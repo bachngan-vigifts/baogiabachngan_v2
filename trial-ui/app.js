@@ -712,7 +712,7 @@ $('#dup-merge-all').addEventListener('click', async () => {
   } catch (e) { $('#dup-error').textContent = e.message; btn.disabled = false; await loadCustomerDuplicates(); renderCustomerDuplicates(); }
 });
 async function loadMembers() {
-  try { const d = await api('/admin/members'); state.members = d.members; state.positions = d.positions; clearGlobalError('staff'); }
+  try { const d = await api('/admin/members'); state.members = d.members; state.positions = d.positions; state.memberDepartments = d.departments || []; clearGlobalError('staff'); }
   catch (e) { state.members = state.members || []; if (e.status !== 401) showGlobalError(e.message, 'staff'); }
   renderMembers();
 }
@@ -3080,16 +3080,18 @@ function renderMembers() {
   const tbody = $('#member-list');
   if (!state.members) { tbody.innerHTML = skeleton(5); return; }
   const pos = new Map(state.positions.map(p => [p.id, p.name])), q = normalize(state.memberQuery);
-  const list = state.members.filter(m => (!state.memberStatus || memberStatus(m) === state.memberStatus) && (!q || normalize(`${m.name} ${m.email} ${m.phone}`).includes(q)));
+  const list = state.members.filter(m => (!state.memberStatus || memberStatus(m) === state.memberStatus) && (!q || normalize(`${m.name} ${m.email} ${m.phone} ${m.workCompany||''} ${(state.memberDepartments||[]).find(d=>d.id===m.workDepartmentId)?.name||''}`).includes(q)));
   tbody.innerHTML = list.map(m => {
     const self = m.id === state.user.id, st = memberStatus(m);
     return `<tr>
       <td class="first"><span class="row-gap"><span class="avatar"${avAttr(m.avatar)}>${esc(initials(m.name))}</span><span><a class="name-btn strong" href="#/members/${esc(encodeURIComponent(m.id))}">${esc(m.name)}</a>${self ? ' <span class="pill blue">Bạn</span>' : ''}<small>${esc(m.email)}</small></span></span></td>
       <td data-label="ĐT">${esc(m.phone) || '—'}</td>
+      <td data-label="Làm việc tại">${esc(m.workCompany==='BN'?'Bách Ngân':m.workCompany==='VG'?'VIGIFTS':'Chưa chọn')}</td>
+      <td data-label="Phòng ban">${esc((state.memberDepartments||[]).find(d=>d.id===m.workDepartmentId)?.name||'Chưa chọn')}${m.isLeader?' <span class="pill blue">Leader</span>':''}</td>
       <td data-label="Chức vụ">${esc(pos.get(m.positionId) || m.positionId)}${m.role === 'manager' ? ' <span class="pill">Manager</span>' : ''}
         ${m.role === 'employee' ? `<label class="approver-toggle" title="Cho phép duyệt báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC (chỉ Manager bật / tắt)"><input type="checkbox" data-approver="${esc(m.id)}" ${m.approver ? 'checked' : ''}> Được duyệt</label>` : ''}</td>
       <td>${STATUS_PILL[st]}</td>
-      <td class="actions-cell"><div class="row-actions">${self ? '' : `
+      <td class="actions-cell"><div class="row-actions">${m.role!=='supplier'?`<button class="btn ghost small" data-mobile-inline data-employment="${esc(m.id)}">Đơn vị & phòng ban</button>`:''}${self ? '' : `
         ${st !== 'locked' ? `<button class="btn ghost small" data-reset="${esc(m.id)}" title="Cấp liên kết đặt lại mật khẩu">${st === 'pending' ? 'Gửi lại liên kết' : 'Đặt lại mật khẩu'}</button>` : ''}
         <button class="icon-btn" data-edit-member="${esc(m.id)}" title="Sửa" aria-label="Sửa ${esc(m.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
         ${st === 'locked'
@@ -3166,6 +3168,23 @@ $('#member-form').addEventListener('submit', async e => {
     loadMembers();
   } catch (ex) { err.textContent = ex.message; }
   finally { btn.disabled = false; }
+});
+let employmentMemberId = null;
+$('#member-list').addEventListener('click', e=>{
+  const b=e.target.closest('[data-employment]');if(!b)return;
+  const m=state.members.find(m=>m.id===b.dataset.employment);if(!m)return;
+  employmentMemberId=m.id;const f=$('#member-employment-form');f.reset();
+  $('#member-employment-name').textContent=m.name;
+  f.elements.workCompany.value=m.workCompany||'';
+  f.elements.workDepartmentId.innerHTML='<option value="">Chưa chọn phòng ban</option>'+(state.memberDepartments||[]).map(d=>`<option value="${esc(d.id)}">${esc(d.name)}</option>`).join('');
+  f.elements.workDepartmentId.value=m.workDepartmentId||'';f.elements.isLeader.checked=!!m.isLeader;
+  $('#member-employment-error').textContent='';$('#member-employment-dialog').showModal();
+});
+$('#member-employment-form').addEventListener('submit',async e=>{
+  e.preventDefault();const f=e.target,b=f.querySelector('[type="submit"]');b.disabled=true;
+  try{const r=await api(`/admin/members/${encodeURIComponent(employmentMemberId)}/employment`,'PUT',{workCompany:f.elements.workCompany.value||null,workDepartmentId:f.elements.workDepartmentId.value||null,isLeader:f.elements.isLeader.checked});
+    Object.assign(state.members.find(m=>m.id===employmentMemberId),r.employment);renderMembers();$('#member-employment-dialog').close();toast('Đã lưu đơn vị và phòng ban.');
+  }catch(ex){$('#member-employment-error').textContent=ex.message;}finally{b.disabled=false;}
 });
 // Cờ "Được duyệt" (chỉ Manager – máy chủ kiểm lại ở PUT /admin/members/:id/approver).
 $('#member-list').addEventListener('change', async e => {

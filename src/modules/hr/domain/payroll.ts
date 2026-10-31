@@ -157,6 +157,7 @@ export const GROUP_DEDUCTION: Record<PayrollGroup, LineKey[]> = {
 export interface PayslipCalc {
   group: PayrollGroup; positionLabel: string; workDays: number; baseSalary: number; revenue: number;
   income: PayLine[]; deductions: PayLine[]; gross: number; deductionTotal: number; net: number;
+  employment?: {company:'BN'|'VG'|null;department:string|null;leader:boolean};
   kpiNetBasis?:{netRevenue:number;issues:number;rate:number};
   kpi: KpiCvResult | null;snapshotUnavailable?:boolean;
   salesCrm?:{apply:boolean;bonusApply?:boolean;kpiApply?:boolean;from:string;kpiEligible?:boolean;previewKpi?:KpiCvResult|null;kpiBonusPreview?:number;facts:{newCustomers:number;transactions:number;contracts:number};awards:import('./contract-bonus.ts').AwardProposal[];};

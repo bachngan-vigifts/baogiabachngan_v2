@@ -29,6 +29,9 @@ export const employees = pgTable('staff_members', {
   name: text('name').notNull(),
   role: text('role', { enum: ['employee', 'manager', 'supplier', 'customer'] }).notNull().default('employee'),
   positionId: text('position_id').references(() => positions.id),
+  workCompany: text('work_company', { enum: ['BN', 'VG'] }),
+  workDepartmentId: text('work_department_id').references(() => departments.id, { onDelete: 'set null' }),
+  isLeader: boolean('is_leader').notNull().default(false),
   active: boolean('active').notNull().default(true),
   createdAt: text('created_at').notNull(),
   /** Đã xoá khỏi danh sách nhân viên (giữ dòng để lịch sử báo giá / đơn vẫn hiện đúng tên). */

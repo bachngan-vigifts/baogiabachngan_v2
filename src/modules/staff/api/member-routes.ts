@@ -4,7 +4,8 @@ import { ACTIVATION_TTL_SECONDS, SELF_MESSAGES, activationLink, assertNotSelf, c
 import { newToken, sha256Hex } from '../domain/session.ts';
 import * as repo from '../repo/member-repo.ts';
 import { CUSTOMER_POSITION_ID } from '../domain/roles.ts';
-import { permissionLog } from '../schema.ts';
+import { and, eq, isNull, notInArray } from 'drizzle-orm';
+import { departments, employees, permissionLog } from '../schema.ts';
 import type { SessionState, StaffEnv } from './auth-routes.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -15,6 +16,20 @@ const CUSTOMER_MSG = 'Tài khoản khách hàng được tạo và quản lý �
 /** Quản lý nhân viên – khu vực 'admin' (chỉ Manager; chốt quyền đã chạy trước handler). Port từ `/admin/member*` bản cũ. */
 export function registerMemberRoutes(router: Router<StaffEnv>): void {
   router.get('/admin/members', async c => json(await repo.listMembers(c.env.db)), 'admin');
+
+  // Organizational labels only: Leader / work department never grant permissions.
+  router.put('/admin/members/:id/employment', async c => {
+    const b=await readJson(c.req,2000),id=c.params.id!,db=c.env.db;
+    if(![null,'BN','VG'].includes(b.workCompany as any)||typeof b.isLeader!=='boolean'||!(b.workDepartmentId===null||typeof b.workDepartmentId==='string'))throw new AppError(400,'Đơn vị, phòng ban hoặc Leader không hợp lệ.');
+    if(b.workDepartmentId&&!(await db.select({id:departments.id}).from(departments).where(eq(departments.id,String(b.workDepartmentId))).limit(1)).length)throw new AppError(400,'Phòng ban không tồn tại.');
+    const employment={workCompany:b.workCompany as 'BN'|'VG'|null,workDepartmentId:b.workDepartmentId ? String(b.workDepartmentId):null,isLeader:b.isLeader};
+    await db.transaction(async tx=>{
+      const [m]=await tx.update(employees).set(employment).where(and(eq(employees.id,id),isNull(employees.deletedAt),notInArray(employees.role,['customer','supplier']))).returning({name:employees.name});
+      if(!m)throw new AppError(404,'Không tìm thấy nhân viên.');
+      await tx.insert(permissionLog).values({id:crypto.randomUUID(),at:new Date().toISOString(),by:actor(c).id,action:'Cập nhật đơn vị / phòng ban / Leader',detail:JSON.stringify({memberId:id,...employment})});
+    });
+    return json({ok:true,employment});
+  }, 'admin');
 
   router.post('/admin/members', async c => {
     const body = await readJson(c.req, 4096);

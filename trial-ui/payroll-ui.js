@@ -6,6 +6,7 @@ const vnd = v => new Intl.NumberFormat('vi-VN').format(Math.round(Number(v) || 0
 const monthLabel = m => `${Number(m.slice(5))}/${m.slice(0, 4)}`;
 const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
 
+export const COMPANY_LABEL = { BN: 'CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI BÁCH NGÂN', VG: 'CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI QUẢNG CÁO VIGIFTS' };
 export const GROUP_LABEL = { sale: 'Sale & Văn phòng', bn: 'Bách Ngân', lock: 'Lock' };
 export const STATUS_LABEL = { estimate: 'Tạm tính', confirmed: 'Đã chốt', paid: 'Đã trả' };
 
@@ -14,10 +15,11 @@ export function payslipSheetHtml({ member, month, slip, standardDays, words = ()
   const row = l => `<tr><td>${esc(l.label)}${l.note ? `<small>${esc(l.note)}</small>` : ''}</td><td class="n">${vnd(l.amount)}</td></tr>`;
   const income = slip.income.filter(l => l.amount || l.key === 'salaryByDays'), out = slip.deductions.filter(l => l.amount);
   return `<div class="slip-sheet">
-    <div class="slip-top"><b>CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI BÁCH NGÂN</b><span>Bảng lương ${esc(GROUP_LABEL[slip.group] || '')}</span></div>
+    <div class="slip-top"><b>${esc(COMPANY_LABEL[slip.employment?.company] || 'ĐƠN VỊ CHƯA ĐƯỢC GHI NHẬN')}</b><span>Bảng lương ${esc(GROUP_LABEL[slip.group] || '')}</span></div>
     <h1>PHIẾU LƯƠNG THÁNG ${esc(monthLabel(month))}</h1>
     <div class="slip-info">
       <div><span>Họ tên</span><b>${esc(member.name)}</b></div><div><span>Vị trí</span><b>${esc(slip.positionLabel || member.position || '')}</b></div>
+      <div><span>Phòng ban</span><b>${esc(slip.employment?.department || 'Chưa ghi nhận')}${slip.employment?.leader?' · Leader':''}</b></div>
       <div><span>Ngày công</span><b>${esc(slip.workDays)} / ${esc(standardDays)}</b></div><div><span>Tình trạng</span><b>${esc(STATUS_LABEL[slip.status] || '')}${slip.confirmedAt ? ' · chốt ' + esc(dmy(slip.confirmedAt)) : ''}</b></div>
       <div><span>Ngày in</span><b>${esc(dmy(new Date().toISOString()))}</b></div>
     </div>
