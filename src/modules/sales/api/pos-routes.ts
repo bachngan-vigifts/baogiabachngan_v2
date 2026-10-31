@@ -346,10 +346,15 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         orderDate: salesOrders.orderDate, createdAt: salesOrders.createdAt, sapoOrderId: salesOrders.sapoOrderId, sapoOrderCode: salesOrders.sapoOrderCode,
         packingStatus: sql<string>`coalesce((select ${packingSlips.status} from ${packingSlips} where ${packingSlips.orderId}=${salesOrders.id} and ${packingSlips.status}<>'cancelled' order by ${packingSlips.updatedAt} desc limit 1),'')`,
         deliveryStatus: sql<string>`coalesce((select ${deliveries.status} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.plannedDate} desc limit 1),'')`,
-        cancelledReturnQty: sql<number>`case when exists(select 1 from pos_returns r where r.order_id=${salesOrders.id} and r.status not in ('cancelled','rejected')) then 0 else greatest(0, -coalesce((select sum(m.qty) from ${stockMoves} m where
-          (m.ref_type='pos_order' and m.ref_id=${salesOrders.id}) or
-          (m.ref_type='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=m.ref_id and p.order_id=${salesOrders.id})) or
-          (m.ref_type='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=m.ref_id and d.order_id=${salesOrders.id}))), 0)) end`.mapWith(Number),
+        // Hàng hoàn chưa nhận – chỉ có nghĩa với đơn ĐÃ HUỶ (nút "Nhận hàng hoàn"): đơn khác trả 0 ngay, không quét phát sinh kho.
+        // Ba nhánh UNION ALL dùng chỉ mục (ref_type, ref_id) thay cho một điều kiện OR quét cả bảng phát sinh kho cho từng đơn.
+        cancelledReturnQty: sql<number>`case when ${salesOrders.status}<>'cancelled' then 0
+          when exists(select 1 from pos_returns r where r.order_id=${salesOrders.id} and r.status not in ('cancelled','rejected')) then 0
+          else greatest(0, -coalesce((select sum(x.qty) from (
+            select m.qty from ${stockMoves} m where m.ref_type='pos_order' and m.ref_id=${salesOrders.id}
+            union all select m.qty from ${packingSlips} p join ${stockMoves} m on m.ref_type='packing_slip' and m.ref_id=p.id where p.order_id=${salesOrders.id}
+            union all select m.qty from ${deliveries} d join ${stockMoves} m on m.ref_type='pos_delivery' and m.ref_id=d.id where d.order_id=${salesOrders.id}
+          ) x), 0)) end`.mapWith(Number),
       }).from(salesOrders)
         .innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
         .leftJoin(employees, eq(employees.id, salesOrders.ownerId))
@@ -777,12 +782,17 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     '/pos/catalog',
     async (c) => {
       posPermission(member(c));
-      await assertSellRegister(c, posText(c.url.searchParams.get('registerId')));
-      const r = await registerOf(c.env.db, posText(c.url.searchParams.get('registerId'))),
-        policy = posText(c.url.searchParams.get('pricePolicyId')) || r.pricePolicyId,
-        q = posText(c.url.searchParams.get('q'), 100);
+      const registerId = posText(c.url.searchParams.get('registerId')), q = posText(c.url.searchParams.get('q'), 100);
+      // Ba lượt đọc độc lập chạy cùng lúc (quyền quầy, quầy, mã vạch); lỗi quyền vẫn báo trước như khi chạy lần lượt.
+      const [allowed, register, barcode] = await Promise.allSettled([
+        assertSellRegister(c, registerId), registerOf(c.env.db, registerId),
+        q ? c.env.db.select().from(productBarcodes).where(eq(productBarcodes.barcode, q)).limit(1) : Promise.resolve([]),
+      ]);
+      for (const result of [allowed, register, barcode]) if (result.status === 'rejected') throw result.reason;
+      const r = (register as PromiseFulfilledResult<Awaited<ReturnType<typeof registerOf>>>).value,
+        policy = posText(c.url.searchParams.get('pricePolicyId')) || r.pricePolicyId;
       if (![r.pricePolicyId, r.secondPricePolicyId].includes(policy)) throw new AppError(400, 'Bảng giá không hợp lệ.');
-      const [barcodeHit] = q ? await c.env.db.select().from(productBarcodes).where(eq(productBarcodes.barcode, q)).limit(1) : [];
+      const [barcodeHit] = (barcode as PromiseFulfilledResult<(typeof productBarcodes.$inferSelect)[]>).value;
       if (barcodeHit && barcodeHit.sku !== q) {
         const [conflict] = await c.env.db.select({ sku: products.sku }).from(products).where(eq(products.sku, q)).limit(1);
         if (conflict) throw new AppError(409, 'Mã đang trùng SKU và barcode của hai sản phẩm. Nhờ Manager kiểm tra trước khi bán.');
@@ -838,18 +848,14 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         .limit(limit)
         .offset(offset);
       if (skuList.length) rows.sort((a, b) => skuList.indexOf(a.sku) - skuList.indexOf(b.sku));
-      const reserved = rows.length
-        ? await reservedBySku(
-            c.env.db,
-            rows.map((p) => p.sku),
-            r.warehouseId,
-          )
-        : new Map<string, number>();
       const exactSku = q && !skuList.length ? rows.find(p=>p.sku===(barcodeHit?.sku||'')||p.sku.toLowerCase()===q.toLowerCase())?.sku ?? null : null;
+      // Hàng đang giữ và tồn các kho khác chỉ phụ thuộc danh sách mã → đọc cùng lúc.
       // A scan only needs the selling warehouse's live availability, not every
       // other warehouse/incoming purchase. Those details stay on catalog pages.
-      const sources = c.url.searchParams.get('scan') === '1' && exactSku
-        ? new Map() : await posStockSources(c.env.db, member(c), r.warehouseId, rows.map(p => p.sku));
+      const [reserved, sources] = await Promise.all([
+        rows.length ? reservedBySku(c.env.db, rows.map((p) => p.sku), r.warehouseId) : new Map<string, number>(),
+        c.url.searchParams.get('scan') === '1' && exactSku ? new Map() : posStockSources(c.env.db, member(c), r.warehouseId, rows.map(p => p.sku)),
+      ]);
       return json({
         products: rows.map((p) => ({
           ...p,

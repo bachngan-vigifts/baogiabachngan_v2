@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // Module trình duyệt (JS thuần) – nạp qua URL để TypeScript không đòi khai báo kiểu.
-const { createPageCache, isCacheable }: any = await import(new URL('../../trial-ui/page-cache.js', import.meta.url).href);
+const { createPageCache, isCacheable, isPassiveWrite }: any = await import(new URL('../../trial-ui/page-cache.js', import.meta.url).href);
 
 test('chỉ đệm lệnh đọc của danh sách / trang chi tiết; không đệm bán hàng nhanh, két, báo giá đang soạn, preflight, số đếm, lệnh ghi', () => {
   for (const p of ['/orders?flow=order&q=&limit=50', '/contracts?limit=50', '/customers?limit=50&offset=0', '/tasks?view=mine&status=open', '/tasks/people',
@@ -28,4 +28,25 @@ test('trả bản đệm (bản sao) trong 10 phút cùng phiên; "vừa lấy" 
   assert.equal(c.set('/orders', 's1', { orders: [{ id: 1 }, { id: 3 }] }), true, 'khác: vẽ lại');
   t += 10 * 60_000 + 1; assert.equal(c.get('/orders', 's1'), null, 'quá 10 phút: tải như mới');
   c.set('/a', 's1', 1); c.clear(); assert.equal(c.size(), 0);
+});
+
+test('không đệm số chứng từ kế tiếp; lệnh chỉ đọc / đánh dấu đã đọc không xoá bộ đệm; bỏ được một trang', () => {
+  for (const p of ['/orders/next-no?quoteId=q1&orderDate=2026-10-30', '/contracts/next-no?quoteId=q1&legalEntity=vigifts'])
+    assert.equal(isCacheable(p), false, p);
+  for (const p of ['/notifications/read', '/chat/c1/read', '/pos/preview', '/csp-report', '/inventory/count-stock', '/inventory/count-candidates', '/pos/ghn/locations'])
+    assert.equal(isPassiveWrite(p), true, p);
+  for (const p of ['/orders', '/tasks/t1', '/payments/p1/void', '/inventory/adjustments', '/chat/c1/messages', '/customers/c1/notes'])
+    assert.equal(isPassiveWrite(p), false, p);
+  const c = createPageCache();
+  c.set('/orders/o1', 's1', { order: 1 }); c.set('/orders', 's1', { orders: [] });
+  c.drop('/orders/o1');
+  assert.equal(c.get('/orders/o1', 's1'), null); assert.notEqual(c.get('/orders', 's1'), null, 'chỉ bỏ đúng trang đó');
+});
+
+test('đệm thêm các trang chỉ để xem: hàng sắp về, lịch nhận NCC, công nợ NCC, nguồn mua, thẻ kho, kho, việc kế toán, khách trùng, trang kho', () => {
+  for (const p of ['/purchase-incoming?q=&page=1', '/purchase-receiving-calendar?from=2026-10-01&to=2026-10-31', '/supplier-payables', '/purchase-sources?q=ly',
+    '/inventory/card?sku=A&warehouseId=w', '/stock-warehouses', '/tasks/accounting/daily', '/customer-duplicates', '/warehouse-work'])
+    assert.equal(isCacheable(p), true, p);
+  for (const p of ['/tasks/accounting/checks', '/supplier-payments/x']) assert.equal(isCacheable(p), false, p);
+  assert.equal(isCacheable('/purchase-incoming', 'POST'), false, 'lệnh ghi không đệm');
 });

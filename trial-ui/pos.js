@@ -390,16 +390,17 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const layout = el('div', 'pos-layout'),
       left = el('section', 'pos-card pos-catalog'),
       right = el('section', 'pos-card pos-checkout'),
-      searchBox = el('div', 'pos-search');
+      searchBox = el('div', 'pos-search scan-field');
     const input = el('input');
     input.type = 'search';
-    input.placeholder = 'Tìm tên, mã hàng hoặc quét mã vạch…';
+    input.placeholder = 'Nhập tên, mã SKU, barcode';
+    input.autocomplete = 'off';
     input.setAttribute('aria-label', 'Tìm hoặc quét sản phẩm');
     nodes.search = input;
     input.addEventListener('input', () => {
       ++searchInputVersion;
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => run(() => search(false, false, true)), localSearch('', '') === null ? 220 : 40);
+      searchTimer = setTimeout(() => run(() => search(false, false, true)), (localSearch.ready ? !localSearch.ready() : localSearch('', '') === null) ? 220 : 40);
     });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -407,7 +408,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         run(submitScan);
       }
     });
-    nodes.scanButton = button('Quét mã', 'btn secondary', () => run(scan));
+    // Nút mã vạch ở cuối ô tìm (scan-field): mở camera; quét xong tự thêm vào giỏ và xoá ô để quét tiếp.
+    nodes.scanButton = button('Quét mã', 'scan-field-btn', () => run(scan)); nodes.scanButton.title = 'Quét mã bằng camera';
     nodes.scanStatus = el('p', 'pos-scan-status');
     nodes.scanStatus.setAttribute('role', 'status');
     nodes.scanStatus.setAttribute('aria-live', 'polite');
@@ -1150,8 +1152,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     }
   };
   function restoreReadyCatalog(registerId, policyId) {
-    st.query = ''; st.localSkus = null; st.catalogPages = [0];
+    st.query = ''; st.catalogPages = [0];
     const ready = readyCatalog?.registerId === registerId && readyCatalog.policyId === policyId ? readyCatalog : null;
+    st.localSkus = ready?.localSkus || null; // trang tiếp theo đi tiếp đúng danh sách đã hiện (danh mục tại chỗ hoặc máy chủ)
     if (ready) st.products = ready.products.map(p => cachedLive(p.sku, registerId, policyId) || p);
     st.offset = ready?.nextOffset ?? null;
     renderProducts(); nodes.previous.hidden = true; nodes.more.hidden = st.offset == null;
@@ -1198,7 +1201,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     }
     try {
       // Cache misses ask the server to resolve exact codes. Typed searches still rank locally.
-      if (!more) st.localSkus = q && !addScanned ? localSearch(q, policyId)?.filter(p=>posCatalogProductVisible(registerName,p)) : null;
+      if (!more) st.localSkus = !addScanned ? localSearch(q, policyId)?.filter(p=>posCatalogProductVisible(registerName,p)) : null;
       const local = st.localSkus?.length ? st.localSkus : null; // [{sku, name, price…}] theo thứ tự xếp hạng
       const base = `/pos/catalog?registerId=${encodeURIComponent(registerId)}&pricePolicyId=${encodeURIComponent(policyId)}`;
       st.query = q;
@@ -1246,7 +1249,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       if (seq !== searchSeq) return;
       st.offset = d.nextOffset;
       st.products = append ? [...st.products, ...d.products] : d.products;
-      if (!q && !more && !addScanned) readyCatalog = { registerId, policyId, products: d.products, nextOffset: d.nextOffset };
+      if (!q && !more && !addScanned) readyCatalog = { registerId, policyId, products: d.products, nextOffset: d.nextOffset, localSkus: st.localSkus };
       if (!more) st.catalogPages = [0];
       else if (previous) st.catalogPages.pop();
       else if (mobile) st.catalogPages.push(offset);

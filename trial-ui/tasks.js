@@ -91,9 +91,10 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   const who = t => t.assigneeName ? esc(t.assigneeName) : t.teamName ? `<span class="team-tag">Nhóm ${esc(t.teamName)}</span>` : '<span class="danger-text">Chưa giao</span>';
   const whoSub = t => !t.assigneeName && t.teamName ? 'Chưa ai nhận' : `Giao bởi ${esc(t.creatorName || 'Hệ thống')}`;
 
-  async function badge() {
+  /** `known`: số đếm đã có (từ GET /badges) → không gọi máy chủ. */
+  async function badge(known) {
     try {
-      const s = await api('/tasks/summary'), b = document.getElementById('nav-task-count');
+      const s = known || await api('/tasks/summary'), b = document.getElementById('nav-task-count');
       const n = s.overdue || s.open; b.hidden = !n; b.textContent = n; b.classList.toggle('danger', s.overdue > 0);
       b.title = `${s.open} việc đang mở · ${s.overdue} quá hạn · ${s.today} đến hạn hôm nay`;
       return s;

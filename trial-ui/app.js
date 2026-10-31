@@ -10,7 +10,7 @@ import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.
 import { createRequestPriority, isBackgroundRequest } from './request-priority.js';
 import { recordApi, openSpeedDialog } from './speed-log.js';
 import { createApiRegion, createRegionCanary } from './api-region.js';
-import { createPageCache, isCacheable } from './page-cache.js';
+import { createPageCache, isCacheable, isPassiveWrite } from './page-cache.js';
 import { createCustomerSearch } from './customer-search.js';
 import { sendOnce } from './request-keys.js';
 import { bindQuoteDeviceDraft } from './quote-device-draft.js';
@@ -323,7 +323,7 @@ function api(path, method = 'GET', body, { fresh = false } = {}) {
   }
   const request = withBusy(method, apiRequest(path, method, body), path);
   // Mọi lệnh ghi (kể cả lỗi – có thể máy chủ đã lưu) làm bản đệm cũ đi: lần mở sau lấy dữ liệu mới.
-  if (method !== 'GET') { const stale = () => { pageCache.clear(); customerSearch.clear(); }; request.then(stale, stale); }
+  if (method !== 'GET' && !isPassiveWrite(path)) { const stale = () => { pageCache.clear(); customerSearch.clear(); }; request.then(stale, stale); }
   return request;
 }
 /** Tải bản mới của trang đang hiện từ bản đệm; khác bản đệm và vẫn đang ở trang đó thì làm mới trang. */
@@ -331,7 +331,12 @@ function revalidate(path, session, hash) {
   apiRequest(path).then(data => {
     if (session !== token) return;
     if (pageCache.set(path, session, data) && location.hash === hash) dataRefresh.changed();
-  }).catch(() => { /* mạng lỗi: giữ bản đang hiện, lần sau thử lại */ });
+  }).catch(e => {
+    // Mất quyền / bản ghi đã xoá: bỏ bản đệm và vẽ lại trang (trang tự báo lỗi hoặc chuyển đi) thay vì giữ dữ liệu cũ.
+    // Phiên hết hạn (401): bỏ bản đệm; màn hình đăng nhập đã được apiRequest mở.
+    if (session === token && [401, 403, 404, 410].includes(e?.status)) { pageCache.drop(path); if (e.status !== 401 && location.hash === hash) dataRefresh.changed(); }
+    /* mạng lỗi / 5xx: giữ bản đang hiện, lần sau thử lại */
+  });
 }
 async function apiRequest(path, method = 'GET', body) {
   const headers = { 'content-type': 'application/json' };
@@ -591,10 +596,11 @@ if ('ResizeObserver' in window) {
   track('.bottom-nav', '--nav-h'); track('.mobile-savebar', '--savebar-h');
 }
 let navigationBadgeRequest = 0;
-async function loadNavigationBadges() {
+/** `known`: số đếm đã có (từ GET /badges) → không gọi máy chủ. */
+async function loadNavigationBadges(known) {
   const request = ++navigationBadgeRequest, user = state.user;
   try {
-    const counts = await api('/navigation-counts');
+    const counts = known || await api('/navigation-counts');
     if (request !== navigationBadgeRequest || user !== state.user) return;
     for (const [name, id] of [['receiving', 'nav-receiving-count'], ['packing', 'nav-packing-count'], ['deliveries', 'nav-deliveries-count'], ['purchases', 'nav-purchase-count'], ['cash', 'nav-cash-count'], ['transfers', 'nav-transfer-count']]) {
       const badge = document.getElementById(id); if (!badge) continue;
@@ -610,7 +616,7 @@ async function loadAll() {
   const later = (home, load) => home.includes(page) ? load() : requestPriority.idle().then(() => state.user ? load() : undefined);
   const jobs = [can('page.quotes') && later(['quotes'], loadQuotes), can('page.customers') && later(['customers'], loadCustomers)].filter(Boolean);
   if (isManager()) jobs.push(later(['staff', 'members'], loadMembers), loadSapoSync());
-  loadNavigationBadges(); loadStockBadge(); tasksView().badge(); if (can('page.care')) careView().badge(); chatView().startBadge(false); $('#chat-launcher').hidden = false; approvalView().start();
+  loadBadges({ startChat: true }); $('#chat-launcher').hidden = false; approvalView().start();
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
   // Tải sẵn bảng Công việc lúc rảnh: lần bấm đầu vào trang Công việc hiện ngay (sau đó vẫn tải bản mới ở nền).
@@ -763,14 +769,17 @@ const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:
 // Bán hàng nhanh tìm trên danh mục tải sẵn như trang Sản phẩm: chỉ mã có giá ở bảng giá đang chọn (máy chủ vẫn lọc lại).
 const posLocalSearch = (q, policy) => {
   if (!catalog.items) return null;
-  if (!q) return [];
-  const found = searchCatalog(catalog.items, { q }) || [];
+  // Ô tìm trống (mở quầy / xoá ô): cả danh mục theo thứ tự sẵn có – quầy hiện ngay rồi chỉ hỏi máy chủ giá / tồn của trang đang xem
+  // (/pos/catalog?skus=), không bắt máy chủ bỏ dấu + xếp hạng toàn bộ sản phẩm mỗi lần mở quầy.
+  const found = q ? searchCatalog(catalog.items, { q }) || [] : catalog.items;
   // Bản danh mục không giá (người không xem giá): không lọc theo giá tại chỗ – máy chủ vẫn chỉ trả mã có giá.
   const priced = catalog.items.some(p => p.prices?.[policy] != null);
   // Trả sẵn tên / giá / ảnh để quầy hiện kết quả ngay; tồn có thể bán vẫn lấy từ máy chủ (/pos/catalog?skus=).
   return (priced ? found.filter(p => p.prices?.[policy] != null) : found)
     .map(p => ({ sku: p.sku, name: p.name, unit: p.unit, brand: p.brand, imageUrl: p.imageUrl, price: p.prices?.[policy] ?? null }));
 };
+// Kiểm tra nhanh đã có danh mục chưa (không dựng cả danh sách chỉ để biết có hay không).
+posLocalSearch.ready = () => !!catalog.items;
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
@@ -3747,8 +3756,7 @@ function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId
 /** Tải lại dữ liệu đang xem sau khi đã kiểm tra các biểu mẫu chưa lưu. */
 async function refreshData() {
   if (!state.user) return;
-  const jobs = [approvalView().refresh(), loadQuotes(), loadStockBadge(), loadNavigationBadges(), tasksView().badge(), chatView().badge()];
-  if (can('page.care')) jobs.push(careView().badge());
+  const jobs = [approvalView().refresh(), loadQuotes(), loadBadges()];
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page, id] = path.split('/'), params = new URLSearchParams(query);
   if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') jobs.push(openEditor(id)); }
@@ -3781,9 +3789,30 @@ async function refreshData() {
 // ----- Khách hỏi tồn kho: nhân viên phụ trách trả lời (khách nhận thông báo)
 let stockFilter = 'open';
 const stockShortageExports = new Map();
-async function loadStockBadge() {
+/**
+ * HUY HIỆU GỘP: một lượt GET /badges thay cho 4–5 lượt (việc, menu, tin nhắn, chăm sóc, khách hỏi tồn) mỗi lần trang làm mới.
+ * Phần nào máy chủ không trả được (mất quyền, lỗi) thì phần đó tự gọi API riêng như trước; cả lượt lỗi thì gọi riêng từng phần.
+ */
+let badgeRequest = 0;
+async function loadBadges({ startChat = false } = {}) {
+  const request = ++badgeRequest, user = state.user;
+  const parts = ['tasks', 'navigation', 'chat', ...(can('page.care') ? ['care'] : []), ...(can('page.stock-requests') ? ['stock'] : [])];
+  let got = {};
+  try { got = (await api('/badges?parts=' + parts.join(','))).parts || {}; } catch { /* gọi riêng từng phần bên dưới */ }
+  if (request !== badgeRequest || user !== state.user) return;
+  const ok = k => got[k] && !got[k].error ? got[k] : undefined;
+  const chat = ok('chat')?.unread;
+  await Promise.all([
+    tasksView().badge(ok('tasks')),
+    loadNavigationBadges(ok('navigation')),
+    startChat ? chatView().startBadge(false, chat) : chatView().badge(chat),
+    parts.includes('care') && careView().badge(ok('care')),
+    parts.includes('stock') && loadStockBadge(ok('stock')),
+  ]);
+}
+async function loadStockBadge(known) {
   if (!can('page.stock-requests')) return;
-  try { const n = (await api('/stock-requests?status=open')).requests.length; $('#nav-stock-count').hidden = !n; $('#nav-stock-count').textContent = n; } catch { /* bỏ qua */ }
+  try { const n = (known || await api('/stock-requests?status=open')).requests.length; $('#nav-stock-count').hidden = !n; $('#nav-stock-count').textContent = n; } catch { /* bỏ qua */ }
 }
 async function loadStockRequests(focusId) {
   stockShortageExports.clear();

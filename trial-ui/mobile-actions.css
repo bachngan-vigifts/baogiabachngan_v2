@@ -43,3 +43,16 @@
   body:has(.quote-actions > .mobile-action-list) #quote-mobile-more { display: none !important; }
   #view-editor .quote-actions:has(> .mobile-action-list) { display: flex !important; position: static; width: auto; padding: 0; border: 0; background: transparent; box-shadow: none; overflow: visible; }
 }
+/* Trang chi tiết báo giá (điện thoại): nút "Thao tác" không chen vào đầu trang (đè số báo giá / trạng thái) mà thành nút tròn (biểu tượng Trung tâm quản lý)
+   nổi ở góc dưới phải – đúng chỗ nút nhắn tin; nút nhắn tin lùi lên trên nó. */
+@media screen and (max-width: 850px) {
+  #view-editor:not([hidden]) .quote-actions .mobile-action-trigger:not([hidden]) {
+    position: fixed; right: 14px; z-index: 61; bottom: calc(var(--nav-h, calc(62px + env(safe-area-inset-bottom))) + var(--savebar-h, 68px) + 12px);
+    width: 60px !important; height: 60px; min-width: 60px; padding: 0; border-radius: 50%; border: 0;
+    background: transparent url('icons/quan-ly-168.png') center / contain no-repeat; box-shadow: 0 10px 24px #102a5640; }
+  /* Biểu tượng "Trung tâm quản lý" thay cho chữ ⋮ / "Thao tác" (tên nút vẫn đọc được qua aria-label). */
+  #view-editor:not([hidden]) .quote-actions .mobile-action-trigger > span { display: none !important; }
+  #view-editor:not([hidden]) .quote-actions .mobile-action-trigger:active { transform: scale(.94); }
+  body:has(#view-editor:not([hidden]) .quote-actions .mobile-action-trigger:not([hidden])) .chat-launcher {
+    bottom: calc(var(--nav-h, calc(62px + env(safe-area-inset-bottom))) + var(--savebar-h, 68px) + 80px); }
+}

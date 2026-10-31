@@ -58,7 +58,7 @@ export function initChat({ api, toast, userId, isManager, compress }) {
   }
   let badgeTimer = null;
   // poll = false: không tự hỏi định kỳ – trial-ui/pulse.js đưa số chưa đọc vào badge(n).
-  const startBadge = (poll = true) => { if (!badgeTimer) { badge(); badgeTimer = poll ? setInterval(() => { if (document.visibilityState === 'visible' && root.hidden) badge(); }, 15_000) : -1; } };
+  const startBadge = (poll = true, known) => { if (!badgeTimer) { badge(known); badgeTimer = poll ? setInterval(() => { if (document.visibilityState === 'visible' && root.hidden) badge(); }, 15_000) : -1; } };
 
   // ----- Danh sách hội thoại
   async function loadList() {
