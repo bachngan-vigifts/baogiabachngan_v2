@@ -96,7 +96,7 @@ export function initMemberDetail(deps) {
   function payrollHtml(d) {
     const p = d.payroll, s = p.payslip, pr = p.profile, inp = p.input, edit = can() && !locked(), hasProfile = !!pr.effectiveMonth;
     const row = (l, cls = '') => `<tr class="${cls}"><td>${esc(l.label)}${l.note ? `<small>${esc(l.note)}</small>` : ''}</td><td class="right num">${cls === 'minus' ? '−' : ''}${money(l.amount)}</td></tr>`;
-    const shown = list => list.filter(l => l.amount || l.key === 'salaryByDays');
+    const shown = list => list.filter(l => l.amount || l.key === 'salaryByDays' || s.group==='sale'&&['contractBonus','contractBonusAdjustment'].includes(l.key));
     const pctTxt = v => v === null || v === undefined ? '—' : `${Math.round(v * 1000) / 10}%`;
     const k = s.kpi;
     return `<div class="md-pay-grid">
@@ -105,7 +105,7 @@ export function initMemberDetail(deps) {
         <p class="muted small">${esc(GROUP[s.group] || '')}${s.positionLabel ? ' · ' + esc(s.positionLabel) : ''} · ${s.workDays} ngày làm việc${inp.workDays === null ? ' (theo chấm công)' : ' (nhập tay)'}</p>
         ${s.snapshotUnavailable?'<p class="error">Phiếu cũ thiếu bản chụp chi tiết. Giữ nguyên tổng tiền đã chốt; cần Manager đối soát trước khi in.</p>':''}<table class="md-slip-table"><tbody>
           ${shown(s.income).map(l => row(l)).join('')}
-          ${s.salesCrm?`<tr><td colspan="2"><button class="btn ghost small" data-act="contract-bonus">${s.salesCrm.kpiEligible===false?'Xem thưởng HĐKT':'Xem KPI & thưởng HĐKT'}</button></td></tr>`:''}
+          ${s.group==='sale'?`<tr><td colspan="2"><button class="btn secondary small" data-act="contract-bonus">${s.salesCrm?.kpiEligible===false||pr.kpiEligible===false?'Xem thưởng sao HĐKT và thanh lý':'Xem KPI & thưởng HĐKT'}</button>${!s.salesCrm?'<p class="muted small">Chưa bật đối chiếu thưởng CRM cho tháng này. Manager cài đặt tại Bảng lương → Cài đặt thưởng HĐKT.</p>':''}</td></tr>`:''}
           ${row({ label: 'Tổng thu nhập', amount: s.gross }, 'sum')}
           ${shown(s.deductions).map(l => row(l, 'minus')).join('')}
           ${row({ label: 'Thực nhận', amount: s.net }, 'net')}
@@ -138,6 +138,7 @@ export function initMemberDetail(deps) {
             ${edit ? `<button class="icon-btn" data-del-adj="${esc(a.id)}" title="Xoá" aria-label="Xoá khoản"><svg viewBox="0 0 24 24"><path d="M5 7h14 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3"/></svg></button>` : ''}</li>`).join('')}</ul>`
           : '<p class="muted cd-empty">Chưa có khoản nào trong tháng.</p>'}
         <div class="card-title-row md-gap"><h3>Hồ sơ lương</h3>${can() ? `<button type="button" class="btn secondary small" data-act="salary">${hasProfile ? 'Sửa hồ sơ lương' : 'Đặt hồ sơ lương'}</button>` : ''}</div>
+        ${pr.payrollGroup==='sale'?`<p class="small"><b>Thưởng sao HĐKT và thanh lý: ${pr.contractBonusEnabled?'Đã bật cho nhân viên':'Chưa bật cho nhân viên'}</b>${pr.kpiEligible===false?' · Sale Admin không tính KPI.':''} ${can()?'<a href="#/payroll?month='+encodeURIComponent(d.month)+'">Cài đặt thưởng HĐKT tại Bảng lương</a>':''}</p>`:''}
         ${hasProfile ? `<dl class="kv"><dt>Áp dụng từ</dt><dd>${esc(monthLabel(pr.effectiveMonth))}</dd>
           <dt>Bảng lương</dt><dd>${esc(GROUP[pr.payrollGroup])}${pr.positionLabel ? ' · ' + esc(pr.positionLabel) : ''}</dd>
           <dt>LCB / thoả thuận</dt><dd class="num">${pr.baseSalary ? money(pr.baseSalary) : `LCB vùng (${money(p.params.minWageDay * p.params.standardDays)})`}</dd>
@@ -182,6 +183,7 @@ export function initMemberDetail(deps) {
           <div><h1>${esc(m.name)}</h1><span class="muted">${esc(m.position || m.positionId || '')}${m.role === 'manager' ? ' · Manager' : ''}</span>
             ${m.active ? '' : ' <span class="pill off">Đã khoá</span>'}</div></div>
         <div class="editor-actions">
+          ${d.payroll&&can()?'<button class="btn primary" data-mobile-inline data-act="salary">Cài đặt lương</button>':''}
           <div class="md-month"><button type="button" class="icon-btn" data-month="-1" aria-label="Tháng trước">‹</button>
             <input type="month" id="md-month" value="${esc(d.month)}" aria-label="Chọn tháng"><button type="button" class="icon-btn" data-month="1" aria-label="Tháng sau">›</button></div>
           ${a.canManage && !a.isSelf ? '<button class="btn secondary" data-act="edit">Sửa thông tin</button>' : ''}
@@ -276,7 +278,7 @@ export function initMemberDetail(deps) {
       ${moneyInput('insurance', 'BHXH người lao động / tháng', has ? p.insurance : prm.socialInsurance)}
       ${check('mealAllowance', 'Hưởng phụ cấp cơm + xăng (thử việc: bỏ chọn)', p.mealAllowance)}
       ${p.kpiEligible===false?'<p class="muted span-2">Sale Admin không tính KPI. Thưởng sao HĐKT và thưởng thanh lý được bật riêng bên dưới.</p>':check('kpiEnabled','Sale: tính KPI công việc + thưởng KPI DS',p.kpiEnabled)+numInput('fixedKpi','KPI cố định (%) — trống = theo tháng / công thức',p.fixedKpi==null?'':p.fixedKpi*100)}
-      ${check('contractBonusEnabled','Sale / Sale Admin: hưởng thưởng HĐKT',p.contractBonusEnabled)}
+      ${check('contractBonusEnabled','Hưởng thưởng sao HĐKT và thanh lý (Sale / Sale Admin)',p.contractBonusEnabled)}
       ${check('teamBonus', 'NVBH ML / Lock: hưởng thưởng DS của nhóm', p.teamBonus)}
       <label>Mã ngân hàng (VietQR)<input name="bankCode" maxlength="30" value="${esc(p.bankCode)}" placeholder="vcb, acb, vietinbank, tcb…"></label>
       <label>Số tài khoản<input name="bankAccount" maxlength="30" inputmode="numeric" value="${esc(p.bankAccount)}"></label>
@@ -355,7 +357,7 @@ export function initMemberDetail(deps) {
     try {
       if (act === 'edit') deps.onEdit(m);
       else if (act === 'photo') { if (await deps.onPhoto(m)) reload(); }
-      else if (act === 'contract-bonus')openContractBonusDetails(st.d.payroll.payslip);
+      else if (act === 'contract-bonus')openContractBonusDetails(st.d.payroll.payslip,{kpiEligible:st.d.payroll.profile.kpiEligible});
       else if (act === 'salary') editSalary();
       else if (act === 'add-adj') addAdjustment();
       else if (act === 'inputs') editInputs();

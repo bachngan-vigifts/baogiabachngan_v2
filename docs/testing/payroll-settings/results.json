@@ -1,0 +1,26 @@
+[
+  {
+    "width": 1280,
+    "salarySaved": true,
+    "profileRewardEnabled": true,
+    "adminKpi": null,
+    "star": 50000,
+    "liquidation": 10000,
+    "total": 60000,
+    "shadowDoesNotPay": true,
+    "otherParamsPreserved": true,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "salarySaved": true,
+    "profileRewardEnabled": true,
+    "adminKpi": null,
+    "star": 50000,
+    "liquidation": 10000,
+    "total": 60000,
+    "shadowDoesNotPay": true,
+    "otherParamsPreserved": true,
+    "errors": []
+  }
+]
