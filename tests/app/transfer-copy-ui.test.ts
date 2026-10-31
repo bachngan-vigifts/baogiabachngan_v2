@@ -20,13 +20,13 @@ class Node {
   async click(){if(!this.disabled)await this.events.click?.();}
 }
 const all=(n:Node):Node[]=>[n,...n.children.flatMap(all)];
-async function setup(status='cancelled',missing=false,lookup?: (path:string)=>Promise<any>, hooks: {write?:()=>Promise<any>;read?:()=>Promise<any>}={}){
+async function setup(status='cancelled',missing=false,lookup?: (path:string)=>Promise<any>, hooks: {write?:()=>Promise<any>;read?:()=>Promise<any>;confirm?:(text:string,options:any)=>Promise<boolean>}={}){
  const root=new Node(),posts:any[]=[],nav:string[]=[],messages:string[]=[],reads:string[]=[];
  const source={id:'old',transferNo:'PCK-OLD',status,statusLabel:'Đã huỷ',fromWarehouseId:'a',toWarehouseId:'b',reason:'Bổ sung kho',lines:[{sku:'X',name:'Ly',qty:12,unit:'cái',fromStock:20,toStock:0},{sku:'Y',name:'Bát',qty:3,unit:'cái',fromStock:30,toStock:0}],revision:1,actions:status==='pending'?{edit:true,approve:true,reject:true,cancel:true}:status==='approved'?{done:true,cancel:true}:{}};
  const context:any={URLSearchParams,setTimeout,clearTimeout,crypto:{randomUUID:()=> '5a828b25-34cf-4145-bbab-43a53a5c465b'},document:{createElement:(tag:string)=>new Node(tag),createTextNode:(s:string)=>{const n=new Node('text');n.textContent=s;return n;}},location:{hash:'#/transfers/old'},history:{replaceState(){}}};
  const code=readFileSync(new URL('../../trial-ui/stock-ops.js',import.meta.url),'utf8').replace(/^import .*;\n/m,'').replace('export function initTransfers','globalThis.initTransfers = function').split('const GROUPS =')[0]!;
  runInNewContext(code,context);
- const ui=context.initTransfers({root,toast:(s:string)=>messages.push(s),go:(s:string)=>nav.push(s),api:async(path:string,method?:string,body?:any)=>{
+ const ui=context.initTransfers({root,confirmBox:(text:string,options:any)=>hooks.confirm?.(text,options)??Promise.resolve(false),toast:(s:string)=>messages.push(s),go:(s:string)=>nav.push(s),api:async(path:string,method?:string,body?:any)=>{
    if(path.startsWith('/inventory/lookup'))return lookup?.(path) ?? {products:[]};
    if(method){posts.push({path,body});if(hooks.write)return hooks.write();return{id:'new',transferNo:'PCK-NEW'};}
    reads.push(path);if(path==='/stock-transfers/old'&&hooks.read)await hooks.read();
@@ -128,4 +128,13 @@ test('lưu thay đổi phiếu cũng ẩn nút khác và chặn gửi lặp tron
  const send=s.button('Lưu thay đổi')!,drawer=all(s.root).find(n=>n.tag==='aside')!,pending=send.click();
  assert.match(send.textContent,/Đang cập nhật/);assert.equal(send.disabled,true);assert.ok(all(drawer).filter(n=>n.tag==='button'&&n!==send).every(n=>n.hidden));
  await send.click();assert.equal(s.posts.length,1);fail(Error('Thử lại'));await pending;assert.equal(send.disabled,false);assert.equal(send.textContent,'Lưu thay đổi');assert.equal(s.button('Huỷ')!.hidden,false);
+});
+
+
+test('cancel requires a 3-second destructive confirmation, dismissing makes no write and repeated clicks cannot duplicate',async()=>{
+ let finish!:(value:boolean)=>void;const confirmations:any[]=[],hooks:any={confirm:(text:string,options:any)=>{confirmations.push({text,options});return new Promise(resolve=>finish=resolve);}};
+ const s=await setup('approved',false,undefined,hooks),cancel=s.button('Huỷ phiếu')!;
+ const dismissed=cancel.click();assert.equal(s.posts.length,0);assert.equal(confirmations[0].options.delay,3000);assert.equal(confirmations[0].options.danger,true);assert.match(confirmations[0].text,/PCK-OLD/);
+ await cancel.click();assert.equal(confirmations.length,1);finish(false);await dismissed;assert.equal(s.posts.length,0);assert.equal(cancel.disabled,false);
+ const confirmed=cancel.click();assert.equal(s.posts.length,0);finish(true);await confirmed;assert.equal(s.posts.length,1);assert.equal(s.posts[0].path,'/stock-transfers/old/cancel');assert.equal(s.posts[0].body.revision,1);
 });

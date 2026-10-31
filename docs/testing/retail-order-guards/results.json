@@ -1,0 +1,24 @@
+[
+  {
+    "width": 1280,
+    "hiddenBeforeSelection": true,
+    "stockChangesWithWarehouse": true,
+    "clearingWarehouseHidesGoods": true,
+    "cancelWaits3Seconds": true,
+    "dismissDoesNotWrite": true,
+    "confirmedWrites": 1,
+    "analyticsReport": true,
+    "pageErrors": []
+  },
+  {
+    "width": 390,
+    "hiddenBeforeSelection": true,
+    "stockChangesWithWarehouse": true,
+    "clearingWarehouseHidesGoods": true,
+    "cancelWaits3Seconds": true,
+    "dismissDoesNotWrite": true,
+    "confirmedWrites": 1,
+    "analyticsReport": true,
+    "pageErrors": []
+  }
+]

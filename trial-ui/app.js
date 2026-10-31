@@ -3726,7 +3726,7 @@ let stocktakeUi;
 function stocktakeView() { return stocktakeUi ||= initStocktake({ api, root: $('#view-stocktake'), toast, confirmBox, userId: () => state.user?.id, ensureCatalog: loadCatalogSnapshot, findProducts: q => catalog.items ? searchCatalog(catalog.items, {q}) : null }); }
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
 var transfersUi = null, stockMovesUi = null, sellerConfigUi = null;
-function transfersView() { return transfersUi ||= initTransfers({ api, root: $('#view-transfers'), toast, go, isManager }); }
+function transfersView() { return transfersUi ||= initTransfers({ api, root: $('#view-transfers'), toast, go, isManager, confirmBox }); }
 function stockMovesView() { return stockMovesUi ||= initStockMoves({ api, root: $('#view-stock-moves'), toast, createPager, linkAllowed }); }
 function sellerConfigView() { if (!sellerConfigUi) { const box = document.createElement('div'); $('#view-permissions').after(box); box.id = 'seller-config-box'; sellerConfigUi = initSellerConfig({ api, root: box, toast }); } return sellerConfigUi; }
 var permissionsUi = null;

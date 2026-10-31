@@ -511,9 +511,52 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const request = ++st.orderBoardRequest;
     const d = await api('/pos/orders?' + p);
     if (request !== st.orderBoardRequest) return;
+    d.analyticsFilters=Object.fromEntries(p);
     st.orderBoard = d;
     st.orderRegisterId = d.registerId;
     renderOrderBoard();
+  }
+  function showCancellationAnalytics(d) {
+    const a = d.analytics;
+    if (!a) return;
+    const title = 'Tổng quan huỷ đơn và kết quả xử lý', m = modal(title);
+    m.dlg.classList.add('pos-cancellation-modal');
+    m.dlg.setAttribute('aria-label', title);
+    const pct = n => n == null ? 'Chưa có dữ liệu' : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(n) + '%';
+    const filters = d.analyticsFilters || {};
+    const register = (d.registers || []).find(r => r.id === d.registerId)?.name || 'Cửa hàng đang chọn';
+    m.body.append(el('p', 'pos-note', register), el('p', 'pos-note',
+      `Kỳ đơn tạo: ${filters.from || d.windowFrom || 'Từ đầu'} → ${filters.to || 'Không giới hạn ngày kết thúc'}. Theo nguồn, nhân viên và từ khoá đang lọc; không áp dụng thẻ trạng thái hoặc bộ lọc thanh toán.`));
+    const grid = el('div', 'pos-cancellation-kpis');
+    const metrics = [
+      ['Tổng đơn', a.total], ['Đã hoàn thành', a.completed], ['Huỷ / hoàn / thất bại', a.unsuccessful], ['Đang xử lý', a.pending],
+      ['Huỷ / hoàn trên tổng đơn', pct(a.unsuccessfulRate)], ['Hoàn thành trên tổng đơn', pct(a.successRate)],
+      ['Thành công trên đơn đã kết thúc', pct(a.closedSuccessRate)],
+    ];
+    for (const [label, value] of metrics) {
+      const item = el('div');
+      item.append(el('strong', '', value), el('span', '', label));
+      grid.append(item);
+    }
+    m.body.append(grid, el('p', 'pos-note', 'Đơn đang xử lý chưa được coi là thành công. Tỷ lệ thành công trên đơn đã kết thúc = hoàn thành ÷ (hoàn thành + huỷ/hoàn/thất bại). Không coi tỷ lệ này là lỗi của nhân viên.'));
+    const kindNames = { cancelled: 'Đã huỷ', returned: 'Hoàn / đang hoàn hàng', refunded: 'Đã hoàn tiền', failed: 'Thất bại / mất / hỏng hàng' };
+    m.body.append(el('h3', '', 'Phân loại kết quả không thành công'));
+    for (const k of a.kinds) m.body.append(el('p', '', `${kindNames[k.kind] || 'Chưa phân loại'}: ${k.count} đơn`));
+    m.body.append(el('h3', '', 'Lý do huỷ đã ghi nhận'));
+    const table = el('table', 'data-table'), head = el('tr'), thead = el('thead'), tbody = el('tbody');
+    for (const name of ['Lý do', 'Số đơn', '% đơn huỷ / hoàn']) head.append(el('th', '', name));
+    thead.append(head);
+    for (const r of a.reasons) {
+      const tr = el('tr');
+      tr.append(el('td', '', r.reason), el('td', 'num', r.count), el('td', 'num', pct(a.unsuccessful ? 100 * r.count / a.unsuccessful : null)));
+      tbody.append(tr);
+    }
+    table.append(thead, tbody);
+    const wrap = el('div', 'table-wrap'); wrap.append(table); m.body.append(wrap);
+    if (!a.unsuccessful) m.body.append(el('p', 'pos-note', 'Chưa có đơn huỷ / hoàn trong kỳ này.'));
+    m.body.append(el('p', 'pos-note', `${a.missingReasons} đơn chưa ghi nhận lý do. Lý do đơn web lấy từ nhật ký huỷ tại CRM nếu có. Trạng thái website/GHN không tự suy ra lý do. Đơn web chưa gắn nhân viên bán.`));
+    m.body.append(el('h3', '', 'Ngưỡng cảnh báo tham khảo'), el('p', 'pos-note', 'Chỉ xem xét khi có ít nhất 30 đơn đã kết thúc trong kỳ: tỷ lệ huỷ/hoàn trên đơn đã kết thúc từ 10% cần rà soát, từ 20% cảnh báo cao. Đây là ngưỡng thử nghiệm, chưa phải quy định phạt; phải đối chiếu nguồn đơn, khách hàng, hàng hoá và vận chuyển trước khi quy trách nhiệm.'));
+    m.show();
   }
   function renderOrderBoard() {
     const box = nodes.orderBoard;
@@ -573,6 +616,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       if (alert) b.setAttribute('aria-label', `Đơn web: ${n} đơn cần xử lý`);
       cards.append(b);
     }
+    if(d.analytics){const a=d.analytics,pct=a.unsuccessfulRate==null?'—':new Intl.NumberFormat('vi-VN',{maximumFractionDigits:1}).format(a.unsuccessfulRate)+'%';const report=button('','pos-order-count pos-cancellation-report',()=>showCancellationAnalytics(d));report.setAttribute('aria-label','Xem tỷ lệ huỷ đơn và lý do');report.append(el('strong','',pct),el('span','','Tỷ lệ huỷ / hoàn'));cards.append(report);}
     box.append(cards);
     const search = el('input', 'pos-order-search');
     search.type = 'search'; search.placeholder = 'Tìm số đơn, khách hàng, điện thoại, nhân viên…'; search.value = st.orderQuery;

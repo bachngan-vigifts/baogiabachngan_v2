@@ -33,7 +33,7 @@ function ask(title, placeholder) {
   });
 }
 
-export function initTransfers({ api, root, toast, go, isManager = () => false }) {
+export function initTransfers({ api, root, toast, go, confirmBox, isManager = () => false }) {
   let data = null, filter = 'open', listRun = 0, detailRun = 0, showing = '', rendered = '', inFlight = null, formOpen = false, posting = false, updating = false, openedAt = 0;
   const page = el('div', 'sup-page'), head = el('div', 'page-head'), titles = el('div');
   titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Điều chuyển kho'),
@@ -173,7 +173,10 @@ export function initTransfers({ api, root, toast, go, isManager = () => false })
     if (t.actions.approve) act('Cho xin hàng', 'btn ok', 'Đang duyệt…', () => run('approve', {}, 'Đã cho – chuyển hàng rồi bấm "Đã chuyển".'));
     if (t.actions.reject) act('Từ chối…', 'btn danger-outline', 'Đang từ chối…', async () => { const r = await ask('Từ chối phiếu xin hàng', 'Lý do từ chối (người xin sẽ nhận được)'); return r ? run('reject', { reason: r }, 'Đã từ chối.') : false; });
     if (t.actions.done) act('Đã chuyển', 'btn primary', 'Đang ghi sổ kho…', () => run('done', {}, 'Đã ghi sổ kho: trừ kho đi, cộng kho đến.'));
-    if (t.actions.cancel) act('Huỷ phiếu', 'btn ghost', 'Đang huỷ…', () => run('cancel', {}, 'Đã huỷ phiếu.'));
+    if (t.actions.cancel) act('Huỷ phiếu', 'btn ghost', 'Đang huỷ…', async () => {
+      if (!await confirmBox(`Huỷ phiếu điều chuyển ${t.transferNo}? Phiếu sẽ không thể tiếp tục chuyển hàng.`, {title:'Huỷ phiếu điều chuyển',ok:'Xác nhận huỷ phiếu',danger:true,delay:3000})) return false;
+      return run('cancel', {}, 'Đã huỷ phiếu.');
+    });
     if (t.status === 'cancelled') acts.append(btn('Sao chép phiếu', 'btn primary', () => openForm(t)));
     drawer.append(h, meta, tw, acts);
     drawer.hidden = false; shade.hidden = false; openedAt=Date.now();
