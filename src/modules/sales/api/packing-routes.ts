@@ -7,7 +7,7 @@ import { saleFlowOf } from '../domain/pos-order-flow.ts';
 import { cashLock } from './cash-store.ts';
 import { posRegisters, posShifts } from '../pos-schema.ts';
 import { createScheduledDelivery, ensurePackingSchedule } from './delivery-store.ts';
-import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { can } from '../../staff/domain/permissions.ts';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -157,7 +157,10 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
     ]);
     const ids = slips.map(s => s.id);
     const [slipLines, photos, cartons] = await Promise.all([
-      ids.length ? db.select().from(packingSlipLines).where(inArray(packingSlipLines.slipId, ids)) : [],
+      ids.length ? db.select(getTableColumns(packingSlipLines)).from(packingSlipLines)
+        .innerJoin(salesOrderLines, eq(salesOrderLines.id, packingSlipLines.orderLineId))
+        .where(inArray(packingSlipLines.slipId, ids))
+        .orderBy(asc(packingSlipLines.slipId), asc(salesOrderLines.lineNo), asc(packingSlipLines.id)) : [],
       ids.length ? db.select({ slipId: packingSlipPhotos.slipId, n: sql<number>`count(*)` }).from(packingSlipPhotos).where(inArray(packingSlipPhotos.slipId, ids)).groupBy(packingSlipPhotos.slipId) : [],
       lines.some(l => l.sku) ? db.select({ sku: products.sku, perCarton: products.perCarton, cartonWeight: products.cartonWeight, cartonLength: products.cartonLength,
         cartonWidth: products.cartonWidth, cartonHeight: products.cartonHeight }).from(products).where(inArray(products.sku, [...new Set(lines.map(l => l.sku).filter(Boolean))])) : [],
@@ -270,7 +273,10 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
   router.get('/packing/:id', async c => {
     const m = viewer(c), { slip, order } = await loadSlip(c, c.params.id!);
     const [lines, photos, people, contracts] = await Promise.all([
-      c.env.db.select().from(packingSlipLines).where(eq(packingSlipLines.slipId, slip.id)),
+      c.env.db.select(getTableColumns(packingSlipLines)).from(packingSlipLines)
+        .innerJoin(salesOrderLines, eq(salesOrderLines.id, packingSlipLines.orderLineId))
+        .where(eq(packingSlipLines.slipId, slip.id))
+        .orderBy(asc(salesOrderLines.lineNo), asc(packingSlipLines.id)),
       c.env.db.select({ id: packingSlipPhotos.id, dataUrl: packingSlipPhotos.dataUrl, createdAt: packingSlipPhotos.createdAt }).from(packingSlipPhotos).where(eq(packingSlipPhotos.slipId, slip.id)).orderBy(asc(packingSlipPhotos.createdAt)),
       c.env.db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, [slip.createdBy, slip.sentBy, slip.packedBy].filter((x): x is string => !!x))),
       c.env.db.select({ contractNo: salesContracts.contractNo, legalEntity: salesContracts.legalEntity }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1),

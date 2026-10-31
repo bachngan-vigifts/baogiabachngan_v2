@@ -1,0 +1,30 @@
+[
+  {
+    "file": "delivery-landscape.pdf",
+    "pages": 1,
+    "topMm": 20.11,
+    "widthMm": 297.0,
+    "heightMm": 209.9
+  },
+  {
+    "file": "delivery-portrait.pdf",
+    "pages": 1,
+    "topMm": 20.11,
+    "widthMm": 209.9,
+    "heightMm": 297.0
+  },
+  {
+    "file": "packing-landscape.pdf",
+    "pages": 1,
+    "topMm": 20.11,
+    "widthMm": 297.0,
+    "heightMm": 209.9
+  },
+  {
+    "file": "packing-portrait.pdf",
+    "pages": 1,
+    "topMm": 20.11,
+    "widthMm": 209.9,
+    "heightMm": 297.0
+  }
+]
