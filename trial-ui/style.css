@@ -2478,3 +2478,5 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 .contract-liquidation-form {display:grid;gap:10px;}
 .contract-liquidation-dialog textarea {width:100%;min-height:80px;}
 .contract-liquidation-dialog .modal-foot {flex-wrap:wrap;}
+.order-status-pills{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}.order-return-history{margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:10px;background:#f6fafc}.order-return-history h3{font-size:15px;margin:0 0 8px}.order-return-record{padding:10px 0;border-top:1px solid var(--line)}.order-return-record>a{font-weight:600;margin-right:10px}.order-return-record p{margin:6px 0;overflow-wrap:anywhere}.order-return-record .pill{white-space:normal}@media(max-width:600px){.order-status-pills{width:100%}.order-return-history{padding:12px}}
+@media(min-width:641px){table:has(#order-lines-head.order-return-columns) th:first-child,table:has(#order-lines-head.order-return-columns) td:first-child{min-width:230px}table:has(#order-lines-head.order-return-columns) th{white-space:normal}}

@@ -1,3 +1,4 @@
+import {orderReturnSummary} from './order-return-summary.ts';
 import {registerContractLiquidationRoutes,assertNoLiquidationHistory} from './contract-liquidation.ts';
 import { editPosOrderWithGhn } from './pos-ghn-edit.ts';
 import { pendingGhnEdit, assertNoPendingGhnEdit } from '../domain/pos-ghn-edit.ts';
@@ -575,11 +576,14 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       .where(inArray(employees.id, [order.ownerId, order.createdBy, order.invoiceRequestedBy, order.invoiceIssuedBy, ...payments.map(p => p.voidedBy)].filter((x): x is string => !!x)));
     const person = (id: string) => people.find(p => p.id === id);
     const purchases = can(viewer(c), 'page.purchases') && options.purchaseLinks ? await options.purchaseLinks(db, viewer(c), order) : [];
-    const adjustment=(await returnAdjustments(db,[order.id])).get(order.id);
+    const [returnSummary,adjustments]=await Promise.all([orderReturnSummary(db,order.id),returnAdjustments(db,[order.id])]);
+    const adjustment=adjustments.get(order.id);
+    const displayedLines=lines.map(l=>{const r=returnSummary.byLine.get(l.id)||{returnedQty:0,restockedQty:0,pendingReturnQty:0};return{...l,...r,customerKeptQty:Math.max(0,l.deliveredQty-r.returnedQty)};});
     const net=netReturnInputs(schedules,payments.filter(p=>!p.voidedAt),adjustment);
     return {
       purchases,
       returnAdjustment: adjustment || null,
+      returnSummary:{requests:returnSummary.requests,receivedQty:returnSummary.receivedQty,restockedQty:returnSummary.restockedQty},
       effectiveSchedules: net.schedules,
       order: { ...order, warehouseName: order.warehouseId ? (await db.select({ name: warehouses.name }).from(warehouses).where(eq(warehouses.id, order.warehouseId)).limit(1))[0]?.name ?? '' : '', posFees: order.channel === 'pos' ? snapshotPosFees(JSON.parse(order.posSnapshot || '{}')) : null, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
         createdByName: person(order.createdBy)?.name ?? '', createdByCustomer: person(order.createdBy)?.role === 'customer',
@@ -587,7 +591,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         canIssueInvoice: canIssueInvoice(viewer(c)), canCreateSapo: !order.sapoOrderId && await canCreateSapoInDepartment(c, order), canEdit: await canCreateSapoInDepartment(c, order),
         // Đơn Sapo đã đẩy (mã đang giữ chỗ "pending:…" khi đang đẩy thì chưa tính).
         sapoOrderCode: order.sapoOrderId ? order.sapoOrderCode : null,
-        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: await canCreateSapoInDepartment(c, order), data: JSON.parse(contract[0].data) } : null,
+        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines:displayedLines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: await canCreateSapoInDepartment(c, order), data: JSON.parse(contract[0].data) } : null,
       deliveries: ships.map(s => ({ ...s,...confirmations.get(s.id),canConfirm:canConfirmDelivery(viewer(c),order),canCancel:!isWarehouseMember(viewer(c))&&canConfirmDelivery(viewer(c),order),lines: shipLines.filter(l => l.deliveryId === s.id), photos: shipPhotos.get(s.id) ?? [] })),
       // Phiếu đã huỷ vẫn trả về (hiện gạch ngang + lý do) nhưng không tính vào đã thu.
       schedules, payments: payments.map(p => ({ ...p, voidedByName: p.voidedBy ? person(p.voidedBy)?.name ?? '' : '' })),
