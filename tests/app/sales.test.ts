@@ -41,7 +41,7 @@ test('quy tắc: số chứng từ, pháp nhân, số HĐKT kiểu web cũ, dòn
   // Phiếu thu trừ vào kỳ đến hạn sớm nhất; phần chưa thu của kỳ đã qua hạn là quá hạn.
   const r = receivable([{ amount: 300, dueDate: '2026-10-01' }, { amount: 700, dueDate: null }], [{ amount: 100 }], '2026-10-06');
   assert.deepEqual(r, { due: 1000, paid: 100, balance: 900, overdue: 200, nextDueDate: null, status: 'overdue', deposit: 0, depositPaid: 0, payState: 'overdue' });
-  assert.deepEqual(contractSchedules(1000, 30, '2026-10-06').map(s => [s.kind, s.amount, s.dueDate]), [['deposit', 300, '2026-10-06'], ['balance', 700, null]]);
+  assert.deepEqual(contractSchedules(1000, 30, '2026-10-06').map(s => [s.kind, s.amount, s.dueDate]), [['deposit', 300, '2026-10-09'], ['balance', 700, null]]);
 });
 
 test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch giao → công nợ, đúng quyền', async t => {
@@ -83,7 +83,7 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
 
   d = (await call('/orders/' + o.data.id, emp)).data;
   assert.equal(d.contract.status, 'signed');
-  assert.deepEqual(d.schedules.map((s: any) => [s.kind, s.amount, s.dueDate]).sort(), [['balance', 17_388_000, null], ['deposit', 7_452_000, '2026-10-06']]);
+  assert.deepEqual(d.schedules.map((s: any) => [s.kind, s.amount, s.dueDate]).sort(), [['balance', 17_388_000, null], ['deposit', 7_452_000, '2026-10-09']]); // cọc: ngày ký 06/10 + 3 ngày
   assert.equal((await call('/contracts', emp)).data.contracts[0].orderNo, d.order.orderNo);
 
   // Lịch giao: giao một phần, không vượt phần còn lại.

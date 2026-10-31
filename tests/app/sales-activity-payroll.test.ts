@@ -140,3 +140,23 @@ test('changing position to Sale Admin keeps a previously confirmed Sale payslip 
  const same=(await f.overview()).data.payroll.payslip;assert.equal(same.net,old.net);assert.equal(same.kpi.used,1);
  const future=(await f.overview(f.mgr,'2026-11')).data.payroll.payslip;assert.equal(future.kpi,null);assert.equal(amount(future,'kpiBonus'),0);
 });
+
+test('Sale Admin: thưởng sao tính cả đơn hàng CRM đã duyệt không có HĐKT; thưởng thanh lý chỉ HĐKT; đơn huỷ sau chốt thì trừ kỳ sau',async()=>{
+ const f=await setupSalesPayroll();await f.client.query("update staff_members set position_id='sale-admin' where id='emp'");
+ await f.setPolicy(1);assert.equal((await f.salary({kpiEnabled:false,fixedKpi:null})).status,200);
+ const order=(id:string,status:string,extra={})=>f.db.insert(salesOrders).values({id,orderNo:'DH-'+id,quoteType:'B2B',customerName:'Khách đơn',ownerId:'emp',createdBy:'emp',orderDate:'2026-10-15',status:status as any,total:2_700_000,subtotal:2_500_000,createdAt:f.stamp,updatedAt:f.stamp,...extra});
+ await order('o-ok','confirmed');                       // 1 sao: 20.000
+ await order('o-draft','draft');                         // chưa duyệt: không tính
+ await order('o-pos','delivered',{channel:'pos'});       // POS: không tính
+ await order('o-nov','confirmed',{orderDate:'2026-11-02'}); // tháng sau
+ assert.equal((await f.award()).status,200);
+ let p=(await f.overview()).data.payroll.payslip;
+ const awards=p.salesCrm.awards.map((a:any)=>[a.fact.docType,a.fact.contractNo,a.kind,a.amount]).sort();
+ assert.deepEqual(awards,[['contract','HDKT-DEMO','liquidation',10000],['contract','HDKT-DEMO','star',50000],['order','DH-o-ok','star',20000]]);
+ assert.equal(amount(p,'contractBonus'),80000);
+ assert.equal((await f.confirm()).status,201);
+ await f.db.update(salesOrders).set({status:'cancelled'}).where(eq(salesOrders.id,'o-ok'));
+ const nov=(await f.overview(f.mgr,'2026-11')).data.payroll.payslip;
+ assert.equal(amount(nov,'contractBonusAdjustment'),-20000,'đơn huỷ sau khi đã ghi thưởng → trừ kỳ sau');
+ assert.equal(amount(nov,'contractBonus'),20000,'đơn tháng 11 tính vào tháng 11');
+});

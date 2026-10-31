@@ -1,4 +1,5 @@
 import {webOrderBucket} from '../domain/web-order-outcome.ts';
+import { applyWebsiteCancel, websiteCancelled } from './web-order-customer-cancel.ts';
 import { posCatalogFamily, MINH_LONG_CATALOG_PATTERN, LOCK_CATALOG_PATTERN } from '../domain/pos-catalog-brand.ts';
 import { nextPosOrderNo } from './pos-number.ts';
 import { posQrContent, reservedPosOrderNo, normalizePosReference, matchesPosQrReference, posQrOrderNumbers } from '../domain/pos-qr-reference.ts';
@@ -253,11 +254,15 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       delete updateFields.ghnOrderCode; delete updateFields.ghnStatus; delete updateFields.ghnSortCode; delete updateFields.ghnFee;
     }
     if (carrierState?.ghnStatus === 'delivered' && (!fields.ghnOrderCode || fields.ghnOrderCode === carrierState.code)) updateFields.ghnStatus = 'delivered';
+    // Vận đơn đã huỷ trên GHN (vd CRM huỷ khi khách huỷ web) không bị nhãn cũ "chờ lấy hàng" của website mở lại.
+    if (carrierState?.ghnStatus === 'cancel' && (!fields.ghnOrderCode || fields.ghnOrderCode === carrierState.code)) updateFields.ghnStatus = 'cancel';
     fields.status = webGhnOrderStatus(fields.ghnStatus, fields.status);
     const effectiveGhnStatus = updateFields.ghnStatus ?? carrierState?.ghnStatus ?? fields.ghnStatus;
     if (effectiveGhnStatus) updateFields.status = webGhnOrderStatus(effectiveGhnStatus, updateFields.status ?? carrierState?.status ?? fields.status);
     const [saved] = await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields })
       .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: updateFields }).returning({ id: webStoreOrders.id });
+    // Khách huỷ trên website: GHN chưa lấy hàng → huỷ vận đơn + huỷ đơn CRM; đã lấy → theo quy trình GHN (web-order-customer-cancel.ts).
+    if (websiteCancelled(b.status)) await applyWebsiteCancel(c.env, saved!.id);
     await invoiceTasksChanged(c.env, { webOrderId: saved!.id });
     // Website Lock báo trạng thái GHN qua cầu nối: ghi sổ kho quầy theo trạng thái (web-order-stock.ts).
     await syncWebOrderStock(c.env, saved!.id);

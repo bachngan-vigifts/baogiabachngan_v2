@@ -17,7 +17,7 @@ export function contractTermsFromQuote(data: Data): ContractQuoteTerms {
   const noteDays = /(?:trong(?: vòng)?|sau)\s+(\d+)\s*ngày\s+kể từ ngày giao hàng/i.exec(payment)?.[1];
   const rate = data.paymentTerms?.depositRate ?? noteRate ?? saved.depositRate;
   const term = data.paymentTerms?.balanceTerm ?? noteDays ?? saved.paymentDays;
-  const days = /^\d+\s*(?:ngày)?$/i.test(String(term ?? '').trim()) ? parseInt(String(term), 10) : undefined;
+  const days = paymentDaysOfTerm(term);
   const date = validDeliveryDate(data.deliveryDate || data.delivery_date);
   return {
     ...(typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 && rate <= 100 ? { depositRate: rate } : {}),
@@ -25,6 +25,15 @@ export function contractTermsFromQuote(data: Data): ContractQuoteTerms {
     deliveryTime: date ? 'Giao hàng ngày ' + date.split('-').reverse().join('/') : nonempty(notes.time) || nonempty(saved.deliveryTime),
     deliveryAddress: nonempty(notes.address) || nonempty(saved.deliveryAddress) || nonempty(data.customerAddress),
   };
+}
+/**
+ * Số ngày thanh toán phần còn lại ghi trong điều khoản: "30", "30 ngày", "Trong vòng 30 ngày kể từ ngày giao hàng", "sau 30 ngày…".
+ * Điều kiện bằng chữ không có số ngày (vd "Thanh toán trước khi giao hàng") → undefined.
+ */
+export function paymentDaysOfTerm(term: unknown): number | undefined {
+  const value = String(term ?? '').trim();
+  const days = /^(\d+)\s*(?:ngày)?$/i.exec(value)?.[1] ?? /(?:^|[^\d.,%])(\d{1,4})\s*ngày/i.exec(value)?.[1];
+  return days === undefined ? undefined : parseInt(days, 10);
 }
 export function deliveryDateFromTerm(value: string) {
   const date = value.match(/(?:^|\s)(\d{4}-\d{2}-\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{4})(?:[.]?$|\s*$)/)?.[1];

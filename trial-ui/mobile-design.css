@@ -308,3 +308,41 @@
  #view-care .crm-card-followup{grid-column:1/-1;grid-row:7;font-size:12px!important}
  #view-care .crm-card-followup:has(>span.muted:only-child){display:none!important}
 }
+
+/* ---------- Lương & nhân viên trên điện thoại (≤ 680px) ----------
+   Trang Nhân viên / Chi tiết nhân viên / Phân quyền giữ bảng vuốt ngang (ở trên): hiện lại tiêu đề cột, bỏ nhãn kiểu thẻ
+   (trước đây tiêu đề bị ẩn còn nhãn chen trong ô → cột bị bóp thành chữ dọc).
+   Phiếu lương vừa khổ màn hình. Bảng lương Manager hiển thị mỗi nhân viên một thẻ; khoản bằng 0 ẩn cho gọn. */
+@media (max-width:680px){
+ :is(#view-members,#view-member,#view-permissions) table thead { display:table-header-group!important; }
+ :is(#view-members,#view-member,#view-permissions) table td[data-label]::before { content:none!important; }
+ :is(#view-members,#view-member,#view-permissions) table :is(td,th) { padding:8px 10px;vertical-align:top; }
+
+ #view-member .md-slip { min-width:0;max-width:100%;overflow:hidden;padding:14px 12px; }
+ #view-member table.md-slip-table { display:table!important;min-width:0!important;width:100%; }
+ #view-member .md-slip-table td { padding:7px 0!important; }
+ #view-member .md-slip-table td:last-child { white-space:nowrap;text-align:right;padding-left:12px!important; }
+ #view-member .md-slip .card-title-row { flex-wrap:wrap;gap:6px; }
+
+ #view-payroll .table-wrap { overflow:visible!important; }
+ #view-payroll table { display:block!important;min-width:0!important;width:100%; }
+ #view-payroll table :is(thead,tfoot) { display:none!important; }
+ #view-payroll table tbody { display:block!important; }
+ #view-payroll table tr { display:flex!important; }
+ #view-payroll table :is(td,th) { display:block!important; }
+ #view-payroll .pr-table tr { display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px;padding:12px 4px;align-items:start; }
+ #view-payroll .pr-table td { margin:0!important;text-align:left!important;white-space:normal!important;padding:0!important;font-size:var(--text-small); }
+ #view-payroll .pr-table td:first-child,#view-payroll .pr-table td.muted:not(:has([data-bonus-member])) { display:none!important; }
+ #view-payroll .pr-table td.first { grid-column:1;font-size:var(--text-body);font-weight:700; }
+ #view-payroll .pr-table td:nth-child(3) { grid-column:2;grid-row:1;justify-self:end;text-align:right!important;color:var(--muted); }
+ #view-payroll .pr-table td[data-label]::before { content:attr(data-label);display:block;font-size:var(--text-caption);color:var(--muted);font-weight:400; }
+ #view-payroll .pr-table td.pr-net { grid-column:1/-1;display:flex!important;justify-content:space-between;align-items:baseline;border-top:1px dashed var(--line-strong);padding-top:8px!important;font-size:var(--text-body); }
+ #view-payroll .pr-table td.pr-net::before { display:inline!important;font-size:var(--text-small)!important;color:var(--brand-navy)!important;font-weight:700!important; }
+ #view-payroll .pr-table td:last-child { grid-column:1/-1; }
+ #view-payroll .pr-table td [data-bonus-member] { padding:2px 8px;margin-top:2px; }
+ #view-payroll .pr-table :is(td.first,td:nth-child(3))::before { content:none!important; }
+ #view-payroll .pr-actions { display:flex;flex-wrap:wrap;gap:8px;width:100%;justify-content:flex-start; }
+ #view-payroll .pr-actions>.md-month { flex:1 1 100%; }
+ #view-payroll .pr-actions>.btn { flex:1 1 auto;min-width:0;justify-content:center; }
+ #view-payroll .pr-actions>.mobile-action-trigger { flex:0 0 auto; }
+}

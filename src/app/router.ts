@@ -29,6 +29,7 @@ import { registerLegacyImageRoutes } from '../modules/integrations/api/legacy-im
 import { registerSapoSyncRoutes } from '../modules/integrations/api/sapo-sync-routes.ts';
 import { registerQuoteSourcingRoutes } from '../modules/sales/api/quote-sourcing-routes.ts';
 import { registerSalesRoutes } from '../modules/sales/api/routes.ts';
+import { registerPaymentDueRepairRoutes } from '../modules/sales/api/payment-terms.ts';
 import { registerPackingRoutes } from '../modules/sales/api/packing-routes.ts';
 import { registerHoldRoutes, catalogHeldQuantities } from '../modules/sales/api/hold-routes.ts';
 import { registerOrderHoldRoutes } from '../modules/sales/api/order-hold-routes.ts';
@@ -89,6 +90,7 @@ export function createAppRouter() {
   registerSapoSyncRoutes(router);
   registerLegacyImageRoutes(router);
   registerSalesRoutes(router, { purchaseLinks: purchaseLinksForOrder });
+  registerPaymentDueRepairRoutes(router);
   registerQuoteSourcingRoutes(router);
   registerPosRoutes(router);
   registerPosGhnSyncRoutes(router);

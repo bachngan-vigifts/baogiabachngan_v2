@@ -4,6 +4,7 @@ import { editPosOrderWithGhn } from './pos-ghn-edit.ts';
 import { pendingGhnEdit, assertNoPendingGhnEdit } from '../domain/pos-ghn-edit.ts';
 import { syncContractQuoteTerms } from './contract-quote-terms.ts';
 import { contractTermsFromQuote } from '../domain/contract-quote-terms.ts';
+import { balancePaymentDays, setBalanceDueOnDelivery, vnDay } from './payment-terms.ts';
 import { registerCrmReturnRoutes } from './crm-return-routes.ts';
 import { assertNotDispatched, recordDispatch } from './cancellation-guards.ts';
 import { canConfirmDelivery, deliveryConfirmations } from './delivery-confirmation.ts';
@@ -69,6 +70,8 @@ import {
 } from '../domain/sales.ts';
 
 type Ctx = RouteContext<StaffEnv>;
+/** Báo giá nguồn để tính số ngày thanh toán (balancePaymentDays). */
+const quoteTermsSource = (quote: { id: string; data: string }) => { const id = JSON.parse(quote.data).customerId; return { quoteId: quote.id, customerId: typeof id === 'string' && id ? id : null }; };
 type Tx = Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
 const viewer = (c: Ctx) => (c.state.session as SessionState).member;
 const nowIso = () => new Date().toISOString();
@@ -205,7 +208,7 @@ export async function recordDeliveryMovements(tx: Tx, d: { id: string; orderId: 
   await recordMovements(tx, lines.map(l => ({ refKey: `delivery:${d.id}:${l.id}`, sku: l.sku, kind: 'delivery' as const, name: l.name, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice,
     partner: o?.customerName ?? '', location: d.address, refCode: `${d.deliveryNo} · ${ref.no}`, link: ref.link, status: 'Đã giao', occurredAt: nowIso() })));
 }
-/** Cập nhật trạng thái đơn theo số đã giao; khi giao xong thì kỳ "còn lại" chưa có hạn được đặt hạn = ngày giao xong + số ngày thanh toán. */
+/** Cập nhật trạng thái đơn theo số đã giao; khi giao xong thì kỳ "còn lại" chưa có hạn được đặt hạn = ngày giao xong + số ngày thanh toán (payment-terms.ts). */
 export async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: string | null) {
   const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1).for('update');
   const lines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId));
@@ -217,11 +220,7 @@ export async function refreshOrderStatus(tx: Tx, orderId: string, deliveredOn: s
     await tx.update(salesOrders).set({ invoiceStatus: 'requested', invoiceRequestedAt: nowIso(), invoiceRequestedBy: null, invoiceRequestNote: 'Tự động: đơn đã giao xong.', invoiceEmail: order!.invoiceEmail || order!.email, invoiceMode: 'issue' }).where(eq(salesOrders.id, orderId));
   // Giao xong → phiếu đóng gói còn treo của đơn tự hoàn tất.
   if (status === 'delivered') await closeSlipsOfDeliveredOrders(tx, [orderId]);
-  if (status === 'delivered' && deliveredOn) {
-    const [contract] = await tx.select().from(salesContracts).where(eq(salesContracts.orderId, orderId)).limit(1);
-    await tx.update(paymentSchedules).set({ dueDate: addDays(deliveredOn, contract?.paymentDays ?? 0) })
-      .where(and(eq(paymentSchedules.orderId, orderId), eq(paymentSchedules.kind, 'balance'), sql`${paymentSchedules.dueDate} IS NULL`));
-  }
+  if (status === 'delivered' && deliveredOn) await setBalanceDueOnDelivery(tx, order!, deliveredOn);
 }
 
 /** Số HĐKT của các bản ghi (bản ghi có HĐKT là HĐKT, không phải đơn hàng – xem domain/doc-ref.ts). */
@@ -415,7 +414,10 @@ async function syncPaymentSchedules(tx: Tx, order: typeof salesOrders.$inferSele
     : [{ kind: 'balance' as const, amount: order.total, dueDate: null as string | null, note: 'Thanh toán khi giao hàng' }];
   const [latest] = await tx.select({ date: deliveries.deliveredAt }).from(deliveries)
     .where(and(eq(deliveries.orderId, order.id), eq(deliveries.status, 'delivered'))).orderBy(desc(deliveries.deliveredAt)).limit(1);
-  if (order.status === 'delivered' && latest?.date) for (const p of plans) if (p.kind === 'balance') p.dueDate = addDays(latest.date, contract?.paymentDays ?? 0);
+  if (order.status === 'delivered' && latest?.date) {
+    const days = await balancePaymentDays(tx, order, contract);
+    for (const p of plans) if (p.kind === 'balance') p.dueDate = addDays(vnDay(latest.date), days);
+  }
   const plan = amendmentSchedules(schedules, plans, new Set(payments.map(p => p.id).filter((id): id is string => !!id)));
   for (const id of plan.remove) await tx.delete(paymentSchedules).where(eq(paymentSchedules.id, id));
   for (const item of plan.updates) {
@@ -1065,10 +1067,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotationPredicate(me))).limit(1);
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     const customerCode = await contractCustomerCode(c.env.db, quote);
-    if (!customerCode) return json({ contractNo: '', error: 'Báo giá chưa có mã khách hàng hoặc MST để cấp số HĐKT.' });
+    // Điều khoản theo báo giá để điền sẵn hộp lập HĐKT (cọc, số ngày thanh toán phần còn lại).
+    const source = contractTermsFromQuote(JSON.parse(quote.data));
+    const terms = { depositRate: source.depositRate ?? null, paymentDays: await balancePaymentDays(c.env.db, quoteTermsSource(quote)) };
+    if (!customerCode) return json({ contractNo: '', terms, error: 'Báo giá chưa có mã khách hàng hoặc MST để cấp số HĐKT.' });
     const { year, month } = vietnamDate();
     const [row] = await c.env.db.select({ seq: contractCounters.lastSequence }).from(contractCounters).where(eq(contractCounters.id, `HDKT:${year}:${month}:${entity}`)).limit(1);
-    return json({ contractNo: contractNumber(entity, customerCode, (row?.seq ?? 0) + 1) });
+    return json({ contractNo: contractNumber(entity, customerCode, (row?.seq ?? 0) + 1), terms });
   }, 'business');
 
   router.post('/contracts', async c => {
@@ -1080,7 +1085,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const entity = legalCode(body.legalEntity);
     if (!entity) throw new AppError(400, 'Chọn pháp nhân bên bán: Bách Ngân (BN), Vigifts (VG) hoặc QTV.');
     const sourceTerms = contractTermsFromQuote(JSON.parse(quote.data));
-    const depositRate = Number(body.depositRate ?? sourceTerms.depositRate ?? 0), paymentDays = Number(body.paymentDays ?? sourceTerms.paymentDays ?? 0);
+    // Không gửi = theo báo giá (đơn không HĐKT cũng tính cùng quy tắc: báo giá → điều khoản khách → 0).
+    const depositRate = Number(body.depositRate ?? sourceTerms.depositRate ?? 0);
+    const paymentDays = Number(body.paymentDays ?? await balancePaymentDays(c.env.db, quoteTermsSource(quote)));
     if (!(depositRate >= 0 && depositRate <= 100)) throw new AppError(400, 'Tỷ lệ đặt cọc phải từ 0 đến 100%.');
     if (!Number.isInteger(paymentDays) || paymentDays < 0 || paymentDays > 3650) throw new AppError(400, 'Số ngày thanh toán không hợp lệ.');
     const signedDate = body.signedDate ? String(body.signedDate) : vietnamDate().iso;
