@@ -16,11 +16,21 @@ export function initPayroll(deps) {
   const root = document.getElementById('payroll-board');
   root.addEventListener('click',e=>{const b=e.target.closest('[data-bonus-member]');if(b){const r=st.d?.rows.find(r=>r.member.id===b.dataset.bonusMember);if(r)openContractBonusDetails(r.payslip);}});
   const st = { month: '', d: null, tab: 'summary', seq: 0 };
-  const TABS = [['summary', 'Tổng hợp'], ['sale', 'Sale & VP'], ['bn', 'NVBH ML'], ['lock', 'NVBH Lock'], ['transfer', 'Chuyển khoản']];
+  const TABS = [['summary', 'Tổng hợp'], ['profiles', 'Cài đặt lương'], ['sale', 'Sale & VP'], ['bn', 'NVBH ML'], ['lock', 'NVBH Lock'], ['transfer', 'Chuyển khoản']];
   const memberLink = (r, text) => `<a href="#/members/${encodeURIComponent(r.member.id)}?month=${encodeURIComponent(st.month)}&tab=payroll">${esc(text)}</a>`;
   const line = (p, key) => [...p.income, ...p.deductions].find(l => l.key === key)?.amount ?? 0;
   const withProfile = () => st.d.rows.filter(r => r.profile.hasProfile || r.payslip.status !== 'estimate');
   const missingIn = g => st.d.rows.filter(r => r.member.active && !r.profile.hasProfile && r.payslip.status === 'estimate' && r.payslip.group === g).length;
+
+  function profilesHtml() {
+    return `<h3>Cài đặt lương nhân viên</h3><p class="muted small">Chọn nhân viên để đặt lương cơ bản, phụ cấp, BHXH, tài khoản ngân hàng và quyền hưởng thưởng HĐKT. Hồ sơ lưu theo tháng áp dụng; phiếu đã chốt giữ nguyên.</p>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Nhân viên</th><th>Vị trí</th><th>Bảng lương</th><th>Hồ sơ</th><th>Cài đặt</th></tr></thead><tbody>${st.d.rows.map(r=>`<tr><td class="first">${memberLink(r,r.member.name)}</td><td>${esc(r.profile.positionLabel||r.member.positionId||'—')}</td><td>${esc(st.d.columns.groups[r.profile.payrollGroup]||'—')}</td><td>${r.profile.hasProfile?'Đã thiết lập':'Chưa thiết lập'}</td><td><a class="btn secondary small" href="#/members/${encodeURIComponent(r.member.id)}?month=${encodeURIComponent(st.month)}&tab=payroll">Cài đặt lương</a></td></tr>`).join('')}</tbody></table></div>`;
+  }
+  function bonusSetupHtml() {
+    const p=st.d.params,from=String(p.salesAutomationFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2');
+    const status=from==='0'?'Chưa bật tính thưởng từ CRM':st.month<from?'Bắt đầu từ '+monthLabel(from):p.salesAutomationApply===1?'Đang áp dụng vào phiếu lương':'Đang đối chiếu — chưa cộng vào thực nhận';
+    return `<section class="approval-box pr-bonus-setup"><div class="approval-head"><h3>Thưởng Sale / Sale Admin</h3></div><p><b>${esc(status)}</b></p><p class="small">Thưởng sao tính theo giá trị HĐKT trước VAT trong tháng ký; thưởng thanh lý tính khi Manager duyệt. Sale Admin chỉ hưởng thưởng sao và thanh lý, không tính KPI.</p><p class="small">${[1,2,3,4,5].map(n=>`${n} sao: từ ${money(p['contractStar'+n+'From'])} → ${money(p['contractStar'+n+'Amount'])}`).join(' · ')}<br>Thanh lý: ${money(p.contractLiquidationAmount)} / HĐKT.</p><p class="muted small">Để tính thưởng, chọn tháng bắt đầu trong Cài đặt thưởng HĐKT và bật “Hưởng thưởng sao HĐKT và thanh lý” trong hồ sơ lương từng người. Chế độ đối chiếu chưa cộng vào thực nhận.</p><button class="btn ghost small" data-mobile-inline data-tab="profiles">Cài đặt lương và thưởng cho nhân viên</button></section>`;
+  }
 
   function groupTable(g) {
     const d = st.d, cols = d.columns, rows = withProfile().filter(r => r.payslip.group === g);
@@ -89,7 +99,7 @@ export function initPayroll(deps) {
       <div class="page-head"><div><span class="eyebrow">Quản trị</span><h1>Bảng lương</h1><p class="muted">${esc(monthLabel(d.month))} · tham số áp dụng ${d.paramsMonth ? 'từ ' + esc(monthLabel(d.paramsMonth).toLowerCase()) : 'mặc định theo file mẫu'}.</p></div>
         <div class="row-actions pr-actions">
           <div class="md-month"><button type="button" class="icon-btn" data-month="-1" aria-label="Tháng trước">‹</button><input type="month" id="pr-month" value="${esc(d.month)}" aria-label="Chọn tháng"><button type="button" class="icon-btn" data-month="1" aria-label="Tháng sau">›</button></div>
-          <a class="btn secondary" href="https://synctime.vn/login.php" target="_blank" rel="noopener noreferrer">Đăng nhập SyncTime</a><button class="btn secondary" data-act="adms">Chấm công từ máy</button><button class="btn secondary" data-act="params">Tham số</button><button class="btn secondary" data-act="excel">Xuất Excel</button>
+          <button class="btn primary" data-mobile-inline data-tab="profiles">Cài đặt lương nhân viên</button><button class="btn secondary" data-mobile-inline data-act="bonus-params">Cài đặt thưởng HĐKT</button><a class="btn secondary" href="https://synctime.vn/login.php" target="_blank" rel="noopener noreferrer">Đăng nhập SyncTime</a><button class="btn secondary" data-act="adms">Chấm công từ máy</button><button class="btn secondary" data-act="params">Tham số</button><button class="btn secondary" data-act="excel">Xuất Excel</button>
           ${open ? `<button class="btn primary" data-act="confirm-all">Chốt lương (${open})</button>` : ''}</div></div>
       <div class="stats">
         <article class="stat"><small>Nhân sự</small><strong>${total.people}</strong><span class="muted">${open ? `${open} phiếu tạm tính` : 'Đã chốt tất cả'}</span></article>
@@ -99,7 +109,7 @@ export function initPayroll(deps) {
       </div>
       <div class="card cd-tabs-card">
         <div class="chips cd-tabs" role="tablist">${TABS.map(([k, t]) => `<button type="button" class="chip ${k === st.tab ? 'active' : ''}" data-tab="${k}">${t}${['sale', 'bn', 'lock'].includes(k) ? ` <b>${d.totals.find(x => x.group === k).people}</b>${missingIn(k) ? ` <small class="danger-text" title="Chưa có hồ sơ lương">+${missingIn(k)}</small>` : ''}` : ''}</button>`).join('')}</div>
-        <div class="cd-tab-body">${st.tab === 'summary' ? summaryHtml() : st.tab === 'transfer' ? transferHtml() : groupTable(st.tab)}</div></div>`;
+        <div class="cd-tab-body">${['summary','sale'].includes(st.tab)?bonusSetupHtml():''}${st.tab === 'summary' ? summaryHtml() : st.tab === 'profiles' ? profilesHtml() : st.tab === 'transfer' ? transferHtml() : groupTable(st.tab)}</div></div>`;
     root.querySelectorAll('.cd-tab-body table.data-table').forEach(t => {
       const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent);
       t.querySelectorAll('tbody tr').forEach(tr => [...tr.children].forEach((td, i) => { if (i && heads[i] && !td.dataset.label) td.dataset.label = heads[i]; }));
@@ -117,16 +127,17 @@ export function initPayroll(deps) {
   const go = m => { location.hash = '#/payroll?month=' + m; };
 
   // ----- Tham số (sheet "Tham số"): nhóm theo mục; ô tỷ lệ nhập dạng % cho dễ đọc.
-  async function editParams() {
+  async function editParams(bonusOnly = false) {
     let s; try { s = await api('/hr/settings?month=' + st.month); } catch (e) { toast(e.message, 'err'); return; }
-    const groups = [...new Set(s.fields.map(f => f.group))];
+    const fields = bonusOnly ? s.fields.filter(f=>/^(salesAutomation|contractStar|contractLiquidation)/.test(f.key)) : s.fields;
+    const groups = [...new Set(fields.map(f => f.group))];
     const val = f => f.kind === 'percent' ? +(s.params[f.key] * 100).toFixed(4) : f.kind === 'money' ? Number(s.params[f.key]).toLocaleString('vi-VN') : s.params[f.key];
     const dlg = document.createElement('dialog'); dlg.className = 'modal pr-params';
-    dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>Tham số lương</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>${bonusOnly?'Cài đặt thưởng HĐKT':'Tham số lương'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body"><label class="pr-eff">Áp dụng từ tháng<input type="month" name="effectiveMonth" value="${esc(st.month)}" required></label>
         <p class="muted small">Đang dùng: ${s.effectiveMonth ? 'bản áp dụng từ ' + esc(monthLabel(s.effectiveMonth).toLowerCase()) : 'mặc định theo file mẫu'}. Lưu với tháng mới để giữ nguyên các tháng trước.</p>
-        ${groups.map(g => `<fieldset><legend>${esc(g)}</legend><div class="form-grid cols-2">${s.fields.filter(f => f.group === g).map(f => `<label>${esc(f.label)}${f.kind === 'percent' ? ' (%)' : ''}
-          <input name="${f.key}" data-kind="${f.kind}" inputmode="decimal" value="${esc(String(val(f)))}">${f.note ? `<small class="muted">${esc(f.note)}</small>` : ''}</label>`).join('')}</div></fieldset>`).join('')}
+        ${groups.map(g => `<fieldset><legend>${esc(bonusOnly&&g==='KPI & thưởng CRM'?'Thời điểm và chế độ thưởng':g)}</legend><div class="form-grid cols-2">${fields.filter(f => f.group === g).map(f => `<label>${esc(bonusOnly&&f.key==='salesAutomationFrom'?'Tháng bắt đầu tính thưởng':bonusOnly&&f.key==='salesAutomationApply'?'Chế độ thưởng':f.label)}${f.kind === 'percent' ? ' (%)' : ''}
+          ${bonusOnly&&f.key==='salesAutomationFrom'?`<input type="month" name="${f.key}" value="${s.params[f.key]?String(s.params[f.key]).replace(/^(\d{4})(\d{2})$/,'$1-$2'):''}">`:bonusOnly&&f.key==='salesAutomationApply'?`<select name="${f.key}"><option value="0" ${s.params[f.key]===0?'selected':''}>Đối chiếu — chưa cộng thực nhận</option><option value="1" ${s.params[f.key]===1?'selected':''}>Áp dụng vào thực nhận</option></select>`:`<input name="${f.key}" data-kind="${f.kind}" inputmode="decimal" value="${esc(String(val(f)))}">`}${f.note ? `<small class="muted">${esc(f.note)}</small>` : ''}</label>`).join('')}</div></fieldset>`).join('')}
         <p class="error" data-err role="alert"></p></div>
       <div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button class="btn primary">Lưu tham số</button></div></form>`;
     document.body.append(dlg); dlg.showModal();
@@ -134,10 +145,10 @@ export function initPayroll(deps) {
     dlg.addEventListener('close', () => dlg.remove());
     dlg.querySelector('form').addEventListener('submit', async e => {
       e.preventDefault();
-      const f = e.target.elements, params = {};
-      for (const x of s.fields) {
+      const f = e.target.elements, params = {...s.params};
+      for (const x of fields) {
         const raw = f.namedItem(x.key).value.trim();
-        params[x.key] = x.kind === 'money' ? digits(raw) : x.kind === 'percent' ? Number(raw.replace(',', '.')) / 100 : Number(raw.replace(',', '.'));
+        params[x.key] = bonusOnly&&x.key==='salesAutomationFrom' ? Number(raw.replace('-','')) : x.kind === 'money' ? digits(raw) : x.kind === 'percent' ? Number(raw.replace(',', '.')) / 100 : Number(raw.replace(',', '.'));
       }
       try { await api('/hr/settings', 'PUT', { effectiveMonth: f.effectiveMonth.value, params }); dlg.close(); toast('Đã lưu tham số lương.'); open(st.month); }
       catch (ex) { dlg.querySelector('[data-err]').textContent = ex.message; }
@@ -201,6 +212,7 @@ export function initPayroll(deps) {
     try {
       if (act === 'adms') await openAdms({ api, toast }, st.month);
       else if (act === 'params') await editParams();
+      else if (act === 'bonus-params') await editParams(true);
       else if (act === 'excel') { await exportExcel(); toast('Đã tải file Excel bảng lương.'); }
       else if (act === 'confirm-all') {
         const n = withProfile().filter(r => r.payslip.status === 'estimate').length;
