@@ -1,3 +1,4 @@
+import {webOrderBucket} from '../domain/web-order-outcome.ts';
 import { posCatalogFamily, MINH_LONG_CATALOG_PATTERN, LOCK_CATALOG_PATTERN } from '../domain/pos-catalog-brand.ts';
 import { nextPosOrderNo } from './pos-number.ts';
 import { posQrContent, reservedPosOrderNo, normalizePosReference, matchesPosQrReference, posQrOrderNumbers } from '../domain/pos-qr-reference.ts';
@@ -64,7 +65,7 @@ import {
 } from './pos-store.ts';
 import { autoCreateGhnForOrder } from './pos-ghn-create.ts';
 import { cancelWebOrderGhn, createWebOrderGhn, minhLongDirect, suggestedWebCod } from './web-order-ghn.ts';
-import { GHN_FAILED, GHN_WAITING, webGhnOrderStatus } from '../domain/ghn-status.ts';
+import { webGhnOrderStatus } from '../domain/ghn-status.ts';
 import { readWebBridgeResult, validWebGhnCode } from './web-order-bridge-result.ts';
 const member = (c: RouteContext<StaffEnv>) => (c.state.session as SessionState).member;
 const ghnLocationCache = new Map<string, { expires: number; locations: unknown[] }>();
@@ -129,19 +130,7 @@ function posOrderBucket(o: { status: string; fulfillmentMode: string; packingSta
   if (o.fulfillmentMode === 'cod') return 'waiting_delivery';
   return 'pending';
 }
-const webBucket = (status: string, ghnStatus = '') => {
-  if (['refunded', 'trash'].includes(status.toLowerCase())) return 'cancelled';
-  const g = ghnStatus.toLowerCase();
-  if (g === 'delivered') return 'completed';
-  if (GHN_FAILED.has(g)) return 'cancelled';
-  if (GHN_WAITING.has(g)) return 'waiting_delivery';
-  const s = status.toLowerCase();
-  if (['cancelled', 'refunded', 'failed', 'trash'].includes(s)) return 'cancelled';
-  if (['completed'].includes(s)) return 'completed';
-  if (['shipped', 'out-for-delivery', 'delivery', 'delivering'].includes(s)) return 'waiting_delivery';
-  if (['packing', 'packed'].includes(s)) return 'packing';
-  return 'pending';
-};
+const webBucket=webOrderBucket;
 /**
  * Đơn web Minh Long khi website chưa có cầu nối: CRM tự xử lý (web-order-ghn.ts). Xác nhận = tạo vận đơn GHN Minh Long;
  * huỷ = huỷ vận đơn GHN trước rồi mới huỷ đơn; hoàn thành = ghi nhận trong CRM. Website không nhận lại trạng thái.
@@ -387,7 +376,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           const payment = readWebOrderFinancials(o.financialSnapshot)?.payment;
           const paid = payment ? (payment.paidAt ? o.total : 0) : null;
           const state=o.status.toLowerCase(),carrier=o.ghnStatus.toLowerCase();
-          const cancellationKind=state==='refunded'?'refunded':carrier.startsWith('return')||carrier==='waiting_to_return'?'returned':['lost','damage'].includes(carrier)||state==='failed'?'failed':'cancelled';
+          const cancellationKind=state==='refunded'?'refunded':carrier.startsWith('return')||carrier==='waiting_to_return'||['lnl-returning','lnl-returned'].includes(state)?'returned':['lost','damage'].includes(carrier)||state==='failed'?'failed':'cancelled';
           return ({cancelReason:webReasons.get(o.id)||'',cancellationKind, ownerId: '', orderSource: 'web', paymentStatus: paid === null ? 'unknown' : paid >= o.total ? 'paid' : 'debt', paid, outstanding: paid === null ? null : Math.max(0, o.total-paid), id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
           status: o.status, fulfillmentMode: 'delivery', orderDate: o.orderedAt.slice(0, 10), createdAt: o.orderedAt, sapoOrderId: null, sapoOrderCode: null,
           packingStatus: '', warehouseReconciliationRequired:true, stockStatus: o.stockStatus, stockNote: o.stockNote, deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,

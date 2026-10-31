@@ -1,3 +1,4 @@
+import {webOrderBucket} from '../../src/modules/sales/domain/web-order-outcome.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
@@ -99,4 +100,33 @@ test('ad budget warning uses website ended orders only, requires 30 outcomes and
  const pending=advertisingCancellationRisk(rows(30,6,70));assert.equal(pending.rate,20);assert.equal(pending.pending,70);assert.equal(pending.total,100);
  assert.equal(advertisingCancellationRisk(rows(10000,1996)).level,'improve','do not compare a rounded percentage to the threshold');
  const mixed=advertisingCancellationRisk([...rows(30,0),...Array.from({length:100},()=>({orderSource:'pos',bucket:'cancelled'}))]);assert.equal(mixed.level,'normal');assert.equal(mixed.total,30);assert.equal(advertisingCancellationRisk([]).rate,null);
+});
+
+
+test('website → GHN custom statuses include delivered before COD settlement and retryable shipping failures',()=>{
+ for(const status of ['completed','lnl-delivered','wc-lnl-delivered',' LNL-DELIVERED '])assert.equal(webOrderBucket(status),'completed',status);
+ for(const status of ['lnl-awaiting-pickup','lnl-pickup','lnl-awaiting-del','lnl-delivery-failed','lnl-del-failed'])assert.equal(webOrderBucket(status),'waiting_delivery',status);
+ for(const status of ['lnl-returning','lnl-returned','failed','cancelled'])assert.equal(webOrderBucket(status),'cancelled',status);
+ assert.equal(webOrderBucket('processing','delivered'),'completed');
+ assert.equal(webOrderBucket('lnl-delivered','returned'),'cancelled');
+ assert.equal(webOrderBucket('cancelled','delivery_fail'),'waiting_delivery');
+ assert.equal(webOrderBucket('refunded','delivered'),'cancelled');
+ assert.equal(webOrderBucket('trash','delivered'),'cancelled');
+ assert.equal(webOrderBucket('processing'),'pending');
+});
+
+test('all failed website mirror needs reconciliation; deleted orders do not establish ad performance',()=>{
+ const rows=Array.from({length:60},()=>({orderSource:'web',bucket:'cancelled',status:'cancelled'}));
+ const risk=advertisingCancellationRisk([...rows,{orderSource:'web',bucket:'cancelled',status:'trash'},...Array.from({length:2},()=>({orderSource:'web',bucket:'waiting_delivery',status:'processing'}))]);
+ assert.equal(risk.level,'check_data');assert.equal(risk.unsuccessful,60);assert.equal(risk.ended,60);assert.equal(risk.total,62);assert.equal(risk.excludedDeleted,1);assert.equal(risk.pending,2);assert.equal(risk.rate,100,'retain visible arithmetic rather than inventing successful deliveries');
+});
+
+test('board API recognises direct-web GHN custom delivery and keeps payment unknown without evidence',async()=>{
+ const f=await setup();
+ await f.db.insert(webStoreOrders).values(['lnl-delivered','lnl-pickup','lnl-del-failed','lnl-returned','trash'].map((status,i)=>({id:'direct-web-'+i,source:'lock',externalId:'direct-'+i,registerId:f.registerId,orderNo:'DIRECT-'+i,status,ghnStatus:'',orderedAt:'2026-10-20T01:00:00Z',updatedAt:'2026-10-20T01:00:00Z'})));
+ const result=await f.call(`/pos/orders?registerId=${f.registerId}&source=web&from=2026-10-20&to=2026-10-20`,f.emp);
+ assert.equal(result.status,200);assert.equal(result.data.counts.completed,1);assert.equal(result.data.counts.waiting_delivery,2);assert.equal(result.data.counts.cancelled,2);
+ const delivered=result.data.orders.find((o:any)=>o.id==='direct-web-0');assert.equal(delivered.bucket,'completed');assert.equal(delivered.paymentStatus,'unknown');assert.equal(delivered.paid,null);
+ assert.equal(result.data.analytics.advertising.excludedDeleted,1);assert.equal(result.data.analytics.advertising.unsuccessful,1);assert.equal(result.data.analytics.advertising.completed,1);
+ assert.equal(result.data.orders.find((o:any)=>o.id==='direct-web-3').cancellationKind,'returned');
 });
