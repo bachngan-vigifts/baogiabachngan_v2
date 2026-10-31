@@ -1277,3 +1277,8 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 
 .pos-cancellation-modal h2 {padding-right:32px;overflow-wrap:anywhere;}
 .pos-cancellation-modal .data-table td:first-child {white-space:normal;overflow-wrap:anywhere;}
+
+.pos-ad-risk {padding:12px;border:1px solid #cbd5e1;border-radius:10px;margin:12px 0;background:#f8fafc;}
+.pos-ad-risk.improve {border-color:#d97706;background:#fffbeb;color:#78350f;}
+.pos-ad-risk.budget {border-color:#dc2626;background:#fef2f2;color:#991b1b;}
+.pos-ad-risk p {margin:6px 0;overflow-wrap:anywhere;}

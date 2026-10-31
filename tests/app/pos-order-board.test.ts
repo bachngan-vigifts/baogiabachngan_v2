@@ -5,7 +5,7 @@ import { setup } from '../helpers/pos-fixture.ts';
 import {auditLogs} from '../../src/core/db/schema.ts';
 import {webStoreOrders} from '../../src/modules/sales/pos-schema.ts';
 import { customerPayments, salesOrders } from '../../src/modules/sales/schema.ts';
-import { filterPosOrderBoard, cancellationAnalytics } from '../../src/modules/sales/domain/pos-order-board.ts';
+import { filterPosOrderBoard, cancellationAnalytics, advertisingCancellationRisk } from '../../src/modules/sales/domain/pos-order-board.ts';
 
 test('board totals apply every filter, omit cancellations, and keep currencies separate', () => {
   const row = { id:'a', orderNo:'POS_A', customerName:'Nguyễn An', phone:'09', ownerId:'emp', ownerName:'Nhân viên', sapoOrderCode:null, orderDate:'2026-10-21', bucket:'completed', orderSource:'pos', paymentStatus:'paid', total:100, paid:100, outstanding:0, currency:'VND' };
@@ -87,4 +87,16 @@ test('cancellation metrics use all cohort rows before status/payment/pagination,
  const scope=filterPosOrderBoard([...rows,{...base,id:'older',orderDate:'2026-09-01',bucket:'pending'}],new URLSearchParams(),{analyticsFrom:'2026-10-01'});assert.equal(scope.counts.all,101);assert.equal(scope.analytics.total,100,'old open orders do not dilute the default analytics period');
  assert.equal(filterPosOrderBoard(rows,new URLSearchParams('ownerId=other')).analytics.total,0);assert.equal(cancellationAnalytics([]).unsuccessfulRate,null);assert.equal(cancellationAnalytics([{bucket:'pending'}]).closedSuccessRate,null);
  const split=cancellationAnalytics([{bucket:'cancelled',cancellationKind:'returned'},{bucket:'cancelled',cancellationKind:'refunded'}]);assert.deepEqual(split.kinds,[{kind:'returned',count:1},{kind:'refunded',count:1}]);assert.equal(split.missingReasons,2);
+});
+
+
+test('ad budget warning uses website ended orders only, requires 30 outcomes and has exact 10/20 percent boundaries',()=>{
+ const rows=(ended:number,bad:number,pending=0)=>Array.from({length:ended+pending},(_,i)=>({orderSource:'web',bucket:i<bad?'cancelled':i<ended?'completed':'pending'}));
+ assert.equal(advertisingCancellationRisk(rows(29,29)).level,'insufficient');
+ assert.equal(advertisingCancellationRisk(rows(30,6)).level,'budget');
+ assert.equal(advertisingCancellationRisk(rows(30,3)).level,'improve');
+ assert.equal(advertisingCancellationRisk(rows(30,2)).level,'normal');
+ const pending=advertisingCancellationRisk(rows(30,6,70));assert.equal(pending.rate,20);assert.equal(pending.pending,70);assert.equal(pending.total,100);
+ assert.equal(advertisingCancellationRisk(rows(10000,1996)).level,'improve','do not compare a rounded percentage to the threshold');
+ const mixed=advertisingCancellationRisk([...rows(30,0),...Array.from({length:100},()=>({orderSource:'pos',bucket:'cancelled'}))]);assert.equal(mixed.level,'normal');assert.equal(mixed.total,30);assert.equal(advertisingCancellationRisk([]).rate,null);
 });

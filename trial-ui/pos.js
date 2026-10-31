@@ -516,6 +516,17 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     st.orderRegisterId = d.registerId;
     renderOrderBoard();
   }
+  function advertisingNotice(risk) {
+    if(!risk)return null;
+    const box=el('section','pos-ad-risk '+risk.level),high=['budget','improve'].includes(risk.level);
+    box.setAttribute('role',high?'alert':'status');
+    const rate=risk.rate==null?'—':new Intl.NumberFormat('vi-VN',{maximumFractionDigits:2}).format(risk.rate)+'%';
+    const title=risk.level==='budget'?'Cảnh báo: rà soát cắt giảm ngân sách quảng cáo':risk.level==='improve'?'Cần cải thiện tỷ lệ đơn web':risk.level==='insufficient'?'Chưa đủ mẫu để đánh giá quảng cáo':'Tỷ lệ huỷ / hoàn đơn web dưới ngưỡng cảnh báo';
+    box.append(el('strong','',title),el('p','',`${risk.unsuccessful}/${risk.ended} đơn web đã kết thúc bị huỷ/hoàn/thất bại (${rate}); còn ${risk.pending} đơn đang xử lý.`));
+    const advice=risk.level==='budget'?'Tỷ lệ từ 20%: đề nghị xem xét giảm hoặc tạm dừng ngân sách quảng cáo nguồn liên quan, rà soát các lý do chính và cải thiện về dưới 10% huỷ/hoàn trước khi tăng ngân sách.':risk.level==='improve'?'Tỷ lệ từ 10%: yêu cầu rà soát lý do huỷ, chất lượng khách và khâu xử lý/giao hàng để đưa tỷ lệ huỷ/hoàn về dưới 10%.':risk.level==='insufficient'?'Cần ít nhất 30 đơn web đã kết thúc trong kỳ mới áp ngưỡng cảnh báo.':'Tiếp tục theo dõi; ngưỡng cần cải thiện là 10%, ngưỡng rà soát ngân sách là 20% khi có ít nhất 30 đơn web đã kết thúc.';
+    box.append(el('p','',advice),el('p','pos-note','Khuyến nghị tham khảo, không tự đổi ngân sách. Đơn web chưa được xác định theo chiến dịch quảng cáo; cần đối chiếu nguồn khách và nguyên nhân trước khi quyết định.'));
+    return box;
+  }
   function showCancellationAnalytics(d) {
     const a = d.analytics;
     if (!a) return;
@@ -538,6 +549,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       item.append(el('strong', '', value), el('span', '', label));
       grid.append(item);
     }
+    const adRisk=advertisingNotice(a.advertising);if(adRisk)m.body.append(adRisk);
     m.body.append(grid, el('p', 'pos-note', 'Đơn đang xử lý chưa được coi là thành công. Tỷ lệ thành công trên đơn đã kết thúc = hoàn thành ÷ (hoàn thành + huỷ/hoàn/thất bại). Không coi tỷ lệ này là lỗi của nhân viên.'));
     const kindNames = { cancelled: 'Đã huỷ', returned: 'Hoàn / đang hoàn hàng', refunded: 'Đã hoàn tiền', failed: 'Thất bại / mất / hỏng hàng' };
     m.body.append(el('h3', '', 'Phân loại kết quả không thành công'));
@@ -555,7 +567,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const wrap = el('div', 'table-wrap'); wrap.append(table); m.body.append(wrap);
     if (!a.unsuccessful) m.body.append(el('p', 'pos-note', 'Chưa có đơn huỷ / hoàn trong kỳ này.'));
     m.body.append(el('p', 'pos-note', `${a.missingReasons} đơn chưa ghi nhận lý do. Lý do đơn web lấy từ nhật ký huỷ tại CRM nếu có. Trạng thái website/GHN không tự suy ra lý do. Đơn web chưa gắn nhân viên bán.`));
-    m.body.append(el('h3', '', 'Ngưỡng cảnh báo tham khảo'), el('p', 'pos-note', 'Chỉ xem xét khi có ít nhất 30 đơn đã kết thúc trong kỳ: tỷ lệ huỷ/hoàn trên đơn đã kết thúc từ 10% cần rà soát, từ 20% cảnh báo cao. Đây là ngưỡng thử nghiệm, chưa phải quy định phạt; phải đối chiếu nguồn đơn, khách hàng, hàng hoá và vận chuyển trước khi quy trách nhiệm.'));
+    m.body.append(el('h3', '', 'Ngưỡng cảnh báo tham khảo'), el('p', 'pos-note', 'Chỉ xem xét quảng cáo khi có ít nhất 30 đơn web đã kết thúc trong kỳ: tỷ lệ huỷ/hoàn trên đơn web đã kết thúc từ 10% cần cải thiện, từ 20% cảnh báo rà soát ngân sách. Đây là ngưỡng thử nghiệm, chưa phải quy định phạt; phải đối chiếu nguồn đơn, khách hàng, hàng hoá và vận chuyển trước khi quy trách nhiệm.'));
     m.show();
   }
   function renderOrderBoard() {
@@ -616,8 +628,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       if (alert) b.setAttribute('aria-label', `Đơn web: ${n} đơn cần xử lý`);
       cards.append(b);
     }
-    if(d.analytics){const a=d.analytics,pct=a.unsuccessfulRate==null?'—':new Intl.NumberFormat('vi-VN',{maximumFractionDigits:1}).format(a.unsuccessfulRate)+'%';const report=button('','pos-order-count pos-cancellation-report',()=>showCancellationAnalytics(d));report.setAttribute('aria-label','Xem tỷ lệ huỷ đơn và lý do');report.append(el('strong','',pct),el('span','','Tỷ lệ huỷ / hoàn'));cards.append(report);}
+    if(d.analytics){const a=d.analytics,pct=a.successRate==null?'—':new Intl.NumberFormat('vi-VN',{maximumFractionDigits:1}).format(a.successRate)+'%';const report=button('','pos-order-count pos-cancellation-report',()=>showCancellationAnalytics(d));report.setAttribute('aria-label','Xem tỷ lệ hoàn thành và lý do huỷ đơn');report.append(el('strong','',pct),el('span','','Tỷ lệ hoàn thành'));cards.append(report);}
     box.append(cards);
+    const adRisk=advertisingNotice(d.analytics?.advertising);if(adRisk)box.append(adRisk);
     const search = el('input', 'pos-order-search');
     search.type = 'search'; search.placeholder = 'Tìm số đơn, khách hàng, điện thoại, nhân viên…'; search.value = st.orderQuery;
     search.setAttribute('aria-label', 'Tìm đơn hàng cửa hàng');

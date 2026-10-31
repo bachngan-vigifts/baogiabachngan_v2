@@ -23,7 +23,8 @@ export function filterPosOrderBoard<T extends BoardOrder>(rows: T[], params: URL
     (!from || o.orderDate >= from) && (!to || o.orderDate <= to) &&
     (!q || [o.orderNo, o.customerName, o.phone, o.ownerName, o.sapoOrderCode].some(v => fold(v || '').includes(q))));
   const filtered = cohort.filter(o=>payment==='all'||o.bucket!=='cancelled'&&o.paymentStatus===payment);
-  const analytics = cancellationAnalytics(cohort.filter(o=>!options.analyticsFrom||o.orderDate>=options.analyticsFrom));
+  const analyticsRows=cohort.filter(o=>!options.analyticsFrom||o.orderDate>=options.analyticsFrom);
+  const analytics={...cancellationAnalytics(analyticsRows),advertising:advertisingCancellationRisk(analyticsRows)};
   const webOpen = (o: BoardOrder) => o.orderSource === 'web' && o.bucket !== 'completed' && o.bucket !== 'cancelled';
   const counts = { all: filtered.length, web: filtered.filter(webOpen).length, pending: 0, packing: 0, waiting_delivery: 0, completed: 0, cancelled: 0 };
   for (const o of filtered) if (o.bucket in counts && o.bucket !== 'all' && o.bucket !== 'web') counts[o.bucket as keyof typeof counts]++;
@@ -54,4 +55,14 @@ export function cancellationAnalytics(rows: Pick<BoardOrder,'bucket'|'cancelReas
     unsuccessfulRate:percent(unsuccessful.length,total),successRate:percent(completed,total),closedSuccessRate:percent(completed,ended),closedUnsuccessfulRate:percent(unsuccessful.length,ended),
     reasons:[...reasons.values()].sort((a,b)=>b.count-a.count||a.reason.localeCompare(b.reason,'vi')),
     kinds:[...kinds].map(([kind,count])=>({kind,count}))};
+}
+
+
+/** Website orders are a review signal, not proof of paid-ad attribution or employee fault. */
+export function advertisingCancellationRisk(rows: Pick<BoardOrder,'bucket'|'orderSource'>[]) {
+  const web=rows.filter(o=>o.orderSource==='web'),completed=web.filter(o=>o.bucket==='completed').length,
+    unsuccessful=web.filter(o=>o.bucket==='cancelled').length,ended=completed+unsuccessful;
+  const level=ended<30?'insufficient':unsuccessful*100>=ended*20?'budget':unsuccessful*100>=ended*10?'improve':'normal';
+  return {total:web.length,completed,unsuccessful,ended,pending:web.length-ended,
+    rate:ended?Math.round(unsuccessful/ended*10000)/100:null,level,minEnded:30,improveAt:10,reviewBudgetAt:20};
 }

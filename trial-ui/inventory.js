@@ -193,9 +193,10 @@ export function initInventory({ api, root, toast, confirmBox }) {
     const back = btn('‹ Danh sách phiếu', 'btn ghost small', () => { if (busy) return; editing = false; editor.replaceChildren(); updatePage(); });
     const top = el('div', 'card-title-row'); top.append(el('h2', 'card-title', 'Lập phiếu cân bằng kho'), back);
     const f = el('form', 'sup-form inv-adjust-form'), err = el('p', 'error');
-    const w = el('select'); w.required = true;
+    const w = el('select'); w.required = true;w.setAttribute('aria-label','Kho cân bằng');
+    w.append(Object.assign(el('option','','Chọn kho…'),{value:''}));
     for (const x of status.warehouses) w.append(Object.assign(el('option', '', x.name), { value: x.id }));
-    if (prefill.warehouseId) w.value = prefill.warehouseId; else if (wh.value) w.value = wh.value;
+    w.value = ''; // Every new sheet needs an explicit warehouse choice, including from a stock card.
     const reason = input('text', '', { maxLength: 500, required: true, placeholder: 'VD: kiểm kê lệch, hàng vỡ, xuất mẫu…' });
     const g = el('div', 'form-grid two'); g.append(field('Kho', w), field('Lý do *', reason));
     const list = el('div', 'inv-adjust-lines');
@@ -212,6 +213,7 @@ export function initInventory({ api, root, toast, confirmBox }) {
     const foot = el('div', 'row-gap inv-adjust-foot'); foot.append(ok, btn('Huỷ', 'btn secondary', () => back.click())); f.append(foot);
     f.addEventListener('submit', async e => {
       e.preventDefault(); err.textContent = '';
+      if(!uncertain&&!status.warehouses.some(x=>x.id===w.value)){err.textContent='Chọn kho trước khi ghi phiếu cân bằng.';w.focus();return;}
       const lines = [...list.children].map(r => { const [s, q] = r.querySelectorAll('input'); return { sku: s.value.trim(), qty: Number(q.value) }; }).filter(l => l.sku && l.qty);
       if(ok.disabled)return;ok.disabled = true;busy=true;
       const body=uncertain||{ warehouseId: w.value, reason: reason.value.trim(), lines,clientKey };

@@ -1,5 +1,5 @@
 import { test } from 'node:test';
-import {cancellationAnalytics} from '../../src/modules/sales/domain/pos-order-board.ts';
+import {cancellationAnalytics,advertisingCancellationRisk} from '../../src/modules/sales/domain/pos-order-board.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 // @ts-ignore browser module uses injected DOM only while rendering
@@ -924,7 +924,7 @@ test('POS order board sends source/staff/date/payment filters, renders server to
     const api=async(path:string)=>{
       if(path.startsWith('/pos/options')) return {registers:[{id:'r',name:'Quầy',pricePolicyId:'vat'}],current:null,shifts:[],templates:[],policies:[]};
       if(path.startsWith('/pos/catalog')) return {products:[],nextOffset:null};
-      if(path.startsWith('/pos/orders')) {calls.push(path);return {registerId:'r',registers:[],analytics:cancellationAnalytics([{bucket:'completed'},{bucket:'pending'},{bucket:'cancelled',cancelReason:'<img src=x onerror=alert(1)>'}]),counts:{all:3},orders:[],owners:[{id:'emp',name:'Nhân viên A'}],totals:[{currency:'VND',revenue:123456,paid:100000,outstanding:23456,orders:3,unknownPayment:0}]};}
+      if(path.startsWith('/pos/orders')) {calls.push(path);return {registerId:'r',registers:[],analytics:{...cancellationAnalytics([{bucket:'completed'},{bucket:'pending'},{bucket:'cancelled',cancelReason:'<img src=x onerror=alert(1)>'}]),advertising:advertisingCancellationRisk([{orderSource:'web',bucket:'completed'}])},counts:{all:3},orders:[],owners:[{id:'emp',name:'Nhân viên A'}],totals:[{currency:'VND',revenue:123456,paid:100000,outstanding:23456,orders:3,unknownPayment:0}]};}
       throw Error(path);
     };
     const ui=initPos({root,api,toast(){},user:()=>({id:'emp',name:'NV'}),confirmBox:async()=>true,go(){}});
@@ -938,8 +938,8 @@ test('POS order board sends source/staff/date/payment filters, renders server to
     }
     const q=new URLSearchParams(calls.at(-1)!.split('?')[1]);
     assert.equal(q.get('source'),'cod');assert.equal(q.get('ownerId'),'emp');assert.equal(q.get('from'),'2026-10-01');assert.equal(q.get('to'),'2026-10-21');assert.equal(q.get('payment'),'debt');
-    const before=calls.length;await root.querySelectorAll('button').find(e=>e.attributes['aria-label']==='Xem tỷ lệ huỷ đơn và lý do')!.fire('click');
-    const modal=doc.body.children.at(-1)!;assert.equal(modal.open,true);assert.match(modal.textContent,/33,3%/);assert.match(modal.textContent,/50%/);assert.match(modal.textContent,/<img src=x onerror=alert\(1\)>/);assert.equal(modal.querySelectorAll('img').length,0);assert.match(modal.textContent,/không áp dụng thẻ trạng thái hoặc bộ lọc thanh toán/);assert.equal(calls.length,before,'report opens from the same confirmed data without another request');
+    const before=calls.length;await root.querySelectorAll('button').find(e=>e.attributes['aria-label']==='Xem tỷ lệ hoàn thành và lý do huỷ đơn')!.fire('click');
+    const modal=doc.body.children.at(-1)!;assert.equal(modal.open,true);assert.match(modal.textContent,/Cần ít nhất 30 đơn web/);assert.match(modal.textContent,/33,3%/);assert.match(modal.textContent,/50%/);assert.match(modal.textContent,/<img src=x onerror=alert\(1\)>/);assert.equal(modal.querySelectorAll('img').length,0);assert.match(modal.textContent,/không áp dụng thẻ trạng thái hoặc bộ lọc thanh toán/);assert.equal(calls.length,before,'report opens from the same confirmed data without another request');
     await root.querySelectorAll('button').find(e=>e.textContent==='Xóa bộ lọc')!.fire('click');
     await new Promise(r=>setTimeout(r,0));
     const reset=new URLSearchParams(calls.at(-1)!.split('?')[1]);

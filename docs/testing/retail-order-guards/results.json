@@ -8,6 +8,10 @@
     "dismissDoesNotWrite": true,
     "confirmedWrites": 1,
     "analyticsReport": true,
+    "adBudgetWarning": true,
+    "taskFontWeight": 500,
+    "newAdjustmentWarehouseEmpty": true,
+    "ledgerSignedColors": true,
     "pageErrors": []
   },
   {
@@ -19,6 +23,10 @@
     "dismissDoesNotWrite": true,
     "confirmedWrites": 1,
     "analyticsReport": true,
+    "adBudgetWarning": true,
+    "taskFontWeight": 500,
+    "newAdjustmentWarehouseEmpty": true,
+    "ledgerSignedColors": true,
     "pageErrors": []
   }
 ]
