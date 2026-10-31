@@ -1,3 +1,4 @@
+import {SALE_ADMIN_POSITION_ID} from '../../staff/domain/roles.ts';
 /**
  * BẢNG LƯƠNG (theo file "Bảng lương mẫu" – 3 bảng: Sale & VP, Bách Ngân, Lock). Hàm thuần, test không cần DB.
  * Tham số công ty ở ./params.ts, KPI công việc ở ./kpi-cv.ts. Từng khoản lương có KHOÁ cố định (LINE_LABEL) để
@@ -87,7 +88,7 @@ export interface SalaryProfile {
   responsibilityMode: ResponsibilityMode; responsibility: number;
   mealAllowance: boolean; phoneAllowance: number; attendanceBonus: number;
   /** Sale: tính KPI công việc + thưởng KPI DS. Bách Ngân / Lock: hưởng thưởng DS của nhóm. */
-  kpiEnabled: boolean; teamBonus: boolean; fixedKpi?: number | null; contractBonusEnabled?: boolean;
+  kpiEnabled: boolean; teamBonus: boolean; kpiEligible?:boolean; fixedKpi?: number | null; contractBonusEnabled?: boolean;
   outputRate: number; revenueTarget: number; insurance: number;
   bankCode: string; bankAccount: string; bankHolder: string;
 }
@@ -102,10 +103,11 @@ export const EMPTY_PROFILE: SalaryProfile = {
  * NVBH ML → bảng cửa hàng ML (Bách Ngân), NVBH Lock → bảng Lock (trách nhiệm theo ngày, chuyên cần, thưởng DS nhóm như file mẫu);
  * chức vụ khác → Sale & Văn phòng. Manager vẫn phải lưu hồ sơ lương (LCB, BHXH…) trước khi chốt.
  */
+export const salaryKpiEligible=(positionId:string|null|undefined)=>positionId!==SALE_ADMIN_POSITION_ID;
 export const POSITION_GROUP: Readonly<Record<string, PayrollGroup>> = { 'sales-ml': 'bn', 'sales-lock': 'lock' };
 export function defaultProfileFor(positionId: string | null | undefined): SalaryProfile {
   const g = POSITION_GROUP[positionId ?? ''];
-  return g ? { ...EMPTY_PROFILE, payrollGroup: g, positionLabel: 'NVBH', responsibilityMode: 'per_day', attendanceBonus: 200_000, teamBonus: true } : EMPTY_PROFILE;
+  return g ? { ...EMPTY_PROFILE,kpiEligible:salaryKpiEligible(positionId), payrollGroup: g, positionLabel: 'NVBH', responsibilityMode: 'per_day', attendanceBonus: 200_000, teamBonus: true } : {...EMPTY_PROFILE,kpiEligible:salaryKpiEligible(positionId)};
 }
 
 // ---------------- Số liệu nhập theo tháng (một dòng / người / tháng)
@@ -156,7 +158,7 @@ export interface PayslipCalc {
   group: PayrollGroup; positionLabel: string; workDays: number; baseSalary: number; revenue: number;
   income: PayLine[]; deductions: PayLine[]; gross: number; deductionTotal: number; net: number;
   kpi: KpiCvResult | null;snapshotUnavailable?:boolean;
-  salesCrm?:{apply:boolean;from:string;previewKpi?:KpiCvResult|null;kpiBonusPreview?:number;facts:{newCustomers:number;transactions:number;contracts:number};awards:import('./contract-bonus.ts').AwardProposal[];};
+  salesCrm?:{apply:boolean;from:string;kpiEligible?:boolean;previewKpi?:KpiCvResult|null;kpiBonusPreview?:number;facts:{newCustomers:number;transactions:number;contracts:number};awards:import('./contract-bonus.ts').AwardProposal[];};
 }
 
 const round = (n: number) => Math.round(n);
@@ -186,7 +188,7 @@ export function computePayslip(a: {
   const adj = (k: AdjustmentKind) => a.adjustments.filter(x => x.kind === k).reduce((s, x) => s + x.amount, 0);
   const days = inp.workDays ?? a.attendanceDays, lcb = f.baseSalary > 0 ? f.baseSalary : minWageMonth(p);
   const revenue = inp.revenue ?? a.systemRevenue;
-  const kpi = g === 'sale' && f.kpiEnabled ? computeKpiCv({...inp,kpiOverride:f.fixedKpi??inp.kpiOverride}, p, f.revenueTarget || p.kpiRevenue, revenue) : null;
+  const kpi = g === 'sale' && f.kpiEligible!==false && f.kpiEnabled ? computeKpiCv({...inp,kpiOverride:f.fixedKpi??inp.kpiOverride}, p, f.revenueTarget || p.kpiRevenue, revenue) : null;
   const responsibility = f.responsibilityMode === 'per_day' ? p.responsibilityDay * days
     : f.responsibilityMode === 'prorated' ? f.responsibility * days / p.standardDays : f.responsibility;
   const mealOff = g === 'sale' ? p.mealOffSale : g === 'bn' ? p.mealOffBn : p.mealOffLock;

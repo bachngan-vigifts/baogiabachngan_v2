@@ -10,7 +10,7 @@ import { employees } from '../../staff/schema.ts';
 import { hrAdjustments, hrAttendance, hrPayrollInputs, hrPayrollMonths, hrPayrollSettings, hrPayslips, hrSalaryProfiles } from '../schema.ts';
 import { mergeParams, type PayrollParams } from '../domain/params.ts';
 import {
-  EMPTY_GROUP_MONTH, EMPTY_INPUT, computePayslip, defaultProfileFor, computeQuarterBonus, monthRange, quarterMonths, summarizeAttendance,
+  EMPTY_GROUP_MONTH, EMPTY_INPUT, computePayslip,salaryKpiEligible, defaultProfileFor, computeQuarterBonus, monthRange, quarterMonths, summarizeAttendance,
   type GroupMonth, type PayrollInput, type PayslipCalc, type SalaryProfile,
 } from '../domain/payroll.ts';
 
@@ -25,7 +25,7 @@ type ProfileRow = typeof hrSalaryProfiles.$inferSelect;
 const toProfile = (p: ProfileRow | undefined, positionId?: string | null): SalaryProfile & { effectiveMonth: string | null; note: string } => p ? {
   payrollGroup: p.payrollGroup, positionLabel: p.positionLabel, baseSalary: p.baseSalary, capacityCoef: p.capacityCoef,
   responsibilityMode: p.responsibilityMode, responsibility: p.responsibility, mealAllowance: p.mealAllowance, phoneAllowance: p.phoneAllowance,
-  attendanceBonus: p.attendanceBonus, kpiEnabled: p.kpiEnabled,fixedKpi:p.fixedKpi,contractBonusEnabled:p.contractBonusEnabled, teamBonus: p.teamBonus, outputRate: p.outputRate, revenueTarget: p.revenueTarget,
+  attendanceBonus: p.attendanceBonus, kpiEligible:salaryKpiEligible(positionId),kpiEnabled:salaryKpiEligible(positionId)&&p.kpiEnabled,fixedKpi:salaryKpiEligible(positionId)?p.fixedKpi:null,contractBonusEnabled:p.contractBonusEnabled, teamBonus: p.teamBonus, outputRate: p.outputRate, revenueTarget: p.revenueTarget,
   insurance: p.insurance, bankCode: p.bankCode, bankAccount: p.bankAccount, bankHolder: p.bankHolder, effectiveMonth: p.effectiveMonth, note: p.note,
 } : { ...defaultProfileFor(positionId), effectiveMonth: null, note: '' };
 const toInput = (r: typeof hrPayrollInputs.$inferSelect | undefined): PayrollInput & { note: string } => r ? {
@@ -61,7 +61,8 @@ async function profilesFor(db: AnyDb, month: string, memberIds?: readonly string
 async function quarterBonuses(db: AnyDb, month: string, params: PayrollParams, gm: GroupMonth, revenueOf: RevenueOf) {
   const q = quarterMonths(month);
   if (!q.isQuarterEnd || !gm.payQuarterBonus) return { map: new Map<string, number>(), detail: null };
-  const profiles = await profilesFor(db, month), team = [...profiles.values()].filter(p => p.payrollGroup === 'sale' && p.kpiEnabled);
+  const profiles=await profilesFor(db,month),positions=await db.select({id:employees.id,positionId:employees.positionId}).from(employees).where(inArray(employees.id,[...profiles.keys()]));
+  const team=[...profiles.values()].filter(p=>p.payrollGroup==='sale'&&p.kpiEnabled&&salaryKpiEligible(positions.find(m=>m.id===p.memberId)?.positionId));
   if (!team.length) return { map: new Map<string, number>(), detail: null };
   const ids = team.map(p => p.memberId);
   const [inputs, revenues] = await Promise.all([
@@ -120,7 +121,7 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     const ownAwards=awards.filter(a=>a.memberId===m.id&&(profile.contractBonusEnabled||!a.isNew));
     const calc = computePayslip({profile,params,input:apply?resolved:input,adjustments:adj,attendanceDays,systemRevenue,groupMonth:gm,quarterBonusAuto:quarter.map.get(m.id)??0,
      contractBonus:apply?ownAwards.filter(a=>a.isNew).reduce((n,a)=>n+a.amount,0):0,contractBonusAdjustment:apply?ownAwards.filter(a=>!a.isNew).reduce((n,a)=>n+a.amount,0):0});
-    if(enabled){const previewKpi=profile.kpiEnabled?computeKpiCv({...resolved,kpiOverride:profile.fixedKpi??resolved.kpiOverride},params,profile.revenueTarget||params.kpiRevenue,input.revenue??systemRevenue):null;calc.salesCrm={apply,from,facts:auto,awards:ownAwards,previewKpi,kpiBonusPreview:Math.round((input.revenue??systemRevenue)*kpiBonusRate(params,previewKpi?.used??null))};}
+    if(enabled){const previewKpi=profile.kpiEnabled?computeKpiCv({...resolved,kpiOverride:profile.fixedKpi??resolved.kpiOverride},params,profile.revenueTarget||params.kpiRevenue,input.revenue??systemRevenue):null;calc.salesCrm={apply,from,kpiEligible:profile.kpiEligible!==false,facts:auto,awards:ownAwards,previewKpi,kpiBonusPreview:Math.round((input.revenue??systemRevenue)*kpiBonusRate(params,previewKpi?.used??null))};}
     return { member: m, profile, input, attendanceDays, systemRevenue, adjustments: adj, calc, slip: slips.find(s => s.memberId === m.id) ?? null };
   });
   for(const row of rows){if(![row.calc.gross,row.calc.deductionTotal,row.calc.net].every(Number.isSafeInteger))throw new AppError(400,'Tổng tiền vượt giới hạn tính toán an toàn. Kiểm tra tham số.');row.context={params,paramsMonth:effectiveMonth,profile:row.profile,input:row.input,systemRevenue:row.systemRevenue,attendanceDays:row.attendanceDays};}

@@ -114,3 +114,29 @@ test('legacy incomplete snapshot preserves stored totals without injecting curre
  await f.client.query("update hr_payslips set data='{}' where member_id='emp' and month='2026-10'");
  const old=(await f.overview()).data.payroll.payslip;assert.equal(old.net,net);assert.equal(old.snapshotUnavailable,true);assert.deepEqual(old.income,[]);assert.equal(old.salesCrm,undefined);
 });
+
+test('Sale Admin has no KPI or automatic quarterly KPI bonus, but receives star and liquidation rewards',async()=>{
+ const f=await setupSalesPayroll();await f.client.query("update staff_members set position_id='sale-admin' where id='emp'");
+ await f.setPolicy(1);
+ assert.equal((await f.salary()).status,400,'cannot turn on KPI for Sale Admin via API');
+ assert.equal((await f.salary({kpiEnabled:false,fixedKpi:1})).status,400,'fixed 100% is also a KPI');
+ assert.equal((await f.salary({kpiEnabled:false,fixedKpi:null})).status,200);
+ // Historical profile flags must not accidentally award KPI after a position change.
+ await f.client.query("update hr_salary_profiles set kpi_enabled=true,fixed_kpi=1 where member_id='emp'");
+ await f.care();assert.equal((await f.award()).status,200);
+ const p=(await f.overview()).data.payroll;
+ assert.equal(p.profile.kpiEligible,false);assert.equal(p.profile.kpiEnabled,false);assert.equal(p.profile.fixedKpi,null);
+ assert.equal(p.payslip.kpi,null);assert.equal(p.payslip.salesCrm.previewKpi,null);assert.equal(amount(p.payslip,'kpiBonus'),0);
+ assert.equal(amount(p.payslip,'contractBonus'),60000,'50k for two stars + 10k liquidation');
+ await f.call('/hr/months/2026-12',f.mgr,'PUT',{payQuarterBonus:true});
+ const quarter=(await f.call('/hr/payroll/2026-12',f.mgr)).data;assert.equal(quarter.quarter,null,'Sale Admin must not enter the automatic Sale quarterly team');
+ assert.equal((await f.confirm()).status,201);assert.equal((await f.overview()).data.payroll.payslip.kpi,null);
+});
+
+test('changing position to Sale Admin keeps a previously confirmed Sale payslip unchanged',async()=>{
+ const f=await setupSalesPayroll();await f.setPolicy(1);await f.salary({fixedKpi:1});await f.confirm();
+ const old=(await f.overview()).data.payroll.payslip;assert.equal(old.kpi.used,1);assert.ok(amount(old,'kpiBonus')>0);
+ await f.client.query("update staff_members set position_id='sale-admin' where id='emp'");
+ const same=(await f.overview()).data.payroll.payslip;assert.equal(same.net,old.net);assert.equal(same.kpi.used,1);
+ const future=(await f.overview(f.mgr,'2026-11')).data.payroll.payslip;assert.equal(future.kpi,null);assert.equal(amount(future,'kpiBonus'),0);
+});

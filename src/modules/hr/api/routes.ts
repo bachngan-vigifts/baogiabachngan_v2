@@ -12,7 +12,7 @@ import { hrAdjustments, hrAttendance, hrPayrollInputs, hrPayrollMonths, hrPayrol
 import { PARAM_FIELDS, validateParams } from '../domain/params.ts';
 import {
   ADJUSTMENT_KINDS, ATTENDANCE_STATUSES, DATE_RE, GROUP_DEDUCTION, GROUP_INCOME, GROUP_LABEL, HR_LIMITS, LINE_LABEL, PAYROLL_GROUPS,
-  RESPONSIBILITY_MODES, isMonth, monthRange,daysInMonth, vietQrUrl,
+  RESPONSIBILITY_MODES,salaryKpiEligible, isMonth, monthRange,daysInMonth, vietQrUrl,
 } from '../domain/payroll.ts';
 import { buildPayroll, paramsFor, payslipView, type PayrollRow, type RevenueOf } from './payroll-data.ts';
 
@@ -121,6 +121,8 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
 
   router.put('/hr/members/:id/salary', write(async c => {
     const db = c.env.db, id = await staffMember(db, c.params.id!), b = await readJson(c.req, 6_000);
+    const [person]=await db.select({positionId:employees.positionId}).from(employees).where(eq(employees.id,id));const eligible=salaryKpiEligible(person?.positionId);
+    if(!eligible&&(b.kpiEnabled===true||b.fixedKpi!==undefined&&b.fixedKpi!==null&&b.fixedKpi!==''))throw new AppError(400,'Sale Admin không áp dụng KPI; chỉ bật thưởng sao HĐKT và thưởng thanh lý.');
     const [prior]=await db.select().from(hrSalaryProfiles).where(and(eq(hrSalaryProfiles.memberId,id),lte(hrSalaryProfiles.effectiveMonth,month(b.effectiveMonth)))).orderBy(desc(hrSalaryProfiles.effectiveMonth)).limit(1);
     const row = {
       memberId: id, effectiveMonth: month(b.effectiveMonth),
@@ -128,7 +130,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
       baseSalary: Math.round(num(b.baseSalary, 'Lương cơ bản')), capacityCoef: num(b.capacityCoef, 'Hệ số năng lực', 100),
       responsibilityMode: oneOf(b.responsibilityMode, RESPONSIBILITY_MODES, 'Cách tính trách nhiệm', 'fixed'), responsibility: Math.round(num(b.responsibility, 'Trách nhiệm')),
       mealAllowance: b.mealAllowance !== false, phoneAllowance: Math.round(num(b.phoneAllowance, 'Phụ cấp điện thoại')), attendanceBonus: Math.round(num(b.attendanceBonus, 'Chuyên cần')),
-      kpiEnabled: b.kpiEnabled === true,fixedKpi:b.fixedKpi===undefined?prior?.fixedKpi??null:optNum(b.fixedKpi,'KPI cố định',10),contractBonusEnabled:b.contractBonusEnabled===undefined?prior?.contractBonusEnabled??false:b.contractBonusEnabled===true, teamBonus: b.teamBonus === true, outputRate: num(b.outputRate, 'Đơn giá sản lượng'),
+      kpiEnabled: eligible&&b.kpiEnabled === true,fixedKpi:!eligible?null:b.fixedKpi===undefined?prior?.fixedKpi??null:optNum(b.fixedKpi,'KPI cố định',10),contractBonusEnabled:b.contractBonusEnabled===undefined?prior?.contractBonusEnabled??false:b.contractBonusEnabled===true, teamBonus: b.teamBonus === true, outputRate: num(b.outputRate, 'Đơn giá sản lượng'),
       revenueTarget: Math.round(num(b.revenueTarget, 'Chỉ tiêu DS', 1e13)), insurance: Math.round(num(b.insurance, 'BHXH')),
       bankCode: text(b.bankCode, 30).toLowerCase().replace(/[^a-z0-9]/g, ''), bankAccount: text(b.bankAccount, 30).replace(/[^\dA-Za-z]/g, ''), bankHolder: text(b.bankHolder, HR_LIMITS.text).toUpperCase(),
       note: text(b.note, HR_LIMITS.note), updatedBy: actor(c).id, updatedAt: nowIso(),

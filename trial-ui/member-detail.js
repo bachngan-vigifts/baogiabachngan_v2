@@ -105,7 +105,7 @@ export function initMemberDetail(deps) {
         <p class="muted small">${esc(GROUP[s.group] || '')}${s.positionLabel ? ' · ' + esc(s.positionLabel) : ''} · ${s.workDays} ngày làm việc${inp.workDays === null ? ' (theo chấm công)' : ' (nhập tay)'}</p>
         ${s.snapshotUnavailable?'<p class="error">Phiếu cũ thiếu bản chụp chi tiết. Giữ nguyên tổng tiền đã chốt; cần Manager đối soát trước khi in.</p>':''}<table class="md-slip-table"><tbody>
           ${shown(s.income).map(l => row(l)).join('')}
-          ${s.salesCrm?'<tr><td colspan="2"><button class="btn ghost small" data-act="contract-bonus">Xem KPI & thưởng HĐKT</button></td></tr>':''}
+          ${s.salesCrm?`<tr><td colspan="2"><button class="btn ghost small" data-act="contract-bonus">${s.salesCrm.kpiEligible===false?'Xem thưởng HĐKT':'Xem KPI & thưởng HĐKT'}</button></td></tr>`:''}
           ${row({ label: 'Tổng thu nhập', amount: s.gross }, 'sum')}
           ${shown(s.deductions).map(l => row(l, 'minus')).join('')}
           ${row({ label: 'Thực nhận', amount: s.net }, 'net')}
@@ -146,7 +146,7 @@ export function initMemberDetail(deps) {
           <dt>Cơm + xăng</dt><dd>${pr.mealAllowance ? 'Có' : 'Không (thử việc)'}</dd>
           ${pr.phoneAllowance ? `<dt>PC điện thoại</dt><dd class="num">${money(pr.phoneAllowance)}</dd>` : ''}
           ${pr.attendanceBonus ? `<dt>Chuyên cần</dt><dd class="num">${money(pr.attendanceBonus)}</dd>` : ''}
-          ${pr.payrollGroup === 'sale' ? `<dt>KPI DS</dt><dd>${pr.kpiEnabled ? `Có · chỉ tiêu ${money(pr.revenueTarget || p.params.kpiRevenue)}` : 'Không'}</dd>` : `<dt>Thưởng DS nhóm</dt><dd>${pr.teamBonus ? 'Có' : 'Không'}</dd>`}
+          ${pr.payrollGroup === 'sale' ? `<dt>KPI DS</dt><dd>${pr.kpiEligible===false?'Không áp dụng (Sale Admin)':pr.kpiEnabled ? `Có · chỉ tiêu ${money(pr.revenueTarget || p.params.kpiRevenue)}` : 'Không'}</dd>` : `<dt>Thưởng DS nhóm</dt><dd>${pr.teamBonus ? 'Có' : 'Không'}</dd>`}
           ${pr.outputRate ? `<dt>Đơn giá sản lượng</dt><dd>${pr.outputRate < 1 ? (pr.outputRate * 100) + '%' : money(pr.outputRate)}</dd>` : ''}
           <dt>BHXH</dt><dd class="num">${money(pr.insurance)}</dd>
           <dt>Nhận lương</dt><dd>${pr.bankAccount ? `${esc(pr.bankAccount)} – ${esc(pr.bankCode.toUpperCase())}<br><small class="muted">${esc(pr.bankHolder)}</small>` : '<span class="muted">Chưa có tài khoản</span>'}</dd>
@@ -275,8 +275,7 @@ export function initMemberDetail(deps) {
       ${moneyInput('revenueTarget', 'Chỉ tiêu DS cá nhân / tháng', p.revenueTarget)}
       ${moneyInput('insurance', 'BHXH người lao động / tháng', has ? p.insurance : prm.socialInsurance)}
       ${check('mealAllowance', 'Hưởng phụ cấp cơm + xăng (thử việc: bỏ chọn)', p.mealAllowance)}
-      ${check('kpiEnabled', 'Sale / Sale Admin: tính KPI công việc + thưởng KPI DS', p.kpiEnabled)}
-      ${numInput('fixedKpi','KPI cố định (%) — trống = theo tháng / công thức',p.fixedKpi==null?'':p.fixedKpi*100)}
+      ${p.kpiEligible===false?'<p class="muted span-2">Sale Admin không tính KPI. Thưởng sao HĐKT và thưởng thanh lý được bật riêng bên dưới.</p>':check('kpiEnabled','Sale: tính KPI công việc + thưởng KPI DS',p.kpiEnabled)+numInput('fixedKpi','KPI cố định (%) — trống = theo tháng / công thức',p.fixedKpi==null?'':p.fixedKpi*100)}
       ${check('contractBonusEnabled','Sale / Sale Admin: hưởng thưởng HĐKT',p.contractBonusEnabled)}
       ${check('teamBonus', 'NVBH ML / Lock: hưởng thưởng DS của nhóm', p.teamBonus)}
       <label>Mã ngân hàng (VietQR)<input name="bankCode" maxlength="30" value="${esc(p.bankCode)}" placeholder="vcb, acb, vietinbank, tcb…"></label>
@@ -287,7 +286,7 @@ export function initMemberDetail(deps) {
       api(base() + '/salary', 'PUT', { effectiveMonth: f.effectiveMonth.value, payrollGroup: f.payrollGroup.value, positionLabel: f.positionLabel.value,
         baseSalary: digits(f.baseSalary.value), capacityCoef: numVal(f.capacityCoef.value) ?? 0, responsibilityMode: f.responsibilityMode.value, responsibility: digits(f.responsibility.value),
         phoneAllowance: digits(f.phoneAllowance.value), attendanceBonus: digits(f.attendanceBonus.value), outputRate: numVal(f.outputRate.value) ?? 0,
-        revenueTarget: digits(f.revenueTarget.value), insurance: digits(f.insurance.value), mealAllowance: f.mealAllowance.checked, kpiEnabled: f.kpiEnabled.checked,fixedKpi:numVal(f.fixedKpi.value)===null?null:numVal(f.fixedKpi.value)/100,contractBonusEnabled:f.contractBonusEnabled.checked,
+        revenueTarget: digits(f.revenueTarget.value), insurance: digits(f.insurance.value), mealAllowance: f.mealAllowance.checked, kpiEnabled: f.kpiEnabled?.checked||false,fixedKpi:numVal(f.fixedKpi?.value||'')===null?null:numVal(f.fixedKpi.value)/100,contractBonusEnabled:f.contractBonusEnabled.checked,
         teamBonus: f.teamBonus.checked, bankCode: f.bankCode.value, bankAccount: f.bankAccount.value, bankHolder: f.bankHolder.value, note: f.note.value })
         .then(() => toast('Đã lưu hồ sơ lương.')));
   }

@@ -2,7 +2,7 @@
 
 ## Phạm vi và mặc định
 
-Phát triển trên trang `#/care`, giữ nhật ký và lịch hẹn cũ. Menu mới “Giao dịch & chăm sóc”; tab ghi nhận tiền ở hồ sơ khách/nhân viên đổi tên “Phiếu thu” để không nhầm với hoạt động KPI. Sale và Sale Admin dùng cùng công thức theo hồ sơ lương, không viết cứng tên người hay tự bật quyền lương cho Sale Admin.
+Phát triển trên trang `#/care`, giữ nhật ký và lịch hẹn cũ. Menu mới “Giao dịch & chăm sóc”; tab ghi nhận tiền ở hồ sơ khách/nhân viên đổi tên “Phiếu thu” để không nhầm với hoạt động KPI. Sale có KPI theo hồ sơ lương. **Sale Admin không áp dụng KPI/KPI cố định hoặc thưởng quý tự động theo KPI**; chỉ bật thưởng sao HĐKT và thanh lý. Không viết cứng tên người, không mở quyền sửa lương cho Sale Admin.
 
 - Gọi đã kết nối, gặp đã thực hiện, tư vấn thực chất qua Zalo/email, báo giá đã gửi: mỗi hoạt động hợp lệ = 1 giao dịch.
 - Chăm sóc sau bán là mục đích của hoạt động, không cộng thêm một lần cho cùng cuộc gọi.
@@ -16,7 +16,7 @@ Phát triển trên trang `#/care`, giữ nhật ký và lịch hẹn cũ. Menu 
 
 App lắp `crmFactsOf` từ care/sales vào HR; HR không import sales/care. KH mới = khách định danh có đơn CRM đầu tiên đã duyệt, xét toàn lịch sử và loại nháp/huỷ. Không suy đoán khách lẻ POS/đơn web thành KH mới. Số HĐ = HĐKT ký trong tháng, signed/completed, đơn chưa huỷ. Doanh số KPI hiện có vẫn theo `memberRevenues` (gồm VAT); riêng xếp sao HĐKT dùng `subtotal` trước VAT.
 
-Ô KPI null lấy CRM khi áp dụng; số 0 nhập tay giữ là 0 (phần cộng ngày làm hàng/công tác vẫn theo công thức hiện có). KPI cố định ưu tiên hơn KPI chốt tháng, rồi mới công thức. Thưởng KPI chỉ khi hồ sơ bật KPI ở bảng Sale & Văn phòng. Thưởng HĐKT bật độc lập trên hồ sơ Sale / Sale Admin.
+Ô KPI null lấy CRM khi áp dụng; số 0 nhập tay giữ là 0 (phần cộng ngày làm hàng/công tác vẫn theo công thức hiện có). Với Sale, KPI cố định ưu tiên hơn KPI chốt tháng, rồi mới công thức. Sale Admin được loại ở máy chủ dù hồ sơ cũ còn cờ KPI; API không cho bật KPI hay KPI cố định cho chức vụ này. Thưởng KPI chỉ khi hồ sơ bật KPI ở bảng Sale & Văn phòng. Thưởng HĐKT bật độc lập trên hồ sơ Sale / Sale Admin.
 
 Hồ sơ lương chỉ Manager sửa, nhân viên xem lương của chính mình như trước. Chi tiết thưởng không nối thẳng tới HĐKT ngoài quyền; khi người nhận cũ không còn phụ trách, phần tạm tính cho nhân viên ẩn fact/ID hợp đồng và chỉ giữ khoản điều chỉnh của họ. Phiếu lương cũ giữ dữ liệu tại thời điểm chốt.
 
@@ -34,12 +34,12 @@ Snapshot v2 lưu cách tính, chính sách, đầu vào, thưởng và run. Phi�
 
 ## Trình tự đưa vào sử dụng
 
-PR này **xếp sau PR #399**, không merge/deploy tự động.
+PR này dùng nguồn thanh lý của #399; #399 đã merge, PR này vẫn không tự merge/deploy.
 
-1. Chủ doanh nghiệp kiểm tra và tự chạy migration thanh lý `20261031041111_contract_liquidation_review.sql` của #399.
+1. Migration thanh lý `20261031041111_contract_liquidation_review.sql` của #399 đã chạy theo yêu cầu riêng của chủ doanh nghiệp. Không chạy lại.
 2. Sau đó tự chạy `migrations/postgres/20261031052408_sales_activity_kpi_payroll.sql` của PR này. File sinh bằng Supabase CLI `migration new`; chưa chạy trên CRM. Bảng mới RLS, không cấp anon/authenticated. Không backfill hoạt động cũ, ngày thanh lý hoặc thưởng đã trả.
 3. Triển khai API/UI sau schema theo quy trình repo. Khi rollback app, giữ schema/sổ thưởng để đối soát; không xoá bảng/ảnh/chứng từ.
-4. Manager vào Tham số, chọn `salesAutomationFrom=YYYYMM`, `salesAutomationApply=0`; đặt trần KH mới `kpiNewCustomersOver=10%` theo chính sách đã chốt. Bật KPI/thưởng HĐKT ở hồ sơ những người được hưởng. Mặc định hệ thống là chưa bật (`from=0`, `apply=0`), không tự sửa thực nhận cũ.
+4. Manager vào Tham số, chọn `salesAutomationFrom=YYYYMM`, `salesAutomationApply=0`; đặt trần KH mới `kpiNewCustomersOver=10%` theo chính sách đã chốt. Bật KPI cho Sale; chỉ bật thưởng sao HĐKT và thanh lý cho Sale Admin ở hồ sơ những người được hưởng. Mặc định hệ thống là chưa bật (`from=0`, `apply=0`), không tự sửa thực nhận cũ.
 5. Chạy đối chiếu một tháng. Sau khi đã đối soát, lưu bản tham số từ tháng chính thức với `salesAutomationApply=1`. API yêu cầu trần KH mới không vượt 10% trước áp dụng. Không đổi công thức KPI cốt lõi.
 
 Các mặc định nghiệp vụ cần duyệt trong review: KH mới theo đơn đầu tiên, người nhận thưởng đã chốt được giữ nguyên khi đổi chủ đơn, thanh lý theo ngày Manager duyệt, lịch sử chưa xác minh không tự ghi có. Muốn chính sách khác phải đổi có hiệu lực theo tháng, không sửa âm thầm dữ liệu đã trả.
@@ -50,3 +50,5 @@ Các mặc định nghiệp vụ cần duyệt trong review: KH mới theo đơn
 - Biên sao, trước/sau VAT, null/0, ngày làm hàng, KPI cố định, khoản ký/thanh lý khác tháng, huỷ/tăng hạng, giữ chính sách và người nhận cũ, mở lại/kỳ sau, chốt đồng thời, nguồn đã chốt, quyền HR và quote/customer scope, quote revision/replay, phân trang, snapshot cũ.
 - `scripts/testing/sales-activity-payroll.mjs`: CRM đầy đủ + API/PGlite, Chromium 1280/390, chặn mạng ngoài. Tạo giao dịch, 502 sau commit/thử lại cùng intent, loại trùng, Manager xét bổ sung, đối chiếu → bật áp dụng → chốt; Excel thật có cột thưởng và điều chỉnh. Ảnh trong thư mục là dữ liệu tổng hợp.
 - Không truy vấn/ghi production, không chạy migration trên CRM, không thay phiên/cron/đồng bộ Sapo, không gọi GHN/email/Zalo.
+
+Bổ sung theo xác nhận của chủ doanh nghiệp: Sale Admin không KPI; kiểm thử API, dữ liệu hồ sơ cũ, loại khỏi thưởng quý tự động và giao diện hồ sơ không còn nút bật KPI. Thưởng 2 sao 50.000 + thanh lý 10.000 vẫn hoạt động. Đổi chức vụ sau khi đã chốt không sửa snapshot phiếu cũ.

@@ -16,5 +16,12 @@
     "shadowThenApply": true,
     "starBonus": 50000,
     "confirmed": true
+  },
+  {
+    "width": 390,
+    "saleAdminNoKpi": true,
+    "starBonus": 50000,
+    "liquidationBonus": 10000,
+    "profileCannotEnableKpi": true
   }
 ]
