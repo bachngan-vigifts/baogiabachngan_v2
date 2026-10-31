@@ -1,10 +1,16 @@
+import {computeKpiCv} from '../domain/kpi-cv.ts';
+import {kpiBonusRate} from '../domain/payroll.ts';
+import type {CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
+import {awardHistory,proposeAwards} from './contract-bonuses.ts';
+import {sha256Hex} from '../../staff/domain/session.ts';
+import {AppError} from '../../../core/errors.ts';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, notInArray } from 'drizzle-orm';
 import type { AnyDb } from '../../../core/db/client.ts';
 import { employees } from '../../staff/schema.ts';
 import { hrAdjustments, hrAttendance, hrPayrollInputs, hrPayrollMonths, hrPayrollSettings, hrPayslips, hrSalaryProfiles } from '../schema.ts';
 import { mergeParams, type PayrollParams } from '../domain/params.ts';
 import {
-  EMPTY_GROUP_MONTH, EMPTY_INPUT, computePayslip, defaultProfileFor, computeQuarterBonus, monthRange, quarterMonths, summarizeAttendance,
+  EMPTY_GROUP_MONTH, EMPTY_INPUT, computePayslip,salaryKpiEligible, defaultProfileFor, computeQuarterBonus, monthRange, quarterMonths, summarizeAttendance,
   type GroupMonth, type PayrollInput, type PayslipCalc, type SalaryProfile,
 } from '../domain/payroll.ts';
 
@@ -19,7 +25,7 @@ type ProfileRow = typeof hrSalaryProfiles.$inferSelect;
 const toProfile = (p: ProfileRow | undefined, positionId?: string | null): SalaryProfile & { effectiveMonth: string | null; note: string } => p ? {
   payrollGroup: p.payrollGroup, positionLabel: p.positionLabel, baseSalary: p.baseSalary, capacityCoef: p.capacityCoef,
   responsibilityMode: p.responsibilityMode, responsibility: p.responsibility, mealAllowance: p.mealAllowance, phoneAllowance: p.phoneAllowance,
-  attendanceBonus: p.attendanceBonus, kpiEnabled: p.kpiEnabled, teamBonus: p.teamBonus, outputRate: p.outputRate, revenueTarget: p.revenueTarget,
+  attendanceBonus: p.attendanceBonus, kpiEligible:salaryKpiEligible(positionId),kpiEnabled:salaryKpiEligible(positionId)&&p.kpiEnabled,fixedKpi:salaryKpiEligible(positionId)?p.fixedKpi:null,contractBonusEnabled:p.contractBonusEnabled, teamBonus: p.teamBonus, outputRate: p.outputRate, revenueTarget: p.revenueTarget,
   insurance: p.insurance, bankCode: p.bankCode, bankAccount: p.bankAccount, bankHolder: p.bankHolder, effectiveMonth: p.effectiveMonth, note: p.note,
 } : { ...defaultProfileFor(positionId), effectiveMonth: null, note: '' };
 const toInput = (r: typeof hrPayrollInputs.$inferSelect | undefined): PayrollInput & { note: string } => r ? {
@@ -55,7 +61,8 @@ async function profilesFor(db: AnyDb, month: string, memberIds?: readonly string
 async function quarterBonuses(db: AnyDb, month: string, params: PayrollParams, gm: GroupMonth, revenueOf: RevenueOf) {
   const q = quarterMonths(month);
   if (!q.isQuarterEnd || !gm.payQuarterBonus) return { map: new Map<string, number>(), detail: null };
-  const profiles = await profilesFor(db, month), team = [...profiles.values()].filter(p => p.payrollGroup === 'sale' && p.kpiEnabled);
+  const profiles=await profilesFor(db,month),positions=await db.select({id:employees.id,positionId:employees.positionId}).from(employees).where(inArray(employees.id,[...profiles.keys()]));
+  const team=[...profiles.values()].filter(p=>p.payrollGroup==='sale'&&p.kpiEnabled&&salaryKpiEligible(positions.find(m=>m.id===p.memberId)?.positionId));
   if (!team.length) return { map: new Map<string, number>(), detail: null };
   const ids = team.map(p => p.memberId);
   const [inputs, revenues] = await Promise.all([
@@ -74,14 +81,14 @@ export interface PayrollRow {
   member: { id: string; name: string; active: boolean; positionId: string | null };
   profile: ReturnType<typeof toProfile>; input: ReturnType<typeof toInput>;
   attendanceDays: number; systemRevenue: number; adjustments: { id: string; kind: string; amount: number; reason: string; createdAt: string; createdByName: string }[];
-  calc: PayslipCalc; slip: (typeof hrPayslips.$inferSelect) | null;
+  context?:unknown;calc: PayslipCalc; slip: (typeof hrPayslips.$inferSelect) | null;
 }
 
 /**
  * Bảng lương một tháng cho nhiều người (mặc định: mọi nhân viên đang làm / có hồ sơ lương). Một chỗ tính duy nhất cho
  * trang chi tiết nhân viên, bảng lương công ty và lúc chốt lương.
  */
-export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueOf, onlyIds?: readonly string[]) {
+export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueOf, onlyIds?: readonly string[],crmFactsOf?:CrmFactsOf,lock=false) {
   const r = monthRange(month);
   const [{ params, effectiveMonth }, gm, profiles] = await Promise.all([paramsFor(db, month), groupMonthOf(db, month), profilesFor(db, month, onlyIds)]);
   const members = await db.select({ id: employees.id, name: employees.name, active: employees.active, positionId: employees.positionId }).from(employees)
@@ -101,40 +108,53 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     revenueOf(db, [month]),
     quarterBonuses(db, month, params, gm, revenueOf),
   ]);
+  const from=String(params.salesAutomationFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2'),enabled=!!crmFactsOf&&from!=='0'&&month>=from,apply=enabled&&params.salesAutomationApply===1;
+  const history=enabled?await awardHistory(db):{accounts:[],entries:[]};
+  const facts=enabled?await crmFactsOf!(db,month,[...new Set(history.accounts.map(a=>a.contractId))],lock):{members:new Map(),contracts:[]};
+  const awards=enabled?await proposeAwards(db,month,from,facts.contracts,history,m=>paramsFor(db,m)):[];
   const rows: PayrollRow[] = list.map(m => {
     const profile = toProfile(profiles.get(m.id), m.positionId), input = toInput(inputs.find(i => i.memberId === m.id));
     const adj = adjustments.filter(a => a.memberId === m.id).map(({ memberId: _m, ...a }) => ({ ...a, createdByName: a.createdByName ?? '' }));
     const attendanceDays = summarizeAttendance(attendance.filter(a => a.memberId === m.id)).worked, systemRevenue = revenues.get(m.id)?.[month] ?? 0;
-    const calc = computePayslip({ profile, params, input, adjustments: adj, attendanceDays, systemRevenue, groupMonth: gm, quarterBonusAuto: quarter.map.get(m.id) ?? 0 });
+    const auto=facts.members.get(m.id)||{newCustomers:0,transactions:0,contracts:0},resolved={...input};
+    if(enabled&&profile.kpiEnabled)for(const [key,value]of Object.entries({kpiNewCustomers:auto.newCustomers,kpiTransactions:auto.transactions,kpiContracts:auto.contracts}))if((resolved as any)[key]===null)(resolved as any)[key]=value;
+    const ownAwards=awards.filter(a=>a.memberId===m.id&&(profile.contractBonusEnabled||!a.isNew));
+    const calc = computePayslip({profile,params,input:apply?resolved:input,adjustments:adj,attendanceDays,systemRevenue,groupMonth:gm,quarterBonusAuto:quarter.map.get(m.id)??0,
+     contractBonus:apply?ownAwards.filter(a=>a.isNew).reduce((n,a)=>n+a.amount,0):0,contractBonusAdjustment:apply?ownAwards.filter(a=>!a.isNew).reduce((n,a)=>n+a.amount,0):0});
+    if(enabled){const previewKpi=profile.kpiEnabled?computeKpiCv({...resolved,kpiOverride:profile.fixedKpi??resolved.kpiOverride},params,profile.revenueTarget||params.kpiRevenue,input.revenue??systemRevenue):null;calc.salesCrm={apply,from,kpiEligible:profile.kpiEligible!==false,facts:auto,awards:ownAwards,previewKpi,kpiBonusPreview:Math.round((input.revenue??systemRevenue)*kpiBonusRate(params,previewKpi?.used??null))};}
     return { member: m, profile, input, attendanceDays, systemRevenue, adjustments: adj, calc, slip: slips.find(s => s.memberId === m.id) ?? null };
   });
-  return { month, params, paramsMonth: effectiveMonth, groupMonth: gm, rows, quarter: quarter.detail };
+  for(const row of rows){if(![row.calc.gross,row.calc.deductionTotal,row.calc.net].every(Number.isSafeInteger))throw new AppError(400,'Tổng tiền vượt giới hạn tính toán an toàn. Kiểm tra tham số.');row.context={params,paramsMonth:effectiveMonth,profile:row.profile,input:row.input,systemRevenue:row.systemRevenue,attendanceDays:row.attendanceDays};}
+  const confirmationHash=sha256Hex(JSON.stringify({month,params,profiles:rows.map(r=>r.profile),inputs:rows.map(r=>r.input),calc:rows.map(r=>r.calc),adjustments:rows.map(r=>r.adjustments)}));
+  return { month, params, paramsMonth: effectiveMonth, groupMonth: gm, rows, quarter: quarter.detail,confirmationHash };
 }
 
 /** Phiếu lương để hiển thị: đã chốt → bản chụp lúc chốt; chưa chốt → tạm tính. */
 export function payslipView(row: PayrollRow) {
   if (row.slip) {
-    let calc: PayslipCalc = row.calc; try { calc = { ...row.calc, ...JSON.parse(row.slip.data) }; } catch { /* dữ liệu hỏng → hiện bản tạm tính */ }
+    let calc: PayslipCalc;try{calc=JSON.parse(row.slip.data);if(!Array.isArray(calc.income)||!Array.isArray(calc.deductions))throw Error();}catch{calc={group:row.slip.payrollGroup,positionLabel:'',workDays:row.slip.workDays,baseSalary:0,revenue:0,income:[],deductions:[],gross:row.slip.gross,deductionTotal:row.slip.deductionTotal,net:row.slip.net,kpi:null,snapshotUnavailable:true};}
     return { ...calc, gross: row.slip.gross, deductionTotal: row.slip.deductionTotal, net: row.slip.net, status: row.slip.status, confirmedAt: row.slip.confirmedAt, paidAt: row.slip.paidAt, note: row.slip.note };
   }
   return { ...row.calc, status: 'estimate' as const, confirmedAt: null, paidAt: null, note: '' };
 }
 
 /** Dữ liệu lương / ngày công một người một tháng (trang chi tiết nhân viên). */
-export async function payrollOf(db: AnyDb, memberId: string, month: string, revenueOf: RevenueOf) {
+export async function payrollOf(db: AnyDb, memberId: string, month: string, revenueOf: RevenueOf,crmFactsOf?:CrmFactsOf,showAllContracts=false) {
   const r = monthRange(month);
   const [board, history, attendance] = await Promise.all([
-    buildPayroll(db, month, revenueOf, [memberId]),
+    buildPayroll(db, month, revenueOf, [memberId],crmFactsOf),
     db.select().from(hrSalaryProfiles).where(eq(hrSalaryProfiles.memberId, memberId)).orderBy(desc(hrSalaryProfiles.effectiveMonth)).limit(36),
     db.select({ date: hrAttendance.workDate, status: hrAttendance.status, note: hrAttendance.note }).from(hrAttendance)
       .where(and(eq(hrAttendance.memberId, memberId), gte(hrAttendance.workDate, r.from), lte(hrAttendance.workDate, r.to))).orderBy(asc(hrAttendance.workDate)),
   ]);
   const row = board.rows[0];
   const profile = row?.profile ?? toProfile(undefined), input = row?.input ?? toInput(undefined);
+  const view=row?payslipView(row):null;
+  if(view?.salesCrm&&!showAllContracts)view.salesCrm={...view.salesCrm,awards:view.salesCrm.awards.map(a=>a.fact.ownerId===memberId?a:({...a,contractId:'',accountId:'',fact:undefined,policy:undefined,reason:'Điều chỉnh thưởng HĐKT theo đối soát Manager'} as any))};
   return {
     profile, input, history: history.map(h => ({ ...toProfile(h), updatedAt: h.updatedAt })),
     attendance, attendanceSummary: { ...summarizeAttendance(attendance), standardDays: board.params.standardDays, daysInMonth: r.days },
     adjustments: row?.adjustments ?? [], systemRevenue: row?.systemRevenue ?? 0, groupMonth: board.groupMonth,
-    params: board.params, payslip: row ? payslipView(row) : null, locked: !!row?.slip,
+    params: board.params,confirmationHash:board.confirmationHash,systemFacts:row?.calc.salesCrm?.facts||null, payslip: view, locked: !!row?.slip,
   };
 }

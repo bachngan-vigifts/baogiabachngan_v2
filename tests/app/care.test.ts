@@ -4,7 +4,7 @@ import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
 import { createAppRouter } from '../../src/app/router.ts';
-import { customers } from '../../src/modules/customers/schema.ts';
+import { customers,customerStaff } from '../../src/modules/customers/schema.ts';
 import { cleanCare, followUpState, remindFrom } from '../../src/modules/care/domain/care.ts';
 import { vnToday } from '../../src/modules/care/api/routes.ts';
 import { reconcileAutoTasks } from '../../src/modules/tasks/api/auto-tasks.ts';
@@ -21,6 +21,7 @@ async function setup() {
     { id: 'K1', name: 'Công ty Hoàng Long', contact: 'Anh Long', phone: '0901', email: '', address: '', search: '', taxCode: '', customerCode: '', sourceVersion: 0, syncedAt: '' },
     { id: 'K2', name: 'Nhà hàng Sen Vàng', contact: '', phone: '', email: '', address: '', search: '', taxCode: '', customerCode: '', sourceVersion: 0, syncedAt: '' },
   ]);
+  await db.insert(customerStaff).values([{customerId:'K1',memberId:'emp',role:'owner',createdBy:'mgr',createdAt:'2026-01-01T00:00:00Z'},{customerId:'K2',memberId:'emp',role:'owner',createdBy:'mgr',createdAt:'2026-01-01T00:00:00Z'}]);
   const router = createAppRouter();
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000, sapoOrderPush: 'off' as const });

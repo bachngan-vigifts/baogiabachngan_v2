@@ -1,3 +1,9 @@
+import {activityFacts} from './kpi-facts.ts';
+import {activityDay} from '../domain/activity-kpi.ts';
+import type {ActivityQuoteAccess} from '../../../core/contracts/activity-quotes.ts';
+import {sha256Hex} from '../../staff/domain/session.ts';
+import {payrollLock} from '../../../core/db/payroll-lock.ts';
+import {customerAccess} from '../../customers/api/routes.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
 import { and, asc, count, desc, eq, or, gte, isNotNull, isNull, lt, lte, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
@@ -41,7 +47,7 @@ const columns = {
 };
 type Row = { a: typeof customerActivities.$inferSelect; customerName: string; customerPhone: string; ownerName: string };
 const present = (r: Row, me: Viewer, today: string) => ({
-  ...r.a, customerName: r.customerName, customerPhone: r.customerPhone, ownerName: r.ownerName,
+  ...r.a,clientKey:undefined,payloadHash:undefined,intentOwnerId:undefined, customerName: r.customerName, customerPhone: r.customerPhone, ownerName: r.ownerName,
   typeLabel: CARE_TYPE_LABEL[r.a.type], resultLabel: CARE_RESULT_LABEL[r.a.result], remindLabel: CARE_REMIND_LABEL[r.a.remindBefore],
   followUp: followUpState(r.a.nextAt, r.a.nextDoneAt, today), canEdit: isManager(me) || r.a.ownerId === me.id,
 });
@@ -67,11 +73,30 @@ async function ownerFor(c: Ctx, raw: unknown, fallback: string) {
 async function ensureCustomer(c: Ctx, id: string) {
   const [k] = await c.env.db.select({ id: customers.id }).from(customers).where(eq(customers.id, id)).limit(1);
   if (!k) throw new AppError(400, 'Không tìm thấy khách hàng.');
+  const access=await customerAccess(c.env.db,id,viewer(c));if(!access.canSeeAll&&!access.peer)throw new AppError(404,'Không tìm thấy khách hàng trong phạm vi của bạn.');
 }
 
-export function registerCareRoutes(router: Router<StaffEnv>) {
+export function registerCareRoutes(router: Router<StaffEnv>,deps:{quotes?:ActivityQuoteAccess;assertKpiOpen?:(db:StaffEnv['db'],owner:string,month:string)=>Promise<void>}={}) {
+  async function marks(c:Ctx,rows:Row[]){
+   const months=[...new Set(rows.map(r=>activityDay(r.a.occurredAt).slice(0,7)))],map=new Map();
+   for(const m of months){const end=new Date(m+'-01T00:00:00Z');end.setUTCMonth(end.getUTCMonth()+1);const f=await activityFacts(c.env.db,m+'-01',end.toISOString().slice(0,10));for(const [id,value]of f.marks)map.set(id,value);}return map;
+  }
+  async function metadata(c:Ctx,b:Record<string,unknown>,customerId:string){
+   const completion=b.completion??null,purpose=b.purpose??null;
+   if(completion!==null&&!['completed','not_completed'].includes(String(completion)))throw new AppError(400,'Chọn kết quả thực hiện.');
+   if(purpose!==null&&!['sales','after_sales'].includes(String(purpose)))throw new AppError(400,'Mục đích giao dịch không hợp lệ.');
+   let quoteId:string|null=null,quoteRevision:number|null=null;
+   if(b.type==='quote'&&completion==='completed'){
+    if(!deps.quotes)throw new AppError(503,'Chưa có nguồn báo giá. Liên hệ Manager.');
+    ({quoteId,quoteRevision}=await deps.quotes.read(c.env.db,viewer(c),{id:String(b.quoteId||''),revision:Number(b.quoteRevision)||0,customerId}));
+   }
+   return{completion:completion as string|null,purpose:purpose as string|null,quoteId,quoteRevision};
+  }
+  async function openSource(db:StaffEnv['db'],owner:string,occurredAt:string){await deps.assertKpiOpen?.(db,owner,activityDay(occurredAt).slice(0,7));}
+
   router.get('/care/config', () => json({
     types: CARE_TYPES.map(k => ({ key: k, label: CARE_TYPE_LABEL[k] })), results: CARE_RESULTS.map(k => ({ key: k, label: CARE_RESULT_LABEL[k] })),
+    completions:[{key:'completed',label:'Đã thực hiện / đã kết nối'},{key:'not_completed',label:'Chưa thực hiện / không kết nối'}],
     reminds: (['1m', '1w', '1d'] as const).map(k => ({ key: k, label: CARE_REMIND_LABEL[k] })),
   }), 'business');
 
@@ -79,10 +104,13 @@ export function registerCareRoutes(router: Router<StaffEnv>) {
     const me = viewer(c), p = c.url.searchParams, today = vnToday(), { limit, offset } = paging(c.url, 100, 300);
     const followUps = p.get('view') === 'follow-ups';
     const type = p.get('type'), result = p.get('result'), from = p.get('from') ?? '', to = p.get('to') ?? '', owner = p.get('owner');
+    if(p.get('kpi')&&!['counted','excluded'].includes(p.get('kpi')!))throw new AppError(400,'Bộ lọc KPI không hợp lệ.');
+    const validDate=(d:string)=>!d||DATE.test(d)&&Number.isFinite(Date.parse(d+'T00:00:00Z'))&&new Date(d+'T00:00:00Z').toISOString().slice(0,10)===d;
+    if(!validDate(from)||!validDate(to)||from&&to&&from>to)throw new AppError(400,'Khoảng ngày không hợp lệ.');
     const scope = careScope(me);
     const filters = and(
       scope,
-      isManager(me) && owner ? eq(customerActivities.ownerId, owner) : undefined,
+      owner==='mine'?eq(customerActivities.ownerId,me.id):isManager(me)&&owner?eq(customerActivities.ownerId,owner):undefined,
       p.get('customerId') ? eq(customerActivities.customerId, p.get('customerId')!) : undefined,
       type && (CARE_TYPES as readonly string[]).includes(type) ? eq(customerActivities.type, type as typeof CARE_TYPES[number]) : undefined,
       result && (CARE_RESULTS as readonly string[]).includes(result) ? eq(customerActivities.result, result as typeof CARE_RESULTS[number]) : undefined,
@@ -102,17 +130,36 @@ export function registerCareRoutes(router: Router<StaffEnv>) {
       c.env.db.select({ overdue: count() }).from(customerActivities).where(and(pending, lt(customerActivities.nextAt, today))),
       c.env.db.select({ dueToday: count() }).from(customerActivities).where(and(pending, eq(customerActivities.nextAt, today))),
     ]);
-    return json({ activities: rows.map(r => present(r, me, today)), total, today, counts: { overdue, today: dueToday } });
+    const full=await baseQuery(c).where(filters),kpi=await marks(c,full);
+    const chosen=p.get('kpi')?full.filter(r=>p.get('kpi')==='counted'?kpi.get(r.a.id)?.counted:!kpi.get(r.a.id)?.counted):full;
+    const shown=p.get('kpi')?chosen.slice(offset,offset+limit):rows;
+    const kpiSummary={total:chosen.length,counted:chosen.filter(r=>kpi.get(r.a.id)?.counted).length};
+    return json({ activities: shown.map(r => ({...present(r, me, today),kpi:kpi.get(r.a.id)})), total:p.get('kpi')?chosen.length:total, today,kpiSummary, counts: { overdue, today: dueToday } });
   }, 'business');
 
-  router.get('/care/:id', async c => json({ activity: present(await loadOne(c, c.params.id!), viewer(c), vnToday()) }), 'business');
+  router.get('/care/quotes',async c=>{
+   const customerId=c.url.searchParams.get('customerId')||'';await ensureCustomer(c,customerId);
+   if(!deps.quotes)throw new AppError(503,'Chưa có nguồn báo giá. Liên hệ Manager.');
+   return json({quotes:await deps.quotes.list(c.env.db,viewer(c),customerId)});
+  },'business');
+  router.get('/care/:id', async c => {const row=await loadOne(c,c.params.id!),kpi=await marks(c,[row]);return json({activity:{...present(row,viewer(c),vnToday()),kpi:kpi.get(row.a.id)}});}, 'business');
 
   router.post('/care', async c => {
-    const me = viewer(c), today = vnToday(), body = await readJson(c.req, 20_000), v = cleanCare(body, today);
+    const me=viewer(c),today=vnToday(),body=await readJson(c.req,20000);
+    const key=typeof body.clientKey==='string'?body.clientKey:null;if(key&&!/^[a-zA-Z0-9_-]{8,100}$/.test(key))throw new AppError(400,'Mã gửi không hợp lệ.');
+    const fields=['customerId','ownerId','occurredAt','contactName','subject','content','type','result','expectedRevenue','nextAt','nextAction','remindBefore','completion','purpose','quoteId','quoteRevision'];
+    const hash=sha256Hex(JSON.stringify(Object.fromEntries(fields.filter(k=>body[k]!==undefined).map(k=>[k,body[k]]))));
+    if(key){const [prior]=await c.env.db.select().from(customerActivities).where(and(eq(customerActivities.intentOwnerId,me.id),eq(customerActivities.clientKey,key))).limit(1);if(prior){if(prior.payloadHash!==hash)throw new AppError(409,'Cùng mã gửi khác nội dung.','COMMAND_CONFLICT');let row:Row;try{row=await loadOne(c,prior.id);}catch(e){if(e instanceof AppError&&e.status===404)return json({replayed:true,activity:null,recorded:true});throw e;}const kpi=await marks(c,[row]);return json({replayed:true,activity:{...present(row,me,today),kpi:kpi.get(prior.id)}});}}
+    const v=cleanCare(body,today);
     await ensureCustomer(c, v.customerId);
-    const id = crypto.randomUUID(), now = new Date().toISOString(), ownerId = await ownerFor(c, body.ownerId, me.id);
-    await c.env.db.insert(customerActivities).values({ id, ...v, ownerId, nextDoneAt: null, createdAt: now, updatedAt: now });
-    return json({ activity: present(await loadOne(c, id), me, today) }, 201);
+    const now=new Date().toISOString(),ownerId=await ownerFor(c,body.ownerId,me.id),meta=await metadata(c,body,v.customerId);
+    const saved=await c.env.db.transaction(async tx=>{
+     await payrollLock(tx as any);
+     if(key){const [old]=await tx.select().from(customerActivities).where(and(eq(customerActivities.intentOwnerId,me.id),eq(customerActivities.clientKey,key)));if(old){if(old.payloadHash!==hash)throw new AppError(409,'Cùng mã gửi khác nội dung.','COMMAND_CONFLICT');return{id:old.id,replayed:true};}}
+     await openSource(tx as any,ownerId,v.occurredAt);
+     const id=crypto.randomUUID();await tx.insert(customerActivities).values({id,...v,...meta,ownerId,intentOwnerId:me.id,clientKey:key,payloadHash:hash,nextDoneAt:null,createdAt:now,updatedAt:now});return{id,replayed:false};
+    });
+    let row:Row;try{row=await loadOne(c,saved.id);}catch(e){if(saved.replayed&&e instanceof AppError&&e.status===404)return json({replayed:true,activity:null,recorded:true});throw e;}const kpi=await marks(c,[row]);return json({activity:{...present(row,me,today),kpi:kpi.get(saved.id)},replayed:saved.replayed},saved.replayed?200:201);
   }, 'business');
 
   router.put('/care/:id', async c => {
@@ -124,8 +171,11 @@ export function registerCareRoutes(router: Router<StaffEnv>) {
     if (v.customerId !== old.customerId) await ensureCustomer(c, v.customerId);
     const now = new Date().toISOString();
     const nextDoneAt = v.nextAt && v.nextAt === old.nextAt ? old.nextDoneAt : null, ownerId = await ownerFor(c, body.ownerId, old.ownerId);
-    await c.env.db.update(customerActivities).set({ ...v, ownerId, nextDoneAt, revision: old.revision + 1, updatedAt: now })
-      .where(and(eq(customerActivities.id, old.id), eq(customerActivities.revision, old.revision)));
+    const meta=await metadata(c,body,v.customerId);
+    await c.env.db.transaction(async tx=>{await payrollLock(tx as any);await openSource(tx as any,old.ownerId,old.occurredAt);await openSource(tx as any,ownerId,v.occurredAt);
+     const changed=await tx.update(customerActivities).set({...v,...meta,ownerId,nextDoneAt,kpiExtraApproved:false,kpiReviewedBy:null,kpiReviewedAt:null,kpiReviewReason:'',revision:old.revision+1,updatedAt:now}).where(and(eq(customerActivities.id,old.id),eq(customerActivities.revision,old.revision))).returning({id:customerActivities.id});
+     if(!changed.length)throw new AppError(409,'Giao dịch vừa được sửa. Tải lại.');
+    });
     return json({ activity: present(await loadOne(c, old.id), me, today) });
   }, 'business');
 
@@ -146,9 +196,16 @@ export function registerCareRoutes(router: Router<StaffEnv>) {
     return json({ activity: present(await loadOne(c, old.id), me, vnToday()) });
   }, 'business');
 
+  router.post('/care/:id/kpi-review',async c=>{
+   if(!isManager(viewer(c)))throw new AppError(403,'Chỉ Manager xét giao dịch bổ sung.');
+   const b=await readJson(c.req,2000),{a}=await loadOne(c,c.params.id!,true),reason=String(b.reason||'').trim();
+   if(typeof b.approved!=='boolean'||reason.length<5||reason.length>500||b.revision!==a.revision)throw new AppError(400,'Nhập lý do từ 5–500 ký tự và phiên bản hiện tại.');
+   await c.env.db.transaction(async tx=>{await payrollLock(tx as any);await openSource(tx as any,a.ownerId,a.occurredAt);const changed=await tx.update(customerActivities).set({kpiExtraApproved:b.approved as boolean,kpiReviewedBy:viewer(c).id,kpiReviewedAt:new Date().toISOString(),kpiReviewReason:reason,revision:a.revision+1}).where(and(eq(customerActivities.id,a.id),eq(customerActivities.revision,a.revision))).returning({id:customerActivities.id});if(!changed.length)throw new AppError(409,'Giao dịch đã thay đổi.');});
+   return json({ok:true});
+  },'business');
   router.delete('/care/:id', async c => {
     const { a } = await loadOne(c, c.params.id!, true);
-    await c.env.db.delete(customerActivities).where(eq(customerActivities.id, a.id));
+    await c.env.db.transaction(async tx=>{await payrollLock(tx as any);await openSource(tx as any,a.ownerId,a.occurredAt);await tx.delete(customerActivities).where(and(eq(customerActivities.id,a.id),eq(customerActivities.revision,a.revision)));});
     return json({ ok: true });
   }, 'business');
 }

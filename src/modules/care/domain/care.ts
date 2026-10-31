@@ -46,7 +46,7 @@ const validDate = (s: string) => ISO_DATE.test(s) && !Number.isNaN(Date.parse(s 
 
 /**
  * Kiểm tra & chuẩn hoá dữ liệu nhập (form như CRM đang dùng). `today` = ngày hiện tại (YYYY-MM-DD, giờ Việt Nam).
- * Bắt buộc: khách hàng, người liên hệ, nội dung, loại giao dịch, kết quả, ngày chăm sóc lần sau, nhắc trước.
+ * Bắt buộc: khách hàng, người liên hệ, nội dung, loại giao dịch, kết quả, nhắc trước. Form có completion cho phép bỏ hẹn tiếp; client cũ giữ yêu cầu cũ.
  * - Thời gian tạo: ngày (YYYY-MM-DD) hoặc ISO đầy đủ; không ở tương lai, không quá 2 năm trước. Mặc định hôm nay.
  * - Chăm sóc lần sau: từ hôm nay trở đi. Doanh số dự kiến: số ≥ 0 (đồng), tuỳ chọn.
  */
@@ -66,13 +66,14 @@ export function cleanCare(raw: Record<string, unknown>, today: string, now = new
   if (Number.isNaN(occurred.getTime())) throw bad('Thời gian tạo không hợp lệ.');
   if (occurred.getTime() > now.getTime() + 86_400_000) throw bad('Thời gian tạo không được ở tương lai.');
   if (occurred.getTime() < now.getTime() - 2 * 365 * 86_400_000) throw bad('Thời gian tạo quá xa (tối đa 2 năm trước).');
+  if(raw.completion!==undefined&&new Date(occurred.getTime()+7*3600_000).toISOString().slice(0,10)>today)throw bad('Giao dịch thực tế không được ở ngày tương lai.');
   const nextRaw = str(raw.nextAt, 'Chăm sóc lần sau', 10), nextAction = str(raw.nextAction, 'Việc hẹn', CARE_LIMITS.nextAction);
-  if (!nextRaw) throw bad('Chọn ngày chăm sóc lần sau.');
-  if (!validDate(nextRaw)) throw bad('Ngày chăm sóc lần sau không hợp lệ.');
-  if (nextRaw < today) throw bad('Ngày chăm sóc lần sau phải từ hôm nay trở đi.');
+  if (!nextRaw&&raw.completion===undefined) throw bad('Chọn ngày chăm sóc lần sau.');
+  if (nextRaw&&!validDate(nextRaw)) throw bad('Ngày chăm sóc lần sau không hợp lệ.');
+  if (nextRaw&&nextRaw < today) throw bad('Ngày chăm sóc lần sau phải từ hôm nay trở đi.');
   const rev = raw.expectedRevenue === undefined || raw.expectedRevenue === null || raw.expectedRevenue === '' ? 0 : Number(raw.expectedRevenue);
   if (!Number.isFinite(rev) || rev < 0 || rev > MAX_EXPECTED_REVENUE) throw bad('Doanh số dự kiến không hợp lệ.');
-  return { customerId, type, result, occurredAt: occurred.toISOString(), contactName, subject, content, nextAt: nextRaw, nextAction, remindBefore, expectedRevenue: Math.round(rev) };
+  return { customerId, type, result, occurredAt: occurred.toISOString(), contactName, subject, content, nextAt: nextRaw||null, nextAction, remindBefore, expectedRevenue: Math.round(rev) };
 }
 
 /** Ngày bắt đầu nhắc (YYYY-MM-DD) = ngày chăm sóc lần sau − số ngày "nhắc trước". */

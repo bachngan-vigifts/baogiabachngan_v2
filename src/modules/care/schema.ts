@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, text, bigint, doublePrecision, index, check } from 'drizzle-orm/pg-core';
+import { pgTable, text, bigint, doublePrecision, index, check, boolean, uniqueIndex } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { customers } from '../customers/schema.ts';
@@ -30,10 +30,26 @@ export const customerActivities = pgTable('customer_activities', {
   nextDoneAt: text('next_done_at'),
   /** Nhắc tôi trước ngày chăm sóc lần sau: 1d / 1w / 1m → việc nhắc hiện từ ngày đó. */
   remindBefore: text('remind_before', { enum: CARE_REMIND }).notNull().default('1d'),
+  completion: text('completion'),
+  purpose: text('purpose'),
+  quoteId: text('quote_id'),
+  quoteRevision: bigint('quote_revision', {mode:'number'}),
+  clientKey: text('client_key'),
+  intentOwnerId:text('intent_owner_id').references(()=>employees.id),
+  payloadHash: text('payload_hash'),
+  kpiExtraApproved: boolean('kpi_extra_approved').notNull().default(false),
+  kpiReviewReason: text('kpi_review_reason').notNull().default(''),
+  kpiReviewedBy: text('kpi_reviewed_by').references(()=>employees.id),
+  kpiReviewedAt: text('kpi_reviewed_at'),
   revision: bigint('revision', { mode: 'number' }).notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, t => [
+  uniqueIndex('uq_care_intent').on(t.intentOwnerId,t.clientKey),
+  check('chk_care_completion',sql`${t.completion} is null or ${t.completion} in ('completed','not_completed')`),
+  check('chk_care_purpose',sql`${t.purpose} is null or ${t.purpose} in ('sales','after_sales')`),
+  check('chk_care_extra',sql`not ${t.kpiExtraApproved} or (${t.kpiReviewedBy} is not null and length(trim(${t.kpiReviewReason}))>=5)`),
+  index('idx_care_kpi_month').on(t.occurredAt),
   index('idx_customer_activities_owner').on(t.ownerId, t.occurredAt),
   index('idx_customer_activities_customer').on(t.customerId, t.occurredAt),
   index('idx_customer_activities_follow_up').on(t.ownerId, t.nextAt).where(sql`${t.nextAt} IS NOT NULL AND ${t.nextDoneAt} IS NULL`),

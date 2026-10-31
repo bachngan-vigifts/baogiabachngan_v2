@@ -7,6 +7,19 @@ export type ParamKind = 'money' | 'number' | 'percent' | 'ratio';
 export interface ParamField { key: string; group: string; label: string; value: number; kind: ParamKind; note?: string }
 
 export const PARAM_FIELDS = [
+  {key:'salesAutomationFrom',group:'KPI & thưởng CRM',label:'Tháng bắt đầu đối chiếu CRM (YYYYMM; 0 = tắt)',value:0,kind:'number',note:'KH mới: đơn CRM đã duyệt đầu tiên trong toàn bộ lịch sử; giao dịch: liên hệ hợp lệ; HĐ: tháng ký. Dữ liệu cũ chưa xác nhận không tự tính giao dịch.'},
+  {key:'salesAutomationApply',group:'KPI & thưởng CRM',label:'Áp dụng vào thực nhận (0 = đối chiếu; 1 = áp dụng)',value:0,kind:'number'},
+  {key:'contractStar1From',group:'Thưởng HĐKT',label:'Cận dưới 1 sao (trước VAT)',value:2000000,kind:'money'},
+  {key:'contractStar1Amount',group:'Thưởng HĐKT',label:'Thưởng 1 sao',value:20000,kind:'money'},
+  {key:'contractStar2From',group:'Thưởng HĐKT',label:'Cận dưới 2 sao (trước VAT)',value:20000000,kind:'money'},
+  {key:'contractStar2Amount',group:'Thưởng HĐKT',label:'Thưởng 2 sao',value:50000,kind:'money'},
+  {key:'contractStar3From',group:'Thưởng HĐKT',label:'Cận dưới 3 sao (trước VAT)',value:100000000,kind:'money'},
+  {key:'contractStar3Amount',group:'Thưởng HĐKT',label:'Thưởng 3 sao',value:100000,kind:'money'},
+  {key:'contractStar4From',group:'Thưởng HĐKT',label:'Cận dưới 4 sao (trước VAT)',value:500000000,kind:'money'},
+  {key:'contractStar4Amount',group:'Thưởng HĐKT',label:'Thưởng 4 sao',value:200000,kind:'money'},
+  {key:'contractStar5From',group:'Thưởng HĐKT',label:'Cận dưới 5 sao (trước VAT)',value:1000000000,kind:'money'},
+  {key:'contractStar5Amount',group:'Thưởng HĐKT',label:'Thưởng 5 sao',value:500000,kind:'money'},
+  {key:'contractLiquidationAmount',group:'Thưởng HĐKT',label:'Thưởng Manager duyệt thanh lý / HĐKT',value:10000,kind:'money'},
   // Lương cơ bản & công
   { key: 'standardDays', group: 'Lương cơ bản & công', label: 'Công chuẩn / tháng (ngày)', value: 26, kind: 'number', note: 'Lương theo công = LCB × ngày làm ÷ công chuẩn' },
   { key: 'minWageDay', group: 'Lương cơ bản & công', label: 'LCB vùng II / ngày', value: 183_000, kind: 'money', note: 'LCB vùng / tháng = mức này × công chuẩn (mức mua BHXH)' },
@@ -85,9 +98,15 @@ export function validateParams(input: unknown): string | null {
     if (src[f.key] === undefined) continue;
     const n = Number(src[f.key]);
     if (!Number.isFinite(n) || n < 0 || n > 1e13) return `${f.label}: giá trị không hợp lệ.`;
+    if(f.kind==='money'&&!Number.isSafeInteger(n))return `${f.label}: nhập số tiền nguyên đồng.`;
     if (POSITIVE.includes(f.key) && n <= 0) return `${f.label} phải lớn hơn 0.`;
     if (f.kind === 'percent' && n > 1) return `${f.label}: nhập dạng tỷ lệ (0,012 = 1,2%).`;
   }
+  const values=mergeParams(src);
+  if(values.salesAutomationApply===1&&values.kpiNewCustomersOver>0.1)return 'Trần điểm KH mới phải tối đa 10% trước khi áp dụng CRM.';
+  if(![0,1].includes(values.salesAutomationApply))return 'Áp dụng CRM phải là 0 hoặc 1.';
+  if(values.salesAutomationFrom!==0&&!/^\d{4}(0[1-9]|1[0-2])$/.test(String(values.salesAutomationFrom)))return 'Tháng bắt đầu CRM nhập YYYYMM hoặc 0.';
+  for(let i=2;i<=5;i++)if(values[('contractStar'+i+'From') as ParamKey]<=values[('contractStar'+(i-1)+'From') as ParamKey])return 'Cận sao phải tăng dần.';
   return null;
 }
 
