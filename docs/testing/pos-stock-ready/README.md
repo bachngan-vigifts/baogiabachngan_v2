@@ -28,8 +28,17 @@ Chạy trình duyệt local:
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node --import tsx scripts/testing/pos-stock-ready.mjs
 ```
 
-## Chưa xác minh production
+## Đối chiếu production ngày 01/11/2026
 
-Chưa đọc được tồn thật của LHC3329BEG/LHC3329DGRN, ánh xạ kho của quầy và số giữ liên quan. Automatic approval review từ chối truy vấn vì ràng buộc không truy vấn production trước đó; đang chờ chủ doanh nghiệp cho phép đọc phạm vi này. Vì vậy chưa kết luận nguyên nhân hai mã trong ảnh (sai kho, tồn đầu kỳ, giữ hàng hay dữ liệu khác). Bản sửa này khắc phục đường tải/hiển thị và một trường hợp cắt số giữ tìm thấy trong code; không tự sửa số tồn thật.
+Chủ doanh nghiệp đã cho phép đọc tồn hai mã, kho quầy và số đang giữ. Kết quả tại thời điểm kiểm tra:
+
+| SKU | Tồn ledger kho bán | Số đồng bộ | Giữ hiệu lực/đơn chưa giao |
+| --- | ---: | ---: | ---: |
+| LHC3329BEG | 20 | 20 | 0 |
+| LHC3329DGRN | 10 | 11 | 0 |
+
+Cả quầy Lock và Minh Long trỏ MINH LONG - LOCKNLOCK CẦN THƠ, kho đã chốt đầu kỳ, hai sản phẩm active/approved. Mã DGRN có đầu kỳ 11 và một lần xuất POS −1 nên tồn ledger 10; không được lấy số đồng bộ 11 thay thế. Không có giữ báo giá, giữ đơn, giữ POS có hiệu lực hoặc dòng đơn draft/confirmed/delivering của hai mã. Vì vậy tại lúc kiểm tra không có căn cứ tồn/giữ khiến POS hết hàng tại quầy Lock/Minh Long.
+
+Đã xác minh trong code đường hiển thị số chưa tải có thể hiện “Hết hàng”; chưa tái hiện phiên trình duyệt production tại lúc chụp ảnh nên không khẳng định đây là nguyên nhân duy nhất. Không sửa dữ liệu kho hoặc bỏ giữ hàng để làm số dương.
 
 Không migration, không sửa dữ liệu production, không thay phiên/cron/đồng bộ Sapo.
