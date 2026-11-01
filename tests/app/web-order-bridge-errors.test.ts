@@ -23,6 +23,16 @@ test('Bridge: HTTP 200 rỗng/sai JSON/không có mã hợp lệ không được
   await assert.rejects(()=>readWebBridgeResult(new Response(body),'confirm',{orderId:'21496',source:'lock'},[]),(e:any)=>e.code==='ghn_response_missing_order_code');
  await assert.rejects(()=>readWebBridgeResult(Response.json({success:false,message:'Không hỗ trợ dịch vụ' }),'confirm',{orderId:'21496',source:'lock'},[]),(e:any)=>e.code==='ghn_reconcile_failed'&&e.message==='Không hỗ trợ dịch vụ');
 });
+test('Bridge: website lỗi 5xx/HTML không kèm lý do → báo kèm mã HTTP, không lộ nội dung phản hồi',async t=>{
+ const log=t.mock.method(console,'warn',()=>{});
+ await assert.rejects(()=>readWebBridgeResult(new Response('<html><body>Bad Gateway fake-secret-body</body></html>',{status:502,statusText:'Bad Gateway'}),'confirm',{orderId:'21547',source:'lock'},['fake-secret-body']),
+  (e:any)=>e.code==='ghn_reconcile_failed'&&e.status===502&&e.message.includes('Chưa đối soát được kết quả GHN')&&e.message.includes('HTTP 502')&&e.message.includes('không phải JSON')&&!e.message.includes('fake-secret-body'));
+ await assert.rejects(()=>readWebBridgeResult(Response.json({ok:false},{status:500}),'confirm',{orderId:'21547',source:'lock'},[]),
+  (e:any)=>e.message.includes('HTTP 500')&&e.message.includes('JSON không kèm lý do'));
+ // A real reason from the website is still shown as-is, without the HTTP hint.
+ await assert.rejects(()=>readWebBridgeResult(Response.json({code:'ghn_rejected',message:'GHN: sai quận'},{status:409}),'confirm',{orderId:'21547',source:'lock'},[]),(e:any)=>e.message==='GHN: sai quận');
+ assert.doesNotMatch(JSON.stringify(log.mock.calls.map(c=>c.arguments)),/fake-secret-body|Bad Gateway/);
+});
 async function fixture(){
  const f=await setup();let calls=0;const wire:any[]=[];
  await f.db.update(posRegisters).set({name:'CỬA HÀNG LOCKNLOCK CẦN THƠ'}).where(eq(posRegisters.id,f.registerId));
