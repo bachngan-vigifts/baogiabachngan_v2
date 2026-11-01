@@ -549,7 +549,7 @@ $('#logout').addEventListener('click', async () => {
   try { await api('/logout', 'POST', {}); } catch (e) { if (e.code === 'STALE_SESSION') return; /* vẫn thoát phiên hiện tại khi mất mạng */ }
   // /logout có thể đã xoá token của chính phiên này; không xoá phiên mới đăng nhập.
   if (user !== state.user || (token && token !== session)) return;
-  state.quotes = state.customers = state.members = state.products = null;
+  state.quotes = state.customers = state.members = state.products = null;state.memberLoadError='';
   showAuth(); $('#auth-note').textContent = 'Đã đăng xuất.';
 });
 function showOwnAvatar(key) { for (const el of [$('#user-avatar'), $('#account-button-m')]) { if (key) el.dataset.av = key; else delete el.dataset.av; } }
@@ -712,8 +712,9 @@ $('#dup-merge-all').addEventListener('click', async () => {
   } catch (e) { $('#dup-error').textContent = e.message; btn.disabled = false; await loadCustomerDuplicates(); renderCustomerDuplicates(); }
 });
 async function loadMembers() {
+  state.memberLoadError='';
   try { const d = await api('/admin/members'); state.members = d.members; state.positions = d.positions; state.memberDepartments = d.departments || []; clearGlobalError('staff'); }
-  catch (e) { state.members = state.members || []; if (e.status !== 401) showGlobalError(e.message, 'staff'); }
+  catch (e) { state.memberLoadError=e.message||'Không tải được danh sách nhân viên.'; if (e.status !== 401) showGlobalError(e.message, 'staff'); }
   renderMembers();
 }
 // Tình trạng đồng bộ Sapo → app (sản phẩm, khách hàng, nhân viên): Sapo đẩy sang, hoặc app tự lấy bằng phiên Sapo của Manager.
@@ -3078,7 +3079,9 @@ const memberStatus = m => !m.active ? 'locked' : !m.activated ? 'pending' : 'act
 const STATUS_PILL = { active: '<span class="pill ok">Đang hoạt động</span>', pending: '<span class="pill warn">Chờ kích hoạt</span>', locked: '<span class="pill off">Đã khoá</span>' };
 function renderMembers() {
   const tbody = $('#member-list');
-  if (!state.members) { tbody.innerHTML = skeleton(5); return; }
+  $('#member-load-error').hidden=!state.memberLoadError;
+  $('#member-load-error-message').textContent=state.memberLoadError ? 'Không tải được danh sách nhân viên. '+state.memberLoadError : '';
+  if (!state.members) { tbody.innerHTML = state.memberLoadError ? '' : skeleton(7); $('#member-empty').hidden=true;$('#member-table').hidden=!!state.memberLoadError; return; }
   const pos = new Map(state.positions.map(p => [p.id, p.name])), q = normalize(state.memberQuery);
   const list = state.members.filter(m => (!state.memberStatus || memberStatus(m) === state.memberStatus) && (!q || normalize(`${m.name} ${m.email} ${m.phone} ${m.workCompany||''} ${(state.memberDepartments||[]).find(d=>d.id===m.workDepartmentId)?.name||''}`).includes(q)));
   tbody.innerHTML = list.map(m => {
@@ -3101,9 +3104,10 @@ function renderMembers() {
       </div></td>
     </tr>`;
   }).join('');
-  $('#member-empty').hidden = list.length > 0;
+  $('#member-empty').hidden = list.length > 0 || !!state.memberLoadError;
   $('#member-table').hidden = list.length === 0;
 }
+$('#member-retry').addEventListener('click',()=>loadMembers());
 $('#member-search').addEventListener('input', e => { state.memberQuery = e.target.value; renderMembers(); });
 $('#member-filter').addEventListener('click', e => {
   const chip = e.target.closest('.chip'); if (!chip) return;
