@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import {actionKind} from '../../trial-ui/mobile-action-policy.js';
 // @ts-ignore browser module; only the grouping threshold is read here
 import {GROUP_MIN} from '../../trial-ui/mobile-actions.js';
-function control(text:string,{dialog=false,field=false,primary=false,desktop=false}={}){
+function control(text:string,{dialog=false,field=false,primary=false,desktop=false,navigation=false}={}){
  return {textContent:text,title:'',getAttribute:()=>null,classList:{contains:(key:string)=>desktop&&key==='mobile-desktop-only'},
-  matches:(selector:string)=>selector==='label'?false:primary&&selector.includes('.btn.primary'),querySelector:()=>field?{}:null,closest:()=>dialog?{}:null};
+  matches:(selector:string)=>selector==='[data-mobile-navigation]'?navigation:selector==='label'?false:primary&&selector.includes('.btn.primary'),querySelector:()=>field?{}:null,closest:()=>dialog?{}:null};
 }
 test('mobile saves, submits, confirmations and field-bearing controls never enter a secondary menu',()=>{
  for(const text of ['Lưu báo giá','Gửi duyệt','Xác nhận nhận hàng','Thanh toán','Nhận theo phiếu','Đã giao','Thu tiền','Đóng phiếu','Gọi','Báo giá','Xuất Excel','Xem / Tải hồ sơ'])assert.equal(actionKind(control(text)),'inline',text);
@@ -25,4 +25,10 @@ test('pagination and adding a product stay inline; only four or more secondary a
  for(const text of ['‹ Trang trước','Trang tiếp ›','‹ Trước','Sau ›','‹','›','＋ Thêm sản phẩm'])assert.equal(actionKind(control(text)),'inline',text);
  assert.equal(actionKind(control('Dán từ Excel')),'secondary');
  assert.equal(GROUP_MIN,4);
+});
+
+test('read-only navigation containing workflow status stays visible; real destructive controls retain their policy',()=>{
+ assert.equal(actionKind(control('Khách hàng · Khách mới chờ duyệt: 3',{navigation:true})),'inline');
+ assert.equal(actionKind(control('Xem đơn đã huỷ: 4',{navigation:true})),'inline');
+ assert.equal(actionKind(control('Huỷ phiếu')),'desktop');
 });

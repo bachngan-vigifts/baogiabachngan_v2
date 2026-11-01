@@ -9,6 +9,7 @@ import { EDGES, ICONS, ITEM_ACTIONS, NODES, STAGES } from './flow-config.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; };
 const svg = (tag, attrs = {}, text) => { const n = document.createElementNS(SVG_NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v)); if (text != null) n.textContent = String(text); return n; };
+const navigation = n => { n.dataset.mobileNavigation = ''; return n; };
 const icon = (name, cls = 'flow-icon') => { const s = svg('svg', { viewBox: '0 0 24 24', class: cls, 'aria-hidden': 'true' }); s.append(svg('path', { d: ICONS[name] || ICONS.doc })); return s; };
 
 /** Chọn chỉ số nổi bật của khối: chỉ số đầu tiên có giá trị và có màu cảnh báo, không có thì chỉ số đầu. */
@@ -23,7 +24,7 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
   const head = el('div', 'flow-head'), titles = el('div');
   titles.append(el('span', 'eyebrow', 'Quy trình bán hàng'), el('h1', '', 'Sơ đồ quy trình'),
     el('p', 'muted', 'Bấm vào từng khối để xem việc đang chờ và thao tác nhanh. Số trên khối là việc của bạn (Manager: toàn công ty).'));
-  const refresh = el('button', 'btn secondary', 'Làm mới'); refresh.type = 'button'; refresh.addEventListener('click', () => load());
+  const refresh = navigation(el('button', 'btn secondary', 'Làm mới')); refresh.type = 'button'; refresh.addEventListener('click', () => load());
   const stamp = el('span', 'muted small flow-stamp');
   const tools = el('div', 'flow-tools'); tools.append(stamp, refresh);
   head.append(titles, tools);
@@ -32,11 +33,20 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
   const legend = el('p', 'flow-legend muted small');
   legend.append(el('span', 'flow-key', ''), document.createTextNode(' luồng chính   '), el('span', 'flow-key alt', ''), document.createTextNode(' nhánh phụ (thiếu hàng, chăm sóc lại)'));
   const status = el('p', 'muted');
-  page.append(head, status, board, legend);
+  const mobileHint=el('p','flow-mobile-hint muted small','Chọn giai đoạn hoặc một mục bên dưới để xem việc đang chờ.');
+  page.append(head, status, mobileHint, board, legend);
   // Bảng chi tiết (ngăn kéo bên phải).
   const shade = el('div', 'flow-shade'); shade.hidden = true; shade.addEventListener('click', () => closePanel());
   const panel = el('aside', 'flow-panel'); panel.hidden = true; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'false');
-  root.append(page, shade, panel);
+  root.append(page);
+  // Mobile's fixed workspace creates a stacking context below the global navigation.
+  // Keep overlays at body level so they can actually cover those controls.
+  document.body.append(shade, panel);
+  window.addEventListener('hashchange', () => closePanel());
+  const workspace=root.closest('#workspace');
+  const visibility=new MutationObserver(()=>{if(root.hidden||workspace?.hidden)closePanel();});
+  visibility.observe(root,{attributes:true,attributeFilter:['hidden']});
+  if(workspace)visibility.observe(workspace,{attributes:true,attributeFilter:['hidden']});
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !panel.hidden) closePanel(); });
 
   // ---- Vẽ khối
@@ -48,7 +58,7 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
     board.style.setProperty('--flow-cols', String(stages.length)); board.style.setProperty('--flow-rows', String(rows.length));
     // Tiêu đề cột bấm được: mở bảng tổng hợp mọi khối của giai đoạn đó.
     stagesRow.replaceChildren(...stages.map(s => {
-      const t = el('button', 'flow-stage' + (openId === 'stage:' + s.id ? ' is-open' : '')); t.type = 'button'; t.dataset.stage = s.id;
+      const t = el('button', 'flow-stage' + (openId === 'stage:' + s.id ? ' is-open' : '')); navigation(t); t.type = 'button'; t.dataset.stage = s.id;
       t.title = 'Xem tổng hợp giai đoạn ' + s.title; t.append(icon(s.icon), el('span', '', s.title));
       t.addEventListener('click', () => openPanel('stage:' + s.id)); return t;
     }));
@@ -58,7 +68,7 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
     for (const nd of visible) {
       const d = data.nodes[nd.id], h = headline(d);
       const b = el('button', 'flow-node' + (h?.value && h.tone ? ' tone-' + h.tone : '') + (nd.id === openId ? ' is-open' : ''));
-      b.type = 'button'; b.dataset.node = nd.id;
+      navigation(b); b.type = 'button'; b.dataset.node = nd.id;b.dataset.stageTitle=STAGES.find(s=>s.id===nd.stage)?.title||'';
       b.style.gridColumn = String(col(nd.stage)); b.style.gridRow = String(row(nd.row));
             const dot = el('span', 'flow-dot'); dot.append(icon(nd.icon));
       if (h?.value) { const c = el('span', 'flow-count', h.money ? '!' : h.value > 99 ? '99+' : h.value); dot.append(c); }
@@ -74,7 +84,7 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
 
   // ---- Vẽ mũi tên: đường gấp khúc vuông góc giữa các khối (tính lại khi đổi kích thước).
   function drawEdges() {
-    if (!data || getComputedStyle(lines).display === 'none') return;
+    if (!data || !grid.getClientRects().length || getComputedStyle(lines).display === 'none') return;
     const g = grid.getBoundingClientRect();
     lines.setAttribute('viewBox', `0 0 ${g.width} ${g.height}`); lines.setAttribute('width', g.width); lines.setAttribute('height', g.height);
     const defs = svg('defs');
@@ -145,12 +155,12 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
       const stats = el('div', 'flow-stats');
       for (const m of d.metrics) {
         const b = el('button', 'flow-stat' + (m.value && m.tone ? ' tone-' + m.tone : '')); b.type = 'button';
-        b.append(el('strong', '', fmt(m)), el('small', '', m.label));
+        navigation(b); b.append(el('strong', '', fmt(m)), el('small', '', m.label));
         b.addEventListener('click', () => { closePanel(); go(nd.page); }); stats.append(b);
       }
       const acts = el('div', 'flow-item-actions');
-      const more = el('button', 'btn small primary', `Xem việc (${d.items.length})`); more.type = 'button'; more.addEventListener('click', () => openPanel(nd.id));
-      const page = el('button', 'btn small secondary', 'Mở trang'); page.type = 'button'; page.addEventListener('click', () => { closePanel(); go(nd.page); });
+      const more = el('button', 'btn small primary', `Xem việc (${d.items.length})`); navigation(more); more.type = 'button'; more.addEventListener('click', () => openPanel(nd.id));
+      const page = el('button', 'btn small secondary', 'Mở trang'); navigation(page); page.type = 'button'; page.addEventListener('click', () => { closePanel(); go(nd.page); });
       acts.append(more, page); card.append(stats, acts);
       return card;
     });
@@ -171,14 +181,14 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
     const stats = el('div', 'flow-stats');
     for (const m of d.metrics) {
       const s = el('button', 'flow-stat' + (m.value && m.tone ? ' tone-' + m.tone : '')); s.type = 'button';
-      s.append(el('strong', '', fmt(m)), el('small', '', m.label));
+      navigation(s); s.append(el('strong', '', fmt(m)), el('small', '', m.label));
       s.addEventListener('click', () => { closePanel(); go(nd.page); }); stats.append(s);
     }
     // Việc cần xử lý + nút thao tác nhanh.
     const listHead = el('h3', 'flow-list-head', d.error ? d.error : d.items.length ? 'Việc cần xử lý' : 'Không có việc nào đang chờ 🎉');
     const list = el('ul', 'flow-items');
     for (const it of d.items) {
-      const li = el('li', 'flow-item'), open = el('button', 'flow-item-main'); open.type = 'button';
+      const li = el('li', 'flow-item'), open = navigation(el('button', 'flow-item-main')); open.type = 'button';
       open.append(el('b', '', it.title), el('small', '', it.sub || ''));
       if (it.badge) open.append(el('span', 'flow-badge' + (it.tone ? ' tone-' + it.tone : ''), it.badge));
       open.addEventListener('click', () => { closePanel(); go(it.hash); });
@@ -197,6 +207,7 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
     const foot = el('div', 'flow-panel-foot');
     for (const a of nd.actions || []) {
       const btn = el('button', 'btn ' + (a.open ? 'primary' : 'secondary'), a.label); btn.type = 'button';
+      if(a.go)navigation(btn);
       btn.addEventListener('click', () => {
         if (a.open) { const fn = openers[a.open]; if (fn) fn(() => load()); else toast('Chưa hỗ trợ thao tác này.', 'err'); }
         else { closePanel(); go(a.go); }

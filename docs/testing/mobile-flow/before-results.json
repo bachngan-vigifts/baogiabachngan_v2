@@ -1,0 +1,18 @@
+[
+  {
+    "phase": "before",
+    "viewport": 390,
+    "page": 390,
+    "board": 356,
+    "canvas": 940,
+    "hiddenNodes": [
+      "customers",
+      "quotes",
+      "orders",
+      "contracts",
+      "purchase"
+    ],
+    "nodes": 11,
+    "errors": []
+  }
+]

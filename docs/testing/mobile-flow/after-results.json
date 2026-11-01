@@ -1,0 +1,41 @@
+[
+  {
+    "width": 320,
+    "nodes": 11,
+    "allNodesAndStageDetailsWork": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "nodes": 11,
+    "allNodesAndStageDetailsWork": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 430,
+    "nodes": 11,
+    "allNodesAndStageDetailsWork": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 850,
+    "nodes": 11,
+    "allNodesAndStageDetailsWork": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 1280,
+    "nodes": 11,
+    "allNodesAndStageDetailsWork": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "staffApiFailureShowsErrorNotEmpty": true,
+    "retryWorks": true
+  }
+]

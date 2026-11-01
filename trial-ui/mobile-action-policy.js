@@ -2,6 +2,8 @@
 export const mobileRisk = text => /h[uủ]ỷ|hủy|xoá|xóa|chốt (tồn|kỳ)|điều chỉnh|hoàn tiền|đồng bộ sapo/i.test(text);
 export const mobileCommit = text => /lưu|gửi|xác nhận|nhận hàng|nhận theo phiếu|thu tiền|thanh toán|duyệt|đã giao|đang giao|hoàn thành|đóng phiếu/i.test(text);
 export function actionKind(node){
+ // Explicitly read-only navigation may contain status text such as ‘chờ duyệt’.
+ if(node.matches('[data-mobile-navigation]'))return 'inline';
  if(node.classList.contains('mobile-desktop-only'))return 'desktop';
  const text=(node.getAttribute('aria-label')||node.textContent||node.title||'').trim();
  if(node.matches('label')||node.querySelector('input,select,textarea'))return 'inline';
