@@ -3,6 +3,7 @@ import {openContractBonusDetails} from './contract-bonus-detail.js';
 // Chuyển khoản (VietQR) · Tham số · Xuất Excel. Mọi con số do máy chủ tính (src/modules/hr/domain/payroll.ts) – trang này chỉ hiển thị.
 // Sửa số liệu từng người ở trang chi tiết nhân viên (tab Lương & thưởng); số liệu chung của nhóm và tham số sửa ngay tại đây.
 
+import { COMPANY_LABEL } from './payroll-ui.js';
 import { openAdms } from './adms.js';
 
 const STATUS = { estimate: ['Tạm tính', 'muted'], confirmed: ['Đã chốt', 'info'], paid: ['Đã trả', 'ok'] };
@@ -187,13 +188,14 @@ export function initPayroll(deps) {
     d.totals.forEach(t => sum.addRow([t.label, t.people, t.gross, t.deductions, t.net]));
     sum.addRow(['TỔNG CỘNG', ...['people', 'gross', 'deductions', 'net'].map(k => d.totals.reduce((s, t) => s + t[k], 0))]).font = { bold: true };
     sum.columns = [{ width: 24 }, { width: 10 }, { width: 18 }, { width: 16 }, { width: 18 }]; style(sum, 4, 5, 3);
-    for (const g of ['sale', 'bn', 'lock']) {
-      const rows = withProfile().filter(r => r.payslip.group === g), inc = cols.income[g], ded = cols.deductions[g];
-      const ws = wb.addWorksheet('Lương ' + (g === 'sale' ? 'Sale' : cols.groups[g]));
+    for (const company of ['BN','VG',null]) for (const g of ['sale', 'bn', 'lock']) {
+      const rows = withProfile().filter(r => r.payslip.group === g && (r.payslip.employment?.company||null)===company), inc = cols.income[g], ded = cols.deductions[g];
+      if(!rows.length)continue;
+      const ws = wb.addWorksheet((company==='BN'?'BN':company==='VG'?'VG':'Chưa xếp')+' · '+(g==='sale'?'Sale':g==='bn'?'ML':'Lock'));
       const header = ['STT', 'Họ tên', 'Vị trí', 'Ngày làm việc', ...inc.map(k => cols.labels[k]), 'Tổng thu nhập', ...ded.map(k => cols.labels[k]), 'Thực nhận', 'TK nhận lương'];
-      head(ws, 'BẢNG LƯƠNG · ' + cols.groups[g].toUpperCase(), sub, header.length);
+      head(ws, COMPANY_LABEL[company] || 'ĐƠN VỊ CHƯA ĐƯỢC GHI NHẬN', sub+' · '+cols.groups[g], header.length);
       ws.addRow([]); ws.addRow(header);
-      rows.forEach((r, i) => { const p = r.payslip; ws.addRow([i + 1, r.member.name, r.profile.positionLabel, p.workDays, ...inc.map(k => line(p, k)), p.gross, ...ded.map(k => line(p, k)), p.net,
+      rows.forEach((r, i) => { const p = r.payslip; ws.addRow([i + 1, r.member.name, [r.profile.positionLabel,p.employment?.department,p.employment?.leader?'Leader':''].filter(Boolean).join(' · '), p.workDays, ...inc.map(k => line(p, k)), p.gross, ...ded.map(k => line(p, k)), p.net,
         r.profile.bankAccount ? `${r.profile.bankAccount} – ${(r.profile.bankCode || '').toUpperCase()}` : '']); });
       const totalRow = ws.addRow(['', 'TỔNG CỘNG', '', '', ...inc.map(k => rows.reduce((s, r) => s + line(r.payslip, k), 0)), rows.reduce((s, r) => s + r.payslip.gross, 0),
         ...ded.map(k => rows.reduce((s, r) => s + line(r.payslip, k), 0)), rows.reduce((s, r) => s + r.payslip.net, 0), '']); totalRow.font = { bold: true };

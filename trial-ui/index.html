@@ -723,7 +723,7 @@
         </div>
         <div class="table-wrap">
           <table class="data-table" id="member-table">
-            <thead><tr><th>Nhân viên</th><th>Điện thoại</th><th>Chức vụ</th><th>Trạng thái</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
+            <thead><tr><th>Nhân viên</th><th>Điện thoại</th><th>Làm việc tại</th><th>Phòng ban</th><th>Chức vụ</th><th>Trạng thái</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
             <tbody id="member-list"></tbody>
           </table>
         </div>
@@ -731,6 +731,16 @@
       </div>
     </section>
   </main>
+
+  <dialog class="modal" id="member-employment-dialog"><form id="member-employment-form">
+    <div class="modal-head"><h2>Đơn vị &amp; phòng ban</h2><button type="button" class="icon-btn" data-close="member-employment-dialog" aria-label="Đóng">×</button></div>
+    <div class="modal-body form-grid"><p id="member-employment-name" class="span-2"></p>
+      <label>Làm việc tại<select name="workCompany"><option value="">Chưa chọn đơn vị</option><option value="BN">Bách Ngân</option><option value="VG">VIGIFTS</option></select></label>
+      <label>Phòng ban<select name="workDepartmentId"></select></label>
+      <label class="span-2"><span><input type="checkbox" name="isLeader"> Leader (trưởng nhóm)</span></label>
+      <p class="muted small span-2">Đơn vị dùng làm chủ thể trên phiếu lương. Leader là thông tin tổ chức; quyền duyệt được cài riêng.</p><p id="member-employment-error" class="error span-2" role="alert"></p>
+    </div><div class="modal-foot"><button type="button" class="btn secondary" data-close="member-employment-dialog">Đóng</button><button class="btn primary" type="submit">Lưu thông tin</button></div>
+  </form></dialog>
 
   <nav class="bottom-nav" aria-label="Điều hướng">
     <a href="#/pos" data-nav="pos" aria-label="Bán hàng nhanh" hidden><svg viewBox="0 0 24 24"><path d="M4 3h16v18H4z M7 6h10v5H7z M7 15h2 M15 15h2 M7 18h2 M15 18h2"/></svg>Bán nhanh</a>

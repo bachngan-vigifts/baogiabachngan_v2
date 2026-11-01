@@ -17,7 +17,8 @@ async function setup() {
   return { call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn') };
 }
 
-test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / giao dịch / công nợ, lương – ngày công – thưởng; quyền xem / sửa; chốt lương khoá tháng', async () => {
+test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / giao dịch / công nợ, lương – ngày công – thưởng; quyền xem / sửa; chốt lương khoá tháng', async t => {
+  t.mock.timers.enable({apis:['Date'],now:new Date('2026-10-31T02:00:00Z')});
   const { call, emp, mgr } = await setup();
   const month = vietnamDate().iso.slice(0, 7), day = (d: number) => `${month}-${String(d).padStart(2, '0')}`;
 

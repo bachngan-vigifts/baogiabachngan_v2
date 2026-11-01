@@ -1,3 +1,4 @@
+import {contractLiquidations} from '../../src/modules/sales/liquidation-schema.ts';
 import {eq} from 'drizzle-orm';
 import {setupLiquidation} from './liquidation-fixture.ts';
 import {customers,customerStaff} from '../../src/modules/customers/schema.ts';
@@ -17,6 +18,6 @@ export async function setupSalesPayroll(){
  const overview=(who=f.mgr,month='2026-10')=>f.call('/members/emp/overview?month='+month,who);
  const care=(extra={})=>f.call('/care',f.emp,'POST',{clientKey:crypto.randomUUID(),customerId:'sales-customer',contactName:'Khách kiểm thử',occurredAt:'2026-10-30',type:'call',completion:'completed',purpose:'sales',result:'consulting',content:'Đã trao đổi nhu cầu và thống nhất bước tiếp theo',nextAt:'2026-11-15',remindBefore:'1d',...extra});
  const confirm=async(month='2026-10',extra={})=>{const view=await overview(f.mgr,month);return f.call('/hr/members/emp/payslips/'+month,f.mgr,'POST',{confirmationHash:view.data.payroll?.confirmationHash,...extra});};
- const award=async()=>{const r=await f.request();if(r.status!==201)throw Error(JSON.stringify(r));const view=(await f.call(f.path,f.mgr)).data;return f.call(f.path+'/'+r.data.id+'/review',f.mgr,'POST',{decision:'approved',revision:1,confirmOriginals:true,expectedHash:view.proof.hash});};
+ const award=async()=>{const r=await f.request();if(r.status!==201)throw Error(JSON.stringify(r));const view=(await f.call(f.path,f.mgr)).data;const result=await f.call(f.path+'/'+r.data.id+'/review',f.mgr,'POST',{decision:'approved',revision:1,confirmOriginals:true,expectedHash:view.proof.hash});if(result.status===200)await f.db.update(contractLiquidations).set({reviewedAt:f.stamp}).where(eq(contractLiquidations.id,r.data.id));return result;};
  return{...f,setPolicy,salary,overview,care,confirm,award};
 }

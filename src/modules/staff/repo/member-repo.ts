@@ -1,6 +1,6 @@
 import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import type { AnyDb } from '../../../core/db/client.ts';
-import { credentials, employees, positions, sessions, staffSapoLinks } from '../schema.ts';
+import { credentials, departments, employees, positions, sessions, staffSapoLinks } from '../schema.ts';
 import type { Role } from '../domain/roles.ts';
 
 /** Truy vấn quản lý nhân viên. Mọi câu UPDATE kèm điều kiện "người thao tác là Manager đang hoạt động" (phòng thủ nhiều lớp, như bản cũ). */
@@ -20,12 +20,13 @@ export async function setApprover(db: AnyDb, actorId: string, id: string, on: bo
 export async function listMembers(db: AnyDb) {
   const members = await db.select({
     id: employees.id, name: employees.name, email: employees.email, phone: employees.phone, role: employees.role,
+    workCompany: employees.workCompany, workDepartmentId: employees.workDepartmentId, isLeader: employees.isLeader,
     positionId: employees.positionId, active: employees.active, avatar: employees.avatarKey, approver: employees.canApprove,
     activated: sql<number>`CASE WHEN ${credentials.passwordHash} IS NULL THEN 0 ELSE 1 END`,
   }).from(employees).leftJoin(credentials, eq(credentials.memberId, employees.id)).where(and(ne(employees.role, 'customer'), isNull(employees.deletedAt))).orderBy(asc(employees.id));
   // Tài khoản khách hàng quản lý ở trang Khách hàng, không nằm trong danh sách nhân viên / chức vụ chọn được.
   const list = await db.select({ id: positions.id, name: positions.name }).from(positions).where(ne(positions.id, 'customer')).orderBy(asc(positions.name));
-  return { members: members.map(m => ({ ...m, active: m.active ? 1 : 0 })), positions: list };
+  return { members: members.map(m => ({ ...m, active: m.active ? 1 : 0 })), positions: list, departments: await db.select({id:departments.id,name:departments.name}).from(departments).orderBy(asc(departments.sortOrder),asc(departments.name)) };
 }
 
 export const positionExists = async (db: AnyDb, id: string) => (await db.select({ id: positions.id }).from(positions).where(eq(positions.id, id)).limit(1)).length > 0;

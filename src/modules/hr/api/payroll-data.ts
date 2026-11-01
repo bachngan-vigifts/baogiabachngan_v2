@@ -6,7 +6,7 @@ import {sha256Hex} from '../../staff/domain/session.ts';
 import {AppError} from '../../../core/errors.ts';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, notInArray } from 'drizzle-orm';
 import type { AnyDb } from '../../../core/db/client.ts';
-import { employees } from '../../staff/schema.ts';
+import { departments, employees } from '../../staff/schema.ts';
 import { hrAdjustments, hrAttendance, hrPayrollInputs, hrPayrollMonths, hrPayrollSettings, hrPayslips, hrSalaryProfiles } from '../schema.ts';
 import { mergeParams, type PayrollParams } from '../domain/params.ts';
 import {
@@ -91,7 +91,7 @@ export interface PayrollRow {
 export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueOf, onlyIds?: readonly string[],crmFactsOf?:CrmFactsOf,lock=false) {
   const r = monthRange(month);
   const [{ params, effectiveMonth }, gm, profiles] = await Promise.all([paramsFor(db, month), groupMonthOf(db, month), profilesFor(db, month, onlyIds)]);
-  const members = await db.select({ id: employees.id, name: employees.name, active: employees.active, positionId: employees.positionId }).from(employees)
+  const members = await db.select({ id: employees.id, name: employees.name, active: employees.active, positionId: employees.positionId, workCompany:employees.workCompany, workDepartment:departments.name, isLeader:employees.isLeader }).from(employees).leftJoin(departments,eq(departments.id,employees.workDepartmentId))
     .where(and(isNull(employees.deletedAt), notInArray(employees.role, ['customer', 'supplier']), onlyIds ? inArray(employees.id, [...onlyIds]) : undefined))
     .orderBy(asc(employees.name));
   const list = onlyIds ? members : members.filter(m => m.active || profiles.has(m.id));
@@ -124,6 +124,7 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     const ownAwards=awards.filter(a=>a.memberId===m.id&&(!a.isNew||profile.contractBonusEnabled&&(!netPolicy||profile.kpiEligible===false)));
     const calc = computePayslip({profile,params,input:kpiApply?resolved:input,adjustments:adj,attendanceDays,systemRevenue,groupMonth:gm,quarterBonusAuto:quarter.map.get(m.id)??0,...(netPolicy&&profile.payrollGroup==='sale'&&profile.kpiEnabled&&profile.kpiEligible!==false?{kpiNetRevenue:fact?.netRevenue||0,kpiNetRevenueIssues:fact?.netRevenueIssues||0}:{}),
      contractBonus:bonusApply?ownAwards.filter(a=>a.isNew).reduce((n,a)=>n+a.amount,0):0,contractBonusAdjustment:bonusApply?ownAwards.filter(a=>!a.isNew).reduce((n,a)=>n+a.amount,0):0});
+    calc.employment={company:m.workCompany,department:m.workDepartment,leader:m.isLeader};
     if(enabled){const previewKpi=kpiEnabled&&profile.kpiEnabled?computeKpiCv({...resolved,kpiOverride:profile.fixedKpi??resolved.kpiOverride},params,profile.revenueTarget||params.kpiRevenue,input.revenue??systemRevenue):null;calc.salesCrm={apply:bonusApply||kpiApply&&profile.kpiEnabled,bonusApply,kpiApply:kpiApply&&profile.kpiEnabled,from,kpiEligible:profile.kpiEligible!==false,facts:auto,awards:ownAwards,previewKpi,kpiBonusPreview:Math.round((netPolicy?Math.max(0,fact?.netRevenue||0):(input.revenue??systemRevenue))*(netPolicy?netKpiBonusRate(params,previewKpi?.used??null):kpiBonusRate(params,previewKpi?.used??null)))};}
     return { member: m, profile, input, attendanceDays, systemRevenue, adjustments: adj, calc, slip: slips.find(s => s.memberId === m.id) ?? null };
   });
