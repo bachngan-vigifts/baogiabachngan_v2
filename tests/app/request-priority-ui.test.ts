@@ -60,3 +60,11 @@ test('idle(): chờ trang đang mở tải xong rồi mới cho tải dữ liệ
   main.resolve(); await call; await idle; assert.equal(after, true);
   assert.deepEqual(pr.stats(), { foreground: 0, background: 0, waiting: 0 });
 });
+
+test('POS periodic stock and optional warehouse details stay behind checkout; initial preload stays foreground',()=>{
+ assert.equal(isBackgroundRequest('/pos/stock-snapshot?registerId=r&pricePolicyId=p&background=1','GET','#/pos'),true);
+ assert.equal(isBackgroundRequest('/pos/catalog?registerId=r&skus=A&background=1','GET','#/pos'),true);
+ assert.equal(isBackgroundRequest('/pos/options?stock=1','GET','#/pos'),false);
+ assert.equal(isBackgroundRequest('/pos/stock-snapshot?registerId=r&pricePolicyId=p','GET','#/pos'),false);
+ assert.equal(isBackgroundRequest('/pos/checkout','POST','#/pos'),false);
+});

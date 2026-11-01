@@ -194,8 +194,8 @@ async function quoteHoldShare(db: PosDb, quotes: { sku: string; qty: number }[],
   const [stock, whs, allOrders, hereOrders] = await Promise.all([
     readCatalogStock(db, skus),
     db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.kind, 'stock'), eq(warehouses.active, true))),
-    orderHolds(db, skus),
-    orderHolds(db, skus, warehouseId),
+    orderHolds(db, skus, undefined, undefined, true),
+    orderHolds(db, skus, warehouseId, undefined, true),
   ]);
   const others = new Set(whs.map(w => w.id).filter(id => id !== warehouseId)), free = new Map<string, number>();
   for (const r of stock) if (others.has(r.warehouseId)) free.set(r.sku, (free.get(r.sku) ?? 0) + Math.max(0, r.quantity));
@@ -212,7 +212,7 @@ export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: str
       .from(stockHolds)
       .where(and(inArray(stockHolds.sku, skus), eq(stockHolds.status, 'active'), sql`${stockHolds.expiresAt}>${now}`))
       .groupBy(stockHolds.sku),
-    orderHolds(db, skus, warehouseId),
+    orderHolds(db, skus, warehouseId, undefined, true),
   ]);
   const orders=exceptOrderId?allOrders.filter(order=>order.orderId!==exceptOrderId):allOrders;
   const out = new Map<string, number>();

@@ -1282,3 +1282,10 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-ad-risk.improve {border-color:#d97706;background:#fffbeb;color:#78350f;}
 .pos-ad-risk.budget {border-color:#dc2626;background:#fef2f2;color:#991b1b;}
 .pos-ad-risk p {margin:6px 0;overflow-wrap:anywhere;}
+
+/* Stock readiness / refresh labels must not collide with the price on narrow tiles. */
+#view-pos .pos-product-price-stock { flex-wrap:wrap; }
+#view-pos .pos-product-price-stock .pos-stock { white-space:normal;max-width:100%;overflow-wrap:anywhere; }
+.pos-stock-stamp { margin:4px 0 8px; }
+
+.pos-stock-unknown { color:#64748b;font-weight:500; }

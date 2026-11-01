@@ -1,0 +1,55 @@
+[
+  {
+    "family": "lock",
+    "width": 1280,
+    "searchMs": 132,
+    "detailApiDelayMs": 2000,
+    "stockReadyBeforeDetail": true,
+    "cartAddImmediate": true,
+    "externalStockRefresh": true,
+    "oldResponseCannotOverwrite": true,
+    "policyScoped": true,
+    "errors": []
+  },
+  {
+    "family": "lock",
+    "width": 390,
+    "searchMs": 142,
+    "detailApiDelayMs": 2000,
+    "stockReadyBeforeDetail": true,
+    "cartAddImmediate": true,
+    "externalStockRefresh": true,
+    "oldResponseCannotOverwrite": true,
+    "policyScoped": true,
+    "errors": []
+  },
+  {
+    "family": "ml",
+    "width": 1280,
+    "searchMs": 149,
+    "detailApiDelayMs": 2000,
+    "stockReadyBeforeDetail": true,
+    "cartAddImmediate": true,
+    "externalStockRefresh": true,
+    "oldResponseCannotOverwrite": true,
+    "policyScoped": true,
+    "errors": []
+  },
+  {
+    "family": "ml",
+    "width": 390,
+    "searchMs": 138,
+    "detailApiDelayMs": 2000,
+    "stockReadyBeforeDetail": true,
+    "cartAddImmediate": true,
+    "externalStockRefresh": true,
+    "oldResponseCannotOverwrite": true,
+    "policyScoped": true,
+    "errors": []
+  },
+  {
+    "unknownNeverOutOfStock": true,
+    "unknownNotSelectable": true,
+    "readyAfterConfirmation": true
+  }
+]
