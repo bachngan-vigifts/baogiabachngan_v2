@@ -1,6 +1,7 @@
+import {posStockSnapshot,posScanCodes,posBrandScope} from './pos-stock-snapshot.ts';
+import {ledgerWarehouses} from './pos-stock.ts';
 import {webOrderBucket} from '../domain/web-order-outcome.ts';
 import { applyWebsiteCancel, websiteCancelled } from './web-order-customer-cancel.ts';
-import { posCatalogFamily, MINH_LONG_CATALOG_PATTERN, LOCK_CATALOG_PATTERN } from '../domain/pos-catalog-brand.ts';
 import { nextPosOrderNo } from './pos-number.ts';
 import { posQrContent, reservedPosOrderNo, normalizePosReference, matchesPosQrReference, posQrOrderNumbers } from '../domain/pos-qr-reference.ts';
 import { posCustomerIssue } from '../domain/pos-customer.ts';
@@ -652,8 +653,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         templateId: selected.shift.templateId, businessDate: selected.shift.businessDate,
         openedAt: selected.shift.openedAt, closedAt: selected.shift.closedAt, memberName: selected.memberName,
       } : null);
+      const selectedRegister=regs.find(r=>r.id===current?.registerId)||regs.find(r=>r.id===requestedRegister)||regs.find(r=>r.id===defaultRegisterId)||regs[0];
+      const stockSnapshot=c.url.searchParams.get('stock')==='1'&&can(m,'pos.sell')&&selectedRegister
+        ?await posStockSnapshot(c.env.db,m,selectedRegister,[selectedRegister.pricePolicyId,selectedRegister.secondPricePolicyId].includes(c.url.searchParams.get('pricePolicyId')||'')?c.url.searchParams.get('pricePolicyId')!:selectedRegister.pricePolicyId,true):undefined;
       return json({
         registers: regs,
+        stockSnapshot,
         defaultRegisterId,
         templates,
         shifts,
@@ -786,10 +791,15 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     },
     'business',
   );
+  router.get('/pos/stock-snapshot',async c=>{
+    posPermission(member(c));const id=posText(c.url.searchParams.get('registerId'));await assertSellRegister(c,id);
+    return json(await posStockSnapshot(c.env.db,member(c),await registerOf(c.env.db,id),posText(c.url.searchParams.get('pricePolicyId'))||undefined,c.url.searchParams.get('metadata')==='1')||{unavailable:true});
+  },'business');
   router.get(
     '/pos/catalog',
     async (c) => {
       posPermission(member(c));
+      const readStartedAt=new Date().toISOString();
       const registerId = posText(c.url.searchParams.get('registerId')), q = posText(c.url.searchParams.get('q'), 100);
       // Ba lượt đọc độc lập chạy cùng lúc (quyền quầy, quầy, mã vạch); lỗi quyền vẫn báo trước như khi chạy lần lượt.
       const [allowed, register, barcode] = await Promise.allSettled([
@@ -809,8 +819,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const skuList = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(x => x.trim()).filter(Boolean))].slice(0, 60);
       const offset = skuList.length ? 0 : Math.max(0, Math.min(100000, Number(c.url.searchParams.get('offset')) || 0));
       const limit = skuList.length ? skuList.length : Math.max(1, Math.min(60, Number(c.url.searchParams.get('limit')) || 60));
-      const catalogFamily=posCatalogFamily(r.name);
-      const brandScope=catalogFamily?sql`${foldSql(products.brand,products.name)} !~ ${catalogFamily==='lock'?MINH_LONG_CATALOG_PATTERN:LOCK_CATALOG_PATTERN}`:undefined;
+      const brandScope=posBrandScope(r.name);
       const rows = await c.env.db
         .select({
           sku: products.sku,
@@ -822,14 +831,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           onHand: stockBalances.qty,
           // Preload only unambiguous exact codes. Browser scans can reuse this page's
           // price/availability; checkout still checks live stock under its locks.
-          scanCodes: sql<string[]>`ARRAY(
-            SELECT codes.code FROM (
-              SELECT ${products.sku} AS code
-              UNION SELECT b.barcode FROM product_barcodes b WHERE b.sku=${products.sku}
-            ) codes
-            WHERE NOT EXISTS (SELECT 1 FROM product_barcodes b WHERE b.barcode=codes.code AND b.sku<>${products.sku})
-              AND NOT EXISTS (SELECT 1 FROM products other WHERE other.sku=codes.code AND other.sku<>${products.sku})
-          )`,
+          scanCodes: posScanCodes,
         })
         .from(products)
         .innerJoin(productPrices, and(eq(productPrices.sku, products.sku), eq(productPrices.policyId, policy)))
@@ -860,14 +862,16 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       // Hàng đang giữ và tồn các kho khác chỉ phụ thuộc danh sách mã → đọc cùng lúc.
       // A scan only needs the selling warehouse's live availability, not every
       // other warehouse/incoming purchase. Those details stay on catalog pages.
-      const [reserved, sources] = await Promise.all([
+      const [reserved, sources, opened] = await Promise.all([
         rows.length ? reservedBySku(c.env.db, rows.map((p) => p.sku), r.warehouseId) : new Map<string, number>(),
         c.url.searchParams.get('scan') === '1' && exactSku ? new Map() : posStockSources(c.env.db, member(c), r.warehouseId, rows.map(p => p.sku)),
+        ledgerWarehouses(c.env.db),
       ]);
       return json({
         products: rows.map((p) => ({
           ...p,
           onHand: p.onHand ?? 0,
+          stockStatus:opened.includes(r.warehouseId)?'ready':'unopened',stockAsOf:readStartedAt,
           stockSources: sources.get(p.sku),
           reserved: reserved.get(p.sku) ?? 0,
           available: Math.max(0, (p.onHand ?? 0) - (reserved.get(p.sku) ?? 0)),

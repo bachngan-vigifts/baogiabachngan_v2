@@ -71,6 +71,8 @@ class Element {
   }
 }
 const doc = {
+  hidden: false,
+  addEventListener(k: string, f: Function) { this.body.addEventListener(k, f); },
   createElement: (tag: string) => new Element(tag),
   createTextNode: (s: string) => {
     const n = new Element('#text');
@@ -877,7 +879,7 @@ test('Manager đổi quầy đang mở; giỏ có hàng không được đổi c
     await ui.load();
     let choose=root.querySelectorAll('select').find(e=>e.attributes['aria-label']==='Chọn quầy')!;
     assert.ok(choose); choose.value='ml'; await choose.fire('change'); await new Promise(r=>setTimeout(r,30));
-    assert.ok(calls.some(c=>c.path==='/pos/options?registerId=ml'));
+    assert.ok(calls.some(c=>c.path.startsWith('/pos/options?') && new URL(c.path, 'https://test.local').searchParams.get('registerId')==='ml' && new URL(c.path, 'https://test.local').searchParams.get('stock')==='1'));
     await root.querySelectorAll('button').find(b=>b.className==='pos-product')!.fire('click'); await new Promise(r=>setTimeout(r,230));
     assert.equal(calls.find(c=>c.path==='/pos/preview')!.body.shiftId,'shift-ml');
     choose=root.querySelectorAll('select').find(e=>e.attributes['aria-label']==='Chọn quầy')!;

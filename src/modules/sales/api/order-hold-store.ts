@@ -120,7 +120,7 @@ export async function expireOrderHolds(db: PosDb, now = new Date().toISOString()
 }
 
 /** Lượng giữ hiệu lực của các đơn CRM giữ theo bảng (dùng trong orderHolds). */
-export async function cappedOrderHolds(db: PosDb, skus: readonly string[] | undefined, warehouseId: string | undefined, now = new Date().toISOString()) {
+export async function cappedOrderHolds(db: PosDb, skus: readonly string[] | undefined, warehouseId: string | undefined, now = new Date().toISOString(), complete = false) {
   if (skus && !skus.length) return [];
   const rows = await db.select({ orderId: orderStockHolds.orderId, lineId: orderStockHolds.orderLineId, sku: orderStockHolds.sku, warehouseId: orderStockHolds.warehouseId,
     qty: sql<number>`sum(${orderStockHolds.qty})`.mapWith(Number) }).from(orderStockHolds)
@@ -130,7 +130,7 @@ export async function cappedOrderHolds(db: PosDb, skus: readonly string[] | unde
       sql`NOT (${salesOrders.sapoOrderId} IS NOT NULL AND (${salesOrders.sapoPushedAt} IS NULL OR EXISTS (SELECT 1 FROM ${productStock} ps JOIN ${warehouses} w ON w.id = ps.warehouse_id
         WHERE ps.sku = ${orderStockHolds.sku} AND w.kind = 'stock' AND ps.updated_at > ${salesOrders.sapoPushedAt})))`,
       skus ? inArray(orderStockHolds.sku, [...skus]) : undefined, warehouseId ? eq(orderStockHolds.warehouseId, warehouseId) : undefined))
-    .groupBy(orderStockHolds.orderId, orderStockHolds.orderLineId, orderStockHolds.sku, orderStockHolds.warehouseId).limit(20000);
+    .groupBy(orderStockHolds.orderId, orderStockHolds.orderLineId, orderStockHolds.sku, orderStockHolds.warehouseId).limit(complete ? 2147483647 : 20000);
   if (!rows.length) return [];
   const ids = [...new Set(rows.map(r => r.orderId))];
   const [orders, lines, state] = await Promise.all([
