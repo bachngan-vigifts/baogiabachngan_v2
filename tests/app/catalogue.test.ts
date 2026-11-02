@@ -51,3 +51,8 @@ test('100-row importer bounds concurrency at six and preserves Excel order',asyn
 test('page text restores safely and remains tied to product IDs rather than page number',()=>{
  const s=defaultState();s.products=[item('Minh Long','Bộ trà',1000000)];s.selected=[s.products[0].id];const slide=makeSlides(s).find((x:any)=>x.type==='products');const key=slideKey(slide);s.pageText[key]={'44:24':'VIGIFTS - BÁCH NGÂN mới'};assert.equal(restoreState(s).pageText[key]['44:24'],'VIGIFTS - BÁCH NGÂN mới');assert.equal(slideKey({...slide,items:[...slide.items].reverse()}),key);
 });
+test('batch import validates every source URL before making an upstream request',async()=>{
+ for(const urls of [['https://evil.example/san-pham/a/'],Array(21).fill('https://minhlongonline.com/san-pham/a/'),['https://minhlongonline.com/san-pham/a/','https://locknlockonline.com/san-pham/b/']]){
+ const r=await handleApi(new Request('https://crm.minhlongonline.com/catalogue/api/products',{method:'POST',body:JSON.stringify({urls})}));assert.equal(r.status,400);assert((await r.json()).error);
+ }
+});
