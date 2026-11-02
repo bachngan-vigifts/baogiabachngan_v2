@@ -1289,3 +1289,15 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-stock-stamp { margin:4px 0 8px; }
 
 .pos-stock-unknown { color:#64748b;font-weight:500; }
+
+/* Order filters respond immediately; product selection and checkout stay usable. */
+.pos-order-feedback { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:9px 12px; margin:8px 0; border-radius:8px; background:#eff6ff; color:#174a86; font-size:13px; }
+.pos-order-feedback[hidden] { display:none; }
+.pos-order-count { position:relative; }
+.pos-order-count[aria-busy="true"] { padding-right:29px; border-color:#1c65d1; background:#eff6ff; cursor:wait; opacity:1; }
+.pos-order-count[aria-busy="true"]::after { content:''; position:absolute; right:10px; top:12px; width:12px; height:12px; border:2px solid #bdd3f2; border-top-color:#1c65d1; border-radius:50%; animation:pos-order-loading .7s linear infinite; }
+.pos-order-board[aria-busy="true"] .pos-order-list { opacity:.45; pointer-events:none; }
+@keyframes pos-order-loading { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .pos-order-count[aria-busy="true"]::after { animation:none; } }
+/* Override generic busy-container blocking: the search field must stay interactive. */
+#view-pos .pos-order-board[aria-busy="true"] { opacity:1; pointer-events:auto; }
