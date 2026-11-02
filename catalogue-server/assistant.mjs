@@ -30,15 +30,15 @@ export function parseIntent(prompt){
  return {brand,type:type?.key||'',min,max,limit:quantity?Math.min(200,Math.max(1,Number(quantity[1]))):200,packSize,keywords:[],stockSource:/\bcrm\b/.test(text)?'crm':'website',inStock:true};
 }
 export function validateCriteria(value){
- if(!value||!['LocknLock','Minh Long','both'].includes(value.brand))throw Error('Vui lòng chọn thương hiệu.');
- const categoryId=Number(value.categoryId||0);if(!Number.isInteger(categoryId)||categoryId<0||categoryId>1e9)throw Error('Danh mục website chưa hợp lệ.');if(categoryId&&value.brand==='both')throw Error('Danh mục website cần chọn đúng một thương hiệu.');const type=assistantTypes.find(t=>t.key===value.type)||(categoryId?{key:'website'}:null);if(!type)throw Error('Vui lòng chọn danh mục sản phẩm cần tìm.');
+ if(!value||(!value.provider&&!['LocknLock','Minh Long','both'].includes(value.brand)))throw Error('Vui lòng chọn thương hiệu.');
+ const categoryId=Number(value.categoryId||0);if(!Number.isInteger(categoryId)||categoryId<0||categoryId>1e9)throw Error('Danh mục website chưa hợp lệ.');if(categoryId&&value.brand==='both')throw Error('Danh mục website cần chọn đúng một thương hiệu.');const type=assistantTypes.find(t=>t.key===value.type)||(categoryId||value.provider?{key:'website'}:null);if(!type)throw Error('Vui lòng chọn danh mục sản phẩm cần tìm.');
  const min=Number(value.min||0),max=value.max===''||value.max==null?null:Number(value.max),limit=Number(value.limit||200),packSize=Number(value.packSize||1);
  if(!Number.isFinite(min)||min<0||min>1e10||max!==null&&(!Number.isFinite(max)||max<=0||max>1e10||max<min))throw Error('Khoảng ngân sách chưa hợp lệ.');
  if(!Number.isInteger(limit)||limit<1||limit>200)throw Error('Mỗi lần tìm từ 1 đến 200 sản phẩm.');
  if(![1,10].includes(packSize))throw Error('Chỉ hỗ trợ đơn giá hoặc bộ 10 SP.');
  const stockSource=value.stockSource||'website';if(!['website','crm'].includes(stockSource))throw Error('Nguồn tồn kho chưa hợp lệ.');
  const keywords=Array.isArray(value.keywords)?value.keywords.map(v=>String(v).trim().slice(0,50)).filter(Boolean).slice(0,5):[];
- return {brand:value.brand,type:type.key,categoryId,categoryLabel:String(value.categoryLabel||'').slice(0,100),min,max,limit,packSize,keywords,stockSource,inStock:true};
+ return {provider:value.provider||null,brand:String(value.brand).slice(0,50),type:type.key,categoryId,categoryLabel:String(value.categoryLabel||'').slice(0,100),min,max,limit,packSize,keywords,stockSource,inStock:true};
 }
 const assistantReply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json;charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const authEndpoint='https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff/me';
@@ -84,7 +84,7 @@ export function matchingProduct(q,criteria,type,brand,pricing){
  return offer>=criteria.min&&(criteria.max===null||offer<=criteria.max)&&criteria.keywords.every(k=>fold(q.name).includes(fold(k)));
 }
 export async function discoverProducts(criteriaValue,pricingValue,adapter){
- const criteria=validateCriteria(criteriaValue),type=assistantTypes.find(t=>t.key===criteria.type)||{key:'website',label:criteria.categoryLabel,name:/.*/,categoryTerms:[]};
+ const criteria=validateCriteria(criteriaValue);if(criteria.provider){if(!adapter.externalProducts)throw Error('Chưa hỗ trợ thương hiệu này.');return adapter.externalProducts(criteria)}const type=assistantTypes.find(t=>t.key===criteria.type)||{key:'website',label:criteria.categoryLabel,name:/.*/,categoryTerms:[]};
  const pricing={lockDiscount:Number(pricingValue?.lockDiscount??40),minhDiscount:Number(pricingValue?.minhDiscount??10),fee:Number(pricingValue?.fee??15000)};
  if(!Number.isFinite(pricing.fee)||pricing.fee<0||pricing.fee>1e8||![pricing.lockDiscount,pricing.minhDiscount].every(n=>Number.isFinite(n)&&n>=0&&n<100))throw Error('Thiết lập chiết khấu hoặc phụ phí chưa hợp lệ.');
  const brands=criteria.brand==='both'?['LocknLock','Minh Long']:[criteria.brand],found=[],errors=[],sources=[];let scanned=0,moreAvailable=false;
@@ -119,6 +119,7 @@ export async function discoverPlan(groupValues,pricing,adapter){if(!Array.isArra
 export async function handleAssistant(request,env,adapter){
  if(request.method!=='POST')return assistantReply({error:'Chức năng này dùng POST.'},405);
  try{if(Number(request.headers.get('content-length'))>20000)throw Error('Yêu cầu quá dài.');const text=await request.text();if(text.length>20000)throw Error('Yêu cầu quá dài.');const body=JSON.parse(text);
+  if(body.action==='brand-preview')return assistantReply(await adapter.brandPreview(body.url,body.prompt));
   if(body.action==='categories')return assistantReply({catalog:await categoryOptions(adapter)});
   if(body.action==='interpret')return assistantReply(await interpretIntent(body.prompt,env,request,await categoryOptions(adapter),body.stockSource||''));
   if(body.action==='search')return assistantReply(body.groups?await discoverPlan(body.groups,body.pricing,adapter):await discoverProducts(body.criteria,body.pricing,adapter));

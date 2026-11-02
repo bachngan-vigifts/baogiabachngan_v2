@@ -24,9 +24,9 @@ test('catalogue applies x10 only to chosen page items and retains scope after re
  const saved=restoreState(s);assert.deepEqual(saved.settings.bundle10Ids,chosen);
  s.settings.bundle10=false;assert(s.products.every((p:any)=>quotePrice(p,s)===price(p)));
 });
-test('catalogue pages keep budget, brand and category separate without losing items',()=>{
+test('catalogue pages keep budget, brand and category separate and omit singleton pages',()=>{
  const s=defaultState();s.products=[...Array.from({length:5},()=>item('LocknLock','Bình giữ nhiệt',300000)),item('LocknLock','Ly',100000),item('Minh Long','Chén',50000),item('Minh Long','Bình hoa',3000000)];s.selected=s.products.map((p:any)=>p.id);
- const pages=makeSlides(s).filter((p:any)=>p.type==='products');assert.equal(pages.flatMap((p:any)=>p.items).length,8);
+ const pages=makeSlides(s).filter((p:any)=>p.type==='products');assert.equal(pages.flatMap((p:any)=>p.items).length,4);
  for(const p of pages){assert(p.items.length<=4);assert.equal(new Set(p.items.map((i:any)=>i.brand)).size,1);assert.equal(new Set(p.items.map((i:any)=>i.category)).size,1);assert(p.items.every((i:any)=>quoteBudget(i,s)===p.band));}
  assert.throws(()=>restoreState({version:1,products:[{name:'bad'}]}));
 });
@@ -49,10 +49,12 @@ test('100-row importer bounds concurrency at six and preserves Excel order',asyn
  let active=0,peak=0;const input=Array.from({length:100},(_,i)=>i);const out=await mapConcurrent(input,6,async(i:number)=>{active++;peak=Math.max(peak,active);await new Promise(r=>setTimeout(r,2+(i%3)));active--;return i*2});assert.equal(peak,6);assert.equal(active,0);assert.deepEqual(out,input.map(i=>i*2));
 });
 test('page text restores safely and remains tied to product IDs rather than page number',()=>{
- const s=defaultState();s.products=[item('Minh Long','Bộ trà',1000000)];s.selected=[s.products[0].id];const slide=makeSlides(s).find((x:any)=>x.type==='products');const key=slideKey(slide);s.pageText[key]={'44:24':'VIGIFTS - BÁCH NGÂN mới'};assert.equal(restoreState(s).pageText[key]['44:24'],'VIGIFTS - BÁCH NGÂN mới');assert.equal(slideKey({...slide,items:[...slide.items].reverse()}),key);
+ const s=defaultState();s.products=[item('Minh Long','Bộ trà',1000000),item('Minh Long','Bộ trà',1100000)];s.selected=s.products.map((p:any)=>p.id);const slide=makeSlides(s).find((x:any)=>x.type==='products');const key=slideKey(slide);s.pageText[key]={'44:24':'VIGIFTS - BÁCH NGÂN mới'};assert.equal(restoreState(s).pageText[key]['44:24'],'VIGIFTS - BÁCH NGÂN mới');assert.equal(slideKey({...slide,items:[...slide.items].reverse()}),key);
 });
 test('batch import validates every source URL before making an upstream request',async()=>{
  for(const urls of [['https://evil.example/san-pham/a/'],Array(21).fill('https://minhlongonline.com/san-pham/a/'),['https://minhlongonline.com/san-pham/a/','https://locknlockonline.com/san-pham/b/']]){
  const r=await handleApi(new Request('https://crm.minhlongonline.com/catalogue/api/products',{method:'POST',body:JSON.stringify({urls})}));assert.equal(r.status,400);assert((await r.json()).error);
  }
 });
+
+test('catalogue keeps partial pages of two or three but drops a final single item per budget-brand-category-unit group',()=>{for(const count of [1,2,3,4,5,6,7,8,9]){const s=defaultState();s.products=Array.from({length:count},()=>item('Minh Long','Bộ trà',1000000));s.selected=s.products.map((p:any)=>p.id);const pages=makeSlides(s).filter((p:any)=>p.type==='products');assert(pages.every((p:any)=>p.items.length>=2&&p.items.length<=4));assert.equal(pages.flatMap((p:any)=>p.items).length,count-(count%4===1?1:0));const divider=makeSlides(s).find((p:any)=>p.type==='divider');if(divider)assert.equal(divider.count,pages.flatMap((p:any)=>p.items).length);}});
