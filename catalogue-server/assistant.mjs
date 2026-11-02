@@ -27,7 +27,7 @@ export function parseIntent(prompt){
  const porcelain=['bo-tra','bo-ca-phe','bo-do-an','chen-com','binh-hoa','ly-su','ly-duong-sinh'].includes(type?.key);
  const brand=both?'both':hasLock?'LocknLock':hasMinh?'Minh Long':porcelain?'Minh Long':'LocknLock';
  const quantity=text.match(/\b(\d{1,3})\s*(?:mau|san pham|sp)\b/),packSize=/bo\s*10\s*(?:sp|san pham)|don gia\s*x\s*10/.test(text)?10:1;
- return {brand,type:type?.key||'',min,max,limit:quantity?Math.min(200,Math.max(1,Number(quantity[1]))):200,packSize,keywords:[],inStock:true};
+ return {brand,type:type?.key||'',min,max,limit:quantity?Math.min(200,Math.max(1,Number(quantity[1]))):200,packSize,keywords:[],stockSource:/\bcrm\b/.test(text)?'crm':'website',inStock:true};
 }
 export function validateCriteria(value){
  if(!value||!['LocknLock','Minh Long','both'].includes(value.brand))throw Error('Vui lòng chọn thương hiệu.');
@@ -36,8 +36,9 @@ export function validateCriteria(value){
  if(!Number.isFinite(min)||min<0||min>1e10||max!==null&&(!Number.isFinite(max)||max<=0||max>1e10||max<min))throw Error('Khoảng ngân sách chưa hợp lệ.');
  if(!Number.isInteger(limit)||limit<1||limit>200)throw Error('Mỗi lần tìm từ 1 đến 200 sản phẩm.');
  if(![1,10].includes(packSize))throw Error('Chỉ hỗ trợ đơn giá hoặc bộ 10 SP.');
+ const stockSource=value.stockSource||'website';if(!['website','crm'].includes(stockSource))throw Error('Nguồn tồn kho chưa hợp lệ.');
  const keywords=Array.isArray(value.keywords)?value.keywords.map(v=>String(v).trim().slice(0,50)).filter(Boolean).slice(0,5):[];
- return {brand:value.brand,type:type.key,categoryId,categoryLabel:String(value.categoryLabel||'').slice(0,100),min,max,limit,packSize,keywords,inStock:true};
+ return {brand:value.brand,type:type.key,categoryId,categoryLabel:String(value.categoryLabel||'').slice(0,100),min,max,limit,packSize,keywords,stockSource,inStock:true};
 }
 const assistantReply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json;charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const authEndpoint='https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff/me';
@@ -55,11 +56,11 @@ export function parsePlan(prompt,catalog=[]){
  for(const part of raw){const intent=parseIntent(part);const web=catalog.find(c=>fold(part).includes(fold(c.label)));if(!intent.type&&!web&&clauses.length)clauses[clauses.length-1]+=' '+part;else clauses.push(part)}
  const groups=clauses.slice(0,12).map(part=>{const c=parseIntent(part);if(!c.type){const web=catalog.filter(x=>fold(part).includes(fold(x.label))).sort((a,b)=>b.label.length-a.label.length)[0];if(web)Object.assign(c,{brand:web.brand,type:'website',categoryId:web.id,categoryLabel:web.label})}if(!/lock|minh long/.test(fold(part))&&/lock|minh long/.test(fold(prompt)))c.brand=parseIntent(prompt).brand;return c});
  const priced=groups.filter(g=>g.min>0||g.max!==null);if(priced.length===1)for(const g of groups)if(g.min===0&&g.max===null){g.min=priced[0].min;g.max=priced[0].max}
- return groups.length?groups:[parseIntent(prompt)];
+ const stockSource=/\bcrm\b/.test(fold(prompt))?'crm':'website';for(const c of groups)c.stockSource=stockSource;return groups.length?groups:[parseIntent(prompt)];
 }
-export async function interpretIntent(prompt,env={},request,catalog=[]){
+export async function interpretIntent(prompt,env={},request,catalog=[],preferredStockSource=''){
  if(typeof prompt!=='string'||prompt.trim().length<5||prompt.length>1000)throw Error('Nhập yêu cầu từ 5 đến 1.000 ký tự.');
- const baseline=parsePlan(prompt,catalog);let warning='',diagnostic='';
+ const baseline=parsePlan(prompt,catalog),stockSource=/\bcrm\b/.test(fold(prompt))?'crm':preferredStockSource||'website';if(!['crm','website'].includes(stockSource))throw Error('Nguồn tồn kho chưa hợp lệ.');for(const c of baseline)c.stockSource=stockSource;let warning='',diagnostic='';
  if(env.AI&&request){
   let user;try{user=await staffForAI(request)}catch(e){warning=String(e.message).startsWith('Anh/chị đã gửi')?e.message:'Chưa xác thực được phiên CRM. Vui lòng đăng nhập lại CRM rồi thử lại.';}
   if(user){let stage='model';try{
@@ -69,15 +70,15 @@ export async function interpretIntent(prompt,env={},request,catalog=[]){
    stage='json';const output=result?.response??(result?.groups?result:result?.result?.response);const raw=typeof output==='string'?JSON.parse(output.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'')):output;stage='criteria';const rows=raw.groups||[raw];if(!Array.isArray(rows)||!rows.length||rows.length>12)throw Error('Invalid groups');let groups=rows.map(validateCriteria);
    // A small model must not collapse explicit category/budget combinations.
    if(baseline.length>1&&baseline.every(g=>g.type)&&baseline.some(c=>!groups.some(g=>g.type===c.type&&g.brand===c.brand&&g.min===c.min&&g.max===c.max)))groups=baseline.map(c=>validateCriteria({...c,keywords:groups.find(g=>g.type===c.type)?.keywords||c.keywords}));
-   if(groups.length>12)throw Error('Too many groups');return {criteria:groups[0],groups,engine:'cloudflare_ai',warning:'',catalog};
+   for(const c of groups)c.stockSource=stockSource;if(groups.length>12)throw Error('Too many groups');return {criteria:groups[0],groups,engine:'cloudflare_ai',warning:'',catalog,stockSource};
   }catch(e){diagnostic=[stage,String(e.name||'Error'),String(e.code||String(e.message).match(/\b\d{4,5}\b/)?.[0]||'unknown'),/quota|free.*limit|usage.*limit/i.test(String(e.message))?'quota':/context|token.*limit|too.*long/i.test(String(e.message))?'context':'other'].join(':');warning='AI chưa phản hồi hợp lệ. Đang dùng bộ lọc câu lệnh; vui lòng kiểm tra các nhóm tiêu chí.';}}
   else if(!warning)warning='Đăng nhập CRM để dùng diễn giải bằng AI. Hiện đang dùng bộ lọc câu lệnh.';
  }else warning='Kết nối AI chưa bật ở môi trường này. Đang dùng bộ lọc câu lệnh nhiều danh mục.';
- return {criteria:baseline[0],groups:baseline,engine:'criteria',warning,catalog,diagnostic};
+ return {criteria:baseline[0],groups:baseline,engine:'criteria',warning,catalog,stockSource,diagnostic};
 }
 const categoryCache=new Map();
 export function matchingProduct(q,criteria,type,brand,pricing){
- if(!q.is_in_stock||!type.name.test(fold(q.name))||type.exclude?.test(fold(q.name)))return false;
+ if(criteria.stockSource!=='crm'&&!q.is_in_stock||!type.name.test(fold(q.name))||type.exclude?.test(fold(q.name)))return false;
  const regular=Number(q.prices?.regular_price)/10**Number(q.prices?.currency_minor_unit||0);if(q.prices?.currency_code!=='VND'||!Number.isFinite(regular)||regular<=0)return false;
  const discount=brand==='LocknLock'?pricing.lockDiscount:pricing.minhDiscount;const offer=Math.round(regular*(1-discount/100)+pricing.fee)*criteria.packSize;
  return offer>=criteria.min&&(criteria.max===null||offer<=criteria.max)&&criteria.keywords.every(k=>fold(q.name).includes(fold(k)));
@@ -95,11 +96,12 @@ export async function discoverProducts(criteriaValue,pricingValue,adapter){
    if(!matched.length){errors.push(`${brand}: chưa tìm thấy danh mục ${type.label}.`);continue;}
    const best=matched[0].c;sources.push({brand,host,category:String(best.name),categoryId:best.id});
    for(let page=1;page<=10;page++){
-    const u=new URL(`https://${host}/wp-json/wc/store/v1/products`);u.searchParams.set('category',String(best.id));u.searchParams.set('stock_status','instock');u.searchParams.set('per_page','100');u.searchParams.set('page',String(page));u.searchParams.set('orderby','price');u.searchParams.set('order','asc');u.searchParams.set('_fields','id,name,sku,slug,permalink,type,prices,is_in_stock,images,categories');
+    const u=new URL(`https://${host}/wp-json/wc/store/v1/products`);u.searchParams.set('category',String(best.id));if(criteria.stockSource!=='crm')u.searchParams.set('stock_status','instock');u.searchParams.set('per_page','100');u.searchParams.set('page',String(page));u.searchParams.set('orderby','price');u.searchParams.set('order','asc');u.searchParams.set('_fields','id,name,sku,slug,permalink,type,prices,is_in_stock,images,categories');
     if(criteria.max!==null){const discount=brand==='LocknLock'?pricing.lockDiscount:pricing.minhDiscount;const ceiling=(criteria.max/criteria.packSize-pricing.fee)/(1-discount/100);if(ceiling<=0)break;u.searchParams.set('max_price',String(Math.ceil(ceiling)));}
     const rows=await adapter.json(u.href);if(!Array.isArray(rows))throw Error('Website chưa trả danh sách sản phẩm.');scanned+=rows.length;
-    for(const q of rows){if(!matchingProduct(q,criteria,type,brand,pricing))continue;const canonical=adapter.sourceUrl(q.permalink||`https://${host}/san-pham/${q.slug}/`);if(canonical.hostname!==host)continue;
-     const p=adapter.normalize(q,canonical);p.category=criteria.categoryId?categoryLabel(best.name):type.label;p.discount=brand==='LocknLock'?pricing.lockDiscount:pricing.minhDiscount;p.fee=pricing.fee;p.qty=1;p.override=null;p.inStock=true;
+    const candidates=rows.filter(q=>matchingProduct(q,criteria,type,brand,pricing));if(criteria.stockSource==='crm'&&!adapter.crmStock)throw Error('Chưa kết nối nguồn tồn CRM.');const crm=criteria.stockSource==='crm'?await adapter.crmStock(candidates.map(q=>q.sku)):null;
+    for(const q of candidates){const crmEvidence=crm?.get(String(q.sku||'').trim().toUpperCase());if(criteria.stockSource==='crm'&&(!crmEvidence||crmEvidence.available<=0))continue;const canonical=adapter.sourceUrl(q.permalink||`https://${host}/san-pham/${q.slug}/`);if(canonical.hostname!==host)continue;
+     const p=adapter.normalize(q,canonical);p.category=criteria.categoryId?categoryLabel(best.name):type.label;p.discount=brand==='LocknLock'?pricing.lockDiscount:pricing.minhDiscount;p.fee=pricing.fee;p.qty=1;p.override=null;p.inStock=true;if(crmEvidence)p.crmStock=crmEvidence;
      if(found.some(x=>x.url===p.url))continue;if(found.length>=criteria.limit){moreAvailable=true;break;}found.push(p);
     }
     if(moreAvailable||rows.length<100)break;if(page===10)moreAvailable=true;
@@ -108,7 +110,7 @@ export async function discoverProducts(criteriaValue,pricingValue,adapter){
  }
  const offer=p=>Math.round(p.regular*(1-p.discount/100)+p.fee)*criteria.packSize;found.sort((a,b)=>offer(a)-offer(b));
  if(!found.length&&errors.length)throw Error(errors.join(' '));
- return {products:found,criteria,scanned,moreAvailable,errors,sources,checkedAt:new Date().toISOString()};
+ return {products:found,criteria,scanned,moreAvailable,errors,sources,stockSource:criteria.stockSource,checkedAt:new Date().toISOString()};
 }
 const categoryLabel=value=>String(value||'').replace(/&#(\d+);/g,(_,n)=>String.fromCodePoint(Number(n))).replaceAll('&amp;','&').replace(/<[^>]*>/g,'').trim();
 async function websiteCategories(host,adapter){let cached=categoryCache.get(host);if(cached&&Date.now()-cached.at<3600000)return cached.rows;const rows=[];for(let page=1;page<=3;page++){const list=await adapter.json(`https://${host}/wp-json/wc/store/v1/products/categories?per_page=100&page=${page}`);if(!Array.isArray(list))throw Error('Website chưa trả danh mục.');rows.push(...list);if(list.length<100)break}categoryCache.set(host,{at:Date.now(),rows});return rows;}
@@ -118,7 +120,7 @@ export async function handleAssistant(request,env,adapter){
  if(request.method!=='POST')return assistantReply({error:'Chức năng này dùng POST.'},405);
  try{if(Number(request.headers.get('content-length'))>20000)throw Error('Yêu cầu quá dài.');const text=await request.text();if(text.length>20000)throw Error('Yêu cầu quá dài.');const body=JSON.parse(text);
   if(body.action==='categories')return assistantReply({catalog:await categoryOptions(adapter)});
-  if(body.action==='interpret')return assistantReply(await interpretIntent(body.prompt,env,request,await categoryOptions(adapter)));
+  if(body.action==='interpret')return assistantReply(await interpretIntent(body.prompt,env,request,await categoryOptions(adapter),body.stockSource||''));
   if(body.action==='search')return assistantReply(body.groups?await discoverPlan(body.groups,body.pricing,adapter):await discoverProducts(body.criteria,body.pricing,adapter));
   throw Error('Chức năng trợ lý chưa hợp lệ.');
  }catch(e){return assistantReply({error:e.message||'Chưa xử lý được yêu cầu.'},400)}

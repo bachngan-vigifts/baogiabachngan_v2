@@ -52,3 +52,8 @@ The category picker loads published taxonomy with products from both suppliers (
 Pages AI bindings are explicitly configured at root, production and preview because downloaded environment overrides can omit a root-only binding. Existing unrelated settings are retained.
 
 The vendored Excel parser is pinned to SheetJS CE 0.20.3 from its authoritative CDN. All nine original input workbooks and the 100-code fixture were verified with this version.
+
+## CRM stock and direct editing
+The assistant now has an explicit stock-source picker. Requests mentioning CRM select the CRM source automatically. Website prices and the agreed discount/fee formula remain the pricing source; eligible stock is verified through the existing authenticated staff products API. `filteredStock` is the CRM authority (real stock warehouses minus active quote holds), never supplier/incoming quantities. Website-out-of-stock products can qualify when CRM stock is positive. Missing/failed CRM reads never fall back to website availability, and SKU comparisons preserve leading zeros. Staff see per-product availability and the check timestamp; stock quantities are not added to customer-facing PDF/PPTX pages.
+Text regions in the preview are directly clickable. A positioned textarea edits the same per-page text overrides used by the existing modal, canvas, PDF and PowerPoint. Blur/Ctrl+Enter save and Escape cancels. Editing display text does not alter product pricing calculations.
+Validation: 17 isolated tests pass, including authenticated read scope, authoritative available stock, source failure, exact-SKU matching and CRM evidence restore. Browser checked direct title editing, Escape cancel and CRM-source detection with the 1–2 million range applied to both tea sets and vases.

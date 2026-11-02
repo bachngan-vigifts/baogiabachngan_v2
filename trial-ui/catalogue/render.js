@@ -12,7 +12,7 @@ export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,sc
  await document.fonts.ready;const ctx=canvas.getContext('2d');canvas.width=1280*scale;canvas.height=720*scale;ctx.scale(scale,scale);ctx.fillStyle='white';ctx.fillRect(0,0,1280,720);
  function box(x,y,w,h,fill,stroke='',radius=0){ctx.beginPath();ctx.roundRect(x,y,w,h,radius);ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=.8;ctx.stroke()}if(pptSlide)pptSlide.addShape(radius?'roundRect':'rect',{x:x/96,y:y/96,w:w/96,h:h/96,rectRadius:radius/96,radius:radius/96,fill:{color:hex(fill)},line:{color:hex(stroke||fill),width:stroke?.6:0}});}
  function text(value,x,y,w,h,size=18,color=C.ink,bold=false,align='left',maxLines=99){
-  const position=x+':'+y,original=String(value??'');value=state.pageText?.[slideKey(slide)]?.[position]??original;if(textBoxes)textBoxes.push({position,original,value:String(value)});
+  const position=x+':'+y,original=String(value??'');value=state.pageText?.[slideKey(slide)]?.[position]??original;if(textBoxes)textBoxes.push({position,original,value:String(value),x,y,w,h,size,color,bold,align});
   ctx.font=`${bold?700:400} ${size}px Montserrat, Arial`;ctx.fillStyle=color;ctx.textBaseline='top';ctx.textAlign=align;
   const lineHeight=size*1.23,lines=wrap(ctx,value,w,Math.min(maxLines,Math.max(1,Math.floor(h/lineHeight))));
   lines.forEach((line,i)=>ctx.fillText(line,align==='right'?x+w:align==='center'?x+w/2:x,y+i*lineHeight));ctx.textAlign='left';
