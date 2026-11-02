@@ -34,7 +34,7 @@ PDF là ảnh render của từng trang, PowerPoint giữ text/giá/khung/ảnh/
 
 ## Thư viện
 
-PptxGenJS 4.0.1 (MIT), pdf-lib (MIT), SheetJS CE 0.18.5 (Apache-2.0), QRCode.js 1.0.0 (MIT), Montserrat (SIL OFL 1.1). Bản phân phối vendored giữ thông tin bản quyền thư viện. Tài sản VIGIFTS theo mẫu khách hàng cung cấp.
+PptxGenJS 4.0.1 (MIT), pdf-lib (MIT), SheetJS CE 0.20.3 (Apache-2.0), QRCode.js 1.0.0 (MIT), Montserrat (SIL OFL 1.1). Bản phân phối vendored giữ thông tin bản quyền thư viện. Tài sản VIGIFTS theo mẫu khách hàng cung cấp.
 
 ## Product assistant
 Staff can describe category and final quotation budget in Vietnamese, review editable criteria, then search live WooCommerce Store APIs for in-stock products. Final price is regular price ×60% (LocknLock) or ×90% (Minh Long), plus VND15,000, before applying the optional 10-unit pack. Results refresh matching library URLs and either replace the selection or append; no product seeds ship.
@@ -45,3 +45,10 @@ Excel rows needing website data run in a six-request pool. Results retain workbo
 Each preview page has “Sửa chữ trang này”. Display overrides are saved per page identity and text position, restored with drafts/backups, and shared by canvas, PDF and editable PowerPoint rendering. Product-page identity follows its product IDs rather than numeric position. Price text overrides do not change product calculations; change the product price to change budget grouping or totals. Long text is clipped to the template's available line count.
 
 Import optimization: rows requiring website lookup are now grouped by supplier in batches of up to 20 slugs, with three batches in flight. Only the fields used in quotations are requested. A real 100-URL benchmark returned all 100 products with zero errors in 6.623 seconds across six supplier requests. Browser Excel import also confirmed 100 products added. Timing varies with supplier availability. Duplicate links are skipped before batch construction; errors remain tied to individual Excel rows.
+
+## Multiple assistant groups
+The assistant now extracts and edits up to 12 category/budget groups instead of one. Each group has independent brand, live website category or common preset, min/max final price, result limit, keywords and unit/ten-pack pricing. “Thêm danh mục” adds another category; “Thêm mức giá” copies a category into the next budget interval. All groups merge into one quotation, deduplicating supplier URLs and reporting empty groups separately.
+The category picker loads published taxonomy with products from both suppliers (122 categories observed). “Ly sứ” and “Ly dưỡng sinh” have separate presets and product-name filters, even though Minh Long assigns both to the same website category. Natural-language parsing preserves explicit categories and price intervals if a small model collapses them. Live stock, price calculation and original quotation grouping remain deterministic.
+Pages AI bindings are explicitly configured at root, production and preview because downloaded environment overrides can omit a root-only binding. Existing unrelated settings are retained.
+
+The vendored Excel parser is pinned to SheetJS CE 0.20.3 from its authoritative CDN. All nine original input workbooks and the 100-code fixture were verified with this version.
