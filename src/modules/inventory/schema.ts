@@ -117,6 +117,8 @@ export const stockTransferLines = pgTable('stock_transfer_lines', {
   unit: text('unit').notNull().default(''),
   qty: doublePrecision('qty').notNull(),
   /** Số lượng kho đến thực nhận (null = chưa nhận; phiếu cũ đã chuyển một bước coi như nhận đủ). */
+  shippedQty: doublePrecision('shipped_qty'),
   receivedQty: doublePrecision('received_qty'),
 }, t => [uniqueIndex('uq_stock_transfer_lines_sku').on(t.transferId, t.sku), check('chk_stock_transfer_lines_qty', sql`${t.qty} > 0`),
-  check('chk_stock_transfer_lines_received', sql`${t.receivedQty} IS NULL OR (${t.receivedQty} >= 0 AND ${t.receivedQty} <= ${t.qty})`)]).enableRLS();
+  check('chk_stock_transfer_lines_received', sql`${t.receivedQty} IS NULL OR (${t.receivedQty} >= 0 AND ${t.receivedQty} <= ${t.qty})`),
+  check('chk_stock_transfer_lines_shipped',sql`${t.shippedQty} IS NULL OR (${t.shippedQty} > 0 AND ${t.shippedQty} <= ${t.qty} AND (${t.receivedQty} IS NULL OR ${t.receivedQty} <= ${t.shippedQty}))`)]).enableRLS();

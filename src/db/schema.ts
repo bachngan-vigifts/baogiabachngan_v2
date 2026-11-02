@@ -20,6 +20,7 @@ export * from '../modules/hr/schema.ts';
 export * from '../modules/hr/adms-schema.ts';
 export * from '../modules/care/schema.ts';
 export * from '../modules/inventory/schema.ts';
+export * from '../modules/inventory/transfer-outbox-schema.ts';
 
 export * from '../modules/sales/pos-schema.ts';
 

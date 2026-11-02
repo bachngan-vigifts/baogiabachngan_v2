@@ -156,7 +156,7 @@ test('phiếu đang chuyển: kho đến nhập SL nhận từng mã; nhận thi
  answer=true;await s.button('Nhận hàng')!.click();
  assert.equal(s.posts.length,1);assert.equal(s.posts[0].path,'/stock-transfers/old/receive');
  assert.deepEqual(JSON.parse(JSON.stringify(s.posts[0].body)),{revision:1,lines:[{sku:'X',qty:12},{sku:'Y',qty:1}],note:'Giao thiếu 2 bát'});
- assert.match(s.messages.at(-1)!,/hoàn về kho đi/);
+ assert.match(s.messages.at(-1)!,/chờ đối soát/);
 });
 test('nhận hàng: ô trống / âm / vượt số chuyển bị chặn ngay trên máy; nhận đủ không hỏi xác nhận',async()=>{
  const s=await setup('shipped',false,undefined,{confirm:async()=>{throw Error('nhận đủ không được hỏi xác nhận thiếu hàng');}});

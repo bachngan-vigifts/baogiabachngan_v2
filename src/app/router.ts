@@ -62,6 +62,7 @@ import { registerPulseRoutes } from './pulse-routes.ts';
 import { registerBadgeRoutes } from './badge-routes.ts';
 import { registerInventoryRoutes } from '../modules/inventory/api/routes.ts';
 import { registerTransferRoutes, stockHoldHooks } from '../modules/inventory/api/transfer-routes.ts';
+import { registerTransferIntegrationRoutes } from '../modules/inventory/api/transfer-outbox.ts';
 import { assertFreeStock } from '../modules/sales/api/stock-free.ts';
 import { registerStockHistoryRoutes, stockRefLinkHooks } from '../modules/inventory/api/history-routes.ts';
 import { registerFlowRoutes } from './flow-routes.ts';
@@ -130,6 +131,7 @@ export function createAppRouter() {
   registerInventoryRoutes(router);
   registerStockIntegrityRoutes(router);
   registerTransferRoutes(router);
+  registerTransferIntegrationRoutes(router);
   registerStockHistoryRoutes(router);
   registerFlowRoutes(router);
   registerCashbookRoutes(router);

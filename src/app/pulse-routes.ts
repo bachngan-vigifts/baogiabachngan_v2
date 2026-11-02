@@ -9,6 +9,7 @@ import { quotations } from '../modules/quotes/schema.ts';
 import { customerPayments, deliveries, packingSlips, salesContracts, salesOrders, stockHolds } from '../modules/sales/schema.ts';
 import { expireHolds } from '../modules/sales/api/hold-routes.ts';
 import { remindPendingTransfers } from '../modules/inventory/api/transfer-routes.ts';
+import { dispatchTransferJobs } from '../modules/inventory/api/transfer-outbox.ts';
 import { tasks } from '../modules/tasks/schema.ts';
 import { incomingShipments } from '../modules/suppliers/schema.ts';
 import { customerActivities } from '../modules/care/schema.ts';
@@ -34,6 +35,9 @@ export function registerPulseRoutes(router: Router<StaffEnv>) {
     // Phiếu xin hàng chờ duyệt quá 1 giờ: nhắc kho được xin + người duyệt (mỗi giờ một lần, chạy nền).
     const remind = remindPendingTransfers(c.env).catch(e => { console.error('transfer reminder failed', e instanceof Error ? e.message : e); return 0; });
     if (c.env.waitUntil) c.env.waitUntil(remind); else await remind;
+    // Recover committed pending events after an Edge shutdown; independent of existing Sapo/receipt cron.
+    const transfers=dispatchTransferJobs(c.env).catch(()=>undefined);
+    if(c.env.waitUntil)c.env.waitUntil(transfers);else await transfers;
     const [[row], notifyAt, chatUnread] = await Promise.all([
       db.select({
         s: sql<string>`concat_ws('|', ${latest(cashEntries.updatedAt)}, ${latest(cashReconciliations.updatedAt)}, ${latest(cashDrawers.updatedAt)}, ${latest(customerPayments.voidedAt)}, ${latest(posShifts.openedAt)}, ${latest(posShifts.closedAt)}, ${latest(stockBalances.updatedAt)}, ${latest(quotations.updatedAt)}, ${latest(salesOrders.updatedAt)}, ${latest(salesContracts.updatedAt)}, ${latest(deliveries.updatedAt)},
