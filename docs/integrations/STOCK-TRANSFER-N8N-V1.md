@@ -2,7 +2,7 @@
 
 Trạng thái bàn giao: code CRM và kiểm thử cục bộ; chưa chạy migration, chưa cấu hình secret, chưa deploy. Không có kết nối quản trị n8n trong phiên này: workflow `zdRTgyHOttwFEJYh` chưa được đọc, sửa hoặc kích hoạt. Không được coi phần n8n / chứng từ đích là đã kiểm chứng.
 
-Workflow do chủ doanh nghiệp cung cấp: **DRAFT — CRM stock transfer received → destination warehouse (v1)**, URL `https://n8nthai.moarchvn.com/webhook/crm-stock-transfer-received-v1`. Giữ inactive khi còn bất cứ URL `.invalid`, chưa có ánh xạ kho/SKU hoặc chưa kiểm thử hệ thống đích. Chưa xác định hệ thống đích qua kết nối thực tế; không tự mặc định mã kho Sapo hay thay luồng Sapo đang chạy.
+Workflow do chủ doanh nghiệp cung cấp: **DRAFT — CRM stock transfer received → destination warehouse (v1)**, URL `https://n8nthai.moarchvn.com/webhook/crm-stock-transfer-received-v1`. Giữ inactive khi còn bất cứ URL `.invalid`, chưa có ánh xạ kho/SKU hoặc chưa kiểm thử hệ thống đích. Hệ thống đích đã được chủ doanh nghiệp chốt là **Sapo Bách Ngân**. Chưa xác minh tenant/origin và ánh xạ kho qua kết nối thực tế; không tự mặc định mã kho Sapo hay thay luồng Sapo đang chạy.
 
 ## Vòng đời CRM
 
@@ -84,3 +84,29 @@ Claim token là mã quyền xử lý riêng từng job, không phải token đă
 Cục bộ: kiểm tra receipt/outbox cùng transaction; lỗi ghi outbox rollback toàn bộ receipt; gửi lỗi sau commit không rollback receipt; nhận trùng; claim đồng thời; callback replay; hash conflict; timeout; callback trước ACK; 429; nhận 0; không backfill; activation; quyền; RLS; constraint shipped/received. Bộ test chạy PGlite và chạy PostgreSQL thật qua TEST_PG_URL (PGlite kiểm tra gửi lại tuần tự; đồng thời thực sự chỉ xác minh trên PostgreSQL).
 
 Chưa kiểm thử: workflow nháp thực tế, xác thực Header Auth n8n, ánh xạ kho/SKU, tạo và đọc lại chứng từ đích, mạng production và secret mới. Chưa chạy migration hoặc kích hoạt production. Chỉ chuyển sang sử dụng chính thức sau khi các mục này đã qua trên môi trường thử và một phiếu có kiểm soát được chủ doanh nghiệp cho phép.
+
+## Prompt bàn giao cho Madam Sen / OpenClaw
+
+Có thể copy nguyên khối bên dưới; không gửi secret qua chat:
+
+```text
+Hoàn thiện workflow n8n zdRTgyHOttwFEJYh để nhận phiếu điều chuyển CRM và tạo chứng từ trên SAPO BÁCH NGÂN.
+
+Tài liệu hợp đồng API: repo bachngan-vigifts/baogiabachngan_v2, PR #426, docs/integrations/STOCK-TRANSFER-N8N-V1.md. Đọc bản mới nhất của nhánh feat/transfer-received-outbox trước khi làm. Không chỉnh workflow Sapo/nhận NCC hiện có, không thay phiên đăng nhập Sapo, không quét phiếu lịch sử.
+Webhook: https://n8nthai.moarchvn.com/webhook/crm-stock-transfer-received-v1.
+CRM API base: https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff.
+
+1. Kiểm tra workflow hiện có; giữ inactive nếu còn URL .invalid, thiếu credential hoặc thiếu mapping. Chỉ dùng credential được bảo vệ, không in token/cookie hoặc ghi vào workflow JSON/tài liệu/chat.
+2. Xác minh tenant Sapo Bách Ngân, origin link chứng từ, quyền API và khả năng tạo/đọc lại chứng từ điều chuyển. Lập bảng CRM warehouse_id -> Sapo location_id, cùng mapping SKU/đơn vị. Thiếu mapping hoặc không hỗ trợ nghiệp vụ thì dừng và báo rõ, không tạo sản phẩm/kho mới. Không đoán endpoint Sapo.
+3. Webhook dùng Header Auth. Validate schema_version=1, event=stock_transfer.received, mã và hash; received_at không trước integration_activated_at. CRM chỉ gửi sau khi nhận hàng đã commit, không gửi lúc duyệt/Đã chuyển.
+4. Gọi POST /integrations/stock-transfers/claim bằng secret STOCK_TRANSFER_SYNC_TOKEN riêng. Chỉ granted=true mới được tạo chứng từ. Dùng payload từ claim, giữ idempotency_key/payload_hash gốc. granted=false hoặc 409 thì kết thúc, không tạo.
+5. Chỉ tạo theo received_qty > 0, không theo qty đề nghị hay shipped_qty. Giữ dòng 0 trong snapshot gốc, lọc ở nhánh tạo chứng từ; không tạo phiếu rỗng. n8n không ghi tồn CRM.
+6. Tra và đối chiếu chứng từ Sapo theo idempotency_key trước khi tạo; kiểm tra kho đi/đến, toàn bộ SKU/đơn vị/số lượng. Ghi tham chiếu CRM vào chứng từ. Xác minh Sapo có unique/idempotency thật hay không; nếu không có phải nêu giới hạn, không tuyên bố exactly-once bằng static data hoặc đọc-rồi-tạo.
+7. Sau Create phải đọc lại và đối chiếu. Chỉ callback POST /integrations/stock-transfers/result succeeded khi verified=true; gửi key/hash/claim_token cùng destination_system=sapo_bach_ngan, destination_id, destination_no, destination_url đúng origin đã cấu hình.
+8. Timeout hoặc không rõ Create đã lưu: callback unknown, chỉ tìm/đối soát; không tự chạy Create lại, đổi key hay reset claim. Thiếu mapping -> manual; lỗi nghiệp vụ chắc chắn chưa tạo -> failed. HTTP202 của webhook không phải thành công.
+9. Dùng hai credential độc lập: CRM -> webhook Header Auth và n8n -> CRM sync token, mỗi mã >=32 ký tự. Thiết lập qua kho secret được phép, không gửi giá trị cho người dùng. Gửi lại cho người phụ trách CRM thông tin không nhạy cảm: tên credential, webhook URL, origin đích và bảng mapping.
+10. Kiểm thử bằng fixture/môi trường thử: đúng mapping, nhận thiếu, dòng0, gửi lặp, hai execution đồng thời chỉ1 granted, cùng key khác hash, timeout sau Create, callback gửi lại, lỗi đọc lại, thiếu mapping, sự kiện trước activation. Không tạo phiếu thật để thử nếu chưa được chủ doanh nghiệp chỉ định phiếu và cho phép.
+11. Chỉ activate sau khi CRM đã merge/deploy, migration đã có, cả hai bên cấu hình đủ và kiểm thử qua. Manager bật tích hợp CRM sau cùng; không backdate activation hoặc backfill.
+
+Trả báo cáo: workflow ID/phiên bản, active hay inactive, mapping, API/loại chứng từ Sapo đã xác minh, hỗ trợ chống trùng ở Sapo, kết quả từng test và các bước còn thiếu. Không trả secret. Chưa có điều kiện nào thì nói rõ, không nhận đã hoàn thành.
+```

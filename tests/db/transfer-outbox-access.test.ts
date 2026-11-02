@@ -15,5 +15,8 @@ test('transfer integration migration is repeatable, preserves activation and rem
   assert.deepEqual(r.rows[0],{rls:true,anon:false,authenticated:false,policies:0});
  }
  const r=await client.query<{enabled:boolean;integration_activated_at:string}>('select enabled,integration_activated_at from stock_transfer_integration_settings');assert.equal(r.rows[0]!.enabled,true);assert.equal(r.rows[0]!.integration_activated_at,'2026-11-02T00:00:00.000Z');
- await client.exec(readFileSync(new URL('../../scripts/sql/assert-transfer-outbox.sql',import.meta.url),'utf8'));
+ const gate=readFileSync(new URL('../../scripts/sql/assert-transfer-outbox.sql',import.meta.url),'utf8');
+ await client.exec(gate);
+ await client.exec('ALTER TABLE stock_transfer_outbox DROP COLUMN destination_url;');
+ await assert.rejects(()=>client.exec(gate),/Transfer migration incomplete: stock_transfer_outbox.destination_url/);
 });
