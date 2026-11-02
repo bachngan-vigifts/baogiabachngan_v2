@@ -91,6 +91,7 @@ async function viewOf(c: Ctx, id: string) {
     requestedByName: name(t!.requestedBy), approvedByName: name(t!.approvedBy), doneByName: name(t!.doneBy), cancelledByName: name(t!.cancelledBy),
     lines: lines.map(l => ({ sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, fromStock: at(l.sku, t!.fromWarehouseId), toStock: at(l.sku, t!.toWarehouseId) })),
     actions: {
+      adjustBalance: can(m, 'inventory.view') && can(m, 'inventory.manage'),
       edit: status === 'pending' && (m.role === 'manager' || t!.requestedBy === m.id),
       approve: status === 'pending' && decide, reject: status === 'pending' && decide,
       cancel: (status === 'pending' || status === 'approved') && (m.role === 'manager' || t!.requestedBy === m.id),

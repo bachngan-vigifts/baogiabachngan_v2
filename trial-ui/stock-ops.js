@@ -169,6 +169,7 @@ export function initTransfers({ api, root, toast, go, confirmBox, isManager = ()
       });
       acts.append(b);
     };
+    if (t.actions.adjustBalance) acts.append(btn('Cân bằng kho nhanh', 'btn secondary mobile-desktop-only', () => { close(); go('#/inventory?transfer=' + encodeURIComponent(t.id)); }));
     if (t.actions.edit) acts.append(btn('Chỉnh sửa', 'btn secondary', () => openForm(t,true)));
     if (t.actions.approve) act('Cho xin hàng', 'btn ok', 'Đang duyệt…', () => run('approve', {}, 'Đã cho – chuyển hàng rồi bấm "Đã chuyển".'));
     if (t.actions.reject) act('Từ chối…', 'btn danger-outline', 'Đang từ chối…', async () => { const r = await ask('Từ chối phiếu xin hàng', 'Lý do từ chối (người xin sẽ nhận được)'); return r ? run('reject', { reason: r }, 'Đã từ chối.') : false; });
