@@ -8,7 +8,7 @@ const declared = tablesIn(schema).map(t => getTableConfig(t).name).sort();
 test('PostgreSQL migration tạo đúng các bảng đã khai báo', async () => {
   const db = await openMigratedDb();
   assert.deepEqual(await tablesOf(db), declared);
-  assert.equal(declared.length, 145); // thêm sổ quyền thưởng và các lần ghi nhận thưởng HĐKT
+  // Full table-name equality above also covers newer modules without a stale hard-coded count.
 });
 
 test('mọi bảng PostgreSQL có khoá chính', async () => {

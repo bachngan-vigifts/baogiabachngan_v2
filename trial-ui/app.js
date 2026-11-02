@@ -1,3 +1,4 @@
+import {initWebOrderDocument,webDocumentMode} from './web-order-document.js';
 import {mountCashCollections} from './cash-collections.js';
 import {returnStateText} from './order-return-summary.js';
 import {mountContractLiquidation} from './contract-liquidation.js';
@@ -3302,7 +3303,7 @@ const slipButtons = (orderId, status) => status === 'draft' || status === 'cance
   : `<button type="button" class="btn ghost small" data-pack-print-for="${esc(orderId)}" title="In phiếu đóng gói">Phiếu ĐG</button><button type="button" class="btn ghost small" data-ship-print-for="${esc(orderId)}" title="In phiếu giao hàng">Phiếu GH</button>`;
 // ----- danh sách đơn
 let ordersPager, ordersReq = 0, ordersData = null;
-const ORDER_SOURCE = { crm: 'CRM', pos: 'POS tại quầy', ghn: 'COD / GHN' };
+const ORDER_SOURCE = { crm: 'CRM', pos: 'POS tại quầy', ghn: 'COD / GHN',web:'Đơn website' };
 function ordersQuery(exportMode = false) {
   const status = $('#orders-status-tabs .chip.active')?.dataset.status || '', inv = $('#orders-filters .chip.active')?.dataset.invoice || '';
   const p = new URLSearchParams({ flow: 'order', q: $('#orders-search').value, limit: String(exportMode ? 5000 : ordersPager.limit), offset: String(exportMode ? 0 : ordersPager.offset) });
@@ -3333,15 +3334,15 @@ async function loadOrders() {
     salesListSummary('orders', d.summary);
     ordersPager.render(d.total ?? d.orders.length);
     fillList('orders', d.orders.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
-      <td>${orderLink(o.id, o.orderNo)}<small>${esc(o.quoteNo || 'Không từ báo giá')} · ${fmtDate(String(o.createdAt || o.orderDate).slice(0, 10))}</small></td>
+      <td>${orderLink(o.id, o.orderNo)}<small>${esc(o.external?'Web '+o.sourceOrderNo:(o.quoteNo || 'Không từ báo giá'))} · ${fmtDate(String(o.createdAt || o.orderDate).slice(0, 10))}</small></td>
       <td>${esc(o.customerName)}<small>${esc([o.contact, o.phone].filter(Boolean).join(' · '))}</small></td>
       <td><span class="pill ${o.orderSource === 'ghn' ? 'warn' : o.orderSource === 'pos' ? 'ok' : 'blue'}">${esc(ORDER_SOURCE[o.orderSource] || o.orderSource)}</span><small>${esc(o.branchName || '—')}</small></td>
       <td>${esc(o.ownerName || '—')}</td>
-      <td>${pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</td>
-      <td class="orders-shipping-cell${o.ghnShipments?.length?' has-ghn-tracking':''}">${o.deliveryStatus ? pill(DELIVERY_STATUS, o.deliveryStatus) : o.orderSource === 'ghn' ? '<span class="pill warn">Chờ tạo vận đơn</span>' : '<span class="muted">—</span>'}<small>${esc(o.deliveryCarrier || '')}</small>${ghnOrderSummary(o.ghnShipments,esc)}</td>
-      <td>${payCell(o.receivable, o.debtCounts, o.status)}</td>
-      <td class="right num"><b>${money(o.total)}</b><small>${invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</small></td>
-      <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${slipButtons(o.id, o.status)}</td></tr>`),
+      <td>${o.external?'<span class="pill info">'+esc(o.statusLabel)+'</span>':pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</td>
+      <td class="orders-shipping-cell${o.ghnShipments?.length?' has-ghn-tracking':''}">${o.deliveryStatus ? pill(DELIVERY_STATUS, o.deliveryStatus) : o.orderSource === 'ghn' ? '<span class="pill warn">Chờ tạo vận đơn</span>' : '<span class="muted">—</span>'}<small>${esc(o.deliveryCarrier || '')}</small>${o.external?'<small>'+esc(o.ghnOrderCode||'Chưa tạo GHN')+' · '+esc(o.ghnStatus||'')+'</small>':ghnOrderSummary(o.ghnShipments,esc)}</td>
+      <td>${o.external&&o.paid===null?'<span class="muted">Chưa rõ thanh toán</span>':payCell(o.receivable, o.debtCounts, o.status)}</td>
+      <td class="right num"><b>${money(o.total)}</b><small>${o.external?'Chưa có dữ liệu hoá đơn':invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</small></td>
+      <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${o.external?'':slipButtons(o.id, o.status)}</td></tr>`),
       'Chưa có đơn đặt hàng. Bấm ＋ để tạo đơn từ báo giá đã duyệt.');
   } catch (e) { if (req === ordersReq) { salesListSummary('orders', null); listError('orders', e); ordersPager.render(0); } }
 }
@@ -3377,7 +3378,7 @@ function salesListSummary(key, s) {
   const box = $(`#${key}-stats`); if (!box) return;
   if (!s) { box.innerHTML = ''; return; }
   box.innerHTML = [[key === 'orders' ? 'Số đơn hàng' : 'Số HĐKT', fmtNum(s.count), '', s.cancelled ? `Không tính ${fmtNum(s.cancelled)} ${noun} đã huỷ` : ''], ['Doanh thu', money(s.revenue), ''], ['Tiền cọc', money(s.deposit), ''],
-    ['Đã thu', money(s.paid), ''], ['Còn phải thu', money(s.remaining), s.remaining > 0 ? 'danger-text' : '']]
+    ['Đã thu', money(s.paid), ''], ['Còn phải thu', money(s.remaining), s.remaining > 0 ? 'danger-text' : '',s.unknownPaymentCount?`Chưa gồm ${fmtNum(s.unknownPaymentCount)} đơn web chưa rõ thanh toán`:'']]
     .map(([t, v, c, note]) => `<article class="stat"><small>${t}</small><strong class="${c}">${v}</strong>${note ? `<span class="stat-note">${note}</span>` : ''}</article>`).join('');
 }
 // ----- lịch giao hàng (mặc định 7 ngày trước → 30 ngày tới)
@@ -3594,7 +3595,7 @@ $('#orders-export').addEventListener('click', async e => {
     await downloadExcel('danh-sach-don-hang', [{ name: 'Đơn hàng', widths: [20, 14, 28, 18, 22, 22, 16, 16, 18, 18],
       header: ['Số đơn', 'Ngày tạo', 'Khách hàng', 'Điện thoại', 'Nguồn', 'Chi nhánh', 'Nhân viên', 'Trạng thái', 'Giao hàng', 'Giá trị'],
       rows: d.orders.map(o => [o.orderNo, String(o.createdAt || o.orderDate).slice(0, 10), o.customerName, o.phone, ORDER_SOURCE[o.orderSource] || o.orderSource,
-        o.branchName, o.ownerName, ORDER_STATUS[o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status]?.[0] || o.status,
+        o.branchName, o.ownerName, o.statusLabel || ORDER_STATUS[o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status]?.[0] || o.status,
         DELIVERY_STATUS[o.deliveryStatus]?.[0] || (o.orderSource === 'ghn' ? 'Chờ tạo vận đơn' : ''), o.total]) }]);
   } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
 });
@@ -3975,13 +3976,17 @@ $('#discount-form').addEventListener('submit', async e => {
 $('#account-link-copy').addEventListener('click', () => { $('#account-link-url').select(); navigator.clipboard?.writeText($('#account-link-url').value).then(() => toast('Đã chép link.')).catch(() => document.execCommand('copy')); });
 
 let orderLoadRun = 0;
+const webOrderUi=initWebOrderDocument({root:$('#web-order-content'),api,toast,go,onPrint:(html,no,kind)=>{ $('#print-sheet').innerHTML=html;printSheet({page:{size:'A4 portrait',margin:'20mm 8mm 10mm 8mm'},cls:'web-order-print',title:`${kind}-${no}`.replace(/[^\w.-]+/g,'-')}); }});
 async function openOrder(id, confirmed = null) {
+  id=decodeURIComponent(id);
   const run = ++orderLoadRun, session = token, route = location.hash;
   const onContracts = location.hash.startsWith('#/contracts/');
+  webDocumentMode($('#view-order'),$('#web-order-content'),id.startsWith('web:'));
   $('#order-title').textContent = onContracts ? 'Đang tải HĐKT…' : 'Đang tải đơn…';
   let d;
   try { d = confirmed || await api('/orders/' + encodeURIComponent(id)); } catch (e) { if(run!==orderLoadRun||session!==token||route!==location.hash)return;toast(e.message, 'err'); if (e.status !== 401) go(onContracts ? '#/contracts' : '#/orders'); return; }
   if(run !== orderLoadRun || session !== token || route !== location.hash)return;
+  if(d.document){sales.order=null;sales.detail=null;webOrderUi.render(d);$('#breadcrumb').textContent=d.document.orderNo;document.title=d.document.orderNo+' · Bách Ngân';return;}
   sales.order = d.order; sales.detail = d;
   // HĐKT luôn ở #/contracts/<id>, đơn hàng ở #/orders/<id> (link cũ / thông báo cũ tự chuyển đúng trang).
   const want = docHref(id, d.contract?.contractNo);
@@ -4084,7 +4089,7 @@ async function openOrder(id, confirmed = null) {
     <dt>Pháp nhân</dt><dd>${esc(k.legalEntity)}</dd><dt>Ngày ký</dt><dd>${fmtDate(k.signedDate) || '—'}</dd><dt>Đặt cọc</dt><dd>${fmtNum(k.depositRate)}% · ${money(k.depositAmount)}</dd>
     <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd>${saleWarehouseRow(o)}</dl>
     <div class="row-gap"><button class="btn primary small" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / sửa / tải hồ sơ HĐKT</button>${isManager() && k.status === 'draft' && o.status !== 'draft' ? `<button class="btn secondary small" data-contract-sign="${esc(k.id)}">Đánh dấu đã ký</button>` : ''}</div><div class="contract-liquidation-actions"></div>`
-    : `<dl class="kv"><dt>Số đơn</dt><dd><b>${esc(o.orderNo)}</b></dd><dt>Trạng thái</dt><dd>${pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</dd>
+    : `<dl class="kv"><dt>Số đơn</dt><dd><b>${esc(o.orderNo)}</b></dd><dt>Trạng thái</dt><dd>${o.external?'<span class="pill info">'+esc(o.statusLabel)+'</span>':pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</dd>
     <dt>Ngày đặt</dt><dd>${fmtDate(o.orderDate)}</dd>${o.quoteNo ? `<dt>Từ báo giá</dt><dd>${o.quoteId ? `<a href="#/quotes/${encodeURIComponent(o.quoteId)}">${esc(o.quoteNo)}</a>` : esc(o.quoteNo)}</dd>` : ''}
     <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd>${saleWarehouseRow(o)}<dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
     <dt>Thanh toán</dt><dd>${o.channel === 'pos' ? esc(posPaymentText(d)) : 'Theo HĐ nguyên tắc với khách'}</dd></dl>
@@ -4788,7 +4793,7 @@ document.addEventListener('click', async e => {
   const listPrint = e.target.closest('[data-order-print-for]');
   if (listPrint) {
     e.stopPropagation();
-    try { openOrderPrint(await api('/orders/' + encodeURIComponent(listPrint.dataset.orderPrintFor))); } catch (ex) { toast(ex.message, 'err'); }
+    try { const d=await api('/orders/' + encodeURIComponent(listPrint.dataset.orderPrintFor));if(d.document){webOrderUi.print(d,'order');}else openOrderPrint(d); } catch (ex) { toast(ex.message, 'err'); }
   }
   if (e.target.closest('[data-contract-docs]')) openContractDocs({ detail: sales.detail, api, toast, onSaved: () => openOrder(sales.order.id) });
   const listDocs = e.target.closest('[data-contract-docs-for]');

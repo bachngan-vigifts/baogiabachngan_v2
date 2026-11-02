@@ -2488,3 +2488,18 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 /* Keep salary/reward setup visible and readable on narrow payroll headers. */
 .pr-actions > [data-tab="profiles"], .pr-actions > [data-act="bonus-params"] { white-space: normal; line-height: 1.35; }
 .pr-bonus-setup p { line-height: 1.5; }
+.web-order-paper { background:#fff; padding:20px; border:1px solid var(--border,#dce3ed); border-radius:8px; margin-top:14px; overflow-wrap:anywhere; }
+.web-order-paper>h1,.web-order-paper>h2 { text-align:center; }
+.web-order-paper .slip-letterhead { width:100%; height:auto; }
+.web-order-paper table { width:100%; margin:14px 0; }
+.web-order-edit { display:grid; gap:12px; }
+.web-edit-lines { display:grid; gap:12px; }
+.web-edit-line { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; padding:12px; border:1px solid #dce3ed; border-radius:8px; min-width:0; }
+.web-edit-field { display:grid; gap:5px; }
+.web-edit-field input { min-width:0; width:100%; }
+.web-edit-search-results { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:6px; }
+.web-edit-total { font-weight:600; }
+@media(max-width:600px) { .web-edit-line { grid-template-columns:repeat(2,minmax(0,1fr)); } .web-order-paper { padding:12px; overflow-x:auto; } .web-order-paper table { min-width:650px; } }
+.web-edit-field input[type=checkbox] { width:auto; justify-self:start; }
+.web-order-paper .ship-table td,.web-order-paper .ship-table th { white-space:normal; }
+#web-order-content { scroll-margin-top:80px; }

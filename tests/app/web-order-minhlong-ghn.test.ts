@@ -55,7 +55,7 @@ test('Web Minh Long: xác nhận tạo vận đơn GHN Minh Long (COD, khối l�
   let [stored] = await f.db.select().from(webStoreOrders).where(eq(webStoreOrders.id, o.id));
   assert.deepEqual([stored!.ghnOrderCode, stored!.ghnStatus, stored!.ghnFee, stored!.ghnSortCode, stored!.address],
     ['GMLX01', 'ready_to_pick', 32000, '055-B', '12 Hai Bà Trưng, Phường Tân An, Quận Ninh Kiều, Cần Thơ']);
-  assert.equal((await act(o.id, { action: 'confirm', ...address })).status, 409, 'không tạo vận đơn lần hai');
+  const sentCount=ghn.length;const replay=await act(o.id,{action:'confirm',...address});assert.equal(replay.status,200);assert.equal(replay.data.ghnOrderCode,'GMLX01');assert.equal(ghn.length,sentCount,'gửi lại trả mã cũ, không tạo vận đơn lần hai');
 
   // Website Minh Long gửi lại đơn (không biết vận đơn CRM tạo): giữ mã GHN, không kéo về "chờ xử lý".
   await sync({ id: 501, status: 'processing', meta_data: [] });

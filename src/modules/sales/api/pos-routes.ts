@@ -1,3 +1,6 @@
+import {webEditFlags} from './web-order-edit-state.ts';
+import {beginWebConfirmation} from './web-order-edit.ts';
+import {readWebEdit} from '../domain/web-order-edit.ts';
 import {posStockSnapshot,posScanCodes,posBrandScope} from './pos-stock-snapshot.ts';
 import {ledgerWarehouses} from './pos-stock.ts';
 import {webOrderBucket} from '../domain/web-order-outcome.ts';
@@ -17,7 +20,7 @@ import { allowedRegister, posScope } from './pos-access.ts';
 import { allowedPosRegisters, assertSellRegister } from './pos-register-scope.ts';
 import { canListRetailCustomers } from '../../customers/domain/customer-config.ts';
 import { cashLock, nextCashOpening, closeCashShift, drawerOf, cashAudit, reconciliationFor } from './cash-store.ts';
-import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, gte, inArray, isNull, lte, ne, notInArray, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -139,16 +142,17 @@ const webBucket=webOrderBucket;
  */
 async function minhLongWebAction(c: RouteContext<StaffEnv>, m: ReturnType<typeof member>, order: typeof webStoreOrders.$inferSelect, action: string, input: Record<string, unknown>, reason: string) {
   const terminal = webBucket(order.status, order.ghnStatus);
-  if (action === 'confirm' && terminal !== 'pending') throw new AppError(409, 'Chỉ chốt được đơn đang chờ xử lý.');
+  if (action === 'confirm' && terminal !== 'pending' && !order.ghnOrderCode) throw new AppError(409, 'Chỉ chốt được đơn đang chờ xử lý.');
   if (action === 'cancel' && ['completed', 'cancelled'].includes(terminal)) throw new AppError(409, terminal === 'completed' ? 'Đơn đã giao thành công, không thể huỷ.' : 'Đơn đã huỷ.');
   let fields: Partial<typeof webStoreOrders.$inferInsert>;
   if (action === 'confirm') {
     const address = completeGhnAddress(input);
     if (!address) throw new AppError(400, 'Vui lòng nhập đủ địa chỉ giao hàng GHN.', 'address_invalid');
     const created = await createWebOrderGhn(c.env, order.id, address, input);
+    if(created.needsReview)throw new AppError(409,'Đã tìm thấy vận đơn GHN nhưng cần đối soát sản phẩm theo bản sửa CRM. Không tạo vận đơn mới.','WEB_GHN_CART_REVIEW');
     fields = created.order;
   } else if (action === 'cancel') {
-    if (order.ghnOrderCode && !['cancel', 'cancelled'].includes(order.ghnStatus.toLowerCase())) await cancelWebOrderGhn(c.env, order.ghnOrderCode);
+    if (order.ghnOrderCode && !['cancel', 'cancelled'].includes(order.ghnStatus.toLowerCase())) await cancelWebOrderGhn(c.env, order.ghnOrderCode,order.source==='lock'?'lock':'minhlong');
     fields = { status: 'cancelled', ...(order.ghnOrderCode ? { ghnStatus: 'cancel' } : {}), updatedAt: posNow() };
   } else fields = {};
   if (Object.keys(fields).length && action !== 'confirm') await c.env.db.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
@@ -182,6 +186,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     const address = posText([shipping.address_1, shipping.address_2, shipping.city, shipping.state].filter(Boolean).join(', '), 1000);
     const lines = Array.isArray(b.line_items) ? b.line_items.slice(0, 300).map((x: Record<string, unknown>) => ({
       sku: posText(x.sku, 100), name: posText(x.name, 500), quantity: Number(x.quantity) || 0, total: Number(x.total) || 0,
+      ...(x.subtotal!==undefined?{subtotal:Number(x.subtotal)||0}:{}),...(x.subtotal_tax!==undefined?{subtotalTax:Number(x.subtotal_tax)||0}:{}),...(x.total_tax!==undefined?{totalTax:Number(x.total_tax)||0}:{}),
     })) : [];
     const metadata = new Map<string, unknown>();
     if (Array.isArray(b.meta_data)) for (const row of b.meta_data) {
@@ -260,8 +265,19 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     fields.status = webGhnOrderStatus(fields.ghnStatus, fields.status);
     const effectiveGhnStatus = updateFields.ghnStatus ?? carrierState?.ghnStatus ?? fields.ghnStatus;
     if (effectiveGhnStatus) updateFields.status = webGhnOrderStatus(effectiveGhnStatus, updateFields.status ?? carrierState?.status ?? fields.status);
-    const [saved] = await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields })
-      .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: updateFields }).returning({ id: webStoreOrders.id });
+    // Resolve the guard under the UPSERT row lock, so a concurrent local edit cannot be overwritten.
+    const locallyEdited=sql`coalesce((${webStoreOrders.crmEditSnapshot}::jsonb->>'revision')::int,0)>0`;
+    const sourcePatch=JSON.stringify(Object.fromEntries(['lines','total','financialSnapshot'].filter(k=>k in updateFields).map(k=>[k,(updateFields as Record<string,unknown>)[k]])));
+    const sourceBase=sql`coalesce(${webStoreOrders.crmEditSnapshot}::jsonb->'latestSource',${webStoreOrders.crmEditSnapshot}::jsonb->'original','{}'::jsonb)`;
+    const protectedUpdate={...updateFields,
+      ...(updateFields.lines!==undefined?{lines:sql`case when ${locallyEdited} then ${webStoreOrders.lines} else ${updateFields.lines} end`}:{}),
+      ...(updateFields.total!==undefined?{total:sql`case when ${locallyEdited} then ${webStoreOrders.total} else ${updateFields.total} end`}:{}),
+      ...(updateFields.financialSnapshot!==undefined?{financialSnapshot:sql`case when ${locallyEdited} then ${webStoreOrders.financialSnapshot} else ${updateFields.financialSnapshot} end`}:{}),
+      crmOrderNo:sql`case when ${webStoreOrders.crmOrderNo}='' then ${b.billing&&Array.isArray(b.line_items)?'Web_'+number+'_'+fullName:''} else ${webStoreOrders.crmOrderNo} end`,
+      crmEditSnapshot:sql`case when ${locallyEdited} then (${webStoreOrders.crmEditSnapshot}::jsonb || jsonb_build_object('latestSource',${sourceBase} || ${sourcePatch}::jsonb,'ghnCartReviewRequired',coalesce((${webStoreOrders.crmEditSnapshot}::jsonb->>'ghnCartReviewRequired')::boolean,false) or (${!!fields.ghnOrderCode} and ${webStoreOrders.crmEditSnapshot}::jsonb->>'ghnAttemptedAt' is null),'sourceConflict',coalesce((${webStoreOrders.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) or ((${sourceBase} || ${sourcePatch}::jsonb) is distinct from ${sourceBase})))::text else ${webStoreOrders.crmEditSnapshot} end`,
+    };
+    const [saved] = await c.env.db.insert(webStoreOrders).values({ id: crypto.randomUUID(), source, externalId, ...fields,crmOrderNo:b.billing&&Array.isArray(b.line_items)?'Web_'+number+'_'+fullName:'' })
+      .onConflictDoUpdate({ target: [webStoreOrders.source, webStoreOrders.externalId], set: protectedUpdate }).returning({ id: webStoreOrders.id });
     // Khách huỷ trên website: GHN chưa lấy hàng → huỷ vận đơn + huỷ đơn CRM; đã lấy → theo quy trình GHN (web-order-customer-cancel.ts).
     if (websiteCancelled(b.status)) await applyWebsiteCancel(c.env, saved!.id);
     await invoiceTasksChanged(c.env, { webOrderId: saved!.id });
@@ -362,7 +378,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           windowFrom ? or(notInArray(salesOrders.status, ['delivered', 'cancelled']), gte(salesOrders.orderDate, windowFrom)) : undefined,
           matchAllWords(foldSql(salesOrders.orderNo, salesOrders.customerName, salesOrders.phone, salesOrders.sapoOrderCode, employees.name), q)))
         .orderBy(...rankFirst(searchRank([salesOrders.orderNo, salesOrders.phone, salesOrders.sapoOrderCode], salesOrders.customerName, q)), desc(salesOrders.createdAt));
-      const webRows = !webWanted ? [] : await c.env.db.select().from(webStoreOrders).where(and(eq(webStoreOrders.registerId, registerId),
+      const webRows = !webWanted ? [] : await c.env.db.select({...getTableColumns(webStoreOrders),crmEditSnapshot:webEditFlags}).from(webStoreOrders).where(and(eq(webStoreOrders.registerId, registerId),
         from ? gte(webStoreOrders.orderedAt, from) : undefined, to ? lte(webStoreOrders.orderedAt, to + 'T23:59:59.999Z') : undefined,
         windowFrom ? or(notInArray(webStoreOrders.status, ['completed', 'cancelled', 'refunded', 'failed', 'trash']), gte(webStoreOrders.orderedAt, windowFrom)) : undefined))
         .orderBy(desc(webStoreOrders.updatedAt));
@@ -379,7 +395,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         ...rows.map(o => {const {cancelSnapshot,...order}=o;let cancelReason='';try{const reason=JSON.parse(cancelSnapshot||'{}').cancelReason;if(typeof reason==='string')cancelReason=reason.slice(0,2000);}catch{/* Legacy snapshots may not contain a reason. */}
           return {...order,cancelReason,cancellationKind:'cancelled',bucket:posOrderBucket(o),source:'crm',external:false,currency:'VND',orderSource:o.fulfillmentMode==='cod'?'cod':'pos',paymentStatus:o.paid>=o.total?'paid':'debt',outstanding:Math.max(0,o.total-o.paid)};}),
         ...webRows.map(o => {
-          const payment = readWebOrderFinancials(o.financialSnapshot)?.payment;
+          const payment = readWebEdit(o.crmEditSnapshot).sourceConflict?undefined:readWebOrderFinancials(o.financialSnapshot)?.payment;
           const paid = payment ? (payment.paidAt ? o.total : 0) : null;
           const state=o.status.toLowerCase(),carrier=o.ghnStatus.toLowerCase();
           const cancellationKind=state==='refunded'?'refunded':carrier.startsWith('return')||carrier==='waiting_to_return'||['lnl-returning','lnl-returned'].includes(state)?'returned':['lost','damage'].includes(carrier)||state==='failed'?'failed':'cancelled';
@@ -390,7 +406,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           paymentMethod: o.paymentMethod, currency: o.currency, financials: readWebOrderFinancials(o.financialSnapshot), ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee,
           actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && (!!c.env.webOrderAction?.minhlongUrl || !!c.env.ghnMlToken),
           // Minh Long chưa có cầu nối: CRM tự tạo vận đơn GHN – giao diện hỏi thêm tiền thu hộ / khối lượng.
-          ghnDirect: minhLongDirect(c.env, o), suggestedCod: minhLongDirect(c.env, o) ? suggestedWebCod(o) : null }); }),
+          webRevision:Number(readWebEdit(o.crmEditSnapshot).revision||0),crmEdited:Number(readWebEdit(o.crmEditSnapshot).revision||0)>0,ghnDirect: minhLongDirect(c.env, o)||Number(readWebEdit(o.crmEditSnapshot).revision||0)>0, suggestedCod: minhLongDirect(c.env, o)||Number(readWebEdit(o.crmEditSnapshot).revision||0)>0 ? suggestedWebCod(o) : null }); }),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const board = filterPosOrderBoard(decorated, c.url.searchParams, {analyticsFrom:windowFrom});
       // Danh sách nhân viên cho bộ lọc lấy riêng, không bị thu hẹp bởi chính bộ lọc / khoảng ngày.
@@ -486,11 +502,12 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if (c.env.ghnToken || c.env.ghnMlToken) return json({ ok: true, locations: rememberGhnLocations(key, await ghnMasterData(c.env, provinceId, districtId)) });
       throw new AppError(503, 'CRM chưa có danh mục địa chỉ GHN này.');
     }
+    if(action==='confirm'&&!order.ghnOrderCode){let items:unknown;try{items=JSON.parse(order.lines);}catch{}if(!Array.isArray(items)||!items.length||items.some(l=>!l||typeof l!=='object'||!String(l.sku||'').trim()||!Number.isFinite(Number(l.quantity))||Number(l.quantity)<=0))throw new AppError(409,'Đơn chưa có chi tiết sản phẩm. Bổ sung dữ liệu hoặc sửa đơn trước khi tạo GHN.','WEB_LINES_REQUIRED');}
     if (action === 'complete' && order.ghnOrderCode) throw new AppError(409,'Đơn có vận đơn GHN chỉ hoàn thành theo trạng thái giao thành công của GHN.','GHN_STATUS_MANAGED');
     // Website mirrors have no verified CRM warehouse issue link. Carrier truth remains
     // authoritative, but a manual completion must never fabricate warehouse completion.
     if(action==='complete')throw new AppError(409,'Đơn website chưa có chứng từ xuất kho đã đối soát trong CRM. Hoàn tất nhập/xuất kho trước khi xác nhận hoàn thành.','WAREHOUSE_EXPORT_REQUIRED');
-    if (minhLongDirect(c.env, order)) return json(await minhLongWebAction(c, m, order, action, input, reason));
+    if (minhLongDirect(c.env, order) || Number(readWebEdit(order.crmEditSnapshot).revision||0)>0) return json(await minhLongWebAction(c, m, order, action, input, reason));
     if(action==='confirm'&&order.ghnOrderCode){
       if(!validWebGhnCode(order.ghnOrderCode))throw new AppError(409,'CRM đang lưu mã GHN cần đối soát. Không tạo lại vận đơn.','ghn_reconcile_failed');
       return json({ok:true,existing:true,status:order.status,ghnOrderCode:order.ghnOrderCode,ghnStatus:order.ghnStatus,ghnSortCode:order.ghnSortCode,ghnFee:order.ghnFee,bucket:webBucket(order.status,order.ghnStatus)});
@@ -530,6 +547,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           throw new AppError(400,'Quận/Huyện hoặc Phường/Xã không thuộc địa bàn đã chọn theo danh mục GHN.','address_invalid');
       }
     }
+    if(action==='confirm')await beginWebConfirmation(c.env,order.id,false,input.webRevision);
     let response:Response;
     try{response=await (c.env.webOrderAction.fetch ?? fetch)(url,{method:'POST',headers:{authorization:`Bearer ${c.env.webOrderAction.token}`,'content-type':'application/json'},body:JSON.stringify(bridgeInput),signal:AbortSignal.timeout(30_000)});}
     catch{throw new AppError(502,'Mất kết nối website; chưa rõ kết quả xử lý. Tra cứu vận đơn trên website/GHN trước khi gửi lại.','ghn_reconcile_failed');}
