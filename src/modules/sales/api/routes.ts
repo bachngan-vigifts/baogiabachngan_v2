@@ -1,3 +1,4 @@
+import {canCollectCrmCashWithoutDrawer} from '../domain/crm-cash-receipt.ts';
 import {orderReturnSummary} from './order-return-summary.ts';
 import {registerContractLiquidationRoutes,assertNoLiquidationHistory} from './contract-liquidation.ts';
 import { editPosOrderWithGhn } from './pos-ghn-edit.ts';
@@ -588,6 +589,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const net=netReturnInputs(schedules,payments.filter(p=>!p.voidedAt),adjustment);
     return {
       purchases,
+      canCollectCashWithoutDrawer: order.channel === 'crm' && canCollectCrmCashWithoutDrawer(viewer(c)),
       returnAdjustment: adjustment || null,
       returnSummary:{requests:returnSummary.requests,receivedQty:returnSummary.receivedQty,restockedQty:returnSummary.restockedQty},
       effectiveSchedules: net.schedules,
@@ -1453,7 +1455,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       if(requestKey){const [prior]=await tx.select().from(customerPayments).where(eq(customerPayments.requestKey,requestKey));if(prior){if(prior.orderId!==order.id||prior.amount!==amount||prior.method!==method||prior.createdBy!==me.id||prior.voidedAt)throw new AppError(409,'Mã ghi thu đã dùng cho giao dịch khác.');receiptId=prior.id;return;}}
       let cashShiftId:string|null=null;
       const [cashShift] = await tx.select().from(posShifts).where(and(eq(posShifts.memberId, me.id), isNull(posShifts.closedAt)));
-      if (posReceipt || (method === 'cash' && (cashShift || (await drawerOf(tx)).openingSetAt))) {
+      const outsideDrawer = order.channel === 'crm' && method === 'cash' && canCollectCrmCashWithoutDrawer(me);
+      if (posReceipt || (!outsideDrawer && method === 'cash' && (cashShift || (await drawerOf(tx)).openingSetAt))) {
         if (!cashShift) throw new AppError(409, 'Cần ca đang mở để ghi tiền mặt vào két.');
         if (posReceipt && order.shiftId) {
           const [originalShift] = await tx.select().from(posShifts).where(eq(posShifts.id, order.shiftId));
@@ -1469,7 +1472,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       const debt = (await receivableOf(tx, [order.id])).get(order.id)!;
       if (amount > debt.balance) throw new AppError(400, `Đơn chỉ còn phải thu ${debt.balance.toLocaleString('vi-VN')} đ.`);
       await tx.insert(customerPayments).values({ id, orderId: order.id, scheduleId, customerId: order.customerId, shiftId:cashShiftId, requestKey, paymentSource:posReceipt?'pos':'manual', amount, paidAt, method, reference: text(body.reference, 200), note: text(body.note, 2000), createdBy: me.id, createdAt: nowIso() });
-      if(cashShiftId)await cashAudit(tx,me.id,'receipt','payments',id,{orderId:order.id,shiftId:cashShiftId,amount,method});
+      if(cashShiftId || outsideDrawer)await cashAudit(tx,me.id,'receipt','payments',id,{orderId:order.id,shiftId:cashShiftId,amount,method,...(outsideDrawer?{cashHandling:'outside_drawer'}:{})});
     });
     return json({ id:receiptId }, 201);
   }, 'business');

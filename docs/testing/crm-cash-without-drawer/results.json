@@ -1,0 +1,32 @@
+[
+  {
+    "actor": "sale",
+    "width": 1280,
+    "noOpenShift": true,
+    "receiptSaved": true,
+    "receivableReduced": true,
+    "drawerUnchanged": true,
+    "cashNoteVisible": true,
+    "errors": []
+  },
+  {
+    "actor": "sale-admin",
+    "width": 390,
+    "noOpenShift": true,
+    "receiptSaved": true,
+    "receivableReduced": true,
+    "drawerUnchanged": true,
+    "cashNoteVisible": true,
+    "errors": []
+  },
+  {
+    "actor": "manager",
+    "width": 1280,
+    "noOpenShift": true,
+    "receiptSaved": true,
+    "receivableReduced": true,
+    "drawerUnchanged": true,
+    "cashNoteVisible": true,
+    "errors": []
+  }
+]

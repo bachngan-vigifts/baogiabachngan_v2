@@ -4901,9 +4901,14 @@ $('#delivery-form').addEventListener('submit', async e => {
     $('#delivery-dialog').close(); toast('Đã lên lịch giao.'); openOrder(sales.order.id);
   } catch (ex) { err.textContent = ex.message; }
 });
+function updatePaymentCashNote() {
+  $('#payment-cash-note').hidden = !($('#payment-form').method.value === 'cash' && sales.detail?.canCollectCashWithoutDrawer === true);
+}
+$('#payment-form').method.addEventListener('change', updatePaymentCashNote);
 $('#order-new-payment').addEventListener('click', () => {
   const f = $('#payment-form'), r = sales.detail.receivable; f.reset(); $('#payment-pos-confirm').hidden=sales.order.channel!=='pos'; f.confirmed.required=sales.order.channel==='pos'; f.method.querySelector('option[value=other]').disabled=sales.order.channel==='pos'; $('#payment-error').textContent = '';
   $('#payment-title').textContent = 'Thu tiền ' + (docNo() || sales.order.orderNo); f.amount.value = fmtNum(r.balance); f.paidAt.value = todayIso(); f.paidAt.max = todayIso();
+  updatePaymentCashNote();
   $('#payment-dialog').showModal();
 });
 $('#payment-form').addEventListener('submit', async e => {
