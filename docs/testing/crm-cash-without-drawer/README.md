@@ -1,18 +1,29 @@
-# Thu tiền mặt đơn/HĐKT CRM không cần két
+# Thu tiền mặt CRM: nhân viên giữ → Manager nhận và xác nhận
 
-## Hành vi
+## Luồng cuối cùng
 
-Manager hoặc nhân viên có chức vụ `sale`, `sale-admin`, `sales-lock`, `sales-ml` được ghi phiếu thu tiền mặt cho đơn/HĐKT `channel=crm` trong phạm vi đơn họ được truy cập. Không cần ca POS/két đang mở, kể cả két đã chốt đầu kỳ. Có ca đang mở cũng không tự gắn phiếu CRM vào ca đó.
+- Manager hoặc nhân viên có chức vụ `sale`, `sale-admin`, `sales-lock`, `sales-ml` có thể ghi nhận tiền mặt cho đơn/HĐKT CRM trong phạm vi được truy cập, không cần mở két/ca POS.
+- Nhân viên bấm thu: tạo `customer_cash_collections.status=held`. Hiện “Tiền mặt nhân viên còn giữ”, người giữ, số tiền và ngày thu khách. Chưa tạo phiếu thu có hiệu lực, chưa tăng Đã thu, chưa giảm công nợ và chưa hoàn tất thanh toán.
+- Manager thực nhận tiền, bấm “Xác nhận đã nhận tiền” và xác nhận trong hộp hỏi: tạo đúng một `customer_payments`, chuyển ghi nhận sang confirmed, lưu Manager/thời điểm xác nhận trong cùng transaction. Khi đó mới giảm công nợ. Nhân viên và Kế toán không tự xác nhận được.
+- Ngày thu khách ban đầu giữ ở `paid_at`; ngày Manager xác nhận giữ riêng ở `confirmed_at`. Phiếu thu hoàn tất giữ người thu ban đầu, lịch sử bàn giao ghi rõ Manager nhận tiền. Không đổi ngày một cách ngầm định.
+- Nếu Manager tự ghi thu tiền mình đã thực nhận, phiếu có hiệu lực ngay. Không tự cộng tiền CRM vào két kể cả người thu có ca POS đang mở.
+- Tiền còn giữ được dành riêng trong số có thể thu tiếp, kể cả thu thêm bằng chuyển khoản. Toàn bộ công nợ chỉ hoàn tất khi phiếu thu được xác nhận đủ. Ghi nhận cũ không bị chuyển đổi hoặc đảo tiền tự động.
+- Manager được huỷ ghi nhận thu nhầm/tiền đã trả lại khách, bắt buộc lý do và xác nhận; đây không phải luồng chuyển/hoàn tiền tự động. Lịch sử giữ lại. Đã xác nhận thì phải dùng quyền huỷ phiếu thu hiện tại, không huỷ hoặc xác nhận lại ghi nhận cũ để tạo phiếu thứ hai.
+- Chặn xác nhận đơn đã huỷ hoặc tiền vượt công nợ hiện tại. Ghi nhận vẫn còn để đối soát, không xóa lặng lẽ. Không xoá hẳn đơn có lịch sử tiền mặt nhân viên giữ.
 
-Phiếu lưu phương thức cash, người thu, ngày thu, số tiền, ghi chú; paymentSource=manual, shiftId=null. Phiếu giảm công nợ; không tăng số dư hoặc thu tiền của ca POS. Nhật ký ghi nhận `cashHandling=outside_drawer`. Hộp thu tiền hiển thị rõ tiền mặt do người thu giữ, không cộng két. Không tự tạo phiếu nộp két.
+## Triển khai
 
-Giữ nguyên kiểm quyền/phạm vi đơn, ngày thu, số tiền còn phải thu, khóa giao dịch, chống gửi trùng, quyền huỷ phiếu. Client không thể bật ngoại lệ bằng một field tự gửi. Đơn POS, COD và cọc/trả trước vẫn đi qua kiểm tra ca/két/chuyến giao hiện tại. Không đổi quy tắc thu tiền cho chức vụ khác.
+Chạy tay **`migrations/postgres/20261102071719_customer_cash_collections.sql` trước khi triển khai API**. Chỉ tạo bảng/index/RLS, không sửa phiếu thu/tiền cũ. Bảng không cho public/anon/authenticated truy cập trực tiếp. `scripts/sql/assert-customer-cash-collections.sql` là kiểm tra chỉ đọc trước deploy; thiếu migration thì dừng deploy API. UI hiện tại đợi API triển khai đúng commit trước khi deploy.
+
+Chưa chạy migration trên production, chưa merge/deploy. Không thay POS/COD/cọc/trả trước, phiên/cron/đồng bộ Sapo hoặc số dư két thật.
 
 ## Kiểm chứng
 
-- `tests/app/crm-cash-without-drawer.test.ts`: đủ các chức vụ Sale và Manager, két đã có đầu kỳ nhưng chưa có ca; thu thành công, công nợ giảm, người thu được lưu, không đổi két. Gửi cùng mã đồng thời và gửi lại giữ một phiếu. Có ca vẫn không tự đưa tiền CRM vào két. Huỷ thu hoàn công nợ, không đổi két. Chặn thu vượt và NCC; chức vụ ngoài danh sách không tự gửi field để bỏ điều kiện két.
-- Các bộ `cash.test.ts`, `sales.test.ts`, `pos.test.ts` kiểm tra luồng tiền/ca/két và ghi thu POS hiện tại.
-- Typecheck, kiến trúc và trial UI.
-- Browser `scripts/testing/crm-cash-without-drawer.mjs`: CRM thật + router/PGlite bằng dữ liệu giả, chặn mạng browser ra ngoài. Sale/Manager 1280px và Sale Admin 390px đều mở đơn, chọn tiền mặt, thấy chú thích, ghi thu được khi chưa mở ca; công nợ giảm, két không đổi. Chuyển sang hình thức chuyển khoản ẩn chú thích. Không lỗi JS.
+- Test đủ các chức vụ; thu khi két đã có đầu kỳ nhưng không có ca và khi ca đang mở. Nhân viên giữ tiền chưa làm tăng paid, chưa tạo effective payment, không đổi két. Manager nhận thì mới cập nhật công nợ.
+- Thu đủ toàn bộ đơn vẫn chưa hoàn tất trước khi Manager xác nhận. Chặn thu thêm vượt số còn có thể thu.
+- Gửi đồng thời/gửi lại cùng mã chỉ một ghi nhận. Xác nhận đồng thời/gửi lại chỉ một phiếu thu. Cùng mã khác nội dung bị 409. Chỉ Manager được xác nhận/huỷ ghi nhận.
+- Lỗi ghi trạng thái sau khi insert phiếu thu: rollback cả transaction; không có phiếu thu lẻ. Công nợ đổi sau khi thu: chặn xác nhận vượt. Huỷ phiếu thu hoàn lại công nợ, không biến tiền đã bàn giao thành nhân viên còn giữ, không cho xác nhận lại tạo thêm phiếu.
+- Bộ test cash, POS, sales, thu trước duyệt, giao diện, kiến trúc và TypeScript đạt. Test kiểm tra SQL gate chạy được trên schema sau migration.
+- Browser Chromium local, CRM/router/PGlite bằng dữ liệu giả, chặn mạng browser ra ngoài: Sale 1280px, Sale Admin 390px ghi held; không thấy nút Manager. Manager 1280px thấy hai khoản chờ, xác nhận thực nhận từng khoản thành công; sau đó ghi thu trực tiếp. Két không đổi, không lỗi JS.
 
-Ảnh và results.json là dữ liệu thử local Chromium, không phải production. Chưa thử Safari/iPhone thật. Không migration, không thao tác tiền/két/dữ liệu production, không thay phiên/cron/đồng bộ Sapo.
+Ảnh và results.json là dữ liệu thử local, không phải production. Một số ảnh trạng thái giữ tiền ẩn toast tạm để đọc nội dung. Chưa kiểm tra trên Safari/iPhone thật.

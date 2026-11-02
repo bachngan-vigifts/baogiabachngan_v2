@@ -1,3 +1,5 @@
+import {cashCollections} from '../cash-collection-schema.ts';
+import {registerCashCollectionRoutes,cashCollectionsForOrder,heldCashForOrder} from './cash-collections.ts';
 import {canCollectCrmCashWithoutDrawer} from '../domain/crm-cash-receipt.ts';
 import {orderReturnSummary} from './order-return-summary.ts';
 import {registerContractLiquidationRoutes,assertNoLiquidationHistory} from './contract-liquidation.ts';
@@ -435,6 +437,7 @@ quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 
 export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchaseLinks?: (db: StaffEnv['db'], member: SessionState['member'], order: { id: string; quoteId: string | null }) => Promise<{ id: string; number: string; internalNo?: string; supplierName?: string }[]> } = {}) {
   registerCrmReturnRoutes(router, loadOrder);
+  registerCashCollectionRoutes(router,loadOrder,async(db,id)=>(await receivableOf(db,[id])).get(id)?.balance||0);
   registerContractLiquidationRoutes(router,loadOrder);
   /** Claw báo kết quả sau khi n8n tạo đơn Sapo; dùng cùng Bearer SAPO_SYNC_TOKEN, không dùng phiên trình duyệt. */
   router.post('/integrations/sapo/order-status', async c => {
@@ -587,8 +590,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const adjustment=adjustments.get(order.id);
     const displayedLines=lines.map(l=>{const r=returnSummary.byLine.get(l.id)||{returnedQty:0,restockedQty:0,pendingReturnQty:0};return{...l,...r,customerKeptQty:Math.max(0,l.deliveredQty-r.returnedQty)};});
     const net=netReturnInputs(schedules,payments.filter(p=>!p.voidedAt),adjustment);
+    const cashCollectionRows=order.channel==='crm'?await cashCollectionsForOrder(db,order.id):[];
     return {
       purchases,
+      cashCollections: cashCollectionRows, cashHeld: cashCollectionRows.filter(r=>r.status==='held').reduce((sum,r)=>sum+r.amount,0), canConfirmCashCollection: viewer(c).role==='manager',
       canCollectCashWithoutDrawer: order.channel === 'crm' && canCollectCrmCashWithoutDrawer(viewer(c)),
       returnAdjustment: adjustment || null,
       returnSummary:{requests:returnSummary.requests,receivedQty:returnSummary.receivedQty,restockedQty:returnSummary.restockedQty},
@@ -919,6 +924,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       if (locked?.status !== 'cancelled') throw new AppError(409, 'Đơn không còn ở trạng thái đã huỷ.');
       await assertNoReturnActivity(tx, order.id);
       await assertNoLiquidationHistory(tx,order.id);
+      const [cashHistory]=await tx.select({id:cashCollections.id}).from(cashCollections).where(eq(cashCollections.orderId,order.id)).limit(1);
+      if(cashHistory)throw new AppError(409,'Đơn có lịch sử tiền mặt nhân viên giữ; giữ chứng từ để đối soát, không xoá.','ORDER_HAS_HISTORY');
       const [ledger] = await tx.select({ id: stockMoves.id }).from(stockMoves).where(sql`
         (${stockMoves.refType} in ('pos_order','sales_order') and (${stockMoves.refId}=${order.id} or ${stockMoves.refId} like ${order.id + '#%'})) or
         (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${order.id})) or
@@ -1447,12 +1454,23 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const scheduleId = body.scheduleId ? text(body.scheduleId, 80) : null;
     if (scheduleId && !(await c.env.db.select({ id: paymentSchedules.id }).from(paymentSchedules).where(and(eq(paymentSchedules.id, scheduleId), eq(paymentSchedules.orderId, order.id))).limit(1)).length)
       throw new AppError(400, 'Kỳ thanh toán không thuộc đơn này.');
+    const needsCashConfirmation = order.channel==='crm' && method==='cash' && me.role==='employee' && canCollectCrmCashWithoutDrawer(me);
+    if(needsCashConfirmation&&!requestKey)throw new AppError(400,'Thiếu mã chống gửi lặp cho ghi nhận tiền mặt.');
     const id = crypto.randomUUID();
-    let receiptId:string=id;
+    let receiptId:string=id,replayed=false;
+    const receiptState:{status:'confirmed'|'held'}={status:'confirmed'};
     // Khoá dòng đơn rồi mới tính số còn phải thu: hai lần bấm / hai người ghi cùng lúc không thu vượt.
     await c.env.db.transaction(async tx => {
       await cashLock(tx);
-      if(requestKey){const [prior]=await tx.select().from(customerPayments).where(eq(customerPayments.requestKey,requestKey));if(prior){if(prior.orderId!==order.id||prior.amount!==amount||prior.method!==method||prior.createdBy!==me.id||prior.voidedAt)throw new AppError(409,'Mã ghi thu đã dùng cho giao dịch khác.');receiptId=prior.id;return;}}
+      if(requestKey&&order.channel==='crm'){
+        const [held]=await tx.select().from(cashCollections).where(eq(cashCollections.requestKey,requestKey));
+        if(held){
+          if(held.orderId!==order.id||held.amount!==amount||method!=='cash'||held.collectedBy!==me.id||held.paidAt!==paidAt||held.reference!==text(body.reference,200)||held.note!==text(body.note,2000)||held.scheduleId!==scheduleId||held.status==='cancelled')throw new AppError(409,'Mã ghi nhận tiền mặt đã dùng cho nội dung khác hoặc đã huỷ.');
+          if(held.status==='confirmed'){const [p]=await tx.select({voidedAt:customerPayments.voidedAt}).from(customerPayments).where(eq(customerPayments.id,held.paymentId!));if(!p||p.voidedAt)throw new AppError(409,'Phiếu thu đã huỷ; không gửi lại ghi nhận này.');}
+          receiptId=held.id;receiptState.status=held.status;replayed=true;return;
+        }
+      }
+      if(requestKey){const [prior]=await tx.select().from(customerPayments).where(eq(customerPayments.requestKey,requestKey));if(prior){if(prior.orderId!==order.id||prior.amount!==amount||prior.method!==method||prior.createdBy!==me.id||prior.voidedAt)throw new AppError(409,'Mã ghi thu đã dùng cho giao dịch khác.');receiptId=prior.id;replayed=true;return;}}
       let cashShiftId:string|null=null;
       const [cashShift] = await tx.select().from(posShifts).where(and(eq(posShifts.memberId, me.id), isNull(posShifts.closedAt)));
       const outsideDrawer = order.channel === 'crm' && method === 'cash' && canCollectCrmCashWithoutDrawer(me);
@@ -1470,11 +1488,21 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       assertNoPendingGhnEdit(fresh.posSnapshot);
       if (fresh.status === 'draft' && fresh.channel !== 'crm') throw new AppError(409, 'Đơn POS chưa được duyệt, chưa ghi thu được.', 'ORDER_NOT_APPROVED');
       const debt = (await receivableOf(tx, [order.id])).get(order.id)!;
-      if (amount > debt.balance) throw new AppError(400, `Đơn chỉ còn phải thu ${debt.balance.toLocaleString('vi-VN')} đ.`);
+      const held=order.channel==='crm'?await heldCashForOrder(tx,order.id):0;
+      if (amount > debt.balance-held) throw new AppError(400, held?`Nhân viên đang giữ ${held.toLocaleString('vi-VN')} đ; đơn chỉ còn có thể thu thêm ${Math.max(0,debt.balance-held).toLocaleString('vi-VN')} đ.`:`Đơn chỉ còn phải thu ${debt.balance.toLocaleString('vi-VN')} đ.`);
+      if(needsCashConfirmation){
+        await tx.insert(cashCollections).values({id,orderId:order.id,scheduleId,requestKey:requestKey!,amount,paidAt,reference:text(body.reference,200),note:text(body.note,2000),status:'held',collectedBy:me.id,createdAt:nowIso()});
+        await cashAudit(tx,me.id,'cash-collection-held','customer_cash_collections',id,{orderId:order.id,amount,paidAt});
+        receiptState.status='held';return;
+      }
       await tx.insert(customerPayments).values({ id, orderId: order.id, scheduleId, customerId: order.customerId, shiftId:cashShiftId, requestKey, paymentSource:posReceipt?'pos':'manual', amount, paidAt, method, reference: text(body.reference, 200), note: text(body.note, 2000), createdBy: me.id, createdAt: nowIso() });
       if(cashShiftId || outsideDrawer)await cashAudit(tx,me.id,'receipt','payments',id,{orderId:order.id,shiftId:cashShiftId,amount,method,...(outsideDrawer?{cashHandling:'outside_drawer'}:{})});
     });
-    return json({ id:receiptId }, 201);
+    if(receiptState.status==='held'&&!replayed){
+      const managers=await c.env.db.select({id:employees.id}).from(employees).where(and(eq(employees.role,'manager'),eq(employees.active,true),isNull(employees.deletedAt)));
+      await notifyMany(c.env,managers.map(m=>m.id),{eventType:'cash_collection_held',title:'Tiền mặt nhân viên đang giữ',body:`${me.name}: ${amount.toLocaleString('vi-VN')} đ · ${order.orderNo}`,url:'/index.html#/orders/'+encodeURIComponent(order.id),actorId:me.id}).catch(()=>console.warn('Cash collection notification skipped'));
+    }
+    return json({ id:receiptId,status:receiptState.status }, 201);
   }, 'business');
 
   /** Huỷ phiếu thu ghi nhầm (bắt buộc lý do). Phiếu giữ lại trong lịch sử, không tính vào đã thu; muốn sửa thì huỷ rồi ghi phiếu mới. */

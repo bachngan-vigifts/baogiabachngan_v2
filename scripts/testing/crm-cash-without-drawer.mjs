@@ -20,9 +20,28 @@ const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.la
 try{
  for(const [actor,cookie,width]of [['sale',f.emp,1280],['sale-admin',f.sa,390],['manager',f.mgr,1280]]){
   const user=(await f.call('/me',cookie)).data.user,context=await browser.newContext({viewport:{width,height:1004},locale:'vi-VN'});await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());await context.addInitScript(({user,token})=>{localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));},{user,token:cookie.split('=')[1]});
-  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/#/orders/'+order.id);await page.locator('#order-new-payment').click();const form=page.locator('#payment-form');await form.locator('input[name=amount]').fill('100');await form.locator('select[name=method]').selectOption('cash');await page.locator('#payment-cash-note').waitFor();await form.locator('select[name=method]').selectOption('transfer');assert.equal(await page.locator('#payment-cash-note').isVisible(),false);await form.locator('select[name=method]').selectOption('cash');await page.locator('#payment-dialog').screenshot({path:out+'/'+actor+'-'+width+'.png'});
+  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/#/orders/'+order.id);
+  if(actor==='manager'){
+   await page.getByRole('button',{name:'Xác nhận đã nhận tiền',exact:true}).first().waitFor();
+   await page.locator('#order-payments .cash-collections').screenshot({path:out+'/manager-pending.png',style:'#toasts {visibility:hidden}'});
+   for(let n=0;n<2;n++){
+    const paid=(await f.call('/orders/'+order.id,cookie)).data.receivable.paid;
+    await page.getByRole('button',{name:'Xác nhận đã nhận tiền',exact:true}).first().click();await page.locator('#confirm-ok').click();
+    await page.waitForFunction(expected=>document.querySelectorAll('.cash-collections button.btn.primary').length===expected,1-n);
+    assert.equal((await f.call('/orders/'+order.id,cookie)).data.receivable.paid,paid+100);
+   }
+   assert.equal((await f.call('/orders/'+order.id,cookie)).data.cashHeld,0);
+  }
+  await page.locator('#order-new-payment').click();const form=page.locator('#payment-form');await form.locator('input[name=amount]').fill('100');await form.locator('select[name=method]').selectOption('cash');await page.locator('#payment-cash-note').waitFor();await form.locator('select[name=method]').selectOption('transfer');assert.equal(await page.locator('#payment-cash-note').isVisible(),false);await form.locator('select[name=method]').selectOption('cash');await page.locator('#payment-dialog').screenshot({path:out+'/'+actor+'-'+width+'.png'});
   const before=(await f.call('/cash',f.mgr)).data.balance,paidBefore=(await f.call('/orders/'+order.id,cookie)).data.receivable.paid;
-  await page.getByRole('button',{name:'Lưu phiếu thu',exact:true}).click();await page.locator('#payment-dialog').waitFor({state:'hidden'});const detail=(await f.call('/orders/'+order.id,cookie)).data;assert.equal(detail.receivable.paid,paidBefore+100);assert.equal((await f.call('/cash',f.mgr)).data.balance,before);const payments=await f.db.select().from(customerPayments).where(eq(customerPayments.orderId,order.id));assert.ok(payments.some(p=>p.createdBy===user.id&&p.method==='cash'&&p.shiftId===null&&p.paymentSource==='manual'));assert.deepEqual(errors,[]);results.push({actor,width,noOpenShift:true,receiptSaved:true,receivableReduced:true,drawerUnchanged:true,cashNoteVisible:true,errors});await context.close();
+  await page.getByRole('button',{name:actor==='manager'?'Lưu phiếu thu':'Ghi nhận tiền nhân viên giữ',exact:true}).click();await page.locator('#payment-dialog').waitFor({state:'hidden'});const detail=(await f.call('/orders/'+order.id,cookie)).data;
+  assert.equal(detail.receivable.paid,paidBefore+(actor==='manager'?100:0));assert.equal((await f.call('/cash',f.mgr)).data.balance,before);
+  if(actor!=='manager'){
+   assert.ok(detail.cashCollections.some(p=>p.collectedBy===user.id&&p.status==='held'));
+   await page.locator('.cash-collections').waitFor();assert.equal(await page.getByRole('button',{name:'Xác nhận đã nhận tiền',exact:true}).count(),0);
+   await page.locator('.cash-collections').screenshot({path:out+'/'+actor+'-held.png',style:'#toasts {visibility:hidden}'});
+  }else{const payments=await f.db.select().from(customerPayments).where(eq(customerPayments.orderId,order.id));assert.equal(payments.length,3);assert.ok(payments.every(p=>p.shiftId===null));}
+  assert.deepEqual(errors,[]);results.push({actor,width,noOpenShift:true,heldUntilManager:actor!=='manager',managerConfirmationWorks:actor==='manager',drawerUnchanged:true,cashNoteVisible:true,errors});await context.close();
  }
  console.log(JSON.stringify(results));
 }finally{await writeFile(out+'/results.json',JSON.stringify(results,null,2));await browser.close();server.close();await f.client.close();}
