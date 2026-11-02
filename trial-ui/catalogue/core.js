@@ -15,7 +15,8 @@ export function validateProduct(p){
  if(!Number.isFinite(discount)||discount<0||discount>100)throw Error('Chiết khấu phải từ 0 đến 100%.');if(!Number.isFinite(fee)||fee<0||fee>1e8)throw Error('Phụ phí chưa hợp lệ.');
  if(override!==null&&(!Number.isFinite(override)||override<0||override>1e10))throw Error('Giá tự nhập chưa hợp lệ.');
  const image=String(p.image||'');if(image&&!image.startsWith('data:image/')&&!cleanUrl(image))throw Error('Đường dẫn ảnh chưa hợp lệ.');
- return {id:String(p.id||crypto.randomUUID()).slice(0,80),name,category,brand,sku:String(p.sku||'').trim().slice(0,100),url:cleanUrl(p.url),image,regular,discount,fee,override,qty:Math.max(1,Math.min(1000000,Math.round(Number(p.qty)||1))),fromPrice:!!p.fromPrice};
+ const rawStock=p.crmStock,crmStock=rawStock?.source==='crm'&&Number.isFinite(Number(rawStock.available))&&Number(rawStock.available)>=0&&Number.isFinite(Date.parse(rawStock.checkedAt))?{source:'crm',sku:String(rawStock.sku||p.sku||'').slice(0,100),available:Number(rawStock.available),checkedAt:String(rawStock.checkedAt),updatedAt:rawStock.updatedAt?String(rawStock.updatedAt).slice(0,80):null}:null;
+ return {id:String(p.id||crypto.randomUUID()).slice(0,80),name,category,brand,sku:String(p.sku||'').trim().slice(0,100),url:cleanUrl(p.url),image,regular,discount,fee,override,qty:Math.max(1,Math.min(1000000,Math.round(Number(p.qty)||1))),crmStock,fromPrice:!!p.fromPrice};
 }
 export function price(p){return p.override!==null&&p.override!==undefined&&p.override!==''?Math.round(Number(p.override)):Math.round(Number(p.regular)*(1-Number(p.discount)/100)+Number(p.fee))}
 export function isBundle(p,state){return !!state.settings.bundle10&&Array.isArray(state.settings.bundle10Ids)&&state.settings.bundle10Ids.includes(p.id)}
