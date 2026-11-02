@@ -20,13 +20,13 @@ class Node {
   async click(){if(!this.disabled)await this.events.click?.();}
 }
 const all=(n:Node):Node[]=>[n,...n.children.flatMap(all)];
-async function setup(status='cancelled',missing=false,lookup?: (path:string)=>Promise<any>, hooks: {write?:()=>Promise<any>;read?:()=>Promise<any>;confirm?:(text:string,options:any)=>Promise<boolean>}={}){
+async function setup(status='cancelled',missing=false,lookup?: (path:string)=>Promise<any>, hooks: {write?:()=>Promise<any>;read?:()=>Promise<any>;confirm?:(text:string,options:any)=>Promise<boolean>;print?:(t:any)=>void}={}){
  const root=new Node(),posts:any[]=[],nav:string[]=[],messages:string[]=[],reads:string[]=[];
- const source={id:'old',transferNo:'PCK-OLD',status,statusLabel:'Đã huỷ',fromWarehouseId:'a',toWarehouseId:'b',reason:'Bổ sung kho',lines:[{sku:'X',name:'Ly',qty:12,unit:'cái',fromStock:20,toStock:0},{sku:'Y',name:'Bát',qty:3,unit:'cái',fromStock:30,toStock:0}],revision:1,actions:status==='pending'?{edit:true,approve:true,reject:true,cancel:true}:status==='approved'?{done:true,cancel:true}:{}};
+ const source={id:'old',transferNo:'PCK-OLD',status,statusLabel:'Đã huỷ',fromWarehouseId:'a',toWarehouseId:'b',reason:'Bổ sung kho',lines:[{sku:'X',name:'Ly',qty:12,unit:'cái',fromStock:20,toStock:0},{sku:'Y',name:'Bát',qty:3,unit:'cái',fromStock:30,toStock:0}],revision:1,actions:status==='pending'?{edit:true,approve:true,reject:true,cancel:true}:status==='approved'?{ship:true,cancel:true}:status==='shipped'?{receive:true}:{}};
  const context:any={URLSearchParams,setTimeout,clearTimeout,crypto:{randomUUID:()=> '5a828b25-34cf-4145-bbab-43a53a5c465b'},document:{createElement:(tag:string)=>new Node(tag),createTextNode:(s:string)=>{const n=new Node('text');n.textContent=s;return n;}},location:{hash:'#/transfers/old'},history:{replaceState(){}}};
  const code=readFileSync(new URL('../../trial-ui/stock-ops.js',import.meta.url),'utf8').replace(/^import .*;\n/m,'').replace('export function initTransfers','globalThis.initTransfers = function').split('const GROUPS =')[0]!;
  runInNewContext(code,context);
- const ui=context.initTransfers({root,confirmBox:(text:string,options:any)=>hooks.confirm?.(text,options)??Promise.resolve(false),toast:(s:string)=>messages.push(s),go:(s:string)=>nav.push(s),api:async(path:string,method?:string,body?:any)=>{
+ const ui=context.initTransfers({root,printTransfer:hooks.print,confirmBox:(text:string,options:any)=>hooks.confirm?.(text,options)??Promise.resolve(false),toast:(s:string)=>messages.push(s),go:(s:string)=>nav.push(s),api:async(path:string,method?:string,body?:any)=>{
    if(path.startsWith('/inventory/lookup'))return lookup?.(path) ?? {products:[]};
    if(method){posts.push({path,body});if(hooks.write)return hooks.write();return{id:'new',transferNo:'PCK-NEW'};}
    reads.push(path);if(path==='/stock-transfers/old'&&hooks.read)await hooks.read();
@@ -137,4 +137,40 @@ test('cancel requires a 3-second destructive confirmation, dismissing makes no w
  const dismissed=cancel.click();assert.equal(s.posts.length,0);assert.equal(confirmations[0].options.delay,3000);assert.equal(confirmations[0].options.danger,true);assert.match(confirmations[0].text,/PCK-OLD/);
  await cancel.click();assert.equal(confirmations.length,1);finish(false);await dismissed;assert.equal(s.posts.length,0);assert.equal(cancel.disabled,false);
  const confirmed=cancel.click();assert.equal(s.posts.length,0);finish(true);await confirmed;assert.equal(s.posts.length,1);assert.equal(s.posts[0].path,'/stock-transfers/old/cancel');assert.equal(s.posts[0].body.revision,1);
+});
+
+const inputs=(s:any)=>all(s.root).filter(n=>n.type==='number');
+const type=async(n:Node,v:string)=>{n.value=v;await n.events.input?.();};
+test('phiếu đang chuyển: kho đến nhập SL nhận từng mã; nhận thiếu cần lý do + xác nhận rồi mới gửi đúng số',async()=>{
+ const confirms:string[]=[];let answer=false;
+ const s=await setup('shipped',false,undefined,{confirm:async(text)=>{confirms.push(text);return answer;}});
+ assert.ok(!s.button('Đã chuyển'),'đã xuất rồi: không còn nút Đã chuyển');
+ assert.ok(all(s.root).some(n=>n.tag==='th'&&n.textContent==='SL nhận'));
+ const [x,y]=inputs(s);assert.deepEqual([x!.value,y!.value],['12','3'],'mặc định điền sẵn số chuyển để sửa');
+ assert.deepEqual([x!.attrs['aria-label'],y!.attrs['aria-label']],['Số lượng nhận X','Số lượng nhận Y']);
+ const why=all(s.root).find(n=>n.tag==='textarea')!;
+ await type(y!,'1');assert.match(s.root.textContent,/Nhận thiếu 1 mã/);
+ await s.button('Nhận hàng')!.click();assert.equal(s.posts.length,0);assert.match(s.messages.at(-1)!,/lý do/);
+ why.value='Giao thiếu 2 bát';await s.button('Nhận hàng')!.click();
+ assert.equal(s.posts.length,0,'người dùng chưa xác nhận nhận thiếu');assert.match(confirms[0]!,/Y: chuyển 3, nhận 1/);
+ answer=true;await s.button('Nhận hàng')!.click();
+ assert.equal(s.posts.length,1);assert.equal(s.posts[0].path,'/stock-transfers/old/receive');
+ assert.deepEqual(JSON.parse(JSON.stringify(s.posts[0].body)),{revision:1,lines:[{sku:'X',qty:12},{sku:'Y',qty:1}],note:'Giao thiếu 2 bát'});
+ assert.match(s.messages.at(-1)!,/hoàn về kho đi/);
+});
+test('nhận hàng: ô trống / âm / vượt số chuyển bị chặn ngay trên máy; nhận đủ không hỏi xác nhận',async()=>{
+ const s=await setup('shipped',false,undefined,{confirm:async()=>{throw Error('nhận đủ không được hỏi xác nhận thiếu hàng');}});
+ const [x]=inputs(s);
+ for(const bad of ['','-1','13','abc']){await type(x!,bad);await s.button('Nhận hàng')!.click();assert.equal(s.posts.length,0,bad);assert.match(s.messages.at(-1)!,/Nhập số lượng nhận hợp lệ/);}
+ await type(x!,'12');await s.button('Nhận hàng')!.click();
+ assert.equal(s.posts.length,1);assert.deepEqual(JSON.parse(JSON.stringify(s.posts[0].body.lines)),[{sku:'X',qty:12},{sku:'Y',qty:3}]);assert.equal(s.posts[0].body.note,'');
+ assert.match(s.messages.at(-1)!,/Đã nhận hàng/);
+});
+test('nút "Nhận hàng" chỉ hiện cho người có quyền nhận; nút in phiếu hiện từ khi đã duyệt',async()=>{
+ const printed:any[]=[];
+ const approved=await setup('approved',false,undefined,{print:t=>printed.push(t.transferNo)});
+ await approved.button('In phiếu điều chuyển')!.click();assert.deepEqual(printed,['PCK-OLD']);assert.ok(approved.button('Đã chuyển')&&!approved.button('Nhận hàng'));
+ const pending=await setup('pending',false,undefined,{print:t=>printed.push(t.transferNo)});assert.ok(!pending.button('In phiếu điều chuyển'),'chưa duyệt chưa có phiếu mang theo');
+ const noRight=await setup('shipped',false,undefined,{print:()=>{}});noRight.source.actions={};await noRight.ui.show('old',true);
+ assert.ok(!noRight.button('Nhận hàng'));assert.ok(noRight.button('In phiếu điều chuyển'));assert.match(noRight.root.textContent,/Chờ nhận/);
 });

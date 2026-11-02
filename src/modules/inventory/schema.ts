@@ -89,6 +89,11 @@ export const stockTransfers = pgTable('stock_transfers', {
   approvedBy: text('approved_by').references(() => employees.id),
   approvedAt: text('approved_at'),
   rejectReason: text('reject_reason').notNull().default(''),
+  /** Kho đi bấm "Đã chuyển": trừ kho đi, hàng đang trên đường. Phiếu cũ (đã chuyển một bước) để trống. */
+  shippedBy: text('shipped_by').references(() => employees.id),
+  shippedAt: text('shipped_at'),
+  shippedNote: text('shipped_note').notNull().default(''),
+  /** done_* = kho đến xác nhận NHẬN HÀNG (phiếu cũ: lần "Đã chuyển" một bước). */
   doneBy: text('done_by').references(() => employees.id),
   doneAt: text('done_at'),
   doneNote: text('done_note').notNull().default(''),
@@ -111,4 +116,7 @@ export const stockTransferLines = pgTable('stock_transfer_lines', {
   name: text('name').notNull().default(''),
   unit: text('unit').notNull().default(''),
   qty: doublePrecision('qty').notNull(),
-}, t => [uniqueIndex('uq_stock_transfer_lines_sku').on(t.transferId, t.sku), check('chk_stock_transfer_lines_qty', sql`${t.qty} > 0`)]).enableRLS();
+  /** Số lượng kho đến thực nhận (null = chưa nhận; phiếu cũ đã chuyển một bước coi như nhận đủ). */
+  receivedQty: doublePrecision('received_qty'),
+}, t => [uniqueIndex('uq_stock_transfer_lines_sku').on(t.transferId, t.sku), check('chk_stock_transfer_lines_qty', sql`${t.qty} > 0`),
+  check('chk_stock_transfer_lines_received', sql`${t.receivedQty} IS NULL OR (${t.receivedQty} >= 0 AND ${t.receivedQty} <= ${t.qty})`)]).enableRLS();

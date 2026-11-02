@@ -65,7 +65,7 @@ import { createPager } from './pager.js';
 import { showAudit } from './audit-ui.js';
 import { watchCsp } from './csp-report.js';
 import { verifyBox, duePill, allocatePayments, installmentStatus } from './verify.js';
-import { orderReference, orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel, sellerOf, SELLERS, SLIP_KINDS, packingPrintData, deliveryPrintData, slipSheetHtml } from './order-print.js';
+import { orderReference, orderPrintData, orderSheetHtml, readEdits, downloadOrderExcel, sellerOf, SELLERS, SLIP_KINDS, packingPrintData, deliveryPrintData, transferPrintData, slipSheetHtml } from './order-print.js';
 import { openContractDocs } from './contract-ui.js';
 import { initTasks } from './tasks.js';
 import { initCare } from './care.js';
@@ -3753,7 +3753,10 @@ let stocktakeUi;
 function stocktakeView() { return stocktakeUi ||= initStocktake({ api, root: $('#view-stocktake'), toast, confirmBox, userId: () => state.user?.id, ensureCatalog: loadCatalogSnapshot, findProducts: q => catalog.items ? searchCatalog(catalog.items, {q}) : null }); }
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
 var transfersUi = null, stockMovesUi = null, sellerConfigUi = null;
-function transfersView() { return transfersUi ||= initTransfers({ api, root: $('#view-transfers'), toast, go, isManager, confirmBox }); }
+function transfersView() {
+  return transfersUi ||= initTransfers({ api, root: $('#view-transfers'), toast, go, isManager, confirmBox,
+    printTransfer: t => openSlipPrint({ kind: 'transfer', choices: [{ value: '', label: t.transferNo }], initial: '', build: () => transferPrintData(t, state.user?.name || '') }) });
+}
 function stockMovesView() { return stockMovesUi ||= initStockMoves({ api, root: $('#view-stock-moves'), toast, createPager, linkAllowed }); }
 function sellerConfigView() { if (!sellerConfigUi) { const box = document.createElement('div'); $('#view-permissions').after(box); box.id = 'seller-config-box'; sellerConfigUi = initSellerConfig({ api, root: box, toast }); } return sellerConfigUi; }
 var permissionsUi = null;
@@ -4685,7 +4688,7 @@ function openOrderPrint(detail = sales.detail) {
  */
 function openSlipPrint({ kind, choices, initial, build }) {
   const k = SLIP_KINDS[kind], dlg = document.createElement('dialog'); dlg.className = 'modal xwide order-print-dialog';
-  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">${kind === 'packing' ? 'Phiếu đóng gói' : 'Phiếu giao hàng'}</span><h2>In ${k.title.toLowerCase()}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">${kind === 'packing' ? 'Phiếu đóng gói' : kind === 'transfer' ? 'Phiếu điều chuyển kho' : 'Phiếu giao hàng'}</span><h2>In ${k.title.toLowerCase()}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
     <div class="modal-body"><div class="row-gap print-tools">${choices.length > 1 ? `<label class="inline">${kind === 'packing' ? 'Phiếu' : 'Chuyến giao'} <select data-choice>${choices.map(c => `<option value="${esc(c.value)}"${c.value === initial ? ' selected' : ''}>${esc(c.label)}</option>`).join('')}</select></label>` : ''}
       <label class="inline">Khổ giấy <select data-orient><option value="portrait">A4 dọc</option><option value="landscape">A4 ngang</option></select></label>
       <span class="muted small">Bấm vào chữ trên phiếu để sửa trước khi in.</span></div>

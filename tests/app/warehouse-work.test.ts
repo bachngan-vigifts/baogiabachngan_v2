@@ -19,7 +19,12 @@ test('transfer lifecycle creates warehouse tasks immediately without opening Tas
  const mine=f.ok(await f.call('/tasks?view=mine&source=transfer',c.kho));assert.ok(mine.tasks.some((x:any)=>x.id===moving.id));
  assert.equal((await f.db.select().from(stockMoves).where(eq(stockMoves.refType,'stock_transfer'))).length,0);
  assert.equal(f.ok(await f.call('/warehouse-work',c.kho)).transfers.approved,1);
- f.ok(await f.call('/stock-transfers/'+t.id+'/done',c.kho,'POST',{revision:approved.revision}));
+ const shipped=f.ok(await f.call('/stock-transfers/'+t.id+'/ship',c.kho,'POST',{revision:approved.revision}));assert.equal(shipped.status,'shipped');
+ assert.equal((await f.db.select().from(tasks).where(eq(tasks.id,moving.id)))[0]!.status,'done','xuất xong: việc "Chuyển hàng" đóng');
+ assert.ok((await f.db.select().from(tasks).where(eq(tasks.sourceId,t.id))).some(x=>x.autoKey?.startsWith('transfer-receive:')&&['todo','in_progress'].includes(x.status)),'kho đến có việc "Nhận hàng điều chuyển"');
+ assert.equal(f.ok(await f.call('/warehouse-work',c.kho)).transfers.shipped,1);assert.equal(f.ok(await f.call('/navigation-counts',c.kho)).transfers,1,'đang chuyển vẫn là việc mở');
+ f.ok(await f.call('/stock-transfers/'+t.id+'/receive',c.kho,'POST',{revision:shipped.revision,lines:shipped.lines.map((l:any)=>({sku:l.sku,qty:l.qty}))}));
+ assert.equal((await f.db.select().from(tasks).where(and(eq(tasks.sourceId,t.id),inArray(tasks.status,['todo','in_progress'])))).length,0);
  assert.equal((await f.db.select().from(tasks).where(eq(tasks.id,moving.id)))[0]!.status,'done');assert.equal(f.ok(await f.call('/navigation-counts',c.kho)).transfers,0);assert.equal(f.ok(await f.call('/warehouse-work',c.kho)).transfers.count,0);
  assert.equal((await f.db.select().from(tasks).where(eq(tasks.id,'unrelated')))[0]!.status,'todo');assert.equal((await f.db.select().from(stockMoves).where(eq(stockMoves.refId,t.id))).length,2);
  const cancelled=await f.create();f.ok(await f.call('/stock-transfers/'+cancelled.id+'/cancel',c.mgr,'POST',{}));assert.equal((await f.db.select().from(tasks).where(and(eq(tasks.sourceId,cancelled.id),inArray(tasks.status,['todo','in_progress'])))).length,0);

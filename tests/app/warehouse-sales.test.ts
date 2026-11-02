@@ -121,17 +121,22 @@ test('điều chuyển kho: NVBH xin → Manager duyệt → Kho chuyển; tồn
   assert.equal(approveTask?.assigneeId, 'sa');
   assert.equal((await s.call(`/stock-transfers/${t.data.id}/approve`, s.ml, 'POST', {})).status, 403);
   assert.equal((await s.call(`/stock-transfers/${t.data.id}/approve`, s.mgr, 'POST', { revision: 1 })).status, 200);
-  assert.equal((await s.call(`/stock-transfers/${t.data.id}/done`, s.ml, 'POST', {})).status, 403, 'NVBH không bấm Đã chuyển');
+  assert.equal((await s.call(`/stock-transfers/${t.data.id}/ship`, s.ml, 'POST', {})).status, 403, 'NVBH không bấm Đã chuyển');
   await reconcileAutoTasks(s.db as never);
   const [move] = await s.db.select().from(tasks).where(eq(tasks.autoKey, `transfer-move:${t.data.id}`));
   assert.equal(move?.assigneePosition, 'warehouse');
-  const done = await s.call(`/stock-transfers/${t.data.id}/done`, s.kho, 'POST', {});
+  const done = await s.call(`/stock-transfers/${t.data.id}/ship`, s.kho, 'POST', {});
   assert.equal(done.status, 200, JSON.stringify(done.data));
+  assert.equal(done.data.status, 'shipped');
+  assert.deepEqual([await bal(s, 'vig'), await bal(s, 'ml')], [20, 20], 'đang chuyển: mới trừ kho đi');
+  assert.equal((await s.call(`/stock-transfers/${t.data.id}/ship`, s.kho, 'POST', {})).status, 409, 'chuyển một lần');
+  const got = await s.call(`/stock-transfers/${t.data.id}/receive`, s.kho, 'POST', { lines: [{ sku: 'LY1', qty: 30 }] });
+  assert.equal(got.status, 200, JSON.stringify(got.data));
   assert.deepEqual([await bal(s, 'vig'), await bal(s, 'ml')], [20, 50]);
-  assert.equal((await s.call(`/stock-transfers/${t.data.id}/done`, s.kho, 'POST', {})).status, 409, 'chuyển một lần');
+  assert.equal((await s.call(`/stock-transfers/${t.data.id}/receive`, s.kho, 'POST', { lines: [{ sku: 'LY1', qty: 30 }] })).status, 409, 'nhận một lần');
   const t2 = await s.call('/stock-transfers', s.ml, 'POST', { fromWarehouseId: 'vig', toWarehouseId: 'ml', reason: 'Thêm nữa', lines: [{ sku: 'LY1', qty: 99 }] });
   await s.call(`/stock-transfers/${t2.data.id}/approve`, s.mgr, 'POST', {});
-  assert.equal((await s.call(`/stock-transfers/${t2.data.id}/done`, s.kho, 'POST', {})).data.code, 'TRANSFER_SHORT');
+  assert.equal((await s.call(`/stock-transfers/${t2.data.id}/ship`, s.kho, 'POST', {})).data.code, 'TRANSFER_SHORT');
   // Lịch sử xuất nhập: nhóm "Điều chuyển"; NVBH không thấy kho Hoá đơn.
   const hist = (await s.call('/stock-moves?group=transfer', s.ml)).data;
   assert.deepEqual(hist.moves.map((m: any) => [m.warehouseId, m.qty]).sort(), [['ml', 30], ['vig', -30]]);
@@ -422,8 +427,10 @@ test('phiếu xin hàng: chức vụ đối ứng Cho / Từ chối (không tự
   assert.equal(await remindPendingTransfers({ db: s.db } as never, new Date(created + 125 * 60_000)), 1, 'giờ sau nhắc tiếp');
   // Sale Admin Cho → tự bấm Đã chuyển (cửa hàng không có nhóm Kho riêng).
   assert.equal((await s.call(`/stock-transfers/${t.data.id}/approve`, s.sa, 'POST', {})).status, 200);
-  const shipped = await s.call(`/stock-transfers/${t.data.id}/done`, s.emp, 'POST', {});
+  const shipped = await s.call(`/stock-transfers/${t.data.id}/ship`, s.emp, 'POST', {});
   assert.equal(shipped.status, 200, JSON.stringify(shipped.data));
+  assert.equal((await s.call(`/stock-transfers/${t.data.id}/receive`, s.emp, 'POST', { lines: [{ sku: 'LY1', qty: 5 }] })).status, 403, 'người xuất kho không tự nhận thay kho đến');
+  assert.equal((await s.call(`/stock-transfers/${t.data.id}/receive`, s.ml, 'POST', { lines: [{ sku: 'LY1', qty: 5 }] })).status, 200, 'người xin (kho đến) nhận hàng');
   assert.deepEqual([await bal(s, 'vig'), await bal(s, 'ml')], [45, 25]);
   assert.equal(await remindPendingTransfers({ db: s.db } as never, new Date(created + 200 * 60_000)), 0, 'đã xử lý thì thôi nhắc');
   // Không tự duyệt phiếu mình xin: emp xin từ VIGIFTS (kho mình bán) phải chờ người khác / Manager.

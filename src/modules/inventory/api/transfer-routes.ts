@@ -25,7 +25,8 @@ import { hiddenWarehouseIds } from './warehouse-access.ts';
  *  POST /stock-transfers/:id/reject       như duyệt, bắt buộc lý do
  *  Chờ duyệt quá 1 giờ: nhắc lại mỗi giờ (remindPendingTransfers, chạy theo nhịp GET /pulse).
  *  POST /stock-transfers/:id/cancel       người xin hoặc Manager, khi chưa chuyển
- *  POST /stock-transfers/:id/done         quyền "Điều chuyển kho" (Kho) hoặc nhân viên kho được xin: trừ kho đi, cộng kho đến trong sổ kho – một lần
+ *  POST /stock-transfers/:id/ship         quyền "Điều chuyển kho" (Kho) hoặc nhân viên kho được xin: "Đã chuyển" → trừ kho đi trong sổ kho, phiếu "Đang chuyển" – một lần
+ *  POST /stock-transfers/:id/receive      kho đến (nhóm Kho / nhân viên kho đến / người xin / Manager): nhập SL thực nhận TỪNG mã → cộng kho đến; phần thiếu ghi ngược về kho đi
  *  GET  /stock-transfers, /stock-transfers/:id
  * Kho riêng (Hoá đơn) chỉ người bán kho đó / Manager thấy và chọn được. Tồn kho đi (đã chốt đầu kỳ) không đủ thì không cho chuyển.
  */
@@ -61,6 +62,12 @@ async function canShip(db: ReadDb, m: Member, t: { fromWarehouseId: string }) {
   const pos = (m as { positionId?: string | null }).positionId;
   return m.role === 'employee' && !!pos && (await sellerPositions(db, t.fromWarehouseId)).includes(pos);
 }
+/** Kho đến nhận hàng: nhóm Kho / Manager (quyền "Điều chuyển kho"), nhân viên bán kho đến (Phân quyền kho bán) hoặc chính người xin phiếu. */
+async function canReceive(db: ReadDb, m: Member, t: { toWarehouseId: string; requestedBy: string }) {
+  if (canMove(m) || t.requestedBy === m.id) return true;
+  const pos = (m as { positionId?: string | null }).positionId;
+  return m.role === 'employee' && !!pos && (await sellerPositions(db, t.toWarehouseId)).includes(pos);
+}
 
 async function visibleWarehouses(c: Ctx, db: ReadDb = c.env.db) {
   const hidden = await hiddenWarehouseIds(db, me(c));
@@ -78,23 +85,23 @@ async function viewOf(c: Ctx, id: string) {
     db.select().from(stockTransferLines).where(eq(stockTransferLines.transferId, id)).orderBy(asc(stockTransferLines.sku)),
     db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses).where(inArray(warehouses.id, [t!.fromWarehouseId, t!.toWarehouseId])),
     db.select({ id: employees.id, name: employees.name,role:employees.role,positionId:employees.positionId,active:employees.active,deletedAt:employees.deletedAt }).from(employees)
-      .where(inArray(employees.id, [t!.requestedBy, t!.approvedBy, t!.doneBy, t!.cancelledBy].filter((x): x is string => !!x))),
+      .where(inArray(employees.id, [t!.requestedBy, t!.approvedBy, t!.shippedBy, t!.doneBy, t!.cancelledBy].filter((x): x is string => !!x))),
   ]);
   const requester=people.find(p=>p.id===t!.requestedBy),decide=transferCanApprove(m,requester);
-  const [stock, ship] = await Promise.all([readCatalogStock(db, lines.map(l => l.sku)), canShip(db, m, t!)]);
+  const [stock, ship, receive] = await Promise.all([readCatalogStock(db, lines.map(l => l.sku)), canShip(db, m, t!), canReceive(db, m, t!)]);
   const at = (sku: string, wh: string) => num(stock.find(s => s.sku === sku && s.warehouseId === wh)?.quantity ?? 0);
   const name = (id: string | null) => id ? people.find(p => p.id === id)?.name ?? '' : '';
   const status = t!.status as TransferStatus;
   return {
     ...t!, statusLabel: TRANSFER_STATUS_LABEL[status], approvalBy:transferApprovalLabel(requester?.role==='employee'&&requester.active&&!requester.deletedAt?requester.positionId:null),
     fromName: whs.find(w => w.id === t!.fromWarehouseId)?.name ?? '', toName: whs.find(w => w.id === t!.toWarehouseId)?.name ?? '',
-    requestedByName: name(t!.requestedBy), approvedByName: name(t!.approvedBy), doneByName: name(t!.doneBy), cancelledByName: name(t!.cancelledBy),
-    lines: lines.map(l => ({ sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, fromStock: at(l.sku, t!.fromWarehouseId), toStock: at(l.sku, t!.toWarehouseId) })),
+    requestedByName: name(t!.requestedBy), approvedByName: name(t!.approvedBy), shippedByName: name(t!.shippedBy), doneByName: name(t!.doneBy), cancelledByName: name(t!.cancelledBy),
+    lines: lines.map(l => ({ sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, receivedQty: l.receivedQty ?? (status === 'done' ? l.qty : null), fromStock: at(l.sku, t!.fromWarehouseId), toStock: at(l.sku, t!.toWarehouseId) })),
     actions: {
       edit: status === 'pending' && (m.role === 'manager' || t!.requestedBy === m.id),
       approve: status === 'pending' && decide, reject: status === 'pending' && decide,
       cancel: (status === 'pending' || status === 'approved') && (m.role === 'manager' || t!.requestedBy === m.id),
-      done: status === 'approved' && ship,
+      ship: status === 'approved' && ship, receive: status === 'shipped' && receive,
     },
   };
 }
@@ -113,6 +120,11 @@ const bump = { revision: sql`${stockTransfers.revision} + 1` };
 async function moveTeam(db: StaffEnv['db']) {
   return (await db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'employee'), eq(employees.active, true), sql`${employees.deletedAt} IS NULL`,
     or(eq(employees.positionId, 'warehouse'), sql`${employees.positionId} IN (SELECT ${positionPermissions.positionId} FROM ${positionPermissions} WHERE ${positionPermissions.permission} = 'stock.transfer')`)))).map(r => r.id);
+}
+/** Người nhận hàng điều chuyển: người xin + nhân viên kho đến + nhóm Kho. */
+async function loadReceivers(db: StaffEnv['db'], t: { requestedBy: string; toWarehouseId: string }) {
+  const [team, staff] = await Promise.all([moveTeam(db), warehouseStaff(db, t.toWarehouseId)]);
+  return [...new Set([t.requestedBy, ...staff, ...team])];
 }
 
 /** Thông báo (chuông + Web Push) chạy nền sau khi trả lời: nút Duyệt / Từ chối / Đã chuyển không phải chờ gửi push. Lỗi gửi không ảnh hưởng phiếu. */
@@ -173,7 +185,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
         requestedBy ? eq(stockTransfers.requestedBy, requestedBy) : undefined,
         from !== null ? gte(stockTransfers.createdAt, new Date(from).toISOString()) : undefined,
         to !== null ? lt(stockTransfers.createdAt, new Date(to + 86400000).toISOString()) : undefined,
-        status === 'open' ? inArray(stockTransfers.status, ['pending', 'approved']) : status ? eq(stockTransfers.status, status as TransferStatus) : undefined,
+        status === 'open' ? inArray(stockTransfers.status, ['pending', 'approved', 'shipped']) : status ? eq(stockTransfers.status, status as TransferStatus) : undefined,
         q ? or(ilike(stockTransfers.transferNo, `%${q.replace(/[\\%_]/g, '')}%`), sql`EXISTS (SELECT 1 FROM ${stockTransferLines} WHERE ${stockTransferLines.transferId} = ${stockTransfers.id} AND ${stockTransferLines.sku} ILIKE ${'%' + q.replace(/[\\%_]/g, '') + '%'})`) : undefined))
       .orderBy(desc(stockTransfers.createdAt)).limit(300);
     const counts = rows.length ? await db.select({ id: stockTransferLines.transferId, n: sql<number>`count(*)`.mapWith(Number), qty: sql<number>`sum(${stockTransferLines.qty})`.mapWith(Number) })
@@ -277,8 +289,11 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
     return json(await viewOf(c, id));
   }, 'business');
 
-  /** Kho bấm "Đã chuyển": trừ kho đi, cộng kho đến (một chứng từ, ghi một lần). Kho đi đã chốt đầu kỳ mà tồn không đủ → không cho chuyển. */
-  router.post('/stock-transfers/:id/done', async c => {
+  /**
+   * Kho đi bấm "Đã chuyển": trừ kho đi (một chứng từ, ghi một lần), phiếu sang "Đang chuyển" – hàng đang trên đường, CHƯA cộng kho đến.
+   * Kho đi đã chốt đầu kỳ mà không đủ tồn → không cho chuyển.
+   */
+  router.post('/stock-transfers/:id/ship', async c => {
     const m = me(c), id = c.params.id!, body = await readJson(c.req, 4_000);
     await viewOf(c, id);
     const t = await c.env.db.transaction(async tx => {
@@ -299,16 +314,63 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       await stockHoldHooks.assertFree?.(tx, t.fromWarehouseId, lines, { override: body.overrideHolds, actor: m,
         context: { module: 'inventory', entityType: 'stock_transfers', entityId: id, refNo: t.transferNo } });
       const note = `${t.transferNo}: ${t.reason}`.slice(0, 500);
-      await postMoves(tx, m.id, lines.flatMap(l => [
-        { sku: l.sku, warehouseId: t.fromWarehouseId, qty: -l.qty, kind: 'transfer_out' as const, refType: 'stock_transfer' as const, refId: id, refNo: t.transferNo, note },
-        { sku: l.sku, warehouseId: t.toWarehouseId, qty: l.qty, kind: 'transfer_in' as const, refType: 'stock_transfer' as const, refId: id, refNo: t.transferNo, note },
-      ]), now);
-      await tx.update(stockTransfers).set({ status: 'done', doneBy: m.id, doneAt: now, doneNote: str(body.note, 500), updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
+      await postMoves(tx, m.id, lines.map(l => ({ sku: l.sku, warehouseId: t.fromWarehouseId, qty: -l.qty, kind: 'transfer_out' as const, refType: 'stock_transfer' as const, refId: id, refNo: t.transferNo, note })), now);
+      await tx.update(stockTransfers).set({ status: 'shipped', shippedBy: m.id, shippedAt: now, shippedNote: str(body.note, 500), updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
       return t;
     });
     await transferTasksChanged(c.env, id, m.id);
     const v = await viewOf(c, id);
-    await background(c.env, notify(c.env, { eventType: 'transfer_done', title: 'Hàng đã chuyển kho', body: `${v.transferNo} · ${v.fromName} → ${v.toName}`, url: `/index.html#/transfers/${id}`, targetMemberId: t.requestedBy, actorId: m.id }));
+    await background(c.env, loadReceivers(c.env.db, t).then(ids => notifyMany(c.env, ids, { eventType: 'transfer_shipped', title: 'Hàng điều chuyển đang tới – nhận hàng',
+      body: `${v.transferNo} · ${v.fromName} → ${v.toName}. Kiểm hàng và nhập số lượng thực nhận trên phiếu.`, url: `/index.html#/transfers/${id}`, actorId: m.id })));
+    return json(v);
+  }, 'business');
+
+  /**
+   * Kho đến bấm "Nhận hàng" và nhập SỐ LƯỢNG THỰC NHẬN của TỪNG mã (0 ≤ nhận ≤ số chuyển): cộng kho đến đúng số nhận,
+   * phần thiếu ghi ngược về kho đi (không để hàng "bốc hơi" khỏi sổ kho). Nhận thiếu phải ghi lý do và báo Manager.
+   */
+  router.post('/stock-transfers/:id/receive', async c => {
+    const m = me(c), id = c.params.id!, body = await readJson(c.req, 40_000), note = str(body.note, 500);
+    await viewOf(c, id);
+    const result = await c.env.db.transaction(async tx => {
+      const t = await lock(tx, id, ['shipped'], body.revision), now = nowIso();
+      if (!await canReceive(tx, m, t)) fail(403, 'Chỉ kho đến (nhóm Kho, nhân viên kho đến, người xin phiếu) hoặc Manager được nhận hàng điều chuyển.');
+      const lines = await tx.select().from(stockTransferLines).where(eq(stockTransferLines.transferId, id)).orderBy(asc(stockTransferLines.sku));
+      const got = new Map<string, number>();
+      for (const raw of (Array.isArray(body.lines) ? body.lines as Record<string, unknown>[] : []).slice(0, 500)) {
+        const sku = str(raw?.sku, 200), blank = raw?.qty === '' || raw?.qty === null || raw?.qty === undefined, qty = num(raw?.qty);
+        if (!lines.some(l => l.sku === sku)) fail(400, `Mã ${sku || '(trống)'} không thuộc phiếu này.`);
+        if (got.has(sku)) fail(400, `Mã ${sku} bị nhập hai lần.`);
+        if (blank || !Number.isFinite(qty) || qty < 0) fail(400, `Nhập số lượng nhận hợp lệ cho ${sku} (nhận 0 nếu chưa tới).`);
+        got.set(sku, qty);
+      }
+      const missing = lines.filter(l => !got.has(l.sku));
+      if (missing.length) fail(400, 'Nhập số lượng nhận cho từng mã. Còn thiếu: ' + missing.slice(0, 8).map(l => l.sku).join(', '), 'RECEIVE_LINES_REQUIRED');
+      const over = lines.filter(l => got.get(l.sku)! > l.qty + 0.0005);
+      if (over.length) fail(400, 'Số nhận vượt số chuyển: ' + over.slice(0, 5).map(l => `${l.sku} (chuyển ${l.qty}, nhận ${got.get(l.sku)})`).join('; ') + '. Hàng thừa lập phiếu điều chuyển / điều chỉnh riêng.', 'RECEIVE_OVER');
+      const short = lines.filter(l => got.get(l.sku)! < l.qty - 0.0005);
+      if (short.length && note.length < 3) fail(400, 'Nhận thiếu hàng: nhập lý do (VD: hàng chưa tới, giao thiếu, hỏng).', 'RECEIVE_NOTE_REQUIRED');
+      await lockLedger(tx);
+      await assertWarehousesOpened(tx, [t.fromWarehouseId, t.toWarehouseId]);
+      const ledgerNote = `${t.transferNo}: ${t.reason}`.slice(0, 500);
+      await postMoves(tx, m.id, lines.flatMap(l => {
+        const received = got.get(l.sku)!, missed = num(l.qty - received);
+        return [
+          { sku: l.sku, warehouseId: t.toWarehouseId, qty: received, kind: 'transfer_in' as const, refType: 'stock_transfer' as const, refId: id, refNo: t.transferNo, note: ledgerNote },
+          { sku: l.sku, warehouseId: t.fromWarehouseId, qty: missed, kind: 'reverse' as const, refType: 'stock_transfer' as const, refId: id, refNo: t.transferNo, note: `Hoàn phần thiếu ${t.transferNo}: ${note}`.slice(0, 500) },
+        ];
+      }), now);
+      for (const l of lines) await tx.update(stockTransferLines).set({ receivedQty: got.get(l.sku)! }).where(eq(stockTransferLines.id, l.id));
+      await tx.update(stockTransfers).set({ status: 'done', doneBy: m.id, doneAt: now, doneNote: note, updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
+      return { t, short: short.map(l => `${l.sku} thiếu ${num(l.qty - got.get(l.sku)!)}`) };
+    });
+    await transferTasksChanged(c.env, id, m.id);
+    const v = await viewOf(c, id), t = result.t;
+    await background(c.env, Promise.all([moveTeam(c.env.db), warehouseStaff(c.env.db, t.fromWarehouseId)]).then(([team, staff]) => notifyMany(c.env, [t.requestedBy, ...team, ...staff],
+      { eventType: 'transfer_done', title: result.short.length ? 'Điều chuyển kho: nhận thiếu hàng' : 'Hàng đã chuyển kho', url: `/index.html#/transfers/${id}`, actorId: m.id,
+        body: `${v.transferNo} · ${v.fromName} → ${v.toName}` + (result.short.length ? ` · ${result.short.slice(0, 5).join('; ')} (đã hoàn về kho đi)` : '') })));
+    if (result.short.length) await background(c.env, notifyMany(c.env, 'managers', { eventType: 'transfer_short', title: 'Điều chuyển kho nhận thiếu hàng', url: `/index.html#/transfers/${id}`, actorId: m.id,
+      body: `${v.transferNo} · ${v.fromName} → ${v.toName}: ${result.short.slice(0, 5).join('; ')}. Lý do: ${note}` }));
     return json(v);
   }, 'business');
 }

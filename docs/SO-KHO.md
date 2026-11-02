@@ -213,12 +213,14 @@ Tài khoản kho chỉ thấy các trang cần dùng, chữ to, nút to.
 **Điều chuyển kho** (`#/transfers`, bảng `stock_transfers` + `stock_transfer_lines`):
 1. Nhân viên bấm **＋ Xin điều chuyển**: kho đi, kho đến, lý do, các mã + số lượng → **Chờ duyệt** (báo người duyệt, vào hộp **Cần duyệt**, việc "Duyệt điều chuyển").
 2. Manager / người được duyệt **Duyệt** hoặc **Từ chối** (bắt buộc lý do).
-3. Nhóm Kho (quyền mới **Điều chuyển kho – xác nhận đã chuyển**, mặc định Kho + Sale Admin) nhận việc "Chuyển hàng", bấm **Đã chuyển** → sổ kho trừ kho đi (**Chuyển kho đi**), cộng kho đến (**Chuyển kho đến**), một lần. Kho đi đã chốt đầu kỳ mà không đủ tồn → 409 `TRANSFER_SHORT`.
-4. Người xin / Manager huỷ được khi chưa chuyển.
+3. **Kho đi xuất hàng** (nhóm Kho – quyền *Điều chuyển kho – xác nhận đã chuyển* – hoặc nhân viên bán của kho đi) bấm **Đã chuyển** → phiếu sang **Đang chuyển** và sổ kho trừ kho đi (**Chuyển kho đi**) đủ số lượng xin. Kho đi đã chốt đầu kỳ mà không đủ tồn → 409 `TRANSFER_SHORT`. Báo kho đến, tạo việc "Nhận hàng điều chuyển".
+4. **Kho đến nhận hàng** (Kho, Manager, người xin hoặc nhân viên bán của kho đến) bấm **Nhận hàng**, nhập **SL nhận** từng mã (mặc định điền sẵn SL chuyển, có nút "Nhận đủ tất cả"). Sổ kho cộng kho đến đúng số nhận (**Chuyển kho đến**). Nếu nhận thiếu: bắt buộc ghi lý do, phần thiếu **hoàn về kho đi** (dòng *Điều chuyển: hoàn phần thiếu về kho đi*), báo Manager; không nhận quá SL chuyển (`RECEIVE_OVER`).
+5. Nút **In phiếu điều chuyển** (từ khi đã duyệt) in mẫu A4 giống phiếu giao hàng để nhân viên mang theo: kho đi/đến, danh sách mã, SL chuyển, cột SL nhận để kho đến ghi tay, 4 chữ ký.
+6. Người xin / Manager huỷ được khi chưa chuyển (đã "Đang chuyển" thì huỷ phải hoàn kho – không cho huỷ).
 
 **Sổ kho** (`#/stock-moves`, mọi nhân viên; trước đây tên là "Lịch sử xuất nhập"): xem mục **Trang Sổ kho** bên dưới.
 
-**Kỹ thuật:** migration `20261021120000_warehouse_sales.sql` (+ `20261021120001_supabase_access_warehouse_sales.sql`); `inventory/api/{warehouse-access,transfer-routes,history-routes}.ts`, `ledger.ts › syncSaleMoves`, `sales/api/routes.ts › pickSaleWarehouse / syncOrderStock`, `sales/api/pos-stock.ts` (nguồn tồn); giao diện `trial-ui/stock-ops.js`. Test: `tests/app/warehouse-sales.test.ts`.
+**Kỹ thuật:** migration `20261021120000_warehouse_sales.sql` (+ `20261021120001_supabase_access_warehouse_sales.sql`); `inventory/api/{warehouse-access,transfer-routes,history-routes}.ts`, `ledger.ts › syncSaleMoves`, `sales/api/routes.ts › pickSaleWarehouse / syncOrderStock`, `sales/api/pos-stock.ts` (nguồn tồn); giao diện `trial-ui/stock-ops.js`. Test: `tests/app/warehouse-sales.test.ts`, `transfer-receive.test.ts`, `transfer-print.test.ts`. Migration nhận hàng điều chuyển `20261102120000_transfer_receive.sql` (thêm `shipped_*`, `received_qty`, trạng thái `shipped`) – **chạy tay trong Supabase SQL Editor trước khi merge**; API `/stock-transfers/:id/done` đã thay bằng `/ship` + `/receive`.
 
 ## Trang Sổ kho (#/stock-moves) – như "Sổ kho" của Sapo (22/10/2026)
 
