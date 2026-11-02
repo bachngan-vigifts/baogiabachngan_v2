@@ -138,3 +138,10 @@ test('cancel requires a 3-second destructive confirmation, dismissing makes no w
  await cancel.click();assert.equal(confirmations.length,1);finish(false);await dismissed;assert.equal(s.posts.length,0);assert.equal(cancel.disabled,false);
  const confirmed=cancel.click();assert.equal(s.posts.length,0);finish(true);await confirmed;assert.equal(s.posts.length,1);assert.equal(s.posts[0].path,'/stock-transfers/old/cancel');assert.equal(s.posts[0].body.revision,1);
 });
+
+test('cân bằng kho nhanh chỉ điều hướng khi server cho phép, không tự ghi kho hoặc đổi phiếu',async()=>{
+ const s=await setup('pending');assert.equal(s.button('Cân bằng kho nhanh'),undefined);
+ (s.source.actions as Record<string,boolean>).adjustBalance=true;await s.ui.show('old');
+ const before=JSON.stringify(s.source);await s.button('Cân bằng kho nhanh')!.click();
+ assert.deepEqual(s.nav,['#/inventory?transfer=old']);assert.equal(s.posts.length,0);assert.equal(JSON.stringify(s.source),before);
+});
