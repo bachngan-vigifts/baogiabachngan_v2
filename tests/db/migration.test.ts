@@ -8,7 +8,7 @@ const declared = tablesIn(schema).map(t => getTableConfig(t).name).sort();
 test('PostgreSQL migration tạo đúng các bảng đã khai báo', async () => {
   const db = await openMigratedDb();
   assert.deepEqual(await tablesOf(db), declared);
-  assert.equal(declared.length, 145); // thêm sổ quyền thưởng và các lần ghi nhận thưởng HĐKT
+  assert.equal(declared.length, 146); // thêm customer_cash_collections (tiền mặt nhân viên giữ chờ Manager nhận)
 });
 
 test('mọi bảng PostgreSQL có khoá chính', async () => {

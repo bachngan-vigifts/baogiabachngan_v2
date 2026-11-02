@@ -286,3 +286,5 @@ dialog.stocktake-camera { width: min(520px, 96vw); }
 .transfer-receive textarea { width: 100%; }
 .transfer-receive-input { width: 6.5em; max-width: 100%; text-align: right; font-size: 1rem; }
 .transfer-receive-summary { margin: 0; }
+/* Tiêu đề cột không gãy giữa chữ (SL chuyển / SL nhận / Tồn kho…): chỉ xuống dòng giữa các từ. */
+.transfer-detail-table th { overflow-wrap: normal; word-break: keep-all; }
