@@ -34,7 +34,7 @@ PDF là ảnh render của từng trang, PowerPoint giữ text/giá/khung/ảnh/
 
 ## Thư viện
 
-PptxGenJS 4.0.1 (MIT), pdf-lib (MIT), SheetJS CE 0.18.5 (Apache-2.0), QRCode.js 1.0.0 (MIT), Montserrat (SIL OFL 1.1). Bản phân phối vendored giữ thông tin bản quyền thư viện. Tài sản VIGIFTS theo mẫu khách hàng cung cấp.
+PptxGenJS 4.0.1 (MIT), pdf-lib (MIT), SheetJS CE 0.20.3 (Apache-2.0), QRCode.js 1.0.0 (MIT), Montserrat (SIL OFL 1.1). Bản phân phối vendored giữ thông tin bản quyền thư viện. Tài sản VIGIFTS theo mẫu khách hàng cung cấp.
 
 ## Product assistant
 Staff can describe category and final quotation budget in Vietnamese, review editable criteria, then search live WooCommerce Store APIs for in-stock products. Final price is regular price ×60% (LocknLock) or ×90% (Minh Long), plus VND15,000, before applying the optional 10-unit pack. Results refresh matching library URLs and either replace the selection or append; no product seeds ship.
@@ -50,3 +50,5 @@ Import optimization: rows requiring website lookup are now grouped by supplier i
 The assistant now extracts and edits up to 12 category/budget groups instead of one. Each group has independent brand, live website category or common preset, min/max final price, result limit, keywords and unit/ten-pack pricing. “Thêm danh mục” adds another category; “Thêm mức giá” copies a category into the next budget interval. All groups merge into one quotation, deduplicating supplier URLs and reporting empty groups separately.
 The category picker loads published taxonomy with products from both suppliers (122 categories observed). “Ly sứ” and “Ly dưỡng sinh” have separate presets and product-name filters, even though Minh Long assigns both to the same website category. Natural-language parsing preserves explicit categories and price intervals if a small model collapses them. Live stock, price calculation and original quotation grouping remain deterministic.
 Pages AI bindings are explicitly configured at root, production and preview because downloaded environment overrides can omit a root-only binding. Existing unrelated settings are retained.
+
+The vendored Excel parser is pinned to SheetJS CE 0.20.3 from its authoritative CDN. All nine original input workbooks and the 100-code fixture were verified with this version.
