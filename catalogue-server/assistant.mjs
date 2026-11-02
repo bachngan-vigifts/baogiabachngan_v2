@@ -59,21 +59,21 @@ export function parsePlan(prompt,catalog=[]){
 }
 export async function interpretIntent(prompt,env={},request,catalog=[]){
  if(typeof prompt!=='string'||prompt.trim().length<5||prompt.length>1000)throw Error('Nhập yêu cầu từ 5 đến 1.000 ký tự.');
- const baseline=parsePlan(prompt,catalog);let warning='';
+ const baseline=parsePlan(prompt,catalog);let warning='',diagnostic='';
  if(env.AI&&request){
   let user;try{user=await staffForAI(request)}catch(e){warning=String(e.message).startsWith('Anh/chị đã gửi')?e.message:'Chưa xác thực được phiên CRM. Vui lòng đăng nhập lại CRM rồi thử lại.';}
-  if(user){try{
+  if(user){let stage='model';try{
    const item={type:'object',properties:{brand:{type:'string',enum:['LocknLock','Minh Long','both']},type:{type:'string',enum:[...assistantTypes.map(t=>t.key),'website']},categoryId:{type:'integer'},min:{type:'number'},max:{type:['number','null']},limit:{type:'integer'},packSize:{type:'integer',enum:[1,10]},keywords:{type:'array',items:{type:'string'}}},required:['brand','type','min','max','limit','packSize','keywords']};
    const schema={type:'object',properties:{groups:{type:'array',minItems:1,maxItems:12,items:item}},required:['groups']};
    const result=await env.AI.run('@cf/meta/llama-3.1-8b-instruct',{messages:[{role:'system',content:'Trích xuất yêu cầu quà tặng tiếng Việt thành NHIỀU nhóm danh mục-ngân sách, chỉ trả JSON đúng schema. Không bỏ sót danh mục nối bằng + hoặc và. Mỗi danh mục, mỗi khoảng giá riêng là một group. Ví dụ ly sứ + ly dưỡng sinh phải có 2 group ly-su và ly-duong-sinh. Danh mục thông dụng: '+assistantTypes.map(t=>t.key+'='+t.label).join('; ')+'. Luôn ưu tiên type thông dụng; categoryId=0. Danh mục khác: dùng type=website và categoryId đúng trong danh sách sau, chỉ một brand: '+JSON.stringify(catalog.map(c=>({id:c.id,brand:c.brand,name:c.label})))+'. Không bịa danh mục. 2tr=2000000,350k=350000; từ 2tr trở lại=min0,max2000000. Giá là giá chào sau chiết khấu + phụ phí. Ngân sách chung áp dụng cho mọi nhóm, ngân sách riêng gắn đúng danh mục. Bộ trà/đồ sứ mặc định Minh Long. Mặc định limit=200,packSize=1,keywords=[]; chỉ packSize=10 khi nói rõ bộ 10 SP. Chỉ còn hàng.'},{role:'user',content:prompt}],temperature:0,max_tokens:1600,response_format:{type:'json_schema',json_schema:schema}});
-   const raw=typeof result.response==='string'?JSON.parse(result.response):result.response;const rows=raw.groups||[raw];if(!Array.isArray(rows)||!rows.length||rows.length>12)throw Error('Invalid groups');let groups=rows.map(validateCriteria);
+   stage='json';const output=result?.response??(result?.groups?result:result?.result?.response);const raw=typeof output==='string'?JSON.parse(output.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'')):output;stage='criteria';const rows=raw.groups||[raw];if(!Array.isArray(rows)||!rows.length||rows.length>12)throw Error('Invalid groups');let groups=rows.map(validateCriteria);
    // A small model must not collapse explicit category/budget combinations.
    if(baseline.length>1&&baseline.every(g=>g.type)&&baseline.some(c=>!groups.some(g=>g.type===c.type&&g.brand===c.brand&&g.min===c.min&&g.max===c.max)))groups=baseline.map(c=>validateCriteria({...c,keywords:groups.find(g=>g.type===c.type)?.keywords||c.keywords}));
    if(groups.length>12)throw Error('Too many groups');return {criteria:groups[0],groups,engine:'cloudflare_ai',warning:'',catalog};
-  }catch{warning='AI chưa phản hồi hợp lệ. Đang dùng bộ lọc câu lệnh; vui lòng kiểm tra các nhóm tiêu chí.';}}
+  }catch(e){diagnostic=[stage,String(e.name||'Error'),String(e.code||String(e.message).match(/\b\d{4,5}\b/)?.[0]||'unknown'),/quota|free.*limit|usage.*limit/i.test(String(e.message))?'quota':/context|token.*limit|too.*long/i.test(String(e.message))?'context':'other'].join(':');warning='AI chưa phản hồi hợp lệ. Đang dùng bộ lọc câu lệnh; vui lòng kiểm tra các nhóm tiêu chí.';}}
   else if(!warning)warning='Đăng nhập CRM để dùng diễn giải bằng AI. Hiện đang dùng bộ lọc câu lệnh.';
  }else warning='Kết nối AI chưa bật ở môi trường này. Đang dùng bộ lọc câu lệnh nhiều danh mục.';
- return {criteria:baseline[0],groups:baseline,engine:'criteria',warning,catalog};
+ return {criteria:baseline[0],groups:baseline,engine:'criteria',warning,catalog,diagnostic};
 }
 const categoryCache=new Map();
 export function matchingProduct(q,criteria,type,brand,pricing){
