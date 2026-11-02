@@ -15,8 +15,8 @@ const GHN_ERRORS = new Set(Object.keys(DEFAULTS));
 export const validWebGhnCode = (value: unknown): value is string => typeof value==='string' && /^[a-z0-9][a-z0-9_-]{0,99}$/i.test(value);
 /** Only allow diagnostic flags in logs; no response bodies, messages, addresses or credentials. */
 export async function readWebBridgeResult(response: Response, action: string, context: {orderId:string;source:string}, secrets: (string|undefined)[]) {
-  let result: Record<string,unknown> = {};
-  try { const body: unknown=await response.json(); if(body && typeof body==='object'&&!Array.isArray(body))result=body as Record<string,unknown>; } catch { /* handled as an empty response */ }
+  let result: Record<string,unknown> = {}, jsonBody=false;
+  try { const body: unknown=await response.json(); if(body && typeof body==='object'&&!Array.isArray(body)){result=body as Record<string,unknown>;jsonBody=true;} } catch { /* handled as an empty response */ }
   const declared=typeof result.code==='string'&&/^[a-z0-9_]{1,80}$/i.test(result.code)?result.code:'';
   const failed=!response.ok||result.ok===false||result.success===false||GHN_ERRORS.has(declared);
   const missingCode=action==='confirm'&&!validWebGhnCode(result.ghnOrderCode);
@@ -27,10 +27,13 @@ export async function readWebBridgeResult(response: Response, action: string, co
     for(const secret of secrets)if(secret)message=message.split(secret).join('[ẩn]');
     // A 2xx without a valid code is never a confirmed shipment, even if its message says success.
     if(!failed&&missingCode)message='';
+    // The website answered with an error but gave no readable reason: show only the HTTP status and body kind (never the body itself)
+    // so staff can tell a crashed/timed-out website (5xx, HTML page) from a GHN rejection.
+    const hint=failed&&!message.trim()&&!response.ok?` Website trả HTTP ${response.status}${response.statusText?' '+response.statusText.replace(/[^\w .-]/g,'').slice(0,40):''}, ${jsonBody?'phản hồi JSON không kèm lý do':'phản hồi không phải JSON (thường là website/máy chủ bị lỗi hoặc quá thời gian)'}.`:'';
     console.warn('web_order_bridge_failure',{...context,httpStatus:response.status,code:GHN_ERRORS.has(code)?code:'bridge_error',
       hasOrderCode:validWebGhnCode(result.ghnOrderCode),hasSortCode:!!result.ghnSortCode,hasTotalFee:typeof result.ghnFee==='number',
-      hasMessage:typeof result.message==='string',hasCodeMessage:typeof result.code_message_value==='string'});
-    throw new AppError(response.status>=500?502:failed?409:502,message.trim().slice(0,500)||DEFAULTS[code]||'Website chưa xử lý được đơn.',code||undefined);
+      hasMessage:typeof result.message==='string',hasCodeMessage:typeof result.code_message_value==='string',jsonBody});
+    throw new AppError(response.status>=500?502:failed?409:502,message.trim().slice(0,500)||(DEFAULTS[code]||'Website chưa xử lý được đơn.')+hint,code||undefined);
   }
   return result;
 }
