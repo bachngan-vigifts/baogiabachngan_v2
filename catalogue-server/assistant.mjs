@@ -44,7 +44,7 @@ const authEndpoint='https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia
 const aiRate=new Map();
 async function staffForAI(request){
  const authorization=request.headers.get('authorization')||'';if(!/^Bearer [A-Za-z0-9_.~+\/-]{16,3000}={0,2}$/.test(authorization))return null;
- const res=await fetch(authEndpoint,{headers:{Authorization:authorization,Origin:'https://crm.minhlongonline.com'},redirect:'error',signal:AbortSignal.timeout(8000)});
+ const res=await fetch(authEndpoint,{headers:{Authorization:authorization,Origin:'https://crm.minhlongonline.com'},redirect:'manual',signal:AbortSignal.timeout(8000)});
  if(!res.ok)return null;const body=await res.json();const user=body.user||body.data?.user;if(!user?.id)return null;
  const key=String(user.id),now=Date.now(),entry=aiRate.get(key);if(entry&&now-entry.since<60000&&entry.count>=8)throw Error('Anh/chị đã gửi nhiều yêu cầu AI. Vui lòng chờ một phút.');
  aiRate.set(key,!entry||now-entry.since>=60000?{since:now,count:1}:{since:entry.since,count:entry.count+1});if(aiRate.size>1000)for(const [k,v]of aiRate)if(now-v.since>=60000)aiRate.delete(k);
@@ -61,7 +61,7 @@ export async function interpretIntent(prompt,env={},request,catalog=[]){
  if(typeof prompt!=='string'||prompt.trim().length<5||prompt.length>1000)throw Error('Nhập yêu cầu từ 5 đến 1.000 ký tự.');
  const baseline=parsePlan(prompt,catalog);let warning='';
  if(env.AI&&request){
-  let user;try{user=await staffForAI(request)}catch(e){warning=e.message;}
+  let user;try{user=await staffForAI(request)}catch(e){warning=String(e.message).startsWith('Anh/chị đã gửi')?e.message:'Chưa xác thực được phiên CRM. Vui lòng đăng nhập lại CRM rồi thử lại.';}
   if(user){try{
    const item={type:'object',properties:{brand:{type:'string',enum:['LocknLock','Minh Long','both']},type:{type:'string',enum:[...assistantTypes.map(t=>t.key),'website']},categoryId:{type:'integer'},min:{type:'number'},max:{type:['number','null']},limit:{type:'integer'},packSize:{type:'integer',enum:[1,10]},keywords:{type:'array',items:{type:'string'}}},required:['brand','type','min','max','limit','packSize','keywords']};
    const schema={type:'object',properties:{groups:{type:'array',minItems:1,maxItems:12,items:item}},required:['groups']};
