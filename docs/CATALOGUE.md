@@ -8,7 +8,7 @@
 2. Đọc sheet `Nhap link` (nếu không có thì sheet đầu tiên). Cột B: link; F: danh mục; M: `Không` thì bỏ dòng đó. Không nhập sheet `208 SP tham khao` kèm sẵn trong workbook cũ.
 3. Đọc giá niêm yết và ảnh từ web nếu dòng chưa đầy đủ; bỏ link trùng. Dòng bị lỗi được tải ra CSV để sửa và nhập lại.
 4. Chọn sản phẩm, chỉnh thông tin khách hàng/người tư vấn, xuất PDF hoặc PowerPoint theo mẫu **VIGIFTS - BACH NGAN - QR v2**.
-5. Ô tick **Giá theo bộ 10 SP (đơn giá × 10)** nhân giá chào sau chiết khấu và phụ phí với 10; giá niêm yết cũng hiện theo bộ. Phân nhóm ngân sách dùng giá bộ sau cùng. Bỏ tick quay về đơn giá, không sửa dữ liệu nguồn.
+5. Bật **Giá theo bộ 10 SP (đơn giá × 10)** rồi chọn các trang cần áp dụng trong danh sách. Chỉ sản phẩm trên trang đã tick được nhân giá chào sau chiết khấu và phụ phí với 10; các trang khác giữ đơn giá. Giá niêm yết trên trang được chọn cũng hiện theo bộ. Phân nhóm ngân sách dùng giá sau cùng; lựa chọn gắn với sản phẩm, không dùng số trang cố định, nên vẫn đúng khi phân trang thay đổi. Trang giá bộ và trang đơn giá được tách riêng. Bỏ tick chính quay về đơn giá mà không sửa dữ liệu nguồn.
 
 Mặc định: LocknLock = niêm yết × 60% + 15.000đ; Minh Long = niêm yết × 90% + 15.000đ. Có thể sửa từng sản phẩm hoặc tự nhập giá chào.
 
