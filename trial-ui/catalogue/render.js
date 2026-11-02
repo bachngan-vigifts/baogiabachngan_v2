@@ -15,7 +15,7 @@ export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,sc
   ctx.font=`${bold?700:400} ${size}px Montserrat, Arial`;ctx.fillStyle=color;ctx.textBaseline='top';ctx.textAlign=align;
   const lines=wrap(ctx,value,w,maxLines),lineHeight=size*1.23;
   lines.forEach((line,i)=>ctx.fillText(line,align==='right'?x+w:align==='center'?x+w/2:x,y+i*lineHeight));ctx.textAlign='left';
-  if(pptSlide)pptSlide.addText(lines.join('\n'),{x:x/96,y:y/96,w:w/96,h:h/96,fontFace:'Montserrat',fontSize:size*.75,bold,color:hex(color),margin:0,align,breakLine:false,vertAnchor:'top',transparency:0,paraSpaceAfterPt:0,lineSpacingMultiple:1.23});
+  if(pptSlide)pptSlide.addText(lines.join('\n'),{x:x/96,y:y/96,w:w/96,h:h/96,fontFace:'Montserrat',fontSize:size*.75,bold,color:hex(color),margin:0,align,breakLine:false,valign:'top',transparency:0,paraSpaceAfterPt:0,lineSpacingMultiple:1.0});
  }
  function photo(im,x,y,w,h,data){if(!im)return;const r=contain(im,x,y,w,h);ctx.fillStyle='#FFFFFF';ctx.fillRect(x,y,w,h);ctx.drawImage(im,r.x,r.y,r.w,r.h);if(pptSlide){const c=document.createElement('canvas');c.width=im.width;c.height=im.height;c.getContext('2d').drawImage(im,0,0);pptSlide.addImage({data:data||c.toDataURL('image/png'),x:r.x/96,y:r.y/96,w:r.w/96,h:r.h/96});}}
  const dark=['cover','divider','closing'].includes(slide.type),bg=await bgPromise;
