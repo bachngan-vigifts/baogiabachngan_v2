@@ -1183,3 +1183,43 @@ test('POS stale scan snapshots require a new exact lookup; fresh zero stock is n
   assert.ok(f.calls.some(c=>c.path.includes('q=8930001')&&c.path.includes('scan=1')));assert.match(f.toasts.at(-1)!,/hết hàng/);assert.ok(!f.calls.some(c=>c.path==='/pos/preview'));assert.equal(f.input.value,'8930001');
  }finally{Date.now=originalNow;Object.assign(globalThis,{document:prevDoc,window:prevWin});}
 });
+
+async function filterFeedbackFixture(complete=false){
+ const root=new Element('section'),calls:string[]=[],prevDoc=globalThis.document,prevWin=globalThis.window;
+ Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
+ let owner='emp',delay=false,resolve!:(d:any)=>void,reject!:(e:any)=>void;
+ const data=(label='OLD')=>({registerId:'r',registers:[],counts:{all:complete?1:200,web:1,completed:1},owners:[],totals:[],totalOrders:complete?1:200,nextOffset:complete?null:100,orders:[{id:label,orderNo:label,customerName:'Khách',total:100,ownerName:'NV',bucket:'pending',orderSource:'web',external:true,paymentStatus:'unknown',currency:'VND'}]});
+ const ui=initPos({root,user:()=>({id:owner}),toast(){},go(){},confirmBox:async()=>true,api:async(path:string)=>{
+  if(path.startsWith('/pos/options'))return{registers:[{id:'r',name:'Quầy',pricePolicyId:'vat'}],current:null,shifts:[],templates:[],policies:[]};
+  if(path.startsWith('/pos/catalog'))return{products:[],nextOffset:null};
+  if(path.startsWith('/pos/orders')){calls.push(path);if(delay)return new Promise((yes,no)=>{resolve=yes;reject=no;});return data(owner==='emp'?'OLD':'NEW OWNER');}
+  throw Error(path);
+ }});await ui.load();
+ const board=()=>root.querySelectorAll('*').find(n=>n.className==='pos-card pos-order-board')!;
+ const chip=(status:string)=>root.querySelectorAll('button').find(n=>n.dataset.orderStatus===status)!;
+ return{root,ui,calls,board,chip,data,takeResolve:()=>resolve,setOwner:(value:string)=>owner=value,setDelay:(v:boolean)=>delay=v,resolve:(d:any)=>resolve(d),reject:(e:any)=>reject(e),restore:()=>Object.assign(globalThis,{document:prevDoc,window:prevWin})};
+}
+test('order chips show loading immediately, guard double clicks and keep search usable while API is slow',async()=>{
+ const f=await filterFeedbackFixture();try{
+  f.setDelay(true);await f.chip('web').fire('click');assert.equal(f.board().attributes['aria-busy'],'true');assert.equal(f.chip('web').attributes['aria-pressed'],'true');assert.equal(f.chip('web').disabled,true);assert.match(f.board().textContent,/Đang lọc: Đơn web/);
+  await f.chip('web').fire('click');await f.chip('completed').fire('click');assert.equal(f.calls.length,2);
+  const search=f.root.querySelectorAll('input').find(n=>n.attributes['aria-label']==='Tìm đơn hàng cửa hàng')!;assert.equal(search.disabled,false);
+  f.resolve({...f.data('WEB'),totalOrders:1,nextOffset:null});await new Promise(r=>setTimeout(r,0));assert.equal(f.board().attributes['aria-busy'],'false');assert.equal(f.chip('web').disabled,false);assert.match(f.board().textContent,/WEB/);
+ }finally{f.restore();}
+});
+test('failed order filter keeps the confirmed result and offers a working retry for the requested filter',async()=>{
+ const f=await filterFeedbackFixture();try{
+  f.setDelay(true);await f.chip('web').fire('click');f.reject(Error('Mất mạng thử nghiệm'));await new Promise(r=>setTimeout(r,0));assert.equal(f.board().attributes['aria-busy'],'false');assert.equal(f.chip('all').attributes['aria-pressed'],'true');assert.match(f.board().textContent,/Chưa đổi được bộ lọc/);assert.match(f.board().textContent,/OLD/);
+  await f.root.querySelectorAll('button').find(n=>n.textContent==='Thử lại')!.fire('click');assert.match(f.calls.at(-1)!,/status=web/);assert.equal(f.calls.length,3);f.resolve({...f.data('RETRIED'),totalOrders:1,nextOffset:null});await new Promise(r=>setTimeout(r,0));assert.match(f.board().textContent,/RETRIED/);assert.equal(f.chip('web').attributes['aria-pressed'],'true');
+ }finally{f.restore();}
+});
+
+test('complete order board switches status chips locally without another server request',async()=>{
+ const f=await filterFeedbackFixture(true);try{await f.chip('web').fire('click');await f.chip('completed').fire('click');await f.chip('all').fire('click');assert.equal(f.calls.length,1);assert.equal(f.board().attributes['aria-busy'],'false');assert.equal(f.chip('all').attributes['aria-pressed'],'true');}finally{f.restore();}
+});
+test('typing while a filter is loading preserves the query and drops the older response',async()=>{
+ const f=await filterFeedbackFixture();try{f.setDelay(true);await f.chip('web').fire('click');const old=f.takeResolve(),search=f.root.querySelectorAll('input').find(n=>n.attributes['aria-label']==='Tìm đơn hàng cửa hàng')!;search.value='Từ khoá mới';await search.fire('input');await new Promise(r=>setTimeout(r,280));assert.equal(f.calls.length,3);const latest=f.takeResolve();old(f.data('STALE RESULT'));await new Promise(r=>setTimeout(r,0));assert.equal(search.value,'Từ khoá mới');assert.equal(f.board().attributes['aria-busy'],'true');latest(f.data('LATEST RESULT'));await new Promise(r=>setTimeout(r,0));assert.match(f.board().textContent,/LATEST RESULT/);assert.ok(!f.board().textContent.includes('STALE RESULT'));}finally{f.restore();}
+});
+test('old account order request cannot replace the new account result',async()=>{
+ const f=await filterFeedbackFixture();try{f.setDelay(true);await f.chip('web').fire('click');const old=f.takeResolve();f.setOwner('other');f.setDelay(false);await f.ui.load();old(f.data('OLD ACCOUNT RESULT'));await new Promise(r=>setTimeout(r,0));assert.match(f.board().textContent,/NEW OWNER/);assert.ok(!f.board().textContent.includes('OLD ACCOUNT RESULT'));assert.equal(f.board().attributes['aria-busy'],'false');}finally{f.restore();}
+});

@@ -1,3 +1,4 @@
+import {createPosOrderBoardCache} from './pos-order-board-cache.js';
 import { createPosStockCache } from './pos-stock-cache.js';
 import { posCatalogProductVisible } from './pos-catalog-brand.js';
 import { bindCustomerDuplicateCheck } from './customer-duplicate-check.js';
@@ -79,6 +80,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     pending: null,
     products: [],
     orderBoard: null,
+    orderBoardLoading: false,
+    orderBoardError: null,
     orderStatus: 'all',
     orderQuery: '',
     orderFilters: { source: 'all', ownerId: '', from: '', to: '', payment: 'all' },
@@ -168,7 +171,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     st.method = 'cash';
     st.shift = null;
     st.showMenu = false;
-    st.orderBoard = null;
+    st.orderBoard = null;st.orderBoardLoading=false;st.orderBoardError=null;orderBoardApplied=null;orderBoardCache.clear();clearTimeout(orderBoardSearchTimer);orderBoardInFlight=null;
     st.orderStatus = 'all';
     st.orderQuery = '';
     st.orderFilters = { source: 'all', ownerId: '', from: '', to: '', payment: 'all' };
@@ -508,19 +511,51 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     all: 'Tất cả đơn', web: 'Đơn web', pending: 'Chờ xử lý', packing: 'Đang đóng hàng',
     waiting_delivery: 'Đợi giao', completed: 'Hoàn thành', cancelled: 'Đã hủy',
   };
-  async function loadOrderBoard() {
+  const orderBoardCache=createPosOrderBoardCache();
+  let orderBoardInFlight=null,orderBoardApplied=null,orderBoardSearchTimer=null;
+  const boardCriteria=()=>({registerId:st.orderRegisterId||st.register?.id,status:st.orderStatus,query:st.orderQuery,filters:{...st.orderFilters}});
+  const applyBoardCriteria=c=>{st.orderRegisterId=c.registerId;st.orderStatus=c.status;st.orderQuery=c.query;st.orderFilters={...c.filters};};
+  function syncOrderBoardFeedback(){
+    const box=nodes.orderBoard;if(!box)return;
+    box.setAttribute('aria-busy',String(st.orderBoardLoading));
+    for(const n of box.querySelectorAll('button,input,select')){
+      if(n.type==='search')continue;
+      if(st.orderBoardLoading){if(n.dataset.boardLocked!=='1'){n.dataset.boardDisabled=n.disabled?'1':'0';n.dataset.boardLocked='1';}n.disabled=true;}
+      else if(n.dataset.boardLocked==='1'){n.disabled=n.dataset.boardDisabled==='1';delete n.dataset.boardLocked;delete n.dataset.boardDisabled;}
+      if(n.dataset.orderStatus){const active=n.dataset.orderStatus===st.orderStatus;n.classList.toggle('active',active);n.setAttribute('aria-pressed',String(active));n.setAttribute('aria-busy',String(active&&st.orderBoardLoading));}
+    }
+    const feedback=nodes.orderBoardFeedback;if(!feedback)return;
+    feedback.replaceChildren();feedback.hidden=!st.orderBoardLoading&&!st.orderBoardError;
+    if(st.orderBoardLoading)feedback.append(el('span','',st.orderBoard?'Đang lọc: '+orderLabels[st.orderStatus]+'…':'Đang tải đơn hàng…'));
+    else if(st.orderBoardError){const failed=st.orderBoardError;feedback.append(el('span','danger-text','Chưa đổi được bộ lọc: '+failed.message+'. Đang giữ kết quả trước đó.'),button('Thử lại','btn secondary small',()=>{if(st.orderBoardLoading)return;applyBoardCriteria(failed.criteria);loadOrderBoard();}));}
+  }
+  async function loadOrderBoard(useCache=false) {
     if (!st.register) return;
-    const registerId = st.orderRegisterId || st.register.id;
-    const p = new URLSearchParams({ registerId, status: st.orderStatus });
-    if (st.orderQuery) p.set('q', st.orderQuery);
-    for (const [key, value] of Object.entries(st.orderFilters)) if (value) p.set(key, value);
-    const request = ++st.orderBoardRequest;
-    const d = await api('/pos/orders?' + p);
-    if (request !== st.orderBoardRequest) return;
-    d.analyticsFilters=Object.fromEntries(p);
-    st.orderBoard = d;
-    st.orderRegisterId = d.registerId;
-    renderOrderBoard();
+    const criteria=boardCriteria(),owner=user()?.id||'',sellingRegister=st.register.id;
+    const p=new URLSearchParams({registerId:criteria.registerId,status:criteria.status});if(criteria.query)p.set('q',criteria.query);
+    for(const [key,value]of Object.entries(criteria.filters))if(value)p.set(key,value);
+    const key=owner+'|'+p.toString();
+    if(useCache&&orderBoardInFlight?.key===key&&orderBoardInFlight.seq===st.orderBoardRequest)return orderBoardInFlight.promise;
+    if(!useCache)orderBoardCache.clear();
+    const seq=++st.orderBoardRequest;st.orderBoardLoading=true;st.orderBoardError=null;syncOrderBoardFeedback();
+    const request={key,seq,promise:null};orderBoardInFlight=request;
+    const current=()=>seq===st.orderBoardRequest&&owner===(user()?.id||'')&&sellingRegister===st.register?.id;
+    request.promise=(async()=>{
+      try{
+        const cached=useCache?orderBoardCache.get(p,owner):null,d=cached||await api('/pos/orders?'+p);
+        if(!current())return;
+        if(!cached)orderBoardCache.remember(p,d,owner);
+        st.orderBoard={...d,analyticsFilters:Object.fromEntries(p)};st.orderRegisterId=d.registerId;orderBoardApplied={...criteria,registerId:d.registerId};
+      }catch(e){
+        if(!current())return;
+        if(orderBoardApplied)applyBoardCriteria(orderBoardApplied);
+        if([401,403].includes(e.status)){orderBoardCache.clear();st.orderBoard=null;orderBoardApplied=null;}
+        st.orderBoardError={message:e.message,criteria};
+      }finally{
+        if(orderBoardInFlight===request)orderBoardInFlight=null;
+        if(current()){st.orderBoardLoading=false;renderOrderBoard();}
+      }
+    })();return request.promise;
   }
   function advertisingNotice(risk) {
     if(!risk)return null;
@@ -588,18 +623,19 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if (d?.registers?.length > 1) {
       const reg = select(d.registers.map(r => [r.id, r.name]), st.orderRegisterId || d.registerId);
       reg.setAttribute('aria-label', 'Lọc đơn theo cửa hàng');
-      reg.addEventListener('change', () => { st.orderRegisterId = reg.value; st.orderFilters.ownerId = ''; run(loadOrderBoard); });
+      reg.addEventListener('change', () => { if(st.orderBoardLoading)return;st.orderRegisterId = reg.value; st.orderFilters.ownerId = ''; run(()=>loadOrderBoard(true)); });
       head.append(reg);
     }
     box.append(head);
-    if (!d) { box.append(el('p', 'pos-note', 'Đang tải đơn hàng…')); return; }
+    nodes.orderBoardFeedback=el('div','pos-order-feedback');nodes.orderBoardFeedback.setAttribute('role','status');nodes.orderBoardFeedback.setAttribute('aria-live','polite');
+    if (!d) { box.append(nodes.orderBoardFeedback);syncOrderBoardFeedback(); return; }
     const filters = el('div', 'pos-order-filters');
     const addFilter = (labelText, key, choices, type = '') => {
       const label = el('label'), caption = el('span', 'pos-note', labelText);
       const input = choices ? select(choices, st.orderFilters[key]) : el('input');
       if (type) { input.type = type; input.value = st.orderFilters[key]; }
       input.setAttribute('aria-label', labelText);
-      input.addEventListener('change', () => { st.orderFilters[key] = input.value; run(loadOrderBoard); });
+      input.addEventListener('change', () => { if(st.orderBoardLoading)return;st.orderFilters[key] = input.value; run(()=>loadOrderBoard(true)); });
       label.append(caption, input); filters.append(label);
     };
     addFilter('Nguồn đơn', 'source', [['all', 'Tất cả nguồn'], ['pos', 'POS tại quầy'], ['web', 'Đơn website'], ['cod', 'POS giao COD']]);
@@ -608,8 +644,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     addFilter('Đến ngày', 'to', null, 'date');
     addFilter('Thanh toán', 'payment', [['all', 'Tất cả thanh toán'], ['paid', 'Đã thanh toán đủ'], ['debt', 'Còn nợ'], ['unknown', 'Chưa rõ thanh toán']]);
     filters.append(button('Xóa bộ lọc', 'btn secondary', () => {
+      if(st.orderBoardLoading)return;
       st.orderFilters = { source: 'all', ownerId: '', from: '', to: '', payment: 'all' };
-      st.orderQuery = ''; st.orderStatus = 'all'; run(loadOrderBoard);
+      st.orderQuery = ''; st.orderStatus = 'all'; run(()=>loadOrderBoard(true));
     }));
     box.append(filters);
     const summary = el('div', 'pos-order-summary');
@@ -629,20 +666,21 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     for (const id of ['all', 'web', 'pending', 'packing', 'waiting_delivery', 'completed', 'cancelled']) {
       const n = d.counts[id] || 0, alert = id === 'web' && n > 0;
       const b = button('', 'pos-order-count' + (st.orderStatus === id ? ' active' : '') + (id === 'web' ? ' pos-order-web' : '') + (alert ? ' has-alert' : ''), () => {
-        st.orderStatus = id; run(loadOrderBoard);
+        if(st.orderBoardLoading||st.orderStatus===id)return;st.orderStatus = id; run(()=>loadOrderBoard(true));
       });
+      b.dataset.orderStatus=id;
       b.append(el('strong', alert ? 'pos-web-badge' : '', n), el('span', '', orderLabels[id]));
       if (alert) b.setAttribute('aria-label', `Đơn web: ${n} đơn cần xử lý`);
       cards.append(b);
     }
     if(d.analytics){const a=d.analytics,pct=a.successRate==null?'—':new Intl.NumberFormat('vi-VN',{maximumFractionDigits:1}).format(a.successRate)+'%';const report=button('','pos-order-count pos-cancellation-report',()=>showCancellationAnalytics(d));report.setAttribute('aria-label','Xem tỷ lệ hoàn thành và lý do huỷ đơn');report.append(el('strong','',pct),el('span','','Tỷ lệ hoàn thành'));cards.append(report);}
-    box.append(cards);
+    box.append(cards,nodes.orderBoardFeedback);
     const adRisk=advertisingNotice(d.analytics?.advertising);if(adRisk)box.append(adRisk);
     const search = el('input', 'pos-order-search');
     search.type = 'search'; search.placeholder = 'Tìm số đơn, khách hàng, điện thoại, nhân viên…'; search.value = st.orderQuery;
     search.setAttribute('aria-label', 'Tìm đơn hàng cửa hàng');
-    let timer;
-    search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { st.orderQuery = search.value.trim(); run(loadOrderBoard); }, 250); });
+    nodes.orderBoardSearch=search;
+    search.addEventListener('input', () => { clearTimeout(orderBoardSearchTimer);st.orderQuery=search.value.trim();++st.orderBoardRequest;const owner=user()?.id;orderBoardSearchTimer=setTimeout(()=>{if(owner!==user()?.id||nodes.orderBoardSearch!==search)return;run(()=>loadOrderBoard(true));},250); });
     box.append(search);
     const list = el('div', 'pos-order-list');
     if (!d.orders.length) list.append(el('p', 'pos-note', 'Không có đơn trong trạng thái này.'));
@@ -655,7 +693,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         el('span', 'pos-note', (o.ownerName || 'Chưa có nhân viên') + ' · ' + (o.external ? 'Đơn website' : o.fulfillmentMode === 'cod' ? 'Giao COD' : 'Nhận tại quầy')),
         el('span', 'pos-order-state', orderLabels[o.bucket] + (o.bucket === 'cancelled' ? '' : ' · ' + ({ paid: 'Đã thanh toán', debt: 'Còn nợ', unknown: 'Chưa rõ thanh toán' }[o.paymentStatus] || ''))),
       );
-      const open = () => o.external ? showWebOrder(o) : go('#/orders/' + encodeURIComponent(o.id));
+      const open = () => {if(st.orderBoardLoading)return;return o.external ? showWebOrder(o) : go('#/orders/' + encodeURIComponent(o.id));};
       row.addEventListener('click', open);
       row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
       if (!o.external && o.bucket === 'cancelled' && Number(o.cancelledReturnQty) > 0) {
@@ -674,6 +712,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     box.append(list);
     if (d.nextOffset != null) {
       box.append(busyButton(`Xem thêm (${d.orders.length}/${d.totalOrders} đơn)`, 'btn secondary pos-order-more', 'Đang tải…', async () => {
+        if(st.orderBoardLoading)return;
         const p = new URLSearchParams({ registerId: st.orderRegisterId || st.register.id, status: st.orderStatus, offset: String(d.nextOffset) });
         if (st.orderQuery) p.set('q', st.orderQuery);
         for (const [key, value] of Object.entries(st.orderFilters)) if (value) p.set(key, value);
@@ -683,6 +722,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         renderOrderBoard();
       }));
     }
+    syncOrderBoardFeedback();
     if (d.windowFrom) box.append(el('p', 'pos-note', `Đơn đã hoàn tất / đã huỷ: hiển thị từ ${d.windowFrom.split('-').reverse().join('/')}. Chọn "Từ ngày" để xem cũ hơn; đơn còn dang dở luôn hiện.`));
   }
   function showWebOrder(o) {
@@ -858,7 +898,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     draw(); if (st.register) await search(false);
   }
   async function flowOrders(orderId=''){
-    return openPosOrderFlows({api,toast,shift:st.shift,register:st.register,orderId,onChanged:()=>Promise.all([search(),loadOrderBoard()]),onReturns:id=>openPosReturns({api,toast,shift:st.shift,register:st.register,orderId:id,onChanged:()=>search()})});
+    return openPosOrderFlows({api,toast,shift:st.shift,register:st.register,orderId,onChanged:()=>Promise.all([search(),loadOrderBoard()]),onReturns:id=>openPosReturns({api,toast,shift:st.shift,register:st.register,orderId:id,onChanged:()=>Promise.all([search(),loadOrderBoard()])})});
   }
   function requireCustomer() {
     const issue = posCustomerIssue(st.customer);
@@ -1855,7 +1895,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     }));
   }
   function openReturns() {
-    openPosReturns({api,toast,shift:st.shift,register:st.register,cartTotal:st.preview?.total||0,onExchange:async({allocation,customer})=>{st.exchangeAllocationId=allocation.id;st.customer=customer;if(allocation.amount >= (st.preview?.total||0))st.method='cash';invalidate();draw();await preview();},onChanged:()=>search()});
+    openPosReturns({api,toast,shift:st.shift,register:st.register,cartTotal:st.preview?.total||0,onExchange:async({allocation,customer})=>{st.exchangeAllocationId=allocation.id;st.customer=customer;if(allocation.amount >= (st.preview?.total||0))st.method='cash';invalidate();draw();await preview();},onChanged:()=>Promise.all([search(),loadOrderBoard()])});
   }
   async function closeShift() {
     if (dirty()) return toast('Xử lý giỏ hàng hoặc giao dịch chưa rõ kết quả trước khi kết ca.', 'err');
