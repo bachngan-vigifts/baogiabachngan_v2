@@ -1,3 +1,5 @@
+import {registerWebOrderEdits} from './web-order-edit.ts';
+import {webDocumentPage,webDocumentDetail} from './web-order-documents.ts';
 import {cashCollections} from '../cash-collection-schema.ts';
 import {registerCashCollectionRoutes,cashCollectionsForOrder,heldCashForOrder} from './cash-collections.ts';
 import {canCollectCrmCashWithoutDrawer} from '../domain/crm-cash-receipt.ts';
@@ -436,6 +438,7 @@ quoteSaveHooks.beforeSave.push(async (tx, old, member) => {
 quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 
 export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchaseLinks?: (db: StaffEnv['db'], member: SessionState['member'], order: { id: string; quoteId: string | null }) => Promise<{ id: string; number: string; internalNo?: string; supplierName?: string }[]> } = {}) {
+  registerWebOrderEdits(router);
   registerCrmReturnRoutes(router, loadOrder);
   registerCashCollectionRoutes(router,loadOrder,async(db,id)=>(await receivableOf(db,[id])).get(id)?.balance||0);
   registerContractLiquidationRoutes(router,loadOrder);
@@ -465,7 +468,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const isGhn = or(eq(salesOrders.fulfillmentMode, 'cod'), sql`EXISTS (SELECT 1 FROM ${deliveries} WHERE ${deliveries.orderId}=${salesOrders.id} AND lower(${deliveries.carrier}) LIKE '%ghn%')`);
     const scopedFlow = and(orderScope(c), flow === 'order' ? sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})` : undefined);
     const where = and(
-      scopedFlow,
+      scopedFlow, source === 'web' ? sql`false` : undefined,
       status === 'unsubmitted' ? and(eq(salesOrders.status, 'draft'), isNull(salesOrders.submittedAt))
         : status ? eq(salesOrders.status, status as OrderStatus) : undefined,
       // Đơn hàng và HĐKT là 2 luồng song song: trang Đơn hàng (flow=order) chỉ hiện đơn KHÔNG có HĐKT (khách đã có HĐ nguyên tắc).
@@ -477,6 +480,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       to ? lte(salesOrders.createdAt, new Date(to + 'T23:59:59.999+07:00').toISOString()) : undefined,
       matchAllWords(foldSql(salesOrders.orderNo, salesOrders.quoteNo, salesOrders.customerName, salesOrders.phone), q),
     );
+    const webPage=await webDocumentPage(c,where,limit,offset);
+    const crmPageIds=webPage.page.filter(x=>x.kind==='crm').map(x=>x.id);
     // Số đơn đang chờ xuất hoá đơn (cùng phạm vi + luồng, không theo ô tìm / bộ lọc) cho nút lọc "Chờ xuất hoá đơn".
     const pendingWhere = and(orderScope(c), ne(salesOrders.status, 'cancelled'), eq(salesOrders.invoiceStatus, 'requested'),
       flow === 'order' ? sql`NOT EXISTS (SELECT 1 FROM ${salesContracts} WHERE ${salesContracts.orderId} = ${salesOrders.id})` : undefined);
@@ -487,7 +492,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         branchName: sql<string>`coalesce((select ${posRegisters.name} from ${posShifts} inner join ${posRegisters} on ${posRegisters.id}=${posShifts.registerId} where ${posShifts.id}=${salesOrders.shiftId} limit 1),'VIGIFTS / CRM')`,
         deliveryStatus: sql<string>`coalesce((select ${deliveries.status} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.updatedAt} desc limit 1),'')`,
         deliveryCarrier: sql<string>`coalesce((select ${deliveries.carrier} from ${deliveries} where ${deliveries.orderId}=${salesOrders.id} and ${deliveries.status}<>'cancelled' order by ${deliveries.updatedAt} desc limit 1),'')`,
-      }).from(salesOrders).leftJoin(employees, eq(employees.id, salesOrders.ownerId)).where(where).orderBy(...rankFirst(searchRank([salesOrders.orderNo, salesOrders.quoteNo, salesOrders.phone], salesOrders.customerName, q)), desc(salesOrders.createdAt), desc(salesOrders.id)).limit(limit).offset(offset),
+      }).from(salesOrders).leftJoin(employees, eq(employees.id, salesOrders.ownerId)).where(and(where,crmPageIds.length?inArray(salesOrders.id,crmPageIds):sql`false`)).orderBy(...rankFirst(searchRank([salesOrders.orderNo, salesOrders.quoteNo, salesOrders.phone], salesOrders.customerName, q)), desc(salesOrders.createdAt), desc(salesOrders.id)),
       c.env.db.select({ n: count() }).from(salesOrders).where(pendingWhere),
       c.env.db.selectDistinct({ id: employees.id, name: employees.name }).from(salesOrders).innerJoin(employees, eq(employees.id, salesOrders.ownerId)).where(scopedFlow).orderBy(asc(employees.name)),
       c.env.db.selectDistinct({ id: posRegisters.id, name: posRegisters.name }).from(salesOrders).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId)).innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId)).where(scopedFlow).orderBy(asc(posRegisters.name)),
@@ -502,7 +507,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         .innerJoin(salesOrders, eq(salesOrders.id, customerPayments.orderId)).where(and(live, isNull(customerPayments.voidedAt))),
     ]);
     const revenue = Number(sum?.revenue ?? 0), paid = Number(paidRow?.paid ?? 0);
-    const summary = { count: Number(sum?.n ?? 0), cancelled: Number(total) - Number(sum?.n ?? 0), revenue, deposit: Number(sum?.deposit ?? 0), paid, remaining: Math.max(0, revenue - paid) };
+    const summary = { count: Number(sum?.n ?? 0)+webPage.summary.count, cancelled: Number(total) - Number(sum?.n ?? 0)+webPage.total-webPage.summary.count, revenue:revenue+webPage.summary.revenue, deposit: Number(sum?.deposit ?? 0), paid:paid+webPage.summary.paid, remaining: Math.max(0, revenue - paid)+webPage.summary.remaining, ...(webPage.summary.unknownPaymentCount?{unknownPaymentCount:webPage.summary.unknownPaymentCount}:{}) };
     const ids = rows.map(r => r.order.id);
     const [debts, contracts, ghnShipments] = await Promise.all([
       receivableOf(c.env.db, ids),
@@ -510,11 +515,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       ids.length ? c.env.db.select({orderId:deliveries.orderId,id:deliveries.id,trackingCode:deliveries.trackingCode,trackingStatus:deliveries.trackingStatus,trackingUpdatedAt:deliveries.trackingUpdatedAt,status:deliveries.status}).from(deliveries)
         .where(and(inArray(deliveries.orderId,ids),sql`lower(trim(${deliveries.carrier}))='ghn'`,sql`trim(${deliveries.trackingCode})<>''`)).orderBy(desc(deliveries.updatedAt),desc(deliveries.createdAt),asc(deliveries.id)) : [],
     ]);
-    return json({ orders: rows.map(({ order: r, ownerName, branchName, deliveryStatus, deliveryCarrier }) => { const contract = contracts.find(x => x.orderId === r.id) ?? null;
+    const crmDocuments=rows.map(({ order: r, ownerName, branchName, deliveryStatus, deliveryCarrier }) => { const contract = contracts.find(x => x.orderId === r.id) ?? null;
       // debtCounts = false (đơn chờ xác nhận chưa ký HĐKT / đã huỷ): chưa phát sinh công nợ.
       const orderSource = r.channel !== 'pos' ? 'crm' : r.fulfillmentMode === 'cod' || /ghn/i.test(deliveryCarrier) ? 'ghn' : 'pos';
-      return { ...r, ownerName, branchName, deliveryStatus, deliveryCarrier, orderSource, ghnShipments:ghnShipments.filter(s=>s.orderId===r.id), receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; }),
-      total: Number(total), limit, offset, invoicePending: Number(invoicePending), summary, filterOptions: { owners: ownerOptions, branches: [...(Number(crmCount) ? [{ id: 'crm', name: 'VIGIFTS / CRM' }] : []), ...branchOptions] } });
+      return { ...r, ownerName, branchName, deliveryStatus, deliveryCarrier, orderSource, ghnShipments:ghnShipments.filter(s=>s.orderId===r.id), receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; });
+    const byId=new Map([...crmDocuments,...webPage.documents].map(o=>[o.id,o]));
+    return json({orders:webPage.page.map(p=>byId.get(p.kind==='web'?'web:'+p.id:p.id)).filter(Boolean),
+      total: Number(total)+webPage.total, limit, offset, invoicePending: Number(invoicePending), summary, filterOptions: { owners: ownerOptions, branches: [...(Number(crmCount) ? [{ id: 'crm', name: 'VIGIFTS / CRM' }] : []), ...new Map([...branchOptions,...webPage.branches].map(b=>[b.id,b])).values()] } });
   }, 'business');
 
   /** Hồ sơ đang hiệu lực của báo giá: dùng ID chính xác, giữ nguyên quyền xem đơn. */
@@ -614,7 +621,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
   }
   // A successful write remains successful if its optional read projection fails.
   async function confirmedDetail(c: Ctx, id: string) { try { return await orderDetail(c,id); } catch { return undefined; } }
-  router.get('/orders/:id', async c => json(await orderDetail(c,c.params.id!)), 'business');
+  router.get('/orders/:id', async c => json(c.params.id!.startsWith('web:')?await webDocumentDetail(c,c.params.id!.slice(4)):await orderDetail(c,c.params.id!)), 'business');
 
   /**
    * Xem trước đẩy Sapo cho popup chọn kho: `?quoteId=` (trước khi sinh đơn) hoặc `?orderId=` (trước khi lập HĐKT).

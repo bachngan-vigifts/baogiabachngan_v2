@@ -5,6 +5,7 @@ import {setup} from '../helpers/pos-fixture.ts';
 import {webStoreOrders,posRegisters} from '../../src/modules/sales/pos-schema.ts';
 import {readWebBridgeResult} from '../../src/modules/sales/api/web-order-bridge-result.ts';
 
+const business=(r:any)=>{const {crmEditSnapshot,...rest}=r;return rest;};
 const address={addressLine:'Đường kiểm thử',provinceId:211,provinceName:'Long An',districtId:1929,districtName:'Huyện Đức Hòa',wardCode:'490707',wardName:'Xã Đức Hòa Hạ'};
 test('Bridge: phân biệt handler thiếu, địa chỉ lỗi, GHN từ chối; không ghi message/credential vào log',async t=>{
  const log=t.mock.method(console,'warn',()=>{}),token='fake-private-token';
@@ -49,13 +50,13 @@ test('CRM: mã lỗi GHN giữ nguyên; lỗi không đổi dữ liệu khách/C
  t.mock.method(console,'warn',()=>{});const f=await fixture(),before=await f.row();
  for(const code of ['ghn_handler_unavailable','address_invalid','ghn_rejected','ghn_response_missing_order_code','ghn_reconcile_failed','ghn_metadata_persist_failed','ghn_create_failed']){
   f.reply.next=()=>Response.json({code,message:'Lý do cụ thể từ website'},{status:400});
-  const res=await f.act({action:'confirm',...address});assert.equal(res.data.code,code);assert.equal(res.data.error,'Lý do cụ thể từ website');assert.deepEqual(await f.row(),before);
+  const res=await f.act({action:'confirm',...address});assert.equal(res.data.code,code);assert.equal(res.data.error,'Lý do cụ thể từ website');assert.deepEqual(business(await f.row()),business(before));
  }
  f.reply.next=()=>Response.json({status:'processing'});
- assert.equal((await f.act({action:'confirm',...address})).data.code,'ghn_response_missing_order_code');assert.deepEqual(await f.row(),before);
+ assert.equal((await f.act({action:'confirm',...address})).data.code,'ghn_response_missing_order_code');assert.deepEqual(business(await f.row()),business(before));
  // A carrier code is not confirmation success when Woo could not persist/verify it.
  f.reply.next=()=>Response.json({ok:true,code:'ghn_metadata_persist_failed',ghnOrderCode:'GHN21496'});
- const unsaved=await f.act({action:'confirm',...address});assert.equal(unsaved.data.code,'ghn_metadata_persist_failed');assert.match(unsaved.data.error,/không tạo vận đơn mới/);assert.deepEqual(await f.row(),before);
+ const unsaved=await f.act({action:'confirm',...address});assert.equal(unsaved.data.code,'ghn_metadata_persist_failed');assert.match(unsaved.data.error,/không tạo vận đơn mới/);assert.deepEqual(business(await f.row()),business(before));
  f.reply.next=()=>Response.json({status:'processing',ghnOrderCode:'GHN21496',ghnSortCode:'SORT',ghnFee:22000});
  const made=await f.act({action:'confirm',...address});assert.equal(made.status,200,JSON.stringify(made.data));assert.equal((await f.row()).ghnOrderCode,'GHN21496');
  const count=f.calls,replay=await f.act({action:'confirm',...address});assert.equal(replay.data.existing,true);assert.equal(replay.data.ghnOrderCode,'GHN21496');assert.equal(f.calls,count);
@@ -80,5 +81,5 @@ test('CRM: lỗi master-data và timeout bridge không bị gán thành lỗi đ
  assert.equal((await f.act({action:'confirm',...address})).data.code,'ghn_reconcile_failed');assert.equal(f.calls,0);
  f.env.ghnToken=undefined;f.reply.next=()=>{throw Error('timeout');};
  const r=await f.act({action:'confirm',...address});assert.equal(r.data.code,'ghn_reconcile_failed');assert.match(r.data.error,/Tra cứu vận đơn/);
- assert.deepEqual(await f.row(),before);assert.equal(f.calls,1);
+ assert.deepEqual(business(await f.row()),business(before));assert.equal(f.calls,1);
 });

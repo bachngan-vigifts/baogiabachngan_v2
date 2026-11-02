@@ -322,6 +322,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     scheduleStockRefresh();
     if (st.register) await Promise.all([search(false), run(loadOrderBoard)]);
     if (st.cart.length && active()) await preview();
+    const focus=new URLSearchParams((globalThis.location?.hash||'').split('?')[1]||'').get('webOrderId');
+    if(focus&&seq===st.request){try{const d=await api('/orders/'+encodeURIComponent('web:'+focus));if(seq===st.request&&location.hash.startsWith('#/pos'))showWebOrder({...d.document,id:d.document.webOrderId,external:true,orderNo:d.document.sourceOrderNo,lines:JSON.stringify(d.items),bucket:d.document.status==='cancelled'?'cancelled':d.document.status==='delivered'?'completed':d.document.ghnOrderCode?'waiting_delivery':'pending',actionsAvailable:d.canManage,ghnDirect:d.document.source==='minhlong'||d.document.edited,webRevision:d.revision,suggestedCod:d.document.paid?0:d.document.total});}catch(e){toast(e.message,'err');}}
   }
   let cartResizeObserver;
   function draw() {
@@ -786,9 +788,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const m = formModal('Hoàn thiện địa chỉ GHN · ' + o.orderNo);
     m.dlg.classList.add('pos-step-modal');
     // Web Minh Long chưa có cầu nối: CRM tự tạo vận đơn bằng tài khoản GHN Minh Long nên hỏi thêm tiền thu hộ / khối lượng / cách xem hàng.
-    const direct = !!o.ghnDirect;
+    const direct = !!o.ghnDirect,shopLabel=o.source==='lock'?'LocknLock':'Minh Long';
     const intro = el('p', 'pos-note pos-step-intro', direct
-      ? 'CRM tạo vận đơn bằng tài khoản GHN Minh Long. Kiểm tra tiền thu hộ (đơn đã thanh toán online nhập 0) và khối lượng.'
+      ? 'CRM tạo vận đơn bằng tài khoản GHN '+shopLabel+'. Kiểm tra tiền thu hộ (đơn đã thanh toán online nhập 0) và khối lượng.'
       : 'Thông tin khách, điện thoại, sản phẩm, COD và khối lượng được giữ nguyên. Chỉ cần chọn lại địa chỉ giao hàng.');
     const cod = field('Tiền thu hộ (COD)', 'number', String(o.suggestedCod ?? o.total ?? 0)), weight = field('Khối lượng (gram)', 'number', '1000');
     cod.input.min = '0'; cod.input.max = String(Math.round(o.total || 0)); cod.input.step = '1'; cod.input.inputMode = 'numeric';
@@ -806,7 +808,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     grid.append(ghn.province.box, ghn.district.box, ghn.ward.box);
     section.append(el('h3', '', 'Địa chỉ giao (chuẩn GHN)'), address.box, grid, ghn.retry);
     editView.append(intro, section);
-    if (direct) { const shipBox = el('section', 'pos-step-section'), shipGrid = el('div', 'pos-step-grid'); shipGrid.append(cod.box, weight.box, requiredBox); shipBox.append(el('h3', '', 'Vận đơn GHN Minh Long'), shipGrid); editView.append(shipBox); }
+    if (direct) { const shipBox = el('section', 'pos-step-section'), shipGrid = el('div', 'pos-step-grid'); shipGrid.append(cod.box, weight.box, requiredBox); shipBox.append(el('h3', '', 'Vận đơn GHN '+shopLabel), shipGrid); editView.append(shipBox); }
     const review = el('div', 'pos-step-body pos-step-review'); review.hidden = true;
     const submit = el('button', 'btn primary', 'Kiểm tra lại'); submit.type = 'submit';
     let reviewing = false;
@@ -834,7 +836,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       m.lock(true, submit, 'Đang tạo vận đơn GHN…');
       let result;
       try {
-        result = await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'confirm', addressLine: address.input.value.trim(),
+        result = await api('/pos/web-orders/' + encodeURIComponent(o.id) + '/action', 'POST', { action: 'confirm',webRevision:o.webRevision??0,addressLine: address.input.value.trim(),
           provinceId: ghn.province.select.value, provinceName: ghn.chosen(ghn.province.select), districtId: ghn.district.select.value, districtName: ghn.chosen(ghn.district.select), wardCode: ghn.ward.select.value, wardName: ghn.chosen(ghn.ward.select),
           ...(direct ? { codAmount: Number(cod.input.value), ghnWeight: Number(weight.input.value), ghnRequiredNote: requiredNote.value } : {}) });
       } catch (err) {
@@ -845,7 +847,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       }
       m.lock(false, submit); m.close(); toast('Đã lưu địa chỉ và tạo vận đơn GHN.', 'ok');
       const done = modal('Đã tạo vận đơn GHN');
-      done.body.append(
+      const crmLink=el('a','btn secondary','Mở đơn trong CRM');crmLink.href='#/orders/'+encodeURIComponent('web:'+o.id);
+      done.body.append(crmLink,
         el('p', '', 'Mã vận đơn: ' + (result.ghnOrderCode || 'Đã tạo thành công')),
         ghnPortalLink(result.ghnOrderCode || ''),
         button('Đóng', 'btn secondary', done.close),

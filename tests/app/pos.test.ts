@@ -252,7 +252,7 @@ test('Đơn website: đúng quầy được chốt, bổ sung địa chỉ GHN, 
       : body.action === 'cancel' ? { status: 'cancelled', ghnOrderCode: 'GHN123', ghnStatus: 'cancel' }
       : { status: 'processing', ghnOrderCode: 'GHN123', ghnStatus: 'picking', ghnFee: 33000 });
   }) as typeof fetch };
-  const payload = { id: 900, number: 'WEB900', status: 'pending', total: '500000', billing: { first_name: 'Khách', phone: '0901' }, line_items: [] };
+  const payload = { id: 900, number: 'WEB900', status: 'pending', total: '500000', billing: { first_name: 'Khách', phone: '0901' }, line_items: [{ sku: '00123', name: 'Ly sứ', quantity: 1, total: '500000' }] };
   assert.equal((await f.call('/integrations/woocommerce/lock/order?token=test-lock-token', '', 'POST', payload)).status, 409);
   const [reg] = await f.db.select().from(posRegisters).where(eq(posRegisters.id, f.registerId));
   await f.db.update(posRegisters).set({ name: 'CỬA HÀNG LOCKNLOCK CẦN THƠ' }).where(eq(posRegisters.id, reg!.id));
@@ -303,7 +303,7 @@ test('Đơn website: chuyển đúng địa chỉ người dùng chọn sang c�
     sent = JSON.parse(String(init?.body)); return Response.json({ status: 'processing', ghnOrderCode: 'GHN456', ghnStatus: 'ready_to_pick' });
   }) as typeof fetch };
   await f.db.update(posRegisters).set({ name: 'CỬA HÀNG LOCKNLOCK CẦN THƠ' }).where(eq(posRegisters.id, f.registerId));
-  await f.call('/integrations/woocommerce/lock/order?token=test-lock-token', '', 'POST', { id: 901, number: 'WEB901', status: 'pending', total: '100000', billing: { first_name: 'Khách', phone: '0901' }, line_items: [] });
+  await f.call('/integrations/woocommerce/lock/order?token=test-lock-token', '', 'POST', { id: 901, number: 'WEB901', status: 'pending', total: '100000', billing: { first_name: 'Khách', phone: '0901' }, line_items: [{ sku: '00123', name: 'Ly sứ', quantity: 1, total: '100000' }] });
   const [order] = await f.db.select().from(webStoreOrders);
   const result = await f.call(`/pos/web-orders/${order!.id}/action`, f.mgr, 'POST', { action: 'confirm', addressLine: '123 Nguyễn Trãi', provinceId: 220,
     provinceName: 'Cần Thơ', districtId: 1572, districtName: 'Ninh Kiều', wardCode: '550105', wardName: 'An Khánh' });

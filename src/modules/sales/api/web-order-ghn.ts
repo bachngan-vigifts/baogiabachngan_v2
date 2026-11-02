@@ -1,3 +1,6 @@
+import {beginWebConfirmation} from './web-order-edit.ts';
+import {readWebEdit} from '../domain/web-order-edit.ts';
+import {webOrderBucket} from '../domain/web-order-outcome.ts';
 import { eq } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
@@ -46,10 +49,19 @@ async function ghnPost(env: StaffEnv, url: string, body: unknown, shop = MINH_LO
 
 /** Tạo vận đơn GHN cho đơn web Minh Long đang chờ xử lý (một lần: khoá dòng; đã có mã thì trả lại mã cũ). */
 export async function createWebOrderGhn(env: StaffEnv, orderId: string, address: WebGhnAddress, input: Record<string, unknown>) {
+  const [hint]=await env.db.select().from(webStoreOrders).where(eq(webStoreOrders.id,orderId));
+  if(!hint)throw new AppError(404,'Không tìm thấy đơn website.');
+  const edited=Number(readWebEdit(hint.crmEditSnapshot).revision||0)>0;
+  const shop=hint.source==='lock'?'LOCKNLOCK':MINH_LONG;
+  const account=await posGhnAccount(env,shop);if(!account?.token)throw new AppError(503,'Chưa cấu hình GHN cho cửa hàng này.');
+  parseGhnShip({...input,ghnProvinceId:address.provinceId,ghnDistrictId:address.districtId,ghnWardCode:address.wardCode});
+  const hintedCod=Number(input.codAmount??suggestedWebCod(hint));if(!Number.isFinite(hintedCod)||hintedCod<0||hintedCod>Math.round(hint.total))throw new AppError(400,'Tiền thu hộ không hợp lệ.','cod_invalid');
+  const intent=await beginWebConfirmation(env,orderId,edited,input.webRevision);
   return env.db.transaction(async tx => {
     const [order] = await tx.select().from(webStoreOrders).where(eq(webStoreOrders.id, orderId)).limit(1).for('update');
     if (!order) throw new AppError(404, 'Không tìm thấy đơn website.');
-    if (order.ghnOrderCode) return { order, existing: true };
+    if (order.ghnOrderCode) return { order, existing: true, needsReview:!!readWebEdit(order.crmEditSnapshot).ghnCartReviewRequired };
+    if(['completed','cancelled'].includes(webOrderBucket(order.status,order.ghnStatus)))throw new AppError(409,'Đơn đã kết thúc; không tạo vận đơn mới.');
     const cod = Number(input.codAmount ?? suggestedWebCod(order));
     if (!Number.isFinite(cod) || cod < 0 || cod > Math.max(0, Math.round(order.total))) throw new AppError(400, 'Tiền thu hộ phải từ 0 đến tổng đơn.', 'cod_invalid');
     const ship = parseGhnShip({ ...input, ghnProvinceId: address.provinceId, ghnDistrictId: address.districtId, ghnWardCode: address.wardCode });
@@ -58,31 +70,32 @@ export async function createWebOrderGhn(env: StaffEnv, orderId: string, address:
     try { lines = JSON.parse(order.lines || '[]'); } catch { /* dòng hàng hỏng: gửi nội dung rỗng */ }
     const body = ghnCreateBody({
       // Tiền tố WEB: không trùng số đơn POS trong cùng shop GHN Minh Long (GHN chặn client_order_code trùng).
-      orderNo: 'WEB-' + order.orderNo, receiverName: order.customerName, receiverPhone: order.phone,
+      orderNo: order.source==='lock'?order.orderNo:'WEB-' + order.orderNo, receiverName: order.customerName, receiverPhone: order.phone,
       address: [address.addressLine, address.wardName, address.districtName, address.provinceName].filter(Boolean).join(', '), codAmount: cod, ship,
-      lines: lines.map(l => ({ sku: text(l.sku, 100), name: text(l.name, 200) || 'Sản phẩm', qty: Number(l.quantity) || 1, unitPrice: (Number(l.total) || 0) / Math.max(1, Number(l.quantity) || 1) })),
+      lines: lines.map(l => ({ sku: text(l.sku, 100), name: text(l.name, 200) || 'Sản phẩm', qty: Number(l.quantity) || 1, unitPrice: ((Number(l.total) || 0)+Number((l as {totalTax?:number}).totalTax||0)) / Math.max(1, Number(l.quantity) || 1) })),
     });
     let response: Response | null = null, result: Record<string, unknown> = {};
-    try { ({ response, result } = await ghnPost(env, GHN_CREATE, body)); }
+    if(!(edited&&intent.priorAttempt))try { ({ response, result } = await ghnPost(env, GHN_CREATE, body,shop)); }
     catch (e) { if (!(e instanceof AppError && e.code === 'GHN_TIMEOUT')) throw e; }
     const data = result.data && typeof result.data === 'object' ? result.data as Record<string, unknown> : {};
     let code = response?.ok ? text(data.order_code, 50).toUpperCase() : '', ghnStatus = 'ready_to_pick', fee = Math.max(0, Number(data.total_fee) || 0);
+    let needsReview=false;
     if (!code) {
       // Mất phản hồi / GHN báo trùng mã đơn: vận đơn có thể đã tạo ở lần trước – gắn lại đúng vận đơn đó (ghn-client-code.ts).
-      const account = await posGhnAccount(env, MINH_LONG);
+      const account = await posGhnAccount(env, shop);
       const existing = account?.token ? await findGhnByClientCode(env.ghnFetch ?? fetch, account, body.client_order_code) : null;
       if (!existing) {
         if (!response) throw new AppError(504, 'Không kết nối được GHN. Thử lại sau.', 'GHN_TIMEOUT');
         throw new AppError(502, 'GHN: ' + (text(result.code_message_value) || text(result.message) || `lỗi ${response.status}`), 'GHN_CREATE_FAILED');
       }
-      code = existing.orderCode; ghnStatus = existing.status; fee = Math.max(0, existing.fee ?? 0);
+      code = existing.orderCode; ghnStatus = existing.status; fee = Math.max(0, existing.fee ?? 0);needsReview=edited;
     }
     const now = new Date().toISOString();
     const fields = { status: 'processing', ghnOrderCode: code, ghnStatus, ghnSortCode: text(data.sort_code, 100),
       ghnFee: fee, updatedAt: now,
-      address: [address.addressLine, address.wardName, address.districtName, address.provinceName].filter(Boolean).join(', '), ghnAddressSnapshot: JSON.stringify(address) };
+      address: [address.addressLine, address.wardName, address.districtName, address.provinceName].filter(Boolean).join(', '), ghnAddressSnapshot: JSON.stringify(address),...(edited?{crmEditSnapshot:JSON.stringify({...readWebEdit(order.crmEditSnapshot),ghnCartReviewRequired:needsReview})}:{}) };
     await tx.update(webStoreOrders).set(fields).where(eq(webStoreOrders.id, order.id));
-    return { order: { ...order, ...fields }, existing: false };
+    return { order: { ...order, ...fields }, existing: false,needsReview };
   });
 }
 
