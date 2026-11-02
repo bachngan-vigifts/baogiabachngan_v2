@@ -486,7 +486,7 @@
           <div class="chips" id="orders-filters" role="group" aria-label="Lọc hoá đơn"><button type="button" class="chip active" data-invoice="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-invoice="requested" aria-pressed="false" title="Đã yêu cầu xuất hoá đơn, chưa nhập số hoá đơn">🧾 Chờ xuất hoá đơn <span class="count" data-invoice-count></span></button></div>
         </div>
         <div class="orders-filter-grid" id="orders-filter-grid">
-          <label>Nguồn đơn<select id="orders-source"><option value="">Tất cả nguồn</option><option value="crm">CRM</option><option value="pos">POS tại quầy</option><option value="ghn">COD / GHN</option></select></label>
+          <label>Nguồn đơn<select id="orders-source"><option value="">Tất cả nguồn</option><option value="crm">CRM</option><option value="pos">POS tại quầy</option><option value="ghn">COD / GHN</option><option value="web">Đơn website</option></select></label>
           <label>Nhân viên<select id="orders-owner"><option value="">Tất cả nhân viên</option></select></label>
           <label>Chi nhánh<select id="orders-branch"><option value="">Tất cả chi nhánh</option></select></label>
           <label>Từ ngày<input type="date" id="orders-from"></label><label>Đến ngày<input type="date" id="orders-to"></label>
@@ -672,6 +672,7 @@
 
     <!-- ---------- Chi tiết đơn đặt hàng ---------- -->
     <section class="view" id="view-order" hidden>
+      <div id="web-order-content" data-mobile-actions="off" hidden></div>
       <div class="editor-head">
         <div class="editor-title"><a class="btn ghost small" href="#/orders" id="order-back">‹ Đơn đặt hàng</a><h1 id="order-title">Đơn đặt hàng</h1><span class="pill" id="order-status"></span></div>
         <div class="editor-actions" id="order-actions"></div>

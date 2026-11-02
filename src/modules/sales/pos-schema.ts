@@ -164,6 +164,9 @@ export const webStoreOrders = pgTable('web_store_orders', {
   paymentMethod: text('payment_method').notNull().default(''),
   lines: text('lines').notNull().default('[]'),
   financialSnapshot: text('financial_snapshot').notNull().default('{}'),
+  /** Local CRM edits and durable GHN confirmation intent; source webhooks cannot overwrite edited goods/prices. */
+  crmEditSnapshot: text('crm_edit_snapshot').notNull().default('{}'),
+  crmOrderNo: text('crm_order_no').notNull().default(''),
   ghnOrderCode: text('ghn_order_code').notNull().default(''),
   ghnStatus: text('ghn_status').notNull().default(''),
   ghnSortCode: text('ghn_sort_code').notNull().default(''),

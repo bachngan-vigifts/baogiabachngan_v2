@@ -1,3 +1,4 @@
+import {readWebEdit} from '../domain/web-order-edit.ts';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
@@ -57,8 +58,9 @@ export async function syncWebOrderStock(env: StaffEnv, webOrderId: string, by?: 
     }
     const known = want.size ? new Set((await tx.select({ sku: products.sku }).from(products).where(inArray(products.sku, [...want.keys()]))).map(p => p.sku)) : new Set<string>();
     for (const sku of want.keys()) if (!known.has(sku)) bad.push(sku);
-    let note = '';
-    if (bad.length || !want.size) note = 'Mã website không khớp danh mục: ' + (bad.join(', ') || 'đơn không có dòng hàng');
+    let note = readWebEdit(o.crmEditSnapshot).ghnCartReviewRequired?'Bản sửa CRM và vận đơn GHN cần đối soát sản phẩm; chưa tự xuất kho.':'';
+    if (note) { /* keep explicit carrier/cart reconciliation block */ }
+    else if (bad.length || !want.size) note = 'Mã website không khớp danh mục: ' + (bad.join(', ') || 'đơn không có dòng hàng');
     else {
       try {
         // Lỗi trong khối ghi sổ chỉ huỷ khối đó (savepoint) – trạng thái GHN vẫn được lưu, đơn đánh dấu cần đối soát.
