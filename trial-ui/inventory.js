@@ -14,7 +14,7 @@ const dt = iso => iso ? new Date(iso).toLocaleString('vi-VN', { day: '2-digit', 
 const REF_LINK = { supplier_receipt: null, packing_slip: id => '#/packing/' + encodeURIComponent(id) };
 
 export function initInventory({ api, root, toast, confirmBox }) {
-  let status = null, rows = [], req = 0, onlyDiff = true, editing = false, busy = false;
+  let status = null, rows = [], req = 0, onlyDiff = true, editing = false, busy = false, loadRun = 0;
   // BỐ CỤC TOÀN TRANG như Kiểm kê hàng: đầu trang (tiêu đề + nút) · tab Phiếu cân bằng / Đối chiếu Sapo · nút ＋ mở trang lập phiếu.
   const page = el('div', 'sup-page');
   const head = el('div', 'page-head'), titles = el('div'), description = el('p', 'muted');
@@ -157,8 +157,25 @@ export function initInventory({ api, root, toast, confirmBox }) {
     } catch (e) { if (id === req) { rows = []; renderRows(0); renderUnopened([]); toast(e.message || 'Không tải được sổ kho.', 'err'); } }
   }
   async function load() {
-    try { status = await api('/inventory/status'); renderStatus(); await Promise.all([loadRows(),adjustmentQueue.load(status)]); }
-    catch (e) { info.replaceChildren(el('p', 'error', e.message || 'Không tải được sổ kho.')); }
+    const run = ++loadRun, route = location.hash;
+    const transferId = /^#\/inventory(?:\?|$)/.test(route) ? new URLSearchParams(route.split('?')[1] || '').get('transfer') : null;
+    try {
+      const next = await api('/inventory/status');
+      if(run !== loadRun) return;
+      status = next; renderStatus();
+      await Promise.all([loadRows(),adjustmentQueue.load(status)]);
+      if(!transferId || run !== loadRun || location.hash !== route || busy) return;
+      if(editing) { toast('Đang có phiếu cân bằng chưa lưu. Hãy ghi hoặc huỷ phiếu đó rồi mở lại Cân bằng kho nhanh.', 'err'); history.replaceState(null, '', '#/inventory'); return; }
+      if(!status.canManage) throw Error('Bạn chưa được cấp quyền lập phiếu cân bằng kho.');
+      const transfer = await api('/stock-transfers/' + encodeURIComponent(transferId));
+      if(run !== loadRun || location.hash !== route || editing || busy) return;
+      if(!transfer.actions?.adjustBalance) throw Error('Bạn chưa được cấp quyền cân bằng kho từ phiếu này.');
+      const warehouseIds = [transfer.fromWarehouseId,transfer.toWarehouseId];
+      if(!status.warehouses.some(w=>warehouseIds.includes(w.id))) throw Error('Không có kho của phiếu trong phạm vi được cân bằng.');
+      adjustForm({transfer,warehouseIds,lines:[...new Set(transfer.lines.map(l=>l.sku))].map(sku=>({sku})),reason:'Cân bằng kho từ phiếu điều chuyển ' + transfer.transferNo});
+      history.replaceState(null, '', '#/inventory');
+    }
+    catch (e) { if(run === loadRun) { info.replaceChildren(el('p', 'error', e.message || 'Không tải được sổ kho.')); toast(e.message || 'Không tải được sổ kho.', 'err'); } }
   }
 
   // ---------------------------------------------------------------- thẻ kho
@@ -188,16 +205,16 @@ export function initInventory({ api, root, toast, confirmBox }) {
 
   // ---------------------------------------------------------------- phiếu cân bằng kho: trang lập phiếu toàn trang (thay ngăn kéo cũ)
   function adjustForm(prefill = {}) {
-    if (busy || !status) return;
+    if (busy || !status?.canManage) return;
     editing = true; editor.replaceChildren(); updatePage();
     const back = btn('‹ Danh sách phiếu', 'btn ghost small', () => { if (busy) return; editing = false; editor.replaceChildren(); updatePage(); });
     const top = el('div', 'card-title-row'); top.append(el('h2', 'card-title', 'Lập phiếu cân bằng kho'), back);
     const f = el('form', 'sup-form inv-adjust-form'), err = el('p', 'error');
     const w = el('select'); w.required = true;w.setAttribute('aria-label','Kho cân bằng');
     w.append(Object.assign(el('option','','Chọn kho…'),{value:''}));
-    for (const x of status.warehouses) w.append(Object.assign(el('option', '', x.name), { value: x.id }));
+    for (const x of status.warehouses.filter(x=>!prefill.warehouseIds||prefill.warehouseIds.includes(x.id))) w.append(Object.assign(el('option', '', x.name), { value: x.id }));
     w.value = ''; // Every new sheet needs an explicit warehouse choice, including from a stock card.
-    const reason = input('text', '', { maxLength: 500, required: true, placeholder: 'VD: kiểm kê lệch, hàng vỡ, xuất mẫu…' });
+    const reason = input('text', prefill.reason || '', { maxLength: 500, required: true, placeholder: 'VD: kiểm kê lệch, hàng vỡ, xuất mẫu…' });
     const g = el('div', 'form-grid two'); g.append(field('Kho', w), field('Lý do *', reason));
     const list = el('div', 'inv-adjust-lines');
     const addLine = (sku = '', qty = '') => {
@@ -205,7 +222,9 @@ export function initInventory({ api, root, toast, confirmBox }) {
       s.setAttribute('aria-label', 'Mã hàng'); q.setAttribute('aria-label', 'Số tăng / giảm');
       r.append(s, q, btn('×', 'icon-btn', () => r.remove())); list.append(r);
     };
-    addLine(prefill.sku || '', prefill.qty ? String(prefill.qty) : '');
+    if(prefill.lines?.length) for(const line of prefill.lines) addLine(line.sku);
+    else addLine(prefill.sku || '', prefill.qty ? String(prefill.qty) : '');
+    if(prefill.transfer) f.append(el('p','muted small',`Phiếu ${prefill.transfer.transferNo}: ${prefill.transfer.fromName} → ${prefill.transfer.toName}. Chọn kho cần cân bằng và nhập số tăng/giảm thực tế; số lượng điều chuyển không phải số điều chỉnh.`));
     f.append(g, el('p', 'muted small', status.canApproveAdjustment?'Số dương = tăng tồn, số âm = giảm tồn. Manager ghi phiếu sẽ duyệt và cập nhật sổ kho ngay.':'Số dương = tăng tồn, số âm = giảm tồn. Phiếu sẽ gửi Manager duyệt; lúc gửi chưa thay đổi tồn kho.'), list,
       btn('+ Thêm mã', 'btn secondary small', () => addLine()), err);
     const ok = el('button', 'btn primary', status.canApproveAdjustment?'Ghi phiếu điều chỉnh':'Gửi Manager duyệt'); ok.type = 'submit';
@@ -213,7 +232,7 @@ export function initInventory({ api, root, toast, confirmBox }) {
     const foot = el('div', 'row-gap inv-adjust-foot'); foot.append(ok, btn('Huỷ', 'btn secondary', () => back.click())); f.append(foot);
     f.addEventListener('submit', async e => {
       e.preventDefault(); err.textContent = '';
-      if(!uncertain&&!status.warehouses.some(x=>x.id===w.value)){err.textContent='Chọn kho trước khi ghi phiếu cân bằng.';w.focus();return;}
+      if(!uncertain&&!status.warehouses.some(x=>x.id===w.value&&(!prefill.warehouseIds||prefill.warehouseIds.includes(x.id)))){err.textContent='Chọn kho trước khi ghi phiếu cân bằng.';w.focus();return;}
       const lines = [...list.children].map(r => { const [s, q] = r.querySelectorAll('input'); return { sku: s.value.trim(), qty: Number(q.value) }; }).filter(l => l.sku && l.qty);
       if(ok.disabled)return;ok.disabled = true;busy=true;
       const body=uncertain||{ warehouseId: w.value, reason: reason.value.trim(), lines,clientKey };

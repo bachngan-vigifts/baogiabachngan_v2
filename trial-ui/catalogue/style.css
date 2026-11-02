@@ -7,3 +7,5 @@
 
 
 .bundle-scope{background:#f1f6f3;border:1px solid #dfe9e2;border-radius:6px;padding:12px;margin:0 0 12px}.bundle-page-list{max-height:240px;overflow:auto}.bundle-page{display:flex;gap:8px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #dce7df;cursor:pointer}.bundle-page:last-child{border:0}.bundle-page input{accent-color:var(--green);margin:1px 0}.bundle-page strong{display:block;font-size:9px;font-weight:600;line-height:1.6}.bundle-page small{display:block;font-size:9px;color:var(--muted);line-height:1.6}
+
+.assistant-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr));gap:18px;margin-top:20px}.assistant-group .panel-title{gap:12px;flex-wrap:wrap}.assistant-group .panel-title h3{font-size:12px}.assistant-group .head-buttons{flex-wrap:wrap}

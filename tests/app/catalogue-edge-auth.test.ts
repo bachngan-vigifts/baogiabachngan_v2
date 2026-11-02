@@ -1,0 +1,14 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+// @ts-ignore Standalone catalogue edge module.
+import {interpretIntent} from '../../catalogue-server/assistant.mjs';
+test('catalogue AI staff verification uses the edge-supported manual redirect policy',async()=>{
+ const original=globalThis.fetch;let modelCalls=0;
+ globalThis.fetch=(async(url:any,options:any)=>{assert.equal(url,'https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff/me');assert.equal(options.redirect,'manual');assert.equal(options.headers.Origin,'https://crm.minhlongonline.com');return Response.json({user:{id:'edge-test-staff'}})}) as typeof fetch;
+ try{const request=new Request('https://crm.minhlongonline.com/catalogue/api/assistant',{headers:{Authorization:'Bearer EDGE_TEST_TOKEN_123456'}});const result=await interpretIntent('bộ trà dưới 2tr',{AI:{run:async(model:string)=>{assert.equal(model,'@cf/meta/llama-3.3-70b-instruct-fp8-fast');modelCalls++;return {response:{groups:[{brand:'Minh Long',type:'bo-tra',min:0,max:2000000,limit:20,packSize:1,keywords:[]}]}}}}},request);assert.equal(result.engine,'cloudflare_ai');assert.equal(modelCalls,1);assert.equal(result.groups.length,1);}finally{globalThis.fetch=original}
+});
+test('catalogue accepts fenced structured AI output and exposes only a safe failure classification',async()=>{
+ const original=globalThis.fetch;globalThis.fetch=(async()=>Response.json({user:{id:'edge-format-test'}})) as typeof fetch;
+ const request=new Request('https://crm.minhlongonline.com/catalogue/api/assistant',{headers:{Authorization:'Bearer EDGE_FORMAT_TEST_123456'}});
+ try{const groups=[{brand:'Minh Long',type:'bo-tra',min:0,max:2000000,limit:20,packSize:1,keywords:[]}];const result=await interpretIntent('bộ trà dưới 2tr',{AI:{run:async()=>({response:'```json\n'+JSON.stringify({groups})+'\n```'})}},request);assert.equal(result.engine,'cloudflare_ai');const failed=await interpretIntent('bộ trà dưới 2tr',{AI:{run:async()=>{throw Error('private provider detail')}}},request);assert.equal(failed.engine,'criteria');assert.equal(failed.diagnostic,'model:Error:unknown:other');assert(!JSON.stringify(failed).includes('private provider detail'));}finally{globalThis.fetch=original}
+});

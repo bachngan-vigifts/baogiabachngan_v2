@@ -1,0 +1,17 @@
+[
+  {
+    "width": 1280,
+    "blankWarehouse": true,
+    "blankAdjustment": true,
+    "preloadedSku": true,
+    "confirmedAdjustmentPostedOnce": true,
+    "transferUnchanged": true,
+    "noOverflow": true,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "existingMobileReadOnlyPolicy": true,
+    "errors": []
+  }
+]

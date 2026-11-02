@@ -174,3 +174,9 @@ test('nút "Nhận hàng" chỉ hiện cho người có quyền nhận; nút in 
  const noRight=await setup('shipped',false,undefined,{print:()=>{}});noRight.source.actions={};await noRight.ui.show('old',true);
  assert.ok(!noRight.button('Nhận hàng'));assert.ok(noRight.button('In phiếu điều chuyển'));assert.match(noRight.root.textContent,/Chờ nhận/);
 });
+test('cân bằng kho nhanh chỉ điều hướng khi server cho phép, không tự ghi kho hoặc đổi phiếu',async()=>{
+ const s=await setup('pending');assert.equal(s.button('Cân bằng kho nhanh'),undefined);
+ (s.source.actions as Record<string,boolean>).adjustBalance=true;await s.ui.show('old');
+ const before=JSON.stringify(s.source);await s.button('Cân bằng kho nhanh')!.click();
+ assert.deepEqual(s.nav,['#/inventory?transfer=old']);assert.equal(s.posts.length,0);assert.equal(JSON.stringify(s.source),before);
+});
