@@ -42,10 +42,12 @@ test('HĐKT đã nhận tiền trước duyệt: không huỷ đơn hoặc hợp
   ok(await f.call('/payments/'+p.id+'/void',f.mgr,'POST',{reason:'Ghi nhầm phiếu thu'}));
   assert.equal(ok(await f.call('/orders/'+f.id,f.emp)).receivable.paid,0);
 });
-test('thu tiền mặt trước duyệt vẫn vào ca thực thu; yêu cầu đã đọc trước khi đơn bị huỷ phải bị từ chối',async()=>{
-  const f=await draft(),shift=await f.open();
+test('thu tiền mặt trước duyệt chờ Manager dù đã mở ca; yêu cầu đã đọc trước khi đơn bị huỷ phải bị từ chối',async()=>{
+  const f=await draft();await f.open();
   const p=ok(await f.call('/payments',f.emp,'POST',{orderId:f.id,key:crypto.randomUUID(),amount:500,method:'cash'}),201);
-  const [row]=await f.db.select().from(customerPayments).where(eq(customerPayments.id,p.id));assert.equal(row!.shiftId,shift.id);
+  assert.equal(p.status,'held');assert.equal((await f.db.select().from(customerPayments)).length,0);
+  ok(await f.call('/payments/cash-collections/'+p.id+'/confirm',f.mgr,'POST',{confirmed:true}));
+  const [row]=await f.db.select().from(customerPayments).where(eq(customerPayments.id,p.id));assert.equal(row!.shiftId,null);
   // Interleaving đã commit: huỷ xảy ra sau lần đọc order nhưng trước transaction ghi thu.
   const db=f.db;let injected=false;
   f.env.db=new Proxy(db,{get(target,prop){if(prop==='transaction')return async(fn:any,...rest:any[])=>{if(!injected){injected=true;await db.update(salesOrders).set({status:'cancelled'}).where(eq(salesOrders.id,f.id));}return (target.transaction as any)(fn,...rest);};const value=(target as any)[prop];return typeof value==='function'?value.bind(target):value;}});

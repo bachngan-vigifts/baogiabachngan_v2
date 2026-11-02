@@ -1,3 +1,4 @@
+import {mountCashCollections} from './cash-collections.js';
 import {returnStateText} from './order-return-summary.js';
 import {mountContractLiquidation} from './contract-liquidation.js';
 import { initQuoteStockWarnings } from './quote-stock-warning.js';
@@ -4108,7 +4109,8 @@ async function openOrder(id, confirmed = null) {
   const fullyScheduled = !d.lines.some(line => line.qty - line.deliveredQty - d.deliveries.filter(x => ['planned','in_transit'].includes(x.status)).flatMap(x => x.lines).filter(x => x.orderLineId === line.id).reduce((sum,x) => sum + x.qty,0) > 1e-9);
   $('#order-new-delivery').disabled = fullyScheduled;
   $('#order-new-delivery').title = fullyScheduled ? 'Mọi sản phẩm đã có đủ lịch giao.' : 'Tạo lịch cho phần hàng còn lại chưa lên lịch.';
-  $('#order-new-payment').hidden = (o.channel === 'pos' && (o.fulfillmentMode === 'cod' || !can('pos.sell'))) || o.status === 'cancelled' || (o.status === 'draft' && o.channel !== 'crm') || r.balance <= 0;
+  const heldCash = d.cashHeld || 0, collectableCash = Math.max(0, r.balance-heldCash);
+  $('#order-new-payment').hidden = (o.channel === 'pos' && (o.fulfillmentMode === 'cod' || !can('pos.sell'))) || o.status === 'cancelled' || (o.status === 'draft' && o.channel !== 'crm') || collectableCash <= 0;
   // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
   const paySummary = r.balance < 0 ? `<div class="pay-summary warn"><span>Còn phải hoàn / dùng đổi hàng</span><b>${money(-r.balance)}</b></div>` : o.status === 'cancelled' ? '' : r.balance <= 0 && r.due > 0
     ? `<div class="pay-summary ok"><span class="pill ok">✓ Đã thanh toán đủ</span><b class="paid-text">${money(r.paid)}</b></div>`
@@ -4116,9 +4118,11 @@ async function openOrder(id, confirmed = null) {
        <small>Đã thu ${money(r.paid)} / ${money(r.due)}</small></div>`;
   // Phiếu đã huỷ: gạch ngang + ai huỷ, lý do (không tính vào đã thu). Manager / quyền "Huỷ phiếu thu" huỷ phiếu ghi nhầm (bắt buộc lý do).
   if(d.returnAdjustment){const n=document.createElement('p');n.className='pos-note';n.textContent='Hàng/phí đã trả: '+money(d.returnAdjustment.credit)+' · Giá trị sau trả: '+money(r.due)+' · Đã hoàn hoặc dùng đổi hàng: '+money(d.returnAdjustment.settled);$('#order-debt').append(n);}
-  const earlyReceiptNote = o.channel === 'crm' && o.status === 'draft' ? '<p class="muted small">Có thể ghi nhận tiền đã thực thu trước khi duyệt. Phiếu thu có hiệu lực ngay; đơn hàng / HĐKT vẫn chờ duyệt.</p>' : '';
+  if(heldCash>0){const note=document.createElement('p');note.className='warn-text';note.textContent='Tiền mặt nhân viên còn giữ: '+money(heldCash)+'. Chờ Manager nhận và xác nhận; chưa hoàn tất thanh toán. Còn có thể thu thêm từ khách: '+money(collectableCash)+'.';$('#order-debt').append(note);}
+  const earlyReceiptNote = o.channel === 'crm' && o.status === 'draft' ? '<p class="muted small">Có thể ghi nhận tiền đã thực thu trước khi duyệt. Tiền mặt nhân viên giữ chờ Manager xác nhận; đơn hàng / HĐKT vẫn chờ duyệt.</p>' : '';
   $('#order-payments').innerHTML = earlyReceiptNote + paySummary + (d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li class="${p.voidedAt ? 'payment-voided' : ''}" data-payment="${esc(p.id)}"><span>${fmtDate(p.paidAt)} · ${p.paymentSource === 'pos_exchange_credit' ? 'Tiền đổi hàng' : p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b>${p.voidedAt ? `<small class="void-note danger-text">Đã huỷ${p.voidedByName ? ' bởi ' + esc(p.voidedByName) : ''} · ${fmtDate(p.voidedAt)}: ${esc(p.voidReason)}</small>` : ''}${!p.voidedAt && d.canVoidPayment && !d.returnAdjustment && p.paymentSource!=='pos_exchange_credit' ? `<button type="button" class="btn ghost small danger-text" data-void-payment="${esc(p.id)}">Huỷ phiếu…</button>` : ''}</li>`).join('')}</ul>`
     : '<p class="muted">Chưa có phiếu thu.</p>');
+  mountCashCollections({host:$('#order-payments'),rows:d.cashCollections,canConfirm:d.canConfirmCashCollection,api,confirmBox,onChanged:()=>openOrder(o.id)});
   if (o.channel === 'pos' && o.fulfillmentMode === 'cod' && o.status !== 'cancelled' && r.balance > 0 && can('pos.sell')) {
     for (const delivery of d.deliveries.filter(x => x.status === 'delivered' && x.codAmount > d.payments.filter(p => !p.voidedAt && p.deliveryId === x.id).reduce((n, p) => n + p.amount, 0)))
       $('#order-payments').append(posCodReceipt({ api, delivery, onSaved: () => openOrder(o.id) }));
@@ -4901,9 +4905,17 @@ $('#delivery-form').addEventListener('submit', async e => {
     $('#delivery-dialog').close(); toast('Đã lên lịch giao.'); openOrder(sales.order.id);
   } catch (ex) { err.textContent = ex.message; }
 });
+function updatePaymentCashNote() {
+  const cash=$('#payment-form').method.value==='cash' && sales.detail?.canCollectCashWithoutDrawer===true;
+  const held=cash&&!isManager(),note=$('#payment-cash-note');note.hidden=!cash;
+  note.textContent=held?'Tiền mặt nhân viên còn giữ. Chỉ khi Manager thực nhận và xác nhận mới hoàn tất thanh toán, giảm công nợ.':'Ghi nhận tiền mặt Manager đã thực nhận, giảm công nợ; không cộng vào két cửa hàng.';
+  $('#payment-form .modal-foot .btn.primary').textContent=held?'Ghi nhận tiền nhân viên giữ':'Lưu phiếu thu';
+}
+$('#payment-form').method.addEventListener('change', updatePaymentCashNote);
 $('#order-new-payment').addEventListener('click', () => {
   const f = $('#payment-form'), r = sales.detail.receivable; f.reset(); $('#payment-pos-confirm').hidden=sales.order.channel!=='pos'; f.confirmed.required=sales.order.channel==='pos'; f.method.querySelector('option[value=other]').disabled=sales.order.channel==='pos'; $('#payment-error').textContent = '';
-  $('#payment-title').textContent = 'Thu tiền ' + (docNo() || sales.order.orderNo); f.amount.value = fmtNum(r.balance); f.paidAt.value = todayIso(); f.paidAt.max = todayIso();
+  $('#payment-title').textContent = 'Thu tiền ' + (docNo() || sales.order.orderNo); f.amount.value = fmtNum(Math.max(0,r.balance-(sales.detail.cashHeld||0))); f.paidAt.value = todayIso(); f.paidAt.max = todayIso();
+  updatePaymentCashNote();
   $('#payment-dialog').showModal();
 });
 $('#payment-form').addEventListener('submit', async e => {
@@ -4913,8 +4925,8 @@ $('#payment-form').addEventListener('submit', async e => {
   try {
     // Mã theo nội dung (request-keys.js): mạng rớt sau khi đã lưu, đóng hộp mở lại nhập y hệt → không ghi thu lần hai.
     const content = { orderId: sales.order.id, amount: parseNum(f.amount.value), paidAt: f.paidAt.value, method: f.method.value, reference: f.reference.value };
-    await sendOnce('payment', content, key => api('/payments', 'POST', { key, confirmed:f.confirmed.checked, ...content }));
-    $('#payment-dialog').close(); toast('Đã ghi nhận thanh toán.'); openOrder(sales.order.id);
+    const result=await sendOnce('payment', content, key => api('/payments', 'POST', { key, confirmed:f.confirmed.checked, ...content }));
+    $('#payment-dialog').close(); toast(result?.status==='held'?'Đã ghi nhận tiền mặt nhân viên còn giữ; chờ Manager xác nhận.':'Đã ghi nhận thanh toán.'); openOrder(sales.order.id);
   } catch (ex) { err.textContent = ex.message; } finally { if (btn) btn.disabled = false; }
 });
 document.addEventListener('click', async e => {
