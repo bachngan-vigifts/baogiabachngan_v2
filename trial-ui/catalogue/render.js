@@ -1,4 +1,4 @@
-import {BRAND,C,slideKey,money,ranges,price,quotePrice,isBundle,selectedProducts} from './core.js';
+import {BRAND,C,slideKey,money,ranges,price,quotePrice,isBundle,selectedProducts,makeSlides} from './core.js';
 const images=new Map(),qrs=new Map();
 export const imageSource=source=>source?.startsWith('data:image/')?source:source?new URL((/^https?:\/\/(?:www\.)?(?:locknlockonline|minhlongonline)\.com\//.test(source)?'api/image?url=':'api/external-image?url=')+encodeURIComponent(source),import.meta.url).href:'';
 export function loadImage(source){if(!source)return Promise.resolve(null);const url=imageSource(source);if(images.has(url))return images.get(url);const pending=new Promise(resolve=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=()=>{images.delete(url);resolve(null)};im.src=url});images.set(url,pending);return pending;}
@@ -25,7 +25,7 @@ export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,sc
  if(slide.type==='cover'){
   text(BRAND,78,100,1100,54,44,'#FFFFFF',true);text(state.meta.title||'DANH MỤC QUÀ TẶNG\nDOANH NGHIỆP',78,225,1120,158,55,'#FFFFFF',true,'left',2);
   text(state.meta.customer?'KÍNH GỬI: '+state.meta.customer:[...new Set(selectedProducts(state).map(p=>p.brand))].join(' & ').toLocaleUpperCase('vi-VN'),80,414,1100,44,26,'#D7BC7D',true);
-  text(`${selectedProducts(state).length} sản phẩm theo danh mục và ngân sách`,80,478,1100,35,24,'#E5EEE8');text(`${state.meta.quoteNo}   /   ${state.meta.date}`,80,566,1100,26,15,'#D6E3DC');footer();return;
+  text(`${makeSlides(state).filter(p=>p.type==='products').reduce((n,p)=>n+p.items.length,0)} sản phẩm theo danh mục và ngân sách`,80,478,1100,35,24,'#E5EEE8');text(`${state.meta.quoteNo}   /   ${state.meta.date}`,80,566,1100,26,15,'#D6E3DC');footer();return;
  }
  if(slide.type==='divider'){
   text(BRAND,70,76,1120,45,30,'#FFFFFF',true);text('NHÓM NGÂN SÁCH 0'+(slide.band+1),70,224,1120,42,22,'#D7BC7D',true);text(ranges[slide.band],70,306,1140,92,slide.band===3?43:48,'#FFFFFF',true);text(`${slide.count} sản phẩm`,70,432,1120,45,27,'#E5EEE8');text('Phân theo thương hiệu và danh mục sản phẩm',70,514,1120,30,20,'#E5EEE8');footer();return;

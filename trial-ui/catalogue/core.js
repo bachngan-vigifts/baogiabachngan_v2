@@ -25,21 +25,21 @@ export function quoteBudget(p,state){return budget({...p,override:quotePrice(p,s
 export function budget(p){if(p.priceOnRequest)return 5;const n=price(p);const b=limits.findIndex(l=>n<=l);return b<0?4:b}
 export function selectedProducts(state){const byId=new Map(state.products.map(p=>[p.id,p]));return [...new Set(state.selected)].map(id=>byId.get(id)).filter(Boolean)}
 export function makeSlides(state){
- const products=selectedProducts(state),slides=[];if(!products.length)return [{type:'empty',band:0,brand:'LOCKNLOCK / MINH LONG',category:'DANH MỤC SẢN PHẨM',items:[]}];
- if(state.settings.cover)slides.push({type:'cover'});
+ const products=selectedProducts(state),pages=[];
  for(let band=0;band<6;band++){
-  const group=products.filter(p=>quoteBudget(p,state)===band);if(!group.length)continue;
-  if(state.settings.dividers)slides.push({type:'divider',band,count:group.length});
+  const group=products.filter(p=>quoteBudget(p,state)===band),bandPages=[];
   const brands=[...new Set(group.map(p=>p.brand))].sort((a,b)=>a==='LocknLock'?-1:b==='LocknLock'?1:a==='Minh Long'?-1:b==='Minh Long'?1:a.localeCompare(b,'vi'));
   for(const brand of brands){
    const cats=[...new Set(group.filter(p=>p.brand===brand).map(p=>p.category))].sort((a,b)=>a.localeCompare(b,'vi'));
-   for(const category of cats){for(const bundle10 of [false,true]){let items=group.filter(p=>p.brand===brand&&p.category===category&&isBundle(p,state)===bundle10);if(state.settings.sortPrice)items.sort((a,b)=>price(a)-price(b));
-    for(let i=0;i<items.length;i+=4)slides.push({type:'products',band,brand,category,bundle10,items:items.slice(i,i+4)});
-   }
+   for(const category of cats)for(const bundle10 of [false,true]){
+    const items=group.filter(p=>p.brand===brand&&p.category===category&&isBundle(p,state)===bundle10);if(state.settings.sortPrice)items.sort((a,b)=>price(a)-price(b));
+    for(let i=0;i<items.length;i+=4){const chunk=items.slice(i,i+4);if(chunk.length>1)bandPages.push({type:'products',band,brand,category,bundle10,items:chunk});}
    }
   }
+  if(bandPages.length){if(state.settings.dividers)pages.push({type:'divider',band,count:bandPages.reduce((n,p)=>n+p.items.length,0)});pages.push(...bandPages)}
  }
- if(state.settings.closing)slides.push({type:'closing'});return slides;
+ if(!pages.length)return [{type:'empty',band:0,brand:'VIGIFTS - BÁCH NGÂN',category:'CHƯA ĐỦ SẢN PHẨM',items:[]}];
+ if(state.settings.cover)pages.unshift({type:'cover'});if(state.settings.closing)pages.push({type:'closing'});return pages;
 }
 export function restoreState(raw){
  if(!raw||raw.version!==1||!Array.isArray(raw.products)||raw.products.length>1000)throw Error('File dữ liệu không đúng định dạng hoặc vượt 1.000 sản phẩm.');
