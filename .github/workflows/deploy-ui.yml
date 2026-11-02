@@ -5,7 +5,7 @@ name: Triển khai giao diện
 on:
   push:
     branches: [main]
-    paths: ['trial-ui/**', 'scripts/stamp-ui-version.ts', 'scripts/wait-for-api-deployment.mjs', '.github/workflows/deploy-ui.yml', '.github/workflows/deploy-api.yml']
+    paths: ['trial-ui/**', 'functions/catalogue/**', 'catalogue-server/**', 'scripts/stamp-catalogue-version.mjs', 'scripts/stamp-ui-version.ts', 'scripts/wait-for-api-deployment.mjs', '.github/workflows/deploy-ui.yml', '.github/workflows/deploy-api.yml']
   workflow_dispatch:
 concurrency: deploy-ui
 permissions:
@@ -64,6 +64,9 @@ jobs:
       - name: Gắn phiên bản vào đường dẫn JS / CSS
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: node --experimental-strip-types scripts/stamp-ui-version.ts "${GITHUB_SHA::7}"
+      - name: Gắn phiên bản riêng cho catalogue QR v2
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        run: node scripts/stamp-catalogue-version.mjs "${GITHUB_SHA::7}"
       - name: Đưa giao diện lên
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: npx --yes wrangler@3 pages deploy trial-ui --project-name "$PROJECT" --branch main --commit-dirty=true
@@ -89,3 +92,4 @@ jobs:
           else
             echo "::warning::Bản ghi DNS $DOMAIN đã có – giữ nguyên, không ghi đè. Kiểm tra nó đang trỏ về $PAGES_HOST."
           fi
+

@@ -1,0 +1,25 @@
+const allowed=new Set(['locknlockonline.com','minhlongonline.com']);
+export function sourceUrl(raw){const u=new URL(raw);u.hostname=u.hostname.replace(/^www\./,'');if(!allowed.has(u.hostname)||!['http:','https:'].includes(u.protocol)||u.username||u.password||u.port)throw Error('Chỉ hỗ trợ link tại locknlockonline.com và minhlongonline.com.');u.protocol='https:';u.hash='';return u;}
+function plain(s){return String(s??'').replace(/<[^>]*>/g,' ').replace(/&#(\d+);/g,(_,n)=>String.fromCodePoint(Number(n))).replace(/&#x([a-f0-9]+);/gi,(_,n)=>String.fromCodePoint(parseInt(n,16))).replaceAll('&amp;','&').replaceAll('&nbsp;',' ').replaceAll('&quot;','"').replaceAll('&#8211;','–').replace(/\s+/g,' ').trim();}
+export function normalizeProduct(q,url){
+ if(q.prices?.currency_code!=='VND')throw Error('Website không trả giá VND cho sản phẩm này.');const regular=Number(q.prices.regular_price)/10**Number(q.prices.currency_minor_unit||0);if(!Number.isFinite(regular)||regular<=0)throw Error('Sản phẩm chưa có giá niêm yết. Hãy nhập giá thủ công.');
+ const brand=url.hostname==='locknlockonline.com'?'LocknLock':'Minh Long',sku=String(q.sku||''),family=[...new Set(sku.match(/\b[A-Z]{2,4}\d{3,5}/g)||[])];
+ let image=q.images?.[0]?.src||'';if(brand==='Minh Long'&&image.includes('sapo-migrated'))image=q.images.find(im=>sku&&im.src.toLowerCase().includes(sku.toLowerCase()))?.src||image;
+ let name=plain(q.name).replace(/^[A-Z]{2,4}\d[\w/\-]*\s*[–-]\s*/,'').replace(/\s*Lock\s*&\s*Lock\s*|\s*Locknlock\s*/gi,' ').replace(/\s*[–-]\s*(\d+\s*[Mm]àu|[Mm]àu).*$/,'').replace(/\s+/g,' ').trim();
+ return {name,sku:q.type==='variable'&&brand==='LocknLock'&&family.length?family.join(' / '):sku,brand,regular,image,url:url.href,category:plain(q.categories?.find(c=>!['Sản phẩm','Uncategorized','Quà tặng'].includes(c.name))?.name||''),fromPrice:!!q.prices.price_range,inStock:!!q.is_in_stock};
+}
+async function remote(url,accept){const r=await fetch(url,{redirect:'manual',headers:{'Accept':accept,'User-Agent':'Mozilla/5.0 VIGIFTS-Quote/1.0'},signal:AbortSignal.timeout(15000)});if(r.status>=300&&r.status<400){const loc=r.headers.get('location');if(loc){const next=sourceUrl(new URL(loc,url).href);return fetch(next,{redirect:'error',headers:{Accept:accept},signal:AbortSignal.timeout(15000)})}}return r;}
+const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json;charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+export async function handleApi(request){const requestUrl=new URL(request.url);requestUrl.pathname=requestUrl.pathname.replace(/^\/catalogue(?=\/)/,'');if(request.method!=='GET')return json({error:'Phương thức không được hỗ trợ.'},405);
+ try{
+  const raw=requestUrl.searchParams.get('url');if(!raw||raw.length>2500)throw Error('Đường dẫn sản phẩm chưa hợp lệ.');const u=sourceUrl(raw);
+  if(requestUrl.pathname==='/api/product'){
+   const parts=u.pathname.split('/').filter(Boolean);if(parts.length!==2||parts[0]!=='san-pham')throw Error('Hãy dán link trang sản phẩm, có dạng /san-pham/ten-san-pham/.');const slug=decodeURIComponent(parts[1]);const api=new URL('/wp-json/wc/store/v1/products',u);api.searchParams.set('slug',slug);
+   const response=await remote(api.href,'application/json');if(!response.ok)throw Error('Website chưa phản hồi. Bạn có thể nhập thông tin thủ công.');const data=await response.text();if(data.length>3e6)throw Error('Dữ liệu website vượt giới hạn.');let rows;try{rows=JSON.parse(data)}catch{throw Error('Website đang chặn lấy thông tin tự động. Vui lòng nhập thủ công.');}if(!Array.isArray(rows))throw Error('Website chưa trả dữ liệu sản phẩm.');const q=rows.find(q=>q.slug===slug);if(!q)throw Error('Chưa tìm thấy sản phẩm tại link này.');return json(normalizeProduct(q,u));
+  }
+  if(requestUrl.pathname==='/api/image'){
+   if(!u.pathname.startsWith('/wp-content/'))throw Error('Đường dẫn ảnh không được hỗ trợ.');const r=await remote(u.href,'image/avif,image/webp,image/png,image/jpeg,image/*');if(!r.ok)throw Error('Chưa tải được ảnh.');const type=(r.headers.get('content-type')||'').split(';')[0];if(!['image/jpeg','image/png','image/webp','image/gif','image/avif'].includes(type))throw Error('Định dạng ảnh chưa được hỗ trợ.');if(Number(r.headers.get('content-length'))>12e6)throw Error('Ảnh vượt 12 MB.');const body=await r.arrayBuffer();if(body.byteLength>12e6)throw Error('Ảnh vượt 12 MB.');return new Response(body,{headers:{'Content-Type':type,'Cache-Control':'public,max-age=86400','X-Content-Type-Options':'nosniff'}});
+  }
+  return json({error:'Không tìm thấy chức năng.'},404);
+ }catch(e){return json({error:e.name==='TimeoutError'?'Website phản hồi chậm. Vui lòng thử lại hoặc nhập thủ công.':e.message||'Chưa lấy được thông tin.'},400)}
+}
