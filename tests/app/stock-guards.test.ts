@@ -123,11 +123,11 @@ for(const opened of [false,true]) test(`duyệt đơn CRM: ${opened?'chưa đủ
   assert.equal(after.orders[0]!.status,'confirmed');
 });
 
-test('điều chuyển done: cả kho đi và đến phải mở, phiếu và hai kho rollback',async()=>{
+test('điều chuyển ship: cả kho đi và đến phải mở, phiếu và hai kho rollback',async()=>{
   const f=await fixture(false);
   const made=await f.call('/stock-transfers',f.mgr,'POST',{fromWarehouseId:'a',toWarehouseId:'b',reason:'Xin hàng',lines:[{sku:'X',qty:1}]});assert.equal(made.status,201,JSON.stringify(made.data));
   const id=made.data.id;assert.equal((await f.call(`/stock-transfers/${id}/approve`,f.mgr,'POST',{})).status,200);
-  const before=await f.snapshot();const r=await f.call(`/stock-transfers/${id}/done`,f.mgr,'POST',{});
+  const before=await f.snapshot();const r=await f.call(`/stock-transfers/${id}/ship`,f.mgr,'POST',{});
   assert.equal(r.status,409);assert.equal(r.data.code,'WAREHOUSE_NOT_OPENED');assert.deepEqual(await f.snapshot(),before);
   assert.equal((await f.call('/stock-transfers/'+id,f.mgr)).data.status,'approved');
 });

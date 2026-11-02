@@ -18,7 +18,8 @@ async function setup(){
  await f.hold(); // hàng về: đơn A bấm Giữ hàng
  const transfer=async(qty:number)=>{let t=ok(await f.call('/stock-transfers',c.mgr,'POST',{fromWarehouseId:'vig',toWarehouseId:'other',reason:'Chuyển bổ sung kho khác',lines:[{sku,qty}]}),201);
   if(t.status==='pending')t=ok(await f.call(`/stock-transfers/${t.id}/approve`,c.mgr,'POST',{revision:t.revision}));return t;};
- const done=(t:any,cookie=c.mgr,overrideHolds?:unknown)=>f.call(`/stock-transfers/${t.id}/done`,cookie,'POST',{revision:t.revision,...(overrideHolds?{overrideHolds}:{})});
+ const done=(t:any,cookie=c.mgr,overrideHolds?:unknown)=>f.call(`/stock-transfers/${t.id}/ship`,cookie,'POST',{revision:t.revision,...(overrideHolds?{overrideHolds}:{})});
+ const receive=async(t:any,cookie=c.mgr)=>{const v=ok(await f.call(`/stock-transfers/${t.id}`,cookie));return f.call(`/stock-transfers/${t.id}/receive`,cookie,'POST',{revision:v.revision,lines:v.lines.map((l:any)=>({sku:l.sku,qty:l.qty}))});};
  /** Đơn B cùng mã, duyệt sau đơn A của fixture, có lịch giao + phiếu xuất đã gửi kho. */
  const orderB=async(qty:number,holdIt=false)=>{
   const q=ok(await f.call('/quotes',c.emp,'POST',{type:'B2B',quoteNo:'B-'+crypto.randomUUID(),customer:'Khách B',vat:8,rows:[{sku,name:'Bộ trà',unit:'Bộ',qty,price:2000}]}),201);
@@ -31,7 +32,7 @@ async function setup(){
   ok(await f.call('/packing/'+slip.id+'/send',c.emp,'POST',{}));return {order:o,slip};};
  const confirm=(slipId:string,cookie=c.kho,overrideHolds?:unknown)=>f.call('/packing/'+slipId+'/confirm',cookie,'POST',{warehouseId:'vig',photos:[photo],...(overrideHolds?{overrideHolds}:{})});
  const overrides=async()=>(await f.db.select().from(auditLogs).where(eq(auditLogs.action,'stock-hold-override'))).length;
- return {...f,transfer,done,orderB,confirm,overrides};
+ return {...f,transfer,done,receive,orderB,confirm,overrides};
 }
 
 test('điều chuyển: chỉ chuyển phần không giữ; lấy phần đang giữ cần Manager + lý do, có nhật ký',async()=>{
@@ -40,7 +41,7 @@ test('điều chuyển: chỉ chuyển phần không giữ; lấy phần đang g
  assert.equal(denied.status,409);assert.equal(denied.data.code,'HELD_FOR_OTHER_ORDER');assert.match(denied.data.error,/đang giữ cho đơn khác 5 \(/);assert.match(denied.data.error,new RegExp(f.order.orderNo));
  assert.equal(await f.balance(),5);assert.equal((await f.db.select().from(stockTransfers).where(eq(stockTransfers.id,all.id)))[0]!.status,'approved');
  await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:3,kind:'adjust',refType:'adjustment',refId:'free-3'}]);
- const free=await f.transfer(3);ok(await f.done(free,c.kho));assert.equal(await f.balance(),5);assert.equal(await f.balance('other'),13);
+ const free=await f.transfer(3);ok(await f.done(free,c.kho));ok(await f.receive(free,c.kho));assert.equal(await f.balance(),5);assert.equal(await f.balance('other'),13);
  assert.equal((await f.done(all,c.kho,{reason:'Gấp cho khách khác'})).status,403,'kho không được lấy hàng giữ');
  assert.equal((await f.done(all,c.mgr,{reason:'ab'})).data.code,'HELD_OVERRIDE_REASON');
  ok(await f.done(all,c.mgr,{reason:'Khách A dời lịch, ưu tiên khách khác'}));assert.equal(await f.balance(),0);assert.equal(await f.overrides(),1);

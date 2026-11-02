@@ -10,7 +10,7 @@ export function stockMoveDescription(kind: StockMoveKind, refType: StockRefType)
   switch (kind) {
     case 'opening': return 'Chốt tồn đầu kỳ';
     case 'receipt': return 'Nhập hàng vào kho';
-    case 'issue': return refType === 'pos_delivery' ? 'Xuất kho giao hàng cho khách/shipper' : refType === 'web_order' ? 'Xuất kho đơn website (GHN đã lấy hàng)' : 'Xuất kho đóng gói giao hàng';
+    case 'issue': return refType === 'pos_delivery' ? 'Xuất kho giao hàng cho khách/shipper' : refType === 'web_order' ? 'Xuất kho đơn website (GHN đã lấy hàng)' : refType === 'stock_transfer' ? 'Điều chuyển: hoàn phần thiếu về kho đi' : 'Xuất kho đóng gói giao hàng';
     case 'sale': return refType === 'pos_order' ? 'Xuất kho bán tại quầy' : 'Xuất kho bán hàng (duyệt đơn / HĐKT)';
     case 'customer_return': return 'Khách trả hàng – nhập lại kho';
     case 'adjust': return 'Điều chỉnh tồn kho';
@@ -19,10 +19,13 @@ export function stockMoveDescription(kind: StockMoveKind, refType: StockRefType)
     case 'reverse': return refType === 'sales_order' ? 'Huỷ / sửa đơn – hoàn lại kho' : refType === 'supplier_receipt' ? 'Huỷ phiếu nhập hàng' : refType === 'web_order' ? 'Đơn website GHN hoàn về – nhập lại kho' : 'Huỷ chứng từ – ghi ngược';
   }
 }
-/** Phiếu điều chuyển kho: nhân viên xin → người duyệt duyệt / từ chối → Kho bấm "Đã chuyển" (trừ kho đi, cộng kho đến). */
-export const TRANSFER_STATUSES = ['pending', 'approved', 'done', 'rejected', 'cancelled'] as const;
+/**
+ * Phiếu điều chuyển kho: nhân viên xin → người duyệt duyệt / từ chối → kho đi bấm "Đã chuyển" (trừ kho đi, hàng đang trên đường)
+ * → kho đến bấm "Nhận hàng" và nhập số lượng thực nhận từng mã (cộng kho đến; phần thiếu ghi ngược về kho đi).
+ */
+export const TRANSFER_STATUSES = ['pending', 'approved', 'shipped', 'done', 'rejected', 'cancelled'] as const;
 export type TransferStatus = typeof TRANSFER_STATUSES[number];
-export const TRANSFER_STATUS_LABEL: Record<TransferStatus, string> = { pending: 'Chờ duyệt', approved: 'Đã duyệt – chờ kho chuyển', done: 'Đã chuyển', rejected: 'Bị từ chối', cancelled: 'Đã huỷ' };
+export const TRANSFER_STATUS_LABEL: Record<TransferStatus, string> = { pending: 'Chờ duyệt', approved: 'Đã duyệt – chờ kho chuyển', shipped: 'Đang chuyển – chờ kho đến nhận', done: 'Đã nhận hàng', rejected: 'Bị từ chối', cancelled: 'Đã huỷ' };
 /** Ảnh nghiệp vụ kho (lưu kho file private, bảng chỉ giữ khoá): hàng NCC về bị hỏng, xác nhận đã giao cho khách. */
 export const WAREHOUSE_PHOTO_REFS = ['supplier_receipt', 'delivery'] as const;
 export type WarehousePhotoRef = typeof WAREHOUSE_PHOTO_REFS[number];

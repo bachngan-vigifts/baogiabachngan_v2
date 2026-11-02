@@ -78,6 +78,7 @@ export const deliverySignDate = (now = new Date()) => `Ngày …… Tháng …�
 export const SLIP_KINDS = {
   packing: { title: 'PHIẾU ĐÓNG GÓI', file: 'Phieu-dong-goi', signers: ['Người lập phiếu', 'Thủ kho', 'Người đóng gói', 'Người kiểm tra'] },
   delivery: { title: 'PHIẾU GIAO HÀNG', file: 'Phieu-giao-hang', signers: ['ĐẠI DIỆN BÊN NHẬN', 'ĐẠI DIỆN BÊN GIAO'] },
+  transfer: { title: 'PHIẾU ĐIỀU CHUYỂN KHO', file: 'Phieu-dieu-chuyen', signers: ['Người lập phiếu', 'Thủ kho xuất (kho đi)', 'Người giao hàng', 'Thủ kho nhận (kho đến)'] },
 };
 const contactOf = o => [o.contact, o.phone].filter(Boolean).join(' · ');
 
@@ -116,6 +117,28 @@ export function deliveryPrintData({ seller, order, contract = null, delivery = n
       { h: 'SL giao', k: 'qty', num: true, sum: true }, { h: 'Ghi chú', k: 'note' }],
     lines: lines.map(l => ({ sku: l.sku || '', imageUrl: l.imageUrl || '', name: l.name, unit: l.unit || '', ordered: Number(l.ordered) || 0, qty: Number(l.qty) || 0, note: '' })),
     note: '- Phiếu bàn giao sản phẩm này cũng chính là biên bản nghiệm thu sản phẩm và được kết thúc ngay sau khi hai bên ký giao – nhận đầy đủ sản phẩm.', signDate: deliverySignDate(), names: ['', ''],
+  };
+}
+
+const dmyVn = iso => iso ? new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(iso)) : '';
+/**
+ * Phiếu điều chuyển kho (nhân viên mang theo khi giao hàng, kho đến đối chiếu và ký nhận). `t` = chi tiết phiếu từ GET /stock-transfers/:id.
+ * Cột "SL nhận" để trống cho kho đến ghi tay; phiếu đã nhận hàng in sẵn số thực nhận và ghi chú "Thiếu …".
+ */
+export function transferPrintData(t, me = '') {
+  const got = t.status === 'done';
+  const received = l => !got || l.receivedQty == null ? '' : Number(l.receivedQty) === 0 ? '0' : Number(l.receivedQty);
+  return {
+    kind: 'transfer', seller: SELLERS.BN.short, department: 'Kho', docNo: t.transferNo,
+    info: [['Số phiếu', t.transferNo], ['Trạng thái', t.statusLabel], ['Kho đi (xuất)', t.fromName], ['Kho đến (nhận)', t.toName],
+      ['Người xin', t.requestedByName || ''], ['Ngày xin', dmyVn(t.createdAt)], ['Người duyệt', t.approvedByName || ''], ['Ngày chuyển', dmyVn(t.shippedAt)],
+      ['Lý do', t.reason || ''], ['', '']],
+    cols: [{ h: 'Mã hàng', k: 'sku' }, { h: 'Tên hàng', k: 'name' }, { h: 'ĐVT', k: 'unit', c: true }, { h: 'SL chuyển', k: 'qty', num: true, sum: true },
+      { h: 'SL nhận', k: 'received', num: true, sum: true }, { h: 'Ghi chú', k: 'note' }],
+    lines: t.lines.map(l => ({ sku: l.sku || '', name: l.name || '', unit: l.unit || '', qty: Number(l.qty) || 0, received: received(l),
+      note: got && l.receivedQty != null && Number(l.receivedQty) < Number(l.qty) - 0.0005 ? `Thiếu ${num(Number(l.qty) - Number(l.receivedQty))}` : '' })),
+    note: [t.shippedNote && `Kho đi: ${t.shippedNote}`, t.doneNote && `Nhận hàng: ${t.doneNote}`].filter(Boolean).join(' · '),
+    signDate: deliverySignDate(), names: [t.requestedByName || me, t.shippedByName || '', '', t.doneByName || ''],
   };
 }
 
