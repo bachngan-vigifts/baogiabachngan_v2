@@ -35,3 +35,11 @@ test('catalogue read proxy rejects arbitrary hosts, credentials, paths and write
  const bad=await handleApi(new Request('https://crm.minhlongonline.com/catalogue/api/product?url='+encodeURIComponent('https://127.0.0.1/')));assert.equal(bad.status,400);
  const write=await handleApi(new Request('https://crm.minhlongonline.com/catalogue/api/product',{method:'POST'}));assert.equal(write.status,405);
 });
+// @ts-ignore Standalone catalogue assistant, no CRM database dependency.
+import {parseIntent,matchingProduct,assistantTypes,interpretIntent} from '../../catalogue-server/assistant.mjs';
+test('assistant understands Vietnamese budget, uses final price and excludes sold out items',async()=>{
+ const c=parseIntent('muốn tạo báo giá bộ trà giá từ 2tr trở lại');assert.equal(c.brand,'Minh Long');assert.equal(c.type,'bo-tra');assert.equal(c.max,2000000);assert.equal(c.min,0);assert.equal(c.packSize,1);
+ const pricing={lockDiscount:40,minhDiscount:10,fee:15000};const p={name:'Bộ trà 0.8L',is_in_stock:true,prices:{currency_code:'VND',regular_price:'2200000',currency_minor_unit:0}};
+ assert(matchingProduct(p,c,assistantTypes[0],'Minh Long',pricing));p.is_in_stock=false;assert(!matchingProduct(p,c,assistantTypes[0],'Minh Long',pricing));p.is_in_stock=true;p.prices.regular_price='2210000';assert(!matchingProduct(p,c,assistantTypes[0],'Minh Long',pricing));
+ const fallback=await interpretIntent('bộ trà dưới 2tr',{},new Request('https://example.com'));assert.equal(fallback.engine,'criteria');assert(fallback.warning);
+});

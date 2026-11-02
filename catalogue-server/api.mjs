@@ -1,3 +1,4 @@
+import {handleAssistant} from './assistant.mjs';
 const allowed=new Set(['locknlockonline.com','minhlongonline.com']);
 export function sourceUrl(raw){const u=new URL(raw);u.hostname=u.hostname.replace(/^www\./,'');if(!allowed.has(u.hostname)||!['http:','https:'].includes(u.protocol)||u.username||u.password||u.port)throw Error('Chỉ hỗ trợ link tại locknlockonline.com và minhlongonline.com.');u.protocol='https:';u.hash='';return u;}
 function plain(s){return String(s??'').replace(/<[^>]*>/g,' ').replace(/&#(\d+);/g,(_,n)=>String.fromCodePoint(Number(n))).replace(/&#x([a-f0-9]+);/gi,(_,n)=>String.fromCodePoint(parseInt(n,16))).replaceAll('&amp;','&').replaceAll('&nbsp;',' ').replaceAll('&quot;','"').replaceAll('&#8211;','–').replace(/\s+/g,' ').trim();}
@@ -10,7 +11,9 @@ export function normalizeProduct(q,url){
 }
 async function remote(url,accept){const r=await fetch(url,{redirect:'manual',headers:{'Accept':accept,'User-Agent':'Mozilla/5.0 VIGIFTS-Quote/1.0'},signal:AbortSignal.timeout(15000)});if(r.status>=300&&r.status<400){const loc=r.headers.get('location');if(loc){const next=sourceUrl(new URL(loc,url).href);return fetch(next,{redirect:'error',headers:{Accept:accept},signal:AbortSignal.timeout(15000)})}}return r;}
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json;charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
-export async function handleApi(request){const requestUrl=new URL(request.url);requestUrl.pathname=requestUrl.pathname.replace(/^\/catalogue(?=\/)/,'');if(request.method!=='GET')return json({error:'Phương thức không được hỗ trợ.'},405);
+export async function handleApi(request,env={}){const requestUrl=new URL(request.url);requestUrl.pathname=requestUrl.pathname.replace(/^\/catalogue(?=\/)/,'');
+ if(requestUrl.pathname==='/api/assistant')return handleAssistant(request,env,{sourceUrl,normalize:normalizeProduct,json:async url=>{const r=await remote(sourceUrl(url).href,'application/json');if(!r.ok)throw Error('Website phản hồi lỗi '+r.status+'. Vui lòng thử lại.');const text=await r.text();if(text.length>12e6)throw Error('Danh mục quá lớn, vui lòng thu hẹp tiêu chí.');try{return JSON.parse(text)}catch{throw Error('Website đang chặn lấy dữ liệu. Vui lòng thử lại sau.')}}});
+ if(request.method!=='GET')return json({error:'Phương thức không được hỗ trợ.'},405);
  try{
   const raw=requestUrl.searchParams.get('url');if(!raw||raw.length>2500)throw Error('Đường dẫn sản phẩm chưa hợp lệ.');const u=sourceUrl(raw);
   if(requestUrl.pathname==='/api/product'){

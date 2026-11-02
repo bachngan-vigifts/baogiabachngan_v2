@@ -35,3 +35,7 @@ PDF là ảnh render của từng trang, PowerPoint giữ text/giá/khung/ảnh/
 ## Thư viện
 
 PptxGenJS 4.0.1 (MIT), pdf-lib (MIT), SheetJS CE 0.18.5 (Apache-2.0), QRCode.js 1.0.0 (MIT), Montserrat (SIL OFL 1.1). Bản phân phối vendored giữ thông tin bản quyền thư viện. Tài sản VIGIFTS theo mẫu khách hàng cung cấp.
+
+## Product assistant
+Staff can describe category and final quotation budget in Vietnamese, review editable criteria, then search live WooCommerce Store APIs for in-stock products. Final price is regular price ×60% (LocknLock) or ×90% (Minh Long), plus VND15,000, before applying the optional 10-unit pack. Results refresh matching library URLs and either replace the selection or append; no product seeds ship.
+Cloudflare Workers AI interprets criteria only, after validating the existing CRM bearer session against the fixed staff /me endpoint. Prices, URLs and availability always come from the allowlisted websites. Without a binding/login or on model error, the interface explicitly labels the deterministic command filter. Download existing Pages config before adding the AI binding, preserving unrelated project settings. Local preview does not invoke a billed model.
