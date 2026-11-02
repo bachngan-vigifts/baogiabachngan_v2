@@ -43,10 +43,14 @@ export function validateCriteria(value){
 const assistantReply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json;charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const authEndpoint='https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff/me';
 const aiRate=new Map();
-async function staffForAI(request){
+/** Nhân viên CRM đang đăng nhập (xác thực ở server CRM), hoặc null. Dùng cho mọi hành động của trợ lý. */
+export async function verifyStaff(request){
  const authorization=request.headers.get('authorization')||'';if(!/^Bearer [A-Za-z0-9_.~+\/-]{16,3000}={0,2}$/.test(authorization))return null;
  const res=await fetch(authEndpoint,{headers:{Authorization:authorization,Origin:'https://crm.minhlongonline.com'},redirect:'manual',signal:AbortSignal.timeout(8000)});
- if(!res.ok)return null;const body=await res.json();const user=body.user||body.data?.user;if(!user?.id)return null;
+ if(!res.ok)return null;const body=await res.json();const user=body.user||body.data?.user;return user?.id?user:null;
+}
+async function staffForAI(request){
+ const user=await verifyStaff(request);if(!user)return null;
  const key=String(user.id),now=Date.now(),entry=aiRate.get(key);if(entry&&now-entry.since<60000&&entry.count>=8)throw Error('Anh/chị đã gửi nhiều yêu cầu AI. Vui lòng chờ một phút.');
  aiRate.set(key,!entry||now-entry.since>=60000?{since:now,count:1}:{since:entry.since,count:entry.count+1});if(aiRate.size>1000)for(const [k,v]of aiRate)if(now-v.since>=60000)aiRate.delete(k);
  return user;
@@ -119,6 +123,9 @@ export async function discoverPlan(groupValues,pricing,adapter){if(!Array.isArra
 export async function handleAssistant(request,env,adapter){
  if(request.method!=='POST')return assistantReply({error:'Chức năng này dùng POST.'},405);
  try{if(Number(request.headers.get('content-length'))>20000)throw Error('Yêu cầu quá dài.');const text=await request.text();if(text.length>20000)throw Error('Yêu cầu quá dài.');const body=JSON.parse(text);
+  // Mọi hành động (kể cả tìm danh mục / sản phẩm, vốn gọi dồn dập vào 2 website công ty) đều cần phiên CRM hợp lệ.
+  let staff=null;try{staff=await verifyStaff(request)}catch{}
+  if(!staff)return assistantReply({error:'Vui lòng đăng nhập CRM để dùng trợ lý catalogue.'},401);
   if(body.action==='brand-preview')return assistantReply(await adapter.brandPreview(body.url,body.prompt));
   if(body.action==='categories')return assistantReply({catalog:await categoryOptions(adapter)});
   if(body.action==='interpret')return assistantReply(await interpretIntent(body.prompt,env,request,await categoryOptions(adapter),body.stockSource||''));

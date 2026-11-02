@@ -3401,12 +3401,17 @@ async function loadDeliveries() {
     const rows = d.deliveries.filter(x => !q || normalize(`${x.customerName} ${x.contractNo || x.orderNo} ${x.deliveryNo} ${x.address}`).includes(q));
     fillList('deliveries', rows.map(x => `<tr>
       <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(ghnTrackingText(x) || x.carrier)}</small></td>
-      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small></td>
+      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small>${deliverySlipButtons(x)}</td>
       <td>${deliveryReceiver(x)}<small>${esc(x.address || x.customerAddress || '')}</small></td>
       <td>${pill(DELIVERY_STATUS, x.status)}${deliveryConfirmation(x)}${deliveryPhotos(x)}</td>
       <td>${x.invoiceNo?.trim() ? esc(x.invoiceNo) : x.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
       'Không có chuyến giao nào trong khoảng ngày này.');
   } catch (e) { listError('deliveries', e); }
+}
+/** In từ lịch: GH theo đúng chuyến; ĐG chọn các phiếu của đơn vì không có liên kết 1–1 với chuyến. */
+function deliverySlipButtons(x) {
+  if (isWarehouse() || !canPage('order')) return '';
+  return `<div class="delivery-slip-links"><button type="button" class="btn ghost small" data-ship-print-for="${esc(x.orderId)}" data-delivery-id="${esc(x.id)}" title="Xem / in phiếu giao hàng ${esc(x.deliveryNo)}">Phiếu giao hàng</button><button type="button" class="btn ghost small" data-pack-print-for="${esc(x.orderId)}" title="Chọn phiếu đóng gói của đơn / HĐKT này">Phiếu đóng gói</button></div>`;
 }
 /** Người nhận của chuyến giao: người nhận ghi trên chuyến, không có thì người liên hệ / SĐT của khách trên đơn (bấm để gọi). */
 function deliveryReceiver(x) {
@@ -4743,14 +4748,16 @@ async function printPackingForOrder(orderId) {
   } });
 }
 /** Phiếu giao hàng của đơn: chọn chuyến giao đã lên lịch, hoặc toàn bộ hàng còn lại. */
-async function printDeliveryForOrder(orderId) {
+async function printDeliveryForOrder(orderId, deliveryId = '') {
   const d = await api('/orders/' + encodeURIComponent(orderId)), byId = new Map(d.lines.map(l => [l.id, l]));
+  // Không âm thầm mở chuyến khác nếu dòng lịch vừa bấm không còn tồn tại.
+  if (deliveryId && !(d.deliveries || []).some(x => x.id === deliveryId)) throw new Error('Không tìm thấy chuyến giao này. Hãy tải lại lịch giao hàng.');
   await deliveryProductImages(d.lines);
-  const trips = (d.deliveries || []).filter(x => x.status !== 'cancelled');
+  const trips = (d.deliveries || []).filter(x => x.status !== 'cancelled' || x.id === deliveryId);
   if (!trips.length) throw new Error(NO_SCHEDULE);
   const choices = [...trips.map(x => ({ value: x.id, label: `${x.deliveryNo} · ${fmtDate(x.plannedDate)}${x.timeSlot ? ' ' + x.timeSlot : ''} · ${DELIVERY_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: 'Toàn bộ hàng chưa giao' }];
   const next = trips.find(x => x.status !== 'delivered');
-  openSlipPrint({ kind: 'delivery', choices, initial: next?.id || (trips.length ? trips.at(-1).id : ''), build: v => {
+  openSlipPrint({ kind: 'delivery', choices, initial: deliveryId || next?.id || (trips.length ? trips.at(-1).id : ''), build: v => {
     const trip = trips.find(x => x.id === v);
     const left = d.lines.map(l => ({ ...l, ordered: l.qty, qty: Math.max(0, Math.round((l.qty - (l.deliveredQty || 0)) * 1000) / 1000) })).filter(l => l.qty > 0);
     const lines = trip ? trip.lines.map(x => { const l = byId.get(x.orderLineId) || {}; return { ...l, ordered: l.qty, qty: x.qty }; })
@@ -4784,7 +4791,7 @@ document.addEventListener('click', async e => {
   e.stopPropagation();
   try {
     if (b.dataset.packPrintFor) await printPackingForOrder(b.dataset.packPrintFor);
-    else if (b.dataset.shipPrintFor) await printDeliveryForOrder(b.dataset.shipPrintFor);
+    else if (b.dataset.shipPrintFor) await printDeliveryForOrder(b.dataset.shipPrintFor, b.dataset.deliveryId || '');
     else await printFromSlip(b.dataset.slipPrint);
   } catch (ex) { toast(ex.message, 'err'); }
 });
