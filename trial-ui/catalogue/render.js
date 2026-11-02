@@ -1,6 +1,6 @@
 import {BRAND,C,slideKey,money,ranges,price,quotePrice,isBundle,selectedProducts} from './core.js';
 const images=new Map(),qrs=new Map();
-export const imageSource=source=>source?.startsWith('data:image/')?source:source?new URL('api/image?url='+encodeURIComponent(source),import.meta.url).href:'';
+export const imageSource=source=>source?.startsWith('data:image/')?source:source?new URL((/^https?:\/\/(?:www\.)?(?:locknlockonline|minhlongonline)\.com\//.test(source)?'api/image?url=':'api/external-image?url=')+encodeURIComponent(source),import.meta.url).href:'';
 export function loadImage(source){if(!source)return Promise.resolve(null);const url=imageSource(source);if(images.has(url))return images.get(url);const pending=new Promise(resolve=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=()=>{images.delete(url);resolve(null)};im.src=url});images.set(url,pending);return pending;}
 const bgPromise=new Promise(resolve=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=()=>resolve(null);im.src=new URL('brand.png',import.meta.url).href});
 export function qrData(url){if(!url)return '';if(!qrs.has(url)){const div=document.createElement('div');new QRCode(div,{text:url,width:460,height:460,correctLevel:QRCode.CorrectLevel.M});const c=document.createElement('canvas');c.width=512;c.height=512;const ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,512,512);ctx.drawImage(div.querySelector('canvas'),26,26,460,460);qrs.set(url,c.toDataURL('image/png'));}return qrs.get(url)}
@@ -24,11 +24,11 @@ export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,sc
  function footer(){const contact=`${BRAND}   Hotline / Zalo: ${state.meta.phone}${state.meta.employee?' ('+state.meta.employee+')':''}`;text(contact,44,682,1060,20,11,dark?'#DCE9E3':C.muted);text(String(number).padStart(2,'0'),1190,678,46,25,13,dark?'#DCE9E3':C.muted,false,'right')}
  if(slide.type==='cover'){
   text(BRAND,78,100,1100,54,44,'#FFFFFF',true);text(state.meta.title||'DANH MỤC QUÀ TẶNG\nDOANH NGHIỆP',78,225,1120,158,55,'#FFFFFF',true,'left',2);
-  text(state.meta.customer?'KÍNH GỬI: '+state.meta.customer:'LOCKNLOCK & MINH LONG',80,414,1100,44,26,'#D7BC7D',true);
+  text(state.meta.customer?'KÍNH GỬI: '+state.meta.customer:[...new Set(selectedProducts(state).map(p=>p.brand))].join(' & ').toLocaleUpperCase('vi-VN'),80,414,1100,44,26,'#D7BC7D',true);
   text(`${selectedProducts(state).length} sản phẩm theo danh mục và ngân sách`,80,478,1100,35,24,'#E5EEE8');text(`${state.meta.quoteNo}   /   ${state.meta.date}`,80,566,1100,26,15,'#D6E3DC');footer();return;
  }
  if(slide.type==='divider'){
-  text(BRAND,70,76,1120,45,30,'#FFFFFF',true);text('NHÓM NGÂN SÁCH 0'+(slide.band+1),70,224,1120,42,22,'#D7BC7D',true);text(ranges[slide.band],70,306,1140,92,slide.band===3?43:48,'#FFFFFF',true);text(`${slide.count} sản phẩm   /   LocknLock & Minh Long`,70,432,1120,45,27,'#E5EEE8');text('Phân theo thương hiệu và danh mục sản phẩm',70,514,1120,30,20,'#E5EEE8');footer();return;
+  text(BRAND,70,76,1120,45,30,'#FFFFFF',true);text('NHÓM NGÂN SÁCH 0'+(slide.band+1),70,224,1120,42,22,'#D7BC7D',true);text(ranges[slide.band],70,306,1140,92,slide.band===3?43:48,'#FFFFFF',true);text(`${slide.count} sản phẩm`,70,432,1120,45,27,'#E5EEE8');text('Phân theo thương hiệu và danh mục sản phẩm',70,514,1120,30,20,'#E5EEE8');footer();return;
  }
  if(slide.type==='closing'){
   text('TRÂN TRỌNG CẢM ƠN',78,145,1125,75,45,'#FFFFFF',true);text('CÔNG TY TNHH SX TM QUẢNG CÁO VIGIFTS',78,267,1120,47,25,'#D7BC7D',true);text(`Hotline / Zalo: ${state.meta.phone}${state.meta.employee?' ('+state.meta.employee+')':''}`,78,355,1120,45,27,'#FFFFFF',true);text('Văn phòng: W36 Đường số 9, KDC Cty 8, P. Cái Răng, TP. Cần Thơ\nCửa hàng: 50 Ngô Quyền, P. Ninh Kiều, TP. Cần Thơ',78,425,1120,75,20,'#E5EEE8');text('Tư vấn lựa chọn sản phẩm, in logo và đóng gói theo yêu cầu',78,553,1120,42,21,'#E5EEE8');footer();return;
@@ -42,9 +42,9 @@ export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,sc
   const im=await loadImage(item.image);if(im)photo(im,x+14,y+14,226,202);else{text('CHƯA CÓ ẢNH',x+14,y+104,226,20,11,'#9BAB9F',false,'center');}
   text(item.name,tx,y+18,310,72,item.name.length>85?15:16,C.ink,true,'left',3);
   text('Mã: '+(item.sku||'—')+(item.qty>1?'  /  SL: '+item.qty:''),tx,y+93,218,24,12.3,C.muted,false,'left',1);
-  if(state.settings.regular)text((bundle?'Niêm yết / bộ: ':item.fromPrice?'Niêm yết từ: ':'Niêm yết: ')+money(item.regular*(bundle?10:1)),tx,y+125,218,25,bundle?12:14,C.muted,false,'left',1);
+  if(state.settings.regular)text((bundle?'Niêm yết / bộ: ':item.fromPrice?'Niêm yết từ: ':'Niêm yết: ')+(item.priceOnRequest?'Liên hệ':money(item.regular*(bundle?10:1))),tx,y+125,218,25,bundle?12:14,C.muted,false,'left',1);
   if(state.settings.qr&&item.url){const data=qrData(item.url),qr=await qrImage(item.url);photo(qr,x+494,y+90,64,64,data);text('Xem chi tiết',x+486,y+155,80,13,9,C.green,false,'center');}
-  text(bundle?'Giá / bộ 10 SP':'Giá đề xuất',tx,y+176,110,24,bundle?12:14,C.ink);const amount=(item.fromPrice?'Từ ':'')+money(quotePrice(item,state));ctx.font='700 23px Montserrat';const amountSize=Math.min(23,23*200/Math.max(200,ctx.measureText(amount).width));text(amount,tx+111,y+169,200,31,amountSize,C.green,true);
+  text(bundle?'Giá / bộ 10 SP':'Giá đề xuất',tx,y+176,110,24,bundle?12:14,C.ink);const amount=item.priceOnRequest?'Liên hệ':(item.fromPrice?'Từ ':'')+money(quotePrice(item,state));ctx.font='700 23px Montserrat';const amountSize=Math.min(23,23*200/Math.max(200,ctx.measureText(amount).width));text(amount,tx+111,y+169,200,31,amountSize,C.green,true);
   text(state.meta.note,tx,y+201,310,28,10.2,C.muted,false,'left',2);
  }
  footer();
