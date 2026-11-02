@@ -43,3 +43,11 @@ test('assistant understands Vietnamese budget, uses final price and excludes sol
  assert(matchingProduct(p,c,assistantTypes[0],'Minh Long',pricing));p.is_in_stock=false;assert(!matchingProduct(p,c,assistantTypes[0],'Minh Long',pricing));p.is_in_stock=true;p.prices.regular_price='2210000';assert(!matchingProduct(p,c,assistantTypes[0],'Minh Long',pricing));
  const fallback=await interpretIntent('bộ trà dưới 2tr',{},new Request('https://example.com'));assert.equal(fallback.engine,'criteria');assert(fallback.warning);
 });
+// @ts-ignore Shared browser helpers.
+import {mapConcurrent,slideKey} from '../../trial-ui/catalogue/core.js';
+test('100-row importer bounds concurrency at six and preserves Excel order',async()=>{
+ let active=0,peak=0;const input=Array.from({length:100},(_,i)=>i);const out=await mapConcurrent(input,6,async(i:number)=>{active++;peak=Math.max(peak,active);await new Promise(r=>setTimeout(r,2+(i%3)));active--;return i*2});assert.equal(peak,6);assert.equal(active,0);assert.deepEqual(out,input.map(i=>i*2));
+});
+test('page text restores safely and remains tied to product IDs rather than page number',()=>{
+ const s=defaultState();s.products=[item('Minh Long','Bộ trà',1000000)];s.selected=[s.products[0].id];const slide=makeSlides(s).find((x:any)=>x.type==='products');const key=slideKey(slide);s.pageText[key]={'44:24':'VIGIFTS - BÁCH NGÂN mới'};assert.equal(restoreState(s).pageText[key]['44:24'],'VIGIFTS - BÁCH NGÂN mới');assert.equal(slideKey({...slide,items:[...slide.items].reverse()}),key);
+});

@@ -6,7 +6,7 @@ export const categories=['Bình giữ nhiệt','Bình nước nhựa','Bình nư
 export const money=n=>new Intl.NumberFormat('vi-VN').format(Math.round(Number(n)||0))+'đ';
 export const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function cleanUrl(value){if(!value)return '';try{const u=new URL(value);if(u.protocol!=='https:'&&u.protocol!=='http:')return '';return u.href}catch{return ''}}
-export function defaultState(){return {version:1,products:[],selected:[],meta:{title:'DANH MỤC QUÀ TẶNG DOANH NGHIỆP',customer:'',quoteNo:'BG-'+new Date().toISOString().slice(0,10).replaceAll('-',''),employee:'Châu Yến',phone:'0907 168 234',date:new Date().toLocaleDateString('en-CA'),note:'Giá đã bao gồm thuế VAT, chi phí in ấn và chi phí vận chuyển.'},settings:{lockDiscount:40,minhDiscount:10,fee:15000,cover:true,dividers:true,closing:true,qr:true,regular:true,sortPrice:true,bundle10:false,bundle10Ids:[]}}}
+export function defaultState(){return {version:1,pageText:{},products:[],selected:[],meta:{title:'DANH MỤC QUÀ TẶNG DOANH NGHIỆP',customer:'',quoteNo:'BG-'+new Date().toISOString().slice(0,10).replaceAll('-',''),employee:'Châu Yến',phone:'0907 168 234',date:new Date().toLocaleDateString('en-CA'),note:'Giá đã bao gồm thuế VAT, chi phí in ấn và chi phí vận chuyển.'},settings:{lockDiscount:40,minhDiscount:10,fee:15000,cover:true,dividers:true,closing:true,qr:true,regular:true,sortPrice:true,bundle10:false,bundle10Ids:[]}}}
 export function validateProduct(p){
  const name=String(p.name||'').trim().slice(0,220),category=String(p.category||'').trim().slice(0,70),brand=String(p.brand||'LocknLock').trim().slice(0,50);
  const regular=Number(p.regular),discount=Number(p.discount),fee=Number(p.fee),override=p.override===''||p.override==null?null:Number(p.override);
@@ -42,10 +42,14 @@ export function makeSlides(state){
 }
 export function restoreState(raw){
  if(!raw||raw.version!==1||!Array.isArray(raw.products)||raw.products.length>1000)throw Error('File dữ liệu không đúng định dạng hoặc vượt 1.000 sản phẩm.');
+ const pageText={};if(raw.pageText&&typeof raw.pageText==='object'){for(const [key,fields] of Object.entries(raw.pageText).slice(0,1000)){if(!fields||typeof fields!=='object')continue;pageText[key.slice(0,500)]={};for(const [position,value]of Object.entries(fields).slice(0,60))if(/^\d+:\d+$/.test(position)&&typeof value==='string')pageText[key.slice(0,500)][position]=value.slice(0,2000);}}
  const d=defaultState(),products=raw.products.map(validateProduct);if(new Set(products.map(p=>p.id)).size!==products.length)throw Error('File có mã dữ liệu trùng nhau.');
  const meta={};for(const k of Object.keys(d.meta))meta[k]=String(raw.meta?.[k]??d.meta[k]).slice(0,k==='note'?500:160);
  const settings={...d.settings};for(const k of ['cover','dividers','closing','qr','regular','sortPrice','bundle10'])if(typeof raw.settings?.[k]==='boolean')settings[k]=raw.settings[k];
  settings.bundle10Ids=Array.isArray(raw.settings?.bundle10Ids)?[...new Set(raw.settings.bundle10Ids)].filter(id=>products.some(p=>p.id===id)):[];
  for(const k of ['lockDiscount','minhDiscount','fee']){const n=Number(raw.settings?.[k]??settings[k]);if(!Number.isFinite(n)||n<0||n>(k==='fee'?1e8:100))throw Error('Thiết lập giá không hợp lệ.');settings[k]=n;}
- return {version:1,products,selected:Array.isArray(raw.selected)?raw.selected.filter(id=>products.some(p=>p.id===id)):[],meta,settings};
+ return {version:1,pageText,products,selected:Array.isArray(raw.selected)?raw.selected.filter(id=>products.some(p=>p.id===id)):[],meta,settings};
 }
+
+export function slideKey(slide){return slide.type==='products'?'products:'+slide.items.map(p=>p.id).sort().join('|'):slide.type+(slide.type==='divider'?':'+slide.band:'');}
+export async function mapConcurrent(items,limit,worker){let cursor=0;const results=new Array(items.length);await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(cursor<items.length){const i=cursor++;results[i]=await worker(items[i],i)}}));return results;}

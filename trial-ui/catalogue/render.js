@@ -1,4 +1,4 @@
-import {BRAND,C,money,ranges,price,quotePrice,isBundle,selectedProducts} from './core.js';
+import {BRAND,C,slideKey,money,ranges,price,quotePrice,isBundle,selectedProducts} from './core.js';
 const images=new Map(),qrs=new Map();
 export const imageSource=source=>source?.startsWith('data:image/')?source:source?new URL('api/image?url='+encodeURIComponent(source),import.meta.url).href:'';
 export function loadImage(source){if(!source)return Promise.resolve(null);const url=imageSource(source);if(images.has(url))return images.get(url);const pending=new Promise(resolve=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=()=>{images.delete(url);resolve(null)};im.src=url});images.set(url,pending);return pending;}
@@ -8,12 +8,13 @@ function qrImage(url){const data=qrData(url);if(!data)return Promise.resolve(nul
 function hex(h){return h.replace('#','')}
 function wrap(ctx,value,width,maxLines=99){const lines=[];for(const paragraph of String(value??'').split('\n')){let current='';for(const word of paragraph.split(/\s+/)){if(!word)continue;const candidate=current?current+' '+word:word;if(ctx.measureText(candidate).width>width&&current){lines.push(current);current=word}else current=candidate}lines.push(current)}if(lines.length>maxLines){lines.length=maxLines;while(ctx.measureText(lines.at(-1)+'…').width>width&&lines.at(-1).length)lines[lines.length-1]=lines.at(-1).slice(0,-1);lines[lines.length-1]+='…'}return lines}
 function contain(im,x,y,w,h){const scale=Math.min(w/im.width,h/im.height);return {x:x+(w-im.width*scale)/2,y:y+(h-im.height*scale)/2,w:im.width*scale,h:im.height*scale}}
-export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,scale=1){
+export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,scale=1,textBoxes=null){
  await document.fonts.ready;const ctx=canvas.getContext('2d');canvas.width=1280*scale;canvas.height=720*scale;ctx.scale(scale,scale);ctx.fillStyle='white';ctx.fillRect(0,0,1280,720);
  function box(x,y,w,h,fill,stroke='',radius=0){ctx.beginPath();ctx.roundRect(x,y,w,h,radius);ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=.8;ctx.stroke()}if(pptSlide)pptSlide.addShape(radius?'roundRect':'rect',{x:x/96,y:y/96,w:w/96,h:h/96,rectRadius:radius/96,radius:radius/96,fill:{color:hex(fill)},line:{color:hex(stroke||fill),width:stroke?.6:0}});}
  function text(value,x,y,w,h,size=18,color=C.ink,bold=false,align='left',maxLines=99){
+  const position=x+':'+y,original=String(value??'');value=state.pageText?.[slideKey(slide)]?.[position]??original;if(textBoxes)textBoxes.push({position,original,value:String(value)});
   ctx.font=`${bold?700:400} ${size}px Montserrat, Arial`;ctx.fillStyle=color;ctx.textBaseline='top';ctx.textAlign=align;
-  const lines=wrap(ctx,value,w,maxLines),lineHeight=size*1.23;
+  const lineHeight=size*1.23,lines=wrap(ctx,value,w,Math.min(maxLines,Math.max(1,Math.floor(h/lineHeight))));
   lines.forEach((line,i)=>ctx.fillText(line,align==='right'?x+w:align==='center'?x+w/2:x,y+i*lineHeight));ctx.textAlign='left';
   if(pptSlide)pptSlide.addText(lines.join('\n'),{x:x/96,y:y/96,w:w/96,h:h/96,fontFace:'Montserrat',fontSize:size*.75,bold,color:hex(color),margin:0,align,breakLine:false,valign:'top',transparency:0,paraSpaceAfterPt:0,lineSpacingMultiple:1.0});
  }
