@@ -1,3 +1,4 @@
+import { quoteTotalsData } from './list-data.ts';
 import { quotationPredicate } from './department-access.ts';
 import { canApprove } from '../../staff/domain/permissions.ts';
 import { and, asc, count, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
@@ -80,17 +81,16 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
       owner === 'mine' ? eq(quotations.creatorId, viewer.id) : owner === 'others' ? ne(quotations.creatorId, viewer.id) : undefined,
       matchAllWords(sql`(${foldSql(quotations.quoteNo, quotations.customer)} || ' ' || coalesce(${quotations.searchText}, ''))`, p.get('q')));
     const month = /^\d{4}-\d{2}$/.test(p.get('month') || '') ? p.get('month')! : '';
-    const [[{ n: total = 0 } = {}], [{ n: all = 0 } = {}], [other], monthRows] = await Promise.all([
+    const [[{ n: total = 0 } = {}], [{ n: all = 0, others = 0 } = {}], monthRows] = await Promise.all([
       db.select({ n: count() }).from(quotations).where(where),
-      db.select({ n: count() }).from(quotations).where(scope),
-      db.select({ id: quotations.id }).from(quotations).where(and(scope, ne(quotations.creatorId, viewer.id))).limit(1),
-      month ? db.select({ data: quotations.data }).from(quotations).where(and(scope, sql`left(coalesce(nullif(${quotations.quoteDate}, ''), ${quotations.createdAt}), 7) = ${month}`)) : [],
+      db.select({ n: count(), others: sql<number>`count(*) filter (where ${quotations.creatorId} <> ${viewer.id})`.mapWith(Number) }).from(quotations).where(scope),
+      month ? db.select({ data: quoteTotalsData }).from(quotations).where(and(scope, sql`left(coalesce(nullif(${quotations.quoteDate}, ''), ${quotations.createdAt}), 7) = ${month}`)) : [],
     ]);
     const sum = (rows: { data: string }[]) => rows.reduce((s, r) => s + totals(JSON.parse(r.data)).total, 0);
     // Giá trị không có cột riêng: tính từ nội dung báo giá – chỉ làm khi số báo giá khớp lọc vừa phải.
     const VALUE_CAP = 3000, n = Number(total);
     const valued = sort === 'value' || n <= VALUE_CAP
-      ? (await db.select({ id: quotations.id, data: quotations.data }).from(quotations).where(where).orderBy(desc(quotations.updatedAt)).limit(VALUE_CAP))
+      ? (await db.select({ id: quotations.id, data: quoteTotalsData }).from(quotations).where(where).orderBy(desc(quotations.updatedAt)).limit(VALUE_CAP))
         .map(r => ({ id: r.id, total: totals(JSON.parse(r.data)).total }))
       : null;
     let rows: QuoteRow[];
@@ -114,7 +114,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
         quoteDate: r.quoteDate, createdAt: r.createdAt, contact: data.contact || '', phone: data.phone || '', lineCount: data.rows.length, mine: r.creatorId === viewer.id,
         approvalStatus: r.approvalStatus, fromCustomer: customerCreators.has(r.creatorId),
       };
-    }), total: n, all: Number(all), limit, offset, hasOthers: !!other,
+    }), total: n, all: Number(all), limit, offset, hasOthers: Number(others) > 0,
     value: valued && n <= VALUE_CAP ? valued.reduce((s, r) => s + r.total, 0) : null,
     month: month ? { month, count: monthRows.length, value: sum(monthRows) } : null });
   }, 'business');

@@ -635,7 +635,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           .orderBy(desc(posShifts.openedAt))
           .limit(50),
       ]);
-      const sellScope = await allowedPosRegisters(c);
+      const sellScope = await allowedPosRegisters(c, c.env.db, allRegs);
       const regs = allRegs.filter(r => allowedRegister(c, r.id) && (sellScope.all || sellScope.ids.has(r.id)));
       const shifts = shiftRows.filter(x => allowedRegister(c, x.shift.registerId)).map(x => ({ ...x.shift, memberName: x.memberName || 'Nhân viên không còn trong danh mục' }));
       const policies = await c.env.db

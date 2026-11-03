@@ -1,4 +1,4 @@
-import {and,asc,eq,inArray,sql} from 'drizzle-orm';
+import {and,asc,eq,sql} from 'drizzle-orm';
 import type {AnyDb} from '../../../core/db/client.ts';
 import {AppError} from '../../../core/errors.ts';
 import {productOrder} from '../../catalog/api/product-query.ts';
@@ -26,18 +26,17 @@ async function readPosStockSnapshot(db:PosDb,member:PosMember,register:{id:strin
  const startedAt=new Date().toISOString();
  const [hidden,opened,rows]=await Promise.all([
   hiddenStockWarehouses(db,member),ledgerWarehouses(db),
-  db.select({sku:products.sku,price:productPrices.price,onHand:stockBalances.qty,scanCodes:posScanCodes}).from(products)
+  db.select({sku:products.sku,price:productPrices.price,onHand:stockBalances.qty,scanCodes:posScanCodes,...(includeCatalog?{name:products.name,brand:products.brand,unit:products.unit,imageUrl:products.imageUrl,pattern:products.pattern}:{})}).from(products)
    .innerJoin(productPrices,and(eq(productPrices.sku,products.sku),eq(productPrices.policyId,policy)))
    .leftJoin(stockBalances,and(eq(stockBalances.sku,products.sku),eq(stockBalances.warehouseId,register.warehouseId)))
-   .where(and(eq(products.active,true),eq(products.approvalStatus,'approved'),sql`${productPrices.price} is not null`,posBrandScope(register.name))).orderBy(asc(products.sku)).limit(20001),
+   .where(and(eq(products.active,true),eq(products.approvalStatus,'approved'),sql`${productPrices.price} is not null`,posBrandScope(register.name))).orderBy(...(includeCatalog?productOrder(null):[asc(products.sku)])).limit(20001),
  ]);
  if(hidden.has(register.warehouseId))throw new AppError(403,'Bạn không được xem tồn kho riêng của quầy này.');
  // Never silently preload a partial catalog; large installations keep the paged path.
  if(rows.length>20000)return null;
- const [held,catalog]=await Promise.all([
-  rows.length?reservedBySku(db,rows.map(r=>r.sku),register.warehouseId):new Map<string,number>(),
-  includeCatalog&&rows.length?db.select({sku:products.sku,name:products.name,brand:products.brand,unit:products.unit,imageUrl:products.imageUrl,pattern:products.pattern}).from(products).where(inArray(products.sku,rows.map(r=>r.sku))).orderBy(...productOrder(null)):Promise.resolve(includeCatalog?[]:undefined),
- ]);
+ const held=rows.length?await reservedBySku(db,rows.map(r=>r.sku),register.warehouseId):new Map<string,number>();
+ // Metadata comes from the same authorized price/stock scan, avoiding a second huge IN query.
+ const catalog=includeCatalog?rows.map(({sku,name,brand,unit,imageUrl,pattern})=>({sku,name,brand,unit,imageUrl,pattern})):undefined;
  return {version:1,catalog,registerId:register.id,warehouseId:register.warehouseId,pricePolicyId:policy,asOf:startedAt,warehouseReady:opened.includes(register.warehouseId),
   // sku, price, physical ledger quantity, reserved quantity, unambiguous scan codes
   rows:rows.map(p=>[p.sku,p.price,p.onHand??0,held.get(p.sku)??0,p.scanCodes] as const)};

@@ -164,12 +164,12 @@ async function assertCanCreateSapo(c: Ctx, o: typeof salesOrders.$inferSelect) {
 }
 async function receivableOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
   if (!orderIds.length) return new Map<string, ReturnType<typeof receivable>>();
-  const [sch, pay] = await Promise.all([
+  const [sch, pay, adjustments] = await Promise.all([
     db.select().from(paymentSchedules).where(inArray(paymentSchedules.orderId, orderIds)),
     db.select().from(customerPayments).where(and(inArray(customerPayments.orderId, orderIds), isNull(customerPayments.voidedAt))),
+    returnAdjustments(db,orderIds),
   ]);
   const today = vietnamDate().iso;
-  const adjustments=await returnAdjustments(db,orderIds);
   return new Map(orderIds.map(id => {const net=netReturnInputs(sch.filter(s => s.orderId === id),pay.filter(p => p.orderId === id),adjustments.get(id));return [id,receivable(net.schedules,net.payments,today)];}));
 }
 /** Lịch sử sản phẩm: các dòng (có mã hàng) của đơn đã xác nhận → biến động "Bán" (khoá `sale:<đơn>:<dòng>`). */
@@ -1046,7 +1046,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const live = and(where, ne(salesOrders.status, 'cancelled'));
     const [[{ n: total = 0 } = {}], rows, [{ n: invoicePending = 0 } = {}], [sum], [paidRow], ownerOptions] = await Promise.all([
       c.env.db.select({ n: count() }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId)).where(where),
-      c.env.db.select({ contract: salesContracts, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo, orderStatus: salesOrders.status,
+      c.env.db.select({ contract: (() => { const { data, ...columns } = getTableColumns(salesContracts); return columns; })(), orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, quoteNo: salesOrders.quoteNo, orderStatus: salesOrders.status,
       invoiceStatus: salesOrders.invoiceStatus, invoiceNo: salesOrders.invoiceNo, submittedAt: salesOrders.submittedAt, ownerName: employees.name })
       .from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId)).leftJoin(employees, eq(employees.id, salesOrders.ownerId))
       .where(where).orderBy(...rankFirst(searchRank([salesContracts.contractNo, salesOrders.quoteNo], salesOrders.customerName, c.url.searchParams.get('q'))), desc(salesContracts.createdAt), desc(salesContracts.id)).limit(limit).offset(offset),
