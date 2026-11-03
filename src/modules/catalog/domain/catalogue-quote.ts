@@ -1,4 +1,6 @@
-import{z}from'zod';import{AppError}from'../../../core/errors.ts';import{cleanCatalogueProduct}from'./catalogue-data.ts';
+import { z } from 'zod';
+import { AppError } from '../../../core/errors.ts';
+import { cleanCatalogueProduct } from './catalogue-data.ts';
 const quoteProduct=z.object({id:z.string().min(1).max(80),discount:z.number().finite().min(0).max(100),fee:z.number().finite().min(0).max(1e8),qty:z.number().int().min(1).max(1e6),override:z.number().finite().min(0).max(1e10).nullable(),sharedId:z.string().max(80).optional(),sharedRevision:z.number().int().positive().nullable().optional()});
 const settings=z.object({lockDiscount:z.number().finite().min(0).max(100),minhDiscount:z.number().finite().min(0).max(100),fee:z.number().finite().min(0).max(1e8),cover:z.boolean(),dividers:z.boolean(),closing:z.boolean(),qr:z.boolean(),regular:z.boolean(),sortPrice:z.boolean(),selectionSort:z.enum(['manual','newest','price','collection','category','pattern','color']).optional(),bundle10:z.boolean(),bundle10Ids:z.array(z.string().max(80)).max(1000)});
 export function stableJson(value:unknown):string{if(Array.isArray(value))return'['+value.map(stableJson).join(',')+']';if(value&&typeof value==='object')return'{'+Object.keys(value).sort().filter(k=>(value as Record<string,unknown>)[k]!==undefined).map(k=>JSON.stringify(k)+':'+stableJson((value as Record<string,unknown>)[k])).join(',')+'}';return JSON.stringify(value);}

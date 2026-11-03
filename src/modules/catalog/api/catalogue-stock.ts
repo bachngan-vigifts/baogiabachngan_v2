@@ -1,7 +1,7 @@
-import{asc,eq,inArray}from'drizzle-orm';
-import type{AnyDb}from'../../../core/db/client.ts';
-import{products,warehouses}from'../schema.ts';
-import{hiddenStockWarehouses,readCatalogStock,catalogStockHooks}from'./stock-source.ts';
+import { asc, eq, inArray } from 'drizzle-orm';
+import type { AnyDb } from '../../../core/db/client.ts';
+import { products, warehouses } from '../schema.ts';
+import { hiddenStockWarehouses, readCatalogStock, catalogStockHooks } from './stock-source.ts';
 type Member={role:string;positionId?:string|null};
 export interface CatalogueIncoming{sku:string;orderId:string;ticketNumber:string;supplierName:string;arrivalDate:string|null;left:number}
 export const catalogueLibraryHooks:{heldAt?:(db:AnyDb,skus:string[],warehouseId:string)=>Promise<Map<string,number>>;incoming?:(db:AnyDb,skus:string[])=>Promise<CatalogueIncoming[]>}={};
