@@ -346,3 +346,23 @@
  #view-payroll .pr-actions>.btn { flex:1 1 auto;min-width:0;justify-content:center; }
  #view-payroll .pr-actions>.mobile-action-trigger { flex:0 0 auto; }
 }
+
+/* Vùng bấm tối thiểu 44px cho ngón tay; chữ và icon giữ nguyên cỡ. */
+@media (max-width: 680px) {
+ .main .row-actions .btn.small,
+ .main .row-actions .icon-btn,
+ .main .pager-pages button,
+ .main .sync-actions .btn.small,
+ .main .chips .chip { min-height: 44px; }
+ .main .row-actions .icon-btn,
+ .main .pager-pages button { min-width: 44px; }
+ .main .check-cell,
+ .main .product-select-page,
+ .main .approver-toggle,
+ .main .chip-check { min-height: 44px; display: inline-flex; align-items: center; }
+ .main .check-cell input[type=checkbox],
+ .main .product-select-page input[type=checkbox],
+ .main .approver-toggle input[type=checkbox],
+ .main .chip-check input[type=checkbox] { width: 22px; height: 22px; }
+ .main .check-cell { min-width: 44px; justify-content: center; }
+}
