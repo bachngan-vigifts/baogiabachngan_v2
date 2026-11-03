@@ -345,7 +345,9 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
         const sku = str(raw?.sku, 200), value = raw?.qty;
         if (!lines.some(l => l.sku === sku)) fail(400, `Mã ${sku || '(trống)'} không thuộc phiếu này.`);
         if (got.has(sku)) fail(400, `Mã ${sku} bị nhập hai lần.`);
-        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) fail(400, `Nhập số lượng nhận hợp lệ cho ${sku} (nhận 0 nếu chưa tới).`);
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+          throw new AppError(400, `Nhập số lượng nhận hợp lệ cho ${sku} (nhận 0 nếu chưa tới).`);
+        }
         const line = lines.find(l => l.sku === sku)!;
         if (value > (line.shippedQty ?? line.qty)) fail(400, `Số nhận vượt số chuyển của ${sku}.`, 'RECEIVE_OVER');
         if (num(value) !== value) fail(400, `Số lượng nhận của ${sku} chỉ được có tối đa 3 chữ số thập phân.`, 'RECEIVE_PRECISION');
