@@ -33,3 +33,5 @@ export * from '../modules/sales/liquidation-schema.ts';
 
 export * from '../modules/hr/contract-bonus-schema.ts';
 export * from '../modules/sales/cash-collection-schema.ts';
+
+export * from '../modules/catalog/catalogue-library-schema.ts';

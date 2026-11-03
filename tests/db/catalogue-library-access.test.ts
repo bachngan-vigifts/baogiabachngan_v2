@@ -1,0 +1,7 @@
+import{test}from'node:test';import assert from'node:assert/strict';import{readFileSync}from'node:fs';import{createTestDb}from'../helpers/postgres.ts';
+test('shared library has RLS, no browser grants, source uniqueness and a complete read-only deploy gate',async()=>{
+ const {client}=await createTestDb();await client.exec("DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon; END IF; IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF; END $$;");
+ const r=await client.query<{rls:boolean;anon:boolean;auth:boolean}>("select relrowsecurity rls,has_table_privilege('anon',oid,'SELECT') anon,has_table_privilege('authenticated',oid,'INSERT') auth from pg_class where oid='catalogue_library_products'::regclass");assert.deepEqual(r.rows[0],{rls:true,anon:false,auth:false});
+ for(const table of ['catalogue_saved_quotes','catalogue_quote_commands']){const q=await client.query<{rls:boolean;anon:boolean;auth:boolean}>(`select relrowsecurity rls,has_table_privilege('anon',oid,'SELECT') anon,has_table_privilege('authenticated',oid,'INSERT') auth from pg_class where oid='${table}'::regclass`);assert.deepEqual(q.rows[0],{rls:true,anon:false,auth:false});}
+ const gate=readFileSync(new URL('../../scripts/sql/assert-catalogue-library.sql',import.meta.url),'utf8');await client.exec(gate);await client.exec('ALTER TABLE catalogue_library_products DROP COLUMN last_hash;');await assert.rejects(()=>client.exec(gate),/missing column: last_hash/);
+});
