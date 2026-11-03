@@ -1,7 +1,13 @@
-import{and,asc,count,desc,eq,isNull,sql}from'drizzle-orm';
-import type{Router,RouteContext}from'../../../core/http/router.ts';import{json,readJson}from'../../../core/http/router.ts';import{AppError}from'../../../core/errors.ts';
-import{auditLogs}from'../../../core/db/schema.ts';import{fold}from'../../../core/text/fold.ts';import type{StaffEnv,SessionState}from'../../staff/api/auth-routes.ts';import{sha256Hex}from'../../staff/domain/session.ts';
-import{catalogueQuotes as quotes,catalogueQuoteCommands as commands}from'../catalogue-library-schema.ts';import{cleanCatalogueQuote,stableJson}from'../domain/catalogue-quote.ts';
+import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm';
+import type { Router, RouteContext } from '../../../core/http/router.ts';
+import { json, readJson } from '../../../core/http/router.ts';
+import { AppError } from '../../../core/errors.ts';
+import { auditLogs } from '../../../core/db/schema.ts';
+import { fold } from '../../../core/text/fold.ts';
+import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
+import { sha256Hex } from '../../staff/domain/session.ts';
+import { catalogueQuotes as quotes, catalogueQuoteCommands as commands } from '../catalogue-library-schema.ts';
+import { cleanCatalogueQuote, stableJson } from '../domain/catalogue-quote.ts';
 type Ctx=RouteContext<StaffEnv>;type Tx=Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];const actor=(c:Ctx)=>(c.state.session as SessionState).member;
 const validId=(id:unknown):id is string=>typeof id==='string'&&/^[A-Za-z0-9_-]{8,80}$/.test(id);
 const summary=(q:typeof quotes.$inferSelect,c:Ctx)=>({id:q.id,quoteNo:q.quoteNo,title:q.title,customer:q.customer,productCount:q.productCount,revision:q.revision,createdBy:q.createdBy,updatedBy:q.updatedBy,updatedAt:q.updatedAt,canDelete:actor(c).role==='manager'||q.createdBy===actor(c).id});

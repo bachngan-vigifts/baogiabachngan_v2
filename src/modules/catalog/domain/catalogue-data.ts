@@ -1,5 +1,5 @@
-import {z} from 'zod';
-import {AppError} from '../../../core/errors.ts';
+import { z } from 'zod';
+import { AppError } from '../../../core/errors.ts';
 const safeUrl=(value:string)=>{if(!value)return '';let u:URL;try{u=new URL(value)}catch{throw new AppError(400,'Link sản phẩm/ảnh không hợp lệ.')}
  if(u.protocol!=='https:'||u.username||u.password||!u.hostname.includes('.')||/^\d+\.\d+\.\d+\.\d+$/.test(u.hostname)||u.hostname.endsWith('.local')||u.hostname.endsWith('.localhost'))throw new AppError(400,'Chỉ lưu link HTTPS công khai, không kèm tài khoản.');u.hash='';u.hostname=u.hostname.replace(/^www\./,'');return u.href;};
 const shape=z.object({name:z.string().trim().min(1).max(220),sku:z.string().trim().max(100).default(''),brand:z.string().trim().min(1).max(100),category:z.string().trim().min(1).max(100),collection:z.string().trim().max(100).default(''),pattern:z.string().trim().max(100).default(''),color:z.string().trim().max(100).default(''),unit:z.string().trim().max(40).default(''),url:z.string().max(2500).default(''),image:z.string().max(2500).default(''),regular:z.number().finite().min(0).max(1e10),priceOnRequest:z.boolean().default(false),fromPrice:z.boolean().default(false),createdAt:z.string().max(80).nullable().default(null),createdAtSource:z.enum(['web','crm']).nullable().default(null)});

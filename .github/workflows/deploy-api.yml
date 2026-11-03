@@ -60,6 +60,7 @@ jobs:
           npm ci &&
           npm run typecheck &&
           node --import tsx --test
+          tests/app/catalogue-edge-dependencies.test.ts
           tests/app/pos.test.ts
           tests/app/invoice-tasks.test.ts
           tests/app/pos-cod-deposit.test.ts

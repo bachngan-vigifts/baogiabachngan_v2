@@ -1,6 +1,6 @@
-import {pgTable,text,bigint,index,uniqueIndex,check,primaryKey} from 'drizzle-orm/pg-core';
-import {sql} from 'drizzle-orm';
-import {employees} from '../staff/schema.ts';
+import { pgTable, text, bigint, index, uniqueIndex, check, primaryKey } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { employees } from '../staff/schema.ts';
 /** Shared source facts only; quote quantities/discounts/overrides and stock never live here. */
 export const catalogueLibrary=pgTable('catalogue_library_products',{
  id:text('id').primaryKey(),sourceKey:text('source_key').notNull(),name:text('name').notNull(),sku:text('sku').notNull().default(''),
