@@ -1088,10 +1088,11 @@
   </form>
 </dialog>
 
-<dialog id="contract-dialog" class="modal">
+<dialog id="contract-dialog" class="modal order-compose">
   <form id="contract-form" novalidate>
     <div class="modal-head"><div><span class="eyebrow">Lập hợp đồng kinh tế</span><h2>Lập HĐKT từ <span id="contract-order-no"></span></h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
-    <div class="modal-body form-grid cols-2">
+    <div class="modal-body order-compose-body">
+      <section class="order-compose-details form-grid cols-2" aria-label="Thông tin hợp đồng kinh tế">
       <label class="span-2">Pháp nhân bên bán<select name="legalEntity"><option value="BN">Bách Ngân (BN)</option><option value="VG">Vigifts (VG)</option><option value="QTV">QTV</option></select></label>
       <label class="span-2">Số HĐKT <small class="muted">(tự sinh – sửa được)</small><input name="contractNo" maxlength="120" autocomplete="off" spellcheck="false" placeholder="Đang lấy số…"></label>
       <label>Đặt cọc (%)<input name="depositRate" inputmode="decimal" placeholder="Theo báo giá"></label>
@@ -1104,8 +1105,11 @@
         <label class="check"><input type="radio" name="pushSapo" value="yes" checked> Có – tạo thêm đơn nháp trên Sapo</label>
       </fieldset>
       <p class="muted small span-2">Số HĐKT tự sinh: tháng-số thứ tự/ngày/HĐKT/pháp nhân-mã khách; giữ nguyên thì lúc lập máy chủ cấp số kế tiếp, sửa thì dùng đúng số đã sửa. Kỳ phải thu được lập lại = cọc + phần còn lại.</p>
-      <section id="contract-sourcing" class="span-2"></section>
-      <p class="error span-2" id="contract-error" role="alert"></p>
+      </section>
+      <section id="contract-sourcing" class="order-compose-sourcing" aria-label="Phân bổ nguồn hàng"></section>
+    </div>
+    <div class="order-compose-feedback">
+      <p class="error" id="contract-error" role="alert"></p>
     </div>
     <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary">Lập HĐKT</button></div>
   </form>
