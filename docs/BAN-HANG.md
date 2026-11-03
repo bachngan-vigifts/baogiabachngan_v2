@@ -32,6 +32,7 @@ Tổng trước thuế được làm tròn từ tổng dòng; tổng thanh toán
   - **Đơn hàng**: cho khách đã có HĐ nguyên tắc. Chỉ tạo đơn (giao hàng, xuất hoá đơn, công nợ), không sinh HĐKT.
   - **HĐKT**: mở ngay hộp lập HĐKT (pháp nhân, cọc, hạn thanh toán) → chọn kho Sapo → `POST /contracts { quoteId }` lập HĐKT thẳng từ báo giá, **không sinh đơn hàng**.
 - **Trang Đơn hàng** (`GET /orders?flow=order`) chỉ hiện đơn **không có HĐKT**. **Trang HĐKT** hiện các HĐKT. Mỗi trang có nút ＋ để chọn một báo giá đã duyệt chưa có đơn (`GET /order-quote-candidates?q=`) rồi tạo nhanh.
+- **Xuất file Đơn hàng**: xuất theo đúng bộ lọc, gồm sheet **Đơn hàng** (mỗi đơn một dòng, có sản phẩm, SL, đơn giá sau giảm trước/sau VAT, phí vận chuyển thu khách và tổng đơn) và **Chi tiết sản phẩm** (mỗi SKU một dòng, các giá trị tiền là số để lọc/cộng). Phí vận chuyển là phí thu khách lưu trên đơn, không thay bằng cước GHN. Tổng đơn lấy từ chứng từ gốc; chiết khấu/voucher đã phân bổ không trừ lại. Dữ liệu cũ thiếu thuế/phí ghi “Chưa có dữ liệu”. Nếu bộ lọc vượt giới hạn 5.000 đơn, yêu cầu thu hẹp bộ lọc thay vì xuất file thiếu đơn âm thầm.
 - **HĐKT và đơn hàng độc lập.** Bên dưới, HĐKT có một bản ghi `sales_orders` đi kèm để dùng chung dòng hàng, lịch giao, công nợ và hoá đơn. Bản ghi này **ẩn với người dùng**:
   - Trang chi tiết HĐKT là `#/contracts/<id>`. Link cũ `#/orders/<id>` của HĐKT tự chuyển sang đây.
   - Trang chi tiết HĐKT **không có** nút / mẫu in đơn đặt hàng; nút chính là **Xem / tải hồ sơ HĐKT**.

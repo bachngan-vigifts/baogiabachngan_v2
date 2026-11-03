@@ -1,3 +1,4 @@
+import {orderListExportSheets} from './order-list-export.js';
 import {initWebOrderDocument,webDocumentMode} from './web-order-document.js';
 import {mountCashCollections} from './cash-collections.js';
 import {returnStateText} from './order-return-summary.js';
@@ -3593,16 +3594,17 @@ $('#orders-clear').addEventListener('click', () => {
   ordersPager?.reset(); loadOrders();
 });
 $('#orders-export').addEventListener('click', async e => {
-  const b = e.currentTarget; b.disabled = true;
+  const b = e.currentTarget, label=b.textContent; b.disabled = true; b.textContent='Đang xuất…';
   try {
     const d = await api('/orders?' + ordersQuery(true));
     if (!d.orders.length) return toast('Không có đơn hàng để xuất.', 'err');
-    await downloadExcel('danh-sach-don-hang', [{ name: 'Đơn hàng', widths: [20, 14, 28, 18, 22, 22, 16, 16, 18, 18],
-      header: ['Số đơn', 'Ngày tạo', 'Khách hàng', 'Điện thoại', 'Nguồn', 'Chi nhánh', 'Nhân viên', 'Trạng thái', 'Giao hàng', 'Giá trị'],
-      rows: d.orders.map(o => [o.orderNo, String(o.createdAt || o.orderDate).slice(0, 10), o.customerName, o.phone, ORDER_SOURCE[o.orderSource] || o.orderSource,
-        o.branchName, o.ownerName, o.statusLabel || ORDER_STATUS[o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status]?.[0] || o.status,
-        DELIVERY_STATUS[o.deliveryStatus]?.[0] || (o.orderSource === 'ghn' ? 'Chờ tạo vận đơn' : ''), o.total]) }]);
-  } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
+    if(d.total>d.orders.length)throw Error(`Bộ lọc có ${d.total} đơn, vượt giới hạn xuất ${d.orders.length} đơn/lần. Anh/chị thu hẹp khoảng ngày hoặc bộ lọc để xuất đủ dữ liệu.`);
+    await downloadExcel('danh-sach-don-hang',orderListExportSheets(d.orders,{
+      source:o=>ORDER_SOURCE[o.orderSource]||o.orderSource,
+      status:o=>ORDER_STATUS[o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status]?.[0]||o.status,
+      delivery:o=>DELIVERY_STATUS[o.deliveryStatus]?.[0]||(o.orderSource === 'ghn' ? 'Chờ tạo vận đơn' : ''),
+    }));
+  } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; b.textContent=label; }
 });
 $('#contracts-search').addEventListener('input', debounce(() => { contractsPager?.reset(); loadContracts(); }));
 $('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 150));
