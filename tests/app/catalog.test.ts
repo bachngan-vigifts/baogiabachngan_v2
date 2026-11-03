@@ -315,6 +315,13 @@ test('tìm sản phẩm theo mã vạch (đúng một mã) trên máy chủ; mã
   assert.deepEqual(await skus('8936086370012'), ['BT-01']);
   assert.deepEqual(await skus('893608637'), [], 'mã vạch phải đúng cả mã');
   assert.deepEqual(await skus('binh giu nhiet'), ['BT-01'], 'tìm theo tên vẫn như cũ');
+  // Barcode lookup must not short-circuit ordinary text/SKU matches or brand filters.
+  await db.insert(products).values({ sku: '8936086370012', name: 'Mã SKU trùng barcode', brand: 'Minh Long', updatedAt: t });
+  assert.deepEqual((await skus('8936086370012')).sort(), ['8936086370012', 'BT-01']);
+  const filtered = await call('/products?q=8936086370012&brand=Minh%20Long', emp);
+  assert.deepEqual(filtered.data.products.map((p: any) => p.sku), ['8936086370012']);
+  await db.update(products).set({ active: false }).where(eq(products.sku, 'BT-01'));
+  assert.deepEqual(await skus('8936086370012'), ['8936086370012']);
 });
 
 test('tô từ khoá: không dấu, không phân biệt hoa thường, gộp đoạn chồng nhau, vị trí theo chuỗi gốc', () => {

@@ -79,3 +79,18 @@ Không lượt nào lỗi → bật mặc định cho mọi máy (`REGION_DEFAUL
 - **Tắt cho tất cả:** đổi `REGION_DEFAULT_ON` thành `false` rồi deploy giao diện. Mọi máy về máy chủ mặc định, vùng / cờ đã lưu bị xoá.
 
 Sau khi deploy: nhờ vài nhân viên mở app, báo ngay nếu thấy "Chưa kết nối được máy chủ" hoặc "Máy chủ nhanh lỗi kết nối". Nhiều máy cùng báo → tắt cho tất cả như trên.
+
+## Kiểm tra sau nâng Pro – 03/11/2026
+
+Đã xác minh tổ chức `yxflxfjbkhgdlpmdtuvq` dùng Pro; project vẫn ở Seoul (`ap-northeast-2`), PostgreSQL `17.11.0.003`. API trong số đo người dùng cũng ở Seoul. Chưa thay compute, vùng, giới hạn kết nối, global work_mem hoặc bật lại pooler. Probe hiện tại qua transaction pooler chạy được `SELECT 1`, nhưng chưa chứng minh đã hết lỗi treo dưới tải đồng thời ngày 30/10.
+
+Cấu hình bảo trì theo bảng (`20261103094412_crm_catalog_autovacuum.sql`) đã áp dụng production:
+- `products`, `product_prices`, `product_stock`: vacuum ở ngưỡng 5% + 50 dòng, analyze ở 2% + 50 dòng, thay vì chờ ngưỡng mặc định lớn hơn.
+- `ANALYZE` lại năm bảng sản phẩm, giá, tồn nguồn, số dư và biến động kho. Đọc lại xác nhận autovacuum tự chạy, dead tuples ba bảng giảm về 0. Không VACUUM FULL, không khởi động lại.
+- Hoàn tác từng bảng bằng `ALTER TABLE public.<table> RESET (autovacuum_vacuum_scale_factor, autovacuum_vacuum_threshold, autovacuum_analyze_scale_factor, autovacuum_analyze_threshold)`.
+
+Hai GIN trigram index (`20261103095218_product_search_trigram.sql`) khớp chính xác biểu thức tìm kiếm tiếng Việt và tìm mã bỏ ký hiệu. Production EXPLAIN ANALYZE cho `matchProductWords('lhc3329')` với `active=true`: trước 1.528,028 ms, quét 11.801 dòng; sau 0,983 ms, BitmapOr hai index, đọc hai dòng kết quả. Đây là một mẫu truy vấn đọc, không đại diện thời gian cả trang. API tìm sản phẩm cần giải mã barcode một lần trước khi xây điều kiện để tránh OR subquery khiến planner bỏ qua index. Không thay ý nghĩa tìm kiếm/nhận dạng SKU hoặc quy tắc lọc kho.
+
+Bản sửa API đi kèm giảm dữ liệu đầu vào tính tổng 214 báo giá từ 947.851 xuống 82.019 byte, vẫn dùng `quote-math.ts` để giữ thứ tự phép tính số thực. POS lấy metadata trong cùng truy vấn tồn/giá thay cho truy vấn IN toàn bộ SKU thứ hai. Không lưu đệm tồn dùng khi thanh toán.
+
+`DB_REGION=ap-northeast-2` được khai báo ở workflow triển khai; chỉ giúp báo cáo tốc độ nhận diện vùng CSDL khi API chạy direct mode, không đổi routing. Nâng Pro không tự bật PITR/custom domain. Chưa xác minh được mốc backup gần nhất hoặc compute SKU qua bộ công cụ hiện có; không tuyên bố các mục này đã được cấu hình.
