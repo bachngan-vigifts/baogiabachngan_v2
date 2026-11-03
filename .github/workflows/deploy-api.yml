@@ -92,6 +92,10 @@ jobs:
       - name: Cập nhật danh sách trang được phép gọi API
         if: env.SUPABASE_ACCESS_TOKEN != '' && vars.APP_ORIGINS != ''
         run: supabase secrets set --project-ref "$PROJECT_REF" ALLOWED_ORIGINS="${{ vars.APP_ORIGINS }}"
+      - name: Khai báo vùng CSDL đã xác minh cho báo cáo tốc độ
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        # Project taceqfnsorewelsbdckg is in Seoul; direct connections cannot infer this from their hostname.
+        run: supabase secrets set --project-ref "$PROJECT_REF" DB_REGION=ap-northeast-2
       - name: Giữ tắt pooler khi chưa bật công tắc ENABLE_DB_POOLER
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_POOLER_URL == ''
         # Gỡ DB_POOLER_URL trên Supabase (nếu còn) để API dùng kết nối trực tiếp; chưa có thì bỏ qua.

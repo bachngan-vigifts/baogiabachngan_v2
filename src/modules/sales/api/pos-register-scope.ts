@@ -18,9 +18,9 @@ const WAREHOUSE_REGISTER_POSITIONS = new Set(['sale-admin']);
  * Sale Admin: các quầy có kho thuộc kho bán của chức vụ (mặc định KHO VIGIFTS).
  * Nhân viên khác: quầy đang mở ca của chính mình, hoặc quầy mặc định theo chức vụ; không có thì không bán được quầy nào.
  */
-export async function allowedPosRegisters(c: RouteContext<StaffEnv>, db: Pick<StaffEnv['db'], 'select'> = c.env.db) {
+export async function allowedPosRegisters(c: RouteContext<StaffEnv>, db: Pick<StaffEnv['db'], 'select'> = c.env.db, activeRegisters?: (typeof posRegisters.$inferSelect)[]) {
   const m = member(c);
-  const regs = (await db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name))).filter(r => allowedRegister(c, r.id));
+  const regs = (activeRegisters ?? await db.select().from(posRegisters).where(eq(posRegisters.active, true)).orderBy(asc(posRegisters.name))).filter(r => allowedRegister(c, r.id));
   if (posScope(c)) return { regs, ids: new Set(regs.map(r => r.id)), all: false };
   if (m.role === 'manager' || can(m, 'pos.configure')) return { regs, ids: new Set(regs.map(r => r.id)), all: true };
   if (m.positionId && WAREHOUSE_REGISTER_POSITIONS.has(m.positionId)) {

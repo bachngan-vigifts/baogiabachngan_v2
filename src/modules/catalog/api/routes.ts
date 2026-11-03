@@ -53,7 +53,7 @@ const chunks = <T>(xs: T[], n = 500) => Array.from({ length: Math.ceil(xs.length
  * bảng giá đang chọn · `scope=minhlong|other` sản phẩm theo loại báo giá (HRC/B2B = Minh Long, VIGIFTS = còn lại);
  * gõ đúng một mã SKU thì vẫn ra mã đó dù khác phạm vi (giống web cũ).
  */
-function searchFilter(params: URLSearchParams, brand: string) {
+async function searchFilter(db: StaffEnv['db'], params: URLSearchParams, brand: string) {
   const q = params.get('q'), group = params.get('group'), scope = params.get('scope'), policy = params.get('policy') || '';
   const range = priceRange(params.get('min'), params.get('max'));
   if (!range) throw new AppError(400, 'Giá từ phải nhỏ hơn hoặc bằng giá đến, và không được âm.');
@@ -63,13 +63,16 @@ function searchFilter(params: URLSearchParams, brand: string) {
   const scopeCond = scope === 'minhlong' ? isMinhLong : scope === 'other' ? sql`NOT (${isMinhLong})` : undefined;
   const words = (q || '').trim().split(/\s+/).filter(Boolean);
   const exactSku = words.length === 1 ? sql`lower(${products.sku}) = lower(${words[0]})` : undefined;
+  // Resolve the indexed barcode once. An OR-correlated subquery forces full catalog scans
+  // even when trigram indexes cover the text-search expressions.
+  const [barcode] = words.length === 1 ? await db.select({ sku: productBarcodes.sku }).from(productBarcodes).where(eq(productBarcodes.barcode, words[0]!)).limit(1) : [];
   const priceCond = policy && (range.min !== null || range.max !== null) ? sql`EXISTS (SELECT 1 FROM ${productPrices} pp WHERE pp.sku = ${products.sku} AND pp.policy_id = ${policy} AND pp.price IS NOT NULL
     ${range.min !== null ? sql`AND pp.price >= ${range.min}` : sql``} ${range.max !== null ? sql`AND pp.price <= ${range.max}` : sql``})` : undefined;
   return and(
     eq(products.active, true),
     brand ? eq(products.brand, brand) : undefined,
     // Gõ / quét đúng một mã vạch (bảng mã vạch, khoá chính) cũng ra sản phẩm.
-    exactSku ? or(matchProductWords(q), sql`EXISTS (SELECT 1 FROM ${productBarcodes} pb WHERE pb.sku = ${products.sku} AND pb.barcode = ${words[0]})`) : matchProductWords(q),
+    barcode ? or(matchProductWords(q), eq(products.sku, barcode.sku)) : matchProductWords(q),
     groupCond, priceCond,
     scopeCond && exactSku ? or(scopeCond, exactSku) : scopeCond,
   );
@@ -167,7 +170,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     // `skus=a,b,c`: lấy đúng các mã (kể cả đã ẩn) – dùng để bổ sung ảnh/thông tin cho dòng báo giá cũ.
     const skuList = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 300);
     const { limit, offset } = skuList.length ? { limit: skuList.length, offset: 0 } : paged;
-    let where = skuList.length ? inArray(products.sku, skuList) : searchFilter(c.url.searchParams, brand);
+    let where = skuList.length ? inArray(products.sku, skuList) : await searchFilter(db, c.url.searchParams, brand);
     const minimumText = c.url.searchParams.get('minStock');
     let thresholdQuantities: Map<string, number> | undefined;
     if (minimumText !== null && minimumText.trim() !== '') {
@@ -230,7 +233,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     const db = c.env.db, priced = seesSalePrices(viewerOf(c)), hidden = await hiddenStockWarehouses(db, viewerOf(c));
     const brand = c.url.searchParams.get('brand') || '';
     const selected = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 50000);
-    const where = selected.length ? and(eq(products.active, true), inArray(products.sku, selected)) : searchFilter(c.url.searchParams, brand);
+    const where = selected.length ? and(eq(products.active, true), inArray(products.sku, selected)) : await searchFilter(db, c.url.searchParams, brand);
     const [rows, policies, stores] = await Promise.all([
       db.select().from(products).where(where).orderBy(...(selected.length ? productOrder(null) : productOrder(c.url.searchParams.get('q')))).limit(50000),
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),

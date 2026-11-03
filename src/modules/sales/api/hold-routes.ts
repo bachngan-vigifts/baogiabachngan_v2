@@ -147,9 +147,11 @@ export async function catalogHeldQuantities(db: Db, member: PermissionMember, sk
 export function registerHoldRoutes(router: Router<StaffEnv>) {
   router.get('/stock-holds', async c => {
     await expireHolds(c.env).catch(() => 0);
-    const rows = await c.env.db.select({ sku: stockHolds.sku, qty: stockHolds.qty, expiresAt: stockHolds.expiresAt, quoteId: stockHolds.quoteId, quoteNo: quotations.quoteNo, customer: quotations.customer })
-      .from(stockHolds).innerJoin(quotations, eq(quotations.id, stockHolds.quoteId)).where(live(nowIso())).orderBy(asc(stockHolds.sku), asc(stockHolds.expiresAt)).limit(5000);
-    const orders = (await orderHolds(c.env.db,undefined,undefined,posOrderStoreScope(viewer(c)))).map(o => ({ ...o, expiresAt: null }));
+    const [rows, orderRows] = await Promise.all([c.env.db.select({ sku: stockHolds.sku, qty: stockHolds.qty, expiresAt: stockHolds.expiresAt, quoteId: stockHolds.quoteId, quoteNo: quotations.quoteNo, customer: quotations.customer })
+      .from(stockHolds).innerJoin(quotations, eq(quotations.id, stockHolds.quoteId)).where(live(nowIso())).orderBy(asc(stockHolds.sku), asc(stockHolds.expiresAt)).limit(5000),
+      orderHolds(c.env.db,undefined,undefined,posOrderStoreScope(viewer(c))),
+    ]);
+    const orders = orderRows.map(o => ({ ...o, expiresAt: null }));
     return json({ holds: [...rows, ...orders] });
   }, 'business');
 
