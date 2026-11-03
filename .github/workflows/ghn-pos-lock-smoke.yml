@@ -1,10 +1,13 @@
-name: Kiểm tra GHN POS Lock
+name: Đối soát GHN POS và hai web
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/ghn-pos-lock-smoke.yml']
+    inputs:
+      recheck_web_terminal:
+        description: 'Hỏi lại cả vận đơn web đã kết thúc trong CRM (một lượt đối soát)'
+        type: boolean
+        default: false
+        required: false
 
 jobs:
   smoke:
@@ -12,16 +15,18 @@ jobs:
     env:
       SAPO_SYNC_TOKEN: ${{ secrets.SAPO_SYNC_TOKEN }}
       PROJECT_REF: taceqfnsorewelsbdckg
+      RECHECK_WEB_TERMINAL: ${{ inputs.recheck_web_terminal }}
     steps:
-      - name: Gọi đồng bộ GHN POS Lock trên production
+      - name: Đối soát GHN POS, web Lock và web Minh Long
         shell: bash
         run: |
           test -n "$SAPO_SYNC_TOKEN"
+          payload=$(jq -n --argjson recheck "${RECHECK_WEB_TERMINAL:-false}" '{recheckWebTerminal:$recheck}')
           response=$(curl --fail-with-body --silent --show-error --max-time 130 \
             -X POST "https://$PROJECT_REF.supabase.co/functions/v1/baogia-v2-api/api/staff/integrations/ghn/pos-lock/pull" \
             -H 'Content-Type: application/json' \
             -H "Authorization: Bearer $SAPO_SYNC_TOKEN" \
-            --data '{}')
+            --data "$payload")
           echo "$response"
           test "$(echo "$response" | jq -r 'has("checked") and has("updated") and (.errors | type == "array")')" = 'true'
           if [ "$(echo "$response" | jq -r '.ok')" != 'true' ]; then

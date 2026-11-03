@@ -120,7 +120,7 @@ async function saveWebGhnStatus(env: StaffEnv, row: { id: string; code?:string; 
   return changed;
 }
 
-export async function syncPosLockGhn(env: StaffEnv) {
+export async function syncPosLockGhn(env: StaffEnv,options:{recheckWebTerminal?:boolean}={}) {
   // Mỗi lượt tối đa 100 chuyến: chuyến lâu chưa kiểm trước (xoay vòng, không bỏ sót khi có nhiều hơn 100).
   const rows = await env.db.select({ id: deliveries.id, code: deliveries.trackingCode, orderNo: salesOrders.orderNo, registerName: posRegisters.name }).from(deliveries)
     .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
@@ -141,10 +141,10 @@ export async function syncPosLockGhn(env: StaffEnv) {
   // Keep independent quotas/accounts so a Lock failure cannot prevent Minh Long from being checked.
   let webChecked=0;
   for(const source of ['lock','minhlong'] as const){
-    if(source==='lock'?!env.ghnToken:!env.ghnMlToken)continue;
     const web=await env.db.select({id:webStoreOrders.id,code:webStoreOrders.ghnOrderCode,orderNo:webStoreOrders.orderNo,status:webStoreOrders.status,ghnStatus:webStoreOrders.ghnStatus}).from(webStoreOrders)
-      .where(and(eq(webStoreOrders.source,source),sql`${webStoreOrders.ghnOrderCode}<>''`,sql`lower(${webStoreOrders.ghnStatus}) not in ('delivered','returned','return_fail','cancel','damage','lost')`))
+      .where(and(eq(webStoreOrders.source,source),sql`${webStoreOrders.ghnOrderCode}<>''`,options.recheckWebTerminal?undefined:sql`lower(${webStoreOrders.ghnStatus}) not in ('delivered','returned','return_fail','cancel','damage','lost')`))
       .orderBy(sql`${webStoreOrders.updatedAt} asc`,webStoreOrders.id).limit(100);
+    if(web.length&&(source==='lock'?!env.ghnToken:!env.ghnMlToken)){errors.push({code:web[0]!.code,orderNo:web[0]!.orderNo,message:'Chưa cấu hình tài khoản GHN cho web '+(source==='lock'?'Lock':'Minh Long')+'.'});continue;}
     webChecked+=web.length;
     for(const row of web)try{
       const state=await ghnDetail(env,row.code,source==='lock'?'CỬA HÀNG LOCKNLOCK CẦN THƠ':'Showroom Gốm Sứ Minh Long');
@@ -194,7 +194,11 @@ export function registerPosGhnSyncRoutes(router: Router<StaffEnv>) {
   }, 'ghn-webhook');
 
   // Máy gọi (n8n / OpenClaw) bằng mã đồng bộ.
-  router.post('/integrations/ghn/pos-lock/pull', async c => json(await syncPosLockGhn(c.env)), 'sapo-sync');
+  router.post('/integrations/ghn/pos-lock/pull', async c => {
+    const body=c.req.body?await readJson(c.req,2048):{};
+    if(body.recheckWebTerminal!==undefined&&typeof body.recheckWebTerminal!=='boolean')throw new AppError(400,'recheckWebTerminal phải là boolean.');
+    return json(await syncPosLockGhn(c.env,{recheckWebTerminal:body.recheckWebTerminal===true}));
+  }, 'sapo-sync');
   /**
    * Đồng bộ trạng thái vận đơn GHN (shop Lock) ngay trong CRM: nhân viên bán hàng nhanh bấm "Đồng bộ GHN" hoặc mở Ship COD.
    * Giao xong → tự xuất kho, ghi thu COD (nguồn ghn_cod); hoàn / huỷ → chuyến giao "thất bại". Kiểm quyền ở máy chủ.
