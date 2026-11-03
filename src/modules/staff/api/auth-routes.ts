@@ -40,6 +40,8 @@ export interface StaffEnv {
   /** Phiếu nhận hàng CRM → n8n/OpenClaw → Sapo; callback dùng chung SAPO_SYNC_TOKEN. */
   sapoGoodsReceiptWebhookUrl?: string;
   sapoWebhookFetch?: typeof fetch;
+  /** Tách credential điều chuyển khỏi Sapo; không nhận từ trình duyệt hay query string. */
+  transferIntegration?: { webhookUrl: string; webhookToken: string; syncToken: string; destinationOrigin: string; fetch?: typeof fetch };
   /** Báo cáo kết ca POS được đẩy bất đồng bộ sang hàng đợi Claw/Zalo. */
   posShiftReportWebhook?: { url: string; token: string; fetch?: typeof fetch };
   /** Cho phép tạo mới đơn cọc / ship trả trước. Production tắt (đã bỏ tính năng); chỉ bộ kiểm thử bật để dựng dữ liệu đơn cũ. */
@@ -108,6 +110,15 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
   const area = c.meta as Area;
   if (area === 'public') return;
   if (area === 'sapo-sync') return checkSyncToken(c);
+  if (area === 'transfer-sync') {
+    const secret = c.env.transferIntegration?.syncToken || '';
+    const token = /^Bearer (.+)$/.exec(c.req.headers.get('authorization') || '')?.[1] || '';
+    if (secret.length < 32) throw new AppError(503, 'Chưa cấu hình tích hợp điều chuyển.');
+    const want = sha256Hex(secret), got = sha256Hex(token);
+    let diff = 0; for (let i=0;i<want.length;i++) diff |= want.charCodeAt(i)^got.charCodeAt(i);
+    if (diff) throw new AppError(401, 'Không được phép tích hợp điều chuyển.');
+    return;
+  }
   if (area === 'sepay-sync') {
     const auth = c.req.headers.get('authorization') || '';
     const key = /^Apikey\s+(.+)$/i.exec(auth)?.[1] || '';

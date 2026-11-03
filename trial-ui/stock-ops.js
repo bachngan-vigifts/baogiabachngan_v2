@@ -37,7 +37,7 @@ export function initTransfers({ api, root, toast, go, confirmBox, isManager = ()
   let receiveDirty = false, drawnId = '', data = null, filter = 'open', listRun = 0, detailRun = 0, showing = '', rendered = '', inFlight = null, formOpen = false, posting = false, updating = false, openedAt = 0;
   const page = el('div', 'sup-page'), head = el('div', 'page-head'), titles = el('div');
   titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Điều chuyển kho'),
-    el('p', 'muted', 'Kho của mình thiếu hàng: xin chuyển từ kho khác. Sale Admin và NVBH Lock/Minh Long duyệt đối ứng theo người xin (Manager duyệt thay); kho đi bấm "Đã chuyển" thì sổ kho trừ kho đi; kho đến bấm "Nhận hàng" và nhập số lượng thực nhận từng mã (phần thiếu hoàn về kho đi). Chờ quá 1 giờ hệ thống nhắc lại.'));
+    el('p', 'muted', 'Kho của mình thiếu hàng: xin chuyển từ kho khác. Sale Admin và NVBH Lock/Minh Long duyệt đối ứng theo người xin (Manager duyệt thay); kho đi bấm "Đã chuyển" thì sổ kho trừ kho đi; kho đến bấm "Nhận hàng" và nhập số lượng thực nhận từng mã (phần thiếu giữ lại để đối soát). Chờ quá 1 giờ hệ thống nhắc lại.'));
   const tools = el('div', 'row-gap'), add = btn('＋ Xin điều chuyển', 'btn primary', () => openForm());
   tools.append(add); head.append(titles, tools);
   const panel = el('div', 'panel'), bar = el('div', 'toolbar chips');
@@ -145,26 +145,34 @@ export function initTransfers({ api, root, toast, go, confirmBox, isManager = ()
     if (t.rejectReason) meta.append(el('p', 'danger-text', 'Lý do từ chối: ' + t.rejectReason));
     if (t.shippedNote) meta.append(el('p', 'small muted', 'Ghi chú kho đi: ' + t.shippedNote));
     if (t.doneNote) meta.append(el('p', 'small muted', 'Ghi chú nhận hàng: ' + t.doneNote));
+    if (t.integration) {
+      const j=t.integration,labels={pending:'Chờ gửi n8n / chờ nhận việc',claimed:'Madam Sen đang xử lý',succeeded:'Đã xác nhận chứng từ đích',manual:'Cần xử lý',conflict:'Xung đột nội dung – cần đối soát',unknown:'Chưa rõ kết quả – cần đối soát',failed:'Gửi lỗi – cần xử lý'};
+      const box=el('section','transfer-integration'),title=el('p','small',j.last_error==='ZERO_RECEIVED_NO_DOCUMENT'?'Không tạo chứng từ đích vì thực nhận bằng 0':(labels[j.status]||'Cần xử lý'));
+      box.setAttribute('role','status');box.append(el('b','','Đồng bộ điều chuyển'),title);
+      if(j.destination?.url){const a=el('a','',j.destination.no||'Mở chứng từ đích');a.href=j.destination.url;a.target='_blank';a.rel='noopener noreferrer';box.append(a);}
+      if(['manual','unknown','conflict','failed'].includes(j.status))box.append(el('p','small danger-text','Không bấm nhận hàng lại. Cần đối soát chứng từ đích trước khi xử lý tiếp.'));
+      meta.append(box);
+    }
     const showReceived = t.status === 'shipped' || t.status === 'done', canReceive = !!t.actions.receive, receiveInputs = new Map();
     const shortNote = el('p', 'muted small transfer-receive-summary'); shortNote.setAttribute('role', 'status');
-    const shortages = () => [...receiveInputs.values()].filter(({ box, line }) => box.value.trim() !== '' && Number(box.value) < line.qty - 0.0005);
-    const refreshShort = () => { const miss = shortages(); shortNote.textContent = miss.length ? `Nhận thiếu ${miss.length} mã – phần thiếu hoàn về kho đi (${t.fromName}). Cần ghi lý do.` : 'Nhận đủ số lượng chuyển.'; shortNote.classList.toggle('danger-text', miss.length > 0); };
+    const shortages = () => [...receiveInputs.values()].filter(({ box, line }) => box.value.trim() !== '' && Number(box.value) < (line.shippedQty ?? line.qty) - 0.0005);
+    const refreshShort = () => { const miss = shortages(); shortNote.textContent = miss.length ? `Nhận thiếu ${miss.length} mã – phần thiếu chờ đối soát, không tự hoàn tồn kho đi. Cần ghi lý do.` : 'Nhận đủ số lượng chuyển.'; shortNote.classList.toggle('danger-text', miss.length > 0); };
     const tbl = el('table', 'data-table transfer-detail-table'), th = el('tr');
     for (const x of ['Sản phẩm', 'SL chuyển', ...(showReceived ? ['SL nhận'] : []), 'Tồn kho đi', 'Tồn kho đến']) th.append(el('th', '', x));
     const tb = el('tbody');
     for(const l of t.lines){
       const row=el('tr'),product=el('td','first');product.append(el('b','',l.name),el('small','',l.sku));product.dataset.label='Sản phẩm';
-      const qty=el('td','num',num(l.qty)+' '+(l.unit||'')),fromStock=el('td','num'+(l.fromStock<l.qty&&(t.status==='pending'||t.status==='approved')?' danger-text':''),num(l.fromStock)),toStock=el('td','num',num(l.toStock));
+      const qty=el('td','num',num(l.shippedQty ?? l.qty)+' '+(l.unit||'')),fromStock=el('td','num'+(l.fromStock<l.qty&&(t.status==='pending'||t.status==='approved')?' danger-text':''),num(l.fromStock)),toStock=el('td','num',num(l.toStock));
       qty.dataset.label='SL chuyển';fromStock.dataset.label='Tồn kho đi';toStock.dataset.label='Tồn kho đến';row.append(product,qty);
       if(showReceived){
         const got=el('td','num');got.dataset.label='SL nhận';
         if(canReceive){
-          const box=input('number',String(l.qty),{min:'0',max:String(l.qty),step:'any',inputMode:'decimal',required:true});
+          const box=input('number',String(l.shippedQty ?? l.qty),{min:'0',max:String(l.shippedQty ?? l.qty),step:'any',inputMode:'decimal',required:true});
           box.className='transfer-receive-input';box.setAttribute('aria-label',`Số lượng nhận ${l.sku}`);
           box.addEventListener('input',()=>{receiveDirty=true;refreshShort();});
-          receiveInputs.set(l.sku,{box,line:l});got.append(box,el('small','muted',' / '+num(l.qty)+' '+(l.unit||'')));
+          receiveInputs.set(l.sku,{box,line:l});got.append(box,el('small','muted',' / '+num(l.shippedQty ?? l.qty)+' '+(l.unit||'')));
         } else if(t.status==='done'){
-          const received=l.receivedQty??l.qty,miss=l.qty-received;got.textContent=num(received)+' '+(l.unit||'');
+          const received=l.receivedQty??l.qty,miss=(l.shippedQty ?? l.qty)-received;got.textContent=num(received)+' '+(l.unit||'');
           if(miss>0.0005){got.classList.add('danger-text');got.append(el('small','',`thiếu ${num(miss)}`));}
         } else got.textContent='Chờ nhận';
         row.append(got);
@@ -204,25 +212,25 @@ export function initTransfers({ api, root, toast, go, confirmBox, isManager = ()
       const why = el('textarea'); why.rows = 2; why.maxLength = 500; why.setAttribute('aria-label', 'Ghi chú nhận hàng');
       why.placeholder = 'Ghi chú nhận hàng – bắt buộc ghi lý do nếu nhận thiếu (hàng chưa tới, giao thiếu, hỏng…)';
       why.addEventListener('input', () => { receiveDirty = true; });
-      const full = btn('Nhận đủ tất cả', 'btn secondary small', () => { for (const { box, line } of receiveInputs.values()) box.value = String(line.qty); refreshShort(); });
+      const full = btn('Nhận đủ tất cả', 'btn secondary small', () => { for (const { box, line } of receiveInputs.values()) box.value = String((line.shippedQty ?? line.qty)); refreshShort(); });
       receivePanel.append(el('h3', '', 'Kiểm hàng và nhập số lượng thực nhận'), el('p', 'muted small', 'Đếm hàng thực tế từng mã rồi nhập vào cột "SL nhận". Nhập 0 nếu mã đó chưa tới.'), shortNote, why, full);
       refreshShort();
       const receive = btn('Nhận hàng', 'btn primary', async () => {
         const lines = []; let bad = null;
         for (const [sku, { box, line }] of receiveInputs) {
           const raw = box.value.trim(), n = Number(raw);
-          if (raw === '' || !Number.isFinite(n) || n < 0 || n > line.qty + 0.0005) { bad ||= box; continue; }
+          if (raw === '' || !Number.isFinite(n) || n < 0 || n > (line.shippedQty ?? line.qty) + 0.0005) { bad ||= box; continue; }
           lines.push({ sku, qty: n });
         }
         if (bad) { toast('Nhập số lượng nhận hợp lệ (từ 0 đến số chuyển) cho từng mã.', 'err'); bad.focus(); return; }
         const miss = shortages(), note = why.value.trim();
         if (miss.length && note.length < 3) { toast('Nhận thiếu hàng: ghi lý do vào ô ghi chú.', 'err'); why.focus(); return; }
-        if (miss.length && !await confirmBox(`Nhận thiếu ${miss.length} mã:\n${miss.slice(0, 6).map(({ box, line }) => `${line.sku}: chuyển ${num(line.qty)}, nhận ${num(Number(box.value))}`).join('\n')}\nPhần thiếu sẽ hoàn về kho đi (${t.fromName}) và báo Manager.`,
+        if (miss.length && !await confirmBox(`Nhận thiếu ${miss.length} mã:\n${miss.slice(0, 6).map(({ box, line }) => `${line.sku}: chuyển ${num((line.shippedQty ?? line.qty))}, nhận ${num(Number(box.value))}`).join('\n')}\nPhần thiếu sẽ được ghi để đối soát và báo Manager, không tự hoàn tồn kho đi.`,
           { title: 'Xác nhận nhận thiếu hàng', ok: 'Xác nhận nhận thiếu', danger: true })) return;
         const release = setUpdating(receive, 'Đang ghi sổ kho…'); if (!release) return;
         try {
           await api(`/stock-transfers/${t.id}/receive`, 'POST', { revision: t.revision, lines, note });
-          receiveDirty = false; toast(miss.length ? 'Đã nhận hàng – phần thiếu đã hoàn về kho đi.' : 'Đã nhận hàng và ghi sổ kho: cộng kho đến.');
+          receiveDirty = false; toast(miss.length ? 'Đã nhận hàng – phần thiếu đang chờ đối soát, chưa hoàn tồn kho đi.' : 'Đã nhận hàng và ghi sổ kho: cộng kho đến.');
           if (showing === t.id) await load(t.id, true);
         } catch (e) { toast(e.message, 'err'); }
         finally { release(); }

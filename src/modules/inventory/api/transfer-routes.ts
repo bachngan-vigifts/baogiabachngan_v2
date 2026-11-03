@@ -16,6 +16,7 @@ import { stockBalances, stockMoves, stockTransferLines, stockTransfers, warehous
 import { TRANSFER_STATUS_LABEL, type TransferStatus } from '../domain/kinds.ts';
 import { postMoves, lockLedger, assertWarehousesOpened } from './ledger.ts';
 import { hiddenWarehouseIds } from './warehouse-access.ts';
+import { queueTransferReceived, dispatchTransferJob, transferCommandKey, transferIntegrationView } from './transfer-outbox.ts';
 
 /**
  * ĐIỀU CHUYỂN KHO (docs/SO-KHO.md "Điều chuyển kho"): nhân viên bán kho này thiếu hàng → xin chuyển từ kho khác.
@@ -26,7 +27,7 @@ import { hiddenWarehouseIds } from './warehouse-access.ts';
  *  Chờ duyệt quá 1 giờ: nhắc lại mỗi giờ (remindPendingTransfers, chạy theo nhịp GET /pulse).
  *  POST /stock-transfers/:id/cancel       người xin hoặc Manager, khi chưa chuyển
  *  POST /stock-transfers/:id/ship         quyền "Điều chuyển kho" (Kho) hoặc nhân viên kho được xin: "Đã chuyển" → trừ kho đi trong sổ kho, phiếu "Đang chuyển" – một lần
- *  POST /stock-transfers/:id/receive      kho đến (nhóm Kho / nhân viên kho đến / người xin / Manager): nhập SL thực nhận TỪNG mã → cộng kho đến; phần thiếu ghi ngược về kho đi
+ *  POST /stock-transfers/:id/receive      kho đến (nhóm Kho / nhân viên kho đến / người xin / Manager): nhập SL thực nhận TỪNG mã → cộng kho đến; phần thiếu chờ đối soát
  *  GET  /stock-transfers, /stock-transfers/:id
  * Kho riêng (Hoá đơn) chỉ người bán kho đó / Manager thấy và chọn được. Tồn kho đi (đã chốt đầu kỳ) không đủ thì không cho chuyển.
  */
@@ -96,7 +97,8 @@ async function viewOf(c: Ctx, id: string) {
     ...t!, statusLabel: TRANSFER_STATUS_LABEL[status], approvalBy:transferApprovalLabel(requester?.role==='employee'&&requester.active&&!requester.deletedAt?requester.positionId:null),
     fromName: whs.find(w => w.id === t!.fromWarehouseId)?.name ?? '', toName: whs.find(w => w.id === t!.toWarehouseId)?.name ?? '',
     requestedByName: name(t!.requestedBy), approvedByName: name(t!.approvedBy), shippedByName: name(t!.shippedBy), doneByName: name(t!.doneBy), cancelledByName: name(t!.cancelledBy),
-    lines: lines.map(l => ({ sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, receivedQty: l.receivedQty ?? (status === 'done' ? l.qty : null), fromStock: at(l.sku, t!.fromWarehouseId), toStock: at(l.sku, t!.toWarehouseId) })),
+    integration: await transferIntegrationView(c.env,id),
+    lines: lines.map(l => ({ sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, shippedQty: l.shippedQty ?? (['shipped','done'].includes(status) ? l.qty : null), receivedQty: l.receivedQty ?? (status === 'done' ? l.qty : null), fromStock: at(l.sku, t!.fromWarehouseId), toStock: at(l.sku, t!.toWarehouseId) })),
     actions: {
       adjustBalance: can(m, 'inventory.view') && can(m, 'inventory.manage'),
       edit: status === 'pending' && (m.role === 'manager' || t!.requestedBy === m.id),
@@ -316,6 +318,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
         context: { module: 'inventory', entityType: 'stock_transfers', entityId: id, refNo: t.transferNo } });
       const note = `${t.transferNo}: ${t.reason}`.slice(0, 500);
       await postMoves(tx, m.id, lines.map(l => ({ sku: l.sku, warehouseId: t.fromWarehouseId, qty: -l.qty, kind: 'transfer_out' as const, refType: 'stock_transfer' as const, refId: id, refNo: t.transferNo, note })), now);
+      await tx.update(stockTransferLines).set({shippedQty:sql`${stockTransferLines.qty}`}).where(eq(stockTransferLines.transferId,id));
       await tx.update(stockTransfers).set({ status: 'shipped', shippedBy: m.id, shippedAt: now, shippedNote: str(body.note, 500), updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
       return t;
     });
@@ -328,7 +331,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
 
   /**
    * Kho đến bấm "Nhận hàng" và nhập SỐ LƯỢNG THỰC NHẬN của TỪNG mã (0 ≤ nhận ≤ số chuyển): cộng kho đến đúng số nhận,
-   * phần thiếu ghi ngược về kho đi (không để hàng "bốc hơi" khỏi sổ kho). Nhận thiếu phải ghi lý do và báo Manager.
+   * phần thiếu giữ chênh lệch để đối soát, không tự hoàn tồn kho đi. Nhận thiếu phải ghi lý do và báo Manager.
    */
   router.post('/stock-transfers/:id/receive', async c => {
     const m = me(c), id = c.params.id!, body = await readJson(c.req, 40_000), note = str(body.note, 500);
@@ -347,29 +350,26 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       }
       const missing = lines.filter(l => !got.has(l.sku));
       if (missing.length) fail(400, 'Nhập số lượng nhận cho từng mã. Còn thiếu: ' + missing.slice(0, 8).map(l => l.sku).join(', '), 'RECEIVE_LINES_REQUIRED');
-      const over = lines.filter(l => got.get(l.sku)! > l.qty + 0.0005);
+      const over = lines.filter(l => got.get(l.sku)! > (l.shippedQty??l.qty));
       if (over.length) fail(400, 'Số nhận vượt số chuyển: ' + over.slice(0, 5).map(l => `${l.sku} (chuyển ${l.qty}, nhận ${got.get(l.sku)})`).join('; ') + '. Hàng thừa lập phiếu điều chuyển / điều chỉnh riêng.', 'RECEIVE_OVER');
-      const short = lines.filter(l => got.get(l.sku)! < l.qty - 0.0005);
+      const short = lines.filter(l => got.get(l.sku)! < (l.shippedQty??l.qty));
       if (short.length && note.length < 3) fail(400, 'Nhận thiếu hàng: nhập lý do (VD: hàng chưa tới, giao thiếu, hỏng).', 'RECEIVE_NOTE_REQUIRED');
       await lockLedger(tx);
       await assertWarehousesOpened(tx, [t.fromWarehouseId, t.toWarehouseId]);
       const ledgerNote = `${t.transferNo}: ${t.reason}`.slice(0, 500);
-      await postMoves(tx, m.id, lines.flatMap(l => {
-        const received = got.get(l.sku)!, missed = num(l.qty - received);
-        return [
-          { sku: l.sku, warehouseId: t.toWarehouseId, qty: received, kind: 'transfer_in' as const, refType: 'stock_transfer' as const, refId: id, refNo: t.transferNo, note: ledgerNote },
-          { sku: l.sku, warehouseId: t.fromWarehouseId, qty: missed, kind: 'reverse' as const, refType: 'stock_transfer' as const, refId: id, refNo: t.transferNo, note: `Hoàn phần thiếu ${t.transferNo}: ${note}`.slice(0, 500) },
-        ];
-      }), now);
+      await postMoves(tx, m.id, lines.map(l => ({ sku:l.sku,warehouseId:t.toWarehouseId,qty:got.get(l.sku)!,kind:'transfer_in' as const,refType:'stock_transfer' as const,refId:id,refNo:t.transferNo,note:ledgerNote })),now);
       for (const l of lines) await tx.update(stockTransferLines).set({ receivedQty: got.get(l.sku)! }).where(eq(stockTransferLines.id, l.id));
       await tx.update(stockTransfers).set({ status: 'done', doneBy: m.id, doneAt: now, doneNote: note, updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
-      return { t, short: short.map(l => `${l.sku} thiếu ${num(l.qty - got.get(l.sku)!)}`) };
+      await queueTransferReceived(tx,t,lines.map(l=>({...l,receivedQty:got.get(l.sku)!})),m.id,now,note);
+      return { t, short: short.map(l => `${l.sku} thiếu ${num((l.shippedQty??l.qty) - got.get(l.sku)!)}`) };
     });
+    // Durable event already committed. HTTP/worker failures cannot repeat stock writes or undo receipt.
+    if(c.env.transferIntegration)await background(c.env,dispatchTransferJob(c.env,transferCommandKey(id)).catch(()=>undefined));
     await transferTasksChanged(c.env, id, m.id);
     const v = await viewOf(c, id), t = result.t;
     await background(c.env, Promise.all([moveTeam(c.env.db), warehouseStaff(c.env.db, t.fromWarehouseId)]).then(([team, staff]) => notifyMany(c.env, [t.requestedBy, ...team, ...staff],
       { eventType: 'transfer_done', title: result.short.length ? 'Điều chuyển kho: nhận thiếu hàng' : 'Hàng đã chuyển kho', url: `/index.html#/transfers/${id}`, actorId: m.id,
-        body: `${v.transferNo} · ${v.fromName} → ${v.toName}` + (result.short.length ? ` · ${result.short.slice(0, 5).join('; ')} (đã hoàn về kho đi)` : '') })));
+        body: `${v.transferNo} · ${v.fromName} → ${v.toName}` + (result.short.length ? ` · ${result.short.slice(0, 5).join('; ')} (chờ đối soát, chưa hoàn kho)` : '') })));
     if (result.short.length) await background(c.env, notifyMany(c.env, 'managers', { eventType: 'transfer_short', title: 'Điều chuyển kho nhận thiếu hàng', url: `/index.html#/transfers/${id}`, actorId: m.id,
       body: `${v.transferNo} · ${v.fromName} → ${v.toName}: ${result.short.slice(0, 5).join('; ')}. Lý do: ${note}` }));
     return json(v);
