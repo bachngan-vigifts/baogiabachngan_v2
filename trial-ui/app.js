@@ -1,3 +1,4 @@
+import {orderListExportSheets} from './order-list-export.js';
 import {initWebOrderDocument,webDocumentMode} from './web-order-document.js';
 import {mountCashCollections} from './cash-collections.js';
 import {returnStateText} from './order-return-summary.js';
@@ -3277,7 +3278,7 @@ function payCell(r, counts, orderStatus, what = 'Đơn') {
   return `${pill(PAY_STATE, r.payState)}<small>${sub}</small>${r.overdue ? `<small class="danger-text">Quá hạn ${money(r.overdue)}</small>` : ''}`;
 }
 /** Xuất hoá đơn của đơn / HĐKT. */
-const INVOICE_STATUS = { none: ['Chưa yêu cầu', 'muted'], requested: ['Chờ xuất HĐ', 'warn'], issued: ['Đã xuất HĐ', 'ok'] };
+const INVOICE_STATUS = { none: ['Chưa yêu cầu', 'muted'], requested: ['Chờ xuất HĐ', 'warn'], issued: ['Đã xuất HĐ', 'ok'], handled: ['Đã xử lý việc hoá đơn', 'muted'] };
 const invoiceCell = (status, no, orderStatus) => orderStatus === 'cancelled' ? '<span class="muted">—</span>'
   : status === 'issued' ? `${pill(INVOICE_STATUS, 'issued')}<small>Số ${esc(no)}</small>` : pill(INVOICE_STATUS, status || 'none');
 const pill = (map, k) => { const [t, c] = map[k] || [k, '']; return `<span class="pill ${c}">${esc(t)}</span>`; };
@@ -3341,7 +3342,7 @@ async function loadOrders() {
       <td>${o.external?'<span class="pill info">'+esc(o.statusLabel)+'</span>':pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</td>
       <td class="orders-shipping-cell${o.ghnShipments?.length?' has-ghn-tracking':''}">${o.deliveryStatus ? pill(DELIVERY_STATUS, o.deliveryStatus) : o.orderSource === 'ghn' ? '<span class="pill warn">Chờ tạo vận đơn</span>' : '<span class="muted">—</span>'}<small>${esc(o.deliveryCarrier || '')}</small>${o.external?'<small>'+esc(o.ghnOrderCode||'Chưa tạo GHN')+' · '+esc(o.ghnStatus||'')+'</small>':ghnOrderSummary(o.ghnShipments,esc)}</td>
       <td>${o.external&&o.paid===null?'<span class="muted">Chưa rõ thanh toán</span>':payCell(o.receivable, o.debtCounts, o.status)}</td>
-      <td class="right num"><b>${money(o.total)}</b><small>${o.external?'Chưa có dữ liệu hoá đơn':invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</small></td>
+      <td class="right num"><b>${money(o.total)}</b><small>${o.external&&o.invoiceStatus==='unknown'?'Chưa có dữ liệu hoá đơn':invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</small></td>
       <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${o.external?'':slipButtons(o.id, o.status)}</td></tr>`),
       'Chưa có đơn đặt hàng. Bấm ＋ để tạo đơn từ báo giá đã duyệt.');
   } catch (e) { if (req === ordersReq) { salesListSummary('orders', null); listError('orders', e); ordersPager.render(0); } }
@@ -3593,16 +3594,17 @@ $('#orders-clear').addEventListener('click', () => {
   ordersPager?.reset(); loadOrders();
 });
 $('#orders-export').addEventListener('click', async e => {
-  const b = e.currentTarget; b.disabled = true;
+  const b = e.currentTarget, label=b.textContent; b.disabled = true; b.textContent='Đang xuất…';
   try {
     const d = await api('/orders?' + ordersQuery(true));
     if (!d.orders.length) return toast('Không có đơn hàng để xuất.', 'err');
-    await downloadExcel('danh-sach-don-hang', [{ name: 'Đơn hàng', widths: [20, 14, 28, 18, 22, 22, 16, 16, 18, 18],
-      header: ['Số đơn', 'Ngày tạo', 'Khách hàng', 'Điện thoại', 'Nguồn', 'Chi nhánh', 'Nhân viên', 'Trạng thái', 'Giao hàng', 'Giá trị'],
-      rows: d.orders.map(o => [o.orderNo, String(o.createdAt || o.orderDate).slice(0, 10), o.customerName, o.phone, ORDER_SOURCE[o.orderSource] || o.orderSource,
-        o.branchName, o.ownerName, o.statusLabel || ORDER_STATUS[o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status]?.[0] || o.status,
-        DELIVERY_STATUS[o.deliveryStatus]?.[0] || (o.orderSource === 'ghn' ? 'Chờ tạo vận đơn' : ''), o.total]) }]);
-  } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
+    if(d.total>d.orders.length)throw Error(`Bộ lọc có ${d.total} đơn, vượt giới hạn xuất ${d.orders.length} đơn/lần. Anh/chị thu hẹp khoảng ngày hoặc bộ lọc để xuất đủ dữ liệu.`);
+    await downloadExcel('danh-sach-don-hang',orderListExportSheets(d.orders,{
+      source:o=>ORDER_SOURCE[o.orderSource]||o.orderSource,
+      status:o=>ORDER_STATUS[o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status]?.[0]||o.status,
+      delivery:o=>DELIVERY_STATUS[o.deliveryStatus]?.[0]||(o.orderSource === 'ghn' ? 'Chờ tạo vận đơn' : ''),
+    }));
+  } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; b.textContent=label; }
 });
 $('#contracts-search').addEventListener('input', debounce(() => { contractsPager?.reset(); loadContracts(); }));
 $('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 150));

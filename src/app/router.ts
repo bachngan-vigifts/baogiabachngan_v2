@@ -1,3 +1,4 @@
+import { webInvoiceStatus } from '../modules/tasks/api/invoice-tasks.ts';
 import {registerCatalogueLibraryBulk} from '../modules/catalog/api/catalogue-library-bulk.ts';
 import {registerCatalogueQuotes} from '../modules/catalog/api/catalogue-quotes.ts';
 import {registerCatalogueLibrary} from '../modules/catalog/api/catalogue-library.ts';
@@ -77,6 +78,7 @@ import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 export function createAppRouter() {
   transferTaskHooks.afterCommit = syncTransferTasks;
   invoiceTaskHooks.afterCommit = syncInvoiceTasks;
+  invoiceTaskHooks.webStatus = webInvoiceStatus;
   cashTaskHooks.afterCommit = syncCashTasks;
   // Sổ kho: link chứng từ của module khác (inventory không import sales / suppliers).
   stockRefLinkHooks.pos_delivery = posDeliveryStockLinks;

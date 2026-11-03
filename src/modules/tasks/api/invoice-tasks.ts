@@ -1,3 +1,4 @@
+import { tasks } from '../schema.ts';
 import { readWebOrderFinancials, webFinancialDescription } from '../../sales/domain/web-order-financials.ts';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
@@ -10,6 +11,18 @@ import { addDaysIso } from '../domain/task-config.ts';
 import type { AutoTask } from './auto-tasks.ts';
 
 const dueDate = (iso: string | null) => iso && Number.isFinite(Date.parse(iso)) ? addDaysIso(vietnamDate(new Date(iso)).iso, 1) : null;
+
+/** Shared eligibility for accounting tasks and the order-list projection. */
+const deliveredWebInvoice = () => and(sql`lower(${webStoreOrders.ghnStatus})='delivered'`,
+  sql`lower(${webStoreOrders.status}) not in ('cancelled','refunded','failed','trash')`)!;
+
+/** A completed accounting task is handled, not evidence of an issued invoice number. */
+export function webInvoiceStatus() {
+  return sql<string>`case when ${deliveredWebInvoice()} then
+    case when exists(select 1 from ${tasks} where ${tasks.autoKey}='invoice-web:' || ${webStoreOrders.id} and ${tasks.status}='done' and ${tasks.completedBy} is not null)
+      then 'handled' else 'requested' end
+    else 'unknown' end`;
+}
 
 /** Also used on task reads to repair old/missed events without a cron or migration. */
 export async function invoiceTasks(db: StaffEnv['db'], ref?: InvoiceTaskRef): Promise<AutoTask[]> {
@@ -41,7 +54,7 @@ export async function invoiceTasks(db: StaffEnv['db'], ref?: InvoiceTaskRef): Pr
   }
   if (!ref || 'webOrderId' in ref) {
     const rows = await db.select().from(webStoreOrders).where(and(ref ? eq(webStoreOrders.id, ref.webOrderId) : undefined,
-      sql`lower(${webStoreOrders.ghnStatus})='delivered'`, sql`lower(${webStoreOrders.status}) not in ('cancelled','refunded','failed','trash')`));
+      deliveredWebInvoice()));
     for (const o of rows) {
       const website = o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long';
       let items = '';
@@ -51,7 +64,7 @@ export async function invoiceTasks(db: StaffEnv['db'], ref?: InvoiceTaskRef): Pr
       out.push({ autoKey: `invoice-web:${o.id}`, source: 'invoice', sourceId: o.id,
         title: `Đã giao hàng · Chờ hoá đơn – ${website} ${o.orderNo} – ${o.customerName}`,
         description: `GHN xác nhận giao thành công · Mã vận đơn: ${o.ghnOrderCode || '—'}\nKhách: ${o.customerName} · ${o.phone} · ${o.email}\nĐịa chỉ: ${o.address}\nGiá trị đơn: ${new Intl.NumberFormat('vi-VN').format(o.total)} ${o.currency}\nHàng: ${items || 'Chưa có chi tiết đồng bộ'}${financialText?'\n'+financialText:''}\nXuất hoá đơn, ghi số hoá đơn vào Trao đổi và hoàn thành nhiệm vụ.`,
-        link: '', assigneeId: null, assigneePosition: 'accounting', priority: 'normal', dueDate: dueDate(o.updatedAt) });
+        link: `/index.html#/orders/${encodeURIComponent('web:'+o.id)}`, assigneeId: null, assigneePosition: 'accounting', priority: 'normal', dueDate: dueDate(o.updatedAt) });
     }
   }
   return out;

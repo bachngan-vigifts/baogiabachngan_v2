@@ -1,8 +1,9 @@
+import type { SQL } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 
 export type InvoiceTaskRef = { orderId: string } | { webOrderId: string };
 /** Wired by the app: sales commits first; a task/notification failure must not roll back a sale. */
-export const invoiceTaskHooks: { afterCommit?: (env: StaffEnv, ref: InvoiceTaskRef, actorId: string | null) => Promise<void> } = {};
+export const invoiceTaskHooks: { webStatus?: () => SQL<string>; afterCommit?: (env: StaffEnv, ref: InvoiceTaskRef, actorId: string | null) => Promise<void> } = {};
 export async function invoiceTasksChanged(env: StaffEnv, ref: InvoiceTaskRef, actorId: string | null = null) {
   const job = (async () => { try { await invoiceTaskHooks.afterCommit?.(env, ref, actorId); }
     catch (e) { console.error('invoice task sync failed', ref, e instanceof Error ? e.message : e); } })();

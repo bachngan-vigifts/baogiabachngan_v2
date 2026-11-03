@@ -1,3 +1,4 @@
+import { orderExportDetails } from './order-export.ts';
 import {registerWebOrderEdits} from './web-order-edit.ts';
 import {webDocumentPage,webDocumentDetail} from './web-order-documents.ts';
 import {cashCollections} from '../cash-collection-schema.ts';
@@ -520,8 +521,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       const orderSource = r.channel !== 'pos' ? 'crm' : r.fulfillmentMode === 'cod' || /ghn/i.test(deliveryCarrier) ? 'ghn' : 'pos';
       return { ...r, ownerName, branchName, deliveryStatus, deliveryCarrier, orderSource, ghnShipments:ghnShipments.filter(s=>s.orderId===r.id), receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; });
     const byId=new Map([...crmDocuments,...webPage.documents].map(o=>[o.id,o]));
-    return json({orders:webPage.page.map(p=>byId.get(p.kind==='web'?'web:'+p.id:p.id)).filter(Boolean),
-      total: Number(total)+webPage.total, limit, offset, invoicePending: Number(invoicePending), summary, filterOptions: { owners: ownerOptions, branches: [...(Number(crmCount) ? [{ id: 'crm', name: 'VIGIFTS / CRM' }] : []), ...new Map([...branchOptions,...webPage.branches].map(b=>[b.id,b])).values()] } });
+    const ordered=webPage.page.map(p=>byId.get(p.kind==='web'?'web:'+p.id:p.id)).filter((o):o is NonNullable<typeof o>=>!!o);
+    const exportDetails=exportMode?await orderExportDetails(c.env.db,ordered):undefined;
+    return json({orders:ordered.map(o=>exportDetails?{...o,exportDetails:exportDetails.get(o.id)}:o),
+      total: Number(total)+webPage.total, limit, offset, invoicePending: Number(invoicePending)+webPage.invoicePending, summary, filterOptions: { owners: ownerOptions, branches: [...(Number(crmCount) ? [{ id: 'crm', name: 'VIGIFTS / CRM' }] : []), ...new Map([...branchOptions,...webPage.branches].map(b=>[b.id,b])).values()] } });
   }, 'business');
 
   /** Hồ sơ đang hiệu lực của báo giá: dùng ID chính xác, giữ nguyên quyền xem đơn. */
