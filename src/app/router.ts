@@ -1,3 +1,8 @@
+import {registerCatalogueQuotes} from '../modules/catalog/api/catalogue-quotes.ts';
+import {registerCatalogueLibrary} from '../modules/catalog/api/catalogue-library.ts';
+import {catalogueLibraryHooks} from '../modules/catalog/api/catalogue-stock.ts';
+import {reservedBySku} from '../modules/sales/api/pos-store.ts';
+import {outstandingLines} from '../modules/suppliers/api/incoming-stock.ts';
 import {activityQuotes} from '../modules/quotes/api/activity-quotes.ts';
 import {crmFactsOf} from './sales-payroll-facts.ts';
 import {assertActivityKpiOpen} from '../modules/hr/api/activity-lock.ts';
@@ -88,6 +93,10 @@ export function createAppRouter() {
   registerImageFetchRoutes(router);
   registerCustomerRoutes(router);
   registerCatalogRoutes(router);
+  catalogueLibraryHooks.heldAt=(db,skus,warehouseId)=>reservedBySku(db,skus,warehouseId);
+  catalogueLibraryHooks.incoming=(db,skus)=>outstandingLines(db,skus);
+  registerCatalogueLibrary(router);
+  registerCatalogueQuotes(router);
   registerSapoSyncRoutes(router);
   registerLegacyImageRoutes(router);
   registerSalesRoutes(router, { purchaseLinks: purchaseLinksForOrder });

@@ -16,13 +16,13 @@ Mỗi trang chỉ chứa một ngân sách, một thương hiệu, một danh m�
 
 ## Lưu trữ
 
-Các sản phẩm/báo giá lưu trong IndexedDB trên từng trình duyệt, không đọc/ghi DB CRM, đơn hàng hoặc tồn kho. Bản sao JSON để lưu/chuyển máy. Xóa dữ liệu trình duyệt sẽ mất dữ liệu nếu chưa sao lưu. Không có sản phẩm hoặc khách hàng thật được nạp mặc định vào source.
+Sản phẩm nguồn được lưu lên thư viện chung của CRM khi nhân viên đăng nhập. Mọi nhân viên được xem, thêm và sửa; dữ liệu chưa gửi được giữ trong hàng chờ IndexedDB theo tài khoản. Báo giá đang sửa vẫn tự lưu trên máy; bấm “Lưu báo giá chung” để lưu lên máy chủ cho toàn bộ nhân viên. Mở rồi lưu cập nhật cùng một mã dữ liệu, không tạo bản mới. “Báo giá mới” tạo mã mới. Báo giá cũ trong trình duyệt có nút “Đưa lên máy chủ”; cần thực hiện từ máy đang giữ dữ liệu cũ. Bản sao JSON vẫn dùng để dự phòng. Không sửa đơn hàng hoặc ghi tồn kho.
 
 ## Triển khai
 
-Giao diện nằm trong `trial-ui/catalogue/`; Pages Functions chỉ chạy `/catalogue/api/*` theo `trial-ui/_routes.json`. API chỉ đọc WooCommerce và ảnh ở `locknlockonline.com` / `minhlongonline.com`, chặn host khác, credentials, port lạ, path ngoài ảnh và response quá lớn. Không forward cookie/header đăng nhập CRM đến nhà cung cấp.
+Giao diện nằm trong `trial-ui/catalogue/`; Pages Functions chỉ chạy `/catalogue/api/*` theo `trial-ui/_routes.json`. Các endpoint nguồn chỉ đọc WooCommerce và ảnh ở `locknlockonline.com` / `minhlongonline.com`, chặn host khác, credentials, port lạ, path ngoài ảnh và response quá lớn. Không forward cookie/header đăng nhập CRM đến nhà cung cấp.
 
-Workflow giao diện hiện có đóng gói Functions khi `wrangler pages deploy trial-ui` chạy từ root repository; bổ sung path filter để thay đổi API catalogue cũng kích hoạt workflow này. Không thay DNS hay cấu hình Supabase.
+Workflow giao diện hiện có đóng gói Functions khi `wrangler pages deploy trial-ui` chạy từ root repository; bổ sung path filter để thay đổi API catalogue cũng kích hoạt workflow này. Không thay DNS. Phần dùng chung cần migration và API CRM trước khi phát hành giao diện.
 
 Trước deploy, `node scripts/stamp-catalogue-version.mjs <commit>` gắn phiên bản vào JS/CSS và vendor script dưới catalogue. Không thay stamper CRM gốc. Các route CRM khác không đi qua Functions catalogue.
 
@@ -67,3 +67,20 @@ Validation: 17 isolated tests pass, including authenticated read scope, authorit
 - Bấm PDF hoặc PowerPoint để chọn tất cả, trang đang xem, hoặc số/khoảng trang như `1, 3-5`. Số trang tính theo toàn bộ bản xem trước, gồm bìa/chia ngân sách/cảm ơn. Bỏ trang trùng, xuất theo thứ tự gốc và giữ số trang như xem trước. Chỉ tải ảnh phục vụ các trang được chọn.
 
 Kiểm tra giao diện bằng `PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/testing/catalogue-editor.mjs` (Chromium; có thể đặt CHROMIUM_PATH và BROWSER_EVIDENCE_DIR). Script dùng IndexedDB/dữ liệu giả và chặn mọi kết nối ngoài localhost; kiểm tra kéo chuột/cảm ứng, tự cuộn, huỷ kéo, bàn phím, sắp xếp/lưu lại và xuất PDF/PPTX thật. Không cần migration.
+
+## Thư viện và báo giá dùng chung (2026-11-03)
+
+- Thư viện nguồn: tìm không dấu theo tên/SKU và lọc thương hiệu, danh mục, bộ sưu tập, hoa văn, màu sắc. Phân trang 60 mã, nạp tồn theo lô. Link nguồn + SKU/brand xác định bản ghi chung; nhập lại giữ bản đã có, sửa chung dùng revision để tránh mất thay đổi.
+- Chỉ lưu thông tin nguồn vào thư viện; số lượng, chiết khấu, phụ phí, giá tự nhập và khách hàng thuộc từng báo giá. Sửa nguồn không tự đổi giá báo giá đã chọn/lưu. Dữ liệu còn thiếu thuộc tính hiển thị rõ, không đoán từ tên.
+- Tồn khả dụng dùng sổ kho CRM và giữ hàng hiện có, loại kho ẩn theo người xem. Tổng khả dụng trừ giữ hàng theo quy tắc catalogue hiện hành; từng kho là đánh giá độc lập, không cộng các số khả dụng từng kho khi có giữ hàng chung. Hàng đang về lấy số còn phải nhận từ đơn mua đã duyệt; tồn NCC hiển thị riêng. Mã không khớp, thiếu bằng chứng hoặc đọc lỗi là “Chưa rõ”, không coi là hết hàng. Có thời điểm kiểm tra; số liệu chỉ phục vụ nội bộ, không đưa vào PDF/PPTX/báo giá dùng chung.
+- `/catalogue-quotes` trả danh sách tóm tắt 30 bản/lượt; mở chi tiết mới tải snapshot. Tất cả nhân viên được mở/sửa. Người tạo hoặc Manager được ẩn báo giá (soft delete).
+- Lưu báo giá dùng ID ổn định, revision/CAS và nhật ký clientKey+hash trong cùng transaction. Bấm lại sau mất phản hồi trả biên nhận cũ; nếu có bản sửa mới hơn phải đối chiếu. Hai nhân viên lưu cùng revision chỉ một lần thành công. Không có thêm thẻ hay phiên bản báo giá hiển thị khi sửa; nhật ký chỉ giữ biên nhận và audit.
+- Yêu cầu chưa xác nhận giữ trên máy theo người gửi; không gửi lại bằng phiên nhân viên khác. Bản nhập đang sửa không bị thay bằng phản hồi chậm. Nếu xung đột, tải bản sao trước khi mở lại bản chung để đối chiếu.
+
+### Thứ tự phát hành
+
+1. Chủ dự án chạy tay **migrations/postgres/20261103042748_catalogue_shared_library.sql** đúng một lần (3 bảng mới, RLS, chỉ backend được truy cập). Không chạy lại nếu đã có các bảng.
+2. Triển khai API; bước read-only `scripts/sql/assert-catalogue-library.sql` kiểm tra đủ bảng/cột, RLS, khoá chống trùng.
+3. Triển khai giao diện. Chưa có migration/API thì báo chưa lưu dùng chung, giữ dữ liệu trên máy. Không tuyên bố đã lưu máy chủ khi chưa có xác nhận.
+
+Kiểm thử: `tests/app/catalogue-library.test.ts`, `catalogue-quotes.test.ts`, `catalogue-library-proxy.test.ts`, `tests/db/catalogue-library-access.test.ts`; thêm `TEST_PG_URL` trỏ PostgreSQL thử để chạy các ca đồng thời. `scripts/testing/catalogue-shared-library.mjs` dùng hai tài khoản giả trên localhost, chặn mạng ngoài: cùng thấy/sửa nguồn, giữ giá báo giá, mất phản hồi, đổi tài khoản, báo giá cập nhật cùng ID, CAS và mobile.
