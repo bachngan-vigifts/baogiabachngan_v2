@@ -3277,7 +3277,7 @@ function payCell(r, counts, orderStatus, what = 'Đơn') {
   return `${pill(PAY_STATE, r.payState)}<small>${sub}</small>${r.overdue ? `<small class="danger-text">Quá hạn ${money(r.overdue)}</small>` : ''}`;
 }
 /** Xuất hoá đơn của đơn / HĐKT. */
-const INVOICE_STATUS = { none: ['Chưa yêu cầu', 'muted'], requested: ['Chờ xuất HĐ', 'warn'], issued: ['Đã xuất HĐ', 'ok'] };
+const INVOICE_STATUS = { none: ['Chưa yêu cầu', 'muted'], requested: ['Chờ xuất HĐ', 'warn'], issued: ['Đã xuất HĐ', 'ok'], handled: ['Đã xử lý việc hoá đơn', 'muted'] };
 const invoiceCell = (status, no, orderStatus) => orderStatus === 'cancelled' ? '<span class="muted">—</span>'
   : status === 'issued' ? `${pill(INVOICE_STATUS, 'issued')}<small>Số ${esc(no)}</small>` : pill(INVOICE_STATUS, status || 'none');
 const pill = (map, k) => { const [t, c] = map[k] || [k, '']; return `<span class="pill ${c}">${esc(t)}</span>`; };
@@ -3341,7 +3341,7 @@ async function loadOrders() {
       <td>${o.external?'<span class="pill info">'+esc(o.statusLabel)+'</span>':pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</td>
       <td class="orders-shipping-cell${o.ghnShipments?.length?' has-ghn-tracking':''}">${o.deliveryStatus ? pill(DELIVERY_STATUS, o.deliveryStatus) : o.orderSource === 'ghn' ? '<span class="pill warn">Chờ tạo vận đơn</span>' : '<span class="muted">—</span>'}<small>${esc(o.deliveryCarrier || '')}</small>${o.external?'<small>'+esc(o.ghnOrderCode||'Chưa tạo GHN')+' · '+esc(o.ghnStatus||'')+'</small>':ghnOrderSummary(o.ghnShipments,esc)}</td>
       <td>${o.external&&o.paid===null?'<span class="muted">Chưa rõ thanh toán</span>':payCell(o.receivable, o.debtCounts, o.status)}</td>
-      <td class="right num"><b>${money(o.total)}</b><small>${o.external?'Chưa có dữ liệu hoá đơn':invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</small></td>
+      <td class="right num"><b>${money(o.total)}</b><small>${o.external&&o.invoiceStatus==='unknown'?'Chưa có dữ liệu hoá đơn':invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</small></td>
       <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${o.external?'':slipButtons(o.id, o.status)}</td></tr>`),
       'Chưa có đơn đặt hàng. Bấm ＋ để tạo đơn từ báo giá đã duyệt.');
   } catch (e) { if (req === ordersReq) { salesListSummary('orders', null); listError('orders', e); ordersPager.render(0); } }
