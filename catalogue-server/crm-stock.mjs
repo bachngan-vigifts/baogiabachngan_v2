@@ -15,7 +15,7 @@ export async function readCrmStock(request,values,fetcher=fetch){
   const data=await response.json();if(!Array.isArray(data.products)||!Array.isArray(data.warehouses))throw Error('CRM chưa trả dữ liệu tồn kho hợp lệ.');
   const checkedAt=new Date().toISOString();
   for(const p of data.products){if(p.active===false)continue;const available=Number(p.filteredStock);if(p.filteredStock==null||!Number.isFinite(available))throw Error('CRM chưa trả số tồn khả dụng; chưa thể xác minh sản phẩm.');
-   result.set(crmSkuKey(p.sku),{source:'crm',sku:String(p.sku),available:Math.max(0,available),checkedAt,updatedAt:p.stockUpdatedAt||null});}
+   result.set(crmSkuKey(p.sku),{source:'crm',sku:String(p.sku),available:Math.max(0,available),checkedAt,updatedAt:p.stockUpdatedAt||null,productCreatedAt:p.createdAt||null,pattern:String(p.pattern||'').trim().slice(0,100)});}
  }
  return result;
 }
