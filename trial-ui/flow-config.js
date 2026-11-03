@@ -5,6 +5,7 @@
  *  - STAGES  : các cột (giai đoạn) theo thứ tự từ trái sang phải.
  *  - NODES   : các khối. `id` trùng khoá trong API `GET /flow` (src/app/flow-routes.ts) – máy chủ trả số liệu + việc cho khối đó.
  *              `stage` = cột, `row` = hàng (1 trên cùng). `page` = trang mở khi bấm "Mở trang". `actions` = nút nhanh của khối.
+ *              `shortcut` = link cạnh khối, mở tab mới, không thêm chỉ số hoặc thao tác ghi.
  *  - EDGES   : mũi tên nối khối (`from` → `to`, `label` chữ trên mũi tên, `alt: true` = nhánh phụ/ngoại lệ, vẽ màu cam,
  *              `labelAt: 'source' | 'target'` đặt chữ sát khối nguồn / đích khi hai nhãn bị chồng nhau).
  *  - ITEM_ACTIONS : nút trên từng việc. Máy chủ quyết định việc nào được hiện nút (trả tên thao tác trong `actions`),
@@ -50,6 +51,7 @@ export const NODES = [
     actions: [{ label: 'Mở danh sách hỏi tồn', go: '#/stock-requests' }] },
   { id: 'care', stage: 'customer', row: 3, title: 'Chăm sóc khách', icon: 'heart', page: '#/care',
     desc: 'Lịch hẹn chăm sóc quá hạn / hôm nay của bạn. Ghi lần chăm sóc mới ngay tại đây.',
+    shortcut: { title: 'Tạo báo giá', icon: 'doc', href: './catalogue/', sub: 'Catalogue' },
     actions: [{ label: 'Ghi chăm sóc', open: 'new-care' }, { label: 'Nhật ký chăm sóc', go: '#/care' }] },
 
   { id: 'quotes', stage: 'sales', row: 2, title: 'Báo giá', icon: 'doc', page: '#/quotes',
