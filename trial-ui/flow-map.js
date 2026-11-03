@@ -77,7 +77,18 @@ export function initFlowMap({ api, root, go, confirmBox, toast, money, openers =
         el('span', 'flow-node-sub', h ? `${h.label}: ${fmt(h)}` : ''));
       b.append(dot, body);
       b.addEventListener('click', () => openPanel(nd.id));
-      grid.append(b);
+      if (nd.shortcut) {
+        const pair = el('div', 'flow-node-pair');
+        pair.style.gridColumn = b.style.gridColumn; pair.style.gridRow = b.style.gridRow;
+        const link = navigation(el('a', 'flow-node flow-node-shortcut'));
+        link.href = nd.shortcut.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+        link.dataset.stageTitle = b.dataset.stageTitle;
+        link.setAttribute('aria-label', nd.shortcut.title + ' – mở trang catalogue trong tab mới');
+        const mark = el('span', 'flow-dot'); mark.append(icon(nd.shortcut.icon));
+        const label = el('span', 'flow-node-body');
+        label.append(el('span', 'flow-node-title', nd.shortcut.title), el('span', 'flow-node-sub', nd.shortcut.sub));
+        link.append(mark, label); pair.append(b, link); grid.append(pair);
+      } else grid.append(b);
     }
     requestAnimationFrame(drawEdges);
   }
