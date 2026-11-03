@@ -34,7 +34,7 @@ export const PERMISSIONS: readonly PermissionDef[] = [
   { key: 'inventory.view', group: 'Kho', label: 'Sổ kho – xem', defaults: ['accounting'] },
   { key: 'inventory.manage', group: 'Kho', label: 'Sổ kho – chốt đầu kỳ, lập đề nghị điều chỉnh', hint:'Nhân viên gửi phiếu chờ duyệt; chỉ Manager duyệt mới ghi tồn.', defaults: [] },
   { key: 'purchases.receive', group: 'Kho', label: 'Nhận hàng NCC về kho', defaults: KHO },
-  { key: 'stock.transfer', group: 'Kho', label: 'Điều chuyển kho – xác nhận đã chuyển', hint: 'Phiếu điều chuyển đã duyệt: bấm "Đã chuyển" (trừ kho đi, cộng kho đến). Ai cũng xin điều chuyển được.', defaults: KHO },
+  { key: 'stock.transfer', group: 'Kho', label: 'Điều chuyển kho – xác nhận đã chuyển', hint: 'Phiếu điều chuyển đã duyệt: bấm "Đã chuyển" để trừ kho đi. Kho đến nhận riêng theo phân quyền kho bán; Manager được nhận thay. Ai cũng xin điều chuyển được.', defaults: KHO },
   { key: 'purchases.prices', group: 'Tài chính NCC', label: 'Xem giá mua NCC', defaults: KE_TOAN },
   { key: 'purchases.pay', group: 'Tài chính NCC', label: 'Ghi thanh toán / lịch trả NCC', defaults: KE_TOAN },
   { key: 'suppliers.edit', group: 'Tài chính NCC', label: 'Danh bạ NCC – xem, sửa', defaults: KE_TOAN },

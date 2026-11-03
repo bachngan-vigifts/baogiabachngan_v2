@@ -58,7 +58,7 @@ export async function transferTasks(db: Db, today: string, transferId?: string):
     to: sql<string>`(SELECT ${warehouses.name} FROM ${warehouses} WHERE ${warehouses.id} = ${stockTransfers.toWarehouseId})` })
     .from(stockTransfers).where(and(inArray(stockTransfers.status, ['pending', 'approved', 'shipped']), transferId ? eq(stockTransfers.id, transferId) : undefined)).limit(2000);
   const directory=rows.some(r=>r.t.status==='pending')?await loadTransferApprovalDirectory(db):null;
-  // Người nhận hàng của phiếu đang chuyển: nhân viên bán kho đến (chức vụ trong Phân quyền kho bán) + người xin phiếu.
+  // Người nhận hàng của phiếu đang chuyển: nhân viên được phân kho đến (chức vụ trong Phân quyền kho bán).
   const receivers = new Map<string, string[]>();
   const shipped = rows.filter(r => r.t.status === 'shipped').map(r => r.t);
   if (shipped.length) {
@@ -68,17 +68,17 @@ export async function transferTasks(db: Db, today: string, transferId?: string):
       .where(and(eq(employees.role, 'employee'), eq(employees.active, true), isNull(employees.deletedAt), inArray(employees.positionId, [...new Set(sellers.map(s => s.positionId))]))) : [];
     for (const t of shipped) {
       const positions = new Set(sellers.filter(s => s.warehouseId === t.toWarehouseId).map(s => s.positionId));
-      receivers.set(t.id, [...new Set([t.requestedBy, ...staff.filter(e => e.positionId && positions.has(e.positionId)).map(e => e.id)])]);
+      receivers.set(t.id, [...new Set(staff.filter(e => e.positionId && positions.has(e.positionId)).map(e => e.id))]);
     }
   }
   return rows.map(({ t, from, to }) => {
     const base = { source: 'transfer' as const, sourceId: t.id, link: `#/transfers/${t.id}` }, what = `${t.transferNo} · ${from} → ${to}`;
-    // Đang chuyển: kho đến (nhân viên kho đến + người xin; không có ai thì nhóm Kho) kiểm hàng, nhập SL thực nhận và bấm "Nhận hàng".
+    // Đang chuyển: nhân viên kho đến; chưa phân nhân viên thì giao Manager kiểm hàng, nhập SL thực nhận và bấm "Nhận hàng".
     if (t.status === 'shipped') {
       const receive = { ...base, title: `Nhận hàng điều chuyển ${what}`, description: `Hàng đã rời ${from}. Kiểm hàng thực tế, nhập số lượng nhận từng mã rồi bấm "Nhận hàng". Nhận thiếu phải ghi lý do.`,
         priority: 'high' as const, dueDate: t.shippedAt ? addDaysIso(day(t.shippedAt)!, 1) : today };
       const members = receivers.get(t.id) ?? [];
-      return members.length ? members.map(id => ({ ...receive, autoKey: `transfer-receive:${t.id}:${id}`, assigneeId: id })) : [{ ...receive, autoKey: `transfer-receive:${t.id}`, assigneeId: null, assigneePosition: 'warehouse' }];
+      return members.length ? members.map(id => ({ ...receive, autoKey: `transfer-receive:${t.id}:${id}`, assigneeId: id })) : [{ ...receive, autoKey: `transfer-receive:${t.id}`, assigneeId: null, assigneePosition: null }];
     }
     if (t.status !== 'pending') return [{ ...base, autoKey: `transfer-move:${t.id}`, title: `Chuyển hàng ${what}`, description: `Lấy hàng ở ${from}, chuyển sang ${to}, rồi bấm "Đã chuyển" trên phiếu. Lý do: ${t.reason}`,
       assigneeId: null, assigneePosition: 'warehouse', priority: 'high' as const, dueDate: t.approvedAt ? addDaysIso(day(t.approvedAt)!, 1) : today }];

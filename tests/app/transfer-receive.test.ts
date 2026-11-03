@@ -9,11 +9,12 @@ import { createAppRouter } from '../../src/app/router.ts';
 import { products, warehouses } from '../../src/modules/catalog/schema.ts';
 import { stockBalances, stockMoves, stockTransferLines, stockTransfers, warehouseSellers } from '../../src/modules/inventory/schema.ts';
 import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
+import { tasks } from '../../src/modules/tasks/schema.ts';
 import { webNotifications } from '../../src/modules/notifications/schema.ts';
 
 /**
  * Điều chuyển kho 2 bước: kho đi "Đã chuyển" (trừ kho đi, Đang chuyển) → kho đến "Nhận hàng" + SL thực nhận TỪNG mã;
- * phần thiếu ghi ngược về kho đi, nhận thiếu bắt buộc lý do và báo Manager.
+ * phần thiếu giữ chênh lệch chờ đối soát, nhận thiếu bắt buộc lý do và báo Manager.
  */
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
 const migration = readFileSync(new URL('../../migrations/postgres/20261102120000_transfer_receive.sql', import.meta.url), 'utf8');
@@ -53,7 +54,8 @@ async function setup() {
 
 test('nhận hàng điều chuyển: nhập SL từng mã; nhận thiếu giữ chênh lệch chờ đối soát, bắt buộc lý do, báo Manager', async () => {
   const s = await setup(), t = await s.shipped();
-  assert.equal(t.status, 'shipped');assert.equal(t.actions.ship, false);assert.equal(t.actions.receive, true);
+  assert.equal(t.status, 'shipped');assert.equal(t.actions.ship, false);assert.equal(t.actions.receive, false, 'kho xuất không mặc nhiên được nhận');
+  assert.equal((await s.call(`/stock-transfers/${t.id}`,s.ml)).data.actions.receive,true);
   assert.deepEqual([await s.bal('LY1', 'vig'), await s.bal('LY1', 'ml'), await s.bal('DIA2', 'vig'), await s.bal('DIA2', 'ml')], [20, 20, 30, 0.001], 'đang chuyển: chỉ trừ kho đi');
   const body = (qtyLy: number, qtyDia: number, note?: string) => ({ revision: t.revision, lines: [{ sku: 'LY1', qty: qtyLy }, { sku: 'DIA2', qty: qtyDia }], ...(note === undefined ? {} : { note }) });
   const noWhy = await s.call(`/stock-transfers/${t.id}/receive`, s.ml, 'POST', body(22, 10));
@@ -78,19 +80,21 @@ test('nhận hàng điều chuyển: nhập SL từng mã; nhận thiếu giữ 
 
 test('nhận hàng: bắt buộc nhập từng mã, 0 ≤ nhận ≤ chuyển; sai dữ liệu không ghi sổ', async () => {
   const s = await setup(), t = await s.shipped(), url = `/stock-transfers/${t.id}/receive`;
-  const bad = async (lines: unknown, code?: string) => { const r = await s.call(url, s.kho, 'POST', { revision: t.revision, note: 'ghi chú', lines }); assert.equal(r.status, 400, JSON.stringify(r.data)); if (code) assert.equal(r.data.code, code); };
+  const bad = async (lines: unknown, code?: string) => { const r = await s.call(url, s.ml, 'POST', { revision: t.revision, note: 'ghi chú', lines }); assert.equal(r.status, 400, JSON.stringify(r.data)); if (code) assert.equal(r.data.code, code); };
   await bad([{ sku: 'LY1', qty: 30 }], 'RECEIVE_LINES_REQUIRED');
   await bad(undefined, 'RECEIVE_LINES_REQUIRED');
   await bad([{ sku: 'LY1', qty: 31 }, { sku: 'DIA2', qty: 10 }], 'RECEIVE_OVER');
   await bad([{ sku: 'LY1', qty: -1 }, { sku: 'DIA2', qty: 10 }]);
   await bad([{ sku: 'LY1', qty: '' }, { sku: 'DIA2', qty: 10 }]);
   await bad([{ sku: 'LY1', qty: 'abc' }, { sku: 'DIA2', qty: 10 }]);
+  for(const qty of [-0.0004, true, false, [], {}, '30', 29.0004, 0.0001]) await bad([{sku:'LY1',qty},{sku:'DIA2',qty:10}]);
+  await bad([{sku:'LY1',qty:30.0004},{sku:'DIA2',qty:10}], 'RECEIVE_OVER');
   await bad([{ sku: 'LY1', qty: 30 }, { sku: 'LY1', qty: 30 }, { sku: 'DIA2', qty: 10 }]);
   await bad([{ sku: 'LY1', qty: 30 }, { sku: 'DIA2', qty: 10 }, { sku: 'KHONG-CO', qty: 1 }]);
   assert.deepEqual([await s.bal('LY1', 'vig'), await s.bal('LY1', 'ml')], [20, 20]);
   assert.equal((await s.db.select().from(stockTransfers).where(eq(stockTransfers.id, t.id)))[0]!.status, 'shipped');
   assert.ok((await s.db.select().from(stockTransferLines).where(eq(stockTransferLines.transferId, t.id))).every(l => l.receivedQty === null));
-  const stale = await s.call(url, s.kho, 'POST', { revision: t.revision - 1, lines: [{ sku: 'LY1', qty: 30 }, { sku: 'DIA2', qty: 10 }] });
+  const stale = await s.call(url, s.ml, 'POST', { revision: t.revision - 1, lines: [{ sku: 'LY1', qty: 30 }, { sku: 'DIA2', qty: 10 }] });
   assert.equal(stale.status, 409);assert.equal(stale.data.code, 'TRANSFER_CHANGED');
 });
 
@@ -104,9 +108,10 @@ test('nhận hàng: ai được nhận; chưa xuất thì chưa nhận được;
   assert.equal((await s.call(`/stock-transfers/${id}/ship`, s.ml, 'POST', {})).status, 403, 'kho đến không tự bấm xuất thay kho đi');
   assert.equal((await s.call(`/stock-transfers/${id}/ship`, s.kho, 'POST', {})).status, 200);
   assert.equal((await s.call(`/stock-transfers/${id}`, s.kt)).data.actions.receive, false);
-  assert.equal((await s.call(`/stock-transfers/${id}/receive`, s.kt, 'POST', { lines })).status, 403, 'Kế toán không phải kho đến / người xin / nhóm Kho');
+  assert.equal((await s.call(`/stock-transfers/${id}/receive`, s.kt, 'POST', { lines })).status, 403, 'Kế toán chưa được phân kho đến');
   assert.equal((await s.call(`/stock-transfers/${id}/cancel`, s.mgr, 'POST', {})).status, 409, 'đang chuyển: không huỷ phiếu');
-  const zero = await s.call(`/stock-transfers/${id}/receive`, s.kho, 'POST', { lines: [{ sku: 'LY1', qty: 0 }], note: 'Xe chưa tới, hàng chưa ra khỏi cửa' });
+  assert.equal((await s.call(`/stock-transfers/${id}/receive`, s.kho, 'POST', {lines})).status,403,'quyền điều chuyển chung không cấp quyền nhận');
+  const zero = await s.call(`/stock-transfers/${id}/receive`, s.ml, 'POST', { lines: [{ sku: 'LY1', qty: 0 }], note: 'Xe chưa tới, hàng chưa ra khỏi cửa' });
   assert.equal(zero.status, 200, JSON.stringify(zero.data));assert.equal(zero.data.status, 'done');
   assert.deepEqual([await s.bal('LY1', 'vig'), await s.bal('LY1', 'ml')], [45, 20], 'nhận 0: không tự cộng lại kho đi, kho đến không đổi');
   assert.equal(zero.data.lines[0].receivedQty, 0);
@@ -124,4 +129,25 @@ test('phiếu cũ đã chuyển một bước (received_qty trống) hiển th�
   await assert.rejects(s.client.exec("update stock_transfer_lines set received_qty = -1 where id = 'old-1'"), /chk_stock_transfer_lines_received/);
   await assert.rejects(s.client.exec("update stock_transfers set status = 'lost' where id = 'old'"), /chk_stock_transfers_status/);
   await s.client.exec("update stock_transfers set status = 'shipped' where id = 'old'");
+});
+
+
+test('receipt belongs to destination staff or Manager, not the requester or global move permission; fractional receipt stays atomic', async()=>{
+  const s=await setup();
+  const create=async()=>{const made=await s.call('/stock-transfers',s.kt,'POST',{fromWarehouseId:'vig',toWarehouseId:'ml',reason:'Xin hàng cho kho đích',lines:[{sku:'LY1',qty:2}]});assert.equal(made.status,201);const id=made.data.id;assert.equal((await s.call(`/stock-transfers/${id}/approve`,s.mgr,'POST',{})).status,200);const shipped=await s.call(`/stock-transfers/${id}/ship`,s.kho,'POST',{});assert.equal(shipped.status,200);return shipped.data;};
+  const t=await create(),url=`/stock-transfers/${t.id}/receive`,body={revision:t.revision,note:'Nhận thiếu chờ đối soát',lines:[{sku:'LY1',qty:1.001}]};
+  for(const actor of [s.kt,s.kho]){assert.equal((await s.call(`/stock-transfers/${t.id}`,actor)).data.actions.receive,false);assert.equal((await s.call(url,actor,'POST',body)).status,403);}
+  const jobs=await s.db.select().from(tasks).where(eq(tasks.sourceId,t.id));
+  assert.deepEqual(jobs.filter(j=>j.autoKey?.startsWith('transfer-receive:')).map(j=>j.assigneeId),['ml']);
+  const notices=await s.db.select().from(webNotifications).where(eq(webNotifications.eventType,'transfer_shipped'));
+  assert.ok(notices.some(n=>n.targetMemberId==='ml'));assert.ok(notices.some(n=>n.targetMemberId==='mgr'));
+  assert.ok(!notices.some(n=>n.targetMemberId==='ketoan'||n.targetMemberId==='kho'));
+  assert.equal((await s.call(url,s.ml,'POST',body)).status,200);
+  assert.equal((await s.call(url,s.ml,'POST',body)).status,409);
+  assert.equal((await s.db.select().from(stockTransferLines).where(eq(stockTransferLines.transferId,t.id)))[0]!.receivedQty,1.001);
+  await s.db.delete(warehouseSellers).where(eq(warehouseSellers.warehouseId,'ml'));
+  const next=await create();
+  const fallback=await s.db.select().from(tasks).where(eq(tasks.autoKey,`transfer-receive:${next.id}`));
+  assert.equal(fallback.length,1);assert.equal(fallback[0]!.assigneeId,null);assert.equal(fallback[0]!.assigneePosition,null,'chưa phân kho: giao Manager, không giao nhóm Kho chung');
+  assert.equal((await s.call(`/stock-transfers/${next.id}/receive`,s.mgr,'POST',{revision:next.revision,lines:[{sku:'LY1',qty:2}]})).status,200,'Manager nhận thay không cần được phân kho');
 });
