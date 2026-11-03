@@ -7,6 +7,7 @@ export const catalogueLibrary=pgTable('catalogue_library_products',{
  brand:text('brand').notNull(),category:text('category').notNull(),collection:text('collection').notNull().default(''),
  pattern:text('pattern').notNull().default(''),color:text('color').notNull().default(''),search:text('search').notNull(),
  data:text('data').notNull(),revision:bigint('revision',{mode:'number'}).notNull().default(1),
+ deletedAt:text('deleted_at'),deletedBy:text('deleted_by').references(()=>employees.id),
  lastKey:text('last_key'),lastHash:text('last_hash'),lastActor:text('last_actor'),
  createdBy:text('created_by').notNull().references(()=>employees.id),updatedBy:text('updated_by').notNull().references(()=>employees.id),
  createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
@@ -25,3 +26,8 @@ export const catalogueQuoteCommands=pgTable('catalogue_quote_commands',{
  memberId:text('member_id').notNull().references(()=>employees.id),clientKey:text('client_key').notNull(),quoteId:text('quote_id').notNull(),payloadHash:text('payload_hash').notNull(),
  result:text('result'),createdAt:text('created_at').notNull(),
 },t=>[primaryKey({columns:[t.memberId,t.clientKey]}),index('idx_catalogue_quote_commands_quote').on(t.quoteId,t.createdAt)]).enableRLS();
+
+/** Durable receipts for atomic bulk library edits/archive/restore; no document snapshots. */
+export const catalogueLibraryCommands=pgTable('catalogue_library_commands',{
+ memberId:text('member_id').notNull().references(()=>employees.id),clientKey:text('client_key').notNull(),payloadHash:text('payload_hash').notNull(),result:text('result'),createdAt:text('created_at').notNull(),
+},t=>[primaryKey({columns:[t.memberId,t.clientKey]})]).enableRLS();

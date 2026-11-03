@@ -1,3 +1,4 @@
+import {registerCatalogueLibraryBulk} from '../modules/catalog/api/catalogue-library-bulk.ts';
 import {registerCatalogueQuotes} from '../modules/catalog/api/catalogue-quotes.ts';
 import {registerCatalogueLibrary} from '../modules/catalog/api/catalogue-library.ts';
 import {catalogueLibraryHooks} from '../modules/catalog/api/catalogue-stock.ts';
@@ -96,6 +97,7 @@ export function createAppRouter() {
   catalogueLibraryHooks.heldAt=(db,skus,warehouseId)=>reservedBySku(db,skus,warehouseId);
   catalogueLibraryHooks.incoming=(db,skus)=>outstandingLines(db,skus);
   registerCatalogueLibrary(router);
+  registerCatalogueLibraryBulk(router);
   registerCatalogueQuotes(router);
   registerSapoSyncRoutes(router);
   registerLegacyImageRoutes(router);

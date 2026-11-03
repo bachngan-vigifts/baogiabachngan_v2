@@ -12,5 +12,5 @@ test('Edge upload graph includes both catalogue domain modules',()=>{
  const root=fileURLToPath(new URL('../../',import.meta.url)),seen=new Set<string>();
  function visit(file:string){if(seen.has(file))return;seen.add(file);const source=readFileSync(file,'utf8');for(const match of source.matchAll(new RegExp(pattern))){const path=match[1]||match[2];if(path?.startsWith('.'))visit(resolve(dirname(file),path));}}
  visit(resolve(root,'supabase/functions/baogia-v2-api/index.ts'));
- for(const path of ['src/modules/catalog/api/catalogue-library.ts','src/modules/catalog/api/catalogue-quotes.ts','src/modules/catalog/domain/catalogue-data.ts','src/modules/catalog/domain/catalogue-quote.ts'])assert(seen.has(resolve(root,path)),`CLI upload graph omits ${path}`);
+ for(const path of ['src/modules/catalog/api/catalogue-library.ts','src/modules/catalog/api/catalogue-quotes.ts','src/modules/catalog/api/catalogue-library-bulk.ts','src/modules/catalog/domain/catalogue-data.ts','src/modules/catalog/domain/catalogue-quote.ts'])assert(seen.has(resolve(root,path)),`CLI upload graph omits ${path}`);
 });

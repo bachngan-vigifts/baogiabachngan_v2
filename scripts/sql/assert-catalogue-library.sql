@@ -1,7 +1,7 @@
 -- Read-only gate: run migration manually before API and UI deployment.
 DO $$ DECLARE col text; BEGIN
  IF to_regclass('public.catalogue_library_products') IS NULL THEN RAISE EXCEPTION 'Run 20261103042748_catalogue_shared_library.sql before deploying shared catalogue'; END IF;
- FOREACH col IN ARRAY ARRAY['id','source_key','name','sku','brand','category','collection','pattern','color','search','data','revision','last_key','last_hash','last_actor','created_by','updated_by','created_at','updated_at'] LOOP
+ FOREACH col IN ARRAY ARRAY['id','source_key','name','sku','brand','category','collection','pattern','color','search','data','revision','last_key','last_hash','last_actor','deleted_at','deleted_by','created_by','updated_by','created_at','updated_at'] LOOP
   IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='catalogue_library_products' AND column_name=col) THEN RAISE EXCEPTION 'Shared catalogue migration missing column: %',col; END IF;
  END LOOP;
  IF NOT EXISTS(SELECT 1 FROM pg_class WHERE oid='public.catalogue_library_products'::regclass AND relrowsecurity) THEN RAISE EXCEPTION 'Shared catalogue requires RLS'; END IF;
@@ -20,4 +20,10 @@ DO $$ DECLARE tbl text; col text; BEGIN
   IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='catalogue_quote_commands' AND column_name=col) THEN RAISE EXCEPTION 'Shared quote journal missing column: %',col; END IF;
  END LOOP;
  IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.catalogue_quote_commands'::regclass AND contype='p' AND pg_get_constraintdef(oid)='PRIMARY KEY (member_id, client_key)') THEN RAISE EXCEPTION 'Shared quote command key missing'; END IF;
+END $$;
+
+DO $$ BEGIN
+ IF to_regclass('public.catalogue_library_commands') IS NULL THEN RAISE EXCEPTION 'Run 20261103070624_catalogue_library_bulk.sql before deploying bulk catalogue'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_class WHERE oid='public.catalogue_library_commands'::regclass AND relrowsecurity) THEN RAISE EXCEPTION 'Library bulk commands require RLS'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.catalogue_library_commands'::regclass AND contype='p' AND pg_get_constraintdef(oid)='PRIMARY KEY (member_id, client_key)') THEN RAISE EXCEPTION 'Library bulk command key missing'; END IF;
 END $$;

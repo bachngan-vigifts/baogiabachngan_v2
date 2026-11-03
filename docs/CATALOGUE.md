@@ -84,3 +84,13 @@ Kiểm tra giao diện bằng `PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs n
 3. Triển khai giao diện. Chưa có migration/API thì báo chưa lưu dùng chung, giữ dữ liệu trên máy. Không tuyên bố đã lưu máy chủ khi chưa có xác nhận.
 
 Kiểm thử: `tests/app/catalogue-library.test.ts`, `catalogue-quotes.test.ts`, `catalogue-library-proxy.test.ts`, `tests/db/catalogue-library-access.test.ts`; thêm `TEST_PG_URL` trỏ PostgreSQL thử để chạy các ca đồng thời. `scripts/testing/catalogue-shared-library.mjs` dùng hai tài khoản giả trên localhost, chặn mạng ngoài: cùng thấy/sửa nguồn, giữ giá báo giá, mất phản hồi, đổi tài khoản, báo giá cập nhật cùng ID, CAS và mobile.
+
+## Tick nhiều sản phẩm
+
+- Checkbox và nút ảnh tick sản phẩm để thao tác, tách biệt với trạng thái đã có trong báo giá. Có “Chọn cả trang”, bỏ tick và giới hạn 100 mã/lượt; lựa chọn giữ khi đổi trang/bộ lọc và xoá khi đổi tài khoản.
+- Thêm hàng loạt chỉ thêm mã còn thiếu, giữ số lượng/giá/chiết khấu của mã đã có trong báo giá và chỉ dựng lại giao diện một lần.
+- Sửa chung chỉ áp dụng trường được tick: danh mục, bộ sưu tập, hoa văn, màu sắc, giá niêm yết. Thuộc tính rỗng có thể xoá khi tick rõ; danh mục phải có giá trị. SKU/brand/link nguồn giữ nguyên định danh. Các bản sao trong báo giá không đổi.
+- Xoá cần xác nhận số lượng/phạm vi dùng chung, lưu `deleted_at/deleted_by` thay vì xoá vật lý. Bật “Đã xoá” để chọn và khôi phục. Nhập lại nguồn đã xoá báo cần khôi phục, không tạo bản ghi khác hoặc tự hồi sinh.
+- API khoá cả nhóm theo thứ tự ID và kiểm tra mọi revision trước khi ghi; một mã xung đột thì cả nhóm không đổi. Biên nhận clientKey+hash lưu cùng transaction, retry sau mất phản hồi không ghi thêm. Hàng chờ trên máy theo tài khoản; nút đối soát gửi lại đúng yêu cầu cũ, không lấy phiên người khác. Bản báo giá đang sửa và hàng chờ được lưu cùng transaction IndexedDB trước khi gửi.
+
+Migration mới: **20261103070624_catalogue_library_bulk.sql**, chạy tay đúng một lần sau migration thư viện 20261103042748, trước API và giao diện. Chỉ thêm cột xoá mềm và bảng biên nhận bulk có RLS; không xoá sản phẩm/báo giá có sẵn. Chưa chạy production trong quá trình làm tính năng này.

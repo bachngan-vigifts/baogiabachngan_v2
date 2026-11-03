@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, isNotNull, sql, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -10,19 +10,20 @@ import { catalogueLibrary as lib } from '../catalogue-library-schema.ts';
 import { cleanCatalogueProduct as clean } from '../domain/catalogue-data.ts';
 import { catalogueStockFacts } from './catalogue-stock.ts';
 type Ctx=RouteContext<StaffEnv>;const actor=(c:Ctx)=>(c.state.session as SessionState).member;
-const fields=(p:ReturnType<typeof clean>)=>({name:p.name,sku:p.sku,brand:p.brand,category:p.category,collection:p.collection,pattern:p.pattern,color:p.color,search:fold([p.name,p.sku,p.brand,p.category,p.collection,p.pattern,p.color].join(' ')),data:JSON.stringify(p)});
-const dto=(r:typeof lib.$inferSelect)=>({id:r.id,revision:r.revision,product:JSON.parse(r.data) as ReturnType<typeof clean>,updatedAt:r.updatedAt,updatedBy:r.updatedBy});
+export const catalogueFields=(p:ReturnType<typeof clean>)=>({name:p.name,sku:p.sku,brand:p.brand,category:p.category,collection:p.collection,pattern:p.pattern,color:p.color,search:fold([p.name,p.sku,p.brand,p.category,p.collection,p.pattern,p.color].join(' ')),data:JSON.stringify(p)});
+export const catalogueDto=(r:typeof lib.$inferSelect)=>({id:r.id,revision:r.revision,product:JSON.parse(r.data) as ReturnType<typeof clean>,updatedAt:r.updatedAt,updatedBy:r.updatedBy,archived:!!r.deletedAt});
 export function registerCatalogueLibrary(router:Router<StaffEnv>){
  router.get('/catalogue-library/stock',async c=>{const skus=[...new Set((c.url.searchParams.get('skus')||'').split(',').map(s=>s.trim()).filter(Boolean))];if(skus.length>100||skus.some(s=>s.length>100))throw new AppError(400,'Chỉ đọc tối đa 100 mã mỗi lượt.');return json({stock:await catalogueStockFacts(c.env.db,actor(c),skus)});},'business');
  router.get('/catalogue-library',async c=>{
   const q=(c.url.searchParams.get('q')||'').trim().slice(0,100),offset=Number(c.url.searchParams.get('offset')||0),limit=Math.min(60,Number(c.url.searchParams.get('limit')||60));
   if(!Number.isSafeInteger(offset)||offset<0||offset>1e6||!Number.isSafeInteger(limit)||limit<1)throw new AppError(400,'Phân trang chưa hợp lệ.');
-  const filters:SQL[]=[];for(const key of ['brand','category','collection','pattern','color'] as const){const v=c.url.searchParams.get(key);if(v){if(v.length>100)throw new AppError(400,'Bộ lọc quá dài.');filters.push(eq(lib[key],v));}}
+  const archived=c.url.searchParams.get('archived')==='1',visibility=archived?isNotNull(lib.deletedAt):isNull(lib.deletedAt);
+  const filters:SQL[]=[visibility];for(const key of ['brand','category','collection','pattern','color'] as const){const v=c.url.searchParams.get(key);if(v){if(v.length>100)throw new AppError(400,'Bộ lọc quá dài.');filters.push(eq(lib[key],v));}}
   for(const word of fold(q).split(' ').filter(Boolean).slice(0,10))filters.push(sql`${lib.search} like ${'%'+word.replace(/[\\%_]/g,m=>'\\'+m)+'%'}`);
   const where=and(...filters),db=c.env.db;
-  const [[total],rows,facets]=await Promise.all([db.select({n:count()}).from(lib).where(where),db.select().from(lib).where(where).orderBy(desc(lib.updatedAt),asc(lib.id)).limit(limit).offset(offset),Promise.all((['brand','category','collection','pattern','color'] as const).map(async key=>[key,(await db.selectDistinct({value:lib[key]}).from(lib).where(sql`${lib[key]}<>''`).orderBy(asc(lib[key])).limit(300)).map(r=>r.value)] as const))]);
+  const [[total],rows,facets]=await Promise.all([db.select({n:count()}).from(lib).where(where),db.select().from(lib).where(where).orderBy(desc(lib.updatedAt),asc(lib.id)).limit(limit).offset(offset),Promise.all((['brand','category','collection','pattern','color'] as const).map(async key=>[key,(await db.selectDistinct({value:lib[key]}).from(lib).where(and(visibility,sql`${lib[key]}<>''`)).orderBy(asc(lib[key])).limit(300)).map(r=>r.value)] as const))]);
   let stock:Awaited<ReturnType<typeof catalogueStockFacts>>|null=null;let stockError='';try{stock=await catalogueStockFacts(db,actor(c),rows.map(r=>r.sku).filter(Boolean));}catch{stockError='Chưa đọc được tồn CRM. Dữ liệu chưa được xem là hết hàng.';}
-  return json({memberId:actor(c).id,products:rows.map(dto),total:total!.n,offset,limit,facets:Object.fromEntries(facets),stock,stockError});
+  return json({memberId:actor(c).id,products:rows.map(catalogueDto),total:total!.n,offset,limit,facets:Object.fromEntries(facets),stock,stockError});
  },'business');
  router.post('/catalogue-library',async c=>{
   const body=await readJson(c.req,250_000);if(!Array.isArray(body.products)||body.products.length<1||body.products.length>25)throw new AppError(400,'Chia sản phẩm thành lô tối đa 25 mã.');
@@ -30,21 +31,21 @@ export function registerCatalogueLibrary(router:Router<StaffEnv>){
   if(!items.length)return json({products:[],errors});
   const unique=[...new Map(items.map(i=>[i.key,i])).values()],now=new Date().toISOString(),who=actor(c).id;
   const saved=await c.env.db.transaction(async tx=>{
-   const inserted=await tx.insert(lib).values(unique.map(i=>({id:i.key,sourceKey:i.key,...fields(i.p),createdBy:who,updatedBy:who,createdAt:now,updatedAt:now}))).onConflictDoNothing().returning();
+   const inserted=await tx.insert(lib).values(unique.map(i=>({id:i.key,sourceKey:i.key,...catalogueFields(i.p),createdBy:who,updatedBy:who,createdAt:now,updatedAt:now}))).onConflictDoNothing().returning();
    if(inserted.length)await tx.insert(auditLogs).values(inserted.map(r=>({id:crypto.randomUUID(),actorId:who,module:'catalog',action:'catalogue-library-create',entityType:'catalogue-library',entityId:r.id,data:JSON.stringify({product:JSON.parse(r.data)}),createdAt:now})));
    return tx.select().from(lib).where(inArray(lib.sourceKey,unique.map(i=>i.key)));
-  });const byKey=new Map(saved.map(r=>[r.sourceKey,r]));return json({products:items.map(i=>({clientId:i.clientId,...dto(byKey.get(i.key)!)})),errors});
+  });const byKey=new Map(saved.map(r=>[r.sourceKey,r]));return json({products:items.flatMap(i=>{const row=byKey.get(i.key)!;if(row.deletedAt){errors.push({clientId:i.clientId,error:'Mã đã xoá khỏi thư viện; mở mục Đã xoá để khôi phục.'});return[];}return[{clientId:i.clientId,...catalogueDto(row)}];}),errors});
  },'business');
  router.put('/catalogue-library/:id',async c=>{
   const b=await readJson(c.req,18_000),p=clean(b.product),who=actor(c).id,key=typeof b.clientKey==='string'?b.clientKey:'';
   if(!/^[\w-]{16,100}$/.test(key)||!Number.isSafeInteger(b.revision))throw new AppError(400,'Tải lại phiên bản sản phẩm trước khi lưu.');
   const hash=sha256Hex(JSON.stringify(p));const saved=await c.env.db.transaction(async tx=>{
-   const [old]=await tx.select().from(lib).where(eq(lib.id,c.params.id!)).for('update');if(!old)throw new AppError(404,'Sản phẩm chung không còn tồn tại.');
+   const [old]=await tx.select().from(lib).where(eq(lib.id,c.params.id!)).for('update');if(!old||old.deletedAt)throw new AppError(404,'Sản phẩm không còn trong thư viện đang dùng.');
    if(old.lastKey===key&&old.lastActor===who){if(old.lastHash!==hash)throw new AppError(409,'Cùng mã thao tác nhưng khác nội dung.','COMMAND_CONFLICT');return old;}
    if(old.revision!==b.revision)throw new AppError(409,'Người khác vừa sửa sản phẩm. Tải lại để đối chiếu; nội dung anh/chị nhập vẫn giữ trên màn hình.','CATALOGUE_LIBRARY_CONFLICT');
    const previous=JSON.parse(old.data) as ReturnType<typeof clean>;if(p.sku!==previous.sku||p.url!==previous.url||p.brand!==previous.brand)throw new AppError(400,'Không đổi SKU, thương hiệu hoặc link nguồn của bản ghi chung.');
-   const [next]=await tx.update(lib).set({...fields(p),revision:old.revision+1,lastKey:key,lastHash:hash,lastActor:who,updatedBy:who,updatedAt:new Date().toISOString()}).where(eq(lib.id,old.id)).returning();
+   const [next]=await tx.update(lib).set({...catalogueFields(p),revision:old.revision+1,lastKey:key,lastHash:hash,lastActor:who,updatedBy:who,updatedAt:new Date().toISOString()}).where(eq(lib.id,old.id)).returning();
    await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:who,module:'catalog',action:'catalogue-library-update',entityType:'catalogue-library',entityId:old.id,data:JSON.stringify({before:previous,after:p,revision:next!.revision}),createdAt:next!.updatedAt});return next!;
-  });return json(dto(saved));
+  });return json(catalogueDto(saved));
  },'business');
 }
