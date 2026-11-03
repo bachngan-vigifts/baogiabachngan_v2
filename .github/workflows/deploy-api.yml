@@ -65,6 +65,7 @@ jobs:
           tests/app/invoice-tasks.test.ts
           tests/app/pos-cod-deposit.test.ts
           tests/app/pos-ghn-sync.test.ts
+          tests/app/web-ghn-direct-sync.test.ts
           tests/app/web-order-ghn-address.test.ts
           tests/app/pos-notifications.test.ts
           tests/db/pos-order-flow-access.test.ts

@@ -30,7 +30,7 @@ async function ghnDetail(env: StaffEnv, code: string, registerName: string) {
   const account = await posGhnAccount(env, registerName);
   if (!account) throw new AppError(409, 'Quầy không dùng GHN tự động.');
   const response = await (env.ghnFetch ?? fetch)(GHN_DETAIL, {
-    method: 'POST', headers: { Token: account.token, ShopId: account.shopId, 'content-type': 'application/json' }, body: JSON.stringify({ order_code: code }),
+    method: 'POST', headers: { Token: account.token, ShopId: account.shopId, 'content-type': 'application/json' }, body: JSON.stringify({ order_code: code }),signal:AbortSignal.timeout(10_000),
   });
   const raw = await response.text(); let body: Record<string, unknown> = {};
   try { body = raw ? JSON.parse(raw) : {}; } catch { /* GHN có thể trả text khi lỗi. */ }
@@ -100,19 +100,24 @@ export async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: 
 }
 
 /** Trạng thái GHN của đơn web (Lock qua cầu nối, Minh Long do CRM tạo vận đơn): giao xong → hoàn thành, hoàn / huỷ → huỷ. */
-async function applyWebGhnStatus(env: StaffEnv, row: { id: string; status: string; ghnStatus: string }, status: string, observedAt: string) {
+async function applyWebGhnStatus(env: StaffEnv, row: { id: string; code?:string; status: string; ghnStatus: string }, status: string, observedAt: string) {
   const changed = await saveWebGhnStatus(env, row, status, observedAt);
   // Sổ kho theo trạng thái GHN (đã lấy hàng → trừ, đã hoàn → cộng lại); gọi cả khi trạng thái không đổi để lần lỗi trước được làm lại.
   await syncWebOrderStock(env, row.id);
   return changed;
 }
-async function saveWebGhnStatus(env: StaffEnv, row: { id: string; status: string; ghnStatus: string }, status: string, observedAt: string) {
-  if (row.ghnStatus.toLowerCase() === 'delivered' && status !== 'delivered') return false;
-  const orderStatus = webGhnOrderStatus(status, row.status);
-  if (row.ghnStatus.toLowerCase() === status && row.status === orderStatus) return false;
-  await env.db.update(webStoreOrders).set({ status: orderStatus, ghnStatus: status, updatedAt: observedAt }).where(eq(webStoreOrders.id, row.id));
-  await invoiceTasksChanged(env, { webOrderId: row.id });
-  return true;
+async function saveWebGhnStatus(env: StaffEnv, row: { id: string; code?:string; status: string; ghnStatus: string }, status: string, observedAt: string) {
+  const changed=await env.db.transaction(async tx=>{
+    const [current]=await tx.select({status:webStoreOrders.status,ghnStatus:webStoreOrders.ghnStatus,code:webStoreOrders.ghnOrderCode}).from(webStoreOrders).where(eq(webStoreOrders.id,row.id)).for('update');
+    if(!current||row.code!==undefined&&current.code!==row.code)return false;
+    // Re-read under lock: a delivered webhook or replaced waybill may have arrived while polling GHN.
+    if(current.ghnStatus.toLowerCase()==='delivered'&&status!=='delivered')return false;
+    const orderStatus=webGhnOrderStatus(status,current.status);
+    if(current.ghnStatus.toLowerCase()===status&&current.status===orderStatus)return false;
+    await tx.update(webStoreOrders).set({status:orderStatus,ghnStatus:status,updatedAt:observedAt}).where(eq(webStoreOrders.id,row.id));return true;
+  });
+  if(changed)await invoiceTasksChanged(env,{webOrderId:row.id});
+  return changed;
 }
 
 export async function syncPosLockGhn(env: StaffEnv) {
@@ -132,22 +137,24 @@ export async function syncPosLockGhn(env: StaffEnv) {
     // Ghi lại lúc kiểm để lượt sau xoay sang chuyến khác (mã sai không chặn mãi đầu hàng đợi).
     await env.db.update(deliveries).set({ trackingUpdatedAt: new Date().toISOString() }).where(eq(deliveries.id, row.id));
   }
-  // Đơn web Minh Long có vận đơn do CRM tạo (website chưa có cầu nối nên không tự báo trạng thái GHN): hỏi GHN như chuyến POS.
-  const web = env.ghnMlToken && !env.webOrderAction?.minhlongUrl ? await env.db.select({ id: webStoreOrders.id, code: webStoreOrders.ghnOrderCode, orderNo: webStoreOrders.orderNo,
-    status: webStoreOrders.status, ghnStatus: webStoreOrders.ghnStatus }).from(webStoreOrders)
-    .where(and(eq(webStoreOrders.source, 'minhlong'), sql`${webStoreOrders.ghnOrderCode}<>''`,
-      sql`lower(${webStoreOrders.ghnStatus}) not in ('delivered','returned','return_fail','cancel','damage','lost')`))
-    .orderBy(sql`${webStoreOrders.updatedAt} asc`).limit(100) : [];
-  for (const row of web) try {
-    const state = await ghnDetail(env, row.code, 'Showroom Gốm Sứ Minh Long');
-    if (await applyWebGhnStatus(env, row, state.status, state.updatedAt)) updated++;
-  } catch (error) {
-    errors.push({ code: row.code, orderNo: row.orderNo, message: error instanceof Error ? error.message : 'Lỗi GHN' });
+  // Both web sources must be queried directly. Website bridges/webhooks may stop reporting.
+  // Keep independent quotas/accounts so a Lock failure cannot prevent Minh Long from being checked.
+  let webChecked=0;
+  for(const source of ['lock','minhlong'] as const){
+    if(source==='lock'?!env.ghnToken:!env.ghnMlToken)continue;
+    const web=await env.db.select({id:webStoreOrders.id,code:webStoreOrders.ghnOrderCode,orderNo:webStoreOrders.orderNo,status:webStoreOrders.status,ghnStatus:webStoreOrders.ghnStatus}).from(webStoreOrders)
+      .where(and(eq(webStoreOrders.source,source),sql`${webStoreOrders.ghnOrderCode}<>''`,sql`lower(${webStoreOrders.ghnStatus}) not in ('delivered','returned','return_fail','cancel','damage','lost')`))
+      .orderBy(sql`${webStoreOrders.updatedAt} asc`,webStoreOrders.id).limit(100);
+    webChecked+=web.length;
+    for(const row of web)try{
+      const state=await ghnDetail(env,row.code,source==='lock'?'CỬA HÀNG LOCKNLOCK CẦN THƠ':'Showroom Gốm Sứ Minh Long');
+      if(await applyWebGhnStatus(env,row,state.status,state.updatedAt))updated++;
+    }catch(error){errors.push({code:row.code,orderNo:row.orderNo,message:error instanceof Error?error.message:'Lỗi GHN'});}
   }
   // Lưới an toàn sổ kho đơn web: đã lấy hàng mà chưa trừ / bị chặn, đã hoàn mà chưa cộng lại (kể cả đơn Lock báo qua website).
   try { updated += await reconcileWebOrderStock(env); }
   catch (error) { errors.push({ code: '', orderNo: 'Sổ kho đơn web', message: error instanceof Error ? error.message : 'Lỗi ghi sổ kho đơn web' }); }
-  return { ok: errors.length === 0, checked: rows.length + web.length, updated, errors };
+  return { ok: errors.length === 0, checked: rows.length + webChecked, updated, errors };
 }
 
 /** Lần đồng bộ gần nhất (theo tiến trình): bấm liên tục trong 60 giây trả kết quả cũ, không gọi GHN lại. */
@@ -175,7 +182,7 @@ export function registerPosGhnSyncRoutes(router: Router<StaffEnv>) {
     let updated = 0;
     for (const ship of ships) if (await applyGhnStatus(c.env, ship.id, status, observedAt)) updated++;
 
-    const web = await c.env.db.select({ id: webStoreOrders.id, source: webStoreOrders.source, status: webStoreOrders.status, ghnStatus: webStoreOrders.ghnStatus }).from(webStoreOrders)
+    const web = await c.env.db.select({ id: webStoreOrders.id, source: webStoreOrders.source, code:webStoreOrders.ghnOrderCode, status: webStoreOrders.status, ghnStatus: webStoreOrders.ghnStatus }).from(webStoreOrders)
       .where(eq(webStoreOrders.ghnOrderCode, orderCode)).limit(2);
     if (shopId && !ships.length) for (const row of web) {
       // Đơn web Lock: shop GHN Lock; đơn web Minh Long: shop GHN Minh Long (vận đơn CRM tạo).

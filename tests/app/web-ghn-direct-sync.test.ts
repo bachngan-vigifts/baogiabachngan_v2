@@ -1,0 +1,18 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {eq} from 'drizzle-orm';
+import {setup} from '../helpers/pos-fixture.ts';
+import {webStoreOrders} from '../../src/modules/sales/pos-schema.ts';
+import {stockBalances,stockMoves} from '../../src/modules/inventory/schema.ts';
+import {syncPosLockGhn} from '../../src/modules/sales/api/pos-ghn-sync.ts';
+async function fixture(){const f=await setup();await f.db.insert(webStoreOrders).values(['lock','minhlong'].map((source,i)=>({id:'web-'+source,source,externalId:String(i+1),orderNo:String(i+1),registerId:f.registerId,status:'processing',ghnOrderCode:source==='lock'?'GYMR68EC':'MLTEST',ghnStatus:'ready_to_pick',lines:JSON.stringify([{sku:'00123',quantity:2}]),orderedAt:'2026-11-02T03:24:42Z',updatedAt:'2026-11-02T03:24:44Z'})));f.env.ghnToken='fake-lock';f.env.ghnMlToken='fake-ml';f.env.ghnMlShopId='885001';f.env.webOrderAction={token:'fake-action',lockUrl:'https://locknlockonline.com/bridge',minhlongUrl:'https://minhlongonline.com/bridge'};return f;}
+test('web Lock and Minh Long poll their own GHN accounts even with bridges; delivered updates CRM and stock once',async()=>{
+ const f=await fixture(),calls:{code:string;token:string;shop:string}[]=[];f.env.ghnFetch=(async(_url,init)=>{const b=JSON.parse(String(init?.body)),h=new Headers(init?.headers);calls.push({code:b.order_code,token:h.get('Token')!,shop:h.get('ShopId')!});return Response.json({data:{status:'delivered',updated_date:'2026-11-03T01:00:00Z'}});}) as typeof fetch;
+ const r=await syncPosLockGhn(f.env);assert.equal(r.checked,2);assert.equal(r.errors.length,0);assert.deepEqual(calls,[{code:'GYMR68EC',token:'fake-lock',shop:'6096731'},{code:'MLTEST',token:'fake-ml',shop:'885001'}]);assert((await f.db.select().from(webStoreOrders)).every(o=>o.status==='completed'&&o.ghnStatus==='delivered'&&o.stockStatus==='issued'));assert.equal((await f.db.select().from(stockBalances))[0]!.qty,6);assert.equal((await f.db.select().from(stockMoves)).filter(m=>m.refType==='web_order').length,2);await syncPosLockGhn(f.env);assert.equal(calls.length,2);assert.equal((await f.db.select().from(stockBalances))[0]!.qty,6);
+});
+test('one account failure leaves the other source syncing and reports the affected code',async()=>{
+ const f=await fixture();f.env.ghnFetch=(async(_url,init)=>new Headers(init?.headers).get('Token')==='fake-lock'?Response.json({message:'Lookup failed'},{status:502}):Response.json({data:{status:'delivered'}})) as typeof fetch;const r=await syncPosLockGhn(f.env);assert.equal(r.checked,2);assert.equal(r.errors.length,1);assert.equal(r.errors[0]!.code,'GYMR68EC');const rows=await f.db.select().from(webStoreOrders);assert.equal(rows.find(o=>o.source==='lock')!.ghnStatus,'ready_to_pick');assert.equal(rows.find(o=>o.source==='minhlong')!.ghnStatus,'delivered');
+});
+test('a delayed poll cannot regress a delivered webhook or apply results to a replaced waybill',async()=>{
+ const f=await fixture();f.env.ghnFetch=(async(_url,init)=>{const code=JSON.parse(String(init?.body)).order_code;if(code==='GYMR68EC')await f.db.update(webStoreOrders).set({ghnStatus:'delivered',status:'completed'}).where(eq(webStoreOrders.id,'web-lock'));else await f.db.update(webStoreOrders).set({ghnOrderCode:'NEW-ML',ghnStatus:'ready_to_pick'}).where(eq(webStoreOrders.id,'web-minhlong'));return Response.json({data:{status:code==='GYMR68EC'?'ready_to_pick':'delivered'}});}) as typeof fetch;await syncPosLockGhn(f.env);const rows=await f.db.select().from(webStoreOrders);assert.equal(rows.find(o=>o.source==='lock')!.ghnStatus,'delivered');assert.equal(rows.find(o=>o.source==='minhlong')!.ghnStatus,'ready_to_pick');assert.equal(rows.find(o=>o.source==='minhlong')!.ghnOrderCode,'NEW-ML');
+});
