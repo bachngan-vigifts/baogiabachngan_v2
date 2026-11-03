@@ -15,7 +15,7 @@ const select = (options, value = '', label = '') => { const s = el('select'); if
 const num = v => Number(v || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 const signed = v => (v > 0 ? '+' : '') + num(v);
 const dt = iso => iso ? new Date(iso).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
-const PILL = { pending: 'warn', approved: 'blue', shipped: 'warn', done: 'ok', rejected: 'danger', cancelled: '' };
+const PILL = { pending: 'warn', approved: 'blue', shipped: 'transfer-shipped', done: 'ok', rejected: 'danger', cancelled: 'transfer-cancelled' };
 
 /** Hộp nhập: trả chuỗi (≥ 3 ký tự) hoặc null. */
 function ask(title, placeholder) {

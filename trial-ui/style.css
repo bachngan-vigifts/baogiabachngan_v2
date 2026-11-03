@@ -207,6 +207,8 @@ table { width: 100%; border-collapse: collapse; }
 .pill.warn { background: var(--amber-50); color: var(--amber); }
 .pill.off { background: #f1f2f4; color: #7b8494; }
 .pill.blue { background: var(--blue-50); color: var(--blue); }
+.pill.transfer-shipped { background: #f3eefe; color: #7041a6; }
+.pill.transfer-cancelled { background: #eef1f5; color: #546174; }
 .type-B2B { background: var(--blue-50); color: var(--blue); }
 .type-HRC { background: var(--green-50); color: var(--green); }
 .type-VIGIFTS { background: var(--red-50); color: var(--red-700); }
