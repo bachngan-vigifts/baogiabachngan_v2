@@ -2287,7 +2287,7 @@ dialog.order-compose { width: 100vw; max-width: 100vw; height: 100dvh; max-heigh
 .order-compose-details { padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); min-width: 0; align-items: start; }
 .order-compose-details > * { min-width: 0; }
 .order-compose-details textarea { width: 100%; }
-#order-create-sourcing { align-content: start; }
+.order-compose-sourcing { align-content: start; }
 .quote-source-toolbar h3 { margin: 0 0 6px; }
 .quote-source-summary { color: var(--brand-navy); font-weight: 700; margin: 0 0 12px; }
 .quote-source-toolbar label { max-width: 520px; }
