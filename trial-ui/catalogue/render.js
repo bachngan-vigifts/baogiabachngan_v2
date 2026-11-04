@@ -41,10 +41,10 @@ export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,sc
  box(x,y,280,230,C.frame,C.line,10);
  const im=await loadImage(item.image);if(im)photo(im,x+10,y+10,108,106);
  text(item.name,x+128,y+10,142,61,12,C.ink,true,'left',4);
- text('Mã: '+(item.sku||'—'),x+128,y+76,142,30,9.5,C.muted,false,'left',2);
+ text('Mã: '+(item.sku||'—')+(item.qty>1?' / SL: '+item.qty:''),x+128,y+76,142,30,9.5,C.muted,false,'left',2);
  if(state.settings.regular)text('Niêm yết: '+(item.priceOnRequest?'Liên hệ':money(item.regular*(bundle?10:1))),x+10,y+124,200,18,10,C.muted,false,'left',1);
  text(bundle?'Giá / bộ 10 SP':'Giá đề xuất',x+10,y+147,195,18,11,C.ink);
- text(item.priceOnRequest?'Liên hệ':(item.fromPrice?'Từ ':'')+money(quotePrice(item,state)),x+10,y+168,195,26,19,C.green,true);
+ const amount=item.priceOnRequest?'Liên hệ':(item.fromPrice?'Từ ':'')+money(quotePrice(item,state));ctx.font='700 19px Montserrat';const size=Math.min(19,19*195/Math.max(195,ctx.measureText(amount).width));text(amount,x+10,y+168,195,26,size,C.green,true);
  if(state.settings.qr&&item.url){const data=qrData(item.url),qr=await qrImage(item.url);photo(qr,x+211,y+126,58,58,data);text('Xem chi tiết',x+204,y+187,72,14,8,C.green,false,'center');}
  text(state.meta.note,x+10,y+204,260,25,8.5,C.muted,false,'left',2);
  }
@@ -64,3 +64,5 @@ export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,sc
  footer();
  if(pptSlide)pptSlide.addNotes(items.map(item=>`${item.name}\nMã: ${item.sku}\n${item.url}\nGiá niêm yết một SP: ${item.regular}; chiết khấu ${item.discount}%; phụ phí ${item.fee}; giá đề xuất một SP ${price(item)}. Đơn vị chào: ${isBundle(item,state)?'bộ 10 SP':'một SP'}; giá chào ${quotePrice(item,state)}; số lượng ${item.qty}.`).join('\n\n'));
 }
+
+
