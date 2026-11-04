@@ -119,6 +119,46 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
 }
 
 export interface PurchaseListFilter { q?: string; supplierId?: string; state?: string; limit?: number; openOnly?: boolean }
+
+/** Flow map needs progress only: never load prices, payment schedules, payments or creator profiles. */
+export async function listPurchaseFlow(db: Db, m: Member, today: string) {
+  const rows = await db.select({ id: incomingShipments.id, ticketNumber: incomingShipments.ticketNumber,
+    supplierName: incomingShipments.supplierName, arrivalDate: incomingShipments.arrivalDate,
+    approvalStatus: incomingShipments.approvalStatus, supplierStatus: incomingShipments.supplierStatus,
+    cancelledAt: incomingShipments.cancelledAt, createdBy: incomingShipments.createdBy, submittedAt: incomingShipments.submittedAt,
+  }).from(incomingShipments).where(and(purchaseScope(m), isNull(incomingShipments.cancelledAt)))
+    .orderBy(desc(incomingShipments.createdAt)).limit(500);
+  const ids = rows.map(r => r.id);
+  if (!ids.length) return [];
+  const [lines, received, pending] = await Promise.all([
+    db.select({ id: incomingShipmentLines.id, shipmentId: incomingShipmentLines.shipmentId,
+      quantity: incomingShipmentLines.quantity, promisedDate: incomingShipmentLines.promisedDate,
+    }).from(incomingShipmentLines).where(inArray(incomingShipmentLines.shipmentId, ids)),
+    db.select({ shipmentId: supplierReceipts.shipmentId, lineId: supplierReceiptLines.lineId,
+      goodQty: supplierReceiptLines.goodQty, damagedQty: supplierReceiptLines.damagedQty,
+    }).from(supplierReceiptLines).innerJoin(supplierReceipts, eq(supplierReceipts.id, supplierReceiptLines.receiptId))
+      .where(and(inArray(supplierReceipts.shipmentId, ids), isNull(supplierReceipts.cancelledAt))),
+    db.select({ shipmentId: supplierReceipts.shipmentId, n: sql<number>`count(*)`.mapWith(Number) }).from(supplierReceipts)
+      .where(and(inArray(supplierReceipts.shipmentId, ids), isNull(supplierReceipts.cancelledAt), inArray(supplierReceipts.sapoStatus, ['pending', 'failed'])))
+      .groupBy(supplierReceipts.shipmentId),
+  ]);
+  const group = <T extends { shipmentId: string }>(values: T[]) => {
+    const map = new Map<string, T[]>();
+    for (const value of values) { const bucket = map.get(value.shipmentId) ?? []; bucket.push(value); map.set(value.shipmentId, bucket); }
+    return map;
+  };
+  const byOrder = group(lines), receivedByOrder = group(received), pendingByOrder = new Map(pending.map(r => [r.shipmentId, r.n]));
+  return rows.map(o => {
+    const ls = byOrder.get(o.id) ?? [];
+    const progress = receiptProgress(ls.map(l => ({ ...l, sku: '', name: '' })), receivedByOrder.get(o.id) ?? []);
+    const promised = ls.map(l => l.promisedDate).filter(Boolean).sort()[0] || o.arrivalDate || '';
+    return { id: o.id, ticketNumber: o.ticketNumber, supplierName: o.supplierName, arrivalDate: promised,
+      state: purchaseState(o, progress), submitted: o.submittedAt !== null,
+      late: Boolean(promised && promised < today && !progress.fullyReceived && !o.cancelledAt && o.approvalStatus === 'approved'),
+      sapoPending: pendingByOrder.get(o.id) ?? 0 };
+  });
+}
+
 function purchaseListScope(m: Member, filter: PurchaseListFilter) {
   const q = (filter.q ?? '').trim().slice(0, 80);
   return and(purchaseScope(m), filter.openOnly ? isNull(incomingShipments.cancelledAt) : undefined, filter.supplierId ? eq(incomingShipments.supplierId, filter.supplierId) : undefined,
