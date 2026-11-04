@@ -1,5 +1,12 @@
 # Tốc độ tải trang CRM
 
+## POS và vùng Edge (04/11/2026)
+
+- Production: CSDL ở Seoul (`ap-northeast-2`); phần lớn lượt POS chậm chạy tại Singapore. Log gần 24 giờ ghi nhận trung vị options 5,12 s tại Singapore / 2,42 s tại Seoul; catalog 3,77 s / 0,57 s; orders 2,49 s / 0,64 s. Đây là các nhóm lượt gọi thực tế khác nhau, không phải benchmark A/B cùng điều kiện.
+- POS không chờ toàn bộ danh mục/tồn kho trong options nữa. Lấy cấu hình nhẹ, hiển thị 20–60 mã bằng API catalog hiện có rồi tải snapshot ở nền. Fixture trình duyệt với snapshot chậm 3 s kiểm tra cả Lock/Minh Long, điện thoại/máy tính và quét mã trước khi tải nền hoàn tất (`scripts/testing/pos-first-load.mjs`). `POS_BASELINE_REF` cho phép chọn commit gốc để so sánh; mặc định là bản đã triển khai `4291e92`.
+- Header chọn vùng vẫn cố định Seoul, không bật lại cơ chế tự học URL cũ. Lỗi mạng/gateway chuyển sang dự phòng 5 phút; sau đó chỉ một GET thăm dò Seoul, các lượt khác vẫn đi dự phòng tới khi thăm dò đạt. Tắt tay được lưu riêng và giữ qua tải lại. Cờ tự tắt v1 không còn giữ máy ở Singapore vô thời hạn.
+- GET có chọn vùng thử tối đa một lượt, timeout 8 s, rồi mới dùng luồng đọc dự phòng thông thường. POST/PUT/DELETE không được gửi lại sang vùng khác khi kết quả chưa rõ. Bộ kiểm thử `api-region-request`, `api-region-ui` và `api-transport` bao phủ giới hạn này.
+
 ## Đã làm (đợt 1)
 
 | Chỗ chậm | Nguyên nhân | Cách sửa |

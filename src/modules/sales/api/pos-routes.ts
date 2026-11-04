@@ -690,6 +690,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       return json({
         registers: regs,
         stockSnapshot,
+        stockSnapshotVersion: can(m, 'pos.sell') && selectedRegister ? 1 : 0,
         defaultRegisterId,
         templates,
         shifts,

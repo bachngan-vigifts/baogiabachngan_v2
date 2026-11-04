@@ -304,7 +304,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   async function load() {
     restorePending();
     const seq = ++st.request;
-    const d = await run(() => api('/pos/options?stock=1' + (st.register?.id ? '&registerId=' + encodeURIComponent(st.register.id) : '') + (st.policy ? '&pricePolicyId='+encodeURIComponent(st.policy):'')));
+    const d = await run(() => api('/pos/options?stock=0' + (st.register?.id ? '&registerId=' + encodeURIComponent(st.register.id) : '') + (st.policy ? '&pricePolicyId='+encodeURIComponent(st.policy):'')));
     if (!d || seq !== st.request) return;
     st.options = d;
     st.shift = d.current;
@@ -316,12 +316,21 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       null;
     if (!st.register || ![st.register.pricePolicyId, st.register.secondPricePolicyId].includes(st.policy))
       st.policy = st.register?.pricePolicyId || '';
-    stockPreloadSupported=d.stockSnapshot?.version===1;
-    if(stockPreloadSupported)acceptStockSnapshot(d.stockSnapshot);
+    const embeddedStock = d.stockSnapshot?.version === 1;
+    stockPreloadSupported = embeddedStock || d.stockSnapshotVersion === 1;
+    firstCatalogRead = stockPreloadSupported && !embeddedStock;
+    if (embeddedStock) acceptStockSnapshot(d.stockSnapshot);
+    if (firstCatalogRead) { st.products = []; st.offset = null; st.localSkus = null; }
     justBootstrappedStock=stockPreloadSupported;
     draw();
     scheduleStockRefresh();
-    if (st.register) await Promise.all([search(false), run(loadOrderBoard)]);
+    if (st.register) {
+      const owner = stockOwner();
+      const firstPage = search(false).then(() => {
+        if (seq === st.request && owner === stockOwner() && !root.hidden && !embeddedStock) void refreshStockSnapshot(true);
+      });
+      await Promise.all([firstPage, run(loadOrderBoard)]);
+    }
     if (st.cart.length && active()) await preview();
     const focus=new URLSearchParams((globalThis.location?.hash||'').split('?')[1]||'').get('webOrderId');
     if(focus&&seq===st.request){try{const d=await api('/orders/'+encodeURIComponent('web:'+focus));if(seq===st.request&&location.hash.startsWith('#/pos'))showWebOrder({...d.document,id:d.document.webOrderId,external:true,orderNo:d.document.sourceOrderNo,lines:JSON.stringify(d.items),bucket:d.document.status==='cancelled'?'cancelled':d.document.status==='delivered'?'completed':d.document.ghnOrderCode?'waiting_delivery':'pending',actionsAvailable:d.canManage,ghnDirect:d.document.source==='minhlong'||d.document.edited,webRevision:d.revision,suggestedCod:d.document.paid?0:d.document.total});}catch(e){toast(e.message,'err');}}
@@ -1265,7 +1274,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   const liveCache = new Map(), scanLookup = new Map(), LIVE_MS = 15000;
   let readyCatalog = null,detailRefreshTimer=null;
   const stockCache=createPosStockCache();
-  let stockPreloadSupported=false,justBootstrappedStock=false,stockRefreshTimer=null,stockRefreshRequest=null,stockFetchFailed=false;
+  let stockPreloadSupported=false,justBootstrappedStock=false,firstCatalogRead=false,stockRefreshTimer=null,stockRefreshRequest=null,stockFetchFailed=false;
   let liveOwner='';
   const stockOwner=()=>{const owner=user()?.id||'';if(owner!==liveOwner){liveOwner=owner;liveCache.clear();scanLookup.clear();stockCache.clear();readyCatalog=null;}return owner;};
   const posSearchReady=()=>!!stockCache.scope(st.register?.id,st.policy,stockOwner())?.catalogItems||(localSearch.ready?localSearch.ready():localSearch('', '')!==null);
@@ -1289,7 +1298,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const registerId=st.register.id,policyId=st.policy,owner=stockOwner(),scope=registerId+'|'+policyId+'|'+owner;
     if(stockRefreshRequest?.scope===scope)return stockRefreshRequest.promise;
     const request={scope,promise:null};request.promise=api('/pos/stock-snapshot?registerId='+encodeURIComponent(registerId)+'&pricePolicyId='+encodeURIComponent(policyId)+(!stockCache.scope(registerId,policyId,owner)?.catalogItems?'&metadata=1':'')+(background?'&background=1':'')).then(snapshot=>{
-      if(stockOwner()===owner&&st.register?.id===registerId&&st.policy===policyId)acceptStockSnapshot(snapshot);
+      if(stockOwner()===owner&&st.register?.id===registerId&&st.policy===policyId){
+        if (snapshot?.version !== 1) { stockPreloadSupported = false; clearTimeout(stockRefreshTimer); return; }
+        acceptStockSnapshot(snapshot);
+      }
     }).catch(e=>{if(stockOwner()!==owner||st.register?.id!==registerId||st.policy!==policyId)return;stockFetchFailed=true;updateStockStamp();if([401,403].includes(e.status)){stockPreloadSupported=false;clearTimeout(stockRefreshTimer);stockCache.clear();liveCache.clear();scanLookup.clear();st.products=st.products.map(p=>({...p,onHand:null,reserved:null,available:undefined,stockSources:null,loading:true}));renderProducts();}else{st.products=st.products.map(p=>({...p,stockStale:true}));renderProducts();}}).finally(()=>{if(stockRefreshRequest===request)stockRefreshRequest=null;});
     stockRefreshRequest=request;return request.promise;
   }
@@ -1323,6 +1335,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if (more && (nodes.search?.value.trim() || '') !== st.query) return;
     if (previous && st.catalogPages.length < 2) return;
     const registerId=st.register.id,registerName=st.register.name,policyId=st.policy;
+    const initialPage = firstCatalogRead && !more && !typed && !addScanned;
+    if (initialPage) firstCatalogRead = false;
     if (addScanned && !more) {
       const code = nodes.search?.value.trim();
       if (!code) return;
@@ -1357,7 +1371,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     }
     try {
       // Cache misses ask the server to resolve exact codes. Typed searches still rank locally.
-      if (!more) st.localSkus = !addScanned ? posSearch(q, policyId)?.filter(p=>posCatalogProductVisible(registerName,p)) : null;
+      if (!more) st.localSkus = !addScanned && !initialPage ? posSearch(q, policyId)?.filter(p=>posCatalogProductVisible(registerName,p)) : null;
       const local = st.localSkus?.length ? st.localSkus : null; // [{sku, name, price…}] theo thứ tự xếp hạng
       const base = `/pos/catalog?registerId=${encodeURIComponent(registerId)}&pricePolicyId=${encodeURIComponent(policyId)}`;
       st.query = q;

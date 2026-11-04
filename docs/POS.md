@@ -2,6 +2,12 @@
 
 POS dùng đơn bán, phiếu thu, lịch giao và sổ kho hiện có. Route: `#/pos`.
 
+## Tải trang và tồn kho
+
+Trang gọi `/pos/options?stock=0` để lấy quầy/ca trước, rồi tải đồng thời trang sản phẩm đầu (20 mã trên điện thoại, 60 trên máy tính) và bảng đơn hàng. API trả `stockSnapshotVersion=1` khi tài khoản/quầy hỗ trợ tải tồn nền; client chỉ bắt đầu tải `/pos/stock-snapshot?metadata=1&background=1` sau khi trang sản phẩm đầu đã hiện, không chờ snapshot để bán hàng. Giá/tồn trang đầu vẫn đọc trực tiếp từ API có kiểm quyền; lúc thanh toán vẫn kiểm lại tồn trong giao dịch.
+
+Danh mục tải nền dùng cho tìm kiếm/quét nhanh tiếp theo; không lưu tồn vào localStorage. Phản hồi snapshot cũ không được ghi đè số tồn mới hơn của từng sản phẩm, và phản hồi của quầy/bảng giá/tài khoản cũ không được áp dụng vào phạm vi mới. Máy chủ vẫn hỗ trợ `stock=1` cho client cũ và giữ cách phân trang nếu snapshot quá lớn/không được hỗ trợ.
+
 ## Chuẩn bị đưa lên web
 
 Áp dụng các migration hiện có của main trước, sau đó chạy theo thứ tự:
