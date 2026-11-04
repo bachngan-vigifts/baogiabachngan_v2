@@ -1,4 +1,5 @@
 import { orderExportDetails } from './order-export.ts';
+import { updateWebAccounting } from './web-order-accounting.ts';
 import {registerWebOrderEdits} from './web-order-edit.ts';
 import {webDocumentPage,webDocumentDetail} from './web-order-documents.ts';
 import {cashCollections} from '../cash-collection-schema.ts';
@@ -960,9 +961,15 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
   }, 'business');
 
   // ================= XUẤT HOÁ ĐƠN =================
+  router.put('/orders/:id/web-billing', async c => {
+    if (!c.params.id!.startsWith('web:')) throw new AppError(404, 'Không phải đơn website.');
+    return json(await updateWebAccounting(c, await readJson(c.req, 16_384), 'billing'));
+  }, 'business');
   /** Nhân viên phụ trách (người xem được đơn) yêu cầu xuất hoá đơn → sinh việc cho nhóm Kế toán. Giao xong thì tự yêu cầu. */
   router.post('/orders/:id/invoice-request', async c => {
-    const body = await readJson(c.req, 4_096), order = await loadOrder(c, c.params.id!);
+    const body = await readJson(c.req, 16_384);
+    if (c.params.id!.startsWith('web:')) return json(await updateWebAccounting(c, body, 'request'));
+    const order = await loadOrder(c, c.params.id!);
     if (order.status === 'cancelled' || order.status === 'draft') throw new AppError(409, 'Đơn chưa xác nhận hoặc đã huỷ, chưa yêu cầu xuất hoá đơn được.');
     if (order.invoiceStatus === 'issued') throw new AppError(409, `Đơn đã xuất hoá đơn ${order.invoiceNo}.`, 'INVOICE_ISSUED');
     // Email nhận hoá đơn: một hoặc nhiều địa chỉ (cách nhau bởi dấu phẩy / chấm phẩy). Phát hành chính thức hay gửi bản nháp.
@@ -986,7 +993,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
   /** Nhân viên / Kế toán / Manager nhập số hoá đơn (sửa lại được khi nhập nhầm). Việc "Xuất hoá đơn" tự hoàn thành. */
   router.put('/orders/:id/invoice', async c => {
     if (!canIssueInvoice(viewer(c))) throw new AppError(403, 'Bạn không có quyền nhập số hoá đơn.');
-    const body = await readJson(c.req, 4_096), order = await loadOrder(c, c.params.id!);
+    const body = await readJson(c.req, 16_384);
+    if (c.params.id!.startsWith('web:')) return json(await updateWebAccounting(c, body, 'invoice'));
+    const order = await loadOrder(c, c.params.id!);
     if (order.status === 'cancelled' || order.status === 'draft') throw new AppError(409, order.status === 'draft' ? 'Đơn chưa được duyệt, chưa nhập số hoá đơn được.' : 'Đơn đã huỷ.');
     const invoiceNo = text(body.invoiceNo, 200), invoiceDate = body.invoiceDate ? String(body.invoiceDate) : vietnamDate().iso;
     if (!invoiceNo) throw new AppError(400, 'Nhập số hoá đơn.');

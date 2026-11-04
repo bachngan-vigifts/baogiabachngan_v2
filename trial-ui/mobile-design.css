@@ -102,7 +102,7 @@
  .crm-designed-page .empty-icon { display:none; }
  .crm-designed-page .task-tabs-row { display:flex;overflow-x:auto;flex-wrap:nowrap;border-bottom:1px solid var(--line); }
  .task-tabs-row button { min-height:44px;white-space:nowrap;font-size:13px; }
- .task-due-cards { display:flex!important;overflow:auto;gap:6px;margin:12px 0; }
+ .task-due-cards { display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0; }
  .task-due-cards button { flex:none;min-height:36px;padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;display:flex;gap:6px;align-items:center; }
  .task-due-cards small { display:none; }
  .task-due-cards strong,.task-due-cards b { font-size:12px; }
@@ -193,9 +193,10 @@
  #view-editor #quote-form .mobile-savebar { bottom:0;grid-template-columns:minmax(0,1fr) auto; }
  #view-editor .editor-head .quote-actions { margin:0; }
  #view-tasks .task-top .task-sync { display:none; }
- #view-tasks .task-due-card { display:flex;align-items:center;gap:6px;padding:8px 12px;min-height:44px;border-radius:999px;box-shadow:none; }
+ #view-tasks .task-due-card { display:grid;align-items:start;gap:4px;padding:12px;min-height:72px;border-radius:12px;box-shadow:none; }
  #view-tasks .task-due-card::before { display:none; }
- #view-tasks .task-due-card strong,#view-tasks .task-due-card span { font-size:12px; }
+ #view-tasks .task-due-card span { font-size:12px; }
+ #view-tasks .task-due-card strong { font-size:20px; }
  #view-tasks .task-due-card strong { order:1; }
  #view-tasks .task-due-card[aria-pressed=true] { background:var(--brand-navy);border-color:var(--brand-navy);box-shadow:none; }
  #view-tasks .task-due-card[aria-pressed=true] :is(span,strong) { color:#fff; }
@@ -204,7 +205,7 @@
  #view-tasks .task-people small { display:inline; }
  #view-tasks .task-row .task-st { display:none; }
  #view-tasks .task-row .task-meta .tag.dashed { display:none; }
- #view-tasks .task-tab[aria-selected=true] { color:var(--brand-navy);border-color:var(--brand-navy); }
+ #view-tasks .task-tab[aria-selected=true] { color:#fff;border-color:var(--brand-navy);background:var(--brand-navy); }
 }
 @media screen and (max-width:850px){
  #view-editor #save-quote-m { background:var(--brand-navy);border-color:var(--brand-navy); }

@@ -5,6 +5,7 @@ import { bindCustomerDuplicateCheck } from './customer-duplicate-check.js';
 import { posCustomerIssue, canListRetailCustomers } from './pos-customer.js';
 import { customerFormFields } from './customer-form-fields.js';
 import { webOrderFinancialSummary } from './web-order-financials.js';
+import { ghnStatusLabel } from './ghn-order-summary.js';
 import { openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
 import { startBarcodeCamera } from './barcode-camera.js';
@@ -689,13 +690,25 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     for (const o of d.orders) {
       const row = el('div', 'pos-order-row');
       row.tabIndex = 0; row.setAttribute('role', 'button');
+      const source = el('span', 'pos-note', (o.ownerName || 'Chưa có nhân viên') + ' · ' + (o.external ? 'Đơn website' : o.fulfillmentMode === 'cod' ? 'Giao COD' : 'Nhận tại quầy'));
+      const shipments = o.external
+        ? (o.ghnOrderCode ? [{ trackingCode: o.ghnOrderCode, trackingStatus: o.ghnStatus }] : [])
+        : (o.ghnShipments || []);
+      for (const shipment of shipments) {
+        source.append(el('small', 'pos-order-shipping', `GHN ${shipment.trackingCode} · ${ghnStatusLabel(shipment.trackingStatus)}`));
+      }
+      if (!shipments.length && (o.external || o.fulfillmentMode === 'cod')) {
+        source.append(el('small', 'pos-order-shipping', o.external && o.ghnStatus
+          ? `Chưa có mã GHN · ${ghnStatusLabel(o.ghnStatus)}`
+          : 'Chưa tạo GHN'));
+      }
       row.append(
         el('b', '', o.orderNo),
         el('span', '', o.customerName + ' · ' + money(o.total)),
-        el('span', 'pos-note', (o.ownerName || 'Chưa có nhân viên') + ' · ' + (o.external ? 'Đơn website' : o.fulfillmentMode === 'cod' ? 'Giao COD' : 'Nhận tại quầy')),
+        source,
         el('span', 'pos-order-state', orderLabels[o.bucket] + (o.bucket === 'cancelled' ? '' : ' · ' + ({ paid: 'Đã thanh toán', debt: 'Còn nợ', unknown: 'Chưa rõ thanh toán' }[o.paymentStatus] || ''))),
       );
-      const open = () => {if(st.orderBoardLoading)return;return o.external ? showWebOrder(o) : go('#/orders/' + encodeURIComponent(o.id));};
+      const open = () => {if(st.orderBoardLoading)return;return go('#/orders/' + encodeURIComponent(o.external ? 'web:' + o.id : o.id));};
       row.addEventListener('click', open);
       row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
       if (!o.external && o.bucket === 'cancelled' && Number(o.cancelledReturnQty) > 0) {

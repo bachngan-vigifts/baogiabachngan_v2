@@ -1,5 +1,6 @@
 import {orderListExportSheets} from './order-list-export.js';
 import {initWebOrderDocument,webDocumentMode} from './web-order-document.js';
+import {renderWebOrderDetail} from './web-order-detail.js';
 import {mountCashCollections} from './cash-collections.js';
 import {returnStateText} from './order-return-summary.js';
 import {mountContractLiquidation} from './contract-liquidation.js';
@@ -3986,17 +3987,25 @@ $('#discount-form').addEventListener('submit', async e => {
 $('#account-link-copy').addEventListener('click', () => { $('#account-link-url').select(); navigator.clipboard?.writeText($('#account-link-url').value).then(() => toast('Đã chép link.')).catch(() => document.execCommand('copy')); });
 
 let orderLoadRun = 0;
-const webOrderUi=initWebOrderDocument({root:$('#web-order-content'),api,toast,go,onPrint:(html,no,kind)=>{ $('#print-sheet').innerHTML=html;printSheet({page:{size:'A4 portrait',margin:'20mm 8mm 10mm 8mm'},cls:'web-order-print',title:`${kind}-${no}`.replace(/[^\w.-]+/g,'-')}); }});
+const webOrderUi=initWebOrderDocument({root:$('#web-order-content'),api,toast,go,onChanged:d=>openOrder(d.document.id,d),onPrint:(html,no,kind)=>{ $('#print-sheet').innerHTML=html;printSheet({page:{size:'A4 portrait',margin:'20mm 8mm 10mm 8mm'},cls:'web-order-print',title:`${kind}-${no}`.replace(/[^\w.-]+/g,'-')}); }});
 async function openOrder(id, confirmed = null) {
   id=decodeURIComponent(id);
   const run = ++orderLoadRun, session = token, route = location.hash;
   const onContracts = location.hash.startsWith('#/contracts/');
-  webDocumentMode($('#view-order'),$('#web-order-content'),id.startsWith('web:'));
+  webOrderUi.invalidate();
+  webDocumentMode($('#view-order'),$('#web-order-content'),false);
   $('#order-title').textContent = onContracts ? 'Đang tải HĐKT…' : 'Đang tải đơn…';
   let d;
   try { d = confirmed || await api('/orders/' + encodeURIComponent(id)); } catch (e) { if(run!==orderLoadRun||session!==token||route!==location.hash)return;toast(e.message, 'err'); if (e.status !== 401) go(onContracts ? '#/contracts' : '#/orders'); return; }
   if(run !== orderLoadRun || session !== token || route !== location.hash)return;
-  if(d.document){sales.order=null;sales.detail=null;webOrderUi.render(d);$('#breadcrumb').textContent=d.document.orderNo;document.title=d.document.orderNo+' · Bách Ngân';return;}
+  if(d.document){
+    sales.order=d.document;sales.detail=d;
+    const isCurrent=()=>run===orderLoadRun&&session===token&&route===location.hash;
+    renderWebOrderDetail({root:$('#view-order'),detail:d,api,toast,isCurrent,renderInvoice,
+      onReload:()=>openOrder(id),onPrint:kind=>webOrderUi.print(d,kind),
+      onEdit:()=>{webDocumentMode($('#view-order'),$('#web-order-content'),true);webOrderUi.edit(d);}});
+    $('#breadcrumb').textContent=d.document.orderNo;document.title=d.document.orderNo+' · Bách Ngân';return;
+  }
   sales.order = d.order; sales.detail = d;
   // HĐKT luôn ở #/contracts/<id>, đơn hàng ở #/orders/<id> (link cũ / thông báo cũ tự chuyển đúng trang).
   const want = docHref(id, d.contract?.contractNo);
@@ -4220,10 +4229,11 @@ function renderInvoice(o) {
     : st === 'issued' ? `<dl class="kv"><dt>Số hoá đơn</dt><dd><b>${esc(o.invoiceNo)}</b></dd><dt>Ngày hoá đơn</dt><dd>${fmtDate(o.invoiceDate) || '—'}</dd>
         <dt>Người nhập</dt><dd>${esc(o.invoiceIssuedByName || '—')} · ${at(o.invoiceIssuedAt)}</dd>${requested}</dl>
         ${o.canIssueInvoice ? '<button type="button" class="btn ghost small" id="invoice-edit">Sửa số hoá đơn</button>' : ''}${form('Lưu số hoá đơn')}`
+    : st === 'handled' ? `<p class="muted small">Việc hoá đơn đã được xử lý nhưng đơn chưa có số hoá đơn. Nhập số để lưu hồ sơ.</p>${form('Lưu số hoá đơn')}`
     : st === 'requested' ? `<dl class="kv">${requested}</dl><p class="muted small">Đã tạo việc "Xuất hoá đơn" cho nhóm Kế toán. Sau khi xuất, Kế toán hoặc nhân viên phụ trách nhập số hoá đơn vào đây.</p>
        <button type="button" class="btn ghost small" id="invoice-request" title="Đổi email nhận, cách xuất hoặc ghi chú">Sửa yêu cầu</button>${form('Đã xuất – lưu số hoá đơn')}`
     : `<p class="muted">Chưa yêu cầu xuất hoá đơn. Khi đơn giao xong, hệ thống tự yêu cầu và giao việc cho nhóm Kế toán.</p>
-       ${o.status === 'draft' ? '' : '<button type="button" class="btn secondary small" id="invoice-request" title="Tạo việc Xuất hoá đơn cho nhóm Kế toán">🧾 Yêu cầu xuất hoá đơn</button>' + form('Lưu số hoá đơn')}`;
+       ${o.status === 'draft' && !o.external ? '' : '<button type="button" class="btn secondary small" id="invoice-request" title="Tạo việc Xuất hoá đơn cho nhóm Kế toán">🧾 Yêu cầu xuất hoá đơn</button>' + form('Lưu số hoá đơn')}`;
 }
 document.addEventListener('click', async e => {
   if (e.target.id === 'invoice-edit') { const f = document.getElementById('invoice-form'); f.hidden = false; e.target.hidden = true; f.invoiceNo.focus(); return; }
@@ -4245,16 +4255,17 @@ $('#invoice-req-form').addEventListener('submit', async e => {
   if (bad) { $('#invoice-req-error').textContent = `Email "${bad}" chưa đúng.`; f.email.focus(); return; }
   if (!email && !confirm('Chưa có email nhận hoá đơn. Vẫn gửi yêu cầu?')) return;
   btn.disabled = true;
+  const requestedOrder=sales.order;
   try {
-    const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/invoice-request`, 'POST', { email, note: f.note.value, mode: f.mode.value });
-    $('#invoice-req-dialog').close(); toast(r.updated ? 'Đã cập nhật yêu cầu xuất hoá đơn.' : 'Đã yêu cầu xuất hoá đơn – nhóm Kế toán nhận việc.'); openOrder(sales.order.id); tasksView().badge();
+    const r = await api(`/orders/${encodeURIComponent(requestedOrder.id)}/invoice-request`, 'POST', { email, note: f.note.value, mode: f.mode.value, ...(requestedOrder.external?{revision:requestedOrder.accountingRevision}:{}) });
+    $('#invoice-req-dialog').close();if(sales.order?.id!==requestedOrder.id)return;toast(r.updated ? 'Đã cập nhật yêu cầu xuất hoá đơn.' : 'Đã yêu cầu xuất hoá đơn – nhóm Kế toán nhận việc.'); openOrder(requestedOrder.id); tasksView().badge();
   } catch (ex) { $('#invoice-req-error').textContent = ex.message; } finally { btn.disabled = false; }
 });
 document.addEventListener('submit', async e => {
   if (e.target.id !== 'invoice-form') return;
   e.preventDefault();
   const f = e.target, btn = f.querySelector('button[type="submit"],button:not([type])'); btn.disabled = true;
-  try { await api(`/orders/${encodeURIComponent(sales.order.id)}/invoice`, 'PUT', { invoiceNo: f.invoiceNo.value, invoiceDate: f.invoiceDate.value }); toast('Đã lưu số hoá đơn.'); openOrder(sales.order.id); tasksView().badge(); }
+  try { const order=sales.order;await api(`/orders/${encodeURIComponent(order.id)}/invoice`, 'PUT', { invoiceNo: f.invoiceNo.value, invoiceDate: f.invoiceDate.value, ...(order.external?{revision:order.accountingRevision}:{}) });if(sales.order?.id!==order.id)return;toast('Đã lưu số hoá đơn.'); openOrder(order.id); tasksView().badge(); }
   catch (ex) { toast(ex.message, 'err'); btn.disabled = false; }
 });
 // ----- Phiếu đóng gói: "📦 Yêu cầu đóng gói" chia số lượng theo nguồn hàng → mỗi nguồn một phiếu → gửi kho → kho xác nhận kèm 1–3 ảnh.

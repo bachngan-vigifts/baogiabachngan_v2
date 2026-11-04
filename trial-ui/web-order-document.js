@@ -8,7 +8,7 @@ export function webDocumentMode(view,root,enabled){
  root.hidden=!enabled;
 }
 /** Read the same web identity used by POS/GHN/stock. Never pretend it is a second sales order. */
-export function initWebOrderDocument({root,api,toast,onPrint,go}){
+export function initWebOrderDocument({root,api,toast,onPrint,go,onChanged}){
  let generation=0;
  const stockLabels={none:'Chưa xuất kho – chờ GHN xác nhận lấy hàng',issued:'Đã xuất kho theo GHN',returned:'Đã hoàn kho theo GHN',blocked:'Cần đối soát kho',legacy:'Đối soát theo hồ sơ cũ'};
  function paper(d,kind='order'){
@@ -27,7 +27,7 @@ export function initWebOrderDocument({root,api,toast,onPrint,go}){
   return p;
  }
  async function edit(d){
-  const o=d.document,seq=generation,form=el('form','card web-order-edit'),rows=el('div','web-edit-lines'),error=el('p','error'),total=el('p','web-edit-total');error.setAttribute('role','alert');
+  const o=d.document,seq=++generation,form=el('form','card web-order-edit'),rows=el('div','web-edit-lines'),error=el('p','error'),total=el('p','web-edit-total');error.setAttribute('role','alert');
   const controls=[],key=crypto.randomUUID();let checked=null,saving=false;
   form.append(el('h2','','Sửa sản phẩm và giá trước GHN'),el('p','muted','Đơn giá nhập đã gồm VAT. Kiểm tra lại giảm giá khi đổi sản phẩm; mã/điểm từ website không được tự kiểm tra điều kiện áp dụng lại.'),error,rows);
   function addLine(l={}){
@@ -54,12 +54,12 @@ export function initWebOrderDocument({root,api,toast,onPrint,go}){
   const fingerprint=()=>JSON.stringify(payload());
   const preview=button('Kiểm tra tổng tiền',async()=>{preview.disabled=true;error.textContent='';try{const p=payload(),r=await api('/orders/'+encodeURIComponent(o.id)+'/web/preview','POST',p);checked={fingerprint:fingerprint(),total:r.total};total.textContent='Tổng bản sửa: '+money(r.total,o.currency);}catch(e){checked=null;error.textContent=e.message;}finally{preview.disabled=false;}});
   const save=el('button','btn primary','Lưu bản sửa');save.type='submit';
-  form.append(button('＋ Thêm sản phẩm',()=>addLine()),orderDiscount.box,shipping.box,shippingTax.box,fee.box,feeTax.box,reason.box,reviewed.box,payment.box,total,preview,save,button('Huỷ sửa',()=>render(d)));
+  form.append(button('＋ Thêm sản phẩm',()=>addLine()),orderDiscount.box,shipping.box,shippingTax.box,fee.box,feeTax.box,reason.box,reviewed.box,payment.box,total,preview,save,button('Huỷ sửa',()=>{if(!saving)(onChanged||render)(d);}));
   form.addEventListener('input',e=>{if(e.target.type==='checkbox')return;checked=null;total.textContent='Đã đổi dữ liệu – cần kiểm tra lại tổng tiền.';});
   form.addEventListener('submit',async e=>{e.preventDefault();if(saving)return;
    if(!checked||checked.fingerprint!==fingerprint()){error.textContent='Bấm Kiểm tra tổng tiền cho nội dung hiện tại trước khi lưu.';return;}
    saving=true;save.disabled=true;error.textContent='';
-   try{const r=await api('/orders/'+encodeURIComponent(o.id)+'/web-edit','PUT',{...payload(),clientKey:key,revision:d.revision,sourceHash:d.sourceHash,expectedTotal:checked.total,pricingReviewed:reviewed.input.checked,paymentReviewed:payment.input.checked});if(seq!==generation)return;toast('Đã lưu bản sửa CRM.');render(r);root.scrollIntoView({block:'start'});}
+   try{const r=await api('/orders/'+encodeURIComponent(o.id)+'/web-edit','PUT',{...payload(),clientKey:key,revision:d.revision,sourceHash:d.sourceHash,expectedTotal:checked.total,pricingReviewed:reviewed.input.checked,paymentReviewed:payment.input.checked});if(seq!==generation)return;toast('Đã lưu bản sửa CRM.');(onChanged||render)(r);root.scrollIntoView({block:'start'});}
    catch(e){error.textContent=e.message||'Chưa rõ kết quả lưu; kiểm tra lại đơn trước khi sửa tiếp.';}
    finally{saving=false;save.disabled=false;}
   });
@@ -85,5 +85,5 @@ export function initWebOrderDocument({root,api,toast,onPrint,go}){
   root.append(status,paper(d));
   if(d.originalFinancials){const old=el('details','card');old.append(el('summary','','Chi tiết tiền website trước khi sửa'),webOrderFinancialSummary(d.originalFinancials,o.currency));root.append(old);}
  }
- return {render,print:(d,kind='order')=>onPrint(paper(d,kind).outerHTML,d.document.orderNo,kind)};
+ return {render,edit,invalidate:()=>{generation++;},print:(d,kind='order')=>onPrint(paper(d,kind).outerHTML,d.document.orderNo,kind)};
 }
