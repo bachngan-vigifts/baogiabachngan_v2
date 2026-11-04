@@ -25,3 +25,26 @@
   Cache-Control: public, max-age=31536000, immutable
 /push-sw.js
   ! Cache-Control
+
+# Font, icon app: gần như không đổi → trình duyệt giữ 1 năm, mở app không hỏi lại máy chủ.
+# ĐỔI font / icon thì ĐỔI TÊN FILE (vd. icon-192-v2.png) – tên cũ có thể còn trong bộ nhớ máy tới 1 năm.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+/icons/*
+  Cache-Control: public, max-age=31536000, immutable
+# Ảnh letterhead, mẫu hợp đồng Word, mẫu đơn NCC: giữ 1 ngày; quá hạn vẫn dùng ngay bản cũ và tải bản mới ở nền (tối đa 7 ngày).
+# Liệt kê từng file (không dùng /*.png) để không trùng quy tắc /icons/* ở trên – Cloudflare ghép hai giá trị nếu trùng.
+/brand-strip.jpeg
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/hrc-letterhead.jpg
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/slip-letterhead.jpg
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/vigifts-letterhead.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/catalogue/brand.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/*.docx
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/templates/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800

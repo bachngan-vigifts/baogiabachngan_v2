@@ -66,3 +66,26 @@ test('không khoá: lời gọi tính / đọc tự động (+/− giỏ hàng g
   const add = button(); click(add); handlers.input!({});
   withBusy('PUT', deferred().promise, '/quotes/1'); assert.equal(add.disabled, false, 'tự lưu sau khi gõ không khoá nút cũ');
 });
+
+test('nhận diện nút xuất file; "Xuất kho" / "Dán từ Excel" không phải nút xuất file', async () => {
+  const { isExportButton }: any = await import(new URL('../../trial-ui/busy-buttons.js', import.meta.url).href);
+  const b = (text: string, sel = '') => ({ textContent: text, closest: () => null, matches: (s: string) => !!sel && s.split(',').includes(sel), classList: { contains: (c: string) => c === 'btn' } });
+  for (const x of [b('⬇ Xuất file'), b('Tải Excel'), b('In / Lưu PDF'), b('Tải file mẫu Excel'), b('Gì đó', '#orders-export')]) assert.equal(isExportButton(x), true, x.textContent);
+  for (const x of [b('Xuất kho'), b('Dán từ Excel'), b('Lưu'), b('Nhập Excel')]) assert.equal(isExportButton(x), false, x.textContent);
+});
+
+test('nút xuất file trang tự đặt disabled khi bấm: xong file nút mở lại, không kẹt khoá', async () => {
+  const { releaseExports }: any = await import(new URL('../../trial-ui/busy-buttons.js', import.meta.url).href);
+  const b = button(); b.textContent = '⬇ Xuất file'; b.matches = (s: string) => s.split(',').includes('#orders-export');
+  const g = deferred();
+  click(b); b.disabled = true; // trang tự khoá nút ngay trong lúc xử lý click…
+  withBusy('GET', g.promise, '/orders/export'); // …rồi gọi API đọc dữ liệu xuất file
+  await new Promise(r => setTimeout(r, 5));
+  assert.equal(b.dataset.busy, '1', 'nút xuất file hiện đang xử lý');
+  g.resolve([]); await flush();
+  b.disabled = false; // trang mở lại nút sau khi tải dữ liệu xong
+  assert.equal(b.dataset.busy, '1', 'đang tạo file: nút vẫn khoá');
+  releaseExports(); // file đã tải xuống
+  assert.equal(b.disabled, false, 'nút không bị kẹt khoá');
+  assert.equal(b.dataset.busy, undefined);
+});

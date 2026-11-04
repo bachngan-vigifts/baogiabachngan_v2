@@ -213,6 +213,7 @@ function toast(text, kind = 'ok') {
   el.className = 'toast ' + kind; el.textContent = text;
   $('#toasts').append(el);
   setTimeout(() => el.remove(), kind === 'err' ? 6000 : 3500);
+  window.dispatchEvent(new Event('ui:toast')); // mở khoá nút xuất file đang chờ (busy-buttons.js)
 }
 // Lỗi giao diện ngoài dự kiến: hiện lên màn hình để người dùng chụp gửi lại (không im lặng).
 let lastUiError = '';
@@ -309,13 +310,15 @@ let token = '';
 // Giữ đăng nhập sau khi đóng app / tab: lưu ở localStorage (sessionStorage bị xoá mỗi lần đóng, nhất là app trên iPhone).
 // Máy chủ tự gia hạn phiên khi còn dùng; chỉ bấm Đăng xuất, đổi mật khẩu hoặc bỏ app quá 30 ngày mới phải đăng nhập lại.
 try { token = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || ''; if (token) { localStorage.setItem(SESSION_KEY, token); sessionStorage.removeItem(SESSION_KEY); } } catch { /* trình duyệt chặn lưu trữ */ }
-const saveToken = t => { const next=t||'';if(next!==token||!next)sessionResume.clear();token=next;try { if (token) localStorage.setItem(SESSION_KEY, token); else { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } } catch { /* bỏ qua */ } };
+const saveToken = t => { const next=t||'';if(next!==token||!next){sessionResume.clear();clearPageCache();}token=next;try { if (token) localStorage.setItem(SESSION_KEY, token); else { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } } catch { /* bỏ qua */ } };
 const sessionResume=createSessionResume({storage:()=>localStorage,readToken:()=>token,verify:()=>api('/me'),open:openWorkspace,refresh:refreshWorkspaceUser});
 
 const requestPriority = createRequestPriority();
 createApiRegion(); // ép vùng tự học đã tắt (sự cố 30/10) – gọi để xoá vùng cũ còn lưu trên máy
 const regionCanary = createRegionCanary({ onDisabled: () => toast('Máy chủ nhanh lỗi kết nối trên máy này – đã chuyển về máy chủ dự phòng.', 'err') });
-const pageCache = createPageCache(); // trang mở lại hiện ngay (page-cache.js)
+// Đổi tài khoản / đăng xuất: xoá bộ đệm (cả bản lưu trên máy) – saveToken có thể chạy trước khi dòng dưới được khởi tạo.
+function clearPageCache() { try { pageCache.clear(); } catch { /* chưa khởi tạo */ } }
+const pageCache = createPageCache({ storage: { local: () => localStorage, session: () => sessionStorage } }); // trang mở lại hiện ngay, giữ qua tải lại trang (page-cache.js)
 // Tìm khách ở hai ô chọn khách: kết quả đã có / lọc được trên máy thì hiện ngay, còn lại mới hỏi máy chủ (customer-search.js).
 const customerSearch = createCustomerSearch({ api });
 class ApiError extends Error { constructor(message, status, code) { super(message); this.status = status; this.code = code; } }

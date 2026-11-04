@@ -22,11 +22,51 @@ function blockIfBusy(el, e) {
   return true;
 }
 
+// NÚT XUẤT FILE (Excel / PDF / Word / mẫu): sau khi tải dữ liệu, máy còn mất vài giây tạo file – nút vẫn khoá (vòng xoay,
+// chữ "Đang tạo file…") tới khi file được tải xuống / mở hộp in / có thông báo (xong hoặc lỗi), tối đa 60 giây.
+const EXPORT_SEL = '[data-export],[data-xlsx],[data-print],[data-shortage-pdf],[data-one],[data-template],[data-act=excel],[data-export-file],'
+  + '#product-export,#orders-export,#cashbook-export,#receivables-export,#pdf-quote,#pdf-quote-nock,#excel-quote';
+// Chữ "Xuất" một mình không tính (Xuất kho, Phiếu xuất… là lệnh ghi) – phải đi kèm file / Excel / PDF.
+const EXPORT_TEXT = /(excel|pdf|word|xuất file|tải file|tải mẫu|sao kê)/i, NOT_EXPORT = /dán|nhập|import/i, EXPORT_MAX_MS = 60_000;
+const exporting = new Set(); // { el, release, timer }
+export const isExportButton = el => !!el && !el.closest?.('[data-no-busy]')
+  && (el.matches?.(EXPORT_SEL) || (el.classList?.contains('btn') && EXPORT_TEXT.test(el.textContent || '') && !NOT_EXPORT.test(el.textContent || '')));
+/** Mở khoá mọi nút xuất file đang chờ (file đã tải / hộp in đã mở / có thông báo). */
+export function releaseExports() {
+  for (const x of exporting) { clearTimeout(x.timer); x.release(); }
+  exporting.clear();
+}
+function lockExport(el, wasDisabled = false) {
+  if ([...exporting].some(x => x.el === el)) return;
+  const unlock = lockButton(el);
+  // Trang thường tự đặt disabled ngay khi bấm (trước lúc khoá ở đây) – nhớ trạng thái lúc bấm để mở khoá không làm nút kẹt.
+  // Kể cả khi lời gọi đọc của trang đã khoá nút trước (lúc đó trang vừa tự đặt disabled).
+  el.dataset.busyWasDisabled = wasDisabled ? '1' : '';
+  // Chỉ đổi chữ nút chỉ có chữ (không có icon / thẻ con); trả lại chữ cũ nếu chưa bị trang tự đổi.
+  const label = el.children?.length === 0 ? el.textContent : null;
+  if (label !== null) el.textContent = 'Đang tạo file…';
+  const x = { el, release: () => { if (label !== null && el.textContent === 'Đang tạo file…') el.textContent = label; unlock(); } };
+  x.timer = setTimeout(() => { exporting.delete(x); x.release(); }, EXPORT_MAX_MS);
+  exporting.add(x);
+}
+let exportHooks = false;
+function installExportHooks(win) {
+  if (exportHooks || !win?.HTMLAnchorElement) return; exportHooks = true;
+  const later = () => setTimeout(releaseExports, 300);
+  const click = win.HTMLAnchorElement.prototype.click;
+  win.HTMLAnchorElement.prototype.click = function (...a) { if (this.hasAttribute('download') || this.target === '_blank') later(); return click.apply(this, a); };
+  for (const k of ['print', 'open']) { const f = win[k]; if (typeof f === 'function') win[k] = function (...a) { later(); return f.apply(this, a); }; }
+  const share = win.navigator?.share;
+  if (typeof share === 'function') win.navigator.share = function (...a) { const p = share.apply(this, a); Promise.resolve(p).then(later, later); return p; };
+  win.addEventListener?.('ui:toast', later);
+}
+
 export function installBusyButtons(doc = document) {
   doc.addEventListener('click', e => {
     const el = e.target.closest?.('button, a.btn, input[type=submit], input[type=button]');
     if (!el || blockIfBusy(el, e)) return;
     if (actionable(el)) remember(el);
+    if (isExportButton(el) && !el.disabled) setTimeout(() => { if (el.isConnected) lockExport(el, false); }, 0);
   }, true);
   doc.addEventListener('submit', e => {
     const el = e.submitter || e.target.querySelector?.('button[type=submit], button:not([type]), input[type=submit]');
@@ -34,7 +74,7 @@ export function installBusyButtons(doc = document) {
     if (actionable(el)) remember(el);
   }, true);
   doc.addEventListener('input', () => { recent = []; }, true);
-  if (doc === globalThis.document) installLoadingFeedback(doc);
+  if (doc === globalThis.document) { installLoadingFeedback(doc); installExportHooks(globalThis.window); }
 }
 
 /** Nút .btn vừa bấm (≤ 1 giây) cho lời gọi API đọc – không xoá ghi nhớ (lời gọi ghi sau đó vẫn tìm được nút). */
@@ -49,13 +89,8 @@ function target() {
   return live[0]?.el ?? null;
 }
 
-/** Bọc một lời gọi API: ghi (khác GET) thì khoá nút vừa bấm tới khi xong. Trả lại đúng promise kết quả. */
-export function withBusy(method, promise, path = '') {
-  trackRequest(path, promise);
-  if (method && method !== 'GET' && !PASSIVE.test(path.split('#')[0])) trackWrite(promise);
-  if (PASSIVE.test(path.split('#')[0])) return promise;
-  const el = !method || method === 'GET' ? readTarget() : target();
-  if (!el) return promise;
+/** Khoá một nút (vòng xoay, aria-busy, bấm thêm bị bỏ qua); trả hàm mở khoá. Đếm lồng nhau: khoá 2 lần thì mở 2 lần. */
+function lockButton(el) {
   const count = Number(el.dataset.busyCount || 0) + 1;
   el.dataset.busyCount = String(count);
   if (count === 1) {
@@ -66,7 +101,7 @@ export function withBusy(method, promise, path = '') {
     if (el.dataset.busyAddedClass) el.classList.add('is-busy');
     el.setAttribute('aria-busy', 'true');
   }
-  const done = () => {
+  return () => {
     const left = Number(el.dataset.busyCount || 1) - 1;
     if (left > 0) { el.dataset.busyCount = String(left); return; }
     if ('disabled' in el) el.disabled = el.dataset.busyWasDisabled === '1';
@@ -74,6 +109,16 @@ export function withBusy(method, promise, path = '') {
     el.removeAttribute('aria-busy');
     for (const k of ['busy', 'busyCount', 'busyWasDisabled', 'busyAddedClass']) delete el.dataset[k];
   };
+}
+
+/** Bọc một lời gọi API: ghi (khác GET) thì khoá nút vừa bấm tới khi xong. Trả lại đúng promise kết quả. */
+export function withBusy(method, promise, path = '') {
+  trackRequest(path, promise);
+  if (method && method !== 'GET' && !PASSIVE.test(path.split('#')[0])) trackWrite(promise);
+  if (PASSIVE.test(path.split('#')[0])) return promise;
+  const el = !method || method === 'GET' ? readTarget() : target();
+  if (!el) return promise;
+  const done = lockButton(el);
   promise.then(done, done);
   return promise;
 }

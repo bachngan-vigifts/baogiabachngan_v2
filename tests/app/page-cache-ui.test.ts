@@ -50,3 +50,36 @@ test('đệm thêm các trang chỉ để xem: hàng sắp về, lịch nhận N
   for (const p of ['/tasks/accounting/checks', '/supplier-payments/x']) assert.equal(isCacheable(p), false, p);
   assert.equal(isCacheable('/purchase-incoming', 'POST'), false, 'lệnh ghi không đệm');
 });
+
+/** Storage giả tối thiểu (getItem / setItem / removeItem / key / length) như localStorage / sessionStorage. */
+function fakeStorage() {
+  const m = new Map<string, string>();
+  return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, String(v)); }, removeItem: (k: string) => { m.delete(k); },
+    key: (i: number) => [...m.keys()][i] ?? null, get length() { return m.size; }, map: m };
+}
+
+test('đệm danh sách Sản phẩm / Báo giá có phân trang và dữ liệu ít đổi; không đệm tra giá / tồn theo mã, tìm nhanh, quầy', () => {
+  for (const p of ['/products?limit=50&offset=0&q=&brand=', '/quotes?limit=30&offset=30&q=&type=', '/product-brands', '/printing-workshops', '/care/config', '/avatars?keys=a,b'])
+    assert.equal(isCacheable(p), true, p);
+  for (const p of ['/products?skus=A1,B2', '/products?limit=8&q=binh', '/quotes?limit=40&q=abc', '/pos/options', '/pos/options?stock=1', '/quotes/next-no?type=x'])
+    assert.equal(isCacheable(p), false, p);
+});
+
+test('bản đệm giữ qua tải lại trang: danh sách ở sessionStorage 10 phút, dữ liệu ít đổi ở localStorage 24 giờ; khác phiên / xoá thì mất', () => {
+  let t = 0; const local = fakeStorage(), session = fakeStorage();
+  const storage = { local: () => local, session: () => session };
+  createPageCache({ now: () => t, storage }).set('/orders?limit=50', 's1', { orders: [1] });
+  createPageCache({ now: () => t, storage }).set('/product-brands', 's1', { brands: ['LnL'] });
+  assert.equal(session.length, 1); assert.equal(local.length, 1);
+  assert.ok(![...session.map.values(), ...local.map.values()].some(v => v.includes('s1')), 'không lưu nguyên mã phiên');
+  let c = createPageCache({ now: () => t, storage }); // "tải lại trang": bộ nhớ trống, đọc từ storage
+  assert.deepEqual(c.get('/orders?limit=50', 's1').data, { orders: [1] });
+  assert.equal(c.get('/orders?limit=50', 's2'), null, 'phiên khác không thấy');
+  t = 2 * 3_600_000; c = createPageCache({ now: () => t, storage });
+  assert.equal(c.get('/orders?limit=50', 's1'), null, 'danh sách quá 10 phút');
+  assert.deepEqual(c.get('/product-brands', 's1').data, { brands: ['LnL'] }, 'dữ liệu ít đổi còn trong 24 giờ');
+  c.clear(); assert.equal(local.length + session.length, 0, 'xoá hết cả bản lưu trên máy');
+  const broken = { local: () => { throw new Error('blocked'); }, session: () => null };
+  const b = createPageCache({ storage: broken }); b.set('/product-brands', 's1', 1);
+  assert.equal(b.get('/product-brands', 's1').data, 1, 'trình duyệt chặn lưu trữ: vẫn chạy bằng bộ nhớ');
+});
