@@ -49,7 +49,7 @@ export function createSharedLibrary({api,identity,getProducts,getSelected,priceO
   const task=(async()=>{try{
    const next=await api('api/library?'+p);if(seq!==run)return;if(who!==identity()){reset();draw();return;}
    if(next.defaultFilters){filters={...filters,...next.defaultFilters};defaultCategory=false;rememberCategory();}
-   if(next.facets){facetCache.set(facetKey,next.facets);if(facetCache.size>20)facetCache.delete(facetCache.keys().next().value);}
+   if(next.facets){facetCache.set(JSON.stringify([visibility,...keys.slice(0,-1).map(k=>filters[k])]),next.facets);if(facetCache.size>20)facetCache.delete(facetCache.keys().next().value);}
    data={...next,facets:next.facets||facetCache.get(facetKey)||{},stock:[],stockPending:new Set()};member=next.memberId;loadedAt=Date.now();error='';loading=false;draw();loadStock(seq);
    await bulk.loadPending(member);
   }catch(e){if(seq!==run)return;if(who!==identity()){reset();draw();return;}error=e.message;}
@@ -101,3 +101,4 @@ export function createSharedLibrary({api,identity,getProducts,getSelected,priceO
  setInterval(()=>{if(root?.isConnected&&!document.hidden&&!loading&&!publishing&&Date.now()-loadedAt>30000)load(true);},30000);
  return{mount,schedulePublish,bootstrap:()=>load().then(()=>publish()),refresh:()=>load(true),getStatus:()=>({member,error,publishing}),unmount:()=>{root=null;}};
 }
+

@@ -12,3 +12,13 @@ test('A4 landscape renderer keeps price above SKU, name below photo and note onc
 });
 
 
+
+test('six layout uses three columns and two rows with matching PowerPoint geometry',async()=>{
+ const s=defaultState();s.settings.productsPerPage=6;s.settings.cover=s.settings.dividers=s.settings.closing=false;s.products=Array.from({length:6},(_,i)=>validateProduct({id:String(i),sku:'SKU'+i,name:'Product '+i,brand:'Elmich',category:'Blender',regular:1000000,discount:0,fee:15000}));s.selected=s.products.map(p=>p.id);
+ const fields=[],boxes=[],pptBoxes=[],ctx={scale(){},fillRect(){},beginPath(){},roundRect(x,y,w,h){boxes.push({x,y,w,h})},fill(){},stroke(){},fillText(){},measureText(t){return{width:t.length*6}}},canvas={getContext:()=>ctx},ppt={addShape(type,o){pptBoxes.push(o)},addText(){},addNotes(){}};
+ await drawSlide(canvas,makeSlides(s)[0],s,1,1,ppt,1,fields);
+ assert.equal(boxes.length,6);assert.equal(new Set(boxes.map(b=>b.x)).size,3);assert.equal(new Set(boxes.map(b=>b.y)).size,2);assert.equal(pptBoxes.length,6);
+ assert(fields.every(f=>/^\d+:\d+$/.test(f.position)));
+ boxes.forEach((b,i)=>{assert(b.x+b.w<=1236&&b.y+b.h<PAGE_HEIGHT-50);const name=fields.find(f=>f.original==='Product '+i),sku=fields.find(f=>f.original==='Mã: SKU'+i);assert(name.x>b.x+140&&name.y<sku.y);assert(name.x+name.w<=b.x+b.w);assert(Math.abs(pptBoxes[i].x-b.x/(1280/PAGE_INCH_WIDTH))<0.001)});
+});
+
