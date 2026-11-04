@@ -5,6 +5,7 @@ import { hashPassword, verifyPassword } from '../../../core/auth/password.ts';
 import { Router, json, readJson, type RouteContext } from '../../../core/http/router.ts';
 import { checkMethodAndOrigin } from '../../../core/http/security.ts';
 import { auditFromRequest, writeAudit } from '../../../core/audit.ts';
+import { noteRequestMethod } from '../../../core/http/write-generation.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
 import { can, routePermission } from '../domain/permissions.ts';
 import { CUSTOMER_FORBIDDEN_MESSAGE, FORBIDDEN_MESSAGE, SUPPLIER_FORBIDDEN_MESSAGE, canAccessArea, type Area } from '../domain/area-policy.ts';
@@ -292,7 +293,7 @@ const AUDIT_SKIP = /^\/api\/staff\/(images\/fetch|chat\/|notifications\/read|pus
 const auditable = (c: RouteContext<StaffEnv>) => AUDIT_AREAS.has(c.meta) && !AUDIT_SKIP.test(c.url.pathname);
 
 export function createStaffRouter(options: StaffRouterOptions = {}): Router<StaffEnv> {
-  const router = new Router<StaffEnv>({ prefix: '/api/staff', requireMeta: true, beforeAll: (req, url) => { if (!isSyncPath(url)) checkMethodAndOrigin(req, url); }, authorize: c => authorizeRoute(c, options),
+  const router = new Router<StaffEnv>({ prefix: '/api/staff', requireMeta: true, beforeAll: (req, url) => { noteRequestMethod(req.method); if (!isSyncPath(url)) checkMethodAndOrigin(req, url); }, authorize: c => authorizeRoute(c, options),
     onSuccess: { wants: auditable, run: async (c, info) => {
       const member = (c.state.session as SessionState | undefined)?.member;
       const path = c.url.pathname.replace(/^\/api\/staff/, '') || '/';
