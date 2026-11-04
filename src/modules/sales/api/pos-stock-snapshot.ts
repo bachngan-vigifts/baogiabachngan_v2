@@ -34,7 +34,8 @@ async function readPosStockSnapshot(db:PosDb,member:PosMember,register:{id:strin
  if(hidden.has(register.warehouseId))throw new AppError(403,'Bạn không được xem tồn kho riêng của quầy này.');
  // Never silently preload a partial catalog; large installations keep the paged path.
  if(rows.length>20000)return null;
- const held=rows.length?await reservedBySku(db,rows.map(r=>r.sku),register.warehouseId):new Map<string,number>();
+ // Cả danh mục: đọc hàng giữ của mọi mã (vài trăm dòng) thay vì gửi hàng nghìn mã vào mỗi truy vấn; mã ngoài danh mục tự bị bỏ qua.
+ const held=rows.length?await reservedBySku(db,undefined,register.warehouseId):new Map<string,number>();
  // Metadata comes from the same authorized price/stock scan, avoiding a second huge IN query.
  const catalog=includeCatalog?rows.map(({sku,name,brand,unit,imageUrl,pattern})=>({sku,name,brand,unit,imageUrl,pattern})):undefined;
  return {version:1,catalog,registerId:register.id,warehouseId:register.warehouseId,pricePolicyId:policy,asOf:startedAt,warehouseReady:opened.includes(register.warehouseId),
