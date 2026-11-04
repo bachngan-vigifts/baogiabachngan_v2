@@ -58,7 +58,7 @@ export function makeSlides(state){
    const cats=[...new Set(group.filter(p=>p.brand===brand).map(p=>p.category))].sort((a,b)=>a.localeCompare(b,'vi'));
    for(const category of cats)for(const bundle10 of [false,true]){
     const items=group.filter(p=>p.brand===brand&&p.category===category&&isBundle(p,state)===bundle10);
-    for(let i=0,size=state.settings.productsPerPage===8?8:4;i<items.length;i+=size){const chunk=items.slice(i,i+size);if(chunk.length>1)bandPages.push({type:'products',band,brand,category,bundle10,layout:size,items:chunk});}
+    for(let i=0,size=[6,8].includes(state.settings.productsPerPage)?state.settings.productsPerPage:4;i<items.length;i+=size){const chunk=items.slice(i,i+size);if(chunk.length>1)bandPages.push({type:'products',band,brand,category,bundle10,layout:size,items:chunk});}
    }
   }
   if(bandPages.length){if(state.settings.dividers)pages.push({type:'divider',band,count:bandPages.reduce((n,p)=>n+p.items.length,0)});pages.push(...bandPages)}
@@ -71,7 +71,7 @@ export function restoreState(raw){
  const pageText={};if(raw.pageText&&typeof raw.pageText==='object'){for(const [key,fields] of Object.entries(raw.pageText).slice(0,1000)){if(!fields||typeof fields!=='object')continue;pageText[key.slice(0,500)]={};for(const [position,value]of Object.entries(fields).slice(0,100))if(/^\d+:\d+$/.test(position)&&typeof value==='string')pageText[key.slice(0,500)][position]=value.slice(0,2000);}}
  const d=defaultState(),products=raw.products.map(validateProduct);if(new Set(products.map(p=>p.id)).size!==products.length)throw Error('File có mã dữ liệu trùng nhau.');
  const meta={};for(const k of Object.keys(d.meta))meta[k]=String(raw.meta?.[k]??d.meta[k]).slice(0,k==='note'?500:160);
- const settings={...d.settings,productsPerPage:raw.settings?.productsPerPage===8?8:4};for(const k of ['cover','dividers','closing','qr','regular','proposedPrice','sortPrice','bundle10'])if(typeof raw.settings?.[k]==='boolean')settings[k]=raw.settings[k];
+ const settings={...d.settings,productsPerPage:[6,8].includes(raw.settings?.productsPerPage)?raw.settings.productsPerPage:4};for(const k of ['cover','dividers','closing','qr','regular','proposedPrice','sortPrice','bundle10'])if(typeof raw.settings?.[k]==='boolean')settings[k]=raw.settings[k];
  settings.selectionSort=SELECTION_SORTS.some(([key])=>key===raw.settings?.selectionSort)?raw.settings.selectionSort:(settings.sortPrice?'price':'manual');if(settings.selectionSort==='price'&&!settings.sortPrice)settings.selectionSort='manual';settings.sortPrice=settings.selectionSort==='price';
  settings.bundle10Ids=Array.isArray(raw.settings?.bundle10Ids)?[...new Set(raw.settings.bundle10Ids)].filter(id=>products.some(p=>p.id===id)):[];
  for(const k of ['lockDiscount','minhDiscount','fee']){const n=Number(raw.settings?.[k]??settings[k]);if(!Number.isFinite(n)||n<0||n>(k==='fee'?1e8:100))throw Error('Thiết lập giá không hợp lệ.');settings[k]=n;}
@@ -79,5 +79,12 @@ export function restoreState(raw){
  return {version:1,cloudQuote,customBrands:Array.isArray(raw.customBrands)?raw.customBrands.filter(b=>b&&typeof b.name==='string'&&typeof b.origin==='string').slice(0,30):[],pageText,products,selected:Array.isArray(raw.selected)?raw.selected.filter(id=>products.some(p=>p.id===id)):[],meta,settings};
 }
 
-export function slideKey(slide){return slide.type==='products'?'products:photo:'+(slide.layout===8?'8:':'')+slide.items.map(p=>p.id).sort().join('|'):slide.type+(slide.type==='divider'?':'+slide.band:'');}
+export function slideKey(slide){return slide.type==='products'?'products:photo:'+([6,8].includes(slide.layout)?slide.layout+':':'')+slide.items.map(p=>p.id).sort().join('|'):slide.type+(slide.type==='divider'?':'+slide.band:'');}
 export async function mapConcurrent(items,limit,worker){let cursor=0;const results=new Array(items.length);await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(cursor<items.length){const i=cursor++;results[i]=await worker(items[i],i)}}));return results;}
+
+
+
+
+
+
+
