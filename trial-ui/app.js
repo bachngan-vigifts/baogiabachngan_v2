@@ -413,7 +413,7 @@ const PAGE_PERM = {
   cash: 'page.cash', pos: 'pos.sell',
   quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
-  purchases: 'page.purchases', 'early-requests': 'page.purchases', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', stocktake: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
+  purchases: 'page.purchases', 'early-requests': 'purchases.early-view', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', stocktake: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
 };
 /** Giá bán: người làm báo giá / đơn / HĐKT (khớp máy chủ – Kho không nhận giá). */
 const seesPrices = () => isManager() || can('page.quotes') || can('page.orders') || can('page.contracts');

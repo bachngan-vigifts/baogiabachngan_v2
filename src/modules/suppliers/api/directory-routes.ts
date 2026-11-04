@@ -90,7 +90,7 @@ export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
     return json(await supplierDetail(db, id), 201);
   }, 'business');
 
-  router.get('/suppliers/:id', async c => { requireEditor(c); return json({...await supplierDetail(c.env.db, c.params.id!),canViewEarlyRequests:can((c.state.session as SessionState).member,'page.purchases')}); }, 'business');
+  router.get('/suppliers/:id', async c => { requireEditor(c); return json({...await supplierDetail(c.env.db, c.params.id!),canViewEarlyRequests:can((c.state.session as SessionState).member,'page.purchases')&&can((c.state.session as SessionState).member,'purchases.early-view')}); }, 'business');
 
   router.put('/suppliers/:id', async c => {
     requireEditor(c);

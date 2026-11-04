@@ -29,6 +29,8 @@ export const isTeam = (v: unknown): v is TaskTeam => typeof v === 'string' && Ob
  * (VD Sale Admin có quyền ghi trả NCC → nhận việc "Xuất hoá đơn", "Thanh toán NCC" của nhóm Kế toán).
  */
 export const TEAM_PERMISSION: Partial<Record<TaskTeam, string>> = { accounting: 'purchases.pay', warehouse: 'purchases.receive' };
+/** Kế toán có quyền nhận hàng NCC nhưng không vào nhóm việc Kho (không nhận việc đóng gói / giao hàng của kho). */
+export const TEAM_PERMISSION_EXCLUDED: Partial<Record<TaskTeam, readonly string[]>> = { warehouse: ['accounting'] };
 
 /** Mọi nhóm/chức vụ được gán đều xem việc đồng nghiệp cùng nhóm, không mở quyền sửa/trao đổi. */
 export const canViewPeers = (positionId: unknown): positionId is string =>

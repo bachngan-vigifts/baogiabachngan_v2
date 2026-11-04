@@ -18,7 +18,7 @@ import { reconcileAutoTasks, reconcileTaskSet, transferTasks } from './auto-task
 import { invoiceTasks } from './invoice-tasks.ts';
 import type { InvoiceTaskRef } from '../../sales/api/invoice-task-hooks.ts';
 import { completeFollowUp } from '../../care/api/routes.ts';
-import { OPEN_STATUSES, addDaysIso, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, TEAM_PERMISSION, canViewPeers, dueBucket, isTeam, type TaskTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
+import { OPEN_STATUSES, addDaysIso, TASK_PRIORITIES, TASK_SOURCES, TASK_STATUSES, TASK_TEAMS, TEAM_PERMISSION, TEAM_PERMISSION_EXCLUDED, canViewPeers, dueBucket, isTeam, type TaskTeam, type TaskPriority, type TaskStatus } from '../domain/task-config.ts';
 import { deliveries, deliveryLines, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { docRef } from '../../sales/domain/doc-ref.ts';
 import { markProgress } from '../../sales/api/progress.ts';
@@ -91,7 +91,7 @@ quoteSaveHooks.afterCommit.push(env => syncAutoTasksLater(env, null, true));
 const myTeams = (c: Ctx): TaskTeam[] => {
   const m = me(c), p = (m as { positionId?: string | null }).positionId;
   if (m.role !== 'employee') return [];
-  const byPerm = (Object.entries(TEAM_PERMISSION) as [TaskTeam, string][]).filter(([, perm]) => can(m as PermissionMember, perm)).map(([t]) => t);
+  const byPerm = (Object.entries(TEAM_PERMISSION) as [TaskTeam, string][]).filter(([t, perm]) => can(m as PermissionMember, perm) && !TEAM_PERMISSION_EXCLUDED[t]?.includes(p ?? '')).map(([t]) => t);
   return [...new Set([...(isTeam(p) ? [p] : []), ...byPerm])];
 };
 /** Việc của nhóm tôi chưa ai nhận – điều kiện SQL (undefined nếu tôi không thuộc nhóm nào). */
@@ -162,9 +162,9 @@ function parseAssignee(v: unknown): { assigneeId: string | null; assigneePositio
 /** Báo cho mọi người đang hoạt động trong nhóm. */
 async function notifyTeam(env: StaffEnv, team: string, n: Omit<Parameters<typeof notify>[1], 'targetMemberId'>) {
   // Thành viên nhóm = cùng chức vụ, hoặc chức vụ có quyền tương ứng (TEAM_PERMISSION) – khớp với ai thấy / nhận được việc của nhóm.
-  const perm = isTeam(team) ? TEAM_PERMISSION[team] : undefined;
+  const perm = isTeam(team) ? TEAM_PERMISSION[team] : undefined, excluded = isTeam(team) ? TEAM_PERMISSION_EXCLUDED[team] ?? [] : [];
   const members = await env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'employee'), eq(employees.active, true), isNull(employees.deletedAt),
-    or(eq(employees.positionId, team), perm ? sql`${employees.positionId} IN (SELECT ${positionPermissions.positionId} FROM ${positionPermissions} WHERE ${positionPermissions.permission} = ${perm})` : undefined)));
+    or(eq(employees.positionId, team), perm ? sql`${employees.positionId} IN (SELECT ${positionPermissions.positionId} FROM ${positionPermissions} WHERE ${positionPermissions.permission} = ${perm})${excluded.length ? sql` AND ${notInArray(employees.positionId, [...excluded])}` : sql``}` : undefined)));
   for (const x of members) if (x.id !== n.actorId) await notify(env, { ...n, targetMemberId: x.id });
 }
 

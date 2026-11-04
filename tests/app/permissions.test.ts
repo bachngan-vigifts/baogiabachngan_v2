@@ -30,7 +30,7 @@ test('quyền mặc định sau migration = đúng quyền cũ: /me trả quyề
   assert.equal((await me(mgr)).perms.length, PERMISSIONS.length, 'Manager có mọi quyền');
   const sale = await me(emp), wh = await me(kho), acc = await me(ketoan);
   assert.ok(sale.perms.includes('page.quotes') && !sale.perms.includes('page.packing') && !sale.perms.includes('inventory.view'));
-  assert.deepEqual([...wh.perms].sort(), ['page.deliveries', 'page.packing', 'page.purchases', 'page.stock-lookup', 'purchases.receive', 'stock.transfer']);
+  assert.deepEqual([...wh.perms].sort(), ['page.deliveries', 'page.packing', 'page.purchases', 'page.stock-lookup', 'purchases.early-view', 'purchases.receive', 'stock.transfer']);
   assert.ok(acc.perms.includes('suppliers.edit') && acc.perms.includes('purchases.pay'));
   assert.equal(sale.dataScope, 'position'); assert.equal(sale.departmentId, 'kinh-doanh');
   // Mặc định khớp đúng danh mục (đối tượng không có `perms` dùng mặc định theo chức vụ).

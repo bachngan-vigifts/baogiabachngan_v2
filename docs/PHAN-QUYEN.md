@@ -29,7 +29,11 @@ Trang **Quản trị › Phân quyền** (`#/permissions`, `trial-ui/permissions
 | Trang được vào | Đơn đặt hàng, HĐKT, Công nợ, Khách hàng, Tổng quan doanh số, Sơ đồ quy trình | Sale, Sale Admin, NVBH ML, NVBH LOCK, Kế toán |
 | Trang được vào | Báo giá, Chăm sóc KH, Khách hỏi tồn | Sale, Sale Admin, NVBH ML, NVBH LOCK (Kế toán bỏ từ migration 0071) |
 | Trang được vào | Lịch giao hàng, Đơn mua NCC | Mọi chức vụ (cả Kho) |
-| Kho | Phiếu đóng gói (xem tất cả, xác nhận đóng xong), Tra tồn, Nhận hàng NCC | Kho, Sale Admin |
+| Kho | Phiếu đóng gói (xem tất cả, xác nhận đóng xong), Tra tồn | Kho, Sale Admin |
+| Kho | Nhận hàng NCC về kho | Kho, Sale Admin, Kế toán |
+| Mua hàng NCC | Xin hàng trước – xem danh sách phiếu | Mọi chức vụ vào được Đơn mua NCC |
+| Mua hàng NCC | Xin hàng trước – lập, sửa, gửi NCC, tải file; Huỷ đơn mua đã duyệt | Sale Admin |
+| Mua hàng NCC | Xác nhận thay NCC | Sale Admin, Kế toán |
 | Kho | Sổ kho – xem; Sổ kho – chốt tồn / phiếu điều chỉnh | Không ai (chỉ Manager) |
 | Tài chính NCC | Xem giá mua NCC, Ghi thanh toán NCC, Danh bạ NCC | Kế toán, Sale Admin |
 | Kế toán | Sổ thu / chi; Huỷ phiếu thu ghi nhầm; Doanh số toàn công ty | Kế toán (migration 0071) |
@@ -130,3 +134,9 @@ NVBH/CHT Lock giới hạn quầy và két Lock; NVBH/CHT Minh Long giới hạn
 ## Kho bán theo chức vụ (18/10/2026)
 - Bảng kho ↔ chức vụ được bán + cờ **kho riêng** ở cuối trang Phân quyền (`GET/PUT /warehouse-sellers`, cần quyền "Quản lý phân quyền"). Chi tiết: docs/SO-KHO.md.
 - Quyền mới **`stock.transfer`** – "Điều chuyển kho – xác nhận đã chuyển" (mặc định Kho, Sale Admin). Duyệt phiếu điều chuyển: Manager / người được duyệt (`canApprove`).
+
+## Quyền mua hàng NCC lên trang Phân quyền (11/11/2026, migration 20261111090000)
+
+- Bốn quyền trước đây gắn cứng theo chức vụ nay bật / tắt được: **`purchases.early-view`**, **`purchases.early-request`**, **`purchases.confirm`**, **`purchases.cancel-approved`**.
+- Kế toán nhận hàng NCC theo đúng công tắc "Nhận hàng NCC về kho" (migration bật sẵn cho Kế toán). Kế toán không vào nhóm việc Kho dù có quyền này.
+- Mặc định giữ y như trước; Xoá / huỷ / tách phiếu xin hàng trước, xác nhận thay NCC ở phiếu xin hàng trước vẫn chỉ Manager.

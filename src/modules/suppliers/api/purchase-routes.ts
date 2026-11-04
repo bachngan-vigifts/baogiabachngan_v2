@@ -179,7 +179,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   router.get('/purchase-incoming', async c => {
     guard(c);
     return json({ ...await incomingBySkuView(c.env.db, c.url.searchParams, today()),
-      canRequest: me(c).role === 'manager' || me(c).positionId === 'sale-admin', canSend: me(c).role === 'manager' || me(c).positionId === 'sale-admin',
+      canRequest: canSendEarlyRequest(asActor(me(c))), canSend: canSendEarlyRequest(asActor(me(c))),
       canViewSuppliers:canEditSuppliers(me(c)),canViewStock:can(me(c),'page.stock-lookup') });
   }, 'business');
 
