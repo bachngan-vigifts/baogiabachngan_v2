@@ -15,7 +15,7 @@ import { bindForgotPassword } from './forgot-password.js';
 import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
 import { createRequestPriority, isBackgroundRequest } from './request-priority.js';
 import { recordApi, openSpeedDialog } from './speed-log.js';
-import { createApiRegion, createRegionCanary } from './api-region.js';
+import { createApiRegion, createRegionCanary, requestWithRegion } from './api-region.js';
 import { createPageCache, isCacheable, isPassiveWrite } from './page-cache.js';
 import { createCustomerSearch } from './customer-search.js';
 import { openDueRepair } from './due-repair.js';
@@ -316,7 +316,7 @@ const sessionResume=createSessionResume({storage:()=>localStorage,readToken:()=>
 
 const requestPriority = createRequestPriority();
 createApiRegion(); // ép vùng tự học đã tắt (sự cố 30/10) – gọi để xoá vùng cũ còn lưu trên máy
-const regionCanary = createRegionCanary({ onDisabled: () => toast('Máy chủ nhanh lỗi kết nối trên máy này – đã chuyển về máy chủ dự phòng.', 'err') });
+const regionCanary = createRegionCanary({ onDisabled: () => toast('Kết nối chậm – đã tạm chuyển máy chủ dự phòng, sẽ tự kiểm tra lại kết nối.', 'err') });
 // Đổi tài khoản / đăng xuất: xoá bộ đệm (cả bản lưu trên máy) – saveToken có thể chạy trước khi dòng dưới được khởi tạo.
 function clearPageCache() { try { pageCache.clear(); } catch { /* chưa khởi tạo */ } }
 const pageCache = createPageCache({ storage: { local: () => localStorage, session: () => sessionStorage } }); // trang mở lại hiện ngay, giữ qua tải lại trang (page-cache.js)
@@ -356,17 +356,12 @@ async function apiRequest(path, method = 'GET', body) {
   let res;
   // Trang đang mở tải trước; số đếm menu, chuông, nhịp kiểm tra… chờ một nhịp (request-priority.js).
   // Máy chủ cạnh CSDL (mặc định bật, api-region.js): thêm header x-region; lỗi là tắt và giữ tắt trên máy này.
-  let sentAt = 0, canary = regionCanary.headers();
-  const send = () => requestPriority.run(isBackgroundRequest(path, method), () => { sentAt = performance.now(); return apiFetch(API + path, { method, headers: { ...headers, ...canary }, body: body === undefined ? undefined : JSON.stringify(body) }); });
-  try { res = await send(); }
+  let sentAt = 0;
+  const send = (regionHeaders, readPolicy) => requestPriority.run(isBackgroundRequest(path, method), () => { if (!sentAt) sentAt = performance.now(); return apiFetch(API + path, { method, headers: { ...headers, ...regionHeaders }, body: body === undefined ? undefined : JSON.stringify(body) }, readPolicy); });
+  try { res = await requestWithRegion(regionCanary, send, {read: method === 'GET'}); }
   catch {
-    const tried = !!canary['x-region'];
-    regionCanary.failed(tried);
-    // Lệnh đọc lỗi mạng khi dùng máy chủ cạnh CSDL: thử lại một lần theo máy chủ mặc định (lệnh ghi không bao giờ tự gửi lại).
-    if (tried && method === 'GET') { canary = {}; try { res = await send(); } catch { /* báo lỗi bên dưới */ } }
-    if (!res) throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME);
+    throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME);
   }
-  regionCanary.observe(res.headers?.get('server-timing'), !!canary['x-region']);
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
   recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing') }); // menu → Đo tốc độ
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.

@@ -91,7 +91,7 @@ export function openSpeedDialog({ doc = document, toast = () => {}, canary = nul
     const on = canary.enabled();
     canaryBox.append(el('p', '', on
       ? `Máy này đang dùng máy chủ cạnh CSDL (vùng ${canary.current()})${canary.byDefault?.() ? ' – mặc định cho mọi máy' : ' – chỉ máy này'}. Có lỗi kết nối là tự chuyển về máy chủ dự phòng.`
-      : 'Máy này đang dùng máy chủ dự phòng (đã tắt do lỗi kết nối hoặc tắt tay). Bật lại để dùng máy chủ cạnh CSDL, nhanh hơn.'));
+      : 'Máy này đang dùng máy chủ dự phòng. Nếu do lỗi kết nối, hệ thống thử lại sau 5 phút; nếu tắt tay thì giữ nguyên. Có thể bấm bật lại ngay.'));
     const toggle = el('button', on ? 'btn secondary' : 'btn primary', on ? 'Tắt trên máy này, dùng máy chủ dự phòng' : 'Bật lại máy chủ cạnh CSDL trên máy này'); toggle.type = 'button';
     toggle.onclick = () => {
       if (on) canary.disable(); else canary.enable();

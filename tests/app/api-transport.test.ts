@@ -23,6 +23,12 @@ test('A stalled read times out and retries at most twice',async()=>{
  let calls=0;const request=createApiTransport({timeoutMs:5,delay:async()=>{},fetcher:async(_url:unknown,init:any)=>{calls++;return new Promise((_resolve,reject)=>init.signal.addEventListener('abort',()=>reject(new Error('timeout'))));}});
  await assert.rejects(request('/tasks'));assert.equal(calls,3);
 });
+test('a regional caller can bound just its read attempt without changing ordinary retries or writes', async () => {
+ let calls=0;const request=createApiTransport({timeoutMs:1000,delay:async()=>{},fetcher:async(_url:unknown,init:RequestInit)=>{calls++;return new Promise<Response>((_resolve,reject)=>init.signal!.addEventListener('abort',()=>reject(Error('timeout'))));}});
+ await assert.rejects(request('/pos/options',{}, {timeoutMs:5,readRetries:0}),/timeout/);assert.equal(calls,1);
+ const write=createApiTransport({writeTimeoutMs:5,fetcher:async(_url:unknown,init:RequestInit)=>{calls++;return new Promise<Response>((_resolve,reject)=>init.signal!.addEventListener('abort',()=>reject(Error('write timeout'))));}});
+ await assert.rejects(write('/payments',{method:'POST'},{timeoutMs:1,readRetries:2}),/write timeout/);assert.equal(calls,2);
+});
 test('Each read retry is announced so the screen can say the network is slow; writes never announce',async()=>{
  let retries=0,calls=0;const request=createApiTransport({delay:async()=>{},onRetry:()=>{retries++;},fetcher:async()=>{calls++;return calls<3?new Response('{}',{status:503}):Response.json({ok:true});}});
  await request('/tasks');assert.equal(retries,2);

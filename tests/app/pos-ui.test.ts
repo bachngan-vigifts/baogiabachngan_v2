@@ -879,7 +879,7 @@ test('Manager đổi quầy đang mở; giỏ có hàng không được đổi c
     await ui.load();
     let choose=root.querySelectorAll('select').find(e=>e.attributes['aria-label']==='Chọn quầy')!;
     assert.ok(choose); choose.value='ml'; await choose.fire('change'); await new Promise(r=>setTimeout(r,30));
-    assert.ok(calls.some(c=>c.path.startsWith('/pos/options?') && new URL(c.path, 'https://test.local').searchParams.get('registerId')==='ml' && new URL(c.path, 'https://test.local').searchParams.get('stock')==='1'));
+    assert.ok(calls.some(c=>c.path.startsWith('/pos/options?') && new URL(c.path, 'https://test.local').searchParams.get('registerId')==='ml' && new URL(c.path, 'https://test.local').searchParams.get('stock')==='0'));
     await root.querySelectorAll('button').find(b=>b.className==='pos-product')!.fire('click'); await new Promise(r=>setTimeout(r,230));
     assert.equal(calls.find(c=>c.path==='/pos/preview')!.body.shiftId,'shift-ml');
     choose=root.querySelectorAll('select').find(e=>e.attributes['aria-label']==='Chọn quầy')!;
@@ -1138,6 +1138,43 @@ test('POS displays GHN codes and carrier statuses without inferring payment or q
     assert.equal(requests.some(path => /ghn|\/orders\//.test(path)), false);
     assert.ok(rows[0]!.textContent.includes('Còn nợ'), 'delivery does not imply payment');
   } finally { Object.assign(globalThis, { document: previousDocument, window: previousWindow }); }
+});
+
+test('POS first page and order board are usable while the full stock snapshot is still pending', async () => {
+  const previousDocument = globalThis.document, previousWindow = globalThis.window, originalTimer = globalThis.setTimeout;
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} }, setTimeout: (fn: () => void, ms: number) => { const timer = originalTimer(fn, ms); timers.push(timer); return timer; } });
+  let release: (value: object) => void = () => {};
+  const gate = new Promise(resolve => { release = resolve; });
+  try {
+    const root = new Element('section'), calls: string[] = [];
+    const product = { sku: 'FAST', name: 'Bình thử', price: 1000, available: 5, onHand: 5, reserved: 0, scanCodes: ['FAST', '893FAST'], stockAsOf: '2026-11-04T00:02:00Z', stockSources: { vigifts: { qty: 0 }, supplier: { qty: 0 }, incoming: { qty: 0, orders: [] } } };
+    const api = async (path: string) => {
+      calls.push(path);
+      if (path.startsWith('/pos/options')) return { stockSnapshotVersion: 1, registers: [{ id: 'r', name: 'Quầy', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/catalog')) return { products: [product], nextOffset: null };
+      if (path.startsWith('/pos/orders')) return { registerId: 'r', registers: [], counts: { all: 0 }, orders: [], owners: [], totals: [] };
+      if (path.startsWith('/pos/stock-snapshot')) return gate;
+      throw Error(path);
+    };
+    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp' }), go() {} });
+    const ready = await Promise.race([ui.load().then(() => true), new Promise(resolve => setTimeout(() => resolve(false), 500))]);
+    assert.equal(ready, true, 'initial load must not await the large snapshot');
+    assert.ok(calls[0]!.startsWith('/pos/options?stock=0'));
+    const page = calls.find(path => path.startsWith('/pos/catalog'))!;
+    assert.equal(new URLSearchParams(page.split('?')[1]).get('limit'), '60');
+    assert.ok(calls.some(path => path.startsWith('/pos/orders')));
+    assert.ok(calls.some(path => path.startsWith('/pos/stock-snapshot') && path.includes('background=1') && path.includes('metadata=1')));
+    const card = root.querySelectorAll('button').find(n => n.className === 'pos-product')!;
+    assert.equal(card.disabled, false); assert.match(card.textContent, /Còn 5/);
+    release({ version: 1, registerId: 'r', pricePolicyId: 'vat', warehouseReady: true, asOf: '2026-11-04T00:01:00Z', catalog: [{ sku: 'FAST', name: 'Bình thử' }], rows: [['FAST', 1000, 0, 0, ['FAST']]] });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.match(root.querySelectorAll('button').find(n => n.className === 'pos-product')!.textContent, /Còn 5/, 'older preload does not overwrite newer page stock');
+  } finally {
+    release({});
+    for (const timer of timers) clearTimeout(timer);
+    Object.assign(globalThis, { document: previousDocument, window: previousWindow, setTimeout: originalTimer });
+  }
 });
 
 test('nút thao tác GHN tự động áp dụng giống nhau cho quầy Lock và Minh Long', () => {

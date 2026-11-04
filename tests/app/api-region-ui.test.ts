@@ -38,7 +38,7 @@ test('mặc định TẮT ép vùng (sự cố 30/10): không thêm tham số, x
 });
 
 const { createRegionCanary }: any = await import(new URL('../../trial-ui/api-region.js', import.meta.url).href);
-test('máy chủ cạnh CSDL bật mặc định cho mọi máy; lỗi là tắt và GIỮ TẮT trên máy đó, không tự bật lại', () => {
+test('regional failures stay on fallback during the cooldown; a manager can enable immediately', () => {
   const store = memory(); let off = 0;
   const c = createRegionCanary({ storage: () => store, onDisabled: () => off++ });
   assert.deepEqual(c.headers(), { 'x-region': 'ap-northeast-2' }, 'mặc định gửi vùng của CSDL');
@@ -54,6 +54,59 @@ test('máy chủ cạnh CSDL bật mặc định cho mọi máy; lỗi là tắt
   assert.equal(createRegionCanary({ storage: () => store }).enabled(), false);
   c.enable('bad"value'); assert.equal(c.enabled(), false, 'vùng sai định dạng bị bỏ qua');
   c.failed(false); c.observe(null, false); assert.equal(off, 2, 'lượt không gửi header không tính');
+});
+
+test('legacy automatic off latch recovers, while new manual off survives reload and elapsed time', () => {
+  const store = memory(); store.setItem('bn-api-region-off', '1');
+  let clock = 100;
+  const c = createRegionCanary({ storage: () => store, now: () => clock });
+  assert.deepEqual(c.headers(), { 'x-region': 'ap-northeast-2' });
+  c.disable(); clock += 86400000;
+  assert.deepEqual(c.headers(), {});
+  assert.deepEqual(createRegionCanary({ storage: () => store, now: () => clock }).headers(), {});
+  c.enable(); assert.equal(store.getItem('bn-api-region-manual-off'), null);
+  assert.deepEqual(c.headers(), { 'x-region': 'ap-northeast-2' });
+});
+
+test('only one GET probes after cooldown; writes and concurrent reads stay on fallback until verification', () => {
+  const store = memory(); let clock = 100;
+  let c = createRegionCanary({ storage: () => store, now: () => clock, retryMs: 1000 });
+  c.failed('ap-northeast-2');
+  clock = 1099; assert.deepEqual(c.headers(), {});
+  c = createRegionCanary({ storage: () => store, now: () => clock, retryMs: 1000 });
+  clock = 1100;
+  assert.deepEqual(c.headers(false), {}, 'writes never probe');
+  assert.deepEqual(c.headers(true), { 'x-region': 'ap-northeast-2' });
+  assert.deepEqual(c.headers(true), {}, 'one outstanding probe');
+  assert.deepEqual(c.headers(false), {});
+  c.observe('total;dur=1, region;desc="ap-northeast-2"', 'ap-northeast-2');
+  assert.deepEqual(c.headers(false), { 'x-region': 'ap-northeast-2' });
+  assert.equal(store.getItem('bn-api-region-retry-at'), null);
+  c.failed('ap-northeast-2'); clock += 1000;
+  assert.deepEqual(c.headers(), { 'x-region': 'ap-northeast-2' });
+  c.failed('ap-northeast-2');
+  assert.deepEqual(c.headers(), {}, 'another failure starts another full cooldown');
+  clock += 999; assert.deepEqual(c.headers(), {});
+});
+
+test('wrong-region responses do not validate a probe, and late responses cannot undo manual off', () => {
+  let clock = 0;
+  const c = createRegionCanary({ storage: () => memory(), now: () => clock, retryMs: 1000 });
+  c.observe('total;dur=1, region;desc="ap-southeast-1"', 'ap-northeast-2');
+  assert.equal(c.enabled(), false);
+  clock = 1000; c.headers(); c.disable();
+  c.observe('region;desc="ap-northeast-2"', 'ap-northeast-2');
+  assert.equal(c.enabled(), false);
+});
+
+test('invalid or distant retry timestamps cannot strand a browser on fallback forever', () => {
+  const store = memory(); let clock = 100;
+  store.setItem('bn-api-region-retry-at', 'Infinity');
+  assert.deepEqual(createRegionCanary({ storage: () => store }).headers(), { 'x-region': 'ap-northeast-2' });
+  store.setItem('bn-api-region-retry-at', '9999999999999');
+  const c = createRegionCanary({ storage: () => store, now: () => clock, retryMs: 1000 });
+  assert.deepEqual(c.headers(), {}); clock = 1100;
+  assert.deepEqual(c.headers(), { 'x-region': 'ap-northeast-2' });
 });
 
 test('công tắc tắt cho tất cả (REGION_DEFAULT_ON = false): mọi máy về máy chủ mặc định, xoá vùng / cờ đã lưu', () => {

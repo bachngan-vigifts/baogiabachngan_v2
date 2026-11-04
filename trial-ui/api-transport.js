@@ -3,7 +3,7 @@
 const announceRetry=()=>{try{globalThis.dispatchEvent?.(new Event('api-retry'));}catch{/* không có window */}};
 /** Lệnh ghi không bao giờ gửi lại tự động; chỉ có giới hạn thời gian chờ (45 giây + 1 giây mỗi 100 KB gửi lên) để không quay mãi. */
 export function createApiTransport({fetcher=(...args)=>fetch(...args),delay=ms=>new Promise(r=>setTimeout(r,ms)),timeoutMs=15000,writeTimeoutMs=45000,onRetry=announceRetry}={}){
- return async function request(url,init={}){
+ return async function request(url,init={}, {readRetries=2,timeoutMs:readTimeoutMs=timeoutMs}={}){
   const read=['GET','HEAD'].includes((init.method||'GET').toUpperCase());
   if(!read){
    const size=typeof init.body==='string'?init.body.length:0,controller=new AbortController(),abort=()=>controller.abort(init.signal.reason);
@@ -16,11 +16,11 @@ export function createApiTransport({fetcher=(...args)=>fetch(...args),delay=ms=>
    if(init.signal?.aborted)throw init.signal.reason||new DOMException('Aborted','AbortError');
    const controller=new AbortController(),abort=()=>controller.abort(init.signal.reason);
    init.signal?.addEventListener('abort',abort,{once:true});
-   const timer=setTimeout(()=>controller.abort(),timeoutMs);let response;
+   const timer=setTimeout(()=>controller.abort(),readTimeoutMs);let response;
    try{
     response=await fetcher(url,{...init,signal:controller.signal});
-    if(![502,503,504].includes(response.status)||attempt>=2)return response;
-   }catch(error){if(attempt>=2||init.signal?.aborted)throw error;}
+    if(![502,503,504].includes(response.status)||attempt>=readRetries)return response;
+   }catch(error){if(attempt>=readRetries||init.signal?.aborted)throw error;}
    finally{clearTimeout(timer);init.signal?.removeEventListener('abort',abort);}
    await response?.body?.cancel().catch(()=>{});
    onRetry();

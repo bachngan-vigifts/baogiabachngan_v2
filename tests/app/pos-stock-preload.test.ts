@@ -26,6 +26,18 @@ test('POS stock preload uses ledger quantities and real reservations, is store/p
  const page=(await f.call('/pos/catalog?registerId='+f.registerId,f.emp)).data.products[0];assert.deepEqual([page.onHand,page.reserved,page.available],[12,3,9]);
 });
 
+test('POS options can advertise background stock support without reading the full stock catalog', async () => {
+ const f=await setup(),before=await f.db.select().from(stockMoves);
+ for(const query of ['', '?stock=0']) {
+  const boot=await f.call('/pos/options'+query,f.emp);assert.equal(boot.status,200);
+  assert.equal(boot.data.stockSnapshotVersion,1);assert.equal(boot.data.stockSnapshot,undefined);
+  assert.ok(boot.data.registers.some((r:{id:string})=>r.id===f.registerId));
+ }
+ const page=await f.call('/pos/catalog?registerId='+f.registerId+'&limit=20',f.emp);
+ assert.equal(page.status,200);assert.ok(page.data.products.length<=20);assert.equal(page.data.products[0].available,10);
+ assert.deepEqual(await f.db.select().from(stockMoves),before);
+});
+
 test('Lock and Minh Long preload have independent warehouses and catalog families; unopened is explicit',async()=>{
  const f=await setup();await f.db.insert(warehouses).values({id:'ml-stock',name:'Kho ML',kind:'stock'});
  const ml=await f.call('/pos/registers',f.mgr,'POST',{name:'Quầy Minh Long',warehouseId:'ml-stock',pricePolicyId:'retail-vat',secondPricePolicyId:'retail'});assert.equal(ml.status,200);
