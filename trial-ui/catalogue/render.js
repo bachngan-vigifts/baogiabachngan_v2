@@ -33,8 +33,22 @@ export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,sc
  if(slide.type==='closing'){
   text('TRÂN TRỌNG CẢM ƠN',78,145,1125,75,45,'#FFFFFF',true);text('CÔNG TY TNHH SX TM QUẢNG CÁO VIGIFTS',78,267,1120,47,25,'#D7BC7D',true);text(`Hotline / Zalo: ${state.meta.phone}${state.meta.employee?' ('+state.meta.employee+')':''}`,78,355,1120,45,27,'#FFFFFF',true);text('Văn phòng: W36 Đường số 9, KDC Cty 8, P. Cái Răng, TP. Cần Thơ\nCửa hàng: 50 Ngô Quyền, P. Ninh Kiều, TP. Cần Thơ',78,425,1120,75,20,'#E5EEE8');text('Tư vấn lựa chọn sản phẩm, in logo và đóng gói theo yêu cầu',78,553,1120,42,21,'#E5EEE8');footer();return;
  }
- text(BRAND,44,24,650,33,25,C.green,true);text('DANH MỤC QUÀ TẶNG DOANH NGHIỆP',44,60,800,20,12.5,C.red,true);text(ranges[slide.band],730,28,505,37,20,C.green,true,'right');text(slide.category.toLocaleUpperCase('vi-VN'),44,108,1110,45,29,C.green,true);text(slide.brand.toUpperCase(),44,153,1190,23,13,C.muted);
+ text(BRAND,44,24,650,33,25,C.green,true);text('DANH MỤC QUÀ TẶNG DOANH NGHIỆP',44,60,800,20,12.5,C.red,true);text(ranges[slide.band],730,28,505,37,20,C.green,true,'right');text((slide.category+' - '+slide.brand).toLocaleUpperCase('vi-VN'),44,108,1192,62,25,C.green,true,'left',2);
  const items=slide.items;
+ if(state.settings.productsPerPage===8){
+ for(let i=0;i<items.length;i++){
+ const item=items[i],x=44+(i%4)*304,y=180+Math.floor(i/4)*244,bundle=isBundle(item,state);
+ box(x,y,280,230,C.frame,C.line,10);
+ const im=await loadImage(item.image);if(im)photo(im,x+10,y+10,108,106);else text('CHƯA CÓ ẢNH',x+10,y+54,108,20,9,C.muted,false,'center');
+ text(item.name,x+128,y+10,142,61,12,C.ink,true,'left',4);
+ text('Mã: '+(item.sku||'—')+(item.qty>1?' / SL: '+item.qty:''),x+128,y+76,142,30,9.5,C.muted,false,'left',2);
+ if(state.settings.regular)text('Niêm yết: '+(item.priceOnRequest?'Liên hệ':money(item.regular*(bundle?10:1))),x+10,y+124,200,18,10,C.muted,false,'left',1);
+ text(bundle?'Giá / bộ 10 SP':'Giá đề xuất',x+10,y+147,195,18,11,C.ink);
+ const amount=item.priceOnRequest?'Liên hệ':(item.fromPrice?'Từ ':'')+money(quotePrice(item,state));ctx.font='700 19px Montserrat';const size=Math.min(19,19*195/Math.max(195,ctx.measureText(amount).width));text(amount,x+10,y+168,195,26,size,C.green,true);
+ if(state.settings.qr&&item.url){const data=qrData(item.url),qr=await qrImage(item.url);photo(qr,x+211,y+126,58,58,data);text('Xem chi tiết',x+204,y+187,72,14,8,C.green,false,'center');}
+ text(state.meta.note,x+10,y+204,260,25,8.5,C.muted,false,'left',2);
+ }
+ }else
  for(let i=0;i<4;i++){
   const x=44+(i%2)*608,y=180+Math.floor(i/2)*244,tx=x+258;
   if(!items[i]&&slide.type!=='empty')continue;
@@ -50,3 +64,5 @@ export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,sc
  footer();
  if(pptSlide)pptSlide.addNotes(items.map(item=>`${item.name}\nMã: ${item.sku}\n${item.url}\nGiá niêm yết một SP: ${item.regular}; chiết khấu ${item.discount}%; phụ phí ${item.fee}; giá đề xuất một SP ${price(item)}. Đơn vị chào: ${isBundle(item,state)?'bộ 10 SP':'một SP'}; giá chào ${quotePrice(item,state)}; số lượng ${item.qty}.`).join('\n\n'));
 }
+
+
