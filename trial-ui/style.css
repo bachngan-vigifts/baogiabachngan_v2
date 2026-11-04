@@ -1026,6 +1026,10 @@ a.flow-step:hover { border-color: var(--blue); }
 .ddh.slip.delivery-slip .ddh-table th, .ddh.slip.delivery-slip .ddh-table td { overflow-wrap: anywhere; }
 .ddh.slip.delivery-slip .ddh-co b { font-size: 16px; }
 .ddh.slip.delivery-slip .ddh-table, .ddh.slip.delivery-slip .ddh-table th, .ddh.slip.delivery-slip .ddh-table td { font-size: inherit; }
+/* Tiêu đề VIGIFTS: trên giấy rộng đúng 15 cm, căn giữa, cách dòng chữ dưới 1 cm. Phiếu được thu nhỏ đều khi in
+   (dọc ×0.73, ngang ×0.9, đơn đặt hàng ×0.71) nên kích thước trên màn hình = kích thước giấy ÷ hệ số thu nhỏ. Lề trên 2 cm lấy từ @page. */
+.ddh.slip .slip-letterhead.letterhead-vigifts { width: calc(150mm / 0.73); max-width: 100%; margin: 0 auto calc(10mm / 0.73); }
+.ddh:not(.slip) .slip-letterhead.letterhead-vigifts { display: block; height: auto; width: calc(150mm / 0.71); max-width: 100%; margin: 0 auto calc(10mm / 0.71); break-inside: avoid; }
 @page slip-portrait { size: A4 portrait; margin: 20mm 8mm 10mm 8mm; }
 @page slip-landscape { size: A4 landscape; margin: 20mm 8mm 10mm 8mm; }
 @media print {
@@ -1034,6 +1038,7 @@ a.flow-step:hover { border-color: var(--blue); }
   .print-sheet .ddh.slip.delivery-slip { font-size: 16px; }
   .print-sheet.slip-portrait .ddh.slip { zoom: 0.73; }
   .print-sheet.slip-landscape .ddh.slip { zoom: 0.9; margin-inline: auto; }
+  .print-sheet.slip-landscape .ddh.slip .slip-letterhead.letterhead-vigifts { width: calc(150mm / 0.9); margin-bottom: calc(10mm / 0.9); }
   .print-sheet .ddh.slip .ddh-table tr, .print-sheet .ddh.slip .ddh-sign { break-inside: avoid; }
 }
 /* ---------- Hồ sơ HĐKT (xem, sửa, tải file Word) ---------- */

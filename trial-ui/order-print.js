@@ -15,6 +15,13 @@ export const SELLERS = {
   VG: { name: 'CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI QUẢNG CÁO VIGIFTS', short: 'CTY TNHH SX TM QC VIGIFTS' },
 };
 export const sellerOf = d => SELLERS[d.contract?.legalEntity] || (d.order.quoteType === 'VIGIFTS' ? SELLERS.VG : SELLERS.BN);
+/** Pháp nhân của bản in, chốt khi lập dữ liệu: sửa tên đơn vị trên phiếu không làm đổi ảnh tiêu đề. */
+const brandOf = seller => seller === SELLERS.VG.short || seller === SELLERS.VG ? 'VG' : 'BN';
+const LETTERHEADS = {
+  BN: { src: 'slip-letterhead.jpg', w: 1280, h: 230, cls: 'slip-letterhead', alt: 'Công ty TNHH Sản xuất Thương mại Bách Ngân — Nhà phân phối gốm sứ cao cấp Minh Long' },
+  VG: { src: 'slip-letterhead-vigifts.jpg', w: 1891, h: 218, cls: 'slip-letterhead letterhead-vigifts', alt: 'Công ty TNHH Sản xuất Thương mại Quảng cáo VIGIFTS — Cung cấp quà tặng doanh nghiệp, nhà phân phối LocknLock' },
+};
+const letterheadImg = brand => { const l = LETTERHEADS[brand] || LETTERHEADS.BN; return `<img class="${l.cls}" src="${l.src}" width="${l.w}" height="${l.h}" alt="${l.alt}">`; };
 
 /** Chứng từ tham chiếu: có HĐKT thì dùng số hợp đồng, đơn thường dùng số đơn. */
 export function orderReference(order, contract = null) {
@@ -26,7 +33,7 @@ export function orderReference(order, contract = null) {
 export function orderPrintData(d, me = '') {
   const o = d.order, today = new Date();
   return {
-    seller: sellerOf(d).short, department: 'Phòng Kinh Doanh', orderNo: o.orderNo, quoteNo: o.quoteNo || '', customerName: o.customerName,
+    seller: sellerOf(d).short, brand: brandOf(sellerOf(d)), department: 'Phòng Kinh Doanh', orderNo: o.orderNo, quoteNo: o.quoteNo || '', customerName: o.customerName,
     customerCode: o.customerCode ? `${o.customerCode}: ${o.customerName}` : o.customerName, taxCode: o.taxCode || '', address: o.address || '',
     contact: [o.contact, o.phone].filter(Boolean).join(' · '), orderDate: dmy(o.orderDate), expectedDeliveryDate: dmy(o.expectedDeliveryDate),
     lines: d.lines.map(l => ({ sku: l.sku, name: l.name, unit: l.unit, qty: l.qty, delivered: l.deliveredQty || 0, date: dmy(o.expectedDeliveryDate), note: '', unitPrice: l.unitPrice, taxRate: l.taxRate, amount: l.amount })),
@@ -45,6 +52,7 @@ export function orderSheetHtml(p, { prices = false, edit = false } = {}) {
   const head = ['STT', 'Mã hàng', 'Chủng loại', 'ĐVT', 'SL đặt', 'SL giao', ...(prices ? ['Đơn giá', 'Thành tiền'] : []), 'Ngày giao', 'Ghi chú'];
   const totalQty = p.lines.reduce((s, l) => s + Number(l.qty || 0), 0);
   return `<div class="ddh">
+    ${p.brand === 'VG' ? letterheadImg('VG') : ''}
     <div class="ddh-top"><div class="ddh-co"><b${ce('seller')}>${esc(p.seller)}</b><span${ce('department')}>${esc(p.department)}</span></div><h1>ĐƠN ĐẶT HÀNG</h1><div></div></div>
     <div class="ddh-info">
       <div><span>Số ĐH</span><b${ce('orderNo')}>${esc(p.orderNo)}</b></div><div><span>Số CT</span><b${ce('quoteNo')}>${esc(p.quoteNo)}</b></div>
@@ -88,7 +96,7 @@ const contactOf = o => [o.contact, o.phone].filter(Boolean).join(' · ');
  */
 export function packingPrintData({ seller, order, contract = null, slip = null, lines }, me = '') {
   return {
-    kind: 'packing', seller, department: 'Kho', docNo: slip?.slipNo || orderReference(order, contract).number,
+    kind: 'packing', seller, brand: brandOf(seller), department: 'Kho', docNo: slip?.slipNo || orderReference(order, contract).number,
     info: [['Số phiếu', slip?.slipNo || ''], [orderReference(order, contract).label, orderReference(order, contract).number], ['Tên khách hàng', order.customerName], ['Ngày lập', dmy(slip?.createdAt || new Date().toISOString())],
       ['Nguồn hàng', slip ? [slip.sourceLabel, slip.sourceNote].filter(Boolean).join(': ') : ''], ['Ngày giao', dmy(order.expectedDeliveryDate)],
       ['Giao tới', slip?.shipTo === 'workshop' ? `Xưởng in ${slip.shipName}` : 'Khách hàng'], ['Liên hệ', slip?.shipTo === 'workshop' ? slip.shipPhone || '' : contactOf(order)],
@@ -109,7 +117,7 @@ export function deliveryPrintData({ seller, order, contract = null, delivery = n
   const recipient = orderRecipient(order, delivery);
   const receiver = [recipient.receiverName, recipient.receiverPhone].filter(Boolean).join(' · ');
   return {
-    kind: 'delivery', seller, department: 'Phòng Kinh Doanh', docNo: delivery?.deliveryNo || orderReference(order, contract).number,
+    kind: 'delivery', seller, brand: brandOf(seller), department: 'Phòng Kinh Doanh', docNo: delivery?.deliveryNo || orderReference(order, contract).number,
     info: [['Số phiếu', delivery?.deliveryNo || ''], [orderReference(order, contract).label, orderReference(order, contract).number], ['Tên khách hàng', order.customerName], ['Người giao', delivery?.senderName || ''],
       ['Địa chỉ giao', delivery?.address || order.address || ''], ['SĐT người giao', delivery?.senderPhone || ''], ['Người nhận', receiver], ['', ''],
       ...(delivery?.carrier ? [['Nhà xe', delivery.carrier], ['SĐT bác tài', delivery.carrierPhone || '']] : [])],
@@ -129,7 +137,7 @@ export function transferPrintData(t, me = '') {
   const got = t.status === 'done';
   const received = l => !got || l.receivedQty == null ? '' : Number(l.receivedQty) === 0 ? '0' : Number(l.receivedQty);
   return {
-    kind: 'transfer', seller: SELLERS.BN.short, department: 'Kho', docNo: t.transferNo,
+    kind: 'transfer', seller: SELLERS.BN.short, brand: 'BN', department: 'Kho', docNo: t.transferNo,
     info: [['Số phiếu', t.transferNo], ['Trạng thái', t.statusLabel], ['Kho đi (xuất)', t.fromName], ['Kho đến (nhận)', t.toName],
       ['Người xin', t.requestedByName || ''], ['Ngày xin', dmyVn(t.createdAt)], ['Người duyệt', t.approvedByName || ''], ['Ngày chuyển', dmyVn(t.shippedAt)],
       ['Lý do', t.reason || ''], ['', '']],
@@ -147,7 +155,7 @@ export function slipSheetHtml(p, { edit = false } = {}) {
   const ce = f => edit ? ` contenteditable="true" data-f="${f}"` : '', kind = SLIP_KINDS[p.kind];
   const first = p.cols.findIndex(c => c.sum);
   return `<div class="ddh slip${p.kind === 'delivery' ? ' delivery-slip' : ''}">
-    <img class="slip-letterhead" src="slip-letterhead.jpg" width="1280" height="230" alt="Công ty TNHH Sản xuất Thương mại Bách Ngân — Nhà phân phối gốm sứ cao cấp Minh Long">
+    ${letterheadImg(p.brand)}
     <div class="ddh-top"><div class="ddh-co"><b${ce('seller')}>${esc(p.seller)}</b><span${ce('department')}>${esc(p.department)}</span></div><h1>${kind.title}</h1><div></div></div>
     <div class="ddh-info">${p.info.map(([label, v], i) => `<div><span>${esc(label)}</span><b${ce(`info.${i}.1`)}>${esc(v)}</b></div>`).join('')}</div>
     <table class="ddh-table">${p.kind === 'delivery' ? '<colgroup>' + [5, 12, 8, 24, 9, 12, 12, 18].map(w => `<col style="width:${w}%">`).join('') + '</colgroup>' : ''}<thead><tr><th>STT</th>${p.cols.map(c => `<th>${esc(c.h)}</th>`).join('')}</tr></thead><tbody>
