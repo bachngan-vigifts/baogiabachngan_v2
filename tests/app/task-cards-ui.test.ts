@@ -42,8 +42,8 @@ test('tab chế độ xem có số đếm (tên nhóm của tôi), thẻ hạn �
   assert.match(tabs, /data-v="mine" aria-selected="true">Của tôi <b>34<\/b>/);
   assert.match(tabs, /Tôi giao <b>5<\/b>/); assert.match(tabs, /Việc nhóm Kho <b>3<\/b>/);
   assert.doesNotMatch(tabs, /Chưa giao/, 'nhân viên không có tab Chưa giao'); assert.doesNotMatch(tabs, /Đồng nghiệp/);
-  assert.match(f.node('#tasks-stats').innerHTML, /data-stat="overdue" aria-pressed="false"><strong>33<\/strong>/);
-  assert.match(f.node('#tasks-stats').innerHTML, /data-stat="week"[^>]*><strong>4<\/strong><span>Sắp tới<\/span><small>7 ngày tới/);
+  assert.match(f.node('#tasks-stats').innerHTML, /data-stat="overdue" aria-pressed="false"><span>Quá hạn<\/span><strong>33<\/strong>/);
+  assert.match(f.node('#tasks-stats').innerHTML, /data-stat="week"[^>]*><span>Sắp tới<\/span><strong>4<\/strong><small>7 ngày tới/);
   assert.match(f.node('#tasks-sync').textContent, /^Đồng bộ lúc \d\d:\d\d/);
   assert.match(f.node('#tasks-count').textContent, /Hiển thị 1 \/ 45 việc của bạn/);
   f.view('team'); await flush(); assert.equal(f.last().get('view'), 'team');

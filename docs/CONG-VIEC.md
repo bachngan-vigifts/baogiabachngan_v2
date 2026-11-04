@@ -4,6 +4,8 @@ Trang **Công việc** (`#/tasks`) gom hai loại việc vào một danh sách:
 - **Việc tự sinh** từ nghiệp vụ.
 - **Việc giao thủ công** giữa các nhân viên.
 
+Bố cục dùng cùng khung với Báo giá, Đơn hàng và HĐKT: tiêu đề trang, tab dạng chip, bốn thẻ thống kê và một panel chứa bộ lọc/danh sách. Trên máy tính, các dòng việc có tiêu đề cột và được chia nhóm theo hạn hoặc nhóm việc; trên điện thoại, thống kê xếp 2 × 2 và từng việc hiển thị thành thẻ. Bộ lọc hạn, mở chi tiết và tab Cần duyệt giữ nguyên thao tác.
+
 ## Cấu trúc (sửa ở đâu)
 | Phần | File |
 |---|---|

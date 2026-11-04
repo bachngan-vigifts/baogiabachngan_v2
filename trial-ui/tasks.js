@@ -117,7 +117,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   // ----- Thẻ hạn: đếm theo bộ lọc hiện tại (trừ hạn) – máy chủ trả `dueCounts`.
   function renderCards() {
     const c = st.dueCounts || {};
-    q('#tasks-stats').innerHTML = TASK_UI.dueCards.map(([k, label, sub]) => `<button type="button" class="task-due-card d-${k}" data-stat="${k}" aria-pressed="${st.due === k}"><strong>${c[k] ?? 0}</strong><span>${label}</span><small>${sub}</small></button>`).join('');
+    q('#tasks-stats').innerHTML = TASK_UI.dueCards.map(([k, label, sub]) => `<button type="button" class="stat task-due-card d-${k}" data-stat="${k}" aria-pressed="${st.due === k}"><span>${label}</span><strong>${c[k] ?? 0}</strong><small>${sub}</small></button>`).join('');
   }
   // ----- Chip bộ lọc đang bật.
   const assigneeLabel = v => v === 'none' ? 'Chưa giao' : v.startsWith('team:') ? 'Nhóm ' + (TASK_UI.teams[v.slice(5)] || v.slice(5)) : v === userId() ? 'Tôi' : (st.people || []).find(p => p.id === v)?.name || v;

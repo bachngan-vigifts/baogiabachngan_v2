@@ -418,7 +418,20 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       // Số đếm và tổng tiền tính trên toàn bộ kết quả lọc; danh sách trả theo trang 100 đơn.
       const offset = Math.max(0, Math.min(1_000_000, Number(p.get('offset')) || 0)), pageSize = 100;
       const orders = board.orders.slice(offset, offset + pageSize);
-      return json({ registers: scope.regs.map(r => ({ id: r.id, name: r.name })), registerId, canViewAllRegisters: scope.all, ...board, orders,
+      // Only read carrier snapshots for the visible CRM page; never call GHN while listing orders.
+      const crmIds = orders.filter(o => !o.external).map(o => o.id);
+      const shipments = crmIds.length ? await c.env.db.select({ orderId: deliveries.orderId, id: deliveries.id,
+        trackingCode: deliveries.trackingCode, trackingStatus: deliveries.trackingStatus }).from(deliveries)
+        .where(and(inArray(deliveries.orderId, crmIds), sql`lower(trim(${deliveries.carrier}))='ghn'`, sql`trim(${deliveries.trackingCode})<>''`))
+        .orderBy(desc(deliveries.updatedAt), desc(deliveries.createdAt), asc(deliveries.id)) : [];
+      const shipmentsByOrder = new Map<string, typeof shipments>();
+      for (const shipment of shipments) {
+        const list = shipmentsByOrder.get(shipment.orderId) || [];
+        list.push(shipment);
+        shipmentsByOrder.set(shipment.orderId, list);
+      }
+      const pageOrders = orders.map(o => o.external ? o : { ...o, ghnShipments: shipmentsByOrder.get(o.id) || [] });
+      return json({ registers: scope.regs.map(r => ({ id: r.id, name: r.name })), registerId, canViewAllRegisters: scope.all, ...board, orders: pageOrders,
         totalOrders: board.orders.length, nextOffset: offset + pageSize < board.orders.length ? offset + pageSize : null, windowFrom: windowFrom || null });
     },
     'business',
