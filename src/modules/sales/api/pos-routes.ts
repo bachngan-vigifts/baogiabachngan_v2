@@ -17,7 +17,7 @@ import { notifyCashApprovers } from './cash-approval-notification.ts';
 import { posExchangeAllocations } from '../return-schema.ts';
 import { returnAccount, returnBalances, assertNoReturnActivity } from './pos-return-credit.ts';
 import { allowedRegister, posScope } from './pos-access.ts';
-import { allowedPosRegisters, assertSellRegister } from './pos-register-scope.ts';
+import { allowedPosRegisters, assertSellRegister, sellRegister } from './pos-register-scope.ts';
 import { canListRetailCustomers } from '../../customers/domain/customer-config.ts';
 import { cashLock, nextCashOpening, closeCashShift, drawerOf, cashAudit, reconciliationFor } from './cash-store.ts';
 import { and, asc, desc, eq, getTableColumns, gte, inArray, isNull, lte, ne, notInArray, or, sql } from 'drizzle-orm';
@@ -824,8 +824,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     'business',
   );
   router.get('/pos/stock-snapshot',async c=>{
-    posPermission(member(c));const id=posText(c.url.searchParams.get('registerId'));await assertSellRegister(c,id);
-    return json(await posStockSnapshot(c.env.db,member(c),await registerOf(c.env.db,id),posText(c.url.searchParams.get('pricePolicyId'))||undefined,c.url.searchParams.get('metadata')==='1')||{unavailable:true});
+    posPermission(member(c));const id=posText(c.url.searchParams.get('registerId'));
+    return json(await posStockSnapshot(c.env.db,member(c),await sellRegister(c,id),posText(c.url.searchParams.get('pricePolicyId'))||undefined,c.url.searchParams.get('metadata')==='1')||{unavailable:true});
   },'business');
   router.get(
     '/pos/catalog',
@@ -833,13 +833,13 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       posPermission(member(c));
       const readStartedAt=new Date().toISOString();
       const registerId = posText(c.url.searchParams.get('registerId')), q = posText(c.url.searchParams.get('q'), 100);
-      // Ba lượt đọc độc lập chạy cùng lúc (quyền quầy, quầy, mã vạch); lỗi quyền vẫn báo trước như khi chạy lần lượt.
-      const [allowed, register, barcode] = await Promise.allSettled([
-        assertSellRegister(c, registerId), registerOf(c.env.db, registerId),
+      // Quầy (đã kiểm quyền, lấy từ danh sách quầy vừa đọc) và mã vạch đọc cùng lúc; lỗi quyền vẫn báo trước như khi chạy lần lượt.
+      const [register, barcode] = await Promise.allSettled([
+        sellRegister(c, registerId),
         q ? c.env.db.select().from(productBarcodes).where(eq(productBarcodes.barcode, q)).limit(1) : Promise.resolve([]),
       ]);
-      for (const result of [allowed, register, barcode]) if (result.status === 'rejected') throw result.reason;
-      const r = (register as PromiseFulfilledResult<Awaited<ReturnType<typeof registerOf>>>).value,
+      for (const result of [register, barcode]) if (result.status === 'rejected') throw result.reason;
+      const r = (register as PromiseFulfilledResult<Awaited<ReturnType<typeof sellRegister>>>).value,
         policy = posText(c.url.searchParams.get('pricePolicyId')) || r.pricePolicyId;
       if (![r.pricePolicyId, r.secondPricePolicyId].includes(policy)) throw new AppError(400, 'Bảng giá không hợp lệ.');
       const [barcodeHit] = (barcode as PromiseFulfilledResult<(typeof productBarcodes.$inferSelect)[]>).value;
@@ -1010,8 +1010,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     '/pos/opening-counts',
     async (c) => {
       posPermission(member(c));
-      await assertSellRegister(c, posText(c.url.searchParams.get('registerId')));
-      const r = await registerOf(c.env.db, posText(c.url.searchParams.get('registerId')));
+      const r = await sellRegister(c, posText(c.url.searchParams.get('registerId')));
       await assertOpening(c.env.db, r.warehouseId);
       const rows = await c.env.db
         .select({

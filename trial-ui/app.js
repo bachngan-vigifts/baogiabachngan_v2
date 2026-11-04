@@ -357,13 +357,16 @@ async function apiRequest(path, method = 'GET', body) {
   // Trang đang mở tải trước; số đếm menu, chuông, nhịp kiểm tra… chờ một nhịp (request-priority.js).
   // Máy chủ cạnh CSDL (mặc định bật, api-region.js): thêm header x-region; lỗi là tắt và giữ tắt trên máy này.
   let sentAt = 0;
-  const send = (regionHeaders, readPolicy) => requestPriority.run(isBackgroundRequest(path, method), () => { if (!sentAt) sentAt = performance.now(); return apiFetch(API + path, { method, headers: { ...headers, ...regionHeaders }, body: body === undefined ? undefined : JSON.stringify(body) }, readPolicy); });
+  // Đo tốc độ: từng lần gửi thật (thử lại khi quá giờ / 502–504, chuyển máy chủ dự phòng) – để không gộp chúng vào "mạng".
+  const attempts = [];
+  const send = (regionHeaders, readPolicy) => requestPriority.run(isBackgroundRequest(path, method), () => { if (!sentAt) sentAt = performance.now(); const region = !!regionHeaders?.['x-region']; return apiFetch(API + path, { method, headers: { ...headers, ...regionHeaders }, body: body === undefined ? undefined : JSON.stringify(body) }, { ...readPolicy, onAttempt: a => attempts.push({ ...a, region }) }); });
   try { res = await requestWithRegion(regionCanary, send, {read: method === 'GET'}); }
   catch {
     throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME);
   }
+  const headersAt = performance.now();
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
-  recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing') }); // menu → Đo tốc độ
+  recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing'), readMs: performance.now() - headersAt, attempts }); // menu → Đo tốc độ
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
   const sameSession = requestToken === token;
   // Phản hồi thuộc phiên trước (vừa đổi tài khoản): không trả dữ liệu cho phiên mới. Mã 409 (không phải 0) để màn hình không coi là

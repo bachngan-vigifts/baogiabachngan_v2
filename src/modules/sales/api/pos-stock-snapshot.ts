@@ -6,7 +6,7 @@ import {foldSql} from '../../../core/text/fold.ts';
 import {products,productPrices} from '../../catalog/schema.ts';
 import {hiddenStockWarehouses} from '../../catalog/api/stock-source.ts';
 import {stockBalances} from '../../inventory/schema.ts';
-import {ledgerWarehouses} from './pos-stock.ts';
+import {rememberLedgerWarehouses} from './pos-stock.ts';
 import {reservedBySku,type PosDb,type PosMember} from './pos-store.ts';
 import {posCatalogFamily,MINH_LONG_CATALOG_PATTERN,LOCK_CATALOG_PATTERN} from '../domain/pos-catalog-brand.ts';
 
@@ -25,7 +25,7 @@ async function readPosStockSnapshot(db:PosDb,member:PosMember,register:{id:strin
  if(![register.pricePolicyId,register.secondPricePolicyId].includes(policy))throw new AppError(400,'Bảng giá không hợp lệ.');
  const startedAt=new Date().toISOString();
  const [hidden,opened,rows]=await Promise.all([
-  hiddenStockWarehouses(db,member),ledgerWarehouses(db),
+  hiddenStockWarehouses(db,member),rememberLedgerWarehouses(db),
   db.select({sku:products.sku,price:productPrices.price,onHand:stockBalances.qty,scanCodes:posScanCodes,...(includeCatalog?{name:products.name,brand:products.brand,unit:products.unit,imageUrl:products.imageUrl,pattern:products.pattern}:{})}).from(products)
    .innerJoin(productPrices,and(eq(productPrices.sku,products.sku),eq(productPrices.policyId,policy)))
    .leftJoin(stockBalances,and(eq(stockBalances.sku,products.sku),eq(stockBalances.warehouseId,register.warehouseId)))

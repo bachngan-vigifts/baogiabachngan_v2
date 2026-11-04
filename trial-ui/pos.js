@@ -1287,8 +1287,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if(stock){const meta=preview||hit?.p||posSearch(sku,policyId)?.find(p=>p.sku===sku);if(meta)return {...meta,...stock,stockStale:stock.stockStale||stockFetchFailed,loading:false};}
     return null;
   };
+  let stockSnapshotAt=0;
   function acceptStockSnapshot(snapshot){
-    if(!stockCache.adopt(snapshot,stockOwner()))return;stockFetchFailed=false;updateStockStamp();
+    if(!stockCache.adopt(snapshot,stockOwner()))return;stockSnapshotAt=Date.now();stockFetchFailed=false;updateStockStamp();
     // A slow full preload must not replace a newer per-product read.
     for(const [key,hit]of liveCache)if(!hit.p.stockAsOf||hit.p.stockAsOf<=snapshot.asOf)liveCache.delete(key);
     scanLookup.clear();
@@ -1309,7 +1310,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   }
   function updateStockStamp(){if(!nodes.stockStamp)return;const s=st.register&&stockCache.scope(st.register.id,st.policy,stockOwner());nodes.stockStamp.textContent=s?'Tồn cập nhật '+new Date(s.asOf).toLocaleTimeString('vi-VN')+(stockFetchFailed?' · chưa lấy được số mới':' · tự cập nhật nền'):'';}
   function scheduleStockRefresh(){clearTimeout(stockRefreshTimer);if(!stockPreloadSupported)return;stockRefreshTimer=setTimeout(async()=>{if(!root.hidden&&!document.hidden)await refreshStockSnapshot(true);scheduleStockRefresh();},30000);}
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!root.hidden)refreshStockSnapshot(true);});
+  // Quay lại tab: chỉ tải lại khi bản tồn đã cũ (> 15 giây) – thu ngân chuyển tab liên tục không làm máy chủ đọc lại toàn bộ tồn mỗi lần.
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!root.hidden&&Date.now()-stockSnapshotAt>15000)refreshStockSnapshot(true);});
 
   const cacheProducts = (products, registerId, policyId) => {
     stockOwner();

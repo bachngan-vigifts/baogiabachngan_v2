@@ -14,7 +14,7 @@ import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import { quoteSaveHooks } from '../../quotes/api/routes.ts';
 import { taskComments, tasks } from '../schema.ts';
-import { reconcileAutoTasks, reconcileTaskSet, transferTasks } from './auto-tasks.ts';
+import { RULES, reconcileAutoTasks, reconcileTaskSet, transferTasks } from './auto-tasks.ts';
 import { invoiceTasks } from './invoice-tasks.ts';
 import type { InvoiceTaskRef } from '../../sales/api/invoice-task-hooks.ts';
 import { completeFollowUp } from '../../care/api/routes.ts';
@@ -33,8 +33,13 @@ const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Dat
 const addDays = (iso: string, n: number) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 86_400_000).toISOString().slice(0, 10);
 const isTime = (v: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
-/** Việc tự sinh được đồng bộ tối đa mỗi 15 giây / phiên chạy (mở bảng việc liên tục không quét lại toàn bộ). `?refresh=1` ép đồng bộ ngay. */
-let lastReconcile = 0;
+/**
+ * Quét toàn bộ việc tự sinh (~30+ truy vấn) tối đa mỗi SWEEP_MS / phiên chạy Edge: bắt việc đến hạn và sự kiện bị bỏ sót.
+ * Thay đổi chứng từ đã có đồng bộ riêng theo sự kiện (hoá đơn, điều chuyển, két, lưu báo giá). `?refresh=1` ép quét ngay.
+ * Chỉ một lượt quét chạy một lúc: gọi trùng thì chờ chung lượt đang chạy; gọi ép trong lúc đang quét thì quét lại một lượt sau đó.
+ */
+const SWEEP_MS = 60_000;
+let lastReconcile = 0, running: Promise<void> | null = null, rerun = false;
 // Mở trang / đếm việc: đồng bộ chạy nền (trả lời ngay, lượt sau thấy việc mới); bấm "Làm mới" (?refresh=1) thì chờ đồng bộ xong.
 const syncAuto = (c: Ctx) => {
   const force = c.url.searchParams.get('refresh') === '1';
@@ -50,12 +55,28 @@ export function syncAutoTasksLater(env: StaffEnv, actorId: string | null = null,
  * Đồng bộ việc tự sinh rồi thông báo (chuông + Web Push) cho việc mới: người nhận; việc của nhóm → cả nhóm; chưa giao ai → Manager.
  * Tối đa 30 việc mỗi lượt (tránh dồn dập). Gọi từ trang Công việc và ngay sau khi lưu báo giá chờ duyệt.
  */
-export async function syncAutoTasks(env: StaffEnv, force = false, actorId: string | null = null) {
-  if (!force && Date.now() - lastReconcile < 15_000) return;
+export function syncAutoTasks(env: StaffEnv, force = false, actorId: string | null = null): Promise<void> {
+  if (running) { if (force) rerun = true; return running; }
+  if (!force && Date.now() - lastReconcile < SWEEP_MS) return Promise.resolve();
   lastReconcile = Date.now();
-  let fresh: Awaited<ReturnType<typeof reconcileAutoTasks>>['fresh'] = [];
-  try { fresh = (await reconcileAutoTasks(env.db)).fresh; } catch (e) { console.error('reconcile auto tasks failed', e instanceof Error ? e.message : e); }
-  await notifyAutoTasks(env, fresh, actorId);
+  running = (async () => {
+    try {
+      do {
+        rerun = false;
+        let fresh: Awaited<ReturnType<typeof reconcileAutoTasks>>['fresh'] = [];
+        try { fresh = (await reconcileAutoTasks(env.db)).fresh; } catch (e) { console.error('reconcile auto tasks failed', e instanceof Error ? e.message : e); }
+        await notifyAutoTasks(env, fresh, actorId);
+      } while (rerun);
+    } finally { running = null; lastReconcile = Date.now(); }
+  })();
+  return running;
+}
+/** Lưu báo giá chỉ đổi việc "Duyệt báo giá": đồng bộ đúng nhóm việc đó (1 quy tắc), không quét lại mọi quy tắc. */
+export async function syncQuoteApprovalTasks(env: StaffEnv, actorId: string | null = null) {
+  const wanted = await RULES.quoteApproval!(env.db, vietnamDate().iso, new Date());
+  const result = await reconcileTaskSet(env.db, new Map(wanted.map(t => [t.autoKey, t])), new Date(),
+    or(like(tasks.autoKey, 'quote-approve:%'), like(tasks.autoKey, 'quote-customer:%')));
+  await notifyAutoTasks(env, result.fresh, actorId);
 }
 /** Narrow event reconciliation: a sale need not rescan quotes, purchases or all other task rules. */
 export async function syncInvoiceTasks(env: StaffEnv, ref: InvoiceTaskRef, actorId: string | null = null) {
@@ -85,7 +106,11 @@ async function notifyAutoTasks(env: StaffEnv, fresh: Awaited<ReturnType<typeof r
   if (env.waitUntil) env.waitUntil(job); else await job;
 }
 // Lưu báo giá chờ duyệt → tạo ngay việc "Duyệt báo giá" cho Manager và báo, không đợi ai mở trang Công việc.
-quoteSaveHooks.afterCommit.push(env => syncAutoTasksLater(env, null, true));
+quoteSaveHooks.afterCommit.push(env => {
+  const job = syncQuoteApprovalTasks(env).catch(e => console.error('quote approval tasks failed', e instanceof Error ? e.message : e));
+  if (env.waitUntil) { env.waitUntil(job); return Promise.resolve(); }
+  return job;
+});
 
 /** Các nhóm của tôi: nhóm trùng chức vụ (Kho, Kế toán, Sale Admin…) + nhóm có quyền tương ứng (`TEAM_PERMISSION`). Manager thấy mọi việc nên không cần. */
 const myTeams = (c: Ctx): TaskTeam[] => {

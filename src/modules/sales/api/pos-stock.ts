@@ -6,7 +6,11 @@ import { warehouses } from '../../catalog/schema.ts';
  * Tồn chuẩn (docs/SO-KHO.md): kho thật đã chốt tồn đầu kỳ đọc số dư sổ kho (bán quầy, bán đơn / HĐKT, điều chuyển, nhận NCC…);
  * kho chưa chốt vẫn đọc tồn đồng bộ Sapo. Trước đây chỉ áp cho kho quầy POS – nay áp cho mọi kho đã chốt (yêu cầu 18/10/2026).
  */
-export async function ledgerWarehouses(db: StockReadDb) {
+/** Giao dịch chỉ đọc (repeatable read) đã đọc danh sách kho chốt: dùng lại trong cùng giao dịch (snapshot POS đọc 2 lần). */
+const ledgerMemo = new WeakMap<object, Promise<string[]>>();
+export function rememberLedgerWarehouses(tx: StockReadDb) { const read = readLedgerWarehouses(tx); ledgerMemo.set(tx, read); return read; }
+export function ledgerWarehouses(db: StockReadDb) { return ledgerMemo.get(db) ?? readLedgerWarehouses(db); }
+async function readLedgerWarehouses(db: StockReadDb) {
   return (await db.selectDistinct({ id: stockMoves.warehouseId }).from(stockMoves)
     .innerJoin(warehouses, and(eq(warehouses.id, stockMoves.warehouseId), eq(warehouses.kind, 'stock')))
     .where(eq(stockMoves.refType, 'opening'))).map(r => r.id);

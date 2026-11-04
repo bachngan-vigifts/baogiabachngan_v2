@@ -42,3 +42,13 @@ export async function assertSellRegister(c: RouteContext<StaffEnv>, registerId: 
   const scope = await allowedPosRegisters(c, db);
   if (!scope.all && !scope.ids.has(registerId)) throw new AppError(403, 'Bạn chỉ được bán tại quầy được giao. Nhờ Manager phân quầy theo chức vụ.', 'POS_REGISTER_NOT_ALLOWED');
 }
+/** Như assertSellRegister nhưng trả luôn quầy (lấy từ danh sách vừa đọc để kiểm quyền, khỏi đọc lại); quầy ngoài danh sách thì đọc riêng như cũ. */
+export async function sellRegister(c: RouteContext<StaffEnv>, registerId: string, db: Pick<StaffEnv['db'], 'select'> = c.env.db) {
+  const scope = await allowedPosRegisters(c, db);
+  if (!scope.all && !scope.ids.has(registerId)) throw new AppError(403, 'Bạn chỉ được bán tại quầy được giao. Nhờ Manager phân quầy theo chức vụ.', 'POS_REGISTER_NOT_ALLOWED');
+  const [known] = scope.regs.filter(r => r.id === registerId);
+  if (known) return known;
+  const [r] = await db.select().from(posRegisters).where(and(eq(posRegisters.id, registerId), eq(posRegisters.active, true)));
+  if (!r) throw new AppError(404, 'Không tìm thấy quầy đang hoạt động.');
+  return r;
+}
