@@ -1,4 +1,5 @@
 import {invoiceTaskHooks} from './invoice-task-hooks.ts';
+import {readWebAccounting,canEditWebAccounting} from '../domain/web-order-accounting.ts';
 import {products} from '../../catalog/schema.ts';
 import {webSourceHash,webEditBlocked,webEditFlags} from './web-order-edit-state.ts';
 import {readWebEdit,webEditorModel} from '../domain/web-order-edit.ts';
@@ -37,6 +38,7 @@ async function scope(c:Ctx){
 }
 const invoiceState = () => invoiceTaskHooks.webStatus?.() ?? sql<string>`'unknown'`;
 function asDocument(o:typeof web.$inferSelect,branchName:string,invoiceStatus='unknown'){
+ const accounting=readWebAccounting(o.crmEditSnapshot),invoice=accounting.invoice;
  const bucket=webOrderBucket(o.status,o.ghnStatus),status=bucket==='completed'?'delivered':bucket==='cancelled'?'cancelled':bucket==='waiting_delivery'?'delivering':bucket==='packing'?'confirmed':'draft';
  const financials=readWebOrderFinancials(o.financialSnapshot),payment=readWebEdit(o.crmEditSnapshot).sourceConflict?undefined:financials?.payment;
  const paid=payment?(payment.paidAt?o.total:0):null;
@@ -44,7 +46,9 @@ function asDocument(o:typeof web.$inferSelect,branchName:string,invoiceStatus='u
   ownerId:null,ownerName:o.source==='lock'?'Web LocknLock':'Web Minh Long',branchName,registerId:o.registerId,orderDate:o.orderedAt.slice(0,10),createdAt:o.orderedAt,updatedAt:o.updatedAt,
   status,statusLabel:bucket==='completed'?'Đã giao':bucket==='cancelled'?'Đã huỷ / hoàn':bucket==='waiting_delivery'?'Đang giao':bucket==='packing'?'Đang chuẩn bị hàng':'Chờ xác nhận GHN',sourceStatus:o.status,total:o.total,currency:o.currency,paid,paymentStatus:paid===null?'unknown':paid>=o.total?'paid':'debt',
   receivable:paid===null?null:{status:paid>=o.total?'paid':paid>0?'partial':'unpaid',payState:paid>=o.total?'paid':paid>0?'partial':'unpaid',paid,balance:Math.max(0,o.total-paid)},debtCounts:status!=='cancelled',
-  invoiceStatus,invoiceNo:'',contract:null,deliveryCarrier:'GHN',deliveryStatus:!o.ghnOrderCode?'':status==='cancelled'?'cancelled':status==='delivered'?'delivered':o.ghnStatus==='ready_to_pick'?'planned':'in_transit',
+  invoiceStatus:invoice?.status==='issued'?'issued':invoiceStatus,invoiceNo:invoice?.invoiceNo||'',invoiceDate:invoice?.invoiceDate||'',invoiceIssuedBy:invoice?.issuedBy||null,invoiceIssuedByName:invoice?.issuedByName||'',invoiceIssuedAt:invoice?.issuedAt||null,
+  invoiceRequestedAt:invoice?.requestedAt||(invoiceStatus==='requested'?o.updatedAt:null),invoiceRequestedBy:invoice?.requestedBy||null,invoiceRequestedByName:invoice?.requestedByName||'',invoiceEmail:invoice?.email||accounting.billing?.email||o.email,invoiceMode:invoice?.mode||'issue',invoiceRequestNote:invoice?.note||'',accountingRevision:accounting.revision,billing:accounting.billing||{name:o.customerName,taxCode:'',address:o.address,email:o.email},
+  contract:null,deliveryCarrier:'GHN',deliveryStatus:!o.ghnOrderCode?'':status==='cancelled'?'cancelled':status==='delivered'?'delivered':o.ghnStatus==='ready_to_pick'?'planned':'in_transit',
   ghnAddress:(()=>{try{return JSON.parse(o.ghnAddressSnapshot||'{}');}catch{return {};}})(),ghnOrderCode:o.ghnOrderCode,ghnStatus:o.ghnStatus,ghnSortCode:o.ghnSortCode,ghnFee:o.ghnFee,ghnShipments:[],stockStatus:o.stockStatus,stockNote:o.stockNote,financials,paymentMethod:o.paymentMethod};
 }
 /** A read projection, not a second sales_orders row: stock, receipts and revenue retain their original web identity. */
@@ -52,7 +56,7 @@ export async function webDocumentPage(c:Ctx,crmWhere:SQL|undefined,limit:number,
  const base=await scope(c),p=c.url.searchParams,status=p.get('status')||'',source=p.get('source')||'',branch=p.get('branch')||'',q=p.get('q');
  const where=and(base,
   ['', 'web','ghn'].includes(source)&&!p.get('owner')?undefined:sql`false`,
-  p.get('invoice') ? p.get('invoice')==='requested' ? eq(invoiceState(),'requested') : sql`false` : undefined,
+  p.get('invoice') ? ['requested','issued'].includes(p.get('invoice')!) ? eq(invoiceState(),p.get('invoice')!) : p.get('invoice')==='none'?eq(invoiceState(),'unknown'):sql`false` : undefined,
   status?eq(webDocumentStatus(),status):undefined,source==='ghn'?sql`trim(${web.ghnOrderCode})<>''`:undefined,
   branch?(branch==='crm'?sql`false`:eq(web.registerId,branch)):undefined,
   p.get('from')?gte(web.orderedAt,new Date(p.get('from')+'T00:00:00+07:00').toISOString().slice(0,19)):undefined,
@@ -80,10 +84,11 @@ export async function webDocumentPage(c:Ctx,crmWhere:SQL|undefined,limit:number,
 }
 export async function webDocumentDetail(c:Ctx,id:string){
  const [r]=await c.env.db.select({o:web,branchName:posRegisters.name,invoiceStatus:invoiceState(),priceIncludesVat:posRegisters.priceIncludesVat,taxRate:posRegisters.taxRate,active:posRegisters.active}).from(web).innerJoin(posRegisters,eq(posRegisters.id,web.registerId)).where(and(await scope(c),eq(web.id,id))).limit(1);
- if(!r)throw new AppError(404,'Không tìm thấy đơn website đã có vận đơn trong phạm vi được xem.');
+ if(!r)throw new AppError(404,'Không tìm thấy đơn website trong phạm vi được xem.');
  let items:{sku?:string;name?:string;quantity?:number;total?:number}[]=[];try{const x=JSON.parse(r.o.lines);if(Array.isArray(x))items=x;}catch{/* legacy malformed lines */}
  const units=items.length?await c.env.db.select({sku:products.sku,unit:products.unit}).from(products).where(inArray(products.sku,items.map(l=>String(l.sku||'')))):[];
  items=items.map(l=>({...l,unit:(l as {unit?:string}).unit||units.find(p=>p.sku===l.sku)?.unit||''}));
  const permitted=can((c.state.session as SessionState).member,'pos.sell'),edit=readWebEdit(r.o.crmEditSnapshot);
- return {document:{...asDocument(r.o,r.branchName,r.invoiceStatus),edited:Number(edit.revision||0)>0,sourceConflict:!!edit.sourceConflict,ghnCartReviewRequired:!!edit.ghnCartReviewRequired},items,canManage:permitted&&r.active,canEdit:permitted&&r.active&&!webEditBlocked(r.o),editBlocked:webEditBlocked(r.o),revision:Number(edit.revision||0),sourceHash:webSourceHash(r.o),editor:webEditorModel(r.o),catalogPricing:{priceIncludesVat:r.priceIncludesVat,taxRate:r.taxRate},originalFinancials:edit.original?readWebOrderFinancials(edit.original.financialSnapshot):null};
+ const document=asDocument(r.o,r.branchName,r.invoiceStatus),canAccount=canEditWebAccounting((c.state.session as SessionState).member)&&document.status!=='cancelled';
+ return {document:{...document,canIssueInvoice:canAccount,edited:Number(edit.revision||0)>0,sourceConflict:!!edit.sourceConflict,ghnCartReviewRequired:!!edit.ghnCartReviewRequired},canEditBilling:canAccount,items,canManage:permitted&&r.active,canEdit:permitted&&r.active&&!webEditBlocked(r.o),editBlocked:webEditBlocked(r.o),revision:Number(edit.revision||0),sourceHash:webSourceHash(r.o),editor:webEditorModel(r.o),catalogPricing:{priceIncludesVat:r.priceIncludesVat,taxRate:r.taxRate},originalFinancials:edit.original?readWebOrderFinancials(edit.original.financialSnapshot):null};
 }

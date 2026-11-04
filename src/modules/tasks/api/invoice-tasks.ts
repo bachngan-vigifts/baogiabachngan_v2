@@ -5,6 +5,8 @@ import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import type { InvoiceTaskRef } from '../../sales/api/invoice-task-hooks.ts';
 import { customerPayments, orderProgressMarks, salesContracts, salesOrders } from '../../sales/schema.ts';
 import { webStoreOrders } from '../../sales/pos-schema.ts';
+import { readWebAccounting } from '../../sales/domain/web-order-accounting.ts';
+import { GHN_FAILED } from '../../sales/domain/ghn-status.ts';
 import { docRef } from '../../sales/domain/doc-ref.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
 import { addDaysIso } from '../domain/task-config.ts';
@@ -15,10 +17,15 @@ const dueDate = (iso: string | null) => iso && Number.isFinite(Date.parse(iso)) 
 /** Shared eligibility for accounting tasks and the order-list projection. */
 const deliveredWebInvoice = () => and(sql`lower(${webStoreOrders.ghnStatus})='delivered'`,
   sql`lower(${webStoreOrders.status}) not in ('cancelled','refunded','failed','trash')`)!;
+const savedWebInvoice = () => sql`${webStoreOrders.crmEditSnapshot}::jsonb->'accounting'->'invoice'`;
+const issuedWebInvoice = () => sql`(${savedWebInvoice()}->>'status'='issued' and length(trim(coalesce(${savedWebInvoice()}->>'invoiceNo','')))>0)`;
+const requestedWebInvoice = () => and(sql`lower(${webStoreOrders.status}) not in ('cancelled','refunded','failed','trash')`,
+  sql`lower(trim(${webStoreOrders.ghnStatus})) not in (${sql.join([...GHN_FAILED].map(status => sql`${status}`), sql`,`)})`,
+  or(deliveredWebInvoice(), sql`${savedWebInvoice()}->>'status'='requested'`))!;
 
 /** A completed accounting task is handled, not evidence of an issued invoice number. */
 export function webInvoiceStatus() {
-  return sql<string>`case when ${deliveredWebInvoice()} then
+  return sql<string>`case when ${issuedWebInvoice()} then 'issued' when ${requestedWebInvoice()} then
     case when exists(select 1 from ${tasks} where ${tasks.autoKey}='invoice-web:' || ${webStoreOrders.id} and ${tasks.status}='done' and ${tasks.completedBy} is not null)
       then 'handled' else 'requested' end
     else 'unknown' end`;
@@ -54,16 +61,17 @@ export async function invoiceTasks(db: StaffEnv['db'], ref?: InvoiceTaskRef): Pr
   }
   if (!ref || 'webOrderId' in ref) {
     const rows = await db.select().from(webStoreOrders).where(and(ref ? eq(webStoreOrders.id, ref.webOrderId) : undefined,
-      deliveredWebInvoice()));
+      requestedWebInvoice(), sql`not coalesce(${issuedWebInvoice()},false)`));
     for (const o of rows) {
+      const accounting = readWebAccounting(o.crmEditSnapshot), invoice = accounting.invoice, billing = accounting.billing;
       const website = o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long';
       let items = '';
       try { const lines: unknown = JSON.parse(o.lines); if (Array.isArray(lines)) items = lines.map(l => `${String(l.sku || '')} ${String(l.name || '')} × ${Number(l.quantity) || 0}`).join('; '); } catch { /* Older snapshots may lack line details. */ }
       if (items.length > 3000) items = items.slice(0, 3000) + '… (xem đủ hàng trên đơn website)';
       const financialText = webFinancialDescription(readWebOrderFinancials(o.financialSnapshot),o.currency);
       out.push({ autoKey: `invoice-web:${o.id}`, source: 'invoice', sourceId: o.id,
-        title: `Đã giao hàng · Chờ hoá đơn – ${website} ${o.orderNo} – ${o.customerName}`,
-        description: `GHN xác nhận giao thành công · Mã vận đơn: ${o.ghnOrderCode || '—'}\nKhách: ${o.customerName} · ${o.phone} · ${o.email}\nĐịa chỉ: ${o.address}\nGiá trị đơn: ${new Intl.NumberFormat('vi-VN').format(o.total)} ${o.currency}\nHàng: ${items || 'Chưa có chi tiết đồng bộ'}${financialText?'\n'+financialText:''}\nXuất hoá đơn, ghi số hoá đơn vào Trao đổi và hoàn thành nhiệm vụ.`,
+        title: `${o.ghnStatus==='delivered'?'Đã giao hàng · ':''}Chờ hoá đơn – ${website} ${o.orderNo} – ${o.customerName}`,
+        description: `${o.ghnStatus==='delivered'?'GHN xác nhận giao thành công':'Đã yêu cầu xuất hoá đơn'} · Mã vận đơn: ${o.ghnOrderCode || '—'}\nKhách: ${billing?.name || o.customerName} · ${o.phone} · ${invoice?.email || billing?.email || o.email}\nĐịa chỉ xuất hoá đơn: ${billing?.address || o.address}${billing?.taxCode?'\nMST: '+billing.taxCode:''}${invoice?.note?'\nGhi chú: '+invoice.note:''}${invoice?.mode==='draft'?'\nGửi bản nháp cho khách kiểm tra.':''}\nGiá trị đơn: ${new Intl.NumberFormat('vi-VN').format(o.total)} ${o.currency}\nHàng: ${items || 'Chưa có chi tiết đồng bộ'}${financialText?'\n'+financialText:''}\nMở trang đơn hàng để nhập số hoá đơn sau khi xuất.`,
         link: `/index.html#/orders/${encodeURIComponent('web:'+o.id)}`, assigneeId: null, assigneePosition: 'accounting', priority: 'normal', dueDate: dueDate(o.updatedAt) });
     }
   }

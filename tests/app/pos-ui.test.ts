@@ -1033,19 +1033,21 @@ test('Giảm giá trên đơn (không còn ô mã, #264): gõ số tiền thì g
 
 test('Thẻ "Đơn web": lọc đơn, chặn nút hoàn thành khi kho chưa đối soát; huỷ bắt buộc lý do', async () => {
   const prevDoc = globalThis.document, prevWin = globalThis.window;
+  const prevLocation=globalThis.location;
   Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
   try {
-    const root = new Element('section'), calls: { path: string; body?: any }[] = [];
+    const root = new Element('section'), calls: { path: string; body?: any }[] = [],destinations:string[]=[];
     const webOrder = { id: 'w1', orderNo: 'WEB900', customerName: 'Khách web', total: 500000, external: true, source: 'lock', bucket: 'pending', paymentStatus: 'unknown', actionsAvailable: true, warehouseReconciliationRequired:true, lines: '[]', currency: 'VND' };
     const api = async (path: string, _m = 'GET', body?: any) => {
       calls.push({ path, body });
       if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Quầy', pricePolicyId: 'vat' }], current: null, shifts: [], templates: [], policies: [] };
       if (path.startsWith('/pos/catalog')) return { products: [], nextOffset: null };
       if (path.startsWith('/pos/orders')) return { registerId: 'r', registers: [], counts: { all: 3, web: 2, pending: 2 }, orders: [webOrder], owners: [], totals: [] };
+      if(path==='/orders/web%3Aw1')return {document:{...webOrder,id:'web:w1',webOrderId:'w1',sourceOrderNo:webOrder.orderNo,status:'draft'},items:[],canManage:true,revision:0};
       if (path.endsWith('/action')) return { ok: true, bucket: body.action === 'cancel' ? 'cancelled' : 'completed' };
       throw Error(path);
     };
-    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go() {} });
+    const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp', name: 'NV' }), confirmBox: async () => true, go:(href:string)=>destinations.push(href) });
     await ui.load();
     const card = root.querySelectorAll('button').find(b => b.className.includes('pos-order-web'))!;
     assert.ok(card.className.includes('has-alert'), 'có đơn web → thẻ báo đỏ');
@@ -1054,6 +1056,10 @@ test('Thẻ "Đơn web": lọc đơn, chặn nút hoàn thành khi kho chưa đ�
     await card.fire('click'); await new Promise(r => setTimeout(r, 0));
     assert.equal(new URLSearchParams(calls.filter(c => c.path.startsWith('/pos/orders')).at(-1)!.path.split('?')[1]).get('status'), 'web');
     await root.querySelectorAll('div').find(b => b.className === 'pos-order-row')!.fire('click');
+    assert.deepEqual(destinations,['#/orders/web%3Aw1']);
+    assert.equal(calls.some(c=>c.path.endsWith('/action')),false,'opening the row only navigates');
+    // Explicit GHN management from the CRM detail still opens the action dialog.
+    Object.assign(globalThis,{location:{hash:'#/pos?webOrderId=w1'}});await ui.load();
     let dlg = doc.body.children.at(-1)!;
     assert.ok(!dlg.querySelectorAll('button').some(b => b.textContent === 'Hoàn thành'));
     assert.match(dlg.textContent,/cần đối soát chứng từ nhập\/xuất/);
@@ -1065,7 +1071,73 @@ test('Thẻ "Đơn web": lọc đơn, chặn nút hoàn thành khi kho chưa đ�
     assert.match(dlg.textContent, /Nhập lý do huỷ đơn/);
     reason.value = 'Khách đổi ý'; await form.fire('submit'); await new Promise(r => setTimeout(r, 0));
     assert.deepEqual(calls.find(c => c.path.endsWith('/action'))!.body, { action: 'cancel', reason: 'Khách đổi ý' });
-  } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
+  } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin,location:prevLocation }); }
+});
+
+test('POS rows open CRM details for Lock, Minh Long and ordinary orders with click, Enter and Space', async () => {
+  const previousDocument=globalThis.document,previousWindow=globalThis.window;
+  Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
+  try{
+    const root=new Element('section'),destinations:string[]=[],requests:{path:string;method:string}[]=[];
+    const orders=[
+      {id:'lock-row /#?',source:'lock',external:true},
+      {id:'minhlong-row',source:'minhlong',external:true},
+      {id:'crm-order',source:'crm',external:false},
+    ].map((order,i)=>({...order,orderNo:'2159'+i,customerName:'Khách thử',total:1000,bucket:'waiting_delivery',paymentStatus:'debt'}));
+    const api=async(path:string,method='GET')=>{
+      requests.push({path,method});
+      if(path.startsWith('/pos/options'))return{registers:[{id:'r',name:'Quầy',pricePolicyId:'vat'}],current:null,shifts:[],templates:[],policies:[]};
+      if(path.startsWith('/pos/catalog'))return{products:[],nextOffset:null};
+      if(path.startsWith('/pos/orders'))return{registerId:'r',registers:[],counts:{all:3,web:2},orders,owners:[],totals:[]};
+      throw Error(path);
+    };
+    const ui=initPos({root,api,toast(){},user:()=>({id:'emp',name:'NV'}),go:(href:string)=>destinations.push(href)});
+    await ui.load();
+    const rows=root.querySelectorAll('div').filter(row=>row.className==='pos-order-row'),beforeDialogs=doc.body.children.length;
+    assert.equal(rows.length,3);
+    for(const [i,row]of rows.entries()){
+      const order=orders[i]!,href='#/orders/'+encodeURIComponent(order.external?'web:'+order.id:order.id);
+      await row.fire('click');await row.fire('keydown',{key:'Enter'});await row.fire('keydown',{key:' '});
+      assert.deepEqual(destinations.slice(-3),[href,href,href]);
+      const count=destinations.length;await row.fire('keydown',{key:'Escape'});assert.equal(destinations.length,count);
+    }
+    assert.equal(doc.body.children.length,beforeDialogs,'row activation does not open the old web modal');
+    assert.ok(requests.every(request=>request.method==='GET'),'navigation does not create or change a shipment');
+  }finally{Object.assign(globalThis,{document:previousDocument,window:previousWindow});}
+});
+
+test('POS displays GHN codes and carrier statuses without inferring payment or querying GHN', async () => {
+  const previousDocument = globalThis.document, previousWindow = globalThis.window;
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
+  try {
+    const root = new Element('section'), requests: string[] = [];
+    const orders = [
+      { external: true, source: 'lock', ghnOrderCode: 'GYMR68EC', ghnStatus: 'delivered' },
+      { external: true, source: 'minhlong', ghnOrderCode: 'ML123', ghnStatus: 'ready_to_pick' },
+      { external: true, ghnOrderCode: '', ghnStatus: 'delivered' },
+      { fulfillmentMode: 'cod', ghnShipments: [{ trackingCode: 'COD1', trackingStatus: 'returned' }, { trackingCode: 'COD2', trackingStatus: '' }] },
+      { fulfillmentMode: 'counter', ghnShipments: [] },
+      { external: true, ghnOrderCode: '<img src=x>', ghnStatus: 'new_carrier_status' },
+      { fulfillmentMode: 'cod', ghnShipments: [] },
+    ].map((o, i) => ({ ...o, id: String(i), orderNo: 'POS' + i, customerName: 'Khách', total: 100, bucket: 'completed', paymentStatus: 'debt' }));
+    const api = async (path: string) => {
+      requests.push(path);
+      if (path.startsWith('/pos/options')) return { registers: [{ id: 'r', name: 'Quầy' }], current: null, shifts: [], templates: [], policies: [] };
+      if (path.startsWith('/pos/catalog')) return { products: [], nextOffset: null };
+      if (path.startsWith('/pos/orders')) return { registerId: 'r', registers: [], counts: { all: orders.length }, orders, owners: [], totals: [] };
+      throw Error(path);
+    };
+    await initPos({ root, api, toast() {}, user: () => ({ id: 'emp' }), go() {} }).load();
+    const rows = root.querySelectorAll('div').filter(n => n.className === 'pos-order-row');
+    assert.deepEqual(rows.map(row => row.querySelectorAll('small').map(n => n.textContent)), [
+      ['GHN GYMR68EC · Đã giao thành công'], ['GHN ML123 · Chờ lấy hàng'], ['Chưa có mã GHN · Đã giao thành công'],
+      ['GHN COD1 · Đã hoàn hàng', 'GHN COD2 · Chưa cập nhật trạng thái GHN'], [],
+      ['GHN <img src=x> · new_carrier_status'], ['Chưa tạo GHN'],
+    ]);
+    assert.equal(rows[5]!.querySelectorAll('img').length, 0, 'carrier values are text, not HTML');
+    assert.equal(requests.some(path => /ghn|\/orders\//.test(path)), false);
+    assert.ok(rows[0]!.textContent.includes('Còn nợ'), 'delivery does not imply payment');
+  } finally { Object.assign(globalThis, { document: previousDocument, window: previousWindow }); }
 });
 
 test('nút thao tác GHN tự động áp dụng giống nhau cho quầy Lock và Minh Long', () => {

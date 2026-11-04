@@ -2,6 +2,12 @@
 
 ## Hành vi
 
+- Trang chi tiết dùng cùng các ô Khách hàng / Đơn hàng / Hàng trong đơn / Giao hàng / Công nợ / Hoá đơn / Thanh toán của CRM; bản in chỉ mở khi bấm In. Kế toán nhập và sửa số, ngày hoá đơn ngay trên đơn web, kể cả khi GHN đã giao thành công.
+- Bấm dòng đơn web trên bảng đơn POS (hoặc Enter/Space khi chọn dòng) mở thẳng `#/orders/web:<id>` cho cả Lock và Minh Long. Nút **Xử lý GHN** trong chi tiết mở riêng thao tác vận đơn; mở dòng không tự gửi lệnh GHN.
+- Dòng đơn POS hiển thị mã GHN và trạng thái hãng bằng tiếng Việt; đơn web/COD chưa có mã ghi “Chưa tạo GHN”. Đơn COD có nhiều chuyến hiển thị từng mã/trạng thái, kể cả vận đơn đã huỷ. Dữ liệu lấy từ snapshot CRM, không gọi GHN khi mở danh sách; giao thành công không đồng nghĩa đã thanh toán. Vận đơn COD được đọc theo lô chỉ cho trang đang xem.
+- Có form sửa tên, MST, địa chỉ và email xuất hoá đơn, tách khỏi người nhận/địa chỉ GHN. Nhập hoá đơn không tạo thêm đơn bán, phiếu thu hoặc bút toán kho. Đơn đã huỷ/hoàn phải xử lý hoá đơn theo quy trình điều chỉnh.
+- Thông tin hoá đơn lưu bền vững trong `crm_edit_snapshot.accounting`, giữ nguyên qua đồng bộ website, có revision riêng và audit. Cùng nội dung gửi lại trả kết quả cũ; hai bản sửa cùng revision không được ghi đè. Ghi metadata và audit trong cùng giao dịch; lỗi audit rollback toàn bộ.
+- Lưu số hoá đơn chuyển trạng thái sang `issued`, bỏ khỏi bộ lọc Chờ xuất và tự đóng việc kế toán. Hoàn thành việc mà chưa nhập số vẫn chỉ là `handled`, không được coi là đã có hoá đơn. Đơn đã có số hoá đơn cũng khoá sửa giỏ hàng/giá trước GHN để tránh lệch chứng từ.
 - Đơn Lock và Minh Long được hiển thị ngay khi đã nhận vào CRM, trước cả lúc tạo GHN. Danh sách kết hợp với đơn CRM/POS, phân trang/sắp xếp theo cùng một tập ID ở máy chủ; tìm theo số nguồn hoặc tên đầy đủ đều được.
 - Mã CRM: `Web_<số đơn web>_<Tên khách hàng>`, ví dụ `Web_21569_C trang`. Mã được lưu lần đầu nhận dữ liệu đầy đủ và không đổi khi website cập nhật tên khách. Đơn cũ chưa có mã lưu dùng cùng định dạng khi đọc, không viết lại tiền/kho lịch sử.
 - Giữ nguyên số đơn website, website nguồn và ID gốc. URI chi tiết dùng namespace `web:<id>`. Đây là giao diện cho chính bản ghi web đang có, không tạo một bản sao `sales_orders`, phiếu thu, ca/két hoặc bút toán kho thứ hai.
