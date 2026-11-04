@@ -97,6 +97,7 @@ export const salesOrders = pgTable('sales_orders', {
   index('idx_sales_orders_customer').on(t.customerId, t.orderDate),
   index('idx_sales_orders_owner').on(t.ownerId, t.updatedAt),
   index('idx_sales_orders_status').on(t.status, t.orderDate),
+  index('idx_sales_orders_report_date').on(t.orderDate).where(sql`${t.status} in ('confirmed', 'delivering', 'delivered')`),
   enumCheck('chk_sales_orders_status', t.status, ORDER_STATUSES),
   enumCheck('chk_sales_orders_invoice_status', t.invoiceStatus, INVOICE_STATUSES),
   enumCheck('chk_sales_orders_invoice_mode', t.invoiceMode, INVOICE_MODES),
