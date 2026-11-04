@@ -7,7 +7,7 @@ Tham chiếu: `he-thong-giao-dien-crm.md` anh Thái gửi và hai ảnh mẫu H�
 - Be Vietnam Pro; tiêu đề gốc 22, trang con/sheet 18, dòng chính 15, nội dung 14, phụ 12. Ô nhập 16px để Safari không tự phóng to. Vùng bấm chính 44px.
 - Nền #F4F6F9, thẻ trắng, viền #E3E8EF; navy #102A56, xanh #12805C; thẻ/nút bo 12px, ô nhập 10px.
 - Nút tạo/saving giữ ngoài menu; thao tác phụ trong một menu gốc. Dùng chính phần tử DOM hiện có: giữ form, sự kiện ủy quyền, trạng thái ẩn/khóa và xác nhận nghiệp vụ.
-- Cập nhật theo anh Thái ngày 26/10: thanh dưới hiện đầy đủ mục được cấp quyền, theo thứ tự menu cũ, cuộn ngang để xem hết; bỏ cách gom vào “Thêm”. Vẫn ẩn khi nhập form/bàn phím/hộp thoại để không đè nút Lưu.
+- Thứ tự thanh dưới theo mẫu V0 anh Thái chốt ngày 04/11: Bán hàng nhanh → Báo giá → Đơn hàng → HĐKT → Công nợ giữ nguyên; tiếp theo là Tiền (Sổ thu / chi, Sổ quỹ) → Khách hàng → Công việc & báo cáo → Kho & giao nhận → Mua hàng → Quản trị. “Việc cần làm” riêng của Kho đứng đầu nhóm Kho & giao nhận khi được cấp quyền. Mọi vai trò dùng cùng thứ tự, chỉ hiện mục có quyền; không ưu tiên lại menu kế toán. Vẫn là từng liên kết trên thanh vuốt ngang, không thêm popup hoặc vạch phân nhóm; thanh vẫn ẩn khi nhập form/bàn phím/hộp thoại để không đè nút Lưu.
 - Mọi trang mobile có nút “Trang chủ” riêng, hiện ngoài menu thao tác và dùng đúng trang mở đầu theo vai trò. Giữ xác nhận khi rời báo giá đang sửa; không tự lưu hay bỏ qua dữ liệu chưa lưu.
 - Một hàng trạng thái; lọc chi tiết trong sheet “Lọc · n”. Giá trị lọc và truy vấn máy chủ cũ giữ nguyên. “Xem n kết quả” lấy tổng từ phản hồi, không đoán số liệu.
 - Desktop giữ bảng/sidebar. HĐKT dùng panel phải từ 1280px và sheet trên điện thoại; phần tử chi tiết gốc được trả lại vị trí khi rời trang/đổi kích thước.
