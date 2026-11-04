@@ -15,4 +15,11 @@ for(const layout of [4,8])test(`layout ${layout} hides proposed price in canvas/
  for(const texts of [fields.map(f=>f.original),ppt]){assert.equal(texts.includes('Giá đề xuất'),visible);assert.equal(texts.includes('1.015.000đ'),visible);assert(texts.includes('Mã: SKU0'));assert(texts.some(t=>t.startsWith('Niêm yết:')));}
  }
 });
+test('hidden proposed price also hides contact and bundle labels',async()=>{
+ const s=fixture(8);s.settings.proposedPrice=false;s.settings.regular=false;s.settings.bundle10=true;s.settings.bundle10Ids=s.selected;
+ const slide=makeSlides(s)[0];slide.items[0].priceOnRequest=true;
+ const fields=[],ctx={scale(){},fillRect(){},beginPath(){},roundRect(){},fill(){},stroke(){},fillText(){},measureText(t){return{width:t.length*6}}};
+ await drawSlide({getContext:()=>ctx},slide,s,1,1,null,1,fields);
+ assert(!fields.some(f=>['Liên hệ','Giá / bộ 10 SP','Giá đề xuất','10.150.000đ'].includes(f.original)));
+});
 
