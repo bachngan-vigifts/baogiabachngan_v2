@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import {and,eq,inArray} from 'drizzle-orm';
 import {setupWarehouseWork} from '../helpers/warehouse-work-fixture.ts';
 import {tasks} from '../../src/modules/tasks/schema.ts';
-import {stockTransfers,stockMoves} from '../../src/modules/inventory/schema.ts';
+import {stockTransfers,stockMoves,warehouseSellers} from '../../src/modules/inventory/schema.ts';
 import {warehouses} from '../../src/modules/catalog/schema.ts';
 import {salesOrders,deliveries} from '../../src/modules/sales/schema.ts';
 import {incomingShipments,supplierReceipts,supplierOrderEvents} from '../../src/modules/suppliers/schema.ts';
 import {purchaseEarlyRequests} from '../../src/modules/suppliers/early-request-schema.ts';
 test('transfer lifecycle creates warehouse tasks immediately without opening Tasks; closes source steps and badges, leaves unrelated tasks and stock untouched until done',async()=>{
  const f=await setupWarehouseWork(),c=f.cookies,at=new Date().toISOString();
+ await f.db.insert(warehouseSellers).values({warehouseId:'to',positionId:'warehouse'});
  await f.db.insert(tasks).values({id:'unrelated',title:'Việc riêng',source:'manual',createdBy:'mgr',createdAt:at,updatedAt:at});
  const t=await f.create();let steps=await f.db.select().from(tasks).where(eq(tasks.sourceId,t.id));assert.equal(steps.length,1);assert.equal(steps[0]!.autoKey,'transfer-approve:'+t.id);assert.equal(steps[0]!.status,'todo');
  assert.equal(f.ok(await f.call('/navigation-counts',c.kho)).transfers,1);

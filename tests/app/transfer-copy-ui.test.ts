@@ -161,7 +161,7 @@ test('phiếu đang chuyển: kho đến nhập SL nhận từng mã; nhận thi
 test('nhận hàng: ô trống / âm / vượt số chuyển bị chặn ngay trên máy; nhận đủ không hỏi xác nhận',async()=>{
  const s=await setup('shipped',false,undefined,{confirm:async()=>{throw Error('nhận đủ không được hỏi xác nhận thiếu hàng');}});
  const [x]=inputs(s);
- for(const bad of ['','-1','13','abc']){await type(x!,bad);await s.button('Nhận hàng')!.click();assert.equal(s.posts.length,0,bad);assert.match(s.messages.at(-1)!,/Nhập số lượng nhận hợp lệ/);}
+ for(const bad of ['','-1','13','abc','-0.0004','12.0004','11.0004']){await type(x!,bad);await s.button('Nhận hàng')!.click();assert.equal(s.posts.length,0,bad);assert.match(s.messages.at(-1)!,/Nhập số lượng nhận hợp lệ/);}
  await type(x!,'12');await s.button('Nhận hàng')!.click();
  assert.equal(s.posts.length,1);assert.deepEqual(JSON.parse(JSON.stringify(s.posts[0].body.lines)),[{sku:'X',qty:12},{sku:'Y',qty:3}]);assert.equal(s.posts[0].body.note,'');
  assert.match(s.messages.at(-1)!,/Đã nhận hàng/);

@@ -219,10 +219,10 @@ export function initTransfers({ api, root, toast, go, confirmBox, isManager = ()
         const lines = []; let bad = null;
         for (const [sku, { box, line }] of receiveInputs) {
           const raw = box.value.trim(), n = Number(raw);
-          if (raw === '' || !Number.isFinite(n) || n < 0 || n > (line.shippedQty ?? line.qty) + 0.0005) { bad ||= box; continue; }
+          if (raw === '' || !Number.isFinite(n) || n < 0 || n > (line.shippedQty ?? line.qty) || Math.round(n * 1000) / 1000 !== n) { bad ||= box; continue; }
           lines.push({ sku, qty: n });
         }
-        if (bad) { toast('Nhập số lượng nhận hợp lệ (từ 0 đến số chuyển) cho từng mã.', 'err'); bad.focus(); return; }
+        if (bad) { toast('Nhập số lượng nhận hợp lệ (từ 0 đến số chuyển, tối đa 3 chữ số thập phân) cho từng mã.', 'err'); bad.focus(); return; }
         const miss = shortages(), note = why.value.trim();
         if (miss.length && note.length < 3) { toast('Nhận thiếu hàng: ghi lý do vào ô ghi chú.', 'err'); why.focus(); return; }
         if (miss.length && !await confirmBox(`Nhận thiếu ${miss.length} mã:\n${miss.slice(0, 6).map(({ box, line }) => `${line.sku}: chuyển ${num((line.shippedQty ?? line.qty))}, nhận ${num(Number(box.value))}`).join('\n')}\nPhần thiếu sẽ được ghi để đối soát và báo Manager, không tự hoàn tồn kho đi.`,

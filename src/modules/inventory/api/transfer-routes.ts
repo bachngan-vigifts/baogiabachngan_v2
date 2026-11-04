@@ -27,7 +27,7 @@ import { queueTransferReceived, dispatchTransferJob, transferCommandKey, transfe
  *  Chờ duyệt quá 1 giờ: nhắc lại mỗi giờ (remindPendingTransfers, chạy theo nhịp GET /pulse).
  *  POST /stock-transfers/:id/cancel       người xin hoặc Manager, khi chưa chuyển
  *  POST /stock-transfers/:id/ship         quyền "Điều chuyển kho" (Kho) hoặc nhân viên kho được xin: "Đã chuyển" → trừ kho đi trong sổ kho, phiếu "Đang chuyển" – một lần
- *  POST /stock-transfers/:id/receive      kho đến (nhóm Kho / nhân viên kho đến / người xin / Manager): nhập SL thực nhận TỪNG mã → cộng kho đến; phần thiếu chờ đối soát
+ *  POST /stock-transfers/:id/receive      nhân viên được phân kho đến / Manager: nhập SL thực nhận TỪNG mã → cộng kho đến; phần thiếu chờ đối soát
  *  GET  /stock-transfers, /stock-transfers/:id
  * Kho riêng (Hoá đơn) chỉ người bán kho đó / Manager thấy và chọn được. Tồn kho đi (đã chốt đầu kỳ) không đủ thì không cho chuyển.
  */
@@ -63,9 +63,9 @@ async function canShip(db: ReadDb, m: Member, t: { fromWarehouseId: string }) {
   const pos = (m as { positionId?: string | null }).positionId;
   return m.role === 'employee' && !!pos && (await sellerPositions(db, t.fromWarehouseId)).includes(pos);
 }
-/** Kho đến nhận hàng: nhóm Kho / Manager (quyền "Điều chuyển kho"), nhân viên bán kho đến (Phân quyền kho bán) hoặc chính người xin phiếu. */
+/** Only Manager or staff assigned to the destination warehouse may confirm receipt. */
 async function canReceive(db: ReadDb, m: Member, t: { toWarehouseId: string; requestedBy: string }) {
-  if (canMove(m) || t.requestedBy === m.id) return true;
+  if (m.role === 'manager') return true;
   const pos = (m as { positionId?: string | null }).positionId;
   return m.role === 'employee' && !!pos && (await sellerPositions(db, t.toWarehouseId)).includes(pos);
 }
@@ -124,10 +124,10 @@ async function moveTeam(db: StaffEnv['db']) {
   return (await db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'employee'), eq(employees.active, true), sql`${employees.deletedAt} IS NULL`,
     or(eq(employees.positionId, 'warehouse'), sql`${employees.positionId} IN (SELECT ${positionPermissions.positionId} FROM ${positionPermissions} WHERE ${positionPermissions.permission} = 'stock.transfer')`)))).map(r => r.id);
 }
-/** Người nhận hàng điều chuyển: người xin + nhân viên kho đến + nhóm Kho. */
+/** Notify only authorized destination staff and Managers about receipt. */
 async function loadReceivers(db: StaffEnv['db'], t: { requestedBy: string; toWarehouseId: string }) {
-  const [team, staff] = await Promise.all([moveTeam(db), warehouseStaff(db, t.toWarehouseId)]);
-  return [...new Set([t.requestedBy, ...staff, ...team])];
+  const [managers, staff] = await Promise.all([db.select({id:employees.id}).from(employees).where(and(eq(employees.role,'manager'),eq(employees.active,true),sql`${employees.deletedAt} IS NULL`)), warehouseStaff(db, t.toWarehouseId)]);
+  return [...new Set([...staff, ...managers.map(m=>m.id)])];
 }
 
 /** Thông báo (chuông + Web Push) chạy nền sau khi trả lời: nút Duyệt / Từ chối / Đã chuyển không phải chờ gửi push. Lỗi gửi không ảnh hưởng phiếu. */
@@ -338,15 +338,20 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
     await viewOf(c, id);
     const result = await c.env.db.transaction(async tx => {
       const t = await lock(tx, id, ['shipped'], body.revision), now = nowIso();
-      if (!await canReceive(tx, m, t)) fail(403, 'Chỉ kho đến (nhóm Kho, nhân viên kho đến, người xin phiếu) hoặc Manager được nhận hàng điều chuyển.');
+      if (!await canReceive(tx, m, t)) fail(403, 'Chỉ nhân viên được phân kho đến hoặc Manager được nhận hàng điều chuyển.');
       const lines = await tx.select().from(stockTransferLines).where(eq(stockTransferLines.transferId, id)).orderBy(asc(stockTransferLines.sku));
       const got = new Map<string, number>();
       for (const raw of (Array.isArray(body.lines) ? body.lines as Record<string, unknown>[] : []).slice(0, 500)) {
-        const sku = str(raw?.sku, 200), blank = raw?.qty === '' || raw?.qty === null || raw?.qty === undefined, qty = num(raw?.qty);
+        const sku = str(raw?.sku, 200), value = raw?.qty;
         if (!lines.some(l => l.sku === sku)) fail(400, `Mã ${sku || '(trống)'} không thuộc phiếu này.`);
         if (got.has(sku)) fail(400, `Mã ${sku} bị nhập hai lần.`);
-        if (blank || !Number.isFinite(qty) || qty < 0) fail(400, `Nhập số lượng nhận hợp lệ cho ${sku} (nhận 0 nếu chưa tới).`);
-        got.set(sku, qty);
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+          throw new AppError(400, `Nhập số lượng nhận hợp lệ cho ${sku} (nhận 0 nếu chưa tới).`);
+        }
+        const line = lines.find(l => l.sku === sku)!;
+        if (value > (line.shippedQty ?? line.qty)) fail(400, `Số nhận vượt số chuyển của ${sku}.`, 'RECEIVE_OVER');
+        if (num(value) !== value) fail(400, `Số lượng nhận của ${sku} chỉ được có tối đa 3 chữ số thập phân.`, 'RECEIVE_PRECISION');
+        got.set(sku, value);
       }
       const missing = lines.filter(l => !got.has(l.sku));
       if (missing.length) fail(400, 'Nhập số lượng nhận cho từng mã. Còn thiếu: ' + missing.slice(0, 8).map(l => l.sku).join(', '), 'RECEIVE_LINES_REQUIRED');
