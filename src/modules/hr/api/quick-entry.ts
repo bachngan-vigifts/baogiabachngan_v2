@@ -25,9 +25,9 @@ const object = (v: unknown): Record<string, unknown> => {
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw new AppError(400, 'Dữ liệu nhập nhanh không hợp lệ.');
   return v as Record<string, unknown>;
 };
-export function payrollEntry(row: PayrollRow) {
+export function payrollEntry(row: PayrollRow, month: string) {
   const adjustments = [...row.adjustments].sort((a, b) => a.id.localeCompare(b.id));
-  return { version: sha256Hex(JSON.stringify({ profile: row.profile, input: row.input, adjustments })),
+  return { version: sha256Hex(JSON.stringify({ month, profile: row.profile, input: row.input, adjustments })),
     inputs: row.input, profile: row.profile,
     adjustments: Object.fromEntries(kinds.map(k => [k, adjustments.filter(a => a.id.startsWith(prefix) && a.kind === k).reduce((s, a) => s + a.amount, 0)])),
     existingAdjustments: Object.fromEntries(kinds.map(k => [k, adjustments.filter(a => !a.id.startsWith(prefix) && a.kind === k).reduce((s, a) => s + a.amount, 0)])) };
@@ -50,7 +50,8 @@ export function registerQuickPayroll(router: Router<StaffEnv>, deps: { revenueOf
         const row = board.rows.find(r => r.member.id === change.memberId);
         if (!row) throw new AppError(404, 'Không tìm thấy nhân viên.');
         if (row.slip) throw new AppError(409, 'Phiếu lương đã chốt. Mở lại phiếu trước khi sửa.');
-        if (change.version !== payrollEntry(row).version) throw new AppError(409, `Số liệu của ${row.member.name} đã thay đổi. Tải lại bảng trước khi lưu.`, 'PAYROLL_CHANGED');
+        if (change.version !== payrollEntry(row, month).version) throw new AppError(409, `Số liệu của ${row.member.name} đã thay đổi. Tải lại bảng trước khi lưu.`, 'PAYROLL_CHANGED');
+        if (change.month !== undefined && change.month !== month) throw new AppError(400, 'Dữ liệu nhập thuộc tháng khác.');
         const now = new Date().toISOString(), id = row.member.id;
         if (change.inputs) {
           const patch = object(change.inputs), values: Record<string, number | null> = {};

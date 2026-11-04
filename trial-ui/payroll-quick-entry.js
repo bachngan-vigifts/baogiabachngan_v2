@@ -15,32 +15,47 @@ export function parseQuickNumber(raw, column) {
     if (['false','0','không','khong',''].includes(value)) return false;
     throw new Error('Cơm/xăng: nhập Có hoặc Không.');
   }
-  let value = String(raw).trim().replace(/[\s\u00a0]/g, '');
+  let value = String(raw).trim();
   if (!value) return column[3] ? null : 0;
-  if (column[2]) {
-    if (value.includes(',')) value = value.replace(/\./g, '').replace(',', '.');
-  } else value = value.replace(/[.,](?=\d{3}(?:\D|$))/g, '');
+  const invalid = () => { throw new Error('Số không hợp lệ. Dùng dấu chấm phân cách hàng nghìn và dấu phẩy cho phần thập phân (15.000; 24,5; 0,005).'); };
+  // A space is a grouping separator only when each group contains three digits.
+  if (/[\s\u00a0\u202f]/.test(value)) {
+    if (!/^\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?$/.test(value)) invalid();
+    value = value.replace(/[ \u00a0\u202f]/g, '');
+  }
+  if (value.includes('.') && value.includes(',')) {
+    if (/^[1-9]\d{0,2}(?:\.\d{3})+,\d+$/.test(value)) value = value.replace(/\./g, '').replace(',', '.');
+    else if (/^[1-9]\d{0,2}(?:,\d{3})+\.\d+$/.test(value)) value = value.replace(/,/g, '');
+    else invalid();
+  } else if (/^[1-9]\d{0,2}(?:\.\d{3})+$/.test(value)) {
+    value = value.replace(/\./g, ''); // Vietnamese Excel: 15.000 means fifteen thousand, including rates/quantities.
+  } else if (/^[1-9]\d{0,2}(?:,\d{3}){2,}$/.test(value)) {
+    value = value.replace(/,/g, ''); // Unambiguous multi-group English integer (4,758,000).
+  } else if (/^\d+(?:[.,]\d+)?$/.test(value)) value = value.replace(',', '.');
+  else invalid();
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) throw new Error('Nhập số không âm. Dùng dấu phẩy cho phần thập phân khi dán từ Excel.');
+  if (!Number.isFinite(n) || n < 0) invalid();
   return n;
 }
 export function createPayrollQuickEntry({ root, api, esc, money, toast, onSaved, confirmBox, userId = () => null }) {
-  const drafts = new Map(); let data, mode = 'inputs', saving = false, owner;
-  const dirty = () => { if (owner !== userId()) { drafts.clear(); owner = userId(); } return drafts.size > 0; };
+  const draftsByMonth = new Map(); let drafts = new Map(), data, mode = 'inputs', saving = false, loading = false, owner;
+  const dirty = () => { if (owner !== userId()) { draftsByMonth.clear(); drafts = new Map(); owner = userId(); } return drafts.size > 0; };
   const labels = { inputs: 'Chấm công & chỉ số', profile: 'Lương & phụ cấp cố định', adjustments: 'Thưởng, phạt & tạm ứng' };
   function html(d) {
-    if (owner !== userId()) { drafts.clear(); owner = userId(); }
+    if (owner !== userId()) { draftsByMonth.clear(); drafts = new Map(); owner = userId(); }
     data = d;
+    drafts = draftsByMonth.get(d.month) || new Map();
+    draftsByMonth.set(d.month, drafts);
     const cols = QUICK_COLUMNS[mode];
     const field = (r,c) => {
       const saved = r.entry[mode]?.[c[0]], value = drafts.get(r.member.id)?.[mode]?.[c[0]];
       const v = value === undefined ? saved : value;
-      if (c[2] === 'boolean') return `<td><label><input type="checkbox" class="pr-quick-value" data-member="${esc(r.member.id)}" data-key="${c[0]}" aria-label="${esc(r.member.name+' — '+c[1])}" ${v?'checked':''} ${r.payslip.status!=='estimate'||saving?'disabled':''}>Có</label></td>`;
+      if (c[2] === 'boolean') return `<td><label><input type="checkbox" class="pr-quick-value" data-member="${esc(r.member.id)}" data-key="${c[0]}" aria-label="${esc(r.member.name+' — '+c[1])}" ${v?'checked':''} ${r.payslip.status!=='estimate'||saving||loading?'disabled':''}>Có</label></td>`;
       const extra = mode === 'adjustments' && r.entry.existingAdjustments[c[0]];
-      return `<td><input class="pr-quick-value" inputmode="decimal" data-member="${esc(r.member.id)}" data-key="${c[0]}" aria-label="${esc(r.member.name+' — '+c[1])}" value="${esc(v ?? '')}" placeholder="${c[3]?'Tự động':'0'}" ${r.payslip.status!=='estimate'||saving?'disabled':''}>${extra?`<small class="muted">Đã ghi riêng: ${money(extra)}</small>`:''}</td>`;
+      return `<td><input class="pr-quick-value" inputmode="decimal" data-member="${esc(r.member.id)}" data-key="${c[0]}" aria-label="${esc(r.member.name+' — '+c[1])}" value="${esc(v == null ? '' : String(v).replace('.', ','))}" placeholder="${c[3]?'Tự động':'0'}" ${r.payslip.status!=='estimate'||saving||loading?'disabled':''}>${extra?`<small class="muted">Đã ghi riêng: ${money(extra)}</small>`:''}</td>`;
     };
-    return `<section id="pr-quick"><div class="pr-quick-tools"><div><h3>Nhập nhanh bảng lương toàn công ty</h3><p class="muted small">Nhập trực tiếp, dùng Tab/Enter hoặc dán một vùng từ Excel. Ô trống “Tự động” lấy từ hệ thống; số 0 là nhập tay bằng 0. Thực nhận cập nhật sau khi lưu.</p></div>
-      <button type="button" class="btn secondary" data-quick-discard>Tải lại / Bỏ thay đổi</button><button type="button" class="btn primary" data-quick-save ${saving?'disabled':''}>Lưu thay đổi <span data-quick-count>${drafts.size?'('+drafts.size+' người)':''}</span></button></div>
+    return `<section id="pr-quick" data-payroll-month="${esc(d.month)}"><div class="pr-quick-tools"><div><h3>Nhập nhanh bảng lương toàn công ty</h3><p class="muted small">Nhập trực tiếp, dùng Tab/Enter hoặc dán một vùng từ Excel. Ô trống “Tự động” lấy từ hệ thống; số 0 là nhập tay bằng 0. Thực nhận cập nhật sau khi lưu.</p></div>
+      <button type="button" class="btn secondary" data-quick-discard>Tải lại / Bỏ thay đổi</button><button type="button" class="btn primary" data-quick-save ${saving||loading?'disabled':''}>Lưu thay đổi <span data-quick-count>${drafts.size?'('+drafts.size+' người)':''}</span></button></div>
       <div class="pr-quick-tools"><label>Tìm nhân viên <input data-quick-search type="search" placeholder="Tên nhân viên…"></label>
       <label>Bảng lương <select data-quick-group><option value="">Tất cả</option>${Object.entries(d.columns.groups).map(([k,v])=>`<option value="${esc(k)}">${esc(v)}</option>`).join('')}</select></label>
       <label>Nhập số liệu <select data-quick-mode>${Object.entries(labels).map(([k,v])=>`<option value="${k}" ${mode===k?'selected':''}>${v}</option>`).join('')}</select></label></div>
@@ -53,9 +68,10 @@ export function createPayrollQuickEntry({ root, api, esc, money, toast, onSaved,
   }
   function capture(input) {
     const r = data.rows.find(r=>r.member.id===input.dataset.member), c = QUICK_COLUMNS[mode].find(c=>c[0]===input.dataset.key);
+    if (loading || saving || input.disabled || input.closest('#pr-quick')?.dataset.payrollMonth !== data.month) return;
     const value = parseQuickNumber(input.type==='checkbox'?input.checked:input.value,c);
     let draft = drafts.get(r.member.id);
-    if (!draft) draft = { memberId:r.member.id, version:r.entry.version };
+    if (!draft) draft = { memberId:r.member.id, version:r.entry.version, month:data.month };
     draft[mode] ||= {};
     if (value === r.entry[mode][c[0]]) delete draft[mode][c[0]];
     else draft[mode][c[0]] = value;
@@ -69,21 +85,25 @@ export function createPayrollQuickEntry({ root, api, esc, money, toast, onSaved,
     root.querySelectorAll('[data-quick-row]').forEach(tr=>{tr.hidden=!tr.dataset.name.includes(q)||!!group&&tr.dataset.group!==group;});
   }
   root.addEventListener('input',e=>{
+    if(loading||saving)return;
     if(e.target.matches('[data-quick-search]')) filter();
     if(!e.target.matches('.pr-quick-value')) return;
     try { capture(e.target); root.querySelector('[data-quick-status]').textContent='Có thay đổi chưa lưu.'; }
     catch(error){e.target.setAttribute('aria-invalid','true');root.querySelector('[data-quick-status]').textContent=error.message;}
   });
   root.addEventListener('change',e=>{
+    if(loading||saving)return;
     if(e.target.matches('[data-quick-group]')) filter();
     if(e.target.matches('[data-quick-mode]')) {if(saving||root.querySelector('[aria-invalid="true"]')) {e.target.value=mode;toast('Sửa ô không hợp lệ trước khi đổi mục nhập.','err');return;} mode=e.target.value;root.querySelector('#pr-quick').outerHTML=html(data);}
   });
   root.addEventListener('keydown',e=>{
+    if(loading||saving)return;
     if(e.key!=='Enter'||!e.target.matches('.pr-quick-value'))return;
     e.preventDefault();const inputs=[...root.querySelectorAll(`.pr-quick-value[data-key="${e.target.dataset.key}"]:not(:disabled)`)].filter(n=>!n.closest('tr').hidden);
     inputs[inputs.indexOf(e.target)+1]?.focus();
   });
   root.addEventListener('paste',e=>{
+    if(loading||saving||e.target.disabled)return;
     if(!e.target.matches('.pr-quick-value'))return;
     const text=e.clipboardData.getData('text');if(!/[\t\r\n]/.test(text))return;
     e.preventDefault();
@@ -98,6 +118,7 @@ export function createPayrollQuickEntry({ root, api, esc, money, toast, onSaved,
     }catch(error){toast(error.message,'err');}
   });
   root.addEventListener('click',async e=>{
+    if(loading)return;
     if(e.target.closest('[data-quick-discard]')) {
       if(saving)return;
       if(dirty()&&!await confirmBox('Bỏ các ô chưa lưu và tải lại bảng lương mới nhất?',{ok:'Bỏ thay đổi'}))return;
@@ -106,6 +127,7 @@ export function createPayrollQuickEntry({ root, api, esc, money, toast, onSaved,
     const button=e.target.closest('[data-quick-save]');if(!button||saving)return;
     if(root.querySelector('[aria-invalid="true"]')){toast('Sửa các ô không hợp lệ trước khi lưu.','err');return;}
     if(!dirty()){toast('Chưa có thay đổi.');return;}
+    if([...drafts.values()].some(d=>d.month!==data.month)){toast('Dữ liệu nhập thuộc tháng khác. Tải lại bảng lương.','err');return;}
     const month=data.month; saving=true;button.disabled=true;
     root.querySelectorAll('.pr-quick-value').forEach(n=>{n.disabled=true;});
     try {
@@ -114,6 +136,12 @@ export function createPayrollQuickEntry({ root, api, esc, money, toast, onSaved,
     }catch(error){toast(error.message,'err');root.querySelector('[data-quick-status]').textContent=error.message+' Dữ liệu bạn nhập vẫn được giữ để đối chiếu.';}
     finally{saving=false;root.querySelectorAll('.pr-quick-value').forEach(n=>{const r=data.rows.find(r=>r.member.id===n.dataset.member);n.disabled=r.payslip.status!=='estimate';});const b=root.querySelector('[data-quick-save]');if(b)b.disabled=false;}
   });
-  window.addEventListener('beforeunload',e=>{if(dirty()){e.preventDefault();e.returnValue='';}});
-  return { html, dirty, isSaving:()=>saving, clear:()=>drafts.clear() };
+  window.addEventListener('beforeunload',e=>{if([...draftsByMonth.values()].some(d=>d.size)){e.preventDefault();e.returnValue='';}});
+  function setLoading(value) {
+    loading=value;
+    root.querySelectorAll('#pr-quick input, #pr-quick select, #pr-quick button').forEach(n=>{
+      n.disabled = loading || saving || (n.matches('.pr-quick-value') && data.rows.find(r=>r.member.id===n.dataset.member)?.payslip.status!=='estimate');
+    });
+  }
+  return { html, dirty, setLoading, isSaving:()=>saving, clear:()=>drafts.clear() };
 }

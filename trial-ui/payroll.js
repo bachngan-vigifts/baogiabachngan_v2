@@ -127,18 +127,22 @@ export function initPayroll(deps) {
 
   async function open(month) {
     if (quick.isSaving()) return;
-    const target = month || st.month;
-    if (quick.dirty()) {
-      if (target === st.month) return;
-      if (!await confirmBox('Có dữ liệu chưa lưu. Bỏ thay đổi để chuyển tháng?', { ok: 'Bỏ thay đổi' })) { location.hash = '#/payroll?month=' + st.month; return; }
-      quick.clear();
-    }
-    const seq = ++st.seq; st.month = month || st.month || new Date().toISOString().slice(0, 7);
-    if (!st.d) root.innerHTML = '<p class="muted cd-loading">Đang tính bảng lương…</p>';
+    const target = month || st.month || new Date().toISOString().slice(0, 7);
+    if (target === st.d?.month && quick.dirty() && !root.hasAttribute('aria-busy')) return;
+    const seq = ++st.seq;
+    // Disable the old board synchronously, before awaiting any request. Commit the visible month only with its response.
+    quick.setLoading(true); root.inert = true; root.setAttribute('aria-busy', 'true');
+    root.innerHTML = '<p class="muted cd-loading" role="status">Đang tải bảng lương tháng ' + esc(target) + '…</p>';
     try {
-      const d = await api('/hr/payroll/' + st.month);
-      if (seq !== st.seq) return; st.d = d; render();
-    } catch (e) { if (seq === st.seq) root.innerHTML = `<div class="empty"><h3>Không mở được bảng lương</h3><p class="muted">${esc(e.message)}</p></div>`; }
+      const d = await api('/hr/payroll/' + target);
+      if (seq !== st.seq) return;
+      if (d.month !== target) throw new Error('Bảng lương trả về không đúng tháng yêu cầu.');
+      st.month = target; st.d = d; render();
+    } catch (e) {
+      if (seq === st.seq) root.innerHTML = `<div class="empty"><h3>Không mở được bảng lương</h3><p class="muted">${esc(e.message)}</p></div>`;
+    } finally {
+      if (seq === st.seq) { quick.setLoading(false); root.inert = false; root.removeAttribute('aria-busy'); }
+    }
   }
   const go = m => { location.hash = '#/payroll?month=' + m; };
 

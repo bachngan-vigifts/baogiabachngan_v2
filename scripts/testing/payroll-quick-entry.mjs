@@ -42,12 +42,60 @@ try{
   const board=(await f.call('/hr/payroll/2026-10',f.mgr)).data,r=board.rows.find(r=>r.member.id==='emp');
   assert.equal(r.entry.inputs.workDays,width===1440?24.5:25);assert.equal(r.entry.inputs.overtimeHours,width===1440?1.5:2);assert.equal(board.rows.find(r=>r.member.id==='mgr').entry.inputs.workDays,26);assert.equal(r.entry.adjustments.advance,width===1440?500000:600000);
   await page.locator('[data-quick-mode]').selectOption('inputs');
-  assert.equal(await page.locator('[data-member="emp"][data-key="workDays"]').inputValue(),width===1440?'24.5':'25');
+  assert.equal(await page.locator('[data-member="emp"][data-key="workDays"]').inputValue(),width===1440?'24,5':'25');
   await page.locator('[data-quick-search]').fill(user.name);assert.equal(await page.locator('[data-quick-row]:not([hidden])').count(),1);
   await page.locator('[data-quick-search]').fill('');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'table scroll stays within page');
   await page.screenshot({path:out+'/payroll-'+width+'.png',fullPage:true});
-  assert.deepEqual(errors,[]);results.push({width,workDays:r.entry.inputs.workDays,advance:r.entry.adjustments.advance,errors});await context.close();
+  // P1 regression: block an intentionally delayed next-month response, then try to edit the old October node.
+  await days.fill('17');
+  const oldDays=await days.elementHandle();
+  let release,started;
+  const gate=new Promise(resolve=>{release=resolve;}),pending=new Promise(resolve=>{started=resolve;});
+  const novemberURL='**/api/staff/hr/payroll/2026-11';
+  await context.route(novemberURL,async route=>{started();await gate;await route.continue();});
+  await page.evaluate(()=>{location.hash='#/payroll?month=2026-11';});await pending;
+  assert.equal(await page.locator('#payroll-board').getAttribute('aria-busy'),'true');
+  assert.equal(await oldDays.evaluate(n=>n.disabled),true,'old month must be locked synchronously');
+  assert.equal(await page.locator('.pr-quick-value').count(),0,'no editable old-month cells while loading');
+  await oldDays.evaluate(n=>{n.value='19';n.dispatchEvent(new Event('input',{bubbles:true}));});
+  release();await page.locator('#pr-quick[data-payroll-month="2026-11"]').waitFor();
+  assert.equal(await days.inputValue(),'','October draft must not enter November');
+  await page.locator('[data-quick-save]').click();
+  assert.equal((await f.call('/hr/payroll/2026-11',f.mgr)).data.rows.find(r=>r.member.id==='emp').entry.inputs.workDays,null);
+  await context.unroute(novemberURL);
+  await page.evaluate(()=>{location.hash='#/payroll?month=2026-10';});await page.locator('#pr-quick[data-payroll-month="2026-10"]').waitFor();
+  assert.equal(await days.inputValue(),'17','October draft stays with October, detached edits are ignored');
+  await page.locator('[data-quick-save]').click();await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent==='');
+  assert.equal((await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find(r=>r.member.id==='emp').entry.inputs.workDays,17);
+  assert.equal((await f.call('/hr/payroll/2026-11',f.mgr)).data.rows.find(r=>r.member.id==='emp').entry.inputs.workDays,null);
+  // A late November response must not replace a newer December board.
+  let resumeLate,lateStarted;
+  const lateGate=new Promise(resolve=>{resumeLate=resolve;}),latePending=new Promise(resolve=>{lateStarted=resolve;});
+  await context.route(novemberURL,async route=>{lateStarted();await lateGate;await route.continue();});
+  await page.evaluate(()=>{location.hash='#/payroll?month=2026-11';});await latePending;
+  await page.evaluate(()=>{location.hash='#/payroll?month=2026-12';});await page.locator('#pr-quick[data-payroll-month="2026-12"]').waitFor();
+  const lateResponse=page.waitForResponse(response=>response.url().endsWith('/hr/payroll/2026-11'));
+  resumeLate();await (await lateResponse).finished();
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(await page.locator('#pr-quick').getAttribute('data-payroll-month'),'2026-12');
+  await context.unroute(novemberURL);
+  // Failure while switching never re-enables a stale board; retry can recover.
+  await context.route(novemberURL,route=>route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'Test month load failure'})}));
+  await page.evaluate(()=>{location.hash='#/payroll?month=2026-11';});
+  await page.getByRole('heading',{name:'Không mở được bảng lương'}).waitFor();
+  assert.equal(await page.locator('.pr-quick-value').count(),0);
+  await context.unroute(novemberURL);
+  await page.evaluate(()=>{location.hash='#/payroll?month=2026-10';});await page.locator('#pr-quick[data-payroll-month="2026-10"]').waitFor();
+  assert.equal(await days.inputValue(),'17');
+  // P1 regression: Vietnamese grouped rate and quantity must persist as 15000, not 15.
+  await page.locator('[data-member="emp"][data-key="outputQty"]').evaluate(node=>{const transfer=new DataTransfer();transfer.setData('text/plain','15.000\n');node.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:transfer}));});
+  await page.locator('[data-quick-mode]').selectOption('profile');
+  await page.locator('[data-member="emp"][data-key="outputRate"]').evaluate(node=>{const transfer=new DataTransfer();transfer.setData('text/plain','15.000\n');node.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:transfer}));});
+  await page.locator('[data-quick-save]').click();await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent==='');
+  const parsed=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find(r=>r.member.id==='emp');
+  assert.equal(parsed.entry.inputs.outputQty,15000);assert.equal(parsed.entry.profile.outputRate,15000);
+  assert.deepEqual(errors,[]);results.push({width,monthRacePassed:true,lateResponsePassed:true,failedLoadPassed:true,groupedRate:15000,groupedQuantity:15000,errors});await context.close();
  }
  await writeFile(out+'/results.json',JSON.stringify(results,null,2));console.log(JSON.stringify(results));
 }finally{await browser.close();server.close();await f.client.close();}

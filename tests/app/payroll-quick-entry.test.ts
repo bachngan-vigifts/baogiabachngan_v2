@@ -68,3 +68,28 @@ test('Excel number parsing distinguishes automatic blanks, zero and decimal days
   assert.equal(parseQuickNumber('Không',['mealAllowance','Cơm xăng','boolean']),false);
   assert.throws(()=>parseQuickNumber('abc',day));assert.throws(()=>parseQuickNumber('-1',day));
 });
+
+test('quick payroll versions bind identical values to their month and reject cross-month writes', async()=>{
+  const f=await setup();
+  const october=(await f.call('/hr/payroll/2026-10',f.mgr)).data;
+  const november=(await f.call('/hr/payroll/2026-11',f.mgr)).data;
+  const a=october.rows.find((r:any)=>r.member.id==='emp'),b=november.rows.find((r:any)=>r.member.id==='emp');
+  assert.deepEqual(a.entry.inputs,b.entry.inputs);
+  assert.notEqual(a.entry.version,b.entry.version,'period must affect the version even when all source values match');
+  const path='/hr/payroll/2026-11/entries';
+  assert.equal((await f.call(path,f.mgr,'PUT',{rows:[{memberId:'emp',version:a.entry.version,inputs:{workDays:17}}]})).status,409);
+  assert.equal((await f.call(path,f.mgr,'PUT',{rows:[{memberId:'emp',version:b.entry.version,month:'2026-10',inputs:{workDays:17}}]})).status,400);
+  const saved=(await f.call('/hr/payroll/2026-11',f.mgr)).data.rows.find((r:any)=>r.member.id==='emp');
+  assert.equal(saved.entry.inputs.workDays,null);
+});
+
+test('Vietnamese Excel thousands and decimal separators work for output rates, quantities and currency',async()=>{
+  const {parseQuickNumber,QUICK_COLUMNS}:any=await import(new URL('../../trial-ui/payroll-quick-entry.js',import.meta.url).href);
+  for(const key of ['outputRate','outputQty','baseSalary']) {
+    const column=[...QUICK_COLUMNS.inputs,...QUICK_COLUMNS.profile].find((c:any)=>c[0]===key);
+    for(const [raw,value] of [['15.000',15000],['1.234.567',1234567],['15.000,5',15000.5],['1,234,567.5',1234567.5],['24,5',24.5],['24.5',24.5],['0,005',0.005],['0.005',0.005],['1\u00a0234,5',1234.5]]) {
+      assert.equal(parseQuickNumber(raw,column),value,`${key}: ${raw}`);
+    }
+    for(const bad of ['1.23.456','1,234,56','12.34,56','15,00,0','1e3','0x10','1 2','NaN','Infinity','-15.000']) assert.throws(()=>parseQuickNumber(bad,column),`${key}: reject ${bad}`);
+  }
+});
