@@ -11,7 +11,7 @@ import {cleanCatalogueProduct} from '../domain/catalogue-data.ts';
 import {stableJson} from '../domain/catalogue-quote.ts';
 import {catalogueFields,catalogueDto} from './catalogue-library.ts';
 
-const patchSchema=z.object({category:z.string().trim().min(1).max(100).optional(),collection:z.string().trim().max(100).optional(),pattern:z.string().trim().max(100).optional(),color:z.string().trim().max(100).optional(),regular:z.number().finite().positive().max(1e10).optional()}).strict();
+const patchSchema=z.object({category:z.string().trim().min(1).max(100).optional(),collection:z.string().trim().max(100).optional(),pattern:z.string().trim().max(100).optional(),color:z.string().trim().max(100).optional(),regular:z.number().finite().min(0).max(1e10).optional(),priceOnRequest:z.boolean().optional()}).strict().refine(p=>!(p.priceOnRequest===true&&p.regular!==undefined&&p.regular!==0)&&!(p.regular===0&&p.priceOnRequest!==true),'Nhập giá lớn hơn 0 hoặc chọn Liên hệ.');
 const bodySchema=z.object({clientKey:z.string().regex(/^[\w-]{16,100}$/),action:z.enum(['edit','archive','restore']),items:z.array(z.object({id:z.string().regex(/^[a-f0-9]{64}$/),revision:z.number().int().positive()}).strict()).min(1).max(100),patch:patchSchema.optional()}).strict();
 export function registerCatalogueLibraryBulk(router:Router<StaffEnv>){
  router.post('/catalogue-library/bulk',async c=>{
@@ -27,7 +27,7 @@ export function registerCatalogueLibraryBulk(router:Router<StaffEnv>){
    if(rows.length!==b.items.length)throw new AppError(409,'Một số sản phẩm không còn tồn tại. Tải lại danh sách.');const expected=new Map(b.items.map(i=>[i.id,i.revision]));
    for(const row of rows)if(row.revision!==expected.get(row.id)||(b.action==='restore'?!row.deletedAt:!!row.deletedAt))throw new AppError(409,`Sản phẩm ${row.sku||row.name} vừa thay đổi. Chưa áp dụng thao tác cho bất kỳ sản phẩm nào; làm mới và chọn lại.`, 'CATALOGUE_BULK_CONFLICT');
    const at=new Date().toISOString(),products=[];
-   for(const row of rows){const before=JSON.parse(row.data),after=b.action==='edit'?cleanCatalogueProduct({...before,...b.patch,...(b.patch?.regular?{priceOnRequest:false}:{})}):before;
+   for(const row of rows){const before=JSON.parse(row.data),after=b.action==='edit'?cleanCatalogueProduct({...before,...b.patch,...(b.patch?.priceOnRequest===true?{regular:0,fromPrice:false}:b.patch?.regular!==undefined?{priceOnRequest:false}:{})}):before;
     const [next]=await tx.update(lib).set({...catalogueFields(after),deletedAt:b.action==='archive'?at:null,deletedBy:b.action==='archive'?who:null,revision:row.revision+1,lastKey:null,lastHash:null,lastActor:null,updatedAt:at,updatedBy:who}).where(eq(lib.id,row.id)).returning();
     products.push(catalogueDto(next!));await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:who,module:'catalog',action:'catalogue-library-bulk-'+b.action,entityType:'catalogue-library',entityId:row.id,data:JSON.stringify({before,after,revision:next!.revision,clientKey:b.clientKey}),createdAt:at});
    }
