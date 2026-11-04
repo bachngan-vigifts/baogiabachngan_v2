@@ -15,7 +15,7 @@ import { customerStockRequests } from '../modules/portal/schema.ts';
 import { customerActivities } from '../modules/care/schema.ts';
 import { tasks } from '../modules/tasks/schema.ts';
 import { OPEN_STATUSES } from '../modules/tasks/domain/task-config.ts';
-import { listPurchases } from '../modules/suppliers/api/purchase-store.ts';
+import { listPurchaseFlow } from '../modules/suppliers/api/purchase-store.ts';
 
 /**
  * SƠ ĐỒ QUY TRÌNH (trang #/flow) – API CHỈ ĐỌC, một lượt gọi trả số liệu + vài việc gần nhất cho mọi khối.
@@ -38,6 +38,7 @@ export interface FlowNode { metrics: FlowMetric[]; items: FlowItem[] }
 interface Ctx { db: Db; me: Member; manager: boolean; warehouse: boolean; accountant: boolean; today: string }
 
 const ITEMS = 6;
+const filteredCount = (where: SQL | undefined) => sql<number>`count(*) filter (where ${where ?? sql`true`})`.mapWith(Number);
 const ex = (q: SQL) => sql`exists (${q})`, notEx = (q: SQL) => sql`not exists (${q})`;
 const n = (v: unknown) => Number(v ?? 0);
 const total = async (q: Promise<{ n: number }[]>) => n((await q)[0]?.n);
@@ -86,9 +87,8 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
   async care({ db, me, manager, warehouse, today }) {
     if (warehouse) return null;
     const due = and(manager ? undefined : eq(customerActivities.ownerId, me.id), isNotNull(customerActivities.nextAt), isNull(customerActivities.nextDoneAt));
-    const [overdue, dueToday, rows] = await Promise.all([
-      total(db.select({ n: count() }).from(customerActivities).where(and(due, lt(customerActivities.nextAt, today)))),
-      total(db.select({ n: count() }).from(customerActivities).where(and(due, eq(customerActivities.nextAt, today)))),
+    const [[{ overdue = 0, dueToday = 0 } = {}], rows] = await Promise.all([
+      db.select({ overdue: filteredCount(lt(customerActivities.nextAt, today)), dueToday: filteredCount(eq(customerActivities.nextAt, today)) }).from(customerActivities).where(and(due, lte(customerActivities.nextAt, today))),
       db.select({ id: customerActivities.id, customer: customers.name, nextAt: customerActivities.nextAt, nextAction: customerActivities.nextAction, ownerId: customerActivities.ownerId })
         .from(customerActivities).innerJoin(customers, eq(customers.id, customerActivities.customerId)).where(and(due, lte(customerActivities.nextAt, today)))
         .orderBy(asc(customerActivities.nextAt)).limit(ITEMS),
@@ -108,9 +108,8 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
     const noOrder = notEx(sql`select 1 from ${salesOrders} where ${salesOrders.quoteId} = ${quotations.id} and ${salesOrders.status} <> 'cancelled'`);
     const pendingW = and(scope, eq(quotations.approvalStatus, 'pending')), readyW = and(scope, eq(quotations.approvalStatus, 'approved'), noOrder);
     const cols = { id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, status: quotations.approvalStatus, revision: quotations.revision, updatedAt: quotations.updatedAt };
-    const [pending, ready, pRows, rRows] = await Promise.all([
-      total(db.select({ n: count() }).from(quotations).where(pendingW)),
-      total(db.select({ n: count() }).from(quotations).where(readyW)),
+    const [[{ pending = 0, ready = 0 } = {}], pRows, rRows] = await Promise.all([
+      db.select({ pending: filteredCount(eq(quotations.approvalStatus, 'pending')), ready: filteredCount(and(eq(quotations.approvalStatus, 'approved'), noOrder)) }).from(quotations).where(and(scope, inArray(quotations.approvalStatus, ['pending', 'approved']))),
       db.select(cols).from(quotations).where(pendingW).orderBy(asc(quotations.updatedAt)).limit(ITEMS),
       db.select(cols).from(quotations).where(readyW).orderBy(desc(quotations.updatedAt)).limit(ITEMS),
     ]);
@@ -127,7 +126,7 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
 
   // ------------------------------------------------ MUA HÀNG (đơn mua NCC, cùng phạm vi xem với trang #/purchases)
   async purchase({ db, me, today }) {
-    const rows = await listPurchases(db, me, { openOnly: true, limit: 500 }, today);
+    const rows = await listPurchaseFlow(db, me, today);
     const has = (f: (r: typeof rows[number]) => boolean) => rows.filter(f);
     const draft = has(r => r.state === 'draft' && r.submitted), waiting = has(r => r.state === 'awaiting_confirmation'), late = has(r => r.late);
     const receive = has(r => (r.state === 'confirmed' || r.state === 'partially_received') && !r.late), sapo = has(r => r.sapoPending > 0);
@@ -150,11 +149,10 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
   // ------------------------------------------------ KHO HÀNG
   async packing({ db, me, manager, warehouse, today }) {
     const scope = manager || warehouse ? undefined : orderScopeFor(me);
-    const base = (status: 'draft' | 'sent' | 'packed') => and(eq(packingSlips.status, status), scope);
-    const q = (w: SQL | undefined) => db.select({ n: count() }).from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId)).where(w);
-    const [draft, sent, packedToday, rows] = await Promise.all([
-      total(q(base('draft'))), total(q(base('sent'))),
-      total(q(and(base('packed'), sql`${packingSlips.packedAt}::timestamptz >= ${today + 'T00:00:00+07:00'}::timestamptz`))),
+    const [[{ draft = 0, sent = 0, packedToday = 0 } = {}], rows] = await Promise.all([
+      db.select({ draft: filteredCount(eq(packingSlips.status, 'draft')), sent: filteredCount(eq(packingSlips.status, 'sent')),
+        packedToday: filteredCount(and(eq(packingSlips.status, 'packed'), sql`${packingSlips.packedAt}::timestamptz >= ${today + 'T00:00:00+07:00'}::timestamptz`)),
+      }).from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId)).where(and(scope, inArray(packingSlips.status, ['draft', 'sent', 'packed']))),
       db.select({ id: packingSlips.id, slipNo: packingSlips.slipNo, customer: salesOrders.customerName, status: packingSlips.status, due: salesOrders.expectedDeliveryDate })
         .from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId)).where(and(inArray(packingSlips.status, ['sent', 'draft']), scope))
         .orderBy(sql`${packingSlips.status} = 'sent' desc`, sql`${salesOrders.expectedDeliveryDate} asc nulls last`).limit(ITEMS),
@@ -170,11 +168,10 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
   async deliveries({ db, me, warehouse, today }) {
     const scope = warehouse ? undefined : orderScopeFor(me);
     const active = and(inArray(deliveries.status, ['planned', 'in_transit']), scope);
-    const q = (w: SQL | undefined) => db.select({ n: count() }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(w);
-    const [late, dueToday, moving, rows] = await Promise.all([
-      total(q(and(active, lt(deliveries.plannedDate, today)))),
-      total(q(and(active, eq(deliveries.plannedDate, today)))),
-      total(q(and(eq(deliveries.status, 'in_transit'), scope))),
+    const [[{ late = 0, dueToday = 0, moving = 0 } = {}], rows] = await Promise.all([
+      db.select({ late: filteredCount(lt(deliveries.plannedDate, today)), dueToday: filteredCount(eq(deliveries.plannedDate, today)),
+        moving: filteredCount(eq(deliveries.status, 'in_transit')),
+      }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(active),
       db.select({ id: deliveries.id, no: deliveries.deliveryNo, customer: salesOrders.customerName, date: deliveries.plannedDate, slot: deliveries.timeSlot, status: deliveries.status })
         .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(and(active, lte(deliveries.plannedDate, today)))
         .orderBy(asc(deliveries.plannedDate), asc(deliveries.timeSlot)).limit(ITEMS),
@@ -193,9 +190,8 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
     const scope = orderScopeFor(me);
     const requested = and(eq(salesOrders.invoiceStatus, 'requested'), scope);
     const notAsked = and(eq(salesOrders.status, 'delivered'), eq(salesOrders.invoiceStatus, 'none'), scope);
-    const [req, none, rows] = await Promise.all([
-      total(db.select({ n: count() }).from(salesOrders).where(requested)),
-      total(db.select({ n: count() }).from(salesOrders).where(notAsked)),
+    const [[{ req = 0, none = 0 } = {}], rows] = await Promise.all([
+      db.select({ req: filteredCount(eq(salesOrders.invoiceStatus, 'requested')), none: filteredCount(and(eq(salesOrders.status, 'delivered'), eq(salesOrders.invoiceStatus, 'none'))) }).from(salesOrders).where(or(requested, notAsked)),
       db.select({ id: salesOrders.id, no: salesOrders.orderNo, customer: salesOrders.customerName, at: salesOrders.invoiceRequestedAt, contract: sql<boolean>`${hasContract}` })
         .from(salesOrders).where(requested).orderBy(asc(salesOrders.invoiceRequestedAt)).limit(ITEMS),
     ]);
@@ -231,12 +227,14 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
 async function salesDocs({ db, me, manager, warehouse }: Ctx, contract: boolean): Promise<FlowNode | null> {
   if (warehouse) return null;
   const scope = and(orderScopeFor(me), contract ? hasContract : sql`not ${hasContract}`);
-  const q = (w: SQL | undefined) => total(db.select({ n: count() }).from(salesOrders).where(w));
   const unsigned = ex(sql`select 1 from ${salesContracts} where ${salesContracts.orderId} = ${salesOrders.id} and ${salesContracts.status} = 'draft'`);
-  const [draft, confirmed, delivering, unsignedN, rows] = await Promise.all([
-    // Manager chỉ đếm đơn nhân viên đã bấm "Gửi duyệt"; nhân viên đếm mọi đơn nháp của mình.
-    q(and(scope, eq(salesOrders.status, 'draft'), manager ? isNotNull(salesOrders.submittedAt) : undefined)), q(and(scope, eq(salesOrders.status, 'confirmed'))), q(and(scope, eq(salesOrders.status, 'delivering'))),
-    contract ? q(and(scope, ne(salesOrders.status, 'cancelled'), ne(salesOrders.status, 'draft'), unsigned)) : Promise.resolve(0),
+  const [[{ draft = 0, confirmed = 0, delivering = 0, unsignedN = 0 } = {}], rows] = await Promise.all([
+    db.select({
+      draft: filteredCount(and(eq(salesOrders.status, 'draft'), manager ? isNotNull(salesOrders.submittedAt) : undefined)),
+      confirmed: filteredCount(eq(salesOrders.status, 'confirmed')),
+      delivering: filteredCount(eq(salesOrders.status, 'delivering')),
+      unsignedN: contract ? filteredCount(and(ne(salesOrders.status, 'cancelled'), ne(salesOrders.status, 'draft'), unsigned)) : sql<number>`0`.mapWith(Number),
+    }).from(salesOrders).where(and(scope, contract ? ne(salesOrders.status, 'cancelled') : inArray(salesOrders.status, ['draft', 'confirmed', 'delivering']))),
     // Danh sách khớp số đếm: Manager không thấy đơn nháp nhân viên chưa gửi duyệt.
     db.select({ id: salesOrders.id, no: salesOrders.orderNo, customer: salesOrders.customerName, status: salesOrders.status, due: salesOrders.expectedDeliveryDate, submittedAt: salesOrders.submittedAt,
       contractNo: sql<string | null>`(select ${salesContracts.contractNo} from ${salesContracts} where ${salesContracts.orderId} = ${salesOrders.id} limit 1)` })
