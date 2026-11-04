@@ -6,6 +6,14 @@ import{stockMoves}from'../../src/modules/inventory/schema.ts';
 import{warehouses,productStock}from'../../src/modules/catalog/schema.ts';
 import{auditLogs}from'../../src/core/db/schema.ts';
 const product={name:'Bộ trà Sen trắng',sku:'031106000',brand:'Minh Long',category:'Bộ trà',collection:'Camellia',pattern:'Sen hồng',color:'Trắng',regular:100000,url:'https://minhlongonline.com/san-pham/bo-tra/',image:'',qty:99,discount:90,override:123,crmStock:{available:999999}};
+test('library facets cascade through brand, category, collection and pattern',async()=>{
+ const f=await setupWarehouseWork();const rows=[product,{...product,sku:'ML2',category:'Bình hoa',collection:'Hoa',pattern:'Sen',color:'Xanh'},{...product,sku:'ML3',collection:'Jasmine',pattern:'Trơn',color:'Đỏ'},{...product,sku:'BT1',brand:'Bát Tràng',category:'Khay mứt',collection:'Tết',pattern:'Đào',color:'Vàng'}];
+ assert.equal((await f.call('/catalogue-library',f.cookies.emp,'POST',{products:rows.map((p,i)=>({clientId:'cascade-'+i,product:p}))})).status,200);
+ const list=(params:Record<string,string>)=>f.call('/catalogue-library?'+new URLSearchParams({...params,includeStock:'0'}),f.cookies.emp);
+ const bt=await list({brand:'Bát Tràng'});assert.deepEqual(bt.data.facets.category,['Khay mứt']);assert.deepEqual(bt.data.facets.collection,['Tết']);assert.equal(bt.data.facets.brand.length,2);
+ const ml=await list({brand:'Minh Long',category:'Bộ trà',collection:'Camellia',pattern:'Sen hồng'});assert.equal(ml.data.facets.category.length,2);assert.deepEqual(ml.data.facets.collection.sort(),['Camellia','Jasmine']);assert.deepEqual(ml.data.facets.pattern,['Sen hồng']);assert.deepEqual(ml.data.facets.color,['Trắng']);assert.equal(ml.data.total,1);
+ assert.deepEqual((await list({brand:'Unknown'})).data.facets.category,[]);
+});
 test('fast list skips stock and optional facets; unmatched SKUs never scan incoming stock',async()=>{
  const f=await setupWarehouseWork();await f.call('/catalogue-library',f.cookies.emp,'POST',{products:[{clientId:'a',product}]});
  const original=catalogueLibraryHooks.incoming;let calls=0;catalogueLibraryHooks.incoming=async()=>{calls++;return[];};
