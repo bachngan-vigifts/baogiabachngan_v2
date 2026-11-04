@@ -1142,23 +1142,30 @@ test('POS displays GHN codes and carrier statuses without inferring payment or q
 
 test('POS first page and order board are usable while the full stock snapshot is still pending', async () => {
   const previousDocument = globalThis.document, previousWindow = globalThis.window, originalTimer = globalThis.setTimeout;
-  const timers: ReturnType<typeof setTimeout>[] = [];
-  Object.assign(globalThis, { document: doc, window: { addEventListener() {} }, setTimeout: (fn: () => void, ms: number) => { const timer = originalTimer(fn, ms); timers.push(timer); return timer; } });
+  const timers: ReturnType<typeof setTimeout>[] = [], scheduled: number[] = [];
+  Object.assign(globalThis, { document: doc, window: { addEventListener() {} }, setTimeout: (fn: () => void, ms: number) => { const timer = originalTimer(fn, ms); timers.push(timer); scheduled.push(ms); return timer; } });
   let release: (value: object) => void = () => {};
   const gate = new Promise(resolve => { release = resolve; });
+  let releasePage: (value: object) => void = () => {};
+  const pageGate = new Promise(resolve => { releasePage = resolve; });
   try {
     const root = new Element('section'), calls: string[] = [];
     const product = { sku: 'FAST', name: 'Bình thử', price: 1000, available: 5, onHand: 5, reserved: 0, scanCodes: ['FAST', '893FAST'], stockAsOf: '2026-11-04T00:02:00Z', stockSources: { vigifts: { qty: 0 }, supplier: { qty: 0 }, incoming: { qty: 0, orders: [] } } };
     const api = async (path: string) => {
       calls.push(path);
       if (path.startsWith('/pos/options')) return { stockSnapshotVersion: 1, registers: [{ id: 'r', name: 'Quầy', pricePolicyId: 'vat' }], current: { id: 's', registerId: 'r', memberId: 'emp' }, shifts: [], templates: [], policies: [] };
-      if (path.startsWith('/pos/catalog')) return { products: [product], nextOffset: null };
+      if (path.startsWith('/pos/catalog')) return pageGate;
       if (path.startsWith('/pos/orders')) return { registerId: 'r', registers: [], counts: { all: 0 }, orders: [], owners: [], totals: [] };
       if (path.startsWith('/pos/stock-snapshot')) return gate;
       throw Error(path);
     };
     const ui = initPos({ root, api, toast() {}, user: () => ({ id: 'emp' }), go() {} });
-    const ready = await Promise.race([ui.load().then(() => true), new Promise(resolve => setTimeout(() => resolve(false), 500))]);
+    const loading = ui.load();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(calls.some(path => path.startsWith('/pos/stock-snapshot')), false, 'no preload before first page');
+    assert.equal(scheduled.includes(30000), false, 'periodic refresh cannot jump ahead of the first page');
+    releasePage({ products: [product], nextOffset: null });
+    const ready = await Promise.race([loading.then(() => true), new Promise(resolve => setTimeout(() => resolve(false), 500))]);
     assert.equal(ready, true, 'initial load must not await the large snapshot');
     assert.ok(calls[0]!.startsWith('/pos/options?stock=0'));
     const page = calls.find(path => path.startsWith('/pos/catalog'))!;
@@ -1171,6 +1178,7 @@ test('POS first page and order board are usable while the full stock snapshot is
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.match(root.querySelectorAll('button').find(n => n.className === 'pos-product')!.textContent, /Còn 5/, 'older preload does not overwrite newer page stock');
   } finally {
+    releasePage({ products: [], nextOffset: null });
     release({});
     for (const timer of timers) clearTimeout(timer);
     Object.assign(globalThis, { document: previousDocument, window: previousWindow, setTimeout: originalTimer });

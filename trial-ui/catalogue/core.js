@@ -80,3 +80,5 @@ export function restoreState(raw){
 
 export function slideKey(slide){return slide.type==='products'?'products:'+(slide.layout===8?'8:':'')+slide.items.map(p=>p.id).sort().join('|'):slide.type+(slide.type==='divider'?':'+slide.band:'');}
 export async function mapConcurrent(items,limit,worker){let cursor=0;const results=new Array(items.length);await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(cursor<items.length){const i=cursor++;results[i]=await worker(items[i],i)}}));return results;}
+
+

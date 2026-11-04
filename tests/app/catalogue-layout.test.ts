@@ -11,3 +11,5 @@ test('4/8 pagination preserves groups and drops singleton tails',()=>{
 
 import {cleanCatalogueQuote} from '../../src/modules/catalog/domain/catalogue-quote.ts';
 test('shared quotes retain 8 layout and older quotes default to 4',()=>{const s=defaultState();const p=validateProduct({name:'Máy xay',sku:'001',brand:'Elmich',category:'Máy xay',regular:1000000,discount:0,fee:15000});s.products=[p];s.selected=[p.id];s.settings.productsPerPage=8;assert.equal(cleanCatalogueQuote(s).settings.productsPerPage,8);delete s.settings.productsPerPage;assert.equal(cleanCatalogueQuote(s).settings.productsPerPage,4);s.settings.productsPerPage=12;assert.throws(()=>cleanCatalogueQuote(s));});
+
+

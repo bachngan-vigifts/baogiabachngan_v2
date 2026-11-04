@@ -225,3 +225,5 @@ function openExportDialog(type){
  form.addEventListener('submit',event=>{event.preventDefault();try{const scope=form.elements.scope.value,numbers=scope==='all'?Array.from({length:total},(_,i)=>i+1):scope==='current'?[current]:parsePageSelection(input.value,total);dialog.close();exportFile(type,snapshot,numbers);}catch(e){dialog.querySelector('#export-error').textContent=e.message;input.focus();}});
  dialog.showModal();
 }
+
+

@@ -16,3 +16,5 @@ export function cleanCatalogueQuote(raw:unknown){
  const customBrands=Array.isArray(b.customBrands)?b.customBrands.slice(0,30).filter(p=>p&&typeof p==='object').map(p=>{const clean:Record<string,unknown>={};for(const key of ['id','name','origin','sourceUrl','collectionUrl','categoryLabel','platform','currency'])if(typeof p[key]==='string'&&p[key].length<=2500)clean[key]=p[key];for(const key of ['discount','fee'])if(typeof p[key]==='number'&&Number.isFinite(p[key]))clean[key]=p[key];clean.includeContact=p.includeContact===true;return clean;}):[];
  return{version:1,products,selected:selected as string[],meta,settings:config.data,pageText,customBrands};
 }
+
+

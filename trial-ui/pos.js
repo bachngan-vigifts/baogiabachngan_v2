@@ -303,6 +303,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   }
   async function load() {
     restorePending();
+    clearTimeout(stockRefreshTimer);
     const seq = ++st.request;
     const d = await run(() => api('/pos/options?stock=0' + (st.register?.id ? '&registerId=' + encodeURIComponent(st.register.id) : '') + (st.policy ? '&pricePolicyId='+encodeURIComponent(st.policy):'')));
     if (!d || seq !== st.request) return;
@@ -323,11 +324,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if (firstCatalogRead) { st.products = []; st.offset = null; st.localSkus = null; }
     justBootstrappedStock=stockPreloadSupported;
     draw();
-    scheduleStockRefresh();
     if (st.register) {
       const owner = stockOwner();
       const firstPage = search(false).then(() => {
-        if (seq === st.request && owner === stockOwner() && !root.hidden && !embeddedStock) void refreshStockSnapshot(true);
+        if (seq !== st.request || owner !== stockOwner()) return;
+        scheduleStockRefresh();
+        if (!root.hidden && !embeddedStock) void refreshStockSnapshot(true);
       });
       await Promise.all([firstPage, run(loadOrderBoard)]);
     }
