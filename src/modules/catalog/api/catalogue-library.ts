@@ -12,16 +12,17 @@ import { catalogueStockFacts } from './catalogue-stock.ts';
 type Ctx=RouteContext<StaffEnv>;const actor=(c:Ctx)=>(c.state.session as SessionState).member;
 export const catalogueFields=(p:ReturnType<typeof clean>)=>({name:p.name,sku:p.sku,brand:p.brand,category:p.category,collection:p.collection,pattern:p.pattern,color:p.color,search:fold([p.name,p.sku,p.brand,p.category,p.collection,p.pattern,p.color].join(' ')),data:JSON.stringify(p)});
 export const catalogueDto=(r:typeof lib.$inferSelect)=>({id:r.id,revision:r.revision,product:JSON.parse(r.data) as ReturnType<typeof clean>,updatedAt:r.updatedAt,updatedBy:r.updatedBy,archived:!!r.deletedAt});
+const filterKeys=['brand','category','collection','pattern','color'] as const;
 export function registerCatalogueLibrary(router:Router<StaffEnv>){
  router.get('/catalogue-library/stock',async c=>{const skus=[...new Set((c.url.searchParams.get('skus')||'').split(',').map(s=>s.trim()).filter(Boolean))];if(skus.length>100||skus.some(s=>s.length>100))throw new AppError(400,'Chỉ đọc tối đa 100 mã mỗi lượt.');return json({stock:await catalogueStockFacts(c.env.db,actor(c),skus)});},'business');
  router.get('/catalogue-library',async c=>{
   const q=(c.url.searchParams.get('q')||'').trim().slice(0,100),offset=Number(c.url.searchParams.get('offset')||0),limit=Math.min(60,Number(c.url.searchParams.get('limit')||60));
   if(!Number.isSafeInteger(offset)||offset<0||offset>1e6||!Number.isSafeInteger(limit)||limit<1)throw new AppError(400,'Phân trang chưa hợp lệ.');
   const archived=c.url.searchParams.get('archived')==='1',visibility=archived?isNotNull(lib.deletedAt):isNull(lib.deletedAt);
-  const filters:SQL[]=[visibility];for(const key of ['brand','category','collection','pattern','color'] as const){const v=c.url.searchParams.get(key);if(v){if(v.length>100)throw new AppError(400,'Bộ lọc quá dài.');filters.push(eq(lib[key],v));}}
+  const filters:SQL[]=[visibility];for(const key of filterKeys){const v=c.url.searchParams.get(key);if(v){if(v.length>100)throw new AppError(400,'Bộ lọc quá dài.');filters.push(eq(lib[key],v));}}
   for(const word of fold(q).split(' ').filter(Boolean).slice(0,10))filters.push(sql`${lib.search} like ${'%'+word.replace(/[\\%_]/g,m=>'\\'+m)+'%'}`);
   const where=and(...filters),db=c.env.db;
-  const [[total],rows,facets]=await Promise.all([db.select({n:count()}).from(lib).where(where),db.select().from(lib).where(where).orderBy(desc(lib.updatedAt),asc(lib.id)).limit(limit).offset(offset),c.url.searchParams.get('facets')==='0'?Promise.resolve(null):Promise.all((['brand','category','collection','pattern','color'] as const).map(async key=>[key,(await db.selectDistinct({value:lib[key]}).from(lib).where(and(visibility,sql`${lib[key]}<>''`)).orderBy(asc(lib[key])).limit(300)).map(r=>r.value)] as const))]);
+  const [[total],rows,facets]=await Promise.all([db.select({n:count()}).from(lib).where(where),db.select().from(lib).where(where).orderBy(desc(lib.updatedAt),asc(lib.id)).limit(limit).offset(offset),c.url.searchParams.get('facets')==='0'?Promise.resolve(null):Promise.all(filterKeys.map(async (key,index)=>[key,(await db.selectDistinct({value:lib[key]}).from(lib).where(and(visibility,sql`${lib[key]}<>''`,...filterKeys.slice(0,index).flatMap(parent=>{const value=c.url.searchParams.get(parent);return value?[eq(lib[parent],value)]:[]}))).orderBy(asc(lib[key])).limit(300)).map(r=>r.value)] as const))]);
   let stock:Awaited<ReturnType<typeof catalogueStockFacts>>|null=null;let stockError='';try{if(c.url.searchParams.get('includeStock')!=='0'&&!archived)stock=await catalogueStockFacts(db,actor(c),rows.map(r=>r.sku).filter(Boolean));}catch{stockError='Chưa đọc được tồn CRM. Dữ liệu chưa được xem là hết hàng.';}
   return json({memberId:actor(c).id,products:rows.map(catalogueDto),total:total!.n,offset,limit,...(facets?{facets:Object.fromEntries(facets)}:{}),stock,stockError});
  },'business');
