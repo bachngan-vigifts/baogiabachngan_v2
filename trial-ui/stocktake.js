@@ -11,7 +11,7 @@ export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,fi
  const description=el('p','muted');titles.append(el('span','eyebrow','Kho hàng'),el('h1','','Kiểm kê hàng'),description);
  const actions=el('div','head-actions row-gap');
  const create=button('',()=>newSheet(),'btn-add');create.title='Tạo phiếu kiểm kê mới';create.setAttribute('aria-label','Tạo phiếu kiểm kê mới');
- create.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+ create.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
  const resume=button('Tiếp tục phiếu đang nhập',()=>showEditor());resume.hidden=true;actions.append(resume,create);head.append(titles,actions);
  const panel=el('section','panel stocktake-panel'),controls=el('fieldset','stocktake-controls');
  const warehouse=el('select');warehouse.setAttribute('aria-label','Kho kiểm kê');

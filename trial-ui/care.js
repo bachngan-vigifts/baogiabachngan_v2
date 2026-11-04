@@ -46,13 +46,13 @@ export function initCare(deps) {
     if (isManager() && !people) { try { people = (await api('/tasks/people')).people; } catch { people = []; } }
     root.innerHTML = `<div class="page-head">
         <div><span class="eyebrow">Kinh doanh</span><h1>Giao dịch & chăm sóc</h1><p class="muted">Ghi kết quả mỗi lần liên hệ khách. Hoạt động hợp lệ tính 1 giao dịch KPI; không đếm từng tin nhắn hoặc cuộc gọi chưa kết nối.</p></div>
-        <button type="button" class="btn-add" data-care-new title="Ghi giao dịch" aria-label="Ghi giao dịch"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button type="button" class="btn-add" data-care-new title="Ghi giao dịch" aria-label="Ghi giao dịch"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
       </div>
       <div class="stats care-stats" data-stats></div>
       <div class="panel">
         <div class="seg care-tabs" role="tablist">${[['follow-ups', 'Cần chăm sóc'], ['log', 'Nhật ký']].map(([k, t]) => `<button type="button" role="tab" data-care-view="${k}" aria-selected="${st.view === k}">${t}</button>`).join('')}</div>
         <div class="toolbar care-filters">
-          <label class="search"><svg viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input type="search" data-f="q" value="${esc(st.q)}" placeholder="Tìm khách, nội dung, người liên hệ…" aria-label="Tìm"></label>
+          <label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><input type="search" data-f="q" value="${esc(st.q)}" placeholder="Tìm khách, nội dung, người liên hệ…" aria-label="Tìm"></label>
           <select data-f="type" aria-label="Hình thức">${options(config.types, st.type, 'Mọi hình thức')}</select>
           <select data-f="kpi" aria-label="Tính KPI"><option value="">Mọi giao dịch KPI</option><option value="counted">Được tính KPI</option><option value="excluded">Không tính KPI</option></select>
           <select data-f="result" aria-label="Kết quả">${options(config.results, st.result, 'Mọi kết quả')}</select>

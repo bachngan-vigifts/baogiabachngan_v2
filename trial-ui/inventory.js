@@ -21,7 +21,7 @@ export function initInventory({ api, root, toast, confirmBox }) {
   titles.append(el('span', 'eyebrow', 'Kho hàng'), el('h1', '', 'Cân bằng kho'), description);
   const tools = el('div', 'head-actions row-gap');
   const create = btn('', 'btn-add', () => adjustForm()); create.title = 'Tạo phiếu cân bằng kho'; create.setAttribute('aria-label', 'Tạo phiếu cân bằng kho'); create.hidden = true;
-  create.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+  create.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
   const openingTools = el('span', 'row-gap');
   tools.append(openingTools, create);
   head.append(titles, tools);
