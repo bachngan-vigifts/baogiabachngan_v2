@@ -169,3 +169,19 @@ test('phiếu giao: tên sản phẩm và ghi chú có bề rộng cố định 
  assert.match(html,/<colgroup>.*width:24%.*width:18%.*<\/colgroup>/);
  const packed=print.slipSheetHtml(print.packingPrintData({seller:'BN',order,slip:{},lines:[]}));assert.doesNotMatch(packed,/<colgroup>/);
 });
+
+test('VIGIFTS: phiếu đóng gói, phiếu giao hàng, đơn đặt hàng dùng ảnh tiêu đề VIGIFTS; Bách Ngân giữ nguyên', () => {
+  const order = { orderNo: 'DH1', customerName: 'Khách', address: 'HCM' };
+  const vg = print.SELLERS.VG.short, bn = print.SELLERS.BN.short;
+  for (const make of [print.packingPrintData, print.deliveryPrintData]) {
+    const v = make({ seller: vg, order, lines: [] }), b = make({ seller: bn, order, lines: [] });
+    assert.match(print.slipSheetHtml(v), /src="slip-letterhead-vigifts\.jpg"[^>]*width="1891" height="218"/);
+    assert.match(print.slipSheetHtml(v), /class="slip-letterhead letterhead-vigifts"/);
+    assert.match(print.slipSheetHtml(b), /src="slip-letterhead\.jpg"/);
+    assert.doesNotMatch(print.slipSheetHtml(b), /vigifts/);
+    v.seller = 'Tên sửa tay'; assert.match(print.slipSheetHtml(v), /slip-letterhead-vigifts\.jpg/);
+  }
+  const d = (o: Record<string, unknown>) => ({ order: { orderNo: 'DH1', customerName: 'K', ...o }, lines: [] });
+  assert.match(print.orderSheetHtml(print.orderPrintData(d({ quoteType: 'VIGIFTS' }))), /slip-letterhead-vigifts\.jpg/);
+  assert.doesNotMatch(print.orderSheetHtml(print.orderPrintData(d({}))), /slip-letterhead/);
+});

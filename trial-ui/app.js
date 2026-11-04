@@ -4690,10 +4690,12 @@ function openOrderPrint(detail = sales.detail) {
   dlg.querySelector('[data-prices]').addEventListener('change', () => editForm.apply());
   const close = () => { dlg.close(); dlg.remove(); };
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
-  dlg.querySelector('[data-print]').addEventListener('click', () => {
+  dlg.querySelector('[data-print]').addEventListener('click', async () => {
     editForm.apply();
     $('#print-sheet').innerHTML = orderSheetHtml(p, { prices: prices() });
-    printSheet({ page: { size: 'A4 portrait', margin: '10mm' }, cls: 'order-sheet', title: `Don-dat-hang-${p.orderNo}`.replace(/[^\w.-]+/g, '-') });
+    const head = $('#print-sheet .slip-letterhead');
+    if (head) { try { await head.decode(); } catch { toast('Không tải được ảnh tiêu đề. Anh thử in lại.', 'err'); return; } }
+    printSheet({ page: { size: 'A4 portrait', margin: head ? '20mm 10mm 10mm' : '10mm' }, cls: 'order-sheet', title: `Don-dat-hang-${p.orderNo}`.replace(/[^\w.-]+/g, '-') });
   });
   dlg.querySelector('[data-xlsx]').addEventListener('click', async e => {
     editForm.apply(); e.target.disabled = true;
