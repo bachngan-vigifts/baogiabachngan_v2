@@ -13,6 +13,8 @@ import { catalogueStockFacts } from './catalogue-stock.ts';
 type Ctx=RouteContext<StaffEnv>;const actor=(c:Ctx)=>(c.state.session as SessionState).member;
 export const catalogueFields=(p:ReturnType<typeof clean>)=>({name:p.name,sku:p.sku,brand:p.brand,category:p.category,collection:p.collection,pattern:p.pattern,color:p.color,search:fold([p.name,p.sku,p.brand,p.category,p.collection,p.pattern,p.color].join(' ')),data:JSON.stringify(p)});
 export const catalogueDto=(r:typeof lib.$inferSelect)=>({id:r.id,revision:r.revision,product:JSON.parse(r.data) as ReturnType<typeof clean>,updatedAt:r.updatedAt,updatedBy:r.updatedBy,archived:!!r.deletedAt});
+// Imports carry quote snapshots: shared prices are set deliberately through library editing.
+function cleanImportedProduct(raw:unknown){const source={...(raw as Record<string,unknown>)};delete source.discount;delete source.fee;delete source.override;return clean(source);}
 const budgetSchema=z.array(z.tuple([z.number().int().min(0).max(1e10),z.number().int().min(0).max(1e10).nullable()]).refine(([min,max])=>max===null||max>=min)).min(1).max(8);
 const pricingSchema=z.object({lockDiscount:z.coerce.number().finite().min(0).max(100),minhDiscount:z.coerce.number().finite().min(0).max(100),fee:z.coerce.number().finite().min(0).max(1e8)});
 const filterKeys=['brand','category','collection','pattern','color'] as const;
@@ -40,7 +42,7 @@ export function registerCatalogueLibrary(router:Router<StaffEnv>){
  },'business');
  router.post('/catalogue-library',async c=>{
   const body=await readJson(c.req,250_000);if(!Array.isArray(body.products)||body.products.length<1||body.products.length>25)throw new AppError(400,'Chia sản phẩm thành lô tối đa 25 mã.');
-  const errors:{clientId:string|null;error:string}[]=[];const items=body.products.flatMap((raw:unknown)=>{try{const row=raw as Record<string,unknown>;if(!row||typeof row.clientId!=='string'||row.clientId.length<1||row.clientId.length>100)throw new AppError(400,'Thiếu mã sản phẩm trên máy.');const p=clean(row.product);const origin=p.url?new URL(p.url).origin:fold(p.brand),identity=p.sku?'sku:'+origin+':'+p.sku.toUpperCase():p.url?'url:'+p.url:'manual:'+row.clientId;return[{clientId:row.clientId,p,key:sha256Hex(identity)}];}catch(e){errors.push({clientId:raw&&typeof raw==='object'&&typeof(raw as Record<string,unknown>).clientId==='string'?String((raw as Record<string,unknown>).clientId):null,error:e instanceof Error?e.message:'Sản phẩm chưa hợp lệ.'});return[];}});
+  const errors:{clientId:string|null;error:string}[]=[];const items=body.products.flatMap((raw:unknown)=>{try{const row=raw as Record<string,unknown>;if(!row||typeof row.clientId!=='string'||row.clientId.length<1||row.clientId.length>100)throw new AppError(400,'Thiếu mã sản phẩm trên máy.');const p=cleanImportedProduct(row.product);const origin=p.url?new URL(p.url).origin:fold(p.brand),identity=p.sku?'sku:'+origin+':'+p.sku.toUpperCase():p.url?'url:'+p.url:'manual:'+row.clientId;return[{clientId:row.clientId,p,key:sha256Hex(identity)}];}catch(e){errors.push({clientId:raw&&typeof raw==='object'&&typeof(raw as Record<string,unknown>).clientId==='string'?String((raw as Record<string,unknown>).clientId):null,error:e instanceof Error?e.message:'Sản phẩm chưa hợp lệ.'});return[];}});
   if(!items.length)return json({products:[],errors});
   const unique=[...new Map(items.map(i=>[i.key,i])).values()],now=new Date().toISOString(),who=actor(c).id;
   const saved=await c.env.db.transaction(async tx=>{
@@ -62,3 +64,4 @@ export function registerCatalogueLibrary(router:Router<StaffEnv>){
   });return json(catalogueDto(saved));
  },'business');
 }
+
