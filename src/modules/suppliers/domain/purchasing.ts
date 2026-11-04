@@ -26,11 +26,12 @@ export const isAccountantStaff = (a: Actor | null | undefined) => isEmployee(a) 
 export const canSeePrices = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && (can(a, 'purchases.prices') || canApprove(a));
 /** Sale Admin được xử lý và xem đầy đủ chứng từ đã duyệt, không mở giá của đơn nháp khi chưa được cấp quyền. */
 export const canSeePurchasePrices = (a: Actor | null | undefined, o: Pick<OrderFlags, 'approvalStatus'>) => canSeePrices(a) || isSaleAdminStaff(a) && o.approvalStatus === 'approved';
-export const canSendEarlyRequest = (a: Actor) => canUsePurchasing(a) && (a.role === 'manager' || a.positionId === SALE_ADMIN_POSITION_ID);
+export const canSendEarlyRequest = (a: Actor) => isManager(a) || isEmployee(a) && can(a, 'purchases.early-request');
+export const canViewEarlyRequests = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.early-view');
 export const canUsePurchasing = (a: Actor | null | undefined) => isManager(a) || isEmployee(a);
-export const canReceive = (a: Actor | null | undefined) => isManager(a) || isAccountantStaff(a) || isEmployee(a) && can(a, 'purchases.receive');
+export const canReceive = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.receive');
 /** Staff record an actual supplier confirmation; this does not approve purchase prices or early requests. */
-export const canRecordSupplierConfirmation = (a: Actor | null | undefined) => isManager(a) || isAccountantStaff(a) || isEmployee(a) && a!.positionId === SALE_ADMIN_POSITION_ID;
+export const canRecordSupplierConfirmation = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.confirm');
 export const canPay = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.pay');
 /** Duyệt giá đơn mua: Manager hoặc nhân viên được Manager bật cờ "Được duyệt" (docs/PHAN-QUYEN.md). */
 export const canApprovePurchase = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && canApprove(a);
@@ -75,11 +76,11 @@ export function checkPurchase(action: PurchaseAction, a: Actor | null | undefine
       if (!canApprovePurchase(a)) return no(403, 'Chỉ Manager hoặc người được Manager chỉ định duyệt đơn mua (giá / chiết khấu).');
       return state === 'draft' ? OK : no(409, 'Đơn này đã được duyệt.');
     case 'confirm':
-      if (!canRecordSupplierConfirmation(a)) return no(403, 'Chỉ Manager, Sale Admin hoặc Kế toán được ghi nhận xác nhận thay NCC.');
+      if (!canRecordSupplierConfirmation(a)) return no(403, 'Bạn chưa được cấp quyền xác nhận thay NCC.');
       if (state === 'draft') return no(409, 'Đơn chưa được duyệt.');
       return state === 'received' ? no(409, 'Đơn đã nhận đủ hàng.') : OK;
     case 'receive':
-      if (!canReceive(a)) return no(403, 'Chỉ kho, Manager, Sale Admin hoặc Kế toán được ghi nhận hàng về.');
+      if (!canReceive(a)) return no(403, 'Bạn chưa được cấp quyền nhận hàng NCC.');
       if (state === 'draft') return no(409, 'Đơn chưa được duyệt, chưa nhận hàng được.');
       return state === 'received' ? no(409, 'Đơn đã nhận đủ hàng.') : OK;
     case 'pay': case 'schedule':
@@ -89,7 +90,7 @@ export function checkPurchase(action: PurchaseAction, a: Actor | null | undefine
       if (p.anyReceived) return no(409, 'Đơn đã nhận hàng – không huỷ được. Huỷ các phiếu nhận trước.');
       if (p.paid > 0) return no(409, 'Đơn đã có thanh toán – huỷ các khoản trả trước khi huỷ đơn.');
       if (state === 'draft') return manager || o.createdBy === a.id ? OK : no(403, 'Chỉ người tạo đơn hoặc Manager được huỷ đơn nháp.');
-      return manager || isSaleAdminStaff(a) ? OK : no(403, 'Chỉ Manager hoặc Sale Admin được huỷ đơn mua đã duyệt.');
+      return manager || isEmployee(a) && can(a, 'purchases.cancel-approved') ? OK : no(403, 'Bạn chưa được cấp quyền huỷ đơn mua đã duyệt.');
     case 'pdf':
       return canSeePurchasePrices(a, o) ? OK : no(403, 'Chỉ người được xem giá mua tải được PDF đơn mua.');
   }

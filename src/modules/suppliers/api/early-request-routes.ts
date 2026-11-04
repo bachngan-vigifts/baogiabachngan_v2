@@ -10,7 +10,7 @@ import { vietnamDate } from '../../sales/domain/sales.ts';
 import { purchaseEarlyRequests as requests, purchaseEarlyRequestLines as lines, purchaseEarlyRequestAllocations as allocations } from '../early-request-schema.ts';
 import { incomingShipments, incomingShipmentLines, supplierAccounts, suppliers } from '../schema.ts';
 import { earlyReceiptAvailability, earlyReceiptContext } from './early-receiving.ts';
-import { canUsePurchasing, canReceive, canSendEarlyRequest } from '../domain/purchasing.ts';
+import { canUsePurchasing, canReceive, canSendEarlyRequest, canViewEarlyRequests } from '../domain/purchasing.ts';
 import { incomingBySku } from './incoming-by-sku.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import {resolveEarlyOrderSources,EarlySourceError} from '../domain/early-order-sources.ts';
@@ -168,7 +168,7 @@ async function withReceiptAvailability(db:Db, rows:Awaited<ReturnType<typeof ear
 
 export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   router.get('/purchase-early-requests',async c=>{
-    guard(c);const supplierId=c.url.searchParams.get('supplierId')||null,page=earlyListFilter(c.url.searchParams,supplierId);
+    guard(c);if(!canViewEarlyRequests(me(c)))fail(403,'Bạn chưa được cấp quyền xem phiếu xin hàng trước.');const supplierId=c.url.searchParams.get('supplierId')||null,page=earlyListFilter(c.url.searchParams,supplierId);
     const id=c.url.searchParams.get('id')||'';
     const replacements=id?await splitResult(c.env.db,id):null;
     const requests=await earlyRequestList(c.env.db,supplierId,replacements||id,false,{...page,limit:page.limit+1});
@@ -181,7 +181,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   },'business');
   // One workbook is one transaction and one retry key; grouping never submits or receives stock.
   router.post('/purchase-early-requests/file',async c=>{
-    guard(c);const m=me(c);if(!canSendEarlyRequest(m))fail(403,'Chỉ Manager và Sale Admin được xin hàng trước.');
+    guard(c);const m=me(c);if(!canSendEarlyRequest(m))fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
     const body=await readJson(c.req,300000);
     if(!Array.isArray(body.groups)||!body.groups.length||body.groups.length>300)fail(400,'File cần từ 1 đến 300 nhóm PXK.');
     const seen=new Set<string>();
@@ -218,7 +218,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
     return json({...result,id:result.requestIds[0],requests:saved,request:saved[0]},result.replayed?200:201);
   },'business');
   router.post('/purchase-early-requests',async c=>{
-    guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Chỉ Manager và Sale Admin được gửi yêu cầu lấy trước.');
+    guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
     const body=await readJson(c.req,300000),input=cleanInput(body),groupBySupplierOrder=body.groupBySupplierOrder===true;
     if(body.groupBySupplierOrder!==undefined&&typeof body.groupBySupplierOrder!=='boolean')fail(400,'Tuỳ chọn gom phiếu không hợp lệ.');
     const payloadHash=sha256Hex(JSON.stringify({lines:input.selected,scope:input.scope,pickupDate:input.pickupDate,...(groupBySupplierOrder?{groupBySupplierOrder:true}:{})}));
@@ -237,7 +237,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
     return json({...result,requests:saved,request:saved[0]},result.replayed?200:201);
   },'business');
   router.put('/purchase-early-requests/:id',async c=>{
-    guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Chỉ Manager và Sale Admin được sửa phiếu nháp.');
+    guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
     const body=await readJson(c.req,300000),id=c.params.id!;
     await c.env.db.transaction(async tx=>{
       const [draft]=await tx.select().from(requests).where(eq(requests.id,id)).for('update');
@@ -252,7 +252,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
     });return json({request:(await earlyRequestList(c.env.db,null,id))[0]});
   },'business');
   router.post('/purchase-early-requests/:id/submit',async c=>{
-    guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Chỉ Manager và Sale Admin được gửi NCC.');
+    guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
     const body=await readJson(c.req,8000),id=c.params.id!;
     const result=await c.env.db.transaction(async tx=>{
       const [draft]=await tx.select().from(requests).where(eq(requests.id,id)).for('update');

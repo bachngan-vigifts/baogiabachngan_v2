@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSchedules, checkPurchase, purchaseActions, purchaseState, receiptProgress, remainingToOrder, supplierDebt, validateReceipt, type Actor } from './purchasing.ts';
+import { buildSchedules, canSendEarlyRequest, canViewEarlyRequests, checkPurchase, purchaseActions, purchaseState, receiptProgress, remainingToOrder, supplierDebt, validateReceipt, type Actor } from './purchasing.ts';
 
 const mgr: Actor = { id: 'm', role: 'manager', active: true, positionId: 'manager' };
 const emp: Actor = { id: 'e', role: 'employee', active: true, positionId: 'sale' };
@@ -72,4 +72,24 @@ test('Sale Admin và Kế toán có xác nhận, nhận hàng, trả NCC, lịch
     assert.equal(checkPurchase('confirm',actor,{...approved,cancelledAt:'2026-10-21'},none).ok,false);
     assert.equal(checkPurchase('receive',actor,approved,{...none,fullyReceived:true}).ok,false);
   }
+});
+
+test('quyền mua hàng theo công tắc trên trang Phân quyền, không theo tên chức vụ',()=>{
+  const sa: Actor={id:'sa',role:'employee',active:true,positionId:'sale-admin'};
+  const kt: Actor={id:'kt',role:'employee',active:true,positionId:'accounting'};
+  // Tắt quyền: Sale Admin / Kế toán không làm được nữa.
+  for(const a of [sa,kt]) {
+    const off={...a,perms:[] as string[]};
+    for(const action of ['confirm','receive','cancel'] as const) assert.equal(checkPurchase(action,off,approved,none).ok,false,`${a.positionId} ${action}`);
+    assert.equal(canSendEarlyRequest(off),false); assert.equal(canViewEarlyRequests(off),false);
+  }
+  // Bật quyền cho chức vụ khác (Kho): làm được.
+  const kho: Actor={id:'kho',role:'employee',active:true,positionId:'warehouse',perms:['purchases.confirm','purchases.cancel-approved','purchases.early-request','purchases.early-view']};
+  for(const action of ['confirm','cancel'] as const) assert.equal(checkPurchase(action,kho,approved,none).ok,true,action);
+  assert.equal(canSendEarlyRequest(kho),true); assert.equal(canViewEarlyRequests(kho),true);
+  // Mặc định giữ như trước.
+  assert.equal(canSendEarlyRequest(sa),true); assert.equal(canSendEarlyRequest(kt),false);
+  assert.equal(canViewEarlyRequests({id:'s',role:'employee',active:true,positionId:'sale'}),true);
+  const mgr: Actor={id:'m',role:'manager',active:true,positionId:'manager',perms:[]};
+  assert.equal(canSendEarlyRequest(mgr),true); assert.equal(canViewEarlyRequests(mgr),true);
 });

@@ -11,6 +11,7 @@ import { incomingShipmentLines, incomingShipments, supplierPaymentSchedules, sup
 import { tasks } from '../../src/modules/tasks/schema.ts';
 import { debtAging } from '../../src/modules/sales/domain/sales.ts';
 import { can, routePermission } from '../../src/modules/staff/domain/permissions.ts';
+import { canReceive } from '../../src/modules/suppliers/domain/purchasing.ts';
 
 /** Công cụ Kế toán: huỷ phiếu thu, tuổi nợ, hoá đơn chờ xuất, công nợ NCC, sổ thu / chi, nhóm việc theo quyền, trang theo chức vụ. */
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
@@ -40,13 +41,21 @@ async function confirmedOrder(s: Awaited<ReturnType<typeof setup>>, no: string) 
   return orderId;
 }
 
-test('trang theo chức vụ: Kế toán bỏ Báo giá / Chăm sóc / Khách hỏi tồn; có Sổ thu chi, Huỷ phiếu thu, Doanh số toàn công ty', async () => {
+test('quyền Kế toán: xem các trang nghiệp vụ, nhận hàng NCC theo công tắc; không bán POS / điều chuyển / chốt tồn', async () => {
   const s = await setup();
   const perms = (await s.call('/me', s.kt)).data.user.perms as string[];
-  // Kế toán vào mọi trang trừ Bảng lương / Phân quyền (migration 20261029160000); không có quyền thao tác kho / quầy.
+  // Kế toán xem các trang nghiệp vụ và được nhận hàng NCC; bán POS / điều chuyển / chốt tồn vẫn bị chặn.
   for (const k of ['page.quotes', 'page.care', 'page.stock-requests', 'page.packing', 'page.stock-lookup', 'inventory.view']) assert.ok(perms.includes(k), k);
-  for (const k of ['perm.manage', 'pos.sell', 'pos.configure', 'inventory.manage', 'purchases.receive', 'stock.transfer']) assert.ok(!perms.includes(k), k);
-  for (const k of ['page.cashbook', 'payments.void', 'dashboard.all', 'page.receivables', 'page.orders']) assert.ok(perms.includes(k), k);
+  for (const k of ['perm.manage', 'pos.sell', 'pos.configure', 'inventory.manage', 'stock.transfer']) assert.ok(!perms.includes(k), k);
+  for (const k of ['page.cashbook', 'payments.void', 'dashboard.all', 'page.receivables', 'page.orders', 'purchases.receive']) assert.ok(perms.includes(k), k);
+  const receiver = { id: 'ketoan', role: 'employee' as const, active: true, positionId: 'accounting', perms };
+  assert.equal(canReceive(receiver), true);
+  const off = await s.call('/permissions/positions/accounting', s.mgr, 'PUT', { perms: perms.filter(k => k !== 'purchases.receive') });
+  assert.equal(off.status, 200, JSON.stringify(off.data));
+  const revoked = (await s.call('/me', s.kt)).data.user.perms as string[];
+  assert.equal(canReceive({ ...receiver, perms: revoked }), false, 'tắt công tắc có hiệu lực ngay với Kế toán đã đăng nhập');
+  assert.equal((await s.call('/permissions/positions/accounting', s.mgr, 'PUT', { perms })).status, 200);
+  assert.equal(canReceive({ ...receiver, perms: (await s.call('/me', s.kt)).data.user.perms }), true, 'bật lại công tắc khôi phục quyền nhận hàng');
   const sa = (await s.call('/me', s.sa)).data.user.perms as string[];
   assert.ok(sa.includes('purchases.pay') && !sa.includes('page.cashbook') && !sa.includes('dashboard.all'), 'Sale Admin: quyền Kế toán nhưng không xem toàn công ty ngoài báo giá / khách / đơn / HĐKT');
   assert.equal((await s.call('/quotes', s.kt)).status, 200, 'Kế toán xem được Báo giá');
@@ -124,6 +133,17 @@ test('nhóm nhận việc theo quyền: Sale Admin (có quyền ghi trả NCC) t
   await s.db.insert(tasks).values({ id: 't-acc', title: 'Xuất hoá đơn thử', status: 'todo', priority: 'normal', source: 'manual', assigneePosition: 'accounting', createdBy: 'mgr', createdAt: now, updatedAt: now } as never);
   const seen = async (cookie: string) => (await s.call('/tasks?view=team', cookie)).data.tasks.some((t: any) => t.id === 't-acc');
   assert.equal(await seen(s.kt), true); assert.equal(await seen(s.sa), true, 'Sale Admin có quyền purchases.pay'); assert.equal(await seen(s.emp), false);
+  const warehouseTask = await s.call('/tasks', s.mgr, 'POST', { title: 'Đóng gói cho nhóm Kho', assigneeId: 'team:warehouse' });
+  assert.equal(warehouseTask.status, 201, JSON.stringify(warehouseTask.data));
+  const warehouseTaskId = warehouseTask.data.id as string;
+  const teamTasks = (await s.call('/tasks?view=team', s.kt)).data.tasks;
+  assert.equal(teamTasks.some((t: { id: string }) => t.id === warehouseTaskId), false, 'quyền nhận NCC không đưa Kế toán vào nhóm Kho');
+  assert.equal((await s.call(`/tasks/${warehouseTaskId}`, s.kt)).status, 404, 'ẩn việc riêng của nhóm Kho khỏi Kế toán');
+  assert.equal((await s.call(`/tasks/${warehouseTaskId}`, s.kt, 'PUT', { status: 'in_progress' })).status, 404, 'Kế toán không nhận việc của nhóm Kho');
+  for (const [cookie, expected] of [[s.kt, false], [s.sa, true]] as const) {
+    const notifications = (await s.call('/notifications', cookie)).data.notifications;
+    assert.equal(notifications.some((n: { url: string }) => n.url === `/index.html#/tasks/${warehouseTaskId}`), expected, 'chỉ người thuộc nhóm Kho nhận thông báo');
+  }
   const orderId = await confirmedOrder(s, 'BG_QH');
   await s.db.update(paymentSchedules).set({ dueDate: '2020-01-01' }).where(eq(paymentSchedules.orderId, orderId));
   await s.call('/tasks?refresh=1', s.mgr);

@@ -34,7 +34,7 @@ export function registerQuoteSourcingRoutes(router: Router<StaffEnv>) {
     const incoming=needs.size&&incomingLookup.read?await incomingLookup.read(db,[...needs.keys()]):[];
     return json({quoteId:quote.id,quoteNo:quote.quoteNo,customerName:quote.customer,
       warehouses:visible.filter(w=>w.kind==='stock').map(w=>({id:w.id,name:w.name,opened:opened.has(w.id),canSell:selling.some(s=>s.id===w.id)})),
-      canPurchase:can(member,'page.purchases'),canRequestEarly:can(member,'page.purchases')&&(member.role==='manager'||member.positionId==='sale-admin'),
+      canPurchase:can(member,'page.purchases'),canRequestEarly:can(member,'page.purchases')&&can(member,'purchases.early-request'),
       lines:[...needs.values()].map(line=>({...line,stock:Object.fromEntries(visible.filter(w=>w.kind==='stock').map(w=>[w.id,stock.find(s=>s.sku===line.sku&&s.warehouseId===w.id)?.quantity??0])),
         incoming:incoming.filter(s=>s.sku===line.sku).reduce((n,s)=>n+s.left,0)}))});
   },'business');
