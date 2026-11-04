@@ -181,7 +181,7 @@ test('VIGIFTS: phiếu đóng gói, phiếu giao hàng, đơn đặt hàng dùng
     assert.doesNotMatch(print.slipSheetHtml(b), /vigifts/);
     v.seller = 'Tên sửa tay'; assert.match(print.slipSheetHtml(v), /slip-letterhead-vigifts\.jpg/);
   }
-  const d = o => ({ order: { orderNo: 'DH1', customerName: 'K', ...o }, lines: [] });
+  const d = (o: Record<string, unknown>) => ({ order: { orderNo: 'DH1', customerName: 'K', ...o }, lines: [] });
   assert.match(print.orderSheetHtml(print.orderPrintData(d({ quoteType: 'VIGIFTS' }))), /slip-letterhead-vigifts\.jpg/);
   assert.doesNotMatch(print.orderSheetHtml(print.orderPrintData(d({}))), /slip-letterhead/);
 });
