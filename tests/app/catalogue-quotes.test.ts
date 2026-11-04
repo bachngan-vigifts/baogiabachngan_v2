@@ -15,6 +15,21 @@ test('shared quotation saves overwrite one document; retries survive later edits
  assert.equal((await f.call('/catalogue-quotes',undefined)).status,401);assert.equal((await f.call('/catalogue-quotes',f.cookies.ncc)).status,403);
  const archive={revision:2,clientKey:crypto.randomUUID()};assert.equal((await f.call('/catalogue-quotes/'+id+'/archive',f.cookies.kt,'POST',archive)).status,403);assert.equal((await f.call('/catalogue-quotes/'+id+'/archive',f.cookies.mgr,'POST',archive)).status,200);assert.equal((await f.call('/catalogue-quotes',f.cookies.emp)).data.total,0);assert.equal((await f.call('/catalogue-quotes/'+id,f.cookies.emp)).status,404);
 });
+test('saved quote filters cover every page, match a single product and use Vietnam calendar dates',async()=>{
+ const f=await setupWarehouseWork();
+ const seed=Array.from({length:32},(_,i)=>{const s=state();s.products=s.products.slice(0,1);s.products[0].brand=i===31?'Bát Tràng':'Minh Long';s.meta.employee=i===31?'Châu Yến':'An';const at=i===31?'2026-11-03T17:00:00.000Z':'2026-11-03T16:59:59.999Z';return{id:'filter-quote-'+String(i).padStart(2,'0'),quoteNo:'BG-'+i,title:'Bộ trà '+i,customer:'Khách',productCount:1,search:'bo tra khach',data:JSON.stringify(s),createdBy:'emp',updatedBy:'emp',createdAt:at,updatedAt:at};});
+ await f.db.insert(quotes).values(seed);
+ const list=(params:Record<string,string>)=>f.call('/catalogue-quotes?'+new URLSearchParams(params),f.cookies.emp);
+ const page=await list({sort:'oldest'});assert.equal(page.data.total,32);assert.equal(page.data.quotes.length,30);
+ const filtered=await list({brand:'Bát Tràng',category:'Bộ trà',employee:'Châu Yến',from:'2026-11-04',to:'2026-11-04',q:'bo tra',facets:'1'});assert.equal(filtered.status,200,JSON.stringify(filtered.data));assert.equal(filtered.data.total,1);assert.equal(filtered.data.quotes[0].id,'filter-quote-31');assert.equal(filtered.data.quotes[0].state,undefined);assert.equal(filtered.data.quotes[0].employee,'Châu Yến');assert.deepEqual(filtered.data.facets.brands,['Bát Tràng','Minh Long']);
+ assert.equal((await list({from:'2026-11-03',to:'2026-11-03'})).data.total,31);
+ assert.equal((await list({brand:'Minh Long',category:'Bộ trà',offset:'30'})).data.quotes.length,1);
+ assert.equal((await list({brand:'Unknown'})).data.total,0);
+ for(const params of [{from:'2026-02-30'},{from:'2026-11-05',to:'2026-11-04'},{sort:'bad'},{employee:'x'.repeat(501)}] as Record<string,string>[])assert.equal((await list(params)).status,400);
+ const mixed=state();mixed.products=[{...mixed.products[0],brand:'Minh Long',category:'Bộ trà'},{...mixed.products[0],id:'second',brand:'Bát Tràng',category:'Bình hoa'}];mixed.selected=['product-1','second'];await f.db.update(quotes).set({data:JSON.stringify(mixed)}).where(eq(quotes.id,'filter-quote-31'));
+ assert.equal((await list({brand:'Bát Tràng',category:'Bộ trà'})).data.total,0);
+ await f.db.update(quotes).set({deletedAt:new Date().toISOString()}).where(eq(quotes.id,'filter-quote-31'));assert.equal((await list({facets:'1'})).data.facets.brands.includes('Bát Tràng'),false);
+});
 test('simultaneous saves claim one command and serialize conflicting revisions', {skip:!process.env.TEST_PG_URL},async()=>{
  const f=await setupWarehouseWork(),id=crypto.randomUUID(),body={id,clientKey:crypto.randomUUID(),state:state()};
  const create=()=>f.call('/catalogue-quotes',f.cookies.emp,'POST',body);const a=await Promise.all([create(),create()]);assert.deepEqual(a.map(r=>r.status),[200,200]);assert.equal(a.filter(r=>r.data.replayed).length,1);assert.equal((await f.db.select().from(quotes)).length,1);assert.equal((await f.db.select().from(commands)).length,1);
