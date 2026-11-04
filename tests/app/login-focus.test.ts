@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 // @ts-ignore browser transport
 import { createApiTransport } from '../../trial-ui/api-transport.js';
+const {requestWithRegion}=await import(new URL('../../trial-ui/api-region.js',import.meta.url).href);
 
 const source = readFileSync(new URL('../../trial-ui/app.js', import.meta.url), 'utf8');
 const apiSource = source.slice(source.indexOf('class ApiError'), source.indexOf('// CSP chỉ báo cáo'));
@@ -21,6 +22,7 @@ function harness() {
   elements['#logout'].addEventListener = (_event: string, fn: Function) => elements['#logout'].click = fn;
   elements['#auth'].contains = (el: unknown) => el === elements['#email'] || el === elements['#password'];
   const ctx: any = {
+    requestWithRegion,
     withBusy: (_method: string, promise: Promise<unknown>) => promise,
     requestPriority: { run: (_bg: boolean, work: () => unknown) => work() }, isBackgroundRequest: () => false, recordApi() {}, performance,
     regionCanary: { headers: () => ({}), observe() {}, failed() {} },
