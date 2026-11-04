@@ -20,8 +20,30 @@ async function command(c:Ctx,id:string,b:Record<string,unknown>,action:string,co
  });
 }
 export function registerCatalogueQuotes(router:Router<StaffEnv>){
- router.get('/catalogue-quotes',async c=>{const q=fold(c.url.searchParams.get('q')||'').slice(0,100),offset=Number(c.url.searchParams.get('offset')||0);if(!Number.isSafeInteger(offset)||offset<0||offset>1e6)throw new AppError(400,'Phân trang chưa hợp lệ.');const where=and(isNull(quotes.deletedAt),...q.split(' ').filter(Boolean).slice(0,10).map(word=>sql`${quotes.search} like ${'%'+word.replace(/[\\%_]/g,m=>'\\'+m)+'%'}`));
-  const [[total],rows]=await Promise.all([c.env.db.select({n:count()}).from(quotes).where(where),c.env.db.select({id:quotes.id,quoteNo:quotes.quoteNo,title:quotes.title,customer:quotes.customer,productCount:quotes.productCount,revision:quotes.revision,createdBy:quotes.createdBy,updatedBy:quotes.updatedBy,updatedAt:quotes.updatedAt}).from(quotes).where(where).orderBy(desc(quotes.updatedAt),asc(quotes.id)).limit(30).offset(offset)]);return json({memberId:actor(c).id,quotes:rows.map(q=>summary(q as typeof quotes.$inferSelect,c)),total:total!.n,offset,limit:30});
+ router.get('/catalogue-quotes',async c=>{
+  const params=c.url.searchParams,q=fold(params.get('q')||'').slice(0,100),offset=Number(params.get('offset')||0),sort=params.get('sort')||'newest';
+  if(!Number.isSafeInteger(offset)||offset<0||offset>1e6||!['newest','oldest','title'].includes(sort))throw new AppError(400,'Phân trang hoặc sắp xếp chưa hợp lệ.');
+  const values:Record<string,string>={};for(const key of ['brand','category','employee']){values[key]=(params.get(key)||'').trim();if(values[key]!.length>(key==='employee'?500:100))throw new AppError(400,'Bộ lọc quá dài.');}
+  const day=(key:string)=>{const value=params.get(key)||'';if(!value)return null;const parsed=new Date(value+'T00:00:00.000Z');if(!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==value)throw new AppError(400,'Ngày lọc chưa hợp lệ.');return parsed.getTime()-7*60*60*1000;};
+  const from=day('from'),to=day('to');if(from!==null&&to!==null&&from>to)throw new AppError(400,'Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.');
+  const productFilter=Object.fromEntries(['brand','category'].filter(key=>values[key]).map(key=>[key,values[key]]));
+  const employee=sql<string>`${quotes.data}::jsonb->'meta'->>'employee'`;
+  const where=and(isNull(quotes.deletedAt),
+   ...q.split(' ').filter(Boolean).slice(0,10).map(word=>sql`${quotes.search} like ${'%'+word.replace(/[\\%_]/g,m=>'\\'+m)+'%'}`),
+   Object.keys(productFilter).length?sql`${quotes.data}::jsonb->'products' @> ${JSON.stringify([productFilter])}::jsonb`:undefined,
+   values.employee?sql`${employee} = ${values.employee}`:undefined,
+   from!==null?sql`${quotes.updatedAt} >= ${new Date(from).toISOString()}`:undefined,
+   to!==null?sql`${quotes.updatedAt} < ${new Date(to+86400000).toISOString()}`:undefined);
+  const [[total],rows,facetRows]=await Promise.all([
+   c.env.db.select({n:count()}).from(quotes).where(where),
+   c.env.db.select({id:quotes.id,quoteNo:quotes.quoteNo,title:quotes.title,customer:quotes.customer,productCount:quotes.productCount,revision:quotes.revision,createdBy:quotes.createdBy,updatedBy:quotes.updatedBy,updatedAt:quotes.updatedAt,employee}).from(quotes).where(where).orderBy(sort==='oldest'?asc(quotes.updatedAt):sort==='title'?asc(quotes.title):desc(quotes.updatedAt),asc(quotes.id)).limit(30).offset(offset),
+   params.get('facets')==='1'?c.env.db.select({
+    brands:sql<string[]>`array(select distinct p->>'brand' from jsonb_array_elements(${quotes.data}::jsonb->'products') p)`,
+    categories:sql<string[]>`array(select distinct p->>'category' from jsonb_array_elements(${quotes.data}::jsonb->'products') p)`,employee
+   }).from(quotes).where(isNull(quotes.deletedAt)):Promise.resolve(null)
+  ]);
+  const unique=(items:string[])=>[...new Set(items.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi'));
+  return json({memberId:actor(c).id,quotes:rows.map(q=>({...summary(q as typeof quotes.$inferSelect,c),employee:q.employee||''})),total:total!.n,offset,limit:30,...(facetRows?{facets:{brands:unique(facetRows.flatMap(r=>r.brands)),categories:unique(facetRows.flatMap(r=>r.categories)),employees:unique(facetRows.map(r=>r.employee))}}:{})});
  },'business');
  router.get('/catalogue-quotes/:id',async c=>{const [row]=await c.env.db.select().from(quotes).where(and(eq(quotes.id,c.params.id!),isNull(quotes.deletedAt)));if(!row)throw new AppError(404,'Báo giá dùng chung không còn trong danh sách.');return json({...summary(row,c),state:JSON.parse(row.data)});},'business');
  router.post('/catalogue-quotes',async c=>{
