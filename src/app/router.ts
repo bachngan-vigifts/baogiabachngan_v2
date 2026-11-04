@@ -1,3 +1,4 @@
+import { registerReportRoutes } from './report-routes.ts';
 import { webInvoiceStatus } from '../modules/tasks/api/invoice-tasks.ts';
 import {registerCatalogueLibraryBulk} from '../modules/catalog/api/catalogue-library-bulk.ts';
 import {registerCatalogueQuotes} from '../modules/catalog/api/catalogue-quotes.ts';
@@ -135,6 +136,7 @@ export function createAppRouter() {
   registerStaffHubRoutes(router,{crmFactsOf});
   registerDashboardRoutes(router);
   registerAuditRoutes(router);
+  registerReportRoutes(router);
   registerPermissionRoutes(router);
   registerApprovalRoutes(router);
   registerPulseRoutes(router);

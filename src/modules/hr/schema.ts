@@ -110,6 +110,7 @@ export const hrPayslips = pgTable('hr_payslips', {
 }, t => [
   primaryKey({ columns: [t.memberId, t.month] }),
   index('idx_hr_payslips_month').on(t.month, t.status),
+  check('chk_hr_payslips_month', sql`${t.month} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
   enumCheck('chk_hr_payslips_status', t.status, PAYSLIP_STATUSES),
   enumCheck('chk_hr_payslips_group', t.payrollGroup, PAYROLL_GROUPS),
 ]).enableRLS();
