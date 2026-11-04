@@ -1,3 +1,4 @@
+import {libraryPricing} from './core.js';
 import {defaultState,restoreState,slideKey,mapConcurrent,validateProduct,price,quotePrice,isBundle,budget,money,esc,makeSlides,selectedProducts,categories} from './core.js';
 import {initProductReorder} from './reorder.js';
 import {parsePageSelection} from './export-pages.js';
@@ -35,10 +36,10 @@ async function libraryPendingWrite(owner,id,value){if(!db)throw Error('Chưa lư
 async function libraryBulkWrite(owner,value){if(!db)throw Error('Cho phép lưu trên máy để giữ yêu cầu chưa xác nhận.');return new Promise((resolve,reject)=>{const t=db.transaction('kv','readwrite'),kv=t.objectStore('kv');kv.put(structuredClone(state),'current');kv.put(value,'catalogue-library-bulk:'+owner);t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error)})}
 function pickLibraryProducts(rows,toggle=false){
  const missing=rows.filter(row=>!row.localId&&!state.products.some(p=>p.sharedId===row.id));if(state.products.length+missing.length>1000){toast('Báo giá/thư viện trên máy đạt 1.000 sản phẩm. Lưu bản sao trước khi tạo báo giá mới.');return;}
- let added=0;for(const row of rows){if(row.localId){if(state.selected.includes(row.localId)){if(toggle)state.selected=state.selected.filter(id=>id!==row.localId);}else{state.selected.push(row.localId);added++;}continue;}const selected=state.products.find(p=>p.sharedId===row.id&&state.selected.includes(p.id));if(selected){if(toggle)state.selected=state.selected.filter(id=>id!==selected.id);continue;}const previous=state.products.find(p=>p.sharedId===row.id),p=row.product,copy=validateProduct({...p,id:previous?.id||crypto.randomUUID(),sharedId:row.id,sharedRevision:row.revision,qty:1,discount:p.brand==='LocknLock'?state.settings.lockDiscount:p.brand==='Minh Long'?state.settings.minhDiscount:0,fee:state.settings.fee,override:null});if(previous)Object.assign(previous,copy);else state.products.push(copy);state.selected.push(copy.id);added++;}changed();if(!toggle)toast('Đã thêm '+added+' sản phẩm vào báo giá; mã đã có được giữ nguyên.');
+ let added=0;for(const row of rows){if(row.localId){if(state.selected.includes(row.localId)){if(toggle)state.selected=state.selected.filter(id=>id!==row.localId);}else{state.selected.push(row.localId);added++;}continue;}const selected=state.products.find(p=>p.sharedId===row.id&&state.selected.includes(p.id));if(selected){if(toggle)state.selected=state.selected.filter(id=>id!==selected.id);continue;}const previous=state.products.find(p=>p.sharedId===row.id),p=row.product,copy=validateProduct({...p,id:previous?.id||crypto.randomUUID(),sharedId:row.id,sharedRevision:row.revision,qty:1,...libraryPricing(p,state.settings)});if(previous)Object.assign(previous,copy);else state.products.push(copy);state.selected.push(copy.id);added++;}changed();if(!toggle)toast('Đã thêm '+added+' sản phẩm vào báo giá; mã đã có được giữ nguyên.');
 }
 const sharedLibrary=createSharedLibrary({api:libraryApi,identity:crmSession,getProducts:()=>state.products,getSelected:()=>state.selected,toast,
- priceOf:(product,row)=>{const picked=state.products.find(p=>(p.sharedId===row.id||p.id===row.localId)&&state.selected.includes(p.id));return quotePrice(picked||{...product,discount:product.brand==='LocknLock'?state.settings.lockDiscount:product.brand==='Minh Long'?state.settings.minhDiscount:0,fee:state.settings.fee,override:null},state)},
+ getPricing:()=>state.settings,priceOf:product=>price(libraryPricing(product,state.settings)),
  onPick:row=>pickLibraryProducts([row],true),onPickMany:rows=>pickLibraryProducts(rows,false),
  getBulkPending:owner=>dbGet('catalogue-library-bulk:'+owner),putBulkPending:libraryBulkWrite,
  onPublished:row=>{const p=state.products.find(p=>p.id===row.clientId);if(p){p.sharedId=row.id;p.sharedRevision=row.revision;p.sharedPendingFor='';}},
@@ -225,11 +226,3 @@ function openExportDialog(type){
  form.addEventListener('submit',event=>{event.preventDefault();try{const scope=form.elements.scope.value,numbers=scope==='all'?Array.from({length:total},(_,i)=>i+1):scope==='current'?[current]:parsePageSelection(input.value,total);dialog.close();exportFile(type,snapshot,numbers);}catch(e){dialog.querySelector('#export-error').textContent=e.message;input.focus();}});
  dialog.showModal();
 }
-
-
-
-
-
-
-
-

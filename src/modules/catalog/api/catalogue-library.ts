@@ -1,4 +1,5 @@
-import { and, asc, count, desc, eq, inArray, isNull, isNotNull, sql, type SQL } from 'drizzle-orm';
+import { z } from 'zod';
+import { and, or, asc, count, desc, eq, inArray, isNull, isNotNull, sql, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -12,6 +13,8 @@ import { catalogueStockFacts } from './catalogue-stock.ts';
 type Ctx=RouteContext<StaffEnv>;const actor=(c:Ctx)=>(c.state.session as SessionState).member;
 export const catalogueFields=(p:ReturnType<typeof clean>)=>({name:p.name,sku:p.sku,brand:p.brand,category:p.category,collection:p.collection,pattern:p.pattern,color:p.color,search:fold([p.name,p.sku,p.brand,p.category,p.collection,p.pattern,p.color].join(' ')),data:JSON.stringify(p)});
 export const catalogueDto=(r:typeof lib.$inferSelect)=>({id:r.id,revision:r.revision,product:JSON.parse(r.data) as ReturnType<typeof clean>,updatedAt:r.updatedAt,updatedBy:r.updatedBy,archived:!!r.deletedAt});
+const budgetSchema=z.array(z.tuple([z.number().int().min(0).max(1e10),z.number().int().min(0).max(1e10).nullable()]).refine(([min,max])=>max===null||max>=min)).min(1).max(8);
+const pricingSchema=z.object({lockDiscount:z.coerce.number().finite().min(0).max(100),minhDiscount:z.coerce.number().finite().min(0).max(100),fee:z.coerce.number().finite().min(0).max(1e8)});
 const filterKeys=['brand','category','collection','pattern','color'] as const;
 export function registerCatalogueLibrary(router:Router<StaffEnv>){
  router.get('/catalogue-library/stock',async c=>{const skus=[...new Set((c.url.searchParams.get('skus')||'').split(',').map(s=>s.trim()).filter(Boolean))];if(skus.length>100||skus.some(s=>s.length>100))throw new AppError(400,'Chỉ đọc tối đa 100 mã mỗi lượt.');return json({stock:await catalogueStockFacts(c.env.db,actor(c),skus)});},'business');
@@ -21,6 +24,13 @@ export function registerCatalogueLibrary(router:Router<StaffEnv>){
   const archived=c.url.searchParams.get('archived')==='1',visibility=archived?isNotNull(lib.deletedAt):isNull(lib.deletedAt);
   const filters:SQL[]=[visibility];for(const key of filterKeys){const v=c.url.searchParams.get(key);if(v){if(v.length>100)throw new AppError(400,'Bộ lọc quá dài.');filters.push(eq(lib[key],v));}}
   for(const word of fold(q).split(' ').filter(Boolean).slice(0,10))filters.push(sql`${lib.search} like ${'%'+word.replace(/[\\%_]/g,m=>'\\'+m)+'%'}`);
+  const budgetRaw=c.url.searchParams.get('budgets');if(budgetRaw){
+   let raw:unknown;try{if(budgetRaw.length>1000)throw Error();raw=JSON.parse(budgetRaw);}catch{throw new AppError(400,'Khoảng ngân sách chưa hợp lệ.');}
+   const parsed=budgetSchema.safeParse(raw),pricing=pricingSchema.safeParse({lockDiscount:c.url.searchParams.get('lockDiscount')??40,minhDiscount:c.url.searchParams.get('minhDiscount')??10,fee:c.url.searchParams.get('fee')??15000});
+   if(!parsed.success||!pricing.success)throw new AppError(400,'Kiểm tra khoảng ngân sách và công thức giá.');
+   const p=pricing.data,source=sql`(${lib.data}::jsonb)`,amount=sql`round(coalesce((${source}->>'override')::numeric, (${source}->>'regular')::numeric*(1-coalesce((${source}->>'discount')::numeric,case when ${lib.brand}='LocknLock' then ${p.lockDiscount}::numeric when ${lib.brand}='Minh Long' then ${p.minhDiscount}::numeric else 0 end)/100)+coalesce((${source}->>'fee')::numeric,${p.fee}::numeric)))`;
+   filters.push(sql`coalesce((${source}->>'priceOnRequest')::boolean,false)=false`,or(...parsed.data.map(([min,max])=>max===null?sql`${amount}>=${min}`:sql`${amount}>=${min} and ${amount}<=${max}`))!);
+  }
   const where=and(...filters),db=c.env.db;
   const [[total],rows,facets]=await Promise.all([db.select({n:count()}).from(lib).where(where),db.select().from(lib).where(where).orderBy(desc(lib.updatedAt),asc(lib.id)).limit(limit).offset(offset),c.url.searchParams.get('facets')==='0'?Promise.resolve(null):Promise.all(filterKeys.map(async (key,index)=>[key,(await db.selectDistinct({value:lib[key]}).from(lib).where(and(visibility,sql`${lib[key]}<>''`,...filterKeys.slice(0,index).flatMap(parent=>{const value=c.url.searchParams.get(parent);return value?[eq(lib[parent],value)]:[]}))).orderBy(asc(lib[key])).limit(300)).map(r=>r.value)] as const))]);
   let stock:Awaited<ReturnType<typeof catalogueStockFacts>>|null=null;let stockError='';try{if(c.url.searchParams.get('includeStock')!=='0'&&!archived)stock=await catalogueStockFacts(db,actor(c),rows.map(r=>r.sku).filter(Boolean));}catch{stockError='Chưa đọc được tồn CRM. Dữ liệu chưa được xem là hết hàng.';}

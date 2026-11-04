@@ -19,6 +19,7 @@ export function validateProduct(p){
  const details={sharedId:/^[a-f0-9]{64}$/.test(p.sharedId||'')?p.sharedId:'',sharedRevision:Number.isSafeInteger(p.sharedRevision)?p.sharedRevision:null,sharedPendingFor:typeof p.sharedPendingFor==='string'?p.sharedPendingFor.slice(0,100):'',collection:String(p.collection||'').trim().slice(0,100),pattern:String(p.pattern||'').trim().slice(0,100),color:String(p.color||'').trim().slice(0,100),createdAt:typeof p.createdAt==='string'&&Number.isFinite(Date.parse(p.createdAt))?new Date(p.createdAt).toISOString():null,createdAtSource:['web','crm'].includes(p.createdAtSource)?p.createdAtSource:null};
  return {...details,id:String(p.id||crypto.randomUUID()).slice(0,80),name,category,brand,sku:String(p.sku||'').trim().slice(0,100),url:cleanUrl(p.url),image,regular,discount,fee,override,qty:Math.max(1,Math.min(1000000,Math.round(Number(p.qty)||1))),crmStock,priceOnRequest:!!p.priceOnRequest&&regular===0,fromPrice:!!p.fromPrice};
 }
+export function libraryPricing(p,settings){return {...p,discount:p.discount??(p.brand==='LocknLock'?settings.lockDiscount:p.brand==='Minh Long'?settings.minhDiscount:0),fee:p.fee??settings.fee,override:p.override??null};}
 export function price(p){if(p.priceOnRequest)return 0;return p.override!==null&&p.override!==undefined&&p.override!==''?Math.round(Number(p.override)):Math.round(Number(p.regular)*(1-Number(p.discount)/100)+Number(p.fee))}
 export function isBundle(p,state){return !!state.settings.bundle10&&Array.isArray(state.settings.bundle10Ids)&&state.settings.bundle10Ids.includes(p.id)}
 export function quotePrice(p,state){return price(p)*(isBundle(p,state)?10:1)}
@@ -80,9 +81,3 @@ export function restoreState(raw){
 
 export function slideKey(slide){return slide.type==='products'?'products:photo:'+(slide.layout===8?'8:':'')+slide.items.map(p=>p.id).sort().join('|'):slide.type+(slide.type==='divider'?':'+slide.band:'');}
 export async function mapConcurrent(items,limit,worker){let cursor=0;const results=new Array(items.length);await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(cursor<items.length){const i=cursor++;results[i]=await worker(items[i],i)}}));return results;}
-
-
-
-
-
-
