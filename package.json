@@ -8,7 +8,9 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test --test-concurrency=2 \"tests/**/*.test.ts\" \"src/**/*.test.ts\"",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run",
+    "test:integration": "node --import tsx --test --test-concurrency=2 \"tests/**/*.test.ts\" \"src/**/*.test.ts\"",
     "test:perf": "node --import tsx --test \"tests/perf/*.perf.ts\"",
     "test:db": "node --import tsx --test --test-concurrency=2 \"tests/db/*.test.ts\"",
     "db:generate": "drizzle-kit generate",
@@ -31,7 +33,9 @@
     "@types/node": "22.19.19",
     "drizzle-kit": "0.31.10",
     "esbuild": "0.25.12",
+    "prettier": "3.6.2",
     "tsx": "^4.19.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
   }
 }

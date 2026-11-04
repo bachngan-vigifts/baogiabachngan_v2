@@ -10,4 +10,8 @@ Phạm vi: bill POS tại quầy đã giao đủ/thu đủ, chưa có đổi/tr�
 
 Chống lặp: cùng key/nội dung trả kết quả đã xử lý; key/nội dung khác sau huỷ bị chặn. Kiểm tra quyền Manager ở server, không chỉ giấu nút.
 
+Yêu cầu huỷ kiểm tra kiểu dữ liệu, revision nguyên không âm, ca nhận hoàn, lý do, xác nhận và độ dài từng trường; không cắt ngắn nội dung trước khi đối chiếu. Một key không dùng cho hai bill. Khi đang gửi, form khoá các trường và nút, hiển thị “Đang huỷ đơn…”. Thử lại sau mất phản hồi giữ key để trả về kết quả cũ. Nếu đã lưu nhưng tải lại trang chi tiết lỗi, vẫn thông báo huỷ thành công.
+
 Kiểm thử: `tests/app/pos-quick-cancel.test.ts` chạy router/PGlite thật, cash/bank, quyền/xác nhận/revision/tham chiếu, gửi đồng thời, replay, báo cáo lịch sử và rollback khi lỗi sau ghi kho. `scripts/testing/pos-quick-cancel.mjs` chạy CRM/router thật tại localhost ở 390/1280px, yêu cầu xác nhận trước POST và đúng một lần ghi. Không thao tác đơn production.
+
+Unit test Vitest nằm ở `tests/unit/posQuickCancel.spec.ts`, theo mẫu `TEST_TEMPLATE.ts`. Chạy `npm run test:unit` để kiểm tra dữ liệu và replay; `npm test` chạy cả Vitest và toàn bộ integration test hiện có. CI giữ hai shard integration và chạy Vitest cùng kiểm tra TypeScript. Kiểm thử trình duyệt còn giả lập mất phản hồi sau commit và gửi lại, xác minh chỉ có một chứng từ hoàn tiền/nhập kho.

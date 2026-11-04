@@ -29,6 +29,7 @@ jobs:
         run: php --version
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run test:unit
       # Node test options must precede the file globs; npm test -- ... appends them too late.
       - run: node --import tsx --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/2 "tests/**/*.test.ts" "src/**/*.test.ts"
   # Preserve the existing required check name; failure/cancellation in either shard fails the gate.

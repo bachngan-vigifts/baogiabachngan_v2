@@ -49,6 +49,7 @@ import { postMoves } from '../../inventory/api/ledger.ts';
 import { recordMovements } from '../../catalog/api/product-history.ts';
 import { stockMoves } from '../../inventory/schema.ts';
 import { warehouses } from '../../catalog/schema.ts';
+import { parseQuickCancelRequest, quickCancelReplay } from '../domain/posQuickCancel.ts';
 type Ctx = RouteContext<StaffEnv>;
 const who = (c: Ctx) => (c.state.session as SessionState).member;
 const now = () => new Date().toISOString();
@@ -169,57 +170,278 @@ async function quickCancelData(c: Ctx, db: CashDb, id: string) {
   return {o,s,snap,lines:returned,fees};
 }
 export function registerPosReturnRoutes(router: Router<StaffEnv>) {
-  router.get('/pos/orders/:id/quick-cancel',async c=>{
-    const {o,s,snap,lines}=await quickCancelData(c,c.env.db,c.params.id!);
-    const shifts=await c.env.db.select({id:posShifts.id,openedAt:posShifts.openedAt,memberName:employees.name})
-      .from(posShifts).innerJoin(employees,eq(employees.id,posShifts.memberId))
-      .where(and(eq(posShifts.registerId,s.registerId),eq(posShifts.cashDrawerId,s.cashDrawerId),isNull(posShifts.closedAt))).orderBy(desc(posShifts.openedAt));
-    const [warehouse]=await c.env.db.select({name:warehouses.name}).from(warehouses).where(eq(warehouses.id,snap.register.warehouseId));
-    return json({orderNo:o.orderNo,revision:o.revision,amount:o.total,method:snap.method,warehouse:warehouse?.name||'Kho gốc',
-      shifts,lines:lines.map(l=>({sku:l.sku,name:l.name,qty:l.qty,unit:l.unit})),sapoManual:!!o.sapoOrderId});
-  },'business');
-  router.post('/pos/orders/:id/quick-cancel',async c=>{
-    if(who(c).role!=='manager')throw new AppError(403,'Chỉ Manager được huỷ nhanh.');
-    const b=await readJson(c.req,6000),key=posKey(b.key),reason=posText(b.reason,2000),reference=posText(b.reference,200),shiftId=posText(b.shiftId);
-    if(!reason||b.confirmed!==true)throw new AppError(400,'Nhập lý do và xác nhận đã thu hồi đủ hàng, hoàn tiền thực tế.');
-    const result=await c.env.db.transaction(async tx=>{
-      await cashLock(tx);
-      const [locked]=await tx.select().from(salesOrders).where(eq(salesOrders.id,c.params.id!)).for('update');
-      if(!locked)throw new AppError(404,'Không tìm thấy bill POS.');
-      const prior=JSON.parse(locked.posSnapshot||'{}').quickCancellation;
-      if(prior){if(prior.key!==key||prior.by!==who(c).id||prior.reason!==reason||prior.reference!==reference||prior.shiftId!==shiftId||prior.revision!==b.revision)
-        throw new AppError(409,'Bill đã được huỷ; không hoàn tiền hoặc nhập kho thêm lần nữa.');
-        return {orderId:locked.id,returnId:prior.returnId,refundId:prior.refundId,replayed:true};}
-      const {o,s,snap,lines,fees}=await quickCancelData(c,tx,c.params.id!);
-      if(o.revision!==b.revision)throw new AppError(409,'Bill vừa thay đổi. Mở lại trước khi huỷ nhanh.');
-      const shift=await current(c,tx,shiftId,s.registerId);
-      if(shift.cashDrawerId!==s.cashDrawerId)throw new AppError(409,'Ca hoàn tiền phải dùng đúng két gốc.');
-      if(snap.method==='transfer'&&o.total>0&&!reference)throw new AppError(400,'Nhập mã giao dịch đã chuyển hoàn tiền cho khách.');
-      const at=now(),returnId=crypto.randomUUID(),returnNo='TH-'+returnId.slice(0,8).toUpperCase();
-      await tx.insert(posReturns).values({id:returnId,returnNo,orderId:o.id,registerId:s.registerId,warehouseId:snap.register.warehouseId,
-        createdShiftId:shift.id,receivedShiftId:shift.id,requestContext:'after_delivery',kind:'return',status:'completed',reason,
-        requestedServiceFee:fees.service.amount,requestedShippingFee:fees.shippingFee,approvedServiceFee:fees.service.amount,approvedShippingFee:fees.shippingFee,
-        subtotal:o.subtotal,tax:o.tax,total:o.total,sourceSnapshot:JSON.stringify({order:o,lines,fees,quickCancellation:true}),requestKey:key,
-        createdBy:who(c).id,createdAt:at,approvedBy:who(c).id,approvedAt:at,receivedBy:who(c).id,receivedAt:at,creditEffectiveAt:at,updatedAt:at});
-      await tx.insert(posReturnLines).values(lines.map(l=>({id:crypto.randomUUID(),returnId,orderLineId:l.id,sku:l.sku,name:l.name,unit:l.unit,
-        requestedQty:l.qty,receivedQty:l.qty,restockQty:l.qty,disposition:'restock',subtotal:l.amount,tax:l.refundTax,total:l.amount+l.refundTax})));
-      await postMoves(tx,who(c).id,lines.map(l=>({sku:l.sku,warehouseId:snap.register.warehouseId,qty:l.qty,kind:'customer_return' as const,refType:'pos_return' as const,refId:returnId,refNo:returnNo,note:reason})),at);
-      await recordMovements(tx,lines.map(l=>({refKey:`return:${returnId}:${l.id}`,sku:l.sku,name:l.name,qty:l.qty,unit:l.unit,unitPrice:l.amount/l.qty,
-        kind:'customer_return',partner:'Khách trả hàng',refCode:returnNo,link:'#/orders/'+o.id,status:'Đã nhập lại kho',occurredAt:at})));
-      let refundId:string|null=null;
-      if(o.total>0){refundId=crypto.randomUUID();const refundNo='HT-'+refundId.slice(0,8).toUpperCase();let cashEntryId:string|null=null;
-        if(snap.method==='cash'){cashEntryId=crypto.randomUUID();const [drawer]=await tx.select().from(cashDrawers).where(eq(cashDrawers.id,shift.cashDrawerId));
-          await tx.insert(cashEntries).values({id:cashEntryId,entryNo:refundNo,drawerId:shift.cashDrawerId,shiftId:shift.id,kind:'customer_refund',direction:'out',amount:o.total,
-            reason:`Huỷ nhanh ${o.orderNo}: ${reason}`,status:'posted',approvalThresholdSnapshot:drawer!.approvalThreshold,createdBy:who(c).id,createdAt:at,approvedBy:who(c).id,approvedAt:at,requestKey:key,updatedAt:at});}
-        await tx.insert(posRefunds).values({id:refundId,refundNo,returnId,shiftId:shift.id,drawerId:shift.cashDrawerId,method:snap.method,amount:o.total,cashEntryId,
-          reference,confirmationNote:reason,confirmedBy:who(c).id,confirmedAt:at,requestKey:key,createdAt:at});}
-      const quickCancellation={key,by:who(c).id,at,returnId,refundId,reason,reference,shiftId,revision:o.revision,externalSync:'manual'};
-      await tx.update(salesOrders).set({status:'cancelled',holdsStock:false,revision:sql`${salesOrders.revision}+1`,updatedAt:at,posSnapshot:JSON.stringify({...snap,quickCancellation})}).where(eq(salesOrders.id,o.id));
-      await cashAudit(tx,who(c).id,'quick-cancel-pos','sales-orders',o.id,{...quickCancellation,amount:o.total,warehouseId:snap.register.warehouseId,lines,method:snap.method,sapoOrderId:o.sapoOrderId});
-      return {orderId:o.id,returnId,refundId,replayed:false};
-    });
-    await cashTasksChanged(c.env);return json(result);
-  },'business');
+  router.get(
+    '/pos/orders/:id/quick-cancel',
+    async (c) => {
+      const { o, s, snap, lines } = await quickCancelData(
+        c,
+        c.env.db,
+        c.params.id!,
+      );
+      const shifts = await c.env.db
+        .select({
+          id: posShifts.id,
+          openedAt: posShifts.openedAt,
+          memberName: employees.name,
+        })
+        .from(posShifts)
+        .innerJoin(employees, eq(employees.id, posShifts.memberId))
+        .where(
+          and(
+            eq(posShifts.registerId, s.registerId),
+            eq(posShifts.cashDrawerId, s.cashDrawerId),
+            isNull(posShifts.closedAt),
+          ),
+        )
+        .orderBy(desc(posShifts.openedAt));
+      const [warehouse] = await c.env.db
+        .select({ name: warehouses.name })
+        .from(warehouses)
+        .where(eq(warehouses.id, snap.register.warehouseId));
+      return json({
+        orderNo: o.orderNo,
+        revision: o.revision,
+        amount: o.total,
+        method: snap.method,
+        warehouse: warehouse?.name || 'Kho gốc',
+        shifts,
+        lines: lines.map((l) => ({
+          sku: l.sku,
+          name: l.name,
+          qty: l.qty,
+          unit: l.unit,
+        })),
+        sapoManual: !!o.sapoOrderId,
+      });
+    },
+    'business',
+  );
+  router.post(
+    '/pos/orders/:id/quick-cancel',
+    async (c) => {
+      if (who(c).role !== 'manager')
+        throw new AppError(403, 'Chỉ Manager được huỷ nhanh.');
+      const b = parseQuickCancelRequest(await readJson(c.req, 16000)),
+        { key, reason, reference, shiftId } = b;
+      const result = await c.env.db.transaction(async (tx) => {
+        await cashLock(tx);
+        const [locked] = await tx
+          .select()
+          .from(salesOrders)
+          .where(eq(salesOrders.id, c.params.id!))
+          .for('update');
+        if (!locked) throw new AppError(404, 'Không tìm thấy bill POS.');
+        const replay = quickCancelReplay(
+          JSON.parse(locked.posSnapshot || '{}').quickCancellation,
+          b,
+          who(c).id,
+        );
+        if (replay) return { orderId: locked.id, ...replay };
+        const { o, s, snap, lines, fees } = await quickCancelData(
+          c,
+          tx,
+          c.params.id!,
+        );
+        if (o.revision !== b.revision)
+          throw new AppError(
+            409,
+            'Bill vừa thay đổi. Mở lại trước khi huỷ nhanh.',
+          );
+        const [usedKey] = await tx
+          .select({ id: posReturns.id })
+          .from(posReturns)
+          .where(eq(posReturns.requestKey, key));
+        if (usedKey)
+          throw new AppError(
+            409,
+            'Mã yêu cầu đã dùng cho phiếu trả khác. Mở lại trước khi huỷ nhanh.',
+          );
+        const shift = await current(c, tx, shiftId, s.registerId);
+        if (shift.cashDrawerId !== s.cashDrawerId)
+          throw new AppError(409, 'Ca hoàn tiền phải dùng đúng két gốc.');
+        if (snap.method === 'transfer' && o.total > 0 && !reference)
+          throw new AppError(
+            400,
+            'Nhập mã giao dịch đã chuyển hoàn tiền cho khách.',
+          );
+        const at = now(),
+          returnId = crypto.randomUUID(),
+          returnNo = 'TH-' + returnId.slice(0, 8).toUpperCase();
+        await tx.insert(posReturns).values({
+          id: returnId,
+          returnNo,
+          orderId: o.id,
+          registerId: s.registerId,
+          warehouseId: snap.register.warehouseId,
+          createdShiftId: shift.id,
+          receivedShiftId: shift.id,
+          requestContext: 'after_delivery',
+          kind: 'return',
+          status: 'completed',
+          reason,
+          requestedServiceFee: fees.service.amount,
+          requestedShippingFee: fees.shippingFee,
+          approvedServiceFee: fees.service.amount,
+          approvedShippingFee: fees.shippingFee,
+          subtotal: o.subtotal,
+          tax: o.tax,
+          total: o.total,
+          sourceSnapshot: JSON.stringify({
+            order: o,
+            lines,
+            fees,
+            quickCancellation: true,
+          }),
+          requestKey: key,
+          createdBy: who(c).id,
+          createdAt: at,
+          approvedBy: who(c).id,
+          approvedAt: at,
+          receivedBy: who(c).id,
+          receivedAt: at,
+          creditEffectiveAt: at,
+          updatedAt: at,
+        });
+        await tx.insert(posReturnLines).values(
+          lines.map((l) => ({
+            id: crypto.randomUUID(),
+            returnId,
+            orderLineId: l.id,
+            sku: l.sku,
+            name: l.name,
+            unit: l.unit,
+            requestedQty: l.qty,
+            receivedQty: l.qty,
+            restockQty: l.qty,
+            disposition: 'restock',
+            subtotal: l.amount,
+            tax: l.refundTax,
+            total: l.amount + l.refundTax,
+          })),
+        );
+        await postMoves(
+          tx,
+          who(c).id,
+          lines.map((l) => ({
+            sku: l.sku,
+            warehouseId: snap.register.warehouseId,
+            qty: l.qty,
+            kind: 'customer_return' as const,
+            refType: 'pos_return' as const,
+            refId: returnId,
+            refNo: returnNo,
+            note: reason,
+          })),
+          at,
+        );
+        await recordMovements(
+          tx,
+          lines.map((l) => ({
+            refKey: `return:${returnId}:${l.id}`,
+            sku: l.sku,
+            name: l.name,
+            qty: l.qty,
+            unit: l.unit,
+            unitPrice: l.amount / l.qty,
+            kind: 'customer_return',
+            partner: 'Khách trả hàng',
+            refCode: returnNo,
+            link: '#/orders/' + o.id,
+            status: 'Đã nhập lại kho',
+            occurredAt: at,
+          })),
+        );
+        let refundId: string | null = null;
+        if (o.total > 0) {
+          refundId = crypto.randomUUID();
+          const refundNo = 'HT-' + refundId.slice(0, 8).toUpperCase();
+          let cashEntryId: string | null = null;
+          if (snap.method === 'cash') {
+            cashEntryId = crypto.randomUUID();
+            const [drawer] = await tx
+              .select()
+              .from(cashDrawers)
+              .where(eq(cashDrawers.id, shift.cashDrawerId));
+            await tx.insert(cashEntries).values({
+              id: cashEntryId,
+              entryNo: refundNo,
+              drawerId: shift.cashDrawerId,
+              shiftId: shift.id,
+              kind: 'customer_refund',
+              direction: 'out',
+              amount: o.total,
+              reason: `Huỷ nhanh ${o.orderNo}: ${reason}`,
+              status: 'posted',
+              approvalThresholdSnapshot: drawer!.approvalThreshold,
+              createdBy: who(c).id,
+              createdAt: at,
+              approvedBy: who(c).id,
+              approvedAt: at,
+              requestKey: key,
+              updatedAt: at,
+            });
+          }
+          await tx.insert(posRefunds).values({
+            id: refundId,
+            refundNo,
+            returnId,
+            shiftId: shift.id,
+            drawerId: shift.cashDrawerId,
+            method: snap.method,
+            amount: o.total,
+            cashEntryId,
+            reference,
+            confirmationNote: reason,
+            confirmedBy: who(c).id,
+            confirmedAt: at,
+            requestKey: key,
+            createdAt: at,
+          });
+        }
+        const quickCancellation = {
+          key,
+          by: who(c).id,
+          at,
+          returnId,
+          refundId,
+          reason,
+          reference,
+          shiftId,
+          revision: o.revision,
+          externalSync: 'manual',
+        };
+        await tx
+          .update(salesOrders)
+          .set({
+            status: 'cancelled',
+            holdsStock: false,
+            revision: sql`${salesOrders.revision}+1`,
+            updatedAt: at,
+            posSnapshot: JSON.stringify({ ...snap, quickCancellation }),
+          })
+          .where(eq(salesOrders.id, o.id));
+        await cashAudit(
+          tx,
+          who(c).id,
+          'quick-cancel-pos',
+          'sales-orders',
+          o.id,
+          {
+            ...quickCancellation,
+            amount: o.total,
+            warehouseId: snap.register.warehouseId,
+            lines,
+            method: snap.method,
+            sapoOrderId: o.sapoOrderId,
+          },
+        );
+        return { orderId: o.id, returnId, refundId, replayed: false };
+      });
+      await cashTasksChanged(c.env);
+      return json(result);
+    },
+    'business',
+  );
   router.get(
     '/pos/returns',
     async (c) => {

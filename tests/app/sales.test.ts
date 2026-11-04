@@ -44,7 +44,10 @@ test('quy tắc: số chứng từ, pháp nhân, số HĐKT kiểu web cũ, dòn
   assert.deepEqual(contractSchedules(1000, 30, '2026-10-06').map(s => [s.kind, s.amount, s.dueDate]), [['deposit', 300, '2026-10-06'], ['balance', 700, null]]);
 });
 
-test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch giao → công nợ, đúng quyền', async () => {
+test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch giao → công nợ, đúng quyền', async (t) => {
+  // Cọc 06/10 đã đến hạn, khoản còn lại 27/10 chưa đến hạn trong kịch bản này.
+  // Không để trạng thái công nợ thay đổi theo ngày chạy test thực tế.
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-20T03:00:00Z') });
   const { db, call, emp, mgr, ncc } = await setup();
   await db.insert(customers).values({ id: '1001', name: 'Công ty Hoàng Long', contact: 'Chị Lan', phone: '0901', email: '', address: '1 Lê Lợi', search: '', taxCode: '0101234567', customerCode: 'HL01', sourceVersion: 0, syncedAt: '' });
   const doc = { type: 'B2B', quoteNo: 'B2B_BG20261006_001', customer: 'Công ty Hoàng Long', customerId: '1001', contact: 'Chị Lan', phone: '0901', customerAddress: '1 Lê Lợi', vat: 8,
