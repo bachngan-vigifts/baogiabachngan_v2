@@ -9,6 +9,11 @@ import {defaultState,validateProduct} from '../../trial-ui/catalogue/core.js';
 const product={name:'Bộ trà',sku:'00123',brand:'Minh Long',category:'Bộ trà',collection:'Camellia',pattern:'Sen',color:'Trắng',regular:100000};
 async function fixture(){const f=await setupWarehouseWork();const r=await f.call('/catalogue-library',f.cookies.emp,'POST',{products:[{clientId:'one',product},{clientId:'two',product:{...product,sku:'00124'}}]});assert.equal(r.status,200);return{...f,rows:r.data.products,bulk:(body:unknown,cookie=f.cookies.emp)=>f.call('/catalogue-library/bulk',cookie,'POST',body)};}
 const items=(f:Awaited<ReturnType<typeof fixture>>)=>f.rows.map((r:any)=>({id:r.id,revision:r.revision}));
+test('default library request loads a single category; explicit selection can request other categories',async()=>{
+ const f=await fixture();await f.call('/catalogue-library',f.cookies.emp,'POST',{products:[{clientId:'third',product:{...product,sku:'NEW',brand:'A',category:'Bình hoa'}}]});
+ const initial=await f.call('/catalogue-library?defaultCategory=1&includeStock=0',f.cookies.emp);assert.equal(initial.status,200,JSON.stringify(initial.data));assert.deepEqual(initial.data.defaultFilters,{brand:'A',category:'Bình hoa'});assert.equal(initial.data.total,1);assert(initial.data.products.every((r:any)=>r.product.category==='Bình hoa'));
+ const next=await f.call('/catalogue-library?brand=Minh%20Long&category='+encodeURIComponent('Bộ trà')+'&includeStock=0',f.cookies.emp);assert.equal(next.data.total,2);assert.equal(next.data.defaultFilters,null);
+});
 test('shared pricing saves across employees and filters all products by computed price',async()=>{
  const f=await fixture(),body={action:'edit',clientKey:crypto.randomUUID(),items:items(f),patch:{discount:20,fee:10000,override:155000}};
  const r=await f.bulk(body);assert.equal(r.status,200,JSON.stringify(r.data));assert(r.data.products.every((x:any)=>x.product.override===155000&&x.product.discount===20&&x.product.fee===10000));

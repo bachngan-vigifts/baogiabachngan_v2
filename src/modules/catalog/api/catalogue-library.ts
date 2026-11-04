@@ -22,6 +22,8 @@ export function registerCatalogueLibrary(router:Router<StaffEnv>){
   const q=(c.url.searchParams.get('q')||'').trim().slice(0,100),offset=Number(c.url.searchParams.get('offset')||0),limit=Math.min(60,Number(c.url.searchParams.get('limit')||60));
   if(!Number.isSafeInteger(offset)||offset<0||offset>1e6||!Number.isSafeInteger(limit)||limit<1)throw new AppError(400,'Phân trang chưa hợp lệ.');
   const archived=c.url.searchParams.get('archived')==='1',visibility=archived?isNotNull(lib.deletedAt):isNull(lib.deletedAt);
+  let defaultFilters:{brand:string;category:string}|null=null;
+  if(c.url.searchParams.get('defaultCategory')==='1'&&!c.url.searchParams.get('category')){const [first]=await c.env.db.select({brand:lib.brand,category:lib.category}).from(lib).where(and(visibility,...(c.url.searchParams.get('brand')?[eq(lib.brand,c.url.searchParams.get('brand')!)]:[]))).orderBy(asc(lib.brand),asc(lib.category)).limit(1);if(first){defaultFilters=first;c.url.searchParams.set('brand',first.brand);c.url.searchParams.set('category',first.category);}}
   const filters:SQL[]=[visibility];for(const key of filterKeys){const v=c.url.searchParams.get(key);if(v){if(v.length>100)throw new AppError(400,'Bộ lọc quá dài.');filters.push(eq(lib[key],v));}}
   for(const word of fold(q).split(' ').filter(Boolean).slice(0,10))filters.push(sql`${lib.search} like ${'%'+word.replace(/[\\%_]/g,m=>'\\'+m)+'%'}`);
   const budgetRaw=c.url.searchParams.get('budgets');if(budgetRaw){
@@ -34,7 +36,7 @@ export function registerCatalogueLibrary(router:Router<StaffEnv>){
   const where=and(...filters),db=c.env.db;
   const [[total],rows,facets]=await Promise.all([db.select({n:count()}).from(lib).where(where),db.select().from(lib).where(where).orderBy(desc(lib.updatedAt),asc(lib.id)).limit(limit).offset(offset),c.url.searchParams.get('facets')==='0'?Promise.resolve(null):Promise.all(filterKeys.map(async (key,index)=>[key,(await db.selectDistinct({value:lib[key]}).from(lib).where(and(visibility,sql`${lib[key]}<>''`,...filterKeys.slice(0,index).flatMap(parent=>{const value=c.url.searchParams.get(parent);return value?[eq(lib[parent],value)]:[]}))).orderBy(asc(lib[key])).limit(300)).map(r=>r.value)] as const))]);
   let stock:Awaited<ReturnType<typeof catalogueStockFacts>>|null=null;let stockError='';try{if(c.url.searchParams.get('includeStock')!=='0'&&!archived)stock=await catalogueStockFacts(db,actor(c),rows.map(r=>r.sku).filter(Boolean));}catch{stockError='Chưa đọc được tồn CRM. Dữ liệu chưa được xem là hết hàng.';}
-  return json({memberId:actor(c).id,products:rows.map(catalogueDto),total:total!.n,offset,limit,...(facets?{facets:Object.fromEntries(facets)}:{}),stock,stockError});
+  return json({defaultFilters,memberId:actor(c).id,products:rows.map(catalogueDto),total:total!.n,offset,limit,...(facets?{facets:Object.fromEntries(facets)}:{}),stock,stockError});
  },'business');
  router.post('/catalogue-library',async c=>{
   const body=await readJson(c.req,250_000);if(!Array.isArray(body.products)||body.products.length<1||body.products.length>25)throw new AppError(400,'Chia sản phẩm thành lô tối đa 25 mã.');
