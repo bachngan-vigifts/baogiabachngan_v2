@@ -6,6 +6,15 @@ import{stockMoves}from'../../src/modules/inventory/schema.ts';
 import{warehouses,productStock}from'../../src/modules/catalog/schema.ts';
 import{auditLogs}from'../../src/core/db/schema.ts';
 const product={name:'Bộ trà Sen trắng',sku:'031106000',brand:'Minh Long',category:'Bộ trà',collection:'Camellia',pattern:'Sen hồng',color:'Trắng',regular:100000,url:'https://minhlongonline.com/san-pham/bo-tra/',image:'',qty:99,discount:90,override:123,crmStock:{available:999999}};
+test('fast list skips stock and optional facets; unmatched SKUs never scan incoming stock',async()=>{
+ const f=await setupWarehouseWork();await f.call('/catalogue-library',f.cookies.emp,'POST',{products:[{clientId:'a',product}]});
+ const original=catalogueLibraryHooks.incoming;let calls=0;catalogueLibraryHooks.incoming=async()=>{calls++;return[];};
+ try{
+  const fast=await f.call('/catalogue-library?includeStock=0&facets=0',f.cookies.emp);assert.equal(fast.status,200,JSON.stringify(fast.data));assert.equal(fast.data.products.length,1);assert.equal(fast.data.facets,undefined);assert.equal(fast.data.stock,null);assert.equal(calls,0);
+  const missing=await f.call('/catalogue-library/stock?skus=not-in-crm',f.cookies.emp);assert.equal(missing.status,200);assert.equal(missing.data.stock[0].known,false);assert.equal(missing.data.stock[0].available,null);assert.equal(calls,0);
+  const actual=await f.call('/catalogue-library/stock?skus=031106000',f.cookies.emp);assert.equal(actual.status,200);assert.equal(calls,1);assert.equal(actual.data.stock[0].available,200);
+ }finally{catalogueLibraryHooks.incoming=original;}
+});
 test('shared library authenticates, deduplicates simultaneous imports, shares between employees, filters all words without accents and strips quote/stock fields',async()=>{
  const f=await setupWarehouseWork();assert.equal((await f.call('/catalogue-library')).status,401);assert.equal((await f.call('/catalogue-library',f.cookies.ncc)).status,403);
  const post=(cookie:string|undefined,id:string)=>f.call('/catalogue-library',cookie,'POST',{products:[{clientId:id,product}]});

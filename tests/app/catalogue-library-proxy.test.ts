@@ -14,3 +14,9 @@ test('saved quote filters reach CRM without forwarding arbitrary parameters',asy
   const actual=new URL(url);for(const [key,value]of query)assert.equal(actual.searchParams.get(key),value,key);assert.equal(actual.searchParams.has('url'),false);return Response.json({quotes:[],total:0});
  });assert.equal(r.status,200);
 });
+
+test('library fast-list options are forwarded to the fixed CRM route',async()=>{
+ const r=await libraryProxy(new Request('https://crm.minhlongonline.com/catalogue/api/library?includeStock=0&facets=0',{headers:{Authorization:'Bearer TEST_CATALOGUE_PROXY_TOKEN'}}),async(url:string)=>{
+  const u=new URL(url);assert.equal(u.pathname,'/functions/v1/baogia-v2-api/api/staff/catalogue-library');assert.equal(u.searchParams.get('includeStock'),'0');assert.equal(u.searchParams.get('facets'),'0');return Response.json({products:[]});
+ });assert.equal(r.status,200);
+});
