@@ -36,7 +36,10 @@ export function posBrandScope(registerName:string){
  return family?sql`${foldSql(products.brand,products.name)} !~ ${family==='lock'?MINH_LONG_CATALOG_PATTERN:LOCK_CATALOG_PATTERN}`:undefined;
 }
 /** Compact session-only stock preload. No supplier/incoming stock, no stock writes. */
-async function readPosStockSnapshot(db:PosDb,member:PosMember,register:{id:string;name:string;warehouseId:string;pricePolicyId:string;secondPricePolicyId:string},policy=register.pricePolicyId,includeCatalog=false){
+/** false: không kèm danh mục; true: danh mục dạng đối tượng (giao diện cũ); 'compact': cột cố định CATALOG_COLUMNS, cùng thứ tự với rows. */
+export type SnapshotCatalog=boolean|'compact';
+export const CATALOG_COLUMNS=['name','brand','unit','imageUrl','pattern'] as const;
+async function readPosStockSnapshot(db:PosDb,member:PosMember,register:{id:string;name:string;warehouseId:string;pricePolicyId:string;secondPricePolicyId:string},policy=register.pricePolicyId,includeCatalog:SnapshotCatalog=false){
  if(![register.pricePolicyId,register.secondPricePolicyId].includes(policy))throw new AppError(400,'Bảng giá không hợp lệ.');
  const startedAt=new Date().toISOString();
  const [hidden,opened,codes,rows]=await Promise.all([
@@ -52,12 +55,14 @@ async function readPosStockSnapshot(db:PosDb,member:PosMember,register:{id:strin
  // Cả danh mục: đọc hàng giữ của mọi mã (vài trăm dòng) thay vì gửi hàng nghìn mã vào mỗi truy vấn; mã ngoài danh mục tự bị bỏ qua.
  const held=rows.length?await reservedBySku(db,undefined,register.warehouseId):new Map<string,number>();
  // Metadata comes from the same authorized price/stock scan, avoiding a second huge IN query.
- const catalog=includeCatalog?rows.map(({sku,name,brand,unit,imageUrl,pattern})=>({sku,name,brand,unit,imageUrl,pattern})):undefined;
- return {version:1,catalog,registerId:register.id,warehouseId:register.warehouseId,pricePolicyId:policy,asOf:startedAt,warehouseReady:opened.includes(register.warehouseId),
+ // 'compact': mảng theo CATALOG_COLUMNS, khỏi lặp tên trường và mã hàng ở mỗi dòng – nhẹ hơn khi tải và khi trình duyệt đọc JSON.
+ const catalog=includeCatalog===true?rows.map(({sku,name,brand,unit,imageUrl,pattern})=>({sku,name,brand,unit,imageUrl,pattern})):undefined;
+ const catalogRows=includeCatalog==='compact'?rows.map(p=>CATALOG_COLUMNS.map(c=>p[c as keyof typeof p]??'')):undefined;
+ return {version:1,catalog,catalogColumns:catalogRows&&CATALOG_COLUMNS,catalogRows,registerId:register.id,warehouseId:register.warehouseId,pricePolicyId:policy,asOf:startedAt,warehouseReady:opened.includes(register.warehouseId),
   // sku, price, physical ledger quantity, reserved quantity, unambiguous scan codes
   rows:rows.map(p=>[p.sku,p.price,p.onHand??0,held.get(p.sku)??0,codes(p.sku)] as const)};
 }
 
-export function posStockSnapshot(db:AnyDb,member:PosMember,register:Parameters<typeof readPosStockSnapshot>[2],policy?:string,includeCatalog=false){
+export function posStockSnapshot(db:AnyDb,member:PosMember,register:Parameters<typeof readPosStockSnapshot>[2],policy?:string,includeCatalog:SnapshotCatalog=false){
  return db.transaction(tx=>readPosStockSnapshot(tx,member,register,policy,includeCatalog),{isolationLevel:'repeatable read',accessMode:'read only'});
 }
