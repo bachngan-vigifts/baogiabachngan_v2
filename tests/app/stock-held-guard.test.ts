@@ -41,7 +41,7 @@ test('điều chuyển: chỉ chuyển phần không giữ; lấy phần đang g
  assert.equal(denied.status,409);assert.equal(denied.data.code,'HELD_FOR_OTHER_ORDER');assert.match(denied.data.error,/đang giữ cho đơn khác 5 \(/);assert.match(denied.data.error,new RegExp(f.order.orderNo));
  assert.equal(await f.balance(),5);assert.equal((await f.db.select().from(stockTransfers).where(eq(stockTransfers.id,all.id)))[0]!.status,'approved');
  await postMoves(f.db,'mgr',[{sku,warehouseId:'vig',qty:3,kind:'adjust',refType:'adjustment',refId:'free-3'}]);
- const free=await f.transfer(3);ok(await f.done(free,c.kho));ok(await f.receive(free,c.kho));assert.equal(await f.balance(),5);assert.equal(await f.balance('other'),13);
+ const free=await f.transfer(3);ok(await f.done(free,c.kho));ok(await f.receive(free,c.mgr));assert.equal(await f.balance(),5);assert.equal(await f.balance('other'),13);
  assert.equal((await f.done(all,c.kho,{reason:'Gấp cho khách khác'})).status,403,'kho không được lấy hàng giữ');
  assert.equal((await f.done(all,c.mgr,{reason:'ab'})).data.code,'HELD_OVERRIDE_REASON');
  ok(await f.done(all,c.mgr,{reason:'Khách A dời lịch, ưu tiên khách khác'}));assert.equal(await f.balance(),0);assert.equal(await f.overrides(),1);

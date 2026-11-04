@@ -130,10 +130,11 @@ test('điều chuyển kho: NVBH xin → Manager duyệt → Kho chuyển; tồn
   assert.equal(done.data.status, 'shipped');
   assert.deepEqual([await bal(s, 'vig'), await bal(s, 'ml')], [20, 20], 'đang chuyển: mới trừ kho đi');
   assert.equal((await s.call(`/stock-transfers/${t.data.id}/ship`, s.kho, 'POST', {})).status, 409, 'chuyển một lần');
-  const got = await s.call(`/stock-transfers/${t.data.id}/receive`, s.kho, 'POST', { lines: [{ sku: 'LY1', qty: 30 }] });
+  assert.equal((await s.call(`/stock-transfers/${t.data.id}/receive`, s.kho, 'POST', { lines: [{ sku: 'LY1', qty: 30 }] })).status, 403, 'nhóm Kho không phân kho đến thì không nhận');
+  const got = await s.call(`/stock-transfers/${t.data.id}/receive`, s.mgr, 'POST', { lines: [{ sku: 'LY1', qty: 30 }] });
   assert.equal(got.status, 200, JSON.stringify(got.data));
   assert.deepEqual([await bal(s, 'vig'), await bal(s, 'ml')], [20, 50]);
-  assert.equal((await s.call(`/stock-transfers/${t.data.id}/receive`, s.kho, 'POST', { lines: [{ sku: 'LY1', qty: 30 }] })).status, 409, 'nhận một lần');
+  assert.equal((await s.call(`/stock-transfers/${t.data.id}/receive`, s.mgr, 'POST', { lines: [{ sku: 'LY1', qty: 30 }] })).status, 409, 'nhận một lần');
   const t2 = await s.call('/stock-transfers', s.ml, 'POST', { fromWarehouseId: 'vig', toWarehouseId: 'ml', reason: 'Thêm nữa', lines: [{ sku: 'LY1', qty: 99 }] });
   await s.call(`/stock-transfers/${t2.data.id}/approve`, s.mgr, 'POST', {});
   assert.equal((await s.call(`/stock-transfers/${t2.data.id}/ship`, s.kho, 'POST', {})).data.code, 'TRANSFER_SHORT');
