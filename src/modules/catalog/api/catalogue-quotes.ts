@@ -10,7 +10,8 @@ import { catalogueQuotes as quotes, catalogueQuoteCommands as commands } from '.
 import { cleanCatalogueQuote, stableJson } from '../domain/catalogue-quote.ts';
 type Ctx=RouteContext<StaffEnv>;type Tx=Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];const actor=(c:Ctx)=>(c.state.session as SessionState).member;
 const validId=(id:unknown):id is string=>typeof id==='string'&&/^[A-Za-z0-9_-]{8,80}$/.test(id);
-const summary=(q:typeof quotes.$inferSelect,c:Ctx)=>({id:q.id,quoteNo:q.quoteNo,title:q.title,customer:q.customer,productCount:q.productCount,revision:q.revision,createdBy:q.createdBy,updatedBy:q.updatedBy,updatedAt:q.updatedAt,canDelete:actor(c).role==='manager'||q.createdBy===actor(c).id});
+type QuoteSummary=Pick<typeof quotes.$inferSelect,'id'|'quoteNo'|'title'|'customer'|'productCount'|'revision'|'createdBy'|'updatedBy'|'updatedAt'>;
+const summary=(q:QuoteSummary,c:Ctx)=>({id:q.id,quoteNo:q.quoteNo,title:q.title,customer:q.customer,productCount:q.productCount,revision:q.revision,createdBy:q.createdBy,updatedBy:q.updatedBy,updatedAt:q.updatedAt,canDelete:actor(c).role==='manager'||q.createdBy===actor(c).id});
 async function command(c:Ctx,id:string,b:Record<string,unknown>,action:string,content:unknown,apply:(tx:Tx)=>Promise<Record<string,unknown>>){
  const who=actor(c).id,key=b.clientKey;if(typeof key!=='string'||!/^[\w-]{16,100}$/.test(key))throw new AppError(400,'Thiếu mã thao tác lưu báo giá.');const hash=sha256Hex(stableJson({id,action,revision:action==='create'?null:b.revision,content}));
  return c.env.db.transaction(async tx=>{
@@ -43,7 +44,7 @@ export function registerCatalogueQuotes(router:Router<StaffEnv>){
    }).from(quotes).where(isNull(quotes.deletedAt)):Promise.resolve(null)
   ]);
   const unique=(items:string[])=>[...new Set(items.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi'));
-  return json({memberId:actor(c).id,quotes:rows.map(q=>({...summary(q as typeof quotes.$inferSelect,c),employee:q.employee||''})),total:total!.n,offset,limit:30,...(facetRows?{facets:{brands:unique(facetRows.flatMap(r=>r.brands)),categories:unique(facetRows.flatMap(r=>r.categories)),employees:unique(facetRows.map(r=>r.employee))}}:{})});
+  return json({memberId:actor(c).id,quotes:rows.map(q=>({...summary(q,c),employee:q.employee||''})),total:total!.n,offset,limit:30,...(facetRows?{facets:{brands:unique(facetRows.flatMap(r=>r.brands)),categories:unique(facetRows.flatMap(r=>r.categories)),employees:unique(facetRows.map(r=>r.employee))}}:{})});
  },'business');
  router.get('/catalogue-quotes/:id',async c=>{const [row]=await c.env.db.select().from(quotes).where(and(eq(quotes.id,c.params.id!),isNull(quotes.deletedAt)));if(!row)throw new AppError(404,'Báo giá dùng chung không còn trong danh sách.');return json({...summary(row,c),state:JSON.parse(row.data)});},'business');
  router.post('/catalogue-quotes',async c=>{
