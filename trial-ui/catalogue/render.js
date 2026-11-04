@@ -39,7 +39,7 @@ export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,sc
  for(let i=0;i<items.length;i++){
  const item=items[i],x=44+(i%4)*304,y=180+Math.floor(i/4)*244,bundle=isBundle(item,state);
  box(x,y,280,230,C.frame,C.line,10);
- const im=await loadImage(item.image);if(im)photo(im,x+10,y+10,108,106);
+ const im=await loadImage(item.image);if(im)photo(im,x+10,y+10,108,106);else text('CHƯA CÓ ẢNH',x+10,y+54,108,20,9,C.muted,false,'center');
  text(item.name,x+128,y+10,142,61,12,C.ink,true,'left',4);
  text('Mã: '+(item.sku||'—')+(item.qty>1?' / SL: '+item.qty:''),x+128,y+76,142,30,9.5,C.muted,false,'left',2);
  if(state.settings.regular)text('Niêm yết: '+(item.priceOnRequest?'Liên hệ':money(item.regular*(bundle?10:1))),x+10,y+124,200,18,10,C.muted,false,'left',1);
