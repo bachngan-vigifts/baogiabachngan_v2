@@ -40,8 +40,10 @@ export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,sc
  const item=items[i],x=44+(i%4)*304,y=180+Math.floor(i/4)*344,bundle=isBundle(item,state);
  box(x,y,280,300,C.frame,C.line,10);
  const im=await loadImage(item.image);if(im)photo(im,x+12,y+10,256,174);else text('CHƯA CÓ ẢNH',x+12,y+80,256,20,11,C.muted,false,'center');
+ if(state.settings.proposedPrice!==false){
  text(bundle?'Giá / bộ 10 SP':'Giá đề xuất',x+12,y+195,90,18,10,C.ink);
  const amount=item.priceOnRequest?'Liên hệ':(item.fromPrice?'Từ ':'')+money(quotePrice(item,state));ctx.font='700 20px Montserrat';const size=Math.min(20,20*160/Math.max(160,ctx.measureText(amount).width));text(amount,x+108,y+190,160,27,size,C.green,true,'right');
+ }
  text('Mã: '+(item.sku||'—')+(item.qty>1?' / SL: '+item.qty:''),x+12,y+220,256,15,10,C.muted,false,'left',1);
  if(state.settings.regular)text('Niêm yết: '+(item.priceOnRequest?'Liên hệ':money(item.regular*(bundle?10:1))),x+12,y+237,256,14,10,C.muted,false,'left',1);
  text(item.name,x+12,y+(state.settings.regular?254:242),256,state.settings.regular?44:56,12,C.ink,true,'left',3);
@@ -55,12 +57,16 @@ export async function drawSlide(canvas,slide,state,number,total,pptSlide=null,sc
   text(item.name,tx,y+18,310,72,item.name.length>85?15:16,C.ink,true,'left',3);
   text('Mã: '+(item.sku||'—')+(item.qty>1?'  /  SL: '+item.qty:''),tx,y+93,218,24,12.3,C.muted,false,'left',1);
   if(state.settings.regular)text((bundle?'Niêm yết / bộ: ':item.fromPrice?'Niêm yết từ: ':'Niêm yết: ')+(item.priceOnRequest?'Liên hệ':money(item.regular*(bundle?10:1))),tx,y+125,218,25,bundle?12:14,C.muted,false,'left',1);
+  if(state.settings.proposedPrice!==false){
   text(bundle?'Giá / bộ 10 SP':'Giá đề xuất',tx,y+176,110,24,bundle?12:14,C.ink);const amount=item.priceOnRequest?'Liên hệ':(item.fromPrice?'Từ ':'')+money(quotePrice(item,state));ctx.font='700 23px Montserrat';const amountSize=Math.min(23,23*200/Math.max(200,ctx.measureText(amount).width));text(amount,tx+111,y+169,200,31,amountSize,C.green,true);
+  }
 
  }
  footer();
  if(pptSlide)pptSlide.addNotes(items.map(item=>`${item.name}\nMã: ${item.sku}\n${item.url}\nGiá niêm yết một SP: ${item.regular}; chiết khấu ${item.discount}%; phụ phí ${item.fee}; giá đề xuất một SP ${price(item)}. Đơn vị chào: ${isBundle(item,state)?'bộ 10 SP':'một SP'}; giá chào ${quotePrice(item,state)}; số lượng ${item.qty}.`).join('\n\n'));
 }
+
+
 
 
 

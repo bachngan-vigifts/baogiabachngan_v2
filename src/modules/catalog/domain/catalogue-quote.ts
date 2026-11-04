@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { AppError } from '../../../core/errors.ts';
 import { cleanCatalogueProduct } from './catalogue-data.ts';
 const quoteProduct=z.object({id:z.string().min(1).max(80),discount:z.number().finite().min(0).max(100),fee:z.number().finite().min(0).max(1e8),qty:z.number().int().min(1).max(1e6),override:z.number().finite().min(0).max(1e10).nullable(),sharedId:z.string().max(80).optional(),sharedRevision:z.number().int().positive().nullable().optional()});
-const settings=z.object({productsPerPage:z.union([z.literal(4),z.literal(8)]).default(4),lockDiscount:z.number().finite().min(0).max(100),minhDiscount:z.number().finite().min(0).max(100),fee:z.number().finite().min(0).max(1e8),cover:z.boolean(),dividers:z.boolean(),closing:z.boolean(),qr:z.boolean(),regular:z.boolean(),sortPrice:z.boolean(),selectionSort:z.enum(['manual','newest','price','collection','category','pattern','color']).optional(),bundle10:z.boolean(),bundle10Ids:z.array(z.string().max(80)).max(1000)});
+const settings=z.object({productsPerPage:z.union([z.literal(4),z.literal(8)]).default(4),lockDiscount:z.number().finite().min(0).max(100),minhDiscount:z.number().finite().min(0).max(100),fee:z.number().finite().min(0).max(1e8),cover:z.boolean(),dividers:z.boolean(),closing:z.boolean(),qr:z.boolean(),regular:z.boolean(),proposedPrice:z.boolean().default(true),sortPrice:z.boolean(),selectionSort:z.enum(['manual','newest','price','collection','category','pattern','color']).optional(),bundle10:z.boolean(),bundle10Ids:z.array(z.string().max(80)).max(1000)});
 export function stableJson(value:unknown):string{if(Array.isArray(value))return'['+value.map(stableJson).join(',')+']';if(value&&typeof value==='object')return'{'+Object.keys(value).sort().filter(k=>(value as Record<string,unknown>)[k]!==undefined).map(k=>JSON.stringify(k)+':'+stableJson((value as Record<string,unknown>)[k])).join(',')+'}';return JSON.stringify(value);}
 export function cleanCatalogueQuote(raw:unknown){
  if(!raw||typeof raw!=='object')throw new AppError(400,'Thiếu nội dung báo giá.');const b=raw as Record<string,unknown>;
@@ -16,5 +16,7 @@ export function cleanCatalogueQuote(raw:unknown){
  const customBrands=Array.isArray(b.customBrands)?b.customBrands.slice(0,30).filter(p=>p&&typeof p==='object').map(p=>{const clean:Record<string,unknown>={};for(const key of ['id','name','origin','sourceUrl','collectionUrl','categoryLabel','platform','currency'])if(typeof p[key]==='string'&&p[key].length<=2500)clean[key]=p[key];for(const key of ['discount','fee'])if(typeof p[key]==='number'&&Number.isFinite(p[key]))clean[key]=p[key];clean.includeContact=p.includeContact===true;return clean;}):[];
  return{version:1,products,selected:selected as string[],meta,settings:config.data,pageText,customBrands};
 }
+
+
 
 
