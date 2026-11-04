@@ -3021,7 +3021,7 @@ async function reviewCustomer(id, approve) {
 }
 /** Bảng lương công ty (trial-ui/payroll.js) – Manager. */
 var payrollUi = null; // eslint-disable-line no-var
-const payrollBoard = () => payrollUi ||= initPayroll({ api, toast, esc, money, pill, confirmBox });
+const payrollBoard = () => payrollUi ||= initPayroll({ api, toast, esc, money, pill, confirmBox, userId: () => state.user?.id });
 /** Trang chi tiết nhân viên (trial-ui/member-detail.js): KPI, khách, báo giá, đơn, HĐKT, giao dịch, công nợ, ngày công, lương. */
 var memberUi = null; // eslint-disable-line no-var
 function memberDetail() {

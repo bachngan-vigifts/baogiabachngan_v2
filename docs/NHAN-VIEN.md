@@ -84,6 +84,18 @@ Nhân viên **chưa có hồ sơ lương** vẫn hiện ở tab theo chức vụ
 - Tăng ca: cả 3 bảng dùng một công thức là LCB ÷ 24 ÷ 8 × giờ × 2. Bảng Lock trong file mẫu lấy "lương theo công" thay vì LCB; app dùng LCB như sheet "Cách tính" ghi.
 - Các điểm lệch chính sách (1,2% hay 1%, 85% hay 80%, mức BHXH) để nguyên như file mẫu và sửa được ở **Tham số**.
 
+### Nhập nhanh toàn công ty
+
+Manager mở **Bảng lương → Nhập nhanh** (`#/payroll?month=YYYY-MM`). Bảng liệt kê mọi nhân viên, lọc theo tên / bảng lương và có ba nhóm cột:
+
+- **Chấm công & chỉ số:** ngày công, giờ tăng ca, doanh số, sản lượng, thưởng quý, BHYT, TNCN và các chỉ số KPI.
+- **Lương & phụ cấp cố định:** LCB, hệ số năng lực, trách nhiệm, điện thoại, chuyên cần, BHXH, đơn giá sản lượng; thay đổi áp dụng từ tháng đang chọn. Nhấn tên nhân viên để sửa cấu hình đầy đủ như cơm/xăng, cách tính trách nhiệm, nhóm lương và ngân hàng.
+- **Thưởng, phạt & tạm ứng:** khoản nhập nhanh bổ sung. Các khoản đã ghi riêng và lý do vẫn được giữ, hiển thị cạnh ô nhập; tổng lương cộng cả hai nguồn.
+
+Dùng Tab/Enter hoặc dán vùng ô từ Excel theo thứ tự hàng/cột đang hiển thị. Ngày công nhận số lẻ (ví dụ `24,5`). Ô trống “Tự động” khác với số 0 nhập tay. Bấm **Lưu thay đổi** để lưu mọi dòng đã sửa trong một giao dịch và tính lại tổng thu nhập/khấu trừ/thực nhận. Không nhập khẩu danh sách nhân viên từ file Excel mẫu.
+
+Phiếu đã chốt/đã trả chỉ xem. Khi có người khác sửa dữ liệu, hệ thống từ chối ghi đè và giữ phần đang nhập để đối chiếu; **Tải lại / Bỏ thay đổi** lấy bản mới. Chuyển tháng khi chưa lưu cần xác nhận bỏ thay đổi. Chưa có hồ sơ: nhập LCB rồi lưu để thiết lập hồ sơ theo mặc định chức vụ. API: `PUT /hr/payroll/:month/entries`, tối đa 100 dòng/lần, chỉ Manager, dùng khoá lương chung; không cần migration mới.
+
 ### Nhập liệu hằng tháng
 1. **Bảng lương → Số liệu chung:** DS cửa hàng Bách Ngân, DS trung bình 6 tháng, DS team Lock. Tháng cuối quý thì bật "Chi trả thưởng quý".
 2. **Trang nhân viên → Lương & thưởng → Nhập số liệu tháng:**

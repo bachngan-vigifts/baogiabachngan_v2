@@ -2523,3 +2523,16 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 .web-edit-field input[type=checkbox] { width:auto; justify-self:start; }
 .web-order-paper .ship-table td,.web-order-paper .ship-table th { white-space:normal; }
 #web-order-content { scroll-margin-top:80px; }
+
+/* Company payroll entry: keep spreadsheet cells usable at every viewport width. */
+.pr-quick-tools{display:flex;gap:16px;align-items:end;justify-content:space-between;flex-wrap:wrap;margin-bottom:16px}
+.pr-quick-tools label{display:grid;gap:6px;min-width:180px}.pr-quick-scroll{overflow:auto;max-height:65vh;border:1px solid var(--line);border-radius:10px}
+.pr-quick-table{min-width:1800px;border-collapse:separate;border-spacing:0}.pr-quick-table th{position:sticky;top:0;z-index:2;background:var(--brand-navy,#173253);color:white;min-width:130px}
+.pr-quick-table .pr-quick-name{position:sticky;left:0;z-index:1;background:var(--surface,#fff);min-width:210px}.pr-quick-table td{vertical-align:top}.pr-quick-table small{display:block;font-size:12px;margin-top:5px}
+.pr-quick-value{width:130px!important;min-height:40px;text-align:right;background:#fff9df!important;border:1px solid #d4c89b!important;border-radius:6px;padding:8px!important}
+.pr-quick-value:disabled{background:#edf0f4!important;color:#64748b}.pr-quick-value[aria-invalid=true]{border:2px solid #d92332!important}.pr-quick-dirty .pr-quick-name{box-shadow:inset 4px 0 #d28a0b}
+.pr-quick-table details{min-width:250px}.pr-quick-table details p{white-space:normal}.pr-quick-table [hidden]{display:none!important}
+@media(max-width:768px){#pr-quick .pr-quick-table{display:table!important}#pr-quick thead{display:table-header-group!important}#pr-quick tr:not([hidden]){display:table-row!important}#pr-quick td,#pr-quick th{display:table-cell!important}#pr-quick td::before{display:none!important}.pr-quick-tools{align-items:stretch}.pr-quick-tools>button{width:100%}}
+.pr-quick-tools:first-child{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:start}.pr-quick-table th:first-child{left:0;z-index:3}
+@media(max-width:768px){.pr-quick-tools:first-child{grid-template-columns:1fr}#view-payroll #pr-quick .pr-quick-table{display:table!important;min-width:1800px!important}#view-payroll #pr-quick .pr-quick-table thead{display:table-header-group!important}#view-payroll #pr-quick .pr-quick-table tbody{display:table-row-group!important}#view-payroll #pr-quick .pr-quick-table tr:not([hidden]){display:table-row!important;padding:0!important}#view-payroll #pr-quick .pr-quick-table td,#view-payroll #pr-quick .pr-quick-table th{display:table-cell!important;padding:10px!important}#view-payroll #pr-quick .pr-quick-table td::before{display:none!important}}
+.pr-quick-value[type=checkbox]{width:20px!important;min-height:20px;vertical-align:middle;margin-right:8px}

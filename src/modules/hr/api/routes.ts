@@ -1,3 +1,4 @@
+import { payrollEntry, registerQuickPayroll } from './quick-entry.ts';
 import type {CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
 import {payrollLock} from '../../../core/db/payroll-lock.ts';
 import {reserveAwards,releaseAwards,payAwards} from './contract-bonuses.ts';
@@ -67,6 +68,7 @@ const slipValues = (row: PayrollRow, me: string, note: string) => ({
  *  POST    /hr/members/:id/payslips/:month       chốt · POST …/paid đã trả · DELETE mở lại (chưa trả)
  */
 export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: RevenueOf;crmFactsOf?:CrmFactsOf }) {
+  registerQuickPayroll(router, deps);
   const write=(fn:(c:Ctx)=>Promise<Response>)=>async(c:Ctx)=>c.env.db.transaction(async tx=>{await payrollLock(tx as any);return fn({...c,env:{...c.env,db:tx as any}});});
   router.get('/hr/settings', async c => {
     const m = c.url.searchParams.get('month'), db = c.env.db;
@@ -99,7 +101,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     const b = await buildPayroll(c.env.db, month(c.params.month), deps.revenueOf,undefined,deps.crmFactsOf);
     const rows = b.rows.map(r => {
       const slip = payslipView(r);
-      return { member: r.member, profile: { payrollGroup: r.profile.payrollGroup, positionLabel: r.profile.positionLabel, hasProfile: r.profile.effectiveMonth !== null,
+      return { member: r.member, entry: payrollEntry(r), profile: { payrollGroup: r.profile.payrollGroup, positionLabel: r.profile.positionLabel, hasProfile: r.profile.effectiveMonth !== null,
           bankCode: r.profile.bankCode, bankAccount: r.profile.bankAccount, bankHolder: r.profile.bankHolder },
         payslip: slip, qr: vietQrUrl(r.profile.bankCode, r.profile.bankAccount, slip.net, b.month) };
     });
