@@ -1,0 +1,11 @@
+// @ts-nocheck
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {discoverExternalProducts} from '../../catalogue-server/external-brand.mjs';
+const provider={name:'Elmich',origin:'https://sapo-pages.example.com',collectionUrl:'https://sapo-pages.example.com/thermal?sortby=name',platform:'sapo',discount:0,fee:15000,currency:'VND',includeContact:true,categoryLabel:'Thermal'};
+const criteria={provider,brand:provider.name,min:0,max:null,limit:100,packSize:1,keywords:[],stockSource:'website'};
+function fixture(){const requests=[];return{requests,fetcher:async(raw)=>{const u=new URL(raw);if(u.hostname==='cloudflare-dns.com')return Response.json({Answer:[{type:1,data:'104.21.1.2'}]});requests.push(u.href);if(u.pathname.startsWith('/products/')){const alias=u.pathname.split('/').at(-1).replace('.js','');assert(!alias.includes('unrelated'));return Response.json({name:alias,alias,url:'/'+alias,variants:[{sku:alias,price:100000,available:alias!=='p2-b'}]});}
+const page=Number(u.searchParams.get('page')||1);assert(page<=3);assert.equal(u.searchParams.get('sortby'),'name');return new Response(`<script>Bizweb.template='collection';io.listing={items:[{url:absUrl("/p${page}-a")}]};</script><div data-url="/unrelated"></div><div class="product-grid-item"><div data-url="/p${page}-a"></div></div><div class="product-grid-item"><div data-url="/p${page}-b"></div></div><a onclick="doSearch(99)" href="javascript:;">unrelated</a><ul class="pagination">${page<3?`<li><a onclick="doSearch(${page+1})" href="javascript:;">Next</a></li>`:''}</ul>`);}};}
+test('Sapo reads every grid card and JavaScript next pages, preserving category filters and excluding unavailable products',async()=>{const f=fixture(),r=await discoverExternalProducts(criteria,{},f.fetcher);assert.equal(r.scanned,6);assert.deepEqual(r.products.map(p=>p.sku),['p1-a','p1-b','p2-a','p3-a','p3-b']);assert.equal(r.moreAvailable,false);assert.equal(f.requests.filter(u=>new URL(u).pathname==='/thermal').length,3);});
+test('Sapo respects selected product limit while advancing past unavailable items',async()=>{const f=fixture(),r=await discoverExternalProducts({...criteria,limit:3},{},f.fetcher);assert.equal(r.products.length,3);assert.equal(r.moreAvailable,true);assert(!f.requests.some(u=>u.includes('page=99')));});
+

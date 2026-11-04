@@ -10,10 +10,17 @@ const externalFold=value=>externalPlain(value).normalize('NFD').replace(/[\u0300
 const isSapo=html=>/\bBizweb\.(?:store|template)\s*=|\.mysapo\.net/i.test(html);
 function sapoPage(html,url){
  const listing=html.match(/\bio\.listing\s*=\s*\{\s*items\s*:\s*\[([\s\S]*?)\]\s*\}/)?.[1],refs=[];
- if(listing)for(const match of listing.matchAll(/\burl\s*:\s*absUrl\(("(?:[^"\\]|\\.)*")\)/g)){try{refs.push(JSON.parse(match[1]));}catch{}}
- else for(const match of html.matchAll(/<div\b[^>]*class=["'][^"']*\bproduct-grid-item\b[^"']*["'][^>]*>\s*<div\b([^>]*)>/gi)){const link=match[1].match(/\bdata-url=["']([^"']+)["']/);if(link)refs.push(link[1]);}
+ // Analytics listings can be truncated (Elmich includes only 24 of 36 cards).
+ for(const match of html.matchAll(/<div\b[^>]*class=["'][^"']*\bproduct-grid-item\b[^"']*["'][^>]*>\s*<div\b([^>]*)>/gi)){const link=match[1].match(/\bdata-url=["']([^"']+)["']/);if(link)refs.push(link[1]);}
+ if(!refs.length&&listing)for(const match of listing.matchAll(/\burl\s*:\s*absUrl\(("(?:[^"\\]|\\.)*")\)/g)){try{refs.push(JSON.parse(match[1]));}catch{}}
  const urls=[...new Set(refs.flatMap(ref=>{try{const u=externalUrl(new URL(ref,url).href);return u.origin===url.origin?[u.href]:[];}catch{return[];}}))].slice(0,50);
  let next='';for(const match of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)){try{const u=externalUrl(new URL(externalPlain(match[1]),url).href);if(u.origin===url.origin&&u.pathname===url.pathname&&Number(u.searchParams.get('page'))===Number(url.searchParams.get('page')||1)+1){next=u.href;break;}}catch{}}
+ if(!next)for(const pagination of html.matchAll(/<(?:ul|nav)\b[^>]*class=["'][^"']*\bpagination\b[^"']*["'][^>]*>([\s\S]*?)<\/(?:ul|nav)>/gi)){
+  for(const link of pagination[1].matchAll(/<a\b[^>]*\bonclick=(["'])\s*(?:return\s+)?doSearch\(\s*(\d+)\s*\)\s*;?\s*\1[^>]*>/gi)){
+   if(Number(link[2])===Number(url.searchParams.get('page')||1)+1){const u=new URL(url);u.searchParams.set('page',link[2]);next=u.href;break;}
+  }
+  if(next)break;
+ }
  return{urls,next};
 }
 async function sapoProduct(url,brand,fetcher){
@@ -52,3 +59,5 @@ export async function discoverExternalProducts(criteria,adapter,fetcher=fetch){c
  if(unpriced&&!found.some(p=>p.priceOnRequest))errors.push(`${unpriced} mẫu chưa công khai giá; không đưa vào khoảng ngân sách bằng giá 0đ.`);
  return {products:found,criteria,scanned,moreAvailable,errors,sources:[{brand:brand.name,host:new URL(brand.origin).hostname,category:brand.categoryLabel}],stockSource:criteria.stockSource,checkedAt:new Date().toISOString()};}
 export async function externalImageResponse(raw,fetcher=fetch){const fetched=await externalFetch(raw,'image/avif,image/webp,image/png,image/jpeg,image/*',fetcher,12000000),type=(fetched.response.headers.get('content-type')||'').split(';')[0];if(!['image/jpeg','image/png','image/webp','image/avif','image/gif'].includes(type))throw Error('Link chưa trả định dạng ảnh được hỗ trợ.');return new Response(fetched.bytes,{headers:{'Content-Type':type,'Cache-Control':'public,max-age=3600','X-Content-Type-Options':'nosniff'}});}
+
+
