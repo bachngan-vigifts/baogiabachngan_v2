@@ -43,3 +43,6 @@
 
 
 .top-leading{display:flex;align-items:center;gap:14px;min-width:0}.crm-back{min-height:44px;text-decoration:none;flex-shrink:0}.crm-back svg{width:16px;height:16px}.crm-back:hover{background:#eff5f1}.crm-back:focus-visible{outline:2px solid var(--green);outline-offset:3px}@media(max-width:650px){.top-leading .crumb{display:none}.topbar .crm-back{min-width:96px}.topbar .top-actions{flex-wrap:wrap}}
+
+.selection-list{max-height:520px;overflow-y:auto;overscroll-behavior:contain}.selection-list .product-row{scroll-margin-top:0}.selection-list .product-row.current-slide{background:#edf6f0;box-shadow:inset 3px 0 var(--green)}.selection-list:focus-visible{outline:2px solid var(--green);outline-offset:-2px}@media(prefers-reduced-motion:reduce){.selection-list{scroll-behavior:auto}}
+
