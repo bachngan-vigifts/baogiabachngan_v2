@@ -223,7 +223,7 @@ export function initDashboard({ api, root, isManager, money }) {
       // Hai dòng mỗi ô: số chính + chỉ tiêu / điểm tối đa (vừa màn hình điện thoại, không cuộn ngang).
       const two = (main, sub) => { const td = node('td'); td.append(node('strong', main), node('small', sub)); return td; };
       const actual = p.key === 'revenue' ? money(p.actual ?? 0) : count(p.actual) + (p.extra ? ` + ${p.extra.toLocaleString('vi-VN')} quy đổi` : '');
-      tr.append(name, two(actual, 'chỉ tiêu ' + (p.key === 'revenue' ? money(p.target) : p.target.toLocaleString('vi-VN'))),
+      tr.append(name, two(actual, (p.own ? 'chỉ tiêu riêng ' : 'chỉ tiêu ') + (p.key === 'revenue' ? money(p.target) : p.target.toLocaleString('vi-VN'))),
         two(kpiPercent(p.points), p.max == null ? 'không giới hạn' : 'tối đa ' + kpiPercent(p.max)));
       body.append(tr);
     }
@@ -232,7 +232,7 @@ export function initDashboard({ api, root, isManager, money }) {
     const scroll = node('div', null, 'revenue-table-scroll'); scroll.append(t);
     const notes = node('ul', null, 'dash-kpi-notes');
     const note = text => notes.append(node('li', text));
-    if (m.adjustedBy) note(`Đang dùng ${m.adjustedBy === 'fixed' ? 'KPI cố định trong hồ sơ' : 'KPI chốt trên bảng lương'} ${kpiPercent(m.used)} (kết quả tính ${kpiPercent(m.total)}).`);
+    if (m.adjustedBy) note(`Đang dùng ${m.adjustedBy === 'fixed' ? 'KPI cố định trong hồ sơ' : 'KPI chốt trên bảng lương'} ${kpiPercent(m.used)} (kết quả tính ${kpiPercent(m.total)}) – đổi chỉ tiêu không làm đổi mức thưởng khi đang dùng số này.`);
     note(kpiBonus(m) + '.');
     note(m.status === 'estimate' ? 'Tạm tính theo số liệu hiện tại; chốt lương sẽ giữ cố định.' : 'Theo phiếu lương đã chốt (số lúc chốt).');
     note(m.source === 'crm' ? 'KH mới, giao dịch, số HĐKT lấy tự động từ CRM.' : 'KH mới, giao dịch, số HĐKT theo số nhập trên bảng lương.');

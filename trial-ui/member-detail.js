@@ -98,6 +98,13 @@ export function initMemberDetail(deps) {
     const row = (l, cls = '') => `<tr class="${cls}"><td>${esc(l.label)}${l.note ? `<small>${esc(l.note)}</small>` : ''}</td><td class="right num">${cls === 'minus' ? '−' : ''}${money(l.amount)}</td></tr>`;
     const shown = list => list.filter(l => l.amount || l.key === 'salaryByDays' || s.group==='sale'&&pr.kpiEligible===false&&['contractBonus','contractBonusAdjustment'].includes(l.key));
     const pctTxt = v => v === null || v === undefined ? '—' : `${Math.round(v * 1000) / 10}%`;
+    // Chỉ tiêu đã dùng: lưu trong kết quả KPI (phiếu mới); phiếu cũ → theo hồ sơ / tham số trong bản chụp lúc chốt.
+    const ctxProfile = s.calculationContext?.profile || pr, ctxParams = s.calculationContext?.params || p.params;
+    const kpiGoal = (k, _s, key) => {
+      const field = { newCustomers: ['kpiNewCustomersTarget', 'kpiNewCustomers'], transactions: ['kpiTransactionsTarget', 'kpiTransactions'], contracts: ['kpiContractsTarget', 'kpiContracts'], revenue: ['revenueTarget', 'kpiRevenue'] }[key];
+      const own = k.targets ? k.targets.own[key] : Number(ctxProfile[field[0]]) > 0, value = k.targets ? k.targets[key] : own ? Number(ctxProfile[field[0]]) : Number(ctxParams?.[field[1]]);
+      return Number.isFinite(value) && value > 0 ? ` / chỉ tiêu ${own ? 'riêng ' : ''}${key === 'revenue' ? money(value) : value.toLocaleString('vi-VN')}` : '';
+    };
     const k = s.kpi;
     return `<div class="md-pay-grid">
       <div class="md-slip">
@@ -116,11 +123,11 @@ export function initMemberDetail(deps) {
           ${can() && s.status === 'confirmed' ? '<button type="button" class="btn primary small" data-act="paid-slip">Đánh dấu đã trả</button><button type="button" class="btn ghost small" data-act="reopen-slip">Mở lại</button>' : ''}</div>
         ${k ? `<div class="md-kpi"><div class="card-title-row"><h3>KPI công việc</h3>${pill(KPI_TIER, k.tier)}</div>
           ${s.snapshotUnavailable?'<p class="error">Phiếu cũ thiếu bản chụp chi tiết. Giữ nguyên tổng tiền đã chốt; cần Manager đối soát trước khi in.</p>':''}<table class="md-slip-table"><tbody>
-            <tr><td>KH mới <small>${inp.kpiNewCustomers ?? ((s.salesCrm?.kpiApply??s.salesCrm?.apply)?s.salesCrm.facts.newCustomers:'—')} KH</small></td><td class="right num">${pctTxt(k.points.newCustomers)}</td></tr>
-            <tr><td>Giao dịch <small>${inp.kpiTransactions ?? ((s.salesCrm?.kpiApply??s.salesCrm?.apply)?s.salesCrm.facts.transactions:'—')} GD</small></td><td class="right num">${pctTxt(k.points.transactions)}</td></tr>
-            <tr><td>Số hợp đồng <small>${inp.kpiContracts ?? ((s.salesCrm?.kpiApply??s.salesCrm?.apply)?s.salesCrm.facts.contracts:'—')} HĐ</small></td><td class="right num">${pctTxt(k.points.contracts)}</td></tr>
-            <tr><td>DS cá nhân <small>${money(inp.kpiRevenue ?? s.revenue)}</small></td><td class="right num">${pctTxt(k.points.revenue)}</td></tr>
-            <tr class="sum"><td>KPI CV${inp.kpiOverride !== null ? ' <small>Dùng KPI chốt nhập tay</small>' : ''}</td><td class="right num">${pctTxt(k.used)}</td></tr>
+            <tr><td>KH mới <small>${inp.kpiNewCustomers ?? ((s.salesCrm?.kpiApply??s.salesCrm?.apply)?s.salesCrm.facts.newCustomers:'—')} KH${kpiGoal(k, s, 'newCustomers')}</small></td><td class="right num">${pctTxt(k.points.newCustomers)}</td></tr>
+            <tr><td>Giao dịch <small>${inp.kpiTransactions ?? ((s.salesCrm?.kpiApply??s.salesCrm?.apply)?s.salesCrm.facts.transactions:'—')} GD${kpiGoal(k, s, 'transactions')}</small></td><td class="right num">${pctTxt(k.points.transactions)}</td></tr>
+            <tr><td>Số hợp đồng <small>${inp.kpiContracts ?? ((s.salesCrm?.kpiApply??s.salesCrm?.apply)?s.salesCrm.facts.contracts:'—')} HĐ${kpiGoal(k, s, 'contracts')}</small></td><td class="right num">${pctTxt(k.points.contracts)}</td></tr>
+            <tr><td>DS cá nhân <small>${money(inp.kpiRevenue ?? s.revenue)}${kpiGoal(k, s, 'revenue')}</small></td><td class="right num">${pctTxt(k.points.revenue)}</td></tr>
+            <tr class="sum"><td>KPI CV${k.used !== k.total ? ` <small>${inp.kpiOverride !== null && ctxProfile.fixedKpi == null ? 'Dùng KPI chốt nhập tay' : 'Dùng KPI cố định'} thay kết quả tính ${pctTxt(k.total)} – đổi chỉ tiêu không làm đổi thưởng</small>` : ''}</td><td class="right num">${pctTxt(k.used)}</td></tr>
           </tbody></table></div>` : ''}
       </div>
       <div>
@@ -147,7 +154,7 @@ export function initMemberDetail(deps) {
           <dt>Cơm + xăng</dt><dd>${pr.mealAllowance ? 'Có' : 'Không (thử việc)'}</dd>
           ${pr.phoneAllowance ? `<dt>PC điện thoại</dt><dd class="num">${money(pr.phoneAllowance)}</dd>` : ''}
           ${pr.attendanceBonus ? `<dt>Chuyên cần</dt><dd class="num">${money(pr.attendanceBonus)}</dd>` : ''}
-          ${pr.payrollGroup === 'sale' ? `<dt>KPI DS</dt><dd>${pr.kpiEligible===false?'Không áp dụng (Sale Admin)':pr.kpiEnabled ? `Có · chỉ tiêu ${money(pr.revenueTarget || p.params.kpiRevenue)}` : 'Không'}</dd>` : `<dt>Thưởng DS nhóm</dt><dd>${pr.teamBonus ? 'Có' : 'Không'}</dd>`}
+          ${pr.payrollGroup === 'sale' ? `<dt>KPI DS</dt><dd>${pr.kpiEligible===false?'Không áp dụng (Sale Admin)':pr.kpiEnabled ? `Có · chỉ tiêu DS ${money(pr.revenueTarget || p.params.kpiRevenue)}${pr.revenueTarget ? ' (riêng)' : ''}<br><small>KH mới ${(pr.kpiNewCustomersTarget || p.params.kpiNewCustomers).toLocaleString('vi-VN')}${pr.kpiNewCustomersTarget ? ' (riêng)' : ''} · Giao dịch ${(pr.kpiTransactionsTarget || p.params.kpiTransactions).toLocaleString('vi-VN')}${pr.kpiTransactionsTarget ? ' (riêng)' : ''} · HĐ ${(pr.kpiContractsTarget || p.params.kpiContracts).toLocaleString('vi-VN')}${pr.kpiContractsTarget ? ' (riêng)' : ''}</small>` : 'Không'}</dd>` : `<dt>Thưởng DS nhóm</dt><dd>${pr.teamBonus ? 'Có' : 'Không'}</dd>`}
           ${pr.outputRate ? `<dt>Đơn giá sản lượng</dt><dd>${pr.outputRate < 1 ? (pr.outputRate * 100) + '%' : money(pr.outputRate)}</dd>` : ''}
           <dt>BHXH</dt><dd class="num">${money(pr.insurance)}</dd>
           <dt>Nhận lương</dt><dd>${pr.bankAccount ? `${esc(pr.bankAccount)} – ${esc(pr.bankCode.toUpperCase())}<br><small class="muted">${esc(pr.bankHolder)}</small>` : '<span class="muted">Chưa có tài khoản</span>'}</dd>
@@ -275,6 +282,11 @@ export function initMemberDetail(deps) {
       ${moneyInput('attendanceBonus', 'Chuyên cần / tháng (BN, Lock)', p.attendanceBonus)}
       ${numInput('outputRate', 'Đơn giá sản lượng (đ) hoặc tỷ lệ (0,005 = 0,5%)', p.outputRate || '', 'placeholder="Kho 15000 · TK 30000 · IT 0,005"')}
       ${moneyInput('revenueTarget', 'Chỉ tiêu DS cá nhân / tháng', p.revenueTarget)}
+      ${p.kpiEligible === false ? '' : `<p class="muted small span-2">Chỉ tiêu KPI riêng (Sale tính KPI): để trống = theo mức chung của tháng ở Thiết lập lương. Không nhập 0. Trọng số và bậc thưởng dùng chung.</p>
+      ${numInput('kpiNewCustomersTarget', `Chỉ tiêu KH mới / tháng (trống = chung ${prm.kpiNewCustomers})`, p.kpiNewCustomersTarget, `placeholder="Chung: ${prm.kpiNewCustomers}" min="1"`)}
+      ${numInput('kpiTransactionsTarget', `Chỉ tiêu giao dịch / tháng (trống = chung ${prm.kpiTransactions})`, p.kpiTransactionsTarget, `placeholder="Chung: ${prm.kpiTransactions}" min="1"`)}
+      ${numInput('kpiContractsTarget', `Chỉ tiêu số HĐ / tháng (trống = chung ${prm.kpiContracts})`, p.kpiContractsTarget, `placeholder="Chung: ${prm.kpiContracts}" min="1"`)}
+      <label class="span-2">Lý do đổi chỉ tiêu (bắt buộc khi đổi chỉ tiêu DS / KH mới / giao dịch / HĐ)<input name="changeReason" maxlength="500" placeholder="Ví dụ: Sale mới, giảm chỉ tiêu 3 tháng đầu"></label>`}
       ${moneyInput('insurance', 'BHXH người lao động / tháng', has ? p.insurance : prm.socialInsurance)}
       ${check('mealAllowance', 'Hưởng phụ cấp cơm + xăng (thử việc: bỏ chọn)', p.mealAllowance)}
       ${p.kpiEligible===false?'<p class="muted span-2">Sale Admin không tính KPI. Thưởng sao HĐKT và thưởng thanh lý được bật riêng bên dưới.</p>':check('kpiEnabled','Sale: tính KPI công việc + thưởng KPI DS',p.kpiEnabled)+numInput('fixedKpi','KPI cố định (%) — trống = theo tháng / công thức',p.fixedKpi==null?'':p.fixedKpi*100)}
@@ -284,13 +296,30 @@ export function initMemberDetail(deps) {
       <label>Số tài khoản<input name="bankAccount" maxlength="30" inputmode="numeric" value="${esc(p.bankAccount)}"></label>
       <label class="span-2">Chủ tài khoản<input name="bankHolder" maxlength="120" value="${esc(p.bankHolder)}"></label>
       <label class="span-2">Ghi chú<input name="note" maxlength="500" value="${esc(p.note || '')}"></label>
-      <p class="muted small span-2">Hồ sơ áp dụng từ tháng đã chọn cho tới khi có bản mới. Các tháng đã chốt lương không đổi.</p>`, 'Lưu hồ sơ lương', f =>
+      <p class="muted small span-2">Hồ sơ áp dụng từ tháng đã chọn cho tới khi có bản mới. Các tháng đã chốt lương không đổi. KPI cố định / KPI chốt tay (nếu có) thay kết quả tính – đổi chỉ tiêu khi đó không đổi thưởng.</p>
+      <details class="span-2" data-salary-history><summary>Lịch sử sửa hồ sơ lương</summary><div class="muted small">Mở để tải…</div></details>`, 'Lưu hồ sơ lương', f =>
       api(base() + '/salary', 'PUT', { effectiveMonth: f.effectiveMonth.value, payrollGroup: f.payrollGroup.value, positionLabel: f.positionLabel.value,
         baseSalary: digits(f.baseSalary.value), capacityCoef: numVal(f.capacityCoef.value) ?? 0, responsibilityMode: f.responsibilityMode.value, responsibility: digits(f.responsibility.value),
         phoneAllowance: digits(f.phoneAllowance.value), attendanceBonus: digits(f.attendanceBonus.value), outputRate: numVal(f.outputRate.value) ?? 0,
         revenueTarget: digits(f.revenueTarget.value), insurance: digits(f.insurance.value), mealAllowance: f.mealAllowance.checked, kpiEnabled: f.kpiEnabled?.checked||false,fixedKpi:numVal(f.fixedKpi?.value||'')===null?null:numVal(f.fixedKpi.value)/100,contractBonusEnabled:f.contractBonusEnabled.checked,
-        teamBonus: f.teamBonus.checked, bankCode: f.bankCode.value, bankAccount: f.bankAccount.value, bankHolder: f.bankHolder.value, note: f.note.value })
+        teamBonus: f.teamBonus.checked, bankCode: f.bankCode.value, bankAccount: f.bankAccount.value, bankHolder: f.bankHolder.value, note: f.note.value,
+        ...(f.kpiNewCustomersTarget ? { kpiNewCustomersTarget: numVal(f.kpiNewCustomersTarget.value), kpiTransactionsTarget: numVal(f.kpiTransactionsTarget.value), kpiContractsTarget: numVal(f.kpiContractsTarget.value), changeReason: f.changeReason.value } : {}) })
         .then(() => toast('Đã lưu hồ sơ lương.')));
+    const history = document.querySelector('dialog.modal [data-salary-history]');
+    history?.addEventListener('toggle', () => { if (history.open && !history.dataset.loaded) { history.dataset.loaded = '1'; loadSalaryHistory(history.querySelector('div')); } });
+  }
+  // Nhật ký sửa hồ sơ lương (Manager): người sửa, lúc sửa, tháng áp dụng, trước → sau, lý do. Không hiện số tài khoản.
+  const SALARY_FIELD = { payrollGroup: 'Bảng lương', positionLabel: 'Vị trí', baseSalary: 'LCB', capacityCoef: 'Hệ số năng lực', responsibilityMode: 'Cách tính trách nhiệm', responsibility: 'Trách nhiệm',
+    mealAllowance: 'PC cơm + xăng', phoneAllowance: 'PC điện thoại', attendanceBonus: 'Chuyên cần', kpiEnabled: 'Tính KPI', fixedKpi: 'KPI cố định', contractBonusEnabled: 'Thưởng HĐKT', teamBonus: 'Thưởng DS nhóm',
+    outputRate: 'Đơn giá sản lượng', revenueTarget: 'Chỉ tiêu DS', kpiNewCustomersTarget: 'Chỉ tiêu KH mới', kpiTransactionsTarget: 'Chỉ tiêu giao dịch', kpiContractsTarget: 'Chỉ tiêu số HĐ', insurance: 'BHXH', note: 'Ghi chú' };
+  async function loadSalaryHistory(box) {
+    try {
+      const { items } = await api(base() + '/salary-history');
+      const show = v => v === null || v === '' ? 'trống' : typeof v === 'boolean' ? (v ? 'có' : 'không') : typeof v === 'number' ? v.toLocaleString('vi-VN') : String(v);
+      box.innerHTML = items.length ? `<ul class="md-history">${items.map(h => `<li><b>${esc(fmtDate(h.at))}</b> · ${esc(h.by || '—')} · ${h.created ? 'tạo hồ sơ, ' : ''}áp dụng ${esc(monthLabel(h.effectiveMonth || st.month))}
+        <br>${Object.entries(h.changes).map(([k, c]) => `${esc(SALARY_FIELD[k] || k)}: ${esc(show(c.from))} → ${esc(show(c.to))}`).join('; ') || '—'}${h.bankChanged ? '; đổi tài khoản nhận lương' : ''}
+        ${h.reason ? `<br><i>Lý do: ${esc(h.reason)}</i>` : ''}</li>`).join('')}</ul>` : 'Chưa có lần sửa nào được ghi nhật ký.';
+    } catch (e) { box.textContent = e.message || 'Chưa tải được lịch sử.'; }
   }
   function editInputs() {
     const p = st.d.payroll, i = p.input, g = p.profile.payrollGroup, kpi = g === 'sale' && p.profile.kpiEnabled;

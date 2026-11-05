@@ -46,6 +46,10 @@ export const hrSalaryProfiles = pgTable('hr_salary_profiles', {
   outputRate: doublePrecision('output_rate').notNull().default(0),
   /** Chỉ tiêu DS cá nhân / tháng (KPI CV, thưởng quý); 0 = mặc định ở tham số. */
   revenueTarget: doublePrecision('revenue_target').notNull().default(0),
+  /** Chỉ tiêu KPI riêng / tháng (KH mới, giao dịch, số HĐ); null = theo mức chung ở Thiết lập lương của tháng. */
+  kpiNewCustomersTarget: doublePrecision('kpi_new_customers_target'),
+  kpiTransactionsTarget: doublePrecision('kpi_transactions_target'),
+  kpiContractsTarget: doublePrecision('kpi_contracts_target'),
   /** BHXH người lao động đóng (trừ vào lương). */
   insurance: doublePrecision('insurance').notNull().default(0),
   /** Tài khoản nhận lương (mã ngân hàng theo VietQR: vcb, acb, vietinbank…). */
@@ -60,6 +64,7 @@ export const hrSalaryProfiles = pgTable('hr_salary_profiles', {
   check('chk_hr_salary_month', sql`${t.effectiveMonth} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
   check('chk_hr_salary_money', sql`${t.baseSalary} >= 0 AND ${t.revenueTarget} >= 0 AND ${t.insurance} >= 0`),
   check('chk_hr_salary_extra', sql`${t.capacityCoef} >= 0 AND ${t.responsibility} >= 0 AND ${t.phoneAllowance} >= 0 AND ${t.attendanceBonus} >= 0 AND ${t.outputRate} >= 0`),
+  check('chk_hr_kpi_targets', sql`(${t.kpiNewCustomersTarget} is null or ${t.kpiNewCustomersTarget} > 0) AND (${t.kpiTransactionsTarget} is null or ${t.kpiTransactionsTarget} > 0) AND (${t.kpiContractsTarget} is null or ${t.kpiContractsTarget} > 0)`),
   check('chk_hr_fixed_kpi',sql`${t.fixedKpi} is null or (${t.fixedKpi}>=0 and ${t.fixedKpi}<=10)`),
   enumCheck('chk_hr_salary_group', t.payrollGroup, PAYROLL_GROUPS),
   enumCheck('chk_hr_salary_resp_mode', t.responsibilityMode, RESPONSIBILITY_MODES),
