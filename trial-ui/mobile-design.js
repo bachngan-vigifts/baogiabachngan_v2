@@ -78,7 +78,7 @@ export function installMobileDesign(profiles){
  const navIcon=a=>{const icon=a.querySelector('svg');if(icon)return icon.cloneNode(true);const symbol=make('span','crm-nav-symbol',a.querySelector('span')?.textContent||'▣');symbol.setAttribute('aria-hidden','true');return symbol;};
  function openGroup(g){
   const key=location.hash.replace(/^#\//,'').split(/[/?]/)[0];
-  setText(sheetTitle,g.label);sheetList.replaceChildren();
+  setText(sheetTitle,g.label);sheet.dataset.group=g.key;sheetList.replaceChildren();
   for(const k of g.items){const source=navSources.get(k),a=make('a','',navLabel(k,source));a.href=source.getAttribute('href');a.dataset.mobileNav=k;a.prepend(navIcon(source));if(k===key)a.setAttribute('aria-current','page');sheetList.append(a);}
   sheet.showModal();
  }
