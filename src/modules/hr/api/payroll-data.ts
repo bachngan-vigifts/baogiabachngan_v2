@@ -10,7 +10,7 @@ import { departments, employees } from '../../staff/schema.ts';
 import { hrAdjustments, hrAttendance, hrPayrollInputs, hrPayrollMonths, hrPayrollSettings, hrPayslips, hrSalaryProfiles } from '../schema.ts';
 import { mergeParams, type PayrollParams } from '../domain/params.ts';
 import {
-  EMPTY_GROUP_MONTH, EMPTY_INPUT, computePayslip,salaryKpiEligible, defaultProfileFor, computeQuarterBonus, monthRange, quarterMonths, summarizeAttendance,
+  EMPTY_GROUP_MONTH, EMPTY_INPUT, isProbation, computePayslip,salaryKpiEligible, defaultProfileFor, computeQuarterBonus, monthRange, quarterMonths, summarizeAttendance,
   type GroupMonth, type PayrollInput, type PayslipCalc, type SalaryProfile,
 } from '../domain/payroll.ts';
 
@@ -121,11 +121,12 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     const attendanceDays = summarizeAttendance(attendance.filter(a => a.memberId === m.id)).worked, systemRevenue = revenues.get(m.id)?.[month] ?? 0;
     const fact=facts.members.get(m.id),auto={newCustomers:fact?.newCustomers||0,transactions:fact?.transactions||0,contracts:fact?.contracts||0},resolved={...input};
     if(kpiEnabled&&profile.kpiEnabled)for(const [key,value]of Object.entries({kpiNewCustomers:auto.newCustomers,kpiTransactions:auto.transactions,kpiContracts:auto.contracts}))if((resolved as any)[key]===null)(resolved as any)[key]=value;
-    const ownAwards=awards.filter(a=>a.memberId===m.id&&(!a.isNew||profile.contractBonusEnabled&&(!netPolicy||profile.kpiEligible===false)));
+    const probation=isProbation(profile.positionLabel);
+    const ownAwards=probation?[]:awards.filter(a=>a.memberId===m.id&&(!a.isNew||profile.contractBonusEnabled&&(!netPolicy||profile.kpiEligible===false)));
     const calc = computePayslip({profile,params,input:kpiApply?resolved:input,adjustments:adj,attendanceDays,systemRevenue,groupMonth:gm,quarterBonusAuto:quarter.map.get(m.id)??0,...(netPolicy&&profile.payrollGroup==='sale'&&profile.kpiEnabled&&profile.kpiEligible!==false?{kpiNetRevenue:fact?.netRevenue||0,kpiNetRevenueIssues:fact?.netRevenueIssues||0}:{}),
      contractBonus:bonusApply?ownAwards.filter(a=>a.isNew).reduce((n,a)=>n+a.amount,0):0,contractBonusAdjustment:bonusApply?ownAwards.filter(a=>!a.isNew).reduce((n,a)=>n+a.amount,0):0});
     calc.employment={company:m.workCompany,department:m.workDepartment,leader:m.isLeader};
-    if(enabled){const previewKpi=kpiEnabled&&profile.kpiEnabled?computeKpiCv({...resolved,kpiOverride:profile.fixedKpi??resolved.kpiOverride},params,profile.revenueTarget||params.kpiRevenue,input.revenue??systemRevenue):null;calc.salesCrm={apply:bonusApply||kpiApply&&profile.kpiEnabled,bonusApply,kpiApply:kpiApply&&profile.kpiEnabled,from,kpiEligible:profile.kpiEligible!==false,facts:auto,awards:ownAwards,previewKpi,kpiBonusPreview:Math.round((netPolicy?Math.max(0,fact?.netRevenue||0):(input.revenue??systemRevenue))*(netPolicy?netKpiBonusRate(params,previewKpi?.used??null):kpiBonusRate(params,previewKpi?.used??null)))};}
+    if(enabled&&!probation){const previewKpi=kpiEnabled&&profile.kpiEnabled?computeKpiCv({...resolved,kpiOverride:profile.fixedKpi??resolved.kpiOverride},params,profile.revenueTarget||params.kpiRevenue,input.revenue??systemRevenue):null;calc.salesCrm={apply:bonusApply||kpiApply&&profile.kpiEnabled,bonusApply,kpiApply:kpiApply&&profile.kpiEnabled,from,kpiEligible:profile.kpiEligible!==false,facts:auto,awards:ownAwards,previewKpi,kpiBonusPreview:Math.round((netPolicy?Math.max(0,fact?.netRevenue||0):(input.revenue??systemRevenue))*(netPolicy?netKpiBonusRate(params,previewKpi?.used??null):kpiBonusRate(params,previewKpi?.used??null)))};}
     return { member: m, profile, input, attendanceDays, systemRevenue, adjustments: adj, calc, slip: slips.find(s => s.memberId === m.id) ?? null };
   });
   for(const row of rows){if(![row.calc.gross,row.calc.deductionTotal,row.calc.net].every(Number.isSafeInteger))throw new AppError(400,'Tổng tiền vượt giới hạn tính toán an toàn. Kiểm tra tham số.');row.context={params,paramsMonth:effectiveMonth,profile:row.profile,input:row.input,systemRevenue:row.systemRevenue,attendanceDays:row.attendanceDays};}

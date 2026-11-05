@@ -187,6 +187,9 @@ export function netKpiBonusRate(p:PayrollParams,kpi:number|null){
 }
 export const kpiBonusRate = (p: PayrollParams, kpi: number | null) => kpi === null ? 0 : kpi >= p.kpiHigh ? p.kpiHighRate : kpi >= p.kpiLow ? p.kpiLowRate : 0;
 
+/** Vị trí lương TV / Thử việc chỉ hưởng LCB theo ngày công. */
+export const isProbation = (position: string) => ['TV', 'THỬ VIỆC'].includes(position.trim().toLocaleUpperCase('vi'));
+
 export function computePayslip(a: {
   profile: SalaryProfile; params: PayrollParams; input: PayrollInput; adjustments: readonly { kind: string; amount: number }[];
   /** Ngày công từ chấm công; DS đơn hàng trên hệ thống; thưởng quý tự tính (nếu có). */
@@ -196,7 +199,8 @@ export function computePayslip(a: {
   const adj = (k: AdjustmentKind) => a.adjustments.filter(x => x.kind === k).reduce((s, x) => s + x.amount, 0);
   const days = inp.workDays ?? a.attendanceDays, lcb = f.baseSalary > 0 ? f.baseSalary : minWageMonth(p);
   const revenue = inp.revenue ?? a.systemRevenue;
-  const kpi = g === 'sale' && f.kpiEligible!==false && f.kpiEnabled ? computeKpiCv({...inp,kpiOverride:f.fixedKpi??inp.kpiOverride}, p, f.revenueTarget || p.kpiRevenue, revenue) : null;
+  const probation = isProbation(f.positionLabel);
+  const kpi = !probation && g === 'sale' && f.kpiEligible!==false && f.kpiEnabled ? computeKpiCv({...inp,kpiOverride:f.fixedKpi??inp.kpiOverride}, p, f.revenueTarget || p.kpiRevenue, revenue) : null;
   const responsibility = f.responsibilityMode === 'per_day' ? p.responsibilityDay * days
     : f.responsibilityMode === 'prorated' ? f.responsibility * days / p.standardDays : f.responsibility;
   const mealOff = g === 'sale' ? p.mealOffSale : g === 'bn' ? p.mealOffBn : p.mealOffLock;
@@ -226,10 +230,13 @@ export function computePayslip(a: {
     phoneDeduction: [g === 'sale' ? Math.max(phoneAdvance, phone) : phoneAdvance, g === 'sale' && phone ? `MAX(tạm ứng ĐT ${vnd(phoneAdvance)}, PC ${vnd(phone)})` : ''],
     advance: [adj('advance'), ''],
   };
+  if (probation) for (const key of Object.keys(amounts) as LineKey[]) {
+    if (key !== 'salaryByDays') amounts[key] = [0, 'Thử việc: không áp dụng'];
+  }
   const line = (key: LineKey): PayLine => ({ key, label: LINE_LABEL[key], amount: round(amounts[key][0]), note: amounts[key][1] });
   const income = GROUP_INCOME[g].map(line), deductions = GROUP_DEDUCTION[g].map(line);
   const gross = income.reduce((s, l) => s + l.amount, 0), deductionTotal = deductions.reduce((s, l) => s + l.amount, 0);
-  return { ...(netPolicy?{kpiNetBasis:{netRevenue:a.kpiNetRevenue!,issues:a.kpiNetRevenueIssues||0,rate}}:{}),group: g, positionLabel: f.positionLabel, workDays: days, baseSalary: lcb, revenue, income, deductions, gross, deductionTotal, net: gross - deductionTotal, kpi };
+  return { ...(netPolicy&&!probation?{kpiNetBasis:{netRevenue:a.kpiNetRevenue!,issues:a.kpiNetRevenueIssues||0,rate}}:{}),group: g, positionLabel: f.positionLabel, workDays: days, baseSalary: lcb, revenue, income, deductions, gross, deductionTotal, net: gross - deductionTotal, kpi };
 }
 
 // ---------------- Thưởng quý – team Sale (sheet "Thưởng quý")
