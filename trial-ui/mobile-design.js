@@ -23,8 +23,16 @@ export function installMobileDesign(profiles){
   if(mainAction&&!mainAction.hasAttribute('data-mobile-primary'))mainAction.dataset.mobilePrimary='';
   for(const b of order?.querySelectorAll('[data-pack-print-for],[data-ship-print-for],#order-history')||[])if(!b.hasAttribute('data-mobile-inline'))b.dataset.mobileInline='';
  }
- // Use the same permission-filtered entries as the sidebar, in daily-work order.
- const navOrder=['pos','quotes','orders','contracts','receivables','customers','care','tasks','kho','packing','receiving','deliveries','early-requests','purchases','suppliers','products','stock-lookup','stock-requests','transfers','stock-moves','inventory','cash','cashbook','dashboard','flow','staff','payroll','permissions'];
+ // Same permission-filtered entries as the sidebar. Up to receivables: daily selling order; after it: grouped like the sidebar (money, customers, work, warehouse, purchasing, admin).
+ const navOrder=[
+  'pos','quotes','orders','contracts','receivables',
+  'cashbook','cash',
+  'customers','care','stock-requests',
+  'tasks','dashboard','flow',
+  'kho','products','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving','deliveries',
+  'early-requests','purchases','suppliers',
+  'staff','payroll','permissions',
+ ];
  const navLabels={pos:'Bán hàng nhanh',quotes:'Báo giá',orders:'Đơn hàng',contracts:'HĐKT',receivables:'Công nợ'};
  function syncNav(){
   const sources=new Map();
