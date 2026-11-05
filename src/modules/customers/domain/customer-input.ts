@@ -1,3 +1,4 @@
+import { isCalendarDate, vietnamToday } from './anniversary.ts';
 import { AppError } from '../../../core/errors.ts';
 /** Customer directory and POS share field limits and payment-term parsing. */
 export function customerInput(body:Record<string,unknown>,requirePhone=false) {
@@ -11,6 +12,8 @@ export function customerInput(body:Record<string,unknown>,requirePhone=false) {
   const depositRate=num('depositRate',100,'Tỷ lệ đặt cọc'),creditLimit=num('creditLimit',1e13,'Giới hạn công nợ');
   const paymentTerm=body.paymentTerm===undefined?undefined:(text('paymentTerm')||null);
   if(paymentTerm&&/^\d+(?:\s*ngày)?$/i.test(paymentTerm)&&parseInt(paymentTerm,10)>3650)throw new AppError(400,'Hạn thanh toán tối đa 3650 ngày.');
-  const terms=Object.fromEntries(Object.entries({depositRate,paymentTerm,creditLimit}).filter(([,v])=>v!==undefined));
+  const establishedDate = body.establishedDate === undefined ? undefined : body.establishedDate === null || body.establishedDate === '' ? null : body.establishedDate;
+  if (establishedDate !== undefined && establishedDate !== null && (!isCalendarDate(establishedDate) || establishedDate > vietnamToday())) throw new AppError(400, 'Ngày thành lập phải là ngày hợp lệ, không ở tương lai.');
+  const terms=Object.fromEntries(Object.entries({depositRate,paymentTerm,creditLimit,establishedDate}).filter(([,v])=>v!==undefined));
   return {fields,terms};
 }

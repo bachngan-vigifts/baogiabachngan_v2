@@ -2,7 +2,7 @@ import { payrollEntry, registerQuickPayroll } from './quick-entry.ts';
 import type {CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
 import {payrollLock} from '../../../core/db/payroll-lock.ts';
 import {reserveAwards,releaseAwards,payAwards} from './contract-bonuses.ts';
-import { and, desc, eq, inArray, isNull,lte } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull,lt,lte } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -112,11 +112,16 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
 
   router.get('/hr/payroll/:month', async c => {
     const b = await buildPayroll(c.env.db, month(c.params.month), deps.revenueOf,undefined,deps.crmFactsOf);
+    const history = b.rows.length ? await c.env.db.select({memberId:hrSalaryProfiles.memberId,capacityCoef:hrSalaryProfiles.capacityCoef})
+      .from(hrSalaryProfiles).where(and(inArray(hrSalaryProfiles.memberId,b.rows.map(r=>r.member.id)),lt(hrSalaryProfiles.effectiveMonth,b.month)))
+      .orderBy(desc(hrSalaryProfiles.effectiveMonth)) : [];
+    const previous = new Map<string,number>(); for(const h of history)if(!previous.has(h.memberId))previous.set(h.memberId,h.capacityCoef);
     const rows = b.rows.map(r => {
       const slip = payslipView(r);
-      return { member: r.member, entry: payrollEntry(r, b.month), profile: { payrollGroup: r.profile.payrollGroup, positionLabel: r.profile.positionLabel, hasProfile: r.profile.effectiveMonth !== null,
+      const bank = (slip as typeof slip & {bank?:{code:string;account:string;holder:string}}).bank;
+      return { member: r.member, previousCapacityCoef: previous.get(r.member.id) ?? null, entry: payrollEntry(r, b.month), profile: { payrollGroup: r.profile.payrollGroup, positionLabel: r.profile.positionLabel, hasProfile: r.profile.effectiveMonth !== null,
           bankCode: r.profile.bankCode, bankAccount: r.profile.bankAccount, bankHolder: r.profile.bankHolder },
-        payslip: slip, qr: vietQrUrl(r.profile.bankCode, r.profile.bankAccount, slip.net, b.month) };
+        payslip: slip, qr: vietQrUrl(bank?.code ?? r.profile.bankCode, bank?.account ?? r.profile.bankAccount, slip.net, b.month) };
     });
     // Tổng chỉ tính người đã có hồ sơ lương / phiếu đã chốt (người chưa có hồ sơ hiện riêng để Manager thiết lập).
     const counted = rows.filter(r => r.profile.hasProfile || r.payslip.status !== 'estimate');

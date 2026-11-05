@@ -1,3 +1,4 @@
+import { anniversarySuggestion, vietnamToday, ANNIVERSARY_LEAD_DAYS, ANNIVERSARY_INTERVAL } from '../domain/anniversary.ts';
 import { customerIdentityLock, findCustomerDuplicates, rejectDuplicate } from './identity.ts';
 import { changedIdentity } from '../domain/identity.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
@@ -86,7 +87,7 @@ export async function customerProfile(db: Db, id: string, who: Viewer) {
     brandDiscountsOf(db, id),
   ]);
   const { search: _s, sourceVersion: _v, ...info } = customer;
-  return { customer: { ...info, fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, discounts, access, generalNote: await generalNoteOf(db, id, access) };
+  return { customer: { ...info, anniversary: anniversarySuggestion(customer.establishedDate), fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, discounts, access, generalNote: await generalNoteOf(db, id, access) };
 }
 
 /** Internal notes follow customer visibility; never returned to the customer portal. */
@@ -170,8 +171,21 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
         .where(and(segment,eq(customerStaff.role,'owner'),isNull(employees.deletedAt))).orderBy(asc(employees.name),asc(employees.id)) : Promise.resolve(undefined),
     ]);
     const staff = await customerStaffOf(c.env.db, rows.map(r => r.id));
-    return json({ customers: rows.map(r => ({ ...r, owner: staff.get(r.id)!.owner, sharedCount: staff.get(r.id)!.shared.length })),
+    return json({ customers: rows.map(r => ({ ...r, anniversary: anniversarySuggestion(r.establishedDate), owner: staff.get(r.id)!.owner, sharedCount: staff.get(r.id)!.shared.length })),
       filterOptions: owners ? {owners} : undefined, canListRetail: retailVisible, total: Number(total), pendingCount: Number(pending), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
+  }, 'business');
+
+  // Reminder scope is restricted to the viewer's owned/shared/department customers; managers see all.
+  router.get('/customers/anniversaries', async c => {
+    const me = viewer(c), today = vietnamToday(), db = c.env.db;
+    const scope = me.role === 'manager' || seesAllAsSaleAdmin(me) ? undefined : exists(db.select({ id: customerStaff.customerId }).from(customerStaff)
+      .where(and(eq(customerStaff.customerId, customers.id), or(eq(customerStaff.memberId, me.id), departmentOwner(customerStaff.memberId, me)))));
+    const rows = await db.select({ id: customers.id, name: customers.name, contact: customers.contact, phone: customers.phone, establishedDate: customers.establishedDate })
+      .from(customers).where(and(eq(customers.isRetail, false), eq(customers.approvalStatus, 'approved'), sql`${customers.establishedDate} is not null`, scope));
+    const reminders = rows.map(row => ({ ...row, anniversary: anniversarySuggestion(row.establishedDate, today) }))
+      .filter((row): row is typeof row & { anniversary: NonNullable<typeof row.anniversary> } => !!row.anniversary?.upcoming)
+      .sort((a, b) => a.anniversary.date.localeCompare(b.anniversary.date) || a.id.localeCompare(b.id));
+    return json({ today, leadDays: ANNIVERSARY_LEAD_DAYS, intervalYears: ANNIVERSARY_INTERVAL, total: reminders.length, reminders: reminders.slice(0, 100) });
   }, 'business');
 
   router.get('/customers/duplicates/check', async c => {

@@ -1,11 +1,12 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
+import { pgTable, text, date, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { APPROVAL_STATUSES, CUSTOMER_STAFF_ROLES } from './domain/customer-config.ts';
 
 export const customers = pgTable('sapo_customers', {
   isRetail: boolean('is_retail').notNull().default(false),
+  establishedDate: date('established_date', { mode: 'string' }),
   createdAt: text('created_at').notNull().default(''),
   taxCode: text('tax_code').notNull().default(''),
   customerCode: text('customer_code').notNull().default(''),
@@ -28,7 +29,8 @@ export const customers = pgTable('sapo_customers', {
   paymentTerm: text('payment_term'),
   creditLimit: doublePrecision('credit_limit'),
 }, t => [index('idx_sapo_customers_name').on(t.name), index('idx_sapo_customers_approval').on(t.approvalStatus),
-  enumCheck('chk_sapo_customers_approval', t.approvalStatus, APPROVAL_STATUSES)]).enableRLS();
+  enumCheck('chk_sapo_customers_approval', t.approvalStatus, APPROVAL_STATUSES),
+  check('chk_customer_established_date', sql`${t.establishedDate} is null or (${t.establishedDate} >= date '0001-01-01' and ${t.establishedDate} <= date '9999-12-31')`)]).enableRLS();
 export const customerContractProfiles = pgTable('customer_contract_profiles', {
   customerId: text('customer_id').primaryKey().references(() => customers.id),
   data: text('data').notNull().default('{}'),

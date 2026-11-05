@@ -1,3 +1,4 @@
+import { payrollSheetHtml } from './payroll-sheet.js';
 // Excel-style entry uses the existing server payroll engine; displayed totals are saved calculations.
 export const QUICK_COLUMNS = {
   inputs: [ ['workDays','Ngày công',true,true], ['overtimeHours','Giờ tăng ca',true], ['revenue','Doanh số tháng',false,true],
@@ -38,43 +39,46 @@ export function parseQuickNumber(raw, column) {
   return n;
 }
 export function createPayrollQuickEntry({ root, api, esc, money, toast, onSaved, confirmBox, userId = () => null }) {
-  const draftsByMonth = new Map(); let drafts = new Map(), data, mode = 'inputs', saving = false, loading = false, owner;
+  const draftsByMonth = new Map(); let drafts = new Map(), data, mode = 'sheet', saving = false, loading = false, owner;
   const dirty = () => { if (owner !== userId()) { draftsByMonth.clear(); drafts = new Map(); owner = userId(); } return drafts.size > 0; };
-  const labels = { inputs: 'Chấm công & chỉ số', profile: 'Lương & phụ cấp cố định', adjustments: 'Thưởng, phạt & tạm ứng' };
+  const labels = { sheet: 'Bảng tổng thể như Excel', inputs: 'Chấm công & chỉ số', profile: 'Lương & phụ cấp cố định', adjustments: 'Thưởng, phạt & tạm ứng' };
   function html(d) {
     if (owner !== userId()) { draftsByMonth.clear(); drafts = new Map(); owner = userId(); }
     data = d;
     drafts = draftsByMonth.get(d.month) || new Map();
     draftsByMonth.set(d.month, drafts);
-    const cols = QUICK_COLUMNS[mode];
-    const field = (r,c) => {
-      const saved = r.entry[mode]?.[c[0]], value = drafts.get(r.member.id)?.[mode]?.[c[0]];
-      const v = value === undefined ? saved : value;
-      if (c[2] === 'boolean') return `<td><label><input type="checkbox" class="pr-quick-value" data-member="${esc(r.member.id)}" data-key="${c[0]}" aria-label="${esc(r.member.name+' — '+c[1])}" ${v?'checked':''} ${r.payslip.status!=='estimate'||saving||loading?'disabled':''}>Có</label></td>`;
-      const extra = mode === 'adjustments' && r.entry.existingAdjustments[c[0]];
-      return `<td><input class="pr-quick-value" inputmode="decimal" data-member="${esc(r.member.id)}" data-key="${c[0]}" aria-label="${esc(r.member.name+' — '+c[1])}" value="${esc(v == null ? '' : String(v).replace('.', ','))}" placeholder="${c[3]?'Tự động':'0'}" ${r.payslip.status!=='estimate'||saving||loading?'disabled':''}>${extra?`<small class="muted">Đã ghi riêng: ${money(extra)}</small>`:''}</td>`;
+    const cols = QUICK_COLUMNS[mode] || [];
+    const field = (r,c,section=mode,scale=1) => {
+      const saved = r.entry[section]?.[c[0]], value = drafts.get(r.member.id)?.[section]?.[c[0]];
+      const raw = value === undefined ? saved : value;
+      const v = raw == null ? raw : +Number(raw * scale).toFixed(6);
+      if (c[2] === 'boolean') return `<td><label><input type="checkbox" class="pr-quick-value" data-member="${esc(r.member.id)}" data-key="${c[0]}" data-section="${section}" data-scale="${scale}" aria-label="${esc(r.member.name+' — '+c[1])}" ${v?'checked':''} ${r.payslip.status!=='estimate'||saving||loading?'disabled':''}>Có</label></td>`;
+      const extra = section === 'adjustments' && r.entry.existingAdjustments[c[0]];
+      return `<td><input class="pr-quick-value" inputmode="decimal" data-member="${esc(r.member.id)}" data-key="${c[0]}" data-section="${section}" data-scale="${scale}" aria-label="${esc(r.member.name+' — '+c[1])}" value="${esc(v == null ? '' : String(v).replace('.', ','))}" placeholder="${c[3]?'Tự động':'0'}" ${r.payslip.status!=='estimate'||saving||loading?'disabled':''}>${extra?`<small class="muted">Đã ghi riêng: ${money(extra)}</small>`:''}</td>`;
     };
     return `<section id="pr-quick" data-payroll-month="${esc(d.month)}"><div class="pr-quick-tools"><div><h3>Nhập nhanh bảng lương toàn công ty</h3><p class="muted small">Nhập trực tiếp, dùng Tab/Enter hoặc dán một vùng từ Excel. Ô trống “Tự động” lấy từ hệ thống; số 0 là nhập tay bằng 0. Thực nhận cập nhật sau khi lưu.</p></div>
       <button type="button" class="btn secondary" data-quick-discard>Tải lại / Bỏ thay đổi</button><button type="button" class="btn primary" data-quick-save ${saving||loading?'disabled':''}>Lưu thay đổi <span data-quick-count>${drafts.size?'('+drafts.size+' người)':''}</span></button></div>
       <div class="pr-quick-tools"><label>Tìm nhân viên <input data-quick-search type="search" placeholder="Tên nhân viên…"></label>
       <label>Bảng lương <select data-quick-group><option value="">Tất cả</option>${Object.entries(d.columns.groups).map(([k,v])=>`<option value="${esc(k)}">${esc(v)}</option>`).join('')}</select></label>
       <label>Nhập số liệu <select data-quick-mode>${Object.entries(labels).map(([k,v])=>`<option value="${k}" ${mode===k?'selected':''}>${v}</option>`).join('')}</select></label></div>
+      ${mode==='sheet'?'<p class="muted small">Nhóm màu theo mẫu Excel. Ô số cho phép nhập; ô nền tổng là kết quả sau lưu. KPI CV nhập theo % (115,72 = 115,72%). Các khoản bổ sung cộng với khoản đã ghi riêng; Hệ số cũ lấy từ hồ sơ gần nhất trước tháng này.</p>':''}
       ${mode==='adjustments'?'<p class="muted small">Các ô này là khoản nhập nhanh bổ sung. Khoản đã ghi riêng và lý do được giữ nguyên; tổng khấu trừ/thu nhập bao gồm cả hai.</p>':''}
       ${mode==='profile'?'<p class="muted small">Cài đặt áp dụng từ tháng đang chọn. Trách nhiệm tuỳ cách tính đã thiết lập (cố định / theo công / mỗi ngày). Nhấn tên nhân viên để xem và sửa cấu hình đầy đủ.</p>':''}
       <p data-quick-status role="status" aria-live="polite"></p>
-      <div class="pr-quick-scroll" tabindex="0" aria-label="Bảng nhập lương, cuộn ngang để xem các cột"><table class="data-table pr-quick-table"><thead><tr><th>Nhân viên</th><th>Bảng / Trạng thái</th>${cols.map(c=>`<th>${c[1]}</th>`).join('')}<th>Tổng thu nhập</th><th>Khấu trừ</th><th>Thực nhận</th><th>Chi tiết</th></tr></thead><tbody>
+      ${mode==='sheet'?payrollSheetHtml({data:d,esc,money,field:(r,col)=>{const c=[...QUICK_COLUMNS[col.section].find(c=>c[0]===col.key)];c[1]=col.bonus?'Thưởng khác (bổ sung)':col.label;return field(r,c,col.section,col.scale||1);},isDirty:id=>drafts.has(id)}):`      <div class="pr-quick-scroll" tabindex="0" aria-label="Bảng nhập lương, cuộn ngang để xem các cột"><table class="data-table pr-quick-table"><thead><tr><th>Nhân viên</th><th>Bảng / Trạng thái</th>${cols.map(c=>`<th>${c[1]}</th>`).join('')}<th>Tổng thu nhập</th><th>Khấu trừ</th><th>Thực nhận</th><th>Chi tiết</th></tr></thead><tbody>
       ${d.rows.map(r=>`<tr class="${drafts.has(r.member.id)?'pr-quick-dirty':''}" data-quick-row="${esc(r.member.id)}" data-group="${esc(r.profile.payrollGroup)}" data-name="${esc(r.member.name.toLocaleLowerCase('vi'))}"><td class="pr-quick-name"><a href="#/members/${encodeURIComponent(r.member.id)}?month=${d.month}&tab=payroll">${esc(r.member.name)}</a><small>${esc(r.profile.positionLabel||r.member.positionId||'')}${r.member.active?'':' · Đã nghỉ'}</small></td><td>${esc(d.columns.groups[r.profile.payrollGroup])}<small>${r.payslip.status==='estimate'?(r.profile.hasProfile?'Tạm tính':'Chưa có hồ sơ lương'):r.payslip.status==='paid'?'Đã trả · Khóa sửa':'Đã chốt · Khóa sửa'}</small></td>${cols.map(c=>field(r,c)).join('')}<td class="num">${money(r.payslip.gross)}</td><td class="num">${money(r.payslip.deductionTotal)}</td><td class="num strong">${money(r.payslip.net)}</td><td><details><summary>Các khoản lương</summary>${[...r.payslip.income,...r.payslip.deductions].map(l=>`<p>${esc(d.columns.labels[l.key]||l.key)}: <b>${money(l.amount)}</b></p>`).join('')}</details></td></tr>`).join('')}
-      </tbody></table></div><p class="muted small">${d.rows.length} nhân viên · Ô nền vàng cho phép nhập · Phiếu đã chốt/đã trả chỉ xem. Nhân viên chưa có hồ sơ: nhập LCB trong mục “Lương & phụ cấp cố định” rồi lưu để tạo hồ sơ.</p></section>`;
+      </tbody></table></div>`}<p class="muted small">${d.rows.length} nhân viên · Ô nền vàng cho phép nhập · Phiếu đã chốt/đã trả chỉ xem. Nhân viên chưa có hồ sơ: nhập LCB trong mục “Lương & phụ cấp cố định” rồi lưu để tạo hồ sơ.</p></section>`;
   }
   function capture(input) {
-    const r = data.rows.find(r=>r.member.id===input.dataset.member), c = QUICK_COLUMNS[mode].find(c=>c[0]===input.dataset.key);
+    const section=input.dataset.section, r = data.rows.find(r=>r.member.id===input.dataset.member), c = QUICK_COLUMNS[section].find(c=>c[0]===input.dataset.key);
     if (loading || saving || input.disabled || input.closest('#pr-quick')?.dataset.payrollMonth !== data.month) return;
-    const value = parseQuickNumber(input.type==='checkbox'?input.checked:input.value,c);
+    const parsed = parseQuickNumber(input.type==='checkbox'?input.checked:input.value,c);
+    const value = parsed==null||typeof parsed==='boolean'?parsed:Number(input.dataset.scale)===100?Number((parsed/100).toFixed(12)):parsed;
     let draft = drafts.get(r.member.id);
     if (!draft) draft = { memberId:r.member.id, version:r.entry.version, month:data.month };
-    draft[mode] ||= {};
-    if (value === r.entry[mode][c[0]]) delete draft[mode][c[0]];
-    else draft[mode][c[0]] = value;
+    draft[section] ||= {};
+    if (value === r.entry[section][c[0]]) delete draft[section][c[0]];
+    else draft[section][c[0]] = value;
     if (['inputs','profile','adjustments'].every(k=>!Object.keys(draft[k]||{}).length)) drafts.delete(r.member.id);
     else drafts.set(r.member.id,draft);
     root.querySelector('[data-quick-count]').textContent = drafts.size?`(${drafts.size} người)`:'';
@@ -108,10 +112,13 @@ export function createPayrollQuickEntry({ root, api, esc, money, toast, onSaved,
     const text=e.clipboardData.getData('text');if(!/[\t\r\n]/.test(text))return;
     e.preventDefault();
     const rows=[...root.querySelectorAll('[data-quick-row]')].filter(tr=>!tr.hidden&&!tr.querySelector('input').disabled);
-    const start=rows.indexOf(e.target.closest('tr')), column=QUICK_COLUMNS[mode].findIndex(c=>c[0]===e.target.dataset.key);
-    const cells=text.replace(/\r?\n$/, '').split(/\r?\n/).flatMap((line,i)=>line.split('\t').map((v,j)=>({input:rows[start+i]?.querySelectorAll('input')[column+j],value:v,column:QUICK_COLUMNS[mode][column+j]})));
+    const start=rows.indexOf(e.target.closest('tr')), column=e.target.closest('td').cellIndex;
+    const cells=text.replace(/\r?\n$/, '').split(/\r?\n/).flatMap((line,i)=>line.split('\t').map((v,j)=>{
+      const input=rows[start+i]?.children[column+j]?.querySelector('input');
+      return {input,value:v,column:input?QUICK_COLUMNS[input.dataset.section]?.find(c=>c[0]===input.dataset.key):null};
+    }));
     try {
-      if(cells.some(c=>!c.input||!c.column))throw new Error('Vùng dán vượt số hàng/cột đang hiển thị.');
+      if(cells.some(c=>!c.input||!c.column))throw new Error('Vùng dán vượt bảng hoặc chứa cột tự tính. Chỉ dán vào các ô nhập liền nhau.');
       cells.forEach(c=>parseQuickNumber(c.value,c.column)); // validate the whole rectangle before changing any cell
       cells.forEach(c=>{if(c.input.type==='checkbox')c.input.checked=parseQuickNumber(c.value,c.column);else c.input.value=c.value;capture(c.input);});
       root.querySelector('[data-quick-status]').textContent='Đã dán dữ liệu, bấm Lưu thay đổi để cập nhật.';
