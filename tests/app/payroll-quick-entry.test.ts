@@ -93,3 +93,16 @@ test('Vietnamese Excel thousands and decimal separators work for output rates, q
     for(const bad of ['1.23.456','1,234,56','12.34,56','15,00,0','1e3','0x10','1 2','NaN','Infinity','-15.000']) assert.throws(()=>parseQuickNumber(bad,column),`${key}: reject ${bad}`);
   }
 });
+
+test('probation position saves through quick entry, ignores saved extras, snapshots correctly and can return to regular payroll',async()=>{
+ const f=await setup();let row=(await f.board()).rows.find((r:any)=>r.member.id==='emp');
+ assert.equal((await f.save([{memberId:'emp',version:row.entry.version,profile:{positionLabel:'Thử việc',baseSalary:5200000,capacityCoef:7,insurance:496650,phoneAllowance:250000},inputs:{workDays:24,overtimeHours:10},adjustments:{advance:500000,bonus:1000000,allowance:300000,deduction:100000}}])).status,200);
+ row=(await f.board()).rows.find((r:any)=>r.member.id==='emp');assert.equal(row.profile.positionLabel,'THỬ VIỆC');assert.equal(row.payslip.gross,4800000);assert.equal(row.payslip.net,4800000);assert.equal(row.payslip.deductionTotal,0);
+ assert.equal((await f.call('/hr/members/emp/payslips/2026-09',f.mgr,'POST',{})).status,201);
+ row=(await f.board()).rows.find((r:any)=>r.member.id==='emp');assert.equal(row.payslip.status,'confirmed');assert.equal(row.payslip.net,4800000);
+ assert.equal((await f.save([{memberId:'emp',version:row.entry.version,profile:{positionLabel:'SALE'}}])).status,409);
+ const october=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find((r:any)=>r.member.id==='emp');
+ assert.equal((await f.call('/hr/payroll/2026-10/entries',f.mgr,'PUT',{rows:[{memberId:'emp',version:october.entry.version,profile:{positionLabel:'SALE'},inputs:{workDays:26}}]})).status,200);
+ const regular=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find((r:any)=>r.member.id==='emp');assert.ok(regular.payslip.income.find((l:any)=>l.key==='capacity').amount>0);
+ assert.equal((await f.board()).rows.find((r:any)=>r.member.id==='emp').payslip.net,4800000);
+});

@@ -156,3 +156,13 @@ Migration theo thứ tự:
 
 
 Đồng nghiệp cùng nhóm được xác định bằng `staff_members.position_id`, tài khoản đang hoạt động/chưa xoá. API overview trả `canViewPayroll: false` và `payroll: null` khi xem đồng nghiệp; không gọi `payrollOf` và không trả dữ liệu từ hồ sơ lương. Quyền các endpoint HR giữ nguyên.
+
+### Thử việc và nhập bảng lương từ Excel
+
+Trong bảng tổng thể, nhập/chọn **THỬ VIỆC** (hoặc **TV**) ở cột Vị trí rồi lưu. Vị trí này chỉ tính LCB × ngày công / ngày công chuẩn; không tính năng lực, trách nhiệm, KPI, thưởng, sản lượng, tăng ca, phụ cấp và mọi khoản trừ (kể cả tạm ứng). Giá trị các chỉ số cũ vẫn được giữ để đối chiếu nhưng không đưa vào thực nhận. Đổi lại vị trí chính thức từ tháng phù hợp sẽ áp dụng công thức thông thường. Phiếu đã chốt giữ nguyên bản chụp.
+
+Các ô tiền dùng dấu phẩy hàng nghìn, ví dụ **4,758,000**, sau khi rời ô. Ngày công, hệ số vẫn cho nhập số lẻ.
+
+**Tải file mẫu** tạo `.xlsx` theo tháng đang xem, có mã và tên nhân viên chưa khóa phiếu. Nhập chỉ số vào sheet **Nhập lương**, giữ nguyên tiêu đề/mã nhân viên/tháng. Ô trống giữ nguyên dữ liệu hiện tại, `0` ghi bằng 0; nhập `Tự động` ở chỉ số hỗ trợ để lấy từ hệ thống. KPI chốt nhập theo phần trăm (115,72 = 115,72%). Không dùng công thức Excel.
+
+**Nhập file Excel** kiểm tra toàn bộ file trước khi tạo bản nháp; sai tháng, trùng/không tìm thấy nhân viên, phiếu đã khóa hay ô lỗi sẽ bị từ chối. Kiểm tra các ô trên bảng rồi bấm **Lưu thay đổi** để ghi vào hệ thống; file không tự lưu. Lưu/bỏ bản nháp hiện tại trước khi nhập file mới. File tối đa 5 MB, 1.000 dòng; mỗi lần lưu tối đa 100 nhân viên theo API nhập nhanh.

@@ -66,9 +66,10 @@ export function registerQuickPayroll(router: Router<StaffEnv>, deps: { revenueOf
           await db.insert(hrPayrollInputs).values(value).onConflictDoUpdate({ target: [hrPayrollInputs.memberId, hrPayrollInputs.month], set: value });
         }
         if (change.profile) {
-          const patch = object(change.profile), values: Record<string, number | boolean> = {};
+          const patch = object(change.profile), values: Record<string, number | boolean | string> = {};
           for (const [key, value] of Object.entries(patch)) {
-            if (key === 'mealAllowance' && typeof value === 'boolean') values[key] = value;
+            if (key === 'positionLabel' && typeof value === 'string' && value.trim().length <= 60) values[key] = value.trim().toLocaleUpperCase('vi');
+            else if (key === 'mealAllowance' && typeof value === 'boolean') values[key] = value;
             else {
               if (!Object.hasOwn(profileLimits, key)) throw new AppError(400, 'Cài đặt lương không được hỗ trợ.');
               values[key] = numeric(value, profileLimits[key]!);
