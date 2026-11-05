@@ -5,6 +5,20 @@ const COLOR = { actual: '#2a78d6', expected: '#eb6834', ramp: ['#86b6ef', '#3987
 const STAGES = [['consulting', 'Đang tư vấn'], ['quote_sent', 'Đã gửi báo giá'], ['negotiating', 'Đang thương lượng']];
 const RANK = [['actual', 'Thực tế'], ['expected', 'Dự kiến'], ['pipeline', 'Pipeline']];
 const PRESETS = [[1, 'Tháng này'], [3, '3 tháng'], [6, '6 tháng'], [12, '12 tháng']];
+// KPI Sale: 4 phần điểm (thứ tự như phiếu lương) – 4 màu phân biệt được khi mù màu; phần chưa đạt tới 100% màu nền.
+const KPI_PARTS = { newCustomers: '#2a78d6', transactions: '#eb6834', contracts: '#1a9e77', revenue: '#8e5bd0' };
+export const kpiPercent = v => `${(Math.round(v * 1000) / 10).toLocaleString('vi-VN')}%`;
+/** Lát biểu đồ tròn KPI: các phần điểm > 0, thêm phần "Chưa đạt" khi tổng < 100%. Cả vòng = max(100%, tổng). */
+export function kpiSlices(member) {
+  const parts = member.parts.filter(p => p.points > 0).map(p => ({ key: p.key, label: p.label, value: p.points, color: KPI_PARTS[p.key] }));
+  const total = parts.reduce((s, p) => s + p.value, 0);
+  if (total < 1) parts.push({ key: 'missing', label: 'Chưa đạt 100%', value: 1 - total, color: 'var(--dash-track, #e3e9e6)' });
+  const whole = Math.max(1, total);
+  let at = 0;
+  return parts.map(p => { const from = at / whole; at += p.value; return { ...p, from, to: at / whole }; });
+}
+/** Mức thưởng KPI theo mức đạt (chỉ tỷ lệ). */
+const kpiBonus = m => m.bonusRate > 0 ? `Thưởng KPI ${(Math.round(m.bonusRate * 10000) / 100).toLocaleString('vi-VN')}% doanh số tính thưởng` : 'Chưa đạt mức thưởng KPI (dưới 60%)';
 
 const thisMonth = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).slice(0, 7);
 const monthIndex = ym => Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5)) - 1;
@@ -173,6 +187,93 @@ export function initDashboard({ api, root, isManager, money }) {
   const legend = items => { const l = node('div', null, 'dash-legend'); for (const [color, label] of items) { const k = node('span'), sw = node('i'); sw.style.background = color; k.append(sw, document.createTextNode(label)); l.append(k); } return l; };
   const tile = (label, value, sub, cls = '') => { const t = node('div', null, 'dash-tile ' + cls); t.append(node('p', label, 'dash-tile-label'), node('strong', value)); if (sub) t.append(node('p', sub, 'dash-tile-sub')); return t; };
 
+  // ---- Điểm KPI Sale (tải riêng sau doanh số; cùng bộ lọc, tháng cuối kỳ mặc định).
+  let kpiData = null, kpiMonth = '', kpiPick = '', kpiRequest = 0;
+  const kpiCard = card('Điểm KPI Sale', null, 'is-wide dash-kpi-card'), kpiBody = node('div', null, 'dash-kpi');
+  const kpiMonthSelect = node('select', null, 'dash-mini'); kpiMonthSelect.setAttribute('aria-label', 'Tháng tính KPI');
+  kpiMonthSelect.addEventListener('change', () => { kpiMonth = kpiMonthSelect.value; loadKpi(); });
+  kpiCard.firstChild.append(kpiMonthSelect); kpiCard.append(kpiBody);
+  const ring = (cx, cy, R, r, a0, a1) => {
+    const pt = (rad, a) => [cx + rad * Math.sin(a * 2 * Math.PI), cy - rad * Math.cos(a * 2 * Math.PI)].map(v => Math.round(v * 100) / 100).join(',');
+    const large = a1 - a0 > 0.5 ? 1 : 0;
+    return `M${pt(R, a0)}A${R},${R} 0 ${large} 1 ${pt(R, a1)}L${pt(r, a1)}A${r},${r} 0 ${large} 0 ${pt(r, a0)}Z`;
+  };
+  function kpiDonut(m) {
+    const S = 220, c = S / 2, R = 100, r = 66, s = svgRoot(S, S, `Biểu đồ tròn điểm KPI của ${m.name}: tổng ${kpiPercent(m.used)}`);
+    s.classList.add('dash-donut');
+    for (const sl of kpiSlices(m)) {
+      // Một lát trọn vòng: chia đôi để cung SVG không suy biến.
+      const segs = sl.to - sl.from >= 0.999 ? [[sl.from, sl.from + 0.5], [sl.from + 0.5, sl.to]] : [[sl.from, sl.to]];
+      const g = svg('g');
+      for (const [a, b] of segs) g.append(svg('path', { d: ring(c, c, R, r, a, segs.length > 1 ? b : b - Math.min(0.002, (b - a) / 3)), fill: sl.color, class: sl.key === 'missing' ? 'dash-donut-missing' : '' }));
+      hover(g, () => [sl.label, [{ color: sl.color, value: kpiPercent(sl.value), label: sl.key === 'missing' ? 'còn thiếu để đạt 100%' : 'điểm KPI' }]], () => g.classList.add('is-on'), () => g.classList.remove('is-on'));
+      s.append(g);
+    }
+    s.append(svg('text', { x: c, y: c + 2, 'text-anchor': 'middle', class: 'dash-donut-value' }, kpiPercent(m.used)),
+      svg('text', { x: c, y: c + 24, 'text-anchor': 'middle', class: 'dash-donut-label', style: 'font-weight:400;font-size:12px' }, m.adjustedBy ? (m.adjustedBy === 'fixed' ? 'KPI cố định' : 'KPI chốt') : 'Tổng điểm KPI'));
+    return s;
+  }
+  function kpiDetail(m) {
+    const box = node('div', null, 'dash-kpi-detail'), t = node('table', null, 'dash-kpi-table'), head = node('tr'), body = node('tbody');
+    for (const h of ['Chỉ tiêu', 'Thực tế', 'Điểm']) head.append(node('th', h));
+    const th = node('thead'); th.append(head); t.append(th);
+    const count = v => v == null ? 'Chưa nhập' : Number(v).toLocaleString('vi-VN');
+    for (const p of m.parts) {
+      const tr = node('tr'), name = node('td'), sw = node('i', null, 'dash-kpi-key'); sw.style.background = KPI_PARTS[p.key]; name.append(sw, document.createTextNode(p.label));
+      // Hai dòng mỗi ô: số chính + chỉ tiêu / điểm tối đa (vừa màn hình điện thoại, không cuộn ngang).
+      const two = (main, sub) => { const td = node('td'); td.append(node('strong', main), node('small', sub)); return td; };
+      const actual = p.key === 'revenue' ? money(p.actual ?? 0) : count(p.actual) + (p.extra ? ` + ${p.extra.toLocaleString('vi-VN')} quy đổi` : '');
+      tr.append(name, two(actual, 'chỉ tiêu ' + (p.key === 'revenue' ? money(p.target) : p.target.toLocaleString('vi-VN'))),
+        two(kpiPercent(p.points), p.max == null ? 'không giới hạn' : 'tối đa ' + kpiPercent(p.max)));
+      body.append(tr);
+    }
+    const sum = node('tr', null, 'is-total'); sum.append(node('td', 'Tổng điểm KPI'), node('td', ''), node('td', kpiPercent(m.total))); body.append(sum);
+    t.append(body);
+    const scroll = node('div', null, 'revenue-table-scroll'); scroll.append(t);
+    const notes = node('ul', null, 'dash-kpi-notes');
+    const note = text => notes.append(node('li', text));
+    if (m.adjustedBy) note(`Đang dùng ${m.adjustedBy === 'fixed' ? 'KPI cố định trong hồ sơ' : 'KPI chốt trên bảng lương'} ${kpiPercent(m.used)} (kết quả tính ${kpiPercent(m.total)}).`);
+    note(kpiBonus(m) + '.');
+    note(m.status === 'estimate' ? 'Tạm tính theo số liệu hiện tại; chốt lương sẽ giữ cố định.' : 'Theo phiếu lương đã chốt (số lúc chốt).');
+    note(m.source === 'crm' ? 'KH mới, giao dịch, số HĐKT lấy tự động từ CRM.' : 'KH mới, giao dịch, số HĐKT theo số nhập trên bảng lương.');
+    if (m.crmPreview != null) note(`KPI tính từ CRM (đối chiếu, chưa áp dụng): ${kpiPercent(m.crmPreview)}.`);
+    if (m.merchDays || m.tripDays) note(`Đã cộng quy đổi ${m.merchDays} ngày làm hàng, ${m.tripDays} ngày công tác.`);
+    box.append(scroll, notes); return box;
+  }
+  function renderKpi() {
+    const x = kpiData; if (!x) return;
+    kpiCard.hidden = !x.available;
+    kpiMonthSelect.replaceChildren(); for (const mo of data?.months?.map(m => m.month) || [x.month]) { const o = node('option', `T${Number(mo.slice(5))}/${mo.slice(0, 4)}`); o.value = mo; kpiMonthSelect.append(o); }
+    kpiMonthSelect.value = x.month; kpiMonthSelect.hidden = kpiMonthSelect.options.length < 2;
+    const sub = kpiCard.querySelector('.dash-sub') || node('p', null, 'dash-sub'); sub.textContent = `Tháng ${Number(x.month.slice(5))}/${x.month.slice(0, 4)} · cùng cách tính với phiếu lương`; kpiCard.firstChild.insertBefore(sub, kpiMonthSelect);
+    if (!x.members.length) { kpiBody.replaceChildren(node('p', x.scope === 'self' ? 'Chưa có KPI Sale cho tháng này (hồ sơ lương chưa bật KPI hoặc không thuộc bảng Sale).' : 'Không có nhân viên Sale tính KPI trong phạm vi lọc.', 'dash-sub')); return; }
+    const m = x.members.find(p => p.id === kpiPick) || x.members[0]; kpiPick = m.id;
+    const main = node('div', null, 'dash-kpi-main'), chart = node('div', null, 'dash-kpi-chart'), keys = legend(m.parts.map(p => [KPI_PARTS[p.key], p.label]));
+    chart.append(node('p', m.name, 'dash-kpi-name'), kpiDonut(m), keys);
+    main.append(chart, kpiDetail(m));
+    const out = [];
+    if (x.members.length > 1) {
+      const list = node('ol', null, 'dash-kpi-list'); list.setAttribute('aria-label', 'Chọn nhân viên xem KPI');
+      for (const p of x.members) {
+        const li = node('li'), b = node('button', null, 'dash-kpi-person'); b.type = 'button'; b.setAttribute('aria-pressed', String(p.id === m.id));
+        const bar = node('span', null, 'dash-kpi-bar'), fill = node('i'); fill.style.width = Math.min(100, p.used * 100) + '%'; fill.className = p.used >= 0.9 ? 'is-high' : p.used >= 0.6 ? 'is-low' : 'is-none'; bar.append(fill);
+        b.append(node('span', p.name, 'dash-kpi-person-name'), bar, node('strong', kpiPercent(p.used)));
+        b.addEventListener('click', () => { kpiPick = p.id; renderKpi(); }); li.append(b); list.append(li);
+      }
+      out.push(list);
+    }
+    if (x.restricted) out.push(node('p', 'Chỉ hiện KPI của bạn – KPI nhân viên khác chỉ Manager xem.', 'dash-sub'));
+    kpiBody.replaceChildren(...out, main);
+  }
+  async function loadKpi() {
+    const id = ++kpiRequest; if (!data) return;
+    const months = data.months.map(m => m.month); if (!months.includes(kpiMonth)) kpiMonth = months.at(-1);
+    kpiCard.classList.add('is-loading'); if (!kpiData) kpiBody.replaceChildren(node('p', 'Đang tính KPI…', 'dash-sub'));
+    try { const r = await api('/dashboard/kpi?' + new URLSearchParams({ from: filters.from, to: filters.to, owner: filters.owner, group: filters.group, month: kpiMonth })); if (id !== kpiRequest) return; kpiData = r; renderKpi(); }
+    catch (e) { if (id !== kpiRequest) return; kpiData = null; kpiCard.hidden = false; const retry = node('button', 'Thử lại', 'btn'); retry.type = 'button'; retry.addEventListener('click', loadKpi); kpiBody.replaceChildren(node('p', e.message || 'Chưa tính được KPI.', 'error'), retry); }
+    finally { if (id === kpiRequest) kpiCard.classList.remove('is-loading'); }
+  }
+
   let draws = [], lastWidth = 0;
   const redraw = () => { for (const draw of draws) draw(); };
   new ResizeObserver(() => { const w = content.clientWidth; if (data && w && Math.abs(w - lastWidth) > 8) { lastWidth = w; redraw(); } }).observe(content);
@@ -243,7 +344,8 @@ export function initDashboard({ api, root, isManager, money }) {
 
     const how = node('details', null, 'dash-how'); how.append(node('summary', 'Cách tính số liệu'),
       node('p', 'Thực tế: đơn hàng/HĐKT trong kỳ (gồm VAT), bỏ đơn huỷ và đơn nháp chưa có hợp đồng ký; mỗi HĐKT tính một lần. Dự kiến và số khách rớt: lần chăm sóc mới nhất của từng cặp khách/nhân viên trong kỳ. Pipeline: trạng thái chăm sóc mới nhất đến cuối kỳ (tư vấn, đã gửi báo giá, thương lượng). Tỷ lệ chốt = báo giá trong kỳ đã sinh đơn còn hiệu lực / tổng báo giá trong kỳ. Dữ liệu Sapo có thể chậm.'));
-    content.replaceChildren(kpis, grid, how);
+    // KPI nằm ngoài lưới biểu đồ: trên điện thoại lưới được gom sau "Xem thêm thống kê", KPI vẫn hiện ngay.
+    content.replaceChildren(kpis, kpiCard, grid, how);
     lastWidth = content.clientWidth; redraw();
   }
 
@@ -259,7 +361,7 @@ export function initDashboard({ api, root, isManager, money }) {
         filters.owner = ''; filters.page = '1'; return load();
       }
       fillSelect(group, options.groups, 'Tất cả nhóm'); fillSelect(owner, options.employees, 'Tất cả nhân viên');
-      data = res; render();
+      data = res; render(); loadKpi();
     } catch (e) {
       if (id !== requestId) return;
       data = null; const retry = node('button', 'Thử lại', 'btn'); retry.type = 'button'; retry.addEventListener('click', load);
