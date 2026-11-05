@@ -4,7 +4,7 @@ import { parseAppsheetInput } from '../../src/modules/customers/domain/appsheet-
 import { customers } from '../../src/modules/customers/schema.ts';
 const stamp='2026-10-01T00:00:00.000Z';
 const empty=():AppsheetState=>({customers:[],contacts:[],customerLinks:[],contactLinks:[]});
-const customer=(i:number):typeof customers.$inferSelect=>({id:'existing-'+i,name:'Doanh nghiệp thử '+i,contact:'',phone:'',email:'',address:'',taxCode:'',customerCode:'',sourceVersion:0,syncedAt:'',createdAt:'',approvalStatus:'approved',isRetail:false,establishedDate:null,customerType:null,dataSource:null,search:'',createdBy:null,approvedBy:null,approvedAt:null,depositRate:null,paymentTerm:null,creditLimit:null});
+const customer=(i:number):typeof customers.$inferSelect=>({id:'existing-'+i,name:'Doanh nghiệp thử '+i,contact:'',phone:'',email:'',address:'',taxCode:'',customerCode:'',sourceVersion:0,syncedAt:'',createdAt:'',approvalStatus:'approved',isRetail:false,establishedDate:null,customerType:null,dataSource:null,search:'',createdBy:null,approvedBy:null,approvedAt:null,depositRate:null,paymentTerm:null,creditLimit:null,paymentDays:null,representativeContactId:null,rejectReason:null,rejectedBy:null,rejectedAt:null});
 const input=(rows:unknown[],contacts:unknown[]=[])=>parseAppsheetInput({format:'appsheet-customers-v1',appId:'fake-plan',customersTable:'KH',contactsTable:'LH',customers:rows,contacts});
 const row=(id:string,over:Record<string,unknown>={})=>({rowId:id,updatedAt:stamp,fields:{name:'Khách mới '+id,approvalStatus:'approved',...over}});
 test('AppSheet planner handles a 200-row batch against 8,200 customers without mutating state; preview hash ignores clock/actor',()=>{

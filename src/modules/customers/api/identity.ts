@@ -17,7 +17,8 @@ export async function findCustomerDuplicates(db: Db, input: CustomerIdentity, ex
   const conditions = [k.taxCode ? sql`${sql.raw(NORM_TAX_SQL('tax_code'))} = ${k.taxCode}` : undefined,
     k.phone.length ? sql`exists(select 1 from regexp_split_to_table(${customers.phone}, E'[,;/\\n]+') token where ${phone} in (${sql.join(k.phone.map(p => sql`${p}`), sql`, `)}))` : undefined].filter(Boolean);
   if (!conditions.length) return [];
-  const rows = await db.select(identityColumns).from(customers).where(and(exceptId ? ne(customers.id, exceptId) : undefined, or(...conditions)))
+  // Khách bị từ chối chỉ là hồ sơ lưu lại: không chặn nhập lại khách đó sau khi đã chỉnh thông tin.
+  const rows = await db.select(identityColumns).from(customers).where(and(exceptId ? ne(customers.id, exceptId) : undefined, ne(customers.approvalStatus, 'rejected'), or(...conditions)))
     .orderBy(asc(customers.name), asc(customers.id)).limit(20);
   return customerIdentityIndex(rows, { byName: false }).find(input, exceptId);
 }

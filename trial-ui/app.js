@@ -2975,7 +2975,7 @@ function renderCustomers() {
   customerPager?.render(state.customerTotal);
   tbody.innerHTML = list.map(c => `
     <tr class="clickable" data-href="#/customers/${esc(encodeURIComponent(c.id))}">
-      <td class="first"><a class="strong" href="#/customers/${esc(encodeURIComponent(c.id))}">${esc(c.name)}</a>${c.approvalStatus === 'pending' ? ' <span class="pill warn">Chờ duyệt</span>' : ''}${c.address ? `<small>${esc(c.address)}</small>` : ''}</td>
+      <td class="first"><a class="strong" href="#/customers/${esc(encodeURIComponent(c.id))}">${esc(c.name)}</a>${c.approvalStatus === 'pending' ? ' <span class="pill warn">Chờ duyệt</span>' : c.approvalStatus === 'rejected' ? ' <span class="pill danger">Bị từ chối</span>' : ''}${c.address ? `<small>${esc(c.address)}</small>` : ''}</td>
       <td data-label="Liên hệ">${esc(c.contact) || '—'}</td>
       <td data-label="ĐT">${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a>` : '—'}</td>
       <td data-label="Email · MST">${esc(c.email) || '—'}${c.taxCode ? `<small>MST ${esc(c.taxCode)}</small>` : ''}</td>
@@ -2984,8 +2984,9 @@ function renderCustomers() {
       <td data-label="Phụ trách">${c.owner ? esc(c.owner.name) : '<span class="muted">—</span>'}${c.sharedCount ? `<small>+${c.sharedCount} được chia sẻ</small>` : ''}</td>
       <td class="right" data-label="Báo giá">${!can('page.quotes') ? '<span class="muted">—</span>' : quoteCountOf(c.name) ?? (state.customerQuoteCounts ? 0 : '…')}</td>
       <td class="actions-cell"><div class="row-actions">
-        ${can('page.care') && c.approvalStatus !== 'pending' ? `<button type="button" class="btn ghost small" data-mobile-inline data-care-for="${esc(c.id)}" title="Ghi giao dịch cho khách này">＋ Giao dịch</button>` : ''}
-        ${c.approvalStatus === 'pending' ? `${canApprove() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
+        ${can('page.care') && c.approvalStatus === 'approved' ? `<button type="button" class="btn ghost small" data-mobile-inline data-care-for="${esc(c.id)}" title="Ghi giao dịch cho khách này">＋ Giao dịch</button>` : ''}
+        ${c.approvalStatus === 'rejected' ? `${canApprove() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt lại</button>` : ''}<span class="pill danger">Bị từ chối</span>`
+        : c.approvalStatus === 'pending' ? `${canApprove() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
         ${canApprove() || c.createdBy === state.user?.id ? `<button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${canApprove() ? 'Từ chối' : 'Xoá'}</button>` : '<span class="pill warn">Chờ duyệt</span>'}` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
         <button class="btn ghost small" data-accounts-for="${esc(c.id)}" title="Tài khoản đăng nhập trang khách hàng">Tài khoản</button>
         <button class="icon-btn" data-edit-customer="${esc(c.id)}" ${isManager() || c.owner?.id === state.user?.id ? '' : 'hidden '}title="Sửa" aria-label="Sửa ${esc(c.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
@@ -3009,7 +3010,7 @@ $('#customer-list').addEventListener('click', e => {
   const care = e.target.closest('[data-care-for]');
   if (care) {
     const c = state.customers?.find(x => x.id === care.dataset.careFor);
-    if (c && can('page.care') && c.approvalStatus !== 'pending') return careView().openForm({ customer: { id: c.id, name: c.name, contact: c.contact } }, reloadCustomers);
+    if (c && can('page.care') && c.approvalStatus === 'approved') return careView().openForm({ customer: { id: c.id, name: c.name, contact: c.contact } }, reloadCustomers);
     return;
   }
   const edit = e.target.closest('[data-edit-customer]'); if (edit) return openCustomer(edit.dataset.editCustomer);
@@ -3022,18 +3023,22 @@ $('#customer-list').addEventListener('click', e => {
   const row = e.target.closest('tr[data-href]'); if (row && !e.target.closest('a, button')) go(row.dataset.href);
 });
 bindCustomerListFilters($, reloadCustomers);
-/** Manager duyệt khách mới; từ chối (hoặc người tạo xoá) khách đang chờ duyệt. */
+/** Người duyệt duyệt / duyệt lại khách hoặc từ chối kèm lý do (giữ hồ sơ); người tạo (không có quyền duyệt) xoá khách đang chờ duyệt. */
 async function reviewCustomer(id, approve) {
   const c = state.customers?.find(x => x.id === id);
   try {
     if (approve) { await api(`/customers/${encodeURIComponent(id)}/approve`, 'POST', {}); toast('Đã duyệt khách hàng.'); }
-    else {
+    else if (canApprove()) {
+      const reason = await reasonBox({ title: 'Từ chối khách hàng', text: `Lý do từ chối "${c?.name || 'khách hàng này'}" (người tạo sẽ thấy lý do này):`, placeholder: 'Ví dụ: sai mã số thuế, trùng khách đã có…', ok: 'Từ chối' });
+      if (!reason) return;
+      await api(`/customers/${encodeURIComponent(id)}/reject`, 'POST', { reason }); toast('Đã từ chối khách hàng.');
+    } else {
       if (!await confirmBox(`Xoá khách hàng chờ duyệt "${c?.name || ''}"?`, { ok: 'Xoá', danger: true })) return;
       await api(`/customers/${encodeURIComponent(id)}`, 'DELETE'); toast('Đã xoá khách hàng chờ duyệt.');
       if (location.hash.startsWith('#/customers/')) go('#/customers');
     }
     await loadCustomers();
-    if (approve && location.hash.startsWith('#/customers/')) customerDetail().reload();
+    if (location.hash.startsWith('#/customers/') && (approve || canApprove())) customerDetail().reload();
   } catch (ex) { toast(ex.message, 'err'); }
 }
 /** Bảng lương công ty (trial-ui/payroll.js) – Manager. */
@@ -3055,7 +3060,7 @@ function memberDetail() {
 var customerUi = null; // eslint-disable-line no-var
 function customerDetail() {
   return customerUi ||= initCustomerDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, canApprove, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS,
-    onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, onCare: (c, a, after) => careView().openForm(a ? { activity: a } : { customer: { id: c.id, name: c.name, contact: c.contact } }, after), isManager, onReview: reviewCustomer });
+    onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, onCare: (c, a, after) => careView().openForm(a ? { activity: a } : { customer: { id: c.id, name: c.name, contact: c.contact } }, after), isManager, userId: () => state.user?.id, onReview: reviewCustomer });
 }
 function openCustomer(id, known) {
   customerId = id || null;
@@ -3064,13 +3069,13 @@ function openCustomer(id, known) {
   customerFields.setRequiredProfile(!id);
   customerNewProfile.reset(state.user,!id);
   const c = id ? known || state.customers?.find(x => x.id === id) : null;
-  if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'customerType', 'address', 'depositRate', 'paymentTerm', 'creditLimit', 'establishedDate']) form.elements.namedItem(k).value = c[k] ?? '';
+  if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'customerType', 'address', 'depositRate', 'paymentTerm', 'paymentDays', 'creditLimit', 'establishedDate']) form.elements.namedItem(k).value = c[k] ?? '';
   customerFields.refreshAnniversary();
   $('#customer-dialog-title').textContent = c ? 'Sửa khách hàng' : 'Thêm khách hàng';
   $('#customer-dialog').showModal();
   customerDuplicateCheck.refresh();
 }
-const customerFields = customerFormFields({requireProfile:true});
+const customerFields = customerFormFields({requireProfile:true,paymentDays:true});
 $('#customer-fields').append(customerFields.root);
 const customerNewProfile=customerCreateProfile({api,mainContact:customerFields.controls.contact});
 $('#customer-new-profile').append(customerNewProfile.root);

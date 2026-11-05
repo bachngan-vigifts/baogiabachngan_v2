@@ -39,6 +39,7 @@ API tạo khách bổ sung tùy chọn `ownerId`, `sharedIds`, `notes`, `contact
 | `sapo_customers` | Hồ sơ khách. Khách từ Sapo có id số; khách tạo trên web có id UUID và Sapo không ghi đè. Liên hệ chính ở cột `contact/phone/email`. |
 | `customer_staff` | Nhân viên gắn với khách. Khoá chính `(customer_id, member_id)`. `role` = `owner` (phụ trách, tối đa 1 người, có unique index riêng) hoặc `shared` (được chia sẻ). |
 | `customer_contacts` | Người liên hệ bổ sung (kế toán, mua hàng, người nhận hàng…): họ tên, chức vụ, điện thoại, email, ghi chú, `is_primary`. |
+| `customer_debt_notes` | Ghi chú công nợ cũ (tối đa 2.000 ký tự, có `revision`). Bảng riêng để không rò ra danh sách khách; chỉ người có `canSeeAll` đọc, Manager / người phụ trách sửa. |
 | `customer_accounts` | Tài khoản trang khách hàng (đã có). |
 | `sales_orders`, `sales_contracts`, `customer_payments`, `deliveries`, `payment_schedules`, `staff_quotations` (`data.customerId`), `customer_stock_requests` | Dữ liệu giao dịch, gom theo `customer_id`. Không chép sang bảng khác. |
 
@@ -77,6 +78,20 @@ Module `customer-hub` chỉ đọc. Module này được import `staff`, `custom
 - `POST /customers/:id/approve`: chỉ Manager. `DELETE /customers/:id`: từ chối / xoá khách **đang chờ duyệt** (Manager hoặc người tạo).
 - `GET /customers?status=pending` lọc khách chờ duyệt; mọi phản hồi danh sách kèm `pendingCount`.
 - Khách đồng bộ từ Sapo luôn là `approved`. Cột: `approval_status`, `created_by`, `approved_by`, `approved_at` (migration `0024_approvals_member_delete.sql`).
+
+### Từ chối có lý do (`rejected`)
+- `POST /customers/:id/reject` `{ reason }` (Manager / người được duyệt, chỉ với khách `pending`): giữ hồ sơ, `approval_status = 'rejected'`, lưu `reject_reason` (bắt buộc, tối đa 1.000 ký tự), `rejected_by`, `rejected_at`. DB có ràng buộc `chk_customer_reject_reason`.
+- Khách `rejected` không dùng được như khách chờ duyệt: không lập đơn (409 `CUSTOMER_REJECTED`), không mời / cấp tài khoản cổng khách, không có trong ô chọn khách. **Mọi chỗ chặn khách chưa dùng được phải kiểm `!== 'approved'`, không kiểm riêng `pending`.**
+- Danh sách mặc định ẩn khách bị từ chối; `GET /customers?status=rejected` cho người duyệt (xem hết) và người tạo (chỉ khách mình tạo). Khách bị từ chối không tính vào kiểm tra trùng MST / SĐT, nên nhập lại sau khi sửa không bị chặn.
+- `POST /customers/:id/resubmit`: người tạo hoặc người duyệt gửi duyệt lại (về `pending`, xoá lý do). `POST /customers/:id/approve` cũng duyệt lại thẳng khách `rejected`. Cả hai xoá lý do cũ.
+- `DELETE /customers/:id` vẫn chỉ xoá khách `pending` (người tạo rút lại khách vừa nhập).
+
+## Số ngày công nợ, người đại diện, ghi chú công nợ cũ
+- `payment_days`: số nguyên 0–3.650, riêng với `payment_term` (nội dung tự do). Để trống = chưa đặt.
+- `representative_contact_id`: một dòng trong `customer_contacts` của chính khách (xoá liên hệ thì về null). Khi tạo khách, đánh dấu `isRepresentative` trên một liên hệ nhập kèm; khi sửa dùng `PUT /customers/:id/representative` `{ contactId | null }` (không đi qua `PUT /customers/:id` vì PUT đó ghi đè mọi ô thông tin).
+- Ghi chú công nợ cũ: `GET / PUT /customers/:id/debt-note` (`{ text, revision }`, xung đột 409 `CUSTOMER_DEBT_NOTE_CONFLICT`). Chỉ trả trong hồ sơ cho người có `canSeeAll` (Manager, người phụ trách, người được chia sẻ); nhân viên cùng phòng ban không có quyền này thì nhận `null`.
+- Gộp khách trùng: giữ ghi chú công nợ cũ của mọi bản (quá 2.000 ký tự thì từ chối gộp), bù người đại diện và số ngày công nợ còn trống, bỏ qua khách `rejected`.
+- Migration `20261111100000_customer_profile_fields.sql`; chạy `scripts/sql/assert-customer-profile-fields.sql` **trước khi deploy API mới**.
 
 
 

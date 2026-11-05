@@ -25,7 +25,7 @@ export function updateCustomerFilterSummary($) {
   if(error)return false;
   const filters=[],label=key=>$('#customer-'+key).selectedOptions[0]?.textContent||$('#customer-'+key).value;
   if($('#customer-mine').checked)filters.push('Khách của tôi');
-  if(statusOf($))filters.push(statusOf($)==='pending'?'Chờ duyệt':'Đã duyệt');
+  if(statusOf($))filters.push({pending:'Chờ duyệt',rejected:'Bị từ chối'}[statusOf($)]||'Đã duyệt');
   if(kindOf($))filters.push(kindOf($)==='retail'?'Khách lẻ':'Khách doanh nghiệp');
   if($('#customer-owner').value)filters.push('Phụ trách: '+label('owner'));
   const date=value=>value.split('-').reverse().join('/');
