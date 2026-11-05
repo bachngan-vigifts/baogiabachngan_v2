@@ -35,3 +35,19 @@ test('simultaneous saves claim one command and serialize conflicting revisions',
  const create=()=>f.call('/catalogue-quotes',f.cookies.emp,'POST',body);const a=await Promise.all([create(),create()]);assert.deepEqual(a.map(r=>r.status),[200,200]);assert.equal(a.filter(r=>r.data.replayed).length,1);assert.equal((await f.db.select().from(quotes)).length,1);assert.equal((await f.db.select().from(commands)).length,1);
  const update=(cookie:string,title:string)=>f.call('/catalogue-quotes/'+id,cookie,'PUT',{revision:1,clientKey:crypto.randomUUID(),state:{...body.state,meta:{...body.state.meta,title}}});const b=await Promise.all([update(f.cookies.emp!,'A'),update(f.cookies.kt!,'B')]);assert.deepEqual(b.map(r=>r.status).sort(),[200,409]);assert.equal((await f.db.select().from(quotes))[0]!.revision,2);assert.equal((await f.db.select().from(commands)).length,2);
 });
+
+test('creator follows authenticated first saver, remains stable after edits and filters independently of advisor',async()=>{
+ const f=await setupWarehouseWork(),id=crypto.randomUUID(),s=state();
+ const me=await f.call('/catalogue-quotes?identity=1',f.cookies.emp);assert.equal(me.status,200);assert.equal(me.data.memberId,'emp');assert.ok(me.data.memberName);assert.equal(me.data.quotes,undefined);
+ const created=await f.call('/catalogue-quotes',f.cookies.emp,'POST',{id,clientKey:crypto.randomUUID(),createdBy:'kt',state:s});assert.equal(created.status,200);
+ const before=await f.call('/catalogue-quotes/'+id,f.cookies.kt);assert.equal(before.data.createdBy,'emp');assert.equal(before.data.createdByName,me.data.memberName);
+ const updated={...before.data.state,meta:{...before.data.state.meta,employee:'Tư vấn khác'}};
+ assert.equal((await f.call('/catalogue-quotes/'+id,f.cookies.kt,'PUT',{revision:1,clientKey:crypto.randomUUID(),createdBy:'kt',state:updated})).status,200);
+ const after=await f.call('/catalogue-quotes/'+id+'?identity=1',f.cookies.kt);assert.equal(after.data.createdBy,'emp');assert.equal(after.data.createdByName,me.data.memberName);assert.equal(after.data.state,undefined);
+ const otherId=crypto.randomUUID();assert.equal((await f.call('/catalogue-quotes',f.cookies.kt,'POST',{id:otherId,clientKey:crypto.randomUUID(),state:updated})).status,200);
+ const filtered=await f.call('/catalogue-quotes?createdBy=emp&employee='+encodeURIComponent('Tư vấn khác')+'&facets=1',f.cookies.kt);assert.equal(filtered.data.total,1);assert.equal(filtered.data.quotes[0].id,id);assert.equal(filtered.data.quotes[0].createdByName,me.data.memberName);assert.deepEqual(filtered.data.facets.creators.map((p:{id:string})=>p.id).sort(),['emp','kt']);
+ assert.equal((await f.call('/catalogue-quotes?createdBy=unknown',f.cookies.emp)).data.total,0);assert.equal((await f.call('/catalogue-quotes?createdBy='+ 'x'.repeat(101),f.cookies.emp)).status,400);
+ assert.equal((await f.call('/catalogue-quotes?identity=1',undefined)).status,401);assert.equal((await f.call('/catalogue-quotes?identity=1',f.cookies.ncc)).status,403);
+ assert.equal((await f.call('/catalogue-quotes/'+id+'/archive',f.cookies.emp,'POST',{revision:2,clientKey:crypto.randomUUID()})).status,200);const remaining=await f.call('/catalogue-quotes?facets=1',f.cookies.emp);assert.deepEqual(remaining.data.facets.creators.map((p:{id:string})=>p.id),['kt']);
+});
+
