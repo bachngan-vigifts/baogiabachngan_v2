@@ -4,6 +4,21 @@ import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 
+test('quick payroll toolbar exposes the existing Excel export and disables it during loading',async()=>{
+ const {createPayrollQuickEntry}:any=await import(new URL('../../trial-ui/payroll-quick-entry.js',import.meta.url).href);
+ const previousWindow=globalThis.window;
+ try{
+  (globalThis as any).window={addEventListener(){}};
+  const quick=createPayrollQuickEntry({root:{addEventListener(){},querySelectorAll:()=>[]},esc:String});
+  const data={month:'2026-10',rows:[],columns:{groups:{},labels:{}}};
+  assert.match(quick.html(data),/<button[^>]*data-act="excel"[^>]*>Xuất file bảng lương<\/button>/);
+  quick.setLoading(true);
+  assert.match(quick.html(data),/<button[^>]*data-act="excel"[^>]*disabled[^>]*>Xuất file bảng lương<\/button>/);
+ }finally{
+  if(previousWindow===undefined)delete (globalThis as any).window;else globalThis.window=previousWindow;
+ }
+});
+
 async function setup() {
   const s = await createTestDb(); await seedStaff(s.d1);
   const router = createAppRouter(), origin = 'https://trial.test';

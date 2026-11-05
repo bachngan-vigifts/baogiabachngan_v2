@@ -33,11 +33,43 @@ test('rejects wrong month, missing bindings, wrong names, duplicate rows, locked
  bad(f=>f.rows[1][index('lateCount')]=1.5,/không hợp lệ/);bad(f=>f.rows[1][index('leaveHours')]=745,/không hợp lệ/);
  bad(f=>f.rows[1][index('workDays')]=32,/không hợp lệ/);bad(f=>f.rows[1][index('advance')]=-1,/không hợp lệ/);
  bad(f=>f.rows[0]=[...f.rows[0],'LCB'],/cấu trúc/);
- bad(()=>{},/khóa/,{...board,rows:[{...board.rows[0],payslip:{status:'confirmed'}},board.rows[1]]});
+ bad(f=>f.rows[1][index('workDays')]=1,/khóa/,{...board,rows:[{...board.rows[0],payslip:{status:'confirmed'}},board.rows[1]]});
 });
 
 test('employee bindings distinguish duplicate names without adding ID columns',()=>{
  const same={...board,rows:[employee('a','Cùng tên'),employee('b','Cùng tên')]};
  const file={rows:payrollFileRows(same),meta:payrollFileMeta(same)};file.rows[2][index('advance')]=500000;
  assert.equal(parse(file,same)[0].memberId,'b');
+});
+
+test('template includes the entire month roster, including locked employees, with matching hidden bindings',()=>{
+ const all={...board,rows:[employee('first','Cùng tên'),{...employee('locked','Đã chốt'),payslip:{status:'confirmed'}},{...employee('paid','Đã trả'),payslip:{status:'paid'}},employee('last','Cùng tên')]};
+ const snapshot=JSON.stringify(all),rows=payrollFileRows(all),meta=payrollFileMeta(all);
+ assert.deepEqual(rows.slice(1).map((r:any)=>r.slice(0,2)),[[1,'Cùng tên'],[2,'Đã chốt'],[3,'Đã trả'],[4,'Cùng tên']]);
+ assert.deepEqual(meta.bindings.map((r:any)=>[r.stt,r.memberId]),[[1,'first'],[2,'locked'],[3,'paid'],[4,'last']]);
+ assert.ok(rows.every((r:any)=>r.length===11));assert.deepEqual(parse({rows,meta},all),[]);
+ rows[4][index('advance')]=500000;assert.equal(parse({rows,meta},all)[0].memberId,'last','locked rows do not shift employee identity');
+ assert.equal(JSON.stringify(all),snapshot);
+});
+test('files include all-locked and empty month rosters without permitting changes to locked slips',()=>{
+ const all={...board,rows:board.rows.map(r=>({...r,payslip:{status:'confirmed'}}))};
+ const file={rows:payrollFileRows(all),meta:payrollFileMeta(all)};assert.equal(file.rows.length,3);assert.deepEqual(parse(file,all),[]);
+ file.rows[2][index('advance')]=0;assert.throws(()=>parse(file,all),/đã khóa/,'zero is still an explicit edit');
+ const empty={...board,rows:[]};assert.deepEqual(parse({rows:payrollFileRows(empty),meta:payrollFileMeta(empty)},empty),[]);
+});
+
+test('downloaded XLSX contains every employee and matching bindings, shades locked rows and imports back unchanged',async()=>{
+ const scope=globalThis as any,previous=scope.ExcelJS;
+ try{
+  await import(new URL('../../trial-ui/exceljs.min.js',import.meta.url).href);
+  const {buildPayrollTemplate,readPayrollFile}:any=await import(new URL('../../trial-ui/payroll-file.js',import.meta.url).href);
+  const all={...board,rows:[employee('a','Nguyễn A'),{...employee('b','Trần B'),payslip:{status:'confirmed'}},employee('c','Nguyễn A')]};
+  const wb=await buildPayrollTemplate(all),ws=wb.getWorksheet('Nhập lương');
+  assert.equal(ws.rowCount,4);assert.equal(ws.columnCount,11);assert.equal(ws.getCell('B3').value,'Trần B');
+  assert.equal(ws.getCell('C3').fill.fgColor.argb,'FFF1F5F9');assert.equal(wb.getWorksheet('_KyLuong').state,'veryHidden');
+  const bytes=Uint8Array.from(await wb.xlsx.writeBuffer());
+  const file=await readPayrollFile({name:'Mau-bang-luong-2026-11.xlsx',size:bytes.byteLength,arrayBuffer:async()=>bytes.buffer});
+  assert.deepEqual(file.rows.slice(1).map((r:any)=>r[1]),['Nguyễn A','Trần B','Nguyễn A']);
+  assert.deepEqual(file.meta.bindings.map((b:any)=>b.memberId),['a','b','c']);assert.deepEqual(parse(file,all),[]);
+ }finally{if(previous===undefined)delete scope.ExcelJS;else scope.ExcelJS=previous;}
 });
