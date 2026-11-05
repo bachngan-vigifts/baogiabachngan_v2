@@ -50,7 +50,7 @@ import { registerSupplierDirectoryRoutes, packingSupplierChoices } from '../modu
 import { registerPurchaseRoutes } from '../modules/suppliers/api/purchase-routes.ts';
 import { registerEarlyRequestRoutes } from '../modules/suppliers/api/early-request-routes.ts';
 import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
-import { registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
+import { notifyMany, registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
 import { registerTaskRoutes, syncInvoiceTasks, syncTransferTasks } from '../modules/tasks/api/routes.ts';
 import { cashTaskHooks, invoiceTaskHooks } from '../modules/sales/api/invoice-task-hooks.ts';
 import { posDeliveryStockLinks, posReturnStockLinks } from '../modules/sales/api/stock-ref-links.ts';
@@ -135,7 +135,8 @@ export function createAppRouter() {
   registerProductDetailRoutes(router);
   registerCustomerDuplicateRoutes(router);
   registerCareRoutes(router,{assertKpiOpen:assertActivityKpiOpen,quotes:activityQuotes});
-  registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
+  registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf,
+    onSelfBankChange: (env, m) => notifyMany(env, 'managers', { eventType: 'hr-bank-changed', title: 'Đổi tài khoản nhận lương', body: `${m.name} vừa tự cập nhật tài khoản nhận lương. Kiểm tra trước khi chuyển lương.`, url: `/index.html#/members/${encodeURIComponent(m.id)}`, actorId: m.id }) }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
   registerAdmsRoutes(router);
   registerSynctimeRoutes(router);
   registerStaffHubRoutes(router,{crmFactsOf});

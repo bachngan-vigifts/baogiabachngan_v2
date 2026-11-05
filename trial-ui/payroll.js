@@ -92,7 +92,7 @@ export function initPayroll(deps) {
 
   function transferHtml() {
     const rows = withProfile().filter(r => r.payslip.net > 0);
-    return `<p class="muted small">Số tiền = thực nhận (làm tròn đồng). Nội dung chuyển khoản: "Luong T${Number(st.month.slice(5))}". Bấm "Mã QR" để mở ảnh mã VietQR quét bằng app ngân hàng.</p>
+    return `<p class="muted small">Số tiền = thực nhận (làm tròn đồng). Nội dung chuyển khoản: "Chuyen luong T${Number(st.month.slice(5))}". Bấm "Mã QR" để mở ảnh mã VietQR quét bằng app ngân hàng.</p>
       <div class="table-wrap"><table class="data-table"><thead><tr><th>Nhân viên</th><th>Ngân hàng</th><th>Số tài khoản</th><th>Chủ tài khoản</th><th class="right">Số tiền</th><th>Mã QR</th><th>Kiểm tra</th></tr></thead><tbody>
       ${rows.map(r => `<tr><td class="first">${memberLink(r, r.member.name)}<small>${esc(r.profile.positionLabel)}</small></td><td data-label="NH">${esc((r.profile.bankCode || '').toUpperCase()) || '—'}</td>
         <td data-label="STK">${esc(r.profile.bankAccount) || '—'}</td><td data-label="Chủ TK">${esc(r.profile.bankHolder) || '—'}</td><td class="right num strong">${money(r.payslip.net)}</td>
@@ -217,7 +217,7 @@ export function initPayroll(deps) {
     const tk = wb.addWorksheet('Chuyển khoản');
     head(tk, 'DANH SÁCH CHUYỂN KHOẢN LƯƠNG', sub, 7); tk.addRow([]);
     tk.addRow(['STT', 'Nhân viên', 'Mã ngân hàng', 'Số tài khoản', 'Tên chủ tài khoản', 'Số tiền', 'Nội dung', 'Link mã VietQR']);
-    withProfile().filter(r => r.payslip.net > 0).forEach((r, i) => tk.addRow([i + 1, r.member.name, r.profile.bankCode, r.profile.bankAccount, r.profile.bankHolder, Math.round(r.payslip.net), `Luong T${m}`, r.qr]));
+    withProfile().filter(r => r.payslip.net > 0).forEach((r, i) => tk.addRow([i + 1, r.member.name, r.profile.bankCode, r.profile.bankAccount, r.profile.bankHolder, Math.round(r.payslip.net), `Chuyen luong T${m}`, r.qr]));
     tk.columns = [{ width: 5 }, { width: 26 }, { width: 12 }, { width: 18 }, { width: 24 }, { width: 14 }, { width: 12 }, { width: 60 }]; style(tk, 4, 6, 6);
     const buf = await wb.xlsx.writeBuffer(), a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));

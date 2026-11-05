@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   EMPTY_GROUP_MONTH, EMPTY_INPUT, EMPTY_PROFILE, bnSalesBonus, computePayslip, computeQuarterBonus, lockSalesBonus, monthRange, quarterMonths,
-  shiftMonth, summarizeAttendance, targetPercent, vietQrUrl, type PayrollInput, type SalaryProfile,
+  shiftMonth, summarizeAttendance, targetPercent, vietQrUrl, normalizeBank, type PayrollInput, type SalaryProfile,
 } from './payroll.ts';
 import { computeKpiCv } from './kpi-cv.ts';
 import { DEFAULT_PARAMS, mergeParams, validateParams } from './params.ts';
@@ -89,7 +89,9 @@ test('tham số: ghép với mặc định, từ chối giá trị sai; link Vie
   assert.equal(mergeParams({ standardDays: 0 }).standardDays, 26, 'số chia = 0 → giữ mặc định');
   assert.match(validateParams({ kpiHighRate: 1.2 })!, /tỷ lệ/);
   assert.equal(validateParams({ standardDays: 24 }), null);
-  assert.equal(vietQrUrl('VCB', '0123', 10_761_350, '2026-09'), 'https://img.vietqr.io/image/vcb-0123.png?amount=10761350&addInfo=Luong%20T9');
+  assert.equal(vietQrUrl('VCB', '0123', 10_761_350, '2026-09'), 'https://img.vietqr.io/image/vcb-0123.png?amount=10761350&addInfo=Chuyen%20luong%20T9');
+  assert.equal(vietQrUrl('vcb', '0123', 5_000_000, '2026-10', 'NGUYEN VAN A'), 'https://img.vietqr.io/image/vcb-0123.png?amount=5000000&addInfo=Chuyen%20luong%20T10&accountName=NGUYEN%20VAN%20A');
+  assert.deepEqual(normalizeBank({ bankCode: ' VCB ', bankAccount: '0123 456-789', bankHolder: '  Trần  Thị Đào ' }), { bankCode: 'vcb', bankAccount: '0123456789', bankHolder: 'TRAN THI DAO' });
   assert.equal(vietQrUrl('', '0123', 1, '2026-09'), '');
   assert.equal(targetPercent(45, 60), 75);
 });

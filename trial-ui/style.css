@@ -1295,6 +1295,9 @@ label.check { display: flex; align-items: center; gap: 8px; }
 .md-net { font-size: var(--text-heading); letter-spacing: -.02em; color: var(--brand-navy); font-variant-numeric: tabular-nums; }
 .md-mini { margin: 10px 0 8px; font-size: var(--text-small); } .md-mini dd { text-align: right; }
 .md-salary-card .btn { justify-self: start; padding-left: 0; }
+.md-bank-card { display: grid; align-content: start; gap: var(--space-2, 8px); }
+.md-bank-qr { display: grid; justify-items: start; gap: 4px; }
+.md-bank-qr img { width: 180px; height: 180px; max-width: 100%; border-radius: 8px; background: #fff; border: 1px solid var(--line, #e5e7eb); }
 .md-pay-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
 .md-pay-grid h3 { margin: 0; font-size: var(--text-body); }
 .md-slip { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: grid; gap: 10px; align-content: start; }
