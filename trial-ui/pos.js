@@ -1300,7 +1300,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if(!stockPreloadSupported||!st.register)return;
     const registerId=st.register.id,policyId=st.policy,owner=stockOwner(),scope=registerId+'|'+policyId+'|'+owner;
     if(stockRefreshRequest?.scope===scope)return stockRefreshRequest.promise;
-    const request={scope,promise:null};request.promise=api('/pos/stock-snapshot?registerId='+encodeURIComponent(registerId)+'&pricePolicyId='+encodeURIComponent(policyId)+(!stockCache.scope(registerId,policyId,owner)?.catalogItems?'&metadata=1':'')+(background?'&background=1':'')).then(snapshot=>{
+    const request={scope,promise:null};request.promise=api('/pos/stock-snapshot?registerId='+encodeURIComponent(registerId)+'&pricePolicyId='+encodeURIComponent(policyId)+(!stockCache.scope(registerId,policyId,owner)?.catalogItems?'&metadata=2':'')+(background?'&background=1':'')).then(snapshot=>{
       if(stockOwner()===owner&&st.register?.id===registerId&&st.policy===policyId){
         if (snapshot?.version !== 1) { stockPreloadSupported = false; clearTimeout(stockRefreshTimer); return; }
         acceptStockSnapshot(snapshot);

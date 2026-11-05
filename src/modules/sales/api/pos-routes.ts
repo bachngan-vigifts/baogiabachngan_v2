@@ -825,7 +825,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
   );
   router.get('/pos/stock-snapshot',async c=>{
     posPermission(member(c));const id=posText(c.url.searchParams.get('registerId'));
-    return json(await posStockSnapshot(c.env.db,member(c),await sellRegister(c,id),posText(c.url.searchParams.get('pricePolicyId'))||undefined,c.url.searchParams.get('metadata')==='1')||{unavailable:true});
+    return json(await posStockSnapshot(c.env.db,member(c),await sellRegister(c,id),posText(c.url.searchParams.get('pricePolicyId'))||undefined,(m=>m==='2'?'compact' as const:m==='1')(c.url.searchParams.get('metadata')))||{unavailable:true});
   },'business');
   router.get(
     '/pos/catalog',

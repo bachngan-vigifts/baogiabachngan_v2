@@ -77,3 +77,21 @@ test('compact stock refresh preserves searchable metadata; removed products disa
  assert.equal(c.adopt({...a,version:2},'u'),false);assert.equal(c.adopt({...a,rows:[['A',100,NaN,0,[]]]},'u'),false);
  c.adopt({...a,catalog:undefined,asOf:'2026-11-01T00:02:00Z',rows:[]},'u');assert.equal(c.search('chen','r','p','u').length,0);
 });
+
+test('danh mục gọn (metadata=2): cùng nội dung với dạng đối tượng, nhẹ hơn; giao diện tìm được như cũ',async()=>{
+ const f=await setup(),now=new Date().toISOString();
+ await f.db.insert(products).values(Array.from({length:30},(_,i)=>({sku:'G'+String(i).padStart(3,'0'),name:'Chén sứ hoa '+i,brand:'Gốm Việt',unit:'cái',pattern:i%2?'Hoa sen':'',imageUrl:i%3?'':'https://img.example/'+i+'.jpg',updatedAt:now})));
+ await f.db.insert(productPrices).values(Array.from({length:30},(_,i)=>({sku:'G'+String(i).padStart(3,'0'),policyId:'retail-vat',price:1000+i})));
+ const path='/pos/stock-snapshot?registerId='+f.registerId+'&pricePolicyId=retail-vat&metadata=';
+ const full=(await f.call(path+'1',f.emp)).data,compact=(await f.call(path+'2',f.emp)).data;
+ assert.equal(compact.catalog,undefined);assert.deepEqual(compact.catalogColumns,['name','brand','unit','imageUrl','pattern']);
+ assert.deepEqual(compact.rows.map((r:any[])=>r[0]),full.rows.map((r:any[])=>r[0]));
+ assert.deepEqual(compact.catalogRows.map((c:any[],i:number)=>({sku:compact.rows[i][0],...Object.fromEntries(compact.catalogColumns.map((k:string,j:number)=>[k,c[j]]))})),full.catalog.map((p:any)=>({...p,imageUrl:p.imageUrl??'',pattern:p.pattern??'',brand:p.brand??'',unit:p.unit??''})));
+ assert.ok(JSON.stringify(compact).length<JSON.stringify(full).length*0.85,`gọn ${JSON.stringify(compact).length} / đủ ${JSON.stringify(full).length}`);
+ const a=createPosStockCache(),b=createPosStockCache();
+ assert.equal(a.adopt(full,'u'),true);assert.equal(b.adopt({...compact,asOf:full.asOf},'u'),true);
+ const view=(c:any)=>c.search('chen su hoa',f.registerId,'retail-vat','u').map((p:any)=>[p.sku,p.name,p.brand,p.unit,p.imageUrl,p.pattern]);
+ assert.ok(view(a).length>0);assert.deepEqual(view(b),view(a));
+ // Lệch số dòng: không dùng danh mục gọn (giữ danh mục đã có).
+ const c=createPosStockCache();assert.equal(c.adopt({...compact,catalogRows:compact.catalogRows.slice(1)},'u'),true);assert.equal(c.search('chen',f.registerId,'retail-vat','u'),null);
+});
