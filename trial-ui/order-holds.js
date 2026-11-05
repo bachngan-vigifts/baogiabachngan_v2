@@ -8,24 +8,30 @@ const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls)
 const num = v => Number(v || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 const when = iso => new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-export async function showOrderHolds({ api, toast, root, orderId, isManager = () => false, onChanged = () => {} }) {
+export async function showOrderHolds({ api, toast, root, orderId, isManager = () => false, onChanged = () => {}, title = 'Giữ hàng', isCurrent = () => true }) {
   const base = '/orders/' + encodeURIComponent(orderId) + '/holds';
   let busy = false;
   const button = (text, cls, fn) => {
     const b = el('button', cls, text); b.type = 'button';
     b.addEventListener('click', async () => {
-      if (busy) return; busy = true; root.querySelectorAll('button').forEach(x => { x.disabled = true; });
+      if (busy || !isCurrent()) return; busy = true; root.querySelectorAll('button').forEach(x => { x.disabled = true; });
       try { await fn(); } catch (e) { toast(e.message, 'err'); } finally { busy = false; await draw(); }
     });
     return b;
   };
   async function draw() {
-    let d; try { d = await api(base); } catch (e) { root.replaceChildren(el('p', 'muted small', e.message)); return; }
+    if (!isCurrent()) return;
+    let d; try { d = await api(base); } catch (e) { if (isCurrent()) root.replaceChildren(el('p', 'muted small', e.message)); return; }
+    if (!isCurrent()) return;
     const box = el('div', 'order-holds'), head = el('div', 'expected-row');
-    head.append(el('span', 'muted small', 'Giữ hàng'));
+    head.append(el('h2', 'card-title', title));
     box.append(head);
+    if (d.blockedReason && !d.holds.length) {
+      box.append(el('p', 'muted small', d.blockedReason));
+      root.replaceChildren(box); return;
+    }
     if (d.holdMode === 'legacy') {
-      box.append(el('p', 'muted small', 'Đơn cũ: đang giữ toàn bộ phần chưa giao theo cách cũ, chờ Manager áp dụng kế hoạch chuyển đổi (giữ tối đa có thể bán).'));
+      box.append(el('p', 'muted small', 'Chứng từ cũ: đang giữ toàn bộ phần chưa giao theo cách cũ, chờ Manager áp dụng kế hoạch chuyển đổi (giữ tối đa có thể bán).'));
       if (isManager()) box.append(button('Kế hoạch chuyển đổi giữ hàng đơn cũ', 'btn secondary small', () => openConversion({ api, toast, onChanged })));
       root.replaceChildren(box); return;
     }
@@ -37,8 +43,9 @@ export async function showOrderHolds({ api, toast, root, orderId, isManager = ()
     }
     if (d.lines.length) box.append(list);
     if (d.holds.length) box.append(el('p', 'muted small', 'Hạn giữ: ' + [...new Set(d.holds.map(h => when(h.expiresAt)))].join(', ') + ' · hết hạn tự nhả cho đơn khác.'));
-    else box.append(el('p', 'muted small', 'Chưa giữ hàng. Đơn có ngày giao thì tự giữ lúc duyệt; hàng về bấm "Giữ hàng" (giữ ' + d.manualDays + ' ngày, tối đa có thể bán).'));
+    else box.append(el('p', 'muted small', d.blockedReason || 'Chưa giữ hàng. Chứng từ có ngày giao thì tự giữ lúc duyệt; hàng về bấm "Giữ hàng" (giữ ' + d.manualDays + ' ngày, tối đa có thể bán).'));
     const acts = el('div', 'row-gap');
+    acts.dataset.mobileActions = 'off';
     if (d.canHold) acts.append(button(d.holds.length ? 'Giữ thêm' : 'Giữ hàng', 'btn primary small', async () => {
       const r = await api(base, 'POST', { clientKey: crypto.randomUUID() });
       const got = r.lines.reduce((n, l) => n + l.qty, 0), short = r.lines.filter(l => l.qty < l.want);
