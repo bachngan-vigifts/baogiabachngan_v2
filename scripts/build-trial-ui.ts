@@ -8,6 +8,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
+export const CUSTOMER_ANNIVERSARY_OUT = join(root, 'trial-ui', 'customer-anniversary.js');
+export const bundleCustomerAnniversary = () => bundle('src/modules/customers/domain/anniversary.ts');
 export const DOCUMENT_NUMBER_OUT = join(root, 'trial-ui', 'document-number.js');
 export const bundleDocumentNumber = () => bundle('src/core/document-number.ts');
 export const QUOTE_MATH_OUT = join(root, 'trial-ui', 'quote-math.js');
@@ -33,7 +35,7 @@ export const bundleQuoteMath = () => bundle('src/modules/quotes/domain/quote-mat
 export const bundleProductSearch = () => bundle('src/modules/catalog/domain/product-search.ts');
 
 if (process.argv[1] && import.meta.filename === process.argv[1]) {
-  for (const [out, code] of [[POS_CATALOG_BRAND_OUT,bundlePosCatalogBrand()], [DOCUMENT_NUMBER_OUT, bundleDocumentNumber()], [QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()], [POS_CUSTOMER_OUT, bundlePosCustomer()], [EARLY_ORDER_SOURCES_OUT,bundleEarlyOrderSources()]] as const) {
+  for (const [out, code] of [[CUSTOMER_ANNIVERSARY_OUT,bundleCustomerAnniversary()], [POS_CATALOG_BRAND_OUT,bundlePosCatalogBrand()], [DOCUMENT_NUMBER_OUT, bundleDocumentNumber()], [QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()], [POS_CUSTOMER_OUT, bundlePosCustomer()], [EARLY_ORDER_SOURCES_OUT,bundleEarlyOrderSources()]] as const) {
     if (readFileSync(out, { encoding: 'utf8', flag: 'a+' }) !== code) writeFileSync(out, code);
     console.log('Đã ghi', out);
   }
