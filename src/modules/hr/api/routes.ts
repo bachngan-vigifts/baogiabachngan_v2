@@ -16,7 +16,7 @@ import {
   ADJUSTMENT_KINDS, ATTENDANCE_STATUSES, DATE_RE, GROUP_DEDUCTION, GROUP_INCOME, GROUP_LABEL, HR_LIMITS, LINE_LABEL, PAYROLL_GROUPS,
   RESPONSIBILITY_MODES,salaryKpiEligible, isMonth, monthRange,daysInMonth, vietQrUrl, normalizeBank,
 } from '../domain/payroll.ts';
-import { buildPayroll, paramsFor, payslipView, type PayrollRow, type RevenueOf } from './payroll-data.ts';
+import { buildPayroll, paramsFor, payslipView, slipBank, type PayrollRow, type RevenueOf } from './payroll-data.ts';
 
 export { payrollOf, type RevenueOf } from './payroll-data.ts';
 
@@ -120,10 +120,10 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     const previous = new Map<string,number>(); for(const h of history)if(!previous.has(h.memberId))previous.set(h.memberId,h.capacityCoef);
     const rows = b.rows.map(r => {
       const slip = payslipView(r);
-      const bank = (slip as typeof slip & {bank?:{code:string;account:string;holder:string}}).bank;
+      const { fromSnapshot: _f, ...bank } = slipBank(slip, r.profile); // phiếu chốt khi chưa có tài khoản → tài khoản hiện tại
       return { member: r.member, previousCapacityCoef: previous.get(r.member.id) ?? null, entry: payrollEntry(r, b.month), profile: { payrollGroup: r.profile.payrollGroup, positionLabel: r.profile.positionLabel, hasProfile: r.profile.effectiveMonth !== null,
           bankCode: r.profile.bankCode, bankAccount: r.profile.bankAccount, bankHolder: r.profile.bankHolder },
-        payslip: slip, qr: vietQrUrl(bank?.code ?? r.profile.bankCode, bank?.account ?? r.profile.bankAccount, slip.net, b.month, bank?.holder ?? r.profile.bankHolder) };
+        payslip: { ...slip, bank }, qr: vietQrUrl(bank.code, bank.account, slip.net, b.month, bank.holder) };
     });
     // Tổng chỉ tính người đã có hồ sơ lương / phiếu đã chốt (người chưa có hồ sơ hiện riêng để Manager thiết lập).
     const counted = rows.filter(r => r.profile.hasProfile || r.payslip.status !== 'estimate');

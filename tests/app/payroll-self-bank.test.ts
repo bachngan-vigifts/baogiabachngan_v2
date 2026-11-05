@@ -57,3 +57,14 @@ test('lương tháng M: nhân viên thấy từ ngày 10/M (máy chủ không tr
  t.mock.timers.setTime(new Date('2026-11-09T17:00:00Z').getTime()); // 00:00 ngày 10/11 giờ VN
  const after=(await f.overview(f.emp,'2026-11')).data;assert.ok(after.payroll.payslip);assert.equal(after.access.salaryOpensOn,null);assert.equal(after.salaryAccount,null);
 });
+
+test('phiếu chốt khi chưa có tài khoản: nhân viên điền sau → thẻ, QR và bảng lương dùng tài khoản mới',async()=>{
+ const f=await setupSalesPayroll();assert.equal((await f.salary()).status,200);
+ assert.equal((await f.call('/hr/members/emp/inputs/2026-10',f.mgr,'PUT',{workDays:26})).status,200);
+ assert.equal((await f.confirm()).status,201);
+ assert.equal((await f.call('/hr/me/bank',f.emp,'PUT',bank)).status,200);
+ const t=(await f.overview(f.emp)).data.payroll.transfer;
+ assert.equal(t.bankAccount,'0123456789');assert.equal(t.fromSnapshot,false);assert.match(t.qr,/vcb-0123456789\.png\?amount=\d+&addInfo=Chuyen%20luong%20T10/);
+ const row=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find((r:any)=>r.member.id==='emp');
+ assert.equal(row.payslip.bank.account,'0123456789');assert.match(row.qr,/vcb-0123456789/);
+});

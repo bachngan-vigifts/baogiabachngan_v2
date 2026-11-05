@@ -144,13 +144,21 @@ export function payslipView(row: PayrollRow) {
 }
 
 /** Dữ liệu lương / ngày công một người một tháng (trang chi tiết nhân viên). */
-/** Chuyển khoản lương tháng: tài khoản (phiếu đã chốt → tài khoản lúc chốt), số tiền = thực nhận, nội dung, ảnh VietQR. */
+type BankSnap = { code: string; account: string; holder: string };
+/**
+ * Tài khoản chuyển lương của phiếu: phiếu đã chốt dùng tài khoản lúc chốt; phiếu chốt khi chưa có tài khoản (bản chụp trống)
+ * → dùng tài khoản hiện tại trong hồ sơ lương (nhân viên điền sau khi chốt).
+ */
+export function slipBank(view: object | null, profile: { bankCode: string; bankAccount: string; bankHolder: string }): BankSnap & { fromSnapshot: boolean } {
+  const snap = (view as { bank?: BankSnap } | null)?.bank;
+  return snap?.account ? { ...snap, fromSnapshot: true } : { code: profile.bankCode, account: profile.bankAccount, holder: profile.bankHolder, fromSnapshot: false };
+}
+/** Chuyển khoản lương tháng: tài khoản (xem `slipBank`), số tiền = thực nhận, nội dung, ảnh VietQR. */
 function transferOf(view: ReturnType<typeof payslipView> | null, profile: { bankCode: string; bankAccount: string; bankHolder: string; effectiveMonth: string | null }, month: string) {
   if (!view || profile.effectiveMonth === null && view.status === 'estimate') return null;
-  const snap = (view as { bank?: { code: string; account: string; holder: string } }).bank;
-  const bank = snap ?? { code: profile.bankCode, account: profile.bankAccount, holder: profile.bankHolder };
+  const bank = slipBank(view, profile);
   return { bankCode: bank.code, bankAccount: bank.account, bankHolder: bank.holder, amount: Math.max(0, Math.round(view.net)), note: salaryTransferNote(month),
-    fromSnapshot: !!snap, qr: vietQrUrl(bank.code, bank.account, view.net, month, bank.holder) };
+    fromSnapshot: bank.fromSnapshot, qr: vietQrUrl(bank.code, bank.account, view.net, month, bank.holder) };
 }
 export async function payrollOf(db: AnyDb, memberId: string, month: string, revenueOf: RevenueOf,crmFactsOf?:CrmFactsOf,showAllContracts=false) {
   const r = monthRange(month);
