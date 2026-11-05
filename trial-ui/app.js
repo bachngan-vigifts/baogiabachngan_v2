@@ -2962,7 +2962,7 @@ async function loadCustomerQuoteCounts(req) {
 const quoteCountOf = name => state.customerQuoteCounts?.[name];
 function renderCustomers() {
   const tbody = $('#customer-list');
-  if (!state.customers) { tbody.innerHTML = skeleton(7); return; }
+  if (!state.customers) { tbody.innerHTML = skeleton(9); return; }
   const list = state.customers;
   $('#customer-count').textContent = `${state.customerTotal.toLocaleString('vi-VN')} khách hàng`;
   $('#view-customers').dataset.resultCount=String(state.customerTotal);
@@ -2973,6 +2973,8 @@ function renderCustomers() {
       <td data-label="Liên hệ">${esc(c.contact) || '—'}</td>
       <td data-label="ĐT">${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a>` : '—'}</td>
       <td data-label="Email · MST">${esc(c.email) || '—'}${c.taxCode ? `<small>MST ${esc(c.taxCode)}</small>` : ''}</td>
+      <td data-label="Ngày thành lập">${c.establishedDate ? esc(c.establishedDate.split('-').reverse().join('/')) : '—'}</td>
+      <td data-label="Kỷ niệm thành lập">${c.anniversary ? `<span class="${c.anniversary.upcoming ? 'pill warn' : 'muted'}">${c.anniversary.years} năm · ${esc(c.anniversary.date.split('-').reverse().join('/'))}</span>${c.anniversary.upcoming ? `<small>${c.anniversary.daysUntil === 0 ? 'Hôm nay' : 'Còn ' + c.anniversary.daysUntil + ' ngày'} · Gợi ý liên hệ tư vấn quà tặng</small>` : ''}` : '—'}</td>
       <td data-label="Phụ trách">${c.owner ? esc(c.owner.name) : '<span class="muted">—</span>'}${c.sharedCount ? `<small>+${c.sharedCount} được chia sẻ</small>` : ''}</td>
       <td class="right" data-label="Báo giá">${!can('page.quotes') ? '<span class="muted">—</span>' : quoteCountOf(c.name) ?? (state.customerQuoteCounts ? 0 : '…')}</td>
       <td class="actions-cell"><div class="row-actions">
@@ -3054,12 +3056,14 @@ function openCustomer(id, known) {
   customerDuplicateCheck.reset();
   const form = $('#customer-form'); form.reset(); $('#customer-error').textContent = '';
   const c = id ? known || state.customers?.find(x => x.id === id) : null;
-  if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'address', 'depositRate', 'paymentTerm', 'creditLimit']) form.elements.namedItem(k).value = c[k] ?? '';
+  if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'address', 'depositRate', 'paymentTerm', 'creditLimit', 'establishedDate']) form.elements.namedItem(k).value = c[k] ?? '';
+  customerFields.refreshAnniversary();
   $('#customer-dialog-title').textContent = c ? 'Sửa khách hàng' : 'Thêm khách hàng';
   $('#customer-dialog').showModal();
   customerDuplicateCheck.refresh();
 }
-$('#customer-fields').append(customerFormFields().root);
+const customerFields = customerFormFields();
+$('#customer-fields').append(customerFields.root);
 const customerDuplicateCheck = bindCustomerDuplicateCheck({
   api, root: $('#customer-fields'), exceptId: () => customerId,
   active: () => $('#customer-dialog').open,
@@ -3067,6 +3071,20 @@ const customerDuplicateCheck = bindCustomerDuplicateCheck({
   onChoose: c => { $('#customer-dialog').close(); go('#/customers/' + encodeURIComponent(c.id)); },
 });
 $('#new-customer').addEventListener('click', () => openCustomer());
+$('#customer-anniversaries').addEventListener('click', async () => {
+  const button = $('#customer-anniversaries'); button.disabled = true;
+  try {
+    const d = await api('/customers/anniversaries'), dlg = document.createElement('dialog'); dlg.className = 'modal wide';
+    dlg.innerHTML = `<div class="modal-head"><h2>Gợi ý kỷ niệm thành lập</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+      <div class="modal-body"><p>Các mốc ${d.intervalYears}, ${d.intervalYears*2}, ${d.intervalYears*3}… năm trong ${d.leadDays} ngày tới, theo phạm vi khách hàng được phân quyền. Manager xem toàn công ty.</p>
+      ${d.reminders.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Khách hàng</th><th>Kỷ niệm</th><th>Ngày</th><th>Gợi ý cho sale</th></tr></thead><tbody>${d.reminders.map(r => `<tr><td><a href="#/customers/${encodeURIComponent(r.id)}" data-open-customer>${esc(r.name)}</a></td><td>${r.anniversary.years} năm</td><td>${esc(r.anniversary.date.split('-').reverse().join('/'))}<small>${r.anniversary.daysUntil === 0 ? 'Hôm nay' : 'Còn '+r.anniversary.daysUntil+' ngày'}</small></td><td>${esc(r.anniversary.suggestion)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Chưa có khách hàng đến mốc kỷ niệm trong kỳ này. Bổ sung ngày thành lập trong hồ sơ khách hàng để nhận gợi ý.</p>'}
+      <p class="muted small">${d.total} khách hàng phù hợp${d.total>d.reminders.length ? ' · Hiển thị 100 khách gần nhất' : ''}.</p></div>`;
+    document.body.append(dlg); dlg.querySelector('[data-close]').onclick = () => dlg.close();
+    dlg.querySelectorAll('[data-open-customer]').forEach(a => a.addEventListener('click', () => dlg.close()));
+    dlg.addEventListener('close', () => dlg.remove()); dlg.showModal();
+  } catch(e) { toast(e.message,'err'); } finally { button.disabled = false; }
+});
+
 $('#customer-form').addEventListener('submit', async e => {
   e.preventDefault();
   const data = Object.fromEntries([...new FormData(e.target)].map(([k, v]) => [k, String(v).trim()]));
