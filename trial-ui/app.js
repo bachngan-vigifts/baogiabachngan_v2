@@ -6,7 +6,7 @@ import {returnStateText} from './order-return-summary.js';
 import {mountContractLiquidation} from './contract-liquidation.js';
 import { initQuoteStockWarnings } from './quote-stock-warning.js';
 import { parseSkuQuantities, pasteRows } from './quote-paste.js';
-import { hasCustomerListFilters, customerListQuery, fillCustomerOwners, bindCustomerListFilters } from './customer-list-filters.js';
+import { hasCustomerListFilters, customerListQuery, fillCustomerOwners, bindCustomerListFilters, updateCustomerFilterSummary } from './customer-list-filters.js';
 import {openPriceLabels} from './price-labels.js';
 import {ghnOrderSummary} from './ghn-order-summary.js';
 import {initProductDetail} from './product-detail.js';
@@ -664,15 +664,17 @@ async function loadQuotes() {
 // Danh bạ có thể hàng nghìn khách: tìm và phân trang trên máy chủ.
 let customerReq = 0, customerPager;
 async function loadCustomers() {
-  if (!can('page.customers')) return;
+  if (!can('page.customers') || !updateCustomerFilterSummary($)) return;
   const req = ++customerReq;
   customerPager ||= createPager($('#customer-pager'), 'customers', () => loadCustomers(), 50);
   try {
     const d = await api('/customers?' + customerListQuery($, {limit:customerPager.limit,offset:customerPager.offset,query:state.customerQuery}));
     if (req !== customerReq) return;
     $('#customer-retail-chip').hidden = !d.canListRetail;
-    if (!d.canListRetail) $('#customer-retail').checked = false;
+    $('#customer-kind-field').hidden = !d.canListRetail;
+    if (!d.canListRetail) { $('#customer-retail').checked = false; $('#customer-kind').value = ''; }
     fillCustomerOwners($('#customer-owner'), d.filterOptions?.owners);
+    updateCustomerFilterSummary($);
     state.customers = d.customers; state.customerQuoteCounts = null;
     state.customerTotal = d.total ?? d.customers.length;
     loadCustomerQuoteCounts(req);
@@ -2974,6 +2976,7 @@ function renderCustomers() {
       <td data-label="Phụ trách">${c.owner ? esc(c.owner.name) : '<span class="muted">—</span>'}${c.sharedCount ? `<small>+${c.sharedCount} được chia sẻ</small>` : ''}</td>
       <td class="right" data-label="Báo giá">${!can('page.quotes') ? '<span class="muted">—</span>' : quoteCountOf(c.name) ?? (state.customerQuoteCounts ? 0 : '…')}</td>
       <td class="actions-cell"><div class="row-actions">
+        ${can('page.care') && c.approvalStatus !== 'pending' ? `<button type="button" class="btn ghost small" data-mobile-inline data-care-for="${esc(c.id)}" title="Ghi giao dịch cho khách này">＋ Giao dịch</button>` : ''}
         ${c.approvalStatus === 'pending' ? `${canApprove() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
         ${canApprove() || c.createdBy === state.user?.id ? `<button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${canApprove() ? 'Từ chối' : 'Xoá'}</button>` : '<span class="pill warn">Chờ duyệt</span>'}` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
         <button class="btn ghost small" data-accounts-for="${esc(c.id)}" title="Tài khoản đăng nhập trang khách hàng">Tài khoản</button>
@@ -2995,6 +2998,12 @@ function quoteForCustomer(c) {
   go('#/quotes/new');
 }
 $('#customer-list').addEventListener('click', e => {
+  const care = e.target.closest('[data-care-for]');
+  if (care) {
+    const c = state.customers?.find(x => x.id === care.dataset.careFor);
+    if (c && can('page.care') && c.approvalStatus !== 'pending') return careView().openForm({ customer: { id: c.id, name: c.name, contact: c.contact } }, reloadCustomers);
+    return;
+  }
   const edit = e.target.closest('[data-edit-customer]'); if (edit) return openCustomer(edit.dataset.editCustomer);
   const accBtn = e.target.closest('[data-accounts-for]'); if (accBtn) return openAccounts(state.customers.find(x => x.id === accBtn.dataset.accountsFor));
   const qb = e.target.closest('[data-quote-for]');
@@ -3004,9 +3013,6 @@ $('#customer-list').addEventListener('click', e => {
   // Bấm vào dòng: mở trang chi tiết khách hàng.
   const row = e.target.closest('tr[data-href]'); if (row && !e.target.closest('a, button')) go(row.dataset.href);
 });
-$('#customer-retail').addEventListener('change', reloadCustomers);
-$('#customer-mine').addEventListener('change', reloadCustomers);
-$('#customer-pending').addEventListener('change', reloadCustomers);
 bindCustomerListFilters($, reloadCustomers);
 /** Manager duyệt khách mới; từ chối (hoặc người tạo xoá) khách đang chờ duyệt. */
 async function reviewCustomer(id, approve) {
