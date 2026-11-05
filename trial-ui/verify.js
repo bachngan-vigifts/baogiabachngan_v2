@@ -17,19 +17,24 @@ export function duePill(date, { done = false, fmt = v => v } = {}) {
 
 /**
  * Hộp xác thực. `rows`: [nhãn, giá trị HTML] hiện dạng bảng; `checks`: các câu phải đánh dấu; `fields`: HTML ô nhập thêm (có name).
+ * `layout: 'page'` mở không gian toàn màn hình; `review` là HTML đã escape của phần đối chiếu bên trái.
  * Trả về object { tên ô: giá trị } khi đồng ý, null khi huỷ.
  */
-export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '', rows = [], checks = [], fields = '', ok = 'Xác nhận', validate } = {}) {
+export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '', rows = [], checks = [], fields = '', ok = 'Xác nhận', validate, layout = 'dialog', subtitle = '', review = '' } = {}) {
   const dlg = document.createElement('dialog');
-  dlg.className = 'modal verify-dialog';
+  const page = layout === 'page';
+  dlg.className = 'modal verify-dialog' + (page ? ' verify-page' : '');
+  dlg.setAttribute('aria-label', title);
+  const summary = `<dl class="kv verify-summary">${rows.filter(r => r && r[1] !== undefined).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v === '' || v === null ? '<span class="danger-text">Chưa có</span>' : v}</dd>`).join('')}</dl>`;
+  const checklist = `<ul class="verify-checks">${checks.map((c, i) => `<li><label><input type="checkbox" data-check="${i}"> <span>${c}</span></label></li>`).join('')}</ul>`;
   dlg.innerHTML = `<form method="dialog">
-    <div class="modal-head"><div><span class="eyebrow">${esc(eyebrow)}</span><h2>${esc(title)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
-    <div class="modal-body">
-      ${intro ? `<p class="muted small">${intro}</p>` : ''}
-      <dl class="kv verify-summary">${rows.filter(r => r && r[1] !== undefined).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v === '' || v === null ? '<span class="danger-text">Chưa có</span>' : v}</dd>`).join('')}</dl>
-      ${fields}
-      <ul class="verify-checks">${checks.map((c, i) => `<li><label><input type="checkbox" data-check="${i}"> <span>${c}</span></label></li>`).join('')}</ul>
-      <p class="error" data-err role="alert"></p>
+    <div class="modal-head"><div><span class="eyebrow">${esc(eyebrow)}</span><h2>${esc(title)}</h2>${subtitle ? `<p class="verify-subtitle">${esc(subtitle)}</p>` : ''}</div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body${page ? ' verify-page-body' : ''}">
+      ${page ? `<div class="verify-page-review">${intro ? `<p class="muted verify-intro">${intro}</p>` : ''}${review || summary}</div>
+      <aside class="verify-page-confirm" aria-label="Xác nhận duyệt">
+        ${fields ? `<section class="verify-page-card"><h3>Thông tin giao hàng</h3>${fields}</section>` : ''}
+        <section class="verify-page-card"><h3>Xác nhận trước khi duyệt</h3>${checklist}<p class="error" data-err role="alert"></p></section>
+      </aside>` : `${intro ? `<p class="muted small">${intro}</p>` : ''}${summary}${fields}${checklist}<p class="error" data-err role="alert"></p>`}
     </div>
     <div class="modal-foot"><span class="muted small" data-left></span><button type="button" class="btn secondary" data-x>Quay lại kiểm tra</button><button type="submit" class="btn primary" data-ok disabled>${esc(ok)}</button></div>
   </form>`;

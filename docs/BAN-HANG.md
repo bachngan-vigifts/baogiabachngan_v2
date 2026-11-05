@@ -1,5 +1,11 @@
 # Bán hàng sau báo giá: Đơn đặt hàng · HĐKT · Lịch giao hàng · Công nợ
 
+## Màn kiểm tra trước khi duyệt HĐKT
+
+- Nút **Duyệt HĐKT** mở màn hình đối chiếu toàn trang: thông tin khách hàng, bảng sản phẩm (SL, ĐVT, đơn giá, VAT), giá trị HĐKT, tồn tại các kho bán và ghi chú.
+- Ngày giao, kho dự kiến xuất và 5 mục xác nhận nằm ở vùng riêng. Thanh **Quay lại kiểm tra / Duyệt HĐKT** luôn hiện ở cuối màn hình; nội dung cuộn trong một vùng, màn hình nhỏ xếp các phần theo chiều dọc.
+- Vẫn phải đánh dấu đủ các mục và chọn ngày giao / kho theo quy định hiện có. Quay lại, đóng hoặc Escape không duyệt HĐKT. Các hộp xác thực khác giữ bố cục hiện tại; không thay đổi API, phân quyền hay cách tính tiền / tồn kho.
+
 ## Luồng và liên kết giữa các trang
 
 ```
