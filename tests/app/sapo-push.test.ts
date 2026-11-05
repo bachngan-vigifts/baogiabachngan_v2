@@ -324,8 +324,9 @@ test('đẩy Sapo sau: kiểm quyền server, kho hợp lệ, chứng từ đã 
   assert.equal(bad.status, 403); assert.equal(bad.data.code, 'SAPO_PERMISSION_DENIED');
   assert.equal(await s.orderCount(), 1);
   await s.db.update(salesOrders).set({ status: 'confirmed' }).where(eq(salesOrders.id, made.data.id));
-  assert.equal((await s.call(path, s.emp, 'POST', { sapoLocationId: 7 })).data.code, 'SAPO_PUSH_FORBIDDEN');
-  assert.equal((await s.call('/orders/' + made.data.id, s.emp)).data.order.canCreateSapo, false);
+  assert.equal((await s.call(path, s.emp, 'POST', { sapoLocationId: 7 })).data.code, 'SAPO_PERMISSION_DENIED', 'sales can push approved orders; upstream denial remains visible');
+  assert.equal((await s.call('/orders/' + made.data.id, s.emp)).data.order.canCreateSapo, true);
+  assert.equal((await s.call('/orders/' + made.data.id, s.emp)).data.order.canEdit, false, 'Sapo permission must not unlock approved documents');
   assert.equal((await s.call('/orders/' + made.data.id, s.mgr)).data.order.canCreateSapo, true);
   await s.db.update(salesOrders).set({ status: 'cancelled' }).where(eq(salesOrders.id, made.data.id));
   assert.equal((await s.call(path, s.mgr, 'POST', { sapoLocationId: 7 })).data.code, 'ORDER_CANCELLED');
@@ -333,6 +334,41 @@ test('đẩy Sapo sau: kiểm quyền server, kho hợp lệ, chứng từ đã 
   assert.equal(order.sapoOrderId, null); assert.equal(order.canCreateSapo, false);
 });
 
+
+test('sales Sapo permission covers approved/completed documents without edit privileges or wider data scope', async () => {
+  const s = await setup({ viaClaw: true });
+  const made = await s.call('/orders', s.emp, 'POST', { quoteId: await s.makeQuote('B2B_SAPO_ACCESS'), pushSapo: false });
+  const path = '/orders/' + made.data.id;
+  for (const positionId of ['sale', 'sales-ml', 'sales-lock', 'sale-admin']) {
+    await s.db.update(employees).set({ positionId }).where(eq(employees.id, 'emp'));
+    // Sale Admin may export a visible order belonging entirely to another employee.
+    await s.db.update(salesOrders).set({ ownerId: positionId === 'sale-admin' ? 'mgr' : 'emp', createdBy: positionId === 'sale-admin' ? 'mgr' : 'emp' }).where(eq(salesOrders.id, made.data.id));
+    for (const status of ['confirmed', 'delivered'] as const) {
+      await s.db.update(salesOrders).set({ status }).where(eq(salesOrders.id, made.data.id));
+      const detail = await s.call(path, s.emp);
+      assert.equal(detail.status, 200, positionId);
+      assert.equal(detail.data.order.canCreateSapo, true, `${positionId}/${status}`);
+      assert.equal(detail.data.order.canEdit, false, 'approved document remains locked');
+      assert.equal((await s.call(path + '/delivery-date', s.emp, 'PUT', { date: '2026-12-01' })).status, 403, 'export permission cannot edit approved orders');
+      assert.equal((await s.call(path + '/status', s.emp, 'PUT', { status: 'cancelled' })).status, 403, 'export permission cannot cancel approved orders');
+      const before = s.hooks.length;
+      assert.equal((await s.call(path + '/sapo', s.emp, 'POST', {})).status, 200);
+      assert.equal(s.hooks.length, before + 1);
+      assert.equal(s.hooks.at(-1)!.body.trigger_source, 'order');
+    }
+  }
+  await s.db.update(employees).set({ positionId: 'accounting' }).where(eq(employees.id, 'emp'));
+  assert.equal((await s.call(path, s.emp)).data.order.canCreateSapo, false);
+  assert.equal((await s.call(path + '/sapo', s.emp, 'POST', {})).data.code, 'SAPO_PUSH_FORBIDDEN');
+  await s.db.update(employees).set({ positionId: 'sales-lock' }).where(eq(employees.id, 'emp'));
+  // makeQuote assigns its customer to emp; remove that legitimate shared-customer access here.
+  await s.db.update(salesOrders).set({ customerId: null }).where(eq(salesOrders.id, made.data.id));
+  const before = s.hooks.length;
+  assert.equal((await s.call(path, s.emp)).status, 404, 'sales position does not widen order scope');
+  assert.equal((await s.call(path + '/sapo', s.emp, 'POST', {})).status, 404);
+  assert.equal(s.hooks.length, before, 'forbidden requests never contact Sapo');
+  assert.equal(await s.orderCount(), 1, 'export never duplicates the CRM document');
+});
 
 test('hai yêu cầu đẩy cùng chứng từ chỉ tạo một đơn Sapo', async () => {
   const s = await setup();
