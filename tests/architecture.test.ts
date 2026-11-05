@@ -19,6 +19,7 @@ const ALLOWED: Record<string, string[]> = {
   'product-hub': ['staff', 'catalog', 'quotes', 'sales', 'suppliers'], // tổng hợp chỉ đọc; không đảo phụ thuộc catalog -> sales/suppliers
   care: ['staff', 'customers'],
   dashboard: ['staff', 'customers', 'sales', 'quotes', 'care', 'integrations'], // báo cáo chỉ đọc, không phụ thuộc HR/lương
+  feedback: ['staff', 'notifications'], // góp ý phần mềm: chỉ cần tài khoản nhân viên + thông báo
 
   hr: ['staff'], 'staff-hub': ['staff', 'customers', 'quotes', 'sales', 'tasks', 'hr'],
 };
