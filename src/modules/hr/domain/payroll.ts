@@ -259,10 +259,22 @@ export function computeQuarterBonus(members: readonly QuarterMember[], p: Payrol
     rows: rows.map(r => ({ ...r, share: teamRevenue > 0 ? r.revenue / teamRevenue : 0, bonus: teamRevenue > 0 ? round(fund * r.revenue / teamRevenue) : 0 })) };
 }
 
-/** Link ảnh mã VietQR chuyển khoản lương (như sheet "Chuyển khoản"). */
-export function vietQrUrl(bankCode: string, account: string, amount: number, month: string) {
+/** Nội dung chuyển khoản lương: "Chuyen luong T10" (không dấu, mọi ngân hàng đọc được). */
+export const salaryTransferNote = (month: string) => 'Chuyen luong T' + Number(month.slice(5));
+/** Link ảnh mã VietQR chuyển khoản lương: số tiền = thực nhận, nội dung "Chuyen luong T<tháng>", kèm tên chủ tài khoản nếu có. */
+export function vietQrUrl(bankCode: string, account: string, amount: number, month: string, holder = '') {
   if (!bankCode || !account || amount <= 0) return '';
-  return `https://img.vietqr.io/image/${encodeURIComponent(bankCode.toLowerCase())}-${encodeURIComponent(account)}.png?amount=${Math.round(amount)}&addInfo=${encodeURIComponent('Luong T' + Number(month.slice(5)))}`;
+  return `https://img.vietqr.io/image/${encodeURIComponent(bankCode.toLowerCase())}-${encodeURIComponent(account)}.png?amount=${Math.round(amount)}&addInfo=${encodeURIComponent(salaryTransferNote(month))}`
+    + (holder ? `&accountName=${encodeURIComponent(holder)}` : '');
+}
+/** Chuẩn hoá tài khoản nhận lương (dùng chung Manager sửa hồ sơ và nhân viên tự điền). Tên chủ TK: IN HOA, bỏ dấu như trên thẻ. */
+export function normalizeBank(b: { bankCode?: unknown; bankAccount?: unknown; bankHolder?: unknown }) {
+  const t = (v: unknown, max: number) => String(v ?? '').trim().slice(0, max);
+  return {
+    bankCode: t(b.bankCode, 30).toLowerCase().replace(/[^a-z0-9]/g, ''),
+    bankAccount: t(b.bankAccount, 30).replace(/[^\dA-Za-z]/g, ''),
+    bankHolder: t(b.bankHolder, HR_LIMITS.text).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'D').toUpperCase().replace(/\s+/g, ' '),
+  };
 }
 
 /** % hoàn thành chỉ tiêu doanh số (null = chưa đặt chỉ tiêu). */

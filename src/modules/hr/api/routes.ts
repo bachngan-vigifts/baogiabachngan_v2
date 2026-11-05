@@ -14,7 +14,7 @@ import { hrAdjustments, hrAttendance, hrPayrollInputs, hrPayrollMonths, hrPayrol
 import { PARAM_FIELDS, validateParams } from '../domain/params.ts';
 import {
   ADJUSTMENT_KINDS, ATTENDANCE_STATUSES, DATE_RE, GROUP_DEDUCTION, GROUP_INCOME, GROUP_LABEL, HR_LIMITS, LINE_LABEL, PAYROLL_GROUPS,
-  RESPONSIBILITY_MODES,salaryKpiEligible, isMonth, monthRange,daysInMonth, vietQrUrl,
+  RESPONSIBILITY_MODES,salaryKpiEligible, isMonth, monthRange,daysInMonth, vietQrUrl, normalizeBank,
 } from '../domain/payroll.ts';
 import { buildPayroll, paramsFor, payslipView, type PayrollRow, type RevenueOf } from './payroll-data.ts';
 
@@ -80,7 +80,9 @@ const slipValues = (row: PayrollRow, me: string, note: string) => ({
  *  POST    /hr/members/:id/adjustments · DELETE /hr/adjustments/:adjId   thưởng khác, công tác, vi phạm, tạm ứng, tạm ứng điện thoại
  *  POST    /hr/members/:id/payslips/:month       chốt · POST …/paid đã trả · DELETE mở lại (chưa trả)
  */
-export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: RevenueOf;crmFactsOf?:CrmFactsOf }) {
+export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: RevenueOf;crmFactsOf?:CrmFactsOf;
+  /** Báo Manager khi nhân viên tự đổi tài khoản nhận lương (bơm từ app/router.ts – hr không phụ thuộc module thông báo). */
+  onSelfBankChange?:(env:StaffEnv,member:{id:string;name:string})=>Promise<unknown> }) {
   registerQuickPayroll(router, deps);
   const write=(fn:(c:Ctx)=>Promise<Response>)=>async(c:Ctx)=>c.env.db.transaction(async tx=>{await payrollLock(tx as any);return fn({...c,env:{...c.env,db:tx as any}});});
   router.get('/hr/settings', async c => {
@@ -121,7 +123,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
       const bank = (slip as typeof slip & {bank?:{code:string;account:string;holder:string}}).bank;
       return { member: r.member, previousCapacityCoef: previous.get(r.member.id) ?? null, entry: payrollEntry(r, b.month), profile: { payrollGroup: r.profile.payrollGroup, positionLabel: r.profile.positionLabel, hasProfile: r.profile.effectiveMonth !== null,
           bankCode: r.profile.bankCode, bankAccount: r.profile.bankAccount, bankHolder: r.profile.bankHolder },
-        payslip: slip, qr: vietQrUrl(bank?.code ?? r.profile.bankCode, bank?.account ?? r.profile.bankAccount, slip.net, b.month) };
+        payslip: slip, qr: vietQrUrl(bank?.code ?? r.profile.bankCode, bank?.account ?? r.profile.bankAccount, slip.net, b.month, bank?.holder ?? r.profile.bankHolder) };
     });
     // Tổng chỉ tính người đã có hồ sơ lương / phiếu đã chốt (người chưa có hồ sơ hiện riêng để Manager thiết lập).
     const counted = rows.filter(r => r.profile.hasProfile || r.payslip.status !== 'estimate');
@@ -148,7 +150,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
       .where(and(eq(auditLogs.entityType, 'hr-salary-profile'), eq(auditLogs.entityId, id), eq(auditLogs.action, 'hr-salary-profile-update')))
       .orderBy(desc(auditLogs.createdAt)).limit(30);
     return json({ items: rows.map(r => { let d: any = {}; try { d = JSON.parse(r.data); } catch { /* bản ghi hỏng → bỏ chi tiết */ }
-      return { id: r.id, at: r.createdAt, by: r.actorName ?? '', effectiveMonth: d.effectiveMonth ?? '', created: !!d.created, changes: d.changes ?? {}, bankChanged: !!d.bankChanged, reason: d.reason ?? '' }; }) });
+      return { id: r.id, at: r.createdAt, by: r.actorName ?? '', effectiveMonth: d.effectiveMonth ?? '', created: !!d.created, changes: d.changes ?? {}, bankChanged: !!d.bankChanged, selfService: !!d.selfService, reason: d.reason ?? '' }; }) });
   }, 'admin');
 
   router.put('/hr/members/:id/salary', write(async c => {
@@ -168,7 +170,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
       kpiTransactionsTarget: kpiTarget(b.kpiTransactionsTarget, prior?.kpiTransactionsTarget, 'Chỉ tiêu giao dịch'),
       kpiContractsTarget: kpiTarget(b.kpiContractsTarget, prior?.kpiContractsTarget, 'Chỉ tiêu số hợp đồng'),
       insurance: Math.round(num(b.insurance, 'BHXH')),
-      bankCode: text(b.bankCode, 30).toLowerCase().replace(/[^a-z0-9]/g, ''), bankAccount: text(b.bankAccount, 30).replace(/[^\dA-Za-z]/g, ''), bankHolder: text(b.bankHolder, HR_LIMITS.text).toUpperCase(),
+      ...normalizeBank(b),
       note: text(b.note, HR_LIMITS.note), updatedBy: actor(c).id, updatedAt: nowIso(),
     };
     if(row.payrollGroup!=='sale'&&(row.contractBonusEnabled||row.fixedKpi!==null))throw new AppError(400,'KPI cố định và thưởng HĐKT chỉ áp dụng bảng Sale & Văn phòng.');
@@ -187,6 +189,34 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
       data:JSON.stringify({effectiveMonth:row.effectiveMonth,basedOn:prior?.effectiveMonth??null,created:!prior,changes,bankChanged,reason}),createdAt:row.updatedAt});
     return json({ ok: true });
   }), 'admin');
+
+  /**
+   * Nhân viên tự điền tài khoản nhận lương ("Hồ sơ của tôi"). Chỉ sửa 3 ô ngân hàng của chính mình, trên mọi bản hồ sơ lương
+   * (tài khoản là nơi nhận tiền hiện tại, không theo tháng); phiếu đã chốt giữ tài khoản lúc chốt. Ghi nhật ký + báo Manager.
+   */
+  router.put('/hr/me/bank', async c => {
+    let changed = false;
+    const me = actor(c), body = normalizeBank(await readJson(c.req, 2_000));
+    if (body.bankCode.length < 2) throw new AppError(400, 'Chọn ngân hàng nhận lương.');
+    if (!/^\d{6,19}$/.test(body.bankAccount)) throw new AppError(400, 'Số tài khoản phải gồm 6–19 chữ số.');
+    if (body.bankHolder.length < 3) throw new AppError(400, 'Nhập tên chủ tài khoản.');
+    await write(async t => {
+      const db = t.env.db, id = await staffMember(db, me.id);
+      const rows = await db.select({ effectiveMonth: hrSalaryProfiles.effectiveMonth, bankCode: hrSalaryProfiles.bankCode, bankAccount: hrSalaryProfiles.bankAccount, bankHolder: hrSalaryProfiles.bankHolder })
+        .from(hrSalaryProfiles).where(eq(hrSalaryProfiles.memberId, id)).orderBy(desc(hrSalaryProfiles.effectiveMonth));
+      if (!rows.length) throw new AppError(409, 'Bạn chưa có hồ sơ lương. Nhờ quản lý đặt hồ sơ lương trước, rồi điền tài khoản.');
+      if (rows.every(r => r.bankCode === body.bankCode && r.bankAccount === body.bankAccount && r.bankHolder === body.bankHolder)) return json({});
+      const at = nowIso();
+      await db.update(hrSalaryProfiles).set({ ...body, updatedBy: id, updatedAt: at }).where(eq(hrSalaryProfiles.memberId, id));
+      await db.insert(auditLogs).values({ id: crypto.randomUUID(), actorId: id, module: 'hr', action: 'hr-salary-profile-update', entityType: 'hr-salary-profile', entityId: id,
+        data: JSON.stringify({ effectiveMonth: rows[0]!.effectiveMonth, basedOn: rows[0]!.effectiveMonth, created: false, changes: {}, bankChanged: true, selfService: true, reason: 'Nhân viên tự cập nhật tài khoản nhận lương' }), createdAt: at });
+      changed = true;
+      return json({});
+    })(c);
+    // Báo sau khi đã ghi xong (ngoài transaction); lỗi gửi thông báo không làm hỏng việc lưu.
+    if (changed && deps.onSelfBankChange) await deps.onSelfBankChange(c.env, { id: me.id, name: me.name }).catch(() => undefined);
+    return json({ ok: true, changed });
+  }, 'business');
 
   router.put('/hr/members/:id/inputs/:month', write(async c => {
     const db = c.env.db, id = await staffMember(db, c.params.id!), m = month(c.params.month), b = await readJson(c.req, 6_000);

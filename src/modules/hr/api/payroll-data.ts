@@ -1,5 +1,5 @@
 import {computeKpiCv,kpiTargetsOf} from '../domain/kpi-cv.ts';
-import {kpiBonusRate,netKpiBonusRate} from '../domain/payroll.ts';
+import {kpiBonusRate,netKpiBonusRate,salaryTransferNote,vietQrUrl} from '../domain/payroll.ts';
 import type {CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
 import {awardHistory,proposeAwards} from './contract-bonuses.ts';
 import {sha256Hex} from '../../staff/domain/session.ts';
@@ -144,6 +144,14 @@ export function payslipView(row: PayrollRow) {
 }
 
 /** Dữ liệu lương / ngày công một người một tháng (trang chi tiết nhân viên). */
+/** Chuyển khoản lương tháng: tài khoản (phiếu đã chốt → tài khoản lúc chốt), số tiền = thực nhận, nội dung, ảnh VietQR. */
+function transferOf(view: ReturnType<typeof payslipView> | null, profile: { bankCode: string; bankAccount: string; bankHolder: string; effectiveMonth: string | null }, month: string) {
+  if (!view || profile.effectiveMonth === null && view.status === 'estimate') return null;
+  const snap = (view as { bank?: { code: string; account: string; holder: string } }).bank;
+  const bank = snap ?? { code: profile.bankCode, account: profile.bankAccount, holder: profile.bankHolder };
+  return { bankCode: bank.code, bankAccount: bank.account, bankHolder: bank.holder, amount: Math.max(0, Math.round(view.net)), note: salaryTransferNote(month),
+    fromSnapshot: !!snap, qr: vietQrUrl(bank.code, bank.account, view.net, month, bank.holder) };
+}
 export async function payrollOf(db: AnyDb, memberId: string, month: string, revenueOf: RevenueOf,crmFactsOf?:CrmFactsOf,showAllContracts=false) {
   const r = monthRange(month);
   const [board, history, attendance] = await Promise.all([
@@ -161,5 +169,6 @@ export async function payrollOf(db: AnyDb, memberId: string, month: string, reve
     attendance, attendanceSummary: { ...summarizeAttendance(attendance), standardDays: board.params.standardDays, daysInMonth: r.days },
     adjustments: row?.adjustments ?? [], systemRevenue: row?.systemRevenue ?? 0, groupMonth: board.groupMonth,
     params: board.params,confirmationHash:board.confirmationHash,systemFacts:row?.calc.salesCrm?.facts||null, payslip: view, locked: !!row?.slip,
+    transfer: transferOf(view, profile, month),
   };
 }

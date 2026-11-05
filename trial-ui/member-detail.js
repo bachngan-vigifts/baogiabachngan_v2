@@ -5,6 +5,7 @@ import {openContractBonusDetails} from './contract-bonus-detail.js';
 // Manager: sửa lương, chấm công (bấm vào ngày), thêm thưởng / khấu trừ, chốt lương. Nhân viên: chỉ xem hồ sơ của mình.
 import { avAttr } from './avatars.js';
 import { printPayslip } from './payroll-ui.js';
+import { bankName, bankOptions } from './salary-banks.js';
 
 const ATT = { // khớp ATTENDANCE_STATUSES (hr/domain/payroll.ts)
   present: { label: 'Đủ công', short: '1', cls: 'att-present' }, half: { label: 'Nửa công', short: '½', cls: 'att-half' },
@@ -166,6 +167,33 @@ export function initMemberDetail(deps) {
       </div></div>`;
   }
 
+  // ----- Tài khoản nhận lương + mã VietQR chuyển lương tháng (số tiền = thực nhận, nội dung "Chuyen luong T<tháng>").
+  function bankCardHtml(d) {
+    const p = d.payroll, pr = p.profile, t = p.transfer, self = d.access.isSelf, hasProfile = !!pr.effectiveMonth;
+    const acc = t || { bankCode: pr.bankCode, bankAccount: pr.bankAccount, bankHolder: pr.bankHolder };
+    const btn = self && hasProfile ? `<button type="button" class="btn secondary small" data-act="bank">${pr.bankAccount ? 'Đổi tài khoản' : 'Điền tài khoản'}</button>` : '';
+    const info = acc.bankAccount ? `<dl class="kv md-mini"><dt>Ngân hàng</dt><dd>${esc(bankName(acc.bankCode))}</dd><dt>Số tài khoản</dt><dd class="num">${esc(acc.bankAccount)}</dd>
+        <dt>Chủ tài khoản</dt><dd>${esc(acc.bankHolder) || '—'}</dd></dl>`
+      : `<p class="muted">${!hasProfile ? (self ? 'Chưa có hồ sơ lương. Nhờ quản lý đặt hồ sơ lương, sau đó bạn tự điền tài khoản tại đây.' : 'Chưa có hồ sơ lương.')
+        : self ? 'Bạn chưa điền tài khoản nhận lương. Bấm "Điền tài khoản" để hệ thống tạo mã QR chuyển lương.' : 'Nhân viên chưa điền tài khoản nhận lương.'}</p>`;
+    const qr = t?.qr ? `<div class="md-bank-qr"><a href="${esc(t.qr)}" target="_blank" rel="noopener noreferrer"><img src="${esc(t.qr)}" width="180" height="180" loading="lazy" alt="Mã VietQR chuyển lương ${esc(monthLabel(d.month).toLowerCase())}"></a>
+        <dl class="kv md-mini"><dt>Số tiền</dt><dd class="num"><b>${money(t.amount)}</b></dd><dt>Nội dung</dt><dd>${esc(t.note)}</dd></dl>
+        <small class="muted">${p.payslip.status === 'estimate' ? 'Số tiền theo lương tạm tính, tự cập nhật đến khi chốt lương.' : t.fromSnapshot ? 'Phiếu đã chốt: dùng tài khoản lúc chốt. Đổi tài khoản sau khi chốt thì nhờ quản lý mở lại phiếu.' : ''}</small></div>`
+      : acc.bankAccount && t && !t.amount ? '<p class="muted small">Tháng này chưa có số tiền thực nhận nên chưa tạo mã QR.</p>' : '';
+    return `<div class="card md-bank-card"><div class="card-title-row"><h2 class="card-title">Tài khoản nhận lương</h2>${btn}</div>${info}${qr}</div>`;
+  }
+  function editBank() {
+    const pr = st.d.payroll.profile;
+    dialog('Tài khoản nhận lương', `
+      <label class="span-2">Ngân hàng<select name="bankCode" required>${bankOptions(pr.bankCode, esc)}</select></label>
+      <label>Số tài khoản<input name="bankAccount" required inputmode="numeric" maxlength="19" autocomplete="off" value="${esc(pr.bankAccount)}" placeholder="Chỉ gồm chữ số"></label>
+      <label>Chủ tài khoản<input name="bankHolder" required maxlength="120" autocomplete="off" value="${esc(pr.bankHolder)}" placeholder="NGUYEN VAN A"></label>
+      <p class="muted small span-2">Kiểm tra kỹ số tài khoản và tên chủ tài khoản (viết không dấu như trên thẻ). Quản lý sẽ nhận thông báo khi bạn đổi tài khoản.</p>`, 'Lưu tài khoản', async f => {
+      const r = await api('/hr/me/bank', 'PUT', { bankCode: f.bankCode.value, bankAccount: f.bankAccount.value, bankHolder: f.bankHolder.value });
+      toast(r.changed ? 'Đã lưu tài khoản nhận lương.' : 'Tài khoản không thay đổi.');
+    });
+  }
+
   // ----- Diễn biến 6 tháng: cột = doanh số, chấm = đã thu.
   function trendHtml(t) {
     const max = Math.max(1, ...t.map(x => Math.max(x.revenue, x.collected)));
@@ -219,6 +247,7 @@ export function initMemberDetail(deps) {
           <dl class="kv md-mini"><dt>Tổng thu nhập</dt><dd class="num">${money(s.gross)}</dd><dt>Thưởng</dt><dd class="num">${money(s.income.filter(l => /Bonus(?:Adjustment)?$/.test(l.key)).reduce((a, l) => a + l.amount, 0))}</dd>
             <dt>Khấu trừ</dt><dd class="num">−${money(s.deductionTotal)}</dd></dl>
           <button type="button" class="btn ghost small" data-tab="payroll">Xem phiếu lương ›</button></div>` : ''}
+        ${d.payroll ? bankCardHtml(d) : ''}
       </div>
       <div class="card cd-tabs-card">
         <div class="chips cd-tabs" role="tablist">${tabs.map(t => `<button type="button" class="chip ${t.key === tab.key ? 'active' : ''}" role="tab" aria-selected="${t.key === tab.key}" data-tab="${t.key}">${t.label} <b>${t.count(d)}</b></button>`).join('')}</div>
@@ -292,7 +321,7 @@ export function initMemberDetail(deps) {
       ${p.kpiEligible===false?'<p class="muted span-2">Sale Admin không tính KPI. Thưởng sao HĐKT và thưởng thanh lý được bật riêng bên dưới.</p>':check('kpiEnabled','Sale: tính KPI công việc + thưởng KPI DS',p.kpiEnabled)+numInput('fixedKpi','KPI cố định (%) — trống = theo tháng / công thức',p.fixedKpi==null?'':p.fixedKpi*100)}
       ${p.kpiEligible===false?check('contractBonusEnabled','Sale Admin: hưởng thưởng sao HĐKT và thanh lý',p.contractBonusEnabled):'<input type="hidden" name="contractBonusEnabled"><p class="muted span-2">Sale nhận thưởng theo tổng KPI trên doanh số net; thưởng sao / thanh lý dành cho Sale Admin.</p>'}
       ${check('teamBonus', 'NVBH ML / Lock: hưởng thưởng DS của nhóm', p.teamBonus)}
-      <label>Mã ngân hàng (VietQR)<input name="bankCode" maxlength="30" value="${esc(p.bankCode)}" placeholder="vcb, acb, vietinbank, tcb…"></label>
+      <label>Ngân hàng<select name="bankCode">${bankOptions(p.bankCode, esc).replace('– Chọn ngân hàng –', '– Chưa có –')}</select></label>
       <label>Số tài khoản<input name="bankAccount" maxlength="30" inputmode="numeric" value="${esc(p.bankAccount)}"></label>
       <label class="span-2">Chủ tài khoản<input name="bankHolder" maxlength="120" value="${esc(p.bankHolder)}"></label>
       <label class="span-2">Ghi chú<input name="note" maxlength="500" value="${esc(p.note || '')}"></label>
@@ -317,7 +346,7 @@ export function initMemberDetail(deps) {
       const { items } = await api(base() + '/salary-history');
       const show = v => v === null || v === '' ? 'trống' : typeof v === 'boolean' ? (v ? 'có' : 'không') : typeof v === 'number' ? v.toLocaleString('vi-VN') : String(v);
       box.innerHTML = items.length ? `<ul class="md-history">${items.map(h => `<li><b>${esc(fmtDate(h.at))}</b> · ${esc(h.by || '—')} · ${h.created ? 'tạo hồ sơ, ' : ''}áp dụng ${esc(monthLabel(h.effectiveMonth || st.month))}
-        <br>${Object.entries(h.changes).map(([k, c]) => `${esc(SALARY_FIELD[k] || k)}: ${esc(show(c.from))} → ${esc(show(c.to))}`).join('; ') || '—'}${h.bankChanged ? '; đổi tài khoản nhận lương' : ''}
+        <br>${Object.entries(h.changes).map(([k, c]) => `${esc(SALARY_FIELD[k] || k)}: ${esc(show(c.from))} → ${esc(show(c.to))}`).join('; ') || '—'}${h.bankChanged ? (h.selfService ? '; nhân viên tự đổi tài khoản nhận lương' : '; đổi tài khoản nhận lương') : ''}
         ${h.reason ? `<br><i>Lý do: ${esc(h.reason)}</i>` : ''}</li>`).join('')}</ul>` : 'Chưa có lần sửa nào được ghi nhật ký.';
     } catch (e) { box.textContent = e.message || 'Chưa tải được lịch sử.'; }
   }
@@ -389,6 +418,7 @@ export function initMemberDetail(deps) {
       else if (act === 'photo') { if (await deps.onPhoto(m)) reload(); }
       else if (act === 'contract-bonus')openContractBonusDetails(st.d.payroll.payslip,{kpiEligible:st.d.payroll.profile.kpiEligible});
       else if (act === 'salary') editSalary();
+      else if (act === 'bank') editBank();
       else if (act === 'add-adj') addAdjustment();
       else if (act === 'inputs') editInputs();
       else if (act === 'print-slip'&&st.d.payroll.payslip.snapshotUnavailable)toast('Phiếu cũ thiếu chi tiết; cần đối soát trước khi in.','err');
