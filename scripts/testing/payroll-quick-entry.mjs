@@ -41,6 +41,38 @@ try{
   assert.equal(await page.locator('.pr-sheet thead tr').count(),2);
   for(const title of ['NĂNG LỰC','KPIs','PHỤ CẤP','CÁC KHOẢN TRỪ']) assert.equal(await page.locator('.pr-sheet thead').getByRole('columnheader',{name:title,exact:true}).count(),1);
   assert.equal(await page.locator('[data-member="emp"][data-key="kpiOverride"]').getAttribute('data-scale'),'100');
+  // Regression: real key events pause at the decimal separator before typing the fraction.
+  const workDays=page.locator('[data-member="emp"][data-key="workDays"]');
+  let saves=0;page.on('request',r=>{if(r.method()==='PUT'&&r.url().endsWith('/entries'))saves++;});
+  for(const separator of ['.',',']){
+    await workDays.fill('');await workDays.pressSequentially('25'+separator+'5');
+    assert.equal(await workDays.inputValue(),'25'+separator+'5','continuous typing must preserve the decimal separator');
+    assert.equal(await workDays.getAttribute('data-quick-pending'),null);
+    await page.locator('[data-quick-save]').click();await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent==='');
+    assert.equal((await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find(r=>r.member.id==='emp').entry.inputs.workDays,25.5);
+    await workDays.fill('');await workDays.pressSequentially('24');await workDays.pressSequentially(separator);
+    assert.equal(await workDays.inputValue(),'24'+separator);
+    assert.equal(await workDays.getAttribute('aria-invalid'),null,'pausing after separator must not report an error');
+    assert.equal(await workDays.getAttribute('data-quick-pending'),'true');
+    assert.ok(!(await page.locator('[data-quick-status]').textContent()).includes('không hợp lệ'));
+    const before=saves;
+    // Even a synthetic click without blur must not save the earlier integer prefix.
+    await page.locator('[data-quick-save]').evaluate(n=>n.click());
+    assert.equal(saves,before);
+    await workDays.press('Tab');assert.equal(await workDays.getAttribute('aria-invalid'),'true','unfinished input is invalid on leaving the cell');
+    await page.locator('[data-quick-save]').click();assert.equal(saves,before);
+    await workDays.focus();await workDays.press('End');await workDays.pressSequentially('5');
+    assert.equal(await workDays.getAttribute('aria-invalid'),null);assert.equal(await workDays.getAttribute('data-quick-pending'),null);
+    assert.equal(await workDays.inputValue(),'24'+separator+'5');
+    await page.locator('[data-quick-save]').click();await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent==='');
+    const saved=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find(r=>r.member.id==='emp');
+    assert.equal(saved.entry.inputs.workDays,24.5);assert.equal(saved.payslip.workDays,24.5);
+    assert.equal(saved.payslip.income.find(l=>l.key==='salaryByDays').amount,Math.round(saved.payslip.baseSalary*24.5/26));
+  }
+  await workDays.fill('24..5');const invalidSaves=saves;
+  await page.locator('[data-quick-save]').click();assert.equal(saves,invalidSaves,'global native-validity styling must not let malformed values save');
+  await page.locator('[data-quick-mode]').selectOption('profile');assert.equal(await page.locator('[data-quick-mode]').inputValue(),'sheet');
+  await workDays.fill('24.5');
   // Template download and real XLSX import: drafts remain reviewable until Save.
   const downloaded=page.waitForEvent('download');await page.locator('[data-quick-template]').click();
   const template=await downloaded;assert.equal(template.suggestedFilename(),'Mau-bang-luong-2026-10.xlsx');

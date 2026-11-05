@@ -243,7 +243,7 @@ export function initPayroll(deps) {
       }
     } catch (ex) { toast(ex.message, 'err'); }
   });
-  root.addEventListener('input', e => { if (e.target.matches('input[data-money]')) { const n = digits(e.target.value); e.target.value = n ? n.toLocaleString('vi-VN') : ''; } });
+  root.addEventListener('input', e => { if (e.target.matches('input[data-money]:not(.pr-quick-value)')) { const n = digits(e.target.value); e.target.value = n ? n.toLocaleString('vi-VN') : ''; } });
   root.addEventListener('change', e => { if (e.target.id === 'pr-month' && /^\d{4}-\d{2}$/.test(e.target.value)) go(e.target.value); });
   root.addEventListener('submit', async e => {
     if (e.target.id !== 'pr-month-form') return;

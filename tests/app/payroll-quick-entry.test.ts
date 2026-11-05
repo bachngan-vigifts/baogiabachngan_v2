@@ -122,3 +122,17 @@ test('monthly late/leave counters persist through both APIs, validate fractions 
  const october=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find((r:any)=>r.member.id==='emp');assert.equal(october.entry.inputs.lateCount,0);assert.equal(october.entry.inputs.leaveHours,0);
  assert.equal((await f.board()).rows.find((r:any)=>r.member.id==='emp').payslip.net,baselineNet,'counters must not invent a new monetary policy');
 });
+
+
+test('decimal typing can pause at a separator, while committed numbers and pasted values stay strict',async()=>{
+ const {isQuickNumberPartial,parseQuickNumber,QUICK_COLUMNS}:any=await import(new URL('../../trial-ui/payroll-quick-entry.js',import.meta.url).href);
+ const day=QUICK_COLUMNS.inputs.find((c:any)=>c[0]==='workDays');
+ for(const separator of ['.',',']){
+  assert.equal(isQuickNumberPartial('24'+separator,day),true);
+  assert.throws(()=>parseQuickNumber('24'+separator,day),'unfinished value must not be silently saved or imported');
+  assert.equal(isQuickNumberPartial('24'+separator+'5',day),false);assert.equal(parseQuickNumber('24'+separator+'5',day),24.5);
+ }
+ for(const invalid of ['abc','24..','24,,','24.,','-24.','24.a'])assert.equal(isQuickNumberPartial(invalid,day),false,invalid);
+ assert.equal(isQuickNumberPartial('TV.',QUICK_COLUMNS.profile.find((c:any)=>c[0]==='positionLabel')),false);
+ assert.equal(isQuickNumberPartial('1.',QUICK_COLUMNS.profile.find((c:any)=>c[0]==='mealAllowance')),false);
+});
