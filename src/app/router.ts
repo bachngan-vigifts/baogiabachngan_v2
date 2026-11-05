@@ -5,6 +5,7 @@ import {registerCatalogueQuotes} from '../modules/catalog/api/catalogue-quotes.t
 import {registerCatalogueLibrary} from '../modules/catalog/api/catalogue-library.ts';
 import {catalogueLibraryHooks} from '../modules/catalog/api/catalogue-stock.ts';
 import {reservedBySku} from '../modules/sales/api/pos-store.ts';
+import { stockLookupHolds } from '../modules/sales/api/stock-lookup-holds.ts';
 import {outstandingLines} from '../modules/suppliers/api/incoming-stock.ts';
 import {activityQuotes} from '../modules/quotes/api/activity-quotes.ts';
 import {crmFactsOf} from './sales-payroll-facts.ts';
@@ -144,7 +145,7 @@ export function createAppRouter() {
   registerBadgeRoutes(router);
   registerNavigationCounts(router);
   registerWarehouseWork(router);
-  registerInventoryRoutes(router);
+  registerInventoryRoutes(router, { heldQuantitiesOf: stockLookupHolds });
   registerStockIntegrityRoutes(router);
   registerTransferRoutes(router);
   registerTransferIntegrationRoutes(router);
