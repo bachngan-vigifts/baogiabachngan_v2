@@ -234,8 +234,11 @@ export function computePayslip(a: {
     phoneDeduction: [g === 'sale' ? Math.max(phoneAdvance, phone) : phoneAdvance, g === 'sale' && phone ? `MAX(tạm ứng ĐT ${vnd(phoneAdvance)}, PC ${vnd(phone)})` : ''],
     advance: [adj('advance'), ''],
   };
+  // Thử việc: chỉ LCB theo công – không năng lực, KPI, thưởng, sản lượng, phụ cấp, tăng ca, BHXH/BHYT/TNCN.
+  // NHƯNG tiền đã ứng / đã ghi phạt vẫn phải trừ lại: tạm ứng, tạm ứng điện thoại (không có PC điện thoại để bù), vi phạm / bể hàng.
   if (probation) for (const key of Object.keys(amounts) as LineKey[]) {
-    if (key !== 'salaryByDays') amounts[key] = [0, 'Thử việc: không áp dụng'];
+    if (key === 'salaryByDays' || key === 'advance' || key === 'violation') continue;
+    amounts[key] = key === 'phoneDeduction' ? [phoneAdvance, phoneAdvance ? 'Tạm ứng điện thoại' : ''] : [0, 'Thử việc: không áp dụng'];
   }
   const line = (key: LineKey): PayLine => ({ key, label: LINE_LABEL[key], amount: round(amounts[key][0]), note: amounts[key][1] });
   const income = GROUP_INCOME[g].map(line), deductions = GROUP_DEDUCTION[g].map(line);
