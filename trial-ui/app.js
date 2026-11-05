@@ -3075,7 +3075,7 @@ function openCustomer(id, known) {
   $('#customer-dialog').showModal();
   customerDuplicateCheck.refresh();
 }
-const customerFields = customerFormFields({requireProfile:true});
+const customerFields = customerFormFields({requireProfile:true,paymentDays:true});
 $('#customer-fields').append(customerFields.root);
 const customerNewProfile=customerCreateProfile({api,mainContact:customerFields.controls.contact});
 $('#customer-new-profile').append(customerNewProfile.root);
