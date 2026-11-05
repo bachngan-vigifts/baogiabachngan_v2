@@ -7,7 +7,7 @@ test('ảnh sản phẩm: upload file vào kho công khai, dùng URL thêm/sửa
  const f=await setup(),store=memoryFileStore();f.env.productImages=store;
  const uploaded=await f.call('/product-images',f.emp,'POST',{image:png});assert.equal(uploaded.status,201,JSON.stringify(uploaded.data));assert.match(uploaded.data.imageUrl,/^https:\/\/files.test\/public\/uploads\/[^/]+\.png$/);assert.equal(store.files.size,1);
  const [file]=[...store.files.values()];assert.equal(file!.mime,'image/png');assert.equal(file!.bytes[0],137);
- const created=await f.call('/products',f.emp,'POST',{sku:'UPLOAD-NEW',name:'Sản phẩm chờ duyệt có ảnh',imageUrl:uploaded.data.imageUrl});assert.equal(created.status,201);assert.equal(created.data.approvalStatus,'pending');
+ const created=await f.call('/products',f.emp,'POST',{sku:'UPLOAD-NEW',name:'Sản phẩm chờ duyệt có ảnh',imageUrl:uploaded.data.imageUrl,prices:{retail:100000,'retail-vat':108000}});assert.equal(created.status,201);assert.equal(created.data.approvalStatus,'pending');
  const before=(await f.call('/products/00123',f.mgr)).data.product;
  const saved=await f.call('/products/00123',f.mgr,'PUT',{...before,expectedUpdatedAt:before.updatedAt,imageUrl:uploaded.data.imageUrl,prices:{}});assert.equal(saved.status,200,JSON.stringify(saved.data));assert.equal((await f.call('/products/00123',f.mgr)).data.product.imageUrl,uploaded.data.imageUrl);
  for(const image of ['data:image/svg+xml;base64,PHN2Zy8+','data:image/png;base64,SGVsbG8=','not-an-image',png.replace('image/png','image/jpeg')])assert.ok([400,415].includes((await f.call('/product-images',f.emp,'POST',{image})).status));

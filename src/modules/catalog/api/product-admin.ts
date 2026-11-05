@@ -8,6 +8,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { can, canApprove } from '../../staff/domain/permissions.ts';
 import { pricePolicies, productPrices, products } from '../schema.ts';
+import { requireNewProductPrices } from '../domain/product-approval.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 const viewer = (c: Ctx) => (c.state.session as SessionState).member;
@@ -57,9 +58,12 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.post('/products', async c => {
-    const me = viewer(c), db = c.env.db, f = cleanProduct(await readJson(c.req, 16_000)), now = new Date().toISOString(), mgr = me.role === 'manager';
+    const body = await readJson(c.req, 16_000);
+    const me = viewer(c), db = c.env.db, f = cleanProduct(body), now = new Date().toISOString(), mgr = me.role === 'manager';
     if ((await db.select({ sku: products.sku }).from(products).where(eq(products.sku, f.sku)).limit(1)).length) throw new AppError(409, `Mã ${f.sku} đã có trong danh mục.`);
-    const policies = new Set((await db.select({ id: pricePolicies.id }).from(pricePolicies).orderBy(asc(pricePolicies.sortOrder))).map(p => p.id));
+    const configuredPolicies = await db.select({ id: pricePolicies.id, name: pricePolicies.name }).from(pricePolicies).orderBy(asc(pricePolicies.sortOrder));
+    requireNewProductPrices(configuredPolicies, (body.prices || {}) as Record<string, unknown>);
+    const policies = new Set(configuredPolicies.map(p => p.id));
     const priceRows = Object.entries(f.prices).filter(([id]) => policies.has(id)).map(([policyId, price]) => ({ sku: f.sku, policyId, price }));
     await db.transaction(async tx => {
       await tx.insert(products).values({ sku: f.sku, ...f.packaging, name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl,
