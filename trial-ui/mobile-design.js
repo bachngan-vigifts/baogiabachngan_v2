@@ -20,7 +20,7 @@ export function orderedMobileNavKeys(keys) {
   // Khách hàng.
   'customers','care','stock-requests',
   // Công việc & báo cáo.
-  'tasks','dashboard','flow',
+  'tasks','dashboard','flow','feedback',
   // Kho & giao nhận, gồm trang công việc riêng của Kho nếu được cấp quyền.
   'kho','products','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving','deliveries',
   // Mua hàng.

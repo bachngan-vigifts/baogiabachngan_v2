@@ -79,6 +79,7 @@ import { registerStockHistoryRoutes, stockRefLinkHooks } from '../modules/invent
 import { registerFlowRoutes } from './flow-routes.ts';
 import { registerCashbookRoutes } from './cashbook-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
+import { registerFeedbackRoutes } from '../modules/feedback/api/routes.ts';
 export function createAppRouter() {
   transferTaskHooks.afterCommit = syncTransferTasks;
   invoiceTaskHooks.afterCommit = syncInvoiceTasks;
@@ -138,6 +139,7 @@ export function createAppRouter() {
   registerAdmsRoutes(router);
   registerSynctimeRoutes(router);
   registerStaffHubRoutes(router,{crmFactsOf});
+  registerFeedbackRoutes(router); // góp ý phát triển phần mềm (mọi nhân viên)
   registerDashboardRoutes(router, { kpiOf: dashboardKpiOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR
   registerAuditRoutes(router);
   registerReportRoutes(router);

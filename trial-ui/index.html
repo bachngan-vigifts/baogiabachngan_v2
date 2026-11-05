@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="pos.css">
 <link rel="stylesheet" href="cash.css">
 <link rel="stylesheet" href="dashboard.css">
+<link rel="stylesheet" href="feedback.css">
 <link rel="stylesheet" href="flow-map.css">
 <link rel="stylesheet" href="suppliers.css">
 <link rel="stylesheet" href="early-request-page.css">
@@ -70,6 +71,7 @@
         <a class="nav" href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/></svg><span>Công việc</span><b id="nav-task-count" class="badge" hidden>0</b></a>
         <a class="nav" href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Tổng quan doanh số</span></a>
         <a class="nav" href="#/flow" data-nav="flow"><svg viewBox="0 0 24 24"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg><span>Sơ đồ quy trình</span></a>
+        <a class="nav" href="#/feedback" data-nav="feedback"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v4"/><path d="M12 14h.01"/></svg><span>Góp ý phần mềm</span></a>
       </section>
       <section class="nav-group" aria-labelledby="nav-group-1">
         <h2 class="nav-label" id="nav-group-1">Bán hàng</h2>
@@ -130,6 +132,7 @@
     <button role="menuitem" id="change-avatar">Đổi ảnh đại diện</button>
     <button role="menuitem" id="change-password">Đổi mật khẩu</button>
     <button role="menuitem" id="speed-check">Đo tốc độ</button>
+    <button role="menuitem" id="send-feedback">Góp ý / báo lỗi phần mềm</button>
     <button role="menuitem" id="logout" class="danger-text">Đăng xuất</button>
     <small class="menu-version">Phiên bản <span id="app-version">__BUILD__</span></small>
   </div>
@@ -147,6 +150,7 @@
 
     <!-- ---------- Danh sách báo giá ---------- -->
     <section class="view" id="view-dashboard" hidden></section>
+    <section class="view" id="view-feedback" hidden></section>
     <section class="view" id="view-cash" hidden></section>
     <section class="view" id="view-pos" hidden></section>
     <section class="view" id="view-flow" hidden></section>
