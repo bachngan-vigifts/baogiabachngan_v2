@@ -34,3 +34,11 @@ test('chọn giữ trên web không gửi POST; module không lưu token hay d�
   await s.click(); assert.equal(s.posts.length, 0); assert.equal(s.messages.length, 0);
   assert.doesNotMatch(readFileSync(new URL('../../trial-ui/order-sapo.js', import.meta.url), 'utf8'), /innerHTML|localStorage|sessionStorage/);
 });
+
+test('sales action on a delivered POS order uses the same server-authorized action and refreshes after queuing', async () => {
+  const s = setup({ id: 'pos-sales-order', channel: 'pos', status: 'delivered', canCreateSapo: true, canEdit: false });
+  assert.equal(s.button.textContent, 'Tạo đơn Sapo');
+  await s.click();
+  assert.equal(s.posts[0][0], '/orders/pos-sales-order/sapo');
+  assert.equal(s.refreshed(), 1);
+});

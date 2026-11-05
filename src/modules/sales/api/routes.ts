@@ -1,4 +1,6 @@
 import { orderExportDetails } from './order-export.ts';
+import { canSalesCreateSapo } from '../domain/order-sapo-access.ts';
+import { sendPosOrderToClaw } from './pos-sapo.ts';
 import { updateWebAccounting } from './web-order-accounting.ts';
 import {registerWebOrderEdits} from './web-order-edit.ts';
 import {webDocumentPage,webDocumentDetail} from './web-order-documents.ts';
@@ -141,13 +143,13 @@ async function loadOrder(c: Ctx, id: string, db: StaffEnv['db'] | Tx = c.env.db)
   if (pendingGhnEdit(order.posSnapshot) && c.req.method !== 'GET' && !c.url.pathname.endsWith('/pos')) assertNoPendingGhnEdit(order.posSnapshot);
   return order;
 }
-/** Integration writes obey the existing approved-document lock. Shared viewers cannot push. */
-export const canCreateSapoFor = (m: { id: string; role: string }, o: typeof salesOrders.$inferSelect) =>
+/** Editing approved documents remains manager-only, independently of Sapo export. */
+const canEditOrderFor = (m: { id: string; role: string }, o: typeof salesOrders.$inferSelect) =>
   o.status !== 'cancelled' && (m.role === 'manager' || (m.role === 'employee' && o.status === 'draft' && (o.ownerId === m.id || o.createdBy === m.id)));
 const linkedSapo = (c: Ctx, o: typeof salesOrders.$inferSelect) => ({ status: 'existing', id: o.sapoOrderId, code: o.sapoOrderCode,
   url: `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(o.sapoOrderId!)}`, warnings: [] });
-async function canCreateSapoInDepartment(c: Ctx, o: typeof salesOrders.$inferSelect, db: StaffEnv['db'] | Tx = c.env.db) {
-  if (canCreateSapoFor(viewer(c), o)) return true;
+async function canEditOrderInDepartment(c: Ctx, o: typeof salesOrders.$inferSelect, db: StaffEnv['db'] | Tx = c.env.db) {
+  if (canEditOrderFor(viewer(c), o)) return true;
   if (o.status !== 'draft') return false;
   const [peer] = await db.select({ id: employees.id }).from(employees).where(and(inArray(employees.id, [o.ownerId, o.createdBy]), departmentOwner(employees.id, viewer(c)) ?? sql`false`)).limit(1);
   return !!peer;
@@ -157,12 +159,11 @@ async function canCreateSapoInDepartment(c: Ctx, o: typeof salesOrders.$inferSel
  * Người chỉ được XEM (Kế toán, Sale Admin "Toàn công ty (chỉ xem)", người được duyệt mở đơn chờ duyệt) không sửa chứng từ của người khác.
  */
 async function assertCanEditOrder(c: Ctx, o: typeof salesOrders.$inferSelect, what = 'đơn hàng / HĐKT', db: StaffEnv['db'] | Tx = c.env.db) {
-  if (!await canCreateSapoInDepartment(c, o, db)) throw new AppError(403, `Chỉ người phụ trách / người tạo được sửa ${what} nháp; ${what} đã duyệt chỉ Manager được sửa hoặc huỷ.`, 'ORDER_EDIT_FORBIDDEN');
+  if (!await canEditOrderInDepartment(c, o, db)) throw new AppError(403, `Chỉ người phụ trách / người tạo được sửa ${what} nháp; ${what} đã duyệt chỉ Manager được sửa hoặc huỷ.`, 'ORDER_EDIT_FORBIDDEN');
 }
 async function assertCanCreateSapo(c: Ctx, o: typeof salesOrders.$inferSelect) {
-  if (o.channel === 'pos') throw new AppError(409, 'Đơn POS ghi sổ kho CRM, không đẩy Sapo từ luồng này.');
   if (o.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không tạo đơn Sapo.', 'ORDER_CANCELLED');
-  if (!await canCreateSapoInDepartment(c, o)) throw new AppError(403, 'Chỉ người phụ trách/người tạo được đẩy chứng từ nháp. Chứng từ đã duyệt chỉ Manager được đẩy Sapo.', 'SAPO_PUSH_FORBIDDEN');
+  if (!canSalesCreateSapo(viewer(c), o) && !await canEditOrderInDepartment(c, o)) throw new AppError(403, 'Chỉ Manager, nhân viên bán hàng, Sale hoặc Sale Admin được tạo đơn Sapo cho chứng từ đã duyệt.', 'SAPO_PUSH_FORBIDDEN');
 }
 async function receivableOf(db: StaffEnv['db'] | Tx, orderIds: string[]) {
   if (!orderIds.length) return new Map<string, ReturnType<typeof receivable>>();
@@ -612,10 +613,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       order: { ...order, warehouseName: order.warehouseId ? (await db.select({ name: warehouses.name }).from(warehouses).where(eq(warehouses.id, order.warehouseId)).limit(1))[0]?.name ?? '' : '', posFees: order.channel === 'pos' ? snapshotPosFees(JSON.parse(order.posSnapshot || '{}')) : null, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
         createdByName: person(order.createdBy)?.name ?? '', createdByCustomer: person(order.createdBy)?.role === 'customer',
         invoiceRequestedByName: order.invoiceRequestedBy ? person(order.invoiceRequestedBy)?.name ?? '' : '', invoiceIssuedByName: order.invoiceIssuedBy ? person(order.invoiceIssuedBy)?.name ?? '' : '',
-        canIssueInvoice: canIssueInvoice(viewer(c)), canCreateSapo: !order.sapoOrderId && await canCreateSapoInDepartment(c, order), canEdit: await canCreateSapoInDepartment(c, order),
+        canIssueInvoice: canIssueInvoice(viewer(c)), canCreateSapo: !order.sapoOrderId && (canSalesCreateSapo(viewer(c), order) || await canEditOrderInDepartment(c, order)), canEdit: await canEditOrderInDepartment(c, order),
         // Đơn Sapo đã đẩy (mã đang giữ chỗ "pending:…" khi đang đẩy thì chưa tính).
         sapoOrderCode: order.sapoOrderId ? order.sapoOrderCode : null,
-        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines:displayedLines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: await canCreateSapoInDepartment(c, order), data: JSON.parse(contract[0].data) } : null,
+        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines:displayedLines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: await canEditOrderInDepartment(c, order), data: JSON.parse(contract[0].data) } : null,
       deliveries: ships.map(s => ({ ...s,...confirmations.get(s.id),canConfirm:canConfirmDelivery(viewer(c),order),canCancel:!isWarehouseMember(viewer(c))&&canConfirmDelivery(viewer(c),order),lines: shipLines.filter(l => l.deliveryId === s.id), photos: shipPhotos.get(s.id) ?? [] })),
       // Phiếu đã huỷ vẫn trả về (hiện gạch ngang + lý do) nhưng không tính vào đã thu.
       schedules, payments: payments.map(p => ({ ...p, voidedByName: p.voidedBy ? person(p.voidedBy)?.name ?? '' : '' })),
@@ -636,6 +637,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (p.get('orderId')) {
       const o = await loadOrder(c, p.get('orderId')!);
       if (o.sapoOrderId) return json({ pushed: { code: o.sapoOrderCode, url: `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(o.sapoOrderId)}` }, required: sapoPushRequired(c) });
+      if (o.channel === 'pos') return json({ required: sapoPushRequired(c), viaClaw: true, connected: true,
+        code: o.orderNo, owner: '', account: null, locations: [], problems: [] });
       const lines = await c.env.db.select({ sku: salesOrderLines.sku }).from(salesOrderLines).where(eq(salesOrderLines.orderId, o.id));
       const [contract] = await c.env.db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, o.id)).limit(1);
       return json(await sapoPreview(c, { code: contract?.no || o.orderNo, ownerId: o.ownerId, lines: lines.map(l => ({ sku: l.sku.trim() })), customerName: o.customerName }));
@@ -744,6 +747,9 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     // Công tắc tắt đẩy Sapo (SAPO_ORDER_PUSH=off) áp dụng cho cả nút "Tạo đơn Sapo" trên chứng từ có sẵn.
     if (!sapoPushRequired(c)) throw new AppError(409, 'Đẩy đơn sang Sapo đang tắt trên hệ thống.', 'SAPO_PUSH_DISABLED');
     await assertCanCreateSapo(c, order);
+    // Retry the original POS integration: preserve pos:<orderNo>, branch, discounts and fees.
+    // Sending a request never re-runs checkout or changes CRM stock/cash.
+    if (order.channel === 'pos') return json({ sapo: await sendPosOrderToClaw(c.env, order.id) });
     if (sapoPushViaClaw(c)) return json({ sapo: await sendOrderToClaw(c, order.id, (await c.env.db.select({ id: salesContracts.id }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1)).length ? 'hdkt' : 'order') });
     const push = await prepareSapoPush(c, sapoLocationOf(body));
     const sapo = await c.env.db.transaction(async tx => {
