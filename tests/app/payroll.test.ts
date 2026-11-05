@@ -31,7 +31,7 @@ test('bảng lương công ty: tham số theo tháng, DS nhóm, thưởng quý t
 
   // Hồ sơ lương: emp (Sale, KPI), new (Lock, thưởng nhóm), old (Bách Ngân, thưởng nhóm).
   const salary = (id: string, body: object) => call(`/hr/members/${id}/salary`, mgr, 'PUT', { effectiveMonth: '2026-07', insurance: 496_650, ...body });
-  assert.equal((await salary('emp', { payrollGroup: 'sale', positionLabel: 'SALE', kpiEnabled: true, revenueTarget: 100_000_000, bankCode: 'vcb', bankAccount: '0123' })).status, 200);
+  assert.equal((await salary('emp', { payrollGroup: 'sale', positionLabel: 'SALE', kpiEnabled: true, revenueTarget: 100_000_000, changeReason: 'Chỉ tiêu ban đầu', bankCode: 'vcb', bankAccount: '0123' })).status, 200);
   assert.equal((await salary('new', { payrollGroup: 'lock', positionLabel: 'NVBH', responsibilityMode: 'per_day', teamBonus: true })).status, 200);
   assert.equal((await salary('old', { payrollGroup: 'bn', positionLabel: 'NVBH', responsibilityMode: 'per_day', teamBonus: true })).status, 200);
   // DS nhóm + chi thưởng quý (T9 là tháng cuối quý 3).

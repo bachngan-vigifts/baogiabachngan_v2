@@ -43,7 +43,7 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
 
   // Manager đặt lương, chấm công, thưởng / tạm ứng.
   assert.equal((await call('/hr/members/emp/salary', mgr, 'PUT', { effectiveMonth: month, payrollGroup: 'sale', positionLabel: 'sale', baseSalary: 10_400_000, capacityCoef: 1,
-    mealAllowance: false, kpiEnabled: true, revenueTarget: 4_320_000, insurance: 500_000, bankCode: 'VCB', bankAccount: '0123 456', bankHolder: 'Ten emp' })).status, 200);
+    mealAllowance: false, kpiEnabled: true, revenueTarget: 4_320_000, changeReason: 'Chỉ tiêu tháng đầu', insurance: 500_000, bankCode: 'VCB', bankAccount: '0123 456', bankHolder: 'Ten emp' })).status, 200);
   assert.equal((await call('/hr/members/emp/salary', mgr, 'PUT', { effectiveMonth: month, payrollGroup: 'khac' })).status, 400);
   assert.equal((await call(`/hr/members/emp/inputs/${month}`, emp, 'PUT', { kpiOverride: 0.95 })).status, 403);
   assert.equal((await call(`/hr/members/emp/inputs/${month}`, mgr, 'PUT', { kpiOverride: 0.95 })).status, 200, 'KPI chốt 95% → thưởng 1% doanh số net');

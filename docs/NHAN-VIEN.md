@@ -50,6 +50,7 @@ Công thức lấy đúng file Excel mẫu và đã đối chiếu từng đồn
 | "DS tổng hợp", "Tổng hợp" | Bảng lương → **Tổng hợp** | `payroll.js` |
 | "Chuyển khoản" (VietQR) | Bảng lương → **Chuyển khoản** + cột trong file Excel xuất ra | `vietQrUrl` |
 | "Chỉ tiêu DS" | Chỉ tiêu DS cá nhân / tháng trong hồ sơ lương (mặc định 415tr ở Tham số) | – |
+| "Chỉ tiêu KH mới / giao dịch / số HĐ" | Chỉ tiêu KPI riêng trong hồ sơ lương (Sale tính KPI). Để trống = mức chung của tháng ở Tham số; không nhận 0. Trọng số, bậc thưởng dùng chung. Đổi chỉ tiêu (cả DS) bắt buộc lý do; mỗi lần sửa hồ sơ lương ghi nhật ký trước → sau (không ghi số tài khoản), xem ở "Lịch sử sửa hồ sơ lương". Chỉ tiêu đã dùng lưu trong bản chụp phiếu lương (`kpi.targets`); KPI cố định / KPI chốt tay vẫn thay kết quả tính. Migration `20261105030000_hr_member_kpi_targets.sql` (chạy tay; cổng `scripts/sql/assert-hr-member-kpi-targets.sql`). | – |
 
 Nhân viên **chưa có hồ sơ lương** vẫn hiện ở tab theo chức vụ (NVBH ML → tab NVBH ML, NVBH LOCK → tab NVBH Lock, còn lại → Sale & VP) trong khung "Chưa có hồ sơ lương", chưa tính vào tổng / chốt. Form hồ sơ lương điền sẵn mặc định theo chức vụ (`defaultProfileFor`): NVBH, trách nhiệm theo ngày, chuyên cần 200.000, hưởng thưởng DS nhóm.
 

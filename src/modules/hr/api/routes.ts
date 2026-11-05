@@ -9,6 +9,7 @@ import { AppError } from '../../../core/errors.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
+import { auditLogs } from '../../../core/db/schema.ts';
 import { hrAdjustments, hrAttendance, hrPayrollInputs, hrPayrollMonths, hrPayrollSettings, hrPayslips, hrSalaryProfiles } from '../schema.ts';
 import { PARAM_FIELDS, validateParams } from '../domain/params.ts';
 import {
@@ -36,6 +37,18 @@ const num = (v: unknown, label: string, max: number = HR_LIMITS.maxSalary) => {
 };
 /** Số tuỳ chọn: trống → null (lấy tự động). */
 const optNum = (v: unknown, label: string, max: number = HR_LIMITS.maxSalary) => v === '' || v === undefined || v === null ? null : num(v, label, max);
+/** Chỉ tiêu KPI riêng: trống → null (theo mức chung); không gửi → giữ giá trị cũ; số 0 / âm / quá lớn → lỗi (không coi là "đạt"). */
+const kpiTarget = (v: unknown, prior: number | null | undefined, label: string) => {
+  if (v === undefined) return prior ?? null;
+  if (v === '' || v === null) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0 || n > 1_000_000) throw new AppError(400, `${label} phải lớn hơn 0 (để trống nếu theo mức chung).`);
+  return n;
+};
+/** Trường hồ sơ lương ghi vào nhật ký (trước → sau); tài khoản ngân hàng chỉ ghi "đã đổi", không ghi số. */
+const SALARY_AUDIT_FIELDS = ['payrollGroup', 'positionLabel', 'baseSalary', 'capacityCoef', 'responsibilityMode', 'responsibility', 'mealAllowance', 'phoneAllowance', 'attendanceBonus',
+  'kpiEnabled', 'fixedKpi', 'contractBonusEnabled', 'teamBonus', 'outputRate', 'revenueTarget', 'kpiNewCustomersTarget', 'kpiTransactionsTarget', 'kpiContractsTarget', 'insurance', 'note'] as const;
+const KPI_TARGET_FIELDS = ['revenueTarget', 'kpiNewCustomersTarget', 'kpiTransactionsTarget', 'kpiContractsTarget'] as const;
 const month = (v: unknown) => { if (!isMonth(v)) throw new AppError(400, 'Tháng không hợp lệ (YYYY-MM).'); return v; };
 const text = (v: unknown, max: number) => String(v ?? '').trim().slice(0, max);
 const oneOf = <T extends string>(v: unknown, list: readonly T[], label: string, fallback: T): T => {
@@ -127,6 +140,17 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     return json({ok:true,confirmed:open.length});
   }), 'admin');
 
+  /** Nhật ký sửa hồ sơ lương (Manager): trước → sau, người sửa, lý do. Không trả số tài khoản ngân hàng. */
+  router.get('/hr/members/:id/salary-history', async c => {
+    const db = c.env.db, id = await staffMember(db, c.params.id!);
+    const rows = await db.select({ id: auditLogs.id, data: auditLogs.data, createdAt: auditLogs.createdAt, actorName: employees.name }).from(auditLogs)
+      .leftJoin(employees, eq(employees.id, auditLogs.actorId))
+      .where(and(eq(auditLogs.entityType, 'hr-salary-profile'), eq(auditLogs.entityId, id), eq(auditLogs.action, 'hr-salary-profile-update')))
+      .orderBy(desc(auditLogs.createdAt)).limit(30);
+    return json({ items: rows.map(r => { let d: any = {}; try { d = JSON.parse(r.data); } catch { /* bản ghi hỏng → bỏ chi tiết */ }
+      return { id: r.id, at: r.createdAt, by: r.actorName ?? '', effectiveMonth: d.effectiveMonth ?? '', created: !!d.created, changes: d.changes ?? {}, bankChanged: !!d.bankChanged, reason: d.reason ?? '' }; }) });
+  }, 'admin');
+
   router.put('/hr/members/:id/salary', write(async c => {
     const db = c.env.db, id = await staffMember(db, c.params.id!), b = await readJson(c.req, 6_000);
     const [person]=await db.select({positionId:employees.positionId}).from(employees).where(eq(employees.id,id));const eligible=salaryKpiEligible(person?.positionId);
@@ -139,13 +163,28 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
       responsibilityMode: oneOf(b.responsibilityMode, RESPONSIBILITY_MODES, 'Cách tính trách nhiệm', 'fixed'), responsibility: Math.round(num(b.responsibility, 'Trách nhiệm')),
       mealAllowance: b.mealAllowance !== false, phoneAllowance: Math.round(num(b.phoneAllowance, 'Phụ cấp điện thoại')), attendanceBonus: Math.round(num(b.attendanceBonus, 'Chuyên cần')),
       kpiEnabled: eligible&&b.kpiEnabled === true,fixedKpi:!eligible?null:b.fixedKpi===undefined?prior?.fixedKpi??null:optNum(b.fixedKpi,'KPI cố định',10),contractBonusEnabled:b.contractBonusEnabled===undefined?prior?.contractBonusEnabled??false:b.contractBonusEnabled===true, teamBonus: b.teamBonus === true, outputRate: num(b.outputRate, 'Đơn giá sản lượng'),
-      revenueTarget: Math.round(num(b.revenueTarget, 'Chỉ tiêu DS', 1e13)), insurance: Math.round(num(b.insurance, 'BHXH')),
+      revenueTarget: Math.round(num(b.revenueTarget, 'Chỉ tiêu DS', 1e13)),
+      kpiNewCustomersTarget: kpiTarget(b.kpiNewCustomersTarget, prior?.kpiNewCustomersTarget, 'Chỉ tiêu KH mới'),
+      kpiTransactionsTarget: kpiTarget(b.kpiTransactionsTarget, prior?.kpiTransactionsTarget, 'Chỉ tiêu giao dịch'),
+      kpiContractsTarget: kpiTarget(b.kpiContractsTarget, prior?.kpiContractsTarget, 'Chỉ tiêu số hợp đồng'),
+      insurance: Math.round(num(b.insurance, 'BHXH')),
       bankCode: text(b.bankCode, 30).toLowerCase().replace(/[^a-z0-9]/g, ''), bankAccount: text(b.bankAccount, 30).replace(/[^\dA-Za-z]/g, ''), bankHolder: text(b.bankHolder, HR_LIMITS.text).toUpperCase(),
       note: text(b.note, HR_LIMITS.note), updatedBy: actor(c).id, updatedAt: nowIso(),
     };
     if(row.payrollGroup!=='sale'&&(row.contractBonusEnabled||row.fixedKpi!==null))throw new AppError(400,'KPI cố định và thưởng HĐKT chỉ áp dụng bảng Sale & Văn phòng.');
+    if((row.payrollGroup!=='sale'||!eligible)&&(row.kpiNewCustomersTarget!==null||row.kpiTransactionsTarget!==null||row.kpiContractsTarget!==null))throw new AppError(400,'Chỉ tiêu KPI riêng chỉ áp dụng Sale tính KPI ở bảng Sale & Văn phòng.');
+    // So với hồ sơ đang áp dụng tại tháng này (cùng tháng hoặc tháng trước gần nhất): chỉ tiêu ảnh hưởng tiền thưởng → bắt buộc lý do.
+    const before=prior?Object.fromEntries(SALARY_AUDIT_FIELDS.map(k=>[k,(prior as any)[k]??null])):null;
+    // Hồ sơ đầu tiên: chỉ ghi các ô có giá trị (không liệt kê ô trống / 0).
+    const changes=Object.fromEntries(SALARY_AUDIT_FIELDS.filter(k=>before?before[k]!==((row as any)[k]??null):![null,'',0,false].includes((row as any)[k]??null)).map(k=>[k,{from:before?.[k]??null,to:(row as any)[k]??null}]));
+    const targetsChanged=KPI_TARGET_FIELDS.some(k=>k in changes&&(before!==null||(row as any)[k]));
+    const reason=text(b.changeReason,HR_LIMITS.reason);
+    if(targetsChanged&&reason.length<3)throw new AppError(400,'Nhập lý do đổi chỉ tiêu (ảnh hưởng tiền thưởng KPI).');
+    const bankChanged=!!prior&&(prior.bankCode!==row.bankCode||prior.bankAccount!==row.bankAccount||prior.bankHolder!==row.bankHolder);
     const { memberId: _m, effectiveMonth: _e, ...set } = row;
     await db.insert(hrSalaryProfiles).values(row).onConflictDoUpdate({ target: [hrSalaryProfiles.memberId, hrSalaryProfiles.effectiveMonth], set });
+    if(Object.keys(changes).length||bankChanged)await db.insert(auditLogs).values({id:crypto.randomUUID(),actorId:actor(c).id,module:'hr',action:'hr-salary-profile-update',entityType:'hr-salary-profile',entityId:id,
+      data:JSON.stringify({effectiveMonth:row.effectiveMonth,basedOn:prior?.effectiveMonth??null,created:!prior,changes,bankChanged,reason}),createdAt:row.updatedAt});
     return json({ ok: true });
   }), 'admin');
 
