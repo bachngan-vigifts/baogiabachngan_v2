@@ -570,6 +570,7 @@ async function uploadAvatar(path) {
   return avatar;
 }
 $('#my-profile').addEventListener('click', () => { toggleAccountMenu(false); go('#/members/' + encodeURIComponent(state.user.id)); });
+$('#my-bank').addEventListener('click', () => { toggleAccountMenu(false); go('#/members/' + encodeURIComponent(state.user.id) + '?tab=bank'); });
 $('#change-avatar').addEventListener('click', async () => {
   toggleAccountMenu(false);
   try {
