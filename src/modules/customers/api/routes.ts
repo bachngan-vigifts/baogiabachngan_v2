@@ -215,7 +215,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
         await tx.update(customers).set(row).where(eq(customers.id, id));
         return;
       }
-      await tx.insert(customers).values({ id, createdAt: now, ...row, approvalStatus: mgr ? 'approved' : 'pending', createdBy: me.id, approvedBy: mgr ? me.id : null, approvedAt: mgr ? now : null });
+      await tx.insert(customers).values({ id, createdAt: now, ...row, dataSource: 'web', approvalStatus: mgr ? 'approved' : 'pending', createdBy: me.id, approvedBy: mgr ? me.id : null, approvedAt: mgr ? now : null });
       if (ownerId) await tx.insert(customerStaff).values({ customerId: id, memberId: ownerId, role: 'owner', createdBy: me.id, createdAt: now });
     });
     return update ? json({ id }) : json({ id, approvalStatus: mgr ? 'approved' : 'pending' }, 201);

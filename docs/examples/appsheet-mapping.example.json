@@ -1,0 +1,28 @@
+{
+  "appId": "THAY-BANG-APP-ID-THAT",
+  "customersTable": "KhachHang",
+  "contactsTable": "NguoiLienHe",
+  "localOffset": "+07:00",
+  "dateOrder": "DMY",
+  "customer": {
+    "keyConfirmed": false,
+    "rowId": "Row ID",
+    "updatedAt": "Ngày cập nhật",
+    "createdAt": "Ngày tạo",
+    "fields": {
+      "name": "Tên khách hàng", "customerCode": "Mã khách hàng", "contact": "Người liên hệ chính",
+      "address": "Địa chỉ", "taxCode": "Mã số thuế", "phone": "Số điện thoại", "email": "Email",
+      "customerType": "Loại khách hàng", "approvalStatus": "Phê duyệt", "establishedDate": "Ngày thành lập"
+    }
+  },
+  "contact": {
+    "keyConfirmed": false,
+    "rowId": "ID người liên hệ",
+    "customerRowId": "Khách hàng",
+    "updatedAt": "Ngày cập nhật",
+    "fields": {
+      "name": "Tên người liên hệ", "title": "Chức vụ", "phone": "Số điện thoại",
+      "email": "Email", "note": "Ghi chú", "isPrimary": "Liên hệ chính"
+    }
+  }
+}

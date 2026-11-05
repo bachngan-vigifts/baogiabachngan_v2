@@ -12,6 +12,7 @@ export function customerFormFields({ requirePhone = false } = {}) {
     ['taxCode', 'Mã số thuế', 'text', 500],
     ['establishedDate', 'Ngày thành lập', 'date', 10],
     ['customerCode', 'Mã khách hàng', 'text', 500],
+    ['customerType', 'Nhóm / loại khách hàng', 'text', 500],
     ['address', 'Địa chỉ', 'textarea', 2000, true],
     ['depositRate', 'Tỷ lệ đặt cọc (%)', 'text', 500, false, 'Để trống = 30'],
     ['paymentTerm', 'Hạn thanh toán', 'text', 500, false, 'Số ngày, để trống = 5'],

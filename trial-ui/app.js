@@ -7,6 +7,7 @@ import {mountContractLiquidation} from './contract-liquidation.js';
 import { initQuoteStockWarnings } from './quote-stock-warning.js';
 import { parseSkuQuantities, pasteRows } from './quote-paste.js';
 import { hasCustomerListFilters, customerListQuery, fillCustomerOwners, bindCustomerListFilters, updateCustomerFilterSummary } from './customer-list-filters.js';
+import { openAppsheetCustomers } from './appsheet-customers.js';
 import {openPriceLabels} from './price-labels.js';
 import {ghnOrderSummary} from './ghn-order-summary.js';
 import {initProductDetail} from './product-detail.js';
@@ -3056,7 +3057,7 @@ function openCustomer(id, known) {
   customerDuplicateCheck.reset();
   const form = $('#customer-form'); form.reset(); $('#customer-error').textContent = '';
   const c = id ? known || state.customers?.find(x => x.id === id) : null;
-  if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'address', 'depositRate', 'paymentTerm', 'creditLimit', 'establishedDate']) form.elements.namedItem(k).value = c[k] ?? '';
+  if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'customerType', 'address', 'depositRate', 'paymentTerm', 'creditLimit', 'establishedDate']) form.elements.namedItem(k).value = c[k] ?? '';
   customerFields.refreshAnniversary();
   $('#customer-dialog-title').textContent = c ? 'Sửa khách hàng' : 'Thêm khách hàng';
   $('#customer-dialog').showModal();
@@ -3071,6 +3072,7 @@ const customerDuplicateCheck = bindCustomerDuplicateCheck({
   onChoose: c => { $('#customer-dialog').close(); go('#/customers/' + encodeURIComponent(c.id)); },
 });
 $('#new-customer').addEventListener('click', () => openCustomer());
+$('#customer-appsheet').addEventListener('click', () => { if (isManager()) openAppsheetCustomers({ api, esc, onSaved: loadCustomers }); });
 $('#customer-anniversaries').addEventListener('click', async () => {
   const button = $('#customer-anniversaries'); button.disabled = true;
   try {

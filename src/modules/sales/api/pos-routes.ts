@@ -974,7 +974,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           await customerIdentityLock(tx);
           const [hit] = await tx.select({ id: customers.id, name: customers.name }).from(customers).where(eq(customers.customerCode, CONSUMER_CODE)).limit(1);
           if (hit) return hit;
-          await tx.insert(customers).values({ id, name: CONSUMER_NAME, customerCode: CONSUMER_CODE, contact: '', phone: '', email: '', address: '', taxCode: '', isRetail: true,
+          await tx.insert(customers).values({ id, name: CONSUMER_NAME, customerCode: CONSUMER_CODE, contact: '', phone: '', email: '', address: '', taxCode: '', isRetail: true, dataSource: 'pos',
             search: CONSUMER_NAME + ' ' + CONSUMER_CODE, sourceVersion: 0, syncedAt: now, createdAt: now, createdBy: m.id, approvalStatus: 'approved', approvedAt: now, approvedBy: m.id });
           return { id, name: CONSUMER_NAME };
         });
@@ -986,6 +986,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         await tx.insert(customers).values({
           id,
           ...fields,...terms,
+          dataSource: 'pos',
           search: fold(Object.values(fields).join(' ')),
           sourceVersion: 0,
           syncedAt: now,

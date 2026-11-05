@@ -14,6 +14,7 @@ export function customerInput(body:Record<string,unknown>,requirePhone=false) {
   if(paymentTerm&&/^\d+(?:\s*ngày)?$/i.test(paymentTerm)&&parseInt(paymentTerm,10)>3650)throw new AppError(400,'Hạn thanh toán tối đa 3650 ngày.');
   const establishedDate = body.establishedDate === undefined ? undefined : body.establishedDate === null || body.establishedDate === '' ? null : body.establishedDate;
   if (establishedDate !== undefined && establishedDate !== null && (!isCalendarDate(establishedDate) || establishedDate > vietnamToday())) throw new AppError(400, 'Ngày thành lập phải là ngày hợp lệ, không ở tương lai.');
-  const terms=Object.fromEntries(Object.entries({depositRate,paymentTerm,creditLimit,establishedDate}).filter(([,v])=>v!==undefined));
+  const customerType=body.customerType===undefined?undefined:(text('customerType')||null);
+  const terms=Object.fromEntries(Object.entries({depositRate,paymentTerm,creditLimit,establishedDate,customerType}).filter(([,v])=>v!==undefined));
   return {fields,terms};
 }

@@ -112,7 +112,7 @@ export function routePermission(method: string, path: string, query: URLSearchPa
   if (is(/^\/(purchase-orders|purchase-receiving-calendar|purchase-incoming|purchase-early-requests|supplier-receipts|supplier-payments|supplier-payables|purchase-sources|purchase-options)(\/|$)/)) return ['page.purchases'];
   if (is(/^\/inventory\/lookup(\/|$)/)) return null; // tra tồn (không giá): mọi nhân viên như trước – quyền chỉ quyết định hiện menu
   if (is(/^\/inventory(\/|$)/)) return ['inventory.view'];
-  if (is(/^\/(customer-duplicates|customer-accounts)(\/|$)/)) return ['page.customers'];
+  if (is(/^\/(appsheet-customers|customer-duplicates|customer-accounts)(\/|$)/)) return ['page.customers'];
   if (is(/^\/customers(\/|$)/)) {
     const picker = ['page.customers', 'page.quotes', 'page.orders', 'page.contracts', 'page.care', 'page.stock-requests'];
     if (method === 'GET' && (p === '/customers' || /^\/customers\/[^/]+$/.test(p))) return query.get('usable') || p !== '/customers' || query.get('q') !== null && Number(query.get('limit')) <= 8 ? picker : ['page.customers'];

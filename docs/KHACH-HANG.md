@@ -1,5 +1,7 @@
 # Khách hàng: danh sách, thêm mới, trang chi tiết
 
+Manager có thể chuẩn bị, xem trước và đối soát khách/người liên hệ từ AppSheet; xem [APPSHEET-MAPPING.md](APPSHEET-MAPPING.md). Nhóm/loại khách (`customerType`) độc lập với khách lẻ/doanh nghiệp (`isRetail`).
+
 ## Giao diện
 - **Danh sách** (`#/customers`):
   - Nút **＋ xanh lá** ở đầu trang để thêm khách hàng. Nút hiện cả trên máy tính và điện thoại.
