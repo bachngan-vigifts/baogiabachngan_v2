@@ -5,10 +5,10 @@ import {runInNewContext} from 'node:vm';
 
 /** Thẻ "Tài khoản nhận lương" ở Hồ sơ của tôi: nút điền / đổi chỉ cho chính mình; có QR khi có tài khoản và số tiền. */
 const banks:any=await import(new URL('../../trial-ui/salary-banks.js',import.meta.url).href);
-async function render(access:any,transfer:any,profile:any={},hidden=false){
+async function render(access:any,transfer:any,profile:any={},hidden=false,tab='',toasts:string[]=[]){
  const root={innerHTML:'',addEventListener(){},querySelectorAll:()=>[]};
  const context:any={avAttr:()=>'',bankName:banks.bankName,bankOptions:banks.bankOptions,printPayslip(){},openContractBonusDetails(){},
-  document:{getElementById:(id:string)=>id==='member-detail'?root:{textContent:''}},location:{hash:''}};
+  document:{querySelector:()=>null,getElementById:(id:string)=>id==='member-detail'?root:{textContent:''}},location:{hash:''}};
  const source=readFileSync(new URL('../../trial-ui/member-detail.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('export function initMemberDetail','globalThis.init = function');
  runInNewContext(source,context);
  const pr={effectiveMonth:'2026-10',payrollGroup:'sale',bankCode:'vcb',bankAccount:'0123456789',bankHolder:'NGUYEN VAN A',...profile};
@@ -17,8 +17,8 @@ async function render(access:any,transfer:any,profile:any={},hidden=false){
    debt:{balance:0,overdue:0,orders:0},tasks:{done:0,open:0,overdue:0}},trend:[],customers:[],quotes:[],orders:[],contracts:[],payments:[],debts:[],
   payroll:{profile:pr,payslip:{status:'estimate',net:5_000_000,gross:5_000_000,deductionTotal:0,income:[]},transfer,adjustments:[],attendance:[],attendanceSummary:{worked:26,standardDays:26,daysInMonth:31}},today:'2026-11-05'};
  if(hidden)Object.assign(data,{payroll:null,salaryAccount:{hasProfile:true,bankCode:pr.bankCode,bankAccount:pr.bankAccount,bankHolder:pr.bankHolder}});
- const ui=context.init({api:async()=>data,toast(){},esc:String,money:(n:number)=>n.toLocaleString('vi-VN'),fmtDate:String,pill:()=>'',payCell:String,initials:()=>'NV',ORDER_STATUS:{},CONTRACT_STATUS:{}});
- await ui.open('emp','2026-10');
+ const ui=context.init({api:async()=>data,toast:(m:string)=>toasts.push(m),esc:String,money:(n:number)=>n.toLocaleString('vi-VN'),fmtDate:String,pill:()=>'',payCell:String,initials:()=>'NV',ORDER_STATUS:{},CONTRACT_STATUS:{}});
+ await ui.open('emp','2026-10',tab);
  return root.innerHTML;
 }
 const qr='https://img.vietqr.io/image/vcb-0123456789.png?amount=5000000&addInfo=Chuyen%20luong%20T10';
@@ -36,7 +36,7 @@ test('chưa điền tài khoản: nút "Điền tài khoản", không có QR; Ma
  const m=await render({isSelf:false,canManage:true,canViewPayroll:true},transfer);
  assert.doesNotMatch(m,/data-act="bank"/);assert.ok(m.includes(qr));
  const none=await render({isSelf:true,canManage:false,canViewPayroll:true},null,{effectiveMonth:null,bankCode:'',bankAccount:'',bankHolder:''});
- assert.match(none,/Nhờ quản lý đặt hồ sơ lương/);assert.doesNotMatch(none,/data-act="bank"/);
+ assert.match(none,/Nhờ quản lý đặt hồ sơ lương/);assert.doesNotMatch(none,/Điền tài khoản|Đổi tài khoản/);
 });
 test('danh sách ngân hàng giữ mã cũ không có trong danh sách',()=>{
  assert.match(banks.bankOptions('vietinbank',String),/<option value="vietinbank" selected>VIETINBANK<\/option>/);
@@ -46,4 +46,12 @@ test('danh sách ngân hàng giữ mã cũ không có trong danh sách',()=>{
 test('trước ngày 10: thẻ báo ngày mở lương, vẫn hiện tài khoản và nút đổi, không có QR',async()=>{
  const h=await render({isSelf:true,canManage:false,canViewPayroll:true,salaryOpensOn:'2026-10-10'},null,{},true);
  assert.match(h,/Lương tháng này hiện từ ngày 10\/10\/2026/);assert.match(h,/0123456789/);assert.match(h,/data-act="bank"/);assert.doesNotMatch(h,/vietqr|Thực nhận/);
+});
+test('lối vào rõ: nút "Tài khoản nhận lương" đầu trang cho chính mình; mở từ menu (tab=bank) khi chưa có hồ sơ lương thì báo rõ',async()=>{
+ const h=await render({isSelf:true,canManage:false,canViewPayroll:true},transfer);
+ assert.match(h,/<button class="btn secondary" data-act="bank">Tài khoản nhận lương<\/button>/);
+ const m=await render({isSelf:false,canManage:true,canViewPayroll:true},transfer);assert.doesNotMatch(m,/data-act="bank"/);
+ const toasts:string[]=[];
+ await render({isSelf:true,canManage:false,canViewPayroll:true},null,{effectiveMonth:null,bankCode:'',bankAccount:'',bankHolder:''},false,'bank',toasts);
+ assert.match(toasts[0]??'',/chưa có hồ sơ lương/);
 });

@@ -190,6 +190,8 @@ export function initMemberDetail(deps) {
   const fmtDay = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
   function editBank() {
     const pr = bankOf(st.d);
+    document.querySelector('#member-detail .md-bank-card')?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    if (!pr.hasProfile) { toast('Bạn chưa có hồ sơ lương. Nhờ quản lý đặt hồ sơ lương trước, rồi điền tài khoản nhận lương.', 'err'); return; }
     dialog('Tài khoản nhận lương', `
       <label class="span-2">Ngân hàng<select name="bankCode" required>${bankOptions(pr.bankCode, esc)}</select></label>
       <label>Số tài khoản<input name="bankAccount" required inputmode="numeric" maxlength="19" autocomplete="off" value="${esc(pr.bankAccount)}" placeholder="Chỉ gồm chữ số"></label>
@@ -228,6 +230,7 @@ export function initMemberDetail(deps) {
           <div class="md-month"><button type="button" class="icon-btn" data-month="-1" aria-label="Tháng trước">‹</button>
             <input type="month" id="md-month" value="${esc(d.month)}" aria-label="Chọn tháng"><button type="button" class="icon-btn" data-month="1" aria-label="Tháng sau">›</button></div>
           ${a.canManage && !a.isSelf ? '<button class="btn secondary" data-act="edit">Sửa thông tin</button>' : ''}
+          ${a.isSelf && (d.payroll || d.salaryAccount) ? '<button class="btn secondary" data-act="bank">Tài khoản nhận lương</button>' : ''}
           ${a.canManage || a.isSelf ? '<button class="btn secondary" data-act="photo">Đổi ảnh</button>' : ''}
         </div>
       </div>
@@ -275,6 +278,7 @@ export function initMemberDetail(deps) {
       const d = await api(`/members/${encodeURIComponent(id)}/overview${st.month ? '?month=' + st.month : ''}`);
       if (seq !== st.seq) return;
       st.d = d; st.month = d.month; render();
+      if (tab === 'bank' && d.access.isSelf && (d.payroll || d.salaryAccount)) editBank(); // menu tài khoản → "Tài khoản nhận lương"
       document.getElementById('breadcrumb').textContent = d.member.name; document.title = d.member.name + ' · Bách Ngân';
     } catch (e) { if (seq === st.seq) root.innerHTML = `<div class="empty"><h3>Không mở được hồ sơ nhân viên</h3><p class="muted">${esc(e.message)}</p></div>`; }
   }
