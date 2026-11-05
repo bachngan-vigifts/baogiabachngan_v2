@@ -139,4 +139,3 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
     return json({ ok: true });
   }, 'business');
 }
-

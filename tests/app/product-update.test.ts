@@ -91,4 +91,3 @@ test('carton dimensions/weight are editable and audited; omitted fields survive 
  assert.equal((await f.call('/products/00123',f.emp,'PUT',{...next,prices:{},expectedUpdatedAt:next.updatedAt,cartonWeight:null})).status,200);
  assert.equal((await f.call('/products/00123',f.emp)).data.product.cartonWeight,null);
 });
-

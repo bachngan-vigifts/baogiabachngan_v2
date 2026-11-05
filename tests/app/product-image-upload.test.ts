@@ -15,4 +15,3 @@ test('ảnh sản phẩm: upload file vào kho công khai, dùng URL thêm/sửa
  delete f.env.productImages;assert.equal((await f.call('/product-images',f.mgr,'POST',{image:png})).status,503);
  assert.equal((await f.call('/product-images','','POST',{image:png})).status,401);
 });
-

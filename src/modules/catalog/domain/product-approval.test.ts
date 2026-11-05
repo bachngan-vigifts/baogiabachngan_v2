@@ -15,4 +15,3 @@ test('new manual products require both positive retail prices, using policy name
   assert.throws(() => requireNewProductPrices(policies, { retail: 100000, 'retail-vat': 108000 }), /Bắt buộc nhập/);
   assert.throws(() => requireNewProductPrices(policies.slice(0, 1), valid), /Chưa có bảng Giá lẻ/);
 });
-

@@ -15,4 +15,3 @@ export function requireNewProductPrices(policies: { id: string; name: string }[]
     }
   }
 }
-

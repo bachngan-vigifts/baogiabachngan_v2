@@ -87,4 +87,3 @@ test('số đếm cần duyệt: đủ trên 200 mục, summary không gửi chi
  await s.db.update(products).set({approvalStatus:'approved'}).where(eq(products.sku,'WAIT-0'));
  assert.equal((await s.call('/approvals?summary=1',s.mgr)).data.counts.total,204);
 });
-

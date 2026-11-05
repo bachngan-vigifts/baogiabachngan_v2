@@ -139,4 +139,3 @@ export function initProductAdmin(deps) {
   }
   return { openCreate: () => openForm(), openEdit, loadPending };
 }
-

@@ -177,4 +177,3 @@ test('Sale Admin: có quyền của Sale + Kế toán + Kho; xem toàn công ty 
   assert.equal((await s.call('/dashboard/revenue?owner=emp2', s.sadmin)).status, 403, 'doanh số chỉ của mình');
   assert.equal((await s.call('/dashboard/revenue', s.sadmin)).status, 200);
 });
-

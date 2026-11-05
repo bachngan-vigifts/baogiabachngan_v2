@@ -73,4 +73,3 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
   d = await inbox();
   assert.equal(d.counts.total, 0, JSON.stringify(d.items));
 });
-
