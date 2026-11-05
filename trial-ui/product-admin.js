@@ -1,5 +1,5 @@
 // Thêm sản phẩm trên web + duyệt (trang Sản phẩm).
-//  - Nút ＋ xanh mở hộp "Thêm sản phẩm": SKU, tên, thương hiệu, ĐVT, mẫu, link ảnh, giá theo từng bảng giá.
+//  - Nút ＋ xanh mở hộp "Thêm sản phẩm": SKU, tên, thương hiệu, ĐVT, mẫu, VAT 8%/10%, link ảnh, giá theo từng bảng giá.
 //  - Manager thêm → có hiệu lực ngay. Nhân viên thêm → "Chờ duyệt", chưa hiện khi lập báo giá.
 //  - Khung "Sản phẩm chờ duyệt" ở đầu trang: Manager bấm Duyệt / Từ chối; người tạo xoá được sản phẩm mình gửi.
 
@@ -35,10 +35,13 @@ export function initProductAdmin(deps) {
 
   function openForm(product = null) {
     const editing = !!product;
+    const initialTax = editing ? product.taxable && [8, 10].includes(product.taxOut) ? String(product.taxOut) : '' : '8';
+    const legacyTaxLabel = !product?.taxable ? 'Không áp dụng thuế (giữ nguyên)' : Number.isFinite(product.taxOut) ? `${product.taxOut}% (giữ nguyên)` : 'Chưa có thuế (giữ nguyên)';
     const policies = editing && deps.canSeePrices && !deps.canSeePrices() ? [] : deps.policies();
     const priceKind = p => p.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const requiredPrices = editing ? [] : [/^gia(ban)?le$/, /^gia(ban)?levat$/].map(pattern => policies.find(p => pattern.test(priceKind(p))));
     const dlg = document.createElement('dialog'); dlg.className = 'modal product-admin-dialog';
+    dlg.setAttribute('aria-label', editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm');
     dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>${editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body form-grid cols-2">
         <label>Mã sản phẩm (SKU)<input name="sku" required maxlength="64" placeholder="VD: ML-BT-001" autocapitalize="characters"></label>
@@ -46,6 +49,7 @@ export function initProductAdmin(deps) {
         <label class="span-2">Tên sản phẩm<input name="name" required maxlength="500"></label>
         <label>Thương hiệu<input name="brand" maxlength="200" list="pa-brands"></label>
         <label>Mẫu / hoạ tiết<input name="pattern" maxlength="200"></label>
+        <label class="span-2">Thuế sản phẩm (VAT)<select name="taxRate">${editing && !initialTax ? `<option value="" selected disabled>${esc(legacyTaxLabel)}</option>` : ''}<option value="8">8%</option><option value="10">10%</option></select></label>
         <label class="span-2">Link ảnh (https://…)<input name="imageUrl" type="url" maxlength="2000" placeholder="Không bắt buộc"></label>
         <div class="span-2 product-image-picker">
           <button type="button" class="btn secondary small" data-image-choose>Tải ảnh lên</button><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-image-file hidden>
@@ -67,6 +71,7 @@ export function initProductAdmin(deps) {
       dlg.querySelector('[name="sku"]').readOnly = true;
       for (const policy of policies) { const price = product.prices.find(p => p.policyId === policy.id)?.price; dlg.querySelector('form').elements.namedItem('price:' + policy.id).value = price == null ? '' : String(price); }
     }
+    dlg.querySelector('[name="taxRate"]').value = initialTax;
     const imageInput = dlg.querySelector('[name="imageUrl"]'), preview = dlg.querySelector('[data-image-preview]'), imageStatus = dlg.querySelector('[data-image-status]'), clearImage = dlg.querySelector('[data-image-clear]');
     let pendingImage = '', imageBusy = false, imageSequence = 0;
     function drawImage(src) {
@@ -109,6 +114,11 @@ export function initProductAdmin(deps) {
         }
       }
       const body = { sku: v('sku'), name: v('name'), brand: v('brand'), unit: v('unit'), pattern: v('pattern'), imageUrl: v('imageUrl'), prices };
+      if (!editing || v('taxRate') !== initialTax) {
+        const rate = Number(v('taxRate'));
+        if (rate !== 8 && rate !== 10) { err.textContent = 'Chọn thuế sản phẩm 8% hoặc 10%.'; return; }
+        body.taxRate = rate;
+      }
       if(editing)for(const key of ['perCarton','cartonLength','cartonWidth','cartonHeight','cartonWeight']){
         const raw=v(key);if(raw===String(product[key]??''))continue;const value=raw===''?null:Number(raw.replace(',','.'));
         if(value!==null&&(!Number.isFinite(value)||value<=0||value>1e6||(key==='perCarton'&&!Number.isInteger(value)))){err.textContent='Nhập quy cách thùng là số dương; số SP/thùng là số nguyên.';return;}body[key]=value;
