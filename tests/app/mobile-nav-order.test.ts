@@ -30,3 +30,14 @@ test('employees and accountants see only allowed links in the same V0 order',()=
 test('future permitted destinations remain reachable and duplicate entries are removed',()=>{
  assert.deepEqual(orderedMobileNavKeys(['future','orders','orders','cashbook','future']),['orders','cashbook','future']);
 });
+const {groupMobileNav,MOBILE_NAV_GROUPS}=await import(new URL('../../trial-ui/mobile-design.js',import.meta.url).href);
+test('menu chân trang gom theo chức năng: đủ trang, đúng thứ tự, chỉ nhóm có quyền; trang mới vào "Khác"',()=>{
+ const groups=groupMobileNav(keys);
+ assert.deepEqual(groups.map((g:any)=>g.label),['Bán hàng','Tiền','Khách hàng','Công việc','Kho','Mua hàng','Quản trị']);
+ assert.deepEqual(groups.flatMap((g:any)=>g.items),expected,'gom lại vẫn đủ mọi trang, theo thứ tự cũ');
+ assert.deepEqual(groups[0].items,['pos','quotes','orders','contracts','receivables']);
+ const sale=groupMobileNav(['orders','customers','care','quotes','tasks']);
+ assert.deepEqual(sale.map((g:any)=>[g.key,g.items]),[['sell',['quotes','orders']],['customers',['customers','care']],['work',['tasks']]]);
+ assert.deepEqual(groupMobileNav(['future','orders']).map((g:any)=>[g.label,g.items]),[['Bán hàng',['orders']],['Khác',['future']]]);
+ assert.equal(new Set(MOBILE_NAV_GROUPS.flatMap((g:any)=>g.keys)).size,MOBILE_NAV_GROUPS.flatMap((g:any)=>g.keys).length,'mỗi trang thuộc đúng một nhóm');
+});
