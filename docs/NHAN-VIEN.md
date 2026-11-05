@@ -160,7 +160,7 @@ Migration theo thứ tự:
 
 ### Thử việc và nhập bảng lương từ Excel
 
-Trong bảng tổng thể, nhập/chọn **THỬ VIỆC** (hoặc **TV**) ở cột Vị trí rồi lưu. Vị trí này chỉ tính LCB × ngày công / ngày công chuẩn; không tính năng lực, trách nhiệm, KPI, thưởng, sản lượng, tăng ca, phụ cấp và mọi khoản trừ (kể cả tạm ứng). Giá trị các chỉ số cũ vẫn được giữ để đối chiếu nhưng không đưa vào thực nhận. Đổi lại vị trí chính thức từ tháng phù hợp sẽ áp dụng công thức thông thường. Phiếu đã chốt giữ nguyên bản chụp.
+Trong bảng tổng thể, nhập/chọn **THỬ VIỆC** (hoặc **TV**) ở cột Vị trí rồi lưu. Vị trí này chỉ tính LCB × ngày công / ngày công chuẩn; không tính năng lực, trách nhiệm, KPI, thưởng, sản lượng, tăng ca, phụ cấp, BHXH / BHYT / TNCN. **Vẫn trừ** tiền đã ứng hoặc đã ghi phạt: tạm ứng, tạm ứng điện thoại, vi phạm / bể hàng (05/11/2026). Giá trị các chỉ số cũ vẫn được giữ để đối chiếu nhưng không đưa vào thực nhận. Đổi lại vị trí chính thức từ tháng phù hợp sẽ áp dụng công thức thông thường. Phiếu đã chốt giữ nguyên bản chụp.
 
 Các ô tiền dùng dấu phẩy hàng nghìn, ví dụ **4,758,000**, sau khi rời ô. Ngày công, hệ số vẫn cho nhập số lẻ.
 
