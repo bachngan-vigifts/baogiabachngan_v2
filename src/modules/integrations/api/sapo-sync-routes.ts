@@ -87,7 +87,7 @@ export async function syncCustomers(db: AnyDb, body: Record<string, unknown>) {
     if (eligible.length) {
       const done = await tx.insert(customers).values(eligible.map(r => ({
         id: r.id, name: r.name, contact: r.contact, phone: r.phone, email: r.email, address: r.address, taxCode: r.taxCode,
-        customerCode: r.customerCode, search: search(r), sourceVersion: r.version, syncedAt: now, createdAt: r.createdAt,
+        customerCode: r.customerCode, search: search(r), sourceVersion: r.version, syncedAt: now, createdAt: r.createdAt, dataSource: 'sapo',
       }))).onConflictDoUpdate({
         target: customers.id,
         set: { name: sql`excluded.name`, contact: sql`excluded.contact`, phone: sql`excluded.phone`, email: sql`excluded.email`, address: sql`excluded.address`,

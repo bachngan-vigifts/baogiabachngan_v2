@@ -433,6 +433,7 @@
     <section class="view" id="view-customers" hidden>
       <div class="page-head">
         <div><span class="eyebrow">Kinh doanh</span><h1>Khách hàng</h1><p class="muted">Bấm vào khách để xem báo giá, đơn hàng, HĐKT, công nợ, lịch sử mua, người liên hệ.</p></div>
+        <button type="button" class="btn secondary manager-only" id="customer-appsheet" hidden>Nhập AppSheet</button>
         <button type="button" class="btn secondary" id="customer-anniversaries">Kỷ niệm sắp tới</button> <button type="button" class="btn-add" id="new-customer" title="Thêm khách hàng" aria-label="Thêm khách hàng"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
       </div>
       <div class="panel">
@@ -775,11 +776,13 @@
 </div>
 
 <!-- ============ HỘP THOẠI ============ -->
-<dialog id="customer-dialog" class="modal">
+<dialog id="customer-dialog" class="modal customer-profile-dialog">
   <form id="customer-form" novalidate>
     <div class="modal-head"><h2 id="customer-dialog-title">Thêm khách hàng</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
     <div class="modal-body">
       <div id="customer-fields"></div>
+      <p class="muted small">Các trường có dấu * là bắt buộc khi tạo khách tại danh sách Khách hàng.</p>
+      <div id="customer-new-profile"></div>
       <p class="error span-2" id="customer-error" role="alert"></p>
     </div>
     <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="save-customer">Lưu khách hàng</button></div>

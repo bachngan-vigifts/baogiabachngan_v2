@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -43,11 +44,11 @@ test('CRM date create/edit/clear, scoped upcoming reminders, pending customers a
   const today=vietnamToday(),date=new Date(today+'T00:00:00Z');date.setUTCDate(date.getUTCDate()+15);
   const event=date.toISOString().slice(0,10),establishedDate=String(Number(event.slice(0,4))-10)+event.slice(4);
   const create=async(name:string,ownerId:string)=>{
-    const r=await call('/customers',mgr,'POST',{name,establishedDate,ownerId});assert.equal(r.status,201,JSON.stringify(r));return r.data.id;
+    const r=await call('/customers',mgr,'POST',customerCreateFixture({name,establishedDate,ownerId}));assert.equal(r.status,201,JSON.stringify(r));return r.data.id;
   };
   const mine=await create('Kỷ niệm của sale','emp'),other=await create('Kỷ niệm Manager','mgr'),shared=await create('Kỷ niệm chia sẻ','mgr');
   assert.equal((await call(`/customers/${shared}/staff`,mgr,'PUT',{sharedIds:['emp']})).status,200);
-  const pending=await call('/customers',emp,'POST',{name:'Khách chưa duyệt',establishedDate});assert.equal(pending.status,201);
+  const pending=await call('/customers',emp,'POST',customerCreateFixture({name:'Khách chưa duyệt',establishedDate}));assert.equal(pending.status,201);
   assert.equal((await call('/customers/anniversaries')).status,401);assert.equal((await call('/customers/anniversaries',ncc)).status,403);
   let reminders=(await call('/customers/anniversaries',emp)).data;
   assert.deepEqual(new Set(reminders.reminders.map((r:any)=>r.id)),new Set([mine,shared]));

@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -23,7 +24,7 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
   const month = vietnamDate().iso.slice(0, 7), day = (d: number) => `${month}-${String(d).padStart(2, '0')}`;
 
   // Doanh số: nhân viên lập 2 báo giá, 1 báo giá lên đơn 2.160.000, khách trả 1.000.000.
-  const kh = await call('/customers', mgr, 'POST', { name: 'Công ty Hoàng Long' });
+  const kh = await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Công ty Hoàng Long' }));
   const doc = { type: 'B2B', customer: 'Công ty Hoàng Long', customerId: kh.data.id, vat: 8, rows: [{ name: 'Bình giữ nhiệt', sku: 'LHC', unit: 'cái', qty: 10, price: 200000, taxRate: 8, commission:{excluded:true} }] };
   const q = await call('/quotes', emp, 'POST', { ...doc, quoteNo: 'B2B_1' });
   await call('/quotes', emp, 'POST', { ...doc, quoteNo: 'B2B_2' });

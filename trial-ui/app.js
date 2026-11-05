@@ -7,6 +7,7 @@ import {mountContractLiquidation} from './contract-liquidation.js';
 import { initQuoteStockWarnings } from './quote-stock-warning.js';
 import { parseSkuQuantities, pasteRows } from './quote-paste.js';
 import { hasCustomerListFilters, customerListQuery, fillCustomerOwners, bindCustomerListFilters, updateCustomerFilterSummary } from './customer-list-filters.js';
+import { openAppsheetCustomers } from './appsheet-customers.js';
 import {openPriceLabels} from './price-labels.js';
 import {ghnOrderSummary} from './ghn-order-summary.js';
 import {initProductDetail} from './product-detail.js';
@@ -31,6 +32,7 @@ import { initReceivingCalendar } from './receiving-calendar.js';
 import { documentSequence, nextDocumentNumber } from './document-number.js';
 import { orderRecipient } from './order-notes.js';
 import { customerFormFields } from './customer-form-fields.js';
+import { customerCreateProfile } from './customer-create-profile.js';
 import { initPackingSupplierChoices } from './packing-supplier-choices.js';
 import { initPackingEarlyRequest } from './packing-early-request.js';
 import { reviewPurchaseCosts, missingPurchaseCost } from './purchase-cost-review.js';
@@ -3055,15 +3057,19 @@ function openCustomer(id, known) {
   customerId = id || null;
   customerDuplicateCheck.reset();
   const form = $('#customer-form'); form.reset(); $('#customer-error').textContent = '';
+  customerFields.setRequiredProfile(!id);
+  customerNewProfile.reset(state.user,!id);
   const c = id ? known || state.customers?.find(x => x.id === id) : null;
-  if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'address', 'depositRate', 'paymentTerm', 'creditLimit', 'establishedDate']) form.elements.namedItem(k).value = c[k] ?? '';
+  if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'customerType', 'address', 'depositRate', 'paymentTerm', 'creditLimit', 'establishedDate']) form.elements.namedItem(k).value = c[k] ?? '';
   customerFields.refreshAnniversary();
   $('#customer-dialog-title').textContent = c ? 'Sửa khách hàng' : 'Thêm khách hàng';
   $('#customer-dialog').showModal();
   customerDuplicateCheck.refresh();
 }
-const customerFields = customerFormFields();
+const customerFields = customerFormFields({requireProfile:true});
 $('#customer-fields').append(customerFields.root);
+const customerNewProfile=customerCreateProfile({api,mainContact:customerFields.controls.contact});
+$('#customer-new-profile').append(customerNewProfile.root);
 const customerDuplicateCheck = bindCustomerDuplicateCheck({
   api, root: $('#customer-fields'), exceptId: () => customerId,
   active: () => $('#customer-dialog').open,
@@ -3071,6 +3077,7 @@ const customerDuplicateCheck = bindCustomerDuplicateCheck({
   onChoose: c => { $('#customer-dialog').close(); go('#/customers/' + encodeURIComponent(c.id)); },
 });
 $('#new-customer').addEventListener('click', () => openCustomer());
+$('#customer-appsheet').addEventListener('click', () => { if (isManager()) openAppsheetCustomers({ api, esc, onSaved: loadCustomers }); });
 $('#customer-anniversaries').addEventListener('click', async () => {
   const button = $('#customer-anniversaries'); button.disabled = true;
   try {
@@ -3087,10 +3094,15 @@ $('#customer-anniversaries').addEventListener('click', async () => {
 
 $('#customer-form').addEventListener('submit', async e => {
   e.preventDefault();
-  const data = Object.fromEntries([...new FormData(e.target)].map(([k, v]) => [k, String(v).trim()]));
+  const data = customerFields.read();
   const err = $('#customer-error'); err.textContent = '';
   if (!data.name) { err.textContent = 'Vui lòng nhập tên khách hàng.'; e.target.elements.name.focus(); return; }
   if (data.email && !/^\S+@\S+\.\S+$/.test(data.email)) { err.textContent = 'Email chưa đúng định dạng.'; return; }
+  if(!customerId) {
+    for(const [key,label] of [['contact','người liên hệ'],['phone','số điện thoại'],['taxCode','mã số thuế'],['address','địa chỉ']])if(!data[key]){err.textContent='Vui lòng nhập '+label+' khách hàng.';customerFields.controls[key].focus();return;}
+    try{Object.assign(data,customerNewProfile.read());}catch(ex){err.textContent=ex.message;return;}
+  }
+  if(e.target.reportValidity&&!e.target.reportValidity())return;
   const btn = $('#save-customer'); btn.disabled = true;
   try {
     const saved = await api(customerId ? '/customers/' + encodeURIComponent(customerId) : '/customers', customerId ? 'PUT' : 'POST', data);

@@ -2,6 +2,7 @@
 export * from '../core/db/schema.ts';
 export * from '../modules/staff/schema.ts';
 export * from '../modules/customers/schema.ts';
+export * from '../modules/customers/appsheet-schema.ts';
 export * from '../modules/catalog/schema.ts';
 export * from '../modules/quotes/schema.ts';
 export * from '../modules/contracts/schema.ts';

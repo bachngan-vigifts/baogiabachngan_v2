@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -29,7 +30,7 @@ async function setup() {
 
 test('khách hàng: chỉ người phụ trách hoặc Manager sửa thông tin / người liên hệ', async () => {
   const { call, emp, emp2, mgr } = await setup();
-  const id = (await call('/customers', emp, 'POST', { name: 'Công ty Mẫu' })).data.id as string;
+  const id = (await call('/customers', emp, 'POST', customerCreateFixture({ name: 'Công ty Mẫu' }))).data.id as string;
   // emp2 được chia sẻ (xem được) nhưng không phụ trách → không sửa được.
   assert.equal((await call(`/customers/${id}/staff`, mgr, 'PUT', { sharedIds: ['emp2'] })).status, 200);
   assert.equal((await call(`/customers/${id}`, emp2)).data.access.canEdit, false);
@@ -49,7 +50,7 @@ test('khách hàng: chỉ người phụ trách hoặc Manager sửa thông tin 
 
 test('kho không xem được danh bạ khách hàng', async () => {
   const { call, mgr, kho } = await setup();
-  const id = (await call('/customers', mgr, 'POST', { name: 'Công ty Mẫu' })).data.id as string;
+  const id = (await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Công ty Mẫu' }))).data.id as string;
   assert.equal((await call('/customers', kho)).status, 403);
   assert.equal((await call(`/customers/${id}`, kho)).status, 403);
   assert.equal((await call('/customers', mgr)).status, 200);
