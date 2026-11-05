@@ -5,7 +5,7 @@ import {runInNewContext} from 'node:vm';
 
 /** Thẻ "Tài khoản nhận lương" ở Hồ sơ của tôi: nút điền / đổi chỉ cho chính mình; có QR khi có tài khoản và số tiền. */
 const banks:any=await import(new URL('../../trial-ui/salary-banks.js',import.meta.url).href);
-async function render(access:any,transfer:any,profile:any={}){
+async function render(access:any,transfer:any,profile:any={},hidden=false){
  const root={innerHTML:'',addEventListener(){},querySelectorAll:()=>[]};
  const context:any={avAttr:()=>'',bankName:banks.bankName,bankOptions:banks.bankOptions,printPayslip(){},openContractBonusDetails(){},
   document:{getElementById:(id:string)=>id==='member-detail'?root:{textContent:''}},location:{hash:''}};
@@ -16,6 +16,7 @@ async function render(access:any,transfer:any,profile:any={}){
   kpi:{revenue:0,orders:0,avgOrder:0,revenueTarget:0,targetPercent:null,quotes:0,quotesWon:0,conversion:0,collected:0,contractsSigned:0,customers:0,newCustomers:0,workedDays:26,standardDays:26,
    debt:{balance:0,overdue:0,orders:0},tasks:{done:0,open:0,overdue:0}},trend:[],customers:[],quotes:[],orders:[],contracts:[],payments:[],debts:[],
   payroll:{profile:pr,payslip:{status:'estimate',net:5_000_000,gross:5_000_000,deductionTotal:0,income:[]},transfer,adjustments:[],attendance:[],attendanceSummary:{worked:26,standardDays:26,daysInMonth:31}},today:'2026-11-05'};
+ if(hidden)Object.assign(data,{payroll:null,salaryAccount:{hasProfile:true,bankCode:pr.bankCode,bankAccount:pr.bankAccount,bankHolder:pr.bankHolder}});
  const ui=context.init({api:async()=>data,toast(){},esc:String,money:(n:number)=>n.toLocaleString('vi-VN'),fmtDate:String,pill:()=>'',payCell:String,initials:()=>'NV',ORDER_STATUS:{},CONTRACT_STATUS:{}});
  await ui.open('emp','2026-10');
  return root.innerHTML;
@@ -41,4 +42,8 @@ test('danh sách ngân hàng giữ mã cũ không có trong danh sách',()=>{
  assert.match(banks.bankOptions('vietinbank',String),/<option value="vietinbank" selected>VIETINBANK<\/option>/);
  assert.match(banks.bankOptions('icb',String),/<option value="icb" selected>VietinBank<\/option>/);
  assert.equal(banks.bankName('tcb'),'Techcombank');
+});
+test('trước ngày 10: thẻ báo ngày mở lương, vẫn hiện tài khoản và nút đổi, không có QR',async()=>{
+ const h=await render({isSelf:true,canManage:false,canViewPayroll:true,salaryOpensOn:'2026-10-10'},null,{},true);
+ assert.match(h,/Lương tháng này hiện từ ngày 10\/10\/2026/);assert.match(h,/0123456789/);assert.match(h,/data-act="bank"/);assert.doesNotMatch(h,/vietqr|Thực nhận/);
 });

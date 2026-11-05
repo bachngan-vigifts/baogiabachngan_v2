@@ -169,7 +169,7 @@ export function initMemberDetail(deps) {
 
   // ----- Tài khoản nhận lương + mã VietQR chuyển lương tháng (số tiền = thực nhận, nội dung "Chuyen luong T<tháng>").
   function bankCardHtml(d) {
-    const p = d.payroll, pr = p.profile, t = p.transfer, self = d.access.isSelf, hasProfile = !!pr.effectiveMonth;
+    const p = d.payroll, pr = bankOf(d), t = p?.transfer, self = d.access.isSelf, hasProfile = pr.hasProfile;
     const acc = t || { bankCode: pr.bankCode, bankAccount: pr.bankAccount, bankHolder: pr.bankHolder };
     const btn = self && hasProfile ? `<button type="button" class="btn secondary small" data-act="bank">${pr.bankAccount ? 'Đổi tài khoản' : 'Điền tài khoản'}</button>` : '';
     const info = acc.bankAccount ? `<dl class="kv md-mini"><dt>Ngân hàng</dt><dd>${esc(bankName(acc.bankCode))}</dd><dt>Số tài khoản</dt><dd class="num">${esc(acc.bankAccount)}</dd>
@@ -182,8 +182,14 @@ export function initMemberDetail(deps) {
       : acc.bankAccount && t && !t.amount ? '<p class="muted small">Tháng này chưa có số tiền thực nhận nên chưa tạo mã QR.</p>' : '';
     return `<div class="card md-bank-card"><div class="card-title-row"><h2 class="card-title">Tài khoản nhận lương</h2>${btn}</div>${info}${qr}</div>`;
   }
+  /** Tài khoản nhận lương: từ hồ sơ lương, hoặc `salaryAccount` khi lương tháng đang ẩn (trước ngày 10). */
+  function bankOf(d) {
+    const a = d.payroll ? d.payroll.profile : d.salaryAccount;
+    return { hasProfile: d.payroll ? !!a.effectiveMonth : a.hasProfile, bankCode: a.bankCode, bankAccount: a.bankAccount, bankHolder: a.bankHolder };
+  }
+  const fmtDay = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
   function editBank() {
-    const pr = st.d.payroll.profile;
+    const pr = bankOf(st.d);
     dialog('Tài khoản nhận lương', `
       <label class="span-2">Ngân hàng<select name="bankCode" required>${bankOptions(pr.bankCode, esc)}</select></label>
       <label>Số tài khoản<input name="bankAccount" required inputmode="numeric" maxlength="19" autocomplete="off" value="${esc(pr.bankAccount)}" placeholder="Chỉ gồm chữ số"></label>
@@ -247,7 +253,9 @@ export function initMemberDetail(deps) {
           <dl class="kv md-mini"><dt>Tổng thu nhập</dt><dd class="num">${money(s.gross)}</dd><dt>Thưởng</dt><dd class="num">${money(s.income.filter(l => /Bonus(?:Adjustment)?$/.test(l.key)).reduce((a, l) => a + l.amount, 0))}</dd>
             <dt>Khấu trừ</dt><dd class="num">−${money(s.deductionTotal)}</dd></dl>
           <button type="button" class="btn ghost small" data-tab="payroll">Xem phiếu lương ›</button></div>` : ''}
-        ${d.payroll ? bankCardHtml(d) : ''}
+        ${d.access.salaryOpensOn ? `<div class="card md-salary-card"><h2 class="card-title">Lương ${esc(monthLabel(d.month).toLowerCase())}</h2>
+          <p class="muted">Lương tháng này hiện từ ngày ${esc(fmtDay(d.access.salaryOpensOn))}.</p></div>` : ''}
+        ${d.payroll || d.salaryAccount ? bankCardHtml(d) : ''}
       </div>
       <div class="card cd-tabs-card">
         <div class="chips cd-tabs" role="tablist">${tabs.map(t => `<button type="button" class="chip ${t.key === tab.key ? 'active' : ''}" role="tab" aria-selected="${t.key === tab.key}" data-tab="${t.key}">${t.label} <b>${t.count(d)}</b></button>`).join('')}</div>

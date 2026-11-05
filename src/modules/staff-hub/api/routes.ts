@@ -14,7 +14,7 @@ import { customerPayments, paymentSchedules, salesContracts, salesOrders } from 
 import { debtCounts, quoteTotal, vietnamDate } from '../../sales/domain/sales.ts';
 import { tasks } from '../../tasks/schema.ts';
 import { payrollOf } from '../../hr/api/routes.ts';
-import { isMonth, monthRange, shiftMonth, targetPercent } from '../../hr/domain/payroll.ts';
+import { isMonth, monthRange, salaryOpensOn, shiftMonth, targetPercent } from '../../hr/domain/payroll.ts';
 import { STAFF_HUB_LIMITS, monthOf, percent, revenueIn, trend } from '../domain/kpi.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -132,11 +132,14 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>,deps:{crmFactsOf
         overdue: taskRows.filter(t => t.status !== 'done' && t.dueDate && t.dueDate < today).length },
       workedDays: payroll ? payroll.payslip?.workDays ?? payroll.attendanceSummary.worked : null, standardDays: payroll?.attendanceSummary.standardDays ?? null,
     };
+    // Nhân viên tự xem: lương tháng chỉ hiện từ ngày 10 của tháng đó (Manager luôn thấy). Ẩn ở máy chủ: không trả số lương,
+    // chỉ trả tài khoản nhận lương để nhân viên vẫn điền / đổi được.
+    const opensOn = salaryOpensOn(month), salaryHidden = !!payroll && me.role !== 'manager' && today < opensOn;
     const months = Array.from({ length: STAFF_HUB_LIMITS.trendMonths }, (_, i) => shiftMonth(month, i - STAFF_HUB_LIMITS.trendMonths + 1));
 
     return json({
       member, month, today,
-      access: { isSelf: me.id === id, canManage: me.role === 'manager', canViewPayroll },
+      access: { isSelf: me.id === id, canManage: me.role === 'manager', canViewPayroll, salaryOpensOn: salaryHidden ? opensOn : null },
       kpi, trend: trend(orderList, payments, months),
       customers: [...byCustomer.values()].sort((a, b) => (b.lastOrderDate ?? '').localeCompare(a.lastOrderDate ?? '') || a.name.localeCompare(b.name, 'vi')),
       quotes: quoteRows.map(({ data, ...q }) => { const orderId = orders.find(o => o.quoteId === q.id && o.status !== 'cancelled')?.id ?? null;
@@ -145,7 +148,8 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>,deps:{crmFactsOf
       contracts: contracts.map(k => ({ ...k, orderNo: orderNo.get(k.orderId) ?? '', customerName: orderCustomer.get(k.orderId) ?? '' })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
       payments: payments.slice(0, STAFF_HUB_LIMITS.payments).map(p => ({ ...p, orderNo: orderNo.get(p.orderId) ?? '', contractNo: contractNo.get(p.orderId) ?? null, customerName: orderCustomer.get(p.orderId) ?? '' })),
       debts: debtors.map(o => ({ id: o.id, orderNo: o.orderNo, contractNo: contractNo.get(o.id) ?? null, orderDate: o.orderDate, customerName: o.customerName, ...o.receivable! })),
-      payroll,
+      payroll: salaryHidden ? null : payroll,
+      salaryAccount: salaryHidden ? { hasProfile: payroll!.profile.effectiveMonth !== null, bankCode: payroll!.profile.bankCode, bankAccount: payroll!.profile.bankAccount, bankHolder: payroll!.profile.bankHolder } : null,
     });
   }, 'business');
 }

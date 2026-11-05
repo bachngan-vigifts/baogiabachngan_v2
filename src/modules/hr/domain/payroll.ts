@@ -259,6 +259,10 @@ export function computeQuarterBonus(members: readonly QuarterMember[], p: Payrol
     rows: rows.map(r => ({ ...r, share: teamRevenue > 0 ? r.revenue / teamRevenue : 0, bonus: teamRevenue > 0 ? round(fund * r.revenue / teamRevenue) : 0 })) };
 }
 
+/** Nhân viên tự xem lương tháng M từ ngày này của chính tháng M (trước đó ẩn; Manager luôn thấy). */
+export const SALARY_OPEN_DAY = 10;
+/** Ngày (YYYY-MM-DD) nhân viên bắt đầu thấy lương tháng; `today` trước ngày đó → ẩn. */
+export const salaryOpensOn = (month: string) => `${month}-${String(SALARY_OPEN_DAY).padStart(2, '0')}`;
 /** Nội dung chuyển khoản lương: "Chuyen luong T10" (không dấu, mọi ngân hàng đọc được). */
 export const salaryTransferNote = (month: string) => 'Chuyen luong T' + Number(month.slice(5));
 /** Link ảnh mã VietQR chuyển khoản lương: số tiền = thực nhận, nội dung "Chuyen luong T<tháng>", kèm tên chủ tài khoản nếu có. */

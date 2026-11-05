@@ -39,7 +39,21 @@ test('kiểm tra đầu vào; phiếu đã chốt giữ tài khoản lúc chốt
  assert.equal((await f.confirm()).status,201);
  assert.equal((await f.call('/hr/me/bank',f.emp,'PUT',{...bank,bankAccount:'999888777'})).status,200);
  const t=(await f.overview(f.emp)).data.payroll.transfer;assert.equal(t.fromSnapshot,true);assert.equal(t.bankAccount,'0123456789');
- assert.equal((await f.overview(f.emp,'2026-11')).data.payroll.transfer.bankAccount,'999888777','tháng chưa chốt dùng tài khoản mới');
+ assert.equal((await f.overview(f.mgr,'2026-11')).data.payroll.transfer.bankAccount,'999888777','tháng chưa chốt dùng tài khoản mới');
  assert.equal((await f.salary({bankCode:'acb',bankAccount:'111222333',bankHolder:'Trần Thị Đào'})).status,200);
  const [p]=await f.db.select().from(hrSalaryProfiles).where(eq(hrSalaryProfiles.memberId,'emp'));assert.equal(p!.bankHolder,'TRAN THI DAO');
+});
+
+test('lương tháng M: nhân viên thấy từ ngày 10/M (máy chủ không trả số lương trước đó); Manager luôn thấy; vẫn điền được tài khoản',async t=>{
+ const f=await setupSalesPayroll();assert.equal((await f.salary()).status,200);
+ assert.equal((await f.call('/hr/me/bank',f.emp,'PUT',bank)).status,200);
+ t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-09T16:59:00Z')}); // 23:59 ngày 09/11 giờ VN
+ const before=(await f.overview(f.emp,'2026-11')).data;
+ assert.equal(before.payroll,null);assert.equal(before.access.salaryOpensOn,'2026-11-10');assert.doesNotMatch(JSON.stringify(before),/payslip|"net"|baseSalary|vietqr/);
+ assert.deepEqual(before.salaryAccount,{hasProfile:true,bankCode:'vcb',bankAccount:'0123456789',bankHolder:'NGUYEN VAN DUC'});
+ assert.ok((await f.overview(f.emp,'2026-10')).data.payroll.payslip,'tháng trước vẫn xem được');
+ assert.equal((await f.overview(f.emp,'2026-12')).data.payroll,null,'tháng sau cũng ẩn');
+ assert.ok((await f.overview(f.mgr,'2026-11')).data.payroll.payslip,'Manager luôn thấy');
+ t.mock.timers.setTime(new Date('2026-11-09T17:00:00Z').getTime()); // 00:00 ngày 10/11 giờ VN
+ const after=(await f.overview(f.emp,'2026-11')).data;assert.ok(after.payroll.payslip);assert.equal(after.access.salaryOpensOn,null);assert.equal(after.salaryAccount,null);
 });
