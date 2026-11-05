@@ -1,3 +1,4 @@
+import { bindCareContactPicker } from './care-contacts.js';
 // CHĂM SÓC KHÁCH HÀNG (nhật ký giao dịch kiểu CRM): trang #/care + hộp ghi / sửa dùng chung cho trang chi tiết khách.
 // - Tab "Cần chăm sóc": lịch hẹn chưa xong (quá hạn → hôm nay → sắp tới); tab "Nhật ký": mọi lần trao đổi, mới nhất trước.
 // - Mặc định của tôi; xem nhóm theo quyền máy chủ. KPI chỉ tính liên hệ đã thực hiện, kiểm tra trùng và Manager xét bổ sung.
@@ -134,8 +135,8 @@ export function initCare(deps) {
           ? `<select name="ownerId">${people.filter(x => x.role !== 'customer' && x.role !== 'supplier').map(x => `<option value="${esc(x.id)}"${x.id === owner ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`
           : `<b class="care-static">${esc(a?.ownerName || deps.userName?.() || '')}</b>`}</label>
         <label>Khách hàng *<span class="care-pick">${picked && (customer || a) ? `<b class="care-static">${esc(picked.name)}</b>` : `<input name="customerQ" placeholder="Gõ tên / SĐT / MST khách…" aria-label="Tìm khách hàng"><span class="care-suggest" data-suggest hidden></span>`}</span></label>
-        <label>Người liên hệ *<input name="contactName" maxlength="160" list="care-contacts" value="${esc(a?.contactName || '')}" placeholder="Chọn người liên hệ của khách hoặc gõ tên – SĐT"><datalist id="care-contacts"></datalist></label>
-        <label>Nội dung *<input name="content" maxlength="2000" value="${esc(a ? (a.content || a.subject) : '')}" placeholder="Ví dụ: Gọi hỏi thăm quà cuối năm"></label>
+        <div class="care-field"><label>Người liên hệ *<select name="contactChoice" aria-label="Chọn người liên hệ" required></select></label><input name="contactName" aria-label="Người liên hệ nhập tay" maxlength="160" value="${esc(a?.contactName || '')}" placeholder="Nhập tên – số điện thoại" hidden><small class="muted" data-contact-status role="status"></small><button type="button" class="btn secondary small" data-contact-retry hidden>Tải lại người liên hệ</button></div>
+        <label>Nội dung *<textarea name="content" rows="5" maxlength="2000" placeholder="Nhập chi tiết cuộc trao đổi, nhu cầu của khách và việc cần theo dõi…">${esc(a ? (a.content || a.subject) : '')}</textarea><small class="muted" data-content-count>${(a?.content||a?.subject||'').length}/2000 ký tự</small></label>
         <div class="care-field"><span>Loại giao dịch *</span>${seg('type', config.types, a?.type || 'call')}</div>
         <label>Kết quả thực hiện *<select name="completion" required><option value="">Chọn kết quả</option><option value="completed" ${a?.completion==='completed'?'selected':''}>Đã thực hiện / đã kết nối / đã gửi khách</option><option value="not_completed" ${a?.completion==='not_completed'?'selected':''}>Chưa thực hiện / không kết nối</option></select></label>
         <label>Mục đích<select name="purpose"><option value="sales">Tư vấn / bán hàng</option><option value="after_sales" ${a?.purpose==='after_sales'?'selected':''}>Chăm sóc sau bán</option></select></label>
@@ -157,20 +158,14 @@ export function initCare(deps) {
     const fillQuotes=async id=>{const run=++quoteRun;f.quoteId.innerHTML='<option value="">Đang tải báo giá…</option>';try{const d=await api('/care/quotes?customerId='+encodeURIComponent(id));if(run!==quoteRun||!dlg.isConnected)return;f.quoteId.innerHTML='<option value="">Chọn bản báo giá đã gửi</option>'+d.quotes.map(q=>`<option value="${esc(q.id+':'+q.revision)}" data-quote-id="${esc(q.id)}" data-revision="${q.revision}" ${q.id===a?.quoteId&&q.revision===a?.quoteRevision?'selected':''}>${esc(q.no)} · bản ${q.revision}</option>`).join('');}catch(ex){if(run===quoteRun){f.quoteId.innerHTML='<option value="">Chưa tải được báo giá</option>';err.textContent=ex.message;}}};
     const quoteField=()=>{const labels={call:'Đã kết nối — có trao đổi',meeting:'Đã gặp trực tiếp',quote:'Đã gửi bản báo giá cho khách',zalo:'Đã trao đổi thực chất qua Zalo',email:'Đã trao đổi thực chất qua email'};f.completion.querySelector('[value=completed]').textContent=labels[f.type.value]||'Đã thực hiện';dlg.querySelector('[data-quote-field]').hidden=f.type.value!=='quote';f.quoteId.required=f.type.value==='quote'&&f.completion.value==='completed';};
     form.addEventListener('change',quoteField);quoteField();
-    const fillContacts = async id => {
-      fillQuotes(id);
-      try {
-        const d = await api(`/customers/${encodeURIComponent(id)}/overview`);if(picked?.id!==id||!dlg.isConnected)return;const k=d.customer||{};
-        const list = [[k.contact, k.phone], ...(d.contacts || []).map(x => [x.name, x.phone, x.title])].filter(x => x[0]).map(x => x.filter(Boolean).join(' – '));
-        dlg.querySelector('#care-contacts').innerHTML = [...new Set(list)].map(n => `<option value="${esc(n)}">`).join('');
-        if (!f.contactName.value && list.length) f.contactName.value = list[0];
-      } catch { /* không bắt buộc */ }
-    };
-    if (picked?.id) fillContacts(picked.id);
+    const contactPicker=bindCareContactPicker({select:f.contactChoice,input:f.contactName,status:dlg.querySelector('[data-contact-status]'),retry:dlg.querySelector('[data-contact-retry]'),api,getCustomerId:()=>picked?.id,isConnected:()=>dlg.isConnected});
+    const fillContacts=(id,preserve='')=>{fillQuotes(id);return contactPicker.load(id,preserve);};
+    if (picked?.id) fillContacts(picked.id,a?.contactName||'');
+    f.content.addEventListener('input',()=>{dlg.querySelector('[data-content-count]').textContent=f.content.value.length+'/2000 ký tự';});
     // Tìm khách (khi chưa chọn sẵn).
     let st2 = 0,customerRun=0;
     f.customerQ?.addEventListener('input', () => {
-      const run=++customerRun;picked = null;quoteRun++;f.quoteId.innerHTML='<option value="">Chọn khách trước</option>'; clearTimeout(st2);
+      const run=++customerRun;picked = null;contactPicker.clear();quoteRun++;f.quoteId.innerHTML='<option value="">Chọn khách trước</option>'; clearTimeout(st2);
       const q = f.customerQ.value.trim(); if (q.length < 2) { sug.hidden = true; return; }
       st2 = setTimeout(async () => {
         try {
@@ -189,16 +184,16 @@ export function initCare(deps) {
     dlg.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => { f.expectedRevenue.value = money(Math.max(0, parseMoney(f.expectedRevenue.value) + Number(b.dataset.step) * 1_000_000)); }));
     f.expectedRevenue.addEventListener('input', () => { const v = parseMoney(f.expectedRevenue.value); f.expectedRevenue.value = money(v); });
     form.addEventListener('submit', async e => {
-      e.preventDefault();if(submitting)return;err.textContent = '';if(!attempt&&!form.reportValidity())return;
+      e.preventDefault();if(submitting)return;err.textContent = '';if(contactPicker.isLoading()){err.textContent='Đang tải người liên hệ. Vui lòng chờ hoặc thử lại.';return;}if(!attempt&&!form.reportValidity())return;
       if (!picked?.id) { err.textContent = 'Chọn khách hàng trong danh sách gợi ý.'; f.customerQ?.focus(); return; }
       const body = { customerId: picked.id, ownerId: f.ownerId?.value || undefined, occurredAt: f.occurredAt.value, contactName: f.contactName.value, content: f.content.value,
         completion:f.completion.value,purpose:f.purpose.value,quoteId:f.quoteId.selectedOptions?.[0]?.dataset.quoteId||null,quoteRevision:Number(f.quoteId.selectedOptions?.[0]?.dataset.revision)||null,type: f.type.value, expectedRevenue: parseMoney(f.expectedRevenue.value), result: f.result.value, nextAt: f.nextAt.value, remindBefore: f.remindBefore.value,
         ...(a ? { subject: '', nextAction: a.nextAction || '', revision: a.revision } : {}) };
-      const btn = dlg.querySelector('[data-save]');submitting=true;btn.disabled=true;if(!attempt)attempt={...body,...(!a?{clientKey:crypto.randomUUID()}:{})};for(const x of form.querySelectorAll('input,select,button'))x.disabled=true;
+      const btn = dlg.querySelector('[data-save]');submitting=true;btn.disabled=true;if(!attempt)attempt={...body,...(!a?{clientKey:crypto.randomUUID()}:{})};for(const x of form.querySelectorAll('input,select,textarea,button'))x.disabled=true;
       try {
         await api(a ? `/care/${encodeURIComponent(a.id)}` : '/care', a ? 'PUT' : 'POST', attempt);submitting=false;
         close(); toast(a ? 'Đã lưu.' : 'Đã ghi giao dịch. Đến hạn nhắc sẽ hiện ở Công việc.'); onSaved?.();
-      } catch (ex) {err.textContent=ex.message;submitting=false;if(!ex.status||ex.status>=500){err.textContent+=' Chưa rõ kết quả; thử lại giữ nguyên nội dung.';btn.textContent='Kiểm tra lại lần gửi';for(const x of dlg.querySelectorAll('[data-x]'))x.disabled=false;}else{attempt=null;for(const x of form.querySelectorAll('input,select,button'))x.disabled=false;}}finally{btn.disabled=false;}
+      } catch (ex) {err.textContent=ex.message;submitting=false;if(!ex.status||ex.status>=500){err.textContent+=' Chưa rõ kết quả; thử lại giữ nguyên nội dung.';btn.textContent='Kiểm tra lại lần gửi';for(const x of dlg.querySelectorAll('[data-x]'))x.disabled=false;}else{attempt=null;for(const x of form.querySelectorAll('input,select,textarea,button'))x.disabled=false;}}finally{btn.disabled=false;}
     });
     dlg.showModal();
     (f.customerQ || f.content).focus();
