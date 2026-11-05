@@ -45,19 +45,27 @@ try{
   const downloaded=page.waitForEvent('download');await page.locator('[data-quick-template]').click();
   const template=await downloaded;assert.equal(template.suggestedFilename(),'Mau-bang-luong-2026-10.xlsx');
   const bytes=await page.evaluate(async()=>{
-    const {payrollFileRows,payrollFileColumns}=await import('/payroll-file.js');const {QUICK_COLUMNS}=await import('/payroll-quick-entry.js');
+    const {buildPayrollTemplate,payrollFileColumns}=await import('/payroll-file.js');
     const token=localStorage.getItem('bn-v2-session'),d=await (await fetch('/api/staff/hr/payroll/2026-10',{headers:{Authorization:'Bearer '+token}})).json();
-    const rows=payrollFileRows(d,QUICK_COLUMNS),r=rows.find(r=>r[1]==='emp');
-    const col=key=>3+payrollFileColumns(QUICK_COLUMNS).findIndex(f=>f.column[0]===key);
-    r[col('positionLabel')]='THỬ VIỆC';r[col('baseSalary')]='5,200,000';r[col('workDays')]=24;r[col('advance')]=500000;
-    const wb=new ExcelJS.Workbook(),ws=wb.addWorksheet('Nhập lương');rows.forEach(r=>ws.addRow(r));return Array.from(new Uint8Array(await wb.xlsx.writeBuffer()));
+    const wb=await buildPayrollTemplate(d),ws=wb.getWorksheet('Nhập lương');
+    if(ws.columnCount!==11||wb.getWorksheet('_KyLuong').state!=='veryHidden')throw Error('Template must have eleven visible columns and hidden bindings');
+    const employeeIndex=d.rows.filter(r=>r.payslip.status==='estimate').findIndex(r=>r.member.id==='emp')+2;
+    const put=(key,value)=>{ws.getCell(employeeIndex,3+payrollFileColumns().findIndex(f=>f.column[0]===key)).value=value;};
+    put('workDays',24);put('lateCount',2);put('leaveHours',1.5);put('advance',500000);put('insurance',499650);put('deduction',100000);put('phone_advance',308099);put('outputQty',24);put('overtimeHours',3.5);
+    return Array.from(new Uint8Array(await wb.xlsx.writeBuffer()));
   });
+  await template.saveAs(out+'/Mau-bang-luong-'+width+'.xlsx');
   await page.locator('[data-quick-file]').setInputFiles({name:'luong.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from(bytes)});
   await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent.includes('1 người'));
-  assert.equal(await page.locator('[data-member="emp"][data-key="positionLabel"]').inputValue(),'THỬ VIỆC');
-  assert.equal(await page.locator('[data-member="emp"][data-key="baseSalary"]').inputValue(),'5,200,000');
+  assert.equal(await page.locator('[data-member="emp"][data-key="workDays"]').inputValue(),'24');
+  assert.equal(await page.locator('[data-member="emp"][data-key="insurance"]').inputValue(),'499,650');
   await page.locator('[data-quick-save]').click();await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent==='');
-  const probation=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find(r=>r.member.id==='emp');assert.equal(probation.payslip.net,4800000);assert.equal(probation.payslip.deductionTotal,0);
+  const imported=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find(r=>r.member.id==='emp');
+  assert.equal(imported.entry.inputs.lateCount,2);assert.equal(imported.entry.inputs.leaveHours,1.5);assert.equal(imported.entry.inputs.outputQty,24);assert.equal(imported.entry.adjustments.deduction,100000);assert.equal(imported.entry.adjustments.phone_advance,308099);
+  // Position is still editable in the CRM, outside the simplified file.
+  await page.locator('[data-member="emp"][data-key="positionLabel"]').fill('THỬ VIỆC');
+  await page.locator('[data-quick-save]').click();await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent==='');
+  const probation=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find(r=>r.member.id==='emp');assert.equal(probation.payslip.net,Math.round(imported.entry.profile.baseSalary*24/26));assert.equal(probation.payslip.deductionTotal,0);
   await page.locator('[data-member="emp"][data-key="positionLabel"]').fill('SALE');
   await page.locator('[data-quick-save]').click();await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent==='');
   // The reference sheet supports editing different sources on one row without switching modes.

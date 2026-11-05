@@ -9,6 +9,8 @@ export interface DashboardKpiPart {
   /** Cộng quy đổi từ ngày làm hàng / công tác (KH mới, giao dịch). */
   extra: number;
   target: number;
+  /** Chỉ tiêu riêng trong hồ sơ lương (false = mức chung của tháng). */
+  own: boolean;
   /** Điểm đạt được (tỷ lệ, 0,1 = 10%). */
   points: number;
   /** Điểm tối đa của phần này; null = không giới hạn. */

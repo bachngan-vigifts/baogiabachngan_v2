@@ -51,7 +51,7 @@ export const rememberQuoteCustomer: QuoteCustomerMemory = async (tx, data, previ
   const now = new Date().toISOString(), created = !profile;
   if (created) {
     id = crypto.randomUUID(); const manager = viewer.role === 'manager';
-    await tx.insert(customers).values({ id, ...clean, search: fold(Object.values(clean).join(' ')), sourceVersion: 0, syncedAt: now, createdAt: now,
+    await tx.insert(customers).values({ id, ...clean, search: fold(Object.values(clean).join(' ')), sourceVersion: 0, syncedAt: now, createdAt: now, dataSource: 'web',
       approvalStatus: manager ? 'approved' : 'pending', createdBy: viewer.id, approvedBy: manager ? viewer.id : null, approvedAt: manager ? now : null });
     await tx.insert(customerStaff).values({ customerId: id, memberId: viewer.id, role: 'owner', createdBy: viewer.id, createdAt: now });
   } else if (Object.entries(patch).some(([key,value]) => profile[key as keyof typeof profile] !== value)) {

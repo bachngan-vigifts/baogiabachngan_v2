@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -48,7 +49,7 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
   assert.equal((await call(`/orders/${o2.data.id}/submit`, emp, 'POST', {})).status, 200, 'bấm lặp không lỗi');
   const o3 = { data: { id: k3.data.orderId as string } };
   // Khách hàng và sản phẩm nhân viên tạo.
-  assert.equal((await call('/customers', emp, 'POST', { name: 'Công ty Mới Tạo' })).status, 201);
+  assert.equal((await call('/customers', emp, 'POST', customerCreateFixture({ name: 'Công ty Mới Tạo' }))).status, 201);
   assert.equal((await call('/products', emp, 'POST', { sku: 'NEW-01', name: 'Ly sứ mới', unit: 'cái' })).status, 201);
 
   let d = await inbox();

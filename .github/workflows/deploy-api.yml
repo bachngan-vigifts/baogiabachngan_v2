@@ -139,6 +139,7 @@ jobs:
           query+=$'\n'"$(<migrations/postgres/20261026080503_early_request_delete_split.sql)"
           query+=$'\n'"$(<migrations/postgres/20261027040000_crm_returns.sql)"
           query+=$'\n'"$(<migrations/postgres/20261027113713_early_request_numbers.sql)"
+          query+=$'\n'"$(<migrations/postgres/20261105042029_payroll_attendance_counters.sql)"
           payload=$(jq -n --arg query "$query" '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
@@ -182,6 +183,13 @@ jobs:
         shell: bash
         run: |
           payload=$(jq -n --rawfile query scripts/sql/assert-customer-established-date.sql '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra migration chỉ tiêu KPI riêng đã chạy tay
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-hr-member-kpi-targets.sql '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
       - name: Kiểm tra migration góp ý phần mềm đã chạy tay

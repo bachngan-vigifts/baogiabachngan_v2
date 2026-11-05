@@ -19,7 +19,7 @@ import {SALE_ADMIN_POSITION_ID} from '../../staff/domain/roles.ts';
  *  Bách Ngân, Lock  Thực nhận = Tổng lương − BHXH − BHYT − TNCN − vi phạm − tạm ứng điện thoại − tạm ứng
  */
 import { minWageMonth, type PayrollParams } from './params.ts';
-import { computeKpiCv, type KpiCvInput, type KpiCvResult } from './kpi-cv.ts';
+import { computeKpiCv, kpiTargetsOf, type KpiCvInput, type KpiCvResult } from './kpi-cv.ts';
 
 // ---------------- Nhóm bảng lương
 export const PAYROLL_GROUPS = ['sale', 'bn', 'lock'] as const;
@@ -90,11 +90,13 @@ export interface SalaryProfile {
   /** Sale: tính KPI công việc + thưởng KPI DS. Bách Ngân / Lock: hưởng thưởng DS của nhóm. */
   kpiEnabled: boolean; teamBonus: boolean; kpiEligible?:boolean; fixedKpi?: number | null; contractBonusEnabled?: boolean;
   outputRate: number; revenueTarget: number; insurance: number;
+  /** Chỉ tiêu KPI riêng (null = theo mức chung của tháng). */
+  kpiNewCustomersTarget?: number | null; kpiTransactionsTarget?: number | null; kpiContractsTarget?: number | null;
   bankCode: string; bankAccount: string; bankHolder: string;
 }
 export const EMPTY_PROFILE: SalaryProfile = {
   payrollGroup: 'sale', positionLabel: '', baseSalary: 0, capacityCoef: 0, responsibilityMode: 'fixed', responsibility: 0,
-  mealAllowance: true, phoneAllowance: 0, attendanceBonus: 0, kpiEnabled: false, teamBonus: false, fixedKpi:null,contractBonusEnabled:false, outputRate: 0, revenueTarget: 0, insurance: 0,
+  mealAllowance: true, phoneAllowance: 0, attendanceBonus: 0, kpiEnabled: false, teamBonus: false, fixedKpi:null,contractBonusEnabled:false, outputRate: 0, revenueTarget: 0, insurance: 0, kpiNewCustomersTarget: null, kpiTransactionsTarget: null, kpiContractsTarget: null,
   bankCode: '', bankAccount: '', bankHolder: '',
 };
 
@@ -115,6 +117,8 @@ export interface PayrollInput extends KpiCvInput {
   /** Ngày làm việc; null = lấy từ chấm công. */
   workDays: number | null;
   overtimeHours: number;
+  /** Chỉ số đối chiếu, chưa tự quy đổi thành khoản trừ. */
+  lateCount?: number; leaveHours?: number;
   /** DS tháng cá nhân (Sale – tính thưởng KPI DS); null = DS đơn hàng trên hệ thống. */
   revenue: number | null;
   /** Sản lượng: số đơn (kho), số lượt (thiết kế), DS web (IT). */
@@ -124,7 +128,7 @@ export interface PayrollInput extends KpiCvInput {
   quarterBonus: number | null;
 }
 export const EMPTY_INPUT: PayrollInput = {
-  workDays: null, overtimeHours: 0, revenue: null, outputQty: 0, healthInsurance: 0, incomeTax: 0, quarterBonus: null,
+  workDays: null, overtimeHours: 0, lateCount: 0, leaveHours: 0, revenue: null, outputQty: 0, healthInsurance: 0, incomeTax: 0, quarterBonus: null,
   kpiNewCustomers: null, kpiTransactions: null, kpiContracts: null, kpiRevenue: null, kpiMerchDays: 0, kpiTripDays: 0, kpiOverride: null,
 };
 
@@ -200,7 +204,7 @@ export function computePayslip(a: {
   const days = inp.workDays ?? a.attendanceDays, lcb = f.baseSalary > 0 ? f.baseSalary : minWageMonth(p);
   const revenue = inp.revenue ?? a.systemRevenue;
   const probation = isProbation(f.positionLabel);
-  const kpi = !probation && g === 'sale' && f.kpiEligible!==false && f.kpiEnabled ? computeKpiCv({...inp,kpiOverride:f.fixedKpi??inp.kpiOverride}, p, f.revenueTarget || p.kpiRevenue, revenue) : null;
+  const kpi = !probation && g === 'sale' && f.kpiEligible!==false && f.kpiEnabled ? computeKpiCv({...inp,kpiOverride:f.fixedKpi??inp.kpiOverride}, p, kpiTargetsOf(p, f), revenue) : null;
   const responsibility = f.responsibilityMode === 'per_day' ? p.responsibilityDay * days
     : f.responsibilityMode === 'prorated' ? f.responsibility * days / p.standardDays : f.responsibility;
   const mealOff = g === 'sale' ? p.mealOffSale : g === 'bn' ? p.mealOffBn : p.mealOffLock;

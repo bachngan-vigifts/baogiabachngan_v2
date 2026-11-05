@@ -12,7 +12,7 @@ import type { CrmFactsOf } from '../../../core/contracts/sales-payroll.ts';
 const prefix = 'payroll-quick:';
 const kinds = ['bonus', 'allowance', 'deduction', 'advance', 'phone_advance'] as const;
 const optional = new Set(['workDays', 'revenue', 'quarterBonus', 'kpiOverride', 'kpiNewCustomers', 'kpiTransactions', 'kpiContracts', 'kpiRevenue']);
-const inputLimits: Record<string, number> = { workDays: 31, overtimeHours: 400, revenue: 1e13, outputQty: 1e13,
+const inputLimits: Record<string, number> = { workDays: 31, overtimeHours: 400, lateCount: 1000, leaveHours: 744, revenue: 1e13, outputQty: 1e13,
   quarterBonus: HR_LIMITS.maxSalary, healthInsurance: HR_LIMITS.maxSalary, incomeTax: HR_LIMITS.maxSalary,
   kpiOverride: 10, kpiNewCustomers: 1e6, kpiTransactions: 1e6, kpiContracts: 1e6, kpiRevenue: 1e13, kpiMerchDays: 31, kpiTripDays: 31 };
 const profileLimits: Record<string, number> = { baseSalary: HR_LIMITS.maxSalary, capacityCoef: 100, responsibility: HR_LIMITS.maxSalary,
@@ -58,6 +58,7 @@ export function registerQuickPayroll(router: Router<StaffEnv>, deps: { revenueOf
           for (const [key, value] of Object.entries(patch)) {
             if (!Object.hasOwn(inputLimits, key)) throw new AppError(400, 'Chỉ số lương không được hỗ trợ.');
             values[key] = value === null && optional.has(key) ? null : numeric(value, inputLimits[key]!);
+            if (key === 'lateCount' && !Number.isInteger(values[key])) throw new AppError(400, 'Số lần đi trễ phải là số nguyên.');
             if (['healthInsurance', 'incomeTax'].includes(key)) values[key] = Math.round(values[key]!);
           }
           const data = { ...row.input, ...values };

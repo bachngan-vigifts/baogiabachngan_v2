@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -23,7 +24,7 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
   const month = vietnamDate().iso.slice(0, 7), day = (d: number) => `${month}-${String(d).padStart(2, '0')}`;
 
   // Doanh số: nhân viên lập 2 báo giá, 1 báo giá lên đơn 2.160.000, khách trả 1.000.000.
-  const kh = await call('/customers', mgr, 'POST', { name: 'Công ty Hoàng Long' });
+  const kh = await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Công ty Hoàng Long' }));
   const doc = { type: 'B2B', customer: 'Công ty Hoàng Long', customerId: kh.data.id, vat: 8, rows: [{ name: 'Bình giữ nhiệt', sku: 'LHC', unit: 'cái', qty: 10, price: 200000, taxRate: 8, commission:{excluded:true} }] };
   const q = await call('/quotes', emp, 'POST', { ...doc, quoteNo: 'B2B_1' });
   await call('/quotes', emp, 'POST', { ...doc, quoteNo: 'B2B_2' });
@@ -42,7 +43,7 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
 
   // Manager đặt lương, chấm công, thưởng / tạm ứng.
   assert.equal((await call('/hr/members/emp/salary', mgr, 'PUT', { effectiveMonth: month, payrollGroup: 'sale', positionLabel: 'sale', baseSalary: 10_400_000, capacityCoef: 1,
-    mealAllowance: false, kpiEnabled: true, revenueTarget: 4_320_000, insurance: 500_000, bankCode: 'VCB', bankAccount: '0123 456', bankHolder: 'Ten emp' })).status, 200);
+    mealAllowance: false, kpiEnabled: true, revenueTarget: 4_320_000, changeReason: 'Chỉ tiêu tháng đầu', insurance: 500_000, bankCode: 'VCB', bankAccount: '0123 456', bankHolder: 'Ten emp' })).status, 200);
   assert.equal((await call('/hr/members/emp/salary', mgr, 'PUT', { effectiveMonth: month, payrollGroup: 'khac' })).status, 400);
   assert.equal((await call(`/hr/members/emp/inputs/${month}`, emp, 'PUT', { kpiOverride: 0.95 })).status, 403);
   assert.equal((await call(`/hr/members/emp/inputs/${month}`, mgr, 'PUT', { kpiOverride: 0.95 })).status, 200, 'KPI chốt 95% → thưởng 1% doanh số net');

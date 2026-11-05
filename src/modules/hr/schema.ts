@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, text, doublePrecision, boolean, index, primaryKey, check } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, doublePrecision, boolean, index, primaryKey, check } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { ADJUSTMENT_KINDS, ATTENDANCE_STATUSES, PAYROLL_GROUPS, PAYSLIP_STATUSES, RESPONSIBILITY_MODES } from './domain/payroll.ts';
@@ -46,6 +46,10 @@ export const hrSalaryProfiles = pgTable('hr_salary_profiles', {
   outputRate: doublePrecision('output_rate').notNull().default(0),
   /** Chỉ tiêu DS cá nhân / tháng (KPI CV, thưởng quý); 0 = mặc định ở tham số. */
   revenueTarget: doublePrecision('revenue_target').notNull().default(0),
+  /** Chỉ tiêu KPI riêng / tháng (KH mới, giao dịch, số HĐ); null = theo mức chung ở Thiết lập lương của tháng. */
+  kpiNewCustomersTarget: doublePrecision('kpi_new_customers_target'),
+  kpiTransactionsTarget: doublePrecision('kpi_transactions_target'),
+  kpiContractsTarget: doublePrecision('kpi_contracts_target'),
   /** BHXH người lao động đóng (trừ vào lương). */
   insurance: doublePrecision('insurance').notNull().default(0),
   /** Tài khoản nhận lương (mã ngân hàng theo VietQR: vcb, acb, vietinbank…). */
@@ -60,6 +64,7 @@ export const hrSalaryProfiles = pgTable('hr_salary_profiles', {
   check('chk_hr_salary_month', sql`${t.effectiveMonth} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
   check('chk_hr_salary_money', sql`${t.baseSalary} >= 0 AND ${t.revenueTarget} >= 0 AND ${t.insurance} >= 0`),
   check('chk_hr_salary_extra', sql`${t.capacityCoef} >= 0 AND ${t.responsibility} >= 0 AND ${t.phoneAllowance} >= 0 AND ${t.attendanceBonus} >= 0 AND ${t.outputRate} >= 0`),
+  check('chk_hr_kpi_targets', sql`(${t.kpiNewCustomersTarget} is null or ${t.kpiNewCustomersTarget} > 0) AND (${t.kpiTransactionsTarget} is null or ${t.kpiTransactionsTarget} > 0) AND (${t.kpiContractsTarget} is null or ${t.kpiContractsTarget} > 0)`),
   check('chk_hr_fixed_kpi',sql`${t.fixedKpi} is null or (${t.fixedKpi}>=0 and ${t.fixedKpi}<=10)`),
   enumCheck('chk_hr_salary_group', t.payrollGroup, PAYROLL_GROUPS),
   enumCheck('chk_hr_salary_resp_mode', t.responsibilityMode, RESPONSIBILITY_MODES),
@@ -148,6 +153,8 @@ export const hrPayrollInputs = pgTable('hr_payroll_inputs', {
   /** Ngày làm việc nhập tay; null = theo chấm công. */
   workDays: doublePrecision('work_days'),
   overtimeHours: doublePrecision('overtime_hours').notNull().default(0),
+  lateCount: integer('late_count').notNull().default(0),
+  leaveHours: doublePrecision('leave_hours').notNull().default(0),
   /** DS tháng (Sale – thưởng KPI DS); null = DS đơn hàng trên hệ thống. */
   revenue: doublePrecision('revenue'),
   outputQty: doublePrecision('output_qty').notNull().default(0),
@@ -170,5 +177,6 @@ export const hrPayrollInputs = pgTable('hr_payroll_inputs', {
   primaryKey({ columns: [t.memberId, t.month] }),
   index('idx_hr_inputs_month').on(t.month),
   check('chk_hr_inputs_month', sql`${t.month} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
+  check('chk_hr_inputs_attendance_counters', sql`${t.lateCount} BETWEEN 0 AND 1000 AND ${t.leaveHours} >= 0 AND ${t.leaveHours} <= 744`),
   check('chk_hr_inputs_values', sql`coalesce(${t.workDays}, 0) >= 0 AND ${t.overtimeHours} >= 0 AND coalesce(${t.revenue}, 0) >= 0 AND ${t.outputQty} >= 0 AND ${t.healthInsurance} >= 0 AND ${t.incomeTax} >= 0 AND coalesce(${t.quarterBonus}, 0) >= 0`),
 ]).enableRLS();

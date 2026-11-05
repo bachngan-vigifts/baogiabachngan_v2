@@ -5,6 +5,8 @@ import { AppError } from '../../../core/errors.ts';
 import { fold } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { customerBrandDiscounts, customerContacts, customerContractProfiles, customerNotes, customers, customerStaff } from '../../customers/schema.ts';
+import { appsheetCustomerLinks } from '../../customers/appsheet-schema.ts';
+import { customerIdentityLock } from '../../customers/api/identity.ts';
 import { NORM_TAX_SQL, normTaxCode, pickKeeper } from '../../customers/domain/tax-code.ts';
 import { quotations, quoteOrderFollowups } from '../../quotes/schema.ts';
 import { customerPayments, salesContracts, salesOrders } from '../../sales/schema.ts';
@@ -49,6 +51,7 @@ export async function mergeCustomers(db: Db, keepId: string, dropIds: string[], 
   const ids = [...new Set(dropIds)].filter(id => id && id !== keepId);
   if (!ids.length) return 0;
   await db.transaction(async tx => {
+    await customerIdentityLock(tx);
     const all = await tx.select().from(customers).where(inArray(customers.id, [keepId, ...ids])).for('update');
     const keep = all.find(r => r.id === keepId); if (!keep) throw new AppError(404, 'Không tìm thấy khách hàng giữ lại.');
     const drops = all.filter(r => r.id !== keepId);
@@ -56,7 +59,7 @@ export async function mergeCustomers(db: Db, keepId: string, dropIds: string[], 
     if (drops.some(d => normTaxCode(d.taxCode) !== normTaxCode(keep.taxCode) || !normTaxCode(keep.taxCode))) throw new AppError(400, 'Chỉ gộp được các khách cùng mã số thuế.');
 
     // Bù ô còn trống của khách giữ lại bằng thông tin của bản trùng.
-    const fill = Object.fromEntries((['contact', 'phone', 'email', 'address', 'customerCode'] as const)
+    const fill = Object.fromEntries((['contact', 'phone', 'email', 'address', 'customerCode', 'customerType', 'establishedDate'] as const)
       .map(k => [k, keep[k]?.trim() ? keep[k] : drops.map(d => d[k]).find(v => v?.trim()) ?? keep[k]]));
     const merged = { ...keep, ...fill };
     await tx.update(customers).set({ ...fill, search: fold([merged.name, merged.contact, merged.phone, merged.email, merged.address, merged.taxCode, merged.customerCode].join(' ')),
@@ -110,6 +113,8 @@ export async function mergeCustomers(db: Db, keepId: string, dropIds: string[], 
     // Bảng việc CRM cũ (không còn dùng) — không import module crm, cập nhật trực tiếp.
     await tx.execute(sql`update crm_tasks set customer_id = ${keepId} where customer_id in (${sql.join(ids.map(id => sql`${id}`), sql`, `)})`);
 
+    // Retain every source identity when multiple source rows resolve to the surviving customer.
+    await tx.update(appsheetCustomerLinks).set({ customerId: keepId }).where(inArray(appsheetCustomerLinks.customerId, ids));
     await tx.delete(customers).where(inArray(customers.id, ids));
   });
   return ids.length;

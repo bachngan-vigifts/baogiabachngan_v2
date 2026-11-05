@@ -962,7 +962,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     async (c) => {
       const m = member(c);
       posPermission(m);
-      const b = await readJson(c.req, 16_384),{fields,terms}=customerInput(b),{name,phone}=fields;
+      const b = await readJson(c.req, 16_384),{fields,terms}=customerInput(b,false,{allowBlankName:true});
+      if (!fields.name) fields.name = fields.phone || fields.taxCode ? `Khách ${fields.phone || fields.taxCode}`.slice(0,500) : CONSUMER_NAME;
+      const {name,phone}=fields;
       const customerIssue = posCustomerIssue({id: 'new', name});
       if (customerIssue) throw new AppError(400, customerIssue, 'POS_CUSTOMER_REQUIRED');
 
@@ -974,7 +976,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           await customerIdentityLock(tx);
           const [hit] = await tx.select({ id: customers.id, name: customers.name }).from(customers).where(eq(customers.customerCode, CONSUMER_CODE)).limit(1);
           if (hit) return hit;
-          await tx.insert(customers).values({ id, name: CONSUMER_NAME, customerCode: CONSUMER_CODE, contact: '', phone: '', email: '', address: '', taxCode: '', isRetail: true,
+          await tx.insert(customers).values({ id, name: CONSUMER_NAME, customerCode: CONSUMER_CODE, contact: '', phone: '', email: '', address: '', taxCode: '', isRetail: true, dataSource: 'pos',
             search: CONSUMER_NAME + ' ' + CONSUMER_CODE, sourceVersion: 0, syncedAt: now, createdAt: now, createdBy: m.id, approvalStatus: 'approved', approvedAt: now, approvedBy: m.id });
           return { id, name: CONSUMER_NAME };
         });
@@ -986,6 +988,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         await tx.insert(customers).values({
           id,
           ...fields,...terms,
+          dataSource: 'pos',
           search: fold(Object.values(fields).join(' ')),
           sourceVersion: 0,
           syncedAt: now,

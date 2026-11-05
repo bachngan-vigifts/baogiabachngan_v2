@@ -2,7 +2,7 @@ import {downloadPayrollTemplate,readPayrollFile,parsePayrollFile} from './payrol
 import { payrollSheetHtml } from './payroll-sheet.js';
 // Excel-style entry uses the existing server payroll engine; displayed totals are saved calculations.
 export const QUICK_COLUMNS = {
-  inputs: [ ['workDays','Ngày công',true,true], ['overtimeHours','Giờ tăng ca',true], ['revenue','Doanh số tháng',false,true],
+  inputs: [ ['workDays','Ngày công',true,true], ['overtimeHours','Giờ tăng ca',true], ['lateCount','Số lần đi trễ',true], ['leaveHours','Số giờ nghỉ trong ngày',true], ['revenue','Doanh số tháng',false,true],
     ['outputQty','Sản lượng',true], ['quarterBonus','Thưởng quý',false,true], ['healthInsurance','BHYT'], ['incomeTax','Thuế TNCN'],
     ['kpiNewCustomers','KH mới',true,true], ['kpiTransactions','Giao dịch',true,true], ['kpiContracts','Số HĐ',true,true],
     ['kpiRevenue','DS KPI',false,true], ['kpiMerchDays','Ngày làm hàng',true], ['kpiTripDays','Ngày công tác',true], ['kpiOverride','KPI chốt (1 = 100%)',true,true] ],

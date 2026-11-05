@@ -34,6 +34,7 @@ import { createStaffRouter } from '../modules/staff/api/auth-routes.ts';
 import { registerQuoteRoutes } from '../modules/quotes/api/routes.ts';
 import { registerImageFetchRoutes } from '../modules/quotes/api/image-fetch.ts';
 import { registerCustomerRoutes } from '../modules/customers/api/routes.ts';
+import { registerAppsheetCustomerRoutes } from '../modules/customers/api/appsheet-routes.ts';
 import { registerCatalogRoutes } from '../modules/catalog/api/routes.ts';
 import { registerLegacyImageRoutes } from '../modules/integrations/api/legacy-images.ts';
 import { registerSapoSyncRoutes } from '../modules/integrations/api/sapo-sync-routes.ts';
@@ -99,6 +100,7 @@ export function createAppRouter() {
   registerQuoteRoutes(router, { rememberCustomer: rememberQuoteCustomer });
   registerImageFetchRoutes(router);
   registerCustomerRoutes(router);
+  registerAppsheetCustomerRoutes(router);
   registerCatalogRoutes(router);
   catalogueLibraryHooks.heldAt=(db,skus,warehouseId)=>reservedBySku(db,skus,warehouseId);
   catalogueLibraryHooks.incoming=(db,skus)=>outstandingLines(db,skus);

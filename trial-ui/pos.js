@@ -1775,7 +1775,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     let selected=false;
     const leave=()=>{st.resumePaymentAt=0;++customerPaymentRun;};window.addEventListener('hashchange',leave);
     m.dlg.addEventListener('close',()=>{if(!selected)leave();window.removeEventListener('hashchange',leave);});
-    const fields = customerFormFields();
+    const fields = customerFormFields({requireName:false});
     fields.controls.phone.placeholder = 'Để trống = Bán người tiêu dùng';
     const error = el('p', 'error'); error.setAttribute('role', 'alert');
     const actions = el('div', 'pos-customer-form-actions');

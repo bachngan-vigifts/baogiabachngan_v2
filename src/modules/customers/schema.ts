@@ -7,6 +7,10 @@ import { APPROVAL_STATUSES, CUSTOMER_STAFF_ROLES } from './domain/customer-confi
 export const customers = pgTable('sapo_customers', {
   isRetail: boolean('is_retail').notNull().default(false),
   establishedDate: date('established_date', { mode: 'string' }),
+  /** AppSheet classification is separate from the retail/business permission segment. */
+  customerType: text('customer_type'),
+  /** Creation origin only; external identities live in appsheet_customer_links. */
+  dataSource: text('data_source'),
   createdAt: text('created_at').notNull().default(''),
   taxCode: text('tax_code').notNull().default(''),
   customerCode: text('customer_code').notNull().default(''),
@@ -30,6 +34,7 @@ export const customers = pgTable('sapo_customers', {
   creditLimit: doublePrecision('credit_limit'),
 }, t => [index('idx_sapo_customers_name').on(t.name), index('idx_sapo_customers_approval').on(t.approvalStatus),
   enumCheck('chk_sapo_customers_approval', t.approvalStatus, APPROVAL_STATUSES),
+  check('chk_customer_data_source', sql`${t.dataSource} is null or ${t.dataSource} in ('appsheet', 'sapo', 'web', 'pos')`),
   check('chk_customer_established_date', sql`${t.establishedDate} is null or (${t.establishedDate} >= date '0001-01-01' and ${t.establishedDate} <= date '9999-12-31')`)]).enableRLS();
 export const customerContractProfiles = pgTable('customer_contract_profiles', {
   customerId: text('customer_id').primaryKey().references(() => customers.id),

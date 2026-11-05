@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -19,7 +20,7 @@ test('chiết khấu thương hiệu: người phụ trách / Manager sửa, ô 
   };
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
   const emp = await login('emp@x.vn'), emp2 = await login('emp2@x.vn'), mgr = await login('mgr@x.vn');
-  const id = (await call('/customers', emp, 'POST', { name: 'Khách CK' })).data.id as string;
+  const id = (await call('/customers', emp, 'POST', customerCreateFixture({ name: 'Khách CK' }))).data.id as string;
 
   assert.deepEqual((await call(`/customers/${id}`, emp)).data.discounts, { minhLong: null, lys: null, lock: null });
   assert.equal((await call(`/customers/${id}/discounts`, emp, 'PUT', { minhLong: 101 })).status, 400);

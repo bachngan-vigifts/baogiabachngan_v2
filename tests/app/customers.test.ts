@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -32,9 +33,9 @@ test('lịch sử mua hàng: gộp theo mã, số đơn, lần mua gần nhất'
 test('khách hàng: thêm mới (người tạo phụ trách), người liên hệ, phụ trách / chia sẻ, trang chi tiết đúng quyền', async () => {
   const { call, emp, mgr, other, old } = await setup();
   // Thêm khách: nhân viên tạo → mình phụ trách; Manager chọn được người phụ trách.
-  const k = await call('/customers', emp, 'POST', { name: 'Công ty Hoàng Long', phone: '0901', taxCode: '0101234567' });
+  const k = await call('/customers', emp, 'POST', customerCreateFixture({ name: 'Công ty Hoàng Long', phone: '0901', taxCode: '0101234567' }));
   assert.equal(k.status, 201);
-  const k2 = await call('/customers', mgr, 'POST', { name: 'Công ty An Phát', ownerId: 'new' });
+  const k2 = await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Công ty An Phát', ownerId: 'new' }));
   let p = (await call(`/customers/${k.data.id}`, emp)).data;
   assert.equal(p.owner.id, 'emp'); assert.deepEqual(p.shared, []); assert.equal(p.customer.fromSapo, false);
   assert.deepEqual([p.access.canSeeAll, p.access.canManageStaff, p.access.canChangeOwner], [true, true, false]);
@@ -46,7 +47,7 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   assert.equal((await call('/customers/nope', emp)).status, 404);
   // Khách mới tạo lên trên cùng (không theo ABC).
   await new Promise(r => setTimeout(r, 5));
-  const k3 = await call('/customers', mgr, 'POST', { name: 'Công ty Xuân Mai' });
+  const k3 = await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Công ty Xuân Mai' }));
   assert.deepEqual((await call('/customers', mgr)).data.customers.slice(0, 2).map((x: any) => x.id), [k3.data.id, k2.data.id]);
 
   // Người liên hệ: thêm / sửa / xoá; một người liên hệ chính.
@@ -116,7 +117,7 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
 
 test('điều khoản riêng của khách: % cọc, hạn thanh toán, giới hạn công nợ – lưu, sửa, xoá về mặc định, chặn giá trị sai', async () => {
   const { call, mgr } = await setup();
-  const c = await call('/customers', mgr, 'POST', { name: 'Khách điều khoản', depositRate: '50', paymentTerm: '7', creditLimit: '20.000.000' });
+  const c = await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Khách điều khoản', depositRate: '50', paymentTerm: '7', creditLimit: '20.000.000' }));
   assert.equal(c.status, 201, JSON.stringify(c.data));
   let got = (await call('/customers/' + c.data.id, mgr)).data.customer;
   assert.deepEqual([got.depositRate, got.paymentTerm, got.creditLimit], [50, '7', 20000000]);

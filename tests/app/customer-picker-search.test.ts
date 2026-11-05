@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -21,9 +22,9 @@ async function setup() {
 
 test('ô chọn khách: tìm nhanh không dấu, theo SĐT viết liền / có dấu cách, chỉ khách đã duyệt, không đếm tổng', async () => {
   const { call, emp, mgr } = await setup();
-  for (const [name, phone] of [['Công ty Hoa Mai', '0901 234 567'], ['Cửa hàng Đồng Tiến', '0283 111 222'], ['Hoa Sen Group', '']])
-    assert.equal((await call('/customers', mgr, 'POST', { name, phone })).status, 201);
-  assert.equal((await call('/customers', emp, 'POST', { name: 'Hoa Chờ Duyệt' })).status, 201);
+  for (const [name, phone] of [['Công ty Hoa Mai', '0901 234 567'], ['Cửa hàng Đồng Tiến', '0283 111 222'], ['Hoa Sen Group', '0283777888']])
+    assert.equal((await call('/customers', mgr, 'POST', customerCreateFixture({ name, phone }))).status, 201);
+  assert.equal((await call('/customers', emp, 'POST', customerCreateFixture({ name: 'Hoa Chờ Duyệt' }))).status, 201);
   const pick = async (q: string) => (await call('/customers?limit=8&usable=1&q=' + encodeURIComponent(q), emp)).data;
   const hoa = await pick('hoa');
   assert.equal(hoa.picker, true, 'đi đường tìm nhanh');
