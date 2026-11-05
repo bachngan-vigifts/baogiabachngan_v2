@@ -85,9 +85,14 @@ test('khách hàng: tìm không dấu theo tên/điện thoại/MST, phân trang
   assert.deepEqual((await call('/customers?q=0312345', emp)).data.customers.map((c: any) => c.id), ['a']);
   const page = await call('/customers?limit=2&offset=2', emp);
   assert.equal(page.data.total, 7); assert.deepEqual(page.data.customers.map((c: any) => c.id), ['u', 'z0']);
-  const created = await call('/customers', emp, 'POST', customerCreateFixture({ name: 'Đại lý Phúc Lộc', phone: '0911' }));
+  const profile = customerCreateFixture({ name: 'Đại lý Phúc Lộc', phone: '0911' });
+  const created = await call('/customers', emp, 'POST', profile);
   const [row] = await db.select().from(customers).where((await import('drizzle-orm')).eq(customers.id, created.data.id));
-  assert.equal(row!.search, 'dai ly phuc loc 0911');
+  assert.ok(row!.search.includes('dai ly phuc loc'));
+  for (const query of ['phuc loc', '0911', profile.taxCode]) {
+    const matches = await call('/customers?q=' + encodeURIComponent(query), emp);
+    assert.ok(matches.data.customers.some((customer: any) => customer.id === created.data.id));
+  }
 });
 
 test('nhập danh mục (Manager): tạo bảng giá/kho/sản phẩm; nhập lại thì cập nhật giá/tồn và ẩn mã không còn', async () => {
