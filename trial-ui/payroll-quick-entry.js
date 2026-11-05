@@ -41,6 +41,8 @@ export function parseQuickNumber(raw, column) {
   if (!Number.isFinite(n) || n < 0) invalid();
   return n;
 }
+// A trailing decimal separator is an unfinished keystroke, not a complete number.
+export const isQuickNumberPartial = (raw,column) => !['text','boolean'].includes(column[2]) && /^\d+[.,]$/.test(String(raw).trim());
 export function createPayrollQuickEntry({ root, api, esc, money, toast, onSaved, confirmBox, userId = () => null }) {
   const draftsByMonth = new Map(); let drafts = new Map(), data, mode = 'sheet', saving = false, loading = false, owner;
   const dirty = () => { if (owner !== userId()) { draftsByMonth.clear(); drafts = new Map(); owner = userId(); } return drafts.size > 0; };
@@ -87,25 +89,37 @@ export function createPayrollQuickEntry({ root, api, esc, money, toast, onSaved,
     if (['inputs','profile','adjustments'].every(k=>!Object.keys(draft[k]||{}).length)) drafts.delete(r.member.id);
     else drafts.set(r.member.id,draft);
     root.querySelector('[data-quick-count]').textContent = drafts.size?`(${drafts.size} người)`:'';
-    input.removeAttribute('aria-invalid'); input.closest('tr').classList.toggle('pr-quick-dirty',drafts.has(r.member.id));
+    input.removeAttribute('aria-invalid'); input.removeAttribute('data-quick-pending'); input.removeAttribute('data-quick-invalid'); input.closest('tr').classList.toggle('pr-quick-dirty',drafts.has(r.member.id));
   }
   function filter() {
     const q = root.querySelector('[data-quick-search]').value.toLocaleLowerCase('vi'), group = root.querySelector('[data-quick-group]').value;
     root.querySelectorAll('[data-quick-row]').forEach(tr=>{tr.hidden=!tr.dataset.name.includes(q)||!!group&&tr.dataset.group!==group;});
   }
-  root.addEventListener('focusout',e=>{if(e.target.matches('[data-money="true"]')&&e.target.value&&!e.target.hasAttribute('aria-invalid')){try{const c=QUICK_COLUMNS[e.target.dataset.section].find(c=>c[0]===e.target.dataset.key);e.target.value=formatQuickMoney(parseQuickNumber(e.target.value,c));}catch{}}});
+  root.addEventListener('focusout',e=>{
+    const input=e.target;
+    if(loading||saving||!input.matches('.pr-quick-value')||input.disabled)return;
+    try {
+      capture(input);
+      if(input.dataset.money==='true'&&input.value){const c=QUICK_COLUMNS[input.dataset.section].find(c=>c[0]===input.dataset.key);input.value=formatQuickMoney(parseQuickNumber(input.value,c));}
+    }catch(error){input.setAttribute('aria-invalid','true');input.setAttribute('data-quick-invalid','true');root.querySelector('[data-quick-status]').textContent=error.message;}
+  });
   root.addEventListener('input',e=>{
     if(loading||saving)return;
     if(e.target.matches('[data-quick-search]')) filter();
     if(!e.target.matches('.pr-quick-value')) return;
+    const column=QUICK_COLUMNS[e.target.dataset.section].find(c=>c[0]===e.target.dataset.key);
+    if(isQuickNumberPartial(e.target.value,column)){
+      e.target.setAttribute('data-quick-pending','true');e.target.removeAttribute('aria-invalid');e.target.removeAttribute('data-quick-invalid');
+      root.querySelector('[data-quick-status]').textContent='Đang nhập phần thập phân…';return;
+    }
     try { capture(e.target); root.querySelector('[data-quick-status]').textContent='Có thay đổi chưa lưu.'; }
-    catch(error){e.target.setAttribute('aria-invalid','true');root.querySelector('[data-quick-status]').textContent=error.message;}
+    catch(error){e.target.setAttribute('aria-invalid','true');e.target.setAttribute('data-quick-invalid','true');root.querySelector('[data-quick-status]').textContent=error.message;}
   });
   root.addEventListener('change',e=>{
     if(loading||saving)return;
     if(e.target.matches('[data-quick-group]')) filter();
     if(e.target.matches('[data-quick-file]')) importFile(e.target);
-    if(e.target.matches('[data-quick-mode]')) {if(saving||root.querySelector('[aria-invalid="true"]')) {e.target.value=mode;toast('Sửa ô không hợp lệ trước khi đổi mục nhập.','err');return;} mode=e.target.value;root.querySelector('#pr-quick').outerHTML=html(data);}
+    if(e.target.matches('[data-quick-mode]')) {if(saving||root.querySelector('[aria-invalid="true"], [data-quick-pending], [data-quick-invalid]')) {e.target.value=mode;toast('Sửa ô không hợp lệ trước khi đổi mục nhập.','err');return;} mode=e.target.value;root.querySelector('#pr-quick').outerHTML=html(data);}
   });
   root.addEventListener('keydown',e=>{
     if(loading||saving)return;
@@ -152,7 +166,7 @@ export function createPayrollQuickEntry({ root, api, esc, money, toast, onSaved,
       drafts.clear();await onSaved(data.month);return;
     }
     const button=e.target.closest('[data-quick-save]');if(!button||saving)return;
-    if(root.querySelector('[aria-invalid="true"]')){toast('Sửa các ô không hợp lệ trước khi lưu.','err');return;}
+    if(root.querySelector('[aria-invalid="true"], [data-quick-pending], [data-quick-invalid]')){toast('Sửa các ô không hợp lệ trước khi lưu.','err');return;}
     if(!dirty()){toast('Chưa có thay đổi.');return;}
     if([...drafts.values()].some(d=>d.month!==data.month)){toast('Dữ liệu nhập thuộc tháng khác. Tải lại bảng lương.','err');return;}
     const month=data.month; saving=true;button.disabled=true;
