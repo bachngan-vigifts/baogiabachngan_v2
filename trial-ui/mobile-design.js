@@ -32,20 +32,20 @@ export function orderedMobileNavKeys(keys) {
 }
 /** Menu chân trang gom theo chức năng: mỗi nút một nhóm, bấm mở bảng chọn các trang trong nhóm. */
 export const MOBILE_NAV_GROUPS=[
- {key:'sell',label:'Bán hàng',keys:['pos','quotes','orders','contracts','receivables'],icon:'M3 4h2l2.4 11h11L21 7H6 M9 20h.01 M18 20h.01'},
- {key:'money',label:'Tiền',keys:['cashbook','cash'],icon:'M3 7h18v12H3z M16 13h2 M6 7l2-3h10l1 3'},
- {key:'customers',label:'Khách hàng',short:'Khách',keys:['customers','care','stock-requests'],icon:'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6 M3 20c0-3 3-5 6-5s6 2 6 5 M16 5a3 3 0 0 1 0 6 M21 20c0-2-1.5-3.5-3.5-4.3'},
- {key:'work',label:'Công việc',keys:['tasks','dashboard','flow','feedback'],icon:'M9 6h11 M9 12h11 M9 18h11 M4 6l1 1 2-2 M4 12l1 1 2-2 M4 18l1 1 2-2'},
- {key:'stock',label:'Kho',keys:['kho','products','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving','deliveries'],icon:'M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10'},
- {key:'buy',label:'Mua hàng',keys:['early-requests','purchases','suppliers'],icon:'M3 6h11v10H3z M14 10h4l3 3v3h-7 M7 19h.01 M17 19h.01'},
- {key:'admin',label:'Quản trị',keys:['staff','payroll','permissions'],icon:'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z'},
+ {key:'sell',label:'Bán hàng',keys:['pos','quotes','orders','contracts','receivables'],icon:'<path d="M4 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M17 17h-11v-14h-2" /><path d="M6 5l14 1l-1 7h-13" />'},
+ {key:'money',label:'Tiền',keys:['cashbook','cash'],icon:'<path d="M17 8v-3a1 1 0 0 0 -1 -1h-10a2 2 0 0 0 0 4h12a1 1 0 0 1 1 1v3m0 4v3a1 1 0 0 1 -1 1h-12a2 2 0 0 1 -2 -2v-12" /><path d="M20 12v4h-4a2 2 0 0 1 0 -4h4" />'},
+ {key:'customers',label:'Khách hàng',short:'Khách',keys:['customers','care','stock-requests'],icon:'<path d="M10 13a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M8 21v-1a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v1" /><path d="M15 5a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M17 10h2a2 2 0 0 1 2 2v1" /><path d="M5 5a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M3 13v-1a2 2 0 0 1 2 -2h2" />'},
+ {key:'work',label:'Công việc',keys:['tasks','dashboard','flow','feedback'],icon:'<path d="M3.5 5.5l1.5 1.5l2.5 -2.5" /><path d="M3.5 11.5l1.5 1.5l2.5 -2.5" /><path d="M3.5 17.5l1.5 1.5l2.5 -2.5" /><path d="M11 6l9 0" /><path d="M11 12l9 0" /><path d="M11 18l9 0" />'},
+ {key:'stock',label:'Kho',keys:['kho','products','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving','deliveries'],icon:'<path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12l0 9" /><path d="M12 12l-8 -4.5" /><path d="M16 5.25l-8 4.5" />'},
+ {key:'buy',label:'Mua hàng',keys:['early-requests','purchases','suppliers'],icon:'<path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M5 17h-2v-11a1 1 0 0 1 1 -1h9v12m-4 0h6m4 0h2v-6h-8m0 -5h5l3 5" />'},
+ {key:'admin',label:'Quản trị',keys:['staff','payroll','permissions'],icon:'<path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" /><path d="M15 19l2 2l4 -4" />'},
 ];
 /** Nhóm có ít nhất một trang được phép (theo thứ tự `orderedMobileNavKeys`); trang lạ (mới thêm) vào nhóm "Khác". */
 export function groupMobileNav(keys){
  const ordered=orderedMobileNavKeys(keys),known=new Set(MOBILE_NAV_GROUPS.flatMap(g=>g.keys));
  const groups=MOBILE_NAV_GROUPS.map(g=>({key:g.key,label:g.label,short:g.short||g.label,icon:g.icon,items:ordered.filter(k=>g.keys.includes(k))}));
  const other=ordered.filter(k=>!known.has(k));
- if(other.length)groups.push({key:'other',label:'Khác',short:'Khác',icon:'M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z',items:other});
+ if(other.length)groups.push({key:'other',label:'Khác',short:'Khác',icon:'<path d="M4 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" /><path d="M14 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" /><path d="M4 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" /><path d="M14 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />',items:other});
  return groups.filter(g=>g.items.length);
 }
 export function installMobileDesign(profiles){
@@ -67,7 +67,7 @@ export function installMobileDesign(profiles){
  // Same permission-filtered entries as the sidebar, gathered into one footer button per function group.
  const navLabels={pos:'Bán hàng nhanh',quotes:'Báo giá',orders:'Đơn hàng',contracts:'HĐKT',receivables:'Công nợ'};
  const svgNs='http://www.w3.org/2000/svg';
- const groupIcon=d=>{const svg=document.createElementNS(svgNs,'svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');const path=document.createElementNS(svgNs,'path');path.setAttribute('d',d);svg.append(path);return svg;};
+ const groupIcon=markup=>{const svg=document.createElementNS(svgNs,'svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');svg.innerHTML=markup;return svg;}; // biểu tượng Tabler (MIT), cùng bộ với thanh bên
  const sheet=make('dialog','crm-sheet crm-nav-sheet');sheet.setAttribute('aria-labelledby','crm-nav-sheet-title');
  const sheetHead=make('header','crm-sheet-head'),sheetTitle=make('h2','',''),sheetClose=make('button','icon-btn','×'),sheetList=make('div','crm-nav-sheet-list');
  sheetTitle.id='crm-nav-sheet-title';sheetClose.type='button';sheetClose.setAttribute('aria-label','Đóng');sheetHead.append(sheetTitle,sheetClose);sheet.append(sheetHead,sheetList);document.body.append(sheet);
@@ -78,7 +78,7 @@ export function installMobileDesign(profiles){
  const navIcon=a=>{const icon=a.querySelector('svg');if(icon)return icon.cloneNode(true);const symbol=make('span','crm-nav-symbol',a.querySelector('span')?.textContent||'▣');symbol.setAttribute('aria-hidden','true');return symbol;};
  function openGroup(g){
   const key=location.hash.replace(/^#\//,'').split(/[/?]/)[0];
-  setText(sheetTitle,g.label);sheetList.replaceChildren();
+  setText(sheetTitle,g.label);sheet.dataset.group=g.key;sheetList.replaceChildren();
   for(const k of g.items){const source=navSources.get(k),a=make('a','',navLabel(k,source));a.href=source.getAttribute('href');a.dataset.mobileNav=k;a.prepend(navIcon(source));if(k===key)a.setAttribute('aria-current','page');sheetList.append(a);}
   sheet.showModal();
  }
