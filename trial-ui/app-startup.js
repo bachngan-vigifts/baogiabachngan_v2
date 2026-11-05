@@ -1,4 +1,6 @@
 // Independent of the module graph: a failed JS download must leave a usable screen.
+// 05/11/2026: bản triển khai lúc 15:41 để lại trang HTML bị lưu đệm 1 năm thay cho một file JS (lỗi "Expected a JavaScript module… text/html").
+// Mỗi lần triển khai giao diện, mọi đường dẫn JS / CSS mang số phiên bản mới (scripts/stamp-ui-version.ts), nên bản kế tiếp tự thoát bản lưu đệm hỏng.
 (() => {
   const startup = document.getElementById('app-startup');
   const message = document.getElementById('app-startup-message');
