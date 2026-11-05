@@ -36,6 +36,8 @@ export function initProductAdmin(deps) {
   function openForm(product = null) {
     const editing = !!product;
     const policies = editing && deps.canSeePrices && !deps.canSeePrices() ? [] : deps.policies();
+    const priceKind = p => p.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const requiredPrices = editing ? [] : [/^gia(ban)?le$/, /^gia(ban)?levat$/].map(pattern => policies.find(p => pattern.test(priceKind(p))));
     const dlg = document.createElement('dialog'); dlg.className = 'modal product-admin-dialog';
     dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>${editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body form-grid cols-2">
@@ -52,7 +54,8 @@ export function initProductAdmin(deps) {
           <div data-image-preview hidden></div>
         </div>
         ${editing?`<p class="muted small span-2">Quy cách thùng đóng gói (cm, kg)</p>${[['perCarton','Số sản phẩm / thùng'],['cartonLength','Dài thùng (cm)'],['cartonWidth','Rộng thùng (cm)'],['cartonHeight','Cao thùng (cm)'],['cartonWeight','Cân nặng thùng (kg)']].map(([key,label])=>`<label>${label}<input name="${key}" type="number" min="0.001" max="1000000" step="${key==='perCarton'?'1':'any'}" inputmode="decimal" placeholder="Chưa có"></label>`).join('')}`:''}
-        ${policies.map(p => `<label>Giá: ${esc(p.name)}<input name="price:${esc(p.id)}" inputmode="numeric" placeholder="0"></label>`).join('')}
+        ${policies.map(p => `<label>Giá: ${esc(p.name)}${requiredPrices.includes(p) ? ' *' : ''}<input name="price:${esc(p.id)}" inputmode="numeric" ${requiredPrices.includes(p) ? 'required aria-required="true" placeholder="Bắt buộc nhập"' : 'placeholder="0"'}></label>`).join('')}
+        ${editing ? '' : '<p class="muted small span-2">* Bắt buộc nhập Giá bán lẻ và Giá lẻ +VAT lớn hơn 0.</p>'}
         <p class="muted small span-2">${editing ? 'Cập nhật danh mục CRM. Nếu sản phẩm được đồng bộ từ Sapo, lần đồng bộ sau có thể ghi đè thông tin. Mã SKU được giữ nguyên.' : isManager() ? 'Bạn là Manager: sản phẩm có hiệu lực ngay sau khi lưu.' : 'Sản phẩm mới cần Manager duyệt mới dùng được khi lập báo giá.'}</p>
         <p class="error span-2" data-err role="alert"></p>
       </div>
@@ -97,7 +100,14 @@ export function initProductAdmin(deps) {
       if (imageBusy) { dlg.querySelector('[data-err]').textContent = 'Đợi xử lý ảnh xong rồi bấm Lưu.'; return; }
       const f = e.target.elements, err = dlg.querySelector('[data-err]'), v = k => f.namedItem(k).value.trim();
       const prices = {};
+      if (requiredPrices.some(p => !p)) { err.textContent = 'Chưa có đủ bảng Giá bán lẻ và Giá lẻ +VAT. Vui lòng tải lại hoặc cấu hình bảng giá.'; return; }
       for (const p of policies) { const raw = v('price:' + p.id).replace(/[\s.,]/g, ''); if (raw && !/^\d+$/.test(raw)) { err.textContent = 'Giá phải là số nguyên VNĐ từ 0 trở lên.'; return; } if (raw) prices[p.id] = Number(raw); else if (editing) prices[p.id] = null; }
+      for (const p of requiredPrices) {
+        if (!Number.isSafeInteger(prices[p.id]) || prices[p.id] <= 0 || prices[p.id] > 1e12) {
+          err.textContent = `Bắt buộc nhập ${p.name} lớn hơn 0 (tối đa 1.000.000.000.000đ).`;
+          f.namedItem('price:' + p.id).focus(); return;
+        }
+      }
       const body = { sku: v('sku'), name: v('name'), brand: v('brand'), unit: v('unit'), pattern: v('pattern'), imageUrl: v('imageUrl'), prices };
       if(editing)for(const key of ['perCarton','cartonLength','cartonWidth','cartonHeight','cartonWeight']){
         const raw=v(key);if(raw===String(product[key]??''))continue;const value=raw===''?null:Number(raw.replace(',','.'));
@@ -129,3 +139,4 @@ export function initProductAdmin(deps) {
   }
   return { openCreate: () => openForm(), openEdit, loadPending };
 }
+

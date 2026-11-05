@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { createAppRouter } from '../../src/app/router.ts';
+import { pricePolicies } from '../../src/modules/catalog/schema.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
 
 /**
@@ -13,6 +14,7 @@ import { customers } from '../../src/modules/customers/schema.ts';
 const origin = 'https://trial.test';
 async function setup() {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
+  await db.insert(pricePolicies).values([{id:'retail',name:'Giá bán lẻ'},{id:'retail-vat',name:'Giá lẻ +VAT'}]);
   await db.insert(customers).values({ id: 'K1', name: 'Công ty An Phú', contact: 'Anh Phú', phone: '0902', email: '', address: 'Cần Thơ', search: '', taxCode: '0309', customerCode: 'AP01', sourceVersion: 0, syncedAt: '' });
   const router = createAppRouter();
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
@@ -50,7 +52,7 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
   const o3 = { data: { id: k3.data.orderId as string } };
   // Khách hàng và sản phẩm nhân viên tạo.
   assert.equal((await call('/customers', emp, 'POST', customerCreateFixture({ name: 'Công ty Mới Tạo' }))).status, 201);
-  assert.equal((await call('/products', emp, 'POST', { sku: 'NEW-01', name: 'Ly sứ mới', unit: 'cái' })).status, 201);
+  assert.equal((await call('/products', emp, 'POST', { sku: 'NEW-01', name: 'Ly sứ mới', unit: 'cái', prices: {retail:100000,'retail-vat':108000} })).status, 201);
 
   let d = await inbox();
   assert.deepEqual(d.counts, { quote: 1, order: 1, contract: 1, purchase: 0, transfer: 0, cash: 0, return: 0, customer: 1, product: 1, total: 5 });
@@ -71,3 +73,4 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
   d = await inbox();
   assert.equal(d.counts.total, 0, JSON.stringify(d.items));
 });
+

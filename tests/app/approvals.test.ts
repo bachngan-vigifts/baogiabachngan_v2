@@ -47,11 +47,11 @@ test('khách hàng mới: nhân viên tạo → chờ duyệt (không lập đơ
 
 test('sản phẩm mới: Manager thêm có hiệu lực ngay; nhân viên thêm chờ duyệt, ẩn khỏi danh mục báo giá tới khi duyệt', async () => {
   const { db, call, emp, mgr } = await setup();
-  await db.insert(pricePolicies).values({ id: 'le', name: 'Giá bán lẻ', sortOrder: 0 });
+  await db.insert(pricePolicies).values([{ id: 'le', name: 'Giá bán lẻ', sortOrder: 0 }, { id: 'vat', name: 'Giá lẻ +VAT', sortOrder: 1 }]);
   assert.equal((await call('/products', emp, 'POST', { sku: 'bad sku!', name: 'X' })).status, 400);
-  assert.equal((await call('/products', mgr, 'POST', { sku: 'ML-01', name: 'Bộ trà', brand: 'Minh Long', unit: 'bộ', prices: { le: 1_200_000 } })).data.approvalStatus, 'approved');
+  assert.equal((await call('/products', mgr, 'POST', { sku: 'ML-01', name: 'Bộ trà', brand: 'Minh Long', unit: 'bộ', prices: { le: 1_200_000, vat: 1_296_000 } })).data.approvalStatus, 'approved');
   assert.equal((await call('/products', emp, 'POST', { sku: 'ML-01', name: 'Trùng' })).status, 409);
-  assert.equal((await call('/products', emp, 'POST', { sku: 'LL-02', name: 'Bình giữ nhiệt', prices: { le: 300000 } })).data.approvalStatus, 'pending');
+  assert.equal((await call('/products', emp, 'POST', { sku: 'LL-02', name: 'Bình giữ nhiệt', prices: { le: 300000, vat: 324000 } })).data.approvalStatus, 'pending');
   const skus = async () => (await call('/catalog-snapshot', emp)).data.products.map((p: any[]) => p[0]).sort();
   assert.deepEqual(await skus(), ['ML-01'], 'sản phẩm chờ duyệt không có trong danh mục báo giá');
   const pending = (await call('/product-approvals', mgr)).data.products;
@@ -60,7 +60,7 @@ test('sản phẩm mới: Manager thêm có hiệu lực ngay; nhân viên thêm
   assert.equal((await call('/products/LL-02/approve', mgr, 'POST', {})).status, 200);
   assert.deepEqual(await skus(), ['LL-02', 'ML-01']);
   assert.equal((await call('/products/LL-02', mgr, 'DELETE')).status, 404, 'đã duyệt thì không xoá ở đây');
-  await call('/products', emp, 'POST', { sku: 'XX-9', name: 'Gửi nhầm' });
+  await call('/products', emp, 'POST', { sku: 'XX-9', name: 'Gửi nhầm', prices: { le: 100000, vat: 108000 } });
   assert.equal((await call('/products/XX-9', emp, 'DELETE')).status, 200);
   assert.equal((await call('/product-approvals', mgr)).data.products.length, 0);
 });
@@ -87,3 +87,4 @@ test('số đếm cần duyệt: đủ trên 200 mục, summary không gửi chi
  await s.db.update(products).set({approvalStatus:'approved'}).where(eq(products.sku,'WAIT-0'));
  assert.equal((await s.call('/approvals?summary=1',s.mgr)).data.counts.total,204);
 });
+
