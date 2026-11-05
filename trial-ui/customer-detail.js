@@ -79,10 +79,11 @@ export function initCustomerDetail(deps) {
 
   // ----- Vẽ
   function render() {
-    const d = st.d, c = d.customer, s = d.stats, a = d.access, pending = c.approvalStatus === 'pending';
-    const contacts = d.contacts.map(x => `<li class="cd-contact"><span><b>${esc(x.name)}</b>${x.isPrimary ? ' <span class="pill blue">Liên hệ chính</span>' : ''}
+    const d = st.d, c = d.customer, s = d.stats, a = d.access, pending = c.approvalStatus === 'pending', rejected = c.approvalStatus === 'rejected', blocked = pending || rejected;
+    const representative = d.contacts.find(x => x.id === c.representativeContactId);
+    const contacts = d.contacts.map(x => `<li class="cd-contact"><span><b>${esc(x.name)}</b>${x.isPrimary ? ' <span class="pill blue">Liên hệ chính</span>' : ''}${x.id === c.representativeContactId ? ' <span class="pill ok">Người đại diện</span>' : ''}
         <small>${esc([x.title, x.phone, x.email].filter(Boolean).join(' · ')) || '—'}</small>${x.note ? `<small class="muted">${esc(x.note)}</small>` : ''}</span>
-        ${a.canEdit ? `<span class="row-actions"><button class="icon-btn" data-contact-edit="${esc(x.id)}" aria-label="Sửa ${esc(x.name)}" title="Sửa"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
+        ${a.canEdit ? `<span class="row-actions"><button type="button" class="btn ghost small" data-contact-rep="${esc(x.id)}">${x.id === c.representativeContactId ? 'Bỏ đại diện' : 'Đặt làm đại diện'}</button><button class="icon-btn" data-contact-edit="${esc(x.id)}" aria-label="Sửa ${esc(x.name)}" title="Sửa"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
         <button class="icon-btn" data-contact-del="${esc(x.id)}" aria-label="Xoá ${esc(x.name)}" title="Xoá"><svg viewBox="0 0 24 24"><path d="M5 7h14 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3"/></svg></button></span>` : ''}</li>`).join('');
     const tabs=[{key:'overview',label:'Tổng quan',count:()=>null,html:()=>''},...TABS];
     const tab = tabs.find(t => t.key === st.tab) || tabs[0];
@@ -90,14 +91,19 @@ export function initCustomerDetail(deps) {
     root.innerHTML = `
       <div class="editor-head">
         <div class="editor-title"><a class="btn ghost small" href="#/customers">‹ Khách hàng</a><h1>${esc(c.name)}</h1>
-          <span class="pill ${c.fromSapo ? 'blue' : 'off'}">${c.fromSapo ? 'Sapo' : 'Tạo trên web'}</span>${pending ? '<span class="pill warn">Chờ duyệt</span>' : ''}</div>
-        <div class="editor-actions">${a.canEdit ? '<button class="btn secondary" data-act="edit" title="Chỉ nhân viên phụ trách hoặc Manager">Sửa thông tin</button>' : ''}${pending ? '' : '<button class="btn primary" data-act="quote">＋ Báo giá</button>'}</div>
+          <span class="pill ${c.fromSapo ? 'blue' : 'off'}">${c.fromSapo ? 'Sapo' : 'Tạo trên web'}</span>${pending ? '<span class="pill warn">Chờ duyệt</span>' : rejected ? '<span class="pill danger">Bị từ chối</span>' : ''}</div>
+        <div class="editor-actions">${a.canEdit ? '<button class="btn secondary" data-act="edit" title="Chỉ nhân viên phụ trách hoặc Manager">Sửa thông tin</button>' : ''}${blocked ? '' : '<button class="btn primary" data-act="quote">＋ Báo giá</button>'}</div>
       </div>
       <section class="crm-customer-hero"><div class="crm-customer-person"><span class="avatar">${esc((c.contact||c.name).split(/\s+/).filter(Boolean).slice(-2).map(s=>s[0]).join(''))}</span><div><strong>${esc(c.contact||c.name)}</strong><small>${esc(c.name)}${c.customerCode?' · '+esc(c.customerCode):''}</small>${d.owner?`<span class="pill blue">Phụ trách: ${esc(d.owner.name)}</span>`:''}</div></div>
-        <div class="crm-customer-quick" data-mobile-actions="off">${c.phone?`<a class="btn secondary" href="tel:${esc(c.phone.replace(/[^\d+]/g,''))}">Gọi</a>`:''}${deps.onCare&&!pending?'<button type="button" class="btn secondary" data-act="care-new">Chăm sóc</button>':''}${pending?'':'<button type="button" class="btn primary" data-act="quote">Báo giá</button>'}</div></section>
+        <div class="crm-customer-quick" data-mobile-actions="off">${c.phone?`<a class="btn secondary" href="tel:${esc(c.phone.replace(/[^\d+]/g,''))}">Gọi</a>`:''}${deps.onCare&&!blocked?'<button type="button" class="btn secondary" data-act="care-new">Chăm sóc</button>':''}${blocked?'':'<button type="button" class="btn primary" data-act="quote">Báo giá</button>'}</div></section>
       ${pending ? `<div class="approval-box"><div class="approval-head"><b>Khách hàng mới đang chờ Manager duyệt</b><small class="muted">Chưa lập báo giá, đặt hàng hay cấp tài khoản cho khách này được tới khi được duyệt.</small></div>
         <div class="row-actions">${(deps.canApprove || deps.isManager)() ? '<button type="button" class="btn primary small" data-act="approve">Duyệt khách hàng</button>' : ''}
         <button type="button" class="btn ghost small danger-text" data-act="reject">${(deps.canApprove || deps.isManager)() ? 'Từ chối' : 'Xoá'}</button></div></div>` : ''}
+      ${rejected ? `<div class="approval-box"><div class="approval-head"><b>Khách hàng đã bị từ chối duyệt</b>
+        <small>Lý do: <span class="cd-reject-reason">${esc(c.rejectReason || '—')}</span></small>
+        <small class="muted">${c.rejectedByName ? esc(c.rejectedByName) : 'Người duyệt'}${c.rejectedAt ? ' · ' + esc(when(c.rejectedAt)) : ''} · Chưa lập báo giá, đặt hàng hay cấp tài khoản được tới khi được duyệt lại.</small></div>
+        <div class="row-actions">${(deps.canApprove || deps.isManager)() ? '<button type="button" class="btn primary small" data-act="approve">Duyệt lại</button>' : ''}
+        ${(deps.canApprove || deps.isManager)() || c.createdBy === deps.userId?.() ? '<button type="button" class="btn secondary small" data-act="resubmit">Gửi duyệt lại</button>' : ''}</div></div>` : ''}
       <div class="stats cd-stats">
         <article class="stat"><small>Doanh số</small><strong>${money(s.revenue)}</strong><span class="muted">${s.orders} đơn hàng / HĐKT đã xác nhận</span></article>
         <article class="stat"><small>Đã thu</small><strong class="paid-text">${money(s.paid)}</strong><span class="muted">Phải thu ${money(s.due)}</span></article>
@@ -111,7 +117,9 @@ export function initCustomerDetail(deps) {
           <dt>Mã KH</dt><dd>${esc(c.customerCode) || '—'}</dd><dt>MST</dt><dd>${esc(c.taxCode) || '—'}</dd>
           <dt>Nhóm / loại khách</dt><dd>${esc(c.customerType) || 'Chưa cập nhật'}</dd>
           <dt>Điều khoản</dt><dd>Cọc ${c.depositRate ?? 30}% · thanh toán ${/^\d+$/.test(String(c.paymentTerm ?? '5')) ? (c.paymentTerm ?? '5') + ' ngày' : esc(c.paymentTerm)}${c.depositRate == null && !c.paymentTerm ? ' <small class="muted">(mặc định)</small>' : ''}</dd>
+          <dt>Số ngày công nợ</dt><dd>${c.paymentDays != null ? c.paymentDays + ' ngày' : '<span class="muted">Chưa đặt</span>'}</dd>
           <dt>Giới hạn công nợ</dt><dd>${c.creditLimit != null ? money(c.creditLimit) : '—'}</dd>
+          <dt>Người đại diện</dt><dd>${representative ? `<b>${esc(representative.name)}</b>${representative.title ? ' <small class="muted">' + esc(representative.title) + '</small>' : ''}` : '<span class="muted">Chưa chọn</span>'}</dd>
           <dt>Liên hệ</dt><dd>${esc(c.contact) || '—'}</dd>
           <dt>Điện thoại</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a>` : '—'}</dd>
           <dt>Email</dt><dd>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '—'}</dd>
@@ -133,7 +141,7 @@ export function initCustomerDetail(deps) {
         <div class="chips cd-tabs" role="tablist">${tabs.map(t => `<button type="button" class="chip ${t.key === tab.key ? 'active' : ''}" role="tab" aria-selected="${t.key === tab.key}" data-tab="${t.key}">${t.label}${t.count(d)!=null?` <b>${t.count(d)}</b>`:''}</button>`).join('')}</div>
         <div class="cd-tab-body">${tab.html(d)}</div>
       </div>`;
-    renderGeneralNote();
+    renderGeneralNote(); renderDebtNote();
     // Bảng thành thẻ trên điện thoại: mỗi ô kèm nhãn cột.
     root.querySelectorAll('.cd-tab-body table').forEach(t => {
       const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent);
@@ -173,6 +181,47 @@ export function initCustomerDetail(deps) {
             const saved = await api(`/customers/${encodeURIComponent(customerId)}/notes`, 'PUT', { text: text.value, revision: note.revision });
             dlg.close(); toast('Đã lưu ghi chú khách hàng.');
             if (st.seq === seq && st.id === customerId) { st.d.generalNote = saved; render(); }
+          } catch (ex) { error.textContent = ex.message || 'Không lưu được ghi chú.'; }
+          finally { save.disabled = false; }
+        });
+        document.body.append(dlg); dlg.showModal(); text.focus();
+      });
+    }
+    root.querySelector('.cd-tabs-card').before(card);
+  }
+
+  // Ghi chú công nợ cũ: chỉ có khi API trả `debtNote` (người xem được toàn bộ khách); dựng bằng DOM/textContent như ghi chú chung.
+  function renderDebtNote() {
+    const note = st.d.debtNote;
+    if (!note) return;
+    const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+    const card = make('section', 'card cd-debt-note'), header = make('div', 'card-title-row');
+    header.append(make('h2', 'card-title', 'Ghi chú công nợ cũ'));
+    const content = make('p', note.text ? '' : 'muted', note.text || 'Chưa có ghi chú công nợ cũ.');
+    content.style.whiteSpace = 'pre-wrap'; content.style.overflowWrap = 'anywhere';
+    card.append(header, content);
+    if (note.updatedAt) card.append(make('small', 'muted', `Cập nhật ${when(note.updatedAt)}${note.updatedBy ? ' · ' + note.updatedBy : ''}`));
+    if (st.d.access.canEdit) {
+      const edit = make('button', 'btn secondary small', note.text ? 'Sửa ghi chú' : 'Thêm ghi chú'); edit.type = 'button'; header.append(edit);
+      edit.addEventListener('click', () => {
+        const customerId = st.d.customer.id, seq = st.seq;
+        const dlg = make('dialog', 'modal'), form = make('form'), head = make('div', 'modal-head');
+        head.append(make('h2', '', 'Ghi chú công nợ cũ'));
+        const body = make('div', 'modal-body'), label = make('label', '', 'Nội dung (tối đa 2.000 ký tự)');
+        const text = make('textarea'); text.rows = 6; text.maxLength = 2000; text.value = note.text; label.append(text);
+        const error = make('p', 'error'); error.setAttribute('role', 'alert');
+        body.append(label, error);
+        const footer = make('div', 'modal-foot'), cancel = make('button', 'btn secondary', 'Huỷ'), save = make('button', 'btn primary', 'Lưu ghi chú');
+        cancel.type = 'button'; save.type = 'submit'; cancel.addEventListener('click', () => dlg.close());
+        footer.append(cancel, save); form.append(head, body, footer); dlg.append(form);
+        dlg.addEventListener('close', () => dlg.remove());
+        form.addEventListener('submit', async e => {
+          e.preventDefault(); if (save.disabled) return;
+          save.disabled = true; error.textContent = '';
+          try {
+            const saved = await api(`/customers/${encodeURIComponent(customerId)}/debt-note`, 'PUT', { text: text.value, revision: note.revision });
+            dlg.close(); toast('Đã lưu ghi chú công nợ cũ.');
+            if (st.seq === seq && st.id === customerId) { st.d.debtNote = saved; render(); }
           } catch (ex) { error.textContent = ex.message || 'Không lưu được ghi chú.'; }
           finally { save.disabled = false; }
         });
@@ -275,12 +324,22 @@ export function initCustomerDetail(deps) {
     if (act === 'brand-discounts') return discountDialog();
     if (act === 'quote') return deps.onQuote(c);
     if (act === 'approve' || act === 'reject') return deps.onReview(c.id, act === 'approve');
+    if (act === 'resubmit') {
+      try { await api(`/customers/${encodeURIComponent(c.id)}/resubmit`, 'POST', {}); toast('Đã gửi duyệt lại khách hàng.'); reload(); } catch (ex) { toast(ex.message, 'err'); }
+      return;
+    }
     if (act === 'accounts') return deps.onAccounts(c);
     if (act === 'care-new') return deps.onCare(c, null, reload);
     if (act === 'care-edit') { const a = st.d.care.find(x => x.id === t.closest('[data-care]').dataset.care); return deps.onCare(c, a && { ...a, customerName: c.name }, reload); }
     if (act === 'discount') return deps.onDiscount(st.d.accounts.find(a => a.memberId === t.closest('[data-member]').dataset.member), reload);
     if (act === 'contact') return contactDialog(null);
     if (act === 'staff') return staffDialog();
+    const rep = t.closest('[data-contact-rep]');
+    if (rep) {
+      const id = rep.dataset.contactRep, next = c.representativeContactId === id ? null : id;
+      try { await api(`/customers/${encodeURIComponent(c.id)}/representative`, 'PUT', { contactId: next }); toast(next ? 'Đã chọn người đại diện.' : 'Đã bỏ người đại diện.'); reload(); } catch (ex) { toast(ex.message, 'err'); }
+      return;
+    }
     const ed = t.closest('[data-contact-edit]'); if (ed) return contactDialog(st.d.contacts.find(x => x.id === ed.dataset.contactEdit));
     const del = t.closest('[data-contact-del]');
     if (del) {

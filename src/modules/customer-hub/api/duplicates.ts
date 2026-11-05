@@ -1,10 +1,10 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import { fold } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
-import { customerBrandDiscounts, customerContacts, customerContractProfiles, customerNotes, customers, customerStaff } from '../../customers/schema.ts';
+import { customerBrandDiscounts, customerContacts, customerContractProfiles, customerDebtNotes, customerNotes, customers, customerStaff } from '../../customers/schema.ts';
 import { appsheetCustomerLinks } from '../../customers/appsheet-schema.ts';
 import { customerIdentityLock } from '../../customers/api/identity.ts';
 import { NORM_TAX_SQL, normTaxCode, pickKeeper } from '../../customers/domain/tax-code.ts';
@@ -33,7 +33,8 @@ export async function duplicateGroups(db: Db) {
       + (select count(*) from ${customerPayments} where ${customerPayments.customerId} = ${customers.id})
       + (select count(*) from ${customerActivities} where ${customerActivities.customerId} = ${customers.id})
       + (select count(*) from ${quotations} where (${quotations.data}::jsonb ->> 'customerId') = ${customers.id})`),
-  }).from(customers).where(sql`${NORM} in (select ${NORM} from ${customers} where ${NORM} <> '' group by 1 having count(*) > 1)`)
+  }).from(customers).where(and(ne(customers.approvalStatus, 'rejected'),
+    sql`${NORM} in (select ${NORM} from ${customers} where ${NORM} <> '' and ${customers.approvalStatus} <> 'rejected' group by 1 having count(*) > 1)`))
     .orderBy(sql`${NORM}`, customers.createdAt);
   const groups = new Map<string, typeof rows>();
   for (const r of rows) groups.set(r.tax, [...(groups.get(r.tax) ?? []), { ...r, hasOwner: !!r.hasOwner }]);
@@ -62,13 +63,21 @@ export async function mergeCustomers(db: Db, keepId: string, dropIds: string[], 
     const fill = Object.fromEntries((['contact', 'phone', 'email', 'address', 'customerCode', 'customerType', 'establishedDate'] as const)
       .map(k => [k, keep[k]?.trim() ? keep[k] : drops.map(d => d[k]).find(v => v?.trim()) ?? keep[k]]));
     const merged = { ...keep, ...fill };
-    await tx.update(customers).set({ ...fill, search: fold([merged.name, merged.contact, merged.phone, merged.email, merged.address, merged.taxCode, merged.customerCode].join(' ')),
-      ...(keep.approvalStatus !== 'approved' && drops.some(d => d.approvalStatus === 'approved') ? { approvalStatus: 'approved' as const } : {}) })
+    // Số ngày công nợ: bù khi khách giữ lại chưa có. Người đại diện bù ở dưới, sau khi người liên hệ đã chuyển sang khách giữ lại.
+    const paymentDays = keep.paymentDays ?? drops.map(d => d.paymentDays).find(v => v !== null && v !== undefined) ?? null;
+    await tx.update(customers).set({ ...fill, paymentDays, search: fold([merged.name, merged.contact, merged.phone, merged.email, merged.address, merged.taxCode, merged.customerCode].join(' ')),
+      ...(keep.approvalStatus !== 'approved' && drops.some(d => d.approvalStatus === 'approved')
+        ? { approvalStatus: 'approved' as const, rejectReason: null, rejectedBy: null, rejectedAt: null } : {}) })
       .where(eq(customers.id, keepId));
 
     // Người liên hệ: chuyển hết; khách giữ lại đã có liên hệ chính thì bỏ cờ chính của bản chuyển sang.
     const [primary] = await tx.select({ id: customerContacts.id }).from(customerContacts).where(and(eq(customerContacts.customerId, keepId), eq(customerContacts.isPrimary, true))).limit(1);
     await tx.update(customerContacts).set({ customerId: keepId, ...(primary ? { isPrimary: false } : {}) }).where(inArray(customerContacts.customerId, ids));
+    // Người đại diện: giữ của khách giữ lại; chưa có thì lấy của bản trùng (liên hệ đó đã nằm trong danh bạ khách giữ lại).
+    if (!keep.representativeContactId) {
+      const representative = drops.map(d => d.representativeContactId).find(v => !!v);
+      if (representative) await tx.update(customers).set({ representativeContactId: representative }).where(eq(customers.id, keepId));
+    }
 
     // Phụ trách / chia sẻ: giữ người phụ trách của khách giữ lại; chưa có thì lấy của bản trùng; còn lại thành chia sẻ.
     const staff = await tx.select().from(customerStaff).where(inArray(customerStaff.customerId, [keepId, ...ids]));
@@ -98,6 +107,18 @@ export async function mergeCustomers(db: Db, keepId: string, dropIds: string[], 
       const currentNote = notes.find(n => n.customerId === keepId);
       const values = { text, revision: (currentNote?.revision ?? 0) + 1, updatedBy: actorId, updatedAt: new Date().toISOString() };
       await tx.insert(customerNotes).values({ customerId: keepId, ...values }).onConflictDoUpdate({ target: customerNotes.customerId, set: values });
+    }
+
+    // Ghi chú công nợ cũ: giữ nội dung của mọi bản trùng, như ghi chú chung (không để cascade xoá mất).
+    const debtNotes = await tx.select().from(customerDebtNotes).where(inArray(customerDebtNotes.customerId, [keepId, ...ids])).for('update');
+    const debtNonempty = debtNotes.filter(n => n.text.trim());
+    if (debtNotes.some(n => ids.includes(n.customerId))) {
+      const texts = [...new Set(debtNonempty.map(n => n.text))];
+      const text = texts.length <= 1 ? texts[0] || '' : debtNonempty.map(n => `[${all.find(c => c.id === n.customerId)!.name}]\n${n.text}`).join('\n\n');
+      if (text.length > 2000) throw new AppError(409, 'Ghi chú công nợ cũ của các khách cần gộp vượt 2.000 ký tự. Rút gọn trước khi gộp để không mất nội dung.');
+      const currentDebtNote = debtNotes.find(n => n.customerId === keepId);
+      const values = { text, revision: (currentDebtNote?.revision ?? 0) + 1, updatedBy: actorId, updatedAt: new Date().toISOString() };
+      await tx.insert(customerDebtNotes).values({ customerId: keepId, ...values }).onConflictDoUpdate({ target: customerDebtNotes.customerId, set: values });
     }
 
     // Chứng từ và lịch sử.

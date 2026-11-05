@@ -6,8 +6,12 @@
 export const CUSTOMER_STAFF_ROLES = ['owner', 'shared'] as const;
 export type CustomerStaffRole = typeof CUSTOMER_STAFF_ROLES[number];
 export const CUSTOMER_LIMITS = { contacts: 50, shared: 30, contactName: 200, contactTitle: 120, contactNote: 1000 } as const;
-/** Duyệt khách hàng mới: nhân viên tạo → `pending` (chưa dùng được cho báo giá / đơn), Manager duyệt → `approved`. Khách Sapo luôn `approved`. */
-export const APPROVAL_STATUSES = ['pending', 'approved'] as const;
+/**
+ * Duyệt khách hàng mới: nhân viên tạo → `pending` (chưa dùng được cho báo giá / đơn), Manager duyệt → `approved`.
+ * Bị từ chối → `rejected` (giữ hồ sơ + lý do; không dùng được cho báo giá / đơn / cổng khách). Khách Sapo luôn `approved`.
+ * Mọi nơi chặn khách chưa dùng được phải kiểm `!== 'approved'`, không kiểm riêng `pending`.
+ */
+export const APPROVAL_STATUSES = ['pending', 'approved', 'rejected'] as const;
 export type ApprovalStatus = typeof APPROVAL_STATUSES[number];
 
 /** Retail is a list/picker segment; existing document access is unchanged. */

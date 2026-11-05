@@ -312,6 +312,7 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
   const [cust] = data.customerId ? await db.select({ id: customers.id, name: customers.name, approvalStatus: customers.approvalStatus }).from(customers).where(eq(customers.id, data.customerId)).limit(1) : [];
   // Khách mới do nhân viên tạo phải được Manager duyệt mới đặt hàng được.
   if (cust?.approvalStatus === 'pending') throw new AppError(409, `Khách hàng "${cust.name}" đang chờ Manager duyệt, chưa tạo đơn được.`, 'CUSTOMER_PENDING');
+  if (cust && cust.approvalStatus !== 'approved') throw new AppError(409, `Khách hàng "${cust.name}" đã bị từ chối duyệt, chưa tạo đơn được.`, 'CUSTOMER_REJECTED');
   const customerId = cust ? cust.id : null;
   assertApprovalDebt(await approvalDebt(db, customerId, String(data.customerTaxCode || '')), o.debtWarningAccepted);
   await db.transaction(async tx => {

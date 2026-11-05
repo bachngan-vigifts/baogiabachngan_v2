@@ -17,6 +17,7 @@ export function customerFormFields({ requirePhone = false, requireProfile = fals
     ['address', 'Địa chỉ', 'textarea', 2000, true],
     ['depositRate', 'Tỷ lệ đặt cọc (%)', 'text', 500, false, 'Để trống = 30'],
     ['paymentTerm', 'Hạn thanh toán', 'text', 500, false, 'Số ngày, để trống = 5'],
+    ['paymentDays', 'Số ngày công nợ', 'text', 4, false, 'Số nguyên 0–3650, để trống = chưa đặt'],
     ['creditLimit', 'Giới hạn công nợ (đ)', 'text', 500, true, 'Để trống = không giới hạn'],
   ];
   for (const [name, label, type, max, wide, placeholder] of fields) {
@@ -32,7 +33,7 @@ export function customerFormFields({ requirePhone = false, requireProfile = fals
     input.setAttribute('aria-required', String(required));
     if (name === 'establishedDate') input.max = vietnamToday();
     if (name === 'depositRate') input.inputMode = 'decimal';
-    if (name === 'creditLimit') input.inputMode = 'numeric';
+    if (name === 'creditLimit' || name === 'paymentDays') input.inputMode = 'numeric';
     if (name === 'paymentTerm') input.setAttribute('list', 'nq-payment-options');
     box.append(title, input); root.append(box); controls[name] = input; titles[name] = {title,label};
   }

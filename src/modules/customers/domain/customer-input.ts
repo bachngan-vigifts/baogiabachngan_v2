@@ -17,6 +17,8 @@ export function customerInput(body:Record<string,unknown>,requirePhone=false,opt
   const establishedDate = body.establishedDate === undefined ? undefined : body.establishedDate === null || body.establishedDate === '' ? null : body.establishedDate;
   if (establishedDate !== undefined && establishedDate !== null && (!isCalendarDate(establishedDate) || establishedDate > vietnamToday())) throw new AppError(400, 'Ngày thành lập phải là ngày hợp lệ, không ở tương lai.');
   const customerType=body.customerType===undefined?undefined:(text('customerType')||null);
-  const terms=Object.fromEntries(Object.entries({depositRate,paymentTerm,creditLimit,establishedDate,customerType}).filter(([,v])=>v!==undefined));
+  const paymentDays=num('paymentDays',3650,'Số ngày công nợ');
+  if(paymentDays!==undefined&&paymentDays!==null&&!Number.isInteger(paymentDays))throw new AppError(400,'Số ngày công nợ phải là số nguyên từ 0 đến 3650.');
+  const terms=Object.fromEntries(Object.entries({depositRate,paymentTerm,creditLimit,establishedDate,customerType,paymentDays}).filter(([,v])=>v!==undefined));
   return {fields,terms};
 }

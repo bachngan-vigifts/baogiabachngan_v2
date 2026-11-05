@@ -77,7 +77,7 @@ export async function registrationInfo(db: AnyDb, raw: unknown, now: number) {
   if (kind === 'customer') {
     const [r] = await db.select({ id: customers.id, name: customers.name, approval: customers.approvalStatus }).from(customerAccounts)
       .innerJoin(customers, eq(customers.id, customerAccounts.customerId)).where(and(eq(customerAccounts.memberId, m.id), eq(customerAccounts.customerId, entityId))).limit(1);
-    if (!r || r.approval === 'pending') throw invalid();
+    if (!r || r.approval !== 'approved') throw invalid();
     return { memberId: m.id, kind: 'customer' as const, entityName: r.name, expiresAt: m.expires! * 1000 };
   }
   const r = await supplierHooks().supplierOf(db, m.id, entityId);

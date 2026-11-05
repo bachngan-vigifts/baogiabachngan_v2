@@ -10,9 +10,10 @@ export function customerCreateProfile({api,mainContact,document:doc=document}) {
   const notice=make('p'),retry=make('button','Tải lại danh sách nhân viên');retry.type='button';retry.className='btn secondary small';retry.hidden=true;
   staff.append(staffTitle,ownerLabel,peopleHint,people,notice,retry);
   const notesLabel=make('label','Ghi chú khách hàng'),notes=make('textarea');notes.rows=4;notes.maxLength=5000;notes.setAttribute('aria-label','Ghi chú khách hàng');notesLabel.append(notes);
+  const debtLabel=make('label','Ghi chú công nợ cũ (chỉ Manager, người phụ trách và người được chia sẻ xem được)'),debtNote=make('textarea');debtNote.rows=3;debtNote.maxLength=2000;debtNote.setAttribute('aria-label','Ghi chú công nợ cũ');debtLabel.append(debtNote);
   const directory=make('fieldset'),legend=make('legend','Danh sách người liên hệ'),hint=make('p','Thêm đầy đủ tên, chức vụ, điện thoại, email và ghi chú của từng người. Chọn liên hệ chính sẽ điền tên vào ô Người liên hệ ở trên.');hint.className='muted small';
   const rowsRoot=make('div'),add=make('button','＋ Thêm người liên hệ');add.type='button';add.className='btn secondary small';
-  directory.append(legend,hint,rowsRoot,add);root.append(status,staff,notesLabel,directory);
+  directory.append(legend,hint,rowsRoot,add);root.append(status,staff,notesLabel,debtLabel,directory);
   let rows=[],user=null,seq=0;
   const option=(value,text)=>{const o=make('option',text);o.value=value;return o;};
   const fillStaff=async()=>{
@@ -37,22 +38,23 @@ export function customerCreateProfile({api,mainContact,document:doc=document}) {
       wrap.append(input);box.append(wrap);controls[key]=input;
     }
     const primaryLabel=make('label'),primary=make('input');primary.type='checkbox';primaryLabel.className='customer-primary-choice';primaryLabel.append(primary,make('span','Liên hệ chính'));
+    const repLabel=make('label'),representative=make('input');representative.type='checkbox';repLabel.className='customer-primary-choice';repLabel.append(representative,make('span','Người đại diện'));
     const remove=make('button','Bỏ người liên hệ này');remove.type='button';remove.className='btn ghost small';
-    const row={box,controls,primary};rows.push(row);primary.addEventListener('change',()=>{if(primary.checked)for(const other of rows)if(other!==row)other.primary.checked=false;syncPrimary();});
+    const row={box,controls,primary,representative};rows.push(row);representative.addEventListener('change',()=>{if(representative.checked)for(const other of rows)if(other!==row)other.representative.checked=false;});primary.addEventListener('change',()=>{if(primary.checked)for(const other of rows)if(other!==row)other.primary.checked=false;syncPrimary();});
     controls.name.addEventListener('input',()=>{if(primary.checked)syncPrimary();});
-    remove.addEventListener('click',()=>{rows=rows.filter(r=>r!==row);box.remove();add.disabled=false;});box.append(primaryLabel,remove);rowsRoot.append(box);add.disabled=rows.length>=50;controls.name.focus();
+    remove.addEventListener('click',()=>{rows=rows.filter(r=>r!==row);box.remove();add.disabled=false;});box.append(primaryLabel,repLabel,remove);rowsRoot.append(box);add.disabled=rows.length>=50;controls.name.focus();
   };
   add.addEventListener('click',addContact);retry.addEventListener('click',fillStaff);
   return {root,
-    reset(current,isNew){++seq;user=current;root.hidden=!isNew;rows=[];rowsRoot.replaceChildren();people.replaceChildren();notes.value='';add.disabled=false;
+    reset(current,isNew){++seq;user=current;root.hidden=!isNew;rows=[];rowsRoot.replaceChildren();people.replaceChildren();notes.value='';debtNote.value='';add.disabled=false;
       owner.replaceChildren(option(current.id,current.name));owner.value=current.id;owner.disabled=current.role!=='manager';
       status.textContent=current.role==='manager'?'Trạng thái khi lưu: Đã duyệt. Ngày tạo và nguồn Web được ghi tự động.':'Trạng thái khi lưu: Chờ Manager duyệt. Ngày tạo và nguồn Web được ghi tự động.';
       if(isNew)fillStaff();
     },
     read(){
-      const contacts=rows.map(row=>({...Object.fromEntries(Object.entries(row.controls).map(([key,control])=>[key,control.value.trim()])),isPrimary:row.primary.checked}));
+      const contacts=rows.map(row=>({...Object.fromEntries(Object.entries(row.controls).map(([key,control])=>[key,control.value.trim()])),isPrimary:row.primary.checked,isRepresentative:row.representative.checked}));
       if(contacts.some(c=>!c.name))throw new Error('Nhập tên cho từng người liên hệ đã thêm.');
-      return {notes:notes.value.trim(),contacts,sharedIds:[...people.querySelectorAll('input:checked')].map(c=>c.value),...(user.role==='manager'?{ownerId:owner.value||null}:{})};
+      return {notes:notes.value.trim(),legacyDebtNote:debtNote.value.trim(),contacts,sharedIds:[...people.querySelectorAll('input:checked')].map(c=>c.value),...(user.role==='manager'?{ownerId:owner.value||null}:{})};
     },
   };
 }

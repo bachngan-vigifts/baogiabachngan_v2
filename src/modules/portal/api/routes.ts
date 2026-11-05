@@ -298,6 +298,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const [cust] = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
     if (!cust) throw new AppError(404, 'Không tìm thấy khách hàng.');
     if (cust.approvalStatus === 'pending') throw new AppError(409, 'Khách hàng đang chờ Manager duyệt, chưa mời đăng ký được.', 'CUSTOMER_PENDING');
+    if (cust.approvalStatus !== 'approved') throw new AppError(409, 'Khách hàng đã bị từ chối duyệt, chưa mời đăng ký được.', 'CUSTOMER_REJECTED');
     if (!(await customerAccess(db, id, me)).canSeeAll) throw new AppError(403, 'Chỉ Manager hoặc nhân viên phụ trách / được chia sẻ khách này mới mời đăng ký được.');
     const discounts = cleanDiscounts(body.discounts);
     if (me.role !== 'manager' && Object.keys(discounts).length) throw new AppError(403, 'Chỉ Manager được đặt chiết khấu riêng cho khách.');
@@ -324,6 +325,7 @@ export function registerPortalRoutes(router: Router<StaffEnv>) {
     const [cust] = await db.select({ id: customers.id, approvalStatus: customers.approvalStatus }).from(customers).where(eq(customers.id, customerId)).limit(1);
     if (!cust) throw new AppError(404, 'Không tìm thấy khách hàng.');
     if (cust.approvalStatus === 'pending') throw new AppError(409, 'Khách hàng đang chờ Manager duyệt, chưa cấp tài khoản được.', 'CUSTOMER_PENDING');
+    if (cust.approvalStatus !== 'approved') throw new AppError(409, 'Khách hàng đã bị từ chối duyệt, chưa cấp tài khoản được.', 'CUSTOMER_REJECTED');
     // Tài khoản trang khách xem được MỌI đơn / công nợ / báo giá của khách → chỉ Manager, người phụ trách hoặc người được chia sẻ khách cấp được.
     if (!(await customerAccess(db, customerId, me)).canSeeAll) throw new AppError(403, 'Chỉ Manager hoặc nhân viên phụ trách / được chia sẻ khách hàng này mới cấp được tài khoản trang khách.');
     const ownerId = mgr && body.ownerId ? str(body.ownerId, 80) : me.id;

@@ -9,7 +9,7 @@ const ACTIONS = {
   'POST /orders': 'Tạo đơn hàng', 'PUT /orders/:id/status': 'Duyệt / huỷ đơn hoặc HĐKT', 'PUT /orders/:id/delivery-date': 'Đổi ngày giao dự kiến',
   'POST /orders/:id/invoice-request': 'Yêu cầu xuất hoá đơn', 'PUT /orders/:id/invoice': 'Nhập số hoá đơn', 'POST /orders/:id/packing': 'Yêu cầu đóng gói',
   'POST /contracts': 'Lập HĐKT', 'PUT /contracts/:id': 'Sửa HĐKT', 'POST /deliveries': 'Lên lịch giao', 'PUT /deliveries/:id/status': 'Đổi trạng thái giao hàng',
-  'POST /payments': 'Ghi phiếu thu', 'POST /payments/:id/void': 'Huỷ phiếu thu', 'POST /orders/:id/submit': 'Gửi duyệt đơn', 'POST /customers': 'Tạo khách hàng', 'PUT /customers/:id': 'Sửa khách hàng', 'POST /customers/:id/approve': 'Duyệt khách hàng',
+  'POST /payments': 'Ghi phiếu thu', 'POST /payments/:id/void': 'Huỷ phiếu thu', 'POST /orders/:id/submit': 'Gửi duyệt đơn', 'POST /customers': 'Tạo khách hàng', 'PUT /customers/:id': 'Sửa khách hàng', 'POST /customers/:id/approve': 'Duyệt khách hàng', 'POST /customers/:id/reject': 'Từ chối khách hàng', 'POST /customers/:id/resubmit': 'Gửi duyệt lại khách hàng', 'PUT /customers/:id/debt-note': 'Sửa ghi chú công nợ cũ', 'PUT /customers/:id/representative': 'Đổi người đại diện khách hàng',
   'DELETE /customers/:id': 'Xoá / từ chối khách hàng', 'POST /packing/:id/send': 'Gửi phiếu đóng gói cho kho', 'POST /packing/:id/confirm': 'Kho xác nhận đã đóng',
   'POST /packing/:id/cancel': 'Huỷ phiếu đóng gói', 'POST /products/:sku/approve': 'Duyệt sản phẩm',
 };

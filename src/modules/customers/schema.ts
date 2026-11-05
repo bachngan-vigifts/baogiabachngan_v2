@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, text, date, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
+import { pgTable, text, date, bigint, boolean, doublePrecision, integer, index, uniqueIndex, primaryKey, check, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { employees } from '../staff/schema.ts';
 import { APPROVAL_STATUSES, CUSTOMER_STAFF_ROLES } from './domain/customer-config.ts';
@@ -32,8 +32,19 @@ export const customers = pgTable('sapo_customers', {
   depositRate: doublePrecision('deposit_rate'),
   paymentTerm: text('payment_term'),
   creditLimit: doublePrecision('credit_limit'),
+  /** Số ngày công nợ (số nguyên) để tính hạn; `paymentTerm` vẫn giữ nội dung tự do. */
+  paymentDays: integer('payment_days'),
+  /** Người đại diện khách: một dòng trong danh bạ `customer_contacts` của chính khách (xoá liên hệ → null). */
+  representativeContactId: text('representative_contact_id').references((): AnyPgColumn => customerContacts.id, { onDelete: 'set null' }),
+  /** Chỉ có giá trị khi `approvalStatus = 'rejected'`: lý do, người từ chối, thời điểm. */
+  rejectReason: text('reject_reason'),
+  rejectedBy: text('rejected_by').references(() => employees.id),
+  rejectedAt: text('rejected_at'),
 }, t => [index('idx_sapo_customers_name').on(t.name), index('idx_sapo_customers_approval').on(t.approvalStatus),
+  index('idx_sapo_customers_representative').on(t.representativeContactId).where(sql`${t.representativeContactId} is not null`),
   enumCheck('chk_sapo_customers_approval', t.approvalStatus, APPROVAL_STATUSES),
+  check('chk_customer_payment_days', sql`${t.paymentDays} is null or (${t.paymentDays} >= 0 and ${t.paymentDays} <= 3650)`),
+  check('chk_customer_reject_reason', sql`${t.approvalStatus} <> 'rejected' or (${t.rejectReason} is not null and length(btrim(${t.rejectReason})) > 0 and length(${t.rejectReason}) <= 1000 and ${t.rejectedBy} is not null and ${t.rejectedAt} is not null)`),
   check('chk_customer_data_source', sql`${t.dataSource} is null or ${t.dataSource} in ('appsheet', 'sapo', 'web', 'pos')`),
   check('chk_customer_established_date', sql`${t.establishedDate} is null or (${t.establishedDate} >= date '0001-01-01' and ${t.establishedDate} <= date '9999-12-31')`)]).enableRLS();
 export const customerContractProfiles = pgTable('customer_contract_profiles', {
@@ -104,3 +115,16 @@ export const customerNotes = pgTable('customer_notes', {
   updatedAt: text('updated_at').notNull(),
 }, t => [check('chk_customer_notes_length', sql`length(${t.text}) <= 5000`),
   check('chk_customer_notes_revision', sql`${t.revision} > 0`)]).enableRLS();
+
+/**
+ * Ghi chú công nợ cũ (từ AppSheet / sổ tay). Bảng riêng, không nằm trên `sapo_customers`: nhiều API trả nguyên dòng khách,
+ * nên cột này sẽ rò ra danh sách. Chỉ người có `canSeeAll` với khách mới đọc / sửa được.
+ */
+export const customerDebtNotes = pgTable('customer_debt_notes', {
+  customerId: text('customer_id').primaryKey().references(() => customers.id, { onDelete: 'cascade' }),
+  text: text('text').notNull().default(''),
+  revision: bigint('revision', { mode: 'number' }).notNull().default(1),
+  updatedBy: text('updated_by').notNull().references(() => employees.id),
+  updatedAt: text('updated_at').notNull(),
+}, t => [check('chk_customer_debt_notes_length', sql`length(${t.text}) <= 2000`),
+  check('chk_customer_debt_notes_revision', sql`${t.revision} > 0`)]).enableRLS();

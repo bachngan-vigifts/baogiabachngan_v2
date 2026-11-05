@@ -13,7 +13,7 @@ import { AppError } from '../../../core/errors.ts';
 import { fold, foldSql, matchAllWords, paging, rankFirst, searchRank } from '../../../core/text/fold.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
-import { customerBrandDiscounts, customerContacts, customerNotes, customers, customerStaff } from '../schema.ts';
+import { customerBrandDiscounts, customerContacts, customerDebtNotes, customerNotes, customers, customerStaff } from '../schema.ts';
 import { CUSTOMER_LIMITS, canListRetailCustomers } from '../domain/customer-config.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -88,7 +88,18 @@ export async function customerProfile(db: Db, id: string, who: Viewer) {
     brandDiscountsOf(db, id),
   ]);
   const { search: _s, sourceVersion: _v, ...info } = customer;
-  return { customer: { ...info, anniversary: anniversarySuggestion(customer.establishedDate), fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, discounts, access, generalNote: await generalNoteOf(db, id, access) };
+  const [rejecter] = info.rejectedBy ? await db.select({ name: employees.name }).from(employees).where(eq(employees.id, info.rejectedBy)).limit(1) : [];
+  return { customer: { ...info, rejectedByName: rejecter?.name ?? null, anniversary: anniversarySuggestion(customer.establishedDate), fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, discounts, access,
+    generalNote: await generalNoteOf(db, id, access), debtNote: await debtNoteOf(db, id, access) };
+}
+
+/** Ghi chú công nợ cũ nhạy cảm hơn ghi chú chung: chỉ người xem được toàn bộ khách (`canSeeAll`) đọc được, nhân viên cùng phòng ban thì không. */
+async function debtNoteOf(db: Db, id: string, access: Awaited<ReturnType<typeof customerAccess>>) {
+  if (!access.canSeeAll) return null;
+  const [note] = await db.select({ text: customerDebtNotes.text, revision: customerDebtNotes.revision, updatedAt: customerDebtNotes.updatedAt,
+    updatedBy: employees.name }).from(customerDebtNotes).innerJoin(employees, eq(employees.id, customerDebtNotes.updatedBy))
+    .where(eq(customerDebtNotes.customerId, id)).limit(1);
+  return note ?? { text: '', revision: 0, updatedAt: null, updatedBy: null };
 }
 
 /** Internal notes follow customer visibility; never returned to the customer portal. */
@@ -128,6 +139,41 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     return json({ ...values, updatedBy: me.name });
   }, 'business');
 
+  /** Chọn / bỏ người đại diện của khách: phải là một người trong danh bạ liên hệ của chính khách (`contactId: null` = bỏ chọn). */
+  router.put('/customers/:id/representative', async c => {
+    const db = c.env.db, id = c.params.id!, me = viewer(c);
+    await loadCustomer(db, id); await requireEdit(db, id, me);
+    const wanted = (await readJson(c.req, 1_024)).contactId;
+    if (wanted !== null && (typeof wanted !== 'string' || !wanted || wanted.length > 200)) throw new AppError(400, 'Người đại diện không hợp lệ.');
+    if (wanted) {
+      const [contact] = await db.select({ id: customerContacts.id }).from(customerContacts).where(and(eq(customerContacts.id, wanted), eq(customerContacts.customerId, id))).limit(1);
+      if (!contact) throw new AppError(400, 'Người đại diện phải là người trong danh bạ liên hệ của khách này.');
+    }
+    await db.update(customers).set({ representativeContactId: wanted }).where(eq(customers.id, id));
+    return json({ representativeContactId: wanted });
+  }, 'business');
+  router.get('/customers/:id/debt-note', async c => {
+    const db = c.env.db, id = c.params.id!;
+    await loadCustomer(db, id);
+    const note = await debtNoteOf(db, id, await customerAccess(db, id, viewer(c)));
+    if (!note) throw new AppError(403, 'Bạn không có quyền xem ghi chú công nợ cũ của khách này.');
+    return json(note);
+  }, 'business');
+  router.put('/customers/:id/debt-note', async c => {
+    const db = c.env.db, id = c.params.id!, me = viewer(c);
+    await loadCustomer(db, id); await requireEdit(db, id, me);
+    const body = await readJson(c.req, 16_384);
+    if (typeof body.text !== 'string' || body.text.length > 2000 || !Number.isSafeInteger(body.revision) || Number(body.revision) < 0)
+      throw new AppError(400, 'Ghi chú công nợ cũ tối đa 2.000 ký tự và cần phiên bản hợp lệ.');
+    const revision = Number(body.revision), now = nowIso();
+    const values = { text: body.text.trim(), revision: revision + 1, updatedAt: now, updatedBy: me.id };
+    const changed = revision === 0
+      ? await db.insert(customerDebtNotes).values({ customerId: id, ...values }).onConflictDoNothing().returning({ id: customerDebtNotes.customerId })
+      : await db.update(customerDebtNotes).set(values).where(and(eq(customerDebtNotes.customerId, id), eq(customerDebtNotes.revision, revision))).returning({ id: customerDebtNotes.customerId });
+    if (!changed.length) throw new AppError(409, 'Ghi chú công nợ cũ đã được cập nhật. Tải lại trước khi lưu.', 'CUSTOMER_DEBT_NOTE_CONFLICT');
+    return json({ ...values, updatedBy: me.name });
+  }, 'business');
+
   // Tìm không dấu theo tên, người liên hệ, điện thoại, email, MST, mã KH; phân trang (?q=&limit=&offset=).
   // `?mine=1`: chỉ khách mình phụ trách hoặc được chia sẻ. Mỗi dòng kèm người phụ trách.
   // Thứ tự: có từ khoá thì khớp nhất lên trước (searchRank); còn lại khách mới tạo lên trên cùng (created_at giảm dần; dữ liệu cũ không có ngày tạo xuống cuối), cùng ngày thì theo tên.
@@ -136,9 +182,11 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const mine = c.url.searchParams.get('mine') === '1'
       ? exists(c.env.db.select({ x: sql`1` }).from(customerStaff).where(and(eq(customerStaff.customerId, customers.id), or(eq(customerStaff.memberId, me.id), departmentOwner(customerStaff.memberId, me)))))
       : undefined;
-    // `?status=pending`: khách chờ Manager duyệt; `?usable=1`: chỉ khách đã duyệt (chọn cho báo giá / đơn).
+    // `?status=pending`: khách chờ Manager duyệt; `?usable=1`: chỉ khách đã duyệt (chọn cho báo giá / đơn);
+    // `?status=rejected`: khách bị từ chối (người duyệt xem hết, người khác chỉ thấy khách mình tạo). Danh sách mặc định ẩn khách bị từ chối.
     const status = c.url.searchParams.get('status'), usable = c.url.searchParams.get('usable') === '1';
-    const approval = status === 'pending' || status === 'approved' ? eq(customers.approvalStatus, status) : usable ? eq(customers.approvalStatus, 'approved') : undefined;
+    const approval = status === 'rejected' ? and(eq(customers.approvalStatus, 'rejected'), canApprove(me) ? undefined : eq(customers.createdBy, me.id))
+      : status === 'pending' || status === 'approved' ? eq(customers.approvalStatus, status) : usable ? eq(customers.approvalStatus, 'approved') : ne(customers.approvalStatus, 'rejected');
     const retailVisible = canListRetailCustomers(me), kind = c.url.searchParams.get('kind');
     const segment = !retailVisible ? eq(customers.isRetail, false) : kind === 'retail' ? eq(customers.isRetail, true) : kind === 'business' ? eq(customers.isRetail, false) : undefined;
     const owner = c.url.searchParams.get('owner') || '', from = c.url.searchParams.get('from') || '', to = c.url.searchParams.get('to') || '';
@@ -206,8 +254,10 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       if (fields.contact && fields.contact !== primary.name) throw new AppError(400, 'Tên liên hệ chính chưa khớp với người được chọn trong danh bạ.');
       fields.contact = primary.name;
     }
-    const row = { ...fields, ...terms, search: fold(Object.values(fields).join(' ')), sourceVersion: 0, syncedAt: now };
     if (update) await requireEdit(c.env.db, id, me);
+    // Người đại diện: khi tạo mới dùng `isRepresentative` trong `contacts`; khi sửa dùng PUT /customers/:id/representative
+    // (không đi qua đây vì PUT này ghi đè mọi ô thông tin bằng giá trị gửi lên).
+    const row = { ...fields, ...terms, search: fold(Object.values(fields).join(' ')), sourceVersion: 0, syncedAt: now };
     // Khách mới: người tạo là người phụ trách (Manager chọn được người khác qua `ownerId`).
     if (!update && me.role !== 'manager' && body.ownerId !== undefined && body.ownerId !== me.id)
       throw new AppError(403, 'Chỉ Manager chọn người phụ trách khác khi tạo khách hàng.');
@@ -235,7 +285,13 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       if (ownerId) await tx.insert(customerStaff).values({ customerId: id, memberId: ownerId, role: 'owner', createdBy: me.id, createdAt: now });
       if (sharedIds.length) await tx.insert(customerStaff).values(sharedIds.map(memberId => ({ customerId: id, memberId, role: 'shared' as const, createdBy: me.id, createdAt: now })));
       if (initial?.notes) await tx.insert(customerNotes).values({ customerId: id, text: initial.notes, revision: 1, updatedBy: me.id, updatedAt: now });
-      if (initial?.contacts.length) await tx.insert(customerContacts).values(initial.contacts.map(contact => ({ ...contact, id: crypto.randomUUID(), customerId: id, createdBy: me.id, createdAt: now, updatedAt: now })));
+      if (initial?.debtNote) await tx.insert(customerDebtNotes).values({ customerId: id, text: initial.debtNote, revision: 1, updatedBy: me.id, updatedAt: now });
+      if (initial?.contacts.length) {
+        const contactRows = initial.contacts.map(contact => ({ ...contact, id: crypto.randomUUID(), customerId: id, createdBy: me.id, createdAt: now, updatedAt: now }));
+        await tx.insert(customerContacts).values(contactRows);
+        const representativeId = contactRows[initial.representativeIndex]?.id;
+        if (representativeId) await tx.update(customers).set({ representativeContactId: representativeId }).where(eq(customers.id, id));
+      }
     }).catch((error: unknown) => {
       if (error instanceof AppError) throw error;
       console.error('customer_save_transaction_failed');
@@ -251,9 +307,31 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const me = viewer(c);
     if (!canApprove(me)) throw new AppError(403, 'Chỉ Manager hoặc người được Manager chỉ định duyệt khách hàng mới.', 'APPROVER_ONLY');
     const now = nowIso();
-    const done = await c.env.db.update(customers).set({ approvalStatus: 'approved', approvedBy: me.id, approvedAt: now })
+    // Duyệt khách đang chờ, hoặc duyệt lại khách đã bị từ chối (xoá lý do từ chối cũ).
+    const done = await c.env.db.update(customers).set({ approvalStatus: 'approved', approvedBy: me.id, approvedAt: now, rejectReason: null, rejectedBy: null, rejectedAt: null })
+      .where(and(eq(customers.id, c.params.id!), inArray(customers.approvalStatus, ['pending', 'rejected']))).returning({ id: customers.id });
+    if (!done.length) throw new AppError(404, 'Không tìm thấy khách hàng đang chờ duyệt hoặc bị từ chối.');
+    return json({ ok: true });
+  }, 'business');
+  /** Từ chối khách đang chờ duyệt (người duyệt): giữ hồ sơ, bắt buộc có lý do. Khách bị từ chối không dùng được cho báo giá / đơn / cổng khách. */
+  router.post('/customers/:id/reject', async c => {
+    const me = viewer(c);
+    if (!canApprove(me)) throw new AppError(403, 'Chỉ Manager hoặc người được Manager chỉ định từ chối khách hàng mới.', 'APPROVER_ONLY');
+    const body = await readJson(c.req, 4_096), reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason || reason.length > 1000) throw new AppError(400, 'Nhập lý do từ chối (tối đa 1.000 ký tự).', 'REJECT_REASON_REQUIRED');
+    const done = await c.env.db.update(customers).set({ approvalStatus: 'rejected', rejectReason: reason, rejectedBy: me.id, rejectedAt: nowIso() })
       .where(and(eq(customers.id, c.params.id!), eq(customers.approvalStatus, 'pending'))).returning({ id: customers.id });
     if (!done.length) throw new AppError(404, 'Không tìm thấy khách hàng đang chờ duyệt.');
+    return json({ ok: true });
+  }, 'business');
+  /** Gửi duyệt lại khách bị từ chối sau khi đã sửa: người tạo hoặc người duyệt. */
+  router.post('/customers/:id/resubmit', async c => {
+    const me = viewer(c), db = c.env.db;
+    const [row] = await db.select({ approvalStatus: customers.approvalStatus, createdBy: customers.createdBy }).from(customers).where(eq(customers.id, c.params.id!)).limit(1);
+    if (!row || row.approvalStatus !== 'rejected') throw new AppError(404, 'Không tìm thấy khách hàng bị từ chối.');
+    if (!canApprove(me) && row.createdBy !== me.id) throw new AppError(403, 'Chỉ người tạo hoặc người duyệt gửi duyệt lại được khách hàng này.');
+    await db.update(customers).set({ approvalStatus: 'pending', rejectReason: null, rejectedBy: null, rejectedAt: null })
+      .where(and(eq(customers.id, c.params.id!), eq(customers.approvalStatus, 'rejected')));
     return json({ ok: true });
   }, 'business');
   /** Từ chối (xoá) khách đang chờ duyệt: Manager / người được duyệt, hoặc người tạo. Khách đã duyệt không xoá được ở đây. */

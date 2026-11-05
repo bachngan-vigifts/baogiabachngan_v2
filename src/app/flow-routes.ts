@@ -64,7 +64,7 @@ const NODES: Record<string, (x: Ctx) => Promise<FlowNode | null>> = {
     return {
       metrics: [{ key: 'pending', label: manager ? 'Khách mới chờ duyệt' : 'Khách mình tạo chờ duyệt', value: pending, tone: pending ? 'warn' : '' }, { key: 'mine', label: 'Khách tôi phụ trách', value: owned }],
       items: rows.map(r => ({ id: r.id, title: r.name, sub: [r.phone, r.createdAt ? 'tạo ' + ddmm(r.createdAt) : ''].filter(Boolean).join(' · '),
-        badge: r.status === 'pending' ? 'Chờ duyệt' : '', tone: r.status === 'pending' ? 'warn' as const : '' as const, hash: '#/customers/' + encodeURIComponent(r.id),
+        badge: r.status === 'pending' ? 'Chờ duyệt' : r.status === 'rejected' ? 'Bị từ chối' : '', tone: r.status === 'pending' ? 'warn' as const : r.status === 'rejected' ? 'danger' as const : '' as const, hash: '#/customers/' + encodeURIComponent(r.id),
         actions: r.status === 'pending' && canApprove(me) ? ['approve-customer'] : [] })),
     };
   },
