@@ -29,7 +29,7 @@ const toProfile = (p: ProfileRow | undefined, positionId?: string | null): Salar
   insurance: p.insurance, bankCode: p.bankCode, bankAccount: p.bankAccount, bankHolder: p.bankHolder, effectiveMonth: p.effectiveMonth, note: p.note,
 } : { ...defaultProfileFor(positionId), effectiveMonth: null, note: '' };
 const toInput = (r: typeof hrPayrollInputs.$inferSelect | undefined): PayrollInput & { note: string } => r ? {
-  workDays: r.workDays, overtimeHours: r.overtimeHours, revenue: r.revenue, outputQty: r.outputQty, healthInsurance: r.healthInsurance, incomeTax: r.incomeTax,
+  workDays: r.workDays, overtimeHours: r.overtimeHours, lateCount: r.lateCount, leaveHours: r.leaveHours, revenue: r.revenue, outputQty: r.outputQty, healthInsurance: r.healthInsurance, incomeTax: r.incomeTax,
   quarterBonus: r.quarterBonus, kpiNewCustomers: r.kpiNewCustomers, kpiTransactions: r.kpiTransactions, kpiContracts: r.kpiContracts, kpiRevenue: r.kpiRevenue,
   kpiMerchDays: r.kpiMerchDays, kpiTripDays: r.kpiTripDays, kpiOverride: r.kpiOverride, note: r.note,
 } : { ...EMPTY_INPUT, note: '' };

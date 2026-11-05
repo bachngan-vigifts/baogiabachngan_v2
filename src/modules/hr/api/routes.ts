@@ -191,8 +191,12 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
   router.put('/hr/members/:id/inputs/:month', write(async c => {
     const db = c.env.db, id = await staffMember(db, c.params.id!), m = month(c.params.month), b = await readJson(c.req, 6_000);
     await assertOpen(db, id, m);
+    const [priorInput] = await db.select().from(hrPayrollInputs).where(and(eq(hrPayrollInputs.memberId,id),eq(hrPayrollInputs.month,m))).limit(1);
+    const lateCount=b.lateCount===undefined?priorInput?.lateCount??0:num(b.lateCount,'Số lần đi trễ',1000);
+    if(!Number.isInteger(lateCount))throw new AppError(400,'Số lần đi trễ phải là số nguyên.');
     const kpiOverride = optNum(b.kpiOverride, 'KPI chốt', 10);
     const row = {
+      lateCount, leaveHours:b.leaveHours===undefined?priorInput?.leaveHours??0:num(b.leaveHours,'Giờ nghỉ trong ngày',744),
       memberId: id, month: m, workDays: optNum(b.workDays, 'Ngày làm việc', 31), overtimeHours: num(b.overtimeHours, 'Giờ tăng ca', 400),
       revenue: optNum(b.revenue, 'DS tháng', 1e13), outputQty: num(b.outputQty, 'Sản lượng', 1e13),
       kpiNewCustomers: optNum(b.kpiNewCustomers, 'KH mới', 1e6), kpiTransactions: optNum(b.kpiTransactions, 'Giao dịch', 1e6), kpiContracts: optNum(b.kpiContracts, 'Số HĐ', 1e6),
