@@ -1,7 +1,7 @@
 import { AppError } from '../../../core/errors.ts';
 import { fold } from '../../../core/text/fold.ts';
 import { sha256Hex } from '../../staff/domain/session.ts';
-import { customerNameKey, identityKeys } from '../domain/identity.ts';
+import { customerIdentityIndex, customerNameKey, identityKeys } from '../domain/identity.ts';
 import { sourceApproval, type AppsheetInput } from '../domain/appsheet-input.ts';
 import { CUSTOMER_LIMITS } from '../domain/customer-config.ts';
 import { customers, customerContacts } from '../schema.ts';
@@ -53,6 +53,21 @@ const search = (row: Customer) => fold([row.name, row.contact, row.phone, row.em
 export function planAppsheet(input: AppsheetInput, state: AppsheetState, now: string, actorId: string) {
   const customerMap = new Map(state.customers.map(r => [r.id, { ...r }]));
   const contactMap = new Map(state.contacts.map(r => [r.id, { ...r }]));
+  const customerIndex = customerIdentityIndex(state.customers);
+  const codeKey = (value: string) => value.trim().toUpperCase();
+  const customerCodes = new Map<string, Set<string>>();
+  for (const row of state.customers) if (codeKey(row.customerCode)) {
+    const key = codeKey(row.customerCode); if (!customerCodes.has(key)) customerCodes.set(key, new Set()); customerCodes.get(key)!.add(row.id);
+  }
+  const rememberCustomer = (row: Customer) => {
+    const old = customerMap.get(row.id); if (old) customerCodes.get(codeKey(old.customerCode))?.delete(row.id);
+    const key = codeKey(row.customerCode); if (key) { if (!customerCodes.has(key)) customerCodes.set(key, new Set()); customerCodes.get(key)!.add(row.id); }
+    customerMap.set(row.id, row); customerIndex.put(row);
+  };
+  const contactGroups = new Map<string, Map<string, Contact>>();
+  for (const row of state.contacts) {
+    if (!contactGroups.has(row.customerId)) contactGroups.set(row.customerId, new Map()); contactGroups.get(row.customerId)!.set(row.id, row);
+  }
   const customerLinks = scope(state.customerLinks, input.appId, input.customersTable);
   const contactLinks = scope(state.contactLinks, input.appId, input.contactsTable);
   const customerWrites: Customer[] = [], contactWrites: Contact[] = [];
@@ -82,16 +97,12 @@ export function planAppsheet(input: AppsheetInput, state: AppsheetState, now: st
     const next: Fields = { ...row.fields, approvalStatus };
     let current = previous?.customerId ? customerMap.get(previous.customerId) : decision && decision !== '$new' ? customerMap.get(decision) : undefined;
     if (decision && decision !== '$new' && !current) { Object.assign(report, { action: 'conflict', reason: 'Không tìm thấy khách CRM đã chọn.' }); continue; }
-    const k = identityKeys(row.fields);
-    const candidates = [...customerMap.values()].flatMap(candidate => {
-      if (candidate.id === current?.id) return [];
-      const c = identityKeys(candidate), reasons: string[] = [];
-      if (k.taxCode && k.taxCode === c.taxCode) reasons.push('taxCode');
-      if (k.phone.some(p => c.phone.includes(p))) reasons.push('phone');
-      if (row.fields.customerCode && row.fields.customerCode.toUpperCase() === candidate.customerCode.trim().toUpperCase()) reasons.push('customerCode');
-      if (k.name && k.name === c.name) reasons.push('name');
-      return reasons.length ? [{ id: candidate.id, name: candidate.name, reasons }] : [];
-    });
+    const matches = new Map(customerIndex.find(row.fields, current?.id).map(c => [c.id, { id: c.id, name: c.name, reasons: c.reasons }]));
+    for (const id of customerCodes.get(codeKey(row.fields.customerCode ?? '')) ?? []) if (id !== current?.id) {
+      const candidate = customerMap.get(id)!;
+      const match = matches.get(id) ?? { id, name: candidate.name, reasons: [] }; match.reasons.push('customerCode'); matches.set(id, match);
+    }
+    const candidates = [...matches.values()];
     if (!current && candidates.some(c => decision !== '$new' || c.reasons.some(r => r !== 'name'))) {
       Object.assign(report, { action: 'conflict', reason: 'Chọn khách CRM tương ứng; không tự gộp theo tên/MST/SĐT.', candidates }); continue;
     }
@@ -109,14 +120,8 @@ export function planAppsheet(input: AppsheetInput, state: AppsheetState, now: st
     // A newly acquired phone/tax/code must not create another identity collision.
     const changedIdentity = ['phone', 'taxCode', 'customerCode'].filter(key => Object.hasOwn(result.patch, key));
     if (!fresh && changedIdentity.length) {
-      const mergedKeys = identityKeys(proposed);
-      const collision = [...customerMap.values()].some(other => {
-        if (other.id === current!.id) return false;
-        const o = identityKeys(other);
-        return changedIdentity.includes('phone') && mergedKeys.phone.some(p => o.phone.includes(p))
-          || changedIdentity.includes('taxCode') && !!mergedKeys.taxCode && mergedKeys.taxCode === o.taxCode
-          || changedIdentity.includes('customerCode') && !!proposed.customerCode && proposed.customerCode.toUpperCase() === other.customerCode.trim().toUpperCase();
-      });
+      const collision = customerIndex.find(proposed, current.id).some(other => other.reasons.some(reason => changedIdentity.includes(reason) && reason !== 'name'))
+        || changedIdentity.includes('customerCode') && [...(customerCodes.get(codeKey(proposed.customerCode)) ?? [])].some(id => id !== current!.id);
       if (collision) { Object.assign(report, { action: 'conflict', reason: 'Thông tin cập nhật sẽ trùng MST/SĐT/mã khách của bản khác.' }); continue; }
     }
     if (Object.hasOwn(result.patch, 'approvalStatus')) {
@@ -129,7 +134,7 @@ export function planAppsheet(input: AppsheetInput, state: AppsheetState, now: st
     report.targetId = proposed.id; report.changed = changed; report.preserved = result.preserved;
     report.changes = changed.map(field => ({ field, before: (current as unknown as Fields)[field] ?? null, after: result.patch[field]! }));
     if (fresh || changed.length) customerWrites.push(proposed);
-    customerMap.set(proposed.id, proposed); available.set(row.rowId, proposed.id);
+    rememberCustomer(proposed); available.set(row.rowId, proposed.id);
     customerLinkWrites.push({ appId: input.appId, tableName: input.customersTable, rowId: row.rowId, customerId: proposed.id, state: 'active',
       sourceCreatedAt: row.createdAt ?? previous?.sourceCreatedAt ?? null, sourceUpdatedAt: row.updatedAt, approvalRaw: row.fields.approvalStatus,
       sourceJson, appliedJson: stableJson(result.applied), syncedAt: now });
@@ -146,16 +151,17 @@ export function planAppsheet(input: AppsheetInput, state: AppsheetState, now: st
     let current = previous?.contactId ? contactMap.get(previous.contactId) : decision && decision !== '$new' ? contactMap.get(decision) : undefined;
     if (current && current.customerId !== parent || decision && decision !== '$new' && !current) { Object.assign(report, { action: 'conflict', reason: 'Liên hệ được chọn không thuộc khách CRM tương ứng.' }); continue; }
     const phones = identityKeys(row.fields).phone;
-    const candidates = [...contactMap.values()].filter(c => c.customerId === parent && (customerNameKey(c.name) === customerNameKey(row.fields.name)
+    const group = contactGroups.get(parent) ?? new Map<string, Contact>();
+    const candidates = [...group.values()].filter(c => (customerNameKey(c.name) === customerNameKey(row.fields.name)
       || identityKeys(c).phone.some(p => phones.includes(p)))).map(c => ({ id: c.id, name: c.name, reasons: ['contact'] }));
     if (!current && candidates.length) { Object.assign(report, { action: 'conflict', reason: 'Chọn liên hệ đã có; không tự gộp danh bạ.', candidates }); continue; }
     const fresh = !current;
-    if (fresh && [...contactMap.values()].filter(c => c.customerId === parent).length >= CUSTOMER_LIMITS.contacts) { Object.assign(report, { action: 'conflict', reason: 'Vượt giới hạn người liên hệ của khách.' }); continue; }
+    if (fresh && group.size >= CUSTOMER_LIMITS.contacts) { Object.assign(report, { action: 'conflict', reason: 'Vượt giới hạn người liên hệ của khách.' }); continue; }
     const newId = externalId('contact', input.appId, input.contactsTable, row.rowId);
     if (fresh && contactMap.has(newId)) { Object.assign(report, { action: 'conflict', reason: 'ID liên hệ nguồn đã tồn tại nhưng thiếu ánh xạ.' }); continue; }
     current ??= { id: newId, customerId: parent, name: '', title: '', phone: '', email: '', note: '', isPrimary: false, createdBy: actorId, createdAt: now, updatedAt: now };
     const result = reconcile(current as unknown as Fields, row.fields, previous ? JSON.parse(previous.appliedJson) as Fields : undefined, fresh);
-    if (result.patch.isPrimary === true && [...contactMap.values()].some(c => c.customerId === parent && c.id !== current!.id && c.isPrimary)) {
+    if (result.patch.isPrimary === true && [...group.values()].some(c => c.id !== current!.id && c.isPrimary)) {
       delete result.patch.isPrimary; delete result.applied.isPrimary; result.preserved.push('isPrimary');
     }
     const proposed = { ...current, ...result.patch, updatedAt: now } as Contact;
@@ -165,6 +171,7 @@ export function planAppsheet(input: AppsheetInput, state: AppsheetState, now: st
     report.changes = changed.map(field => ({ field, before: (current as unknown as Fields)[field] ?? null, after: result.patch[field]! }));
     if (fresh || changed.length) contactWrites.push(proposed);
     contactMap.set(proposed.id, proposed);
+    group.set(proposed.id, proposed); contactGroups.set(parent, group);
     contactLinkWrites.push({ appId: input.appId, tableName: input.contactsTable, rowId: row.rowId, contactId: proposed.id, customerRowId: row.customerRowId,
       sourceUpdatedAt: row.updatedAt, sourceJson, appliedJson: stableJson(result.applied), syncedAt: now });
   }
