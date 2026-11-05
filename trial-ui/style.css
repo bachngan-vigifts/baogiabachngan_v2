@@ -1658,6 +1658,16 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .lookup-stock { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
 .lookup-stock li { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }
 .lookup-stock li b { font-size: var(--text-body); font-variant-numeric: tabular-nums; }
+.data-table.stock-check-table, .data-table.lookup-stock-table { display: table; }
+.stock-check-table thead, .lookup-stock-table thead { display: table-header-group; }
+.stock-check-table tbody, .lookup-stock-table tbody { display: table-row-group; }
+.stock-check-table tr:not([hidden]), .lookup-stock-table tr:not([hidden]) { display: table-row; padding: 0; }
+.stock-check-table td, .lookup-stock-table td { display: table-cell; }
+.stock-check-table { min-width: 760px; }
+.lookup-stock-table { margin-top: 10px; min-width: 0; }
+.lookup-stock-table th, .lookup-stock-table td { padding: 8px; overflow-wrap: anywhere; }
+.lookup-stock-table th { white-space: normal; }
+.lookup-stock-total { font-weight: 700; }
 .scan-dialog video { width: min(80vw, 420px); border-radius: 10px; background: #000; display: block; margin: 8px 0; }
 @media (max-width: 680px) {
   .kho-cards { grid-template-columns: 1fr; gap: 10px; }

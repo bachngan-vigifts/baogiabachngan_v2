@@ -72,7 +72,7 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
   const ledgerCounted = sql`EXISTS (SELECT 1 FROM ${stockMoves} m WHERE m.ref_type = 'sales_order' AND (m.ref_id = ${salesOrders.id} OR m.ref_id LIKE ${salesOrders.id} || '#%')
     AND EXISTS (SELECT 1 FROM ${stockMoves} o WHERE o.warehouse_id = m.warehouse_id AND o.ref_type = 'opening'))`;
   // Legacy POS orders often have no warehouse_id; their register still gives the exact selling warehouse.
-  const sellingWarehouse = sql`coalesce(${salesOrders.warehouseId}, (select ${posRegisters.warehouseId} from ${posShifts} join ${posRegisters} on ${posRegisters.id}=${posShifts.registerId} where ${posShifts.id}=${salesOrders.shiftId} and ${salesOrders.channel}='pos'))`;
+  const sellingWarehouse = sql<string | null>`coalesce(${salesOrders.warehouseId}, (select ${posRegisters.warehouseId} from ${posShifts} join ${posRegisters} on ${posRegisters.id}=${posShifts.registerId} where ${posShifts.id}=${salesOrders.shiftId} and ${salesOrders.channel}='pos'))`;
   // Issued stock has already reduced stock_balances. Delivered quantities and issued moves may describe
   // the same units, so subtract their maximum, never both. Reverse moves reduce net issued quantity.
   const legacyIssued = sql`coalesce((select greatest(0,-sum(${stockMoves.qty})) from ${stockMoves}
@@ -84,6 +84,7 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
   const legacy = await db.select({
     sku: salesOrderLines.sku, qty: sql<number>`${legacyRemaining}`.mapWith(Number),
     orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName,
+    warehouseId: sellingWarehouse,
     contractNo: sql<string | null>`max(${salesContracts.contractNo})`,
     /** Đơn chưa gắn kho bán (đơn cũ): giữ hàng trên tổng tồn mọi kho, không biết kho nào xuất. */
     unassigned: sql<boolean>`(${sellingWarehouse}) is null`,
@@ -98,13 +99,14 @@ export async function orderHolds(db: Db, skus?: string[], warehouseId?: string, 
       skus ? inArray(salesOrderLines.sku, skus) : undefined, sql`NOT (${sapoCounted})`, sql`NOT (${ledgerCounted})`))
     .groupBy(salesOrderLines.sku, salesOrders.id).having(sql`${legacyRemaining}>0`).orderBy(asc(salesOrderLines.sku), asc(salesOrders.orderNo)).limit(complete ? 2147483647 : 5000);
   const issued = sql`coalesce((select -sum(${stockMoves.qty}) from ${stockMoves} where ${stockMoves.sku}=${salesOrderLines.sku} and ${stockMoves.warehouseId}=${posOrderReservations.warehouseId} and ((${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} where ${packingSlips.id}=${stockMoves.refId} and ${packingSlips.orderId}=${salesOrders.id})) or (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} where ${deliveries.id}=${stockMoves.refId} and ${deliveries.orderId}=${salesOrders.id})))),0)`;
-  const timed = await db.select({ sku: salesOrderLines.sku, qty: sql<number>`sum(greatest(0,${posOrderReservations.qty}-greatest(${salesOrderLines.deliveredQty},${issued})))`.mapWith(Number), orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName, contractNo: sql<string | null>`null` })
+  const timed = await db.select({ sku: salesOrderLines.sku, qty: sql<number>`sum(greatest(0,${posOrderReservations.qty}-greatest(${salesOrderLines.deliveredQty},${issued})))`.mapWith(Number), orderId: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName, contractNo: sql<string | null>`null`, warehouseId: posOrderReservations.warehouseId })
     .from(posOrderReservations).innerJoin(salesOrders, eq(salesOrders.id, posOrderReservations.orderId)).innerJoin(salesOrderLines, eq(salesOrderLines.id, posOrderReservations.orderLineId))
     .where(and(storeScope,eq(posOrderReservations.status, 'active'), gt(posOrderReservations.expiresAt, nowIso()), inArray(salesOrders.status, ['draft','confirmed','delivering']), skus ? inArray(salesOrderLines.sku, skus) : undefined, warehouseId ? eq(posOrderReservations.warehouseId, warehouseId) : undefined))
-    .groupBy(salesOrderLines.sku, salesOrders.id).limit(complete ? 2147483647 : 5000);
-  const [pending, capped] = await Promise.all([db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName, snapshot: salesOrders.posSnapshot }).from(salesOrders)
+    .groupBy(salesOrderLines.sku, salesOrders.id, posOrderReservations.warehouseId).limit(complete ? 2147483647 : 5000);
+  const [pending, capped] = await Promise.all([db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName, snapshot: salesOrders.posSnapshot, warehouseId: sellingWarehouse }).from(salesOrders)
+    .leftJoin(posShifts, eq(posShifts.id, salesOrders.shiftId)).leftJoin(posRegisters, eq(posRegisters.id, posShifts.registerId))
     .where(and(storeScope, eq(salesOrders.channel, 'pos'), inArray(salesOrders.status, ['draft','confirmed','delivering']), sql`${salesOrders.posSnapshot}::jsonb ? 'ghnAmendment'`, warehouseId ? sql`${sellingWarehouse}=${warehouseId}` : undefined)).limit(complete ? 2147483647 : 5000), cappedOrderHolds(db, skus, warehouseId, nowIso(), complete)]);
-  const extras = pending.flatMap(o => (pendingGhnEdit(o.snapshot)?.reserve || []).filter(r => r.qty > 0 && (!skus || skus.includes(r.sku))).map(r => ({ ...r, orderId: o.id, orderNo: o.orderNo, quoteId: o.quoteId, customer: o.customer, contractNo: null, unassigned: false, timed: false })));
+  const extras = pending.flatMap(o => (pendingGhnEdit(o.snapshot)?.reserve || []).filter(r => r.qty > 0 && (!skus || skus.includes(r.sku))).map(r => ({ ...r, orderId: o.id, orderNo: o.orderNo, quoteId: o.quoteId, customer: o.customer, contractNo: null, warehouseId: o.warehouseId, unassigned: false, timed: false })));
   return [...extras, ...legacy.map(r=>({...r,timed:false})), ...timed.map(r=>({...r,timed:true,unassigned:false})), ...capped.map(r=>({...r,timed:false}))];
 }
 

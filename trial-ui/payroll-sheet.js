@@ -28,7 +28,7 @@ export function payrollSheetHtml({data,esc,money,field,isDirty}) {
       const v=c.read?r[c.read]:c.total?r.payslip[c.total]:line(r,c.line);
       return `<td class="num ${c.tone?'pr-sheet-'+c.tone:''}">${v==null?'—':c.read?esc(v):money(v)}</td>`;
     }).join('');
-    return `<tr class="${isDirty(r.member.id)?'pr-quick-dirty':''}" data-quick-row="${esc(r.member.id)}" data-group="${esc(r.profile.payrollGroup)}" data-name="${esc(r.member.name.toLocaleLowerCase('vi'))}"><td class="pr-sheet-index">${i+1}</td><td class="pr-quick-name"><a href="#/members/${encodeURIComponent(r.member.id)}?month=${data.month}&tab=payroll">${esc(r.member.name)}</a><small>${esc(data.columns.groups[r.profile.payrollGroup])} · ${status}</small></td><td class="pr-sheet-position">${esc(r.profile.positionLabel||r.member.positionId||'—')}</td>${cells}</tr>`;
+    return `<tr class="${isDirty(r.member.id)?'pr-quick-dirty':''}" data-quick-row="${esc(r.member.id)}" data-group="${esc(r.profile.payrollGroup)}" data-name="${esc(r.member.name.toLocaleLowerCase('vi'))}"><td class="pr-sheet-index">${i+1}</td><td class="pr-quick-name"><a href="#/members/${encodeURIComponent(r.member.id)}?month=${data.month}&tab=payroll">${esc(r.member.name)}</a><small>${esc(data.columns.groups[r.profile.payrollGroup])} · ${status}</small></td>${field(r,{section:'profile',key:'positionLabel',label:'Vị trí'})}${cells}</tr>`;
   }).join('');
   const counted=data.rows.filter(r=>r.profile.hasProfile||r.payslip.status!=='estimate');
   const mapped={insurance:'socialInsurance',healthInsurance:'healthInsurance',incomeTax:'incomeTax',deduction:'violation',phone_advance:'phoneDeduction',advance:'advance',allowance:'trip',phoneAllowance:'phone',responsibility:'responsibility',bonus:'otherBonus'};

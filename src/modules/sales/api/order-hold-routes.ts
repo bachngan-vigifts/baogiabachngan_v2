@@ -45,7 +45,11 @@ export function registerOrderHoldRoutes(router: Router<StaffEnv>) {
         .where(and(eq(orderStockHolds.orderId, o.id), eq(orderStockHolds.status, 'active'), gt(orderStockHolds.expiresAt, now))).orderBy(asc(orderStockHolds.expiresAt)),
     ]);
     const open = o.channel === 'crm' && o.holdMode === 'capped' && ['confirmed', 'delivering'].includes(o.status);
-    return json({ holdMode: o.holdMode, lines, holds: rows, manualDays: MANUAL_HOLD_DAYS,
+    const blockedReason = o.status === 'draft' ? 'Duyệt đơn hàng / HĐKT trước khi giữ hàng.'
+      : o.status === 'cancelled' ? 'Chứng từ đã huỷ, không giữ hàng.'
+      : o.status === 'delivered' ? 'Chứng từ đã giao xong, không giữ thêm hàng.'
+      : !o.warehouseId ? 'Chọn kho bán cho đơn hàng / HĐKT trước khi giữ hàng.' : null;
+    return json({ holdMode: o.holdMode, lines, holds: rows, manualDays: MANUAL_HOLD_DAYS, blockedReason,
       canHold: open && !!o.warehouseId && lines.some(l => l.remaining > l.held), canRelease: open && rows.length > 0, canExtend: open && rows.length > 0 && m.role === 'manager' });
   }, 'business');
 

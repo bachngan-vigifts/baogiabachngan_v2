@@ -41,6 +41,25 @@ try{
   assert.equal(await page.locator('.pr-sheet thead tr').count(),2);
   for(const title of ['NĂNG LỰC','KPIs','PHỤ CẤP','CÁC KHOẢN TRỪ']) assert.equal(await page.locator('.pr-sheet thead').getByRole('columnheader',{name:title,exact:true}).count(),1);
   assert.equal(await page.locator('[data-member="emp"][data-key="kpiOverride"]').getAttribute('data-scale'),'100');
+  // Template download and real XLSX import: drafts remain reviewable until Save.
+  const downloaded=page.waitForEvent('download');await page.locator('[data-quick-template]').click();
+  const template=await downloaded;assert.equal(template.suggestedFilename(),'Mau-bang-luong-2026-10.xlsx');
+  const bytes=await page.evaluate(async()=>{
+    const {payrollFileRows,payrollFileColumns}=await import('/payroll-file.js');const {QUICK_COLUMNS}=await import('/payroll-quick-entry.js');
+    const token=localStorage.getItem('bn-v2-session'),d=await (await fetch('/api/staff/hr/payroll/2026-10',{headers:{Authorization:'Bearer '+token}})).json();
+    const rows=payrollFileRows(d,QUICK_COLUMNS),r=rows.find(r=>r[1]==='emp');
+    const col=key=>3+payrollFileColumns(QUICK_COLUMNS).findIndex(f=>f.column[0]===key);
+    r[col('positionLabel')]='THỬ VIỆC';r[col('baseSalary')]='5,200,000';r[col('workDays')]=24;r[col('advance')]=500000;
+    const wb=new ExcelJS.Workbook(),ws=wb.addWorksheet('Nhập lương');rows.forEach(r=>ws.addRow(r));return Array.from(new Uint8Array(await wb.xlsx.writeBuffer()));
+  });
+  await page.locator('[data-quick-file]').setInputFiles({name:'luong.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from(bytes)});
+  await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent.includes('1 người'));
+  assert.equal(await page.locator('[data-member="emp"][data-key="positionLabel"]').inputValue(),'THỬ VIỆC');
+  assert.equal(await page.locator('[data-member="emp"][data-key="baseSalary"]').inputValue(),'5,200,000');
+  await page.locator('[data-quick-save]').click();await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent==='');
+  const probation=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find(r=>r.member.id==='emp');assert.equal(probation.payslip.net,4800000);assert.equal(probation.payslip.deductionTotal,0);
+  await page.locator('[data-member="emp"][data-key="positionLabel"]').fill('SALE');
+  await page.locator('[data-quick-save]').click();await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent==='');
   // The reference sheet supports editing different sources on one row without switching modes.
   assert.equal((await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find(r=>r.member.id==='emp').previousCapacityCoef,6);
   await paste('[data-member="emp"][data-key="baseSalary"]','5.400.000\t23');

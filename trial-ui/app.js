@@ -2328,10 +2328,10 @@ let holdsAt = 0, holdsReq = null;
 state.holds = new Map();
 state.holdsLoaded = false;
 function loadHolds(force = false) {
-  if (!force && Date.now() - holdsAt < 30000) return holdsReq || Promise.resolve();
+  if (!force && Date.now() - holdsAt < 30000) return holdsReq || Promise.resolve(state.holdsLoaded);
   holdsAt = Date.now();
-  return holdsReq = api('/stock-holds').then(r => { const m = new Map(); for (const h of r.holds) (m.get(h.sku) ?? m.set(h.sku, []).get(h.sku)).push(h); state.holds = m; state.holdsLoaded = true; })
-    .catch(() => { holdsAt = 0; }).finally(() => { holdsReq = null; });
+  return holdsReq = api('/stock-holds').then(r => { const m = new Map(); for (const h of r.holds) (m.get(h.sku) ?? m.set(h.sku, []).get(h.sku)).push(h); state.holds = m; state.holdsLoaded = true; return true; })
+    .catch(() => { holdsAt = 0; state.holdsLoaded = false; return false; }).finally(() => { holdsReq = null; });
 }
 /** Số đang treo của một mã (bỏ phần treo cho chính báo giá `exceptQuote`). */
 const heldQty = (sku, exceptQuote = '') => (state.holds.get(sku) || []).filter(h => h.quoteId !== exceptQuote).reduce((t, h) => t + h.qty, 0);
@@ -4014,6 +4014,8 @@ async function openOrder(id, confirmed = null) {
   id=decodeURIComponent(id);
   const run = ++orderLoadRun, session = token, route = location.hash;
   const onContracts = location.hash.startsWith('#/contracts/');
+  $('#order-holds-card').hidden = true;
+  $('#order-holds-card').replaceChildren();
   webOrderUi.invalidate();
   webDocumentMode($('#view-order'),$('#web-order-content'),false);
   $('#order-title').textContent = onContracts ? 'Đang tải HĐKT…' : 'Đang tải đơn…';
@@ -4145,9 +4147,13 @@ async function openOrder(id, confirmed = null) {
     : '<p class="muted">Chưa có lịch giao.</p>');
   loadOrderPacking(o.id);
   // Giữ hàng theo đơn CRM (order-holds.js): ≤ có thể bán, tự giữ khi duyệt có ngày giao, giữ thêm / huỷ / gia hạn.
-  if ((o.channel || 'crm') === 'crm' && ['confirmed', 'delivering'].includes(o.status)) {
-    const holdBox = document.createElement('div'); $('#order-deliveries').append(holdBox);
-    showOrderHolds({ api, toast, root: holdBox, orderId: o.id, isManager, onChanged: () => loadHolds(true) });
+  if ((o.channel || 'crm') === 'crm' && (isK || ['confirmed', 'delivering'].includes(o.status))) {
+    const holdBox = isK ? $('#order-holds-card') : document.createElement('div');
+    if (isK) holdBox.hidden = false; else $('#order-deliveries').append(holdBox);
+    showOrderHolds({ api, toast, root: holdBox, orderId: o.id, isManager,
+      title: isK ? 'Giữ hàng HĐKT' : 'Giữ hàng',
+      isCurrent: () => run === orderLoadRun && session === token && sales.order?.id === o.id && location.hash.split('?')[0] === want,
+      onChanged: () => loadHolds(true) });
   }
   $('#order-pack').hidden = ['cancelled', 'draft', 'delivered'].includes(o.status);
   $('#order-pack').disabled = true; $('#order-pack').title = 'Đang kiểm tra phiếu đóng gói…';
@@ -5097,25 +5103,26 @@ $('#quote-stock').addEventListener('click', async () => {
   $('#stock-check-body').innerHTML = '<p class="muted">Đang kiểm tồn…</p>'; $('#stock-check-note').textContent = ''; $('#stock-check-dialog').showModal();
   try {
     const skus = [...new Set([...need.values()].map(x => x.sku).filter(Boolean))], stock = new Map(), me = editor.id || '';
-    await loadHolds(true);
+    const holdsReady = await loadHolds(true);
     for (let i = 0; i < skus.length; i += 200) { const r = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(r); for (const p of r.products) stock.set(p.sku, p); }
     let short = 0;
-    // Cột "Tồn kho · Đang treo" chỉ hiện khi có mã đang bị báo giá khác treo; không thì bảng gọn như cũ.
-    const anyHeld = [...need.values()].some(i => i.sku && heldQty(i.sku, me) > 0), anyLock = [...need.values()].some(i => i.sku && hasSupplierStock(stock.get(i.sku)));
+    // Luôn hiển thị tổng giữ, gồm cả phần của báo giá đang kiểm; khả dụng vẫn loại phần giữ của chứng từ khác.
+    const anyLock = [...need.values()].some(i => i.sku && hasSupplierStock(stock.get(i.sku)));
     const rows = [...need.values()].map(i => {
       // Khả dụng cho báo giá này = tồn kho − phần báo giá KHÁC đang treo (phần chính báo giá này giữ vẫn tính là của mình).
-      const p = i.sku ? stock.get(i.sku) : null, av = p ? availableStock(p, me) : null, miss = av === null ? null : Math.max(0, i.qty - av);
-      const mine = i.sku ? (state.holds.get(i.sku) || []).filter(h => h.quoteId === me).reduce((t, h) => t + h.qty, 0) : 0;
+      const p = i.sku ? stock.get(i.sku) : null, av = p && holdsReady ? availableStock(p, me) : null, miss = av === null ? null : Math.max(0, i.qty - av);
+      const mine = i.sku && holdsReady ? (state.holds.get(i.sku) || []).filter(h => h.quoteId === me).reduce((t, h) => t + h.qty, 0) : 0;
       if (miss) short++;
       return `<tr data-stock-result="${miss === null ? 'unknown' : miss ? 'missing' : 'enough'}"><td>${esc(i.name)}<small>${esc(i.sku || 'Chưa có mã hàng')}${i.unit ? ' · ' + esc(i.unit) : ''}${mine ? ` · <b>báo giá này đang giữ ${fmtNum(mine)}</b>` : ''}</small></td><td class="right">${fmtNum(i.qty)}</td>
-        ${anyHeld ? `<td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${i.sku ? heldCell(i.sku, me) : '—'}</td>` : ''}
+        <td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${holdsReady ? heldQty(i.sku) > 0 ? heldCell(i.sku) : '0' : 'Chưa tải được'}</td>
         <td class="right ${miss ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
         ${anyLock ? `<td class="right">${p && hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : ''}</td>` : ''}<td class="right">${p ? incomingCell(p) : '—'}</td>
         <td class="right">${miss === null ? '<span class="muted">Không có số liệu</span>' : miss ? `<span class="pill danger">Thiếu ${fmtNum(miss)}</span>` : '<span class="pill ok">Đủ</span>'}</td></tr>`;
     });
-    $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th>${anyHeld ? '<th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th>' : '<th class="right">Tồn khả dụng</th>'}${anyLock ? '<th class="right">Kho NCC</th>' : ''}<th class="right">Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+    $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table stock-check-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Tồn kho</th><th class="right">Hàng đang giữ</th><th class="right">Khả dụng cho báo giá</th>${anyLock ? '<th class="right">Kho NCC</th>' : ''}<th class="right">Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
     bindStockCheckFilter($('#stock-check-body'));
-    $('#stock-check-note').textContent = short ? `${short} sản phẩm không đủ tồn khả dụng – xem tồn NCC / hàng chờ về.` : 'Các sản phẩm có số liệu đều đủ tồn khả dụng.';
+    $('#stock-check-note').textContent = (!holdsReady ? 'Chưa tải được hàng đang giữ; chưa thể kết luận đủ hàng. Đóng và kiểm tồn lại.' : short ? `${short} sản phẩm không đủ tồn khả dụng – xem tồn NCC / hàng chờ về.` : 'Các sản phẩm có số liệu đều đủ tồn khả dụng.')
+      + ' Hàng đang giữ gồm báo giá, đơn hàng và HĐKT; phần báo giá này đang giữ vẫn dùng được cho chính báo giá này.';
   } catch (e) { $('#stock-check-body').innerHTML = `<p class="error">${esc(e.message)}</p>`; }
 });
 /** Hộp chọn luồng: 'order' (khách đã có HĐ nguyên tắc) hoặc 'contract' (lập HĐKT); null = huỷ. */

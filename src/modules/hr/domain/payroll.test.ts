@@ -93,3 +93,14 @@ test('tham số: ghép với mặc định, từ chối giá trị sai; link Vie
   assert.equal(vietQrUrl('', '0123', 1, '2026-09'), '');
   assert.equal(targetPercent(45, 60), 75);
 });
+
+test('TV / Thử việc: chỉ LCB theo ngày công ở cả ba nhóm, kể cả có phụ cấp, thưởng và tạm ứng cũ',()=>{
+ for(const payrollGroup of ['sale','bn','lock'] as const)for(const positionLabel of ['TV','Thử việc',' THỬ VIỆC ']){
+  const r=computePayslip({profile:{...EMPTY_PROFILE,payrollGroup,positionLabel,baseSalary:5200000,capacityCoef:7,responsibility:1000000,phoneAllowance:250000,attendanceBonus:200000,kpiEnabled:true,teamBonus:true,insurance:496650,outputRate:15000},params:P,
+   input:{...EMPTY_INPUT,workDays:24,overtimeHours:10,revenue:1e9,outputQty:100,quarterBonus:3000000,kpiOverride:1,healthInsurance:100000,incomeTax:200000},
+   adjustments:['bonus','allowance','deduction','advance','phone_advance'].map(kind=>({kind,amount:500000})),attendanceDays:26,systemRevenue:1e9,groupMonth:{...EMPTY_GROUP_MONTH,bnRevenue:1e9,lockRevenue:1e9},quarterBonusAuto:5000000,contractBonus:1e6,contractBonusAdjustment:-1e5,kpiNetRevenue:1e9});
+  assert.equal(r.gross,4800000);assert.equal(r.net,4800000);assert.equal(r.deductionTotal,0);assert.equal(r.kpi,null);assert.equal(r.kpiNetBasis,undefined);
+  assert.ok(r.income.filter(l=>l.key!=='salaryByDays').every(l=>l.amount===0));assert.ok(r.deductions.every(l=>l.amount===0));
+ }
+ const fallback=run({positionLabel:'TV'},{},{days:13});assert.equal(fallback.net,2379000,'LCB vùng và ngày chấm công khi không nhập tay');
+});

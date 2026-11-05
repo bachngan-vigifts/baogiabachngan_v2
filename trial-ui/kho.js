@@ -4,6 +4,7 @@
  *  #/stock-lookup Tra tồn: gõ / quét mã → tồn từng kho (chỉ số lượng, không có giá).
  * DOM dựng bằng createElement / textContent.
  */
+import { stockLookupTable } from './stock-lookup-holds.js';
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; };
 const num = v => Number(v || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 const dmy = iso => iso ? iso.slice(0, 10).split('-').reverse().join('/') : '';
@@ -96,13 +97,7 @@ export function initStockLookup({ api, root }) {
         const name = el('div'); name.append(el('b', 'lookup-sku', p.sku), el('span', 'lookup-name', p.name));
         const total = el('div', 'lookup-total'); total.append(el('strong', p.total > 0 ? '' : 'danger-text', num(p.total)), el('small', 'muted', p.unit || 'tổng'));
         top.append(name, total);
-        const rows = el('ul', 'lookup-stock');
-        for (const s of p.stock) {
-          const li = el('li', s.qty > 0 ? '' : 'muted'), w = el('span', '', s.warehouse);
-          if (r.source === 'mixed') w.append(el('small', 'muted', ' · ' + (SRC[s.source] || SRC.sapo)));
-          li.append(w, el('b', '', num(s.qty))); rows.append(li);
-        }
-        c.append(top, rows);
+        c.append(top, stockLookupTable(p, r.source === 'mixed'));
         // Hàng đang về: đơn mua NCC đã duyệt còn chờ nhận (không cộng vào tổng tồn) – từng đơn: số đơn, NCC, ngày hẹn.
         const inc = p.incoming;
         if (inc?.qty > 0) {

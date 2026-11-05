@@ -273,7 +273,7 @@ export function initMemberDetail(deps) {
     dialog('Hồ sơ lương ' + st.d.member.name, `
       <label>Áp dụng từ tháng<input name="effectiveMonth" type="month" required value="${esc(st.month)}"></label>
       <label>Bảng lương<select name="payrollGroup">${Object.entries(GROUP).map(([k, t]) => `<option value="${k}" ${p.payrollGroup === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
-      <label>Vị trí (in trên bảng lương)<input name="positionLabel" maxlength="60" value="${esc(p.positionLabel)}" placeholder="SALE, KẾ TOÁN, KHO, TK, IT-WEB, NVBH, TV…"></label>
+      <label>Vị trí (in trên bảng lương)<input name="positionLabel" list="salary-positions" maxlength="60" value="${esc(p.positionLabel)}" placeholder="SALE, KẾ TOÁN, KHO, TK, IT-WEB, NVBH, TV…"><datalist id="salary-positions"><option value="THỬ VIỆC">Chỉ LCB theo ngày công; không phụ cấp, thưởng hoặc khoản trừ</option></datalist></label><p class="muted small">Vị trí TV / THỬ VIỆC: chỉ hưởng LCB theo ngày công, không tính các khoản khác.</p>
       <label>LCB / lương thoả thuận<input name="baseSalary" data-money inputmode="numeric" value="${p.baseSalary ? Number(p.baseSalary).toLocaleString('vi-VN') : ''}" placeholder="Trống = LCB vùng ${(prm.minWageDay * prm.standardDays).toLocaleString('vi-VN')}"></label>
       ${numInput('capacityCoef', 'Hệ số năng lực', p.capacityCoef || '', 'placeholder="0"')}
       <label>Trách nhiệm tính<select name="responsibilityMode">${Object.entries(RESP).map(([k, t]) => `<option value="${k}" ${p.responsibilityMode === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>

@@ -61,7 +61,9 @@ export interface IncomingLine { sku: string; orderId: string; ticketNumber: stri
  */
 export const incomingLookup: { read?: (db: StaffEnv['db'], skus: readonly string[]) => Promise<IncomingLine[]> } = {};
 
-export function registerInventoryRoutes(router: Router<StaffEnv>) {
+export function registerInventoryRoutes(router: Router<StaffEnv>, deps: {
+  heldQuantitiesOf?: (db: StaffEnv['db'], skus: string[], warehouseIds: string[]) => Promise<{ sku: string; warehouseId: string | null; qty: number }[]>;
+} = {}) {
   registerAdjustmentRoutes(router,ledgerWarehouses);
   router.get('/stock-warehouses', async c => {
     const hidden = await hiddenWarehouseIds(c.env.db, me(c));
@@ -80,14 +82,15 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
     if (!found.length) found = await db.select(cols).from(products).where(and(eq(products.active, true), matchAllWords(foldSql(products.sku, products.name, products.brand), raw)))
       .orderBy(asc(products.sku)).limit(30);
     const skus = found.map(p => p.sku);
+    const hidden = await hiddenStockWarehouses(db, me(c));
+    whs = whs.filter(w => !hidden.has(w.id));
     // Tồn theo cùng nguồn với danh mục: kho đã chốt đầu kỳ = sổ kho, kho chưa chốt = tồn Sapo. Kho riêng (Hoá đơn) ẩn với người không bán kho đó.
-    const [opened, rows, incoming, hidden] = await Promise.all([
+    const [opened, rows, incoming, held] = await Promise.all([
       openedWarehouses(db, whs.map(w => w.id)),
       readCatalogStock(db, skus),
       skus.length && incomingLookup.read ? incomingLookup.read(db, skus).catch(() => [] as IncomingLine[]) : [] as IncomingLine[],
-      hiddenStockWarehouses(db, me(c)),
+      deps.heldQuantitiesOf ? deps.heldQuantitiesOf(db, skus, whs.map(w => w.id)) : [],
     ]);
-    whs = whs.filter(w => !hidden.has(w.id));
     const at = (sku: string, wh: string) => num(rows.find(r => r.sku === sku && r.warehouseId === wh)?.quantity ?? 0);
     // Nguồn theo TỪNG kho: kho đã chốt = sổ kho, kho chưa chốt = Sapo; `source` chung = 'mixed' khi các kho khác nguồn.
     const sourceOf = (id: string) => opened.has(id) ? 'ledger' as const : 'sapo' as const, sources = new Set(whs.map(w => sourceOf(w.id)));
@@ -96,7 +99,12 @@ export function registerInventoryRoutes(router: Router<StaffEnv>) {
       // Hàng đang về: đơn mua NCC đã duyệt còn chờ (không cộng vào tổng tồn); đơn hẹn sớm lên trước.
       const orders = incoming.filter(l => l.sku === p.sku).sort((a, b) => (a.arrivalDate || '9') < (b.arrivalDate || '9') ? -1 : 1)
         .map(l => ({ orderId: l.orderId, ticketNumber: l.ticketNumber, supplierName: l.supplierName, internalNo: l.internalNo, arrivalDate: l.arrivalDate, qty: num(l.left) }));
-      return { ...p, stock, total: num(stock.reduce((t, x) => t + x.qty, 0)), incoming: { qty: num(orders.reduce((t, o) => t + o.qty, 0)), orders } };
+      const reservations = held.filter(h => h.sku === p.sku);
+      return { ...p, stock, total: num(stock.reduce((t, x) => t + x.qty, 0)),
+        held: deps.heldQuantitiesOf ? { qty: num(reservations.reduce((sum, h) => sum + h.qty, 0)),
+          unassigned: num(reservations.filter(h => h.warehouseId === null).reduce((sum, h) => sum + h.qty, 0)),
+          stock: whs.map(w => ({ warehouseId: w.id, qty: num(reservations.filter(h => h.warehouseId === w.id).reduce((sum, h) => sum + h.qty, 0)) })) } : undefined,
+        incoming: { qty: num(orders.reduce((t, o) => t + o.qty, 0)), orders } };
     }) });
   }, 'business');
 
