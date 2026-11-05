@@ -2537,6 +2537,24 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 @media(max-width:768px){.pr-quick-tools:first-child{grid-template-columns:1fr}#view-payroll #pr-quick .pr-quick-table{display:table!important;min-width:1800px!important}#view-payroll #pr-quick .pr-quick-table thead{display:table-header-group!important}#view-payroll #pr-quick .pr-quick-table tbody{display:table-row-group!important}#view-payroll #pr-quick .pr-quick-table tr:not([hidden]){display:table-row!important;padding:0!important}#view-payroll #pr-quick .pr-quick-table td,#view-payroll #pr-quick .pr-quick-table th{display:table-cell!important;padding:10px!important}#view-payroll #pr-quick .pr-quick-table td::before{display:none!important}}
 .pr-quick-value[type=checkbox]{width:20px!important;min-height:20px;vertical-align:middle;margin-right:8px}
 
+/* Payroll reference sheet: two header levels, grouped colors, fixed employee columns. */
+#pr-quick .pr-sheet{table-layout:fixed;width:3260px;min-width:3260px!important;border-collapse:separate;border-spacing:0;font-size:12px}
+#pr-quick .pr-sheet th,#pr-quick .pr-sheet td{border-right:1px solid #b8bec6;border-bottom:1px solid #b8bec6;min-width:0;white-space:normal;padding:8px;vertical-align:middle}
+#pr-quick .pr-sheet th{color:#172433;background:#fff;font-size:11px;text-transform:none;text-align:center;line-height:1.3;top:0;z-index:5}
+#pr-quick .pr-sheet thead tr:first-child{height:44px}#pr-quick .pr-sheet .pr-sheet-subhead{height:46px}#pr-quick .pr-sheet .pr-sheet-subhead th{top:44px}
+#pr-quick .pr-sheet .pr-sheet-capacity,#pr-quick .pr-sheet .pr-sheet-gross{background:#f7cfb5}
+#pr-quick .pr-sheet .pr-sheet-kpi,#pr-quick .pr-sheet .pr-sheet-net{background:#cbe1b4}
+#pr-quick .pr-sheet .pr-sheet-allowance{background:#b9cae6}#pr-quick .pr-sheet .pr-sheet-deduction{background:#adbaca}#pr-quick .pr-sheet .pr-sheet-base{background:#b9b6b5}
+#pr-quick .pr-sheet tbody tr{height:86px}#pr-quick .pr-sheet .pr-sheet-gross,#pr-quick .pr-sheet .pr-sheet-net{font-weight:700}
+#pr-quick .pr-sheet .pr-sheet-index{position:sticky;left:0;width:44px;background:#fff;z-index:3;text-align:center}
+#pr-quick .pr-sheet .pr-quick-name,#pr-quick .pr-sheet .pr-sheet-name{position:sticky;left:44px;width:220px;min-width:220px;background:#fff;z-index:3}
+#pr-quick .pr-sheet thead .pr-sheet-index,#pr-quick .pr-sheet thead .pr-sheet-name{z-index:8}
+#pr-quick .pr-sheet .pr-quick-name>a{text-transform:uppercase;font-weight:700}#pr-quick .pr-sheet small{font-size:10px;line-height:1.3;color:#58677c}
+#pr-quick .pr-sheet .pr-quick-value{width:100%!important;min-width:0;min-height:34px;padding:5px!important;border:1px solid transparent!important;background:#fffdf5!important;font-size:12px}
+#pr-quick .pr-sheet .pr-quick-value:focus{border-color:#3c79c9!important;outline:2px solid #dceaff}#pr-quick .pr-sheet .pr-quick-value[aria-invalid=true]{border-color:#d92332!important}
+#pr-quick .pr-sheet .pr-sheet-bank{text-align:center}#pr-quick .pr-sheet .pr-sheet-bank img{display:block;margin:5px auto;max-width:86px}
+#pr-quick .pr-sheet details{min-width:0}#pr-quick .pr-sheet details[open]{min-width:240px}
+#view-payroll #pr-quick .pr-sheet tfoot{display:table-footer-group!important;font-weight:700;background:#f2f5f8}
 .customer-filter-heading { flex: 1 0 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
 .customer-filter-notice { margin: 10px 0; overflow-wrap: anywhere; }
 .crm-filter-fields .customer-filter-heading { display: none; }

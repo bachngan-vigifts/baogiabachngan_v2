@@ -6,7 +6,8 @@ import {fileURLToPath} from 'node:url';
 import {setupSalesPayroll} from '../../tests/helpers/sales-payroll-fixture.ts';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
 const f=await setupSalesPayroll(),root=fileURLToPath(new URL('../../trial-ui/',import.meta.url));
-await f.salary({baseSalary:5200000,kpiEnabled:false,contractBonusEnabled:false});
+await f.call('/hr/members/emp/salary',f.mgr,'PUT',{effectiveMonth:'2026-09',baseSalary:5200000,capacityCoef:6});
+await f.salary({baseSalary:5200000,capacityCoef:7,kpiEnabled:false,contractBonusEnabled:false});
 const server=createServer(async(req,res)=>{try{
  const u=new URL(req.url,'http://localhost');
  if(u.pathname.startsWith('/api/staff/')){
@@ -29,12 +30,30 @@ try{
   const user=(await f.call('/me',f.mgr)).data.user;
   await context.addInitScript(({user,token})=>{localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));},{user,token:f.mgr.split('=')[1]});
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const paste=async(selector,text)=>page.waitForFunction(({selector,text})=>{
+    const node=document.querySelector(selector);if(!node||node.disabled||document.getElementById('payroll-board').inert)return false;
+    const transfer=new DataTransfer();transfer.setData('text/plain',text);node.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:transfer}));return true;
+  },{selector,text});
   await page.goto(origin+'/#/payroll?month=2026-10');
   await page.locator('#pr-quick').waitFor();
   assert.equal(await page.locator('.pr-quick-table thead').evaluate(n=>getComputedStyle(n).display),'table-header-group');
   assert.equal(await page.locator('.pr-quick-table tbody').evaluate(n=>getComputedStyle(n).display),'table-row-group');
+  assert.equal(await page.locator('.pr-sheet thead tr').count(),2);
+  for(const title of ['NĂNG LỰC','KPIs','PHỤ CẤP','CÁC KHOẢN TRỪ']) assert.equal(await page.locator('.pr-sheet thead').getByRole('columnheader',{name:title,exact:true}).count(),1);
+  assert.equal(await page.locator('[data-member="emp"][data-key="kpiOverride"]').getAttribute('data-scale'),'100');
+  // The reference sheet supports editing different sources on one row without switching modes.
+  assert.equal((await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find(r=>r.member.id==='emp').previousCapacityCoef,6);
+  await paste('[data-member="emp"][data-key="baseSalary"]','5.400.000\t23');
+  await page.locator('[data-member="emp"][data-key="kpiOverride"]').fill('115,72');
+  await page.locator('[data-member="emp"][data-key="baseSalary"]').fill('5.400.000');
+  await page.locator('[data-member="emp"][data-key="advance"]').fill('100000');
+  await page.locator('[data-quick-save]').click();await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent==='');
+  let sheet=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find(r=>r.member.id==='emp');
+  assert.equal(sheet.entry.inputs.workDays,23);assert.equal(sheet.entry.inputs.kpiOverride,1.1572);assert.equal(sheet.entry.profile.baseSalary,5400000);assert.equal(sheet.entry.adjustments.advance,100000);
+  await page.screenshot({path:out+'/sheet-'+width+'.png',fullPage:true});
+  await page.locator('[data-quick-mode]').selectOption('inputs');
   const days=page.locator('[data-member="emp"][data-key="workDays"]');
-  await days.evaluate((node,text)=>{const transfer=new DataTransfer();transfer.setData('text/plain',text);node.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:transfer}));},width===1440?'24,5\t1,5\n26\t0':'25\t2\n26\t0');
+  await paste('[data-member="emp"][data-key="workDays"]',width===1440?'24,5\t1,5\n26\t0':'25\t2\n26\t0');
   await page.locator('[data-quick-mode]').selectOption('adjustments');
   await page.locator('[data-member="emp"][data-key="advance"]').fill(width===1440?'500000':'600000');
   await page.locator('[data-quick-save]').click();
@@ -89,9 +108,9 @@ try{
   await page.evaluate(()=>{location.hash='#/payroll?month=2026-10';});await page.locator('#pr-quick[data-payroll-month="2026-10"]').waitFor();
   assert.equal(await days.inputValue(),'17');
   // P1 regression: Vietnamese grouped rate and quantity must persist as 15000, not 15.
-  await page.locator('[data-member="emp"][data-key="outputQty"]').evaluate(node=>{const transfer=new DataTransfer();transfer.setData('text/plain','15.000\n');node.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:transfer}));});
+  await paste('[data-member="emp"][data-key="outputQty"]','15.000\n');
   await page.locator('[data-quick-mode]').selectOption('profile');
-  await page.locator('[data-member="emp"][data-key="outputRate"]').evaluate(node=>{const transfer=new DataTransfer();transfer.setData('text/plain','15.000\n');node.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:transfer}));});
+  await paste('[data-member="emp"][data-key="outputRate"]','15.000\n');
   await page.locator('[data-quick-save]').click();await page.waitForFunction(()=>document.querySelector('[data-quick-count]')?.textContent==='');
   const parsed=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find(r=>r.member.id==='emp');
   assert.equal(parsed.entry.inputs.outputQty,15000);assert.equal(parsed.entry.profile.outputRate,15000);
