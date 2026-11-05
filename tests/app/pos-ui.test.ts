@@ -1172,7 +1172,7 @@ test('POS first page and order board are usable while the full stock snapshot is
     const page = calls.find(path => path.startsWith('/pos/catalog'))!;
     assert.equal(new URLSearchParams(page.split('?')[1]).get('limit'), '60');
     assert.ok(calls.some(path => path.startsWith('/pos/orders')));
-    assert.ok(calls.some(path => path.startsWith('/pos/stock-snapshot') && path.includes('background=1') && path.includes('metadata=1')));
+    assert.ok(calls.some(path => path.startsWith('/pos/stock-snapshot') && path.includes('background=1') && path.includes('metadata=2')));
     const card = root.querySelectorAll('button').find(n => n.className === 'pos-product')!;
     assert.equal(card.disabled, false); assert.match(card.textContent, /Còn 5/);
     release({ version: 1, registerId: 'r', pricePolicyId: 'vat', warehouseReady: true, asOf: '2026-11-04T00:01:00Z', catalog: [{ sku: 'FAST', name: 'Bình thử' }], rows: [['FAST', 1000, 0, 0, ['FAST']]] });

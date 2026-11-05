@@ -5,6 +5,10 @@
   - Nút **＋ xanh lá** ở đầu trang để thêm khách hàng. Nút hiện cả trên máy tính và điện thoại.
   - Lưu xong thì mở luôn trang chi tiết của khách mới.
   - Có cột **Phụ trách** (kèm số người được chia sẻ) và ô lọc **Khách của tôi** (`?mine=1`).
+  - **Bộ lọc:** người phụ trách/chưa phân công, trạng thái duyệt, loại khách (doanh nghiệp/khách lẻ theo quyền), ngày tạo theo giờ Việt Nam và sắp xếp. Dòng “Đang lọc” nêu điều kiện đang dùng. Xóa bộ lọc giữ từ khóa tìm kiếm và trả về trang đầu.
+  - Trên điện thoại, mở **Lọc**, chọn điều kiện rồi bấm **Xem kết quả**; đóng bảng lọc thì bỏ các điều kiện chưa áp dụng. Ngày không hợp lệ không gửi truy vấn.
+  - Khách đã duyệt có nút **＋ Giao dịch** trước **＋ Báo giá** khi tài khoản có quyền Giao dịch & chăm sóc; mở form hiện có, chọn sẵn đúng khách và danh bạ liên hệ. Bấm nút chưa ghi giao dịch; chỉ lưu khi người dùng hoàn tất form.
+  - Popup giao dịch PC rộng 840px (150% của bản 560px); điện thoại vẫn giới hạn theo màn hình. Chọn khách sẽ tải đủ danh bạ, ưu tiên liên hệ chính, có lựa chọn nhập tay và tải lại khi lỗi. Đổi khách xóa liên hệ cũ ngay; phản hồi chậm không ghi đè khách mới. Nội dung là ô nhiều dòng, tối đa 2.000 ký tự; khi sửa giữ nguyên người liên hệ đã ghi.
   - Bấm vào dòng hoặc tên khách để mở trang chi tiết.
 - **Trang chi tiết** (`#/customers/<id>`, file `trial-ui/customer-detail.js`):
   - **Đầu trang:** tên khách, nhãn *Sapo* hoặc *Tạo trên web*, nút **Sửa thông tin** và **＋ Báo giá**.

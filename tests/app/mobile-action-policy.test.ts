@@ -30,5 +30,6 @@ test('pagination and adding a product stay inline; only four or more secondary a
 test('read-only navigation containing workflow status stays visible; real destructive controls retain their policy',()=>{
  assert.equal(actionKind(control('Khách hàng · Khách mới chờ duyệt: 3',{navigation:true})),'inline');
  assert.equal(actionKind(control('Xem đơn đã huỷ: 4',{navigation:true})),'inline');
+ assert.equal(actionKind(control('Xóa lọc',{navigation:true})),'inline');
  assert.equal(actionKind(control('Huỷ phiếu')),'desktop');
 });
