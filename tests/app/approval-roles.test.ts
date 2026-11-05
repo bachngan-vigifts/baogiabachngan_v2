@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -6,7 +7,7 @@ import { hashPassword } from '../../src/core/auth/password.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
 import { quotations, quoteLines } from '../../src/modules/quotes/schema.ts';
-import { products } from '../../src/modules/catalog/schema.ts';
+import { products, pricePolicies } from '../../src/modules/catalog/schema.ts';
 import { customerStockRequests } from '../../src/modules/portal/schema.ts';
 
 /**
@@ -17,6 +18,7 @@ import { customerStockRequests } from '../../src/modules/portal/schema.ts';
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
 async function setup() {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
+  await db.insert(pricePolicies).values([{id:'retail',name:'Giá bán lẻ'},{id:'retail-vat',name:'Giá lẻ +VAT'}]);
   const pw = await hashPassword(PASSWORD, 1000);
   // sadmin: Sale Admin · duyet: Sale được Manager chỉ định duyệt · emp2: Sale thường (người tạo dữ liệu thứ hai).
   for (const [id, pos] of [['sadmin', 'sale-admin'], ['duyet', 'sale'], ['emp2', 'sale']] as const) {
@@ -51,8 +53,8 @@ async function setup() {
     assert.equal((await call(`/orders/${o.data.id}/submit`, s.emp, 'POST', {})).status, 200);
     return o.data.id as string;
   };
-  const pendingCustomer = async (name: string) => { const r = await call('/customers', s.emp, 'POST', { name }); assert.equal(r.status, 201); return r.data.id as string; };
-  const pendingProduct = async (sku: string) => { assert.equal((await call('/products', s.emp, 'POST', { sku, name: 'SP ' + sku, unit: 'cái' })).status, 201); return sku; };
+  const pendingCustomer = async (name: string) => { const r = await call('/customers', s.emp, 'POST', customerCreateFixture({ name })); assert.equal(r.status, 201); return r.data.id as string; };
+  const pendingProduct = async (sku: string) => { assert.equal((await call('/products', s.emp, 'POST', { sku, name: 'SP ' + sku, unit: 'cái', prices: {retail:100000,'retail-vat':108000} })).status, 201); return sku; };
   /** Đơn mua NCC chờ duyệt (Manager lập từ báo giá nguồn). */
   const pendingPurchase = async () => {
     const sup = (await call('/suppliers', s.mgr, 'POST', { name: 'NCC ' + (++n), contacts: [{ kind: 'order', email: `ncc${n}@ncc.vn` }] })).data.supplier.id;
@@ -146,7 +148,7 @@ test('Sale Admin: có quyền của Sale + Kế toán + Kho; xem toàn công ty 
   assert.equal((await s.call('/quotes?limit=50', s.sadmin)).data.quotes.some((x: any) => x.id === q.data.id), true, 'báo giá toàn công ty');
   assert.equal((await s.call(`/quotes/${q.data.id}`, s.sadmin)).status, 200);
   assert.equal((await s.call('/quotes?limit=50', s.emp)).data.quotes.some((x: any) => x.id === q.data.id), true, 'Sale cùng chức vụ cũng thấy (phạm vi Cùng chức vụ)');
-  const c = await s.call('/customers', s.emp2, 'POST', { name: 'Khách của emp2', phone: '0911222333' });
+  const c = await s.call('/customers', s.emp2, 'POST', customerCreateFixture({ name: 'Khách của emp2', phone: '0911222333' }));
   assert.equal((await s.call(`/customers/${c.data.id}`, s.sadmin)).status, 200, 'khách hàng');
   await s.call(`/quotes/${q.data.id}/submit`, s.emp2, 'POST', { revision: 1 });
   await s.call(`/quotes/${q.data.id}/approve`, s.mgr, 'POST', { revision: 1 });

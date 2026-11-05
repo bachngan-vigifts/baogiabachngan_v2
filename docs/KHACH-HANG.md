@@ -1,10 +1,27 @@
 # Khách hàng: danh sách, thêm mới, trang chi tiết
 
+Manager có thể chuẩn bị, xem trước và đối soát khách/người liên hệ từ AppSheet; xem [APPSHEET-MAPPING.md](APPSHEET-MAPPING.md). Nhóm/loại khách (`customerType`) độc lập với khách lẻ/doanh nghiệp (`isRetail`).
+
+## Form tạo khách đầy đủ
+
+- Tạo tại trang Khách hàng bắt buộc **tên, người liên hệ, số điện thoại, MST và địa chỉ**, có dấu `*` trên giao diện và kiểm tra tại `POST /customers`.
+- Có nhóm/loại khách, ngày thành lập, mã khách, email và điều khoản; thêm được ghi chú khách, người phụ trách/chia sẻ và nhiều liên hệ (tên/chức vụ/SĐT/email/ghi chú/cờ chính). Toàn bộ hồ sơ được lưu trong một transaction, lỗi thì không tạo dở.
+- Manager chọn người phụ trách hoặc để chưa phân công. Nhân viên tạo thì tự phụ trách, khách chờ Manager duyệt; người được chia sẻ phải là nhân viên đang hoạt động.
+- Chọn liên hệ chính điền tên vào trường người liên hệ, không tự thay điện thoại/email doanh nghiệp bằng thông tin cá nhân. Mỗi liên hệ thêm vào phải có tên, tối đa một cờ chính.
+- **Tạo tại Bán hàng nhanh được miễn các trường bắt buộc trên**, kể cả tên. Không có SĐT/MST thì dùng chung “Bán người tiêu dùng”; có định danh nhưng chưa có tên thì hiển thị “Khách <SĐT/MST>”. Vẫn chống trùng MST/SĐT và kiểm tra định dạng/giới hạn trường đã nhập.
+- Sửa hồ sơ cũ không bắt buộc điền lại dữ liệu lịch sử còn thiếu. Ngày tạo/nguồn Web/trạng thái duyệt do hệ thống quản lý; không nhập tay các khóa AppSheet hay thời điểm đồng bộ trong form.
+
+API tạo khách bổ sung tùy chọn `ownerId`, `sharedIds`, `notes`, `contacts`; `contacts` dùng cùng cấu trúc với API danh bạ. Giới hạn 50 liên hệ/30 người chia sẻ/5.000 ký tự ghi chú. Nhân viên không được chọn người phụ trách khác khi tạo. Bộ test nghiệp vụ dùng `tests/helpers/customer-fixture.ts` cho dữ liệu giả đủ trường; test thiếu trường gọi API trực tiếp, không đi qua helper bổ sung dữ liệu.
+
 ## Giao diện
 - **Danh sách** (`#/customers`):
   - Nút **＋ xanh lá** ở đầu trang để thêm khách hàng. Nút hiện cả trên máy tính và điện thoại.
   - Lưu xong thì mở luôn trang chi tiết của khách mới.
   - Có cột **Phụ trách** (kèm số người được chia sẻ) và ô lọc **Khách của tôi** (`?mine=1`).
+  - **Bộ lọc:** người phụ trách/chưa phân công, trạng thái duyệt, loại khách (doanh nghiệp/khách lẻ theo quyền), ngày tạo theo giờ Việt Nam và sắp xếp. Dòng “Đang lọc” nêu điều kiện đang dùng. Xóa bộ lọc giữ từ khóa tìm kiếm và trả về trang đầu.
+  - Trên điện thoại, mở **Lọc**, chọn điều kiện rồi bấm **Xem kết quả**; đóng bảng lọc thì bỏ các điều kiện chưa áp dụng. Ngày không hợp lệ không gửi truy vấn.
+  - Khách đã duyệt có nút **＋ Giao dịch** trước **＋ Báo giá** khi tài khoản có quyền Giao dịch & chăm sóc; mở form hiện có, chọn sẵn đúng khách và danh bạ liên hệ. Bấm nút chưa ghi giao dịch; chỉ lưu khi người dùng hoàn tất form.
+  - Popup giao dịch PC rộng 840px (150% của bản 560px); điện thoại vẫn giới hạn theo màn hình. Chọn khách sẽ tải đủ danh bạ, ưu tiên liên hệ chính, có lựa chọn nhập tay và tải lại khi lỗi. Đổi khách xóa liên hệ cũ ngay; phản hồi chậm không ghi đè khách mới. Nội dung là ô nhiều dòng, tối đa 2.000 ký tự; khi sửa giữ nguyên người liên hệ đã ghi.
   - Bấm vào dòng hoặc tên khách để mở trang chi tiết.
 - **Trang chi tiết** (`#/customers/<id>`, file `trial-ui/customer-detail.js`):
   - **Đầu trang:** tên khách, nhãn *Sapo* hoặc *Tạo trên web*, nút **Sửa thông tin** và **＋ Báo giá**.
@@ -79,3 +96,15 @@ Migration `20261019030603_retail_customers.sql` thêm `sapo_customers.is_retail`
 GET /customers và GET /pos/customers hỗ trợ `kind=retail|business`; NVBH LOCK/ML và Manager được thấy bộ lọc Khách lẻ, các chức vụ nhân viên khác luôn loại nhóm này khỏi danh sách/tìm kiếm/phân trang kể cả tự thêm query. Quyền xem liên kết khách trên chứng từ cũ không đổi. Khách doanh nghiệp giữ nguyên luồng hiện tại; đồng bộ thường không ghi đè hồ sơ đã đánh dấu retail.
 
 Chạy workflow **Đồng bộ Sapo**, scope=retail: mỗi lần gọi đọc tối đa hai trang, lưu con trỏ riêng trong sapo_health_monitor_state, chạy lại tiếp tục và không thêm trùng. Không reset cursor sản phẩm/nhân viên, không đổi cron. API `/integrations/sapo/retail-customers/pull` dùng mã đồng bộ sẵn có; `/admin/sapo-retail-customers` chỉ Manager. Không trả dữ liệu liên hệ hay credential trong kết quả. Nhận completed=true mới hết trang; nếu có warning nhóm thì cần đối chiếu trước khi tuyên bố đủ cả hai nhóm.
+
+### Ngày thành lập và gợi ý kỷ niệm
+
+Form thêm/sửa khách có **Ngày thành lập** (không bắt buộc). Chỉ nhận ngày thực tế, không ở tương lai; để trống để xóa. Client cũ không gửi trường này khi sửa sẽ giữ nguyên giá trị cũ. Đồng bộ Sapo không ghi đè ngày CRM đã nhập.
+
+Danh sách và hồ sơ khách hiển thị mốc kỷ niệm tiếp theo theo chu kỳ **5, 10, 15, 20… năm**, gồm ngày diễn ra và số ngày còn lại. **Kỷ niệm sắp tới** liệt kê các khách doanh nghiệp đã duyệt có mốc trong **60 ngày** tới (bao gồm hôm nay), để sale liên hệ tìm hiểu kế hoạch sự kiện và tư vấn quà tặng/ấn phẩm. Không tự gửi tin nhắn hay tạo công việc. Sale xem khách thuộc phạm vi sở hữu/chia sẻ/phòng ban hiện có; Manager và Sale Admin theo phạm vi toàn công ty của vai trò. Lọc toàn bộ trước khi giới hạn 100 gợi ý gần nhất.
+
+Công thức chọn bội số 5 năm chưa qua: nếu mốc năm nay đã qua thì chuyển sang mốc tiếp theo; không lấy số ngày chia 365 để tính tuổi. Ngày 29/2 được tính vào 28/2 ở năm không nhuận. Dùng ngày lịch Việt Nam; không suy đoán ngày thành lập từ ngày tạo hồ sơ hoặc ngày đồng bộ Sapo.
+
+Migration: `20261105010141_customer_established_date.sql` thêm cột `sapo_customers.established_date` kiểu `date`, cho phép null và ràng buộc năm 0001–9999. Phải áp dụng trước deploy API/UI; workflow API có read-only gate `scripts/sql/assert-customer-established-date.sql` để không thay API đang hoạt động khi thiếu cột. Không thay đổi RLS hoặc cấp quyền truy cập mới.
+
+Công thức dùng chung server/browser ở `customers/domain/anniversary.ts`; `npm run ui:build` sinh `trial-ui/customer-anniversary.js`. Test: `tests/app/customer-anniversary.test.ts`; kiểm tra trình duyệt local: `scripts/testing/customer-anniversary.mjs`.

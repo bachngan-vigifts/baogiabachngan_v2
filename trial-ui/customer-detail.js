@@ -106,7 +106,10 @@ export function initCustomerDetail(deps) {
       </div>
       <div class="cd-grid">
         <div class="card"><h2 class="card-title">Thông tin</h2><dl class="kv">
+          <dt>Ngày thành lập</dt><dd>${c.establishedDate ? esc(c.establishedDate.split('-').reverse().join('/')) : 'Chưa cập nhật'}</dd>
+          ${c.anniversary ? `<dt>Kỷ niệm tiếp theo</dt><dd><b>${c.anniversary.years} năm · ${esc(c.anniversary.date.split('-').reverse().join('/'))}</b><small>${c.anniversary.daysUntil === 0 ? 'Hôm nay' : 'Còn '+c.anniversary.daysUntil+' ngày'}${c.anniversary.upcoming ? ' · '+esc(c.anniversary.suggestion) : ''}</small></dd>` : ''}
           <dt>Mã KH</dt><dd>${esc(c.customerCode) || '—'}</dd><dt>MST</dt><dd>${esc(c.taxCode) || '—'}</dd>
+          <dt>Nhóm / loại khách</dt><dd>${esc(c.customerType) || 'Chưa cập nhật'}</dd>
           <dt>Điều khoản</dt><dd>Cọc ${c.depositRate ?? 30}% · thanh toán ${/^\d+$/.test(String(c.paymentTerm ?? '5')) ? (c.paymentTerm ?? '5') + ' ngày' : esc(c.paymentTerm)}${c.depositRate == null && !c.paymentTerm ? ' <small class="muted">(mặc định)</small>' : ''}</dd>
           <dt>Giới hạn công nợ</dt><dd>${c.creditLimit != null ? money(c.creditLimit) : '—'}</dd>
           <dt>Liên hệ</dt><dd>${esc(c.contact) || '—'}</dd>

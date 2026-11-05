@@ -1,5 +1,5 @@
 // Thêm sản phẩm trên web + duyệt (trang Sản phẩm).
-//  - Nút ＋ xanh mở hộp "Thêm sản phẩm": SKU, tên, thương hiệu, ĐVT, mẫu, link ảnh, giá theo từng bảng giá.
+//  - Nút ＋ xanh mở hộp "Thêm sản phẩm": SKU, tên, thương hiệu, ĐVT, mẫu, VAT 8%/10%, link ảnh, giá theo từng bảng giá.
 //  - Manager thêm → có hiệu lực ngay. Nhân viên thêm → "Chờ duyệt", chưa hiện khi lập báo giá.
 //  - Khung "Sản phẩm chờ duyệt" ở đầu trang: Manager bấm Duyệt / Từ chối; người tạo xoá được sản phẩm mình gửi.
 
@@ -35,8 +35,13 @@ export function initProductAdmin(deps) {
 
   function openForm(product = null) {
     const editing = !!product;
+    const initialTax = editing ? product.taxable && [8, 10].includes(product.taxOut) ? String(product.taxOut) : '' : '8';
+    const legacyTaxLabel = !product?.taxable ? 'Không áp dụng thuế (giữ nguyên)' : Number.isFinite(product.taxOut) ? `${product.taxOut}% (giữ nguyên)` : 'Chưa có thuế (giữ nguyên)';
     const policies = editing && deps.canSeePrices && !deps.canSeePrices() ? [] : deps.policies();
+    const priceKind = p => p.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const requiredPrices = editing ? [] : [/^gia(ban)?le$/, /^gia(ban)?levat$/].map(pattern => policies.find(p => pattern.test(priceKind(p))));
     const dlg = document.createElement('dialog'); dlg.className = 'modal product-admin-dialog';
+    dlg.setAttribute('aria-label', editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm');
     dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>${editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body form-grid cols-2">
         <label>Mã sản phẩm (SKU)<input name="sku" required maxlength="64" placeholder="VD: ML-BT-001" autocapitalize="characters"></label>
@@ -44,6 +49,7 @@ export function initProductAdmin(deps) {
         <label class="span-2">Tên sản phẩm<input name="name" required maxlength="500"></label>
         <label>Thương hiệu<input name="brand" maxlength="200" list="pa-brands"></label>
         <label>Mẫu / hoạ tiết<input name="pattern" maxlength="200"></label>
+        <label class="span-2">Thuế sản phẩm (VAT)<select name="taxRate">${editing && !initialTax ? `<option value="" selected disabled>${esc(legacyTaxLabel)}</option>` : ''}<option value="8">8%</option><option value="10">10%</option></select></label>
         <label class="span-2">Link ảnh (https://…)<input name="imageUrl" type="url" maxlength="2000" placeholder="Không bắt buộc"></label>
         <div class="span-2 product-image-picker">
           <button type="button" class="btn secondary small" data-image-choose>Tải ảnh lên</button><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-image-file hidden>
@@ -52,7 +58,8 @@ export function initProductAdmin(deps) {
           <div data-image-preview hidden></div>
         </div>
         ${editing?`<p class="muted small span-2">Quy cách thùng đóng gói (cm, kg)</p>${[['perCarton','Số sản phẩm / thùng'],['cartonLength','Dài thùng (cm)'],['cartonWidth','Rộng thùng (cm)'],['cartonHeight','Cao thùng (cm)'],['cartonWeight','Cân nặng thùng (kg)']].map(([key,label])=>`<label>${label}<input name="${key}" type="number" min="0.001" max="1000000" step="${key==='perCarton'?'1':'any'}" inputmode="decimal" placeholder="Chưa có"></label>`).join('')}`:''}
-        ${policies.map(p => `<label>Giá: ${esc(p.name)}<input name="price:${esc(p.id)}" inputmode="numeric" placeholder="0"></label>`).join('')}
+        ${policies.map(p => `<label>Giá: ${esc(p.name)}${requiredPrices.includes(p) ? ' *' : ''}<input name="price:${esc(p.id)}" inputmode="numeric" ${requiredPrices.includes(p) ? 'required aria-required="true" placeholder="Bắt buộc nhập"' : 'placeholder="0"'}></label>`).join('')}
+        ${editing ? '' : '<p class="muted small span-2">* Bắt buộc nhập Giá bán lẻ và Giá lẻ +VAT lớn hơn 0.</p>'}
         <p class="muted small span-2">${editing ? 'Cập nhật danh mục CRM. Nếu sản phẩm được đồng bộ từ Sapo, lần đồng bộ sau có thể ghi đè thông tin. Mã SKU được giữ nguyên.' : isManager() ? 'Bạn là Manager: sản phẩm có hiệu lực ngay sau khi lưu.' : 'Sản phẩm mới cần Manager duyệt mới dùng được khi lập báo giá.'}</p>
         <p class="error span-2" data-err role="alert"></p>
       </div>
@@ -64,6 +71,7 @@ export function initProductAdmin(deps) {
       dlg.querySelector('[name="sku"]').readOnly = true;
       for (const policy of policies) { const price = product.prices.find(p => p.policyId === policy.id)?.price; dlg.querySelector('form').elements.namedItem('price:' + policy.id).value = price == null ? '' : String(price); }
     }
+    dlg.querySelector('[name="taxRate"]').value = initialTax;
     const imageInput = dlg.querySelector('[name="imageUrl"]'), preview = dlg.querySelector('[data-image-preview]'), imageStatus = dlg.querySelector('[data-image-status]'), clearImage = dlg.querySelector('[data-image-clear]');
     let pendingImage = '', imageBusy = false, imageSequence = 0;
     function drawImage(src) {
@@ -97,8 +105,20 @@ export function initProductAdmin(deps) {
       if (imageBusy) { dlg.querySelector('[data-err]').textContent = 'Đợi xử lý ảnh xong rồi bấm Lưu.'; return; }
       const f = e.target.elements, err = dlg.querySelector('[data-err]'), v = k => f.namedItem(k).value.trim();
       const prices = {};
+      if (requiredPrices.some(p => !p)) { err.textContent = 'Chưa có đủ bảng Giá bán lẻ và Giá lẻ +VAT. Vui lòng tải lại hoặc cấu hình bảng giá.'; return; }
       for (const p of policies) { const raw = v('price:' + p.id).replace(/[\s.,]/g, ''); if (raw && !/^\d+$/.test(raw)) { err.textContent = 'Giá phải là số nguyên VNĐ từ 0 trở lên.'; return; } if (raw) prices[p.id] = Number(raw); else if (editing) prices[p.id] = null; }
+      for (const p of requiredPrices) {
+        if (!Number.isSafeInteger(prices[p.id]) || prices[p.id] <= 0 || prices[p.id] > 1e12) {
+          err.textContent = `Bắt buộc nhập ${p.name} lớn hơn 0 (tối đa 1.000.000.000.000đ).`;
+          f.namedItem('price:' + p.id).focus(); return;
+        }
+      }
       const body = { sku: v('sku'), name: v('name'), brand: v('brand'), unit: v('unit'), pattern: v('pattern'), imageUrl: v('imageUrl'), prices };
+      if (!editing || v('taxRate') !== initialTax) {
+        const rate = Number(v('taxRate'));
+        if (rate !== 8 && rate !== 10) { err.textContent = 'Chọn thuế sản phẩm 8% hoặc 10%.'; return; }
+        body.taxRate = rate;
+      }
       if(editing)for(const key of ['perCarton','cartonLength','cartonWidth','cartonHeight','cartonWeight']){
         const raw=v(key);if(raw===String(product[key]??''))continue;const value=raw===''?null:Number(raw.replace(',','.'));
         if(value!==null&&(!Number.isFinite(value)||value<=0||value>1e6||(key==='perCarton'&&!Number.isInteger(value)))){err.textContent='Nhập quy cách thùng là số dương; số SP/thùng là số nguyên.';return;}body[key]=value;

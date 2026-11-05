@@ -1,7 +1,8 @@
+import { createPayrollQuickEntry } from './payroll-quick-entry.js';
 import {openContractBonusDetails} from './contract-bonus-detail.js';
 // BẢNG LƯƠNG CÔNG TY (#/payroll?month=YYYY-MM) – theo file "Bảng lương mẫu": Tổng hợp · 3 bảng (Sale & VP, NVBH ML – Bách Ngân, NVBH Lock) ·
 // Chuyển khoản (VietQR) · Tham số · Xuất Excel. Mọi con số do máy chủ tính (src/modules/hr/domain/payroll.ts) – trang này chỉ hiển thị.
-// Sửa số liệu từng người ở trang chi tiết nhân viên (tab Lương & thưởng); số liệu chung của nhóm và tham số sửa ngay tại đây.
+// Nhập nhanh số liệu nhiều người ngay tại bảng; cấu hình đầy đủ và các khoản có lý do ở trang chi tiết nhân viên.
 
 import { COMPANY_LABEL } from './payroll-ui.js';
 import { openAdms } from './adms.js';
@@ -16,8 +17,9 @@ export function initPayroll(deps) {
   const { api, toast, esc, money, pill, confirmBox } = deps;
   const root = document.getElementById('payroll-board');
   root.addEventListener('click',e=>{const b=e.target.closest('[data-bonus-member]');if(b){const r=st.d?.rows.find(r=>r.member.id===b.dataset.bonusMember);if(r)openContractBonusDetails(r.payslip);}});
-  const st = { month: '', d: null, tab: 'summary', seq: 0 };
-  const TABS = [['summary', 'Tổng hợp'], ['profiles', 'Cài đặt lương'], ['sale', 'Sale & VP'], ['bn', 'NVBH ML'], ['lock', 'NVBH Lock'], ['transfer', 'Chuyển khoản']];
+  const st = { month: '', d: null, tab: 'quick', seq: 0 };
+  const TABS = [['quick', 'Nhập nhanh'], ['summary', 'Tổng hợp'], ['profiles', 'Cài đặt lương'], ['sale', 'Sale & VP'], ['bn', 'NVBH ML'], ['lock', 'NVBH Lock'], ['transfer', 'Chuyển khoản']];
+  const quick = createPayrollQuickEntry({ root, api, esc, money, toast, confirmBox, userId: deps.userId, onSaved: m => open(m) });
   const memberLink = (r, text) => `<a href="#/members/${encodeURIComponent(r.member.id)}?month=${encodeURIComponent(st.month)}&tab=payroll">${esc(text)}</a>`;
   const line = (p, key) => [...p.income, ...p.deductions].find(l => l.key === key)?.amount ?? 0;
   const withProfile = () => st.d.rows.filter(r => r.profile.hasProfile || r.payslip.status !== 'estimate');
@@ -90,7 +92,7 @@ export function initPayroll(deps) {
 
   function transferHtml() {
     const rows = withProfile().filter(r => r.payslip.net > 0);
-    return `<p class="muted small">Số tiền = thực nhận (làm tròn đồng). Nội dung chuyển khoản: "Luong T${Number(st.month.slice(5))}". Bấm "Mã QR" để mở ảnh mã VietQR quét bằng app ngân hàng.</p>
+    return `<p class="muted small">Số tiền = thực nhận (làm tròn đồng). Nội dung chuyển khoản: "Chuyen luong T${Number(st.month.slice(5))}". Bấm "Mã QR" để mở ảnh mã VietQR quét bằng app ngân hàng.</p>
       <div class="table-wrap"><table class="data-table"><thead><tr><th>Nhân viên</th><th>Ngân hàng</th><th>Số tài khoản</th><th>Chủ tài khoản</th><th class="right">Số tiền</th><th>Mã QR</th><th>Kiểm tra</th></tr></thead><tbody>
       ${rows.map(r => `<tr><td class="first">${memberLink(r, r.member.name)}<small>${esc(r.profile.positionLabel)}</small></td><td data-label="NH">${esc((r.profile.bankCode || '').toUpperCase()) || '—'}</td>
         <td data-label="STK">${esc(r.profile.bankAccount) || '—'}</td><td data-label="Chủ TK">${esc(r.profile.bankHolder) || '—'}</td><td class="right num strong">${money(r.payslip.net)}</td>
@@ -116,7 +118,7 @@ export function initPayroll(deps) {
       </div>
       <div class="card cd-tabs-card">
         <div class="chips cd-tabs" role="tablist">${TABS.map(([k, t]) => `<button type="button" class="chip ${k === st.tab ? 'active' : ''}" data-tab="${k}">${t}${['sale', 'bn', 'lock'].includes(k) ? ` <b>${d.totals.find(x => x.group === k).people}</b>${missingIn(k) ? ` <small class="danger-text" title="Chưa có hồ sơ lương">+${missingIn(k)}</small>` : ''}` : ''}</button>`).join('')}</div>
-        <div class="cd-tab-body">${['summary','sale'].includes(st.tab)?saleKpiPolicyHtml()+bonusSetupHtml():''}${st.tab === 'summary' ? summaryHtml() : st.tab === 'profiles' ? profilesHtml() : st.tab === 'transfer' ? transferHtml() : groupTable(st.tab)}</div></div>`;
+        <div class="cd-tab-body">${['summary','sale'].includes(st.tab)?saleKpiPolicyHtml()+bonusSetupHtml():''}${st.tab === 'quick' ? quick.html(d) : st.tab === 'summary' ? summaryHtml() : st.tab === 'profiles' ? profilesHtml() : st.tab === 'transfer' ? transferHtml() : groupTable(st.tab)}</div></div>`;
     root.querySelectorAll('.cd-tab-body table.data-table').forEach(t => {
       const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent);
       t.querySelectorAll('tbody tr').forEach(tr => [...tr.children].forEach((td, i) => { if (i && heads[i] && !td.dataset.label) td.dataset.label = heads[i]; }));
@@ -124,12 +126,23 @@ export function initPayroll(deps) {
   }
 
   async function open(month) {
-    const seq = ++st.seq; st.month = month || st.month || new Date().toISOString().slice(0, 7);
-    if (!st.d) root.innerHTML = '<p class="muted cd-loading">Đang tính bảng lương…</p>';
+    if (quick.isSaving()) return;
+    const target = month || st.month || new Date().toISOString().slice(0, 7);
+    if (target === st.d?.month && quick.dirty() && !root.hasAttribute('aria-busy')) return;
+    const seq = ++st.seq;
+    // Disable the old board synchronously, before awaiting any request. Commit the visible month only with its response.
+    quick.setLoading(true); root.inert = true; root.setAttribute('aria-busy', 'true');
+    root.innerHTML = '<p class="muted cd-loading" role="status">Đang tải bảng lương tháng ' + esc(target) + '…</p>';
     try {
-      const d = await api('/hr/payroll/' + st.month);
-      if (seq !== st.seq) return; st.d = d; render();
-    } catch (e) { if (seq === st.seq) root.innerHTML = `<div class="empty"><h3>Không mở được bảng lương</h3><p class="muted">${esc(e.message)}</p></div>`; }
+      const d = await api('/hr/payroll/' + target);
+      if (seq !== st.seq) return;
+      if (d.month !== target) throw new Error('Bảng lương trả về không đúng tháng yêu cầu.');
+      st.month = target; st.d = d; render();
+    } catch (e) {
+      if (seq === st.seq) root.innerHTML = `<div class="empty"><h3>Không mở được bảng lương</h3><p class="muted">${esc(e.message)}</p></div>`;
+    } finally {
+      if (seq === st.seq) { quick.setLoading(false); root.inert = false; root.removeAttribute('aria-busy'); }
+    }
   }
   const go = m => { location.hash = '#/payroll?month=' + m; };
 
@@ -204,7 +217,7 @@ export function initPayroll(deps) {
     const tk = wb.addWorksheet('Chuyển khoản');
     head(tk, 'DANH SÁCH CHUYỂN KHOẢN LƯƠNG', sub, 7); tk.addRow([]);
     tk.addRow(['STT', 'Nhân viên', 'Mã ngân hàng', 'Số tài khoản', 'Tên chủ tài khoản', 'Số tiền', 'Nội dung', 'Link mã VietQR']);
-    withProfile().filter(r => r.payslip.net > 0).forEach((r, i) => tk.addRow([i + 1, r.member.name, r.profile.bankCode, r.profile.bankAccount, r.profile.bankHolder, Math.round(r.payslip.net), `Luong T${m}`, r.qr]));
+    withProfile().filter(r => r.payslip.net > 0).forEach((r, i) => tk.addRow([i + 1, r.member.name, r.profile.bankCode, r.profile.bankAccount, r.profile.bankHolder, Math.round(r.payslip.net), `Chuyen luong T${m}`, r.qr]));
     tk.columns = [{ width: 5 }, { width: 26 }, { width: 12 }, { width: 18 }, { width: 24 }, { width: 14 }, { width: 12 }, { width: 60 }]; style(tk, 4, 6, 6);
     const buf = await wb.xlsx.writeBuffer(), a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
@@ -217,6 +230,7 @@ export function initPayroll(deps) {
     const tab = t.closest('[data-tab]'); if (tab) { st.tab = tab.dataset.tab; render(); return; }
     const mb = t.closest('[data-month]'); if (mb) { go(shiftMonth(st.month, Number(mb.dataset.month))); return; }
     const act = t.closest('[data-act]')?.dataset.act; if (!act) return;
+    if (quick.dirty()) { toast('Lưu thay đổi ở tab Nhập nhanh trước khi thực hiện thao tác khác.', 'err'); return; }
     try {
       if (act === 'adms') await openAdms({ api, toast }, st.month);
       else if (act === 'params') await editParams();
@@ -229,7 +243,7 @@ export function initPayroll(deps) {
       }
     } catch (ex) { toast(ex.message, 'err'); }
   });
-  root.addEventListener('input', e => { if (e.target.matches('input[data-money]')) { const n = digits(e.target.value); e.target.value = n ? n.toLocaleString('vi-VN') : ''; } });
+  root.addEventListener('input', e => { if (e.target.matches('input[data-money]:not(.pr-quick-value)')) { const n = digits(e.target.value); e.target.value = n ? n.toLocaleString('vi-VN') : ''; } });
   root.addEventListener('change', e => { if (e.target.id === 'pr-month' && /^\d{4}-\d{2}$/.test(e.target.value)) go(e.target.value); });
   root.addEventListener('submit', async e => {
     if (e.target.id !== 'pr-month-form') return;

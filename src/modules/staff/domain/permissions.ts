@@ -47,6 +47,7 @@ export const PERMISSIONS: readonly PermissionDef[] = [
   { key: 'page.cashbook', group: 'Kế toán', label: 'Sổ thu / chi', hint: 'Phiếu thu khách + phiếu chi NCC theo ngày, xuất Excel để đối soát ngân hàng.', defaults: ['accounting'] },
   { key: 'payments.void', group: 'Kế toán', label: 'Huỷ phiếu thu ghi nhầm', hint: 'Bắt buộc ghi lý do; phiếu huỷ vẫn giữ trong lịch sử.', defaults: ['accounting'] },
   { key: 'dashboard.all', group: 'Kế toán', label: 'Doanh số toàn công ty', hint: 'Tổng quan doanh số xem cả công ty (không có: chỉ doanh số của mình).', defaults: ['accounting'] },
+  { key: 'feedback.manage', group: 'Quản trị', label: 'Quản lý góp ý phần mềm', hint: 'Xem mọi góp ý (kể cả góp ý riêng tư), đổi trạng thái, ưu tiên, gộp trùng, nhận thông báo góp ý mới.', defaults: [] },
   { key: 'perm.manage', group: 'Quản trị', label: 'Quản lý phân quyền (trang này)', hint: 'Sửa phòng ban, chức vụ và bảng quyền. Không đụng được chức vụ Manager.', defaults: [] },
 ];
 export const PERMISSION_KEYS = new Set(PERMISSIONS.map(p => p.key));
@@ -112,7 +113,7 @@ export function routePermission(method: string, path: string, query: URLSearchPa
   if (is(/^\/(purchase-orders|purchase-receiving-calendar|purchase-incoming|purchase-early-requests|supplier-receipts|supplier-payments|supplier-payables|purchase-sources|purchase-options)(\/|$)/)) return ['page.purchases'];
   if (is(/^\/inventory\/lookup(\/|$)/)) return null; // tra tồn (không giá): mọi nhân viên như trước – quyền chỉ quyết định hiện menu
   if (is(/^\/inventory(\/|$)/)) return ['inventory.view'];
-  if (is(/^\/(customer-duplicates|customer-accounts)(\/|$)/)) return ['page.customers'];
+  if (is(/^\/(appsheet-customers|customer-duplicates|customer-accounts)(\/|$)/)) return ['page.customers'];
   if (is(/^\/customers(\/|$)/)) {
     const picker = ['page.customers', 'page.quotes', 'page.orders', 'page.contracts', 'page.care', 'page.stock-requests'];
     if (method === 'GET' && (p === '/customers' || /^\/customers\/[^/]+$/.test(p))) return query.get('usable') || p !== '/customers' || query.get('q') !== null && Number(query.get('limit')) <= 8 ? picker : ['page.customers'];

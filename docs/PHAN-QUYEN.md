@@ -105,6 +105,9 @@ Các thao tác phê duyệt chỉ do **Manager** hoặc **nhân viên được M
 
 ## Hiệu lực
 
+- **Tạo đơn Sapo:** Manager, Sale (`sale`), Sale Admin (`sale-admin`), NVBH ML (`sales-ml`) và NVBH Lock (`sales-lock`) thấy và dùng nút trên đơn được phép truy cập, gồm đơn đã duyệt/đang giao/đã giao. Quyền này không mở rộng phạm vi đơn hoặc quyền sửa/huỷ chứng từ đã duyệt. Đơn đã huỷ không được gửi; đơn đã liên kết chỉ hiện **Xem đơn Sapo**. Quyền đẩy nháp của người phụ trách/người tạo/cùng phòng trước đây được giữ nguyên.
+- **Đơn POS:** nút gửi lại qua đúng webhook POS → Claw, giữ mã `pos:<số đơn>`, dữ liệu quầy, chiết khấu và phí từ checkout. Không chạy lại checkout, không ghi thêm kho hoặc phiếu thu CRM. Công tắc tắt đẩy Sapo vẫn chặn thao tác gửi thủ công.
+
 - **Máy chủ:** mỗi yêu cầu đọc quyền của chức vụ cùng lúc với phiên đăng nhập (`auth-repo.findSessionMember`), nên đổi quyền có hiệu lực ngay ở lần bấm kế tiếp.
 - **Quyền trang** được chốt tại `authorizeRoute` (`routePermission`): API của trang chưa được cấp trả 403.
   - Ô chọn khách ở báo giá / đơn / chăm sóc vẫn dùng được khi tắt trang Khách hàng.

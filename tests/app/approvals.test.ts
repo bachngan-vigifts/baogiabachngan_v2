@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { products } from '../../src/modules/catalog/schema.ts';
 import { eq } from 'drizzle-orm';
 import { test } from 'node:test';
@@ -21,9 +22,9 @@ async function setup() {
 
 test('khách hàng mới: nhân viên tạo → chờ duyệt (không lập đơn / cấp tài khoản được), Manager duyệt; từ chối = xoá', async () => {
   const { call, emp, mgr } = await setup();
-  const k = await call('/customers', emp, 'POST', { name: 'Công ty Mới' });
+  const k = await call('/customers', emp, 'POST', customerCreateFixture({ name: 'Công ty Mới' }));
   assert.equal(k.data.approvalStatus, 'pending');
-  assert.equal((await call('/customers', mgr, 'POST', { name: 'Công ty Manager tạo' })).data.approvalStatus, 'approved');
+  assert.equal((await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Công ty Manager tạo' }))).data.approvalStatus, 'approved');
   let list = (await call('/customers', emp)).data;
   assert.equal(list.pendingCount, 1);
   assert.deepEqual((await call('/customers?status=pending', emp)).data.customers.map((c: any) => c.name), ['Công ty Mới']);
@@ -38,7 +39,7 @@ test('khách hàng mới: nhân viên tạo → chờ duyệt (không lập đơ
   assert.equal((await call('/orders', mgr, 'POST', { quoteId: q.data.id })).status, 201);
   assert.equal((await call(`/customers/${k.data.id}`, mgr, 'DELETE')).status, 404, 'đã duyệt thì không xoá ở đây');
   // Từ chối: người tạo hoặc Manager xoá khách đang chờ duyệt.
-  const k2 = await call('/customers', emp, 'POST', { name: 'Công ty Bị Từ Chối' });
+  const k2 = await call('/customers', emp, 'POST', customerCreateFixture({ name: 'Công ty Bị Từ Chối' }));
   assert.equal((await call(`/customers/${k2.data.id}`, emp, 'DELETE')).status, 200);
   list = (await call('/customers', emp)).data;
   assert.equal(list.pendingCount, 0); assert.ok(!list.customers.some((c: any) => c.name === 'Công ty Bị Từ Chối'));
@@ -46,11 +47,11 @@ test('khách hàng mới: nhân viên tạo → chờ duyệt (không lập đơ
 
 test('sản phẩm mới: Manager thêm có hiệu lực ngay; nhân viên thêm chờ duyệt, ẩn khỏi danh mục báo giá tới khi duyệt', async () => {
   const { db, call, emp, mgr } = await setup();
-  await db.insert(pricePolicies).values({ id: 'le', name: 'Giá bán lẻ', sortOrder: 0 });
+  await db.insert(pricePolicies).values([{ id: 'le', name: 'Giá bán lẻ', sortOrder: 0 }, { id: 'vat', name: 'Giá lẻ +VAT', sortOrder: 1 }]);
   assert.equal((await call('/products', emp, 'POST', { sku: 'bad sku!', name: 'X' })).status, 400);
-  assert.equal((await call('/products', mgr, 'POST', { sku: 'ML-01', name: 'Bộ trà', brand: 'Minh Long', unit: 'bộ', prices: { le: 1_200_000 } })).data.approvalStatus, 'approved');
+  assert.equal((await call('/products', mgr, 'POST', { sku: 'ML-01', name: 'Bộ trà', brand: 'Minh Long', unit: 'bộ', prices: { le: 1_200_000, vat: 1_296_000 } })).data.approvalStatus, 'approved');
   assert.equal((await call('/products', emp, 'POST', { sku: 'ML-01', name: 'Trùng' })).status, 409);
-  assert.equal((await call('/products', emp, 'POST', { sku: 'LL-02', name: 'Bình giữ nhiệt', prices: { le: 300000 } })).data.approvalStatus, 'pending');
+  assert.equal((await call('/products', emp, 'POST', { sku: 'LL-02', name: 'Bình giữ nhiệt', prices: { le: 300000, vat: 324000 } })).data.approvalStatus, 'pending');
   const skus = async () => (await call('/catalog-snapshot', emp)).data.products.map((p: any[]) => p[0]).sort();
   assert.deepEqual(await skus(), ['ML-01'], 'sản phẩm chờ duyệt không có trong danh mục báo giá');
   const pending = (await call('/product-approvals', mgr)).data.products;
@@ -59,7 +60,7 @@ test('sản phẩm mới: Manager thêm có hiệu lực ngay; nhân viên thêm
   assert.equal((await call('/products/LL-02/approve', mgr, 'POST', {})).status, 200);
   assert.deepEqual(await skus(), ['LL-02', 'ML-01']);
   assert.equal((await call('/products/LL-02', mgr, 'DELETE')).status, 404, 'đã duyệt thì không xoá ở đây');
-  await call('/products', emp, 'POST', { sku: 'XX-9', name: 'Gửi nhầm' });
+  await call('/products', emp, 'POST', { sku: 'XX-9', name: 'Gửi nhầm', prices: { le: 100000, vat: 108000 } });
   assert.equal((await call('/products/XX-9', emp, 'DELETE')).status, 200);
   assert.equal((await call('/product-approvals', mgr)).data.products.length, 0);
 });

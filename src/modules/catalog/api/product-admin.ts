@@ -8,6 +8,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { can, canApprove } from '../../staff/domain/permissions.ts';
 import { pricePolicies, productPrices, products } from '../schema.ts';
+import { requireNewProductPrices } from '../domain/product-approval.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 const viewer = (c: Ctx) => (c.state.session as SessionState).member;
@@ -36,7 +37,13 @@ function cleanProduct(body: Record<string, unknown>, existingSku?: string) {
     if(typeof value!=='number'||!Number.isFinite(value)||value<=0||value>1e6||(key==='perCarton'&&!Number.isInteger(value)))throw new AppError(400,'Quy cách thùng phải là số dương; số SP/thùng là số nguyên.');
     packaging[key]=value;
   }
-  return { sku, name, packaging, brand: t('brand', 200), unit: t('unit', 50), pattern: t('pattern', 200), imageUrl, prices };
+  const tax: Partial<Pick<typeof products.$inferInsert, 'taxOut' | 'taxable'>> = {};
+  if (existingSku === undefined || Object.hasOwn(body, 'taxRate')) {
+    const rate = body.taxRate === undefined ? 8 : body.taxRate;
+    if (rate !== 8 && rate !== 10) throw new AppError(400, 'Thuế sản phẩm phải là 8% hoặc 10%.');
+    tax.taxOut = rate; tax.taxable = true;
+  }
+  return { sku, name, packaging, tax, brand: t('brand', 200), unit: t('unit', 50), pattern: t('pattern', 200), imageUrl, prices };
 }
 
 /**
@@ -57,12 +64,15 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.post('/products', async c => {
-    const me = viewer(c), db = c.env.db, f = cleanProduct(await readJson(c.req, 16_000)), now = new Date().toISOString(), mgr = me.role === 'manager';
+    const body = await readJson(c.req, 16_000);
+    const me = viewer(c), db = c.env.db, f = cleanProduct(body), now = new Date().toISOString(), mgr = me.role === 'manager';
     if ((await db.select({ sku: products.sku }).from(products).where(eq(products.sku, f.sku)).limit(1)).length) throw new AppError(409, `Mã ${f.sku} đã có trong danh mục.`);
-    const policies = new Set((await db.select({ id: pricePolicies.id }).from(pricePolicies).orderBy(asc(pricePolicies.sortOrder))).map(p => p.id));
+    const configuredPolicies = await db.select({ id: pricePolicies.id, name: pricePolicies.name }).from(pricePolicies).orderBy(asc(pricePolicies.sortOrder));
+    requireNewProductPrices(configuredPolicies, (body.prices || {}) as Record<string, unknown>);
+    const policies = new Set(configuredPolicies.map(p => p.id));
     const priceRows = Object.entries(f.prices).filter(([id]) => policies.has(id)).map(([policyId, price]) => ({ sku: f.sku, policyId, price }));
     await db.transaction(async tx => {
-      await tx.insert(products).values({ sku: f.sku, ...f.packaging, name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl,
+      await tx.insert(products).values({ sku: f.sku, ...f.packaging, ...f.tax, name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl,
         active: mgr, approvalStatus: mgr ? 'approved' : 'pending', createdBy: me.id, approvedBy: mgr ? me.id : null, approvedAt: mgr ? now : null, updatedAt: now });
       if (priceRows.length) await tx.insert(productPrices).values(priceRows);
     });
@@ -107,11 +117,11 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
       const oldPrices = await tx.select().from(productPrices).where(eq(productPrices.sku, sku));
       const changedPrices = Object.entries(rawPrices).map(([policyId, value]) => ({ sku, policyId, price: value == null || value === '' ? null : f.prices[policyId]! }));
       const now = new Date(Math.max(Date.now(), Date.parse(before.updatedAt) + 1)).toISOString();
-      const fields = { name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl, ...f.packaging };
+      const fields = { name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl, ...f.packaging, ...f.tax };
       await tx.update(products).set({ ...fields, updatedAt: now }).where(eq(products.sku, sku));
       for (const row of changedPrices) await tx.insert(productPrices).values(row).onConflictDoUpdate({ target: [productPrices.sku, productPrices.policyId], set: { price: row.price } });
       await tx.insert(auditLogs).values({ id: crypto.randomUUID(), actorId: me.id, module: 'catalog', action: 'update', entityType: 'products', entityId: sku,
-        data: JSON.stringify({ before: { name: before.name, brand: before.brand, unit: before.unit, pattern: before.pattern, imageUrl: before.imageUrl, perCarton:before.perCarton,cartonWeight:before.cartonWeight,cartonLength:before.cartonLength,cartonWidth:before.cartonWidth,cartonHeight:before.cartonHeight, prices: oldPrices }, after: { ...fields, prices: changedPrices } }), createdAt: now });
+        data: JSON.stringify({ before: { name: before.name, brand: before.brand, unit: before.unit, pattern: before.pattern, imageUrl: before.imageUrl, taxOut: before.taxOut, taxable: before.taxable, perCarton:before.perCarton,cartonWeight:before.cartonWeight,cartonLength:before.cartonLength,cartonWidth:before.cartonWidth,cartonHeight:before.cartonHeight, prices: oldPrices }, after: { ...fields, taxOut: f.tax.taxOut ?? before.taxOut, taxable: f.tax.taxable ?? before.taxable, prices: changedPrices } }), createdAt: now });
     });
     return json({ ok: true, sku });
   }, 'business');

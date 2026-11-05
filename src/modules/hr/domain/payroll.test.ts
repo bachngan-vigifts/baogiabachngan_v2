@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   EMPTY_GROUP_MONTH, EMPTY_INPUT, EMPTY_PROFILE, bnSalesBonus, computePayslip, computeQuarterBonus, lockSalesBonus, monthRange, quarterMonths,
-  shiftMonth, summarizeAttendance, targetPercent, vietQrUrl, type PayrollInput, type SalaryProfile,
+  shiftMonth, summarizeAttendance, targetPercent, vietQrUrl, normalizeBank, type PayrollInput, type SalaryProfile,
 } from './payroll.ts';
 import { computeKpiCv } from './kpi-cv.ts';
 import { DEFAULT_PARAMS, mergeParams, validateParams } from './params.ts';
@@ -89,7 +89,21 @@ test('tham số: ghép với mặc định, từ chối giá trị sai; link Vie
   assert.equal(mergeParams({ standardDays: 0 }).standardDays, 26, 'số chia = 0 → giữ mặc định');
   assert.match(validateParams({ kpiHighRate: 1.2 })!, /tỷ lệ/);
   assert.equal(validateParams({ standardDays: 24 }), null);
-  assert.equal(vietQrUrl('VCB', '0123', 10_761_350, '2026-09'), 'https://img.vietqr.io/image/vcb-0123.png?amount=10761350&addInfo=Luong%20T9');
+  assert.equal(vietQrUrl('VCB', '0123', 10_761_350, '2026-09'), 'https://img.vietqr.io/image/vcb-0123.png?amount=10761350&addInfo=Chuyen%20luong%20T9');
+  assert.equal(vietQrUrl('vcb', '0123', 5_000_000, '2026-10', 'NGUYEN VAN A'), 'https://img.vietqr.io/image/vcb-0123.png?amount=5000000&addInfo=Chuyen%20luong%20T10&accountName=NGUYEN%20VAN%20A');
+  assert.deepEqual(normalizeBank({ bankCode: ' VCB ', bankAccount: '0123 456-789', bankHolder: '  Trần  Thị Đào ' }), { bankCode: 'vcb', bankAccount: '0123456789', bankHolder: 'TRAN THI DAO' });
   assert.equal(vietQrUrl('', '0123', 1, '2026-09'), '');
   assert.equal(targetPercent(45, 60), 75);
+});
+
+test('TV / Thử việc: chỉ LCB theo ngày công ở cả ba nhóm (bỏ phụ cấp, thưởng, BHXH…) nhưng vẫn trừ tạm ứng, tạm ứng điện thoại, vi phạm',()=>{
+ for(const payrollGroup of ['sale','bn','lock'] as const)for(const positionLabel of ['TV','Thử việc',' THỬ VIỆC ']){
+  const r=computePayslip({profile:{...EMPTY_PROFILE,payrollGroup,positionLabel,baseSalary:5200000,capacityCoef:7,responsibility:1000000,phoneAllowance:250000,attendanceBonus:200000,kpiEnabled:true,teamBonus:true,insurance:496650,outputRate:15000},params:P,
+   input:{...EMPTY_INPUT,workDays:24,overtimeHours:10,revenue:1e9,outputQty:100,quarterBonus:3000000,kpiOverride:1,healthInsurance:100000,incomeTax:200000},
+   adjustments:['bonus','allowance','deduction','advance','phone_advance'].map(kind=>({kind,amount:500000})),attendanceDays:26,systemRevenue:1e9,groupMonth:{...EMPTY_GROUP_MONTH,bnRevenue:1e9,lockRevenue:1e9},quarterBonusAuto:5000000,contractBonus:1e6,contractBonusAdjustment:-1e5,kpiNetRevenue:1e9});
+  assert.equal(r.gross,4800000);assert.equal(r.deductionTotal,1500000,'tạm ứng 500k + tạm ứng ĐT 500k + vi phạm 500k');assert.equal(r.net,3300000);assert.equal(r.kpi,null);assert.equal(r.kpiNetBasis,undefined);
+  assert.ok(r.income.filter(l=>l.key!=='salaryByDays').every(l=>l.amount===0));
+  assert.deepEqual(Object.fromEntries(r.deductions.map(l=>[l.key,l.amount])),{socialInsurance:0,...(payrollGroup==='sale'?{}:{healthInsurance:0,incomeTax:0}),violation:500000,phoneDeduction:500000,advance:500000});
+ }
+ const fallback=run({positionLabel:'TV'},{},{days:13});assert.equal(fallback.net,2379000,'LCB vùng và ngày chấm công khi không nhập tay');
 });

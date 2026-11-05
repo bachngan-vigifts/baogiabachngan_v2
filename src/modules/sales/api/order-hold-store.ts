@@ -1,8 +1,8 @@
-import { and, asc, eq, gt, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, lte, ne, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import { productStock, warehouses } from '../../catalog/schema.ts';
-import { orderStockHolds, salesOrderLines, salesOrders } from '../schema.ts';
+import { orderStockHolds, salesContracts, salesOrderLines, salesOrders } from '../schema.ts';
 import { crmStockFulfilment } from './crm-stock-lifecycle.ts';
 import { reservedBySku, type PosDb } from './pos-store.ts';
 
@@ -134,18 +134,19 @@ export async function cappedOrderHolds(db: PosDb, skus: readonly string[] | unde
   if (!rows.length) return [];
   const ids = [...new Set(rows.map(r => r.orderId))];
   const [orders, lines, state] = await Promise.all([
-    db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName }).from(salesOrders).where(inArray(salesOrders.id, ids)),
+    db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, quoteId: salesOrders.quoteId, customer: salesOrders.customerName, contractNo: salesContracts.contractNo }).from(salesOrders)
+      .leftJoin(salesContracts, and(eq(salesContracts.orderId, salesOrders.id), ne(salesContracts.status, 'cancelled'))).where(inArray(salesOrders.id, ids)),
     db.select({ id: salesOrderLines.id, qty: salesOrderLines.qty, delivered: salesOrderLines.deliveredQty }).from(salesOrderLines).where(inArray(salesOrderLines.orderId, ids)),
     crmStockFulfilment(db, ids),
   ]);
-  const bySku = new Map<string, { sku: string; orderId: string; qty: number }>();
+  const bySku = new Map<string, { sku: string; orderId: string; warehouseId: string; qty: number }>();
   for (const r of rows) {
     const line = lines.find(l => l.id === r.lineId), issued = state.get(r.orderId)?.lines.find(l => l.lineId === r.lineId)?.issued ?? 0;
     const remaining = line ? Math.max(0, line.qty - Math.max(line.delivered, issued)) : 0, qty = Math.min(r.qty, remaining);
     if (qty <= 0.0005) continue;
-    const k = r.orderId + '\u0000' + r.sku, cur = bySku.get(k);
-    bySku.set(k, { sku: r.sku, orderId: r.orderId, qty: round((cur?.qty ?? 0) + qty) });
+    const k = r.orderId + '\u0000' + r.sku + '\u0000' + r.warehouseId, cur = bySku.get(k);
+    bySku.set(k, { sku: r.sku, orderId: r.orderId, warehouseId: r.warehouseId, qty: round((cur?.qty ?? 0) + qty) });
   }
   return [...bySku.values()].map(v => { const o = orders.find(x => x.id === v.orderId)!;
-    return { sku: v.sku, qty: v.qty, orderId: v.orderId, orderNo: o.orderNo, quoteId: o.quoteId, customer: o.customer, contractNo: null as string | null, unassigned: false }; });
+    return { sku: v.sku, qty: v.qty, warehouseId: v.warehouseId, orderId: v.orderId, orderNo: o.orderNo, quoteId: o.quoteId, customer: o.customer, contractNo: o.contractNo ?? null, unassigned: false }; });
 }

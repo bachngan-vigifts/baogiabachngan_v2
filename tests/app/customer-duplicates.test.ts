@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -35,13 +36,13 @@ test('MST: chuẩn hoá và chọn bản giữ lại (có người liên hệ tr
 
 test('tạo / sửa khách: chặn trùng MST; đồng bộ Sapo không tạo bản sao', async () => {
   const { db, call, emp, mgr } = await setup();
-  const a = await call('/customers', emp, 'POST', { name: 'Công ty A', taxCode: '0317821742' });
+  const a = await call('/customers', emp, 'POST', customerCreateFixture({ name: 'Công ty A', taxCode: '0317821742' }));
   assert.equal(a.status, 201);
-  const dup = await call('/customers', mgr, 'POST', { name: 'Công ty A (2)', taxCode: '0317 821 742' });
+  const dup = await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Công ty A (2)', taxCode: '0317 821 742' }));
   assert.equal(dup.status, 409); assert.match(dup.data.error, /Công ty A/);
-  assert.equal((await call('/customers', mgr, 'POST', { name: 'Chi nhánh', taxCode: '0317821742-001' })).status, 201, 'MST chi nhánh khác MST chính');
-  assert.equal((await call('/customers', mgr, 'POST', { name: 'Khách lẻ' })).status, 201, 'không MST thì không chặn');
-  const b = await call('/customers', mgr, 'POST', { name: 'Công ty B', taxCode: '0100000001' });
+  assert.equal((await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Chi nhánh', taxCode: '0317821742-001' }))).status, 201, 'MST chi nhánh khác MST chính');
+  assert.equal((await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Khách thiếu MST', taxCode: '' }))).status, 400, 'CRM tạo mới bắt buộc MST; POS có luồng miễn riêng');
+  const b = await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Công ty B', taxCode: '0100000001' }));
   assert.equal((await call(`/customers/${b.data.id}`, mgr, 'PUT', { name: 'Công ty B', taxCode: '0317821742' })).status, 409, 'đổi sang MST đã có');
   assert.equal((await call(`/customers/${a.data.id}`, emp, 'PUT', { name: 'Công ty A mới', taxCode: '0317821742' })).status, 200);
 

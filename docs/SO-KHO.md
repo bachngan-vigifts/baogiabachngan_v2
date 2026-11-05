@@ -99,6 +99,9 @@
 - Lượng giữ hiệu lực = min(tổng dòng giữ còn hạn, phần chưa giao / chưa xuất).
 - Mọi thao tác giữ chạy trong giao dịch dưới khoá `stock_holds`. Thứ tự khoá chung: `stock_holds` → đơn → sổ kho.
 - Đơn POS giữ nguyên cơ chế hiện hành.
+- **Chi tiết HĐKT:** có khối **Giữ hàng HĐKT** riêng ngay dưới bảng sản phẩm, dùng cùng `GET/POST /orders/:orderId/holds`, `/release` và `/extend` như đơn hàng. Đây là ID bản ghi hàng/giao hàng của HĐKT, không phải ID hồ sơ Word. HĐKT nháp hiển thị yêu cầu duyệt trước; chưa chọn kho thì nhắc chọn kho. Không tạo thêm dòng giữ riêng cho HĐKT, không tự chuyển đổi chứng từ cũ.
+- **Kiểm tồn báo giá:** luôn có cột **Hàng đang giữ**, gồm cả phần báo giá đang mở giữ và các báo giá / đơn / HĐKT khác. Cột **Khả dụng cho báo giá** chỉ trừ giữ của chứng từ khác. Không tải được số giữ thì hiển thị chưa có số liệu, không kết luận đủ hàng từ tồn vật lý.
+- **Tra tồn:** cột **Hàng đang giữ** hiển thị theo từng kho thật, riêng dòng **Chưa gắn kho** cho giữ báo giá / chứng từ chưa chọn kho; chỉ cộng một lần trong tổng. Không cộng hàng giữ hoặc hàng đang về vào tồn vật lý. Dùng cùng lượng giữ hiệu lực của bán hàng/POS; không hiện số giữ của kho riêng bị ẩn, không trả thông tin khách hay giá qua API Tra tồn.
 - **Đơn cũ** (`sales_orders.hold_mode = 'legacy'`) vẫn giữ toàn bộ phần chưa giao cho tới khi Manager chuyển đổi:
   - `GET /stock-holds/conversion`: xem trước, chạy trong giao dịch rồi huỷ, không ghi gì. Đơn trước giữ trước, chỉ đơn đã duyệt có kho bán và ngày giao còn hiệu lực mới giữ.
   - `POST /stock-holds/conversion { planId, confirmed: true }`: chạy lại, chỉ ghi khi trùng mã kế hoạch. Dữ liệu đổi thì `409 HOLD_PLAN_CHANGED`; áp dụng lại không đổi gì.

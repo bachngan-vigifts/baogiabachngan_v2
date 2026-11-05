@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="pos.css">
 <link rel="stylesheet" href="cash.css">
 <link rel="stylesheet" href="dashboard.css">
+<link rel="stylesheet" href="feedback.css">
 <link rel="stylesheet" href="flow-map.css">
 <link rel="stylesheet" href="suppliers.css">
 <link rel="stylesheet" href="early-request-page.css">
@@ -70,6 +71,7 @@
         <a class="nav" href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/></svg><span>Công việc</span><b id="nav-task-count" class="badge" hidden>0</b></a>
         <a class="nav" href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Tổng quan doanh số</span></a>
         <a class="nav" href="#/flow" data-nav="flow"><svg viewBox="0 0 24 24"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg><span>Sơ đồ quy trình</span></a>
+        <a class="nav" href="#/feedback" data-nav="feedback"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v4"/><path d="M12 14h.01"/></svg><span>Góp ý phần mềm</span></a>
       </section>
       <section class="nav-group" aria-labelledby="nav-group-1">
         <h2 class="nav-label" id="nav-group-1">Bán hàng</h2>
@@ -127,9 +129,11 @@
   <div class="account-menu" id="account-menu" role="menu" hidden>
     <div class="account-menu-head"><strong id="menu-name"></strong><small id="menu-email"></small></div>
     <button role="menuitem" id="my-profile">Hồ sơ của tôi</button>
+    <button role="menuitem" id="my-bank">Tài khoản nhận lương</button>
     <button role="menuitem" id="change-avatar">Đổi ảnh đại diện</button>
     <button role="menuitem" id="change-password">Đổi mật khẩu</button>
     <button role="menuitem" id="speed-check">Đo tốc độ</button>
+    <button role="menuitem" id="send-feedback">Góp ý / báo lỗi phần mềm</button>
     <button role="menuitem" id="logout" class="danger-text">Đăng xuất</button>
     <small class="menu-version">Phiên bản <span id="app-version">__BUILD__</span></small>
   </div>
@@ -147,6 +151,7 @@
 
     <!-- ---------- Danh sách báo giá ---------- -->
     <section class="view" id="view-dashboard" hidden></section>
+    <section class="view" id="view-feedback" hidden></section>
     <section class="view" id="view-cash" hidden></section>
     <section class="view" id="view-pos" hidden></section>
     <section class="view" id="view-flow" hidden></section>
@@ -433,7 +438,8 @@
     <section class="view" id="view-customers" hidden>
       <div class="page-head">
         <div><span class="eyebrow">Kinh doanh</span><h1>Khách hàng</h1><p class="muted">Bấm vào khách để xem báo giá, đơn hàng, HĐKT, công nợ, lịch sử mua, người liên hệ.</p></div>
-        <button type="button" class="btn-add" id="new-customer" title="Thêm khách hàng" aria-label="Thêm khách hàng"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+        <button type="button" class="btn secondary manager-only" id="customer-appsheet" hidden>Nhập AppSheet</button>
+        <button type="button" class="btn secondary" id="customer-anniversaries">Kỷ niệm sắp tới</button> <button type="button" class="btn-add" id="new-customer" title="Thêm khách hàng" aria-label="Thêm khách hàng"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
       </div>
       <div class="panel">
         <div class="toolbar">
@@ -443,16 +449,20 @@
           <label class="chip-check" id="customer-pending-chip" hidden><input type="checkbox" id="customer-pending"> Chờ duyệt <b id="customer-pending-count">0</b></label>
           <button type="button" class="chip-check dup-chip" id="customer-dup-chip" hidden>Trùng MST <b id="customer-dup-count">0</b></button>
           <span class="muted small" id="customer-count"></span>
-          <div class="orders-filter-grid customer-filter-grid" id="customer-filter-grid" role="group" aria-label="Bộ lọc khách hàng">
+          <div class="customer-filter-heading"><strong id="customer-filter-title">Bộ lọc khách hàng</strong><button type="button" class="btn ghost small" id="customer-clear">Xóa bộ lọc</button></div>
+          <div class="orders-filter-grid customer-filter-grid" id="customer-filter-grid" role="group" aria-labelledby="customer-filter-title">
             <label>Người phụ trách<select id="customer-owner"><option value="">Tất cả người phụ trách</option><option value="unassigned">Chưa có người phụ trách</option></select></label>
+            <label>Trạng thái<select id="customer-status"><option value="">Tất cả trạng thái</option><option value="approved">Đã duyệt</option><option value="pending">Chờ duyệt</option></select></label>
+            <label id="customer-kind-field" hidden>Loại khách<select id="customer-kind"><option value="">Tất cả loại khách</option><option value="business">Khách doanh nghiệp</option><option value="retail">Khách lẻ</option></select></label>
             <label>Sắp xếp<select id="customer-sort"><option value="newest">Mới tạo</option><option value="oldest">Cũ nhất</option><option value="name-asc">Tên A–Z</option><option value="name-desc">Tên Z–A</option></select></label>
             <label>Tạo từ ngày<input type="date" id="customer-from"></label><label>Tạo đến ngày<input type="date" id="customer-to"></label>
-            <button type="button" class="btn ghost small" id="customer-clear">Xóa bộ lọc</button>
           </div>
         </div>
+        <p id="customer-filter-error" class="error customer-filter-notice" role="alert" hidden></p>
+        <p id="customer-filter-summary" class="muted small customer-filter-notice" role="status" hidden></p>
         <div class="table-wrap">
           <table class="data-table" id="customer-table">
-            <thead><tr><th>Khách hàng</th><th>Người liên hệ</th><th>Điện thoại</th><th>Email · MST</th><th>Phụ trách</th><th class="right">Báo giá</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
+            <thead><tr><th>Khách hàng</th><th>Người liên hệ</th><th>Điện thoại</th><th>Email · MST</th><th>Ngày thành lập</th><th>Kỷ niệm thành lập</th><th>Phụ trách</th><th class="right">Báo giá</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
             <tbody id="customer-list"></tbody>
           </table>
         </div>
@@ -692,6 +702,7 @@
         <div class="table-wrap"><table class="data-table"><thead><tr id="order-lines-head"><th>Sản phẩm</th><th class="right">SL</th><th class="right">Đã giao</th><th class="right">Đơn giá</th><th class="right">VAT</th><th class="right">Thành tiền</th></tr></thead><tbody id="order-lines"></tbody></table></div>
         <div id="order-line-details"></div>
       </div>
+      <div class="card" id="order-holds-card" hidden></div>
       <div class="editor-grid">
         <div class="card" id="order-delivery-card"><div class="card-title-row"><h2 class="card-title">Lịch giao hàng</h2><span class="row-gap"><button class="btn secondary small" id="order-pack" title="Lập phiếu đóng gói theo nguồn hàng (kho / cửa hàng / NCC / đại lý), chọn giao cho khách hay về xưởng in, gửi xe nào">📦 Lên lịch & đóng gói</button><button class="btn secondary small" id="order-new-delivery">Chỉ lên lịch giao</button></span></div><div id="order-deliveries"></div><div id="order-packing"></div></div>
         <div class="card" id="order-debt-card"><h2 class="card-title">Công nợ</h2><div id="order-debt"></div></div>
@@ -770,11 +781,13 @@
 </div>
 
 <!-- ============ HỘP THOẠI ============ -->
-<dialog id="customer-dialog" class="modal">
+<dialog id="customer-dialog" class="modal customer-profile-dialog">
   <form id="customer-form" novalidate>
     <div class="modal-head"><h2 id="customer-dialog-title">Thêm khách hàng</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
     <div class="modal-body">
       <div id="customer-fields"></div>
+      <p class="muted small">Các trường có dấu * là bắt buộc khi tạo khách tại danh sách Khách hàng.</p>
+      <div id="customer-new-profile"></div>
       <p class="error span-2" id="customer-error" role="alert"></p>
     </div>
     <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="save-customer">Lưu khách hàng</button></div>

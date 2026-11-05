@@ -49,7 +49,10 @@ Công thức lấy đúng file Excel mẫu và đã đối chiếu từng đồn
 | "Phiếu lương" | Tab **Lương & thưởng** ở trang nhân viên (nhân viên tự xem phiếu của mình) | `member-detail.js` |
 | "DS tổng hợp", "Tổng hợp" | Bảng lương → **Tổng hợp** | `payroll.js` |
 | "Chuyển khoản" (VietQR) | Bảng lương → **Chuyển khoản** + cột trong file Excel xuất ra | `vietQrUrl` |
+| "Ẩn lương trước ngày 10" | Nhân viên tự xem: lương tháng M chỉ hiện từ ngày 10/M giờ VN (`SALARY_OPEN_DAY`); trước đó (và mọi tháng sau) API overview trả `payroll: null`, `access.salaryOpensOn` và `salaryAccount` (chỉ tài khoản nhận lương để vẫn điền / đổi được). Tháng trước xem bình thường; Manager luôn thấy. | `salaryOpensOn` |
+| "Tài khoản nhận lương" (nhân viên tự điền) | Hồ sơ của tôi → thẻ **Tài khoản nhận lương** → Điền / Đổi tài khoản (`PUT /hr/me/bank`). Chỉ sửa ngân hàng, số TK (6–19 chữ số), tên chủ TK (IN HOA, bỏ dấu) của chính mình, áp cho mọi bản hồ sơ lương; cần có hồ sơ lương trước. Ghi nhật ký "nhân viên tự đổi" (không ghi số TK) và báo mọi Manager. Thẻ hiện mã VietQR: số tiền = thực nhận tháng đang xem, nội dung `Chuyen luong T<tháng>`; phiếu đã chốt dùng tài khoản lúc chốt (`transfer.fromSnapshot`). | `normalizeBank`, `payrollOf().transfer` |
 | "Chỉ tiêu DS" | Chỉ tiêu DS cá nhân / tháng trong hồ sơ lương (mặc định 415tr ở Tham số) | – |
+| "Chỉ tiêu KH mới / giao dịch / số HĐ" | Chỉ tiêu KPI riêng trong hồ sơ lương (Sale tính KPI). Để trống = mức chung của tháng ở Tham số; không nhận 0. Trọng số, bậc thưởng dùng chung. Đổi chỉ tiêu (cả DS) bắt buộc lý do; mỗi lần sửa hồ sơ lương ghi nhật ký trước → sau (không ghi số tài khoản), xem ở "Lịch sử sửa hồ sơ lương". Chỉ tiêu đã dùng lưu trong bản chụp phiếu lương (`kpi.targets`); KPI cố định / KPI chốt tay vẫn thay kết quả tính. Migration `20261105030000_hr_member_kpi_targets.sql` (chạy tay; cổng `scripts/sql/assert-hr-member-kpi-targets.sql`). | – |
 
 Nhân viên **chưa có hồ sơ lương** vẫn hiện ở tab theo chức vụ (NVBH ML → tab NVBH ML, NVBH LOCK → tab NVBH Lock, còn lại → Sale & VP) trong khung "Chưa có hồ sơ lương", chưa tính vào tổng / chốt. Form hồ sơ lương điền sẵn mặc định theo chức vụ (`defaultProfileFor`): NVBH, trách nhiệm theo ngày, chuyên cần 200.000, hưởng thưởng DS nhóm.
 
@@ -83,6 +86,22 @@ Nhân viên **chưa có hồ sơ lương** vẫn hiện ở tab theo chức vụ
 ### Chỗ chuẩn hoá so với file gốc (theo sheet "Cách tính")
 - Tăng ca: cả 3 bảng dùng một công thức là LCB ÷ 24 ÷ 8 × giờ × 2. Bảng Lock trong file mẫu lấy "lương theo công" thay vì LCB; app dùng LCB như sheet "Cách tính" ghi.
 - Các điểm lệch chính sách (1,2% hay 1%, 85% hay 80%, mức BHXH) để nguyên như file mẫu và sửa được ở **Tham số**.
+
+### Nhập nhanh toàn công ty
+
+Manager mở **Bảng lương → Nhập nhanh** (`#/payroll?month=YYYY-MM`). Bảng liệt kê mọi nhân viên, lọc theo tên / bảng lương và có ba nhóm cột:
+
+- **Chấm công & chỉ số:** ngày công, giờ tăng ca, doanh số, sản lượng, thưởng quý, BHYT, TNCN và các chỉ số KPI.
+- **Lương & phụ cấp cố định:** LCB, hệ số năng lực, trách nhiệm, điện thoại, chuyên cần, BHXH, đơn giá sản lượng; thay đổi áp dụng từ tháng đang chọn. Nhấn tên nhân viên để sửa cấu hình đầy đủ như cơm/xăng, cách tính trách nhiệm, nhóm lương và ngân hàng.
+- **Thưởng, phạt & tạm ứng:** khoản nhập nhanh bổ sung. Các khoản đã ghi riêng và lý do vẫn được giữ, hiển thị cạnh ô nhập; tổng lương cộng cả hai nguồn.
+
+Mặc định là **Bảng tổng thể như Excel**: tiêu đề hai tầng, nhóm màu Năng lực/KPI/Phụ cấp/Các khoản trừ, cột Tổng thu nhập màu cam và Thực nhận màu xanh. Mỗi người một hàng gồm LCB, ngày công, lương theo công, hệ số cũ/mới, tiền năng lực, KPI, doanh số, thưởng, phụ cấp, tạm ứng và QR nhận lương. STT/họ tên cố định khi cuộn ngang; tiêu đề giữ trên cùng khi cuộn dọc. **Hệ số cũ** đọc từ hồ sơ lương gần nhất có tháng áp dụng trước tháng đang xem, không có dữ liệu thì hiện “—”. **KPI CV (%)** ở bảng tổng thể nhập 115,72 tương ứng tỷ lệ 1,1572 phía máy chủ. Cột Thưởng cho nhập thưởng khác bổ sung và hiển thị riêng tổng thưởng đã tính; các cột kết quả không sửa trực tiếp. QR của phiếu đã chốt lấy ngân hàng trong snapshot, không dùng hồ sơ ngân hàng mới.
+
+Vẫn có thể chọn các nhóm nhập chuyên sâu bên dưới. Dán dữ liệu chỉ vào ô nhập liền nhau; vùng chạm cột tự tính bị từ chối toàn bộ để không đẩy lệch dữ liệu sang cột khác.
+
+Dùng Tab/Enter hoặc dán vùng ô từ Excel theo thứ tự hàng/cột đang hiển thị. Số theo định dạng Excel Việt Nam: `15.000` = 15 nghìn (kể cả đơn giá và sản lượng), `24,5` = 24,5 và `0,005` = 0,005. Có thể nhập `24.5` / `0.005`; nếu phần lẻ có đúng ba chữ số và phần nguyên khác 0, dùng dấu phẩy để tránh nhầm với dấu chấm phân cách hàng nghìn. Định dạng sai như `1.23.456` bị từ chối; ô số được hiển thị lại với dấu phẩy thập phân. Ô trống “Tự động” khác với số 0 nhập tay. Bấm **Lưu thay đổi** để lưu mọi dòng đã sửa trong một giao dịch và tính lại tổng thu nhập/khấu trừ/thực nhận. Không nhập khẩu danh sách nhân viên từ file Excel mẫu.
+
+Phiếu đã chốt/đã trả chỉ xem. Khi có người khác sửa dữ liệu, hệ thống từ chối ghi đè và giữ phần đang nhập để đối chiếu; **Tải lại / Bỏ thay đổi** lấy bản mới. Khi chuyển tháng, bảng cũ bị khóa và thay bằng trạng thái đang tải; chỉ phản hồi mới nhất đúng tháng mới được hiển thị. Dữ liệu chưa lưu được giữ riêng theo từng tháng và khôi phục khi quay lại, không chuyển sang tháng khác. Version phía API bao gồm tháng; payload chỉ rõ tháng khác với URL bị từ chối. Chưa có hồ sơ: nhập LCB rồi lưu để thiết lập hồ sơ theo mặc định chức vụ. API: `PUT /hr/payroll/:month/entries`, tối đa 100 dòng/lần, chỉ Manager, dùng khoá lương chung; không cần migration mới.
 
 ### Nhập liệu hằng tháng
 1. **Bảng lương → Số liệu chung:** DS cửa hàng Bách Ngân, DS trung bình 6 tháng, DS team Lock. Tháng cuối quý thì bật "Chi trả thưởng quý".
@@ -140,3 +159,21 @@ Migration theo thứ tự:
 
 
 Đồng nghiệp cùng nhóm được xác định bằng `staff_members.position_id`, tài khoản đang hoạt động/chưa xoá. API overview trả `canViewPayroll: false` và `payroll: null` khi xem đồng nghiệp; không gọi `payrollOf` và không trả dữ liệu từ hồ sơ lương. Quyền các endpoint HR giữ nguyên.
+
+### Thử việc và nhập bảng lương từ Excel
+
+Trong bảng tổng thể, nhập/chọn **THỬ VIỆC** (hoặc **TV**) ở cột Vị trí rồi lưu. Vị trí này chỉ tính LCB × ngày công / ngày công chuẩn; không tính năng lực, trách nhiệm, KPI, thưởng, sản lượng, tăng ca, phụ cấp, BHXH / BHYT / TNCN. **Vẫn trừ** tiền đã ứng hoặc đã ghi phạt: tạm ứng, tạm ứng điện thoại, vi phạm / bể hàng (05/11/2026). Giá trị các chỉ số cũ vẫn được giữ để đối chiếu nhưng không đưa vào thực nhận. Đổi lại vị trí chính thức từ tháng phù hợp sẽ áp dụng công thức thông thường. Phiếu đã chốt giữ nguyên bản chụp.
+
+Các ô tiền dùng dấu phẩy hàng nghìn, ví dụ **4,758,000**, sau khi rời ô. Ngày công, hệ số vẫn cho nhập số lẻ.
+
+**Tải file mẫu** tạo `.xlsx` đúng tháng đang xem, chỉ có 11 cột: STT, Họ và tên, Ngày công, Nhân viên làm bể hàng/đền hàng, Số giờ làm thêm, Phiếu file sản xuất/phiếu giao hàng/phiếu làm hàng, Số lần đi trễ, Điện thoại Sale, Số giờ nghỉ trong ngày, BHXH, Tạm ứng. Không có cột LCB, KPI hay cài đặt lương. Sheet ẩn giữ kỳ lương và liên kết nhân viên; giữ nguyên STT/họ tên, có thể sắp xếp cả hàng. Người trùng tên được phân biệt bằng STT của file mẫu.
+
+Ô trống giữ nguyên dữ liệu hiện tại; `0` ghi bằng 0. Ngày công nhập `Tự động` để lấy chấm công. Bể/đền hàng nhập số tiền khấu trừ; Điện thoại Sale là tạm ứng điện thoại; số phiếu là sản lượng, nhân đơn giá đã cài. BHXH cập nhật mức từ tháng đang xem. Khoản nhập nhanh cộng với các khoản đã ghi riêng. Số lần trễ và giờ nghỉ được lưu để đối chiếu, không tự tạo khoản trừ hoặc trừ thêm ngày công.
+
+File mẫu có **đủ nhân viên trong bảng lương tháng đang chọn**, kể cả người đã chốt/đã trả lương; không phụ thuộc bộ lọc nhóm hay ô tìm kiếm trên màn hình. Dòng đã khóa tô xám và để trống số liệu. Khi nhập lại, các dòng đã khóa còn trống được bỏ qua; nhập bất kỳ số liệu nào (kể cả 0) vào dòng đã khóa sẽ bị từ chối.
+
+**Xuất file bảng lương** trong thanh công cụ Nhập nhanh dùng cùng chức năng **Xuất Excel** ở đầu trang: xuất số liệu đã lưu của tháng đang chọn, gồm tổng hợp, các nhóm lương và chuyển khoản. Bộ lọc tìm kiếm/nhóm ở Nhập nhanh không giới hạn file xuất. Nếu có bản nháp chưa lưu, hệ thống yêu cầu lưu hoặc bỏ thay đổi trước khi xuất.
+
+**Nhập file Excel** kiểm tra toàn bộ file trước khi tạo bản nháp; sai tháng, trùng/không tìm thấy nhân viên, tên lệch STT, sửa phiếu đã khóa hoặc ô lỗi bị từ chối. Không nhập công thức, không xóa sheet ẩn. Kiểm tra bảng rồi bấm **Lưu thay đổi** để ghi; file không tự lưu. Lưu/bỏ bản nháp trước khi nhập file mới. Tối đa 5 MB, 1.000 dòng, 100 nhân viên thay đổi mỗi lần. Chỉ số trễ/giờ nghỉ có thể xem/sửa tại chế độ Chấm công & chỉ số.
+
+Migration `20261105042029_payroll_attendance_counters.sql` bổ sung `late_count` và `leave_hours` vào bảng chỉ số tháng; workflow API chạy trước khi deploy. Không thay đổi RLS hoặc các công thức khấu trừ hiện có.

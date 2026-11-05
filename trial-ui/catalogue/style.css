@@ -41,3 +41,8 @@
 .quote-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;align-items:end;padding:16px;margin-bottom:16px;border:1px solid var(--line);border-radius:8px;background:white}.quote-filters label{display:grid;gap:7px;min-width:0;font-size:11px}.quote-filters .quote-search{grid-column:1/-1}.quote-filters .input{min-width:0;width:100%;margin:0}.quote-filters .head-buttons{flex-wrap:wrap}.quote-filters button{min-height:38px}@media(max-width:600px){.quote-filters{grid-template-columns:1fr 1fr;padding:12px}.quote-filters .head-buttons{grid-column:1/-1}.quote-filters .head-buttons .btn{flex:1}}
 
 
+
+.top-leading{display:flex;align-items:center;gap:14px;min-width:0}.crm-back{min-height:44px;text-decoration:none;flex-shrink:0}.crm-back svg{width:16px;height:16px}.crm-back:hover{background:#eff5f1}.crm-back:focus-visible{outline:2px solid var(--green);outline-offset:3px}@media(max-width:650px){.top-leading .crumb{display:none}.topbar .crm-back{min-width:96px}.topbar .top-actions{flex-wrap:wrap}}
+
+.selection-list{max-height:520px;overflow-y:auto;overscroll-behavior:contain}.selection-list .product-row{scroll-margin-top:0}.selection-list .product-row.current-slide{background:#edf6f0;box-shadow:inset 3px 0 var(--green)}.selection-list:focus-visible{outline:2px solid var(--green);outline-offset:-2px}@media(prefers-reduced-motion:reduce){.selection-list{scroll-behavior:auto}}
+.assistant-more summary{cursor:pointer;font-size:12px;color:var(--muted);margin:4px 0 12px}.assistant-more[open] summary{margin-bottom:14px}.assistant-preview-group+.assistant-preview-group{border-top:1px solid var(--line);padding-top:10px}.assistant-preview-list li label{font-size:12px}

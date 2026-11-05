@@ -10,10 +10,17 @@ const externalFold=value=>externalPlain(value).normalize('NFD').replace(/[\u0300
 const isSapo=html=>/\bBizweb\.(?:store|template)\s*=|\.mysapo\.net/i.test(html);
 function sapoPage(html,url){
  const listing=html.match(/\bio\.listing\s*=\s*\{\s*items\s*:\s*\[([\s\S]*?)\]\s*\}/)?.[1],refs=[];
- if(listing)for(const match of listing.matchAll(/\burl\s*:\s*absUrl\(("(?:[^"\\]|\\.)*")\)/g)){try{refs.push(JSON.parse(match[1]));}catch{}}
- else for(const match of html.matchAll(/<div\b[^>]*class=["'][^"']*\bproduct-grid-item\b[^"']*["'][^>]*>\s*<div\b([^>]*)>/gi)){const link=match[1].match(/\bdata-url=["']([^"']+)["']/);if(link)refs.push(link[1]);}
+ // Analytics listings can be truncated (Elmich includes only 24 of 36 cards).
+ for(const match of html.matchAll(/<div\b[^>]*class=["'][^"']*\bproduct-grid-item\b[^"']*["'][^>]*>\s*<div\b([^>]*)>/gi)){const link=match[1].match(/\bdata-url=["']([^"']+)["']/);if(link)refs.push(link[1]);}
+ if(!refs.length&&listing)for(const match of listing.matchAll(/\burl\s*:\s*absUrl\(("(?:[^"\\]|\\.)*")\)/g)){try{refs.push(JSON.parse(match[1]));}catch{}}
  const urls=[...new Set(refs.flatMap(ref=>{try{const u=externalUrl(new URL(ref,url).href);return u.origin===url.origin?[u.href]:[];}catch{return[];}}))].slice(0,50);
  let next='';for(const match of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)){try{const u=externalUrl(new URL(externalPlain(match[1]),url).href);if(u.origin===url.origin&&u.pathname===url.pathname&&Number(u.searchParams.get('page'))===Number(url.searchParams.get('page')||1)+1){next=u.href;break;}}catch{}}
+ if(!next)for(const pagination of html.matchAll(/<(?:ul|nav)\b[^>]*class=["'][^"']*\bpagination\b[^"']*["'][^>]*>([\s\S]*?)<\/(?:ul|nav)>/gi)){
+  for(const link of pagination[1].matchAll(/<a\b[^>]*\bonclick=(["'])\s*(?:return\s+)?doSearch\(\s*(\d+)\s*\)\s*;?\s*\1[^>]*>/gi)){
+   if(Number(link[2])===Number(url.searchParams.get('page')||1)+1){const u=new URL(url);u.searchParams.set('page',link[2]);next=u.href;break;}
+  }
+  if(next)break;
+ }
  return{urls,next};
 }
 async function sapoProduct(url,brand,fetcher){
@@ -23,8 +30,9 @@ async function sapoProduct(url,brand,fetcher){
  const link=externalUrl(new URL(p.url||url.href,brand.origin).href);if(link.origin!==brand.origin)throw Error('Link sản phẩm không cùng website đã xác nhận.');
  return{...externalHaravanProduct({...p,title:p.name,handle:p.alias,images:(p.images||[]).map(image=>typeof image==='string'?{src:image}:image)},brand),url:link.href};
 }
+/** Đọc lần lượt từng nhóm 4 sản phẩm; lỗi giữa chừng (website chậm, hết lượt gọi) vẫn mang theo các sản phẩm đã đọc (error.partial). */
 async function sapoProducts(urls,brand,fetcher){
- const products=[];for(let i=0;i<urls.length;i+=4)products.push(...await Promise.all(urls.slice(i,i+4).map(url=>sapoProduct(externalUrl(url),brand,fetcher))));return products;
+ const products=[];for(let i=0;i<urls.length;i+=4){try{products.push(...await Promise.all(urls.slice(i,i+4).map(url=>sapoProduct(externalUrl(url),brand,fetcher))));}catch(e){const error=e instanceof Error?e:Error(String(e));error.partial=products;throw error;}}return products;
 }
 function externalMeta(html,key){for(const tag of html.match(/<meta\b[^>]*>/gi)||[]){const attrs=Object.fromEntries([...tag.matchAll(/([\w:-]+)\s*=\s*["']([^"']*)["']/g)].map(m=>[m[1].toLowerCase(),m[2]]));if(attrs.property===key||attrs.name===key)return externalPlain(attrs.content)}return '';}
 export function validateExternalBrand(raw){if(!raw||typeof raw!=='object')throw Error('Chưa có thông tin thương hiệu đã xác nhận.');const name=String(raw.name||'').trim().slice(0,50),source=externalUrl(raw.collectionUrl||raw.sourceUrl),origin=externalUrl(raw.origin||source.origin).origin,discount=Number(raw.discount),fee=Number(raw.fee);if(!name||['LocknLock','Minh Long','both'].includes(name))throw Error('Tên thương hiệu mới chưa hợp lệ.');if(source.origin!==origin)throw Error('Link danh mục phải cùng website thương hiệu.');if(!Number.isFinite(discount)||discount<0||discount>=100||!Number.isFinite(fee)||fee<0||fee>1e8)throw Error('Kiểm tra chiết khấu và phụ phí thương hiệu.');return {id:String(raw.id||'').slice(0,80),name,origin,collectionUrl:source.href,platform:['haravan','woocommerce','sapo','product'].includes(raw.platform)?raw.platform:'product',discount,fee,currency:raw.currency==='VND'?'VND':'',includeContact:raw.includeContact===true,categoryLabel:String(raw.categoryLabel||'Sản phẩm').slice(0,70),type:String(raw.type||'').slice(0,40),collections:Array.isArray(raw.collections)?raw.collections.slice(0,150).flatMap(c=>{try{const u=externalUrl(c.url);return u.origin===origin?[{name:externalPlain(c.name).slice(0,100),url:u.href}]:[]}catch{return []}}):[]};}
@@ -36,7 +44,8 @@ export async function previewExternalBrand(raw,prompt='',fetcher=fetch){const fe
 export async function readExternalProduct(raw,brandValue,fetcher=fetch){const brand=validateExternalBrand(brandValue),url=externalUrl(raw);if(url.origin!==brand.origin)throw Error('Link phải thuộc website thương hiệu đã xác nhận.');if(brand.platform==='sapo')return sapoProduct(url,brand,fetcher);if(brand.platform==='haravan'&&/^\/products\/[^/]+\/?$/.test(url.pathname)){const data=JSON.parse(externalText((await externalFetch(url.href.replace(/\/$/,'')+'.json','application/json',fetcher,6000000,brand.origin)).bytes));return externalHaravanProduct(data.product||data,brand)}const fetched=await externalFetch(url.href,'text/html',fetcher,2000000,brand.origin);const html=externalText(fetched.bytes);return isSapo(html)?sapoProduct(fetched.url,brand,fetcher):externalJsonLd(html,fetched.url,brand);}
 export async function discoverExternalProducts(criteria,adapter,fetcher=fetch){const brand=validateExternalBrand(criteria.provider);if(brand.name!==criteria.brand)throw Error('Thương hiệu chưa khớp nguồn đã xác nhận.');if(brand.currency!=='VND')throw Error('Xác nhận đơn vị giá VND trong thông tin thương hiệu trước khi tạo báo giá.');const found=[],errors=[],seen=new Set();let scanned=0,unpriced=0,moreAvailable=false,initialHtml='',sapoUrl=brand.collectionUrl;
  if(brand.platform==='product'){const fetched=await externalFetch(brand.collectionUrl,'text/html',fetcher,2000000,brand.origin);initialHtml=externalText(fetched.bytes);if(isSapo(initialHtml))brand.platform='sapo';}
- for(let page=1;page<=10;page++){let products=[],sapoNext='';
+ for(let page=1;page<=10;page++){let products=[],sapoNext='',stopped=null;
+  try{
   if(brand.platform==='haravan'&&/^\/collections\/[^/]+\/?$/.test(new URL(brand.collectionUrl).pathname)){const u=new URL(new URL(brand.collectionUrl).pathname.replace(/\/$/,'')+'/products.json',brand.origin);u.searchParams.set('limit','50');u.searchParams.set('page',String(page));const data=JSON.parse(externalText((await externalFetch(u.href,'application/json',fetcher,6000000,brand.origin)).bytes));if(!Array.isArray(data.products))throw Error('Website chưa trả danh sách sản phẩm.');products=data.products.map(p=>externalHaravanProduct(p,brand));}
   else if(brand.platform==='sapo'){
    const u=externalUrl(sapoUrl),html=page===1&&initialHtml?initialHtml:externalText((await externalFetch(u.href,'text/html',fetcher,2000000,brand.origin)).bytes),listing=sapoPage(html,u);
@@ -45,10 +54,17 @@ export async function discoverExternalProducts(criteria,adapter,fetcher=fetch){c
   }
   else if(brand.platform==='woocommerce'){const source=new URL(brand.collectionUrl),slug=source.pathname.split('/').filter(Boolean).at(-1)||'',u=new URL('/wp-json/wc/store/v1/products',brand.origin);const cu=new URL('/wp-json/wc/store/v1/products/categories',brand.origin);cu.searchParams.set('slug',slug);const cats=JSON.parse(externalText((await externalFetch(cu.href,'application/json',fetcher,1000000,brand.origin)).bytes));const category=cats.find(c=>c.slug===slug);if(!category?.id)throw Error('Chưa xác định được danh mục website; dùng link sản phẩm hoặc nhập Excel.');u.searchParams.set('category',String(category.id));u.searchParams.set('per_page','50');u.searchParams.set('page',String(page));const data=JSON.parse(externalText((await externalFetch(u.href,'application/json',fetcher,6000000,brand.origin)).bytes));if(!Array.isArray(data))throw Error('Website chưa trả danh sách sản phẩm.');products=data.filter(p=>p.prices?.currency_code==='VND').map(p=>({name:externalPlain(p.name),sku:String(p.sku||''),brand:brand.name,regular:Number(p.prices.regular_price)/10**Number(p.prices.currency_minor_unit||0),image:p.images?.[0]?.src||'',url:p.permalink||new URL('/san-pham/'+p.slug+'/',brand.origin).href,category:brand.categoryLabel,discount:brand.discount,fee:brand.fee,qty:1,override:null,fromPrice:!!p.prices.price_range,priceOnRequest:Number(p.prices.regular_price)<=0,webAvailable:p.is_in_stock===true}));}
   else{if(page>1)break;products=[initialHtml?externalJsonLd(initialHtml,externalUrl(brand.collectionUrl),brand):await readExternalProduct(brand.collectionUrl,brand,fetcher)];}
+  }catch(e){
+   // Trang sau (hoặc giữa trang) lỗi: giữ sản phẩm đã đọc, báo dừng ở trang nào. Chưa đọc được gì thì báo lỗi như cũ.
+   products=Array.isArray(e?.partial)?e.partial:[];if(!products.length&&!found.length)throw e;stopped=e;
+  }
   scanned+=products.length;const candidates=products.filter(p=>{if(p.priceOnRequest){unpriced++;return brand.includeContact&&criteria.min===0&&criteria.max===null}const amount=Math.round(p.regular*(1-brand.discount/100)+brand.fee)*criteria.packSize;return amount>=criteria.min&&(criteria.max===null||amount<=criteria.max)}).filter(p=>criteria.keywords.every(k=>externalFold(p.name).includes(externalFold(k))));const stock=criteria.stockSource==='crm'?await adapter.crmStock(candidates.map(p=>p.sku)):null;
   for(const p of candidates){const proof=stock?.get(String(p.sku).trim().toUpperCase());if(criteria.stockSource==='crm'?(!proof||proof.available<=0):!p.webAvailable)continue;const u=externalUrl(p.url);if(u.origin!==brand.origin||seen.has(u.href))continue;if(found.length>=criteria.limit){moreAvailable=true;break}seen.add(u.href);if(proof)p.crmStock=proof;found.push(p);}
+  if(stopped){errors.push(`Dừng ở trang ${page}: ${stopped.message||'website chưa phản hồi'}. Đã giữ ${found.length} sản phẩm đọc được; thử lại sau hoặc thu hẹp danh mục / ngân sách.`);moreAvailable=true;break;}
   if(moreAvailable||(brand.platform==='sapo'?!sapoNext:products.length<50))break;if(page===10)moreAvailable=true;
  }
  if(unpriced&&!found.some(p=>p.priceOnRequest))errors.push(`${unpriced} mẫu chưa công khai giá; không đưa vào khoảng ngân sách bằng giá 0đ.`);
  return {products:found,criteria,scanned,moreAvailable,errors,sources:[{brand:brand.name,host:new URL(brand.origin).hostname,category:brand.categoryLabel}],stockSource:criteria.stockSource,checkedAt:new Date().toISOString()};}
 export async function externalImageResponse(raw,fetcher=fetch){const fetched=await externalFetch(raw,'image/avif,image/webp,image/png,image/jpeg,image/*',fetcher,12000000),type=(fetched.response.headers.get('content-type')||'').split(';')[0];if(!['image/jpeg','image/png','image/webp','image/avif','image/gif'].includes(type))throw Error('Link chưa trả định dạng ảnh được hỗ trợ.');return new Response(fetched.bytes,{headers:{'Content-Type':type,'Cache-Control':'public,max-age=3600','X-Content-Type-Options':'nosniff'}});}
+
+

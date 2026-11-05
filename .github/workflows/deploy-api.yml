@@ -39,6 +39,14 @@ jobs:
         with:
           node-version: 22.22.0
           cache: npm
+      # Fail before changing secrets/API when the reviewed manual migration is absent.
+      - name: Kiểm tra schema AppSheet chỉ đọc trước khi triển khai
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-appsheet-customers.sql '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
       # Reject an invalid URL before setting Edge secrets or replacing a working deployment.
       - name: Kiểm tra pooler chỉ đọc trước khi đổi cấu hình
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_POOLER_URL != ''
@@ -139,6 +147,7 @@ jobs:
           query+=$'\n'"$(<migrations/postgres/20261026080503_early_request_delete_split.sql)"
           query+=$'\n'"$(<migrations/postgres/20261027040000_crm_returns.sql)"
           query+=$'\n'"$(<migrations/postgres/20261027113713_early_request_numbers.sql)"
+          query+=$'\n'"$(<migrations/postgres/20261105042029_payroll_attendance_counters.sql)"
           payload=$(jq -n --arg query "$query" '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
@@ -175,6 +184,27 @@ jobs:
         shell: bash
         run: |
           payload=$(jq -n --rawfile query scripts/sql/assert-catalogue-library.sql '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra ngày thành lập khách hàng đã có
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-customer-established-date.sql '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra migration chỉ tiêu KPI riêng đã chạy tay
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-hr-member-kpi-targets.sql '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra migration góp ý phần mềm đã chạy tay
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-software-feedback.sql '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
       - name: Triển khai Edge Function

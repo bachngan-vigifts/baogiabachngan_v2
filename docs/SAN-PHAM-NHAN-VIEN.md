@@ -7,6 +7,13 @@
 - API (`src/modules/catalog/api/product-admin.ts`): `GET /product-approvals`, `POST /products`, `POST /products/:sku/approve` (Manager), `DELETE /products/:sku` (chỉ sản phẩm chờ duyệt; Manager hoặc người tạo).
 - Nhập danh mục / đồng bộ Sapo luôn ghi `approved`. Nhập danh mục kiểu "thay toàn bộ" không ẩn sản phẩm thêm trên web.
 
+## Thuế sản phẩm khi thêm / cập nhật
+
+- Form **Thêm sản phẩm** và **Cập nhật sản phẩm** có ô **Thuế sản phẩm (VAT)**: chọn **8%** hoặc **10%**. Sản phẩm mới mặc định 8%.
+- Khi sửa, form hiển thị mức đã lưu. Sản phẩm cũ chưa áp dụng thuế hoặc có mức khác được giữ nguyên cho đến khi người dùng chọn 8%/10%; chỉ sửa tên, ảnh hoặc giá không tự đổi thuế.
+- API nhận `taxRate` là số 8 hoặc 10, lưu vào trường thuế đầu ra có sẵn (`taxOut`, `taxable = true`). Khi cập nhật không gửi `taxRate`, giữ nguyên thuế. Không cần migration.
+- Việc chọn thuế không tự tính lại bảng giá, không đổi thuế đầu vào, tồn kho hoặc chứng từ đã lập. Quy tắc đồng bộ thông tin sản phẩm từ Sapo vẫn giữ nguyên.
+
 ## Xoá nhân viên (trang Nhân viên, nút thùng rác)
 - `DELETE /admin/members/:id` (Manager). Nhân viên bị đăng xuất mọi thiết bị, không đăng nhập được, biến khỏi danh sách và danh bạ chat.
 - Dòng dữ liệu được giữ lại (`deleted_at`) để báo giá, đơn… cũ vẫn hiện đúng tên. Email được giải phóng nên tạo lại tài khoản bằng email đó được.

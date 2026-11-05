@@ -9,7 +9,11 @@ export function createPosStockCache({now=()=>Date.now(),ttl=15000}={}){
    const k=key(snapshot.registerId,snapshot.pricePolicyId),old=snapshots.get(k);
    if(old&&old.asOf>snapshot.asOf)return false;
    const columns=['sku','name','brand','unit','imageUrl','pattern'];
-   const catalogItems=snapshot.catalog?hydrateSnapshot({columns,policies:[],warehouses:[],products:snapshot.catalog.map(p=>[...columns.map(c=>p[c]),[],[]])}):old?.catalogItems;
+   // catalogRows (metadata=2): mảng theo catalogColumns, cùng thứ tự với rows – mã hàng lấy từ rows.
+   const compact=Array.isArray(snapshot.catalogRows)&&Array.isArray(snapshot.catalogColumns)&&snapshot.catalogRows.length===snapshot.rows.length?snapshot.catalogRows:null;
+   const fromCompact=compact&&((i,c)=>c==='sku'?snapshot.rows[i][0]:compact[i]?.[snapshot.catalogColumns.indexOf(c)]);
+   const catalogItems=compact?hydrateSnapshot({columns,policies:[],warehouses:[],products:compact.map((_,i)=>[...columns.map(c=>fromCompact(i,c)),[],[]])})
+    :snapshot.catalog?hydrateSnapshot({columns,policies:[],warehouses:[],products:snapshot.catalog.map(p=>[...columns.map(c=>p[c]),[],[]])}):old?.catalogItems;
    snapshots.set(k,{...snapshot,catalogItems,at:now(),products:new Map(snapshot.rows.map(([sku,price,onHand,reserved,scanCodes])=>[sku,{sku,price,onHand,reserved,available:Math.max(0,onHand-reserved),scanCodes,stockStatus:snapshot.warehouseReady?'ready':'unopened',stockAsOf:snapshot.asOf}]))});return true;
   },
   get(sku,registerId,policyId,id){session(id);const s=snapshots.get(key(registerId,policyId)),p=s?.products.get(sku);return p?{...p,stockStale:now()-s.at>=ttl}:null;},

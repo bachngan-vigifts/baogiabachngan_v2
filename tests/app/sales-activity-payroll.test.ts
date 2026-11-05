@@ -50,12 +50,14 @@ test('shadow calculation, null vs manual zero, fixed KPI, actual bonus booking, 
  assert.equal((await f.call('/hr/members/emp/payslips/2026-10',f.mgr,'DELETE')).status,409);
 });
 
-test('prior-period differences subtract reserved awards, survive owner changes, reopen safely, and never repeat after payment',async()=>{
+test('prior-period differences subtract reserved awards, survive owner changes, reopen safely, and never repeat after payment',async t=>{
  const f=await setupSalesPayroll();await f.setPolicy(1);await f.salary();assert.equal((await f.confirm()).status,201);
  // Original owner remains the beneficiary after the order is reassigned.
  await f.db.update(salesOrders).set({subtotal:150000000,ownerId:'mgr'}).where(eq(salesOrders.id,'liq-order'));
  let nov=(await f.overview(f.mgr,'2026-11')).data.payroll;assert.equal(amount(nov.payslip,'contractBonusAdjustment'),50000);
+ t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-20T03:00:00Z')}); // nhân viên chỉ thấy lương T11 từ 10/11
  const hidden=(await f.overview(f.emp,'2026-11')).data.payroll.payslip.salesCrm.awards[0];assert.equal(hidden.fact,undefined);
+ t.mock.timers.reset();
  assert.equal((await f.confirm('2026-11')).status,201);
  assert.equal((await f.call('/hr/members/emp/payslips/2026-10',f.mgr,'DELETE')).status,409,'cannot reopen a base with a downstream adjustment');
  assert.equal((await f.call('/hr/members/emp/payslips/2026-11',f.mgr,'DELETE')).status,200);assert.equal((await f.confirm('2026-11')).status,201);

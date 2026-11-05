@@ -1,6 +1,6 @@
 # Tổng quan doanh số
 
-Trang `#/dashboard`, menu **Tổng quan doanh số**, gọi duy nhất `GET /api/staff/dashboard/revenue`.
+Trang `#/dashboard`, menu **Tổng quan doanh số**, gọi `GET /api/staff/dashboard/revenue` cho doanh số; cụm **Điểm KPI Sale** gọi riêng `GET /api/staff/dashboard/kpi` sau đó (xem mục dưới).
 Chỉ đọc; không migration, không ghi nghiệp vụ, không thay đổi lương, cron hay đồng bộ Sapo.
 
 ## Quyền và nguồn dữ liệu
@@ -47,3 +47,12 @@ Chạy `npm run typecheck` và `npm test`. Test PostgreSQL dùng PGlite và migr
 - Giữ nguồn/schema, chỉ đọc trong transaction; không truy vấn hay thay đổi lương, phiên Sapo hoặc cron.
 - Nhân viên nhận đúng một hàng của mình, không mở rộng qua phòng ban hoặc khách chỉ được chia sẻ. Manager giữ tổng công ty/nhóm/nhân viên/tháng; chỉ số và thời điểm cập nhật giữ định nghĩa đã ghi ở trên.
 - Chưa có role Giám đốc riêng hoặc mã cơ hội gắn đơn: Giám đốc cần role Manager hiện có; chỉ số rớt là kết quả `lost` từ chăm sóc, không tự đồng nhất với đơn huỷ.
+
+## Điểm KPI Sale
+
+- `GET /api/staff/dashboard/kpi?from&to[&month][&owner][&group]`: một tháng KPI, mặc định tháng cuối kỳ; `month` phải nằm trong kỳ (400 nếu không). Gọi sau `/dashboard/revenue` để doanh số không chờ phần tính KPI.
+- Nguồn số liệu: app lắp `dashboardKpiOf` (`src/app/dashboard-kpi.ts`) dùng chính `buildPayroll` của HR, nên điểm KPI **bằng đúng** phiếu lương: cùng tham số tháng, KPI chốt / KPI cố định, ngày làm hàng / công tác, nguồn CRM khi bật "Áp dụng KPI từ CRM". Phiếu đã chốt dùng bản chụp lúc chốt. Dashboard không import HR (hợp đồng `src/core/contracts/dashboard-kpi.ts`).
+- Chỉ trả điểm, số thực tế, chỉ tiêu và tỷ lệ thưởng; không trả lương, thu nhập hay tài khoản ngân hàng. Chỉ người thuộc bảng Sale có bật KPI.
+- Quyền như phiếu lương: Manager xem mọi người (lọc nhóm / nhân viên); nhân viên, kể cả người có quyền "Doanh số toàn công ty", chỉ xem KPI của mình; xem người khác → 403.
+- Giao diện: danh sách nhân viên theo điểm (Manager), biểu đồ tròn 4 phần điểm (KH mới, giao dịch, số HĐKT, doanh số cá nhân; phần còn thiếu tới 100% màu nền; vượt 100% thì cả vòng = tổng điểm), bảng thực tế / chỉ tiêu / điểm / tối đa và ghi chú: KPI chốt hoặc cố định, mức thưởng, tạm tính hay đã chốt, nguồn CRM hay nhập tay, KPI đối chiếu từ CRM. Cụm KPI nằm ngoài lưới biểu đồ nên trên điện thoại vẫn hiện ngay, không cần "Xem thêm thống kê".
+- Test: `tests/app/dashboard-kpi.test.ts`.

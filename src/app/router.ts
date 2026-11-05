@@ -5,9 +5,11 @@ import {registerCatalogueQuotes} from '../modules/catalog/api/catalogue-quotes.t
 import {registerCatalogueLibrary} from '../modules/catalog/api/catalogue-library.ts';
 import {catalogueLibraryHooks} from '../modules/catalog/api/catalogue-stock.ts';
 import {reservedBySku} from '../modules/sales/api/pos-store.ts';
+import { stockLookupHolds } from '../modules/sales/api/stock-lookup-holds.ts';
 import {outstandingLines} from '../modules/suppliers/api/incoming-stock.ts';
 import {activityQuotes} from '../modules/quotes/api/activity-quotes.ts';
 import {crmFactsOf} from './sales-payroll-facts.ts';
+import {dashboardKpiOf} from './dashboard-kpi.ts';
 import {assertActivityKpiOpen} from '../modules/hr/api/activity-lock.ts';
 import { rememberQuoteCustomer } from './quote-customer-memory.ts';
 import {registerProductDetailRoutes} from '../modules/product-hub/api/routes.ts';
@@ -32,6 +34,7 @@ import { createStaffRouter } from '../modules/staff/api/auth-routes.ts';
 import { registerQuoteRoutes } from '../modules/quotes/api/routes.ts';
 import { registerImageFetchRoutes } from '../modules/quotes/api/image-fetch.ts';
 import { registerCustomerRoutes } from '../modules/customers/api/routes.ts';
+import { registerAppsheetCustomerRoutes } from '../modules/customers/api/appsheet-routes.ts';
 import { registerCatalogRoutes } from '../modules/catalog/api/routes.ts';
 import { registerLegacyImageRoutes } from '../modules/integrations/api/legacy-images.ts';
 import { registerSapoSyncRoutes } from '../modules/integrations/api/sapo-sync-routes.ts';
@@ -47,7 +50,7 @@ import { registerSupplierDirectoryRoutes, packingSupplierChoices } from '../modu
 import { registerPurchaseRoutes } from '../modules/suppliers/api/purchase-routes.ts';
 import { registerEarlyRequestRoutes } from '../modules/suppliers/api/early-request-routes.ts';
 import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
-import { registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
+import { notifyMany, registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
 import { registerTaskRoutes, syncInvoiceTasks, syncTransferTasks } from '../modules/tasks/api/routes.ts';
 import { cashTaskHooks, invoiceTaskHooks } from '../modules/sales/api/invoice-task-hooks.ts';
 import { posDeliveryStockLinks, posReturnStockLinks } from '../modules/sales/api/stock-ref-links.ts';
@@ -76,6 +79,7 @@ import { registerStockHistoryRoutes, stockRefLinkHooks } from '../modules/invent
 import { registerFlowRoutes } from './flow-routes.ts';
 import { registerCashbookRoutes } from './cashbook-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
+import { registerFeedbackRoutes } from '../modules/feedback/api/routes.ts';
 export function createAppRouter() {
   transferTaskHooks.afterCommit = syncTransferTasks;
   invoiceTaskHooks.afterCommit = syncInvoiceTasks;
@@ -96,6 +100,7 @@ export function createAppRouter() {
   registerQuoteRoutes(router, { rememberCustomer: rememberQuoteCustomer });
   registerImageFetchRoutes(router);
   registerCustomerRoutes(router);
+  registerAppsheetCustomerRoutes(router);
   registerCatalogRoutes(router);
   catalogueLibraryHooks.heldAt=(db,skus,warehouseId)=>reservedBySku(db,skus,warehouseId);
   catalogueLibraryHooks.incoming=(db,skus)=>outstandingLines(db,skus);
@@ -130,11 +135,13 @@ export function createAppRouter() {
   registerProductDetailRoutes(router);
   registerCustomerDuplicateRoutes(router);
   registerCareRoutes(router,{assertKpiOpen:assertActivityKpiOpen,quotes:activityQuotes});
-  registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
+  registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf,
+    onSelfBankChange: (env, m) => notifyMany(env, 'managers', { eventType: 'hr-bank-changed', title: 'Đổi tài khoản nhận lương', body: `${m.name} vừa tự cập nhật tài khoản nhận lương. Kiểm tra trước khi chuyển lương.`, url: `/index.html#/members/${encodeURIComponent(m.id)}`, actorId: m.id }) }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
   registerAdmsRoutes(router);
   registerSynctimeRoutes(router);
   registerStaffHubRoutes(router,{crmFactsOf});
-  registerDashboardRoutes(router);
+  registerFeedbackRoutes(router); // góp ý phát triển phần mềm (mọi nhân viên)
+  registerDashboardRoutes(router, { kpiOf: dashboardKpiOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR
   registerAuditRoutes(router);
   registerReportRoutes(router);
   registerPermissionRoutes(router);
@@ -143,7 +150,7 @@ export function createAppRouter() {
   registerBadgeRoutes(router);
   registerNavigationCounts(router);
   registerWarehouseWork(router);
-  registerInventoryRoutes(router);
+  registerInventoryRoutes(router, { heldQuantitiesOf: stockLookupHolds });
   registerStockIntegrityRoutes(router);
   registerTransferRoutes(router);
   registerTransferIntegrationRoutes(router);

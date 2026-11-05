@@ -19,6 +19,7 @@ export function validateProduct(p){
  const details={sharedId:/^[a-f0-9]{64}$/.test(p.sharedId||'')?p.sharedId:'',sharedRevision:Number.isSafeInteger(p.sharedRevision)?p.sharedRevision:null,sharedPendingFor:typeof p.sharedPendingFor==='string'?p.sharedPendingFor.slice(0,100):'',collection:String(p.collection||'').trim().slice(0,100),pattern:String(p.pattern||'').trim().slice(0,100),color:String(p.color||'').trim().slice(0,100),createdAt:typeof p.createdAt==='string'&&Number.isFinite(Date.parse(p.createdAt))?new Date(p.createdAt).toISOString():null,createdAtSource:['web','crm'].includes(p.createdAtSource)?p.createdAtSource:null};
  return {...details,id:String(p.id||crypto.randomUUID()).slice(0,80),name,category,brand,sku:String(p.sku||'').trim().slice(0,100),url:cleanUrl(p.url),image,regular,discount,fee,override,qty:Math.max(1,Math.min(1000000,Math.round(Number(p.qty)||1))),crmStock,priceOnRequest:!!p.priceOnRequest&&regular===0,fromPrice:!!p.fromPrice};
 }
+export function libraryPricing(p,settings){return {...p,discount:p.discount??(p.brand==='LocknLock'?settings.lockDiscount:p.brand==='Minh Long'?settings.minhDiscount:0),fee:p.fee??settings.fee,override:p.override??null};}
 export function price(p){if(p.priceOnRequest)return 0;return p.override!==null&&p.override!==undefined&&p.override!==''?Math.round(Number(p.override)):Math.round(Number(p.regular)*(1-Number(p.discount)/100)+Number(p.fee))}
 export function isBundle(p,state){return !!state.settings.bundle10&&Array.isArray(state.settings.bundle10Ids)&&state.settings.bundle10Ids.includes(p.id)}
 export function quotePrice(p,state){return price(p)*(isBundle(p,state)?10:1)}
@@ -57,7 +58,7 @@ export function makeSlides(state){
    const cats=[...new Set(group.filter(p=>p.brand===brand).map(p=>p.category))].sort((a,b)=>a.localeCompare(b,'vi'));
    for(const category of cats)for(const bundle10 of [false,true]){
     const items=group.filter(p=>p.brand===brand&&p.category===category&&isBundle(p,state)===bundle10);
-    for(let i=0,size=state.settings.productsPerPage===8?8:4;i<items.length;i+=size){const chunk=items.slice(i,i+size);if(chunk.length>1)bandPages.push({type:'products',band,brand,category,bundle10,layout:size,items:chunk});}
+    for(let i=0,size=[6,8].includes(state.settings.productsPerPage)?state.settings.productsPerPage:4;i<items.length;i+=size){const chunk=items.slice(i,i+size);if(chunk.length>1)bandPages.push({type:'products',band,brand,category,bundle10,layout:size,items:chunk});}
    }
   }
   if(bandPages.length){if(state.settings.dividers)pages.push({type:'divider',band,count:bandPages.reduce((n,p)=>n+p.items.length,0)});pages.push(...bandPages)}
@@ -70,7 +71,7 @@ export function restoreState(raw){
  const pageText={};if(raw.pageText&&typeof raw.pageText==='object'){for(const [key,fields] of Object.entries(raw.pageText).slice(0,1000)){if(!fields||typeof fields!=='object')continue;pageText[key.slice(0,500)]={};for(const [position,value]of Object.entries(fields).slice(0,100))if(/^\d+:\d+$/.test(position)&&typeof value==='string')pageText[key.slice(0,500)][position]=value.slice(0,2000);}}
  const d=defaultState(),products=raw.products.map(validateProduct);if(new Set(products.map(p=>p.id)).size!==products.length)throw Error('File có mã dữ liệu trùng nhau.');
  const meta={};for(const k of Object.keys(d.meta))meta[k]=String(raw.meta?.[k]??d.meta[k]).slice(0,k==='note'?500:160);
- const settings={...d.settings,productsPerPage:raw.settings?.productsPerPage===8?8:4};for(const k of ['cover','dividers','closing','qr','regular','proposedPrice','sortPrice','bundle10'])if(typeof raw.settings?.[k]==='boolean')settings[k]=raw.settings[k];
+ const settings={...d.settings,productsPerPage:[6,8].includes(raw.settings?.productsPerPage)?raw.settings.productsPerPage:4};for(const k of ['cover','dividers','closing','qr','regular','proposedPrice','sortPrice','bundle10'])if(typeof raw.settings?.[k]==='boolean')settings[k]=raw.settings[k];
  settings.selectionSort=SELECTION_SORTS.some(([key])=>key===raw.settings?.selectionSort)?raw.settings.selectionSort:(settings.sortPrice?'price':'manual');if(settings.selectionSort==='price'&&!settings.sortPrice)settings.selectionSort='manual';settings.sortPrice=settings.selectionSort==='price';
  settings.bundle10Ids=Array.isArray(raw.settings?.bundle10Ids)?[...new Set(raw.settings.bundle10Ids)].filter(id=>products.some(p=>p.id===id)):[];
  for(const k of ['lockDiscount','minhDiscount','fee']){const n=Number(raw.settings?.[k]??settings[k]);if(!Number.isFinite(n)||n<0||n>(k==='fee'?1e8:100))throw Error('Thiết lập giá không hợp lệ.');settings[k]=n;}
@@ -78,8 +79,9 @@ export function restoreState(raw){
  return {version:1,cloudQuote,customBrands:Array.isArray(raw.customBrands)?raw.customBrands.filter(b=>b&&typeof b.name==='string'&&typeof b.origin==='string').slice(0,30):[],pageText,products,selected:Array.isArray(raw.selected)?raw.selected.filter(id=>products.some(p=>p.id===id)):[],meta,settings};
 }
 
-export function slideKey(slide){return slide.type==='products'?'products:photo:'+(slide.layout===8?'8:':'')+slide.items.map(p=>p.id).sort().join('|'):slide.type+(slide.type==='divider'?':'+slide.band:'');}
+export function slideKey(slide){return slide.type==='products'?'products:photo:'+([6,8].includes(slide.layout)?slide.layout+':':'')+slide.items.map(p=>p.id).sort().join('|'):slide.type+(slide.type==='divider'?':'+slide.band:'');}
 export async function mapConcurrent(items,limit,worker){let cursor=0;const results=new Array(items.length);await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(cursor<items.length){const i=cursor++;results[i]=await worker(items[i],i)}}));return results;}
+
 
 
 

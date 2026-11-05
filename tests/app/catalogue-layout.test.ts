@@ -13,3 +13,11 @@ import {cleanCatalogueQuote} from '../../src/modules/catalog/domain/catalogue-qu
 test('shared quotes retain 8 layout and older quotes default to 4',()=>{const s=defaultState();const p=validateProduct({name:'Máy xay',sku:'001',brand:'Elmich',category:'Máy xay',regular:1000000,discount:0,fee:15000});s.products=[p];s.selected=[p.id];s.settings.productsPerPage=8;assert.equal(cleanCatalogueQuote(s).settings.productsPerPage,8);delete s.settings.productsPerPage;assert.equal(cleanCatalogueQuote(s).settings.productsPerPage,4);s.settings.productsPerPage=12;assert.throws(()=>cleanCatalogueQuote(s));});
 
 
+
+test('six products paginate and survive local/shared quote restore with separate text edits',()=>{
+ const s=defaultState();s.products=Array.from({length:14},(_,i)=>validateProduct({id:String(i),name:'Bộ trà '+i,sku:String(i),brand:'Minh Long',category:'Bộ trà',regular:1000000,discount:10,fee:15000}));s.selected=s.products.map(p=>p.id);s.settings.productsPerPage=6;
+ const pages=()=>makeSlides(s).filter(p=>p.type==='products');
+ assert.deepEqual(pages().map(p=>p.items.length),[6,6,2]);assert.equal(restoreState(s).settings.productsPerPage,6);assert.equal(cleanCatalogueQuote(s).settings.productsPerPage,6);
+ s.selected.pop();assert.deepEqual(pages().map(p=>p.items.length),[6,6]);
+});
+

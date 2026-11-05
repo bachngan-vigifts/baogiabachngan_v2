@@ -9,6 +9,27 @@ export function compactKpi(text){
  const scale=amount>=1e9?1e9:amount>=1e6?1e6:0;
  return scale?new Intl.NumberFormat('vi-VN',{maximumFractionDigits:2}).format(amount/scale)+(scale===1e9?' tỷ':' triệu'):null;
 }
+/** V0 footer order is shared by every role; callers supply only permission-visible links. */
+export function orderedMobileNavKeys(keys) {
+ const visible=[...new Set(keys)];
+ const order=[
+  // Bán hàng: giữ nguyên năm mục đầu.
+  'pos','quotes','orders','contracts','receivables',
+  // Tiền.
+  'cashbook','cash',
+  // Khách hàng.
+  'customers','care','stock-requests',
+  // Công việc & báo cáo.
+  'tasks','dashboard','flow','feedback',
+  // Kho & giao nhận, gồm trang công việc riêng của Kho nếu được cấp quyền.
+  'kho','products','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving','deliveries',
+  // Mua hàng.
+  'early-requests','purchases','suppliers',
+  // Quản trị.
+  'staff','payroll','permissions',
+ ];
+ return [...order.filter(key=>visible.includes(key)),...visible.filter(key=>!order.includes(key))];
+}
 export function installMobileDesign(profiles){
  const media=matchMedia('(max-width: 850px)');
  const filters=new Map(),cardRows=new WeakSet();let frame=0,navSignature='';
@@ -23,23 +44,12 @@ export function installMobileDesign(profiles){
   if(mainAction&&!mainAction.hasAttribute('data-mobile-primary'))mainAction.dataset.mobilePrimary='';
   for(const b of order?.querySelectorAll('[data-pack-print-for],[data-ship-print-for],#order-history')||[])if(!b.hasAttribute('data-mobile-inline'))b.dataset.mobileInline='';
  }
- // Same permission-filtered entries as the sidebar. Up to receivables: daily selling order; after it: grouped like the sidebar (money, customers, work, warehouse, purchasing, admin).
- const navOrder=[
-  'pos','quotes','orders','contracts','receivables',
-  'cashbook','cash',
-  'customers','care','stock-requests',
-  'tasks','dashboard','flow',
-  'kho','products','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving','deliveries',
-  'early-requests','purchases','suppliers',
-  'staff','payroll','permissions',
- ];
+ // Use the same permission-filtered entries as the sidebar.
  const navLabels={pos:'Bán hàng nhanh',quotes:'Báo giá',orders:'Đơn hàng',contracts:'HĐKT',receivables:'Công nợ'};
  function syncNav(){
   const sources=new Map();
   for(const a of document.querySelectorAll('.sidebar [data-nav]'))if(visible(a)&&!sources.has(a.dataset.nav))sources.set(a.dataset.nav,a);
-  // Kế toán (app.js accountingMenu): việc hằng ngày đứng trước.
-  const order=document.body.classList.contains('role-accounting')?['tasks','receivables','purchases','cashbook','cash','customers','suppliers']:navOrder;
-  const keys=[...order.filter(k=>sources.has(k)),...[...sources.keys()].filter(k=>!order.includes(k))];
+  const keys=orderedMobileNavKeys(sources.keys());
   const key=location.hash.replace(/^#\//,'').split(/[/?]/)[0];
   const label=(k,a)=>navLabels[k]||a.querySelector('span:last-of-type')?.textContent||a.textContent.trim();
   const signature=JSON.stringify(keys.map(k=>{const a=sources.get(k);return [k,a.getAttribute('href'),label(k,a)];}))+key;
@@ -64,7 +74,7 @@ export function installMobileDesign(profiles){
   if(profile.extraFilters)parts.push(...root.querySelectorAll(profile.extraFilters));if(!parts.length)return;
   const group=make('div','crm-filter-sheet'),head=make('header','crm-sheet-head'),title=make('h2','','Lọc '+profile.title),close=make('button','icon-btn','×');
   group.setAttribute('role','dialog');group.dataset.mobileActions='off';group.setAttribute('aria-label','Lọc '+profile.title);group.setAttribute('popover','auto');close.type='button';close.setAttribute('aria-label','Đóng bộ lọc');head.append(title,close);
-  const body=make('div','crm-filter-fields'),hint=make('p','muted small','Lọc chi tiết chỉ áp dụng khi bấm Xem. Xóa lọc chưa thay đổi danh sách. Tìm kiếm và trạng thái ngoài bảng lọc áp dụng ngay.'),foot=make('footer','crm-filter-foot'),clear=make('button','btn secondary','Xóa lọc'),apply=make('button','btn primary','Xem kết quả');clear.type=apply.type='button';body.append(hint);foot.append(clear,apply);group.append(head,body,foot);
+  const body=make('div','crm-filter-fields'),hint=make('p','muted small','Lọc chi tiết chỉ áp dụng khi bấm Xem. Xóa lọc chưa thay đổi danh sách. Tìm kiếm và trạng thái ngoài bảng lọc áp dụng ngay.'),foot=make('footer','crm-filter-foot'),clear=make('button','btn secondary','Xóa lọc'),apply=make('button','btn primary','Xem kết quả');clear.type=apply.type='button';clear.setAttribute('data-mobile-navigation','');body.append(hint);foot.append(clear,apply);group.append(head,body,foot);
   const trigger=make('button','btn secondary crm-filter-trigger','Lọc');trigger.type='button';trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-label','Lọc '+profile.title);
   const slots=new Map();for(const n of parts){const slot=document.createComment('filter position');n.before(slot);slots.set(n,slot);n.classList.add('crm-filter-collapsed');}
   (root.querySelector('.page-head')||source).append(trigger);source.append(group);

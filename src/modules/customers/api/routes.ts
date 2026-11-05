@@ -1,5 +1,7 @@
+import { anniversarySuggestion, vietnamToday, ANNIVERSARY_LEAD_DAYS, ANNIVERSARY_INTERVAL } from '../domain/anniversary.ts';
 import { customerIdentityLock, findCustomerDuplicates, rejectDuplicate } from './identity.ts';
 import { changedIdentity } from '../domain/identity.ts';
+import { customerContactInput, initialCustomerProfile } from '../domain/customer-contact-input.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
 import { customerInput } from '../domain/customer-input.ts';
 import { seesAllAsSaleAdmin } from '../../staff/domain/roles.ts';
@@ -86,7 +88,7 @@ export async function customerProfile(db: Db, id: string, who: Viewer) {
     brandDiscountsOf(db, id),
   ]);
   const { search: _s, sourceVersion: _v, ...info } = customer;
-  return { customer: { ...info, fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, discounts, access, generalNote: await generalNoteOf(db, id, access) };
+  return { customer: { ...info, anniversary: anniversarySuggestion(customer.establishedDate), fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, discounts, access, generalNote: await generalNoteOf(db, id, access) };
 }
 
 /** Internal notes follow customer visibility; never returned to the customer portal. */
@@ -170,8 +172,21 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
         .where(and(segment,eq(customerStaff.role,'owner'),isNull(employees.deletedAt))).orderBy(asc(employees.name),asc(employees.id)) : Promise.resolve(undefined),
     ]);
     const staff = await customerStaffOf(c.env.db, rows.map(r => r.id));
-    return json({ customers: rows.map(r => ({ ...r, owner: staff.get(r.id)!.owner, sharedCount: staff.get(r.id)!.shared.length })),
+    return json({ customers: rows.map(r => ({ ...r, anniversary: anniversarySuggestion(r.establishedDate), owner: staff.get(r.id)!.owner, sharedCount: staff.get(r.id)!.shared.length })),
       filterOptions: owners ? {owners} : undefined, canListRetail: retailVisible, total: Number(total), pendingCount: Number(pending), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
+  }, 'business');
+
+  // Reminder scope is restricted to the viewer's owned/shared/department customers; managers see all.
+  router.get('/customers/anniversaries', async c => {
+    const me = viewer(c), today = vietnamToday(), db = c.env.db;
+    const scope = me.role === 'manager' || seesAllAsSaleAdmin(me) ? undefined : exists(db.select({ id: customerStaff.customerId }).from(customerStaff)
+      .where(and(eq(customerStaff.customerId, customers.id), or(eq(customerStaff.memberId, me.id), departmentOwner(customerStaff.memberId, me)))));
+    const rows = await db.select({ id: customers.id, name: customers.name, contact: customers.contact, phone: customers.phone, establishedDate: customers.establishedDate })
+      .from(customers).where(and(eq(customers.isRetail, false), eq(customers.approvalStatus, 'approved'), sql`${customers.establishedDate} is not null`, scope));
+    const reminders = rows.map(row => ({ ...row, anniversary: anniversarySuggestion(row.establishedDate, today) }))
+      .filter((row): row is typeof row & { anniversary: NonNullable<typeof row.anniversary> } => !!row.anniversary?.upcoming)
+      .sort((a, b) => a.anniversary.date.localeCompare(b.anniversary.date) || a.id.localeCompare(b.id));
+    return json({ today, leadDays: ANNIVERSARY_LEAD_DAYS, intervalYears: ANNIVERSARY_INTERVAL, total: reminders.length, reminders: reminders.slice(0, 100) });
   }, 'business');
 
   router.get('/customers/duplicates/check', async c => {
@@ -182,14 +197,29 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   const save = async (c: Ctx, update: boolean) => {
-    const body = await readJson(c.req, 16_384), me = viewer(c);
+    const body = await readJson(c.req, update ? 16_384 : 512_000), me = viewer(c);
     const now = nowIso(), id = update ? c.params.id! : crypto.randomUUID();
-    const {fields,terms}=customerInput(body);
+    const initial = update ? null : initialCustomerProfile(body);
+    const primary = initial?.contacts.find(row => row.isPrimary);
+    const {fields,terms}=customerInput(primary && !body.contact ? {...body,contact:primary.name} : body,false,{requireProfile:!update});
+    if (primary) {
+      if (fields.contact && fields.contact !== primary.name) throw new AppError(400, 'Tên liên hệ chính chưa khớp với người được chọn trong danh bạ.');
+      fields.contact = primary.name;
+    }
     const row = { ...fields, ...terms, search: fold(Object.values(fields).join(' ')), sourceVersion: 0, syncedAt: now };
     if (update) await requireEdit(c.env.db, id, me);
     // Khách mới: người tạo là người phụ trách (Manager chọn được người khác qua `ownerId`).
-    const wanted = me.role === 'manager' && typeof body.ownerId === 'string' && body.ownerId ? body.ownerId : me.id;
-    const [ownerId] = update ? [] : await activeStaff(c.env.db, [wanted]);
+    if (!update && me.role !== 'manager' && body.ownerId !== undefined && body.ownerId !== me.id)
+      throw new AppError(403, 'Chỉ Manager chọn người phụ trách khác khi tạo khách hàng.');
+    if (!update && body.ownerId !== undefined && body.ownerId !== null && typeof body.ownerId !== 'string')
+      throw new AppError(400, 'Nhân viên phụ trách không hợp lệ.');
+    const wanted = me.role === 'manager' && body.ownerId === null ? null
+      : me.role === 'manager' && typeof body.ownerId === 'string' && body.ownerId ? body.ownerId : me.id;
+    const [ownerId] = update || !wanted ? [] : await activeStaff(c.env.db, [wanted]);
+    if (!update && wanted && !ownerId) throw new AppError(400, 'Nhân viên phụ trách không còn hoạt động.');
+    const sharedIds = initial?.sharedIds.filter(id => id !== ownerId) ?? [];
+    if (sharedIds.length && (await activeStaff(c.env.db, sharedIds)).length !== sharedIds.length)
+      throw new AppError(400, 'Danh sách chia sẻ có nhân viên không hợp lệ hoặc đã ngừng hoạt động.');
     // Khách nhân viên tạo chờ Manager duyệt mới dùng được cho báo giá / đơn; Manager tạo thì có hiệu lực ngay.
     const mgr = me.role === 'manager';
     await c.env.db.transaction(async tx => {
@@ -201,8 +231,15 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
         await tx.update(customers).set(row).where(eq(customers.id, id));
         return;
       }
-      await tx.insert(customers).values({ id, createdAt: now, ...row, approvalStatus: mgr ? 'approved' : 'pending', createdBy: me.id, approvedBy: mgr ? me.id : null, approvedAt: mgr ? now : null });
+      await tx.insert(customers).values({ id, createdAt: now, ...row, dataSource: 'web', approvalStatus: mgr ? 'approved' : 'pending', createdBy: me.id, approvedBy: mgr ? me.id : null, approvedAt: mgr ? now : null });
       if (ownerId) await tx.insert(customerStaff).values({ customerId: id, memberId: ownerId, role: 'owner', createdBy: me.id, createdAt: now });
+      if (sharedIds.length) await tx.insert(customerStaff).values(sharedIds.map(memberId => ({ customerId: id, memberId, role: 'shared' as const, createdBy: me.id, createdAt: now })));
+      if (initial?.notes) await tx.insert(customerNotes).values({ customerId: id, text: initial.notes, revision: 1, updatedBy: me.id, updatedAt: now });
+      if (initial?.contacts.length) await tx.insert(customerContacts).values(initial.contacts.map(contact => ({ ...contact, id: crypto.randomUUID(), customerId: id, createdBy: me.id, createdAt: now, updatedAt: now })));
+    }).catch((error: unknown) => {
+      if (error instanceof AppError) throw error;
+      console.error('customer_save_transaction_failed');
+      throw new AppError(500, 'Không lưu được hồ sơ khách hàng. Các thay đổi trong lần lưu này đã được hủy.', 'CUSTOMER_SAVE_FAILED');
     });
     return update ? json({ id }) : json({ id, approvalStatus: mgr ? 'approved' : 'pending' }, 201);
   };
@@ -274,14 +311,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   // ----- Người liên hệ
-  const contactFields = (body: Record<string, unknown>) => {
-    const t = (k: string, max: number) => { const v = body[k] ?? ''; if (typeof v !== 'string' || v.length > max) throw new AppError(400, 'Thông tin người liên hệ không hợp lệ.'); return v.trim(); };
-    const name = t('name', CUSTOMER_LIMITS.contactName);
-    if (!name) throw new AppError(400, 'Nhập tên người liên hệ.');
-    const email = t('email', 200);
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, 'Email người liên hệ không hợp lệ.');
-    return { name, title: t('title', CUSTOMER_LIMITS.contactTitle), phone: t('phone', 40), email, note: t('note', CUSTOMER_LIMITS.contactNote), isPrimary: body.isPrimary === true };
-  };
+  const contactFields = customerContactInput;
   /** Chiết khấu thương hiệu của khách (để báo giá điền sẵn CK khi thêm sản phẩm). */
   router.get('/customers/:id/discounts', async c => {
     await loadCustomer(c.env.db, c.params.id!);

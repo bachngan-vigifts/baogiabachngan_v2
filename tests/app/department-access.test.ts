@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
@@ -19,7 +20,7 @@ async function setup() {
   };
   const login = async (email: string) => { const r = await call('/login', '', 'POST', { email, password: PASSWORD }); assert.equal(r.status, 200); return r.cookie; };
   const emp = await login('emp@x.vn'), peer = await login('new@x.vn'), mgr = await login('mgr@x.vn');
-  const customer = await call('/customers', peer, 'POST', { name: 'Khách của đồng nghiệp', taxCode: '1234567890', phone: '0901234567', address: 'Kho khách' });
+  const customer = await call('/customers', peer, 'POST', customerCreateFixture({ name: 'Khách của đồng nghiệp', taxCode: '1234567890', phone: '0901234567', address: 'Kho khách' }));
   assert.equal(customer.status, 201, JSON.stringify(customer.data));
   const customerId = customer.data.id;
   await call('/customers/' + customerId + '/approve', mgr, 'POST');

@@ -19,7 +19,7 @@ import {SALE_ADMIN_POSITION_ID} from '../../staff/domain/roles.ts';
  *  Bách Ngân, Lock  Thực nhận = Tổng lương − BHXH − BHYT − TNCN − vi phạm − tạm ứng điện thoại − tạm ứng
  */
 import { minWageMonth, type PayrollParams } from './params.ts';
-import { computeKpiCv, type KpiCvInput, type KpiCvResult } from './kpi-cv.ts';
+import { computeKpiCv, kpiTargetsOf, type KpiCvInput, type KpiCvResult } from './kpi-cv.ts';
 
 // ---------------- Nhóm bảng lương
 export const PAYROLL_GROUPS = ['sale', 'bn', 'lock'] as const;
@@ -90,11 +90,13 @@ export interface SalaryProfile {
   /** Sale: tính KPI công việc + thưởng KPI DS. Bách Ngân / Lock: hưởng thưởng DS của nhóm. */
   kpiEnabled: boolean; teamBonus: boolean; kpiEligible?:boolean; fixedKpi?: number | null; contractBonusEnabled?: boolean;
   outputRate: number; revenueTarget: number; insurance: number;
+  /** Chỉ tiêu KPI riêng (null = theo mức chung của tháng). */
+  kpiNewCustomersTarget?: number | null; kpiTransactionsTarget?: number | null; kpiContractsTarget?: number | null;
   bankCode: string; bankAccount: string; bankHolder: string;
 }
 export const EMPTY_PROFILE: SalaryProfile = {
   payrollGroup: 'sale', positionLabel: '', baseSalary: 0, capacityCoef: 0, responsibilityMode: 'fixed', responsibility: 0,
-  mealAllowance: true, phoneAllowance: 0, attendanceBonus: 0, kpiEnabled: false, teamBonus: false, fixedKpi:null,contractBonusEnabled:false, outputRate: 0, revenueTarget: 0, insurance: 0,
+  mealAllowance: true, phoneAllowance: 0, attendanceBonus: 0, kpiEnabled: false, teamBonus: false, fixedKpi:null,contractBonusEnabled:false, outputRate: 0, revenueTarget: 0, insurance: 0, kpiNewCustomersTarget: null, kpiTransactionsTarget: null, kpiContractsTarget: null,
   bankCode: '', bankAccount: '', bankHolder: '',
 };
 
@@ -115,6 +117,8 @@ export interface PayrollInput extends KpiCvInput {
   /** Ngày làm việc; null = lấy từ chấm công. */
   workDays: number | null;
   overtimeHours: number;
+  /** Chỉ số đối chiếu, chưa tự quy đổi thành khoản trừ. */
+  lateCount?: number; leaveHours?: number;
   /** DS tháng cá nhân (Sale – tính thưởng KPI DS); null = DS đơn hàng trên hệ thống. */
   revenue: number | null;
   /** Sản lượng: số đơn (kho), số lượt (thiết kế), DS web (IT). */
@@ -124,7 +128,7 @@ export interface PayrollInput extends KpiCvInput {
   quarterBonus: number | null;
 }
 export const EMPTY_INPUT: PayrollInput = {
-  workDays: null, overtimeHours: 0, revenue: null, outputQty: 0, healthInsurance: 0, incomeTax: 0, quarterBonus: null,
+  workDays: null, overtimeHours: 0, lateCount: 0, leaveHours: 0, revenue: null, outputQty: 0, healthInsurance: 0, incomeTax: 0, quarterBonus: null,
   kpiNewCustomers: null, kpiTransactions: null, kpiContracts: null, kpiRevenue: null, kpiMerchDays: 0, kpiTripDays: 0, kpiOverride: null,
 };
 
@@ -187,6 +191,9 @@ export function netKpiBonusRate(p:PayrollParams,kpi:number|null){
 }
 export const kpiBonusRate = (p: PayrollParams, kpi: number | null) => kpi === null ? 0 : kpi >= p.kpiHigh ? p.kpiHighRate : kpi >= p.kpiLow ? p.kpiLowRate : 0;
 
+/** Vị trí lương TV / Thử việc chỉ hưởng LCB theo ngày công. */
+export const isProbation = (position: string) => ['TV', 'THỬ VIỆC'].includes(position.trim().toLocaleUpperCase('vi'));
+
 export function computePayslip(a: {
   profile: SalaryProfile; params: PayrollParams; input: PayrollInput; adjustments: readonly { kind: string; amount: number }[];
   /** Ngày công từ chấm công; DS đơn hàng trên hệ thống; thưởng quý tự tính (nếu có). */
@@ -196,7 +203,8 @@ export function computePayslip(a: {
   const adj = (k: AdjustmentKind) => a.adjustments.filter(x => x.kind === k).reduce((s, x) => s + x.amount, 0);
   const days = inp.workDays ?? a.attendanceDays, lcb = f.baseSalary > 0 ? f.baseSalary : minWageMonth(p);
   const revenue = inp.revenue ?? a.systemRevenue;
-  const kpi = g === 'sale' && f.kpiEligible!==false && f.kpiEnabled ? computeKpiCv({...inp,kpiOverride:f.fixedKpi??inp.kpiOverride}, p, f.revenueTarget || p.kpiRevenue, revenue) : null;
+  const probation = isProbation(f.positionLabel);
+  const kpi = !probation && g === 'sale' && f.kpiEligible!==false && f.kpiEnabled ? computeKpiCv({...inp,kpiOverride:f.fixedKpi??inp.kpiOverride}, p, kpiTargetsOf(p, f), revenue) : null;
   const responsibility = f.responsibilityMode === 'per_day' ? p.responsibilityDay * days
     : f.responsibilityMode === 'prorated' ? f.responsibility * days / p.standardDays : f.responsibility;
   const mealOff = g === 'sale' ? p.mealOffSale : g === 'bn' ? p.mealOffBn : p.mealOffLock;
@@ -226,10 +234,16 @@ export function computePayslip(a: {
     phoneDeduction: [g === 'sale' ? Math.max(phoneAdvance, phone) : phoneAdvance, g === 'sale' && phone ? `MAX(tạm ứng ĐT ${vnd(phoneAdvance)}, PC ${vnd(phone)})` : ''],
     advance: [adj('advance'), ''],
   };
+  // Thử việc: chỉ LCB theo công – không năng lực, KPI, thưởng, sản lượng, phụ cấp, tăng ca, BHXH/BHYT/TNCN.
+  // NHƯNG tiền đã ứng / đã ghi phạt vẫn phải trừ lại: tạm ứng, tạm ứng điện thoại (không có PC điện thoại để bù), vi phạm / bể hàng.
+  if (probation) for (const key of Object.keys(amounts) as LineKey[]) {
+    if (key === 'salaryByDays' || key === 'advance' || key === 'violation') continue;
+    amounts[key] = key === 'phoneDeduction' ? [phoneAdvance, phoneAdvance ? 'Tạm ứng điện thoại' : ''] : [0, 'Thử việc: không áp dụng'];
+  }
   const line = (key: LineKey): PayLine => ({ key, label: LINE_LABEL[key], amount: round(amounts[key][0]), note: amounts[key][1] });
   const income = GROUP_INCOME[g].map(line), deductions = GROUP_DEDUCTION[g].map(line);
   const gross = income.reduce((s, l) => s + l.amount, 0), deductionTotal = deductions.reduce((s, l) => s + l.amount, 0);
-  return { ...(netPolicy?{kpiNetBasis:{netRevenue:a.kpiNetRevenue!,issues:a.kpiNetRevenueIssues||0,rate}}:{}),group: g, positionLabel: f.positionLabel, workDays: days, baseSalary: lcb, revenue, income, deductions, gross, deductionTotal, net: gross - deductionTotal, kpi };
+  return { ...(netPolicy&&!probation?{kpiNetBasis:{netRevenue:a.kpiNetRevenue!,issues:a.kpiNetRevenueIssues||0,rate}}:{}),group: g, positionLabel: f.positionLabel, workDays: days, baseSalary: lcb, revenue, income, deductions, gross, deductionTotal, net: gross - deductionTotal, kpi };
 }
 
 // ---------------- Thưởng quý – team Sale (sheet "Thưởng quý")
@@ -245,10 +259,26 @@ export function computeQuarterBonus(members: readonly QuarterMember[], p: Payrol
     rows: rows.map(r => ({ ...r, share: teamRevenue > 0 ? r.revenue / teamRevenue : 0, bonus: teamRevenue > 0 ? round(fund * r.revenue / teamRevenue) : 0 })) };
 }
 
-/** Link ảnh mã VietQR chuyển khoản lương (như sheet "Chuyển khoản"). */
-export function vietQrUrl(bankCode: string, account: string, amount: number, month: string) {
+/** Nhân viên tự xem lương tháng M từ ngày này của chính tháng M (trước đó ẩn; Manager luôn thấy). */
+export const SALARY_OPEN_DAY = 10;
+/** Ngày (YYYY-MM-DD) nhân viên bắt đầu thấy lương tháng; `today` trước ngày đó → ẩn. */
+export const salaryOpensOn = (month: string) => `${month}-${String(SALARY_OPEN_DAY).padStart(2, '0')}`;
+/** Nội dung chuyển khoản lương: "Chuyen luong T10" (không dấu, mọi ngân hàng đọc được). */
+export const salaryTransferNote = (month: string) => 'Chuyen luong T' + Number(month.slice(5));
+/** Link ảnh mã VietQR chuyển khoản lương: số tiền = thực nhận, nội dung "Chuyen luong T<tháng>", kèm tên chủ tài khoản nếu có. */
+export function vietQrUrl(bankCode: string, account: string, amount: number, month: string, holder = '') {
   if (!bankCode || !account || amount <= 0) return '';
-  return `https://img.vietqr.io/image/${encodeURIComponent(bankCode.toLowerCase())}-${encodeURIComponent(account)}.png?amount=${Math.round(amount)}&addInfo=${encodeURIComponent('Luong T' + Number(month.slice(5)))}`;
+  return `https://img.vietqr.io/image/${encodeURIComponent(bankCode.toLowerCase())}-${encodeURIComponent(account)}.png?amount=${Math.round(amount)}&addInfo=${encodeURIComponent(salaryTransferNote(month))}`
+    + (holder ? `&accountName=${encodeURIComponent(holder)}` : '');
+}
+/** Chuẩn hoá tài khoản nhận lương (dùng chung Manager sửa hồ sơ và nhân viên tự điền). Tên chủ TK: IN HOA, bỏ dấu như trên thẻ. */
+export function normalizeBank(b: { bankCode?: unknown; bankAccount?: unknown; bankHolder?: unknown }) {
+  const t = (v: unknown, max: number) => String(v ?? '').trim().slice(0, max);
+  return {
+    bankCode: t(b.bankCode, 30).toLowerCase().replace(/[^a-z0-9]/g, ''),
+    bankAccount: t(b.bankAccount, 30).replace(/[^\dA-Za-z]/g, ''),
+    bankHolder: t(b.bankHolder, HR_LIMITS.text).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'D').toUpperCase().replace(/\s+/g, ' '),
+  };
 }
 
 /** % hoàn thành chỉ tiêu doanh số (null = chưa đặt chỉ tiêu). */

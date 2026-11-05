@@ -6,6 +6,20 @@ import {products,productPrices,productStock} from '../../src/modules/catalog/sch
 import {employees} from '../../src/modules/staff/schema.ts';
 import {auditLogs} from '../../src/core/db/schema.ts';
 
+test('manual product creation rejects missing/zero retail and VAT prices before inserting; manager and staff still follow approval rules',async()=>{
+ const f=await setup(),sku='REQUIRED-PRICES',base={sku,name:'Giá bắt buộc'};
+ for(const prices of [undefined,{}, {retail:100000}, {'retail-vat':108000}, {retail:0,'retail-vat':108000}, {retail:100000,'retail-vat':0}, {retail:true,'retail-vat':108000}, {retail:0.4,'retail-vat':108000}]){
+  const r=await f.call('/products',f.mgr,'POST',{...base,prices});assert.equal(r.status,400,JSON.stringify(r.data));
+  assert.equal((await f.db.select().from(products).where(eq(products.sku,sku))).length,0);
+  assert.equal((await f.db.select().from(productPrices).where(eq(productPrices.sku,sku))).length,0);
+ }
+ const prices={retail:100000,'retail-vat':108000};
+ assert.equal((await f.call('/products',f.emp,'POST',{...base,prices})).data.approvalStatus,'pending');
+ assert.equal((await f.call('/products',f.mgr,'POST',{...base,sku:sku+'-MGR',prices})).data.approvalStatus,'approved');
+ const saved=await f.db.select().from(productPrices).where(eq(productPrices.sku,sku));
+ assert.deepEqual(Object.fromEntries(saved.map(p=>[p.policyId,p.price])),prices);
+});
+
 test('Manager cập nhật sản phẩm/giá: giữ SKU, thuế, kho, trạng thái và ID Sapo; ghi audit, chặn ghi đè bản cũ',async()=>{
  const f=await setup();
  await f.db.update(products).set({sapoProductId:'sapo-123',taxable:true,taxIn:8,taxOut:10,taxBasis:'Chưa VAT',perCarton:12}).where(eq(products.sku,'00123'));
@@ -29,7 +43,7 @@ test('Manager cập nhật sản phẩm/giá: giữ SKU, thuế, kho, trạng th
  const audits=await f.db.select().from(auditLogs).where(eq(auditLogs.entityId,'00123'));assert.equal(audits.filter(a=>a.action==='update').length,1);
  const clear=await f.call('/products/00123',f.mgr,'PUT',{...body,expectedUpdatedAt:p.updatedAt,prices:{retail:null}});assert.equal(clear.status,200);
  const prices=await f.db.select().from(productPrices).where(eq(productPrices.sku,'00123'));assert.equal(prices.find(v=>v.policyId==='retail')!.price,null);assert.equal(prices.find(v=>v.policyId==='retail-vat')!.price,0,'omitted policies unchanged');
- const pending=await f.call('/products',f.emp,'POST',{sku:'WAIT-UPDATE',name:'Chờ duyệt'});assert.equal(pending.status,201);
+ const pending=await f.call('/products',f.emp,'POST',{sku:'WAIT-UPDATE',name:'Chờ duyệt',prices:{retail:100000,'retail-vat':108000}});assert.equal(pending.status,201);
  const waiting=(await f.call('/products/WAIT-UPDATE',f.mgr)).data.product;
  assert.equal((await f.call('/products/WAIT-UPDATE',f.mgr,'PUT',{...body,sku:'WAIT-UPDATE',expectedUpdatedAt:waiting.updatedAt})).status,409);
  assert.equal((await f.call('/products/MISSING',f.mgr,'PUT',{...body,sku:'MISSING'})).status,404);

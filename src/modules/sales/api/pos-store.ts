@@ -189,13 +189,14 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
   };
 }
 /** Phần giữ không gắn kho (báo giá, đơn chưa chọn kho) rơi vào `warehouseId`: tổng giữ trừ tồn trống ở các kho thật khác (tồn − hàng đơn đang giữ ở kho đó). */
-async function quoteHoldShare(db: PosDb, quotes: { sku: string; qty: number }[], warehouseId: string) {
-  const skus = quotes.map(q => q.sku);
+async function quoteHoldShare(db: PosDb, quotes: { sku: string; qty: number }[], warehouseId: string, knownHere?: Awaited<ReturnType<typeof orderHolds>>) {
+  const skus = quotes.map(q => q.sku), wanted = new Set(skus);
+  // `knownHere`: hàng đơn giữ ở kho này cho tập mã rộng hơn (reservedBySku vừa đọc, cùng tham số) – lọc lại theo mã, khỏi đọc lần hai.
   const [stock, whs, allOrders, hereOrders] = await Promise.all([
     readCatalogStock(db, skus),
     db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.kind, 'stock'), eq(warehouses.active, true))),
     orderHolds(db, skus, undefined, undefined, true),
-    orderHolds(db, skus, warehouseId, undefined, true),
+    knownHere ? knownHere.filter(r => wanted.has(r.sku)) : orderHolds(db, skus, warehouseId, undefined, true),
   ]);
   const others = new Set(whs.map(w => w.id).filter(id => id !== warehouseId)), free = new Map<string, number>();
   for (const r of stock) if (others.has(r.warehouseId)) free.set(r.sku, (free.get(r.sku) ?? 0) + Math.max(0, r.quantity));
@@ -204,13 +205,17 @@ async function quoteHoldShare(db: PosDb, quotes: { sku: string; qty: number }[],
   for (const r of hereOrders) free.set(r.sku, (free.get(r.sku) ?? 0) + r.qty);
   return new Map(quotes.map(q => [q.sku, Math.max(0, q.qty - Math.max(0, free.get(q.sku) ?? 0))]));
 }
-export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: string, exceptOrderId?: string) {
+/**
+ * Hàng đang giữ theo mã. `skus` bỏ trống = mọi mã (snapshot POS đọc cả danh mục): không gửi danh sách hàng nghìn mã vào từng truy vấn
+ * giữ hàng – CSDL tốn công phân tích / lập kế hoạch cho danh sách dài, trong khi số dòng giữ hàng thật chỉ vài trăm.
+ */
+export async function reservedBySku(db: PosDb, skus: string[] | undefined, warehouseId?: string, exceptOrderId?: string) {
   const now = posNow();
   const [quotes, allOrders] = await Promise.all([
     db
       .select({ sku: stockHolds.sku, qty: sql<number>`sum(${stockHolds.qty})`.mapWith(Number) })
       .from(stockHolds)
-      .where(and(inArray(stockHolds.sku, skus), eq(stockHolds.status, 'active'), sql`${stockHolds.expiresAt}>${now}`))
+      .where(and(skus ? inArray(stockHolds.sku, skus) : undefined, eq(stockHolds.status, 'active'), sql`${stockHolds.expiresAt}>${now}`))
       .groupBy(stockHolds.sku),
     orderHolds(db, skus, warehouseId, undefined, true),
   ]);
@@ -220,7 +225,7 @@ export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: str
   // phần mà tồn trống ở các kho khác không đủ che: hàng giữ cho khách sỉ ở kho VIGIFTS không làm kho cửa hàng hiện "Hết hàng" (23/10/2026).
   const global = new Map(quotes.map(r => [r.sku, r.qty]));
   for (const r of orders) if (r.unassigned) global.set(r.sku, (global.get(r.sku) ?? 0) + r.qty);
-  const share = warehouseId && global.size ? await quoteHoldShare(db, [...global].map(([sku, qty]) => ({ sku, qty })), warehouseId) : global;
+  const share = warehouseId && global.size ? await quoteHoldShare(db, [...global].map(([sku, qty]) => ({ sku, qty })), warehouseId, allOrders) : global;
   for (const [sku, qty] of share) if (qty > 0) out.set(sku, (out.get(sku) ?? 0) + qty);
   for (const r of orders) {
     if (r.unassigned) continue;

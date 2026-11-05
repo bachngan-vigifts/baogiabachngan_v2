@@ -1,5 +1,5 @@
-import {computeKpiCv} from '../domain/kpi-cv.ts';
-import {kpiBonusRate,netKpiBonusRate} from '../domain/payroll.ts';
+import {computeKpiCv,kpiTargetsOf} from '../domain/kpi-cv.ts';
+import {kpiBonusRate,netKpiBonusRate,salaryTransferNote,vietQrUrl} from '../domain/payroll.ts';
 import type {CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
 import {awardHistory,proposeAwards} from './contract-bonuses.ts';
 import {sha256Hex} from '../../staff/domain/session.ts';
@@ -10,7 +10,7 @@ import { departments, employees } from '../../staff/schema.ts';
 import { hrAdjustments, hrAttendance, hrPayrollInputs, hrPayrollMonths, hrPayrollSettings, hrPayslips, hrSalaryProfiles } from '../schema.ts';
 import { mergeParams, type PayrollParams } from '../domain/params.ts';
 import {
-  EMPTY_GROUP_MONTH, EMPTY_INPUT, computePayslip,salaryKpiEligible, defaultProfileFor, computeQuarterBonus, monthRange, quarterMonths, summarizeAttendance,
+  EMPTY_GROUP_MONTH, EMPTY_INPUT, isProbation, computePayslip,salaryKpiEligible, defaultProfileFor, computeQuarterBonus, monthRange, quarterMonths, summarizeAttendance,
   type GroupMonth, type PayrollInput, type PayslipCalc, type SalaryProfile,
 } from '../domain/payroll.ts';
 
@@ -25,11 +25,11 @@ type ProfileRow = typeof hrSalaryProfiles.$inferSelect;
 const toProfile = (p: ProfileRow | undefined, positionId?: string | null): SalaryProfile & { effectiveMonth: string | null; note: string } => p ? {
   payrollGroup: p.payrollGroup, positionLabel: p.positionLabel, baseSalary: p.baseSalary, capacityCoef: p.capacityCoef,
   responsibilityMode: p.responsibilityMode, responsibility: p.responsibility, mealAllowance: p.mealAllowance, phoneAllowance: p.phoneAllowance,
-  attendanceBonus: p.attendanceBonus, kpiEligible:salaryKpiEligible(positionId),kpiEnabled:salaryKpiEligible(positionId)&&p.kpiEnabled,fixedKpi:salaryKpiEligible(positionId)?p.fixedKpi:null,contractBonusEnabled:p.contractBonusEnabled, teamBonus: p.teamBonus, outputRate: p.outputRate, revenueTarget: p.revenueTarget,
+  attendanceBonus: p.attendanceBonus, kpiEligible:salaryKpiEligible(positionId),kpiEnabled:salaryKpiEligible(positionId)&&p.kpiEnabled,fixedKpi:salaryKpiEligible(positionId)?p.fixedKpi:null,contractBonusEnabled:p.contractBonusEnabled, teamBonus: p.teamBonus, outputRate: p.outputRate, revenueTarget: p.revenueTarget, kpiNewCustomersTarget: p.kpiNewCustomersTarget, kpiTransactionsTarget: p.kpiTransactionsTarget, kpiContractsTarget: p.kpiContractsTarget,
   insurance: p.insurance, bankCode: p.bankCode, bankAccount: p.bankAccount, bankHolder: p.bankHolder, effectiveMonth: p.effectiveMonth, note: p.note,
 } : { ...defaultProfileFor(positionId), effectiveMonth: null, note: '' };
 const toInput = (r: typeof hrPayrollInputs.$inferSelect | undefined): PayrollInput & { note: string } => r ? {
-  workDays: r.workDays, overtimeHours: r.overtimeHours, revenue: r.revenue, outputQty: r.outputQty, healthInsurance: r.healthInsurance, incomeTax: r.incomeTax,
+  workDays: r.workDays, overtimeHours: r.overtimeHours, lateCount: r.lateCount, leaveHours: r.leaveHours, revenue: r.revenue, outputQty: r.outputQty, healthInsurance: r.healthInsurance, incomeTax: r.incomeTax,
   quarterBonus: r.quarterBonus, kpiNewCustomers: r.kpiNewCustomers, kpiTransactions: r.kpiTransactions, kpiContracts: r.kpiContracts, kpiRevenue: r.kpiRevenue,
   kpiMerchDays: r.kpiMerchDays, kpiTripDays: r.kpiTripDays, kpiOverride: r.kpiOverride, note: r.note,
 } : { ...EMPTY_INPUT, note: '' };
@@ -121,11 +121,12 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     const attendanceDays = summarizeAttendance(attendance.filter(a => a.memberId === m.id)).worked, systemRevenue = revenues.get(m.id)?.[month] ?? 0;
     const fact=facts.members.get(m.id),auto={newCustomers:fact?.newCustomers||0,transactions:fact?.transactions||0,contracts:fact?.contracts||0},resolved={...input};
     if(kpiEnabled&&profile.kpiEnabled)for(const [key,value]of Object.entries({kpiNewCustomers:auto.newCustomers,kpiTransactions:auto.transactions,kpiContracts:auto.contracts}))if((resolved as any)[key]===null)(resolved as any)[key]=value;
-    const ownAwards=awards.filter(a=>a.memberId===m.id&&(!a.isNew||profile.contractBonusEnabled&&(!netPolicy||profile.kpiEligible===false)));
+    const probation=isProbation(profile.positionLabel);
+    const ownAwards=probation?[]:awards.filter(a=>a.memberId===m.id&&(!a.isNew||profile.contractBonusEnabled&&(!netPolicy||profile.kpiEligible===false)));
     const calc = computePayslip({profile,params,input:kpiApply?resolved:input,adjustments:adj,attendanceDays,systemRevenue,groupMonth:gm,quarterBonusAuto:quarter.map.get(m.id)??0,...(netPolicy&&profile.payrollGroup==='sale'&&profile.kpiEnabled&&profile.kpiEligible!==false?{kpiNetRevenue:fact?.netRevenue||0,kpiNetRevenueIssues:fact?.netRevenueIssues||0}:{}),
      contractBonus:bonusApply?ownAwards.filter(a=>a.isNew).reduce((n,a)=>n+a.amount,0):0,contractBonusAdjustment:bonusApply?ownAwards.filter(a=>!a.isNew).reduce((n,a)=>n+a.amount,0):0});
     calc.employment={company:m.workCompany,department:m.workDepartment,leader:m.isLeader};
-    if(enabled){const previewKpi=kpiEnabled&&profile.kpiEnabled?computeKpiCv({...resolved,kpiOverride:profile.fixedKpi??resolved.kpiOverride},params,profile.revenueTarget||params.kpiRevenue,input.revenue??systemRevenue):null;calc.salesCrm={apply:bonusApply||kpiApply&&profile.kpiEnabled,bonusApply,kpiApply:kpiApply&&profile.kpiEnabled,from,kpiEligible:profile.kpiEligible!==false,facts:auto,awards:ownAwards,previewKpi,kpiBonusPreview:Math.round((netPolicy?Math.max(0,fact?.netRevenue||0):(input.revenue??systemRevenue))*(netPolicy?netKpiBonusRate(params,previewKpi?.used??null):kpiBonusRate(params,previewKpi?.used??null)))};}
+    if(enabled&&!probation){const previewKpi=kpiEnabled&&profile.kpiEnabled?computeKpiCv({...resolved,kpiOverride:profile.fixedKpi??resolved.kpiOverride},params,kpiTargetsOf(params,profile),input.revenue??systemRevenue):null;calc.salesCrm={apply:bonusApply||kpiApply&&profile.kpiEnabled,bonusApply,kpiApply:kpiApply&&profile.kpiEnabled,from,kpiEligible:profile.kpiEligible!==false,facts:auto,awards:ownAwards,previewKpi,kpiBonusPreview:Math.round((netPolicy?Math.max(0,fact?.netRevenue||0):(input.revenue??systemRevenue))*(netPolicy?netKpiBonusRate(params,previewKpi?.used??null):kpiBonusRate(params,previewKpi?.used??null)))};}
     return { member: m, profile, input, attendanceDays, systemRevenue, adjustments: adj, calc, slip: slips.find(s => s.memberId === m.id) ?? null };
   });
   for(const row of rows){if(![row.calc.gross,row.calc.deductionTotal,row.calc.net].every(Number.isSafeInteger))throw new AppError(400,'Tổng tiền vượt giới hạn tính toán an toàn. Kiểm tra tham số.');row.context={params,paramsMonth:effectiveMonth,profile:row.profile,input:row.input,systemRevenue:row.systemRevenue,attendanceDays:row.attendanceDays};}
@@ -143,6 +144,22 @@ export function payslipView(row: PayrollRow) {
 }
 
 /** Dữ liệu lương / ngày công một người một tháng (trang chi tiết nhân viên). */
+type BankSnap = { code: string; account: string; holder: string };
+/**
+ * Tài khoản chuyển lương của phiếu: phiếu đã chốt dùng tài khoản lúc chốt; phiếu chốt khi chưa có tài khoản (bản chụp trống)
+ * → dùng tài khoản hiện tại trong hồ sơ lương (nhân viên điền sau khi chốt).
+ */
+export function slipBank(view: object | null, profile: { bankCode: string; bankAccount: string; bankHolder: string }): BankSnap & { fromSnapshot: boolean } {
+  const snap = (view as { bank?: BankSnap } | null)?.bank;
+  return snap?.account ? { ...snap, fromSnapshot: true } : { code: profile.bankCode, account: profile.bankAccount, holder: profile.bankHolder, fromSnapshot: false };
+}
+/** Chuyển khoản lương tháng: tài khoản (xem `slipBank`), số tiền = thực nhận, nội dung, ảnh VietQR. */
+function transferOf(view: ReturnType<typeof payslipView> | null, profile: { bankCode: string; bankAccount: string; bankHolder: string; effectiveMonth: string | null }, month: string) {
+  if (!view || profile.effectiveMonth === null && view.status === 'estimate') return null;
+  const bank = slipBank(view, profile);
+  return { bankCode: bank.code, bankAccount: bank.account, bankHolder: bank.holder, amount: Math.max(0, Math.round(view.net)), note: salaryTransferNote(month),
+    fromSnapshot: bank.fromSnapshot, qr: vietQrUrl(bank.code, bank.account, view.net, month, bank.holder) };
+}
 export async function payrollOf(db: AnyDb, memberId: string, month: string, revenueOf: RevenueOf,crmFactsOf?:CrmFactsOf,showAllContracts=false) {
   const r = monthRange(month);
   const [board, history, attendance] = await Promise.all([
@@ -160,5 +177,6 @@ export async function payrollOf(db: AnyDb, memberId: string, month: string, reve
     attendance, attendanceSummary: { ...summarizeAttendance(attendance), standardDays: board.params.standardDays, daysInMonth: r.days },
     adjustments: row?.adjustments ?? [], systemRevenue: row?.systemRevenue ?? 0, groupMonth: board.groupMonth,
     params: board.params,confirmationHash:board.confirmationHash,systemFacts:row?.calc.salesCrm?.facts||null, payslip: view, locked: !!row?.slip,
+    transfer: transferOf(view, profile, month),
   };
 }
