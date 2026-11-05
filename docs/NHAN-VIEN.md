@@ -168,6 +168,10 @@ Các ô tiền dùng dấu phẩy hàng nghìn, ví dụ **4,758,000**, sau khi 
 
 Ô trống giữ nguyên dữ liệu hiện tại; `0` ghi bằng 0. Ngày công nhập `Tự động` để lấy chấm công. Bể/đền hàng nhập số tiền khấu trừ; Điện thoại Sale là tạm ứng điện thoại; số phiếu là sản lượng, nhân đơn giá đã cài. BHXH cập nhật mức từ tháng đang xem. Khoản nhập nhanh cộng với các khoản đã ghi riêng. Số lần trễ và giờ nghỉ được lưu để đối chiếu, không tự tạo khoản trừ hoặc trừ thêm ngày công.
 
-**Nhập file Excel** kiểm tra toàn bộ file trước khi tạo bản nháp; sai tháng, trùng/không tìm thấy nhân viên, tên lệch STT, phiếu đã khóa hoặc ô lỗi bị từ chối. Không nhập công thức, không xóa sheet ẩn. Kiểm tra bảng rồi bấm **Lưu thay đổi** để ghi; file không tự lưu. Lưu/bỏ bản nháp trước khi nhập file mới. Tối đa 5 MB, 1.000 dòng, 100 nhân viên thay đổi mỗi lần. Chỉ số trễ/giờ nghỉ có thể xem/sửa tại chế độ Chấm công & chỉ số.
+File mẫu có **đủ nhân viên trong bảng lương tháng đang chọn**, kể cả người đã chốt/đã trả lương; không phụ thuộc bộ lọc nhóm hay ô tìm kiếm trên màn hình. Dòng đã khóa tô xám và để trống số liệu. Khi nhập lại, các dòng đã khóa còn trống được bỏ qua; nhập bất kỳ số liệu nào (kể cả 0) vào dòng đã khóa sẽ bị từ chối.
+
+**Xuất file bảng lương** trong thanh công cụ Nhập nhanh dùng cùng chức năng **Xuất Excel** ở đầu trang: xuất số liệu đã lưu của tháng đang chọn, gồm tổng hợp, các nhóm lương và chuyển khoản. Bộ lọc tìm kiếm/nhóm ở Nhập nhanh không giới hạn file xuất. Nếu có bản nháp chưa lưu, hệ thống yêu cầu lưu hoặc bỏ thay đổi trước khi xuất.
+
+**Nhập file Excel** kiểm tra toàn bộ file trước khi tạo bản nháp; sai tháng, trùng/không tìm thấy nhân viên, tên lệch STT, sửa phiếu đã khóa hoặc ô lỗi bị từ chối. Không nhập công thức, không xóa sheet ẩn. Kiểm tra bảng rồi bấm **Lưu thay đổi** để ghi; file không tự lưu. Lưu/bỏ bản nháp trước khi nhập file mới. Tối đa 5 MB, 1.000 dòng, 100 nhân viên thay đổi mỗi lần. Chỉ số trễ/giờ nghỉ có thể xem/sửa tại chế độ Chấm công & chỉ số.
 
 Migration `20261105042029_payroll_attendance_counters.sql` bổ sung `late_count` và `leave_hours` vào bảng chỉ số tháng; workflow API chạy trước khi deploy. Không thay đổi RLS hoặc các công thức khấu trừ hiện có.
