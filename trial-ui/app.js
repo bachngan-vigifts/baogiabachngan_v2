@@ -4708,8 +4708,18 @@ async function verifyAndConfirmOrder() {
   const whStock = w => w.lines.map(l => `${esc(l.sku)}: cần ${fmtNum(l.need)} · tồn ${fmtNum(l.stock)}${l.stock < l.need ? ' <b class="danger-text">thiếu</b>' : ''}`).join('<br>');
   const whField = wh && wh.warehouses.length ? `<label class="verify-field"><span>Kho dự kiến xuất hàng</span><select name="warehouseId">${wh.configured && !whPick ? '<option value="">Chọn kho</option>' : ''}${wh.warehouses.map(w => `<option value="${esc(w.id)}" ${w.id === whPick ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></label>` : '';
   const whRow = wh && wh.warehouses.length ? [['Tồn tại kho bán', wh.warehouses.map(w => `<b>${esc(w.name)}</b><br>${whStock(w) || '<span class="muted">—</span>'}`).join('<br>')]] : [];
+  const contractReview = isContractDoc(d) ? `
+    <section class="verify-page-card"><h3>Thông tin khách hàng</h3><dl class="kv verify-customer">
+      ${[['Khách hàng', o.customerName], ['MST', o.taxCode], ['Người nhận / SĐT', [o.contact, o.phone].filter(Boolean).join(' · ')], ['Địa chỉ giao', o.address]].map(([label, value]) => `<dt>${esc(label)}</dt><dd>${value ? esc(value) : '<span class="danger-text">Chưa có</span>'}</dd>`).join('')}</dl></section>
+    <section class="verify-page-card verify-products"><div class="verify-section-head"><h3>Sản phẩm trong HĐKT</h3><span class="muted small">${fmtNum(d.lines.length)} dòng sản phẩm</span></div>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="num">SL</th><th>ĐVT</th><th class="num">Đơn giá</th><th class="num">VAT</th></tr></thead><tbody>
+        ${d.lines.map(l => `<tr><td>${esc(l.name)}${l.sku ? `<small>${esc(l.sku)}</small>` : ''}</td><td class="num" data-label="SL">${fmtNum(l.qty)}</td><td data-label="ĐVT">${esc(l.unit || '—')}</td><td class="num" data-label="Đơn giá">${money(l.unitPrice)}</td><td class="num" data-label="VAT">${fmtNum(l.taxRate)}%</td></tr>`).join('')}
+      </tbody></table></div><div class="verify-contract-total"><span>Giá trị HĐKT (gồm VAT)</span><strong>${money(o.total)}</strong></div></section>
+    ${whRow.length ? `<section class="verify-page-card"><h3>Tồn tại kho bán</h3><div class="verify-stock-list">${wh.warehouses.map(w => `<section><h4>${esc(w.name)}</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>Mã sản phẩm</th><th class="num">Cần</th><th class="num">Tồn</th><th>Khả năng đáp ứng</th></tr></thead><tbody>${w.lines.map(l => `<tr><td>${esc(l.sku)}</td><td class="num" data-label="Cần">${fmtNum(l.need)}</td><td class="num" data-label="Tồn">${fmtNum(l.stock)}</td><td>${l.stock < l.need ? '<span class="danger-text">Thiếu hàng</span>' : 'Đủ hàng'}</td></tr>`).join('')}</tbody></table></div></section>`).join('')}</div></section>` : ''}
+    <section class="verify-page-card"><h3>Ghi chú</h3><p class="verify-note">${o.note ? esc(o.note) : '<span class="muted">Không có ghi chú</span>'}</p></section>` : '';
   const v = await verifyBox({
     title: `Duyệt ${isContractDoc(d) ? 'HĐKT' : 'đơn'} ${docNo(d)}`, eyebrow: 'Kiểm tra trước khi duyệt',
+    ...(isContractDoc(d) ? { title: 'Duyệt HĐKT', subtitle: docNo(d), layout: 'page', review: contractReview } : {}),
     intro: `Kiểm tra kỹ các thông tin dưới đây với khách hàng. Đánh dấu đủ các mục mới duyệt được ${isContractDoc(d) ? 'HĐKT' : 'đơn'}.`,
     rows: [['Khách hàng', dash(o.customerName)], ['MST', dash(o.taxCode)], ['Người nhận / SĐT', dash([o.contact, o.phone].filter(Boolean).join(' · '))], ['Địa chỉ giao', dash(o.address)],
       ['Sản phẩm', items], ...whRow, [`Giá trị ${isContractDoc(d) ? 'HĐKT' : 'đơn'} (gồm VAT)`, `<b>${money(o.total)}</b>`], ['Ghi chú', o.note ? esc(o.note) : '<span class="muted">Không có</span>']],
