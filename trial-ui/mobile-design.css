@@ -215,8 +215,15 @@
 /* Workflow review: all overrides below are deliberately mobile-only. */
 @media screen and (max-width:850px){
  /* Menu chân trang gom theo chức năng: mỗi nhóm một nút chia đều bề ngang, không cuộn ngang; bấm nút mở bảng chọn (.crm-nav-sheet). */
- .crm-mobile-nav:not([hidden]) { display:grid;grid-template-columns:repeat(var(--crm-nav-count,7),minmax(0,1fr));overflow:hidden;gap:0; }
- .crm-mobile-nav:not([hidden]) :is(a,button) { min-width:0;padding:4px 2px;white-space:normal;text-align:center;cursor:pointer;font-size:10.5px;line-height:1.25; }
+ .crm-mobile-nav:not([hidden]) { display:grid;grid-template-columns:repeat(var(--crm-nav-count,7),minmax(0,1fr));overflow:hidden;gap:0;padding:2px 2px calc(2px + env(safe-area-inset-bottom)); }
+ /* Thấp gọn: biểu tượng + nhãn một dòng (~50px + vùng an toàn) để không che nút thao tác của trang. */
+ .crm-mobile-nav:not([hidden]) :is(a,button) { min-width:0;min-height:46px;gap:2px;padding:3px 1px;text-align:center;cursor:pointer;font-size:10.5px;line-height:1.2; }
+ .crm-mobile-nav:not([hidden]) svg { width:20px;height:20px; }
+ .crm-mobile-nav .crm-nav-label { display:block;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis; }
+ .crm-mobile-nav:not([hidden]) [aria-current] { border-top-width:2px;padding-top:1px; }
+ /* Vùng cuộn dừng ngay trên menu chân trang: thanh dính đáy (sticky) và nội dung cuối trang không bị menu che. */
+ body:has(.crm-mobile-nav:not([hidden])) #workspace > .main { height:calc(100% - var(--nav-h, 56px)); }
+ body:has(.crm-mobile-nav:not([hidden])) .selection-bar { bottom:8px!important; }
  .crm-nav-sheet { padding:0 0 calc(12px + env(safe-area-inset-bottom)); }
  .crm-nav-sheet .crm-sheet-head { display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px; }
  .crm-nav-sheet .crm-sheet-head h2 { margin:0;font-size:17px; }
@@ -254,7 +261,7 @@
  #view-editor #quote-form #line-list tr.manual-line .col-price { grid-row:2; }
  #view-editor #quote-form #line-list tr.manual-line .col-after { display:none!important; }
  #view-order.crm-mobile-contract { padding-bottom:180px; }
- #view-order.crm-mobile-contract #order-actions { position:fixed;left:16px;right:16px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:25;display:flex;flex-wrap:wrap;gap:6px;background:#fff;padding:10px;border:1px solid var(--line);border-radius:12px; }
+ #view-order.crm-mobile-contract #order-actions { position:fixed;left:16px;right:16px;bottom:calc(var(--nav-h, calc(56px + env(safe-area-inset-bottom))) + 8px);z-index:25;display:flex;flex-wrap:wrap;gap:6px;background:#fff;padding:10px;border:1px solid var(--line);border-radius:12px; }
  #view-order.crm-mobile-contract [data-contract-docs] { flex-basis:100%;background:var(--brand-navy);color:#fff; }
  #view-order.crm-mobile-contract .card [data-contract-docs] { display:none!important; }
  #view-order.crm-mobile-contract :is([data-pack-print-for],[data-ship-print-for],[data-order-history]) { flex:1;font-size:12px;min-width:0; }
