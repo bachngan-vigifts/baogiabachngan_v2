@@ -1,3 +1,4 @@
+import { anniversarySuggestion, vietnamToday } from './customer-anniversary.js';
 /** Shared customer fields for the directory and POS. Build server values as text only. */
 export function customerFormFields({ requirePhone = false } = {}) {
   const root = document.createElement('div');
@@ -9,6 +10,7 @@ export function customerFormFields({ requirePhone = false } = {}) {
     ['phone', 'Điện thoại', 'tel', 40],
     ['email', 'Email', 'email', 500],
     ['taxCode', 'Mã số thuế', 'text', 500],
+    ['establishedDate', 'Ngày thành lập', 'date', 10],
     ['customerCode', 'Mã khách hàng', 'text', 500],
     ['address', 'Địa chỉ', 'textarea', 2000, true],
     ['depositRate', 'Tỷ lệ đặt cọc (%)', 'text', 500, false, 'Để trống = 30'],
@@ -24,13 +26,20 @@ export function customerFormFields({ requirePhone = false } = {}) {
     if (type === 'textarea') input.rows = 2; else input.type = type;
     if (placeholder) input.placeholder = placeholder;
     input.required = name === 'name' || (name === 'phone' && requirePhone);
+    if (name === 'establishedDate') input.max = vietnamToday();
     if (name === 'depositRate') input.inputMode = 'decimal';
     if (name === 'creditLimit') input.inputMode = 'numeric';
     if (name === 'paymentTerm') input.setAttribute('list', 'nq-payment-options');
     box.append(title, input); root.append(box); controls[name] = input;
   }
+  const anniversary = document.createElement('p'); anniversary.className = 'muted small span-2'; anniversary.setAttribute('aria-live','polite');
+  const refreshAnniversary = () => {
+    const date = controls.establishedDate.value, next = anniversarySuggestion(date);
+    anniversary.textContent = !date ? 'Nhập ngày thành lập để gợi ý mốc 5, 10, 15… năm; chuẩn bị trước 60 ngày.' : next ? `Kỷ niệm ${next.years} năm vào ${next.date.split('-').reverse().join('/')} (${next.daysUntil === 0 ? 'hôm nay' : 'còn ' + next.daysUntil + ' ngày'}). ${next.upcoming ? next.suggestion : 'Sẽ gợi ý chăm sóc khi còn tối đa 60 ngày.'}` : 'Ngày thành lập không hợp lệ hoặc ở tương lai.';
+  };
+  controls.establishedDate.addEventListener('input',refreshAnniversary); refreshAnniversary(); root.append(anniversary);
   const hint = document.createElement('p'); hint.className = 'muted small span-2';
   hint.textContent = 'Điều khoản riêng của khách: tự điền khi tạo báo giá cho khách này (vẫn sửa được trên từng báo giá).';
   root.append(hint);
-  return { root, controls, read: () => Object.fromEntries(Object.entries(controls).map(([name, input]) => [name, input.value.trim()])) };
+  return { root, controls, refreshAnniversary, read: () => Object.fromEntries(Object.entries(controls).map(([name, input]) => [name, input.value.trim()])) };
 }

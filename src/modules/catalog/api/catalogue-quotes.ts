@@ -3,6 +3,7 @@ import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import { auditLogs } from '../../../core/db/schema.ts';
+import { employees } from '../../staff/schema.ts';
 import { fold } from '../../../core/text/fold.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { sha256Hex } from '../../staff/domain/session.ts';
@@ -10,8 +11,8 @@ import { catalogueQuotes as quotes, catalogueQuoteCommands as commands } from '.
 import { cleanCatalogueQuote, stableJson } from '../domain/catalogue-quote.ts';
 type Ctx=RouteContext<StaffEnv>;type Tx=Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];const actor=(c:Ctx)=>(c.state.session as SessionState).member;
 const validId=(id:unknown):id is string=>typeof id==='string'&&/^[A-Za-z0-9_-]{8,80}$/.test(id);
-type QuoteSummary=Pick<typeof quotes.$inferSelect,'id'|'quoteNo'|'title'|'customer'|'productCount'|'revision'|'createdBy'|'updatedBy'|'updatedAt'>;
-const summary=(q:QuoteSummary,c:Ctx)=>({id:q.id,quoteNo:q.quoteNo,title:q.title,customer:q.customer,productCount:q.productCount,revision:q.revision,createdBy:q.createdBy,updatedBy:q.updatedBy,updatedAt:q.updatedAt,canDelete:actor(c).role==='manager'||q.createdBy===actor(c).id});
+type QuoteSummary=Pick<typeof quotes.$inferSelect,'id'|'quoteNo'|'title'|'customer'|'productCount'|'revision'|'createdBy'|'updatedBy'|'updatedAt'>&{createdByName?:string|null};
+const summary=(q:QuoteSummary,c:Ctx)=>({id:q.id,quoteNo:q.quoteNo,title:q.title,customer:q.customer,productCount:q.productCount,revision:q.revision,createdBy:q.createdBy,createdByName:q.createdByName||'Không rõ nhân viên',updatedBy:q.updatedBy,updatedAt:q.updatedAt,canDelete:actor(c).role==='manager'||q.createdBy===actor(c).id});
 async function command(c:Ctx,id:string,b:Record<string,unknown>,action:string,content:unknown,apply:(tx:Tx)=>Promise<Record<string,unknown>>){
  const who=actor(c).id,key=b.clientKey;if(typeof key!=='string'||!/^[\w-]{16,100}$/.test(key))throw new AppError(400,'Thiếu mã thao tác lưu báo giá.');const hash=sha256Hex(stableJson({id,action,revision:action==='create'?null:b.revision,content}));
  return c.env.db.transaction(async tx=>{
@@ -22,9 +23,10 @@ async function command(c:Ctx,id:string,b:Record<string,unknown>,action:string,co
 }
 export function registerCatalogueQuotes(router:Router<StaffEnv>){
  router.get('/catalogue-quotes',async c=>{
+  if(c.url.searchParams.get('identity')==='1')return json({memberId:actor(c).id,memberName:actor(c).name});
   const params=c.url.searchParams,q=fold(params.get('q')||'').slice(0,100),offset=Number(params.get('offset')||0),sort=params.get('sort')||'newest';
   if(!Number.isSafeInteger(offset)||offset<0||offset>1e6||!['newest','oldest','title'].includes(sort))throw new AppError(400,'Phân trang hoặc sắp xếp chưa hợp lệ.');
-  const values:Record<string,string>={};for(const key of ['brand','category','employee']){values[key]=(params.get(key)||'').trim();if(values[key]!.length>(key==='employee'?500:100))throw new AppError(400,'Bộ lọc quá dài.');}
+  const values:Record<string,string>={};for(const key of ['brand','category','employee','createdBy']){values[key]=(params.get(key)||'').trim();if(values[key]!.length>(key==='employee'?500:100))throw new AppError(400,'Bộ lọc quá dài.');}
   const day=(key:string)=>{const value=params.get(key)||'';if(!value)return null;const parsed=new Date(value+'T00:00:00.000Z');if(!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==value)throw new AppError(400,'Ngày lọc chưa hợp lệ.');return parsed.getTime()-7*60*60*1000;};
   const from=day('from'),to=day('to');if(from!==null&&to!==null&&from>to)throw new AppError(400,'Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.');
   const productFilter=Object.fromEntries(['brand','category'].filter(key=>values[key]).map(key=>[key,values[key]]));
@@ -32,21 +34,22 @@ export function registerCatalogueQuotes(router:Router<StaffEnv>){
   const where=and(isNull(quotes.deletedAt),
    ...q.split(' ').filter(Boolean).slice(0,10).map(word=>sql`${quotes.search} like ${'%'+word.replace(/[\\%_]/g,m=>'\\'+m)+'%'}`),
    Object.keys(productFilter).length?sql`${quotes.data}::jsonb->'products' @> ${JSON.stringify([productFilter])}::jsonb`:undefined,
+   values.createdBy?eq(quotes.createdBy,values.createdBy):undefined,
    values.employee?sql`${employee} = ${values.employee}`:undefined,
    from!==null?sql`${quotes.updatedAt} >= ${new Date(from).toISOString()}`:undefined,
    to!==null?sql`${quotes.updatedAt} < ${new Date(to+86400000).toISOString()}`:undefined);
   const [[total],rows,facetRows]=await Promise.all([
    c.env.db.select({n:count()}).from(quotes).where(where),
-   c.env.db.select({id:quotes.id,quoteNo:quotes.quoteNo,title:quotes.title,customer:quotes.customer,productCount:quotes.productCount,revision:quotes.revision,createdBy:quotes.createdBy,updatedBy:quotes.updatedBy,updatedAt:quotes.updatedAt,employee}).from(quotes).where(where).orderBy(sort==='oldest'?asc(quotes.updatedAt):sort==='title'?asc(quotes.title):desc(quotes.updatedAt),asc(quotes.id)).limit(30).offset(offset),
+   c.env.db.select({id:quotes.id,quoteNo:quotes.quoteNo,title:quotes.title,customer:quotes.customer,productCount:quotes.productCount,revision:quotes.revision,createdBy:quotes.createdBy,updatedBy:quotes.updatedBy,updatedAt:quotes.updatedAt,createdByName:employees.name,employee}).from(quotes).leftJoin(employees,eq(quotes.createdBy,employees.id)).where(where).orderBy(sort==='oldest'?asc(quotes.updatedAt):sort==='title'?asc(quotes.title):desc(quotes.updatedAt),asc(quotes.id)).limit(30).offset(offset),
    params.get('facets')==='1'?c.env.db.select({
     brands:sql<string[]>`array(select distinct p->>'brand' from jsonb_array_elements(${quotes.data}::jsonb->'products') p)`,
-    categories:sql<string[]>`array(select distinct p->>'category' from jsonb_array_elements(${quotes.data}::jsonb->'products') p)`,employee
-   }).from(quotes).where(isNull(quotes.deletedAt)):Promise.resolve(null)
+    categories:sql<string[]>`array(select distinct p->>'category' from jsonb_array_elements(${quotes.data}::jsonb->'products') p)`,employee,createdBy:quotes.createdBy,createdByName:employees.name
+   }).from(quotes).leftJoin(employees,eq(quotes.createdBy,employees.id)).where(isNull(quotes.deletedAt)):Promise.resolve(null)
   ]);
   const unique=(items:string[])=>[...new Set(items.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi'));
-  return json({memberId:actor(c).id,quotes:rows.map(q=>({...summary(q,c),employee:q.employee||''})),total:total!.n,offset,limit:30,...(facetRows?{facets:{brands:unique(facetRows.flatMap(r=>r.brands)),categories:unique(facetRows.flatMap(r=>r.categories)),employees:unique(facetRows.map(r=>r.employee))}}:{})});
+  return json({memberId:actor(c).id,quotes:rows.map(q=>({...summary(q,c),employee:q.employee||''})),total:total!.n,offset,limit:30,...(facetRows?{facets:{brands:unique(facetRows.flatMap(r=>r.brands)),categories:unique(facetRows.flatMap(r=>r.categories)),employees:unique(facetRows.map(r=>r.employee)),creators:[...new Map(facetRows.map(r=>[r.createdBy,{id:r.createdBy,name:r.createdByName||'Không rõ nhân viên'}] as const)).values()].sort((a,b)=>a.name.localeCompare(b.name,'vi'))}}:{})});
  },'business');
- router.get('/catalogue-quotes/:id',async c=>{const [row]=await c.env.db.select().from(quotes).where(and(eq(quotes.id,c.params.id!),isNull(quotes.deletedAt)));if(!row)throw new AppError(404,'Báo giá dùng chung không còn trong danh sách.');return json({...summary(row,c),state:JSON.parse(row.data)});},'business');
+ router.get('/catalogue-quotes/:id',async c=>{const [row]=await c.env.db.select({quote:quotes,createdByName:employees.name}).from(quotes).leftJoin(employees,eq(quotes.createdBy,employees.id)).where(and(eq(quotes.id,c.params.id!),isNull(quotes.deletedAt)));if(!row)throw new AppError(404,'Báo giá dùng chung không còn trong danh sách.');return json({...summary({...row.quote,createdByName:row.createdByName},c),...(c.url.searchParams.get('identity')==='1'?{}:{state:JSON.parse(row.quote.data)})});},'business');
  router.post('/catalogue-quotes',async c=>{
   const b=await readJson(c.req,2_000_000);if(!validId(b.id))throw new AppError(400,'Mã bản báo giá chưa hợp lệ.');const state=cleanCatalogueQuote(b.state),id=b.id;
   return json(await command(c,id,b,'create',state,async tx=>{
@@ -63,3 +66,4 @@ export function registerCatalogueQuotes(router:Router<StaffEnv>){
  },'business');
  router.post('/catalogue-quotes/:id/archive',async c=>{const b=await readJson(c.req,2048),id=c.params.id!;return json(await command(c,id,b,'archive',null,async tx=>{const [old]=await tx.select().from(quotes).where(eq(quotes.id,id)).for('update');if(!old||old.deletedAt)throw new AppError(404,'Báo giá không còn trong danh sách.');if(actor(c).role!=='manager'&&old.createdBy!==actor(c).id)throw new AppError(403,'Chỉ người tạo hoặc Manager được xoá báo giá chung.');if(old.revision!==b.revision)throw new AppError(409,'Báo giá vừa thay đổi. Tải lại trước khi xoá.');const at=new Date().toISOString();await tx.update(quotes).set({deletedAt:at,deletedBy:actor(c).id,revision:old.revision+1,updatedBy:actor(c).id,updatedAt:at}).where(eq(quotes.id,id));await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:actor(c).id,module:'catalog',action:'catalogue-quote-archive',entityType:'catalogue-quote',entityId:id,data:JSON.stringify({revision:old.revision+1}),createdAt:at});return{id,revision:old.revision+1,currentRevision:old.revision+1,deleted:true};}));},'business');
 }
+

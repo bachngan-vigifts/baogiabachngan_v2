@@ -1511,7 +1511,7 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .care-seg input:focus-visible + span { outline: 2px solid var(--blue); outline-offset: 2px; }
 .care-money { display: flex; align-items: center; gap: 6px; } .care-money input { flex: 1; text-align: right; font-variant-numeric: tabular-nums; }
 .care-static { font-weight: 700; padding: 6px 0; }
-.care-dialog { width: min(560px, calc(100vw - 24px)); }
+.care-dialog { width: min(840px, calc(100vw - 24px)); }
 .bell-panel [data-push-note] { white-space: pre-line; }
 .push-devices td small { display: block; color: var(--muted, #6b7280); } .push-devices h3 { margin: 18px 0 8px; font-size: var(--text-body); }
 /* Điện thoại: menu (vd. "Tải báo giá") hiện thành tấm đáy rộng hết màn hình, không tràn ra ngoài cạnh trái. */
@@ -2417,7 +2417,7 @@ body:has(.approval-launcher:not([hidden])) .pos-head { padding-left: 76px; }
  #orders-list .crm-list-card .orders-shipping-cell.has-ghn-tracking { display:block!important;grid-column:1/-1;grid-row:5; }
 }
 
-.customer-filter-grid { flex: 1 0 100%; width: 100%; grid-template-columns: minmax(170px, 1.5fr) minmax(130px, 1fr) 150px 150px auto; margin: 2px 0 0; }
+.customer-filter-grid { flex: 1 0 100%; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 2px 0 0; }
 @media (max-width: 1100px) { .customer-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Đo tốc độ (trial-ui/speed-log.js) */
@@ -2555,3 +2555,9 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 #pr-quick .pr-sheet .pr-sheet-bank{text-align:center}#pr-quick .pr-sheet .pr-sheet-bank img{display:block;margin:5px auto;max-width:86px}
 #pr-quick .pr-sheet details{min-width:0}#pr-quick .pr-sheet details[open]{min-width:240px}
 #view-payroll #pr-quick .pr-sheet tfoot{display:table-footer-group!important;font-weight:700;background:#f2f5f8}
+.customer-filter-heading { flex: 1 0 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.customer-filter-notice { margin: 10px 0; overflow-wrap: anywhere; }
+.crm-filter-fields .customer-filter-heading { display: none; }
+
+.care-dialog textarea[name=content] { width: 100%; min-height: 140px; resize: vertical; line-height: 1.6; }
+.care-dialog [data-contact-retry] { justify-self: start; }

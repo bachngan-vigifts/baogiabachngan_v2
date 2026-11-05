@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { setup } from '../helpers/pos-fixture.ts';
 import { clearBadgeCache, BADGE_TTL_MS } from '../../src/app/badge-routes.ts';
 import { syncAutoTasks } from '../../src/modules/tasks/api/routes.ts';
 import { tasks } from '../../src/modules/tasks/schema.ts';
-import { products, productStock, warehouses } from '../../src/modules/catalog/schema.ts';
+import { products, productBarcodes, productPrices, productStock, warehouses } from '../../src/modules/catalog/schema.ts';
+import { posScanCodes } from '../../src/modules/sales/api/pos-stock-snapshot.ts';
 import { salesOrders, salesOrderLines, stockHolds } from '../../src/modules/sales/schema.ts';
 import { posRegisters } from '../../src/modules/sales/pos-schema.ts';
 import { employees } from '../../src/modules/staff/schema.ts';
@@ -34,7 +35,28 @@ test('snapshot POS: hàng giữ không gắn kho chia đúng theo tồn trống 
   const [row] = value.data.rows.filter((r: any[]) => r[0] === '00123');
   // Giữ = đơn ở kho quầy 3 + phần báo giá kho quầy gánh: 2 − tồn trống kho khác (1 − 0 đơn ở kho khác) = 1 → 4.
   assert.equal(row[2], 10); assert.equal(row[3], 4);
-  assert.ok(queries <= 20, `snapshot dùng ${queries} truy vấn`);
+  // 21: mã quét đọc riêng một lượt gộp cho cả danh mục (thay 3 lượt tra chỉ mục cho từng sản phẩm).
+  assert.ok(queries <= 21, `snapshot dùng ${queries} truy vấn`);
+});
+
+test('snapshot POS: mã quét đọc một lượt cho cả danh mục, cùng kết quả với cách tính từng sản phẩm (kể cả mã trùng)', async () => {
+  const f = await setup(), now = new Date().toISOString();
+  await f.db.insert(products).values(['A', 'B', 'C', 'OFF'].map(sku => ({ sku, name: 'SP ' + sku, unit: 'cái', updatedAt: now, ...(sku === 'OFF' ? { active: false } : {}) })));
+  await f.db.insert(productPrices).values(['A', 'B', 'C'].map(sku => ({ sku, policyId: 'retail-vat', price: 1000 })));
+  await f.db.insert(productBarcodes).values([
+    { barcode: 'BC-A1', sku: 'A' }, { barcode: 'BC-A2', sku: 'A' },
+    { barcode: 'B', sku: 'A' },       // mã vạch của A trùng mã hàng B → bỏ ở cả A lẫn B
+    { barcode: 'C', sku: 'C' },       // mã vạch trùng chính mã hàng → giữ một lần
+    { barcode: 'OFF', sku: 'C' },     // trùng mã hàng đang ngưng bán vẫn tính là trùng
+    { barcode: 'BC-00123', sku: '00123' },
+  ]);
+  const snap = await f.call(`/pos/stock-snapshot?registerId=${f.registerId}&pricePolicyId=retail-vat`, f.emp);
+  assert.equal(snap.status, 200, JSON.stringify(snap.data));
+  const got = Object.fromEntries(snap.data.rows.map((r: any[]) => [r[0], [...r[4]].sort()]));
+  // Đối chiếu cách cũ – có join như truy vấn snapshot thật (bảng đơn lẻ thì Drizzle viết cột không kèm tên bảng).
+  const old = Object.fromEntries((await f.db.select({ sku: products.sku, codes: posScanCodes }).from(products).innerJoin(productPrices, and(eq(productPrices.sku, products.sku), eq(productPrices.policyId, 'retail-vat')))).map(r => [r.sku, [...r.codes].sort()]));
+  for (const sku of Object.keys(got)) assert.deepEqual(got[sku], old[sku], sku);
+  assert.deepEqual(got, { '00123': ['00123', 'BC-00123'], A: ['A', 'BC-A1', 'BC-A2'], B: [], C: ['C'] });
 });
 
 test('snapshot / mở két: quầy lấy từ danh sách vừa kiểm quyền; quầy người khác 403, quầy đã tắt 404', async () => {

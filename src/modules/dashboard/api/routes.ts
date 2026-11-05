@@ -10,6 +10,7 @@ import { quotations as quotes } from '../../quotes/schema.ts';
 import { sapoHealthMonitorState } from '../../integrations/schema.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
 import { dashboardFilters } from '../domain/filters.ts';
+import type { DashboardKpiOf } from '../../../core/contracts/dashboard-kpi.ts';
 
 const amount = (column: typeof orders.total | typeof care.expectedRevenue) => sql<number>`coalesce(sum(${column}), 0)`.mapWith(Number);
 const ratio = (part: number, whole: number) => whole ? Math.round(part / whole * 1000) / 10 : null;
@@ -18,7 +19,29 @@ export const PIPELINE_FRESH_DAYS = 90;
 const blank = () => ({ actual: 0, orders: 0, expected: 0, pipeline: 0, consulting: 0, quote_sent: 0, negotiating: 0, lost: 0, quotes: 0, converted: 0 });
 
 /** Only GET. All totals are DB aggregates; no limit on source orders/activities. */
-export function registerDashboardRoutes(router: Router<StaffEnv>) {
+export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?: DashboardKpiOf } = {}) {
+  /**
+   * Điểm KPI Sale một tháng (mặc định tháng cuối kỳ) – tách khỏi /dashboard/revenue để trang doanh số không chờ phần tính lương.
+   * Cùng bộ lọc / quyền với doanh số; KPI người khác chỉ Manager xem (như phiếu lương). Quyền "Doanh số toàn công ty" không mở KPI người khác.
+   */
+  router.get('/dashboard/kpi', async c => {
+    const me = (c.state.session as SessionState | undefined)?.member;
+    if (!me) throw new AppError(401, 'Vui lòng đăng nhập.');
+    const f = dashboardFilters(c.url.searchParams, me, vietnamDate().iso);
+    const month = c.url.searchParams.get('month') || f.months.at(-1)!;
+    if (!f.months.includes(month)) throw new AppError(400, 'Tháng KPI phải nằm trong kỳ đang xem.');
+    const manager = me.role === 'manager';
+    if (!manager && f.owner && f.owner !== me.id) throw new AppError(403, 'Chỉ Manager xem được KPI của nhân viên khác.');
+    if (!deps.kpiOf) return json({ month, available: false, scope: manager ? 'company' : 'self', members: [] });
+    const ids = (await c.env.db.select({ id: employees.id }).from(employees).where(and(
+      inArray(employees.role, ['manager', 'employee']), isNull(employees.deletedAt),
+      manager ? undefined : eq(employees.id, me.id),
+      f.owner ? eq(employees.id, f.owner) : undefined,
+      manager && f.group ? eq(employees.positionId, f.group) : undefined))).map(r => r.id);
+    const members = (await deps.kpiOf(c.env.db, month, ids)).sort((a, b) => b.used - a.used || a.name.localeCompare(b.name, 'vi'));
+    return json({ month, available: true, scope: manager && !f.owner ? 'company' : 'self', restricted: !manager && f.manager, members });
+   }, 'business');
+
   router.get('/dashboard/revenue', async c => {
     const me = (c.state.session as SessionState | undefined)?.member;
     if (!me) throw new AppError(401, 'Vui lòng đăng nhập.');

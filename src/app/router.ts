@@ -8,6 +8,7 @@ import {reservedBySku} from '../modules/sales/api/pos-store.ts';
 import {outstandingLines} from '../modules/suppliers/api/incoming-stock.ts';
 import {activityQuotes} from '../modules/quotes/api/activity-quotes.ts';
 import {crmFactsOf} from './sales-payroll-facts.ts';
+import {dashboardKpiOf} from './dashboard-kpi.ts';
 import {assertActivityKpiOpen} from '../modules/hr/api/activity-lock.ts';
 import { rememberQuoteCustomer } from './quote-customer-memory.ts';
 import {registerProductDetailRoutes} from '../modules/product-hub/api/routes.ts';
@@ -134,7 +135,7 @@ export function createAppRouter() {
   registerAdmsRoutes(router);
   registerSynctimeRoutes(router);
   registerStaffHubRoutes(router,{crmFactsOf});
-  registerDashboardRoutes(router);
+  registerDashboardRoutes(router, { kpiOf: dashboardKpiOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR
   registerAuditRoutes(router);
   registerReportRoutes(router);
   registerPermissionRoutes(router);

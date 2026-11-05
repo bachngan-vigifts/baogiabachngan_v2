@@ -205,13 +205,17 @@ async function quoteHoldShare(db: PosDb, quotes: { sku: string; qty: number }[],
   for (const r of hereOrders) free.set(r.sku, (free.get(r.sku) ?? 0) + r.qty);
   return new Map(quotes.map(q => [q.sku, Math.max(0, q.qty - Math.max(0, free.get(q.sku) ?? 0))]));
 }
-export async function reservedBySku(db: PosDb, skus: string[], warehouseId?: string, exceptOrderId?: string) {
+/**
+ * Hàng đang giữ theo mã. `skus` bỏ trống = mọi mã (snapshot POS đọc cả danh mục): không gửi danh sách hàng nghìn mã vào từng truy vấn
+ * giữ hàng – CSDL tốn công phân tích / lập kế hoạch cho danh sách dài, trong khi số dòng giữ hàng thật chỉ vài trăm.
+ */
+export async function reservedBySku(db: PosDb, skus: string[] | undefined, warehouseId?: string, exceptOrderId?: string) {
   const now = posNow();
   const [quotes, allOrders] = await Promise.all([
     db
       .select({ sku: stockHolds.sku, qty: sql<number>`sum(${stockHolds.qty})`.mapWith(Number) })
       .from(stockHolds)
-      .where(and(inArray(stockHolds.sku, skus), eq(stockHolds.status, 'active'), sql`${stockHolds.expiresAt}>${now}`))
+      .where(and(skus ? inArray(stockHolds.sku, skus) : undefined, eq(stockHolds.status, 'active'), sql`${stockHolds.expiresAt}>${now}`))
       .groupBy(stockHolds.sku),
     orderHolds(db, skus, warehouseId, undefined, true),
   ]);

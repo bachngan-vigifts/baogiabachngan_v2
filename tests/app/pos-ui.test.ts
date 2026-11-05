@@ -558,7 +558,8 @@ test('Chọn khách POS: gợi ý trong ô tìm, lọc Khách lẻ/B2B, bàn ph�
     assert.ok(doc.body.children.at(-1)!.textContent.includes('Khách mới – dùng ngay'));
     const create = doc.body.children.at(-1)!;
     const controls = create.querySelectorAll('input,textarea') as (Element & { name: string })[];
-    assert.deepEqual(controls.map(c => c.name), ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'address', 'depositRate', 'paymentTerm', 'creditLimit']);
+    assert.deepEqual(controls.map(c => c.name), ['name', 'contact', 'phone', 'email', 'taxCode', 'establishedDate', 'customerCode', 'address', 'depositRate', 'paymentTerm', 'creditLimit']);
+    assert.equal(controls.find(c => c.name === 'establishedDate')!.type, 'date');
     const actionRow = create.querySelectorAll('div').find(e => e.className.includes('pos-customer-form-actions'))!;
     assert.deepEqual(actionRow.children.map(b => b.textContent), ['Huỷ', 'Lưu & chọn khách'], 'nút chính bên phải, cách nút Huỷ');
     await actionRow.children[0]!.fire('click');
@@ -1171,7 +1172,7 @@ test('POS first page and order board are usable while the full stock snapshot is
     const page = calls.find(path => path.startsWith('/pos/catalog'))!;
     assert.equal(new URLSearchParams(page.split('?')[1]).get('limit'), '60');
     assert.ok(calls.some(path => path.startsWith('/pos/orders')));
-    assert.ok(calls.some(path => path.startsWith('/pos/stock-snapshot') && path.includes('background=1') && path.includes('metadata=1')));
+    assert.ok(calls.some(path => path.startsWith('/pos/stock-snapshot') && path.includes('background=1') && path.includes('metadata=2')));
     const card = root.querySelectorAll('button').find(n => n.className === 'pos-product')!;
     assert.equal(card.disabled, false); assert.match(card.textContent, /Còn 5/);
     release({ version: 1, registerId: 'r', pricePolicyId: 'vat', warehouseReady: true, asOf: '2026-11-04T00:01:00Z', catalog: [{ sku: 'FAST', name: 'Bình thử' }], rows: [['FAST', 1000, 0, 0, ['FAST']]] });
