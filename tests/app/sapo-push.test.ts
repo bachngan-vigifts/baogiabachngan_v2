@@ -361,6 +361,8 @@ test('sales Sapo permission covers approved/completed documents without edit pri
   assert.equal((await s.call(path, s.emp)).data.order.canCreateSapo, false);
   assert.equal((await s.call(path + '/sapo', s.emp, 'POST', {})).data.code, 'SAPO_PUSH_FORBIDDEN');
   await s.db.update(employees).set({ positionId: 'sales-lock' }).where(eq(employees.id, 'emp'));
+  // makeQuote assigns its customer to emp; remove that legitimate shared-customer access here.
+  await s.db.update(salesOrders).set({ customerId: null }).where(eq(salesOrders.id, made.data.id));
   const before = s.hooks.length;
   assert.equal((await s.call(path, s.emp)).status, 404, 'sales position does not widen order scope');
   assert.equal((await s.call(path + '/sapo', s.emp, 'POST', {})).status, 404);
