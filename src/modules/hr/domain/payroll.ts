@@ -115,6 +115,8 @@ export interface PayrollInput extends KpiCvInput {
   /** Ngày làm việc; null = lấy từ chấm công. */
   workDays: number | null;
   overtimeHours: number;
+  /** Chỉ số đối chiếu, chưa tự quy đổi thành khoản trừ. */
+  lateCount?: number; leaveHours?: number;
   /** DS tháng cá nhân (Sale – tính thưởng KPI DS); null = DS đơn hàng trên hệ thống. */
   revenue: number | null;
   /** Sản lượng: số đơn (kho), số lượt (thiết kế), DS web (IT). */
@@ -124,7 +126,7 @@ export interface PayrollInput extends KpiCvInput {
   quarterBonus: number | null;
 }
 export const EMPTY_INPUT: PayrollInput = {
-  workDays: null, overtimeHours: 0, revenue: null, outputQty: 0, healthInsurance: 0, incomeTax: 0, quarterBonus: null,
+  workDays: null, overtimeHours: 0, lateCount: 0, leaveHours: 0, revenue: null, outputQty: 0, healthInsurance: 0, incomeTax: 0, quarterBonus: null,
   kpiNewCustomers: null, kpiTransactions: null, kpiContracts: null, kpiRevenue: null, kpiMerchDays: 0, kpiTripDays: 0, kpiOverride: null,
 };
 

@@ -106,3 +106,19 @@ test('probation position saves through quick entry, ignores saved extras, snapsh
  const regular=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find((r:any)=>r.member.id==='emp');assert.ok(regular.payslip.income.find((l:any)=>l.key==='capacity').amount>0);
  assert.equal((await f.board()).rows.find((r:any)=>r.member.id==='emp').payslip.net,4800000);
 });
+
+test('monthly late/leave counters persist through both APIs, validate fractions and bounds and stay scoped by month',async()=>{
+ const f=await setup();let row=(await f.board()).rows.find((r:any)=>r.member.id==='emp');
+ assert.equal(row.entry.inputs.lateCount,0);assert.equal(row.entry.inputs.leaveHours,0);
+ const save=(inputs:unknown)=>f.save([{memberId:'emp',version:row.entry.version,inputs}]);
+ assert.equal((await save({lateCount:2,leaveHours:1.5})).status,200);
+ row=(await f.board()).rows.find((r:any)=>r.member.id==='emp');assert.equal(row.entry.inputs.lateCount,2);assert.equal(row.entry.inputs.leaveHours,1.5);
+ for(const inputs of [{lateCount:1.5},{lateCount:-1},{lateCount:1001},{leaveHours:-1},{leaveHours:745}])assert.equal((await save(inputs)).status,400);
+ assert.equal((await f.call('/hr/members/emp/inputs/2026-09',f.mgr,'PUT',{workDays:24})).status,200);
+ row=(await f.board()).rows.find((r:any)=>r.member.id==='emp');assert.equal(row.entry.inputs.lateCount,2);assert.equal(row.entry.inputs.leaveHours,1.5,'old form must preserve new indicators');
+ const baselineNet=row.payslip.net;
+ assert.equal((await f.call('/hr/members/emp/inputs/2026-09',f.mgr,'PUT',{workDays:24,lateCount:3,leaveHours:30})).status,200);
+ assert.equal((await f.call('/hr/members/emp/inputs/2026-09',f.mgr,'PUT',{lateCount:0.5})).status,400);
+ const october=(await f.call('/hr/payroll/2026-10',f.mgr)).data.rows.find((r:any)=>r.member.id==='emp');assert.equal(october.entry.inputs.lateCount,0);assert.equal(october.entry.inputs.leaveHours,0);
+ assert.equal((await f.board()).rows.find((r:any)=>r.member.id==='emp').payslip.net,baselineNet,'counters must not invent a new monetary policy');
+});

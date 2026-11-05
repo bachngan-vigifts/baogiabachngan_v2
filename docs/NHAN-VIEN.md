@@ -163,6 +163,10 @@ Trong bảng tổng thể, nhập/chọn **THỬ VIỆC** (hoặc **TV**) ở c�
 
 Các ô tiền dùng dấu phẩy hàng nghìn, ví dụ **4,758,000**, sau khi rời ô. Ngày công, hệ số vẫn cho nhập số lẻ.
 
-**Tải file mẫu** tạo `.xlsx` theo tháng đang xem, có mã và tên nhân viên chưa khóa phiếu. Nhập chỉ số vào sheet **Nhập lương**, giữ nguyên tiêu đề/mã nhân viên/tháng. Ô trống giữ nguyên dữ liệu hiện tại, `0` ghi bằng 0; nhập `Tự động` ở chỉ số hỗ trợ để lấy từ hệ thống. KPI chốt nhập theo phần trăm (115,72 = 115,72%). Không dùng công thức Excel.
+**Tải file mẫu** tạo `.xlsx` đúng tháng đang xem, chỉ có 11 cột: STT, Họ và tên, Ngày công, Nhân viên làm bể hàng/đền hàng, Số giờ làm thêm, Phiếu file sản xuất/phiếu giao hàng/phiếu làm hàng, Số lần đi trễ, Điện thoại Sale, Số giờ nghỉ trong ngày, BHXH, Tạm ứng. Không có cột LCB, KPI hay cài đặt lương. Sheet ẩn giữ kỳ lương và liên kết nhân viên; giữ nguyên STT/họ tên, có thể sắp xếp cả hàng. Người trùng tên được phân biệt bằng STT của file mẫu.
 
-**Nhập file Excel** kiểm tra toàn bộ file trước khi tạo bản nháp; sai tháng, trùng/không tìm thấy nhân viên, phiếu đã khóa hay ô lỗi sẽ bị từ chối. Kiểm tra các ô trên bảng rồi bấm **Lưu thay đổi** để ghi vào hệ thống; file không tự lưu. Lưu/bỏ bản nháp hiện tại trước khi nhập file mới. File tối đa 5 MB, 1.000 dòng; mỗi lần lưu tối đa 100 nhân viên theo API nhập nhanh.
+Ô trống giữ nguyên dữ liệu hiện tại; `0` ghi bằng 0. Ngày công nhập `Tự động` để lấy chấm công. Bể/đền hàng nhập số tiền khấu trừ; Điện thoại Sale là tạm ứng điện thoại; số phiếu là sản lượng, nhân đơn giá đã cài. BHXH cập nhật mức từ tháng đang xem. Khoản nhập nhanh cộng với các khoản đã ghi riêng. Số lần trễ và giờ nghỉ được lưu để đối chiếu, không tự tạo khoản trừ hoặc trừ thêm ngày công.
+
+**Nhập file Excel** kiểm tra toàn bộ file trước khi tạo bản nháp; sai tháng, trùng/không tìm thấy nhân viên, tên lệch STT, phiếu đã khóa hoặc ô lỗi bị từ chối. Không nhập công thức, không xóa sheet ẩn. Kiểm tra bảng rồi bấm **Lưu thay đổi** để ghi; file không tự lưu. Lưu/bỏ bản nháp trước khi nhập file mới. Tối đa 5 MB, 1.000 dòng, 100 nhân viên thay đổi mỗi lần. Chỉ số trễ/giờ nghỉ có thể xem/sửa tại chế độ Chấm công & chỉ số.
+
+Migration `20261105042029_payroll_attendance_counters.sql` bổ sung `late_count` và `leave_hours` vào bảng chỉ số tháng; workflow API chạy trước khi deploy. Không thay đổi RLS hoặc các công thức khấu trừ hiện có.
