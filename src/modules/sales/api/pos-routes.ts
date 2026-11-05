@@ -962,7 +962,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     async (c) => {
       const m = member(c);
       posPermission(m);
-      const b = await readJson(c.req, 16_384),{fields,terms}=customerInput(b),{name,phone}=fields;
+      const b = await readJson(c.req, 16_384),{fields,terms}=customerInput(b,false,{allowBlankName:true});
+      if (!fields.name) fields.name = fields.phone || fields.taxCode ? `Khách ${fields.phone || fields.taxCode}`.slice(0,500) : CONSUMER_NAME;
+      const {name,phone}=fields;
       const customerIssue = posCustomerIssue({id: 'new', name});
       if (customerIssue) throw new AppError(400, customerIssue, 'POS_CUSTOMER_REQUIRED');
 

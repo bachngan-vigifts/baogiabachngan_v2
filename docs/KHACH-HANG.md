@@ -2,6 +2,17 @@
 
 Manager có thể chuẩn bị, xem trước và đối soát khách/người liên hệ từ AppSheet; xem [APPSHEET-MAPPING.md](APPSHEET-MAPPING.md). Nhóm/loại khách (`customerType`) độc lập với khách lẻ/doanh nghiệp (`isRetail`).
 
+## Form tạo khách đầy đủ
+
+- Tạo tại trang Khách hàng bắt buộc **tên, người liên hệ, số điện thoại, MST và địa chỉ**, có dấu `*` trên giao diện và kiểm tra tại `POST /customers`.
+- Có nhóm/loại khách, ngày thành lập, mã khách, email và điều khoản; thêm được ghi chú khách, người phụ trách/chia sẻ và nhiều liên hệ (tên/chức vụ/SĐT/email/ghi chú/cờ chính). Toàn bộ hồ sơ được lưu trong một transaction, lỗi thì không tạo dở.
+- Manager chọn người phụ trách hoặc để chưa phân công. Nhân viên tạo thì tự phụ trách, khách chờ Manager duyệt; người được chia sẻ phải là nhân viên đang hoạt động.
+- Chọn liên hệ chính điền tên vào trường người liên hệ, không tự thay điện thoại/email doanh nghiệp bằng thông tin cá nhân. Mỗi liên hệ thêm vào phải có tên, tối đa một cờ chính.
+- **Tạo tại Bán hàng nhanh được miễn các trường bắt buộc trên**, kể cả tên. Không có SĐT/MST thì dùng chung “Bán người tiêu dùng”; có định danh nhưng chưa có tên thì hiển thị “Khách <SĐT/MST>”. Vẫn chống trùng MST/SĐT và kiểm tra định dạng/giới hạn trường đã nhập.
+- Sửa hồ sơ cũ không bắt buộc điền lại dữ liệu lịch sử còn thiếu. Ngày tạo/nguồn Web/trạng thái duyệt do hệ thống quản lý; không nhập tay các khóa AppSheet hay thời điểm đồng bộ trong form.
+
+API tạo khách bổ sung tùy chọn `ownerId`, `sharedIds`, `notes`, `contacts`; `contacts` dùng cùng cấu trúc với API danh bạ. Giới hạn 50 liên hệ/30 người chia sẻ/5.000 ký tự ghi chú. Nhân viên không được chọn người phụ trách khác khi tạo. Bộ test nghiệp vụ dùng `tests/helpers/customer-fixture.ts` cho dữ liệu giả đủ trường; test thiếu trường gọi API trực tiếp, không đi qua helper bổ sung dữ liệu.
+
 ## Giao diện
 - **Danh sách** (`#/customers`):
   - Nút **＋ xanh lá** ở đầu trang để thêm khách hàng. Nút hiện cả trên máy tính và điện thoại.

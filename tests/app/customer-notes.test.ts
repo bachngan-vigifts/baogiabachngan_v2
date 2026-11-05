@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -13,7 +14,7 @@ async function setup() {
   };
   const login = async (id: string) => (await call('/login', '', 'POST', { email: id+'@x.vn', password: PASSWORD })).cookie;
   const mgr = await login('mgr'), owner = await login('emp'), peer = await login('new'), outsider = await login('old'), supplier = await login('ncc');
-  const c = await call('/customers', mgr, 'POST', { name: 'Khách thử', ownerId: 'emp', taxCode: '1234567890' });
+  const c = await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Khách thử', ownerId: 'emp', taxCode: '1234567890' }));
   return { call, d1, mgr, owner, peer, outsider, supplier, id: c.data.id };
 }
 test('customer notes: server enforces owner/manager write, scoped reading, hidden for unrelated viewers', async () => {
@@ -62,7 +63,7 @@ test('customer notes: stale initial/create and update requests conflict; validat
 });
 test('merging duplicate customers preserves all notes and invalidates old revisions', async () => {
   const s = await setup();
-  const other = await s.call('/customers', s.mgr, 'POST', { name: 'Bản trùng', ownerId: 'emp' });
+  const other = await s.call('/customers', s.mgr, 'POST', customerCreateFixture({ name: 'Bản trùng', ownerId: 'emp' }));
   const id2 = other.data.id;
   await s.d1.sqlite.prepare("UPDATE sapo_customers SET tax_code='1234567890' WHERE id=?").run(id2);
   assert.equal((await s.call(`/customers/${id2}/notes`, s.mgr, 'PUT', { text: 'Ghi chú khác', revision: 0 })).status, 200);
@@ -76,7 +77,7 @@ test('merging duplicate customers preserves all notes and invalidates old revisi
 
 test('duplicate merge with oversized combined notes rolls back without losing either note', async () => {
   const s = await setup();
-  const c = await s.call('/customers', s.mgr, 'POST', { name: 'Trùng', ownerId: 'emp' });
+  const c = await s.call('/customers', s.mgr, 'POST', customerCreateFixture({ name: 'Trùng', ownerId: 'emp' }));
   await s.d1.sqlite.prepare("UPDATE sapo_customers SET tax_code='1234567890' WHERE id=?").run(c.data.id);
   for (const [id, text] of [[s.id, 'a'.repeat(3000)], [c.data.id, 'b'.repeat(3000)]])
     assert.equal((await s.call(`/customers/${id}/notes`, s.mgr, 'PUT', { text, revision: 0 })).status, 200);

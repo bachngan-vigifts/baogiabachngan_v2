@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
@@ -44,28 +45,28 @@ test('POS khách mới: trùng tên được phép; không SĐT / MST dùng chun
 
 test('customer identity: prevent phone/tax duplicates (same name allowed) across CRM, POS, edits, imports and simultaneous saves', async () => {
   const {db,call,emp,mgr,ncc}=await setup();
-  const a={name:'FPT - Nhật Phương',phone:'0868 908 378',taxCode:'0101234567',address:'Hà Nội'};
+  const a={name:'FPT - Nhật Phương',contact:'Nhật Phương',phone:'0868 908 378',taxCode:'0101234567',address:'Hà Nội'};
   const saved=await call('/customers',mgr,'POST',a);assert.equal(saved.status,201,JSON.stringify(saved.data));
   const id=saved.data.id;
   for(const duplicate of [{name:'Khác một',phone:'+84 868 908 378',taxCode:''},{name:'Khác hai',phone:'',taxCode:'0101 234.567'}]) {
     for(const path of ['/customers','/pos/customers']) {
-      const input=path.startsWith('/pos')?{...duplicate,phone:duplicate.phone||'0977000001'}:duplicate;
+      const input=path.startsWith('/pos')?{...duplicate,phone:duplicate.phone||'0977000001'}:customerCreateFixture(Object.fromEntries(Object.entries(duplicate).filter(([,value])=>value!=='')));
       const r=await call(path,mgr,'POST',input);assert.equal(r.status,409,JSON.stringify(r.data));
     }
   }
-  assert.equal((await call('/customers',mgr,'POST',{name:'FPT NHAT PHUONG',phone:'0977000009'})).status,201,'same name, different phone is allowed');
+  assert.equal((await call('/customers',mgr,'POST',customerCreateFixture({name:'FPT NHAT PHUONG',phone:'0977000009'}))).status,201,'same name, different phone is allowed');
   const check=await call('/customers/duplicates/check?name=FPT%20NHAT%20PHUONG&phone=%2B84868908378',mgr);
   assert.equal(check.status,200);assert.equal(check.data.matches[0].id,id);assert.deepEqual(check.data.matches[0].reasons.sort(),['phone']);
   assert.deepEqual(Object.keys(check.data.matches[0]).sort(),['id','name','reasons']);
   assert.equal((await call('/customers/duplicates/check?exceptId='+id+'&phone=0868908378',mgr)).data.matches.length,0);
   assert.equal((await call('/customers/'+id,mgr,'PUT',{...a,name:'FPT NHẬT PHƯƠNG',phone:'0084868908378',address:'Địa chỉ mới'})).status,200,'format-only edits remain valid');
-  const b=await call('/customers',mgr,'POST',{name:'Hồ sơ khác',phone:'0977111111'});assert.equal(b.status,201);
+  const b=await call('/customers',mgr,'POST',customerCreateFixture({name:'Hồ sơ khác',phone:'0977111111'}));assert.equal(b.status,201);
   assert.equal((await call('/customers/'+b.data.id,mgr,'PUT',{name:'FPT NHAT PHUONG',phone:'0977111111'})).status,200,'renaming to an existing name is allowed');
   assert.equal((await call('/customers/'+b.data.id,mgr,'PUT',{name:'Hồ sơ khác',phone:'0868908378'})).status,409);
   const [old]=await db.select().from(customers).where(eq(customers.id,id));
   await db.insert(customers).values({...old!,id:'legacy-copy'});
   assert.equal((await call('/customers/'+id,mgr,'PUT',{...a,address:'Cập nhật địa chỉ'})).status,200,'legacy duplicates can edit unrelated fields');
-  const parallel=await Promise.all([call('/customers',mgr,'POST',{name:'Song song CRM',phone:'0977222222'}),call('/pos/customers',emp,'POST',{name:'Song song POS',phone:'+84977222222'})]);
+  const parallel=await Promise.all([call('/customers',mgr,'POST',customerCreateFixture({name:'Song song CRM',phone:'0977222222'})),call('/pos/customers',emp,'POST',{name:'Song song POS',phone:'+84977222222'})]);
   assert.deepEqual(parallel.map(r=>r.status).sort(),[201,409]);
   const {syncCustomers}=await import('../../src/modules/integrations/api/sapo-sync-routes.ts');
   const synced=await syncCustomers(db,{customers:[{id:'9000999',name:'FPT tên nhập khác',phone:'0868908378',tax_code:'9999999999',updated_at:'2026-10-22T00:00:00Z'}]});
@@ -79,6 +80,6 @@ test('customer identity: prevent phone/tax duplicates (same name allowed) across
   await db.update(employees).set({positionId:'sale'}).where(eq(employees.id,'emp'));
   const hidden=(await call('/customers/duplicates/check?phone=0977333333',emp)).data.matches[0];
   assert.equal(hidden.id,null);assert.equal(hidden.name,'Khách hàng trong danh mục hạn chế');
-  const blocked=await call('/customers',emp,'POST',{name:'Tên mới riêng',phone:'0977333333'});
+  const blocked=await call('/customers',emp,'POST',customerCreateFixture({name:'Tên mới riêng',phone:'0977333333'}));
   assert.equal(blocked.status,409);assert.equal(blocked.data.error.includes('Tên khách lẻ hạn chế'),false);
 });

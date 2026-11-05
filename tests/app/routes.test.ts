@@ -1,3 +1,4 @@
+import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -28,7 +29,7 @@ test('trial: customer CRUD, quote save/revision và chặn NCC/nhân viên khác
   // Nhập lại cập nhật giá theo file (yêu cầu chủ dự án 06/10/2026; trước đây giữ giá cũ).
   assert.equal((await call('/products?q=SKU-TEST','GET',undefined,emp)).data.products[0].prices[0].price,99);
   assert.equal((await call('/admin/catalog-import', 'POST', {...catalog,products:[catalog.products[0],catalog.products[0]]},mgr)).status,400);
-  const c = await call('/customers', 'POST', { name: 'Khách thử', phone: '0900000000' }, emp);
+  const c = await call('/customers', 'POST', customerCreateFixture({ name: 'Khách thử', phone: '0900000000' }), emp);
   assert.equal(c.status, 201);
   assert.equal((await call('/customers/' + c.data.id, 'PUT', { name: 'Khách thử 2' }, emp)).status, 200);
   const doc = { type: 'B2B', quoteNo: 'BG-TEST', customer: 'Khách thử', vat: 8, rows: [{ name: 'Sản phẩm', qty: 1.5, price: 12.5 }] };
