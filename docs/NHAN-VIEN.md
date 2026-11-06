@@ -197,3 +197,5 @@ Manager mở Bảng lương → Đăng ký doanh số năm, hoặc nút cùng t�
 Chưa đăng ký hoặc xóa đăng ký: dùng chỉ tiêu hồ sơ cũ, nếu 0 thì dùng tham số chung. Giao diện ghi rõ nguồn. Phiếu đã chốt không đổi và tháng đã chốt khóa chỉnh chỉ tiêu năm; yêu cầu cũ bị từ chối 409 nếu dữ liệu vừa đổi. Mọi thay đổi ghi audit với trước/sau, người sửa, lý do.
 
 API Manager: `GET/PUT /hr/revenue-targets/:year`. PUT nhận version của GET, reason và changes [{memberId,month,amount}], amount=null để bỏ đăng ký. Cùng payroll advisory lock với chốt lương; toàn bộ batch rollback khi có lỗi. Bảng `hr_revenue_targets` bật RLS, không cấp anon/authenticated; chỉ backend staff truy cập. Migration cần áp dụng trước API; workflow kiểm tra schema chỉ đọc.
+
+Khi một người đã dùng bảng đăng ký năm, API hồ sơ lương không cho thay chỉ tiêu kế thừa bằng giá trị mới từ cửa sổ cũ; trả 409 và yêu cầu sửa ở bảng năm. Chặn cả khi chuyển tháng hoặc đã xóa hết đăng ký (đối chiếu audit), tránh ô chỉ đọc đã resolve bị ghi ngược vào hồ sơ dùng cho tháng sau. Các trường lương/phụ cấp khác vẫn lưu bình thường.

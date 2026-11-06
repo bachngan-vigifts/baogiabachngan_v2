@@ -1,5 +1,6 @@
 import { payrollEntry, registerQuickPayroll } from './quick-entry.ts';
 import {registerRevenueTargets} from './revenue-target-routes.ts';
+import {hasRevenueTargetHistory} from './revenue-target-data.ts';
 import type {CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
 import {payrollLock} from '../../../core/db/payroll-lock.ts';
 import {reserveAwards,releaseAwards,payAwards} from './contract-bonuses.ts';
@@ -160,6 +161,8 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     const [person]=await db.select({positionId:employees.positionId}).from(employees).where(eq(employees.id,id));const eligible=salaryKpiEligible(person?.positionId);
     if(!eligible&&(b.kpiEnabled===true||b.fixedKpi!==undefined&&b.fixedKpi!==null&&b.fixedKpi!==''))throw new AppError(400,'Sale Admin không áp dụng KPI; chỉ bật thưởng sao HĐKT và thưởng thanh lý.');
     const [prior]=await db.select().from(hrSalaryProfiles).where(and(eq(hrSalaryProfiles.memberId,id),lte(hrSalaryProfiles.effectiveMonth,month(b.effectiveMonth)))).orderBy(desc(hrSalaryProfiles.effectiveMonth)).limit(1);
+    const legacyTarget=b.revenueTarget===undefined?prior?.revenueTarget??0:Math.round(num(b.revenueTarget,'Chỉ tiêu DS',1e13));
+    if(legacyTarget!==(prior?.revenueTarget??0)&&await hasRevenueTargetHistory(db,id))throw new AppError(409,'Chỉ tiêu doanh số được quản lý ở bảng Đăng ký doanh số năm. Tải lại giao diện và sửa chỉ tiêu ở bảng năm.','REVENUE_TARGET_REGISTERED');
     const row = {
       memberId: id, effectiveMonth: month(b.effectiveMonth),
       payrollGroup: oneOf(b.payrollGroup, PAYROLL_GROUPS, 'Bảng lương', 'sale'), positionLabel: text(b.positionLabel, 60).toUpperCase(),
@@ -167,7 +170,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
       responsibilityMode: oneOf(b.responsibilityMode, RESPONSIBILITY_MODES, 'Cách tính trách nhiệm', 'fixed'), responsibility: Math.round(num(b.responsibility, 'Trách nhiệm')),
       mealAllowance: b.mealAllowance !== false, phoneAllowance: Math.round(num(b.phoneAllowance, 'Phụ cấp điện thoại')), attendanceBonus: Math.round(num(b.attendanceBonus, 'Chuyên cần')),
       kpiEnabled: eligible&&b.kpiEnabled === true,fixedKpi:!eligible?null:b.fixedKpi===undefined?prior?.fixedKpi??null:optNum(b.fixedKpi,'KPI cố định',10),contractBonusEnabled:b.contractBonusEnabled===undefined?prior?.contractBonusEnabled??false:b.contractBonusEnabled===true, teamBonus: b.teamBonus === true, outputRate: num(b.outputRate, 'Đơn giá sản lượng'),
-      revenueTarget: b.revenueTarget===undefined?prior?.revenueTarget??0:Math.round(num(b.revenueTarget, 'Chỉ tiêu DS', 1e13)),
+      revenueTarget: legacyTarget,
       kpiNewCustomersTarget: kpiTarget(b.kpiNewCustomersTarget, prior?.kpiNewCustomersTarget, 'Chỉ tiêu KH mới'),
       kpiTransactionsTarget: kpiTarget(b.kpiTransactionsTarget, prior?.kpiTransactionsTarget, 'Chỉ tiêu giao dịch'),
       kpiContractsTarget: kpiTarget(b.kpiContractsTarget, prior?.kpiContractsTarget, 'Chỉ tiêu số hợp đồng'),

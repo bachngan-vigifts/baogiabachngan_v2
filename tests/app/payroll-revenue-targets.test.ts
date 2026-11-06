@@ -39,6 +39,11 @@ test('yearly target never leaks into inherited salary profile when quick entry o
   assert.equal((await f.salary({capacityCoef:4})).status,200);
   [stored]=await f.db.select().from(hrSalaryProfiles).where(and(eq(hrSalaryProfiles.memberId,'emp'),eq(hrSalaryProfiles.effectiveMonth,'2026-10')));assert.equal(stored!.revenueTarget,100_000_000);
   assert.equal((await f.overview()).data.payroll.profile.revenueTarget,200_000_000);
+  assert.equal((await f.salary({revenueTarget:2e8,changeReason:'Giao diện cũ gửi lại chỉ tiêu đang xem'})).status,409);
+  assert.equal((await f.salary({effectiveMonth:'2026-11',revenueTarget:2e8,changeReason:'Giao diện cũ chuyển tháng'})).status,409);
+  await save(f,[{memberId:'emp',month:'2026-10',amount:null}]);
+  assert.equal((await f.salary({revenueTarget:2e8,changeReason:'Cửa sổ cũ lưu sau khi bỏ đăng ký'})).status,409);
+  assert.equal((await f.overview(f.mgr,'2026-11')).data.payroll.profile.revenueTarget,100_000_000);
 });
 test('annual target save is manager-only, optimistic and atomic; audit captures before/after/reason',async()=>{
   const f=await setup(),initial=await board(f);
