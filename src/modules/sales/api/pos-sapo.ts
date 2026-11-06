@@ -70,12 +70,19 @@ export async function sendPosOrderToClaw(env: StaffEnv, orderId: string) {
     fulfillment_mode: o.fulfillmentMode,
     notes: `Bán hàng nhanh · ${row.registerName} · ${row.employeeName}` + fees.services.filter(f => f.amount).map(f => ` · ${f.name}: ${f.quantity} × ${f.unitPrice}đ = ${f.amount}đ (VAT ${f.taxRate}%)`).join('') + (fees.shippingFee ? ` · Phí ship: ${fees.shippingFee}đ (${fees.shipping.taxRate ? `gồm VAT ${fees.shipping.taxRate}%` : 'không VAT'})` : '') + voucher + (o.note ? ` · Ghi chú: ${o.note}` : ''),
   };
+  const body=await sendPosClawPayload(env,payload);
+  return { status: 'updating' as const, code: o.orderNo, runId: body.runId ?? null };
+}
+
+/** Shared transport only: never checks out, takes stock or posts payments. */
+export async function sendPosClawPayload(env:StaffEnv,payload:unknown,kind:'pos'|'web'='pos'){
+ const url=target(env);if(!url)throw new AppError(503,'Chưa cấu hình webhook POS sang Claw.','SAPO_POS_WEBHOOK_MISSING');
   let response: Response;
   try {
     response = await (env.sapoWebhookFetch ?? fetch)(url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(payload), signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(45_000) : undefined });
-  } catch { throw new AppError(504, 'Chưa kết nối được n8n; bill POS vẫn đã lưu.', 'SAPO_POS_WEBHOOK_TIMEOUT'); }
+  } catch { throw new AppError(504, kind==='web'?'Chưa nhận được kết quả tạo Sapo; đơn website vẫn được giữ nguyên.':'Chưa kết nối được n8n; bill POS vẫn đã lưu.', 'SAPO_POS_WEBHOOK_TIMEOUT'); }
   const raw = await response.text(); let body: Record<string, any> = {}; // eslint-disable-line @typescript-eslint/no-explicit-any
   try { body = raw ? JSON.parse(raw) : {}; } catch { /* n8n có thể trả text */ }
   if (!response.ok || body.success === false || body.ok === false || body.error) throw new AppError(502, body.message || body.error || `n8n báo lỗi (${response.status}); bill POS vẫn đã lưu.`, 'SAPO_POS_WEBHOOK_FAILED');
-  return { status: 'updating' as const, code: o.orderNo, runId: body.runId ?? null };
+ return body;
 }

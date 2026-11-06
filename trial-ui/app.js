@@ -3405,8 +3405,9 @@ async function loadOrders() {
       <td class="orders-shipping-cell${o.ghnShipments?.length?' has-ghn-tracking':''}">${o.deliveryStatus ? pill(DELIVERY_STATUS, o.deliveryStatus) : o.orderSource === 'ghn' ? '<span class="pill warn">Chờ tạo vận đơn</span>' : '<span class="muted">—</span>'}<small>${esc(o.deliveryCarrier || '')}</small>${o.external?'<small>'+esc(o.ghnOrderCode||'Chưa tạo GHN')+' · '+esc(o.ghnStatus||'')+'</small>':ghnOrderSummary(o.ghnShipments,esc)}</td>
       <td>${o.external&&o.paid===null?'<span class="muted">Chưa rõ thanh toán</span>':payCell(o.receivable, o.debtCounts, o.status)}</td>
       <td class="right num"><b>${money(o.total)}</b><small>${o.external&&o.invoiceStatus==='unknown'?'Chưa có dữ liệu hoá đơn':invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</small></td>
-      <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${o.external?'':slipButtons(o.id, o.status)}</td></tr>`),
+      <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${o.external?'':slipButtons(o.id, o.status)}<span data-order-sapo="${esc(o.id)}"></span>${o.sapoSourceChanged?'<small class="error">Cần đối soát Sapo</small>':''}</td></tr>`),
       'Chưa có đơn đặt hàng. Bấm ＋ để tạo đơn từ báo giá đã duyệt.');
+    for(const row of $('#orders-list').querySelectorAll('[data-order-sapo]')){const o=d.orders.find(o=>o.id===row.dataset.orderSapo);if(!o)continue;const action=orderSapoAction({order:o,api,chooseSapo:(ref,opts)=>sapoPush().choose(ref,opts),onSaved:loadOrders,toast});if(action){action.className+=' small';row.append(action);}}
   } catch (e) { if (req === ordersReq) { salesListSummary('orders', null); listError('orders', e); ordersPager.render(0); } }
 }
 // ----- danh sách HĐKT
@@ -4071,6 +4072,7 @@ async function openOrder(id, confirmed = null) {
     renderWebOrderDetail({root:$('#view-order'),detail:d,api,toast,isCurrent,renderInvoice,
       onReload:()=>openOrder(id),onPrint:kind=>webOrderUi.print(d,kind),
       onEdit:()=>{webDocumentMode($('#view-order'),$('#web-order-content'),true);webOrderUi.edit(d);}});
+    const sapoAction=orderSapoAction({order:d.document,api,chooseSapo:(ref,opts)=>sapoPush().choose(ref,opts),onSaved:()=>openOrder(id),toast});if(sapoAction)$('#order-actions').append(sapoAction);
     $('#breadcrumb').textContent=d.document.orderNo;document.title=d.document.orderNo+' · Bách Ngân';return;
   }
   sales.order = d.order; sales.detail = d;

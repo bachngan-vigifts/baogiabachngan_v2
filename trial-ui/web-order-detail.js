@@ -81,6 +81,7 @@ export function renderWebOrderDetail({
   $('#order-progress').replaceChildren();
   $('#order-pos-ghn-edit').textContent = [
     d.editBlocked,
+    o.sapoSourceChanged?'Đơn website đã đổi sau lần gửi Sapo; cần đối soát sản phẩm/giá trên Sapo.':'',
     o.sourceConflict ? 'Website có thay đổi khác bản CRM; cần đối soát.' : '',
     o.ghnCartReviewRequired ? 'Cần đối soát sản phẩm với vận đơn GHN.' : '',
   ]
