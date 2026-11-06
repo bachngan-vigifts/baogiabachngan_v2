@@ -8,6 +8,14 @@ export const PAYROLL_SHEET_GROUPS = [
 const info = [{label:'LCB / lương thỏa thuận',section:'profile',key:'baseSalary'}, {label:'Ngày làm việc',section:'inputs',key:'workDays'}, {label:'Lương theo công',line:'salaryByDays'}];
 const gross = {label:'TỔNG THU NHẬP',total:'gross',tone:'gross'}, net = {label:'THỰC NHẬN',total:'net',tone:'net'}, bank = {label:'TK NHẬN LƯƠNG',bank:true}, detail = {label:'Chi tiết',detail:true};
 export const PAYROLL_SHEET_COLUMNS = [...info, ...PAYROLL_SHEET_GROUPS.slice(0,3).flatMap(g=>g.columns), gross, ...PAYROLL_SHEET_GROUPS[3].columns, net, bank, detail];
+export function payrollSheetTotals(data) {
+  const counted=data.rows.filter(r=>r.profile.hasProfile||r.payslip.status!=='estimate');
+  const mapped={insurance:'socialInsurance',healthInsurance:'healthInsurance',incomeTax:'incomeTax',deduction:'violation',phone_advance:'phoneDeduction',advance:'advance',allowance:'trip',phoneAllowance:'phone',responsibility:'responsibility',bonus:'otherBonus'};
+  return {people:counted.length,values:PAYROLL_SHEET_COLUMNS.map(c=>{
+    const key=c.line||mapped[c.key];
+    return c.total||key?counted.reduce((s,r)=>s+(c.total?r.payslip[c.total]:[...r.payslip.income,...r.payslip.deductions].find(l=>l.key===key)?.amount??0),0):null;
+  })};
+}
 export function payrollSheetHtml({data,esc,money,field,isDirty}) {
   const line=(r,key)=>[...r.payslip.income,...r.payslip.deductions].find(l=>l.key===key)?.amount??0;
   const bonus=r=>r.payslip.income.filter(l=>/Bonus|Adjustment/.test(l.key)).reduce((s,l)=>s+l.amount,0);
@@ -30,8 +38,7 @@ export function payrollSheetHtml({data,esc,money,field,isDirty}) {
     }).join('');
     return `<tr class="${isDirty(r.member.id)?'pr-quick-dirty':''}" data-quick-row="${esc(r.member.id)}" data-group="${esc(r.profile.payrollGroup)}" data-name="${esc(r.member.name.toLocaleLowerCase('vi'))}"><td class="pr-sheet-index">${i+1}</td><td class="pr-quick-name"><a href="#/members/${encodeURIComponent(r.member.id)}?month=${data.month}&tab=payroll">${esc(r.member.name)}</a><small>${esc(data.columns.groups[r.profile.payrollGroup])} · ${status}</small></td>${field(r,{section:'profile',key:'positionLabel',label:'Vị trí'})}${cells}</tr>`;
   }).join('');
-  const counted=data.rows.filter(r=>r.profile.hasProfile||r.payslip.status!=='estimate');
-  const mapped={insurance:'socialInsurance',healthInsurance:'healthInsurance',incomeTax:'incomeTax',deduction:'violation',phone_advance:'phoneDeduction',advance:'advance',allowance:'trip',phoneAllowance:'phone',responsibility:'responsibility',bonus:'otherBonus'};
-  const footer=PAYROLL_SHEET_COLUMNS.map(c=>{const key=c.line||mapped[c.key];return `<td class="num ${c.tone?'pr-sheet-'+c.tone:''}">${c.total||key?money(counted.reduce((s,r)=>s+(c.total?r.payslip[c.total]:line(r,key)),0)):'—'}</td>`;}).join('');
-  return `<div class="pr-quick-scroll pr-sheet-scroll" tabindex="0" aria-label="Bảng lương tổng thể, cuộn ngang để xem các nhóm"><table class="data-table pr-quick-table pr-sheet"><colgroup><col style="width:44px"><col style="width:220px"><col style="width:100px">${PAYROLL_SHEET_COLUMNS.map(c=>`<col style="width:${c.bank?140:c.detail?90:114}px">`).join('')}</colgroup><thead><tr>${solo('STT','pr-sheet-index')}${solo('HỌ TÊN','pr-sheet-name')}${solo('VỊ TRÍ')}${info.map(c=>solo(c.label,'pr-sheet-base')).join('')}${PAYROLL_SHEET_GROUPS.slice(0,3).map(group).join('')}${solo(gross.label,'pr-sheet-gross')}${group(PAYROLL_SHEET_GROUPS[3])}${solo(net.label,'pr-sheet-net')}${solo(bank.label)}${solo('Chi tiết')}</tr><tr class="pr-sheet-subhead">${PAYROLL_SHEET_GROUPS.flatMap(g=>g.columns.map(c=>`<th scope="col" class="pr-sheet-${g.tone}">${c.label}</th>`)).join('')}</tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="3">TỔNG TOÀN BẢNG (${counted.length} người đã có hồ sơ / phiếu chốt)</td>${footer}</tr></tfoot></table></div>`;
+  const totals=payrollSheetTotals(data);
+  const footer=PAYROLL_SHEET_COLUMNS.map((c,i)=>`<td class="num ${c.tone?'pr-sheet-'+c.tone:''}">${totals.values[i]==null?'—':money(totals.values[i])}</td>`).join('');
+  return `<div class="pr-quick-scroll pr-sheet-scroll" tabindex="0" aria-label="Bảng lương tổng thể, cuộn ngang để xem các nhóm"><table class="data-table pr-quick-table pr-sheet"><colgroup><col style="width:44px"><col style="width:220px"><col style="width:100px">${PAYROLL_SHEET_COLUMNS.map(c=>`<col style="width:${c.bank?140:c.detail?90:114}px">`).join('')}</colgroup><thead><tr>${solo('STT','pr-sheet-index')}${solo('HỌ TÊN','pr-sheet-name')}${solo('VỊ TRÍ')}${info.map(c=>solo(c.label,'pr-sheet-base')).join('')}${PAYROLL_SHEET_GROUPS.slice(0,3).map(group).join('')}${solo(gross.label,'pr-sheet-gross')}${group(PAYROLL_SHEET_GROUPS[3])}${solo(net.label,'pr-sheet-net')}${solo(bank.label)}${solo('Chi tiết')}</tr><tr class="pr-sheet-subhead">${PAYROLL_SHEET_GROUPS.flatMap(g=>g.columns.map(c=>`<th scope="col" class="pr-sheet-${g.tone}">${c.label}</th>`)).join('')}</tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="3">TỔNG TOÀN BẢNG (${totals.people} người đã có hồ sơ / phiếu chốt)</td>${footer}</tr></tfoot></table></div>`;
 }

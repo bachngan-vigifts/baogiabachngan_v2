@@ -113,7 +113,7 @@ Phiếu đã chốt/đã trả chỉ xem. Khi có người khác sửa dữ li�
    - Thưởng quý (trống = tự tính).
 3. **＋ Thêm khoản:** thưởng khác / tuyên dương, công tác, vi phạm, tạm ứng, tạm ứng điện thoại (mỗi khoản có lý do).
 4. **Bảng lương → Chốt lương:** chốt cả bảng, hoặc chốt từng người ở trang nhân viên. Phiếu đã chốt lưu bản chụp toàn bộ chi tiết; sửa tham số hay dữ liệu sau đó không làm đổi phiếu. Tháng đã chốt thì khoá số liệu.
-5. **Xuất Excel:** gồm các sheet Tổng hợp, Lương Sale, Lương Bách Ngân, Lương Lock, Chuyển khoản (có link VietQR).
+5. **Xuất Excel:** một sheet Bảng lương, cùng thứ tự cột, nhóm màu và dòng tổng với bảng Nhập nhanh.
 6. **In phiếu lương:** nút "In phiếu lương" ở tab Lương & thưởng (Manager và chính nhân viên đó). Phiếu A4 dọc, lưu được PDF, có số tiền bằng chữ và chỗ ký. Phiếu đã chốt in đúng từng khoản lúc chốt.
 
 ## Cấu trúc dữ liệu
@@ -172,7 +172,7 @@ Các ô tiền dùng dấu phẩy hàng nghìn, ví dụ **4,758,000**, sau khi 
 
 File mẫu có **đủ nhân viên trong bảng lương tháng đang chọn**, kể cả người đã chốt/đã trả lương; không phụ thuộc bộ lọc nhóm hay ô tìm kiếm trên màn hình. Dòng đã khóa tô xám và để trống số liệu. Khi nhập lại, các dòng đã khóa còn trống được bỏ qua; nhập bất kỳ số liệu nào (kể cả 0) vào dòng đã khóa sẽ bị từ chối.
 
-**Xuất file bảng lương** trong thanh công cụ Nhập nhanh dùng cùng chức năng **Xuất Excel** ở đầu trang: xuất số liệu đã lưu của tháng đang chọn, gồm tổng hợp, các nhóm lương và chuyển khoản. Bộ lọc tìm kiếm/nhóm ở Nhập nhanh không giới hạn file xuất. Nếu có bản nháp chưa lưu, hệ thống yêu cầu lưu hoặc bỏ thay đổi trước khi xuất.
+**Xuất file bảng lương** trong thanh công cụ Nhập nhanh dùng cùng chức năng **Xuất Excel** ở đầu trang: xuất số liệu đã lưu của tháng đang chọn, một sheet duy nhất giống bảng Nhập nhanh tổng thể trên web; chi tiết khoản và trạng thái phiếu nằm trong ghi chú ô. Bộ lọc tìm kiếm/nhóm ở Nhập nhanh không giới hạn file xuất. Nếu có bản nháp chưa lưu, hệ thống yêu cầu lưu hoặc bỏ thay đổi trước khi xuất.
 
 **Nhập file Excel** kiểm tra toàn bộ file trước khi tạo bản nháp; sai tháng, trùng/không tìm thấy nhân viên, tên lệch STT, sửa phiếu đã khóa hoặc ô lỗi bị từ chối. Không nhập công thức, không xóa sheet ẩn. Kiểm tra bảng rồi bấm **Lưu thay đổi** để ghi; file không tự lưu. Lưu/bỏ bản nháp trước khi nhập file mới. Tối đa 5 MB, 1.000 dòng, 100 nhân viên thay đổi mỗi lần. Chỉ số trễ/giờ nghỉ có thể xem/sửa tại chế độ Chấm công & chỉ số.
 
