@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 const {customerListQuery,hasCustomerListFilters,bindCustomerListFilters,updateCustomerFilterSummary}=await import(new URL('../../trial-ui/customer-list-filters.js',import.meta.url).href);
 function setup(){
  const nodes:Record<string,any>={};
- for(const key of ['owner','from','to','sort','status','kind','mine','pending','retail','clear','filter-error','filter-summary'])nodes['#customer-'+key]={value:'',checked:false,hidden:false,disabled:false,textContent:'',attrs:{},events:{} as Record<string,Function>,get selectedOptions(){return[{textContent:this.value==='emp'?'Nhân viên A':this.value}];},setAttribute(k:string,v:string){this.attrs[k]=v;},addEventListener(k:string,fn:Function){this.events[k]=fn;}};
+ for(const key of ['province','owner','from','to','sort','status','kind','mine','pending','retail','clear','filter-error','filter-summary'])nodes['#customer-'+key]={value:'',checked:false,hidden:false,disabled:false,textContent:'',attrs:{},events:{} as Record<string,Function>,get selectedOptions(){return[{textContent:this.value==='emp'?'Nhân viên A':this.value}];},setAttribute(k:string,v:string){this.attrs[k]=v;},addEventListener(k:string,fn:Function){this.events[k]=fn;}};
  nodes['#customer-sort'].value='newest';const $=(key:string)=>nodes[key];let reloads=0;bindCustomerListFilters($,()=>reloads++);
  return{$,change:(key:string,value:any)=>{const n=$('#customer-'+key);if(typeof value==='boolean')n.checked=value;else n.value=value;n.events.change();},get reloads(){return reloads;}};
 }
@@ -28,4 +28,8 @@ test('invalid dates do not query; correcting dates reloads and clear resets all 
 });
 test('sorting alone does not change the unfiltered customer total',async()=>{
  const s=setup();s.change('sort','oldest');await flush();assert.equal(hasCustomerListFilters(s.$),false);assert.equal(s.$('#customer-clear').disabled,false);
+});
+
+test('province filter is sent to server pagination, appears in summary and resets with other filters',async()=>{
+ const s=setup();s.change('province','92');await flush();const q=new URLSearchParams(customerListQuery(s.$,{limit:50,offset:50,query:''}));assert.equal(q.get('province'),'92');assert.equal(hasCustomerListFilters(s.$),true);assert.match(s.$('#customer-filter-summary').textContent,/Tỉnh\/thành/);s.$('#customer-clear').events.click();await flush();assert.equal(s.$('#customer-province').value,'');assert.equal(hasCustomerListFilters(s.$),false);
 });

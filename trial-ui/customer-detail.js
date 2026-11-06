@@ -125,6 +125,7 @@ export function initCustomerDetail(deps) {
           <dt>Điện thoại</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a>` : '—'}</dd>
           <dt>Email</dt><dd>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '—'}</dd>
           <dt>Địa chỉ</dt><dd>${esc(c.address) || '—'}</dd>
+          <dt>Tỉnh/thành sau sáp nhập</dt><dd>${esc(c.province?.name)||'Chưa xác định — kiểm tra/bổ sung địa chỉ'}</dd>
           ${s.firstOrderDate ? `<dt>Khách từ</dt><dd>${fmtDate(s.firstOrderDate)}</dd>` : ''}
         </dl></div>
         <div class="card"><div class="card-title-row"><h2 class="card-title">Nhân viên</h2>${a.canManageStaff ? '<button class="btn secondary small" data-act="staff">Phân công / chia sẻ</button>' : ''}</div>
