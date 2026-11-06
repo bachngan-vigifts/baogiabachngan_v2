@@ -6,7 +6,7 @@ Manager có thể chuẩn bị, xem trước và đối soát khách/người li
 
 - **Nhóm / loại khách hàng**: chọn từ danh sách nhóm đang dùng hoặc gõ tên nhóm mới. Nhóm mới chỉ được ghi nhận khi lưu khách thành công; mở form lần sau sẽ tải lại danh sách. Danh sách lấy toàn bộ nhóm, không phụ thuộc phân trang khách, ẩn nhóm chỉ thuộc khách bị từ chối hoặc phân khúc không được phép xem. Không cần quản lý danh mục riêng.
 
-- Tạo tại trang Khách hàng bắt buộc **tên, người liên hệ, số điện thoại, MST và địa chỉ**, có dấu `*` trên giao diện và kiểm tra tại `POST /customers`.
+- Tạo tại trang Khách hàng bắt buộc **tên, người liên hệ, MST và địa chỉ**, có dấu `*` trên giao diện và kiểm tra tại `POST /customers`. **Điện thoại khách hàng không bắt buộc**; có thể để trống khi tạo mới.
 - Có nhóm/loại khách, ngày thành lập, mã khách, email và điều khoản; thêm được ghi chú khách, người phụ trách/chia sẻ và nhiều liên hệ (tên/chức vụ/SĐT/email/ghi chú/cờ chính). Toàn bộ hồ sơ được lưu trong một transaction, lỗi thì không tạo dở.
 - Manager chọn người phụ trách hoặc để chưa phân công. Nhân viên tạo thì tự phụ trách, khách chờ Manager duyệt; người được chia sẻ phải là nhân viên đang hoạt động.
 - Chọn liên hệ chính điền tên vào trường người liên hệ, không tự thay điện thoại/email doanh nghiệp bằng thông tin cá nhân. Mỗi liên hệ thêm vào phải có tên, tối đa một cờ chính.

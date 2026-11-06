@@ -1,3 +1,6 @@
+import {customerProvince,provinceOptions} from '../domain/province.ts';
+import {provinceCodeSql} from './province.ts';
+import {registerProvinceSharing} from './province-sharing.ts';
 import {contactDirectoryVersion,editableContacts,saveContactDirectory,lockContactCustomer,ensureLegacyContact,syncPrimaryContact} from './contact-directory.ts';
 import { anniversarySuggestion, vietnamToday, ANNIVERSARY_LEAD_DAYS, ANNIVERSARY_INTERVAL } from '../domain/anniversary.ts';
 import { customerIdentityLock, findCustomerDuplicates, rejectDuplicate } from './identity.ts';
@@ -96,7 +99,7 @@ export async function customerProfile(db: Db, id: string, who: Viewer) {
   ]);
   const { search: _s, sourceVersion: _v, ...info } = customer;
   const [rejecter] = info.rejectedBy ? await db.select({ name: employees.name }).from(employees).where(eq(employees.id, info.rejectedBy)).limit(1) : [];
-  return { customer: { ...info, rejectedByName: rejecter?.name ?? null, anniversary: anniversarySuggestion(customer.establishedDate), fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, contactDirectory:editableContacts(customer,contacts),contactDirectoryVersion:contactDirectoryVersion(customer,contacts), discounts, access,
+  return { customer: { ...info, province:customerProvince(customer.address), rejectedByName: rejecter?.name ?? null, anniversary: anniversarySuggestion(customer.establishedDate), fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, contactDirectory:editableContacts(customer,contacts),contactDirectoryVersion:contactDirectoryVersion(customer,contacts), discounts, access,
     generalNote: await generalNoteOf(db, id, access), debtNote: await debtNoteOf(db, id, access) };
 }
 
@@ -119,6 +122,7 @@ async function generalNoteOf(db: Db, id: string, access: Awaited<ReturnType<type
 }
 
 export function registerCustomerRoutes(router: Router<StaffEnv>) {
+  registerProvinceSharing(router);
   router.get('/customers/:id/notes', async c => {
     const db = c.env.db, id = c.params.id!, me = viewer(c);
     await loadCustomer(db, id);
@@ -201,6 +205,9 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
   // Thứ tự: có từ khoá thì khớp nhất lên trước (searchRank); còn lại khách mới tạo lên trên cùng (created_at giảm dần; dữ liệu cũ không có ngày tạo xuống cuối), cùng ngày thì theo tên.
   router.get('/customers', async c => {
     const { limit, offset } = paging(c.url, 100, 500), me = viewer(c);
+    const province=c.url.searchParams.get('province')||'';
+    if(province&&province!=='unknown'&&!provinceOptions.some(p=>p.code===province))throw new AppError(400,'Tỉnh/thành không hợp lệ.');
+    const provinceFilter=province==='unknown'?isNull(provinceCodeSql(customers.address)):province?eq(provinceCodeSql(customers.address),province):undefined;
     const mine = c.url.searchParams.get('mine') === '1'
       ? exists(c.env.db.select({ x: sql`1` }).from(customerStaff).where(and(eq(customerStaff.customerId, customers.id), or(eq(customerStaff.memberId, me.id), departmentOwner(customerStaff.memberId, me)))))
       : undefined;
@@ -215,7 +222,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     // Ô chọn khách (lập báo giá / đơn): `usable=1&limit≤8&q=…` chỉ cần vài khách khớp nhất. Một truy vấn trên cột `search`
     // (đã bỏ dấu sẵn khi lưu) thay cho bỏ dấu 6 cột từng dòng + đếm tổng + đếm khách chờ duyệt + người phụ trách.
     const q = c.url.searchParams.get('q') || '';
-    if (usable && !status && limit <= 8 && offset === 0 && q.trim() && !mine && !owner && !from && !to && !kind && c.url.searchParams.get('filters') !== '1') {
+    if (usable && !province && !status && limit <= 8 && offset === 0 && q.trim() && !mine && !owner && !from && !to && !kind && c.url.searchParams.get('filters') !== '1') {
       const rows = await c.env.db.select().from(customers)
         .where(and(segment, eq(customers.approvalStatus, 'approved'), matchAllWords(sql`${customers.search}`, q)))
         .orderBy(...rankFirst(searchRank([customers.customerCode, customers.phone, customers.taxCode], customers.name, q)), desc(customers.createdAt), asc(customers.name), asc(customers.id)).limit(limit);
@@ -232,7 +239,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const sort = c.url.searchParams.get('sort') || 'newest';
     if (!['newest','oldest','name-asc','name-desc'].includes(sort)) throw new AppError(400, 'Cách sắp xếp khách hàng không hợp lệ.');
     const order = sort === 'oldest' ? [asc(customers.createdAt)] : sort === 'name-asc' ? [asc(foldSql(customers.name)), asc(customers.name)] : sort === 'name-desc' ? [desc(foldSql(customers.name)), desc(customers.name)] : [desc(customers.createdAt)];
-    const where = and(segment, matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine, approval, assigned, created);
+    const where = and(segment, matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine, approval, assigned, created,provinceFilter);
     const [[{ total = 0 } = {}], rows, [{ pending = 0 } = {}], owners] = await Promise.all([
       c.env.db.select({ total: count() }).from(customers).where(where),
       c.env.db.select().from(customers).where(where).orderBy(...rankFirst(searchRank([customers.customerCode, customers.phone, customers.taxCode], customers.name, c.url.searchParams.get('q'))), ...order, asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
@@ -242,8 +249,8 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
         .where(and(segment,eq(customerStaff.role,'owner'),isNull(employees.deletedAt))).orderBy(asc(employees.name),asc(employees.id)) : Promise.resolve(undefined),
     ]);
     const staff = await customerStaffOf(c.env.db, rows.map(r => r.id));
-    return json({ customers: rows.map(r => ({ ...r, anniversary: anniversarySuggestion(r.establishedDate), owner: staff.get(r.id)!.owner, sharedCount: staff.get(r.id)!.shared.length })),
-      filterOptions: owners ? {owners} : undefined, canListRetail: retailVisible, total: Number(total), pendingCount: Number(pending), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
+    return json({ customers: rows.map(r => ({ ...r, province:customerProvince(r.address), anniversary: anniversarySuggestion(r.establishedDate), owner: staff.get(r.id)!.owner, sharedCount: staff.get(r.id)!.shared.length })),
+      filterOptions: owners ? {owners,provinces:provinceOptions} : undefined, canListRetail: retailVisible, total: Number(total), pendingCount: Number(pending), limit, offset, nextOffset: offset + rows.length < Number(total) ? offset + rows.length : null });
   }, 'business');
 
   // Reminder scope is restricted to the viewer's owned/shared/department customers; managers see all.
@@ -398,6 +405,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       if (sharedIds.length !== wanted.length) throw new AppError(400, 'Có nhân viên không hợp lệ trong danh sách chia sẻ.');
     }
     await db.transaction(async tx => {
+      await tx.select({id:customers.id}).from(customers).where(eq(customers.id,id)).for('update');
       if (ownerId !== undefined) {
         await tx.delete(customerStaff).where(and(eq(customerStaff.customerId, id), eq(customerStaff.role, 'owner')));
         if (ownerId) {

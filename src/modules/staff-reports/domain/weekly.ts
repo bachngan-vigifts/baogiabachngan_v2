@@ -1,11 +1,13 @@
 /**
- * BÁO CÁO TUẦN của Sale / Sale Admin – hàm thuần (không DB). Căn cứ Tiền trách nhiệm từ tháng 12/2026:
+ * BÁO CÁO TUẦN của Sale / Sale Admin – hàm thuần (không DB). Căn cứ Tiền trách nhiệm từ tháng 11/2026:
  *   Tiền trách nhiệm = Mức trách nhiệm (hồ sơ lương) × (ngày công ÷ công chuẩn) × (điểm báo cáo tuần ÷ 4).
  *  Kỳ báo cáo = tuần thứ Hai → Chủ nhật; hạn 10h00 thứ Hai tuần sau (giờ VN); nộp chính thức từ 00h00 thứ Hai tuần sau.
  *  Điểm một tuần: Miễn (nghỉ phép / công tác, Manager duyệt) 1 · Chưa đạt (Manager duyệt) 0 · đúng hạn 1 · trễ < 1 ngày 0,5 ·
  *  trễ từ 1 ngày / không nộp 0. Tuần thuộc tháng của ngày hạn nộp; tháng có 5 tuần lấy 4 tuần điểm cao nhất (tối đa 4 điểm).
  */
-export const WEEKLY_REPORT_FROM = '2026-12';
+export const WEEKLY_REPORT_FROM = '2026-11';
+/** Ngày triển khai: tuần có hạn nộp trước 00h00 ngày này tính "Miễn – trước ngày triển khai" (1 điểm, không nhắc). */
+export const WEEKLY_LAUNCH_DAY = '2026-11-06';
 export const WEEKLY_REQUIRED = 4;
 /** Chức vụ phải nộp báo cáo tuần (và được tính Tiền trách nhiệm theo báo cáo). */
 export const WEEKLY_POSITIONS = ['sale', 'sale-admin'] as const;
@@ -38,17 +40,21 @@ export function weeksOfMonth(month: string) {
 }
 export const appliesTo = (month: string) => month >= WEEKLY_REPORT_FROM;
 
-export type WeekState = 'on_time' | 'late' | 'missing' | 'not_due';
-export function weekState(monday: string, submittedAt: string | null, nowIso: string): { state: WeekState; lateMs: number } {
+export type WeekState = 'on_time' | 'late' | 'missing' | 'not_due' | 'exempt';
+/** Hạn nộp trước ngày triển khai (`launchDay` để test truyền '' = không miễn). */
+export const beforeLaunch = (monday: string, launchDay = WEEKLY_LAUNCH_DAY) => !!launchDay && weeklyDeadline(monday) < vnAt(launchDay, 0);
+export function weekState(monday: string, submittedAt: string | null, nowIso: string, launchDay = WEEKLY_LAUNCH_DAY): { state: WeekState; lateMs: number } {
   const due = weeklyDeadline(monday);
+  if (beforeLaunch(monday, launchDay)) return { state: 'exempt', lateMs: 0 };
   if (!submittedAt) return { state: nowIso > due ? 'missing' : 'not_due', lateMs: 0 };
   return submittedAt <= due ? { state: 'on_time', lateMs: 0 } : { state: 'late', lateMs: Date.parse(submittedAt) - Date.parse(due) };
 }
 /** Điểm một tuần; `null` = chưa tới hạn (chưa tính). */
-export function weekScore(monday: string, r: { submittedAt: string; review: WeeklyReview } | null, nowIso: string): number | null {
+export function weekScore(monday: string, r: { submittedAt: string; review: WeeklyReview } | null, nowIso: string, launchDay = WEEKLY_LAUNCH_DAY): number | null {
   if (r?.review === 'excused') return 1;
   if (r?.review === 'rejected') return 0;
-  const s = weekState(monday, r?.submittedAt ?? null, nowIso);
+  const s = weekState(monday, r?.submittedAt ?? null, nowIso, launchDay);
+  if (s.state === 'exempt') return 1;
   if (s.state === 'not_due') return null;
   if (s.state === 'on_time') return 1;
   if (s.state === 'late') return s.lateMs < DAY ? 0.5 : 0;

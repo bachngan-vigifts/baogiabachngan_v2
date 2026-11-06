@@ -24,7 +24,7 @@ import type { SaleTargetOf, WeeklyReportPointsOf } from '../../../core/contracts
 import { staffWeeklyReportDrafts, staffWeeklyReportVersions, staffWeeklyReports } from '../schema.ts';
 import {
   INDUSTRIES, INDUSTRY_LABEL, WEEKLY_LIMITS, WEEKLY_POSITIONS, industryOf, weeklyProblems, type WeeklyInputs, WEEKLY_REVIEWS, WEEKLY_REVIEW_LABEL, addDays, appliesTo, canSubmitWeek, isWeek, mondayOf, monthPoints, vnDay,
-  weekScore, weekStarted, weekState, weeklyDeadline, weeklyOpensAt, weeksOfMonth, type WeeklyReview,
+  beforeLaunch, weekScore, weekStarted, weekState, weeklyDeadline, weeklyOpensAt, weeksOfMonth, type WeeklyReview,
 } from '../domain/weekly.ts';
 
 type Ctx = Parameters<Parameters<Router<StaffEnv>['get']>[1]>[0];
@@ -153,7 +153,7 @@ export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: { targ
       weeks: pts.weeks.map(w => { const r = rows.find(x => x.period === w.period);
         return { ...w, reportId: r?.id ?? null, submittedAt: r?.submittedAt ?? null, reviewNote: r?.reviewNote ?? '', draftAt: drafts.find(d => d.period === w.period)?.updatedAt ?? null }; }),
       // Nhắc: tuần trước chưa nộp, từ 08h00 thứ Hai.
-      remind: !last && now >= new Date(Date.parse(addDays(lastWeek, 7) + 'T08:00:00+07:00')).toISOString() ? { period: lastWeek, deadline: weeklyDeadline(lastWeek) } : null,
+      remind: !last && !beforeLaunch(lastWeek) && now >= new Date(Date.parse(addDays(lastWeek, 7) + 'T08:00:00+07:00')).toISOString() ? { period: lastWeek, deadline: weeklyDeadline(lastWeek) } : null,
       reviewLabels: WEEKLY_REVIEW_LABEL });
   }, 'business');
 

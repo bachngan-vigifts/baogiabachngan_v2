@@ -61,7 +61,7 @@ Nhân viên **chưa có hồ sơ lương** vẫn hiện ở tab theo chức vụ
 - Lương theo công = LCB × ngày làm ÷ công chuẩn. LCB trống thì lấy LCB vùng = LCB/ngày × công chuẩn.
 - Năng lực = hệ số × 200.000.
 - Trách nhiệm: cố định (Sale), theo tỷ lệ ngày làm (VD kho làm 18/26 ngày), hoặc theo ngày (Bách Ngân, Lock: 20.000 × ngày làm).
-  Từ **12/2026**, Sale / Sale Admin: trách nhiệm × ngày công ÷ công chuẩn × điểm 4 báo cáo tuần ÷ 4 – xem [BAO-CAO-TUAN-SALE.md](BAO-CAO-TUAN-SALE.md).
+  Từ **11/2026**, Sale / Sale Admin: trách nhiệm × ngày công ÷ công chuẩn × điểm 4 báo cáo tuần ÷ 4 – xem [BAO-CAO-TUAN-SALE.md](BAO-CAO-TUAN-SALE.md).
 - Cơm + xăng = 50.000 × MAX(0, ngày làm − ngày trừ cơm của nhóm). Thử việc: bỏ chọn "hưởng cơm + xăng".
 - Tăng ca = LCB ÷ 24 ÷ 8 × giờ × 2.
 

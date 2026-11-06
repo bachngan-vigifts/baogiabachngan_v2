@@ -4,9 +4,9 @@ import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { customers, customerContacts, customerNotes, customerStaff } from '../../src/modules/customers/schema.ts';
 import { eq } from 'drizzle-orm';
 
-test('CRM creation requires name/contact/phone/tax/address on API; whitespace and omitted values never create partial rows',async()=>{
+test('CRM creation requires name/contact/tax/address on API; whitespace and omitted values never create partial rows',async()=>{
   const s=await setup(),complete=customerCreateFixture({name:'Khách đầy đủ'}),baseline=(await s.db.select().from(customers)).length;
-  for(const key of ['name','contact','phone','taxCode','address'] as const){
+  for(const key of ['name','contact','taxCode','address'] as const){
     for(const missing of [undefined,'   ']){
       const body={...complete,[key]:missing};const r=await s.call('/customers',s.mgr,'POST',body);
       assert.equal(r.status,400,`${key}: ${JSON.stringify(r.data)}`);
@@ -15,6 +15,18 @@ test('CRM creation requires name/contact/phone/tax/address on API; whitespace an
   assert.equal((await s.db.select().from(customers)).length,baseline);
   const good=await s.call('/customers',s.mgr,'POST',complete);assert.equal(good.status,201);
   assert.equal((await s.call('/customers/'+good.data.id,s.mgr,'PUT',{name:'Sửa hồ sơ cũ'})).status,200,'legacy edits are not blocked by missing historical fields');
+});
+test('CRM creation accepts omitted, blank and whitespace phone for managers and employees but still validates supplied phone',async()=>{
+  const s=await setup();
+  for(const who of [s.mgr,s.emp])for(const phone of [undefined,'','   ']){
+    const result=await s.call('/customers',who,'POST',customerCreateFixture({name:'Khách không điện thoại',phone}));
+    assert.equal(result.status,201,JSON.stringify(result.data));
+    const saved=await s.db.select().from(customers).where(eq(customers.id,result.data.id));
+    assert.equal(saved[0]!.phone,'');assert.equal(saved[0]!.approvalStatus,who===s.mgr?'approved':'pending');
+  }
+  for(const phone of [12345,'1'.repeat(41)]){
+    assert.equal((await s.call('/customers',s.mgr,'POST',customerCreateFixture({name:'Sai kiểu điện thoại',phone}))).status,400);
+  }
 });
 test('complete initial customer profile stores staff, notes and contacts atomically with correct approval and primary contact',async()=>{
   const s=await setup(),baseline=(await s.db.select().from(customers)).length;const body={...customerCreateFixture({name:'Khách hồ sơ',contact:'Anh A',customerType:'Nhà máy',establishedDate:'2010-02-03'}),ownerId:'emp',sharedIds:['mgr','other-missing'],notes:'Ghi chú nội bộ',contacts:[{name:'Anh A',title:'Giám đốc',phone:'0912345678',email:'a@example.test',note:'Ghi chú liên hệ',isPrimary:true},{name:'Chị B',title:'Kế toán'}]};
@@ -59,15 +71,18 @@ class Node {
   all():Node[]{return this.children.flatMap(c=>[c,...c.all()]);}
   querySelectorAll(selector:string){return this.all().filter(n=>selector==='input:checked'&&n.tag==='input'&&n.checked);}
 }
-test('customer form marks exactly the five CRM required fields and no required fields for POS; additional contacts track one primary',async()=>{
+test('customer form marks exactly the four CRM required fields and no required fields for POS; additional contacts track one primary',async()=>{
   const previous=globalThis.document,doc={createElement:(tag:string)=>new Node(tag)};
   Object.assign(globalThis,{document:doc});
   try{
     const {customerFormFields}:any=await import(new URL('../../trial-ui/customer-form-fields.js',import.meta.url).href);
     const {customerCreateProfile}:any=await import(new URL('../../trial-ui/customer-create-profile.js',import.meta.url).href);
     const fields=customerFormFields({requireProfile:true});
-    assert.deepEqual(Object.keys(fields.controls).filter(key=>fields.controls[key].required),['name','contact','phone','taxCode','address']);
-    for(const key of ['name','contact','phone','taxCode','address']){const control=fields.controls[key] as Node;assert.ok(control.parent!.textContent.includes('*'));assert.equal(control.attributes['aria-required'],'true');}
+    assert.deepEqual(Object.keys(fields.controls).filter(key=>fields.controls[key].required),['name','contact','taxCode','address']);
+    for(const key of ['name','contact','taxCode','address']){const control=fields.controls[key] as Node;assert.ok(control.parent!.textContent.includes('*'));assert.equal(control.attributes['aria-required'],'true');}
+    assert.equal(fields.controls.phone.required,false);assert.equal(fields.controls.phone.attributes['aria-required'],'false');assert.ok(!fields.controls.phone.parent.textContent.includes('*'));
+    fields.setRequiredProfile(false);fields.setRequiredProfile(true);assert.equal(fields.controls.phone.required,false);assert.ok(!fields.controls.phone.parent.textContent.includes('*'));
+    const strict=customerFormFields({requirePhone:true});assert.equal(strict.controls.phone.required,true,'explicit phone requirement in other flows is retained');
     const pos=customerFormFields({requireName:false});assert.equal(Object.values(pos.controls).some((c:any)=>c.required),false);
     fields.setRequiredProfile(false);assert.deepEqual(Object.keys(fields.controls).filter(key=>fields.controls[key].required),['name']);
     const profile=customerCreateProfile({document:doc,mainContact:fields.controls.contact,api:async()=>({people:[{id:'mgr',name:'Manager',role:'manager'},{id:'emp',name:'Nhân viên',role:'employee'}]})});

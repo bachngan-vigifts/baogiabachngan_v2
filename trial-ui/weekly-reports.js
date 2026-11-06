@@ -3,7 +3,7 @@
  *  - Sale / Sale Admin: 4 báo cáo bắt buộc / tháng (hạn 10h thứ Hai tuần sau), lưu nháp / nộp chính thức; điểm → Tiền trách nhiệm.
  *  - Manager: bảng mọi người × tuần, mở báo cáo để duyệt Đạt / Chưa đạt / Miễn. Mọi quyền kiểm tra lại ở máy chủ.
  */
-const STATE = { on_time: ['Đúng hạn', 'ok'], late: ['Nộp trễ', 'warn'], missing: ['Chưa nộp – quá hạn', 'danger'], not_due: ['Chưa tới hạn', 'muted'] };
+const STATE = { on_time: ['Đúng hạn', 'ok'], late: ['Nộp trễ', 'warn'], missing: ['Chưa nộp – quá hạn', 'danger'], not_due: ['Chưa tới hạn', 'muted'], exempt: ['Miễn – trước ngày triển khai', 'info'] };
 const REVIEW_TONE = { pending: 'muted', ok: 'ok', rejected: 'danger', excused: 'info' };
 const dm = d => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 const addDays = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 86400_000).toISOString().slice(0, 10);
@@ -35,7 +35,7 @@ export function initWeeklyReports({ api, root, toast, esc, go, money }) {
         <div class="head-actions"><input type="month" id="wr-month" value="${esc(current.month)}" aria-label="Tháng"></div></div>
       <div class="card wr-sum"><div class="wr-row"><b>Điểm tháng ${esc(current.month.slice(5))}/${esc(current.month.slice(0, 4))}</b><b class="num">${scoreText(me.points)} / ${me.maxPoints}</b></div>
         <div class="wr-bar"><i style="width:${pct}%"></i></div>
-        <p class="muted small">${me.applies ? 'Tiền trách nhiệm = mức trách nhiệm × ngày công ÷ công chuẩn × điểm ÷ 4. Đúng hạn 1 điểm · trễ dưới 1 ngày 0,5 · trễ từ 1 ngày / không nộp / Chưa đạt 0 · Miễn 1. Tháng 5 tuần lấy 4 tuần cao nhất.' : 'Tháng này chưa áp dụng vào Tiền trách nhiệm (áp dụng từ 12/2026) – vẫn nên nộp để làm quen.'}</p></div>
+        <p class="muted small">${me.applies ? 'Tiền trách nhiệm = mức trách nhiệm × ngày công ÷ công chuẩn × điểm ÷ 4. Đúng hạn 1 điểm · trễ dưới 1 ngày 0,5 · trễ từ 1 ngày / không nộp / Chưa đạt 0 · Miễn 1. Tháng 5 tuần lấy 4 tuần cao nhất.' : 'Tháng này chưa áp dụng vào Tiền trách nhiệm (áp dụng từ 11/2026) – vẫn nên nộp để làm quen.'}</p></div>
       <div class="card"><div class="wr-weeks">${me.weeks.map((w, i) => { const st = STATE[w.state];
         return `<button type="button" class="wr-week" data-week="${esc(w.period)}"><span class="wr-n">${i + 1}</span><span class="wr-grow"><b>Tuần ${esc(weekLabel(w.period))}</b>
           <small>${w.submittedAt ? 'Nộp ' + esc(when(w.submittedAt)) : 'Hạn ' + esc(when(w.deadline))}${w.draftAt && !w.submittedAt ? ' · có nháp' : ''}</small></span>
