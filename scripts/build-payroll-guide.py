@@ -31,8 +31,8 @@ sections=[
  'Chức vụ trong hồ sơ Nhân viên quyết định điều kiện Sale Admin/NVBH. Cột Vị trí trên hồ sơ lương là nhãn in, không thay chức vụ tài khoản. Nếu đổi chỉ tiêu KPI, nhập lý do rồi lưu.',
 ], '02-ho-so-chung.png','Ảnh 2. Hồ sơ lương chung: tháng áp dụng, nhóm lương và LCB.'),
 ('2. Đăng ký doanh số theo năm',[
- 'Mở Bảng lương → Đăng ký doanh số năm. Cũng có thể mở từ Hồ sơ lương của nhân viên. Chỉ Manager nhập và điều chỉnh bảng này.',
- 'Chọn năm. Mỗi nhân viên có 12 ô từ tháng 1 đến tháng 12; cuộn ngang để xem đủ tháng. Đây là chỉ tiêu kế hoạch, không phải doanh số thực hiện. Chỉ tiêu doanh số KPI cần cùng cơ sở chưa VAT trừ hoa hồng với số thực hiện.',
+ 'Mở Bảng lương → Đăng ký doanh số năm. Cũng có thể mở từ Hồ sơ lương của nhân viên Sale. Chỉ Manager nhập và điều chỉnh bảng này.',
+ 'Chọn năm. Bảng chỉ liệt kê người có chức vụ Sale; Sale Admin, NVBH cửa hàng và các vị trí khác không áp dụng. Mỗi nhân viên Sale có 12 ô từ tháng 1 đến tháng 12; cuộn ngang để xem đủ tháng. Đây là chỉ tiêu kế hoạch, không phải doanh số thực hiện. Chỉ tiêu doanh số KPI cần cùng cơ sở chưa VAT trừ hoa hồng với số thực hiện.',
  'Nhập số tiền nguyên lớn hơn 0, ví dụ 120.000.000 hoặc 120,000,000. Nhập lý do đăng ký/điều chỉnh rồi bấm Lưu đăng ký. Có tổng đăng ký theo người, theo tháng và cả năm.',
  'Chỉ tiêu tháng được đăng ký sẽ tự dùng cho hồ sơ lương, điểm KPI và bảng xếp hạng của đúng tháng đó. Thưởng quý cộng chỉ tiêu ba tháng. Không kế thừa đăng ký sang tháng khác hoặc năm sau.',
  'Ô trống là chưa đăng ký: hệ thống dùng chỉ tiêu hồ sơ cũ hoặc mức chung và ghi rõ nguồn. Xóa số rồi lưu để bỏ đăng ký. Tháng đã chốt lương chỉ xem; bản chụp phiếu đã chốt không đổi.',

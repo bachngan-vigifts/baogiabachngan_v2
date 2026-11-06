@@ -3,6 +3,7 @@ import {setupSalesPayroll} from '../helpers/sales-payroll-fixture.ts';
 import {hrSalaryProfiles,hrPayslips} from '../../src/modules/hr/schema.ts';
 import {hrRevenueTargets} from '../../src/modules/hr/revenue-target-schema.ts';
 import {auditLogs} from '../../src/core/db/schema.ts';
+import {employees,positions} from '../../src/modules/staff/schema.ts';
 import {and,eq} from 'drizzle-orm';
 
 async function setup(){const f=await setupSalesPayroll();assert.equal((await f.salary({revenueTarget:100_000_000,changeReason:'Chỉ tiêu ban đầu'})).status,200);return f;}
@@ -88,4 +89,32 @@ test('changing or deleting a registered target invalidates previously reviewed p
   await save(f,[{memberId:'emp',month:'2026-09',amount:null}]);
   assert.equal((await f.call('/hr/members/emp/payslips/2026-09',f.mgr,'POST',{confirmationHash:before.confirmationHash})).status,409);
   assert.equal((await f.confirm('2026-09')).status,201);
+});
+test('annual board includes only Sale and atomically rejects plans for every other position',async()=>{
+  const f=await setup();
+  for(const positionId of ['manager','sale-admin','sales-ml','sales-lock','warehouse','accounting','thiet-ke','it',null]){
+    if(positionId)await f.db.insert(positions).values({id:positionId,name:'Vị trí kiểm thử '+positionId}).onConflictDoNothing();
+    await f.db.update(employees).set({positionId}).where(eq(employees.id,'emp'));
+    assert.ok(!(await board(f)).data.rows.some((r:any)=>r.member.id==='emp'),String(positionId));
+    const response=await save(f,[{memberId:'emp',month:'2026-10',amount:2e8}]);assert.equal(response.status,400,String(positionId));
+  }
+  await f.db.update(employees).set({positionId:'sale'}).where(eq(employees.id,'emp'));
+  assert.equal((await save(f,[{memberId:'emp',month:'2026-10',amount:2e8},{memberId:'mgr',month:'2026-11',amount:3e8}])).status,400);
+  assert.equal((await f.db.select().from(hrRevenueTargets)).length,0);
+  assert.equal((await save(f,[{memberId:'emp',month:'2026-10',amount:2e8}])).status,200);
+});
+test('previous plans stop applying after leaving Sale; confirmed snapshots remain intact',async()=>{
+  const f=await setup();await save(f,[{memberId:'emp',month:'2026-10',amount:2e8},{memberId:'emp',month:'2026-12',amount:4e8}]);
+  assert.equal((await f.confirm()).status,201);
+  const [before]=await f.db.select().from(hrPayslips).where(eq(hrPayslips.memberId,'emp'));
+  await f.db.update(employees).set({positionId:'manager'}).where(eq(employees.id,'emp'));
+  const view=(await f.overview()).data.payroll;assert.equal(view.profile.registeredRevenueTarget,null);assert.equal(view.profile.revenueTarget,1e8);assert.equal(view.payslip.kpi.targets.revenue,2e8);
+  assert.ok(!(await board(f)).data.rows.some((r:any)=>r.member.id==='emp'));
+  assert.equal((await f.overview(f.mgr,'2026-12')).data.payroll.profile.revenueTarget,1e8);
+  await f.call('/hr/months/2026-12',f.mgr,'PUT',{payQuarterBonus:true});
+  assert.equal((await f.call('/hr/payroll/2026-12',f.mgr)).data.quarter.rows.find((r:any)=>r.memberId==='emp').target,3e8);
+  const [after]=await f.db.select().from(hrPayslips).where(eq(hrPayslips.memberId,'emp'));assert.equal(after!.data,before!.data);
+  assert.equal((await f.db.select().from(hrRevenueTargets)).length,2,'Keep prior plans for history');
+  await f.db.update(employees).set({positionId:'sale'}).where(eq(employees.id,'emp'));
+  assert.equal((await f.overview(f.mgr,'2026-12')).data.payroll.profile.revenueTarget,4e8);
 });

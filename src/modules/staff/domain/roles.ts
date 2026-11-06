@@ -5,6 +5,7 @@ import { scopeOf } from './permissions.ts';
  */
 export type Role = 'employee' | 'manager' | 'supplier' | 'customer';
 export const MANAGER_POSITION_ID = 'manager';
+export const SALE_POSITION_ID = 'sale';
 export const SUPPLIER_POSITION_ID = 'supplier';
 /** Tài khoản khách hàng (trang riêng của khách: xem/tạo báo giá, đặt hàng). Không phải nhân viên. */
 export const CUSTOMER_POSITION_ID = 'customer';

@@ -1,11 +1,15 @@
-import {and,eq,gte,lt,inArray,asc,sql} from 'drizzle-orm';
+import {and,eq,gte,lt,inArray,asc,sql,isNull,notInArray} from 'drizzle-orm';
 import type {AnyDb} from '../../../core/db/client.ts';
 import {auditLogs} from '../../../core/db/schema.ts';
 import {hrRevenueTargets} from '../revenue-target-schema.ts';
+import {employees} from '../../staff/schema.ts';
+import {SALE_POSITION_ID} from '../../staff/domain/roles.ts';
 
 export async function revenueTargetsFor(db:AnyDb,months:readonly string[],ids?:readonly string[]){
   if(!months.length||ids?.length===0)return new Map<string,number>();
-  const rows=await db.select().from(hrRevenueTargets).where(and(inArray(hrRevenueTargets.month,[...months]),ids?inArray(hrRevenueTargets.memberId,[...ids]):undefined));
+  const rows=await db.select({memberId:hrRevenueTargets.memberId,month:hrRevenueTargets.month,amount:hrRevenueTargets.amount}).from(hrRevenueTargets)
+    .innerJoin(employees,eq(employees.id,hrRevenueTargets.memberId))
+    .where(and(eq(employees.positionId,SALE_POSITION_ID),isNull(employees.deletedAt),notInArray(employees.role,['customer','supplier']),inArray(hrRevenueTargets.month,[...months]),ids?inArray(hrRevenueTargets.memberId,[...ids]):undefined));
   return new Map(rows.map(r=>[r.memberId+':'+r.month,r.amount]));
 }
 export const targetKey=(id:string,month:string)=>id+':'+month;
