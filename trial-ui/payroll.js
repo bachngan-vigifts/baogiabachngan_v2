@@ -12,6 +12,12 @@ const monthLabel = m => `Tháng ${Number(m.slice(5))}/${m.slice(0, 4)}`;
 const shiftMonth = (m, d) => { const t = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5) - 1 + d, 1)); return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}`; };
 const digits = v => Number(String(v ?? '').replace(/[^\d]/g, '')) || 0;
 
+/** Trong ngày 03–05 (giờ VN), mặc định mở kỳ tháng trước để chốt lương. URL chọn kỳ luôn được ưu tiên. */
+export function defaultPayrollMonth(now=new Date()) {
+ const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now);
+ const value=k=>parts.find(p=>p.type===k).value,month=value('year')+'-'+value('month'),day=Number(value('day'));
+ return day>=3&&day<=5?shiftMonth(month,-1):month;
+}
 /** @param deps { api, toast, esc, money, pill, confirmBox } */
 export function initPayroll(deps) {
   const { api, toast, esc, money, pill, confirmBox } = deps;
@@ -31,7 +37,7 @@ export function initPayroll(deps) {
   }
   function saleKpiPolicyHtml() {
     const p=st.d.params,from=String(p.saleKpiNetFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2');
-    if(from==='0'||st.month<from)return '';
+    if((!p.appsheetKpiFrom||Number(st.month.replace('-',''))<p.appsheetKpiFrom)&&(from==='0'||st.month<from))return '';
     const pct=n=>new Intl.NumberFormat('vi-VN',{style:'percent',maximumFractionDigits:2}).format(n);
     return `<section class="approval-box"><h3>Thưởng KPI — Sale</h3><p>Doanh số net = doanh số chưa VAT − hoa hồng khách hàng.</p><p>Dưới 60%: 0 · Từ 60% đến dưới 90%: ${pct(p.saleKpiNetLowRate)} · Từ 90% đến hết 120%: ${pct(p.saleKpiNetHighRate)} · Trên 120%: ${pct(p.saleKpiNetOverRate)} doanh số net.</p><p class="small muted">Sale không tính thưởng sao. Phiếu đã chốt giữ nguyên; phiếu chưa chốt cần đối chiếu đủ căn cứ hoa hồng.</p></section>`;
   }
@@ -108,8 +114,9 @@ export function initPayroll(deps) {
       <div class="page-head"><div><span class="eyebrow">Quản trị</span><h1>Bảng lương</h1><p class="muted">${esc(monthLabel(d.month))} · tham số áp dụng ${d.paramsMonth ? 'từ ' + esc(monthLabel(d.paramsMonth).toLowerCase()) : 'mặc định theo file mẫu'}.</p></div>
         <div class="row-actions pr-actions">
           <div class="md-month"><button type="button" class="icon-btn" data-month="-1" aria-label="Tháng trước">‹</button><input type="month" id="pr-month" value="${esc(d.month)}" aria-label="Chọn tháng"><button type="button" class="icon-btn" data-month="1" aria-label="Tháng sau">›</button></div>
-          <button class="btn primary" data-mobile-inline data-tab="profiles">Cài đặt lương nhân viên</button><button class="btn secondary" data-mobile-inline data-act="bonus-params">Cài đặt thưởng HĐKT</button><a class="btn secondary" href="https://synctime.vn/login.php" target="_blank" rel="noopener noreferrer">Đăng nhập SyncTime</a><button class="btn secondary" data-act="adms">Chấm công từ máy</button><button class="btn secondary" data-act="params">Tham số</button><button class="btn secondary" data-act="excel">Xuất Excel</button>
+          <a class="btn secondary" href="guides/huong-dan-cai-dat-luong.pdf" target="_blank" rel="noopener">Hướng dẫn cài đặt (PDF)</a><button class="btn primary" data-mobile-inline data-tab="profiles">Cài đặt lương nhân viên</button><button class="btn secondary" data-mobile-inline data-act="bonus-params">Cài đặt thưởng HĐKT</button><a class="btn secondary" href="https://synctime.vn/login.php" target="_blank" rel="noopener noreferrer">Đăng nhập SyncTime</a><button class="btn secondary" data-act="adms">Chấm công từ máy</button><button class="btn secondary" data-act="params">Tham số</button><button class="btn secondary" data-act="excel">Xuất Excel</button>
           ${open ? `<button class="btn primary" data-act="confirm-all">Chốt lương (${open})</button>` : ''}</div></div>
+      ${d.period?`<p class="muted small" data-payroll-period>Số liệu: ${esc(d.period.from)} – ${esc(d.period.to)} · Chốt lương: ${esc(d.period.closeFrom)} – ${esc(d.period.closeTo)}</p>`:''}
       <div class="stats">
         <article class="stat"><small>Nhân sự</small><strong>${total.people}</strong><span class="muted">${open ? `${open} phiếu tạm tính` : 'Đã chốt tất cả'}</span></article>
         <article class="stat"><small>Tổng thu nhập</small><strong>${money(total.gross)}</strong><span class="muted">3 bảng lương</span></article>
@@ -127,7 +134,7 @@ export function initPayroll(deps) {
 
   async function open(month) {
     if (quick.isSaving()) return;
-    const target = month || st.month || new Date().toISOString().slice(0, 7);
+    const target = month || st.month || defaultPayrollMonth();
     if (target === st.d?.month && quick.dirty() && !root.hasAttribute('aria-busy')) return;
     const seq = ++st.seq;
     // Disable the old board synchronously, before awaiting any request. Commit the visible month only with its response.

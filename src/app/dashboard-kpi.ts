@@ -24,17 +24,18 @@ export const dashboardKpiOf: DashboardKpiOf = async (db, month, memberIds) => {
     const profile = ctx?.profile ?? row.profile, systemRevenue = ctx?.systemRevenue ?? row.systemRevenue;
     const crm = view.salesCrm, auto = crm?.kpiApply ? crm.facts : null;
     const pick = (manual: number | null, fact: number | undefined) => manual ?? (auto ? fact ?? 0 : null);
-    const merchDays = input.kpiMerchDays || 0, tripDays = input.kpiTripDays || 0, days = merchDays + tripDays;
-    const revenueActual = input.kpiRevenue ?? input.revenue ?? systemRevenue;
+    const basis=kpi.basis;
+    const merchDays = basis?.merchDays ?? input.kpiMerchDays ?? 0, tripDays = basis?.tripDays ?? input.kpiTripDays ?? 0, days = basis?.extraDays ?? merchDays + tripDays;
+    const revenueActual = basis?.revenue ?? input.kpiRevenue ?? input.revenue ?? systemRevenue;
     // Chỉ tiêu đã dùng khi tính (lưu trong kết quả KPI); phiếu chốt trước khi có chỉ tiêu riêng → tính lại từ bản chụp.
     const t = kpi.targets ?? kpiTargetsOf(p, profile);
     const parts: DashboardKpiPart[] = [
-      { key: 'newCustomers', label: 'KH mới', actual: pick(input.kpiNewCustomers, auto?.newCustomers), extra: p.kpiCustomersPerExtraDay * days, target: t.newCustomers, own: t.own.newCustomers, points: kpi.points.newCustomers, max: Math.max(p.kpiNewCustomersWeight, p.kpiNewCustomersOver) },
-      { key: 'transactions', label: 'Giao dịch', actual: pick(input.kpiTransactions, auto?.transactions), extra: p.kpiTransactionsPerExtraDay * days, target: t.transactions, own: t.own.transactions, points: kpi.points.transactions, max: p.kpiTransactionsWeight },
-      { key: 'contracts', label: 'Số HĐKT', actual: pick(input.kpiContracts, auto?.contracts), extra: 0, target: t.contracts, own: t.own.contracts, points: kpi.points.contracts, max: p.kpiContractsWeight },
-      { key: 'revenue', label: 'Doanh số cá nhân', actual: revenueActual, extra: 0, target: t.revenue, own: t.own.revenue, points: kpi.points.revenue, max: null },
+      { key: 'newCustomers', label: 'KH mới', actual: basis ? basis.newCustomers : pick(input.kpiNewCustomers, auto?.newCustomers), extra: p.kpiCustomersPerExtraDay * days, target: t.newCustomers, own: t.own.newCustomers, points: kpi.points.newCustomers, max: kpi.policy==='appsheet'?p.kpiNewCustomersWeight:Math.max(p.kpiNewCustomersWeight, p.kpiNewCustomersOver) },
+      { key: 'transactions', label: 'Giao dịch', actual: basis ? basis.transactions : pick(input.kpiTransactions, auto?.transactions), extra: p.kpiTransactionsPerExtraDay * days, target: t.transactions, own: t.own.transactions, points: kpi.points.transactions, max: p.kpiTransactionsWeight },
+      { key: 'contracts', label: 'Số HĐKT', actual: basis ? basis.contracts : pick(input.kpiContracts, auto?.contracts), extra: 0, target: t.contracts, own: t.own.contracts, points: kpi.points.contracts, max: p.kpiContractsWeight },
+      { key: 'revenue', label: kpi.policy==='appsheet'?'Doanh số ghi nhận':'Doanh số cá nhân', actual: revenueActual, extra: 0, target: t.revenue, own: t.own.revenue, points: kpi.points.revenue, max: null },
     ];
-    const netFrom = String(p.saleKpiNetFrom || 0).replace(/^(\d{4})(\d{2})$/, '$1-$2'), net = netFrom !== '0' && month >= netFrom;
+    const netFrom = String(p.saleKpiNetFrom || 0).replace(/^(\d{4})(\d{2})$/, '$1-$2'), net = kpi.policy==='appsheet' || netFrom !== '0' && month >= netFrom;
     const adjustedBy = kpi.used === kpi.total ? null : profile.fixedKpi != null ? 'fixed' : 'override';
     out.push({
       id: row.member.id, name: row.member.name, status: view.status, source: auto ? 'crm' : 'manual',
