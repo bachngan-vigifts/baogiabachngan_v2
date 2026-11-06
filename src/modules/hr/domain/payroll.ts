@@ -133,7 +133,7 @@ export const EMPTY_INPUT: PayrollInput = {
 };
 
 /** Số liệu chung của nhóm trong tháng (doanh số cửa hàng / team, thưởng quý). */
-export interface GroupMonth { bnRevenue: number; bnAvgRevenue: number; lockRevenue: number; payQuarterBonus: boolean }
+export interface GroupMonth { teamRevenue?:import('../../../core/contracts/sales-payroll.ts').TeamRevenueFacts;bnRevenue: number; bnAvgRevenue: number; lockRevenue: number; payQuarterBonus: boolean }
 export const EMPTY_GROUP_MONTH: GroupMonth = { bnRevenue: 0, bnAvgRevenue: 0, lockRevenue: 0, payQuarterBonus: false };
 
 // ---------------- Phiếu lương
@@ -162,6 +162,7 @@ export interface PayslipCalc {
   group: PayrollGroup; positionLabel: string; workDays: number; baseSalary: number; revenue: number;
   income: PayLine[]; deductions: PayLine[]; gross: number; deductionTotal: number; net: number;
   employment?: {company:'BN'|'VG'|null;department:string|null;leader:boolean};
+  teamRevenueBasis?:{target:number;revenue:number;crm:number;pos:number;issues:number;policyMonth:string;bonusMode:'threshold'|'tiers'};
   kpiNetBasis?:{netRevenue:number;issues:number;rate:number};
   kpi: KpiCvResult | null;snapshotUnavailable?:boolean;
   salesCrm?:{apply:boolean;bonusApply?:boolean;kpiApply?:boolean;from:string;kpiEligible?:boolean;previewKpi?:KpiCvResult|null;kpiBonusPreview?:number;facts:{newCustomers:number;transactions:number;contracts:number};awards:import('./contract-bonus.ts').AwardProposal[];};
@@ -176,6 +177,13 @@ export function bnSalesBonus(p: PayrollParams, revenue: number, avg: number) {
   if (revenue <= p.bnMinRevenue || avg <= 0) return 0;
   const r = revenue / avg, rate = r >= p.bnLevel1 ? p.bnLevel1Rate : r >= p.bnLevel2 ? p.bnLevel2Rate : 0;
   return revenue * rate / p.bnSplit;
+}
+/** Shared monthly store target, never divided by staff count. Payout split remains a separate setting. */
+export function monthlyStoreBonus(p:PayrollParams,group:'bn'|'lock',revenue:number,mode:'threshold'|'tiers'){
+ const target=300_000_000;
+ if(mode==='threshold'&&revenue<target)return 0;
+ if(group==='bn'){const ratio=revenue/target,rate=ratio>=p.bnLevel1?p.bnLevel1Rate:ratio>=p.bnLevel2?p.bnLevel2Rate:0;return revenue*rate/p.bnSplit;}
+ return lockSalesBonus({...p,lockTarget:target},revenue);
 }
 /** Thưởng DS team Lock (đã chia số người). */
 export function lockSalesBonus(p: PayrollParams, revenue: number) {
@@ -208,7 +216,7 @@ export function computePayslip(a: {
   const responsibility = f.responsibilityMode === 'per_day' ? p.responsibilityDay * days
     : f.responsibilityMode === 'prorated' ? f.responsibility * days / p.standardDays : f.responsibility;
   const mealOff = g === 'sale' ? p.mealOffSale : g === 'bn' ? p.mealOffBn : p.mealOffLock;
-  const salesBonus = !f.teamBonus ? 0 : g === 'bn' ? bnSalesBonus(p, gm.bnRevenue, gm.bnAvgRevenue) : g === 'lock' ? lockSalesBonus(p, gm.lockRevenue) : 0;
+  const salesBonus = !f.teamBonus ? 0 : (g==='bn'||g==='lock')&&gm.teamRevenue?monthlyStoreBonus(p,g,gm.teamRevenue[g].revenue,gm.teamRevenue.bonusMode):g === 'bn' ? bnSalesBonus(p, gm.bnRevenue, gm.bnAvgRevenue) : g === 'lock' ? lockSalesBonus(p, gm.lockRevenue) : 0;
   const netPolicy=a.kpiNetRevenue!==undefined,rate = netPolicy?netKpiBonusRate(p,kpi?.used??null):kpiBonusRate(p, kpi?.used ?? null),bonusRevenue=netPolicy?Math.max(0,a.kpiNetRevenue!):revenue, phone = g === 'lock' ? 0 : f.phoneAllowance, phoneAdvance = adj('phone_advance');
   const amounts: Record<LineKey, [number, string]> = {
     salaryByDays: [lcb * days / p.standardDays, `${vnd(lcb)} × ${days} ngày ÷ ${p.standardDays}`],
@@ -217,7 +225,7 @@ export function computePayslip(a: {
     kpiBonus: [bonusRevenue * rate, kpi ? `KPI CV ${pct(kpi.used)} → ${pct(rate)} × ${netPolicy?'DS net':'DS'} ${vnd(bonusRevenue)}` : ''],
     outputBonus: [inp.outputQty * f.outputRate, inp.outputQty ? `${inp.outputQty.toLocaleString('vi-VN')} × ${f.outputRate < 1 ? pct(f.outputRate) : vnd(f.outputRate)}` : ''],
     quarterBonus: [inp.quarterBonus ?? a.quarterBonusAuto, inp.quarterBonus === null && a.quarterBonusAuto ? 'Tự tính theo DS quý của team' : ''],
-    salesBonus: [salesBonus, salesBonus ? (g === 'bn' ? `DS cửa hàng ${vnd(gm.bnRevenue)} (TB 6 tháng ${vnd(gm.bnAvgRevenue)}) ÷ ${p.bnSplit}` : `DS team ${vnd(gm.lockRevenue)} ÷ ${p.lockSplit}`) : ''],
+    salesBonus: [salesBonus, salesBonus ? (gm.teamRevenue&&(g==='bn'||g==='lock')?`DS chung cửa hàng ${vnd(gm.teamRevenue[g].revenue)} / chỉ tiêu 300.000.000 đ; chia thưởng ${g==='bn'?p.bnSplit:p.lockSplit}`:g === 'bn' ? `DS cửa hàng ${vnd(gm.bnRevenue)} (TB 6 tháng ${vnd(gm.bnAvgRevenue)}) ÷ ${p.bnSplit}` : `DS team ${vnd(gm.lockRevenue)} ÷ ${p.lockSplit}`) : ''],
     otherBonus: [adj('bonus'), ''],
     contractBonus:[a.contractBonus||0,'Theo từng HĐKT trước VAT'],
     contractBonusAdjustment:[a.contractBonusAdjustment||0,'Chênh lệch với khoản đã chốt / đã trả'],

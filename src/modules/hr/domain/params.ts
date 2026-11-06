@@ -63,14 +63,14 @@ export const PARAM_FIELDS = [
   { key: 'quarterTeamMin', group: 'Thưởng quý – team Sale', label: 'ĐK 1: DS team đạt ≥ % chỉ tiêu', value: 0.9, kind: 'percent' },
   { key: 'quarterMemberMin', group: 'Thưởng quý – team Sale', label: 'ĐK 2: mỗi thành viên đạt ≥ % chỉ tiêu', value: 0.6, kind: 'percent' },
   // Thưởng DS – Bách Ngân
-  { key: 'bnMinRevenue', group: 'Thưởng DS – Bách Ngân', label: 'DS tối thiểu để xét thưởng', value: 300_000_000, kind: 'money', note: 'DS tháng ≤ mức này: không thưởng' },
-  { key: 'bnLevel1', group: 'Thưởng DS – Bách Ngân', label: 'Mức 1: DS tháng ≥ … × DS TB 6 tháng', value: 1, kind: 'ratio' },
+  { key: 'bnMinRevenue', group: 'Thưởng DS – Bách Ngân', label: 'DS tối thiểu (kỳ dùng chính sách cũ)', value: 300_000_000, kind: 'money', note: 'Chỉ áp dụng kỳ chưa bật nguồn CRM + POS. Chính sách tháng mới dùng chỉ tiêu chung 300 triệu/cửa hàng.' },
+  { key: 'bnLevel1', group: 'Thưởng DS – Bách Ngân', label: 'Mức 1: DS tháng ≥ … × chỉ tiêu', value: 1, kind: 'ratio' },
   { key: 'bnLevel1Rate', group: 'Thưởng DS – Bách Ngân', label: 'Mức 1: tỷ lệ thưởng', value: 0.01, kind: 'percent' },
-  { key: 'bnLevel2', group: 'Thưởng DS – Bách Ngân', label: 'Mức 2: DS tháng ≥ … × DS TB 6 tháng', value: 0.85, kind: 'ratio', note: 'File gốc 85% (chính sách ghi 80%)' },
+  { key: 'bnLevel2', group: 'Thưởng DS – Bách Ngân', label: 'Mức 2: DS tháng ≥ … × chỉ tiêu', value: 0.85, kind: 'ratio', note: 'File gốc 85% (chính sách ghi 80%)' },
   { key: 'bnLevel2Rate', group: 'Thưởng DS – Bách Ngân', label: 'Mức 2: tỷ lệ thưởng', value: 0.005, kind: 'percent' },
   { key: 'bnSplit', group: 'Thưởng DS – Bách Ngân', label: 'Số người chia thưởng', value: 2, kind: 'number' },
   // Thưởng DS – Lock (team)
-  { key: 'lockTarget', group: 'Thưởng DS – Lock', label: 'Chỉ tiêu DS team / tháng', value: 300_000_000, kind: 'money' },
+  { key: 'lockTarget', group: 'Thưởng DS – Lock', label: 'Chỉ tiêu DS team (kỳ dùng chính sách cũ)', value: 300_000_000, kind: 'money', note: 'Khi bật CRM + POS, chỉ tiêu chung là 300 triệu/tháng/cửa hàng.' },
   { key: 'lockFloor', group: 'Thưởng DS – Lock', label: 'Sàn xét thưởng (% chỉ tiêu)', value: 0.85, kind: 'percent', note: 'Dưới sàn: không thưởng' },
   { key: 'lockHigh', group: 'Thưởng DS – Lock', label: 'Ngưỡng DS mức cao', value: 310_000_000, kind: 'money' },
   { key: 'lockHighRate', group: 'Thưởng DS – Lock', label: 'Thưởng mức cao (% DS)', value: 0.015, kind: 'percent' },

@@ -5,6 +5,8 @@
   "netRevenue": 95000000,
   "kpi": 0.915,
   "yearlyRegistration": true,
+  "selfSubmissionApproval": true,
+  "teamRevenueAuto": true,
   "yearSwitchLocked": true,
   "lockedMonth": true,
   "unsavedYearProtected": true,

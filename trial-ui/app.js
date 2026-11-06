@@ -93,6 +93,7 @@ import { initSapoPush } from './sapo-push.js';
 import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
+import {openSelfRevenueTargets} from './revenue-target-requests.js';
 import { quoteStockSku, manualLineDescription, manualLineNote, totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, costModeOf, parsePurchaseCost, applyPurchaseCost, syncPurchaseCost, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS, brandDiscountKey } from './quote-math.js';
 installBusyButtons(); // nút gửi API ghi tự khoá + vòng xoay đang xử lý (busy-buttons.js)
 
@@ -512,6 +513,7 @@ function applyWorkspaceUser(user) {
   $('#user-avatar').textContent = $('#account-button-m').textContent = initials(user.name);
   showOwnAvatar(user.avatar);
   $$('.manager-only').forEach(el => el.hidden = !isManager());
+  $('#my-sales-targets').hidden=user.positionId!=='sale';
   // Kho: Trang kho + thanh dưới riêng (Trang chủ · Đóng gói · Nhận hàng · Giao hàng · Tra tồn).
   $$('.kho-nav, .kho-only').forEach(el => el.hidden = !isWarehouse());
   // Menu theo quyền của chức vụ (trang Phân quyền): mục nào chức vụ chưa được cấp thì ẩn.
@@ -571,6 +573,11 @@ async function uploadAvatar(path) {
   return avatar;
 }
 $('#my-profile').addEventListener('click', () => { toggleAccountMenu(false); go('#/members/' + encodeURIComponent(state.user.id)); });
+$('#my-sales-targets').addEventListener('click',async()=>{
+ toggleAccountMenu(false);
+ const year=new Intl.DateTimeFormat('en',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric'}).format(new Date());
+ try{await openSelfRevenueTargets({api,esc,toast,confirmBox},year);}catch(e){toast(e.message,'err');}
+});
 $('#my-bank').addEventListener('click', () => { toggleAccountMenu(false); go('#/members/' + encodeURIComponent(state.user.id) + '?tab=bank'); });
 $('#change-avatar').addEventListener('click', async () => {
   toggleAccountMenu(false);

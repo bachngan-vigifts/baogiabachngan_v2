@@ -31,7 +31,7 @@ sections=[
  'Chức vụ trong hồ sơ Nhân viên quyết định điều kiện Sale Admin/NVBH. Cột Vị trí trên hồ sơ lương là nhãn in, không thay chức vụ tài khoản. Nếu đổi chỉ tiêu KPI, nhập lý do rồi lưu.',
 ], '02-ho-so-chung.png','Ảnh 2. Hồ sơ lương chung: tháng áp dụng, nhóm lương và LCB.'),
 ('2. Đăng ký doanh số theo năm',[
- 'Mở Bảng lương → Đăng ký doanh số năm. Cũng có thể mở từ Hồ sơ lương của nhân viên Sale. Chỉ Manager nhập và điều chỉnh bảng này.',
+ 'Mở Bảng lương → Đăng ký doanh số năm. Cũng có thể mở từ Hồ sơ lương của nhân viên Sale. Sale tự đăng ký trong tài khoản của mình, Manager duyệt rồi mới áp dụng. Manager cũng có thể điều chỉnh trực tiếp kèm lý do.',
  'Chọn năm. Bảng chỉ liệt kê người có chức vụ Sale; Sale Admin, NVBH cửa hàng và các vị trí khác không áp dụng. Mỗi nhân viên Sale có 12 ô từ tháng 1 đến tháng 12; cuộn ngang để xem đủ tháng. Đây là chỉ tiêu kế hoạch, không phải doanh số thực hiện. Chỉ tiêu doanh số KPI cần cùng cơ sở chưa VAT trừ hoa hồng với số thực hiện.',
  'Nhập số tiền nguyên lớn hơn 0, ví dụ 120.000.000 hoặc 120,000,000. Nhập lý do đăng ký/điều chỉnh rồi bấm Lưu đăng ký. Có tổng đăng ký theo người, theo tháng và cả năm.',
  'Chỉ tiêu tháng được đăng ký sẽ tự dùng cho hồ sơ lương, điểm KPI và bảng xếp hạng của đúng tháng đó. Thưởng quý cộng chỉ tiêu ba tháng. Không kế thừa đăng ký sang tháng khác hoặc năm sau.',
@@ -61,8 +61,8 @@ sections=[
 ], '03-cua-hang-truong.png','Ảnh 6. Chọn cách tính và mức trách nhiệm dành cho cửa hàng trưởng.'),
 ('6. Cài đặt cho NVBH CỬA HÀNG',[
  'Chọn đúng chức vụ NVBH ML hoặc NVBH LOCK và nhóm lương tương ứng. Đặt trách nhiệm theo ngày nếu chính sách dùng mức/ngày, cùng chuyên cần, cơm/xăng, BHXH.',
- 'Bật hưởng thưởng doanh số nhóm cho người đủ điều kiện. Doanh số ML, trung bình 6 tháng và doanh số Lock được nhập/đối soát trong Số liệu chung của kỳ.',
- 'CRM tự áp bậc thưởng ML/Lock theo Tham số rồi chia cho bộ chia đã đặt. Hiện không tự gom doanh số POS riêng cho từng cửa hàng hoặc tự phân quỹ theo số nhân viên.',
+ 'Bật hưởng thưởng doanh số nhóm cho người đủ điều kiện. Doanh số ML và Lock tự cộng từ CRM theo team và POS theo cửa hàng sau khi cấu hình nguồn. Bỏ doanh số trung bình 6 tháng; chỉ tiêu chung 300 triệu/tháng/cửa hàng, không chia theo người.',
+ 'CRM tự áp bậc thưởng ML/Lock theo Tham số rồi chia cho bộ chia đã đặt. Doanh số POS theo cửa hàng, kể cả khi Manager đứng quầy; bộ chia tiền thưởng vẫn theo Tham số, không tự đếm nhân viên.',
  'Chuyên cần hiện là số tiền trong hồ sơ, chưa tự loại theo đi trễ/thiếu công. Nếu không được hưởng trong kỳ, Manager phải điều chỉnh mức theo tháng sau khi đối soát.',
  'Nhân viên thử việc dùng TV/THỬ VIỆC theo chính sách riêng hiện có. Kiểm tra kỹ các khoản ứng/phạt đã ghi và phiếu lương trước khi chốt.',
 ], '03-nvbh.png','Ảnh 7. Công tắc thưởng doanh số nhóm trong hồ sơ NVBH.'),
@@ -92,11 +92,32 @@ sections=[
  '4. Lưu thay đổi. Đối chiếu Sale/Admin/CHT/NVBH, bốn thành phần KPI, điểm cố định/chốt tay, doanh số ghi nhận và thực nhận. Số liệu thay đổi đồng thời sẽ yêu cầu tải lại, tránh ghi đè.',
  '5. Chốt từng phiếu hoặc cả bảng sau khi kiểm tra. Phiếu lưu bản chụp; sửa hồ sơ/tham số/dữ liệu sau đó không làm đổi phiếu đã chốt. Không tự mở lại phiếu cũ.',
  '6. Xuất Excel bảng lương và chuyển khoản/VietQR, kiểm tra ngân hàng rồi thực hiện trả lương. Nút Chuyển khoản không tự chuyển tiền; chỉ đánh dấu Đã trả sau khi trả thực tế.',
- 'Chưa tự động: đổi lượt máy thành công, phân doanh số theo từng cửa hàng, thưởng quản lý riêng cho CHT, thưởng người Admin hỗ trợ và điều kiện chuyên cần/đi trễ. Cần quy tắc nghiệp vụ riêng trước khi bổ sung các phần này.',
+ 'Chưa tự động: đổi lượt máy thành công, thưởng quản lý riêng cho CHT, thưởng người Admin hỗ trợ và điều kiện chuyên cần/đi trễ. Cần quy tắc nghiệp vụ riêng trước khi bổ sung các phần này.',
 ], None,None),
 ]
 flow=[]; doc=Document();sec=doc.sections[0];sec.top_margin=Inches(.65);sec.bottom_margin=Inches(.65);sec.left_margin=sec.right_margin=Inches(.7)
 normal=doc.styles['Normal'];normal.font.name='Arial';normal.font.size=Pt(10);normal.paragraph_format.space_after=Pt(7)
+sections.extend([
+('11. Sale tự đăng ký chỉ tiêu',[
+ 'Tài khoản Sale: mở hồ sơ của mình → Đăng ký doanh số; hoặc mở menu tài khoản → Đăng ký doanh số của tôi.',
+ 'Chọn năm, điền chỉ tiêu 12 tháng cần đăng ký và lý do, bấm Gửi Manager duyệt. Chỉ được xem/sửa chỉ tiêu của chính mình. Không áp dụng cho Sale Admin, Manager, CHT hay NVBH cửa hàng.',
+ 'Trạng thái Chờ duyệt chưa đổi chỉ tiêu KPI/lương. Có thể cập nhật hoặc rút khi chưa duyệt. Ô trống là chưa đăng ký; nếu bỏ đăng ký đã có, sau khi duyệt sẽ dùng chỉ tiêu hồ sơ/mức chung.',
+ 'Tháng đã chốt chỉ xem. Lịch sử ghi trạng thái và ý kiến Manager. Khi số liệu hiện hành đổi, tải lại và gửi lại đăng ký mới để tránh ghi đè.',
+], '08-sale-tu-dang-ky.png','Ảnh 11. Sale chỉ đăng ký 12 tháng của chính mình; dữ liệu minh họa.'),
+('12. Manager duyệt đăng ký',[
+ 'Bảng lương → Duyệt đăng ký DS. Lọc theo năm và trạng thái, chọn Xem / duyệt.',
+ 'Đối chiếu chỉ tiêu khi gửi, đề nghị mới và hiện hành. Duyệt và áp dụng cập nhật đúng các tháng đề nghị; không đổi hồ sơ lương kế thừa.',
+ 'Từ chối phải ghi lý do; chỉ tiêu hiện hành giữ nguyên. Nếu Sale đã gửi lại, tháng đã chốt hoặc chỉ tiêu đã đổi, yêu cầu tải lại/đăng ký lại trước khi duyệt.',
+ 'Việc duyệt lưu người duyệt, thời gian, lý do và toàn bộ thay đổi. Nhân viên không có quyền duyệt hoặc xem đăng ký của người khác.',
+], '09-manager-duyet.png','Ảnh 12. Manager kiểm tra nội dung và duyệt đăng ký của Sale.'),
+('13. Doanh số chung cửa hàng tự động',[
+ 'Bảng lương → Tổng hợp → Cấu hình nguồn CRM + POS. Chọn đúng cửa hàng ML và Lock, cách xét thưởng được duyệt và lý do. Áp dụng từ tháng đang chọn; tháng đã chốt không đổi.',
+ 'CRM: cộng doanh số nhân viên theo nhóm lương hiệu lực của tháng. POS: cộng theo cửa hàng, bất kể người đứng quầy. Chỉ lấy đơn đã duyệt trong ngày 01 đến cuối tháng; số ghi nhận là chưa VAT trừ hoa hồng.',
+ 'Không nhập doanh số trung bình 6 tháng. Mỗi cửa hàng có một chỉ tiêu chung 300 triệu/tháng, áp dụng cho toàn bộ nhân viên thuộc cửa hàng. Tiền thưởng chia theo bộ chia trong Tham số, không chia chỉ tiêu 300 triệu theo đầu người.',
+ 'Hai cách xét: đạt 300 triệu mới thưởng hoặc giữ bậc % hoàn thành trên chỉ tiêu 300 triệu. Manager chọn đúng phương án được phê duyệt; tỷ lệ tiền thưởng vẫn theo tham số kỳ đó.',
+ 'Màn hình hiển thị tổng CRM + POS và đơn chưa đối chiếu hoa hồng. Doanh số tự cập nhật khi đọc/tính lương; không ghi đè thủ công. Nếu nguồn đổi trước lúc chốt, phải xem lại. Phiếu đã chốt giữ bản chụp.',
+], '10-doanh-so-cua-hang.png','Ảnh 13. Tổng doanh số cửa hàng từ dữ liệu minh họa; không phải số thực tế.'),
+])
 for idx,(title,texts,image,caption) in enumerate(sections):
  if idx:flow.append(PageBreak());doc.add_page_break()
  flow.append(Paragraph(escape(title),styles['VNTitle']));doc.add_heading(title,0 if idx==0 else 1)

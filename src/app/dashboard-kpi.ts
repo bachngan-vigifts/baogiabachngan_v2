@@ -1,4 +1,5 @@
 import type { DashboardKpiMember, DashboardKpiOf, DashboardKpiPart } from '../core/contracts/dashboard-kpi.ts';
+import {teamPayrollRevenues} from './team-payroll-revenues.ts';
 import { buildPayroll, payslipView } from '../modules/hr/api/payroll-data.ts';
 import { kpiBonusRate, netKpiBonusRate, type PayrollInput } from '../modules/hr/domain/payroll.ts';
 import { kpiTargetsOf, type KpiTargetProfile } from '../modules/hr/domain/kpi-cv.ts';
@@ -12,7 +13,7 @@ import { crmFactsOf } from './sales-payroll-facts.ts';
  */
 export const dashboardKpiOf: DashboardKpiOf = async (db, month, memberIds) => {
   if (!memberIds.length) return [];
-  const board = await buildPayroll(db, month, memberRevenues, memberIds, crmFactsOf);
+  const board = await buildPayroll(db, month, memberRevenues, memberIds, crmFactsOf,false,teamPayrollRevenues);
   const out: DashboardKpiMember[] = [];
   for (const row of board.rows) {
     const view = payslipView(row) as ReturnType<typeof payslipView> & {
