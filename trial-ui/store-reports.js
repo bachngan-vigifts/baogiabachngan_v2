@@ -208,6 +208,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
         ${rep?.reviewNote ? `<p class="small">Ghi chú duyệt: ${esc(rep.reviewNote)}</p>` : ''}
         <section class="store-facts-box"><h3>Số liệu CRM ${editable || !rep ? `tính lúc ${esc(when(factsAt))} (nộp sẽ tính lại)` : `lúc nộp ${esc(when(factsAt))}`}</h3>${factsHtml(kind, shownFacts)}</section>
         <div class="form-grid cols-2">${inputsHtml(kind, values, !editable)}</div>
+        <section class="store-files" data-files><h3>Tệp đính kèm</h3><p class="muted small">Đang tải…</p></section>
         ${d.versions?.length > 1 ? `<details class="store-versions"><summary>Lịch sử nộp (${d.versions.length} lần)</summary><ol>${d.versions.map(v => `<li>Lần ${v.version} · ${esc(when(v.submittedAt))} · ${esc(v.member || '')}${v.provisional ? ' · tạm tính' : ''}</li>`).join('')}</ol></details>` : ''}
         ${rep && (data?.isManager) ? `<label class="span-2">Giải trình của CHT<textarea name="explanation" rows="2">${esc(rep.explanation || '')}</textarea></label><button type="button" class="btn secondary small" data-explain>Gửi giải trình</button>` : rep?.explanation ? `<p class="small"><b>Giải trình:</b> ${esc(rep.explanation)}</p>` : ''}
         ${canReview ? `<div class="store-review"><h3>Duyệt</h3><div class="chips">${status.reviewFor[kind].map(k => `<label class="chip"><input type="radio" name="review" value="${k}" ${rep.review === k ? 'checked' : ''}> ${esc(status.labels.reviews[k])}</label>`).join('')}</div>
@@ -219,6 +220,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
     dlg.addEventListener('close', () => dlg.remove());
     dlg.querySelectorAll('[data-x]').forEach(b => b.onclick = () => dlg.close());
     const after = async msg => { toast(msg); dlg.close(); status = null; await loadStatus().catch(() => {}); if (location.hash.startsWith('#/store-reports')) show(`registerId=${encodeURIComponent(registerId)}&month=${current.month}`); };
+    loadFiles(dlg.querySelector('[data-files]'), registerId, kind, period, editable);
     const collect = () => { const el = f.elements, inputs = {}; for (const k of INPUT_KEYS) if (el[k]) inputs[k] = el[k].value; if (el.counted) inputs.counted = el.counted.checked; return inputs; };
     dlg.querySelector('[data-draft]')?.addEventListener('click', async ev => {
       const btn = ev.currentTarget; btn.disabled = true; err.textContent = '';
@@ -238,6 +240,37 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
     dlg.querySelector('[data-review]')?.addEventListener('click', async () => {
       const review = f.querySelector('input[name="review"]:checked')?.value; if (!review) { err.textContent = 'Chọn kết quả duyệt.'; return; }
       try { await api(`/store/reports/${rep.id}/review`, 'POST', { review, note: f.elements.reviewNote.value }); await after('Đã lưu kết quả duyệt.'); } catch (ex) { err.textContent = ex.message; }
+    });
+  }
+
+  // ---------------- Tệp đính kèm (chứng từ nộp tiền, biên bản kiểm kê) – máy chủ kiểm tra loại / nội dung / dung lượng
+  const FILE_MAX = 6 * 1024 * 1024, ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
+  const size = n => n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+  const readDataUrl = file => new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => fail(new Error('Không đọc được tệp.')); r.readAsDataURL(file); });
+  async function loadFiles(box, registerId, kind, period, editable) {
+    if (!box) return;
+    let x; try { x = await api(`/store/reports/files?registerId=${encodeURIComponent(registerId)}&kind=${kind}&period=${period}`); }
+    catch (e) { box.innerHTML = `<h3>Tệp đính kèm</h3><p class="error small">${esc(e.message)}</p>`; return; }
+    const label = Object.fromEntries(x.purposes.map(p => [p.key, p.label]));
+    box.innerHTML = `<h3>Tệp đính kèm</h3>
+      ${x.files.length ? `<ul class="store-file-list">${x.files.map(f => `<li><a href="${esc(f.url || '#')}" target="_blank" rel="noopener noreferrer">${esc(f.name)}</a><small>${esc(label[f.purpose] || f.purpose)} · ${size(f.bytes)} · ${esc(f.by || '')}</small>${editable ? `<button type="button" class="btn ghost small" data-del="${esc(f.id)}">Gỡ</button>` : ''}</li>`).join('')}</ul>` : '<p class="muted small">Chưa có tệp.</p>'}
+      ${editable ? `<div class="store-file-add"><select data-purpose aria-label="Loại tệp">${x.purposes.map(p => `<option value="${p.key}">${esc(p.label)}</option>`).join('')}</select>
+        <label class="btn secondary">Chọn ảnh / PDF<input type="file" accept="${ACCEPT}" data-file hidden></label></div>
+        <p class="muted small">Ảnh JPEG / PNG / WebP hoặc PDF, tối đa 6 MB / tệp, 6 tệp / báo cáo. Trên điện thoại có thể chụp ảnh trực tiếp.</p>` : ''}
+      <p class="error small" data-ferr role="alert"></p>`;
+    const err = box.querySelector('[data-ferr]');
+    box.querySelector('[data-file]')?.addEventListener('change', async e => {
+      const file = e.target.files?.[0]; e.target.value = ''; if (!file) return;
+      if (file.size > FILE_MAX) { err.textContent = 'Tệp quá lớn (tối đa 6 MB).'; return; }
+      err.textContent = 'Đang tải lên…';
+      try { await api('/store/reports/files', 'POST', { registerId, kind, period, purpose: box.querySelector('[data-purpose]').value, name: file.name, data: await readDataUrl(file) });
+        toast('Đã đính kèm tệp.'); loadFiles(box, registerId, kind, period, editable); }
+      catch (ex) { err.textContent = ex.message; }
+    });
+    box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+      if (!(await confirmBox('Gỡ tệp này khỏi báo cáo?'))) return;
+      try { await api('/store/reports/files/' + encodeURIComponent(b.dataset.del), 'DELETE'); loadFiles(box, registerId, kind, period, editable); }
+      catch (ex) { err.textContent = ex.message; }
     });
   }
 

@@ -4,6 +4,7 @@ import { employees } from '../staff/schema.ts';
 import { posRegisters } from '../sales/pos-schema.ts';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { DEPOSIT_SCHEDULES, STORE_REPORT_KINDS, STORE_REVIEW_STATUSES } from './domain/reports.ts';
+import { STORE_FILE_PURPOSES, STORE_FILE_STATUSES } from './domain/files.ts';
 
 /** Cửa hàng trưởng (CHT) của từng cửa hàng (quầy POS): mỗi cửa hàng một CHT, mỗi người phụ trách tối đa một cửa hàng. */
 export const storeManagers = pgTable('store_managers', {
@@ -90,4 +91,37 @@ export const storeSettings = pgTable('store_settings', {
   enumCheck('chk_store_settings_schedule', t.depositSchedule, DEPOSIT_SCHEDULES),
   check('chk_store_settings_cash_float', sql`${t.cashFloat} is null or (${t.cashFloat} >= 0 and ${t.cashFloat} = trunc(${t.cashFloat}) and ${t.cashFloat} <= 100000000000)`),
   check('chk_store_settings_threshold', sql`${t.stocktakeExplainThreshold} is null or (${t.stocktakeExplainThreshold} >= 0 and ${t.stocktakeExplainThreshold} <= 100000000000)`),
+]).enableRLS();
+
+/**
+ * Tệp đính kèm báo cáo CHT (chứng từ nộp tiền, biên bản kiểm kê…). Nội dung ở kho file private, khoá lưu = UUID (máy chủ đặt).
+ * Vòng đời: uploading (đã ghi dòng, đang tải) → ready (đã kiểm tra + tải xong, mới được cấp link) → deleted (đã gỡ; purged_at khi xoá xong ở kho file).
+ * Dòng "uploading" quá hạn / "deleted" chưa purge được dọn lại khi có lượt tải / xoá kế tiếp.
+ */
+export const storeReportFiles = pgTable('store_report_files', {
+  id: text('id').primaryKey(),
+  registerId: text('register_id').notNull().references(() => posRegisters.id),
+  kind: text('kind', { enum: STORE_REPORT_KINDS }).notNull(),
+  period: text('period').notNull(),
+  purpose: text('purpose', { enum: STORE_FILE_PURPOSES }).notNull(),
+  fileKey: text('file_key').notNull(),
+  name: text('name').notNull(),
+  mime: text('mime').notNull(),
+  bytes: integer('bytes').notNull(),
+  sha256: text('sha256').notNull(),
+  status: text('status', { enum: STORE_FILE_STATUSES }).notNull().default('uploading'),
+  createdBy: text('created_by').notNull().references(() => employees.id),
+  createdAt: text('created_at').notNull(),
+  deletedBy: text('deleted_by').references(() => employees.id),
+  deletedAt: text('deleted_at'),
+  purgedAt: text('purged_at'),
+}, t => [
+  uniqueIndex('uq_store_report_files_key').on(t.fileKey),
+  index('idx_store_report_files_slot').on(t.registerId, t.kind, t.period, t.status),
+  index('idx_store_report_files_cleanup').on(t.status, t.createdAt),
+  enumCheck('chk_store_report_files_kind', t.kind, STORE_REPORT_KINDS),
+  enumCheck('chk_store_report_files_purpose', t.purpose, STORE_FILE_PURPOSES),
+  enumCheck('chk_store_report_files_status', t.status, STORE_FILE_STATUSES),
+  check('chk_store_report_files_mime', sql`${t.mime} in ('image/jpeg','image/png','image/webp','application/pdf')`),
+  check('chk_store_report_files_bytes', sql`${t.bytes} > 0 and ${t.bytes} <= 6291456`),
 ]).enableRLS();
