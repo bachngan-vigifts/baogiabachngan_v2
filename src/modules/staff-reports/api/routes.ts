@@ -14,16 +14,17 @@ import { json, readJson, type Router } from '../../../core/http/router.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
-import { deliveries, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
+import { customerPayments, deliveries, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { debtCounts, orderLinesFromQuote, quoteTotal } from '../../sales/domain/sales.ts';
 import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { customers } from '../../customers/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { activityFacts } from '../../care/api/kpi-facts.ts';
-import type { SaleTargetOf, WeeklyReportPointsOf } from '../../../core/contracts/weekly-report.ts';
+import type { SalePayrollPreviewOf, SaleTargetOf, WeeklyReportPointsOf } from '../../../core/contracts/weekly-report.ts';
 import { staffWeeklyReportDrafts, staffWeeklyReportVersions, staffWeeklyReports } from '../schema.ts';
 import {
   INDUSTRIES, INDUSTRY_LABEL, WEEKLY_LIMITS, WEEKLY_POSITIONS, industryOf, weeklyProblems, type WeeklyInputs, WEEKLY_REVIEWS, WEEKLY_REVIEW_LABEL, addDays, appliesTo, canSubmitWeek, isWeek, mondayOf, monthPoints, vnDay,
+  MONTHLY_REPORT_FROM, canSubmitMonth, isMonthPeriod, monthStarted, monthlyDeadline, monthlyOpensAt, monthlyProblems, monthlyRequired, monthlyScore, monthlyState, nextMonth, shiftMonths, type MonthlyInputs,
   beforeLaunch, weekScore, weekStarted, weekState, weeklyDeadline, weeklyOpensAt, weeksOfMonth, type WeeklyReview,
 } from '../domain/weekly.ts';
 
@@ -49,7 +50,7 @@ export const weeklyPointsFor: WeeklyReportPointsOf = async (db, month, memberIds
   const people = await reporters(db, memberIds), weeks = weeksOfMonth(month);
   if (!people.length) return out;
   const rows = await db.select({ memberId: staffWeeklyReports.memberId, period: staffWeeklyReports.period, submittedAt: staffWeeklyReports.submittedAt, review: staffWeeklyReports.review })
-    .from(staffWeeklyReports).where(and(inArray(staffWeeklyReports.memberId, people.map(p => p.id)), inArray(staffWeeklyReports.period, weeks)));
+    .from(staffWeeklyReports).where(and(inArray(staffWeeklyReports.memberId, people.map(p => p.id)), inArray(staffWeeklyReports.period, [...weeks, month])));
   const now = nowIso();
   for (const p of people) {
     const mine = new Map(rows.filter(r => r.memberId === p.id).map(r => [r.period, { submittedAt: r.submittedAt, review: r.review as WeeklyReview }]));
@@ -71,7 +72,7 @@ async function weekFacts(db: AnyDb, memberId: string, monday: string, targetOf?:
   const counted = and(eq(salesOrders.ownerId, memberId), ne(salesOrders.status, 'cancelled'), ne(salesOrders.status, 'draft'));
   const quoteOwner = sql<string>`coalesce(${quotations.assigneeId}, ${quotations.creatorId})`;
   const quoteDay = sql<string>`coalesce(nullif(${quotations.quoteDate}, ''), substr(${quotations.createdAt}, 1, 10))`;
-  const [weekOrders, mtd, newCustomers, quoteRows, contracts, care, target, ships, owned] = await Promise.all([
+  const [weekOrders, mtd, newCustomers, quoteRows, contracts, care, target, ships, recv] = await Promise.all([
     db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders)
       .where(and(counted, gte(salesOrders.orderDate, monday), lte(salesOrders.orderDate, sunday))).orderBy(desc(salesOrders.total)),
     db.select({ revenue: sql<number>`coalesce(sum(${salesOrders.total}),0)`.mapWith(Number) }).from(salesOrders)
@@ -92,18 +93,13 @@ async function weekFacts(db: AnyDb, memberId: string, monday: string, targetOf?:
       .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
       .where(and(eq(salesOrders.ownerId, memberId), inArray(deliveries.status, ['planned', 'in_transit', 'failed']), lte(deliveries.plannedDate, addDays(sunday, 14))))
       .orderBy(asc(deliveries.plannedDate)).limit(30),
-    // Đơn có thể còn công nợ (đơn đã xác nhận hoặc HĐKT đã ký) của mình phụ trách.
-    db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, status: salesOrders.status,
-      contract: sql<string | null>`(select k.status from ${salesContracts} k where k.order_id = "sales_orders"."id" and k.status <> 'cancelled' limit 1)`,
-      contractNo: sql<string | null>`(select k.contract_no from ${salesContracts} k where k.order_id = "sales_orders"."id" and k.status <> 'cancelled' limit 1)` })
-      .from(salesOrders).where(and(eq(salesOrders.ownerId, memberId), ne(salesOrders.status, 'cancelled'))),
+    ownReceivables(db, memberId, today),
   ]);
-  const orderIds = weekOrders.map(o => o.id), debtOrders = owned.filter(o => debtCounts(o.status, o.contract));
+  const orderIds = weekOrders.map(o => o.id);
   const careRows = care.rows.filter(a => care.marks.get(a.id)?.counted), careCustomerIds = [...new Set(careRows.map(a => a.customerId))];
-  const [lines, net, customerRows, oldRows] = await Promise.all([
+  const [lines, customerRows, oldRows] = await Promise.all([
     orderIds.length ? db.select({ orderId: salesOrderLines.orderId, name: salesOrderLines.name, qty: salesOrderLines.qty, amount: salesOrderLines.amount })
       .from(salesOrderLines).where(inArray(salesOrderLines.orderId, orderIds)).orderBy(desc(salesOrderLines.amount)) : [],
-    netReceivables(db, debtOrders.map(o => o.id), today),
     careCustomerIds.length ? db.select({ id: customers.id, name: customers.name, type: customers.customerType }).from(customers).where(inArray(customers.id, careCustomerIds)) : [],
     careCustomerIds.length ? db.selectDistinct({ id: salesOrders.customerId }).from(salesOrders)
       .where(and(inArray(salesOrders.customerId, careCustomerIds), ne(salesOrders.status, 'cancelled'), ne(salesOrders.status, 'draft'), lt(salesOrders.orderDate, monday))) : [],
@@ -117,16 +113,14 @@ async function weekFacts(db: AnyDb, memberId: string, monday: string, targetOf?:
   const quotes = quoteRows.map(q => { let ls: { name: string; qty: number; amount: number }[] = []; try { ls = orderLinesFromQuote(JSON.parse(q.data)); } catch { /* báo giá lỗi dữ liệu */ }
     return { id: q.id, quoteNo: q.quoteNo, customer: q.customer, total: quoteTotal(q.data), items: itemsText([...ls].sort((a, b) => b.amount - a.amount)), won: !!q.won }; })
     .sort((a, b) => b.total - a.total);
-  const receivables = debtOrders.map(o => ({ orderNo: o.orderNo, contractNo: o.contractNo, customerName: o.customerName, ...net.get(o.id)! }))
-    .filter(r => r.balance > 0).map(r => ({ orderNo: r.orderNo, contractNo: r.contractNo, customerName: r.customerName, balance: r.balance, overdue: r.overdue, nextDueDate: r.nextDueDate }))
-    .sort((a, b) => b.overdue - a.overdue || b.balance - a.balance);
+  const receivables = recv.list;
   return { from: monday, to: sunday, revenue: weekOrders.reduce((s, o) => s + o.total, 0), orders: weekOrders.length, newCustomers: newCustomers[0]?.n ?? 0,
     transactions: care.counts.get(memberId) ?? 0, quotesSent: quotes.length, quotesWon: quotes.filter(q => q.won).length, contracts: contracts[0]?.n ?? 0,
     month: { month, revenue: mtd[0]?.revenue ?? 0, target, ratio: target ? (mtd[0]?.revenue ?? 0) / target : null },
     orderList: weekOrders.map(o => ({ orderNo: o.orderNo, customerName: o.customerName, total: o.total, items: itemsText(lines.filter(l => l.orderId === o.id)) })),
     quotes, care: [...careBy.values()].map(g => ({ industry: g.industry, label: g.label, oldCustomers: g.oldCustomers.size, newCustomers: g.newCustomers.size, activities: g.activities })),
     deliveries: ships, receivables,
-    receivableTotals: { balance: receivables.reduce((s, r) => s + r.balance, 0), overdue: receivables.reduce((s, r) => s + r.overdue, 0) } };
+    receivableTotals: recv.totals };
 }
 type WeekFacts = Awaited<ReturnType<typeof weekFacts>>;
 function inputsOf(b: Record<string, unknown>, quotes?: WeekFacts['quotes']): WeeklyInputs {
@@ -137,14 +131,106 @@ function inputsOf(b: Record<string, unknown>, quotes?: WeekFacts['quotes']): Wee
   return { highlights: text(b.highlights), nextWeekPlan: text(b.nextWeekPlan), support: text(b.support), quoteNotes };
 }
 
-export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: { targetOf?: SaleTargetOf } = {}) {
+/** Công nợ còn lại của đơn mình phụ trách (đã trừ hàng trả, như trang Công nợ) – quá hạn lên đầu. */
+async function ownReceivables(db: AnyDb, memberId: string, today: string) {
+  const owned = await db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, status: salesOrders.status,
+    contract: sql<string | null>`(select k.status from ${salesContracts} k where k.order_id = "sales_orders"."id" and k.status <> 'cancelled' limit 1)`,
+    contractNo: sql<string | null>`(select k.contract_no from ${salesContracts} k where k.order_id = "sales_orders"."id" and k.status <> 'cancelled' limit 1)` })
+    .from(salesOrders).where(and(eq(salesOrders.ownerId, memberId), ne(salesOrders.status, 'cancelled')));
+  const debtOrders = owned.filter(o => debtCounts(o.status, o.contract)), net = await netReceivables(db, debtOrders.map(o => o.id), today);
+  const list = debtOrders.map(o => ({ orderNo: o.orderNo, contractNo: o.contractNo, customerName: o.customerName, ...net.get(o.id)! }))
+    .filter(r => r.balance > 0).map(r => ({ orderNo: r.orderNo, contractNo: r.contractNo, customerName: r.customerName, balance: r.balance, overdue: r.overdue, nextDueDate: r.nextDueDate }))
+    .sort((a, b) => b.overdue - a.overdue || b.balance - a.balance);
+  return { list, totals: { balance: list.reduce((n, r) => n + r.balance, 0), overdue: list.reduce((n, r) => n + r.overdue, 0) } };
+}
+
+/** Số liệu tháng của một Sale (chỉ của chính người đó). Thưởng KPI dự kiến lấy từ bảng lương qua contract (app lắp). */
+async function monthFacts(db: AnyDb, memberId: string, month: string, deps: StaffReportDeps) {
+  const from = month + '-01', to = addDays(nextMonth(month) + '-01', -1), today = VN_TODAY(), prev = shiftMonths(month, -1), lastYear = shiftMonths(month, -12);
+  const counted = and(eq(salesOrders.ownerId, memberId), ne(salesOrders.status, 'cancelled'), ne(salesOrders.status, 'draft'));
+  const sumIn = (m: string) => db.select({ v: sql<number>`coalesce(sum(${salesOrders.total}),0)`.mapWith(Number) }).from(salesOrders)
+    .where(and(counted, gte(salesOrders.orderDate, m + '-01'), lte(salesOrders.orderDate, addDays(nextMonth(m) + '-01', -1))));
+  const quoteOwner = sql<string>`coalesce(${quotations.assigneeId}, ${quotations.creatorId})`;
+  const quoteDay = sql<string>`coalesce(nullif(${quotations.quoteDate}, ''), substr(${quotations.createdAt}, 1, 10))`;
+  const won = sql<boolean>`exists (select 1 from ${salesOrders} o where o.quote_id = "staff_quotations"."id" and o.status <> 'cancelled')`;
+  const [orders, prevRev, lastYearRev, monthQuotes, openQuotes, contracts, care, target, paid, preview, recv] = await Promise.all([
+    db.select({ customerId: salesOrders.customerId, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders)
+      .where(and(counted, gte(salesOrders.orderDate, from), lte(salesOrders.orderDate, to))),
+    sumIn(prev), sumIn(lastYear),
+    db.select({ id: quotations.id, won }).from(quotations).where(and(eq(quoteOwner, memberId), gte(quoteDay, from), lte(quoteDay, to))),
+    // Báo giá còn mở chuyển sang tháng sau: gửi trong 3 tháng gần nhất, chưa thành đơn.
+    db.select({ id: quotations.id, customer: quotations.customer, data: quotations.data, won }).from(quotations)
+      .where(and(eq(quoteOwner, memberId), gte(quoteDay, shiftMonths(month, -2) + '-01'), lte(quoteDay, to))),
+    db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
+      .where(and(eq(salesOrders.ownerId, memberId), inArray(salesContracts.status, ['signed', 'completed']), gte(salesContracts.signedDate, from), lte(salesContracts.signedDate, to))),
+    activityFacts(db, from, nextMonth(month) + '-01', [memberId]),
+    deps.targetOf ? deps.targetOf(db, memberId, month) : Promise.resolve(null),
+    db.select({ v: sql<number>`coalesce(sum(${customerPayments.amount}),0)`.mapWith(Number) }).from(customerPayments).innerJoin(salesOrders, eq(salesOrders.id, customerPayments.orderId))
+      .where(and(eq(salesOrders.ownerId, memberId), isNull(customerPayments.voidedAt), gte(customerPayments.paidAt, from), lte(customerPayments.paidAt, to))),
+    deps.payrollPreviewOf ? deps.payrollPreviewOf(db, memberId, month) : Promise.resolve(null),
+    ownReceivables(db, memberId, today),
+  ]);
+  const revenue = orders.reduce((n, o) => n + o.total, 0), ids = [...new Set(orders.map(o => o.customerId).filter((x): x is string => !!x))];
+  const [customerRows, oldRows] = ids.length ? await Promise.all([
+    db.select({ id: customers.id, name: customers.name, type: customers.customerType }).from(customers).where(inArray(customers.id, ids)),
+    db.selectDistinct({ id: salesOrders.customerId }).from(salesOrders).where(and(inArray(salesOrders.customerId, ids), ne(salesOrders.status, 'cancelled'), ne(salesOrders.status, 'draft'), lt(salesOrders.orderDate, from))),
+  ]) : [[], []];
+  const customerOf = new Map(customerRows.map(c => [c.id, c])), oldIds = new Set(oldRows.map(r => r.id));
+  const byIndustry = new Map(INDUSTRIES.map(k => [k, 0])), byCustomer = new Map<string, number>();
+  let oldRevenue = 0;
+  for (const o of orders) {
+    const c = o.customerId ? customerOf.get(o.customerId) : undefined;
+    byIndustry.set(industryOf(c?.type, c?.name ?? o.customerName), byIndustry.get(industryOf(c?.type, c?.name ?? o.customerName))! + o.total);
+    byCustomer.set(o.customerName, (byCustomer.get(o.customerName) ?? 0) + o.total);
+    if (o.customerId && oldIds.has(o.customerId)) oldRevenue += o.total;
+  }
+  const open = openQuotes.filter(q => !q.won).map(q => ({ customer: q.customer, total: quoteTotal(q.data) })).sort((a, b) => b.total - a.total);
+  return { month, from, to, revenue, prevRevenue: prevRev[0]?.v ?? 0, lastYearRevenue: lastYearRev[0]?.v ?? 0, target, ratio: target ? revenue / target : null,
+    orders: orders.length, newCustomers: ids.filter(id => !oldIds.has(id)).length, transactions: care.counts.get(memberId) ?? 0, contracts: contracts[0]?.n ?? 0,
+    quotesSent: monthQuotes.length, quotesWon: monthQuotes.filter(q => q.won).length,
+    industries: INDUSTRIES.map(k => ({ industry: k, label: INDUSTRY_LABEL[k], revenue: byIndustry.get(k)! })).filter(x => x.revenue > 0),
+    oldShare: revenue > 0 ? oldRevenue / revenue : null,
+    topCustomers: [...byCustomer].map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 5),
+    openQuotes: { count: open.length, total: open.reduce((n, q) => n + q.total, 0), largest: open[0]?.customer ?? null },
+    collected: paid[0]?.v ?? 0, receivables: recv.list, receivableTotals: recv.totals, payroll: preview };
+}
+function monthlyInputsOf(b: Record<string, unknown>): MonthlyInputs {
+  const n = Number(String(b.nextTarget ?? '').replace(/[^\d]/g, ''));
+  return { evaluation: text(b.evaluation), nextTarget: Number.isFinite(n) && n > 0 ? Math.min(n, 1e13) : null, keyCustomers: text(b.keyCustomers), plan: text(b.plan), support: text(b.support) };
+}
+
+/** Kỳ báo cáo: tuần (thứ Hai 'YYYY-MM-DD') hoặc tháng ('YYYY-MM'). Mọi quy tắc hạn / điểm / số liệu theo kỳ. */
+type StaffReportDeps = { targetOf?: SaleTargetOf; payrollPreviewOf?: SalePayrollPreviewOf };
+function specOf(period: unknown, deps: StaffReportDeps) {
+  if (isWeek(period)) return { kind: 'weekly' as const, period, label: 'tuần', deadline: weeklyDeadline(period), opensAt: weeklyOpensAt(period),
+    started: (now: string) => weekStarted(period, now), official: (now: string) => canSubmitWeek(period, now),
+    state: (at: string | null, now: string) => weekState(period, at, now), score: (r: { submittedAt: string; review: WeeklyReview } | null, now: string) => weekScore(period, r, now),
+    facts: (db: AnyDb, memberId: string) => weekFacts(db, memberId, period, deps.targetOf),
+    openMsg: 'Tuần chưa kết thúc – chỉ lưu nháp được, chưa nộp chính thức.', openCode: 'WEEK_OPEN',
+    blockerOpen: 'Tuần chưa kết thúc – chỉ lưu nháp; nộp chính thức từ 00:00 thứ Hai tuần sau.', notStarted: 'Tuần chưa bắt đầu.',
+    draftInputs: (b: Record<string, unknown>) => inputsOf(b) as unknown,
+    validate: (b: Record<string, unknown>, facts: unknown) => { const f = facts as WeekFacts, v = inputsOf(b, f.quotes); return { inputs: v as unknown, issues: weeklyProblems(v, f.quotes.filter(q => !q.won)) }; },
+    sources: ['sales_orders', 'sales_order_lines', 'quotations', 'sales_contracts', 'customer_activities', 'deliveries', 'payment_schedules', 'customer_payments', 'hr_revenue_targets'] };
+  if (isMonthPeriod(period) && period >= MONTHLY_REPORT_FROM) return { kind: 'monthly' as const, period, label: 'tháng', deadline: monthlyDeadline(period), opensAt: monthlyOpensAt(period),
+    started: (now: string) => monthStarted(period, now), official: (now: string) => canSubmitMonth(period, now),
+    state: (at: string | null, now: string) => monthlyState(period, at, now), score: (r: { submittedAt: string; review: WeeklyReview } | null, now: string) => monthlyScore(period, r, now),
+    facts: (db: AnyDb, memberId: string) => monthFacts(db, memberId, period, deps),
+    openMsg: 'Tháng chưa kết thúc – chỉ lưu nháp được, chưa nộp chính thức.', openCode: 'MONTH_OPEN',
+    blockerOpen: 'Tháng chưa kết thúc – chỉ lưu nháp; nộp chính thức từ 00:00 ngày 01 tháng sau.', notStarted: 'Tháng chưa bắt đầu.',
+    draftInputs: (b: Record<string, unknown>) => monthlyInputsOf(b) as unknown,
+    validate: (b: Record<string, unknown>) => { const v = monthlyInputsOf(b); return { inputs: v as unknown, issues: monthlyProblems(v) }; },
+    sources: ['sales_orders', 'quotations', 'sales_contracts', 'customer_activities', 'customer_payments', 'payment_schedules', 'hr_revenue_targets', 'hr_payroll (thưởng KPI dự kiến)'] };
+  throw new AppError(400, 'Kỳ báo cáo không hợp lệ (tuần: chọn thứ Hai; tháng: từ 11/2026).');
+}
+
+export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: StaffReportDeps = {}) {
   router.get('/staff-reports/me', async c => {
     const m = me(c), db = c.env.db, now = nowIso(), month = isMonth(c.url.searchParams.get('month')) ? c.url.searchParams.get('month')! : vnDay(now).slice(0, 7);
     if (!reports(m)) return json({ required: false, canReview: isManager(m), month });
-    const weeks = weeksOfMonth(month);
+    const periods = [...weeksOfMonth(month), month];
     const [rows, drafts] = await Promise.all([
-      db.select().from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), inArray(staffWeeklyReports.period, weeks))),
-      db.select({ period: staffWeeklyReportDrafts.period, updatedAt: staffWeeklyReportDrafts.updatedAt }).from(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId, m.id), inArray(staffWeeklyReportDrafts.period, weeks))),
+      db.select().from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), inArray(staffWeeklyReports.period, periods))),
+      db.select({ period: staffWeeklyReportDrafts.period, updatedAt: staffWeeklyReportDrafts.updatedAt }).from(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId, m.id), inArray(staffWeeklyReportDrafts.period, periods))),
     ]);
     const pts = monthPoints(month, new Map(rows.map(r => [r.period, { submittedAt: r.submittedAt, review: r.review as WeeklyReview }])), now);
     const lastWeek = addDays(mondayOf(vnDay(now)), -7);
@@ -152,63 +238,65 @@ export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: { targ
     return json({ required: true, applies: appliesTo(month), canReview: false, month, points: pts.points, maxPoints: pts.required,
       weeks: pts.weeks.map(w => { const r = rows.find(x => x.period === w.period);
         return { ...w, reportId: r?.id ?? null, submittedAt: r?.submittedAt ?? null, reviewNote: r?.reviewNote ?? '', draftAt: drafts.find(d => d.period === w.period)?.updatedAt ?? null }; }),
+      monthly: pts.monthly ? (() => { const r = rows.find(x => x.period === month);
+        return { ...pts.monthly, reportId: r?.id ?? null, submittedAt: r?.submittedAt ?? null, reviewNote: r?.reviewNote ?? '', draftAt: drafts.find(d => d.period === month)?.updatedAt ?? null }; })() : null,
       // Nhắc: tuần trước chưa nộp, từ 08h00 thứ Hai.
       remind: !last && !beforeLaunch(lastWeek) && now >= new Date(Date.parse(addDays(lastWeek, 7) + 'T08:00:00+07:00')).toISOString() ? { period: lastWeek, deadline: weeklyDeadline(lastWeek) } : null,
       reviewLabels: WEEKLY_REVIEW_LABEL });
   }, 'business');
 
+  // Xem một kỳ (tuần: period = thứ Hai; tháng: period = 'YYYY-MM'). memberId khác mình: chỉ Manager.
   router.get('/staff-reports/week', async c => {
-    const m = me(c), db = c.env.db, q = c.url.searchParams, period = q.get('period'), now = nowIso();
-    if (!isWeek(period)) throw new AppError(400, 'Tuần không hợp lệ (chọn thứ Hai).');
+    const m = me(c), db = c.env.db, q = c.url.searchParams, sp = specOf(q.get('period'), deps), period = sp.period, now = nowIso();
     const memberId = q.get('memberId') && q.get('memberId') !== m.id ? q.get('memberId')! : m.id;
-    if (memberId !== m.id && !isManager(m)) throw new AppError(403, 'Chỉ Manager xem được báo cáo tuần của người khác.');
-    if (memberId === m.id && !reports(m)) throw new AppError(403, 'Chức vụ của bạn không phải nộp báo cáo tuần.');
+    if (memberId !== m.id && !isManager(m)) throw new AppError(403, `Chỉ Manager xem được báo cáo ${sp.label} của người khác.`);
+    if (memberId === m.id && !reports(m)) throw new AppError(403, 'Chức vụ của bạn không phải nộp báo cáo tuần / tháng.');
     const [person] = await reporters(db, [memberId]);
-    if (!person) throw new AppError(404, 'Không tìm thấy nhân viên phải nộp báo cáo tuần.');
+    if (!person) throw new AppError(404, 'Không tìm thấy nhân viên phải nộp báo cáo.');
     const [[report], [draft]] = await Promise.all([
       db.select().from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, memberId), eq(staffWeeklyReports.period, period))).limit(1),
       db.select().from(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId, memberId), eq(staffWeeklyReportDrafts.period, period))).limit(1),
     ]);
     const versions = report ? await db.select({ version: staffWeeklyReportVersions.version, submittedAt: staffWeeklyReportVersions.submittedAt })
       .from(staffWeeklyReportVersions).where(eq(staffWeeklyReportVersions.reportId, report.id)).orderBy(asc(staffWeeklyReportVersions.version)) : [];
-    const own = memberId === m.id, locked = !!report && report.review !== 'pending', started = weekStarted(period, now), official = canSubmitWeek(period, now);
-    return json({ member: { id: person.id, name: person.name }, period, deadline: weeklyDeadline(period), opensAt: weeklyOpensAt(period), factsAt: now,
-      facts: await weekFacts(db, memberId, period, deps.targetOf), canEdit: own && started && !locked, canSubmit: own && official && !locked, canReview: isManager(m) && !!report,
-      blockers: [...(!started ? ['Tuần chưa bắt đầu.'] : []), ...(started && !official ? ['Tuần chưa kết thúc – chỉ lưu nháp; nộp chính thức từ 00:00 thứ Hai tuần sau.'] : []), ...(locked ? ['Báo cáo đã được duyệt – không sửa được.'] : [])],
+    const own = memberId === m.id, locked = !!report && report.review !== 'pending', started = sp.started(now), official = sp.official(now);
+    return json({ kind: sp.kind, member: { id: person.id, name: person.name }, period, deadline: sp.deadline, opensAt: sp.opensAt, factsAt: now,
+      facts: await sp.facts(db, memberId), canEdit: own && started && !locked, canSubmit: own && official && !locked, canReview: isManager(m) && !!report,
+      blockers: [...(!started ? [sp.notStarted] : []), ...(started && !official ? [sp.blockerOpen] : []), ...(locked ? ['Báo cáo đã được duyệt – không sửa được.'] : [])],
       draft: own && draft ? { inputs: parse(draft.inputs), updatedAt: draft.updatedAt } : null, versions,
-      report: report ? { ...report, data: parse(report.data), state: weekState(period, report.submittedAt, now), score: weekScore(period, { submittedAt: report.submittedAt, review: report.review as WeeklyReview }, now) } : null,
+      report: report ? { ...report, data: parse(report.data), state: sp.state(report.submittedAt, now), score: sp.score({ submittedAt: report.submittedAt, review: report.review as WeeklyReview }, now) } : null,
       reviewLabels: WEEKLY_REVIEW_LABEL });
   }, 'business');
 
   router.put('/staff-reports/draft', async c => {
-    const m = me(c), db = c.env.db, b = await readJson(c.req, 30_000), period = b.period, now = nowIso();
-    if (!reports(m)) throw new AppError(403, 'Chức vụ của bạn không phải nộp báo cáo tuần.');
-    if (!isWeek(period)) throw new AppError(400, 'Tuần không hợp lệ (chọn thứ Hai).');
-    if (!weekStarted(period, now)) throw new AppError(400, 'Tuần chưa bắt đầu.');
+    const m = me(c), db = c.env.db, b = await readJson(c.req, 30_000), now = nowIso();
+    if (!reports(m)) throw new AppError(403, 'Chức vụ của bạn không phải nộp báo cáo tuần / tháng.');
+    const sp = specOf(b.period, deps), period = sp.period;
+    if (!sp.started(now)) throw new AppError(400, sp.notStarted);
     const [r] = await db.select({ review: staffWeeklyReports.review }).from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), eq(staffWeeklyReports.period, period))).limit(1);
     if (r && r.review !== 'pending') throw new AppError(409, 'Báo cáo đã được duyệt, không sửa được.');
-    const inputs = JSON.stringify(inputsOf((b.inputs ?? {}) as Record<string, unknown>));
+    const inputs = JSON.stringify(sp.draftInputs((b.inputs ?? {}) as Record<string, unknown>));
     await db.insert(staffWeeklyReportDrafts).values({ memberId: m.id, period, inputs, updatedAt: now })
       .onConflictDoUpdate({ target: [staffWeeklyReportDrafts.memberId, staffWeeklyReportDrafts.period], set: { inputs, updatedAt: now } });
     return json({ ok: true, updatedAt: now });
   }, 'business');
 
   router.post('/staff-reports', async c => {
-    const m = me(c), db = c.env.db, b = await readJson(c.req, 30_000), period = b.period, clientKey = text(b.clientKey, 80), now = nowIso();
-    if (!reports(m)) throw new AppError(403, 'Chức vụ của bạn không phải nộp báo cáo tuần.');
-    if (!isWeek(period)) throw new AppError(400, 'Tuần không hợp lệ (chọn thứ Hai).');
+    const m = me(c), db = c.env.db, b = await readJson(c.req, 30_000), clientKey = text(b.clientKey, 80), now = nowIso();
+    if (!reports(m)) throw new AppError(403, 'Chức vụ của bạn không phải nộp báo cáo tuần / tháng.');
+    const sp = specOf(b.period, deps), period = sp.period;
     if (clientKey.length < 8) throw new AppError(400, 'Thiếu mã chống gửi lặp. Tải lại trang rồi thử lại.');
-    if (!weekStarted(period, now)) throw new AppError(400, 'Tuần chưa bắt đầu.');
-    if (!canSubmitWeek(period, now)) throw new AppError(409, 'Tuần chưa kết thúc – chỉ lưu nháp được, chưa nộp chính thức.', 'WEEK_OPEN');
+    if (!sp.started(now)) throw new AppError(400, sp.notStarted);
+    if (!sp.official(now)) throw new AppError(409, sp.openMsg, sp.openCode);
     const [replay] = await db.select({ id: staffWeeklyReports.id }).from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), eq(staffWeeklyReports.clientKey, clientKey))).limit(1);
     if (replay) return json({ ok: true, id: replay.id, replayed: true });
     const [locked] = await db.select({ review: staffWeeklyReports.review }).from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), eq(staffWeeklyReports.period, period))).limit(1);
     if (locked && locked.review !== 'pending') throw new AppError(409, 'Báo cáo đã được duyệt, không sửa được.');
     // Số liệu CRM luôn tính ở máy chủ lúc nộp – bỏ qua mọi số liệu client gửi lên.
-    const facts = await weekFacts(db, m.id, period, deps.targetOf);
-    const inputs = inputsOf((b.inputs ?? {}) as Record<string, unknown>, facts.quotes), issues = weeklyProblems(inputs, facts.quotes.filter(q => !q.won));
+    const facts = await sp.facts(db, m.id);
+    const { inputs, issues } = sp.validate((b.inputs ?? {}) as Record<string, unknown>, facts);
     if (issues.length) throw new AppError(400, issues.join(' '));
-    const data = JSON.stringify({ facts, inputs, meta: { factsAt: now, sources: ['sales_orders', 'sales_order_lines', 'quotations', 'sales_contracts', 'customer_activities', 'deliveries', 'payment_schedules', 'customer_payments', 'hr_revenue_targets'] } });
+    const data = JSON.stringify({ kind: sp.kind, facts, inputs, meta: { factsAt: now, sources: sp.sources } });
     const result = await db.transaction(async tx => {
       const [existing] = await tx.select().from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), eq(staffWeeklyReports.period, period))).limit(1).for('update');
       if (existing) {
@@ -218,14 +306,14 @@ export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: { targ
         await tx.update(staffWeeklyReports).set({ data, updatedAt: now, clientKey }).where(eq(staffWeeklyReports.id, existing.id));
         await tx.insert(staffWeeklyReportVersions).values({ id: crypto.randomUUID(), reportId: existing.id, version, data, submittedAt: now });
         await tx.delete(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId, m.id), eq(staffWeeklyReportDrafts.period, period)));
-        return { status: 200, body: { ok: true, id: existing.id, version, state: weekState(period, existing.submittedAt, now) } };
+        return { status: 200, body: { ok: true, id: existing.id, version, state: sp.state(existing.submittedAt, now) } };
       }
       const id = crypto.randomUUID();
       const inserted = await tx.insert(staffWeeklyReports).values({ id, memberId: m.id, period, data, submittedAt: now, updatedAt: now, clientKey }).onConflictDoNothing().returning({ id: staffWeeklyReports.id });
-      if (!inserted.length) throw new AppError(409, 'Báo cáo tuần này vừa được nộp ở máy khác. Tải lại trang.');
+      if (!inserted.length) throw new AppError(409, `Báo cáo ${sp.label} này vừa được nộp ở máy khác. Tải lại trang.`);
       await tx.insert(staffWeeklyReportVersions).values({ id: crypto.randomUUID(), reportId: id, version: 1, data, submittedAt: now });
       await tx.delete(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId, m.id), eq(staffWeeklyReportDrafts.period, period)));
-      return { status: 201, body: { ok: true, id, version: 1, state: weekState(period, now, now) } };
+      return { status: 201, body: { ok: true, id, version: 1, state: sp.state(now, now) } };
     });
     return json(result.body, result.status);
   }, 'business');
@@ -235,11 +323,12 @@ export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: { targ
     const db = c.env.db, now = nowIso(), month = isMonth(c.url.searchParams.get('month')) ? c.url.searchParams.get('month')! : vnDay(now).slice(0, 7);
     const weeks = weeksOfMonth(month), people = await reporters(db);
     const rows = people.length ? await db.select({ id: staffWeeklyReports.id, memberId: staffWeeklyReports.memberId, period: staffWeeklyReports.period, submittedAt: staffWeeklyReports.submittedAt, review: staffWeeklyReports.review })
-      .from(staffWeeklyReports).where(and(inArray(staffWeeklyReports.memberId, people.map(p => p.id)), inArray(staffWeeklyReports.period, weeks))) : [];
-    return json({ month, applies: appliesTo(month), weeks, reviewLabels: WEEKLY_REVIEW_LABEL,
+      .from(staffWeeklyReports).where(and(inArray(staffWeeklyReports.memberId, people.map(p => p.id)), inArray(staffWeeklyReports.period, [...weeks, month]))) : [];
+    return json({ month, applies: appliesTo(month), weeks, hasMonthly: monthlyRequired(month), reviewLabels: WEEKLY_REVIEW_LABEL,
       people: people.map(p => { const mine = rows.filter(r => r.memberId === p.id);
         const pts = monthPoints(month, new Map(mine.map(r => [r.period, { submittedAt: r.submittedAt, review: r.review as WeeklyReview }])), now);
-        return { id: p.id, name: p.name, positionId: p.positionId, points: pts.points, weeks: pts.weeks.map(w => ({ ...w, reportId: mine.find(r => r.period === w.period)?.id ?? null })) }; }) });
+        return { id: p.id, name: p.name, positionId: p.positionId, points: pts.points, required: pts.required, weeks: pts.weeks.map(w => ({ ...w, reportId: mine.find(r => r.period === w.period)?.id ?? null })),
+          monthly: pts.monthly ? { ...pts.monthly, reportId: mine.find(r => r.period === month)?.id ?? null } : null }; }) });
   }, 'business');
 
   router.post('/staff-reports/:id/review', async c => {

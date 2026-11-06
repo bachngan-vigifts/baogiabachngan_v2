@@ -79,7 +79,7 @@ test('nháp không tính; tuần chưa hết 409 WEEK_OPEN; bắt buộc 3 mục
   assert.equal((await f.call('/staff-reports/draft', f.s.emp, 'PUT', { period: '2026-11-30', inputs })).status, 409);
 });
 
-test('điểm tháng → Tiền trách nhiệm = mức × công/công chuẩn × điểm/4 từ 11/2026; trước 11/2026 giữ cách cũ; thử việc không áp dụng', async t => {
+test('điểm tháng → Tiền trách nhiệm = mức × công/công chuẩn × điểm/5 (4 tuần + tháng) từ 11/2026; trước 11/2026 giữ cách cũ; thử việc không áp dụng', async t => {
   const f = await setup(t);
   ok(await f.salary());
   ok(await f.call('/hr/members/emp/inputs/2026-12', f.s.mgr, 'PUT', { workDays: 26 }));
@@ -89,12 +89,12 @@ test('điểm tháng → Tiền trách nhiệm = mức × công/công chuẩn ×
   await f.relog('2026-12-23T10:00:00'); const late = ok(await f.submit('2026-12-14'), 201);   // trễ 2 ngày: 0
   await f.relog('2026-12-29T12:00:00');                                                       // tuần 21/12 không nộp: 0
   let line = responsibility(await f.slip('2026-12'));
-  assert.equal(line.amount, 975_000, JSON.stringify(line)); assert.match(line.note, /1,5\/4 điểm báo cáo tuần/);
+  assert.equal(line.amount, 780_000, JSON.stringify(line)); assert.match(line.note, /1,5\/5 điểm báo cáo \(4 tuần \+ tháng\)/, 'chưa nộp báo cáo tháng: 1,5 / 5');
   const review = ok(await f.call('/staff-reports/review?month=2026-12', f.s.mgr));
   assert.deepEqual(review.weeks, ['2026-11-30', '2026-12-07', '2026-12-14', '2026-12-21']);
   assert.deepEqual(review.people.find((p: any) => p.id === 'emp').weeks.map((w: any) => w.score), [1, 0.5, 0, 0]);
   ok(await f.call(`/staff-reports/${late.id}/review`, f.s.mgr, 'POST', { review: 'excused', note: 'Nghỉ phép có duyệt' }));
-  assert.equal(responsibility(await f.slip('2026-12')).amount, 1_625_000, 'Miễn = 1 điểm');
+  assert.equal(responsibility(await f.slip('2026-12')).amount, 1_300_000, 'Miễn = 1 điểm → 2,5 / 5');
   assert.equal(responsibility(await f.slip('2026-10')).amount, 2_600_000, 'tháng 10/2026 chưa áp dụng: giữ cách tính cũ');
   ok(await f.salary({ positionLabel: 'TV' }));
   const probation = responsibility(await f.slip('2026-12'));
@@ -111,8 +111,8 @@ test('tháng 5 tuần lấy 4 tuần điểm cao nhất', async t => {
   }
   await f.relog('2027-03-31T09:00:00');
   const me = ok(await f.call('/staff-reports/me?month=2027-03', f.s.emp));
-  assert.equal(me.weeks.length, 5); assert.equal(me.points, 4);
-  assert.equal(responsibility(await f.slip('2027-03')).amount, 2_600_000);
+  assert.equal(me.weeks.length, 5); assert.equal(me.points, 4); assert.equal(me.maxPoints, 5);
+  assert.equal(responsibility(await f.slip('2027-03')).amount, 2_080_000, '4 tuần đủ, thiếu báo cáo tháng: 4 / 5');
 });
 
 test('số liệu tuần: đơn chốt, báo giá trong tuần (bắt buộc ghi tình trạng báo giá chưa chốt), chăm sóc theo ngành, giao hàng, công nợ', async t => {
@@ -168,6 +168,44 @@ test('tháng 11/2026 áp dụng; tuần 26/10–01/11 (hạn trước ngày tri�
   await f.relog('2026-11-09T09:00:00'); ok(await f.submit('2026-11-02'), 201);
   await f.relog('2026-12-01T09:00:00');
   me = ok(await f.call('/staff-reports/me?month=2026-11', f.s.emp));
-  assert.equal(me.weeks.length, 5); assert.equal(me.points, 2, 'Miễn 1 + đúng hạn 1; 3 tuần còn lại không nộp');
-  assert.equal(responsibility(await f.slip('2026-11')).amount, 1_300_000);
+  assert.equal(me.weeks.length, 5); assert.equal(me.points, 2, 'Miễn 1 + đúng hạn 1; 3 tuần còn lại + báo cáo tháng không nộp');
+  assert.equal(responsibility(await f.slip('2026-11')).amount, 1_040_000);
+});
+
+test('báo cáo tháng: hạn 10h ngày 02 tháng sau, bắt buộc 4 mục, số liệu tháng + thưởng KPI dự kiến từ bảng lương, cộng 1 điểm (÷5)', async t => {
+  const f = await setup(t), stamp = '2026-11-10T03:00:00Z';
+  ok(await f.salary());
+  ok(await f.call('/hr/members/emp/inputs/2026-11', f.s.mgr, 'PUT', { workDays: 26 }));
+  await f.db.insert(salesOrders).values([
+    { id: 'm-1', orderNo: 'DH-M1', quoteType: 'HRC', customerName: 'Agribank CN Bến Tre', ownerId: 'emp', createdBy: 'emp', orderDate: '2026-11-10', status: 'confirmed', total: 30_000_000, subtotal: 30_000_000, createdAt: stamp, updatedAt: stamp },
+    { id: 'm-2', orderNo: 'DH-M2', quoteType: 'HRC', customerName: 'Công ty Phân bón X', ownerId: 'emp', createdBy: 'emp', orderDate: '2026-11-20', status: 'confirmed', total: 10_000_000, subtotal: 10_000_000, createdAt: stamp, updatedAt: stamp },
+    { id: 'm-prev', orderNo: 'DH-M0', quoteType: 'HRC', customerName: 'Agribank CN Bến Tre', ownerId: 'emp', createdBy: 'emp', orderDate: '2026-10-05', status: 'confirmed', total: 20_000_000, subtotal: 20_000_000, createdAt: stamp, updatedAt: stamp }]);
+  const monthly = { evaluation: 'Đạt nhờ khối ngân hàng', nextTarget: '450.000.000', keyCustomers: 'Vietcombank KG; Agribank', plan: 'Quà Tết khối ngân hàng', support: '' };
+  await f.relog('2026-11-20T09:00:00');
+  ok(await f.call('/staff-reports/draft', f.s.emp, 'PUT', { period: '2026-11', inputs: { evaluation: 'Nháp' } }));
+  const open = await f.call('/staff-reports', f.s.emp, 'POST', { period: '2026-11', clientKey: crypto.randomUUID(), inputs: monthly });
+  assert.equal(open.status, 409); assert.equal(open.data.code, 'MONTH_OPEN');
+  assert.equal((await f.call('/staff-reports/week?period=2026-10', f.s.emp)).status, 400, 'trước 11/2026 không có báo cáo tháng');
+  await f.relog('2026-12-01T09:00:00');
+  const view = ok(await f.call('/staff-reports/week?period=2026-11', f.s.emp));
+  assert.equal(view.kind, 'monthly'); assert.equal(view.deadline, new Date('2026-12-02T10:00:00+07:00').toISOString());
+  assert.equal(view.facts.revenue, 40_000_000); assert.equal(view.facts.prevRevenue, 20_000_100, 'gồm đơn mẫu 100đ ngày 31/10 của fixture');
+  assert.deepEqual(view.facts.industries.map((x: any) => [x.industry, x.revenue]), [['bank', 30_000_000], ['agri', 10_000_000]]);
+  assert.equal(view.facts.topCustomers[0].name, 'Agribank CN Bến Tre');
+  assert.ok(view.facts.payroll, 'thưởng KPI dự kiến từ bảng lương'); assert.equal(typeof view.facts.payroll.bonus.amount, 'number');
+  assert.ok(view.facts.payroll.bonus.tiers.length >= 2);
+  assert.equal((await f.call('/staff-reports', f.s.emp, 'POST', { period: '2026-11', clientKey: crypto.randomUUID(), inputs: { ...monthly, plan: '' } })).status, 400);
+  assert.equal((await f.call('/staff-reports', f.s.emp, 'POST', { period: '2026-11', clientKey: crypto.randomUUID(), inputs: { ...monthly, nextTarget: '' } })).status, 400);
+  const done = ok(await f.call('/staff-reports', f.s.emp, 'POST', { period: '2026-11', clientKey: crypto.randomUUID(), inputs: monthly, facts: { revenue: 1 } }), 201);
+  assert.equal(done.state.state, 'on_time');
+  const [row] = await f.db.select().from(staffWeeklyReports).where(eq(staffWeeklyReports.id, done.id));
+  const saved = JSON.parse(row!.data); assert.equal(saved.kind, 'monthly'); assert.equal(saved.facts.revenue, 40_000_000); assert.equal(saved.inputs.nextTarget, 450_000_000);
+  const me = ok(await f.call('/staff-reports/me?month=2026-11', f.s.emp));
+  assert.equal(me.maxPoints, 5); assert.equal(me.monthly.state, 'on_time'); assert.equal(me.monthly.score, 1); assert.equal(me.points, 2, 'tuần 26/10 Miễn 1 + báo cáo tháng 1');
+  assert.equal(responsibility(await f.slip('2026-11')).amount, 1_040_000);
+  const review = ok(await f.call('/staff-reports/review?month=2026-11', f.s.mgr));
+  assert.equal(review.hasMonthly, true); assert.equal(review.people.find((p: any) => p.id === 'emp').monthly.reportId, done.id);
+  ok(await f.call(`/staff-reports/${done.id}/review`, f.s.mgr, 'POST', { review: 'rejected', note: 'Đánh giá sơ sài' }));
+  assert.equal(responsibility(await f.slip('2026-11')).amount, 520_000, 'Chưa đạt → 0 điểm tháng');
+  assert.equal((await f.call('/staff-reports/week?period=2026-11&memberId=emp', f.s.other)).status, 403);
 });

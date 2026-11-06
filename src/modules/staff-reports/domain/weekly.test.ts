@@ -51,3 +51,13 @@ test('ngày triển khai: tuần có hạn trước 06/11/2026 tính Miễn 1 đ
   assert.equal(weekScore('2026-10-26', null, at('2026-11-20T00:00:00'), ''), 0, 'không miễn khi tắt mốc');
   assert.equal(weekScore('2026-11-02', null, at('2026-11-20T00:00:00')), 0);
 });
+test('báo cáo tháng: hạn 10h ngày 02 tháng sau; điểm cùng thang; tối đa 5 từ 11/2026', async () => {
+  const { monthlyDeadline, canSubmitMonth, monthlyScore, monthPoints, nextMonth, shiftMonths } = await import('./weekly.ts');
+  assert.equal(monthlyDeadline('2026-12'), at('2027-01-02T10:00:00')); assert.equal(nextMonth('2026-12'), '2027-01'); assert.equal(shiftMonths('2026-01', -1), '2025-12');
+  assert.equal(canSubmitMonth('2026-11', at('2026-11-30T23:59:00')), false); assert.equal(canSubmitMonth('2026-11', at('2026-12-01T00:00:00')), true);
+  assert.equal(monthlyScore('2026-11', { submittedAt: at('2026-12-02T09:00:00'), review: 'pending' }, at('2026-12-10T00:00:00')), 1);
+  assert.equal(monthlyScore('2026-11', { submittedAt: at('2026-12-02T18:00:00'), review: 'ok' }, at('2026-12-10T00:00:00')), 0.5);
+  assert.equal(monthlyScore('2026-11', null, at('2026-12-01T00:00:00')), null);
+  assert.equal(monthPoints('2026-11', new Map(), at('2026-12-10T00:00:00')).required, 5);
+  assert.equal(monthPoints('2026-10', new Map(), at('2026-12-10T00:00:00')).required, 4);
+});
