@@ -1,3 +1,4 @@
+import {downloadPayrollSheet} from './payroll-sheet-export.js';
 import {openTeamPayrollSources} from './payroll-team-sources.js';
 import { createPayrollQuickEntry } from './payroll-quick-entry.js';
 import {openContractBonusDetails} from './contract-bonus-detail.js';
@@ -188,53 +189,9 @@ export function initPayroll(deps) {
     });
   }
 
-  // ----- Xuất Excel theo bố cục file mẫu: Tổng hợp, 3 bảng lương, Chuyển khoản.
+  // One sheet matching the saved full quick-entry table.
   async function exportExcel() {
-    if(withProfile().some(r=>r.payslip.snapshotUnavailable))throw new Error('Có phiếu cũ thiếu bản chụp chi tiết. Đối soát trước khi xuất Excel.');
-    await new Promise((resolve, reject) => {
-      if (globalThis.ExcelJS) return resolve();
-      const s = Object.assign(document.createElement('script'), { src: 'exceljs.min.js', onload: resolve, onerror: () => reject(new Error('Không tải được bộ tạo Excel.')) });
-      document.head.append(s);
-    });
-    const d = st.d, cols = d.columns, wb = new globalThis.ExcelJS.Workbook(), NAVY = 'FF102A56', m = Number(d.month.slice(5));
-    const head = (ws, title, sub, n) => {
-      ws.mergeCells(1, 1, 1, n); ws.getCell(1, 1).value = title; ws.getCell(1, 1).font = { bold: true, size: 14, color: { argb: NAVY } };
-      ws.mergeCells(2, 1, 2, n); ws.getCell(2, 1).value = sub; ws.getCell(2, 1).font = { italic: true, color: { argb: 'FF66748A' } };
-    };
-    const style = (ws, headerRow, n, moneyFrom) => {
-      const hr = ws.getRow(headerRow); hr.font = { bold: true, color: { argb: 'FFFFFFFF' } }; hr.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' }; hr.height = 32;
-      for (let c = 1; c <= n; c++) hr.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
-      ws.eachRow((row, i) => { if (i > headerRow) for (let c = moneyFrom; c <= n; c++) row.getCell(c).numFmt = '#,##0'; });
-      ws.views = [{ state: 'frozen', ySplit: headerRow, xSplit: 2 }];
-    };
-    const sub = `Kỳ lương: Tháng ${m} / ${d.month.slice(0, 4)}`;
-    const sum = wb.addWorksheet('Tổng hợp');
-    head(sum, 'TỔNG HỢP LƯƠNG CÔNG TY', sub, 5);
-    sum.addRow([]); sum.addRow(['Nhóm', 'Nhân sự', 'Tổng thu nhập', 'Khấu trừ', 'Thực nhận']);
-    d.totals.forEach(t => sum.addRow([t.label, t.people, t.gross, t.deductions, t.net]));
-    sum.addRow(['TỔNG CỘNG', ...['people', 'gross', 'deductions', 'net'].map(k => d.totals.reduce((s, t) => s + t[k], 0))]).font = { bold: true };
-    sum.columns = [{ width: 24 }, { width: 10 }, { width: 18 }, { width: 16 }, { width: 18 }]; style(sum, 4, 5, 3);
-    for (const company of ['BN','VG',null]) for (const g of ['sale', 'bn', 'lock']) {
-      const rows = withProfile().filter(r => r.payslip.group === g && (r.payslip.employment?.company||null)===company), inc = cols.income[g], ded = cols.deductions[g];
-      if(!rows.length)continue;
-      const ws = wb.addWorksheet((company==='BN'?'BN':company==='VG'?'VG':'Chưa xếp')+' · '+(g==='sale'?'Sale':g==='bn'?'ML':'Lock'));
-      const header = ['STT', 'Họ tên', 'Vị trí', 'Ngày làm việc', ...inc.map(k => cols.labels[k]), 'Tổng thu nhập', ...ded.map(k => cols.labels[k]), 'Thực nhận', 'TK nhận lương'];
-      head(ws, COMPANY_LABEL[company] || 'ĐƠN VỊ CHƯA ĐƯỢC GHI NHẬN', sub+' · '+cols.groups[g], header.length);
-      ws.addRow([]); ws.addRow(header);
-      rows.forEach((r, i) => { const p = r.payslip; ws.addRow([i + 1, r.member.name, [r.profile.positionLabel,p.employment?.department,p.employment?.leader?'Leader':''].filter(Boolean).join(' · '), p.workDays, ...inc.map(k => line(p, k)), p.gross, ...ded.map(k => line(p, k)), p.net,
-        r.profile.bankAccount ? `${r.profile.bankAccount} – ${(r.profile.bankCode || '').toUpperCase()}` : '']); });
-      const totalRow = ws.addRow(['', 'TỔNG CỘNG', '', '', ...inc.map(k => rows.reduce((s, r) => s + line(r.payslip, k), 0)), rows.reduce((s, r) => s + r.payslip.gross, 0),
-        ...ded.map(k => rows.reduce((s, r) => s + line(r.payslip, k), 0)), rows.reduce((s, r) => s + r.payslip.net, 0), '']); totalRow.font = { bold: true };
-      ws.columns = header.map((h, i) => ({ width: i === 1 ? 26 : i === 0 ? 5 : i === header.length - 1 ? 26 : 14 })); style(ws, 4, header.length - 1, 4);
-    }
-    const tk = wb.addWorksheet('Chuyển khoản');
-    head(tk, 'DANH SÁCH CHUYỂN KHOẢN LƯƠNG', sub, 7); tk.addRow([]);
-    tk.addRow(['STT', 'Nhân viên', 'Mã ngân hàng', 'Số tài khoản', 'Tên chủ tài khoản', 'Số tiền', 'Nội dung', 'Link mã VietQR']);
-    withProfile().filter(r => r.payslip.net > 0).forEach((r, i) => tk.addRow([i + 1, r.member.name, r.profile.bankCode, r.profile.bankAccount, r.profile.bankHolder, Math.round(r.payslip.net), `Chuyen luong T${m}`, r.qr]));
-    tk.columns = [{ width: 5 }, { width: 26 }, { width: 12 }, { width: 18 }, { width: 24 }, { width: 14 }, { width: 12 }, { width: 60 }]; style(tk, 4, 6, 6);
-    const buf = await wb.xlsx.writeBuffer(), a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-    a.download = `Bang-luong-T${m}-${d.month.slice(0, 4)}.xlsx`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    await downloadPayrollSheet(st.d);
   }
 
   // ----- Sự kiện

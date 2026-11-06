@@ -57,10 +57,14 @@ try{
    const wb=new ExcelJS.Workbook();await wb.xlsx.load(new Uint8Array(bytes));
    return wb.worksheets.map(ws=>({name:ws.name,rows:ws.getSheetValues()}));
   },Array.from(await readFile(reportFile)));
-  assert.ok(report.some(ws=>ws.name==='Tổng hợp'));assert.ok(report.some(ws=>ws.name==='Chuyển khoản'));
-  for(const row of board.rows.filter(r=>r.profile.hasProfile||r.payslip.status!=='estimate')){
-   assert.ok(report.some(ws=>!['Tổng hợp','Chuyển khoản'].includes(ws.name)&&ws.rows.some(cells=>cells?.[2]===row.member.name&&cells.includes(row.payslip.net))),'export includes salary and net amount for '+row.member.id);
+  assert.equal(report.length,1);assert.equal(report[0].name,'Bảng lương');
+  for(const row of board.rows){
+   assert.ok(report.some(ws=>ws.rows.some(cells=>cells?.[2]===row.member.name&&cells.includes(row.payslip.net))),'export includes salary and net amount for '+row.member.id);
   }
+  const topPending=page.waitForEvent('download');await page.locator('[data-act="excel"]').first().click();const topExport=await topPending;
+  const topFile=out+'/payroll-top-'+width+'.xlsx';await topExport.saveAs(topFile);
+  const topSheets=await page.evaluate(async bytes=>{const wb=new ExcelJS.Workbook();await wb.xlsx.load(new Uint8Array(bytes));return wb.worksheets.map(ws=>ws.name);},Array.from(await readFile(topFile)));
+  assert.deepEqual(topSheets,['Bảng lương'],'both export buttons use the same single-sheet layout');
   const before=writes.length;await page.locator('[data-quick-file]').setInputFiles(file);
   await page.waitForFunction(()=>document.body.textContent.includes('Đã nhập 0 nhân viên'));
   assert.equal(writes.length,before,'downloading and importing a blank template never saves salary');assert.deepEqual(errors,[]);
