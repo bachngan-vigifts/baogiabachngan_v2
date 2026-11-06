@@ -8,7 +8,7 @@ Có hai cách, dùng song song được, cùng một quy tắc ghi (mục *Quy t
 - Manager vào trang **Nhân viên**, ô **Đồng bộ Sapo**, bấm **Kết nối Sapo**, rồi dán cookie phiên Sapo theo 3 bước ghi trong hộp thoại.
   - App gọi thử Sapo trước, phiên dùng được mới lưu.
   - Cookie được **mã hoá AES-GCM** (khoá dẫn xuất từ secret `SAPO_SYNC_TOKEN`, không nằm trong DB) và không bao giờ trả về trình duyệt.
-- Đồng bộ **chỉ đọc** Sapo (GET). Ghi vào Sapo chỉ có một chỗ: **đẩy đơn hàng / HĐKT sang Sapo** (mục 3).
+- Đồng bộ **chỉ đọc** Sapo (GET). CRM không ghi gì vào Sapo; tạo đơn Sapo do n8n → OpenClaw làm (mục 3).
 - Các đường đọc:
   - `/accounts.json` lấy nhân viên,
   - `/customers.json` lấy khách hàng,
@@ -89,40 +89,19 @@ Sai hoặc thiếu mã thì app trả 401. App chưa cài mã thì trả 503 và
 
 Mọi lần gửi đều chạy được nhiều lần (idempotent). Gửi trùng không tạo dòng trùng.
 
-## 3. Đẩy đơn hàng / HĐKT sang Sapo – tự động, bắt buộc (thay "Copy báo giá vào Sapo" của web cũ)
-- **Khi nào:** đẩy cùng lúc với việc sinh đơn / HĐKT; không có nút đẩy riêng.
-  - **Sinh đơn hàng** (từ báo giá, hoặc nút ＋ ở trang Đơn hàng): popup chọn **kho Sapo** → bấm "Sinh đơn hàng + đơn Sapo".
-  - **Lập HĐKT:** bấm "Lập HĐKT" → popup chọn kho → "Lập HĐKT + đơn Sapo".
-    - HĐKT lập thẳng từ báo giá (không qua đơn hàng); ghi chú Sapo chỉ có số HĐKT.
-    - Đơn đã có trên Sapo thì lập HĐKT luôn, không hỏi kho.
-- **Sapo lỗi → không sinh gì:**
-  - Máy chủ tạo đơn / HĐKT và đơn nháp Sapo trong **cùng một giao dịch**. Sapo lỗi (chưa kết nối, hết phiên, thiếu quyền, SKU trùng…) → huỷ giao dịch, không có đơn / HĐKT.
-  - Lỗi hiện ngay trong popup để nhân viên sửa rồi thử lại.
-  - Phiên Sapo được đọc trước khi mở giao dịch.
-- **Sau khi đẩy:** trang đơn có nút **Đơn Sapo … ↗** mở đơn trên Sapo.
-- **Kho:** danh sách kho Sapo đang hoạt động; app nhớ kho chọn lần trước trên máy đó.
-- **Nhân viên phụ trách trên Sapo** = người phụ trách báo giá / đơn.
-  - Khớp tài khoản Sapo theo liên kết nhân viên ↔ Sapo (đồng bộ nhân viên), rồi email, rồi tên.
-  - Không khớp được → popup báo trước; đơn Sapo để người phụ trách theo phiên Sapo đang kết nối.
-- **Cách tạo:**
-  - Tạo đơn **nháp** (`status: draft`), mã đơn = **số đơn hàng mới sinh**, hoặc **số HĐKT** với luồng hợp đồng.
-  - Đã có đơn Sapo cùng mã (lần trước Sapo tạo xong mà web lỗi) → chỉ liên kết, **không tạo trùng**.
-  - Khách: tìm theo id Sapo / mã KH / MST / SĐT / email / tên; chưa có thì tạo.
-  - Sản phẩm: tìm theo SKU; chưa có thì tạo. SKU trùng trên Sapo → lỗi.
-  - Dòng hàng: giá sau CK (đã cộng phí in), chưa VAT, thuế suất từng dòng.
-  - Ghi chú gồm số báo giá, số đơn web, HĐKT, NV phụ trách, ngày giao, tổng web.
-  - Nguồn đơn `339582` và bảng giá `146550` như web cũ.
-- **Chặn trước khi tạo:**
-  - Dòng thiếu SKU → chặn.
-  - Tổng Sapo lệch tổng web hơn 1đ → vẫn tạo, kèm cảnh báo.
-- **Quyền:** dùng phiên Sapo Manager đã kết nối; tài khoản Sapo đó cần quyền tạo đơn / khách / sản phẩm.
-- **Sửa báo giá sau khi đã đẩy:** đơn Sapo **không** tự cập nhật, cần sửa tay trên Sapo.
+## 3. Đẩy đơn hàng / HĐKT sang Sapo – qua n8n → OpenClaw
+CRM **không tự tạo đơn trên Sapo**. Đường tạo đơn trực tiếp bằng phiên Sapo (thay "Copy báo giá vào Sapo" của web cũ) đã gỡ ngày 06/11/2026 vì chưa từng chạy thành công trên production. Phiên Sapo và kéo dữ liệu Sapo (mục 1–2) giữ nguyên.
+
+- **Khi nào:** sinh đơn hàng / lập HĐKT (mặc định có tạo đơn Sapo; popup cho chọn "Không tạo đơn trên Sapo"), hoặc nút **Tạo đơn Sapo** trên chứng từ có sẵn.
+- **Cách chạy:**
+  1. CRM lưu đơn / HĐKT trước.
+  2. CRM gửi hook n8n: `crm-order-from-web-to-claw` (đơn hàng) hoặc `crm-hdkt-sapo-order-from-web-to-claw` (HĐKT); POS dùng `crm-pos-order-from-web-to-claw`. `idempotency_key` = `order:<số đơn>` / `hdkt:<số HĐKT>` để n8n không tạo trùng.
+  3. OpenClaw tạo đơn nháp trên UI Sapo rồi gọi `POST /integrations/sapo/order-status` (Bearer `SAPO_SYNC_TOKEN`) với `quote_number`, `status: created | created_after_error | existing`, `sapo_order_id`, `sapo_order_code` → CRM lưu liên kết, trang đơn có nút **Đơn Sapo … ↗**.
+- **HTTP 2xx từ n8n chỉ nghĩa là n8n đã nhận**, chưa chắc Sapo đã tạo đơn. Báo lỗi từ OpenClaw hiện chưa được CRM lưu (việc tiếp theo).
+- **Chặn trước khi gửi:** dòng thiếu SKU, chưa có khách / sản phẩm.
+- **Chưa cấu hình n8n** (`env.sapoOrderMode` khác `'n8n'`): báo `SAPO_WEBHOOK_MISSING`, không lưu chứng từ (chọn "Không tạo đơn trên Sapo" để sinh chứng từ). Production luôn bật.
 - **Tắt (chỉ cho test):** `env.sapoOrderPush = 'off'`.
-- **Code:**
-  - `src/modules/integrations/domain/sapo-order.ts`, `api/sapo-order-push.ts`
-  - `src/modules/sales/api/sapo-push.ts`
-  - Giao diện: `trial-ui/sapo-push.js`
-  - Test: `tests/app/sapo-push.test.ts`
+- **Code:** `src/modules/sales/api/sapo-push.ts` (gửi n8n), `src/modules/integrations/domain/sapo-order.ts` (dữ liệu + kiểm tra), callback trong `src/modules/sales/api/routes.ts`; giao diện `trial-ui/sapo-push.js`; test `tests/app/sapo-push.test.ts`.
 
 ## Chưa làm (đề xuất bước sau)
 - Webhook **tồn kho** riêng (`inventory`) và đơn hàng Sapo.

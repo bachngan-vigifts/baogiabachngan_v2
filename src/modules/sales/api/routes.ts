@@ -70,7 +70,7 @@ import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import { warehouses } from '../../catalog/schema.ts';
 import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
 import { DEFAULT_SAPO_BASE } from '../../integrations/api/sapo-client.ts';
-import { prepareSapoPush, sapoLocationOf, sapoPreview, sapoPushRequired, sapoPushViaClaw, sendOrderToClaw, wantsSapoPush, type SapoPushOutcome } from './sapo-push.ts';
+import { assertSapoClawReady, sapoPreview, sapoPushRequired, sendOrderToClaw, wantsSapoPush, type SapoPushOutcome } from './sapo-push.ts';
 import { amendmentLines, amendmentSchedules } from '../domain/amendments.ts';
 import { CONTRACT_STATUSES, DELIVERY_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PAYMENT_METHODS } from '../domain/statuses.ts';
 import {
@@ -660,16 +660,16 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const customOrderNo = text(body.orderNo, 120).replace(/\s+/g, ' ');
     if (customOrderNo && /[\u0000-\u001f<>]/.test(customOrderNo)) throw new AppError(400, 'Số đơn hàng không hợp lệ.');
     // Đơn sinh từ báo giá luôn là NHÁP – kể cả Manager tạo – chờ Manager duyệt.
-    // Có tạo đơn Sapo (mặc định): đẩy trong cùng giao dịch (Sapo lỗi → không tạo đơn); `pushSapo: false` → chỉ tạo đơn web. HĐKT là luồng riêng: POST /contracts { quoteId }.
-    const viaClaw = wantsSapoPush(c, body) && sapoPushViaClaw(c);
-    const push = wantsSapoPush(c, body) && !viaClaw ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
+    // Có tạo đơn Sapo (mặc định): sau khi lưu đơn, giao n8n/OpenClaw tạo đơn Sapo; `pushSapo: false` → chỉ tạo đơn web. HĐKT là luồng riêng: POST /contracts { quoteId }.
+    const viaClaw = wantsSapoPush(c, body);
+    if (viaClaw) assertSapoClawReady(c);
     let sapo: SapoPushOutcome = null;
     // Nhân viên sinh đơn: NHÁP, chỉ gửi Manager khi bấm "Gửi duyệt" (POST /orders/:id/submit). Manager sinh đơn: coi như đã gửi.
     const submitted = me.role === 'manager';
     const warehouseId = await pickSaleWarehouse(c.env.db, quote.assigneeId ?? quote.creatorId, me, body.warehouseId);
     const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted, warehouseId, ...input,
       debtWarningAccepted: body.debtWarningAccepted === true, orderNo: customOrderNo || undefined,
-      inTx: async (tx, orderId) => { await saveQuoteStockPlan(tx,orderId,me.id,body.stockPlan); if (push) sapo = await push.push(tx,orderId); } }).finally(() => push?.done());
+      inTx: async (tx, orderId) => { await saveQuoteStockPlan(tx,orderId,me.id,body.stockPlan); } });
     if (viaClaw) sapo = await sendOrderToClaw(c, id, 'order');
     const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
     if (submitted) await notifyMany(c.env, 'approvers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
@@ -743,7 +743,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
 
   /** Push an existing document; never create another CRM order/contract. Row lock serializes double clicks. */
   router.post('/orders/:id/sapo', async c => {
-    const body = await readJson(c.req, 1_024), order = await loadOrder(c, c.params.id!);
+    await readJson(c.req, 1_024); const order = await loadOrder(c, c.params.id!);
     if (order.sapoOrderId) return json({ sapo: linkedSapo(c, order) });
     // Công tắc tắt đẩy Sapo (SAPO_ORDER_PUSH=off) áp dụng cho cả nút "Tạo đơn Sapo" trên chứng từ có sẵn.
     if (!sapoPushRequired(c)) throw new AppError(409, 'Đẩy đơn sang Sapo đang tắt trên hệ thống.', 'SAPO_PUSH_DISABLED');
@@ -751,16 +751,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     // Retry the original POS integration: preserve pos:<orderNo>, branch, discounts and fees.
     // Sending a request never re-runs checkout or changes CRM stock/cash.
     if (order.channel === 'pos') return json({ sapo: await sendPosOrderToClaw(c.env, order.id) });
-    if (sapoPushViaClaw(c)) return json({ sapo: await sendOrderToClaw(c, order.id, (await c.env.db.select({ id: salesContracts.id }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1)).length ? 'hdkt' : 'order') });
-    const push = await prepareSapoPush(c, sapoLocationOf(body));
-    const sapo = await c.env.db.transaction(async tx => {
-      const [locked] = await tx.select().from(salesOrders).where(and(eq(salesOrders.id, order.id), orderScope(c))).limit(1).for('update');
-      if (!locked) throw new AppError(404, 'Không tìm thấy đơn hàng / HĐKT.');
-      if (locked.sapoOrderId) return linkedSapo(c, locked);
-      await assertCanCreateSapo(c, locked);
-      return push.push(tx, locked.id);
-    }).finally(() => push.done());
-    return json({ sapo });
+    assertSapoClawReady(c);
+    return json({ sapo: await sendOrderToClaw(c, order.id, (await c.env.db.select({ id: salesContracts.id }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1)).length ? 'hdkt' : 'order') });
   }, 'business');
 
   router.get('/quotes/:id/approval-preflight', async c => {
@@ -1136,8 +1128,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (customNo && /[\u0000-\u001f<>]/.test(customNo)) throw new AppError(400, 'Số HĐKT không hợp lệ.');
     const now = nowIso(), id = crypto.randomUUID(), { year, month } = vietnamDate();
     const warehouseId = await pickSaleWarehouse(c.env.db, quote.assigneeId ?? quote.creatorId, me, body.warehouseId);
-    const viaClaw = wantsSapoPush(c, body) && sapoPushViaClaw(c);
-    const push = wantsSapoPush(c, body) && !viaClaw ? await prepareSapoPush(c, sapoLocationOf(body)) : null;
+    const viaClaw = wantsSapoPush(c, body);
+    if (viaClaw) assertSapoClawReady(c);
     let contractNo = '', sapo: SapoPushOutcome = null;
     let orderId = '';
     try {
@@ -1166,7 +1158,6 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         await tx.delete(paymentSchedules).where(eq(paymentSchedules.orderId, oid));
         const plans = contractSchedules(order!.total, depositRate, signedDate);
         if (plans.length) await tx.insert(paymentSchedules).values(plans.map(p => ({ id: crypto.randomUUID(), orderId: oid, contractId: id, ...p, createdAt: now })));
-        if (push) sapo = await push.push(tx, oid);
       } });
     } catch (e) {
       const pg = e as { code?: string; constraint?: string; cause?: { code?: string; constraint?: string } };
@@ -1176,7 +1167,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         throw new AppError(409, 'Báo giá này đã có HĐKT.', 'CONTRACT_EXISTS');
       }
       throw e;
-    } finally { await push?.done(); }
+    }
     if (viaClaw) sapo = await sendOrderToClaw(c, orderId, 'hdkt');
     if (me.role === 'manager') await notifyMany(c.env, 'approvers', { eventType: 'contract_pending', title: 'HĐKT mới chờ duyệt',
       body: `${me.name}: ${contractNo} – ${text(data.customer) || quote.customer}`, url: `/index.html#/contracts/${orderId}`, actorId: me.id, data: { orderId, contractId: id } });
