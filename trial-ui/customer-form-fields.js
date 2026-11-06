@@ -24,7 +24,7 @@ export function customerFormFields({ requirePhone = false, requireProfile = fals
   for (const [name, label, type, max, wide, placeholder] of fields) {
     const box = document.createElement('label');
     if (wide) box.className = 'span-2';
-    const required = name === 'name' && requireName || name === 'phone' && requirePhone || requireProfile && ['name','contact','phone','taxCode','address'].includes(name);
+    const required = name === 'name' && requireName || name === 'phone' && requirePhone || requireProfile && ['name','contact','taxCode','address'].includes(name);
     const title = document.createElement('span'); title.textContent = label + (required ? ' *' : '');
     const input = document.createElement(type === 'textarea' ? 'textarea' : 'input');
     input.name = name; input.maxLength = max;
@@ -53,7 +53,7 @@ export function customerFormFields({ requirePhone = false, requireProfile = fals
   const setRequiredProfile = value => {
     requireProfile=value;
     for(const [name,input] of Object.entries(controls)){
-      const required=name==='name'&&requireName||name==='phone'&&requirePhone||value&&['name','contact','phone','taxCode','address'].includes(name);
+      const required=name==='name'&&requireName||name==='phone'&&requirePhone||value&&['name','contact','taxCode','address'].includes(name);
       input.required=required&&!(contactDirectory&&name==='contact');input.setAttribute('aria-required',String(required&&!(contactDirectory&&name==='contact')));titles[name].title.textContent=titles[name].label+(required?' *':'');
     }
   };
