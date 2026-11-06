@@ -3071,23 +3071,29 @@ function customerDetail() {
   return customerUi ||= initCustomerDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, canApprove, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS,
     onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, onCare: (c, a, after) => careView().openForm(a ? { activity: a } : { customer: { id: c.id, name: c.name, contact: c.contact } }, after), isManager, userId: () => state.user?.id, onReview: reviewCustomer });
 }
-function openCustomer(id, known) {
-  customerId = id || null;
-  customerDuplicateCheck.reset();
-  const form = $('#customer-form'); form.reset(); $('#customer-error').textContent = '';
-  customerFields.setRequiredProfile(!id);
-  customerNewProfile.reset(state.user,!id);
-  const c = id ? known || state.customers?.find(x => x.id === id) : null;
-  if (c) for (const k of ['name', 'contact', 'phone', 'email', 'taxCode', 'customerCode', 'customerType', 'address', 'depositRate', 'paymentTerm', 'paymentDays', 'creditLimit', 'establishedDate']) form.elements.namedItem(k).value = c[k] ?? '';
-  customerFields.refreshAnniversary();
-  $('#customer-dialog-title').textContent = c ? 'Sửa khách hàng' : 'Thêm khách hàng';
-  $('#customer-dialog').showModal();
-  customerDuplicateCheck.refresh();
+let customerOpenSeq=0;
+async function openCustomer(id, known) {
+  const request=++customerOpenSeq;
+  try{
+    // Always load the current directory before editing; a stale cached form must not replace newer contacts.
+    const profile=id?await api('/customers/'+encodeURIComponent(id)+'?refresh=1'):null;
+    if(request!==customerOpenSeq)return;
+    customerId=id||null;customerDuplicateCheck.reset();
+    const form=$('#customer-form');form.reset();$('#customer-error').textContent='';
+    customerFields.setRequiredProfile(!id);
+    const c=profile?.customer;
+    if(c)for(const k of ['name','contact','phone','email','taxCode','customerCode','customerType','address','depositRate','paymentTerm','paymentDays','creditLimit','establishedDate'])form.elements.namedItem(k).value=c[k]??'';
+    customerNewProfile.reset(state.user,!id,profile?.contactDirectory??[],profile?.contactDirectoryVersion);
+    customerFields.refreshAnniversary();
+    $('#customer-dialog-title').textContent=c?'Sửa khách hàng':'Thêm khách hàng';
+    $('#customer-dialog').showModal();customerDuplicateCheck.refresh();
+  }catch(ex){toast(ex.message,'err');}
 }
-const customerFields = customerFormFields({requireProfile:true,paymentDays:true});
+const customerFields = customerFormFields({requireProfile:true,paymentDays:true,contactDirectory:true});
 $('#customer-fields').append(customerFields.root);
 const customerNewProfile=customerCreateProfile({api,mainContact:customerFields.controls.contact});
 $('#customer-new-profile').append(customerNewProfile.root);
+customerFields.contactSlot.append(customerNewProfile.directory);
 const customerDuplicateCheck = bindCustomerDuplicateCheck({
   api, root: $('#customer-fields'), exceptId: () => customerId,
   active: () => $('#customer-dialog').open,
@@ -3116,9 +3122,9 @@ $('#customer-form').addEventListener('submit', async e => {
   const err = $('#customer-error'); err.textContent = '';
   if (!data.name) { err.textContent = 'Vui lòng nhập tên khách hàng.'; e.target.elements.name.focus(); return; }
   if (data.email && !/^\S+@\S+\.\S+$/.test(data.email)) { err.textContent = 'Email chưa đúng định dạng.'; return; }
+  try{Object.assign(data,customerNewProfile.read());data.contact=customerFields.controls.contact.value;}catch(ex){err.textContent=ex.message;return;}
   if(!customerId) {
-    for(const [key,label] of [['contact','người liên hệ'],['phone','số điện thoại'],['taxCode','mã số thuế'],['address','địa chỉ']])if(!data[key]){err.textContent='Vui lòng nhập '+label+' khách hàng.';customerFields.controls[key].focus();return;}
-    try{Object.assign(data,customerNewProfile.read());}catch(ex){err.textContent=ex.message;return;}
+    for(const [key,label] of [['phone','số điện thoại'],['taxCode','mã số thuế'],['address','địa chỉ']])if(!data[key]){err.textContent='Vui lòng nhập '+label+' khách hàng.';customerFields.controls[key].focus();return;}
   }
   if(e.target.reportValidity&&!e.target.reportValidity())return;
   const btn = $('#save-customer'); btn.disabled = true;

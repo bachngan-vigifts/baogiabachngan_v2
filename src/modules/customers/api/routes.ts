@@ -1,3 +1,4 @@
+import {contactDirectoryVersion,editableContacts,saveContactDirectory,lockContactCustomer,ensureLegacyContact,syncPrimaryContact} from './contact-directory.ts';
 import { anniversarySuggestion, vietnamToday, ANNIVERSARY_LEAD_DAYS, ANNIVERSARY_INTERVAL } from '../domain/anniversary.ts';
 import { customerIdentityLock, findCustomerDuplicates, rejectDuplicate } from './identity.ts';
 import { changedIdentity } from '../domain/identity.ts';
@@ -89,7 +90,7 @@ export async function customerProfile(db: Db, id: string, who: Viewer) {
   ]);
   const { search: _s, sourceVersion: _v, ...info } = customer;
   const [rejecter] = info.rejectedBy ? await db.select({ name: employees.name }).from(employees).where(eq(employees.id, info.rejectedBy)).limit(1) : [];
-  return { customer: { ...info, rejectedByName: rejecter?.name ?? null, anniversary: anniversarySuggestion(customer.establishedDate), fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, discounts, access,
+  return { customer: { ...info, rejectedByName: rejecter?.name ?? null, anniversary: anniversarySuggestion(customer.establishedDate), fromSapo: /^\d+$/.test(customer.id) }, ...staff.get(id)!, contacts, contactDirectory:editableContacts(customer,contacts),contactDirectoryVersion:contactDirectoryVersion(customer,contacts), discounts, access,
     generalNote: await generalNoteOf(db, id, access), debtNote: await debtNoteOf(db, id, access) };
 }
 
@@ -141,17 +142,17 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
 
   /** Chọn / bỏ người đại diện của khách: phải là một người trong danh bạ liên hệ của chính khách (`contactId: null` = bỏ chọn). */
   router.put('/customers/:id/representative', async c => {
-    const db = c.env.db, id = c.params.id!, me = viewer(c);
-    await loadCustomer(db, id); await requireEdit(db, id, me);
-    const wanted = (await readJson(c.req, 1_024)).contactId;
-    if (wanted !== null && (typeof wanted !== 'string' || !wanted || wanted.length > 200)) throw new AppError(400, 'Người đại diện không hợp lệ.');
-    if (wanted) {
-      const [contact] = await db.select({ id: customerContacts.id }).from(customerContacts).where(and(eq(customerContacts.id, wanted), eq(customerContacts.customerId, id))).limit(1);
-      if (!contact) throw new AppError(400, 'Người đại diện phải là người trong danh bạ liên hệ của khách này.');
-    }
-    await db.update(customers).set({ representativeContactId: wanted }).where(eq(customers.id, id));
-    return json({ representativeContactId: wanted });
-  }, 'business');
+    const db=c.env.db,id=c.params.id!,me=viewer(c),wanted=(await readJson(c.req,1_024)).contactId;
+    if(wanted!==null&&(typeof wanted!=='string'||!wanted||wanted.length>200))throw new AppError(400,'Người đại diện không hợp lệ.');
+    await db.transaction(async tx=>{
+      await lockContactCustomer(tx as any,id);await requireEdit(tx as any,id,me);
+      if(wanted){
+        const [contact]=await tx.select({id:customerContacts.id}).from(customerContacts).where(and(eq(customerContacts.id,wanted),eq(customerContacts.customerId,id))).limit(1);
+        if(!contact)throw new AppError(400,'Người đại diện phải là người trong danh bạ liên hệ của khách này.');
+      }
+      await tx.update(customers).set({representativeContactId:wanted}).where(eq(customers.id,id));
+    });return json({representativeContactId:wanted});
+  },'business');
   router.get('/customers/:id/debt-note', async c => {
     const db = c.env.db, id = c.params.id!;
     await loadCustomer(db, id);
@@ -245,7 +246,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   const save = async (c: Ctx, update: boolean) => {
-    const body = await readJson(c.req, update ? 16_384 : 512_000), me = viewer(c);
+    const body = await readJson(c.req, 512_000), me = viewer(c);
     const now = nowIso(), id = update ? c.params.id! : crypto.randomUUID();
     const initial = update ? null : initialCustomerProfile(body);
     const primary = initial?.contacts.find(row => row.isPrimary);
@@ -278,6 +279,11 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       if (update && !previous) throw new AppError(404, 'Không tìm thấy khách hàng.');
       rejectDuplicate(await findCustomerDuplicates(tx, changedIdentity(fields, previous), update ? id : undefined), canListRetailCustomers(me));
       if (update) {
+        await requireEdit(tx as any,id,me);
+        if(body.contacts!==undefined){
+          const directory=await saveContactDirectory(tx as any,previous!,body.contacts,body.contactDirectoryVersion,me.id,now);
+          Object.assign(row,directory,{search:fold(Object.values({...fields,contact:directory.contact}).join(' '))});
+        }
         await tx.update(customers).set(row).where(eq(customers.id, id));
         return;
       }
@@ -417,34 +423,37 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     return json({ discounts: await brandDiscountsOf(db, id) });
   }, 'business');
   router.post('/customers/:id/contacts', async c => {
-    const db = c.env.db, id = c.params.id!, f = contactFields(await readJson(c.req, 8_000)), now = nowIso();
-    await loadCustomer(db, id); await requireEdit(db, id, viewer(c));
-    const [{ n = 0 } = {}] = await db.select({ n: count() }).from(customerContacts).where(eq(customerContacts.customerId, id));
-    if (Number(n) >= CUSTOMER_LIMITS.contacts) throw new AppError(400, `Mỗi khách tối đa ${CUSTOMER_LIMITS.contacts} người liên hệ.`);
-    const contactId = crypto.randomUUID();
-    await db.transaction(async tx => {
-      if (f.isPrimary) await tx.update(customerContacts).set({ isPrimary: false }).where(eq(customerContacts.customerId, id));
-      await tx.insert(customerContacts).values({ id: contactId, customerId: id, ...f, createdBy: viewer(c).id, createdAt: now, updatedAt: now });
+    const db=c.env.db,id=c.params.id!,me=viewer(c),fields=contactFields(await readJson(c.req,8_000)),now=nowIso(),contactId=crypto.randomUUID();
+    await requireEdit(db,id,me);
+    await db.transaction(async tx=>{
+      const customer=await lockContactCustomer(tx as any,id);await ensureLegacyContact(tx as any,customer,me.id,now);
+      const [{n=0}={}]=await tx.select({n:count()}).from(customerContacts).where(eq(customerContacts.customerId,id));
+      if(Number(n)>=CUSTOMER_LIMITS.contacts)throw new AppError(400,`Mỗi khách tối đa ${CUSTOMER_LIMITS.contacts} người liên hệ.`);
+      if(fields.isPrimary)await tx.update(customerContacts).set({isPrimary:false}).where(eq(customerContacts.customerId,id));
+      await tx.insert(customerContacts).values({...fields,id:contactId,customerId:id,createdBy:me.id,createdAt:now,updatedAt:now});
+      await syncPrimaryContact(tx as any,customer);
     });
-    return json({ id: contactId }, 201);
-  }, 'business');
-  router.put('/customers/:id/contacts/:contactId', async c => {
-    const db = c.env.db, id = c.params.id!, f = contactFields(await readJson(c.req, 8_000));
-    await loadCustomer(db, id); await requireEdit(db, id, viewer(c));
-    const done = await db.transaction(async tx => {
-      if (f.isPrimary) await tx.update(customerContacts).set({ isPrimary: false }).where(and(eq(customerContacts.customerId, id), ne(customerContacts.id, c.params.contactId!)));
-      return tx.update(customerContacts).set({ ...f, updatedAt: nowIso() })
-        .where(and(eq(customerContacts.id, c.params.contactId!), eq(customerContacts.customerId, id))).returning({ id: customerContacts.id });
-    });
-    if (!done.length) throw new AppError(404, 'Không tìm thấy người liên hệ.');
-    return json({ ok: true });
-  }, 'business');
-  router.delete('/customers/:id/contacts/:contactId', async c => {
-    await loadCustomer(c.env.db, c.params.id!); await requireEdit(c.env.db, c.params.id!, viewer(c));
-    const done = await c.env.db.delete(customerContacts)
-      .where(and(eq(customerContacts.id, c.params.contactId!), eq(customerContacts.customerId, c.params.id!))).returning({ id: customerContacts.id });
-    if (!done.length) throw new AppError(404, 'Không tìm thấy người liên hệ.');
-    return json({ ok: true });
-  }, 'business');
+    return json({id:contactId},201);
+  },'business');
+  router.put('/customers/:id/contacts/:contactId',async c=>{
+    const db=c.env.db,id=c.params.id!,me=viewer(c),fields=contactFields(await readJson(c.req,8_000)),now=nowIso();
+    await requireEdit(db,id,me);
+    await db.transaction(async tx=>{
+      const customer=await lockContactCustomer(tx as any,id);await ensureLegacyContact(tx as any,customer,me.id,now);
+      const done=await tx.update(customerContacts).set({...fields,updatedAt:now}).where(and(eq(customerContacts.id,c.params.contactId!),eq(customerContacts.customerId,id))).returning({id:customerContacts.id});
+      if(!done.length)throw new AppError(404,'Không tìm thấy người liên hệ.');
+      if(fields.isPrimary)await tx.update(customerContacts).set({isPrimary:false}).where(and(eq(customerContacts.customerId,id),ne(customerContacts.id,c.params.contactId!)));
+      await syncPrimaryContact(tx as any,customer);
+    });return json({ok:true});
+  },'business');
+  router.delete('/customers/:id/contacts/:contactId',async c=>{
+    const db=c.env.db,id=c.params.id!,me=viewer(c),now=nowIso();await requireEdit(db,id,me);
+    await db.transaction(async tx=>{
+      const customer=await lockContactCustomer(tx as any,id);await ensureLegacyContact(tx as any,customer,me.id,now);
+      const done=await tx.delete(customerContacts).where(and(eq(customerContacts.id,c.params.contactId!),eq(customerContacts.customerId,id))).returning({id:customerContacts.id});
+      if(!done.length)throw new AppError(404,'Không tìm thấy người liên hệ.');
+      await syncPrimaryContact(tx as any,customer);
+    });return json({ok:true});
+  },'business');
 }
 

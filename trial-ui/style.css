@@ -312,11 +312,13 @@ table { width: 100%; border-collapse: collapse; }
 .customer-profile-dialog .modal-body { overflow-y:auto; }
 .customer-profile-dialog .modal-head,.customer-profile-dialog .modal-foot { flex-shrink:0; }
 .customer-create-profile { display:grid; gap:18px; margin-top:20px; }
-.customer-create-profile fieldset { min-width:0; border:1px solid var(--line); border-radius:10px; padding:14px; display:grid; gap:12px; }
-.customer-create-profile legend { font-weight:700; padding:0 6px; }
+.customer-create-profile fieldset,.customer-contact-directory { min-width:0; border:1px solid var(--line); border-radius:10px; padding:14px; display:grid; gap:12px; }
+.customer-create-profile legend,.customer-contact-directory legend { font-weight:700; padding:0 6px; }
 .customer-share-choices { display:flex; flex-wrap:wrap; gap:10px 18px; max-height:180px; overflow-y:auto; }
 .customer-share-choices label,.customer-primary-choice { display:flex; align-items:center; gap:7px; }
 .customer-share-choices input,.customer-primary-choice input { width:auto; }
+.customer-contact-slot > fieldset { margin:0; }
+.customer-contact-entry .span-2 { grid-column:1/-1; }
 .customer-contact-entry { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:12px; border:1px solid var(--line); border-radius:8px; margin-bottom:12px; }
 @media(max-width:700px) { .customer-contact-entry { grid-template-columns:minmax(0,1fr); } }
 .modal::backdrop { background: #0d1729a6; backdrop-filter: blur(2px); }

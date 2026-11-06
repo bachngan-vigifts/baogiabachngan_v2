@@ -1,7 +1,7 @@
 import { anniversarySuggestion, vietnamToday } from './customer-anniversary.js';
 /** Shared customer fields for the directory and POS. Build server values as text only. */
 /** `paymentDays`: ô Số ngày công nợ chỉ có ở danh bạ khách (CRM); POS giữ form gọn. */
-export function customerFormFields({ requirePhone = false, requireProfile = false, requireName = true, paymentDays = false } = {}) {
+export function customerFormFields({ requirePhone = false, requireProfile = false, requireName = true, paymentDays = false, contactDirectory = false } = {}) {
   const root = document.createElement('div');
   root.className = 'form-grid cols-2 customer-form-fields';
   const controls = {};
@@ -30,13 +30,16 @@ export function customerFormFields({ requirePhone = false, requireProfile = fals
     input.name = name; input.maxLength = max;
     if (type === 'textarea') input.rows = 2; else input.type = type;
     if (placeholder) input.placeholder = placeholder;
-    input.required = required;
-    input.setAttribute('aria-required', String(required));
+    input.required = required && !(contactDirectory&&name==='contact');
+    input.setAttribute('aria-required', String(required&&!(contactDirectory&&name==='contact')));
     if (name === 'establishedDate') input.max = vietnamToday();
     if (name === 'depositRate') input.inputMode = 'decimal';
     if (name === 'creditLimit' || name === 'paymentDays') input.inputMode = 'numeric';
     if (name === 'paymentTerm') input.setAttribute('list', 'nq-payment-options');
-    box.append(title, input); root.append(box); controls[name] = input; titles[name] = {title,label};
+    box.append(title, input);
+    if(contactDirectory&&name==='contact'){input.type='hidden';root.append(input);const slot=document.createElement('div');slot.className='span-2 customer-contact-slot';root.append(slot);}
+    else root.append(box);
+    controls[name] = input; titles[name] = {title,label};
   }
   const anniversary = document.createElement('p'); anniversary.className = 'muted small span-2'; anniversary.setAttribute('aria-live','polite');
   const refreshAnniversary = () => {
@@ -51,8 +54,8 @@ export function customerFormFields({ requirePhone = false, requireProfile = fals
     requireProfile=value;
     for(const [name,input] of Object.entries(controls)){
       const required=name==='name'&&requireName||name==='phone'&&requirePhone||value&&['name','contact','phone','taxCode','address'].includes(name);
-      input.required=required;input.setAttribute('aria-required',String(required));titles[name].title.textContent=titles[name].label+(required?' *':'');
+      input.required=required&&!(contactDirectory&&name==='contact');input.setAttribute('aria-required',String(required&&!(contactDirectory&&name==='contact')));titles[name].title.textContent=titles[name].label+(required?' *':'');
     }
   };
-  return { root, controls, refreshAnniversary, setRequiredProfile, read: () => Object.fromEntries(Object.entries(controls).map(([name, input]) => [name, input.value.trim()])) };
+  return { root, controls, contactSlot:contactDirectory?root.querySelector('.customer-contact-slot'):null, refreshAnniversary, setRequiredProfile, read: () => Object.fromEntries(Object.entries(controls).map(([name, input]) => [name, input.value.trim()])) };
 }

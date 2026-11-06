@@ -85,8 +85,8 @@ export const customerStaff = pgTable('customer_staff', {
 ]).enableRLS();
 
 /**
- * Người liên hệ của khách hàng (nhiều người). Liên hệ chính đồng bộ từ Sapo vẫn nằm ở `sapo_customers.contact/phone/email`;
- * bảng này là danh bạ bổ sung do nhân viên nhập (kế toán, mua hàng, người nhận hàng…).
+ * Danh sách người liên hệ của khách hàng. Form CRM dùng danh sách này làm nguồn chỉnh sửa duy nhất;
+ * tên liên hệ chính được ghi vào `sapo_customers.contact` để tương thích báo giá, đơn hàng và dữ liệu cũ.
  */
 export const customerContacts = pgTable('customer_contacts', {
   id: text('id').primaryKey(),
