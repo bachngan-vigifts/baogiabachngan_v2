@@ -1,3 +1,4 @@
+import {initCustomerCenter} from './customer-center.js';
 import {openProvinceSharing} from './customer-province-sharing.js';
 import {orderListExportSheets} from './order-list-export.js';
 import {initWebOrderDocument,webDocumentMode} from './web-order-document.js';
@@ -907,6 +908,8 @@ function route() {
   if (view === 'stock-lookup') stockLookup().load(new URLSearchParams(query).get('q')||'');
   if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
   if (view === 'order') openOrder(id);
+  if (view === 'customers') customerScreen(query);
+  else centerUi?.invalidate();
   if (view === 'customer') customerDetail().open(decodeURIComponent(id));
   if (view === 'member') memberDetail().open(decodeURIComponent(id), new URLSearchParams(query).get('month') || '', new URLSearchParams(query).get('tab') || '');
   if (view === 'payroll') payrollBoard().open(new URLSearchParams(query).get('month') || '');
@@ -3367,7 +3370,7 @@ function fillList(key, rows, emptyText) {
   $(`#${key}-empty`).hidden = rows.length > 0; $(`#${key}-empty-text`).textContent = emptyText;
 }
 const listError = (key, e) => { const view=$('#view-'+key);if(view)view.dataset.loadState='error';$(`#${key}-list`).innerHTML = ''; $(`#${key}-empty`).hidden = false; $(`#${key}-empty-text`).textContent = e.message; };
-window.addEventListener('crm-reload-current',e=>{if(!state.user)return;const reload={quotes:loadQuotes,orders:loadOrders,contracts:loadContracts,customers:loadCustomers,tasks:()=>tasksView().load(),care:()=>careView().load()}[e.detail?.view];reload?.();});
+window.addEventListener('crm-reload-current',e=>{if(!state.user)return;const reload={quotes:loadQuotes,orders:loadOrders,contracts:loadContracts,customers:()=>customerScreen(location.hash.split('?')[1]||''),tasks:()=>tasksView().load(),care:()=>careView().load()}[e.detail?.view];reload?.();});
 
 const NO_SCHEDULE = 'Lên lịch giao trước rồi mới yêu cầu đóng gói / in phiếu đóng gói, phiếu giao hàng.';
 /** Nút in nhanh phiếu đóng gói / phiếu giao hàng trên dòng đơn / HĐKT (đơn đã xác nhận, chưa huỷ). */
@@ -3820,6 +3823,16 @@ const notifier = setupNotifications({
 var pulse = setupPulse({ api, onData: () => dataRefresh.tick(), onNotify: () => notifier.check(), onChat: n => chatView().badge(n) }); // eslint-disable-line no-var -- showAuth() dừng nhịp trước khi khởi tạo xong
 /** Bảng công việc (trial-ui/tasks.js) – khởi tạo khi cần (sau đăng nhập). */
 var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dòng này (khởi động sau đăng nhập)
+var centerUi = null;
+function customerScreen(query='') {
+  const center=new URLSearchParams(query).get('tab')==='center';
+  $('#customer-center').hidden=!center;$('#customer-directory').hidden=center;
+  for(const a of $$('[data-customer-tab]')){const active=a.dataset.customerTab===(center?'center':'list');a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}
+  if(!center){centerUi?.invalidate();return loadCustomers();}
+  centerUi ||= initCustomerCenter({root:$('#customer-center'),api,canCare:()=>can('page.care'),user:()=>state.user,openCare:(data,after)=>careView().openForm(data,after),toast});
+  return centerUi.load();
+}
+
 /** Chăm sóc khách hàng (trial-ui/care.js). */
 var careUi = null; // eslint-disable-line no-var
 var dashboardUi = null;
@@ -3890,7 +3903,7 @@ async function refreshData() {
   else if (page === 'receiving') jobs.push(receivingView().load());
   else if (page === 'deliveries') jobs.push(loadDeliveries());
   else if (page === 'receivables') jobs.push(loadReceivables());
-  else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : loadCustomers());
+  else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : customerScreen(query));
   else if (page === 'products') { if(id)jobs.push(productDetail().refresh());else jobs.push(loadProducts(),productAdmin().loadPending(),loadCatalogSnapshot()); }
   else if (page === 'staff' && isManager()) jobs.push(loadMembers());
   else if (page === 'tasks') jobs.push(tasksView().load(id));

@@ -2,6 +2,17 @@
 
 Manager có thể chuẩn bị, xem trước và đối soát khách/người liên hệ từ AppSheet; xem [APPSHEET-MAPPING.md](APPSHEET-MAPPING.md). Nhóm/loại khách (`customerType`) độc lập với khách lẻ/doanh nghiệp (`isRetail`).
 
+## Trung tâm khách hàng
+
+`#/customers?tab=center` mở tab Trung tâm khách hàng; `#/customers` hoặc `?tab=list` giữ danh bạ hiện có. Dùng chung nhóm Khách hàng và footer mobile, không thêm thanh điều hướng.
+
+- **Dữ liệu thật:** số việc hẹn hôm nay, lịch chăm sóc phân trang và kỷ niệm sắp tới từ API hiện có. Tìm kiếm/bộ lọc lịch áp dụng trên trang đang hiển thị, không tính tổng từ trang đó. Số tổng kỷ niệm dùng `total`, danh sách API giới hạn 100. Hẹn chưa có giờ nên không hiển thị giờ tự đặt.
+- **Thao tác thật:** Ghi nhận chăm sóc dùng form Giao dịch & chăm sóc có sẵn; hoàn tất lịch dùng revision/ngày hẹn hiện hành, lỗi không đánh dấu xong. Tôn trọng quyền trang `page.care` và `canEdit` từng lịch. Hoàn tất lịch không tự tạo giao dịch KPI mới.
+- **Minh họa:** khách mua cùng kỳ, khách lâu chưa mua, cơ hội quay lại và chiến dịch có nhãn rõ. Khách mẫu không có hồ sơ/SĐT thật; nút gọi và hồ sơ bị vô hiệu hóa. Hoàn tất mẫu chỉ đổi giao diện; form mẫu chỉ kiểm tra dữ liệu, không gọi API ghi hay báo đã lưu CRM.
+- Mỗi phần có trạng thái tải, trống, lỗi và thử lại. Lỗi API không được thay bằng số liệu mẫu. Tên người dùng lấy từ tài khoản đang đăng nhập.
+
+Kiểm tra giao diện bằng `node --import tsx scripts/testing/customer-center.mjs` (Playwright + Chromium, dữ liệu PGlite giả lập tại localhost), viewport 390px/1440px. Unit test tại `tests/app/customer-center.test.ts`.
+
 ## Form tạo khách đầy đủ
 
 - **Nhóm / loại khách hàng**: chọn từ danh sách nhóm đang dùng hoặc gõ tên nhóm mới. Nhóm mới chỉ được ghi nhận khi lưu khách thành công; mở form lần sau sẽ tải lại danh sách. Danh sách lấy toàn bộ nhóm, không phụ thuộc phân trang khách, ẩn nhóm chỉ thuộc khách bị từ chối hoặc phân khúc không được phép xem. Không cần quản lý danh mục riêng.
