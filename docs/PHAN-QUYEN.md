@@ -105,6 +105,9 @@ Các thao tác phê duyệt chỉ do **Manager** hoặc **nhân viên được M
 
 ## Hiệu lực
 
+- **Sửa hồ sơ khách được chia sẻ:** `customer_staff.role = shared` mở quyền `canEditProfile` để cập nhật form thông tin, danh bạ liên hệ và người đại diện của chính khách đó. Manager/người phụ trách vẫn sửa được như trước. Quyền này không cấp cho người chỉ xem cùng phòng/toàn công ty, không cho đổi phụ trách/chia sẻ, phê duyệt/từ chối, sửa chiết khấu thương hiệu hoặc ghi chú chung/công nợ cũ. Thu hồi chia sẻ có hiệu lực ở yêu cầu tiếp theo; API kiểm quyền lại khi lưu form trong giao dịch.
+
+
 - **Tạo đơn Sapo:** Manager, Sale (`sale`), Sale Admin (`sale-admin`), NVBH ML (`sales-ml`) và NVBH Lock (`sales-lock`) thấy và dùng nút trên đơn được phép truy cập, gồm đơn đã duyệt/đang giao/đã giao. Quyền này không mở rộng phạm vi đơn hoặc quyền sửa/huỷ chứng từ đã duyệt. Đơn đã huỷ không được gửi; đơn đã liên kết chỉ hiện **Xem đơn Sapo**. Quyền đẩy nháp của người phụ trách/người tạo/cùng phòng trước đây được giữ nguyên.
 - **Đơn POS:** nút gửi lại qua đúng webhook POS → Claw, giữ mã `pos:<số đơn>`, dữ liệu quầy, chiết khấu và phí từ checkout. Không chạy lại checkout, không ghi thêm kho hoặc phiếu thu CRM. Công tắc tắt đẩy Sapo vẫn chặn thao tác gửi thủ công.
 
