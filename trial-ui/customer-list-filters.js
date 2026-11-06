@@ -1,12 +1,12 @@
 const statusOf = $ => $('#customer-pending').checked ? 'pending' : $('#customer-status').value;
 const kindOf = $ => $('#customer-retail').checked ? 'retail' : $('#customer-kind').value;
 export function hasCustomerListFilters($) {
-  return $('#customer-mine').checked || !!statusOf($) || !!kindOf($) || ['owner','from','to'].some(key=>$('#customer-'+key).value);
+  return $('#customer-mine').checked || !!statusOf($) || !!kindOf($) || ['owner','from','to','province'].some(key=>$('#customer-'+key)?.value);
 }
 /** Customer list controls share the server pagination and permission scope. */
 export function customerListQuery($, {limit, offset, query}) {
   const params = new URLSearchParams({limit:String(limit),offset:String(offset),q:query,filters:'1'});
-  for (const key of ['owner','from','to','sort']) { const value = $('#customer-'+key).value; if(value) params.set(key,value); }
+  for (const key of ['owner','from','to','sort','province']) { const value = $('#customer-'+key)?.value; if(value) params.set(key,value); }
   if($('#customer-mine').checked)params.set('mine','1');
   if(statusOf($))params.set('status',statusOf($));
   if(kindOf($))params.set('kind',kindOf($));
@@ -27,6 +27,7 @@ export function updateCustomerFilterSummary($) {
   if($('#customer-mine').checked)filters.push('Khách của tôi');
   if(statusOf($))filters.push({pending:'Chờ duyệt',rejected:'Bị từ chối'}[statusOf($)]||'Đã duyệt');
   if(kindOf($))filters.push(kindOf($)==='retail'?'Khách lẻ':'Khách doanh nghiệp');
+  if($('#customer-province')?.value)filters.push('Tỉnh/thành: '+label('province'));
   if($('#customer-owner').value)filters.push('Phụ trách: '+label('owner'));
   const date=value=>value.split('-').reverse().join('/');
   if($('#customer-from').value)filters.push('Tạo từ '+date($('#customer-from').value));
@@ -46,16 +47,21 @@ export function fillCustomerOwners(select, owners) {
 export function bindCustomerListFilters($, reload) {
   let queued=false;
   const apply=()=>{if(queued)return;queued=true;queueMicrotask(()=>{queued=false;if(updateCustomerFilterSummary($))reload();});};
-  for(const key of ['owner','from','to','sort','mine'])$('#customer-'+key).addEventListener('change',apply);
+  for(const key of ['owner','from','to','sort','mine','province'])$('#customer-'+key)?.addEventListener('change',apply);
   for(const [select,check,value] of [['status','pending','pending'],['kind','retail','retail']]){
     $('#customer-'+select).addEventListener('change',()=>{$('#customer-'+check).checked=$('#customer-'+select).value===value;apply();});
     $('#customer-'+check).addEventListener('change',()=>{$('#customer-'+select).value=$('#customer-'+check).checked?value:'';apply();});
   }
   $('#customer-clear').addEventListener('click',()=>{
-    for(const key of ['owner','from','to','status','kind'])$('#customer-'+key).value='';
+    for(const key of ['owner','from','to','status','kind','province']){const n=$('#customer-'+key);if(n)n.value='';}
     $('#customer-sort').value='newest';
     for(const key of ['mine','pending','retail'])$('#customer-'+key).checked=false;
     apply();
   });
   updateCustomerFilterSummary($);
+}
+
+export function fillCustomerProvinces(select,provinces){
+ if(!select||!provinces)return;const value=select.value;
+ select.replaceChildren(...[{code:'',name:'Tất cả tỉnh/thành'},{code:'unknown',name:'Chưa xác định'},...provinces].map(p=>Object.assign(document.createElement('option'),{value:p.code,textContent:p.name})));select.value=value;
 }

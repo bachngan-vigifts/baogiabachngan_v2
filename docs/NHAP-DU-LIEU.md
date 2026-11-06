@@ -44,3 +44,11 @@ Lời gọi không có `replaceAll` không bao giờ ẩn sản phẩm. Lỗi gi
 2. Vài sản phẩm bất kỳ: giá từng bảng giá và tồn từng kho khớp màn hình bản cũ.
 3. Đăng nhập trang dùng thử → trang **Sản phẩm** hiện danh mục; gõ tên không dấu trong dòng báo giá ra gợi ý; trang **Khách hàng** hiện đủ tổng số.
 4. Deploy lại Edge Function `baogia-v2-api` (router có thêm route sản phẩm) và tải lại `trial-ui/`.
+
+## Phân tỉnh và chia sẻ khách hàng hàng loạt
+
+CRM nhận diện tỉnh/thành từ địa chỉ và quy đổi tên cũ sang 34 đơn vị cấp tỉnh theo [Nghị quyết 202/2025/QH15](https://datafiles.chinhphu.vn/cpp/files/vbpq/2025/6/202qh.signed.pdf). Ví dụ: Kiên Giang → An Giang; Hậu Giang/Sóc Trăng → Cần Thơ. Địa chỉ gốc được giữ nguyên; thông tin tỉnh được tính khi đọc nên dữ liệu mới đồng bộ từ Sapo cũng được nhận diện. Không cần migration hay ghi lại toàn bộ địa chỉ.
+
+Trong **Khách hàng**, dùng bộ lọc **Tỉnh/thành sau sáp nhập**. Hồ sơ chi tiết và danh sách cùng hiển thị tỉnh đã nhận diện. Địa chỉ thiếu, tên đường/phường trùng tên tỉnh hoặc có nhiều tỉnh khác nhau được để **Chưa xác định**; kiểm tra và bổ sung địa chỉ đầy đủ trong hồ sơ trước khi phân nhóm.
+
+Manager bấm **Chia sẻ theo tỉnh** → chọn tỉnh và 1–10 nhân viên → **Xem trước** → **Chia sẻ khách hàng**. Phạm vi là tất cả khách đã duyệt của tỉnh, gồm doanh nghiệp và khách lẻ, tối đa 5.000 khách mỗi lượt; các bộ lọc tìm kiếm khác không áp dụng trong hộp thoại này. Bảng xem trước nêu rõ số khách, nhân viên nhận và số lượt chia sẻ mới. Thao tác chỉ thêm chia sẻ, giữ người phụ trách và chia sẻ hiện có, không tạo trùng khi gửi lại. Nếu địa chỉ/danh sách khách thay đổi sau xem trước, phải xem trước lại. Nếu một khách vượt giới hạn 30 người được chia sẻ, cả lượt bị chặn, không áp dụng một phần.
