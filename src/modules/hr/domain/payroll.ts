@@ -222,7 +222,7 @@ export function computePayslip(a: {
   profile: SalaryProfile; params: PayrollParams; input: PayrollInput; adjustments: readonly { kind: string; amount: number }[];
   /** Ngày công từ chấm công; DS đơn hàng trên hệ thống; thưởng quý tự tính (nếu có). */
   attendanceDays: number; systemRevenue: number; groupMonth: GroupMonth; quarterBonusAuto: number;kpiPolicy?:'legacy'|'appsheet';kpiNetRevenue?:number;kpiNetRevenueIssues?:number;contractBonus?:number;contractBonusAdjustment?:number;
-  /** Sale / Sale Admin từ 12/2026: điểm báo cáo tuần (tối đa 4) → Tiền trách nhiệm = mức × ngày công ÷ công chuẩn × điểm ÷ 4. */
+  /** Sale / Sale Admin từ 11/2026: điểm báo cáo tuần (tối đa 4) → Tiền trách nhiệm = mức × ngày công ÷ công chuẩn × điểm ÷ 4. */
   weeklyReport?: { points: number; required: number };
 }): PayslipCalc {
   const { profile: f, params: p, input: inp, groupMonth: gm } = a, g = f.payrollGroup;
