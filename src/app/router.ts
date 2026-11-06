@@ -12,6 +12,7 @@ import {teamPayrollRevenues} from './team-payroll-revenues.ts';
 import {registerTeamPayrollSources} from './team-payroll-source-routes.ts';
 import {crmFactsOf} from './sales-payroll-facts.ts';
 import {dashboardKpiOf} from './dashboard-kpi.ts';
+import {dashboardStoreOf} from './dashboard-store.ts';
 import {assertActivityKpiOpen} from '../modules/hr/api/activity-lock.ts';
 import { rememberQuoteCustomer } from './quote-customer-memory.ts';
 import {registerProductDetailRoutes} from '../modules/product-hub/api/routes.ts';
@@ -146,7 +147,7 @@ export function createAppRouter() {
   registerTeamPayrollSources(router);
   registerFeedbackRoutes(router); // góp ý phát triển phần mềm (mọi nhân viên)
   registerStoreRoutes(router); // báo cáo Cửa hàng trưởng (CHT): nộp, duyệt, Tiền Trách nhiệm, nhắc nhở
-  registerDashboardRoutes(router, { kpiOf: dashboardKpiOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR
+  registerDashboardRoutes(router, { kpiOf: dashboardKpiOf, storeOf: dashboardStoreOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR
   registerAuditRoutes(router);
   registerReportRoutes(router);
   registerPermissionRoutes(router);

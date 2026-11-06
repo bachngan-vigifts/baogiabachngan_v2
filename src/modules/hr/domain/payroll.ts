@@ -185,6 +185,17 @@ export function monthlyStoreBonus(p:PayrollParams,group:'bn'|'lock',revenue:numb
  if(group==='bn'){const ratio=revenue/target,rate=ratio>=p.bnLevel1?p.bnLevel1Rate:ratio>=p.bnLevel2?p.bnLevel2Rate:0;return revenue*rate/p.bnSplit;}
  return lockSalesBonus({...p,lockTarget:target},revenue);
 }
+/**
+ * Các mốc thưởng DS chung cửa hàng (đúng công thức monthlyStoreBonus) để hiển thị: doanh số cần đạt, tỷ lệ thưởng trên
+ * toàn bộ DS, số người chia. Chế độ "threshold": dưới chỉ tiêu không thưởng nên mốc thấp nhất là chỉ tiêu.
+ */
+export function storeBonusTiers(p:PayrollParams,group:'bn'|'lock',mode:'threshold'|'tiers',target=300_000_000){
+ const raw=group==='bn'?[{at:p.bnLevel2*target,rate:p.bnLevel2Rate},{at:p.bnLevel1*target,rate:p.bnLevel1Rate}]:[{at:p.lockFloor*target,rate:p.lockRate},{at:p.lockHigh,rate:p.lockHighRate}];
+ const tiers=raw.map(t=>({at:mode==='threshold'?Math.max(t.at,target):t.at,rate:t.rate})).filter(t=>t.rate>0).sort((a,b)=>a.at-b.at||a.rate-b.rate);
+ // Hai mốc trùng doanh số (chế độ threshold) → giữ tỷ lệ cao hơn, như công thức.
+ const out:{at:number;rate:number}[]=[];for(const t of tiers){const last=out.at(-1);if(last&&last.at===t.at)last.rate=Math.max(last.rate,t.rate);else out.push(t);}
+ return {target,split:group==='bn'?p.bnSplit:p.lockSplit,tiers:out};
+}
 /** Thưởng DS team Lock (đã chia số người). */
 export function lockSalesBonus(p: PayrollParams, revenue: number) {
   if (revenue < p.lockFloor * p.lockTarget) return 0;
