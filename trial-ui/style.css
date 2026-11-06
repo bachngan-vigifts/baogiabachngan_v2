@@ -1,4 +1,40 @@
 /* Bách Ngân · Báo giá – giao diện dùng thử v2 */
+/* Customer center uses the existing page, modal and footer; no second navigation bar. */
+.center-tabs { margin-bottom: 18px; display:flex; gap:8px; flex-wrap:wrap; }
+#customer-center { min-width:0; }
+#customer-center .page-head { align-items:flex-start; }
+.center-search { display:flex; align-items:end; gap:12px; margin-bottom:16px; }
+.center-search label { flex:1; display:grid; gap:6px; }
+.center-search input { width:100%; }
+.center-stats { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
+.center-stats .stat { text-align:left; cursor:pointer; min-width:0; display:grid; gap:8px; }
+.center-stats .stat[aria-pressed="true"] { outline:2px solid var(--blue); outline-offset:1px; }
+.center-stats .pill { justify-self:start; white-space:normal; }
+.center-shortcuts { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
+.center-columns { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); gap:18px; align-items:start; }
+.center-columns>.card { min-width:0; }
+#customer-center .card { display:grid; gap:12px; margin-bottom:18px; }
+.center-item { display:grid; gap:12px; padding:16px 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+.center-item p { margin-top:5px; }
+.center-name { color:var(--blue); font-weight:700; }
+.center-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.center-status { display:grid; gap:6px; max-width:340px; }
+.center-pager { display:flex; align-items:center; flex-wrap:wrap; gap:10px; font-size:var(--text-small); }
+.center-demo-dialog .modal-body { display:grid; gap:14px; }
+.center-demo-dialog label { display:grid; gap:6px; }
+#customer-center button:focus-visible,#customer-center a:focus-visible,.center-tabs a:focus-visible { outline:2px solid var(--blue); outline-offset:3px; }
+@media(max-width:850px) {
+ .center-columns { grid-template-columns:minmax(0,1fr); }
+ .center-stats { display:flex; overflow-x:auto; padding:3px 3px 10px; scroll-snap-type:x proximity; }
+ .center-stats .stat { flex:0 0 180px; scroll-snap-align:start; }
+ #customer-center .page-head { display:grid; gap:12px; }
+ #customer-center .page-head p { display:block; }
+ #customer-center .page-head [data-center-record] { width:100%!important;max-width:none;border-radius:var(--radius); }
+ .center-search { align-items:stretch; flex-direction:column; }
+ #customer-center .btn,.center-shortcuts .chip,.center-tabs .chip { min-height:44px; }
+ #customer-center { padding-bottom:16px; }
+ .center-demo-dialog { width:calc(100vw - 24px); max-height:calc(100dvh - 24px); }
+}
 :root {
   --app-content-max: 1800px;
   --red: #c8212b; --red-700: #a51b24; --red-50: #fdf0f1;
