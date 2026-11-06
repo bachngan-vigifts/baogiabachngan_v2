@@ -79,11 +79,11 @@ test('nháp không tính; tuần chưa hết 409 WEEK_OPEN; bắt buộc 3 mục
   assert.equal((await f.call('/staff-reports/draft', f.s.emp, 'PUT', { period: '2026-11-30', inputs })).status, 409);
 });
 
-test('điểm tháng → Tiền trách nhiệm = mức × công/công chuẩn × điểm/4 từ 12/2026; trước 12/2026 giữ cách cũ; thử việc không áp dụng', async t => {
+test('điểm tháng → Tiền trách nhiệm = mức × công/công chuẩn × điểm/4 từ 11/2026; trước 11/2026 giữ cách cũ; thử việc không áp dụng', async t => {
   const f = await setup(t);
   ok(await f.salary());
   ok(await f.call('/hr/members/emp/inputs/2026-12', f.s.mgr, 'PUT', { workDays: 26 }));
-  ok(await f.call('/hr/members/emp/inputs/2026-11', f.s.mgr, 'PUT', { workDays: 13 }));
+  ok(await f.call('/hr/members/emp/inputs/2026-10', f.s.mgr, 'PUT', { workDays: 13 }));
   await f.relog('2026-12-07T09:00:00'); ok(await f.submit('2026-11-30'), 201);                // đúng hạn: 1
   await f.relog('2026-12-14T17:00:00'); ok(await f.submit('2026-12-07'), 201);                // trễ < 1 ngày: 0,5
   await f.relog('2026-12-23T10:00:00'); const late = ok(await f.submit('2026-12-14'), 201);   // trễ 2 ngày: 0
@@ -95,7 +95,7 @@ test('điểm tháng → Tiền trách nhiệm = mức × công/công chuẩn ×
   assert.deepEqual(review.people.find((p: any) => p.id === 'emp').weeks.map((w: any) => w.score), [1, 0.5, 0, 0]);
   ok(await f.call(`/staff-reports/${late.id}/review`, f.s.mgr, 'POST', { review: 'excused', note: 'Nghỉ phép có duyệt' }));
   assert.equal(responsibility(await f.slip('2026-12')).amount, 1_625_000, 'Miễn = 1 điểm');
-  assert.equal(responsibility(await f.slip('2026-11')).amount, 2_600_000, 'tháng 11/2026 chưa áp dụng: giữ cách tính cũ');
+  assert.equal(responsibility(await f.slip('2026-10')).amount, 2_600_000, 'tháng 10/2026 chưa áp dụng: giữ cách tính cũ');
   ok(await f.salary({ positionLabel: 'TV' }));
   const probation = responsibility(await f.slip('2026-12'));
   assert.equal(probation.amount, 0); assert.doesNotMatch(probation.note, /báo cáo tuần/, 'thử việc: không có trách nhiệm, không dùng điểm báo cáo tuần');
@@ -155,4 +155,19 @@ test('số liệu tuần: đơn chốt, báo giá trong tuần (bắt buộc ghi
   const done = ok(await f.submit('2026-11-30', { inputs: { ...inputs, quoteNotes: { 'q-open': 'Chị Dương đang trình Sếp', 'la': 'không thuộc tuần' } } }), 201);
   const [row] = await f.db.select().from(staffWeeklyReports).where(eq(staffWeeklyReports.id, done.id));
   assert.deepEqual(JSON.parse(row!.data).inputs.quoteNotes, { 'q-open': 'Chị Dương đang trình Sếp' });
+});
+
+test('tháng 11/2026 áp dụng; tuần 26/10–01/11 (hạn trước ngày triển khai 06/11) tính Miễn 1 điểm, không nhắc', async t => {
+  const f = await setup(t);
+  ok(await f.salary());
+  ok(await f.call('/hr/members/emp/inputs/2026-11', f.s.mgr, 'PUT', { workDays: 26 }));
+  await f.relog('2026-11-06T09:00:00');
+  let me = ok(await f.call('/staff-reports/me?month=2026-11', f.s.emp));
+  assert.equal(me.applies, true); assert.equal(me.remind, null, 'tuần trước ngày triển khai không nhắc');
+  assert.deepEqual(me.weeks.map((w: any) => [w.period, w.state, w.score]).slice(0, 2), [['2026-10-26', 'exempt', 1], ['2026-11-02', 'not_due', null]]);
+  await f.relog('2026-11-09T09:00:00'); ok(await f.submit('2026-11-02'), 201);
+  await f.relog('2026-12-01T09:00:00');
+  me = ok(await f.call('/staff-reports/me?month=2026-11', f.s.emp));
+  assert.equal(me.weeks.length, 5); assert.equal(me.points, 2, 'Miễn 1 + đúng hạn 1; 3 tuần còn lại không nộp');
+  assert.equal(responsibility(await f.slip('2026-11')).amount, 1_300_000);
 });

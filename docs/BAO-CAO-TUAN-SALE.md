@@ -26,14 +26,15 @@ Trang `#/weekly-reports` (menu *Công việc → Báo cáo tuần*; chỉ hiện
 | Trễ từ 1 ngày / không nộp | 0 |
 | Manager duyệt *Chưa đạt* | 0 |
 | Manager duyệt *Miễn* | 1 |
+| Hạn nộp trước ngày triển khai 06/11/2026 (tuần 26/10–01/11) | 1 – "Miễn – trước ngày triển khai" |
 
-## Tiền trách nhiệm (áp dụng từ bảng lương **12/2026**)
+## Tiền trách nhiệm (áp dụng từ bảng lương **11/2026**)
 
 ```
 Tiền trách nhiệm = mức trách nhiệm (hồ sơ lương từng người) × ngày công ÷ công chuẩn × điểm ÷ 4
 ```
 
-- Chỉ áp dụng cho người thuộc bảng lương **Sale & VP** có chức vụ Sale / Sale Admin; tháng trước 12/2026 và các chức vụ khác giữ cách tính cũ.
+- Chỉ áp dụng cho người thuộc bảng lương **Sale & VP** có chức vụ Sale / Sale Admin; tháng trước 11/2026 và các chức vụ khác giữ cách tính cũ.
 - Thử việc: như cũ, không có tiền trách nhiệm.
 - Ví dụ: mức 2.600.000, đủ 26/26 công, 4 tuần được 1 + 0,5 + 0 + 0 = 1,5 điểm → 2.600.000 × 26/26 × 1,5/4 = **975.000**.
 - Phiếu lương ghi rõ: `2.600.000 × 26/26 công × 1,5/4 điểm báo cáo tuần`.

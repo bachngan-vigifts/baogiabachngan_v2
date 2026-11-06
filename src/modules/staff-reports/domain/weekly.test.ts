@@ -43,3 +43,11 @@ test('nhóm ngành: ưu tiên loại khách, rồi tên khách; không khớp �
   assert.deepEqual(weeklyProblems({ highlights: '', nextWeekPlan: '', support: '', quoteNotes: { a: 'Đang trình' } }, [{ id: 'a', quoteNo: 'BG-1' }, { id: 'b', quoteNo: 'BG-2' }]),
     ['Nhập kế hoạch tuần tới.', 'Ghi tình trạng / bước tiếp cho báo giá: BG-2.']);
 });
+test('ngày triển khai: tuần có hạn trước 06/11/2026 tính Miễn 1 điểm', async () => {
+  const { weekScore, weekState, beforeLaunch } = await import('./weekly.ts');
+  assert.equal(beforeLaunch('2026-10-26'), true); assert.equal(beforeLaunch('2026-11-02'), false);
+  assert.equal(weekState('2026-10-26', null, at('2026-11-20T00:00:00')).state, 'exempt');
+  assert.equal(weekScore('2026-10-26', null, at('2026-11-20T00:00:00')), 1);
+  assert.equal(weekScore('2026-10-26', null, at('2026-11-20T00:00:00'), ''), 0, 'không miễn khi tắt mốc');
+  assert.equal(weekScore('2026-11-02', null, at('2026-11-20T00:00:00')), 0);
+});
