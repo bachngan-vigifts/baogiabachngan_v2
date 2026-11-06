@@ -41,6 +41,7 @@ export async function customerStaffOf(db: Db, customerIds: string[]) {
 /**
  * Quyền của một người với một khách:
  *  - Manager, người phụ trách, người được chia sẻ: xem mọi báo giá / đơn / HĐKT / công nợ của khách (`canSeeAll`);
+ *  - Manager, người phụ trách, người được chia sẻ: sửa hồ sơ / danh bạ (`canEditProfile`).
  *  - Manager: đổi người phụ trách; Manager hoặc người phụ trách: đổi danh sách người được chia sẻ.
  */
 export async function customerAccess(db: Db, customerId: string, who: Viewer) {
@@ -48,11 +49,15 @@ export async function customerAccess(db: Db, customerId: string, who: Viewer) {
     .where(and(eq(customerStaff.customerId, customerId), eq(customerStaff.memberId, who.id))).limit(1);
   const manager = who.role === 'manager', owner = row?.role === 'owner', shared = row?.role === 'shared';
   const [peer] = await db.select({ id: customerStaff.memberId }).from(customerStaff).where(and(eq(customerStaff.customerId, customerId), eq(customerStaff.role, 'owner'), departmentOwner(customerStaff.memberId, who) ?? sql`false`)).limit(1);
-  return { manager, owner, shared, peer: !!peer, canSeeAll: manager || owner || shared || seesAllAsSaleAdmin(who), canManageStaff: manager || owner, canChangeOwner: manager, canEdit: manager || owner };
+  return { manager, owner, shared, peer: !!peer, canSeeAll: manager || owner || shared || seesAllAsSaleAdmin(who), canManageStaff: manager || owner, canChangeOwner: manager, canEdit: manager || owner, canEditProfile: manager || owner || shared };
 }
-/** Sửa thông tin khách / người liên hệ: chỉ nhân viên phụ trách khách hoặc Manager. */
+/** Ghi chú và chiết khấu riêng vẫn chỉ cho nhân viên phụ trách khách hoặc Manager. */
 async function requireEdit(db: Db, customerId: string, who: Viewer) {
-  if (!(await customerAccess(db, customerId, who)).canEdit) throw new AppError(403, 'Chỉ nhân viên phụ trách khách hàng hoặc Manager được sửa thông tin khách.');
+  if (!(await customerAccess(db, customerId, who)).canEdit) throw new AppError(403, 'Chỉ nhân viên phụ trách khách hàng hoặc Manager được chỉnh sửa mục này.');
+}
+/** Editing the customer form and its contacts does not grant staff-management or approval privileges. */
+async function requireProfileEdit(db: Db, customerId: string, who: Viewer) {
+  if (!(await customerAccess(db, customerId, who)).canEditProfile) throw new AppError(403, 'Chỉ Manager, nhân viên phụ trách hoặc nhân viên được chia sẻ khách hàng được cập nhật hồ sơ khách.');
 }
 
 /** Nhân viên / Manager đang hoạt động (người gán cho khách được). */
@@ -145,7 +150,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const db=c.env.db,id=c.params.id!,me=viewer(c),wanted=(await readJson(c.req,1_024)).contactId;
     if(wanted!==null&&(typeof wanted!=='string'||!wanted||wanted.length>200))throw new AppError(400,'Người đại diện không hợp lệ.');
     await db.transaction(async tx=>{
-      await lockContactCustomer(tx as any,id);await requireEdit(tx as any,id,me);
+      await lockContactCustomer(tx as any,id);await requireProfileEdit(tx as any,id,me);
       if(wanted){
         const [contact]=await tx.select({id:customerContacts.id}).from(customerContacts).where(and(eq(customerContacts.id,wanted),eq(customerContacts.customerId,id))).limit(1);
         if(!contact)throw new AppError(400,'Người đại diện phải là người trong danh bạ liên hệ của khách này.');
@@ -255,7 +260,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       if (fields.contact && fields.contact !== primary.name) throw new AppError(400, 'Tên liên hệ chính chưa khớp với người được chọn trong danh bạ.');
       fields.contact = primary.name;
     }
-    if (update) await requireEdit(c.env.db, id, me);
+    if (update) await requireProfileEdit(c.env.db, id, me);
     // Người đại diện: khi tạo mới dùng `isRepresentative` trong `contacts`; khi sửa dùng PUT /customers/:id/representative
     // (không đi qua đây vì PUT này ghi đè mọi ô thông tin bằng giá trị gửi lên).
     const row = { ...fields, ...terms, search: fold(Object.values(fields).join(' ')), sourceVersion: 0, syncedAt: now };
@@ -279,7 +284,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       if (update && !previous) throw new AppError(404, 'Không tìm thấy khách hàng.');
       rejectDuplicate(await findCustomerDuplicates(tx, changedIdentity(fields, previous), update ? id : undefined), canListRetailCustomers(me));
       if (update) {
-        await requireEdit(tx as any,id,me);
+        await requireProfileEdit(tx as any,id,me);
         if(body.contacts!==undefined){
           const directory=await saveContactDirectory(tx as any,previous!,body.contacts,body.contactDirectoryVersion,me.id,now);
           Object.assign(row,directory,{search:fold(Object.values({...fields,contact:directory.contact}).join(' '))});
@@ -424,9 +429,9 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
   }, 'business');
   router.post('/customers/:id/contacts', async c => {
     const db=c.env.db,id=c.params.id!,me=viewer(c),fields=contactFields(await readJson(c.req,8_000)),now=nowIso(),contactId=crypto.randomUUID();
-    await requireEdit(db,id,me);
+    await requireProfileEdit(db,id,me);
     await db.transaction(async tx=>{
-      const customer=await lockContactCustomer(tx as any,id);await ensureLegacyContact(tx as any,customer,me.id,now);
+      const customer=await lockContactCustomer(tx as any,id);await requireProfileEdit(tx as any,id,me);await ensureLegacyContact(tx as any,customer,me.id,now);
       const [{n=0}={}]=await tx.select({n:count()}).from(customerContacts).where(eq(customerContacts.customerId,id));
       if(Number(n)>=CUSTOMER_LIMITS.contacts)throw new AppError(400,`Mỗi khách tối đa ${CUSTOMER_LIMITS.contacts} người liên hệ.`);
       if(fields.isPrimary)await tx.update(customerContacts).set({isPrimary:false}).where(eq(customerContacts.customerId,id));
@@ -437,9 +442,9 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
   },'business');
   router.put('/customers/:id/contacts/:contactId',async c=>{
     const db=c.env.db,id=c.params.id!,me=viewer(c),fields=contactFields(await readJson(c.req,8_000)),now=nowIso();
-    await requireEdit(db,id,me);
+    await requireProfileEdit(db,id,me);
     await db.transaction(async tx=>{
-      const customer=await lockContactCustomer(tx as any,id);await ensureLegacyContact(tx as any,customer,me.id,now);
+      const customer=await lockContactCustomer(tx as any,id);await requireProfileEdit(tx as any,id,me);await ensureLegacyContact(tx as any,customer,me.id,now);
       const done=await tx.update(customerContacts).set({...fields,updatedAt:now}).where(and(eq(customerContacts.id,c.params.contactId!),eq(customerContacts.customerId,id))).returning({id:customerContacts.id});
       if(!done.length)throw new AppError(404,'Không tìm thấy người liên hệ.');
       if(fields.isPrimary)await tx.update(customerContacts).set({isPrimary:false}).where(and(eq(customerContacts.customerId,id),ne(customerContacts.id,c.params.contactId!)));
@@ -447,9 +452,9 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     });return json({ok:true});
   },'business');
   router.delete('/customers/:id/contacts/:contactId',async c=>{
-    const db=c.env.db,id=c.params.id!,me=viewer(c),now=nowIso();await requireEdit(db,id,me);
+    const db=c.env.db,id=c.params.id!,me=viewer(c),now=nowIso();await requireProfileEdit(db,id,me);
     await db.transaction(async tx=>{
-      const customer=await lockContactCustomer(tx as any,id);await ensureLegacyContact(tx as any,customer,me.id,now);
+      const customer=await lockContactCustomer(tx as any,id);await requireProfileEdit(tx as any,id,me);await ensureLegacyContact(tx as any,customer,me.id,now);
       const done=await tx.delete(customerContacts).where(and(eq(customerContacts.id,c.params.contactId!),eq(customerContacts.customerId,id))).returning({id:customerContacts.id});
       if(!done.length)throw new AppError(404,'Không tìm thấy người liên hệ.');
       await syncPrimaryContact(tx as any,customer);

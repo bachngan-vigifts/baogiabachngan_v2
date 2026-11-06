@@ -80,10 +80,11 @@ export function initCustomerDetail(deps) {
   // ----- Vẽ
   function render() {
     const d = st.d, c = d.customer, s = d.stats, a = d.access, pending = c.approvalStatus === 'pending', rejected = c.approvalStatus === 'rejected', blocked = pending || rejected;
+    const canEditProfile = a.canEditProfile ?? a.canEdit;
     const representative = d.contacts.find(x => x.id === c.representativeContactId);
     const contacts = d.contacts.map(x => `<li class="cd-contact"><span><b>${esc(x.name)}</b>${x.isPrimary ? ' <span class="pill blue">Liên hệ chính</span>' : ''}${x.id === c.representativeContactId ? ' <span class="pill ok">Người đại diện</span>' : ''}
         <small>${esc([x.title, x.phone, x.email].filter(Boolean).join(' · ')) || '—'}</small>${x.note ? `<small class="muted">${esc(x.note)}</small>` : ''}</span>
-        ${a.canEdit ? `<span class="row-actions"><button type="button" class="btn ghost small" data-contact-rep="${esc(x.id)}">${x.id === c.representativeContactId ? 'Bỏ đại diện' : 'Đặt làm đại diện'}</button><button class="icon-btn" data-contact-edit="${esc(x.id)}" aria-label="Sửa ${esc(x.name)}" title="Sửa"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
+        ${canEditProfile ? `<span class="row-actions"><button type="button" class="btn ghost small" data-contact-rep="${esc(x.id)}">${x.id === c.representativeContactId ? 'Bỏ đại diện' : 'Đặt làm đại diện'}</button><button class="icon-btn" data-contact-edit="${esc(x.id)}" aria-label="Sửa ${esc(x.name)}" title="Sửa"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
         <button class="icon-btn" data-contact-del="${esc(x.id)}" aria-label="Xoá ${esc(x.name)}" title="Xoá"><svg viewBox="0 0 24 24"><path d="M5 7h14 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3"/></svg></button></span>` : ''}</li>`).join('');
     const tabs=[{key:'overview',label:'Tổng quan',count:()=>null,html:()=>''},...TABS];
     const tab = tabs.find(t => t.key === st.tab) || tabs[0];
@@ -92,7 +93,7 @@ export function initCustomerDetail(deps) {
       <div class="editor-head">
         <div class="editor-title"><a class="btn ghost small" href="#/customers">‹ Khách hàng</a><h1>${esc(c.name)}</h1>
           <span class="pill ${c.fromSapo ? 'blue' : 'off'}">${c.fromSapo ? 'Sapo' : 'Tạo trên web'}</span>${pending ? '<span class="pill warn">Chờ duyệt</span>' : rejected ? '<span class="pill danger">Bị từ chối</span>' : ''}</div>
-        <div class="editor-actions">${a.canEdit ? '<button class="btn secondary" data-act="edit" title="Chỉ nhân viên phụ trách hoặc Manager">Sửa thông tin</button>' : ''}${blocked ? '' : '<button class="btn primary" data-act="quote">＋ Báo giá</button>'}</div>
+        <div class="editor-actions">${canEditProfile ? '<button class="btn secondary" data-act="edit" title="Manager, nhân viên phụ trách hoặc được chia sẻ khách hàng">Sửa thông tin</button>' : ''}${blocked ? '' : '<button class="btn primary" data-act="quote">＋ Báo giá</button>'}</div>
       </div>
       <section class="crm-customer-hero"><div class="crm-customer-person"><span class="avatar">${esc((c.contact||c.name).split(/\s+/).filter(Boolean).slice(-2).map(s=>s[0]).join(''))}</span><div><strong>${esc(c.contact||c.name)}</strong><small>${esc(c.name)}${c.customerCode?' · '+esc(c.customerCode):''}</small>${d.owner?`<span class="pill blue">Phụ trách: ${esc(d.owner.name)}</span>`:''}</div></div>
         <div class="crm-customer-quick" data-mobile-actions="off">${c.phone?`<a class="btn secondary" href="tel:${esc(c.phone.replace(/[^\d+]/g,''))}">Gọi</a>`:''}${deps.onCare&&!blocked?'<button type="button" class="btn secondary" data-act="care-new">Chăm sóc</button>':''}${blocked?'':'<button type="button" class="btn primary" data-act="quote">Báo giá</button>'}</div></section>
@@ -134,7 +135,7 @@ export function initCustomerDetail(deps) {
         <div class="card"><div class="card-title-row"><h2 class="card-title">Chiết khấu theo thương hiệu (%)</h2>${a.canEdit ? '<button class="btn secondary small" data-act="brand-discounts">Sửa</button>' : ''}</div>
           <dl class="kv cd-discounts">${BRANDS.map(([k, label]) => `<dt>CK ${label}</dt><dd>${d.discounts?.[k] === null || d.discounts?.[k] === undefined ? '<span class="muted">Chưa thiết lập</span>' : `<b>${fmtPct(d.discounts[k])}%</b>`}</dd>`).join('')}</dl>
           <p class="muted small">Áp dụng khi thêm sản phẩm vào báo giá. Có thể sửa CK trên từng dòng.</p></div>
-        <div class="card"><div class="card-title-row"><h2 class="card-title">Người liên hệ <small class="muted">(${d.contacts.length})</small></h2>${a.canEdit ? '<button class="btn secondary small" data-act="contact">＋ Thêm</button>' : ''}</div>
+        <div class="card"><div class="card-title-row"><h2 class="card-title">Người liên hệ <small class="muted">(${d.contacts.length})</small></h2>${canEditProfile ? '<button class="btn secondary small" data-act="contact">＋ Thêm</button>' : ''}</div>
           ${contacts ? `<ul class="plain-list cd-contacts">${contacts}</ul>` : '<p class="muted cd-empty">Chưa có người liên hệ bổ sung (kế toán, mua hàng, người nhận hàng…).</p>'}</div>
       </div>
       <div class="card cd-tabs-card">
