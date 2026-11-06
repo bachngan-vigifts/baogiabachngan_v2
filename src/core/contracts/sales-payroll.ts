@@ -3,6 +3,8 @@ import type {AnyDb} from '../db/client.ts';
 export interface ContractFact{docType?:'contract'|'order';contractId:string;contractNo:string;customerName:string;ownerId:string;signedDate:string|null;subtotal:number;status:string;orderStatus:string;liquidatedAt:string|null;liquidationValid:boolean;revision:number;}
 export interface SalesFacts{members:Map<string,{newCustomers:number;transactions:number;contracts:number;netRevenue?:number;netRevenueIssues?:number}>;contracts:ContractFact[];}
 export type CrmFactsOf=(db:AnyDb,month:string,previousContractIds?:readonly string[],lock?:boolean,options?:{approvedOnly?:boolean})=>Promise<SalesFacts>;
+/** Approved customer profiles, counted once per customer and credited to the creator. */
+export type NewCustomerFactsOf=(db:AnyDb,from:string,next:string)=>Promise<Map<string,number>>;
 
 export interface TeamRevenueFacts {
  policyMonth:string;bonusMode:'threshold'|'tiers';target:number;

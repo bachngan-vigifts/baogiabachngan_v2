@@ -185,6 +185,8 @@ Tham số `appsheetKpiFrom` (YYYYMM, 0 = chính sách cũ) kích hoạt theo k�
 
 Khi bật lấy KPI từ CRM, các số đếm cũ nhập tay không ghi đè bộ đếm CRM. Doanh số ghi nhận là doanh số chưa VAT trừ hoa hồng khách hàng, theo ngày đơn trong kỳ và trạng thái đã duyệt; nháp/đợi duyệt/hủy không tính. HĐ tính theo tháng ký, HĐ đã ký/hoàn tất và đơn đủ điều kiện. Dữ liệu thiếu căn cứ hoa hồng được báo và chặn chốt theo chính sách mới. Trên bảng nhập nhanh, nguồn KPI/doanh số này chỉ đọc.
 
+**KH mới:** mỗi hồ sơ khách doanh nghiệp do nhân viên tạo trên CRM, đã được duyệt, tính một lần cho `createdBy`; không cần báo giá, đơn hàng hay HĐKT. Kỳ tính là tháng được duyệt theo giờ Việt Nam; hồ sơ web cũ đã duyệt nhưng thiếu `approvedAt` dùng ngày tạo làm căn cứ dự phòng. Khách chờ duyệt/bị từ chối, khách lẻ/tiêu dùng dùng chung, hồ sơ đồng bộ Sapo/AppSheet và hồ sơ không xác định được người/ngày tạo không tự cộng điểm. Đổi phụ trách/chia sẻ hoặc tạo thêm đơn không cộng thêm hay chuyển điểm. Lương và bảng xếp hạng dùng cùng nguồn; phiếu đã chốt giữ nguyên bản chụp, không tự tính lại.
+
 Kết quả KPI lưu `policy` và `basis` (số liệu thật đã dùng) cùng bốn điểm/tổng điểm/điểm áp dụng. Hồ sơ nhân viên, bảng KPI và xếp hạng đọc cùng kết quả; phiếu đã chốt dùng bản chụp. KPI cố định theo mã nhân viên được ưu tiên hơn KPI chốt tháng; không so sánh tên hiển thị trong code. Ngoại lệ KPI 100% được đặt bằng trường KPI cố định ở đúng hồ sơ Sale đã được xác minh.
 
 Kỳ số liệu luôn 01–ngày cuối tháng; thời gian chốt là 03–05 tháng kế tiếp. Trong ngày 03–05 theo giờ VN, trang Bảng lương không có kỳ chỉ định sẽ mặc định mở tháng trước; chọn kỳ trên URL hoặc màn hình vẫn được ưu tiên. Không có tác vụ tự chốt/trả lương hoặc chuyển tiền ngân hàng.

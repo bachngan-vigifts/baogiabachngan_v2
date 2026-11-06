@@ -5,7 +5,7 @@ import {customers,customerStaff} from '../../src/modules/customers/schema.ts';
 import {salesOrders,salesContracts,salesOrderLines,customerPayments} from '../../src/modules/sales/schema.ts';
 export async function setupSalesPayroll(){
  const f=await setupLiquidation();
- await f.db.insert(customers).values({id:'sales-customer',name:'Khách KPI kiểm thử',search:'khach kpi',syncedAt:'',contact:'Khách kiểm thử',phone:'',email:'',address:'',taxCode:'',customerCode:'',sourceVersion:0});
+ await f.db.insert(customers).values({id:'sales-customer',name:'Khách KPI kiểm thử',search:'khach kpi',syncedAt:'',contact:'Khách kiểm thử',phone:'',email:'',address:'',taxCode:'',customerCode:'',sourceVersion:0,createdBy:'emp',createdAt:f.stamp,approvedBy:'mgr',approvedAt:f.stamp,approvalStatus:'approved',dataSource:'web'});
  await f.db.insert(customerStaff).values({customerId:'sales-customer',memberId:'emp',role:'owner',createdBy:'mgr',createdAt:f.stamp});
  await f.db.update(salesOrders).set({customerId:'sales-customer',subtotal:20_000_000,total:21_600_000}).where(eq(salesOrders.id,'liq-order'));
  await f.db.update(salesContracts).set({customerId:'sales-customer',value:21_600_000}).where(eq(salesContracts.id,'liq-contract'));
