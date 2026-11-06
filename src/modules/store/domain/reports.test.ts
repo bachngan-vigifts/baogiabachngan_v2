@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dailyFails, deadlineOf, isPeriod, mondayOf, remindersAt, responsibilityOf, slotState, weeksDueIn, weeklyFails, type ReportRow } from './reports.ts';
+import { dailyFails, deadlineOf, isPeriod, mondayOf, remindersAt as remindersAtLaunch, responsibilityOf as responsibilityAtLaunch, slotState as slotStateAtLaunch, weeksDueIn, weeklyFails, type ReportRow } from './reports.ts';
+// Các test logic chung dùng ngày mẫu tháng 10–11/2026: tắt mốc ngày triển khai để không lẫn quy tắc "miễn trước triển khai".
+const slotState = (...a: [Parameters<typeof slotStateAtLaunch>[0], string, string | null, string]) => slotStateAtLaunch(...a, '');
+const responsibilityOf = (a: Parameters<typeof responsibilityAtLaunch>[0]) => responsibilityAtLaunch({ launchAt: '', ...a });
+const remindersAt = (now: string, days: readonly string[], done: ReadonlySet<string>) => remindersAtLaunch(now, days, done, '');
 
 test('hạn nộp theo giờ Việt Nam', () => {
   assert.equal(deadlineOf('daily', '2026-11-05'), '2026-11-05T15:00:00.000Z'); // 22h00 VN
@@ -71,4 +75,17 @@ test('nhắc nhở 30 phút: báo cáo ngày từ 19h, quá hạn 7 ngày, tuầ
   assert.deepEqual(remindersAt('2026-12-03T01:30:00Z', ['2026-11-20'], new Set(['monthly:2026-11'])).map(x => x.kind + ':' + x.period), ['stocktake:2026-11']);
   assert.deepEqual(remindersAt('2026-12-15T01:30:00Z', ['2026-11-20'], new Set()), [], 'quá 10 ngày đầu tháng thì thôi nhắc tháng trước');
   assert.deepEqual(remindersAt('2026-12-03T01:30:00Z', [], new Set()), [], 'tháng không mở ca: không nhắc');
+});
+
+test('trước ngày triển khai (06/11/2026): kỳ có hạn trước đó mà chưa nộp → miễn, tính hoàn thành, không nhắc', () => {
+  const now = new Date('2026-11-20T03:00:00Z').toISOString();
+  assert.equal(slotStateAtLaunch('daily', '2026-11-05', null, now).state, 'exempt');
+  assert.equal(slotStateAtLaunch('daily', '2026-11-06', null, now).state, 'missing', 'từ ngày 06 xét bình thường');
+  assert.equal(slotStateAtLaunch('weekly', '2026-10-26', null, now).state, 'exempt', 'tuần 26/10 hạn 02/11 – trước triển khai');
+  assert.equal(slotStateAtLaunch('weekly', '2026-11-02', null, now).state, 'missing', 'tuần 02/11 hạn 09/11 – sau triển khai');
+  assert.equal(slotStateAtLaunch('daily', '2026-11-05', new Date('2026-11-07T01:00:00Z').toISOString(), now).state, 'late', 'đã nộp thì xét theo giờ nộp');
+  const r = responsibilityAtLaunch({ month: '2026-11', now, dailyDays: ['2026-11-01', '2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05'], weeks: ['2026-10-26'], reports: [] });
+  assert.equal(r.parts.find(p => p.slot === 'daily')!.amount, 250_000); assert.equal(r.parts.find(p => p.slot === 'weekly')!.amount, 250_000);
+  assert.equal(responsibilityAtLaunch({ month: '2026-10', now, dailyDays: ['2026-10-30'], weeks: [], reports: [] }).total, 1_000_000, 'tháng 10 (hạn 02/11) miễn cả tháng / kiểm tồn');
+  assert.deepEqual(remindersAtLaunch(new Date('2026-11-06T13:00:00Z').toISOString(), ['2026-11-01', '2026-11-05', '2026-11-06'], new Set()).map(x => x.period), ['2026-11-06']);
 });

@@ -36,7 +36,7 @@ import { readyFiles, registerStoreFileRoutes } from './file-routes.ts';
 import { storeRestockRules } from '../schema.ts';
 import { storeManagers, storeReportDrafts, storeReportVersions, storeReports, storeSettings } from '../schema.ts';
 import {
-  DEPOSIT_SCHEDULES, DEPOSIT_SCHEDULE_LABEL, REVIEW_FOR, STORE_LIMITS, STORE_REPORT_KINDS, STORE_REPORT_LABEL, STORE_REVIEW_LABEL, canSubmitOfficial, cashDue,
+  DEPOSIT_SCHEDULES, DEPOSIT_SCHEDULE_LABEL, REVIEW_FOR, STORE_LIMITS, STORE_REPORT_KINDS, STORE_REPORT_LABEL, STORE_REVIEW_LABEL, canSubmitOfficial, cashDue, storeReportsLaunchAt,
   deadlineOf, isPeriod, nextMonth, periodEndsAt, periodStarted, remindersAt, responsibilityOf, slotState, vnClock, weeksDueIn,
   compareMonth, prevMonth, restockNeeds, stocktakeGaps, DAILY_CHECKLIST, INCIDENT_TYPES, compareAvg, incidentTypesOf, monthPace,
   type DepositSchedule, type StoreReportKind, type StoreReviewStatus,
@@ -391,7 +391,7 @@ export function registerStoreRoutes(router: Router<StaffEnv>, deps: Deps = {}) {
     const drafts = await db.select({ kind: storeReportDrafts.kind, period: storeReportDrafts.period, updatedAt: storeReportDrafts.updatedAt }).from(storeReportDrafts).where(eq(storeReportDrafts.registerId, store.id));
     const reports = rows.map(({ data, ...r }) => ({ ...r, provisional: !!parse(data)?.meta?.provisional, deadline: deadlineOf(r.kind, r.period), state: slotState(r.kind, r.period, r.submittedAt, now) }));
     const responsibility = responsibilityOf({ month, dailyDays, weeks, now, reports: rows.map(r => ({ kind: r.kind, period: r.period, submittedAt: r.submittedAt, review: r.review })) });
-    return json({ store: { registerId: store.id, name: store.name }, isManager: store.isManager, canReview: reviews(me(c)), canConfigure: me(c).role === 'manager', month, dailyDays, weeks, reports, drafts, responsibility });
+    return json({ store: { registerId: store.id, name: store.name }, isManager: store.isManager, canReview: reviews(me(c)), canConfigure: me(c).role === 'manager', launchAt: storeReportsLaunchAt(), month, dailyDays, weeks, reports, drafts, responsibility });
   }, 'business');
 
   router.get('/store/reports/draft', async c => {
