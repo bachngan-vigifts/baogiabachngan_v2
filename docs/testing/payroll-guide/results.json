@@ -8,5 +8,7 @@
   "yearSwitchLocked": true,
   "lockedMonth": true,
   "unsavedYearProtected": true,
+  "saleOnly": true,
+  "emptySaleList": true,
   "errors": []
 }

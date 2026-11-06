@@ -192,10 +192,12 @@ Hướng dẫn có ảnh minh họa: [PDF](../trial-ui/guides/huong-dan-cai-dat-
 
 ## Đăng ký doanh số năm
 
-Manager mở Bảng lương → Đăng ký doanh số năm, hoặc nút cùng tên ở hộp Hồ sơ lương. Mỗi người có 12 chỉ tiêu theo từng tháng; nhập tiền nguyên >0, lý do rồi lưu. Chỉ tiêu đăng ký được ưu tiên cho đúng tháng trong hồ sơ/KPI/dashboard/xếp hạng, không kế thừa sang tháng/năm khác. Chỉ tiêu quý là tổng ba tháng (tháng chưa đăng ký giữ cách lấy chỉ tiêu cũ). Ô DS trong hồ sơ lương chỉ đọc; lưu lương/phụ cấp không chép chỉ tiêu đăng ký vào hồ sơ kế thừa.
+Manager mở Bảng lương → Đăng ký doanh số năm, hoặc nút cùng tên ở hộp Hồ sơ lương. Chỉ áp dụng chức vụ có mã `sale`: bảng chỉ liệt kê Sale, API từ chối ghi chỉ tiêu cho Sale Admin, NVBH/CHT cửa hàng, Manager, Kho, Kế toán và các vị trí khác. Mỗi người Sale có 12 chỉ tiêu theo từng tháng; nhập tiền nguyên >0, lý do rồi lưu. Chỉ tiêu đăng ký được ưu tiên cho đúng tháng trong hồ sơ/KPI/dashboard/xếp hạng, không kế thừa sang tháng/năm khác. Chỉ tiêu quý là tổng ba tháng (tháng chưa đăng ký giữ cách lấy chỉ tiêu cũ). Ô DS trong hồ sơ lương chỉ đọc; lưu lương/phụ cấp không chép chỉ tiêu đăng ký vào hồ sơ kế thừa.
 
 Chưa đăng ký hoặc xóa đăng ký: dùng chỉ tiêu hồ sơ cũ, nếu 0 thì dùng tham số chung. Giao diện ghi rõ nguồn. Phiếu đã chốt không đổi và tháng đã chốt khóa chỉnh chỉ tiêu năm; yêu cầu cũ bị từ chối 409 nếu dữ liệu vừa đổi. Mọi thay đổi ghi audit với trước/sau, người sửa, lý do.
 
 API Manager: `GET/PUT /hr/revenue-targets/:year`. PUT nhận version của GET, reason và changes [{memberId,month,amount}], amount=null để bỏ đăng ký. Cùng payroll advisory lock với chốt lương; toàn bộ batch rollback khi có lỗi. Bảng `hr_revenue_targets` bật RLS, không cấp anon/authenticated; chỉ backend staff truy cập. Migration cần áp dụng trước API; workflow kiểm tra schema chỉ đọc.
 
 Khi một người đã dùng bảng đăng ký năm, API hồ sơ lương không cho thay chỉ tiêu kế thừa bằng giá trị mới từ cửa sổ cũ; trả 409 và yêu cầu sửa ở bảng năm. Chặn cả khi chuyển tháng hoặc đã xóa hết đăng ký (đối chiếu audit), tránh ô chỉ đọc đã resolve bị ghi ngược vào hồ sơ dùng cho tháng sau. Các trường lương/phụ cấp khác vẫn lưu bình thường.
+
+Chỉ tiêu đăng ký năm chỉ được dùng trong phép tính khi nhân viên hiện có chức vụ Sale. Các bản đăng ký cũ ngoài Sale được giữ để bảo toàn lịch sử, nhưng không xuất hiện trong bảng và không ghi đè chỉ tiêu hồ sơ hiện tại; phiếu đã chốt vẫn dùng snapshot.

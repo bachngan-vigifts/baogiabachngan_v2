@@ -323,7 +323,7 @@ export function initMemberDetail(deps) {
       ${moneyInput('phoneAllowance', 'Phụ cấp điện thoại / tháng', p.phoneAllowance)}
       ${moneyInput('attendanceBonus', 'Chuyên cần / tháng (BN, Lock)', p.attendanceBonus)}
       ${numInput('outputRate', 'Đơn giá sản lượng (đ) hoặc tỷ lệ (0,005 = 0,5%)', p.outputRate || '', 'placeholder="Kho 15000 · TK 30000 · IT 0,005"')}
-      <label>Chỉ tiêu DS cá nhân · kỳ ${esc(st.month)}<input data-revenue-goal readonly value="${money(p.revenueTarget||prm.kpiRevenue)}"><small data-revenue-source>${p.revenueTargetSource==='registration'?'Từ bảng đăng ký doanh số năm':p.revenueTarget?'Chưa đăng ký tháng này · dùng chỉ tiêu hồ sơ cũ':'Chưa đăng ký tháng này · dùng mức chung'}</small><button type="button" class="btn secondary small" data-open-revenue-targets>Đăng ký doanh số năm</button></label>
+      ${st.d.member.positionId==='sale'?`<label>Chỉ tiêu DS cá nhân · kỳ ${esc(st.month)}<input data-revenue-goal readonly value="${money(p.revenueTarget||prm.kpiRevenue)}"><small data-revenue-source>${p.revenueTargetSource==='registration'?'Từ bảng đăng ký doanh số năm':p.revenueTarget?'Chưa đăng ký tháng này · dùng chỉ tiêu hồ sơ cũ':'Chưa đăng ký tháng này · dùng mức chung'}</small><button type="button" class="btn secondary small" data-open-revenue-targets>Đăng ký doanh số năm</button></label>`:''}
       ${p.kpiEligible === false ? '' : `<p class="muted small span-2">Chỉ tiêu KPI riêng (Sale tính KPI): để trống = theo mức chung của tháng ở Thiết lập lương. Không nhập 0. Trọng số và bậc thưởng dùng chung.</p>
       ${numInput('kpiNewCustomersTarget', `Chỉ tiêu KH mới / tháng (trống = chung ${prm.kpiNewCustomers})`, p.kpiNewCustomersTarget, `placeholder="Chung: ${prm.kpiNewCustomers}" min="1"`)}
       ${numInput('kpiTransactionsTarget', `Chỉ tiêu giao dịch / tháng (trống = chung ${prm.kpiTransactions})`, p.kpiTransactionsTarget, `placeholder="Chung: ${prm.kpiTransactions}" min="1"`)}
@@ -349,7 +349,8 @@ export function initMemberDetail(deps) {
         .then(() => toast('Đã lưu hồ sơ lương.')));
     const history = document.querySelector('dialog.modal [data-salary-history]');
     const salaryDialog=history.closest('dialog');
-    salaryDialog.querySelector('[data-open-revenue-targets]').onclick=()=>openRevenueTargets({api,esc,toast,confirmBox},st.month.slice(0,4),async()=>{
+    const openTargets=salaryDialog.querySelector('[data-open-revenue-targets]');
+    if(openTargets)openTargets.onclick=()=>openRevenueTargets({api,esc,toast,confirmBox},st.month.slice(0,4),async()=>{
       await reload();const profile=st.d.payroll.profile;
       salaryDialog.querySelector('[data-revenue-goal]').value=money(profile.revenueTarget||st.d.payroll.params.kpiRevenue);
       salaryDialog.querySelector('[data-revenue-source]').textContent=profile.revenueTargetSource==='registration'?'Từ bảng đăng ký doanh số năm':'Chưa đăng ký tháng này · dùng hồ sơ cũ hoặc mức chung';
