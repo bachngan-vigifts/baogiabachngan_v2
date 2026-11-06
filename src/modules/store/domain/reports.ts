@@ -238,3 +238,32 @@ export function stocktakeGaps(lines: readonly StocktakeLine[], threshold: number
   return { surplus: side(l => l.qty > 0), shortage: side(l => l.qty < 0), missingCost: gaps.filter(l => l.value === null).map(l => l.sku),
     mustExplain: threshold === null ? [] : gaps.filter(l => l.value !== null && l.value >= threshold).map(l => l.sku), noGap: gaps.length === 0 };
 }
+
+// ---------------- Báo cáo ngày: checklist cuối ngày, loại sự cố, nhịp bán
+/** Checklist vận hành cuối ngày – bắt buộc trả lời (có / chưa) từng mục để nộp chính thức; KHÔNG tính vào Tiền Trách nhiệm. */
+export const DAILY_CHECKLIST = [
+  { key: 'clean', label: 'Vệ sinh quầy, kệ, mặt kính', hint: '' },
+  { key: 'display', label: 'Trưng bày đúng sơ đồ, đủ tem giá', hint: '' },
+  { key: 'valuable', label: 'Kiểm tra nhanh hàng giá trị cao', hint: 'Đếm 5–10 mã đắt nhất' },
+  { key: 'devices', label: 'Máy POS, máy in, máy quẹt thẻ hoạt động tốt', hint: '' },
+  { key: 'safe', label: 'Két khoá, camera ghi hình', hint: '' },
+] as const;
+export type ChecklistKey = typeof DAILY_CHECKLIST[number]['key'];
+export const INCIDENT_TYPES = { none: 'Không có', complaint: 'Khách khiếu nại', damage: 'Bể vỡ / hỏng hàng', device: 'Thiết bị hỏng', security: 'An ninh / mất hàng', other: 'Khác' } as const;
+export type IncidentType = keyof typeof INCIDENT_TYPES;
+/** Chuẩn hoá loại sự cố: "Không có" đi một mình; loại lạ bị bỏ. */
+export function incidentTypesOf(v: unknown): IncidentType[] {
+  const list = [...new Set((Array.isArray(v) ? v : []).filter((x): x is IncidentType => typeof x === 'string' && Object.hasOwn(INCIDENT_TYPES, x)))];
+  return list.includes('none') && list.length > 1 ? list.filter(x => x !== 'none') : list;
+}
+/** So doanh thu hôm nay với trung bình các ngày có mở ca trước đó (không có ngày nào → null, không coi là 0). */
+export function compareAvg(today: number, previous: readonly number[]) {
+  if (!previous.length) return { avg: null, pct: null, days: 0 };
+  const avg = previous.reduce((n, x) => n + x, 0) / previous.length;
+  return { avg: Math.round(avg), pct: avg > 0 ? Math.round((today - avg) / avg * 1000) / 10 : null, days: previous.length };
+}
+/** Nhịp chỉ tiêu tháng tính tới ngày `day`: % thời gian đã qua, cần bán thêm mỗi ngày còn lại (sau ngày báo cáo). */
+export function monthPace(day: string, target: number, revenue: number) {
+  const days = new Date(Date.UTC(+day.slice(0, 4), +day.slice(5, 7), 0)).getUTCDate(), d = +day.slice(8, 10), left = days - d;
+  return { elapsed: Math.round(d / days * 1000) / 10, daysLeft: left, needPerDay: left > 0 ? Math.max(0, Math.ceil((target - revenue) / left)) : null };
+}

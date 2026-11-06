@@ -250,7 +250,78 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
       ${t('scopeNote', 'Phạm vi chưa kiểm và lý do')}${t('damagedNote', 'Hàng hỏng / bể vỡ / chờ xử lý')}${t('gapExplanation', 'Giải trình chung các chênh lệch')}${t('note', 'Ghi chú')}`;
   }
   const when = v => new Date(v).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
-  const INPUT_KEYS = ['bankDeposit', 'bankRef', 'cashExplanation', 'incidents', 'note', 'orderProposal', 'orderRefs', 'slowAction', 'roster', 'nextWeekPlan', 'groupAnalysis', 'staffReview', 'nextMonthPlan', 'scopeNote', 'damagedNote', 'gapExplanation'];
+  const INPUT_KEYS = ['bankDeposit', 'bankRef', 'cashExplanation', 'incidents', 'officeSupport', 'tomorrowPlan', 'note', 'orderProposal', 'orderRefs', 'slowAction', 'roster', 'nextWeekPlan', 'groupAnalysis', 'staffReview', 'nextMonthPlan', 'scopeNote', 'damagedNote', 'gapExplanation'];
+  // ---------------- Báo cáo ngày: 5 phần, chuyển nhanh, đếm ngược hạn, checklist, sự cố theo loại
+  const SECTIONS = [['s1', 'Doanh số'], ['s2', 'Tiền & quỹ'], ['s3', 'Vận hành'], ['s4', 'Hàng hoá'], ['s5', 'Sự cố & kế hoạch']];
+  const num = v => v === null || v === undefined ? '—' : Number(v).toLocaleString('vi-VN');
+  function dailyLayout(d, v, ro, f, factsNote) {
+    const t = f.target, c = f.cash || {}, ck = v.checklist || {}, inc = v.incidentTypes || [];
+    const card = (id, title, body, badge = '') => `<section class="store-sec" id="${id}" data-sec="${id}"><div class="store-sec-h"><h3>${esc(title)}</h3>${badge}</div>${body}</section>`;
+    const src = (auto, txt) => `<span class="store-src ${auto ? 'auto' : 'input'}">${esc(txt)}</span>`;
+    const ta = (name, lab, hint = '', req = '') => `<label class="span-2">${esc(lab)}${req}<textarea name="${name}" rows="2" ${ro ? 'readonly' : ''} placeholder="${esc(hint)}">${esc(v[name] || '')}</textarea></label>`;
+    const vs = f.vsAvg7 || {};
+    const s1 = `${src(true, 'CRM tự điền · ' + factsNote)}
+      <div class="store-big num">${vnd(f.totals.revenue)}</div>
+      <p class="muted small">Doanh thu POS (gồm VAT, đơn không huỷ)${vs.avg !== null && vs.avg !== undefined ? ` · ${vs.pct === null ? 'TB ' + vs.days + ' ngày trước: ' + vnd(vs.avg) : `${vs.pct >= 0 ? '+' : ''}${String(vs.pct).replace('.', ',')}% so TB ${vs.days} ngày có ca`}` : ' · chưa có ngày trước để so'}</p>
+      <div class="store-kpis"><div><small>Hoá đơn</small><b class="num">${num(f.totals.bills)}</b></div><div><small>TB / hoá đơn</small><b class="num">${vnd(f.aov)}</b></div><div><small>Khách mới</small><b class="num">${num(f.newCustomers)}</b></div></div>
+      <p class="small num">Tiền mặt ${vnd(f.totals.cash)} · CK ${vnd(f.totals.transfer)} · Khác ${vnd(f.totals.other)}${f.totals.returnsValue ? ` · Hàng trả ${vnd(f.totals.returnsValue)}` : ''}</p>
+      ${t?.configured ? `<div class="store-target"><div class="row"><b>Tiến độ chỉ tiêu tháng</b><b class="num">${pct1(t.ratio)}</b></div><div class="store-bar"><i style="width:${Math.min(100, t.ratio * 100)}%"></i></div>
+        <p class="muted small num">Doanh số xét chỉ tiêu (CRM + POS, trước VAT) ${vnd(t.revenue)} / ${vnd(t.target)} · đã qua ${String(t.pace.elapsed).replace('.', ',')}% tháng${t.pace.needPerDay !== null ? ` · cần <b>${vnd(t.pace.needPerDay)}</b>/ngày còn lại` : ''}</p></div>`
+        : `<p class="warn-text small">Chỉ tiêu tháng: ${esc(t?.reason || 'chưa cấu hình')}</p>`}
+      ${f.top?.length ? `<h4>Bán chạy hôm nay</h4>${factTable(['Mã', 'Sản phẩm', '>SL'], f.top.map(x => `<tr><td>${esc(x.sku)}</td><td>${esc(x.name)}</td><td class="right num">${x.qty}</td></tr>`))}` : ''}`;
+    const s2 = `${dailyHtml(f).split('<h3>Các ca</h3>')[0].replace(/^[\s\S]*?(<h3>Tiền phải nộp)/, '$1').replace('<h3>Tiền phải nộp (theo Sổ quỹ)</h3>', src(true, 'Tiền phải nộp – theo Sổ quỹ'))}
+      ${src(false, 'CHT nhập')}
+      <div class="form-grid cols-2"><label>Tiền mặt đã nộp ngân hàng<input name="bankDeposit" inputmode="numeric" ${ro ? 'readonly' : ''} value="${v.bankDeposit ?? ''}" placeholder="0"></label>
+      <label>Mã giao dịch / ghi chú nộp tiền<input name="bankRef" maxlength="200" ${ro ? 'readonly' : ''} value="${esc(v.bankRef || '')}"></label>
+      ${ta('cashExplanation', 'Giải trình chênh lệch tiền nộp', 'VD: giữ lại đổi tiền lẻ, nộp sáng mai; đã nộp nhưng chưa lập phiếu Nộp két…', c.needsExplanation ? ' <b class="danger-text">*</b>' : '')}</div>
+      <section class="store-files" data-files><h4>Chứng từ nộp tiền / tệp đính kèm</h4><p class="muted small">Đang tải…</p></section>`;
+    const s3 = `${src(false, 'Checklist cuối ngày – trả lời từng mục (bắt buộc, không trừ tiền)')}
+      <div class="store-checks">${(d.checklistItems || []).map(i => `<div class="store-check" data-ck="${esc(i.key)}"><span>${esc(i.label)}${i.hint ? `<small>${esc(i.hint)}</small>` : ''}</span><span class="store-seg">${[['yes', 'Đã làm'], ['no', 'Chưa']].map(([k, l]) => `<button type="button" data-v="${k}" aria-pressed="${ck[i.key] === k}" ${ro ? 'disabled' : ''}>${l}</button>`).join('')}</span></div>`).join('')}</div>
+      <h4>Các ca hôm nay</h4>${dailyHtml(f).split('<h3>Các ca</h3>')[1]?.split('<h3>Trả / đổi')[0] || ''}`;
+    const low = f.lowStock || {};
+    const s4 = `${src(true, 'CRM tự điền')}
+      <h4>Hàng dưới ngưỡng tối thiểu</h4>${!low.configured ? '<p class="muted small">Chưa cấu hình ngưỡng tồn cho kho cửa hàng.</p>' : low.items.length ? factTable(['Mã', 'Sản phẩm', '>Tồn', '>Đang về', '>Ngưỡng'], low.items.map(i => `<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td class="right num">${i.onHand}</td><td class="right num">${i.incoming}</td><td class="right num">${i.minQty}</td></tr>`)) : '<p class="muted small">Không có mã dưới ngưỡng.</p>'}
+      <h4>Hàng nhận trong ngày (điều chuyển)</h4>${f.received?.length ? `<ul class="store-plain">${f.received.map(r => `<li>${esc(r.transferNo)} · ${r.lines} mã · đã nhận</li>`).join('')}</ul>` : '<p class="muted small">Không có.</p>'}
+      ${(f.returns?.length || f.refunds?.length) ? '<h4>Trả / đổi hàng và hoàn tiền</h4>' + (dailyHtml(f).split('<h3>Trả / đổi hàng và hoàn tiền</h3>')[1] || '') : ''}`;
+    const s5 = `${src(false, 'CHT nhập')}
+      <div class="store-pills">${Object.entries(d.incidentTypes || {}).map(([k, l]) => `<button type="button" data-inc="${k}" aria-pressed="${inc.includes(k)}" ${ro ? 'disabled' : ''}>${esc(l)}</button>`).join('')}</div>
+      <div class="form-grid cols-2">${ta('incidents', 'Mô tả sự cố và cách xử lý', 'Chuyện gì, lúc nào, đã xử lý ra sao, cần văn phòng làm gì')}
+      ${ta('officeSupport', 'Cần văn phòng hỗ trợ', 'VD: gửi thêm 2 thùng hộp quà trước thứ Sáu')}${ta('tomorrowPlan', 'Kế hoạch ngày mai', '1–3 việc chính')}${ta('note', 'Ghi chú')}</div>`;
+    return `<div class="store-deadline"><span>Hạn nộp <b>${esc(when(d.deadline))}</b> · <span data-countdown></span></span>${f.openShifts ? pill('warn', `${f.openShifts} ca đang mở – tạm tính`) : ''}</div>
+      <nav class="store-steps" aria-label="Các phần báo cáo">${SECTIONS.map(([id, l], i) => `<a href="#${id}" data-step="${id}"><span class="dot">${i + 1}</span>${esc(l)}</a>`).join('')}</nav>
+      ${card('s1', 'Doanh số hôm nay', s1)}${card('s2', 'Tiền & quỹ', s2, c.needsExplanation ? pill('danger', 'Cần giải trình') : '')}${card('s3', 'Vận hành cửa hàng', s3, '<span class="pill info" data-ckcount></span>')}${card('s4', 'Hàng hoá', s4)}${card('s5', 'Sự cố & kế hoạch', s5)}`;
+  }
+  /** Gắn thao tác cho báo cáo ngày + tính các mục bắt buộc còn thiếu (máy chủ kiểm lại khi nộp). */
+  function wireDaily(dlg, d, editable) {
+    const f = dlg.querySelector('form'), hint = dlg.querySelector('[data-hint]'), cd = dlg.querySelector('[data-countdown]');
+    const tick = () => { const ms = Date.parse(d.deadline) - Date.now(); if (!cd) return; cd.textContent = ms > 0 ? `còn ${Math.floor(ms / 3600_000)} giờ ${Math.floor(ms % 3600_000 / 60_000)} phút` : 'đã quá hạn'; };
+    tick(); const timer = setInterval(tick, 30_000); dlg.addEventListener('close', () => clearInterval(timer));
+    dlg.querySelectorAll('[data-step]').forEach(a => a.onclick = e => { e.preventDefault(); dlg.querySelector('#' + a.dataset.step)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    const update = () => {
+      const groups = [...dlg.querySelectorAll('[data-ck]')], answered = groups.filter(g => g.querySelector('[aria-pressed="true"]')).length;
+      const cnt = dlg.querySelector('[data-ckcount]'); if (cnt) cnt.textContent = `${answered}/${groups.length}`;
+      const types = [...dlg.querySelectorAll('[data-inc][aria-pressed="true"]')].map(b => b.dataset.inc);
+      const needCash = !!d.facts?.cash?.needsExplanation && (f.elements.cashExplanation?.value || '').trim().length < 3;
+      const needInc = !types.length || (!types.includes('none') && (f.elements.incidents?.value || '').trim().length < 3);
+      const missing = [needCash && 'giải trình chênh lệch tiền', answered < groups.length && `checklist (${groups.length - answered} mục)`, needInc && (types.length ? 'mô tả sự cố' : 'chọn sự cố')].filter(Boolean);
+      const state = { s2: !needCash, s3: answered === groups.length, s5: !needInc };
+      dlg.querySelectorAll('[data-step]').forEach(a => { const ok = state[a.dataset.step]; a.classList.toggle('done', ok === true); a.classList.toggle('need', ok === false); });
+      if (hint) hint.innerHTML = missing.length ? `Còn thiếu: <b>${esc(missing.join(', '))}</b>` : 'Đủ mục bắt buộc – có thể nộp chính thức.';
+    };
+    if (editable) {
+      dlg.querySelectorAll('[data-ck]').forEach(g => g.querySelectorAll('button').forEach(b => b.onclick = () => { g.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); update(); }));
+      const pills = [...dlg.querySelectorAll('[data-inc]')];
+      pills.forEach(p => p.onclick = () => {
+        const on = p.getAttribute('aria-pressed') !== 'true';
+        if (p.dataset.inc === 'none') pills.forEach(x => x.setAttribute('aria-pressed', String(x === p && on)));
+        else { p.setAttribute('aria-pressed', String(on)); pills.find(x => x.dataset.inc === 'none')?.setAttribute('aria-pressed', 'false'); }
+        update();
+      });
+      f.addEventListener('input', update);
+    }
+    update();
+  }
+
   async function openReport(registerId, kind, period) {
     let d; try { d = await api(`/store/reports/draft?registerId=${encodeURIComponent(registerId)}&kind=${kind}&period=${period}`); } catch (e) { toast(e.message, 'err'); return; }
     const rep = d.report, editable = d.canEdit, canReview = status?.canReview && rep;
@@ -265,22 +336,28 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
           ${d.draft ? ` · Nháp lưu ${esc(when(d.draft.updatedAt))}` : ''}</p>
         ${d.blockers?.length ? `<p class="warn-text small">${d.blockers.map(esc).join(' ')}</p>` : ''}
         ${rep?.reviewNote ? `<p class="small">Ghi chú duyệt: ${esc(rep.reviewNote)}</p>` : ''}
+        ${kind === 'daily' ? dailyLayout(d, values, !editable, shownFacts, editable || !rep ? `tính lúc ${when(factsAt)} (nộp sẽ tính lại)` : `lúc nộp ${when(factsAt)}`) : `
         <section class="store-facts-box"><h3>Số liệu CRM ${editable || !rep ? `tính lúc ${esc(when(factsAt))} (nộp sẽ tính lại)` : `lúc nộp ${esc(when(factsAt))}`}</h3>${factsHtml(kind, shownFacts)}</section>
         <div class="form-grid cols-2">${inputsHtml(kind, values, !editable, shownFacts)}</div>
-        <section class="store-files" data-files><h3>Tệp đính kèm</h3><p class="muted small">Đang tải…</p></section>
+        <section class="store-files" data-files><h3>Tệp đính kèm</h3><p class="muted small">Đang tải…</p></section>`}
         ${d.versions?.length > 1 ? `<details class="store-versions"><summary>Lịch sử nộp (${d.versions.length} lần)</summary><ol>${d.versions.map(v => `<li>Lần ${v.version} · ${esc(when(v.submittedAt))} · ${esc(v.member || '')}${v.provisional ? ' · tạm tính' : ''}</li>`).join('')}</ol></details>` : ''}
         ${rep && (data?.isManager) ? `<label class="span-2">Giải trình của CHT<textarea name="explanation" rows="2">${esc(rep.explanation || '')}</textarea></label><button type="button" class="btn secondary small" data-explain>Gửi giải trình</button>` : rep?.explanation ? `<p class="small"><b>Giải trình:</b> ${esc(rep.explanation)}</p>` : ''}
         ${canReview ? `<div class="store-review"><h3>Duyệt</h3><div class="chips">${status.reviewFor[kind].map(k => `<label class="chip"><input type="radio" name="review" value="${k}" ${rep.review === k ? 'checked' : ''}> ${esc(status.labels.reviews[k])}</label>`).join('')}</div>
           <label>Lý do / ghi chú (bắt buộc khi không đạt hoặc miễn)<input name="reviewNote" maxlength="1000" value="${esc(rep.reviewNote || '')}"></label><button type="button" class="btn primary small" data-review>Lưu kết quả duyệt</button></div>` : ''}
         <p class="error" data-err role="alert"></p></div>
-      <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button>${editable ? `<button type="button" class="btn secondary" data-draft>Lưu nháp</button>` : ''}${d.canSubmit ? `<button class="btn primary">${rep ? 'Nộp lại chính thức' : 'Nộp chính thức'}</button>` : ''}</div></form>`;
+      <div class="modal-foot">${kind === 'daily' && editable ? '<p class="store-hint small" data-hint></p>' : ''}<button type="button" class="btn secondary" data-x>Đóng</button>${editable ? `<button type="button" class="btn secondary" data-draft>Lưu nháp</button>` : ''}${d.canSubmit ? `<button class="btn primary">${rep ? 'Nộp lại chính thức' : 'Nộp chính thức'}</button>` : ''}</div></form>`;
     document.body.append(dlg); dlg.showModal(); labelCells(dlg);
     const f = dlg.querySelector('form'), err = dlg.querySelector('[data-err]');
     dlg.addEventListener('close', () => dlg.remove());
     dlg.querySelectorAll('[data-x]').forEach(b => b.onclick = () => dlg.close());
     const after = async msg => { toast(msg); dlg.close(); status = null; await loadStatus().catch(() => {}); if (location.hash.startsWith('#/store-reports')) show(`registerId=${encodeURIComponent(registerId)}&month=${current.month}`); };
     loadFiles(dlg.querySelector('[data-files]'), registerId, kind, period, editable);
+    if (kind === 'daily') wireDaily(dlg, d, editable);
     const collect = () => { const el = f.elements, inputs = {}; for (const k of INPUT_KEYS) if (el[k]) inputs[k] = el[k].value; if (el.counted) inputs.counted = el.counted.checked;
+      if (kind === 'daily') {
+        inputs.checklist = Object.fromEntries([...f.querySelectorAll('[data-ck]')].map(g => [g.dataset.ck, g.querySelector('[aria-pressed="true"]')?.dataset.v]).filter(([, v]) => v));
+        inputs.incidentTypes = [...f.querySelectorAll('[data-inc][aria-pressed="true"]')].map(b => b.dataset.inc);
+      }
       const sku = [...f.querySelectorAll('[data-sku]')]; if (sku.length) inputs.skuExplanations = Object.fromEntries(sku.map(i => [i.dataset.sku, i.value]));
       return inputs; };
     dlg.querySelector('[data-draft]')?.addEventListener('click', async ev => {
