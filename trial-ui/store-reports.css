@@ -28,3 +28,17 @@
   .store-slots { grid-template-columns:repeat(2, minmax(0, 1fr)); }
   .store-quick .btn { flex:1 1 45%; }
 }
+
+/* Nháp / nộp chính thức, tiền phải nộp, trả / đổi / hoàn, lịch sử nộp */
+.store-kv dd small, .store-facts td small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+.store-facts-box h3 { margin: 14px 0 6px; font-size: 14px; }
+.store-versions { margin: 8px 0; font-size: 13px; }
+.store-versions ol { margin: 6px 0 0 18px; display: grid; gap: 2px; }
+.store-dialog .modal-foot { flex-wrap: wrap; gap: 8px; }
+@media (max-width: 640px) {
+  .store-dialog .modal-foot .btn { flex: 1 1 140px; min-height: 44px; }
+  .store-kv { grid-template-columns: minmax(0, 1fr) auto; }
+}
+@media (max-width: 640px) {
+  #view-store-reports .store-facts td, .store-dialog .store-facts td { white-space: normal !important; overflow-wrap: anywhere; }
+}

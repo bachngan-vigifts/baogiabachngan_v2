@@ -1,7 +1,8 @@
 /**
  * BÁO CÁO CỬA HÀNG TRƯỞNG (CHT) – trang #/store-reports[?registerId=&month=] + hộp nhắc việc 30 phút / lần.
- *  - CHT: nộp báo cáo ngày / tuần / tháng / kiểm tồn kho (CRM tự điền số liệu ca POS, doanh số, hàng bán chạy / chậm, phiếu kiểm kê), giải trình.
- *  - Người duyệt (Manager / quyền "Duyệt báo cáo Cửa hàng trưởng"): xem mọi cửa hàng, duyệt, gán CHT (Manager).
+ *  - CHT: lưu nháp / nộp chính thức báo cáo ngày / tuần / tháng / kiểm tồn kho (CRM tự tính số liệu ca POS, Sổ quỹ, trả / đổi / hoàn, doanh số,
+ *    hàng bán chạy / chậm, phiếu kiểm kê), giải trình. Nháp không tính là đã nộp.
+ *  - Người duyệt (Manager / quyền "Duyệt báo cáo Cửa hàng trưởng"): xem mọi cửa hàng, duyệt; Manager gán CHT và cấu hình cửa hàng.
  *  - Tiền Trách nhiệm tạm tính theo 4 ngạch (domain: src/modules/store/domain/reports.ts). Mọi quyền kiểm tra lại ở máy chủ.
  */
 const STATE = { on_time: ['Đúng hạn', 'ok'], late: ['Nộp trễ', 'warn'], missing: ['Chưa nộp – quá hạn', 'danger'], not_due: ['Chưa tới hạn', 'muted'] };
@@ -86,10 +87,10 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
   const byKey = () => new Map(data.reports.map(r => [r.kind + ':' + r.period, r]));
   function row(kind, period, r) {
     const st = r ? r.state.state : (new Date().toISOString() > dueOf(kind, period) ? 'missing' : 'not_due');
-    const review = r?.review || 'pending';
-    const act = data.isManager && (!r || review === 'pending') ? `<button type="button" class="btn ${r ? 'secondary' : 'primary'} small" data-open="${kind}|${period}">${r ? 'Sửa' : 'Nộp'}</button>`
+    const review = r?.review || 'pending', draft = !r && (data.drafts || []).some(x => x.kind === kind && x.period === period);
+    const act = data.isManager && (!r || review === 'pending') ? `<button type="button" class="btn ${r ? 'secondary' : 'primary'} small" data-open="${kind}|${period}">${r ? 'Xem / nộp lại' : draft ? 'Tiếp tục nháp' : 'Làm báo cáo'}</button>`
       : `<button type="button" class="btn ghost small" data-open="${kind}|${period}">${data.canReview && r && review === 'pending' ? 'Duyệt' : 'Xem'}</button>`;
-    return `<tr><td>${esc(periodLabel(kind, period))}</td><td>${pill(STATE[st][1], STATE[st][0])}${r ? `<small class="muted"> ${esc(new Date(r.submittedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }))}</small>` : ''}</td>
+    return `<tr><td>${esc(periodLabel(kind, period))}</td><td>${pill(STATE[st][1], STATE[st][0])}${r ? `<small class="muted"> ${esc(new Date(r.submittedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }))}</small>` : ''}${draft ? ' ' + pill('muted', 'Có nháp – chưa nộp') : ''}${r?.provisional ? ' ' + pill('warn', 'Tạm tính (ca chưa đóng)') : ''}</td>
       <td>${r ? pill(REVIEW_TONE[review], status.labels.reviews[review]) : ''}${r?.explanation ? ' <span class="pill info">Có giải trình</span>' : ''}</td><td class="right">${(st !== 'not_due' || data.isManager) ? act : ''}</td></tr>`;
   }
   // Hạn nộp phía máy khách (chỉ để hiện trạng thái kỳ chưa có báo cáo; máy chủ tính lại khi nộp).
@@ -112,6 +113,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
           <input type="month" id="store-month" value="${esc(current.month)}" aria-label="Tháng">
           ${guideLink()}
           ${status.canAssign ? '<button type="button" class="btn secondary" data-assign>Gán CHT</button>' : ''}
+          ${data.canConfigure ? '<button type="button" class="btn secondary" data-settings>Cấu hình cửa hàng</button>' : ''}
         </div></div>
       ${data.isManager ? `<div class="store-quick">
         <button type="button" class="btn primary" data-open="daily|${today}">Báo cáo ngày hôm nay</button>
@@ -121,7 +123,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
       <div class="card store-resp"><div class="card-title-row"><h2 class="card-title">Tiền Trách nhiệm tháng ${esc(monthLabel(data.month))} (tạm tính)</h2><strong class="store-total">${vnd(r.total)}</strong></div>
         <div class="store-slots">${r.parts.map(p => `<div class="store-slot ${p.amount === 250000 ? 'full' : p.amount ? 'part' : 'zero'}"><small>${SLOT[p.slot]}</small><b>${vnd(p.amount)}</b>
           <span class="muted small">${p.slot === 'daily' || p.slot === 'weekly' ? `${p.fails} lần chưa đạt` : p.amount === 250000 ? 'Đạt' : 'Chưa đạt'}</span></div>`).join('')}</div>
-        <p class="muted small">Ngày cần báo cáo = ngày cửa hàng mở ca POS. Sai số liệu sổ quỹ tính 2 lần. Có lý do khách quan được duyệt "Miễn" thì không tính.</p></div>
+        <p class="muted small">Ngày cần báo cáo = ngày cửa hàng mở ca POS. Chỉ báo cáo <b>nộp chính thức</b> mới được tính; nháp chưa tính. Sai số liệu sổ quỹ (người duyệt đánh dấu) tính 2 lần. Có lý do khách quan được duyệt "Miễn" thì không tính.</p></div>
       <div class="card"><h2 class="card-title">Báo cáo ngày (hạn 22h00)</h2>${table(data.dailyDays.slice().reverse().map(d => row('daily', d, keys.get('daily:' + d))), 'Tháng này cửa hàng chưa mở ca nào.')}</div>
       <div class="card"><h2 class="card-title">Báo cáo tuần (hạn 10h00 thứ Hai tuần sau)</h2>${table(data.weeks.slice().reverse().map(w => row('weekly', w, keys.get('weekly:' + w))), 'Chưa có tuần cần báo cáo trong tháng.')}</div>
       <div class="card"><h2 class="card-title">Báo cáo tháng & kiểm tồn kho (hạn trước ngày 02 tháng sau)</h2>${table(['monthly', 'stocktake'].map(k => row(k, data.month, keys.get(k + ':' + data.month)).replace(/<td>Tháng [^<]*<\/td>/, `<td>${esc(label(k))}</td>`)), '')}</div>`;
@@ -129,6 +131,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
     root.querySelector('#store-pick')?.addEventListener('change', e => go(`#/store-reports?registerId=${encodeURIComponent(e.target.value)}&month=${current.month}`));
     root.querySelector('#store-month')?.addEventListener('change', e => { if (e.target.value) go(`#/store-reports?registerId=${encodeURIComponent(current.registerId)}&month=${e.target.value}`); });
     root.querySelector('[data-assign]')?.addEventListener('click', assign);
+    root.querySelector('[data-settings]')?.addEventListener('click', () => settings(current.registerId));
     root.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { const [kind, period] = b.dataset.open.split('|'); openReport(current.registerId, kind, period); });
   }
 
@@ -137,10 +140,42 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
   const labelCells = el => el.querySelectorAll('table.data-table').forEach(t => { const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent);
     t.querySelectorAll('tbody tr').forEach(tr => [...tr.children].forEach((td, i) => { if (heads[i]) td.dataset.label = heads[i]; })); });
   const factTable = (head, rows) => rows.length ? `<div class="table-wrap"><table class="data-table store-facts"><thead><tr>${head.map(h => `<th${h.startsWith('>') ? ' class="right"' : ''}>${esc(h.replace(/^>/, ''))}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>` : '<p class="muted small">Không có dữ liệu.</p>';
+  const hm = v => v ? new Date(v).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }) : '';
+  const RETURN_STATUS = { pending: 'Chờ duyệt', approved: 'Đã duyệt', processing: 'Đang xử lý', completed: 'Hoàn tất', rejected: 'Từ chối', cancelled: 'Đã huỷ' };
+  /** Báo cáo ngày: doanh thu, tiền phải nộp theo sổ quỹ, ca, trả / đổi / hoàn. */
+  function dailyHtml(f) {
+    const c = f.cash || {}, t = f.totals;
+    const cashBox = `<h3>Tiền phải nộp (theo Sổ quỹ)</h3>
+      ${c.missingLabels?.length ? `<p class="warn-text small"><b>Thiếu căn cứ:</b> ${c.missingLabels.map(esc).join('; ')}. Chưa tính tiền phải nộp – không tự coi là 0.</p>` : ''}
+      <dl class="kv store-kv">
+        <dt>Tiền đầu ngày (đếm lúc mở ca đầu)</dt><dd class="num">${vnd(c.opening)}</dd>
+        <dt>+ Thu tiền mặt bán hàng / COD</dt><dd class="num">${vnd(c.cashSales)}</dd>
+        <dt>+ Thu khác / rút két</dt><dd class="num">${vnd(c.otherIn)}</dd>
+        <dt>− Chi vặt, tạm ứng, hoàn tiền khách</dt><dd class="num">${vnd(c.spent)}${c.refundsCash ? `<small>gồm hoàn tiền ${vnd(c.refundsCash)}</small>` : ''}</dd>
+        <dt>− Quỹ được giữ lại</dt><dd class="num">${vnd(c.retained)}</dd>
+        <dt><b>= Tiền phải nộp</b></dt><dd class="num"><b>${vnd(c.due)}</b>${c.schedule === 'periodic' ? '<small>Lịch nộp theo đợt: không bắt buộc nộp hôm nay</small>' : ''}</dd>
+        <dt>Đã nộp theo Sổ quỹ (phiếu Nộp két)</dt><dd class="num">${vnd(c.depositedBook)}</dd>
+        <dt>CHT khai đã nộp ngân hàng</dt><dd class="num">${vnd(c.declared)}</dd>
+        ${c.declaredDiff !== null && c.declaredDiff !== undefined ? `<dt>Khai so với phải nộp</dt><dd class="num ${c.declaredDiff ? 'danger-text' : ''}">${vnd(c.declaredDiff)}</dd>` : ''}
+        ${c.bookDiff ? `<dt>Khai so với Sổ quỹ</dt><dd class="num danger-text">${vnd(c.bookDiff)}</dd>` : ''}
+      </dl>
+      ${c.adjustments ? `<p class="muted small">Phiếu điều chỉnh két trong ngày ${vnd(c.adjustments)} – sửa số dư sổ, không tính vào tiền phải nộp.</p>` : ''}
+      ${c.pendingEntries ? `<p class="warn-text small">${c.pendingEntries} phiếu thu/chi chờ duyệt (${vnd(c.pendingAmount)}) – chưa tính.</p>` : ''}
+      ${c.needsExplanation ? '<p class="warn-text small">Có chênh lệch – nhập giải trình. Người duyệt quyết định đạt / sai sổ quỹ; CRM không tự trừ.</p>' : ''}`;
+    const returns = f.returns?.length || f.refunds?.length ? `<h3>Trả / đổi hàng và hoàn tiền</h3>
+      ${factTable(['Phiếu', 'Loại', 'Đơn gốc', 'Trạng thái', '>Giá trị'], (f.returns || []).map(r => `<tr><td>${esc(r.returnNo)}</td><td>${r.kind === 'exchange' ? 'Đổi' : 'Trả'}</td><td>${r.orderId ? `<a href="#/orders/${encodeURIComponent(r.orderId)}">${esc(r.orderNo || r.orderId)}</a>` : ''}${r.exchanges.map(x => `<small>Đổi sang <a href="#/orders/${encodeURIComponent(x.orderId)}">${esc(x.orderNo || '')}</a> · ${vnd(x.amount)}</small>`).join('')}</td><td>${esc(RETURN_STATUS[r.status] || r.status)}</td><td class="right num">${vnd(r.total)}</td></tr>`))}
+      ${f.refunds?.length ? factTable(['Phiếu hoàn', 'Phiếu trả', 'Hình thức', '>Số tiền'], f.refunds.map(r => `<tr><td>${esc(r.refundNo)}</td><td>${esc(r.returnNo)}</td><td>${r.method === 'cash' ? 'Tiền mặt (đã ghi Sổ quỹ)' : 'Chuyển khoản'}${r.inShift ? '' : '<small>ngoài ca hôm nay</small>'}</td><td class="right num">${vnd(r.amount)}</td></tr>`)) : ''}` : '';
+    return `${f.openShifts ? `<p class="warn-text small"><b>Còn ${f.openShifts} ca chưa đóng</b> – số liệu đang là tạm tính. Nộp chính thức lúc này sẽ ghi "tạm tính"; đóng ca rồi nộp lại để hoàn tất (giờ nộp đầu vẫn được giữ).</p>` : ''}
+      <dl class="kv store-kv"><dt>Doanh thu POS (gồm VAT, đơn không huỷ)</dt><dd class="num"><b>${vnd(t.revenue)}</b> · ${t.bills} hoá đơn</dd>
+        <dt>Tiền mặt / CK / khác</dt><dd class="num">${vnd(t.cash)} / ${vnd(t.transfer)} / ${vnd(t.other)}</dd>
+        ${t.returnsValue ? `<dt>Hàng trả hoàn tất</dt><dd class="num">${vnd(t.returnsValue)}</dd>` : ''}
+        <dt>Lệch quỹ khi kết ca</dt><dd class="num">${t.shortage ? `<span class="danger-text">Thiếu ${vnd(-t.shortage)}</span> ` : ''}${t.surplus ? `<span class="warn-text">Thừa ${vnd(t.surplus)}</span>` : ''}${!t.shortage && !t.surplus ? '0' : ''}</dd></dl>
+      ${cashBox}
+      <h3>Các ca</h3>${factTable(['Ca', 'Người', '>Doanh thu', '>Tiền mặt', '>Đếm / hệ thống', '>Lệch'], f.shifts.map(s => `<tr><td>${esc(hm(s.openedAt))}–${s.closedAt ? esc(hm(s.closedAt)) : '<b class="warn-text">đang mở</b>'}</td><td>${esc(s.member)}</td><td class="right num">${vnd(s.revenue)}</td><td class="right num">${vnd(s.cash)}</td><td class="right num">${s.closedAt ? `${vnd(s.countedCash)} / ${vnd(s.expectedCash)}` : 'chưa kết ca'}</td><td class="right num">${vnd(s.cashDifference)}${s.differenceReason ? `<small>${esc(s.differenceReason)}</small>` : ''}</td></tr>`))}
+      ${returns}`;
+  }
   function factsHtml(kind, f) {
-    if (kind === 'daily') return `<dl class="kv store-kv"><dt>Doanh số</dt><dd class="num"><b>${vnd(f.totals.revenue)}</b> · ${f.totals.bills} hoá đơn</dd><dt>Tiền mặt / CK / khác</dt><dd class="num">${vnd(f.totals.cash)} / ${vnd(f.totals.transfer)} / ${vnd(f.totals.other)}</dd>
-        <dt>Chênh lệch quỹ</dt><dd class="num ${f.totals.cashDifference ? 'danger-text' : ''}">${vnd(f.totals.cashDifference)}</dd></dl>${f.openShifts ? `<p class="warn-text small">Còn ${f.openShifts} ca chưa đóng – đóng ca để số liệu đầy đủ.</p>` : ''}
-      ${factTable(['Ca', 'Người', '>Doanh số', '>Tiền mặt', '>Đếm / hệ thống', '>Lệch'], f.shifts.map(s => `<tr><td>${esc((s.openedAt || '').slice(11, 16))}–${s.closedAt ? esc(s.closedAt.slice(11, 16)) : 'đang mở'}</td><td>${esc(s.member)}</td><td class="right num">${vnd(s.revenue)}</td><td class="right num">${vnd(s.cash)}</td><td class="right num">${vnd(s.countedCash)} / ${vnd(s.expectedCash)}</td><td class="right num">${vnd(s.cashDifference)}${s.differenceReason ? `<small>${esc(s.differenceReason)}</small>` : ''}</td></tr>`))}`;
+    if (kind === 'daily') return dailyHtml(f);
     if (kind === 'weekly' || kind === 'monthly') return `<dl class="kv store-kv"><dt>Doanh số ${kind === 'weekly' ? 'tuần' : 'tháng'}</dt><dd class="num"><b>${vnd(f.revenue)}</b> · ${f.bills} hoá đơn</dd></dl>
       <h3>Bán chạy</h3>${factTable(['Mã', 'Sản phẩm', '>SL', '>Tiền'], f.top.map(t => `<tr><td>${esc(t.sku)}</td><td>${esc(t.name)}</td><td class="right num">${t.qty}</td><td class="right num">${vnd(t.amount)}</td></tr>`))}
       ${kind === 'weekly' ? `<h3>Tồn mà 30 ngày không bán được</h3>${factTable(['Mã', 'Sản phẩm', '>Tồn'], f.slow.map(t => `<tr><td>${esc(t.sku)}</td><td>${esc(t.name)}</td><td class="right num">${t.qty}</td></tr>`))}`
@@ -150,41 +185,51 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
   function inputsHtml(kind, v = {}, ro = false) {
     const t = (name, lab, hint = '') => `<label class="span-2">${esc(lab)}<textarea name="${name}" rows="3" ${ro ? 'readonly' : ''} placeholder="${esc(hint)}">${esc(v[name] || '')}</textarea></label>`;
     if (kind === 'daily') return `<label>Tiền mặt đã nộp ngân hàng<input name="bankDeposit" inputmode="numeric" ${ro ? 'readonly' : ''} value="${v.bankDeposit ?? ''}" placeholder="0"></label>
-      <label>Mã giao dịch / ghi chú nộp tiền<input name="bankRef" maxlength="200" ${ro ? 'readonly' : ''} value="${esc(v.bankRef || '')}"></label>${t('incidents', 'Sự cố phát sinh', 'Khách khiếu nại, bể vỡ, thiết bị hỏng… (ghi "Không có" nếu không có)')}${t('note', 'Ghi chú')}`;
-    if (kind === 'weekly') return t('orderProposal', 'Đề xuất đặt hàng (Sale-in) *', 'Mã / tên hàng, số lượng đề xuất đặt về') + t('roster', 'Lịch ca trực tuần tới') + t('note', 'Ghi chú');
-    if (kind === 'monthly') return t('groupAnalysis', 'Phân tích nhóm hàng') + t('staffReview', 'Đánh giá ngày công và năng lực NVBH *') + t('note', 'Ghi chú');
+      <label>Mã giao dịch / ghi chú nộp tiền<input name="bankRef" maxlength="200" ${ro ? 'readonly' : ''} value="${esc(v.bankRef || '')}"></label>${t('cashExplanation', 'Giải trình chênh lệch tiền nộp (bắt buộc khi có chênh lệch)', 'Ví dụ: ngân hàng đóng cửa, nộp sáng mai; đã nộp nhưng chưa lập phiếu Nộp két…')}${t('incidents', 'Sự cố phát sinh', 'Khách khiếu nại, bể vỡ, thiết bị hỏng… (ghi "Không có" nếu không có)')}${t('note', 'Ghi chú')}`;
+    if (kind === 'weekly') return t('orderProposal', 'Đề xuất đặt hàng (Sale-in) *', 'Mã / tên hàng, số lượng đề xuất đặt về') + t('roster', 'Lịch ca trực tuần tới') + t('nextWeekPlan', 'Kế hoạch tuần tới (ngắn gọn)') + t('note', 'Ghi chú');
+    if (kind === 'monthly') return t('groupAnalysis', 'Nhận xét nhóm hàng') + t('staffReview', 'Đánh giá ngày công và năng lực NVBH *') + t('nextMonthPlan', 'Kế hoạch tháng sau') + t('note', 'Ghi chú');
     return `<label class="check span-2"><input type="checkbox" name="counted" ${v.counted ? 'checked' : ''} ${ro ? 'disabled' : ''}> Đã kiểm kê theo đúng quy trình, biên bản khớp thực tế và phần mềm *</label>${t('gapExplanation', 'Giải trình mọi chênh lệch phát sinh')}${t('note', 'Ghi chú')}`;
   }
+  const when = v => new Date(v).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
+  const INPUT_KEYS = ['bankDeposit', 'bankRef', 'cashExplanation', 'incidents', 'note', 'orderProposal', 'roster', 'nextWeekPlan', 'groupAnalysis', 'staffReview', 'nextMonthPlan', 'gapExplanation'];
   async function openReport(registerId, kind, period) {
     let d; try { d = await api(`/store/reports/draft?registerId=${encodeURIComponent(registerId)}&kind=${kind}&period=${period}`); } catch (e) { toast(e.message, 'err'); return; }
-    const rep = d.report, editable = (data?.isManager ?? status?.mine?.registerId === registerId) && (!rep || rep.review === 'pending'), canReview = status?.canReview && rep;
+    const rep = d.report, editable = d.canEdit, canReview = status?.canReview && rep;
     const st = rep ? rep.state.state : null, clientKey = crypto.randomUUID();
+    const values = d.draft?.inputs || rep?.data?.inputs || {};
+    const shownFacts = editable || !rep ? d.facts : rep.data.facts, factsAt = editable || !rep ? d.factsAt : rep.data.meta?.factsAt || rep.submittedAt;
     const dlg = document.createElement('dialog'); dlg.className = 'modal store-dialog';
     dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>${esc(label(kind))} · ${esc(periodLabel(kind, period))}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body">
-        <p class="small">Hạn nộp: <b>${esc(new Date(d.deadline).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }))}</b>
-          ${rep ? ` · Nộp lúc ${esc(new Date(rep.submittedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }))} ${pill(STATE[st][1], STATE[st][0])} ${pill(REVIEW_TONE[rep.review], status.labels.reviews[rep.review])}` : ''}</p>
+        <p class="small">Hạn nộp: <b>${esc(when(d.deadline))}</b>
+          ${rep ? ` · Nộp chính thức lần đầu ${esc(when(rep.submittedAt))} ${pill(STATE[st][1], STATE[st][0])} ${pill(REVIEW_TONE[rep.review], status.labels.reviews[rep.review])}${rep.data?.meta?.provisional ? ' ' + pill('warn', 'Tạm tính – còn ca chưa đóng') : ''}` : ' · ' + pill('muted', 'Chưa nộp chính thức')}
+          ${d.draft ? ` · Nháp lưu ${esc(when(d.draft.updatedAt))}` : ''}</p>
+        ${d.blockers?.length ? `<p class="warn-text small">${d.blockers.map(esc).join(' ')}</p>` : ''}
         ${rep?.reviewNote ? `<p class="small">Ghi chú duyệt: ${esc(rep.reviewNote)}</p>` : ''}
-        <section class="store-facts-box"><h3>Số liệu CRM ${rep ? (editable ? '(cập nhật lại khi nộp)' : 'lúc nộp') : '(tự điền khi nộp)'}</h3>${factsHtml(kind, editable || !rep ? d.facts : rep.data.facts)}</section>
-        <div class="form-grid cols-2">${inputsHtml(kind, rep?.data?.inputs || {}, !editable)}</div>
+        <section class="store-facts-box"><h3>Số liệu CRM ${editable || !rep ? `tính lúc ${esc(when(factsAt))} (nộp sẽ tính lại)` : `lúc nộp ${esc(when(factsAt))}`}</h3>${factsHtml(kind, shownFacts)}</section>
+        <div class="form-grid cols-2">${inputsHtml(kind, values, !editable)}</div>
+        ${d.versions?.length > 1 ? `<details class="store-versions"><summary>Lịch sử nộp (${d.versions.length} lần)</summary><ol>${d.versions.map(v => `<li>Lần ${v.version} · ${esc(when(v.submittedAt))} · ${esc(v.member || '')}${v.provisional ? ' · tạm tính' : ''}</li>`).join('')}</ol></details>` : ''}
         ${rep && (data?.isManager) ? `<label class="span-2">Giải trình của CHT<textarea name="explanation" rows="2">${esc(rep.explanation || '')}</textarea></label><button type="button" class="btn secondary small" data-explain>Gửi giải trình</button>` : rep?.explanation ? `<p class="small"><b>Giải trình:</b> ${esc(rep.explanation)}</p>` : ''}
         ${canReview ? `<div class="store-review"><h3>Duyệt</h3><div class="chips">${status.reviewFor[kind].map(k => `<label class="chip"><input type="radio" name="review" value="${k}" ${rep.review === k ? 'checked' : ''}> ${esc(status.labels.reviews[k])}</label>`).join('')}</div>
           <label>Lý do / ghi chú (bắt buộc khi không đạt hoặc miễn)<input name="reviewNote" maxlength="1000" value="${esc(rep.reviewNote || '')}"></label><button type="button" class="btn primary small" data-review>Lưu kết quả duyệt</button></div>` : ''}
         <p class="error" data-err role="alert"></p></div>
-      <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button>${editable ? `<button class="btn primary">${rep ? 'Nộp lại' : 'Nộp báo cáo'}</button>` : ''}</div></form>`;
+      <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button>${editable ? `<button type="button" class="btn secondary" data-draft>Lưu nháp</button>` : ''}${d.canSubmit ? `<button class="btn primary">${rep ? 'Nộp lại chính thức' : 'Nộp chính thức'}</button>` : ''}</div></form>`;
     document.body.append(dlg); dlg.showModal(); labelCells(dlg);
     const f = dlg.querySelector('form'), err = dlg.querySelector('[data-err]');
     dlg.addEventListener('close', () => dlg.remove());
     dlg.querySelectorAll('[data-x]').forEach(b => b.onclick = () => dlg.close());
     const after = async msg => { toast(msg); dlg.close(); status = null; await loadStatus().catch(() => {}); if (location.hash.startsWith('#/store-reports')) show(`registerId=${encodeURIComponent(registerId)}&month=${current.month}`); };
+    const collect = () => { const el = f.elements, inputs = {}; for (const k of INPUT_KEYS) if (el[k]) inputs[k] = el[k].value; if (el.counted) inputs.counted = el.counted.checked; return inputs; };
+    dlg.querySelector('[data-draft]')?.addEventListener('click', async ev => {
+      const btn = ev.currentTarget; btn.disabled = true; err.textContent = '';
+      try { await api('/store/reports/draft', 'PUT', { registerId, kind, period, inputs: collect() }); await after('Đã lưu nháp – chưa nộp chính thức.'); }
+      catch (ex) { err.textContent = ex.message; } finally { btn.disabled = false; }
+    });
     f.addEventListener('submit', async e => {
-      e.preventDefault(); if (!editable) return;
-      const el = f.elements, inputs = {};
-      for (const k of ['bankDeposit', 'bankRef', 'incidents', 'note', 'orderProposal', 'roster', 'groupAnalysis', 'staffReview', 'gapExplanation']) if (el[k]) inputs[k] = el[k].value;
-      if (el.counted) inputs.counted = el.counted.checked;
-      const btn = f.querySelector('button.primary'); btn.disabled = true;
-      try { const res = await api('/store/reports', 'POST', { registerId, kind, period, clientKey, inputs });
-        await after(res.state?.state === 'late' ? 'Đã nộp (trễ hạn).' : 'Đã nộp báo cáo.'); }
+      e.preventDefault(); if (!d.canSubmit) return;
+      const btn = f.querySelector('button.primary'); btn.disabled = true; err.textContent = '';
+      try { const res = await api('/store/reports', 'POST', { registerId, kind, period, clientKey, inputs: collect() });
+        await after(res.provisional ? 'Đã nộp chính thức (tạm tính – còn ca chưa đóng). Đóng ca rồi nộp lại để hoàn tất.' : res.state?.state === 'late' ? 'Đã nộp chính thức (trễ hạn).' : 'Đã nộp chính thức.'); }
       catch (ex) { err.textContent = ex.message; } finally { btn.disabled = false; }
     });
     dlg.querySelector('[data-explain]')?.addEventListener('click', async () => {
@@ -193,6 +238,28 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
     dlg.querySelector('[data-review]')?.addEventListener('click', async () => {
       const review = f.querySelector('input[name="review"]:checked')?.value; if (!review) { err.textContent = 'Chọn kết quả duyệt.'; return; }
       try { await api(`/store/reports/${rep.id}/review`, 'POST', { review, note: f.elements.reviewNote.value }); await after('Đã lưu kết quả duyệt.'); } catch (ex) { err.textContent = ex.message; }
+    });
+  }
+
+  // ---------------- Manager cấu hình báo cáo cửa hàng
+  async function settings(registerId) {
+    let d; try { d = await api(`/store/settings?registerId=${encodeURIComponent(registerId)}`); } catch (e) { toast(e.message, 'err'); return; }
+    const s = d.settings, dlg = document.createElement('dialog'); dlg.className = 'modal';
+    dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>Cấu hình báo cáo · ${esc(data.store.name)}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+      <div class="modal-body form-grid">
+        <label>Quỹ tiền mặt được giữ lại tại cửa hàng<input name="cashFloat" inputmode="numeric" value="${s.cashFloat ?? ''}" placeholder="Chưa cấu hình"></label>
+        <label>Lịch nộp tiền<select name="depositSchedule"><option value="">– Chưa cấu hình –</option>${Object.entries(d.scheduleLabels).map(([k, v]) => `<option value="${k}" ${s.depositSchedule === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+        <label>Ngưỡng giải trình theo mã khi kiểm tồn (đồng)<input name="stocktakeExplainThreshold" inputmode="numeric" value="${s.stocktakeExplainThreshold ?? ''}" placeholder="Chưa cấu hình"></label>
+        <p class="muted small span-2">Để trống = chưa cấu hình: báo cáo hiện "thiếu căn cứ", không tự coi là 0. Áp dụng cho báo cáo tính sau khi lưu; báo cáo đã nộp giữ bản chụp lúc nộp.</p>
+        <p class="error span-2" data-err role="alert"></p></div>
+      <div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button class="btn primary">Lưu</button></div></form>`;
+    document.body.append(dlg); dlg.showModal();
+    dlg.addEventListener('close', () => dlg.remove()); dlg.querySelectorAll('[data-x]').forEach(b => b.onclick = () => dlg.close());
+    dlg.querySelector('form').addEventListener('submit', async e => {
+      e.preventDefault(); const el = e.target.elements;
+      try { await api('/store/settings', 'PUT', { registerId, cashFloat: el.cashFloat.value, depositSchedule: el.depositSchedule.value || null, stocktakeExplainThreshold: el.stocktakeExplainThreshold.value });
+        toast('Đã lưu cấu hình cửa hàng.'); dlg.close(); }
+      catch (ex) { dlg.querySelector('[data-err]').textContent = ex.message; }
     });
   }
 

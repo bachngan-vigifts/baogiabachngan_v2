@@ -17,7 +17,24 @@ Theo *Bản mô tả công việc CHT* và *Quy định chính sách lương CHT
 | Tháng | tháng | trước ngày 02 tháng sau | doanh số, mã bán chạy, ngày / ca của từng người theo ca POS |
 | Kiểm tồn kho | tháng | trước ngày 02 tháng sau | phiếu kiểm kê kho cửa hàng, số mã lệch, giá trị lệch (giá nhập gần nhất) |
 
-Nộp lại được khi chưa duyệt; giờ nộp lần đầu dùng để xét đúng hạn. Đã duyệt thì khoá (CHT dùng *Giải trình*).
+## Nháp và nộp chính thức
+- **Lưu nháp**: chỉ lưu phần CHT nhập, bất cứ lúc nào sau khi kỳ bắt đầu. Nháp **không** tính là đã nộp / đúng hạn và không tắt nhắc việc.
+- **Nộp chính thức**: báo cáo tuần chỉ từ 00h00 thứ Hai tuần sau; tháng / kiểm tồn từ 00h00 ngày 01 tháng sau; báo cáo ngày nộp trong ngày (hạn 22h). Máy chủ kiểm tra lại, client gửi số liệu nào cũng bị bỏ qua.
+- **Giờ nộp chính thức đầu tiên** là giờ xét đúng hạn. Nộp lại (khi chưa duyệt) thêm một bản vào **lịch sử nộp** (`store_report_versions`), không xoá bản cũ, không đổi giờ đầu.
+- Mỗi lần nộp lưu **bản chụp**: số liệu CRM, phần CHT nhập, thời điểm tính (`meta.factsAt`) và nguồn bảng (`meta.sources`).
+- Đã duyệt thì khoá cả nộp lại lẫn nháp (CHT dùng *Giải trình*). Không tự tính lại thưởng / Tiền Trách nhiệm cho báo cáo lịch sử.
+
+### Hạn 22h và ca chưa đóng (cần anh xác nhận chính sách)
+Ca có thể đóng sau 22h. CRM **không đổi chính sách**: CHT được nộp chính thức khi còn ca mở, báo cáo ghi **"Tạm tính – còn ca chưa đóng"**; đóng ca rồi *Nộp lại* để có số liệu đủ (giờ nộp đầu vẫn giữ). Tiền Trách nhiệm vẫn xét theo giờ nộp chính thức đầu tiên như cũ; người duyệt thấy cờ tạm tính và tự quyết (Đạt / Miễn…). CRM không tự phạt hay miễn.
+
+## Báo cáo ngày – tiền phải nộp (nguồn Sổ quỹ)
+Tiền phải nộp = **tiền đầu ngày** (tiền thực đếm lúc mở ca đầu tiên) + thu tiền mặt (bán hàng, COD, Thu khác / Rút két) − chi hợp lệ (chi vặt, tạm ứng, hoàn tiền khách) − **quỹ được giữ lại**.
+- Tiền bàn giao giữa các ca không cộng lại. Phiếu *Nộp két* là tiền đã nộp, không trừ thêm lần nữa. Phiếu điều chỉnh két và phiếu chờ duyệt hiện riêng, không tính.
+- Thiếu tiền đầu ngày / quỹ giữ lại / lịch nộp → hiện **thiếu căn cứ**, không tính, không coi là 0. Manager đặt ở **Cấu hình cửa hàng** (trang Báo cáo CHT).
+- So số CHT khai đã nộp ngân hàng với tiền phải nộp và với Sổ quỹ. Có chênh lệch → bắt buộc giải trình; **không** tự đánh dấu "sai số liệu sổ quỹ" hay trừ tiền – người duyệt quyết định.
+- Lệch quỹ khi kết ca: thiếu và thừa hiện riêng.
+- Trả / đổi / hoàn trong ngày: phiếu trả (link đơn gốc, đơn đổi sang), phiếu hoàn (tiền mặt đã ghi Sổ quỹ / chuyển khoản). Hoàn tiền mặt chỉ trừ một lần (qua phiếu chi). Doanh thu POS bỏ đơn huỷ; hàng trả hiện riêng.
+- Ca thuộc ngày theo ngày làm việc của ca (ca qua nửa đêm thuộc ngày mở ca).
 
 ## Tiền Trách nhiệm (4 ngạch × 250.000)
 - Ngày: 0 lần chưa đạt 250k · 1–2: 150k · 3–4: 50k · ≥ 5: 0. Chưa đạt = trễ / thiếu; *sai số liệu sổ quỹ* tính 2 lần.
@@ -31,3 +48,4 @@ Trang hiện số tạm tính theo tháng. Giai đoạn 2 đưa vào bảng lư�
 ## Kỹ thuật
 - Module `src/modules/store` (domain thuần: `domain/reports.ts`). API `/store/*` – xem đầu file `api/routes.ts`.
 - Migration `20261111100000_store_manager_reports.sql` (chạy tay) + cổng `scripts/sql/assert-store-manager-reports.sql`.
+- Migration `20261112090000_store_report_submission.sql` (chạy tay): `store_report_drafts`, `store_report_versions` (tạo bản lần 1 cho báo cáo đã có), `store_settings` + cổng `scripts/sql/assert-store-report-submission.sql`.
