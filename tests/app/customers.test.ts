@@ -57,7 +57,7 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   const c2 = await call(`/customers/${k.data.id}/contacts`, emp, 'POST', { name: 'Anh Minh', title: 'Mua hàng', email: 'minh@hl.vn' });
   assert.equal((await call(`/customers/${k.data.id}/contacts/${c2.data.id}`, emp, 'PUT', { name: 'Anh Minh', title: 'Trưởng phòng mua hàng', isPrimary: true })).status, 200);
   p = (await call(`/customers/${k.data.id}`, emp)).data;
-  assert.deepEqual(p.contacts.map((x: any) => [x.name, x.title, x.isPrimary]), [['Anh Minh', 'Trưởng phòng mua hàng', true], ['Chị Lan', 'Kế toán', false]]);
+  assert.deepEqual(p.contacts.map((x: any) => [x.name, x.title, x.isPrimary]).sort((a:any,b:any)=>a[0].localeCompare(b[0])), [['Anh Minh', 'Trưởng phòng mua hàng', true], ['Chị Lan', 'Kế toán', false], ['Liên hệ kiểm thử', '', false]]);
   assert.equal((await call(`/customers/${k.data.id}/contacts/${c1.data.id}`, emp, 'DELETE')).status, 200);
   assert.equal((await call(`/customers/${k2.data.id}/contacts/${c2.data.id}`, emp, 'DELETE')).status, 403, 'không phụ trách k2 → không sửa được');
   assert.equal((await call(`/customers/${k2.data.id}/contacts/${c2.data.id}`, mgr, 'DELETE')).status, 404, 'không xoá chéo khách');

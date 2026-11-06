@@ -7,7 +7,7 @@ export function customerContactInput(body: Record<string, unknown>) {
     if (typeof value !== 'string' || value.length > max) throw new AppError(400, 'Thông tin người liên hệ không hợp lệ.');
     return value.trim();
   };
-  const name = text('name', CUSTOMER_LIMITS.contactName), email = text('email', 200);
+  const name = text('name', CUSTOMER_LIMITS.contactName), email = text('email', 500);
   if (!name) throw new AppError(400, 'Nhập tên người liên hệ.');
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, 'Email người liên hệ không hợp lệ.');
   return { name, title: text('title', CUSTOMER_LIMITS.contactTitle), phone: text('phone', 40), email,

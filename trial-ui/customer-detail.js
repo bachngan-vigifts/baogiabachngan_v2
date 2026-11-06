@@ -277,10 +277,10 @@ export function initCustomerDetail(deps) {
   function contactDialog(x) {
     const v = k => esc(x?.[k] || '');
     const dlg = dialog(x ? 'Sửa người liên hệ' : 'Thêm người liên hệ', `<div class="form-grid cols-2">
-      <label class="span-2">Họ tên<input name="name" required maxlength="200" value="${v('name')}"></label>
+      <label class="span-2">Họ tên<input name="name" required maxlength="500" value="${v('name')}"></label>
       <label>Chức vụ / bộ phận<input name="title" maxlength="120" value="${v('title')}" placeholder="Kế toán, Mua hàng…"></label>
       <label>Điện thoại<input name="phone" maxlength="40" inputmode="tel" value="${v('phone')}"></label>
-      <label class="span-2">Email<input name="email" type="email" maxlength="200" value="${v('email')}"></label>
+      <label class="span-2">Email<input name="email" type="email" maxlength="500" value="${v('email')}"></label>
       <label class="span-2">Ghi chú<textarea name="note" rows="2" maxlength="1000">${v('note')}</textarea></label>
       <label class="span-2 check"><input type="checkbox" name="isPrimary" ${x?.isPrimary ? 'checked' : ''}> Liên hệ chính</label></div>`, x ? 'Lưu' : 'Thêm');
     dlg.querySelector('form').addEventListener('submit', async e => {
