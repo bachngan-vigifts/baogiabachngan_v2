@@ -1,3 +1,4 @@
+import {openProvinceSharing} from './customer-province-sharing.js';
 import {orderListExportSheets} from './order-list-export.js';
 import {initWebOrderDocument,webDocumentMode} from './web-order-document.js';
 import {renderWebOrderDetail} from './web-order-detail.js';
@@ -6,7 +7,7 @@ import {returnStateText} from './order-return-summary.js';
 import {mountContractLiquidation} from './contract-liquidation.js';
 import { initQuoteStockWarnings } from './quote-stock-warning.js';
 import { parseSkuQuantities, pasteRows } from './quote-paste.js';
-import { hasCustomerListFilters, customerListQuery, fillCustomerOwners, bindCustomerListFilters, updateCustomerFilterSummary } from './customer-list-filters.js';
+import { hasCustomerListFilters, customerListQuery, fillCustomerProvinces, fillCustomerOwners, bindCustomerListFilters, updateCustomerFilterSummary } from './customer-list-filters.js';
 import { openAppsheetCustomers } from './appsheet-customers.js';
 import {openPriceLabels} from './price-labels.js';
 import {ghnOrderSummary} from './ghn-order-summary.js';
@@ -688,6 +689,8 @@ async function loadCustomers() {
     $('#customer-kind-field').hidden = !d.canListRetail;
     if (!d.canListRetail) { $('#customer-retail').checked = false; $('#customer-kind').value = ''; }
     fillCustomerOwners($('#customer-owner'), d.filterOptions?.owners);
+    fillCustomerProvinces($('#customer-province'),d.filterOptions?.provinces);state.customerProvinces=d.filterOptions?.provinces||[];
+    $('#customer-share-province').hidden=!isManager();
     updateCustomerFilterSummary($);
     state.customers = d.customers; state.customerQuoteCounts = null;
     state.customerTotal = d.total ?? d.customers.length;
@@ -2979,7 +2982,7 @@ async function loadCustomerQuoteCounts(req) {
 const quoteCountOf = name => state.customerQuoteCounts?.[name];
 function renderCustomers() {
   const tbody = $('#customer-list');
-  if (!state.customers) { tbody.innerHTML = skeleton(9); return; }
+  if (!state.customers) { tbody.innerHTML = skeleton(10); return; }
   const list = state.customers;
   $('#customer-count').textContent = `${state.customerTotal.toLocaleString('vi-VN')} khách hàng`;
   $('#view-customers').dataset.resultCount=String(state.customerTotal);
@@ -2987,6 +2990,7 @@ function renderCustomers() {
   tbody.innerHTML = list.map(c => `
     <tr class="clickable" data-href="#/customers/${esc(encodeURIComponent(c.id))}">
       <td class="first"><a class="strong" href="#/customers/${esc(encodeURIComponent(c.id))}">${esc(c.name)}</a>${c.approvalStatus === 'pending' ? ' <span class="pill warn">Chờ duyệt</span>' : c.approvalStatus === 'rejected' ? ' <span class="pill danger">Bị từ chối</span>' : ''}${c.address ? `<small>${esc(c.address)}</small>` : ''}</td>
+      <td data-label="Tỉnh/thành">${esc(c.province?.name)||'Chưa xác định'}</td>
       <td data-label="Liên hệ">${esc(c.contact) || '—'}</td>
       <td data-label="ĐT">${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a>` : '—'}</td>
       <td data-label="Email · MST">${esc(c.email) || '—'}${c.taxCode ? `<small>MST ${esc(c.taxCode)}</small>` : ''}</td>
@@ -3034,6 +3038,7 @@ $('#customer-list').addEventListener('click', e => {
   const row = e.target.closest('tr[data-href]'); if (row && !e.target.closest('a, button')) go(row.dataset.href);
 });
 bindCustomerListFilters($, reloadCustomers);
+$('#customer-share-province').addEventListener('click',async()=>{try{await openProvinceSharing({api,esc,toast,provinces:state.customerProvinces||[],province:$('#customer-province').value,onSaved:reloadCustomers});}catch(e){toast(e.message,'err');}});
 /** Người duyệt duyệt / duyệt lại khách hoặc từ chối kèm lý do (giữ hồ sơ); người tạo (không có quyền duyệt) xoá khách đang chờ duyệt. */
 async function reviewCustomer(id, approve) {
   const c = state.customers?.find(x => x.id === id);
