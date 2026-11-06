@@ -5,12 +5,13 @@ import {quotations} from '../../quotes/schema.ts';
 import {commissionOf,quoteStockSku,type QuoteRow} from '../../quotes/domain/quote-math.ts';
 import {debtCounts} from '../domain/sales.ts';
 /** Monetary basis only; HR owns KPI tiers. Never substitute VAT-inclusive totals or assume missing CRM commission is zero. */
-export async function kpiNetRevenue(db:AnyDb,from:string,next:string){
- const orders=await db.select({o:{id:salesOrders.id,ownerId:salesOrders.ownerId,subtotal:salesOrders.subtotal,status:salesOrders.status,channel:salesOrders.channel,quoteType:salesOrders.quoteType},quote:quotations.data}).from(salesOrders).leftJoin(quotations,eq(quotations.id,salesOrders.quoteId)).where(and(gte(salesOrders.orderDate,from),lt(salesOrders.orderDate,next)));
+export async function kpiNetRevenue(db:AnyDb,from:string,next:string,approvedOnly=false){
+ const orders=await db.select({o:{id:salesOrders.id,ownerId:salesOrders.ownerId,subtotal:salesOrders.subtotal,status:salesOrders.status,channel:salesOrders.channel,quoteType:salesOrders.quoteType},quote:quotations.data}).from(salesOrders).leftJoin(quotations,eq(quotations.id,salesOrders.quoteId)).where(and(gte(salesOrders.orderDate,from),lt(salesOrders.orderDate,next),approvedOnly?inArray(salesOrders.status,['confirmed','delivering','delivered']):undefined));
  const ids=orders.map(r=>r.o.id),out=new Map<string,{netRevenue:number;netRevenueIssues:number}>();
  if(!ids.length)return out;
  const [lines,contracts]=await Promise.all([db.select().from(salesOrderLines).where(inArray(salesOrderLines.orderId,ids)).orderBy(asc(salesOrderLines.lineNo)),db.select({orderId:salesContracts.orderId,status:salesContracts.status}).from(salesContracts).where(inArray(salesContracts.orderId,ids))]);
  for(const {o,quote} of orders){
+  if(approvedOnly&&!['confirmed','delivering','delivered'].includes(o.status))continue;
   if(!debtCounts(o.status,contracts.find(k=>k.orderId===o.id&&k.status!=='cancelled')?.status))continue;
   const m=out.get(o.ownerId)||{netRevenue:0,netRevenueIssues:0};let commission=0,valid=Number.isFinite(o.subtotal);
   if(o.channel==='crm'){

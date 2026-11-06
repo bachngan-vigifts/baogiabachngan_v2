@@ -7,7 +7,7 @@ import {liquidationAwards} from './contract-liquidation.ts';
 import {contractLiquidations} from '../liquidation-schema.ts';
 const ORDER='order:';
 /** Raw sales facts. Reward tiers and payroll policy belong to HR. */
-export const salesPayrollFacts:CrmFactsOf=async(db,month,previous=[],lock=false)=>{
+export const salesPayrollFacts:CrmFactsOf=async(db,month,previous=[],lock=false,options)=>{
  const {from,next}=monthRange(month),tzFrom=new Date(from+'T00:00:00+07:00').toISOString(),tzNext=new Date(next+'T00:00:00+07:00').toISOString();
  const approved=await db.select({contractId:contractLiquidations.contractId}).from(contractLiquidations).where(and(eq(contractLiquidations.status,'approved'),gte(contractLiquidations.reviewedAt,tzFrom),lt(contractLiquidations.reviewedAt,tzNext)));
  const relevant=[...new Set([...previous,...approved.map(a=>a.contractId)])];
@@ -17,7 +17,7 @@ export const salesPayrollFacts:CrmFactsOf=async(db,month,previous=[],lock=false)
  // Find the first approved CRM order across all history, with deterministic tie-breaking. Anonymous retail customers are excluded.
  const first=await db.select({owner:sql<string>`f.owner_id`}).from(sql`(select owner_id,order_date,row_number() over(partition by customer_id order by order_date,created_at,id) as n from ${salesOrders} where customer_id is not null and channel='crm' and status in ('confirmed','delivering','delivered')) f`).where(sql`f.n=1 and f.order_date>=${from} and f.order_date<${next}`);
  for(const r of first)member(r.owner).newCustomers++;
- for(const r of rows)if(['signed','completed'].includes(r.k.status)&&r.o.status!=='cancelled'&&r.k.signedDate&&r.k.signedDate>=from&&r.k.signedDate<next)member(r.o.ownerId).contracts++;
+ for(const r of rows)if(['signed','completed'].includes(r.k.status)&&r.o.status!=='cancelled'&&(!options?.approvedOnly||['confirmed','delivering','delivered'].includes(r.o.status))&&r.k.signedDate&&r.k.signedDate>=from&&r.k.signedDate<next)member(r.o.ownerId).contracts++;
  // Thưởng sao còn tính trên đơn hàng CRM đã duyệt không có HĐKT (tháng = ngày đơn). Đơn có HĐKT tính theo HĐKT, không tính hai lần.
  const previousOrders=previous.filter(id=>id.startsWith(ORDER)).map(id=>id.slice(ORDER.length));
  const orderQuery=db.select().from(salesOrders).where(and(eq(salesOrders.channel,'crm'),
@@ -26,6 +26,6 @@ export const salesPayrollFacts:CrmFactsOf=async(db,month,previous=[],lock=false)
  const orders=await(lock?orderQuery.for('share'):orderQuery);
  const contracts:ContractFact[]=[...orders.map(o=>({docType:'order' as const,contractId:ORDER+o.id,contractNo:o.orderNo,customerName:o.customerName,ownerId:o.ownerId,signedDate:o.orderDate,subtotal:o.subtotal,
   status:'signed',orderStatus:o.status,liquidatedAt:null,liquidationValid:false,revision:o.revision})),...rows.map(({k,o})=>({docType:'contract' as const,contractId:k.id,contractNo:k.contractNo,customerName:o.customerName,ownerId:o.ownerId,signedDate:k.signedDate,subtotal:o.subtotal,status:k.status,orderStatus:o.status,liquidatedAt:liquidated.get(k.id)?.at||null,liquidationValid:liquidated.get(k.id)?.valid||false,revision:k.revision}))];
- for(const [id,net]of await kpiNetRevenue(db,from,next))Object.assign(member(id),net);
+ for(const [id,net]of await kpiNetRevenue(db,from,next,options?.approvedOnly))Object.assign(member(id),net);
  return{members,contracts};
 };

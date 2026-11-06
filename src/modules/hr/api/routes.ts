@@ -14,7 +14,7 @@ import { hrAdjustments, hrAttendance, hrPayrollInputs, hrPayrollMonths, hrPayrol
 import { PARAM_FIELDS, validateParams } from '../domain/params.ts';
 import {
   ADJUSTMENT_KINDS, ATTENDANCE_STATUSES, DATE_RE, GROUP_DEDUCTION, GROUP_INCOME, GROUP_LABEL, HR_LIMITS, LINE_LABEL, PAYROLL_GROUPS,
-  RESPONSIBILITY_MODES,salaryKpiEligible, isMonth, monthRange,daysInMonth, vietQrUrl, normalizeBank,
+  RESPONSIBILITY_MODES,salaryKpiEligible, isMonth, monthRange, payrollPeriod,daysInMonth, vietQrUrl, normalizeBank,
 } from '../domain/payroll.ts';
 import { buildPayroll, paramsFor, payslipView, slipBank, type PayrollRow, type RevenueOf } from './payroll-data.ts';
 
@@ -129,14 +129,14 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     const counted = rows.filter(r => r.profile.hasProfile || r.payslip.status !== 'estimate');
     const totals = PAYROLL_GROUPS.map(g => { const list = counted.filter(r => r.payslip.group === g);
       return { group: g, label: GROUP_LABEL[g], people: list.length, gross: list.reduce((s, r) => s + r.payslip.gross, 0), deductions: list.reduce((s, r) => s + r.payslip.deductionTotal, 0), net: list.reduce((s, r) => s + r.payslip.net, 0) }; });
-    return json({ month: b.month, params: b.params, paramsMonth: b.paramsMonth, groupMonth: b.groupMonth, quarter: b.quarter,confirmationHash:b.confirmationHash, rows, totals,
+    return json({ period:payrollPeriod(b.month), month: b.month, params: b.params, paramsMonth: b.paramsMonth, groupMonth: b.groupMonth, quarter: b.quarter,confirmationHash:b.confirmationHash, rows, totals,
       columns: { income: GROUP_INCOME, deductions: GROUP_DEDUCTION, labels: LINE_LABEL, groups: GROUP_LABEL } });
   }, 'admin');
 
   router.post('/hr/payroll/:month/confirm', write(async c => {
     const m=month(c.params.month),me=actor(c).id,body=await readJson(c.req,2000),db=c.env.db,b=await buildPayroll(db,m,deps.revenueOf,undefined,deps.crmFactsOf,true);
     const open=b.rows.filter(r=>!r.slip&&r.profile.effectiveMonth!==null);
-    if(open.some(r=>r.calc.kpiNetBasis?.issues&&r.calc.kpiNetBasis.rate>0))throw new AppError(409,'Có đơn chưa đối chiếu được hoa hồng khách hàng. Kiểm tra báo giá nguồn trước khi chốt lương.','KPI_NET_UNVERIFIED');
+    if(open.some(r=>r.calc.kpiNetBasis?.issues&&(r.calc.kpi?.policy==='appsheet'||r.calc.kpiNetBasis.rate>0)))throw new AppError(409,'Có đơn chưa đối chiếu được hoa hồng khách hàng. Kiểm tra báo giá nguồn trước khi chốt lương.','KPI_NET_UNVERIFIED');
     if(open.some(r=>r.calc.salesCrm?.apply||r.calc.kpiNetBasis)&&body.confirmationHash!==b.confirmationHash)throw new AppError(409,'Số liệu lương đã đổi. Xem lại rồi chốt.','PAYROLL_CHANGED');
     for(const row of open){const runId=crypto.randomUUID();await db.insert(hrPayslips).values({...slipValues(row,me,''),data:JSON.stringify({...JSON.parse(slipValues(row,me,'').data),runId}),month:m});if(row.calc.salesCrm?.bonusApply??row.calc.salesCrm?.apply)await reserveAwards(db,row.member.id,m,runId,row.calc.salesCrm.awards);}
     return json({ok:true,confirmed:open.length});
@@ -284,7 +284,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     const db = c.env.db, id = await staffMember(db, c.params.id!), m = month(c.params.month), b = await readJson(c.req, 2_000);
     await assertOpen(db, id, m);
     const board=await buildPayroll(db,m,deps.revenueOf,[id],deps.crmFactsOf,true),[row]=board.rows;
-    if(row?.calc.kpiNetBasis?.issues&&row.calc.kpiNetBasis.rate>0)throw new AppError(409,'Có đơn chưa đối chiếu được hoa hồng khách hàng. Kiểm tra báo giá nguồn trước khi chốt lương.','KPI_NET_UNVERIFIED');
+    if(row?.calc.kpiNetBasis?.issues&&(row.calc.kpi?.policy==='appsheet'||row.calc.kpiNetBasis.rate>0))throw new AppError(409,'Có đơn chưa đối chiếu được hoa hồng khách hàng. Kiểm tra báo giá nguồn trước khi chốt lương.','KPI_NET_UNVERIFIED');
     if (!row || row.profile.effectiveMonth === null) throw new AppError(400, 'Chưa đặt hồ sơ lương cho nhân viên này.');
     if((row.calc.salesCrm?.apply||row.calc.kpiNetBasis)&&b.confirmationHash!==board.confirmationHash)throw new AppError(409,'Số liệu lương đã đổi. Xem lại rồi chốt.','PAYROLL_CHANGED');
     const runId=crypto.randomUUID(),values=slipValues(row,actor(c).id,text(b.note,HR_LIMITS.note));

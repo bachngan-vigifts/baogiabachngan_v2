@@ -177,3 +177,15 @@ File mẫu có **đủ nhân viên trong bảng lương tháng đang chọn**, k
 **Nhập file Excel** kiểm tra toàn bộ file trước khi tạo bản nháp; sai tháng, trùng/không tìm thấy nhân viên, tên lệch STT, sửa phiếu đã khóa hoặc ô lỗi bị từ chối. Không nhập công thức, không xóa sheet ẩn. Kiểm tra bảng rồi bấm **Lưu thay đổi** để ghi; file không tự lưu. Lưu/bỏ bản nháp trước khi nhập file mới. Tối đa 5 MB, 1.000 dòng, 100 nhân viên thay đổi mỗi lần. Chỉ số trễ/giờ nghỉ có thể xem/sửa tại chế độ Chấm công & chỉ số.
 
 Migration `20261105042029_payroll_attendance_counters.sql` bổ sung `late_count` và `leave_hours` vào bảng chỉ số tháng; workflow API chạy trước khi deploy. Không thay đổi RLS hoặc các công thức khấu trừ hiện có.
+
+## KPI chuẩn AppSheet từ kỳ 11/2026
+
+Tham số `appsheetKpiFrom` (YYYYMM, 0 = chính sách cũ) kích hoạt theo kỳ. Cấu hình production được áp dụng từ 202611; không đổi bản chụp phiếu đã chốt. KH mới tối đa 10%, giao dịch 30%, HĐ hợp lệ 10%; doanh số ghi nhận / chỉ tiêu × 50% không có trần. Chỉ ngày làm hàng cộng bù 4 KH và 10 giao dịch mỗi ngày; công tác không cộng bù. Chỉ tiêu riêng từng nhân viên tiếp tục được áp dụng.
+
+Khi bật lấy KPI từ CRM, các số đếm cũ nhập tay không ghi đè bộ đếm CRM. Doanh số ghi nhận là doanh số chưa VAT trừ hoa hồng khách hàng, theo ngày đơn trong kỳ và trạng thái đã duyệt; nháp/đợi duyệt/hủy không tính. HĐ tính theo tháng ký, HĐ đã ký/hoàn tất và đơn đủ điều kiện. Dữ liệu thiếu căn cứ hoa hồng được báo và chặn chốt theo chính sách mới. Trên bảng nhập nhanh, nguồn KPI/doanh số này chỉ đọc.
+
+Kết quả KPI lưu `policy` và `basis` (số liệu thật đã dùng) cùng bốn điểm/tổng điểm/điểm áp dụng. Hồ sơ nhân viên, bảng KPI và xếp hạng đọc cùng kết quả; phiếu đã chốt dùng bản chụp. KPI cố định theo mã nhân viên được ưu tiên hơn KPI chốt tháng; không so sánh tên hiển thị trong code. Ngoại lệ KPI 100% được đặt bằng trường KPI cố định ở đúng hồ sơ Sale đã được xác minh.
+
+Kỳ số liệu luôn 01–ngày cuối tháng; thời gian chốt là 03–05 tháng kế tiếp. Trong ngày 03–05 theo giờ VN, trang Bảng lương không có kỳ chỉ định sẽ mặc định mở tháng trước; chọn kỳ trên URL hoặc màn hình vẫn được ưu tiên. Không có tác vụ tự chốt/trả lương hoặc chuyển tiền ngân hàng.
+
+Hướng dẫn có ảnh minh họa: [PDF](../trial-ui/guides/huong-dan-cai-dat-luong.pdf), [Word](../trial-ui/guides/huong-dan-cai-dat-luong.docx). Ảnh dùng dữ liệu kiểm thử, không chứa bảng lương thật.

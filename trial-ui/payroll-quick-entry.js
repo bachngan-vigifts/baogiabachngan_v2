@@ -55,6 +55,10 @@ export function createPayrollQuickEntry({ root, api, esc, money, toast, onSaved,
     draftsByMonth.set(d.month, drafts);
     const cols = QUICK_COLUMNS[mode] || [];
     const field = (r,c,section=mode,scale=1) => {
+      const basis=r.payslip.kpi?.policy==='appsheet'?r.payslip.kpi.basis:null;
+      const canonical={revenue:'revenue',kpiRevenue:'revenue',kpiNewCustomers:'newCustomers',kpiTransactions:'transactions',kpiContracts:'contracts'};
+      if(basis&&section==='inputs'&&canonical[c[0]]){const value=basis[canonical[c[0]]];return `<td class="num">${value==null?'—':!c[2]?money(value):esc(value)}<small>Tự động từ CRM${c[0]==='revenue'||c[0]==='kpiRevenue'?' · chưa VAT − hoa hồng':''}</small></td>`;}
+
       const saved = r.entry[section]?.[c[0]], value = drafts.get(r.member.id)?.[section]?.[c[0]];
       const raw = value === undefined ? saved : value;
       const v = c[2]==='text'?raw:raw == null ? raw : +Number(raw * scale).toFixed(6);

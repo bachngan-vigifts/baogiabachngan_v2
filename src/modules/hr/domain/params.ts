@@ -7,6 +7,7 @@ export type ParamKind = 'money' | 'number' | 'percent' | 'ratio';
 export interface ParamField { key: string; group: string; label: string; value: number; kind: ParamKind; note?: string }
 
 export const PARAM_FIELDS = [
+  {key:'appsheetKpiFrom',group:'KPI công việc – Sale',label:'Tháng áp dụng KPI chuẩn AppSheet (YYYYMM; 0 = chính sách cũ)',value:0,kind:'number',note:'Trần 10/30/10%, chỉ ngày làm hàng cộng bù; doanh số chưa VAT trừ hoa hồng; cùng điểm cho lương và xếp hạng.'},
   {key:'saleKpiNetFrom',group:'Thưởng KPI Sale — doanh số net',label:'Tháng áp dụng doanh số net (YYYYMM; 0 = chính sách cũ)',value:202610,kind:'number'},
   {key:'saleKpiNetLowRate',group:'Thưởng KPI Sale — doanh số net',label:'Thưởng từ 60% đến dưới 90%',value:0.005,kind:'percent'},
   {key:'saleKpiNetHighRate',group:'Thưởng KPI Sale — doanh số net',label:'Thưởng từ 90% đến hết 120%',value:0.01,kind:'percent'},
@@ -112,15 +113,19 @@ export function validateParams(input: unknown): string | null {
     if (f.kind === 'percent' && n > 1) return `${f.label}: nhập dạng tỷ lệ (0,012 = 1,2%).`;
   }
   const values=mergeParams(src);
+  if(values.appsheetKpiFrom>0&&Object.entries({kpiNewCustomersWeight:0.1,kpiTransactionsWeight:0.3,kpiContractsWeight:0.1,kpiRevenueWeight:0.5,kpiCustomersPerExtraDay:4,kpiTransactionsPerExtraDay:10}).some(([key,value])=>values[key as ParamKey]!==value))return 'KPI chuẩn AppSheet dùng trọng số 10/30/10/50% và bù 4 KH, 10 giao dịch mỗi ngày làm hàng.';
   if(values.salesAutomationApply===1&&values.kpiNewCustomersOver>0.1)return 'Trần điểm KH mới phải tối đa 10% trước khi áp dụng KPI Sale từ CRM.';
   if(![0,1].includes(values.contractBonusApply))return 'Áp dụng thưởng HĐKT phải là 0 hoặc 1.';
   if(![0,1].includes(values.salesAutomationApply))return 'Áp dụng CRM phải là 0 hoặc 1.';
   if(values.salesAutomationFrom!==0&&!/^\d{4}(0[1-9]|1[0-2])$/.test(String(values.salesAutomationFrom)))return 'Tháng bắt đầu CRM nhập YYYYMM hoặc 0.';
   if(values.contractBonusFrom!==0&&!/^\d{4}(0[1-9]|1[0-2])$/.test(String(values.contractBonusFrom)))return 'Tháng bắt đầu thưởng HĐKT nhập YYYYMM hoặc 0.';
   for(let i=2;i<=5;i++)if(values[('contractStar'+i+'From') as ParamKey]<=values[('contractStar'+(i-1)+'From') as ParamKey])return 'Cận sao phải tăng dần.';
+  if(values.appsheetKpiFrom!==0&&!/^\d{4}(0[1-9]|1[0-2])$/.test(String(values.appsheetKpiFrom)))return 'Tháng áp dụng KPI AppSheet nhập YYYYMM hoặc 0.';
   if(values.saleKpiNetFrom!==0&&!/^\d{4}(0[1-9]|1[0-2])$/.test(String(values.saleKpiNetFrom)))return 'Tháng áp dụng doanh số net nhập YYYYMM hoặc 0.';
   return null;
 }
 
 /** LCB vùng / tháng (mức mua BHXH, LCB mặc định khi hồ sơ chưa đặt). */
 export const minWageMonth = (p: PayrollParams) => p.minWageDay * p.standardDays;
+
+export const appsheetKpiApplies = (p: PayrollParams, month: string) => p.appsheetKpiFrom > 0 && Number(month.replace('-', '')) >= p.appsheetKpiFrom;

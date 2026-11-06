@@ -197,14 +197,14 @@ export const isProbation = (position: string) => ['TV', 'THỬ VIỆC'].includes
 export function computePayslip(a: {
   profile: SalaryProfile; params: PayrollParams; input: PayrollInput; adjustments: readonly { kind: string; amount: number }[];
   /** Ngày công từ chấm công; DS đơn hàng trên hệ thống; thưởng quý tự tính (nếu có). */
-  attendanceDays: number; systemRevenue: number; groupMonth: GroupMonth; quarterBonusAuto: number;kpiNetRevenue?:number;kpiNetRevenueIssues?:number;contractBonus?:number;contractBonusAdjustment?:number;
+  attendanceDays: number; systemRevenue: number; groupMonth: GroupMonth; quarterBonusAuto: number;kpiPolicy?:'legacy'|'appsheet';kpiNetRevenue?:number;kpiNetRevenueIssues?:number;contractBonus?:number;contractBonusAdjustment?:number;
 }): PayslipCalc {
   const { profile: f, params: p, input: inp, groupMonth: gm } = a, g = f.payrollGroup;
   const adj = (k: AdjustmentKind) => a.adjustments.filter(x => x.kind === k).reduce((s, x) => s + x.amount, 0);
   const days = inp.workDays ?? a.attendanceDays, lcb = f.baseSalary > 0 ? f.baseSalary : minWageMonth(p);
-  const revenue = inp.revenue ?? a.systemRevenue;
+  const revenue = a.kpiPolicy==='appsheet'&&g==='sale'&&f.kpiEnabled&&f.kpiEligible!==false ? inp.kpiRevenue ?? a.kpiNetRevenue ?? 0 : inp.revenue ?? a.systemRevenue;
   const probation = isProbation(f.positionLabel);
-  const kpi = !probation && g === 'sale' && f.kpiEligible!==false && f.kpiEnabled ? computeKpiCv({...inp,kpiOverride:f.fixedKpi??inp.kpiOverride}, p, kpiTargetsOf(p, f), revenue) : null;
+  const kpi = !probation && g === 'sale' && f.kpiEligible!==false && f.kpiEnabled ? computeKpiCv({...inp,kpiOverride:f.fixedKpi??inp.kpiOverride}, p, kpiTargetsOf(p, f), revenue, a.kpiPolicy) : null;
   const responsibility = f.responsibilityMode === 'per_day' ? p.responsibilityDay * days
     : f.responsibilityMode === 'prorated' ? f.responsibility * days / p.standardDays : f.responsibility;
   const mealOff = g === 'sale' ? p.mealOffSale : g === 'bn' ? p.mealOffBn : p.mealOffLock;
@@ -283,3 +283,9 @@ export function normalizeBank(b: { bankCode?: unknown; bankAccount?: unknown; ba
 
 /** % hoàn thành chỉ tiêu doanh số (null = chưa đặt chỉ tiêu). */
 export const targetPercent = (revenue: number, target: number) => target > 0 ? Math.round(revenue / target * 1000) / 10 : null;
+
+/** Kỳ số liệu nguyên tháng; chốt lương từ ngày 03 đến 05 tháng kế tiếp. */
+export function payrollPeriod(month: string) {
+ const r=monthRange(month),next=shiftMonth(month,1);
+ return {from:r.from,to:`${month}-${String(r.days).padStart(2,'0')}`,closeFrom:next+'-03',closeTo:next+'-05'};
+}
