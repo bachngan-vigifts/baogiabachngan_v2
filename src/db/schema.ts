@@ -40,5 +40,6 @@ export * from '../modules/sales/cash-collection-schema.ts';
 export * from '../modules/catalog/catalogue-library-schema.ts';
 export * from '../modules/feedback/schema.ts';
 export * from '../modules/store/schema.ts';
+export * from '../modules/staff-reports/schema.ts';
 
 export {salesPayrollTeamSources} from '../modules/sales/team-payroll-schema.ts';

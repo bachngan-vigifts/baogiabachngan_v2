@@ -20,7 +20,8 @@ const ALLOWED: Record<string, string[]> = {
   care: ['staff', 'customers'],
   dashboard: ['staff', 'customers', 'sales', 'quotes', 'care', 'integrations'], // báo cáo chỉ đọc, không phụ thuộc HR/lương
   feedback: ['staff', 'notifications'], // góp ý phần mềm: chỉ cần tài khoản nhân viên + thông báo
-  store: ['staff', 'sales', 'inventory', 'catalog', 'notifications'], // báo cáo Cửa hàng trưởng: đọc ca POS / đơn / tồn kho cửa hàng (chỉ đọc)
+  store: ['staff', 'sales', 'inventory', 'catalog', 'notifications'],
+  'staff-reports': ['staff', 'customers', 'sales', 'quotes', 'care'], // báo cáo tuần Sale / Sale Admin: đọc đơn / báo giá / chăm sóc / giao hàng / công nợ của chính người nộp, loại khách để chia ngành (chỉ đọc) // báo cáo Cửa hàng trưởng: đọc ca POS / đơn / tồn kho cửa hàng (chỉ đọc)
 
   hr: ['staff'], 'staff-hub': ['staff', 'customers', 'quotes', 'sales', 'tasks', 'hr'],
 };
