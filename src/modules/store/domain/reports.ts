@@ -56,11 +56,18 @@ export function periodStarted(kind: StoreReportKind, period: string, nowIso: str
   return period <= day.slice(0, 7);
 }
 
-export type SlotState = 'on_time' | 'late' | 'missing' | 'not_due';
+export type SlotState = 'on_time' | 'late' | 'missing' | 'not_due' | 'exempt';
+/**
+ * Ngày bắt đầu áp dụng báo cáo CHT (giờ VN). Kỳ có hạn nộp TRƯỚC ngày này mà chưa nộp → "Miễn – trước ngày triển khai":
+ * tính là hoàn thành (không trừ Tiền Trách nhiệm, không nhắc). Kỳ đã nộp vẫn xét theo giờ nộp như thường.
+ */
+export const STORE_REPORTS_LAUNCH_DAY = '2026-11-06';
+export const storeReportsLaunchAt = () => vnAt(STORE_REPORTS_LAUNCH_DAY, 0);
+export const beforeLaunch = (kind: StoreReportKind, period: string) => deadlineOf(kind, period) < storeReportsLaunchAt();
 /** Trạng thái nộp của một kỳ: so giờ nộp lần đầu với hạn. */
-export function slotState(kind: StoreReportKind, period: string, submittedAt: string | null, nowIso: string): { state: SlotState; lateDays: number } {
+export function slotState(kind: StoreReportKind, period: string, submittedAt: string | null, nowIso: string, launchAt: string = storeReportsLaunchAt()): { state: SlotState; lateDays: number } {
   const due = deadlineOf(kind, period);
-  if (!submittedAt) return { state: nowIso > due ? 'missing' : 'not_due', lateDays: 0 };
+  if (!submittedAt) return { state: launchAt && due < launchAt ? 'exempt' : nowIso > due ? 'missing' : 'not_due', lateDays: 0 };
   if (submittedAt <= due) return { state: 'on_time', lateDays: 0 };
   return { state: 'late', lateDays: Math.ceil((Date.parse(submittedAt) - Date.parse(due)) / 86400_000) };
 }
@@ -76,16 +83,17 @@ const tierWeekly = (n: number) => n === 0 ? 250_000 : n === 1 ? 150_000 : n === 
  * `dailyDays`: các ngày trong tháng cửa hàng có mở ca POS (ngày cần báo cáo). `weeks`: thứ Hai các tuần cần báo cáo
  * (tuần có mở ca, hạn nộp rơi vào tháng). `reports`: các báo cáo đã nộp (mọi kỳ liên quan).
  */
-export function responsibilityOf(a: { month: string; dailyDays: readonly string[]; weeks: readonly string[]; reports: readonly ReportRow[]; now: string }) {
+export function responsibilityOf(a: { month: string; dailyDays: readonly string[]; weeks: readonly string[]; reports: readonly ReportRow[]; now: string; launchAt?: string }) {
+  const launch = a.launchAt ?? storeReportsLaunchAt();
   const find = (kind: StoreReportKind, period: string) => a.reports.find(r => r.kind === kind && r.period === period);
-  const dayDetail = a.dailyDays.map(period => { const r = find('daily', period), s = slotState('daily', period, r?.submittedAt ?? null, a.now).state, review = r?.review ?? 'pending';
+  const dayDetail = a.dailyDays.map(period => { const r = find('daily', period), s = slotState('daily', period, r?.submittedAt ?? null, a.now, launch).state, review = r?.review ?? 'pending';
     return { period, state: s, review, fails: dailyFails(s, review) }; });
-  const weekDetail = a.weeks.map(period => { const r = find('weekly', period), s = slotState('weekly', period, r?.submittedAt ?? null, a.now).state, review = r?.review ?? 'pending';
+  const weekDetail = a.weeks.map(period => { const r = find('weekly', period), s = slotState('weekly', period, r?.submittedAt ?? null, a.now, launch).state, review = r?.review ?? 'pending';
     return { period, state: s, review, fails: weeklyFails(s, review) }; });
   const once = (kind: 'monthly' | 'stocktake') => {
-    const r = find(kind, a.month), st = slotState(kind, a.month, r?.submittedAt ?? null, a.now), review = r?.review ?? 'pending';
+    const r = find(kind, a.month), st = slotState(kind, a.month, r?.submittedAt ?? null, a.now, launch), review = r?.review ?? 'pending';
     let amount: number;
-    if (review === 'excused' || st.state === 'not_due') amount = RESPONSIBILITY_SLOT;
+    if (review === 'excused' || st.state === 'not_due' || st.state === 'exempt') amount = RESPONSIBILITY_SLOT;
     else if (kind === 'stocktake' && review === 'gap_unreported') amount = 0;
     else if (st.state === 'on_time') amount = RESPONSIBILITY_SLOT;
     else if (st.state === 'late' && st.lateDays <= 2) amount = kind === 'monthly' ? 100_000 : 150_000;
@@ -102,13 +110,13 @@ export function responsibilityOf(a: { month: string; dailyDays: readonly string[
 }
 /** Ngày: trễ / thiếu = 1 lần; sai số liệu sổ quỹ = 2 lần (thay cho 1 lần trễ nếu có cả hai). */
 export function dailyFails(s: SlotState, review: StoreReviewStatus) {
-  if (review === 'excused' || s === 'not_due') return 0;
+  if (review === 'excused' || s === 'not_due' || s === 'exempt') return 0;
   if (review === 'cash_error') return 2;
   return s === 'on_time' ? 0 : 1;
 }
 /** Tuần: trễ / thiếu / đề xuất đặt hàng sai = 1 lần. */
 export function weeklyFails(s: SlotState, review: StoreReviewStatus) {
-  if (review === 'excused' || s === 'not_due') return 0;
+  if (review === 'excused' || s === 'not_due' || s === 'exempt') return 0;
   return s === 'on_time' && review !== 'order_error' ? 0 : 1;
 }
 
@@ -125,9 +133,9 @@ export interface Reminder { kind: StoreReportKind; period: string; label: string
  *  – Báo cáo tuần: tuần trước có mở ca, chưa nộp → nhắc từ 08h00 thứ Hai.
  *  – Báo cáo tháng + kiểm tồn kho (tháng cửa hàng có mở ca): nhắc từ 08h00 ngày cuối tháng; tháng trước chưa nộp → nhắc trong 10 ngày đầu tháng.
  */
-export function remindersAt(nowIso: string, shiftDays: readonly string[], submitted: ReadonlySet<string>) {
+export function remindersAt(nowIso: string, shiftDays: readonly string[], submitted: ReadonlySet<string>, launchAt: string = storeReportsLaunchAt()) {
   const { day, hour } = vnClock(nowIso), out: Reminder[] = [], has = (k: StoreReportKind, p: string) => submitted.has(`${k}:${p}`);
-  const push = (kind: StoreReportKind, period: string, label: string) => { const due = deadlineOf(kind, period); out.push({ kind, period, label, due, overdue: nowIso > due }); };
+  const push = (kind: StoreReportKind, period: string, label: string) => { const due = deadlineOf(kind, period); if (launchAt && due < launchAt) return; out.push({ kind, period, label, due, overdue: nowIso > due }); };
   const days = new Set(shiftDays);
   for (let i = 7; i >= 1; i--) { const d = addDays(day, -i); if (days.has(d) && !has('daily', d)) push('daily', d, `Báo cáo ngày ${d.slice(8)}/${d.slice(5, 7)}`); }
   if (days.has(day) && hour >= 19 && !has('daily', day)) push('daily', day, 'Báo cáo ngày hôm nay');
