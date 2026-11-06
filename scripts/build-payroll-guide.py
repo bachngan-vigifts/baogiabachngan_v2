@@ -30,54 +30,62 @@ sections=[
  'Lương theo công = LCB × ngày làm / công chuẩn. Ngày công chấp nhận cả 24.5 và 24,5. Hệ số năng lực × đơn giá hệ số; mức thực tế lấy từ Tham số của kỳ.',
  'Chức vụ trong hồ sơ Nhân viên quyết định điều kiện Sale Admin/NVBH. Cột Vị trí trên hồ sơ lương là nhãn in, không thay chức vụ tài khoản. Nếu đổi chỉ tiêu KPI, nhập lý do rồi lưu.',
 ], '02-ho-so-chung.png','Ảnh 2. Hồ sơ lương chung: tháng áp dụng, nhóm lương và LCB.'),
-('2. Cài đặt cho SALE',[
- 'Chọn bảng Sale & Văn phòng. Bật “Sale: tính KPI công việc + thưởng KPI DS”. Điền chỉ tiêu doanh số, khách mới, giao dịch và số HĐ; ô chỉ tiêu riêng để trống sẽ theo mức chung.',
+('2. Đăng ký doanh số theo năm',[
+ 'Mở Bảng lương → Đăng ký doanh số năm. Cũng có thể mở từ Hồ sơ lương của nhân viên. Chỉ Manager nhập và điều chỉnh bảng này.',
+ 'Chọn năm. Mỗi nhân viên có 12 ô từ tháng 1 đến tháng 12; cuộn ngang để xem đủ tháng. Đây là chỉ tiêu kế hoạch, không phải doanh số thực hiện. Chỉ tiêu doanh số KPI cần cùng cơ sở chưa VAT trừ hoa hồng với số thực hiện.',
+ 'Nhập số tiền nguyên lớn hơn 0, ví dụ 120.000.000 hoặc 120,000,000. Nhập lý do đăng ký/điều chỉnh rồi bấm Lưu đăng ký. Có tổng đăng ký theo người, theo tháng và cả năm.',
+ 'Chỉ tiêu tháng được đăng ký sẽ tự dùng cho hồ sơ lương, điểm KPI và bảng xếp hạng của đúng tháng đó. Thưởng quý cộng chỉ tiêu ba tháng. Không kế thừa đăng ký sang tháng khác hoặc năm sau.',
+ 'Ô trống là chưa đăng ký: hệ thống dùng chỉ tiêu hồ sơ cũ hoặc mức chung và ghi rõ nguồn. Xóa số rồi lưu để bỏ đăng ký. Tháng đã chốt lương chỉ xem; bản chụp phiếu đã chốt không đổi.',
+ 'Ô Chỉ tiêu DS trong hồ sơ lương chỉ đọc. Muốn đổi số, sửa ở bảng năm. Bảng khóa lúc tải năm và báo nếu người khác vừa sửa, tránh lưu nhầm năm hoặc ghi đè.',
+], '02b-dang-ky-doanh-so-nam.png','Ảnh 3. Phóng phần đầu bảng năm. Cuộn ngang trên CRM để nhập đủ 12 tháng.'),
+('3. Cài đặt cho SALE',[
+ 'Chọn bảng Sale & Văn phòng. Bật “Sale: tính KPI công việc + thưởng KPI DS”. Chỉ tiêu doanh số tự lấy từ bảng đăng ký năm theo tháng. Điền chỉ tiêu khách mới, giao dịch và số HĐ; ba ô này để trống sẽ theo mức chung.',
  'Muốn tính tự động theo số liệu: để trống KPI cố định và KPI chốt tay. Hai ô này dùng để thay điểm tính toán khi có quyết định riêng; giao diện hiển thị rõ điểm tính và điểm áp dụng.',
  'Bốn phần: KH mới tối đa 10%; giao dịch tối đa 30%; HĐ hợp lệ tối đa 10%; doanh số ghi nhận / chỉ tiêu × 50% và không có trần. Chỉ ngày làm hàng cộng bù 4 KH và 10 giao dịch mỗi ngày; ngày công tác không cộng bù.',
  'Doanh số ghi nhận = doanh số chưa VAT − hoa hồng khách hàng. Nguồn này thống nhất giữa hồ sơ, bảng lương và bảng KPI/xếp hạng. Khi bật tự động, bộ đếm cũ nhập tay không ghi đè nguồn CRM.',
  'Trường hợp được duyệt KPI cố định 100%: nhập 100 ở đúng hồ sơ Sale đã xác minh theo mã nhân viên. Không áp theo tên hiển thị; người trùng tên cần được phân biệt bằng mã.',
-], '03-sale.png','Ảnh 3. Bật KPI Sale và ô KPI cố định (%). Cuộn trong hộp thoại để tới phần này.'),
-('3. Cài đặt cho SALE ADMIN',[
+], '03-sale.png','Ảnh 4. Bật KPI Sale và ô KPI cố định (%). Cuộn trong hộp thoại để tới phần này.'),
+('4. Cài đặt cho SALE ADMIN',[
  'Chọn đúng chức vụ Sale Admin ở Nhân viên và bảng Sale & Văn phòng trong hồ sơ lương.',
  'Sale Admin không tính KPI doanh số của Sale. Bật “Sale Admin: hưởng thưởng sao HĐKT và thanh lý” rồi lưu hồ sơ.',
  'Tại Bảng lương → Cài đặt thưởng HĐKT, kiểm tra tháng bắt đầu, chế độ áp dụng, các mức sao và thưởng thanh lý. Cần bật cả chế độ chung và quyền hưởng của người đó.',
  'Thưởng sao theo giá trị trước VAT của chứng từ đủ điều kiện; thưởng thanh lý phát sinh khi Manager duyệt thanh lý hợp lệ. Căn cứ và khoản đã chốt được theo dõi để tránh tính trùng.',
  'Giới hạn cần biết: hiện người nhận thưởng là người phụ trách chứng từ. Chưa có người Sale Admin hỗ trợ riêng để Sale giữ doanh số còn Admin nhận thưởng hỗ trợ. Không đổi người phụ trách chỉ để chuyển thưởng; quy tắc này cần bổ sung nếu doanh nghiệp dùng cơ chế hỗ trợ.',
-], '03-sale-admin.png','Ảnh 4. Sale Admin có nút bật thưởng riêng và không có công tắc tính KPI Sale.'),
-('4. Cài đặt cho CỬA HÀNG TRƯỞNG',[
+], '03-sale-admin.png','Ảnh 5. Sale Admin có nút bật thưởng riêng và không có công tắc tính KPI Sale.'),
+('5. Cài đặt cho CỬA HÀNG TRƯỞNG',[
  'Chọn nhóm NVBH ML hoặc NVBH Lock theo cửa hàng. Điền LCB/hệ số và mức trách nhiệm theo chính sách dành cho cửa hàng trưởng.',
  'Trách nhiệm có ba cách: cố định mỗi tháng; theo tỷ lệ ngày làm; hoặc theo ngày với đơn giá chung. Ví dụ ảnh dùng trách nhiệm cố định, không phải mức áp cho toàn bộ nhân viên thật.',
  'Nếu được hưởng doanh số nhóm, bật “NVBH ML / Lock: hưởng thưởng DS của nhóm”. Cập nhật doanh số nhóm và mức chia ở Bảng lương trước khi chốt.',
  'CRM chưa tự tạo phần trăm thưởng quản lý riêng từ chức danh Cửa hàng trưởng/Leader. Đánh dấu trưởng nhóm dùng cho thông tin tổ chức; công thức vẫn theo nhóm lương và hồ sơ.',
  'Số người chia thưởng là tham số cố định, không tự đếm số người bật hưởng. Khi thêm cửa hàng trưởng vào diện nhận, đối chiếu tổng quỹ thưởng và bộ chia trước khi lưu.',
-], '03-cua-hang-truong.png','Ảnh 5. Chọn cách tính và mức trách nhiệm dành cho cửa hàng trưởng.'),
-('5. Cài đặt cho NVBH CỬA HÀNG',[
+], '03-cua-hang-truong.png','Ảnh 6. Chọn cách tính và mức trách nhiệm dành cho cửa hàng trưởng.'),
+('6. Cài đặt cho NVBH CỬA HÀNG',[
  'Chọn đúng chức vụ NVBH ML hoặc NVBH LOCK và nhóm lương tương ứng. Đặt trách nhiệm theo ngày nếu chính sách dùng mức/ngày, cùng chuyên cần, cơm/xăng, BHXH.',
  'Bật hưởng thưởng doanh số nhóm cho người đủ điều kiện. Doanh số ML, trung bình 6 tháng và doanh số Lock được nhập/đối soát trong Số liệu chung của kỳ.',
  'CRM tự áp bậc thưởng ML/Lock theo Tham số rồi chia cho bộ chia đã đặt. Hiện không tự gom doanh số POS riêng cho từng cửa hàng hoặc tự phân quỹ theo số nhân viên.',
  'Chuyên cần hiện là số tiền trong hồ sơ, chưa tự loại theo đi trễ/thiếu công. Nếu không được hưởng trong kỳ, Manager phải điều chỉnh mức theo tháng sau khi đối soát.',
  'Nhân viên thử việc dùng TV/THỬ VIỆC theo chính sách riêng hiện có. Kiểm tra kỹ các khoản ứng/phạt đã ghi và phiếu lương trước khi chốt.',
-], '03-nvbh.png','Ảnh 6. Công tắc thưởng doanh số nhóm trong hồ sơ NVBH.'),
-('6. Bật chính sách KPI chung',[
+], '03-nvbh.png','Ảnh 7. Công tắc thưởng doanh số nhóm trong hồ sơ NVBH.'),
+('7. Bật chính sách KPI chung',[
  'Vào Bảng lương → Tham số. Chọn tháng áp dụng trước khi lưu để giữ lịch sử các tháng trước.',
  'Từ kỳ 11/2026: Tháng áp dụng KPI chuẩn AppSheet = 202611; Tháng bắt đầu KPI Sale từ CRM = 202611; Áp dụng KPI từ CRM = 1.',
  'Đặt trọng số KH/GD/HĐ/DS lần lượt 10/30/10/50%; mức điểm KH mới khi vượt chỉ tiêu là 10%; bù mỗi ngày làm hàng là 4 KH và 10 GD. Mục số tháng YYYYMM nhập 202611, không nhập 11/2026.',
  'Bậc tiền thưởng doanh số net đang dùng: dưới 60% KPI không thưởng; từ 60% đến dưới 90%: 0,5%; 90% đến hết 120%: 1%; trên 120%: 1,2%. Có thể có cấu hình theo kỳ; không nhầm tỷ lệ thưởng với trọng số điểm KPI.',
  'Ví dụ ảnh: doanh số chưa VAT 100 triệu, hoa hồng 5 triệu → ghi nhận 95 triệu. Chỉ tiêu 100 triệu → phần doanh số 47,5 điểm phần trăm. Tổng KPI trên ảnh là 91,5% sau ba thành phần còn lại.',
-], '04-tham-so.png','Ảnh 7. Các công tắc chính sách và nguồn dữ liệu KPI.'),
-('7. Thiết lập thưởng HĐKT cho Admin',[
+], '04-tham-so.png','Ảnh 8. Các công tắc chính sách và nguồn dữ liệu KPI.'),
+('8. Thiết lập thưởng HĐKT cho Admin',[
  'Bảng lương → Cài đặt thưởng HĐKT. Chọn tháng bắt đầu và chế độ “Áp dụng vào thực nhận” để cộng tiền; “Đối chiếu” dùng để kiểm tra trước.',
  'Các ngưỡng sao, số tiền theo sao và thưởng thanh lý là tham số công ty. Kiểm tra mức đã được duyệt; những con số trong ảnh chỉ dùng minh họa thao tác.',
  'Kiểm tra người phụ trách, ngày ký/ngày đơn, trạng thái duyệt, giá trị trước VAT và phê duyệt thanh lý. Đơn chờ duyệt/nháp/hủy không được đưa vào doanh số ghi nhận của chính sách KPI mới.',
  'Sau khi đối soát, vào hồ sơ Sale Admin để kiểm tra quyền hưởng đã bật. Việc bật ở một nơi chưa đủ nếu nơi còn lại tắt.',
-], '05-thuong-admin.png','Ảnh 8. Màn hình riêng cho chế độ và mức thưởng HĐKT.'),
-('8. Kiểm tra KPI và nguồn số liệu',[
+], '05-thuong-admin.png','Ảnh 9. Màn hình riêng cho chế độ và mức thưởng HĐKT.'),
+('9. Kiểm tra KPI và nguồn số liệu',[
  'Tổng quan doanh số → Điểm KPI Sale: chọn tháng và nhân viên. Bốn điểm, tổng điểm và điểm áp dụng lấy cùng kết quả với phiếu lương; xếp hạng theo điểm áp dụng.',
  'KH mới lấy theo khách có đơn CRM được duyệt đầu tiên; giao dịch chăm sóc phải hợp lệ và đã thực hiện; HĐ lấy theo tháng ký và trạng thái đủ điều kiện. Doanh số ghi nhận lấy theo ngày đơn trong kỳ, chưa VAT trừ hoa hồng.',
  'Mỗi người cần được gán đúng trên khách/đơn/HĐ/giao dịch. Mở hồ sơ → Lương & thưởng để đối chiếu các con số và chỉ tiêu trước khi chốt. Đơn thiếu căn cứ hoa hồng sẽ báo và chặn chốt theo chính sách mới.',
  'Nguồn tự động và giới hạn: máy ADMS/SyncTime hiện lưu lượt gốc/gói nhận, chưa tự đổi thành công hoặc giờ tăng ca. Ngày công vẫn cần duyệt hoặc nhập file. Đi trễ/giờ nghỉ chỉ là chỉ số đối chiếu, chưa tự quy đổi tiền phạt.',
-], '06-kpi.png','Ảnh 9. Số liệu minh họa: nguồn ghi nhận 95 triệu và tổng KPI 91,5%.'),
-('9. Quy trình chốt lương ngày 03–05',[
+], '06-kpi.png','Ảnh 10. Số liệu minh họa: nguồn ghi nhận 95 triệu và tổng KPI 91,5%.'),
+('10. Quy trình chốt lương ngày 03–05',[
  '1. Chọn kỳ tháng trước. Kiểm tra dòng “Số liệu … / Chốt lương …” trên đầu bảng; ngày 03–05 là lịch xử lý, không dịch cửa sổ doanh số.',
  '2. Duyệt chấm công hoặc tải file mẫu 11 cột. Nhập ngày công lẻ, tăng ca, bể/đền hàng, số phiếu, trễ, điện thoại, giờ nghỉ, BHXH và ứng. Ô trống file giữ nguyên; 0 ghi bằng 0; Ngày công nhập Tự động để trả về chấm công.',
  '3. Nhập/đối soát doanh số nhóm ML/Lock và số chia thưởng. Kiểm tra phụ cấp, chuyên cần, các khoản trừ đã ghi riêng; khoản nhập nhanh là bổ sung, không xóa khoản riêng.',

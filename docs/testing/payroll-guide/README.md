@@ -14,6 +14,6 @@ Build PDF and editable Word (Python packages `reportlab`, `python-docx`, `Pillow
 python3 scripts/build-payroll-guide.py
 ```
 
-Artifacts in `trial-ui/guides/`: 10-page PDF, Word guide, nine actual UI screenshots. The payroll screen links the PDF. `results.json` records the canonical-net/KPI check (95 million recognized revenue, 91.5% KPI) and JavaScript error list.
+Artifacts in `trial-ui/guides/`: 11-page PDF, Word guide, ten actual UI screenshots. The payroll screen links the PDF. `results.json` records the canonical-net/KPI check (95 million recognized revenue, 91.5% KPI) annual target registration/year-switch checks, and JavaScript error list.
 
 The guide covers shared settings, Sale, Sale Admin, store managers, store salespeople, policy switches, data sources and closing the previous month on days 03–05. It clearly describes the manual inputs and unsupported automations. Do not replace these fixtures with private production screenshots.

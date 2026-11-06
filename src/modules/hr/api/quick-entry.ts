@@ -77,8 +77,8 @@ export function registerQuickPayroll(router: Router<StaffEnv>, deps: { revenueOf
               if (!['capacityCoef', 'outputRate'].includes(key)) values[key] = Math.round(values[key] as number);
             }
           }
-          const { effectiveMonth: _e, kpiEligible: _k, ...profile } = row.profile;
-          const value = { ...profile, ...values, memberId: id, effectiveMonth: month, updatedBy: me, updatedAt: now };
+          const { effectiveMonth: _e, kpiEligible: _k, legacyRevenueTarget,registeredRevenueTarget:_registered,revenueTargetSource:_source, ...profile } = row.profile;
+          const value = { ...profile,revenueTarget:legacyRevenueTarget??profile.revenueTarget, ...values, memberId: id, effectiveMonth: month, updatedBy: me, updatedAt: now };
           await db.insert(hrSalaryProfiles).values(value).onConflictDoUpdate({ target: [hrSalaryProfiles.memberId, hrSalaryProfiles.effectiveMonth], set: value });
         }
         if (change.adjustments) for (const [kind, value] of Object.entries(object(change.adjustments))) {

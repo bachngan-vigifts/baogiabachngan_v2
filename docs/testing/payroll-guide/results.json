@@ -4,5 +4,9 @@
   "month": "2026-11",
   "netRevenue": 95000000,
   "kpi": 0.915,
+  "yearlyRegistration": true,
+  "yearSwitchLocked": true,
+  "lockedMonth": true,
+  "unsavedYearProtected": true,
   "errors": []
 }

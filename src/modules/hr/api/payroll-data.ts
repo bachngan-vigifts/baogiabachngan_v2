@@ -4,6 +4,7 @@ import type {CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
 import {awardHistory,proposeAwards} from './contract-bonuses.ts';
 import {sha256Hex} from '../../staff/domain/session.ts';
 import {AppError} from '../../../core/errors.ts';
+import {revenueTargetsFor,targetKey} from './revenue-target-data.ts';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, notInArray } from 'drizzle-orm';
 import type { AnyDb } from '../../../core/db/client.ts';
 import { departments, employees } from '../../staff/schema.ts';
@@ -22,7 +23,7 @@ export type RevenueOf = (db: AnyDb, months: readonly string[]) => Promise<Map<st
 
 type ProfileRow = typeof hrSalaryProfiles.$inferSelect;
 /** Chưa có hồ sơ lương → mặc định theo chức vụ (`effectiveMonth: null`). */
-const toProfile = (p: ProfileRow | undefined, positionId?: string | null): SalaryProfile & { effectiveMonth: string | null; note: string } => p ? {
+const toProfile = (p: ProfileRow | undefined, positionId?: string | null): SalaryProfile & { effectiveMonth: string | null; note: string; legacyRevenueTarget?:number;registeredRevenueTarget?:number|null;revenueTargetSource?:'registration'|'profile'|'company' } => p ? {
   payrollGroup: p.payrollGroup, positionLabel: p.positionLabel, baseSalary: p.baseSalary, capacityCoef: p.capacityCoef,
   responsibilityMode: p.responsibilityMode, responsibility: p.responsibility, mealAllowance: p.mealAllowance, phoneAllowance: p.phoneAllowance,
   attendanceBonus: p.attendanceBonus, kpiEligible:salaryKpiEligible(positionId),kpiEnabled:salaryKpiEligible(positionId)&&p.kpiEnabled,fixedKpi:salaryKpiEligible(positionId)?p.fixedKpi:null,contractBonusEnabled:p.contractBonusEnabled, teamBonus: p.teamBonus, outputRate: p.outputRate, revenueTarget: p.revenueTarget, kpiNewCustomersTarget: p.kpiNewCustomersTarget, kpiTransactionsTarget: p.kpiTransactionsTarget, kpiContractsTarget: p.kpiContractsTarget,
@@ -65,13 +66,14 @@ async function quarterBonuses(db: AnyDb, month: string, params: PayrollParams, g
   const team=[...profiles.values()].filter(p=>p.payrollGroup==='sale'&&p.kpiEnabled&&salaryKpiEligible(positions.find(m=>m.id===p.memberId)?.positionId));
   if (!team.length) return { map: new Map<string, number>(), detail: null };
   const ids = team.map(p => p.memberId);
-  const [inputs, revenues] = await Promise.all([
+  const [inputs, revenues,registered] = await Promise.all([
     db.select({ memberId: hrPayrollInputs.memberId, month: hrPayrollInputs.month, revenue: hrPayrollInputs.revenue }).from(hrPayrollInputs)
       .where(and(inArray(hrPayrollInputs.memberId, ids), inArray(hrPayrollInputs.month, q.months))),
     revenueOf(db, q.months),
+    revenueTargetsFor(db,q.months,ids),
   ]);
   const detail = computeQuarterBonus(team.map(p => ({
-    memberId: p.memberId, target: (p.revenueTarget || params.kpiRevenue) * 3,
+    memberId: p.memberId, target: q.months.reduce((sum,m)=>sum+(registered.get(targetKey(p.memberId,m))??(p.revenueTarget||params.kpiRevenue)),0),
     revenues: q.months.map(m => inputs.find(i => i.memberId === p.memberId && i.month === m)?.revenue ?? revenues.get(p.memberId)?.[m] ?? 0),
   })), params);
   return { map: new Map(detail.rows.map(r => [r.memberId, r.bonus])), detail: { ...detail, quarter: q.quarter, months: q.months } };
@@ -97,7 +99,7 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
   const list = onlyIds ? members : members.filter(m => m.active || profiles.has(m.id));
   const ids = list.map(m => m.id);
   if (!ids.length) return { month, params, paramsMonth: effectiveMonth, groupMonth: gm, rows: [] as PayrollRow[], quarter: null };
-  const [inputs, adjustments, attendance, slips, revenues, quarter] = await Promise.all([
+  const [inputs, adjustments, attendance, slips, revenues, quarter,registered] = await Promise.all([
     db.select().from(hrPayrollInputs).where(and(eq(hrPayrollInputs.month, month), inArray(hrPayrollInputs.memberId, ids))),
     db.select({ id: hrAdjustments.id, memberId: hrAdjustments.memberId, kind: hrAdjustments.kind, amount: hrAdjustments.amount, reason: hrAdjustments.reason, createdAt: hrAdjustments.createdAt, createdByName: employees.name })
       .from(hrAdjustments).leftJoin(employees, eq(employees.id, hrAdjustments.createdBy))
@@ -107,6 +109,7 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     db.select().from(hrPayslips).where(and(eq(hrPayslips.month, month), inArray(hrPayslips.memberId, ids))),
     revenueOf(db, [month]),
     quarterBonuses(db, month, params, gm, revenueOf),
+    revenueTargetsFor(db,[month],ids),
   ]);
   const from=String(params.contractBonusFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2'),kpiFrom=String(params.salesAutomationFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2');
   const appsheet = appsheetKpiApplies(params,month);
@@ -119,6 +122,10 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
   const awards=bonusEnabled?await proposeAwards(db,month,from,facts.contracts,history,m=>paramsFor(db,m)):[];
   const rows: PayrollRow[] = list.map(m => {
     const profile = toProfile(profiles.get(m.id), m.positionId), input = toInput(inputs.find(i => i.memberId === m.id));
+    const target=registered.get(targetKey(m.id,month));
+    profile.legacyRevenueTarget=profile.revenueTarget;profile.registeredRevenueTarget=target??null;
+    profile.revenueTargetSource=target!==undefined?'registration':profile.revenueTarget>0?'profile':'company';
+    if(target!==undefined)profile.revenueTarget=target;
     const adj = adjustments.filter(a => a.memberId === m.id).map(({ memberId: _m, ...a }) => ({ ...a, createdByName: a.createdByName ?? '' }));
     const attendanceDays = summarizeAttendance(attendance.filter(a => a.memberId === m.id)).worked, systemRevenue = revenues.get(m.id)?.[month] ?? 0;
     const fact=facts.members.get(m.id),auto={newCustomers:fact?.newCustomers||0,transactions:fact?.transactions||0,contracts:fact?.contracts||0},resolved={...input};

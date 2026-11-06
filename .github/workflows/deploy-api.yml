@@ -47,6 +47,15 @@ jobs:
           payload=$(jq -n --rawfile query scripts/sql/assert-appsheet-customers.sql '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra schema hồ sơ khách và đăng ký doanh số chỉ đọc
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          for query_file in scripts/sql/assert-customer-profile-fields.sql scripts/sql/assert-hr-revenue-targets.sql; do
+            payload=$(jq -n --rawfile query "$query_file" '{query:$query}')
+            curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+          done
       # Reject an invalid URL before setting Edge secrets or replacing a working deployment.
       - name: Kiểm tra pooler chỉ đọc trước khi đổi cấu hình
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_POOLER_URL != ''

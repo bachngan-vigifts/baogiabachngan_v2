@@ -1,5 +1,6 @@
 import { createPayrollQuickEntry } from './payroll-quick-entry.js';
 import {openContractBonusDetails} from './contract-bonus-detail.js';
+import {openRevenueTargets} from './revenue-targets.js';
 // BẢNG LƯƠNG CÔNG TY (#/payroll?month=YYYY-MM) – theo file "Bảng lương mẫu": Tổng hợp · 3 bảng (Sale & VP, NVBH ML – Bách Ngân, NVBH Lock) ·
 // Chuyển khoản (VietQR) · Tham số · Xuất Excel. Mọi con số do máy chủ tính (src/modules/hr/domain/payroll.ts) – trang này chỉ hiển thị.
 // Nhập nhanh số liệu nhiều người ngay tại bảng; cấu hình đầy đủ và các khoản có lý do ở trang chi tiết nhân viên.
@@ -114,7 +115,7 @@ export function initPayroll(deps) {
       <div class="page-head"><div><span class="eyebrow">Quản trị</span><h1>Bảng lương</h1><p class="muted">${esc(monthLabel(d.month))} · tham số áp dụng ${d.paramsMonth ? 'từ ' + esc(monthLabel(d.paramsMonth).toLowerCase()) : 'mặc định theo file mẫu'}.</p></div>
         <div class="row-actions pr-actions">
           <div class="md-month"><button type="button" class="icon-btn" data-month="-1" aria-label="Tháng trước">‹</button><input type="month" id="pr-month" value="${esc(d.month)}" aria-label="Chọn tháng"><button type="button" class="icon-btn" data-month="1" aria-label="Tháng sau">›</button></div>
-          <a class="btn secondary" href="guides/huong-dan-cai-dat-luong.pdf" target="_blank" rel="noopener">Hướng dẫn cài đặt (PDF)</a><button class="btn primary" data-mobile-inline data-tab="profiles">Cài đặt lương nhân viên</button><button class="btn secondary" data-mobile-inline data-act="bonus-params">Cài đặt thưởng HĐKT</button><a class="btn secondary" href="https://synctime.vn/login.php" target="_blank" rel="noopener noreferrer">Đăng nhập SyncTime</a><button class="btn secondary" data-act="adms">Chấm công từ máy</button><button class="btn secondary" data-act="params">Tham số</button><button class="btn secondary" data-act="excel">Xuất Excel</button>
+          <a class="btn secondary" href="guides/huong-dan-cai-dat-luong.pdf?v=yearly-targets-1" target="_blank" rel="noopener">Hướng dẫn cài đặt (PDF)</a><button class="btn secondary" data-act="revenue-targets">Đăng ký doanh số năm</button><button class="btn primary" data-mobile-inline data-tab="profiles">Cài đặt lương nhân viên</button><button class="btn secondary" data-mobile-inline data-act="bonus-params">Cài đặt thưởng HĐKT</button><a class="btn secondary" href="https://synctime.vn/login.php" target="_blank" rel="noopener noreferrer">Đăng nhập SyncTime</a><button class="btn secondary" data-act="adms">Chấm công từ máy</button><button class="btn secondary" data-act="params">Tham số</button><button class="btn secondary" data-act="excel">Xuất Excel</button>
           ${open ? `<button class="btn primary" data-act="confirm-all">Chốt lương (${open})</button>` : ''}</div></div>
       ${d.period?`<p class="muted small" data-payroll-period>Số liệu: ${esc(d.period.from)} – ${esc(d.period.to)} · Chốt lương: ${esc(d.period.closeFrom)} – ${esc(d.period.closeTo)}</p>`:''}
       <div class="stats">
@@ -240,6 +241,7 @@ export function initPayroll(deps) {
     if (quick.dirty()) { toast('Lưu thay đổi ở tab Nhập nhanh trước khi thực hiện thao tác khác.', 'err'); return; }
     try {
       if (act === 'adms') await openAdms({ api, toast }, st.month);
+      else if(act==='revenue-targets')await openRevenueTargets({api,esc,toast,confirmBox},st.month.slice(0,4),()=>open(st.month));
       else if (act === 'params') await editParams();
       else if (act === 'bonus-params') await editParams(true);
       else if (act === 'excel') { await exportExcel(); toast('Đã tải file Excel bảng lương.'); }
