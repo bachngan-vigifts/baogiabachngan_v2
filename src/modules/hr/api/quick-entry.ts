@@ -7,7 +7,7 @@ import { sha256Hex } from '../../staff/domain/session.ts';
 import { hrAdjustments, hrPayrollInputs, hrSalaryProfiles } from '../schema.ts';
 import { isMonth, daysInMonth, HR_LIMITS } from '../domain/payroll.ts';
 import { buildPayroll, type PayrollRow, type RevenueOf } from './payroll-data.ts';
-import type { CrmFactsOf } from '../../../core/contracts/sales-payroll.ts';
+import type { TeamRevenueOf,CrmFactsOf } from '../../../core/contracts/sales-payroll.ts';
 
 const prefix = 'payroll-quick:';
 const kinds = ['bonus', 'allowance', 'deduction', 'advance', 'phone_advance'] as const;
@@ -34,7 +34,7 @@ export function payrollEntry(row: PayrollRow, month: string) {
 }
 
 /** One locked transaction for all changed staff; stale rows and confirmed slips are never overwritten. */
-export function registerQuickPayroll(router: Router<StaffEnv>, deps: { revenueOf: RevenueOf; crmFactsOf?: CrmFactsOf }) {
+export function registerQuickPayroll(router: Router<StaffEnv>, deps: { revenueOf: RevenueOf; crmFactsOf?: CrmFactsOf;teamRevenueOf?:TeamRevenueOf }) {
   router.put('/hr/payroll/:month/entries', async c => {
     const month = c.params.month;
     if (!isMonth(month)) throw new AppError(400, 'Tháng không hợp lệ.');
@@ -45,7 +45,7 @@ export function registerQuickPayroll(router: Router<StaffEnv>, deps: { revenueOf
     const me = (c.state.session as SessionState).member.id;
     await c.env.db.transaction(async db => {
       await payrollLock(db as any);
-      const board = await buildPayroll(db as any, month, deps.revenueOf, ids as string[], deps.crmFactsOf);
+      const board = await buildPayroll(db as any, month, deps.revenueOf, ids as string[], deps.crmFactsOf,false,deps.teamRevenueOf);
       for (const change of changes) {
         const row = board.rows.find(r => r.member.id === change.memberId);
         if (!row) throw new AppError(404, 'Không tìm thấy nhân viên.');

@@ -8,6 +8,8 @@ import {reservedBySku} from '../modules/sales/api/pos-store.ts';
 import { stockLookupHolds } from '../modules/sales/api/stock-lookup-holds.ts';
 import {outstandingLines} from '../modules/suppliers/api/incoming-stock.ts';
 import {activityQuotes} from '../modules/quotes/api/activity-quotes.ts';
+import {teamPayrollRevenues} from './team-payroll-revenues.ts';
+import {registerTeamPayrollSources} from './team-payroll-source-routes.ts';
 import {crmFactsOf} from './sales-payroll-facts.ts';
 import {dashboardKpiOf} from './dashboard-kpi.ts';
 import {assertActivityKpiOpen} from '../modules/hr/api/activity-lock.ts';
@@ -136,11 +138,12 @@ export function createAppRouter() {
   registerProductDetailRoutes(router);
   registerCustomerDuplicateRoutes(router);
   registerCareRoutes(router,{assertKpiOpen:assertActivityKpiOpen,quotes:activityQuotes});
-  registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf,
+  registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf,teamRevenueOf:teamPayrollRevenues,
     onSelfBankChange: (env, m) => notifyMany(env, 'managers', { eventType: 'hr-bank-changed', title: 'Đổi tài khoản nhận lương', body: `${m.name} vừa tự cập nhật tài khoản nhận lương. Kiểm tra trước khi chuyển lương.`, url: `/index.html#/members/${encodeURIComponent(m.id)}`, actorId: m.id }) }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
   registerAdmsRoutes(router);
   registerSynctimeRoutes(router);
-  registerStaffHubRoutes(router,{crmFactsOf});
+  registerStaffHubRoutes(router,{crmFactsOf,teamRevenueOf:teamPayrollRevenues});
+  registerTeamPayrollSources(router);
   registerFeedbackRoutes(router); // góp ý phát triển phần mềm (mọi nhân viên)
   registerStoreRoutes(router); // báo cáo Cửa hàng trưởng (CHT): nộp, duyệt, Tiền Trách nhiệm, nhắc nhở
   registerDashboardRoutes(router, { kpiOf: dashboardKpiOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR

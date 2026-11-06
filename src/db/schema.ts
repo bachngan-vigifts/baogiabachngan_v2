@@ -19,6 +19,7 @@ export * from '../modules/tasks/schema.ts';
 export * from '../modules/chat/schema.ts';
 export * from '../modules/hr/schema.ts';
 export * from '../modules/hr/revenue-target-schema.ts';
+export * from '../modules/hr/revenue-target-request-schema.ts';
 export * from '../modules/hr/adms-schema.ts';
 export * from '../modules/care/schema.ts';
 export * from '../modules/inventory/schema.ts';
@@ -39,3 +40,5 @@ export * from '../modules/sales/cash-collection-schema.ts';
 export * from '../modules/catalog/catalogue-library-schema.ts';
 export * from '../modules/feedback/schema.ts';
 export * from '../modules/store/schema.ts';
+
+export {salesPayrollTeamSources} from '../modules/sales/team-payroll-schema.ts';

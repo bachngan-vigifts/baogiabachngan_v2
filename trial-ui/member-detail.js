@@ -1,5 +1,6 @@
 import {openContractBonusDetails} from './contract-bonus-detail.js';
 import {openRevenueTargets} from './revenue-targets.js';
+import {openSelfRevenueTargets} from './revenue-target-requests.js';
 // Trang chi tiết nhân viên (#/members/<id>[?month=YYYY-MM]): một lượt gọi GET /members/:id/overview?month= rồi vẽ.
 // Cấu trúc: HEAD (ảnh, tên, chọn tháng) → KPI (thẻ chỉ số) → DIỄN BIẾN 6 THÁNG + HỒ SƠ + LƯƠNG THÁNG → TABS.
 // Thêm một mục mới = thêm một phần tử vào TABS (key, nhãn, đếm số, hàm vẽ). Công thức lương ở src/modules/hr/domain/payroll.ts.
@@ -232,6 +233,7 @@ export function initMemberDetail(deps) {
             <input type="month" id="md-month" value="${esc(d.month)}" aria-label="Chọn tháng"><button type="button" class="icon-btn" data-month="1" aria-label="Tháng sau">›</button></div>
           ${a.canManage && !a.isSelf ? '<button class="btn secondary" data-act="edit">Sửa thông tin</button>' : ''}
           ${a.isSelf && (d.payroll || d.salaryAccount) ? '<button class="btn secondary" data-act="bank">Tài khoản nhận lương</button>' : ''}
+          ${a.isSelf&&m.positionId==='sale'?'<button class="btn primary" data-act="self-revenue-targets">Đăng ký doanh số năm</button>':''}
           ${a.canManage || a.isSelf ? '<button class="btn secondary" data-act="photo">Đổi ảnh</button>' : ''}
         </div>
       </div>
@@ -438,6 +440,7 @@ export function initMemberDetail(deps) {
       else if (act === 'photo') { if (await deps.onPhoto(m)) reload(); }
       else if (act === 'contract-bonus')openContractBonusDetails(st.d.payroll.payslip,{kpiEligible:st.d.payroll.profile.kpiEligible});
       else if (act === 'salary') editSalary();
+      else if(act==='self-revenue-targets')await openSelfRevenueTargets({api,esc,toast,confirmBox},st.month.slice(0,4),reload);
       else if (act === 'bank') editBank();
       else if (act === 'add-adj') addAdjustment();
       else if (act === 'inputs') editInputs();

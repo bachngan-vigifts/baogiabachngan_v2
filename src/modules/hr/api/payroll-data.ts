@@ -1,6 +1,6 @@
 import {computeKpiCv,kpiTargetsOf} from '../domain/kpi-cv.ts';
 import {kpiBonusRate,netKpiBonusRate,salaryTransferNote,vietQrUrl} from '../domain/payroll.ts';
-import type {CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
+import type {TeamRevenueOf,CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
 import {awardHistory,proposeAwards} from './contract-bonuses.ts';
 import {sha256Hex} from '../../staff/domain/session.ts';
 import {AppError} from '../../../core/errors.ts';
@@ -90,9 +90,11 @@ export interface PayrollRow {
  * Bảng lương một tháng cho nhiều người (mặc định: mọi nhân viên đang làm / có hồ sơ lương). Một chỗ tính duy nhất cho
  * trang chi tiết nhân viên, bảng lương công ty và lúc chốt lương.
  */
-export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueOf, onlyIds?: readonly string[],crmFactsOf?:CrmFactsOf,lock=false) {
+export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueOf, onlyIds?: readonly string[],crmFactsOf?:CrmFactsOf,lock=false,teamRevenueOf?:TeamRevenueOf) {
   const r = monthRange(month);
   const [{ params, effectiveMonth }, gm, profiles] = await Promise.all([paramsFor(db, month), groupMonthOf(db, month), profilesFor(db, month, onlyIds)]);
+  const teamRevenue=teamRevenueOf?await teamRevenueOf(db,month):null;
+  if(teamRevenue){gm.bnRevenue=teamRevenue.bn.revenue;gm.lockRevenue=teamRevenue.lock.revenue;gm.teamRevenue=teamRevenue;}
   const members = await db.select({ id: employees.id, name: employees.name, active: employees.active, positionId: employees.positionId, workCompany:employees.workCompany, workDepartment:departments.name, isLeader:employees.isLeader }).from(employees).leftJoin(departments,eq(departments.id,employees.workDepartmentId))
     .where(and(isNull(employees.deletedAt), notInArray(employees.role, ['customer', 'supplier']), onlyIds ? inArray(employees.id, [...onlyIds]) : undefined))
     .orderBy(asc(employees.name));
@@ -139,6 +141,7 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     const ownAwards=probation?[]:awards.filter(a=>a.memberId===m.id&&(!a.isNew||profile.contractBonusEnabled&&(!netPolicy||profile.kpiEligible===false)));
     const calc = computePayslip({profile,params,kpiPolicy:appsheet?'appsheet':'legacy',input:kpiApply?resolved:appsheet?{...input,kpiRevenue:resolved.kpiRevenue}:input,adjustments:adj,attendanceDays,systemRevenue,groupMonth:gm,quarterBonusAuto:quarter.map.get(m.id)??0,...(netPolicy&&profile.payrollGroup==='sale'&&profile.kpiEnabled&&profile.kpiEligible!==false?{kpiNetRevenue:fact?.netRevenue||0,kpiNetRevenueIssues:fact?.netRevenueIssues||0}:{}),
      contractBonus:bonusApply?ownAwards.filter(a=>a.isNew).reduce((n,a)=>n+a.amount,0):0,contractBonusAdjustment:bonusApply?ownAwards.filter(a=>!a.isNew).reduce((n,a)=>n+a.amount,0):0});
+    if(teamRevenue&&!probation&&profile.teamBonus&&(profile.payrollGroup==='bn'||profile.payrollGroup==='lock')){const t=teamRevenue[profile.payrollGroup];calc.teamRevenueBasis={target:teamRevenue.target,revenue:t.revenue,crm:t.crm,pos:t.pos,issues:t.issues,policyMonth:teamRevenue.policyMonth,bonusMode:teamRevenue.bonusMode};}
     calc.employment={company:m.workCompany,department:m.workDepartment,leader:m.isLeader};
     if(enabled&&!probation){const previewKpi=kpiEnabled&&profile.kpiEnabled?computeKpiCv({...resolved,kpiOverride:profile.fixedKpi??resolved.kpiOverride},params,kpiTargetsOf(params,profile),input.revenue??systemRevenue,appsheet?'appsheet':'legacy'):null;calc.salesCrm={apply:bonusApply||kpiApply&&profile.kpiEnabled,bonusApply,kpiApply:kpiApply&&profile.kpiEnabled,from,kpiEligible:profile.kpiEligible!==false,facts:auto,awards:ownAwards,previewKpi,kpiBonusPreview:Math.round((netPolicy?Math.max(0,fact?.netRevenue||0):(input.revenue??systemRevenue))*(netPolicy?netKpiBonusRate(params,previewKpi?.used??null):kpiBonusRate(params,previewKpi?.used??null)))};}
     return { member: m, profile, input, attendanceDays, systemRevenue, adjustments: adj, calc, slip: slips.find(s => s.memberId === m.id) ?? null };
@@ -174,10 +177,10 @@ function transferOf(view: ReturnType<typeof payslipView> | null, profile: { bank
   return { bankCode: bank.code, bankAccount: bank.account, bankHolder: bank.holder, amount: Math.max(0, Math.round(view.net)), note: salaryTransferNote(month),
     fromSnapshot: bank.fromSnapshot, qr: vietQrUrl(bank.code, bank.account, view.net, month, bank.holder) };
 }
-export async function payrollOf(db: AnyDb, memberId: string, month: string, revenueOf: RevenueOf,crmFactsOf?:CrmFactsOf,showAllContracts=false) {
+export async function payrollOf(db: AnyDb, memberId: string, month: string, revenueOf: RevenueOf,crmFactsOf?:CrmFactsOf,showAllContracts=false,teamRevenueOf?:TeamRevenueOf) {
   const r = monthRange(month);
   const [board, history, attendance] = await Promise.all([
-    buildPayroll(db, month, revenueOf, [memberId],crmFactsOf),
+    buildPayroll(db, month, revenueOf, [memberId],crmFactsOf,false,teamRevenueOf),
     db.select().from(hrSalaryProfiles).where(eq(hrSalaryProfiles.memberId, memberId)).orderBy(desc(hrSalaryProfiles.effectiveMonth)).limit(36),
     db.select({ date: hrAttendance.workDate, status: hrAttendance.status, note: hrAttendance.note }).from(hrAttendance)
       .where(and(eq(hrAttendance.memberId, memberId), gte(hrAttendance.workDate, r.from), lte(hrAttendance.workDate, r.to))).orderBy(asc(hrAttendance.workDate)),
