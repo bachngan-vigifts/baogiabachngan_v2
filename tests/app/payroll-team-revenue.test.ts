@@ -63,8 +63,13 @@ test('effective payroll team selects CRM membership; shared target is not divide
  const f=await seed();await f.db.insert(hrSalaryProfiles).values({memberId:'emp',effectiveMonth:'2026-12',payrollGroup:'lock',positionLabel:'NVBH',baseSalary:5200000,teamBonus:true,updatedBy:'mgr',updatedAt:''});
  await f.order('bad-crm-nov','crm',{ownerId:'emp'});await f.order('bad-crm-dec','crm',{ownerId:'emp',orderDate:'2026-12-10'});
  assert.equal((await teamPayrollRevenues(f.db,month))!.bn.issues,1);assert.equal((await teamPayrollRevenues(f.db,'2026-12'))!.lock.issues,1);
- const p=mergeParams({bnSplit:2,lockSplit:2});assert.equal(monthlyStoreBonus(p,'bn',299_999_999,'threshold'),0);assert.equal(monthlyStoreBonus(p,'bn',300_000_000,'threshold'),1_500_000);assert.equal(monthlyStoreBonus(p,'lock',300_000_000,'threshold'),1_500_000);
- assert.equal(monthlyStoreBonus(p,'bn',270_000_000,'tiers'),675_000);assert.equal(monthlyStoreBonus(p,'lock',255_000_000,'tiers'),1_275_000);assert.equal(monthlyStoreBonus(p,'lock',310_000_000,'threshold'),2_325_000);
+ const p=mergeParams({bnSplit:2,lockSplit:2});
+ // Cùng thang cho ML và Lock: < 85% → 0 · từ 85% 0,5% · từ 100% 1% · trên 120% 1,5% (đúng 120% vẫn 1%); cách xét cũ không còn ảnh hưởng.
+ for(const g of ['bn','lock'] as const)for(const mode of ['threshold','tiers'] as const){
+  assert.equal(monthlyStoreBonus(p,g,254_999_999,mode),0);assert.equal(monthlyStoreBonus(p,g,255_000_000,mode),637_500);
+  assert.equal(monthlyStoreBonus(p,g,270_000_000,mode),675_000);assert.equal(monthlyStoreBonus(p,g,300_000_000,mode),1_500_000);
+  assert.equal(monthlyStoreBonus(p,g,360_000_000,mode),1_800_000);assert.equal(monthlyStoreBonus(p,g,400_000_000,mode),3_000_000);
+ }
 });
 
 test('valid fractional before-VAT amounts remain eligible; salary lines round money only after calculating the bonus',async()=>{

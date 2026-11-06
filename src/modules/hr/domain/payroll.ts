@@ -178,23 +178,27 @@ export function bnSalesBonus(p: PayrollParams, revenue: number, avg: number) {
   const r = revenue / avg, rate = r >= p.bnLevel1 ? p.bnLevel1Rate : r >= p.bnLevel2 ? p.bnLevel2Rate : 0;
   return revenue * rate / p.bnSplit;
 }
-/** Shared monthly store target, never divided by staff count. Payout split remains a separate setting. */
-export function monthlyStoreBonus(p:PayrollParams,group:'bn'|'lock',revenue:number,mode:'threshold'|'tiers'){
- const target=300_000_000;
- if(mode==='threshold'&&revenue<target)return 0;
- if(group==='bn'){const ratio=revenue/target,rate=ratio>=p.bnLevel1?p.bnLevel1Rate:ratio>=p.bnLevel2?p.bnLevel2Rate:0;return revenue*rate/p.bnSplit;}
- return lockSalesBonus({...p,lockTarget:target},revenue);
+/**
+ * Tỷ lệ thưởng DS chung cửa hàng (CRM + POS) – cùng thang cho ML và Lock:
+ * dưới mốc 1 (85%) 0 · từ 85% 0,5% · từ 100% 1% · trên 120% 1,5% (đúng 120% vẫn 1%).
+ */
+export function storeBonusRate(p:PayrollParams,revenue:number,target=300_000_000){
+ if(!(target>0))return 0;
+ const ratio=revenue/target,epsilon=1e-12;
+ return ratio>p.storeLevel3+epsilon?p.storeLevel3Rate:ratio+epsilon>=p.storeLevel2?p.storeLevel2Rate:ratio+epsilon>=p.storeLevel1?p.storeLevel1Rate:0;
+}
+/** Shared monthly store target, never divided by staff count. Payout split remains a separate setting.
+ *  `mode` (cấu hình nguồn cũ "threshold" / "tiers") không còn ảnh hưởng: mọi kỳ nguồn CRM + POS dùng thang chung ở trên. */
+export function monthlyStoreBonus(p:PayrollParams,group:'bn'|'lock',revenue:number,_mode?:'threshold'|'tiers'){
+ return revenue*storeBonusRate(p,revenue)/(group==='bn'?p.bnSplit:p.lockSplit);
 }
 /**
- * Các mốc thưởng DS chung cửa hàng (đúng công thức monthlyStoreBonus) để hiển thị: doanh số cần đạt, tỷ lệ thưởng trên
- * toàn bộ DS, số người chia. Chế độ "threshold": dưới chỉ tiêu không thưởng nên mốc thấp nhất là chỉ tiêu.
+ * Các mốc thưởng DS chung cửa hàng để hiển thị: doanh số cần đạt, tỷ lệ thưởng trên toàn bộ DS, số người chia.
+ * `strict`: mốc tính khi DS VƯỢT (>) mức, không tính khi bằng.
  */
-export function storeBonusTiers(p:PayrollParams,group:'bn'|'lock',mode:'threshold'|'tiers',target=300_000_000){
- const raw=group==='bn'?[{at:p.bnLevel2*target,rate:p.bnLevel2Rate},{at:p.bnLevel1*target,rate:p.bnLevel1Rate}]:[{at:p.lockFloor*target,rate:p.lockRate},{at:p.lockHigh,rate:p.lockHighRate}];
- const tiers=raw.map(t=>({at:mode==='threshold'?Math.max(t.at,target):t.at,rate:t.rate})).filter(t=>t.rate>0).sort((a,b)=>a.at-b.at||a.rate-b.rate);
- // Hai mốc trùng doanh số (chế độ threshold) → giữ tỷ lệ cao hơn, như công thức.
- const out:{at:number;rate:number}[]=[];for(const t of tiers){const last=out.at(-1);if(last&&last.at===t.at)last.rate=Math.max(last.rate,t.rate);else out.push(t);}
- return {target,split:group==='bn'?p.bnSplit:p.lockSplit,tiers:out};
+export function storeBonusTiers(p:PayrollParams,group:'bn'|'lock',_mode?:'threshold'|'tiers',target=300_000_000){
+ const tiers=[{at:p.storeLevel1*target,rate:p.storeLevel1Rate,strict:false},{at:p.storeLevel2*target,rate:p.storeLevel2Rate,strict:false},{at:p.storeLevel3*target,rate:p.storeLevel3Rate,strict:true}].filter(t=>t.rate>0);
+ return {target,split:group==='bn'?p.bnSplit:p.lockSplit,tiers};
 }
 /** Thưởng DS team Lock (đã chia số người). */
 export function lockSalesBonus(p: PayrollParams, revenue: number) {
@@ -236,7 +240,7 @@ export function computePayslip(a: {
     kpiBonus: [bonusRevenue * rate, kpi ? `KPI CV ${pct(kpi.used)} → ${pct(rate)} × ${netPolicy?'DS net':'DS'} ${vnd(bonusRevenue)}` : ''],
     outputBonus: [inp.outputQty * f.outputRate, inp.outputQty ? `${inp.outputQty.toLocaleString('vi-VN')} × ${f.outputRate < 1 ? pct(f.outputRate) : vnd(f.outputRate)}` : ''],
     quarterBonus: [inp.quarterBonus ?? a.quarterBonusAuto, inp.quarterBonus === null && a.quarterBonusAuto ? 'Tự tính theo DS quý của team' : ''],
-    salesBonus: [salesBonus, salesBonus ? (gm.teamRevenue&&(g==='bn'||g==='lock')?`DS chung cửa hàng ${vnd(gm.teamRevenue[g].revenue)} / chỉ tiêu 300.000.000 đ; chia thưởng ${g==='bn'?p.bnSplit:p.lockSplit}`:g === 'bn' ? `DS cửa hàng ${vnd(gm.bnRevenue)} (TB 6 tháng ${vnd(gm.bnAvgRevenue)}) ÷ ${p.bnSplit}` : `DS team ${vnd(gm.lockRevenue)} ÷ ${p.lockSplit}`) : ''],
+    salesBonus: [salesBonus, salesBonus ? (gm.teamRevenue&&(g==='bn'||g==='lock')?`DS chung cửa hàng ${vnd(gm.teamRevenue[g].revenue)} / chỉ tiêu 300.000.000 đ (${pct(gm.teamRevenue[g].revenue/300_000_000)}) → ${pct(storeBonusRate(p,gm.teamRevenue[g].revenue))}; chia thưởng ${g==='bn'?p.bnSplit:p.lockSplit}`:g === 'bn' ? `DS cửa hàng ${vnd(gm.bnRevenue)} (TB 6 tháng ${vnd(gm.bnAvgRevenue)}) ÷ ${p.bnSplit}` : `DS team ${vnd(gm.lockRevenue)} ÷ ${p.lockSplit}`) : ''],
     otherBonus: [adj('bonus'), ''],
     contractBonus:[a.contractBonus||0,'Theo từng HĐKT trước VAT'],
     contractBonusAdjustment:[a.contractBonusAdjustment||0,'Chênh lệch với khoản đã chốt / đã trả'],

@@ -2,7 +2,7 @@ import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import type { DashboardStore, DashboardStoreOf } from '../core/contracts/dashboard-store.ts';
 import { teamPayrollBreakdown } from './team-payroll-revenues.ts';
 import { paramsFor } from '../modules/hr/api/payroll-data.ts';
-import { monthRange, monthlyStoreBonus, storeBonusTiers } from '../modules/hr/domain/payroll.ts';
+import { monthRange, monthlyStoreBonus, storeBonusRate, storeBonusTiers } from '../modules/hr/domain/payroll.ts';
 import { salesOrders } from '../modules/sales/schema.ts';
 import { posRegisters, posShifts } from '../modules/sales/pos-schema.ts';
 import { employees } from '../modules/staff/schema.ts';
@@ -48,7 +48,7 @@ export const dashboardStoreOf: DashboardStoreOf = async (db, month) => {
       return [{ id, name: e.name, active: e.active && !e.deletedAt, storeManager: id === manager, crm: r.crm, pos: r.pos, total: r.crm + r.pos }];
     }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'vi'));
     const { tiers, split } = storeBonusTiers(params, key, facts.bonusMode, facts.target);
-    const rate = [...tiers].reverse().find(x => t.revenue >= x.at)?.rate ?? 0;
+    const rate = storeBonusRate(params, t.revenue, facts.target);
     stores.push({ key, registerId: t.registerId, name: reg.name, target: facts.target, revenue: t.revenue, crm: t.crm, pos: t.pos, issues: t.issues,
       bonusMode: facts.bonusMode, split, tiers, rate, bonusPerPerson: Math.round(monthlyStoreBonus(params, key, t.revenue, facts.bonusMode)), members });
   }

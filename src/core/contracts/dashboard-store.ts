@@ -1,7 +1,7 @@
 import type { AnyDb } from '../db/client.ts';
 
-/** Một mốc thưởng DS chung cửa hàng: đạt `at` đồng (DS CRM + POS) thì thưởng `rate` × DS, chia đều `split` người. */
-export interface DashboardStoreTier { at: number; rate: number }
+/** Một mốc thưởng DS chung cửa hàng: đạt `at` đồng (DS CRM + POS; `strict` = phải vượt) thì thưởng `rate` × DS, chia đều `split` người. */
+export interface DashboardStoreTier { at: number; rate: number; strict: boolean }
 export interface DashboardStoreMember {
   id: string; name: string; active: boolean;
   /** Cửa hàng trưởng của cửa hàng này. */

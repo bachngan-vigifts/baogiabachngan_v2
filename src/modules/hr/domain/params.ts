@@ -62,6 +62,13 @@ export const PARAM_FIELDS = [
   { key: 'quarterRate', group: 'Thưởng quý – team Sale', label: 'Tỷ lệ thưởng (% DS team quý)', value: 0.005, kind: 'percent' },
   { key: 'quarterTeamMin', group: 'Thưởng quý – team Sale', label: 'ĐK 1: DS team đạt ≥ % chỉ tiêu', value: 0.9, kind: 'percent' },
   { key: 'quarterMemberMin', group: 'Thưởng quý – team Sale', label: 'ĐK 2: mỗi thành viên đạt ≥ % chỉ tiêu', value: 0.6, kind: 'percent' },
+  // Thưởng DS chung cửa hàng (nguồn CRM + POS, chỉ tiêu 300 triệu) – cùng thang cho cửa hàng ML và Lock
+  { key: 'storeLevel1', group: 'Thưởng DS cửa hàng (CRM + POS)', label: 'Mốc 1: DS ≥ … × chỉ tiêu', value: 0.85, kind: 'ratio', note: 'Dưới mốc 1: không thưởng' },
+  { key: 'storeLevel1Rate', group: 'Thưởng DS cửa hàng (CRM + POS)', label: 'Mốc 1: tỷ lệ thưởng (% DS chung)', value: 0.005, kind: 'percent' },
+  { key: 'storeLevel2', group: 'Thưởng DS cửa hàng (CRM + POS)', label: 'Mốc 2: DS ≥ … × chỉ tiêu', value: 1, kind: 'ratio' },
+  { key: 'storeLevel2Rate', group: 'Thưởng DS cửa hàng (CRM + POS)', label: 'Mốc 2: tỷ lệ thưởng (% DS chung)', value: 0.01, kind: 'percent' },
+  { key: 'storeLevel3', group: 'Thưởng DS cửa hàng (CRM + POS)', label: 'Mốc 3: DS vượt (>) … × chỉ tiêu', value: 1.2, kind: 'ratio', note: 'Đúng bằng mốc 3 vẫn tính mức 2' },
+  { key: 'storeLevel3Rate', group: 'Thưởng DS cửa hàng (CRM + POS)', label: 'Mốc 3: tỷ lệ thưởng (% DS chung)', value: 0.015, kind: 'percent' },
   // Thưởng DS – Bách Ngân
   { key: 'bnMinRevenue', group: 'Thưởng DS – Bách Ngân', label: 'DS tối thiểu (kỳ dùng chính sách cũ)', value: 300_000_000, kind: 'money', note: 'Chỉ áp dụng kỳ chưa bật nguồn CRM + POS. Chính sách tháng mới dùng chỉ tiêu chung 300 triệu/cửa hàng.' },
   { key: 'bnLevel1', group: 'Thưởng DS – Bách Ngân', label: 'Mức 1: DS tháng ≥ … × chỉ tiêu', value: 1, kind: 'ratio' },

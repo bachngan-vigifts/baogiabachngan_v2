@@ -8,7 +8,7 @@ import {employees,credentials} from '../../src/modules/staff/schema.ts';
 import {storeManagers} from '../../src/modules/store/schema.ts';
 import {hashPassword} from '../../src/core/auth/password.ts';
 import {PASSWORD} from '../helpers/staff-fixture.ts';
-import {storeBonusTiers,monthlyStoreBonus} from '../../src/modules/hr/domain/payroll.ts';
+import {storeBonusTiers,storeBonusRate,monthlyStoreBonus} from '../../src/modules/hr/domain/payroll.ts';
 import {mergeParams} from '../../src/modules/hr/domain/params.ts';
 const month='2026-11',path='/hr/team-revenue-sources/'+month,now='2026-11-06T01:00:00Z';
 /** Hai cửa hàng: ML (emp, nhóm lương bn) và Lock (cashier2, nhóm lock theo vị trí). Ca mẫu (quầy Lock) do emp mở. */
@@ -26,6 +26,7 @@ async function seed(bonusMode='threshold'){
  const order=async(id:string,subtotal:number,shiftId:string,extra:Record<string,unknown>={})=>{await f.db.insert(salesOrders).values({id,orderNo:id,quoteType:'HRC',customerName:'Khách kiểm thử',ownerId:'mgr',createdBy:'mgr',orderDate:'2026-11-06',status:'confirmed',subtotal,total:subtotal*1.08,channel:'pos',shiftId,createdAt:now,updatedAt:now,...extra});};
  return {...f,office,order,lockShift:base!.id};
 }
+const TIERS=[{at:255_000_000,rate:0.005,strict:false},{at:300_000_000,rate:0.01,strict:false},{at:360_000_000,rate:0.015,strict:true}];
 const store=(r:any,key:string)=>r.data.stores.find((s:any)=>s.key===key);
 test('store staff see only their own store with target, achievement, tiers and per-person sales',async()=>{
  const f=await seed();await f.order('ml-1',120_000_000,'ml-shift');await f.order('lock-1',80_000_000,f.lockShift);
@@ -34,7 +35,7 @@ test('store staff see only their own store with target, achievement, tiers and p
  const lock=await f.call('/dashboard/store?month='+month,f.other);assert.equal(lock.status,200,JSON.stringify(lock.data));assert.equal(lock.data.available,true);
  assert.deepEqual(lock.data.stores.map((s:any)=>s.key),['lock']);
  const l=store(lock,'lock');assert.equal(l.revenue,80_000_000);assert.equal(l.target,300_000_000);assert.equal(l.rate,0);assert.equal(l.bonusPerPerson,0);
- assert.deepEqual(l.tiers,[{at:300_000_000,rate:0.01},{at:310_000_000,rate:0.015}]);
+ assert.deepEqual(l.tiers,TIERS);
  // CHT luôn có tên trong cửa hàng; DS POS chia theo người mở ca (emp mở ca Lock).
  assert.deepEqual(l.members.map((m:any)=>[m.id,m.pos,m.storeManager]),[['emp',80_000_000,false],['cashier2',0,true]]);
  const ml=await f.call('/dashboard/store?month='+month,f.emp);assert.deepEqual(ml.data.stores.map((s:any)=>s.key),['bn','lock']);
@@ -48,21 +49,23 @@ test('bonus rate and per-person estimate follow the payroll formula at each mile
  const f=await seed();await f.order('ml-big',300_000_000,'ml-shift');
  const bn=store(await f.call('/dashboard/store?month='+month,f.mgr),'bn');
  assert.equal(bn.rate,0.01);assert.equal(bn.split,2);assert.equal(bn.bonusPerPerson,1_500_000);
- assert.equal(bn.bonusPerPerson,monthlyStoreBonus(mergeParams({}),'bn',300_000_000,'threshold'));
- const t=await seed('tiers');await t.order('ml-mid',260_000_000,'ml-shift');
+ assert.equal(bn.bonusPerPerson,monthlyStoreBonus(mergeParams({}),'bn',300_000_000));
+ // Cấu hình nguồn cũ "threshold" không còn chặn mốc 85%.
+ const t=await seed('threshold');await t.order('ml-mid',260_000_000,'ml-shift');
  const tiered=store(await t.call('/dashboard/store?month='+month,t.emp),'bn');
- assert.deepEqual(tiered.tiers,[{at:255_000_000,rate:0.005},{at:300_000_000,rate:0.01}]);assert.equal(tiered.rate,0.005);assert.equal(tiered.bonusPerPerson,650_000);
+ assert.deepEqual(tiered.tiers,TIERS);assert.equal(tiered.rate,0.005);assert.equal(tiered.bonusPerPerson,650_000);
  assert.equal((await t.call('/dashboard/store?month=2026-10',t.emp)).data.available,false);
 });
-test('store bonus tiers mirror monthlyStoreBonus for both stores and modes',()=>{
+test('store bonus tiers mirror monthlyStoreBonus: same scale for both stores, 120% exactly stays at 1%',()=>{
  const p=mergeParams({});
- assert.deepEqual(storeBonusTiers(p,'bn','threshold').tiers,[{at:300_000_000,rate:0.01}]);
- assert.deepEqual(storeBonusTiers(p,'lock','tiers').tiers,[{at:255_000_000,rate:0.01},{at:310_000_000,rate:0.015}]);
- for(const g of ['bn','lock'] as const)for(const mode of ['threshold','tiers'] as const){
-  const {tiers,split}=storeBonusTiers(p,g,mode);
-  for(const revenue of [0,254_999_999,255_000_000,299_999_999,300_000_000,309_999_999,310_000_000,500_000_000]){
-   const rate=[...tiers].reverse().find(t=>revenue>=t.at)?.rate??0;
-   assert.equal(Math.round(revenue*rate/split),Math.round(monthlyStoreBonus(p,g,revenue,mode)),`${g}/${mode}/${revenue}`);
+ assert.equal(storeBonusRate(p,360_000_000),0.01);assert.equal(storeBonusRate(p,360_000_001),0.015);assert.equal(storeBonusRate(p,254_999_999),0);
+ for(const g of ['bn','lock'] as const){
+  const {tiers,split}=storeBonusTiers(p,g);assert.deepEqual(tiers,TIERS);
+  for(const revenue of [0,254_999_999,255_000_000,299_999_999,300_000_000,359_999_999,360_000_000,360_000_001,500_000_000]){
+   const rate=[...tiers].reverse().find(t=>t.strict?revenue>t.at:revenue>=t.at)?.rate??0;
+   assert.equal(Math.round(revenue*rate/split),Math.round(monthlyStoreBonus(p,g,revenue)),`${g}/${revenue}`);
   }
  }
+ // Sửa mức trong Tham số lương → cả hai cửa hàng theo.
+ assert.equal(storeBonusRate(mergeParams({storeLevel1Rate:0.007}),260_000_000),0.007);
 });

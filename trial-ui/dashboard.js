@@ -283,7 +283,8 @@ export function initDashboard({ api, root, isManager, money }) {
   const rateText = r => `${(Math.round(r * 10000) / 100).toLocaleString('vi-VN')}%`;
   function storeBlock(st, x) {
     const box = node('div', null, 'dash-store-one'), ratio = st.target > 0 ? st.revenue / st.target : 0;
-    const reached = st.tiers.filter(t => st.revenue >= t.at), nextTier = st.tiers.find(t => st.revenue < t.at);
+    const hit = t => t.strict ? st.revenue > t.at : st.revenue >= t.at;
+    const reached = st.tiers.filter(hit), nextTier = st.tiers.find(t => !hit(t));
     // Dự báo cuối tháng chỉ khi đang xem tháng hiện tại (theo nhịp bán từ đầu tháng tới hôm nay).
     const current = x.month === x.today.slice(0, 7), day = Number(x.today.slice(8, 10));
     const days = new Date(Date.UTC(+x.month.slice(0, 4), +x.month.slice(5), 0)).getUTCDate();
@@ -295,21 +296,21 @@ export function initDashboard({ api, root, isManager, money }) {
       tile('Chỉ tiêu tháng', compact(st.target), money(st.target)),
       tile('Tỷ lệ đạt', kpiPercent(ratio), ratio >= 1 ? 'Đã vượt chỉ tiêu' : `Còn thiếu ${money(Math.max(0, st.target - st.revenue))}`),
       tile('Mức thưởng đang đạt', st.rate > 0 ? rateText(st.rate) : 'Chưa đạt', st.rate > 0 ? `≈ ${money(st.bonusPerPerson)}/người (chia ${st.split})` : nextTier ? `Mốc đầu: ${money(nextTier.at)}` : ''),
-      tile('Mốc tiếp theo', nextTier ? `+${compact(nextTier.at - st.revenue)}` : 'Đã đạt hết', nextTier ? `Đạt ${money(nextTier.at)} → thưởng ${rateText(nextTier.rate)}` : 'Đã đạt mốc cao nhất'),
+      tile('Mốc tiếp theo', nextTier ? `+${compact(nextTier.at - st.revenue)}` : 'Đã đạt hết', nextTier ? `${nextTier.strict ? 'Vượt' : 'Đạt'} ${money(nextTier.at)} → thưởng ${rateText(nextTier.rate)}` : 'Đã đạt mốc cao nhất'),
       ...(forecast != null ? [tile('Dự báo cuối tháng', compact(forecast), `Theo nhịp ${day}/${days} ngày · ${kpiPercent(st.target ? forecast / st.target : 0)} chỉ tiêu`)] : []));
     // Thanh tiến độ: vạch tại từng mốc thưởng; thang tới max(mốc cao nhất × 1,1, DS).
     const top = Math.max(st.target, ...st.tiers.map(t => t.at), st.revenue) * 1.1 || 1;
     const bar = node('div', null, 'dash-store-bar'), fill = node('i', null, reached.length ? 'is-on' : '');
     bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', `Đạt ${kpiPercent(ratio)} chỉ tiêu`);
     fill.style.width = Math.min(100, st.revenue / top * 100) + '%'; bar.append(fill);
-    for (const t of st.tiers) { const mark = node('span', null, 'dash-store-mark' + (st.revenue >= t.at ? ' is-done' : '')); mark.style.left = (t.at / top * 100) + '%'; mark.title = `${money(t.at)} → ${rateText(t.rate)}`; bar.append(mark); }
+    for (const t of st.tiers) { const mark = node('span', null, 'dash-store-mark' + (hit(t) ? ' is-done' : '')); mark.style.left = (t.at / top * 100) + '%'; mark.title = `${money(t.at)} → ${rateText(t.rate)}`; bar.append(mark); }
     const tierTable = node('table', null, 'dash-kpi-table dash-store-tiers'), th = node('thead'), hr = node('tr'), tb = node('tbody');
     for (const h of ['Mốc thưởng', 'DS cần đạt', 'Tỷ lệ thưởng', 'Thưởng tối thiểu / người', 'Trạng thái']) hr.append(node('th', h));
     th.append(hr); tierTable.append(th);
     st.tiers.forEach((t, i) => {
-      const tr = node('tr', null, st.revenue >= t.at ? 'is-done' : '');
-      tr.append(node('td', `Mốc ${i + 1} · ${kpiPercent(st.target ? t.at / st.target : 0)} chỉ tiêu`), node('td', money(t.at)), node('td', rateText(t.rate) + ' DS'),
-        node('td', money(Math.round(t.at * t.rate / st.split))), node('td', st.revenue >= t.at ? 'Đã đạt' : `Còn ${money(t.at - st.revenue)}`));
+      const tr = node('tr', null, hit(t) ? 'is-done' : '');
+      tr.append(node('td', `Mốc ${i + 1} · ${t.strict ? 'trên' : 'từ'} ${kpiPercent(st.target ? t.at / st.target : 0)} chỉ tiêu`), node('td', money(t.at)), node('td', rateText(t.rate) + ' DS'),
+        node('td', money(Math.round(t.at * t.rate / st.split))), node('td', hit(t) ? 'Đã đạt' : `Còn ${money(Math.max(0, t.at - st.revenue))}${t.strict ? ' (phải vượt)' : ''}`));
       tb.append(tr);
     });
     tierTable.append(tb);
@@ -330,7 +331,7 @@ export function initDashboard({ api, root, isManager, money }) {
     people.append(pb);
     const peopleScroll = node('div', null, 'revenue-table-scroll'); peopleScroll.append(people);
     const notes = node('ul', null, 'dash-kpi-notes');
-    notes.append(node('li', `Thưởng DS cửa hàng = DS chung × tỷ lệ mốc đạt, chia đều ${st.split} người. ${st.bonusMode === 'threshold' ? 'Dưới chỉ tiêu không thưởng.' : 'Thưởng theo bậc từ mốc thấp nhất.'} Tạm tính – số chốt theo phiếu lương.`),
+    notes.append(node('li', `Thưởng DS cửa hàng = DS chung × tỷ lệ mốc đạt, chia đều ${st.split} người. Dưới mốc 1 không thưởng. Tạm tính – số chốt theo phiếu lương.`),
       node('li', 'DS CRM: đơn đã duyệt của nhân viên thuộc cửa hàng (cùng cách tính bảng lương). DS POS: đơn bán quầy, chia theo người mở ca.'));
     if (st.issues) notes.append(node('li', `Còn ${st.issues} đơn chưa đối chiếu – doanh số có thể thay đổi.`, 'error'));
     box.append(tiles, bar, node('h4', 'Các mốc thưởng', 'dash-store-sub'), tierScroll, node('h4', 'Doanh số từng nhân viên', 'dash-store-sub'), peopleScroll, notes);
