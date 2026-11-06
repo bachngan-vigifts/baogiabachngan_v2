@@ -42,3 +42,14 @@
 @media (max-width: 640px) {
   #view-store-reports .store-facts td, .store-dialog .store-facts td { white-space: normal !important; overflow-wrap: anywhere; }
 }
+
+/* Tệp đính kèm báo cáo */
+.store-files { margin: 12px 0; }
+.store-files h3 { margin: 0 0 6px; font-size: 14px; }
+.store-file-list { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+.store-file-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.store-file-list a { overflow-wrap: anywhere; font-weight: 600; }
+.store-file-list small { grid-column: 1; color: var(--muted); }
+.store-file-list button { grid-row: 1 / span 2; grid-column: 2; }
+.store-file-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.store-file-add .btn { min-height: 44px; display: inline-flex; align-items: center; }

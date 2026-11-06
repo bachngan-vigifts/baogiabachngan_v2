@@ -12,6 +12,7 @@
  *  POST /store/reports/:id/review           người duyệt (Manager / quyền store.review): đạt, sai sổ quỹ, đề xuất sai, miễn…
  *  POST /store/reports/:id/explain          CHT giải trình
  *  PUT  /store/managers                     Manager gán / bỏ CHT cho cửa hàng
+ *  /store/reports/files…                    tệp đính kèm báo cáo – xem api/file-routes.ts
  * Chỉ CHT của cửa hàng (và người duyệt) xem / nộp báo cáo của cửa hàng đó – kiểm tra ở máy chủ.
  */
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
@@ -27,6 +28,7 @@ import { cashEntries } from '../../sales/cash-schema.ts';
 import { posExchangeAllocations, posRefunds, posReturns } from '../../sales/return-schema.ts';
 import { inventoryAdjustments, stockBalances } from '../../inventory/schema.ts';
 import { productMovements, products } from '../../catalog/schema.ts';
+import { readyFiles, registerStoreFileRoutes } from './file-routes.ts';
 import { storeManagers, storeReportDrafts, storeReportVersions, storeReports, storeSettings } from '../schema.ts';
 import {
   DEPOSIT_SCHEDULES, DEPOSIT_SCHEDULE_LABEL, REVIEW_FOR, STORE_LIMITS, STORE_REPORT_KINDS, STORE_REPORT_LABEL, STORE_REVIEW_LABEL, canSubmitOfficial, cashDue,
@@ -213,6 +215,7 @@ const SOURCES: Record<StoreReportKind, string[]> = {
 const provisionalOf = (kind: StoreReportKind, facts: any) => kind === 'daily' && Number(facts?.openShifts || 0) > 0;
 
 export function registerStoreRoutes(router: Router<StaffEnv>) {
+  registerStoreFileRoutes(router, { storeFor, myStore });
   router.get('/store/status', async c => {
     const m = me(c), db = c.env.db, mine = await myStore(db, m.id), canReview = reviews(m);
     const stores = canReview ? await db.select({ registerId: posRegisters.id, name: posRegisters.name, active: posRegisters.active, memberId: storeManagers.memberId, memberName: employees.name })
@@ -305,7 +308,9 @@ export function registerStoreRoutes(router: Router<StaffEnv>) {
     const problems = officialProblems(kind, inputs, facts);
     if (problems.length) throw new AppError(400, problems.join(' '));
     const provisional = provisionalOf(kind, facts);
-    const data = JSON.stringify({ facts, inputs, meta: { factsAt: now, sources: SOURCES[kind], provisional, openShifts: kind === 'daily' ? (facts as { openShifts: number }).openShifts : 0 } });
+    const attached = await readyFiles(db, mine.registerId, kind, period);
+    const data = JSON.stringify({ facts, inputs, meta: { factsAt: now, sources: SOURCES[kind], provisional, openShifts: kind === 'daily' ? (facts as { openShifts: number }).openShifts : 0,
+      files: attached.map(f => ({ id: f.id, name: f.name, purpose: f.purpose, sha256: f.sha256 })) } });
     const result = await db.transaction(async tx => {
       const [existing] = await tx.select().from(storeReports).where(and(eq(storeReports.registerId, mine.registerId), eq(storeReports.kind, kind), eq(storeReports.period, period))).limit(1).for('update');
       if (existing) {

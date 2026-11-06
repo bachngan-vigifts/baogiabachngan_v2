@@ -36,6 +36,14 @@ Tiền phải nộp = **tiền đầu ngày** (tiền thực đếm lúc mở ca
 - Trả / đổi / hoàn trong ngày: phiếu trả (link đơn gốc, đơn đổi sang), phiếu hoàn (tiền mặt đã ghi Sổ quỹ / chuyển khoản). Hoàn tiền mặt chỉ trừ một lần (qua phiếu chi). Doanh thu POS bỏ đơn huỷ; hàng trả hiện riêng.
 - Ca thuộc ngày theo ngày làm việc của ca (ca qua nửa đêm thuộc ngày mở ca).
 
+## Tệp đính kèm (chứng từ nộp tiền, biên bản kiểm kê)
+- CHT đính kèm trong hộp báo cáo: báo cáo ngày (chứng từ nộp tiền, tệp khác), kiểm tồn (biên bản / ảnh kiểm kê có chữ ký), tuần / tháng (tệp khác).
+- Chỉ ảnh JPEG / PNG / WebP hoặc PDF; máy chủ nhận dạng theo **byte thực tế**, MIME khai phải khớp; PDF có JavaScript / tự chạy / tệp nhúng bị từ chối.
+- Tối đa 6 MB / tệp, 6 tệp và 24 MB / báo cáo. Khoá lưu `store-reports/<uuid>.<đuôi>` do máy chủ đặt.
+- Kho file private (bucket hiện có). Chỉ CHT của cửa hàng và người duyệt xem; link ký 10 phút cấp sau khi kiểm quyền; chỉ tệp đã kiểm tra xong mới có link.
+- CHT gỡ được khi báo cáo chưa duyệt; đã duyệt thì khoá. Nộp chính thức ghi danh sách tệp (id, mã SHA-256) vào bản chụp.
+- Lỗi giữa chừng: dòng ghi trước ("đang tải") → tải lên → "sẵn sàng". Lỗi kho file thì xoá dòng + tệp ngay; lỗi không dọn được thì lượt tải / gỡ kế tiếp dọn lại (tệp tải dở quá 15 phút, tệp đã gỡ chưa xoá được ở kho file).
+
 ## Tiền Trách nhiệm (4 ngạch × 250.000)
 - Ngày: 0 lần chưa đạt 250k · 1–2: 150k · 3–4: 50k · ≥ 5: 0. Chưa đạt = trễ / thiếu; *sai số liệu sổ quỹ* tính 2 lần.
 - Tuần: 0: 250k · 1: 150k · 2: 50k · ≥ 3: 0. Chưa đạt = trễ / thiếu / *đề xuất đặt hàng sai*.
@@ -49,3 +57,4 @@ Trang hiện số tạm tính theo tháng. Giai đoạn 2 đưa vào bảng lư�
 - Module `src/modules/store` (domain thuần: `domain/reports.ts`). API `/store/*` – xem đầu file `api/routes.ts`.
 - Migration `20261111100000_store_manager_reports.sql` (chạy tay) + cổng `scripts/sql/assert-store-manager-reports.sql`.
 - Migration `20261112090000_store_report_submission.sql` (chạy tay): `store_report_drafts`, `store_report_versions` (tạo bản lần 1 cho báo cáo đã có), `store_settings` + cổng `scripts/sql/assert-store-report-submission.sql`.
+- Migration `20261112100000_store_report_files.sql` (chạy tay): `store_report_files` + cổng `scripts/sql/assert-store-report-files.sql`.
