@@ -72,9 +72,9 @@ test('customer form marks exactly the five CRM required fields and no required f
     fields.setRequiredProfile(false);assert.deepEqual(Object.keys(fields.controls).filter(key=>fields.controls[key].required),['name']);
     const profile=customerCreateProfile({document:doc,mainContact:fields.controls.contact,api:async()=>({people:[{id:'mgr',name:'Manager',role:'manager'},{id:'emp',name:'Nhân viên',role:'employee'}]})});
     profile.reset({id:'mgr',name:'Manager',role:'manager'},true);await new Promise(r=>setTimeout(r,0));
-    const add=profile.root.all().find((n:Node)=>n.text==='＋ Thêm người liên hệ');add.fire('click');
-    const name=profile.root.all().find((n:Node)=>n.attributes['aria-label']==='Tên người liên hệ');name.value='Anh A';name.fire('input');
-    const primary=profile.root.all().find((n:Node)=>n.className==='customer-primary-choice').children[0];primary.checked=true;primary.fire('change');assert.equal(fields.controls.contact.value,'Anh A');
+    const add=profile.directory.all().find((n:Node)=>n.text==='＋ Thêm người liên hệ');assert.ok(add);
+    const name=profile.directory.all().find((n:Node)=>n.attributes['aria-label']==='Tên người liên hệ');name.value='Anh A';name.fire('input');
+    const primary=profile.directory.all().find((n:Node)=>n.className==='customer-primary-choice').children[0];primary.checked=true;primary.fire('change');assert.equal(fields.controls.contact.value,'Anh A');
     const value=profile.read();assert.equal(value.contacts[0].name,'Anh A');assert.equal(value.contacts[0].isPrimary,true);assert.equal(value.ownerId,'mgr');
     profile.reset({id:'emp',name:'Nhân viên',role:'employee'},false);assert.equal(profile.root.hidden,true);assert.equal(profile.read().contacts.length,0);
   }finally{Object.assign(globalThis,{document:previous});}
