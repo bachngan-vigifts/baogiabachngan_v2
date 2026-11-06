@@ -32,6 +32,7 @@ import { initReceivingCalendar } from './receiving-calendar.js';
 import { documentSequence, nextDocumentNumber } from './document-number.js';
 import { orderRecipient } from './order-notes.js';
 import { customerFormFields } from './customer-form-fields.js';
+import { bindCustomerTypeOptions } from './customer-type-options.js';
 import { customerCreateProfile } from './customer-create-profile.js';
 import { initPackingSupplierChoices } from './packing-supplier-choices.js';
 import { initPackingEarlyRequest } from './packing-early-request.js';
@@ -3086,12 +3087,13 @@ async function openCustomer(id, known) {
     const c=profile?.customer;
     if(c)for(const k of ['name','contact','phone','email','taxCode','customerCode','customerType','address','depositRate','paymentTerm','paymentDays','creditLimit','establishedDate'])form.elements.namedItem(k).value=c[k]??'';
     customerNewProfile.reset(state.user,!id,profile?.contactDirectory??[],profile?.contactDirectoryVersion);
-    customerFields.refreshAnniversary();
+    customerFields.refreshAnniversary();customerTypeOptions.refresh();
     $('#customer-dialog-title').textContent=c?'Sửa khách hàng':'Thêm khách hàng';
     $('#customer-dialog').showModal();customerDuplicateCheck.refresh();
   }catch(ex){toast(ex.message,'err');}
 }
 const customerFields = customerFormFields({requireProfile:true,paymentDays:true,contactDirectory:true});
+const customerTypeOptions = bindCustomerTypeOptions({input:customerFields.controls.customerType,api});
 $('#customer-fields').append(customerFields.root);
 const customerNewProfile=customerCreateProfile({api,mainContact:customerFields.controls.contact});
 $('#customer-new-profile').append(customerNewProfile.root);
