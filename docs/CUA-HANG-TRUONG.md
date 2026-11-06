@@ -17,6 +17,9 @@ Theo *Bản mô tả công việc CHT* và *Quy định chính sách lương CHT
 | Tháng | tháng | trước ngày 02 tháng sau | doanh số, mã bán chạy, ngày / ca của từng người theo ca POS |
 | Kiểm tồn kho | tháng | trước ngày 02 tháng sau | phiếu kiểm kê kho cửa hàng, số mã lệch, giá trị lệch (giá nhập gần nhất) |
 
+## Ngày bắt đầu áp dụng: 06/11/2026
+Báo cáo CHT triển khai từ **06/11/2026** (`STORE_REPORTS_LAUNCH_DAY` trong `domain/reports.ts`). Kỳ có **hạn nộp trước 00h00 ngày 06/11** mà chưa nộp được ghi **"Miễn – trước ngày triển khai"**: tính là hoàn thành (đủ Tiền Trách nhiệm), không nhắc việc. Gồm báo cáo ngày 01–05/11, báo cáo tuần 26/10–01/11 (hạn 02/11) và báo cáo tháng / kiểm tồn tháng 10 (hạn 02/11). Kỳ đã nộp vẫn xét theo giờ nộp thực tế.
+
 ## Nháp và nộp chính thức
 - **Lưu nháp**: chỉ lưu phần CHT nhập, bất cứ lúc nào sau khi kỳ bắt đầu. Nháp **không** tính là đã nộp / đúng hạn và không tắt nhắc việc.
 - **Nộp chính thức**: báo cáo tuần chỉ từ 00h00 thứ Hai tuần sau; tháng / kiểm tồn từ 00h00 ngày 01 tháng sau; báo cáo ngày nộp trong ngày (hạn 22h). Máy chủ kiểm tra lại, client gửi số liệu nào cũng bị bỏ qua.

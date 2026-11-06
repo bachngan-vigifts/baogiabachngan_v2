@@ -5,7 +5,7 @@
  *  - Người duyệt (Manager / quyền "Duyệt báo cáo Cửa hàng trưởng"): xem mọi cửa hàng, duyệt; Manager gán CHT và cấu hình cửa hàng.
  *  - Tiền Trách nhiệm tạm tính theo 4 ngạch (domain: src/modules/store/domain/reports.ts). Mọi quyền kiểm tra lại ở máy chủ.
  */
-const STATE = { on_time: ['Đúng hạn', 'ok'], late: ['Nộp trễ', 'warn'], missing: ['Chưa nộp – quá hạn', 'danger'], not_due: ['Chưa tới hạn', 'muted'] };
+const STATE = { on_time: ['Đúng hạn', 'ok'], late: ['Nộp trễ', 'warn'], missing: ['Chưa nộp – quá hạn', 'danger'], not_due: ['Chưa tới hạn', 'muted'], exempt: ['Miễn – trước ngày triển khai', 'ok'] };
 const REVIEW_TONE = { pending: 'muted', ok: 'ok', cash_error: 'danger', order_error: 'danger', gap_unreported: 'danger', excused: 'info' };
 export const REMIND_EVERY = 30 * 60_000;
 /** Hướng dẫn báo cáo cho CHT (đổi nội dung → tăng ?v=). */
@@ -86,7 +86,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
   }
   const byKey = () => new Map(data.reports.map(r => [r.kind + ':' + r.period, r]));
   function row(kind, period, r) {
-    const st = r ? r.state.state : (new Date().toISOString() > dueOf(kind, period) ? 'missing' : 'not_due');
+    const due = dueOf(kind, period), st = r ? r.state.state : data.launchAt && due < data.launchAt ? 'exempt' : (new Date().toISOString() > due ? 'missing' : 'not_due');
     const review = r?.review || 'pending', draft = !r && (data.drafts || []).some(x => x.kind === kind && x.period === period);
     const act = data.isManager && (!r || review === 'pending') ? `<button type="button" class="btn ${r ? 'secondary' : 'primary'} small" data-open="${kind}|${period}">${r ? 'Xem / nộp lại' : draft ? 'Tiếp tục nháp' : 'Làm báo cáo'}</button>`
       : `<button type="button" class="btn ghost small" data-open="${kind}|${period}">${data.canReview && r && review === 'pending' ? 'Duyệt' : 'Xem'}</button>`;
