@@ -2630,3 +2630,14 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 
 .care-dialog textarea[name=content] { width: 100%; min-height: 140px; resize: vertical; line-height: 1.6; }
 .care-dialog [data-contact-retry] { justify-self: start; }
+/* Bảng đăng ký 12 tháng giữ lưới và cuộn ngang trên cả điện thoại. */
+.data-table.revenue-target-table { display: table; min-width: 2200px; }
+.data-table.revenue-target-table thead { display: table-header-group; }
+.data-table.revenue-target-table tbody { display: table-row-group; }
+.data-table.revenue-target-table tfoot { display: table-footer-group; }
+.data-table.revenue-target-table tr { display: table-row; padding: 0; }
+.data-table.revenue-target-table tr[hidden] { display: none; }
+.data-table.revenue-target-table td, .data-table.revenue-target-table th { display: table-cell; padding: 8px; white-space: nowrap; }
+.data-table.revenue-target-table thead th { position: sticky; top: 0; z-index: 2; background: #102a56; color: white; }
+.data-table.revenue-target-table td:first-child small { display: block; }
+.data-table.revenue-target-table input[aria-invalid="true"] { outline: 2px solid #dc2626; }

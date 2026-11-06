@@ -1,4 +1,5 @@
 import {openContractBonusDetails} from './contract-bonus-detail.js';
+import {openRevenueTargets} from './revenue-targets.js';
 // Trang chi tiết nhân viên (#/members/<id>[?month=YYYY-MM]): một lượt gọi GET /members/:id/overview?month= rồi vẽ.
 // Cấu trúc: HEAD (ảnh, tên, chọn tháng) → KPI (thẻ chỉ số) → DIỄN BIẾN 6 THÁNG + HỒ SƠ + LƯƠNG THÁNG → TABS.
 // Thêm một mục mới = thêm một phần tử vào TABS (key, nhãn, đếm số, hàm vẽ). Công thức lương ở src/modules/hr/domain/payroll.ts.
@@ -322,12 +323,12 @@ export function initMemberDetail(deps) {
       ${moneyInput('phoneAllowance', 'Phụ cấp điện thoại / tháng', p.phoneAllowance)}
       ${moneyInput('attendanceBonus', 'Chuyên cần / tháng (BN, Lock)', p.attendanceBonus)}
       ${numInput('outputRate', 'Đơn giá sản lượng (đ) hoặc tỷ lệ (0,005 = 0,5%)', p.outputRate || '', 'placeholder="Kho 15000 · TK 30000 · IT 0,005"')}
-      ${moneyInput('revenueTarget', 'Chỉ tiêu DS cá nhân / tháng', p.revenueTarget)}
+      <label>Chỉ tiêu DS cá nhân · kỳ ${esc(st.month)}<input data-revenue-goal readonly value="${money(p.revenueTarget||prm.kpiRevenue)}"><small data-revenue-source>${p.revenueTargetSource==='registration'?'Từ bảng đăng ký doanh số năm':p.revenueTarget?'Chưa đăng ký tháng này · dùng chỉ tiêu hồ sơ cũ':'Chưa đăng ký tháng này · dùng mức chung'}</small><button type="button" class="btn secondary small" data-open-revenue-targets>Đăng ký doanh số năm</button></label>
       ${p.kpiEligible === false ? '' : `<p class="muted small span-2">Chỉ tiêu KPI riêng (Sale tính KPI): để trống = theo mức chung của tháng ở Thiết lập lương. Không nhập 0. Trọng số và bậc thưởng dùng chung.</p>
       ${numInput('kpiNewCustomersTarget', `Chỉ tiêu KH mới / tháng (trống = chung ${prm.kpiNewCustomers})`, p.kpiNewCustomersTarget, `placeholder="Chung: ${prm.kpiNewCustomers}" min="1"`)}
       ${numInput('kpiTransactionsTarget', `Chỉ tiêu giao dịch / tháng (trống = chung ${prm.kpiTransactions})`, p.kpiTransactionsTarget, `placeholder="Chung: ${prm.kpiTransactions}" min="1"`)}
       ${numInput('kpiContractsTarget', `Chỉ tiêu số HĐ / tháng (trống = chung ${prm.kpiContracts})`, p.kpiContractsTarget, `placeholder="Chung: ${prm.kpiContracts}" min="1"`)}
-      <label class="span-2">Lý do đổi chỉ tiêu (bắt buộc khi đổi chỉ tiêu DS / KH mới / giao dịch / HĐ)<input name="changeReason" maxlength="500" placeholder="Ví dụ: Sale mới, giảm chỉ tiêu 3 tháng đầu"></label>`}
+      <label class="span-2">Lý do đổi chỉ tiêu (bắt buộc khi đổi KH mới / giao dịch / HĐ)<input name="changeReason" maxlength="500" placeholder="Ví dụ: Sale mới, giảm chỉ tiêu 3 tháng đầu"></label>`}
       ${moneyInput('insurance', 'BHXH người lao động / tháng', has ? p.insurance : prm.socialInsurance)}
       ${check('mealAllowance', 'Hưởng phụ cấp cơm + xăng (thử việc: bỏ chọn)', p.mealAllowance)}
       ${p.kpiEligible===false?'<p class="muted span-2">Sale Admin không tính KPI. Thưởng sao HĐKT và thưởng thanh lý được bật riêng bên dưới.</p>':check('kpiEnabled','Sale: tính KPI công việc + thưởng KPI DS',p.kpiEnabled)+numInput('fixedKpi','KPI cố định (%) — trống = theo tháng / công thức',p.fixedKpi==null?'':p.fixedKpi*100)}
@@ -342,11 +343,17 @@ export function initMemberDetail(deps) {
       api(base() + '/salary', 'PUT', { effectiveMonth: f.effectiveMonth.value, payrollGroup: f.payrollGroup.value, positionLabel: f.positionLabel.value,
         baseSalary: digits(f.baseSalary.value), capacityCoef: numVal(f.capacityCoef.value) ?? 0, responsibilityMode: f.responsibilityMode.value, responsibility: digits(f.responsibility.value),
         phoneAllowance: digits(f.phoneAllowance.value), attendanceBonus: digits(f.attendanceBonus.value), outputRate: numVal(f.outputRate.value) ?? 0,
-        revenueTarget: digits(f.revenueTarget.value), insurance: digits(f.insurance.value), mealAllowance: f.mealAllowance.checked, kpiEnabled: f.kpiEnabled?.checked||false,fixedKpi:numVal(f.fixedKpi?.value||'')===null?null:numVal(f.fixedKpi.value)/100,contractBonusEnabled:f.contractBonusEnabled.checked,
+        insurance: digits(f.insurance.value), mealAllowance: f.mealAllowance.checked, kpiEnabled: f.kpiEnabled?.checked||false,fixedKpi:numVal(f.fixedKpi?.value||'')===null?null:numVal(f.fixedKpi.value)/100,contractBonusEnabled:f.contractBonusEnabled.checked,
         teamBonus: f.teamBonus.checked, bankCode: f.bankCode.value, bankAccount: f.bankAccount.value, bankHolder: f.bankHolder.value, note: f.note.value,
         ...(f.kpiNewCustomersTarget ? { kpiNewCustomersTarget: numVal(f.kpiNewCustomersTarget.value), kpiTransactionsTarget: numVal(f.kpiTransactionsTarget.value), kpiContractsTarget: numVal(f.kpiContractsTarget.value), changeReason: f.changeReason.value } : {}) })
         .then(() => toast('Đã lưu hồ sơ lương.')));
     const history = document.querySelector('dialog.modal [data-salary-history]');
+    const salaryDialog=history.closest('dialog');
+    salaryDialog.querySelector('[data-open-revenue-targets]').onclick=()=>openRevenueTargets({api,esc,toast,confirmBox},st.month.slice(0,4),async()=>{
+      await reload();const profile=st.d.payroll.profile;
+      salaryDialog.querySelector('[data-revenue-goal]').value=money(profile.revenueTarget||st.d.payroll.params.kpiRevenue);
+      salaryDialog.querySelector('[data-revenue-source]').textContent=profile.revenueTargetSource==='registration'?'Từ bảng đăng ký doanh số năm':'Chưa đăng ký tháng này · dùng hồ sơ cũ hoặc mức chung';
+    }).catch(e=>toast(e.message,'err'));
     history?.addEventListener('toggle', () => { if (history.open && !history.dataset.loaded) { history.dataset.loaded = '1'; loadSalaryHistory(history.querySelector('div')); } });
   }
   // Nhật ký sửa hồ sơ lương (Manager): người sửa, lúc sửa, tháng áp dụng, trước → sau, lý do. Không hiện số tài khoản.

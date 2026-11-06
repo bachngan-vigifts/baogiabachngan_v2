@@ -189,3 +189,11 @@ Kết quả KPI lưu `policy` và `basis` (số liệu thật đã dùng) cùng 
 Kỳ số liệu luôn 01–ngày cuối tháng; thời gian chốt là 03–05 tháng kế tiếp. Trong ngày 03–05 theo giờ VN, trang Bảng lương không có kỳ chỉ định sẽ mặc định mở tháng trước; chọn kỳ trên URL hoặc màn hình vẫn được ưu tiên. Không có tác vụ tự chốt/trả lương hoặc chuyển tiền ngân hàng.
 
 Hướng dẫn có ảnh minh họa: [PDF](../trial-ui/guides/huong-dan-cai-dat-luong.pdf), [Word](../trial-ui/guides/huong-dan-cai-dat-luong.docx). Ảnh dùng dữ liệu kiểm thử, không chứa bảng lương thật.
+
+## Đăng ký doanh số năm
+
+Manager mở Bảng lương → Đăng ký doanh số năm, hoặc nút cùng tên ở hộp Hồ sơ lương. Mỗi người có 12 chỉ tiêu theo từng tháng; nhập tiền nguyên >0, lý do rồi lưu. Chỉ tiêu đăng ký được ưu tiên cho đúng tháng trong hồ sơ/KPI/dashboard/xếp hạng, không kế thừa sang tháng/năm khác. Chỉ tiêu quý là tổng ba tháng (tháng chưa đăng ký giữ cách lấy chỉ tiêu cũ). Ô DS trong hồ sơ lương chỉ đọc; lưu lương/phụ cấp không chép chỉ tiêu đăng ký vào hồ sơ kế thừa.
+
+Chưa đăng ký hoặc xóa đăng ký: dùng chỉ tiêu hồ sơ cũ, nếu 0 thì dùng tham số chung. Giao diện ghi rõ nguồn. Phiếu đã chốt không đổi và tháng đã chốt khóa chỉnh chỉ tiêu năm; yêu cầu cũ bị từ chối 409 nếu dữ liệu vừa đổi. Mọi thay đổi ghi audit với trước/sau, người sửa, lý do.
+
+API Manager: `GET/PUT /hr/revenue-targets/:year`. PUT nhận version của GET, reason và changes [{memberId,month,amount}], amount=null để bỏ đăng ký. Cùng payroll advisory lock với chốt lương; toàn bộ batch rollback khi có lỗi. Bảng `hr_revenue_targets` bật RLS, không cấp anon/authenticated; chỉ backend staff truy cập. Migration cần áp dụng trước API; workflow kiểm tra schema chỉ đọc.

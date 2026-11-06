@@ -1,4 +1,5 @@
 import { payrollEntry, registerQuickPayroll } from './quick-entry.ts';
+import {registerRevenueTargets} from './revenue-target-routes.ts';
 import type {CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
 import {payrollLock} from '../../../core/db/payroll-lock.ts';
 import {reserveAwards,releaseAwards,payAwards} from './contract-bonuses.ts';
@@ -84,6 +85,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
   /** Báo Manager khi nhân viên tự đổi tài khoản nhận lương (bơm từ app/router.ts – hr không phụ thuộc module thông báo). */
   onSelfBankChange?:(env:StaffEnv,member:{id:string;name:string})=>Promise<unknown> }) {
   registerQuickPayroll(router, deps);
+  registerRevenueTargets(router);
   const write=(fn:(c:Ctx)=>Promise<Response>)=>async(c:Ctx)=>c.env.db.transaction(async tx=>{await payrollLock(tx as any);return fn({...c,env:{...c.env,db:tx as any}});});
   router.get('/hr/settings', async c => {
     const m = c.url.searchParams.get('month'), db = c.env.db;
@@ -137,7 +139,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     const m=month(c.params.month),me=actor(c).id,body=await readJson(c.req,2000),db=c.env.db,b=await buildPayroll(db,m,deps.revenueOf,undefined,deps.crmFactsOf,true);
     const open=b.rows.filter(r=>!r.slip&&r.profile.effectiveMonth!==null);
     if(open.some(r=>r.calc.kpiNetBasis?.issues&&(r.calc.kpi?.policy==='appsheet'||r.calc.kpiNetBasis.rate>0)))throw new AppError(409,'Có đơn chưa đối chiếu được hoa hồng khách hàng. Kiểm tra báo giá nguồn trước khi chốt lương.','KPI_NET_UNVERIFIED');
-    if(open.some(r=>r.calc.salesCrm?.apply||r.calc.kpiNetBasis)&&body.confirmationHash!==b.confirmationHash)throw new AppError(409,'Số liệu lương đã đổi. Xem lại rồi chốt.','PAYROLL_CHANGED');
+    if((body.confirmationHash!==undefined||open.some(r=>r.calc.salesCrm?.apply||r.calc.kpiNetBasis||r.profile.registeredRevenueTarget!=null))&&body.confirmationHash!==b.confirmationHash)throw new AppError(409,'Số liệu lương đã đổi. Xem lại rồi chốt.','PAYROLL_CHANGED');
     for(const row of open){const runId=crypto.randomUUID();await db.insert(hrPayslips).values({...slipValues(row,me,''),data:JSON.stringify({...JSON.parse(slipValues(row,me,'').data),runId}),month:m});if(row.calc.salesCrm?.bonusApply??row.calc.salesCrm?.apply)await reserveAwards(db,row.member.id,m,runId,row.calc.salesCrm.awards);}
     return json({ok:true,confirmed:open.length});
   }), 'admin');
@@ -165,7 +167,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
       responsibilityMode: oneOf(b.responsibilityMode, RESPONSIBILITY_MODES, 'Cách tính trách nhiệm', 'fixed'), responsibility: Math.round(num(b.responsibility, 'Trách nhiệm')),
       mealAllowance: b.mealAllowance !== false, phoneAllowance: Math.round(num(b.phoneAllowance, 'Phụ cấp điện thoại')), attendanceBonus: Math.round(num(b.attendanceBonus, 'Chuyên cần')),
       kpiEnabled: eligible&&b.kpiEnabled === true,fixedKpi:!eligible?null:b.fixedKpi===undefined?prior?.fixedKpi??null:optNum(b.fixedKpi,'KPI cố định',10),contractBonusEnabled:b.contractBonusEnabled===undefined?prior?.contractBonusEnabled??false:b.contractBonusEnabled===true, teamBonus: b.teamBonus === true, outputRate: num(b.outputRate, 'Đơn giá sản lượng'),
-      revenueTarget: Math.round(num(b.revenueTarget, 'Chỉ tiêu DS', 1e13)),
+      revenueTarget: b.revenueTarget===undefined?prior?.revenueTarget??0:Math.round(num(b.revenueTarget, 'Chỉ tiêu DS', 1e13)),
       kpiNewCustomersTarget: kpiTarget(b.kpiNewCustomersTarget, prior?.kpiNewCustomersTarget, 'Chỉ tiêu KH mới'),
       kpiTransactionsTarget: kpiTarget(b.kpiTransactionsTarget, prior?.kpiTransactionsTarget, 'Chỉ tiêu giao dịch'),
       kpiContractsTarget: kpiTarget(b.kpiContractsTarget, prior?.kpiContractsTarget, 'Chỉ tiêu số hợp đồng'),
@@ -286,7 +288,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
     const board=await buildPayroll(db,m,deps.revenueOf,[id],deps.crmFactsOf,true),[row]=board.rows;
     if(row?.calc.kpiNetBasis?.issues&&(row.calc.kpi?.policy==='appsheet'||row.calc.kpiNetBasis.rate>0))throw new AppError(409,'Có đơn chưa đối chiếu được hoa hồng khách hàng. Kiểm tra báo giá nguồn trước khi chốt lương.','KPI_NET_UNVERIFIED');
     if (!row || row.profile.effectiveMonth === null) throw new AppError(400, 'Chưa đặt hồ sơ lương cho nhân viên này.');
-    if((row.calc.salesCrm?.apply||row.calc.kpiNetBasis)&&b.confirmationHash!==board.confirmationHash)throw new AppError(409,'Số liệu lương đã đổi. Xem lại rồi chốt.','PAYROLL_CHANGED');
+    if((b.confirmationHash!==undefined||row.calc.salesCrm?.apply||row.calc.kpiNetBasis||row.profile.registeredRevenueTarget!=null)&&b.confirmationHash!==board.confirmationHash)throw new AppError(409,'Số liệu lương đã đổi. Xem lại rồi chốt.','PAYROLL_CHANGED');
     const runId=crypto.randomUUID(),values=slipValues(row,actor(c).id,text(b.note,HR_LIMITS.note));
     await db.insert(hrPayslips).values({...values,data:JSON.stringify({...JSON.parse(values.data),runId}),month:m});
     if(row.calc.salesCrm?.bonusApply??row.calc.salesCrm?.apply)await reserveAwards(db,id,m,runId,row.calc.salesCrm.awards);
