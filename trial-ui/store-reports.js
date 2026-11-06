@@ -7,6 +7,9 @@
 const STATE = { on_time: ['Đúng hạn', 'ok'], late: ['Nộp trễ', 'warn'], missing: ['Chưa nộp – quá hạn', 'danger'], not_due: ['Chưa tới hạn', 'muted'] };
 const REVIEW_TONE = { pending: 'muted', ok: 'ok', cash_error: 'danger', order_error: 'danger', gap_unreported: 'danger', excused: 'info' };
 export const REMIND_EVERY = 30 * 60_000;
+/** Hướng dẫn báo cáo cho CHT (đổi nội dung → tăng ?v=). */
+export const GUIDE_URL = 'guides/huong-dan-bao-cao-cua-hang-truong.pdf?v=1';
+const guideLink = (cls = 'btn secondary') => `<a class="${cls}" href="${GUIDE_URL}" target="_blank" rel="noopener">Hướng dẫn (PDF)</a>`;
 const dm = d => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 const monthLabel = m => `${m.slice(5)}/${m.slice(0, 4)}`;
 const addDays = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 86400_000).toISOString().slice(0, 10);
@@ -59,7 +62,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
       <div class="modal-body"><p class="muted small">Nhắc lại mỗi 30 phút đến khi hoàn thành. Báo cáo nộp đúng hạn giữ đủ Tiền Trách nhiệm.</p>
         <ul class="store-remind-list">${r.items.map((x, i) => `<li class="${x.overdue ? 'overdue' : ''}"><span><b>${esc(x.label)}</b><small>Hạn: ${esc(new Date(x.due).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }))}${x.overdue ? ' · <b class="danger-text">Quá hạn</b>' : ''}</small></span>
           <button type="button" class="btn primary small" data-do="${i}">Làm ngay</button></li>`).join('')}</ul></div>
-      <div class="modal-foot"><button type="button" class="btn secondary" data-x>Nhắc lại sau 30 phút</button></div>`;
+      <div class="modal-foot">${guideLink('btn ghost')}<button type="button" class="btn secondary" data-x>Nhắc lại sau 30 phút</button></div>`;
     document.body.append(dlg); dlg.showModal();
     dlg.addEventListener('close', () => dlg.remove());
     dlg.querySelectorAll('[data-x]').forEach(b => b.onclick = () => dlg.close());
@@ -74,7 +77,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
     try { if (!status) await loadStatus(); } catch (e) { root.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; return; }
     current.registerId = q.get('registerId') || current.registerId || status.mine?.registerId || status.stores?.find(s => s.memberId)?.registerId || status.stores?.[0]?.registerId || '';
     current.month = q.get('month') || current.month || vnNow().slice(0, 7);
-    if (!status.mine && !status.canReview) { root.innerHTML = '<div class="empty"><h3>Báo cáo Cửa hàng trưởng</h3><p class="muted">Bạn chưa được gán làm Cửa hàng trưởng. Liên hệ Manager.</p></div>'; return; }
+    if (!status.mine && !status.canReview) { root.innerHTML = `<div class="empty"><h3>Báo cáo Cửa hàng trưởng</h3><p class="muted">Bạn chưa được gán làm Cửa hàng trưởng. Liên hệ Manager.</p>${guideLink()}</div>`; return; }
     if (!current.registerId) { root.innerHTML = '<div class="empty"><p class="muted">Chưa có cửa hàng (quầy POS) nào.</p></div>'; return; }
     root.innerHTML = '<p class="muted">Đang tải báo cáo…</p>';
     try { data = await api(`/store/reports?registerId=${encodeURIComponent(current.registerId)}&month=${current.month}`); } catch (e) { root.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; return; }
@@ -107,6 +110,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
         <div class="head-actions store-filters">
           ${stores.length > 1 ? `<select id="store-pick" aria-label="Cửa hàng">${stores.map(s => `<option value="${esc(s.registerId)}" ${s.registerId === current.registerId ? 'selected' : ''}>${esc(s.name)}${s.memberName ? ' · ' + esc(s.memberName) : ''}</option>`).join('')}</select>` : ''}
           <input type="month" id="store-month" value="${esc(current.month)}" aria-label="Tháng">
+          ${guideLink()}
           ${status.canAssign ? '<button type="button" class="btn secondary" data-assign>Gán CHT</button>' : ''}
         </div></div>
       ${data.isManager ? `<div class="store-quick">

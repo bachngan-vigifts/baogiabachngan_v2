@@ -12,3 +12,10 @@ test('nhãn kỳ báo cáo và nhịp nhắc 30 phút', () => {
   assert.equal(ui.shouldRemind([{}], now - 29 * 60_000, now), false, 'chưa đủ 30 phút');
   assert.equal(ui.shouldRemind([{}], now - 30 * 60_000, now), true);
 });
+
+test('hướng dẫn PDF cho CHT có trong giao diện', async () => {
+  const { existsSync, statSync } = await import('node:fs');
+  const file = new URL('../../trial-ui/' + ui.GUIDE_URL.split('?')[0], import.meta.url);
+  assert.ok(existsSync(file), 'file PDF hướng dẫn phải nằm trong trial-ui');
+  assert.ok(statSync(file).size > 50_000);
+});

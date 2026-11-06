@@ -7,6 +7,8 @@ Theo *Bản mô tả công việc CHT* và *Quy định chính sách lương CHT
 - **CHT** thấy mục *Báo cáo CHT* trong menu, nộp báo cáo, giải trình; nhận **hộp nhắc việc 30 phút / lần** khi còn báo cáo chưa nộp.
 - **Người duyệt**: Manager, hoặc chức vụ được cấp quyền *Duyệt báo cáo Cửa hàng trưởng* (`store.review`).
 
+**Hướng dẫn cho CHT (PDF, có ảnh minh hoạ):** `trial-ui/guides/huong-dan-bao-cao-cua-hang-truong.pdf` – nút **Hướng dẫn (PDF)** trên trang Báo cáo CHT và trong hộp nhắc việc. Sửa nội dung thì thay file và tăng `?v=` ở `GUIDE_URL` (`trial-ui/store-reports.js`).
+
 ## Báo cáo và hạn nộp (giờ Việt Nam)
 | Báo cáo | Kỳ | Hạn | CRM tự điền |
 |---|---|---|---|
