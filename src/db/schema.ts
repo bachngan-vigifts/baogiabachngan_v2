@@ -37,3 +37,4 @@ export * from '../modules/sales/cash-collection-schema.ts';
 
 export * from '../modules/catalog/catalogue-library-schema.ts';
 export * from '../modules/feedback/schema.ts';
+export * from '../modules/store/schema.ts';
