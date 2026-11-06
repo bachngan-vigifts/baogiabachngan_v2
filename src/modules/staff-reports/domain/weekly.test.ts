@@ -29,3 +29,17 @@ test('tháng 5 tuần lấy 4 tuần điểm cao nhất; công thức Tiền tr�
   assert.equal(Math.round(weeklyResponsibility(1_000_000, 24, 26, 3.5)), 807_692);
   assert.equal(weeklyResponsibility(1_000_000, 26, 26, 5), 1_000_000, 'tối đa 4 điểm');
 });
+test('nhóm ngành: ưu tiên loại khách, rồi tên khách; không khớp → Khác', async () => {
+  const { industryOf, weeklyProblems } = await import('./weekly.ts');
+  assert.equal(industryOf(null, 'Agribank CN Bến Tre'), 'bank');
+  assert.equal(industryOf(null, 'Ngân hàng VIB chi nhánh An Giang'), 'bank');
+  assert.equal(industryOf(null, 'Vib An Giang'), 'bank');
+  assert.equal(industryOf(null, 'QTDND Chợ Vàm An Giang'), 'bank');
+  assert.equal(industryOf(null, 'Công ty Phân bón Thế Mẫn'), 'agri');
+  assert.equal(industryOf(null, 'CÔNG TY TNHH NÔNG NGHIỆP HƯNG NGUYÊN PHÁT'), 'agri');
+  assert.equal(industryOf(null, 'Thuỷ sản TBC'), 'aqua');
+  assert.equal(industryOf('Thủy sản', 'Công ty Khang Thịnh Phát'), 'aqua', 'loại khách thắng tên');
+  assert.equal(industryOf('Nhà máy', 'Bệnh viện Tim mạch An Giang'), 'other');
+  assert.deepEqual(weeklyProblems({ highlights: '', nextWeekPlan: '', support: '', quoteNotes: { a: 'Đang trình' } }, [{ id: 'a', quoteNo: 'BG-1' }, { id: 'b', quoteNo: 'BG-2' }]),
+    ['Nhập kế hoạch tuần tới.', 'Ghi tình trạng / bước tiếp cho báo giá: BG-2.']);
+});

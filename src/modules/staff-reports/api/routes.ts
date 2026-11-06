@@ -8,19 +8,22 @@
  *  POST /staff-reports/:id/review               Manager: Đạt / Chưa đạt (bắt buộc lý do) / Miễn (bắt buộc lý do)
  * Nhân viên chỉ xem / nộp báo cáo của chính mình – kiểm tra ở máy chủ.
  */
-import { and, asc, eq, gte, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { json, readJson, type Router } from '../../../core/http/router.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
-import { salesContracts, salesOrders } from '../../sales/schema.ts';
+import { deliveries, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
+import { debtCounts, orderLinesFromQuote, quoteTotal } from '../../sales/domain/sales.ts';
+import { netReceivables } from '../../sales/api/pos-return-credit.ts';
+import { customers } from '../../customers/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { activityFacts } from '../../care/api/kpi-facts.ts';
 import type { SaleTargetOf, WeeklyReportPointsOf } from '../../../core/contracts/weekly-report.ts';
 import { staffWeeklyReportDrafts, staffWeeklyReportVersions, staffWeeklyReports } from '../schema.ts';
 import {
-  WEEKLY_LIMITS, WEEKLY_POSITIONS, WEEKLY_REVIEWS, WEEKLY_REVIEW_LABEL, addDays, appliesTo, canSubmitWeek, isWeek, mondayOf, monthPoints, vnDay,
+  INDUSTRIES, INDUSTRY_LABEL, WEEKLY_LIMITS, WEEKLY_POSITIONS, industryOf, weeklyProblems, type WeeklyInputs, WEEKLY_REVIEWS, WEEKLY_REVIEW_LABEL, addDays, appliesTo, canSubmitWeek, isWeek, mondayOf, monthPoints, vnDay,
   weekScore, weekStarted, weekState, weeklyDeadline, weeklyOpensAt, weeksOfMonth, type WeeklyReview,
 } from '../domain/weekly.ts';
 
@@ -56,41 +59,82 @@ export const weeklyPointsFor: WeeklyReportPointsOf = async (db, month, memberIds
   return out;
 };
 
-/** Số liệu tuần của một nhân viên (chỉ dữ liệu của chính người đó). */
+const VN_TODAY = () => vnDay(nowIso());
+const itemsText = (lines: readonly { name: string; qty: number }[]) => {
+  const top = lines.slice(0, 2).map(l => `${Math.round(l.qty * 100) / 100} ${l.name}`).join(' + ');
+  return lines.length > 2 ? `${top} + ${lines.length - 2} mục khác` : top;
+};
+
+/** Số liệu tuần của một nhân viên (chỉ dữ liệu của chính người đó; không có lương, không có khách người khác phụ trách). */
 async function weekFacts(db: AnyDb, memberId: string, monday: string, targetOf?: SaleTargetOf) {
-  const sunday = addDays(monday, 6), next = addDays(monday, 7), month = sunday.slice(0, 7);
+  const sunday = addDays(monday, 6), next = addDays(monday, 7), month = sunday.slice(0, 7), today = VN_TODAY();
   const counted = and(eq(salesOrders.ownerId, memberId), ne(salesOrders.status, 'cancelled'), ne(salesOrders.status, 'draft'));
   const quoteOwner = sql<string>`coalesce(${quotations.assigneeId}, ${quotations.creatorId})`;
   const quoteDay = sql<string>`coalesce(nullif(${quotations.quoteDate}, ''), substr(${quotations.createdAt}, 1, 10))`;
-  const [week, mtd, newCustomers, quotes, contracts, care, target] = await Promise.all([
-    db.select({ revenue: sql<number>`coalesce(sum(${salesOrders.total}),0)`.mapWith(Number), orders: sql<number>`count(*)`.mapWith(Number) }).from(salesOrders)
-      .where(and(counted, gte(salesOrders.orderDate, monday), lte(salesOrders.orderDate, sunday))),
+  const [weekOrders, mtd, newCustomers, quoteRows, contracts, care, target, ships, owned] = await Promise.all([
+    db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders)
+      .where(and(counted, gte(salesOrders.orderDate, monday), lte(salesOrders.orderDate, sunday))).orderBy(desc(salesOrders.total)),
     db.select({ revenue: sql<number>`coalesce(sum(${salesOrders.total}),0)`.mapWith(Number) }).from(salesOrders)
       .where(and(counted, gte(salesOrders.orderDate, month + '-01'), lte(salesOrders.orderDate, sunday))),
     db.select({ n: sql<number>`count(distinct ${salesOrders.customerId})`.mapWith(Number) }).from(salesOrders)
       .where(and(counted, gte(salesOrders.orderDate, monday), lte(salesOrders.orderDate, sunday), sql`${salesOrders.customerId} is not null`,
         sql`not exists (select 1 from ${salesOrders} o2 where o2.customer_id = ${salesOrders.customerId} and o2.status not in ('cancelled','draft') and o2.order_date < ${monday})`)),
-    db.select({ sent: sql<number>`count(*)`.mapWith(Number),
-      won: sql<number>`count(*) filter (where exists (select 1 from ${salesOrders} o where o.quote_id = ${quotations.id} and o.status <> 'cancelled'))`.mapWith(Number) })
-      .from(quotations).where(and(eq(quoteOwner, memberId), gte(quoteDay, monday), lte(quoteDay, sunday))),
+    // Câu con trong phần select: Drizzle không ghi tên bảng cho cột ngoài → ghi tên bảng tường minh.
+    db.select({ id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, data: quotations.data,
+      won: sql<boolean>`exists (select 1 from ${salesOrders} o where o.quote_id = "staff_quotations"."id" and o.status <> 'cancelled')` })
+      .from(quotations).where(and(eq(quoteOwner, memberId), gte(quoteDay, monday), lte(quoteDay, sunday))).orderBy(asc(quotations.quoteNo)),
     db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(salesContracts).innerJoin(salesOrders, eq(salesOrders.id, salesContracts.orderId))
       .where(and(eq(salesOrders.ownerId, memberId), inArray(salesContracts.status, ['signed', 'completed']), gte(salesContracts.signedDate, monday), lte(salesContracts.signedDate, sunday))),
     activityFacts(db, monday, next, [memberId]),
     targetOf ? targetOf(db, memberId, month) : Promise.resolve(null),
+    // Giao hàng chưa xong của đơn mình phụ trách, hẹn tới hết 2 tuần sau.
+    db.select({ plannedDate: deliveries.plannedDate, status: deliveries.status, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName })
+      .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
+      .where(and(eq(salesOrders.ownerId, memberId), inArray(deliveries.status, ['planned', 'in_transit', 'failed']), lte(deliveries.plannedDate, addDays(sunday, 14))))
+      .orderBy(asc(deliveries.plannedDate)).limit(30),
+    // Đơn có thể còn công nợ (đơn đã xác nhận hoặc HĐKT đã ký) của mình phụ trách.
+    db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, status: salesOrders.status,
+      contract: sql<string | null>`(select k.status from ${salesContracts} k where k.order_id = "sales_orders"."id" and k.status <> 'cancelled' limit 1)`,
+      contractNo: sql<string | null>`(select k.contract_no from ${salesContracts} k where k.order_id = "sales_orders"."id" and k.status <> 'cancelled' limit 1)` })
+      .from(salesOrders).where(and(eq(salesOrders.ownerId, memberId), ne(salesOrders.status, 'cancelled'))),
   ]);
-  return { from: monday, to: sunday, revenue: week[0]?.revenue ?? 0, orders: week[0]?.orders ?? 0, newCustomers: newCustomers[0]?.n ?? 0,
-    transactions: care.counts.get(memberId) ?? 0, quotesSent: quotes[0]?.sent ?? 0, quotesWon: quotes[0]?.won ?? 0, contracts: contracts[0]?.n ?? 0,
-    month: { month, revenue: mtd[0]?.revenue ?? 0, target, ratio: target ? (mtd[0]?.revenue ?? 0) / target : null } };
+  const orderIds = weekOrders.map(o => o.id), debtOrders = owned.filter(o => debtCounts(o.status, o.contract));
+  const careRows = care.rows.filter(a => care.marks.get(a.id)?.counted), careCustomerIds = [...new Set(careRows.map(a => a.customerId))];
+  const [lines, net, customerRows, oldRows] = await Promise.all([
+    orderIds.length ? db.select({ orderId: salesOrderLines.orderId, name: salesOrderLines.name, qty: salesOrderLines.qty, amount: salesOrderLines.amount })
+      .from(salesOrderLines).where(inArray(salesOrderLines.orderId, orderIds)).orderBy(desc(salesOrderLines.amount)) : [],
+    netReceivables(db, debtOrders.map(o => o.id), today),
+    careCustomerIds.length ? db.select({ id: customers.id, name: customers.name, type: customers.customerType }).from(customers).where(inArray(customers.id, careCustomerIds)) : [],
+    careCustomerIds.length ? db.selectDistinct({ id: salesOrders.customerId }).from(salesOrders)
+      .where(and(inArray(salesOrders.customerId, careCustomerIds), ne(salesOrders.status, 'cancelled'), ne(salesOrders.status, 'draft'), lt(salesOrders.orderDate, monday))) : [],
+  ]);
+  const oldIds = new Set(oldRows.map(r => r.id)), customerOf = new Map(customerRows.map(c => [c.id, c]));
+  const careBy = new Map(INDUSTRIES.map(k => [k, { industry: k, label: INDUSTRY_LABEL[k], oldCustomers: new Set<string>(), newCustomers: new Set<string>(), activities: 0 }]));
+  for (const a of careRows) {
+    const c = customerOf.get(a.customerId), g = careBy.get(industryOf(c?.type, c?.name))!;
+    g.activities++; (oldIds.has(a.customerId) ? g.oldCustomers : g.newCustomers).add(a.customerId);
+  }
+  const quotes = quoteRows.map(q => { let ls: { name: string; qty: number; amount: number }[] = []; try { ls = orderLinesFromQuote(JSON.parse(q.data)); } catch { /* báo giá lỗi dữ liệu */ }
+    return { id: q.id, quoteNo: q.quoteNo, customer: q.customer, total: quoteTotal(q.data), items: itemsText([...ls].sort((a, b) => b.amount - a.amount)), won: !!q.won }; })
+    .sort((a, b) => b.total - a.total);
+  const receivables = debtOrders.map(o => ({ orderNo: o.orderNo, contractNo: o.contractNo, customerName: o.customerName, ...net.get(o.id)! }))
+    .filter(r => r.balance > 0).map(r => ({ orderNo: r.orderNo, contractNo: r.contractNo, customerName: r.customerName, balance: r.balance, overdue: r.overdue, nextDueDate: r.nextDueDate }))
+    .sort((a, b) => b.overdue - a.overdue || b.balance - a.balance);
+  return { from: monday, to: sunday, revenue: weekOrders.reduce((s, o) => s + o.total, 0), orders: weekOrders.length, newCustomers: newCustomers[0]?.n ?? 0,
+    transactions: care.counts.get(memberId) ?? 0, quotesSent: quotes.length, quotesWon: quotes.filter(q => q.won).length, contracts: contracts[0]?.n ?? 0,
+    month: { month, revenue: mtd[0]?.revenue ?? 0, target, ratio: target ? (mtd[0]?.revenue ?? 0) / target : null },
+    orderList: weekOrders.map(o => ({ orderNo: o.orderNo, customerName: o.customerName, total: o.total, items: itemsText(lines.filter(l => l.orderId === o.id)) })),
+    quotes, care: [...careBy.values()].map(g => ({ industry: g.industry, label: g.label, oldCustomers: g.oldCustomers.size, newCustomers: g.newCustomers.size, activities: g.activities })),
+    deliveries: ships, receivables,
+    receivableTotals: { balance: receivables.reduce((s, r) => s + r.balance, 0), overdue: receivables.reduce((s, r) => s + r.overdue, 0) } };
 }
-function inputsOf(b: Record<string, unknown>) {
-  return { highlights: text(b.highlights), keyCustomers: text(b.keyCustomers), nextWeekPlan: text(b.nextWeekPlan), support: text(b.support) };
-}
-function problems(v: ReturnType<typeof inputsOf>) {
-  const out: string[] = [];
-  if (v.highlights.length < 3) out.push('Nhập kết quả nổi bật tuần.');
-  if (v.keyCustomers.length < 3) out.push('Nhập khách trọng điểm đang theo và bước tiếp.');
-  if (v.nextWeekPlan.length < 3) out.push('Nhập kế hoạch tuần tới.');
-  return out;
+type WeekFacts = Awaited<ReturnType<typeof weekFacts>>;
+function inputsOf(b: Record<string, unknown>, quotes?: WeekFacts['quotes']): WeeklyInputs {
+  const raw = (b.quoteNotes && typeof b.quoteNotes === 'object' ? b.quoteNotes : {}) as Record<string, unknown>;
+  // Chỉ giữ ghi chú của báo giá thuộc tuần (khi đã biết danh sách) – không nhận khoá lạ từ client.
+  const keys = quotes ? quotes.map(q => q.id) : Object.keys(raw).slice(0, 200);
+  const quoteNotes = Object.fromEntries(keys.map(k => [k, text(raw[k], 500)]).filter(([, v]) => v));
+  return { highlights: text(b.highlights), nextWeekPlan: text(b.nextWeekPlan), support: text(b.support), quoteNotes };
 }
 
 export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: { targetOf?: SaleTargetOf } = {}) {
@@ -160,10 +204,11 @@ export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: { targ
     if (replay) return json({ ok: true, id: replay.id, replayed: true });
     const [locked] = await db.select({ review: staffWeeklyReports.review }).from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), eq(staffWeeklyReports.period, period))).limit(1);
     if (locked && locked.review !== 'pending') throw new AppError(409, 'Báo cáo đã được duyệt, không sửa được.');
-    const inputs = inputsOf((b.inputs ?? {}) as Record<string, unknown>), issues = problems(inputs);
-    if (issues.length) throw new AppError(400, issues.join(' '));
     // Số liệu CRM luôn tính ở máy chủ lúc nộp – bỏ qua mọi số liệu client gửi lên.
-    const data = JSON.stringify({ facts: await weekFacts(db, m.id, period, deps.targetOf), inputs, meta: { factsAt: now, sources: ['sales_orders', 'quotations', 'sales_contracts', 'customer_activities', 'hr_revenue_targets'] } });
+    const facts = await weekFacts(db, m.id, period, deps.targetOf);
+    const inputs = inputsOf((b.inputs ?? {}) as Record<string, unknown>, facts.quotes), issues = weeklyProblems(inputs, facts.quotes.filter(q => !q.won));
+    if (issues.length) throw new AppError(400, issues.join(' '));
+    const data = JSON.stringify({ facts, inputs, meta: { factsAt: now, sources: ['sales_orders', 'sales_order_lines', 'quotations', 'sales_contracts', 'customer_activities', 'deliveries', 'payment_schedules', 'customer_payments', 'hr_revenue_targets'] } });
     const result = await db.transaction(async tx => {
       const [existing] = await tx.select().from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), eq(staffWeeklyReports.period, period))).limit(1).for('update');
       if (existing) {

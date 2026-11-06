@@ -18,3 +18,10 @@
 .wr-review { margin-top: 10px; display: grid; gap: 8px; }
 .wr-table .btn { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 @media (max-width: 640px) { .wr-week { flex-wrap: wrap; } .wr-tags { width: 100%; justify-content: flex-start; } .wr-dialog .modal-foot .btn { flex: 1 1 140px; min-height: 44px; } }
+.wr-h { font-size: 14px; margin: 18px 0 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wr-h .wr-src { margin-top: 0; }
+.wr-mini { width: 100%; }
+.wr-mini td input { width: 100%; min-width: 160px; box-sizing: border-box; }
+.wr-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (min-width: 760px) { .wr-dialog { width: min(920px, 96vw); } }
+@media (max-width: 640px) { .wr-two { grid-template-columns: 1fr; } .wr-mini td input { min-width: 0; } }

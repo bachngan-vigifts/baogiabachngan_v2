@@ -60,20 +60,41 @@ export function initWeeklyReports({ api, root, toast, esc, go, money }) {
     let d; try { d = await api(`/staff-reports/week?period=${period}${memberId ? '&memberId=' + encodeURIComponent(memberId) : ''}`); } catch (e) { toast(e.message, 'err'); return; }
     const rep = d.report, f = d.canEdit || !rep ? d.facts : rep.data.facts, v = d.draft?.inputs || rep?.data?.inputs || {}, ro = !d.canEdit, clientKey = crypto.randomUUID();
     const ta = (name, label, hint, req) => `<label class="span-2">${esc(label)}${req ? ' *' : ''}<textarea name="${name}" rows="3" ${ro ? 'readonly' : ''} placeholder="${esc(hint)}">${esc(v[name] || '')}</textarea></label>`;
-    const mo = f.month || {};
+    const mo = f.month || {}, notes = v.quoteNotes || {}, quotes = f.quotes || [], open = quotes.filter(q => !q.won);
+    const tag = (cls, t) => `<span class="wr-src ${cls}">${esc(t)}</span>`, H = (n, t, ...tags) => `<h3 class="wr-h">${n}. ${esc(t)} ${tags.join(' ')}</h3>`;
+    const table = (heads, rows, empty) => `<div class="table-wrap"><table class="data-table wr-mini"><thead><tr>${heads.map(h => `<th${h.startsWith('>') ? ' class="right"' : ''}>${esc(h.replace(/^>/, ''))}</th>`).join('')}</tr></thead>
+      <tbody>${rows.join('') || `<tr><td colspan="${heads.length}" class="muted">${esc(empty)}</td></tr>`}</tbody></table></div>`;
+    const R = (cells, heads) => `<tr>${cells.map((c, i) => `<td data-label="${esc(heads[i].replace(/^>/, ''))}"${heads[i].startsWith('>') ? ' class="right num"' : ''}>${c}</td>`).join('')}</tr>`;
+    const hO = ['Khách hàng', 'Sản phẩm chính', '>Doanh số'], hQ = ['Khách hàng', 'Báo giá', '>Giá trị', 'Tình trạng / bước tiếp'], hC = ['Nhóm khách', '>KH cũ chăm sóc tái ký', '>KH mới mở rộng', '>Giao dịch'],
+      hD = ['Ngày', 'Khách / đơn'], hR = ['Khách / đơn', '>Còn nợ'];
+    const dt = x => x ? `${x.slice(8, 10)}/${x.slice(5, 7)}` : '';
+    const sections = `
+        ${H(1, 'Kết quả tuần', tag('', 'CRM tự điền · ' + (rep && !d.canEdit ? 'lúc nộp' : 'tính lúc ' + when(d.factsAt))))}
+        <div class="wr-kpis"><div><small>Doanh số tuần</small><b class="num">${vnd(f.revenue)}</b></div><div><small>KH mới</small><b class="num">${f.newCustomers}</b></div><div><small>Giao dịch</small><b class="num">${f.transactions}</b></div>
+          <div><small>Báo giá gửi</small><b class="num">${f.quotesSent}</b></div><div><small>Báo giá chốt</small><b class="num">${f.quotesWon}</b></div><div><small>HĐKT ký</small><b class="num">${f.contracts}</b></div></div>
+        <p class="muted small">Luỹ kế tháng ${esc(mo.month?.slice(5) || '')}: ${vnd(mo.revenue)}${mo.target ? ` / ${vnd(mo.target)} chỉ tiêu (${(Math.round(mo.ratio * 1000) / 10).toLocaleString('vi-VN')}%)` : ' · chưa có chỉ tiêu đăng ký'}</p>
+        ${table(hO, (f.orderList || []).map(o => R([`${esc(o.customerName)} <small class="muted">${esc(o.orderNo)}</small>`, esc(o.items), vnd(o.total)], hO)), 'Không có đơn chốt trong tuần.')}
+        ${H(2, 'Báo giá trong tuần', tag('', 'CRM'), tag('input', 'ghi tình trạng – bắt buộc với báo giá chưa chốt'))}
+        ${table(hQ, quotes.map(q => R([esc(q.customer), `${esc(q.quoteNo)}<br><small class="muted">${esc(q.items)}</small>`, vnd(q.total),
+          q.won ? pill('ok', 'Đã chốt') : `<input name="qn-${esc(q.id)}" maxlength="500" ${ro ? 'readonly' : ''} placeholder="Bắt buộc ghi 1 dòng" value="${esc(notes[q.id] || '')}">`], hQ)), 'Không gửi báo giá nào trong tuần.')}
+        ${H(3, 'Chăm sóc trong tuần', tag('', 'CRM: sổ giao dịch'))}
+        ${table(hC, (f.care || []).filter(g => g.activities).map(g => R([esc(g.label), g.oldCustomers, g.newCustomers, g.activities], hC)), 'Chưa có giao dịch tính KPI trong tuần.')}
+        <p class="muted small">Nhóm ngành lấy theo "Nhóm / loại khách" trên hồ sơ khách; trống thì đoán theo tên khách.</p>
+        <div class="wr-two"><div>${H(4, 'Giao hàng sắp tới', tag('', 'CRM'))}
+          ${table(hD, (f.deliveries || []).map(x => R([`${dt(x.plannedDate)}${x.status === 'failed' ? ' ' + pill('danger', 'Giao lỗi') : ''}`, `${esc(x.customerName)} <small class="muted">${esc(x.orderNo)}</small>`], hD)), 'Không có lịch giao.')}</div>
+          <div>${H(5, 'Công nợ', tag('', 'CRM'))}
+          ${table(hR, (f.receivables || []).map(x => R([`${esc(x.customerName)} <small class="muted">${esc(x.contractNo || x.orderNo)}</small>${x.overdue > 0 ? ' ' + pill('danger', 'Quá hạn ' + vnd(x.overdue)) : x.nextDueDate ? ` <small class="muted">hạn ${dt(x.nextDueDate)}</small>` : ''}`, vnd(x.balance)], hR)), 'Không còn công nợ.')}
+          ${(f.receivables || []).length ? `<p class="small">Tổng còn nợ <b>${vnd(f.receivableTotals.balance)}</b>${f.receivableTotals.overdue ? ` · <span class="warn-text">quá hạn ${vnd(f.receivableTotals.overdue)}</span>` : ''}</p>` : ''}</div></div>
+        ${H(6, 'Kế hoạch tuần tới & ghi chú', tag('input', 'tự nhập'))}
+        <div class="form-grid cols-2">${ta('nextWeekPlan', 'Kế hoạch tuần tới', '1–3 mục tiêu cụ thể', true)}${ta('highlights', 'Kết quả nổi bật (không bắt buộc)', 'Việc đáng chú ý trong tuần…', false)}
+          ${ta('support', 'Khó khăn / đề xuất (không bắt buộc)', 'Cần Sếp hỗ trợ gì…', false)}</div>`;
     const dlg = document.createElement('dialog'); dlg.className = 'modal wr-dialog';
     dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>Báo cáo tuần ${esc(weekLabel(period))}${memberId ? ' · ' + esc(d.member.name) : ''}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body">
         <p class="small">Hạn nộp <b>${esc(when(d.deadline))}</b>${rep ? ` · Nộp chính thức ${esc(when(rep.submittedAt))} ${pill(STATE[rep.state.state][1], STATE[rep.state.state][0])} ${pill(REVIEW_TONE[rep.review], d.reviewLabels[rep.review])} · ${scoreText(rep.score)} điểm` : ' · ' + pill('muted', 'Chưa nộp chính thức')}${d.draft ? ` · Nháp lưu ${esc(when(d.draft.updatedAt))}` : ''}</p>
         ${d.blockers.length && !memberId ? `<p class="warn-text small">${d.blockers.map(esc).join(' ')}</p>` : ''}
         ${rep?.reviewNote ? `<p class="small">Ghi chú duyệt: ${esc(rep.reviewNote)}</p>` : ''}
-        <span class="wr-src">CRM tự điền · ${esc(rep && !d.canEdit ? 'lúc nộp' : 'tính lúc ' + when(d.factsAt))}</span>
-        <div class="wr-kpis"><div><small>Doanh số tuần</small><b class="num">${vnd(f.revenue)}</b></div><div><small>KH mới</small><b class="num">${f.newCustomers}</b></div><div><small>Giao dịch</small><b class="num">${f.transactions}</b></div>
-          <div><small>Báo giá gửi</small><b class="num">${f.quotesSent}</b></div><div><small>Báo giá chốt</small><b class="num">${f.quotesWon}</b></div><div><small>HĐKT ký</small><b class="num">${f.contracts}</b></div></div>
-        <p class="muted small">Luỹ kế tháng ${esc(mo.month?.slice(5) || '')}: ${vnd(mo.revenue)}${mo.target ? ` / ${vnd(mo.target)} chỉ tiêu (${(Math.round(mo.ratio * 1000) / 10).toLocaleString('vi-VN')}%)` : ' · chưa có chỉ tiêu đăng ký'}</p>
-        <span class="wr-src input">Tự nhập</span>
-        <div class="form-grid cols-2">${ta('highlights', 'Kết quả nổi bật tuần', 'Hợp đồng / đơn chốt, khách mới đáng chú ý…', true)}${ta('keyCustomers', 'Khách trọng điểm đang theo & bước tiếp', 'Tên khách – giá trị dự kiến – việc cần làm', true)}
-          ${ta('nextWeekPlan', 'Kế hoạch tuần tới', '1–3 mục tiêu cụ thể', true)}${ta('support', 'Khó khăn / cần hỗ trợ', '', false)}</div>
+        ${sections}
         ${d.versions.length > 1 ? `<details class="small"><summary>Lịch sử nộp (${d.versions.length} lần)</summary><ol>${d.versions.map(x => `<li>Lần ${x.version} · ${esc(when(x.submittedAt))}</li>`).join('')}</ol></details>` : ''}
         ${d.canReview ? `<div class="wr-review"><h3>Duyệt</h3><div class="chips">${['ok', 'rejected', 'excused'].map(k => `<label class="chip"><input type="radio" name="review" value="${k}" ${rep.review === k ? 'checked' : ''}> ${esc(d.reviewLabels[k])}</label>`).join('')}</div>
           <label>Lý do / ghi chú (bắt buộc khi Chưa đạt hoặc Miễn)<input name="reviewNote" maxlength="1000" value="${esc(rep.reviewNote || '')}"></label><button type="button" class="btn primary small" data-review>Lưu kết quả duyệt</button></div>` : ''}
@@ -82,7 +103,8 @@ export function initWeeklyReports({ api, root, toast, esc, go, money }) {
     document.body.append(dlg); dlg.showModal();
     const form = dlg.querySelector('form'), err = dlg.querySelector('[data-err]');
     dlg.addEventListener('close', () => dlg.remove()); dlg.querySelectorAll('[data-x]').forEach(b => b.onclick = () => dlg.close());
-    const inputs = () => Object.fromEntries(['highlights', 'keyCustomers', 'nextWeekPlan', 'support'].map(k => [k, form.elements[k].value]));
+    const inputs = () => ({ ...Object.fromEntries(['highlights', 'nextWeekPlan', 'support'].map(k => [k, form.elements[k].value])),
+      quoteNotes: Object.fromEntries(open.map(q => [q.id, form.elements['qn-' + q.id]?.value || '']).filter(([, x]) => x.trim())) });
     const after = msg => { toast(msg); dlg.close(); show(`month=${current.month}`); };
     dlg.querySelector('[data-draft]')?.addEventListener('click', async () => { try { await api('/staff-reports/draft', 'PUT', { period, inputs: inputs() }); after('Đã lưu nháp – chưa nộp chính thức.'); } catch (e) { err.textContent = e.message; } });
     form.addEventListener('submit', async e => { e.preventDefault(); if (!d.canSubmit) return;

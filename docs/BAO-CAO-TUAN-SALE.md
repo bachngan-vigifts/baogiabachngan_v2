@@ -7,7 +7,13 @@ Trang `#/weekly-reports` (menu *Công việc → Báo cáo tuần*; chỉ hiện
 - **Ai nộp:** nhân viên đang làm có chức vụ `sale` hoặc `sale-admin`. Chức vụ khác nhận 403 ở máy chủ.
 - **Tuần:** thứ Hai → Chủ nhật (giờ Việt Nam). Trong tuần chỉ **lưu nháp**; **nộp chính thức** từ 00h00 thứ Hai tuần sau, **hạn 10h00 thứ Hai** tuần sau. Nháp không tính điểm.
 - **Tuần thuộc tháng nào:** tuần có *thứ Hai hạn nộp* rơi vào tháng đó. Thường 4 tuần; tháng có 5 thứ Hai thì có 5 tuần và **lấy 4 tuần điểm cao nhất**.
-- **Nội dung:** CRM tự điền (tính ở máy chủ lúc nộp, bỏ qua số client gửi): doanh số tuần, số đơn, KH mới, giao dịch chăm sóc, báo giá gửi / chốt, HĐKT ký, luỹ kế tháng / chỉ tiêu. Nhân viên **bắt buộc** nhập 3 mục: kết quả nổi bật, khách trọng điểm & bước tiếp, kế hoạch tuần tới (thêm mục *khó khăn / cần hỗ trợ* không bắt buộc).
+- **Nội dung** (rút gọn từ mẫu báo cáo tuần đang dùng; số liệu CRM tính ở máy chủ lúc nộp, bỏ qua số client gửi):
+  1. *Kết quả tuần* – CRM: doanh số tuần, số đơn, KH mới, giao dịch, báo giá gửi / chốt, HĐKT ký, luỹ kế tháng / chỉ tiêu đăng ký; bảng đơn chốt trong tuần (khách, sản phẩm chính, doanh số).
+  2. *Báo giá trong tuần* – CRM liệt kê mọi báo giá gửi trong tuần; **mỗi báo giá chưa chốt bắt buộc ghi 1 dòng tình trạng / bước tiếp**.
+  3. *Chăm sóc trong tuần* – CRM: số KH cũ chăm sóc tái ký (đã có đơn trước tuần) / KH mới mở rộng / số giao dịch (tính KPI), chia theo ngành Ngân hàng / Nông nghiệp / Thuỷ sản / Khác. Ngành lấy theo "Nhóm / loại khách" trên hồ sơ khách; trống thì đoán theo tên khách (Agribank, QTDND, Phân bón…). Muốn đúng thì cập nhật "Nhóm / loại khách".
+  4. *Giao hàng sắp tới* – CRM: lịch giao chưa xong của đơn mình phụ trách, tới hết 2 tuần sau.
+  5. *Công nợ* – CRM: mọi khoản còn nợ của đơn mình phụ trách (đã trừ hàng trả, như trang Công nợ), tô đỏ quá hạn.
+  6. *Tự nhập*: **kế hoạch tuần tới (bắt buộc)**, kết quả nổi bật và khó khăn / đề xuất (không bắt buộc).
 - **Nộp lại** trước khi duyệt: giữ giờ nộp lần đầu, lưu lịch sử phiên bản. **Đã duyệt thì khoá** cả nộp lại lẫn nháp.
 - **Duyệt (Manager):** Đạt / Chưa đạt / Miễn; Chưa đạt và Miễn bắt buộc ghi lý do.
 

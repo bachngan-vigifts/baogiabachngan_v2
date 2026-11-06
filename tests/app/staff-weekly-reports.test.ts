@@ -5,11 +5,15 @@ import { setupLiquidation } from '../helpers/liquidation-fixture.ts';
 import { PASSWORD } from '../helpers/staff-fixture.ts';
 import { employees } from '../../src/modules/staff/schema.ts';
 import { staffWeeklyReports, staffWeeklyReportVersions } from '../../src/modules/staff-reports/schema.ts';
+import { deliveries, paymentSchedules, salesOrderLines, salesOrders } from '../../src/modules/sales/schema.ts';
+import { quotations } from '../../src/modules/quotes/schema.ts';
+import { customers } from '../../src/modules/customers/schema.ts';
+import { customerActivities } from '../../src/modules/care/schema.ts';
 
 /** Báo cáo tuần Sale / Sale Admin: quyền, nháp / nộp chính thức, lịch sử, duyệt, điểm và Tiền trách nhiệm trong bảng lương. */
 const ok = (r: { status: number; data: any }, status = 200) => { assert.equal(r.status, status, JSON.stringify(r.data)); return r.data; };
 const at = (vnLocal: string) => new Date(vnLocal + '+07:00').getTime();
-const inputs = { highlights: 'Chốt 2 đơn quà Tết', keyCustomers: 'Cty A – chờ duyệt mẫu', nextWeekPlan: 'Gửi 5 báo giá mới', support: '' };
+const inputs = { highlights: 'Chốt 2 đơn quà Tết', nextWeekPlan: 'Gửi 5 báo giá mới', support: '' };
 const responsibility = (slip: any) => slip.income.find((l: any) => l.key === 'responsibility');
 
 async function setup(t: TestContext) {
@@ -109,4 +113,46 @@ test('tháng 5 tuần lấy 4 tuần điểm cao nhất', async t => {
   const me = ok(await f.call('/staff-reports/me?month=2027-03', f.s.emp));
   assert.equal(me.weeks.length, 5); assert.equal(me.points, 4);
   assert.equal(responsibility(await f.slip('2027-03')).amount, 2_600_000);
+});
+
+test('số liệu tuần: đơn chốt, báo giá trong tuần (bắt buộc ghi tình trạng báo giá chưa chốt), chăm sóc theo ngành, giao hàng, công nợ', async t => {
+  const f = await setup(t), stamp = '2026-12-02T03:00:00Z';
+  await f.db.insert(customers).values([
+    { id: 'c-bank', name: 'Agribank CN Bến Tre', search: '', syncedAt: '', contact: '', phone: '', email: '', address: '', sourceVersion: 0 },
+    { id: 'c-agri', name: 'Công ty ABC', customerType: 'Phân bón', search: '', syncedAt: '', contact: '', phone: '', email: '', address: '', sourceVersion: 0 }]);
+  await f.db.insert(salesOrders).values([
+    { id: 'o-old', orderNo: 'DH-OLD', quoteType: 'HRC', customerId: 'c-bank', customerName: 'Agribank CN Bến Tre', ownerId: 'emp', createdBy: 'emp', orderDate: '2026-11-10', status: 'confirmed', total: 8_640_000, subtotal: 8_000_000, createdAt: stamp, updatedAt: stamp },
+    { id: 'o-week', orderNo: 'DH-WEEK', quoteType: 'HRC', customerId: 'c-bank', customerName: 'Agribank CN Bến Tre', ownerId: 'emp', createdBy: 'emp', orderDate: '2026-12-02', status: 'confirmed', total: 32_076_000, subtotal: 29_700_000, createdAt: stamp, updatedAt: stamp },
+    { id: 'o-other', orderNo: 'DH-MGR', quoteType: 'HRC', customerName: 'Khách người khác', ownerId: 'mgr', createdBy: 'mgr', orderDate: '2026-12-02', status: 'confirmed', total: 99_000_000, subtotal: 99_000_000, createdAt: stamp, updatedAt: stamp }]);
+  await f.db.insert(salesOrderLines).values([
+    { id: 'l1', orderId: 'o-week', lineNo: 1, sku: '', name: 'Bộ 10 chén cơm', qty: 100, unitPrice: 297_000, amount: 29_700_000 },
+    { id: 'l2', orderId: 'o-week', lineNo: 2, sku: '', name: 'Túi vải', qty: 100, unitPrice: 18_700, amount: 1_870_000 }]);
+  await f.db.insert(paymentSchedules).values([
+    { id: 's-old', orderId: 'o-old', kind: 'balance', amount: 8_640_000, dueDate: '2026-11-20', createdAt: stamp },
+    { id: 's-week', orderId: 'o-week', kind: 'balance', amount: 32_076_000, dueDate: '2026-12-31', createdAt: stamp },
+    { id: 's-other', orderId: 'o-other', kind: 'balance', amount: 99_000_000, dueDate: '2026-11-01', createdAt: stamp }]);
+  await f.db.insert(deliveries).values({ id: 'd1', deliveryNo: 'GH-1', orderId: 'o-week', plannedDate: '2026-12-14', createdBy: 'emp', createdAt: stamp, updatedAt: stamp });
+  await f.db.insert(quotations).values([
+    { id: 'q-open', creatorId: 'emp', quoteNo: 'BG-OPEN', quoteType: 'HRC', customer: 'Vietcombank KG', quoteDate: '2026-12-03', data: '{"rows":[]}', createdAt: stamp, updatedAt: stamp },
+    { id: 'q-won', creatorId: 'emp', quoteNo: 'BG-WON', quoteType: 'HRC', customer: 'Agribank CN Bến Tre', quoteDate: '2026-12-01', data: '{"rows":[]}', createdAt: stamp, updatedAt: stamp }]);
+  await f.db.update(salesOrders).set({ quoteId: 'q-won' }).where(eq(salesOrders.id, 'o-week'));
+  const act = (id: string, customerId: string) => ({ id, customerId, ownerId: 'emp', type: 'call', completion: 'completed', purpose: 'sales', result: 'consulting', content: 'Trao đổi nhu cầu quà Tết', contactName: 'Chị A', occurredAt: '2026-12-03T03:00:00Z', createdAt: stamp, updatedAt: stamp }) as typeof customerActivities.$inferInsert;
+  await f.db.insert(customerActivities).values([act('a1', 'c-bank'), act('a2', 'c-agri')]);
+
+  await f.relog('2026-12-07T09:00:00');
+  const week = ok(await f.call('/staff-reports/week?period=2026-11-30', f.s.emp)).facts;
+  assert.equal(week.revenue, 32_076_000, 'không lấy đơn người khác');
+  assert.deepEqual(week.orderList, [{ orderNo: 'DH-WEEK', customerName: 'Agribank CN Bến Tre', total: 32_076_000, items: '100 Bộ 10 chén cơm + 100 Túi vải' }]);
+  assert.deepEqual(week.quotes.map((q: any) => [q.quoteNo, q.won]).sort(), [['BG-OPEN', false], ['BG-WON', true]]);
+  const care = Object.fromEntries(week.care.filter((g: any) => g.activities).map((g: any) => [g.industry, [g.oldCustomers, g.newCustomers]]));
+  assert.deepEqual(care, { bank: [1, 0], agri: [0, 1] }, 'KH cũ = đã có đơn trước tuần; ngành theo tên / loại khách');
+  assert.deepEqual(week.deliveries.map((d: any) => d.orderNo), ['DH-WEEK']);
+  assert.deepEqual(week.receivables.map((r: any) => [r.orderNo, r.overdue]), [['DH-OLD', 8_640_000], ['DH-WEEK', 0]], 'quá hạn lên đầu; không có công nợ người khác');
+  assert.equal(week.receivableTotals.balance, 40_716_000);
+
+  const missing = await f.submit('2026-11-30');
+  assert.equal(missing.status, 400); assert.match(missing.data.error ?? missing.data.message ?? JSON.stringify(missing.data), /BG-OPEN/);
+  const done = ok(await f.submit('2026-11-30', { inputs: { ...inputs, quoteNotes: { 'q-open': 'Chị Dương đang trình Sếp', 'la': 'không thuộc tuần' } } }), 201);
+  const [row] = await f.db.select().from(staffWeeklyReports).where(eq(staffWeeklyReports.id, done.id));
+  assert.deepEqual(JSON.parse(row!.data).inputs.quoteNotes, { 'q-open': 'Chị Dương đang trình Sếp' });
 });

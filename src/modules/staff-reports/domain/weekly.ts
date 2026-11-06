@@ -64,3 +64,31 @@ export function monthPoints(month: string, reports: ReadonlyMap<string, { submit
 /** Tiền trách nhiệm theo báo cáo tuần. */
 export const weeklyResponsibility = (amount: number, days: number, standardDays: number, points: number) =>
   standardDays > 0 ? amount * days / standardDays * Math.min(WEEKLY_REQUIRED, Math.max(0, points)) / WEEKLY_REQUIRED : 0;
+
+/** Nhóm ngành của khách cho mục "Chăm sóc trong tuần": ưu tiên "Nhóm / loại khách", không khớp thì đoán theo tên khách. */
+export const INDUSTRIES = ['bank', 'agri', 'aqua', 'other'] as const;
+export type Industry = typeof INDUSTRIES[number];
+export const INDUSTRY_LABEL: Record<Industry, string> = { bank: 'Ngân hàng / tín dụng', agri: 'Nông nghiệp', aqua: 'Thuỷ sản', other: 'Khác' };
+const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
+const INDUSTRY_RULES: [Industry, RegExp][] = [
+  ['bank', /ngan hang|\w*bank\b|quy tin dung|\bqtdnd\b|\b(bidv|vib|msb|ncb|shb|ocb|scb|vrb)\b/],
+  ['aqua', /thuy san|hai san/],
+  ['agri', /nong nghiep|nong san|nong duoc|phan bon|vat tu nong|bao ve thuc vat|\bbvtv\b|giong cay|thuc an chan nuoi/],
+];
+export function industryOf(customerType: string | null | undefined, name: string | null | undefined): Industry {
+  for (const src of [customerType, name]) {
+    const t = fold(src ?? '');
+    for (const [k, re] of INDUSTRY_RULES) if (re.test(t)) return k;
+  }
+  return 'other';
+}
+
+/** Phần nhân viên tự nhập: kế hoạch tuần tới (bắt buộc), tình trạng từng báo giá trong tuần chưa chốt (bắt buộc), kết quả nổi bật / khó khăn (tuỳ chọn). */
+export interface WeeklyInputs { highlights: string; nextWeekPlan: string; support: string; quoteNotes: Record<string, string> }
+export function weeklyProblems(v: WeeklyInputs, openQuotes: readonly { id: string; quoteNo: string }[]) {
+  const out: string[] = [];
+  if (v.nextWeekPlan.length < 3) out.push('Nhập kế hoạch tuần tới.');
+  const missing = openQuotes.filter(q => (v.quoteNotes[q.id] ?? '').length < 3).map(q => q.quoteNo);
+  if (missing.length) out.push(`Ghi tình trạng / bước tiếp cho báo giá: ${missing.join(', ')}.`);
+  return out;
+}
