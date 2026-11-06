@@ -3,8 +3,12 @@
  *  GET  /store/status                       cửa hàng mình phụ trách + quyền duyệt (+ danh sách cửa hàng / CHT cho người duyệt)
  *  GET  /store/reminders                    việc CHT cần làm lúc này (hộp nhắc 30 phút)
  *  GET  /store/reports?registerId&month     báo cáo trong tháng + Tiền Trách nhiệm tạm tính
- *  GET  /store/reports/draft?registerId&kind&period   số liệu CRM tự điền + báo cáo đã nộp (nếu có)
- *  POST /store/reports                      CHT nộp / nộp lại (giữ giờ nộp lần đầu; đã duyệt thì khoá)
+ *  GET  /store/reports/draft?registerId&kind&period   số liệu CRM tự tính + nháp + báo cáo đã nộp + lịch sử nộp + điều kiện nộp
+ *  PUT  /store/reports/draft                CHT lưu NHÁP (chỉ phần CHT nhập; nháp không tính là đã nộp / đúng hạn)
+ *  POST /store/reports                      CHT NỘP CHÍNH THỨC / nộp lại (kỳ phải kết thúc; giữ giờ nộp chính thức đầu tiên;
+ *                                           mỗi lần nộp lưu một bản chụp số liệu vào lịch sử; đã duyệt thì khoá)
+ *  GET  /store/settings?registerId          cấu hình báo cáo của cửa hàng (quỹ giữ lại, lịch nộp tiền, ngưỡng giải trình kiểm tồn)
+ *  PUT  /store/settings                     Manager đặt cấu hình
  *  POST /store/reports/:id/review           người duyệt (Manager / quyền store.review): đạt, sai sổ quỹ, đề xuất sai, miễn…
  *  POST /store/reports/:id/explain          CHT giải trình
  *  PUT  /store/managers                     Manager gán / bỏ CHT cho cửa hàng
@@ -18,13 +22,16 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { can } from '../../staff/domain/permissions.ts';
 import { posRegisters, posShifts } from '../../sales/pos-schema.ts';
-import { salesOrderLines, salesOrders } from '../../sales/schema.ts';
+import { customerPayments, salesOrderLines, salesOrders } from '../../sales/schema.ts';
+import { cashEntries } from '../../sales/cash-schema.ts';
+import { posExchangeAllocations, posRefunds, posReturns } from '../../sales/return-schema.ts';
 import { inventoryAdjustments, stockBalances } from '../../inventory/schema.ts';
 import { productMovements, products } from '../../catalog/schema.ts';
-import { storeManagers, storeReports } from '../schema.ts';
+import { storeManagers, storeReportDrafts, storeReportVersions, storeReports, storeSettings } from '../schema.ts';
 import {
-  REVIEW_FOR, STORE_LIMITS, STORE_REPORT_KINDS, STORE_REPORT_LABEL, STORE_REVIEW_LABEL, deadlineOf, isPeriod, nextMonth, periodStarted, remindersAt,
-  responsibilityOf, slotState, vnClock, weeksDueIn, type StoreReportKind, type StoreReviewStatus,
+  DEPOSIT_SCHEDULES, DEPOSIT_SCHEDULE_LABEL, REVIEW_FOR, STORE_LIMITS, STORE_REPORT_KINDS, STORE_REPORT_LABEL, STORE_REVIEW_LABEL, canSubmitOfficial, cashDue,
+  deadlineOf, isPeriod, nextMonth, periodEndsAt, periodStarted, remindersAt, responsibilityOf, slotState, vnClock, weeksDueIn,
+  type DepositSchedule, type StoreReportKind, type StoreReviewStatus,
 } from '../domain/reports.ts';
 
 type Ctx = Parameters<Parameters<Router<StaffEnv>['get']>[1]>[0];
@@ -67,19 +74,64 @@ async function shiftDays(db: AnyDb, registerId: string, from: string, to: string
 const parse = (s: string | null) => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
 
 // ---------------- Số liệu CRM tự điền
-async function dailyFacts(db: AnyDb, registerId: string, day: string) {
+type Settings = { cashFloat: number | null; depositSchedule: DepositSchedule | null; stocktakeExplainThreshold: number | null; updatedAt: string | null };
+async function settingsOf(db: AnyDb, registerId: string): Promise<Settings> {
+  const [r] = await db.select().from(storeSettings).where(eq(storeSettings.registerId, registerId)).limit(1);
+  return { cashFloat: r?.cashFloat ?? null, depositSchedule: r?.depositSchedule ?? null, stocktakeExplainThreshold: r?.stocktakeExplainThreshold ?? null, updatedAt: r?.updatedAt ?? null };
+}
+const IN_KINDS = ['other_income', 'cash_in'], SPENT_KINDS = ['petty_expense', 'advance', 'customer_refund'];
+/**
+ * Báo cáo ngày – tính trực tiếp từ ca POS (kể cả ca còn mở → số liệu tạm tính), đơn, phiếu thu khách, Sổ quỹ, trả / đổi / hoàn.
+ * Ca thuộc ngày theo `business_date` (ca qua nửa đêm vẫn thuộc ngày mở ca). Tiền đầu ngày = tiền thực đếm lúc mở ca đầu tiên;
+ * tiền bàn giao giữa các ca không cộng lại. Nộp két ("cash_out") là tiền đã nộp, không trừ thêm khi tính tiền phải nộp.
+ */
+async function dailyFacts(db: AnyDb, registerId: string, day: string, settings: Settings, declared: number | null) {
   const shifts = await db.select({ id: posShifts.id, member: employees.name, openedAt: posShifts.openedAt, closedAt: posShifts.closedAt, openingCash: posShifts.openingCash,
-    expectedCash: posShifts.expectedCash, countedCash: posShifts.countedCash, cashDifference: posShifts.cashDifference, differenceReason: posShifts.differenceReason, snapshot: posShifts.reportSnapshot })
-    .from(posShifts).leftJoin(employees, eq(employees.id, posShifts.memberId)).where(and(eq(posShifts.registerId, registerId), eq(posShifts.businessDate, day))).orderBy(asc(posShifts.openedAt));
-  const list = shifts.map(s => {
-    const snap = parse(s.snapshot), pay = (method: string) => (snap?.payments ?? []).filter((p: { method: string }) => p.method === method).reduce((n: number, p: { total: number }) => n + Number(p.total || 0), 0);
-    return { id: s.id, member: s.member ?? '', openedAt: s.openedAt, closedAt: s.closedAt, bills: Number(snap?.bills?.count ?? 0), revenue: Number(snap?.bills?.revenue ?? 0),
-      cash: pay('cash'), transfer: pay('transfer'), other: (snap?.payments ?? []).filter((p: { method: string }) => !['cash', 'transfer'].includes(p.method)).reduce((n: number, p: { total: number }) => n + Number(p.total || 0), 0),
-      openingCash: s.openingCash, expectedCash: s.expectedCash, countedCash: s.countedCash, cashDifference: s.cashDifference, differenceReason: s.differenceReason };
-  });
-  const sum = (k: 'bills' | 'revenue' | 'cash' | 'transfer' | 'other' | 'cashDifference') => list.reduce((n, s) => n + Number(s[k] || 0), 0);
-  return { shifts: list, openShifts: list.filter(s => !s.closedAt).length,
-    totals: { bills: sum('bills'), revenue: sum('revenue'), cash: sum('cash'), transfer: sum('transfer'), other: sum('other'), cashDifference: sum('cashDifference') } };
+    expectedCash: posShifts.expectedCash, countedCash: posShifts.countedCash, cashDifference: posShifts.cashDifference, differenceReason: posShifts.differenceReason })
+    .from(posShifts).leftJoin(employees, eq(employees.id, posShifts.memberId)).where(and(eq(posShifts.registerId, registerId), eq(posShifts.businessDate, day))).orderBy(asc(posShifts.openedAt), asc(posShifts.id));
+  const ids = shifts.length ? shifts.map(s => s.id) : ['-'];
+  const [orders, payments, entries, returns] = await Promise.all([
+    db.select({ shiftId: salesOrders.shiftId, revenue: sql<number>`coalesce(sum(${salesOrders.total}),0)`.mapWith(Number), bills: sql<number>`count(*)`.mapWith(Number) })
+      .from(salesOrders).where(and(inArray(salesOrders.shiftId, ids), ne(salesOrders.status, 'cancelled'))).groupBy(salesOrders.shiftId),
+    db.select({ shiftId: customerPayments.shiftId, method: customerPayments.method, amount: sql<number>`coalesce(sum(${customerPayments.amount}),0)`.mapWith(Number) })
+      .from(customerPayments).where(and(inArray(customerPayments.shiftId, ids), isNull(customerPayments.voidedAt))).groupBy(customerPayments.shiftId, customerPayments.method),
+    db.select({ kind: cashEntries.kind, direction: cashEntries.direction, status: cashEntries.status, amount: sql<number>`coalesce(sum(${cashEntries.amount}),0)`.mapWith(Number), n: sql<number>`count(*)`.mapWith(Number) })
+      .from(cashEntries).where(and(inArray(cashEntries.shiftId, ids), inArray(cashEntries.status, ['posted', 'pending']))).groupBy(cashEntries.kind, cashEntries.direction, cashEntries.status),
+    db.select({ id: posReturns.id, returnNo: posReturns.returnNo, kind: posReturns.kind, status: posReturns.status, total: posReturns.total, orderId: posReturns.orderId, orderNo: salesOrders.orderNo, createdAt: posReturns.createdAt })
+      .from(posReturns).leftJoin(salesOrders, eq(salesOrders.id, posReturns.orderId)).where(and(eq(posReturns.registerId, registerId), inArray(posReturns.createdShiftId, ids))).orderBy(asc(posReturns.createdAt)),
+  ]);
+  const retIds = returns.length ? returns.map(r => r.id) : ['-'];
+  const [refunds, exchanges] = await Promise.all([
+    db.select({ id: posRefunds.id, refundNo: posRefunds.refundNo, returnId: posRefunds.returnId, returnNo: posReturns.returnNo, method: posRefunds.method, amount: posRefunds.amount,
+      cashEntryId: posRefunds.cashEntryId, shiftId: posRefunds.shiftId, confirmedAt: posRefunds.confirmedAt })
+      .from(posRefunds).innerJoin(posReturns, eq(posReturns.id, posRefunds.returnId))
+      .where(and(eq(posReturns.registerId, registerId), or(inArray(posRefunds.shiftId, ids), inArray(posRefunds.returnId, retIds)))).orderBy(asc(posRefunds.confirmedAt)),
+    db.select({ returnId: posExchangeAllocations.returnId, amount: posExchangeAllocations.amount, status: posExchangeAllocations.status, orderId: posExchangeAllocations.replacementOrderId, orderNo: salesOrders.orderNo })
+      .from(posExchangeAllocations).leftJoin(salesOrders, eq(salesOrders.id, posExchangeAllocations.replacementOrderId))
+      .where(and(inArray(posExchangeAllocations.returnId, retIds), ne(posExchangeAllocations.status, 'cancelled'))),
+  ]);
+  const pay = (shiftId: string, method?: string) => payments.filter(p => p.shiftId === shiftId && (method ? p.method === method : !['cash', 'transfer'].includes(p.method))).reduce((n, p) => n + p.amount, 0);
+  const list = shifts.map(s => { const o = orders.find(x => x.shiftId === s.id);
+    return { id: s.id, member: s.member ?? '', openedAt: s.openedAt, closedAt: s.closedAt, open: !s.closedAt, bills: o?.bills ?? 0, revenue: o?.revenue ?? 0,
+      cash: pay(s.id, 'cash'), transfer: pay(s.id, 'transfer'), other: pay(s.id), openingCash: s.openingCash,
+      expectedCash: s.closedAt ? s.expectedCash : null, countedCash: s.closedAt ? s.countedCash : null, cashDifference: s.closedAt ? s.cashDifference : null, differenceReason: s.differenceReason }; });
+  const sum = (k: 'bills' | 'revenue' | 'cash' | 'transfer' | 'other') => list.reduce((n, x) => n + Number(x[k] || 0), 0);
+  const posted = (kinds: readonly string[]) => entries.filter(e => e.status === 'posted' && kinds.includes(e.kind)).reduce((n, e) => n + e.amount, 0);
+  const adjustments = entries.filter(e => e.status === 'posted' && e.kind === 'adjustment').reduce((n, e) => n + (e.direction === 'in' ? e.amount : -e.amount), 0);
+  const pending = entries.filter(e => e.status === 'pending'), cashIn = sum('cash') + posted(IN_KINDS), spent = posted(SPENT_KINDS), depositedBook = posted(['cash_out']);
+  const differences = list.filter(x => x.cashDifference), returnsDone = returns.filter(r => r.status === 'completed');
+  const cash = { ...cashDue({ opening: list[0]?.openingCash ?? null, cashIn, spent, depositedBook, retained: settings.cashFloat, schedule: settings.depositSchedule, declared }),
+    opening: list[0]?.openingCash ?? null, cashSales: sum('cash'), otherIn: posted(IN_KINDS), spent, refundsCash: posted(['customer_refund']), adjustments,
+    pendingEntries: pending.reduce((n, e) => n + e.n, 0), pendingAmount: pending.reduce((n, e) => n + e.amount, 0),
+    retained: settings.cashFloat, schedule: settings.depositSchedule };
+  return { shifts: list, openShifts: list.filter(x => x.open).length,
+    totals: { bills: sum('bills'), revenue: sum('revenue'), cash: sum('cash'), transfer: sum('transfer'), other: sum('other'),
+      // Lệch thiếu và lệch thừa tách riêng – không cộng bù thành 0.
+      shortage: differences.filter(x => x.cashDifference! < 0).reduce((n, x) => n + x.cashDifference!, 0), surplus: differences.filter(x => x.cashDifference! > 0).reduce((n, x) => n + x.cashDifference!, 0),
+      cashDifference: differences.reduce((n, x) => n + x.cashDifference!, 0), returnsValue: returnsDone.reduce((n, r) => n + r.total, 0) },
+    cash,
+    returns: returns.map(r => ({ ...r, exchanges: exchanges.filter(x => x.returnId === r.id).map(x => ({ orderId: x.orderId, orderNo: x.orderNo, amount: x.amount, status: x.status })) })),
+    refunds: refunds.map(r => ({ ...r, inShift: ids.includes(r.shiftId ?? '') })) };
 }
 /** Doanh số POS (đơn không huỷ) của cửa hàng theo ngày làm việc trong [from, to]. */
 async function salesByDay(db: AnyDb, registerId: string, from: string, to: string) {
@@ -117,8 +169,8 @@ async function stocktakeFacts(db: AnyDb, warehouseId: string, month: string) {
     const value = ls.reduce((n, l) => n + Math.abs(l.qty) * (costs.get(l.sku) ?? 0), 0);
     return { id: r.id, refNo: r.refNo, status: r.status, createdAt: r.createdAt, gapSkus: ls.length, gapValue: Math.round(value), missingCost: ls.filter(l => !costs.has(l.sku)).length }; }) };
 }
-async function factsFor(db: AnyDb, store: { id: string; warehouseId: string }, kind: StoreReportKind, period: string) {
-  if (kind === 'daily') return dailyFacts(db, store.id, period);
+async function factsFor(db: AnyDb, store: { id: string; warehouseId: string }, kind: StoreReportKind, period: string, declared: number | null = null) {
+  if (kind === 'daily') return dailyFacts(db, store.id, period, await settingsOf(db, store.id), declared);
   if (kind === 'weekly') { const to = addDays(period, 6);
     const [days, top] = await Promise.all([salesByDay(db, store.id, period, to), topProducts(db, store.id, period, to)]);
     return { from: period, to, days, revenue: days.reduce((n, d) => n + d.revenue, 0), bills: days.reduce((n, d) => n + d.bills, 0), top, slow: await slowProducts(db, store.id, store.warehouseId, to) }; }
@@ -130,16 +182,35 @@ async function factsFor(db: AnyDb, store: { id: string; warehouseId: string }, k
     return { from, to, revenue: days.reduce((n, d) => n + d.revenue, 0), bills: days.reduce((n, d) => n + d.bills, 0), days, top, staff }; }
   return stocktakeFacts(db, store.warehouseId, period);
 }
-/** Phần CHT nhập theo loại báo cáo (chỉ nhận đúng các ô này). */
+/** Phần CHT nhập theo loại báo cáo (chỉ nhận đúng các ô này; số liệu CRM không bao giờ lấy từ client). */
 function inputsFor(kind: StoreReportKind, b: Record<string, unknown>) {
-  if (kind === 'daily') return { bankDeposit: money(b.bankDeposit, 'Tiền nộp ngân hàng'), bankRef: text(b.bankRef, 200), incidents: text(b.incidents), note: text(b.note) };
-  if (kind === 'weekly') { const v = { orderProposal: text(b.orderProposal), roster: text(b.roster), note: text(b.note) };
-    if (v.orderProposal.length < 3) throw new AppError(400, 'Nhập đề xuất đặt hàng (Sale-in) cho tuần tới.'); return v; }
-  if (kind === 'monthly') { const v = { groupAnalysis: text(b.groupAnalysis), staffReview: text(b.staffReview), note: text(b.note) };
-    if (v.staffReview.length < 3) throw new AppError(400, 'Nhập đánh giá ngày công và năng lực NVBH.'); return v; }
-  const v = { counted: b.counted === true, gapExplanation: text(b.gapExplanation), note: text(b.note) };
-  if (!v.counted) throw new AppError(400, 'Xác nhận đã kiểm kê theo đúng quy trình.'); return v;
+  if (kind === 'daily') return { bankDeposit: money(b.bankDeposit, 'Tiền nộp ngân hàng'), bankRef: text(b.bankRef, 200), cashExplanation: text(b.cashExplanation), incidents: text(b.incidents), note: text(b.note) };
+  if (kind === 'weekly') return { orderProposal: text(b.orderProposal), roster: text(b.roster), nextWeekPlan: text(b.nextWeekPlan, 1000), note: text(b.note) };
+  if (kind === 'monthly') return { groupAnalysis: text(b.groupAnalysis), staffReview: text(b.staffReview), nextMonthPlan: text(b.nextMonthPlan), note: text(b.note) };
+  return { counted: b.counted === true, gapExplanation: text(b.gapExplanation), note: text(b.note) };
 }
+type Inputs = ReturnType<typeof inputsFor>;
+/** Điều kiện nộp chính thức (nháp không cần đủ). */
+function officialProblems(kind: StoreReportKind, v: Inputs, facts: any) {
+  const out: string[] = [];
+  if (kind === 'daily') {
+    const d = v as Extract<Inputs, { bankDeposit: unknown }>;
+    if (facts?.cash?.schedule === 'daily' && d.bankDeposit === null) out.push('Nhập số tiền đã nộp ngân hàng hôm nay (nhập 0 nếu chưa nộp).');
+    if (facts?.cash?.needsExplanation && d.cashExplanation.length < 3) out.push('Có chênh lệch tiền nộp – nhập giải trình chênh lệch.');
+  }
+  if (kind === 'weekly' && (v as { orderProposal: string }).orderProposal.length < 3) out.push('Nhập đề xuất đặt hàng (Sale-in) cho tuần tới.');
+  if (kind === 'monthly' && (v as { staffReview: string }).staffReview.length < 3) out.push('Nhập đánh giá ngày công và năng lực NVBH.');
+  if (kind === 'stocktake' && !(v as { counted: boolean }).counted) out.push('Xác nhận đã kiểm kê theo đúng quy trình.');
+  return out;
+}
+/** Nguồn số liệu ghi kèm bản chụp. */
+const SOURCES: Record<StoreReportKind, string[]> = {
+  daily: ['pos_shifts', 'sales_orders', 'customer_payments', 'cash_entries', 'pos_returns', 'pos_refunds', 'pos_exchange_allocations', 'store_settings'],
+  weekly: ['pos_shifts', 'sales_orders', 'sales_order_lines', 'stock_balances'],
+  monthly: ['pos_shifts', 'sales_orders', 'sales_order_lines'],
+  stocktake: ['inventory_adjustments', 'product_movements'],
+};
+const provisionalOf = (kind: StoreReportKind, facts: any) => kind === 'daily' && Number(facts?.openShifts || 0) > 0;
 
 export function registerStoreRoutes(router: Router<StaffEnv>) {
   router.get('/store/status', async c => {
@@ -166,24 +237,55 @@ export function registerStoreRoutes(router: Router<StaffEnv>) {
     const from = month + '-01', last = addDays(nextMonth(month) + '-01', -1);
     const days = await shiftDays(db, store.id, addDays(from, -7), last);
     const weeks = weeksDueIn(month, days), dailyDays = days.filter(d => d.startsWith(month));
-    const rows = await db.select({ id: storeReports.id, kind: storeReports.kind, period: storeReports.period, submittedAt: storeReports.submittedAt, updatedAt: storeReports.updatedAt,
+    const rows = await db.select({ id: storeReports.id, kind: storeReports.kind, period: storeReports.period, submittedAt: storeReports.submittedAt, updatedAt: storeReports.updatedAt, data: storeReports.data,
       review: storeReports.review, reviewNote: storeReports.reviewNote, reviewedAt: storeReports.reviewedAt, explanation: storeReports.explanation, member: employees.name })
       .from(storeReports).leftJoin(employees, eq(employees.id, storeReports.memberId))
       .where(and(eq(storeReports.registerId, store.id), or(and(inArray(storeReports.kind, ['monthly', 'stocktake']), eq(storeReports.period, month)),
         and(eq(storeReports.kind, 'daily'), gte(storeReports.period, from), lte(storeReports.period, last)), and(eq(storeReports.kind, 'weekly'), inArray(storeReports.period, weeks.length ? weeks : ['-'])))))
       .orderBy(asc(storeReports.period));
-    const reports = rows.map(r => ({ ...r, deadline: deadlineOf(r.kind, r.period), state: slotState(r.kind, r.period, r.submittedAt, now) }));
+    const drafts = await db.select({ kind: storeReportDrafts.kind, period: storeReportDrafts.period, updatedAt: storeReportDrafts.updatedAt }).from(storeReportDrafts).where(eq(storeReportDrafts.registerId, store.id));
+    const reports = rows.map(({ data, ...r }) => ({ ...r, provisional: !!parse(data)?.meta?.provisional, deadline: deadlineOf(r.kind, r.period), state: slotState(r.kind, r.period, r.submittedAt, now) }));
     const responsibility = responsibilityOf({ month, dailyDays, weeks, now, reports: rows.map(r => ({ kind: r.kind, period: r.period, submittedAt: r.submittedAt, review: r.review })) });
-    return json({ store: { registerId: store.id, name: store.name }, isManager: store.isManager, canReview: reviews(me(c)), month, dailyDays, weeks, reports, responsibility });
+    return json({ store: { registerId: store.id, name: store.name }, isManager: store.isManager, canReview: reviews(me(c)), canConfigure: me(c).role === 'manager', month, dailyDays, weeks, reports, drafts, responsibility });
   }, 'business');
 
   router.get('/store/reports/draft', async c => {
-    const q = c.url.searchParams, store = await storeFor(c, q.get('registerId')), kind = kindOf(q.get('kind')), period = q.get('period');
+    const q = c.url.searchParams, store = await storeFor(c, q.get('registerId')), kind = kindOf(q.get('kind')), period = q.get('period'), db = c.env.db, now = nowIso();
     if (!isPeriod(kind, period)) throw new AppError(400, 'Kỳ báo cáo không hợp lệ.');
-    const [existing] = await c.env.db.select().from(storeReports).where(and(eq(storeReports.registerId, store.id), eq(storeReports.kind, kind), eq(storeReports.period, period))).limit(1);
-    const facts = await factsFor(c.env.db, store, kind, period);
-    return json({ kind, period, deadline: deadlineOf(kind, period), facts,
-      report: existing ? { ...existing, data: parse(existing.data), state: slotState(kind, period, existing.submittedAt, nowIso()) } : null });
+    const [[existing], [draft]] = await Promise.all([
+      db.select().from(storeReports).where(and(eq(storeReports.registerId, store.id), eq(storeReports.kind, kind), eq(storeReports.period, period))).limit(1),
+      db.select().from(storeReportDrafts).where(and(eq(storeReportDrafts.registerId, store.id), eq(storeReportDrafts.kind, kind), eq(storeReportDrafts.period, period))).limit(1),
+    ]);
+    const versions = existing ? await db.select({ version: storeReportVersions.version, submittedAt: storeReportVersions.submittedAt, provisional: storeReportVersions.provisional, member: employees.name })
+      .from(storeReportVersions).leftJoin(employees, eq(employees.id, storeReportVersions.memberId)).where(eq(storeReportVersions.reportId, existing.id)).orderBy(asc(storeReportVersions.version)) : [];
+    const draftInputs = draft ? parse(draft.inputs) : null, reportData = existing ? parse(existing.data) : null;
+    // Ô "đã nộp ngân hàng" ảnh hưởng chênh lệch: ưu tiên số trong nháp, rồi số đã nộp chính thức.
+    const declared = kind === 'daily' ? money((draftInputs ?? reportData?.inputs ?? {}).bankDeposit, 'Tiền nộp ngân hàng') : null;
+    const facts = await factsFor(db, store, kind, period, declared);
+    const started = periodStarted(kind, period, now), official = canSubmitOfficial(kind, period, now);
+    const locked = !!existing && existing.review !== 'pending';
+    return json({ kind, period, deadline: deadlineOf(kind, period), opensAt: periodEndsAt(kind, period), factsAt: now, facts, provisional: provisionalOf(kind, facts),
+      settings: kind === 'daily' ? await settingsOf(db, store.id) : undefined, scheduleLabels: DEPOSIT_SCHEDULE_LABEL,
+      canEdit: store.isManager && started && !locked, canSubmit: store.isManager && official && !locked,
+      blockers: [...(!started ? ['Kỳ báo cáo chưa bắt đầu.'] : []), ...(started && !official ? [`Kỳ chưa kết thúc – chỉ lưu nháp; nộp chính thức từ ${new Date(periodEndsAt(kind, period)).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}.`] : []),
+        ...(locked ? ['Báo cáo đã được duyệt – không sửa được. Dùng "Giải trình" nếu cần.'] : [])],
+      draft: draft ? { inputs: draftInputs, updatedAt: draft.updatedAt } : null, versions,
+      report: existing ? { ...existing, data: reportData, state: slotState(kind, period, existing.submittedAt, now) } : null });
+  }, 'business');
+
+  /** Lưu nháp: chỉ CHT của cửa hàng, kỳ đã bắt đầu, báo cáo chưa duyệt. Không tính là đã nộp. */
+  router.put('/store/reports/draft', async c => {
+    const b = await readJson(c.req, 30_000), m = me(c), db = c.env.db, kind = kindOf(b.kind), period = b.period, now = nowIso();
+    if (!isPeriod(kind, period)) throw new AppError(400, 'Kỳ báo cáo không hợp lệ.');
+    const mine = await myStore(db, m.id);
+    if (!mine || mine.registerId !== text(b.registerId, 80)) throw new AppError(403, 'Chỉ Cửa hàng trưởng của cửa hàng này được lưu báo cáo.');
+    if (!periodStarted(kind, period, now)) throw new AppError(400, 'Kỳ báo cáo chưa bắt đầu.');
+    const [existing] = await db.select({ review: storeReports.review }).from(storeReports).where(and(eq(storeReports.registerId, mine.registerId), eq(storeReports.kind, kind), eq(storeReports.period, period))).limit(1);
+    if (existing && existing.review !== 'pending') throw new AppError(409, 'Báo cáo đã được duyệt, không sửa được.');
+    const inputs = JSON.stringify(inputsFor(kind, (b.inputs ?? {}) as Record<string, unknown>));
+    await db.insert(storeReportDrafts).values({ registerId: mine.registerId, kind, period, memberId: m.id, inputs, updatedAt: now })
+      .onConflictDoUpdate({ target: [storeReportDrafts.registerId, storeReportDrafts.kind, storeReportDrafts.period], set: { inputs, memberId: m.id, updatedAt: now } });
+    return json({ ok: true, draft: true, updatedAt: now });
   }, 'business');
 
   router.post('/store/reports', async c => {
@@ -194,22 +296,55 @@ export function registerStoreRoutes(router: Router<StaffEnv>) {
     if (!mine || mine.registerId !== text(b.registerId, 80)) throw new AppError(403, 'Chỉ Cửa hàng trưởng của cửa hàng này được nộp báo cáo.');
     const now = nowIso();
     if (!periodStarted(kind, period, now)) throw new AppError(400, 'Kỳ báo cáo chưa bắt đầu.');
+    if (!canSubmitOfficial(kind, period, now)) throw new AppError(409, 'Kỳ báo cáo chưa kết thúc – chỉ lưu nháp được, chưa nộp chính thức.', 'STORE_PERIOD_OPEN');
     const inputs = inputsFor(kind, (b.inputs ?? {}) as Record<string, unknown>);
     const [replay] = await db.select({ id: storeReports.id }).from(storeReports).where(and(eq(storeReports.memberId, m.id), eq(storeReports.clientKey, clientKey))).limit(1);
     if (replay) return json({ ok: true, id: replay.id, replayed: true });
-    const facts = await factsFor(db, { id: mine.registerId, warehouseId: mine.warehouseId }, kind, period);
-    const data = JSON.stringify({ facts, inputs });
-    const [existing] = await db.select().from(storeReports).where(and(eq(storeReports.registerId, mine.registerId), eq(storeReports.kind, kind), eq(storeReports.period, period))).limit(1);
-    if (existing) {
-      if (existing.review !== 'pending') throw new AppError(409, 'Báo cáo đã được duyệt, không sửa được. Dùng "Giải trình" nếu cần.');
-      await db.update(storeReports).set({ data, updatedAt: now, clientKey, memberId: m.id }).where(and(eq(storeReports.id, existing.id), eq(storeReports.review, 'pending')));
-      return json({ ok: true, id: existing.id, updated: true, state: slotState(kind, period, existing.submittedAt, now) });
-    }
-    const id = crypto.randomUUID();
-    const inserted = await db.insert(storeReports).values({ id, registerId: mine.registerId, kind, period, memberId: m.id, data, submittedAt: now, updatedAt: now, clientKey })
-      .onConflictDoNothing().returning({ id: storeReports.id });
-    if (!inserted.length) throw new AppError(409, 'Báo cáo kỳ này vừa được nộp ở máy khác. Tải lại trang.');
-    return json({ ok: true, id, state: slotState(kind, period, now, now) }, 201);
+    // Số liệu CRM luôn tính ở máy chủ lúc nộp – bỏ qua mọi "facts" client gửi lên.
+    const facts = await factsFor(db, { id: mine.registerId, warehouseId: mine.warehouseId }, kind, period, kind === 'daily' ? (inputs as { bankDeposit: number | null }).bankDeposit : null);
+    const problems = officialProblems(kind, inputs, facts);
+    if (problems.length) throw new AppError(400, problems.join(' '));
+    const provisional = provisionalOf(kind, facts);
+    const data = JSON.stringify({ facts, inputs, meta: { factsAt: now, sources: SOURCES[kind], provisional, openShifts: kind === 'daily' ? (facts as { openShifts: number }).openShifts : 0 } });
+    const result = await db.transaction(async tx => {
+      const [existing] = await tx.select().from(storeReports).where(and(eq(storeReports.registerId, mine.registerId), eq(storeReports.kind, kind), eq(storeReports.period, period))).limit(1).for('update');
+      if (existing) {
+        if (existing.review !== 'pending') throw new AppError(409, 'Báo cáo đã được duyệt, không sửa được. Dùng "Giải trình" nếu cần.');
+        const [last] = await tx.select({ v: sql<number>`coalesce(max(${storeReportVersions.version}),0)`.mapWith(Number) }).from(storeReportVersions).where(eq(storeReportVersions.reportId, existing.id));
+        const version = (last?.v ?? 0) + 1;
+        // Giữ giờ nộp chính thức đầu tiên (submitted_at); lịch sử giữ mọi bản đã nộp.
+        await tx.update(storeReports).set({ data, updatedAt: now, clientKey, memberId: m.id }).where(and(eq(storeReports.id, existing.id), eq(storeReports.review, 'pending')));
+        await tx.insert(storeReportVersions).values({ id: crypto.randomUUID(), reportId: existing.id, version, memberId: m.id, data, provisional, submittedAt: now });
+        await tx.delete(storeReportDrafts).where(and(eq(storeReportDrafts.registerId, mine.registerId), eq(storeReportDrafts.kind, kind), eq(storeReportDrafts.period, period)));
+        return { status: 200, body: { ok: true, id: existing.id, updated: true, version, provisional, state: slotState(kind, period, existing.submittedAt, now) } };
+      }
+      const id = crypto.randomUUID();
+      const inserted = await tx.insert(storeReports).values({ id, registerId: mine.registerId, kind, period, memberId: m.id, data, submittedAt: now, updatedAt: now, clientKey })
+        .onConflictDoNothing().returning({ id: storeReports.id });
+      if (!inserted.length) throw new AppError(409, 'Báo cáo kỳ này vừa được nộp ở máy khác. Tải lại trang.');
+      await tx.insert(storeReportVersions).values({ id: crypto.randomUUID(), reportId: id, version: 1, memberId: m.id, data, provisional, submittedAt: now });
+      await tx.delete(storeReportDrafts).where(and(eq(storeReportDrafts.registerId, mine.registerId), eq(storeReportDrafts.kind, kind), eq(storeReportDrafts.period, period)));
+      return { status: 201, body: { ok: true, id, version: 1, provisional, state: slotState(kind, period, now, now) } };
+    });
+    return json(result.body, result.status);
+  }, 'business');
+
+  router.get('/store/settings', async c => {
+    const store = await storeFor(c, c.url.searchParams.get('registerId'));
+    return json({ registerId: store.id, settings: await settingsOf(c.env.db, store.id), canEdit: me(c).role === 'manager', scheduleLabels: DEPOSIT_SCHEDULE_LABEL });
+  }, 'business');
+
+  router.put('/store/settings', async c => {
+    const m = me(c); if (m.role !== 'manager') throw new AppError(403, 'Chỉ Manager được cấu hình báo cáo cửa hàng.');
+    const b = await readJson(c.req, 2_000), db = c.env.db, registerId = text(b.registerId, 80);
+    const [reg] = await db.select({ id: posRegisters.id }).from(posRegisters).where(eq(posRegisters.id, registerId)).limit(1);
+    if (!reg) throw new AppError(404, 'Không tìm thấy cửa hàng.');
+    const schedule = b.depositSchedule === null || b.depositSchedule === '' ? null : b.depositSchedule;
+    if (schedule !== null && !DEPOSIT_SCHEDULES.includes(schedule as never)) throw new AppError(400, 'Lịch nộp tiền không hợp lệ.');
+    const values = { cashFloat: money(b.cashFloat, 'Quỹ được giữ lại'), depositSchedule: schedule as DepositSchedule | null,
+      stocktakeExplainThreshold: money(b.stocktakeExplainThreshold, 'Ngưỡng giải trình kiểm tồn'), updatedBy: m.id, updatedAt: nowIso() };
+    await db.insert(storeSettings).values({ registerId, ...values }).onConflictDoUpdate({ target: storeSettings.registerId, set: values });
+    return json({ ok: true, settings: await settingsOf(db, registerId) });
   }, 'business');
 
   router.post('/store/reports/:id/review', async c => {

@@ -141,3 +141,60 @@ export function remindersAt(nowIso: string, shiftDays: readonly string[], submit
   }
   return out;
 }
+
+// ---------------- Nộp chính thức / nháp
+/**
+ * Thời điểm kỳ kết thúc = sớm nhất được NỘP CHÍNH THỨC (nháp lưu được bất cứ lúc nào sau khi kỳ bắt đầu):
+ *  ngày → từ 00h00 chính ngày đó (báo cáo trong ngày, hạn 22h; ca còn mở thì số liệu là tạm tính);
+ *  tuần → 00h00 thứ Hai tuần sau; tháng / kiểm tồn → 00h00 ngày 01 tháng sau.
+ */
+export function periodEndsAt(kind: StoreReportKind, period: string) {
+  if (kind === 'daily') return vnAt(period, 0);
+  if (kind === 'weekly') return vnAt(addDays(period, 7), 0);
+  return vnAt(nextMonth(period) + '-01', 0);
+}
+export const canSubmitOfficial = (kind: StoreReportKind, period: string, nowIso: string) => nowIso >= periodEndsAt(kind, period);
+
+// ---------------- Báo cáo ngày: tiền phải nộp (nguồn sổ quỹ)
+export const DEPOSIT_SCHEDULES = ['daily', 'periodic'] as const;
+export type DepositSchedule = typeof DEPOSIT_SCHEDULES[number];
+export const DEPOSIT_SCHEDULE_LABEL: Record<DepositSchedule, string> = { daily: 'Nộp hằng ngày', periodic: 'Nộp theo đợt (không bắt buộc mỗi ngày)' };
+export const CASH_MISSING_LABEL = {
+  opening: 'Chưa có tiền đầu ngày (chưa mở ca)',
+  retained: 'Chưa cấu hình quỹ được giữ lại tại cửa hàng',
+  schedule: 'Chưa cấu hình lịch nộp tiền',
+} as const;
+export type CashMissing = keyof typeof CASH_MISSING_LABEL;
+export interface CashDayInput {
+  /** Tiền đầu ngày = tiền thực đếm lúc mở ca ĐẦU TIÊN của ngày (tiền bàn giao giữa các ca không cộng lại). */
+  opening: number | null;
+  /** Thu tiền mặt: bán hàng + COD thực nhận + Thu khác / Rút két (phiếu đã ghi). */
+  cashIn: number;
+  /** Chi hợp lệ: chi vặt, tạm ứng, hoàn tiền khách (phiếu đã ghi). Không gồm nộp két. */
+  spent: number;
+  /** Đã nộp theo sổ quỹ (phiếu "Nộp két" đã ghi) – không trừ lần nữa khi tính tiền phải nộp. */
+  depositedBook: number;
+  /** Quỹ được giữ lại tại cửa hàng (cấu hình); null = chưa cấu hình. */
+  retained: number | null;
+  schedule: DepositSchedule | null;
+  /** Số CHT khai đã nộp ngân hàng; null = chưa khai. */
+  declared: number | null;
+}
+/**
+ * Tiền phải nộp = tiền đầu ngày + thu tiền mặt − chi hợp lệ − quỹ được giữ lại (không âm).
+ * Thiếu căn cứ (đầu ngày / quỹ giữ lại / lịch nộp) → không tính, nêu rõ thiếu gì; KHÔNG tự coi là 0.
+ * Chênh lệch chỉ để giải trình – không tự đánh dấu sai sổ quỹ hay trừ Tiền Trách nhiệm (người duyệt quyết định).
+ */
+export function cashDue(x: CashDayInput) {
+  const missing: CashMissing[] = [];
+  if (x.opening === null) missing.push('opening');
+  if (x.retained === null) missing.push('retained');
+  if (x.schedule === null) missing.push('schedule');
+  const available = (x.opening ?? 0) + x.cashIn - x.spent;
+  const due = missing.length ? null : Math.max(0, available - x.retained!);
+  const requiredToday = x.schedule === 'daily';
+  const declaredDiff = due !== null && x.declared !== null ? x.declared - due : null;
+  const bookDiff = x.declared !== null ? x.declared - x.depositedBook : null;
+  const needsExplanation = (declaredDiff !== null && declaredDiff !== 0 && (requiredToday || x.declared! > 0)) || (bookDiff !== null && bookDiff !== 0);
+  return { available, due, requiredToday, missing, missingLabels: missing.map(k => CASH_MISSING_LABEL[k]), declared: x.declared, depositedBook: x.depositedBook, declaredDiff, bookDiff, needsExplanation };
+}
