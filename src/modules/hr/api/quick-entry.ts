@@ -1,3 +1,4 @@
+import type { WeeklyReportPointsOf } from '../../../core/contracts/weekly-report.ts';
 import { and, eq } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { payrollLock } from '../../../core/db/payroll-lock.ts';
@@ -34,7 +35,7 @@ export function payrollEntry(row: PayrollRow, month: string) {
 }
 
 /** One locked transaction for all changed staff; stale rows and confirmed slips are never overwritten. */
-export function registerQuickPayroll(router: Router<StaffEnv>, deps: { revenueOf: RevenueOf; crmFactsOf?: CrmFactsOf;teamRevenueOf?:TeamRevenueOf }) {
+export function registerQuickPayroll(router: Router<StaffEnv>, deps: { revenueOf: RevenueOf; crmFactsOf?: CrmFactsOf;teamRevenueOf?:TeamRevenueOf;weeklyReportOf?:WeeklyReportPointsOf }) {
   router.put('/hr/payroll/:month/entries', async c => {
     const month = c.params.month;
     if (!isMonth(month)) throw new AppError(400, 'Tháng không hợp lệ.');
@@ -45,7 +46,7 @@ export function registerQuickPayroll(router: Router<StaffEnv>, deps: { revenueOf
     const me = (c.state.session as SessionState).member.id;
     await c.env.db.transaction(async db => {
       await payrollLock(db as any);
-      const board = await buildPayroll(db as any, month, deps.revenueOf, ids as string[], deps.crmFactsOf,false,deps.teamRevenueOf);
+      const board = await buildPayroll(db as any, month, deps.revenueOf, ids as string[], deps.crmFactsOf,false,deps.teamRevenueOf,deps.weeklyReportOf);
       for (const change of changes) {
         const row = board.rows.find(r => r.member.id === change.memberId);
         if (!row) throw new AppError(404, 'Không tìm thấy nhân viên.');

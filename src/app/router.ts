@@ -84,6 +84,8 @@ import { registerCashbookRoutes } from './cashbook-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 import { registerFeedbackRoutes } from '../modules/feedback/api/routes.ts';
 import { registerStoreRoutes } from '../modules/store/api/routes.ts';
+import { registerStaffReportRoutes, weeklyPointsFor } from '../modules/staff-reports/api/routes.ts';
+import { saleTargetOf } from './sale-target.ts';
 import { storeAttendanceOf, storeTargetOf } from './store-report-sources.ts';
 export function createAppRouter() {
   transferTaskHooks.afterCommit = syncTransferTasks;
@@ -140,13 +142,14 @@ export function createAppRouter() {
   registerProductDetailRoutes(router);
   registerCustomerDuplicateRoutes(router);
   registerCareRoutes(router,{assertKpiOpen:assertActivityKpiOpen,quotes:activityQuotes});
-  registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf,teamRevenueOf:teamPayrollRevenues,
+  registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf,teamRevenueOf:teamPayrollRevenues,weeklyReportOf:weeklyPointsFor,
     onSelfBankChange: (env, m) => notifyMany(env, 'managers', { eventType: 'hr-bank-changed', title: 'Đổi tài khoản nhận lương', body: `${m.name} vừa tự cập nhật tài khoản nhận lương. Kiểm tra trước khi chuyển lương.`, url: `/index.html#/members/${encodeURIComponent(m.id)}`, actorId: m.id }) }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
   registerAdmsRoutes(router);
   registerSynctimeRoutes(router);
-  registerStaffHubRoutes(router,{crmFactsOf,teamRevenueOf:teamPayrollRevenues});
+  registerStaffHubRoutes(router,{crmFactsOf,teamRevenueOf:teamPayrollRevenues,weeklyReportOf:weeklyPointsFor});
   registerTeamPayrollSources(router);
   registerFeedbackRoutes(router); // góp ý phát triển phần mềm (mọi nhân viên)
+  registerStaffReportRoutes(router, { targetOf: saleTargetOf }); // báo cáo tuần Sale / Sale Admin (căn cứ Tiền trách nhiệm)
   registerStoreRoutes(router, { targetOf: storeTargetOf, attendanceOf: storeAttendanceOf }); // báo cáo Cửa hàng trưởng (CHT): nộp, duyệt, Tiền Trách nhiệm, nhắc nhở
   registerDashboardRoutes(router, { kpiOf: dashboardKpiOf, storeOf: dashboardStoreOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR
   registerAuditRoutes(router);

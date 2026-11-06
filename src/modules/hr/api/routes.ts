@@ -1,3 +1,4 @@
+import type { WeeklyReportPointsOf } from '../../../core/contracts/weekly-report.ts';
 import { payrollEntry, registerQuickPayroll } from './quick-entry.ts';
 import {registerRevenueTargets} from './revenue-target-routes.ts';
 import {registerRevenueTargetRequests} from './revenue-target-request-routes.ts';
@@ -83,7 +84,7 @@ const slipValues = (row: PayrollRow, me: string, note: string) => ({
  *  POST    /hr/members/:id/adjustments · DELETE /hr/adjustments/:adjId   thưởng khác, công tác, vi phạm, tạm ứng, tạm ứng điện thoại
  *  POST    /hr/members/:id/payslips/:month       chốt · POST …/paid đã trả · DELETE mở lại (chưa trả)
  */
-export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: RevenueOf;crmFactsOf?:CrmFactsOf;teamRevenueOf?:TeamRevenueOf;
+export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: RevenueOf;crmFactsOf?:CrmFactsOf;teamRevenueOf?:TeamRevenueOf;weeklyReportOf?:WeeklyReportPointsOf;
   /** Báo Manager khi nhân viên tự đổi tài khoản nhận lương (bơm từ app/router.ts – hr không phụ thuộc module thông báo). */
   onSelfBankChange?:(env:StaffEnv,member:{id:string;name:string})=>Promise<unknown> }) {
   registerQuickPayroll(router, deps);
@@ -120,7 +121,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
   }), 'admin');
 
   router.get('/hr/payroll/:month', async c => {
-    const b = await buildPayroll(c.env.db, month(c.params.month), deps.revenueOf,undefined,deps.crmFactsOf,false,deps.teamRevenueOf);
+    const b = await buildPayroll(c.env.db, month(c.params.month), deps.revenueOf,undefined,deps.crmFactsOf,false,deps.teamRevenueOf,deps.weeklyReportOf);
     const history = b.rows.length ? await c.env.db.select({memberId:hrSalaryProfiles.memberId,capacityCoef:hrSalaryProfiles.capacityCoef})
       .from(hrSalaryProfiles).where(and(inArray(hrSalaryProfiles.memberId,b.rows.map(r=>r.member.id)),lt(hrSalaryProfiles.effectiveMonth,b.month)))
       .orderBy(desc(hrSalaryProfiles.effectiveMonth)) : [];
@@ -141,7 +142,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
   }, 'admin');
 
   router.post('/hr/payroll/:month/confirm', write(async c => {
-    const m=month(c.params.month),me=actor(c).id,body=await readJson(c.req,2000),db=c.env.db,b=await buildPayroll(db,m,deps.revenueOf,undefined,deps.crmFactsOf,true,deps.teamRevenueOf);
+    const m=month(c.params.month),me=actor(c).id,body=await readJson(c.req,2000),db=c.env.db,b=await buildPayroll(db,m,deps.revenueOf,undefined,deps.crmFactsOf,true,deps.teamRevenueOf,deps.weeklyReportOf);
     const open=b.rows.filter(r=>!r.slip&&r.profile.effectiveMonth!==null);
     if(open.some(r=>r.calc.teamRevenueBasis?.issues))throw new AppError(409,'Doanh số team còn đơn chưa đối chiếu hoa hồng. Kiểm tra nguồn trước khi chốt.','TEAM_REVENUE_UNVERIFIED');
     if(open.some(r=>r.calc.kpiNetBasis?.issues&&(r.calc.kpi?.policy==='appsheet'||r.calc.kpiNetBasis.rate>0)))throw new AppError(409,'Có đơn chưa đối chiếu được hoa hồng khách hàng. Kiểm tra báo giá nguồn trước khi chốt lương.','KPI_NET_UNVERIFIED');
@@ -293,7 +294,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
   router.post('/hr/members/:id/payslips/:month', write(async c => {
     const db = c.env.db, id = await staffMember(db, c.params.id!), m = month(c.params.month), b = await readJson(c.req, 2_000);
     await assertOpen(db, id, m);
-    const board=await buildPayroll(db,m,deps.revenueOf,[id],deps.crmFactsOf,true,deps.teamRevenueOf),[row]=board.rows;
+    const board=await buildPayroll(db,m,deps.revenueOf,[id],deps.crmFactsOf,true,deps.teamRevenueOf,deps.weeklyReportOf),[row]=board.rows;
     if(row?.calc.teamRevenueBasis?.issues)throw new AppError(409,'Doanh số team còn đơn chưa đối chiếu hoa hồng.','TEAM_REVENUE_UNVERIFIED');
     if(row?.calc.kpiNetBasis?.issues&&(row.calc.kpi?.policy==='appsheet'||row.calc.kpiNetBasis.rate>0))throw new AppError(409,'Có đơn chưa đối chiếu được hoa hồng khách hàng. Kiểm tra báo giá nguồn trước khi chốt lương.','KPI_NET_UNVERIFIED');
     if (!row || row.profile.effectiveMonth === null) throw new AppError(400, 'Chưa đặt hồ sơ lương cho nhân viên này.');

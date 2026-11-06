@@ -1,6 +1,7 @@
 import {computeKpiCv,kpiTargetsOf} from '../domain/kpi-cv.ts';
 import {kpiBonusRate,netKpiBonusRate,salaryTransferNote,vietQrUrl} from '../domain/payroll.ts';
 import type {TeamRevenueOf,CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
+import type { WeeklyReportPoints, WeeklyReportPointsOf } from '../../../core/contracts/weekly-report.ts';
 import {awardHistory,proposeAwards} from './contract-bonuses.ts';
 import {sha256Hex} from '../../staff/domain/session.ts';
 import {AppError} from '../../../core/errors.ts';
@@ -90,7 +91,7 @@ export interface PayrollRow {
  * Bảng lương một tháng cho nhiều người (mặc định: mọi nhân viên đang làm / có hồ sơ lương). Một chỗ tính duy nhất cho
  * trang chi tiết nhân viên, bảng lương công ty và lúc chốt lương.
  */
-export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueOf, onlyIds?: readonly string[],crmFactsOf?:CrmFactsOf,lock=false,teamRevenueOf?:TeamRevenueOf) {
+export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueOf, onlyIds?: readonly string[],crmFactsOf?:CrmFactsOf,lock=false,teamRevenueOf?:TeamRevenueOf,weeklyOf?:WeeklyReportPointsOf) {
   const r = monthRange(month);
   const [{ params, effectiveMonth }, gm, profiles] = await Promise.all([paramsFor(db, month), groupMonthOf(db, month), profilesFor(db, month, onlyIds)]);
   const teamRevenue=teamRevenueOf?await teamRevenueOf(db,month):null;
@@ -113,6 +114,7 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     quarterBonuses(db, month, params, gm, revenueOf),
     revenueTargetsFor(db,[month],ids),
   ]);
+  const weekly=weeklyOf?await weeklyOf(db,month,ids):new Map<string,WeeklyReportPoints>();
   const from=String(params.contractBonusFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2'),kpiFrom=String(params.salesAutomationFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2');
   const appsheet = appsheetKpiApplies(params,month);
   if(appsheet&&!crmFactsOf)throw new AppError(503,'Chưa có nguồn doanh số ghi nhận cho KPI AppSheet.','CRM_FACTS_NOT_READY');
@@ -140,7 +142,9 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     const probation=isProbation(profile.positionLabel);
     const ownAwards=probation?[]:awards.filter(a=>a.memberId===m.id&&(!a.isNew||profile.contractBonusEnabled&&(!netPolicy||profile.kpiEligible===false)));
     const calc = computePayslip({profile,params,kpiPolicy:appsheet?'appsheet':'legacy',input:kpiApply?resolved:appsheet?{...input,kpiRevenue:resolved.kpiRevenue}:input,adjustments:adj,attendanceDays,systemRevenue,groupMonth:gm,quarterBonusAuto:quarter.map.get(m.id)??0,...(netPolicy&&profile.payrollGroup==='sale'&&profile.kpiEnabled&&profile.kpiEligible!==false?{kpiNetRevenue:fact?.netRevenue||0,kpiNetRevenueIssues:fact?.netRevenueIssues||0}:{}),
-     contractBonus:bonusApply?ownAwards.filter(a=>a.isNew).reduce((n,a)=>n+a.amount,0):0,contractBonusAdjustment:bonusApply?ownAwards.filter(a=>!a.isNew).reduce((n,a)=>n+a.amount,0):0});
+     contractBonus:bonusApply?ownAwards.filter(a=>a.isNew).reduce((n,a)=>n+a.amount,0):0,contractBonusAdjustment:bonusApply?ownAwards.filter(a=>!a.isNew).reduce((n,a)=>n+a.amount,0):0,
+     ...(weekly.has(m.id)&&profile.payrollGroup==='sale'&&!probation?{weeklyReport:{points:weekly.get(m.id)!.points,required:weekly.get(m.id)!.required}}:{})});
+    if(weekly.has(m.id)&&profile.payrollGroup==='sale'&&!probation)calc.weeklyReportBasis=weekly.get(m.id);
     if(teamRevenue&&!probation&&profile.teamBonus&&(profile.payrollGroup==='bn'||profile.payrollGroup==='lock')){const t=teamRevenue[profile.payrollGroup];calc.teamRevenueBasis={target:teamRevenue.target,revenue:t.revenue,crm:t.crm,pos:t.pos,issues:t.issues,policyMonth:teamRevenue.policyMonth,bonusMode:teamRevenue.bonusMode};}
     calc.employment={company:m.workCompany,department:m.workDepartment,leader:m.isLeader};
     if(enabled&&!probation){const previewKpi=kpiEnabled&&profile.kpiEnabled?computeKpiCv({...resolved,kpiOverride:profile.fixedKpi??resolved.kpiOverride},params,kpiTargetsOf(params,profile),input.revenue??systemRevenue,appsheet?'appsheet':'legacy'):null;calc.salesCrm={apply:bonusApply||kpiApply&&profile.kpiEnabled,bonusApply,kpiApply:kpiApply&&profile.kpiEnabled,from,kpiEligible:profile.kpiEligible!==false,facts:auto,awards:ownAwards,previewKpi,kpiBonusPreview:Math.round((netPolicy?Math.max(0,fact?.netRevenue||0):(input.revenue??systemRevenue))*(netPolicy?netKpiBonusRate(params,previewKpi?.used??null):kpiBonusRate(params,previewKpi?.used??null)))};}
@@ -177,10 +181,10 @@ function transferOf(view: ReturnType<typeof payslipView> | null, profile: { bank
   return { bankCode: bank.code, bankAccount: bank.account, bankHolder: bank.holder, amount: Math.max(0, Math.round(view.net)), note: salaryTransferNote(month),
     fromSnapshot: bank.fromSnapshot, qr: vietQrUrl(bank.code, bank.account, view.net, month, bank.holder) };
 }
-export async function payrollOf(db: AnyDb, memberId: string, month: string, revenueOf: RevenueOf,crmFactsOf?:CrmFactsOf,showAllContracts=false,teamRevenueOf?:TeamRevenueOf) {
+export async function payrollOf(db: AnyDb, memberId: string, month: string, revenueOf: RevenueOf,crmFactsOf?:CrmFactsOf,showAllContracts=false,teamRevenueOf?:TeamRevenueOf,weeklyOf?:WeeklyReportPointsOf) {
   const r = monthRange(month);
   const [board, history, attendance] = await Promise.all([
-    buildPayroll(db, month, revenueOf, [memberId],crmFactsOf,false,teamRevenueOf),
+    buildPayroll(db, month, revenueOf, [memberId],crmFactsOf,false,teamRevenueOf,weeklyOf),
     db.select().from(hrSalaryProfiles).where(eq(hrSalaryProfiles.memberId, memberId)).orderBy(desc(hrSalaryProfiles.effectiveMonth)).limit(36),
     db.select({ date: hrAttendance.workDate, status: hrAttendance.status, note: hrAttendance.note }).from(hrAttendance)
       .where(and(eq(hrAttendance.memberId, memberId), gte(hrAttendance.workDate, r.from), lte(hrAttendance.workDate, r.to))).orderBy(asc(hrAttendance.workDate)),

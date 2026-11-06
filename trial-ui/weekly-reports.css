@@ -1,0 +1,20 @@
+/* Báo cáo tuần Sale / Sale Admin */
+.wr-sum { display: grid; gap: 8px; }
+.wr-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.wr-bar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.wr-bar i { display: block; height: 100%; background: #12805c; border-radius: 99px; }
+.wr-weeks { display: grid; gap: 8px; }
+.wr-week { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface, #fff); text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.wr-n { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; font-size: 12px; background: var(--line); flex: none; }
+.wr-grow { flex: 1; min-width: 0; display: grid; }
+.wr-grow small { color: var(--muted); }
+.wr-tags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.wr-src { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; margin-top: 6px; }
+.wr-src::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #2459a9; }
+.wr-src.input::before { background: #a86400; }
+.wr-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 6px 0; }
+.wr-kpis > div { border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+.wr-kpis small { display: block; color: var(--muted); font-size: 12px; }
+.wr-review { margin-top: 10px; display: grid; gap: 8px; }
+.wr-table .btn { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+@media (max-width: 640px) { .wr-week { flex-wrap: wrap; } .wr-tags { width: 100%; justify-content: flex-start; } .wr-dialog .modal-foot .btn { flex: 1 1 140px; min-height: 44px; } }
