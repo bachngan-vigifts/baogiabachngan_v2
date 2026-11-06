@@ -42,3 +42,9 @@ test('sales action on a delivered POS order uses the same server-authorized acti
   assert.equal(s.posts[0][0], '/orders/pos-sales-order/sapo');
   assert.equal(s.refreshed(), 1);
 });
+
+test('web pending and changed-source states cannot send another request; retry keeps the same document identity',async()=>{
+ const pending=setup({id:'web:lock:1',status:'draft',sapoPending:true,canCreateSapo:false});assert.equal(pending.button.disabled,true);assert.equal(pending.button.textContent,'Đang tạo Sapo');assert.equal(pending.posts.length,0);
+ const changed=setup({id:'web:lock:1',status:'draft',sapoSourceChanged:true,canCreateSapo:false});assert.equal(changed.button.disabled,true);assert.equal(changed.button.textContent,'Đối soát Sapo');
+ const retry=setup({id:'web:lock:1',status:'draft',sapoRetry:true,canCreateSapo:true});assert.equal(retry.button.textContent,'Đối soát / tạo Sapo');await retry.click();assert.equal(retry.posts[0][0],'/orders/web%3Alock%3A1/sapo');
+});

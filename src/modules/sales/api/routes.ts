@@ -1,3 +1,4 @@
+import {previewWebSapo,createWebSapo,recordWebSapoResult} from './web-order-sapo.ts';
 import { orderExportDetails } from './order-export.ts';
 import { canSalesCreateSapo } from '../domain/order-sapo-access.ts';
 import { sendPosOrderToClaw } from './pos-sapo.ts';
@@ -451,6 +452,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const body = await readJson(c.req, 128_000), status = text(body.status, 40), code = text(body.quote_number ?? body.sapo_order_code, 160);
     const sapoId = text(body.sapo_order_id == null ? '' : String(body.sapo_order_id), 80), sapoCode = text(body.sapo_order_code, 160) || code;
     if (!code) throw new AppError(400, 'Thiếu số đơn / HĐKT để cập nhật trạng thái Sapo.');
+    const webResult=await recordWebSapoResult(c,body,code);if(webResult)return webResult;
     // Dry-run hoặc lỗi chỉ xác nhận callback; không ghi liên kết giả vào chứng từ.
     if (!sapoId || !['created', 'created_after_error', 'existing'].includes(status)) return json({ ok: true, ignored: true });
     const [found] = await c.env.db.select({ id: salesOrders.id }).from(salesOrders).leftJoin(salesContracts, eq(salesContracts.orderId, salesOrders.id))
@@ -519,10 +521,11 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       ids.length ? c.env.db.select({orderId:deliveries.orderId,id:deliveries.id,trackingCode:deliveries.trackingCode,trackingStatus:deliveries.trackingStatus,trackingUpdatedAt:deliveries.trackingUpdatedAt,status:deliveries.status}).from(deliveries)
         .where(and(inArray(deliveries.orderId,ids),sql`lower(trim(${deliveries.carrier}))='ghn'`,sql`trim(${deliveries.trackingCode})<>''`)).orderBy(desc(deliveries.updatedAt),desc(deliveries.createdAt),asc(deliveries.id)) : [],
     ]);
+    const me=viewer(c),peerOwners=!canSalesCreateSapo(me,{status:'draft'})?new Set((await c.env.db.select({id:employees.id}).from(employees).where(departmentOwner(employees.id,me)??sql`false`)).map(m=>m.id)):new Set<string>();
     const crmDocuments=rows.map(({ order: r, ownerName, branchName, deliveryStatus, deliveryCarrier }) => { const contract = contracts.find(x => x.orderId === r.id) ?? null;
       // debtCounts = false (đơn chờ xác nhận chưa ký HĐKT / đã huỷ): chưa phát sinh công nợ.
       const orderSource = r.channel !== 'pos' ? 'crm' : r.fulfillmentMode === 'cod' || /ghn/i.test(deliveryCarrier) ? 'ghn' : 'pos';
-      return { ...r, ownerName, branchName, deliveryStatus, deliveryCarrier, orderSource, ghnShipments:ghnShipments.filter(s=>s.orderId===r.id), receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; });
+      return { ...r,sapoOrderUrl:r.sapoOrderId?`${(c.env.sapoAdminBase||DEFAULT_SAPO_BASE).replace(/\/+$/,'')}/orders/${encodeURIComponent(r.sapoOrderId)}`:'',canCreateSapo:!r.sapoOrderId&&r.status!=='cancelled'&&(canSalesCreateSapo(me,r)||canEditOrderFor(me,r)||r.status==='draft'&&(peerOwners.has(r.ownerId)||peerOwners.has(r.createdBy))), ownerName, branchName, deliveryStatus, deliveryCarrier, orderSource, ghnShipments:ghnShipments.filter(s=>s.orderId===r.id), receivable: debts.get(r.id), debtCounts: debtCounts(r.status, contract?.status), contract }; });
     const byId=new Map([...crmDocuments,...webPage.documents].map(o=>[o.id,o]));
     const ordered=webPage.page.map(p=>byId.get(p.kind==='web'?'web:'+p.id:p.id)).filter((o):o is NonNullable<typeof o>=>!!o);
     const exportDetails=exportMode?await orderExportDetails(c.env.db,ordered):undefined;
@@ -636,6 +639,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
   router.get('/sapo/preview', async c => {
     const p = c.url.searchParams, me = viewer(c);
     if (p.get('orderId')) {
+      if(p.get('orderId')!.startsWith('web:'))return json(await previewWebSapo(c));
       const o = await loadOrder(c, p.get('orderId')!);
       if (o.sapoOrderId) return json({ pushed: { code: o.sapoOrderCode, url: `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(o.sapoOrderId)}` }, required: sapoPushRequired(c) });
       if (o.channel === 'pos') return json({ required: sapoPushRequired(c), viaClaw: true, connected: true,
@@ -743,7 +747,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
 
   /** Push an existing document; never create another CRM order/contract. Row lock serializes double clicks. */
   router.post('/orders/:id/sapo', async c => {
-    await readJson(c.req, 1_024); const order = await loadOrder(c, c.params.id!);
+    await readJson(c.req, 1_024);if(c.params.id!.startsWith('web:'))return json(await createWebSapo(c));
+    const order = await loadOrder(c, c.params.id!);
     if (order.sapoOrderId) return json({ sapo: linkedSapo(c, order) });
     // Công tắc tắt đẩy Sapo (SAPO_ORDER_PUSH=off) áp dụng cho cả nút "Tạo đơn Sapo" trên chứng từ có sẵn.
     if (!sapoPushRequired(c)) throw new AppError(409, 'Đẩy đơn sang Sapo đang tắt trên hệ thống.', 'SAPO_PUSH_DISABLED');

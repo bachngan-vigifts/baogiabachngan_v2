@@ -127,3 +127,11 @@ Mỗi lần **Đồng bộ ngay** hoặc chạy theo lịch tự động, ngoài
   - Loại nào Sapo không cho đọc (404/403, ví dụ tài khoản thiếu quyền) thì được ghi vào `warnings`; các phần khác vẫn đồng bộ bình thường.
 
 Số báo giá chỉ giữ trong ghi chú nguồn. Trước khi sinh chứng từ, popup chưa có mã đơn Sapo và hiển thị sẽ dùng số đơn/HĐKT mới cấp; không lấy số báo giá làm mã tạm. Mã kiểm trùng, mã tham chiếu và tag đối chiếu dùng số chứng từ đã được cấp trong giao dịch. Các liên kết Sapo đã lưu vẫn giữ nguyên.
+
+### Thao tác Sapo tại danh sách đơn hàng
+
+Cột **Thao tác** trên trang **Đơn đặt hàng** hiển thị **Xem đơn Sapo** khi CRM đã có liên kết; người có quyền tạo đơn thấy **Tạo đơn Sapo** khi chưa liên kết. Đơn đã huỷ không được tạo mới. Nút tạo dùng luồng n8n → OpenClaw hiện có, không ghi trực tiếp vào API Sapo.
+
+Đơn website ML/Lock dùng luồng Claw POS để giữ đúng chi nhánh, thuế và phí. Mã tham chiếu cố định `WEB_ML_<id>` / `WEB_LOCK_<id>` được giữ khi thử lại. CRM kiểm tra SKU, tiền hàng sau giảm giá, VAT, phí và tổng tiền trước khi gửi; thiếu dữ liệu thì báo để kiểm tra, không tự đoán thuế hay trừ giảm giá hai lần. Trạng thái chờ và liên kết được lưu trong bảng `sapo_order_statuses` hiện có; không tạo thêm đơn CRM, chứng từ kho hoặc thu chi.
+
+Khi đang chờ kết quả, nút tạo bị khoá. Callback có mã bí mật tại `/integrations/sapo/order-status` cập nhật liên kết Sapo; CRM chỉ tạo URL từ tên miền Sapo đã cấu hình. Nếu quá thời gian chờ, thao tác đối soát/gửi lại vẫn dùng cùng mã tham chiếu. Nếu nội dung nguồn đã đổi sau lần gửi, cần đối soát trước khi gửi tiếp. Không cần migration cho thay đổi này.

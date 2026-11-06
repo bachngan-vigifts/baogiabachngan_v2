@@ -1,3 +1,5 @@
+import {webSapoReference} from '../domain/web-sapo.ts';
+import {webSapoStatuses,webSapoFields} from './web-sapo-status.ts';
 import {invoiceTaskHooks} from './invoice-task-hooks.ts';
 import {readWebAccounting,canEditWebAccounting} from '../domain/web-order-accounting.ts';
 import {products} from '../../catalog/schema.ts';
@@ -80,7 +82,8 @@ export async function webDocumentPage(c:Ctx,crmWhere:SQL|undefined,limit:number,
  ]);
  const ids=page.filter(x=>x.kind==='web').map(x=>x.id);
  const rows=ids.length?await c.env.db.select({o:{...getTableColumns(web),crmEditSnapshot:webEditFlags},branchName:posRegisters.name,invoiceStatus:invoiceState()}).from(web).innerJoin(posRegisters,eq(posRegisters.id,web.registerId)).where(and(base,inArray(web.id,ids))):[];
- return {page,total:Number(n?.n||0),invoicePending:Number(pending?.n||0),branches,summary:{count:Number(s?.count||0),revenue:Number(s?.revenue||0),paid:Number(s?.paid||0),remaining:Number(s?.remaining||0),unknownPaymentCount:Number(s?.unknown||0)},documents:rows.map(r=>{const {financials,ghnAddress,...row}=asDocument(r.o,r.branchName,r.invoiceStatus);return row;})};
+ const sapo=await webSapoStatuses(c.env.db,rows.map(r=>r.o)),member=(c.state.session as SessionState).member;
+ return {page,total:Number(n?.n||0),invoicePending:Number(pending?.n||0),branches,summary:{count:Number(s?.count||0),revenue:Number(s?.revenue||0),paid:Number(s?.paid||0),remaining:Number(s?.remaining||0),unknownPaymentCount:Number(s?.unknown||0)},documents:rows.map(r=>{const {financials,ghnAddress,...row}=asDocument(r.o,r.branchName,r.invoiceStatus);return {...row,...webSapoFields(c.env,r.o,member,row.status,sapo.get(webSapoReference(r.o)))};})};
 }
 export async function webDocumentDetail(c:Ctx,id:string){
  const [r]=await c.env.db.select({o:web,branchName:posRegisters.name,invoiceStatus:invoiceState(),priceIncludesVat:posRegisters.priceIncludesVat,taxRate:posRegisters.taxRate,active:posRegisters.active}).from(web).innerJoin(posRegisters,eq(posRegisters.id,web.registerId)).where(and(await scope(c),eq(web.id,id))).limit(1);
@@ -90,5 +93,6 @@ export async function webDocumentDetail(c:Ctx,id:string){
  items=items.map(l=>({...l,unit:(l as {unit?:string}).unit||units.find(p=>p.sku===l.sku)?.unit||''}));
  const permitted=can((c.state.session as SessionState).member,'pos.sell'),edit=readWebEdit(r.o.crmEditSnapshot);
  const document=asDocument(r.o,r.branchName,r.invoiceStatus),canAccount=canEditWebAccounting((c.state.session as SessionState).member)&&document.status!=='cancelled';
- return {document:{...document,canIssueInvoice:canAccount,edited:Number(edit.revision||0)>0,sourceConflict:!!edit.sourceConflict,ghnCartReviewRequired:!!edit.ghnCartReviewRequired},canEditBilling:canAccount,items,canManage:permitted&&r.active,canEdit:permitted&&r.active&&!webEditBlocked(r.o),editBlocked:webEditBlocked(r.o),revision:Number(edit.revision||0),sourceHash:webSourceHash(r.o),editor:webEditorModel(r.o),catalogPricing:{priceIncludesVat:r.priceIncludesVat,taxRate:r.taxRate},originalFinancials:edit.original?readWebOrderFinancials(edit.original.financialSnapshot):null};
+ const sapo=(await webSapoStatuses(c.env.db,[r.o])).get(webSapoReference(r.o));
+ return {document:{...document,...webSapoFields(c.env,r.o,(c.state.session as SessionState).member,document.status,sapo),canIssueInvoice:canAccount,edited:Number(edit.revision||0)>0,sourceConflict:!!edit.sourceConflict,ghnCartReviewRequired:!!edit.ghnCartReviewRequired},canEditBilling:canAccount,items,canManage:permitted&&r.active,canEdit:permitted&&r.active&&!webEditBlocked(r.o),editBlocked:webEditBlocked(r.o),revision:Number(edit.revision||0),sourceHash:webSourceHash(r.o),editor:webEditorModel(r.o),catalogPricing:{priceIncludesVat:r.priceIncludesVat,taxRate:r.taxRate},originalFinancials:edit.original?readWebOrderFinancials(edit.original.financialSnapshot):null};
 }
