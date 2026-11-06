@@ -1,3 +1,4 @@
+import {reportScoreText,scoreNumber} from './report-scores.js';
 import {downloadPayrollSheet} from './payroll-sheet-export.js';
 import {openTeamPayrollSources} from './payroll-team-sources.js';
 import { createPayrollQuickEntry } from './payroll-quick-entry.js';
@@ -60,15 +61,15 @@ export function initPayroll(deps) {
       <p>${missing.map(r => memberLink(r, r.member.name)).join(' · ')}</p></div>` : '';
     if (!rows.length) return missingHtml + `<p class="muted cd-empty">Chưa có nhân viên nào thuộc bảng ${esc(cols.groups[g])}. Đặt "Bảng lương" trong hồ sơ lương của nhân viên.</p>`;
     const inc = cols.income[g], ded = cols.deductions[g], sum = k => rows.reduce((s, r) => s + line(r.payslip, k), 0);
-    const head = ['STT', 'Họ tên', 'Vị trí', 'Ngày công', ...inc.map(k => cols.labels[k]), 'Tổng thu nhập', ...ded.map(k => cols.labels[k]), 'Thực nhận', 'Trạng thái'];
+    const head = ['STT', 'Họ tên', 'Vị trí', ...(g==='sale'?['Điểm BC tháng']:[]), 'Ngày công', ...inc.map(k => cols.labels[k]), 'Tổng thu nhập', ...ded.map(k => cols.labels[k]), 'Thực nhận', 'Trạng thái'];
     return missingHtml + `<div class="table-wrap pr-wide"><table class="data-table pr-table"><thead><tr>${head.map((h, i) => `<th class="${i >= 3 && i < head.length - 1 ? 'right' : ''}">${esc(h)}</th>`).join('')}</tr></thead><tbody>
       ${rows.map((r, i) => { const p = r.payslip; return `<tr>
-        <td>${i + 1}</td><td class="first">${memberLink(r, r.member.name)}</td><td>${esc(r.profile.positionLabel || '—')}</td><td class="right num" data-label="Ngày công">${p.workDays}</td>
+        <td>${i + 1}</td><td class="first">${memberLink(r, r.member.name)}</td><td>${esc(r.profile.positionLabel || '—')}</td>${g==='sale'?`<td data-label="Điểm BC tháng">${r.reportScores?memberLink(r,reportScoreText(r.reportScores)):'—'}${r.reportScores?.basis?`<small>${r.reportScores.basis.weeks.map((w,i)=>'T'+(i+1)+': '+scoreNumber(w.score)).join(' · ')}</small>`:''}</td>`:''}<td class="right num" data-label="Ngày công">${p.workDays}</td>
         ${inc.map(k => { const v = line(p, k); return `<td class="right num ${v ? '' : 'muted'}" data-label="${esc(cols.labels[k])}">${['contractBonus','contractBonusAdjustment'].includes(k)&&p.salesCrm?`<button class="btn ghost small" data-bonus-member="${esc(r.member.id)}">${v?money(v):'—'} · Chi tiết</button>`:(v?money(v):'—')}</td>`; }).join('')}
         <td class="right num strong" data-label="Tổng thu nhập">${money(p.gross)}</td>
         ${ded.map(k => { const v = line(p, k); return `<td class="right num ${v ? 'danger-text' : 'muted'}" data-label="${esc(cols.labels[k])}">${v ? money(v) : '—'}</td>`; }).join('')}
         <td class="right num strong pr-net" data-label="Thực nhận">${money(p.net)}</td><td>${pill(STATUS, p.status)}</td></tr>`; }).join('')}
-      </tbody><tfoot><tr><td></td><td colspan="2"><b>Tổng cộng (${rows.length})</b></td><td></td>
+      </tbody><tfoot><tr><td></td><td colspan="2"><b>Tổng cộng (${rows.length})</b></td>${g==='sale'?'<td></td>':''}<td></td>
         ${inc.map(k => `<td class="right num">${money(sum(k))}</td>`).join('')}<td class="right num strong">${money(rows.reduce((s, r) => s + r.payslip.gross, 0))}</td>
         ${ded.map(k => `<td class="right num">${money(sum(k))}</td>`).join('')}<td class="right num strong">${money(rows.reduce((s, r) => s + r.payslip.net, 0))}</td><td></td></tr></tfoot></table></div>`;
   }

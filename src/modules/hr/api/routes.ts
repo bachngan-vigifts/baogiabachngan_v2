@@ -1,3 +1,4 @@
+import {payrollReportScores} from './payroll-data.ts';
 import type { WeeklyReportPointsOf } from '../../../core/contracts/weekly-report.ts';
 import { payrollEntry, registerQuickPayroll } from './quick-entry.ts';
 import {registerRevenueTargets} from './revenue-target-routes.ts';
@@ -131,7 +132,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
       const { fromSnapshot: _f, ...bank } = slipBank(slip, r.profile); // phiếu chốt khi chưa có tài khoản → tài khoản hiện tại
       return { member: r.member, previousCapacityCoef: previous.get(r.member.id) ?? null, entry: payrollEntry(r, b.month), profile: { payrollGroup: r.profile.payrollGroup, positionLabel: r.profile.positionLabel, hasProfile: r.profile.effectiveMonth !== null,
           bankCode: r.profile.bankCode, bankAccount: r.profile.bankAccount, bankHolder: r.profile.bankHolder },
-        payslip: { ...slip, bank }, qr: vietQrUrl(bank.code, bank.account, slip.net, b.month, bank.holder) };
+        reportScores:payrollReportScores(r,b.month,slip),payslip: { ...slip, bank }, qr: vietQrUrl(bank.code, bank.account, slip.net, b.month, bank.holder) };
     });
     // Tổng chỉ tính người đã có hồ sơ lương / phiếu đã chốt (người chưa có hồ sơ hiện riêng để Manager thiết lập).
     const counted = rows.filter(r => r.profile.hasProfile || r.payslip.status !== 'estimate');

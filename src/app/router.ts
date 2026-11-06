@@ -1,3 +1,4 @@
+import {dashboardReportScoresOf} from './dashboard-report-scores.ts';
 import { registerReportRoutes } from './report-routes.ts';
 import { webInvoiceStatus } from '../modules/tasks/api/invoice-tasks.ts';
 import {registerCatalogueLibraryBulk} from '../modules/catalog/api/catalogue-library-bulk.ts';
@@ -151,7 +152,7 @@ export function createAppRouter() {
   registerFeedbackRoutes(router); // góp ý phát triển phần mềm (mọi nhân viên)
   registerStaffReportRoutes(router, { targetOf: saleTargetOf }); // báo cáo tuần Sale / Sale Admin (căn cứ Tiền trách nhiệm)
   registerStoreRoutes(router, { targetOf: storeTargetOf, attendanceOf: storeAttendanceOf }); // báo cáo Cửa hàng trưởng (CHT): nộp, duyệt, Tiền Trách nhiệm, nhắc nhở
-  registerDashboardRoutes(router, { kpiOf: dashboardKpiOf, storeOf: dashboardStoreOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR
+  registerDashboardRoutes(router, { kpiOf: dashboardKpiOf, storeOf: dashboardStoreOf,reportScoresOf:dashboardReportScoresOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR
   registerAuditRoutes(router);
   registerReportRoutes(router);
   registerPermissionRoutes(router);

@@ -50,3 +50,13 @@ Tiền trách nhiệm = mức trách nhiệm (hồ sơ lương từng người) 
 Migration `migrations/postgres/20261113090000_staff_weekly_reports.sql` (chạy tay), cổng kiểm tra `scripts/sql/assert-staff-weekly-reports.sql` trong `deploy-api.yml`.
 
 Bảng lương nhận điểm qua contract `src/core/contracts/weekly-report.ts` (`WeeklyReportPointsOf`), nối ở `src/app/router.ts` – mô-đun HR không import mô-đun báo cáo.
+
+## Xem điểm trên dashboard và bảng lương
+
+- **Tổng quan doanh số → Điểm báo cáo tuần / tháng — Sale & Sale Admin**: chọn tháng trong kỳ đang xem; Manager chọn nhân viên. Nhân viên chỉ thấy điểm của chính mình, kể cả khi có quyền xem doanh số toàn công ty.
+- **Hồ sơ nhân viên → Lương & thưởng**: xem điểm từng tuần, hạn nộp, trạng thái nộp/duyệt và tổng điểm tháng. Trước ngày mở số lương, nhân viên vẫn xem được điểm báo cáo; số tiền lương vẫn được ẩn theo quy tắc hiện hành.
+- **Bảng lương công ty → Sale & VP**: cột **Điểm BC tháng** hiển thị tổng điểm và điểm từng tuần; bấm tổng điểm để mở phiếu lương của nhân viên trong đúng tháng.
+
+Tổng điểm tháng là tổng các tuần theo chính sách báo cáo đang dùng (lấy 4 tuần có điểm cao nhất, tối đa 4 điểm), không phải một loại báo cáo tháng mới. Báo cáo chờ duyệt có nhãn riêng; tuần chưa tới hạn hiện dấu “—” thay vì coi là chưa nộp. Điểm trên phiếu tạm tính cập nhật theo báo cáo hiện tại; phiếu đã chốt/đã trả giữ bản điểm lúc chốt. Phiếu cũ không lưu điểm hiển thị “Chưa có bản lưu điểm”, không tự thay bằng điểm mới.
+
+Nhân viên thử việc vẫn theo dõi được điểm, nhưng có thông báo nếu phiếu lương không dùng điểm đó tính tiền trách nhiệm. Việc hiển thị không đổi công thức lương. Điểm được lưu thêm trong JSON phiếu lương khi chốt; không cần migration.

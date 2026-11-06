@@ -1,3 +1,4 @@
+import {createReportScoreCard,reportScoreText} from './report-scores.js';
 /** Dashboard doanh số (read-only): biểu đồ SVG dựng bằng DOM API (không chuỗi HTML), dùng API đã xác thực của app. */
 const SVG_NS = 'http://www.w3.org/2000/svg';
 // Bảng màu đã kiểm định (CVD/tương phản): thực tế = xanh, dự kiến = cam; giai đoạn pipeline = thang xanh có thứ tự.
@@ -80,7 +81,7 @@ export function initDashboard({ api, root, isManager, money }) {
   };
   function apply() { filters.page = '1'; syncForm(); load(); }
   form.addEventListener('change', e => {
-    const t = e.target; if (!(t instanceof HTMLInputElement || t instanceof HTMLSelectElement) || !t.value) return;
+    const t = e.target; if (!(t instanceof HTMLInputElement || t instanceof HTMLSelectElement) || (!t.value&&t instanceof HTMLInputElement)) return;
     filters[t.name] = t.value; preset = 0;
     if (t === from && to.value < from.value) filters.to = from.value;
     if (t === to && to.value < from.value) filters.from = to.value;
@@ -274,6 +275,28 @@ export function initDashboard({ api, root, isManager, money }) {
     finally { if (id === kpiRequest) kpiCard.classList.remove('is-loading'); }
   }
 
+  // Report scores load independently; monthly totals and settled snapshots use the payroll source.
+  let reportData=null,reportMonth='',reportPick='',reportRequest=0;
+  const reportCard=card('Điểm báo cáo tuần / tháng — Sale & Sale Admin',null,'is-wide dash-report-card'),reportBody=node('div',null,'dash-report-body');
+  const reportMonthSelect=node('select',null,'dash-mini');reportMonthSelect.setAttribute('aria-label','Tháng xem điểm báo cáo');reportMonthSelect.onchange=()=>{reportMonth=reportMonthSelect.value;loadReports();};reportCard.firstChild.append(reportMonthSelect);reportCard.append(reportBody);reportCard.hidden=true;
+  function renderReports(){
+    const x=reportData;if(!x)return;reportCard.hidden=!x.available||(x.scope==='self'&&!x.members.length);
+    reportMonthSelect.replaceChildren(...(data?.months.map(m=>m.month)||[x.month]).map(month=>{const o=node('option','T'+Number(month.slice(5))+'/'+month.slice(0,4));o.value=month;return o;}));reportMonthSelect.value=x.month;reportMonthSelect.hidden=reportMonthSelect.options.length<2;
+    if(!x.members.length){reportBody.replaceChildren(node('p','Không có điểm báo cáo Sale / Sale Admin trong tháng và phạm vi đang xem.','dash-sub'));return;}
+    const member=x.members.find(m=>m.id===reportPick)||x.members[0];reportPick=member.id;
+    const children=[];
+    if(x.members.length>1){const label=node('label',null,'dash-field'),select=node('select');label.append(node('span','Nhân viên xem điểm'),select);select.setAttribute('aria-label','Nhân viên xem điểm báo cáo');for(const m of x.members){const option=node('option',m.name+' · '+reportScoreText(m));option.value=m.id;select.append(option);}select.value=member.id;select.onchange=()=>{reportPick=select.value;renderReports();};children.push(label);}
+    children.push(node('h3',member.name,'dash-kpi-name'),createReportScoreCard(member));reportBody.replaceChildren(...children);
+  }
+  async function loadReports(){
+    const id=++reportRequest;if(!data)return;
+    const months=data.months.map(m=>m.month);if(!months.includes(reportMonth))reportMonth=months.at(-1);
+    reportCard.hidden=false;reportBody.replaceChildren(node('p','Đang tải điểm báo cáo…','dash-sub'));reportCard.classList.add('is-loading');
+    try{const result=await api('/dashboard/report-scores?'+new URLSearchParams({from:filters.from,to:filters.to,owner:filters.owner,group:filters.group,month:reportMonth}));if(id!==reportRequest)return;reportData=result;renderReports();}
+    catch(e){if(id!==reportRequest)return;reportData=null;reportCard.hidden=false;const retry=node('button','Thử lại','btn');retry.type='button';retry.onclick=loadReports;reportBody.replaceChildren(node('p',e.message||'Chưa tải được điểm báo cáo.','error'),retry);}
+    finally{if(id===reportRequest)reportCard.classList.remove('is-loading');}
+  }
+
   // ---- Doanh số cửa hàng (NVBH / CHT): DS chung CRM + POS, chỉ tiêu, mốc thưởng, DS từng người. Tải riêng như KPI.
   let storeData = null, storeMonth = '', storeRequest = 0;
   const storeCard = card('Doanh số cửa hàng', null, 'is-wide dash-store-card'), storeBody = node('div', null, 'dash-store');
@@ -424,12 +447,12 @@ export function initDashboard({ api, root, isManager, money }) {
     const how = node('details', null, 'dash-how'); how.append(node('summary', 'Cách tính số liệu'),
       node('p', 'Thực tế: đơn hàng/HĐKT trong kỳ (gồm VAT), bỏ đơn huỷ và đơn nháp chưa có hợp đồng ký; mỗi HĐKT tính một lần. Dự kiến và số khách rớt: lần chăm sóc mới nhất của từng cặp khách/nhân viên trong kỳ. Pipeline: trạng thái chăm sóc mới nhất đến cuối kỳ (tư vấn, đã gửi báo giá, thương lượng). Tỷ lệ chốt = báo giá trong kỳ đã sinh đơn còn hiệu lực / tổng báo giá trong kỳ. Dữ liệu Sapo có thể chậm.'));
     // KPI nằm ngoài lưới biểu đồ: trên điện thoại lưới được gom sau "Xem thêm thống kê", KPI vẫn hiện ngay.
-    content.replaceChildren(kpis, storeCard, kpiCard, grid, how);
+    content.replaceChildren(kpis, reportCard, storeCard, kpiCard, grid, how);
     lastWidth = content.clientWidth; redraw();
   }
 
   async function load() {
-    const id = ++requestId; syncForm(); hideTip();
+    const id = ++requestId; ++reportRequest;reportData=null;reportCard.hidden=true;reportBody.replaceChildren();syncForm(); hideTip();
     group.parentElement.hidden = owner.parentElement.hidden = !isManager();
     content.classList.add('is-loading'); if (!data) content.replaceChildren(node('p', 'Đang tải tổng quan…', 'dash-sub'));
     try {
@@ -440,7 +463,7 @@ export function initDashboard({ api, root, isManager, money }) {
         filters.owner = ''; filters.page = '1'; return load();
       }
       fillSelect(group, options.groups, 'Tất cả nhóm'); fillSelect(owner, options.employees, 'Tất cả nhân viên');
-      data = res; render(); loadKpi(); loadStore();
+      data = res; render(); loadKpi(); loadStore();loadReports();
     } catch (e) {
       if (id !== requestId) return;
       data = null; const retry = node('button', 'Thử lại', 'btn'); retry.type = 'button'; retry.addEventListener('click', load);

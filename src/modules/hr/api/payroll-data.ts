@@ -1,3 +1,4 @@
+import {reportScoreView} from '../../../core/contracts/report-scores.ts';
 import {computeKpiCv,kpiTargetsOf} from '../domain/kpi-cv.ts';
 import {kpiBonusRate,netKpiBonusRate,salaryTransferNote,vietQrUrl} from '../domain/payroll.ts';
 import type {TeamRevenueOf,CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
@@ -144,6 +145,7 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     const calc = computePayslip({profile,params,kpiPolicy:appsheet?'appsheet':'legacy',input:kpiApply?resolved:appsheet?{...input,kpiRevenue:resolved.kpiRevenue}:input,adjustments:adj,attendanceDays,systemRevenue,groupMonth:gm,quarterBonusAuto:quarter.map.get(m.id)??0,...(netPolicy&&profile.payrollGroup==='sale'&&profile.kpiEnabled&&profile.kpiEligible!==false?{kpiNetRevenue:fact?.netRevenue||0,kpiNetRevenueIssues:fact?.netRevenueIssues||0}:{}),
      contractBonus:bonusApply?ownAwards.filter(a=>a.isNew).reduce((n,a)=>n+a.amount,0):0,contractBonusAdjustment:bonusApply?ownAwards.filter(a=>!a.isNew).reduce((n,a)=>n+a.amount,0):0,
      ...(weekly.has(m.id)&&profile.payrollGroup==='sale'&&!probation?{weeklyReport:{points:weekly.get(m.id)!.points,required:weekly.get(m.id)!.required}}:{})});
+    if(weekly.has(m.id))calc.reportScoreBasis=weekly.get(m.id);
     if(weekly.has(m.id)&&profile.payrollGroup==='sale'&&!probation)calc.weeklyReportBasis=weekly.get(m.id);
     if(teamRevenue&&!probation&&profile.teamBonus&&(profile.payrollGroup==='bn'||profile.payrollGroup==='lock')){const t=teamRevenue[profile.payrollGroup];calc.teamRevenueBasis={target:teamRevenue.target,revenue:t.revenue,crm:t.crm,pos:t.pos,issues:t.issues,policyMonth:teamRevenue.policyMonth,bonusMode:teamRevenue.bonusMode};}
     calc.employment={company:m.workCompany,department:m.workDepartment,leader:m.isLeader};
@@ -162,6 +164,12 @@ export function payslipView(row: PayrollRow) {
     return { ...calc, gross: row.slip.gross, deductionTotal: row.slip.deductionTotal, net: row.slip.net, status: row.slip.status, confirmedAt: row.slip.confirmedAt, paidAt: row.slip.paidAt, note: row.slip.note };
   }
   return { ...row.calc, status: 'estimate' as const, confirmedAt: null, paidAt: null, note: '' };
+}
+
+/** Current score basis for estimates; saved basis only for a settled slip. Never fill legacy gaps with live points. */
+export function payrollReportScores(row:PayrollRow,month:string,view=payslipView(row)){
+ if(!row.calc.reportScoreBasis&&!row.calc.weeklyReportBasis&&!view.reportScoreBasis&&!view.weeklyReportBasis)return null;
+ return {...reportScoreView(month,view.status,view.reportScoreBasis??view.weeklyReportBasis),applied:!!view.weeklyReportBasis};
 }
 
 /** Dữ liệu lương / ngày công một người một tháng (trang chi tiết nhân viên). */
@@ -199,5 +207,6 @@ export async function payrollOf(db: AnyDb, memberId: string, month: string, reve
     adjustments: row?.adjustments ?? [], systemRevenue: row?.systemRevenue ?? 0, groupMonth: board.groupMonth,
     params: board.params,confirmationHash:board.confirmationHash,systemFacts:row?.calc.salesCrm?.facts||null, payslip: view, locked: !!row?.slip,
     transfer: transferOf(view, profile, month),
+    reportScores:row?payrollReportScores(row,month,view!):null,
   };
 }
