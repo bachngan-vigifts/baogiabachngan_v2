@@ -66,3 +66,11 @@ test('effective payroll team selects CRM membership; shared target is not divide
  const p=mergeParams({bnSplit:2,lockSplit:2});assert.equal(monthlyStoreBonus(p,'bn',299_999_999,'threshold'),0);assert.equal(monthlyStoreBonus(p,'bn',300_000_000,'threshold'),1_500_000);assert.equal(monthlyStoreBonus(p,'lock',300_000_000,'threshold'),1_500_000);
  assert.equal(monthlyStoreBonus(p,'bn',270_000_000,'tiers'),675_000);assert.equal(monthlyStoreBonus(p,'lock',255_000_000,'tiers'),1_275_000);assert.equal(monthlyStoreBonus(p,'lock',310_000_000,'threshold'),2_325_000);
 });
+
+test('valid fractional before-VAT amounts remain eligible; salary lines round money only after calculating the bonus',async()=>{
+ const f=await seed();await f.order('fractional-pos','pos',{subtotal:300_000_000.5,total:324_000_000.54});
+ const facts=await teamPayrollRevenues(f.db,month);assert.equal(facts!.bn.revenue,300_000_000.5);assert.equal(facts!.bn.issues,0);
+ const view=(await f.call('/members/emp/overview?month='+month,f.mgr)).data.payroll;
+ assert.equal(view.payslip.income.find((l:any)=>l.key==='salesBonus').amount,1_500_000);
+ assert.equal((await f.call('/hr/members/emp/payslips/'+month,f.mgr,'POST',{confirmationHash:view.confirmationHash})).status,201);
+});

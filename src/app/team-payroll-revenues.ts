@@ -22,6 +22,6 @@ export const teamPayrollRevenues:TeamRevenueOf=async(db,month)=>{
  const latest=new Map<string,string>();for(const p of profiles)if(!latest.has(p.memberId))latest.set(p.memberId,p.payrollGroup);
  const result={policyMonth:config.effectiveMonth,bonusMode:config.bonusMode,target:300_000_000,bn:{crm:0,pos:0,revenue:0,issues:0,registerId:config.bnRegisterId},lock:{crm:0,pos:0,revenue:0,issues:0,registerId:config.lockRegisterId}};
  for(const m of members){const group=latest.get(m.id)??defaultProfileFor(m.positionId).payrollGroup;if(group!=='bn'&&group!=='lock')continue;const f=crm.get(m.id);result[group].crm+=f?.netRevenue||0;result[group].issues+=f?.netRevenueIssues||0;}
- for(const group of ['bn','lock'] as const){const t=result[group];t.pos=Number(pos.find(p=>p.registerId===t.registerId)?.revenue||0);t.revenue=Math.max(0,t.crm+t.pos);if(!registers.some(r=>r.id===t.registerId)||!Number.isSafeInteger(t.revenue))t.issues++;}
+ for(const group of ['bn','lock'] as const){const t=result[group];t.pos=Number(pos.find(p=>p.registerId===t.registerId)?.revenue||0);t.revenue=Math.max(0,t.crm+t.pos);if(!registers.some(r=>r.id===t.registerId)||(!Number.isFinite(t.revenue)||Math.abs(t.revenue)>Number.MAX_SAFE_INTEGER))t.issues++;}
  return result;
 };
