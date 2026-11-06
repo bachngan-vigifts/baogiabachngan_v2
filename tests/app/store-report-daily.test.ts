@@ -22,7 +22,9 @@ test('domain: TB 7 ngày không có dữ liệu → null; nhịp chỉ tiêu; "K
   assert.deepEqual(incidentTypesOf(['none']), ['none']);
 });
 
-test('nộp chính thức: bắt buộc trả lời đủ checklist và chọn sự cố; sự cố khác "Không có" phải mô tả; checklist không ảnh hưởng Tiền Trách nhiệm', async () => {
+test('nộp chính thức: bắt buộc trả lời đủ checklist và chọn sự cố; sự cố khác "Không có" phải mô tả; checklist không ảnh hưởng Tiền Trách nhiệm', async t => {
+  // Cố định 12h00 giờ VN hôm nay: nộp trước hạn 22h dù test chạy lúc nào trong ngày.
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(vnClock(new Date().toISOString()).day + 'T12:00:00+07:00') });
   const f = await setup();
   ok(await f.call('/store/managers', f.mgr, 'PUT', { registerId: f.registerId, memberId: 'emp' }));
   const day = vnClock(new Date().toISOString()).day, shift = await f.open();
