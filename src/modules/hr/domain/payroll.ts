@@ -222,7 +222,7 @@ export function computePayslip(a: {
   profile: SalaryProfile; params: PayrollParams; input: PayrollInput; adjustments: readonly { kind: string; amount: number }[];
   /** Ngày công từ chấm công; DS đơn hàng trên hệ thống; thưởng quý tự tính (nếu có). */
   attendanceDays: number; systemRevenue: number; groupMonth: GroupMonth; quarterBonusAuto: number;kpiPolicy?:'legacy'|'appsheet';kpiNetRevenue?:number;kpiNetRevenueIssues?:number;contractBonus?:number;contractBonusAdjustment?:number;
-  /** Sale / Sale Admin từ 11/2026: điểm báo cáo tuần (tối đa 4) → Tiền trách nhiệm = mức × ngày công ÷ công chuẩn × điểm ÷ 4. */
+  /** Sale / Sale Admin từ 11/2026: điểm báo cáo (4 tuần + 1 tháng, tối đa 5) → Tiền trách nhiệm = mức × ngày công ÷ công chuẩn × điểm ÷ điểm tối đa. */
   weeklyReport?: { points: number; required: number };
 }): PayslipCalc {
   const { profile: f, params: p, input: inp, groupMonth: gm } = a, g = f.payrollGroup;
@@ -241,7 +241,7 @@ export function computePayslip(a: {
   const amounts: Record<LineKey, [number, string]> = {
     salaryByDays: [lcb * days / p.standardDays, `${vnd(lcb)} × ${days} ngày ÷ ${p.standardDays}`],
     capacity: [f.capacityCoef * p.capacityUnit, f.capacityCoef ? `Hệ số ${f.capacityCoef} × ${vnd(p.capacityUnit)}` : ''],
-    responsibility: [responsibility, weekly ? `${vnd(f.responsibility)} × ${days}/${p.standardDays} công × ${String(weeklyPoints).replace('.', ',')}/${weekly.required} điểm báo cáo tuần` : f.responsibilityMode === 'per_day' ? `${vnd(p.responsibilityDay)} × ${days} ngày` : f.responsibilityMode === 'prorated' ? `${vnd(f.responsibility)} × ${days} ÷ ${p.standardDays}` : ''],
+    responsibility: [responsibility, weekly ? `${vnd(f.responsibility)} × ${days}/${p.standardDays} công × ${String(weeklyPoints).replace('.', ',')}/${weekly.required} điểm báo cáo ${weekly.required > 4 ? '(4 tuần + tháng)' : 'tuần'}` : f.responsibilityMode === 'per_day' ? `${vnd(p.responsibilityDay)} × ${days} ngày` : f.responsibilityMode === 'prorated' ? `${vnd(f.responsibility)} × ${days} ÷ ${p.standardDays}` : ''],
     kpiBonus: [bonusRevenue * rate, kpi ? `KPI CV ${pct(kpi.used)} → ${pct(rate)} × ${netPolicy?'DS net':'DS'} ${vnd(bonusRevenue)}` : ''],
     outputBonus: [inp.outputQty * f.outputRate, inp.outputQty ? `${inp.outputQty.toLocaleString('vi-VN')} × ${f.outputRate < 1 ? pct(f.outputRate) : vnd(f.outputRate)}` : ''],
     quarterBonus: [inp.quarterBonus ?? a.quarterBonusAuto, inp.quarterBonus === null && a.quarterBonusAuto ? 'Tự tính theo DS quý của team' : ''],

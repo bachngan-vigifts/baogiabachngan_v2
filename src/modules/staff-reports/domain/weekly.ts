@@ -44,10 +44,8 @@ export type WeekState = 'on_time' | 'late' | 'missing' | 'not_due' | 'exempt';
 /** Hạn nộp trước ngày triển khai (`launchDay` để test truyền '' = không miễn). */
 export const beforeLaunch = (monday: string, launchDay = WEEKLY_LAUNCH_DAY) => !!launchDay && weeklyDeadline(monday) < vnAt(launchDay, 0);
 export function weekState(monday: string, submittedAt: string | null, nowIso: string, launchDay = WEEKLY_LAUNCH_DAY): { state: WeekState; lateMs: number } {
-  const due = weeklyDeadline(monday);
   if (beforeLaunch(monday, launchDay)) return { state: 'exempt', lateMs: 0 };
-  if (!submittedAt) return { state: nowIso > due ? 'missing' : 'not_due', lateMs: 0 };
-  return submittedAt <= due ? { state: 'on_time', lateMs: 0 } : { state: 'late', lateMs: Date.parse(submittedAt) - Date.parse(due) };
+  return stateBy(weeklyDeadline(monday), submittedAt, nowIso);
 }
 /** Điểm một tuần; `null` = chưa tới hạn (chưa tính). */
 export function weekScore(monday: string, r: { submittedAt: string; review: WeeklyReview } | null, nowIso: string, launchDay = WEEKLY_LAUNCH_DAY): number | null {
@@ -60,16 +58,60 @@ export function weekScore(monday: string, r: { submittedAt: string; review: Week
   if (s.state === 'late') return s.lateMs < DAY ? 0.5 : 0;
   return 0;
 }
-/** Điểm tháng: 4 tuần điểm cao nhất (tuần chưa tới hạn tính 0 khi tạm tính), tối đa 4. */
+/** BÁO CÁO THÁNG (từ 11/2026): kỳ = 'YYYY-MM'; nộp chính thức từ 00h00 ngày 01 tháng sau, hạn 10h00 ngày 02 tháng sau. */
+export const MONTHLY_REPORT_FROM = '2026-11';
+export const isMonthPeriod = (p: unknown): p is string => typeof p === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(p);
+export const nextMonth = (month: string) => { const [y, m] = month.split('-').map(Number) as [number, number]; return m === 12 ? `${y + 1}-01` : `${y}-${pad(m + 1)}`; };
+export const shiftMonths = (month: string, n: number) => { const [y, m] = month.split('-').map(Number) as [number, number]; const t = y * 12 + m - 1 + n; return `${Math.floor(t / 12)}-${pad(t % 12 + 1)}`; };
+export const monthlyDeadline = (month: string) => vnAt(nextMonth(month) + '-02', 10);
+export const monthlyOpensAt = (month: string) => vnAt(nextMonth(month) + '-01', 0);
+export const monthStarted = (month: string, nowIso: string) => vnDay(nowIso).slice(0, 7) >= month;
+export const canSubmitMonth = (month: string, nowIso: string) => nowIso >= monthlyOpensAt(month);
+export const monthlyRequired = (month: string) => month >= MONTHLY_REPORT_FROM;
+function stateBy(due: string, submittedAt: string | null, nowIso: string): { state: WeekState; lateMs: number } {
+  if (!submittedAt) return { state: nowIso > due ? 'missing' : 'not_due', lateMs: 0 };
+  return submittedAt <= due ? { state: 'on_time', lateMs: 0 } : { state: 'late', lateMs: Date.parse(submittedAt) - Date.parse(due) };
+}
+export const monthlyState = (month: string, submittedAt: string | null, nowIso: string) => stateBy(monthlyDeadline(month), submittedAt, nowIso);
+/** Điểm báo cáo tháng – cùng thang báo cáo tuần; `null` = chưa tới hạn. */
+export function monthlyScore(month: string, r: { submittedAt: string; review: WeeklyReview } | null, nowIso: string): number | null {
+  if (r?.review === 'excused') return 1;
+  if (r?.review === 'rejected') return 0;
+  const s = monthlyState(month, r?.submittedAt ?? null, nowIso);
+  if (s.state === 'not_due') return null;
+  if (s.state === 'on_time') return 1;
+  if (s.state === 'late') return s.lateMs < DAY ? 0.5 : 0;
+  return 0;
+}
+
+/**
+ * Điểm tháng (căn cứ Tiền trách nhiệm): 4 tuần điểm cao nhất + báo cáo tháng (từ 11/2026) → tối đa 5.
+ * `reports`: theo kỳ – tuần (thứ Hai) và tháng ('YYYY-MM'). Kỳ chưa tới hạn tính 0 khi tạm tính.
+ */
 export function monthPoints(month: string, reports: ReadonlyMap<string, { submittedAt: string; review: WeeklyReview }>, nowIso: string) {
   const weeks = weeksOfMonth(month).map(period => { const r = reports.get(period) ?? null, st = weekState(period, r?.submittedAt ?? null, nowIso);
     return { period, deadline: weeklyDeadline(period), state: st.state, review: r?.review ?? null, score: weekScore(period, r, nowIso) }; });
   const counted = [...weeks].map(w => w.score ?? 0).sort((a, b) => b - a).slice(0, WEEKLY_REQUIRED);
-  return { month, weeks, points: counted.reduce((n, x) => n + x, 0), required: WEEKLY_REQUIRED, pending: weeks.filter(w => w.score === null).length };
+  const mr = reports.get(month) ?? null;
+  const monthly = monthlyRequired(month) ? { period: month, deadline: monthlyDeadline(month), state: monthlyState(month, mr?.submittedAt ?? null, nowIso).state, review: mr?.review ?? null, score: monthlyScore(month, mr, nowIso) } : null;
+  const points = counted.reduce((n, x) => n + x, 0) + (monthly?.score ?? 0);
+  return { month, weeks, monthly, points, required: WEEKLY_REQUIRED + (monthly ? 1 : 0),
+    pending: weeks.filter(w => w.score === null).length + (monthly && monthly.score === null ? 1 : 0) };
 }
-/** Tiền trách nhiệm theo báo cáo tuần. */
-export const weeklyResponsibility = (amount: number, days: number, standardDays: number, points: number) =>
-  standardDays > 0 ? amount * days / standardDays * Math.min(WEEKLY_REQUIRED, Math.max(0, points)) / WEEKLY_REQUIRED : 0;
+/** Tiền trách nhiệm theo điểm báo cáo (`required` = 4 hoặc 5). */
+export const weeklyResponsibility = (amount: number, days: number, standardDays: number, points: number, required = WEEKLY_REQUIRED) =>
+  standardDays > 0 ? amount * days / standardDays * Math.min(required, Math.max(0, points)) / required : 0;
+
+/** Phần tự nhập báo cáo tháng: đánh giá, chỉ tiêu tháng sau (ghi chú), khách trọng điểm, kế hoạch (bắt buộc); đề xuất (tuỳ chọn). */
+export interface MonthlyInputs { evaluation: string; nextTarget: number | null; keyCustomers: string; plan: string; support: string }
+export function monthlyProblems(v: MonthlyInputs) {
+  const out: string[] = [];
+  if (v.evaluation.length < 3) out.push('Nhập đánh giá tháng (vì sao đạt / chưa đạt).');
+  if (!v.nextTarget || v.nextTarget <= 0) out.push('Nhập chỉ tiêu đăng ký tháng sau.');
+  if (v.keyCustomers.length < 3) out.push('Nhập khách trọng điểm tháng sau.');
+  if (v.plan.length < 3) out.push('Nhập kế hoạch / chương trình tháng sau.');
+  return out;
+}
 
 /** Nhóm ngành của khách cho mục "Chăm sóc trong tuần": ưu tiên "Nhóm / loại khách", không khớp thì đoán theo tên khách. */
 export const INDUSTRIES = ['bank', 'agri', 'aqua', 'other'] as const;
