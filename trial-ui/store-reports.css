@@ -53,3 +53,40 @@
 .store-file-list button { grid-row: 1 / span 2; grid-column: 2; }
 .store-file-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .store-file-add .btn { min-height: 44px; display: inline-flex; align-items: center; }
+
+/* Báo cáo ngày (bản 2): 5 phần, thanh chuyển nhanh, checklist, sự cố theo loại */
+.store-deadline { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 10px 12px; margin: 6px 0 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2, #f8fafc); font-size: 13px; }
+.store-steps { position: sticky; top: -1px; z-index: 3; display: flex; gap: 6px; overflow-x: auto; padding: 8px 0; background: var(--surface, #fff); scrollbar-width: none; }
+.store-steps::-webkit-scrollbar { display: none; }
+.store-steps a { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); text-decoration: none; font-size: 13px; font-weight: 500; }
+.store-steps .dot { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--line); color: var(--muted); }
+.store-steps a.done .dot { background: #12805c; color: #fff; }
+.store-steps a.need .dot { background: #c8212b; color: #fff; }
+.store-sec { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin: 10px 0; display: grid; gap: 10px; scroll-margin-top: 56px; }
+.store-sec-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.store-sec-h h3 { margin: 0; font-size: 15px; }
+.store-sec h4 { margin: 4px 0 0; font-size: 13px; }
+.store-src { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.store-src::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #2459a9; }
+.store-src.input::before { background: #a86400; }
+.store-big { font-size: 26px; font-weight: 700; }
+.store-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.store-kpis > div { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.store-kpis small { display: block; color: var(--muted); font-size: 12px; }
+.store-target .row { display: flex; justify-content: space-between; }
+.store-bar { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; margin: 6px 0; }
+.store-bar i { display: block; height: 100%; background: #102a56; border-radius: 99px; }
+.store-checks { display: grid; gap: 8px; }
+.store-check { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; font-size: 14px; }
+.store-check small { display: block; color: var(--muted); font-size: 12px; }
+.store-seg { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.store-seg button { min-height: 40px; min-width: 64px; border: 0; background: var(--surface, #fff); color: var(--muted); font: 600 13px inherit; font-family: inherit; cursor: pointer; }
+.store-seg button + button { border-left: 1px solid var(--line); }
+.store-seg button[aria-pressed="true"][data-v="yes"] { background: #12805c; color: #fff; }
+.store-seg button[aria-pressed="true"][data-v="no"] { background: #a86400; color: #fff; }
+.store-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.store-pills button { min-height: 40px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface, #fff); color: var(--ink); font: 500 14px inherit; font-family: inherit; cursor: pointer; }
+.store-pills button[aria-pressed="true"] { background: #102a56; border-color: #102a56; color: #fff; }
+.store-plain { margin: 0; padding-left: 18px; font-size: 14px; }
+.store-dialog .modal-foot { position: sticky; bottom: 0; background: var(--surface, #fff); }
+.store-hint { flex: 1 1 100%; margin: 0; color: var(--muted); text-align: center; }

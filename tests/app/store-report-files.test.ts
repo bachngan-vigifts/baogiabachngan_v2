@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
 import { setup } from '../helpers/pos-fixture.ts';
+import { DAILY_DONE } from '../helpers/store-daily.ts';
 import { posRegisters } from '../../src/modules/sales/pos-schema.ts';
 import { storeReportFiles, storeReports } from '../../src/modules/store/schema.ts';
 import { checkStoreFile, fileQuota, safeFileName, STORE_FILE_MAX_BYTES } from '../../src/modules/store/domain/files.ts';
@@ -105,7 +106,7 @@ test('giới hạn số tệp; lỗi kho file không để lại dòng / tệp; 
 test('nộp chính thức ghi danh sách tệp vào bản chụp; đã duyệt thì không thêm / gỡ tệp', async () => {
   const f = await store();
   const file = ok(await f.upload(), 201);
-  const rep = ok(await f.call('/store/reports', f.emp, 'POST', { registerId: f.registerId, kind: 'daily', period: f.day, clientKey: crypto.randomUUID(), inputs: { bankDeposit: 0 } }), 201);
+  const rep = ok(await f.call('/store/reports', f.emp, 'POST', { registerId: f.registerId, kind: 'daily', period: f.day, clientKey: crypto.randomUUID(), inputs: { ...DAILY_DONE, bankDeposit: 0 } }), 201);
   const [saved] = await f.db.select().from(storeReports);
   assert.deepEqual(JSON.parse(saved!.data).meta.files.map((x: any) => [x.id, x.purpose]), [[file.id, 'bank_deposit']]);
   ok(await f.call(`/store/reports/${rep.id}/review`, f.mgr, 'POST', { review: 'ok' }));

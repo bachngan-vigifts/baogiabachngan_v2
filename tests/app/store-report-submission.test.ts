@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
 import { setup } from '../helpers/pos-fixture.ts';
+import { DAILY_DONE } from '../helpers/store-daily.ts';
 import { storeReportDrafts, storeReportVersions, storeReports } from '../../src/modules/store/schema.ts';
 import { posShifts, posRegisters } from '../../src/modules/sales/pos-schema.ts';
 import { salesOrderLines, salesOrders } from '../../src/modules/sales/schema.ts';
@@ -17,7 +18,7 @@ async function store(opts: { configure?: boolean } = {}) {
   const day = vnClock(new Date().toISOString()).day;
   const draftOf = async (kind = 'daily', period = day, cookie = f.emp) => ok(await f.call(`/store/reports/draft?registerId=${f.registerId}&kind=${kind}&period=${period}`, cookie));
   const submit = (inputs: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
-    f.call('/store/reports', f.emp, 'POST', { registerId: f.registerId, kind: 'daily', period: day, clientKey: crypto.randomUUID(), inputs, ...extra });
+    f.call('/store/reports', f.emp, 'POST', { registerId: f.registerId, kind: 'daily', period: day, clientKey: crypto.randomUUID(), inputs: { ...DAILY_DONE, ...inputs }, ...extra });
   return { ...f, day, draftOf, submit };
 }
 
@@ -87,7 +88,7 @@ test('mốc hạn 22h giờ Việt Nam; tuần chỉ nộp chính thức từ 00
   // Ca mở trong một ngày cố định: đặt lại ngày làm việc để mốc thời gian không phụ thuộc ngày chạy test.
   await f.db.update(posShifts).set({ businessDate: '2026-11-04' }).where(eq(posShifts.id, shift.id));
   ok(await f.call('/pos/shifts/' + shift.id + '/close', f.emp, 'POST', { countedCash: 500_000 }));
-  const body = (key: string) => ({ registerId: f.registerId, kind: 'daily', period: '2026-11-04', clientKey: key, inputs: { bankDeposit: 0 } });
+  const body = (key: string) => ({ registerId: f.registerId, kind: 'daily', period: '2026-11-04', clientKey: key, inputs: { ...DAILY_DONE, bankDeposit: 0 } });
   t.mock.timers.enable({ apis: ['Date'], now: at('2026-11-04T21:59:00') });
   assert.equal(ok(await f.call('/store/reports', f.emp, 'POST', body('daily-key-0001')), 201).state.state, 'on_time');
   t.mock.timers.setTime(at('2026-11-04T22:01:00').getTime());

@@ -38,7 +38,7 @@ import { storeManagers, storeReportDrafts, storeReportVersions, storeReports, st
 import {
   DEPOSIT_SCHEDULES, DEPOSIT_SCHEDULE_LABEL, REVIEW_FOR, STORE_LIMITS, STORE_REPORT_KINDS, STORE_REPORT_LABEL, STORE_REVIEW_LABEL, canSubmitOfficial, cashDue,
   deadlineOf, isPeriod, nextMonth, periodEndsAt, periodStarted, remindersAt, responsibilityOf, slotState, vnClock, weeksDueIn,
-  compareMonth, prevMonth, restockNeeds, stocktakeGaps,
+  compareMonth, prevMonth, restockNeeds, stocktakeGaps, DAILY_CHECKLIST, INCIDENT_TYPES, compareAvg, incidentTypesOf, monthPace,
   type DepositSchedule, type StoreReportKind, type StoreReviewStatus,
 } from '../domain/reports.ts';
 
@@ -247,8 +247,37 @@ async function returnsTotal(db: AnyDb, registerId: string, from: string, to: str
     .where(and(eq(posReturns.registerId, registerId), eq(posReturns.status, 'completed'), gte(posReturns.updatedAt, vnStart(from)), lt(posReturns.updatedAt, vnStart(addDays(to, 1)))));
   return r?.total ?? 0;
 }
+/**
+ * Báo cáo ngày – số CRM tự điền thêm: khách mới (đơn không huỷ đầu tiên của khách – mọi kênh – rơi vào ca hôm nay; khách lẻ không tính),
+ * doanh thu 7 ngày có mở ca trước đó, tiến độ chỉ tiêu tháng (cùng nguồn báo cáo tuần), top bán chạy, hàng dưới ngưỡng, hàng nhận trong ngày.
+ */
+async function dailyExtras(db: AnyDb, store: { id: string; warehouseId: string }, day: string, deps: Deps) {
+  const ids = (await db.select({ id: posShifts.id }).from(posShifts).where(and(eq(posShifts.registerId, store.id), eq(posShifts.businessDate, day)))).map(r => r.id);
+  const shiftIds = ids.length ? ids : ['-'];
+  const prevDays = (await shiftDays(db, store.id, addDays(day, -60), addDays(day, -1))).slice(-7);
+  const [newCustomers, prevSales, top, restock, received, target] = await Promise.all([
+    db.select({ n: sql<number>`count(distinct ${salesOrders.customerId})`.mapWith(Number) }).from(salesOrders)
+      .where(and(inArray(salesOrders.shiftId, shiftIds), ne(salesOrders.status, 'cancelled'), sql`${salesOrders.customerId} is not null`,
+        sql`not exists (select 1 from ${salesOrders} o2 where o2.customer_id = ${salesOrders.customerId} and o2.status <> 'cancelled' and o2.order_date < ${day})`)),
+    prevDays.length ? salesByDay(db, store.id, prevDays[0]!, prevDays.at(-1)!) : Promise.resolve([]),
+    topProducts(db, store.id, day, day, 5),
+    restockFacts(db, store.warehouseId),
+    db.select({ id: stockTransfers.id, transferNo: stockTransfers.transferNo, doneAt: stockTransfers.doneAt, lines: sql<number>`count(${stockTransferLines.id})`.mapWith(Number) })
+      .from(stockTransfers).leftJoin(stockTransferLines, eq(stockTransferLines.transferId, stockTransfers.id))
+      .where(and(eq(stockTransfers.toWarehouseId, store.warehouseId), eq(stockTransfers.status, 'done'), gte(stockTransfers.doneAt, vnStart(day)), lt(stockTransfers.doneAt, vnStart(addDays(day, 1)))))
+      .groupBy(stockTransfers.id, stockTransfers.transferNo, stockTransfers.doneAt),
+    deps.targetOf ? deps.targetOf(db, store.id, day.slice(0, 7)) : NO_TARGET,
+  ]);
+  // Ngày có ca nhưng không bán → 0 thật; ngày không mở ca không tính.
+  const prevRevenues = prevDays.map(d => prevSales.find(x => x.day === d)?.revenue ?? 0);
+  return { newCustomers: newCustomers[0]?.n ?? 0, prevRevenues, top, lowStock: restock.configured ? { configured: true, items: restock.items.slice(0, 8) } : { configured: false, items: [] },
+    received, target: { month: day.slice(0, 7), ...target, ...(target.configured ? { pace: monthPace(day, target.target, target.revenue) } : {}) } };
+}
 async function factsFor(db: AnyDb, store: { id: string; warehouseId: string }, kind: StoreReportKind, period: string, declared: number | null = null, deps: Deps = {}) {
-  if (kind === 'daily') return dailyFacts(db, store.id, period, await settingsOf(db, store.id), declared);
+  if (kind === 'daily') {
+    const [base, extra] = await Promise.all([dailyFacts(db, store.id, period, await settingsOf(db, store.id), declared), dailyExtras(db, store, period, deps)]);
+    return { ...base, ...extra, aov: base.totals.bills ? Math.round(base.totals.revenue / base.totals.bills) : null, vsAvg7: compareAvg(base.totals.revenue, extra.prevRevenues) };
+  }
   if (kind === 'weekly') { const to = addDays(period, 6), month = to.slice(0, 7);
     const [days, top, slow, restock, target] = await Promise.all([salesByDay(db, store.id, period, to), topProducts(db, store.id, period, to),
       slowProducts(db, store.id, store.warehouseId, to), restockFacts(db, store.warehouseId), deps.targetOf ? deps.targetOf(db, store.id, month) : NO_TARGET]);
@@ -283,7 +312,12 @@ function redactCosts(kind: StoreReportKind, facts: any, canSeeCost: boolean) {
 
 /** Phần CHT nhập theo loại báo cáo (chỉ nhận đúng các ô này; số liệu CRM không bao giờ lấy từ client). */
 function inputsFor(kind: StoreReportKind, b: Record<string, unknown>) {
-  if (kind === 'daily') return { bankDeposit: money(b.bankDeposit, 'Tiền nộp ngân hàng'), bankRef: text(b.bankRef, 200), cashExplanation: text(b.cashExplanation), incidents: text(b.incidents), note: text(b.note) };
+  if (kind === 'daily') {
+    const ck = (b.checklist && typeof b.checklist === 'object' ? b.checklist : {}) as Record<string, unknown>;
+    return { bankDeposit: money(b.bankDeposit, 'Tiền nộp ngân hàng'), bankRef: text(b.bankRef, 200), cashExplanation: text(b.cashExplanation),
+      checklist: Object.fromEntries(DAILY_CHECKLIST.filter(i => ck[i.key] === 'yes' || ck[i.key] === 'no').map(i => [i.key, ck[i.key] as 'yes' | 'no'])),
+      incidentTypes: incidentTypesOf(b.incidentTypes), incidents: text(b.incidents), officeSupport: text(b.officeSupport, 1000), tomorrowPlan: text(b.tomorrowPlan, 1000), note: text(b.note) };
+  }
   if (kind === 'weekly') return { orderProposal: text(b.orderProposal), orderRefs: text(b.orderRefs, 500), slowAction: text(b.slowAction), roster: text(b.roster), nextWeekPlan: text(b.nextWeekPlan, 1000), note: text(b.note) };
   if (kind === 'monthly') return { groupAnalysis: text(b.groupAnalysis), staffReview: text(b.staffReview), nextMonthPlan: text(b.nextMonthPlan), note: text(b.note) };
   const sku = (b.skuExplanations && typeof b.skuExplanations === 'object' ? b.skuExplanations : {}) as Record<string, unknown>;
@@ -298,6 +332,10 @@ function officialProblems(kind: StoreReportKind, v: Inputs, facts: any) {
     const d = v as Extract<Inputs, { bankDeposit: unknown }>;
     if (facts?.cash?.schedule === 'daily' && d.bankDeposit === null) out.push('Nhập số tiền đã nộp ngân hàng hôm nay (nhập 0 nếu chưa nộp).');
     if (facts?.cash?.needsExplanation && d.cashExplanation.length < 3) out.push('Có chênh lệch tiền nộp – nhập giải trình chênh lệch.');
+    const missing = DAILY_CHECKLIST.filter(i => !(d.checklist as Record<string, string>)[i.key]);
+    if (missing.length) out.push(`Trả lời đủ checklist cuối ngày (còn ${missing.length} mục).`);
+    if (!d.incidentTypes.length) out.push('Chọn sự cố hôm nay (hoặc "Không có").');
+    else if (!d.incidentTypes.includes('none') && d.incidents.length < 3) out.push('Mô tả sự cố và cách xử lý.');
   }
   if (kind === 'weekly' && (v as { orderProposal: string }).orderProposal.length < 3) out.push('Nhập đề xuất đặt hàng (Sale-in) cho tuần tới.');
   if (kind === 'monthly' && (v as { staffReview: string }).staffReview.length < 3) out.push('Nhập đánh giá ngày công và năng lực NVBH.');
@@ -311,7 +349,7 @@ function officialProblems(kind: StoreReportKind, v: Inputs, facts: any) {
 }
 /** Nguồn số liệu ghi kèm bản chụp. */
 const SOURCES: Record<StoreReportKind, string[]> = {
-  daily: ['pos_shifts', 'sales_orders', 'customer_payments', 'cash_entries', 'pos_returns', 'pos_refunds', 'pos_exchange_allocations', 'store_settings'],
+  daily: ['pos_shifts', 'sales_orders', 'sales_order_lines', 'customer_payments', 'cash_entries', 'pos_returns', 'pos_refunds', 'pos_exchange_allocations', 'store_settings', 'stock_balances', 'stock_transfers', 'store_restock_rules', 'store-target-source'],
   weekly: ['pos_shifts', 'sales_orders', 'sales_order_lines', 'stock_balances', 'stock_holds', 'order_stock_holds', 'stock_transfers', 'store_restock_rules', 'pos_returns', 'store-target-source'],
   monthly: ['pos_shifts', 'sales_orders', 'sales_order_lines', 'products.brand', 'pos_returns', 'hr_attendance', 'store-target-source'],
   stocktake: ['inventory_adjustments', 'stock_balances', 'product_movements', 'pos_return_lines', 'store_settings'],
@@ -373,6 +411,7 @@ export function registerStoreRoutes(router: Router<StaffEnv>, deps: Deps = {}) {
     const locked = !!existing && existing.review !== 'pending';
     return json({ kind, period, deadline: deadlineOf(kind, period), opensAt: periodEndsAt(kind, period), factsAt: now, facts, provisional: provisionalOf(kind, facts),
       settings: kind === 'daily' ? await settingsOf(db, store.id) : undefined, scheduleLabels: DEPOSIT_SCHEDULE_LABEL,
+      ...(kind === 'daily' ? { checklistItems: DAILY_CHECKLIST, incidentTypes: INCIDENT_TYPES } : {}),
       canEdit: store.isManager && started && !locked, canSubmit: store.isManager && official && !locked,
       blockers: [...(!started ? ['Kỳ báo cáo chưa bắt đầu.'] : []), ...(started && !official ? [`Kỳ chưa kết thúc – chỉ lưu nháp; nộp chính thức từ ${new Date(periodEndsAt(kind, period)).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}.`] : []),
         ...(locked ? ['Báo cáo đã được duyệt – không sửa được. Dùng "Giải trình" nếu cần.'] : [])],
@@ -409,6 +448,8 @@ export function registerStoreRoutes(router: Router<StaffEnv>, deps: Deps = {}) {
     if (replay) return json({ ok: true, id: replay.id, replayed: true });
     // Số liệu CRM luôn tính ở máy chủ lúc nộp – bỏ qua mọi "facts" client gửi lên.
     const facts = await factsFor(db, { id: mine.registerId, warehouseId: mine.warehouseId }, kind, period, kind === 'daily' ? (inputs as { bankDeposit: number | null }).bankDeposit : null, deps);
+    const [locked] = await db.select({ review: storeReports.review }).from(storeReports).where(and(eq(storeReports.registerId, mine.registerId), eq(storeReports.kind, kind), eq(storeReports.period, period))).limit(1);
+    if (locked && locked.review !== 'pending') throw new AppError(409, 'Báo cáo đã được duyệt, không sửa được. Dùng "Giải trình" nếu cần.');
     const problems = officialProblems(kind, inputs, facts);
     if (problems.length) throw new AppError(400, problems.join(' '));
     const provisional = provisionalOf(kind, facts);

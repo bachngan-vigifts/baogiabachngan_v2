@@ -36,6 +36,16 @@ Tiền phải nộp = **tiền đầu ngày** (tiền thực đếm lúc mở ca
 - Trả / đổi / hoàn trong ngày: phiếu trả (link đơn gốc, đơn đổi sang), phiếu hoàn (tiền mặt đã ghi Sổ quỹ / chuyển khoản). Hoàn tiền mặt chỉ trừ một lần (qua phiếu chi). Doanh thu POS bỏ đơn huỷ; hàng trả hiện riêng.
 - Ca thuộc ngày theo ngày làm việc của ca (ca qua nửa đêm thuộc ngày mở ca).
 
+## Báo cáo ngày (bản 2 – 5 phần)
+Giao diện điện thoại: thanh hạn nộp + đếm ngược, thanh chuyển nhanh 5 phần (xanh = đủ, đỏ = còn mục bắt buộc), nút Lưu nháp / Nộp chính thức cố định ở đáy kèm danh sách mục còn thiếu. Nhãn nguồn: chấm xanh = CRM tự điền, chấm cam = CHT nhập.
+1. **Doanh số** (CRM): doanh thu POS, số hoá đơn, trung bình / hoá đơn, khách mới (đơn không huỷ đầu tiên của khách rơi vào hôm nay; khách lẻ không tính), so trung bình 7 ngày **có mở ca** trước đó (không có → không so), tiến độ chỉ tiêu tháng theo **doanh số xét chỉ tiêu** (CRM + POS trước VAT) và số cần bán mỗi ngày còn lại, top 5 bán chạy.
+2. **Tiền & quỹ**: như mục "tiền phải nộp" ở trên + chứng từ đính kèm.
+3. **Vận hành**: checklist cuối ngày 5 mục (vệ sinh; trưng bày & tem giá; kiểm nhanh hàng giá trị cao; máy POS / in / quẹt thẻ; két khoá & camera) – **bắt buộc trả lời "Đã làm" / "Chưa" từng mục** mới nộp chính thức, **không** tính vào Tiền Trách nhiệm. Kèm bảng các ca.
+4. **Hàng hoá** (CRM): hàng dưới ngưỡng tối thiểu, phiếu điều chuyển đã nhận trong ngày, trả / đổi / hoàn.
+5. **Sự cố & kế hoạch**: chọn loại sự cố (Không có / Khiếu nại / Bể vỡ / Thiết bị / An ninh / Khác) – bắt buộc chọn; khác "Không có" thì phải mô tả. Ô "Cần văn phòng hỗ trợ", "Kế hoạch ngày mai", ghi chú (không bắt buộc).
+
+Không làm: chấm chuyên cần Đủ / Trễ / Vắng, khách hỏi không có hàng, lượt khách vào (anh đã chốt bỏ / để sau).
+
 ## Báo cáo tuần
 - **Doanh thu POS** của báo cáo (gồm VAT, đơn không huỷ, theo ngày làm việc của ca) tách riêng với **doanh số xét chỉ tiêu** (CRM net + POS trước VAT, đơn đã duyệt – cùng nguồn xét thưởng DS cửa hàng). Không chia doanh thu POS cho chỉ tiêu.
 - Chỉ tiêu / mốc thưởng lấy qua contract `StoreTargetOf` (lắp ở `src/app/store-report-sources.ts`): đúng cấu hình nguồn doanh số cửa hàng + tham số lương của tháng. Quầy chưa nằm trong cấu hình → "chưa cấu hình", **không** gán mặc định 300 triệu.

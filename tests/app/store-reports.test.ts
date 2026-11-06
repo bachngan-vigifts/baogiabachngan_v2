@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
 import { setup } from '../helpers/pos-fixture.ts';
+import { DAILY_DONE } from '../helpers/store-daily.ts';
 import { storeReports } from '../../src/modules/store/schema.ts';
 import { deadlineOf, vnClock } from '../../src/modules/store/domain/reports.ts';
 
@@ -27,7 +28,7 @@ test('CHT nộp báo cáo ngày: số liệu ca POS tự điền, giữ giờ n�
   const due = (await f.call('/store/reminders', f.emp)).data.items.filter((x: any) => x.kind === 'daily');
   assert.deepEqual(due.map((x: any) => [x.period, x.overdue]), [[f.day, false]]);
   t.mock.timers.reset();
-  const body = (key: string, extra = {}) => ({ registerId: f.registerId, kind: 'daily', period: f.day, clientKey: key, inputs: { bankDeposit: '194.400', cashExplanation: 'Nộp ngân hàng, chưa lập phiếu Nộp két', incidents: 'Không có', ...extra } });
+  const body = (key: string, extra = {}) => ({ registerId: f.registerId, kind: 'daily', period: f.day, clientKey: key, inputs: { ...DAILY_DONE, bankDeposit: '194.400', cashExplanation: 'Nộp ngân hàng, chưa lập phiếu Nộp két', incidents: 'Không có', ...extra } });
   const first = await f.call('/store/reports', f.emp, 'POST', body('key-first-0001'));
   assert.equal(first.status, 201, JSON.stringify(first.data));
   assert.equal(first.data.state.state, new Date().toISOString() <= deadlineOf('daily', f.day) ? 'on_time' : 'late');
@@ -62,7 +63,7 @@ test('kiểm tra đầu vào: kỳ sai / chưa tới / chưa kết thúc, thiế
   assert.equal((await post({ kind: 'daily', period: '2099-01-01', inputs: {} })).status, 400, 'kỳ chưa tới');
   assert.equal((await post({ kind: 'monthly', period: prevMonth, inputs: { staffReview: '' } })).status, 400);
   assert.equal((await post({ kind: 'stocktake', period: prevMonth, inputs: { counted: false } })).status, 400);
-  assert.equal((await post({ kind: 'daily', period: f.day, inputs: { bankDeposit: '-5' } })).status, 400);
+  assert.equal((await post({ kind: 'daily', period: f.day, inputs: { ...DAILY_DONE, bankDeposit: '-5' } })).status, 400);
   assert.equal((await f.call('/store/reports', f.emp, 'POST', { registerId: f.registerId, kind: 'daily', period: f.day, inputs: {} })).status, 400, 'thiếu clientKey');
   // Sang thứ Hai tuần sau: tuần đã kết thúc → nộp chính thức được (thiếu đề xuất đặt hàng vẫn 400).
   t.mock.timers.enable({ apis: ['Date'], now: new Date(Date.parse(monday + 'T00:00:00+07:00') + 7 * 86400_000 + 3600_000) });
@@ -75,7 +76,7 @@ test('kiểm tra đầu vào: kỳ sai / chưa tới / chưa kết thúc, thiế
 
 test('duyệt: chỉ người có quyền, kết quả đúng loại, bắt buộc lý do; đã duyệt thì khoá; CHT giải trình; Tiền Trách nhiệm theo duyệt', async () => {
   const f = await store();
-  const made = await f.call('/store/reports', f.emp, 'POST', { registerId: f.registerId, kind: 'daily', period: f.day, clientKey: crypto.randomUUID(), inputs: { bankDeposit: 194400, cashExplanation: 'Nộp ngân hàng trực tiếp' } });
+  const made = await f.call('/store/reports', f.emp, 'POST', { registerId: f.registerId, kind: 'daily', period: f.day, clientKey: crypto.randomUUID(), inputs: { ...DAILY_DONE, bankDeposit: 194400, cashExplanation: 'Nộp ngân hàng trực tiếp' } });
   assert.equal(made.status, 201, JSON.stringify(made.data));
   const id = made.data.id;
   assert.equal((await f.call(`/store/reports/${id}/review`, f.emp, 'POST', { review: 'ok' })).status, 403);
