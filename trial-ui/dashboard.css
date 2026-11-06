@@ -133,3 +133,24 @@ circle.dash-dot { fill: #2a78d6; stroke: var(--surface); stroke-width: 2; pointe
 .dash-kpi-card.is-loading .dash-kpi { opacity: .55; }
 .dash-kpi-card .dash-mini { min-width: 110px; }
 @media (max-width: 760px) { .dash-kpi-main { grid-template-columns: minmax(0, 1fr); } .dash-kpi-table th, .dash-kpi-table td { padding: 8px 6px; font-size: 13px; } }
+
+/* Doanh số cửa hàng (NVBH / CHT): DS chung, chỉ tiêu, mốc thưởng, DS từng người */
+.dash-store { display: grid; gap: 20px; }
+.dash-store-one { display: grid; gap: 12px; min-width: 0; }
+.dash-store-one + .dash-store-one { padding-top: 16px; border-top: 1px solid var(--line); }
+.dash-store-name { margin: 0; font-size: var(--text-body, 15px); font-weight: 700; }
+.dash-store-sub { margin: 4px 0 0; font-size: var(--text-small, 13px); font-weight: 600; color: var(--ink); }
+.dash-store-tiles { grid-template-columns: minmax(0, 2fr) repeat(auto-fit, minmax(140px, 1fr)); }
+.dash-store-bar { position: relative; height: 12px; margin: 6px 0 4px; border-radius: 6px; background: var(--dash-track, #e3e9e6); }
+.dash-store-bar > i { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: #eb6834; }
+.dash-store-bar > i.is-on { background: #1a9e77; }
+.dash-store-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ink, #1f2a37); border-radius: 1px; }
+.dash-store-mark.is-done { background: #1a9e77; }
+.dash-store-tiers tr.is-done td { color: #127a5b; font-weight: 600; }
+.dash-store-people tr.is-me td { background: var(--blue-50, #eef5fd); }
+.dash-store-people .dash-pill { margin-left: 6px; }
+#view-dashboard .dash-store-tiers, #view-dashboard .dash-store-people { min-width: 560px !important; }
+#view-dashboard .dash-store-tiers :is(td, th):not(:first-child), #view-dashboard .dash-store-people :is(td, th):not(:first-child) { white-space: nowrap !important; }
+@media (max-width: 760px) {
+  .dash-store-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

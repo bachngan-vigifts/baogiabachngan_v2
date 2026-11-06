@@ -11,6 +11,7 @@ import { sapoHealthMonitorState } from '../../integrations/schema.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
 import { dashboardFilters } from '../domain/filters.ts';
 import type { DashboardKpiOf } from '../../../core/contracts/dashboard-kpi.ts';
+import type { DashboardStoreOf } from '../../../core/contracts/dashboard-store.ts';
 
 const amount = (column: typeof orders.total | typeof care.expectedRevenue) => sql<number>`coalesce(sum(${column}), 0)`.mapWith(Number);
 const ratio = (part: number, whole: number) => whole ? Math.round(part / whole * 1000) / 10 : null;
@@ -19,7 +20,7 @@ export const PIPELINE_FRESH_DAYS = 90;
 const blank = () => ({ actual: 0, orders: 0, expected: 0, pipeline: 0, consulting: 0, quote_sent: 0, negotiating: 0, lost: 0, quotes: 0, converted: 0 });
 
 /** Only GET. All totals are DB aggregates; no limit on source orders/activities. */
-export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?: DashboardKpiOf } = {}) {
+export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?: DashboardKpiOf; storeOf?: DashboardStoreOf } = {}) {
   /**
    * Điểm KPI Sale một tháng (mặc định tháng cuối kỳ) – tách khỏi /dashboard/revenue để trang doanh số không chờ phần tính lương.
    * Cùng bộ lọc / quyền với doanh số; KPI người khác chỉ Manager xem (như phiếu lương). Quyền "Doanh số toàn công ty" không mở KPI người khác.
@@ -41,6 +42,22 @@ export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?
     const members = (await deps.kpiOf(c.env.db, month, ids)).sort((a, b) => b.used - a.used || a.name.localeCompare(b.name, 'vi'));
     return json({ month, available: true, scope: manager && !f.owner ? 'company' : 'self', restricted: !manager && f.manager, members });
    }, 'business');
+
+  /**
+   * Doanh số chung cửa hàng (CRM + POS), chỉ tiêu, mốc / tỷ lệ thưởng và DS từng nhân viên của cửa hàng – một tháng.
+   * Manager / quyền "Doanh số toàn công ty" xem mọi cửa hàng; nhân viên chỉ thấy cửa hàng mình thuộc (nhóm lương,
+   * cửa hàng trưởng hoặc có mở ca POS trong tháng). Người không thuộc cửa hàng nào: available=false.
+   */
+  router.get('/dashboard/store', async c => {
+    const me = (c.state.session as SessionState | undefined)?.member;
+    if (!me) throw new AppError(401, 'Vui lòng đăng nhập.');
+    const today = vietnamDate().iso, raw = c.url.searchParams.get('month') || today.slice(0, 7);
+    const f = dashboardFilters(new URLSearchParams({ from: raw, to: raw }), me, today);
+    const month = f.months[0]!;
+    const board = deps.storeOf ? await deps.storeOf(c.env.db, month) : null;
+    const stores = (board?.stores ?? []).filter(s => f.manager || s.members.some(m => m.id === me.id));
+    return json({ month, available: stores.length > 0, scope: f.manager ? 'company' : 'self', me: me.id, today, policyMonth: board?.policyMonth ?? null, stores });
+  }, 'business');
 
   router.get('/dashboard/revenue', async c => {
     const me = (c.state.session as SessionState | undefined)?.member;

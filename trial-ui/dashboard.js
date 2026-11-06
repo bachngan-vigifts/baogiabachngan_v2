@@ -274,6 +274,85 @@ export function initDashboard({ api, root, isManager, money }) {
     finally { if (id === kpiRequest) kpiCard.classList.remove('is-loading'); }
   }
 
+  // ---- Doanh số cửa hàng (NVBH / CHT): DS chung CRM + POS, chỉ tiêu, mốc thưởng, DS từng người. Tải riêng như KPI.
+  let storeData = null, storeMonth = '', storeRequest = 0;
+  const storeCard = card('Doanh số cửa hàng', null, 'is-wide dash-store-card'), storeBody = node('div', null, 'dash-store');
+  const storeMonthSelect = node('select', null, 'dash-mini'); storeMonthSelect.setAttribute('aria-label', 'Tháng xem doanh số cửa hàng');
+  storeMonthSelect.addEventListener('change', () => { storeMonth = storeMonthSelect.value; loadStore(); });
+  storeCard.firstChild.append(storeMonthSelect); storeCard.append(storeBody); storeCard.hidden = true;
+  const rateText = r => `${(Math.round(r * 10000) / 100).toLocaleString('vi-VN')}%`;
+  function storeBlock(st, x) {
+    const box = node('div', null, 'dash-store-one'), ratio = st.target > 0 ? st.revenue / st.target : 0;
+    const hit = t => t.strict ? st.revenue > t.at : st.revenue >= t.at;
+    const reached = st.tiers.filter(hit), nextTier = st.tiers.find(t => !hit(t));
+    // Dự báo cuối tháng chỉ khi đang xem tháng hiện tại (theo nhịp bán từ đầu tháng tới hôm nay).
+    const current = x.month === x.today.slice(0, 7), day = Number(x.today.slice(8, 10));
+    const days = new Date(Date.UTC(+x.month.slice(0, 4), +x.month.slice(5), 0)).getUTCDate();
+    const forecast = current && day > 0 ? Math.round(st.revenue / day * days) : null;
+    box.append(node('h3', st.name, 'dash-store-name'));
+    const tiles = node('div', null, 'dash-kpis dash-store-tiles');
+    tiles.append(
+      tile('DS chung cửa hàng', compact(st.revenue), `${money(st.revenue)} · CRM ${compact(st.crm)} + POS ${compact(st.pos)}`, 'is-hero'),
+      tile('Chỉ tiêu tháng', compact(st.target), money(st.target)),
+      tile('Tỷ lệ đạt', kpiPercent(ratio), ratio >= 1 ? 'Đã vượt chỉ tiêu' : `Còn thiếu ${money(Math.max(0, st.target - st.revenue))}`),
+      tile('Mức thưởng đang đạt', st.rate > 0 ? rateText(st.rate) : 'Chưa đạt', st.rate > 0 ? `≈ ${money(st.bonusPerPerson)}/người (chia ${st.split})` : nextTier ? `Mốc đầu: ${money(nextTier.at)}` : ''),
+      tile('Mốc tiếp theo', nextTier ? `+${compact(nextTier.at - st.revenue)}` : 'Đã đạt hết', nextTier ? `${nextTier.strict ? 'Vượt' : 'Đạt'} ${money(nextTier.at)} → thưởng ${rateText(nextTier.rate)}` : 'Đã đạt mốc cao nhất'),
+      ...(forecast != null ? [tile('Dự báo cuối tháng', compact(forecast), `Theo nhịp ${day}/${days} ngày · ${kpiPercent(st.target ? forecast / st.target : 0)} chỉ tiêu`)] : []));
+    // Thanh tiến độ: vạch tại từng mốc thưởng; thang tới max(mốc cao nhất × 1,1, DS).
+    const top = Math.max(st.target, ...st.tiers.map(t => t.at), st.revenue) * 1.1 || 1;
+    const bar = node('div', null, 'dash-store-bar'), fill = node('i', null, reached.length ? 'is-on' : '');
+    bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', `Đạt ${kpiPercent(ratio)} chỉ tiêu`);
+    fill.style.width = Math.min(100, st.revenue / top * 100) + '%'; bar.append(fill);
+    for (const t of st.tiers) { const mark = node('span', null, 'dash-store-mark' + (hit(t) ? ' is-done' : '')); mark.style.left = (t.at / top * 100) + '%'; mark.title = `${money(t.at)} → ${rateText(t.rate)}`; bar.append(mark); }
+    const tierTable = node('table', null, 'dash-kpi-table dash-store-tiers'), th = node('thead'), hr = node('tr'), tb = node('tbody');
+    for (const h of ['Mốc thưởng', 'DS cần đạt', 'Tỷ lệ thưởng', 'Thưởng tối thiểu / người', 'Trạng thái']) hr.append(node('th', h));
+    th.append(hr); tierTable.append(th);
+    st.tiers.forEach((t, i) => {
+      const tr = node('tr', null, hit(t) ? 'is-done' : '');
+      tr.append(node('td', `Mốc ${i + 1} · ${t.strict ? 'trên' : 'từ'} ${kpiPercent(st.target ? t.at / st.target : 0)} chỉ tiêu`), node('td', money(t.at)), node('td', rateText(t.rate) + ' DS'),
+        node('td', money(Math.round(t.at * t.rate / st.split))), node('td', hit(t) ? 'Đã đạt' : `Còn ${money(Math.max(0, t.at - st.revenue))}${t.strict ? ' (phải vượt)' : ''}`));
+      tb.append(tr);
+    });
+    tierTable.append(tb);
+    const tierScroll = node('div', null, 'revenue-table-scroll'); tierScroll.append(tierTable);
+    const people = node('table', null, 'dash-kpi-table dash-store-people'), ph = node('thead'), phr = node('tr'), pb = node('tbody');
+    for (const h of ['Nhân viên', 'DS CRM', 'DS POS', 'Tổng', 'Đóng góp', 'So chỉ tiêu']) phr.append(node('th', h));
+    ph.append(phr); people.append(ph);
+    for (const m of st.members) {
+      const tr = node('tr', null, m.id === x.me ? 'is-me' : ''), name = node('td');
+      name.append(document.createTextNode(m.name + (m.active ? '' : ' (nghỉ)')));
+      if (m.storeManager) name.append(node('span', 'CHT', 'dash-pill'));
+      tr.append(name, node('td', money(m.crm)), node('td', money(m.pos)), node('td', money(m.total)),
+        node('td', st.revenue > 0 ? kpiPercent(m.total / st.revenue) : '—'), node('td', st.target > 0 ? kpiPercent(m.total / st.target) : '—'));
+      pb.append(tr);
+    }
+    if (!st.members.length) { const tr = node('tr'), td = node('td', 'Chưa có nhân viên trong cửa hàng.'); td.colSpan = 6; tr.append(td); pb.append(tr); }
+    const sum = node('tr', null, 'is-total'); sum.append(node('td', 'Cả cửa hàng'), node('td', money(st.crm)), node('td', money(st.pos)), node('td', money(st.revenue)), node('td', '100%'), node('td', kpiPercent(ratio))); pb.append(sum);
+    people.append(pb);
+    const peopleScroll = node('div', null, 'revenue-table-scroll'); peopleScroll.append(people);
+    const notes = node('ul', null, 'dash-kpi-notes');
+    notes.append(node('li', `Thưởng DS cửa hàng = DS chung × tỷ lệ mốc đạt, chia đều ${st.split} người. Dưới mốc 1 không thưởng. Tạm tính – số chốt theo phiếu lương.`),
+      node('li', 'DS CRM: đơn đã duyệt của nhân viên thuộc cửa hàng (cùng cách tính bảng lương). DS POS: đơn bán quầy, chia theo người mở ca.'));
+    if (st.issues) notes.append(node('li', `Còn ${st.issues} đơn chưa đối chiếu – doanh số có thể thay đổi.`, 'error'));
+    box.append(tiles, bar, node('h4', 'Các mốc thưởng', 'dash-store-sub'), tierScroll, node('h4', 'Doanh số từng nhân viên', 'dash-store-sub'), peopleScroll, notes);
+    return box;
+  }
+  function renderStore() {
+    const x = storeData; storeCard.hidden = !x?.available; if (!x?.available) return;
+    storeMonthSelect.replaceChildren(); for (const mo of data?.months?.map(m => m.month) || [x.month]) { const o = node('option', `T${Number(mo.slice(5))}/${mo.slice(0, 4)}`); o.value = mo; storeMonthSelect.append(o); }
+    storeMonthSelect.value = x.month; storeMonthSelect.hidden = storeMonthSelect.options.length < 2;
+    const sub = storeCard.querySelector('.dash-sub') || node('p', null, 'dash-sub'); sub.textContent = `Tháng ${Number(x.month.slice(5))}/${x.month.slice(0, 4)} · CRM + bán quầy, cùng cách tính thưởng với phiếu lương`; storeCard.firstChild.insertBefore(sub, storeMonthSelect);
+    storeBody.replaceChildren(...x.stores.map(st => storeBlock(st, x)));
+  }
+  async function loadStore() {
+    const id = ++storeRequest; if (!data) return;
+    const months = data.months.map(m => m.month); if (!months.includes(storeMonth)) storeMonth = months.at(-1);
+    storeCard.classList.add('is-loading');
+    try { const r = await api('/dashboard/store?' + new URLSearchParams({ month: storeMonth })); if (id !== storeRequest) return; storeData = r; renderStore(); }
+    catch (e) { if (id !== storeRequest) return; storeData = null; storeCard.hidden = false; const retry = node('button', 'Thử lại', 'btn'); retry.type = 'button'; retry.addEventListener('click', loadStore); storeBody.replaceChildren(node('p', e.message || 'Chưa tải được doanh số cửa hàng.', 'error'), retry); }
+    finally { if (id === storeRequest) storeCard.classList.remove('is-loading'); }
+  }
+
   let draws = [], lastWidth = 0;
   const redraw = () => { for (const draw of draws) draw(); };
   new ResizeObserver(() => { const w = content.clientWidth; if (data && w && Math.abs(w - lastWidth) > 8) { lastWidth = w; redraw(); } }).observe(content);
@@ -345,7 +424,7 @@ export function initDashboard({ api, root, isManager, money }) {
     const how = node('details', null, 'dash-how'); how.append(node('summary', 'Cách tính số liệu'),
       node('p', 'Thực tế: đơn hàng/HĐKT trong kỳ (gồm VAT), bỏ đơn huỷ và đơn nháp chưa có hợp đồng ký; mỗi HĐKT tính một lần. Dự kiến và số khách rớt: lần chăm sóc mới nhất của từng cặp khách/nhân viên trong kỳ. Pipeline: trạng thái chăm sóc mới nhất đến cuối kỳ (tư vấn, đã gửi báo giá, thương lượng). Tỷ lệ chốt = báo giá trong kỳ đã sinh đơn còn hiệu lực / tổng báo giá trong kỳ. Dữ liệu Sapo có thể chậm.'));
     // KPI nằm ngoài lưới biểu đồ: trên điện thoại lưới được gom sau "Xem thêm thống kê", KPI vẫn hiện ngay.
-    content.replaceChildren(kpis, kpiCard, grid, how);
+    content.replaceChildren(kpis, storeCard, kpiCard, grid, how);
     lastWidth = content.clientWidth; redraw();
   }
 
@@ -361,7 +440,7 @@ export function initDashboard({ api, root, isManager, money }) {
         filters.owner = ''; filters.page = '1'; return load();
       }
       fillSelect(group, options.groups, 'Tất cả nhóm'); fillSelect(owner, options.employees, 'Tất cả nhân viên');
-      data = res; render(); loadKpi();
+      data = res; render(); loadKpi(); loadStore();
     } catch (e) {
       if (id !== requestId) return;
       data = null; const retry = node('button', 'Thử lại', 'btn'); retry.type = 'button'; retry.addEventListener('click', load);

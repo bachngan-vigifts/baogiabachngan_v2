@@ -69,15 +69,15 @@ Nhân viên **chưa có hồ sơ lương** vẫn hiện ở tab theo chức vụ
 - Thưởng sản lượng = sản lượng × đơn giá / tỷ lệ (kho 15.000/đơn, TK 30.000/lượt, IT 0,005 × DS web).
 - Thực nhận = Tổng − BHXH − vi phạm − MAX(tạm ứng ĐT, PC điện thoại) − tạm ứng.
 
-**Bách Ngân:** thưởng DS cửa hàng
-- DS > 300tr: DS/DS TB 6 tháng ≥ 100% → 1%, ≥ 85% → 0,5%.
-- Rồi ÷ 2, chỉ cho người được chọn "hưởng thưởng DS nhóm".
+**Bách Ngân (ML) và Lock – kỳ có nguồn doanh số CRM + POS:** cùng một thang thưởng DS chung cửa hàng
+- DS chung = DS CRM net của NV thuộc bảng lương cửa hàng + DS bán quầy POS; chỉ tiêu 300tr/tháng/cửa hàng.
+- Dưới 85% → 0 · từ 85% → 0,5% · từ 100% → 1% · trên 120% → 1,5% (đúng 120% vẫn 1%) × DS chung.
+- Rồi ÷ số người chia (mặc định 2), chỉ cho người được chọn "hưởng thưởng DS nhóm".
+- Mức % sửa ở Tham số lương, nhóm "Thưởng DS cửa hàng (CRM + POS)". Cách xét cũ ("threshold" / "tiers") không còn ảnh hưởng.
 
-**Lock:** thưởng DS team
-- DS < 85% × 300tr → 0.
-- DS ≥ 310tr → 1,5%.
-- Còn lại → 1%.
-- Kết quả ÷ 2.
+**Kỳ cũ chưa có nguồn CRM + POS (nhập tay):**
+- Bách Ngân: DS > 300tr: DS/DS TB 6 tháng ≥ 100% → 1%, ≥ 85% → 0,5%; ÷ 2.
+- Lock: DS < 85% × 300tr → 0; DS ≥ 310tr → 1,5%; còn lại → 1%; ÷ 2.
 
 **Bách Ngân / Lock:** Thực nhận = Tổng − BHXH − BHYT − TNCN − vi phạm − tạm ứng ĐT − tạm ứng.
 
