@@ -36,6 +36,35 @@ Tiền phải nộp = **tiền đầu ngày** (tiền thực đếm lúc mở ca
 - Trả / đổi / hoàn trong ngày: phiếu trả (link đơn gốc, đơn đổi sang), phiếu hoàn (tiền mặt đã ghi Sổ quỹ / chuyển khoản). Hoàn tiền mặt chỉ trừ một lần (qua phiếu chi). Doanh thu POS bỏ đơn huỷ; hàng trả hiện riêng.
 - Ca thuộc ngày theo ngày làm việc của ca (ca qua nửa đêm thuộc ngày mở ca).
 
+## Báo cáo tuần
+- **Doanh thu POS** của báo cáo (gồm VAT, đơn không huỷ, theo ngày làm việc của ca) tách riêng với **doanh số xét chỉ tiêu** (CRM net + POS trước VAT, đơn đã duyệt – cùng nguồn xét thưởng DS cửa hàng). Không chia doanh thu POS cho chỉ tiêu.
+- Chỉ tiêu / mốc thưởng lấy qua contract `StoreTargetOf` (lắp ở `src/app/store-report-sources.ts`): đúng cấu hình nguồn doanh số cửa hàng + tham số lương của tháng. Quầy chưa nằm trong cấu hình → "chưa cấu hình", **không** gán mặc định 300 triệu.
+- **Hàng cần bổ sung** theo ngưỡng tối thiểu từng mã của kho cửa hàng (`store_restock_rules`, Manager đặt ở *Cấu hình cửa hàng*): tồn sổ kho, hàng đã giữ (cùng cách tính POS), đang về (phiếu điều chuyển tới kho đã duyệt / đã gửi). Đề xuất = ngưỡng − (tồn trống + đang về). Chưa có ngưỡng → báo chưa cấu hình. "Tồn" là tồn sổ kho, không phải tồn trên kệ.
+- Đề xuất đặt hàng / xử lý hàng chậm bán: CHT ghi số đơn mua / phiếu điều chuyển liên quan, link sang trang Đơn mua và Điều chuyển; **không** tự tạo chứng từ hay ghi kho.
+
+## Báo cáo tháng
+- Kết quả chỉ tiêu và mốc thưởng từ cùng nguồn trên, ghi rõ **thưởng DS cửa hàng tạm tính (trước chia)**; không có lương cá nhân.
+- So tháng trước cùng quầy, cùng cách tính. Tháng trước không mở ca → **thiếu dữ liệu** (không coi là 0).
+- Doanh thu theo **thương hiệu** (trường thương hiệu trong danh mục); mã trống thương hiệu vào nhóm **Chưa phân loại**. Không đoán từ tên sản phẩm.
+- Lệch quỹ khi kết ca: thiếu và thừa riêng (kèm số ca).
+- Ngày có ca POS chỉ để đối chiếu; **công chấm HR** lấy qua contract `StoreAttendanceOf` (chưa chấm → "Chưa chấm").
+
+## Báo cáo kiểm tồn
+- Phiếu kiểm kê (dòng nguồn `stocktake`) của **đúng kho cửa hàng**, lập từ 00h ngày 01 tới hạn (00h ngày 02 tháng sau, giờ VN). Phiếu **chờ duyệt** vẫn được nộp báo cáo; phiếu từ chối không tính.
+- Phạm vi: số mã đã đếm so với số mã đang có tồn; liệt kê mã chưa kiểm. Một phiếu không mặc nhiên là đã kiểm đủ.
+- Ghi nhận phiếu **không chênh lệch**. Lệch theo mã lấy lần đếm mới nhất (không cộng dồn giữa các phiếu); **thừa / thiếu** tách riêng; **hàng hỏng / bể** (khách trả, loại hỏng) riêng; số phiếu chờ duyệt.
+- Giá trị lệch = |SL lệch| × giá nhập gần nhất (lịch sử sản phẩm) – ghi rõ phương pháp, mã thiếu giá không tính, **không phải tiền bồi thường**. Giá vốn **chỉ Manager xem** (CHT thấy số lượng).
+- Mã có giá trị lệch ≥ **ngưỡng giải trình** (Cấu hình cửa hàng) phải giải trình riêng mới nộp chính thức được. Chưa cấu hình ngưỡng → không bắt buộc theo mã.
+
+## Đề xuất giai đoạn sau (chưa làm)
+- Báo cáo tuyển dụng / đào tạo NVBH.
+- Theo dõi chi phí vận hành cửa hàng (điện, nước, vật tư).
+- So cùng kỳ năm trước.
+- Dự báo doanh số cuối tháng trong báo cáo CHT.
+- Báo cáo sự cố đột xuất và nhắc việc bằng thông báo đẩy điện thoại.
+- Liên kết đơn mua NCC với kho theo mã kho (hiện đơn mua lưu tên kho dạng chữ nên "đang về" chỉ tính phiếu điều chuyển).
+- Thay đổi chính sách thưởng / phạt (cần quyết định riêng).
+
 ## Tệp đính kèm (chứng từ nộp tiền, biên bản kiểm kê)
 - CHT đính kèm trong hộp báo cáo: báo cáo ngày (chứng từ nộp tiền, tệp khác), kiểm tồn (biên bản / ảnh kiểm kê có chữ ký), tuần / tháng (tệp khác).
 - Chỉ ảnh JPEG / PNG / WebP hoặc PDF; máy chủ nhận dạng theo **byte thực tế**, MIME khai phải khớp; PDF có JavaScript / tự chạy / tệp nhúng bị từ chối.
@@ -58,3 +87,4 @@ Trang hiện số tạm tính theo tháng. Giai đoạn 2 đưa vào bảng lư�
 - Migration `20261111100000_store_manager_reports.sql` (chạy tay) + cổng `scripts/sql/assert-store-manager-reports.sql`.
 - Migration `20261112090000_store_report_submission.sql` (chạy tay): `store_report_drafts`, `store_report_versions` (tạo bản lần 1 cho báo cáo đã có), `store_settings` + cổng `scripts/sql/assert-store-report-submission.sql`.
 - Migration `20261112100000_store_report_files.sql` (chạy tay): `store_report_files` + cổng `scripts/sql/assert-store-report-files.sql`.
+- Migration `20261112110000_store_restock_rules.sql` (chạy tay): `store_restock_rules` + cổng `scripts/sql/assert-store-restock-rules.sql`.

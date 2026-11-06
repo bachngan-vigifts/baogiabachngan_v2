@@ -198,3 +198,35 @@ export function cashDue(x: CashDayInput) {
   const needsExplanation = (declaredDiff !== null && declaredDiff !== 0 && (requiredToday || x.declared! > 0)) || (bookDiff !== null && bookDiff !== 0);
   return { available, due, requiredToday, missing, missingLabels: missing.map(k => CASH_MISSING_LABEL[k]), declared: x.declared, depositedBook: x.depositedBook, declaredDiff, bookDiff, needsExplanation };
 }
+
+// ---------------- Báo cáo tuần: hàng cần bổ sung
+export interface RestockInput { sku: string; minQty: number; onHand: number; held: number; incoming: number }
+/**
+ * Mã cần bổ sung: (tồn thực tế − hàng đã giữ) + hàng đang về < ngưỡng tối thiểu. Đề xuất = ngưỡng − (tồn trống + đang về).
+ * "Tồn" là tồn sổ kho của kho cửa hàng (chưa có dữ liệu vị trí kệ).
+ */
+export function restockNeeds(rows: readonly RestockInput[]) {
+  return rows.map(r => { const free = Math.max(0, r.onHand - r.held); return { ...r, free, suggest: Math.round((r.minQty - free - r.incoming) * 1000) / 1000 }; })
+    .filter(r => r.suggest > 0).sort((a, b) => b.suggest - a.suggest || a.sku.localeCompare(b.sku));
+}
+
+// ---------------- Báo cáo tháng: so tháng trước
+/** Chênh lệch so tháng trước; thiếu dữ liệu một bên → null (KHÔNG coi là 0). */
+export function compareMonth(current: number | null, previous: number | null) {
+  if (current === null || previous === null) return { diff: null, pct: null, missing: true };
+  return { diff: current - previous, pct: previous ? Math.round((current - previous) / previous * 1000) / 10 : null, missing: false };
+}
+
+// ---------------- Kiểm tồn: phân loại chênh lệch, giải trình theo mã
+export interface StocktakeLine { sku: string; qty: number; value: number | null }
+/**
+ * Tách thừa / thiếu (không cộng bù), mã thiếu giá; mã phải giải trình riêng khi |giá trị| ≥ ngưỡng (ngưỡng null = chưa cấu hình → không bắt buộc theo mã).
+ * Giá trị = |SL lệch| × giá nhập gần nhất – chỉ để đánh giá, không phải tiền bồi thường.
+ */
+export function stocktakeGaps(lines: readonly StocktakeLine[], threshold: number | null) {
+  const gaps = lines.filter(l => l.qty !== 0);
+  const side = (pick: (l: StocktakeLine) => boolean) => { const ls = gaps.filter(pick);
+    return { skus: ls.length, qty: Math.round(ls.reduce((n, l) => n + Math.abs(l.qty), 0) * 1000) / 1000, value: ls.reduce((n, l) => n + (l.value ?? 0), 0) }; };
+  return { surplus: side(l => l.qty > 0), shortage: side(l => l.qty < 0), missingCost: gaps.filter(l => l.value === null).map(l => l.sku),
+    mustExplain: threshold === null ? [] : gaps.filter(l => l.value !== null && l.value >= threshold).map(l => l.sku), noGap: gaps.length === 0 };
+}

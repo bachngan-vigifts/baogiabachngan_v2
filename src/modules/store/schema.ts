@@ -2,6 +2,7 @@ import { pgTable, text, index, uniqueIndex, check, integer, doublePrecision, boo
 import { sql } from 'drizzle-orm';
 import { employees } from '../staff/schema.ts';
 import { posRegisters } from '../sales/pos-schema.ts';
+import { warehouses } from '../catalog/schema.ts';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { DEPOSIT_SCHEDULES, STORE_REPORT_KINDS, STORE_REVIEW_STATUSES } from './domain/reports.ts';
 import { STORE_FILE_PURPOSES, STORE_FILE_STATUSES } from './domain/files.ts';
@@ -124,4 +125,18 @@ export const storeReportFiles = pgTable('store_report_files', {
   enumCheck('chk_store_report_files_status', t.status, STORE_FILE_STATUSES),
   check('chk_store_report_files_mime', sql`${t.mime} in ('image/jpeg','image/png','image/webp','application/pdf')`),
   check('chk_store_report_files_bytes', sql`${t.bytes} > 0 and ${t.bytes} <= 6291456`),
+]).enableRLS();
+
+/**
+ * Ngưỡng tồn tối thiểu theo kho + mã (Manager đặt) – căn cứ "hàng cần bổ sung" trong báo cáo tuần. Mã chưa có ngưỡng: không tự đặt số.
+ */
+export const storeRestockRules = pgTable('store_restock_rules', {
+  warehouseId: text('warehouse_id').notNull().references(() => warehouses.id),
+  sku: text('sku').notNull(),
+  minQty: doublePrecision('min_qty').notNull(),
+  updatedBy: text('updated_by').notNull().references(() => employees.id),
+  updatedAt: text('updated_at').notNull(),
+}, t => [
+  primaryKey({ columns: [t.warehouseId, t.sku], name: 'store_restock_rules_pkey' }),
+  check('chk_store_restock_min', sql`${t.minQty} > 0 and ${t.minQty} <= 1000000000`),
 ]).enableRLS();

@@ -9,6 +9,7 @@
  *                                           mỗi lần nộp lưu một bản chụp số liệu vào lịch sử; đã duyệt thì khoá)
  *  GET  /store/settings?registerId          cấu hình báo cáo của cửa hàng (quỹ giữ lại, lịch nộp tiền, ngưỡng giải trình kiểm tồn)
  *  PUT  /store/settings                     Manager đặt cấu hình
+ *  GET/PUT /store/restock-rules             ngưỡng tồn tối thiểu theo mã của kho cửa hàng (Manager đặt; căn cứ hàng cần bổ sung)
  *  POST /store/reports/:id/review           người duyệt (Manager / quyền store.review): đạt, sai sổ quỹ, đề xuất sai, miễn…
  *  POST /store/reports/:id/explain          CHT giải trình
  *  PUT  /store/managers                     Manager gán / bỏ CHT cho cửa hàng
@@ -26,13 +27,18 @@ import { posRegisters, posShifts } from '../../sales/pos-schema.ts';
 import { customerPayments, salesOrderLines, salesOrders } from '../../sales/schema.ts';
 import { cashEntries } from '../../sales/cash-schema.ts';
 import { posExchangeAllocations, posRefunds, posReturns } from '../../sales/return-schema.ts';
-import { inventoryAdjustments, stockBalances } from '../../inventory/schema.ts';
+import { inventoryAdjustments, stockBalances, stockTransferLines, stockTransfers } from '../../inventory/schema.ts';
+import { posReturnLines } from '../../sales/return-schema.ts';
+import { reservedBySku } from '../../sales/api/pos-store.ts';
+import type { StoreAttendanceOf, StoreTargetOf } from '../../../core/contracts/store-report.ts';
 import { productMovements, products } from '../../catalog/schema.ts';
 import { readyFiles, registerStoreFileRoutes } from './file-routes.ts';
+import { storeRestockRules } from '../schema.ts';
 import { storeManagers, storeReportDrafts, storeReportVersions, storeReports, storeSettings } from '../schema.ts';
 import {
   DEPOSIT_SCHEDULES, DEPOSIT_SCHEDULE_LABEL, REVIEW_FOR, STORE_LIMITS, STORE_REPORT_KINDS, STORE_REPORT_LABEL, STORE_REVIEW_LABEL, canSubmitOfficial, cashDue,
   deadlineOf, isPeriod, nextMonth, periodEndsAt, periodStarted, remindersAt, responsibilityOf, slotState, vnClock, weeksDueIn,
+  compareMonth, prevMonth, restockNeeds, stocktakeGaps,
   type DepositSchedule, type StoreReportKind, type StoreReviewStatus,
 } from '../domain/reports.ts';
 
@@ -157,39 +163,132 @@ async function slowProducts(db: AnyDb, registerId: string, warehouseId: string, 
     .where(and(eq(stockBalances.warehouseId, warehouseId), sql`${stockBalances.qty} > 0`, sql`${stockBalances.sku} not in (${sold})`))
     .orderBy(desc(stockBalances.qty)).limit(limit);
 }
-async function stocktakeFacts(db: AnyDb, warehouseId: string, month: string) {
-  const from = addDays(month + '-01', -5), to = nextMonth(month) + '-04';
+type Deps = { targetOf?: StoreTargetOf; attendanceOf?: StoreAttendanceOf };
+const vnStart = (day: string) => new Date(Date.parse(day + 'T00:00:00+07:00')).toISOString();
+const NO_TARGET = { configured: false as const, reason: 'Chưa nối nguồn chỉ tiêu cửa hàng.' };
+/** Giá nhập gần nhất theo mã (lịch sử sản phẩm, dòng Nhập hàng) – cùng phương pháp với phiếu kiểm kê. */
+async function lastCosts(db: AnyDb, skus: readonly string[]) {
+  if (!skus.length) return new Map<string, number>();
+  return new Map((await db.selectDistinctOn([productMovements.sku], { sku: productMovements.sku, price: productMovements.unitPrice }).from(productMovements)
+    .where(and(inArray(productMovements.sku, [...skus]), eq(productMovements.kind, 'purchase'), sql`${productMovements.unitPrice} is not null`))
+    .orderBy(productMovements.sku, desc(productMovements.occurredAt))).map(r => [r.sku, Number(r.price)]));
+}
+/**
+ * Kiểm tồn của tháng: phiếu kiểm kê (dòng nguồn "stocktake") của ĐÚNG kho cửa hàng, lập từ 00h ngày 01 tới hạn nộp (00h ngày 02 tháng sau, giờ VN).
+ * Phiếu chờ duyệt vẫn tính (không bắt buộc đã duyệt). Phạm vi: mã đã đếm so với mã đang có tồn. Thừa / thiếu tách riêng; hàng hỏng từ phiếu trả.
+ */
+async function stocktakeFacts(db: AnyDb, warehouseId: string, month: string, threshold: number | null) {
+  const from = vnStart(month + '-01'), to = vnStart(nextMonth(month) + '-02');
   const rows = await db.select({ id: inventoryAdjustments.id, refNo: inventoryAdjustments.refNo, status: inventoryAdjustments.status, createdAt: inventoryAdjustments.createdAt, lines: inventoryAdjustments.lines })
     .from(inventoryAdjustments).where(and(eq(inventoryAdjustments.warehouseId, warehouseId), gte(inventoryAdjustments.createdAt, from), lt(inventoryAdjustments.createdAt, to),
       sql`${inventoryAdjustments.lines}::jsonb @> '[{"source":"stocktake"}]'::jsonb`)).orderBy(asc(inventoryAdjustments.createdAt));
-  const lines = rows.flatMap(r => (parse(r.lines) ?? []) as { sku: string; qty: number }[]);
-  const skus = [...new Set(lines.filter(l => l.qty).map(l => l.sku))];
-  const costs = skus.length ? new Map((await db.selectDistinctOn([productMovements.sku], { sku: productMovements.sku, price: productMovements.unitPrice }).from(productMovements)
-    .where(and(inArray(productMovements.sku, skus), eq(productMovements.kind, 'purchase'), sql`${productMovements.unitPrice} is not null`))
-    .orderBy(productMovements.sku, desc(productMovements.occurredAt))).map(r => [r.sku, Number(r.price)])) : new Map<string, number>();
-  return { counts: rows.map(r => { const ls = ((parse(r.lines) ?? []) as { sku: string; qty: number }[]).filter(l => l.qty);
-    const value = ls.reduce((n, l) => n + Math.abs(l.qty) * (costs.get(l.sku) ?? 0), 0);
-    return { id: r.id, refNo: r.refNo, status: r.status, createdAt: r.createdAt, gapSkus: ls.length, gapValue: Math.round(value), missingCost: ls.filter(l => !costs.has(l.sku)).length }; }) };
+  type L = { sku: string; qty: number; countedQty?: number; expectedQty?: number };
+  const live = rows.filter(r => r.status !== 'rejected');
+  const counted = new Set(live.flatMap(r => ((parse(r.lines) ?? []) as L[]).map(l => l.sku)));
+  // Lệch theo mã: lấy phiếu mới nhất của mỗi mã (đếm lại thay cho lần trước), không cộng dồn giữa các phiếu.
+  const latest = new Map<string, L & { status: string }>();
+  for (const r of live) for (const l of (parse(r.lines) ?? []) as L[]) latest.set(l.sku, { ...l, status: r.status });
+  const costs = await lastCosts(db, [...latest.values()].filter(l => l.qty).map(l => l.sku));
+  const lines = [...latest.values()].map(l => ({ sku: l.sku, qty: l.qty, status: l.status, value: l.qty ? (costs.has(l.sku) ? Math.round(Math.abs(l.qty) * costs.get(l.sku)!) : null) : 0 }));
+  const gaps = stocktakeGaps(lines, threshold);
+  const [stocked, damaged, names] = await Promise.all([
+    db.select({ sku: stockBalances.sku }).from(stockBalances).where(and(eq(stockBalances.warehouseId, warehouseId), sql`${stockBalances.qty} > 0`)),
+    db.select({ sku: posReturnLines.sku, name: posReturnLines.name, qty: sql<number>`sum(${posReturnLines.receivedQty} - ${posReturnLines.restockQty})`.mapWith(Number) })
+      .from(posReturnLines).innerJoin(posReturns, eq(posReturns.id, posReturnLines.returnId))
+      .where(and(eq(posReturns.warehouseId, warehouseId), eq(posReturnLines.disposition, 'damaged'), sql`${posReturns.receivedAt} is not null`, gte(posReturns.receivedAt, vnStart(month + '-01')), lt(posReturns.receivedAt, vnStart(nextMonth(month) + '-01'))))
+      .groupBy(posReturnLines.sku, posReturnLines.name),
+    latest.size ? db.select({ sku: products.sku, name: products.name }).from(products).where(inArray(products.sku, [...latest.keys()])) : Promise.resolve([]),
+  ]);
+  const notCounted = stocked.map(s => s.sku).filter(sku => !counted.has(sku)).sort();
+  const name = new Map(names.map(n => [n.sku, n.name]));
+  return { from, to, valuation: 'Giá nhập gần nhất (lịch sử sản phẩm, dòng Nhập hàng) × |SL lệch|. Chỉ để đánh giá, không phải tiền bồi thường. Mã thiếu giá không tính giá trị.',
+    counts: rows.map(r => { const ls = ((parse(r.lines) ?? []) as L[]);
+      return { id: r.id, refNo: r.refNo, status: r.status, createdAt: r.createdAt, countedSkus: ls.length, gapSkus: ls.filter(l => l.qty).length, noGap: ls.length > 0 && ls.every(l => !l.qty) }; }),
+    scope: { countedSkus: counted.size, stockedSkus: stocked.length, notCounted: notCounted.length, notCountedSample: notCounted.slice(0, 20) },
+    lines: lines.filter(l => l.qty).map(l => ({ ...l, name: name.get(l.sku) ?? '', mustExplain: gaps.mustExplain.includes(l.sku) })).sort((a, b) => (b.value ?? 0) - (a.value ?? 0)),
+    surplus: gaps.surplus, shortage: gaps.shortage, missingCost: gaps.missingCost, noGap: live.length > 0 && gaps.noGap,
+    pending: rows.filter(r => r.status === 'pending').length, damaged: damaged.filter(d => d.qty > 0), threshold };
 }
-async function factsFor(db: AnyDb, store: { id: string; warehouseId: string }, kind: StoreReportKind, period: string, declared: number | null = null) {
+/** Hàng cần bổ sung của kho cửa hàng theo ngưỡng đã cấu hình. Đang về = phiếu điều chuyển tới kho đã duyệt / đã gửi, chưa nhận. */
+async function restockFacts(db: AnyDb, warehouseId: string) {
+  const rules = await db.select({ sku: storeRestockRules.sku, minQty: storeRestockRules.minQty, name: products.name }).from(storeRestockRules)
+    .leftJoin(products, eq(products.sku, storeRestockRules.sku)).where(eq(storeRestockRules.warehouseId, warehouseId));
+  if (!rules.length) return { configured: false as const, rules: 0, items: [] };
+  const skus = rules.map(r => r.sku);
+  const [balances, held, incoming] = await Promise.all([
+    db.select({ sku: stockBalances.sku, qty: stockBalances.qty }).from(stockBalances).where(and(eq(stockBalances.warehouseId, warehouseId), inArray(stockBalances.sku, skus))),
+    reservedBySku(db as never, skus, warehouseId),
+    db.select({ sku: stockTransferLines.sku, qty: sql<number>`sum(coalesce(${stockTransferLines.shippedQty}, ${stockTransferLines.qty}))`.mapWith(Number) })
+      .from(stockTransferLines).innerJoin(stockTransfers, eq(stockTransfers.id, stockTransferLines.transferId))
+      .where(and(eq(stockTransfers.toWarehouseId, warehouseId), inArray(stockTransfers.status, ['approved', 'shipped']), inArray(stockTransferLines.sku, skus))).groupBy(stockTransferLines.sku),
+  ]);
+  const items = restockNeeds(rules.map(r => ({ sku: r.sku, minQty: r.minQty, onHand: balances.find(b => b.sku === r.sku)?.qty ?? 0, held: held.get(r.sku) ?? 0, incoming: incoming.find(i => i.sku === r.sku)?.qty ?? 0 })));
+  const name = new Map(rules.map(r => [r.sku, r.name ?? '']));
+  return { configured: true as const, rules: rules.length, items: items.map(i => ({ ...i, name: name.get(i.sku) ?? '' })) };
+}
+/** Doanh thu POS theo thương hiệu (trường thương hiệu trong danh mục); trống → "Chưa phân loại". Không đoán từ tên sản phẩm. */
+async function brandSales(db: AnyDb, registerId: string, from: string, to: string) {
+  const rows = await db.select({ brand: sql<string>`coalesce(nullif(trim(${products.brand}), ''), '')`, amount: sql<number>`sum(${salesOrderLines.amount})`.mapWith(Number), qty: sql<number>`sum(${salesOrderLines.qty})`.mapWith(Number) })
+    .from(salesOrderLines).innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.orderId)).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
+    .leftJoin(products, eq(products.sku, salesOrderLines.sku))
+    .where(and(eq(posShifts.registerId, registerId), gte(posShifts.businessDate, from), lte(posShifts.businessDate, to), ne(salesOrders.status, 'cancelled')))
+    .groupBy(sql`1`).orderBy(desc(sql`sum(${salesOrderLines.amount})`));
+  return rows.map(r => ({ group: r.brand || 'Chưa phân loại', unclassified: !r.brand, amount: r.amount, qty: r.qty }));
+}
+/** Lệch quỹ khi kết ca trong khoảng ngày: thiếu và thừa riêng (không cộng bù). */
+async function cashGaps(db: AnyDb, registerId: string, from: string, to: string) {
+  const rows = await db.select({ diff: posShifts.cashDifference }).from(posShifts)
+    .where(and(eq(posShifts.registerId, registerId), gte(posShifts.businessDate, from), lte(posShifts.businessDate, to), sql`${posShifts.closedAt} is not null`, sql`coalesce(${posShifts.cashDifference},0) <> 0`));
+  const short = rows.filter(r => r.diff! < 0), over = rows.filter(r => r.diff! > 0);
+  return { shortage: short.reduce((n, r) => n + r.diff!, 0), shortageShifts: short.length, surplus: over.reduce((n, r) => n + r.diff!, 0), surplusShifts: over.length };
+}
+async function returnsTotal(db: AnyDb, registerId: string, from: string, to: string) {
+  const [r] = await db.select({ total: sql<number>`coalesce(sum(${posReturns.total}),0)`.mapWith(Number) }).from(posReturns)
+    .where(and(eq(posReturns.registerId, registerId), eq(posReturns.status, 'completed'), gte(posReturns.updatedAt, vnStart(from)), lt(posReturns.updatedAt, vnStart(addDays(to, 1)))));
+  return r?.total ?? 0;
+}
+async function factsFor(db: AnyDb, store: { id: string; warehouseId: string }, kind: StoreReportKind, period: string, declared: number | null = null, deps: Deps = {}) {
   if (kind === 'daily') return dailyFacts(db, store.id, period, await settingsOf(db, store.id), declared);
-  if (kind === 'weekly') { const to = addDays(period, 6);
-    const [days, top] = await Promise.all([salesByDay(db, store.id, period, to), topProducts(db, store.id, period, to)]);
-    return { from: period, to, days, revenue: days.reduce((n, d) => n + d.revenue, 0), bills: days.reduce((n, d) => n + d.bills, 0), top, slow: await slowProducts(db, store.id, store.warehouseId, to) }; }
-  if (kind === 'monthly') { const from = period + '-01', to = addDays(nextMonth(period) + '-01', -1);
-    const [days, top, staff] = await Promise.all([salesByDay(db, store.id, from, to), topProducts(db, store.id, from, to, 15),
-      db.select({ member: employees.name, shifts: sql<number>`count(distinct ${posShifts.id})`.mapWith(Number), days: sql<number>`count(distinct ${posShifts.businessDate})`.mapWith(Number) })
+  if (kind === 'weekly') { const to = addDays(period, 6), month = to.slice(0, 7);
+    const [days, top, slow, restock, target] = await Promise.all([salesByDay(db, store.id, period, to), topProducts(db, store.id, period, to),
+      slowProducts(db, store.id, store.warehouseId, to), restockFacts(db, store.warehouseId), deps.targetOf ? deps.targetOf(db, store.id, month) : NO_TARGET]);
+    return { from: period, to, days, revenue: days.reduce((n, d) => n + d.revenue, 0), bills: days.reduce((n, d) => n + d.bills, 0), returns: await returnsTotal(db, store.id, period, to),
+      top, slow, restock, target: { month, ...target } }; }
+  if (kind === 'monthly') { const from = period + '-01', to = addDays(nextMonth(period) + '-01', -1), prev = prevMonth(period);
+    const pFrom = prev + '-01', pTo = addDays(period + '-01', -1);
+    const [days, prevDays, prevShiftDays, top, brands, gaps, staffRows, target, prevTarget, returns] = await Promise.all([salesByDay(db, store.id, from, to), salesByDay(db, store.id, pFrom, pTo), shiftDays(db, store.id, pFrom, pTo),
+      topProducts(db, store.id, from, to, 15), brandSales(db, store.id, from, to), cashGaps(db, store.id, from, to),
+      db.select({ memberId: posShifts.memberId, member: employees.name, shifts: sql<number>`count(distinct ${posShifts.id})`.mapWith(Number), days: sql<number>`count(distinct ${posShifts.businessDate})`.mapWith(Number) })
         .from(posShifts).leftJoin(employees, eq(employees.id, posShifts.memberId)).where(and(eq(posShifts.registerId, store.id), gte(posShifts.businessDate, from), lte(posShifts.businessDate, to)))
-        .groupBy(employees.name)]);
-    return { from, to, revenue: days.reduce((n, d) => n + d.revenue, 0), bills: days.reduce((n, d) => n + d.bills, 0), days, top, staff }; }
-  return stocktakeFacts(db, store.warehouseId, period);
+        .groupBy(posShifts.memberId, employees.name),
+      deps.targetOf ? deps.targetOf(db, store.id, period) : NO_TARGET, deps.targetOf ? deps.targetOf(db, store.id, prev) : NO_TARGET, returnsTotal(db, store.id, from, to)]);
+    // Tháng trước "có dữ liệu" khi cửa hàng có mở ca (không bán gì → 0 thật); không mở ca nào → thiếu dữ liệu.
+    const prevOpen = prevShiftDays.length > 0, revenue = days.reduce((n, d) => n + d.revenue, 0), prevRevenue = prevOpen ? prevDays.reduce((n, d) => n + d.revenue, 0) : null;
+    const hr = deps.attendanceOf ? await deps.attendanceOf(db, staffRows.map(s => s.memberId), period) : null;
+    const t = target.configured ? target.revenue : null, pt = prevTarget.configured ? prevTarget.revenue : null;
+    return { from, to, revenue, bills: days.reduce((n, d) => n + d.bills, 0), returns, days, top, brands, cashGaps: gaps,
+      // So tháng trước: cùng quầy, cùng cách tính; tháng trước không có ca → thiếu dữ liệu (không coi là 0).
+      previous: { month: prev, revenue: prevRevenue, bills: prevOpen ? prevDays.reduce((n, d) => n + d.bills, 0) : null, posCompare: compareMonth(revenue, prevRevenue),
+        targetRevenue: pt, targetCompare: compareMonth(t, pt) },
+      target: { month: period, ...target },
+      staff: staffRows.map(s => ({ member: s.member, shifts: s.shifts, days: s.days, hrWorked: hr?.get(s.memberId)?.recorded ? hr.get(s.memberId)!.worked : null, hrRecorded: hr?.get(s.memberId)?.recorded ?? null })) }; }
+  return stocktakeFacts(db, store.warehouseId, period, (await settingsOf(db, store.id)).stocktakeExplainThreshold);
 }
+/** Giá vốn / giá trị lệch kiểm kê chỉ Manager xem (cùng quy tắc phiếu kiểm kê). */
+function redactCosts(kind: StoreReportKind, facts: any, canSeeCost: boolean) {
+  if (kind !== 'stocktake' || canSeeCost || !facts) return facts;
+  const hide = (x: any) => x ? { ...x, value: null } : x;
+  return { ...facts, lines: (facts.lines ?? []).map(hide), surplus: hide(facts.surplus), shortage: hide(facts.shortage), counts: (facts.counts ?? []).map((c: any) => ({ ...c, gapValue: undefined })), costHidden: true };
+}
+
 /** Phần CHT nhập theo loại báo cáo (chỉ nhận đúng các ô này; số liệu CRM không bao giờ lấy từ client). */
 function inputsFor(kind: StoreReportKind, b: Record<string, unknown>) {
   if (kind === 'daily') return { bankDeposit: money(b.bankDeposit, 'Tiền nộp ngân hàng'), bankRef: text(b.bankRef, 200), cashExplanation: text(b.cashExplanation), incidents: text(b.incidents), note: text(b.note) };
-  if (kind === 'weekly') return { orderProposal: text(b.orderProposal), roster: text(b.roster), nextWeekPlan: text(b.nextWeekPlan, 1000), note: text(b.note) };
+  if (kind === 'weekly') return { orderProposal: text(b.orderProposal), orderRefs: text(b.orderRefs, 500), slowAction: text(b.slowAction), roster: text(b.roster), nextWeekPlan: text(b.nextWeekPlan, 1000), note: text(b.note) };
   if (kind === 'monthly') return { groupAnalysis: text(b.groupAnalysis), staffReview: text(b.staffReview), nextMonthPlan: text(b.nextMonthPlan), note: text(b.note) };
-  return { counted: b.counted === true, gapExplanation: text(b.gapExplanation), note: text(b.note) };
+  const sku = (b.skuExplanations && typeof b.skuExplanations === 'object' ? b.skuExplanations : {}) as Record<string, unknown>;
+  return { counted: b.counted === true, scopeNote: text(b.scopeNote), damagedNote: text(b.damagedNote), gapExplanation: text(b.gapExplanation), note: text(b.note),
+    skuExplanations: Object.fromEntries(Object.entries(sku).slice(0, 200).map(([k, v]) => [text(k, 200), text(v, 1000)]).filter(([k, v]) => k && v)) };
 }
 type Inputs = ReturnType<typeof inputsFor>;
 /** Điều kiện nộp chính thức (nháp không cần đủ). */
@@ -202,19 +301,24 @@ function officialProblems(kind: StoreReportKind, v: Inputs, facts: any) {
   }
   if (kind === 'weekly' && (v as { orderProposal: string }).orderProposal.length < 3) out.push('Nhập đề xuất đặt hàng (Sale-in) cho tuần tới.');
   if (kind === 'monthly' && (v as { staffReview: string }).staffReview.length < 3) out.push('Nhập đánh giá ngày công và năng lực NVBH.');
-  if (kind === 'stocktake' && !(v as { counted: boolean }).counted) out.push('Xác nhận đã kiểm kê theo đúng quy trình.');
+  if (kind === 'stocktake') {
+    const st = v as { counted: boolean; skuExplanations: Record<string, string> };
+    if (!st.counted) out.push('Xác nhận đã kiểm kê theo đúng quy trình.');
+    const miss = (facts?.lines ?? []).filter((l: { mustExplain: boolean; sku: string }) => l.mustExplain && (st.skuExplanations[l.sku] ?? '').length < 3).map((l: { sku: string }) => l.sku);
+    if (miss.length) out.push(`Giải trình riêng các mã lệch vượt ngưỡng: ${miss.slice(0, 10).join(', ')}${miss.length > 10 ? '…' : ''}.`);
+  }
   return out;
 }
 /** Nguồn số liệu ghi kèm bản chụp. */
 const SOURCES: Record<StoreReportKind, string[]> = {
   daily: ['pos_shifts', 'sales_orders', 'customer_payments', 'cash_entries', 'pos_returns', 'pos_refunds', 'pos_exchange_allocations', 'store_settings'],
-  weekly: ['pos_shifts', 'sales_orders', 'sales_order_lines', 'stock_balances'],
-  monthly: ['pos_shifts', 'sales_orders', 'sales_order_lines'],
-  stocktake: ['inventory_adjustments', 'product_movements'],
+  weekly: ['pos_shifts', 'sales_orders', 'sales_order_lines', 'stock_balances', 'stock_holds', 'order_stock_holds', 'stock_transfers', 'store_restock_rules', 'pos_returns', 'store-target-source'],
+  monthly: ['pos_shifts', 'sales_orders', 'sales_order_lines', 'products.brand', 'pos_returns', 'hr_attendance', 'store-target-source'],
+  stocktake: ['inventory_adjustments', 'stock_balances', 'product_movements', 'pos_return_lines', 'store_settings'],
 };
 const provisionalOf = (kind: StoreReportKind, facts: any) => kind === 'daily' && Number(facts?.openShifts || 0) > 0;
 
-export function registerStoreRoutes(router: Router<StaffEnv>) {
+export function registerStoreRoutes(router: Router<StaffEnv>, deps: Deps = {}) {
   registerStoreFileRoutes(router, { storeFor, myStore });
   router.get('/store/status', async c => {
     const m = me(c), db = c.env.db, mine = await myStore(db, m.id), canReview = reviews(m);
@@ -264,7 +368,7 @@ export function registerStoreRoutes(router: Router<StaffEnv>) {
     const draftInputs = draft ? parse(draft.inputs) : null, reportData = existing ? parse(existing.data) : null;
     // Ô "đã nộp ngân hàng" ảnh hưởng chênh lệch: ưu tiên số trong nháp, rồi số đã nộp chính thức.
     const declared = kind === 'daily' ? money((draftInputs ?? reportData?.inputs ?? {}).bankDeposit, 'Tiền nộp ngân hàng') : null;
-    const facts = await factsFor(db, store, kind, period, declared);
+    const facts = redactCosts(kind, await factsFor(db, store, kind, period, declared, deps), me(c).role === 'manager');
     const started = periodStarted(kind, period, now), official = canSubmitOfficial(kind, period, now);
     const locked = !!existing && existing.review !== 'pending';
     return json({ kind, period, deadline: deadlineOf(kind, period), opensAt: periodEndsAt(kind, period), factsAt: now, facts, provisional: provisionalOf(kind, facts),
@@ -273,7 +377,7 @@ export function registerStoreRoutes(router: Router<StaffEnv>) {
       blockers: [...(!started ? ['Kỳ báo cáo chưa bắt đầu.'] : []), ...(started && !official ? [`Kỳ chưa kết thúc – chỉ lưu nháp; nộp chính thức từ ${new Date(periodEndsAt(kind, period)).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}.`] : []),
         ...(locked ? ['Báo cáo đã được duyệt – không sửa được. Dùng "Giải trình" nếu cần.'] : [])],
       draft: draft ? { inputs: draftInputs, updatedAt: draft.updatedAt } : null, versions,
-      report: existing ? { ...existing, data: reportData, state: slotState(kind, period, existing.submittedAt, now) } : null });
+      report: existing ? { ...existing, data: reportData ? { ...reportData, facts: redactCosts(kind, reportData.facts, me(c).role === 'manager') } : null, state: slotState(kind, period, existing.submittedAt, now) } : null });
   }, 'business');
 
   /** Lưu nháp: chỉ CHT của cửa hàng, kỳ đã bắt đầu, báo cáo chưa duyệt. Không tính là đã nộp. */
@@ -304,7 +408,7 @@ export function registerStoreRoutes(router: Router<StaffEnv>) {
     const [replay] = await db.select({ id: storeReports.id }).from(storeReports).where(and(eq(storeReports.memberId, m.id), eq(storeReports.clientKey, clientKey))).limit(1);
     if (replay) return json({ ok: true, id: replay.id, replayed: true });
     // Số liệu CRM luôn tính ở máy chủ lúc nộp – bỏ qua mọi "facts" client gửi lên.
-    const facts = await factsFor(db, { id: mine.registerId, warehouseId: mine.warehouseId }, kind, period, kind === 'daily' ? (inputs as { bankDeposit: number | null }).bankDeposit : null);
+    const facts = await factsFor(db, { id: mine.registerId, warehouseId: mine.warehouseId }, kind, period, kind === 'daily' ? (inputs as { bankDeposit: number | null }).bankDeposit : null, deps);
     const problems = officialProblems(kind, inputs, facts);
     if (problems.length) throw new AppError(400, problems.join(' '));
     const provisional = provisionalOf(kind, facts);
@@ -339,15 +443,49 @@ export function registerStoreRoutes(router: Router<StaffEnv>) {
     return json({ registerId: store.id, settings: await settingsOf(c.env.db, store.id), canEdit: me(c).role === 'manager', scheduleLabels: DEPOSIT_SCHEDULE_LABEL });
   }, 'business');
 
+  /** Ngưỡng tồn tối thiểu của kho cửa hàng (hàng cần bổ sung). CHT / người duyệt xem; Manager thay cả danh sách. */
+  router.get('/store/restock-rules', async c => {
+    const store = await storeFor(c, c.url.searchParams.get('registerId'));
+    const rules = await c.env.db.select({ sku: storeRestockRules.sku, minQty: storeRestockRules.minQty, name: products.name, updatedAt: storeRestockRules.updatedAt })
+      .from(storeRestockRules).leftJoin(products, eq(products.sku, storeRestockRules.sku)).where(eq(storeRestockRules.warehouseId, store.warehouseId)).orderBy(asc(storeRestockRules.sku));
+    return json({ registerId: store.id, rules, canEdit: me(c).role === 'manager' });
+  }, 'business');
+  router.put('/store/restock-rules', async c => {
+    const m = me(c); if (m.role !== 'manager') throw new AppError(403, 'Chỉ Manager được đặt ngưỡng tồn.');
+    const b = await readJson(c.req, 200_000), db = c.env.db, registerId = text(b.registerId, 80);
+    const [reg] = await db.select({ warehouseId: posRegisters.warehouseId }).from(posRegisters).where(eq(posRegisters.id, registerId)).limit(1);
+    if (!reg) throw new AppError(404, 'Không tìm thấy cửa hàng.');
+    const raw = Array.isArray(b.rules) ? b.rules : null;
+    if (!raw || raw.length > 2000) throw new AppError(400, 'Danh sách ngưỡng không hợp lệ (tối đa 2.000 mã).');
+    const rules = new Map<string, number>();
+    for (const r of raw as Record<string, unknown>[]) {
+      const sku = text(r?.sku, 200), min = Number(r?.minQty);
+      if (!sku || !Number.isFinite(min) || min <= 0 || min > 1e9) throw new AppError(400, `Ngưỡng của mã "${sku || '?'}" không hợp lệ (phải > 0).`);
+      if (rules.has(sku)) throw new AppError(400, `Mã ${sku} bị lặp.`);
+      rules.set(sku, Math.round(min * 1000) / 1000);
+    }
+    const known = rules.size ? new Set((await db.select({ sku: products.sku }).from(products).where(inArray(products.sku, [...rules.keys()]))).map(p => p.sku)) : new Set<string>();
+    const unknown = [...rules.keys()].filter(s => !known.has(s));
+    if (unknown.length) throw new AppError(400, `Không có trong danh mục: ${unknown.slice(0, 10).join(', ')}.`);
+    const now = nowIso();
+    await db.transaction(async tx => {
+      await tx.delete(storeRestockRules).where(eq(storeRestockRules.warehouseId, reg.warehouseId));
+      if (rules.size) await tx.insert(storeRestockRules).values([...rules].map(([sku, minQty]) => ({ warehouseId: reg.warehouseId, sku, minQty, updatedBy: m.id, updatedAt: now })));
+    });
+    return json({ ok: true, count: rules.size });
+  }, 'business');
+
   router.put('/store/settings', async c => {
     const m = me(c); if (m.role !== 'manager') throw new AppError(403, 'Chỉ Manager được cấu hình báo cáo cửa hàng.');
     const b = await readJson(c.req, 2_000), db = c.env.db, registerId = text(b.registerId, 80);
     const [reg] = await db.select({ id: posRegisters.id }).from(posRegisters).where(eq(posRegisters.id, registerId)).limit(1);
     if (!reg) throw new AppError(404, 'Không tìm thấy cửa hàng.');
-    const schedule = b.depositSchedule === null || b.depositSchedule === '' ? null : b.depositSchedule;
+    // Chỉ đổi các ô được gửi lên; ô không gửi giữ nguyên.
+    const cur = await settingsOf(db, registerId), has = (k: string) => Object.hasOwn(b, k);
+    const schedule = !has('depositSchedule') ? cur.depositSchedule : b.depositSchedule === null || b.depositSchedule === '' ? null : b.depositSchedule;
     if (schedule !== null && !DEPOSIT_SCHEDULES.includes(schedule as never)) throw new AppError(400, 'Lịch nộp tiền không hợp lệ.');
-    const values = { cashFloat: money(b.cashFloat, 'Quỹ được giữ lại'), depositSchedule: schedule as DepositSchedule | null,
-      stocktakeExplainThreshold: money(b.stocktakeExplainThreshold, 'Ngưỡng giải trình kiểm tồn'), updatedBy: m.id, updatedAt: nowIso() };
+    const values = { cashFloat: has('cashFloat') ? money(b.cashFloat, 'Quỹ được giữ lại') : cur.cashFloat, depositSchedule: schedule as DepositSchedule | null,
+      stocktakeExplainThreshold: has('stocktakeExplainThreshold') ? money(b.stocktakeExplainThreshold, 'Ngưỡng giải trình kiểm tồn') : cur.stocktakeExplainThreshold, updatedBy: m.id, updatedAt: nowIso() };
     await db.insert(storeSettings).values({ registerId, ...values }).onConflictDoUpdate({ target: storeSettings.registerId, set: values });
     return json({ ok: true, settings: await settingsOf(db, registerId) });
   }, 'business');

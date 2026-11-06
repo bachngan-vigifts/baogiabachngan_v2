@@ -84,6 +84,7 @@ import { registerCashbookRoutes } from './cashbook-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 import { registerFeedbackRoutes } from '../modules/feedback/api/routes.ts';
 import { registerStoreRoutes } from '../modules/store/api/routes.ts';
+import { storeAttendanceOf, storeTargetOf } from './store-report-sources.ts';
 export function createAppRouter() {
   transferTaskHooks.afterCommit = syncTransferTasks;
   invoiceTaskHooks.afterCommit = syncInvoiceTasks;
@@ -146,7 +147,7 @@ export function createAppRouter() {
   registerStaffHubRoutes(router,{crmFactsOf,teamRevenueOf:teamPayrollRevenues});
   registerTeamPayrollSources(router);
   registerFeedbackRoutes(router); // góp ý phát triển phần mềm (mọi nhân viên)
-  registerStoreRoutes(router); // báo cáo Cửa hàng trưởng (CHT): nộp, duyệt, Tiền Trách nhiệm, nhắc nhở
+  registerStoreRoutes(router, { targetOf: storeTargetOf, attendanceOf: storeAttendanceOf }); // báo cáo Cửa hàng trưởng (CHT): nộp, duyệt, Tiền Trách nhiệm, nhắc nhở
   registerDashboardRoutes(router, { kpiOf: dashboardKpiOf, storeOf: dashboardStoreOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR
   registerAuditRoutes(router);
   registerReportRoutes(router);
