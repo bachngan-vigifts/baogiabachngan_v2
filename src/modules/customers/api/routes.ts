@@ -19,6 +19,7 @@ import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { customerBrandDiscounts, customerContacts, customerDebtNotes, customerNotes, customers, customerStaff } from '../schema.ts';
 import { CUSTOMER_LIMITS, canListRetailCustomers } from '../domain/customer-config.ts';
+import type { CustomerTypesResponse } from '../../../core/contracts/customer-types.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 type Db = StaffEnv['db'];
@@ -183,6 +184,21 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     if (!changed.length) throw new AppError(409, 'Ghi chú công nợ cũ đã được cập nhật. Tải lại trước khi lưu.', 'CUSTOMER_DEBT_NOTE_CONFLICT');
     return json({ ...values, updatedBy: me.name });
   }, 'business');
+
+  // All existing group names, independent of the customer page's pagination.
+  router.get('/customers/types', async c => {
+    const name=sql<string>`btrim(${customers.customerType})`;
+    const rows=await c.env.db.selectDistinct({name}).from(customers)
+      .where(and(ne(customers.approvalStatus,'rejected'),canListRetailCustomers(viewer(c))?undefined:eq(customers.isRetail,false)))
+      .orderBy(asc(name));
+    const seen=new Set<string>(),types:string[]=[];
+    for(const row of rows){
+      const value=row.name?.trim(),key=value?.toLocaleLowerCase('vi');
+      if(value&&key&&!seen.has(key)){seen.add(key);types.push(value);}
+    }
+    types.sort((a,b)=>a.localeCompare(b,'vi'));
+    return json({types} satisfies CustomerTypesResponse);
+  },'business');
 
   // Tìm không dấu theo tên, người liên hệ, điện thoại, email, MST, mã KH; phân trang (?q=&limit=&offset=).
   // `?mine=1`: chỉ khách mình phụ trách hoặc được chia sẻ. Mỗi dòng kèm người phụ trách.
