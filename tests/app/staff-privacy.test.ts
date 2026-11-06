@@ -9,7 +9,7 @@ import { keepCosts, withoutCosts } from '../../src/modules/quotes/domain/cost-pr
 
 /**
  * QUYỀN RIÊNG TƯ NỘI BỘ:
- *  - chỉ nhân viên phụ trách khách (hoặc Manager) sửa được thông tin khách / người liên hệ;
+ *  - Manager, người phụ trách và nhân viên được chia sẻ sửa được hồ sơ / người liên hệ; người chỉ xem thì không;
  *  - giá vốn (giá nhập, CK mua vào, chi phí in gia công, CK khách) chỉ Manager thấy, nhân viên lưu báo giá không làm mất / đổi giá vốn;
  *  - kho không xem được danh bạ khách hàng.
  */
@@ -28,21 +28,30 @@ async function setup() {
   return { call, emp: await login('emp@x.vn'), emp2: await login('emp2@x.vn'), mgr: await login('mgr@x.vn'), kho: await login('kho@x.vn') };
 }
 
-test('khách hàng: chỉ người phụ trách hoặc Manager sửa thông tin / người liên hệ', async () => {
+test('khách hàng: phụ trách, Manager và người được chia sẻ sửa hồ sơ; thu hồi chia sẻ chặn lại', async () => {
   const { call, emp, emp2, mgr } = await setup();
   const id = (await call('/customers', emp, 'POST', customerCreateFixture({ name: 'Công ty Mẫu' }))).data.id as string;
-  // emp2 được chia sẻ (xem được) nhưng không phụ trách → không sửa được.
+  // Cùng nhóm chỉ được xem; phải có chia sẻ trực tiếp mới sửa được hồ sơ.
+  assert.equal((await call(`/customers/${id}`, emp2)).data.access.canEditProfile, false);
+  assert.equal((await call(`/customers/${id}`, emp2, 'PUT', { name: 'Chưa được chia sẻ' })).status, 403);
+  assert.equal((await call(`/customers/${id}/contacts`, emp2, 'POST', { name: 'Chưa được thêm' })).status, 403);
   assert.equal((await call(`/customers/${id}/staff`, mgr, 'PUT', { sharedIds: ['emp2'] })).status, 200);
   assert.equal((await call(`/customers/${id}`, emp2)).data.access.canEdit, false);
-  assert.equal((await call(`/customers/${id}`, emp2, 'PUT', { name: 'Đổi tên' })).status, 403);
-  assert.equal((await call(`/customers/${id}/contacts`, emp2, 'POST', { name: 'Anh A' })).status, 403);
+  assert.equal((await call(`/customers/${id}`, emp2)).data.access.canEditProfile, true);
+  assert.equal((await call(`/customers/${id}`, emp2, 'PUT', { name: 'Đổi tên' })).status, 200);
+  const sharedContact = await call(`/customers/${id}/contacts`, emp2, 'POST', { name: 'Anh Chia Sẻ' });
+  assert.equal(sharedContact.status, 201);
 
   assert.equal((await call(`/customers/${id}`, emp)).data.access.canEdit, true);
   assert.equal((await call(`/customers/${id}`, emp, 'PUT', { name: 'Công ty Mẫu 2' })).status, 200);
   const contact = await call(`/customers/${id}/contacts`, emp, 'POST', { name: 'Anh A' });
   assert.equal(contact.status, 201, JSON.stringify(contact.data));
   const contactId = contact.data.id;
-  assert.equal((await call(`/customers/${id}/contacts/${contactId}`, emp2, 'PUT', { name: 'Anh B' })).status, 403);
+  assert.equal((await call(`/customers/${id}/contacts/${contactId}`, emp2, 'PUT', { name: 'Anh B' })).status, 200);
+  assert.equal((await call(`/customers/${id}/contacts/${sharedContact.data.id}`, emp2, 'DELETE')).status, 200);
+  assert.equal((await call(`/customers/${id}/staff`, mgr, 'PUT', { sharedIds: [] })).status, 200);
+  assert.equal((await call(`/customers/${id}`, emp2)).data.access.canEditProfile, false);
+  assert.equal((await call(`/customers/${id}/contacts/${contactId}`, emp2, 'PUT', { name: 'Không được sửa nữa' })).status, 403);
   assert.equal((await call(`/customers/${id}/contacts/${contactId}`, emp2, 'DELETE')).status, 403);
   assert.equal((await call(`/customers/${id}`, mgr, 'PUT', { name: 'Công ty Mẫu 3' })).status, 200);
   assert.equal((await call(`/customers/${id}/contacts/${contactId}`, mgr, 'DELETE')).status, 200);
