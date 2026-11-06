@@ -20,6 +20,7 @@ const ALLOWED: Record<string, string[]> = {
   care: ['staff', 'customers'],
   dashboard: ['staff', 'customers', 'sales', 'quotes', 'care', 'integrations'], // báo cáo chỉ đọc, không phụ thuộc HR/lương
   feedback: ['staff', 'notifications'], // góp ý phần mềm: chỉ cần tài khoản nhân viên + thông báo
+  store: ['staff', 'sales', 'inventory', 'catalog', 'notifications'], // báo cáo Cửa hàng trưởng: đọc ca POS / đơn / tồn kho cửa hàng (chỉ đọc)
 
   hr: ['staff'], 'staff-hub': ['staff', 'customers', 'quotes', 'sales', 'tasks', 'hr'],
 };

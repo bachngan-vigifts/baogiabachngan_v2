@@ -47,6 +47,7 @@ export const PERMISSIONS: readonly PermissionDef[] = [
   { key: 'page.cashbook', group: 'Kế toán', label: 'Sổ thu / chi', hint: 'Phiếu thu khách + phiếu chi NCC theo ngày, xuất Excel để đối soát ngân hàng.', defaults: ['accounting'] },
   { key: 'payments.void', group: 'Kế toán', label: 'Huỷ phiếu thu ghi nhầm', hint: 'Bắt buộc ghi lý do; phiếu huỷ vẫn giữ trong lịch sử.', defaults: ['accounting'] },
   { key: 'dashboard.all', group: 'Kế toán', label: 'Doanh số toàn công ty', hint: 'Tổng quan doanh số xem cả công ty (không có: chỉ doanh số của mình).', defaults: ['accounting'] },
+  { key: 'store.review', group: 'Quản trị', label: 'Duyệt báo cáo Cửa hàng trưởng', hint: 'Xem báo cáo ngày / tuần / tháng / kiểm kho của mọi cửa hàng, đánh dấu đạt / sai sổ quỹ / đề xuất sai / miễn (ảnh hưởng Tiền Trách nhiệm CHT).', defaults: [] },
   { key: 'feedback.manage', group: 'Quản trị', label: 'Quản lý góp ý phần mềm', hint: 'Xem mọi góp ý (kể cả góp ý riêng tư), đổi trạng thái, ưu tiên, gộp trùng, nhận thông báo góp ý mới.', defaults: [] },
   { key: 'perm.manage', group: 'Quản trị', label: 'Quản lý phân quyền (trang này)', hint: 'Sửa phòng ban, chức vụ và bảng quyền. Không đụng được chức vụ Manager.', defaults: [] },
 ];

@@ -56,6 +56,7 @@ import { initQuoteSourcing } from './quote-sourcing.js';
 import { initOrderCreate } from './order-create.js';
 import { initDashboard } from './dashboard.js';
 import { initFeedback } from './feedback.js';
+import { initStoreReports } from './store-reports.js';
 import { initFlowMap } from './flow-map.js';
 import { initSuppliers } from './suppliers.js';
 import { initPurchases } from './purchases.js';
@@ -452,7 +453,7 @@ let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('
 function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
-  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
+  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
   // Chỉ tự đặt con trỏ khi vừa mở form; không giành focus người dùng đã chọn.
@@ -629,7 +630,7 @@ async function loadAll() {
   const later = (home, load) => home.includes(page) ? load() : requestPriority.idle().then(() => state.user ? load() : undefined);
   const jobs = [can('page.quotes') && later(['quotes'], loadQuotes), can('page.customers') && later(['customers'], loadCustomers)].filter(Boolean);
   if (isManager()) jobs.push(later(['staff', 'members'], loadMembers), loadSapoSync());
-  loadBadges({ startChat: true }); $('#chat-launcher').hidden = false; approvalView().start();
+  loadBadges({ startChat: true }); $('#chat-launcher').hidden = false; approvalView().start(); storeView().start();
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
   // Tải sẵn bảng Công việc lúc rảnh: lần bấm đầu vào trang Công việc hiện ngay (sau đó vẫn tải bản mới ở nền).
@@ -799,7 +800,7 @@ posLocalSearch.ready = () => !!catalog.items;
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { feedback: 'Góp ý phần mềm', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+const VIEWS = { feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
@@ -879,6 +880,7 @@ function route() {
   if (view === 'tasks') tasksView().load(id);
   if (view === 'dashboard') dashboardView().load();
   if (view === 'feedback') feedbackView().show(id ? decodeURIComponent(id) : '');
+  if (view === 'store-reports') storeView().show(query);
   if (view === 'flow') flowView().load();
   if (view === 'suppliers') { suppliersView().load(); if (new URLSearchParams(query).get('new') === '1') suppliersView().openNew(); else if (id) suppliersView().open(decodeURIComponent(id)); }
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
@@ -3794,6 +3796,9 @@ var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dò
 var careUi = null; // eslint-disable-line no-var
 var dashboardUi = null;
 function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('#view-dashboard'), isManager, money }); }
+var storeUi = null;
+/** Báo cáo Cửa hàng trưởng: trang #/store-reports + hộp nhắc việc 30 phút (chỉ CHT được gán). */
+function storeView() { return storeUi ||= initStoreReports({ api, root: $('#view-store-reports'), toast, esc, go, money, confirmBox, userId: () => state.user?.id }); }
 var feedbackUi = null;
 /** Góp ý phần mềm: trang #/feedback + nút trong menu tài khoản (mở ở mọi trang, tự ghi trang đang dùng). */
 function feedbackView() { return feedbackUi ||= initFeedback({ api, root: $('#view-feedback'), toast, esc, go, fmtDate,
