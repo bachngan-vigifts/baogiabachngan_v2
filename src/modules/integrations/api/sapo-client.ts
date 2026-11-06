@@ -20,7 +20,7 @@ const pathOf = (location: string) => { try { return new URL(location, 'https://x
 
 /**
  * Gọi Sapo admin bằng cookie phiên của Manager. Đồng bộ chỉ ĐỌC (`get` / `list`); `send` (POST / PUT) chỉ dùng cho
- * luồng đẩy đơn hàng sang Sapo (api/sapo-order-push.ts) – như nút "Copy báo giá vào Sapo" của web cũ.
+ * thao tác ghi (hiện không còn luồng nào trong CRM dùng: tạo đơn Sapo đi qua n8n → OpenClaw).
  * Phân loại lỗi như bản cũ: chuyển về trang đăng nhập / 401 → phiên hết hạn; 403 → thiếu quyền.
  */
 export function sapoClient(o: SapoClientOptions) {
