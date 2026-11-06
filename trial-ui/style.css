@@ -2643,3 +2643,13 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 .data-table.revenue-target-table thead th { position: sticky; top: 0; z-index: 2; background: #102a56; color: white; }
 .data-table.revenue-target-table td:first-child small { display: block; }
 .data-table.revenue-target-table input[aria-invalid="true"] { outline: 2px solid #dc2626; }
+
+/* Đăng ký / duyệt doanh số (revenue-target-requests.js, revenue-targets.js): hàng chọn năm thẳng hàng với ô nhập; lưới 12 tháng canh đầu ô. */
+.rt-year-row { display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: flex-start; align-items: flex-end; margin-bottom: 8px; white-space: normal; }
+.rt-year-row label { width: auto; }
+.rt-year-row input[data-year] { width: 120px; }
+.rt-year-row .btn { min-height: var(--field-h, 42px); align-self: flex-end; }
+.rt-year-row .btn + .btn { margin-left: 0; }
+.rt-month-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); align-items: start; gap: 12px 14px; margin: 10px 0; }
+.rt-month-grid > label { align-content: start; }
+.rt-month-grid > label small { display: block; min-height: 2.6em; font-weight: 400; color: var(--muted); line-height: 1.3; }
