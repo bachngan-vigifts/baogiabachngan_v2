@@ -37,6 +37,10 @@ test('CRM receipt shows historical delivery, actual return, sellable restock and
     assert.equal(record.children[0]!.tag, 'a');
     assert.equal(record.children[0]!.textContent, '<img onerror=alert(1)>');
     assert.equal(record.children[0]!.href, '#/orders/synthetic?returns=1');
+    const redeliveryLines=[{...lines[0]!,deliveredQty:1,historicalDeliveredQty:2}];
+    renderOrderLineDetails({head,body,details,lines:redeliveryLines,returnSummary:summary,order:{id:'synthetic',channel:'crm'}});
+    assert.equal(body.children[0]!.children[2]!.textContent,'2','show cumulative delivery history separately from net progress');
+    assert.equal(returnStateText(summary,redeliveryLines),'Đã nhận hoàn một phần');
     renderOrderLineDetails({ head, body, details, lines, order: { channel: 'crm' } });
     assert.equal(head.children.length, 6); assert.equal(details.children.length, 0);
   } finally { Object.assign(globalThis, { document: previous }); }
