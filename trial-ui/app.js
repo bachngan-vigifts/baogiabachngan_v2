@@ -1,3 +1,5 @@
+import {makeShipmentDemo} from './order-shipment-demo-data.js';
+import {initOrderShipmentDemo} from './order-shipment-demo.js';
 import {initCustomerCenter} from './customer-center.js';
 import {openProvinceSharing} from './customer-province-sharing.js';
 import {orderListExportSheets} from './order-list-export.js';
@@ -424,7 +426,7 @@ const can = key => isManager() || (Array.isArray(state.user?.perms) ? state.user
 /** Trang (#/…) → quyền cần có. Trang không có ở đây (Công việc, Sản phẩm…) ai cũng vào được. */
 const PAGE_PERM = {
   cash: 'page.cash', pos: 'pos.sell',
-  quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
+  quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', 'order-products':'page.orders', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
   purchases: 'page.purchases', 'early-requests': 'purchases.early-view', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', stocktake: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
 };
@@ -814,7 +816,7 @@ posLocalSearch.ready = () => !!catalog.items;
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+const VIEWS = { 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
@@ -888,6 +890,9 @@ function route() {
   if (view === 'contracts') loadContracts();
   if (view === 'receiving') receivingView().load();
   if (view === 'deliveries') loadDeliveries();
+  if (view === 'order-products') productOrdersDemo().show(query);
+  if(view!=='order-products')productOrdersUi?.close();
+  if(view!=='deliveries')shipmentCalendarUi?.close();
   if (view === 'receivables') loadReceivables();
   if (view === 'cashbook') loadCashbook();
   if (view === 'stock-requests') loadStockRequests(id);
@@ -3463,7 +3468,14 @@ function salesListSummary(key, s) {
 /** Bộ lọc chi tiết Lịch giao hàng (máy chủ lọc): nhân viên phụ trách, loại chứng từ, đơn vị giao, hoá đơn. */
 const DELIVERY_FILTERS = ['owner', 'kind', 'carrier', 'invoice'];
 let deliveriesReq = 0;
+var productOrdersUi=null,shipmentCalendarUi=null,orderShipmentData=null;
+function productOrdersDemo(){return productOrdersUi ||= initOrderShipmentDemo({root:$('#view-order-products'),data:orderShipmentData ||= makeShipmentDemo(),kind:'products',go,canProducts:()=>canPage('order-products')});}
+function shipmentCalendarDemo(){return shipmentCalendarUi ||= initOrderShipmentDemo({root:$('#deliveries-prototype'),data:orderShipmentData ||= makeShipmentDemo(),kind:'calendar',go,canProducts:()=>canPage('order-products')});}
 async function loadDeliveries() {
+  const query=location.hash.split('?')[1]||'',calendar=new URLSearchParams(query).get('view')==='calendar';
+  $('#deliveries-real').hidden=calendar;$('#deliveries-prototype').hidden=!calendar;
+  for(const a of $$('[data-shipment-tab]')){const active=a.dataset.shipmentTab===(calendar?'calendar':'list');a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}
+  if(calendar){shipmentCalendarDemo().show(query);return;}shipmentCalendarUi?.close();
   // Kho: 7 ngày trước (chuyến trễ chưa giao) → ngày mai; người khác 7 ngày trước → 30 ngày tới.
   if (!$('#deliveries-from').value) { const t = new Date(todayIso()); $('#deliveries-from').value = new Date(t - 7 * 864e5).toISOString().slice(0, 10); $('#deliveries-to').value = new Date(+t + (isWarehouse() ? 1 : 30) * 864e5).toISOString().slice(0, 10); }
   $('#deliveries-list').innerHTML = skeleton(7);
@@ -3907,6 +3919,7 @@ async function refreshData() {
   else if (page === 'transfers') jobs.push(transfersView().load(id));
   else if (page === 'receiving') jobs.push(receivingView().load());
   else if (page === 'deliveries') jobs.push(loadDeliveries());
+  else if (page === 'order-products') productOrdersDemo().show(query);
   else if (page === 'receivables') jobs.push(loadReceivables());
   else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : customerScreen(query));
   else if (page === 'products') { if(id)jobs.push(productDetail().refresh());else jobs.push(loadProducts(),productAdmin().loadPending(),loadCatalogSnapshot()); }
