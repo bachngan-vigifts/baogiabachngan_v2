@@ -12,7 +12,7 @@ function setup(hash: string, fail?: (path: string) => Error | undefined) {
   let dashboard = false;
   const context: any = { URLSearchParams, $: node, view() {}, location, history: { replaceState(_a: unknown, _b: string, url: string) { location.hash = url.includes('#') ? '#' + url.split('#')[1] : ''; } },
     api: async (path: string) => { calls.push(path); const error = fail?.(path); if (error) throw error; return { email: 'client@example.test' }; },
-    boot: async () => { dashboard = true; }, saveToken() {} };
+    boot: async () => { dashboard = true; }, saveToken() {}, loginBot: { token: () => '', reset() {} } };
   const start = source.indexOf('let activation = null;');
   const end = source.indexOf("$('#c-staff-logout')", start);
   runInNewContext(source.slice(start, end) + '\nglobalThis.show = showAuth;', context);
