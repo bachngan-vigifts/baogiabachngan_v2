@@ -25,7 +25,8 @@ export const staffWeeklyReports = pgTable('staff_weekly_reports', {
   uniqueIndex('uq_staff_weekly_reports_client_key').on(t.memberId, t.clientKey),
   index('idx_staff_weekly_reports_review').on(t.review, t.period),
   enumCheck('chk_staff_weekly_reports_review', t.review, WEEKLY_REVIEWS),
-  check('chk_staff_weekly_reports_period', sql`${t.period} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
+  // Kỳ tuần 'YYYY-MM-DD' (thứ Hai) hoặc kỳ tháng 'YYYY-MM' (báo cáo tháng, migration 20261114090000).
+  check('chk_staff_weekly_reports_period', sql`${t.period} ~ '^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$'`),
 ]).enableRLS();
 
 /** Nháp (chỉ phần nhân viên nhập) – không tính là đã nộp. */

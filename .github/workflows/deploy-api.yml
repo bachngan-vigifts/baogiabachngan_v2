@@ -6,7 +6,14 @@ name: Triển khai API
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'supabase/**', 'migrations/postgres/**', 'package-lock.json', '.github/workflows/deploy-api.yml']
+    paths:
+      [
+        'src/**',
+        'supabase/**',
+        'migrations/postgres/**',
+        'package-lock.json',
+        '.github/workflows/deploy-api.yml',
+      ]
   workflow_dispatch:
     inputs:
       backfill_legacy_addresses:
@@ -99,7 +106,7 @@ jobs:
           tests/app/order-sapo-ui.test.ts
       - name: Thiếu SUPABASE_ACCESS_TOKEN
         if: env.SUPABASE_ACCESS_TOKEN == ''
-        run: echo "::warning::Chưa có secret SUPABASE_ACCESS_TOKEN – bỏ qua bước triển khai." 
+        run: echo "::warning::Chưa có secret SUPABASE_ACCESS_TOKEN – bỏ qua bước triển khai."
       - uses: supabase/setup-cli@v1
         if: env.SUPABASE_ACCESS_TOKEN != ''
         # Cố định phiên bản: "latest" phải hỏi API GitHub mỗi lần và có lúc bị chặn (rate limit) → hỏng bước triển khai.
@@ -249,6 +256,13 @@ jobs:
         shell: bash
         run: |
           payload=$(jq -n --rawfile query scripts/sql/assert-staff-weekly-reports.sql '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra migration báo cáo tháng Sale đã chạy tay
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-staff-monthly-reports.sql '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
       - name: Kiểm tra migration giá vốn dòng đơn đã chạy tay

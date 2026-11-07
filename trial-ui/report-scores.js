@@ -18,11 +18,13 @@ export function createReportScoreCard(view){
  const b=view?.basis;
  if(b){
   const table=node('table',null,'report-score-table'),head=node('thead'),tr=node('tr'),body=node('tbody');
-  for(const label of ['Tuần / hạn nộp','Trạng thái','Điểm'])tr.append(node('th',label));head.append(tr);table.append(head,body);
+  for(const label of [b.monthly?'Tuần / tháng / hạn nộp':'Tuần / hạn nộp','Trạng thái','Điểm'])tr.append(node('th',label));head.append(tr);table.append(head,body);
   const day=iso=>/^\d{4}-\d{2}-\d{2}/.test(iso||'')?iso.slice(0,10).split('-').reverse().join('/'):'—';
-  b.weeks.forEach((w,i)=>{const row=node('tr'),week=node('td');week.append(node('b',`Tuần ${i+1} · ${day(w.period)}`),node('small','Hạn: '+(Number.isNaN(Date.parse(w.deadline))?'—':new Date(w.deadline).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',dateStyle:'short',timeStyle:'short'}))));row.append(week,node('td',reportWeekLabel(w)),node('td',scoreNumber(w.score),'num'));body.append(row);});root.append(table);
-  const pending=b.weeks.filter(w=>w.score===null).length;
-  root.append(node('p',`Tổng tháng lấy ${b.required} tuần có điểm cao nhất, tối đa ${b.required} điểm. Tuần xếp vào tháng theo hạn nộp.${pending?' Còn '+pending+' tuần chưa tới hạn.':''}`,'muted small'));
+  const addRow=(w,label)=>{const row=node('tr'),week=node('td');week.append(node('b',label),node('small','Hạn: '+(Number.isNaN(Date.parse(w.deadline))?'—':new Date(w.deadline).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',dateStyle:'short',timeStyle:'short'}))));row.append(week,node('td',reportWeekLabel(w)),node('td',scoreNumber(w.score),'num'));body.append(row);};
+  b.weeks.forEach((w,i)=>addRow(w,`Tuần ${i+1} · ${day(w.period)}`));if(b.monthly)addRow(b.monthly,'Báo cáo tháng '+month);root.append(table);
+  const pending=[...b.weeks,...(b.monthly?[b.monthly]:[])].filter(w=>w.score===null).length;
+  const rule=b.monthly?`Tổng tháng = 4 tuần có điểm cao nhất + báo cáo tháng, tối đa ${b.required} điểm.`:`Tổng tháng lấy ${b.required} tuần có điểm cao nhất, tối đa ${b.required} điểm.`;
+  root.append(node('p',`${rule} Tuần xếp vào tháng theo hạn nộp.${pending?' Còn '+pending+' kỳ chưa tới hạn.':''}`,'muted small'));
  }
  const link=node('a','Xem báo cáo tuần','btn ghost small');link.href='#/weekly-reports?month='+encodeURIComponent(view?.month||'');root.append(link);return root;
 }

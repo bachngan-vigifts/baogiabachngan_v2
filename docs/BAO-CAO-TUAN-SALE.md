@@ -5,6 +5,7 @@ Trang `#/weekly-reports` (menu *Công việc → Báo cáo tuần*; chỉ hiện
 ## Quy định
 
 - **Ai nộp:** nhân viên đang làm có chức vụ `sale` hoặc `sale-admin`. Chức vụ khác nhận 403 ở máy chủ.
+- **KH mới** trong số liệu tuần/tháng dùng cùng nguồn KPI hiện hành: hồ sơ khách doanh nghiệp do người đó tạo và được duyệt, theo thời điểm duyệt giờ Việt Nam; không cần có đơn. Không tính hồ sơ chờ duyệt/nhập khẩu/khách lẻ hoặc khách do đồng nghiệp tạo. Cơ cấu doanh số KH cũ/mới vẫn là phân tích lịch sử mua, là chỉ số riêng.
 - **Tuần:** thứ Hai → Chủ nhật (giờ Việt Nam). Trong tuần chỉ **lưu nháp**; **nộp chính thức** từ 00h00 thứ Hai tuần sau, **hạn 10h00 thứ Hai** tuần sau. Nháp không tính điểm.
 - **Tuần thuộc tháng nào:** tuần có *thứ Hai hạn nộp* rơi vào tháng đó. Thường 4 tuần; tháng có 5 thứ Hai thì có 5 tuần và **lấy 4 tuần điểm cao nhất**.
 - **Nội dung** (rút gọn từ mẫu báo cáo tuần đang dùng; số liệu CRM tính ở máy chủ lúc nộp, bỏ qua số client gửi):
@@ -28,16 +29,29 @@ Trang `#/weekly-reports` (menu *Công việc → Báo cáo tuần*; chỉ hiện
 | Manager duyệt *Miễn* | 1 |
 | Hạn nộp trước ngày triển khai 06/11/2026 (tuần 26/10–01/11) | 1 – "Miễn – trước ngày triển khai" |
 
+## Báo cáo tháng (từ tháng 11/2026)
+
+Cùng trang `#/weekly-reports` (thẻ "Báo cáo tháng" cuối danh sách tuần). Kỳ = tháng; lưu nháp trong tháng, **nộp chính thức từ 00h00 ngày 01, hạn 10h00 ngày 02 tháng sau**. Nộp lại / duyệt như báo cáo tuần; điểm cùng thang (đúng hạn 1 · trễ < 1 ngày 0,5 · còn lại 0 · Miễn 1 · Chưa đạt 0).
+
+1. *Doanh số & thưởng* – CRM: doanh số tháng, so tháng trước / cùng kỳ năm trước, chỉ tiêu đăng ký và tỉ lệ đạt; **thưởng KPI DS dự kiến** (KPI CV → tỉ lệ thưởng → số tiền, căn cứ DS / DS net, bậc thưởng) lấy đúng từ bảng lương (`buildPayroll`, contract `SalePayrollPreviewOf`) – tiền thật theo phiếu lương khi chốt.
+2. *KPI hoạt động* – từng chỉ số KPI CV thực hiện / chỉ tiêu; tỉ lệ chốt báo giá.
+3. *Cơ cấu doanh số* theo ngành, tỉ lệ KH cũ / KH mới, top 5 khách.
+4. *Cơ hội chuyển sang tháng sau* – báo giá 3 tháng gần nhất chưa chốt.
+5. *Công nợ cuối tháng* – thu được trong tháng, còn phải thu, quá hạn.
+6. *Tự nhập* (bắt buộc): đánh giá tháng, chỉ tiêu đăng ký tháng sau (**chỉ ghi chú** – đăng ký chính thức vẫn ở trang Chỉ tiêu), khách trọng điểm, kế hoạch; đề xuất không bắt buộc.
+
 ## Tiền trách nhiệm (áp dụng từ bảng lương **11/2026**)
 
 ```
-Tiền trách nhiệm = mức trách nhiệm (hồ sơ lương từng người) × ngày công ÷ công chuẩn × điểm ÷ 4
+Tiền trách nhiệm = mức trách nhiệm (hồ sơ lương từng người) × ngày công ÷ công chuẩn × điểm ÷ 5
+(điểm = 4 tuần cao nhất + báo cáo tháng; tháng trước 11/2026 không có báo cáo tháng thì ÷ 4)
 ```
 
 - Chỉ áp dụng cho người thuộc bảng lương **Sale & VP** có chức vụ Sale / Sale Admin; tháng trước 11/2026 và các chức vụ khác giữ cách tính cũ.
 - Thử việc: như cũ, không có tiền trách nhiệm.
-- Ví dụ: mức 2.600.000, đủ 26/26 công, 4 tuần được 1 + 0,5 + 0 + 0 = 1,5 điểm → 2.600.000 × 26/26 × 1,5/4 = **975.000**.
-- Phiếu lương ghi rõ: `2.600.000 × 26/26 công × 1,5/4 điểm báo cáo tuần`.
+- Ví dụ: mức 2.600.000, đủ 26/26 công, 4 tuần được 1 + 0,5 + 0 + 0 = 1,5 điểm, báo cáo tháng đúng hạn 1 điểm → 2,5 điểm → 2.600.000 × 26/26 × 2,5/5 = **1.300.000**.
+- Phiếu lương ghi rõ: `2.600.000 × 26/26 công × 2,5/5 điểm báo cáo (4 tuần + tháng)`.
+- Tổng quan và phiếu lương nhận cả dòng điểm báo cáo tháng qua contract chỉ đọc; không đưa nội dung báo cáo, lương hay ngân hàng vào API điểm. Phiếu đã chốt giữ bản lưu cũ (kể cả mẫu số 4), không ghép thêm điểm tháng hiện tại.
 
 ## Dữ liệu
 
