@@ -60,12 +60,59 @@ Báo cáo: thẻ "Độ tin cậy giá vốn" (doanh thu theo chính xác / ư�
 - Như phí ship báo giá: phần phí cấp đơn chỉ cộng / trừ khi mọi dòng của đơn đủ giá vốn.
 - Có vận đơn GHN nhưng chưa có phí → cảnh báo "chưa có phí GHN", không coi là 0.
 
+## Chi phí nhân sự bán hàng (giai đoạn 2 – PR-C)
+
+**LN sau chi phí = LN gộp + thu phí khách − phí GHN − lương & phụ cấp − thưởng (Sale / Sale Admin).**
+
+| Khoản | Nguồn chuẩn | Ghi nhận | Chống tính hai lần |
+| --- | --- | --- | --- |
+| Lương + phụ cấp, thưởng của Sale / Sale Admin | Bảng lương tháng (`buildPayroll` / `payslipView`: phiếu đã chốt = bản chụp; chưa chốt = tạm tính), qua contract `src/core/contracts/staff-cost.ts` nối ở `src/app/staff-cost.ts` | Theo **kỳ lương** (tháng); chỉ tháng **trọn** trong kỳ lọc | Chi lương bằng tiền mặt trong sổ quỹ **không** tính là chi phí ở bước chi nhánh (đã có ở bảng lương); hoa hồng / CK khách đã trừ ở LN gộp, thưởng HĐKT là thưởng của Sale (khoản khác) |
+
+- `gross` = tổng các dòng **thu nhập** trên phiếu (không gồm khấu trừ: tạm ứng, BHXH phần người lao động, vi phạm). [Giả định] BHXH phần công ty đóng chưa có trên phiếu → chưa tính.
+- Thưởng = KPI DS, HĐKT + điều chỉnh kỳ trước, sản lượng, quý, DS, khác; phần còn lại là lương + phụ cấp.
+- **Phân bổ**: vào đơn của chính người đó trong tháng, theo doanh thu **đủ giá vốn**, giữ nguyên tổng (làm tròn xuống, phần lẻ dồn theo phần dư lớn nhất). Không có đơn đủ giá vốn → **chưa phân bổ** (liệt kê tên, tháng, lý do).
+- Phân bổ trên mọi đơn rồi mới áp bộ lọc → **đối soát toàn công ty**: phân bổ + chưa phân bổ = tổng bảng lương Sale / Sale Admin (hiện ✔ / ⚠ trên trang).
+- Kỳ lọc có tháng lẻ (không bắt đầu ngày 01 hoặc không kết thúc cuối tháng): tháng lẻ chưa trừ lương, ghi chú rõ.
+- Kỳ lương đã chốt: dùng bản chụp lúc chốt; điều chỉnh sau chốt đi vào kỳ sau theo quy trình bảng lương (không sửa kỳ cũ).
+
+## Chi phí chi nhánh và lợi nhuận công ty (giai đoạn 2 – PR-D)
+
+Chi phí chi nhánh **không chia xuống đơn**; tính ở cấp chi nhánh (quầy POS; Văn phòng / CRM).
+
+| Khoản | Nguồn chuẩn | Ghi nhận | Chống tính hai lần |
+| --- | --- | --- | --- |
+| Chi vặt két – chi phí hoạt động | `cash_entries` (đã ghi sổ, chưa huỷ), quầy theo ca (`pos_shifts.register_id`) | Ngày tạo phiếu (giờ VN) trong kỳ | Chỉ loại `petty_expense` không mang dấu hiệu trùng (bảng dưới) |
+| Lương NVBH / CHT (không thuộc Sale / Sale Admin) | Bảng lương (contract `StaffCostOf`) | Tháng trọn | Chia theo **số ca đã mở** ở từng quầy trong tháng (giữ nguyên tổng); không có ca → chi phí chung |
+| Chi phí chung chưa phân bổ | Phiếu lương người không phải Sale và không có ca (văn phòng, kho, quản lý…) | Tháng trọn | Chỉ hiện khi không lọc |
+| Chi phí văn phòng (thuê, điện…) | — | — | CRM chưa ghi nhận → **chưa tính**, ghi rõ |
+
+**Phân loại phiếu két** (không phải phiếu chi nào cũng là chi phí):
+
+| Loại | Tính vào chi phí? |
+| --- | --- |
+| Chi vặt – hoạt động | **Có** |
+| Chi vặt ghi trả lương / thưởng / phụ cấp | Không – đã ở bảng lương (liệt kê "cần xác nhận") |
+| Chi vặt ghi phí GHN / ship / giao hàng | Không – có thể trùng phí GHN của đơn (cần xác nhận) |
+| Chi vặt ghi trả NCC / nhập hàng | Không – đã ở giá vốn (cần xác nhận) |
+| Hoàn tiền / trả khách | Không – đã trừ doanh thu qua phiếu trả |
+| Tạm ứng | Không – trừ lương sau |
+| Nộp két / rút két | Không – chuyển tiền |
+| Thu khác | Không – không phải doanh thu bán hàng |
+| Điều chỉnh két (chênh lệch) | Chưa tính – cần Manager xác nhận |
+
+[Giả định] Nhận biết chi vặt trùng bằng từ khoá trong tên / nội dung phiếu (lương, GHN / ship, NCC, hoàn tiền); trang liệt kê để Manager kiểm tra.
+
+**Lợi nhuận công ty** (chỉ khi không lọc) = Σ LN sau chi phí của đơn − lương Sale chưa phân bổ − chi vặt chi nhánh − lương quầy − chi phí chung.
+Đối soát hiện trên trang:
+- Σ LN chi nhánh − lương Sale chưa phân bổ − chi phí chung = LN công ty (tính độc lập từ đơn, phát hiện đơn rơi ngoài chi nhánh);
+- Bảng lương các tháng trọn = Sale (phân bổ + chưa) + quầy + chung.
+
 ## Xem theo
 
 Ngày / tuần / tháng / năm (biểu đồ LN gộp + bảng), chi nhánh (Văn phòng / CRM, từng quầy POS), nhân viên (người phụ trách đơn), khách hàng, đơn hàng (bấm xem từng dòng: giá bán, giá vốn + nguồn, in, hoa hồng), sản phẩm. Lọc chi nhánh / nhân viên; xuất CSV mở bằng Excel. Cờ **Lỗ** (LN < 0) và **Biên thấp** (< 15%).
 
 ## Chưa có (giai đoạn sau)
 
-Lợi nhuận sau chi phí (thưởng Sale từ bảng lương, chi phí cửa hàng từ sổ quỹ) – PR-C / PR-D; phí quẹt thẻ (chưa có dữ liệu); đơn web chưa đổi thành đơn CRM; giá vốn bình quân / giá xuất kho thực tế.
+Chi phí văn phòng ngoài CRM; phí quẹt thẻ (chưa có dữ liệu); đơn web chưa đổi thành đơn CRM; giá vốn bình quân / giá xuất kho thực tế.
 
 API: `GET /profit?from&to&grain&branch&owner&customer`, `GET /profit/orders/:id`.
