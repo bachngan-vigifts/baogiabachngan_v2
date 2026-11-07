@@ -7,6 +7,7 @@ import {employees} from '../../src/modules/staff/schema.ts';
 import {staffWeeklyReports} from '../../src/modules/staff-reports/schema.ts';
 import {hrPayslips} from '../../src/modules/hr/schema.ts';
 import {reportScoreView} from '../../src/core/contracts/report-scores.ts';
+import {customers} from '../../src/modules/customers/schema.ts';
 
 const ok=(r:any,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
 const periods=['2026-10-26','2026-11-02','2026-11-09','2026-11-16','2026-11-23'];
@@ -30,7 +31,8 @@ test('weekly and monthly scores match across dashboard, personal and company pay
  const f=await setup(t);await f.salary();await f.salary('new');await seed(f);await seed(f,'new');
  const board=ok(await f.scores()),person=ok(await f.overview()).payroll;
  assert.equal(board.members.length,3);assert.ok(board.members.every((m:any)=>['sale','sale-admin'].includes(m.positionId)));assert.equal(board.scope,'company');
- const score=board.members.find((m:any)=>m.id==='emp');assert.deepEqual(score.basis.weeks.map((w:any)=>w.score),[1,1,0.5,0,1]);assert.equal(score.basis.points,3.5);assert.equal(score.basis.required,4);assert.equal(score.source,'live');
+ const score=board.members.find((m:any)=>m.id==='emp');assert.deepEqual(score.basis.weeks.map((w:any)=>w.score),[1,1,0.5,0,1]);assert.equal(score.basis.points,3.5);assert.equal(score.basis.required,5);assert.equal(score.source,'live');
+ assert.equal(score.basis.monthly.period,'2026-11');assert.equal(score.basis.monthly.score,0);
  assert.deepEqual(score.basis,person.reportScores.basis);assert.deepEqual(score.basis,person.payslip.weeklyReportBasis);
  const payroll=ok(await f.call('/hr/payroll/2026-11',f.mgr));assert.deepEqual(payroll.rows.find((r:any)=>r.member.id==='emp').reportScores.basis,score.basis);
  assert.doesNotMatch(JSON.stringify(board),/baseSalary|gross|"net"|"income"|bankAccount|responsibility|reviewNote|nextWeekPlan/);
@@ -64,6 +66,49 @@ test('an employee can see own report scores before salary opens without receivin
  const self=ok(await f.overview(f.emp));assert.equal(self.payroll,null);assert.equal(self.access.salaryOpensOn,'2026-11-10');assert.equal(self.reportScores.basis.points,1);assert.equal(self.reportScores.source,'live');
  assert.doesNotMatch(JSON.stringify(self.reportScores),/income|deductions|baseSalary|bank|gross|"net"/);
  const other=await f.overview(f.admin);assert.ok(other.status===403||other.data.reportScores===null);
+});
+
+test('monthly score is included once across dashboard and payroll, drives the /5 responsibility, and strips private report content',async t=>{
+ const f=await setup(t);await f.salary();await seed(f);
+ ok(await f.call('/hr/members/emp/inputs/2026-11',f.mgr,'PUT',{workDays:26}));
+ await f.db.insert(staffWeeklyReports).values({id:'monthly-score',memberId:'emp',period:'2026-11',data:'{"inputs":{"evaluation":"Private report"}}',submittedAt:'2026-12-02T02:00:00Z',updatedAt:'2026-12-02T02:00:00Z',clientKey:'monthly-score-key',review:'ok'});
+ const score=ok(await f.scores(f.mgr,'&owner=emp')).members[0];
+ assert.equal(score.basis.required,5);assert.equal(score.basis.points,4.5);assert.equal(score.basis.monthly.score,1);
+ const own=ok(await f.overview(f.emp));assert.deepEqual(own.reportScores.basis,score.basis);
+ assert.equal(own.payroll.payslip.income.find((l:any)=>l.key==='responsibility').amount,900000);
+ assert.match(own.payroll.payslip.income.find((l:any)=>l.key==='responsibility').note,/4,5\/5/);
+ assert.doesNotMatch(JSON.stringify(score),/Private report|reviewNote|evaluation|bonus|salary|bank/);
+ await f.db.update(staffWeeklyReports).set({review:'rejected'}).where(eq(staffWeeklyReports.id,'monthly-score'));
+ const changed=ok(await f.scores(f.mgr,'&owner=emp')).members[0];assert.equal(changed.basis.points,3.5);assert.equal(changed.basis.monthly.score,0);
+});
+
+test('legacy /4 snapshots remain /4 without borrowing a live monthly row; monthly DTO validates period and strips salary',async t=>{
+ const f=await setup(t);await f.salary();await seed(f);
+ const current=ok(await f.overview());ok(await f.call('/hr/members/emp/payslips/2026-11',f.mgr,'POST',{confirmationHash:current.payroll.confirmationHash}),201);
+ const [row]=await f.db.select().from(hrPayslips).where(eq(hrPayslips.memberId,'emp'));
+ const data=JSON.parse(row!.data),legacy={points:3.5,required:4,weeks:data.reportScoreBasis.weeks};
+ data.reportScoreBasis=legacy;data.weeklyReportBasis=legacy;
+ await f.db.update(hrPayslips).set({data:JSON.stringify(data)}).where(and(eq(hrPayslips.memberId,'emp'),eq(hrPayslips.month,'2026-11')));
+ const view=ok(await f.scores(f.mgr,'&owner=emp')).members[0];
+ assert.equal(view.source,'snapshot');assert.equal(view.basis.required,4);assert.equal(view.basis.points,3.5);assert.equal(view.basis.monthly,undefined);
+ const monthly={period:'2026-11',deadline:'2026-12-02T03:00:00Z',state:'on_time',review:'ok',score:1,salary:9000,reviewNote:'private'};
+ const dto=reportScoreView('2026-11','confirmed',{points:1,required:5,weeks:[],monthly});
+ assert.equal(dto.basis?.monthly?.score,1);assert.doesNotMatch(JSON.stringify(dto),/salary|reviewNote|private/);
+ assert.equal(reportScoreView('2026-11','confirmed',{points:1,required:5,weeks:[],monthly:{...monthly,period:'2026-12'}}).source,'unavailable');
+});
+
+test('weekly/monthly new-customer facts keep the approved-profile KPI from #518 without requiring an order',async t=>{
+ const f=await setup(t);
+ const base={search:'khach',syncedAt:'',sourceVersion:0,contact:'',phone:'',email:'',address:'',taxCode:'',customerCode:''};
+ await f.db.insert(customers).values([
+  {...base,id:'profile-new',name:'Khách mới được duyệt',createdBy:'emp',createdAt:'2026-11-03T01:00:00Z',approvedAt:'2026-11-05T01:00:00Z',approvalStatus:'approved',dataSource:'web'},
+  {...base,id:'profile-pending',name:'Khách chờ duyệt',createdBy:'emp',createdAt:'2026-11-03T01:00:00Z',approvalStatus:'pending',dataSource:'web'},
+  {...base,id:'profile-peer',name:'Khách đồng nghiệp',createdBy:'new',createdAt:'2026-11-03T01:00:00Z',approvedAt:'2026-11-05T01:00:00Z',approvalStatus:'approved',dataSource:'web'},
+ ]);
+ const week=ok(await f.call('/staff-reports/week?period=2026-11-02',f.emp));
+ const month=ok(await f.call('/staff-reports/week?period=2026-11',f.emp));
+ assert.equal(week.facts.newCustomers,1);assert.equal(month.facts.newCustomers,1);
+ assert.equal((await f.call('/staff-reports/week?period=2026-11&memberId=new',f.emp)).status,403);
 });
 test('score DTO strips unexpected snapshot fields; UI labels preserve pending, exempt, rejected, half points and unavailable',async()=>{
  const w={period:'2026-11-02',deadline:'2026-11-09T03:00:00Z',state:'on_time',review:'pending',score:0.5};

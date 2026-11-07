@@ -251,6 +251,13 @@ jobs:
           payload=$(jq -n --rawfile query scripts/sql/assert-staff-weekly-reports.sql '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra migration báo cáo tháng Sale đã chạy tay
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-staff-monthly-reports.sql '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
       - name: Triển khai Edge Function
         if: env.SUPABASE_ACCESS_TOKEN != ''
         run: supabase functions deploy baogia-v2-api --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
