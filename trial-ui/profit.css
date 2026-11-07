@@ -4,7 +4,7 @@
 .pf-filters .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .pf-filters .seg button { border: 0; background: transparent; padding: 8px 14px; font: inherit; color: var(--muted); cursor: pointer; min-height: 40px; }
 .pf-filters .seg button.on { background: #102a56; color: #fff; }
-.pf-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.pf-kpis { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
 .pf-kpis .card { display: grid; gap: 2px; padding: 12px 14px; }
 .pf-kpis small, .pf-kpis span { color: var(--muted); font-size: 12px; }
 .pf-kpis b { font-size: 19px; }
@@ -32,3 +32,7 @@
 .pf-chart line { fill: none; }
 .pf-adjust { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 8px; }
 .pf-hist { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.pf-staff { margin-bottom: 12px; display: grid; gap: 8px; }
+.pf-check { background: #f1f8f4; border: 1px solid #cfe8da; border-radius: 10px; padding: 8px 12px; color: #0a5c36; margin: 0; }
+.pf-check.bad { background: #fde8e8; border-color: #f5b5b5; color: #b42318; }
+.pf-bridge td { padding: 7px 10px; } .pf-bridge tr.tot td { font-weight: 700; background: #f7f8fa; }

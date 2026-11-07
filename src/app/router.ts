@@ -87,6 +87,7 @@ import { registerFeedbackRoutes } from '../modules/feedback/api/routes.ts';
 import { registerStoreRoutes } from '../modules/store/api/routes.ts';
 import { registerStaffReportRoutes, weeklyPointsFor } from '../modules/staff-reports/api/routes.ts';
 import { registerProfitRoutes } from '../modules/profit/api/routes.ts';
+import { staffCostOf } from './staff-cost.ts';
 import { saleTargetOf } from './sale-target.ts';
 import { storeAttendanceOf, storeTargetOf } from './store-report-sources.ts';
 export function createAppRouter() {
@@ -151,7 +152,7 @@ export function createAppRouter() {
   registerStaffHubRoutes(router,{crmFactsOf,teamRevenueOf:teamPayrollRevenues,weeklyReportOf:weeklyPointsFor});
   registerTeamPayrollSources(router);
   registerFeedbackRoutes(router); // góp ý phát triển phần mềm (mọi nhân viên)
-  registerProfitRoutes(router); // phân tích lợi nhuận (chỉ Manager)
+  registerProfitRoutes(router, { staffCostOf }); // phân tích lợi nhuận (chỉ Manager); chi phí nhân sự từ bảng lương
   registerStaffReportRoutes(router, { targetOf: saleTargetOf }); // báo cáo tuần Sale / Sale Admin (căn cứ Tiền trách nhiệm)
   registerStoreRoutes(router, { targetOf: storeTargetOf, attendanceOf: storeAttendanceOf }); // báo cáo Cửa hàng trưởng (CHT): nộp, duyệt, Tiền Trách nhiệm, nhắc nhở
   registerDashboardRoutes(router, { kpiOf: dashboardKpiOf, storeOf: dashboardStoreOf,reportScoresOf:dashboardReportScoresOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR
