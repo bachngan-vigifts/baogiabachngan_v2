@@ -44,6 +44,7 @@ const sharedLibrary=createSharedLibrary({api:libraryApi,identity:crmSession,getP
  getPricing:()=>state.settings,priceOf:product=>price(libraryPricing(product,state.settings)),
  onPick:row=>pickLibraryProducts([row],true),onPickMany:rows=>pickLibraryProducts(rows,false),
  getBulkPending:owner=>dbGet('catalogue-library-bulk:'+owner),putBulkPending:libraryBulkWrite,
+ getPricePending:owner=>dbGet('catalogue-library-prices:'+owner),putPricePending:(owner,rows)=>dbPut('catalogue-library-prices:'+owner,rows),
  onPublished:row=>{const p=state.products.find(p=>p.id===row.clientId);if(p){p.sharedId=row.id;p.sharedRevision=row.revision;p.sharedPendingFor='';}},
  pin:(id,owner)=>{const p=state.products.find(p=>p.id===id);if(p)p.sharedPendingFor=owner;},
  pending:libraryPending,savePending:(owner,id,value)=>libraryPendingWrite(owner,id,value),removePending:(owner,id)=>libraryPendingWrite(owner,id,null)
