@@ -14,9 +14,7 @@ export const salesPayrollFacts:CrmFactsOf=async(db,month,previous=[],lock=false,
  const query=db.select({k:salesContracts,o:salesOrders}).from(salesContracts).innerJoin(salesOrders,eq(salesOrders.id,salesContracts.orderId)).where(or(and(gte(salesContracts.signedDate,from),lt(salesContracts.signedDate,next)),relevant.length?inArray(salesContracts.id,relevant):undefined));
  const rows=await(lock?query.for('share'):query),liquidated=await liquidationAwards(db,rows.map(r=>r.k.id));
  const members=new Map<string,{newCustomers:number;transactions:number;contracts:number;netRevenue?:number;netRevenueIssues?:number}>(),member=(id:string)=>{let n=members.get(id);if(!n){n={newCustomers:0,transactions:0,contracts:0};members.set(id,n);}return n;};
- // Find the first approved CRM order across all history, with deterministic tie-breaking. Anonymous retail customers are excluded.
- const first=await db.select({owner:sql<string>`f.owner_id`}).from(sql`(select owner_id,order_date,row_number() over(partition by customer_id order by order_date,created_at,id) as n from ${salesOrders} where customer_id is not null and channel='crm' and status in ('confirmed','delivering','delivered')) f`).where(sql`f.n=1 and f.order_date>=${from} and f.order_date<${next}`);
- for(const r of first)member(r.owner).newCustomers++;
+ // Customer creation/approval facts are supplied by the customers module in app composition.
  for(const r of rows)if(['signed','completed'].includes(r.k.status)&&r.o.status!=='cancelled'&&(!options?.approvedOnly||['confirmed','delivering','delivered'].includes(r.o.status))&&r.k.signedDate&&r.k.signedDate>=from&&r.k.signedDate<next)member(r.o.ownerId).contracts++;
  // Thưởng sao còn tính trên đơn hàng CRM đã duyệt không có HĐKT (tháng = ngày đơn). Đơn có HĐKT tính theo HĐKT, không tính hai lần.
  const previousOrders=previous.filter(id=>id.startsWith(ORDER)).map(id=>id.slice(ORDER.length));
