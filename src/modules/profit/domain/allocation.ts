@@ -25,3 +25,5 @@ export function fullMonths(from: string, to: string, limit = 24) {
   return out;
 }
 export const isMonthEnd = (day: string) => { const [y, m] = day.split('-').map(Number) as [number, number]; return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10) === day; };
+/** Ngày theo giờ Việt Nam của một thời điểm ISO. */
+export const vnDay = (iso: string) => new Date(Date.parse(iso) + 7 * 3600_000).toISOString().slice(0, 10);
