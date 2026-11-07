@@ -1,6 +1,5 @@
-import {makeShipmentDemo} from './order-shipment-demo-data.js';
+import {initOrderProducts} from './order-products.js';
 import { createDeliveryCalendar, renderDeliveryProducts } from './delivery-calendar.js';
-import {initOrderShipmentDemo} from './order-shipment-demo.js';
 import {initCustomerCenter} from './customer-center.js';
 import {openProvinceSharing} from './customer-province-sharing.js';
 import {orderListExportSheets} from './order-list-export.js';
@@ -897,7 +896,7 @@ function route() {
   if (view === 'contracts') loadContracts();
   if (view === 'receiving') receivingView().load();
   if (view === 'deliveries') loadDeliveries();
-  if (view === 'order-products') productOrdersDemo().show(query);
+  if (view === 'order-products') productOrdersView().load();
   if(view!=='order-products')productOrdersUi?.close();
   if(view!=='deliveries')shipmentCalendarUi?.close();
   if (view === 'receivables') loadReceivables();
@@ -3475,8 +3474,8 @@ function salesListSummary(key, s) {
 /** Bộ lọc chi tiết Lịch giao hàng (máy chủ lọc): nhân viên phụ trách, loại chứng từ, đơn vị giao, hoá đơn. */
 const DELIVERY_FILTERS = ['owner', 'kind', 'carrier', 'invoice', 'assignee', 'customer', 'product', 'receiver', 'address', 'due', 'tracking', 'confirmation', 'sort'];
 let deliveriesReq = 0;
-var productOrdersUi=null,shipmentCalendarUi=null,orderShipmentData=null;
-function productOrdersDemo(){return productOrdersUi ||= initOrderShipmentDemo({root:$('#view-order-products'),data:orderShipmentData ||= makeShipmentDemo(),kind:'products',go,canProducts:()=>canPage('order-products')});}
+var productOrdersUi=null,shipmentCalendarUi=null;
+function productOrdersView(){return productOrdersUi ||= initOrderProducts({root:$('#view-order-products'),api,go,money,canCalendar:()=>canPage('deliveries')});}
 function deliveryCalendarView(){return shipmentCalendarUi ||= createDeliveryCalendar({root:$('#deliveries-calendar'),onRange:(from,to)=>{$('#deliveries-from').value=from;$('#deliveries-to').value=to;loadDeliveries();},actions:x=>deliveryButtons(x)+deliverySlipButtons(x),orderLink:x=>!isWarehouse()&&canPage('order')?(x.contractNo?'#/contracts/':'#/orders/')+encodeURIComponent(x.orderId):null});}
 async function loadDeliveries() {
   const query=location.hash.split('?')[1]||'',tab=new URLSearchParams(query).get('view')||'calendar',calendar=!['list','products'].includes(tab);
@@ -3938,7 +3937,7 @@ async function refreshData() {
   else if (page === 'transfers') jobs.push(transfersView().load(id));
   else if (page === 'receiving') jobs.push(receivingView().load());
   else if (page === 'deliveries') jobs.push(loadDeliveries());
-  else if (page === 'order-products') productOrdersDemo().show(query);
+  else if (page === 'order-products') productOrdersView().load();
   else if (page === 'receivables') jobs.push(loadReceivables());
   else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : customerScreen(query));
   else if (page === 'products') { if(id)jobs.push(productDetail().refresh());else jobs.push(loadProducts(),productAdmin().loadPending(),loadCatalogSnapshot()); }
@@ -4285,6 +4284,14 @@ async function openOrder(id, confirmed = null) {
   if (o.channel === 'pos' && o.fulfillmentMode === 'cod' && o.status !== 'cancelled' && r.balance > 0 && can('pos.sell')) {
     for (const delivery of d.deliveries.filter(x => x.status === 'delivered' && x.codAmount > d.payments.filter(p => !p.voidedAt && p.deliveryId === x.id).reduce((n, p) => n + p.amount, 0)))
       $('#order-payments').append(posCodReceipt({ api, delivery, onSaved: () => openOrder(o.id) }));
+  }
+  const scheduleParams = new URLSearchParams(route.split('?')[1]||''), scheduleLine = scheduleParams.get('scheduleLine');
+  if(scheduleLine){
+    scheduleParams.delete('scheduleLine');const rest=scheduleParams.toString(),clean=location.hash.split('?')[0]+(rest?'?'+rest:'');
+    history.replaceState(null,'',clean);lastRoutedHash=currentHash=clean;
+    const target=d.lines.find(l=>l.id===scheduleLine),reserved=target?d.deliveries.filter(s=>['planned','in_transit'].includes(s.status)).flatMap(s=>s.lines).filter(l=>l.orderLineId===target.id).reduce((sum,l)=>sum+l.qty,0):0;
+    if(target&&target.qty-target.deliveredQty-reserved>1e-9&&o.status!=='draft'&&!$('#order-new-delivery').hidden&&!$('#order-new-delivery').disabled){$('#order-new-delivery').dataset.scheduleLine=scheduleLine;$('#order-new-delivery').click();}
+    else toast('Dòng hàng không còn số lượng được xếp lịch. Vui lòng kiểm tra lại đơn.','err');
   }
 }
 /**
@@ -5060,12 +5067,13 @@ $('#contract-form').addEventListener('submit', async e => {
 });
 $('#contract-dialog').addEventListener('close',()=>{contractTarget=null;});
 $('#order-new-delivery').addEventListener('click', () => {
+  const focusLine=$('#order-new-delivery').dataset.scheduleLine;delete $('#order-new-delivery').dataset.scheduleLine;
   const f = $('#delivery-form'), d = sales.detail, o = d.order; f.reset(); $('#delivery-error').textContent = '';
   $('#delivery-order-no').textContent = o.orderNo; f.plannedDate.value = o.expectedDeliveryDate && o.expectedDeliveryDate >= todayIso() ? o.expectedDeliveryDate : todayIso();
   const recipient = orderRecipient(o); f.receiverName.value = recipient.receiverName; f.receiverPhone.value = recipient.receiverPhone; f.address.value = o.address || '';
   const pending = id => d.deliveries.filter(x => ['planned', 'in_transit'].includes(x.status)).flatMap(x => x.lines).filter(l => l.orderLineId === id).reduce((s, l) => s + l.qty, 0);
   $('#delivery-lines').innerHTML = d.lines.map(l => { const left = Math.max(0, l.qty - l.deliveredQty - pending(l.id)); return `<tr><td>${esc(l.name)}<small>${esc(l.unit)}</small></td><td class="right">${fmtNum(left)}</td>
-    <td class="right"><input class="num-input" inputmode="decimal" data-line="${esc(l.id)}" value="${left ? fmtNum(left) : ''}" ${left ? '' : 'disabled'} aria-label="Số lượng giao ${esc(l.name)}"></td></tr>`; }).join('');
+    <td class="right"><input class="num-input" inputmode="decimal" data-line="${esc(l.id)}" value="${left && (!focusLine||focusLine===l.id) ? fmtNum(left) : ''}" ${left ? '' : 'disabled'} aria-label="Số lượng giao ${esc(l.name)}"></td></tr>`; }).join('');
   // Mỗi lần mở form một mã chống gửi lặp: bấm lại / mạng gửi lại cùng nội dung trả chuyến đã tạo, không tạo trùng.
   $('#delivery-form').dataset.clientKey = crypto.randomUUID();
   $('#delivery-dialog').showModal();
