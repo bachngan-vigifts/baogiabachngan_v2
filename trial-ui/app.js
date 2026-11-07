@@ -53,6 +53,7 @@ import { openBarcodeImport } from './barcode-import.js';
 import { posOrderEditor, posCodReceipt, posPaymentText, posGhnEditNotice } from './pos-order-edit.js';
 import { renderOrderLineDetails } from './order-line-details.js';
 import { initCash } from './cash.js';
+import { initShiftReports } from './shift-reports.js';
 import { initPos } from './pos.js';
 import { shortageRows, downloadShortagePdf } from './stock-shortage-pdf.js';
 import { bindStockCheckFilter } from './stock-check-filter.js';
@@ -445,7 +446,7 @@ const legacyPerms = () => isWarehouse() ? ['page.deliveries', 'page.purchases', 
 const can = key => isManager() || (Array.isArray(state.user?.perms) ? state.user.perms : legacyPerms()).includes(key);
 /** Trang (#/…) → quyền cần có. Trang không có ở đây (Công việc, Sản phẩm…) ai cũng vào được. */
 const PAGE_PERM = {
-  cash: 'page.cash', pos: 'pos.sell',
+  cash: 'page.cash', pos: 'pos.sell', 'shift-reports': 'pos.sell',
   quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', 'order-products':'page.order-products', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
   purchases: 'page.purchases', 'early-requests': 'purchases.early-view', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', stocktake: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
@@ -482,6 +483,7 @@ let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('
 
 function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
+  if (typeof shiftReportsUi !== 'undefined') shiftReportsUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
   $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
   $('#auth-error').textContent = message;
@@ -837,13 +839,11 @@ const posLocalSearch = (q, policy) => {
 // Kiểm tra nhanh đã có danh mục chưa (không dựng cả danh sách chỉ để biết có hay không).
 posLocalSearch.ready = () => !!catalog.items;
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
-document.addEventListener('crm-open-shift-reports', () => {
-  if (!state.user || !canPage('pos')) return;
-  void posView().showShiftReports();
-});
+var shiftReportsUi = null;
+const shiftReportsView = () => shiftReportsUi ||= initShiftReports({api,root:$('#view-shift-reports'),go});
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+const VIEWS = { 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
@@ -908,6 +908,8 @@ function route() {
   if (view === 'editor') openEditor(id);
   thuChiTabs(view);
   if (view === 'cash') cashView().load().catch(e=>toast(e.message,'err'));
+  if (view !== 'shift-reports') shiftReportsUi?.close();
+  if (view === 'shift-reports') shiftReportsView().show(query);
   if (view === 'pos') posView().load();
   if (view === 'product') productDetail().show(decodeURIComponent(id),query);
   if (view === 'products' && !state.products) loadProducts();
@@ -3858,7 +3860,7 @@ const sales = { order: null, detail: null };
 var dataRefresh = setupDataRefresh({
   read: path => api(path, 'GET', undefined, { fresh: true }), refresh: () => refreshData(),
   enabled: () => !!state.user,
-  blocked: () => (location.hash.startsWith('#/pos') && !!posUi?.dirty()) || (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
+  blocked: () => (location.hash.startsWith('#/shift-reports') && !!document.activeElement?.closest('.srp-filters')) || (location.hash.startsWith('#/pos') && !!posUi?.dirty()) || (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
   routeKey: () => location.hash,
   primaryPaths: () => location.hash.startsWith('#/cash') ? ['/cash'] : location.hash.startsWith('#/pos') ? ['/pos/options'] : isWarehouse() ? ['/packing?status=sent'] : [can('page.quotes') && '/quotes', can('page.orders') && '/orders', can('page.contracts') && '/contracts'].filter(Boolean),
   onDeferred: () => toast('Có dữ liệu mới. Trang sẽ cập nhật sau khi anh/chị lưu thay đổi và đóng biểu mẫu.'),
@@ -3955,6 +3957,7 @@ async function refreshData() {
   else if (page === 'orders') jobs.push(id ? openOrder(id) : loadOrders());
   else if (page === 'contracts') jobs.push(id ? openOrder(id) : loadContracts());
   else if (page === 'cash') jobs.push(cashView().load());
+  else if (page === 'shift-reports') jobs.push(shiftReportsView().show(location.hash.split('?')[1]||''));
   else if (page === 'pos') { if (!posUi?.dirty()) jobs.push(posView().load()); }
   else if (page === 'kho') jobs.push(khoHome().load());
   else if (page === 'transfers') jobs.push(transfersView().load(id));

@@ -81,6 +81,15 @@ test('empty email receives initial autofocus', () => {
   assert.equal(h.document.activeElement, h.elements['#email']);
 });
 
+test('returning to login clears an initialized private shift-report screen', () => {
+  const h = harness(); let cleared = 0;
+  h.ctx.shiftReportsUi = { close() { cleared++; } };
+  h.ctx.showAuth();
+  assert.equal(cleared, 1);
+  assert.equal(h.ctx.state.user, null);
+  assert.equal(h.elements['#workspace'].hidden, true);
+});
+
 test('concurrent expired requests show expiry once; later response preserves email focus', async () => {
   const h = harness();
   const first = h.ctx.api('/me').catch((e: any) => e);

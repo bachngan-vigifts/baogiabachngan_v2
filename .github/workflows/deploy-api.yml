@@ -94,6 +94,8 @@ jobs:
           node --import tsx --test
           tests/app/catalogue-edge-dependencies.test.ts
           tests/app/pos.test.ts
+          tests/app/shift-reports-page.test.ts
+          tests/app/shift-report-filters.test.ts
           tests/app/invoice-tasks.test.ts
           tests/app/pos-cod-deposit.test.ts
           tests/app/pos-ghn-sync.test.ts

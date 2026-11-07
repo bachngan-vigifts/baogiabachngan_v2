@@ -8,7 +8,7 @@ const expected=[
  'pos','quotes','orders','contracts','products','receivables','order-products','deliveries',
  'cashbook','cash',
  'customers','care','stock-requests',
- 'tasks','dashboard','profit','flow','store-reports','weekly-reports','feedback',
+ 'tasks','shift-reports','dashboard','profit','flow','store-reports','weekly-reports','feedback',
  'kho','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving',
  'early-requests','purchases','suppliers',
  'staff','payroll','permissions',
@@ -42,13 +42,10 @@ test('menu chân trang gom theo chức năng: đủ trang, đúng thứ tự, ch
  assert.equal(new Set(MOBILE_NAV_GROUPS.flatMap((g:any)=>g.keys)).size,MOBILE_NAV_GROUPS.flatMap((g:any)=>g.keys).length,'mỗi trang thuộc đúng một nhóm');
 });
 
-const {withMobileNavShortcuts}=await import(new URL('../../trial-ui/mobile-design.js',import.meta.url).href);
-test('shift reports shortcut inherits POS access and belongs to Work without replacing POS',()=>{
- const allowed=withMobileNavShortcuts(['tasks','pos','orders']);
- const groups=groupMobileNav(allowed);
+test('shift reports is a normal Work destination and only appears when permission-visible',()=>{
+ const groups=groupMobileNav(['tasks','pos','orders','shift-reports']);
  assert.deepEqual(groups.find((g:any)=>g.key==='work')?.items,['tasks','shift-reports']);
  assert.deepEqual(groups.find((g:any)=>g.key==='sell')?.items,['pos','orders']);
- assert.deepEqual(withMobileNavShortcuts(['tasks','orders']),['tasks','orders']);
- assert.deepEqual(withMobileNavShortcuts([]),[]);
- assert.equal(withMobileNavShortcuts(allowed).filter((k:string)=>k==='shift-reports').length,1);
+ assert.equal(groupMobileNav(['tasks','orders']).some((g:any)=>g.items.includes('shift-reports')),false);
+ assert.match(sidebar,/href="#\/shift-reports" data-nav="shift-reports"/);
 });

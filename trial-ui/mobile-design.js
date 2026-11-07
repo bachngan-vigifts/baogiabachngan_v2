@@ -30,11 +30,6 @@ export function orderedMobileNavKeys(keys) {
  ];
  return [...order.filter(key=>visible.includes(key)),...visible.filter(key=>!order.includes(key))];
 }
-/** Shortcuts inherit the permission-visible POS destination; no extra page access is granted. */
-export function withMobileNavShortcuts(keys){
- const allowed=[...new Set(keys)];
- return allowed.includes('pos')&&!allowed.includes('shift-reports')?[...allowed,'shift-reports']:allowed;
-}
 /** Menu chân trang gom theo chức năng: mỗi nút một nhóm, bấm mở bảng chọn các trang trong nhóm. */
 export const MOBILE_NAV_GROUPS=[
  {key:'sell',label:'Bán hàng',keys:['pos','quotes','orders','contracts','products','receivables','order-products','deliveries'],icon:'<path d="M4 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M17 17h-11v-14h-2" /><path d="M6 5l14 1l-1 7h-13" />'},
@@ -82,11 +77,9 @@ export function installMobileDesign(profiles){
  const navLabel=(k,a)=>navLabels[k]||a.querySelector('span:last-of-type')?.textContent||a.textContent.trim();
  const navIcon=a=>{const icon=a.querySelector('svg');if(icon)return icon.cloneNode(true);const symbol=make('span','crm-nav-symbol',a.querySelector('span')?.textContent||'▣');symbol.setAttribute('aria-hidden','true');return symbol;};
  function navTarget(k,source,footer=false){
-  const report=k==='shift-reports',a=make(report?'button':'a');
+  const a=make('a');
   a.append(footer?make('span','crm-nav-label',navLabel(k,source)):document.createTextNode(navLabel(k,source)));
-  a.dataset.mobileNav=k;a.prepend(report?groupIcon('<path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 3h6v4h-6z" /><path d="M9 17v-3m3 3v-5m3 5v-2" />'):navIcon(source));
-  if(report){a.type='button';a.onclick=()=>{sheet.close();document.dispatchEvent(new Event('crm-open-shift-reports'));};}
-  else a.href=source.getAttribute('href');
+  a.dataset.mobileNav=k;a.prepend(navIcon(source));a.href=source.getAttribute('href');
   return a;
  }
  function openGroup(g){
@@ -98,7 +91,6 @@ export function installMobileDesign(profiles){
  function syncNav(){
   const sources=new Map();
   for(const a of document.querySelectorAll('.sidebar [data-nav]'))if(visible(a)&&!sources.has(a.dataset.nav))sources.set(a.dataset.nav,a);
-  for(const key of withMobileNavShortcuts(sources.keys()))if(!sources.has(key))sources.set(key,sources.get('pos'));
   const groups=groupMobileNav(sources.keys());
   const key=location.hash.replace(/^#\//,'').split(/[/?]/)[0];
   const signature=JSON.stringify(groups.map(g=>[g.key,g.items.map(k=>{const a=sources.get(k);return [k,a.getAttribute('href'),navLabel(k,a)];})]))+key;
