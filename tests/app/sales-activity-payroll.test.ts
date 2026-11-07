@@ -55,7 +55,7 @@ test('prior-period differences subtract reserved awards, survive owner changes, 
  // Original owner remains the beneficiary after the order is reassigned.
  await f.db.update(salesOrders).set({subtotal:150000000,ownerId:'mgr'}).where(eq(salesOrders.id,'liq-order'));
  let nov=(await f.overview(f.mgr,'2026-11')).data.payroll;assert.equal(amount(nov.payslip,'contractBonusAdjustment'),50000);
- t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-20T03:00:00Z')}); // nhân viên chỉ thấy lương T11 từ 10/11
+ t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-12T03:00:00Z')}); // nhân viên chỉ thấy lương T11 từ 10/12; giữ trong hạn phiên 7 ngày
  const hidden=(await f.overview(f.emp,'2026-11')).data.payroll.payslip.salesCrm.awards[0];assert.equal(hidden.fact,undefined);
  t.mock.timers.reset();
  assert.equal((await f.confirm('2026-11')).status,201);
