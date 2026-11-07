@@ -49,7 +49,7 @@ export function initOrderShipmentDemo({root,data,kind,go,canProducts=()=>true}) 
   if(b.hasAttribute('data-od-day')){selected=b.dataset.odDay;render();return;}
   if(b.hasAttribute('data-od-clear-line')){focusLine='';render();return;}
   if(b.hasAttribute('data-od-schedule'))return schedule(b.dataset.odSchedule);
-  if(b.hasAttribute('data-od-calendar')){const l=line(b.dataset.odCalendar),facts=lineFacts(data,l);return go('#/deliveries?view=calendar&lineId='+l.id+'&date='+(facts.date||order(l.orderId).expected));}
+  if(b.hasAttribute('data-od-calendar')){const l=line(b.dataset.odCalendar),facts=lineFacts(data,l);return modal('Các đợt giao — minh họa',`<h3>${esc(l.name)}</h3>${tripRows(facts.trips)}<p class="muted">Các chuyến này là dữ liệu mẫu, không nằm trong lịch giao hàng thật.</p>`);}
   if(b.hasAttribute('data-od-line')){const l=line(b.dataset.odLine),facts=lineFacts(data,l),o=order(l.orderId);return modal('Dòng sản phẩm — minh họa',`<h3>${esc(l.name)}</h3><p>${esc(l.spec)}</p><p>${esc(o.no)} · ${esc(o.customer)}</p><p>Đặt ${l.qty} ${l.unit} · Đã giao ${facts.delivered} · Còn ${facts.remaining}</p><p>Tiến độ cấp đơn: ${esc(o.stage)}</p><p>Đơn giá mẫu: ${money(l.price)} · ${money(l.qty*l.price)} chưa VAT · ${money(l.qty*l.price*(1+l.tax/100))} gồm VAT ${l.tax}%</p><h3>Các chuyến liên quan</h3>${tripRows(facts.trips)}<p class="muted">Đây là dữ liệu mẫu, không có đơn thật để mở.</p>`);}
   if(b.hasAttribute('data-od-trip'))return openTrip(b.dataset.odTrip);
  });

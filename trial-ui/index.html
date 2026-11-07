@@ -32,6 +32,7 @@
 <link rel="stylesheet" href="mobile-design.css">
 <link rel="stylesheet" href="order-shipment-demo.css">
 <link rel="stylesheet" href="supplier-portal.css">
+<link rel="stylesheet" href="delivery-calendar.css">
 </head>
 <body>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
@@ -564,11 +565,10 @@
     <section class="view" id="view-receiving" hidden></section>
 
     <section class="view" id="view-deliveries" hidden>
-      <nav class="shipment-tabs" aria-label="Lịch giao hàng"><a class="chip" href="#/deliveries" data-shipment-tab="list">Danh sách chuyến giao thật</a><a class="chip" href="#/deliveries?view=calendar" data-shipment-tab="calendar">Lịch mẫu</a></nav>
-      <div id="deliveries-prototype" hidden></div>
+      <nav class="shipment-tabs" aria-label="Lịch giao hàng"><a class="chip" href="#/deliveries?view=calendar" data-shipment-tab="calendar">Lịch ngày / tuần / tháng</a><a class="chip" href="#/deliveries?view=products" data-shipment-tab="products">Sản phẩm theo chuyến</a><a class="chip" href="#/deliveries?view=list" data-shipment-tab="list">Danh sách chuyến giao</a></nav>
       <div id="deliveries-real">
       <div class="page-head">
-        <div><span class="eyebrow">Bán hàng</span><h1>Lịch giao hàng</h1><p class="muted">Các chuyến giao theo ngày; bấm vào chuyến để mở đơn.</p></div>
+        <div><span class="eyebrow">Bán hàng</span><h1>Lịch giao hàng</h1><p class="muted">Lịch và sản phẩm của các chuyến giao thực tế. Bộ lọc áp dụng chung cho lịch và danh sách.</p></div>
       </div>
       <div class="row-gap delivery-range">
         <label>Từ ngày<input type="date" id="deliveries-from"></label>
@@ -581,16 +581,31 @@
       </div>
       <div class="panel">
         <div class="toolbar">
-          <label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><input id="deliveries-search" type="search" placeholder="Lọc theo khách hàng, số đơn…" aria-label="Tìm"></label>
+          <label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><input id="deliveries-search" type="search" maxlength="200" placeholder="Tìm khách, số đơn / HĐKT, chuyến, vận đơn, ghi chú…" aria-label="Tìm chuyến giao"></label>
         </div>
+        <details class="delivery-advanced-filters"><summary>Bộ lọc chi tiết: nhân viên, khách hàng, sản phẩm, vận chuyển…</summary>
         <div class="orders-filter-grid" id="deliveries-filter-grid">
           <label>Nhân viên<select id="deliveries-owner"><option value="">Tất cả nhân viên</option></select></label>
           <label>Loại chứng từ<select id="deliveries-kind"><option value="">Đơn hàng + HĐKT</option><option value="order">Đơn hàng</option><option value="contract">HĐKT</option></select></label>
           <label>Đơn vị giao<select id="deliveries-carrier"><option value="">Tất cả</option></select></label>
           <label>Hoá đơn<select id="deliveries-invoice"><option value="">Tất cả</option><option value="none">Chưa yêu cầu xuất</option><option value="requested">Chờ xuất hoá đơn</option><option value="issued">Đã xuất hoá đơn</option></select></label>
-          <button type="button" class="btn ghost small" id="deliveries-clear">Xóa bộ lọc</button>
+          <label>Người giao<select id="deliveries-assignee"><option value="">Tất cả người giao</option></select></label>
+          <label>Khách hàng<input id="deliveries-customer" type="search" maxlength="200" placeholder="Tên khách / công ty"></label>
+          <label>Sản phẩm<input id="deliveries-product" type="search" maxlength="200" placeholder="Mã SKU hoặc tên sản phẩm"></label>
+          <label>Người nhận / SĐT<input id="deliveries-receiver" type="search" maxlength="200" placeholder="Tên hoặc số điện thoại"></label>
+          <label>Địa chỉ giao<input id="deliveries-address" type="search" maxlength="200" placeholder="Tỉnh, thành, quận hoặc địa chỉ"></label>
+          <label>Thời hạn<select id="deliveries-due"><option value="">Tất cả thời hạn</option><option value="overdue">Quá hạn, chưa giao xong</option><option value="today">Giao hôm nay</option><option value="next7">Chưa giao xong trong 7 ngày tới</option><option value="no-time">Chưa có giờ giao</option></select></label>
+          <label>Mã vận đơn<select id="deliveries-tracking"><option value="">Tất cả</option><option value="yes">Đã có vận đơn</option><option value="no">Chưa có vận đơn</option></select></label>
+          <label>Xác nhận giao<select id="deliveries-confirmation"><option value="">Tất cả</option><option value="yes">Đã ghi nhận xác nhận</option><option value="no">Chưa có xác nhận</option></select></label>
+          <label>Sắp xếp<select id="deliveries-sort"><option value="">Ngày giao mới trước</option><option value="date_asc">Ngày giao cũ trước</option><option value="customer">Tên khách hàng</option><option value="owner">Nhân viên phụ trách</option></select></label>
+          <button type="button" class="btn ghost small" id="deliveries-clear" data-mobile-navigation>Xóa bộ lọc</button>
         </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th>Hoá đơn</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
+        </details>
+        <p id="deliveries-filter-summary" class="muted small" role="status"></p>
+        <button type="button" class="btn secondary" id="deliveries-retry" hidden>Thử tải lại</button>
+        <div id="deliveries-calendar"></div>
+        <div id="deliveries-product-lines" class="table-wrap" hidden></div>
+        <div class="table-wrap" id="deliveries-table" hidden><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT · Sản phẩm</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th>Hoá đơn</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
         <div id="deliveries-empty" class="empty" hidden><p class="muted" id="deliveries-empty-text"></p></div>
       </div>
       </div>

@@ -1,4 +1,5 @@
 import {makeShipmentDemo} from './order-shipment-demo-data.js';
+import { createDeliveryCalendar, renderDeliveryProducts } from './delivery-calendar.js';
 import {initOrderShipmentDemo} from './order-shipment-demo.js';
 import {initCustomerCenter} from './customer-center.js';
 import {openProvinceSharing} from './customer-province-sharing.js';
@@ -3471,37 +3472,46 @@ function salesListSummary(key, s) {
 }
 // ----- lịch giao hàng (mặc định 7 ngày trước → 30 ngày tới)
 /** Bộ lọc chi tiết Lịch giao hàng (máy chủ lọc): nhân viên phụ trách, loại chứng từ, đơn vị giao, hoá đơn. */
-const DELIVERY_FILTERS = ['owner', 'kind', 'carrier', 'invoice'];
+const DELIVERY_FILTERS = ['owner', 'kind', 'carrier', 'invoice', 'assignee', 'customer', 'product', 'receiver', 'address', 'due', 'tracking', 'confirmation', 'sort'];
 let deliveriesReq = 0;
 var productOrdersUi=null,shipmentCalendarUi=null,orderShipmentData=null;
 function productOrdersDemo(){return productOrdersUi ||= initOrderShipmentDemo({root:$('#view-order-products'),data:orderShipmentData ||= makeShipmentDemo(),kind:'products',go,canProducts:()=>canPage('order-products')});}
-function shipmentCalendarDemo(){return shipmentCalendarUi ||= initOrderShipmentDemo({root:$('#deliveries-prototype'),data:orderShipmentData ||= makeShipmentDemo(),kind:'calendar',go,canProducts:()=>canPage('order-products')});}
+function deliveryCalendarView(){return shipmentCalendarUi ||= createDeliveryCalendar({root:$('#deliveries-calendar'),onRange:(from,to)=>{$('#deliveries-from').value=from;$('#deliveries-to').value=to;loadDeliveries();},actions:x=>deliveryButtons(x)+deliverySlipButtons(x),orderLink:x=>!isWarehouse()&&canPage('order')?(x.contractNo?'#/contracts/':'#/orders/')+encodeURIComponent(x.orderId):null});}
 async function loadDeliveries() {
-  const query=location.hash.split('?')[1]||'',calendar=new URLSearchParams(query).get('view')==='calendar';
-  $('#deliveries-real').hidden=calendar;$('#deliveries-prototype').hidden=!calendar;
-  for(const a of $$('[data-shipment-tab]')){const active=a.dataset.shipmentTab===(calendar?'calendar':'list');a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}
-  if(calendar){shipmentCalendarDemo().show(query);return;}shipmentCalendarUi?.close();
-  // Kho: 7 ngày trước (chuyến trễ chưa giao) → ngày mai; người khác 7 ngày trước → 30 ngày tới.
-  if (!$('#deliveries-from').value) { const t = new Date(todayIso()); $('#deliveries-from').value = new Date(t - 7 * 864e5).toISOString().slice(0, 10); $('#deliveries-to').value = new Date(+t + (isWarehouse() ? 1 : 30) * 864e5).toISOString().slice(0, 10); }
+  const query=location.hash.split('?')[1]||'',tab=new URLSearchParams(query).get('view')||'calendar',calendar=!['list','products'].includes(tab);
+  $('#deliveries-table').hidden=tab!=='list';$('#deliveries-calendar').hidden=!calendar;$('#deliveries-product-lines').hidden=tab!=='products';
+  for(const a of $$('[data-shipment-tab]')){const active=a.dataset.shipmentTab===(calendar?'calendar':tab);a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}
+  shipmentCalendarUi?.close();
+  // Default to the visible month grid, including its adjacent week days.
+  if (!$('#deliveries-from').value) { const [from,to]=deliveryCalendarView().range();$('#deliveries-from').value=from;$('#deliveries-to').value=to; }
   $('#deliveries-list').innerHTML = skeleton(7);
+  $('#deliveries-retry').hidden=true;
+  const req = ++deliveriesReq;
+  $('#deliveries-filter-summary').textContent='Đang tải chuyến giao…';
+  $('#deliveries-calendar').setAttribute('aria-busy','true');
   try {
     const focusId = new URLSearchParams(location.hash.split('?')[1] || '').get('deliveryId');
     const params = new URLSearchParams({ id: focusId || '', from: $('#deliveries-from').value, to: $('#deliveries-to').value, status: $('#deliveries-status .chip.active')?.dataset.status ?? '' });
     for (const k of DELIVERY_FILTERS) { const v = $('#deliveries-' + k).value; if (v) params.set(k, v); }
-    const req = ++deliveriesReq, d = await api('/deliveries?' + params);
+    if (!focusId && $('#deliveries-search').value.trim()) params.set('q',$('#deliveries-search').value.trim());
+    const d = await api('/deliveries?' + params);
     if (req !== deliveriesReq) return;
     fillOrderFilter('#deliveries-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
+    fillOrderFilter('#deliveries-assignee', 'Tất cả người giao', d.filterOptions?.assignees);
     fillOrderFilter('#deliveries-carrier', 'Tất cả', (d.filterOptions?.carriers || []).map(c => ({ id: c, name: c })));
-    const q = focusId ? '' : normalize($('#deliveries-search').value);
-    const rows = d.deliveries.filter(x => !q || normalize(`${x.customerName} ${x.contractNo || x.orderNo} ${x.deliveryNo} ${x.address}`).includes(q));
+    const rows = d.deliveries;
+    $('#deliveries-filter-summary').textContent=`${rows.length} chuyến phù hợp · ${fmtDate($('#deliveries-from').value)} – ${fmtDate($('#deliveries-to').value)}${d.truncated?' · Chỉ hiện 500 chuyến; hãy thu hẹp khoảng ngày hoặc bộ lọc để xem đầy đủ.':''}${focusId?' · Đang xem chuyến từ liên kết trực tiếp; các bộ lọc được bỏ qua.':''}`;
+    deliveryCalendarView().render(rows,{from:focusId?rows[0]?.plannedDate:$('#deliveries-from').value,to:focusId?rows[0]?.plannedDate:$('#deliveries-to').value});
+    renderDeliveryProducts($('#deliveries-product-lines'),rows,x=>deliveryCalendarView().details(x));
     fillList('deliveries', rows.map(x => `<tr>
       <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(ghnTrackingText(x) || x.carrier)}</small></td>
-      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small>${deliverySlipButtons(x)}</td>
+      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small><small class="delivery-product-labels">${(x.products||[]).map(p=>esc(`${p.name} (${p.sku}) · ${fmtNum(p.qty)} ${p.unit}`)).join('<br>')}</small>${deliverySlipButtons(x)}</td>
       <td>${deliveryReceiver(x)}<small>${esc(x.address || x.customerAddress || '')}</small></td>
       <td>${pill(DELIVERY_STATUS, x.status)}${deliveryConfirmation(x)}${deliveryPhotos(x)}</td>
       <td>${x.invoiceNo?.trim() ? esc(x.invoiceNo) : x.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
       'Không có chuyến giao nào trong khoảng ngày này.');
-  } catch (e) { listError('deliveries', e); }
+  } catch (e) { if(req!==deliveriesReq)return;listError('deliveries', e);$('#deliveries-filter-summary').textContent=e.message||'Không tải được lịch giao hàng.';$('#deliveries-calendar').replaceChildren();$('#deliveries-product-lines').replaceChildren();$('#deliveries-retry').hidden=false; }
+  finally { if(req===deliveriesReq)$('#deliveries-calendar').removeAttribute('aria-busy'); }
 }
 /** In từ lịch: GH theo đúng chuyến; ĐG chọn các phiếu của đơn vì không có liên kết 1–1 với chuyến. */
 function deliverySlipButtons(x) {
@@ -3701,7 +3711,9 @@ $('#orders-export').addEventListener('click', async e => {
   } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; b.textContent=label; }
 });
 $('#contracts-search').addEventListener('input', debounce(() => { contractsPager?.reset(); loadContracts(); }));
-$('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 150));
+$('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 350));
+$('#deliveries-retry').addEventListener('click', loadDeliveries);
+for (const key of ['customer','product','receiver','address']) $('#deliveries-'+key).addEventListener('input', debounce(loadDeliveries, 350));
 $('#receivables-search').addEventListener('input', debounce(loadReceivables));
 // ---------------------------------------------------------------- Sổ thu / chi
 const PAY_METHOD = { transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác' };
@@ -3783,6 +3795,7 @@ $('#receivables-filters').addEventListener('click', e => {
   $$('#receivables-filters .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
   loadReceivables();
 });
+for (const chip of $$('#deliveries-status .chip')) chip.setAttribute('data-mobile-navigation','');
 for (const id of ['#deliveries-from', '#deliveries-to', ...DELIVERY_FILTERS.map(k => '#deliveries-' + k)]) $(id).addEventListener('change', loadDeliveries);
 $('#deliveries-clear').addEventListener('click', () => {
   for (const k of DELIVERY_FILTERS) $('#deliveries-' + k).value = '';
