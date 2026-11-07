@@ -7,6 +7,11 @@
 // Chỉ giữ trong bộ nhớ của tab (300 lượt gần nhất), không gửi đi đâu. Nút "Sao chép" để gửi cho người hỗ trợ kỹ thuật.
 const MAX = 300;
 const entries = [];
+// Tab ẩn / máy ngủ giữa chừng: trình duyệt dừng hoặc làm chậm hẹn giờ, lượt gọi bị tính hàng phút dù máy chủ trả nhanh.
+// Lượt như vậy vẫn lưu (đếm riêng) nhưng không đưa vào trung vị / p90 để không làm sai báo cáo.
+const now = () => globalThis.performance?.now?.() ?? Date.now();
+let hiddenAt = -Infinity;
+try { globalThis.document?.addEventListener?.('visibilitychange', () => { if (globalThis.document.hidden) hiddenAt = now(); }); } catch { /* không có document */ }
 
 /** "db;dur=12.5, app;dur=80;desc="9 queries", total;dur=95, region;desc="ap-southeast-1"" → số liệu. */
 export function parseServerTiming(header) {
@@ -26,19 +31,22 @@ export function parseServerTiming(header) {
 /** Nhóm theo đường dẫn: bỏ query string, mã (uuid / số dài) → :id. */
 export const routeOf = path => String(path || '').split('?')[0].replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}(?=\/|$)/gi, '/:id').replace(/\/[A-Za-z0-9_%.-]*\d[A-Za-z0-9_%.-]{5,}(?=\/|$)/g, '/:id');
 
-export function recordApi({ path, method = 'GET', ms, status = 0, serverTiming = '', at = Date.now(), readMs = NaN, attempts = [] }) {
+/** `wallMs`: thời gian theo đồng hồ hệ thống (Date.now) – lệch nhiều so với `ms` (đồng hồ đơn điệu) là máy đã ngủ giữa chừng. */
+export function recordApi({ path, method = 'GET', ms, status = 0, serverTiming = '', at = Date.now(), readMs = NaN, attempts = [], wallMs = NaN }) {
   const t = parseServerTiming(serverTiming), list = Array.isArray(attempts) ? attempts : [];
+  const paused = !!globalThis.document?.hidden || hiddenAt >= now() - ms || (Number.isFinite(wallMs) && Math.abs(wallMs - ms) > 2000);
   const earlier = list.slice(0, -1), retryMs = earlier.reduce((s, a) => s + (Number(a.ms) || 0), 0);
   entries.push({ route: method + ' ' + routeOf(path), ms: Math.round(ms), status, at, server: t.total, db: t.db, app: t.app, queries: t.queries, region: t.region, dbRegion: t.dbRegion,
     readMs: Number.isFinite(readMs) ? Math.round(readMs) : NaN, attempts: list.length || 1, retryMs: Math.round(retryMs),
-    timeouts: list.filter(a => a.error === 'timeout').length, failovers: list.some(a => a.region) && list.length > 1 && !list[list.length - 1].region ? 1 : 0 });
+    timeouts: list.filter(a => a.error === 'timeout').length, failovers: list.some(a => a.region) && list.length > 1 && !list[list.length - 1].region ? 1 : 0, paused });
   if (entries.length > MAX) entries.splice(0, entries.length - MAX);
 }
 export const speedEntries = () => entries.slice();
 
 const pct = (xs, p) => { const s = xs.filter(Number.isFinite).sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : NaN; };
 /** Tổng hợp: toàn bộ + theo từng API (trung vị, p90 tổng thời gian; trung vị máy chủ / chờ CSDL / số truy vấn; mạng = tổng − máy chủ). */
-export function summarize(list = entries) {
+export function summarize(all = entries) {
+  const list = all.filter(x => !x.paused), paused = all.length - list.length;
   const stat = xs => {
     const total = xs.map(x => x.ms), server = xs.map(x => x.server);
     // Mạng = tổng − thời gian các lần thử trước − đọc JSON − máy chủ (lần cuối).
@@ -50,14 +58,14 @@ export function summarize(list = entries) {
   const groups = new Map();
   for (const e of list) { if (!groups.has(e.route)) groups.set(e.route, []); groups.get(e.route).push(e); }
   const routes = [...groups].map(([route, xs]) => ({ route, ...stat(xs) })).sort((a, b) => b.median * b.count - a.median * a.count);
-  return { all: stat(list), routes, region: [...list].reverse().find(x => x.region)?.region || '', dbRegion: [...list].reverse().find(x => x.dbRegion)?.dbRegion || '' };
+  return { all: stat(list), routes, paused, region: [...list].reverse().find(x => x.region)?.region || '', dbRegion: [...list].reverse().find(x => x.dbRegion)?.dbRegion || '' };
 }
 
 const fmt = n => Number.isFinite(n) ? Math.round(n).toLocaleString('vi-VN') + ' ms' : '–';
 /** Văn bản gửi hỗ trợ kỹ thuật. */
 export function speedReport(list = entries, nav = globalThis.navigator) {
   const s = summarize(list), conn = nav?.connection;
-  const lines = [`Đo tốc độ CRM – ${new Date().toLocaleString('vi-VN')}`, `Số lượt: ${s.all.count} · vùng máy chủ: ${s.region || 'chưa rõ'} · vùng CSDL: ${s.dbRegion || 'chưa rõ'}` + (conn?.effectiveType ? ` · mạng: ${conn.effectiveType}${conn.rtt ? ` (rtt ${conn.rtt} ms)` : ''}` : ''),
+  const lines = [`Đo tốc độ CRM – ${new Date().toLocaleString('vi-VN')}`, `Số lượt: ${s.all.count} · vùng máy chủ: ${s.region || 'chưa rõ'} · vùng CSDL: ${s.dbRegion || 'chưa rõ'}` + (conn?.effectiveType ? ` · mạng: ${conn.effectiveType}${conn.rtt ? ` (rtt ${conn.rtt} ms)` : ''}` : '') + (s.paused ? ` · bỏ qua ${s.paused} lượt lúc tab ẩn / máy ngủ` : ''),
     `Toàn bộ: trung vị ${fmt(s.all.median)}, p90 ${fmt(s.all.p90)} · máy chủ ${fmt(s.all.server)} (chờ CSDL ${fmt(s.all.db)}, ${Number.isFinite(s.all.queries) ? s.all.queries : '–'} truy vấn) · đọc JSON ${fmt(s.all.read)} · mạng ${fmt(s.all.network)} · thử lại ${s.all.retries} lần (quá giờ ${s.all.timeouts}, chuyển dự phòng ${s.all.failovers})`, ''];
   const retry = r => r.retries ? ` · thử lại ${r.retries} lần (quá giờ ${r.timeouts}, chuyển dự phòng ${r.failovers}, mất ${fmt(r.retryMs)})` : '';
   for (const r of s.routes.slice(0, 15)) lines.push(`${r.route} ×${r.count}: ${fmt(r.median)} (p90 ${fmt(r.p90)}) · máy chủ ${fmt(r.server)} · CSDL chờ ${fmt(r.db)} · ${Number.isFinite(r.queries) ? r.queries : '–'} truy vấn · đọc JSON ${fmt(r.read)} · mạng ${fmt(r.network)}${retry(r)}`);
