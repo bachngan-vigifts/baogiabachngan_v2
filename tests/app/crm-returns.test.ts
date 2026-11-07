@@ -35,7 +35,7 @@ test('CRM partial return: credit reduces debt, receive/request/refund retries ne
 test('CRM returns respect order scope, delivered caps, active claims, cancellation and original snapshot; one-per-SKU selection never defaults whole order',async()=>{
  const f=await setupCrmReturns();await f.seed('caps');await f.seed('private',0,'mgr');
  assert.equal((await f.call('/orders/private/returns',f.emp)).status,404);assert.equal((await f.call('/orders/caps/returns',f.ncc)).status,403);
- const payload={key:crypto.randomUUID(),warehouseId:'pos-wh',reason:'test',lines:[{orderLineId:'caps-a',qty:3,disposition:'restock'}]};assert.equal((await f.call('/orders/caps/returns',f.emp,'POST',payload)).status,400);
+ const payload={purpose:'credit',key:crypto.randomUUID(),warehouseId:'pos-wh',reason:'test',lines:[{orderLineId:'caps-a',qty:3,disposition:'restock'}]};assert.equal((await f.call('/orders/caps/returns',f.emp,'POST',payload)).status,400);
  assert.equal((await f.call('/orders/caps/returns',f.emp,'POST',{...payload,key:crypto.randomUUID(),lines:[{orderLineId:'private-a',qty:1,disposition:'restock'}]})).status,400);
  const a=await f.create('caps',[{orderLineId:'caps-a',qty:2,disposition:'restock'}]);assert.equal(a.data.total,1600884);
  assert.equal((await f.call('/orders/caps/returns',f.emp,'POST',{...payload,key:crypto.randomUUID(),lines:[{orderLineId:'caps-a',qty:1,disposition:'restock'}]})).status,400);
@@ -59,7 +59,7 @@ test('CRM damaged returns reduce debt without saleable stock; cash refunds requi
  assert.equal((await f.db.select().from(customerPayments).where(eq(customerPayments.orderId,'cash'))).length,1);
 });
 test('CRM concurrent claim/refund caps serialize; delegated approver cannot self-approve and store staff cannot receive into another store warehouse',async()=>{
- const f=await setupCrmReturns();await f.seed('race',4372250);const payload={warehouseId:'pos-wh',reason:'Khách trả',lines:[{orderLineId:'race-a',qty:2,disposition:'restock'}]};
+ const f=await setupCrmReturns();await f.seed('race',4372250);const payload={purpose:'credit',warehouseId:'pos-wh',reason:'Khách trả',lines:[{orderLineId:'race-a',qty:2,disposition:'restock'}]};
  const results=await Promise.all([1,2].map(()=>f.call('/orders/race/returns',f.emp,'POST',{...payload,key:crypto.randomUUID()})));assert.deepEqual(results.map(r=>r.status).sort(),[201,400]);const ret=results.find(r=>r.status===201)!.data;
  await f.db.update(employees).set({canApprove:true}).where(eq(employees.id,'emp'));assert.equal((await f.call(`/orders/race/returns/${ret.id}/approve`,f.emp,'POST',{})).status,403);
  await f.receive('race',ret.id);

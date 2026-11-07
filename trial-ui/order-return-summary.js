@@ -12,7 +12,7 @@ export function renderOrderReturns({host,order,summary}){
  box.append(el('p','Số đã giao giữ nguyên lịch sử; khách đang giữ = đã giao − đã nhận hoàn. Nhận hàng hoàn và hoàn tiền là hai bước riêng.','small muted'));
  const state={pending:'Chờ duyệt',approved:'Đã duyệt — chờ nhận hàng',processing:'Đã nhận hàng — đang xử lý',completed:'Hoàn tất',cancelled:'Đã huỷ',rejected:'Từ chối'};
  for(const r of summary.requests){
-  const item=el('div','','order-return-record'),link=el('a',r.returnNo);link.href='#/orders/'+encodeURIComponent(order.id)+'?returns=1';item.append(link,el('span',state[r.status]||r.status,'pill '+(r.receivedAt?'ok':'muted')));
+  const item=el('div','','order-return-record'),link=el('a',r.returnNo);link.href='#/orders/'+encodeURIComponent(order.id)+'?returns=1';item.append(el('p',r.purpose==='redelivery'?'Nhận để giao lại · giữ nguyên tiền và công nợ':'Trả hàng giảm công nợ · hoàn tiền là bước riêng','small'),link,el('span',state[r.status]||r.status,'pill '+(r.receivedAt?'ok':'muted')));
   const date=r.receivedAt?new Date(r.receivedAt).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'';
   if(r.basisKind==='pre_opening')item.append(el('p','Phiếu hoàn đã được duyệt theo căn cứ hàng giao trước chốt tồn.','small muted'));
   item.append(el('p',r.receivedAt?'Đã nhận về '+r.warehouseName+' · '+date:'Chưa ghi nhận thực nhận; chưa trừ số khách đang giữ.','small'));

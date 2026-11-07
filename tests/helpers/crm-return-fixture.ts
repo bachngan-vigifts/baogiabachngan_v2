@@ -18,7 +18,7 @@ export async function setupCrmReturns(){
   if(paid)await f.db.insert(customerPayments).values({id:'paid-'+id,orderId:id,amount:paid,paidAt:'2026-10-14',method:'transfer',createdBy:'mgr',createdAt:at});
  };
  const ok=(r:any,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
- const create=async(id:string,lines:any[],extra:any={})=>{const body={key:crypto.randomUUID(),warehouseId:'pos-wh',reason:'Khách trả hàng',lines,...extra};return{body,data:ok(await f.call('/orders/'+id+'/returns',f.emp,'POST',body),201)};};
+ const create=async(id:string,lines:any[],extra:any={})=>{const body={purpose:'credit',key:crypto.randomUUID(),warehouseId:'pos-wh',reason:'Khách trả hàng',lines,...extra};return{body,data:ok(await f.call('/orders/'+id+'/returns',f.emp,'POST',body),201)};};
  const receive=async(id:string,returnId:string)=>{ok(await f.call(`/orders/${id}/returns/${returnId}/approve`,f.mgr,'POST',{}));return ok(await f.call(`/orders/${id}/returns/${returnId}/receive`,f.emp,'POST',{confirmed:true}));};
  return{...f,seed,ok,create,receive};
 }
