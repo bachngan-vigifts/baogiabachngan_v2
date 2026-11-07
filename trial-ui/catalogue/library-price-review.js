@@ -2,7 +2,7 @@ import {esc,money} from './core.js';
 const label=p=>p.priceOnRequest?'Liên hệ':money(p.regular);
 /** Explicit account-scoped review queue. Never rewrites quotation snapshots. */
 export function createLibraryPriceReview({api,identity,getMember,getPending,putPending,refresh,toast}){
- let account='',session='',items=[],busy=false,notify=()=>{},dialog=null;
+ let account='',session='',items=[],busy=false,notify=()=>{},dialog=null,writes=Promise.resolve();
  const same=(owner=account,who=session)=>session===who&&who===identity()&&account===owner&&owner===getMember();
  function close(){dialog?.close();dialog?.remove();dialog=null;}
  function reset(){close();account='';session='';items=[];busy=false;}
@@ -12,13 +12,15 @@ export function createLibraryPriceReview({api,identity,getMember,getPending,putP
   if(who!==identity()||member!==getMember()||(account===member&&session===who))return;
   account=member;session=who;items=Array.isArray(saved)?saved.filter(x=>/^[a-f0-9]{64}$/.test(x?.id)&&x.product&&x.incoming):[];
  }
- async function record(rows){
-  if(!same())return;let next=[...items];
-  for(const row of rows){if(!row.priceConflict)continue;const value={id:row.id,revision:row.revision,product:row.product,incoming:row.priceConflict.incoming,clientKey:crypto.randomUUID()};next=next.filter(x=>x.id!==row.id);next.push(value);}
-  if(JSON.stringify(next)===JSON.stringify(items))return;
-  const owner=account,who=session;await putPending(owner,next);if(same(owner,who)){items=next;notify();}
+ function mutate(update){
+  const owner=account,who=session;
+  const task=writes.catch(()=>{}).then(async()=>{if(!same(owner,who))return;const next=update(items);if(JSON.stringify(next)===JSON.stringify(items))return;await putPending(owner,next);if(same(owner,who)){items=next;notify();}});
+  writes=task;return task;
  }
- async function remove(id){const next=items.filter(x=>x.id!==id),owner=account,who=session;await putPending(owner,next);if(same(owner,who))items=next;}
+ async function record(rows){
+  return mutate(current=>{let next=[...current];for(const row of rows){if(!row.priceConflict)continue;const value={id:row.id,revision:row.revision,product:row.product,incoming:row.priceConflict.incoming,clientKey:crypto.randomUUID()};next=next.filter(x=>x.id!==row.id);next.push(value);}return next;});
+ }
+ function remove(id){return mutate(current=>current.filter(x=>x.id!==id));}
  function html(){return items.length?`<div class="library-price-conflicts" role="status"><strong>${items.length} sản phẩm có giá dữ liệu nhập khác thư viện.</strong> Giá thư viện chưa bị thay đổi. <button class="btn small" data-price-review>Đối chiếu giá</button></div>`:'';}
  function open(id=items[0]?.id){
   close();if(!same())return;const item=items.find(x=>x.id===id);if(!item)return;

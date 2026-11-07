@@ -19,3 +19,9 @@ test('concurrent initial queue loads cannot overwrite a newly persisted conflict
  const review=createLibraryPriceReview({api:async()=>{},identity:()=> 'session',getMember:()=> 'employee',getPending:async()=>{if(++reads===1)await gate;return[];},putPending:async()=>{},refresh:async()=>{},toast:()=>{}});
  const slow=review.load('employee');await review.load('employee');await review.record([row]);release();await slow;assert.match(review.html(),/1 sản phẩm/);
 });
+
+test('concurrent price conflicts are serialized without dropping another product',async()=>{
+ let saved:unknown[]=[];
+ const review=createLibraryPriceReview({api:async()=>{},identity:()=> 'session',getMember:()=> 'employee',getPending:async()=>[],putPending:async(_owner:string,items:unknown[])=>{await new Promise(r=>setTimeout(r,5));saved=items;},refresh:async()=>{},toast:()=>{}});
+ await review.load('employee');await Promise.all([review.record([row]),review.record([{...row,id:'d'.repeat(64)}])]);assert.equal(saved.length,2);assert.match(review.html(),/2 sản phẩm/);
+});
