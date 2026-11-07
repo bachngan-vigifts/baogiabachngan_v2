@@ -139,7 +139,7 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>,deps:{crmFactsOf
     const months = Array.from({ length: STAFF_HUB_LIMITS.trendMonths }, (_, i) => shiftMonth(month, i - STAFF_HUB_LIMITS.trendMonths + 1));
 
     return json({
-      member, month, today,
+      member, month, today,reportScores:payroll?.reportScores??null,
       access: { isSelf: me.id === id, canManage: me.role === 'manager', canViewPayroll, salaryOpensOn: salaryHidden ? opensOn : null },
       kpi, trend: trend(orderList, payments, months),
       customers: [...byCustomer.values()].sort((a, b) => (b.lastOrderDate ?? '').localeCompare(a.lastOrderDate ?? '') || a.name.localeCompare(b.name, 'vi')),

@@ -1,3 +1,4 @@
+import type {DashboardReportScoresOf} from '../../../core/contracts/report-scores.ts';
 import { and, asc, count, desc, eq, exists, gte, inArray, isNull, lt, max, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { json, type Router } from '../../../core/http/router.ts';
@@ -20,11 +21,23 @@ export const PIPELINE_FRESH_DAYS = 90;
 const blank = () => ({ actual: 0, orders: 0, expected: 0, pipeline: 0, consulting: 0, quote_sent: 0, negotiating: 0, lost: 0, quotes: 0, converted: 0 });
 
 /** Only GET. All totals are DB aggregates; no limit on source orders/activities. */
-export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?: DashboardKpiOf; storeOf?: DashboardStoreOf } = {}) {
+export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?: DashboardKpiOf; storeOf?: DashboardStoreOf; reportScoresOf?:DashboardReportScoresOf } = {}) {
   /**
    * Điểm KPI Sale một tháng (mặc định tháng cuối kỳ) – tách khỏi /dashboard/revenue để trang doanh số không chờ phần tính lương.
    * Cùng bộ lọc / quyền với doanh số; KPI người khác chỉ Manager xem (như phiếu lương). Quyền "Doanh số toàn công ty" không mở KPI người khác.
    */
+  router.get('/dashboard/report-scores',async c=>{
+    const me=(c.state.session as SessionState|undefined)?.member;
+    if(!me)throw new AppError(401,'Vui lòng đăng nhập.');
+    const f=dashboardFilters(c.url.searchParams,me,vietnamDate().iso),month=c.url.searchParams.get('month')||f.months.at(-1)!;
+    if(!f.months.includes(month))throw new AppError(400,'Tháng điểm báo cáo phải nằm trong kỳ đang xem.');
+    const manager=me.role==='manager';
+    if(!manager&&f.owner&&f.owner!==me.id)throw new AppError(403,'Chỉ Manager xem được điểm báo cáo của nhân viên khác.');
+    const ids=(await c.env.db.select({id:employees.id}).from(employees).where(and(inArray(employees.role,['manager','employee']),isNull(employees.deletedAt),manager?undefined:eq(employees.id,me.id),f.owner?eq(employees.id,f.owner):undefined,manager&&f.group?eq(employees.positionId,f.group):undefined))).map(r=>r.id);
+    const members=deps.reportScoresOf?await deps.reportScoresOf(c.env.db,month,ids):[];
+    return json({month,available:!!deps.reportScoresOf,scope:manager&&!f.owner?'company':'self',members});
+  },'business');
+
   router.get('/dashboard/kpi', async c => {
     const me = (c.state.session as SessionState | undefined)?.member;
     if (!me) throw new AppError(401, 'Vui lòng đăng nhập.');

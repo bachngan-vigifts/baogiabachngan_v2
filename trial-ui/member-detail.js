@@ -1,3 +1,4 @@
+import {createReportScoreCard,reportScoreText} from './report-scores.js';
 import {openContractBonusDetails} from './contract-bonus-detail.js';
 import {openRevenueTargets} from './revenue-targets.js';
 import {openSelfRevenueTargets} from './revenue-target-requests.js';
@@ -73,7 +74,7 @@ export function initMemberDetail(deps) {
         <td class="right num">${money(o.due)}</td><td class="right num paid-text">${money(o.paid)}</td><td class="right num strong">${money(o.balance)}</td>
         <td class="right num ${o.overdue ? 'danger-text' : 'muted'}">${o.overdue ? money(o.overdue) : '—'}</td></tr>`), 'Không có công nợ đang theo dõi.') },
     { key: 'attendance', label: 'Ngày công', count: d => d.payroll.attendanceSummary.worked, html: attendanceHtml },
-    { key: 'payroll', label: 'Lương & thưởng', count: d => d.payroll.adjustments.length, html: payrollHtml },
+    { key: 'payroll', label: 'Lương & thưởng', count: d => d.payroll?.adjustments.length??0, html: payrollHtml },
   ];
 
   // ----- Ngày công: lịch tháng; Manager bấm vào ngày để đổi trạng thái (đủ → nửa → nghỉ có lương → nghỉ không lương → vắng → bỏ trống).
@@ -97,6 +98,7 @@ export function initMemberDetail(deps) {
 
   // ----- Lương & thưởng: phiếu lương (tạm tính / đã chốt), các khoản thưởng – trừ, mức lương áp dụng + lịch sử.
   function payrollHtml(d) {
+    if(!d.payroll)return `<div class="card">${d.reportScores?createReportScoreCard(d.reportScores).outerHTML:''}<p class="muted">Lương tháng này hiện từ ngày ${esc(fmtDay(d.access.salaryOpensOn))}.</p></div>`;
     const p = d.payroll, s = p.payslip, pr = p.profile, inp = p.input, edit = can() && !locked(), hasProfile = !!pr.effectiveMonth;
     const row = (l, cls = '') => `<tr class="${cls}"><td>${esc(l.label)}${l.note ? `<small>${esc(l.note)}</small>` : ''}</td><td class="right num">${cls === 'minus' ? '−' : ''}${money(l.amount)}</td></tr>`;
     const shown = list => list.filter(l => l.amount || l.key === 'salaryByDays' || s.group==='sale'&&pr.kpiEligible===false&&['contractBonus','contractBonusAdjustment'].includes(l.key));
@@ -111,6 +113,7 @@ export function initMemberDetail(deps) {
     const k = s.kpi;
     return `<div class="md-pay-grid">
       <div class="md-slip">
+        ${p.reportScores?createReportScoreCard(p.reportScores).outerHTML:''}
         <div class="card-title-row"><h3>Phiếu lương ${esc(monthLabel(d.month).toLowerCase())}</h3>${pill(SLIP, s.status)}</div>
         <p class="muted small">${esc(GROUP[s.group] || '')}${s.positionLabel ? ' · ' + esc(s.positionLabel) : ''} · ${s.workDays} ngày làm việc${inp.workDays === null ? ' (theo chấm công)' : ' (nhập tay)'}</p>
         ${s.kpiNetBasis?`<p class="small"><b>DS net tính thưởng KPI: ${money(s.kpiNetBasis.netRevenue)}</b><br>Doanh số chưa VAT − hoa hồng khách hàng. ${s.kpiNetBasis.issues?`<span class="error">${s.kpiNetBasis.issues} đơn thiếu căn cứ hoa hồng${s.kpiNetBasis.rate>0||s.kpi?.policy==='appsheet'?'; cần đối chiếu trước khi chốt thưởng':'; chưa phát sinh thưởng do KPI dưới 60%' }.</span>`:''}</p>`:''}${s.snapshotUnavailable?'<p class="error">Phiếu cũ thiếu bản chụp chi tiết. Giữ nguyên tổng tiền đã chốt; cần Manager đối soát trước khi in.</p>':''}<table class="md-slip-table"><tbody>
@@ -218,7 +221,7 @@ export function initMemberDetail(deps) {
   function render() {
     const d = st.d, m = d.member, k = d.kpi, a = d.access, s = d.payroll?.payslip;
     const pct = k.targetPercent, bar = pct === null ? '' : `<span class="md-progress"><i style="width:${Math.min(100, pct)}%"></i></span>`;
-    const tabs = d.payroll ? TABS : TABS.filter(t => !['attendance', 'payroll'].includes(t.key));
+    const tabs = d.payroll ? TABS : TABS.filter(t => t.key!=='attendance'&&(t.key!=='payroll'||d.reportScores));
     const tab = tabs.find(t => t.key === st.tab) || tabs[0];
     const stat = (label, value, sub, cls = '') => `<article class="stat ${cls}"><small>${label}</small><strong>${value}</strong>${sub}</article>`;
     root.innerHTML = `
@@ -258,7 +261,8 @@ export function initMemberDetail(deps) {
           <strong class="md-net">${money(s.net)}</strong><span class="muted">Thực nhận${s.status === 'estimate' ? ' (tạm tính)' : ''}</span>
           <dl class="kv md-mini"><dt>Tổng thu nhập</dt><dd class="num">${money(s.gross)}</dd><dt>Thưởng</dt><dd class="num">${money(s.income.filter(l => /Bonus(?:Adjustment)?$/.test(l.key)).reduce((a, l) => a + l.amount, 0))}</dd>
             <dt>Khấu trừ</dt><dd class="num">−${money(s.deductionTotal)}</dd></dl>
-          <button type="button" class="btn ghost small" data-tab="payroll">Xem phiếu lương ›</button></div>` : ''}
+          ${d.reportScores?`<p class="small"><b>Điểm báo cáo tháng: ${esc(reportScoreText(d.reportScores))}</b></p>`:''}<button type="button" class="btn ghost small" data-tab="payroll">Xem phiếu lương ›</button></div>` : ''}
+        ${!d.payroll&&d.reportScores&&tab.key!=='payroll'?`<div class="card">${createReportScoreCard(d.reportScores).outerHTML}</div>`:''}
         ${d.access.salaryOpensOn ? `<div class="card md-salary-card"><h2 class="card-title">Lương ${esc(monthLabel(d.month).toLowerCase())}</h2>
           <p class="muted">Lương tháng này hiện từ ngày ${esc(fmtDay(d.access.salaryOpensOn))}.</p></div>` : ''}
         ${d.payroll || d.salaryAccount ? bankCardHtml(d) : ''}

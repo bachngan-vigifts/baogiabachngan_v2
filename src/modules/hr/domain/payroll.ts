@@ -163,6 +163,8 @@ export interface PayslipCalc {
   income: PayLine[]; deductions: PayLine[]; gross: number; deductionTotal: number; net: number;
   employment?: {company:'BN'|'VG'|null;department:string|null;leader:boolean};
   weeklyReportBasis?:import('../../../core/contracts/weekly-report.ts').WeeklyReportPoints;
+  /** Read-only report score snapshot, including employees whose wage policy does not use report points. */
+  reportScoreBasis?:import('../../../core/contracts/weekly-report.ts').WeeklyReportPoints;
   teamRevenueBasis?:{target:number;revenue:number;crm:number;pos:number;issues:number;policyMonth:string;bonusMode:'threshold'|'tiers'};
   kpiNetBasis?:{netRevenue:number;issues:number;rate:number};
   kpi: KpiCvResult | null;snapshotUnavailable?:boolean;
