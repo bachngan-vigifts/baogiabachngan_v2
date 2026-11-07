@@ -6,7 +6,7 @@
  */
 import { and, asc, eq, gte, inArray, isNotNull, lte, ne } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
-import { json, type Router } from '../../../core/http/router.ts';
+import { json, readJson, type Router } from '../../../core/http/router.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
@@ -17,6 +17,10 @@ import { debtCounts } from '../../sales/domain/sales.ts';
 import { quotations } from '../../quotes/schema.ts';
 import { commissionOf, printingInfo, quoteStockSku, type QuoteDoc, type QuoteRow } from '../../quotes/domain/quote-math.ts';
 import { productMovements } from '../../catalog/schema.ts';
+import { salesLineCosts } from '../../sales/line-cost-schema.ts';
+import { adjustLineCost } from '../../sales/api/line-costs.ts';
+import { salesLineCostHistory } from '../../sales/line-cost-schema.ts';
+import { LINE_COST_CONFIDENCE_LABEL } from '../../sales/domain/line-cost.ts';
 import {
   COST_SOURCE_LABEL, GRAINS, emptyRow, bucketLabel, bucketOf, groupBy, groupByProduct, orderProfit, purchaseCostAt, type Grain, type LineInput, type OrderProfit,
 } from '../domain/profit.ts';
@@ -33,7 +37,7 @@ function requireManager(c: Ctx) {
 }
 
 /** Lợi nhuận từng đơn trong khoảng ngày đơn [from, to]. `orderIds` để lấy riêng một đơn. */
-async function profitOrders(db: AnyDb, from: string, to: string, orderIds?: string[]) {
+async function profitOrders(db: AnyDb, from: string, to: string, orderIds?: string[], onlyConfirmed = false) {
   const orders = await db.select({
     id: salesOrders.id, orderNo: salesOrders.orderNo, orderDate: salesOrders.orderDate, status: salesOrders.status, channel: salesOrders.channel,
     shiftId: salesOrders.shiftId, ownerId: salesOrders.ownerId, customerId: salesOrders.customerId, customerName: salesOrders.customerName,
@@ -43,7 +47,7 @@ async function profitOrders(db: AnyDb, from: string, to: string, orderIds?: stri
   const ids = orders.map(o => o.id);
   if (!ids.length) return [];
   const shiftIds = [...new Set(orders.map(o => o.shiftId).filter((x): x is string => !!x))];
-  const [lines, contracts, ships, returned, shifts] = await Promise.all([
+  const [lines, contracts, ships, returned, shifts, snaps] = await Promise.all([
     db.select().from(salesOrderLines).where(inArray(salesOrderLines.orderId, ids)).orderBy(asc(salesOrderLines.lineNo)),
     db.select({ orderId: salesContracts.orderId, status: salesContracts.status }).from(salesContracts).where(and(inArray(salesContracts.orderId, ids), ne(salesContracts.status, 'cancelled'))),
     db.select({ orderId: deliveries.orderId, fee: deliveries.shippingFee }).from(deliveries).where(and(inArray(deliveries.orderId, ids), ne(deliveries.status, 'cancelled'))),
@@ -52,7 +56,10 @@ async function profitOrders(db: AnyDb, from: string, to: string, orderIds?: stri
       .from(posReturnLines).innerJoin(posReturns, eq(posReturns.id, posReturnLines.returnId))
       .where(and(inArray(posReturns.orderId, ids), isNotNull(posReturns.creditEffectiveAt))),
     shiftIds.length ? db.select({ id: posShifts.id, registerId: posShifts.registerId }).from(posShifts).where(inArray(posShifts.id, shiftIds)) : [],
+    db.select({ lineId: salesLineCosts.orderLineId, sku: salesLineCosts.sku, unitCost: salesLineCosts.unitCost, source: salesLineCosts.source, confidence: salesLineCosts.confidence })
+      .from(salesLineCosts).where(inArray(salesLineCosts.orderId, ids)),
   ]);
+  const snapOf = new Map(snaps.map(x => [x.lineId, x]));
   const skus = [...new Set(lines.map(l => l.sku).filter(Boolean))];
   const buys = skus.length ? await db.select({ sku: productMovements.sku, at: productMovements.occurredAt, price: productMovements.unitPrice }).from(productMovements)
     .where(and(inArray(productMovements.sku, skus), eq(productMovements.kind, 'purchase'), isNotNull(productMovements.unitPrice))) : [];
@@ -72,7 +79,9 @@ async function profitOrders(db: AnyDb, from: string, to: string, orderIds?: stri
       const r: QuoteRow | undefined = rows[l.lineNo - 1];
       const match = !!r && quoteStockSku(r) === l.sku && String(r.name || '').trim() === l.name.trim();
       const ret = returned.filter(x => x.orderLineId === l.id);
+      const snap = snapOf.get(l.id);
       const base: LineInput = { id: l.id, sku: l.sku, name: l.name, qty: l.qty, revenue: l.amount,
+        snapshot: snap && snap.sku === l.sku ? { unitCost: snap.unitCost, source: snap.source, confidence: snap.confidence } : null,
         returnedQty: ret.reduce((n, x) => n + x.qty, 0), returnedRevenue: ret.reduce((n, x) => n + x.subtotal, 0) };
       if (!match || !doc) return base;
       const printing = printingInfo({ type: doc.type, rows: [r] }).enabled
@@ -84,7 +93,7 @@ async function profitOrders(db: AnyDb, from: string, to: string, orderIds?: stri
     const shippingCost = doc?.shipping?.payer === 'sender' ? ships.filter(s => s.orderId === o.id).reduce((n, s) => n + Math.max(0, s.fee || 0), 0) : 0;
     const branchId = o.channel === 'pos' && o.shiftId ? registerOf.get(o.shiftId) ?? 'pos' : CRM_BRANCH;
     out.push(orderProfit({ id: o.id, orderNo: o.orderNo, orderDate: o.orderDate, ownerId: o.ownerId, customerId: o.customerId, customerName: o.customerName, branchId, shippingCost },
-      inputs, sku => purchaseCostAt(history.get(sku), o.orderDate)));
+      inputs, sku => purchaseCostAt(history.get(sku), o.orderDate), onlyConfirmed));
   }
   return out;
 }
@@ -106,14 +115,15 @@ export function registerProfitRoutes(router: Router<StaffEnv>) {
     if (!isDay(from) || !isDay(to) || from > to) throw new AppError(400, 'Khoảng ngày không hợp lệ.');
     if ((Date.parse(to) - Date.parse(from)) / 86400_000 > MAX_DAYS) throw new AppError(400, 'Khoảng ngày tối đa 3 năm.');
     if (!GRAINS.includes(grain)) throw new AppError(400, 'Kỳ không hợp lệ (ngày / tuần / tháng / năm).');
-    const all = await profitOrders(c.env.db, from, to), n = await names(c.env.db, all);
+    const costs = q.get('costs') === 'confirmed' ? 'confirmed' : 'all';
+    const all = await profitOrders(c.env.db, from, to, undefined, costs === 'confirmed'), n = await names(c.env.db, all);
     const branch = q.get('branch') || '', owner = q.get('owner') || '', customer = q.get('customer') || '';
     const orders = all.filter(o => (!branch || o.branchId === branch) && (!owner || o.ownerId === owner) && (!customer || o.customerId === customer));
     const [summary] = groupBy(orders, () => 'all', () => 'Tổng');
     const customerKey = (o: OrderProfit) => o.customerId ?? `name:${o.customerName}`;
     const customerName = new Map(orders.map(o => [customerKey(o), o.customerName]));
     return json({
-      from, to, grain, costSources: COST_SOURCE_LABEL,
+      from, to, grain, costs, costSources: COST_SOURCE_LABEL, confidenceLabels: LINE_COST_CONFIDENCE_LABEL,
       summary: summary ?? emptyRow('all', 'Tổng'),
       direct: { printing: orders.reduce((s, o) => s + o.printing, 0), commission: orders.reduce((s, o) => s + o.commission, 0), shipping: orders.reduce((s, o) => s + o.shipping, 0) },
       series: groupBy(orders, o => bucketOf(o.orderDate, grain), k => bucketLabel(k, grain), 'key'),
@@ -134,7 +144,26 @@ export function registerProfitRoutes(router: Router<StaffEnv>) {
     const [o] = await profitOrders(c.env.db, '', '', [String(c.params.id)]);
     if (!o) throw new AppError(404, 'Không tìm thấy đơn (hoặc đơn không tính doanh số).');
     const n = await names(c.env.db, [o]);
+    const [snaps, history] = await Promise.all([
+      c.env.db.select({ lineId: salesLineCosts.orderLineId, revision: salesLineCosts.revision, costAt: salesLineCosts.costAt, capturedAt: salesLineCosts.capturedAt, note: salesLineCosts.note })
+        .from(salesLineCosts).where(eq(salesLineCosts.orderId, o.id)),
+      c.env.db.select().from(salesLineCostHistory).where(eq(salesLineCostHistory.orderId, o.id)).orderBy(asc(salesLineCostHistory.at)),
+    ]);
+    const actors = await names(c.env.db, history.filter(h => h.actorId).map(h => ({ ownerId: h.actorId!, branchId: CRM_BRANCH } as OrderProfit)));
     return json({ ...o, ownerName: n.owner(o.ownerId), branch: n.branch(o.branchId), margin: o.coveredRevenue > 0 ? o.gross / o.coveredRevenue : null,
-      lines: o.lines.map(l => ({ ...l, costSourceLabel: COST_SOURCE_LABEL[l.costSource] })) });
+      lines: o.lines.map(l => { const s = snaps.find(x => x.lineId === l.id);
+        return { ...l, costSourceLabel: COST_SOURCE_LABEL[l.costSource], confidenceLabel: l.confidence ? LINE_COST_CONFIDENCE_LABEL[l.confidence] : 'Thiếu',
+          snapshot: s ? { revision: s.revision, costAt: s.costAt, capturedAt: s.capturedAt, note: s.note } : null,
+          history: history.filter(h => h.orderLineId === l.id).map(h => ({ at: h.at, reason: h.reason, unitCost: h.unitCost, previousUnitCost: h.previousUnitCost, source: h.source,
+            confidence: h.confidence, note: h.note, actor: h.actorId ? actors.owner(h.actorId) : 'Hệ thống' })) }; }) });
+  }, 'business');
+
+  // Manager điều chỉnh giá vốn một dòng (bắt buộc lý do; kiểm tra phiên bản); ghi lịch sử, mức tin cậy "chính xác".
+  router.put('/profit/line-costs/:lineId', async c => {
+    requireManager(c);
+    const b = await readJson(c.req, 4_000);
+    const r = await adjustLineCost(c.env.db, String(c.params.lineId), { unitCost: Number(String(b.unitCost ?? '').replace(/[^\d.]/g, '')), reason: String(b.reason ?? ''),
+      revision: b.revision === null || b.revision === undefined ? null : Number(b.revision) }, member(c).id);
+    return json({ ok: true, ...r });
   }, 'business');
 }

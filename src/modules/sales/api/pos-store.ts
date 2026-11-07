@@ -1,3 +1,4 @@
+import { ensureLineCosts } from './line-costs.ts';
 import { orderNoForCheckout } from './pos-number.ts';
 import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { posOrderReservations, posPaymentIntents } from '../pos-order-flow-schema.ts';
@@ -531,6 +532,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
         deliveredQty: !flow && mode === 'counter' ? l.qty : 0,
       })),
     );
+    await ensureLineCosts(tx, id, 'pos', m.id); // giá vốn lúc bán (snapshot)
     const scheduleId = crypto.randomUUID();
     await tx.insert(paymentSchedules).values({
       id: scheduleId,

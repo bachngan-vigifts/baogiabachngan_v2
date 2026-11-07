@@ -1,3 +1,4 @@
+import { ensureLineCosts } from './line-costs.ts';
 import {previewWebSapo,createWebSapo,recordWebSapoResult} from './web-order-sapo.ts';
 import { orderExportDetails } from './order-export.ts';
 import { canSalesCreateSapo } from '../domain/order-sapo-access.ts';
@@ -333,6 +334,7 @@ export async function createOrderFromQuote(db: StaffEnv['db'], quote: QuoteRow, 
       expectedDeliveryDate: o.deliveryDate === null ? null : isDate(o.deliveryDate) ? o.deliveryDate : isDate(data.deliveryDate) ? data.deliveryDate : null, status: o.status, submittedAt: o.submitted === false ? null : now, ...t, note: text(o.note ?? orderNotesFromQuote(data), 20000), createdAt: now, updatedAt: now,
     });
     await tx.insert(salesOrderLines).values(lines.map(l => ({ id: crypto.randomUUID(), orderId: id, ...l })));
+    await ensureLineCosts(tx, id, 'create', o.createdBy); // giá vốn lúc bán (snapshot)
     // Chưa có HĐKT: phải thu toàn bộ, hạn khi giao xong.
     await tx.insert(paymentSchedules).values({ id: crypto.randomUUID(), orderId: id, kind: 'balance', amount: t.total, dueDate: null, note: 'Thanh toán khi giao hàng', createdAt: now });
     // Khách chưa có nhân viên phụ trách: người phụ trách đơn đầu tiên thành người phụ trách khách.
@@ -390,6 +392,7 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
     if (id) await tx.update(salesOrderLines).set(values).where(eq(salesOrderLines.id, id));
     else await tx.insert(salesOrderLines).values({ id: crypto.randomUUID(), orderId: order.id, ...values });
   }
+  await ensureLineCosts(tx, order.id, 'amend', member.id);
   await tx.update(salesOrders).set({ ...t, quoteNo: quote.quoteNo, quoteType: quote.quoteType,
     customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
     taxCode: text(data.customerTaxCode, 100), address: text(data.customerAddress, 2000),
@@ -824,6 +827,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
             throw new AppError(409, 'Vui lòng kiểm tra CK khách và phí vận chuyển trước khi duyệt.', 'COST_REVIEW_REQUIRED');
         }
       }
+      // Duyệt: chốt giá vốn lúc bán (đơn nháp còn cập nhật theo báo giá / giá nhập; sau duyệt khoá) – chạy trước khi đổi trạng thái.
+      if (status === 'confirmed') await ensureLineCosts(tx, order.id, 'confirm', viewer(c).id);
       await tx.update(salesOrders).set({ status, warehouseId, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
       // Duyệt không ghi sổ kho; khi huỷ chỉ hoàn các dòng trừ kiểu cũ. Phiếu xuất được đảo ở cancelDocumentChildren.
       await syncOrderStock(tx, viewer(c).id, order.id, status === 'confirmed' ? `Duyệt bán – ${order.customerName}` : `Huỷ ${order.orderNo} – hàng về lại kho bán`);

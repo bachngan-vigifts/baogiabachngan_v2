@@ -30,3 +30,5 @@
 .pf-chart rect, .pf-chart path, .pf-chart text { stroke: none; }
 .pf-chart text { font-weight: 400; font-family: inherit; }
 .pf-chart line { fill: none; }
+.pf-adjust { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 8px; }
+.pf-hist { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
