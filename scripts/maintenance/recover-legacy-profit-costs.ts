@@ -88,7 +88,7 @@ export function recoverySql(plan:ReturnType<typeof recoveryPlan>,fingerprint:str
  if(!/^[a-f0-9]{32}$/.test(fingerprint))throw Error('Invalid input fingerprint');
  const values=plan.costs.map(c=>`(${lit(c.line.id)},${lit(c.line.orderId)},${lit(c.line.sku)},${c.unitCost},${lit(c.source)},${lit(c.confidence)},${c.costAt?lit(c.costAt):'NULL'},${lit(c.note)})`).join(',\n');
  const repairs=plan.repairs.map(r=>`(${lit(r.id)},${r.previous},${r.price},${lit(r.ref)})`).join(',\n');
- return `BEGIN;
+ return `BEGIN ISOLATION LEVEL REPEATABLE READ;
 SET LOCAL lock_timeout='5s';
 SET LOCAL statement_timeout='60s';
 CREATE TEMP TABLE recovery_cost_plan(line_id text,order_id text,sku text,unit_cost double precision,source text,confidence text,cost_at text,note text) ON COMMIT DROP;
