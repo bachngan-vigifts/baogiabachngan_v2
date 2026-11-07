@@ -104,7 +104,7 @@ test('invalid or distant retry timestamps cannot strand a browser on fallback fo
   store.setItem('bn-api-region-retry-at', 'Infinity');
   assert.deepEqual(createRegionCanary({ storage: () => store }).headers(), { 'x-region': 'ap-northeast-2' });
   store.setItem('bn-api-region-retry-at', '9999999999999');
-  const c = createRegionCanary({ storage: () => store, now: () => clock, retryMs: 1000 });
+  const c = createRegionCanary({ storage: () => store, now: () => clock, retryMs: 1000, maxRetryMs: 1000 });
   assert.deepEqual(c.headers(), {}); clock = 1100;
   assert.deepEqual(c.headers(), { 'x-region': 'ap-northeast-2' });
 });
@@ -116,4 +116,31 @@ test('công tắc tắt cho tất cả (REGION_DEFAULT_ON = false): mọi máy v
   c.enable(); assert.deepEqual(c.headers(), { 'x-region': 'ap-northeast-2' }, 'Manager vẫn bật thử được trên máy mình');
   assert.equal(createRegionCanary({ storage: () => store, defaultOn: false }).enabled(), false, 'đến lần mở app sau');
   assert.doesNotThrow(() => createRegionCanary({ storage: () => { throw Error('blocked'); } }).failed(true));
+});
+
+test('thời gian chờ tăng dần theo số lần lỗi liên tiếp (30 s → 5 phút), thành công là về 0; chỉ báo một lần mỗi đợt lỗi', () => {
+  const store = memory(); let clock = 0, off = 0;
+  const c = createRegionCanary({ storage: () => store, now: () => clock, onDisabled: () => off++ });
+  const failAndWait = () => { c.failed('ap-northeast-2'); const { retryAt } = c.status(); const wait = retryAt - clock; clock = retryAt; assert.deepEqual(c.headers(), { 'x-region': 'ap-northeast-2' }, 'hết thời gian chờ thì dò lại'); return wait; };
+  assert.deepEqual([1, 2, 3, 4, 5, 6].map(failAndWait), [30_000, 60_000, 120_000, 240_000, 300_000, 300_000]);
+  assert.equal(off, 1, 'lượt dò thất bại không báo lại');
+  c.observe('total;dur=1, region;desc="ap-northeast-2"', 'ap-northeast-2');
+  assert.deepEqual(c.status(), { streak: 0, retryAt: 0, manual: false });
+  assert.equal(store.getItem('bn-api-region-fail-streak'), null);
+  c.failed('ap-northeast-2'); assert.equal(c.status().retryAt - clock, 30_000, 'đợt lỗi mới bắt đầu lại từ 30 s'); assert.equal(off, 2);
+  assert.equal(createRegionCanary({ storage: () => store, now: () => clock }).status().streak, 1, 'số lần lỗi được nhớ qua lần mở app');
+});
+
+test('mạng có lại / quay lại tab: lượt đọc kế tiếp dò lại ngay; Manager tắt tay thì không', () => {
+  const store = memory(); let clock = 0;
+  const c = createRegionCanary({ storage: () => store, now: () => clock });
+  c.failed('ap-northeast-2'); clock = 1000;
+  assert.deepEqual(c.headers(), {}, 'đang chờ');
+  c.wake();
+  assert.deepEqual(c.headers(false), {}, 'lệnh ghi không dò');
+  assert.deepEqual(c.headers(), { 'x-region': 'ap-northeast-2' }, 'dò lại ngay');
+  const m = createRegionCanary({ storage: () => memory(), now: () => clock });
+  m.disable(); m.wake(); assert.deepEqual(m.headers(), {}, 'tắt tay giữ tắt');
+  const on = createRegionCanary({ storage: () => memory(), now: () => clock });
+  on.wake(); assert.deepEqual(on.headers(), { 'x-region': 'ap-northeast-2' }, 'đang bật: không đổi gì');
 });

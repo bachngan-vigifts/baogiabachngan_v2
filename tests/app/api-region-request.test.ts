@@ -102,3 +102,28 @@ test('a write is never replayed to another region, even after 503 or an unknown 
     assert.equal(calls, 1);
   }
 });
+
+const ours = (status: number, extra: Record<string, string> = {}) => new Response('{}', { status, headers: { 'server-timing': 'total;dur=5, region;desc="ap-northeast-2"', ...extra } });
+test('503 của chính máy chủ mình ở đúng vùng (CSDL bận) không phải lỗi vùng: đọc thử lại tại chỗ, giữ máy chủ cạnh CSDL', async () => {
+  const canary = newCanary(); const calls: Record<string, string>[] = []; const waits: number[] = [];
+  const result = await requestWithRegion(canary, async (headers: Record<string, string>) => {
+    calls.push(headers); return calls.length === 1 ? ours(503, { 'retry-after': '1' }) : ours(200);
+  }, { delay: async (ms: number) => { waits.push(ms); } });
+  assert.equal(result.status, 200);
+  assert.deepEqual(calls, [{ 'x-region': 'ap-northeast-2' }, { 'x-region': 'ap-northeast-2' }], 'không chuyển sang máy chủ dự phòng');
+  assert.deepEqual(waits, [1000], 'theo retry-after');
+  assert.equal(canary.enabled(), true);
+  // Vẫn bận ở lượt thử lại: trả 503 cho màn hình, vẫn giữ vùng.
+  let n = 0;
+  const busy = await requestWithRegion(canary, async () => { n++; return ours(503); }, { delay: async () => {} });
+  assert.equal(busy.status, 503); assert.equal(n, 2); assert.equal(canary.enabled(), true);
+  // Lượt thử lại gặp lỗi cổng (không phải máy chủ mình): tắt tạm, chuyển dự phòng.
+  const seen: Record<string, string>[] = [];
+  const fell = await requestWithRegion(canary, async (h: Record<string, string>) => { seen.push(h); return seen.length === 1 ? ours(503) : seen.length === 2 ? new Response('{}', { status: 502 }) : Response.json({ ok: true }); }, { delay: async () => {} });
+  assert.equal(fell.status, 200); assert.deepEqual(seen.at(-1), {}); assert.equal(canary.enabled(), false);
+});
+test('lệnh ghi gặp 503 của máy chủ mình: không gửi lại, không tắt vùng', async () => {
+  const canary = newCanary(); let calls = 0;
+  const r = await requestWithRegion(canary, async () => { calls++; return ours(503); }, { read: false, delay: async () => {} });
+  assert.equal(r.status, 503); assert.equal(calls, 1); assert.equal(canary.enabled(), true);
+});
