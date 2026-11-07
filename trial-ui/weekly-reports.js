@@ -12,17 +12,27 @@ export const weekLabel = p => `${dm(p)}–${dm(addDays(p, 6))}`;
 export const periodLabel = p => p.length === 7 ? `tháng ${p.slice(5)}/${p.slice(0, 4)}` : `tuần ${weekLabel(p)}`;
 const pctText = x => x === null || x === undefined ? '—' : (Math.round(x * 1000) / 10).toLocaleString('vi-VN') + '%';
 export const scoreText = s => s === null || s === undefined ? '—' : String(s).replace('.', ',');
+export const canSeeStaffReports = member => member?.role === 'manager' || member?.role === 'employee' && ['sale', 'sale-admin'].includes(member.positionId);
 
-export function initWeeklyReports({ api, root, toast, esc, go, money }) {
+export function initWeeklyReports({ api, root, toast, esc, go, money, user, monthlyOnly = false }) {
   let current = { month: '' }, me = null, reminded = false;
+  const reportPath = monthlyOnly ? 'monthly-reports' : 'weekly-reports';
+  const bindMonth = () => { root.querySelector('#wr-month').onchange = e => { if (e.target.value) go(`#/${reportPath}?month=${e.target.value}`); }; };
+  const unavailable = () => { root.innerHTML = `<div class="page-head"><h1>Báo cáo tháng</h1><input type="month" id="wr-month" value="${esc(current.month)}" aria-label="Tháng"></div><div class="empty"><p>Báo cáo tháng áp dụng từ tháng 11/2026. Chọn tháng 11/2026 trở đi để xem và lập báo cáo.</p></div>`; bindMonth(); };
   const pill = (tone, text) => `<span class="pill ${tone}">${esc(text)}</span>`;
   const when = v => new Date(v).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
   const vnd = v => v === null || v === undefined ? '—' : money(v);
 
   /** Sau đăng nhập: hiện mục menu; nhắc tuần trước chưa nộp (một lần mỗi phiên). */
   async function start() {
+    const member = user?.();
+    const navigation = visible => document.querySelectorAll('[data-nav="weekly-reports"], [data-nav="monthly-reports"]').forEach(a => { a.hidden = !visible; });
+    // This menu must not depend on a background request succeeding during login.
+    // API permissions remain authoritative when opening/saving any report.
+    if (user) { navigation(canSeeStaffReports(member)); if (!canSeeStaffReports(member)) return; }
     try { me = await api('/staff-reports/me'); } catch { return; }
-    document.querySelectorAll('[data-nav="weekly-reports"]').forEach(a => { a.hidden = !(me.required || me.canReview); });
+    if (user && user()?.id !== member?.id) return;
+    navigation(me.required || me.canReview);
     if (me.required && me.remind && !reminded) { reminded = true; toast(`Chưa nộp báo cáo tuần ${weekLabel(me.remind.period)} – hạn ${when(me.remind.deadline)}.`, 'warn'); }
   }
   async function show(query = '') {
@@ -32,33 +42,37 @@ export function initWeeklyReports({ api, root, toast, esc, go, money }) {
     try { me = await api(`/staff-reports/me?month=${current.month}`); } catch (e) { root.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; return; }
     if (me.canReview) return showReview();
     if (!me.required) { root.innerHTML = '<div class="empty"><h3>Báo cáo tuần</h3><p class="muted">Chức vụ của bạn không phải nộp báo cáo tuần.</p></div>'; return; }
-    const pct = Math.min(100, me.points / me.maxPoints * 100);
-    root.innerHTML = `<div class="page-head"><div><h1>${me.monthly ? 'Báo cáo tuần / tháng' : 'Báo cáo tuần'}</h1><p class="muted">${me.monthly ? '4 báo cáo tuần + 1 báo cáo tháng' : me.maxPoints + ' báo cáo tuần'} bắt buộc · tuần hạn <b>10h00 thứ Hai</b> tuần sau${me.monthly ? ' · tháng hạn <b>10h00 ngày 02</b> tháng sau' : ''}</p></div>
+    if (monthlyOnly && !me.monthly) return unavailable();
+    const points = monthlyOnly ? me.monthly.score : me.points, maxPoints = monthlyOnly ? 1 : me.maxPoints;
+    const pct = Math.min(100, (points ?? 0) / maxPoints * 100);
+    root.innerHTML = `<div class="page-head"><div><h1>${monthlyOnly ? 'Báo cáo tháng' : me.monthly ? 'Báo cáo tuần / tháng' : 'Báo cáo tuần'}</h1><p class="muted">${monthlyOnly ? 'Hạn nộp <b>10h00 ngày 02</b> tháng sau. Trong tháng được lưu nháp; nộp chính thức từ ngày 01 tháng sau.' : `${me.monthly ? '4 báo cáo tuần + 1 báo cáo tháng' : me.maxPoints + ' báo cáo tuần'} bắt buộc · tuần hạn <b>10h00 thứ Hai</b> tuần sau${me.monthly ? ' · tháng hạn <b>10h00 ngày 02</b> tháng sau' : ''}`}</p></div>
         <div class="head-actions"><input type="month" id="wr-month" value="${esc(current.month)}" aria-label="Tháng"></div></div>
-      <div class="card wr-sum"><div class="wr-row"><b>Điểm tháng ${esc(current.month.slice(5))}/${esc(current.month.slice(0, 4))}</b><b class="num">${scoreText(me.points)} / ${me.maxPoints}</b></div>
+      <div class="card wr-sum"><div class="wr-row"><b>Điểm ${monthlyOnly ? 'báo cáo tháng' : 'tháng'} ${esc(current.month.slice(5))}/${esc(current.month.slice(0, 4))}</b><b class="num">${scoreText(points)} / ${maxPoints}</b></div>
         <div class="wr-bar"><i style="width:${pct}%"></i></div>
-        <p class="muted small">${me.applies ? `Tiền trách nhiệm = mức trách nhiệm × ngày công ÷ công chuẩn × điểm ÷ ${me.maxPoints}. ` + 'Đúng hạn 1 điểm · trễ dưới 1 ngày 0,5 · trễ từ 1 ngày / không nộp / Chưa đạt 0 · Miễn 1. Tháng 5 tuần lấy 4 tuần cao nhất.' + (me.monthly ? ' Báo cáo tháng tính thêm 1 điểm.' : '') : 'Tháng này chưa áp dụng vào Tiền trách nhiệm (áp dụng từ 11/2026) – vẫn nên nộp để làm quen.'}</p></div>
-      <div class="card"><div class="wr-weeks">${me.weeks.map((w, i) => { const st = STATE[w.state];
+        <p class="muted small">${monthlyOnly ? 'Báo cáo tháng đóng góp tối đa 1 điểm, cộng với 4 báo cáo tuần để tính Tiền trách nhiệm. Đúng hạn 1 · trễ dưới 1 ngày 0,5 · trễ từ 1 ngày / không nộp / Chưa đạt 0 · Miễn 1.' : me.applies ? `Tiền trách nhiệm = mức trách nhiệm × ngày công ÷ công chuẩn × điểm ÷ ${me.maxPoints}. ` + 'Đúng hạn 1 điểm · trễ dưới 1 ngày 0,5 · trễ từ 1 ngày / không nộp / Chưa đạt 0 · Miễn 1. Tháng 5 tuần lấy 4 tuần cao nhất.' + (me.monthly ? ' Báo cáo tháng tính thêm 1 điểm.' : '') : 'Tháng này chưa áp dụng vào Tiền trách nhiệm (áp dụng từ 11/2026) – vẫn nên nộp để làm quen.'}</p></div>
+      <div class="card"><div class="wr-weeks">${(monthlyOnly ? [] : me.weeks).map((w, i) => { const st = STATE[w.state];
         return `<button type="button" class="wr-week" data-week="${esc(w.period)}"><span class="wr-n">${i + 1}</span><span class="wr-grow"><b>Tuần ${esc(weekLabel(w.period))}</b>
           <small>${w.submittedAt ? 'Nộp ' + esc(when(w.submittedAt)) : 'Hạn ' + esc(when(w.deadline))}${w.draftAt && !w.submittedAt ? ' · có nháp' : ''}</small></span>
           <span class="wr-tags">${pill(st[1], st[0])}${w.review ? pill(REVIEW_TONE[w.review], me.reviewLabels[w.review]) : ''}${w.score !== null ? pill('info', scoreText(w.score) + ' điểm') : ''}</span></button>`; }).join('')}
         ${me.monthly ? (w => `<button type="button" class="wr-week wr-month" data-week="${esc(w.period)}"><span class="wr-n">T</span><span class="wr-grow"><b>Báo cáo ${esc(periodLabel(w.period))}</b>
           <small>${w.submittedAt ? 'Nộp ' + esc(when(w.submittedAt)) : 'Hạn ' + esc(when(w.deadline))}${w.draftAt && !w.submittedAt ? ' · có nháp' : ''}</small></span>
           <span class="wr-tags">${pill(STATE[w.state][1], STATE[w.state][0])}${w.review ? pill(REVIEW_TONE[w.review], me.reviewLabels[w.review]) : ''}${w.score !== null ? pill('info', scoreText(w.score) + ' điểm') : ''}</span></button>`)(me.monthly) : ''}</div></div>`;
-    root.querySelector('#wr-month').onchange = e => { if (e.target.value) go(`#/weekly-reports?month=${e.target.value}`); };
+    bindMonth();
     root.querySelectorAll('[data-week]').forEach(b => b.onclick = () => openWeek(b.dataset.week));
   }
   async function showReview() {
     let d; try { d = await api(`/staff-reports/review?month=${current.month}`); } catch (e) { root.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; return; }
-    root.innerHTML = `<div class="page-head"><div><h1>Báo cáo tuần / tháng – Sale / Sale Admin</h1><p class="muted">Duyệt Đạt / Chưa đạt / Miễn · điểm dùng tính Tiền trách nhiệm${d.applies ? '' : ' (tháng này chưa áp dụng)'}</p></div>
+    if (monthlyOnly && !d.hasMonthly) return unavailable();
+    const weeks = monthlyOnly ? [] : d.weeks;
+    root.innerHTML = `<div class="page-head"><div><h1>${monthlyOnly ? 'Báo cáo tháng' : 'Báo cáo tuần / tháng'} – Sale / Sale Admin</h1><p class="muted">Duyệt Đạt / Chưa đạt / Miễn · điểm dùng tính Tiền trách nhiệm${d.applies ? '' : ' (tháng này chưa áp dụng)'}</p></div>
         <div class="head-actions"><input type="month" id="wr-month" value="${esc(current.month)}" aria-label="Tháng"></div></div>
-      <div class="card"><div class="table-wrap"><table class="data-table wr-table"><thead><tr><th>Nhân viên</th>${d.weeks.map(w => `<th>${esc(weekLabel(w))}</th>`).join('')}${d.hasMonthly ? '<th>Báo cáo tháng</th>' : ''}<th class="right">Điểm</th></tr></thead>
-      <tbody>${d.people.map(p => `<tr><td>${esc(p.name)}${p.positionId === 'sale-admin' ? ' <small class="muted">Sale Admin</small>' : ''}</td>${p.weeks.map(w => `<td>${w.reportId
+      <div class="card"><div class="table-wrap"><table class="data-table wr-table"><thead><tr><th>Nhân viên</th>${weeks.map(w => `<th>${esc(weekLabel(w))}</th>`).join('')}${d.hasMonthly ? '<th>Báo cáo tháng</th>' : ''}<th class="right">Điểm${monthlyOnly ? ' tháng' : ''}</th></tr></thead>
+      <tbody>${d.people.map(p => `<tr><td>${esc(p.name)}${p.positionId === 'sale-admin' ? ' <small class="muted">Sale Admin</small>' : ''}</td>${(monthlyOnly ? [] : p.weeks).map(w => `<td>${w.reportId
         ? `<button type="button" class="btn ghost small" data-open="${esc(p.id)}|${esc(w.period)}">${pill(STATE[w.state][1], STATE[w.state][0])}${pill(REVIEW_TONE[w.review], d.reviewLabels[w.review])}</button>`
         : pill(STATE[w.state][1], STATE[w.state][0])}</td>`).join('')}${p.monthly ? `<td>${p.monthly.reportId
         ? `<button type="button" class="btn ghost small" data-open="${esc(p.id)}|${esc(p.monthly.period)}">${pill(STATE[p.monthly.state][1], STATE[p.monthly.state][0])}${pill(REVIEW_TONE[p.monthly.review], d.reviewLabels[p.monthly.review])}</button>`
-        : pill(STATE[p.monthly.state][1], STATE[p.monthly.state][0])}</td>` : ''}<td class="right num"><b>${scoreText(p.points)}</b>/${p.required}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">Chưa có Sale / Sale Admin.</td></tr>'}</tbody></table></div></div>`;
-    root.querySelector('#wr-month').onchange = e => { if (e.target.value) go(`#/weekly-reports?month=${e.target.value}`); };
+        : pill(STATE[p.monthly.state][1], STATE[p.monthly.state][0])}</td>` : ''}<td class="right num"><b>${scoreText(monthlyOnly ? p.monthly?.score : p.points)}</b>/${monthlyOnly ? 1 : p.required}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">Chưa có Sale / Sale Admin.</td></tr>'}</tbody></table></div></div>`;
+    bindMonth();
     root.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { const [id, period] = b.dataset.open.split('|'); openWeek(period, id); });
     root.querySelectorAll('table.data-table').forEach(t => { const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent);
       t.querySelectorAll('tbody tr').forEach(tr => [...tr.children].forEach((td, i) => { if (heads[i]) td.dataset.label = heads[i]; })); });
