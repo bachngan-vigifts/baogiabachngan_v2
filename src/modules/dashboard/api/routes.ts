@@ -1,6 +1,7 @@
 import type {DashboardReportScoresOf} from '../../../core/contracts/report-scores.ts';
 import { and, asc, count, desc, eq, exists, gte, inArray, isNull, lt, max, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
+import { cachedReport } from '../../../core/cache/report-cache.ts';
 import { json, type Router } from '../../../core/http/router.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees, positions } from '../../staff/schema.ts';
@@ -18,6 +19,13 @@ const amount = (column: typeof orders.total | typeof care.expectedRevenue) => sq
 const ratio = (part: number, whole: number) => whole ? Math.round(part / whole * 1000) / 10 : null;
 /** Pipeline chỉ tính cơ hội còn "sống": lần chăm sóc mới nhất không quá N ngày trước cuối kỳ. */
 export const PIPELINE_FRESH_DAYS = 90;
+/**
+ * Bản tính sẵn 30 phút cho từng người xem + bộ lọc (core/cache/report-cache.ts); `refresh=1` (nút "Cập nhật") tính lại.
+ * Khoá gồm vai trò và quyền xem toàn công ty, nên đổi quyền không bao giờ lộ bản tính của phạm vi cũ.
+ */
+const viewerKey = (me: { id: string; role: string }, f: { manager: boolean }) => `${me.id}:${me.role}:${f.manager ? 'all' : 'self'}`;
+const cacheOf = (c: { url: URL }, scope: string, me: { id: string; role: string }, f: { manager: boolean }) =>
+  ({ scope, viewer: viewerKey(me, f), params: c.url.searchParams, refresh: c.url.searchParams.get('refresh') === '1' });
 const blank = () => ({ actual: 0, orders: 0, expected: 0, pipeline: 0, consulting: 0, quote_sent: 0, negotiating: 0, lost: 0, quotes: 0, converted: 0 });
 
 /** Only GET. All totals are DB aggregates; no limit on source orders/activities. */
@@ -34,8 +42,10 @@ export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?
     const manager=me.role==='manager';
     if(!manager&&f.owner&&f.owner!==me.id)throw new AppError(403,'Chỉ Manager xem được điểm báo cáo của nhân viên khác.');
     const ids=(await c.env.db.select({id:employees.id}).from(employees).where(and(inArray(employees.role,['manager','employee']),isNull(employees.deletedAt),manager?undefined:eq(employees.id,me.id),f.owner?eq(employees.id,f.owner):undefined,manager&&f.group?eq(employees.positionId,f.group):undefined))).map(r=>r.id);
-    const members=deps.reportScoresOf?await deps.reportScoresOf(c.env.db,month,ids):[];
-    return json({month,available:!!deps.reportScoresOf,scope:manager&&!f.owner?'company':'self',members});
+    return json(await cachedReport(c.env.db,cacheOf(c,'dashboard-report-scores',me,f),async()=>{
+      const members=deps.reportScoresOf?await deps.reportScoresOf(c.env.db,month,ids):[];
+      return {month,available:!!deps.reportScoresOf,scope:manager&&!f.owner?'company':'self',members};
+    }));
   },'business');
 
   router.get('/dashboard/kpi', async c => {
@@ -52,8 +62,11 @@ export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?
       manager ? undefined : eq(employees.id, me.id),
       f.owner ? eq(employees.id, f.owner) : undefined,
       manager && f.group ? eq(employees.positionId, f.group) : undefined))).map(r => r.id);
-    const members = (await deps.kpiOf(c.env.db, month, ids)).sort((a, b) => b.used - a.used || a.name.localeCompare(b.name, 'vi'));
-    return json({ month, available: true, scope: manager && !f.owner ? 'company' : 'self', restricted: !manager && f.manager, members });
+    const kpiOf = deps.kpiOf;
+    return json(await cachedReport(c.env.db, cacheOf(c, 'dashboard-kpi', me, f), async () => {
+      const members = (await kpiOf(c.env.db, month, ids)).sort((a, b) => b.used - a.used || a.name.localeCompare(b.name, 'vi'));
+      return { month, available: true, scope: manager && !f.owner ? 'company' : 'self', restricted: !manager && f.manager, members };
+    }));
    }, 'business');
 
   /**
@@ -67,9 +80,11 @@ export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?
     const today = vietnamDate().iso, raw = c.url.searchParams.get('month') || today.slice(0, 7);
     const f = dashboardFilters(new URLSearchParams({ from: raw, to: raw }), me, today);
     const month = f.months[0]!;
-    const board = deps.storeOf ? await deps.storeOf(c.env.db, month) : null;
-    const stores = (board?.stores ?? []).filter(s => f.manager || s.members.some(m => m.id === me.id));
-    return json({ month, available: stores.length > 0, scope: f.manager ? 'company' : 'self', me: me.id, today, policyMonth: board?.policyMonth ?? null, stores });
+    return json(await cachedReport(c.env.db, cacheOf(c, 'dashboard-store', me, f), async () => {
+      const board = deps.storeOf ? await deps.storeOf(c.env.db, month) : null;
+      const stores = (board?.stores ?? []).filter(s => f.manager || s.members.some(m => m.id === me.id));
+      return { month, available: stores.length > 0, scope: f.manager ? 'company' : 'self', me: me.id, today, policyMonth: board?.policyMonth ?? null, stores };
+    }));
   }, 'business');
 
   router.get('/dashboard/revenue', async c => {
@@ -77,7 +92,7 @@ export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?
     if (!me) throw new AppError(401, 'Vui lòng đăng nhập.');
     const f = dashboardFilters(c.url.searchParams, me, vietnamDate().iso);
     // One read-only snapshot keeps totals, tables and pagination consistent during concurrent updates.
-    const data = await c.env.db.transaction(async db => {
+    const data = await cachedReport(c.env.db, cacheOf(c, 'dashboard-revenue', me, f), () => c.env.db.transaction(async db => {
       const selected = db.select({ id: employees.id }).from(employees).where(and(
         inArray(employees.role, ['manager', 'employee']),
         f.manager ? undefined : eq(employees.id, me.id),
@@ -182,7 +197,7 @@ export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?
         neglected: { total: neglectCount?.count ?? 0, page: f.page, pageSize: 25, days: f.neglectDays, customers: neglected },
         lastSyncedAt: syncAt, syncSource: syncAt && syncAt === sync?.at ? 'sapo-pull' : syncAt ? 'customers' : null,
         calculatedAt: new Date().toISOString() };
-    }, { isolationLevel: 'repeatable read', accessMode: 'read only' });
+    }, { isolationLevel: 'repeatable read', accessMode: 'read only' }));
     return json(data);
   }, 'business');
 }

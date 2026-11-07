@@ -5,7 +5,8 @@ import {eq} from 'drizzle-orm';
 import {employees} from '../../src/modules/staff/schema.ts';
 
 /** Tổng quan doanh số › Điểm KPI Sale: đúng số của phiếu lương, đúng quyền, không trả tiền lương. */
-const kpi=(f:any,who:string,q='')=>f.call('/dashboard/kpi?from=2026-10&to=2026-10'+q,who);
+// refresh=1: test đọc lại ngay sau khi sửa dữ liệu (bỏ bản tính sẵn 30 phút – xem tests/core/report-cache.test.ts).
+const kpi=(f:any,who:string,q='')=>f.call('/dashboard/kpi?from=2026-10&to=2026-10&refresh=1'+q,who);
 async function sale(){const f=await setupSalesPayroll();await f.setPolicy(1);await f.salary();assert.equal((await f.care()).status,201);return f;}
 
 test('KPI trên tổng quan bằng KPI phiếu lương; từng phần có thực tế, chỉ tiêu, điểm; không có số tiền lương',async()=>{

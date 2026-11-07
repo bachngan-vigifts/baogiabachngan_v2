@@ -8,6 +8,9 @@ import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne } from 'driz
 import { AppError } from '../../../core/errors.ts';
 import { json, readJson, type Router } from '../../../core/http/router.ts';
 import type { AnyDb } from '../../../core/db/client.ts';
+import { cachedReport, dropReportCache } from '../../../core/cache/report-cache.ts';
+/** Khoá cache trang Phân tích lợi nhuận; sửa giá vốn / loại phiếu két thì bỏ để lần xem sau tính lại. */
+const PROFIT_CACHE = 'profit';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { deliveries, salesContracts, salesOrderLines, salesOrders } from '../../sales/schema.ts';
@@ -214,6 +217,8 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
     if ((Date.parse(to) - Date.parse(from)) / 86400_000 > MAX_DAYS) throw new AppError(400, 'Khoảng ngày tối đa 3 năm.');
     if (!GRAINS.includes(grain)) throw new AppError(400, 'Kỳ không hợp lệ (ngày / tuần / tháng / năm).');
     const costs = q.get('costs') === 'confirmed' ? 'confirmed' : 'all';
+    // Tính một lần cho mọi Manager (số liệu không phụ thuộc người xem), giữ 30 phút; "Cập nhật" (refresh=1) tính lại ngay.
+    return json(await cachedReport(c.env.db, { scope: PROFIT_CACHE, viewer: 'manager', params: q, refresh: q.get('refresh') === '1' }, async () => {
     const all = await profitOrders(c.env.db, from, to, undefined, costs === 'confirmed', deps.lineCostFallbackOf), n = await names(c.env.db, all);
     const branch = q.get('branch') || '', owner = q.get('owner') || '', customer = q.get('customer') || '';
     // Bảng lương mỗi tháng chỉ tính một lần cho cả chi phí Sale (PR-C) và chi nhánh (PR-D).
@@ -244,7 +249,7 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
     })();
     const customerKey = (o: OrderProfit) => o.customerId ?? `name:${o.customerName}`;
     const customerName = new Map(orders.map(o => [customerKey(o), o.customerName]));
-    return json({
+    return {
       from, to, grain, costs, compare, costSources: COST_SOURCE_LABEL, confidenceLabels: LINE_COST_CONFIDENCE_LABEL,
       summary: summary ?? emptyRow('all', 'Tổng'),
       direct: { printing: orders.reduce((s, o) => s + o.printing, 0), commission: orders.reduce((s, o) => s + o.commission, 0), shipping: orders.reduce((s, o) => s + o.shipping, 0) },
@@ -280,7 +285,8 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
           feeRevenue: o.feeRevenue, carrierFee: o.carrierFee, staffCost: o.staffSalary + o.staffBonus, net: o.net, carrierUnknown: o.carrierUnknown })),
       ordersTotal: orders.length,
       filterOptions: { branches: groupBy(all, o => o.branchId, n.branch).map(r => ({ id: r.key, name: r.label })), owners: groupBy(all, o => o.ownerId, n.owner).map(r => ({ id: r.key, name: r.label })) },
-    });
+    };
+    }));
   }, 'business');
 
   router.get('/profit/orders/:id', async c => {
@@ -308,6 +314,7 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
     const b = await readJson(c.req, 4_000);
     const r = await adjustLineCost(c.env.db, String(c.params.lineId), { unitCost: Number(String(b.unitCost ?? '').replace(/[^\d.]/g, '')), reason: String(b.reason ?? ''),
       revision: b.revision === null || b.revision === undefined ? null : Number(b.revision) }, member(c).id);
+    await dropReportCache(c.env.db, PROFIT_CACHE);
     return json({ ok: true, ...r });
   }, 'business');
 
@@ -349,10 +356,11 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
     const b = await readJson(c.req, 4_000), id = String(c.params.entryId), cls = String(b.cls ?? '');
     const [e] = await c.env.db.select({ id: cashEntries.id }).from(cashEntries).where(eq(cashEntries.id, id)).limit(1);
     if (!e) throw new AppError(404, 'Không tìm thấy phiếu két.');
-    if (!cls) { await c.env.db.delete(cashEntryClasses).where(eq(cashEntryClasses.entryId, id)); return json({ ok: true, cls: null }); }
+    if (!cls) { await c.env.db.delete(cashEntryClasses).where(eq(cashEntryClasses.entryId, id)); await dropReportCache(c.env.db, PROFIT_CACHE); return json({ ok: true, cls: null }); }
     if (!(CASH_CLASSES as readonly string[]).includes(cls)) throw new AppError(400, 'Loại phiếu không hợp lệ.');
     const values = { cls: cls as CashClass, note: String(b.note ?? '').trim().slice(0, 300), updatedBy: member(c).id, updatedAt: new Date().toISOString() };
     await c.env.db.insert(cashEntryClasses).values({ entryId: id, ...values }).onConflictDoUpdate({ target: cashEntryClasses.entryId, set: values });
+    await dropReportCache(c.env.db, PROFIT_CACHE);
     return json({ ok: true, cls });
   }, 'business');
   router.get('/profit/missing-costs', async c => {
@@ -390,6 +398,7 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
         await adjustLineCost(c.env.db, l.lineId, { unitCost: cost, reason: note.slice(0, 500), revision: revisions.get(l.lineId) ?? null }, member(c).id); written++;
       }
     }
+    await dropReportCache(c.env.db, PROFIT_CACHE);
     return json({ ok: true, written });
   }, 'business');
 }

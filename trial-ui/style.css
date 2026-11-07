@@ -2718,3 +2718,6 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 #view-member .report-score-table :is(th,td){padding:10px 5px!important;white-space:normal}
 #view-member .report-score-table :is(th,td):first-child{width:42%}
 #view-member .report-score-table :is(th,td):last-child{width:18%;white-space:nowrap!important}
+/* Bản tính sẵn (Tổng quan, Phân tích lợi nhuận): "Số liệu lúc HH:mm" + nút Cập nhật */
+.report-cache{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 0;font-size:13px;color:var(--muted,#64748b)}
+.report-cache .btn-sm{padding:3px 10px;font-size:12px;min-height:0}

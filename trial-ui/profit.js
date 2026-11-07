@@ -2,6 +2,8 @@
  * PHÂN TÍCH LỢI NHUẬN – trang #/profit (chỉ Manager; máy chủ kiểm tra lại quyền).
  * Lợi nhuận gộp = Doanh thu thuần − Giá vốn − Chi phí trực tiếp; ghi nhận theo ngày đơn; dòng thiếu giá vốn không tính 0.
  */
+import { cacheLineHtml } from './report-cache.js';
+
 const GRAIN_LABEL = { day: 'Ngày', week: 'Tuần', month: 'Tháng', year: 'Năm' };
 const TABS = { series: 'Thời gian', branches: 'Chi nhánh', owners: 'Nhân viên', customers: 'Khách hàng', orders: 'Đơn hàng', products: 'Sản phẩm' };
 const vnToday = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
@@ -38,10 +40,11 @@ export function initProfit({ api, root, toast, esc, money }) {
     else if (st.to.slice(0, 7) === st.from.slice(0, 7) && st.from.endsWith('-01')) { st.from = new Date(Date.parse(today) - 29 * 86400_000).toISOString().slice(0, 10); st.to = today; }
   }
 
-  async function load() {
-    root.innerHTML = '<p class="muted">Đang tính lợi nhuận…</p>';
+  /** `refresh`: nút "Cập nhật" – máy chủ bỏ bản tính sẵn (30 phút) và tính lại ngay. */
+  async function load(refresh = false) {
+    root.innerHTML = `<p class="muted">${refresh ? 'Đang tính lại lợi nhuận…' : 'Đang tải lợi nhuận…'}</p>`;
     const q = new URLSearchParams({ from: st.from, to: st.to, grain: seriesGrain(), ...(st.branch ? { branch: st.branch } : {}), ...(st.owner ? { owner: st.owner } : {}),
-      ...(st.costs === 'confirmed' ? { costs: 'confirmed' } : {}), ...(st.compare ? {} : { compare: '0' }) });
+      ...(st.costs === 'confirmed' ? { costs: 'confirmed' } : {}), ...(st.compare ? {} : { compare: '0' }), ...(refresh ? { refresh: '1' } : {}) });
     try { st.data = await api('/profit?' + q); } catch (e) { root.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; return; }
     render();
   }
@@ -58,6 +61,7 @@ export function initProfit({ api, root, toast, esc, money }) {
     root.innerHTML = `<div class="card pf-head">
         <div class="pf-title"><h1>Phân tích lợi nhuận</h1><span class="pill info">Sau chi phí</span></div>
         <p class="muted">Chỉ Manager · chưa VAT · ghi nhận theo ngày đơn · chi phí kỳ lương / sổ quỹ ghi nhận theo kỳ phát sinh</p>
+        ${cacheLineHtml(d.cache, 'pf-refresh', esc)}
         <div class="pf-filters"><div class="seg" role="group" aria-label="Kỳ">${Object.entries(GRAIN_LABEL).map(([k, v]) => `<button type="button" data-grain="${k}" class="${k === st.grain ? 'on' : ''}" aria-pressed="${k === st.grain}">${v}</button>`).join('')}</div>
           ${periodControl()}
           <label class="pf-check-inline"><input type="checkbox" id="pf-compare" ${st.compare ? 'checked' : ''}> So với kỳ trước</label>
@@ -78,6 +82,7 @@ export function initProfit({ api, root, toast, esc, money }) {
         <div id="pf-tab">${tabBody()}</div>
         <p class="muted small">Thưởng / lương Sale chia về đơn theo tỉ lệ doanh thu đủ giá vốn của người đó trong tháng trọn; tổng khớp bảng lương. Bấm một nhân viên → các đơn của người đó; bấm một đơn → giá vốn từng dòng.</p></div>
       <div class="pf-two">${costCard()}${rulesCard(d)}</div>`;
+    root.querySelector('#pf-refresh')?.addEventListener('click', () => load(true));
     root.querySelectorAll('[data-grain]').forEach(b => b.onclick = () => { setGrain(b.dataset.grain); load(); });
     root.querySelector('#pf-month')?.addEventListener('change', e => { const m = e.target.value; if (!m) return; st.from = m + '-01'; st.to = monthEnd(m) < vnToday() ? monthEnd(m) : vnToday(); load(); });
     root.querySelector('#pf-year')?.addEventListener('change', e => { const y = e.target.value; st.from = y + '-01-01'; st.to = y + '-12-31' < vnToday() ? y + '-12-31' : vnToday(); load(); });
