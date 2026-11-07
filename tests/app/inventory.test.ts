@@ -61,7 +61,7 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   const v = (await call(`/purchase-orders/${id}`, mgr)).data;
   await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100 }] });
   await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
-  const rc = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-12345678', warehouse: ' kho cần thơ ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }], photos: ['data:image/jpeg;base64,AAAA'] });
+  const rc = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-12345678', warehouse: ' kho cần thơ ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }], photos: ['data:image/jpeg;base64,/9j/4AAA'] });
   assert.equal(rc.status, 201, JSON.stringify(rc.data));
   const resetAfterReceipt = await call('/inventory/opening',mgr,'POST',{confirm:true,warehouseId:'ct'});
   assert.equal(resetAfterReceipt.status,409);assert.match(resetAfterReceipt.data.error,/supplier_receipt.*Dùng phiếu điều chỉnh để sửa lệch/);

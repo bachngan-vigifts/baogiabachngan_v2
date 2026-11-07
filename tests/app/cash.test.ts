@@ -154,7 +154,7 @@ test('Cash: ngưỡng lấy cấu hình; chờ duyệt không vào két; kết c
 test('Cash: phiếu idempotent, quyền xem theo ca, Kế toán xem tất cả, ảnh private không lộ khoá', async () => {
   const f = await setup();
   await f.open();
-  const b = { ...entry(), photo: 'data:image/jpeg;base64,' + Buffer.from('hoa-don').toString('base64') };
+  const b = { ...entry(), photo: 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('hoa-don')]).toString('base64') };
   const [a, r] = await Promise.all([
     f.call('/cash/entries', f.emp, 'POST', b),
     f.call('/cash/entries', f.emp, 'POST', b),
@@ -359,7 +359,7 @@ test('Cash: người được chỉ định duyệt thay chỉ thấy phiếu ch
   const f = await setup();
   await f.open();
   const pending = await f.call('/cash/entries', f.emp, 'POST', {
-    ...entry('other_income', 1000000), photo: 'data:image/jpeg;base64,' + Buffer.from('hoa-don').toString('base64'),
+    ...entry('other_income', 1000000), photo: 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('hoa-don')]).toString('base64'),
   });
   const posted = await f.call('/cash/entries', f.emp, 'POST', entry());
   assert.equal(pending.status, 201);

@@ -1,4 +1,5 @@
 import { bindForgotPassword } from './forgot-password.js';
+import { mountTurnstile } from './turnstile.js';
 import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
 // Bách Ngân · Trang khách hàng: xem/tạo báo giá, đặt hàng, theo dõi đơn. Không có tồn kho, giá nhập.
 // Tính tiền dùng đúng hàm của máy chủ (quote-math.js sinh từ src/modules/quotes/domain/quote-math.ts).
@@ -55,6 +56,7 @@ async function apiRequest(path, method = 'GET', body) {
 watchCsp(r => { if (!token) return false; api('/csp-report', 'POST', r).catch(() => {}); return true; });
 
 bindForgotPassword({button:$('#c-forgot-password'),api,email:()=>$('#c-email').value,audience:'customer'});
+const loginBot = mountTurnstile({ api, before: $('#c-login-button'), action: 'login' });
 const ORDER_STATUS = { draft: ['Chờ xác nhận', 'warn'], confirmed: ['Đã xác nhận', 'blue'], delivering: ['Đang giao', 'warn'], delivered: ['Đã giao xong', 'ok'], cancelled: ['Đã huỷ', 'off'] };
 const DELIVERY_STATUS = { planned: 'Đã lên lịch', in_transit: 'Đang giao', delivered: 'Đã giao', failed: 'Giao không thành công' };
 const pill = (map, s) => `<span class="pill ${map[s]?.[1] || ''}">${esc(map[s]?.[0] || s)}</span>`;
@@ -118,10 +120,10 @@ $('#c-login-form').addEventListener('submit', async e => {
       catch (ex) { if (invalidActivation(ex)) { activationToLogin(); return; } throw ex; }
       activation = null; history.replaceState(null, '', location.pathname + location.search + '#new');
     }
-    await api('/login', 'POST', { email, password });
+    await api('/login', 'POST', { email, password, turnstileToken: loginBot.token() });
     $('#c-login-form').reset(); $('#c-email').readOnly = false;
     await boot();
-  } catch (ex) { err.textContent = ex.message; }
+  } catch (ex) { err.textContent = ex.message; loginBot.reset(); }
   finally { btn.disabled = false; }
 });
 $('#c-staff-logout').addEventListener('click', async () => { try { await api('/logout', 'POST', {}); } catch { /* bỏ qua */ } saveToken(''); showAuth(); });

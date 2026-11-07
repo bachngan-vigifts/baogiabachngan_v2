@@ -82,7 +82,7 @@ test('Outbox: thiếu giá/SKU/NCC không dispatch; kho sai bị chặn, chỉ s
  await f.db.update(incomingShipmentLines).set({sku:'00123'}).where(eq(incomingShipmentLines.id,'line'));
  const noSupplier=await f.call('/purchase-orders',f.mgr,'POST',{orders:[{supplierId:'',warehouse:'Kho POS',lines:[{sku:'00123',name:'Ly',unit:'cái',quantity:1,sources:[]}]}]});assert.equal(noSupplier.status,400);assert.equal(f.calls.length,0);
  const bad=await f.call(`/purchase-orders/${order}/receipts`,f.mgr,'POST',{clientKey:crypto.randomUUID(),warehouse:'Sai kho',lines:[{lineId:'line',goodQty:1}]});assert.equal(bad.status,400);
- const r=await f.call(`/purchase-orders/${order}/receipts`,f.mgr,'POST',{clientKey:crypto.randomUUID(),warehouse:'Kho POS',lines:[{lineId:'line',goodQty:1,damagedQty:2}],photos:['data:image/jpeg;base64,YW5o']});assert.equal(r.status,201,JSON.stringify(r.data));
+ const r=await f.call(`/purchase-orders/${order}/receipts`,f.mgr,'POST',{clientKey:crypto.randomUUID(),warehouse:'Kho POS',lines:[{lineId:'line',goodQty:1,damagedQty:2}],photos:['data:image/jpeg;base64,/9j/4AAA']});assert.equal(r.status,201,JSON.stringify(r.data));
  assert.equal(f.calls[0].items[0].good_quantity,1);assert.equal(f.calls[0].items[0].purchase_discount_percent,20);assert.equal(f.calls[0].items[0].damaged_quantity,undefined);
 });
 test('Đối soát: Manager + expected + lý do; done thủ công không tự vượt 409; chỉ callback đúng yêu cầu mới sửa liên kết',async()=>{

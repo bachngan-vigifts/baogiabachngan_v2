@@ -34,7 +34,7 @@ test('MỌI route của staff đều khai báo khu vực truy cập (không có 
   const routes = router.list();
   assert.ok(routes.length >= 6);
   for (const r of routes) assert.ok(['public', 'self', 'supplier-portal', 'ncc-admin', 'admin', 'business'].includes(r.meta as string), `${r.method} ${r.pattern}`);
-  assert.deepEqual(routes.filter(r => r.meta === 'public').map(r => r.pattern.replace(/[\^$\\/?]/g, '')).sort(), ['activate', 'activation-info', 'forgot-password', 'login']);
+  assert.deepEqual(routes.filter(r => r.meta === 'public').map(r => r.pattern.replace(/[\^$\\/?]/g, '')).sort(), ['activate', 'activation-info', 'auth-config', 'forgot-password', 'login']);
 });
 
 test('vòng đời tài khoản: xem liên kết → kích hoạt → đăng nhập → /me → đăng xuất', async () => {
@@ -53,10 +53,10 @@ test('vòng đời tài khoản: xem liên kết → kích hoạt → đăng nh�
   assert.equal((await w.call('/me', { cookie: l.cookie })).status, 401);
 });
 
-test('cookie phiên: HttpOnly, Secure, SameSite=Strict, Path=/, sống 30 ngày, tên __Host-', async () => {
+test('cookie phiên: HttpOnly, Secure, SameSite=Strict, Path=/, sống 7 ngày, tên __Host-', async () => {
   const w = await world();
   const r = await w.call('/login', { body: { email: 'emp@x.vn', password: PASSWORD } });
-  assert.match(r.cookie!, /^__Host-bn-session=[a-f0-9]{64}; Path=\/; Secure; HttpOnly; SameSite=Strict; Max-Age=2592000$/);
+  assert.match(r.cookie!, /^__Host-bn-session=[a-f0-9]{64}; Path=\/; Secure; HttpOnly; SameSite=Strict; Max-Age=604800$/);
 });
 
 test('liên kết kích hoạt chỉ dùng được MỘT lần, kể cả khi hai người bấm cùng lúc', async () => {
@@ -204,13 +204,13 @@ test('NCC lệch vai trò (vai trò nhân viên nhưng chức vụ NCC) vẫn b�
   assert.equal((await w.call('/portal', { cookie: l.cookie })).status, 200);
 });
 
-test('phiên trượt: còn dùng thì tự gia hạn 30 ngày (tối đa 1 lần/ngày); bỏ không dùng quá 30 ngày mới hết hạn', async () => {
+test('phiên trượt: còn dùng thì tự gia hạn 7 ngày (tối đa 1 lần/ngày); bỏ không dùng quá 7 ngày mới hết hạn', async () => {
   const { login, call, clock } = await world();
   const DAY = 86_400, { cookie } = await login('emp@x.vn');
-  // Dùng đều đặn mỗi 20 ngày trong 100 ngày: không bao giờ bị đá ra.
-  for (let i = 0; i < 5; i++) { clock.t += 20 * DAY; assert.equal((await call('/me', { cookie })).status, 200, `ngày ${(i + 1) * 20}`); }
-  // Bỏ app 31 ngày: phiên hết hạn.
-  clock.t += 31 * DAY;
+  // Dùng đều đặn mỗi 5 ngày trong 100 ngày: không bao giờ bị đá ra.
+  for (let i = 0; i < 20; i++) { clock.t += 5 * DAY; assert.equal((await call('/me', { cookie })).status, 200, `ngày ${(i + 1) * 5}`); }
+  // Bỏ app 8 ngày: phiên hết hạn.
+  clock.t += 8 * DAY;
   assert.equal((await call('/me', { cookie })).status, 401);
 });
 
@@ -219,4 +219,31 @@ test('gia hạn phiên chỉ khi đã trôi qua hơn 1 ngày từ lần gia hạ
   assert.equal(shouldRenewSession(now + SESSION_LIFETIME_SECONDS, now), false);
   assert.equal(shouldRenewSession(now + SESSION_LIFETIME_SECONDS - 3600, now), false);
   assert.equal(shouldRenewSession(now + SESSION_LIFETIME_SECONDS - 86_401, now), true);
+});
+
+test('Turnstile (chống bot): chưa có secret thì đăng nhập như cũ; bật rồi thì thiếu / sai mã bị chặn, mã đúng vào được; Cloudflare lỗi mạng không khoá đăng nhập', async () => {
+  const w = await world();
+  assert.deepEqual((await w.call('/auth-config')).body, { turnstileSiteKey: '' }, 'chưa bật: không lộ gì');
+  assert.equal((await w.login('mgr@x.vn')).status, 200, 'chưa bật: không cần mã');
+  const seen: { body: string }[] = [];
+  let mode: 'ok' | 'bad' | 'down' = 'ok';
+  w.env.turnstile = { secret: 'sec-123', siteKey: 'site-abc', fetch: (async (_url: string, init: RequestInit) => {
+    seen.push({ body: String(init.body) });
+    if (mode === 'down') throw new Error('network');
+    return Response.json({ success: mode === 'ok' });
+  }) as typeof fetch };
+  assert.deepEqual((await w.call('/auth-config')).body, { turnstileSiteKey: 'site-abc' }, 'chỉ trả khoá công khai, không trả secret');
+  const missing = await w.call('/login', { body: { email: 'mgr@x.vn', password: PASSWORD }, ip: '1.2.3.4' });
+  assert.equal(missing.status, 400); assert.equal(missing.body.code, 'TURNSTILE_REQUIRED'); assert.equal(seen.length, 0);
+  mode = 'bad';
+  const bad = await w.call('/login', { body: { email: 'mgr@x.vn', password: PASSWORD, turnstileToken: 'tok-bad' }, ip: '1.2.3.4' });
+  assert.equal(bad.status, 403); assert.equal(bad.body.code, 'TURNSTILE_FAILED');
+  assert.match(seen[0]!.body, /secret=sec-123/); assert.match(seen[0]!.body, /response=tok-bad/); assert.match(seen[0]!.body, /remoteip=1\.2\.3\.4/);
+  mode = 'ok';
+  assert.equal((await w.call('/login', { body: { email: 'mgr@x.vn', password: PASSWORD, turnstileToken: 'tok-ok' } })).status, 200);
+  mode = 'down';
+  assert.equal((await w.call('/login', { body: { email: 'mgr@x.vn', password: PASSWORD, turnstileToken: 'tok-x' } })).status, 200, 'Cloudflare không phản hồi: vẫn đăng nhập (còn giới hạn số lần thử)');
+  mode = 'ok';
+  const forgot = await w.call('/forgot-password', { body: { email: 'mgr@x.vn' } });
+  assert.equal(forgot.body.code, 'TURNSTILE_REQUIRED', 'quên mật khẩu cũng cần mã');
 });

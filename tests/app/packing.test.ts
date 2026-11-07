@@ -25,7 +25,7 @@ async function setup() {
   };
   return { db, call, files, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kho: await login('kho@x.vn') };
 }
-const photo = 'data:image/jpeg;base64,' + Buffer.from('anh-hang-da-dong').toString('base64');
+const photo = 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('anh-hang-da-dong')]).toString('base64');
 
 test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu (gợi ý thùng + cân nặng); gửi kho → việc nhóm Kho; kho xác nhận kèm 1–3 ảnh', async () => {
   const { db, call, emp, mgr, kho } = await setup();
