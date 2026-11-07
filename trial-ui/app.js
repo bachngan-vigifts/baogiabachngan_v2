@@ -468,7 +468,7 @@ let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('
 
 function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
-  shiftReportsUi?.close();
+  if (typeof shiftReportsUi !== 'undefined') shiftReportsUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
   $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
   $('#auth-error').textContent = message;
