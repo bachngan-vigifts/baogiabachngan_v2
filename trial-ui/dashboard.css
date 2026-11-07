@@ -105,6 +105,7 @@ circle.dash-dot { fill: #2a78d6; stroke: var(--surface); stroke-width: 2; pointe
 .dash-kpi-chart { display: grid; justify-items: center; gap: 8px; }
 .dash-kpi-name { margin: 0; font-weight: 600; }
 .dash-donut path { stroke: #fff; stroke-width: 1.5; }
+.dash-donut text { stroke: none; }
 .dash-donut .dash-hit { outline: none; }
 .dash-donut .dash-hit:focus-visible path { stroke: #1d2b24; stroke-width: 2; }
 .dash-donut .dash-donut-value { font-size: 28px; font-weight: 700; fill: var(--ink, #1d2b24); }
