@@ -58,3 +58,7 @@
 .pf-two { align-items: start; }
 .pf-filters > select, .pf-filters > input { width: auto; flex: 0 0 auto; max-width: 240px; }
 @media (max-width: 760px) { .pf-filters > select, .pf-filters > input { flex: 1 1 150px; max-width: none; } }
+
+/* Keep filters editable, but do not display totals belonging to the previous range. */
+#view-profit[data-pf-stale] .pf-results { visibility: hidden; }
+#view-profit[aria-busy="true"] { pointer-events: auto; opacity: 1; }
