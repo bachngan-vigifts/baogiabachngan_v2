@@ -3,7 +3,7 @@
 import {readFileSync,writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
-import {defaultCostDiscount,normalize,netPrice,purchasePrice,type QuoteRow} from '../../src/modules/quotes/domain/quote-math.ts';
+import {defaultCostDiscount,normalize,netPrice,type QuoteRow} from '../../src/modules/quotes/domain/quote-math.ts';
 import {matchQuoteRow,type LineCostConfidence,type LineCostSource} from '../../src/modules/sales/domain/line-cost.ts';
 import {purchaseUnitCost} from '../../src/modules/suppliers/domain/order-totals.ts';
 
@@ -74,9 +74,12 @@ export function recoveryPlan(input:RecoveryInput){
   if(p&&retail&&discount!==null&&valid(retail.price)&&sameUnit(p.unit,l.unit)){
    const included=/vat/i.test(retail.name)||p.taxBasis==='Giá đã bao gồm thuế';
    if(included&&p.taxable&&(!valid(p.taxOut)||p.taxOut>100)){unresolved.push({id:l.id,reason:'Chưa rõ VAT của giá tham chiếu'});continue;}
-   const value=purchasePrice(netPrice(retail.price,p.taxable?(p.taxOut??0):0,included),discount);
+   // Match purchases.js prefillCosts exactly: round the VAT-exclusive list price first,
+   // then apply supplier totals without rounding the unit discount result a second time.
+   const listPrice=Math.round(netPrice(retail.price,p.taxable?(p.taxOut??0):0,included));
+   const value=purchaseUnitCost({price:listPrice,purchaseDiscount:discount,confirmedPurchaseDiscount:null,printFee:0,taxRate:0})!;
    costs.push({line:l,unitCost:value,source:'catalog_rule',confidence:'estimate',costAt:p.at,
-    note:`Khôi phục theo công thức gợi ý đơn mua NCC: ${retail.id}, CK ${discount}%, trước VAT; bảng giá tham chiếu tại ${p.at}. Chưa phải giá mua lịch sử hay giá vốn xuất kho đã đối soát.`});continue;
+    note:`Khôi phục theo công thức gợi ý đơn mua NCC: ${retail.name} (${retail.id}), CK ${discount}%, trước VAT; bảng giá tham chiếu tại ${p.at}. Chưa phải giá mua lịch sử hay giá vốn xuất kho đã đối soát.`});continue;
   }
   unresolved.push({id:l.id,reason:'Chưa có giá mua / báo giá gốc / công thức thương hiệu phù hợp'});
  }

@@ -44,6 +44,8 @@ test('ngày bán theo giờ Việt Nam; giá sau ngày bán không bị coi là 
 test('công thức thương hiệu dùng đúng chính sách bán lẻ và VAT, không dùng giá sỉ bất kỳ; thương hiệu lạ giữ thiếu',()=>{
  const i=empty();i.products=[{...product,prices:[{id:'wholesale',name:'Giá sỉ',price:1},...product.prices]}];
  const p=recoveryPlan(i).costs[0]!;assert.equal(p.unitCost,42000);assert.equal(p.source,'catalog_rule');assert.equal(p.confidence,'estimate');assert.match(p.note,/CK 58%/);
+ i.products[0]!.prices=[{id:'retail',name:'Giá bán lẻ + VAT',price:1221000}];
+ assert.equal(recoveryPlan(i).costs[0]!.unitCost,474833.52,'khớp thứ tự làm tròn giá trước VAT rồi CK của đơn mua NCC');
  i.products[0]!.brand='Không rõ';assert.equal(recoveryPlan(i).costs.length,0);
  i.products=[{...product,taxOut:null}];assert.equal(recoveryPlan(i).costs.length,0);
 });
@@ -110,5 +112,6 @@ test('nguồn báo giá cũ lấy phiên bản có hiệu lực khi lập đơn,
  await db.insert(salesOrderLines).values({id:'line',orderId:'order',lineNo:1,sku:'A',name:'Ly A',qty:2,unitPrice:100000,amount:200000});
  const input=async()=>(await client.query<{payload:RecoveryInput}>(recoveryInputSql)).rows[0]!.payload;
  const first=await input();assert.equal(first.lines[0]!.quoteRows![0]!.costPrice,500);assert.equal(recoveryPlan(first).costs[0]!.unitCost,500);
+ assert.equal(recoveryPlan(first).costs[0]!.costAt,null,'ngày lưu bản cũ không bị gắn nhầm thành ngày giá vốn có hiệu lực');
  await db.delete(quoteRevisions);assert.equal(recoveryPlan(await input()).costs.length,0,'không mượn giá 900 sửa sau thời điểm bán');
 });
