@@ -4,7 +4,7 @@ Manager có thể chuẩn bị, xem trước và đối soát khách/người li
 
 ## Trung tâm khách hàng
 
-`#/customers?tab=center` mở tab Trung tâm khách hàng; `#/customers` hoặc `?tab=list` giữ danh bạ hiện có. Dùng chung nhóm Khách hàng và footer mobile, không thêm thanh điều hướng.
+Menu **Khách hàng → Trung tâm khách hàng** trên máy tính và điện thoại mở thẳng `#/customers?tab=center`. Tab **Danh sách khách hàng** vẫn mở danh bạ; các đường dẫn `#/customers` hoặc `?tab=list` giữ nguyên danh bạ hiện có. Dùng chung quyền và nhóm Khách hàng, không thêm thanh điều hướng hay quyền mới. Breadcrumb và tiêu đề trình duyệt hiển thị đúng tab Trung tâm.
 
 - **Dữ liệu thật:** số việc hẹn hôm nay, lịch chăm sóc phân trang và kỷ niệm sắp tới từ API hiện có. Tìm kiếm/bộ lọc lịch áp dụng trên trang đang hiển thị, không tính tổng từ trang đó. Số tổng kỷ niệm dùng `total`, danh sách API giới hạn 100. Hẹn chưa có giờ nên không hiển thị giờ tự đặt.
 - **Thao tác thật:** Ghi nhận chăm sóc dùng form Giao dịch & chăm sóc có sẵn; hoàn tất lịch dùng revision/ngày hẹn hiện hành, lỗi không đánh dấu xong. Tôn trọng quyền trang `page.care` và `canEdit` từng lịch. Hoàn tất lịch không tự tạo giao dịch KPI mới.
