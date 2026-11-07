@@ -43,6 +43,7 @@ test('ảnh grid chỉ bắt đầu tải gần viewport; giữ ảnh khi dựng
   callback([{target:image,isIntersecting:false}]);assert.equal(image.src,undefined);
   suspendProductThumbnail(image);assert.equal(observed.has(image),false);
   assert.equal(setProductThumbnail(image,source,'grid'),image);assert.equal(observed.has(image),true);assert.equal(listeners.size,1);
+  image.isConnected=false;callback([{target:image,isIntersecting:true}]);assert.equal(image.src,undefined,'queued callback must not load a removed tile');image.isConnected=true;
   callback([{target:image,isIntersecting:true}]);assert.equal(image.src,productThumbnailUrl(source,'grid'));assert.equal(observed.size,0);
   const loaded=image.src;setProductThumbnail(image,source,'grid');assert.equal(image.src,loaded);assert.equal(listeners.size,1);
   setProductThumbnail(image,source,'list');assert.equal(image.src,productThumbnailUrl(source));assert.equal(listeners.size,1);

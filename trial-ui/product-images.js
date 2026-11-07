@@ -17,7 +17,7 @@ let gridObserver;
 function loadNearViewport(image, source) {
   if (typeof IntersectionObserver === 'undefined') { image.src = source; return; }
   gridObserver ||= new IntersectionObserver(entries => {
-    for (const { target, isIntersecting } of entries) if (isIntersecting && pending.has(target)) {
+    for (const { target, isIntersecting } of entries) if (isIntersecting && target.isConnected !== false && pending.has(target)) {
       const source = pending.get(target); pending.delete(target); gridObserver.unobserve(target); target.src = source;
     }
   }, { rootMargin: '200px' });
