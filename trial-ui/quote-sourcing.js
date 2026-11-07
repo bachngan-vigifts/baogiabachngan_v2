@@ -29,12 +29,19 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
   host.replaceChildren(el('p','muted','Đang lấy kho và nguồn hàng…'));
   const data=await api('/quotes/'+encodeURIComponent(quoteId)+'/stock-plan');
   if(!isCurrent())return null;
+  // Chỉ hàng Minh Long / Lock&Lock cần rà nguồn (máy chủ lọc sẵn); mã khác bỏ qua bước này và sinh đơn/HĐKT như bình thường.
+  const skipped=Array.isArray(data.skipped)?data.skipped:[],scopeLabel=data.scopeLabel||'Minh Long / Lock&Lock';
+  const skippedNote=()=>{const p=el('p','muted small quote-source-skipped',`${skipped.length} mã ngoài ${scopeLabel} không cần rà nguồn: `+skipped.slice(0,8).map(l=>l.sku).join(', ')+(skipped.length>8?` và ${skipped.length-8} mã khác`:'')+'.');return p;};
+  if(!data.lines.length){
+    host.replaceChildren(el('h3','','Lấy hàng từ đâu?'),el('p','muted',skipped.length?`Đơn không có mã ${scopeLabel} – bỏ qua bước rà nguồn hàng.`:'Báo giá chưa có mã sản phẩm cần rà nguồn.'),...(skipped.length?[skippedNote()]:[]));
+    return {read:()=>({}),prepare:async()=>({}),skipped:true};
+  }
   const selling=data.warehouses.filter(w=>w.canSell);
   const warehouse=select([['','Chọn kho bán / kho xuất'],...selling.map(w=>[w.id,w.name+(w.opened?'':' · Chưa chốt đầu kỳ')])],'Kho bán / kho xuất');
   const heading=el('h3','','Lấy hàng từ đâu?'),label=el('label','','Kho bán / kho xuất');label.append(warehouse);
   const hint=el('p','muted small','Duyệt đơn trước, xuất từng phần theo nguồn. Chỉ xác nhận xuất khi hàng đã có tại kho bán và kho đã chốt đầu kỳ. Khi sinh đơn/HĐKT: phần xin hàng từ kho khác tự lập phiếu điều chuyển chờ duyệt; phần đặt NCC bạn chọn tạo đơn mua nháp ngay hoặc đặt sau. Các mã xin giao trước được gom vào một phiếu nháp khi sinh đơn/HĐKT, chưa gửi NCC. Các nút xin kho / đặt NCC riêng vẫn lưu yêu cầu ngay, kể cả khi đóng hộp này.');
-  const summary=el('p','quote-source-summary',`${data.lines.length} mã sản phẩm · Rà số lượng và nguồn cho từng mã`);
-  const toolbar=el('div','quote-source-toolbar');toolbar.append(heading,summary,label,hint);
+  const summary=el('p','quote-source-summary',`${data.lines.length} mã ${scopeLabel} · Rà số lượng và nguồn cho từng mã`);
+  const toolbar=el('div','quote-source-toolbar');toolbar.append(heading,summary,label,hint);if(skipped.length)toolbar.append(skippedNote());
   const prompt=el('p','muted','Chọn kho bán / kho xuất để xem hàng hoá và phân bổ nguồn hàng.');prompt.setAttribute('role','status');
   const list=el('div','quote-source-list'),error=el('p','error');error.setAttribute('role','alert');host.replaceChildren(toolbar,prompt,list,error);
   let busy=false,suppliers=null,incomingAttempt=null;const cards=[],incomingCache=new Map();

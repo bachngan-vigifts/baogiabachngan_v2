@@ -4,7 +4,8 @@ import { json, type Router } from '../../../core/http/router.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { can } from '../../staff/domain/permissions.ts';
 import { employees } from '../../staff/schema.ts';
-import { warehouses } from '../../catalog/schema.ts';
+import { products, warehouses } from '../../catalog/schema.ts';
+import { needsSourcing, SOURCING_SCOPE_LABEL } from '../domain/sourcing-scope.ts';
 import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import { quoteStockSku } from '../../quotes/domain/quote-math.ts';
 import { quotations } from '../../quotes/schema.ts';
@@ -25,6 +26,9 @@ export function registerQuoteSourcingRoutes(router: Router<StaffEnv>) {
     const data=JSON.parse(quote.data), needs=new Map<string,{sku:string;name:string;unit:string;qty:number}>();
     for(const row of data.rows||[]) {const sku=quoteStockSku(row),qty=Number(row.qty);if(!sku||!(qty>0))continue;
       const prior=needs.get(sku);needs.set(sku,{sku,name:String(row.name||sku),unit:String(row.unit||''),qty:(prior?.qty||0)+qty});}
+    // Chỉ hàng Minh Long / Lock&Lock cần rà nguồn; mã khác bỏ qua bước này (trả riêng để giao diện ghi chú).
+    const scope=await sourcingScope(db,[...needs.values()]),skipped=[...needs.values()].filter(l=>!scope.has(l.sku)).map(l=>({sku:l.sku,name:l.name,unit:l.unit,qty:l.qty}));
+    for(const sku of [...needs.keys()])if(!scope.has(sku))needs.delete(sku);
     const hidden=await hiddenWarehouseIds(db,member),configured=await sellersConfigured(db);
     const [owner]=await db.select({role:employees.role,positionId:employees.positionId}).from(employees).where(eq(employees.id,quote.assigneeId??quote.creatorId));
     const selling=await sellableWarehouses(db,!configured||member.role==='manager'?{role:'manager'}:owner??{role:''});
@@ -32,7 +36,7 @@ export function registerQuoteSourcingRoutes(router: Router<StaffEnv>) {
     const opened=new Set((await db.selectDistinct({id:stockMoves.warehouseId}).from(stockMoves).where(eq(stockMoves.refType,'opening'))).map(w=>w.id));
     const stock=needs.size?await readCatalogStock(db,[...needs.keys()]):[];
     const incoming=needs.size&&incomingLookup.read?await incomingLookup.read(db,[...needs.keys()]):[];
-    return json({quoteId:quote.id,quoteNo:quote.quoteNo,customerName:quote.customer,
+    return json({quoteId:quote.id,quoteNo:quote.quoteNo,customerName:quote.customer,scopeLabel:SOURCING_SCOPE_LABEL,skipped,
       warehouses:visible.filter(w=>w.kind==='stock').map(w=>({id:w.id,name:w.name,opened:opened.has(w.id),canSell:selling.some(s=>s.id===w.id)})),
       canPurchase:can(member,'page.purchases'),canRequestEarly:can(member,'page.purchases')&&can(member,'purchases.early-request'),
       lines:[...needs.values()].map(line=>({...line,stock:Object.fromEntries(visible.filter(w=>w.kind==='stock').map(w=>[w.id,stock.find(s=>s.sku===line.sku&&s.warehouseId===w.id)?.quantity??0])),
@@ -42,6 +46,13 @@ export function registerQuoteSourcingRoutes(router: Router<StaffEnv>) {
 
 
 type Tx = Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
+/** Mã cần rà nguồn (Minh Long / Lock&Lock) trong số các mã đã cho; mã không có trong danh mục sản phẩm thì xét theo tên trên chứng từ. */
+async function sourcingScope(db: StaffEnv['db'] | Tx, lines: { sku: string; name: string }[]) {
+  const skus = [...new Set(lines.map(l => l.sku))];
+  const rows = skus.length ? await db.select({ sku: products.sku, brand: products.brand, name: products.name }).from(products).where(inArray(products.sku, skus)) : [];
+  const bySku = new Map(rows.map(r => [r.sku, r]));
+  return new Set(lines.filter(l => needsSourcing(bySku.get(l.sku) ?? { name: l.name })).map(l => l.sku));
+}
 /** Persist the plan as separate packing drafts. Nothing is issued or sent to the warehouse here. */
 export async function saveQuoteStockPlan(tx: Tx, orderId: string, by: string, raw: unknown) {
   if (raw === undefined) return;
@@ -50,7 +61,8 @@ export async function saveQuoteStockPlan(tx: Tx, orderId: string, by: string, ra
   if (!order?.warehouseId) throw new AppError(400, 'Chọn kho bán / kho xuất cho kế hoạch nguồn hàng.');
   const lines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, orderId)).orderBy(asc(salesOrderLines.lineNo));
   const needs = new Map<string, number>();
-  for (const l of lines) if (l.sku) needs.set(l.sku, (needs.get(l.sku) || 0) + l.qty);
+  const scope = await sourcingScope(tx, lines.filter(l => l.sku).map(l => ({ sku: l.sku!, name: l.name })));
+  for (const l of lines) if (l.sku && scope.has(l.sku)) needs.set(l.sku, (needs.get(l.sku) || 0) + l.qty);
   const allocated = new Map<string, number>();
   const groups = new Map<string, {sku:string;qty:number;note:string}[]>();
   for (const x of raw) {
