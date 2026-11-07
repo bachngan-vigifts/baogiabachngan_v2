@@ -1,3 +1,4 @@
+import { ensureLineCosts } from './line-costs.ts';
 import { pendingGhnEdit, type GhnEditPreviewLine } from '../domain/pos-ghn-edit.ts';
 import { assertNotDispatched } from './cancellation-guards.ts';
 import { saleFlowOf } from '../domain/pos-order-flow.ts';
@@ -175,6 +176,7 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
       if (meta.existing) await db.update(salesOrderLines).set(values).where(eq(salesOrderLines.id, meta.id));
       else await db.insert(salesOrderLines).values({ ...values, id: meta.id, orderId: order.id, deliveredQty: 0 });
     }
+    await ensureLineCosts(db, order.id, 'pos_edit', actor.id); // dòng mới / đổi mã: ghi giá vốn; dòng cũ giữ nguyên
     for (const ship of ships.filter(s => s.status === 'planned')) {
       await db.delete(deliveryLines).where(eq(deliveryLines.deliveryId, ship.id));
       await db.insert(deliveryLines).values(plan.map((l, i) => ({ deliveryId: ship.id, orderLineId: l.id, qty: computed![i]!.qty })));
