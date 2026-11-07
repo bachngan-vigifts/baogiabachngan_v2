@@ -1,4 +1,5 @@
 import { setup } from "./pos-fixture.ts";
+import { vietnamDate } from "../../src/modules/sales/domain/sales.ts";
 import {
   posShifts,
   posShiftTemplates,
@@ -6,6 +7,7 @@ import {
 
 export async function setupShiftReports() {
   const f = await setup();
+  const day = vietnamDate().iso;
   const [template] = await f.db.select().from(posShiftTemplates).limit(1);
   async function closed(
     id: string,
@@ -20,10 +22,10 @@ export async function setupShiftReports() {
       registerId,
       memberId,
       templateId: template!.id,
-      businessDate: "2026-11-02",
+      businessDate: day,
       openKey: crypto.randomUUID(),
-      openedAt: "2026-11-02T01:00:00.000Z",
-      closedAt: "2026-11-02T05:00:00.000Z",
+      openedAt: day + "T01:00:00.000Z",
+      closedAt: day + "T05:00:00.000Z",
       openingCash: 10000,
       expectedCash: 10000 + amount,
       countedCash: 10000 + amount + difference,
@@ -52,5 +54,5 @@ export async function setupShiftReports() {
       .values({ ...shift, reportSnapshot: JSON.stringify(report) });
     return report;
   }
-  return { ...f, closed };
+  return { ...f, closed, day };
 }

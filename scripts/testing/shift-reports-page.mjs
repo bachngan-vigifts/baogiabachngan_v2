@@ -62,11 +62,7 @@ const origin = "http://127.0.0.1:" + server.address().port,
   out = "/workspace/artifacts/shift-reports-page-20261107",
   results = [];
 await mkdir(out, { recursive: true });
-async function pageFor(
-  cookie,
-  width,
-  hash = "#/shift-reports?from=2026-11-01&to=2026-11-30",
-) {
+async function pageFor(cookie, width, hash = "#/shift-reports") {
   const context = await browser.newContext({
     viewport: { width, height: 960 },
     locale: "vi-VN",

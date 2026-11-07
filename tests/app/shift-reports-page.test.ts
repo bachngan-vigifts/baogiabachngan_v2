@@ -28,7 +28,7 @@ test("shift reports: full filtered totals, immutable closed snapshots, live figu
     reason: "Chi kiểm thử",
   });
   assert.equal(expense.status, 201, JSON.stringify(expense.data));
-  const url = "/pos/shift-reports?from=2026-11-01&to=2026-11-30";
+  const url = `/pos/shift-reports?from=${f.day.slice(0, 7)}-01&to=${f.day}`;
   const call = async (suffix = "", cookie = f.mgr) => {
     const r = await f.call(url + suffix, cookie);
     assert.equal(r.status, 200, JSON.stringify(r.data));
