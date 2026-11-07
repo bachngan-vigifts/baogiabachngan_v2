@@ -32,7 +32,7 @@ export function purchaseCostAt(history: readonly { at: string; price: number }[]
 }
 
 export interface LineInput {
-  id: string; sku: string; name: string; qty: number; revenue: number;
+  id: string; sku: string; name: string; qty: number; revenue: number; unit?: string;
   /** Giá vốn / đơn vị từ báo giá (undefined = báo giá không có). */
   quoteCost?: number; printingCost?: number; commission?: number;
   /** Giá vốn lưu lúc bán (snapshot). Không có → tính lại từ báo giá / giá nhập và gắn nhãn backfill. */
@@ -76,14 +76,14 @@ export function applyOrderFees(o: OrderProfit, f: { feeRevenue: number; carrierF
  * `onlyConfirmed`: chỉ tính dòng có giá vốn "chính xác"; dòng ước tính / backfill coi như thiếu giá vốn.
  */
 export function orderProfit(o: Omit<OrderProfit, 'revenue' | 'coveredRevenue' | 'cost' | 'printing' | 'commission' | 'shipping' | 'gross' | 'missingLines' | 'lines' | 'revenueBy' | 'feeRevenue' | 'carrierFee' | 'net' | 'carrierUnknown' | 'staffSalary' | 'staffBonus'> & { shippingCost: number },
-  lines: readonly LineInput[], purchase: (sku: string) => { cost: number; source: CostSource } | null, onlyConfirmed = false): OrderProfit {
+  lines: readonly LineInput[], purchase: (sku: string, line: LineInput) => { cost: number; source: CostSource } | null, onlyConfirmed = false): OrderProfit {
   const out: LineProfit[] = [];
   for (const l of lines) {
     const qty = Math.max(0, l.qty - (l.returnedQty ?? 0)), ratio = l.qty > 0 ? qty / l.qty : 0;
     const revenue = Math.max(0, l.revenue - (l.returnedRevenue ?? 0));
     // Snapshot lúc bán trước; không có thì tính lại (luôn gắn nhãn backfill – không coi là chính xác).
     const q = Number.isFinite(l.quoteCost) && (l.quoteCost as number) >= 0 ? { cost: l.quoteCost as number, source: 'quote' as const } : null;
-    const live = q ?? (l.sku ? purchase(l.sku) : null);
+    const live = q ?? (l.sku ? purchase(l.sku, l) : null);
     const found = l.snapshot ? { cost: l.snapshot.unitCost, source: l.snapshot.source as CostSource, confidence: l.snapshot.confidence }
       : live ? { ...live, confidence: 'backfill' as const } : null;
     const c = found && (!onlyConfirmed || found.confidence === 'confirmed') ? found : null;

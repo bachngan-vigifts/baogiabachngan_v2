@@ -52,7 +52,8 @@ export function initProfit({ api, root, toast, esc, money }) {
       ${s.revenueBy.estimate > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.estimate))} doanh thu dùng <b>giá mua tham chiếu</b> (giá mua gần nhất, đơn NCC đã duyệt hoặc công thức thương hiệu). Đây chưa phải giá vốn xuất kho đã đối soát. Mở từng đơn để xem nguồn và cách tính.</span></div>` : ''}
       ${s.revenueBy.backfill > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.backfill))} doanh thu dùng giá bổ sung, có thể gồm giá mua ghi nhận sau ngày bán; chưa đủ căn cứ coi là chính xác. Mở từng đơn để xem nguồn giá. Chọn "Chỉ giá vốn chính xác" để lọc các dòng đã xác nhận.</span></div>` : ''}
       ${s.missingOrders ? `<div class="pf-warn" role="status">⚠ ${s.missingOrders} đơn (${esc(money(s.missingRevenue))} doanh thu) có dòng thiếu giá vốn – phần đó không tính vào lợi nhuận, không coi là 0.
-        <button type="button" class="btn ghost small" id="pf-missing">${st.missingOnly ? 'Xem tất cả đơn' : 'Xem các đơn cần bổ sung'}</button></div>` : ''}
+        <button type="button" class="btn ghost small" id="pf-missing">${st.missingOnly ? 'Xem tất cả đơn' : 'Xem các đơn cần bổ sung'}</button>
+        <button type="button" class="btn secondary small" id="pf-fill">Nhập giá vốn cho mã thiếu</button></div>` : ''}
       <div class="pf-two"><div class="card"><h3 class="pf-h">Lợi nhuận gộp theo ${GRAIN_LABEL[st.grain].toLowerCase()}</h3>${chart(d.series)}</div>
         <div class="card"><h3 class="pf-h">Theo chi nhánh (sau chi phí chi nhánh)</h3>${table(['Chi nhánh', '>LN đơn', '>Chi vặt', '>Lương', '>LN chi nhánh'],
           (d.branchCosts?.rows || []).map(r => [esc(r.name), short(r.ordersNet), short(r.petty), short(r.staff), `<b class="${r.net < 0 ? 'neg' : ''}">${short(r.net)}</b>`]))}
@@ -66,6 +67,7 @@ export function initProfit({ api, root, toast, esc, money }) {
     root.querySelector('#pf-owner').onchange = e => { st.owner = e.target.value; load(); };
     root.querySelector('#pf-costs').onchange = e => { st.costs = e.target.value; load(); };
     root.querySelector('#pf-missing')?.addEventListener('click', () => { st.missingOnly = !st.missingOnly; st.tab = 'orders'; render(); });
+    root.querySelector('#pf-fill')?.addEventListener('click', () => fillMissing());
     root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { st.tab = b.dataset.tab; render(); });
     root.querySelector('#pf-csv').onclick = exportCsv;
     bindTab();
@@ -108,13 +110,44 @@ export function initProfit({ api, root, toast, esc, money }) {
   const rowCells = r => [num(r.orders), num(r.revenue), num(r.cost), num(r.direct), `<b class="${r.gross < 0 ? 'neg' : ''}">${num(r.gross)}</b>`,
     r.staffSalary || r.staffBonus ? `<span title="Lương + phụ cấp ${esc(num(r.staffSalary))} · thưởng ${esc(num(r.staffBonus))}">${num(r.staffSalary + r.staffBonus)}</span>` : '—',
     `<b class="${r.net < 0 ? 'neg' : ''}">${num(r.net)}</b>`, marginCell(r), `${flag(r)} ${miss(r)}`];
+  /** Mã vẫn thiếu giá vốn sau khi áp đủ nguyên tắc: Manager nhập giá một lần cho mỗi mã (ghi "Manager điều chỉnh" + lịch sử, có lý do). */
+  async function fillMissing() {
+    const q = new URLSearchParams({ from: st.from, to: st.to });
+    let d; try { d = await api('/profit/missing-costs?' + q); } catch (e) { toast(e.message, 'err'); return; }
+    const dlg = document.createElement('dialog'); dlg.className = 'modal pf-dialog pf-fill';
+    dlg.innerHTML = `<form><div class="modal-head"><h2>Nhập giá vốn cho mã thiếu</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+      <div class="modal-body"><p class="small muted">${esc(st.from.split('-').reverse().join('/'))} – ${esc(st.to.split('-').reverse().join('/'))} · ${d.items.length} mã / ${d.lines} dòng vẫn thiếu sau khi đã thử báo giá, giá nhập kho, đơn NCC đã duyệt và công thức thương hiệu. Giá nhập ở đây là giá vốn trước VAT / 1 đơn vị, áp cho mọi dòng thiếu của mã đó trong kỳ.</p>
+      ${d.items.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Mã</th><th>Sản phẩm</th><th>ĐVT</th><th class="num">Dòng</th><th class="num">SL</th><th class="num">Doanh thu</th><th class="num">Giá vốn / ĐV</th></tr></thead><tbody>
+        ${d.items.map((it, i) => `<tr><td>${esc(it.sku)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td><td class="num">${it.lines.length}</td><td class="num">${num(it.qty)}</td><td class="num">${num(it.revenue)}</td>
+          <td class="num"><input type="number" min="0" step="1" inputmode="numeric" data-i="${i}" aria-label="Giá vốn ${esc(it.sku)}" placeholder="Để trống = chưa nhập"></td></tr>`).join('')}</tbody></table></div>
+      <label>Lý do / căn cứ giá vốn *<input name="reason" required minlength="3" maxlength="300" placeholder="VD: theo hoá đơn mua NCC tháng 10, bảng giá nhập 2026"></label>`
+      : '<p class="empty">Không còn mã nào thiếu giá vốn trong kỳ.</p>'}<p class="error" data-err role="alert"></p></div>
+      <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button>${d.items.length ? '<button class="btn primary">Lưu giá vốn</button>' : ''}</div></form>`;
+    document.body.append(dlg); dlg.showModal();
+    dlg.querySelectorAll('[data-x]').forEach(b => b.onclick = () => dlg.close());
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.querySelector('form').onsubmit = async e => {
+      e.preventDefault();
+      const items = [...dlg.querySelectorAll('input[data-i]')].filter(x => x.value.trim() !== '').map(x => ({ ...d.items[Number(x.dataset.i)], unitCost: Number(x.value) }))
+        .map(({ sku, unit, unitCost }) => ({ sku, unit, unitCost }));
+      const err = dlg.querySelector('[data-err]'), btn = dlg.querySelector('.modal-foot .btn.primary');
+      if (!items.length) { err.textContent = 'Nhập giá vốn cho ít nhất một mã.'; return; }
+      if (items.some(x => !Number.isFinite(x.unitCost) || x.unitCost < 0)) { err.textContent = 'Giá vốn phải là số ≥ 0.'; return; }
+      btn.disabled = true;
+      try {
+        const r = await api('/profit/missing-costs', 'POST', { from: st.from, to: st.to, reason: dlg.querySelector('[name=reason]').value, items });
+        dlg.close(); toast(`Đã nhập giá vốn cho ${r.written} dòng.`); load();
+      } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+    };
+  }
   function tabBody() {
     const d = st.data;
     if (st.tab === 'orders') {
       const list = st.missingOnly ? d.orders.filter(o => o.missingLines) : d.orders;
       return table(['Ngày', 'Đơn', 'Khách hàng', 'Nhân viên', '>DT thuần', '>Giá vốn', '>CP trực tiếp', '>LN gộp', '>Phí POS / GHN', '>Lương + thưởng', '>LN sau CP', 'Biên LN', ''],
-        list.map(o => [esc(o.orderDate.split('-').reverse().join('/')), esc(o.orderNo), esc(o.customerName), esc(o.ownerName), num(o.revenue), num(o.cost), num(o.direct),
-          `<b class="${o.gross < 0 ? 'neg' : ''}">${num(o.gross)}</b>`, o.feeRevenue || o.carrierFee ? `+${num(o.feeRevenue)} / −${num(o.carrierFee)}` : '—', o.staffCost ? num(o.staffCost) : '—', `<b class="${o.net < 0 ? 'neg' : ''}">${num(o.net)}</b>`, marginCell(o), `${flag(o)}${o.missingLines ? ` <span class="pill muted">${o.missingLines} dòng thiếu giá vốn</span>` : ''}`]),
+        // Đơn chưa có dòng nào đủ giá vốn: hiện "—" thay vì 0 (chưa tính được, không phải lãi 0).
+        list.map(o => { const none = o.missingLines && !o.coveredRevenue, dash = v => none ? '<span class="muted" title="Chưa có giá vốn – chưa tính được">—</span>' : v; return [esc(o.orderDate.split('-').reverse().join('/')), esc(o.orderNo), esc(o.customerName), esc(o.ownerName), num(o.revenue), dash(num(o.cost)), num(o.direct),
+          dash(`<b class="${o.gross < 0 ? 'neg' : ''}">${num(o.gross)}</b>`), o.feeRevenue || o.carrierFee ? `+${num(o.feeRevenue)} / −${num(o.carrierFee)}` : '—', o.staffCost ? num(o.staffCost) : '—', dash(`<b class="${o.net < 0 ? 'neg' : ''}">${num(o.net)}</b>`), marginCell(o), `${flag(o)}${o.missingLines ? ` <span class="pill muted">${o.missingLines} dòng thiếu giá vốn</span>` : ''}`]; }),
         list.map(o => `class="pf-click" data-order="${esc(o.id)}" tabindex="0"`)) + (d.ordersTotal > d.orders.length ? `<p class="muted small">Hiện ${d.orders.length}/${d.ordersTotal} đơn mới nhất – lọc theo nhân viên / chi nhánh để xem đủ.</p>` : '');
     }
     if (st.tab === 'products') return table(['Mã', 'Sản phẩm', '>SL', ...H], d.products.map(r => [esc(r.key.startsWith('(không mã)') ? '—' : r.key), esc(r.label), num(r.qty), ...rowCells(r)]));

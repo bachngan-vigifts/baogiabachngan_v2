@@ -6,6 +6,7 @@
  *               · backfill = đơn cũ chưa có snapshot hoặc giá nhập sau ngày bán – không coi là chính xác.
  */
 import type { QuoteRow } from '../../quotes/domain/quote-math.ts';
+import type { CostPoint, SkuFallbackCosts } from '../../../core/contracts/line-cost-fallback.ts';
 import { costModeOf, quoteStockSku } from '../../quotes/domain/quote-math.ts';
 
 export const LINE_COST_SOURCES = ['quote', 'purchase', 'purchase_later', 'manual', 'purchase_order', 'catalog_rule'] as const;
@@ -55,6 +56,33 @@ export function quoteLineCost(row: QuoteRow | null, quoteUpdatedAt: string | nul
   return { unitCost: v, source: 'quote', confidence: (row as { costMode?: string }).costMode === 'manual' ? 'confirmed' : 'estimate', costAt: quoteUpdatedAt };
 }
 /** Báo giá trước, rồi giá nhập. */
-export function pickLineCost(row: QuoteRow | null, quoteUpdatedAt: string | null, history: readonly { at: string; price: number }[] | undefined, day: string, sku: string): LineCost | null {
-  return quoteLineCost(row, quoteUpdatedAt) ?? (sku ? purchaseCostAt(history, day) : null);
+const sameUnit = (a?: string, b?: string) => !a?.trim() || !b?.trim() || a.trim().toLowerCase() === b.trim().toLowerCase();
+/** Điểm giá gần nhất trước / trong ngày bán; không có thì sớm nhất sau ngày bán. Cùng thời điểm lấy theo mã tham chiếu (ổn định). */
+function nearestPoint(points: readonly CostPoint[] | undefined, day: string, unit?: string) {
+  const end = Date.parse(day + 'T23:59:59.999+07:00');
+  if (!points?.length || !Number.isFinite(end)) return null;
+  const ok = points.filter(p => Number.isFinite(p.cost) && p.cost >= 0 && Number.isFinite(Date.parse(p.at)) && sameUnit(p.unit, unit));
+  const before = ok.filter(p => Date.parse(p.at) <= end).sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || a.ref.localeCompare(b.ref))[0];
+  if (before) return { point: before, later: false };
+  const after = ok.filter(p => Date.parse(p.at) > end).sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.ref.localeCompare(b.ref))[0];
+  return after ? { point: after, later: true } : null;
+}
+/**
+ * Giá vốn một dòng theo nguyên tắc chung (lúc bán và khi tính lại đơn cũ):
+ * báo giá → giá nhập kho trước ngày bán → đơn NCC đã duyệt trước ngày bán → giá nhập kho sau ngày bán → đơn NCC sau ngày bán (backfill)
+ * → công thức thương hiệu (giá tham chiếu). Không có nguồn nào → null (thiếu giá vốn, không coi là 0).
+ */
+export function pickLineCost(row: QuoteRow | null, quoteUpdatedAt: string | null, history: readonly { at: string; price: number }[] | undefined, day: string, sku: string,
+  fallback?: SkuFallbackCosts | null, unit?: string): LineCost | null {
+  const quote = quoteLineCost(row, quoteUpdatedAt);
+  if (quote || !sku) return quote;
+  const receipt = purchaseCostAt(history, day);
+  if (receipt?.source === 'purchase') return receipt;
+  const order = nearestPoint(fallback?.orders, day, unit);
+  if (order && !order.later) return { unitCost: order.point.cost, source: 'purchase_order', confidence: 'estimate', costAt: order.point.at };
+  if (receipt) return receipt;
+  if (order) return { unitCost: order.point.cost, source: 'purchase_order', confidence: 'backfill', costAt: order.point.at };
+  const rule = fallback?.catalog;
+  if (rule && Number.isFinite(rule.cost) && rule.cost >= 0 && sameUnit(rule.unit, unit)) return { unitCost: rule.cost, source: 'catalog_rule', confidence: 'estimate', costAt: rule.at };
+  return null;
 }
