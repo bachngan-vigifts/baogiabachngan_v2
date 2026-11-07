@@ -82,7 +82,9 @@ test('Manager điều chỉnh giá vốn: bắt buộc lý do, kiểm phiên b�
   assert.equal(ok(await f.call(`/profit/orders/${f.orderId}`, f.mgr)).lines[1].unitCost, 90000);
 });
 
-test('đơn nháp cập nhật snapshot theo giá nhập mới; đổi mã ghi lại; đơn cũ không snapshot = backfill, lọc "chỉ chính xác" loại ra', async () => {
+test('đơn nháp cập nhật snapshot theo giá nhập mới; đổi mã ghi lại; đơn cũ không snapshot = backfill, lọc "chỉ chính xác" loại ra', async (t) => {
+  // Keep receipt timestamps before the Vietnamese sale-day cutoff, regardless of the CI runner's wall clock.
+  t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-07T09:00:00Z')});
   const f = await setup(), stamp = new Date().toISOString(), today = stamp.slice(0, 10);
   await f.db.insert(salesOrders).values({ id: 'draft1', orderNo: 'DH-D1', quoteType: 'HRC', customerName: 'Khách nháp', ownerId: 'emp', createdBy: 'emp', orderDate: today,
     status: 'draft', total: 300000, subtotal: 300000, createdAt: stamp, updatedAt: stamp } as typeof salesOrders.$inferInsert);

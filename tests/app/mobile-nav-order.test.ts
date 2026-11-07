@@ -5,7 +5,7 @@ const {orderedMobileNavKeys}=await import(new URL('../../trial-ui/mobile-design.
 const sidebar=readFileSync(new URL('../../trial-ui/index.html',import.meta.url),'utf8').split('<aside')[1]!.split('</aside>')[0]!;
 const keys=[...sidebar.matchAll(/data-nav="([^"]+)"/g)].map(m=>m[1]!);
 const expected=[
- 'pos','quotes','orders','contracts','products','receivables','order-products','deliveries',
+ 'pos','quotes','orders','contracts','products','product-custody','receivables','order-products','deliveries',
  'cashbook','cash',
  'customers','care','stock-requests',
  'tasks','shift-reports','dashboard','profit','flow','store-reports','weekly-reports','feedback',
@@ -20,7 +20,8 @@ test('mobile footer matches V0 functional order, retaining all sidebar destinati
 });
 test('sidebar order does not reorder mobile groups; products follows contracts',()=>{
  assert.deepEqual(orderedMobileNavKeys([...keys].reverse()),expected);
- assert.deepEqual(orderedMobileNavKeys(keys).slice(0,6),['pos','quotes','orders','contracts','products','receivables']);
+ assert.deepEqual(orderedMobileNavKeys(keys).slice(0,7),['pos','quotes','orders','contracts','products','product-custody','receivables']);
+ assert.deepEqual(orderedMobileNavKeys(keys).filter(key=>key!=='product-custody').slice(0,6),['pos','quotes','orders','contracts','products','receivables'],'existing destinations retain their relative order');
 });
 test('employees and accountants see only allowed links in the same V0 order',()=>{
  for(const visible of [[],['tasks','receivables','purchases','cashbook','cash','customers','suppliers'],['kho','receiving','stocktake','stock-lookup'],['orders','customers','care','quotes']]){
@@ -35,7 +36,7 @@ test('menu chân trang gom theo chức năng: đủ trang, đúng thứ tự, ch
  const groups=groupMobileNav(keys);
  assert.deepEqual(groups.map((g:any)=>g.label),['Bán hàng','Tiền','Khách hàng','Công việc','Kho','Mua hàng','Quản trị']);
  assert.deepEqual(groups.flatMap((g:any)=>g.items),expected,'gom lại vẫn đủ mọi trang, theo thứ tự cũ');
- assert.deepEqual(groups[0].items,['pos','quotes','orders','contracts','products','receivables','order-products','deliveries']);
+ assert.deepEqual(groups[0].items,['pos','quotes','orders','contracts','products','product-custody','receivables','order-products','deliveries']);
  const sale=groupMobileNav(['orders','customers','care','quotes','tasks']);
  assert.deepEqual(sale.map((g:any)=>[g.key,g.items]),[['sell',['quotes','orders']],['customers',['customers','care']],['work',['tasks']]]);
  assert.deepEqual(groupMobileNav(['future','orders']).map((g:any)=>[g.label,g.items]),[['Bán hàng',['orders']],['Khác',['future']]]);
@@ -48,4 +49,11 @@ test('shift reports is a normal Work destination and only appears when permissio
  assert.deepEqual(groups.find((g:any)=>g.key==='sell')?.items,['pos','orders']);
  assert.equal(groupMobileNav(['tasks','orders']).some((g:any)=>g.items.includes('shift-reports')),false);
  assert.match(sidebar,/href="#\/shift-reports" data-nav="shift-reports"/);
+});
+
+test('custody stays next to products and only appears for permission-visible destinations',()=>{
+ assert.deepEqual(orderedMobileNavKeys(['product-custody','products']),['products','product-custody']);
+ assert.deepEqual(groupMobileNav(['products','product-custody']).map((g:any)=>[g.key,g.items]),[['sell',['products','product-custody']]]);
+ assert.equal(groupMobileNav(['products','orders']).some((g:any)=>g.items.includes('product-custody')),false);
+ assert.match(sidebar,/href="#\/product-custody" data-nav="product-custody"/);
 });
