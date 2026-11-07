@@ -65,6 +65,7 @@ test('multi-product sample returns only finish when every line is returned; assi
  assert.equal((await f.call('/product-custody/'+id+'/actions',f.cookies.emp,'POST',receive(2,[{id:second.id,qty:1,condition:'Đủ'},{id:second.id,qty:0,condition:''}]))).status,400);
  assert.equal((await f.call('/product-custody/'+id+'/actions',f.cookies.emp,'POST',{clientKey:crypto.randomUUID(),revision:2,action:'update',responsibleId:'sa',date:today()})).status,403);
  f.ok(await f.call('/product-custody/'+id+'/actions',f.cookies.mgr,'POST',{clientKey:crypto.randomUUID(),revision:2,action:'update',responsibleId:'sa',date:today(),note:'Phân công tiếp nhận'}));
+ assert.ok(f.ok(await f.call('/product-custody/options',f.cookies.emp)).owners.some((owner:any)=>owner.id==='sa'),'creator can filter assigned-away tickets without granting reassignment');
  const done=f.ok(await f.call('/product-custody/'+id+'/actions',f.cookies.sa,'POST',receive(3,[{id:second.id,qty:1,condition:'Nguyên vẹn'}])));assert.equal(done.ticket.status,'returned');assert.equal(done.ticket.overdue,false);assert.equal(f.ok(await f.call('/product-custody?metric=overdue',f.cookies.emp)).total,0);assert.equal((await f.call('/product-custody/'+id,f.cookies.kho)).status,404);
 });
 test('warranty can record supplier processing then actual customer delivery with required result',async()=>{

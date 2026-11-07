@@ -22,7 +22,7 @@ export function initProductCustody({api,root,toast,compress,identity,userId}){
   for(const b of root.querySelectorAll('[data-metric]'))b.onclick=()=>{filters.metric=filters.metric===b.dataset.metric?'':b.dataset.metric;offset=0;load();};
   const form=root.querySelector('[data-filters]');form.onsubmit=ev=>{ev.preventDefault();const values=Object.fromEntries(new FormData(form));filters={...values,metric:filters.metric||''};offset=0;load();};
   root.querySelector('[data-clear]').onclick=()=>{filters={};offset=0;load();};root.querySelector('[data-prev]').onclick=()=>{offset=Math.max(0,offset-50);load();};root.querySelector('[data-next]').onclick=()=>{offset+=50;load();};
-  const who=identity();api('/product-custody/options').then(d=>{if(who!==identity()||!form.isConnected)return;form.querySelector('[data-owner-filter]').innerHTML='<option value="">Tất cả trong phạm vi</option>'+d.members.map(m=>`<option value="${e(m.id)}">${e(m.name)}</option>`).join('');form.elements.owner.value=filters.owner||'';}).catch(()=>{});
+  const who=identity();api('/product-custody/options').then(d=>{if(who!==identity()||!form.isConnected)return;form.querySelector('[data-owner-filter]').innerHTML='<option value="">Tất cả trong phạm vi</option>'+(d.owners||d.members).map(m=>`<option value="${e(m.id)}">${e(m.name)}</option>`).join('');form.elements.owner.value=filters.owner||'';}).catch(()=>{});
  }
  async function createForm(){
   const who=identity(),options=await api('/product-custody/options');if(who!==identity())return;
