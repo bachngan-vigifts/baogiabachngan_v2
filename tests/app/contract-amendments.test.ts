@@ -76,8 +76,8 @@ function handler(body: any, role = 'manager', orderStatus = 'confirmed', path = 
   };
   const table = new Proxy({}, { get: (_, key) => String(key) });
   const ctx: any = {
-    // This VM isolates contract handlers; the separate CRM return API has real-router integration tests.
-    registerCrmReturnRoutes: () => {}, registerContractLiquidationRoutes: () => {}, registerCashCollectionRoutes: () => {}, registerWebOrderEdits: () => {}, pendingGhnEdit, assertNoPendingGhnEdit,
+    // This VM isolates contract handlers; return and order-product APIs have real-router integration tests.
+    registerCrmReturnRoutes: () => {}, registerContractLiquidationRoutes: () => {}, registerCashCollectionRoutes: () => {}, registerWebOrderEdits: () => {}, registerOrderProductsRoutes: () => {}, pendingGhnEdit, assertNoPendingGhnEdit,
     departmentOwner, quotationPredicate, seesAllAsSaleAdmin, canApprove, can, posOrderStoreScope, isNotNull: () => null, isNull: () => null, quoteSaveHooks: { beforeSave: [], afterSave: [] },
     customerStaff: table, salesOrders: table, salesContracts: table, paymentSchedules: table, customerPayments: table, deliveries: table,
     or: () => null, eq: () => null, and: () => null, desc: () => null, sql: () => null,
