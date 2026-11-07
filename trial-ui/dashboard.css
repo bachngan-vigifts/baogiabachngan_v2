@@ -129,7 +129,10 @@ circle.dash-dot { fill: #2a78d6; stroke: var(--surface); stroke-width: 2; pointe
 .dash-kpi-person strong { grid-area: value; }
 .dash-kpi-bar { grid-area: bar; height: 6px; border-radius: 3px; background: var(--dash-track, #e3e9e6); overflow: hidden; }
 .dash-kpi-bar i { display: block; height: 100%; border-radius: 3px; }
-.dash-kpi-bar i.is-high { background: #1a9e77; } .dash-kpi-bar i.is-low { background: #eb6834; } .dash-kpi-bar i.is-none { background: #9aa5a0; }
+.dash-kpi-bar i.is-high { background: #1a9e77; } .dash-kpi-bar i.is-low { background: #eb6834; } .dash-kpi-bar i.is-poor { background: #d92d20; }
+.dash-kpi-score.is-high { color: #127a5b; fill: #127a5b; }
+.dash-kpi-score.is-low { color: #9a4d00; fill: #9a4d00; }
+.dash-kpi-score.is-poor { color: #b42318; fill: #b42318; }
 .dash-kpi-card.is-loading .dash-kpi { opacity: .55; }
 .dash-kpi-card .dash-mini { min-width: 110px; }
 @media (max-width: 760px) { .dash-kpi-main { grid-template-columns: minmax(0, 1fr); } .dash-kpi-table th, .dash-kpi-table td { padding: 8px 6px; font-size: 13px; } }
