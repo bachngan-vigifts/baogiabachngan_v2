@@ -17,7 +17,7 @@ export function parseServerTiming(header) {
     for (const p of params) {
       const [k, v = ''] = p.split('=');
       if (k === 'dur') out[name] = Number(v);
-      if (k === 'desc') { const d = v.replace(/^"|"$/g, ''); if (name === 'app') out.queries = Number.parseInt(d, 10) || 0; else if (name === 'region') out.region = d; else if (name === 'dbregion') out.dbRegion = d; }
+      if (k === 'desc') { const d = v.replace(/^"|"$/g, ''); if (name === 'app') out.queries = Number.parseInt(d, 10) || 0; else if (name === 'region') out.region = d; else if (name === 'dbregion') out.dbRegion = d; else if (name === 'dbmode') out.dbMode = d; else if (name === 'inflight') out.inflight = Number.parseInt(d, 10) || 0; }
     }
   }
   return out;
@@ -29,7 +29,7 @@ export const routeOf = path => String(path || '').split('?')[0].replace(/\/[0-9a
 export function recordApi({ path, method = 'GET', ms, status = 0, serverTiming = '', at = Date.now(), readMs = NaN, attempts = [] }) {
   const t = parseServerTiming(serverTiming), list = Array.isArray(attempts) ? attempts : [];
   const earlier = list.slice(0, -1), retryMs = earlier.reduce((s, a) => s + (Number(a.ms) || 0), 0);
-  entries.push({ route: method + ' ' + routeOf(path), ms: Math.round(ms), status, at, server: t.total, db: t.db, app: t.app, queries: t.queries, region: t.region, dbRegion: t.dbRegion,
+  entries.push({ route: method + ' ' + routeOf(path), ms: Math.round(ms), status, at, server: t.total, db: t.db, app: t.app, queries: t.queries, region: t.region, dbRegion: t.dbRegion, dbMode: t.dbMode, inflight: t.inflight,
     readMs: Number.isFinite(readMs) ? Math.round(readMs) : NaN, attempts: list.length || 1, retryMs: Math.round(retryMs),
     timeouts: list.filter(a => a.error === 'timeout').length, failovers: list.some(a => a.region) && list.length > 1 && !list[list.length - 1].region ? 1 : 0 });
   if (entries.length > MAX) entries.splice(0, entries.length - MAX);
@@ -50,14 +50,15 @@ export function summarize(list = entries) {
   const groups = new Map();
   for (const e of list) { if (!groups.has(e.route)) groups.set(e.route, []); groups.get(e.route).push(e); }
   const routes = [...groups].map(([route, xs]) => ({ route, ...stat(xs) })).sort((a, b) => b.median * b.count - a.median * a.count);
-  return { all: stat(list), routes, region: [...list].reverse().find(x => x.region)?.region || '', dbRegion: [...list].reverse().find(x => x.dbRegion)?.dbRegion || '' };
+  return { all: stat(list), routes, region: [...list].reverse().find(x => x.region)?.region || '', dbRegion: [...list].reverse().find(x => x.dbRegion)?.dbRegion || '',
+    dbMode: [...list].reverse().find(x => x.dbMode)?.dbMode || '', maxInflight: Math.max(0, ...list.map(x => x.inflight).filter(Number.isFinite)) };
 }
 
 const fmt = n => Number.isFinite(n) ? Math.round(n).toLocaleString('vi-VN') + ' ms' : '–';
 /** Văn bản gửi hỗ trợ kỹ thuật. */
 export function speedReport(list = entries, nav = globalThis.navigator) {
   const s = summarize(list), conn = nav?.connection;
-  const lines = [`Đo tốc độ CRM – ${new Date().toLocaleString('vi-VN')}`, `Số lượt: ${s.all.count} · vùng máy chủ: ${s.region || 'chưa rõ'} · vùng CSDL: ${s.dbRegion || 'chưa rõ'}` + (conn?.effectiveType ? ` · mạng: ${conn.effectiveType}${conn.rtt ? ` (rtt ${conn.rtt} ms)` : ''}` : ''),
+  const lines = [`Đo tốc độ CRM – ${new Date().toLocaleString('vi-VN')}`, `Số lượt: ${s.all.count} · vùng máy chủ: ${s.region || 'chưa rõ'} · vùng CSDL: ${s.dbRegion || 'chưa rõ'} · kết nối CSDL: ${s.dbMode || 'chưa rõ'} · cùng lúc tối đa ${s.maxInflight || '–'} lượt/isolate` + (conn?.effectiveType ? ` · mạng: ${conn.effectiveType}${conn.rtt ? ` (rtt ${conn.rtt} ms)` : ''}` : ''),
     `Toàn bộ: trung vị ${fmt(s.all.median)}, p90 ${fmt(s.all.p90)} · máy chủ ${fmt(s.all.server)} (chờ CSDL ${fmt(s.all.db)}, ${Number.isFinite(s.all.queries) ? s.all.queries : '–'} truy vấn) · đọc JSON ${fmt(s.all.read)} · mạng ${fmt(s.all.network)} · thử lại ${s.all.retries} lần (quá giờ ${s.all.timeouts}, chuyển dự phòng ${s.all.failovers})`, ''];
   const retry = r => r.retries ? ` · thử lại ${r.retries} lần (quá giờ ${r.timeouts}, chuyển dự phòng ${r.failovers}, mất ${fmt(r.retryMs)})` : '';
   for (const r of s.routes.slice(0, 15)) lines.push(`${r.route} ×${r.count}: ${fmt(r.median)} (p90 ${fmt(r.p90)}) · máy chủ ${fmt(r.server)} · CSDL chờ ${fmt(r.db)} · ${Number.isFinite(r.queries) ? r.queries : '–'} truy vấn · đọc JSON ${fmt(r.read)} · mạng ${fmt(r.network)}${retry(r)}`);
@@ -71,7 +72,7 @@ export function clearSpeedEntries() { entries.length = 0; }
  * `canary` (Manager): bật / tắt máy chủ cạnh CSDL trên máy này (api-region.js → createRegionCanary). Bật / tắt đều xoá số đo
  * cũ để bảng chỉ còn số của chế độ mới; ghi chế độ vào báo cáo sao chép.
  */
-export function openSpeedDialog({ doc = document, toast = () => {}, canary = null } = {}) {
+export function openSpeedDialog({ doc = document, toast = () => {}, canary = null, dbPool = null } = {}) {
   const el = (tag, cls, text) => { const n = doc.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; };
   const dlg = el('dialog', 'speed-dialog'), s = summarize();
   const head = el('div', 'speed-head'), close = el('button', 'btn secondary', 'Đóng'); close.type = 'button'; close.onclick = () => dlg.close();
@@ -94,7 +95,7 @@ export function openSpeedDialog({ doc = document, toast = () => {}, canary = nul
   copy.onclick = async () => { try { await globalThis.navigator.clipboard.writeText(speedReport()); toast('Đã sao chép số liệu đo tốc độ.'); } catch { toast('Không sao chép được – chụp màn hình bảng này để gửi.', 'err'); } };
   const actions = el('div', 'speed-actions'); actions.append(copy);
   const reset = el('button', 'btn secondary', 'Xoá số đo'); reset.type = 'button';
-  reset.onclick = () => { clearSpeedEntries(); dlg.close(); openSpeedDialog({ doc, toast, canary }); };
+  reset.onclick = () => { clearSpeedEntries(); dlg.close(); openSpeedDialog({ doc, toast, canary, dbPool }); };
   actions.append(reset);
   let canaryBox = null;
   if (canary) {
@@ -112,7 +113,31 @@ export function openSpeedDialog({ doc = document, toast = () => {}, canary = nul
     };
     canaryBox.append(toggle);
   }
-  dlg.append(head, ...(canaryBox ? [canaryBox] : []), note, wrap, actions);
+  // Thử pooler (Manager): bật / tắt trên máy này + đo tải đồng thời trực tiếp so với pooler.
+  let poolBox = null;
+  if (dbPool) {
+    poolBox = el('div', 'speed-canary');
+    const on = dbPool.canary.enabled();
+    poolBox.append(el('p', '', on
+      ? 'Máy này đang THỬ pooler: mọi lượt gọi xin máy chủ dùng pooler (cột "máy chủ báo" cho biết máy chủ có thật sự dùng). Bỏ chọn là về kết nối trực tiếp ngay.'
+      : 'Thử pooler trên riêng máy này (máy khác không đổi). Đo tải đồng thời: gửi 3 đợt × 8 lượt đọc cùng lúc, so kết nối trực tiếp với pooler.'));
+    const toggle = el('button', on ? 'btn secondary' : 'btn primary', on ? 'Tắt thử pooler trên máy này' : 'Bật thử pooler trên máy này'); toggle.type = 'button';
+    toggle.onclick = () => { dbPool.canary.set(!on); clearSpeedEntries(); toast(on ? 'Đã tắt thử pooler trên máy này. Số đo đã xoá.' : 'Đã bật thử pooler trên máy này. Số đo đã xoá.'); dlg.close(); };
+    const run = el('button', 'btn secondary', 'Đo tải đồng thời'); run.type = 'button';
+    const out = el('pre', 'speed-load'); out.hidden = true;
+    run.onclick = async () => {
+      run.disabled = true; out.hidden = false; out.textContent = 'Đang đo… (khoảng 10–30 giây)';
+      try {
+        const { loadReport } = await import('./db-pool-canary.js');
+        const opts = { parallel: 8, rounds: 3, path: '/me' }, report = loadReport(await dbPool.runLoad(opts), opts);
+        out.textContent = report;
+        try { await globalThis.navigator.clipboard.writeText(report); toast('Đã đo xong và sao chép kết quả.'); } catch { toast('Đã đo xong – chụp màn hình kết quả để gửi.'); }
+      } catch (e) { out.textContent = 'Không đo được: ' + (e?.message || e); }
+      finally { run.disabled = false; }
+    };
+    poolBox.append(toggle, run, out);
+  }
+  dlg.append(head, ...(canaryBox ? [canaryBox] : []), ...(poolBox ? [poolBox] : []), note, wrap, actions);
   doc.body.append(dlg);
   dlg.addEventListener('close', () => dlg.remove(), { once: true });
   dlg.showModal();

@@ -25,7 +25,7 @@ function harness() {
     requestWithRegion,
     withBusy: (_method: string, promise: Promise<unknown>) => promise,
     requestPriority: { run: (_bg: boolean, work: () => unknown) => work() }, isBackgroundRequest: () => false, recordApi() {}, performance,
-    regionCanary: { headers: () => ({}), observe() {}, failed() {} },
+    regionCanary: { headers: () => ({}), observe() {}, failed() {} }, managerPoolHeaders: () => ({}),
     isCacheable: () => false, isPassiveWrite: () => false, pageCache: { clear() {} }, customerSearch: { clear() {} },
     toggleAccountMenu() {}, editor: { dirty: false }, quoteDeviceDraft: { logout() {} },
     token: 'old-session', state: { user: {} }, activation: null, chatUi: null, approvalUi: null, API: '/api',

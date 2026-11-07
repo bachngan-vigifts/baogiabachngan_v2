@@ -29,6 +29,10 @@ jobs:
       # Pooler CHỈ bật khi biến repository ENABLE_DB_POOLER = true (Settings → Variables). Sự cố 30/10: bật pooler làm
       # nhiều lời gọi API treo → nhân viên không truy cập được. Secret SUPABASE_POOLER_URL được giữ lại nhưng không dùng.
       SUPABASE_POOLER_URL: ${{ vars.ENABLE_DB_POOLER == 'true' && secrets.SUPABASE_POOLER_URL || '' }}
+      # THỬ POOLER CÓ KIỂM SOÁT (07/11): biến ENABLE_DB_POOLER_CANARY = true → đặt secret Edge DB_POOLER_CANARY_URL. Chỉ lượt gọi có
+      # header x-db-pool: pooler (Manager tự bật trong "Đo tốc độ") dùng pooler; mọi máy khác vẫn kết nối trực tiếp.
+      # Khôi phục: đặt biến = false (hoặc xoá) rồi deploy lại → secret bị gỡ.
+      POOLER_CANARY_URL: ${{ vars.ENABLE_DB_POOLER != 'true' && vars.ENABLE_DB_POOLER_CANARY == 'true' && secrets.SUPABASE_POOLER_URL || '' }}
       SAPO_SYNC_TOKEN: ${{ secrets.SAPO_SYNC_TOKEN }}
       WEB_ORDER_ACTION_TOKEN: ${{ secrets.WEB_ORDER_ACTION_TOKEN }}
       GHN_API_TOKEN: ${{ secrets.GHN_API_TOKEN }}
@@ -124,6 +128,24 @@ jobs:
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_POOLER_URL == ''
         # Gỡ DB_POOLER_URL trên Supabase (nếu còn) để API dùng kết nối trực tiếp; chưa có thì bỏ qua.
         run: supabase secrets unset DB_POOLER_URL --project-ref "$PROJECT_REF" --yes || true
+      - name: Thử pooler có kiểm soát – kiểm tra chỉ đọc rồi đặt DB_POOLER_CANARY_URL
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.POOLER_CANARY_URL != ''
+        env:
+          PGCONNECT_TIMEOUT: '10'
+          PGSSLMODE: require
+          PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=5000'
+        shell: bash
+        # Pooler không qua SELECT 1 thì gỡ secret thử (API vẫn chạy kết nối trực tiếp như cũ) và cảnh báo, không chặn triển khai.
+        run: |
+          if result=$(psql -X -w "$POOLER_CANARY_URL" -At -v ON_ERROR_STOP=1 -c 'SELECT 1' 2>/dev/null) && test "$result" = '1'; then
+            supabase secrets set --project-ref "$PROJECT_REF" DB_POOLER_CANARY_URL="$POOLER_CANARY_URL"
+          else
+            echo '::warning::Pooler chưa qua kiểm tra chỉ đọc – chưa bật thử pooler; API giữ kết nối trực tiếp.'
+            supabase secrets unset DB_POOLER_CANARY_URL --project-ref "$PROJECT_REF" --yes || true
+          fi
+      - name: Tắt thử pooler khi chưa bật công tắc ENABLE_DB_POOLER_CANARY
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.POOLER_CANARY_URL == ''
+        run: supabase secrets unset DB_POOLER_CANARY_URL --project-ref "$PROJECT_REF" --yes || true
       - name: Cấu hình transaction pooler khi repository đã có secret
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_POOLER_URL != ''
         # SUPABASE_* names are reserved inside Edge Functions; keep the GitHub secret name unchanged.
