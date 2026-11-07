@@ -82,6 +82,12 @@ export function initCustomerCenter({
   const realForm = (customer) =>
     openCare(customer ? { customer } : {}, () => load());
   function render() {
+    const active = root.ownerDocument?.activeElement;
+    const searchFocused =
+      active?.matches?.("[data-center-search]") && root.contains(active);
+    const selection = searchFocused
+      ? [active.selectionStart, active.selectionEnd]
+      : null;
     const allowed = canCare(),
       today = care?.today || vietnamToday(),
       rows = centerRows(activities, q, status, today);
@@ -156,6 +162,11 @@ export function initCustomerCenter({
    }</section>
    <section class="card" data-center-campaigns ${selected === "campaign" ? "" : "hidden"}></section>
    <p class="center-feedback muted" data-center-feedback role="status"></p>`;
+    if (searchFocused) {
+      const input = root.querySelector("[data-center-search]");
+      input?.focus({ preventScroll: true });
+      input?.setSelectionRange(...selection);
+    }
     if (selected === "campaign" && !loading) {
       campaignUi = initCenterCampaigns({
         root: root.querySelector("[data-center-campaigns]"),

@@ -167,6 +167,13 @@ try {
         exact: true,
       })
       .waitFor();
+    assert.equal(
+      await center
+        .locator("[data-center-search]")
+        .evaluate((el) => el === document.activeElement),
+      true,
+      "server search retains typing focus",
+    );
     await center.locator("[data-center-search]").fill("");
     await center.locator("[data-center-opportunity=returning]").waitFor();
     await center.locator("[data-center-section=dormant]").last().click();

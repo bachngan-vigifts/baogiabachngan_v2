@@ -6,6 +6,10 @@ const esc = (v) =>
         c
       ],
   );
+const day = (v) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(
+    new Date(v),
+  );
 const labels = {
   draft: "Nháp",
   active: "Đang chạy",
@@ -54,6 +58,12 @@ export function initCenterCampaigns({
   };
   function render() {
     if (!live()) return;
+    const active = root.ownerDocument?.activeElement;
+    const searchFocused =
+      active?.matches?.("[data-campaign-search]") && root.contains(active);
+    const selection = searchFocused
+      ? [active.selectionStart, active.selectionEnd]
+      : null;
     const campaign = detail?.campaign;
     root.innerHTML = `<div class="page-head"><div><h2>${campaign ? esc(campaign.name) : "Chiến dịch trọng tâm"}</h2><p class="muted small">Chỉ hiển thị phân công trong phạm vi được xem. Kết quả lấy từ giao dịch chăm sóc đã lưu, không tự cộng KPI khi tạo chiến dịch.</p></div>${manager() ? `<button class="btn primary" data-campaign-new>${campaign ? "＋ Thêm khách" : "＋ Tạo chiến dịch"}</button>` : ""}</div>
  <label>Tìm ${campaign ? "khách trong chiến dịch" : "chiến dịch"}<input type="search" data-campaign-search value="${esc(query)}" placeholder="Nhập từ khoá…"></label>
@@ -83,7 +93,7 @@ export function initCenterCampaigns({
            ? detail.targets
                .map((t) => {
                  const href = phoneHref(t.phone);
-                 return `<article class="center-item"><a class="center-name" href="#/customers/${encodeURIComponent(t.customerId)}">${esc(t.name)}</a><p>${esc(t.contact)} · ${esc(t.assigneeName)}</p><p class="muted">${t.occurredAt ? `Đã ghi ${esc(t.occurredAt.slice(0, 10))}: ${esc(t.content)}` : "Chưa có giao dịch gắn với chiến dịch"}</p><span class="pill ${t.completion === "completed" ? "ok" : "muted"}">${t.completion === "completed" ? "Đã kết nối" : t.occurredAt ? "Đã ghi / chưa kết nối" : "Chưa chăm sóc"}</span><div class="center-actions">${href ? `<a class="btn secondary" href="${esc(href)}">Gọi</a>` : '<span class="muted">Chưa có SĐT</span>'}<button class="btn secondary" data-campaign-record="${esc(t.id)}" ${canCare() && campaign.status === "active" ? "" : "disabled"}>Ghi nhận</button><button class="btn secondary" data-campaign-link="${esc(t.id)}" ${canCare() && campaign.status === "active" ? "" : "disabled"}>Gắn giao dịch đã có</button></div></article>`;
+                 return `<article class="center-item"><a class="center-name" href="#/customers/${encodeURIComponent(t.customerId)}">${esc(t.name)}</a><p>${esc(t.contact)} · ${esc(t.assigneeName)}</p><p class="muted">${t.occurredAt ? `Đã ghi ${esc(day(t.occurredAt))}: ${esc(t.content)}` : "Chưa có giao dịch gắn với chiến dịch"}</p><span class="pill ${t.completion === "completed" ? "ok" : "muted"}">${t.completion === "completed" ? "Đã kết nối" : t.occurredAt ? "Đã ghi / chưa kết nối" : "Chưa chăm sóc"}</span><div class="center-actions">${href ? `<a class="btn secondary" href="${esc(href)}">Gọi</a>` : '<span class="muted">Chưa có SĐT</span>'}<button class="btn secondary" data-campaign-record="${esc(t.id)}" ${canCare() && campaign.status === "active" ? "" : "disabled"}>Ghi nhận</button><button class="btn secondary" data-campaign-link="${esc(t.id)}" ${canCare() && campaign.status === "active" ? "" : "disabled"}>Gắn giao dịch đã có</button></div></article>`;
                })
                .join("")
            : '<p class="empty">Chưa có khách phù hợp trong phạm vi được xem.</p>'
@@ -97,6 +107,11 @@ export function initCenterCampaigns({
            : '<p class="empty">Chưa có chiến dịch trong phạm vi được xem. Manager có thể tạo và phân công khách thực tế.</p>'
  }
  <div class="center-pager"><button class="btn secondary" data-campaign-page="-1" ${loading || !(campaign ? detailPage : page) ? "disabled" : ""}>Trang trước</button><span>Trang ${(campaign ? detailPage : page) + 1} · ${campaign ? detail.total : (data?.total ?? 0)} ${campaign ? "khách" : "chiến dịch"}</span><button class="btn secondary" data-campaign-page="1" ${loading || ((campaign ? detailPage : page) + 1) * 20 >= (campaign ? detail.total : (data?.total ?? 0)) ? "disabled" : ""}>Trang sau</button></div>`;
+    if (searchFocused) {
+      const input = root.querySelector("[data-campaign-search]");
+      input?.focus({ preventScroll: true });
+      input?.setSelectionRange(...selection);
+    }
   }
   async function load(id = detail?.campaign.id) {
     const current = ++run;
@@ -266,7 +281,7 @@ export function initCenterCampaigns({
     if (!live()) return;
     const { dlg, form, close } = dialog(
       "Gắn giao dịch đã ghi",
-      `<p>${esc(target.name)} · ${esc(target.assigneeName)}</p><p class="muted small">Nếu lần ghi vừa rồi đã lưu nhưng chưa gắn được, chọn lại tại đây; không ghi thêm giao dịch trùng.</p><label>Giao dịch trong thời gian chiến dịch<select name="activityId" required><option value="">Chọn giao dịch</option>${rows.map((a) => `<option value="${esc(a.id)}" ${a.id === preselected?.id ? "selected" : ""}>${esc(a.occurredAt.slice(0, 10))} · ${esc(a.content || a.subject)}</option>`).join("")}</select></label>`,
+      `<p>${esc(target.name)} · ${esc(target.assigneeName)}</p><p class="muted small">Nếu lần ghi vừa rồi đã lưu nhưng chưa gắn được, chọn lại tại đây; không ghi thêm giao dịch trùng.</p><label>Giao dịch trong thời gian chiến dịch<select name="activityId" required><option value="">Chọn giao dịch</option>${rows.map((a) => `<option value="${esc(a.id)}" ${a.id === preselected?.id ? "selected" : ""}>${esc(day(a.occurredAt))} · ${esc(a.content || a.subject)}</option>`).join("")}</select></label>`,
     );
     let saving = false;
     form.onsubmit = async (e) => {
