@@ -19,6 +19,7 @@ export function profitPeriod(grain, today = vnToday()) {
   if (grain === 'year') return { from: today.slice(0, 4) + '-01-01', to: today };
   throw new RangeError('Kỳ không hợp lệ.');
 }
+export const profitHasCoverage = r => !(r.revenue > 0 && r.coveredRevenue === 0 && ((r.missingOrders ?? r.missingLines ?? 0) > 0 || (r.unconfirmedOrders ?? r.unconfirmedLines ?? 0) > 0));
 const pct = x => x === null || x === undefined ? '—' : (Math.round(x * 1000) / 10).toLocaleString('vi-VN') + '%';
 const short = v => { const a = Math.abs(v), s = v < 0 ? '−' : '';
   return a >= 1e9 ? s + (Math.round(a / 1e7) / 100).toLocaleString('vi-VN') + ' tỷ' : a >= 1e6 ? s + Math.round(a / 1e6).toLocaleString('vi-VN') + ' tr' : s + Math.round(a).toLocaleString('vi-VN'); };
@@ -29,9 +30,10 @@ const REASON = { create: 'Tạo đơn', amend: 'Sửa đơn', confirm: 'Duyệt 
 export function initProfit({ api, root, toast, esc, money }) {
   const pill = (tone, text) => `<span class="pill ${tone}">${esc(text)}</span>`;
   const when = v => new Date(v).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' });
-  // Mặc định CHỈ giá vốn chính xác (Manager nhập / xác nhận): giá ước tính / tham chiếu tách riêng "chưa xác nhận", không cộng vào LN.
-  const st = { costs: 'confirmed', grain: 'month', from: vnToday().slice(0, 8) + '01', to: vnToday(), compare: true, branch: '', owner: '', tab: 'owners', missingOnly: false, data: null };
+  // Hiển thị cả giá tham chiếu để theo dõi đơn cũ; mức tin cậy luôn ghi rõ. Manager vẫn lọc chỉ giá đã xác nhận được.
+  const st = { costs: 'all', grain: 'month', from: vnToday().slice(0, 8) + '01', to: vnToday(), compare: true, branch: '', owner: '', tab: 'owners', missingOnly: false, data: null };
   const num = v => (Math.round(v) || 0).toLocaleString('vi-VN'); // -0 → 0
+  const amount = (r, v) => profitHasCoverage(r) ? num(v) : '<span class="muted" title="Chưa đủ giá vốn theo bộ lọc để tính lợi nhuận">—</span>';
   const marginCell = r => { const w = r.margin === null ? 0 : Math.max(0, Math.min(1, r.margin / 0.4)) * 80;
     return `<span class="pf-mbar" style="width:${w}px"></span> ${pct(r.margin)}`; };
   const flag = r => r.gross < 0 ? '<span class="pill danger">Lỗ</span>' : r.margin !== null && r.margin < 0.15 ? '<span class="pill warn">Biên thấp</span>' : '';
@@ -95,18 +97,18 @@ export function initProfit({ api, root, toast, esc, money }) {
           <button type="button" class="btn secondary" id="pf-csv">⬇ Xuất Excel</button></div>
         <p class="muted small">Số liệu đơn hàng: ${esc((d.from || st.from).split('-').reverse().join('/'))} – ${esc((d.to || st.to).split('-').reverse().join('/'))}</p>
         <p data-pf-status role="status" class="muted" hidden></p></div><div class="pf-results">
+      <div class="card pf-analysis" data-pf-analysis><div class="pf-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === st.tab}" class="${k === st.tab ? 'on' : ''}">${v}</button>`).join('')}</div>
+        <div id="pf-tab">${tabBody()}</div>
+        <p class="muted small">Thưởng / lương Sale chia về đơn theo tỉ lệ doanh thu đủ giá vốn của người đó trong tháng trọn; tổng khớp bảng lương. Bấm một nhân viên → các đơn của người đó; bấm một đơn → giá vốn từng dòng.</p></div>
       ${warnings(d)}
       <div class="pf-kpis">
         <div class="card"><small>Doanh thu thuần</small><b class="num">${short(s.revenue)}</b><span>${s.orders} đơn${st.compare && cmp ? ' · ' + delta(s.revenue, cmp.revenue) : ''}</span></div>
-        <div class="card"><small>LN gộp</small><b class="num ${s.gross < 0 ? 'neg' : ''}">${short(s.gross)}</b><span>biên ${pct(s.margin)}${st.compare && cmp && cmp.margin !== null && s.margin !== null ? ` · <span class="${s.margin < cmp.margin ? 'neg' : 'pos'}">${s.margin < cmp.margin ? '▼' : '▲'} ${(Math.abs(s.margin - cmp.margin) * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} điểm</span>` : ''}</span></div>
-        <div class="card"><small>LN sau chi phí</small><b class="num ${net < 0 ? 'neg' : ''}">${short(net)}</b><span>biên ${netBase > 0 ? pct(net / netBase) : '—'}${co ? ' · toàn công ty' : ' · theo bộ lọc'}</span></div>
+        <div class="card"><small>LN gộp</small><b class="num ${s.gross < 0 ? 'neg' : ''}">${profitHasCoverage(s) ? short(s.gross) : '—'}</b><span>biên ${pct(s.margin)}${st.compare && cmp && cmp.margin !== null && s.margin !== null ? ` · <span class="${s.margin < cmp.margin ? 'neg' : 'pos'}">${s.margin < cmp.margin ? '▼' : '▲'} ${(Math.abs(s.margin - cmp.margin) * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} điểm</span>` : ''}</span></div>
+        <div class="card"><small>LN sau chi phí</small><b class="num ${net < 0 ? 'neg' : ''}">${profitHasCoverage(s) ? short(net) : '—'}</b><span>biên ${netBase > 0 ? pct(net / netBase) : '—'}${co ? ' · toàn công ty' : ' · theo bộ lọc'}</span></div>
         <div class="card"><small>Chưa phân bổ</small><b class="num">${unalloc === null ? '—' : short(unalloc)}</b><span>${unalloc === null ? 'chỉ xem khi không lọc' : 'chi phí chung văn phòng + lương Sale chưa phân bổ'}</span></div>
         <div class="card"><small>Độ tin cậy giá vốn</small><b class="num">${share('confirmed')}</b><span>chính xác · ${share('estimate')} ước tính · ${share('backfill')} backfill · ${share('missing')} thiếu</span></div></div>
       ${co ? `<p class="pf-check ${co.reconcile.ok && co.reconcile.payrollOk ? '' : 'bad'}">${co.reconcile.ok && co.reconcile.payrollOk ? '✔ <b>Đối soát khớp:</b>' : '⚠ <b>Đối soát lệch:</b>'} Σ theo chi nhánh ${esc(short(co.reconcile.branches))} − lương Sale chưa phân bổ ${esc(short(co.saleUnallocated))} − chi phí chung ${esc(short(co.overhead))} = LN sau chi phí công ty ${esc(short(co.net))} · bảng lương ${esc(short(co.reconcile.payroll))} = Sale ${esc(short(co.reconcile.payrollParts.sale))} + quầy ${esc(short(co.reconcile.payrollParts.store))} + chung ${esc(short(co.reconcile.payrollParts.overhead))}${co.reconcile.ok && co.reconcile.payrollOk ? '' : ' – báo kỹ thuật kiểm tra'}</p>` : ''}
       <div class="pf-two">${bridgeCard(d)}${cashCard(d)}</div>
-      <div class="card"><div class="pf-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === st.tab}" class="${k === st.tab ? 'on' : ''}">${v}</button>`).join('')}</div>
-        <div id="pf-tab">${tabBody()}</div>
-        <p class="muted small">Thưởng / lương Sale chia về đơn theo tỉ lệ doanh thu đủ giá vốn của người đó trong tháng trọn; tổng khớp bảng lương. Bấm một nhân viên → các đơn của người đó; bấm một đơn → giá vốn từng dòng.</p></div>
       <div class="pf-two">${costCard()}${rulesCard(d)}</div></div>`;
     root.querySelector('#pf-refresh')?.addEventListener('click', () => load(true));
     root.querySelectorAll('[data-grain]').forEach(b => b.onclick = () => { setGrain(b.dataset.grain); load(); });
@@ -208,10 +210,10 @@ export function initProfit({ api, root, toast, esc, money }) {
       <tbody>${rows.map((r, i) => `<tr ${attrs[i] || ''}>${r.map((c, j) => `<td data-label="${esc(heads[j].replace(/^>/, ''))}"${heads[j].startsWith('>') ? ' class="right num"' : ''}>${c}</td>`).join('')}</tr>`).join('')
         || `<tr><td colspan="${heads.length}" class="muted">Không có dữ liệu trong khoảng đã chọn.</td></tr>`}</tbody></table></div>`;
   }
-  const H = ['>DT thuần', '>LN gộp', '>Phí POS / GHN', '>Thưởng', '>Lương cố định', '>LN sau CP', 'Biên', 'Giá vốn', ''];
-  const rowCells = r => [num(r.revenue), `<b class="${r.gross < 0 ? 'neg' : ''}">${num(r.gross)}</b>`,
+  const H = ['>DT thuần', '>Giá vốn hàng bán', '>CP trực tiếp', '>LN gộp', '>Phí POS / GHN', '>Thưởng', '>Lương cố định', '>LN sau CP', 'Biên', 'Độ tin cậy', ''];
+  const rowCells = r => [num(r.revenue), amount(r,r.cost), amount(r,r.direct), `<b class="${r.gross < 0 ? 'neg' : ''}">${amount(r,r.gross)}</b>`,
     r.feeRevenue || r.carrierFee ? `+${num(r.feeRevenue)} / −${num(r.carrierFee)}` : '0', r.staffBonus ? num(r.staffBonus) : '—', r.staffSalary ? num(r.staffSalary) : '—',
-    `<b class="${r.net < 0 ? 'neg' : ''}">${num(r.net)}</b>`, pct(r.netMargin), trust(r), `${flag(r)} ${miss(r)}`];
+    `<b class="${r.net < 0 ? 'neg' : ''}">${amount(r,r.net)}</b>`, pct(r.netMargin), trust(r), `${flag(r)} ${miss(r)}`];
   /** Rà giá vốn theo mã: `missing` = nhập giá cho mã không có nguồn · `unconfirmed` = xác nhận / sửa giá ước tính / tham chiếu. */
   async function reviewCosts(scope) {
     const q = new URLSearchParams({ from: st.from, to: st.to, scope });
@@ -259,10 +261,10 @@ export function initProfit({ api, root, toast, esc, money }) {
     if (st.tab === 'branches') {
       // Chi nhánh = LN đơn sau chi phí đơn − chi vặt két − lương NVBH / CHT (chi phí cấp chi nhánh, không chia xuống đơn).
       const bc = new Map((d.branchCosts?.rows || []).map(r => [r.id, r]));
-      return table(['Chi nhánh', '>DT thuần', '>LN gộp', '>LN đơn', '>Chi vặt', '>Lương quầy', '>LN chi nhánh', 'Giá vốn', ''], d.branches.map(r => { const b = bc.get(r.key);
-        return [esc(r.label), num(r.revenue), `<b class="${r.gross < 0 ? 'neg' : ''}">${num(r.gross)}</b>`, num(r.net), b ? num(b.petty) : '0', b ? num(b.staff) : '0',
-          `<b class="${(b ? b.net : r.net) < 0 ? 'neg' : ''}">${num(b ? b.net : r.net)}</b>`, trust(r), `${flag(r)} ${miss(r)}`]; })
-        .concat((d.branchCosts?.rows || []).filter(b => !d.branches.some(r => r.key === b.id)).map(b => [esc(b.name), '0', '0', '0', num(b.petty), num(b.staff), `<b class="${b.net < 0 ? 'neg' : ''}">${num(b.net)}</b>`, '—', ''])))
+      return table(['Chi nhánh', '>DT thuần', '>Giá vốn hàng bán', '>CP trực tiếp', '>LN gộp', '>LN đơn', '>Chi vặt', '>Lương quầy', '>LN chi nhánh', 'Độ tin cậy', ''], d.branches.map(r => { const b = bc.get(r.key);
+        return [esc(r.label), num(r.revenue), amount(r,r.cost), amount(r,r.direct), `<b class="${r.gross < 0 ? 'neg' : ''}">${amount(r,r.gross)}</b>`, amount(r,r.net), b ? num(b.petty) : '0', b ? num(b.staff) : '0',
+          `<b class="${(b ? b.net : r.net) < 0 ? 'neg' : ''}">${amount(r,b ? b.net : r.net)}</b>`, trust(r), `${flag(r)} ${miss(r)}`]; })
+        .concat((d.branchCosts?.rows || []).filter(b => !d.branches.some(r => r.key === b.id)).map(b => [esc(b.name), '0', '0', '0', '0', '0', num(b.petty), num(b.staff), `<b class="${b.net < 0 ? 'neg' : ''}">${num(b.net)}</b>`, '—', ''])))
         + '<p class="muted small">Lương NVBH / CHT chia theo số ca mở ở từng quầy trong tháng trọn; chi vặt két chỉ tính phiếu "chi phí hoạt động".</p>';
     }
     const label = { owners: 'Nhân viên', customers: 'Khách hàng' }[st.tab];
@@ -275,6 +277,8 @@ export function initProfit({ api, root, toast, esc, money }) {
     root.querySelectorAll('[data-owner]').forEach(tr => on(tr, () => { st.owner = tr.dataset.owner; st.tab = 'orders'; load(); }));
   }
   function chart(series) {
+    if (series.length && !series.some(profitHasCoverage)) return `<p class="muted">Chưa đủ giá vốn theo bộ lọc để tính lợi nhuận. ${st.costs === 'confirmed' ? 'Chọn gồm giá vốn ước tính hoặc xác nhận giá vốn để xem kết quả.' : 'Bổ sung giá vốn cho các dòng còn thiếu để xem kết quả.'}</p>`;
+    series = series.filter(profitHasCoverage);
     if (!series.length) return '<p class="muted">Không có dữ liệu.</p>';
     const W = 640, Hh = 220, top = 14, base = 186, left = 52, max = Math.max(1, ...series.map(r => r.gross)), min = Math.min(0, ...series.map(r => r.gross));
     const span = max - min, y = v => top + (max - v) / span * (base - top), zero = y(0), slot = (W - left - 8) / series.length, bw = Math.max(2, Math.min(28, slot * 0.62));
@@ -327,7 +331,7 @@ export function initProfit({ api, root, toast, esc, money }) {
     const rows = st.tab === 'orders'
       ? [['Ngày', 'Đơn', 'Khách hàng', 'Nhân viên', 'Chi nhánh', 'Doanh thu thuần', 'Giá vốn', 'Chi phí trực tiếp', 'LN gộp', 'Biên LN (%)', 'Dòng thiếu giá vốn'],
         ...d.orders.map(o => [o.orderDate, o.orderNo, o.customerName, o.ownerName, o.branch, o.revenue, o.cost, o.direct, o.gross, o.margin === null ? '' : Math.round(o.margin * 1000) / 10, o.missingLines])]
-      : [heads, ...(st.tab === 'series' ? d.series : d[st.tab]).map(r => [r.label, r.orders, r.revenue, r.cost, r.direct, r.gross, r.margin === null ? '' : Math.round(r.margin * 1000) / 10, r.missingOrders, r.missingRevenue])];
+      : [heads, ...(st.tab === 'series' ? d.series : d[st.tab]).map(r => [r.label, r.orders, r.revenue, profitHasCoverage(r) ? r.cost : '', profitHasCoverage(r) ? r.direct : '', profitHasCoverage(r) ? r.gross : '', r.margin === null ? '' : Math.round(r.margin * 1000) / 10, r.missingOrders, r.missingRevenue])];
     const blob = new Blob(['﻿' + rows.map(r => r.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `loi-nhuan-${TABS[st.tab]}-${st.from}-${st.to}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
