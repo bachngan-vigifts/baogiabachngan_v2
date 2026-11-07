@@ -541,8 +541,8 @@ function openWorkspace(user) {
   route();
   loadAll();
   notifier.start(); dataRefresh.start(); pulse.start();
-  // Mốc so sánh thay đổi: chụp sau khi trang đang mở tải xong (không tranh kết nối với dữ liệu của trang).
-  requestPriority.idle().then(() => { if (state.user) dataRefresh.tick({ baseline: true }); });
+  // Không chụp mốc /quotes, /orders, /contracts lúc mở app (3 lượt đọc nặng mỗi lần mở, /orders ~270 KB): dữ liệu của trang đang
+  // xem đã có mốc qua observe(); nhịp /pulse báo có thay đổi thì tick() so sánh đúng các đường dẫn đó và tải lại trang.
 }
 function refreshWorkspaceUser(user) {
   const access=u=>JSON.stringify([u?.role,u?.positionId,u?.perms,u?.approver,u?.dataScope,u?.departmentId]);
@@ -646,7 +646,8 @@ async function loadAll() {
   const page = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] || 'quotes';
   const later = (home, load) => home.includes(page) ? load() : requestPriority.idle().then(() => state.user ? load() : undefined);
   const jobs = [can('page.quotes') && later(['quotes'], loadQuotes), can('page.customers') && later(['customers'], loadCustomers)].filter(Boolean);
-  if (isManager()) jobs.push(later(['staff', 'members'], loadMembers), loadSapoSync());
+  // Ô đồng bộ Sapo chỉ hiện ở trang Nhân viên: tải khi mở trang đó (route), không tải lúc mở app.
+  if (isManager()) jobs.push(later(['staff', 'members'], loadMembers));
   loadBadges({ startChat: true }); $('#chat-launcher').hidden = false; approvalView().start(); storeView().start(); weeklyView().start();
   loadCatalogSnapshot(); // tải sẵn danh mục để "Tìm nhanh sản phẩm" lọc ngay khi gõ (không chờ)
   await Promise.all(jobs);
@@ -889,6 +890,7 @@ function route() {
   if (view === 'products') {
     productAdmin().loadPending(); legacyImagesBox();
   }
+  if (view === 'staff' && isManager()) loadSapoSync();
   if (view === 'orders') loadOrders();
   if (view === 'contracts') loadContracts();
   if (view === 'receiving') receivingView().load();
@@ -3926,7 +3928,7 @@ async function refreshData() {
   else if (page === 'receivables') jobs.push(loadReceivables());
   else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : customerScreen(query));
   else if (page === 'products') { if(id)jobs.push(productDetail().refresh());else jobs.push(loadProducts(),productAdmin().loadPending(),loadCatalogSnapshot()); }
-  else if (page === 'staff' && isManager()) jobs.push(loadMembers());
+  else if (page === 'staff' && isManager()) jobs.push(loadMembers(), loadSapoSync());
   else if (page === 'tasks') jobs.push(tasksView().load(id));
   else if (page === 'dashboard') jobs.push(dashboardView().load());
   else if (page === 'flow') jobs.push(flowView().load());

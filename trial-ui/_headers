@@ -15,7 +15,7 @@
   Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://taceqfnsorewelsbdckg.supabase.co; worker-src 'self'; manifest-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 
 # JS / CSS: mọi tham chiếu đều có ?v=<commit> sau bước triển khai (scripts/stamp-ui-version.ts; test chặn file lọt),
-# nên mỗi bản mới là URL mới → trình duyệt giữ một năm, mở app không phải hỏi lại máy chủ từng module (hàng chục lượt nối đuôi).
+# (?v= là mã băm nội dung từng file: file nào đổi thì URL đó đổi) → trình duyệt giữ một năm, mở app không phải hỏi lại máy chủ từng module (hàng chục lượt nối đuôi).
 # index.html và các file khác dùng mặc định (luôn hỏi lại) nên bản mới lên là dùng ngay.
 # (Quy tắc riêng chỉ thêm header, không ghép với /* vì /* không đặt Cache-Control.) push-sw.js: bỏ header này, dùng mặc định
 # luôn hỏi lại – service worker cần URL cố định.

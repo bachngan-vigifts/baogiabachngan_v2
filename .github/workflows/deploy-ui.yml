@@ -65,7 +65,7 @@ jobs:
       - name: Ghi số phiên bản (commit) vào giao diện
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: sed -i "s/__BUILD__/${GITHUB_SHA::7}/" trial-ui/index.html
-      # app.js?v=<commit>, import './x.js?v=<commit>'…: bản mới có URL mới, máy người dùng không dùng lẫn file JS / CSS cũ.
+      # ?v=<mã băm nội dung> (scripts/stamp-ui-version.ts): file đổi nội dung mới đổi URL; file không đổi giữ URL, trình duyệt dùng lại bản đã lưu.
       - name: Gắn phiên bản vào đường dẫn JS / CSS
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: node --experimental-strip-types scripts/stamp-ui-version.ts "${GITHUB_SHA::7}"
