@@ -623,6 +623,13 @@ table { width: 100%; border-collapse: collapse; }
 .demo-note code { background: #fff; border: 1px solid #f1d8a8; border-radius: 4px; padding: 0 4px; font-size: var(--text-small); }
 
 /* ---------- Sản phẩm ---------- */
+@media (min-width: 851px) {
+  /* Metadata must not widen initially empty selects and push the table down. */
+  #view-products .toolbar #product-brand, #view-products .toolbar #product-warehouse { width:160px;flex:0 0 160px; }
+  #view-products .toolbar #product-policy { width:240px;flex:0 0 240px; }
+  #view-products .toolbar #product-count { min-width:100px;white-space:nowrap; }
+  #view-products .toolbar .product-select-page { flex-basis:100%;min-height:24px; }
+}
 .check-col { width: 40px; }
 .check-col input, td.check-cell input { width: 18px; height: 18px; accent-color: var(--blue); }
 .prod-cell { display: flex; gap: 12px; align-items: center; min-width: 0; }
@@ -2713,3 +2720,6 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 #view-member .report-score-table :is(th,td){padding:10px 5px!important;white-space:normal}
 #view-member .report-score-table :is(th,td):first-child{width:42%}
 #view-member .report-score-table :is(th,td):last-child{width:18%;white-space:nowrap!important}
+/* Bản tính sẵn (Tổng quan, Phân tích lợi nhuận): "Số liệu lúc HH:mm" + nút Cập nhật */
+.report-cache{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 0;font-size:13px;color:var(--muted,#64748b)}
+.report-cache .btn-sm{padding:3px 10px;font-size:12px;min-height:0}

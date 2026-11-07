@@ -1,0 +1,364 @@
+{
+  "baseline": "f783021eca0a089e072dc90a2a5835b6dbcd081e",
+  "scope": "Catalogue shared-product grid and selected-product list; CRM/POS thumbnail flow independently verified live",
+  "method": {
+    "cards": 60,
+    "uniquePublicImages": 12,
+    "api": "isolated real API/PGlite fixture",
+    "storage": "GET existing public files and real transforms; no object changes",
+    "viewport": [
+      1440,
+      390
+    ],
+    "initialMeasurement": "open Products, wait 1.5s, scroll first row into view, wait images + 1.5s",
+    "network": "unthrottled; one run per case; cache conditions can differ",
+    "sizes": {
+      "list": 128,
+      "grid": 320
+    },
+    "sdk": "@supabase/supabase-js 2.117.2 getPublicUrl({transform}) parity tested"
+  },
+  "before": [
+    {
+      "width": 1440,
+      "beforeScroll": {
+        "requests": 12,
+        "assigned": 60
+      },
+      "total": 60,
+      "assigned": 60,
+      "imageRequests": 12,
+      "imageBytes": 2396574,
+      "lazy": true,
+      "async": false,
+      "dimensions": true,
+      "metrics": {
+        "lcp": 572,
+        "cls": 0.0024086539713541666
+      },
+      "errors": [],
+      "statuses": [
+        200
+      ],
+      "kinds": [
+        "original-proxy"
+      ]
+    },
+    {
+      "width": 390,
+      "beforeScroll": {
+        "requests": 7,
+        "assigned": 60
+      },
+      "total": 60,
+      "assigned": 60,
+      "imageRequests": 10,
+      "imageBytes": 1905571,
+      "lazy": true,
+      "async": false,
+      "dimensions": true,
+      "metrics": {
+        "lcp": 376,
+        "cls": 0.17251953012820512
+      },
+      "errors": [],
+      "statuses": [
+        200
+      ],
+      "kinds": [
+        "original-proxy"
+      ]
+    }
+  ],
+  "after": [
+    {
+      "width": 1440,
+      "beforeScroll": {
+        "requests": 8,
+        "assigned": 10,
+        "pictureHeight": 174
+      },
+      "total": 60,
+      "assigned": 10,
+      "imageRequests": 8,
+      "imageBytes": 43692,
+      "lazy": true,
+      "async": true,
+      "dimensions": true,
+      "metrics": {
+        "lcp": 716,
+        "cls": 0.0024086539713541666,
+        "shifts": [
+          {
+            "value": 0.0024086539713541666,
+            "sources": [
+              {
+                "node": "NAV",
+                "previous": {
+                  "x": 21,
+                  "y": 144,
+                  "width": 180,
+                  "height": 228,
+                  "top": 144,
+                  "right": 201,
+                  "bottom": 372,
+                  "left": 21
+                },
+                "current": {
+                  "x": 21,
+                  "y": 149,
+                  "width": 180,
+                  "height": 228,
+                  "top": 149,
+                  "right": 201,
+                  "bottom": 377,
+                  "left": 21
+                }
+              },
+              {
+                "node": "head-buttons",
+                "previous": {
+                  "x": 853.34375,
+                  "y": 110,
+                  "width": 554.65625,
+                  "height": 38,
+                  "top": 110,
+                  "right": 1408,
+                  "bottom": 148,
+                  "left": 853.34375
+                },
+                "current": {
+                  "x": 833.078125,
+                  "y": 110,
+                  "width": 574.921875,
+                  "height": 38,
+                  "top": 110,
+                  "right": 1408,
+                  "bottom": 148,
+                  "left": 833.078125
+                }
+              },
+              {
+                "node": "field",
+                "previous": {
+                  "x": 1140,
+                  "y": 827.375,
+                  "width": 248,
+                  "height": 55,
+                  "top": 827.375,
+                  "right": 1388,
+                  "bottom": 882.375,
+                  "left": 1140
+                },
+                "current": {
+                  "x": 1140,
+                  "y": 843.375,
+                  "width": 248,
+                  "height": 57,
+                  "top": 843.375,
+                  "right": 1388,
+                  "bottom": 900.375,
+                  "left": 1140
+                }
+              },
+              {
+                "node": "field",
+                "previous": {
+                  "x": 1140,
+                  "y": 756.375,
+                  "width": 248,
+                  "height": 55,
+                  "top": 756.375,
+                  "right": 1388,
+                  "bottom": 811.375,
+                  "left": 1140
+                },
+                "current": {
+                  "x": 1140,
+                  "y": 770.375,
+                  "width": 248,
+                  "height": 57,
+                  "top": 770.375,
+                  "right": 1388,
+                  "bottom": 827.375,
+                  "left": 1140
+                }
+              },
+              {
+                "node": "field",
+                "previous": {
+                  "x": 1140,
+                  "y": 655.6875,
+                  "width": 248,
+                  "height": 55,
+                  "top": 655.6875,
+                  "right": 1388,
+                  "bottom": 710.6875,
+                  "left": 1140
+                },
+                "current": {
+                  "x": 1140,
+                  "y": 667.6875,
+                  "width": 248,
+                  "height": 57,
+                  "top": 667.6875,
+                  "right": 1388,
+                  "bottom": 724.6875,
+                  "left": 1140
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "errors": [],
+      "statuses": [
+        200
+      ],
+      "kinds": [
+        "transform"
+      ]
+    },
+    {
+      "width": 390,
+      "beforeScroll": {
+        "requests": 0,
+        "assigned": 0,
+        "pictureHeight": 135
+      },
+      "total": 60,
+      "assigned": 6,
+      "imageRequests": 5,
+      "imageBytes": 30462,
+      "lazy": true,
+      "async": true,
+      "dimensions": true,
+      "metrics": {
+        "lcp": 444,
+        "cls": 0.17251953012820512,
+        "shifts": [
+          {
+            "value": 0.17251953012820512,
+            "sources": [
+              {
+                "node": "editor-layout",
+                "previous": {
+                  "x": 16,
+                  "y": 347.6875,
+                  "width": 358,
+                  "height": 652.3125,
+                  "top": 347.6875,
+                  "right": 374,
+                  "bottom": 1000,
+                  "left": 16
+                },
+                "current": {
+                  "x": 16,
+                  "y": 368.375,
+                  "width": 358,
+                  "height": 631.625,
+                  "top": 368.375,
+                  "right": 374,
+                  "bottom": 1000,
+                  "left": 16
+                }
+              },
+              {
+                "node": "head-buttons",
+                "previous": {
+                  "x": 16,
+                  "y": 242.6875,
+                  "width": 358,
+                  "height": 80,
+                  "top": 242.6875,
+                  "right": 374,
+                  "bottom": 322.6875,
+                  "left": 16
+                },
+                "current": {
+                  "x": 16,
+                  "y": 263.375,
+                  "width": 358,
+                  "height": 80,
+                  "top": 263.375,
+                  "right": 374,
+                  "bottom": 343.375,
+                  "left": 16
+                }
+              },
+              {
+                "node": "top-actions",
+                "previous": {
+                  "x": 172.53125,
+                  "y": 83,
+                  "width": 201.46875,
+                  "height": 36,
+                  "top": 83,
+                  "right": 374,
+                  "bottom": 119,
+                  "left": 172.53125
+                },
+                "current": {
+                  "x": 163.28125,
+                  "y": 83,
+                  "width": 210.71875,
+                  "height": 36,
+                  "top": 83,
+                  "right": 374,
+                  "bottom": 119,
+                  "left": 163.28125
+                }
+              },
+              {
+                "node": "draft-mini",
+                "previous": {
+                  "x": 16,
+                  "y": 989.703125,
+                  "width": 358,
+                  "height": 10.296875,
+                  "top": 989.703125,
+                  "right": 374,
+                  "bottom": 1000,
+                  "left": 16
+                },
+                "current": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 0,
+                  "height": 0,
+                  "top": 0,
+                  "right": 0,
+                  "bottom": 0,
+                  "left": 0
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "errors": [],
+      "statuses": [
+        200
+      ],
+      "kinds": [
+        "transform"
+      ]
+    }
+  ],
+  "verified": [
+    "list/grid requests use real render/image/public/product-images and return 200",
+    "no original-file/proxy requests during thumbnail phase",
+    "offscreen src deferred; final image loads after scrolling",
+    "picture wrapper height unchanged before/after lazy load",
+    "selected-product mini image uses width=128",
+    "detail/edit image keeps original source",
+    "existing shared-library, editor PDF/PPTX and feedback browser regressions pass"
+  ],
+  "limits": [
+    "Not real-user p95 and not comparable with gateway origin time.",
+    "LCP is initial Catalogue shell navigation; product view is opened by user interaction. Do not claim image LCP improvement from these values.",
+    "Mobile CLS remains from initial editor/header text layout, confirmed by PerformanceObserver sources; added grid shift was fixed by reserving wrapper height.",
+    "Non-public/signed/external/data source behavior is unchanged; transforms only existing supported public product-images.",
+    "Transform outage retains existing original-image fallback; originals may be requested intentionally by details/exports."
+  ]
+}

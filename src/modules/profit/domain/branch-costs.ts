@@ -5,6 +5,7 @@
  *      · trả lương / thưởng / phụ cấp → đã ở bảng lương  · phí GHN / ship / giao hàng → có thể trùng phí GHN của đơn
  *      · trả NCC / nhập hàng → đã ở giá vốn  · hoàn tiền khách → đã trừ doanh thu
  *    Các phiếu này KHÔNG tính, liệt kê "cần xác nhận" (từ khoá là GIẢ ĐỊNH, Manager xem lại).
+ *  - Chi vặt ghi "nộp quỹ / nộp két / nộp tiền về công ty / ngân hàng" (phiếu cũ trước khi có loại Nộp quỹ) → chuyển tiền, không tính.
  *  - Tạm ứng → trừ lương sau, không phải chi phí · Nộp két / rút két → chuyển tiền · Hoàn tiền khách → đã trừ doanh thu qua phiếu trả
  *  - Thu khác → không phải doanh thu bán hàng, không cộng · Điều chỉnh két (chênh lệch) → chưa tính, cần Manager xác nhận.
  */
@@ -23,6 +24,9 @@ export const CASH_CLASS_LABEL: Record<CashClass, { label: string; counted: boole
 };
 const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
 const RULES: [CashClass, RegExp][] = [
+  // Phiếu cũ lập bằng "chi vặt" nhưng thực chất là nộp tiền két về công ty / ngân hàng (trước khi có loại "Nộp quỹ"):
+  // chuyển tiền, không phải chi phí – xét trước các từ khoá khác ("nộp quỹ lương" vẫn là nộp quỹ).
+  ['transfer', /\b(nop (quy|ket)|chuyen quy|nop (tien )?(ve )?(cong ty|van phong|ke toan|ngan hang|doanh thu|tien ban hang|tien hang ngay|tien mat ve))\b/],
   ['payroll', /\b(luong|thuong|phu cap|bhxh|com xang)\b/],
   ['carrier', /\b(ghn|ship|giao hang|van chuyen|cuoc xe)\b/],
   ['supplier', /\b(ncc|nha cung cap|nhap hang|tra hang ncc)\b/],

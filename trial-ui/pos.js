@@ -1,3 +1,4 @@
+import {setProductThumbnail,suspendProductThumbnail} from './product-images.js';
 import {createPosOrderBoardCache} from './pos-order-board-cache.js';
 import { createPosStockCache } from './pos-stock-cache.js';
 import { posCatalogProductVisible } from './pos-catalog-brand.js';
@@ -1468,6 +1469,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   }
   function renderProducts() {
     if (!nodes.grid) return;
+    // Reuse decoded images across stock refresh/filter redraws of the same SKU.
+    const images = new Map([...nodes.grid.querySelectorAll('.pos-product img')].map(img => [img.closest('[data-sku]').dataset.sku, img]));
+    for (const image of images.values()) suspendProductThumbnail(image);
     nodes.grid.replaceChildren();
     for (const p of st.products.filter(p => st.productFilter === 'all' || !p.loading && Number.isFinite(p.available) && p.stockStatus!=='unopened' && (st.productFilter === 'available' && p.available > 0 || st.productFilter === 'low' && p.available > 0 && p.available < 5 || st.productFilter === 'out' && p.available <= 0))) {
       const tile = el('article', 'pos-product-tile');
@@ -1480,10 +1484,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       b.dataset.sku = p.sku;
       b.setAttribute('aria-pressed', String(st.cart.some(x => x.sku === p.sku)));
       if (p.imageUrl && /^https:\/\//.test(p.imageUrl)) {
-        const im = el('img');
-        im.src = p.imageUrl;
+        const old = images.get(p.sku);
+        const im = setProductThumbnail(old?.dataset.productImageSource === p.imageUrl ? old : el('img'), p.imageUrl, 'grid');
         im.alt = p.name;
-        im.loading = 'lazy';
         b.append(im);
       } else b.append(el('span', 'pos-image-empty', 'Sản phẩm'));
       const priceStock = el('span', 'pos-product-price-stock');
@@ -1939,8 +1942,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     } else go('#/cash');
   }
   /** Báo cáo ca: lọc theo nhân viên, ngày, trạng thái; ca đang mở màu xanh, đã kết màu xám. */
-  async function history() {
-    const m = modal('Báo cáo ca'), shifts = st.options.shifts || [];
+  async function history(shifts = st.options.shifts || [], { standalone = false } = {}) {
+    const m = modal('Báo cáo ca');
     const day = iso => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
     const staff = el('select'); staff.setAttribute('aria-label', 'Nhân viên');
     for (const [v, t] of [['', 'Tất cả nhân viên'], ...[...new Set(shifts.map(s => s.memberName || ''))].filter(Boolean).sort().map(n => [n, n])]) { const o = el('option', '', t); o.value = v; staff.append(o); }
@@ -1962,6 +1965,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
           detail.close();
           if (target === 'cash') go('#/cash');
           else if (target === 'orders') go('#/orders');
+          else if (standalone) go('#/pos');
           else if (target === 'returns') openReturns();
           else if (target === 'flows') run(flowOrders);
           else if (target === 'cod') run(() => codList());
@@ -2493,5 +2497,16 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   catalogMedia?.addEventListener?.('change', () => {
     if (root.isConnected && !root.hidden && st.register) run(() => search(false));
   });
-  return { load, dirty };
+  let reportsLoading = false;
+  async function showShiftReports() {
+    if (reportsLoading) return;
+    reportsLoading = true;
+    try {
+      await run(async () => {
+        const options = await api('/pos/options?stock=0');
+        await history(options.shifts || [], { standalone: true });
+      });
+    } finally { reportsLoading = false; }
+  }
+  return { load, dirty, showShiftReports };
 }

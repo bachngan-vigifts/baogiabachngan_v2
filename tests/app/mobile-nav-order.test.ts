@@ -5,11 +5,11 @@ const {orderedMobileNavKeys}=await import(new URL('../../trial-ui/mobile-design.
 const sidebar=readFileSync(new URL('../../trial-ui/index.html',import.meta.url),'utf8').split('<aside')[1]!.split('</aside>')[0]!;
 const keys=[...sidebar.matchAll(/data-nav="([^"]+)"/g)].map(m=>m[1]!);
 const expected=[
- 'pos','quotes','orders','contracts','receivables','order-products','deliveries',
+ 'pos','quotes','orders','contracts','products','receivables','order-products','deliveries',
  'cashbook','cash',
  'customers','care','stock-requests',
  'tasks','dashboard','profit','flow','store-reports','weekly-reports','feedback',
- 'kho','products','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving',
+ 'kho','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving',
  'early-requests','purchases','suppliers',
  'staff','payroll','permissions',
 ];
@@ -18,9 +18,9 @@ test('mobile footer matches V0 functional order, retaining all sidebar destinati
  assert.deepEqual(new Set(orderedMobileNavKeys(keys)),new Set(keys));
  assert.equal(orderedMobileNavKeys(keys).length,keys.length);
 });
-test('sidebar order does not reorder mobile groups or the five original selling entries',()=>{
+test('sidebar order does not reorder mobile groups; products follows contracts',()=>{
  assert.deepEqual(orderedMobileNavKeys([...keys].reverse()),expected);
- assert.deepEqual(orderedMobileNavKeys(keys).slice(0,5),['pos','quotes','orders','contracts','receivables']);
+ assert.deepEqual(orderedMobileNavKeys(keys).slice(0,6),['pos','quotes','orders','contracts','products','receivables']);
 });
 test('employees and accountants see only allowed links in the same V0 order',()=>{
  for(const visible of [[],['tasks','receivables','purchases','cashbook','cash','customers','suppliers'],['kho','receiving','stocktake','stock-lookup'],['orders','customers','care','quotes']]){
@@ -35,9 +35,20 @@ test('menu chân trang gom theo chức năng: đủ trang, đúng thứ tự, ch
  const groups=groupMobileNav(keys);
  assert.deepEqual(groups.map((g:any)=>g.label),['Bán hàng','Tiền','Khách hàng','Công việc','Kho','Mua hàng','Quản trị']);
  assert.deepEqual(groups.flatMap((g:any)=>g.items),expected,'gom lại vẫn đủ mọi trang, theo thứ tự cũ');
- assert.deepEqual(groups[0].items,['pos','quotes','orders','contracts','receivables','order-products','deliveries']);
+ assert.deepEqual(groups[0].items,['pos','quotes','orders','contracts','products','receivables','order-products','deliveries']);
  const sale=groupMobileNav(['orders','customers','care','quotes','tasks']);
  assert.deepEqual(sale.map((g:any)=>[g.key,g.items]),[['sell',['quotes','orders']],['customers',['customers','care']],['work',['tasks']]]);
  assert.deepEqual(groupMobileNav(['future','orders']).map((g:any)=>[g.label,g.items]),[['Bán hàng',['orders']],['Khác',['future']]]);
  assert.equal(new Set(MOBILE_NAV_GROUPS.flatMap((g:any)=>g.keys)).size,MOBILE_NAV_GROUPS.flatMap((g:any)=>g.keys).length,'mỗi trang thuộc đúng một nhóm');
+});
+
+const {withMobileNavShortcuts}=await import(new URL('../../trial-ui/mobile-design.js',import.meta.url).href);
+test('shift reports shortcut inherits POS access and belongs to Work without replacing POS',()=>{
+ const allowed=withMobileNavShortcuts(['tasks','pos','orders']);
+ const groups=groupMobileNav(allowed);
+ assert.deepEqual(groups.find((g:any)=>g.key==='work')?.items,['tasks','shift-reports']);
+ assert.deepEqual(groups.find((g:any)=>g.key==='sell')?.items,['pos','orders']);
+ assert.deepEqual(withMobileNavShortcuts(['tasks','orders']),['tasks','orders']);
+ assert.deepEqual(withMobileNavShortcuts([]),[]);
+ assert.equal(withMobileNavShortcuts(allowed).filter((k:string)=>k==='shift-reports').length,1);
 });

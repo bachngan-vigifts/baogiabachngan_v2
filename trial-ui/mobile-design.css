@@ -91,6 +91,14 @@
  .crm-card-note { grid-column:1/-1;font-size:12px!important; }
  .crm-list-card .crm-card-actions { grid-column:2;grid-row:4;justify-self:end;display:flex;min-height:0!important; }
  .crm-card-extra { display:none!important; }
+ /* Order actions must not determine the width of the amount column. */
+ #orders-list .crm-list-card { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+ #orders-list .crm-card-amount, #orders-list .crm-card-substatus { white-space:normal;overflow-wrap:anywhere; }
+ #orders-list .crm-card-status .pill, #orders-list .crm-card-substatus .pill { white-space:normal; }
+ #orders-list .crm-list-card .crm-card-actions { grid-column:1/-1;grid-row:6;justify-self:stretch;justify-content:flex-start;flex-wrap:wrap;gap:6px;white-space:normal; }
+ #orders-list .crm-card-actions > [data-order-sapo] { display:inline-flex;min-width:0;max-width:100%; }
+ #orders-list .crm-card-actions > [data-order-sapo]:empty { display:none; }
+ #orders-list .crm-card-actions .btn { max-width:100%;margin-left:0; }
  .crm-list-card .mobile-action-trigger { min-height:44px;min-width:44px;width:44px!important;padding:2px; }
  .crm-designed-page .table-wrap { overflow:visible; }
  .crm-designed-page .data-table { width:100%;min-width:0; }
@@ -228,10 +236,10 @@
  .crm-nav-sheet .crm-sheet-head { display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px; }
  .crm-nav-sheet .crm-sheet-head h2 { margin:0;font-size:17px; }
  .crm-nav-sheet-list { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:4px 12px 8px; }
- .crm-nav-sheet-list a { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:76px;padding:10px 6px;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);font:500 12.5px/1.3 var(--font);text-align:center;text-decoration:none; }
- .crm-nav-sheet-list a svg { width:22px;height:22px;color:var(--brand-navy); }
- .crm-nav-sheet-list a[aria-current] { border-color:var(--green);color:var(--green);background:#f0fbf4; }
- .crm-nav-sheet-list a[aria-current] svg { color:var(--green); }
+ .crm-nav-sheet-list :is(a,button) { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:76px;padding:10px 6px;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);font:500 12.5px/1.3 var(--font);text-align:center;text-decoration:none; }
+ .crm-nav-sheet-list :is(a,button) svg { width:22px;height:22px;color:var(--brand-navy); }
+ .crm-nav-sheet-list :is(a,button)[aria-current] { border-color:var(--green);color:var(--green);background:#f0fbf4; }
+ .crm-nav-sheet-list :is(a,button)[aria-current] svg { color:var(--green); }
  .crm-nav-symbol { font:20px/20px system-ui; }
  .crm-home-row { display:none!important; }
  .crm-more-sheet { padding:0;border:0;border-radius:22px 22px 0 0;margin:auto auto 0;width:min(100%,540px);max-height:86dvh;overflow:auto; }
@@ -397,8 +405,8 @@
  .crm-mobile-nav:not([hidden]) :is(a,button) svg { color:var(--g, var(--muted)); }
  .crm-mobile-nav:not([hidden]) [aria-current] { color:var(--g, var(--green));border-top-color:var(--g, var(--green));background:var(--g-50, transparent); }
  .crm-nav-sheet .crm-sheet-head h2 { color:var(--g, var(--ink)); }
- .crm-nav-sheet-list a svg,.crm-nav-sheet-list a .crm-nav-symbol { box-sizing:content-box;width:22px;height:22px;padding:9px;border-radius:12px;background:var(--g-50, var(--surface-2));color:var(--g, var(--brand-navy)); }
- .crm-nav-sheet-list a[aria-current] { border-color:var(--g, var(--green));color:var(--g, var(--green));background:var(--g-50, #f0fbf4); }
- .crm-nav-sheet-list a[aria-current] svg { background:var(--g, var(--green));color:#fff; }
- .crm-nav-sheet-list a:active { transform:scale(.97); }
+ .crm-nav-sheet-list :is(a,button) svg,.crm-nav-sheet-list :is(a,button) .crm-nav-symbol { box-sizing:content-box;width:22px;height:22px;padding:9px;border-radius:12px;background:var(--g-50, var(--surface-2));color:var(--g, var(--brand-navy)); }
+ .crm-nav-sheet-list :is(a,button)[aria-current] { border-color:var(--g, var(--green));color:var(--g, var(--green));background:var(--g-50, #f0fbf4); }
+ .crm-nav-sheet-list :is(a,button)[aria-current] svg { background:var(--g, var(--green));color:#fff; }
+ .crm-nav-sheet-list :is(a,button):active { transform:scale(.97); }
 }

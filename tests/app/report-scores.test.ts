@@ -19,7 +19,8 @@ async function setup(t:TestContext,at='2026-12-10T09:00:00+07:00'){
  const login=async(email:string)=>(await f.call('/login','','POST',{email,password:PASSWORD})).cookie;
  const mgr=await login('mgr@x.vn'),emp=await login('emp@x.vn'),admin=await login('new@x.vn'),accounting=await login('old@x.vn');
  const salary=async(id='emp',extra={})=>ok(await f.call('/hr/members/'+id+'/salary',mgr,'PUT',{effectiveMonth:'2026-10',payrollGroup:'sale',baseSalary:5_000_000,responsibilityMode:'fixed',responsibility:1_000_000,kpiEnabled:false,contractBonusEnabled:false,...extra}));
- const scores=(who=mgr,q='')=>f.call('/dashboard/report-scores?from=2026-11&to=2026-11'+q,who);
+ // refresh=1: các bước đọc lại ngay sau khi sửa báo cáo / chốt lương (bỏ bản tính sẵn 30 phút).
+ const scores=(who=mgr,q='')=>f.call('/dashboard/report-scores?from=2026-11&to=2026-11&refresh=1'+q,who);
  const overview=(who=mgr)=>f.call('/members/emp/overview?month=2026-11',who);
  return {...f,mgr,emp,admin,accounting,salary,scores,overview};
 }

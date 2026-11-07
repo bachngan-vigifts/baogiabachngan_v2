@@ -13,6 +13,12 @@ test('domain: chỉ chi vặt hoạt động là chi phí; tạm ứng / nộp k
   assert.equal(classifyCashEntry({ kind: 'petty_expense', reason: 'Trả NCC tiền hàng' }), 'supplier');
   assert.equal(classifyCashEntry({ kind: 'advance', reason: 'Ứng lương' }), 'advance');
   assert.equal(classifyCashEntry({ kind: 'cash_out', reason: 'Nộp két' }), 'transfer');
+  // Phiếu cũ lập bằng chi vặt nhưng là nộp tiền về công ty: chuyển tiền, không phải chi phí (không làm âm lợi nhuận chi nhánh).
+  for (const reason of ['Tên phiếu: Nộp quỹ\n\nNộp tiền bán hàng ngày 5/11', 'Tên phiếu: Chi khác\n\nNộp tiền về công ty', 'nop quy luong thang 10', 'Nộp két cuối ca',
+    'Nộp ngân hàng', 'Nộp tiền mặt về kế toán', 'Nộp doanh thu tuần 44', 'Chuyển quỹ về văn phòng'])
+    assert.equal(classifyCashEntry({ kind: 'petty_expense', reason }), 'transfer', reason);
+  for (const reason of ['Nộp phạt vi phạm giao thông', 'Nộp tiền điện tháng 10', 'Tên phiếu: Phí gửi xe\n\nNộp phí gửi xe'])
+    assert.equal(classifyCashEntry({ kind: 'petty_expense', reason }), 'operating', reason);
   assert.equal(classifyCashEntry({ kind: 'customer_refund', reason: 'x' }), 'refund');
   assert.equal(classifyCashEntry({ kind: 'other_income', reason: 'x' }), 'other_income');
   assert.equal(classifyCashEntry({ kind: 'adjustment', reason: 'x' }), 'adjustment');
@@ -45,3 +51,34 @@ test('API: chi vặt hoạt động trừ vào chi nhánh; lương NVBH chia the
   assert.equal(filtered.branchCosts.company, null, 'lọc chi nhánh: không hiện số toàn công ty');
   assert.equal(filtered.branchCosts.rows.length, 1);
 });
+
+test('Manager sửa loại phiếu két: thắng phân loại tự động, đổi chi phí chi nhánh, bỏ thì quay về tự động; chỉ Manager', async () => {
+  const f = await setup();
+  await f.open();
+  const entry = (kind: string, reason: string, amount: number) => f.call('/cash/entries', f.emp, 'POST', { key: crypto.randomUUID(), kind, reason, amount });
+  assert.equal((await entry('petty_expense', 'Trả lương thời vụ', 300)).status, 201);
+  assert.equal((await entry('petty_expense', 'Mua văn phòng phẩm', 100)).status, 201);
+  const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10), q = `/profit?from=${today}&to=${today}`;
+  const petty = (d: any) => d.branchCosts.rows.reduce((n: number, r: any) => n + r.petty, 0);
+  const before = ok(await f.call(q, f.mgr));
+  assert.equal(petty(before), 100, 'tự động: chỉ chi vặt hoạt động');
+  assert.equal(before.cache.hit, false);
+  // Xem lại trong 30 phút: lấy bản tính sẵn (mọi Manager dùng chung); sửa loại phiếu bên dưới phải bỏ bản này.
+  const again = ok(await f.call(q, f.mgr));
+  assert.equal(again.cache.hit, true); assert.equal(again.cache.computedAt, before.cache.computedAt); assert.equal(petty(again), 100);
+  assert.equal((await f.call(q, f.emp)).status, 403, 'bản tính sẵn không mở quyền cho nhân viên');
+  const item = before.branchCosts.review.find((r: any) => r.amount === 300);
+  assert.deepEqual([item.cls, item.auto, item.manual], ['payroll', 'payroll', false]);
+  assert.ok(before.branchCosts.classOptions.some((o: any) => o.cls === 'operating' && o.counted));
+  assert.equal((await f.call(`/profit/cash-classes/${item.id}`, f.emp, 'PUT', { cls: 'operating' })).status, 403);
+  assert.equal((await f.call(`/profit/cash-classes/${item.id}`, f.mgr, 'PUT', { cls: 'xyz' })).status, 400);
+  assert.equal((await f.call('/profit/cash-classes/khong-co', f.mgr, 'PUT', { cls: 'operating' })).status, 404);
+  ok(await f.call(`/profit/cash-classes/${item.id}`, f.mgr, 'PUT', { cls: 'operating', note: 'Thực ra là tiền thuê bốc xếp' }));
+  const after = ok(await f.call(q, f.mgr));
+  assert.equal(after.cache.hit, false, 'sửa loại phiếu két bỏ bản tính sẵn');
+  assert.equal(petty(after), 400, 'Manager xác nhận là chi phí hoạt động → tính vào chi nhánh');
+  assert.deepEqual(['cls', 'auto', 'manual'].map(k => after.branchCosts.review.find((r: any) => r.id === item.id)[k]), ['operating', 'payroll', true], 'vẫn hiện trong danh sách để xem lại');
+  ok(await f.call(`/profit/cash-classes/${item.id}`, f.mgr, 'PUT', { cls: '' }));
+  assert.equal(petty(ok(await f.call(q, f.mgr))), 100, 'bỏ → quay về tự phân loại');
+});
+

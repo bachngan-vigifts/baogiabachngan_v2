@@ -49,7 +49,14 @@ export function registerCatalogueLibrary(router:Router<StaffEnv>){
    const inserted=await tx.insert(lib).values(unique.map(i=>({id:i.key,sourceKey:i.key,...catalogueFields(i.p),createdBy:who,updatedBy:who,createdAt:now,updatedAt:now}))).onConflictDoNothing().returning();
    if(inserted.length)await tx.insert(auditLogs).values(inserted.map(r=>({id:crypto.randomUUID(),actorId:who,module:'catalog',action:'catalogue-library-create',entityType:'catalogue-library',entityId:r.id,data:JSON.stringify({product:JSON.parse(r.data)}),createdAt:now})));
    return tx.select().from(lib).where(inArray(lib.sourceKey,unique.map(i=>i.key)));
-  });const byKey=new Map(saved.map(r=>[r.sourceKey,r]));return json({products:items.flatMap(i=>{const row=byKey.get(i.key)!;if(row.deletedAt){errors.push({clientId:i.clientId,error:'Mã đã xoá khỏi thư viện; mở mục Đã xoá để khôi phục.'});return[];}return[{clientId:i.clientId,...catalogueDto(row)}];}),errors});
+  });const byKey=new Map(saved.map(r=>[r.sourceKey,r]));return json({products:items.flatMap(i=>{const row=byKey.get(i.key)!;if(row.deletedAt){errors.push({clientId:i.clientId,error:'Mã đã xoá khỏi thư viện; mở mục Đã xoá để khôi phục.'});return[];}const dto=catalogueDto(row),old=dto.product;
+   const differs=old.priceOnRequest!==i.p.priceOnRequest||(!i.p.priceOnRequest&&old.regular!==i.p.regular);
+   return[{clientId:i.clientId,...dto,...(differs?{priceConflict:{incoming:{regular:i.p.regular,priceOnRequest:i.p.priceOnRequest,fromPrice:i.p.fromPrice}}}:{})}];}),errors});
+ },'business');
+ router.get('/catalogue-library/:id',async c=>{
+  if(!/^[a-f0-9]{64}$/.test(c.params.id!))throw new AppError(400,'Mã sản phẩm chung chưa hợp lệ.');
+  const [row]=await c.env.db.select().from(lib).where(and(eq(lib.id,c.params.id!),isNull(lib.deletedAt)));
+  if(!row)throw new AppError(404,'Sản phẩm không còn trong thư viện đang dùng.');return json(catalogueDto(row));
  },'business');
  router.put('/catalogue-library/:id',async c=>{
   const b=await readJson(c.req,18_000),p=clean(b.product),who=actor(c).id,key=typeof b.clientKey==='string'?b.clientKey:'';

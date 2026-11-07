@@ -1,3 +1,4 @@
+import {productThumbnailUrl,noteThumbnailFailure} from './product-images.js';
 import {initOrderProducts} from './order-products.js';
 import { createDeliveryCalendar, renderDeliveryProducts } from './delivery-calendar.js';
 import {initCustomerCenter} from './customer-center.js';
@@ -155,14 +156,17 @@ const PLACEHOLDER = '<svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z M4 15l4-4 4
 /** Ảnh được phép lưu trong báo giá (như máy chủ kiểm tra): https hoặc ảnh JPEG/PNG/WebP nhúng. */
 const savableImage = v => /^https:\/\//i.test(v || '') || /^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(v || '');
 // Chỉ nhận ảnh https:// hoặc data:image (như trang khách) – ảnh từ Sapo / file nhập có thể là URL bất kỳ.
-const imgTag = (url, cls = 'thumb') => /^(https:\/\/|data:image\/)/i.test(url || '')
-  ? `<img class="${cls}" src="${esc(displayImage(url))}" data-fallback="${esc(fallbackImage(url))}" alt="" loading="lazy" referrerpolicy="no-referrer">`
-  : `<span class="${cls}">${PLACEHOLDER}</span>`;
+const imgTag = (url, cls = 'thumb') => {
+  if (!/^(https:\/\/|data:image\/)/i.test(url || '')) return `<span class="${cls}">${PLACEHOLDER}</span>`;
+  const original = displayImage(url), source = cls.includes('big') ? original : productThumbnailUrl(original);
+  const fallback = source !== original ? original : fallbackImage(url);
+  return `<img class="${cls}" src="${esc(source)}" data-fallback="${esc(fallback)}" alt="" loading="lazy" decoding="async" ${cls.includes('big') ? '' : 'width="64" height="64"'} referrerpolicy="no-referrer">`;
+};
 // Ảnh lỗi: thử nguồn dự phòng một lần, sau đó thay bằng biểu tượng.
 document.addEventListener('error', e => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement) || !img.classList.contains('thumb')) return;
-  if (img.dataset.fallback) { img.src = img.dataset.fallback; img.dataset.fallback = ''; return; }
+  if (img.dataset.fallback) { noteThumbnailFailure(img.currentSrc || img.src); img.src = img.dataset.fallback; img.dataset.fallback = ''; return; }
   const span = document.createElement('span'); span.className = img.className + ' broken'; span.title = 'Không tải được ảnh'; span.innerHTML = PLACEHOLDER;
   img.replaceWith(span);
 }, true);
@@ -372,17 +376,17 @@ async function apiRequest(path, method = 'GET', body) {
   let res;
   // Trang đang mở tải trước; số đếm menu, chuông, nhịp kiểm tra… chờ một nhịp (request-priority.js).
   // Máy chủ cạnh CSDL (mặc định bật, api-region.js): thêm header x-region; lỗi là tắt và giữ tắt trên máy này.
-  let sentAt = 0;
+  let sentAt = 0, sentWall = 0;
   // Đo tốc độ: từng lần gửi thật (thử lại khi quá giờ / 502–504, chuyển máy chủ dự phòng) – để không gộp chúng vào "mạng".
   const attempts = [];
-  const send = (regionHeaders, readPolicy) => requestPriority.run(isBackgroundRequest(path, method), () => { if (!sentAt) sentAt = performance.now(); const region = !!regionHeaders?.['x-region']; return apiFetch(API + path, { method, headers: { ...headers, ...regionHeaders }, body: body === undefined ? undefined : JSON.stringify(body) }, { ...readPolicy, onAttempt: a => attempts.push({ ...a, region }) }); });
+  const send = (regionHeaders, readPolicy) => requestPriority.run(isBackgroundRequest(path, method), () => { if (!sentAt) { sentAt = performance.now(); sentWall = Date.now(); } const region = !!regionHeaders?.['x-region']; return apiFetch(API + path, { method, headers: { ...headers, ...regionHeaders }, body: body === undefined ? undefined : JSON.stringify(body) }, { ...readPolicy, onAttempt: a => attempts.push({ ...a, region }) }); });
   try { res = await requestWithRegion(regionCanary, send, {read: method === 'GET'}); }
   catch {
     throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME);
   }
   const headersAt = performance.now();
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
-  recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing'), readMs: performance.now() - headersAt, attempts }); // menu → Đo tốc độ
+  recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing'), readMs: performance.now() - headersAt, attempts, wallMs: Date.now() - sentWall }); // menu → Đo tốc độ
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
   const sameSession = requestToken === token;
   // Phản hồi thuộc phiên trước (vừa đổi tài khoản): không trả dữ liệu cho phiên mới. Mã 409 (không phải 0) để màn hình không coi là
@@ -821,9 +825,13 @@ const posLocalSearch = (q, policy) => {
 // Kiểm tra nhanh đã có danh mục chưa (không dựng cả danh sách chỉ để biết có hay không).
 posLocalSearch.ready = () => !!catalog.items;
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
+document.addEventListener('crm-open-shift-reports', () => {
+  if (!state.user || !canPage('pos')) return;
+  void posView().showShiftReports();
+});
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+const VIEWS = { 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
@@ -2613,7 +2621,7 @@ function renderProducts() {
       <td class="right num" data-label="Đang tạm giữ" title="Tổng số đang giữ trên tất cả kho; báo giá có thể chưa phân kho">${stockText(held)}</td>
       <td class="right num" data-label="Hàng đang về">${incomingCell(p)}</td>
       <td class="right num" data-label="Tồn NCC">${hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : '<span class="muted">—</span>'}</td>
-      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
+      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small mobile-desktop-only" data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
   $('#product-empty').hidden = list.length > 0;
