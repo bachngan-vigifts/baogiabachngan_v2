@@ -182,3 +182,12 @@ test('switching selling warehouses redraws quantities from the chosen stock, non
  for(const [id,qty] of [['a','2'],['b','1']]){s.label('Kho bán / kho xuất').value=id;await s.label('Kho bán / kho xuất').fire('change');assert.equal(s.label('Lấy từ kho X').value,qty);}
  s.label('Kho bán / kho xuất').value='c';await s.label('Kho bán / kho xuất').fire('change');assert.equal(s.label('Lấy từ kho X'),undefined);assert.throws(()=>s.ui.read(),/Chọn kho bán/);assert.equal(s.posts.length,0);
 });
+test('nguồn hàng UI: chỉ rà mã Minh Long / Lock&Lock; ghi chú mã bỏ qua; đơn toàn mã khác thì bỏ qua cả bước',async()=>{
+  const mixed=await setup(false,{scopeLabel:'Minh Long / Lock&Lock',skipped:[{sku:'VG1',name:'Hộp quà',unit:'cái',qty:3}]});
+  assert.match(mixed.host.textContent,/1 mã Minh Long \/ Lock&Lock · Rà số lượng/);
+  assert.match(mixed.host.textContent,/1 mã ngoài Minh Long \/ Lock&Lock không cần rà nguồn: VG1\./);
+  const none=await setup(false,{lines:[],scopeLabel:'Minh Long / Lock&Lock',skipped:[{sku:'VG1',name:'Hộp quà',unit:'cái',qty:3}]},true,'create',false);
+  assert.match(none.host.textContent,/Đơn không có mã Minh Long \/ Lock&Lock – bỏ qua bước rà nguồn hàng\./);
+  assert.equal(all(none.host).some(n=>n.attrs['aria-label']==='Kho bán / kho xuất'),false,'không bắt chọn kho');
+  assert.deepEqual(JSON.parse(JSON.stringify(none.ui.read())),{});assert.deepEqual(JSON.parse(JSON.stringify(await none.ui.prepare())),{});assert.equal(none.posts.length,0);
+});
