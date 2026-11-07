@@ -25,7 +25,7 @@ try{
   const perms=scenario==='products'?['page.order-products']:scenario==='deliveries'?['page.deliveries']:scenario==='orders'?['page.orders']:[];assert.equal((await f.call('/permissions/positions/sale',f.mgr,'PUT',{perms})).status,200);
   const context=await contextFor(f.emp,width),p=await context.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));
   const denied=async(hash)=>{await p.goto(origin+'/'+hash);await p.waitForFunction(hash=>!location.hash.startsWith(hash),hash);};
-  if(scenario==='products'){await p.goto(origin+'/#/order-products');await p.locator('#view-order-products .od-table').waitFor();assert.equal(await p.locator('#view-order-products a[href^="#/deliveries"]').count(),0);await p.screenshot({path:out+'/'+width+'-products.png'});await denied('#/deliveries');await denied('#/orders');}
+  if(scenario==='products'){await p.goto(origin+'/#/order-products');await p.locator('#view-order-products .op-table').waitFor();assert.equal(await p.locator('#view-order-products a[href^="#/deliveries"]').count(),0);await p.screenshot({path:out+'/'+width+'-products.png'});await denied('#/deliveries');await denied('#/orders');}
   else if(scenario==='deliveries'){await p.goto(origin+'/#/deliveries?view=calendar');await p.locator('#deliveries-calendar:not([aria-busy])').waitFor();await p.locator('#deliveries-calendar .dc-grid').waitFor();assert.equal(await p.locator('#view-deliveries').isVisible(),true);await p.screenshot({path:out+'/'+width+'-deliveries.png'});await denied('#/order-products');}
   else{await denied('#/order-products');await denied('#/deliveries');}
   assert.equal(await p.locator('.sidebar [data-nav="order-products"]').evaluate(n=>!n.hidden),scenario==='products');assert.equal(await p.locator('.sidebar [data-nav="deliveries"]').evaluate(n=>!n.hidden),scenario==='deliveries');
@@ -33,7 +33,7 @@ try{
  }
  await f.db.update(employees).set({positionId:'warehouse'}).where(eq(employees.id,'emp'));
  assert.equal((await f.call('/permissions/positions/warehouse',f.mgr,'PUT',{perms:['page.order-products']})).status,200);
- const wh=await contextFor(f.emp,390),wp=await wh.newPage(),whErrors=[];wp.on('pageerror',e=>whErrors.push(e.message));await wp.goto(origin+'/#/order-products');await wp.locator('#view-order-products .od-table').waitFor();assert.equal(await wp.locator('.sidebar [data-nav="order-products"]').evaluate(n=>!n.hidden),true);assert.deepEqual(whErrors,[]);await wh.close();results.push({warehouseCanBeGrantedProductPage:true,errors:whErrors});
+ const wh=await contextFor(f.emp,390),wp=await wh.newPage(),whErrors=[];wp.on('pageerror',e=>whErrors.push(e.message));await wp.goto(origin+'/#/order-products');await wp.locator('#view-order-products .op-table').waitFor();assert.equal(await wp.locator('.sidebar [data-nav="order-products"]').evaluate(n=>!n.hidden),true);assert.deepEqual(whErrors,[]);await wh.close();results.push({warehouseCanBeGrantedProductPage:true,errors:whErrors});
  assert.equal(writes.length,2);assert.ok(writes.every(w=>w.path==='/api/staff/permissions/positions/sale'&&w.method==='PUT'));
  await writeFile(out+'/results.json',JSON.stringify(results,null,2));console.log(JSON.stringify(results));
 }finally{await browser.close();await new Promise(r=>server.close(r));await f.client.close();}

@@ -102,6 +102,7 @@ export function routePermission(method: string, path: string, query: URLSearchPa
   // Review endpoints also admit Sổ quỹ viewers; handlers still require canApprove or pos.sell.
   if (is(/^\/pos\/(returns|exchanges)(\/|$)/)) return ['pos.sell', 'pos.configure', 'page.cash'];
   if (is(/^\/pos(\/|$)/)) return ['pos.sell', 'pos.configure'];
+  if (is(/^\/order-products(\/|$)/)) return ['page.order-products'];
   if (is(/^\/(quotes|quote-docs)(\/|$)/)) return ['page.quotes'];
   if (is(/^\/(orders|order-quote-candidates|payments)(\/|$)/)) return ['page.orders', 'page.contracts', 'page.receivables'];
   if (is(/^\/contracts(\/|$)/)) return ['page.contracts', 'page.orders'];

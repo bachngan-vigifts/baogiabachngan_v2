@@ -1,4 +1,5 @@
 import { ensureLineCosts } from './line-costs.ts';
+import { registerOrderProductsRoutes } from './order-products.ts';
 import { deliveryListFilters } from './delivery-list-filters.ts';
 import {previewWebSapo,createWebSapo,recordWebSapoResult} from './web-order-sapo.ts';
 import { orderExportDetails } from './order-export.ts';
@@ -448,6 +449,7 @@ quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 
 export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchaseLinks?: (db: StaffEnv['db'], member: SessionState['member'], order: { id: string; quoteId: string | null }) => Promise<{ id: string; number: string; internalNo?: string; supplierName?: string }[]> } = {}) {
   registerWebOrderEdits(router);
+  registerOrderProductsRoutes(router, orderScopeFor);
   registerCrmReturnRoutes(router, loadOrder);
   registerCashCollectionRoutes(router,loadOrder,async(db,id)=>(await receivableOf(db,[id])).get(id)?.balance||0);
   registerContractLiquidationRoutes(router,loadOrder);

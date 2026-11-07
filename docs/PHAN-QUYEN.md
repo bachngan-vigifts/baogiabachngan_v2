@@ -39,7 +39,7 @@ Trang **Quản trị › Phân quyền** (`#/permissions`, `trial-ui/permissions
 | Kế toán | Sổ thu / chi; Huỷ phiếu thu ghi nhầm; Doanh số toàn công ty | Kế toán (migration 0071) |
 | Quản trị | Quản lý phân quyền | Không ai (chỉ Manager) |
 
-**Sản phẩm theo đơn** (`page.order-products`) và **Lịch giao hàng** (`page.deliveries`) là hai dòng riêng trong nhóm **Trang được vào**. Manager có thể bật/tắt độc lập cho từng chức vụ. Quyền Sản phẩm theo đơn chỉ mở trang đó; quyền đọc/sửa đơn thật vẫn kiểm tra theo API Đơn đặt hàng. Liên kết sang Lịch giao hàng chỉ hiện khi có quyền vào lịch. Trang Sản phẩm theo đơn hiện vẫn sử dụng dữ liệu mẫu như trước.
+**Sản phẩm theo đơn** (`page.order-products`) và **Lịch giao hàng** (`page.deliveries`) là hai dòng riêng trong nhóm **Trang được vào**. Manager có thể bật/tắt độc lập cho từng chức vụ. Quyền Sản phẩm theo đơn chỉ mở trang đó; quyền đọc/sửa đơn thật vẫn kiểm tra theo API Đơn đặt hàng. Liên kết sang Lịch giao hàng chỉ hiện khi có quyền vào lịch. API Sản phẩm theo đơn dùng quyền mới và vẫn giữ phạm vi dữ liệu theo nhân viên; chỉ cấp quyền này không mở API Đơn đặt hàng hoặc quyền xếp lịch.
 
 Migration `20261107074837_order_products_page_permission.sql` chạy một lần để giữ quyền mở Sản phẩm theo đơn cho các chức vụ đang có quyền Đơn đặt hàng, bao gồm chức vụ tự tạo. Quyền Lịch giao hàng hiện có được giữ nguyên.
 
