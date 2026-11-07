@@ -2,9 +2,23 @@
  * PHÂN TÍCH LỢI NHUẬN – trang #/profit (chỉ Manager; máy chủ kiểm tra lại quyền).
  * Lợi nhuận gộp = Doanh thu thuần − Giá vốn − Chi phí trực tiếp; ghi nhận theo ngày đơn; dòng thiếu giá vốn không tính 0.
  */
+import { cacheLineHtml } from './report-cache.js';
+
 const GRAIN_LABEL = { day: 'Ngày', week: 'Tuần', month: 'Tháng', year: 'Năm' };
 const TABS = { series: 'Thời gian', branches: 'Chi nhánh', owners: 'Nhân viên', customers: 'Khách hàng', orders: 'Đơn hàng', products: 'Sản phẩm' };
 const vnToday = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+/** Presets select an actual reporting range, independently of chart grouping. */
+export function profitPeriod(grain, today = vnToday()) {
+  if (grain === 'day') return { from: today, to: today };
+  if (grain === 'week') {
+    const date = new Date(today + 'T00:00:00Z');
+    date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+    return { from: date.toISOString().slice(0, 10), to: today };
+  }
+  if (grain === 'month') return { from: today.slice(0, 8) + '01', to: today };
+  if (grain === 'year') return { from: today.slice(0, 4) + '-01-01', to: today };
+  throw new RangeError('Kỳ không hợp lệ.');
+}
 const pct = x => x === null || x === undefined ? '—' : (Math.round(x * 1000) / 10).toLocaleString('vi-VN') + '%';
 const short = v => { const a = Math.abs(v), s = v < 0 ? '−' : '';
   return a >= 1e9 ? s + (Math.round(a / 1e7) / 100).toLocaleString('vi-VN') + ' tỷ' : a >= 1e6 ? s + Math.round(a / 1e6).toLocaleString('vi-VN') + ' tr' : s + Math.round(a).toLocaleString('vi-VN'); };
@@ -15,111 +29,244 @@ const REASON = { create: 'Tạo đơn', amend: 'Sửa đơn', confirm: 'Duyệt 
 export function initProfit({ api, root, toast, esc, money }) {
   const pill = (tone, text) => `<span class="pill ${tone}">${esc(text)}</span>`;
   const when = v => new Date(v).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' });
-  const st = { costs: 'all', grain: 'month', from: vnToday().slice(0, 4) + '-01-01', to: vnToday(), branch: '', owner: '', tab: 'owners', missingOnly: false, data: null };
-  const num = v => Math.round(v).toLocaleString('vi-VN');
+  // Mặc định CHỈ giá vốn chính xác (Manager nhập / xác nhận): giá ước tính / tham chiếu tách riêng "chưa xác nhận", không cộng vào LN.
+  const st = { costs: 'confirmed', grain: 'month', from: vnToday().slice(0, 8) + '01', to: vnToday(), compare: true, branch: '', owner: '', tab: 'owners', missingOnly: false, data: null };
+  const num = v => (Math.round(v) || 0).toLocaleString('vi-VN'); // -0 → 0
   const marginCell = r => { const w = r.margin === null ? 0 : Math.max(0, Math.min(1, r.margin / 0.4)) * 80;
     return `<span class="pf-mbar" style="width:${w}px"></span> ${pct(r.margin)}`; };
   const flag = r => r.gross < 0 ? '<span class="pill danger">Lỗ</span>' : r.margin !== null && r.margin < 0.15 ? '<span class="pill warn">Biên thấp</span>' : '';
-  const miss = r => r.missingOrders ? `<span class="pill muted" title="Doanh thu thiếu giá vốn: ${esc(money(r.missingRevenue))}">${r.missingOrders} thiếu giá vốn</span>` : '';
+  const miss = r => (r.missingOrders ? `<span class="pill muted" title="Doanh thu thiếu giá vốn: ${esc(money(r.missingRevenue))}">${r.missingOrders} thiếu giá vốn</span> ` : '')
+    + (r.unconfirmedOrders ? `<span class="pill warn" title="Doanh thu dùng giá ước tính chưa xác nhận: ${esc(money(r.unconfirmedRevenue))}">${r.unconfirmedOrders} chưa xác nhận</span>` : '');
+  /** Tỉ lệ doanh thu có giá vốn chính xác của một nhóm – nhãn "Giá vốn" ở các bảng. */
+  const trust = r => { if (!r.revenue) return '—'; const p = r.revenueBy.confirmed / r.revenue;
+    return `<span class="pill ${p >= 0.95 ? 'ok' : p >= 0.7 ? 'warn' : 'muted'}">${pct(p)} chính xác</span>`; };
+  const monthEnd = ym => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
+  const delta = (cur, prev) => { if (!prev) return ''; const p = (cur - prev) / Math.abs(prev); return `<span class="${p < 0 ? 'neg' : 'pos'}">${p < 0 ? '▼' : '▲'} ${pct(Math.abs(p))}</span> so kỳ trước`; };
+  /** Presets reset to today / this week / this month / this year; inputs can select older periods. */
+  const seriesGrain = () => st.grain === 'month' ? 'day' : st.grain === 'year' ? 'month' : st.grain;
+  function setGrain(g) {
+    Object.assign(st, { grain: g }, profitPeriod(g));
+  }
 
-  async function load() {
-    root.innerHTML = '<p class="muted">Đang tính lợi nhuận…</p>';
-    const q = new URLSearchParams({ from: st.from, to: st.to, grain: st.grain, ...(st.branch ? { branch: st.branch } : {}), ...(st.owner ? { owner: st.owner } : {}), ...(st.costs === 'confirmed' ? { costs: 'confirmed' } : {}) });
-    try { st.data = await api('/profit?' + q); } catch (e) { root.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; return; }
-    render();
+  let loadRequest = 0;
+  function loadingStatus(message, error = false) {
+    if (!st.data) { root.innerHTML = `<p data-pf-status role="status" class="${error ? 'error' : 'muted'}">${esc(message)}</p>`; return; }
+    const status = root.querySelector('[data-pf-status]');
+    status.hidden = false; status.textContent = message; status.classList.toggle('error', error);
+    root.querySelector('#pf-csv').disabled = true;
+  }
+  /** `refresh`: nút "Cập nhật" – máy chủ bỏ bản tính sẵn (30 phút) và tính lại ngay. */
+  async function load(refresh = false) {
+    const request = ++loadRequest;
+    root.setAttribute('data-pf-stale', '');
+    if (st.from > st.to) {
+      root.removeAttribute('aria-busy'); loadingStatus('Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.', true); return;
+    }
+    root.setAttribute('aria-busy', 'true'); loadingStatus(refresh === true ? 'Đang tính lại lợi nhuận với dữ liệu mới nhất…' : 'Đang tính lợi nhuận theo bộ lọc…');
+    const q = new URLSearchParams({ from: st.from, to: st.to, grain: seriesGrain(), ...(st.branch ? { branch: st.branch } : {}), ...(st.owner ? { owner: st.owner } : {}),
+      ...(st.costs === 'confirmed' ? { costs: 'confirmed' } : {}), ...(st.compare ? {} : { compare: '0' }), ...(refresh === true ? { refresh: '1' } : {}) });
+    try {
+      const data = await api('/profit?' + q);
+      if (request !== loadRequest) return;
+      st.data = data; root.removeAttribute('data-pf-stale'); render();
+    } catch (e) { if (request === loadRequest) loadingStatus(e.message, true); }
+    finally { if (request === loadRequest) root.removeAttribute('aria-busy'); }
+  }
+  function periodControl() {
+    if (st.grain === 'month') return `<input type="month" id="pf-month" aria-label="Tháng" value="${esc(st.from.slice(0, 7))}" max="${esc(vnToday().slice(0, 7))}">`;
+    if (st.grain === 'year') { const y = Number(vnToday().slice(0, 4)); return `<select id="pf-year" aria-label="Năm">${[0, 1, 2, 3].map(i => `<option value="${y - i}" ${String(y - i) === st.from.slice(0, 4) ? 'selected' : ''}>Năm ${y - i}</option>`).join('')}</select>`; }
+    return `<input type="date" id="pf-from" aria-label="Từ ngày" value="${esc(st.from)}"><span class="muted">→</span><input type="date" id="pf-to" aria-label="Đến ngày" value="${esc(st.to)}">`;
   }
   function render() {
-    const d = st.data, s = d.summary, opt = (list, val, all) => `<option value="">${all}</option>` + list.map(o => `<option value="${esc(o.id)}" ${o.id === val ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
-    root.innerHTML = `<div class="page-head"><div><h1>Phân tích lợi nhuận</h1><p class="muted">Chỉ Manager · số liệu chưa VAT · LN gộp = Doanh thu thuần − Giá vốn − Chi phí trực tiếp · ghi nhận theo ngày đơn</p></div></div>
-      <div class="card pf-filters"><div class="seg" role="group" aria-label="Kỳ">${Object.entries(GRAIN_LABEL).map(([k, v]) => `<button type="button" data-grain="${k}" class="${k === st.grain ? 'on' : ''}">${v}</button>`).join('')}</div>
-        <label>Từ<input type="date" id="pf-from" value="${esc(st.from)}"></label><label>Đến<input type="date" id="pf-to" value="${esc(st.to)}"></label>
-        <label>Chi nhánh<select id="pf-branch">${opt(d.filterOptions.branches, st.branch, 'Tất cả')}</select></label>
-        <label>Nhân viên<select id="pf-owner">${opt(d.filterOptions.owners, st.owner, 'Tất cả')}</select></label>
-        <label>Giá vốn<select id="pf-costs"><option value="all" ${st.costs === 'all' ? 'selected' : ''}>Gồm ước tính / backfill</option><option value="confirmed" ${st.costs === 'confirmed' ? 'selected' : ''}>Chỉ giá vốn chính xác</option></select></label>
-        <button type="button" class="btn secondary" id="pf-csv">Xuất Excel (CSV)</button></div>
+    const d = st.data, s = d.summary, co = d.branchCosts?.company, cmp = d.compare;
+    const opt = (list, val, all, pre) => `<option value="">${pre}: ${all}</option>` + list.map(o => `<option value="${esc(o.id)}" ${o.id === val ? 'selected' : ''}>${pre}: ${esc(o.name)}</option>`).join('');
+    const net = co ? co.net : s.net, netBase = s.coveredRevenue + s.feeRevenue, unalloc = co ? co.overhead + co.saleUnallocated : null;
+    const share = k => s.revenue ? pct(s.revenueBy[k] / s.revenue) : '—';
+    root.innerHTML = `<div class="card pf-head">
+        <div class="pf-title"><h1>Phân tích lợi nhuận</h1><span class="pill info">Sau chi phí</span></div>
+        <p class="muted">Chỉ Manager · chưa VAT · ghi nhận theo ngày đơn · chi phí kỳ lương / sổ quỹ ghi nhận theo kỳ phát sinh</p>
+        ${cacheLineHtml(d.cache, 'pf-refresh', esc)}
+        <div class="pf-filters"><div class="seg" role="group" aria-label="Kỳ">${Object.entries(GRAIN_LABEL).map(([k, v]) => `<button type="button" data-grain="${k}" class="${k === st.grain ? 'on' : ''}" aria-pressed="${k === st.grain}">${v}</button>`).join('')}</div>
+          ${periodControl()}
+          <label class="pf-check-inline"><input type="checkbox" id="pf-compare" ${st.compare ? 'checked' : ''}> So với kỳ trước</label>
+          <select id="pf-branch" aria-label="Chi nhánh">${opt(d.filterOptions.branches, st.branch, 'Tất cả', 'Chi nhánh')}</select>
+          <select id="pf-owner" aria-label="Nhân viên">${opt(d.filterOptions.owners, st.owner, 'Tất cả', 'Nhân viên')}</select>
+          <select id="pf-costs" aria-label="Giá vốn"><option value="confirmed" ${st.costs === 'confirmed' ? 'selected' : ''}>Giá vốn: chỉ chính xác</option><option value="all" ${st.costs === 'all' ? 'selected' : ''}>Giá vốn: gồm ước tính</option></select>
+          <button type="button" class="btn secondary" id="pf-csv">⬇ Xuất Excel</button></div>
+        <p class="muted small">Số liệu đơn hàng: ${esc((d.from || st.from).split('-').reverse().join('/'))} – ${esc((d.to || st.to).split('-').reverse().join('/'))}</p>
+        <p data-pf-status role="status" class="muted" hidden></p></div><div class="pf-results">
+      ${warnings(d)}
       <div class="pf-kpis">
-        <div class="card"><small>Doanh thu thuần</small><b class="num">${short(s.revenue)}</b><span>${s.orders} đơn</span></div>
-        <div class="card"><small>Giá vốn hàng bán</small><b class="num">${short(s.cost)}</b><span>${s.coveredRevenue ? pct(s.cost / s.coveredRevenue) + ' doanh thu' : ''}</span></div>
-        <div class="card"><small>Chi phí trực tiếp</small><b class="num">${short(s.direct)}</b><span>in ${short(d.direct.printing)} · hoa hồng ${short(d.direct.commission)} · ship ${short(d.direct.shipping)}</span></div>
-        <div class="card"><small>Lợi nhuận gộp</small><b class="num ${s.gross < 0 ? 'neg' : ''}">${short(s.gross)}</b><span>&nbsp;</span></div>
-        <div class="card"><small>Biên LN gộp</small><b class="num">${pct(s.margin)}</b><span>trên doanh thu đủ giá vốn</span></div>
-        <div class="card"><small>LN sau chi phí</small><b class="num ${s.net < 0 ? 'neg' : ''}">${short(s.net)}</b><span>+ thu phí khách ${short(s.feeRevenue)} − GHN ${short(s.carrierFee)} − lương + thưởng Sale ${short(s.staffSalary + s.staffBonus)} · biên ${pct(s.netMargin)}</span></div>
-        <div class="card"><small>Độ tin cậy giá vốn</small><b class="num">${s.revenue ? pct(s.revenueBy.confirmed / s.revenue) : '—'}</b><span>chính xác · ${s.revenue ? pct(s.revenueBy.estimate / s.revenue) : '—'} ước tính · ${s.revenue ? pct(s.revenueBy.backfill / s.revenue) : '—'} backfill · ${s.revenue ? pct(s.revenueBy.missing / s.revenue) : '—'} thiếu</span></div></div>
-      ${s.carrierUnknownOrders ? `<div class="pf-warn" role="status">⚠ ${s.carrierUnknownOrders} đơn POS có vận đơn GHN nhưng chưa có phí GHN – chưa trừ (không coi là 0).</div>` : ''}
-      <p class="muted small">Phí quẹt thẻ / cổng thanh toán: ${esc(d.cardFees?.note || '')}</p>
-      ${staffBox(d.staff)}
-      ${companyBox(d)}
-      ${s.revenueBy.estimate > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.estimate))} doanh thu dùng <b>giá mua tham chiếu</b> (giá mua gần nhất, đơn NCC đã duyệt hoặc công thức thương hiệu). Đây chưa phải giá vốn xuất kho đã đối soát. Mở từng đơn để xem nguồn và cách tính.</span></div>` : ''}
-      ${s.revenueBy.backfill > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.backfill))} doanh thu dùng giá bổ sung, có thể gồm giá mua ghi nhận sau ngày bán; chưa đủ căn cứ coi là chính xác. Mở từng đơn để xem nguồn giá. Chọn "Chỉ giá vốn chính xác" để lọc các dòng đã xác nhận.</span></div>` : ''}
-      ${s.missingOrders ? `<div class="pf-warn" role="status">⚠ ${s.missingOrders} đơn (${esc(money(s.missingRevenue))} doanh thu) có dòng thiếu giá vốn – phần đó không tính vào lợi nhuận, không coi là 0.
-        <button type="button" class="btn ghost small" id="pf-missing">${st.missingOnly ? 'Xem tất cả đơn' : 'Xem các đơn cần bổ sung'}</button></div>` : ''}
-      <div class="pf-two"><div class="card"><h3 class="pf-h">Lợi nhuận gộp theo ${GRAIN_LABEL[st.grain].toLowerCase()}</h3>${chart(d.series)}</div>
-        <div class="card"><h3 class="pf-h">Theo chi nhánh (sau chi phí chi nhánh)</h3>${table(['Chi nhánh', '>LN đơn', '>Chi vặt', '>Lương', '>LN chi nhánh'],
-          (d.branchCosts?.rows || []).map(r => [esc(r.name), short(r.ordersNet), short(r.petty), short(r.staff), `<b class="${r.net < 0 ? 'neg' : ''}">${short(r.net)}</b>`]))}
-          <p class="muted small">Lương NVBH / CHT chia theo số ca mở ở từng quầy trong tháng trọn; chi vặt két chỉ tính phiếu "chi phí hoạt động".</p></div></div>
+        <div class="card"><small>Doanh thu thuần</small><b class="num">${short(s.revenue)}</b><span>${s.orders} đơn${st.compare && cmp ? ' · ' + delta(s.revenue, cmp.revenue) : ''}</span></div>
+        <div class="card"><small>LN gộp</small><b class="num ${s.gross < 0 ? 'neg' : ''}">${short(s.gross)}</b><span>biên ${pct(s.margin)}${st.compare && cmp && cmp.margin !== null && s.margin !== null ? ` · <span class="${s.margin < cmp.margin ? 'neg' : 'pos'}">${s.margin < cmp.margin ? '▼' : '▲'} ${(Math.abs(s.margin - cmp.margin) * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} điểm</span>` : ''}</span></div>
+        <div class="card"><small>LN sau chi phí</small><b class="num ${net < 0 ? 'neg' : ''}">${short(net)}</b><span>biên ${netBase > 0 ? pct(net / netBase) : '—'}${co ? ' · toàn công ty' : ' · theo bộ lọc'}</span></div>
+        <div class="card"><small>Chưa phân bổ</small><b class="num">${unalloc === null ? '—' : short(unalloc)}</b><span>${unalloc === null ? 'chỉ xem khi không lọc' : 'chi phí chung văn phòng + lương Sale chưa phân bổ'}</span></div>
+        <div class="card"><small>Độ tin cậy giá vốn</small><b class="num">${share('confirmed')}</b><span>chính xác · ${share('estimate')} ước tính · ${share('backfill')} backfill · ${share('missing')} thiếu</span></div></div>
+      ${co ? `<p class="pf-check ${co.reconcile.ok && co.reconcile.payrollOk ? '' : 'bad'}">${co.reconcile.ok && co.reconcile.payrollOk ? '✔ <b>Đối soát khớp:</b>' : '⚠ <b>Đối soát lệch:</b>'} Σ theo chi nhánh ${esc(short(co.reconcile.branches))} − lương Sale chưa phân bổ ${esc(short(co.saleUnallocated))} − chi phí chung ${esc(short(co.overhead))} = LN sau chi phí công ty ${esc(short(co.net))} · bảng lương ${esc(short(co.reconcile.payroll))} = Sale ${esc(short(co.reconcile.payrollParts.sale))} + quầy ${esc(short(co.reconcile.payrollParts.store))} + chung ${esc(short(co.reconcile.payrollParts.overhead))}${co.reconcile.ok && co.reconcile.payrollOk ? '' : ' – báo kỹ thuật kiểm tra'}</p>` : ''}
+      <div class="pf-two">${bridgeCard(d)}${cashCard(d)}</div>
       <div class="card"><div class="pf-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === st.tab}" class="${k === st.tab ? 'on' : ''}">${v}</button>`).join('')}</div>
-        <div id="pf-tab">${tabBody()}</div></div>`;
-    root.querySelectorAll('[data-grain]').forEach(b => b.onclick = () => { st.grain = b.dataset.grain; load(); });
-    root.querySelector('#pf-from').onchange = e => { if (e.target.value) { st.from = e.target.value; load(); } };
-    root.querySelector('#pf-to').onchange = e => { if (e.target.value) { st.to = e.target.value; load(); } };
+        <div id="pf-tab">${tabBody()}</div>
+        <p class="muted small">Thưởng / lương Sale chia về đơn theo tỉ lệ doanh thu đủ giá vốn của người đó trong tháng trọn; tổng khớp bảng lương. Bấm một nhân viên → các đơn của người đó; bấm một đơn → giá vốn từng dòng.</p></div>
+      <div class="pf-two">${costCard()}${rulesCard(d)}</div></div>`;
+    root.querySelector('#pf-refresh')?.addEventListener('click', () => load(true));
+    root.querySelectorAll('[data-grain]').forEach(b => b.onclick = () => { setGrain(b.dataset.grain); load(); });
+    root.querySelector('#pf-month')?.addEventListener('change', e => { const m = e.target.value; if (!m) return; st.from = m + '-01'; st.to = monthEnd(m) < vnToday() ? monthEnd(m) : vnToday(); load(); });
+    root.querySelector('#pf-year')?.addEventListener('change', e => { const y = e.target.value; st.from = y + '-01-01'; st.to = y + '-12-31' < vnToday() ? y + '-12-31' : vnToday(); load(); });
+    root.querySelector('#pf-from')?.addEventListener('change', e => { if (e.target.value) { st.from = e.target.value; load(); } });
+    root.querySelector('#pf-to')?.addEventListener('change', e => { if (e.target.value) { st.to = e.target.value; load(); } });
+    root.querySelector('#pf-compare').onchange = e => { st.compare = e.target.checked; load(); };
     root.querySelector('#pf-branch').onchange = e => { st.branch = e.target.value; load(); };
     root.querySelector('#pf-owner').onchange = e => { st.owner = e.target.value; load(); };
     root.querySelector('#pf-costs').onchange = e => { st.costs = e.target.value; load(); };
     root.querySelector('#pf-missing')?.addEventListener('click', () => { st.missingOnly = !st.missingOnly; st.tab = 'orders'; render(); });
+    root.querySelector('#pf-fill')?.addEventListener('click', () => reviewCosts('missing'));
+    root.querySelector('#pf-confirm')?.addEventListener('click', () => reviewCosts('unconfirmed'));
+    root.querySelectorAll('[data-cash-entry]').forEach(sel => sel.addEventListener('change', () => setCashClass(sel)));
     root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { st.tab = b.dataset.tab; render(); });
     root.querySelector('#pf-csv').onclick = exportCsv;
     bindTab();
   }
-  function companyBox(d) {
-    const co = d.branchCosts?.company, s = d.summary, bc = d.branchCosts;
-    if (!bc) return '';
-    const bridge = co ? [
-      ['Lợi nhuận gộp', s.gross, 'tot'], ['+ Thu phí của khách (POS)', s.feeRevenue], ['− Phí GHN', -s.carrierFee],
-      ['− Lương + thưởng Sale (đã phân bổ vào đơn)', -(s.staffSalary + s.staffBonus)], ['− Lương Sale chưa phân bổ', -co.saleUnallocated],
-      ['− Chi vặt két chi nhánh', -co.petty], ['− Lương NVBH / CHT', -co.storeStaff], ['− Chi phí chung chưa phân bổ (lương văn phòng, kho…)', -co.overhead], ['= Lợi nhuận công ty', co.net, 'tot'],
-    ] : [];
-    return `<div class="pf-two">
-      ${co ? `<div class="card"><h3 class="pf-h">Từ lợi nhuận gộp đến lợi nhuận công ty</h3>
-        <div class="table-wrap"><table class="data-table pf-bridge"><tbody>${bridge.map(([label, v, cls]) => `<tr class="${cls || ''}"><td>${esc(label)}</td><td class="right num ${v < 0 ? 'neg' : ''}">${num(v)}</td></tr>`).join('')}</tbody></table></div>
-        <p class="pf-check ${co.reconcile.ok && co.reconcile.payrollOk ? '' : 'bad'}">${co.reconcile.ok && co.reconcile.payrollOk ? '✔' : '⚠'} Đối soát: Σ chi nhánh ${esc(money(co.reconcile.branches))} − lương Sale chưa phân bổ − chi phí chung = LN công ty · bảng lương ${esc(money(co.reconcile.payroll))} = Sale ${esc(money(co.reconcile.payrollParts.sale))} + quầy ${esc(money(co.reconcile.payrollParts.store))} + chung ${esc(money(co.reconcile.payrollParts.overhead))}</p>
-        <p class="muted small">${esc(bc.officeExpenses.note)}</p>
-        ${co.overheadItems.length ? `<details class="small"><summary>Chi phí chung chưa phân bổ (${co.overheadItems.length} phiếu lương)</summary>${table(['Tháng', 'Nhân viên', '>Tổng thu nhập', 'Phiếu'], co.overheadItems.map(x => [esc(x.month.split('-').reverse().join('/')), esc(x.name), num(x.amount), x.status === 'estimate' ? pill('warn', 'Tạm tính') : pill('ok', 'Đã chốt')]))}</details>` : ''}</div>`
-        : '<div class="card"><p class="muted small">Đang lọc theo chi nhánh / nhân viên / khách: không hiện lợi nhuận toàn công ty (chi phí chung và lương chưa phân bổ không thuộc riêng nhóm nào).</p></div>'}
-      <div class="card"><h3 class="pf-h">Phân loại phiếu két trong kỳ</h3>
-        ${table(['Loại', '>Số phiếu', '>Số tiền', 'Tính vào chi phí?'], bc.cash.map(x => [esc(x.label), num(x.count), num(x.amount), x.counted ? pill('ok', 'Có') : `<small>${esc(x.why)}</small>`]))}
-        ${bc.review.length ? `<details class="small" open><summary>Phiếu chi vặt cần xác nhận (${bc.review.length}) – đang KHÔNG tính</summary>${table(['Ngày', 'Phiếu', 'Chi nhánh', '>Số tiền', 'Nội dung'], bc.review.map(r => [esc(r.day.split('-').reverse().join('/')), esc(r.entryNo), esc(r.branch), num(r.amount), esc(r.reason)]))}</details>` : ''}
-        <p class="muted small">Phân loại chi vặt theo từ khoá trong tên / nội dung phiếu (lương, GHN / ship, NCC, hoàn tiền) – là giả định, Manager kiểm tra danh sách trên.</p></div></div>`;
+  /** Cảnh báo nguồn số liệu ở đầu trang (ngắn, mỗi dòng một việc cần làm). */
+  function warnings(d) {
+    const s = d.summary, estimate = s.revenueBy.estimate + s.revenueBy.backfill;
+    return [
+      s.unconfirmedOrders ? `<div class="pf-warn" role="status"><span>ℹ ${s.unconfirmedOrders} đơn (${esc(money(s.unconfirmedRevenue))} doanh thu) dùng <b>giá vốn ước tính / tham chiếu</b> chưa được xác nhận – chưa tính vào lợi nhuận.</span>
+        <button type="button" class="btn secondary small" id="pf-confirm">Xác nhận giá vốn</button></div>` : '',
+      st.costs === 'all' && estimate > 0 ? `<div class="pf-warn" role="status"><span>ℹ Đang gồm ${esc(money(estimate))} doanh thu dùng giá ước tính / tham chiếu (giá mua gần nhất, đơn NCC, công thức thương hiệu) – chưa phải giá vốn đã đối soát.</span></div>` : '',
+      s.missingOrders ? `<div class="pf-warn" role="status"><span>⚠ ${s.missingOrders} đơn (${esc(money(s.missingRevenue))} doanh thu) có dòng thiếu giá vốn – không tính vào lợi nhuận, không coi là 0.</span>
+        <button type="button" class="btn ghost small" id="pf-missing">${st.missingOnly ? 'Xem tất cả đơn' : 'Xem các đơn cần bổ sung'}</button>
+        <button type="button" class="btn secondary small" id="pf-fill">Nhập giá vốn cho mã thiếu</button></div>` : '',
+      s.carrierUnknownOrders ? `<div class="pf-warn" role="status">⚠ ${s.carrierUnknownOrders} đơn POS có vận đơn GHN nhưng chưa có phí GHN – chưa trừ (không coi là 0).</div>` : '',
+    ].join('');
   }
-  function staffBox(t) {
-    if (!t?.available) return '';
-    const r = t.reconcile;
-    return `<div class="card pf-staff"><h3 class="pf-h">Chi phí nhân sự bán hàng (bảng lương) ${t.payroll.estimateMembers ? pill('warn', 'có phiếu tạm tính') : pill('ok', 'đã chốt')}</h3>
-      ${t.partial ? '<p class="muted small">Kỳ lọc có tháng lẻ: chi phí lương chỉ tính cho tháng trọn trong kỳ' + (t.months.length ? ' (' + t.months.map(esc).join(', ') + ')' : ' – kỳ này chưa có tháng trọn nên chưa trừ') + '.</p>' : ''}
-      ${r.payroll ? `<p class="pf-check ${r.ok ? '' : 'bad'}">${r.ok ? '✔' : '⚠'} Đối soát: phân bổ vào đơn <b>${esc(money(r.allocated))}</b> + chưa phân bổ <b>${esc(money(r.unallocated))}</b> = bảng lương Sale / Sale Admin <b>${esc(money(r.payroll))}</b>${r.ok ? '' : ' – LỆCH, báo kỹ thuật kiểm tra'}</p>` : ''}
-      ${t.unallocated.length ? table(['Tháng', 'Nhân viên', '>Lương + phụ cấp', '>Thưởng', 'Lý do', 'Phiếu lương'], t.unallocated.map(u => [esc(u.month.split('-').reverse().join('/')), esc(u.name), num(u.salary), num(u.bonus), esc(u.reason), u.status === 'estimate' ? pill('warn', 'Tạm tính') : pill('ok', 'Đã chốt')])) : ''}
-      <p class="muted small">Lương + thưởng của Sale / Sale Admin chia vào đơn của chính người đó trong tháng theo doanh thu đủ giá vốn (giữ nguyên tổng, phần lẻ dồn vào đơn lớn). Phiếu chưa chốt là số tạm tính.</p></div>`;
+  /** Từ doanh thu đến lợi nhuận sau chi phí: từng khoản, tỉ lệ trên doanh thu và nguồn chuẩn của khoản đó. */
+  function bridgeCard(d) {
+    const s = d.summary, co = d.branchCosts?.company, base = Math.max(1, s.coveredRevenue);
+    const rows = [
+      ['Doanh thu thuần (đủ giá vốn)', s.coveredRevenue, 'Đơn hàng − trả hàng', 'tot'],
+      ['− Giá vốn', -s.cost, 'Giá vốn dòng đơn'],
+      ['− In · hoa hồng · ship bên bán trả', -s.direct, 'Báo giá / giao hàng'],
+      ['= Lợi nhuận gộp', s.gross, '', 'tot'],
+      ['+ Thu phí của khách (POS)', s.feeRevenue, 'Bill POS'],
+      ['− Phí GHN', -s.carrierFee, 'POS / GHN'],
+      ['− Thưởng Sale (KPI · HĐKT · doanh số)', -s.staffBonus, 'Bảng lương'],
+      ['− Lương cố định + phụ cấp Sale', -s.staffSalary, 'Bảng lương'],
+      ...(co ? [['− Lương Sale chưa phân bổ', -co.saleUnallocated, 'Bảng lương'], ['− Chi vặt chi nhánh', -co.petty, 'Sổ quỹ (đã phân loại)'],
+        ['− Lương NVBH / CHT', -co.storeStaff, 'Bảng lương + ca POS'], ['− Chi phí chung chưa phân bổ', -co.overhead, 'Chưa có căn cứ phân bổ', 'warn']] : []),
+      [co ? '= Lợi nhuận sau chi phí (công ty)' : '= Lợi nhuận sau chi phí (theo bộ lọc)', co ? co.net : s.net, '', 'tot'],
+    ];
+    const excluded = s.revenue - s.coveredRevenue;
+    return `<div class="card"><h3 class="pf-h">Từ doanh thu đến lợi nhuận sau chi phí</h3>
+      <div class="table-wrap"><table class="data-table pf-bridge"><thead><tr><th>Khoản</th><th class="right">Số tiền</th><th></th><th>Nguồn chuẩn</th></tr></thead><tbody>
+        ${rows.map(([label, v, src, cls]) => `<tr class="${cls === 'tot' ? 'tot' : ''}"><td>${esc(label)}</td><td class="right num ${v < 0 ? 'neg' : ''}">${num(v)}</td>
+          <td><span class="pf-bar-h ${v < 0 ? 'neg' : ''}" style="width:${Math.min(100, Math.abs(v) / base * 100)}%"></span></td><td>${src ? `<span class="pill ${cls === 'warn' ? 'warn' : 'muted'}">${esc(src)}</span>` : ''}</td></tr>`).join('')}
+      </tbody></table></div>
+      ${excluded > 0 ? `<p class="muted small">Chưa tính ${esc(money(excluded))} doanh thu (thiếu giá vốn / chưa xác nhận) – xem cảnh báo đầu trang.</p>` : ''}
+      ${co ? '' : '<p class="muted small">Đang lọc theo chi nhánh / nhân viên: không trừ chi phí chung và lương chưa phân bổ (không thuộc riêng nhóm nào).</p>'}</div>`;
+  }
+  /** Phân loại phiếu chi sổ quỹ: phiếu nào tính vào chi phí; phiếu cần xem lại có ô chọn loại (Manager xác nhận / sửa). */
+  function cashCard(d) {
+    const bc = d.branchCosts;
+    if (!bc) return '';
+    const options = bc.classOptions || [];
+    return `<div class="card"><h3 class="pf-h">Phân loại phiếu chi sổ quỹ</h3>
+      ${table(['Loại phiếu', '>Số phiếu', '>Số tiền', 'Tính vào chi phí?'], bc.cash.map(x => [esc(x.label), num(x.count), num(x.amount), x.counted ? pill('ok', 'Có') : `<span class="pill muted">${esc(x.why)}</span>`]))}
+      ${bc.review.length ? `<details class="small" ${bc.review.some(r => !r.manual) ? 'open' : ''}><summary>Phiếu cần xem lại (${bc.review.filter(r => !r.manual).length} chưa xác nhận · ${bc.review.filter(r => r.manual).length} Manager đã chọn)</summary>
+        ${table(['Ngày', 'Phiếu', 'Chi nhánh', '>Số tiền', 'Nội dung', 'Loại'], bc.review.map(r => [esc(r.day.split('-').reverse().join('/')), esc(r.entryNo), esc(r.branch), num(r.amount), esc(r.reason),
+          `<select data-cash-entry="${esc(r.id)}" aria-label="Loại phiếu ${esc(r.entryNo)}">${options.map(o => `<option value="${esc(o.cls)}" ${o.cls === r.cls ? 'selected' : ''}>${esc(o.label)}${o.counted ? ' – tính' : ''}</option>`).join('')}
+            ${r.manual ? '<option value="">↺ Về tự phân loại</option>' : ''}</select> ${r.manual ? pill('ok', 'Manager') : pill('muted', 'Tự động')}`]))}</details>` : ''}
+      <p class="muted small">Tự phân loại theo loại phiếu và từ khoá (lương, GHN / ship, NCC, hoàn tiền). Phiếu nào sai, chọn lại loại – lựa chọn của Manager được lưu và thay cho phân loại tự động.</p></div>`;
+  }
+  async function setCashClass(sel) {
+    sel.disabled = true;
+    try { await api(`/profit/cash-classes/${encodeURIComponent(sel.dataset.cashEntry)}`, 'PUT', { cls: sel.value }); toast('Đã lưu loại phiếu.'); load(); }
+    catch (e) { toast(e.message, 'err'); sel.disabled = false; }
+  }
+  function costCard() {
+    return `<div class="card"><h3 class="pf-h">Giá vốn dòng đơn</h3>
+      <p class="muted small">Mở tab <b>Đơn hàng</b> rồi bấm một đơn để xem từng dòng: giá vốn / đơn vị, nguồn (báo giá, giá nhập, đơn NCC, công thức thương hiệu, Manager), thời điểm lấy giá, mức tin cậy và lịch sử điều chỉnh. Manager điều chỉnh được từng dòng (bắt buộc lý do).</p>
+      <p class="muted small">Theo mã: <b>Xác nhận giá vốn</b> (giá ước tính / tham chiếu) và <b>Nhập giá vốn cho mã thiếu</b> ở dòng cảnh báo đầu trang.</p></div>`;
+  }
+  function rulesCard(d) {
+    const t = d.staff, r = t?.reconcile;
+    const rules = [['Đơn nháp / sửa đơn trước duyệt', 'Cập nhật giá vốn theo báo giá / giá nhập mới'], ['Duyệt đơn / bán POS', 'Chốt giá vốn của dòng (snapshot)'],
+      ['Sau duyệt', 'Khoá; chỉ Manager điều chỉnh, bắt buộc lý do, lưu lịch sử'], ['Huỷ đơn', 'Giữ lịch sử, loại khỏi báo cáo'], ['Đổi / trả hàng', 'Trừ theo giá vốn của dòng gốc'],
+      ['Thiếu giá vốn', 'Không tính vào lợi nhuận, không coi là 0'], ['Chỉ giá vốn chính xác (mặc định)', 'Giá ước tính / tham chiếu tách riêng đến khi Manager xác nhận']];
+    return `<div class="card"><h3 class="pf-h">Quy tắc & cảnh báo</h3>
+      ${table(['Sự kiện', 'Giá vốn'], rules.map(([a, b]) => [esc(a), esc(b)]))}
+      <ul class="pf-notes small">
+        <li>Phí quẹt thẻ / cổng thanh toán: ${esc(d.cardFees?.note || '')}</li>
+        ${d.branchCosts?.officeExpenses?.note ? `<li>${esc(d.branchCosts.officeExpenses.note)}</li>` : ''}
+        ${t?.available && t.partial ? `<li>Kỳ lọc có tháng lẻ: lương / thưởng chỉ tính cho tháng trọn${t.months.length ? ' (' + t.months.map(esc).join(', ') + ')' : ' – kỳ này chưa có tháng trọn nên chưa trừ'}.</li>` : ''}
+        ${t?.available && r?.payroll ? `<li>${r.ok ? '✔' : '⚠'} Lương Sale: phân bổ vào đơn ${esc(money(r.allocated))} + chưa phân bổ ${esc(money(r.unallocated))} = bảng lương ${esc(money(r.payroll))}${t.payroll.estimateMembers ? ' (có phiếu tạm tính)' : ''}.</li>` : ''}
+      </ul>
+      ${t?.unallocated?.length ? `<details class="small"><summary>Lương Sale chưa phân bổ (${t.unallocated.length})</summary>${table(['Tháng', 'Nhân viên', '>Lương + phụ cấp', '>Thưởng', 'Lý do'], t.unallocated.map(u => [esc(u.month.split('-').reverse().join('/')), esc(u.name), num(u.salary), num(u.bonus), esc(u.reason)]))}</details>` : ''}
+      ${d.branchCosts?.company?.overheadItems?.length ? `<details class="small"><summary>Chi phí chung chưa phân bổ (${d.branchCosts.company.overheadItems.length} phiếu lương)</summary>${table(['Tháng', 'Nhân viên', '>Tổng thu nhập', 'Phiếu'], d.branchCosts.company.overheadItems.map(x => [esc(x.month.split('-').reverse().join('/')), esc(x.name), num(x.amount), x.status === 'estimate' ? pill('warn', 'Tạm tính') : pill('ok', 'Đã chốt')]))}</details>` : ''}</div>`;
   }
   function table(heads, rows, attrs = []) {
     return `<div class="table-wrap"><table class="data-table pf-table"><thead><tr>${heads.map(h => `<th${h.startsWith('>') ? ' class="right"' : ''}>${esc(h.replace(/^>/, ''))}</th>`).join('')}</tr></thead>
       <tbody>${rows.map((r, i) => `<tr ${attrs[i] || ''}>${r.map((c, j) => `<td data-label="${esc(heads[j].replace(/^>/, ''))}"${heads[j].startsWith('>') ? ' class="right num"' : ''}>${c}</td>`).join('')}</tr>`).join('')
         || `<tr><td colspan="${heads.length}" class="muted">Không có dữ liệu trong khoảng đã chọn.</td></tr>`}</tbody></table></div>`;
   }
-  const H = ['>Số đơn', '>DT thuần', '>Giá vốn', '>CP trực tiếp', '>LN gộp', '>Lương + thưởng', '>LN sau CP', 'Biên LN', ''];
-  const rowCells = r => [num(r.orders), num(r.revenue), num(r.cost), num(r.direct), `<b class="${r.gross < 0 ? 'neg' : ''}">${num(r.gross)}</b>`,
-    r.staffSalary || r.staffBonus ? `<span title="Lương + phụ cấp ${esc(num(r.staffSalary))} · thưởng ${esc(num(r.staffBonus))}">${num(r.staffSalary + r.staffBonus)}</span>` : '—',
-    `<b class="${r.net < 0 ? 'neg' : ''}">${num(r.net)}</b>`, marginCell(r), `${flag(r)} ${miss(r)}`];
+  const H = ['>DT thuần', '>LN gộp', '>Phí POS / GHN', '>Thưởng', '>Lương cố định', '>LN sau CP', 'Biên', 'Giá vốn', ''];
+  const rowCells = r => [num(r.revenue), `<b class="${r.gross < 0 ? 'neg' : ''}">${num(r.gross)}</b>`,
+    r.feeRevenue || r.carrierFee ? `+${num(r.feeRevenue)} / −${num(r.carrierFee)}` : '0', r.staffBonus ? num(r.staffBonus) : '—', r.staffSalary ? num(r.staffSalary) : '—',
+    `<b class="${r.net < 0 ? 'neg' : ''}">${num(r.net)}</b>`, pct(r.netMargin), trust(r), `${flag(r)} ${miss(r)}`];
+  /** Rà giá vốn theo mã: `missing` = nhập giá cho mã không có nguồn · `unconfirmed` = xác nhận / sửa giá ước tính / tham chiếu. */
+  async function reviewCosts(scope) {
+    const q = new URLSearchParams({ from: st.from, to: st.to, scope });
+    let d; try { d = await api('/profit/missing-costs?' + q); } catch (e) { toast(e.message, 'err'); return; }
+    const confirm = scope === 'unconfirmed', dlg = document.createElement('dialog'); dlg.className = 'modal pf-dialog pf-fill';
+    dlg.innerHTML = `<form><div class="modal-head"><h2>${confirm ? 'Xác nhận giá vốn ước tính / tham chiếu' : 'Nhập giá vốn cho mã thiếu'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+      <div class="modal-body"><p class="small muted">${esc(st.from.split('-').reverse().join('/'))} – ${esc(st.to.split('-').reverse().join('/'))} · ${d.items.length} mã / ${d.lines} dòng.
+        ${confirm ? 'Giá gợi ý lấy từ nguồn ước tính (giá nhập, đơn NCC, công thức thương hiệu) – kiểm tra, sửa nếu cần rồi xác nhận. Để trống = chưa xác nhận mã đó.' : 'Các mã này không có báo giá, giá nhập, đơn NCC hay công thức thương hiệu. Giá nhập ở đây là giá vốn trước VAT / 1 đơn vị, áp cho mọi dòng thiếu của mã trong kỳ.'}</p>
+      ${d.items.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Mã</th><th>Sản phẩm</th><th>ĐVT</th>${confirm ? '<th>Nguồn gợi ý</th>' : ''}<th class="num">Dòng</th><th class="num">Doanh thu</th><th class="num">Giá vốn / ĐV</th></tr></thead><tbody>
+        ${d.items.map((it, i) => `<tr><td>${esc(it.sku)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td>${confirm ? `<td><small>${esc((it.sources || []).join(' · '))}</small></td>` : ''}<td class="num">${it.lines.length}</td><td class="num">${num(it.revenue)}</td>
+          <td class="num"><input type="number" min="0" step="1" inputmode="numeric" data-i="${i}" aria-label="Giá vốn ${esc(it.sku)}" ${confirm && it.suggested !== null ? `value="${it.suggested}"` : 'placeholder="Để trống = chưa nhập"'}></td></tr>`).join('')}</tbody></table></div>
+      <label>Lý do / căn cứ giá vốn *<input name="reason" required minlength="3" maxlength="300" placeholder="VD: theo hoá đơn mua NCC tháng 10, bảng giá nhập 2026"></label>`
+      : `<p class="empty">${confirm ? 'Không còn giá vốn nào chờ xác nhận trong kỳ.' : 'Không còn mã nào thiếu giá vốn trong kỳ.'}</p>`}<p class="error" data-err role="alert"></p></div>
+      <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button>${d.items.length ? `<button class="btn primary">${confirm ? 'Xác nhận giá vốn' : 'Lưu giá vốn'}</button>` : ''}</div></form>`;
+    document.body.append(dlg); dlg.showModal();
+    dlg.querySelectorAll('[data-x]').forEach(b => b.onclick = () => dlg.close());
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.querySelector('form').onsubmit = async e => {
+      e.preventDefault();
+      const items = [...dlg.querySelectorAll('input[data-i]')].filter(x => x.value.trim() !== '').map(x => ({ ...d.items[Number(x.dataset.i)], unitCost: Number(x.value) }))
+        .map(({ sku, unit, unitCost }) => ({ sku, unit, unitCost }));
+      const err = dlg.querySelector('[data-err]'), btn = dlg.querySelector('.modal-foot .btn.primary');
+      if (!items.length) { err.textContent = 'Nhập giá vốn cho ít nhất một mã.'; return; }
+      if (items.some(x => !Number.isFinite(x.unitCost) || x.unitCost < 0)) { err.textContent = 'Giá vốn phải là số ≥ 0.'; return; }
+      btn.disabled = true;
+      try {
+        const r = await api('/profit/missing-costs', 'POST', { from: st.from, to: st.to, scope, reason: dlg.querySelector('[name=reason]').value, items });
+        dlg.close(); toast(`${confirm ? 'Đã xác nhận' : 'Đã nhập'} giá vốn cho ${r.written} dòng.`); load();
+      } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+    };
+  }
   function tabBody() {
     const d = st.data;
     if (st.tab === 'orders') {
-      const list = st.missingOnly ? d.orders.filter(o => o.missingLines) : d.orders;
+      const list = st.missingOnly ? d.orders.filter(o => o.missingLines || o.unconfirmedLines) : d.orders;
       return table(['Ngày', 'Đơn', 'Khách hàng', 'Nhân viên', '>DT thuần', '>Giá vốn', '>CP trực tiếp', '>LN gộp', '>Phí POS / GHN', '>Lương + thưởng', '>LN sau CP', 'Biên LN', ''],
-        list.map(o => [esc(o.orderDate.split('-').reverse().join('/')), esc(o.orderNo), esc(o.customerName), esc(o.ownerName), num(o.revenue), num(o.cost), num(o.direct),
-          `<b class="${o.gross < 0 ? 'neg' : ''}">${num(o.gross)}</b>`, o.feeRevenue || o.carrierFee ? `+${num(o.feeRevenue)} / −${num(o.carrierFee)}` : '—', o.staffCost ? num(o.staffCost) : '—', `<b class="${o.net < 0 ? 'neg' : ''}">${num(o.net)}</b>`, marginCell(o), `${flag(o)}${o.missingLines ? ` <span class="pill muted">${o.missingLines} dòng thiếu giá vốn</span>` : ''}`]),
+        // Đơn chưa có dòng nào đủ giá vốn: hiện "—" thay vì 0 (chưa tính được, không phải lãi 0).
+        list.map(o => { const none = (o.missingLines || o.unconfirmedLines) && !o.coveredRevenue, dash = v => none ? '<span class="muted" title="Chưa có giá vốn – chưa tính được">—</span>' : v; return [esc(o.orderDate.split('-').reverse().join('/')), esc(o.orderNo), esc(o.customerName), esc(o.ownerName), num(o.revenue), dash(num(o.cost)), num(o.direct),
+          dash(`<b class="${o.gross < 0 ? 'neg' : ''}">${num(o.gross)}</b>`), o.feeRevenue || o.carrierFee ? `+${num(o.feeRevenue)} / −${num(o.carrierFee)}` : '—', o.staffCost ? num(o.staffCost) : '—', dash(`<b class="${o.net < 0 ? 'neg' : ''}">${num(o.net)}</b>`), marginCell(o), `${flag(o)}${o.missingLines ? ` <span class="pill muted">${o.missingLines} dòng thiếu giá vốn</span>` : ''}${o.unconfirmedLines ? ` <span class="pill warn">${o.unconfirmedLines} dòng chưa xác nhận</span>` : ''}`]; }),
         list.map(o => `class="pf-click" data-order="${esc(o.id)}" tabindex="0"`)) + (d.ordersTotal > d.orders.length ? `<p class="muted small">Hiện ${d.orders.length}/${d.ordersTotal} đơn mới nhất – lọc theo nhân viên / chi nhánh để xem đủ.</p>` : '');
     }
     if (st.tab === 'products') return table(['Mã', 'Sản phẩm', '>SL', ...H], d.products.map(r => [esc(r.key.startsWith('(không mã)') ? '—' : r.key), esc(r.label), num(r.qty), ...rowCells(r)]));
-    const label = { series: 'Kỳ', branches: 'Chi nhánh', owners: 'Nhân viên', customers: 'Khách hàng' }[st.tab];
-    const list = st.tab === 'series' ? [...d.series].reverse() : d[st.tab];
+    if (st.tab === 'series') return `<h3 class="pf-h">Lợi nhuận gộp theo ${GRAIN_LABEL[seriesGrain()].toLowerCase()}</h3>${chart(d.series)}`
+      + table(['Kỳ', ...H], [...d.series].reverse().map(r => [esc(r.label), ...rowCells(r)]));
+    if (st.tab === 'branches') {
+      // Chi nhánh = LN đơn sau chi phí đơn − chi vặt két − lương NVBH / CHT (chi phí cấp chi nhánh, không chia xuống đơn).
+      const bc = new Map((d.branchCosts?.rows || []).map(r => [r.id, r]));
+      return table(['Chi nhánh', '>DT thuần', '>LN gộp', '>LN đơn', '>Chi vặt', '>Lương quầy', '>LN chi nhánh', 'Giá vốn', ''], d.branches.map(r => { const b = bc.get(r.key);
+        return [esc(r.label), num(r.revenue), `<b class="${r.gross < 0 ? 'neg' : ''}">${num(r.gross)}</b>`, num(r.net), b ? num(b.petty) : '0', b ? num(b.staff) : '0',
+          `<b class="${(b ? b.net : r.net) < 0 ? 'neg' : ''}">${num(b ? b.net : r.net)}</b>`, trust(r), `${flag(r)} ${miss(r)}`]; })
+        .concat((d.branchCosts?.rows || []).filter(b => !d.branches.some(r => r.key === b.id)).map(b => [esc(b.name), '0', '0', '0', num(b.petty), num(b.staff), `<b class="${b.net < 0 ? 'neg' : ''}">${num(b.net)}</b>`, '—', ''])))
+        + '<p class="muted small">Lương NVBH / CHT chia theo số ca mở ở từng quầy trong tháng trọn; chi vặt két chỉ tính phiếu "chi phí hoạt động".</p>';
+    }
+    const label = { owners: 'Nhân viên', customers: 'Khách hàng' }[st.tab];
+    const list = d[st.tab];
     return table([label, ...H], list.map(r => [esc(r.label), ...rowCells(r)]), st.tab === 'owners' ? list.map(r => `class="pf-click" data-owner="${esc(r.key)}" tabindex="0" title="Lọc theo nhân viên này"`) : []);
   }
   function bindTab() {

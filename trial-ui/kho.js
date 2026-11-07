@@ -1,3 +1,4 @@
+import {setProductThumbnail} from './product-images.js';
 /**
  * Trang dành cho tài khoản Kho (chức vụ "warehouse") – chữ to, nút to, ít lựa chọn.
  *  #/kho          Việc cần làm: đóng gói, nhận NCC, giao hàng, điều chuyển, lấy trước và chứng từ nhập Sapo.
@@ -93,7 +94,7 @@ export function initStockLookup({ api, root }) {
       out.replaceChildren(...r.products.map(p => {
         const c = el('article', 'card lookup-item');
         const top = el('div', 'lookup-top');
-        if (/^(https?:|data:image\/)/.test(p.imageUrl || '')) { const img = el('img'); img.src = p.imageUrl; img.alt = ''; img.loading = 'lazy'; top.append(img); }
+        if (/^(https?:|data:image\/)/.test(p.imageUrl || '')) { const img = el('img'); img.alt = ''; setProductThumbnail(img, p.imageUrl); top.append(img); }
         const name = el('div'); name.append(el('b', 'lookup-sku', p.sku), el('span', 'lookup-name', p.name));
         const total = el('div', 'lookup-total'); total.append(el('strong', p.total > 0 ? '' : 'danger-text', num(p.total)), el('small', 'muted', p.unit || 'tổng'));
         top.append(name, total);

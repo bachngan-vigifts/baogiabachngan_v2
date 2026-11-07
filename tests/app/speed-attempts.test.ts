@@ -33,3 +33,14 @@ test('Đo tốc độ tách thời gian thử lại và đọc JSON khỏi phầ
  assert.equal(summarize().routes[0].network,200);assert.equal(summarize().routes[0].retries,0);
  clearSpeedEntries();
 });
+
+test('Lượt gọi lúc máy ngủ (đồng hồ hệ thống lệch đồng hồ đơn điệu) không vào trung vị / p90, báo số lượt bỏ qua',()=>{
+ clearSpeedEntries();
+ // Máy ngủ ~15 phút: performance.now đo 186 s, Date.now đo 1.080 s.
+ recordApi({path:'/receivables',ms:186000,status:200,serverTiming:'total;dur=4000',wallMs:1080000,attempts:[{ms:90000,error:'timeout'},{ms:90000,error:'timeout'},{ms:5000,status:200}]});
+ recordApi({path:'/receivables',ms:900,status:200,serverTiming:'total;dur=400',wallMs:905,attempts:[{ms:880,status:200}]});
+ const s=summarize();
+ assert.equal(s.paused,1);assert.equal(s.all.count,1);assert.equal(s.routes[0].median,900);assert.equal(s.routes[0].retries,0);
+ assert.match(speedReport(),/bỏ qua 1 lượt lúc tab ẩn \/ máy ngủ/);
+ clearSpeedEntries();
+});

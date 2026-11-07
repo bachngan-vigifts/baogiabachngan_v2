@@ -13,16 +13,16 @@ export function compactKpi(text){
 export function orderedMobileNavKeys(keys) {
  const visible=[...new Set(keys)];
  const order=[
-  // Bán hàng: giữ nguyên năm mục đầu.
-  'pos','quotes','orders','contracts','receivables','order-products','deliveries',
+  // Bán hàng: Sản phẩm nằm ngay sau HĐKT.
+  'pos','quotes','orders','contracts','products','receivables','order-products','deliveries',
   // Tiền.
   'cashbook','cash',
   // Khách hàng.
   'customers','care','stock-requests',
   // Công việc & báo cáo.
-  'tasks','dashboard','profit','flow','store-reports','weekly-reports','feedback',
+  'tasks','shift-reports','dashboard','profit','flow','store-reports','weekly-reports','feedback',
   // Kho & giao nhận, gồm trang công việc riêng của Kho nếu được cấp quyền.
-  'kho','products','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving',
+  'kho','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving',
   // Mua hàng.
   'early-requests','purchases','suppliers',
   // Quản trị.
@@ -30,13 +30,18 @@ export function orderedMobileNavKeys(keys) {
  ];
  return [...order.filter(key=>visible.includes(key)),...visible.filter(key=>!order.includes(key))];
 }
+/** Shortcuts inherit the permission-visible POS destination; no extra page access is granted. */
+export function withMobileNavShortcuts(keys){
+ const allowed=[...new Set(keys)];
+ return allowed.includes('pos')&&!allowed.includes('shift-reports')?[...allowed,'shift-reports']:allowed;
+}
 /** Menu chân trang gom theo chức năng: mỗi nút một nhóm, bấm mở bảng chọn các trang trong nhóm. */
 export const MOBILE_NAV_GROUPS=[
- {key:'sell',label:'Bán hàng',keys:['pos','quotes','orders','contracts','receivables','order-products','deliveries'],icon:'<path d="M4 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M17 17h-11v-14h-2" /><path d="M6 5l14 1l-1 7h-13" />'},
+ {key:'sell',label:'Bán hàng',keys:['pos','quotes','orders','contracts','products','receivables','order-products','deliveries'],icon:'<path d="M4 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M17 17h-11v-14h-2" /><path d="M6 5l14 1l-1 7h-13" />'},
  {key:'money',label:'Tiền',keys:['cashbook','cash'],icon:'<path d="M17 8v-3a1 1 0 0 0 -1 -1h-10a2 2 0 0 0 0 4h12a1 1 0 0 1 1 1v3m0 4v3a1 1 0 0 1 -1 1h-12a2 2 0 0 1 -2 -2v-12" /><path d="M20 12v4h-4a2 2 0 0 1 0 -4h4" />'},
  {key:'customers',label:'Khách hàng',short:'Khách',keys:['customers','care','stock-requests'],icon:'<path d="M10 13a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M8 21v-1a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v1" /><path d="M15 5a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M17 10h2a2 2 0 0 1 2 2v1" /><path d="M5 5a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M3 13v-1a2 2 0 0 1 2 -2h2" />'},
- {key:'work',label:'Công việc',keys:['tasks','dashboard','profit','flow','store-reports','weekly-reports','feedback'],icon:'<path d="M3.5 5.5l1.5 1.5l2.5 -2.5" /><path d="M3.5 11.5l1.5 1.5l2.5 -2.5" /><path d="M3.5 17.5l1.5 1.5l2.5 -2.5" /><path d="M11 6l9 0" /><path d="M11 12l9 0" /><path d="M11 18l9 0" />'},
- {key:'stock',label:'Kho',keys:['kho','products','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving'],icon:'<path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12l0 9" /><path d="M12 12l-8 -4.5" /><path d="M16 5.25l-8 4.5" />'},
+ {key:'work',label:'Công việc',keys:['tasks','shift-reports','dashboard','profit','flow','store-reports','weekly-reports','feedback'],icon:'<path d="M3.5 5.5l1.5 1.5l2.5 -2.5" /><path d="M3.5 11.5l1.5 1.5l2.5 -2.5" /><path d="M3.5 17.5l1.5 1.5l2.5 -2.5" /><path d="M11 6l9 0" /><path d="M11 12l9 0" /><path d="M11 18l9 0" />'},
+ {key:'stock',label:'Kho',keys:['kho','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving'],icon:'<path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12l0 9" /><path d="M12 12l-8 -4.5" /><path d="M16 5.25l-8 4.5" />'},
  {key:'buy',label:'Mua hàng',keys:['early-requests','purchases','suppliers'],icon:'<path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M5 17h-2v-11a1 1 0 0 1 1 -1h9v12m-4 0h6m4 0h2v-6h-8m0 -5h5l3 5" />'},
  {key:'admin',label:'Quản trị',keys:['staff','payroll','permissions'],icon:'<path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" /><path d="M15 19l2 2l4 -4" />'},
 ];
@@ -65,7 +70,7 @@ export function installMobileDesign(profiles){
   for(const b of order?.querySelectorAll('[data-pack-print-for],[data-ship-print-for],#order-history')||[])if(!b.hasAttribute('data-mobile-inline'))b.dataset.mobileInline='';
  }
  // Same permission-filtered entries as the sidebar, gathered into one footer button per function group.
- const navLabels={pos:'Bán hàng nhanh',quotes:'Báo giá',orders:'Đơn hàng',contracts:'HĐKT',receivables:'Công nợ'};
+ const navLabels={pos:'Bán hàng nhanh',quotes:'Báo giá',orders:'Đơn hàng',contracts:'HĐKT',receivables:'Công nợ','shift-reports':'Báo cáo ca'};
  const svgNs='http://www.w3.org/2000/svg';
  const groupIcon=markup=>{const svg=document.createElementNS(svgNs,'svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');svg.innerHTML=markup;return svg;}; // biểu tượng Tabler (MIT), cùng bộ với thanh bên
  const sheet=make('dialog','crm-sheet crm-nav-sheet');sheet.setAttribute('aria-labelledby','crm-nav-sheet-title');
@@ -76,15 +81,24 @@ export function installMobileDesign(profiles){
  let navSources=new Map();
  const navLabel=(k,a)=>navLabels[k]||a.querySelector('span:last-of-type')?.textContent||a.textContent.trim();
  const navIcon=a=>{const icon=a.querySelector('svg');if(icon)return icon.cloneNode(true);const symbol=make('span','crm-nav-symbol',a.querySelector('span')?.textContent||'▣');symbol.setAttribute('aria-hidden','true');return symbol;};
+ function navTarget(k,source,footer=false){
+  const report=k==='shift-reports',a=make(report?'button':'a');
+  a.append(footer?make('span','crm-nav-label',navLabel(k,source)):document.createTextNode(navLabel(k,source)));
+  a.dataset.mobileNav=k;a.prepend(report?groupIcon('<path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 3h6v4h-6z" /><path d="M9 17v-3m3 3v-5m3 5v-2" />'):navIcon(source));
+  if(report){a.type='button';a.onclick=()=>{sheet.close();document.dispatchEvent(new Event('crm-open-shift-reports'));};}
+  else a.href=source.getAttribute('href');
+  return a;
+ }
  function openGroup(g){
   const key=location.hash.replace(/^#\//,'').split(/[/?]/)[0];
   setText(sheetTitle,g.label);sheet.dataset.group=g.key;sheetList.replaceChildren();
-  for(const k of g.items){const source=navSources.get(k),a=make('a','',navLabel(k,source));a.href=source.getAttribute('href');a.dataset.mobileNav=k;a.prepend(navIcon(source));if(k===key)a.setAttribute('aria-current','page');sheetList.append(a);}
+  for(const k of g.items){const source=navSources.get(k),a=navTarget(k,source);if(k===key)a.setAttribute('aria-current','page');sheetList.append(a);}
   sheet.showModal();
  }
  function syncNav(){
   const sources=new Map();
   for(const a of document.querySelectorAll('.sidebar [data-nav]'))if(visible(a)&&!sources.has(a.dataset.nav))sources.set(a.dataset.nav,a);
+  for(const key of withMobileNavShortcuts(sources.keys()))if(!sources.has(key))sources.set(key,sources.get('pos'));
   const groups=groupMobileNav(sources.keys());
   const key=location.hash.replace(/^#\//,'').split(/[/?]/)[0];
   const signature=JSON.stringify(groups.map(g=>[g.key,g.items.map(k=>{const a=sources.get(k);return [k,a.getAttribute('href'),navLabel(k,a)];})]))+key;
@@ -92,9 +106,8 @@ export function installMobileDesign(profiles){
   nav.style.setProperty('--crm-nav-count',String(Math.max(1,groups.length)));
   for(const g of groups){
    const one=g.items.length===1,source=one?sources.get(g.items[0]):null;
-   const b=make(one?'a':'button');b.append(make('span','crm-nav-label',one?navLabel(g.items[0],source):g.short));if(!one)b.setAttribute('aria-label',g.label);
-   if(one){b.href=source.getAttribute('href');b.dataset.mobileNav=g.items[0];b.prepend(navIcon(source));}
-   else {b.type='button';b.setAttribute('aria-haspopup','dialog');b.prepend(groupIcon(g.icon));b.onclick=()=>openGroup(g);}
+   const b=one?navTarget(g.items[0],source,true):make('button');
+   if(!one){b.append(make('span','crm-nav-label',g.short));b.setAttribute('aria-label',g.label);b.type='button';b.setAttribute('aria-haspopup','dialog');b.prepend(groupIcon(g.icon));b.onclick=()=>openGroup(g);}
    b.dataset.mobileNavGroup=g.key;if(g.items.includes(key))b.setAttribute('aria-current','page');nav.append(b);
   }
  }

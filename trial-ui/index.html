@@ -32,6 +32,8 @@
 <link rel="stylesheet" href="mobile-design.css">
 <link rel="stylesheet" href="order-shipment-demo.css">
 <link rel="stylesheet" href="supplier-portal.css">
+<link rel="stylesheet" href="delivery-calendar.css">
+<link rel="stylesheet" href="order-products.css">
 </head>
 <body>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
@@ -73,7 +75,7 @@
       <section class="nav-group" aria-labelledby="nav-group-0">
         <h2 class="nav-label" id="nav-group-0">Công việc &amp; tổng quan</h2>
         <a class="nav" href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M9 11l3 3l8 -8" /><path d="M20 12v6a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h9" /></svg><span>Công việc</span><b id="nav-task-count" class="badge" hidden>0</b></a>
-        <a class="nav" href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24"><path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -6" /><path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -10" /><path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -14" /><path d="M4 20h14" /></svg><span>Tổng quan doanh số</span></a>
+        <a class="nav" href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24"><path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -6" /><path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -10" /><path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -14" /><path d="M4 20h14" /></svg><span>Tổng quan</span></a>
         <a class="nav manager-only" href="#/profit" data-nav="profit" hidden><svg viewBox="0 0 24 24"><path d="M3 17l6 -6l4 4l8 -8" /><path d="M14 7l7 0l0 7" /></svg><span>Phân tích lợi nhuận</span></a>
         <a class="nav" href="#/flow" data-nav="flow"><svg viewBox="0 0 24 24"><path d="M3 19a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M19 7a2 2 0 1 0 0 -4a2 2 0 0 0 0 4" /><path d="M11 19h5.5a3.5 3.5 0 0 0 0 -7h-8a3.5 3.5 0 0 1 0 -7h4.5" /></svg><span>Sơ đồ quy trình</span></a>
         <a class="nav" href="#/store-reports" data-nav="store-reports" hidden><svg viewBox="0 0 24 24"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" /><path d="M9 17v-5" /><path d="M12 17v-1" /><path d="M15 17v-3" /></svg><span>Báo cáo CHT</span></a>
@@ -86,19 +88,19 @@
         <a class="nav" href="#/quotes" data-nav="quotes"><svg viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2" /><path d="M9 9l1 0" /><path d="M9 13l6 0" /><path d="M9 17l6 0" /></svg><span>Báo giá</span><b id="nav-quote-count" class="badge">0</b></a>
         <a class="nav" href="#/orders" data-nav="orders"><svg viewBox="0 0 24 24"><path d="M6.331 8h11.339a2 2 0 0 1 1.977 2.304l-1.255 8.152a3 3 0 0 1 -2.966 2.544h-6.852a3 3 0 0 1 -2.965 -2.544l-1.255 -8.152a2 2 0 0 1 1.977 -2.304" /><path d="M9 11v-5a3 3 0 0 1 6 0v5" /></svg><span>Đơn đặt hàng</span></a>
         <a class="nav" href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M5 8v-3a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-5" /><path d="M3 14a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" /><path d="M4.5 17l-1.5 5l3 -1.5l3 1.5l-1.5 -5" /></svg><span>HĐKT</span></a>
+        <a class="nav" href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12l0 9" /><path d="M12 12l-8 -4.5" /></svg><span>Sản phẩm</span></a>
         <a class="nav" href="#/order-products" data-nav="order-products"><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z M3 8v9l9 5 9-5V8 M12 13v9"/></svg><span>Sản phẩm theo đơn</span></a>
         <a class="nav" href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M5 17h-2v-4m-1 -8h11v12m-4 0h6m4 0h2v-6h-8m0 -5h5l3 5" /><path d="M3 9l4 0" /></svg><span>Lịch giao hàng</span><b id="nav-deliveries-count" class="badge danger" hidden>0</b></a>
       </section>
       <section class="nav-group" aria-labelledby="nav-group-2">
         <h2 class="nav-label" id="nav-group-2">Khách hàng</h2>
-        <a class="nav" href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M5 7a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /><path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /><path d="M21 21v-2a4 4 0 0 0 -3 -3.85" /></svg><span>Khách hàng</span></a>
+        <a class="nav" href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M5 7a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /><path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /><path d="M21 21v-2a4 4 0 0 0 -3 -3.85" /></svg><span>Trung tâm khách hàng</span></a>
         <a class="nav" href="#/care" data-nav="care"><svg viewBox="0 0 24 24"><path d="M21 14l-3 -3h-7a1 1 0 0 1 -1 -1v-6a1 1 0 0 1 1 -1h9a1 1 0 0 1 1 1v10" /><path d="M14 15v2a1 1 0 0 1 -1 1h-7l-3 3v-10a1 1 0 0 1 1 -1h2" /></svg><span>Giao dịch & chăm sóc</span><b id="nav-care-count" class="badge" hidden>0</b></a>
         <a class="nav" href="#/stock-requests" data-nav="stock-requests"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M12 16v.01" /><path d="M12 13a2 2 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483" /></svg><span>Khách hỏi tồn</span><b id="nav-stock-count" class="badge" hidden>0</b></a>
       </section>
       <section class="nav-group" aria-labelledby="nav-group-3">
         <h2 class="nav-label" id="nav-group-3">Kho &amp; giao hàng</h2>
         <a class="nav kho-nav" href="#/kho" data-nav="kho" hidden><svg viewBox="0 0 24 24"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" /><path d="M9 12l.01 0" /><path d="M13 12l2 0" /><path d="M9 16l.01 0" /><path d="M13 16l2 0" /></svg><span>Việc cần làm</span></a>
-        <a class="nav" href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12l0 9" /><path d="M12 12l-8 -4.5" /></svg><span>Sản phẩm</span></a>
         <a class="nav" href="#/transfers" data-nav="transfers"><svg viewBox="0 0 24 24"><path d="M7 10h14l-4 -4" /><path d="M17 14h-14l4 4" /></svg><span>Điều chuyển kho</span><b id="nav-transfer-count" class="badge danger" hidden>0</b></a>
         <a class="nav" href="#/stock-moves" data-nav="stock-moves"><svg viewBox="0 0 24 24"><path d="M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0" /><path d="M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0" /><path d="M3 6l0 13" /><path d="M12 6l0 13" /><path d="M21 6l0 13" /></svg><span>Sổ kho</span></a>
         <a class="nav" href="#/inventory" data-nav="inventory" hidden><svg viewBox="0 0 24 24"><path d="M7 20l10 0" /><path d="M6 6l6 -1l6 1" /><path d="M12 3l0 17" /><path d="M9 12l-3 -6l-3 6a3 3 0 0 0 6 0" /><path d="M21 12l-3 -6l-3 6a3 3 0 0 0 6 0" /></svg><span>Cân bằng kho</span></a>
@@ -400,7 +402,7 @@
         <div><span class="eyebrow">Kinh doanh</span><h1>Sản phẩm</h1><p class="muted" id="product-sub">Danh mục, giá bán và tồn kho để chọn nhanh khi lập báo giá.</p></div>
         <div class="row-gap head-actions">
           <button type="button" class="btn secondary" id="product-export">↓ Xuất Excel</button>
-          <button type="button" class="btn primary" id="new-product">＋ Thêm sản phẩm</button>
+          <button type="button" class="btn primary mobile-desktop-only" id="new-product">＋ Thêm sản phẩm</button>
         </div>
       </div>
       <div class="toolbar manager-only product-tools" id="product-actions">
@@ -564,11 +566,10 @@
     <section class="view" id="view-receiving" hidden></section>
 
     <section class="view" id="view-deliveries" hidden>
-      <nav class="shipment-tabs" aria-label="Lịch giao hàng"><a class="chip" href="#/deliveries" data-shipment-tab="list">Danh sách chuyến giao thật</a><a class="chip" href="#/deliveries?view=calendar" data-shipment-tab="calendar">Lịch mẫu</a></nav>
-      <div id="deliveries-prototype" hidden></div>
+      <nav class="shipment-tabs" aria-label="Lịch giao hàng"><a class="chip" href="#/deliveries?view=calendar" data-shipment-tab="calendar">Lịch ngày / tuần / tháng</a><a class="chip" href="#/deliveries?view=products" data-shipment-tab="products">Sản phẩm theo chuyến</a><a class="chip" href="#/deliveries?view=list" data-shipment-tab="list">Danh sách chuyến giao</a></nav>
       <div id="deliveries-real">
       <div class="page-head">
-        <div><span class="eyebrow">Bán hàng</span><h1>Lịch giao hàng</h1><p class="muted">Các chuyến giao theo ngày; bấm vào chuyến để mở đơn.</p></div>
+        <div><span class="eyebrow">Bán hàng</span><h1>Lịch giao hàng</h1><p class="muted">Lịch và sản phẩm của các chuyến giao thực tế. Bộ lọc áp dụng chung cho lịch và danh sách.</p></div>
       </div>
       <div class="row-gap delivery-range">
         <label>Từ ngày<input type="date" id="deliveries-from"></label>
@@ -581,16 +582,31 @@
       </div>
       <div class="panel">
         <div class="toolbar">
-          <label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><input id="deliveries-search" type="search" placeholder="Lọc theo khách hàng, số đơn…" aria-label="Tìm"></label>
+          <label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><input id="deliveries-search" type="search" maxlength="200" placeholder="Tìm khách, số đơn / HĐKT, chuyến, vận đơn, ghi chú…" aria-label="Tìm chuyến giao"></label>
         </div>
+        <details class="delivery-advanced-filters"><summary>Bộ lọc chi tiết: nhân viên, khách hàng, sản phẩm, vận chuyển…</summary>
         <div class="orders-filter-grid" id="deliveries-filter-grid">
           <label>Nhân viên<select id="deliveries-owner"><option value="">Tất cả nhân viên</option></select></label>
           <label>Loại chứng từ<select id="deliveries-kind"><option value="">Đơn hàng + HĐKT</option><option value="order">Đơn hàng</option><option value="contract">HĐKT</option></select></label>
           <label>Đơn vị giao<select id="deliveries-carrier"><option value="">Tất cả</option></select></label>
           <label>Hoá đơn<select id="deliveries-invoice"><option value="">Tất cả</option><option value="none">Chưa yêu cầu xuất</option><option value="requested">Chờ xuất hoá đơn</option><option value="issued">Đã xuất hoá đơn</option></select></label>
-          <button type="button" class="btn ghost small" id="deliveries-clear">Xóa bộ lọc</button>
+          <label>Người giao<select id="deliveries-assignee"><option value="">Tất cả người giao</option></select></label>
+          <label>Khách hàng<input id="deliveries-customer" type="search" maxlength="200" placeholder="Tên khách / công ty"></label>
+          <label>Sản phẩm<input id="deliveries-product" type="search" maxlength="200" placeholder="Mã SKU hoặc tên sản phẩm"></label>
+          <label>Người nhận / SĐT<input id="deliveries-receiver" type="search" maxlength="200" placeholder="Tên hoặc số điện thoại"></label>
+          <label>Địa chỉ giao<input id="deliveries-address" type="search" maxlength="200" placeholder="Tỉnh, thành, quận hoặc địa chỉ"></label>
+          <label>Thời hạn<select id="deliveries-due"><option value="">Tất cả thời hạn</option><option value="overdue">Quá hạn, chưa giao xong</option><option value="today">Giao hôm nay</option><option value="next7">Chưa giao xong trong 7 ngày tới</option><option value="no-time">Chưa có giờ giao</option></select></label>
+          <label>Mã vận đơn<select id="deliveries-tracking"><option value="">Tất cả</option><option value="yes">Đã có vận đơn</option><option value="no">Chưa có vận đơn</option></select></label>
+          <label>Xác nhận giao<select id="deliveries-confirmation"><option value="">Tất cả</option><option value="yes">Đã ghi nhận xác nhận</option><option value="no">Chưa có xác nhận</option></select></label>
+          <label>Sắp xếp<select id="deliveries-sort"><option value="">Ngày giao mới trước</option><option value="date_asc">Ngày giao cũ trước</option><option value="customer">Tên khách hàng</option><option value="owner">Nhân viên phụ trách</option></select></label>
+          <button type="button" class="btn ghost small" id="deliveries-clear" data-mobile-navigation>Xóa bộ lọc</button>
         </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th>Hoá đơn</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
+        </details>
+        <p id="deliveries-filter-summary" class="muted small" role="status"></p>
+        <button type="button" class="btn secondary" id="deliveries-retry" hidden>Thử tải lại</button>
+        <div id="deliveries-calendar"></div>
+        <div id="deliveries-product-lines" class="table-wrap" hidden></div>
+        <div class="table-wrap" id="deliveries-table" hidden><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT · Sản phẩm</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th>Hoá đơn</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
         <div id="deliveries-empty" class="empty" hidden><p class="muted" id="deliveries-empty-text"></p></div>
       </div>
       </div>
@@ -794,6 +810,7 @@
     <a href="#/quotes" data-nav="quotes"><svg viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2" /><path d="M9 9l1 0" /><path d="M9 13l6 0" /><path d="M9 17l6 0" /></svg>Báo giá</a>
     <a href="#/orders" data-nav="orders"><svg viewBox="0 0 24 24"><path d="M6.331 8h11.339a2 2 0 0 1 1.977 2.304l-1.255 8.152a3 3 0 0 1 -2.966 2.544h-6.852a3 3 0 0 1 -2.965 -2.544l-1.255 -8.152a2 2 0 0 1 1.977 -2.304" /><path d="M9 11v-5a3 3 0 0 1 6 0v5" /></svg>Đơn hàng</a>
     <a href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M5 8v-3a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-5" /><path d="M3 14a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" /><path d="M4.5 17l-1.5 5l3 -1.5l3 1.5l-1.5 -5" /></svg>HĐKT</a>
+    <a href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12l0 9" /><path d="M12 12l-8 -4.5" /></svg>Sản phẩm</a>
     <a href="#/deliveries" data-nav="deliveries" class="kho-bn"><svg viewBox="0 0 24 24"><path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M5 17h-2v-4m-1 -8h11v12m-4 0h6m4 0h2v-6h-8m0 -5h5l3 5" /><path d="M3 9l4 0" /></svg>Giao hàng</a>
     <a href="#/receivables" data-nav="receivables"><svg viewBox="0 0 24 24"><path d="M9 14c0 1.657 2.686 3 6 3s6 -1.343 6 -3s-2.686 -3 -6 -3s-6 1.343 -6 3" /><path d="M9 14v4c0 1.656 2.686 3 6 3s6 -1.344 6 -3v-4" /><path d="M3 6c0 1.072 1.144 2.062 3 2.598s4.144 .536 6 0c1.856 -.536 3 -1.526 3 -2.598c0 -1.072 -1.144 -2.062 -3 -2.598s-4.144 -.536 -6 0c-1.856 .536 -3 1.526 -3 2.598" /><path d="M3 6v10c0 .888 .772 1.45 2 2" /><path d="M3 11c0 .888 .772 1.45 2 2" /></svg>Công nợ</a>
     <a href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M9 11l3 3l8 -8" /><path d="M20 12v6a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h9" /></svg>Công việc</a>
@@ -801,7 +818,6 @@
     <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M5 7a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /><path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /><path d="M21 21v-2a4 4 0 0 0 -3 -3.85" /></svg>Khách hàng</a>
     <a href="#/care" data-nav="care"><svg viewBox="0 0 24 24"><path d="M21 14l-3 -3h-7a1 1 0 0 1 -1 -1v-6a1 1 0 0 1 1 -1h9a1 1 0 0 1 1 1v10" /><path d="M14 15v2a1 1 0 0 1 -1 1h-7l-3 3v-10a1 1 0 0 1 1 -1h2" /></svg>Chăm sóc</a>
     <a href="#/packing" data-nav="packing" class="packing-nav kho-bn" hidden><svg viewBox="0 0 24 24"><path d="M7 16.5l-5 -3l5 -3l5 3v5.5l-5 3l0 -5.5" /><path d="M2 13.5v5.5l5 3" /><path d="M7 16.545l5 -3.03" /><path d="M17 16.5l-5 -3l5 -3l5 3v5.5l-5 3l0 -5.5" /><path d="M12 19l5 3" /><path d="M17 16.5l5 -3" /><path d="M12 13.5v-5.5l-5 -3l5 -3l5 3v5.5" /><path d="M7 5.03v5.455" /><path d="M12 8l5 -3" /></svg>Đóng gói</a>
-    <a href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12l0 9" /><path d="M12 12l-8 -4.5" /></svg>Sản phẩm</a>
     <a href="#/staff" data-nav="staff" class="manager-only"><svg viewBox="0 0 24 24"><path d="M7 12h3v4h-3l0 -4" /><path d="M10 6h-6a1 1 0 0 0 -1 1v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1 -1v-12a1 1 0 0 0 -1 -1h-6" /><path d="M10 4a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v3a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1l0 -3" /><path d="M14 16h2" /><path d="M14 12h4" /></svg>Nhân viên</a>
     <a href="#/payroll" data-nav="payroll" class="manager-only"><svg viewBox="0 0 24 24"><path d="M7 15h-3a1 1 0 0 1 -1 -1v-8a1 1 0 0 1 1 -1h12a1 1 0 0 1 1 1v3" /><path d="M7 10a1 1 0 0 1 1 -1h12a1 1 0 0 1 1 1v8a1 1 0 0 1 -1 1h-12a1 1 0 0 1 -1 -1l0 -8" /><path d="M12 14a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /></svg>Bảng lương</a>
   </nav>

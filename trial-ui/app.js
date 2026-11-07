@@ -1,5 +1,6 @@
-import {makeShipmentDemo} from './order-shipment-demo-data.js';
-import {initOrderShipmentDemo} from './order-shipment-demo.js';
+import {productThumbnailUrl,noteThumbnailFailure} from './product-images.js';
+import {initOrderProducts} from './order-products.js';
+import { createDeliveryCalendar, renderDeliveryProducts } from './delivery-calendar.js';
 import {initCustomerCenter} from './customer-center.js';
 import {openProvinceSharing} from './customer-province-sharing.js';
 import {orderListExportSheets} from './order-list-export.js';
@@ -155,14 +156,17 @@ const PLACEHOLDER = '<svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z M4 15l4-4 4
 /** Ảnh được phép lưu trong báo giá (như máy chủ kiểm tra): https hoặc ảnh JPEG/PNG/WebP nhúng. */
 const savableImage = v => /^https:\/\//i.test(v || '') || /^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(v || '');
 // Chỉ nhận ảnh https:// hoặc data:image (như trang khách) – ảnh từ Sapo / file nhập có thể là URL bất kỳ.
-const imgTag = (url, cls = 'thumb') => /^(https:\/\/|data:image\/)/i.test(url || '')
-  ? `<img class="${cls}" src="${esc(displayImage(url))}" data-fallback="${esc(fallbackImage(url))}" alt="" loading="lazy" referrerpolicy="no-referrer">`
-  : `<span class="${cls}">${PLACEHOLDER}</span>`;
+const imgTag = (url, cls = 'thumb') => {
+  if (!/^(https:\/\/|data:image\/)/i.test(url || '')) return `<span class="${cls}">${PLACEHOLDER}</span>`;
+  const original = displayImage(url), source = cls.includes('big') ? original : productThumbnailUrl(original);
+  const fallback = source !== original ? original : fallbackImage(url);
+  return `<img class="${cls}" src="${esc(source)}" data-fallback="${esc(fallback)}" alt="" loading="lazy" decoding="async" ${cls.includes('big') ? '' : 'width="64" height="64"'} referrerpolicy="no-referrer">`;
+};
 // Ảnh lỗi: thử nguồn dự phòng một lần, sau đó thay bằng biểu tượng.
 document.addEventListener('error', e => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement) || !img.classList.contains('thumb')) return;
-  if (img.dataset.fallback) { img.src = img.dataset.fallback; img.dataset.fallback = ''; return; }
+  if (img.dataset.fallback) { noteThumbnailFailure(img.currentSrc || img.src); img.src = img.dataset.fallback; img.dataset.fallback = ''; return; }
   const span = document.createElement('span'); span.className = img.className + ' broken'; span.title = 'Không tải được ảnh'; span.innerHTML = PLACEHOLDER;
   img.replaceWith(span);
 }, true);
@@ -383,17 +387,17 @@ async function apiRequest(path, method = 'GET', body) {
   let res;
   // Trang đang mở tải trước; số đếm menu, chuông, nhịp kiểm tra… chờ một nhịp (request-priority.js).
   // Máy chủ cạnh CSDL (mặc định bật, api-region.js): thêm header x-region; lỗi là tắt và giữ tắt trên máy này.
-  let sentAt = 0;
+  let sentAt = 0, sentWall = 0;
   // Đo tốc độ: từng lần gửi thật (thử lại khi quá giờ / 502–504, chuyển máy chủ dự phòng) – để không gộp chúng vào "mạng".
   const attempts = [];
-  const send = (regionHeaders, readPolicy) => requestPriority.run(isBackgroundRequest(path, method), () => { if (!sentAt) sentAt = performance.now(); const region = !!regionHeaders?.['x-region']; return apiFetch(API + path, { method, headers: { ...headers, ...regionHeaders, ...managerPoolHeaders() }, body: body === undefined ? undefined : JSON.stringify(body) }, { ...readPolicy, onAttempt: a => attempts.push({ ...a, region }) }); });
+  const send = (regionHeaders, readPolicy) => requestPriority.run(isBackgroundRequest(path, method), () => { if (!sentAt) { sentAt = performance.now(); sentWall = Date.now(); } const region = !!regionHeaders?.['x-region']; return apiFetch(API + path, { method, headers: { ...headers, ...regionHeaders, ...managerPoolHeaders() }, body: body === undefined ? undefined : JSON.stringify(body) }, { ...readPolicy, onAttempt: a => attempts.push({ ...a, region }) }); });
   try { res = await requestWithRegion(regionCanary, send, {read: method === 'GET'}); }
   catch {
     throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME);
   }
   const headersAt = performance.now();
   const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
-  recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing'), readMs: performance.now() - headersAt, attempts }); // menu → Đo tốc độ
+  recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing'), readMs: performance.now() - headersAt, attempts, wallMs: Date.now() - sentWall }); // menu → Đo tốc độ
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
   const sameSession = requestToken === token;
   // Phản hồi thuộc phiên trước (vừa đổi tài khoản): không trả dữ liệu cho phiên mới. Mã 409 (không phải 0) để màn hình không coi là
@@ -434,14 +438,14 @@ const isWarehouse = () => state.user?.role === 'employee' && state.user?.positio
  * Quyền theo chức vụ (trang Phân quyền – máy chủ trả trong /me, kiểm tra lại ở mọi API). Manager luôn có mọi quyền.
  * Máy chủ chưa có bảng quyền (chưa chạy migration 0065) thì dùng đúng quyền cũ theo chức vụ.
  */
-const OFFICE_PAGES = ['page.quotes', 'page.orders', 'page.contracts', 'page.deliveries', 'page.receivables', 'page.customers', 'page.care', 'page.stock-requests', 'page.dashboard', 'page.flow', 'page.purchases'];
+const OFFICE_PAGES = ['page.quotes', 'page.orders', 'page.order-products', 'page.contracts', 'page.deliveries', 'page.receivables', 'page.customers', 'page.care', 'page.stock-requests', 'page.dashboard', 'page.flow', 'page.purchases'];
 const legacyPerms = () => isWarehouse() ? ['page.deliveries', 'page.purchases', 'page.packing', 'page.stock-lookup', 'purchases.receive']
   : state.user?.positionId === 'accounting' ? [...OFFICE_PAGES, 'purchases.prices', 'purchases.pay', 'suppliers.edit'] : OFFICE_PAGES;
 const can = key => isManager() || (Array.isArray(state.user?.perms) ? state.user.perms : legacyPerms()).includes(key);
 /** Trang (#/…) → quyền cần có. Trang không có ở đây (Công việc, Sản phẩm…) ai cũng vào được. */
 const PAGE_PERM = {
   cash: 'page.cash', pos: 'pos.sell',
-  quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', 'order-products':'page.orders', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
+  quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', 'order-products':'page.order-products', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
   purchases: 'page.purchases', 'early-requests': 'purchases.early-view', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', stocktake: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
 };
@@ -830,9 +834,13 @@ const posLocalSearch = (q, policy) => {
 // Kiểm tra nhanh đã có danh mục chưa (không dựng cả danh sách chỉ để biết có hay không).
 posLocalSearch.ready = () => !!catalog.items;
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
+document.addEventListener('crm-open-shift-reports', () => {
+  if (!state.user || !canPage('pos')) return;
+  void posView().showShiftReports();
+});
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan doanh số', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+const VIEWS = { 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
@@ -889,9 +897,10 @@ function route() {
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
   const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? (page === 'contracts' ? 'contracts' : 'orders') : view === 'customer' ? 'customers' : view === 'product' ? 'products' : view === 'member' ? 'staff' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
-  $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : VIEWS[view];
+  const viewTitle = view === 'customers' && new URLSearchParams(query).get('tab') === 'center' ? 'Trung tâm khách hàng' : VIEWS[view];
+  $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : viewTitle;
   pageBack.record();
-  document.title = (view === 'editor' ? $('#breadcrumb').textContent : VIEWS[view]) + ' · Bách Ngân';
+  document.title = (view === 'editor' ? $('#breadcrumb').textContent : viewTitle) + ' · Bách Ngân';
   window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
   if (view === 'editor') openEditor(id);
   thuChiTabs(view);
@@ -907,7 +916,7 @@ function route() {
   if (view === 'contracts') loadContracts();
   if (view === 'receiving') receivingView().load();
   if (view === 'deliveries') loadDeliveries();
-  if (view === 'order-products') productOrdersDemo().show(query);
+  if (view === 'order-products') productOrdersView().load();
   if(view!=='order-products')productOrdersUi?.close();
   if(view!=='deliveries')shipmentCalendarUi?.close();
   if (view === 'receivables') loadReceivables();
@@ -2621,7 +2630,7 @@ function renderProducts() {
       <td class="right num" data-label="Đang tạm giữ" title="Tổng số đang giữ trên tất cả kho; báo giá có thể chưa phân kho">${stockText(held)}</td>
       <td class="right num" data-label="Hàng đang về">${incomingCell(p)}</td>
       <td class="right num" data-label="Tồn NCC">${hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : '<span class="muted">—</span>'}</td>
-      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
+      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small mobile-desktop-only" data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
   $('#product-empty').hidden = list.length > 0;
@@ -3483,37 +3492,46 @@ function salesListSummary(key, s) {
 }
 // ----- lịch giao hàng (mặc định 7 ngày trước → 30 ngày tới)
 /** Bộ lọc chi tiết Lịch giao hàng (máy chủ lọc): nhân viên phụ trách, loại chứng từ, đơn vị giao, hoá đơn. */
-const DELIVERY_FILTERS = ['owner', 'kind', 'carrier', 'invoice'];
+const DELIVERY_FILTERS = ['owner', 'kind', 'carrier', 'invoice', 'assignee', 'customer', 'product', 'receiver', 'address', 'due', 'tracking', 'confirmation', 'sort'];
 let deliveriesReq = 0;
-var productOrdersUi=null,shipmentCalendarUi=null,orderShipmentData=null;
-function productOrdersDemo(){return productOrdersUi ||= initOrderShipmentDemo({root:$('#view-order-products'),data:orderShipmentData ||= makeShipmentDemo(),kind:'products',go,canProducts:()=>canPage('order-products')});}
-function shipmentCalendarDemo(){return shipmentCalendarUi ||= initOrderShipmentDemo({root:$('#deliveries-prototype'),data:orderShipmentData ||= makeShipmentDemo(),kind:'calendar',go,canProducts:()=>canPage('order-products')});}
+var productOrdersUi=null,shipmentCalendarUi=null;
+function productOrdersView(){return productOrdersUi ||= initOrderProducts({root:$('#view-order-products'),api,go,money,canCalendar:()=>canPage('deliveries'),canOrder:row=>canPage(row.contractNo?'contracts':'orders')});}
+function deliveryCalendarView(){return shipmentCalendarUi ||= createDeliveryCalendar({root:$('#deliveries-calendar'),onRange:(from,to)=>{$('#deliveries-from').value=from;$('#deliveries-to').value=to;loadDeliveries();},actions:x=>deliveryButtons(x)+deliverySlipButtons(x),orderLink:x=>!isWarehouse()&&canPage('order')?(x.contractNo?'#/contracts/':'#/orders/')+encodeURIComponent(x.orderId):null});}
 async function loadDeliveries() {
-  const query=location.hash.split('?')[1]||'',calendar=new URLSearchParams(query).get('view')==='calendar';
-  $('#deliveries-real').hidden=calendar;$('#deliveries-prototype').hidden=!calendar;
-  for(const a of $$('[data-shipment-tab]')){const active=a.dataset.shipmentTab===(calendar?'calendar':'list');a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}
-  if(calendar){shipmentCalendarDemo().show(query);return;}shipmentCalendarUi?.close();
-  // Kho: 7 ngày trước (chuyến trễ chưa giao) → ngày mai; người khác 7 ngày trước → 30 ngày tới.
-  if (!$('#deliveries-from').value) { const t = new Date(todayIso()); $('#deliveries-from').value = new Date(t - 7 * 864e5).toISOString().slice(0, 10); $('#deliveries-to').value = new Date(+t + (isWarehouse() ? 1 : 30) * 864e5).toISOString().slice(0, 10); }
+  const query=location.hash.split('?')[1]||'',tab=new URLSearchParams(query).get('view')||'calendar',calendar=!['list','products'].includes(tab);
+  $('#deliveries-table').hidden=tab!=='list';$('#deliveries-calendar').hidden=!calendar;$('#deliveries-product-lines').hidden=tab!=='products';
+  for(const a of $$('[data-shipment-tab]')){const active=a.dataset.shipmentTab===(calendar?'calendar':tab);a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}
+  shipmentCalendarUi?.close();
+  // Default to the visible month grid, including its adjacent week days.
+  if (!$('#deliveries-from').value) { const [from,to]=deliveryCalendarView().range();$('#deliveries-from').value=from;$('#deliveries-to').value=to; }
   $('#deliveries-list').innerHTML = skeleton(7);
+  $('#deliveries-retry').hidden=true;
+  const req = ++deliveriesReq;
+  $('#deliveries-filter-summary').textContent='Đang tải chuyến giao…';
+  $('#deliveries-calendar').setAttribute('aria-busy','true');
   try {
     const focusId = new URLSearchParams(location.hash.split('?')[1] || '').get('deliveryId');
     const params = new URLSearchParams({ id: focusId || '', from: $('#deliveries-from').value, to: $('#deliveries-to').value, status: $('#deliveries-status .chip.active')?.dataset.status ?? '' });
     for (const k of DELIVERY_FILTERS) { const v = $('#deliveries-' + k).value; if (v) params.set(k, v); }
-    const req = ++deliveriesReq, d = await api('/deliveries?' + params);
+    if (!focusId && $('#deliveries-search').value.trim()) params.set('q',$('#deliveries-search').value.trim());
+    const d = await api('/deliveries?' + params);
     if (req !== deliveriesReq) return;
     fillOrderFilter('#deliveries-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
+    fillOrderFilter('#deliveries-assignee', 'Tất cả người giao', d.filterOptions?.assignees);
     fillOrderFilter('#deliveries-carrier', 'Tất cả', (d.filterOptions?.carriers || []).map(c => ({ id: c, name: c })));
-    const q = focusId ? '' : normalize($('#deliveries-search').value);
-    const rows = d.deliveries.filter(x => !q || normalize(`${x.customerName} ${x.contractNo || x.orderNo} ${x.deliveryNo} ${x.address}`).includes(q));
+    const rows = d.deliveries;
+    $('#deliveries-filter-summary').textContent=`${rows.length} chuyến phù hợp · ${fmtDate($('#deliveries-from').value)} – ${fmtDate($('#deliveries-to').value)}${d.truncated?' · Chỉ hiện 500 chuyến; hãy thu hẹp khoảng ngày hoặc bộ lọc để xem đầy đủ.':''}${focusId?' · Đang xem chuyến từ liên kết trực tiếp; các bộ lọc được bỏ qua.':''}`;
+    deliveryCalendarView().render(rows,{from:focusId?rows[0]?.plannedDate:$('#deliveries-from').value,to:focusId?rows[0]?.plannedDate:$('#deliveries-to').value});
+    renderDeliveryProducts($('#deliveries-product-lines'),rows,x=>deliveryCalendarView().details(x));
     fillList('deliveries', rows.map(x => `<tr>
       <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(ghnTrackingText(x) || x.carrier)}</small></td>
-      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small>${deliverySlipButtons(x)}</td>
+      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small><small class="delivery-product-labels">${(x.products||[]).map(p=>esc(`${p.name} (${p.sku}) · ${fmtNum(p.qty)} ${p.unit}`)).join('<br>')}</small>${deliverySlipButtons(x)}</td>
       <td>${deliveryReceiver(x)}<small>${esc(x.address || x.customerAddress || '')}</small></td>
       <td>${pill(DELIVERY_STATUS, x.status)}${deliveryConfirmation(x)}${deliveryPhotos(x)}</td>
       <td>${x.invoiceNo?.trim() ? esc(x.invoiceNo) : x.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
       'Không có chuyến giao nào trong khoảng ngày này.');
-  } catch (e) { listError('deliveries', e); }
+  } catch (e) { if(req!==deliveriesReq)return;listError('deliveries', e);$('#deliveries-filter-summary').textContent=e.message||'Không tải được lịch giao hàng.';$('#deliveries-calendar').replaceChildren();$('#deliveries-product-lines').replaceChildren();$('#deliveries-retry').hidden=false; }
+  finally { if(req===deliveriesReq)$('#deliveries-calendar').removeAttribute('aria-busy'); }
 }
 /** In từ lịch: GH theo đúng chuyến; ĐG chọn các phiếu của đơn vì không có liên kết 1–1 với chuyến. */
 function deliverySlipButtons(x) {
@@ -3713,7 +3731,9 @@ $('#orders-export').addEventListener('click', async e => {
   } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; b.textContent=label; }
 });
 $('#contracts-search').addEventListener('input', debounce(() => { contractsPager?.reset(); loadContracts(); }));
-$('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 150));
+$('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 350));
+$('#deliveries-retry').addEventListener('click', loadDeliveries);
+for (const key of ['customer','product','receiver','address']) $('#deliveries-'+key).addEventListener('input', debounce(loadDeliveries, 350));
 $('#receivables-search').addEventListener('input', debounce(loadReceivables));
 // ---------------------------------------------------------------- Sổ thu / chi
 const PAY_METHOD = { transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác' };
@@ -3795,6 +3815,7 @@ $('#receivables-filters').addEventListener('click', e => {
   $$('#receivables-filters .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
   loadReceivables();
 });
+for (const chip of $$('#deliveries-status .chip')) chip.setAttribute('data-mobile-navigation','');
 for (const id of ['#deliveries-from', '#deliveries-to', ...DELIVERY_FILTERS.map(k => '#deliveries-' + k)]) $(id).addEventListener('change', loadDeliveries);
 $('#deliveries-clear').addEventListener('click', () => {
   for (const k of DELIVERY_FILTERS) $('#deliveries-' + k).value = '';
@@ -3936,7 +3957,7 @@ async function refreshData() {
   else if (page === 'transfers') jobs.push(transfersView().load(id));
   else if (page === 'receiving') jobs.push(receivingView().load());
   else if (page === 'deliveries') jobs.push(loadDeliveries());
-  else if (page === 'order-products') productOrdersDemo().show(query);
+  else if (page === 'order-products') productOrdersView().load();
   else if (page === 'receivables') jobs.push(loadReceivables());
   else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : customerScreen(query));
   else if (page === 'products') { if(id)jobs.push(productDetail().refresh());else jobs.push(loadProducts(),productAdmin().loadPending(),loadCatalogSnapshot()); }
@@ -4193,7 +4214,7 @@ async function openOrder(id, confirmed = null) {
       box.append(b);
     }).catch(e => { if (box.isConnected) { box.textContent = e.message; box.className = 'error'; } });
   }
-  if(o.channel==='crm'&&d.lines.some(l=>l.deliveredQty>0)&&o.status!=='cancelled'){
+  if(o.channel==='crm'&&(d.lines.some(l=>l.deliveredQty>0)||d.returnSummary?.requests?.length)&&o.status!=='cancelled'){
     const b=document.createElement('button');b.type='button';b.className='btn secondary';b.dataset.mobileInline='';b.dataset.crmReturns='';b.textContent='Trả hàng / Hoàn tiền';
     b.onclick=()=>openCrmReturns({api,toast,orderId:o.id,onChanged:()=>openOrder(o.id)});$('#order-actions').append(b);
     if(new URLSearchParams(location.hash.split('?')[1]||'').get('returns')==='1'&&!document.querySelector('.pos-return-modal[open]')){const [path,query='']=location.hash.split('?'),params=new URLSearchParams(query);params.delete('returns');history.replaceState(history.state,'',path+(params.size?'?'+params:''));b.click();}
@@ -4283,6 +4304,14 @@ async function openOrder(id, confirmed = null) {
   if (o.channel === 'pos' && o.fulfillmentMode === 'cod' && o.status !== 'cancelled' && r.balance > 0 && can('pos.sell')) {
     for (const delivery of d.deliveries.filter(x => x.status === 'delivered' && x.codAmount > d.payments.filter(p => !p.voidedAt && p.deliveryId === x.id).reduce((n, p) => n + p.amount, 0)))
       $('#order-payments').append(posCodReceipt({ api, delivery, onSaved: () => openOrder(o.id) }));
+  }
+  const scheduleParams = new URLSearchParams(route.split('?')[1]||''), scheduleLine = scheduleParams.get('scheduleLine');
+  if(scheduleLine){
+    scheduleParams.delete('scheduleLine');const rest=scheduleParams.toString(),clean=location.hash.split('?')[0]+(rest?'?'+rest:'');
+    history.replaceState(null,'',clean);lastRoutedHash=currentHash=clean;
+    const target=d.lines.find(l=>l.id===scheduleLine),reserved=target?d.deliveries.filter(s=>['planned','in_transit'].includes(s.status)).flatMap(s=>s.lines).filter(l=>l.orderLineId===target.id).reduce((sum,l)=>sum+l.qty,0):0;
+    if(target&&target.qty-target.deliveredQty-reserved>1e-9&&o.status!=='draft'&&!$('#order-new-delivery').hidden&&!$('#order-new-delivery').disabled){$('#order-new-delivery').dataset.scheduleLine=scheduleLine;$('#order-new-delivery').click();}
+    else toast('Dòng hàng không còn số lượng được xếp lịch. Vui lòng kiểm tra lại đơn.','err');
   }
 }
 /**
@@ -5058,12 +5087,13 @@ $('#contract-form').addEventListener('submit', async e => {
 });
 $('#contract-dialog').addEventListener('close',()=>{contractTarget=null;});
 $('#order-new-delivery').addEventListener('click', () => {
+  const focusLine=$('#order-new-delivery').dataset.scheduleLine;delete $('#order-new-delivery').dataset.scheduleLine;
   const f = $('#delivery-form'), d = sales.detail, o = d.order; f.reset(); $('#delivery-error').textContent = '';
   $('#delivery-order-no').textContent = o.orderNo; f.plannedDate.value = o.expectedDeliveryDate && o.expectedDeliveryDate >= todayIso() ? o.expectedDeliveryDate : todayIso();
   const recipient = orderRecipient(o); f.receiverName.value = recipient.receiverName; f.receiverPhone.value = recipient.receiverPhone; f.address.value = o.address || '';
   const pending = id => d.deliveries.filter(x => ['planned', 'in_transit'].includes(x.status)).flatMap(x => x.lines).filter(l => l.orderLineId === id).reduce((s, l) => s + l.qty, 0);
   $('#delivery-lines').innerHTML = d.lines.map(l => { const left = Math.max(0, l.qty - l.deliveredQty - pending(l.id)); return `<tr><td>${esc(l.name)}<small>${esc(l.unit)}</small></td><td class="right">${fmtNum(left)}</td>
-    <td class="right"><input class="num-input" inputmode="decimal" data-line="${esc(l.id)}" value="${left ? fmtNum(left) : ''}" ${left ? '' : 'disabled'} aria-label="Số lượng giao ${esc(l.name)}"></td></tr>`; }).join('');
+    <td class="right"><input class="num-input" inputmode="decimal" data-line="${esc(l.id)}" value="${left && (!focusLine||focusLine===l.id) ? fmtNum(left) : ''}" ${left ? '' : 'disabled'} aria-label="Số lượng giao ${esc(l.name)}"></td></tr>`; }).join('');
   // Mỗi lần mở form một mã chống gửi lặp: bấm lại / mạng gửi lại cùng nội dung trả chuyến đã tạo, không tạo trùng.
   $('#delivery-form').dataset.clientKey = crypto.randomUUID();
   $('#delivery-dialog').showModal();

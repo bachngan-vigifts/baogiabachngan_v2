@@ -26,7 +26,7 @@ Trang **Quản trị › Phân quyền** (`#/permissions`, `trial-ui/permissions
 
 | Nhóm | Quyền | Mặc định |
 |---|---|---|
-| Trang được vào | Đơn đặt hàng, HĐKT, Công nợ, Khách hàng, Tổng quan doanh số, Sơ đồ quy trình | Sale, Sale Admin, NVBH ML, NVBH LOCK, Kế toán |
+| Trang được vào | Đơn đặt hàng, Sản phẩm theo đơn, HĐKT, Công nợ, Khách hàng, Tổng quan doanh số, Sơ đồ quy trình | Sale, Sale Admin, NVBH ML, NVBH LOCK, Kế toán |
 | Trang được vào | Báo giá, Chăm sóc KH, Khách hỏi tồn | Sale, Sale Admin, NVBH ML, NVBH LOCK (Kế toán bỏ từ migration 0071) |
 | Trang được vào | Lịch giao hàng, Đơn mua NCC | Mọi chức vụ (cả Kho) |
 | Kho | Phiếu đóng gói (xem tất cả, xác nhận đóng xong), Tra tồn | Kho, Sale Admin |
@@ -38,6 +38,10 @@ Trang **Quản trị › Phân quyền** (`#/permissions`, `trial-ui/permissions
 | Tài chính NCC | Xem giá mua NCC, Ghi thanh toán NCC, Danh bạ NCC | Kế toán, Sale Admin |
 | Kế toán | Sổ thu / chi; Huỷ phiếu thu ghi nhầm; Doanh số toàn công ty | Kế toán (migration 0071) |
 | Quản trị | Quản lý phân quyền | Không ai (chỉ Manager) |
+
+**Sản phẩm theo đơn** (`page.order-products`) và **Lịch giao hàng** (`page.deliveries`) là hai dòng riêng trong nhóm **Trang được vào**. Manager có thể bật/tắt độc lập cho từng chức vụ. Quyền Sản phẩm theo đơn chỉ mở trang đó; quyền đọc/sửa đơn thật vẫn kiểm tra theo API Đơn đặt hàng. Liên kết sang Lịch giao hàng chỉ hiện khi có quyền vào lịch. API Sản phẩm theo đơn dùng quyền mới và vẫn giữ phạm vi dữ liệu theo nhân viên; chỉ cấp quyền này không mở API Đơn đặt hàng hoặc quyền xếp lịch.
+
+Migration `20261107074837_order_products_page_permission.sql` chạy một lần để giữ quyền mở Sản phẩm theo đơn cho các chức vụ đang có quyền Đơn đặt hàng, bao gồm chức vụ tự tạo. Quyền Lịch giao hàng hiện có được giữ nguyên.
 
 **Nhóm nhận việc theo quyền:** việc giao cho nhóm Kế toán cũng đến người có quyền "Ghi thanh toán / lịch trả NCC"; nhóm Kho cũng đến người có quyền "Nhận hàng NCC" (thông báo "Kho: yêu cầu đóng gói" đến người có quyền "Phiếu đóng gói"). VD Sale Admin nhận việc "Xuất hoá đơn", "Thanh toán NCC".
 

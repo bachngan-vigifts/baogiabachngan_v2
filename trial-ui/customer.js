@@ -1,3 +1,4 @@
+import {productThumbnailUrl,noteThumbnailFailure} from './product-images.js';
 import { bindForgotPassword } from './forgot-password.js';
 import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
 // Bách Ngân · Trang khách hàng: xem/tạo báo giá, đặt hàng, theo dõi đơn. Không có tồn kho, giá nhập.
@@ -209,13 +210,16 @@ const isDrive = v => { try { const h = new URL(v).hostname; return h === 'drive.
 const displayImage = v => { const x = String(v || '').trim(), id = isDrive(x) && driveId(x); return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w600` : x; };
 const fallbackImage = v => { const id = isDrive(v) && driveId(v); return id ? `https://lh3.googleusercontent.com/d/${id}=w600` : ''; };
 const PLACEHOLDER = '<svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z M4 15l4-4 4 4 3-3 5 5 M15 9h.01"/></svg>';
-const imgTag = (url, cls = 'thumb') => /^(https:\/\/|data:image\/)/i.test(url || '')
-  ? `<img class="${cls}" src="${esc(displayImage(url))}" data-fallback="${esc(fallbackImage(url))}" alt="" loading="lazy" referrerpolicy="no-referrer">`
-  : `<span class="${cls}">${PLACEHOLDER}</span>`;
+const imgTag = (url, cls = 'thumb') => {
+  if (!/^(https:\/\/|data:image\/)/i.test(url || '')) return `<span class="${cls}">${PLACEHOLDER}</span>`;
+  const original = displayImage(url), source = productThumbnailUrl(original);
+  const fallback = source !== original ? original : fallbackImage(url);
+  return `<img class="${cls}" src="${esc(source)}" data-fallback="${esc(fallback)}" alt="" loading="lazy" decoding="async" width="64" height="64" referrerpolicy="no-referrer">`;
+};
 document.addEventListener('error', e => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement) || !img.classList.contains('thumb')) return;
-  if (img.dataset.fallback) { img.src = img.dataset.fallback; img.dataset.fallback = ''; return; }
+  if (img.dataset.fallback) { noteThumbnailFailure(img.currentSrc || img.src); img.src = img.dataset.fallback; img.dataset.fallback = ''; return; }
   const span = document.createElement('span'); span.className = img.className + ' broken'; span.title = 'Không tải được ảnh'; span.innerHTML = PLACEHOLDER; img.replaceWith(span);
 }, true);
 

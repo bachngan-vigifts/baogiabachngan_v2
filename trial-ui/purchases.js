@@ -955,7 +955,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       return { l, pd, nt };
     });
     const tw = el('div', 'table-wrap'); tw.append(t);
-    const ok = el('button', 'btn primary', 'Ghi nhận'); ok.type = 'submit';
+    const ok = el('button', 'btn primary', 'Duyệt đơn'); ok.type = 'submit';
     f.append(g, tw, err, foot(ok));
     f.addEventListener('submit', e => {
       e.preventDefault();

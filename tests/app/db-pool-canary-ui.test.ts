@@ -33,3 +33,15 @@ test('đo tải: mỗi chế độ gửi đúng số đợt × lượt GET cùng
   assert.match(text, /2 đợt × 4 lượt GET \/me/); assert.match(text, /Kết nối trực tiếp: .*lỗi 1\/8/); assert.match(text, /Pooler \(thử\): .*máy chủ báo: pooler-canary/);
   assert.equal(summarizeLoad([]).count, 0);
 });
+
+test('sau khi đồng bộ main: báo cáo vẫn có pooler/inflight và loại lượt đo khi máy ngủ', async () => {
+  const {recordApi,speedEntries,clearSpeedEntries,summarize,speedReport}=await import(new URL('../../trial-ui/speed-log.js',import.meta.url).href);
+  clearSpeedEntries();
+  try {
+    recordApi({path:'/me',ms:200,wallMs:200,status:200,serverTiming:timing('pooler-canary',150,3)});
+    recordApi({path:'/me',ms:30000,wallMs:90000,status:200,serverTiming:timing('direct',100,99)});
+    const result=summarize(speedEntries());assert.equal(result.all.count,1);assert.equal(result.paused,1);
+    assert.equal(result.dbMode,'pooler-canary');assert.equal(result.maxInflight,3);
+    const report=speedReport(speedEntries(),{});assert.match(report,/kết nối CSDL: pooler-canary/);assert.match(report,/tối đa 3 lượt\/isolate/);assert.match(report,/bỏ qua 1 lượt/);
+  } finally {clearSpeedEntries();}
+});

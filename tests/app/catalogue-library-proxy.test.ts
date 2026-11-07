@@ -20,3 +20,13 @@ test('library fast-list options are forwarded to the fixed CRM route',async()=>{
   const u=new URL(url);assert.equal(u.pathname,'/functions/v1/baogia-v2-api/api/staff/catalogue-library');assert.equal(u.searchParams.get('includeStock'),'0');assert.equal(u.searchParams.get('facets'),'0');return Response.json({products:[]});
  });assert.equal(r.status,200);
 });
+
+test('GET prefers database region, retries only transient reads, never replays writes',async()=>{
+ const request=(method='GET')=>new Request('https://crm.minhlongonline.com/catalogue/api/library',{method,headers:{Authorization:'Bearer TEST_CATALOGUE_PROXY_TOKEN','x-region':'untrusted'},...(method==='GET'?{}:{body:'{}'})});
+ const regions:(string|null)[]=[];
+ const result=await libraryProxy(request(),async(_url:string,init:RequestInit)=>{regions.push(new Headers(init.headers).get('x-region'));return regions.length===1?Response.json({error:'busy'},{status:503}):Response.json({products:[]});});
+ assert.equal(result.status,200);assert.deepEqual(regions,['ap-northeast-2',null]);
+ let writes=0;const failure=await libraryProxy(request('POST'),async(_url:string,init:RequestInit)=>{writes++;assert.equal(new Headers(init.headers).get('x-region'),null);throw Error('connection lost');});assert.equal(failure.status,503);assert.equal(writes,1);
+ let denied=0;await libraryProxy(request(),async()=>{denied++;return Response.json({error:'forbidden'},{status:403});});assert.equal(denied,1);
+ let unavailable=0;const recovered=await libraryProxy(request(),async()=>{if(++unavailable===1)throw Error('region unavailable');return Response.json({products:[]});});assert.equal(recovered.status,200);assert.equal(unavailable,2);
+});

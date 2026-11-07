@@ -112,7 +112,8 @@ test('dashboard: ranking and employee selector match staff page, deleted history
   const { db, call, mgr } = await fixture();
   const before = (await call('/dashboard/revenue' + month, mgr)).data;
   await db.update(employees).set({ deletedAt: now, active: false }).where(eq(employees.id, 'emp'));
-  const res = await call('/dashboard/revenue' + month, mgr);
+  // refresh=1: đọc lại sau khi sửa dữ liệu (bỏ bản tính sẵn 30 phút).
+  const res = await call('/dashboard/revenue' + month + '&refresh=1', mgr);
   assert.equal(res.status, 200, JSON.stringify(res.data));
   const staff = (await call('/admin/members', mgr)).data.members.filter((m: any) => ['employee', 'manager'].includes(m.role));
   const ids = (rows: any[]) => rows.map(r => r.id).sort();
@@ -135,13 +136,13 @@ test('dashboard: đồng nghiệp cùng chức vụ và khách được chia s�
   await db.insert(customerStaff).values([{ customerId: 'peer-customer', memberId: 'new', role: 'owner', createdAt: now }, { customerId: 'peer-customer', memberId: 'emp', role: 'shared', createdAt: now }]);
   await db.insert(salesOrders).values({ id: 'peer-order', orderNo: 'PEER', quoteType: 'HRC', customerName: 'Khách đồng nghiệp', customerId: 'peer-customer', ownerId: 'new', createdBy: 'new', orderDate: '2026-09-10', status: 'confirmed', total: 12345, createdAt: now, updatedAt: now });
   await db.insert(customerActivities).values({ id: 'peer-care', customerId: 'peer-customer', ownerId: 'new', type: 'call', result: 'negotiating', expectedRevenue: 45678, occurredAt: '2026-09-20T03:00:00Z', content: 'Của đồng nghiệp', createdAt: now, updatedAt: now });
-  const mine = (await call('/dashboard/revenue' + month, emp)).data;
+  const mine = (await call('/dashboard/revenue' + month + '&refresh=1', emp)).data;
   assert.deepEqual(mine.summary, before.summary);
   assert.deepEqual(mine.employees.map((x: any) => x.id), ['emp']);
   assert.ok(!mine.neglected.customers.some((x: any) => x.id === 'peer-customer'));
   assert.equal((await call('/dashboard/revenue' + month + '&owner=new', emp)).status, 403);
   assert.equal((await call('/dashboard/revenue' + month + '&group=sale', emp)).status, 403);
-  const all = (await call('/dashboard/revenue' + month, mgr)).data;
+  const all = (await call('/dashboard/revenue' + month + '&refresh=1', mgr)).data;
   assert.equal(all.summary.actual, 1501 + 12345);
   assert.ok(all.employees.some((x: any) => x.id === 'new' && x.actual === 12345));
 });

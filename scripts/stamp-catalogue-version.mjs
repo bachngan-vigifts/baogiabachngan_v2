@@ -5,7 +5,7 @@ if(!/^[\w.-]{1,40}$/.test(version||''))throw Error('Invalid catalogue release ve
 for(const name of readdirSync(root)){
  if(!/\.(?:js|html|css)$/.test(name))continue;
  const path=new URL(name,root),source=readFileSync(path,'utf8');
- const result=source.replace(/((?:\bfrom\s*|\bimport\s*|\b(?:src|href)=)["'])(\.\/[^"'?]+\.(?:js|css))(["'])/g,(_,start,file,end)=>start+file+'?v='+version+end);
+ const result=source.replace(/((?:\bfrom\s*|\bimport\s*|\b(?:src|href)=)["'])(\.\.?\/[^"'?]+\.(?:js|css))(["'])/g,(_,start,file,end)=>start+file+'?v='+version+end);
  if(result!==source)writeFileSync(path,result);
 }
 console.log('Stamped catalogue release',version);

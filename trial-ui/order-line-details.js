@@ -30,7 +30,7 @@ export function renderOrderLineDetails({ head, body, details, order, lines,retur
     } else name.textContent = line.name;
     const sub = [line.sku, line.unit].filter(Boolean).join(' · ');
     if (sub) name.append(el('small', sub));
-    cell(tr, num(line.qty)); cell(tr, num(line.deliveredQty));
+    cell(tr, num(line.qty)); cell(tr, num(line.historicalDeliveredQty??line.deliveredQty));
     if(showReturns){cell(tr,num(line.returnedQty||0));cell(tr,num(line.restockedQty||0));cell(tr,num(line.customerKeptQty??Math.max(0,line.deliveredQty-(line.returnedQty||0))));}
     if (pos) {
       // Original POS prices include VAT under the VAT policy. Never present them as net prices.

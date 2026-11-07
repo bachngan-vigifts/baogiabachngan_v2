@@ -1,3 +1,4 @@
+import {redeliveryByLine} from './crm-redelivery.ts';
 import { assertNoPendingGhnEdit } from '../domain/pos-ghn-edit.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { orderRecipient } from '../domain/order-notes.ts';
@@ -85,7 +86,8 @@ async function allocatedByLine(db: StaffEnv['db'] | Tx, orderId: string) {
   const rows = await db.select({ lineId: packingSlipLines.orderLineId, qty: sql<number>`sum(${packingSlipLines.qty})` }).from(packingSlipLines)
     .innerJoin(packingSlips, eq(packingSlips.id, packingSlipLines.slipId))
     .where(and(eq(packingSlips.orderId, orderId), ne(packingSlips.status, 'cancelled'))).groupBy(packingSlipLines.orderLineId);
-  return new Map(rows.map(r => [r.lineId, Number(r.qty) || 0]));
+  const returned=await redeliveryByLine(db,[orderId]);
+  return new Map(rows.map(r => [r.lineId, Math.max(0,(Number(r.qty)||0)-(r.lineId?returned.get(r.lineId)?.packed??0:0))]));
 }
 async function notifyWarehouse(c: Ctx, title: string, body: string, url: string) {
   // Nhóm Kho = chức vụ Kho + chức vụ có quyền "Phiếu đóng gói" (VD Sale Admin) – khớp với ai xác nhận đóng hàng được.

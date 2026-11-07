@@ -121,11 +121,11 @@ export function initCare(deps) {
   const parseMoney = v => Number(String(v || '').replace(/[^\d]/g, '')) || 0;
   const seg = (name, list, sel) => `<div class="care-seg" role="radiogroup">${list.map(x => `<label><input type="radio" name="${name}" value="${esc(x.key)}"${x.key === sel ? ' checked' : ''}><span>${esc(x.label)}</span></label>`).join('')}</div>`;
   /** `customer` = khách chọn sẵn (từ trang chi tiết khách), `activity` = lần chăm sóc cần sửa. */
-  async function openForm({ customer = null, activity = null } = {}, onSaved) {
+  async function openForm({ customer = null, activity = null, ownerId = null } = {}, onSaved) {
     try { await loadConfig(); if (isManager() && !people) people = (await api('/tasks/people')).people; } catch (ex) { return toast(ex.message, 'err'); }
     const a = activity, today = todayIso();
     let picked = a ? { id: a.customerId, name: a.customerName } : customer;
-    const me = deps.userId?.() || '', owner = a?.ownerId || me;
+    const me = deps.userId?.() || '', owner = a?.ownerId || ownerId || me;
     const dlg = document.createElement('dialog'); dlg.className = 'modal care-dialog';
     dlg.innerHTML = `<form method="dialog" autocomplete="off">
       <div class="modal-head"><div><span class="eyebrow">Chăm sóc khách hàng</span><h2>${a ? 'Sửa giao dịch' : 'Giao dịch mới'}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
@@ -191,8 +191,8 @@ export function initCare(deps) {
         ...(a ? { subject: '', nextAction: a.nextAction || '', revision: a.revision } : {}) };
       const btn = dlg.querySelector('[data-save]');submitting=true;btn.disabled=true;if(!attempt)attempt={...body,...(!a?{clientKey:crypto.randomUUID()}:{})};for(const x of form.querySelectorAll('input,select,textarea,button'))x.disabled=true;
       try {
-        await api(a ? `/care/${encodeURIComponent(a.id)}` : '/care', a ? 'PUT' : 'POST', attempt);submitting=false;
-        close(); toast(a ? 'Đã lưu.' : 'Đã ghi giao dịch. Đến hạn nhắc sẽ hiện ở Công việc.'); onSaved?.();
+        const saved = await api(a ? `/care/${encodeURIComponent(a.id)}` : '/care', a ? 'PUT' : 'POST', attempt);submitting=false;
+        close(); toast(a ? 'Đã lưu.' : 'Đã ghi giao dịch. Đến hạn nhắc sẽ hiện ở Công việc.'); onSaved?.(saved.activity);
       } catch (ex) {err.textContent=ex.message;submitting=false;if(!ex.status||ex.status>=500){err.textContent+=' Chưa rõ kết quả; thử lại giữ nguyên nội dung.';btn.textContent='Kiểm tra lại lần gửi';for(const x of dlg.querySelectorAll('[data-x]'))x.disabled=false;}else{attempt=null;for(const x of form.querySelectorAll('input,select,textarea,button'))x.disabled=false;}}finally{btn.disabled=false;}
     });
     dlg.showModal();

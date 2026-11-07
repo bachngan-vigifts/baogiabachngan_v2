@@ -22,6 +22,7 @@ export interface DashboardKpiMember {
   status: 'estimate' | 'confirmed' | 'paid';
   /** crm = KH mới / giao dịch / HĐ lấy tự động từ CRM; manual = nhập trên bảng lương. */
   source: 'crm' | 'manual';
+  /** Tổng điểm thực tế từ các chỉ tiêu, dùng trên Tổng quan cho mọi nhân viên/chức vụ. */
   total: number;
   /** KPI dùng tính thưởng: bằng total, trừ khi có KPI chốt / KPI cố định. */
   used: number;

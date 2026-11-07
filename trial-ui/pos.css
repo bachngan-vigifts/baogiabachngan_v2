@@ -1140,6 +1140,11 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-catalog > .pos-grid, .pos-catalog > .btn { flex: none; }
 .pos-catalog-pages { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 10px; flex: none; }
 
+/* Reserve the loaded grid height while its first catalog page is pending. */
+@media (max-width: 850px) {
+  .pos-catalog > .pos-grid:empty { min-height: min(48vh, 420px); min-height: min(48svh, 420px); }
+}
+
 /* Mobile: a short product viewport, with page scrolling continuing to the customer/cart. */
 @media (max-width: 850px) {
   .pos-catalog > .pos-grid {

@@ -34,7 +34,7 @@ async function setup() {
     { id: 'hd', name: 'Hoá đơn Lock', kind: 'stock', stockPrivate: true }]);
   await db.insert(warehouseSellers).values([{ warehouseId: 'vig', positionId: 'sale' }, { warehouseId: 'vig', positionId: 'sale-admin' },
     { warehouseId: 'ml', positionId: 'sales-ml' }, { warehouseId: 'ml', positionId: 'sales-lock' }, { warehouseId: 'hd', positionId: 'accounting' }]);
-  await db.insert(products).values([{ sku: 'LY1', name: 'Ly sứ', unit: 'cái', updatedAt: now }]);
+  await db.insert(products).values([{ sku: 'LY1', name: 'Ly sứ', unit: 'cái', brand: 'Minh Long', updatedAt: now }]);
   await db.insert(productStock).values([{ sku: 'LY1', warehouseId: 'vig', quantity: 999, updatedAt: now }]);
   // Đã chốt tồn đầu kỳ: sổ kho là tồn chuẩn (tồn Sapo 999 không còn dùng cho các kho này).
   await postMoves(db as never, 'mgr', [{ sku: 'LY1', warehouseId: 'vig', qty: 50, kind: 'opening', refType: 'opening', refId: 'op1' },
@@ -536,4 +536,41 @@ test('phụ phí nhập tay giữ nguyên tiền, bỏ kiểm tồn và kế ho�
     assert.equal(slips.length,1);assert.equal(slips[0]!.totalQty,10);
     assert.equal(await bal(s,'vig'),50,'sinh chứng từ không tự ghi kho');
   }
+});
+
+test('rà nguồn hàng chỉ áp dụng cho Minh Long / Lock&Lock: mã khác bỏ qua bước này, kế hoạch không cần và không nhận mã khác', async () => {
+  const { needsSourcing } = await import('../../src/modules/sales/domain/sourcing-scope.ts');
+  for (const brand of ['Minh Long', 'Minh Long Lys', 'Minh Long Healthy Cook', 'Minh Long I', 'Minh Long 1', 'MINH LONG', 'Lock', 'LocknLock', 'Lock&Lock', 'Lock & Lock', 'lock n lock'])
+    assert.equal(needsSourcing({ brand, name: 'Sản phẩm' }), true, brand);
+  for (const brand of ['Vigifts', 'Thermos', 'Bát Tràng', 'Blockchain'])
+    assert.equal(needsSourcing({ brand, name: 'Bộ quà Minh Long' }), false, `${brand}: có thương hiệu thì xét thương hiệu, không xét tên`);
+  assert.equal(needsSourcing({ brand: '', name: 'Gác muỗng Jas Lys Trắng Ngà' }), true, 'chưa ghi thương hiệu: xét theo tên');
+  assert.equal(needsSourcing({ brand: '', name: 'Hộp quà giấy kraft' }), false);
+  assert.equal(needsSourcing(null), false);
+
+  const s = await setup(), now = new Date().toISOString();
+  await s.db.insert(products).values([{ sku: 'VG1', name: 'Hộp quà giấy', unit: 'cái', brand: 'Vigifts', updatedAt: now }]);
+  const mixed = await s.call('/quotes', s.emp, 'POST', { type: 'B2B', quoteNo: 'BG_MIX', customer: 'Khách MIX', vat: 8, rows: [
+    { name: 'Ly sứ', sku: 'LY1', unit: 'cái', qty: 5, price: 1000 }, { name: 'Hộp quà giấy', sku: 'VG1', unit: 'cái', qty: 3, price: 2000 },
+    { name: 'Thiệp in logo', sku: 'NEW-1', unit: 'cái', qty: 2, price: 500 }] });
+  assert.equal(mixed.status, 201, JSON.stringify(mixed.data));
+  assert.equal((await s.call(`/quotes/${mixed.data.id}/approve`, s.mgr, 'POST', { revision: 1 })).status, 200);
+  const plan = await s.call(`/quotes/${mixed.data.id}/stock-plan`, s.emp);
+  assert.deepEqual(plan.data.lines.map((l: any) => l.sku), ['LY1'], 'chỉ mã Minh Long cần rà nguồn');
+  assert.deepEqual(plan.data.skipped.map((l: any) => l.sku), ['VG1', 'NEW-1'], 'mã khác (kể cả mã chưa có trong danh mục) được bỏ qua');
+  assert.equal(plan.data.scopeLabel, 'Minh Long / Lock&Lock');
+  const outside = await s.call('/orders', s.emp, 'POST', { quoteId: mixed.data.id, warehouseId: 'vig', stockPlan: [{ sku: 'LY1', qty: 5, type: 'stock', note: 'KHO VIGIFTS' }, { sku: 'VG1', qty: 3, type: 'stock', note: 'KHO VIGIFTS' }] });
+  assert.equal(outside.status, 400, 'kế hoạch không nhận mã ngoài phạm vi');
+  const created = await s.call('/orders', s.emp, 'POST', { quoteId: mixed.data.id, warehouseId: 'vig', stockPlan: [{ sku: 'LY1', qty: 5, type: 'stock', note: 'KHO VIGIFTS' }] });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const slips = await s.db.select().from(packingSlips).where(eq(packingSlips.orderId, created.data.id));
+  assert.equal(slips.reduce((n, x) => n + x.totalQty, 0), 5, 'phiếu kế hoạch chỉ gồm mã Minh Long');
+
+  const onlyOther = await s.call('/quotes', s.emp, 'POST', { type: 'B2B', quoteNo: 'BG_VG', customer: 'Khách VG', vat: 8, rows: [{ name: 'Hộp quà giấy', sku: 'VG1', unit: 'cái', qty: 3, price: 2000 }] });
+  assert.equal((await s.call(`/quotes/${onlyOther.data.id}/approve`, s.mgr, 'POST', { revision: 1 })).status, 200);
+  const none = await s.call(`/quotes/${onlyOther.data.id}/stock-plan`, s.emp);
+  assert.deepEqual([none.data.lines.length, none.data.skipped.length], [0, 1], 'đơn toàn mã khác: bỏ qua cả bước rà nguồn');
+  const plain = await s.call('/orders', s.emp, 'POST', { quoteId: onlyOther.data.id });
+  assert.equal(plain.status, 201, JSON.stringify(plain.data));
+  assert.equal((await s.db.select().from(packingSlips).where(eq(packingSlips.orderId, plain.data.id))).length, 0);
 });
