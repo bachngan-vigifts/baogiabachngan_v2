@@ -12,6 +12,7 @@ import { quotations, quoteOrderFollowups } from '../../quotes/schema.ts';
 import { customerPayments, salesContracts, salesOrders } from '../../sales/schema.ts';
 import { customerAccounts, customerStockRequests } from '../../portal/schema.ts';
 import { customerActivities } from '../../care/schema.ts';
+import { customerCampaignTargets } from '../schema.ts';
 
 type Ctx = RouteContext<StaffEnv>;
 type Db = StaffEnv['db'];
@@ -126,6 +127,18 @@ export async function mergeCustomers(db: Db, keepId: string, dropIds: string[], 
     await tx.update(salesContracts).set({ customerId: keepId }).where(inArray(salesContracts.customerId, ids));
     await tx.update(customerPayments).set({ customerId: keepId }).where(inArray(customerPayments.customerId, ids));
     await tx.update(customerActivities).set({ customerId: keepId }).where(inArray(customerActivities.customerId, ids));
+    // A merged customer stays once per campaign. Keep the strongest real outcome;
+    // all care activities remain in the customer's history even when assignments collapse.
+    const campaignTargets = await tx.select({ t: customerCampaignTargets, completion: customerActivities.completion })
+      .from(customerCampaignTargets).leftJoin(customerActivities, eq(customerActivities.id, customerCampaignTargets.activityId))
+      .where(inArray(customerCampaignTargets.customerId, [keepId, ...ids])).for('update', { of: customerCampaignTargets });
+    const campaigns = new Set(campaignTargets.map(r => r.t.campaignId));
+    const priority = (r: typeof campaignTargets[number]) => (r.completion === 'completed' ? 4 : 0) + (r.t.activityId ? 2 : 0) + (r.t.customerId === keepId ? 1 : 0);
+    for (const id of campaigns) {
+      const rows = campaignTargets.filter(r => r.t.campaignId === id).sort((a,b) => priority(b)-priority(a) || a.t.id.localeCompare(b.t.id));
+      if (rows.length > 1) await tx.delete(customerCampaignTargets).where(inArray(customerCampaignTargets.id, rows.slice(1).map(r => r.t.id)));
+      await tx.update(customerCampaignTargets).set({ customerId: keepId, revision: sql`${customerCampaignTargets.revision} + 1` }).where(eq(customerCampaignTargets.id, rows[0]!.t.id));
+    }
     await tx.update(customerAccounts).set({ customerId: keepId }).where(inArray(customerAccounts.customerId, ids));
     await tx.update(customerStockRequests).set({ customerId: keepId }).where(inArray(customerStockRequests.customerId, ids));
     await tx.update(quoteOrderFollowups).set({ customerId: keepId }).where(inArray(quoteOrderFollowups.customerId, ids));

@@ -44,3 +44,5 @@ export * from '../modules/store/schema.ts';
 export * from '../modules/staff-reports/schema.ts';
 
 export {salesPayrollTeamSources} from '../modules/sales/team-payroll-schema.ts';
+
+export * from '../modules/customer-hub/schema.ts';

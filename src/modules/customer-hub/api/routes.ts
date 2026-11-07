@@ -1,3 +1,4 @@
+import { registerCustomerCenterRoutes } from './center.ts';
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
@@ -29,6 +30,7 @@ const viewer = (c: Ctx) => (c.state.session as SessionState).member;
  * Manager / người phụ trách / người được chia sẻ thấy toàn bộ; nhân viên khác chỉ thấy phần mình phụ trách hoặc tạo.
  */
 export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
+  registerCustomerCenterRoutes(router);
   router.get('/customers/:id/overview', async c => {
     const db = c.env.db, me = viewer(c), id = c.params.id!;
     const profile = await customerProfile(db, id, me), all = profile.access.canSeeAll;

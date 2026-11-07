@@ -4,14 +4,18 @@ Manager có thể chuẩn bị, xem trước và đối soát khách/người li
 
 ## Trung tâm khách hàng
 
-Menu **Khách hàng → Trung tâm khách hàng** trên máy tính và điện thoại mở thẳng `#/customers?tab=center`. Tab **Danh sách khách hàng** vẫn mở danh bạ; các đường dẫn `#/customers` hoặc `?tab=list` giữ nguyên danh bạ hiện có. Dùng chung quyền và nhóm Khách hàng, không thêm thanh điều hướng hay quyền mới. Breadcrumb và tiêu đề trình duyệt hiển thị đúng tab Trung tâm.
+Menu **Khách hàng → Trung tâm khách hàng** trên máy tính và điện thoại mặc định mở **Danh sách khách hàng** (`#/customers`). Chuyển sang tab **Trung tâm khách hàng** để xem lịch chăm sóc và cơ hội mua lại. Link `#/customers?tab=center` vẫn mở thẳng Trung tâm; breadcrumb và tiêu đề đi theo tab.
 
-- **Dữ liệu thật:** số việc hẹn hôm nay, lịch chăm sóc phân trang và kỷ niệm sắp tới từ API hiện có. Tìm kiếm/bộ lọc lịch áp dụng trên trang đang hiển thị, không tính tổng từ trang đó. Số tổng kỷ niệm dùng `total`, danh sách API giới hạn 100. Hẹn chưa có giờ nên không hiển thị giờ tự đặt.
-- **Thao tác thật:** Ghi nhận chăm sóc dùng form Giao dịch & chăm sóc có sẵn; hoàn tất lịch dùng revision/ngày hẹn hiện hành, lỗi không đánh dấu xong. Tôn trọng quyền trang `page.care` và `canEdit` từng lịch. Hoàn tất lịch không tự tạo giao dịch KPI mới.
-- **Minh họa:** khách mua cùng kỳ, khách lâu chưa mua, cơ hội quay lại và chiến dịch có nhãn rõ. Khách mẫu không có hồ sơ/SĐT thật; nút gọi và hồ sơ bị vô hiệu hóa. Hoàn tất mẫu chỉ đổi giao diện; form mẫu chỉ kiểm tra dữ liệu, không gọi API ghi hay báo đã lưu CRM.
-- Mỗi phần có trạng thái tải, trống, lỗi và thử lại. Lỗi API không được thay bằng số liệu mẫu. Tên người dùng lấy từ tài khoản đang đăng nhập.
+- **Lịch chăm sóc, kỷ niệm:** dùng API thật hiện có; không tạo giờ hẹn giả. Hoàn tất lịch dùng revision/ngày hẹn hiện hành, không tự tạo thêm giao dịch KPI. Tìm kiếm lịch/kỷ niệm áp dụng trên trang đang hiển thị.
+- **Khách mua cùng kỳ:** đã có đơn trong toàn bộ tháng của năm trước so với tháng chọn. Ví dụ chọn 11/2026 thì đối chiếu 01–30/11/2025. Số khách là số duy nhất, không phải số đơn.
+- **Khách lâu chưa mua:** lần mua gần nhất cách hôm nay ít nhất **180 ngày** (có thể đổi 1–3650 ngày). Khách chưa từng mua không nằm trong danh sách này. Cả hai nhóm dùng khách doanh nghiệp đã duyệt và đơn CRM đã xác nhận/HĐKT đã ký, loại đơn huỷ/nháp chưa ký và ngày tương lai. Không suy diễn lịch sử ngoài CRM hoặc nối khách theo tên/SĐT. Giá trị đơn gồm VAT, chưa trừ hàng trả; đối chiếu công nợ ở hồ sơ khách. Tổng và phân trang/tìm kiếm thực hiện tại máy chủ, không lấy độ dài trang làm tổng. Không trả giá vốn.
+- **Gọi / hồ sơ / ghi nhận:** mở SĐT, hồ sơ và form chăm sóc của khách thật. Các nút ghi nhận tuân thủ `page.care`. Lỗi tải hiện lỗi/thử lại, không thay bằng ví dụ hoặc số giả.
+- **Chiến dịch:** Manager tạo tên, thời gian, danh sách khách và nhân viên được giao; thêm khách, đổi trạng thái khi cần. Nhân viên phải được phụ trách/chia sẻ khách từ trước; phân công không tự cấp quyền. Nhân viên chỉ thấy phân công của mình và khách còn quyền truy cập. Thẻ “đang chạy” chỉ đếm chiến dịch active trong thời gian bắt đầu/kết thúc (ngày Việt Nam).
+- **Kết quả chiến dịch:** dùng Ghi nhận để lưu giao dịch chăm sóc hiện có rồi gắn vào phân công, hoặc Gắn giao dịch đã có để dùng lần ghi thật của đúng khách/nhân viên/ngày chiến dịch. Mỗi giao dịch chỉ gắn một chiến dịch. “Đã ghi” khác “Đã kết nối”; trạng thái hoàn thành dựa trên kết quả giao dịch, không có nút xong giả. Nếu lưu giao dịch thành công nhưng gắn lỗi, dùng nút gắn lại, không ghi trùng. Xoá giao dịch sẽ bỏ liên kết/kết quả. Tạo chiến dịch hoặc gắn lại không tự cộng KPI. Gộp khách trùng giữ một phân công/chiến dịch (ưu tiên lần đã kết nối, rồi lần đã ghi, rồi khách giữ lại); toàn bộ giao dịch vẫn được chuyển sang lịch sử khách giữ lại.
 
-Kiểm tra giao diện bằng `node --import tsx scripts/testing/customer-center.mjs` (Playwright + Chromium, dữ liệu PGlite giả lập tại localhost), viewport 390px/1440px. Unit test tại `tests/app/customer-center.test.ts`.
+Migration mới: `migrations/postgres/20261107064327_customer_center_campaigns.sql` (chỉ thêm hai bảng trống, RLS, index và quyền service role; không sửa khách/đơn/giao dịch hiện có). Chạy trước deploy API; cổng kiểm tra chỉ đọc `scripts/sql/assert-customer-center-campaigns.sql` chặn deploy nếu thiếu schema/RLS.
+
+Kiểm thử API/quyền/phân trang bằng `tests/app/customer-center-live.test.ts`, UI helper bằng `tests/app/customer-center.test.ts`; browser PC/điện thoại bằng `node --import tsx scripts/testing/customer-center.mjs` (PGlite tại localhost, không ghi dữ liệu thử lên production).
 
 ## Form tạo khách đầy đủ
 
