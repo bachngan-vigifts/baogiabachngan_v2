@@ -1,3 +1,4 @@
+import {productThumbnailUrl,noteThumbnailFailure} from './product-images.js';
 import {initOrderProducts} from './order-products.js';
 import { createDeliveryCalendar, renderDeliveryProducts } from './delivery-calendar.js';
 import {initCustomerCenter} from './customer-center.js';
@@ -154,14 +155,17 @@ const PLACEHOLDER = '<svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z M4 15l4-4 4
 /** Ảnh được phép lưu trong báo giá (như máy chủ kiểm tra): https hoặc ảnh JPEG/PNG/WebP nhúng. */
 const savableImage = v => /^https:\/\//i.test(v || '') || /^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(v || '');
 // Chỉ nhận ảnh https:// hoặc data:image (như trang khách) – ảnh từ Sapo / file nhập có thể là URL bất kỳ.
-const imgTag = (url, cls = 'thumb') => /^(https:\/\/|data:image\/)/i.test(url || '')
-  ? `<img class="${cls}" src="${esc(displayImage(url))}" data-fallback="${esc(fallbackImage(url))}" alt="" loading="lazy" referrerpolicy="no-referrer">`
-  : `<span class="${cls}">${PLACEHOLDER}</span>`;
+const imgTag = (url, cls = 'thumb') => {
+  if (!/^(https:\/\/|data:image\/)/i.test(url || '')) return `<span class="${cls}">${PLACEHOLDER}</span>`;
+  const original = displayImage(url), source = cls.includes('big') ? original : productThumbnailUrl(original);
+  const fallback = source !== original ? original : fallbackImage(url);
+  return `<img class="${cls}" src="${esc(source)}" data-fallback="${esc(fallback)}" alt="" loading="lazy" decoding="async" ${cls.includes('big') ? '' : 'width="64" height="64"'} referrerpolicy="no-referrer">`;
+};
 // Ảnh lỗi: thử nguồn dự phòng một lần, sau đó thay bằng biểu tượng.
 document.addEventListener('error', e => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement) || !img.classList.contains('thumb')) return;
-  if (img.dataset.fallback) { img.src = img.dataset.fallback; img.dataset.fallback = ''; return; }
+  if (img.dataset.fallback) { noteThumbnailFailure(img.currentSrc || img.src); img.src = img.dataset.fallback; img.dataset.fallback = ''; return; }
   const span = document.createElement('span'); span.className = img.className + ' broken'; span.title = 'Không tải được ảnh'; span.innerHTML = PLACEHOLDER;
   img.replaceWith(span);
 }, true);
@@ -2610,7 +2614,7 @@ function renderProducts() {
       <td class="right num" data-label="Đang tạm giữ" title="Tổng số đang giữ trên tất cả kho; báo giá có thể chưa phân kho">${stockText(held)}</td>
       <td class="right num" data-label="Hàng đang về">${incomingCell(p)}</td>
       <td class="right num" data-label="Tồn NCC">${hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : '<span class="muted">—</span>'}</td>
-      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
+      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small mobile-desktop-only" data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
   $('#product-empty').hidden = list.length > 0;

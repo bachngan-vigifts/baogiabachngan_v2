@@ -621,6 +621,13 @@ table { width: 100%; border-collapse: collapse; }
 .demo-note code { background: #fff; border: 1px solid #f1d8a8; border-radius: 4px; padding: 0 4px; font-size: var(--text-small); }
 
 /* ---------- Sản phẩm ---------- */
+@media (min-width: 851px) {
+  /* Metadata must not widen initially empty selects and push the table down. */
+  #view-products .toolbar #product-brand, #view-products .toolbar #product-warehouse { width:160px;flex:0 0 160px; }
+  #view-products .toolbar #product-policy { width:240px;flex:0 0 240px; }
+  #view-products .toolbar #product-count { min-width:100px;white-space:nowrap; }
+  #view-products .toolbar .product-select-page { flex-basis:100%;min-height:24px; }
+}
 .check-col { width: 40px; }
 .check-col input, td.check-cell input { width: 18px; height: 18px; accent-color: var(--blue); }
 .prod-cell { display: flex; gap: 12px; align-items: center; min-width: 0; }

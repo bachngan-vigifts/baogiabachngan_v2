@@ -1,3 +1,4 @@
+import {setProductThumbnail,suspendProductThumbnail} from './product-images.js';
 import {createPosOrderBoardCache} from './pos-order-board-cache.js';
 import { createPosStockCache } from './pos-stock-cache.js';
 import { posCatalogProductVisible } from './pos-catalog-brand.js';
@@ -1468,6 +1469,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   }
   function renderProducts() {
     if (!nodes.grid) return;
+    // Reuse decoded images across stock refresh/filter redraws of the same SKU.
+    const images = new Map([...nodes.grid.querySelectorAll('.pos-product img')].map(img => [img.closest('[data-sku]').dataset.sku, img]));
+    for (const image of images.values()) suspendProductThumbnail(image);
     nodes.grid.replaceChildren();
     for (const p of st.products.filter(p => st.productFilter === 'all' || !p.loading && Number.isFinite(p.available) && p.stockStatus!=='unopened' && (st.productFilter === 'available' && p.available > 0 || st.productFilter === 'low' && p.available > 0 && p.available < 5 || st.productFilter === 'out' && p.available <= 0))) {
       const tile = el('article', 'pos-product-tile');
@@ -1480,10 +1484,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       b.dataset.sku = p.sku;
       b.setAttribute('aria-pressed', String(st.cart.some(x => x.sku === p.sku)));
       if (p.imageUrl && /^https:\/\//.test(p.imageUrl)) {
-        const im = el('img');
-        im.src = p.imageUrl;
+        const old = images.get(p.sku);
+        const im = setProductThumbnail(old?.dataset.productImageSource === p.imageUrl ? old : el('img'), p.imageUrl, 'grid');
         im.alt = p.name;
-        im.loading = 'lazy';
         b.append(im);
       } else b.append(el('span', 'pos-image-empty', 'Sản phẩm'));
       const priceStock = el('span', 'pos-product-price-stock');
