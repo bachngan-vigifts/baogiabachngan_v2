@@ -1,0 +1,176 @@
+{
+  "method": {
+    "api": "isolated POS fixture; no production session or writes",
+    "images": "60 existing public product image URLs, unchanged between runs",
+    "viewportHeights": 1000,
+    "network": {
+      "latencyMs": 80,
+      "downloadBytesPerSecond": 750000
+    },
+    "cpuSlowdown": 4,
+    "window": "10 seconds after first image element appears",
+    "runsPerCase": 1
+  },
+  "before": [
+    {
+      "route": "products",
+      "width": 1440,
+      "imageRequests": 12,
+      "imageBytes": 2185542,
+      "imageP95ms": 3995,
+      "incomplete": 0,
+      "lcpMs": 5664,
+      "cls": 0.3815,
+      "longTasks": 15,
+      "maxLongTaskMs": 281,
+      "domNodes": 4160,
+      "retainedImages": null,
+      "totalImages": null,
+      "statuses": [
+        200
+      ],
+      "errors": []
+    },
+    {
+      "route": "pos",
+      "width": 1440,
+      "imageRequests": 60,
+      "imageBytes": 12354950,
+      "imageP95ms": 9066,
+      "incomplete": 13,
+      "lcpMs": 15892,
+      "cls": 0.0377,
+      "longTasks": 4,
+      "maxLongTaskMs": 258,
+      "domNodes": 3684,
+      "retainedImages": 0,
+      "totalImages": 60,
+      "statuses": [
+        200
+      ],
+      "errors": []
+    },
+    {
+      "route": "products",
+      "width": 390,
+      "imageRequests": 7,
+      "imageBytes": 694158,
+      "imageP95ms": 623,
+      "incomplete": 0,
+      "lcpMs": 5612,
+      "cls": 0.2192,
+      "longTasks": 16,
+      "maxLongTaskMs": 239,
+      "domNodes": 3911,
+      "retainedImages": null,
+      "totalImages": null,
+      "statuses": [
+        200
+      ],
+      "errors": []
+    },
+    {
+      "route": "pos",
+      "width": 390,
+      "imageRequests": 20,
+      "imageBytes": 4803692,
+      "imageP95ms": 6436,
+      "incomplete": 0,
+      "lcpMs": 10772,
+      "cls": 0.3185,
+      "longTasks": 4,
+      "maxLongTaskMs": 173,
+      "domNodes": 3044,
+      "retainedImages": 0,
+      "totalImages": 20,
+      "statuses": [
+        200
+      ],
+      "errors": []
+    }
+  ],
+  "after": [
+    {
+      "route": "products",
+      "width": 1440,
+      "imageRequests": 12,
+      "imageBytes": 25242,
+      "imageP95ms": 494,
+      "incomplete": 0,
+      "lcpMs": 5852,
+      "cls": 0.0087,
+      "longTasks": 12,
+      "maxLongTaskMs": 392,
+      "domNodes": 3860,
+      "retainedImages": null,
+      "totalImages": null,
+      "statuses": [
+        200
+      ],
+      "errors": []
+    },
+    {
+      "route": "pos",
+      "width": 1440,
+      "imageRequests": 12,
+      "imageBytes": 55208,
+      "imageP95ms": 323,
+      "incomplete": 0,
+      "lcpMs": 6772,
+      "cls": 0.0377,
+      "longTasks": 4,
+      "maxLongTaskMs": 269,
+      "domNodes": 3684,
+      "retainedImages": 60,
+      "totalImages": 60,
+      "statuses": [
+        200
+      ],
+      "errors": []
+    },
+    {
+      "route": "products",
+      "width": 390,
+      "imageRequests": 7,
+      "imageBytes": 15334,
+      "imageP95ms": 172,
+      "incomplete": 0,
+      "lcpMs": 5596,
+      "cls": 0.1095,
+      "longTasks": 14,
+      "maxLongTaskMs": 212,
+      "domNodes": 3911,
+      "retainedImages": null,
+      "totalImages": null,
+      "statuses": [
+        200
+      ],
+      "errors": []
+    },
+    {
+      "route": "pos",
+      "width": 390,
+      "imageRequests": 4,
+      "imageBytes": 19447,
+      "imageP95ms": 166,
+      "incomplete": 0,
+      "lcpMs": 6652,
+      "cls": 0.0856,
+      "longTasks": 5,
+      "maxLongTaskMs": 211,
+      "domNodes": 3044,
+      "retainedImages": 20,
+      "totalImages": 20,
+      "statuses": [
+        200
+      ],
+      "errors": []
+    }
+  ],
+  "limitations": [
+    "Lab comparison, not real-user p95 or gateway origin timing. CDN cache state and API fixture timing can differ.",
+    "13 original POS desktop image requests were still incomplete at cutoff; baseline bytes undercount their final size.",
+    "Products page initial LCP remains around 5.6–5.9 seconds; image optimization does not resolve bootstrap/module/API latency.",
+    "Residual mobile CLS includes the chat spacer and initial control placement, not just image dimensions."
+  ]
+}
