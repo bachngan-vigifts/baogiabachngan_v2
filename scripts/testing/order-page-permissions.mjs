@@ -5,9 +5,13 @@ import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {setup} from '../../tests/helpers/pos-fixture.ts';
 import {eq} from 'drizzle-orm';
+import {salesOrders,salesOrderLines} from '../../src/modules/sales/schema.ts';
 import {employees} from '../../src/modules/staff/schema.ts';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright'),f=await setup(),writes=[];
 await f.db.update(employees).set({positionId:'sale'}).where(eq(employees.id,'emp'));
+const now=new Date().toISOString();
+await f.db.insert(salesOrders).values({id:'perm-order',orderNo:'PERM-ORDER',quoteType:'HRC',ownerId:'emp',createdBy:'emp',customerName:'Khách kiểm thử',orderDate:'2026-11-01',status:'confirmed',createdAt:now,updatedAt:now});
+await f.db.insert(salesOrderLines).values({id:'perm-line',orderId:'perm-order',lineNo:1,name:'Sản phẩm kiểm thử',qty:1});
 const root=fileURLToPath(new URL('../../trial-ui/',import.meta.url)),out='/tmp/order-view-permissions-browser';await mkdir(out,{recursive:true});
 const server=createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost');if(u.pathname.startsWith('/api/staff/')){const chunks=[];for await(const c of req)chunks.push(c);if(req.method!=='GET')writes.push({path:u.pathname,method:req.method});const token=req.headers.authorization?.replace(/^Bearer /,'');const r=await f.call(u.pathname.slice(10)+u.search,token?'__Host-bn-session='+token:'',req.method,chunks.length?JSON.parse(Buffer.concat(chunks).toString()):undefined);res.writeHead(r.status,{'content-type':'application/json'}).end(JSON.stringify(r.data));return;}
  const path=u.pathname==='/'?'/index.html':u.pathname;let bytes=await readFile(root+path);if(path.endsWith('.html'))bytes=Buffer.from(bytes.toString().replace('<head>','<head><meta name="bn-api" content="/api/staff">'));res.setHeader('content-type',path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':path.endsWith('.ttf')?'font/ttf':'text/html;charset=utf-8');res.end(bytes);
@@ -25,7 +29,7 @@ try{
   const perms=scenario==='products'?['page.order-products']:scenario==='deliveries'?['page.deliveries']:scenario==='orders'?['page.orders']:[];assert.equal((await f.call('/permissions/positions/sale',f.mgr,'PUT',{perms})).status,200);
   const context=await contextFor(f.emp,width),p=await context.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));
   const denied=async(hash)=>{await p.goto(origin+'/'+hash);await p.waitForFunction(hash=>!location.hash.startsWith(hash),hash);};
-  if(scenario==='products'){await p.goto(origin+'/#/order-products');await p.locator('#view-order-products .op-table').waitFor();assert.equal(await p.locator('#view-order-products a[href^="#/deliveries"]').count(),0);await p.screenshot({path:out+'/'+width+'-products.png'});await denied('#/deliveries');await denied('#/orders');}
+  if(scenario==='products'){await p.goto(origin+'/#/order-products');await p.locator('#view-order-products [data-order-line=perm-line]').waitFor();assert.equal(await p.locator('#view-order-products a[href^="#/orders/"]').count(),0);assert.equal(await p.locator('#view-order-products .op-actions').getByRole('button',{name:'Xếp lịch',exact:true}).count(),0);assert.equal(await p.locator('#view-order-products a[href^="#/deliveries"]').count(),0);await p.screenshot({path:out+'/'+width+'-products.png'});await denied('#/deliveries');await denied('#/orders');}
   else if(scenario==='deliveries'){await p.goto(origin+'/#/deliveries?view=calendar');await p.locator('#deliveries-calendar:not([aria-busy])').waitFor();await p.locator('#deliveries-calendar .dc-grid').waitFor();assert.equal(await p.locator('#view-deliveries').isVisible(),true);await p.screenshot({path:out+'/'+width+'-deliveries.png'});await denied('#/order-products');}
   else{await denied('#/order-products');await denied('#/deliveries');}
   assert.equal(await p.locator('.sidebar [data-nav="order-products"]').evaluate(n=>!n.hidden),scenario==='products');assert.equal(await p.locator('.sidebar [data-nav="deliveries"]').evaluate(n=>!n.hidden),scenario==='deliveries');

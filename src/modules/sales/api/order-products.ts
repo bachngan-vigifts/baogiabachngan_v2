@@ -76,7 +76,7 @@ export function registerOrderProductsRoutes(router: Router<StaffEnv>, scopeFor: 
         const {unitPrice,taxRate,amount,...rest}=r,p=progress.get(r.orderId);
         return {...rest,ownerName:r.ownerName||'',imageUrl:r.imageUrl||'',...(!warehouse?{unitPrice,taxRate,amount}:{}),
           overdue:r.remainingQty>1e-9&&r.orderStatus!=='cancelled'&&!!r.nextDeliveryDate&&r.nextDeliveryDate<today,
-          canSchedule:!warehouse&&(can(member,'page.orders')||can(member,'page.contracts'))&&!['draft','cancelled','delivered'].includes(r.orderStatus)&&r.availableQty>1e-9,
+          canSchedule:!warehouse&&can(member,r.contractNo?'page.contracts':'page.orders')&&!['draft','cancelled','delivered'].includes(r.orderStatus)&&r.availableQty>1e-9,
           progress:p?{label:p.label,current:p.current}:null,trips:byLine.get(r.id)||[]};
       }) };
     return json(response);
