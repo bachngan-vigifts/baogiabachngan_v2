@@ -62,3 +62,33 @@
 /* Keep filters editable, but do not display totals belonging to the previous range. */
 #view-profit[data-pf-stale] .pf-results { visibility: hidden; }
 #view-profit[aria-busy="true"] { pointer-events: auto; opacity: 1; }
+
+/* Giá niêm yết / CK / giá vốn: bảng PC, thẻ có nhãn trên điện thoại. */
+.pf-fill.modal { width: min(1200px, calc(100vw - 24px)); max-height: 92dvh; overflow: hidden; }
+.pf-fill > form { display: flex; flex-direction: column; max-height: 92dvh; }
+.pf-fill .modal-head { flex-shrink: 0; padding-bottom: 12px; gap: 12px; }
+.pf-fill .modal-head h2 { font-size: 20px; }
+.pf-fill .modal-head [data-x] { min-width: 44px; min-height: 44px; }
+.pf-fill .modal-body { overflow-y: auto; min-height: 0; }
+.pf-fill .modal-foot { flex-shrink: 0; }
+.pf-fill .pf-cost-table { width: 100%; table-layout: fixed; }
+.pf-fill .pf-cost-table th { white-space: normal; overflow-wrap: anywhere; }
+.pf-fill .pf-cost-table th:first-child { width: 30%; }
+.pf-fill .pf-cost-table th:nth-child(2) { width: 15%; }
+.pf-fill .pf-cost-table th:nth-child(4) { width: 12%; }
+.pf-fill .pf-cost-table td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.pf-cost-name { display: block; margin-top: 5px; }
+.pf-fill .pf-cost-table small { color: var(--muted); font-size: 12px; }
+.pf-fill .pf-cost-table input { width: 100%; min-width: 0; min-height: 44px; text-align: right; }
+.pf-fill .pf-cost-table input[readonly] { background: var(--surface-2); color: var(--muted); }
+@media (max-width: 760px) {
+  .pf-fill .table-wrap { overflow: visible; }
+  .pf-fill .pf-cost-table, .pf-fill .pf-cost-table tbody { display: block; min-width: 0; }
+  .pf-fill .pf-cost-table thead { display: none; }
+  .pf-fill .pf-cost-table tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+  .pf-fill .pf-cost-table td { display: block; padding: 0; border: 0; width: auto; text-align: left; min-width: 0; }
+  .pf-fill .pf-cost-table td:first-child { grid-column: 1 / -1; }
+  .pf-fill .pf-cost-table td::before { content: attr(data-label); display: block; margin-bottom: 5px; color: var(--muted); font-size: 12px; }
+  .pf-fill .pf-cost-table td:first-child::before { display: none; }
+  .pf-fill .modal-foot .btn { flex: 1; min-height: 44px; white-space: normal; }
+}

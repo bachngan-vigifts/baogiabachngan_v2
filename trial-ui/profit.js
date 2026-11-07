@@ -3,6 +3,7 @@
  * Lợi nhuận gộp = Doanh thu thuần − Giá vốn − Chi phí trực tiếp; ghi nhận theo ngày đơn; dòng thiếu giá vốn không tính 0.
  */
 import { cacheLineHtml } from './report-cache.js';
+import { purchasePrice } from './quote-math.js';
 
 const GRAIN_LABEL = { day: 'Ngày', week: 'Tuần', month: 'Tháng', year: 'Năm' };
 const TABS = { series: 'Thời gian', branches: 'Chi nhánh', owners: 'Nhân viên', customers: 'Khách hàng', orders: 'Đơn hàng', products: 'Sản phẩm' };
@@ -216,23 +217,35 @@ export function initProfit({ api, root, toast, esc, money }) {
   async function reviewCosts(scope) {
     const q = new URLSearchParams({ from: st.from, to: st.to, scope });
     let d; try { d = await api('/profit/missing-costs?' + q); } catch (e) { toast(e.message, 'err'); return; }
+    const initialDiscount = it => it.reference?.discount > 0 && it.suggested === purchasePrice(it.reference.listPrice, it.reference.discount) && it.lines.every(l => l.source === 'catalog_rule') ? it.reference.discount : '';
     const confirm = scope === 'unconfirmed', dlg = document.createElement('dialog'); dlg.className = 'modal pf-dialog pf-fill';
     dlg.innerHTML = `<form><div class="modal-head"><h2>${confirm ? 'Xác nhận giá vốn ước tính / tham chiếu' : 'Nhập giá vốn cho mã thiếu'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body"><p class="small muted">${esc(st.from.split('-').reverse().join('/'))} – ${esc(st.to.split('-').reverse().join('/'))} · ${d.items.length} mã / ${d.lines} dòng.
         ${confirm ? 'Giá gợi ý lấy từ nguồn ước tính (giá nhập, đơn NCC, công thức thương hiệu) – kiểm tra, sửa nếu cần rồi xác nhận. Để trống = chưa xác nhận mã đó.' : 'Các mã này không có báo giá, giá nhập, đơn NCC hay công thức thương hiệu. Giá nhập ở đây là giá vốn trước VAT / 1 đơn vị, áp cho mọi dòng thiếu của mã trong kỳ.'}</p>
-      ${d.items.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Mã</th><th>Sản phẩm</th><th>ĐVT</th>${confirm ? '<th>Nguồn gợi ý</th>' : ''}<th class="num">Dòng</th><th class="num">Doanh thu</th><th class="num">Giá vốn / ĐV</th></tr></thead><tbody>
-        ${d.items.map((it, i) => `<tr><td>${esc(it.sku)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td>${confirm ? `<td><small>${esc((it.sources || []).join(' · '))}</small></td>` : ''}<td class="num">${it.lines.length}</td><td class="num">${num(it.revenue)}</td>
-          <td class="num"><input type="number" min="0" step="1" inputmode="numeric" data-i="${i}" aria-label="Giá vốn ${esc(it.sku)}" ${confirm && it.suggested !== null ? `value="${it.suggested}"` : 'placeholder="Để trống = chưa nhập"'}></td></tr>`).join('')}</tbody></table></div>
+      <p class="small muted">Giá niêm yết hiện tại được quy về trước VAT / 1 đơn vị, không phải giá mua lịch sử. CK &gt; 0: giá vốn = niêm yết × (100 − CK) / 100, làm tròn đồng. Để CK trống hoặc 0 để chỉnh giá vốn trực tiếp. Chưa có niêm yết thì nhập giá vốn, không đoán giá.</p>
+      ${d.items.length ? `<div class="table-wrap"><table class="data-table pf-cost-table"><thead><tr><th>Sản phẩm</th><th class="num">Dòng / Doanh thu</th><th class="num">Niêm yết trước VAT</th><th class="num">CK (%)</th><th class="num">Giá vốn / ĐV trước VAT</th></tr></thead><tbody>
+        ${d.items.map((it, i) => `<tr data-cost-row="${i}"><td data-label="Sản phẩm"><b>${esc(it.sku)}</b><span class="pf-cost-name">${esc(it.name)}</span><small>${esc(it.unit)}${confirm ? ' · ' + esc((it.sources || []).join(' · ')) : ''}</small></td>
+          <td data-label="Dòng / Doanh thu" class="num">${it.lines.length} dòng<span class="pf-cost-name">${num(it.revenue)} ₫</span></td>
+          <td data-label="Niêm yết trước VAT" class="num">${it.reference ? `${num(it.reference.listPrice)} ₫<small class="pf-cost-name">${esc(it.reference.policy)} · ${esc(it.reference.at?.slice(0,10).split('-').reverse().join('/') || '')}</small>` : '<span class="muted">Chưa có / khác ĐVT</span>'}</td>
+          <td data-label="CK (%)" class="num"><input type="number" min="0" max="100" step="0.01" inputmode="decimal" data-discount="${i}" aria-label="CK ${esc(it.sku)}" value="${initialDiscount(it)}" placeholder="Không CK" ${it.reference ? '' : 'disabled'}></td>
+          <td data-label="Giá vốn / ĐV trước VAT" class="num"><input type="number" min="0" max="1000000000000" step="any" inputmode="decimal" data-i="${i}" aria-label="Giá vốn ${esc(it.sku)}" ${confirm && it.suggested !== null ? `value="${it.suggested}"` : 'placeholder="Để trống = chưa nhập"'} ${initialDiscount(it) !== '' ? 'readonly' : ''}></td></tr>`).join('')}</tbody></table></div>
       <label>Lý do / căn cứ giá vốn *<input name="reason" required minlength="3" maxlength="300" placeholder="VD: theo hoá đơn mua NCC tháng 10, bảng giá nhập 2026"></label>`
       : `<p class="empty">${confirm ? 'Không còn giá vốn nào chờ xác nhận trong kỳ.' : 'Không còn mã nào thiếu giá vốn trong kỳ.'}</p>`}<p class="error" data-err role="alert"></p></div>
       <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button>${d.items.length ? `<button class="btn primary">${confirm ? 'Xác nhận giá vốn' : 'Lưu giá vốn'}</button>` : ''}</div></form>`;
     document.body.append(dlg); dlg.showModal();
     dlg.querySelectorAll('[data-x]').forEach(b => b.onclick = () => dlg.close());
     dlg.addEventListener('close', () => dlg.remove());
+    dlg.querySelectorAll('[data-discount]').forEach(input => input.addEventListener('input', () => {
+      const i = Number(input.dataset.discount), cost = dlg.querySelector(`[data-i="${i}"]`), discount = Number(input.value);
+      cost.readOnly = input.value.trim() !== '' && discount > 0;
+      if (cost.readOnly && input.validity.valid) cost.value = purchasePrice(d.items[i].reference.listPrice, discount);
+    }));
     dlg.querySelector('form').onsubmit = async e => {
       e.preventDefault();
-      const items = [...dlg.querySelectorAll('input[data-i]')].filter(x => x.value.trim() !== '').map(x => ({ ...d.items[Number(x.dataset.i)], unitCost: Number(x.value) }))
-        .map(({ sku, unit, unitCost }) => ({ sku, unit, unitCost }));
+      const items = [...dlg.querySelectorAll('input[data-i]')].filter(x => x.value.trim() !== '').map(x => {
+        const i = Number(x.dataset.i), it = d.items[i], discountPercent = Number(dlg.querySelector(`[data-discount="${i}"]`).value);
+        return { sku: it.sku, unit: it.unit, unitCost: Number(x.value), discountPercent, ...(discountPercent > 0 ? { listPrice: it.reference.listPrice } : {}) };
+      });
       const err = dlg.querySelector('[data-err]'), btn = dlg.querySelector('.modal-foot .btn.primary');
       if (!items.length) { err.textContent = 'Nhập giá vốn cho ít nhất một mã.'; return; }
       if (items.some(x => !Number.isFinite(x.unitCost) || x.unitCost < 0)) { err.textContent = 'Giá vốn phải là số ≥ 0.'; return; }

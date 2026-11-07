@@ -9,6 +9,8 @@ export interface CostPoint { at: string; cost: number; ref: string; unit?: strin
 export interface SkuFallbackCosts {
   /** Giá mua sau CK, trước VAT trên các dòng đơn NCC đã duyệt, chưa huỷ. */
   orders: CostPoint[];
+  /** Giá niêm yết hiện tại trước VAT, chỉ để Manager đối soát; không phải giá mua lịch sử. */
+  reference?: { listPrice: number; discount: number | null; policy: string; at: string; unit?: string } | null;
   /** Giá tham chiếu theo công thức thương hiệu (giá bán lẻ trước VAT × (1 − CK mặc định)); null = không áp được. */
   catalog: (CostPoint & { note: string }) | null;
 }
