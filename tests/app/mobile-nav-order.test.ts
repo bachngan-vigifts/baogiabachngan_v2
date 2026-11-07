@@ -5,11 +5,11 @@ const {orderedMobileNavKeys}=await import(new URL('../../trial-ui/mobile-design.
 const sidebar=readFileSync(new URL('../../trial-ui/index.html',import.meta.url),'utf8').split('<aside')[1]!.split('</aside>')[0]!;
 const keys=[...sidebar.matchAll(/data-nav="([^"]+)"/g)].map(m=>m[1]!);
 const expected=[
- 'pos','quotes','orders','contracts','receivables',
+ 'pos','quotes','orders','contracts','receivables','order-products','deliveries',
  'cashbook','cash',
  'customers','care','stock-requests',
  'tasks','dashboard','profit','flow','store-reports','weekly-reports','feedback',
- 'kho','products','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving','deliveries',
+ 'kho','products','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving',
  'early-requests','purchases','suppliers',
  'staff','payroll','permissions',
 ];
@@ -35,7 +35,7 @@ test('menu chân trang gom theo chức năng: đủ trang, đúng thứ tự, ch
  const groups=groupMobileNav(keys);
  assert.deepEqual(groups.map((g:any)=>g.label),['Bán hàng','Tiền','Khách hàng','Công việc','Kho','Mua hàng','Quản trị']);
  assert.deepEqual(groups.flatMap((g:any)=>g.items),expected,'gom lại vẫn đủ mọi trang, theo thứ tự cũ');
- assert.deepEqual(groups[0].items,['pos','quotes','orders','contracts','receivables']);
+ assert.deepEqual(groups[0].items,['pos','quotes','orders','contracts','receivables','order-products','deliveries']);
  const sale=groupMobileNav(['orders','customers','care','quotes','tasks']);
  assert.deepEqual(sale.map((g:any)=>[g.key,g.items]),[['sell',['quotes','orders']],['customers',['customers','care']],['work',['tasks']]]);
  assert.deepEqual(groupMobileNav(['future','orders']).map((g:any)=>[g.label,g.items]),[['Bán hàng',['orders']],['Khác',['future']]]);

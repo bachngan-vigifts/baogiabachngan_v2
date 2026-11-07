@@ -1300,6 +1300,12 @@ label.check { display: flex; align-items: center; gap: 8px; }
 .approval-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .approval-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; }
 .approval-list li small { display: block; }
+@media (max-width: 900px) {
+  #product-pending .approval-list li { flex-direction: column; align-items: stretch; }
+  #product-pending .approval-list li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+  #product-pending .row-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+  #product-pending .row-actions .btn { min-height: 44px; }
+}
 .page-head .btn-add { margin-left: 8px; }
 .page-head .head-actions { flex-wrap: nowrap; flex: none; }
 
