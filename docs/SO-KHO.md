@@ -59,6 +59,11 @@
   - Kiểm trong giao dịch, sau khoá `stock_holds`, khoá dòng tồn. Vượt → `409 HELD_FOR_OTHER_ORDER`, kèm số đơn đang giữ.
   - Manager được lấy vượt khi ghi lý do (`overrideHolds.reason`); nhật ký `stock-hold-override` ghi các đơn bị ảnh hưởng.
   - **Không tự xếp ưu tiên** giữa các đơn: hai đơn cùng giữ quá tồn thì bên nào xuất cũng cần Manager quyết.
+- **Nhận hàng CRM về để giao lại** (mặc định phiếu mới): không giảm công nợ, không tạo phiếu hoàn tiền. Khi đã duyệt và thực nhận, cộng tồn đúng một lần nếu hàng nhập lại được; mở lại lượng được giao/đóng gói. `delivered_qty` là tiến độ giao ròng; `historicalDeliveredQty` cộng lại lượng từng nhận để giao lại, giữ lịch sử trên phiếu giao cũ. Kỳ thanh toán, phiếu thu, giá trị đơn và hoá đơn không bị sửa.
+  - Mục đích nằm trong `source_snapshot.returnPurpose` (`redelivery`/`credit`); phiếu cũ không có trường này vẫn là trả giảm công nợ. Không cần migration.
+  - Trước lúc mở giao lại, lưu lượng đóng gói/xuất kho đã có để ngừng dùng bằng chứng xuất cũ cho chuyến mới. Cần xác nhận xuất kho thực tế cho phần giao lại; không dùng số đã giao hay căn cứ giao trước chốt để suy ra đã xuất lô mới. Không thả thêm phân bổ khi phiếu cũ chưa từng có đóng gói.
+  - **Trả giảm công nợ / hoàn tiền** là lựa chọn riêng, rõ trên form. Với lựa chọn này, thực nhận hàng ghi giảm công nợ; nút Hoàn tiền chỉ ghi thực chi đã xác nhận. Không nhập nhằng ghi giảm công nợ với đã chi tiền.
+  - Manager có thể **Chuyển sang nhận để giao lại** cho phiếu cũ chưa hoàn tiền/chưa áp dụng hoặc giữ khoản đổi hàng. Khôi phục phần công nợ đã giảm, mở giao lại lượng thực nhận; không nhập kho lần nữa. Thao tác có nhật ký, gửi lặp không mở giao hai lần; phiếu đã hoàn tiền/đổi hàng phải đối soát với kế toán.
 - **Trả hàng CRM chỉ nhập lại trong phạm vi đã thực xuất** (`sales/api/crm-return-stock.ts`):
   - Mỗi dòng đơn: tổng nhập lại (mọi phiếu đã nhận + phiếu này) ≤ lượng xuất ròng có bút toán (phiếu xuất / trừ kiểu cũ).
   - Phần vượt (đơn cũ giao khi chưa ghi xuất): Manager chọn căn cứ khi duyệt, hoặc bổ sung trước khi nhận (`POST …/returns/:id/stock-basis`):

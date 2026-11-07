@@ -4194,7 +4194,7 @@ async function openOrder(id, confirmed = null) {
       box.append(b);
     }).catch(e => { if (box.isConnected) { box.textContent = e.message; box.className = 'error'; } });
   }
-  if(o.channel==='crm'&&d.lines.some(l=>l.deliveredQty>0)&&o.status!=='cancelled'){
+  if(o.channel==='crm'&&(d.lines.some(l=>l.deliveredQty>0)||d.returnSummary?.requests?.length)&&o.status!=='cancelled'){
     const b=document.createElement('button');b.type='button';b.className='btn secondary';b.dataset.mobileInline='';b.dataset.crmReturns='';b.textContent='Trả hàng / Hoàn tiền';
     b.onclick=()=>openCrmReturns({api,toast,orderId:o.id,onChanged:()=>openOrder(o.id)});$('#order-actions').append(b);
     if(new URLSearchParams(location.hash.split('?')[1]||'').get('returns')==='1'&&!document.querySelector('.pos-return-modal[open]')){const [path,query='']=location.hash.split('?'),params=new URLSearchParams(query);params.delete('returns');history.replaceState(history.state,'',path+(params.size?'?'+params:''));b.click();}
