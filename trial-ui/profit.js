@@ -37,6 +37,12 @@ export function initProfit({ api, root, toast, esc, money }) {
         <label>Nhân viên<select id="pf-owner">${opt(d.filterOptions.owners, st.owner, 'Tất cả')}</select></label>
         <label>Giá vốn<select id="pf-costs"><option value="all" ${st.costs === 'all' ? 'selected' : ''}>Gồm ước tính / backfill</option><option value="confirmed" ${st.costs === 'confirmed' ? 'selected' : ''}>Chỉ giá vốn chính xác</option></select></label>
         <button type="button" class="btn secondary" id="pf-csv">Xuất Excel (CSV)</button></div>
+      ${s.carrierUnknownOrders ? `<div class="pf-warn" role="status">⚠ ${s.carrierUnknownOrders} đơn POS có vận đơn GHN nhưng chưa có phí GHN – chưa trừ (không coi là 0).</div>` : ''}
+      ${s.revenueBy.estimate > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.estimate))} doanh thu dùng <b>giá mua tham chiếu</b> (giá mua gần nhất, đơn NCC đã duyệt hoặc công thức thương hiệu). Đây chưa phải giá vốn xuất kho đã đối soát. Mở từng đơn để xem nguồn và cách tính.</span></div>` : ''}
+      ${s.revenueBy.backfill > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.backfill))} doanh thu dùng giá bổ sung, có thể gồm giá mua ghi nhận sau ngày bán; chưa đủ căn cứ coi là chính xác. Mở từng đơn để xem nguồn giá. Chọn "Chỉ giá vốn chính xác" để lọc các dòng đã xác nhận.</span></div>` : ''}
+      ${s.missingOrders ? `<div class="pf-warn" role="status">⚠ ${s.missingOrders} đơn (${esc(money(s.missingRevenue))} doanh thu) có dòng thiếu giá vốn – phần đó không tính vào lợi nhuận, không coi là 0.
+        <button type="button" class="btn ghost small" id="pf-missing">${st.missingOnly ? 'Xem tất cả đơn' : 'Xem các đơn cần bổ sung'}</button>
+        <button type="button" class="btn secondary small" id="pf-fill">Nhập giá vốn cho mã thiếu</button></div>` : ''}
       <div class="pf-kpis">
         <div class="card"><small>Doanh thu thuần</small><b class="num">${short(s.revenue)}</b><span>${s.orders} đơn</span></div>
         <div class="card"><small>Giá vốn hàng bán</small><b class="num">${short(s.cost)}</b><span>${s.coveredRevenue ? pct(s.cost / s.coveredRevenue) + ' doanh thu' : ''}</span></div>
@@ -45,21 +51,15 @@ export function initProfit({ api, root, toast, esc, money }) {
         <div class="card"><small>Biên LN gộp</small><b class="num">${pct(s.margin)}</b><span>trên doanh thu đủ giá vốn</span></div>
         <div class="card"><small>LN sau chi phí</small><b class="num ${s.net < 0 ? 'neg' : ''}">${short(s.net)}</b><span>+ thu phí khách ${short(s.feeRevenue)} − GHN ${short(s.carrierFee)} − lương + thưởng Sale ${short(s.staffSalary + s.staffBonus)} · biên ${pct(s.netMargin)}</span></div>
         <div class="card"><small>Độ tin cậy giá vốn</small><b class="num">${s.revenue ? pct(s.revenueBy.confirmed / s.revenue) : '—'}</b><span>chính xác · ${s.revenue ? pct(s.revenueBy.estimate / s.revenue) : '—'} ước tính · ${s.revenue ? pct(s.revenueBy.backfill / s.revenue) : '—'} backfill · ${s.revenue ? pct(s.revenueBy.missing / s.revenue) : '—'} thiếu</span></div></div>
-      ${s.carrierUnknownOrders ? `<div class="pf-warn" role="status">⚠ ${s.carrierUnknownOrders} đơn POS có vận đơn GHN nhưng chưa có phí GHN – chưa trừ (không coi là 0).</div>` : ''}
-      <p class="muted small">Phí quẹt thẻ / cổng thanh toán: ${esc(d.cardFees?.note || '')}</p>
-      ${staffBox(d.staff)}
-      ${companyBox(d)}
-      ${s.revenueBy.estimate > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.estimate))} doanh thu dùng <b>giá mua tham chiếu</b> (giá mua gần nhất, đơn NCC đã duyệt hoặc công thức thương hiệu). Đây chưa phải giá vốn xuất kho đã đối soát. Mở từng đơn để xem nguồn và cách tính.</span></div>` : ''}
-      ${s.revenueBy.backfill > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.backfill))} doanh thu dùng giá bổ sung, có thể gồm giá mua ghi nhận sau ngày bán; chưa đủ căn cứ coi là chính xác. Mở từng đơn để xem nguồn giá. Chọn "Chỉ giá vốn chính xác" để lọc các dòng đã xác nhận.</span></div>` : ''}
-      ${s.missingOrders ? `<div class="pf-warn" role="status">⚠ ${s.missingOrders} đơn (${esc(money(s.missingRevenue))} doanh thu) có dòng thiếu giá vốn – phần đó không tính vào lợi nhuận, không coi là 0.
-        <button type="button" class="btn ghost small" id="pf-missing">${st.missingOnly ? 'Xem tất cả đơn' : 'Xem các đơn cần bổ sung'}</button>
-        <button type="button" class="btn secondary small" id="pf-fill">Nhập giá vốn cho mã thiếu</button></div>` : ''}
       <div class="pf-two"><div class="card"><h3 class="pf-h">Lợi nhuận gộp theo ${GRAIN_LABEL[st.grain].toLowerCase()}</h3>${chart(d.series)}</div>
         <div class="card"><h3 class="pf-h">Theo chi nhánh (sau chi phí chi nhánh)</h3>${table(['Chi nhánh', '>LN đơn', '>Chi vặt', '>Lương', '>LN chi nhánh'],
           (d.branchCosts?.rows || []).map(r => [esc(r.name), short(r.ordersNet), short(r.petty), short(r.staff), `<b class="${r.net < 0 ? 'neg' : ''}">${short(r.net)}</b>`]))}
           <p class="muted small">Lương NVBH / CHT chia theo số ca mở ở từng quầy trong tháng trọn; chi vặt két chỉ tính phiếu "chi phí hoạt động".</p></div></div>
       <div class="card"><div class="pf-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === st.tab}" class="${k === st.tab ? 'on' : ''}">${v}</button>`).join('')}</div>
-        <div id="pf-tab">${tabBody()}</div></div>`;
+        <div id="pf-tab">${tabBody()}</div></div>
+      <p class="muted small">Phí quẹt thẻ / cổng thanh toán: ${esc(d.cardFees?.note || '')}</p>
+      ${staffBox(d.staff)}
+      ${companyBox(d)}`;
     root.querySelectorAll('[data-grain]').forEach(b => b.onclick = () => { st.grain = b.dataset.grain; load(); });
     root.querySelector('#pf-from').onchange = e => { if (e.target.value) { st.from = e.target.value; load(); } };
     root.querySelector('#pf-to').onchange = e => { if (e.target.value) { st.to = e.target.value; load(); } };

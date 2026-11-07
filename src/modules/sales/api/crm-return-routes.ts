@@ -1,3 +1,7 @@
+import {returnPurpose, requestedReturnPurpose} from '../domain/crm-return-purpose.ts';
+import {redeliveryByLine} from './crm-redelivery.ts';
+import {crmStockFulfilment} from './crm-stock-lifecycle.ts';
+import {lockHolds} from './order-hold-store.ts';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -9,8 +13,8 @@ import { warehouses } from '../../catalog/schema.ts';
 import { postMoves, assertWarehousesOpened } from '../../inventory/api/ledger.ts';
 import { recordMovements } from '../../catalog/api/product-history.ts';
 import { notifyMany } from '../../notifications/api/routes.ts';
-import { salesOrders, salesOrderLines } from '../schema.ts';
-import { posReturns, posReturnLines, posRefunds } from '../return-schema.ts';
+import { salesOrders, salesOrderLines, packingSlips, packingSlipLines } from '../schema.ts';
+import { posReturns, posReturnLines, posRefunds, posExchangeAllocations } from '../return-schema.ts';
 import { posShifts } from '../pos-schema.ts';
 import { cashDrawers, cashEntries } from '../cash-schema.ts';
 import { cashAccess, cashAudit, cashLock, type CashDb } from './cash-store.ts';
@@ -56,7 +60,7 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     if (snapshot.lines !== lineSnapshot(lines) || snapshot.total !== o.total || snapshot.subtotal !== o.subtotal || snapshot.tax !== o.tax)
       throw new AppError(409, 'Dòng hàng/giá trị đơn đã thay đổi; cần huỷ phiếu chưa nhận và lập lại.');
     const all = await db.select().from(posReturns).where(eq(posReturns.orderId, o.id));
-    const claims = all.filter(x => active(x.status));
+    const claims = all.filter(x => active(x.status) && !(x.receivedAt && returnPurpose(x.sourceSnapshot)==='redelivery'));
     const claimed = claims.length ? await db.select().from(posReturnLines).where(inArray(posReturnLines.returnId, claims.map(x => x.id))) : [];
     if (lines.some(l => claimed.filter(x => x.orderLineId === l.id).reduce((n, x) => n + x.requestedQty, 0) > l.deliveredQty + 1e-9))
       throw new AppError(409, 'Số trả đang giữ vượt lượng đã giao của đơn.');
@@ -77,13 +81,33 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     await cashAudit(db, by, 'crm-return-stock-basis', 'pos-returns', r.id, { orderId: o.id, basis, unproven });
     return JSON.stringify({ ...snapshot, stockBasis: basis, stockBasisSkus: basisSkus(unproven) });
   }
+  async function reopenForRedelivery(db: CashDb, o: Order, r: typeof posReturns.$inferSelect, lines: (typeof posReturnLines.$inferSelect)[]) {
+    const [state,previous,packed]=await Promise.all([
+      crmStockFulfilment(db,[o.id]),redeliveryByLine(db,[o.id]),
+      db.select({lineId:packingSlipLines.orderLineId,qty:sql<number>`sum(${packingSlipLines.qty})`.mapWith(Number)}).from(packingSlipLines)
+        .innerJoin(packingSlips,eq(packingSlips.id,packingSlipLines.slipId)).where(and(eq(packingSlips.orderId,o.id),eq(packingSlips.status,'packed'))).groupBy(packingSlipLines.orderLineId),
+    ]);
+    const issuedByLine:Record<string,number>={},packedByLine:Record<string,number>={};
+    for(const line of lines){
+      const qty=r.receivedAt?line.receivedQty:line.requestedQty;
+      if(!(qty>0))throw new AppError(409,'Phiếu chưa có lượng hàng thực nhận hợp lệ.');
+      issuedByLine[line.orderLineId]=Math.min(qty,state.get(o.id)?.lines.find(l=>l.lineId===line.orderLineId)?.issued??0);
+      packedByLine[line.orderLineId]=Math.min(qty,Math.max(0,(packed.find(l=>l.lineId===line.orderLineId)?.qty??0)-(previous.get(line.orderLineId)?.packed??0)));
+      const changed=await db.update(salesOrderLines).set({deliveredQty:sql`greatest(0,${salesOrderLines.deliveredQty}-${qty})`})
+        .where(and(eq(salesOrderLines.id,line.orderLineId),eq(salesOrderLines.orderId,o.id),sql`${salesOrderLines.deliveredQty}+1e-9>=${qty}`)).returning({id:salesOrderLines.id});
+      if(!changed.length)throw new AppError(409,'Số hàng đã giao vừa thay đổi, không mở giao lại vượt lượng thực nhận.');
+    }
+    const fresh=await linesOf(db,o.id),at=now();
+    await db.update(salesOrders).set({status:fresh.some(l=>l.deliveredQty>0)?'delivering':'confirmed',revision:sql`${salesOrders.revision}+1`,updatedAt:at}).where(eq(salesOrders.id,o.id));
+    return JSON.stringify({...JSON.parse(r.sourceSnapshot),returnPurpose:'redelivery',redeliveryIssuedByLine:issuedByLine,redeliveryPackedByLine:packedByLine});
+  }
   const base = '/orders/:id/returns';
   router.get(base, async c => {
     const db = c.env.db, o = await source(c, db), account = await returnAccount(db, o.id), lines = await linesOf(db, o.id);
     const scope = await posStoreScopeFor(db, who(c));
     const people = await db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, [...new Set(account.returns.flatMap(r => [r.createdBy, r.approvedBy, r.receivedBy].filter((x): x is string => !!x)) .concat(account.refunds.map(r => r.confirmedBy)))]));
     const names = new Map(people.map(x => [x.id, x.name]));
-    const returns = await Promise.all(account.returns.map(async r => ({ ...r, createdByName: names.get(r.createdBy), approvedByName: names.get(r.approvedBy || ''), receivedByName: names.get(r.receivedBy || ''),
+    const returns = await Promise.all(account.returns.map(async r => ({ ...r, purpose:returnPurpose(r.sourceSnapshot), createdByName: names.get(r.createdBy), approvedByName: names.get(r.approvedBy || ''), receivedByName: names.get(r.receivedBy || ''),
       // Phần nhập lại vượt lượng đã thực xuất (đơn cũ) + căn cứ Manager đã chọn – giao diện hỏi căn cứ trước khi duyệt / nhận.
       stockCheck: active(r.status) && !r.receivedAt ? { unproven: await unprovenRestock(db, o.id, r.id), basis: (JSON.parse(r.sourceSnapshot) as { stockBasis?: StockBasis }).stockBasis ?? null } : null,
       lines: await db.select().from(posReturnLines).where(eq(posReturnLines.returnId, r.id)), refunds: account.refunds.filter(x => x.returnId === r.id).map(x => ({ ...x, confirmedByName: names.get(x.confirmedBy) })) })));
@@ -91,13 +115,13 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     const whs = (await db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses).where(eq(warehouses.kind, 'stock'))).filter(w => !scope || scope.rows.some(x => scope.scope.registers.includes(x.r.id) && x.r.warehouseId === w.id));
     const drawers = canRefund ? (await db.select({ id: cashDrawers.id, name: cashDrawers.name }).from(cashDrawers)).filter(d => !scope || scope.scope.drawers.includes(d.id)) : [];
     return json({ order: { id: o.id, orderNo: o.orderNo, status: o.status, customerName: o.customerName, total: o.total, invoiceIssued: !!o.invoiceNo || o.invoiceStatus === 'issued' },
-      lines: lines.map(l => ({ ...l, returnableQty: Math.max(0, l.deliveredQty - returns.filter(r => active(r.status)).flatMap(r => r.lines).filter(x => x.orderLineId === l.id).reduce((n, x) => n + x.requestedQty, 0)) })),
+      lines: lines.map(l => ({ ...l, returnableQty: Math.max(0, l.deliveredQty - returns.filter(r => active(r.status) && !(r.receivedAt && r.purpose==='redelivery')).flatMap(r => r.lines).filter(x => x.orderLineId === l.id).reduce((n, x) => n + x.requestedQty, 0)) })),
       returns, account: { paid: account.paid, credit: account.credit, refunded: account.refunded, balance: account.balance, available: account.available }, warehouses: whs, drawers,
       canApprove: canApprove(who(c)), canRefund, viewerId: who(c).id, manager: who(c).role === 'manager' });
   }, 'business');
 
   router.post(base, async c => {
-    const b = await readJson(c.req, 32000), key = posKey(b.key), reason = posText(b.reason, 2000), warehouseId = posText(b.warehouseId);
+    const b = await readJson(c.req, 32000), key = posKey(b.key), reason = posText(b.reason, 2000), warehouseId = posText(b.warehouseId), purpose=requestedReturnPurpose(b.purpose);
     if (!reason || !warehouseId) throw new AppError(400, 'Chọn kho nhận và nhập lý do trả hàng.');
     let created = false;
     const result = await c.env.db.transaction(async tx => {
@@ -108,7 +132,7 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
       await checkWarehouse(c, tx, warehouseId);
       const old = await linesOf(tx, o.id), amounts = crmReturnAmounts(o, old);
       const rs = await tx.select().from(posReturns).where(eq(posReturns.orderId, o.id));
-      const ids = rs.filter(r => active(r.status)).map(r => r.id);
+      const ids = rs.filter(r => active(r.status) && !(r.receivedAt && returnPurpose(r.sourceSnapshot)==='redelivery')).map(r => r.id);
       const claimed = ids.length ? await tx.select().from(posReturnLines).where(inArray(posReturnLines.returnId, ids)) : [];
       if (!Array.isArray(b.lines) || !b.lines.length || b.lines.length > old.length || new Set(b.lines.map((x: any) => x?.orderLineId)).size !== b.lines.length) throw new AppError(400, 'Chọn dòng hàng cần trả, không trùng.');
       const id = crypto.randomUUID(), at = now();
@@ -118,13 +142,15 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
         const prev = claimed.filter(p => p.orderLineId === l.id), qty = prev.reduce((n, p) => n + p.requestedQty, 0);
         returnPortion(0, l.deliveredQty, qty, x.qty, 0);
         const amount = amounts.get(l.id)!;
-        const subtotal = returnPortion(amount.subtotal, l.qty, qty, x.qty, prev.reduce((n, p) => n + p.subtotal, 0));
-        const tax = returnPortion(amount.tax, l.qty, qty, x.qty, prev.reduce((n, p) => n + p.tax, 0));
+        const financial=purpose==='credit'?prev.filter(p=>returnPurpose(rs.find(r=>r.id===p.returnId)!.sourceSnapshot)==='credit'):[];
+        const creditedQty=financial.reduce((n,p)=>n+p.requestedQty,0);
+        const subtotal = returnPortion(amount.subtotal, l.qty, creditedQty, x.qty, financial.reduce((n,p)=>n+p.subtotal,0));
+        const tax = returnPortion(amount.tax, l.qty, creditedQty, x.qty, financial.reduce((n,p)=>n+p.tax,0));
         return { id: crypto.randomUUID(), returnId: id, orderLineId: l.id, sku: l.sku, name: l.name, unit: l.unit, requestedQty: Number(x.qty), disposition: x.disposition, conditionNote: posText(x.conditionNote, 1000), subtotal, tax, total: subtotal + tax };
       });
       const [r] = await tx.insert(posReturns).values({ id, source: 'crm', returnNo: 'TH-CRM-' + id.slice(0, 8).toUpperCase(), orderId: o.id, warehouseId, registerId: null, createdShiftId: null, kind: 'return', requestContext: 'after_delivery', status: 'pending', reason,
         subtotal: lines.reduce((n: number, l: any) => n + l.subtotal, 0), tax: lines.reduce((n: number, l: any) => n + l.tax, 0), total: lines.reduce((n: number, l: any) => n + l.total, 0),
-        sourceSnapshot: JSON.stringify({ lines: lineSnapshot(old), total: o.total, subtotal: o.subtotal, tax: o.tax, request: JSON.stringify(b) }), requestKey: key, createdBy: who(c).id, createdAt: at, updatedAt: at }).returning();
+        sourceSnapshot: JSON.stringify({ returnPurpose:purpose, lines: lineSnapshot(old), total: o.total, subtotal: o.subtotal, tax: o.tax, request: JSON.stringify(b) }), requestKey: key, createdBy: who(c).id, createdAt: at, updatedAt: at }).returning();
       await tx.insert(posReturnLines).values(lines); await cashAudit(tx, who(c).id, 'crm-request-return', 'pos-returns', id, { orderId: o.id, warehouseId, lines, reason }); created = true; return r!;
     });
     if (created) { const managers = await c.env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'manager'), eq(employees.active, true), isNull(employees.deletedAt)));
@@ -171,7 +197,7 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
   router.post(base + '/:returnId/receive', async c => {
     const b = await readJson(c.req, 4000); if (b.confirmed !== true) throw new AppError(400, 'Chỉ xác nhận khi đã nhận đủ hàng thực tế trên phiếu.');
     return json(await c.env.db.transaction(async tx => {
-      await cashLock(tx); const { o, r } = await request(c, tx);
+      await cashLock(tx); await lockHolds(tx); const { o, r } = await request(c, tx);
       if (r.receivedAt) return { id: r.id, replayed: true };
       if (r.status !== 'approved') throw new AppError(409, 'Phiếu chưa được duyệt.');
       await checkUnchanged(tx, o, r); await checkWarehouse(c, tx, r.warehouseId);
@@ -183,11 +209,33 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
       await postMoves(tx, who(c).id, lines.filter(l => l.disposition === 'restock').map(l => ({ sku: l.sku, warehouseId: r.warehouseId, qty: l.requestedQty, kind: 'customer_return' as const, refType: 'pos_return' as const, refId: r.id, refNo: r.returnNo, note: r.reason })), at);
       await recordMovements(tx, lines.map(l => ({ refKey: `return:${r.id}:${l.id}`, sku: l.sku, name: l.name, qty: l.requestedQty, unit: l.unit, unitPrice: l.subtotal / l.requestedQty, kind: 'customer_return', partner: o.customerName, refCode: r.returnNo, link: '#/orders/' + o.id, status: l.disposition === 'restock' ? 'Đã nhập lại kho' : 'Hàng hỏng, không nhập tồn bán', occurredAt: at })));
       for (const l of lines) await tx.update(posReturnLines).set({ receivedQty: l.requestedQty, restockQty: l.disposition === 'restock' ? l.requestedQty : 0 }).where(eq(posReturnLines.id, l.id));
-      await tx.update(posReturns).set({ status: 'processing', receivedBy: who(c).id, receivedAt: at, creditEffectiveAt: at, updatedAt: at }).where(eq(posReturns.id, r.id));
+      const logistics=returnPurpose(r.sourceSnapshot)==='redelivery',snapshot=logistics?await reopenForRedelivery(tx,o,r,lines):r.sourceSnapshot;
+      await tx.update(posReturns).set({ status: logistics?'completed':'processing', receivedBy: who(c).id, receivedAt: at, creditEffectiveAt: logistics?null:at, sourceSnapshot:snapshot, updatedAt: at }).where(eq(posReturns.id, r.id));
       await tx.update(salesOrders).set({ revision: sql`${salesOrders.revision}+1`, updatedAt: at }).where(eq(salesOrders.id, o.id));
       await cashAudit(tx, who(c).id, 'crm-receive-return', 'pos-returns', r.id, { orderId: o.id, warehouseId: r.warehouseId, lines, note: posText(b.note, 2000) }); return { id: r.id };
     }));
   }, 'business');
+  router.post(base+'/:returnId/redelivery',async c=>{
+    if(who(c).role!=='manager')throw new AppError(403,'Chỉ Manager được chuyển phiếu trả sang nhận để giao lại.');
+    const body=await readJson(c.req,4000),reason=posText(body.reason,2000);
+    if(body.confirmed!==true||reason.length<5)throw new AppError(400,'Xác nhận nhận hàng để giao lại và ghi rõ lý do (ít nhất 5 ký tự).');
+    return json(await c.env.db.transaction(async tx=>{
+      await cashLock(tx);await lockHolds(tx);const {o,r}=await request(c,tx);
+      if(returnPurpose(r.sourceSnapshot)==='redelivery')return{id:r.id,replayed:true};
+      if(!active(r.status))throw new AppError(409,'Phiếu đã huỷ/từ chối.');
+      const [refunds,allocations]=await Promise.all([
+        tx.select({id:posRefunds.id}).from(posRefunds).where(eq(posRefunds.returnId,r.id)).limit(1),
+        tx.select({id:posExchangeAllocations.id}).from(posExchangeAllocations).where(and(eq(posExchangeAllocations.returnId,r.id),inArray(posExchangeAllocations.status,['reserved','applied']))).limit(1),
+      ]);
+      if(refunds.length||allocations.length)throw new AppError(409,'Phiếu đã hoàn tiền hoặc dùng đổi hàng; cần kế toán đối soát, không tự chuyển sang giao lại.');
+      await checkUnchanged(tx,o,r);
+      const lines=await tx.select().from(posReturnLines).where(eq(posReturnLines.returnId,r.id));
+      const snapshot=r.receivedAt?await reopenForRedelivery(tx,o,r,lines):JSON.stringify({...JSON.parse(r.sourceSnapshot),returnPurpose:'redelivery'}),at=now();
+      await tx.update(posReturns).set({sourceSnapshot:snapshot,creditEffectiveAt:null,status:r.receivedAt?'completed':r.status,updatedAt:at}).where(eq(posReturns.id,r.id));
+      await cashAudit(tx,who(c).id,'crm-return-to-redelivery','pos-returns',r.id,{orderId:o.id,reason,previousCreditEffectiveAt:r.creditEffectiveAt,restoredCredit:r.creditEffectiveAt?r.total:0,stockReplayed:false});
+      return{id:r.id};
+    }));
+  },'business');
   router.post(base + '/:returnId/refund', async c => {
     refundAccess(c); const b = await readJson(c.req, 6000), key = posKey(b.key), amount = posMoney(b.amount), method = posText(b.method), reference = posText(b.reference, 200), drawerId = posText(b.drawerId);
     if (b.confirmed !== true || amount <= 0 || !['cash', 'transfer'].includes(method) || method === 'transfer' && !reference || !drawerId) throw new AppError(400, 'Xác nhận số tiền thực hoàn, két và tham chiếu chuyển khoản.');

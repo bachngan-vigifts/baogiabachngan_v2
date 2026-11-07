@@ -11,7 +11,7 @@ export function orderProductHref(row, schedule=false) {
 }
 export const orderProductImage = url => { try { return new URL(url).protocol==='https:' ? url : ''; } catch { return ''; } };
 
-export function initOrderProducts({root,api,go,money,canCalendar=()=>true}) {
+export function initOrderProducts({root,api,go,money,canCalendar=()=>true,canOrder=()=>true}) {
   let data=null,status='work',request=0,dialog=null;
   const close=()=>{dialog?.close();dialog?.remove();dialog=null;};
   const head=el('div',null,'page-head'),titles=el('div');titles.append(el('span','Bán hàng','eyebrow'),el('h1','Sản phẩm theo đơn'),el('p','Theo dõi dòng hàng thật của đơn CRM / POS: số đã giao, còn giao và các đợt giao.','muted'));
@@ -45,14 +45,14 @@ export function initOrderProducts({root,api,go,money,canCalendar=()=>true}) {
     content.append(el('h3','Các đợt giao của dòng hàng'));const trips=el('ul',null,'plain-list');
     for(const t of row.trips){const li=el('li'),label=`${t.deliveryNo} · ${date(t.plannedDate)} ${t.timeSlot} · ${qty(t.qty)} ${row.unit} · ${TRIP[t.status]||t.status}`;if(canCalendar()){const a=el('a',label);a.href='#/deliveries?deliveryId='+encodeURIComponent(t.id);a.addEventListener('click',close);li.append(a);}else li.append(el('span',label));trips.append(li);}
     if(!row.trips.length)trips.append(el('li','Dòng này chưa có chuyến giao.'));content.append(trips,el('p','Chuyến giao lỗi / huỷ không giữ số lượng chờ giao. Tiến độ in, sản xuất và xuất kho là tiến độ cấp đơn.','muted small'));
-    const foot=el('div',null,'modal-foot');foot.append(button('Mở đơn / HĐKT',()=>{close();go(orderProductHref(row));}));if(row.canSchedule)foot.append(button('Xếp lịch giao',()=>{close();go(orderProductHref(row,true));},'btn primary'));
+    const foot=el('div',null,'modal-foot');if(canOrder(row))foot.append(button('Mở đơn / HĐKT',()=>{close();go(orderProductHref(row));}));if(row.canSchedule)foot.append(button('Xếp lịch giao',()=>{close();go(orderProductHref(row,true));},'btn primary'));
     dialog.append(head,content,foot);dialog.addEventListener('cancel',close);document.body.append(dialog);dialog.showModal();
   }
   function render() {
     cards.replaceChildren();for(const [key,label]of STATES){const b=button('',()=>{status=key;pager.reset();load();},'stat op-stat'+(key===status?' active':''));b.setAttribute('aria-pressed',String(key===status));b.append(el('small',label),el('strong',qty(data.counts[key])),el('small','dòng hàng'));cards.append(b);}
     const table=el('table',null,'data-table op-table'),thead=el('thead'),tr=el('tr'),headers=['Sản phẩm / SKU','Đơn · Khách hàng','Phụ trách','Đã giao / Đặt · Còn','Hạn giao','Tiến độ cấp đơn','Thao tác'];for(const h of headers)tr.append(el('th',h));thead.append(tr);table.append(thead);const tb=el('tbody');
     for(const row of data.lines){const tr=el('tr');tr.dataset.orderLine=row.id;const name=el('td'),image=orderProductImage(row.imageUrl);if(image){const img=el('img');img.src=image;img.alt='';img.loading='lazy';img.addEventListener('error',()=>img.remove(),{once:true});name.append(img);}name.append(button(row.name,()=>details(row),'btn ghost op-product-name'),el('small',row.sku||'Không có SKU'));
-      const order=el('td'),a=el('a',row.contractNo||row.orderNo);a.href=orderProductHref(row);order.append(a,el('small',row.customerName));
+      const order=el('td'),a=el('a',row.contractNo||row.orderNo);a.href=orderProductHref(row);order.append(canOrder(row)?a:el('span',row.contractNo||row.orderNo),el('small',row.customerName));
       const numbers=el('td');numbers.append(el('strong',`${qty(row.deliveredQty)} / ${qty(row.qty)} ${row.unit}`));const progress=el('progress');progress.max=row.qty;progress.value=row.deliveredQty;progress.setAttribute('aria-label',`Đã giao ${qty(row.deliveredQty)} trên ${qty(row.qty)} ${row.unit}`);numbers.append(progress,el('small',`Còn ${qty(row.remainingQty)} · Chưa xếp lịch ${qty(row.availableQty)}`));
       const due=el('td');due.append(el('strong',orderProductDueLabel(row)));if(row.remainingQty>1e-9&&row.orderStatus!=='cancelled')due.append(el('small',row.overdue?'Quá hạn':row.availableQty>0?'Còn phần chưa xếp lịch':'Theo chuyến chờ / đang giao',row.overdue?'danger-text':'muted'));
       const actions=el('td',null,'op-actions');actions.append(button('Chi tiết',()=>details(row)));if(row.canSchedule)actions.append(button('Xếp lịch',()=>go(orderProductHref(row,true)),'btn primary small'));

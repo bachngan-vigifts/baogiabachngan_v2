@@ -422,14 +422,14 @@ const isWarehouse = () => state.user?.role === 'employee' && state.user?.positio
  * Quyền theo chức vụ (trang Phân quyền – máy chủ trả trong /me, kiểm tra lại ở mọi API). Manager luôn có mọi quyền.
  * Máy chủ chưa có bảng quyền (chưa chạy migration 0065) thì dùng đúng quyền cũ theo chức vụ.
  */
-const OFFICE_PAGES = ['page.quotes', 'page.orders', 'page.contracts', 'page.deliveries', 'page.receivables', 'page.customers', 'page.care', 'page.stock-requests', 'page.dashboard', 'page.flow', 'page.purchases'];
+const OFFICE_PAGES = ['page.quotes', 'page.orders', 'page.order-products', 'page.contracts', 'page.deliveries', 'page.receivables', 'page.customers', 'page.care', 'page.stock-requests', 'page.dashboard', 'page.flow', 'page.purchases'];
 const legacyPerms = () => isWarehouse() ? ['page.deliveries', 'page.purchases', 'page.packing', 'page.stock-lookup', 'purchases.receive']
   : state.user?.positionId === 'accounting' ? [...OFFICE_PAGES, 'purchases.prices', 'purchases.pay', 'suppliers.edit'] : OFFICE_PAGES;
 const can = key => isManager() || (Array.isArray(state.user?.perms) ? state.user.perms : legacyPerms()).includes(key);
 /** Trang (#/…) → quyền cần có. Trang không có ở đây (Công việc, Sản phẩm…) ai cũng vào được. */
 const PAGE_PERM = {
   cash: 'page.cash', pos: 'pos.sell',
-  quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', 'order-products':'page.orders', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
+  quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', 'order-products':'page.order-products', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
   purchases: 'page.purchases', 'early-requests': 'purchases.early-view', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', stocktake: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
 };
@@ -3475,7 +3475,7 @@ function salesListSummary(key, s) {
 const DELIVERY_FILTERS = ['owner', 'kind', 'carrier', 'invoice', 'assignee', 'customer', 'product', 'receiver', 'address', 'due', 'tracking', 'confirmation', 'sort'];
 let deliveriesReq = 0;
 var productOrdersUi=null,shipmentCalendarUi=null;
-function productOrdersView(){return productOrdersUi ||= initOrderProducts({root:$('#view-order-products'),api,go,money,canCalendar:()=>canPage('deliveries')});}
+function productOrdersView(){return productOrdersUi ||= initOrderProducts({root:$('#view-order-products'),api,go,money,canCalendar:()=>canPage('deliveries'),canOrder:row=>canPage(row.contractNo?'contracts':'orders')});}
 function deliveryCalendarView(){return shipmentCalendarUi ||= createDeliveryCalendar({root:$('#deliveries-calendar'),onRange:(from,to)=>{$('#deliveries-from').value=from;$('#deliveries-to').value=to;loadDeliveries();},actions:x=>deliveryButtons(x)+deliverySlipButtons(x),orderLink:x=>!isWarehouse()&&canPage('order')?(x.contractNo?'#/contracts/':'#/orders/')+encodeURIComponent(x.orderId):null});}
 async function loadDeliveries() {
   const query=location.hash.split('?')[1]||'',tab=new URLSearchParams(query).get('view')||'calendar',calendar=!['list','products'].includes(tab);
@@ -4194,7 +4194,7 @@ async function openOrder(id, confirmed = null) {
       box.append(b);
     }).catch(e => { if (box.isConnected) { box.textContent = e.message; box.className = 'error'; } });
   }
-  if(o.channel==='crm'&&d.lines.some(l=>l.deliveredQty>0)&&o.status!=='cancelled'){
+  if(o.channel==='crm'&&(d.lines.some(l=>l.deliveredQty>0)||d.returnSummary?.requests?.length)&&o.status!=='cancelled'){
     const b=document.createElement('button');b.type='button';b.className='btn secondary';b.dataset.mobileInline='';b.dataset.crmReturns='';b.textContent='Trả hàng / Hoàn tiền';
     b.onclick=()=>openCrmReturns({api,toast,orderId:o.id,onChanged:()=>openOrder(o.id)});$('#order-actions').append(b);
     if(new URLSearchParams(location.hash.split('?')[1]||'').get('returns')==='1'&&!document.querySelector('.pos-return-modal[open]')){const [path,query='']=location.hash.split('?'),params=new URLSearchParams(query);params.delete('returns');history.replaceState(history.state,'',path+(params.size?'?'+params:''));b.click();}

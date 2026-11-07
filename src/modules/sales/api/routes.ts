@@ -610,7 +610,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const purchases = can(viewer(c), 'page.purchases') && options.purchaseLinks ? await options.purchaseLinks(db, viewer(c), order) : [];
     const [returnSummary,adjustments]=await Promise.all([orderReturnSummary(db,order.id),returnAdjustments(db,[order.id])]);
     const adjustment=adjustments.get(order.id);
-    const displayedLines=lines.map(l=>{const r=returnSummary.byLine.get(l.id)||{returnedQty:0,restockedQty:0,pendingReturnQty:0};return{...l,...r,customerKeptQty:Math.max(0,l.deliveredQty-r.returnedQty)};});
+    const displayedLines=lines.map(l=>{const r=returnSummary.byLine.get(l.id)||{returnedQty:0,restockedQty:0,pendingReturnQty:0,redeliveryQty:0};return{...l,...r,historicalDeliveredQty:l.deliveredQty+r.redeliveryQty,customerKeptQty:Math.max(0,l.deliveredQty+r.redeliveryQty-r.returnedQty)};});
     const net=netReturnInputs(schedules,payments.filter(p=>!p.voidedAt),adjustment);
     const cashCollectionRows=order.channel==='crm'?await cashCollectionsForOrder(db,order.id):[];
     return {

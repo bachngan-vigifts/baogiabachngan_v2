@@ -26,14 +26,16 @@ const vnDate = (iso: string) => /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : new Date
 export async function unprovenRestock(db: CashDb, orderId: string, returnId: string): Promise<UnprovenLine[]> {
   const lines = (await db.select().from(posReturnLines).where(eq(posReturnLines.returnId, returnId))).filter(l => l.disposition === 'restock' && l.requestedQty > 0);
   if (!lines.length) return [];
-  const state = (await crmStockFulfilment(db, [orderId])).get(orderId);
-  const prior = await db.select({ lineId: posReturnLines.orderLineId, qty: sql<number>`coalesce(sum(${posReturnLines.restockQty}),0)`.mapWith(Number) })
+  const state = (await crmStockFulfilment(db, [orderId], {gross:true})).get(orderId);
+  const priorRows = await db.select({ lineId: posReturnLines.orderLineId, qty: posReturnLines.restockQty, snapshot: posReturns.sourceSnapshot })
     .from(posReturnLines).innerJoin(posReturns, eq(posReturns.id, posReturnLines.returnId))
-    .where(and(eq(posReturns.orderId, orderId), isNotNull(posReturns.receivedAt), ne(posReturns.id, returnId))).groupBy(posReturnLines.orderLineId);
+    .where(and(eq(posReturns.orderId, orderId), isNotNull(posReturns.receivedAt), ne(posReturns.id, returnId)));
+  const prior = new Map<string,number>();
+  for(const row of priorRows){const covered=Number(JSON.parse(row.snapshot)?.stockBasis?.covered?.[row.lineId]??0);prior.set(row.lineId,(prior.get(row.lineId)??0)+Math.max(0,row.qty-(Number.isFinite(covered)?covered:0)));}
   const want = new Map<string, { sku: string; qty: number }>();
   for (const l of lines) want.set(l.orderLineId, { sku: l.sku, qty: (want.get(l.orderLineId)?.qty ?? 0) + l.requestedQty });
   return [...want].flatMap(([lineId, w]) => {
-    const issued = state?.lines.find(x => x.lineId === lineId)?.issued ?? 0, restocked = prior.find(p => p.lineId === lineId)?.qty ?? 0;
+    const issued = state?.lines.find(x => x.lineId === lineId)?.issued ?? 0, restocked = prior.get(lineId) ?? 0;
     const qty = round(Math.min(w.qty, Math.max(0, restocked + w.qty - issued)));
     return qty > 0.0005 ? [{ lineId, sku: w.sku, qty, issued, restocked }] : [];
   });

@@ -16,7 +16,7 @@ async function fixture(){
  await f.db.insert(products).values([{sku:'09566',name:'Bộ 09',unit:'Bộ',updatedAt:at},{sku:'22566',name:'Bộ 22',unit:'Bộ',updatedAt:at}]);
  const balance=async(sku='09566')=>(await f.db.select().from(stockBalances).where(and(eq(stockBalances.sku,sku),eq(stockBalances.warehouseId,'pos-wh'))))[0]?.qty??0;
  const path=(id:string,r='')=>`/orders/${id}/returns${r?'/'+r:''}`;
- const request=async(id:string,qty=2,line='a')=>f.ok(await f.call(path(id),f.emp,'POST',{key:crypto.randomUUID(),warehouseId:'pos-wh',reason:'Khách trả',lines:[{orderLineId:`${id}-${line}`,qty,disposition:'restock'}]}),201);
+ const request=async(id:string,qty=2,line='a')=>f.ok(await f.call(path(id),f.emp,'POST',{purpose:'credit',key:crypto.randomUUID(),warehouseId:'pos-wh',reason:'Khách trả',lines:[{orderLineId:`${id}-${line}`,qty,disposition:'restock'}]}),201);
  const approve=(id:string,r:string,stockBasis?:unknown)=>f.call(path(id,r+'/approve'),f.mgr,'POST',stockBasis===undefined?{}:{stockBasis});
  const receive=(id:string,r:string)=>f.call(path(id,r+'/receive'),f.emp,'POST',{confirmed:true});
  const adjust=async(qty:number,key:string)=>f.ok(await f.call('/inventory/adjustments',f.mgr,'POST',{clientKey:key,warehouseId:'pos-wh',reason:'Bù xuất thiếu đơn cũ',lines:[{sku:'09566',qty}]}),201);
