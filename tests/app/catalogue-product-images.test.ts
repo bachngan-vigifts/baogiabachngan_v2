@@ -1,5 +1,9 @@
 import {contractTest as test,assert} from '../TEST_TEMPLATE.ts';
 import {createClient} from '@supabase/supabase-js';
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {execFileSync} from 'node:child_process';
 
 // render.js preloads its static export background, unrelated to thumbnails.
 (globalThis as any).Image=class {set src(_value:string) {}};
@@ -49,4 +53,17 @@ test('catalogue transform failure falls back once and detached grids release laz
   for(const fn of [...listeners])fn();assert.equal(image.src,image.dataset.catalogueImage);
   for(const fn of [...listeners])fn();assert.equal(listeners.size,0);
  }finally{if(original)(globalThis as any).IntersectionObserver=original;else delete (globalThis as any).IntersectionObserver;}
+});
+
+test('deployment versions the shared parent image helper so immutable caches cannot pin an old implementation',()=>{
+ const stage=mkdtempSync(join(tmpdir(),'catalogue-thumbnail-stamp-'));
+ try{
+  mkdirSync(join(stage,'scripts'));mkdirSync(join(stage,'trial-ui/catalogue'),{recursive:true});
+  const script=join(stage,'scripts/stamp-catalogue-version.mjs'),file=join(stage,'trial-ui/catalogue/product-images.js');
+  writeFileSync(script,readFileSync(new URL('../../scripts/stamp-catalogue-version.mjs',import.meta.url)));
+  writeFileSync(file,"import {setProductThumbnail} from '../product-images.js';\nimport {imageSource} from './render.js';\nimport x from 'https://example.test/external.js';\nimport y from './already.js?v=old';");
+  execFileSync(process.execPath,[script,'release-test']);const result=readFileSync(file,'utf8');
+  assert.match(result,/\.\.\/product-images\.js\?v=release-test/);assert.match(result,/\.\/render\.js\?v=release-test/);
+  assert.match(result,/https:\/\/example\.test\/external\.js'/);assert.match(result,/already\.js\?v=old'/);
+ }finally{rmSync(stage,{recursive:true,force:true});}
 });
