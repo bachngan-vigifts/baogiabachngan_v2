@@ -22,6 +22,7 @@ import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.
 import { createRequestPriority, isBackgroundRequest } from './request-priority.js';
 import { recordApi, openSpeedDialog } from './speed-log.js';
 import { createApiRegion, createRegionCanary, requestWithRegion } from './api-region.js';
+import { createDbPoolCanary, runLoadTest } from './db-pool-canary.js';
 import { createPageCache, isCacheable, isPassiveWrite } from './page-cache.js';
 import { createCustomerSearch } from './customer-search.js';
 import { openDueRepair } from './due-repair.js';
@@ -332,10 +333,21 @@ const sessionResume=createSessionResume({storage:()=>localStorage,readToken:()=>
 
 const requestPriority = createRequestPriority();
 createApiRegion(); // ép vùng tự học đã tắt (sự cố 30/10) – gọi để xoá vùng cũ còn lưu trên máy
+// Thử pooler có kiểm soát (Manager bật trên máy mình trong "Đo tốc độ"); máy chủ chưa có secret thử thì bỏ qua header.
+const dbPoolCanary = createDbPoolCanary();
+// isManager / state khai báo sau: lượt gọi sớm lúc khởi động (trước khi có state) không gửi header thử.
+const managerPoolHeaders = () => { try { return isManager() ? dbPoolCanary.headers() : {}; } catch { return {}; } };
 const regionCanary = createRegionCanary({ onDisabled: () => toast('Kết nối chậm – đã tạm chuyển máy chủ dự phòng, sẽ tự kiểm tra lại kết nối.', 'err') });
 // Mạng có lại / quay lại tab: lượt đọc kế tiếp thử lại máy chủ cạnh CSDL ngay (không chờ hết thời gian chờ).
 window.addEventListener('online', () => regionCanary.wake());
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') regionCanary.wake(); });
+/** Một lượt GET đo tải (không qua hàng đợi ưu tiên / bộ đệm / thử lại): chọn pooler hay kết nối trực tiếp cho riêng lượt này. */
+async function dbPoolProbe(path, { pool = false } = {}) {
+  const started = performance.now();
+  const res = await fetch(API + path, { headers: { authorization: 'Bearer ' + token, ...(regionCanary.enabled() ? { 'x-region': regionCanary.current() } : {}), ...(pool ? { 'x-db-pool': 'pooler' } : {}) } });
+  await res.text();
+  return { ms: performance.now() - started, status: res.status, timing: res.headers.get('server-timing') || '' };
+}
 // Đổi tài khoản / đăng xuất: xoá bộ đệm (cả bản lưu trên máy) – saveToken có thể chạy trước khi dòng dưới được khởi tạo.
 function clearPageCache() { try { pageCache.clear(); } catch { /* chưa khởi tạo */ } }
 const pageCache = createPageCache({ storage: { local: () => localStorage, session: () => sessionStorage } }); // trang mở lại hiện ngay, giữ qua tải lại trang (page-cache.js)
@@ -378,7 +390,7 @@ async function apiRequest(path, method = 'GET', body) {
   let sentAt = 0, sentWall = 0;
   // Đo tốc độ: từng lần gửi thật (thử lại khi quá giờ / 502–504, chuyển máy chủ dự phòng) – để không gộp chúng vào "mạng".
   const attempts = [];
-  const send = (regionHeaders, readPolicy) => requestPriority.run(isBackgroundRequest(path, method), () => { if (!sentAt) { sentAt = performance.now(); sentWall = Date.now(); } const region = !!regionHeaders?.['x-region']; return apiFetch(API + path, { method, headers: { ...headers, ...regionHeaders }, body: body === undefined ? undefined : JSON.stringify(body) }, { ...readPolicy, onAttempt: a => attempts.push({ ...a, region }) }); });
+  const send = (regionHeaders, readPolicy) => requestPriority.run(isBackgroundRequest(path, method), () => { if (!sentAt) { sentAt = performance.now(); sentWall = Date.now(); } const region = !!regionHeaders?.['x-region']; return apiFetch(API + path, { method, headers: { ...headers, ...regionHeaders, ...managerPoolHeaders() }, body: body === undefined ? undefined : JSON.stringify(body) }, { ...readPolicy, onAttempt: a => attempts.push({ ...a, region }) }); });
   try { res = await requestWithRegion(regionCanary, send, {read: method === 'GET'}); }
   catch {
     throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME);
@@ -563,7 +575,7 @@ function toggleAccountMenu(force) {
 $('#account-button').addEventListener('click', e => { e.stopPropagation(); toggleAccountMenu(); });
 $('#account-button-m').addEventListener('click', e => { e.stopPropagation(); toggleAccountMenu(); });
 document.addEventListener('click', e => { if (!e.target.closest('#account-menu')) toggleAccountMenu(false); });
-$('#speed-check').addEventListener('click', () => { toggleAccountMenu(false); openSpeedDialog({ toast, canary: isManager() ? regionCanary : null }); });
+$('#speed-check').addEventListener('click', () => { toggleAccountMenu(false); openSpeedDialog({ toast, canary: isManager() ? regionCanary : null, dbPool: isManager() ? { canary: dbPoolCanary, runLoad: opts => runLoadTest(dbPoolProbe, opts) } : null }); });
 $('#send-feedback').addEventListener('click', () => { toggleAccountMenu(false); feedbackView().openNew(); });
 $('#logout').addEventListener('click', async () => {
   const session = token, user = state.user;

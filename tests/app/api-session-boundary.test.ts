@@ -8,7 +8,7 @@ const source=app.slice(app.indexOf('async function apiRequest('),app.indexOf('//
 class ApiError extends Error {constructor(message:string,public status:number,public code?:string){super(message);}}
 function fixture(){
  let finish!:(r:Response)=>void;const response=new Promise<Response>(resolve=>finish=resolve);let saved=0,refresh=0,shown=0;
- const ctx:any={requestWithRegion,token:'account-a',API:'/api',location:{hash:'#/orders/order-a'},ApiError,state:{user:{id:'a'}},performance:{now:()=>0},apiFetch:()=>response,isBackgroundRequest:()=>false,requestPriority:{run:(_:unknown,send:Function)=>send()},regionCanary:{headers:()=>({}),observe(){}},recordApi(){},saveToken:(v:string)=>{saved++;ctx.token=v;},showAuth:()=>shown++,approvalUi:null,dataRefresh:{observe(){},afterWrite:()=>refresh++}};
+ const ctx:any={requestWithRegion,token:'account-a',API:'/api',location:{hash:'#/orders/order-a'},ApiError,state:{user:{id:'a'}},performance:{now:()=>0},apiFetch:()=>response,isBackgroundRequest:()=>false,requestPriority:{run:(_:unknown,send:Function)=>send()},regionCanary:{headers:()=>({}),observe(){}},managerPoolHeaders:()=>({}),recordApi(){},saveToken:(v:string)=>{saved++;ctx.token=v;},showAuth:()=>shown++,approvalUi:null,dataRefresh:{observe(){},afterWrite:()=>refresh++}};
  vm.createContext(ctx);vm.runInContext(source,ctx);return{ctx,finish,get saved(){return saved;},get refresh(){return refresh;},get shown(){return shown;}};
 }
 test('a late write/read from account A cannot return its data, refresh account B or replace its session',async()=>{

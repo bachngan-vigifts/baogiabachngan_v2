@@ -31,10 +31,21 @@ const SLOW_MS = 1500;
 // yêu cầu Edge chạy CÙNG vùng với CSDL (?forceFunctionRegion=…): mỗi truy vấn khỏi phải đi xa (đo thật: ~150–200 ms/truy vấn
 // khi Edge ở ap-southeast-1 còn CSDL ở vùng khác).
 const DB_REGION = (/@aws-\d+-([a-z]{2}-[a-z]+-\d)\.pooler\.supabase\.com/.exec(POOLER_URL)?.[1] || Deno.env.get('DB_REGION') || '').replace(/[^\w-]/g, '').slice(0, 40);
+const countQuery=()=>{const t=timing.getStore();if(t)t.queries++;};
 const dbPool = createDbLifecycle({
-  create:()=>createDb(POOLER_URL||Deno.env.get('SUPABASE_DB_URL')||'',schema,{max:POOLER_URL?3:1,idleTimeout:POOLER_URL?20:1,onQuery:()=>{const t=timing.getStore();if(t)t.queries++;}}),
+  create:()=>createDb(POOLER_URL||Deno.env.get('SUPABASE_DB_URL')||'',schema,{max:POOLER_URL?3:1,idleTimeout:POOLER_URL?20:1,onQuery:countQuery}),
   close:closeDb,keepWarm:!!POOLER_URL,onCloseError:()=>console.warn('API database client close failed'),
 });
+// THỬ POOLER CÓ KIỂM SOÁT (07/11/2026): secret DB_POOLER_CANARY_URL (deploy chỉ đặt khi biến ENABLE_DB_POOLER_CANARY=true và
+// pooler qua kiểm tra chỉ đọc). CHỈ lượt gọi có header `x-db-pool: pooler` (Manager tự bật trong "Đo tốc độ" trên máy mình) đi qua
+// pooler; mọi lượt khác giữ nguyên kết nối trực tiếp max 1. Tắt: bỏ chọn trên máy đó (tức thì) hoặc ENABLE_DB_POOLER_CANARY=false rồi deploy.
+const POOLER_CANARY_URL = POOLER_URL ? '' : Deno.env.get('DB_POOLER_CANARY_URL') || '';
+const poolerCanary = POOLER_CANARY_URL ? createDbLifecycle({
+  create:()=>createDb(POOLER_CANARY_URL,schema,{max:3,idleTimeout:20,onQuery:countQuery}),
+  close:closeDb,keepWarm:true,onCloseError:()=>console.warn('API pooler canary client close failed'),
+}) : null;
+// Số lượt đang xử lý cùng lúc trong isolate này (Server-Timing `inflight`) – để thấy lượt gọi phải chờ chung một kết nối.
+let inflight = 0;
 /**
  * Chắc chắn có kết nối trước khi xử lý: CSDL hết chỗ kết nối (lúc đông) thì chờ rồi thử lại vài lần thay vì báo lỗi ngay.
  * Kết nối vừa dùng (< 5 giây) thì bỏ qua bước kiểm tra.
@@ -54,20 +65,24 @@ Deno.serve(async req => {
   const at = incoming.pathname.indexOf('/api/staff'), path = at < 0 ? '' : incoming.pathname.slice(at), sync = path.startsWith(SYNC_PREFIX);
   const origin = sync ? SYNC_ORIGIN : req.headers.get('origin') || '';
   const ORIGIN = origin; // liên kết kích hoạt/đặt lại mật khẩu trỏ về đúng trang đã gửi yêu cầu
-  const cors = { 'access-control-allow-origin': ORIGIN, 'access-control-allow-headers': 'authorization, content-type, x-region', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'vary': 'Origin', 'cache-control': 'no-store', 'access-control-expose-headers': 'server-timing', 'timing-allow-origin': ORIGIN };
+  const cors = { 'access-control-allow-origin': ORIGIN, 'access-control-allow-headers': 'authorization, content-type, x-region, x-db-pool', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'vary': 'Origin', 'cache-control': 'no-store', 'access-control-expose-headers': 'server-timing', 'timing-allow-origin': ORIGIN };
   if (!ORIGINS.has(origin)) return new Response(JSON.stringify({error:'Nguồn yêu cầu không hợp lệ.'}), {status:403,headers:{'content-type':'application/json'}});
   if (req.method === 'OPTIONS') return new Response(null, {status:204,headers:cors});
   const url = POOLER_URL || Deno.env.get('SUPABASE_DB_URL');
   if (!url) return new Response(JSON.stringify({error:'Kết nối dữ liệu chưa sẵn sàng.'}), {status:503,headers:{...cors,'content-type':'application/json'}});
   let lease:ReturnType<typeof dbPool.acquire>|undefined;
+  const canary = !!poolerCanary && req.headers.get('x-db-pool') === 'pooler';
+  const pool = canary ? poolerCanary! : dbPool, dbMode = canary ? 'pooler-canary' : POOLER_URL ? 'pooler' : 'direct';
+  const concurrent = ++inflight;
+  const timingTail = () => (REGION ? `, region;desc="${REGION}"` : '') + (DB_REGION ? `, dbregion;desc="${DB_REGION}"` : '') + `, dbmode;desc="${dbMode}", inflight;desc="${concurrent}"`;
   try {
-    const currentLease=dbPool.acquire();lease=currentLease;const db=currentLease.db;
+    const currentLease=pool.acquire();lease=currentLease;const db=currentLease.db;
     const requestWaitUntil=(work:Promise<unknown>)=>waitUntil(currentLease.track(work));
     await ready(db);
     const dbReady = performance.now();
     if (incoming.pathname.endsWith('/health')) {
       await db.select({id:schema.positions.id}).from(schema.positions).limit(1);
-      return new Response(JSON.stringify({ok:true,databaseMode:POOLER_URL?'transaction-pooler':'direct-request-scoped'}), {headers:{...cors,'content-type':'application/json'}});
+      return new Response(JSON.stringify({ok:true,databaseMode:canary?'transaction-pooler-canary':POOLER_URL?'transaction-pooler':'direct-request-scoped'}), {headers:{...cors,'content-type':'application/json'}});
     }
     if (!path) return new Response('{}',{status:404,headers:cors});
     const headers = new Headers(req.headers); headers.delete('cookie');
@@ -92,9 +107,9 @@ const response = await timing.run(stats, () => router.handle(forwarded,{db,trans
     let body = await response.text();
     if (cookie) { const payload = JSON.parse(body); payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || ''; body = JSON.stringify(payload); }
     const total = performance.now() - started, ms = (n: number) => Math.round(n * 10) / 10;
-    const serverTiming = `db;dur=${ms(dbReady - started)}, app;dur=${ms(handled - dbReady)};desc="${stats.queries} queries", total;dur=${ms(total)}` + (REGION ? `, region;desc="${REGION}"` : '') + (DB_REGION ? `, dbregion;desc="${DB_REGION}"` : '');
+    const serverTiming = `db;dur=${ms(dbReady - started)}, app;dur=${ms(handled - dbReady)};desc="${stats.queries} queries", total;dur=${ms(total)}` + timingTail();
     // Yêu cầu chậm: ghi log (đường dẫn đã bỏ mã / query string) để xem ở Supabase → Edge Functions → Logs.
-    if (total > SLOW_MS) console.warn('API slow', JSON.stringify({ method: req.method, route: path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}|[A-Za-z0-9_-]{20,}/g, ':id'), status: response.status, ms: Math.round(total), dbMs: Math.round(dbReady - started), queries: stats.queries, pooled: !!POOLER_URL }));
+    if (total > SLOW_MS) console.warn('API slow', JSON.stringify({ method: req.method, route: path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}|[A-Za-z0-9_-]{20,}/g, ':id'), status: response.status, ms: Math.round(total), dbMs: Math.round(dbReady - started), queries: stats.queries, pooled: !!POOLER_URL, dbMode, inflight: concurrent }));
     const jsonHeaders = {...cors,'content-type':'application/json; charset=utf-8','x-content-type-options':'nosniff','server-timing':serverTiming};
     // Nén gzip khi trình duyệt hỗ trợ (danh sách 20–200 KB còn ~1/5; bản chụp danh mục ~3 MB còn ~0,5 MB) – đỡ chờ trên 4G.
     if (body.length > 4_000 && /\bgzip\b/.test(req.headers.get('accept-encoding') || '')) {
@@ -104,9 +119,12 @@ const response = await timing.run(stats, () => router.handle(forwarded,{db,trans
     return new Response(body,{status:response.status,headers:jsonHeaders});
   } catch(e) {
     const code=String((e as {code?:unknown})?.code||(e as {cause?:{code?:unknown}})?.cause?.code||'unknown').slice(0,40);
-    console.error('API database unavailable',JSON.stringify({code,phase:'request',pooled:!!POOLER_URL}));
-    return new Response(JSON.stringify({error:'Kết nối dữ liệu đang bận. Vui lòng thử lại sau ít giây.',code:'DB_CONNECTION_UNAVAILABLE'}),{status:503,headers:{...cors,'retry-after':'1','content-type':'application/json','server-timing':`total;dur=${Math.round(performance.now()-started)}`+(REGION?`, region;desc="${REGION}"`:'')+(DB_REGION?`, dbregion;desc="${DB_REGION}"`:'')}});
+    console.error('API database unavailable',JSON.stringify({code,phase:'request',pooled:!!POOLER_URL,dbMode}));
+    return new Response(JSON.stringify({error:'Kết nối dữ liệu đang bận. Vui lòng thử lại sau ít giây.',code:'DB_CONNECTION_UNAVAILABLE'}),{status:503,headers:{...cors,'retry-after':'1','content-type':'application/json','server-timing':`total;dur=${Math.round(performance.now()-started)}`+timingTail()}});
   } finally {
-    await lease?.release();
+    inflight--;
+    // Đóng kết nối SAU khi trả phản hồi (chạy nền): trước đây trình duyệt phải chờ cả bước đóng kết nối – phần này không có trong
+    // Server-Timing nên bị tính nhầm vào "mạng". Lượt mới đến trong lúc đóng sẽ mở client mới (lifecycle đã bỏ client đang đóng).
+    if (lease) { const done = lease.release(); if ((globalThis as any).EdgeRuntime?.waitUntil) waitUntil(done); else await done; } // eslint-disable-line @typescript-eslint/no-explicit-any
   }
 });

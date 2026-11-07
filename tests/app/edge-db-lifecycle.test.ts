@@ -7,13 +7,13 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createDbLifecycle, createDbReadiness } from '../../src/core/db/request-lifecycle.js';
 
 // Execute the real Edge handler, replacing only infrastructure imports (no network/database).
-async function harness({ pooled = false, legacyPooler = false, broken = false, region = '', poolerUrl = 'postgres://pool.fake.test/db', handler = async (_req: Request, _env: any) => Response.json({ ok: true }) } = {}) {
+async function harness({ canaryUrl = '', pooled = false, legacyPooler = false, broken = false, region = '', poolerUrl = 'postgres://pool.fake.test/db', handler = async (_req: Request, _env: any) => Response.json({ ok: true }) } = {}) {
   const source = readFileSync('supabase/functions/baogia-v2-api/index.ts', 'utf8').replace(/^import .*;\n/gm, '');
   const { code } = await transform(source, { loader: 'ts', format: 'iife' });
   const stats = { created: 0, closed: 0, probes: 0, routed: 0 };
   let serve: (req: Request) => Promise<Response> = null!;
   const background: Promise<unknown>[] = [];
-  const env: Record<string, string> = { SUPABASE_DB_URL: 'postgres://fake.test/db', ...(pooled ? { DB_POOLER_URL: poolerUrl } : {}), ...(legacyPooler ? { SUPABASE_POOLER_URL: 'postgres://legacy.pool.fake.test/db' } : {}), ...(region ? { SB_REGION: region } : {}) };
+  const env: Record<string, string> = { SUPABASE_DB_URL: 'postgres://fake.test/db', ...(pooled ? { DB_POOLER_URL: poolerUrl } : {}), ...(legacyPooler ? { SUPABASE_POOLER_URL: 'postgres://legacy.pool.fake.test/db' } : {}), ...(region ? { SB_REGION: region } : {}), ...(canaryUrl ? { DB_POOLER_CANARY_URL: canaryUrl } : {}) };
   const connections: {url:string;max?:number}[] = [];
   const hooks: { onQuery?: () => void } = {};
   runInNewContext(code, {
@@ -72,7 +72,7 @@ test('Edge trả Server-Timing (chờ CSDL, xử lý + số truy vấn của đ�
   h = await harness({ region: 'ap-southeast-1', handler: async () => { h.query(); h.query(); h.query(); return Response.json({ list: [1, 2], text: 'Đơn' }); } });
   const res = await h.request();
   const timing = res.headers.get('server-timing') || '';
-  assert.match(timing, /^db;dur=[\d.]+, app;dur=[\d.]+;desc="3 queries", total;dur=[\d.]+, region;desc="ap-southeast-1"$/);
+  assert.match(timing, /^db;dur=[\d.]+, app;dur=[\d.]+;desc="3 queries", total;dur=[\d.]+, region;desc="ap-southeast-1", dbmode;desc="direct", inflight;desc="1"$/);
   assert.equal(res.headers.get('access-control-expose-headers'), 'server-timing');
   assert.deepEqual(await res.json(), { list: [1, 2], text: 'Đơn' });
   // Đăng nhập: Set-Cookie → sessionToken trong JSON (như trước).
@@ -100,7 +100,7 @@ test('Edge báo vùng CSDL (đọc từ tên máy pooler) và bỏ tham số ch�
   const h = await harness({ pooled: true, region: 'ap-southeast-1', poolerUrl: 'postgresql://postgres.ref:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres',
     handler: async req => { seen = req.url; return Response.json({ ok: true }); } });
   const res = await h.request('GET', '/api/staff/orders?q=a&forceFunctionRegion=us-east-1');
-  assert.match(res.headers.get('server-timing') || '', /region;desc="ap-southeast-1", dbregion;desc="us-east-1"$/);
+  assert.match(res.headers.get('server-timing') || '', /region;desc="ap-southeast-1", dbregion;desc="us-east-1", dbmode;desc="pooler", inflight;desc="1"$/);
   assert.equal(new URL(seen).search, '?q=a');
   const down = await harness({ pooled: true, broken: true, poolerUrl: 'postgresql://x:y@aws-1-eu-central-1.pooler.supabase.com:6543/postgres' });
   const failed = await down.request();
@@ -142,4 +142,37 @@ test('CORS cho phép header x-region (thử máy chủ cạnh CSDL từ trình d
   const h = await harness();
   const res = await h.request('OPTIONS');
   assert.match(res.headers.get('access-control-allow-headers') || '', /x-region/);
+});
+
+test('thử pooler có kiểm soát: chỉ lượt có x-db-pool: pooler dùng pooler (giữ ấm, max 3); lượt khác vẫn kết nối trực tiếp max 1', async () => {
+  const h = await harness({ canaryUrl: 'postgres://canary.pool.fake.test/db' });
+  const direct = await h.request();
+  assert.match(direct.headers.get('server-timing') || '', /dbmode;desc="direct"/);
+  const viaPool = await h.request('GET', '/api/staff/tasks', { 'x-db-pool': 'pooler' });
+  assert.match(viaPool.headers.get('server-timing') || '', /dbmode;desc="pooler-canary"/);
+  await h.request('GET', '/api/staff/tasks', { 'x-db-pool': 'pooler' });
+  await Promise.all(h.background);
+  assert.deepEqual(h.connections, [{ url: 'postgres://fake.test/db', max: 1 }, { url: 'postgres://canary.pool.fake.test/db', max: 3 }], 'pooler client tạo một lần, giữ ấm');
+  assert.equal(h.stats.closed, 1, 'chỉ client trực tiếp bị đóng');
+  assert.deepEqual(await (await h.request('GET', '/health', { 'x-db-pool': 'pooler' })).json(), { ok: true, databaseMode: 'transaction-pooler-canary' });
+  const preflight = await h.request('OPTIONS');
+  assert.match(preflight.headers.get('access-control-allow-headers') || '', /x-db-pool/);
+  // Không có secret thử: header bị bỏ qua.
+  const off = await harness();
+  assert.match((await off.request('GET', '/api/staff/tasks', { 'x-db-pool': 'pooler' })).headers.get('server-timing') || '', /dbmode;desc="direct"/);
+  // Pooler đã bật cho tất cả: không tạo client thử.
+  const all = await harness({ pooled: true, canaryUrl: 'postgres://canary.pool.fake.test/db' });
+  assert.match((await all.request('GET', '/api/staff/tasks', { 'x-db-pool': 'pooler' })).headers.get('server-timing') || '', /dbmode;desc="pooler"/);
+  assert.equal(all.connections.length, 1);
+});
+test('inflight: số lượt đang xử lý cùng lúc trong isolate; đóng kết nối trực tiếp chạy nền sau khi trả phản hồi', async () => {
+  let open!: () => void; const gate = new Promise<void>(r => { open = r; });
+  const h = await harness({ handler: async () => { await gate; return Response.json({ ok: true }); } });
+  const batch = [h.request(), h.request(), h.request()];
+  await new Promise(r => setTimeout(r, 0)); open();
+  const timings = (await Promise.all(batch)).map(r => /inflight;desc="(\d+)"/.exec(r.headers.get('server-timing') || '')?.[1]);
+  assert.deepEqual(timings, ['1', '2', '3']);
+  assert.equal(h.connections.length, 1, 'cùng một client trực tiếp (max 1) – giữ nguyên trong lúc thử');
+  await Promise.all(h.background); assert.equal(h.stats.closed, 1);
+  assert.match((await h.request()).headers.get('server-timing') || '', /inflight;desc="1"/, 'đếm giảm sau khi xong');
 });
