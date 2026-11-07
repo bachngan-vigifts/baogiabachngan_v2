@@ -1,3 +1,5 @@
+import {customerMergeHooks} from '../core/contracts/customer-merge.ts';
+import {reassignCustodyCustomer,registerCustodyRoutes} from '../modules/product-custody/api/routes.ts';
 import {dashboardReportScoresOf} from './dashboard-report-scores.ts';
 import { registerReportRoutes } from './report-routes.ts';
 import { webInvoiceStatus } from '../modules/tasks/api/invoice-tasks.ts';
@@ -116,6 +118,8 @@ export function createAppRouter() {
   registerCustomerRoutes(router);
   registerAppsheetCustomerRoutes(router);
   registerCatalogRoutes(router);
+  registerCustodyRoutes(router);
+  customerMergeHooks.reassign=reassignCustodyCustomer;
   catalogueLibraryHooks.heldAt=(db,skus,warehouseId)=>reservedBySku(db,skus,warehouseId);
   catalogueLibraryHooks.incoming=(db,skus)=>outstandingLines(db,skus);
   registerCatalogueLibrary(router);

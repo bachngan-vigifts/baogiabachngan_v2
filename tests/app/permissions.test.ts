@@ -30,7 +30,7 @@ test('quyền mặc định sau migration = đúng quyền cũ: /me trả quyề
   assert.equal((await me(mgr)).perms.length, PERMISSIONS.length, 'Manager có mọi quyền');
   const sale = await me(emp), wh = await me(kho), acc = await me(ketoan);
   assert.ok(sale.perms.includes('page.quotes') && !sale.perms.includes('page.packing') && !sale.perms.includes('inventory.view'));
-  assert.deepEqual([...wh.perms].sort(), ['page.deliveries', 'page.packing', 'page.purchases', 'page.stock-lookup', 'purchases.early-view', 'purchases.receive', 'stock.transfer']);
+  assert.deepEqual([...wh.perms].sort(), ['page.deliveries', 'page.packing', 'page.product-custody', 'page.purchases', 'page.stock-lookup', 'purchases.early-view', 'purchases.receive', 'stock.transfer']);
   assert.ok(acc.perms.includes('suppliers.edit') && acc.perms.includes('purchases.pay'));
   assert.equal(sale.dataScope, 'position'); assert.equal(sale.departmentId, 'kinh-doanh');
   // Mặc định khớp đúng danh mục (đối tượng không có `perms` dùng mặc định theo chức vụ).
@@ -46,6 +46,7 @@ test('quyền mặc định sau migration = đúng quyền cũ: /me trả quyề
 
 test('ô chọn khách ở báo giá vẫn dùng được khi tắt trang Khách hàng; danh bạ thì không', () => {
   const q = (s: string) => new URLSearchParams(s);
+  assert.deepEqual(routePermission('GET', '/api/staff/product-custody', q('')), ['page.product-custody']);
   assert.deepEqual(routePermission('GET', '/api/staff/customers', q('limit=50&offset=0&q=')), ['page.customers']);
   assert.ok(routePermission('GET', '/api/staff/customers', q('limit=8&usable=1&q=an'))!.includes('page.quotes'));
   assert.ok(routePermission('GET', '/api/staff/customers/9001', q(''))!.includes('page.quotes'));

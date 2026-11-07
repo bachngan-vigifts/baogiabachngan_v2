@@ -27,6 +27,7 @@
 <link rel="stylesheet" href="suppliers.css">
 <link rel="stylesheet" href="early-request-page.css">
 <link rel="stylesheet" href="product-detail.css">
+<link rel="stylesheet" href="product-custody.css">
 <link rel="stylesheet" href="price-labels.css">
 <link rel="stylesheet" href="typography.css">
 <link rel="stylesheet" href="mobile-actions.css">
@@ -90,7 +91,6 @@
         <a class="nav" href="#/quotes" data-nav="quotes"><svg viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2" /><path d="M9 9l1 0" /><path d="M9 13l6 0" /><path d="M9 17l6 0" /></svg><span>Báo giá</span><b id="nav-quote-count" class="badge">0</b></a>
         <a class="nav" href="#/orders" data-nav="orders"><svg viewBox="0 0 24 24"><path d="M6.331 8h11.339a2 2 0 0 1 1.977 2.304l-1.255 8.152a3 3 0 0 1 -2.966 2.544h-6.852a3 3 0 0 1 -2.965 -2.544l-1.255 -8.152a2 2 0 0 1 1.977 -2.304" /><path d="M9 11v-5a3 3 0 0 1 6 0v5" /></svg><span>Đơn đặt hàng</span></a>
         <a class="nav" href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M5 8v-3a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-5" /><path d="M3 14a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" /><path d="M4.5 17l-1.5 5l3 -1.5l3 1.5l-1.5 -5" /></svg><span>HĐKT</span></a>
-        <a class="nav" href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12l0 9" /><path d="M12 12l-8 -4.5" /></svg><span>Sản phẩm</span></a>
         <a class="nav" href="#/order-products" data-nav="order-products"><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z M3 8v9l9 5 9-5V8 M12 13v9"/></svg><span>Sản phẩm theo đơn</span></a>
         <a class="nav" href="#/deliveries" data-nav="deliveries"><svg viewBox="0 0 24 24"><path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M5 17h-2v-4m-1 -8h11v12m-4 0h6m4 0h2v-6h-8m0 -5h5l3 5" /><path d="M3 9l4 0" /></svg><span>Lịch giao hàng</span><b id="nav-deliveries-count" class="badge danger" hidden>0</b></a>
       </section>
@@ -99,6 +99,10 @@
         <a class="nav" href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24"><path d="M5 7a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /><path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /><path d="M21 21v-2a4 4 0 0 0 -3 -3.85" /></svg><span>Trung tâm khách hàng</span></a>
         <a class="nav" href="#/care" data-nav="care"><svg viewBox="0 0 24 24"><path d="M21 14l-3 -3h-7a1 1 0 0 1 -1 -1v-6a1 1 0 0 1 1 -1h9a1 1 0 0 1 1 1v10" /><path d="M14 15v2a1 1 0 0 1 -1 1h-7l-3 3v-10a1 1 0 0 1 1 -1h2" /></svg><span>Giao dịch & chăm sóc</span><b id="nav-care-count" class="badge" hidden>0</b></a>
         <a class="nav" href="#/stock-requests" data-nav="stock-requests"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M12 16v.01" /><path d="M12 13a2 2 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483" /></svg><span>Khách hỏi tồn</span><b id="nav-stock-count" class="badge" hidden>0</b></a>
+      </section>
+      <section class="nav-group" aria-labelledby="nav-group-products"><h2 class="nav-label" id="nav-group-products">Danh mục sản phẩm</h2>
+        <a class="nav" href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12l0 9" /><path d="M12 12l-8 -4.5" /></svg><span>Sản phẩm</span></a>
+<a class="nav" href="#/product-custody" data-nav="product-custody"><svg viewBox="0 0 24 24"><path d="M12 3 3 7.5V17l9 5 9-5V7.5L12 3Z M3 7.5l9 5 9-5 M12 12.5V22 M8 3v5 M16 3v5"/></svg><span>Hàng bảo hành &amp; mượn mẫu</span></a>
       </section>
       <section class="nav-group" aria-labelledby="nav-group-3">
         <h2 class="nav-label" id="nav-group-3">Kho &amp; giao hàng</h2>
@@ -400,6 +404,7 @@
     </section>
 
     <!-- ---------- Sản phẩm ---------- -->
+    <section class="view" id="view-product-custody" hidden></section>
     <section class="view" id="view-products" hidden>
       <div class="page-head">
         <div><span class="eyebrow">Kinh doanh</span><h1>Sản phẩm</h1><p class="muted" id="product-sub">Danh mục, giá bán và tồn kho để chọn nhanh khi lập báo giá.</p></div>
@@ -814,6 +819,7 @@
     <a href="#/orders" data-nav="orders"><svg viewBox="0 0 24 24"><path d="M6.331 8h11.339a2 2 0 0 1 1.977 2.304l-1.255 8.152a3 3 0 0 1 -2.966 2.544h-6.852a3 3 0 0 1 -2.965 -2.544l-1.255 -8.152a2 2 0 0 1 1.977 -2.304" /><path d="M9 11v-5a3 3 0 0 1 6 0v5" /></svg>Đơn hàng</a>
     <a href="#/contracts" data-nav="contracts"><svg viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M5 8v-3a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-5" /><path d="M3 14a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" /><path d="M4.5 17l-1.5 5l3 -1.5l3 1.5l-1.5 -5" /></svg>HĐKT</a>
     <a href="#/products" data-nav="products"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12l0 9" /><path d="M12 12l-8 -4.5" /></svg>Sản phẩm</a>
+<a href="#/product-custody" data-nav="product-custody"><svg viewBox="0 0 24 24"><path d="M12 3 3 7.5V17l9 5 9-5V7.5L12 3Z M3 7.5l9 5 9-5 M12 12.5V22 M8 3v5 M16 3v5"/></svg>Hàng bảo hành &amp; mượn mẫu</a>
     <a href="#/deliveries" data-nav="deliveries" class="kho-bn"><svg viewBox="0 0 24 24"><path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M5 17h-2v-4m-1 -8h11v12m-4 0h6m4 0h2v-6h-8m0 -5h5l3 5" /><path d="M3 9l4 0" /></svg>Giao hàng</a>
     <a href="#/receivables" data-nav="receivables"><svg viewBox="0 0 24 24"><path d="M9 14c0 1.657 2.686 3 6 3s6 -1.343 6 -3s-2.686 -3 -6 -3s-6 1.343 -6 3" /><path d="M9 14v4c0 1.656 2.686 3 6 3s6 -1.344 6 -3v-4" /><path d="M3 6c0 1.072 1.144 2.062 3 2.598s4.144 .536 6 0c1.856 -.536 3 -1.526 3 -2.598c0 -1.072 -1.144 -2.062 -3 -2.598s-4.144 -.536 -6 0c-1.856 .536 -3 1.526 -3 2.598" /><path d="M3 6v10c0 .888 .772 1.45 2 2" /><path d="M3 11c0 .888 .772 1.45 2 2" /></svg>Công nợ</a>
     <a href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M9 11l3 3l8 -8" /><path d="M20 12v6a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h9" /></svg>Công việc</a>

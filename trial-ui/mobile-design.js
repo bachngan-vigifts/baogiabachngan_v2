@@ -14,7 +14,7 @@ export function orderedMobileNavKeys(keys) {
  const visible=[...new Set(keys)];
  const order=[
   // Bán hàng: Sản phẩm nằm ngay sau HĐKT.
-  'pos','quotes','orders','contracts','products','receivables','order-products','deliveries',
+  'pos','quotes','orders','contracts','products','product-custody','receivables','order-products','deliveries',
   // Tiền.
   'cashbook','cash',
   // Khách hàng.
@@ -32,7 +32,7 @@ export function orderedMobileNavKeys(keys) {
 }
 /** Menu chân trang gom theo chức năng: mỗi nút một nhóm, bấm mở bảng chọn các trang trong nhóm. */
 export const MOBILE_NAV_GROUPS=[
- {key:'sell',label:'Bán hàng',keys:['pos','quotes','orders','contracts','products','receivables','order-products','deliveries'],icon:'<path d="M4 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M17 17h-11v-14h-2" /><path d="M6 5l14 1l-1 7h-13" />'},
+ {key:'sell',label:'Bán hàng',keys:['pos','quotes','orders','contracts','products','product-custody','receivables','order-products','deliveries'],icon:'<path d="M4 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M17 17h-11v-14h-2" /><path d="M6 5l14 1l-1 7h-13" />'},
  {key:'money',label:'Tiền',keys:['cashbook','cash'],icon:'<path d="M17 8v-3a1 1 0 0 0 -1 -1h-10a2 2 0 0 0 0 4h12a1 1 0 0 1 1 1v3m0 4v3a1 1 0 0 1 -1 1h-12a2 2 0 0 1 -2 -2v-12" /><path d="M20 12v4h-4a2 2 0 0 1 0 -4h4" />'},
  {key:'customers',label:'Khách hàng',short:'Khách',keys:['customers','care','stock-requests'],icon:'<path d="M10 13a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M8 21v-1a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2v1" /><path d="M15 5a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M17 10h2a2 2 0 0 1 2 2v1" /><path d="M5 5a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M3 13v-1a2 2 0 0 1 2 -2h2" />'},
  {key:'work',label:'Công việc',keys:['tasks','shift-reports','dashboard','profit','flow','store-reports','weekly-reports','feedback'],icon:'<path d="M3.5 5.5l1.5 1.5l2.5 -2.5" /><path d="M3.5 11.5l1.5 1.5l2.5 -2.5" /><path d="M3.5 17.5l1.5 1.5l2.5 -2.5" /><path d="M11 6l9 0" /><path d="M11 12l9 0" /><path d="M11 18l9 0" />'},

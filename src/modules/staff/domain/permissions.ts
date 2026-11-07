@@ -21,6 +21,7 @@ export const PERMISSIONS: readonly PermissionDef[] = [
   { key: 'page.quotes', group: 'Trang được vào', label: 'Báo giá', defaults: SALES_KT },
   { key: 'page.orders', group: 'Trang được vào', label: 'Đơn đặt hàng', defaults: OFFICE },
   { key: 'page.contracts', group: 'Trang được vào', label: 'HĐKT', defaults: OFFICE },
+  { key: 'page.product-custody', group: 'Trang được vào', label: 'Hàng bảo hành & mượn mẫu', hint: 'Manager xem mọi phiếu; nhân viên theo người tạo / phụ trách. Không tự ghi tồn kho.', defaults: ALL },
   { key: 'page.order-products', group: 'Trang được vào', label: 'Sản phẩm theo đơn', hint: 'Mở trang Sản phẩm theo đơn; cấp riêng với quyền Đơn đặt hàng.', defaults: OFFICE },
   { key: 'page.deliveries', group: 'Trang được vào', label: 'Lịch giao hàng', hint: 'Mở lịch, danh sách và sản phẩm theo chuyến giao hàng.', defaults: ALL },
   { key: 'page.receivables', group: 'Trang được vào', label: 'Công nợ', defaults: OFFICE },
@@ -102,6 +103,7 @@ export function routePermission(method: string, path: string, query: URLSearchPa
   // Review endpoints also admit Sổ quỹ viewers; handlers still require canApprove or pos.sell.
   if (is(/^\/pos\/(returns|exchanges)(\/|$)/)) return ['pos.sell', 'pos.configure', 'page.cash'];
   if (is(/^\/pos(\/|$)/)) return ['pos.sell', 'pos.configure'];
+  if (is(/^\/product-custody(\/|$)/)) return ['page.product-custody'];
   if (is(/^\/order-products(\/|$)/)) return ['page.order-products'];
   if (is(/^\/(quotes|quote-docs)(\/|$)/)) return ['page.quotes'];
   if (is(/^\/(orders|order-quote-candidates|payments)(\/|$)/)) return ['page.orders', 'page.contracts', 'page.receivables'];
