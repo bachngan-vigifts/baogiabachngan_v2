@@ -45,3 +45,28 @@ test('API: chi vặt hoạt động trừ vào chi nhánh; lương NVBH chia the
   assert.equal(filtered.branchCosts.company, null, 'lọc chi nhánh: không hiện số toàn công ty');
   assert.equal(filtered.branchCosts.rows.length, 1);
 });
+
+test('Manager sửa loại phiếu két: thắng phân loại tự động, đổi chi phí chi nhánh, bỏ thì quay về tự động; chỉ Manager', async () => {
+  const f = await setup();
+  await f.open();
+  const entry = (kind: string, reason: string, amount: number) => f.call('/cash/entries', f.emp, 'POST', { key: crypto.randomUUID(), kind, reason, amount });
+  assert.equal((await entry('petty_expense', 'Trả lương thời vụ', 300)).status, 201);
+  assert.equal((await entry('petty_expense', 'Mua văn phòng phẩm', 100)).status, 201);
+  const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10), q = `/profit?from=${today}&to=${today}`;
+  const petty = (d: any) => d.branchCosts.rows.reduce((n: number, r: any) => n + r.petty, 0);
+  const before = ok(await f.call(q, f.mgr));
+  assert.equal(petty(before), 100, 'tự động: chỉ chi vặt hoạt động');
+  const item = before.branchCosts.review.find((r: any) => r.amount === 300);
+  assert.deepEqual([item.cls, item.auto, item.manual], ['payroll', 'payroll', false]);
+  assert.ok(before.branchCosts.classOptions.some((o: any) => o.cls === 'operating' && o.counted));
+  assert.equal((await f.call(`/profit/cash-classes/${item.id}`, f.emp, 'PUT', { cls: 'operating' })).status, 403);
+  assert.equal((await f.call(`/profit/cash-classes/${item.id}`, f.mgr, 'PUT', { cls: 'xyz' })).status, 400);
+  assert.equal((await f.call('/profit/cash-classes/khong-co', f.mgr, 'PUT', { cls: 'operating' })).status, 404);
+  ok(await f.call(`/profit/cash-classes/${item.id}`, f.mgr, 'PUT', { cls: 'operating', note: 'Thực ra là tiền thuê bốc xếp' }));
+  const after = ok(await f.call(q, f.mgr));
+  assert.equal(petty(after), 400, 'Manager xác nhận là chi phí hoạt động → tính vào chi nhánh');
+  assert.deepEqual(['cls', 'auto', 'manual'].map(k => after.branchCosts.review.find((r: any) => r.id === item.id)[k]), ['operating', 'payroll', true], 'vẫn hiện trong danh sách để xem lại');
+  ok(await f.call(`/profit/cash-classes/${item.id}`, f.mgr, 'PUT', { cls: '' }));
+  assert.equal(petty(ok(await f.call(q, f.mgr))), 100, 'bỏ → quay về tự phân loại');
+});
+

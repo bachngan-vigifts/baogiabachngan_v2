@@ -85,3 +85,35 @@ test('lúc bán và khi tính lại đơn cũ: dùng đơn NCC đã duyệt (b�
   assert.equal((await f.call('/profit/missing-costs?' + q, f.mgr)).data.items.length, 0);
   assert.equal((await post({ reason: 'Lặp lại', items: [{ sku: 'NO1', unit: 'Cái', unitCost: 99 }] })).data.written, 0, 'gửi lặp không ghi đè giá vừa nhập');
 });
+
+test('chỉ giá vốn chính xác: dòng ước tính / tham chiếu tách "chưa xác nhận" (không lẫn "thiếu"); Manager xác nhận theo mã; so với kỳ trước', async () => {
+  const f = await setupLiquidation(), now = '2026-10-01T02:00:00Z', stamp = '2026-11-10T03:00:00Z';
+  await f.db.insert(products).values([{ sku: 'RC1', name: 'Ly sứ', unit: 'Cái', brand: 'Minh Long', updatedAt: now }, { sku: 'NO1', name: 'Bình', unit: 'Cái', brand: 'Thermos', updatedAt: now }] as never);
+  await f.db.insert(productMovements).values({ id: 'rc', refKey: 'buy-rc', sku: 'RC1', kind: 'purchase', qty: 5, unitPrice: 30000, occurredAt: now, recordedAt: now } as never);
+  const order = (id: string, day: string) => ({ id, orderNo: 'DH-' + id, quoteType: 'HRC', customerName: 'Khách', ownerId: 'emp', createdBy: 'emp', orderDate: day, status: 'confirmed', total: 0, subtotal: 0, createdAt: stamp, updatedAt: stamp });
+  await f.db.insert(salesOrders).values([order('nov', '2026-11-10'), order('oct', '2026-10-15')] as never);
+  await f.db.insert(salesOrderLines).values([
+    { id: 'n1', orderId: 'nov', lineNo: 1, sku: 'RC1', name: 'Ly sứ', unit: 'Cái', qty: 2, unitPrice: 100000, amount: 200000 },
+    { id: 'n2', orderId: 'nov', lineNo: 2, sku: 'NO1', name: 'Bình', unit: 'Cái', qty: 1, unitPrice: 50000, amount: 50000 },
+    { id: 'o1', orderId: 'oct', lineNo: 1, sku: 'RC1', name: 'Ly sứ', unit: 'Cái', qty: 1, unitPrice: 80000, amount: 80000 },
+  ] as never);
+  const q = '/profit?from=2026-11-01&to=2026-11-30', confirmed = ok2(await f.call(q + '&costs=confirmed', f.mgr));
+  assert.deepEqual([confirmed.summary.coveredRevenue, confirmed.summary.unconfirmedRevenue, confirmed.summary.unconfirmedOrders, confirmed.summary.missingRevenue],
+    [0, 200000, 1, 50000], 'RC1 có giá ước tính → "chưa xác nhận"; NO1 không nguồn → "thiếu"');
+  assert.equal(confirmed.summary.revenueBy.backfill + confirmed.summary.revenueBy.estimate, 200000, 'độ tin cậy vẫn ghi đúng nguồn gốc');
+  assert.deepEqual(confirmed.orders.find((o: any) => o.id === 'nov') && [confirmed.orders.find((o: any) => o.id === 'nov').missingLines, confirmed.orders.find((o: any) => o.id === 'nov').unconfirmedLines], [1, 1]);
+  assert.deepEqual([confirmed.compare.from, confirmed.compare.to], ['2026-10-01', '2026-10-31'], 'trọn tháng → so với tháng trước');
+  const all = ok2(await f.call(q, f.mgr));
+  const oct = ok2(await f.call('/profit?from=2026-10-01&to=2026-10-31', f.mgr)).summary;
+  assert.deepEqual([all.compare.revenue, all.compare.gross, all.compare.orders], [oct.revenue, oct.gross, oct.orders], 'kỳ trước = đúng số liệu tháng 10 (fixture có sẵn đơn khác)');
+  assert.ok(oct.revenue >= 80000);
+  const list = ok2(await f.call('/profit/missing-costs?from=2026-11-01&to=2026-11-30&scope=unconfirmed', f.mgr));
+  assert.deepEqual(list.items.map((i: any) => [i.sku, i.suggested, i.lines.length]), [['RC1', 30000, 1]]);
+  assert.ok(list.items[0].sources[0].includes('Giá nhập'));
+  const saved = ok2(await f.call('/profit/missing-costs', f.mgr, 'POST', { from: '2026-11-01', to: '2026-11-30', scope: 'unconfirmed', reason: 'Đối chiếu phiếu nhập', items: [{ sku: 'RC1', unit: 'Cái', unitCost: 30000 }] }));
+  assert.equal(saved.written, 1);
+  const after = ok2(await f.call(q + '&costs=confirmed', f.mgr));
+  assert.deepEqual([after.summary.coveredRevenue, after.summary.unconfirmedRevenue, after.summary.gross], [200000, 0, 140000], 'đã xác nhận → tính vào LN');
+});
+const ok2 = (r: { status: number; data: any }) => { assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data; };
+

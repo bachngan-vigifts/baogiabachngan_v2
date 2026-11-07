@@ -2,17 +2,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { profitLayoutFixture } from '../helpers/profit-layout-fixture.ts';
 
-test('ba cụm tổng hợp lợi nhuận nằm sau KPI, trước bảng lương/phiếu chi; giữ cảnh báo nguồn số liệu', async () => {
+test('bố cục theo mẫu giai đoạn 2: cảnh báo → 5 KPI → đối soát → DT→LN sau CP + phiếu chi → tab (Nhân viên) → quy tắc; mặc định chỉ giá vốn chính xác', async () => {
   const { initProfit } = await import(new URL('../../trial-ui/profit.js', import.meta.url).href);
   const response=profitLayoutFixture(),before=structuredClone(response),requests:string[]=[];
   const root={innerHTML:'',querySelector:()=>({addEventListener(){}}),querySelectorAll:()=>[]};
   const ui=initProfit({root,api:async(path:string)=>{requests.push(path);return response;},toast(){},esc:(v:unknown)=>String(v??''),money:(n:number)=>String(n)});
   await ui.show();
-  assert.equal(requests.length,1);assert.match(requests[0]!,/^\/profit\?/);
-  const html=root.innerHTML,kpis=html.indexOf('class="pf-kpis"'),chart=html.indexOf('Lợi nhuận gộp theo tháng'),branch=html.indexOf('Theo chi nhánh (sau chi phí chi nhánh)'),tabs=html.indexOf('role="tablist"'),staff=html.indexOf('Chi phí nhân sự bán hàng'),cash=html.indexOf('Phân loại phiếu két trong kỳ');
-  assert.ok(kpis>=0&&chart>kpis&&branch>chart&&tabs>branch);
-  assert.ok(staff>tabs&&cash>tabs,'bảng chi tiết chi phí không đẩy biểu đồ xuống cuối trang');
-  assert.ok(html.indexOf('giá mua tham chiếu')<kpis,'cảnh báo nguồn vẫn ở vùng đầu trang');
-  for(const label of ['Lợi nhuận gộp theo tháng','Theo chi nhánh (sau chi phí chi nhánh)','role="tablist"'])assert.equal(html.split(label).length-1,1,'không nhân đôi cụm');
-  assert.deepEqual(response,before,'chỉ đổi thứ tự hiển thị, không đổi dữ liệu trả về');
+  assert.equal(requests.length,1);assert.match(requests[0]!,/^\/profit\?/);assert.match(requests[0]!,/costs=confirmed/,'mặc định chỉ giá vốn chính xác');
+  const html=root.innerHTML,at=(s:string)=>html.indexOf(s);
+  const warn=at('giá vốn ước tính / tham chiếu'),kpis=at('class="pf-kpis"'),check=at('Đối soát khớp'),bridge=at('Từ doanh thu đến lợi nhuận sau chi phí'),cash=at('Phân loại phiếu chi sổ quỹ'),tabs=at('role="tablist"'),rules=at('Quy tắc &amp; cảnh báo')>=0?at('Quy tắc &amp; cảnh báo'):at('Quy tắc & cảnh báo');
+  assert.ok(warn>=0&&warn<kpis,'cảnh báo nguồn giá vốn ở đầu trang');
+  assert.ok(kpis<check&&check<bridge&&bridge<cash&&cash<tabs&&tabs<rules,'thứ tự theo mẫu');
+  assert.equal((html.match(/<div class="card"><small>/g)||[]).length,5,'5 thẻ KPI');
+  assert.match(html,/data-tab="owners" aria-selected="true"/,'tab Nhân viên mặc định');
+  assert.match(html,/id="pf-confirm"/,'nút xác nhận giá vốn chưa xác nhận');
+  assert.match(html,/data-cash-entry="e0"/,'phiếu chi có ô chọn loại');
+  for(const label of ['Từ doanh thu đến lợi nhuận sau chi phí','Phân loại phiếu chi sổ quỹ','role="tablist"'])assert.equal(html.split(label).length-1,1,'không nhân đôi cụm');
+  assert.deepEqual(response,before,'không đổi dữ liệu trả về');
 });

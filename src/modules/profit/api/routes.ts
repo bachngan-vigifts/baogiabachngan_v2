@@ -22,6 +22,7 @@ import { adjustLineCost } from '../../sales/api/line-costs.ts';
 import { salesLineCostHistory } from '../../sales/line-cost-schema.ts';
 import { LINE_COST_CONFIDENCE_LABEL, pickLineCost, quoteLineCost } from '../../sales/domain/line-cost.ts';
 import type { LineCostFallbackOf, SkuFallbackCosts } from '../../../core/contracts/line-cost-fallback.ts';
+import { cashEntryClasses } from '../schema.ts';
 import { posFeeFacts } from '../domain/pos-fees.ts';
 import { allocate, fullMonths, isMonthEnd, vnDay } from '../domain/allocation.ts';
 import type { StaffCost, StaffCostOf } from '../../../core/contracts/staff-cost.ts';
@@ -167,15 +168,19 @@ async function branchCosts(db: AnyDb, orders: OrderProfit[], from: string, to: s
     reason: cashEntries.reason, createdAt: cashEntries.createdAt, registerId: posShifts.registerId })
     .from(cashEntries).innerJoin(posShifts, eq(posShifts.id, cashEntries.shiftId))
     .where(and(eq(cashEntries.status, 'posted'), isNull(cashEntries.voidedAt), gte(cashEntries.createdAt, start), lt(cashEntries.createdAt, end)));
+  // Loại Manager đã xác nhận / sửa thắng phân loại tự động (theo loại phiếu + từ khoá).
+  const manual = new Map(entries.length ? (await db.select({ id: cashEntryClasses.entryId, cls: cashEntryClasses.cls }).from(cashEntryClasses)
+    .where(inArray(cashEntryClasses.entryId, entries.map(e => e.id)))).map(r => [r.id, r.cls as CashClass]) : []);
   const byBranch = new Map<string, { petty: number; staff: number }>(), get = (id: string) => byBranch.get(id) ?? byBranch.set(id, { petty: 0, staff: 0 }).get(id)!;
-  const classes = new Map<CashClass, { amount: number; count: number }>(), review: { entryNo: string; branch: string; amount: number; cls: CashClass; reason: string; day: string }[] = [];
+  const classes = new Map<CashClass, { amount: number; count: number }>(), review: { id: string; entryNo: string; branch: string; amount: number; cls: CashClass; auto: CashClass; manual: boolean; reason: string; day: string }[] = [];
   for (const e of entries) {
-    const cls = classifyCashEntry(e), x = classes.get(cls) ?? classes.set(cls, { amount: 0, count: 0 }).get(cls)!;
+    const auto = classifyCashEntry(e), cls = manual.get(e.id) ?? auto, x = classes.get(cls) ?? classes.set(cls, { amount: 0, count: 0 }).get(cls)!;
     const signed = cls === 'adjustment' && e.direction === 'in' ? -e.amount : e.amount;
     x.amount += signed; x.count++;
     if (cls === 'operating') get(e.registerId).petty += e.amount;
-    if (['payroll', 'carrier', 'supplier', 'refund'].includes(cls) && e.kind === 'petty_expense')
-      review.push({ entryNo: e.entryNo, branch: branchName(e.registerId), amount: e.amount, cls, reason: e.reason.replace(/^Tên phiếu: /, '').slice(0, 160), day: vnDay(e.createdAt) });
+    // Cần Manager xem: chi vặt tự phân loại là "không tính" (từ khoá), điều chỉnh két, và mọi phiếu đã được sửa tay.
+    if (manual.has(e.id) || (e.kind === 'petty_expense' && auto !== 'operating') || auto === 'adjustment')
+      review.push({ id: e.id, entryNo: e.entryNo, branch: branchName(e.registerId), amount: e.amount, cls, auto, manual: manual.has(e.id), reason: e.reason.replace(/^Tên phiếu: /, '').slice(0, 160), day: vnDay(e.createdAt) });
   }
   const months = fullMonths(from, to), overhead: { month: string; name: string; amount: number; status: string }[] = [];
   let storeStaff = 0, payrollTotal = 0;
@@ -221,14 +226,30 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
     const filtered = !!(branch || owner || customer);
     const orders = all.filter(o => (!branch || o.branchId === branch) && (!owner || o.ownerId === owner) && (!customer || o.customerId === customer));
     const [summary] = groupBy(orders, () => 'all', () => 'Tổng');
+    // So với kỳ trước (cùng độ dài; chọn trọn tháng thì so với các tháng liền trước): DT, LN gộp, biên. Không tính lại bảng lương.
+    const compare = q.get('compare') === '0' ? null : await (async () => {
+      const days = Math.round((Date.parse(to) - Date.parse(from)) / 86400_000) + 1, wholeMonths = from.slice(8) === '01' && isMonthEnd(to);
+      let pFrom: string, pTo: string;
+      if (wholeMonths) {
+        const n = (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 + Number(to.slice(5, 7)) - Number(from.slice(5, 7)) + 1;
+        const start = new Date(Date.UTC(Number(from.slice(0, 4)), Number(from.slice(5, 7)) - 1 - n, 1));
+        pFrom = start.toISOString().slice(0, 10); pTo = new Date(Date.UTC(Number(from.slice(0, 4)), Number(from.slice(5, 7)) - 1, 0)).toISOString().slice(0, 10);
+      } else {
+        pTo = new Date(Date.parse(from) - 86400_000).toISOString().slice(0, 10); pFrom = new Date(Date.parse(pTo) - (days - 1) * 86400_000).toISOString().slice(0, 10);
+      }
+      const prev = (await profitOrders(c.env.db, pFrom, pTo, undefined, costs === 'confirmed', deps.lineCostFallbackOf))
+        .filter(o => (!branch || o.branchId === branch) && (!owner || o.ownerId === owner) && (!customer || o.customerId === customer));
+      const [p] = groupBy(prev, () => 'all', () => 'Kỳ trước');
+      return { from: pFrom, to: pTo, revenue: p?.revenue ?? 0, gross: p?.gross ?? 0, coveredRevenue: p?.coveredRevenue ?? 0, margin: p?.margin ?? null, orders: p?.orders ?? 0 };
+    })();
     const customerKey = (o: OrderProfit) => o.customerId ?? `name:${o.customerName}`;
     const customerName = new Map(orders.map(o => [customerKey(o), o.customerName]));
     return json({
-      from, to, grain, costs, costSources: COST_SOURCE_LABEL, confidenceLabels: LINE_COST_CONFIDENCE_LABEL,
+      from, to, grain, costs, compare, costSources: COST_SOURCE_LABEL, confidenceLabels: LINE_COST_CONFIDENCE_LABEL,
       summary: summary ?? emptyRow('all', 'Tổng'),
       direct: { printing: orders.reduce((s, o) => s + o.printing, 0), commission: orders.reduce((s, o) => s + o.commission, 0), shipping: orders.reduce((s, o) => s + o.shipping, 0) },
       cardFees: { available: false, note: 'CRM chưa ghi nhận thanh toán thẻ / phí cổng thanh toán – chưa tính.' },
-      branchCosts: { months: bc.months, rows: branchRows, cash: bc.cash, review: bc.review.filter(r => !branch || r.branch === n.branch(branch)), officeExpenses: bc.officeExpenses,
+      branchCosts: { months: bc.months, rows: branchRows, cash: bc.cash, classOptions: CASH_CLASSES.map(k => ({ cls: k, ...CASH_CLASS_LABEL[k] })), review: bc.review.filter(r => !branch || r.branch === n.branch(branch)), officeExpenses: bc.officeExpenses,
         // Toàn công ty: chỉ khi không lọc (chi phí chung / lương Sale chưa phân bổ không thuộc riêng chi nhánh / nhân viên nào).
         company: filtered ? null : {
           ordersNet: all.reduce((s, o) => s + o.net, 0), petty: bc.rows.reduce((s, r) => s + r.petty, 0), storeStaff: bc.storeStaff, saleUnallocated,
@@ -255,7 +276,7 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
       products: groupByProduct(orders).slice(0, 300),
       orders: [...orders].sort((a, b) => b.orderDate.localeCompare(a.orderDate) || b.revenue - a.revenue).slice(0, 500)
         .map(o => ({ id: o.id, orderNo: o.orderNo, orderDate: o.orderDate, customerName: o.customerName, ownerName: n.owner(o.ownerId), branch: n.branch(o.branchId),
-          revenue: o.revenue, cost: o.cost, direct: o.printing + o.commission + o.shipping, gross: o.gross, margin: o.coveredRevenue > 0 ? o.gross / o.coveredRevenue : null, missingLines: o.missingLines,
+          revenue: o.revenue, cost: o.cost, direct: o.printing + o.commission + o.shipping, gross: o.gross, margin: o.coveredRevenue > 0 ? o.gross / o.coveredRevenue : null, missingLines: o.missingLines, unconfirmedLines: o.unconfirmedLines,
           feeRevenue: o.feeRevenue, carrierFee: o.carrierFee, staffCost: o.staffSalary + o.staffBonus, net: o.net, carrierUnknown: o.carrierUnknown })),
       ordersTotal: orders.length,
       filterOptions: { branches: groupBy(all, o => o.branchId, n.branch).map(r => ({ id: r.key, name: r.label })), owners: groupBy(all, o => o.ownerId, n.owner).map(r => ({ id: r.key, name: r.label })) },
@@ -294,16 +315,25 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
    * Dòng VẪN thiếu giá vốn sau khi áp đủ nguyên tắc (báo giá → giá nhập → đơn NCC đã duyệt → công thức thương hiệu), gom theo mã + đơn vị,
    * để Manager nhập giá một lần cho mỗi mã. Chỉ đọc.
    */
-  async function missingCosts(db: AnyDb, from: string, to: string) {
-    const all = await profitOrders(db, from, to, undefined, false, deps.lineCostFallbackOf);
+  async function missingCosts(db: AnyDb, from: string, to: string, scope: 'missing' | 'unconfirmed' = 'missing') {
+    const all = await profitOrders(db, from, to, undefined, scope === 'unconfirmed', deps.lineCostFallbackOf);
     const units = new Map((all.length ? await db.select({ id: salesOrderLines.id, unit: salesOrderLines.unit }).from(salesOrderLines)
       .where(inArray(salesOrderLines.orderId, all.map(o => o.id))) : []).map(l => [l.id, l.unit]));
-    const groups = new Map<string, { sku: string; name: string; unit: string; qty: number; revenue: number; lines: { lineId: string; orderId: string; orderNo: string; orderDate: string; qty: number; revenue: number }[] }>();
+    type Line = { lineId: string; orderId: string; orderNo: string; orderDate: string; qty: number; revenue: number; unitCost: number | null; source: string | null };
+    const groups = new Map<string, { sku: string; name: string; unit: string; qty: number; revenue: number; suggested: number | null; sources: string[]; lines: Line[] }>();
     for (const o of all) for (const l of o.lines) {
-      if (l.costSource !== 'missing' || !l.sku) continue;
+      // missing: không có nguồn giá nào · unconfirmed: có giá ước tính / tham chiếu chưa được Manager xác nhận.
+      if (!l.sku || (scope === 'missing' ? l.costSource !== 'missing' || l.pending : !l.pending)) continue;
       const unit = units.get(l.id) ?? '', key = l.sku + '\u0000' + unit;
-      const g = groups.get(key) ?? groups.set(key, { sku: l.sku, name: l.name, unit, qty: 0, revenue: 0, lines: [] }).get(key)!;
-      g.qty += l.qty; g.revenue += l.revenue; g.lines.push({ lineId: l.id, orderId: o.id, orderNo: o.orderNo, orderDate: o.orderDate, qty: l.qty, revenue: l.revenue });
+      const g = groups.get(key) ?? groups.set(key, { sku: l.sku, name: l.name, unit, qty: 0, revenue: 0, suggested: null, sources: [], lines: [] }).get(key)!;
+      g.qty += l.qty; g.revenue += l.revenue;
+      g.lines.push({ lineId: l.id, orderId: o.id, orderNo: o.orderNo, orderDate: o.orderDate, qty: l.qty, revenue: l.revenue, unitCost: l.pending?.unitCost ?? null, source: l.pending?.source ?? null });
+      if (l.pending && !g.sources.includes(COST_SOURCE_LABEL[l.pending.source])) g.sources.push(COST_SOURCE_LABEL[l.pending.source]);
+    }
+    for (const g of groups.values()) {
+      // Giá gợi ý = giá xuất hiện nhiều nhất trên các dòng của mã (ước tính / tham chiếu) – Manager sửa được trước khi xác nhận.
+      const freq = new Map<number, number>(); for (const l of g.lines) if (l.unitCost !== null) freq.set(l.unitCost, (freq.get(l.unitCost) ?? 0) + 1);
+      g.suggested = [...freq].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]?.[0] ?? null;
     }
     return [...groups.values()].sort((a, b) => b.revenue - a.revenue || a.sku.localeCompare(b.sku));
   }
@@ -313,16 +343,28 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
     if (!isDay(from) || !isDay(to) || from > to) throw new AppError(400, 'Khoảng ngày không hợp lệ.');
     return { from, to };
   };
+  /** Manager xác nhận / sửa loại một phiếu két (tính hay không tính vào chi phí chi nhánh). `cls` rỗng = bỏ, quay về tự phân loại. */
+  router.put('/profit/cash-classes/:entryId', async c => {
+    requireManager(c);
+    const b = await readJson(c.req, 4_000), id = String(c.params.entryId), cls = String(b.cls ?? '');
+    const [e] = await c.env.db.select({ id: cashEntries.id }).from(cashEntries).where(eq(cashEntries.id, id)).limit(1);
+    if (!e) throw new AppError(404, 'Không tìm thấy phiếu két.');
+    if (!cls) { await c.env.db.delete(cashEntryClasses).where(eq(cashEntryClasses.entryId, id)); return json({ ok: true, cls: null }); }
+    if (!(CASH_CLASSES as readonly string[]).includes(cls)) throw new AppError(400, 'Loại phiếu không hợp lệ.');
+    const values = { cls: cls as CashClass, note: String(b.note ?? '').trim().slice(0, 300), updatedBy: member(c).id, updatedAt: new Date().toISOString() };
+    await c.env.db.insert(cashEntryClasses).values({ entryId: id, ...values }).onConflictDoUpdate({ target: cashEntryClasses.entryId, set: values });
+    return json({ ok: true, cls });
+  }, 'business');
   router.get('/profit/missing-costs', async c => {
     requireManager(c);
-    const { from, to } = range(c.url.searchParams);
-    const items = await missingCosts(c.env.db, from, to);
-    return json({ from, to, items, lines: items.reduce((n, i) => n + i.lines.length, 0) });
+    const { from, to } = range(c.url.searchParams), scope = c.url.searchParams.get('scope') === 'unconfirmed' ? 'unconfirmed' : 'missing';
+    const items = await missingCosts(c.env.db, from, to, scope);
+    return json({ from, to, scope, items, lines: items.reduce((n, i) => n + i.lines.length, 0) });
   }, 'business');
   /** Manager nhập giá vốn theo mã cho các dòng còn thiếu trong kỳ (mỗi dòng ghi snapshot "Manager điều chỉnh" + lịch sử, có lý do). */
   router.post('/profit/missing-costs', async c => {
     requireManager(c);
-    const b = await readJson(c.req, 64_000), { from, to } = range(b);
+    const b = await readJson(c.req, 64_000), { from, to } = range(b), scope = b.scope === 'unconfirmed' ? 'unconfirmed' : 'missing';
     const reason = String(b.reason ?? '').trim();
     if (reason.length < 3) throw new AppError(400, 'Nhập lý do / căn cứ giá vốn.');
     const wanted = Array.isArray(b.items) ? b.items.slice(0, 500) : [];
@@ -335,10 +377,18 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
     if (!prices.size) throw new AppError(400, 'Chưa nhập giá vốn cho mã nào.');
     // Tính lại danh sách thiếu ngay lúc ghi: dòng đã có giá (người khác vừa nhập / nguồn mới) không bị ghi đè.
     let written = 0;
-    for (const g of await missingCosts(c.env.db, from, to)) {
-      const cost = prices.get(g.sku + '\u0000' + g.unit);
-      if (cost === undefined) continue;
-      for (const l of g.lines) { await adjustLineCost(c.env.db, l.lineId, { unitCost: cost, reason: `Nhập giá vốn theo mã ${g.sku}: ${reason}`.slice(0, 500), revision: null }, member(c).id); written++; }
+    const groups = (await missingCosts(c.env.db, from, to, scope)).filter(g => prices.has(g.sku + '\u0000' + g.unit));
+    const lineIds = groups.flatMap(g => g.lines.map(l => l.lineId));
+    // Dòng đã có snapshot (giá ước tính): ghi đè đúng phiên bản đang xem (adjustLineCost kiểm phiên bản – người khác vừa sửa thì 409).
+    const revisions = new Map(lineIds.length ? (await c.env.db.select({ id: salesLineCosts.orderLineId, revision: salesLineCosts.revision }).from(salesLineCosts)
+      .where(inArray(salesLineCosts.orderLineId, lineIds))).map(r => [r.id, r.revision]) : []);
+    const verb = scope === 'unconfirmed' ? 'Xác nhận giá vốn' : 'Nhập giá vốn';
+    for (const g of groups) {
+      const cost = prices.get(g.sku + '\u0000' + g.unit)!;
+      for (const l of g.lines) {
+        const note = `${verb} theo mã ${g.sku}${l.source ? ` (gợi ý: ${COST_SOURCE_LABEL[l.source as keyof typeof COST_SOURCE_LABEL] ?? l.source} ${l.unitCost})` : ''}: ${reason}`;
+        await adjustLineCost(c.env.db, l.lineId, { unitCost: cost, reason: note.slice(0, 500), revision: revisions.get(l.lineId) ?? null }, member(c).id); written++;
+      }
     }
     return json({ ok: true, written });
   }, 'business');
