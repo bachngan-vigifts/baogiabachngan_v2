@@ -46,3 +46,5 @@
 
 .selection-list{max-height:520px;overflow-y:auto;overscroll-behavior:contain}.selection-list .product-row{scroll-margin-top:0}.selection-list .product-row.current-slide{background:#edf6f0;box-shadow:inset 3px 0 var(--green)}.selection-list:focus-visible{outline:2px solid var(--green);outline-offset:-2px}@media(prefers-reduced-motion:reduce){.selection-list{scroll-behavior:auto}}
 .assistant-more summary{cursor:pointer;font-size:12px;color:var(--muted);margin:4px 0 12px}.assistant-more[open] summary{margin-bottom:14px}.assistant-preview-group+.assistant-preview-group{border-top:1px solid var(--line);padding-top:10px}.assistant-preview-list li label{font-size:12px}
+
+.library-price-conflicts{padding:14px;margin:12px 0;border:1px solid var(--border,#d6dce5);border-radius:12px;background:#fff8e7;color:#684500;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
