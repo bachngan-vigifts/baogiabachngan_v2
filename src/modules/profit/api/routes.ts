@@ -20,7 +20,7 @@ import { productMovements } from '../../catalog/schema.ts';
 import { salesLineCosts } from '../../sales/line-cost-schema.ts';
 import { adjustLineCost } from '../../sales/api/line-costs.ts';
 import { salesLineCostHistory } from '../../sales/line-cost-schema.ts';
-import { LINE_COST_CONFIDENCE_LABEL } from '../../sales/domain/line-cost.ts';
+import { LINE_COST_CONFIDENCE_LABEL, quoteLineCost } from '../../sales/domain/line-cost.ts';
 import { posFeeFacts } from '../domain/pos-fees.ts';
 import { allocate, fullMonths, isMonthEnd, vnDay } from '../domain/allocation.ts';
 import type { StaffCost, StaffCostOf } from '../../../core/contracts/staff-cost.ts';
@@ -95,7 +95,7 @@ async function profitOrders(db: AnyDb, from: string, to: string, orderIds?: stri
       const printing = printingInfo({ type: doc.type, rows: [r] }).enabled
         ? (Number.isFinite(r.printing?.unitPrice) ? Math.max(0, Number(r.printing!.unitPrice)) * l.qty : printQty > 0 ? docPrint * Number(r.qty || 0) / printQty * (l.qty / Math.max(1, Number(r.qty || 0))) : 0) : 0;
       const commission = commissionOf({ ...r, price: Math.max(0, l.unitPrice - (o.quoteType === 'HRC' ? 0 : Number(r.printFee || 0))), discount: 0, qty: l.qty });
-      const cost = r.costPrice === undefined || r.costPrice === null ? undefined : Number(r.costPrice);
+      const cost = quoteLineCost(r, null)?.unitCost;
       return { ...base, quoteCost: cost, printingCost: Math.round(printing), commission };
     });
     const shippingCost = doc?.shipping?.payer === 'sender' ? ships.filter(s => s.orderId === o.id).reduce((n, s) => n + Math.max(0, s.fee || 0), 0) : 0;

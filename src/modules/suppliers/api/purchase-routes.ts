@@ -24,7 +24,7 @@ import {
   incomingShipmentLines, incomingShipments, supplierContacts, receiptJobs, supplierOrderEvents, supplierOrderSources, supplierPaymentSchedules, supplierPayments,
   supplierReceiptLines, supplierReceipts, suppliers,
 } from '../schema.ts';
-import { computeOrderTotals } from '../domain/order-totals.ts';
+import { computeOrderTotals, purchaseUnitCost } from '../domain/order-totals.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import { canEditSuppliers, defaultRecipients } from '../domain/directory.ts';
 import { canSendEarlyRequest, buildSchedules, canPay, canReceive, canSeePrices, canSeePurchasePrices, canUsePurchasing, checkPurchase, validateReceipt, type PurchaseAction } from '../domain/purchasing.ts';
@@ -556,9 +556,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       // Lịch sử sản phẩm: mỗi mã một dòng "Nhập hàng" (giá nhập chỉ Manager xem – lọc ở GET /products/:sku/history).
       await recordMovements(tx, v.lines.map(l => {
         const line = p.raw.lines.find(x => x.id === l.lineId);
-        return { refKey: `receipt:${receiptId}:${l.lineId}`, sku: l.sku, kind: 'purchase' as const, name: line?.name, qty: l.goodQty, unit: line?.unit, unitPrice: line?.price ?? null,
+        return { refKey: `receipt:${receiptId}:${l.lineId}`, sku: l.sku, kind: 'purchase' as const, name: line?.name, qty: l.goodQty, unit: line?.unit, unitPrice: line ? purchaseUnitCost(line) : null,
           partner: p.raw.order.supplierName ?? '', location: whName, refCode: `${no} · ${p.raw.order.ticketNumber}`, link: `#/purchases/${id}`,
-          status: l.damagedQty ? `Đạt ${l.goodQty} · hỏng ${l.damagedQty} (NCC giao bù)` : 'Đã nhận', note: l.note, occurredAt: nowIso() };
+          status: l.damagedQty ? `Đạt ${l.goodQty} · hỏng ${l.damagedQty} (NCC giao bù)` : 'Đã nhận', note: `${l.note}${l.note?' · ':''}[net-cost-v1] Giá mua sau CK, trước VAT`, occurredAt: `${v.receivedDate}T00:00:00+07:00` };
       }));
       // Keep provenance compact: the event size cap must never truncate the request/receipt link. Lines already live in supplier_receipt_lines.
       await event(tx, id, m.id, 'receive', `Nhận hàng ${no}${earlyRequestId?' theo phiếu xin lấy trước':''}: ` + v.lines.map(l => `${l.sku} đạt ${l.goodQty}${l.damagedQty ? `, hỏng ${l.damagedQty}` : ''}`).slice(0, 8).join('; ') + (after > 0 ? ` · còn thiếu ${after}` : ' · đã nhận đủ'), { receiptId,createSapo, ...(earlyRequestId?{earlyRequestId}:{lines:v.lines}) });
