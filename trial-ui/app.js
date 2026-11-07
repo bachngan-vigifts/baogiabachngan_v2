@@ -329,6 +329,9 @@ const sessionResume=createSessionResume({storage:()=>localStorage,readToken:()=>
 const requestPriority = createRequestPriority();
 createApiRegion(); // ép vùng tự học đã tắt (sự cố 30/10) – gọi để xoá vùng cũ còn lưu trên máy
 const regionCanary = createRegionCanary({ onDisabled: () => toast('Kết nối chậm – đã tạm chuyển máy chủ dự phòng, sẽ tự kiểm tra lại kết nối.', 'err') });
+// Mạng có lại / quay lại tab: lượt đọc kế tiếp thử lại máy chủ cạnh CSDL ngay (không chờ hết thời gian chờ).
+window.addEventListener('online', () => regionCanary.wake());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') regionCanary.wake(); });
 // Đổi tài khoản / đăng xuất: xoá bộ đệm (cả bản lưu trên máy) – saveToken có thể chạy trước khi dòng dưới được khởi tạo.
 function clearPageCache() { try { pageCache.clear(); } catch { /* chưa khởi tạo */ } }
 const pageCache = createPageCache({ storage: { local: () => localStorage, session: () => sessionStorage } }); // trang mở lại hiện ngay, giữ qua tải lại trang (page-cache.js)
