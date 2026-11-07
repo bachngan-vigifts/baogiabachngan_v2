@@ -90,7 +90,7 @@ export function initPermissions({ api, root, toast, confirmBox }) {
     const undo = button('Bỏ thay đổi', 'btn secondary', () => { draft = new Map(); drawMatrix(); }); undo.disabled = !n;
     const save = button(n ? `Lưu thay đổi (${n})` : 'Lưu thay đổi', 'btn primary', saveMatrix); save.disabled = !n;
     bar.append(el('span', 'spacer'), undo, save);
-    const note = el('p', 'muted small', 'Luôn có (không cần cấp): Công việc, Sản phẩm, Tin nhắn. Chỉ Manager: Nhân viên, Bảng lương, quản trị hệ thống. Tắt "Khách hàng" vẫn chọn được khách khi lập báo giá / đơn. Phê duyệt (báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC) không nằm trong bảng này: Manager bật cờ "Được duyệt" cho từng nhân viên ở trang Nhân viên.');
+    const note = el('p', 'muted small', 'Luôn có (không cần cấp): Công việc, Sản phẩm (danh mục), Tin nhắn. Chỉ Manager: Nhân viên, Bảng lương, quản trị hệ thống. Tắt "Khách hàng" vẫn chọn được khách khi lập báo giá / đơn. Phê duyệt (báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC) không nằm trong bảng này: Manager bật cờ "Được duyệt" cho từng nhân viên ở trang Nhân viên.');
     body.replaceChildren(bar, wrap, note);
   }
   function cellHead(label, hint) { const th = el('th', 'perm-label'); th.scope = 'row'; th.append(el('span', '', label)); if (hint) th.append(el('small', 'muted', hint)); return th; }

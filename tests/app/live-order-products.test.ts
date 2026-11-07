@@ -47,8 +47,8 @@ test('sản phẩm theo đơn: dữ liệu thật theo ID dòng, giữ scope, t�
  assert.equal((await read('status=all&owner=mgr',f.emp)).total,0);
  assert.equal((await f.call('/order-products',f.ncc)).status,403);
  await f.db.update(employees).set({positionId:'warehouse'}).where(eq(employees.id,'cashier2'));
- assert.equal((await f.call('/order-products',f.other)).status,403,'phải có quyền trang Đơn đặt hàng');
- await f.db.insert(positionPermissions).values({positionId:'warehouse',permission:'page.orders'}).onConflictDoNothing();
+ assert.equal((await f.call('/order-products',f.other)).status,403,'phải có quyền trang Sản phẩm theo đơn');
+ await f.db.insert(positionPermissions).values({positionId:'warehouse',permission:'page.order-products'}).onConflictDoNothing();
  await f.db.update(salesOrders).set({ownerId:'cashier2'}).where(eq(salesOrders.id,'own'));
  const warehouse=await read('status=all',f.other);assert.equal(warehouse.lines.length,2);
  assert.equal('unitPrice' in warehouse.lines[0],false);assert.equal('amount' in warehouse.lines[0],false);assert.equal(warehouse.lines[0].canSchedule,false);
@@ -57,7 +57,7 @@ test('sản phẩm theo đơn: dữ liệu thật theo ID dòng, giữ scope, t�
 });
 
 test('quyền API và đường dẫn thao tác dùng luồng đơn / lịch thật',async()=>{
- assert.deepEqual(routePermission('GET','/order-products',new URLSearchParams()),['page.orders']);
+ assert.deepEqual(routePermission('GET','/order-products',new URLSearchParams()),['page.order-products']);
  const ui=await import(new URL('../../trial-ui/order-products.js',import.meta.url).href);
  assert.equal(ui.orderProductHref({orderId:'o/a',id:'line/a',contractNo:'HD'}), '#/contracts/o%2Fa');
  assert.equal(ui.orderProductHref({orderId:'o',id:'line/a',contractNo:null},true),'#/orders/o?scheduleLine=line%2Fa');

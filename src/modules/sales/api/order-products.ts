@@ -5,6 +5,7 @@ import { AppError } from '../../../core/errors.ts';
 import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import type { OrderProductsResponse, OrderProductTrip } from '../../../core/contracts/order-products.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
+import { can } from '../../staff/domain/permissions.ts';
 import { employees } from '../../staff/schema.ts';
 import { products } from '../../catalog/schema.ts';
 import { salesOrders, salesOrderLines, salesContracts, deliveries, deliveryLines } from '../schema.ts';
@@ -75,7 +76,7 @@ export function registerOrderProductsRoutes(router: Router<StaffEnv>, scopeFor: 
         const {unitPrice,taxRate,amount,...rest}=r,p=progress.get(r.orderId);
         return {...rest,ownerName:r.ownerName||'',imageUrl:r.imageUrl||'',...(!warehouse?{unitPrice,taxRate,amount}:{}),
           overdue:r.remainingQty>1e-9&&r.orderStatus!=='cancelled'&&!!r.nextDeliveryDate&&r.nextDeliveryDate<today,
-          canSchedule:!warehouse&&!['draft','cancelled','delivered'].includes(r.orderStatus)&&r.availableQty>1e-9,
+          canSchedule:!warehouse&&can(member,r.contractNo?'page.contracts':'page.orders')&&!['draft','cancelled','delivered'].includes(r.orderStatus)&&r.availableQty>1e-9,
           progress:p?{label:p.label,current:p.current}:null,trips:byLine.get(r.id)||[]};
       }) };
     return json(response);
