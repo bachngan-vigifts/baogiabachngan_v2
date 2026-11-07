@@ -79,26 +79,34 @@ export function createApiRegion({
 
 // MÁY CHỦ CẠNH CSDL (header `x-region: <vùng>` để Supabase chạy Edge ở vùng của CSDL).
 // Thử trên một máy (30/10/2026): trung vị 2,8 s → 0,83 s, máy chủ 2 s → 0,19 s, không lượt nào lỗi → BẬT MẶC ĐỊNH CHO MỌI MÁY.
-// Fixed verified database region. Transient failures use the ordinary gateway for five minutes,
-// then a single GET probes recovery. Manual off remains off; writes never probe or retry.
+// Đường dự phòng (máy chủ mặc định, CSDL ở xa) chậm hơn nhiều (log 07/11: ~4,3 s so với ~0,75 s), nên phải QUAY LẠI SỚM:
+//  - Chỉ coi là lỗi vùng khi không tới được máy chủ của mình (lỗi mạng / quá giờ / 502–504 của cổng, không có Server-Timing).
+//    Máy chủ của mình trả 5xx (vd. 503 CSDL đang bận – Server-Timing có đúng vùng): vẫn ở vùng này, đọc thử lại một lần tại chỗ.
+//  - Thời gian chờ trước khi thử lại tăng dần theo số lần lỗi liên tiếp: 30 s → 1 → 2 → 4 → tối đa 5 phút; một lượt thành công là về 0.
+//  - Mạng có lại / quay lại tab (wake): thử lại ngay ở lượt đọc kế tiếp, không chờ hết thời gian.
+//  - Một lượt GET dò trước; lệnh ghi không bao giờ dò hay gửi lại. Manager tắt tay thì giữ tắt.
 //  - CÔNG TẮC TẮT CHO TẤT CẢ: đổi REGION_DEFAULT_ON thành false rồi deploy. Khi tắt, mọi máy về máy chủ mặc định và vùng / cờ
 //    đã lưu bị xoá; Manager vẫn bật thử được trên máy mình đến lần mở app sau.
 const CANARY_KEY = 'bn-api-region-canary',
   OFF_KEY = 'bn-api-region-off';
 const RETRY_KEY = 'bn-api-region-retry-at',
-  MANUAL_KEY = 'bn-api-region-manual-off';
+  MANUAL_KEY = 'bn-api-region-manual-off',
+  STREAK_KEY = 'bn-api-region-fail-streak';
 export const CANARY_REGION = 'ap-northeast-2';
 export const REGION_DEFAULT_ON = true;
+const regionOf = (serverTiming) => /(?:^|,)\s*region;desc="([^"]*)"/.exec(String(serverTiming || ''))?.[1] || '';
 export function createRegionCanary({
   storage = () => globalThis.localStorage,
   onDisabled = () => {},
   defaultOn = REGION_DEFAULT_ON,
   now = () => Date.now(),
-  retryMs = 300000,
+  retryMs = 30000,
+  maxRetryMs = 300000,
 } = {}) {
   let region = '',
     manual = false,
     retryAt = 0,
+    streak = 0,
     probing = false;
   const store = (key, value) => {
     try {
@@ -112,10 +120,12 @@ export function createRegionCanary({
     try {
       region = storage()?.getItem(CANARY_KEY) || '';
       manual = storage()?.getItem(MANUAL_KEY) === '1';
+      const savedStreak = Number(storage()?.getItem(STREAK_KEY));
+      streak = Number.isInteger(savedStreak) && savedStreak > 0 ? Math.min(savedStreak, 20) : 0;
       const savedRetry = Number(storage()?.getItem(RETRY_KEY));
       retryAt =
         Number.isFinite(savedRetry) && savedRetry > 0
-          ? Math.min(savedRetry, now() + retryMs)
+          ? Math.min(savedRetry, now() + maxRetryMs)
           : 0;
       if (savedRetry !== retryAt)
         store(RETRY_KEY, retryAt ? String(retryAt) : '');
@@ -133,15 +143,28 @@ export function createRegionCanary({
     store(OFF_KEY, '');
     store(RETRY_KEY, '');
     store(MANUAL_KEY, '');
+    store(STREAK_KEY, '');
   }
+  const recovered = () => {
+    probing = false;
+    retryAt = 0;
+    streak = 0;
+    store(RETRY_KEY, '');
+    store(OFF_KEY, '');
+    store(STREAK_KEY, '');
+  };
   const turnOff = () => {
+    const first = streak === 0;
     region = '';
     probing = false;
-    retryAt = now() + retryMs;
+    streak = Math.min(streak + 1, 20);
+    retryAt = now() + Math.min(maxRetryMs, retryMs * 2 ** (streak - 1));
     store(CANARY_KEY, '');
     store(OFF_KEY, '1');
     store(RETRY_KEY, String(retryAt));
-    onDisabled();
+    store(STREAK_KEY, String(streak));
+    // Chỉ báo một lần cho mỗi đợt lỗi (lượt dò lại thất bại không báo lại).
+    if (first) onDisabled();
   };
   const relevant = (sent) =>
     !!sent && !!region && (typeof sent !== 'string' || sent === region);
@@ -166,14 +189,19 @@ export function createRegionCanary({
     current: () => region,
     /** Đang bật mặc định cho mọi máy (công tắc trong code). */
     byDefault: () => defaultOn,
+    /** Số lần lỗi liên tiếp và thời điểm thử lại (trang Đo tốc độ). */
+    status: () => ({ streak, retryAt, manual }),
+    /** Mạng có lại / quay lại tab: cho lượt đọc kế tiếp dò lại ngay (không áp dụng khi Manager tắt tay). */
+    wake() {
+      if (!defaultOn || manual || region || !retryAt || now() >= retryAt) return;
+      retryAt = now();
+      store(RETRY_KEY, String(retryAt));
+    },
     enable(next = CANARY_REGION) {
       if (!VALID.test(next)) return;
       region = next;
       manual = false;
-      probing = false;
-      retryAt = 0;
-      store(OFF_KEY, '');
-      store(RETRY_KEY, '');
+      recovered();
       store(MANUAL_KEY, '');
       store(CANARY_KEY, next);
     },
@@ -181,10 +209,12 @@ export function createRegionCanary({
       region = '';
       probing = false;
       retryAt = 0;
+      streak = 0;
       manual = true;
       store(CANARY_KEY, '');
       store(OFF_KEY, '1');
       store(RETRY_KEY, '');
+      store(STREAK_KEY, '');
       store(MANUAL_KEY, '1');
     },
     /** A probe succeeds only when the response reaches our application in the requested region. */
@@ -194,39 +224,61 @@ export function createRegionCanary({
         turnOff();
         return;
       }
-      const actual = /(?:^|,)\s*region;desc="([^"]*)"/.exec(serverTiming)?.[1];
+      const actual = regionOf(serverTiming);
       if (actual && actual !== region) {
         turnOff();
         return;
       }
-      probing = false;
-      retryAt = 0;
-      store(RETRY_KEY, '');
-      store(OFF_KEY, '');
+      recovered();
     },
-    /** Lỗi mạng ở lượt có header → tắt, giữ tắt. */
+    /** Lỗi mạng ở lượt có header → tắt tạm, thử lại sau thời gian chờ tăng dần. */
     failed(sent) {
       if (relevant(sent)) turnOff();
     },
   };
 }
 
-/** Regional reads get one bounded attempt before the ordinary fallback. Writes are never resent. */
-export async function requestWithRegion(canary, send, { read = true } = {}) {
+/** Phản hồi do chính máy chủ của mình trả ở đúng vùng đã yêu cầu (có Server-Timing `region` khớp). */
+const fromOurRegion = (response, sent) => !!sent && regionOf(response.headers?.get('server-timing')) === sent;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/**
+ * Regional reads get one bounded attempt before the ordinary fallback. Writes are never resent.
+ * Our own 5xx from the requested region (e.g. 503 DB busy) is not a routing failure: reads retry once in the same region.
+ */
+export async function requestWithRegion(canary, send, { read = true, delay = wait } = {}) {
   const headers = canary.headers(read),
     sent = headers['x-region'] || '';
+  const policy = sent && read ? { readRetries: 0, timeoutMs: 8000 } : undefined;
   let response;
   try {
-    response = await send(
-      headers,
-      sent && read ? { readRetries: 0, timeoutMs: 8000 } : undefined,
-    );
+    response = await send(headers, policy);
   } catch (error) {
     canary.failed(sent);
     if (!sent || !read) throw error;
     return send({});
   }
   if (sent && [502, 503, 504].includes(response.status)) {
+    if (fromOurRegion(response, sent)) {
+      canary.observe(response.headers.get('server-timing'), sent);
+      if (!read) return response;
+      const after = Number(response.headers.get('retry-after')) || 0;
+      await response.body?.cancel().catch(() => {});
+      await delay(Math.min(2000, Math.max(500, after * 1000)));
+      let again;
+      try {
+        again = await send(headers, policy);
+      } catch {
+        canary.failed(sent);
+        return send({});
+      }
+      if (!fromOurRegion(again, sent) && [502, 503, 504].includes(again.status)) {
+        canary.failed(sent);
+        await again.body?.cancel().catch(() => {});
+        return send({});
+      }
+      canary.observe(again.headers?.get('server-timing'), sent);
+      return again;
+    }
     canary.failed(sent);
     if (read) {
       await response.body?.cancel().catch(() => {});
