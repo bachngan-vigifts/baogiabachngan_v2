@@ -7,6 +7,18 @@ import { cacheLineHtml } from './report-cache.js';
 const GRAIN_LABEL = { day: 'Ngày', week: 'Tuần', month: 'Tháng', year: 'Năm' };
 const TABS = { series: 'Thời gian', branches: 'Chi nhánh', owners: 'Nhân viên', customers: 'Khách hàng', orders: 'Đơn hàng', products: 'Sản phẩm' };
 const vnToday = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+/** Presets select an actual reporting range, independently of chart grouping. */
+export function profitPeriod(grain, today = vnToday()) {
+  if (grain === 'day') return { from: today, to: today };
+  if (grain === 'week') {
+    const date = new Date(today + 'T00:00:00Z');
+    date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+    return { from: date.toISOString().slice(0, 10), to: today };
+  }
+  if (grain === 'month') return { from: today.slice(0, 8) + '01', to: today };
+  if (grain === 'year') return { from: today.slice(0, 4) + '-01-01', to: today };
+  throw new RangeError('Kỳ không hợp lệ.');
+}
 const pct = x => x === null || x === undefined ? '—' : (Math.round(x * 1000) / 10).toLocaleString('vi-VN') + '%';
 const short = v => { const a = Math.abs(v), s = v < 0 ? '−' : '';
   return a >= 1e9 ? s + (Math.round(a / 1e7) / 100).toLocaleString('vi-VN') + ' tỷ' : a >= 1e6 ? s + Math.round(a / 1e6).toLocaleString('vi-VN') + ' tr' : s + Math.round(a).toLocaleString('vi-VN'); };
@@ -30,23 +42,35 @@ export function initProfit({ api, root, toast, esc, money }) {
     return `<span class="pill ${p >= 0.95 ? 'ok' : p >= 0.7 ? 'warn' : 'muted'}">${pct(p)} chính xác</span>`; };
   const monthEnd = ym => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
   const delta = (cur, prev) => { if (!prev) return ''; const p = (cur - prev) / Math.abs(prev); return `<span class="${p < 0 ? 'neg' : 'pos'}">${p < 0 ? '▼' : '▲'} ${pct(Math.abs(p))}</span> so kỳ trước`; };
-  /** Kỳ xem: Tháng = trọn 1 tháng (chuỗi theo ngày) · Năm = trọn 1 năm (theo tháng) · Ngày / Tuần = khoảng tuỳ chọn. */
+  /** Presets reset to today / this week / this month / this year; inputs can select older periods. */
   const seriesGrain = () => st.grain === 'month' ? 'day' : st.grain === 'year' ? 'month' : st.grain;
   function setGrain(g) {
-    st.grain = g;
-    const today = vnToday();
-    if (g === 'month') { st.from = today.slice(0, 8) + '01'; st.to = monthEnd(today.slice(0, 7)) < today ? monthEnd(today.slice(0, 7)) : today; }
-    else if (g === 'year') { st.from = today.slice(0, 4) + '-01-01'; st.to = today; }
-    else if (st.to.slice(0, 7) === st.from.slice(0, 7) && st.from.endsWith('-01')) { st.from = new Date(Date.parse(today) - 29 * 86400_000).toISOString().slice(0, 10); st.to = today; }
+    Object.assign(st, { grain: g }, profitPeriod(g));
   }
 
+  let loadRequest = 0;
+  function loadingStatus(message, error = false) {
+    if (!st.data) { root.innerHTML = `<p data-pf-status role="status" class="${error ? 'error' : 'muted'}">${esc(message)}</p>`; return; }
+    const status = root.querySelector('[data-pf-status]');
+    status.hidden = false; status.textContent = message; status.classList.toggle('error', error);
+    root.querySelector('#pf-csv').disabled = true;
+  }
   /** `refresh`: nút "Cập nhật" – máy chủ bỏ bản tính sẵn (30 phút) và tính lại ngay. */
   async function load(refresh = false) {
-    root.innerHTML = `<p class="muted">${refresh ? 'Đang tính lại lợi nhuận…' : 'Đang tải lợi nhuận…'}</p>`;
+    const request = ++loadRequest;
+    root.setAttribute('data-pf-stale', '');
+    if (st.from > st.to) {
+      root.removeAttribute('aria-busy'); loadingStatus('Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.', true); return;
+    }
+    root.setAttribute('aria-busy', 'true'); loadingStatus(refresh === true ? 'Đang tính lại lợi nhuận với dữ liệu mới nhất…' : 'Đang tính lợi nhuận theo bộ lọc…');
     const q = new URLSearchParams({ from: st.from, to: st.to, grain: seriesGrain(), ...(st.branch ? { branch: st.branch } : {}), ...(st.owner ? { owner: st.owner } : {}),
-      ...(st.costs === 'confirmed' ? { costs: 'confirmed' } : {}), ...(st.compare ? {} : { compare: '0' }), ...(refresh ? { refresh: '1' } : {}) });
-    try { st.data = await api('/profit?' + q); } catch (e) { root.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; return; }
-    render();
+      ...(st.costs === 'confirmed' ? { costs: 'confirmed' } : {}), ...(st.compare ? {} : { compare: '0' }), ...(refresh === true ? { refresh: '1' } : {}) });
+    try {
+      const data = await api('/profit?' + q);
+      if (request !== loadRequest) return;
+      st.data = data; root.removeAttribute('data-pf-stale'); render();
+    } catch (e) { if (request === loadRequest) loadingStatus(e.message, true); }
+    finally { if (request === loadRequest) root.removeAttribute('aria-busy'); }
   }
   function periodControl() {
     if (st.grain === 'month') return `<input type="month" id="pf-month" aria-label="Tháng" value="${esc(st.from.slice(0, 7))}" max="${esc(vnToday().slice(0, 7))}">`;
@@ -68,10 +92,12 @@ export function initProfit({ api, root, toast, esc, money }) {
           <select id="pf-branch" aria-label="Chi nhánh">${opt(d.filterOptions.branches, st.branch, 'Tất cả', 'Chi nhánh')}</select>
           <select id="pf-owner" aria-label="Nhân viên">${opt(d.filterOptions.owners, st.owner, 'Tất cả', 'Nhân viên')}</select>
           <select id="pf-costs" aria-label="Giá vốn"><option value="confirmed" ${st.costs === 'confirmed' ? 'selected' : ''}>Giá vốn: chỉ chính xác</option><option value="all" ${st.costs === 'all' ? 'selected' : ''}>Giá vốn: gồm ước tính</option></select>
-          <button type="button" class="btn secondary" id="pf-csv">⬇ Xuất Excel</button></div></div>
+          <button type="button" class="btn secondary" id="pf-csv">⬇ Xuất Excel</button></div>
+        <p class="muted small">Số liệu đơn hàng: ${esc((d.from || st.from).split('-').reverse().join('/'))} – ${esc((d.to || st.to).split('-').reverse().join('/'))}</p>
+        <p data-pf-status role="status" class="muted" hidden></p></div><div class="pf-results">
       ${warnings(d)}
       <div class="pf-kpis">
-        <div class="card"><small>Doanh thu thuần</small><b class="num">${short(s.revenue)}</b><span>${st.compare && cmp ? delta(s.revenue, cmp.revenue) : `${s.orders} đơn`}</span></div>
+        <div class="card"><small>Doanh thu thuần</small><b class="num">${short(s.revenue)}</b><span>${s.orders} đơn${st.compare && cmp ? ' · ' + delta(s.revenue, cmp.revenue) : ''}</span></div>
         <div class="card"><small>LN gộp</small><b class="num ${s.gross < 0 ? 'neg' : ''}">${short(s.gross)}</b><span>biên ${pct(s.margin)}${st.compare && cmp && cmp.margin !== null && s.margin !== null ? ` · <span class="${s.margin < cmp.margin ? 'neg' : 'pos'}">${s.margin < cmp.margin ? '▼' : '▲'} ${(Math.abs(s.margin - cmp.margin) * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} điểm</span>` : ''}</span></div>
         <div class="card"><small>LN sau chi phí</small><b class="num ${net < 0 ? 'neg' : ''}">${short(net)}</b><span>biên ${netBase > 0 ? pct(net / netBase) : '—'}${co ? ' · toàn công ty' : ' · theo bộ lọc'}</span></div>
         <div class="card"><small>Chưa phân bổ</small><b class="num">${unalloc === null ? '—' : short(unalloc)}</b><span>${unalloc === null ? 'chỉ xem khi không lọc' : 'chi phí chung văn phòng + lương Sale chưa phân bổ'}</span></div>
@@ -81,7 +107,7 @@ export function initProfit({ api, root, toast, esc, money }) {
       <div class="card"><div class="pf-tabs" role="tablist">${Object.entries(TABS).map(([k, v]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === st.tab}" class="${k === st.tab ? 'on' : ''}">${v}</button>`).join('')}</div>
         <div id="pf-tab">${tabBody()}</div>
         <p class="muted small">Thưởng / lương Sale chia về đơn theo tỉ lệ doanh thu đủ giá vốn của người đó trong tháng trọn; tổng khớp bảng lương. Bấm một nhân viên → các đơn của người đó; bấm một đơn → giá vốn từng dòng.</p></div>
-      <div class="pf-two">${costCard()}${rulesCard(d)}</div>`;
+      <div class="pf-two">${costCard()}${rulesCard(d)}</div></div>`;
     root.querySelector('#pf-refresh')?.addEventListener('click', () => load(true));
     root.querySelectorAll('[data-grain]').forEach(b => b.onclick = () => { setGrain(b.dataset.grain); load(); });
     root.querySelector('#pf-month')?.addEventListener('change', e => { const m = e.target.value; if (!m) return; st.from = m + '-01'; st.to = monthEnd(m) < vnToday() ? monthEnd(m) : vnToday(); load(); });
