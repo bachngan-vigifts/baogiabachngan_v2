@@ -18,6 +18,7 @@ import {ghnOrderSummary} from './ghn-order-summary.js';
 import {initProductDetail} from './product-detail.js';
 import { createPageBack } from './page-back.js';
 import { bindForgotPassword } from './forgot-password.js';
+import { mountTurnstile } from './turnstile.js';
 import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
 import { createRequestPriority, isBackgroundRequest } from './request-priority.js';
 import { recordApi, openSpeedDialog } from './speed-log.js';
@@ -326,7 +327,7 @@ function photoBox({ title, text = '', min = 1, max = 3, ok = 'Lưu' }) {
 // ---------------------------------------------------------------- gọi API
 let token = '';
 // Giữ đăng nhập sau khi đóng app / tab: lưu ở localStorage (sessionStorage bị xoá mỗi lần đóng, nhất là app trên iPhone).
-// Máy chủ tự gia hạn phiên khi còn dùng; chỉ bấm Đăng xuất, đổi mật khẩu hoặc bỏ app quá 30 ngày mới phải đăng nhập lại.
+// Máy chủ tự gia hạn phiên khi còn dùng; chỉ bấm Đăng xuất, đổi mật khẩu hoặc bỏ app quá 7 ngày mới phải đăng nhập lại.
 try { token = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || ''; if (token) { localStorage.setItem(SESSION_KEY, token); sessionStorage.removeItem(SESSION_KEY); } } catch { /* trình duyệt chặn lưu trữ */ }
 const saveToken = t => { const next=t||'';if(next!==token||!next){sessionResume.clear();clearPageCache();}token=next;try { if (token) localStorage.setItem(SESSION_KEY, token); else { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } } catch { /* bỏ qua */ } };
 const sessionResume=createSessionResume({storage:()=>localStorage,readToken:()=>token,verify:()=>api('/me'),open:openWorkspace,refresh:refreshWorkspaceUser});
@@ -474,6 +475,8 @@ let loginToHome = false;
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
 bindForgotPassword({button:$('#forgot-password'),api,email:()=>$('#email').value});
+// Chống bot ở đăng nhập (chỉ khi máy chủ đã bật Turnstile).
+const loginBot = mountTurnstile({ api, before: $('#login-button'), action: 'login' });
 const hashParams = () => new URLSearchParams(location.hash.slice(1));
 let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('token') : null;
 
@@ -512,10 +515,10 @@ $('#login-form').addEventListener('submit', async e => {
       await api('/activate', 'POST', { token: activation, password });
       activation = null; history.replaceState(null, '', location.pathname + '#/quotes');
     }
-    await api('/login', 'POST', { email, password });
+    await api('/login', 'POST', { email, password, turnstileToken: loginBot.token() });
     $('#password').value = ''; $('#password2').value = '';
     await enter();
-  } catch (ex) { err.textContent = ex.message; }
+  } catch (ex) { err.textContent = ex.message; loginBot.reset(); }
   finally { btn.disabled = false; }
 });
 

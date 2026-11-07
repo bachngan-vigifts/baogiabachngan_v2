@@ -216,7 +216,7 @@ export function registerChatRoutes(router: Router<StaffEnv>) {
     const files = raw.map((f: unknown) => {
       const x = (f && typeof f === 'object' ? f : {}) as Record<string, unknown>, name = str(x.name, 180).replace(/[\\/\u0000-\u001f]/g, '_'), data = String(x.data ?? '');
       const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '', mime = CHAT_FILE_TYPES[ext];
-      if (!name || !mime) throw new AppError(400, `Không gửi được "${name || 'file'}": chỉ nhận ảnh, PDF, Excel, Word, CSV, TXT, ZIP.`);
+      if (!name || !mime) throw new AppError(400, `Không gửi được "${name || 'file'}": chỉ nhận ảnh, PDF, Excel, Word, CSV, TXT.`);
       if (!B64_RE.test(data)) throw new AppError(400, `File "${name}" không hợp lệ.`);
       const bytes = decodeB64(data);
       if (!bytes.length || bytes.length > CHAT_LIMITS.fileBytes) throw new AppError(400, `File "${name}" phải nhỏ hơn 6 MB.`);

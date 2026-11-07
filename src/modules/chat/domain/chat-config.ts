@@ -9,7 +9,7 @@ export const CHAT_FILE_TYPES: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', pdf: 'application/pdf',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xls: 'application/vnd.ms-excel',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', doc: 'application/msword',
-  csv: 'text/csv', txt: 'text/plain', zip: 'application/zip',
+  csv: 'text/csv', txt: 'text/plain', // ZIP bỏ từ 07/11/2026: không kiểm được nội dung bên trong (file-sniff.ts)
 };
 /** Liên kết nhanh gửi trong tin (đơn hàng, HĐKT, báo giá, phiếu đóng gói, việc). */
 export const CHAT_REF_TYPES = ['order', 'contract', 'quote', 'packing', 'task'] as const;

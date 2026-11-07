@@ -3,6 +3,8 @@
  * Route tự kiểm tra quyền trước khi gọi; người dùng chỉ nhận link ký tên có hạn.
  * Test / máy dùng thử dùng `memoryFileStore` (link = data URL).
  */
+import { assertFileMatchesMime } from './file-sniff.ts';
+
 export const FILE_BUCKET = 'baogiabachngan-v2-files';
 export const MAX_FILE_BYTES = 6 * 1024 * 1024;
 
@@ -27,6 +29,7 @@ export function supabaseFileStore(o: { url: string; serviceKey: string; bucket?:
   const fail = async (what: string, res: Response) => { throw new Error(`${what} thất bại (${res.status}): ${(await res.text()).slice(0, 200)}`); };
   return {
     async put(key, bytes, mime, opts) {
+      assertFileMatchesMime(bytes, mime); // nội dung phải đúng loại khai báo (chặn file độc đổi đuôi)
       const res = await doFetch(`${base}/object/${bucket}/${safeKey(key)}`, { method: 'POST', headers: headers({ 'content-type': mime, 'x-upsert': opts?.upsert ? 'true' : 'false' }), body: bytes as BodyInit });
       if (!res.ok) await fail('Tải file lên', res);
     },
@@ -53,7 +56,7 @@ export function memoryFileStore() {
   const toB64 = (b: Uint8Array) => { let s = ''; for (const x of b) s += String.fromCharCode(x); return btoa(s); };
   const store: FileStore & { files: typeof files } = {
     files,
-    async put(key, bytes, mime, opts) { safeKey(key); if (files.has(key) && !opts?.upsert) throw new Error('File đã tồn tại.'); files.set(key, { bytes, mime }); },
+    async put(key, bytes, mime, opts) { safeKey(key); assertFileMatchesMime(bytes, mime); if (files.has(key) && !opts?.upsert) throw new Error('File đã tồn tại.'); files.set(key, { bytes, mime }); },
     publicUrl: key => `https://files.test/public/${key}`,
     async signedUrls(keys) { const out = new Map<string, string>(); for (const k of keys) { const f = files.get(k); if (f) out.set(k, `data:${f.mime};base64,${toB64(f.bytes)}`); } return out; },
     async remove(keys) { for (const k of keys) files.delete(k); },

@@ -10,7 +10,7 @@ test('kho file Supabase: tải lên, ký link theo lô, xoá; chặn đường d
     return new Response('{}');
   }) as unknown as typeof fetch;
   const s = supabaseFileStore({ url: 'https://p.supabase.co/', serviceKey: 'k', bucket: 'b', fetch: fake });
-  await s.put('chat/a/1.pdf', new Uint8Array([1]), 'application/pdf');
+  await s.put('chat/a/1.pdf', new TextEncoder().encode('%PDF-1.4'), 'application/pdf');
   assert.deepEqual([calls[0]!.url, calls[0]!.method, calls[0]!.auth], ['https://p.supabase.co/storage/v1/object/b/chat/a/1.pdf', 'POST', 'Bearer k']);
   const urls = await s.signedUrls(['chat/a/1.pdf', 'x'], 60);
   assert.deepEqual([...urls], [['chat/a/1.pdf', 'https://p.supabase.co/storage/v1/object/sign/b/chat/a/1.pdf?token=t']]);

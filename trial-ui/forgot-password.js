@@ -1,3 +1,4 @@
+import { mountTurnstile } from './turnstile.js';
 /** Shared recovery dialog: account existence and recovery tokens are never returned to this form. */
 export function bindForgotPassword({button,api,email=()=>'',audience}) {
   button?.addEventListener('click',()=>{
@@ -9,15 +10,15 @@ export function bindForgotPassword({button,api,email=()=>'',audience}) {
     const message=el('p');message.setAttribute('role','status');
     const actions=el('div','row-gap'),submit=el('button','btn primary','Gửi liên kết đặt lại'),close=el('button','btn secondary','Đóng');submit.type='submit';close.type='button';
     dialog.setAttribute('aria-label','Quên mật khẩu');
-    let busy=false;
+    let busy=false,bot=null;
     close.addEventListener('click',()=>{if(!busy)dialog.close();});
     form.addEventListener('submit',async e=>{
       e.preventDefault();if(busy||!form.reportValidity())return;busy=true;submit.disabled=close.disabled=input.disabled=true;message.textContent='Đang xử lý…';
-      try{const result=await api('/forgot-password','POST',{email:input.value.trim(),...(audience?{audience}:{})});message.className='';message.textContent=result.message;}
-      catch(e){message.className='error';message.textContent=e?.status===404?'Chức năng đặt lại mật khẩu đang được cập nhật. Vui lòng thử lại sau ít phút.':e?.message||'Không gửi được yêu cầu. Vui lòng thử lại.';}
+      try{const result=await api('/forgot-password','POST',{email:input.value.trim(),...(audience?{audience}:{}),turnstileToken:bot?.token()||''});message.className='';message.textContent=result.message;}
+      catch(e){bot?.reset();message.className='error';message.textContent=e?.status===404?'Chức năng đặt lại mật khẩu đang được cập nhật. Vui lòng thử lại sau ít phút.':e?.message||'Không gửi được yêu cầu. Vui lòng thử lại.';}
       finally{busy=false;submit.disabled=close.disabled=input.disabled=false;}
     });
     actions.append(submit,close);form.append(title,note,label,message,actions);dialog.append(form);document.body.append(dialog);
-    dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();input.focus();
+    dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();bot=mountTurnstile({api,before:actions,action:'forgot_password'});input.focus();
   });
 }

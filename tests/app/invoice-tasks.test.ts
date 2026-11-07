@@ -37,7 +37,7 @@ test('Kế toán: kho giao đủ đơn/HĐKT tạo việc ngay, giữ yêu cầu
   const id = await order(f, 'INVOICE-CONTRACT', true);
   const [line] = await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, id));
   const ship = async () => ok(await f.call('/deliveries', f.emp, 'POST', { orderId: id, plannedDate: '2026-10-20', lines: [{ orderLineId: line!.id, qty: 1 }] }), 201);
-  const done = async (deliveryId: string) => ok(await f.call(`/deliveries/${deliveryId}/status`, warehouse, 'PUT', { status: 'delivered', photos: ['data:image/jpeg;base64,' + Buffer.from('delivery-photo').toString('base64')] }));
+  const done = async (deliveryId: string) => ok(await f.call(`/deliveries/${deliveryId}/status`, warehouse, 'PUT', { status: 'delivered', photos: ['data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('delivery-photo')]).toString('base64')] }));
   const firstTrip=await ship();await confirmWarehouseSupply(f.db,f.call,f.mgr,id);
   await done(firstTrip.id);
   assert.equal((await invoiceRows(f, id)).length, 0, 'giao một phần chưa tự yêu cầu');

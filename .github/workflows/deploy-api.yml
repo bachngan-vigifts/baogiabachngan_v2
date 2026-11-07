@@ -34,6 +34,10 @@ jobs:
       # Khôi phục: đặt biến = false (hoặc xoá) rồi deploy lại → secret bị gỡ.
       POOLER_CANARY_URL: ${{ vars.ENABLE_DB_POOLER != 'true' && vars.ENABLE_DB_POOLER_CANARY == 'true' && secrets.SUPABASE_POOLER_URL || '' }}
       SAPO_SYNC_TOKEN: ${{ secrets.SAPO_SYNC_TOKEN }}
+      # Cloudflare Turnstile (chống bot ở đăng nhập / quên mật khẩu): secret TURNSTILE_SECRET_KEY + biến TURNSTILE_SITE_KEY.
+      # Có đủ cả hai thì bật; thiếu thì gỡ secret khỏi Edge – đăng nhập chạy như cũ.
+      TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+      TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
       WEB_ORDER_ACTION_TOKEN: ${{ secrets.WEB_ORDER_ACTION_TOKEN }}
       GHN_API_TOKEN: ${{ secrets.GHN_API_TOKEN }}
       GHN_ML_API_TOKEN: ${{ secrets.GHN_ML_API_TOKEN }}
@@ -150,6 +154,12 @@ jobs:
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_POOLER_URL != ''
         # SUPABASE_* names are reserved inside Edge Functions; keep the GitHub secret name unchanged.
         run: supabase secrets set --project-ref "$PROJECT_REF" DB_POOLER_URL="$SUPABASE_POOLER_URL"
+      - name: Bật Turnstile chống bot khi có đủ khoá
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.TURNSTILE_SECRET_KEY != '' && env.TURNSTILE_SITE_KEY != ''
+        run: supabase secrets set --project-ref "$PROJECT_REF" TURNSTILE_SECRET_KEY="$TURNSTILE_SECRET_KEY" TURNSTILE_SITE_KEY="$TURNSTILE_SITE_KEY"
+      - name: Tắt Turnstile khi chưa đủ khoá
+        if: env.SUPABASE_ACCESS_TOKEN != '' && (env.TURNSTILE_SECRET_KEY == '' || env.TURNSTILE_SITE_KEY == '')
+        run: supabase secrets unset TURNSTILE_SECRET_KEY TURNSTILE_SITE_KEY --project-ref "$PROJECT_REF" --yes || true
       - name: Cập nhật mã bí mật đồng bộ Sapo
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SAPO_SYNC_TOKEN != ''
         # Truyền qua biến môi trường để mã không xuất hiện trong lệnh/log.

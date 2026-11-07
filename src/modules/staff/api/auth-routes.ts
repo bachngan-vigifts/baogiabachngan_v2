@@ -48,6 +48,11 @@ export interface StaffEnv {
   /** Cho phép tạo mới đơn cọc / ship trả trước. Production tắt (đã bỏ tính năng); chỉ bộ kiểm thử bật để dựng dữ liệu đơn cũ. */
   posOrderFlowCreate?: boolean;
   sepayPosApiKeyHash?: string;
+  /**
+   * Cloudflare Turnstile (chống bot) ở đăng nhập / quên mật khẩu. Chỉ bật khi có secret; siteKey là khoá công khai trả cho giao diện.
+   * Secret không bao giờ gửi ra trình duyệt.
+   */
+  turnstile?: { secret: string; siteKey: string; fetch?: typeof fetch };
   wooLockTokenHash?: string;
   wooMinhLongTokenHash?: string;
   /** Cầu nối máy chủ → WooCommerce để chốt/huỷ/làm mới đơn web; token không bao giờ gửi ra trình duyệt. */
@@ -83,6 +88,23 @@ const now = (c: Ctx) => (c.env.nowSec ?? (() => Math.floor(Date.now() / 1000)))(
 const session = (c: Ctx) => c.state.session as SessionState;
 
 /** Giới hạn số lần thử theo khoá (IP, link kích hoạt / mời…) – dùng chung cho route công khai của module khác (portal). */
+/**
+ * Kiểm mã Turnstile của trình duyệt (khi đã bật). Thiếu / sai mã → từ chối. Không gọi được máy chủ Cloudflare thì cho qua
+ * (vẫn còn giới hạn số lần thử) để sự cố của Cloudflare không khoá đăng nhập cả công ty.
+ */
+export async function verifyTurnstile(c: Ctx, token: unknown) {
+  const cfg = c.env.turnstile;
+  if (!cfg?.secret) return;
+  if (typeof token !== 'string' || !token || token.length > 2048) throw new AppError(400, 'Vui lòng hoàn tất bước xác minh "Không phải robot" rồi thử lại.', 'TURNSTILE_REQUIRED');
+  let ok: boolean;
+  try {
+    const form = new URLSearchParams({ secret: cfg.secret, response: token });
+    const ip = clientIp(c.req.headers); if (ip !== 'unknown') form.set('remoteip', ip);
+    const res = await (cfg.fetch ?? fetch)('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: form, signal: AbortSignal.timeout(5000) });
+    ok = !!(await res.json() as { success?: boolean }).success;
+  } catch { console.warn('turnstile_verify_unavailable'); return; }
+  if (!ok) throw new AppError(403, 'Xác minh "Không phải robot" chưa đạt. Vui lòng thử lại.', 'TURNSTILE_FAILED');
+}
 export async function limit(c: Ctx, key: string, max: number) {
   if (await repo.countAttempt(c.env.db, key, now(c)) > max) throw tooManyAttempts();
 }
@@ -187,12 +209,15 @@ function checkSyncToken(c: Ctx): void {
 export function registerAuthRoutes(router: Router<StaffEnv>): void {
   // ---- Công khai ----
   // Same sender/config as supplier order mail; recovery is private (no order-mail CC list).
+  /** Cấu hình công khai cho màn hình đăng nhập (khoá công khai Turnstile; rỗng = chưa bật). */
+  router.get('/auth-config', c => json({ turnstileSiteKey: c.env.turnstile?.secret ? c.env.turnstile.siteKey : '' }, 200, { 'cache-control': 'no-store' }), 'public');
   router.post('/forgot-password', async c => {
     const body = await readJson(c.req,4096);
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     if (!isEmail(email)) throw new AppError(400,'Nhập email đã đăng ký tài khoản.');
     if (body.audience !== undefined && (typeof body.audience !== 'string' || !['supplier','customer'].includes(body.audience))) throw new AppError(400,'Loại tài khoản không hợp lệ.');
     await limit(c,'reset-ip:'+clientIp(c.req.headers),10);
+    await verifyTurnstile(c, body.turnstileToken);
     await limit(c,'reset-email:'+email,3);
     if (!mailerReady(c.env.mailer)) throw new AppError(503,'Chức năng gửi email chưa sẵn sàng. Vui lòng thử lại sau.');
     const token = newToken();
@@ -237,6 +262,7 @@ export function registerAuthRoutes(router: Router<StaffEnv>): void {
     // Email (mọi tài khoản) hoặc số điện thoại (tài khoản khách hàng). Giới hạn thử tính theo định danh đã chuẩn hoá.
     const id = parseLoginId(body.email ?? body.login);
     await limit(c, 'ip:' + clientIp(c.req.headers), RATE_LIMITS.ip);
+    await verifyTurnstile(c, body.turnstileToken);
     await limit(c, 'email:' + id.value, RATE_LIMITS.email);
     const row = id.kind === 'phone' ? await repo.findLoginRowByPhone(c.env.db, id.value) : await repo.findLoginRow(c.env.db, id.value);
     // Luôn tốn thời gian băm như nhau dù email có tồn tại hay không (verifyPassword dùng hash giả khi thiếu).
