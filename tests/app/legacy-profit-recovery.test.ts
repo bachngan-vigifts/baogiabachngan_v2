@@ -71,9 +71,9 @@ test('nhận hàng NCC mới lưu đúng giá sau CK trước VAT và đúng ng�
  await f.db.update(productMovements).set({unitPrice:100000,note:''}).where(eq(productMovements.id,movement.id));
  await f.db.insert(salesOrders).values({id:'legacy-cost-order',orderNo:'DH-LEGACY-COST',quoteType:'HRC',customerName:'Khách kiểm thử',ownerId:'emp',createdBy:'emp',orderDate:'2026-11-05',status:'confirmed',subtotal:200000,total:200000,createdAt:'2026-11-05T08:00:00Z',updatedAt:stamp});
  await f.db.insert(salesOrderLines).values({id:'legacy-cost-line',orderId:'legacy-cost-order',lineNo:1,sku:'00123',name:'Ly',unit:'Cái',qty:2,unitPrice:100000,amount:200000});
- const exported=(await f.db.$client.query(recoveryInputSql)).rows[0] as {payload:RecoveryInput;fingerprint:string};
+ const exported=(await f.client.query(recoveryInputSql)).rows[0] as {payload:RecoveryInput;fingerprint:string};
  const plan=recoveryPlan(exported.payload);assert.equal(plan.repairs.length,1);assert.equal(plan.costs[0]!.unitCost,76000);
- const query=recoverySql(plan,exported.fingerprint);await f.db.$client.exec(query);await f.db.$client.exec(query);
+ const query=recoverySql(plan,exported.fingerprint);await f.client.exec(query);await f.client.exec(query);
  const repaired=(await f.db.select().from(productMovements).where(eq(productMovements.id,movement.id)))[0]!;
  assert.equal(repaired.unitPrice,76000);assert.equal(repaired.note.match(/net-cost-v1/g)?.length,1,'gửi lặp không chiết khấu lần hai');
  assert.equal((await f.db.select().from(salesLineCostHistory)).filter(x=>x.reason==='recover').length,1);
