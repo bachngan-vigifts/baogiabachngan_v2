@@ -21,7 +21,7 @@ test('mobile footer matches V0 functional order, retaining all sidebar destinati
 test('sidebar order does not reorder mobile groups; products follows contracts',()=>{
  assert.deepEqual(orderedMobileNavKeys([...keys].reverse()),expected);
  assert.deepEqual(orderedMobileNavKeys(keys).slice(0,7),['pos','quotes','orders','contracts','products','product-custody','receivables']);
- assert.deepEqual(orderedMobileNavKeys(keys).filter(key=>key!=='product-custody').slice(0,6),['pos','quotes','orders','contracts','products','receivables'],'existing destinations retain their relative order');
+ assert.deepEqual(orderedMobileNavKeys(keys).filter((key:string)=>key!=='product-custody').slice(0,6),['pos','quotes','orders','contracts','products','receivables'],'existing destinations retain their relative order');
 });
 test('employees and accountants see only allowed links in the same V0 order',()=>{
  for(const visible of [[],['tasks','receivables','purchases','cashbook','cash','customers','suppliers'],['kho','receiving','stocktake','stock-lookup'],['orders','customers','care','quotes']]){
