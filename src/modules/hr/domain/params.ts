@@ -12,7 +12,7 @@ export const PARAM_FIELDS = [
   {key:'saleKpiNetLowRate',group:'Thưởng KPI Sale — doanh số net',label:'Thưởng từ 60% đến dưới 90%',value:0.005,kind:'percent'},
   {key:'saleKpiNetHighRate',group:'Thưởng KPI Sale — doanh số net',label:'Thưởng từ 90% đến hết 120%',value:0.01,kind:'percent'},
   {key:'saleKpiNetOverRate',group:'Thưởng KPI Sale — doanh số net',label:'Thưởng trên 120%',value:0.012,kind:'percent'},
-  {key:'salesAutomationFrom',group:'KPI công việc – Sale',label:'Tháng bắt đầu KPI Sale từ CRM (YYYYMM; 0 = tắt)',value:0,kind:'number',note:'KH mới: đơn CRM đã duyệt đầu tiên trong toàn bộ lịch sử; giao dịch: liên hệ hợp lệ; HĐ: tháng ký. Dữ liệu cũ chưa xác nhận không tự tính giao dịch.'},
+  {key:'salesAutomationFrom',group:'KPI công việc – Sale',label:'Tháng bắt đầu KPI Sale từ CRM (YYYYMM; 0 = tắt)',value:0,kind:'number',note:'KH mới: hồ sơ khách do nhân viên tạo đã được duyệt, tính cho người tạo trong tháng duyệt, không cần đơn hàng; giao dịch: liên hệ hợp lệ; HĐ: tháng ký.'},
   {key:'salesAutomationApply',group:'KPI công việc – Sale',label:'Áp dụng KPI từ CRM (0 = đối chiếu; 1 = áp dụng)',value:0,kind:'number'},
   {key:'contractBonusFrom',group:'Thưởng HĐKT',label:'Tháng bắt đầu thưởng HĐKT (YYYYMM; 0 = tắt)',value:0,kind:'number'},
   {key:'contractBonusApply',group:'Thưởng HĐKT',label:'Áp dụng thưởng sao / thanh lý (0 = đối chiếu; 1 = áp dụng)',value:0,kind:'number'},

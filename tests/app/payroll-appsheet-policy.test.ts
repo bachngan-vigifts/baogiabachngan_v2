@@ -46,8 +46,8 @@ test('waiting/cancelled orders contribute no recognized revenue or valid contrac
  const f=await setup();await f.db.update(salesOrders).set({status:'draft'}).where(eq(salesOrders.id,'liq-order'));
  let k=(await f.overview()).data.payroll.payslip.kpi;assert.equal(k.basis.revenue,0);assert.equal(k.basis.contracts,0);
  await f.db.update(salesOrders).set({status:'cancelled'}).where(eq(salesOrders.id,'liq-order'));
- k=(await f.overview()).data.payroll.payslip.kpi;assert.equal(k.basis.revenue,0);
- await f.salary({fixedKpi:1});k=(await f.overview()).data.payroll.payslip.kpi;assert.equal(k.used,1);assert.equal(k.total,0);
+ k=(await f.overview()).data.payroll.payslip.kpi;assert.equal(k.basis.revenue,0);assert.equal(k.basis.newCustomers,1,'approved profile still counts when its order is cancelled');
+ await f.salary({fixedKpi:1});k=(await f.overview()).data.payroll.payslip.kpi;assert.equal(k.used,1);assert.equal(k.total,1/96*0.1);
 });
 test('missing commission provenance blocks new-policy settlement instead of silently accepting incomplete KPI',async()=>{
  const f=await setup();await f.db.update(salesOrders).set({channel:'crm',quoteId:null}).where(eq(salesOrders.id,'liq-order'));
