@@ -1,4 +1,5 @@
 import {createReportScoreCard,reportScoreText} from './report-scores.js';
+import { cacheLineNode } from './report-cache.js';
 /** Dashboard doanh số (read-only): biểu đồ SVG dựng bằng DOM API (không chuỗi HTML), dùng API đã xác thực của app. */
 const SVG_NS = 'http://www.w3.org/2000/svg';
 // Bảng màu đã kiểm định (CVD/tương phản): thực tế = xanh, dự kiến = cam; giai đoạn pipeline = thang xanh có thứ tự.
@@ -54,7 +55,10 @@ export function initDashboard({ api, root, isManager, money }) {
 
   const wrap = node('div', null, 'revenue-dashboard'); root.append(wrap);
   const head = node('div', null, 'dash-head'), meta = node('p', null, 'dash-meta');
-  head.append(node('h1', 'Tổng quan'), meta);
+  // Bản tính sẵn 30 phút (máy chủ) – "Cập nhật" tính lại mọi khối của trang.
+  const cacheSlot = node('div', null, 'dash-cache');
+  head.append(node('h1', 'Tổng quan'), meta, cacheSlot);
+  const fresh = refresh => refresh === true ? { refresh: '1' } : {};
   const form = node('form', null, 'dash-filters'), content = node('div', null, 'dash-content');
   const tip = node('div', null, 'dash-tip'); tip.hidden = true; tip.setAttribute('role', 'tooltip');
   wrap.append(head, form, content, tip);
@@ -268,11 +272,11 @@ export function initDashboard({ api, root, isManager, money }) {
     if (x.restricted) out.push(node('p', 'Chỉ hiện KPI của bạn – KPI nhân viên khác chỉ Manager xem.', 'dash-sub'));
     kpiBody.replaceChildren(...out, main);
   }
-  async function loadKpi() {
+  async function loadKpi(refresh) {
     const id = ++kpiRequest; if (!data) return;
     const months = data.months.map(m => m.month); if (!months.includes(kpiMonth)) kpiMonth = months.at(-1);
     kpiCard.classList.add('is-loading'); if (!kpiData) kpiBody.replaceChildren(node('p', 'Đang tính KPI…', 'dash-sub'));
-    try { const r = await api('/dashboard/kpi?' + new URLSearchParams({ from: filters.from, to: filters.to, owner: filters.owner, group: filters.group, month: kpiMonth })); if (id !== kpiRequest) return; kpiData = r; renderKpi(); }
+    try { const r = await api('/dashboard/kpi?' + new URLSearchParams({ from: filters.from, to: filters.to, owner: filters.owner, group: filters.group, month: kpiMonth, ...fresh(refresh) })); if (id !== kpiRequest) return; kpiData = r; renderKpi(); }
     catch (e) { if (id !== kpiRequest) return; kpiData = null; kpiCard.hidden = false; const retry = node('button', 'Thử lại', 'btn'); retry.type = 'button'; retry.addEventListener('click', loadKpi); kpiBody.replaceChildren(node('p', e.message || 'Chưa tính được KPI.', 'error'), retry); }
     finally { if (id === kpiRequest) kpiCard.classList.remove('is-loading'); }
   }
@@ -290,11 +294,11 @@ export function initDashboard({ api, root, isManager, money }) {
     if(x.members.length>1){const label=node('label',null,'dash-field'),select=node('select');label.append(node('span','Nhân viên xem điểm'),select);select.setAttribute('aria-label','Nhân viên xem điểm báo cáo');for(const m of x.members){const option=node('option',m.name+' · '+reportScoreText(m));option.value=m.id;select.append(option);}select.value=member.id;select.onchange=()=>{reportPick=select.value;renderReports();};children.push(label);}
     children.push(node('h3',member.name,'dash-kpi-name'),createReportScoreCard(member));reportBody.replaceChildren(...children);
   }
-  async function loadReports(){
+  async function loadReports(refresh){
     const id=++reportRequest;if(!data)return;
     const months=data.months.map(m=>m.month);if(!months.includes(reportMonth))reportMonth=months.at(-1);
     reportCard.hidden=false;reportBody.replaceChildren(node('p','Đang tải điểm báo cáo…','dash-sub'));reportCard.classList.add('is-loading');
-    try{const result=await api('/dashboard/report-scores?'+new URLSearchParams({from:filters.from,to:filters.to,owner:filters.owner,group:filters.group,month:reportMonth}));if(id!==reportRequest)return;reportData=result;renderReports();}
+    try{const result=await api('/dashboard/report-scores?'+new URLSearchParams({from:filters.from,to:filters.to,owner:filters.owner,group:filters.group,month:reportMonth,...fresh(refresh)}));if(id!==reportRequest)return;reportData=result;renderReports();}
     catch(e){if(id!==reportRequest)return;reportData=null;reportCard.hidden=false;const retry=node('button','Thử lại','btn');retry.type='button';retry.onclick=loadReports;reportBody.replaceChildren(node('p',e.message||'Chưa tải được điểm báo cáo.','error'),retry);}
     finally{if(id===reportRequest)reportCard.classList.remove('is-loading');}
   }
@@ -369,11 +373,11 @@ export function initDashboard({ api, root, isManager, money }) {
     const sub = storeCard.querySelector('.dash-sub') || node('p', null, 'dash-sub'); sub.textContent = `Tháng ${Number(x.month.slice(5))}/${x.month.slice(0, 4)} · CRM + bán quầy, cùng cách tính thưởng với phiếu lương`; storeCard.firstChild.insertBefore(sub, storeMonthSelect);
     storeBody.replaceChildren(...x.stores.map(st => storeBlock(st, x)));
   }
-  async function loadStore() {
+  async function loadStore(refresh) {
     const id = ++storeRequest; if (!data) return;
     const months = data.months.map(m => m.month); if (!months.includes(storeMonth)) storeMonth = months.at(-1);
     storeCard.classList.add('is-loading');
-    try { const r = await api('/dashboard/store?' + new URLSearchParams({ month: storeMonth })); if (id !== storeRequest) return; storeData = r; renderStore(); }
+    try { const r = await api('/dashboard/store?' + new URLSearchParams({ month: storeMonth, ...fresh(refresh) })); if (id !== storeRequest) return; storeData = r; renderStore(); }
     catch (e) { if (id !== storeRequest) return; storeData = null; storeCard.hidden = false; const retry = node('button', 'Thử lại', 'btn'); retry.type = 'button'; retry.addEventListener('click', loadStore); storeBody.replaceChildren(node('p', e.message || 'Chưa tải được doanh số cửa hàng.', 'error'), retry); }
     finally { if (id === storeRequest) storeCard.classList.remove('is-loading'); }
   }
@@ -453,19 +457,20 @@ export function initDashboard({ api, root, isManager, money }) {
     lastWidth = content.clientWidth; redraw();
   }
 
-  async function load() {
+  async function load(refresh) {
     const id = ++requestId; ++reportRequest;reportData=null;reportCard.hidden=true;reportBody.replaceChildren();syncForm(); hideTip();
     group.parentElement.hidden = owner.parentElement.hidden = !isManager();
     content.classList.add('is-loading'); if (!data) content.replaceChildren(node('p', 'Đang tải tổng quan…', 'dash-sub'));
     try {
-      const res = await api('/dashboard/revenue?' + new URLSearchParams(filters)); if (id !== requestId) return;
+      const res = await api('/dashboard/revenue?' + new URLSearchParams({ ...filters, ...fresh(refresh) })); if (id !== requestId) return;
       options = res.filters;
       // A staff member removed since the last refresh must also leave the cached selector.
       if (isManager() && filters.owner && !options.employees.some(m => m.id === filters.owner)) {
         filters.owner = ''; filters.page = '1'; return load();
       }
       fillSelect(group, options.groups, 'Tất cả nhóm'); fillSelect(owner, options.employees, 'Tất cả nhân viên');
-      data = res; render(); loadKpi(); loadStore();loadReports();
+      cacheSlot.replaceChildren(cacheLineNode(document, res.cache, () => load(true)));
+      data = res; render(); loadKpi(refresh); loadStore(refresh); loadReports(refresh);
     } catch (e) {
       if (id !== requestId) return;
       data = null; const retry = node('button', 'Thử lại', 'btn'); retry.type = 'button'; retry.addEventListener('click', load);

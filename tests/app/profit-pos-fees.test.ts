@@ -39,6 +39,6 @@ test('API: đơn POS cộng thu phí khách, trừ phí GHN vào LN sau chi phí
   assert.equal(d.cardFees.available, false);
   // Có vận đơn nhưng chưa biết phí → cờ cảnh báo, không tính 0 lặng lẽ.
   await f.db.update(salesOrders).set({ posSnapshot: JSON.stringify({ ...snap, ghn: { orderCode: 'GHNTEST' } }) }).where(eq(salesOrders.id, orderId));
-  const d2 = ok(await f.call(`/profit?from=${day}&to=${day}`, f.mgr));
+  const d2 = ok(await f.call(`/profit?from=${day}&to=${day}&refresh=1`, f.mgr)); // đọc lại sau khi sửa dữ liệu: bỏ bản tính sẵn
   assert.equal(d2.summary.carrierUnknownOrders, 1);
 });

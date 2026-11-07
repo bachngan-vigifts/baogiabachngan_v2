@@ -13,7 +13,8 @@ test('danh sách chi thường dùng không lẫn nộp quỹ; tên chuyển qu�
 
 test('nộp quỹ giảm tiền két đúng một lần nhưng không làm tăng chi phí hoạt động hay giảm lợi nhuận; ngưỡng duyệt giữ nguyên',async()=>{
  const f=await setup();await f.open();const day=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'});
- const profit=async()=>{const r=await f.call('/profit?'+new URLSearchParams({from:day,to:day,compare:'0'}),f.mgr);assert.equal(r.status,200);return r.data;};
+ // refresh=1: đọc lại ngay sau khi ghi phiếu két (bỏ bản tính sẵn 30 phút).
+ const profit=async()=>{const r=await f.call('/profit?'+new URLSearchParams({from:day,to:day,compare:'0',refresh:'1'}),f.mgr);assert.equal(r.status,200);return r.data;};
  const expense=await f.call('/cash/entries',f.emp,'POST',{key:crypto.randomUUID(),kind:cashEntryKind('Văn phòng phẩm','out'),entryName:'Văn phòng phẩm',amount:100000,reason:'Mua giấy in'});assert.equal(expense.status,201);
  const before=await profit(),balance=(await f.call('/cash',f.emp)).data.balance;
  const body={key:crypto.randomUUID(),kind:cashEntryKind('Nộp quỹ','out',true),entryName:'Nộp quỹ',amount:200000,reason:'Nộp về quỹ công ty',direction:'in'};

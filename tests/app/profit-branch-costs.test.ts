@@ -56,6 +56,11 @@ test('Manager sửa loại phiếu két: thắng phân loại tự động, đ�
   const petty = (d: any) => d.branchCosts.rows.reduce((n: number, r: any) => n + r.petty, 0);
   const before = ok(await f.call(q, f.mgr));
   assert.equal(petty(before), 100, 'tự động: chỉ chi vặt hoạt động');
+  assert.equal(before.cache.hit, false);
+  // Xem lại trong 30 phút: lấy bản tính sẵn (mọi Manager dùng chung); sửa loại phiếu bên dưới phải bỏ bản này.
+  const again = ok(await f.call(q, f.mgr));
+  assert.equal(again.cache.hit, true); assert.equal(again.cache.computedAt, before.cache.computedAt); assert.equal(petty(again), 100);
+  assert.equal((await f.call(q, f.emp)).status, 403, 'bản tính sẵn không mở quyền cho nhân viên');
   const item = before.branchCosts.review.find((r: any) => r.amount === 300);
   assert.deepEqual([item.cls, item.auto, item.manual], ['payroll', 'payroll', false]);
   assert.ok(before.branchCosts.classOptions.some((o: any) => o.cls === 'operating' && o.counted));
@@ -64,6 +69,7 @@ test('Manager sửa loại phiếu két: thắng phân loại tự động, đ�
   assert.equal((await f.call('/profit/cash-classes/khong-co', f.mgr, 'PUT', { cls: 'operating' })).status, 404);
   ok(await f.call(`/profit/cash-classes/${item.id}`, f.mgr, 'PUT', { cls: 'operating', note: 'Thực ra là tiền thuê bốc xếp' }));
   const after = ok(await f.call(q, f.mgr));
+  assert.equal(after.cache.hit, false, 'sửa loại phiếu két bỏ bản tính sẵn');
   assert.equal(petty(after), 400, 'Manager xác nhận là chi phí hoạt động → tính vào chi nhánh');
   assert.deepEqual(['cls', 'auto', 'manual'].map(k => after.branchCosts.review.find((r: any) => r.id === item.id)[k]), ['operating', 'payroll', true], 'vẫn hiện trong danh sách để xem lại');
   ok(await f.call(`/profit/cash-classes/${item.id}`, f.mgr, 'PUT', { cls: '' }));
