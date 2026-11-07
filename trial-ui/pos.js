@@ -1942,8 +1942,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     } else go('#/cash');
   }
   /** Báo cáo ca: lọc theo nhân viên, ngày, trạng thái; ca đang mở màu xanh, đã kết màu xám. */
-  async function history() {
-    const m = modal('Báo cáo ca'), shifts = st.options.shifts || [];
+  async function history(shifts = st.options.shifts || [], { standalone = false } = {}) {
+    const m = modal('Báo cáo ca');
     const day = iso => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
     const staff = el('select'); staff.setAttribute('aria-label', 'Nhân viên');
     for (const [v, t] of [['', 'Tất cả nhân viên'], ...[...new Set(shifts.map(s => s.memberName || ''))].filter(Boolean).sort().map(n => [n, n])]) { const o = el('option', '', t); o.value = v; staff.append(o); }
@@ -1965,6 +1965,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
           detail.close();
           if (target === 'cash') go('#/cash');
           else if (target === 'orders') go('#/orders');
+          else if (standalone) go('#/pos');
           else if (target === 'returns') openReturns();
           else if (target === 'flows') run(flowOrders);
           else if (target === 'cod') run(() => codList());
@@ -2496,5 +2497,16 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   catalogMedia?.addEventListener?.('change', () => {
     if (root.isConnected && !root.hidden && st.register) run(() => search(false));
   });
-  return { load, dirty };
+  let reportsLoading = false;
+  async function showShiftReports() {
+    if (reportsLoading) return;
+    reportsLoading = true;
+    try {
+      await run(async () => {
+        const options = await api('/pos/options?stock=0');
+        await history(options.shifts || [], { standalone: true });
+      });
+    } finally { reportsLoading = false; }
+  }
+  return { load, dirty, showShiftReports };
 }

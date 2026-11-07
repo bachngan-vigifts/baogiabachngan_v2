@@ -41,3 +41,14 @@ test('menu chân trang gom theo chức năng: đủ trang, đúng thứ tự, ch
  assert.deepEqual(groupMobileNav(['future','orders']).map((g:any)=>[g.label,g.items]),[['Bán hàng',['orders']],['Khác',['future']]]);
  assert.equal(new Set(MOBILE_NAV_GROUPS.flatMap((g:any)=>g.keys)).size,MOBILE_NAV_GROUPS.flatMap((g:any)=>g.keys).length,'mỗi trang thuộc đúng một nhóm');
 });
+
+const {withMobileNavShortcuts}=await import(new URL('../../trial-ui/mobile-design.js',import.meta.url).href);
+test('shift reports shortcut inherits POS access and belongs to Work without replacing POS',()=>{
+ const allowed=withMobileNavShortcuts(['tasks','pos','orders']);
+ const groups=groupMobileNav(allowed);
+ assert.deepEqual(groups.find((g:any)=>g.key==='work')?.items,['tasks','shift-reports']);
+ assert.deepEqual(groups.find((g:any)=>g.key==='sell')?.items,['pos','orders']);
+ assert.deepEqual(withMobileNavShortcuts(['tasks','orders']),['tasks','orders']);
+ assert.deepEqual(withMobileNavShortcuts([]),[]);
+ assert.equal(withMobileNavShortcuts(allowed).filter((k:string)=>k==='shift-reports').length,1);
+});

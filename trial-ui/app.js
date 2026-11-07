@@ -822,6 +822,10 @@ const posLocalSearch = (q, policy) => {
 // Kiểm tra nhanh đã có danh mục chưa (không dựng cả danh sách chỉ để biết có hay không).
 posLocalSearch.ready = () => !!catalog.items;
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
+document.addEventListener('crm-open-shift-reports', () => {
+  if (!state.user || !canPage('pos')) return;
+  void posView().showShiftReports();
+});
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
 const VIEWS = { 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
