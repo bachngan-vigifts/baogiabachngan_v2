@@ -1,4 +1,4 @@
-/** Real local router/PGlite: staff request/receive, Manager approve/refund. No production or external calls. */
+/** Mobile Work menu opens existing shift reports through the local router/PGlite. No production or external calls. */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
@@ -144,6 +144,51 @@ try {
     });
     await context.close();
   }
+  const retry = await pageFor(f.mgr),
+    retryPage = retry.page;
+  let failed = false;
+  await retryPage.route("**/api/staff/pos/options?stock=0", async (route) => {
+    if (failed) return route.continue();
+    failed = true;
+    await route.fulfill({
+      status: 403,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Lỗi báo cáo thử nghiệm" }),
+    });
+  });
+  const openReport = async () => {
+    await retryPage
+      .locator('.crm-mobile-nav [data-mobile-nav-group="work"]')
+      .click();
+    await retryPage
+      .locator('.crm-nav-sheet[open] [data-mobile-nav="shift-reports"]')
+      .click();
+  };
+  await openReport();
+  await retryPage
+    .getByText("Lỗi báo cáo thử nghiệm", { exact: true })
+    .waitFor();
+  assert.equal(await retryPage.locator(".pos-modal[open]").count(), 0);
+  await openReport();
+  await retryPage
+    .locator(".pos-modal[open] .pos-shift-list button")
+    .first()
+    .waitFor();
+  await retryPage.locator(".pos-modal[open] .pos-modal-close").click();
+  await retryPage.route("**/api/staff/pos/options?stock=0", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ shifts: [] }),
+    }),
+  );
+  await openReport();
+  await retryPage
+    .getByText("Không có ca phù hợp bộ lọc.", { exact: true })
+    .waitFor();
+  assert.deepEqual(retry.errors, []);
+  results.push({ reportFailureCanRetry: true, emptyShiftsHandled: true });
+  await retry.context.close();
   const cart = await pageFor(f.emp),
     p = cart.page;
   await p.goto(origin + "/#/pos");
