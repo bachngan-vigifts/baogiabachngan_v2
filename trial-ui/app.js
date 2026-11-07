@@ -878,9 +878,10 @@ function route() {
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
   const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? (page === 'contracts' ? 'contracts' : 'orders') : view === 'customer' ? 'customers' : view === 'product' ? 'products' : view === 'member' ? 'staff' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
-  $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : VIEWS[view];
+  const viewTitle = view === 'customers' && new URLSearchParams(query).get('tab') === 'center' ? 'Trung tâm khách hàng' : VIEWS[view];
+  $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : viewTitle;
   pageBack.record();
-  document.title = (view === 'editor' ? $('#breadcrumb').textContent : VIEWS[view]) + ' · Bách Ngân';
+  document.title = (view === 'editor' ? $('#breadcrumb').textContent : viewTitle) + ' · Bách Ngân';
   window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
   if (view === 'editor') openEditor(id);
   thuChiTabs(view);
