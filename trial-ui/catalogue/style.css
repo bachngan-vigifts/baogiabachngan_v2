@@ -48,3 +48,8 @@
 .assistant-more summary{cursor:pointer;font-size:12px;color:var(--muted);margin:4px 0 12px}.assistant-more[open] summary{margin-bottom:14px}.assistant-preview-group+.assistant-preview-group{border-top:1px solid var(--line);padding-top:10px}.assistant-preview-list li label{font-size:12px}
 
 .library-price-conflicts{padding:14px;margin:12px 0;border:1px solid var(--border,#d6dce5);border-radius:12px;background:#fff8e7;color:#684500;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+
+/* Reserve the complete picture area even before a lazy image has a src. */
+#shared-library-root .library-picture{height:174px}
+#shared-library-root .library-picture>.card-image{display:block;height:100%}
+@media(max-width:650px){#shared-library-root .library-picture{height:135px}}
