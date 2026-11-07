@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {setupSalesPayroll} from '../helpers/sales-payroll-fixture.ts';
+import {eq} from 'drizzle-orm';
+import {employees} from '../../src/modules/staff/schema.ts';
 
 /** Tổng quan doanh số › Điểm KPI Sale: đúng số của phiếu lương, đúng quyền, không trả tiền lương. */
 const kpi=(f:any,who:string,q='')=>f.call('/dashboard/kpi?from=2026-10&to=2026-10'+q,who);
@@ -36,6 +38,19 @@ test('KPI chốt tay hiện rõ là điều chỉnh; phiếu đã chốt dùng b
  const done=await f.confirm();assert.equal(done.status,201,JSON.stringify(done.data));
  assert.equal((await f.call('/hr/members/emp/inputs/2026-10',f.mgr,'PUT',{kpiOverride:0.5})).status,409,'phiếu đã chốt không sửa số liệu');
  const [after]=(await kpi(f,f.mgr)).data.members;assert.equal(after.status,'confirmed');assert.equal(after.used,0.95);
+});
+
+test('Manager có KPI cố định vẫn có tổng điểm thực tế bằng các phần, tách biệt KPI tính lương',async()=>{
+ const f=await sale();
+ await f.db.update(employees).set({role:'manager'}).where(eq(employees.id,'emp'));
+ assert.equal((await f.salary({fixedKpi:1})).status,200);
+ const [member]=(await kpi(f,f.mgr)).data.members;
+ assert.equal(member.used,1);assert.equal(member.adjustedBy,'fixed');assert.ok(member.total<1);
+ assert.equal(Number(member.parts.reduce((sum:number,p:any)=>sum+p.points,0).toFixed(12)),Number(member.total.toFixed(12)));
+ const total=member.total;
+ assert.equal((await f.salary({fixedKpi:0})).status,200);
+ const [zero]=(await kpi(f,f.mgr)).data.members;
+ assert.equal(zero.used,0);assert.equal(zero.total,total,'KPI cố định không thay đổi điểm thực tế');
 });
 
 test('biểu đồ tròn: lát theo điểm từng phần; dưới 100% thêm phần "Chưa đạt"; vượt 100% chia theo tổng; UI không dùng innerHTML',async()=>{

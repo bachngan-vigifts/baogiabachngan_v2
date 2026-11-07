@@ -54,7 +54,7 @@ export function initDashboard({ api, root, isManager, money }) {
 
   const wrap = node('div', null, 'revenue-dashboard'); root.append(wrap);
   const head = node('div', null, 'dash-head'), meta = node('p', null, 'dash-meta');
-  head.append(node('h1', 'Tổng quan doanh số'), meta);
+  head.append(node('h1', 'Tổng quan'), meta);
   const form = node('form', null, 'dash-filters'), content = node('div', null, 'dash-content');
   const tip = node('div', null, 'dash-tip'); tip.hidden = true; tip.setAttribute('role', 'tooltip');
   wrap.append(head, form, content, tip);
@@ -202,7 +202,7 @@ export function initDashboard({ api, root, isManager, money }) {
     return `M${pt(R, a0)}A${R},${R} 0 ${large} 1 ${pt(R, a1)}L${pt(r, a1)}A${r},${r} 0 ${large} 0 ${pt(r, a0)}Z`;
   };
   function kpiDonut(m) {
-    const S = 220, c = S / 2, R = 100, r = 66, s = svgRoot(S, S, `Biểu đồ tròn điểm KPI của ${m.name}: tổng ${kpiPercent(m.used)}`);
+    const S = 220, c = S / 2, R = 100, r = 66, s = svgRoot(S, S, `Biểu đồ tròn điểm KPI của ${m.name}: tổng ${kpiPercent(m.total)}`);
     s.classList.add('dash-donut');
     for (const sl of kpiSlices(m)) {
       // Một lát trọn vòng: chia đôi để cung SVG không suy biến.
@@ -212,8 +212,8 @@ export function initDashboard({ api, root, isManager, money }) {
       hover(g, () => [sl.label, [{ color: sl.color, value: kpiPercent(sl.value), label: sl.key === 'missing' ? 'còn thiếu để đạt 100%' : 'điểm KPI' }]], () => g.classList.add('is-on'), () => g.classList.remove('is-on'));
       s.append(g);
     }
-    s.append(svg('text', { x: c, y: c + 2, 'text-anchor': 'middle', class: `dash-donut-value dash-kpi-score ${kpiAttainmentClass(m.used)}` }, kpiPercent(m.used)),
-      svg('text', { x: c, y: c + 24, 'text-anchor': 'middle', class: 'dash-donut-label', style: 'font-weight:400;font-size:12px' }, m.adjustedBy ? (m.adjustedBy === 'fixed' ? 'KPI cố định' : 'KPI chốt') : 'Tổng điểm KPI'));
+    s.append(svg('text', { x: c, y: c + 2, 'text-anchor': 'middle', class: `dash-donut-value dash-kpi-score ${kpiAttainmentClass(m.total)}` }, kpiPercent(m.total)),
+      svg('text', { x: c, y: c + 24, 'text-anchor': 'middle', class: 'dash-donut-label', style: 'font-weight:400;font-size:12px' }, 'Tổng điểm KPI'));
     return s;
   }
   function kpiDetail(m) {
@@ -235,8 +235,8 @@ export function initDashboard({ api, root, isManager, money }) {
     const scroll = node('div', null, 'revenue-table-scroll'); scroll.append(t);
     const notes = node('ul', null, 'dash-kpi-notes');
     const note = text => notes.append(node('li', text));
-    if (m.adjustedBy) note(`Đang dùng ${m.adjustedBy === 'fixed' ? 'KPI cố định trong hồ sơ' : 'KPI chốt trên bảng lương'} ${kpiPercent(m.used)} (kết quả tính ${kpiPercent(m.total)}) – đổi chỉ tiêu không làm đổi mức thưởng khi đang dùng số này.`);
-    note(kpiBonus(m) + '.');
+    if (m.adjustedBy) note(`Điểm thực tế theo chỉ tiêu: ${kpiPercent(m.total)}. Bảng lương áp dụng ${m.adjustedBy === 'fixed' ? 'KPI cố định trong hồ sơ' : 'KPI chốt'} ${kpiPercent(m.used)}; mức này không thay thế điểm thực tế trên Tổng quan.`);
+    note((m.adjustedBy ? 'Theo KPI áp dụng trên bảng lương: ' : '') + kpiBonus(m) + '.');
     note(m.status === 'estimate' ? 'Tạm tính theo số liệu hiện tại; chốt lương sẽ giữ cố định.' : 'Theo phiếu lương đã chốt (số lúc chốt).');
     note(m.source === 'crm' ? 'KH mới: hồ sơ đã duyệt trong kỳ, tính cho người tạo, không cần đơn hàng. Giao dịch và số HĐKT lấy tự động từ CRM.' : 'KH mới, giao dịch, số HĐKT theo số nhập trên bảng lương.');
     if (m.crmPreview != null) note(`KPI tính từ CRM (đối chiếu, chưa áp dụng): ${kpiPercent(m.crmPreview)}.`);
@@ -248,7 +248,7 @@ export function initDashboard({ api, root, isManager, money }) {
     kpiCard.hidden = !x.available;
     kpiMonthSelect.replaceChildren(); for (const mo of data?.months?.map(m => m.month) || [x.month]) { const o = node('option', `T${Number(mo.slice(5))}/${mo.slice(0, 4)}`); o.value = mo; kpiMonthSelect.append(o); }
     kpiMonthSelect.value = x.month; kpiMonthSelect.hidden = kpiMonthSelect.options.length < 2;
-    const sub = kpiCard.querySelector('.dash-sub') || node('p', null, 'dash-sub'); sub.textContent = `Tháng ${Number(x.month.slice(5))}/${x.month.slice(0, 4)} · cùng cách tính với phiếu lương`; kpiCard.firstChild.insertBefore(sub, kpiMonthSelect);
+    const sub = kpiCard.querySelector('.dash-sub') || node('p', null, 'dash-sub'); sub.textContent = `Tháng ${Number(x.month.slice(5))}/${x.month.slice(0, 4)} · điểm thực tế theo các chỉ tiêu KPI`; kpiCard.firstChild.insertBefore(sub, kpiMonthSelect);
     if (!x.members.length) { kpiBody.replaceChildren(node('p', x.scope === 'self' ? 'Chưa có KPI Sale cho tháng này (hồ sơ lương chưa bật KPI hoặc không thuộc bảng Sale).' : 'Không có nhân viên Sale tính KPI trong phạm vi lọc.', 'dash-sub')); return; }
     const m = x.members.find(p => p.id === kpiPick) || x.members[0]; kpiPick = m.id;
     const main = node('div', null, 'dash-kpi-main'), chart = node('div', null, 'dash-kpi-chart'), keys = legend(m.parts.map(p => [KPI_PARTS[p.key], p.label]));
@@ -259,8 +259,8 @@ export function initDashboard({ api, root, isManager, money }) {
       const list = node('ol', null, 'dash-kpi-list'); list.setAttribute('aria-label', 'Chọn nhân viên xem KPI');
       for (const p of x.members) {
         const li = node('li'), b = node('button', null, 'dash-kpi-person'); b.type = 'button'; b.setAttribute('aria-pressed', String(p.id === m.id));
-        const bar = node('span', null, 'dash-kpi-bar'), fill = node('i'); fill.style.width = Math.min(100, p.used * 100) + '%'; fill.className = kpiAttainmentClass(p.used); bar.append(fill);
-        b.append(node('span', p.name, 'dash-kpi-person-name'), bar, node('strong', kpiPercent(p.used), `dash-kpi-score ${kpiAttainmentClass(p.used)}`));
+        const bar = node('span', null, 'dash-kpi-bar'), fill = node('i'); fill.style.width = Math.min(100, p.total * 100) + '%'; fill.className = kpiAttainmentClass(p.total); bar.append(fill);
+        b.append(node('span', p.name, 'dash-kpi-person-name'), bar, node('strong', kpiPercent(p.total), `dash-kpi-score ${kpiAttainmentClass(p.total)}`));
         b.addEventListener('click', () => { kpiPick = p.id; renderKpi(); }); li.append(b); list.append(li);
       }
       out.push(list);
