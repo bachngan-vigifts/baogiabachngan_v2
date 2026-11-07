@@ -43,10 +43,11 @@ export function initProfit({ api, root, toast, esc, money }) {
         <div class="card"><small>Chi phí trực tiếp</small><b class="num">${short(s.direct)}</b><span>in ${short(d.direct.printing)} · hoa hồng ${short(d.direct.commission)} · ship ${short(d.direct.shipping)}</span></div>
         <div class="card"><small>Lợi nhuận gộp</small><b class="num ${s.gross < 0 ? 'neg' : ''}">${short(s.gross)}</b><span>&nbsp;</span></div>
         <div class="card"><small>Biên LN gộp</small><b class="num">${pct(s.margin)}</b><span>trên doanh thu đủ giá vốn</span></div>
-        <div class="card"><small>LN sau chi phí</small><b class="num ${s.net < 0 ? 'neg' : ''}">${short(s.net)}</b><span>+ thu phí khách ${short(s.feeRevenue)} − phí GHN ${short(s.carrierFee)} · biên ${pct(s.netMargin)}</span></div>
+        <div class="card"><small>LN sau chi phí</small><b class="num ${s.net < 0 ? 'neg' : ''}">${short(s.net)}</b><span>+ thu phí khách ${short(s.feeRevenue)} − GHN ${short(s.carrierFee)} − lương + thưởng Sale ${short(s.staffSalary + s.staffBonus)} · biên ${pct(s.netMargin)}</span></div>
         <div class="card"><small>Độ tin cậy giá vốn</small><b class="num">${s.revenue ? pct(s.revenueBy.confirmed / s.revenue) : '—'}</b><span>chính xác · ${s.revenue ? pct(s.revenueBy.estimate / s.revenue) : '—'} ước tính · ${s.revenue ? pct(s.revenueBy.backfill / s.revenue) : '—'} backfill · ${s.revenue ? pct(s.revenueBy.missing / s.revenue) : '—'} thiếu</span></div></div>
       ${s.carrierUnknownOrders ? `<div class="pf-warn" role="status">⚠ ${s.carrierUnknownOrders} đơn POS có vận đơn GHN nhưng chưa có phí GHN – chưa trừ (không coi là 0).</div>` : ''}
       <p class="muted small">Phí quẹt thẻ / cổng thanh toán: ${esc(d.cardFees?.note || '')}</p>
+      ${staffBox(d.staff)}
       ${s.revenueBy.backfill > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.backfill))} doanh thu dùng giá vốn <b>backfill</b> (đơn chưa lưu giá vốn lúc bán – tính lại từ báo giá / giá nhập gần nhất), không coi là chính xác. Chọn "Chỉ giá vốn chính xác" để xem số chắc chắn.</span></div>` : ''}
       ${s.missingOrders ? `<div class="pf-warn" role="status">⚠ ${s.missingOrders} đơn (${esc(money(s.missingRevenue))} doanh thu) có dòng thiếu giá vốn – phần đó không tính vào lợi nhuận, không coi là 0.
         <button type="button" class="btn ghost small" id="pf-missing">${st.missingOnly ? 'Xem tất cả đơn' : 'Xem các đơn cần bổ sung'}</button></div>` : ''}
@@ -65,20 +66,31 @@ export function initProfit({ api, root, toast, esc, money }) {
     root.querySelector('#pf-csv').onclick = exportCsv;
     bindTab();
   }
+  function staffBox(t) {
+    if (!t?.available) return '';
+    const r = t.reconcile;
+    return `<div class="card pf-staff"><h3 class="pf-h">Chi phí nhân sự bán hàng (bảng lương) ${t.payroll.estimateMembers ? pill('warn', 'có phiếu tạm tính') : pill('ok', 'đã chốt')}</h3>
+      ${t.partial ? '<p class="muted small">Kỳ lọc có tháng lẻ: chi phí lương chỉ tính cho tháng trọn trong kỳ' + (t.months.length ? ' (' + t.months.map(esc).join(', ') + ')' : ' – kỳ này chưa có tháng trọn nên chưa trừ') + '.</p>' : ''}
+      ${r.payroll ? `<p class="pf-check ${r.ok ? '' : 'bad'}">${r.ok ? '✔' : '⚠'} Đối soát: phân bổ vào đơn <b>${esc(money(r.allocated))}</b> + chưa phân bổ <b>${esc(money(r.unallocated))}</b> = bảng lương Sale / Sale Admin <b>${esc(money(r.payroll))}</b>${r.ok ? '' : ' – LỆCH, báo kỹ thuật kiểm tra'}</p>` : ''}
+      ${t.unallocated.length ? table(['Tháng', 'Nhân viên', '>Lương + phụ cấp', '>Thưởng', 'Lý do', 'Phiếu lương'], t.unallocated.map(u => [esc(u.month.split('-').reverse().join('/')), esc(u.name), num(u.salary), num(u.bonus), esc(u.reason), u.status === 'estimate' ? pill('warn', 'Tạm tính') : pill('ok', 'Đã chốt')])) : ''}
+      <p class="muted small">Lương + thưởng của Sale / Sale Admin chia vào đơn của chính người đó trong tháng theo doanh thu đủ giá vốn (giữ nguyên tổng, phần lẻ dồn vào đơn lớn). Phiếu chưa chốt là số tạm tính.</p></div>`;
+  }
   function table(heads, rows, attrs = []) {
     return `<div class="table-wrap"><table class="data-table pf-table"><thead><tr>${heads.map(h => `<th${h.startsWith('>') ? ' class="right"' : ''}>${esc(h.replace(/^>/, ''))}</th>`).join('')}</tr></thead>
       <tbody>${rows.map((r, i) => `<tr ${attrs[i] || ''}>${r.map((c, j) => `<td data-label="${esc(heads[j].replace(/^>/, ''))}"${heads[j].startsWith('>') ? ' class="right num"' : ''}>${c}</td>`).join('')}</tr>`).join('')
         || `<tr><td colspan="${heads.length}" class="muted">Không có dữ liệu trong khoảng đã chọn.</td></tr>`}</tbody></table></div>`;
   }
-  const H = ['>Số đơn', '>DT thuần', '>Giá vốn', '>CP trực tiếp', '>LN gộp', 'Biên LN', ''];
-  const rowCells = r => [num(r.orders), num(r.revenue), num(r.cost), num(r.direct), `<b class="${r.gross < 0 ? 'neg' : ''}">${num(r.gross)}</b>`, marginCell(r), `${flag(r)} ${miss(r)}`];
+  const H = ['>Số đơn', '>DT thuần', '>Giá vốn', '>CP trực tiếp', '>LN gộp', '>Lương + thưởng', '>LN sau CP', 'Biên LN', ''];
+  const rowCells = r => [num(r.orders), num(r.revenue), num(r.cost), num(r.direct), `<b class="${r.gross < 0 ? 'neg' : ''}">${num(r.gross)}</b>`,
+    r.staffSalary || r.staffBonus ? `<span title="Lương + phụ cấp ${esc(num(r.staffSalary))} · thưởng ${esc(num(r.staffBonus))}">${num(r.staffSalary + r.staffBonus)}</span>` : '—',
+    `<b class="${r.net < 0 ? 'neg' : ''}">${num(r.net)}</b>`, marginCell(r), `${flag(r)} ${miss(r)}`];
   function tabBody() {
     const d = st.data;
     if (st.tab === 'orders') {
       const list = st.missingOnly ? d.orders.filter(o => o.missingLines) : d.orders;
-      return table(['Ngày', 'Đơn', 'Khách hàng', 'Nhân viên', '>DT thuần', '>Giá vốn', '>CP trực tiếp', '>LN gộp', '>Phí POS / GHN', '>LN sau CP', 'Biên LN', ''],
+      return table(['Ngày', 'Đơn', 'Khách hàng', 'Nhân viên', '>DT thuần', '>Giá vốn', '>CP trực tiếp', '>LN gộp', '>Phí POS / GHN', '>Lương + thưởng', '>LN sau CP', 'Biên LN', ''],
         list.map(o => [esc(o.orderDate.split('-').reverse().join('/')), esc(o.orderNo), esc(o.customerName), esc(o.ownerName), num(o.revenue), num(o.cost), num(o.direct),
-          `<b class="${o.gross < 0 ? 'neg' : ''}">${num(o.gross)}</b>`, o.feeRevenue || o.carrierFee ? `+${num(o.feeRevenue)} / −${num(o.carrierFee)}` : '—', `<b class="${o.net < 0 ? 'neg' : ''}">${num(o.net)}</b>`, marginCell(o), `${flag(o)}${o.missingLines ? ` <span class="pill muted">${o.missingLines} dòng thiếu giá vốn</span>` : ''}`]),
+          `<b class="${o.gross < 0 ? 'neg' : ''}">${num(o.gross)}</b>`, o.feeRevenue || o.carrierFee ? `+${num(o.feeRevenue)} / −${num(o.carrierFee)}` : '—', o.staffCost ? num(o.staffCost) : '—', `<b class="${o.net < 0 ? 'neg' : ''}">${num(o.net)}</b>`, marginCell(o), `${flag(o)}${o.missingLines ? ` <span class="pill muted">${o.missingLines} dòng thiếu giá vốn</span>` : ''}`]),
         list.map(o => `class="pf-click" data-order="${esc(o.id)}" tabindex="0"`)) + (d.ordersTotal > d.orders.length ? `<p class="muted small">Hiện ${d.orders.length}/${d.ordersTotal} đơn mới nhất – lọc theo nhân viên / chi nhánh để xem đủ.</p>` : '');
     }
     if (st.tab === 'products') return table(['Mã', 'Sản phẩm', '>SL', ...H], d.products.map(r => [esc(r.key.startsWith('(không mã)') ? '—' : r.key), esc(r.label), num(r.qty), ...rowCells(r)]));

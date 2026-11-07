@@ -54,6 +54,12 @@ export interface OrderProfit {
   /** Giai đoạn 2: thu phí của khách (POS, chưa VAT), phí GHN trả hãng; LN sau chi phí = gross + feeRevenue − carrierFee. */
   feeRevenue: number; carrierFee: number; net: number;
   /** Có vận đơn GHN nhưng chưa biết phí. */ carrierUnknown: boolean;
+  /** PR-C: lương + phụ cấp / thưởng của người phụ trách (bảng lương tháng), phân bổ theo doanh thu đủ giá vốn. */
+  staffSalary: number; staffBonus: number;
+}
+/** Trừ chi phí nhân sự đã phân bổ vào đơn. */
+export function addStaffCost(o: OrderProfit, salary: number, bonus: number) {
+  o.staffSalary += salary; o.staffBonus += bonus; o.net -= salary + bonus; return o;
 }
 /**
  * Gắn phí cấp đơn (thu phí khách, phí GHN). Như phí ship báo giá: chỉ cộng / trừ khi mọi dòng đủ giá vốn;
@@ -62,14 +68,14 @@ export interface OrderProfit {
 export function applyOrderFees(o: OrderProfit, f: { feeRevenue: number; carrierFee: number; carrierUnknown?: boolean }) {
   const apply = o.missingLines === 0;
   o.feeRevenue = apply ? f.feeRevenue : 0; o.carrierFee = apply ? f.carrierFee : 0; o.carrierUnknown = !!f.carrierUnknown;
-  o.net = o.gross + o.feeRevenue - o.carrierFee;
+  o.net = o.gross + o.feeRevenue - o.carrierFee - o.staffSalary - o.staffBonus;
   return o;
 }
 /**
  * Lợi nhuận một đơn. Phí ship (nếu mình trả) chỉ trừ khi mọi dòng đủ giá vốn – tránh cộng chi phí vào phần doanh thu đã bị loại.
  * `onlyConfirmed`: chỉ tính dòng có giá vốn "chính xác"; dòng ước tính / backfill coi như thiếu giá vốn.
  */
-export function orderProfit(o: Omit<OrderProfit, 'revenue' | 'coveredRevenue' | 'cost' | 'printing' | 'commission' | 'shipping' | 'gross' | 'missingLines' | 'lines' | 'revenueBy' | 'feeRevenue' | 'carrierFee' | 'net' | 'carrierUnknown'> & { shippingCost: number },
+export function orderProfit(o: Omit<OrderProfit, 'revenue' | 'coveredRevenue' | 'cost' | 'printing' | 'commission' | 'shipping' | 'gross' | 'missingLines' | 'lines' | 'revenueBy' | 'feeRevenue' | 'carrierFee' | 'net' | 'carrierUnknown' | 'staffSalary' | 'staffBonus'> & { shippingCost: number },
   lines: readonly LineInput[], purchase: (sku: string) => { cost: number; source: CostSource } | null, onlyConfirmed = false): OrderProfit {
   const out: LineProfit[] = [];
   for (const l of lines) {
@@ -94,7 +100,7 @@ export function orderProfit(o: Omit<OrderProfit, 'revenue' | 'coveredRevenue' | 
   const revenueBy = { confirmed: 0, estimate: 0, backfill: 0, missing: 0 };
   for (const l of out) revenueBy[l.confidence ?? 'missing'] += l.revenue;
   const gross = coveredRevenue - cost - printing - commission - shipping;
-  return { ...head, revenue: sum(out, 'revenue'), coveredRevenue, cost, printing, commission, shipping, gross, missingLines, lines: out, revenueBy, feeRevenue: 0, carrierFee: 0, net: gross, carrierUnknown: false };
+  return { ...head, revenue: sum(out, 'revenue'), coveredRevenue, cost, printing, commission, shipping, gross, missingLines, lines: out, revenueBy, feeRevenue: 0, carrierFee: 0, net: gross, carrierUnknown: false, staffSalary: 0, staffBonus: 0 };
 }
 
 export interface ProfitRow {
@@ -103,16 +109,18 @@ export interface ProfitRow {
   margin: number | null; missingOrders: number; missingRevenue: number;
   /** Doanh thu theo mức tin cậy giá vốn. */ revenueBy: Record<CostConfidence | 'missing', number>;
   feeRevenue: number; carrierFee: number; net: number; netMargin: number | null; carrierUnknownOrders: number;
+  staffSalary: number; staffBonus: number;
 }
 export function emptyRow(key: string, label: string): ProfitRow {
   return { key, label, orders: 0, revenue: 0, coveredRevenue: 0, cost: 0, direct: 0, gross: 0, margin: null, missingOrders: 0, missingRevenue: 0, revenueBy: { confirmed: 0, estimate: 0, backfill: 0, missing: 0 },
-    feeRevenue: 0, carrierFee: 0, net: 0, netMargin: null, carrierUnknownOrders: 0 };
+    feeRevenue: 0, carrierFee: 0, net: 0, netMargin: null, carrierUnknownOrders: 0, staffSalary: 0, staffBonus: 0 };
 }
 export function addOrder(r: ProfitRow, o: OrderProfit) {
   r.orders++; r.revenue += o.revenue; r.coveredRevenue += o.coveredRevenue; r.cost += o.cost; r.direct += o.printing + o.commission + o.shipping; r.gross += o.gross;
   if (o.missingLines) { r.missingOrders++; r.missingRevenue += o.revenue - o.coveredRevenue; }
   for (const k of ['confirmed', 'estimate', 'backfill', 'missing'] as const) r.revenueBy[k] += o.revenueBy[k];
   r.feeRevenue += o.feeRevenue; r.carrierFee += o.carrierFee; r.net += o.net; if (o.carrierUnknown) r.carrierUnknownOrders++;
+  r.staffSalary += o.staffSalary; r.staffBonus += o.staffBonus;
   r.margin = r.coveredRevenue > 0 ? r.gross / r.coveredRevenue : null;
   r.netMargin = r.coveredRevenue + r.feeRevenue > 0 ? r.net / (r.coveredRevenue + r.feeRevenue) : null;
   return r;

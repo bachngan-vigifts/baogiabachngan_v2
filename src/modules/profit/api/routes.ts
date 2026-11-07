@@ -22,8 +22,10 @@ import { adjustLineCost } from '../../sales/api/line-costs.ts';
 import { salesLineCostHistory } from '../../sales/line-cost-schema.ts';
 import { LINE_COST_CONFIDENCE_LABEL } from '../../sales/domain/line-cost.ts';
 import { posFeeFacts } from '../domain/pos-fees.ts';
+import { allocate, fullMonths, isMonthEnd } from '../domain/allocation.ts';
+import type { StaffCostOf } from '../../../core/contracts/staff-cost.ts';
 import {
-  COST_SOURCE_LABEL, GRAINS, applyOrderFees, emptyRow, bucketLabel, bucketOf, groupBy, groupByProduct, orderProfit, purchaseCostAt, type Grain, type LineInput, type OrderProfit,
+  COST_SOURCE_LABEL, GRAINS, addStaffCost, applyOrderFees, emptyRow, bucketLabel, bucketOf, groupBy, groupByProduct, orderProfit, purchaseCostAt, type Grain, type LineInput, type OrderProfit,
 } from '../domain/profit.ts';
 
 type Ctx = Parameters<Parameters<Router<StaffEnv>['get']>[1]>[0];
@@ -119,7 +121,33 @@ async function names(db: AnyDb, orders: readonly OrderProfit[]) {
   return { owner: (id: string) => owner.get(id) ?? id, branch: (id: string) => id === CRM_BRANCH ? 'Văn phòng / CRM' : id === 'pos' ? 'Quầy POS (không rõ quầy)' : reg.get(id) ?? id };
 }
 
-export function registerProfitRoutes(router: Router<StaffEnv>) {
+/** Chức vụ được tính "chi phí bán hàng" (lương + thưởng Sale) vào đơn mình phụ trách. */
+const SELLING_POSITIONS = ['sale', 'sale-admin'];
+type StaffUnallocated = { month: string; memberId: string; name: string; salary: number; bonus: number; status: string; reason: string };
+/**
+ * Chi phí nhân sự bán hàng (PR-C): mỗi tháng TRỌN trong kỳ lọc, lương + phụ cấp và thưởng của Sale / Sale Admin (bảng lương)
+ * phân bổ vào đơn của chính người đó trong tháng theo doanh thu ĐỦ GIÁ VỐN (giữ nguyên tổng, làm tròn dồn phần lẻ).
+ * Không có đơn đủ giá vốn → "chưa phân bổ". Phân bổ trên MỌI đơn rồi mới lọc, để tổng không đổi theo bộ lọc.
+ */
+async function applyStaffCosts(db: AnyDb, orders: OrderProfit[], from: string, to: string, staffCostOf?: StaffCostOf) {
+  const months = fullMonths(from, to), unallocated: StaffUnallocated[] = [];
+  const payroll = { salary: 0, bonus: 0, estimateMembers: 0, confirmedMembers: 0 };
+  if (!staffCostOf) return { available: false, months, payroll, unallocated };
+  for (const month of months) {
+    const costs = (await staffCostOf(db, month)).filter(c => SELLING_POSITIONS.includes(c.positionId ?? ''));
+    for (const c of costs) {
+      payroll.salary += c.salary; payroll.bonus += c.bonus;
+      if (c.status === 'estimate') payroll.estimateMembers++; else payroll.confirmedMembers++;
+      const mine = orders.filter(o => o.ownerId === c.memberId && o.orderDate.slice(0, 7) === month && o.coveredRevenue > 0);
+      const weights = mine.map(o => o.coveredRevenue), sal = allocate(c.salary, weights), bon = allocate(c.bonus, weights);
+      if (!sal || !bon) { unallocated.push({ month, memberId: c.memberId, name: c.name, salary: c.salary, bonus: c.bonus, status: c.status, reason: 'Không có đơn đủ giá vốn trong tháng' }); continue; }
+      mine.forEach((o, i) => addStaffCost(o, sal[i]!, bon[i]!));
+    }
+  }
+  return { available: true, months, payroll, unallocated };
+}
+
+export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCostOf?: StaffCostOf } = {}) {
   router.get('/profit', async c => {
     requireManager(c);
     const q = c.url.searchParams, from = q.get('from'), to = q.get('to'), grain = (q.get('grain') || 'month') as Grain;
@@ -128,6 +156,7 @@ export function registerProfitRoutes(router: Router<StaffEnv>) {
     if (!GRAINS.includes(grain)) throw new AppError(400, 'Kỳ không hợp lệ (ngày / tuần / tháng / năm).');
     const costs = q.get('costs') === 'confirmed' ? 'confirmed' : 'all';
     const all = await profitOrders(c.env.db, from, to, undefined, costs === 'confirmed'), n = await names(c.env.db, all);
+    const staff = await applyStaffCosts(c.env.db, all, from, to, deps.staffCostOf);
     const branch = q.get('branch') || '', owner = q.get('owner') || '', customer = q.get('customer') || '';
     const orders = all.filter(o => (!branch || o.branchId === branch) && (!owner || o.ownerId === owner) && (!customer || o.customerId === customer));
     const [summary] = groupBy(orders, () => 'all', () => 'Tổng');
@@ -138,6 +167,14 @@ export function registerProfitRoutes(router: Router<StaffEnv>) {
       summary: summary ?? emptyRow('all', 'Tổng'),
       direct: { printing: orders.reduce((s, o) => s + o.printing, 0), commission: orders.reduce((s, o) => s + o.commission, 0), shipping: orders.reduce((s, o) => s + o.shipping, 0) },
       cardFees: { available: false, note: 'CRM chưa ghi nhận thanh toán thẻ / phí cổng thanh toán – chưa tính.' },
+      staff: (() => {
+        const unalloc = staff.unallocated.filter(u => !owner || u.memberId === owner), allocated = all.reduce((n, o) => n + o.staffSalary + o.staffBonus, 0);
+        const unTotal = staff.unallocated.reduce((n, u) => n + u.salary + u.bonus, 0);
+        return { available: staff.available, months: staff.months, /** Kỳ lọc có phần tháng lẻ: chi phí nhân sự tháng đó chưa tính. */ partial: from.slice(8) !== '01' || !isMonthEnd(to),
+          payroll: staff.payroll, unallocated: unalloc, unallocatedTotal: unalloc.reduce((n, u) => n + u.salary + u.bonus, 0),
+          // Đối soát toàn công ty (không theo bộ lọc): phân bổ + chưa phân bổ = bảng lương.
+          reconcile: { payroll: staff.payroll.salary + staff.payroll.bonus, allocated, unallocated: unTotal, ok: allocated + unTotal === staff.payroll.salary + staff.payroll.bonus } };
+      })(),
       series: groupBy(orders, o => bucketOf(o.orderDate, grain), k => bucketLabel(k, grain), 'key'),
       branches: groupBy(orders, o => o.branchId, n.branch),
       owners: groupBy(orders, o => o.ownerId, n.owner),
@@ -146,7 +183,7 @@ export function registerProfitRoutes(router: Router<StaffEnv>) {
       orders: [...orders].sort((a, b) => b.orderDate.localeCompare(a.orderDate) || b.revenue - a.revenue).slice(0, 500)
         .map(o => ({ id: o.id, orderNo: o.orderNo, orderDate: o.orderDate, customerName: o.customerName, ownerName: n.owner(o.ownerId), branch: n.branch(o.branchId),
           revenue: o.revenue, cost: o.cost, direct: o.printing + o.commission + o.shipping, gross: o.gross, margin: o.coveredRevenue > 0 ? o.gross / o.coveredRevenue : null, missingLines: o.missingLines,
-          feeRevenue: o.feeRevenue, carrierFee: o.carrierFee, net: o.net, carrierUnknown: o.carrierUnknown })),
+          feeRevenue: o.feeRevenue, carrierFee: o.carrierFee, staffCost: o.staffSalary + o.staffBonus, net: o.net, carrierUnknown: o.carrierUnknown })),
       ordersTotal: orders.length,
       filterOptions: { branches: groupBy(all, o => o.branchId, n.branch).map(r => ({ id: r.key, name: r.label })), owners: groupBy(all, o => o.ownerId, n.owner).map(r => ({ id: r.key, name: r.label })) },
     });
