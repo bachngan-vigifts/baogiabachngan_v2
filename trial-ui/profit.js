@@ -11,7 +11,7 @@ const short = v => { const a = Math.abs(v), s = v < 0 ? '−' : '';
 const csvCell = v => /[",\n;]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
 
 const CONF_TONE = { confirmed: 'ok', estimate: 'warn', backfill: 'muted' };
-const REASON = { create: 'Tạo đơn', amend: 'Sửa đơn', confirm: 'Duyệt đơn', pos: 'Bán POS', pos_edit: 'Sửa đơn POS', adjust: 'Manager điều chỉnh' };
+const REASON = { create: 'Tạo đơn', amend: 'Sửa đơn', confirm: 'Duyệt đơn', pos: 'Bán POS', pos_edit: 'Sửa đơn POS', adjust: 'Manager điều chỉnh', recover: 'Hệ thống khôi phục giá tham chiếu' };
 export function initProfit({ api, root, toast, esc, money }) {
   const pill = (tone, text) => `<span class="pill ${tone}">${esc(text)}</span>`;
   const when = v => new Date(v).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' });
@@ -49,7 +49,8 @@ export function initProfit({ api, root, toast, esc, money }) {
       <p class="muted small">Phí quẹt thẻ / cổng thanh toán: ${esc(d.cardFees?.note || '')}</p>
       ${staffBox(d.staff)}
       ${companyBox(d)}
-      ${s.revenueBy.backfill > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.backfill))} doanh thu dùng giá vốn <b>backfill</b> (đơn chưa lưu giá vốn lúc bán – tính lại từ báo giá / giá nhập gần nhất), không coi là chính xác. Chọn "Chỉ giá vốn chính xác" để xem số chắc chắn.</span></div>` : ''}
+      ${s.revenueBy.estimate > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.estimate))} doanh thu dùng <b>giá mua tham chiếu</b> (giá mua gần nhất, đơn NCC đã duyệt hoặc công thức thương hiệu). Đây chưa phải giá vốn xuất kho đã đối soát. Mở từng đơn để xem nguồn và cách tính.</span></div>` : ''}
+      ${s.revenueBy.backfill > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.backfill))} doanh thu dùng giá bổ sung, có thể gồm giá mua ghi nhận sau ngày bán; chưa đủ căn cứ coi là chính xác. Mở từng đơn để xem nguồn giá. Chọn "Chỉ giá vốn chính xác" để lọc các dòng đã xác nhận.</span></div>` : ''}
       ${s.missingOrders ? `<div class="pf-warn" role="status">⚠ ${s.missingOrders} đơn (${esc(money(s.missingRevenue))} doanh thu) có dòng thiếu giá vốn – phần đó không tính vào lợi nhuận, không coi là 0.
         <button type="button" class="btn ghost small" id="pf-missing">${st.missingOnly ? 'Xem tất cả đơn' : 'Xem các đơn cần bổ sung'}</button></div>` : ''}
       <div class="pf-two"><div class="card"><h3 class="pf-h">Lợi nhuận gộp theo ${GRAIN_LABEL[st.grain].toLowerCase()}</h3>${chart(d.series)}</div>
@@ -149,7 +150,7 @@ export function initProfit({ api, root, toast, esc, money }) {
       <div class="modal-body"><p class="small">${esc(o.orderDate.split('-').reverse().join('/'))} · ${esc(o.customerName)} · ${esc(o.ownerName)} · ${esc(o.branch)}</p>
       ${table(['Sản phẩm', '>SL', '>DT thuần', '>Giá vốn / đv', 'Nguồn · tin cậy', '>In', '>Hoa hồng', '>LN gộp', ''], o.lines.map(l => [`${esc(l.name)}<br><small class="muted">${esc(l.sku || '—')}</small>`,
         num(l.qty), num(l.revenue), l.unitCost === null ? '—' : num(l.unitCost),
-        l.costSource === 'missing' ? `<span class="pill danger">${esc(l.costSourceLabel)}</span>` : `<small>${esc(l.costSourceLabel)}</small><br>${pill(CONF_TONE[l.confidence], l.confidenceLabel)}${l.snapshot?.costAt ? `<br><small class="muted">giá lúc ${esc(when(l.snapshot.costAt))}</small>` : ''}`,
+        l.costSource === 'missing' ? `<span class="pill danger">${esc(l.costSourceLabel)}</span>` : `<small>${esc(l.costSourceLabel)}</small><br>${pill(CONF_TONE[l.confidence], l.confidenceLabel)}${l.snapshot?.costAt ? `<br><small class="muted">giá lúc ${esc(when(l.snapshot.costAt))}</small>` : ''}${l.snapshot?.note ? `<br><small class="muted">${esc(l.snapshot.note)}</small>` : ''}`,
         num(l.printing), num(l.commission), l.gross === null ? '—' : `<b class="${l.gross < 0 ? 'neg' : ''}">${num(l.gross)}</b>`,
         `<button type="button" class="btn ghost small" data-adjust="${esc(l.id)}">Điều chỉnh</button>`]))}
       <div class="pf-adjust" hidden><h3 class="pf-h">Điều chỉnh giá vốn: <span data-adj-name></span></h3>

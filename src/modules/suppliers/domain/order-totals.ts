@@ -43,6 +43,13 @@ export function computeOrderTotals(input: OrderTotalsInput): OrderTotals {
   return { rows, subtotal, vat, total, depositRate, depositAmount, depositPaidAmount, remainingAmount: Math.max(0, total - depositPaidAmount) };
 }
 
+/** Giá mua một đơn vị trước VAT, cùng công thức với tiền phải trả NCC. Không biến giá thiếu thành 0. */
+export function purchaseUnitCost(row: Omit<TotalsRow, 'quantity'>): number | null {
+  if (row.price === null || !Number.isFinite(row.price) || row.price < 0) return null;
+  const t = computeOrderTotals({rows:[{...row,quantity:1}],depositRate:null,paidAmount:null}).rows[0]!;
+  return t.priceAfterDiscount + t.printFee;
+}
+
 /** Nhân viên thường xem đơn NCC nhưng BỊ ẨN giá/tiền (bản cũ: `priceHidden`). */
 export function hidePrices(t: OrderTotals): OrderTotals & { priceHidden: true } {
   return {

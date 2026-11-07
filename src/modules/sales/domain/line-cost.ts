@@ -6,17 +6,19 @@
  *               · backfill = đơn cũ chưa có snapshot hoặc giá nhập sau ngày bán – không coi là chính xác.
  */
 import type { QuoteRow } from '../../quotes/domain/quote-math.ts';
-import { quoteStockSku } from '../../quotes/domain/quote-math.ts';
+import { costModeOf, quoteStockSku } from '../../quotes/domain/quote-math.ts';
 
-export const LINE_COST_SOURCES = ['quote', 'purchase', 'purchase_later', 'manual'] as const;
+export const LINE_COST_SOURCES = ['quote', 'purchase', 'purchase_later', 'manual', 'purchase_order', 'catalog_rule'] as const;
 export type LineCostSource = typeof LINE_COST_SOURCES[number];
 export const LINE_COST_CONFIDENCES = ['confirmed', 'estimate', 'backfill'] as const;
 export type LineCostConfidence = typeof LINE_COST_CONFIDENCES[number];
-export const LINE_COST_REASONS = ['create', 'amend', 'confirm', 'pos', 'pos_edit', 'adjust'] as const;
+export const LINE_COST_REASONS = ['create', 'amend', 'confirm', 'pos', 'pos_edit', 'adjust', 'recover'] as const;
 export type LineCostReason = typeof LINE_COST_REASONS[number];
 export const LINE_COST_SOURCE_LABEL: Record<LineCostSource | 'missing', string> = {
   quote: 'Giá vốn trên báo giá', purchase: 'Giá nhập gần nhất trước ngày bán', purchase_later: 'Giá nhập sau ngày bán (chưa có giá trước đó)',
   manual: 'Manager điều chỉnh', missing: 'Thiếu giá vốn',
+  purchase_order: 'Giá mua trên đơn NCC đã duyệt (sau CK, trước VAT)',
+  catalog_rule: 'Công thức mua NCC theo thương hiệu (giá tham chiếu)',
 };
 export const LINE_COST_CONFIDENCE_LABEL: Record<LineCostConfidence, string> = { confirmed: 'Chính xác', estimate: 'Ước tính', backfill: 'Backfill' };
 
@@ -25,12 +27,14 @@ export interface LineCost { unitCost: number; source: LineCostSource; confidence
 /** Giá nhập theo mã: gần nhất trước / trong ngày bán; không có thì sớm nhất sau ngày bán. */
 export function purchaseCostAt(history: readonly { at: string; price: number }[] | undefined, day: string): LineCost | null {
   if (!history?.length) return null;
-  const end = day + '￿';
+  const end = Date.parse(day + 'T23:59:59.999+07:00');
+  if (!Number.isFinite(end)) return null;
   let before: { at: string; price: number } | null = null, after: { at: string; price: number } | null = null;
   for (const h of history) {
-    if (!Number.isFinite(h.price) || h.price < 0) continue;
-    if (h.at <= end) { if (!before || h.at > before.at) before = h; }
-    else if (!after || h.at < after.at) after = h;
+    const at = Date.parse(h.at);
+    if (!Number.isFinite(h.price) || h.price < 0 || !Number.isFinite(at)) continue;
+    if (at <= end) { if (!before || at > Date.parse(before.at)) before = h; }
+    else if (!after || at < Date.parse(after.at)) after = h;
   }
   return before ? { unitCost: before.price, source: 'purchase', confidence: 'estimate', costAt: before.at }
     : after ? { unitCost: after.price, source: 'purchase_later', confidence: 'backfill', costAt: after.at } : null;
@@ -46,6 +50,8 @@ export function quoteLineCost(row: QuoteRow | null, quoteUpdatedAt: string | nul
   if (!row || row.costPrice === undefined || row.costPrice === null) return null;
   const v = Number(row.costPrice);
   if (!Number.isFinite(v) || v < 0) return null;
+  // A discounted quote with no list price often persisted 0. It is not evidence of free stock.
+  if (v === 0 && costModeOf(row) !== 'manual' && row.purchaseDiscount !== 100) return null;
   return { unitCost: v, source: 'quote', confidence: (row as { costMode?: string }).costMode === 'manual' ? 'confirmed' : 'estimate', costAt: quoteUpdatedAt };
 }
 /** Báo giá trước, rồi giá nhập. */
