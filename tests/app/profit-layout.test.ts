@@ -5,7 +5,7 @@ import { profitLayoutFixture } from '../helpers/profit-layout-fixture.ts';
 test('bố cục theo mẫu giai đoạn 2: cảnh báo → 5 KPI → đối soát → DT→LN sau CP + phiếu chi → tab (Nhân viên) → quy tắc; mặc định chỉ giá vốn chính xác', async () => {
   const { initProfit } = await import(new URL('../../trial-ui/profit.js', import.meta.url).href);
   const response=profitLayoutFixture(),before=structuredClone(response),requests:string[]=[];
-  const root={innerHTML:'',querySelector:()=>({addEventListener(){}}),querySelectorAll:()=>[]};
+  const root={innerHTML:'',setAttribute(){},removeAttribute(){},querySelector:()=>({addEventListener(){}}),querySelectorAll:()=>[]};
   const ui=initProfit({root,api:async(path:string)=>{requests.push(path);return response;},toast(){},esc:(v:unknown)=>String(v??''),money:(n:number)=>String(n)});
   await ui.show();
   assert.equal(requests.length,1);assert.match(requests[0]!,/^\/profit\?/);assert.match(requests[0]!,/costs=confirmed/,'mặc định chỉ giá vốn chính xác');
