@@ -10,15 +10,15 @@ concurrency:
   cancel-in-progress: true
 jobs:
   test-shards:
-    name: test shard ${{ matrix.shard }}/2
+    name: test shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
-    # The unsharded PGlite suite hit 35m after 1,050 tests on a hosted runner.
-    # Both disjoint file shards use the same full globs/concurrency as npm test; no tests are skipped.
+    # The two-shard PGlite suite hit the 35m job limit near its final schema tests.
+    # Four disjoint file shards keep the same full globs/concurrency as npm test; no tests are skipped.
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,14 +30,14 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       # Node test options must precede the file globs; npm test -- ... appends them too late.
-      - run: node --import tsx --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/2 "tests/**/*.test.ts" "src/**/*.test.ts"
-  # Preserve the existing required check name; failure/cancellation in either shard fails the gate.
+      - run: node --import tsx --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/4 "tests/**/*.test.ts" "src/**/*.test.ts"
+  # Preserve the existing required check name; failure/cancellation in any shard fails the gate.
   test:
     if: ${{ always() }}
     needs: test-shards
     runs-on: ubuntu-latest
     steps:
-      - name: Require both test shards
+      - name: Require all four test shards
         env:
           RESULT: ${{ needs.test-shards.result }}
         run: test "$RESULT" = success
