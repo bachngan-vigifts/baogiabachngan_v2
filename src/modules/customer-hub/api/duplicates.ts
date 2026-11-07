@@ -1,3 +1,4 @@
+import {customerMergeHooks} from '../../../core/contracts/customer-merge.ts';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -149,6 +150,7 @@ export async function mergeCustomers(db: Db, keepId: string, dropIds: string[], 
 
     // Retain every source identity when multiple source rows resolve to the surviving customer.
     await tx.update(appsheetCustomerLinks).set({ customerId: keepId }).where(inArray(appsheetCustomerLinks.customerId, ids));
+    await customerMergeHooks.reassign?.(tx,keepId,ids);
     await tx.delete(customers).where(inArray(customers.id, ids));
   });
   return ids.length;
