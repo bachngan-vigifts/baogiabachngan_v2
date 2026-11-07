@@ -43,8 +43,11 @@ export function initProfit({ api, root, toast, esc, money }) {
         <div class="card"><small>Chi phí trực tiếp</small><b class="num">${short(s.direct)}</b><span>in ${short(d.direct.printing)} · hoa hồng ${short(d.direct.commission)} · ship ${short(d.direct.shipping)}</span></div>
         <div class="card"><small>Lợi nhuận gộp</small><b class="num ${s.gross < 0 ? 'neg' : ''}">${short(s.gross)}</b><span>&nbsp;</span></div>
         <div class="card"><small>Biên LN gộp</small><b class="num">${pct(s.margin)}</b><span>trên doanh thu đủ giá vốn</span></div>
+        <div class="card"><small>LN sau chi phí</small><b class="num ${s.net < 0 ? 'neg' : ''}">${short(s.net)}</b><span>+ thu phí khách ${short(s.feeRevenue)} − phí GHN ${short(s.carrierFee)} · biên ${pct(s.netMargin)}</span></div>
         <div class="card"><small>Độ tin cậy giá vốn</small><b class="num">${s.revenue ? pct(s.revenueBy.confirmed / s.revenue) : '—'}</b><span>chính xác · ${s.revenue ? pct(s.revenueBy.estimate / s.revenue) : '—'} ước tính · ${s.revenue ? pct(s.revenueBy.backfill / s.revenue) : '—'} backfill · ${s.revenue ? pct(s.revenueBy.missing / s.revenue) : '—'} thiếu</span></div></div>
-      ${s.revenueBy.backfill > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status">ℹ ${esc(money(s.revenueBy.backfill))} doanh thu dùng giá vốn <b>backfill</b> (đơn chưa lưu giá vốn lúc bán – tính lại từ báo giá / giá nhập gần nhất), không coi là chính xác. Chọn "Chỉ giá vốn chính xác" để xem số chắc chắn.</div>` : ''}
+      ${s.carrierUnknownOrders ? `<div class="pf-warn" role="status">⚠ ${s.carrierUnknownOrders} đơn POS có vận đơn GHN nhưng chưa có phí GHN – chưa trừ (không coi là 0).</div>` : ''}
+      <p class="muted small">Phí quẹt thẻ / cổng thanh toán: ${esc(d.cardFees?.note || '')}</p>
+      ${s.revenueBy.backfill > 0 && st.costs === 'all' ? `<div class="pf-warn" role="status"><span>ℹ ${esc(money(s.revenueBy.backfill))} doanh thu dùng giá vốn <b>backfill</b> (đơn chưa lưu giá vốn lúc bán – tính lại từ báo giá / giá nhập gần nhất), không coi là chính xác. Chọn "Chỉ giá vốn chính xác" để xem số chắc chắn.</span></div>` : ''}
       ${s.missingOrders ? `<div class="pf-warn" role="status">⚠ ${s.missingOrders} đơn (${esc(money(s.missingRevenue))} doanh thu) có dòng thiếu giá vốn – phần đó không tính vào lợi nhuận, không coi là 0.
         <button type="button" class="btn ghost small" id="pf-missing">${st.missingOnly ? 'Xem tất cả đơn' : 'Xem các đơn cần bổ sung'}</button></div>` : ''}
       <div class="pf-two"><div class="card"><h3 class="pf-h">Lợi nhuận gộp theo ${GRAIN_LABEL[st.grain].toLowerCase()}</h3>${chart(d.series)}</div>
@@ -73,9 +76,9 @@ export function initProfit({ api, root, toast, esc, money }) {
     const d = st.data;
     if (st.tab === 'orders') {
       const list = st.missingOnly ? d.orders.filter(o => o.missingLines) : d.orders;
-      return table(['Ngày', 'Đơn', 'Khách hàng', 'Nhân viên', '>DT thuần', '>Giá vốn', '>CP trực tiếp', '>LN gộp', 'Biên LN', ''],
+      return table(['Ngày', 'Đơn', 'Khách hàng', 'Nhân viên', '>DT thuần', '>Giá vốn', '>CP trực tiếp', '>LN gộp', '>Phí POS / GHN', '>LN sau CP', 'Biên LN', ''],
         list.map(o => [esc(o.orderDate.split('-').reverse().join('/')), esc(o.orderNo), esc(o.customerName), esc(o.ownerName), num(o.revenue), num(o.cost), num(o.direct),
-          `<b class="${o.gross < 0 ? 'neg' : ''}">${num(o.gross)}</b>`, marginCell(o), `${flag(o)}${o.missingLines ? ` <span class="pill muted">${o.missingLines} dòng thiếu giá vốn</span>` : ''}`]),
+          `<b class="${o.gross < 0 ? 'neg' : ''}">${num(o.gross)}</b>`, o.feeRevenue || o.carrierFee ? `+${num(o.feeRevenue)} / −${num(o.carrierFee)}` : '—', `<b class="${o.net < 0 ? 'neg' : ''}">${num(o.net)}</b>`, marginCell(o), `${flag(o)}${o.missingLines ? ` <span class="pill muted">${o.missingLines} dòng thiếu giá vốn</span>` : ''}`]),
         list.map(o => `class="pf-click" data-order="${esc(o.id)}" tabindex="0"`)) + (d.ordersTotal > d.orders.length ? `<p class="muted small">Hiện ${d.orders.length}/${d.ordersTotal} đơn mới nhất – lọc theo nhân viên / chi nhánh để xem đủ.</p>` : '');
     }
     if (st.tab === 'products') return table(['Mã', 'Sản phẩm', '>SL', ...H], d.products.map(r => [esc(r.key.startsWith('(không mã)') ? '—' : r.key), esc(r.label), num(r.qty), ...rowCells(r)]));

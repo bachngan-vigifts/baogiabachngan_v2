@@ -46,12 +46,26 @@ Chưa có giá vốn xuất kho thực tế (sổ kho không ghi giá trị). Kh
 
 Báo cáo: thẻ "Độ tin cậy giá vốn" (doanh thu theo chính xác / ước tính / backfill / thiếu – tổng khớp doanh thu thuần), bộ lọc **Chỉ giá vốn chính xác** (dòng khác coi như thiếu giá vốn).
 
+## Phí đơn POS (giai đoạn 2 – PR-B)
+
+**LN sau chi phí = LN gộp + thu phí của khách (POS) − phí GHN trả hãng.** LN gộp giữ nguyên định nghĩa giai đoạn 1.
+
+| Khoản | Nguồn chuẩn | Ghi nhận | Chống tính hai lần |
+| --- | --- | --- | --- |
+| Thu phí dịch vụ / ship của khách (POS) | `sales_orders.pos_snapshot.fees`, quy **chưa VAT** | Ngày đơn | Trừ phần hoàn khi trả hàng (`pos_returns.approved_service_fee + approved_shipping_fee`, gồm VAT → quy theo tỉ lệ chưa VAT của bill), chỉ phiếu có hiệu lực công nợ |
+| Phí GHN trả hãng (POS) | `pos_snapshot.ghn.fee` (số GHN báo lúc tạo vận đơn) | Ngày đơn | Đơn CRM trừ ship qua lịch giao (`deliveries.shipping_fee`, chỉ khi báo giá ghi bên bán trả); đơn POS không có báo giá nên phần đó luôn 0. Phiếu chi sổ quỹ trả GHN sẽ KHÔNG tính là chi phí ở bước chi nhánh |
+| Phí quẹt thẻ / cổng thanh toán | — | — | CRM chưa ghi nhận thanh toán thẻ → **chưa tính**, ghi rõ trên báo cáo |
+
+- [Giả định] Phí GHN tính nguyên số GHN báo (coi như đã gồm VAT, chưa khấu trừ thuế đầu vào).
+- Như phí ship báo giá: phần phí cấp đơn chỉ cộng / trừ khi mọi dòng của đơn đủ giá vốn.
+- Có vận đơn GHN nhưng chưa có phí → cảnh báo "chưa có phí GHN", không coi là 0.
+
 ## Xem theo
 
 Ngày / tuần / tháng / năm (biểu đồ LN gộp + bảng), chi nhánh (Văn phòng / CRM, từng quầy POS), nhân viên (người phụ trách đơn), khách hàng, đơn hàng (bấm xem từng dòng: giá bán, giá vốn + nguồn, in, hoa hồng), sản phẩm. Lọc chi nhánh / nhân viên; xuất CSV mở bằng Excel. Cờ **Lỗ** (LN < 0) và **Biên thấp** (< 15%).
 
 ## Chưa có (giai đoạn sau)
 
-Lợi nhuận sau chi phí (thưởng Sale từ bảng lương, chi phí cửa hàng từ sổ quỹ) – PR-C / PR-D; phí GHN, phí quẹt thẻ đơn POS – PR-B; đơn web chưa đổi thành đơn CRM; giá vốn bình quân / giá xuất kho thực tế.
+Lợi nhuận sau chi phí (thưởng Sale từ bảng lương, chi phí cửa hàng từ sổ quỹ) – PR-C / PR-D; phí quẹt thẻ (chưa có dữ liệu); đơn web chưa đổi thành đơn CRM; giá vốn bình quân / giá xuất kho thực tế.
 
 API: `GET /profit?from&to&grain&branch&owner&customer`, `GET /profit/orders/:id`.

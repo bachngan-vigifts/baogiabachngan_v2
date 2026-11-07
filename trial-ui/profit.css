@@ -4,7 +4,7 @@
 .pf-filters .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .pf-filters .seg button { border: 0; background: transparent; padding: 8px 14px; font: inherit; color: var(--muted); cursor: pointer; min-height: 40px; }
 .pf-filters .seg button.on { background: #102a56; color: #fff; }
-.pf-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.pf-kpis { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
 .pf-kpis .card { display: grid; gap: 2px; padding: 12px 14px; }
 .pf-kpis small, .pf-kpis span { color: var(--muted); font-size: 12px; }
 .pf-kpis b { font-size: 19px; }

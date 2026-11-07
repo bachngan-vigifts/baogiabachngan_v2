@@ -51,12 +51,25 @@ export interface OrderProfit {
   missingLines: number; lines: LineProfit[];
   /** Doanh thu theo mức tin cậy giá vốn (đối soát: tổng = revenue). */
   revenueBy: Record<CostConfidence | 'missing', number>;
+  /** Giai đoạn 2: thu phí của khách (POS, chưa VAT), phí GHN trả hãng; LN sau chi phí = gross + feeRevenue − carrierFee. */
+  feeRevenue: number; carrierFee: number; net: number;
+  /** Có vận đơn GHN nhưng chưa biết phí. */ carrierUnknown: boolean;
+}
+/**
+ * Gắn phí cấp đơn (thu phí khách, phí GHN). Như phí ship báo giá: chỉ cộng / trừ khi mọi dòng đủ giá vốn;
+ * đơn còn dòng thiếu giá vốn thì phần này nằm ở `pendingFees` để không lệch biên LN.
+ */
+export function applyOrderFees(o: OrderProfit, f: { feeRevenue: number; carrierFee: number; carrierUnknown?: boolean }) {
+  const apply = o.missingLines === 0;
+  o.feeRevenue = apply ? f.feeRevenue : 0; o.carrierFee = apply ? f.carrierFee : 0; o.carrierUnknown = !!f.carrierUnknown;
+  o.net = o.gross + o.feeRevenue - o.carrierFee;
+  return o;
 }
 /**
  * Lợi nhuận một đơn. Phí ship (nếu mình trả) chỉ trừ khi mọi dòng đủ giá vốn – tránh cộng chi phí vào phần doanh thu đã bị loại.
  * `onlyConfirmed`: chỉ tính dòng có giá vốn "chính xác"; dòng ước tính / backfill coi như thiếu giá vốn.
  */
-export function orderProfit(o: Omit<OrderProfit, 'revenue' | 'coveredRevenue' | 'cost' | 'printing' | 'commission' | 'shipping' | 'gross' | 'missingLines' | 'lines' | 'revenueBy'> & { shippingCost: number },
+export function orderProfit(o: Omit<OrderProfit, 'revenue' | 'coveredRevenue' | 'cost' | 'printing' | 'commission' | 'shipping' | 'gross' | 'missingLines' | 'lines' | 'revenueBy' | 'feeRevenue' | 'carrierFee' | 'net' | 'carrierUnknown'> & { shippingCost: number },
   lines: readonly LineInput[], purchase: (sku: string) => { cost: number; source: CostSource } | null, onlyConfirmed = false): OrderProfit {
   const out: LineProfit[] = [];
   for (const l of lines) {
@@ -80,7 +93,8 @@ export function orderProfit(o: Omit<OrderProfit, 'revenue' | 'coveredRevenue' | 
   const { shippingCost: _s, ...head } = o;
   const revenueBy = { confirmed: 0, estimate: 0, backfill: 0, missing: 0 };
   for (const l of out) revenueBy[l.confidence ?? 'missing'] += l.revenue;
-  return { ...head, revenue: sum(out, 'revenue'), coveredRevenue, cost, printing, commission, shipping, gross: coveredRevenue - cost - printing - commission - shipping, missingLines, lines: out, revenueBy };
+  const gross = coveredRevenue - cost - printing - commission - shipping;
+  return { ...head, revenue: sum(out, 'revenue'), coveredRevenue, cost, printing, commission, shipping, gross, missingLines, lines: out, revenueBy, feeRevenue: 0, carrierFee: 0, net: gross, carrierUnknown: false };
 }
 
 export interface ProfitRow {
@@ -88,15 +102,19 @@ export interface ProfitRow {
   /** Biên LN gộp trên doanh thu đã đủ giá vốn; null = chưa có doanh thu đủ giá vốn. */
   margin: number | null; missingOrders: number; missingRevenue: number;
   /** Doanh thu theo mức tin cậy giá vốn. */ revenueBy: Record<CostConfidence | 'missing', number>;
+  feeRevenue: number; carrierFee: number; net: number; netMargin: number | null; carrierUnknownOrders: number;
 }
 export function emptyRow(key: string, label: string): ProfitRow {
-  return { key, label, orders: 0, revenue: 0, coveredRevenue: 0, cost: 0, direct: 0, gross: 0, margin: null, missingOrders: 0, missingRevenue: 0, revenueBy: { confirmed: 0, estimate: 0, backfill: 0, missing: 0 } };
+  return { key, label, orders: 0, revenue: 0, coveredRevenue: 0, cost: 0, direct: 0, gross: 0, margin: null, missingOrders: 0, missingRevenue: 0, revenueBy: { confirmed: 0, estimate: 0, backfill: 0, missing: 0 },
+    feeRevenue: 0, carrierFee: 0, net: 0, netMargin: null, carrierUnknownOrders: 0 };
 }
 export function addOrder(r: ProfitRow, o: OrderProfit) {
   r.orders++; r.revenue += o.revenue; r.coveredRevenue += o.coveredRevenue; r.cost += o.cost; r.direct += o.printing + o.commission + o.shipping; r.gross += o.gross;
   if (o.missingLines) { r.missingOrders++; r.missingRevenue += o.revenue - o.coveredRevenue; }
   for (const k of ['confirmed', 'estimate', 'backfill', 'missing'] as const) r.revenueBy[k] += o.revenueBy[k];
+  r.feeRevenue += o.feeRevenue; r.carrierFee += o.carrierFee; r.net += o.net; if (o.carrierUnknown) r.carrierUnknownOrders++;
   r.margin = r.coveredRevenue > 0 ? r.gross / r.coveredRevenue : null;
+  r.netMargin = r.coveredRevenue + r.feeRevenue > 0 ? r.net / (r.coveredRevenue + r.feeRevenue) : null;
   return r;
 }
 /** Gộp theo khoá (kỳ / chi nhánh / nhân viên / khách); sắp theo `sort`. */
@@ -112,7 +130,7 @@ export function groupByProduct(orders: readonly OrderProfit[]) {
     const k = l.sku || `(không mã) ${l.name}`, r = m.get(k) ?? m.set(k, { ...emptyRow(k, l.name), qty: 0 }).get(k)!;
     r.orders++; r.qty += l.qty; r.revenue += l.revenue; r.revenueBy[l.confidence ?? 'missing'] += l.revenue;
     if (l.gross === null) { r.missingOrders++; r.missingRevenue += l.revenue; }
-    else { r.coveredRevenue += l.revenue; r.cost += l.cost; r.direct += l.printing + l.commission; r.gross += l.gross; }
+    else { r.coveredRevenue += l.revenue; r.cost += l.cost; r.direct += l.printing + l.commission; r.gross += l.gross; r.net += l.gross; }
     r.margin = r.coveredRevenue > 0 ? r.gross / r.coveredRevenue : null;
   }
   return [...m.values()].sort((a, b) => b.gross - a.gross || b.revenue - a.revenue);

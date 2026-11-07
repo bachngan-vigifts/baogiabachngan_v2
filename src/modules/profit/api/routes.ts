@@ -21,8 +21,9 @@ import { salesLineCosts } from '../../sales/line-cost-schema.ts';
 import { adjustLineCost } from '../../sales/api/line-costs.ts';
 import { salesLineCostHistory } from '../../sales/line-cost-schema.ts';
 import { LINE_COST_CONFIDENCE_LABEL } from '../../sales/domain/line-cost.ts';
+import { posFeeFacts } from '../domain/pos-fees.ts';
 import {
-  COST_SOURCE_LABEL, GRAINS, emptyRow, bucketLabel, bucketOf, groupBy, groupByProduct, orderProfit, purchaseCostAt, type Grain, type LineInput, type OrderProfit,
+  COST_SOURCE_LABEL, GRAINS, applyOrderFees, emptyRow, bucketLabel, bucketOf, groupBy, groupByProduct, orderProfit, purchaseCostAt, type Grain, type LineInput, type OrderProfit,
 } from '../domain/profit.ts';
 
 type Ctx = Parameters<Parameters<Router<StaffEnv>['get']>[1]>[0];
@@ -41,13 +42,13 @@ async function profitOrders(db: AnyDb, from: string, to: string, orderIds?: stri
   const orders = await db.select({
     id: salesOrders.id, orderNo: salesOrders.orderNo, orderDate: salesOrders.orderDate, status: salesOrders.status, channel: salesOrders.channel,
     shiftId: salesOrders.shiftId, ownerId: salesOrders.ownerId, customerId: salesOrders.customerId, customerName: salesOrders.customerName,
-    quoteType: salesOrders.quoteType, quoteData: quotations.data,
+    quoteType: salesOrders.quoteType, quoteData: quotations.data, posSnapshot: salesOrders.posSnapshot,
   }).from(salesOrders).leftJoin(quotations, eq(quotations.id, salesOrders.quoteId))
     .where(and(ne(salesOrders.status, 'cancelled'), orderIds ? inArray(salesOrders.id, orderIds) : and(gte(salesOrders.orderDate, from), lte(salesOrders.orderDate, to))));
   const ids = orders.map(o => o.id);
   if (!ids.length) return [];
   const shiftIds = [...new Set(orders.map(o => o.shiftId).filter((x): x is string => !!x))];
-  const [lines, contracts, ships, returned, shifts, snaps] = await Promise.all([
+  const [lines, contracts, ships, returned, shifts, snaps, feeRefunds] = await Promise.all([
     db.select().from(salesOrderLines).where(inArray(salesOrderLines.orderId, ids)).orderBy(asc(salesOrderLines.lineNo)),
     db.select({ orderId: salesContracts.orderId, status: salesContracts.status }).from(salesContracts).where(and(inArray(salesContracts.orderId, ids), ne(salesContracts.status, 'cancelled'))),
     db.select({ orderId: deliveries.orderId, fee: deliveries.shippingFee }).from(deliveries).where(and(inArray(deliveries.orderId, ids), ne(deliveries.status, 'cancelled'))),
@@ -58,6 +59,9 @@ async function profitOrders(db: AnyDb, from: string, to: string, orderIds?: stri
     shiftIds.length ? db.select({ id: posShifts.id, registerId: posShifts.registerId }).from(posShifts).where(inArray(posShifts.id, shiftIds)) : [],
     db.select({ lineId: salesLineCosts.orderLineId, sku: salesLineCosts.sku, unitCost: salesLineCosts.unitCost, source: salesLineCosts.source, confidence: salesLineCosts.confidence })
       .from(salesLineCosts).where(inArray(salesLineCosts.orderId, ids)),
+    // Phí dịch vụ / ship đã hoàn khi trả hàng (gồm VAT) – chỉ phiếu có hiệu lực công nợ.
+    db.select({ orderId: posReturns.orderId, service: posReturns.approvedServiceFee, shipping: posReturns.approvedShippingFee }).from(posReturns)
+      .where(and(inArray(posReturns.orderId, ids), isNotNull(posReturns.creditEffectiveAt))),
   ]);
   const snapOf = new Map(snaps.map(x => [x.lineId, x]));
   const skus = [...new Set(lines.map(l => l.sku).filter(Boolean))];
@@ -92,8 +96,15 @@ async function profitOrders(db: AnyDb, from: string, to: string, orderIds?: stri
     });
     const shippingCost = doc?.shipping?.payer === 'sender' ? ships.filter(s => s.orderId === o.id).reduce((n, s) => n + Math.max(0, s.fee || 0), 0) : 0;
     const branchId = o.channel === 'pos' && o.shiftId ? registerOf.get(o.shiftId) ?? 'pos' : CRM_BRANCH;
-    out.push(orderProfit({ id: o.id, orderNo: o.orderNo, orderDate: o.orderDate, ownerId: o.ownerId, customerId: o.customerId, customerName: o.customerName, branchId, shippingCost },
-      inputs, sku => purchaseCostAt(history.get(sku), o.orderDate), onlyConfirmed));
+    const profit = orderProfit({ id: o.id, orderNo: o.orderNo, orderDate: o.orderDate, ownerId: o.ownerId, customerId: o.customerId, customerName: o.customerName, branchId, shippingCost },
+      inputs, sku => purchaseCostAt(history.get(sku), o.orderDate), onlyConfirmed);
+    if (o.channel === 'pos') {
+      const refunded = feeRefunds.filter(r => r.orderId === o.id).reduce((n, r) => n + (r.service || 0) + (r.shipping || 0), 0);
+      const f = posFeeFacts(o.posSnapshot, refunded);
+      let ghnShipped = false; try { ghnShipped = !!JSON.parse(o.posSnapshot || '{}')?.ghn?.orderCode; } catch { /* bill lỗi dữ liệu */ }
+      applyOrderFees(profit, { feeRevenue: f.feeRevenue, carrierFee: f.carrierFee, carrierUnknown: ghnShipped && !f.carrierKnown });
+    }
+    out.push(profit);
   }
   return out;
 }
@@ -126,6 +137,7 @@ export function registerProfitRoutes(router: Router<StaffEnv>) {
       from, to, grain, costs, costSources: COST_SOURCE_LABEL, confidenceLabels: LINE_COST_CONFIDENCE_LABEL,
       summary: summary ?? emptyRow('all', 'Tổng'),
       direct: { printing: orders.reduce((s, o) => s + o.printing, 0), commission: orders.reduce((s, o) => s + o.commission, 0), shipping: orders.reduce((s, o) => s + o.shipping, 0) },
+      cardFees: { available: false, note: 'CRM chưa ghi nhận thanh toán thẻ / phí cổng thanh toán – chưa tính.' },
       series: groupBy(orders, o => bucketOf(o.orderDate, grain), k => bucketLabel(k, grain), 'key'),
       branches: groupBy(orders, o => o.branchId, n.branch),
       owners: groupBy(orders, o => o.ownerId, n.owner),
@@ -133,7 +145,8 @@ export function registerProfitRoutes(router: Router<StaffEnv>) {
       products: groupByProduct(orders).slice(0, 300),
       orders: [...orders].sort((a, b) => b.orderDate.localeCompare(a.orderDate) || b.revenue - a.revenue).slice(0, 500)
         .map(o => ({ id: o.id, orderNo: o.orderNo, orderDate: o.orderDate, customerName: o.customerName, ownerName: n.owner(o.ownerId), branch: n.branch(o.branchId),
-          revenue: o.revenue, cost: o.cost, direct: o.printing + o.commission + o.shipping, gross: o.gross, margin: o.coveredRevenue > 0 ? o.gross / o.coveredRevenue : null, missingLines: o.missingLines })),
+          revenue: o.revenue, cost: o.cost, direct: o.printing + o.commission + o.shipping, gross: o.gross, margin: o.coveredRevenue > 0 ? o.gross / o.coveredRevenue : null, missingLines: o.missingLines,
+          feeRevenue: o.feeRevenue, carrierFee: o.carrierFee, net: o.net, carrierUnknown: o.carrierUnknown })),
       ordersTotal: orders.length,
       filterOptions: { branches: groupBy(all, o => o.branchId, n.branch).map(r => ({ id: r.key, name: r.label })), owners: groupBy(all, o => o.ownerId, n.owner).map(r => ({ id: r.key, name: r.label })) },
     });
