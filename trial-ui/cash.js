@@ -1,4 +1,5 @@
 import { sendOnce } from './request-keys.js';
+import {cashEntryKind,cashNamePresets} from './cash-entry-presets.js';
 import { openPosReturns } from './pos-returns.js';
 import { downloadExcel } from './sheet-export.js';
 import { printPos } from './pos-print.js';
@@ -11,7 +12,7 @@ const kinds = {
   cash_in: 'Rút két',
   petty_expense: 'Chi vặt',
   advance: 'Tạm ứng',
-  cash_out: 'Nộp két',
+  cash_out: 'Nộp quỹ',
   adjustment: 'Điều chỉnh két',
   sale: 'Bán hàng',
   cod: 'COD',
@@ -228,9 +229,10 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     const guarded = (fn) => () => summary.ownShift ? fn() : toast(needOwnShift, 'err');
     const inc = button('+ Thu tiền', guarded(() => entry('in')), 'btn primary'),
       out = button('+ Chi tiền', guarded(() => entry('out'))),
+      remit = button('Nộp quỹ', guarded(() => entry('out', false, '', true))),
       close = button('Kết ca', guarded(() => run(closeShift)));
-    if (!summary.ownShift) for (const b of [inc, out, close]) b.className += ' cash-action-blocked';
-    tools2.append(inc, out, close);
+    if (!summary.ownShift) for (const b of [inc, out, remit, close]) b.className += ' cash-action-blocked';
+    tools2.append(inc, out, remit, close);
     if (summary.canManage) {
       const a = button('Điều chỉnh két', () => summary.activeShift ? entry('in', true) : toast('Chưa có ca đang mở trên két này để điều chỉnh.', 'err'));
       if (!summary.activeShift) a.className += ' cash-action-blocked';
@@ -418,13 +420,13 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     });
     m.show();
   }
-  function entry(direction, adjustment = false, recId = '') {
-    const m = dialog(adjustment ? 'Điều chỉnh két' : direction === 'in' ? 'Thêm phiếu thu' : 'Thêm phiếu chi'),
+  function entry(direction, adjustment = false, recId = '', remittance = false) {
+    const m = dialog(adjustment ? 'Điều chỉnh két' : remittance ? 'Nộp quỹ' : direction === 'in' ? 'Thêm phiếu thu' : 'Thêm phiếu chi'),
       allowed = adjustment
         ? ['adjustment']
         : direction === 'in'
           ? ['other_income', 'cash_in']
-          : ['petty_expense', 'advance', 'cash_out'],
+          : ['petty_expense', 'advance'],
       kind = adjustment ? select(allowed.map((k) => [k, kinds[k]])) : el('input'),
       dir = select(
         [
@@ -435,20 +437,26 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       ),
       amount = field('Số tiền (VNĐ)', 'number'),
       reason = field('Nội dung / lý do', 'textarea'),
-      photo = field('Ảnh hoá đơn (không bắt buộc)', 'file'),
+      photo = field(remittance ? 'Ảnh biên nhận (không bắt buộc)' : 'Ảnh hoá đơn (không bắt buộc)', 'file'),
       key = crypto.randomUUID();
     amount.input.min = '1';
     amount.input.step = '1';
     amount.input.required = reason.input.required = true;
     photo.input.accept = 'image/jpeg,image/png,image/webp';
-    if (!adjustment) {
+    if (remittance) {
+      kind.type = 'text'; kind.value = 'Nộp quỹ'; kind.readOnly = true; kind.required = true;
+      reason.input.placeholder = 'Ghi rõ nơi nhận tiền, người nhận hoặc ngân hàng.';
+    }
+    if (!adjustment && !remittance) {
       kind.type = 'text'; kind.value = kinds[allowed[0]]; kind.required = true; kind.maxLength = 120;
       kind.placeholder = 'Nhập tên phiếu, ví dụ: Chi sửa xe';
       const suggestions = el('datalist'); suggestions.id = 'cash-entry-names-' + key;
-      const presets=direction==='in'?['Nộp quỹ','Thu công nợ','Hoàn tạm ứng','Thu phí khác']:['Nộp quỹ','Tạm ứng lương','Phí GHN','Phí vận chuyển','Phí khác'];
-      const seen=new Set();const add=name=>{const key=name.trim().toLocaleLowerCase('vi-VN');if(!key||seen.has(key))return;seen.add(key);const o=el('option');o.value=name;suggestions.append(o);};
+      const quick = direction === 'out' ? select([['','Chọn khoản chi thường dùng…']]) : null;
+      if (quick) { quick.setAttribute('aria-label','Khoản chi thường dùng'); quick.addEventListener('change',()=>{if(quick.value)kind.value=quick.value;}); kind.addEventListener('input',()=>{if(quick.value!==kind.value)quick.value='';}); m.body.append(labeled('Khoản chi thường dùng',quick)); }
+      const presets=cashNamePresets(direction);
+      const seen=new Set();const add=name=>{if(direction==='out'&&cashEntryKind(name,'out')==='cash_out')return;const key=name.trim().toLocaleLowerCase('vi-VN');if(!key||seen.has(key))return;seen.add(key);const o=el('option');o.value=name;suggestions.append(o);if(quick){const option=el('option','',name);option.value=name;quick.append(option);}};
       [...allowed.map(code=>kinds[code]),...presets].forEach(add);
-      request('/cash/entry-names?direction='+direction).then(data=>{if(m.d.open)data.names.forEach(add);}).catch(()=>{});
+      api('/cash/entry-names?direction='+direction).then(data=>{if(m.d.open)data.names.forEach(add);}).catch(()=>{});
       kind.setAttribute('list', suggestions.id); m.body.append(suggestions);
     }
     // Tên / chiều + số tiền trên một hàng (máy tính), nội dung, ảnh; ghi chú ngắn thay cho khối cảnh báo dài.
@@ -471,16 +479,18 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       el('p', 'cash-hint', adjustment
         ? 'Điều chỉnh chỉ sửa số dư theo sổ (kiểm kê lệch), không ghi thêm thu/chi tiền thật.'
         : `Từ ${money(summary.drawer.approvalThreshold)} phiếu chờ duyệt, chưa tính vào két. Manager được tự duyệt phiếu của mình.`));
-    if(!adjustment)m.body.append(el('p','cash-hint','Chọn tên gợi ý hoặc nhập tên mới. Sau khi lưu phiếu thành công, tên mới được gợi ý lại từ các phiếu bạn được quyền xem trong két này.'));
+    if(remittance)m.body.append(el('p','cash-hint','Nộp tiền từ két cửa hàng về quỹ công ty hoặc ngân hàng. Khoản này giảm tiền két, không phải chi phí và không trừ vào lợi nhuận.'));
+    else if(!adjustment)m.body.append(el('p','cash-hint','Chọn tên gợi ý hoặc nhập tên mới. Sau khi lưu phiếu thành công, tên mới được gợi ý lại từ các phiếu bạn được quyền xem trong két này. Nộp tiền về quỹ công ty: dùng nút Nộp quỹ.'));
     if (recId) m.body.append(el('p', '', 'Phiếu tham chiếu tra soát đang xem.'));
     submitForm(m, 'Lưu phiếu', async () => {
       let img;
       if (photo.input.files?.[0]) img = await compress(photo.input.files[0]);
       // Mã theo nội dung (request-keys.js): mạng rớt sau khi đã lưu, mở lại nhập y hệt → không ghi phiếu két lần hai.
+      const entryKind = adjustment ? 'adjustment' : cashEntryKind(kind.value, direction, remittance);
       const content = { drawerId, adjustment, kind: kind.value.trim(), direction: dir.value, amount: Number(amount.input.value), reason: reason.input.value, recId: recId || null, photo: img ? img.length + ':' + img.slice(-32) : null };
       await sendOnce('cash-entry', content, key => api('/cash/entries', 'POST', {
         key,
-        kind: adjustment ? 'adjustment' : allowed.find(k => kinds[k] === kind.value.trim()) || (direction==='out'&&kind.value.trim()==='Tạm ứng lương'?'advance':direction==='out'&&kind.value.trim()==='Nộp quỹ'?'cash_out':allowed[0]),
+        kind: entryKind,
         ...(!adjustment && !allowed.some(k => kinds[k] === kind.value.trim()) ? { entryName: kind.value.trim() } : {}),
         direction: dir.value,
         amount: Number(amount.input.value),
