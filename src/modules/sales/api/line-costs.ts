@@ -16,6 +16,7 @@ import { quotations } from '../../quotes/schema.ts';
 import type { QuoteRow } from '../../quotes/domain/quote-math.ts';
 import { productMovements } from '../../catalog/schema.ts';
 import { matchQuoteRow, pickLineCost, type LineCostReason } from '../domain/line-cost.ts';
+import type { LineCostFallbackOf } from '../../../core/contracts/line-cost-fallback.ts';
 
 /** Lịch sử giá nhập theo mã (sổ sản phẩm, dòng "Nhập hàng"). */
 export async function purchaseHistory(db: AnyDb, skus: readonly string[]) {
@@ -30,11 +31,14 @@ const parseRows = (s: string | null | undefined): QuoteRow[] => {
   try { const d = JSON.parse(s || 'null'); return Array.isArray(d?.rows) ? d.rows.filter((r: QuoteRow) => String(r.name || '').trim() && Number(r.qty) > 0) : []; } catch { return []; }
 };
 
+/** Nguồn giá bổ sung (đơn NCC đã duyệt, công thức thương hiệu) – tầng app nối khi lắp router (sales không đọc dữ liệu NCC). */
+let fallbackOf: LineCostFallbackOf | null = null;
+export function setLineCostFallback(f: LineCostFallbackOf | null) { fallbackOf = f; }
 export async function ensureLineCosts(db: AnyDb, orderId: string, reason: LineCostReason, actorId: string | null) {
   const [order] = await db.select({ id: salesOrders.id, status: salesOrders.status, orderDate: salesOrders.orderDate, quoteId: salesOrders.quoteId }).from(salesOrders).where(eq(salesOrders.id, orderId)).limit(1);
   if (!order) return { written: 0 };
   const [lines, existing, quote] = await Promise.all([
-    db.select({ id: salesOrderLines.id, lineNo: salesOrderLines.lineNo, sku: salesOrderLines.sku, name: salesOrderLines.name }).from(salesOrderLines)
+    db.select({ id: salesOrderLines.id, lineNo: salesOrderLines.lineNo, sku: salesOrderLines.sku, name: salesOrderLines.name, unit: salesOrderLines.unit }).from(salesOrderLines)
       .where(eq(salesOrderLines.orderId, orderId)).orderBy(asc(salesOrderLines.lineNo)),
     db.select().from(salesLineCosts).where(eq(salesLineCosts.orderId, orderId)),
     order.quoteId ? db.select({ data: quotations.data, updatedAt: quotations.updatedAt }).from(quotations).where(eq(quotations.id, order.quoteId)).limit(1) : Promise.resolve([]),
@@ -44,10 +48,10 @@ export async function ensureLineCosts(db: AnyDb, orderId: string, reason: LineCo
   // Dòng cần (tính) lại: chưa có · đổi mã · đơn nháp (trừ bản Manager điều chỉnh).
   const todo = lines.filter(l => { const e = byLine.get(l.id); return !e || e.sku !== l.sku || (draft && e.source !== 'manual'); });
   if (!todo.length) return { written: 0 };
-  const history = await purchaseHistory(db, todo.map(l => l.sku));
+  const [history, fallback] = await Promise.all([purchaseHistory(db, todo.map(l => l.sku)), fallbackOf ? fallbackOf(db, todo.map(l => l.sku)) : new Map()]);
   let written = 0;
   for (const l of todo) {
-    const e = byLine.get(l.id), c = pickLineCost(matchQuoteRow(rows, l), quote[0]?.updatedAt ?? null, history.get(l.sku), order.orderDate, l.sku);
+    const e = byLine.get(l.id), c = pickLineCost(matchQuoteRow(rows, l), quote[0]?.updatedAt ?? null, history.get(l.sku), order.orderDate, l.sku, fallback.get(l.sku), l.unit);
     if (e && c && e.sku === l.sku && e.unitCost === c.unitCost && e.source === c.source && e.confidence === c.confidence) continue;
     if (!c) {
       if (!e) continue;

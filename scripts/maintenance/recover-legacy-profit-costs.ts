@@ -3,9 +3,9 @@
 import {readFileSync,writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
-import {defaultCostDiscount,normalize,netPrice,type QuoteRow} from '../../src/modules/quotes/domain/quote-math.ts';
+import {normalize,type QuoteRow} from '../../src/modules/quotes/domain/quote-math.ts';
+import {catalogRuleCost,purchaseOrderCost} from '../../src/app/line-cost-fallback.ts';
 import {matchQuoteRow,type LineCostConfidence,type LineCostSource} from '../../src/modules/sales/domain/line-cost.ts';
-import {purchaseUnitCost} from '../../src/modules/suppliers/domain/order-totals.ts';
 
 type Purchase={sku:string;unit?:string;ref:string;at:string;price:number|null;discount:number|null;printFee:number|null};
 type Movement=Purchase & {id:string;storedPrice:number|null;note:string;receiptId:string|null;cancelled:boolean;approved:boolean;item?:{sku:string;unit_price:number|null;purchase_discount_percent:number|null;print_fee?:number}|null};
@@ -18,10 +18,8 @@ const valid=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v)&&v>
 const date=(v:string)=>Date.parse(v);
 const marker='[net-cost-v1]';
 const sameUnit=(a?:string,b?:string)=>!a?.trim()||!b?.trim()||normalize(a)===normalize(b);
-function cost(p:Purchase){
- if(!valid(p.price)||p.discount!==null&&(!valid(p.discount)||p.discount>100)||p.printFee!==null&&!valid(p.printFee))return null;
- return purchaseUnitCost({price:p.price,purchaseDiscount:p.discount,confirmedPurchaseDiscount:null,printFee:p.printFee??0,taxRate:0});
-}
+// Dùng chung cách tính với luồng tự ghi giá vốn khi bán (src/app/line-cost-fallback.ts).
+const cost=(p:Purchase)=>purchaseOrderCost(p);
 function nearest(points:Point[],day:string){
  const end=date(day+'T23:59:59.999+07:00');if(!Number.isFinite(end))return {point:null,ambiguous:false};
  const before=points.filter(p=>date(p.at)<=end).sort((a,b)=>date(b.at)-date(a.at)||a.ref.localeCompare(b.ref));
@@ -67,20 +65,9 @@ export function recoveryPlan(input:RecoveryInput){
    costs.push({line:l,unitCost:q.costPrice,source:'quote',confidence:'estimate',costAt:l.quoteAt,
     note:`Khôi phục từ phiên bản báo giá có hiệu lực khi lập đơn: ${l.quoteRef}. Giá tham chiếu, chưa đối soát giá vốn xuất kho.`});continue;
   }
-  const p=products.get(l.sku),discount=p?defaultCostDiscount(p):null;
-  // Use an explicitly named retail policy, not the first arbitrary wholesale/customer policy.
-  const retail=p?.prices?.filter(x=>['gia ban le','gia le','gia ban le vat','gia le vat'].includes(normalize(x.name).replace(/\+/g,' ').replace(/\s+/g,' ').trim())&&valid(x.price)&&x.price>0)
-   .sort((a,b)=>Number(/vat/i.test(a.name))-Number(/vat/i.test(b.name))||a.id.localeCompare(b.id))[0];
-  if(p&&retail&&discount!==null&&valid(retail.price)&&sameUnit(p.unit,l.unit)){
-   const included=/vat/i.test(retail.name)||p.taxBasis==='Giá đã bao gồm thuế';
-   if(included&&p.taxable&&(!valid(p.taxOut)||p.taxOut>100)){unresolved.push({id:l.id,reason:'Chưa rõ VAT của giá tham chiếu'});continue;}
-   // Match purchases.js prefillCosts exactly: round the VAT-exclusive list price first,
-   // then apply supplier totals without rounding the unit discount result a second time.
-   const listPrice=Math.round(netPrice(retail.price,p.taxable?(p.taxOut??0):0,included));
-   const value=purchaseUnitCost({price:listPrice,purchaseDiscount:discount,confirmedPurchaseDiscount:null,printFee:0,taxRate:0})!;
-   costs.push({line:l,unitCost:value,source:'catalog_rule',confidence:'estimate',costAt:p.at,
-    note:`Khôi phục theo công thức gợi ý đơn mua NCC: ${retail.name} (${retail.id}), CK ${discount}%, trước VAT; bảng giá tham chiếu tại ${p.at}. Chưa phải giá mua lịch sử hay giá vốn xuất kho đã đối soát.`});continue;
-  }
+  const p=products.get(l.sku),rule=p&&sameUnit(p.unit,l.unit)?catalogRuleCost(p):null;
+  if(rule&&'reason' in rule){unresolved.push({id:l.id,reason:rule.reason});continue;}
+  if(rule){costs.push({line:l,unitCost:rule.cost,source:'catalog_rule',confidence:'estimate',costAt:rule.at,note:'Khôi phục theo '+rule.note.charAt(0).toLowerCase()+rule.note.slice(1)});continue;}
   unresolved.push({id:l.id,reason:'Chưa có giá mua / báo giá gốc / công thức thương hiệu phù hợp'});
  }
  return {costs,repairs,unresolved};
