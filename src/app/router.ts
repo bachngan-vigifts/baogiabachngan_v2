@@ -31,6 +31,7 @@ import { registerCashRoutes } from './cash-routes.ts';
 import { catalogStockHooks } from '../modules/catalog/api/stock-source.ts';
 import { hiddenWarehouseIds } from '../modules/inventory/api/warehouse-access.ts';
 import { ledgerWarehouses, overlayPosStock, posStockStamp } from '../modules/sales/api/pos-stock.ts';
+import { registerShiftReportRoutes } from '../modules/sales/api/shift-report-routes.ts';
 import { registerPosRoutes } from '../modules/sales/api/pos-routes.ts';
 import { registerPosGhnSyncRoutes } from '../modules/sales/api/pos-ghn-sync.ts';
 import { registerPosGhnCreateRoutes } from '../modules/sales/api/pos-ghn-create.ts';
@@ -126,6 +127,7 @@ export function createAppRouter() {
   registerPaymentDueRepairRoutes(router);
   registerQuoteSourcingRoutes(router);
   registerPosRoutes(router);
+  registerShiftReportRoutes(router);
   registerPosGhnSyncRoutes(router);
   registerPosGhnCreateRoutes(router);
   registerPosReturnRoutes(router);
