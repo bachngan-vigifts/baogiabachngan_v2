@@ -3879,7 +3879,7 @@ function transfersView() {
     printTransfer: t => openSlipPrint({ kind: 'transfer', choices: [{ value: '', label: t.transferNo }], initial: '', build: () => transferPrintData(t, state.user?.name || '') }) });
 }
 function stockMovesView() { return stockMovesUi ||= initStockMoves({ api, root: $('#view-stock-moves'), toast, createPager, linkAllowed }); }
-function sellerConfigView() { if (!sellerConfigUi) { const box = document.createElement('div'); $('#view-permissions').after(box); box.id = 'seller-config-box'; sellerConfigUi = initSellerConfig({ api, root: box, toast }); } return sellerConfigUi; }
+function sellerConfigView() { if (!sellerConfigUi) { const box = document.createElement('div'); $('#view-permissions').append(box); box.id = 'seller-config-box'; sellerConfigUi = initSellerConfig({ api, root: box, toast }); } return sellerConfigUi; }
 var permissionsUi = null;
 function permissionsView() { return permissionsUi ||= initPermissions({ api, root: $('#view-permissions'), toast, confirmBox }); }
 var purchasesUi = null;

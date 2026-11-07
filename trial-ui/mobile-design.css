@@ -304,7 +304,7 @@
 }
 
 @media screen and (max-width:850px){
- body:has(#view-permissions[hidden]) #seller-config-box,#view-products #product-actions { display:none!important; }
+ #view-products #product-actions { display:none!important; }
  #view-order.crm-mobile-contract #order-actions { display:grid;grid-template-columns:repeat(3,minmax(0,1fr)); }
  #view-order.crm-mobile-contract #order-actions>[data-contract-docs] { grid-column:1/-1;min-width:0;width:100%;max-width:100%;box-sizing:border-box; }
  #view-order.crm-mobile-contract #order-actions>:not([data-contract-docs]):not([data-pack-print-for]):not([data-ship-print-for]):not(#order-history) { display:none!important; }
