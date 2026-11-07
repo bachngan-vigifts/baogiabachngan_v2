@@ -1,4 +1,5 @@
 import { ensureLineCosts } from './line-costs.ts';
+import { deliveryListFilters } from './delivery-list-filters.ts';
 import {previewWebSapo,createWebSapo,recordWebSapoResult} from './web-order-sapo.ts';
 import { orderExportDetails } from './order-export.ts';
 import { canSalesCreateSapo } from '../domain/order-sapo-access.ts';
@@ -1261,8 +1262,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     // Bộ lọc chi tiết: nhân viên phụ trách đơn, loại chứng từ (đơn / HĐKT), đơn vị giao, hoá đơn của đơn.
     const sp = c.url.searchParams, owner = focusId ? '' : sp.get('owner') || '', kind = focusId ? '' : sp.get('kind') || '';
     const carrier = focusId ? '' : sp.get('carrier') || '', invoice = focusId ? '' : sp.get('invoice') || '';
+    const sort = sp.get('sort') || 'date_desc';
+    if (!['date_desc','date_asc','customer','owner'].includes(sort)) throw new AppError(400, 'Thứ tự sắp xếp không hợp lệ.');
+    if (!focusId && ((from && !isDate(from)) || (to && !isDate(to)) || (from && to && from > to))) throw new AppError(400, 'Khoảng ngày giao không hợp lệ.');
+    if (!focusId && ((status && !['planned','in_transit','delivered','failed','cancelled'].includes(status)) || !['','order','contract'].includes(kind) || !['','none','requested','issued'].includes(invoice))) throw new AppError(400, 'Bộ lọc giao hàng không hợp lệ.');
     const scope = and(sql`${salesOrders.channel} <> 'pos'`, deliveryScope(c));
-    const [rows, ownerOptions, carrierOptions] = await Promise.all([c.env.db.select({ d: deliveries, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName,
+    const [rows, ownerOptions, carrierOptions, assigneeOptions] = await Promise.all([c.env.db.select({ d: deliveries, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName,
       contact: salesOrders.contact, phone: salesOrders.phone, orderAddress: salesOrders.address, ownerId:salesOrders.ownerId,orderCreatedBy:salesOrders.createdBy,ownerName: employees.name, invoiceStatus: salesOrders.invoiceStatus, invoiceNo: salesOrders.invoiceNo })
       .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, deliveries.orderId))
       .leftJoin(employees, eq(employees.id, salesOrders.ownerId))
@@ -1271,21 +1276,37 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         owner ? eq(salesOrders.ownerId, owner) : undefined,
         kind === 'contract' ? isNotNull(salesContracts.orderId) : kind === 'order' ? isNull(salesContracts.orderId) : undefined,
         carrier ? eq(deliveries.carrier, carrier) : undefined,
-        invoice === 'requested' || invoice === 'issued' || invoice === 'none' ? eq(salesOrders.invoiceStatus, invoice) : undefined))
-      .orderBy(desc(deliveries.plannedDate), desc(deliveries.createdAt), desc(deliveries.id)).limit(500),
+        invoice === 'requested' || invoice === 'issued' || invoice === 'none' ? eq(salesOrders.invoiceStatus, invoice) : undefined,
+        focusId ? undefined : deliveryListFilters(sp, vietnamDate().iso)))
+      .orderBy(...(sort === 'date_asc' ? [asc(deliveries.plannedDate)] : sort === 'customer' ? [asc(salesOrders.customerName),asc(deliveries.plannedDate)] : sort === 'owner' ? [asc(employees.name),asc(deliveries.plannedDate)] : [desc(deliveries.plannedDate)]), desc(deliveries.createdAt), desc(deliveries.id)).limit(501),
       c.env.db.selectDistinct({ id: employees.id, name: employees.name }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
         .innerJoin(employees, eq(employees.id, salesOrders.ownerId)).where(scope).orderBy(asc(employees.name)),
       c.env.db.selectDistinct({ carrier: deliveries.carrier }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
         .where(and(scope, ne(deliveries.carrier, ''))).orderBy(asc(deliveries.carrier)),
+      c.env.db.selectDistinct({ id: employees.id, name: employees.name }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
+        .innerJoin(employees, eq(employees.id, deliveries.assigneeId)).where(scope).orderBy(asc(employees.name)),
     ]);
+    const truncated = rows.length > 500;
+    if (truncated) rows.pop();
+    // Batch visible shipment lines; omit selling prices from warehouse responses below.
+    const products = rows.length ? await c.env.db.select({ deliveryId: deliveryLines.deliveryId, orderLineId: deliveryLines.orderLineId,
+      sku: salesOrderLines.sku, name: salesOrderLines.name, unit: salesOrderLines.unit, qty: deliveryLines.qty,
+      unitPrice: salesOrderLines.unitPrice, taxRate: salesOrderLines.taxRate })
+      .from(deliveryLines).innerJoin(salesOrderLines, eq(salesOrderLines.id, deliveryLines.orderLineId))
+      .where(inArray(deliveryLines.deliveryId, rows.map(r => r.d.id))).orderBy(asc(salesOrderLines.lineNo)) : [];
+    const productsByDelivery = new Map<string, typeof products>();
+    for (const p of products) { const list = productsByDelivery.get(p.deliveryId) || []; list.push(p); productsByDelivery.set(p.deliveryId, list); }
     // `contractNo` có → chuyến giao của HĐKT (hiện số HĐKT, mở #/contracts/…), không phải của đơn hàng.
     // Liên hệ / địa chỉ của khách trên đơn: kho (không xem được danh bạ khách) vẫn có đủ thông tin để liên hệ giao hàng.
     const photos = await photoUrls(c.env.db, c.env.files, 'delivery', rows.filter(r => r.d.status === 'delivered').map(r => r.d.id));
     const confirmations=await deliveryConfirmations(c.env.db,rows.map(r=>r.d));
     return json({ canCancel: !isWarehouseMember(viewer(c)), deliveries: rows.map(r => ({ ...r.d, shippingFee: isWarehouseMember(viewer(c)) ? null : r.d.shippingFee, orderNo: r.orderNo, contractNo: r.contractNo ?? null, customerName: r.customerName,
       customerContact: r.contact, customerPhone: r.phone, customerAddress: r.orderAddress, ownerName: r.ownerName ?? '', invoiceStatus: r.invoiceStatus, invoiceNo: r.invoiceNo,
+      products: (productsByDelivery.get(r.d.id) || []).map(p => ({ orderLineId:p.orderLineId,sku:p.sku,name:p.name,unit:p.unit,qty:p.qty,
+        ...(!isWarehouseMember(viewer(c)) ? { unitPrice:p.unitPrice,taxRate:p.taxRate,amount:Math.round(p.unitPrice*p.qty),total:Math.round(Math.round(p.unitPrice*p.qty)*(1+p.taxRate/100)) } : {}) })),
       ...confirmations.get(r.d.id),canConfirm:canConfirmDelivery(viewer(c),{ownerId:r.ownerId,createdBy:r.orderCreatedBy}),canCancel:!isWarehouseMember(viewer(c))&&canConfirmDelivery(viewer(c),{ownerId:r.ownerId,createdBy:r.orderCreatedBy}),photos: photos.get(r.d.id) ?? [] })),
-      filterOptions: { owners: ownerOptions, carriers: carrierOptions.map(x => x.carrier).filter(Boolean) } });
+      truncated, limit: 500,
+      filterOptions: { owners: ownerOptions, assignees: assigneeOptions, carriers: carrierOptions.map(x => x.carrier).filter(Boolean) } });
   }, 'business');
 
   /** Lên lịch giao: số lượng mỗi dòng không vượt phần còn lại (đã trừ hàng đã giao và các chuyến đang chờ giao). */
