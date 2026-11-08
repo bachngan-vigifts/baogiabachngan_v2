@@ -4,3 +4,5 @@
 #view-home .home-head p { margin:0;color:var(--muted); }
 .home-entry { display:inline-flex;align-items:center;justify-content:center;min-height:40px;min-width:40px;color:var(--ink); }
 .home-entry svg { width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8; }
+
+#view-home .home-stats{display:flex;flex-wrap:wrap;gap:20px;margin-bottom:20px;}

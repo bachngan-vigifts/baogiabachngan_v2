@@ -1,3 +1,4 @@
+import { registerHomeTasks } from './home.ts';
 import { stockTransfers } from '../../inventory/schema.ts';
 import { receivingReminderTasks, RECEIVING_REMINDER_PREFIX } from './receiving-reminders.ts';
 import { registerAccountingTaskRoutes } from './accounting-routes.ts';
@@ -253,6 +254,7 @@ function keyedTaskId(memberId: string, clientKey: string): string {
 }
 
 export function registerTaskRoutes(router: Router<StaffEnv>) {
+  registerHomeTasks(router,{scope:c=>and(visible(c),viewCond(c,me(c).role==='manager'?'all':'mine')),sync:syncAuto});
   // Server-only cron endpoint: existing integrations token guard, never a staff cookie or public client key.
   router.post('/integrations/tasks/receiving-reminders', async c => {
     const now = new Date(), wanted = await receivingReminderTasks(c.env.db, now);
