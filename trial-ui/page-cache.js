@@ -21,7 +21,7 @@ const PAGED = /^\/(products|quotes)\?(?:.*&)?offset=/;
 const STATIC = /^\/(product-brands|printing-workshops|care\/config|avatars\?keys=)/;
 const STATIC_TTL_MS = 24 * 3_600_000, STORE_PREFIX = 'bn-pc:', STORE_MAX_CHARS = 400_000;
 export const isLongLived = path => STATIC.test(String(path));
-const NEVER = /^\/tasks\/(summary)(\?|$)|preflight|[?&]refresh=1|^\/customers\?(?:.*&)?usable=1|\/next-no(\?|$)/;
+const NEVER = /^\/tasks\/(summary|home)(\?|$)|preflight|[?&]refresh=1|^\/customers\?(?:.*&)?usable=1|\/next-no(\?|$)/;
 // Lệnh POST chỉ tính / tra / đánh dấu đã đọc (cùng nhóm với busy-buttons.js): không đổi dữ liệu trang nên KHÔNG xoá bộ đệm.
 // Chat tự đánh dấu đã đọc mỗi khi có tin mới – nếu xoá thì bộ đệm gần như luôn trống khi mở khung chat.
 const PASSIVE = /\/(preview|csp-report|read|locations|typing|presence|count-stock|count-candidates)(\?|$)/;

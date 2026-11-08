@@ -1,3 +1,4 @@
+import { createNotificationFeed } from './notification-feed.js';
 import {productThumbnailUrl,noteThumbnailFailure} from './product-images.js';
 import {initOrderProducts} from './order-products.js';
 import { createDeliveryCalendar, renderDeliveryProducts } from './delivery-calendar.js';
@@ -485,6 +486,7 @@ function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
   if (typeof shiftReportsUi !== 'undefined') shiftReportsUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
+  homeUi?.reset(); homeNotifications?.clear(); notifier?.reset();
   $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
@@ -570,7 +572,7 @@ function refreshWorkspaceUser(user) {
   const access=u=>JSON.stringify([u?.role,u?.positionId,u?.perms,u?.approver,u?.dataScope,u?.departmentId]);
   const previous=access(state.user);
   if(!applyWorkspaceUser(user))return;
-  if(previous!==access(user)){route();loadAll();}
+  if(previous!==access(user)){homeNotifications?.clear();notifier?.reset();notifier?.start();route();loadAll();}
 }
 
 // ---------------------------------------------------------------- tài khoản
@@ -894,6 +896,7 @@ function route() {
   if(page==='products'&&!id){const legacySku=new URLSearchParams(query).get('sku');if(legacySku){currentHash='#/products/'+encodeURIComponent(legacySku);history.replaceState(null,'',currentHash);return route();}}
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
   let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'home';
+  if(view==='home'&&page!=='home'){currentHash=homeHash();history.replaceState(null,'',location.pathname+currentHash);return route();}
   if ((view === 'staff' || view === 'payroll') && !isManager()) { history.replaceState(null, '', homeHash()); return route(); }
   // Trang chức vụ chưa được cấp quyền (link cũ, thông báo…): về trang mở đầu. Báo giá / đơn / khách có mã thì xét theo trang chi tiết.
   const detail = id && view === 'quotes' ? 'editor' : id && (view === 'orders' || view === 'contracts') ? 'order' : id && view === 'customers' ? 'customer' : id && view === 'packing' ? 'packing-slip' : view;
@@ -937,7 +940,7 @@ function route() {
   if (view === 'receivables') loadReceivables();
   if (view === 'cashbook') loadCashbook();
   if (view === 'stock-requests') loadStockRequests(id);
-  if (view === 'tasks') tasksView().load(id);
+  if (view === 'tasks') {const target=location.hash,who=state.user?.id;tasksView().load(id,query).then(()=>{if(new URLSearchParams(query).get('new')==='1'&&location.hash===target&&state.user?.id===who)tasksView().openNew();}).catch(e=>toast(e.message,'err'));}
   if (view === 'dashboard') dashboardView().load();
   if (view === 'profit') profitView().show();
   if (view === 'feedback') feedbackView().show(id ? decodeURIComponent(id) : '');
@@ -3873,13 +3876,14 @@ var dataRefresh = setupDataRefresh({
   enabled: () => !!state.user,
   blocked: () => (location.hash.startsWith('#/shift-reports') && !!document.activeElement?.closest('.srp-filters')) || (location.hash.startsWith('#/pos') && !!posUi?.dirty()) || (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
   routeKey: () => location.hash,
-  primaryPaths: () => location.hash.startsWith('#/cash') ? ['/cash'] : location.hash.startsWith('#/pos') ? ['/pos/options'] : isWarehouse() ? ['/packing?status=sent'] : [can('page.quotes') && '/quotes', can('page.orders') && '/orders', can('page.contracts') && '/contracts'].filter(Boolean),
+  primaryPaths: () => location.hash.startsWith('#/home') ? [] : location.hash.startsWith('#/cash') ? ['/cash'] : location.hash.startsWith('#/pos') ? ['/pos/options'] : isWarehouse() ? ['/packing?status=sent'] : [can('page.quotes') && '/quotes', can('page.orders') && '/orders', can('page.contracts') && '/contracts'].filter(Boolean),
   onDeferred: () => toast('Có dữ liệu mới. Trang sẽ cập nhật sau khi anh/chị lưu thay đổi và đóng biểu mẫu.'),
   // Không tự hỏi định kỳ / khi quay lại tab: `pulse` (GET /pulse mỗi 30 giây) gọi tick() khi máy chủ báo có thay đổi.
   schedule: () => 0, cancel: () => {}, wakeOnFocus: false,
 });
-const notifier = setupNotifications({
-  api, root: $('#staff-bell'),
+var homeNotifications = createNotificationFeed({api,identity:()=>JSON.stringify([token,state.user?.role,state.user?.positionId,state.user?.perms,state.user?.approver])});
+var notifier = setupNotifications({
+  api:homeNotifications.read, root: $('#staff-bell'),
   onNew(notes) {
     for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`);
     dataRefresh.request(); dataRefresh.tick();
@@ -3962,6 +3966,7 @@ function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId
 /** Tải lại dữ liệu đang xem sau khi đã kiểm tra các biểu mẫu chưa lưu. */
 async function refreshData() {
   if (!state.user) return;
+  if(location.hash.split('?')[0]==='#/home'){await Promise.allSettled([homeUi?.refresh(),approvalView().refresh()]);return;}
   const jobs = [approvalView().refresh(), loadQuotes(), loadBadges()];
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page, id] = path.split('/'), params = new URLSearchParams(query);
@@ -5568,10 +5573,23 @@ function custodyView(){return custodyLoading ||= import('./product-custody.js').
 
 // Trang chủ tải module khi mở; phần còn lại của CRM không phải tải giao diện này.
 var homeUi = null, homeLoading = null;
-function homeView() { return homeLoading ||= import('./home.js').then(({initHome}) => homeUi = initHome({root:$('#view-home'),api,user:()=>state.user,canApprove,go})); }
+function homeNavigation(){return [...document.querySelectorAll('.side-nav [data-nav]')].filter(a=>!a.hidden&&!a.closest('[hidden]')&&linkAllowed(a.getAttribute('href'))).map(a=>{const group=a.closest('.nav-group'),heading=group?.querySelector('h2');return{key:a.dataset.nav,label:a.querySelector('span')?.textContent?.trim()||a.textContent.trim(),href:a.getAttribute('href'),groupId:heading?.id||'',group:(heading?.querySelector('.nav-group-toggle>span:first-child')?.textContent||heading?.textContent)?.trim()||'Chức năng khác'};});}
+function homeActions(){return [
+  {key:'new-task',label:'Tạo công việc',icon:'work',run:()=>go('#/tasks?home=1&view=mine&new=1')},
+  ...(can('pos.sell')&&isCounterSales()?[{key:'pos',label:'Bán hàng nhanh',icon:'sell',run:()=>go('#/pos')}]:[]),
+  ...(can('page.quotes')?[{key:'new-quote',label:'Lập báo giá',icon:'sell',run:()=>openNewQuote()}]:[]),
+  ...(can('page.customers')?[{key:'new-customer',label:'Thêm khách hàng',icon:'customers',run:()=>openCustomer()}]:[]),
+  ...(can('page.care')?[{key:'new-care',label:'Ghi nhận chăm sóc',icon:'customers',run:()=>careView().openForm({},()=>homeUi?.refresh())}]:[]),
+];}
+function homeView() { if(homeUi)return Promise.resolve(homeUi);return homeLoading ||= import('./home.js').then(({initHome}) => homeUi = initHome({root:$('#view-home'),api,user:()=>state.user,canApprove,go,
+  entries:homeNavigation,actions:homeActions,approvalFeed:sharedApprovalFeed(),notifications:()=>homeNotifications.read('/notifications'),navigationRoot:document.querySelector('.side-nav'),
+  noticeHref:n=>{try{const url=new URL(n.url,location.origin);return url.origin===location.origin&&/^#\/[\w-]+/.test(url.hash)&&linkAllowed(url.hash)?url.hash:'';}catch{return'';}},
+  markRead:id=>{const who=state.user?.id;return homeNotifications.read('/notifications/read','POST',{ids:[id]}).then(()=>{if(who===state.user?.id)notifier.markRead(id);});},
+  openBell:()=>{const button=$('#staff-bell .bell');if(button?.getAttribute('aria-expanded')!=='true')button?.click();window.scrollTo(0,0);},
+})); }
 function showHome() {
   const who=state.user?.id;
-  homeView().then(ui=>{if(who===state.user?.id&&location.hash.split('?')[0]==='#/home')ui.show();}).catch(e=>{
-    if(who===state.user?.id&&location.hash.split('?')[0]==='#/home')$('#view-home').innerHTML=`<h1>Trang chủ</h1><p class="error" role="alert">${esc(e.message||'Chưa tải được trang chủ.')}</p>`;
+  homeView().then(ui=>{if(who===state.user?.id&&location.hash.split('?')[0]==='#/home')return ui.show();}).catch(e=>{
+    if(who===state.user?.id&&location.hash.split('?')[0]==='#/home'){homeLoading=null;$('#view-home').innerHTML=`<h1>Trang chủ</h1><p class="error" role="alert">${esc(e.message||'Chưa tải được trang chủ.')}</p><button class="btn secondary" type="button" data-home-boot-retry>Thử lại</button>`;$('#view-home [data-home-boot-retry]').onclick=showHome;}
   });
 }

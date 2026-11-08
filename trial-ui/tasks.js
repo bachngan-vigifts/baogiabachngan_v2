@@ -274,7 +274,13 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
     } catch { /* bỏ qua: mở trang sẽ tải như thường */ }
   }
 
-  async function load(focusId) {
+  async function load(focusId, query = '') {
+    const homeParams=new URLSearchParams(query);
+    if(homeParams.get('home')==='1'){
+      st.view=isManager()&&homeParams.get('view')==='all'?'all':'mine';st.tab='tasks';st.status='open';
+      st.due=['overdue','today'].includes(homeParams.get('due'))?homeParams.get('due'):'';
+      st.priority=st.source=st.assignee=st.search='';
+    }
     resetQuickOwner();
     const request = ++loadSequence;
     if (focusId === 'approvals') { focusId = undefined; st.tab = 'approvals'; }
@@ -530,5 +536,5 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
     } else if (e.key === 'Enter' && st.selected) { e.preventDefault(); openDetail(st.selected); }
     else if (e.key === 'Escape' && panelTask) closePanel();
   });
-  return { load, badge, prefetch, refreshPeople: () => { st.people = null; } };
+  return { load, badge, prefetch, openNew: async()=>{const who=userId();await people();if(who!==userId()||root.hidden)return;fillFilters();toggleQuick(true);}, refreshPeople: () => { st.people = null; } };
 }
