@@ -1,0 +1,73 @@
+/** Personal warehouse queue. Source documents remain authoritative for inventory operations. */
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=v=>Number(v||0).toLocaleString('vi-VN',{maximumFractionDigits:1});
+const pct=v=>v==null?'—':num(v*100)+'%';
+const money=v=>v==null?'Chưa cài đặt':num(v)+' đ';
+const time=s=>s?new Date(s).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}):'Chưa có hạn';
+const kinds={manual:'Công việc',picking:'Soạn hàng',packing:'Đóng gói',receiving:'Nhận hàng',transfer:'Điều chuyển',stocktake:'Kiểm kho'};
+const stages={todo:'Cần làm',working:'Đang làm',blocked:'Chờ xử lý',submitted:'Chờ xác nhận',confirmed:'Đã xác nhận'};
+const field=(name,label,type='text',value='',extra='')=>`<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
+const button=(action,label,cls='secondary')=>`<button type="button" class="btn ${cls}" data-ww-action="${action}" data-mobile-inline data-no-busy>${label}</button>`;
+export function initWarehouseWorkspace({api,root,toast,identity,legacy}){
+ let data=null,seq=0,tab='priority',month='',selected='',page=0,busy=false,dialog=null;
+ const same=(key,n)=>key===identity()&&n===seq;
+ function closeDialog(){if(dialog){dialog.close();dialog.remove();dialog=null;}}
+ function close(){seq++;data=null;busy=false;month='';selected='';tab='priority';page=0;closeDialog();root.replaceChildren();}
+ async function load(){const n=++seq,key=identity();if(!data)root.innerHTML='<p class="card" role="status">Đang tải Không gian Kho…</p>';
+  const q=new URLSearchParams({tab,page:String(page)});if(month)q.set('month',month);if(selected)q.set('member',selected);
+  try{const next=await api('/warehouse-workspace?'+q);if(!same(key,n))return;data=next;month=next.month;selected=next.memberId;draw();}
+  catch(e){if(same(key,n)){data=null;root.innerHTML=`<div class="card"><p class="error" role="alert">${esc(e.message)}</p>${button('reload','Thử lại')}</div>`;}}
+ }
+ function scoreCard(){const r=data.report;if(!r)return '<p class="muted">Chưa có nhân viên Kho đang hoạt động.</p>';
+  return `<h2>Hiệu suất tháng</h2><div class="ww-score"><strong>${r.score==null?'—':num(r.score)}</strong><span>/ 100 điểm</span></div>
+   <dl class="ww-rates"><div><dt>Đúng hạn · 30%</dt><dd>${pct(r.rates?.onTime)}</dd></div><div><dt>Tốc độ · 25%</dt><dd>${pct(r.rates?.speed)}</dd></div><div><dt>Hoàn thành · 25%</dt><dd>${pct(r.rates?.completion)}</dd></div><div><dt>Chất lượng · 20%</dt><dd>${pct(r.rates?.quality)}</dd></div></dl>
+   <p class="ww-bonus"><span>Thưởng dự kiến</span><strong>${money(r.bonusPreview)}</strong></p><small class="muted">Quỹ đủ công × hệ số điểm. Chưa cộng vào bảng lương; chưa điều chỉnh theo ngày công.</small>
+   <p class="${r.score==null?'ww-warning':'muted'}">${r.locked?'Đã duyệt điểm tháng · '+time(r.approvedAt):r.score==null?'Chưa đủ dữ liệu: '+num(r.missing)+' việc thiếu định mức, '+num(r.pending)+' việc có kết quả/khoảng chờ chưa duyệt, '+num(r.missingTiming)+' việc chưa có thời gian làm trong ca.':'Điểm tạm tính · Chờ Manager duyệt'}</p>
+   <small class="muted">${num(r.eligible)} việc đến hạn · ${num(r.future)} việc chưa đến hạn · ${num(r.withoutDeadline)} việc chưa đặt hạn. ${num(r.legacyExcluded)} việc cũ đã hoàn tất trước khi bật theo dõi được loại khỏi điểm.</small>
+   ${data.manager&&!r.locked?button('approve-month','Duyệt điểm tháng'):''}`;
+ }
+ function taskCard(t){const r=t.run,s=r?.stage||(t.taskStatus==='done'?'confirmed':'todo'),claimed=!!t.assigneeId,locked=data.report?.locked&&t.dueAt&&new Date(Date.parse(t.dueAt)+7*3600e3).toISOString().startsWith(month);
+  let actions='';if(!locked){
+   if(!r&&!claimed&&!data.manager)actions+=button('claim','Nhận việc','primary');
+   if(data.manager&&(!r||s==='todo')&&t.taskStatus!=='done')actions+=button('configure','Giao định mức');
+   if(r&&s==='todo')actions+=button('start','Bắt đầu','ww-red');
+   if(s==='working')actions+=button('block','Báo vướng mắc')+button('submit','Hoàn thành','primary');
+   if(s==='blocked')actions+=button('resume','Tiếp tục làm','primary');
+   if(data.manager&&s==='submitted')actions+=button('reject','Yêu cầu làm lại')+button('confirm','Xác nhận kết quả','primary');
+  }
+  const waits=r?.waits?.length?`<details class="ww-waits"><summary>Khoảng chờ (${r.waits.length})</summary>${r.waits.map(w=>`<div><p>${esc(w.reason)} · ${time(w.start)} → ${w.end?time(w.end):'Đang chờ'}</p><small>${w.decision==='approved'?'Đã duyệt loại trừ':w.decision==='rejected'?'Không loại trừ':'Chờ duyệt, vẫn tính thời gian'}</small>${data.manager&&w.end&&w.decision==='pending'&&!locked?`<button type="button" class="btn secondary small" data-wait="${esc(w.id)}" data-ww-action="review-wait" data-mobile-inline data-no-busy>Duyệt khoảng chờ</button>`:''}</div>`).join('')}</details>`:'';
+  const href=/^#\/[\w/-]+$/.test(t.link||'')?t.link:'#/tasks/'+encodeURIComponent(t.id);
+  return `<article class="ww-task" data-task="${esc(t.id)}"><header><small>${esc(kinds[r?.kind]||kinds[t.source]||'Công việc Kho')}</small><span class="ww-state ${s}">${esc(stages[s])}${!r&&t.taskStatus==='done'?' · Chưa theo dõi điểm':''}</span></header><h3>${esc(t.title)}</h3><p class="ww-task-description">${esc(t.description)}</p><p class="${t.dueAt&&Date.parse(t.dueAt)<Date.parse(data.now)&&s!=='confirmed'?'ww-warning':'muted'}">Hạn ${time(t.dueAt)}${r?' · '+num(r.weight)+' điểm khối lượng':''}</p>
+   <p>${r?'Đã làm <b>'+num(r.elapsed?.minutes)+' / '+num(r.standardMinutes)+' phút</b>':'Chưa có định mức được duyệt'}</p>${r?.elapsed?`<progress value="${Math.min(100,r.elapsed.minutes/r.standardMinutes*100)}" max="100" aria-label="Thời gian đã dùng"></progress>`:''}
+   ${r?.evidence?`<p class="ww-evidence"><b>Kết quả:</b> ${esc(r.evidence)}</p>`:''}${r?.reviewNote?`<small class="muted">${esc(r.reviewNote)}</small>`:''}${waits}
+   <footer><a class="btn ghost small" href="${esc(href)}">${t.sourceManaged?'Mở phiếu / công việc gốc':'Chi tiết công việc'}</a><div class="ww-task-actions">${actions}</div></footer></article>`;
+ }
+ function draw(){const d=data;root.innerHTML=`<div class="ww-page"><header class="ww-head"><div><span class="eyebrow">Kho & giao hàng</span><h1>${d.manager?'Không gian Kho':'Kho của tôi'}</h1><p class="muted">Việc được giao và việc nhóm chưa nhận · Giờ Việt Nam</p></div><div class="ww-head-actions">${button('reload','Làm mới')}${d.manager?button('settings','Cài đặt ca & thưởng'):''}</div></header>
+  <div class="ww-filters">${field('month','Tháng hiệu suất','month',month)}${d.manager?`<label>Nhân viên Kho<select name="member"><option value="">Chọn nhân viên</option>${d.people.map(p=>`<option value="${esc(p.id)}"${p.id===selected?' selected':''}>${esc(p.name)}</option>`).join('')}</select></label>`:''}<small class="muted">Ca làm: ${d.config?esc(d.config.calendar.start+'–'+d.config.calendar.end):'Manager chưa cài đặt'} · Cập nhật ${time(d.now)}</small></div>
+  <div class="ww-kpis">${[['Cần làm',d.counts.todo,'priority'],['Đang xử lý',d.counts.working,'working'],['Quá hạn',d.counts.overdue,'overdue'],['Đã xong hôm nay',d.counts.doneToday,'todayDone']].map(([label,n,k],i)=>`<button class="card ww-kpi ${i===2?'late':i===3?'ok':''}" type="button" data-tab="${k}" data-no-busy><span>${label}</span><strong>${num(n)}</strong></button>`).join('')}</div>
+  <div class="ww-columns"><section class="card ww-queue"><h2>Công việc cần xử lý</h2><nav class="ww-tabs" aria-label="Trạng thái công việc">${[['priority','Ưu tiên'],['working','Đang làm'],['review','Chờ xác nhận '+num(d.counts.review)],['done','Đã xong']].map(([k,label])=>`<button type="button" data-tab="${k}" class="${tab===k?'active':''}" aria-pressed="${tab===k}" data-no-busy>${label}</button>`).join('')}</nav><div class="ww-task-list">${d.rows.length?d.rows.map(taskCard).join(''):'<p class="ww-empty">Không có công việc trong nhóm này.</p>'}</div><div class="ww-pagination">${page?button('previous','Trang trước'):''}<small>Trang ${page+1} · Tối đa 30 việc/trang</small>${d.hasMore?button('next','Trang sau'):''}</div></section>
+  <aside><section class="card ww-performance" id="ww-performance">${scoreCard()}</section><section class="card ww-quick"><h2>Thao tác nhanh</h2><a href="#/stock-lookup">Tra tồn / Quét mã <span>›</span></a><a href="#/receiving">Nhận hàng NCC <span>›</span></a><a href="#/packing">Phiếu đóng gói <span>›</span></a><a href="#/transfers">Điều chuyển kho <span>›</span></a><a href="#/stocktake">Kiểm kê / Báo chênh lệch <span>›</span></a></section></aside></div>
+  <p class="muted ww-note">Chỉ thời gian trong ca được tính. Khoảng chờ phải được Manager duyệt mới loại trừ. Xác nhận điểm không thay thao tác nhập/xuất kho.</p><details class="ww-operations"><summary>Phiếu nghiệp vụ cần theo dõi</summary><div data-ww-legacy></div></details></div>`;
+  const detail=root.querySelector('.ww-operations');detail.addEventListener('toggle',()=>{if(detail.open&&!detail.dataset.loaded){detail.dataset.loaded='1';legacy?.(root.querySelector('[data-ww-legacy]')).load();}});
+ }
+ function modal(title,body,submit){closeDialog();const key=identity();dialog=document.createElement('dialog');dialog.className='modal ww-dialog';dialog.innerHTML=`<form data-no-busy><header class="modal-head"><h2>${esc(title)}</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></header><div class="modal-body form-grid">${body}</div><footer class="modal-foot"><p class="error" role="alert"></p><button class="btn primary" type="submit">Lưu / Xác nhận</button></footer></form>`;document.body.append(dialog);const current=dialog;dialog.querySelector('[data-close]').onclick=()=>{if(!busy)closeDialog();};dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>{if(dialog===current){current.remove();dialog=null;}});
+  dialog.querySelector('form').onsubmit=async e=>{e.preventDefault();if(busy)return;const values=Object.fromEntries(new FormData(e.target));busy=true;const b=e.target.querySelector('[type=submit]');b.disabled=true;e.target.querySelector('.error').textContent='';try{await submit(values);if(key!==identity())return;closeDialog();toast('Đã lưu.');await load();}catch(err){if(key===identity()&&current.isConnected)e.target.querySelector('.error').textContent=err.message;}finally{if(key===identity()){busy=false;b.disabled=false;}}};dialog.showModal();
+ }
+ const note=label=>`<label class="full">${label}<textarea name="note" required minlength="3" maxlength="2000" rows="3"></textarea></label>`;
+ async function act(t,action,extra={}){await api('/warehouse-workspace/'+encodeURIComponent(t.id)+'/action','POST',{action,revision:t.run?.revision||0,taskRevision:t.taskRevision,...extra});}
+ root.addEventListener('change',e=>{if(e.target.name==='month'){month=e.target.value;page=0;load();}if(e.target.name==='member'){selected=e.target.value;page=0;load();}});
+ root.addEventListener('click',async e=>{const el=e.target.closest('button');if(!el||busy)return;if(el.dataset.tab){tab=el.dataset.tab;page=0;return load();}const a=el.dataset.wwAction;if(!a)return;
+  if(a==='reload')return load();if(a==='previous'||a==='next'){page+=a==='next'?1:-1;return load();}
+  if(a==='settings'){const c=data.config?.calendar||{},conf=data.config;return modal('Ca làm & thưởng dự kiến',`${field('start','Bắt đầu ca','time',c.start||'', 'required')}${field('end','Kết thúc ca','time',c.end||'', 'required')}${field('breakStart','Bắt đầu nghỉ','time',c.breakStart||'')}${field('breakEnd','Kết thúc nghỉ','time',c.breakEnd||'')}<fieldset class="full"><legend>Ngày làm việc</legend>${[1,2,3,4,5,6,0].map(d=>`<label class="ww-check"><input type="checkbox" name="day${d}"${c.days?.includes(d)?' checked':''}>${d?'Thứ '+(d+1):'Chủ nhật'}</label>`).join('')}</fieldset>${field('bonusBudget','Quỹ thưởng đủ công / tháng (chỉ dự kiến)','number',conf?.bonusBudget??'','min="0" step="1000"')}<p class="muted full">Thưởng chưa cộng vào lương. Ca mới chỉ áp dụng khi giao định mức cho việc chưa bắt đầu.</p><label class="full">Lý do<textarea name="reason" required minlength="3"></textarea></label>`,v=>api('/warehouse-workspace/settings','PUT',{revision:conf?.revision||0,calendar:{start:v.start,end:v.end,breakStart:v.breakStart,breakEnd:v.breakEnd,days:[0,1,2,3,4,5,6].filter(d=>v['day'+d])},bonusBudget:v.bonusBudget,reason:v.reason}));}
+  if(a==='approve-month')return modal('Duyệt điểm tháng',`<p class="full">Chốt ${esc(month)}: ${num(data.report.score)} điểm. Sau khi duyệt không sửa dữ liệu kỳ này. Tiền thưởng vẫn là dự kiến.</p>`,()=>api('/warehouse-workspace/approve-month','POST',{memberId:selected,month,fingerprint:data.report.fingerprint}));
+  const t=data?.rows.find(x=>x.id===el.closest('[data-task]')?.dataset.task);if(!t)return;
+  if(a==='configure')return modal('Giao định mức công việc',`<p class="full">${esc(t.title)} · Hạn ${time(t.dueAt)}. Chưa có hạn: mở Chi tiết công việc để đặt trước.</p><label>Người phụ trách<select name="memberId" required>${data.people.map(p=>`<option value="${esc(p.id)}"${p.id===(t.assigneeId||selected)?' selected':''}>${esc(p.name)}</option>`).join('')}</select></label><label>Loại việc<select name="kind">${Object.entries(kinds).map(([k,v])=>`<option value="${k}"${t.run?.kind===k?' selected':''}>${v}</option>`).join('')}</select></label>${field('weight','Điểm khối lượng','number',t.run?.weight||'','required min="0.1" max="10000" step="0.1"')}${field('standardMinutes','Tổng thời gian chuẩn (phút)','number',t.run?.standardMinutes||'','required min="1" max="100000" step="1"')}${note('Căn cứ định mức')}`,v=>act(t,a,v));
+  if(['block','submit','reject','confirm','review-wait'].includes(a)){const labels={block:'Báo vướng mắc',submit:'Gửi kết quả hoàn thành',reject:'Yêu cầu làm lại',confirm:'Xác nhận chất lượng', 'review-wait':'Duyệt khoảng chờ'};let body=note(a==='submit'?'Kết quả / phiếu / bằng chứng bàn giao':'Lý do / nhận xét');
+   if(a==='confirm')body='<label>Chất lượng<select name="quality"><option value="clean">Không lỗi</option><option value="error">Có lỗi đã xác minh</option></select></label>'+body;
+   if(a==='review-wait')body='<label>Kết quả<select name="decision"><option value="approved">Duyệt loại trừ thời gian chờ</option><option value="rejected">Không loại trừ</option></select></label>'+body;
+   return modal(labels[a],body,v=>act(t,a,{...v,waitId:el.dataset.wait}));
+  }
+  const key=identity();busy=true;el.disabled=true;try{await act(t,a);if(key===identity())await load();}catch(err){if(key===identity())toast(err.message,'err');}finally{if(key===identity())busy=false;}
+ });
+ return {load,close,hide(){seq++;closeDialog();}};
+}

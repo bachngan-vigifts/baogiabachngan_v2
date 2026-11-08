@@ -1,3 +1,4 @@
+import {initWarehouseWorkspace} from './warehouse-workspace.js';
 import { createNotificationFeed } from './notification-feed.js';
 import {productThumbnailUrl,noteThumbnailFailure} from './product-images.js';
 import {initOrderProducts} from './order-products.js';
@@ -485,6 +486,7 @@ let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('
 function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
   if (typeof shiftReportsUi !== 'undefined') shiftReportsUi?.close();
+  if(typeof khoHomeUi!=='undefined')khoHomeUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
   homeUi?.reset(); homeNotifications?.clear(); notifier?.reset(); tasksUi?.resetQuick();
   $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
@@ -551,6 +553,7 @@ function applyWorkspaceUser(user) {
   $$('.kho-nav, .kho-only').forEach(el => el.hidden = !isWarehouse());
   // Menu theo quyền của chức vụ (trang Phân quyền): mục nào chức vụ chưa được cấp thì ẩn.
   $$('[data-nav]').forEach(el => { const k = PAGE_PERM[el.dataset.nav]; if (k && !(el.classList.contains('kho-only') && !isWarehouse())) el.hidden = !can(k); });
+  $$('.ww-nav').forEach(el=>el.hidden=!(isManager()||isWarehouse()));
   $$('.perm-admin-only').forEach(el => el.hidden = !can('perm.manage'));
   $$('[data-nav=tasks]').forEach(el => { if (isWarehouse()) el.hidden = true; });
   document.body.classList.toggle('role-warehouse', isWarehouse());
@@ -852,7 +855,7 @@ var shiftReportsUi = null;
 const shiftReportsView = () => shiftReportsUi ||= initShiftReports({api,root:$('#view-shift-reports'),go});
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+const VIEWS = { home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Kho của tôi', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
@@ -956,7 +959,7 @@ function route() {
   if (view === 'transfers') transfersView().load(id);
   if (view === 'stock-moves') stockMovesView().show(query);
   if (view === 'permissions') { permissionsView().load(); sellerConfigView().load(); }
-  if (view === 'kho') khoHome().load();
+  if (view === 'kho') khoHome().load(); else khoHomeUi?.hide();
   if (view === 'stock-lookup') stockLookup().load(new URLSearchParams(query).get('q')||'');
   if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
   if (view === 'order') openOrder(id);
@@ -3926,8 +3929,9 @@ function feedbackView() { return feedbackUi ||= initFeedback({ api, root: $('#vi
 var suppliersUi = null;
 function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('#view-suppliers'), toast, confirmBox, canLinkAccounts: isManager }); }
 var inventoryUi = null;
-let khoHomeUi = null, stockLookupUi = null;
-function khoHome() { return khoHomeUi ||= initKhoHome({ api, root: $('#view-kho'), today: todayIso }); }
+var khoHomeUi = null; // hoisted: unauthenticated startup can call showAuth before this section
+let stockLookupUi = null;
+function khoHome() { return khoHomeUi ||= initWarehouseWorkspace({api,root:$('#view-kho'),toast,identity:()=>JSON.stringify([token,state.user?.id]),legacy:root=>initKhoHome({api,root,today:todayIso})}); }
 function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
 let stocktakeUi;
 function stocktakeView() { return stocktakeUi ||= initStocktake({ api, root: $('#view-stocktake'), toast, confirmBox, userId: () => state.user?.id, ensureCatalog: loadCatalogSnapshot, findProducts: q => catalog.items ? searchCatalog(catalog.items, {q}) : null }); }
