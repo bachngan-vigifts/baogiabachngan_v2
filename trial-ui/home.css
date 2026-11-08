@@ -109,9 +109,3 @@
  #view-home .home-group summary { gap:7px;padding:12px 10px;min-height:102px; }
  #view-home .home-group summary b { font-size:12px; }
 }
-
-/* Home already contains the approval inbox entry; keep its global launcher on other routes. */
-body:has(#view-home:not([hidden])) #approval-launcher { display:none; }
-body:has(#view-home:not([hidden])) #page-back { display:none; }
-body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
-@media(max-width:760px) { body:has(#view-home:not([hidden])) .topbar { padding-left:12px; } }

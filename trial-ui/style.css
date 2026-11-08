@@ -2723,3 +2723,11 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 /* Bản tính sẵn (Tổng quan, Phân tích lợi nhuận): "Số liệu lúc HH:mm" + nút Cập nhật */
 .report-cache{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 0;font-size:13px;color:var(--muted,#64748b)}
 .report-cache .btn-sm{padding:3px 10px;font-size:12px;min-height:0}
+
+/* Critical Home shell sizing is available before the lazy route CSS; keep the chat spacer below the first viewport. */
+#view-home { min-height:calc(100vh - 40px);min-height:calc(100svh - 40px); }
+/* Home already contains the approval inbox entry; keep its global launcher on other routes. */
+body:has(#view-home:not([hidden])) #approval-launcher { display:none; }
+body:has(#view-home:not([hidden])) #page-back { display:none; }
+body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
+@media(max-width:760px) { body:has(#view-home:not([hidden])) .topbar { padding-left:12px; } }
