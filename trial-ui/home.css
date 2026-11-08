@@ -1,0 +1,6 @@
+#view-home { min-width:0; }
+#view-home .home-head { margin-bottom:20px; }
+#view-home .home-head h1 { margin:0 0 4px; }
+#view-home .home-head p { margin:0;color:var(--muted); }
+.home-entry { display:inline-flex;align-items:center;justify-content:center;min-height:40px;min-width:40px;color:var(--ink); }
+.home-entry svg { width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8; }

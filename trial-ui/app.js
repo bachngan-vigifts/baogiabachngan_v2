@@ -471,7 +471,7 @@ const isAccountant = () => state.user?.role === 'employee' && state.user?.positi
 /** NVBH ML/LOCK dùng POS làm trang chủ khi được cấp quyền bán hàng. */
 const isCounterSales = () => state.user?.role === 'employee' && ['sales-ml', 'sales-lock'].includes(state.user?.positionId) && can('pos.sell');
 /** Trang mở đầu theo chức vụ và quyền hiện hành. */
-const homeHash = () => isAccountant() ? '#/tasks' : state.user?.role==='employee'&&can('page.flow') ? '#/flow' : isWarehouse() ? KHO_HOME : isCounterSales() ? '#/pos' : can('page.quotes') ? '#/quotes' : '#/tasks';
+const homeHash = () => '#/home';
 let loginToHome = false;
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
@@ -557,7 +557,8 @@ function applyWorkspaceUser(user) {
 }
 function openWorkspace(user) {
   if(!applyWorkspaceUser(user))return;
-  if ((loginToHome && state.user?.role==='employee') || !/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + homeHash());
+  const directDocument = /^#\/[^/?]+\/(?!new(?:[/?]|$))[^/?]+/.test(location.hash);
+  if ((loginToHome && !directDocument) || !/^#\//.test(location.hash)) history.replaceState(null, '', location.pathname + homeHash());
   currentHash = location.hash;
   route();
   loadAll();
@@ -662,6 +663,12 @@ async function loadNavigationBadges(known) {
 }
 async function loadAll() {
   clearGlobalError();
+  if (location.hash.split('?')[0] === '#/home') {
+    // Home never preloads full quotes/customers/members/catalog or the 500-row task board.
+    loadBadges({startChat:true}); $('#chat-launcher').hidden=false;
+    approvalView().start(); storeView().start(); weeklyView().start();
+    return;
+  }
   // Chỉ tải dữ liệu của trang chức vụ được cấp quyền (máy chủ chặn phần còn lại) – tránh báo lỗi đỏ khi mở app.
   // Danh sách báo giá / khách / nhân viên dùng ở nhiều chỗ nên luôn tải, nhưng nếu đang mở trang khác thì chờ trang đó tải xong.
   const page = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] || 'quotes';
@@ -843,7 +850,7 @@ var shiftReportsUi = null;
 const shiftReportsView = () => shiftReportsUi ||= initShiftReports({api,root:$('#view-shift-reports'),go});
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+const VIEWS = { home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
@@ -886,7 +893,7 @@ function route() {
   const [page = 'quotes', id] = path.split('/');
   if(page==='products'&&!id){const legacySku=new URLSearchParams(query).get('sku');if(legacySku){currentHash='#/products/'+encodeURIComponent(legacySku);history.replaceState(null,'',currentHash);return route();}}
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
-  let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'quotes';
+  let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'home';
   if ((view === 'staff' || view === 'payroll') && !isManager()) { history.replaceState(null, '', homeHash()); return route(); }
   // Trang chức vụ chưa được cấp quyền (link cũ, thông báo…): về trang mở đầu. Báo giá / đơn / khách có mã thì xét theo trang chi tiết.
   const detail = id && view === 'quotes' ? 'editor' : id && (view === 'orders' || view === 'contracts') ? 'order' : id && view === 'customers' ? 'customer' : id && view === 'packing' ? 'packing-slip' : view;
@@ -900,11 +907,13 @@ function route() {
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
   const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? (page === 'contracts' ? 'contracts' : 'orders') : view === 'customer' ? 'customers' : view === 'product' ? 'products' : view === 'member' ? 'staff' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
+  $$('[data-home-link]').forEach(a => a.classList.toggle('active', view === 'home'));
   const viewTitle = view === 'customers' && new URLSearchParams(query).get('tab') === 'center' ? 'Trung tâm khách hàng' : VIEWS[view];
   $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : viewTitle;
   pageBack.record();
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : viewTitle) + ' · Bách Ngân';
   window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
+  if (view === 'home') showHome(); else homeUi?.hide();
   if (view === 'editor') openEditor(id);
   thuChiTabs(view);
   if (view === 'cash') cashView().load().catch(e=>toast(e.message,'err'));
@@ -5556,3 +5565,13 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('mess
 
 var custodyUi=null,custodyLoading=null;
 function custodyView(){return custodyLoading ||= import('./product-custody.js').then(({initProductCustody})=>custodyUi=initProductCustody({api,root:$('#view-product-custody'),toast,compress:compressImage,identity:()=>token,userId:()=>state.user?.id}));}
+
+// Trang chủ tải module khi mở; phần còn lại của CRM không phải tải giao diện này.
+var homeUi = null, homeLoading = null;
+function homeView() { return homeLoading ||= import('./home.js').then(({initHome}) => homeUi = initHome({root:$('#view-home'),api,user:()=>state.user,canApprove,go})); }
+function showHome() {
+  const who=state.user?.id;
+  homeView().then(ui=>{if(who===state.user?.id&&location.hash.split('?')[0]==='#/home')ui.show();}).catch(e=>{
+    if(who===state.user?.id&&location.hash.split('?')[0]==='#/home')$('#view-home').innerHTML=`<h1>Trang chủ</h1><p class="error" role="alert">${esc(e.message||'Chưa tải được trang chủ.')}</p>`;
+  });
+}
