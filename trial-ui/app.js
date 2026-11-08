@@ -485,7 +485,7 @@ function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
   if (typeof shiftReportsUi !== 'undefined') shiftReportsUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
-  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
+  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; notifier?.stop(); approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
   // Chỉ tự đặt con trỏ khi vừa mở form; không giành focus người dùng đã chọn.
@@ -3869,7 +3869,7 @@ var dataRefresh = setupDataRefresh({
   // Không tự hỏi định kỳ / khi quay lại tab: `pulse` (GET /pulse mỗi 30 giây) gọi tick() khi máy chủ báo có thay đổi.
   schedule: () => 0, cancel: () => {}, wakeOnFocus: false,
 });
-const notifier = setupNotifications({
+var notifier = setupNotifications({ // var: showAuth() có thể chạy trước khi khởi tạo xong.
   api, root: $('#staff-bell'),
   onNew(notes) {
     for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`);
