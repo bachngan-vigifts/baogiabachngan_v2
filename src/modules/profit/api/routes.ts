@@ -18,7 +18,7 @@ import { posRegisters, posShifts } from '../../sales/pos-schema.ts';
 import { posReturnLines, posReturns } from '../../sales/return-schema.ts';
 import { debtCounts } from '../../sales/domain/sales.ts';
 import { quotations } from '../../quotes/schema.ts';
-import { commissionOf, printingInfo, quoteStockSku, type QuoteDoc, type QuoteRow } from '../../quotes/domain/quote-math.ts';
+import { commissionOf, purchasePrice, printingInfo, quoteStockSku, type QuoteDoc, type QuoteRow } from '../../quotes/domain/quote-math.ts';
 import { productMovements } from '../../catalog/schema.ts';
 import { salesLineCosts } from '../../sales/line-cost-schema.ts';
 import { adjustLineCost } from '../../sales/api/line-costs.ts';
@@ -342,7 +342,12 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
       const freq = new Map<number, number>(); for (const l of g.lines) if (l.unitCost !== null) freq.set(l.unitCost, (freq.get(l.unitCost) ?? 0) + 1);
       g.suggested = [...freq].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]?.[0] ?? null;
     }
-    return [...groups.values()].sort((a, b) => b.revenue - a.revenue || a.sku.localeCompare(b.sku));
+    const references = deps.lineCostFallbackOf ? await deps.lineCostFallbackOf(db, [...new Set([...groups.values()].map(g => g.sku))]) : new Map<string, SkuFallbackCosts>();
+    return [...groups.values()].sort((a, b) => b.revenue - a.revenue || a.sku.localeCompare(b.sku)).map(g => {
+      const ref = references.get(g.sku)?.reference;
+      // Không áp giá niêm yết theo cái cho dòng bán theo bộ / thùng.
+      return { ...g, reference: ref && ref.unit === g.unit ? ref : null };
+    });
   }
   const range = (q: URLSearchParams | Record<string, unknown>) => {
     const get = (k: string) => String((q instanceof URLSearchParams ? q.get(k) : q[k]) ?? '');
@@ -376,25 +381,39 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
     const reason = String(b.reason ?? '').trim();
     if (reason.length < 3) throw new AppError(400, 'Nhập lý do / căn cứ giá vốn.');
     const wanted = Array.isArray(b.items) ? b.items.slice(0, 500) : [];
-    const prices = new Map<string, number>();
+    const prices = new Map<string, { unitCost: number; discount: number; listPrice: number | null }>();
     for (const x of wanted) {
       const sku = String(x?.sku ?? ''), unit = String(x?.unit ?? ''), cost = Number(x?.unitCost);
       if (!sku || !Number.isFinite(cost) || cost < 0 || cost > 1e12) throw new AppError(400, `Giá vốn mã ${sku || '(trống)'} không hợp lệ.`);
-      prices.set(sku + '\u0000' + unit, cost);
+      const discount = x?.discountPercent === undefined ? 0 : x.discountPercent;
+      if (typeof discount !== 'number' || !Number.isFinite(discount) || discount < 0 || discount > 100) throw new AppError(400, 'CK phải từ 0 đến 100%.');
+      const listPrice = x?.listPrice ?? null;
+      if (discount > 0 && (typeof listPrice !== 'number' || !Number.isFinite(listPrice) || listPrice <= 0 || listPrice > 1e12)) throw new AppError(400, 'Thiếu giá niêm yết để tính CK.');
+      const key = sku + '\u0000' + unit;
+      if (prices.has(key)) throw new AppError(400, 'Mã và đơn vị bị lặp.');
+      prices.set(key, { unitCost: cost, discount, listPrice });
     }
     if (!prices.size) throw new AppError(400, 'Chưa nhập giá vốn cho mã nào.');
     // Tính lại danh sách thiếu ngay lúc ghi: dòng đã có giá (người khác vừa nhập / nguồn mới) không bị ghi đè.
     let written = 0;
     const groups = (await missingCosts(c.env.db, from, to, scope)).filter(g => prices.has(g.sku + '\u0000' + g.unit));
+    // Kiểm tra toàn bộ CK trước khi ghi bất kỳ dòng nào; giá niêm yết đổi thì yêu cầu mở lại popup.
+    for (const g of groups) {
+      const p = prices.get(g.sku + '\u0000' + g.unit)!;
+      if (p.discount > 0) {
+        if (!g.reference || g.reference.listPrice !== p.listPrice) throw new AppError(409, `Giá niêm yết mã ${g.sku} đã đổi hoặc chưa có. Mở lại bảng giá vốn.`);
+        if (p.unitCost !== purchasePrice(g.reference.listPrice, p.discount)) throw new AppError(400, `Giá vốn mã ${g.sku} không khớp giá niêm yết và CK.`);
+      }
+    }
     const lineIds = groups.flatMap(g => g.lines.map(l => l.lineId));
     // Dòng đã có snapshot (giá ước tính): ghi đè đúng phiên bản đang xem (adjustLineCost kiểm phiên bản – người khác vừa sửa thì 409).
     const revisions = new Map(lineIds.length ? (await c.env.db.select({ id: salesLineCosts.orderLineId, revision: salesLineCosts.revision }).from(salesLineCosts)
       .where(inArray(salesLineCosts.orderLineId, lineIds))).map(r => [r.id, r.revision]) : []);
     const verb = scope === 'unconfirmed' ? 'Xác nhận giá vốn' : 'Nhập giá vốn';
     for (const g of groups) {
-      const cost = prices.get(g.sku + '\u0000' + g.unit)!;
+      const price = prices.get(g.sku + '\u0000' + g.unit)!, cost = price.unitCost;
       for (const l of g.lines) {
-        const note = `${verb} theo mã ${g.sku}${l.source ? ` (gợi ý: ${COST_SOURCE_LABEL[l.source as keyof typeof COST_SOURCE_LABEL] ?? l.source} ${l.unitCost})` : ''}: ${reason}`;
+        const note = `${verb} theo mã ${g.sku}${l.source ? ` (gợi ý: ${COST_SOURCE_LABEL[l.source as keyof typeof COST_SOURCE_LABEL] ?? l.source} ${l.unitCost})` : ''}${price.discount > 0 ? `; niêm yết trước VAT ${price.listPrice}, CK ${price.discount}%` : ''}: ${reason}`;
         await adjustLineCost(c.env.db, l.lineId, { unitCost: cost, reason: note.slice(0, 500), revision: revisions.get(l.lineId) ?? null }, member(c).id); written++;
       }
     }

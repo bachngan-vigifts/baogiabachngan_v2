@@ -116,3 +116,14 @@ Ngày / tuần / tháng / năm (biểu đồ LN gộp + bảng), chi nhánh (Vă
 Chi phí văn phòng ngoài CRM; phí quẹt thẻ (chưa có dữ liệu); đơn web chưa đổi thành đơn CRM; giá vốn bình quân / giá xuất kho thực tế.
 
 API: `GET /profit?from&to&grain&branch&owner&customer`, `GET /profit/orders/:id`.
+
+### Rà soát giá vốn theo mã: niêm yết và CK
+
+Popup **Xác nhận giá vốn** / **Nhập giá vốn cho mã thiếu** hiển thị niêm yết hiện tại từ chính sách Giá bán lẻ, quy về trước VAT, kèm tên chính sách và ngày cập nhật. Không có giá bán lẻ, không rõ VAT hoặc khác đơn vị tính thì không dùng giá tham chiếu; không suy ra từ giá sỉ hay giá bán của đơn.
+
+- CK > 0: giá vốn = niêm yết trước VAT × (100 − CK) / 100, làm tròn đồng, ô giá vốn chỉ đọc. CK 100% tương ứng giá vốn 0.
+- CK trống / 0: cho nhập giá vốn trực tiếp, giữ giá đang gợi ý đến khi Manager sửa. CK chỉ được điền sẵn khi nguồn gợi ý là công thức thương hiệu và khớp niêm yết hiện tại; không áp lại CK lên giá mua đã chiết khấu.
+- Máy chủ kiểm tra CK, niêm yết hiện tại và giá tính ra trước khi ghi. Giá niêm yết đã đổi yêu cầu mở lại popup. Lý do bắt buộc; lịch sử lưu niêm yết + CK khi áp dụng.
+- Niêm yết dùng để đối soát, không thay giá mua lịch sử tự động. Luồng ghi snapshot/manual/confirmed hiện có giữ nguyên; không sửa danh mục giá hoặc tồn kho. Chỉ Manager được xem/ghi. Không cần migration.
+
+Kiểm thử trình duyệt: `node --import tsx scripts/testing/profit-cost-review.mjs` (cần Playwright/Chromium; dùng CSDL test cô lập).

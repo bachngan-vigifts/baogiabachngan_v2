@@ -15,22 +15,31 @@ export function purchaseOrderCost(p: { price: number | null; discount: number | 
 }
 export interface CatalogProduct { sku: string; unit?: string; name: string; brand: string; pattern: string; taxable: boolean; taxOut: number | null; taxBasis: string; at: string; prices: { id: string; name: string; price: number | null }[] | null }
 const RETAIL = ['gia ban le', 'gia le', 'gia ban le vat', 'gia le vat'];
+/** Giá niêm yết hiện tại, chuẩn hoá trước VAT; vẫn trả giá cho thương hiệu không có CK. */
+export function catalogListPrice(p: CatalogProduct | undefined): NonNullable<SkuFallbackCosts['reference']> | { reason: string } | null {
+  if (!p) return null;
+  const retail = p.prices?.filter(x => RETAIL.includes(normalize(x.name).replace(/\+/g, ' ').replace(/\s+/g, ' ').trim()) && valid(x.price) && (x.price as number) > 0)
+    .sort((a, b) => Number(/vat/i.test(a.name)) - Number(/vat/i.test(b.name)) || a.id.localeCompare(b.id))[0];
+  if (!retail || !valid(retail.price)) return null;
+  const included = /vat/i.test(retail.name) || p.taxBasis === 'Giá đã bao gồm thuế';
+  if (included && p.taxable && (!valid(p.taxOut) || p.taxOut > 100)) return { reason: 'Chưa rõ VAT của giá tham chiếu' };
+  return { listPrice: Math.round(netPrice(retail.price, p.taxable ? (p.taxOut ?? 0) : 0, included)),
+    discount: defaultCostDiscount(p), policy: `${retail.name} (${retail.id})`, at: p.at, unit: p.unit };
+}
 /**
  * Công thức gợi ý đơn mua NCC theo thương hiệu: giá bán lẻ (đúng chính sách "Giá bán lẻ") quy trước VAT, trừ CK mặc định của thương hiệu.
  * Giống hệt purchases.js prefillCosts và script khôi phục đơn cũ. Trả `reason` khi không áp được (để báo, không đoán).
  */
 export function catalogRuleCost(p: CatalogProduct | undefined): { cost: number; note: string; at: string; unit?: string } | { reason: string } | null {
-  if (!p) return null;
-  const discount = defaultCostDiscount(p);
-  const retail = p.prices?.filter(x => RETAIL.includes(normalize(x.name).replace(/\+/g, ' ').replace(/\s+/g, ' ').trim()) && valid(x.price) && (x.price as number) > 0)
-    .sort((a, b) => Number(/vat/i.test(a.name)) - Number(/vat/i.test(b.name)) || a.id.localeCompare(b.id))[0];
-  if (!retail || discount === null || !valid(retail.price)) return null;
-  const included = /vat/i.test(retail.name) || p.taxBasis === 'Giá đã bao gồm thuế';
-  if (included && p.taxable && (!valid(p.taxOut) || p.taxOut > 100)) return { reason: 'Chưa rõ VAT của giá tham chiếu' };
-  const listPrice = Math.round(netPrice(retail.price, p.taxable ? (p.taxOut ?? 0) : 0, included));
+  if (!p || defaultCostDiscount(p) === null) return null;
+  const reference = catalogListPrice(p);
+  if (!reference) return null;
+  if ('reason' in reference) return reference;
+  if (reference.discount === null) return null;
+  const { listPrice, discount } = reference;
   const cost = purchaseUnitCost({ price: listPrice, purchaseDiscount: discount, confirmedPurchaseDiscount: null, printFee: 0, taxRate: 0 })!;
   return { cost, at: p.at, unit: p.unit,
-    note: `Công thức gợi ý đơn mua NCC: ${retail.name} (${retail.id}), CK ${discount}%, trước VAT; bảng giá tham chiếu tại ${p.at}. Chưa phải giá mua lịch sử hay giá vốn xuất kho đã đối soát.` };
+    note: `Công thức gợi ý đơn mua NCC: ${reference.policy}, CK ${discount}%, trước VAT; bảng giá tham chiếu tại ${p.at}. Chưa phải giá mua lịch sử hay giá vốn xuất kho đã đối soát.` };
 }
 
 /** Nguồn giá bổ sung theo mã: đơn NCC đã duyệt (chưa huỷ, SL > 0) + công thức thương hiệu (sản phẩm đã duyệt). Chỉ đọc. */
@@ -58,7 +67,10 @@ export const lineCostFallbackOf: LineCostFallbackOf = async (db: AnyDb, skus) =>
     entry(l.sku).orders.push(point);
   }
   for (const p of prods) {
-    const rule = catalogRuleCost({ ...p, unit: p.unit, prices: prices.filter(x => x.sku === p.sku).map(x => ({ id: x.id, name: x.name, price: x.price })) } as CatalogProduct);
+    const product = { ...p, prices: prices.filter(x => x.sku === p.sku).map(x => ({ id: x.id, name: x.name, price: x.price })) } as CatalogProduct;
+    const reference = catalogListPrice(product);
+    if (reference && !('reason' in reference)) entry(p.sku).reference = reference;
+    const rule = catalogRuleCost(product);
     if (rule && 'cost' in rule) entry(p.sku).catalog = { at: rule.at, cost: rule.cost, unit: rule.unit, ref: 'catalog:' + p.sku, note: rule.note };
   }
   return out;

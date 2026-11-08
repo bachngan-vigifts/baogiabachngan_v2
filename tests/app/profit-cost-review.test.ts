@@ -1,0 +1,44 @@
+import { contractTest as test, assert } from '../TEST_TEMPLATE.ts';
+import { profitCostReviewFixture } from '../helpers/profit-cost-review-fixture.ts';
+import { catalogListPrice, catalogRuleCost, type CatalogProduct } from '../../src/app/line-cost-fallback.ts';
+import { productPrices } from '../../src/modules/catalog/schema.ts';
+import { salesLineCosts, salesLineCostHistory } from '../../src/modules/sales/line-cost-schema.ts';
+import { and, eq } from 'drizzle-orm';
+
+const query = '?from=2026-11-01&to=2026-11-30';
+const ok = (r: { status: number; data: any }) => { assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data; };
+test('niêm yết chuẩn hoá VAT, không lấy giá sỉ hay đoán VAT; sản phẩm không CK vẫn có niêm yết', () => {
+  const p: CatalogProduct = { sku: 'X', name: 'Bình', brand: 'Thermos', pattern: '', unit: 'Cái', taxable: true, taxOut: 8, taxBasis: '', at: '2026-11-01', prices: [{ id: 'r', name: 'Giá bán lẻ VAT', price: 108000 }] };
+  assert.deepEqual(catalogListPrice(p), { listPrice: 100000, discount: null, policy: 'Giá bán lẻ VAT (r)', at: p.at, unit: 'Cái' });
+  assert.equal(catalogRuleCost(p), null, 'không tạo giá vốn tự động khi chưa biết CK');
+  assert.ok('reason' in catalogListPrice({ ...p, taxOut: null })!);
+  assert.equal(catalogListPrice({ ...p, prices: [{ id: 'w', name: 'Giá sỉ', price: 50000 }] }), null);
+});
+test('API trả niêm yết thật đúng ĐVT; kiểm CK ở máy chủ, chặn giá cũ/sai trước ghi; lưu audit và giữ nhập tay', async () => {
+  const f = await profitCostReviewFixture();
+    const get = (scope = 'missing', who = f.mgr) => f.call('/profit/missing-costs' + query + '&scope=' + scope, who);
+    const post = (items: unknown[], scope = 'missing', who = f.mgr) => f.call('/profit/missing-costs', who, 'POST', { from: '2026-11-01', to: '2026-11-30', scope, reason: 'Đối soát hoá đơn NCC', items });
+    assert.equal((await get('unconfirmed', f.emp)).status, 403);
+    assert.equal((await post([], 'missing', f.emp)).status, 403);
+    const pending = ok(await get('unconfirmed'));
+    assert.equal(pending.items.find((i: any) => i.sku === 'LOCK').reference.discount, 58);
+    const missing = ok(await get()), plain = missing.items.find((i: any) => i.sku === 'PLAIN' && i.unit === 'Cái');
+    assert.equal(plain.reference.listPrice, 100000); assert.equal(plain.reference.discount, null);
+    assert.equal(missing.items.find((i: any) => i.sku === 'NONE').reference, null);
+    assert.equal(missing.items.find((i: any) => i.unit === 'Thùng').reference, null);
+    const row = { sku: 'PLAIN', unit: 'Cái', listPrice: 100000, discountPercent: 20, unitCost: 80000 };
+    for (const patch of [{ discountPercent: -1 }, { discountPercent: 101 }, { discountPercent: '20' }, { unitCost: 1 }, { listPrice: null }]) assert.equal((await post([{ ...row, ...patch }])).status, 400);
+    assert.equal((await post([{ ...row, sku: 'NONE' }])).status, 409);
+    assert.equal((await post([{ ...row, unit: 'Thùng' }])).status, 409);
+    assert.equal((await post([row, row])).status, 400);
+    await f.db.update(productPrices).set({ price: 118800 }).where(and(eq(productPrices.sku, 'PLAIN'), eq(productPrices.policyId, 'retail')));
+    assert.equal((await post([{ sku: 'NONE', unit: 'Cái', unitCost: 1 }, row])).status, 409);
+    assert.equal((await f.db.select().from(salesLineCosts)).length, 0, 'không ghi một phần trước khi phát hiện niêm yết cũ');
+    assert.equal(ok(await post([{ ...row, listPrice: 110000, unitCost: 88000 }, { sku: 'NONE', unit: 'Cái', unitCost: 12500.5, discountPercent: 0 }])).written, 2);
+    assert.equal(ok(await post([{ sku: 'LOCK', unit: 'Cái', unitCost: 42000, discountPercent: 58, listPrice: 100000 }], 'unconfirmed')).written, 1);
+    const costs = await f.db.select().from(salesLineCosts);
+    assert.deepEqual(costs.map(c => [c.orderLineId, c.unitCost, c.confidence]).sort(), [['review-LOCK', 42000, 'confirmed'], ['review-NONE', 12500.5, 'confirmed'], ['review-PLAIN', 88000, 'confirmed']]);
+    const audit = await f.db.select().from(salesLineCostHistory).where(eq(salesLineCostHistory.orderLineId, 'review-PLAIN'));
+    assert.match(audit[0]!.note, /niêm yết trước VAT 110000, CK 20%/);
+    assert.equal(ok(await post([{ ...row, listPrice: 110000, unitCost: 88000 }])).written, 0, 'gửi lặp không ghi đè giá đã xác nhận');
+});
