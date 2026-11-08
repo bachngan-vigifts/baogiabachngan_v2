@@ -1,9 +1,13 @@
-import {test} from 'node:test';
+import {test,beforeEach,afterEach,mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {eq} from 'drizzle-orm';
 import {fixture,ok,photo,sku} from '../helpers/warehouse-lifecycle-fixture.ts';
 import {postMoves} from '../../src/modules/inventory/api/ledger.ts';
 import {orderStockHolds,salesOrderLines,salesOrders} from '../../src/modules/sales/schema.ts';
+
+// The fixture delivery dates must stay unexpired regardless of when CI runs.
+beforeEach(()=>mock.timers.enable({apis:['Date'],now:Date.parse('2026-11-07T00:00:00.000Z')}));
+afterEach(()=>mock.timers.reset());
 
 /**
  * Giữ hàng theo đơn CRM (quyết định 28/10/2026, order-hold-store.ts): mỗi lần giữ ≤ có thể bán; tự giữ lúc duyệt khi có ngày giao

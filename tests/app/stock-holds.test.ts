@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -6,6 +6,10 @@ import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { products, productStock, warehouses } from '../../src/modules/catalog/schema.ts';
 import { salesOrderLines, salesOrders, stockHolds } from '../../src/modules/sales/schema.ts';
+
+// The fixture delivery dates must stay unexpired regardless of when CI runs.
+beforeEach(()=>mock.timers.enable({apis:['Date'],now:Date.parse('2026-11-07T00:00:00.000Z')}));
+afterEach(()=>mock.timers.reset());
 
 /** GIỮ HÀNG CHO BÁO GIÁ: treo tồn 5 ngày, khả dụng = tồn − đang treo; hết hạn báo nhân viên; lập đơn thì tự bỏ treo. */
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
