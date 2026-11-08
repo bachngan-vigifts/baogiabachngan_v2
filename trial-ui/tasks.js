@@ -49,6 +49,7 @@ const dm = iso => iso ? String(iso).slice(5, 10).split('-').reverse().join('/') 
 // "Hôm nay" theo giờ Việt Nam (khớp máy chủ), không theo múi giờ của máy đang mở.
 const todayIso = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
 const addDays = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+export const quickTaskDeadline = (days,iso=todayIso()) => days===''?'':addDays(iso,Number(days));
 const hm = iso => new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
 const pill = (map, k, extra = '') => `<span class="pill ${map[k]?.[1] || ''} ${extra}">${esc(map[k]?.[0] || k)}</span>`;
 const completionHint = t => t.completionHelp || (t.source === 'invoice' ? 'Việc xuất hoá đơn tự hoàn thành khi nhập số hoá đơn trên đơn / HĐKT. Mở chứng từ để ghi nhận số hoá đơn.' : /duyệt/i.test(t.title) ? 'Việc duyệt tự hoàn thành khi chứng từ được duyệt. Mở chứng từ để duyệt.' : 'Việc nhận hàng tự hoàn thành theo đơn mua. Mở chứng từ để ghi nhận hàng đã nhận.');
@@ -66,7 +67,7 @@ const store = { get: k => { try { return localStorage.getItem(k); } catch { retu
  * Gắn bảng công việc vào #view-tasks. `api(path, method, body)`, `toast(msg, kind)`, `go(hash)`, `isManager()`, `userId()`.
  * Trả về { load(id?), badge() }.
  */
-export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(t), go, isManager, canApprove = isManager, userId, positionId = () => '', approvalFeed, sendOnce = (_scope, _content, send) => send(crypto.randomUUID()) }) {
+export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(t), go, isManager, canApprove = isManager, userId, positionId = () => '', approvalFeed, onCreated = () => {}, sendOnce = (_scope, _content, send) => send(crypto.randomUUID()) }) {
   /**
    * Lưu sẵn danh sách theo bộ lọc (trong bộ nhớ trang, không lưu ổ đĩa): mở lại trang Công việc hiện ngay bản trước rồi tải bản mới ở nền.
    * Mọi thao tác ghi (giao việc, sửa, xoá, bình luận…) xoá bản lưu để lần tải sau lấy dữ liệu mới.
@@ -81,7 +82,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   const wide = () => !!globalThis.matchMedia?.('(min-width: 1280px)').matches;
 
   async function people() {
-    if (!st.people) { try { st.people = (await api('/tasks/people')).people; } catch { st.people = []; } }
+    if (!st.people) { const owner=userId();try { const data=await api('/tasks/people');if(owner===userId())st.people=data.people; } catch { if(owner===userId())st.people=[]; } }
     return st.people;
   }
   // Người nhận: từng nhân viên, hoặc cả nhóm (Kho, Kế toán…) – giá trị `team:<chức vụ>`.
@@ -255,7 +256,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
     if (s) st.summary = s;
     if (st.view === 'colleagues' && !d.canViewColleagues) st.view = 'mine';
     st.list = d.tasks; st.dueCounts = d.dueCounts || null;
-    if (!q('#tasks-quick-assignee').options.length) q('#tasks-quick-assignee').innerHTML = personOptions(userId(), isManager());
+    if (!quick.elements.assigneeId.options.length) quick.elements.assigneeId.innerHTML = personOptions(userId(), isManager());
     if (!q('#tasks-assignee').options.length) fillFilters();
     q('#tasks-sync').textContent = syncText(d);
     showTab(st.tab); renderCards(); renderList();
@@ -450,32 +451,55 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   }
 
   // ----- Sự kiện
-  const quick = q('#tasks-quick'),taskIntent=createTaskWriteIntent({owner:userId,scope:'tasks'});
-  let quickOwner=userId();
-  function resetQuickOwner(){if(quickOwner!==userId()){quickOwner=userId();quick.reset?.();quick.hidden=true;}}
-  // Lần giao việc chưa rõ kết quả: nút "Bỏ lần giao việc này" để không bị kẹt khi gửi lại bị từ chối (mất quyền, người nhận nghỉ…).
-  const discardBtn=quick.querySelector('[data-discard]');
+  const quick = q('#tasks-quick'),quickDialog=q('#tasks-quick-dialog'),taskIntent=createTaskWriteIntent({owner:userId,scope:'tasks'});
+  document.body.append(quickDialog);
+  let quickOwner=userId(),quickFresh=true,quickBusy=false;
+  function closeQuick(){if(quickBusy)return;if(quickDialog.open)quickDialog.close();quick.hidden=true;}
+  function resetQuick(){quickBusy=false;closeQuick();quick.reset();quick.elements.dueDate.value='';quick.elements.priority.value='normal';quick.elements.assigneeId.innerHTML='';quick.querySelector('[type=submit]').disabled=false;quick.querySelector('[type=submit]').removeAttribute('aria-busy');quick.querySelector('[type=submit]').textContent='Giao việc';quickFresh=true;quickOwner=userId();st.people=null;cache.clear();loadSequence++;quickError.textContent='';const hint=quick.querySelector('[data-custom-due]');hint.textContent='';hint.hidden=true;}
+  function resetQuickOwner(){if(quickOwner!==userId())resetQuick();}
+  const discardBtn=quick.querySelector('[data-discard]'),quickError=quick.querySelector('[data-quick-error]');
+  function syncQuickChoices(){
+    const date=quick.elements.dueDate.value;
+    let matched=false;quick.querySelectorAll('[data-due]').forEach(b=>{const selected=date===quickTaskDeadline(b.dataset.due);b.setAttribute('aria-pressed',String(selected));matched ||= selected;});
+    quick.querySelectorAll('[data-priority]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.priority===quick.elements.priority.value)));
+    const hint=quick.querySelector('[data-custom-due]');hint.hidden=matched||!date;hint.textContent=hint.hidden?'':'Hạn: '+dmy(date);
+  }
   const syncPendingUi=()=>{const pending=!!taskIntent.pending();quick.querySelector('button[type=submit]').textContent=pending?'Gửi lại lần giao việc trước':'Giao việc';if(discardBtn)discardBtn.hidden=!pending;};
-  discardBtn?.addEventListener?.('click',async()=>{
+  discardBtn?.addEventListener('click',async()=>{
     if(!await confirmBox('Bỏ lần giao việc chưa rõ kết quả trên máy này? Việc có thể ĐÃ được tạo – kiểm tra danh sách việc trước khi giao lại.',{title:'Bỏ lần giao việc',ok:'Bỏ lần giao việc'}))return;
-    if(taskIntent.discard()){quick.reset?.();syncPendingUi();toast('Đã bỏ. Kiểm tra danh sách việc xem việc đã được tạo chưa.');void load();}
+    if(taskIntent.discard()){quickFresh=true;closeQuick();toast('Đã bỏ. Kiểm tra danh sách việc xem việc đã được tạo chưa.');if(!root.hidden)void load();}
   });
-  const toggleQuick = (show = quick.hidden) => { resetQuickOwner();quick.hidden = !show; if(show){const pending=taskIntent.pending();syncPendingUi();if(pending){for(const key of ['title','assigneeId','priority','dueDate'])quick.elements[key].value=pending.content[key]||'';toast('Có lần giao việc chưa rõ kết quả. Nội dung đã được khôi phục để gửi lại đúng mã.');}quick.querySelector('[name=title]').focus?.();} };
-  q('#tasks-new').addEventListener('click', () => toggleQuick());
-  quick.addEventListener('submit', async e => {
-    e.preventDefault();
-    const f = e.target, title = f.title.value.trim(); if (!title) return f.title.focus();
-    const btn = f.querySelector('button[type=submit]'),owner=userId(); btn.disabled = true;
-    try {
-
-      const content = { title, assigneeId: f.assigneeId.value, priority: f.priority.value, dueDate: f.dueDate.value || undefined };
+  async function openQuick(){
+    resetQuickOwner();const who=userId();if(!who)return;
+    await people();if(who!==userId())return;
+    if(!st.people?.length){st.people=null;throw Error('Chưa tải được người nhận. Vui lòng thử lại.');}
+    if(quickDialog.open){quick.elements.title.focus();return;}
+    const selected=quickFresh?who:quick.elements.assigneeId.value;
+    quick.elements.assigneeId.innerHTML=personOptions(selected,isManager());
+    for(const option of quick.elements.assigneeId.options)if(option.value===who)option.textContent='Tôi';
+    if(quickFresh){quick.reset();quick.elements.assigneeId.value=who;quick.elements.dueDate.value=todayIso();quick.elements.priority.value='normal';quickFresh=false;}
+    const pending=taskIntent.pending();syncPendingUi();
+    if(pending){for(const key of ['title','assigneeId','priority','dueDate'])quick.elements[key].value=pending.content[key]||'';toast('Có lần giao việc chưa rõ kết quả. Nội dung đã được khôi phục để gửi lại đúng mã.');}
+    quickError.textContent='';syncQuickChoices();quick.hidden=false;quickDialog.showModal();quick.elements.title.focus();
+  }
+  const launchQuick=()=>openQuick().catch(e=>toast(e.message,'err'));
+  q('#tasks-new').addEventListener('click',launchQuick);
+  quick.addEventListener('submit',async e=>{
+    e.preventDefault();if(quickBusy)return;
+    const f=e.target,title=f.elements.title.value.trim();if(!title){quickError.textContent='Nhập tên việc cần giao.';f.elements.title.focus();return;}
+    const btn=f.querySelector('button[type=submit]'),owner=userId();quickBusy=true;btn.disabled=true;btn.setAttribute('aria-busy','true');btn.textContent='Đang giao việc…';quickError.textContent='';
+    try{
+      const content={title,assigneeId:f.elements.assigneeId.value,priority:f.elements.priority.value,dueDate:f.elements.dueDate.value||undefined};
       await taskIntent.send(content,(clientKey,content)=>api('/tasks','POST',{...content,clientKey}));
       if(owner!==userId())return;
-      f.title.value = ''; syncPendingUi(); toast('Đã giao việc.'); await load(); f.title.focus();
-    } catch (ex) { if(owner===userId())toast(ex.message+(taskIntent.pending()&&ex.status>=400&&ex.status<500?' Có thể bấm "Bỏ lần giao việc này".':''), 'err'); } finally { if(owner===userId()){btn.disabled = false;syncPendingUi();} }
+      quickBusy=false;closeQuick();quickFresh=true;syncPendingUi();toast('Đã giao việc.');onCreated();if(!root.hidden)void load().catch(e=>toast(e.message,'err'));
+    }catch(ex){if(owner===userId()){quickError.textContent=ex.message;toast(ex.message+(taskIntent.pending()&&ex.status>=400&&ex.status<500?' Có thể bấm “Bỏ lần giao việc này”.':''),'err');}}
+    finally{if(owner===userId()){quickBusy=false;btn.disabled=false;btn.removeAttribute('aria-busy');syncPendingUi();}}
   });
-  quick.querySelector('[data-cancel]')?.addEventListener('click', () => toggleQuick(false));
-  quick.querySelectorAll('[data-due]').forEach(b => b.addEventListener('click', () => { quick.dueDate.value = b.dataset.due === '' ? '' : addDays(todayIso(), Number(b.dataset.due)); }));
+  quickDialog.addEventListener('cancel',e=>{e.preventDefault();closeQuick();});
+  quick.querySelectorAll('[data-cancel]').forEach(b=>b.addEventListener('click',closeQuick));
+  quick.querySelectorAll('[data-due]').forEach(b=>b.addEventListener('click',()=>{quick.elements.dueDate.value=quickTaskDeadline(b.dataset.due);syncQuickChoices();}));
+  quick.querySelectorAll('[data-priority]').forEach(b=>b.addEventListener('click',()=>{quick.elements.priority.value=b.dataset.priority;syncQuickChoices();}));
   q('#tasks-refresh').addEventListener('click', () => { st.refresh = true; load(); });
   q('#tasks-view').addEventListener('click', e => {
     const b = e.target.closest('[data-v]'); if (!b) return;
@@ -526,7 +550,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   // Phím tắt: N giao việc · / tìm · ↑↓ chọn việc · Enter mở · Esc đóng khung chi tiết (khi không gõ trong ô nhập).
   document.addEventListener('keydown', e => {
     if (root.hidden || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.querySelector('dialog[open]')) return;
-    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); toggleQuick(true); }
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); launchQuick(); }
     else if (e.key === '/') { e.preventDefault(); q('#tasks-search').focus(); }
     else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       const ids = [...q('#tasks-list').querySelectorAll('[data-task]')].map(r => r.dataset.task); if (!ids.length) return;
@@ -536,5 +560,5 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
     } else if (e.key === 'Enter' && st.selected) { e.preventDefault(); openDetail(st.selected); }
     else if (e.key === 'Escape' && panelTask) closePanel();
   });
-  return { load, badge, prefetch, openNew: async()=>{const who=userId();await people();if(who!==userId()||root.hidden)return;fillFilters();toggleQuick(true);}, refreshPeople: () => { st.people = null; } };
+  return { load, badge, prefetch, openNew:openQuick, resetQuick, refreshPeople: () => { st.people = null; } };
 }

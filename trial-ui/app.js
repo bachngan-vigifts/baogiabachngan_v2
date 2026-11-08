@@ -486,7 +486,7 @@ function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
   if (typeof shiftReportsUi !== 'undefined') shiftReportsUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
-  homeUi?.reset(); homeNotifications?.clear(); notifier?.reset();
+  homeUi?.reset(); homeNotifications?.clear(); notifier?.reset(); tasksUi?.resetQuick();
   $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
@@ -3956,7 +3956,7 @@ function flowView() {
   } });
 }
 function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
-function tasksView() { return tasksUi ||= initTasks({ approvalFeed: sharedApprovalFeed(), api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId, sendOnce }); }
+function tasksView() { return tasksUi ||= initTasks({ approvalFeed: sharedApprovalFeed(), onCreated:()=>homeUi?.refresh(), api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId, sendOnce }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
 var approvalFeed = null;
@@ -5575,7 +5575,7 @@ function custodyView(){return custodyLoading ||= import('./product-custody.js').
 var homeUi = null, homeLoading = null;
 function homeNavigation(){return [...document.querySelectorAll('.side-nav [data-nav]')].filter(a=>!a.hidden&&!a.closest('[hidden]')&&linkAllowed(a.getAttribute('href'))).map(a=>{const group=a.closest('.nav-group'),heading=group?.querySelector('h2');return{key:a.dataset.nav,label:a.querySelector('span')?.textContent?.trim()||a.textContent.trim(),href:a.getAttribute('href'),groupId:heading?.id||'',group:(heading?.querySelector('.nav-group-toggle>span:first-child')?.textContent||heading?.textContent)?.trim()||'Chức năng khác'};});}
 function homeActions(){return [
-  {key:'new-task',label:'Tạo công việc',icon:'work',run:()=>go('#/tasks?home=1&view=mine&new=1')},
+  {key:'new-task',label:'Tạo công việc',icon:'work',run:()=>tasksView().openNew().catch(e=>toast(e.message,'err'))},
   ...(can('pos.sell')&&isCounterSales()?[{key:'pos',label:'Bán hàng nhanh',icon:'sell',run:()=>go('#/pos')}]:[]),
   ...(can('page.quotes')?[{key:'new-quote',label:'Lập báo giá',icon:'sell',run:()=>openNewQuote()}]:[]),
   ...(can('page.customers')?[{key:'new-customer',label:'Thêm khách hàng',icon:'customers',run:()=>openCustomer()}]:[]),

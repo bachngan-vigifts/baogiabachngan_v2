@@ -442,7 +442,9 @@ test('phiếu xin hàng: chức vụ đối ứng Cho / Từ chối (không tự
 });
 
 
-test('tồn đầu 0 + nhập 5: duyệt đơn không trừ; xuất 2 rồi 3 về 0, giảm giữ hàng đúng phần đã xuất', async () => {
+test('tồn đầu 0 + nhập 5: duyệt đơn không trừ; xuất 2 rồi 3 về 0, giảm giữ hàng đúng phần đã xuất', async (t) => {
+  // Keep the fixed delivery date inside its active hold period.
+  t.mock.timers.enable({apis:['Date'],now:Date.parse('2026-11-07T00:00:00.000Z')});
   const s = await setup();
   await postMoves(s.db, 'mgr', [{sku:'LY1',warehouseId:'vig',qty:-50,kind:'adjust',refType:'adjustment',refId:'reset-fixture'}]);
   assert.equal(await bal(s,'vig'),0);

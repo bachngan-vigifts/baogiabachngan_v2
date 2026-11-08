@@ -11,7 +11,7 @@ const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 function fixture(manager = false, custom?: object[]) {
   const nodes = new Map<string, any>(), calls: string[] = [], pending = new Map<string, (x: unknown) => void>(); let delayed = false;
   function node(key: string): any {
-    if (!nodes.has(key)) nodes.set(key, { innerHTML: '', textContent: '', value: '', hidden: false, className: 'view', options: [], listeners: {}, dataset: {}, attrs: {}, classList: { toggle() {} },
+    if (!nodes.has(key)) nodes.set(key, { innerHTML: '', textContent: '', value: '', hidden: false, className: 'view', options: [], elements:{assigneeId:{options:[],innerHTML:''}}, listeners: {}, dataset: {}, attrs: {}, classList: { toggle() {} },
       setAttribute(k: string, v: string) { this.attrs[k] = v; }, addEventListener(k: string, fn: Function) { this.listeners[k] = fn; }, focus() {},
       querySelector: (s: string) => node(key + ' ' + s), querySelectorAll: (s: string) => key === '#tasks-status' && s === '[data-v]' ? ['open', 'done', 'all'].map(v => chip(v)) : [] });
     return nodes.get(key);
@@ -19,7 +19,7 @@ function fixture(manager = false, custom?: object[]) {
   function chip(v: string) { const n = node(`status-${v}`); n.dataset.v = v; return n; }
   const data = (due: string) => ({ today: '2026-10-22', syncedAt: '2026-10-22T08:20:00.000Z', dueCounts: { overdue: 33, today: 1, week: 4, upcoming: 9, none: 2, total: 45 },
     tasks: custom ?? [{ id: due || 'mine', title: due ? `Only ${due}` : 'My open tasks', status: 'todo', priority: 'normal', source: 'manual', due: due === 'week' ? 'upcoming' : due || 'none', dueDate: null }], canViewColleagues: false });
-  const ctx: any = { createTaskWriteIntent, document: { getElementById: (id: string) => node('#' + id), addEventListener() {} }, Intl, Date, URLSearchParams, setTimeout, clearTimeout };
+  const ctx: any = { createTaskWriteIntent, document: { body:{append(){}}, getElementById: (id: string) => node('#' + id), addEventListener() {} }, Intl, Date, URLSearchParams, setTimeout, clearTimeout };
   vm.createContext(ctx); vm.runInContext(source, ctx);
   const app = ctx.initTasks({ isManager: () => manager, userId: () => 'emp', toast() {}, go() {}, api: async (path: string) => {
     calls.push(path);
