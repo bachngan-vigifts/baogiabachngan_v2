@@ -1,3 +1,4 @@
+import { createNotificationFeed } from './notification-feed.js';
 import {productThumbnailUrl,noteThumbnailFailure} from './product-images.js';
 import {initOrderProducts} from './order-products.js';
 import { createDeliveryCalendar, renderDeliveryProducts } from './delivery-calendar.js';
@@ -468,10 +469,10 @@ const ghnCancelNote = r => !r?.ghnCancel ? '' : (r.ghnCancel.cancelled.length ? 
 const KHO_HOME = '#/kho';
 /** Kế toán: chức vụ "accounting". */
 const isAccountant = () => state.user?.role === 'employee' && state.user?.positionId === 'accounting';
-/** NVBH ML/LOCK dùng POS làm trang chủ khi được cấp quyền bán hàng. */
+/** NVBH ML/LOCK có lối tắt POS trên Trang chủ khi được cấp quyền bán hàng. */
 const isCounterSales = () => state.user?.role === 'employee' && ['sales-ml', 'sales-lock'].includes(state.user?.positionId) && can('pos.sell');
-/** Trang mở đầu theo chức vụ và quyền hiện hành. */
-const homeHash = () => isAccountant() ? '#/tasks' : state.user?.role==='employee'&&can('page.flow') ? '#/flow' : isWarehouse() ? KHO_HOME : isCounterSales() ? '#/pos' : can('page.quotes') ? '#/quotes' : '#/tasks';
+/** Điểm vào chung; nội dung Trang chủ vẫn theo chức vụ và quyền hiện hành. */
+const homeHash = () => '#/home';
 let loginToHome = false;
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
@@ -485,6 +486,7 @@ function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
   if (typeof shiftReportsUi !== 'undefined') shiftReportsUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
+  homeUi?.reset(); homeNotifications?.clear(); notifier?.reset();
   $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
@@ -557,7 +559,8 @@ function applyWorkspaceUser(user) {
 }
 function openWorkspace(user) {
   if(!applyWorkspaceUser(user))return;
-  if ((loginToHome && state.user?.role==='employee') || !/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + homeHash());
+  const directDocument = /^#\/[^/?]+\/(?!new(?:[/?]|$))[^/?]+/.test(location.hash);
+  if ((loginToHome && !directDocument) || !/^#\//.test(location.hash)) history.replaceState(null, '', location.pathname + homeHash());
   currentHash = location.hash;
   route();
   loadAll();
@@ -569,7 +572,7 @@ function refreshWorkspaceUser(user) {
   const access=u=>JSON.stringify([u?.role,u?.positionId,u?.perms,u?.approver,u?.dataScope,u?.departmentId]);
   const previous=access(state.user);
   if(!applyWorkspaceUser(user))return;
-  if(previous!==access(user)){route();loadAll();}
+  if(previous!==access(user)){homeNotifications?.clear();notifier?.reset();notifier?.start();route();loadAll();}
 }
 
 // ---------------------------------------------------------------- tài khoản
@@ -662,6 +665,12 @@ async function loadNavigationBadges(known) {
 }
 async function loadAll() {
   clearGlobalError();
+  if (location.hash.split('?')[0] === '#/home') {
+    // Home never preloads full quotes/customers/members/catalog or the 500-row task board.
+    loadBadges({startChat:true}); $('#chat-launcher').hidden=false;
+    approvalView().start(); storeView().start(); weeklyView().start();
+    return;
+  }
   // Chỉ tải dữ liệu của trang chức vụ được cấp quyền (máy chủ chặn phần còn lại) – tránh báo lỗi đỏ khi mở app.
   // Danh sách báo giá / khách / nhân viên dùng ở nhiều chỗ nên luôn tải, nhưng nếu đang mở trang khác thì chờ trang đó tải xong.
   const page = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] || 'quotes';
@@ -843,7 +852,7 @@ var shiftReportsUi = null;
 const shiftReportsView = () => shiftReportsUi ||= initShiftReports({api,root:$('#view-shift-reports'),go});
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+const VIEWS = { home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
@@ -886,7 +895,8 @@ function route() {
   const [page = 'quotes', id] = path.split('/');
   if(page==='products'&&!id){const legacySku=new URLSearchParams(query).get('sku');if(legacySku){currentHash='#/products/'+encodeURIComponent(legacySku);history.replaceState(null,'',currentHash);return route();}}
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
-  let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'quotes';
+  let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'home';
+  if(view==='home'&&page!=='home'){currentHash=homeHash();history.replaceState(null,'',location.pathname+currentHash);return route();}
   if ((view === 'staff' || view === 'payroll') && !isManager()) { history.replaceState(null, '', homeHash()); return route(); }
   // Trang chức vụ chưa được cấp quyền (link cũ, thông báo…): về trang mở đầu. Báo giá / đơn / khách có mã thì xét theo trang chi tiết.
   const detail = id && view === 'quotes' ? 'editor' : id && (view === 'orders' || view === 'contracts') ? 'order' : id && view === 'customers' ? 'customer' : id && view === 'packing' ? 'packing-slip' : view;
@@ -900,11 +910,13 @@ function route() {
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
   const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? (page === 'contracts' ? 'contracts' : 'orders') : view === 'customer' ? 'customers' : view === 'product' ? 'products' : view === 'member' ? 'staff' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
+  $$('[data-home-link]').forEach(a => a.classList.toggle('active', view === 'home'));
   const viewTitle = view === 'customers' && new URLSearchParams(query).get('tab') === 'center' ? 'Trung tâm khách hàng' : VIEWS[view];
   $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : viewTitle;
   pageBack.record();
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : viewTitle) + ' · Bách Ngân';
   window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
+  if (view === 'home') showHome(); else homeUi?.hide();
   if (view === 'editor') openEditor(id);
   thuChiTabs(view);
   if (view === 'cash') cashView().load().catch(e=>toast(e.message,'err'));
@@ -928,7 +940,7 @@ function route() {
   if (view === 'receivables') loadReceivables();
   if (view === 'cashbook') loadCashbook();
   if (view === 'stock-requests') loadStockRequests(id);
-  if (view === 'tasks') tasksView().load(id);
+  if (view === 'tasks') {const target=location.hash,who=state.user?.id;tasksView().load(id,query).then(()=>{if(new URLSearchParams(query).get('new')==='1'&&location.hash===target&&state.user?.id===who)return tasksView().openNew();}).catch(e=>toast(e.message,'err'));}
   if (view === 'dashboard') dashboardView().load();
   if (view === 'profit') profitView().show();
   if (view === 'feedback') feedbackView().show(id ? decodeURIComponent(id) : '');
@@ -3864,13 +3876,14 @@ var dataRefresh = setupDataRefresh({
   enabled: () => !!state.user,
   blocked: () => (location.hash.startsWith('#/shift-reports') && !!document.activeElement?.closest('.srp-filters')) || (location.hash.startsWith('#/pos') && !!posUi?.dirty()) || (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
   routeKey: () => location.hash,
-  primaryPaths: () => location.hash.startsWith('#/cash') ? ['/cash'] : location.hash.startsWith('#/pos') ? ['/pos/options'] : isWarehouse() ? ['/packing?status=sent'] : [can('page.quotes') && '/quotes', can('page.orders') && '/orders', can('page.contracts') && '/contracts'].filter(Boolean),
+  primaryPaths: () => location.hash.startsWith('#/home') ? [] : location.hash.startsWith('#/cash') ? ['/cash'] : location.hash.startsWith('#/pos') ? ['/pos/options'] : isWarehouse() ? ['/packing?status=sent'] : [can('page.quotes') && '/quotes', can('page.orders') && '/orders', can('page.contracts') && '/contracts'].filter(Boolean),
   onDeferred: () => toast('Có dữ liệu mới. Trang sẽ cập nhật sau khi anh/chị lưu thay đổi và đóng biểu mẫu.'),
   // Không tự hỏi định kỳ / khi quay lại tab: `pulse` (GET /pulse mỗi 30 giây) gọi tick() khi máy chủ báo có thay đổi.
   schedule: () => 0, cancel: () => {}, wakeOnFocus: false,
 });
-const notifier = setupNotifications({
-  api, root: $('#staff-bell'),
+var homeNotifications = createNotificationFeed({api,identity:()=>JSON.stringify([token,state.user?.role,state.user?.positionId,state.user?.perms,state.user?.approver])});
+var notifier = setupNotifications({
+  api:homeNotifications.read, root: $('#staff-bell'),
   onNew(notes) {
     for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`);
     dataRefresh.request(); dataRefresh.tick();
@@ -3953,6 +3966,7 @@ function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId
 /** Tải lại dữ liệu đang xem sau khi đã kiểm tra các biểu mẫu chưa lưu. */
 async function refreshData() {
   if (!state.user) return;
+  if(location.hash.split('?')[0]==='#/home'){await Promise.allSettled([homeUi?.refresh(),approvalView().refresh()]);return;}
   const jobs = [approvalView().refresh(), loadQuotes(), loadBadges()];
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page, id] = path.split('/'), params = new URLSearchParams(query);
@@ -5556,3 +5570,26 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('mess
 
 var custodyUi=null,custodyLoading=null;
 function custodyView(){return custodyLoading ||= import('./product-custody.js').then(({initProductCustody})=>custodyUi=initProductCustody({api,root:$('#view-product-custody'),toast,compress:compressImage,identity:()=>token,userId:()=>state.user?.id}));}
+
+// Trang chủ tải module khi mở; phần còn lại của CRM không phải tải giao diện này.
+var homeUi = null, homeLoading = null;
+function homeNavigation(){return [...document.querySelectorAll('.side-nav [data-nav]')].filter(a=>!a.hidden&&!a.closest('[hidden]')&&linkAllowed(a.getAttribute('href'))).map(a=>{const group=a.closest('.nav-group'),heading=group?.querySelector('h2');return{key:a.dataset.nav,label:a.querySelector('span')?.textContent?.trim()||a.textContent.trim(),href:a.getAttribute('href'),groupId:heading?.id||'',group:(heading?.querySelector('.nav-group-toggle>span:first-child')?.textContent||heading?.textContent)?.trim()||'Chức năng khác'};});}
+function homeActions(){return [
+  {key:'new-task',label:'Tạo công việc',icon:'work',run:()=>go('#/tasks?home=1&view=mine&new=1')},
+  ...(can('pos.sell')&&isCounterSales()?[{key:'pos',label:'Bán hàng nhanh',icon:'sell',run:()=>go('#/pos')}]:[]),
+  ...(can('page.quotes')?[{key:'new-quote',label:'Lập báo giá',icon:'sell',run:()=>openNewQuote()}]:[]),
+  ...(can('page.customers')?[{key:'new-customer',label:'Thêm khách hàng',icon:'customers',run:()=>openCustomer()}]:[]),
+  ...(can('page.care')?[{key:'new-care',label:'Ghi nhận chăm sóc',icon:'customers',run:()=>careView().openForm({},()=>homeUi?.refresh())}]:[]),
+];}
+function homeView() { if(homeUi)return Promise.resolve(homeUi);return homeLoading ||= import('./home.js').then(({initHome}) => homeUi = initHome({root:$('#view-home'),api,user:()=>state.user,canApprove,go,
+  entries:homeNavigation,actions:homeActions,approvalFeed:sharedApprovalFeed(),notifications:()=>homeNotifications.read('/notifications'),navigationRoot:document.querySelector('.side-nav'),
+  noticeHref:n=>{try{const url=new URL(n.url,location.origin);return url.origin===location.origin&&/^#\/[\w-]+/.test(url.hash)&&linkAllowed(url.hash)?url.hash:'';}catch{return'';}},
+  markRead:id=>{const who=state.user?.id;return homeNotifications.read('/notifications/read','POST',{ids:[id]}).then(()=>{if(who===state.user?.id)notifier.markRead(id);});},
+  openBell:()=>{const button=$('#staff-bell .bell');if(button?.getAttribute('aria-expanded')!=='true')button?.click();window.scrollTo(0,0);},
+})); }
+function showHome() {
+  const who=state.user?.id;
+  homeView().then(ui=>{if(who===state.user?.id&&location.hash.split('?')[0]==='#/home')return ui.show();}).catch(e=>{
+    if(who===state.user?.id&&location.hash.split('?')[0]==='#/home'){homeLoading=null;$('#view-home').innerHTML=`<h1>Trang chủ</h1><p class="error" role="alert">${esc(e.message||'Chưa tải được trang chủ.')}</p><button class="btn secondary" type="button" data-home-boot-retry>Thử lại</button>`;$('#view-home [data-home-boot-retry]').onclick=showHome;}
+  });
+}

@@ -172,6 +172,8 @@ export function setupNotifications({ api, root, onNew, onOpen, isManager = () =>
   if (poll) document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && started) check(); });
   return {
     start() { if (started) return; started = true; check(true); if (poll) loop(); autoPush(); },
+    reset() { clearInterval(timer);timer=null;started=false;notes=[];newest='';panel.hidden=true;btn.setAttribute('aria-expanded','false');draw(); },
+    markRead(id) { const n=notes.find(x=>x.id===id);if(n){n.readAt=n.readAt||new Date().toISOString();draw();} },
     check,
   };
 }

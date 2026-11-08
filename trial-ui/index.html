@@ -74,6 +74,7 @@
   <aside class="sidebar"><!-- Biểu tượng menu: Tabler Icons (MIT, licenses/tabler-icons.txt); thanh dưới điện thoại dùng cùng bộ (mobile-design.js). -->
     <div class="brand light"><b class="brandmark">BN</b><div>BÁCH NGÂN<small>BÁO GIÁ &amp; CRM</small></div></div>
     <nav class="side-nav" aria-label="Điều hướng chính">
+      <a class="nav" href="#/home" data-home-link><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7 M5 9v12h14V9 M9 21v-8h6v8"/></svg><span>Trang chủ</span></a>
       <section class="nav-group" aria-labelledby="nav-group-0">
         <h2 class="nav-label" id="nav-group-0">Công việc &amp; tổng quan</h2>
         <a class="nav" href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M9 11l3 3l8 -8" /><path d="M20 12v6a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h9" /></svg><span>Công việc</span><b id="nav-task-count" class="badge" hidden>0</b></a>
@@ -160,6 +161,7 @@
     <header class="topbar">
       <div class="crumbs"><button type="button" class="page-back" id="page-back" aria-label="Trở lại">‹ Trở lại</button><span class="muted">Bách Ngân</span><span class="slash">/</span><b id="breadcrumb">Báo giá</b></div>
       <div class="topbar-right">
+        <a href="#/home" class="icon-btn home-entry" aria-label="Trang chủ" title="Trang chủ"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7 M5 9v12h14V9 M9 21v-8h6v8"/></svg></a>
         <span id="today" class="muted hide-sm"></span>
         <div class="bell-wrap" id="staff-bell"></div>
         <button class="avatar small mobile-only" id="account-button-m" aria-label="Tài khoản">BN</button>
@@ -172,6 +174,7 @@
     <section class="view" id="view-profit" hidden></section>
     <section class="view" id="view-feedback" hidden></section>
     <section class="view" id="view-store-reports" hidden></section>
+    <section class="view" id="view-home" hidden></section>
     <section class="view" id="view-weekly-reports" hidden></section>
     <section class="view" id="view-monthly-reports" hidden></section>
     <section class="view" id="view-cash" hidden></section>

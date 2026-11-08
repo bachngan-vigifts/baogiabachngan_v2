@@ -29,6 +29,7 @@ function harness() {
     isCacheable: () => false, isPassiveWrite: () => false, pageCache: { clear() {} }, customerSearch: { clear() {} },
     toggleAccountMenu() {}, editor: { dirty: false }, quoteDeviceDraft: { logout() {} },
     token: 'old-session', state: { user: {} }, activation: null, chatUi: null, approvalUi: null, API: '/api',
+    homeUi: null, homeNotifications: null, notifier: null,
     location: { hash: '#/quotes' },
     dataRefresh: { stop() {}, observe() {}, saved() {}, tick() {} },
     queueMicrotask: (fn: () => void) => timers.push(fn),
@@ -88,6 +89,21 @@ test('returning to login clears an initialized private shift-report screen', () 
   assert.equal(cleared, 1);
   assert.equal(h.ctx.state.user, null);
   assert.equal(h.elements['#workspace'].hidden, true);
+});
+
+test('returning to login clears private Home and notification state for expired and explicit logout', () => {
+  for (const keepToken of [false, true]) {
+    const h = harness(), cleared: string[] = [];
+    h.ctx.homeUi = { reset() { cleared.push('home'); } };
+    h.ctx.homeNotifications = { clear() { cleared.push('feed'); } };
+    h.ctx.notifier = { reset() { cleared.push('bell'); } };
+    h.ctx.showAuth('expired', { keepToken });
+    assert.deepEqual(cleared, ['home', 'feed', 'bell']);
+    assert.equal(h.ctx.state.user, null);
+    assert.equal(h.ctx.token, keepToken ? 'old-session' : '');
+    assert.equal(h.elements['#workspace'].hidden, true);
+    assert.equal(h.elements['#auth'].hidden, false);
+  }
 });
 
 test('concurrent expired requests show expiry once; later response preserves email focus', async () => {
