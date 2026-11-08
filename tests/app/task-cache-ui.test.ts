@@ -12,12 +12,12 @@ function fixture(options: { blockPeople?: boolean; blockSummary?: boolean; feed?
   const nodes = new Map<string, any>(), calls: string[] = [];
   let title = 'Việc A', hold: Promise<unknown> | null = null, approvalsGate: (() => void) | null = null;
   function node(key: string): any {
-    if (!nodes.has(key)) nodes.set(key, { innerHTML: '', textContent: '', value: '', hidden: false, className: 'view', options: [], listeners: {}, dataset: {}, attrs: {}, classList: { toggle() {} },
+    if (!nodes.has(key)) nodes.set(key, { innerHTML: '', textContent: '', value: '', hidden: false, className: 'view', options: [], elements:{assigneeId:{options:[],innerHTML:''}}, listeners: {}, dataset: {}, attrs: {}, classList: { toggle() {} },
       setAttribute(k: string, v: string) { this.attrs[k] = v; }, addEventListener(k: string, fn: Function) { this.listeners[k] = fn; }, focus() {},
       querySelector: (s: string) => node(key + ' ' + s), querySelectorAll: () => [] });
     return nodes.get(key);
   }
-  const ctx: any = { createTaskWriteIntent, document: { getElementById: (id: string) => node('#' + id), addEventListener() {} }, Intl, Date, URLSearchParams, setTimeout, clearTimeout };
+  const ctx: any = { createTaskWriteIntent, document: { body:{append(){}}, getElementById: (id: string) => node('#' + id), addEventListener() {} }, Intl, Date, URLSearchParams, setTimeout, clearTimeout };
   vm.createContext(ctx); vm.runInContext(source, ctx);
   const app = ctx.initTasks({ approvalFeed: options.feed, isManager: () => true, canApprove: () => true, userId: () => 'mgr', toast() {}, go() {}, api: async (path: string, method = 'GET') => {
     calls.push(method + ' ' + path);
