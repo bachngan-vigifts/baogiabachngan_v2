@@ -2,3 +2,5 @@
 @media(max-width:850px){.custody-page .btn{min-height:44px}.custody-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.custody-filters,.custody-form-grid,.custody-detail-grid,.custody-list,.custody-product-picker,.custody-edit-line,.custody-return-line,.custody-ticket-main{grid-template-columns:minmax(0,1fr)}.custody-ticket dl{display:grid;gap:6px}.custody-dialog .modal-body{padding:14px}.custody-dialog .modal-foot .btn{flex:1;white-space:normal}.custody-dialog .modal-head h2{font-size:20px}.custody-page .page-head{gap:12px;flex-wrap:wrap}.custody-ticket ul{padding-left:18px}}
 
 .custody-filters>label,.custody-filters>.row-gap,.custody-filter-panel{grid-column:1/-1}.custody-filter-panel summary{cursor:pointer;padding:10px 0;font-weight:600}.custody-filter-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}@media(max-width:850px){.custody-filter-fields{grid-template-columns:minmax(0,1fr)}}
+
+.custody-dialog .modal-foot>.error{flex-basis:100%;margin:0;text-align:left;overflow-wrap:anywhere}.custody-dialog .modal-foot>.error:empty{display:none}
