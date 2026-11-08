@@ -4,9 +4,9 @@ CREATE TABLE IF NOT EXISTS public.warehouse_work_settings (
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS public.warehouse_work_runs (
- task_id text PRIMARY KEY REFERENCES public.tasks(id) ON DELETE CASCADE, member_id text REFERENCES public.staff_members(id),
+ task_id text PRIMARY KEY REFERENCES public.tasks(id), member_id text REFERENCES public.staff_members(id),
  kind text NOT NULL CONSTRAINT chk_warehouse_work_kind CHECK(kind IN ('manual','picking','packing','receiving','transfer','stocktake')),
- stage text NOT NULL DEFAULT 'todo' CONSTRAINT chk_warehouse_work_stage CHECK(stage IN ('todo','working','blocked','submitted','confirmed')),
+ stage text NOT NULL DEFAULT 'todo' CONSTRAINT chk_warehouse_work_stage CHECK(stage IN ('todo','working','blocked','submitted','confirmed','cancelled')),
  weight double precision NOT NULL CHECK(weight>0 AND weight<=10000), standard_minutes double precision NOT NULL CHECK(standard_minutes>0 AND standard_minutes<=100000),
  calendar text NOT NULL, due_at text NOT NULL, started_at text, submitted_at text, confirmed_at text, confirmed_by text REFERENCES public.staff_members(id), quality text CHECK(quality IN ('clean','error')),
  waits text NOT NULL DEFAULT '[]', evidence text NOT NULL DEFAULT '', review_note text NOT NULL DEFAULT '', revision integer NOT NULL DEFAULT 1, updated_at text NOT NULL

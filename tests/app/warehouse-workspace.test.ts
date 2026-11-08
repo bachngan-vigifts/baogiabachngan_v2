@@ -63,3 +63,14 @@ test('warehouse work cannot complete an auto source document, and rejected work 
  check(await act('ww-one','reject',{note:'Cần kiểm lại một dòng hàng'}));mock.timers.tick(300000);check(await act('ww-one','submit',{note:'Đã sửa dòng hàng và bàn giao'}));
  check(await act('ww-one','confirm',{quality:'clean',note:'Đã sửa, ghi nhận lỗi lần đầu'}));const r=await row('ww-one');assert.equal(r.quality,'error');const {elapsed}=await import('../../src/modules/warehouse-workspace/domain.ts');assert.equal(elapsed(r,new Date().toISOString())?.minutes,15);
 });
+test('tracked warehouse work cannot be deleted or edited through legacy Tasks and Manager cancellation preserves its record',async()=>{
+ const f=await setup(),c=f.cookies;check(await f.call('/warehouse-workspace/settings',c.mgr,'PUT',{calendar,revision:0,reason:'Ca làm'}));
+ await f.db.update(tasks).set({createdBy:'wh'}).where(eq(tasks.id,'ww-one'));
+ check(await f.act('ww-one',c.mgr,{action:'configure',memberId:'wh',taskRevision:1,revision:0,kind:'manual',weight:1,standardMinutes:30,note:'Căn cứ định mức'}));
+ check(await f.call('/tasks/ww-one',c.wh,'DELETE'),409);
+ check(await f.call('/tasks/ww-one',c.wh,'PUT',{status:'cancelled',revision:2}),409);
+ check(await f.call('/tasks/ww-one',c.mgr,'PUT',{dueDate:'2027-01-01',revision:2}),409);
+ let [r]=await f.db.select().from(runs).where(eq(runs.taskId,'ww-one'));
+ check(await f.act('ww-one',c.mgr,{action:'cancel',revision:r!.revision,note:'Không còn nhu cầu thực hiện'}));
+ [r]=await f.db.select().from(runs).where(eq(runs.taskId,'ww-one'));assert.equal(r!.stage,'cancelled');assert.equal((await f.db.select().from(tasks).where(eq(tasks.id,'ww-one')))[0]!.status,'cancelled');
+});

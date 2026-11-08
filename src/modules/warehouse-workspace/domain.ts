@@ -3,7 +3,7 @@ export interface Calendar { days:number[]; start:string; end:string; breakStart:
 export interface Wait { id:string; start:string; end:string|null; reason:string; decision:'pending'|'approved'|'rejected'; reviewedBy?:string; reviewNote?:string }
 export const KINDS = ['manual','picking','packing','receiving','transfer','stocktake'] as const;
 export type Kind=typeof KINDS[number];
-export const STAGES=['todo','working','blocked','submitted','confirmed'] as const;
+export const STAGES=['todo','working','blocked','submitted','confirmed','cancelled'] as const;
 export const parseJson=<T>(text:string|null|undefined,fallback:T):T=>{try{return JSON.parse(text||'') as T;}catch{return fallback;}};
 const minute=(s:string)=>{const [h,m]=s.split(':').map(Number);return h!*60+m!;};
 export function validCalendar(x:unknown):x is Calendar {

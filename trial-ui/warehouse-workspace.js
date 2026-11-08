@@ -7,7 +7,7 @@ const time=s=>s?new Date(s).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',
 const kinds={manual:'Công việc',picking:'Soạn hàng',packing:'Đóng gói',receiving:'Nhận hàng',transfer:'Điều chuyển',stocktake:'Kiểm kho'};
 const stages={todo:'Cần làm',working:'Đang làm',blocked:'Chờ xử lý',submitted:'Chờ xác nhận',confirmed:'Đã xác nhận'};
 const field=(name,label,type='text',value='',extra='')=>`<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
-const button=(action,label,cls='secondary')=>`<button type="button" class="btn ${cls}" data-ww-action="${action}" data-mobile-inline data-no-busy>${label}</button>`;
+const button=(action,label,cls='secondary')=>`<button type="button" class="btn ${cls}" data-ww-action="${action}" ${action==='cancel'?'data-mobile-confirmation-page':''} data-mobile-inline data-no-busy>${label}</button>`;
 export function initWarehouseWorkspace({api,root,toast,identity,legacy}){
  let data=null,seq=0,tab='priority',month='',selected='',page=0,busy=false,dialog=null;
  const same=(key,n)=>key===identity()&&n===seq;
@@ -33,6 +33,7 @@ export function initWarehouseWorkspace({api,root,toast,identity,legacy}){
    if(r&&s==='todo')actions+=button('start','Bắt đầu','ww-red');
    if(s==='working')actions+=button('block','Báo vướng mắc')+button('submit','Hoàn thành','primary');
    if(s==='blocked')actions+=button('resume','Tiếp tục làm','primary');
+   if(data.manager&&r&&!t.sourceManaged)actions+=button('cancel','Hủy việc thủ công');
    if(data.manager&&s==='submitted')actions+=button('reject','Yêu cầu làm lại')+button('confirm','Xác nhận kết quả','primary');
   }
   const waits=r?.waits?.length?`<details class="ww-waits"><summary>Khoảng chờ (${r.waits.length})</summary>${r.waits.map(w=>`<div><p>${esc(w.reason)} · ${time(w.start)} → ${w.end?time(w.end):'Đang chờ'}</p><small>${w.decision==='approved'?'Đã duyệt loại trừ':w.decision==='rejected'?'Không loại trừ':'Chờ duyệt, vẫn tính thời gian'}</small>${data.manager&&w.end&&w.decision==='pending'&&!locked?`<button type="button" class="btn secondary small" data-wait="${esc(w.id)}" data-ww-action="review-wait" data-mobile-inline data-no-busy>Duyệt khoảng chờ</button>`:''}</div>`).join('')}</details>`:'';
@@ -62,7 +63,7 @@ export function initWarehouseWorkspace({api,root,toast,identity,legacy}){
   if(a==='approve-month')return modal('Duyệt điểm tháng',`<p class="full">Chốt ${esc(month)}: ${num(data.report.score)} điểm. Sau khi duyệt không sửa dữ liệu kỳ này. Tiền thưởng vẫn là dự kiến.</p>`,()=>api('/warehouse-workspace/approve-month','POST',{memberId:selected,month,fingerprint:data.report.fingerprint}));
   const t=data?.rows.find(x=>x.id===el.closest('[data-task]')?.dataset.task);if(!t)return;
   if(a==='configure')return modal('Giao định mức công việc',`<p class="full">${esc(t.title)} · Hạn ${time(t.dueAt)}. Chưa có hạn: mở Chi tiết công việc để đặt trước.</p><label>Người phụ trách<select name="memberId" required>${data.people.map(p=>`<option value="${esc(p.id)}"${p.id===(t.assigneeId||selected)?' selected':''}>${esc(p.name)}</option>`).join('')}</select></label><label>Loại việc<select name="kind">${Object.entries(kinds).map(([k,v])=>`<option value="${k}"${t.run?.kind===k?' selected':''}>${v}</option>`).join('')}</select></label>${field('weight','Điểm khối lượng','number',t.run?.weight||'','required min="0.1" max="10000" step="0.1"')}${field('standardMinutes','Tổng thời gian chuẩn (phút)','number',t.run?.standardMinutes||'','required min="1" max="100000" step="1"')}${note('Căn cứ định mức')}`,v=>act(t,a,v));
-  if(['block','submit','reject','confirm','review-wait'].includes(a)){const labels={block:'Báo vướng mắc',submit:'Gửi kết quả hoàn thành',reject:'Yêu cầu làm lại',confirm:'Xác nhận chất lượng', 'review-wait':'Duyệt khoảng chờ'};let body=note(a==='submit'?'Kết quả / phiếu / bằng chứng bàn giao':'Lý do / nhận xét');
+  if(['block','submit','reject','confirm','review-wait','cancel'].includes(a)){const labels={cancel:'Hủy việc thủ công — giữ lịch sử',block:'Báo vướng mắc',submit:'Gửi kết quả hoàn thành',reject:'Yêu cầu làm lại',confirm:'Xác nhận chất lượng', 'review-wait':'Duyệt khoảng chờ'};let body=note(a==='submit'?'Kết quả / phiếu / bằng chứng bàn giao':'Lý do / nhận xét');
    if(a==='confirm')body='<label>Chất lượng<select name="quality"><option value="clean">Không lỗi</option><option value="error">Có lỗi đã xác minh</option></select></label>'+body;
    if(a==='review-wait')body='<label>Kết quả<select name="decision"><option value="approved">Duyệt loại trừ thời gian chờ</option><option value="rejected">Không loại trừ</option></select></label>'+body;
    return modal(labels[a],body,v=>act(t,a,{...v,waitId:el.dataset.wait}));

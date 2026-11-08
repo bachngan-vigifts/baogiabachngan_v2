@@ -7,7 +7,7 @@ export const warehouseWorkSettings=pgTable('warehouse_work_settings',{
  id:text('id').primaryKey(),createdAt:text('created_at').notNull(),calendar:text('calendar').notNull(),bonusBudget:doublePrecision('bonus_budget'),revision:integer('revision').notNull().default(1),updatedBy:text('updated_by').references(()=>employees.id),updatedAt:text('updated_at').notNull(),
 }).enableRLS();
 export const warehouseWorkRuns=pgTable('warehouse_work_runs',{
- taskId:text('task_id').primaryKey().references(()=>tasks.id,{onDelete:'cascade'}),memberId:text('member_id').references(()=>employees.id),
+ taskId:text('task_id').primaryKey().references(()=>tasks.id),memberId:text('member_id').references(()=>employees.id),
  kind:text('kind',{enum:KINDS}).notNull(),stage:text('stage',{enum:STAGES}).notNull().default('todo'),weight:doublePrecision('weight').notNull(),standardMinutes:doublePrecision('standard_minutes').notNull(),calendar:text('calendar').notNull(),dueAt:text('due_at').notNull(),
  startedAt:text('started_at'),submittedAt:text('submitted_at'),confirmedAt:text('confirmed_at'),confirmedBy:text('confirmed_by').references(()=>employees.id),quality:text('quality'),waits:text('waits').notNull().default('[]'),evidence:text('evidence').notNull().default(''),reviewNote:text('review_note').notNull().default(''),revision:integer('revision').notNull().default(1),updatedAt:text('updated_at').notNull(),
 },t=>[index('idx_warehouse_work_member_due').on(t.memberId,t.dueAt),enumCheck('chk_warehouse_work_kind',t.kind,KINDS),enumCheck('chk_warehouse_work_stage',t.stage,STAGES)]).enableRLS();

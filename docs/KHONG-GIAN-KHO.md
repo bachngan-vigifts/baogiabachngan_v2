@@ -17,6 +17,8 @@ Mở **Kho & giao hàng → Kho của tôi** (`#/kho`). Nhân viên Kho chỉ th
 - **Hoàn thành**: nhập kết quả/bằng chứng bàn giao, chuyển sang Chờ xác nhận. Với nghiệp vụ tự sinh, hoàn tất phiếu gốc trước khi Manager xác nhận. Thao tác ở đây không tự ghi tồn kho hoặc đẩy đơn Sapo.
 - Manager duyệt khoảng chờ, chọn chất lượng và xác nhận; hoặc yêu cầu làm lại. Thời gian chờ Manager trả kết quả được loại trừ khi yêu cầu làm lại; lỗi lần đầu vẫn được ghi nhận.
 
+Việc đã đưa vào theo dõi không sửa/xóa từ trang Công việc cũ. Manager có thể **Hủy việc thủ công** tại Không gian Kho với lý do; bản theo dõi được giữ lại. Phiếu nghiệp vụ vẫn hủy theo luồng gốc.
+
 ## Điểm và chốt tháng
 
 30% đúng hạn + 25% tốc độ + 25% hoàn thành + 20% chất lượng. Các tỷ lệ có trọng số theo điểm khối lượng. Tốc độ tối đa 100%; chỉ thời gian trong ca và ngoài giờ nghỉ được tính. Việc đến hạn chưa hoàn thành vẫn nằm trong mẫu số. Việc huỷ không tính. Việc xác nhận sớm trong tháng được tính ngay; việc chưa đến hạn khác chưa tính. Tháng dựa trên hạn gốc theo giờ Việt Nam.

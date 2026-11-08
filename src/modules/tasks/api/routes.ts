@@ -253,7 +253,7 @@ function keyedTaskId(memberId: string, clientKey: string): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }
 
-export function registerTaskRoutes(router: Router<StaffEnv>) {
+export function registerTaskRoutes(router: Router<StaffEnv>, deps: { assertMutable?: (db:StaffEnv['db'],task:Task)=>Promise<void> } = {}) {
   registerHomeTasks(router,{scope:c=>and(visible(c),viewCond(c,me(c).role==='manager'?'all':'mine')),sync:syncAuto});
   // Server-only cron endpoint: existing integrations token guard, never a staff cookie or public client key.
   router.post('/integrations/tasks/receiving-reminders', async c => {
@@ -369,6 +369,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
       if (alreadyApplied(b, t)) return json({ ok: true, alreadyApplied: true, ...(b.returnTask===true?{task:await confirmedTask(c,t.id)}:{}) });
       throw new AppError(409, 'Công việc vừa được người khác cập nhật. Tải lại để xem bản mới.', 'REVISION_CONFLICT');
     }
+    await deps.assertMutable?.(c.env.db,t);
     // Người trong nhóm được giao (chưa ai nhận) làm như người nhận: bấm "Nhận việc" hoặc đổi trạng thái là nhận luôn.
     const manage = canManage(c, t), isAssignee = t.assigneeId === m.id || inMyTeam(c, t), f = readFields(b);
     if (t.autoKey) { delete f.title; delete f.description; delete f.link; }
@@ -471,6 +472,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>) {
     const t = await loadOwnTask(c, c.params.id!, 'Việc của đồng nghiệp cùng chức vụ – chỉ xem, không sửa được.');
     if (t.autoKey) throw new AppError(409, 'Việc tự sinh không xoá được; việc sẽ tự hoàn thành khi xử lý xong chứng từ.');
     if (!canManage(c, t)) throw new AppError(403, 'Chỉ người giao việc hoặc Manager xoá được.');
+    await deps.assertMutable?.(c.env.db,t);
     await c.env.db.delete(tasks).where(eq(tasks.id, t.id));
     return json({ ok: true });
   }, 'business');

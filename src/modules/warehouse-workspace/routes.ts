@@ -49,6 +49,14 @@ async function liveReport(db:Db,id:string,month:string,now:string){
  // The fingerprint includes all input facts so cancelling/reassigning/altering a due task invalidates approval.
  return {...data,fingerprint:sha256Hex(JSON.stringify(data))};
 }
+/** Composition-root guard: Tasks does not import warehouse metadata. Source hooks remain authoritative. */
+export async function assertWarehouseTaskMutable(db:Db,t:typeof tasks.$inferSelect){
+ const [r]=await db.select({id:runs.taskId}).from(runs).where(eq(runs.taskId,t.id)).limit(1);
+ if(r)fail('Việc đã theo dõi hiệu suất Kho. Thao tác tại Kho của tôi; Manager hủy việc thủ công tại đó để giữ lịch sử.',409);
+}
+async function workingJob(db:Db,id:string){
+ return (await db.select({id:runs.taskId}).from(runs).innerJoin(tasks,eq(tasks.id,runs.taskId)).where(and(eq(runs.memberId,id),eq(runs.stage,'working'),inArray(tasks.status,['todo','in_progress']))).limit(1)).length>0;
+}
 export function registerWarehouseWorkspace(router:Router<StaffEnv>){
  router.get('/warehouse-workspace',async c=>{
   const m=access(c),p=c.url.searchParams,now=new Date().toISOString(),today=vietnamDate().iso,month=p.get('month')||today.slice(0,7);
@@ -86,7 +94,7 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
    const db=tx as unknown as Db,[initial]=await db.select({task:tasks,run:runs}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(eq(tasks.id,c.params.id!));if(!initial)fail('Không tìm thấy việc.',404);
    const target=action==='configure'?text(b.memberId,100):initial.run?.memberId||initial.task.assigneeId||m.id;
    if(m.role!=='manager'&&target!==m.id)fail('Không được sửa việc người khác.',403);
-   if(m.role!=='manager'&&['configure','confirm','reject','review-wait'].includes(action))fail('Chỉ Manager xác nhận kết quả.',403);
+   if(m.role!=='manager'&&['configure','confirm','reject','review-wait','cancel'].includes(action))fail('Chỉ Manager xác nhận kết quả.',403);
    await lockWorker(db,target);
    const [t]=await db.select().from(tasks).where(eq(tasks.id,c.params.id!)).for('update');if(!t)fail('Không tìm thấy việc.',404);
    const [r]=await db.select().from(runs).where(eq(runs.taskId,t.id));
@@ -115,15 +123,19 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
    const patch:Partial<typeof runs.$inferInsert>={updatedAt:now,revision:r.revision+1};const waits=parseJson<Wait[]>(r.waits,[]);
    if(action==='start'){
     if(r.stage!=='todo'||t.status==='done')fail('Không thể bắt đầu việc này.',409);
-    if((await db.select({id:runs.taskId}).from(runs).where(and(eq(runs.memberId,target),eq(runs.stage,'working'))).limit(1)).length)fail('Hoàn thành hoặc báo vướng mắc việc đang làm trước.',409);
+    if(await workingJob(db,target))fail('Hoàn thành hoặc báo vướng mắc việc đang làm trước.',409);
     patch.stage='working';patch.startedAt=now;
     await db.update(tasks).set({status:'in_progress',startedAt:t.startedAt||now,revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));
+   }else if(action==='cancel'){
+    if(t.autoKey)fail('Hủy trên phiếu nghiệp vụ gốc, không hủy bước kho từ bảng chấm điểm.',409);
+    if(!text(b.note))fail('Nhập lý do hủy.');patch.stage='cancelled';patch.reviewNote=text(b.note);
+    await db.update(tasks).set({status:'cancelled',revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));
    }else if(action==='block'){
     if(r.stage!=='working'||text(b.note).length<3)fail('Nhập lý do vướng mắc cho việc đang làm.');
     waits.push({id:crypto.randomUUID(),start:now,end:null,reason:text(b.note),decision:'pending'});patch.waits=JSON.stringify(waits);patch.stage='blocked';
    }else if(action==='resume'){
     if(r.stage!=='blocked')fail('Việc không đang chờ.',409);
-    if((await db.select().from(runs).where(and(eq(runs.memberId,target),eq(runs.stage,'working'))).limit(1)).length)fail('Có việc khác đang làm.',409);
+    if(await workingJob(db,target))fail('Có việc khác đang làm.',409);
     const wait=waits.find(w=>!w.end);if(!wait)fail('Khoảng chờ không hợp lệ.',409);wait.end=now;patch.waits=JSON.stringify(waits);patch.stage='working';
    }else if(action==='submit'){
     if(r.stage!=='working'||text(b.note).length<3)fail('Nhập kết quả / bằng chứng trước khi gửi hoàn thành.');
@@ -135,7 +147,7 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
    }else if(action==='reject'){
     if(r.stage!=='submitted'||!text(b.note))fail('Nhập lý do yêu cầu làm lại.');patch.stage='working';patch.submittedAt=null;patch.reviewNote=text(b.note);patch.quality='error';
     waits.push({id:crypto.randomUUID(),start:r.submittedAt!,end:now,reason:'Chờ xác nhận kết quả trước khi yêu cầu làm lại',decision:'approved',reviewedBy:m.id,reviewNote:text(b.note)});patch.waits=JSON.stringify(waits);
-    if((await db.select().from(runs).where(and(eq(runs.memberId,target),eq(runs.stage,'working'))).limit(1)).length)fail('Nhân viên có việc khác đang làm. Xử lý việc đó trước.',409);
+    if(await workingJob(db,target))fail('Nhân viên có việc khác đang làm. Xử lý việc đó trước.',409);
    }else if(action==='confirm'){
     if(r.stage!=='submitted'||!['clean','error'].includes(String(b.quality))||!text(b.note))fail('Chọn chất lượng và nhập nhận xét.');
     if(waits.some(w=>w.decision==='pending'))fail('Duyệt các khoảng chờ trước khi xác nhận kết quả.',409);
