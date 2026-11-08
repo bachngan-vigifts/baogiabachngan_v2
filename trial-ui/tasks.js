@@ -492,7 +492,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
       const content={title,assigneeId:f.elements.assigneeId.value,priority:f.elements.priority.value,dueDate:f.elements.dueDate.value||undefined};
       await taskIntent.send(content,(clientKey,content)=>api('/tasks','POST',{...content,clientKey}));
       if(owner!==userId())return;
-      quickBusy=false;closeQuick();quickFresh=true;syncPendingUi();toast('Đã giao việc.');onCreated();if(!root.hidden)await load();
+      quickBusy=false;closeQuick();quickFresh=true;syncPendingUi();toast('Đã giao việc.');onCreated();if(!root.hidden)void load().catch(e=>toast(e.message,'err'));
     }catch(ex){if(owner===userId()){quickError.textContent=ex.message;toast(ex.message+(taskIntent.pending()&&ex.status>=400&&ex.status<500?' Có thể bấm “Bỏ lần giao việc này”.':''),'err');}}
     finally{if(owner===userId()){quickBusy=false;btn.disabled=false;btn.removeAttribute('aria-busy');syncPendingUi();}}
   });
