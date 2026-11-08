@@ -455,7 +455,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   document.body.append(quickDialog);
   let quickOwner=userId(),quickFresh=true,quickBusy=false;
   function closeQuick(){if(quickBusy)return;if(quickDialog.open)quickDialog.close();quick.hidden=true;}
-  function resetQuick(){quickBusy=false;closeQuick();quick.reset();quick.elements.dueDate.value='';quick.elements.priority.value='normal';quick.elements.assigneeId.innerHTML='';quick.querySelector('[type=submit]').disabled=false;quickFresh=true;quickOwner=userId();st.people=null;cache.clear();loadSequence++;quickError.textContent='';const hint=quick.querySelector('[data-custom-due]');hint.textContent='';hint.hidden=true;}
+  function resetQuick(){quickBusy=false;closeQuick();quick.reset();quick.elements.dueDate.value='';quick.elements.priority.value='normal';quick.elements.assigneeId.innerHTML='';quick.querySelector('[type=submit]').disabled=false;quick.querySelector('[type=submit]').removeAttribute('aria-busy');quick.querySelector('[type=submit]').textContent='Giao việc';quickFresh=true;quickOwner=userId();st.people=null;cache.clear();loadSequence++;quickError.textContent='';const hint=quick.querySelector('[data-custom-due]');hint.textContent='';hint.hidden=true;}
   function resetQuickOwner(){if(quickOwner!==userId())resetQuick();}
   const discardBtn=quick.querySelector('[data-discard]'),quickError=quick.querySelector('[data-quick-error]');
   function syncQuickChoices(){
@@ -487,14 +487,14 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   quick.addEventListener('submit',async e=>{
     e.preventDefault();if(quickBusy)return;
     const f=e.target,title=f.elements.title.value.trim();if(!title){quickError.textContent='Nhập tên việc cần giao.';f.elements.title.focus();return;}
-    const btn=f.querySelector('button[type=submit]'),owner=userId();quickBusy=true;btn.disabled=true;quickError.textContent='';
+    const btn=f.querySelector('button[type=submit]'),owner=userId();quickBusy=true;btn.disabled=true;btn.setAttribute('aria-busy','true');btn.textContent='Đang giao việc…';quickError.textContent='';
     try{
       const content={title,assigneeId:f.elements.assigneeId.value,priority:f.elements.priority.value,dueDate:f.elements.dueDate.value||undefined};
       await taskIntent.send(content,(clientKey,content)=>api('/tasks','POST',{...content,clientKey}));
       if(owner!==userId())return;
       quickBusy=false;closeQuick();quickFresh=true;syncPendingUi();toast('Đã giao việc.');onCreated();if(!root.hidden)await load();
     }catch(ex){if(owner===userId()){quickError.textContent=ex.message;toast(ex.message+(taskIntent.pending()&&ex.status>=400&&ex.status<500?' Có thể bấm “Bỏ lần giao việc này”.':''),'err');}}
-    finally{if(owner===userId()){quickBusy=false;btn.disabled=false;syncPendingUi();}}
+    finally{if(owner===userId()){quickBusy=false;btn.disabled=false;btn.removeAttribute('aria-busy');syncPendingUi();}}
   });
   quickDialog.addEventListener('cancel',e=>{e.preventDefault();closeQuick();});
   quick.querySelectorAll('[data-cancel]').forEach(b=>b.addEventListener('click',closeQuick));
