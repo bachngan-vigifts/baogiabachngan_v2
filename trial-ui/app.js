@@ -469,9 +469,9 @@ const ghnCancelNote = r => !r?.ghnCancel ? '' : (r.ghnCancel.cancelled.length ? 
 const KHO_HOME = '#/kho';
 /** Kế toán: chức vụ "accounting". */
 const isAccountant = () => state.user?.role === 'employee' && state.user?.positionId === 'accounting';
-/** NVBH ML/LOCK dùng POS làm trang chủ khi được cấp quyền bán hàng. */
+/** NVBH ML/LOCK có lối tắt POS trên Trang chủ khi được cấp quyền bán hàng. */
 const isCounterSales = () => state.user?.role === 'employee' && ['sales-ml', 'sales-lock'].includes(state.user?.positionId) && can('pos.sell');
-/** Trang mở đầu theo chức vụ và quyền hiện hành. */
+/** Điểm vào chung; nội dung Trang chủ vẫn theo chức vụ và quyền hiện hành. */
 const homeHash = () => '#/home';
 let loginToHome = false;
 
@@ -940,7 +940,7 @@ function route() {
   if (view === 'receivables') loadReceivables();
   if (view === 'cashbook') loadCashbook();
   if (view === 'stock-requests') loadStockRequests(id);
-  if (view === 'tasks') {const target=location.hash,who=state.user?.id;tasksView().load(id,query).then(()=>{if(new URLSearchParams(query).get('new')==='1'&&location.hash===target&&state.user?.id===who)tasksView().openNew();}).catch(e=>toast(e.message,'err'));}
+  if (view === 'tasks') {const target=location.hash,who=state.user?.id;tasksView().load(id,query).then(()=>{if(new URLSearchParams(query).get('new')==='1'&&location.hash===target&&state.user?.id===who)return tasksView().openNew();}).catch(e=>toast(e.message,'err'));}
   if (view === 'dashboard') dashboardView().load();
   if (view === 'profit') profitView().show();
   if (view === 'feedback') feedbackView().show(id ? decodeURIComponent(id) : '');

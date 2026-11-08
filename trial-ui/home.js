@@ -105,7 +105,7 @@ export function initHome({root,api,user,canApprove,go,entries=()=>[],actions=()=
     else if(b.hasAttribute('data-home-tab')||b.hasAttribute('data-home-stat')){const next=b.dataset.homeTab||b.dataset.homeStat;if(next==='approvals'&&!canApprove())return;filter=next;drawTasks();if(next==='approvals')loadApprovals();else loadTasks();}
     else if(b.hasAttribute('data-home-refresh'))refresh();
     else if(b.dataset.homeRetry==='tasks')loadTasks();else if(b.dataset.homeRetry==='approvals')loadApprovals();else if(b.dataset.homeRetry==='notes')loadNotes();
-    else if(b.hasAttribute('data-home-bell'))openBell();
+    else if(b.hasAttribute('data-home-bell')){e.stopPropagation();openBell();}
     else if(b.dataset.homeNotice){markRead(b.dataset.homeNotice).catch(()=>{});}
   });
   root.addEventListener('keydown',e=>{if(!e.target.matches('[data-home-tab]')||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;const buttons=[...root.querySelectorAll('[data-home-tab]')],i=buttons.indexOf(e.target),next=e.key==='Home'?0:e.key==='End'?buttons.length-1:(i+(e.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;e.preventDefault();buttons[next].focus();buttons[next].click();});

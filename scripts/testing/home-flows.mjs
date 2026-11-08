@@ -15,6 +15,7 @@ export async function runHomeFlows({browser,origin,f,out,requests}) {
    assert.equal(requests.slice(start).some(r=>/^\/(quotes\?|customers\?|admin\/members|catalog-snapshot)/.test(r.path)),false,'no unrelated full list at Home startup');
    assert.equal(await p.locator('.crm-mobile-nav').count(),1,'one footer only');
    if(id==='emp'){
+    await p.locator('[data-home-bell]').click();assert.equal(await p.locator('#staff-bell .bell-panel').isVisible(),true,'Home opens the existing bell without an outside-click closing it');await p.locator('#staff-bell .bell').click();
     const before=requests.length;await p.locator('[data-home-search]').fill('bang luong');await p.waitForTimeout(60);assert.equal(requests.length,before);assert.match(await p.locator('[data-home-groups]').innerText(),/Không có chức năng/);await p.locator('[data-home-search]').fill('');
     await p.locator('[data-home-tab=overdue]').click();await p.waitForFunction(()=>document.querySelector('[data-home-work]').getAttribute('aria-busy')==='false');assert.equal(await p.locator('.home-task').count(),1);assert.match(await p.locator('.home-task').textContent(),/Xác nhận lịch giao hàng/);
     await p.locator('[data-home-all]').click();await p.waitForURL('**/#/tasks?home=1&view=mine&due=overdue');await p.locator('#tasks-list [data-task=home-late]').waitFor();assert.equal(await p.locator('#tasks-list [data-task=home-private]').count(),0);assert.equal(await p.locator('#tasks-list [data-task=home-today]').count(),0);
