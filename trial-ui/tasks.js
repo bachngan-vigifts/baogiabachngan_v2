@@ -455,7 +455,7 @@ export function initTasks({ api: rawApi, toast, confirmBox = async t => confirm(
   document.body.append(quickDialog);
   let quickOwner=userId(),quickFresh=true,quickBusy=false;
   function closeQuick(){if(quickBusy)return;if(quickDialog.open)quickDialog.close();quick.hidden=true;}
-  function resetQuick(){quickBusy=false;closeQuick();quick.reset();quick.elements.assigneeId.innerHTML='';quick.querySelector('[type=submit]').disabled=false;quickFresh=true;quickOwner=userId();st.people=null;cache.clear();loadSequence++;quickError.textContent='';const hint=quick.querySelector('[data-custom-due]');hint.textContent='';hint.hidden=true;}
+  function resetQuick(){quickBusy=false;closeQuick();quick.reset();quick.elements.dueDate.value='';quick.elements.priority.value='normal';quick.elements.assigneeId.innerHTML='';quick.querySelector('[type=submit]').disabled=false;quickFresh=true;quickOwner=userId();st.people=null;cache.clear();loadSequence++;quickError.textContent='';const hint=quick.querySelector('[data-custom-due]');hint.textContent='';hint.hidden=true;}
   function resetQuickOwner(){if(quickOwner!==userId())resetQuick();}
   const discardBtn=quick.querySelector('[data-discard]'),quickError=quick.querySelector('[data-quick-error]');
   function syncQuickChoices(){
