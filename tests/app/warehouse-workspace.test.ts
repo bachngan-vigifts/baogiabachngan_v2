@@ -103,3 +103,18 @@ test('current-month demo is repeatable and read-only, validates Manager/worker/m
  assert.equal(check(await f.call('/warehouse-workspace?member=wh&month=2026-11',c.mgr)).report.locked,false);
  assert.deepEqual((await f.client.query('select (select count(*) from warehouse_work_months)::int as months,(select count(*) from stock_moves)::int as stock,(select count(*) from hr_payslips)::int as payroll')).rows,before.rows);
 });
+
+test('Manager employee filter excludes shared and other employee work, team mode is separate, and worker claiming scope stays intact',async()=>{
+ const f=await setup(),c=f.cookies,at=new Date().toISOString();
+ await f.client.query("insert into staff_members(id,email,name,phone,role,position_id,active,created_at) values ('wh-filter','wh-filter@x.vn','Kho kiểm thử 2','','employee','warehouse',true,$1)",[at]);
+ for(const [id,assignee,status]of [['filter-own','wh','todo'],['filter-other','wh-filter','todo'],['filter-run-owner','wh','todo'],['filter-team',null,'todo'],['filter-cancelled','wh-filter','cancelled']]as const)await f.db.insert(tasks).values({id,title:id,assigneeId:assignee,assigneePosition:'warehouse',status,dueDate:'2026-11-08',createdBy:'mgr',createdAt:at,updatedAt:at});
+ await f.db.insert(runs).values({taskId:'filter-run-owner',memberId:'wh-filter',kind:'manual',stage:'todo',weight:1,standardMinutes:30,calendar:JSON.stringify(calendar),dueAt:'2026-11-08T02:00:00Z',updatedAt:at});
+ const list=async(q:string,cookie=c.mgr)=>check(await f.call('/warehouse-workspace?'+q,cookie));
+ const first=await list('member=wh');assert.ok(first.rows.some((r:any)=>r.id==='filter-own'));assert.ok(!first.rows.some((r:any)=>['filter-other','filter-team','filter-run-owner','home-team'].includes(r.id)));
+ const other=await list('member=wh-filter');assert.deepEqual(other.rows.map((r:any)=>r.id).sort(),['filter-other','filter-run-owner']);assert.equal(other.counts.todo,2);assert.equal(other.counts.overdue,2);assert.equal(other.memberId,'wh-filter');assert.equal(other.report.eligible,2);
+ const team=await list('scope=team');assert.equal(team.scope,'team');assert.equal(team.memberId,'');assert.equal(team.report,null);assert.deepEqual(team.rows.map((r:any)=>r.id).sort(),['filter-team','home-team']);assert.equal(team.counts.todo,2);assert.equal(team.counts.overdue,1);
+ assert.deepEqual((await list('member=wh-filter&tab=overdue')).rows.map((r:any)=>r.id).sort(),['filter-other','filter-run-owner']);
+ const worker=await list('',c.wh);assert.ok(worker.rows.some((r:any)=>r.id==='filter-own'));assert.ok(worker.rows.some((r:any)=>r.id==='filter-team'));assert.ok(!worker.rows.some((r:any)=>['filter-other','filter-run-owner'].includes(r.id)));
+ check(await f.call('/warehouse-workspace?scope=team',c.wh),403);check(await f.call('/warehouse-workspace?member=wh-filter',c.wh),403);check(await f.call('/warehouse-workspace?scope=bad',c.mgr),400);check(await f.call('/warehouse-workspace?scope=team&member=wh',c.mgr),400);
+ const expected=other.rows.map((r:any)=>r.id);assert.deepEqual((await list('member=wh-filter')).rows.map((r:any)=>r.id),expected,'repeat employee switch does not retain the shared queue');
+});
