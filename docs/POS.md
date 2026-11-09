@@ -108,6 +108,9 @@ API mới nhận `serviceFees: [{ name, quantity, unitPrice }]` cùng `shippingF
 Payload POS → n8n/Claw bổ sung `additional_fees` (dịch vụ gồm amount/subtotal/tax_amount/tax_percent; ship amount/tax_percent=0), giữ tổng đã gồm phí và diễn giải từng dòng trong notes. `additional_fees.service` giữ tổng tương thích, thêm `service.lines` để lưu tên, SL, đơn giá và tiền/thuế từng khoản; không cộng tổng và lines hai lần. Đã kiểm payload bằng adapter giả; cần kiểm dry-run downstream n8n/Claw trước khi kết luận khoản phí đã được ghi đúng ở Sapo. Không kiểm thử bằng đơn thật.
 
 Cụm **Đơn hàng cửa hàng** nằm cuối trang, sau danh mục sản phẩm và thanh toán; giữ bộ lọc, liên kết và nguồn đồng bộ hiện có. Đơn website (`web_store_orders`): xem thông tin, **chọn địa chỉ chuẩn GHN → kiểm tra → tạo vận đơn**, cập nhật trạng thái hoặc huỷ (gọi về website nguồn); không tự tạo bản sao đơn bán CRM khi bấm xem.
+
+**Xử lý GHN nhanh:** ở đơn web đang chờ xử lý, chưa có mã GHN và có cấu hình xử lý, bấm nút **Xử lý GHN** riêng trên dòng để mở ngay form địa chỉ GHN, không cần tải trang chi tiết đơn. Bấm phần còn lại của dòng (hoặc Enter/Space khi dòng có tiêu điểm) vẫn mở đơn CRM. Enter/Space trên nút chỉ mở form GHN; nút khoá trong khi form mở. Mở form chưa tạo vận đơn hay ghi thu tiền: vẫn phải **Kiểm tra lại → Xác nhận & tạo vận đơn GHN**. Đơn đã có mã GHN, đã hoàn tất hoặc huỷ không hiện nút tạo nhanh này.
+
 ## Voucher trên đơn (22/10/2026)
 
 Giỏ hàng có mục **Voucher**, nằm ngay trên phần phí. Thu ngân nhập tay, không có danh sách mã phát hành sẵn.

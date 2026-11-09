@@ -1102,6 +1102,52 @@ test('POS rows open CRM details for Lock, Minh Long and ordinary orders with cli
   }finally{Object.assign(globalThis,{document:previousDocument,window:previousWindow});}
 });
 
+test('quick GHN opens the existing form only for pending web orders and never navigates or creates a shipment on open', async () => {
+  const previousDocument=globalThis.document,previousWindow=globalThis.window;
+  Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
+  try{
+    const root=new Element('section'),destinations:string[]=[],requests:{path:string;method:string;body:any}[]=[];
+    const orders=[
+      {id:'lock-quick',source:'lock',external:true,actionsAvailable:true,bucket:'pending'},
+      {id:'ml-quick',source:'minhlong',external:true,actionsAvailable:true,bucket:'pending',ghnDirect:true,suggestedCod:0},
+      {id:'no-config',source:'lock',external:true,actionsAvailable:false,bucket:'pending'},
+      {id:'existing',source:'lock',external:true,actionsAvailable:true,bucket:'pending',ghnOrderCode:'GYEXIST'},
+      {id:'waiting',source:'lock',external:true,actionsAvailable:true,bucket:'waiting_delivery'},
+      {id:'completed',source:'lock',external:true,actionsAvailable:true,bucket:'completed'},
+      {id:'cancelled',source:'lock',external:true,actionsAvailable:true,bucket:'cancelled'},
+      {id:'crm',source:'crm',external:false,actionsAvailable:true,bucket:'pending'},
+    ].map((o,i)=>({...o,orderNo:'QUICK'+i,customerName:'Khách thử',total:1000,paymentStatus:'debt',lines:'[]'}));
+    const api=async(path:string,method='GET',body?:any)=>{
+      requests.push({path,method,body});
+      if(path.startsWith('/pos/options'))return{registers:[{id:'r',name:'Quầy',pricePolicyId:'vat'}],current:null,shifts:[],templates:[],policies:[]};
+      if(path.startsWith('/pos/catalog'))return{products:[],nextOffset:null};
+      if(path.startsWith('/pos/orders'))return{registerId:'r',registers:[],counts:{all:orders.length},orders,owners:[],totals:[]};
+      if(path.startsWith('/pos/web-orders/')&&body?.action==='locations')return{locations:[]};
+      throw Error(path);
+    };
+    await initPosDirect({root,api,toast(){},user:()=>({id:'emp'}),go:(href:string)=>destinations.push(href)}).load();
+    const rows=root.querySelectorAll('div').filter(n=>n.className==='pos-order-row');
+    for(const [i,row]of rows.entries()){
+      const actions=row.querySelectorAll('button').filter(n=>n.className.includes('pos-order-quick-ghn'));
+      assert.equal(actions.length,i<2?1:0,orders[i]!.id);
+      if(i>=2)continue;
+      const b=actions[0]!,before=doc.body.children.length;
+      let stopped=false;
+      await b.fire('keydown',{key:'Enter',stopPropagation(){stopped=true;}});assert.equal(stopped,true);
+      await b.fire('click',{stopPropagation(){stopped=true;}});
+      assert.equal(b.disabled,true);assert.equal(doc.body.children.length,before+1);
+      const dialog=doc.body.children.at(-1)!;assert.ok(dialog.textContent.includes('Hoàn thiện địa chỉ GHN · '+orders[i]!.orderNo));
+      await b.fire('click');assert.equal(doc.body.children.length,before+1,'repeat activation must not open another form');
+      await dialog.fire('close');assert.equal(b.disabled,false,'closing the form unlocks its own row action');
+    }
+    await new Promise(resolve=>setTimeout(resolve,0));
+    assert.deepEqual(destinations,[]);
+    assert.equal(requests.some(r=>r.path.startsWith('/orders/')),false,'quick handling does not load CRM detail');
+    assert.ok(requests.filter(r=>r.method!=='GET').every(r=>r.body?.action==='locations'),'opening only loads address choices; it never confirms shipping or payment');
+    await rows[0]!.fire('click');assert.deepEqual(destinations,['#/orders/web%3Alock-quick']);
+  }finally{Object.assign(globalThis,{document:previousDocument,window:previousWindow});}
+});
+
 test('POS displays GHN codes and carrier statuses without inferring payment or querying GHN', async () => {
   const previousDocument = globalThis.document, previousWindow = globalThis.window;
   Object.assign(globalThis, { document: doc, window: { addEventListener() {} } });
