@@ -8,6 +8,16 @@ export function reportWeekLabel(w){
  const state={on_time:'Đúng hạn',late:'Nộp trễ',missing:'Chưa nộp',not_due:'Chưa tới hạn'}[w.state]||'Chưa xác định';
  return w.review==='pending'?'Chờ duyệt · '+state:w.review==='ok'?'Đạt · '+state:state;
 }
+/** Counts describe the saved/live periods; total points stay authoritative from the server. */
+export function reportScoreOverview(view){
+ const b=view?.basis;if(!b)return null;
+ const weeks=b.weeks.filter(w=>w.state!=='exempt');
+ return {submitted:weeks.filter(w=>['on_time','late'].includes(w.state)).length,total:weeks.length,
+  onTime:weeks.filter(w=>w.state==='on_time').length,late:weeks.filter(w=>w.state==='late').length,
+  missing:weeks.filter(w=>w.state==='missing'&&w.review!=='excused').length,notDue:weeks.filter(w=>w.state==='not_due').length,excused:weeks.filter(w=>w.review==='excused').length,
+  pending:[...b.weeks,...(b.monthly?[b.monthly]:[])].filter(w=>w.review==='pending').length,
+  monthly:b.monthly?reportWeekLabel(b.monthly):'Chưa áp dụng',points:reportScoreText(view)};
+}
 export function createReportScoreCard(view){
  const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=String(text);if(cls)n.className=cls;return n;};
  const root=node('section',null,'report-score-card');root.dataset.reportScores='';
