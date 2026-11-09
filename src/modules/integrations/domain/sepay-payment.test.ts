@@ -46,6 +46,24 @@ test("whole reference candidates preserve boundaries and Vietnamese HĐKT withou
   assert.ok(sepayReferenceCandidates("word ".repeat(64)).length <= 1024);
 });
 
+test("separated document components stay atomic and never emit a prefix or suffix", () => {
+  const short = "DH20261109001";
+  for (const content of [
+    "DH_20261109_001-ABC", "DH_20261109_001/ABC",
+    "DH_20261109_001_ABC", "DH_20261109_001.ABC",
+    "DH_20261109_001 - ABC", "DH_20261109_001 / ABC",
+    "DH_20261109_001 – ABC", "DH_20261109_001 -- ABC",
+    "DH_20261109_001 _ / ABC", "PREFIX-DH_20261109_001",
+    "PREFIX / DH_20261109_001",
+  ]) assert.ok(!sepayReferenceCandidates(content).includes(short), content);
+  assert.ok(sepayReferenceCandidates("Thanh toán (DH_20261109_001-ABC), FT123")
+    .includes(short + "ABC"));
+  assert.ok(sepayReferenceCandidates("Thanh toán DH _ 20261109 _ 001 - ABC")
+    .includes(short + "ABC"));
+  assert.ok(sepayReferenceCandidates("Thanh toán DH_20261109_001; FT123")
+    .includes(short));
+});
+
 test("bank dates without offsets use Vietnam time; explicit UTC is preserved, paidAt is the VN calendar day", () => {
   const base = {
     id: "date",
