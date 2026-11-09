@@ -6,9 +6,9 @@ import {fileURLToPath} from 'node:url';
 import {eq} from 'drizzle-orm';
 import {homeFixture} from '../../tests/helpers/home-fixture.ts';
 import {tasks} from '../../src/modules/tasks/schema.ts';
-import {warehouseWorkRuns as runs} from '../../src/modules/warehouse-workspace/schema.ts';
+import {warehouseWorkRuns as runs,warehouseWorkMonths as months} from '../../src/modules/warehouse-workspace/schema.ts';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
-const f=await homeFixture(),root=fileURLToPath(new URL('../../trial-ui/',import.meta.url)),out='/tmp/warehouse-workspace';await mkdir(out,{recursive:true});
+const f=await homeFixture(),root=fileURLToPath(new URL('../../trial-ui/',import.meta.url)),out='/tmp/warehouse-demo';await mkdir(out,{recursive:true});
 const check=(r,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
 const calendar={days:[0,1,2,3,4,5,6],start:'00:00',end:'23:59',breakStart:'',breakEnd:''};
 check(await f.call('/warehouse-workspace/settings',f.cookies.mgr,'PUT',{calendar,bonusBudget:1000000,revision:0,reason:'Ca kiểm thử'}));
@@ -38,9 +38,16 @@ try{for(const width of [1440,390]){
  assert.ok(await p.locator('.ww-page').evaluate(n=>n.scrollWidth<=innerWidth));await p.locator('.main').evaluate(n=>n.scrollTo({top:0,behavior:'instant'}));await p.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));await p.screenshot({path:out+'/worker-'+width+'.png',fullPage:true});
  // Manager uses the same UI, approves a completed wait and confirms the manual task.
  await context.addInitScript(token=>localStorage.setItem('bn-v2-session',token),f.cookies.mgr.split('=')[1]);await p.reload();await p.locator('.ww-page').waitFor();await p.locator('[name=member]').selectOption('wh');await p.locator('.ww-tabs [data-tab=review]').click();await card.waitFor();await card.locator('.ww-waits summary').click();await card.locator('[data-ww-action=review-wait]').click();d=p.locator('dialog.ww-dialog[open]');await d.locator('[name=note]').fill('NCC giao trễ, đã kiểm tra xác nhận');await d.locator('[type=submit]').click();await p.locator('dialog.ww-dialog').waitFor({state:'hidden'});await card.locator('[data-ww-action=confirm]').click();d=p.locator('dialog.ww-dialog[open]');await d.locator('[name=note]').fill('Đúng số lượng và quy cách');await d.locator('[type=submit]').click();await p.locator('dialog.ww-dialog').waitFor({state:'hidden'});await p.locator('.ww-tabs [data-tab=done]').click();await card.waitFor();
+ // Current-month demo can run repeatedly and never creates a monthly approval snapshot.
+ await p.locator('[data-ww-action=performance]').click();
+ const monthsBefore=(await f.db.select().from(months)).length;
+ for(let attempt=0;attempt<2;attempt++){
+  await p.locator('[data-ww-action=approve-month]').click();d=p.locator('dialog.ww-dialog[open]');assert.match(await d.locator('h2').innerText(),/Demo điểm tháng/);assert.equal(await d.locator('[type=submit]').innerText(),'Chạy demo');await d.locator('[type=submit]').click();await p.locator('[data-ww-demo-result]').waitFor();assert.match(await p.locator('[data-ww-demo-result]').innerText(),/Tháng vẫn mở/);assert.equal(await p.locator('dialog.ww-dialog[open] [type=submit]').count(),0);await p.locator('dialog.ww-dialog[open] .modal-foot [data-close]').click();await p.locator('dialog.ww-dialog').waitFor({state:'hidden'});
+ }
+ assert.equal((await f.db.select().from(months)).length,monthsBefore);
  await p.locator('[data-ww-action=settings]').click();d=p.locator('dialog.ww-dialog[open]');assert.ok(await d.evaluate(n=>n.getBoundingClientRect().width<=innerWidth));await d.locator('[name=reason]').fill('Kiểm tra lưu ca làm');await d.locator('[type=submit]').click();await p.locator('dialog.ww-dialog').waitFor({state:'hidden'});
  await p.locator('.ww-tabs [data-tab=priority]').click();const cancelId='browser-cancel-'+width,cancelCard=p.locator('[data-task="'+cancelId+'"]');await cancelCard.locator('[data-ww-action=cancel]').click();d=p.locator('dialog.ww-dialog[open]');await d.locator('[name=note]').fill('Không còn nhu cầu, giữ bản theo dõi để đối chiếu');await d.locator('[type=submit]').click();await p.locator('dialog.ww-dialog').waitFor({state:'hidden'});assert.equal((await f.db.select().from(runs).where(eq(runs.taskId,cancelId)))[0].stage,'cancelled');
- assert.equal((await f.db.select().from(runs).where(eq(runs.taskId,id)))[0].stage,'confirmed');assert.deepEqual(errors,[]);await p.locator('.main').evaluate(n=>n.scrollTo({top:0,behavior:'instant'}));await p.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));await p.screenshot({path:out+'/manager-'+width+'.png',fullPage:true});results.push({width,warehouseLogin:true,performanceNavigation:true,lifecycle:true,managerApproval:true,settings:true,noOverflow:true,errors});await context.close();
+ assert.equal((await f.db.select().from(runs).where(eq(runs.taskId,id)))[0].stage,'confirmed');assert.deepEqual(errors,[]);await p.locator('.main').evaluate(n=>n.scrollTo({top:0,behavior:'instant'}));await p.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));await p.screenshot({path:out+'/manager-'+width+'.png',fullPage:true});results.push({width,warehouseLogin:true,performanceNavigation:true,lifecycle:true,managerApproval:true,settings:true,currentMonthDemo:true,demoDoesNotLock:true,noOverflow:true,errors});await context.close();
 }
  await writeFile(out+'/results.json',JSON.stringify(results,null,2));process.stdout.write(JSON.stringify(results)+'\n');
 }finally{await browser.close();server.close();await Promise.allSettled([...f.background]);await f.client.close();}
