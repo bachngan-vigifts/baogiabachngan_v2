@@ -1,6 +1,7 @@
 import {orderProductState,fulfilmentBadge,fulfilmentLegend,compactFulfilmentTable} from './fulfilment-display.js';
 import {setProductThumbnail} from './product-images.js';
 import { createPager } from './pager.js';
+import {ghnStatusLabel} from './ghn-order-summary.js';
 const STATES = [['work','Cần xử lý'],['partial','Giao một phần'],['overdue','Quá hạn'],['unscheduled','Chưa xếp đủ lịch'],['delivered','Đã giao đủ'],['all','Tất cả']];
 const TRIP = {planned:'Chưa giao',in_transit:'Đang giao',delivered:'Đã giao',failed:'Giao lỗi',cancelled:'Đã huỷ'};
 const el = (tag, text, cls) => { const n=document.createElement(tag); if(text!=null)n.textContent=String(text); if(cls)n.className=cls; return n; };
@@ -12,6 +13,9 @@ export function orderProductHref(row, schedule=false) {
   return (row.contractNo?'#/contracts/':'#/orders/')+encodeURIComponent(row.orderId)+(schedule?'?scheduleLine='+encodeURIComponent(row.id):'');
 }
 export const orderProductImage = url => { try { return new URL(url).protocol==='https:' ? url : ''; } catch { return ''; } };
+
+export const orderProductGhnShipments = row => (row.trips || []).filter(t=>String(t.carrier||'').trim().toLowerCase()==='ghn' && String(t.trackingCode||'').trim());
+export const orderProductGhnLabel = trip => `${trip.trackingCode} · ${ghnStatusLabel(trip.trackingStatus)}`;
 
 export function initOrderProducts({root,api,go,money,canCalendar=()=>true,canOrder=()=>true}) {
   let data=null,status='work',request=0,dialog=null;
@@ -43,6 +47,9 @@ export function initOrderProducts({root,api,go,money,canCalendar=()=>true,canOrd
     close();dialog=el('dialog',null,'modal op-dialog');dialog.setAttribute('aria-labelledby','op-dialog-title');
     const head=el('div',null,'modal-head'),title=el('h2',row.name);title.id='op-dialog-title';const x=button('×',close,'icon-btn');x.setAttribute('aria-label','Đóng chi tiết dòng hàng');head.append(title,x);
     const content=el('div',null,'modal-body');content.append(el('p',`${row.sku || 'Không có SKU'} · ${row.contractNo || row.orderNo} · ${row.customerName}`),el('p',`Đặt ${qty(row.qty)} ${row.unit} · Đã giao ${qty(row.deliveredQty)} · Còn ${qty(row.remainingQty)} · Đang xếp lịch ${qty(row.scheduledQty)} · Chưa xếp ${qty(row.availableQty)}`));
+    content.append(el('p',`Phụ trách: ${row.ownerName||'Chưa phân công'}`));
+    const ghn=orderProductGhnShipments(row);content.append(el('h3','Vận đơn GHN'));
+    if(ghn.length){const list=el('ul',null,'plain-list');for(const trip of ghn)list.append(el('li',orderProductGhnLabel(trip)));content.append(list);}else content.append(el('p','Chưa có vận đơn GHN'));
     content.append(el('p',`Tiến độ cấp đơn: ${row.progress?.label||'Chưa có tiến độ'}`));
     if(row.unitPrice!=null)content.append(el('p',`Đơn giá sau chiết khấu, chưa VAT: ${money(row.unitPrice)} · VAT ${qty(row.taxRate)}% · Giá trị toàn dòng chưa VAT: ${money(row.amount)}`));
     content.append(el('h3','Các đợt giao của dòng hàng'));const trips=el('ul',null,'plain-list');
@@ -53,13 +60,16 @@ export function initOrderProducts({root,api,go,money,canCalendar=()=>true,canOrd
   }
   function render() {
     cards.replaceChildren();for(const [key,label]of STATES){const b=button('',()=>{status=key;pager.reset();load();},'stat op-stat'+(key===status?' active':''));b.setAttribute('aria-pressed',String(key===status));b.append(el('small',label),el('strong',qty(data.counts[key])),el('small','dòng hàng'));cards.append(b);}
-    const table=el('table',null,'data-table op-table'),thead=el('thead'),tr=el('tr'),headers=['Sản phẩm','Đơn · Khách hàng','Phụ trách','Đã giao / Đặt · Còn','Hạn giao','Trạng thái','Tiến độ cấp đơn','Thao tác'];for(const h of headers)tr.append(el('th',h));thead.append(tr);table.append(thead);const tb=el('tbody');
+    const table=el('table',null,'data-table op-table'),thead=el('thead'),tr=el('tr'),headers=['Sản phẩm','Đơn · Khách hàng','Số đơn GHN / Trạng thái GHN','Đã giao / Đặt · Còn','Hạn giao','Trạng thái','Tiến độ cấp đơn','Thao tác'];for(const h of headers)tr.append(el('th',h));thead.append(tr);table.append(thead);const tb=el('tbody');
     for(const row of data.lines){const state=orderProductState(row),tr=el('tr',null,'ff-row ff-'+state);tr.dataset.orderLine=row.id;const name=el('td',null,'ff-product'),image=orderProductImage(row.imageUrl);if(image){const img=el('img');img.alt='';setProductThumbnail(img,image,'list',()=>img.remove());name.append(img);}name.append(button(row.name,()=>details(row),'btn ghost op-product-name'));
       const order=el('td'),a=el('a',row.contractNo||row.orderNo);a.href=orderProductHref(row);order.append(canOrder(row)?a:el('span',row.contractNo||row.orderNo),el('small',row.customerName));
+      const shipping=el('td',null,'op-ghn'),shipments=orderProductGhnShipments(row);
+      if(!shipments.length)shipping.append(el('span','Chưa có vận đơn GHN','muted'));
+      for(const [index,trip] of shipments.entries()){if(index)shipping.append(document.createTextNode(' | '));const label=orderProductGhnLabel(trip);if(canCalendar()){const link=el('a',label);link.href='#/deliveries?deliveryId='+encodeURIComponent(trip.id);shipping.append(link);}else shipping.append(el('span',label));}
       const numbers=el('td');numbers.append(el('strong',`${qty(row.deliveredQty)} / ${qty(row.qty)} ${row.unit}`));const progress=el('progress');progress.max=row.qty;progress.value=row.deliveredQty;progress.setAttribute('aria-label',`Đã giao ${qty(row.deliveredQty)} trên ${qty(row.qty)} ${row.unit}`);numbers.append(progress,el('small',`Còn ${qty(row.remainingQty)} · Chưa xếp lịch ${qty(row.availableQty)}`));
       const due=el('td');due.append(el('strong',orderProductDueLabel(row)));if(row.remainingQty>1e-9&&row.orderStatus!=='cancelled')due.append(el('small',row.overdue?'Quá hạn':row.availableQty>0?'Còn phần chưa xếp lịch':'Theo chuyến chờ / đang giao',row.overdue?'danger-text':'muted'));
       const actions=el('td',null,'op-actions');actions.append(button('Chi tiết',()=>details(row)));if(row.canSchedule)actions.append(button('Xếp lịch',()=>go(orderProductHref(row,true)),'btn primary small'));
-      tr.append(name,order,el('td',row.ownerName||'Chưa phân công'),numbers,due,el('td'),el('td',row.progress?.label||'Chưa có tiến độ'),actions);tr.children[5].append(fulfilmentBadge(state,state==='delivered'?'Đã giao đủ':undefined));[...tr.children].forEach((td,i)=>td.dataset.label=headers[i]);tb.append(tr);
+      tr.append(name,order,shipping,numbers,due,el('td'),el('td',row.progress?.label||'Chưa có tiến độ'),actions);tr.children[5].append(fulfilmentBadge(state,state==='delivered'?'Đã giao đủ':undefined));[...tr.children].forEach((td,i)=>td.dataset.label=headers[i]);tb.append(tr);
     }
     if(!data.lines.length){const tr=el('tr'),td=el('td','Không có dòng sản phẩm phù hợp bộ lọc.','empty');td.colSpan=8;tr.append(td);tb.append(tr);}table.append(tb);compactFulfilmentTable(table);body.replaceChildren(table);
     feedback.textContent=`${qty(data.total)} dòng phù hợp · Tính ngày ${date(data.calculatedDate)} · Mỗi dòng giữ nguyên đơn vị tính.`;

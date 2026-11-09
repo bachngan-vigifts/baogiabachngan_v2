@@ -19,8 +19,8 @@ test('sản phẩm theo đơn: dữ liệu thật theo ID dòng, giữ scope, t�
   {id:'line-cancelled',orderId:'cancelled',lineNo:1,sku:'CANCEL',name:'Đơn đã huỷ',qty:1,deliveredQty:0},
  ]);
  await f.db.insert(deliveries).values([
-  {id:'trip-active',deliveryNo:'ACTIVE',orderId:'own',plannedDate:'2020-01-01',status:'planned',createdBy:'emp',createdAt:now,updatedAt:now},
-  {id:'trip-failed',deliveryNo:'FAILED',orderId:'own',plannedDate:'2020-01-01',status:'failed',createdBy:'emp',createdAt:now,updatedAt:now},
+  {id:'trip-active',deliveryNo:'ACTIVE',orderId:'own',plannedDate:'2020-01-01',carrier:'GHN',trackingCode:'GHN-A',trackingStatus:'delivering',status:'planned',createdBy:'emp',createdAt:now,updatedAt:now},
+  {id:'trip-failed',deliveryNo:'FAILED',orderId:'own',plannedDate:'2020-01-01',carrier:'GHN',trackingCode:'GHN-B',trackingStatus:'delivery_fail',status:'failed',createdBy:'emp',createdAt:now,updatedAt:now},
   {id:'trip-cancelled',deliveryNo:'CANCELLED',orderId:'own',plannedDate:'2020-01-01',status:'cancelled',createdBy:'emp',createdAt:now,updatedAt:now},
  ]);
  await f.db.insert(deliveryLines).values([
@@ -30,7 +30,8 @@ test('sản phẩm theo đơn: dữ liệu thật theo ID dòng, giữ scope, t�
  const all=await read('status=all'),a=all.lines.find((l:any)=>l.id==='line-1'),b=all.lines.find((l:any)=>l.id==='line-2');
  assert.equal(all.total,4);assert.equal(all.counts.delivered,1);assert.equal(all.counts.work,3);
  assert.deepEqual([a.qty,a.deliveredQty,a.remainingQty,a.scheduledQty,a.availableQty],[10,3,7,4,3]);
- assert.equal(a.trips.length,2);assert.equal(a.overdue,true);assert.equal(a.nextDeliveryDate,'2020-01-01');
+ assert.equal(a.trips.length,2);assert.deepEqual(a.trips.map((t:any)=>[t.carrier,t.trackingCode,t.trackingStatus]),[['GHN','GHN-A','delivering'],['GHN','GHN-B','delivery_fail']]);
+ assert.equal(b.trips[0].trackingCode,'','không lấy vận đơn từ dòng khác cùng đơn');assert.equal(a.overdue,true);assert.equal(a.nextDeliveryDate,'2020-01-01');
  assert.deepEqual([b.qty,b.deliveredQty,b.scheduledQty,b.availableQty],[5,0,0,5]);assert.equal(b.trips[0].status,'cancelled');
  assert.equal(a.sku,b.sku);assert.notEqual(a.id,b.id,'cùng SKU vẫn là hai dòng khác nhau');
  assert.equal(a.contractNo,'HD-LIVE');assert.ok(a.progress.label);assert.equal(a.canSchedule,true);
@@ -62,6 +63,11 @@ test('quyền API và đường dẫn thao tác dùng luồng đơn / lịch th�
  assert.equal(ui.orderProductHref({orderId:'o/a',id:'line/a',contractNo:'HD'}), '#/contracts/o%2Fa');
  assert.equal(ui.orderProductHref({orderId:'o',id:'line/a',contractNo:null},true),'#/orders/o?scheduleLine=line%2Fa');
  assert.equal(ui.orderProductImage('javascript:alert(1)'),'');assert.equal(ui.orderProductImage('https://example.test/a.png'),'https://example.test/a.png');
+ assert.deepEqual(ui.orderProductGhnShipments({trips:[{id:'a',carrier:' GHN ',trackingCode:'X',trackingStatus:'new_status'},{id:'b',carrier:'other',trackingCode:'NOT-GHN'},{id:'c',carrier:'GHN',trackingCode:' '},{id:'d'}]}).map((t:any)=>t.id),['a']);
+ assert.deepEqual(ui.orderProductGhnShipments({}),[]);
+ assert.equal(ui.orderProductGhnLabel({trackingCode:'X',trackingStatus:'delivering'}),'X · Đang giao hàng');
+ assert.equal(ui.orderProductGhnLabel({trackingCode:'X',trackingStatus:''}),'X · Chưa cập nhật trạng thái GHN');
+ assert.equal(ui.orderProductGhnLabel({trackingCode:'X',trackingStatus:'new_status'}),'X · new_status');
  assert.equal(ui.orderProductDueLabel({orderStatus:'delivered',remainingQty:0,nextDeliveryDate:null}),'Đã giao đủ');
  assert.equal(ui.orderProductDueLabel({orderStatus:'cancelled',remainingQty:5,nextDeliveryDate:null}),'Đã huỷ');
  assert.equal(ui.orderProductDueLabel({orderStatus:'confirmed',remainingQty:5,nextDeliveryDate:null}),'Chưa hẹn');
