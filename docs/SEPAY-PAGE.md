@@ -55,6 +55,12 @@ Thay đổi này không sửa quyền hoặc điều kiện ghi thu. Kế toán 
 
 Kiểm tra browser fixture cô lập: danh sách dài ở 390/1440px, focus và vị trí dưới header, quay lại đúng dòng, tạo/gắn phiếu thu, chống bấm trùng, mất phản hồi sau ghi, lỗi tải danh sách, quyền Kế toán/Sale và nội dung không tin cậy. Không gọi production trong kiểm thử.
 
+## Chọn đơn/HĐKT khi tài khoản nhận chưa được duyệt
+
+Manager vẫn được tìm/chọn đơn hoặc HĐKT và xem công nợ dù tài khoản chưa có trong `SEPAY_RECEIPT_ACCOUNTS`. Đây là bước đọc/đối chiếu, không ghi nhận thanh toán hoặc lưu liên kết tạm vào DB. Giao diện chỉ ẩn phần xác nhận ghi thu, nêu rõ nguyên nhân và có nút kiểm tra lại tài khoản.
+
+Sau khi tài khoản công ty được xác nhận và cấu hình trên máy chủ, bấm **Kiểm tra lại tài khoản**, chọn lại chứng từ để lấy công nợ mới nhất, rồi theo luồng xác nhận. Kế toán vẫn chỉ đọc; khoản POS/web giữ luồng riêng. Không bỏ hoặc nới kiểm tra tài khoản ở API. Không cần migration cho thay đổi giao diện này.
+
 ## Manager xử lý giao dịch thiếu hoặc sai mã
 
 1. Mở giao dịch chờ đối soát; kiểm tra chứng từ ngân hàng thật.

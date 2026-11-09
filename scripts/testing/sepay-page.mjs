@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import { setupSepay } from "../../tests/helpers/sepay-fixture.ts";
 import { posRegisters,webStoreOrders } from "../../src/modules/sales/pos-schema.ts";
-import { customerPayments } from "../../src/modules/sales/schema.ts";
+import { customerPayments, salesContracts } from "../../src/modules/sales/schema.ts";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE || "playwright"
 );
@@ -465,6 +465,34 @@ try {
   }
   assert.equal((await f.db.select().from(customerPayments)).length,receiptsBefore);
   results.push({case:'Lock QR links exact original website order on PC/mobile without another CRM receipt',pass:true});
+  const pickerOrder=await f.order('SEPAY_PICK_ORDER');
+  await f.db.insert(salesContracts).values({id:crypto.randomUUID(),contractNo:'HDKT_PICK_001',orderId:pickerOrder.id,legalEntity:'BN',status:'signed',value:100000,createdBy:'mgr',createdAt:f.stamp,updatedAt:f.stamp});
+  const pickerEvent=await f.incoming('Khoản cần chọn HĐKT',100000,{id:'picker-account-pending'});
+  const receiptsAtPicker=(await f.db.select().from(customerPayments)).length;
+  f.env.sepayReceiptAccounts=[];
+  const picker=await pageFor(f.mgr,390,'#/sepay?q=picker-account-pending');
+  await picker.p.locator('[data-open]').waitFor();await detail(picker.p,pickerEvent.id);
+  await picker.p.locator('[data-order-search]').waitFor();
+  await picker.p.locator('[data-order-search] input').fill('HDKT_PICK_001');
+  await picker.p.locator('[data-order-search] button[type=submit]').click();
+  await picker.p.locator('[data-order-results] [data-choose]').first().click();
+  await picker.p.locator('[data-account-block]').waitFor();
+  assert.equal(await picker.p.locator('[data-preview] h3').textContent(),'HDKT_PICK_001');
+  assert.equal(await picker.p.locator('[data-approval-form]').count(),0);
+  assert.equal(await picker.p.locator('[data-confirm]').count(),0);
+  assert.equal((await f.confirm(pickerEvent.id,f.choice(pickerOrder.id))).status,409);
+  assert.equal((await f.db.select().from(customerPayments)).length,receiptsAtPicker);
+  await picker.p.screenshot({path:out+'/picker-unapproved-390.png',fullPage:true});
+  f.env.sepayReceiptAccounts=['123456'];
+  await picker.p.locator('[data-reload-detail]').click();
+  await picker.p.locator('[data-order-search]').waitFor();await choose(picker.p,'HDKT_PICK_001');
+  await review(picker.p);await picker.p.locator('[data-confirm]').click();
+  await picker.p.locator('[data-notice] .sp-success').waitFor();
+  const picked=await f.db.select().from(customerPayments).where(eq(customerPayments.orderId,pickerOrder.id));
+  assert.equal(picked.length,1);assert.equal(picked[0].amount,100000);
+  assert.equal(picker.errors.length,0,picker.errors.join('\n'));
+  await picker.context.close();
+  results.push({case:'unapproved account can search/select HĐKT and inspect debt; only after approval can Manager post once',pass:true});
   const emp = await pageFor(f.emp, 1100, "#/sepay");
   await emp.p.waitForTimeout(500);
   assert.ok(!emp.p.url().includes("#/sepay"));
