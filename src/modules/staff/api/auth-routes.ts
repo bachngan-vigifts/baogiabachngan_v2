@@ -48,6 +48,8 @@ export interface StaffEnv {
   /** Cho phép tạo mới đơn cọc / ship trả trước. Production tắt (đã bỏ tính năng); chỉ bộ kiểm thử bật để dựng dữ liệu đơn cũ. */
   posOrderFlowCreate?: boolean;
   sepayPosApiKeyHash?: string;
+  /** Server-only approved company accounts for CRM SePay receipts. Missing = reconciliation only. */
+  sepayReceiptAccounts?: readonly string[];
   /**
    * Cloudflare Turnstile (chống bot) ở đăng nhập / quên mật khẩu. Chỉ bật khi có secret; siteKey là khoá công khai trả cho giao diện.
    * Secret không bao giờ gửi ra trình duyệt.
