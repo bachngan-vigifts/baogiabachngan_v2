@@ -45,6 +45,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     epoch = 0,
     detailEpoch = 0,
     searchEpoch = 0,
+    searchTimer = null,
     params = null,
     data = null,
     event = null,
@@ -71,6 +72,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     active = false;
     epoch++;
     detailEpoch++;
+    clearTimeout(searchTimer);
     searchEpoch++;
     event = null;
     preview = null;
@@ -197,6 +199,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     const back = '<button class="btn secondary small sp-back" type="button" data-back-list>← Về giao dịch</button>';
     const own = epoch,
       d = ++detailEpoch;
+    clearTimeout(searchTimer);
     searchEpoch++;
     event = null;
     preview = null;
@@ -216,13 +219,15 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
         `${back}<div class="sp-heading"><h2>Đối soát giao dịch</h2>${badge(r.status, !!r.webOrderId)}</div><strong class="sp-bank-amount">${esc(money(r.amount))}</strong><dl class="sp-info"><dt>Mã SePay</dt><dd>${esc(r.providerId)}</dd><dt>Thời gian</dt><dd>${esc(stamp(r.transactionAt))}</dd><dt>Tài khoản nhận</dt><dd>${esc(r.accountNumber)}</dd><dt>Nội dung gốc</dt><dd class="sp-original">${esc(r.content)}</dd></dl>
       ${r.reason && !(r.webOrderId && r.status === "matched") ? `<p class="sp-warning">${esc(r.reason)}</p>` : ""}${receiptView(r)}
       <div data-notice aria-live="polite"></div>
-      ${r.webOrderId ? "" : !data?.capabilities.canConfirm ? '<p class="sp-readonly">Kế toán được xem và đối chiếu. Chỉ Manager được xác nhận ghi thu.</p>' : !res.capabilities.canConfirm ? `<p class="sp-readonly">${esc(res.blockReason || "Giao dịch đã được xử lý; không tạo thêm phiếu thu.")}</p>` : `${!res.accountApproved ? '<p class="sp-warning">Tài khoản nhận chưa được duyệt ghi thu. Vẫn có thể tìm, chọn đơn/HĐKT và xem công nợ; cần duyệt tài khoản trước khi xác nhận thanh toán.</p>' : ''}<section class="sp-match"><h3>Chọn đơn / HĐKT</h3><p class="muted small">Gắn toàn bộ số tiền vào một đơn CRM/HĐKT. Khoản POS, đơn web chưa chuyển CRM và khoản cần chia nhiều đơn xử lý theo luồng riêng.</p><form data-order-search><label>Tìm số đơn / HĐKT hoặc khách hàng<input name="orderQuery" minlength="2" maxlength="120" required placeholder="Nhập ít nhất 2 ký tự"></label><button class="btn secondary" type="submit">Tìm đơn</button></form><div data-order-results></div><div data-preview></div></section>`}
+      ${r.webOrderId ? "" : !data?.capabilities.canConfirm ? '<p class="sp-readonly">Kế toán được xem và đối chiếu. Chỉ Manager được xác nhận ghi thu.</p>' : !res.capabilities.canConfirm ? `<p class="sp-readonly">${esc(res.blockReason || "Giao dịch đã được xử lý; không tạo thêm phiếu thu.")}</p>` : `${!res.accountApproved ? '<p class="sp-warning">Tài khoản nhận chưa được duyệt ghi thu. Vẫn có thể tìm, chọn đơn/HĐKT và xem công nợ; cần duyệt tài khoản trước khi xác nhận thanh toán.</p>' : ''}<section class="sp-match"><h3>Chọn đơn / HĐKT</h3><p class="muted small">Gắn toàn bộ số tiền vào một đơn CRM/HĐKT. Khoản POS, đơn web chưa chuyển CRM và khoản cần chia nhiều đơn xử lý theo luồng riêng.</p><form data-order-search><label>Tìm đơn / HĐKT / khách hàng<input name="orderQuery" maxlength="120" placeholder="Tên khách, mã đơn, hợp đồng, điện thoại…"></label><button class="btn secondary" type="submit">Tìm đơn</button><div class="sp-document-filters"><label>Loại chứng từ<select name="kind"><option value="all">Đơn hàng và HĐKT</option><option value="order">Đơn chưa có HĐKT</option><option value="contract">HĐKT</option></select></label><label>Trạng thái<select name="eligibility"><option value="active">Chưa hủy (gồm bản nháp)</option><option value="eligible">Có thể chọn đối soát</option><option value="draft">Bản nháp chưa duyệt/ký</option><option value="cancelled">Đã hủy</option><option value="all">Tất cả</option></select></label><label>Lập từ ngày<input name="from" type="date"></label><label>Đến ngày<input name="to" type="date"></label><button class="btn secondary" type="button" data-clear-orders>Bỏ bộ lọc</button></div></form><div data-order-results aria-live="polite"></div><div data-preview></div></section>`}
       ${res.history.length ? `<details class="sp-history"><summary>Nhật ký xử lý (${res.history.length})</summary>${res.history.map((h) => `<article><b>${esc(h.actorName || "Hệ thống")}</b> · ${esc(stamp(h.createdAt))}<p>${esc(h.reason || "Kiểm tra lại giao dịch")}</p></article>`).join("")}</details>` : ""}`;
       root
         .querySelectorAll("[data-row]")
         .forEach((x) =>
           x.classList.toggle("sp-selected", x.dataset.row === id),
         );
+      const searchForm = $("[data-order-search]");
+      if (searchForm) searchOrders(searchForm);
       // Loading content is short and may clamp scrolling at the page bottom.
       // Reposition once the full form exists, unless the user has already returned to the list.
       if (document.activeElement === $("[data-detail]"))
@@ -233,24 +238,28 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
           `${back}<h2>Đối soát giao dịch</h2><p role="alert" class="sp-error">${esc(e.message)}</p>`;
     }
   }
-  async function searchOrders(form) {
+  async function searchOrders(form, offset = 0) {
+    clearTimeout(searchTimer);
     if (!event || mutating) return;
     const own = epoch,
       d = detailEpoch,
       s = ++searchEpoch,
-      q = String(new FormData(form).get("orderQuery") || "").trim();
-    if (q.length < 2) return;
+      filters = new URLSearchParams();
+    for (const [k,v] of new FormData(form)) if (String(v).trim()) filters.set(k === "orderQuery" ? "q" : k, String(v).trim());
+    filters.set("offset", String(offset));
     form.querySelector('button[type="submit"]').disabled = true;
     $("[data-order-results]").textContent = "Đang tìm…";
     preview = null;
     draft = null;
     $("[data-preview]").replaceChildren();
     try {
-      const r = await api("/sepay/orders?q=" + encodeURIComponent(q));
+      const r = await api("/sepay/orders?" + filters);
       if (!valid(own, d) || s !== searchEpoch) return;
-      $("[data-order-results]").innerHTML = r.orders.length
-        ? `<ul class="sp-order-results">${r.orders.map((o) => `<li><button type="button" data-choose="${esc(o.id)}"><b>${esc(o.contractNo || o.orderNo)}</b><span>${esc(o.customerName)} · ${esc(money(o.total))}</span></button></li>`).join("")}</ul>${r.hasMore ? '<p class="muted small">Có thêm kết quả. Nhập cụ thể hơn để tìm đúng đơn.</p>' : ""}`
-        : '<p class="sp-empty">Không tìm thấy đơn CRM/HĐKT hợp lệ.</p>';
+      const labels = {draft:"Bản nháp",confirmed:"Đã duyệt",delivering:"Đang giao",delivered:"Đã giao",cancelled:"Đã hủy",signed:"Đã ký",completed:"Hoàn tất"};
+      $("[data-order-results]").innerHTML = (r.orders.length
+        ? `<ul class="sp-order-results">${r.orders.map((o) => `<li><button type="button" ${o.selectable ? `data-choose="${esc(o.id)}"` : 'disabled'}><b>${esc(o.contractNo || o.orderNo)}</b><span>${esc(o.customerName)} · ${esc(money(o.total))}</span><span>${esc(o.orderNo)} · ${esc(o.orderDate.slice(0,10))} · ${esc(labels[o.contractStatus || o.status] || o.status)}</span>${!o.selectable ? `<span>${o.status === "cancelled" ? "Đã hủy; không thể ghi thu." : "Chưa duyệt đơn / ký HĐKT; cần hoàn tất trước khi ghi thu."}</span>` : ""}</button></li>`).join("")}</ul>`
+        : '<p class="sp-empty">Không có đơn/HĐKT phù hợp. Thử bỏ bộ lọc hoặc tìm theo mã hợp đồng, tên khách không dấu.</p>') +
+        `<div class="sp-order-pages"><button type="button" class="btn secondary" data-order-offset="${Math.max(0,r.offset-r.limit)}" ${r.offset===0 ? "disabled" : ""}>← Trước</button><span>Trang ${Math.floor(r.offset/r.limit)+1}</span><button type="button" class="btn secondary" data-order-offset="${r.offset+r.limit}" ${!r.hasMore ? "disabled" : ""}>Sau →</button></div>`;
     } catch (e) {
       if (valid(own, d) && s === searchEpoch)
         $("[data-order-results]").innerHTML =
@@ -261,6 +270,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     }
   }
   async function chooseOrder(id) {
+    clearTimeout(searchTimer);
     if (!event || mutating) return;
     const own = epoch,
       d = detailEpoch,
@@ -361,12 +371,23 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     else if (e.target.matches("[data-approval-form]")) prepare(e.target);
   });
   root.addEventListener("input", (e) => {
+    const form = e.target.closest("[data-order-search]");
+    if (form) {
+      clearTimeout(searchTimer);
+      searchEpoch++;
+      preview = null; draft = null;
+      $("[data-preview]")?.replaceChildren();
+      $("[data-order-results]").textContent = "Đang tìm…";
+      searchTimer = setTimeout(() => { if(active && form.isConnected) searchOrders(form); },250);
+    }
     if (e.target.closest("[data-approval-form]")) {
       draft = null;
       $("[data-review]")?.replaceChildren();
     }
   });
   root.addEventListener("change", (e) => {
+    const form = e.target.closest("[data-order-search]");
+    if (form && e.target.tagName === "SELECT") searchOrders(form);
     if (e.target.closest("[data-approval-form]")) {
       draft = null;
       $("[data-review]")?.replaceChildren();
@@ -385,6 +406,8 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     }
     if (b.hasAttribute("data-clear"))
       navigate(new URLSearchParams(sepayDefaults()));
+    if (b.hasAttribute("data-clear-orders")) { const form = $("[data-order-search]"); form.reset(); searchOrders(form); }
+    if (b.hasAttribute("data-order-offset")) searchOrders($("[data-order-search]"),Number(b.dataset.orderOffset));
     if (b.dataset.open) openDetail(b.dataset.open);
     if (b.dataset.choose) chooseOrder(b.dataset.choose);
     if (b.hasAttribute("data-reload-detail") && event) openDetail(event.id);
@@ -412,6 +435,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     active = true;
     const id = ++epoch;
     detailEpoch++;
+    clearTimeout(searchTimer);
     searchEpoch++;
     data = null;
     event = null;
