@@ -1,3 +1,4 @@
+import {createCatalogueCustomerLink} from './customer-link.js';
 import {syncPreviewProducts} from './preview-selection.js';
 import {libraryPricing} from './core.js';
 import {defaultState,restoreState,slideKey,mapConcurrent,validateProduct,price,quotePrice,isBundle,budget,money,esc,makeSlides,selectedProducts,categories} from './core.js';
@@ -51,16 +52,18 @@ const sharedLibrary=createSharedLibrary({api:libraryApi,identity:crmSession,getP
  pending:libraryPending,savePending:(owner,id,value)=>libraryPendingWrite(owner,id,value),removePending:(owner,id)=>libraryPendingWrite(owner,id,null)
 });
 async function quotePendingWrite(owner,id,value){if(!db)throw Error('Cho phép lưu trữ để giữ yêu cầu lưu báo giá.');return new Promise((resolve,reject)=>{const t=db.transaction('kv','readwrite'),kv=t.objectStore('kv'),key='catalogue-quote-save:'+owner+':'+id;if(value)kv.put(value,key);else kv.delete(key);kv.put(structuredClone(state),'current');kv.put(structuredClone(drafts),'drafts');t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error)})}
-const sharedQuotes=createSharedQuotes({api:libraryApi,identity:crmSession,getState:()=>state,getDrafts:()=>drafts,toast,confirm:confirmAction,
+const sharedQuotes=createSharedQuotes({api:libraryApi,identity:crmSession,getState:()=>state,requireCustomer:true,getDrafts:()=>drafts,toast,confirm:confirmAction,
  setDocument:(snapshot,cloud)=>{state=restoreState(snapshot);state.cloudQuote=cloud;page=0;view='quote';changed();},
  persist:async()=>{clearTimeout(saveTimer);await dbPut('current',structuredClone(state));await dbPut('drafts',structuredClone(drafts));},
  remember:async(id,snapshot,result,owner)=>{const d={id,shared:true,owner,updated:Date.now(),state:{...structuredClone(snapshot),cloudQuote:{id,revision:result.revision,owner}}};const index=drafts.findIndex(v=>v.id===id);if(index<0)drafts.unshift(d);else drafts[index]=d;},
  getPending:(owner,id)=>dbGet('catalogue-quote-save:'+owner+':'+id),putPending:quotePendingWrite
 });
+const catalogueCustomer=createCatalogueCustomerLink({api:libraryApi,getState:()=>state,identity:crmSession,onChange:()=>{scheduleSave();updatePreview();}});
 function render(){
  releaseCatalogueThumbnails(app);
  const count=selectedProducts(state).length;
  app.innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand">VIGIFTS<small>BÁCH NGÂN</small></div><div class="side-label">Không gian làm việc</div><nav>${[['quote','file','Tạo báo giá'],['assistant','search','Trợ lý sản phẩm'],['products','grid','Sản phẩm'],['drafts','folder','Báo giá đã lưu'],['help','help','Hướng dẫn']].map(([id,ic,label])=>`<button class="nav ${view===id?'active':''}" data-action="nav" data-view="${id}">${icon(ic)}<span>${label}</span></button>`).join('')}</nav><div class="side-foot"><strong>QUÀ TẶNG DOANH NGHIỆP</strong><br>Chăm chút từng món quà.<br><br>Mẫu: VIGIFTS - BÁCH NGÂN<br>A4 · 4, 6 hoặc 8 SP/trang</div></aside><main class="main"><header class="topbar"><div class="top-leading"><a class="btn crm-back" href="https://crm.minhlongonline.com/" aria-label="Về trang chính CRM">${icon('left')}<span>Về CRM</span></a><div class="crumb">Không gian làm việc <span style="padding:0 9px;color:#b6c2bb">/</span><b>${{quote:'Báo giá của bạn',assistant:'Trợ lý sản phẩm',products:'Thư viện sản phẩm',drafts:'Báo giá đã lưu',help:'Hướng dẫn sử dụng'}[view]}</b></div></div><div class="top-actions"><span class="saved" id="save-status"><span class="dot"></span>${db?'Lưu trên máy này':'Chưa bật lưu trữ'}</span>${btn('PowerPoint','export-pptx','file','',count?'':'disabled')}${btn('Xuất PDF','export-pdf','download','primary',count?'':'disabled')}<div class="avatar">VG</div></div></header><section class="workspace">${view==='quote'?quoteView():view==='assistant'?assistantView():view==='products'?productsView():view==='drafts'?draftView():helpView()}</section></main></div>`;
+ catalogueCustomer.mount(view==='quote'?$('#meta-customer'):null);
  if(view==='drafts')sharedQuotes.mount($('#shared-quotes-root'));else sharedQuotes.unmount();
  if(view==='products')sharedLibrary.mount($('#shared-library-root'));else sharedLibrary.unmount();
  hydrateCatalogueThumbnails(app);
@@ -166,7 +169,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-acti
  }catch(e){fail(e)}
 });
 document.addEventListener('input',e=>{const t=e.target;
- if(t.dataset.meta){state.meta[t.dataset.meta]=t.value.slice(0,t.dataset.meta==='note'?140:160);scheduleSave();updatePreview()}
+ if(t.dataset.meta){if(t.dataset.meta==='customer')state.meta.customerId='';state.meta[t.dataset.meta]=t.value.slice(0,t.dataset.meta==='note'?140:160);scheduleSave();updatePreview()}
  else if(t.id==='product-search'){const pos=t.selectionStart;query=t.value;render();$('#product-search').focus();$('#product-search').setSelectionRange(pos,pos)}
  else if(['p-regular','p-discount','p-fee','p-override'].includes(t.id))updateCalculation();
 });
@@ -186,7 +189,35 @@ document.addEventListener('change',async e=>{const t=e.target;try{
  }catch(e){fail(e)}});
 document.addEventListener('submit',e=>{if(e.target.id!=='product-form')return;e.preventDefault();try{const prior=state.products.find(p=>p.id===editingId);const date=$('#p-created-at').value;const p=validateProduct({...prior,id:editingId,collection:$('#p-collection').value,pattern:$('#p-pattern').value,color:$('#p-color').value,createdAt:date===(prior?.createdAt?.slice(0,10)||'')?prior?.createdAt:date,createdAtSource:date===(prior?.createdAt?.slice(0,10)||'')?prior?.createdAtSource:null,name:$('#p-name').value,brand:$('#p-brand').value,sku:$('#p-sku').value,category:$('#p-category').value,url:$('#p-url').value,image:modalImage,priceOnRequest:$('#p-contact').checked,regular:$('#p-contact').checked?0:$('#p-regular').value,discount:$('#p-discount').value,fee:$('#p-fee').value,override:$('#p-contact').checked?null:$('#p-override').value,qty:$('#p-qty').value,fromPrice:!$('#p-contact').checked&&$('#p-from').checked});const old=state.products.findIndex(q=>q.id===p.id);if(old>=0)state.products[old]=p;else state.products.push(p);if(!state.selected.includes(p.id))state.selected.push(p.id);$('#product-dialog').close();changed();toast(old>=0?'Đã lưu thay đổi.':'Đã thêm và chọn vào báo giá.')}catch(e){$('#product-error').textContent=e.message}});
 try{const stored=await dbGet('current');if(stored)state=restoreState(stored);drafts=(await dbGet('drafts')||[]).filter(d=>{try{restoreState(d.state);return true}catch{return false}})}catch(e){toast('Chưa đọc được dữ liệu cũ. Có thể khôi phục từ bản sao JSON.')}
-render();sharedLibrary.bootstrap();window.vigifts={getState:()=>structuredClone(state),getSlides:()=>makeSlides(state)};
+render();
+const incoming=new URLSearchParams(location.search);
+if(incoming.has('quoteId')||incoming.has('customerId'))setBusy('Đang mở báo giá / khách hàng từ CRM…');
+async function backupWorkingQuote(){
+ if(!selectedProducts(state).length)return;
+ const backup={id:crypto.randomUUID(),updated:Date.now(),state:{...structuredClone(state),cloudQuote:null}};
+ drafts.unshift(backup);await dbPut('drafts',structuredClone(drafts));
+}
+try{
+ if(incoming.get('quoteId')){
+  await backupWorkingQuote();
+  await sharedQuotes.open(incoming.get('quoteId'));
+ }else if(incoming.get('customerId')){
+  const proceed=!selectedProducts(state).length||await confirmAction('Tạo báo giá cho khách đã chọn?','Báo giá hiện tại vẫn ở bản lưu trên máy. Tạo báo giá trống cho khách được mở từ CRM?');
+  if(proceed){
+   await backupWorkingQuote();
+   const previous=state;state={...defaultState(),products:previous.products};
+   try{await catalogueCustomer.select(incoming.get('customerId'));render();}
+   catch(e){state=previous;render();throw e;}
+  }
+ }
+}catch(e){fail(e);}
+finally{
+ clearBusy();
+ if(incoming.has('quoteId')||incoming.has('customerId')){
+  const url=new URL(location.href);url.searchParams.delete('quoteId');url.searchParams.delete('customerId');history.replaceState(null,'',url.href);
+ }
+}
+sharedLibrary.bootstrap();window.vigifts={getState:()=>structuredClone(state),getSlides:()=>makeSlides(state)};
 
 function assistantCategoryOptions(c){if(c.provider)return [...new Map([{name:c.provider.categoryLabel,url:c.provider.collectionUrl},...(c.provider.collections||[])].map(v=>[v.url,v])).values()].map(v=>`<option value="${esc(v.url)}" ${v.url===c.provider.collectionUrl?"selected":""}>${esc(v.name)}</option>`).join('');const value=c.categoryId?'web:'+c.brand+':'+c.categoryId:'type:'+c.type;return `<option value="type:">Chọn danh mục</option><optgroup label="Danh mục thông dụng">${assistantCategories.map(([v,l])=>`<option value="type:${v}" ${value==='type:'+v?'selected':''}>${l}</option>`).join('')}</optgroup>${['Minh Long','LocknLock'].filter(b=>c.brand==='both'||c.brand===b).map(b=>`<optgroup label="Danh mục website ${b}">${assistantCatalog.filter(v=>v.brand===b).map(v=>`<option value="web:${b}:${v.id}" ${value===`web:${b}:${v.id}`?'selected':''}>${esc(v.label)} (${v.count})</option>`).join('')}</optgroup>`).join('')}`;}
 function assistantGroupCard(c,i){const prefix='ag-'+i+'-';return `<article class="panel assistant-group" data-assistant-group="${i}"><div class="panel-title"><h3>Nhóm ${i+1} · Danh mục & ngân sách</h3><div class="head-buttons">${btn('Thêm mức giá','assistant-range','plus','small',`data-index="${i}"`)}${btn('Bỏ nhóm','assistant-remove','close','small',`data-index="${i}"`)}</div></div><div class="panel-body"><div class="two"><div class="field"><label class="label" for="${prefix}brand">Thương hiệu</label><select class="input" id="${prefix}brand" aria-label="Thương hiệu nhóm ${i+1}" data-assistant-refresh="${i}">${[['Minh Long','Minh Long'],['LocknLock','LocknLock'],['both','LocknLock & Minh Long'],...(state.customBrands||[]).map(b=>[b.name,b.name])].map(([v,l])=>`<option value="${v}" ${c.brand===v?'selected':''}>${l}</option>`).join('')}</select></div><div class="field"><label class="label" for="${prefix}category">Danh mục</label><select class="input" id="${prefix}category" aria-label="Danh mục nhóm ${i+1}" data-assistant-refresh="${i}">${assistantCategoryOptions(c)}</select></div></div><div class="two">${field('Giá chào từ (đ)',prefix+'min',c.min,'number',`min="0" aria-label="Giá chào từ, nhóm ${i+1}"`)}${field('Giá chào tối đa (đ)',prefix+'max',c.max??'','number',`min="1" placeholder="Không giới hạn" aria-label="Giá chào tối đa, nhóm ${i+1}"`)}</div><details class="assistant-more"${c.limit!==100&&c.limit!==200||c.packSize===10||(c.keywords||[]).length?' open':''}><summary>Tuỳ chọn thêm (số lượng, bộ 10 SP, từ khóa)</summary><div class="two">${field('Số sản phẩm tối đa',prefix+'limit',c.limit,'number',`min="1" max="200" aria-label="Số sản phẩm tối đa, nhóm ${i+1}"`)}<div class="field"><label class="label" for="${prefix}pack">Đơn vị ngân sách</label><select class="input" id="${prefix}pack" aria-label="Đơn vị ngân sách, nhóm ${i+1}"><option value="1" ${c.packSize===1?'selected':''}>Một sản phẩm</option><option value="10" ${c.packSize===10?'selected':''}>Bộ 10 sản phẩm</option></select></div></div>${c.provider?`<p class="inline-note">${esc(c.provider.name)}: giá niêm yết ×${100-c.provider.discount}% + ${money(c.provider.fee)}. Mẫu chưa công khai giá: ${c.provider.includeContact?"Liên hệ, chỉ lấy khi không đặt ngân sách":"bỏ qua"}.</p>`:""}${field('Từ khóa bổ sung',prefix+'keywords',(c.keywords||[]).join(', '),'text',`placeholder="Ngăn cách bằng dấu phẩy" aria-label="Từ khóa bổ sung, nhóm ${i+1}"`)}</details></div></article>`;}

@@ -1,3 +1,4 @@
+import type {CatalogueCustomerLinks} from '../../../core/contracts/catalogue-customer.ts';
 import { registerCustomerCenterRoutes } from './center.ts';
 import { quotationPredicate } from '../../quotes/api/department-access.ts';
 import { netReceivables } from '../../sales/api/pos-return-credit.ts';
@@ -29,13 +30,13 @@ const viewer = (c: Ctx) => (c.state.session as SessionState).member;
  * (hồ sơ, người liên hệ, nhân viên phụ trách / chia sẻ, báo giá, đơn, HĐKT, giao hàng, phiếu thu, công nợ, lịch sử mua, hỏi tồn, tài khoản).
  * Manager / người phụ trách / người được chia sẻ thấy toàn bộ; nhân viên khác chỉ thấy phần mình phụ trách hoặc tạo.
  */
-export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
+export function registerCustomerHubRoutes(router: Router<StaffEnv>, catalogue?: CatalogueCustomerLinks) {
   registerCustomerCenterRoutes(router);
   router.get('/customers/:id/overview', async c => {
     const db = c.env.db, me = viewer(c), id = c.params.id!;
     const profile = await customerProfile(db, id, me), all = profile.access.canSeeAll;
     const quoteWhere = and(sql`(${quotations.data}::jsonb ->> 'customerId') = ${id}`, all ? undefined : quotationPredicate(me));
-    const [orders, quoteRows, stockRows, accountRows, careRows] = await Promise.all([
+    const [orders, quoteRows, stockRows, accountRows, careRows, catalogueQuotes] = await Promise.all([
       db.select({ o: salesOrders, ownerName: employees.name }).from(salesOrders).innerJoin(employees, eq(employees.id, salesOrders.ownerId))
         .where(and(eq(salesOrders.customerId, id), all ? undefined : orderScopeFor(me)))
         .orderBy(desc(salesOrders.orderDate), desc(salesOrders.orderNo)).limit(HUB_LIMITS.orders),
@@ -50,6 +51,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
       // Nhật ký chăm sóc: nhân viên chỉ thấy lần mình ghi, Manager thấy tất cả (như trang Chăm sóc KH).
       db.select({ a: customerActivities, ownerName: employees.name }).from(customerActivities).innerJoin(employees, eq(employees.id, customerActivities.ownerId))
         .where(and(eq(customerActivities.customerId, id), careScope(me))).orderBy(desc(customerActivities.occurredAt)).limit(HUB_LIMITS.care),
+      catalogue?catalogue.list(db,me,id,all):Promise.resolve([]),
     ]);
     const ids = orders.map(r => r.o.id);
     const [lines, ships, sch, pays, cts] = ids.length ? await Promise.all([
@@ -85,7 +87,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>) {
         revenue: counted.reduce((s, o) => s + o.total, 0), due: sum('due'), paid: sum('paid'), balance: sum('balance'), overdue: sum('overdue'),
         firstOrderDate: counted.at(-1)?.orderDate ?? null, lastOrderDate: lastOrder,
       },
-      quotes,
+      quotes, catalogueQuotes,
       orders: orderList,
       contracts: cts.map(k => ({ ...k, orderNo: orderNo.get(k.orderId) ?? '' })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
       deliveries: ships.map(d => ({ ...d, orderNo: orderNo.get(d.orderId) ?? '', contractNo: contractNo.get(d.orderId) ?? null })),

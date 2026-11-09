@@ -30,3 +30,11 @@ test('GET prefers database region, retries only transient reads, never replays w
  let denied=0;await libraryProxy(request(),async()=>{denied++;return Response.json({error:'forbidden'},{status:403});});assert.equal(denied,1);
  let unavailable=0;const recovered=await libraryProxy(request(),async()=>{if(++unavailable===1)throw Error('region unavailable');return Response.json({products:[]});});assert.equal(recovered.status,200);assert.equal(unavailable,2);
 });
+
+test('customer picker is authenticated, read-only and forwards customer IDs as query data to a fixed route',async()=>{
+ const headers={Authorization:'Bearer TEST_CATALOGUE_PROXY_TOKEN'};let calls=0;
+ const fetcher=async(url:string)=>{calls++;const u=new URL(url);assert.equal(u.origin,'https://taceqfnsorewelsbdckg.supabase.co');assert.equal(u.pathname,'/functions/v1/baogia-v2-api/api/staff/catalogue-customers');assert.equal(u.searchParams.get('id'),'customer/../same-name');assert.equal(u.searchParams.has('url'),false);return Response.json({customer:{id:'customer/../same-name'}});};
+ assert.equal((await libraryProxy(new Request('https://crm.minhlongonline.com/catalogue/api/customers'),fetcher)).status,401);
+ assert.equal((await libraryProxy(new Request('https://crm.minhlongonline.com/catalogue/api/customers?id=customer%2F..%2Fsame-name&url=https://bad.test',{headers}),fetcher)).status,200);
+ assert.equal((await libraryProxy(new Request('https://crm.minhlongonline.com/catalogue/api/customers',{headers,method:'POST',body:'{}'}),fetcher)).status,405);assert.equal(calls,1);
+});
