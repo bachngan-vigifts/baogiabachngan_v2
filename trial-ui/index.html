@@ -36,6 +36,7 @@
 <link rel="stylesheet" href="supplier-portal.css">
 <link rel="stylesheet" href="delivery-calendar.css">
 <link rel="stylesheet" href="order-products.css">
+<link rel="stylesheet" href="fulfilment-display.css">
 <link rel="stylesheet" href="warehouse-workspace.css">
 </head>
 <body>
@@ -620,9 +621,10 @@
         </details>
         <p id="deliveries-filter-summary" class="muted small" role="status"></p>
         <button type="button" class="btn secondary" id="deliveries-retry" hidden>Thử tải lại</button>
+        <div id="deliveries-legend"></div>
         <div id="deliveries-calendar"></div>
-        <div id="deliveries-product-lines" class="table-wrap" hidden></div>
-        <div class="table-wrap" id="deliveries-table" hidden><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT · Sản phẩm</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th>Hoá đơn</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
+        <div id="deliveries-product-lines" tabindex="0" aria-label="Bảng sản phẩm chuyến giao, cuộn ngang để xem thêm cột" class="table-wrap" hidden></div>
+        <div class="table-wrap" id="deliveries-table" tabindex="0" aria-label="Bảng chuyến giao, cuộn ngang để xem thêm cột" hidden><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT · Sản phẩm</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th>Hoá đơn</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
         <div id="deliveries-empty" class="empty" hidden><p class="muted" id="deliveries-empty-text"></p></div>
       </div>
       </div>
