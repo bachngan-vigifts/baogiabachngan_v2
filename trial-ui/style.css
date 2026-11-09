@@ -2726,6 +2726,8 @@ dialog.inv-count-history { width: min(820px, 96vw); }
 
 /* Critical Home shell sizing is available before the lazy route CSS; keep the chat spacer below the first viewport. */
 #view-home { min-height:calc(100vh - 40px);min-height:calc(100svh - 40px); }
+/* Keep the existing chat spacer outside the initial Dashboard viewport while its data/CSS load. */
+#view-dashboard { flex-shrink:0;min-height:calc(100vh - 40px);min-height:calc(100svh - 40px); }
 /* Home already contains the approval inbox entry; keep its global launcher on other routes. */
 body:has(#view-home:not([hidden])) #approval-launcher { display:none; }
 body:has(#view-home:not([hidden])) #page-back { display:none; }
