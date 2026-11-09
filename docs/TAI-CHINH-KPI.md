@@ -11,6 +11,7 @@ Trang `#/finance` nằm ở Công việc & tổng quan (điện thoại: menu C�
 
 ## Ý nghĩa và giới hạn số liệu
 
+- **Phạm vi nguồn:** chỉ chứng từ đã ghi vào sổ CRM (`sales_orders`, phiếu thu/chi liên quan). Đơn web ở `web_store_orders` chưa chuyển thành đơn CRM chưa được tính; không ghép thêm rồi đếm trùng với đơn đã chuyển.
 - **Doanh thu thuần:** ngày đơn, chưa VAT, trừ hàng trả có hiệu lực công nợ; dùng nguyên quy tắc `/profit`.
 - **Chi phí đã ghi nhận / lợi nhuận tạm tính:** cùng nguồn lợi nhuận hiện hành. Biên trên doanh thu đủ giá vốn cộng thu phí khách. Không gọi là lãi ròng kế toán. Thiếu giá vốn, phí hãng vận chuyển hoặc đối soát nhân sự không khớp thì không hiện tổng chi phí/lợi nhuận/biên. Giá vốn ước tính hoặc tính lại được chú thích.
 - **Tháng lẻ:** phần chi phí nhân sự tháng lẻ chưa được tính theo quy tắc lợi nhuận hiện có; trang ghi rõ. Chi nhánh không tự nhận chi phí chung hay lương Sale chưa phân bổ. Văn phòng và phí thẻ còn thiếu được ghi chú riêng.
