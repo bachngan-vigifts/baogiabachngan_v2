@@ -38,3 +38,7 @@ Migration thêm ba bảng metadata, không sửa/xóa dữ liệu nghiệp vụ:
 Manager chọn tháng hiện tại theo giờ Việt Nam và nhân viên Kho, bấm **Chạy demo tháng này → Chạy demo**. Popup trả điểm, thưởng dự kiến và phần còn thiếu theo dữ liệu thật. Nếu chưa đủ dữ liệu thì giữ trạng thái chưa tính được, không giả định 0 điểm.
 
 Demo chỉ đọc dữ liệu, không lưu bản chốt, không khóa tháng và không cộng vào lương. Có thể sửa công việc/cấu hình rồi chạy lại. Tháng tương lai chưa demo; tháng đã kết thúc dùng quy trình **Duyệt điểm tháng** chính thức như trước.
+
+## Lọc nhân viên và việc nhóm
+
+Manager chọn tên nhân viên để xem riêng công việc, số đếm và hiệu suất của người đó. **Việc nhóm chưa giao** là lựa chọn riêng để giao định mức/người nhận; không cộng vào thẻ thống kê của từng nhân viên. Tài khoản Kho vẫn thấy việc của mình cùng việc nhóm có thể nhận. Bộ lọc giữ nguyên khi chuyển tab/tháng và đặt lại trang danh sách về trang đầu khi đổi nhân viên.

@@ -21,7 +21,9 @@ const positive=(x:unknown,max:number)=>{const v=Number(x);if(!Number.isFinite(v)
 const deadline=(t:{dueDate:string|null;dueTime:string|null})=>t.dueDate?new Date(t.dueDate+'T'+(t.dueTime||'23:59')+':00+07:00').toISOString():null;
 const warehousePeople=()=>and(eq(employees.positionId,'warehouse'),eq(employees.role,'employee'),eq(employees.active,true),isNull(employees.deletedAt));
 const stageSql=sql<string>`coalesce(${runs.stage},case when ${tasks.status}='done' then 'legacy' when ${tasks.status}='cancelled' then 'cancelled' else 'todo' end)`;
-const taskScope=(id:string)=>or(eq(runs.memberId,id),and(isNull(runs.memberId),eq(tasks.assigneeId,id)),and(isNull(runs.memberId),isNull(tasks.assigneeId),eq(tasks.assigneePosition,'warehouse')));
+const assignedScope=(id:string)=>or(eq(runs.memberId,id),and(isNull(runs.memberId),eq(tasks.assigneeId,id)));
+const teamScope=()=>and(isNull(runs.memberId),isNull(tasks.assigneeId),eq(tasks.assigneePosition,'warehouse'));
+const taskScope=(id:string)=>or(assignedScope(id),teamScope());
 const monthWhere=(month:string)=>sql`coalesce(((${runs.dueAt})::timestamptz at time zone 'Asia/Ho_Chi_Minh')::date::text,${tasks.dueDate}) like ${month+'%'}`;
 async function lockWorker(db:Db,id:string){const [p]=await db.select({id:employees.id}).from(employees).where(and(eq(employees.id,id),warehousePeople())).for('update');if(!p)fail('Chọn nhân viên Kho đang hoạt động.');}
 async function assertOpen(db:Db,id:string,month:string){if((await db.select().from(months).where(and(eq(months.memberId,id),eq(months.month,month))).limit(1)).length)fail('Tháng hiệu suất đã chốt, không sửa dữ liệu của kỳ này.',409);}
@@ -62,13 +64,16 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
   const m=access(c),p=c.url.searchParams,now=new Date().toISOString(),today=vietnamDate().iso,month=p.get('month')||today.slice(0,7);
   if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))fail('Tháng không hợp lệ.');
   const people=m.role==='manager'?await c.env.db.select({id:employees.id,name:employees.name}).from(employees).where(warehousePeople()).orderBy(asc(employees.name)):[];
-  const id=m.role==='manager'?(p.get('member')||people[0]?.id||''):m.id;
+  const filter=p.get('scope')||'member';if(!['member','team'].includes(filter))fail('Bộ lọc nhân viên không hợp lệ.');
+  if(filter==='team'&&m.role!=='manager')fail('Chỉ Manager lọc riêng việc nhóm.',403);
+  if(filter==='team'&&p.get('member'))fail('Chọn nhân viên hoặc việc nhóm, không chọn đồng thời.');
+  const id=filter==='team'?'':m.role==='manager'?(p.get('member')||people[0]?.id||''):m.id;
   if(m.role!=='manager'&&p.has('member')&&p.get('member')!==m.id)fail('Không được xem hiệu suất người khác.',403);
   if(id&&m.role==='manager'&&!people.some(x=>x.id===id))fail('Không tìm thấy nhân viên Kho.',404);
   const [config]=await c.env.db.select().from(settings).where(eq(settings.id,'default'));
   const selected=p.get('tab')||'priority';if(!['priority','working','review','done','overdue','todayDone'].includes(selected))fail('Bộ lọc không hợp lệ.');
   const page=Number(p.get('page')||0);if(!Number.isInteger(page)||page<0||page>100000)fail('Trang không hợp lệ.');
-  const scope=id?taskScope(id):sql`false`,active=sql`${tasks.status}<>'cancelled'`;
+  const scope=filter==='team'?teamScope():id?(m.role==='manager'?assignedScope(id):taskScope(id)):sql`false`,active=sql`${tasks.status}<>'cancelled'`;
   const overdueFilter=sql`${stageSql} not in ('confirmed','legacy') and coalesce(${runs.dueAt}::timestamptz,(${tasks.dueDate} || 'T' || coalesce(${tasks.dueTime},'23:59') || ':00+07:00')::timestamptz)<${now}::timestamptz`;
   const doneTodayFilter=sql`${runs.stage}='confirmed' and (${runs.confirmedAt}::timestamptz at time zone 'Asia/Ho_Chi_Minh')::date=${today}::date`;
   const [counts]=await c.env.db.select({todo:sql<number>`count(*) filter(where ${stageSql}='todo' and ${tasks.status}<>'done')`.mapWith(Number),working:sql<number>`count(*) filter(where ${stageSql} in ('working','blocked'))`.mapWith(Number),review:sql<number>`count(*) filter(where ${stageSql}='submitted')`.mapWith(Number),overdue:sql<number>`count(*) filter(where ${overdueFilter})`.mapWith(Number),doneToday:sql<number>`count(*) filter(where ${doneTodayFilter})`.mapWith(Number)}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(scope,active));
@@ -77,7 +82,7 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
   const [closed]=id?await c.env.db.select().from(months).where(and(eq(months.memberId,id),eq(months.month,month))):[];
   const report=closed?{...parseJson<Record<string,unknown>>(closed.snapshot,{}),locked:true,approvedAt:closed.approvedAt}:id?{...await liveReport(c.env.db,id,month,now),locked:false}:null;
   const publicReport=report&&Object.fromEntries(Object.entries(report).filter(([key])=>key!=='tasks'));
-  return json({now,today,month,memberId:id,manager:m.role==='manager',people,config:config?{...config,calendar:parseJson(config.calendar,null)}:null,counts,report:publicReport,page,hasMore:rows.length>30,rows:rows.slice(0,30).map(({task:t,run:r})=>({id:t.id,title:t.title,description:t.description,source:t.source,link:t.link,taskStatus:t.status,taskRevision:t.revision,assigneeId:t.assigneeId,team:t.assigneePosition,dueAt:r?.dueAt||deadline(t),priority:t.priority,sourceManaged:!!t.autoKey,run:r?{...r,waits:parseJson<Wait[]>(r.waits,[]),elapsed:elapsed(r,now)}:null}))});
+  return json({now,today,month,scope:filter,memberId:id,manager:m.role==='manager',people,config:config?{...config,calendar:parseJson(config.calendar,null)}:null,counts,report:publicReport,page,hasMore:rows.length>30,rows:rows.slice(0,30).map(({task:t,run:r})=>({id:t.id,title:t.title,description:t.description,source:t.source,link:t.link,taskStatus:t.status,taskRevision:t.revision,assigneeId:t.assigneeId,team:t.assigneePosition,dueAt:r?.dueAt||deadline(t),priority:t.priority,sourceManaged:!!t.autoKey,run:r?{...r,waits:parseJson<Wait[]>(r.waits,[]),elapsed:elapsed(r,now)}:null}))});
  },'business');
  router.put('/warehouse-workspace/settings',async c=>{
   const m=access(c);if(m.role!=='manager')fail('Chỉ Manager cài đặt định mức.',403);
