@@ -3934,7 +3934,7 @@ var notifier = setupNotifications({
   isManager: () => isManager(),
   poll: false,
 });
-var pulse = setupPulse({ api, onData: () => dataRefresh.tick(), onNotify: () => notifier.check(), onChat: n => chatView().badge(n) }); // eslint-disable-line no-var -- showAuth() dừng nhịp trước khi khởi tạo xong
+var pulse = setupPulse({ api, onData: () => dataRefresh.tick(), onTick: () => sepayUi?.refresh(), onNotify: () => notifier.check(), onChat: n => chatView().badge(n) }); // eslint-disable-line no-var -- showAuth() dừng nhịp trước khi khởi tạo xong
 /** Bảng công việc (trial-ui/tasks.js) – khởi tạo khi cần (sau đăng nhập). */
 var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dòng này (khởi động sau đăng nhập)
 var centerUi = null;

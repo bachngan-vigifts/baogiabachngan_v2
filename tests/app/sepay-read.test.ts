@@ -94,3 +94,24 @@ test('simultaneous pulls and webhook share the same ID without overwriting a rec
  for(const r of responses.slice(0,2))assert.equal((r as {status:number}).status,200);
  assert.equal((await f.db.select().from(sepayTransactions)).length,1);assert.equal((await f.db.select().from(customerPayments)).length,1);
 });
+
+test('scheduled pull requires machine authentication and reuses idempotent review-only import',async()=>{
+ const f=await setupSepay(),calls:string[]=[];
+ f.env.nowSec=()=>Date.parse(day+'T00:00:00+07:00')/1000;
+ f.env.sepayApiToken=token;f.env.sapoSyncToken='TEST_SERVER_ONLY_SYNC_TOKEN_32_CHARS';
+ f.env.sepayApiFetch=provider([row('scheduled')],calls);
+ for(const cookie of ['',f.emp,f.other,f.mgr])assert.equal((await f.call('/integrations/sepay/pull',cookie,'POST',{})).status,401);
+ assert.equal(calls.length,0,'employee cookies cannot invoke the scheduler');
+ const {createAppRouter}=await import('../../src/app/router.ts');
+ const router=createAppRouter();
+ const invoke=async(body:object={},authorization='Bearer '+f.env.sapoSyncToken)=>{
+  const res=await router.handle(new Request('https://trial.test/api/staff/integrations/sepay/pull',{method:'POST',headers:{authorization,'content-type':'application/json'},body:JSON.stringify(body)}),f.env);
+  return {status:res.status,data:await res.json() as any};
+ };
+ assert.equal((await invoke({},'Bearer wrong')).status,401);
+ assert.equal((await invoke({date:'2026-11-08'})).status,400);assert.equal(calls.length,0);
+ const first=await invoke();assert.equal(first.status,200,JSON.stringify(first.data));assert.equal(first.data.imported,1);assert.equal(first.data.receiptsCreated,0);
+ const next=await invoke();assert.equal(next.status,200);assert.equal(next.data.duplicate,1);
+ const [stored]=await f.db.select().from(sepayTransactions);assert.equal(stored!.status,'review');assert.equal(stored!.paymentId,null);
+ assert.equal((await f.db.select().from(customerPayments)).length,0);
+});

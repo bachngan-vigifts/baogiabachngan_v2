@@ -44,7 +44,7 @@ try{for(const width of [1440,390])for(let run=1;run<=3;run++){
  const metrics=await p.evaluate(()=>{const n=performance.getEntriesByType('navigation')[0],r=performance.getEntriesByType('resource');return{ttfb:n.responseStart-n.requestStart,load:n.loadEventEnd-n.startTime,fcp:performance.getEntriesByName('first-contentful-paint')[0]?.startTime,lcp:window.__perf.lcp,cls:window.__perf.cls,jsRequests:r.filter(x=>new URL(x.name).pathname.endsWith('.js')).length,jsBytes:r.filter(x=>new URL(x.name).pathname.endsWith('.js')).reduce((s,x)=>s+x.encodedBodySize,0)};});
  assert.equal(providerCalls,beforeProvider,'opening the page never reads SePay automatically');
  const openingApis=requests.slice(before).length;
- if(phase==='after'){
+ if(phase==='after'||phase==='auto'){
   const pulls=requests.filter(r=>r.path==='/sepay/pull-today').length,start=performance.now();
   await p.locator('[data-pull]').waitFor({state:'visible'});assert.equal(await p.locator('[data-pull]').isEnabled(),true);
   await p.locator('[data-pull]').evaluate(b=>{b.click();b.click();});
@@ -54,6 +54,23 @@ try{for(const width of [1440,390])for(let run=1;run<=3;run++){
   assert.equal((await f.db.select().from(sepayTransactions)).length,2);assert.equal((await f.db.select().from(customerPayments)).length,0);
   if(run===3){providerFail=true;await p.locator('[data-pull]').click();await p.locator('[data-pull-notice]').filter({hasText:'Chưa xác nhận được đợt'}).waitFor();
    assert.equal(await p.locator('[data-pull]').isEnabled(),true);providerFail=false;await p.locator('[data-pull]').click();await p.locator('[data-pull-notice]').filter({hasText:'Chưa tạo phiếu thu.'}).waitFor();}
+ }
+ if(phase==='auto'&&run===3){
+  const providersBefore=providerCalls,currentHash=await p.evaluate(()=>location.hash);
+  await f.incoming('Giao dịch mới kiểm tra tự cập nhật',2000,{id:'auto-'+width,transactionDate:day+' 00:40:00'});
+  const listed=requests.filter(r=>r.path.startsWith('/sepay/transactions?')).length;
+  await p.waitForTimeout(32_000);
+  await p.locator('[data-list]').filter({hasText:'Giao dịch mới kiểm tra tự cập nhật'}).waitFor();
+  assert.ok(requests.filter(r=>r.path.startsWith('/sepay/transactions?')).length>listed);
+  assert.equal(providerCalls,providersBefore,'visible heartbeat reads CRM only, never SePay');
+  assert.equal(await p.evaluate(()=>location.hash),currentHash,'automatic refresh preserves filters');
+  assert.equal((await f.db.select().from(customerPayments)).length,0);
+  await p.locator('[data-open]').first().click();
+  await p.locator('[data-detail] h2').waitFor();
+  const afterDetail=requests.filter(r=>r.path.startsWith('/sepay/transactions?')).length;
+  await p.waitForTimeout(31_000);
+  assert.equal(requests.filter(r=>r.path.startsWith('/sepay/transactions?')).length,afterDetail,'reconciliation detail blocks automatic redraw');
+  metrics.autoRefresh=true;metrics.detailPreserved=true;
  }
  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true);assert.deepEqual(errors,[]);
  if(run===3)await p.screenshot({path:out+'/'+width+'.png',fullPage:true});

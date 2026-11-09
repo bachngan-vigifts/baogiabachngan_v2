@@ -3,7 +3,7 @@
  *  - Chỉ hỏi khi tab đang hiện và người dùng còn thao tác trong 5 phút gần nhất; quay lại tab / thao tác lại thì hỏi ngay.
  *  - `stamp` đổi → onData() (trang tải lại dữ liệu đang xem) · `notifyAt` đổi → onNotify() · `chatUnread` → onChat(n).
  */
-export function setupPulse({ api, onData, onNotify, onChat, interval = 30_000, idleAfter = 5 * 60_000,
+export function setupPulse({ api, onData, onNotify, onChat, onTick = () => {}, interval = 30_000, idleAfter = 5 * 60_000,
   doc = document, win = window, now = () => Date.now(), schedule = setInterval, cancel = clearInterval }) {
   let timer, busy = false, last = null, lastActive = now(), lastCheck = 0;
   const visible = () => doc.visibilityState !== 'hidden';
@@ -12,12 +12,14 @@ export function setupPulse({ api, onData, onNotify, onChat, interval = 30_000, i
     busy = true; lastCheck = now();
     try {
       const p = await api('/pulse');
+      const hadLast = !!last;
       if (last) {
         if (p.stamp !== last.stamp) onData();
         if (p.notifyAt !== last.notifyAt) onNotify();
       }
       if (!last || p.chatUnread !== last.chatUnread) onChat(p.chatUnread);
       last = p;
+      if (hadLast) onTick(); // First load already fetches the active page; avoid a duplicate opening request.
     } catch { /* mất mạng / hết phiên: lượt sau thử lại */ }
     finally { busy = false; }
   }
