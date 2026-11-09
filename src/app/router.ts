@@ -1,3 +1,4 @@
+import {registerHomeStockValue} from './home-stock-value.ts';
 import {registerWarehouseWorkspace,assertWarehouseTaskMutable} from '../modules/warehouse-workspace/routes.ts';
 import {customerMergeHooks} from '../core/contracts/customer-merge.ts';
 import {reassignCustodyCustomer,registerCustodyRoutes} from '../modules/product-custody/api/routes.ts';
@@ -175,6 +176,7 @@ export function createAppRouter() {
   registerBadgeRoutes(router);
   registerNavigationCounts(router);
   registerWarehouseWork(router);
+  registerHomeStockValue(router);
   registerWarehouseWorkspace(router);
   registerInventoryRoutes(router, { heldQuantitiesOf: stockLookupHolds });
   registerStockIntegrityRoutes(router);
