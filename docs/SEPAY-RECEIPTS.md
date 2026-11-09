@@ -26,7 +26,8 @@ API `POST /api/staff/integrations/sepay/payment` nhận webhook bằng `Authoriz
 
 - `GET /api/staff/admin/sepay-transactions?status=review&limit=50&offset=0`: danh sách phân trang; trạng thái hợp lệ `review`, `unmatched`, `matched`. Không trả raw payload. Chỉ Manager được xem.
 - `POST /api/staff/admin/sepay-transactions/<id>/reconcile`, JSON `{}`: đọc lại payload đã lưu và kiểm tra lại tài khoản, mã đơn, trạng thái và công nợ; không cho người gọi sửa số tiền hoặc ép khớp một đơn khác. Có nhật ký Manager đối soát. Gọi lại sau khi khớp không tạo thêm phiếu thu.
-- Các API này chưa có trang đối soát riêng. Trường hợp chuyển dư, chuyển gộp hoặc sai nội dung cần kế toán/Manager xác minh bằng quy trình nghiệp vụ trước khi ghi thu thủ công; không tự tạo một webhook mới để lách chống trùng.
+- Trang **Tiền & công nợ → Thanh toán SePay** (`#/sepay`) cho Manager và Kế toán xem; chỉ Manager được chọn đơn/HĐKT, ghi lý do và xác nhận. Xem [hướng dẫn trang SePay](SEPAY-PAGE.md). Hai API quản trị cũ vẫn chỉ dành cho Manager và giữ nguyên hành vi.
+- Trường hợp chuyển dư hoặc chuyển gộp cần xác minh theo quy trình nghiệp vụ; trang không chia nhỏ giao dịch hay cắt số tiền. Không tự tạo webhook mới để lách chống trùng.
 
 ## Giới hạn và rollback
 
