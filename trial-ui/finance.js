@@ -30,6 +30,13 @@ const stamp = (d) =>
 const metric = (label, value, note = "", tone = "") =>
   `<div class="fn-metric ${tone}"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(note)}</small></div>`;
 export function initFinance({ api, root, go }) {
+  if (!document.getElementById("finance-style")) {
+    const style = document.createElement("link");
+    style.id = "finance-style";
+    style.rel = "stylesheet";
+    style.href = new URL("./finance.css", import.meta.url).href;
+    document.head.append(style);
+  }
   let epoch = 0,
     active = false,
     queue = Promise.resolve(),

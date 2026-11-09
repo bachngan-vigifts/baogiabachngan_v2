@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { stampVersion } from "../../scripts/stamp-ui-version.ts";
 import { readFileSync } from "node:fs";
 const { financeDefaults, financeRange, financeMetrics, financeKpiProgress } =
   await import(
@@ -95,4 +96,20 @@ test("finance stays lazy, Manager-only, does not add a polling job or a second p
   assert.doesNotMatch(ui, /setInterval|computePayslip|buildPayroll/);
   assert.match(ui, /compare: "0"/);
   assert.match(ui, /view: "overview"/);
+});
+
+test("finance CSS is lazy and receives the normal content version stamp", () => {
+  const html = readFileSync(
+      new URL("../../trial-ui/index.html", import.meta.url),
+      "utf8",
+    ),
+    ui = readFileSync(
+      new URL("../../trial-ui/finance.js", import.meta.url),
+      "utf8",
+    );
+  assert.doesNotMatch(html, /href="finance.css/);
+  assert.match(
+    stampVersion(ui, "test-build", "js"),
+    /finance.css\?v=test-build/,
+  );
 });

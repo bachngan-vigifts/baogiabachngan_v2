@@ -103,13 +103,15 @@ async function pageFor(
   );
   const p = await context.newPage(),
     errors = [],
-    calls = [];
+    calls = [],
+    assets = [];
   let inflight = 0,
     max = 0;
   p.on("pageerror", (e) => errors.push(e.message));
   const relevant = (u) =>
     /\/api\/staff\/(finance\/|profit\?|dashboard\/kpi)/.test(u);
   p.on("request", (r) => {
+    if (/\/finance\.(js|css)(?:[?]|$)/.test(r.url())) assets.push(r.url());
     if (relevant(r.url())) {
       calls.push(r.url());
       max = Math.max(max, ++inflight);
@@ -122,7 +124,7 @@ async function pageFor(
     if (relevant(r.url())) inflight--;
   });
   await p.goto(origin + "/" + hash);
-  return { p, context, errors, calls, max: () => max };
+  return { p, context, errors, calls, assets, max: () => max };
 }
 const loaded = async (p) => {
   await p.locator("#view-finance [data-debt] .fn-stamp").waitFor();
@@ -312,6 +314,11 @@ try {
     () => !location.hash.startsWith("#/finance"),
   );
   assert.equal(employee.calls.length, 0);
+  assert.equal(
+    employee.assets.length,
+    0,
+    "blocked/other pages load no finance JS or CSS",
+  );
   assert.equal(
     await employee.p.locator("[data-nav=finance]").isVisible(),
     false,

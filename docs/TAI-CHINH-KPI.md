@@ -29,7 +29,7 @@ Trang `#/finance` nằm ở Công việc & tổng quan (điện thoại: menu C�
 - Dòng tiền: 4 truy vấn nguồn theo lô. Công nợ: truy vấn theo lô, không gọi API từng đơn; không dùng tổng trang đầu giới hạn 2.000 dòng. Vượt 10.000 đơn/phiếu quỹ trong phạm vi thì báo lỗi yêu cầu thu hẹp, không cắt rồi trả tổng thiếu.
 - Cache tài chính mới 60 giây. Lợi nhuận/KPI dùng cache hiện có 30 phút; từng phần ghi thời điểm tính. Bấm làm mới rồi xem lại phần lợi nhuận/KPI để yêu cầu tính mới.
 - `/profit?view=overview` chỉ lược bỏ chi tiết khỏi phản hồi, không đổi công thức. Dùng chung cache với phản hồi đầy đủ (tham số `view` không tạo bản tính khác).
-- JS trang tài chính chỉ import khi vào trang; không thêm polling. Luồng API trang chạy tuần tự, ngừng bước tiếp theo khi đổi trang/đăng xuất, bỏ phản hồi cũ. Không gửi API theo từng lần sửa ô lọc.
+- JS và CSS trang tài chính chỉ tải khi vào trang; không thêm polling. Luồng API trang chạy tuần tự, ngừng bước tiếp theo khi đổi trang/đăng xuất, bỏ phản hồi cũ. Không gửi API theo từng lần sửa ô lọc.
 - Không migration, không đụng đăng nhập, kết nối CSDL, cron hay đồng bộ.
 
 ## Kiểm thử
