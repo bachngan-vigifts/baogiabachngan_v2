@@ -53,7 +53,10 @@ export function createDeliveryCalendar({ root, onRange, actions, orderLink }) {
     ];
     const dl = el('dl', null, 'dc-detail-fields');
     for (const [label, value] of fields) dl.append(el('dt', label), el('dd', value || '—'));
-    body.append(dl, el('h3', 'Sản phẩm trong chuyến'));
+    body.append(dl);
+    const phone=(trip.receiverPhone||trip.customerPhone||'').replace(/[^\d+]/g,'');
+    if(phone){const call=el('a','Gọi người nhận','btn secondary');call.href='tel:'+phone;body.append(call);}
+    body.append(el('h3', 'Sản phẩm trong chuyến'));
     const list = el('ul');
     for (const p of trip.products || []) list.append(el('li', `${p.name} · ${p.sku || 'Không có mã'} · ${p.qty.toLocaleString('vi-VN')} ${p.unit || ''}`));
     if (!list.children.length) list.append(el('li', 'Chưa có dòng sản phẩm.'));

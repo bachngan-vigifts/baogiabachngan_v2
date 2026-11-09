@@ -5,7 +5,7 @@
 - `#/order-products`: ảnh 24px bên trái, tên bên phải cùng hàng; tên dài có dấu ba chấm. Bỏ nhãn SKU phụ trong bảng, giữ tìm kiếm SKU và đầy đủ thông tin trong Chi tiết. Các ô khác cũng chỉ một hàng; title giữ nguyên nội dung dài.
 - Màu và nhãn trạng thái lấy từ dữ liệu dòng/chuyến hiện có. Ưu tiên màu dòng: đã huỷ → đã giao đủ → quá hạn → giao một phần → có chuyến đang giao → chưa xếp đủ lịch → chưa giao. Bộ đếm/bộ lọc vẫn do API tính; một dòng có thể thuộc nhiều bộ lọc, màu ưu tiên không thay cách đếm.
 - `#/deliveries`: áp dụng cho lịch ngày/tuần/tháng, danh sách chuyến và sản phẩm theo chuyến. Có chú giải màu bằng chấm màu + chữ. Quá hạn là cảnh báo, không thay trạng thái nghiệp vụ; chuyến giao lỗi có màu riêng khi chưa quá hạn.
-- Số chuyến bấm được để xem chi tiết đầy đủ. Nút in giao hàng/đóng gói nằm cùng cột thao tác; giữ cơ chế kiểm tra quyền hiện có. Không thêm API, query, ghi dữ liệu hoặc quyền.
+- Số chuyến bấm được để xem chi tiết đầy đủ, gồm ảnh xác nhận, người/thời điểm xác nhận và nút gọi người nhận. Nút in giao hàng/đóng gói nằm cùng cột thao tác; giữ cơ chế kiểm tra quyền hiện có. Không thêm API, query, ghi dữ liệu hoặc quyền.
 - Mobile: giữ hàng gọn, cuộn ngang bên trong bảng, ghim cột sản phẩm; không cuộn ngang toàn trang. Loại các bảng `.ff-table` khỏi cơ chế tự đổi bảng thành thẻ. Nút thao tác giữ vùng chạm ít nhất 44px. Vùng cuộn nhận focus bằng bàn phím.
 - Không thêm dependency, backend hay migration. Tái sử dụng ảnh thu nhỏ, form xếp lịch, chi tiết chuyến và API hiện hành.
 

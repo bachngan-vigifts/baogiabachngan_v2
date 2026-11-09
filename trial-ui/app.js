@@ -3531,7 +3531,7 @@ const DELIVERY_FILTERS = ['owner', 'kind', 'carrier', 'invoice', 'assignee', 'cu
 let deliveriesReq = 0;
 var productOrdersUi=null,shipmentCalendarUi=null;
 function productOrdersView(){return productOrdersUi ||= initOrderProducts({root:$('#view-order-products'),api,go,money,canCalendar:()=>canPage('deliveries'),canOrder:row=>canPage(row.contractNo?'contracts':'orders')});}
-function deliveryCalendarView(){return shipmentCalendarUi ||= createDeliveryCalendar({root:$('#deliveries-calendar'),onRange:(from,to)=>{$('#deliveries-from').value=from;$('#deliveries-to').value=to;loadDeliveries();},actions:x=>deliveryButtons(x)+deliverySlipButtons(x),orderLink:x=>!isWarehouse()&&canPage('order')?(x.contractNo?'#/contracts/':'#/orders/')+encodeURIComponent(x.orderId):null});}
+function deliveryCalendarView(){return shipmentCalendarUi ||= createDeliveryCalendar({root:$('#deliveries-calendar'),onRange:(from,to)=>{$('#deliveries-from').value=from;$('#deliveries-to').value=to;loadDeliveries();},actions:x=>deliveryButtons(x)+deliverySlipButtons(x)+deliveryConfirmation(x)+deliveryPhotos(x),orderLink:x=>!isWarehouse()&&canPage('order')?(x.contractNo?'#/contracts/':'#/orders/')+encodeURIComponent(x.orderId):null});}
 async function loadDeliveries() {
   const query=location.hash.split('?')[1]||'',tab=new URLSearchParams(query).get('view')||'calendar',calendar=!['list','products'].includes(tab);
   $('#deliveries-table').hidden=tab!=='list';$('#deliveries-calendar').hidden=!calendar;$('#deliveries-product-lines').hidden=tab!=='products';

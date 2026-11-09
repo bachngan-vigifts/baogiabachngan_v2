@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {readFile,mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
+import {warehousePhotos} from '../../src/modules/inventory/schema.ts';
 import {setup} from '../../tests/helpers/pos-fixture.ts';
 import {salesOrders,salesOrderLines,deliveries,deliveryLines} from '../../src/modules/sales/schema.ts';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
@@ -13,6 +14,8 @@ for(const [i,status] of ['planned','in_transit','delivered','cancelled'].entries
  await f.db.insert(deliveries).values({id:'calendar-'+i,deliveryNo:'CAL-'+i,orderId:'calendar-order',plannedDate:today,timeSlot:'09:00',receiverName:'Người nhận minh họa',receiverPhone:'0900000000',address:i%2?'Cần Thơ':'Sóc Trăng',carrier:'Tự giao',status,createdBy:'emp',createdAt:now,updatedAt:now});
  await f.db.insert(deliveryLines).values({deliveryId:'calendar-'+i,orderLineId:'calendar-line',qty:1});
 }
+await f.files.put('delivery-proof.png',Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6zS8AAAAASUVORK5CYII=','base64'),'image/png');
+await f.db.insert(warehousePhotos).values({id:'calendar-proof',refType:'delivery',refId:'calendar-2',fileKey:'delivery-proof.png',createdBy:'emp',createdAt:now});
 const root=fileURLToPath(new URL('../../trial-ui/',import.meta.url)),out='/tmp/delivery-calendar-browser',writes=[];
 await mkdir(out,{recursive:true});
 const server=createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost');if(u.pathname.startsWith('/api/staff/')){
@@ -31,7 +34,9 @@ try{for(const width of [1440,390]){
  await page.waitForFunction(()=>document.querySelector('#deliveries-filter-summary').textContent.startsWith('4 chuyến'));
  assert.equal(await view.getByText('Lịch mẫu',{exact:true}).count(),0);assert.equal(await view.locator('.dc-grid>.dc-day').count(),42);
  assert.equal(await view.locator('#deliveries-status [data-status=cancelled]').isVisible(),true,'cancelled is a filter, not a delete action');
- await view.locator('.dc-event').first().click();await page.locator('.delivery-calendar-dialog').waitFor();assert.equal(await page.locator('.delivery-calendar-dialog li b').count(),0,'product name remains text');
+ await view.locator('.dc-event').first().click();await page.locator('.delivery-calendar-dialog').waitFor();assert.equal(await page.locator('.delivery-calendar-dialog li b').count(),0,'product name remains text');assert.equal(await page.locator('.delivery-calendar-dialog a[href=\"tel:0900000000\"]').count(),1,'call action remains accessible after truncating the table');
+ await page.locator('.delivery-calendar-dialog button[aria-label="Đóng chi tiết chuyến giao"]').click();
+ await view.locator('.dc-delivered').first().click();await page.locator('.delivery-calendar-dialog').waitFor();assert.equal(await page.locator('.delivery-calendar-dialog a:has(img)').count(),1,'proof photo remains accessible in details');assert.match(await page.locator('.delivery-calendar-dialog a:has(img)').getAttribute('href'),/^data:image\/png/);
  await page.locator('.delivery-calendar-dialog button[aria-label="Đóng chi tiết chuyến giao"]').click();
  await view.locator('.delivery-advanced-filters summary').click();await view.locator('#deliveries-product').fill('NOT-FOUND');
  await page.waitForFunction(()=>document.querySelector('#deliveries-filter-summary').textContent.startsWith('0 chuyến'));
