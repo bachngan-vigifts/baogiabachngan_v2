@@ -161,7 +161,19 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
  },'business');
  router.post('/warehouse-workspace/approve-month',async c=>{
   const m=access(c);if(m.role!=='manager')fail('Chỉ Manager duyệt điểm tháng.',403);const b=await readJson(c.req,4000),id=text(b.memberId,100),month=text(b.month,7),now=new Date().toISOString();
-  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||month>=vietnamDate().iso.slice(0,7))fail('Chỉ duyệt sau khi tháng đã kết thúc.');
+  const currentMonth=vietnamDate().iso.slice(0,7);
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))fail('Tháng không hợp lệ.');
+  if(b.demo!==undefined&&typeof b.demo!=='boolean')fail('Chế độ demo không hợp lệ.');
+  if(b.demo===true){
+   if(month!==currentMonth)fail('Demo chỉ áp dụng cho tháng hiện tại.');
+   const report=await c.env.db.transaction(async tx=>{
+    const db=tx as unknown as Db,[person]=await db.select({id:employees.id}).from(employees).where(and(eq(employees.id,id),warehousePeople())).limit(1);
+    if(!person)fail('Chọn nhân viên Kho đang hoạt động.');
+    const {tasks:_tasks,...preview}=await liveReport(db,id,month,now);return {...preview,locked:false};
+   },{isolationLevel:'repeatable read',accessMode:'read only'});
+   return json({ok:true,demo:true,previewOnly:true,month,memberId:id,generatedAt:now,report});
+  }
+  if(month>=currentMonth)fail('Chỉ duyệt sau khi tháng đã kết thúc. Dùng Demo cho tháng hiện tại.');
   await c.env.db.transaction(async tx=>{const db=tx as unknown as Db;await lockWorker(db,id);await assertOpen(db,id,month);const report=await liveReport(db,id,month,now);
    if(report.score===null)fail('Chưa đủ dữ liệu hoặc còn kết quả / khoảng chờ chưa xác nhận.',409);
    if(report.fingerprint!==b.fingerprint)fail('Số liệu vừa thay đổi. Tải lại và đối soát trước khi duyệt.',409);

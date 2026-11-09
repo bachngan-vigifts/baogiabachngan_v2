@@ -86,3 +86,20 @@ test('closing a warehouse score month freezes the score but does not prevent unf
  [r]=await f.db.select().from(runs).where(eq(runs.taskId,'ww-closed-late'));check(await f.act('ww-closed-late',c.mgr,{action:'confirm',revision:r!.revision,quality:'clean',note:'Đã đối soát và hoàn tất công việc'}));
  const after=check(await f.call(path,c.mgr));assert.equal(after.report.score,before.report.score);assert.equal(after.report.fingerprint,before.report.fingerprint);assert.equal(after.report.locked,true);assert.equal((await f.db.select().from(tasks).where(eq(tasks.id,'ww-closed-late')))[0]!.status,'done');
 });
+
+test('current-month demo is repeatable and read-only, validates Manager/worker/month, and does not relax official closing',async()=>{
+ const f=await setup(),c=f.cookies,endpoint='/warehouse-workspace/approve-month',body={memberId:'wh',month:'2026-11',demo:true};
+ const before=await f.client.query('select (select count(*) from warehouse_work_months)::int as months,(select count(*) from stock_moves)::int as stock,(select count(*) from hr_payslips)::int as payroll');
+ check(await f.call(endpoint,'','POST',body),401);for(const role of ['wh','emp','ncc'])check(await f.call(endpoint,c[role as keyof typeof c],'POST',body),403);
+ for(const override of [{month:'2026-10'},{month:'2026-12'},{month:'2026-13'},{memberId:'emp'},{memberId:'missing'},{demo:'true'}])check(await f.call(endpoint,c.mgr,'POST',{...body,...override}),400);
+ check(await f.call(endpoint,c.mgr,'POST',{...body,demo:false}),400);
+ const first=check(await f.call(endpoint,c.mgr,'POST',body));assert.equal(first.demo,true);assert.equal(first.previewOnly,true);assert.equal(first.report.locked,false);assert.equal(first.report.score,null);assert.equal('tasks' in first.report,false,'demo returns no raw task records');
+ check(await f.call('/warehouse-workspace/settings',c.mgr,'PUT',{calendar,bonusBudget:1000000,revision:0,reason:'Quỹ demo'}));
+ await f.db.insert(tasks).values({id:'ww-demo-scored',title:'Việc hoàn tất để demo',assigneeId:'wh',dueDate:'2026-11-09',status:'done',createdAt:'2026-11-09T01:00:00Z',updatedAt:'2026-11-09T01:30:00Z'});
+ await f.db.insert(runs).values({taskId:'ww-demo-scored',memberId:'wh',kind:'manual',stage:'confirmed',weight:1,standardMinutes:30,calendar:JSON.stringify(calendar),dueAt:'2026-11-09T02:00:00Z',startedAt:'2026-11-09T01:00:00Z',submittedAt:'2026-11-09T01:30:00Z',quality:'clean',updatedAt:'2026-11-09T02:00:00Z'});
+ const scored=check(await f.call(endpoint,c.mgr,'POST',body));assert.equal(scored.report.score,100);assert.equal(scored.report.bonusPreview,1000000);
+ check(await f.call('/warehouse-workspace/settings',c.mgr,'PUT',{calendar,bonusBudget:2000000,revision:1,reason:'Đổi quỹ chạy lại demo'}));
+ const again=check(await f.call(endpoint,c.mgr,'POST',body));assert.equal(again.report.bonusPreview,2000000);assert.equal(again.report.locked,false);assert.notEqual(again.report.fingerprint,scored.report.fingerprint);
+ assert.equal(check(await f.call('/warehouse-workspace?member=wh&month=2026-11',c.mgr)).report.locked,false);
+ assert.deepEqual((await f.client.query('select (select count(*) from warehouse_work_months)::int as months,(select count(*) from stock_moves)::int as stock,(select count(*) from hr_payslips)::int as payroll')).rows,before.rows);
+});
