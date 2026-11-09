@@ -1,6 +1,7 @@
 import {and,asc,desc,eq,gt,inArray,isNotNull,sql} from 'drizzle-orm';
 import {nextDocumentNumber,documentNumberPatterns} from '../../../core/document-number.ts';
 import {AppError} from '../../../core/errors.ts';
+import {MAX_STOCKTAKE_LINES} from '../../../core/contracts/stocktake.ts';
 import {auditLogs} from '../../../core/db/schema.ts';
 import {json,readJson,type Router,type RouteContext} from '../../../core/http/router.ts';
 import {can} from '../../staff/domain/permissions.ts';
@@ -8,7 +9,7 @@ import {sha256Hex} from '../../staff/domain/session.ts';
 import type {StaffEnv,SessionState} from '../../staff/api/auth-routes.ts';
 import {employees} from '../../staff/schema.ts';
 import {productMovements,products,productStock,warehouses} from '../../catalog/schema.ts';
-import {inventoryAdjustments as adjustments,stockBalances} from '../schema.ts';
+import {inventoryAdjustments as adjustments,stockBalances,stockMoves} from '../schema.ts';
 import {assertWarehousesOpened,postMoves} from './ledger.ts';
 import {notifyMany} from '../../notifications/api/routes.ts';
 type Ctx=RouteContext<StaffEnv>;
@@ -29,7 +30,7 @@ function cleanLines(raw:unknown):Line[]{
  if(!lines.length)fail(400,'Phiếu không có thay đổi tồn kho.');return lines;
 }
 function countLines(raw:unknown):Line[]{
- if(!Array.isArray(raw)||!raw.length||raw.length>1000)fail(400,'Nhập từ 1 đến 1.000 sản phẩm kiểm kê.');
+ if(!Array.isArray(raw)||!raw.length||raw.length>MAX_STOCKTAKE_LINES)fail(400,`Nhập từ 1 đến ${MAX_STOCKTAKE_LINES} sản phẩm kiểm kê trong mỗi phiếu.`);
  const seen=new Set<string>();
  return (raw as Record<string,unknown>[]).map(r=>{
   const sku=typeof r?.sku==='string'?r.sku.trim():'';
@@ -113,16 +114,16 @@ export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)
  },'business');
  /**
   * Tạo nhanh phiếu kiểm kê: danh sách mã theo thương hiệu (`brand`), mọi mã còn tồn trong kho (`instock`)
-  * hoặc các mã lệch lớn nhất giữa sổ kho và Sapo (`sapo`, `limit` mã). Trả tồn sổ kho hiện tại của từng mã (tối đa 1.000 mã).
+  * hoặc các mã lệch lớn nhất giữa sổ kho và Sapo (`sapo`, `limit` mã). Trả tồn sổ kho hiện tại của từng mã (tối đa 300 mã).
   */
  router.post('/inventory/count-candidates',async c=>{
   guard(c);const body=await readJson(c.req,3000),warehouseId=String(body.warehouseId||''),mode=String(body.mode||''),brand=String(body.brand??'').trim().slice(0,200);
-  const limit=Math.min(1000,Math.max(1,Math.trunc(Number(body.limit)||50)));
+  const limit=Math.min(MAX_STOCKTAKE_LINES,Math.max(1,Math.trunc(Number(body.limit)||50)));
   if(!['brand','instock','sapo'].includes(mode))fail(400,'Chọn cách tạo nhanh phiếu kiểm kê.');
   if(mode==='brand'&&!brand)fail(400,'Chọn thương hiệu.');
   if(!(await allowed(c)).some(w=>w.id===warehouseId))fail(403,'Kho không thuộc phạm vi sổ kho của bạn.');
   await assertWarehousesOpened(c.env.db,[warehouseId]);
-  const db=c.env.db,MAX=1000;let items:{sku:string;name:string;unit:string;stock:number}[]=[];
+  const db=c.env.db,MAX=MAX_STOCKTAKE_LINES;let items:{sku:string;name:string;unit:string;stock:number}[]=[];
   if(mode==='brand'){
    const rows=await db.select({sku:products.sku,name:products.name,unit:products.unit,stock:stockBalances.qty}).from(products)
     .leftJoin(stockBalances,and(eq(stockBalances.sku,products.sku),eq(stockBalances.warehouseId,warehouseId)))
@@ -155,15 +156,22 @@ export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)
  },'business');
  router.post('/inventory/count-stock',async c=>{
   guard(c);const body=await readJson(c.req,250000),warehouseId=String(body.warehouseId||''),skus=body.skus;
-  if(!(await allowed(c)).some(w=>w.id===warehouseId))fail(403,'Kho không thuộc phạm vi sổ kho của bạn.');
+  const whs=await allowed(c);
+  if(!whs.some(w=>w.id===warehouseId))fail(403,'Kho không thuộc phạm vi sổ kho của bạn.');
   if(!Array.isArray(skus)||!skus.length||skus.length>1000||skus.some(x=>typeof x!=='string'||!x||x.length>200))fail(400,'Chọn từ 1 đến 1.000 sản phẩm.');
+  if(body.includeWarehouses!==undefined&&typeof body.includeWarehouses!=='boolean')fail(400,'Tuỳ chọn tồn các kho không hợp lệ.');
   await assertWarehousesOpened(c.env.db,[warehouseId]);
-  const [rows,pendingBySku]=await Promise.all([
-   c.env.db.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,warehouseId),inArray(stockBalances.sku,skus))),
+  const ids=body.includeWarehouses?whs.map(w=>w.id):[warehouseId];
+  const [rows,pendingBySku,opened]=await Promise.all([
+   c.env.db.select().from(stockBalances).where(and(inArray(stockBalances.warehouseId,ids),inArray(stockBalances.sku,skus))),
    pendingCounts(c.env.db,warehouseId,skus),
+   body.includeWarehouses?c.env.db.selectDistinct({id:stockMoves.warehouseId}).from(stockMoves).where(and(eq(stockMoves.refType,'opening'),inArray(stockMoves.warehouseId,ids))):Promise.resolve([]),
   ]);
-  const at=new Date().toISOString(),m=new Map(rows.map(r=>[r.sku,r.qty]));
-  return json({warehouseId,observedAt:at,pendingBySku,stock:Object.fromEntries(skus.map(sku=>[sku,m.get(sku)||0]))});
+  const at=new Date().toISOString(),m=new Map(rows.filter(r=>r.warehouseId===warehouseId).map(r=>[r.sku,r.qty]));
+  const byWarehouse=new Map(rows.map(r=>[JSON.stringify([r.sku,r.warehouseId]),r.qty])),ready=new Set(opened.map(w=>w.id));
+  return json({warehouseId,observedAt:at,pendingBySku,stock:Object.fromEntries(skus.map(sku=>[sku,m.get(sku)||0])),
+   ...(body.includeWarehouses?{warehouseStock:Object.fromEntries(skus.map(sku=>[sku,Object.fromEntries(ids.map(id=>[id,ready.has(id)?byWarehouse.get(JSON.stringify([sku,id]))??0:null]))]))}:{}),
+  });
  },'business');
  router.get('/inventory/adjustments',async c=>{
   guard(c);const p=c.url.searchParams,state=p.get('status')||'',wh=p.get('warehouseId')||'',offset=Number(p.get('offset')||0);
