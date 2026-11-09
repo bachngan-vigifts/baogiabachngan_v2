@@ -8,7 +8,7 @@ const expected=[
  'pos','quotes','orders','contracts','products','product-custody','receivables','order-products','deliveries',
  'cashbook','cash',
  'customers','care','stock-requests',
- 'tasks','shift-reports','dashboard','profit','flow','store-reports','weekly-reports','monthly-reports','feedback',
+ 'tasks','shift-reports','dashboard','finance','profit','flow','store-reports','weekly-reports','monthly-reports','feedback',
  'kho','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving',
  'early-requests','purchases','suppliers',
  'staff','payroll','permissions',
