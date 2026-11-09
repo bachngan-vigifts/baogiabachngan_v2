@@ -400,3 +400,6 @@
   flex: 1;
   min-width: 0;
 }
+
+.sp-head-actions{display:flex;flex-wrap:wrap;gap:8px}.sp-head-actions .btn{min-height:44px}[data-pull-notice]:empty{display:none}
+@media(max-width:760px){.sp-page .page-head{flex-direction:column;align-items:stretch;gap:10px}.sp-head-actions{width:100%}.sp-head-actions .btn:first-child{flex:1}}

@@ -4,7 +4,21 @@
 
 Mở **Tiền & công nợ → Thanh toán SePay** (`#/sepay`); điện thoại vào nhóm **Tiền** ở menu chân trang. Manager và Kế toán được xem danh sách, chứng từ gốc và lịch sử xử lý. Chỉ Manager được tìm đơn/HĐKT, xem trước cách ghi nhận và xác nhận. API kiểm tra quyền độc lập với giao diện.
 
-Trang hiển thị giao dịch tiền vào đã được webhook CRM lưu trong `sepay_transactions`. Trang không tải sao kê lịch sử trực tiếp từ ngân hàng. Dùng migration và cấu hình tài khoản đã có trong [luồng nhận webhook](SEPAY-RECEIPTS.md); phần trang không thêm migration hay tự cấu hình webhook.
+Trang hiển thị giao dịch tiền vào đã được webhook CRM hoặc thao tác tải API lưu trong `sepay_transactions`. Trang không tải sao kê lịch sử trực tiếp từ ngân hàng. Dùng migration và cấu hình tài khoản đã có trong [luồng nhận webhook](SEPAY-RECEIPTS.md); phần trang không thêm migration hay tự cấu hình webhook.
+
+## Lấy giao dịch hôm nay qua API SePay
+
+- Manager và Kế toán bấm **Lấy giao dịch hôm nay**. Máy chủ tính ngày theo Việt Nam, chỉ GET API SePay bằng token máy chủ; mở trang hoặc làm mới danh sách không gọi SePay. Bộ lọc chuyển sang đúng ngày vừa tải.
+- GitHub Actions Secret `SEPAY_API_TOKEN` được workflow deploy API chuyển vào Supabase Edge Secrets bằng file tạm quyền 600 rồi xoá. Không đưa token vào JS, URL, request của nhân viên hoặc log. Token đọc API độc lập với khoá webhook POS; không thay webhook hay danh sách tài khoản tự ghi thu.
+- API đối chiếu `count_transactions` với danh sách, kiểm tra toàn bộ giao dịch trước khi ghi. Thiếu dữ liệu, dữ liệu vừa thay đổi, lỗi mạng/quyền hoặc phản hồi sai định dạng đều báo lỗi, không giả thành danh sách rỗng. Mỗi lượt giới hạn dưới 1.000 giao dịch và phản hồi tối đa 3 MB; chạm giới hạn thì từ chối đợt nhập, cần phát triển đồng bộ theo đợt trước khi dùng cho khối lượng lớn.
+- Chỉ nhập giao dịch **tiền vào**; hiển thị số dòng không có tiền vào đã bỏ qua. Giao dịch mới có trạng thái **Cần đối soát**, chưa gắn đơn và chưa tạo phiếu thu. Ghi thu vẫn phải qua quy trình đối soát hiện có.
+- Khoá theo ID SePay dùng chung với webhook. ID đã có và cùng số tiền/tài khoản/nội dung/thời điểm chỉ tính là trùng; giữ nguyên liên kết/phiếu thu, kể cả phiếu đã huỷ. ID có dữ liệu khác làm toàn bộ đợt nhập rollback. Gửi lại sau khi mất phản hồi không nhập trùng. Webhook được cấu hình tự ghi thu vẫn giữ hành vi hiện có; API tải thủ công không tự ghi thu.
+- Không thêm migration. Khi chưa có token ở Edge, nút bị khoá và trang giải thích thiếu cấu hình.
+- Kiểm tra token thực tế: chạy thủ công workflow **Kiểm tra API đọc SePay**. Workflow chỉ GET count/list hôm nay, chỉ in số lượng/tổng tiền, không in tài khoản/nội dung/token và không kết nối CSDL. Không đánh đồng kiểm tra token thành nhập giao dịch vào CRM; sau deploy, nhân viên dùng nút trên trang để nhập.
+
+Hợp đồng provider dùng `GET https://my.sepay.vn/userapi/transactions/count` và `/list`, xác thực Bearer, `transaction_date_min/max` theo ngày Việt Nam; adapter kiểm tra số lượng để tránh khẳng định đã tải đủ khi bị giới hạn. Trường REST ánh xạ về payload webhook chuẩn để tái sử dụng đối soát. Đối chiếu tham khảo mã SDK công khai [Transactions PHP](https://github.com/datlechin/sepay-php/blob/main/src/Resources/Transactions.php), [Entity](https://github.com/datlechin/sepay-php/blob/main/src/Entities/Transaction.php), [bộ lọc Python](https://github.com/shinxz12/sepay/blob/main/sepay/transaction.py). Đây là SDK cộng đồng, không phải tài liệu chính thức; docs.sepay.vn trả 403 trong phiên phát triển. Cần workflow kiểm tra chỉ đọc để xác nhận hợp đồng với tài khoản thật trước khi báo kết nối thành công.
+
+Kiểm thử thêm: `tests/app/sepay-read.test.ts`, `scripts/testing/sepay-read-browser.mjs`; Chromium 1440px/390px, API CRM thật trên CSDL cô lập, SePay giả và chặn mạng ngoài. Không dùng token thật trong kiểm thử. Dùng `SEPAY_UI_DIR` và đối số `before` để so với UI gốc, `after` để kiểm tra nút tải, chống bấm lặp, lỗi provider và phục hồi.
 
 Khoản QR POS cần xử lý theo luồng POS để gắn đúng ca. Đơn web chưa chuyển thành đơn CRM chưa thể chọn trên trang này. Không dùng trang để sửa lỗi WooCommerce/GHN hoặc sửa đơn #21618.
 
@@ -41,3 +55,5 @@ Mã và CSS của trang chỉ tải khi mở SePay; không polling. Danh sách d
 Chỉ triển khai sau khi PR và CI được duyệt, migration có sẵn của PR #581 đã chạy và cổng kiểm tra schema chỉ đọc thành công. Không chạy migration production từ bộ kiểm thử.
 
 Nếu cần rollback riêng trang, hoàn nguyên commit trang/API này, giữ nguyên inbox và phiếu thu đã ghi đúng. Không xoá dữ liệu hay huỷ phiếu thu để rollback giao diện. Webhook gốc và hai API quản trị cũ vẫn có trong bản nền PR #581.
+
+Đo trước/sau (3 lượt lạnh mỗi viewport, cùng hàng dữ liệu thử): PC ready median 3091 → 3050 ms; mobile 3038 → 3032 ms. Không tăng số request lúc mở trang; JS trang tăng 1.880 byte. CLS khởi động ứng dụng đã cao ở bản nền (PC 0,476; mobile 0,232), sau thay đổi lần lượt 0,476/0,234; đây chưa phải bản sửa CLS toàn app. Điều kiện và số liệu đầy đủ trong `docs/testing/sepay-read-performance.json`, không dùng các số này làm độ trễ production.
