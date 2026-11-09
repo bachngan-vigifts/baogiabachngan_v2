@@ -491,7 +491,16 @@ test("bank-paid web order suggests zero COD, rejects extra collection and cart e
       { sku: "TEST", name: "Ly test", quantity: 1, total: 100000 },
     ]),
   });
+  const beforePulse = await f.call("/pulse", f.mgr);
+  assert.equal(beforePulse.status, 200);
   const e = await f.incoming("Tien don web Minh Long");
+  const afterPulse = await f.call("/pulse", f.mgr);
+  assert.equal(afterPulse.status, 200);
+  assert.notEqual(
+    afterPulse.data.stamp,
+    beforePulse.data.stamp,
+    "bank-only proof invalidates existing page refresh stamps",
+  );
   assert.equal(e.status, "matched");
   const board = await f.call("/pos/orders?registerId=" + f.registerId, f.mgr);
   assert.equal(
