@@ -7,7 +7,7 @@ import {sepayReferenceCandidates,type SepayPayment} from '../../integrations/dom
 import {posRegisters,webStoreOrders as web} from '../pos-schema.ts';
 import {salesOrders,salesContracts} from '../schema.ts';
 import {readWebOrderFinancials} from '../domain/web-order-financials.ts';
-import {webOrderBucket} from '../domain/web-order-outcome.ts';
+import {webOrderPaymentBlocked} from '../domain/web-order-outcome.ts';
 import {cashAudit,type CashDb} from './cash-store.ts';
 
 export type WebSepayDecision={webOrderId:string|null;status:'matched'|'review';reason:string};
@@ -42,7 +42,9 @@ export async function decideWebSepay(db:CashDb,p:SepayPayment):Promise<WebSepayD
  await db.execute(sql`select pg_advisory_xact_lock(hashtext('sepay:web-qr'))`);
  const review=(reason:string,webOrderId:string|null=null):WebSepayDecision=>({status:'review',reason,webOrderId});
  if(refs.length!==1||targets.length!==1)return review('Nội dung có nhiều mã/đơn web; cần đối soát, không tự gắn.');
- const all=sepayReferenceCandidates(p.content),values=sql`(select jsonb_array_elements_text(${JSON.stringify(all)}::jsonb))`;
+ const normalized=sepayReferenceCandidates(p.content);
+ if(!normalized.length)return review('Nội dung chuyển khoản quá phức tạp; cần kiểm tra mã trước khi tự đối soát.');
+ const all=[...new Set([...normalized,...refs])],values=sql`(select jsonb_array_elements_text(${JSON.stringify(all)}::jsonb))`;
  const matches=(field:SQLWrapper)=>inArray(sql`upper(regexp_replace(${foldSql(field)},'[^a-z0-9]','','g'))`,values);
  const [crm]=await db.select({id:salesOrders.id}).from(salesOrders).leftJoin(salesContracts,eq(salesContracts.orderId,salesOrders.id))
   .where(or(matches(salesOrders.orderNo),matches(salesOrders.quoteNo),matches(salesOrders.sapoOrderCode),matches(salesContracts.contractNo))).limit(1);
@@ -50,7 +52,7 @@ export async function decideWebSepay(db:CashDb,p:SepayPayment):Promise<WebSepayD
  const [order]=await db.select().from(web).where(eq(web.id,targets[0]!.id)).for('update');
  if(!order)return review('Chưa tìm thấy đơn web để đối soát.');
  const id=order.id;
- if(order.currency!=='VND'||webOrderBucket(order.status,order.ghnStatus)==='cancelled')return review('Đơn web đã huỷ/hoàn hoặc không dùng VND; cần kiểm tra.',id);
+ if(order.currency!=='VND'||webOrderPaymentBlocked(order.status,order.ghnStatus))return review('Đơn web đã huỷ/hoàn hoặc không dùng VND; cần kiểm tra.',id);
  let edit:Record<string,unknown>;
  try{edit=JSON.parse(order.crmEditSnapshot||'{}');if(!edit||typeof edit!=='object'||Array.isArray(edit))throw new Error();}catch{return review('Dữ liệu chỉnh sửa đơn web cần kiểm tra trước khi khớp tiền.',id);}
  if(edit.sourceConflict||Number(edit.revision||0)>0)return review('Đơn web có thay đổi cần đối chiếu nguồn trước khi khớp tiền.',id);
