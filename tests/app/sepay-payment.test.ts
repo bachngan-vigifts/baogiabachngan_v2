@@ -358,6 +358,72 @@ test("SePay follows the receivables schedule instead of assuming original order 
   );
 });
 
+test("manual transfers matching bank evidence are reviewed; distinct transfers and voided receipts remain collectable", async () => {
+  const f = await fixture(),
+    o = await f.order("MANUALOVERLAP122");
+  const id = crypto.randomUUID();
+  await f.db
+    .insert(customerPayments)
+    .values({
+      id,
+      orderId: o.id,
+      amount: 30000,
+      paidAt: "2026-11-08",
+      method: "transfer",
+      createdBy: "mgr",
+      createdAt: f.stamp,
+      reference: "Bank statement entered manually",
+    });
+  const p = f.payload(o.orderNo, 30000);
+  assert.equal((await f.hook(p)).data.status, "review");
+  assert.equal((await f.receipts(o.id)).length, 1);
+  assert.equal(
+    (await f.hook(f.payload(o.orderNo, 40000))).data.status,
+    "matched",
+  );
+  await f.db
+    .update(customerPayments)
+    .set({
+      voidedAt: f.stamp,
+      voidedBy: "mgr",
+      voidReason: "Duplicate manual receipt corrected in test",
+    })
+    .where(eq(customerPayments.id, id));
+  assert.equal((await f.hook(p)).data.status, "matched");
+  assert.equal((await f.hook(p)).data.duplicate, true);
+  const differentDay = await f.order("MANUALOTHERDAY123");
+  await f.db
+    .insert(customerPayments)
+    .values({
+      id: crypto.randomUUID(),
+      orderId: differentDay.id,
+      amount: 30000,
+      paidAt: "2026-11-07",
+      method: "transfer",
+      createdBy: "mgr",
+      createdAt: f.stamp,
+    });
+  assert.equal(
+    (await f.hook(f.payload(differentDay.orderNo, 30000))).data.status,
+    "matched",
+  );
+  const sameReference = await f.order("MANUALREFERENCE124");
+  const event = f.payload(sameReference.orderNo, 30000);
+  await f.db
+    .insert(customerPayments)
+    .values({
+      id: crypto.randomUUID(),
+      orderId: sameReference.id,
+      amount: 20000,
+      paidAt: "2026-11-07",
+      method: "transfer",
+      createdBy: "mgr",
+      createdAt: f.stamp,
+      reference: "SEPAY:" + event.id,
+    });
+  assert.equal((await f.hook(event)).data.status, "review");
+});
+
 test("Manager-only reconciliation APIs validate status/missing IDs, audit and never duplicate a receipt", async () => {
   const f = await fixture(),
     o = await f.order("RECONCILE112");

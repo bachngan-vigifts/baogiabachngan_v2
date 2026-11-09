@@ -3,6 +3,7 @@ import {
   desc,
   eq,
   inArray,
+  isNull,
   ne,
   or,
   sql,
@@ -154,6 +155,35 @@ async function ingestPayment(
         if (!blockedReason && held > 0 && payment.amount > outstanding)
           blockedReason =
             "Đơn có tiền mặt nhân viên đang giữ chờ xác nhận; cần đối soát trước khi ghi thu thêm.";
+        // An accountant may have entered this bank transfer before its webhook arrived.
+        if (!blockedReason) {
+          const [manual] = await tx
+            .select({ id: customerPayments.id })
+            .from(customerPayments)
+            .where(
+              and(
+                eq(customerPayments.orderId, target.id),
+                eq(customerPayments.method, "transfer"),
+                ne(customerPayments.paymentSource, "sepay_auto"),
+                ne(customerPayments.paymentSource, "pos_exchange_credit"),
+                isNull(customerPayments.voidedAt),
+                or(
+                  eq(customerPayments.reference, "SEPAY:" + payment.providerId),
+                  and(
+                    eq(customerPayments.amount, payment.amount),
+                    eq(
+                      customerPayments.paidAt,
+                      sepayPaidDate(payment.transactionAt),
+                    ),
+                  ),
+                ),
+              ),
+            )
+            .limit(1);
+          if (manual)
+            blockedReason =
+              "Có phiếu chuyển khoản nhập trước trùng mã giao dịch hoặc số tiền/ngày thu; cần đối soát để tránh ghi nhận hai lần.";
+        }
         matches = [{ id: target.id, outstanding }];
       }
     }

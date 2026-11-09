@@ -18,6 +18,7 @@ API `POST /api/staff/integrations/sepay/payment` nhận webhook bằng `Authoriz
 - Số còn nợ lấy từ cùng hàm đang xử lý hàng trả, hoàn tiền, đổi hàng và phiếu thu bị huỷ. Khoản vượt số còn nợ: `review`; không âm thầm cắt số tiền.
 - Ghi thu trong transaction, cùng khóa tiền với POS/thu thủ công/COD/hàng trả và khóa dòng đơn. Kiểm tra lại trạng thái và công nợ dưới khóa. Ghi inbox và phiếu thu cùng thành công hoặc cùng rollback.
 - Cùng ID SePay và cùng dữ liệu: không tạo thêm phiếu thu. Cùng ID nhưng khác số tiền, tài khoản, nội dung hoặc thời điểm: HTTP 409. Gửi lại giao dịch đã tạo phiếu thu rồi bị huỷ cũng không làm sống lại phiếu.
+- Nếu có phiếu chuyển khoản nhập trước trùng mã SePay hoặc cùng số tiền/ngày thu, giữ giao dịch ở `review` để tránh thu hai lần. Hai khoản thật sự khác nhau nhưng trùng số tiền/ngày cần Manager đối chiếu chứng từ; không tự coi là cùng một khoản hay cộng thêm. Phiếu đã huỷ và tín dụng đổi hàng không được dùng làm bằng chứng trùng.
 - Giao dịch `unmatched`/`review` có thể được đánh giá lại khi webhook gửi lại sau khi đơn/cấu hình đã sẵn sàng. Chỉ tự ghi thu nếu vẫn qua đủ các kiểm tra trên.
 
 ## Đối soát dành cho Manager
