@@ -1,3 +1,4 @@
+import {registerFinanceRoutes} from './finance-routes.ts';
 import {registerWarehouseWorkspace,assertWarehouseTaskMutable} from '../modules/warehouse-workspace/routes.ts';
 import {customerMergeHooks} from '../core/contracts/customer-merge.ts';
 import {reassignCustodyCustomer,registerCustodyRoutes} from '../modules/product-custody/api/routes.ts';
@@ -183,5 +184,6 @@ export function createAppRouter() {
   registerStockHistoryRoutes(router);
   registerFlowRoutes(router);
   registerCashbookRoutes(router);
+  registerFinanceRoutes(router);
   return router;
 }

@@ -455,7 +455,7 @@ const PAGE_PERM = {
 };
 /** Giá bán: người làm báo giá / đơn / HĐKT (khớp máy chủ – Kho không nhận giá). */
 const seesPrices = () => isManager() || can('page.quotes') || can('page.orders') || can('page.contracts');
-const canPage = view => view === 'order' ? can('page.orders') || can('page.contracts') || can('page.receivables') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
+const canPage = view => view === 'finance' ? isManager() : view === 'order' ? can('page.orders') || can('page.contracts') || can('page.receivables') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
 /** Link "#/<trang>/<id>" mở được với quyền hiện tại (cùng cách `route()` đổi trang chi tiết) – không thì hiện chữ, không đưa người dùng về trang chủ. */
 const linkAllowed = hash => {
   const [view, id] = String(hash).replace(/^#\//, '').split(/[/?]/);
@@ -486,6 +486,7 @@ let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('
 function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
   if (typeof shiftReportsUi !== 'undefined') shiftReportsUi?.close();
+  if (typeof financeUi !== 'undefined') financeUi?.close();
   if(typeof khoHomeUi!=='undefined')khoHomeUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
   homeUi?.reset(); homeNotifications?.clear(); notifier?.reset(); tasksUi?.resetQuick();
@@ -855,7 +856,16 @@ var shiftReportsUi = null;
 const shiftReportsView = () => shiftReportsUi ||= initShiftReports({api,root:$('#view-shift-reports'),go});
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Kho của tôi', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+var financeUi = null, financeLoading = null;
+async function financeView(query) {
+ const hash=location.hash, who=state.user?.id;
+ try { const {initFinance}=await (financeLoading ||= import('./finance.js'));
+  if(!isManager()||state.user?.id!==who||location.hash!==hash)return;
+  financeUi ||= initFinance({api,root:$('#view-finance'),go});
+  await financeUi.show(query);
+ } catch(e) {financeLoading=null;if(location.hash===hash)toast(e.message,'err');}
+}
+const VIEWS = { finance:'Tài chính & KPI', home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Kho của tôi', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
@@ -925,6 +935,8 @@ function route() {
   if (view === 'cash') cashView().load().catch(e=>toast(e.message,'err'));
   if (view !== 'shift-reports') shiftReportsUi?.close();
   if (view === 'shift-reports') shiftReportsView().show(query);
+  if (view !== 'finance') financeUi?.close();
+  if (view === 'finance') financeView(query);
   if (view === 'pos') posView().load();
   if (view === 'product') productDetail().show(decodeURIComponent(id),query);
   if(view==='product-custody')custodyView().then(ui=>ui.load(id||''));else custodyUi?.close();
