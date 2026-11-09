@@ -407,5 +407,10 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     frame();
     await load(id);
   }
-  return { show, close };
+  // Reuse the app's visible/active 30-second pulse; no extra timer or provider call here.
+  function refresh() {
+    if (!active || document.visibilityState === 'hidden' || mutating || listLoading || event) return;
+    return load(epoch);
+  }
+  return { show, close, refresh };
 }

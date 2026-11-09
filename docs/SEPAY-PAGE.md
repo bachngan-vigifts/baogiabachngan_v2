@@ -61,3 +61,15 @@ Nếu cần rollback riêng trang, hoàn nguyên commit trang/API này, giữ ng
 ### Sửa phạm vi ngày API đọc (09/11/2026)
 
 Kiểm tra chỉ đọc bằng cùng API token: khoảng ngày thuần `2026-11-09` → `2026-11-09` trả 0; khoảng giờ đầy đủ `00:00:00` → `23:59:59` trả 6 giao dịch. SePay coi cận trên thiếu giờ là đầu ngày. Cả `/count` và `/list` nay dùng khoảng giờ đầy đủ; test bao gồm đầu ngày, cuối ngày và loại hai ngày liền kề. Workflow chỉ in số liệu tổng hợp, không nhập giao dịch, không tạo phiếu thu.
+
+## Đồng bộ tự động
+
+- Webhook `/integrations/sepay/payment` vẫn là luồng nhận ngay khi SePay đẩy giao dịch. Cần cấu hình đúng URL và Apikey trong SePay. Log ngày 09/11/2026 có lượt HTTP 401; không thể coi webhook đã hoạt động chỉ vì API đọc thành công. Không thay hoặc xoá webhook POS đang dùng.
+- Lịch Supabase `sepay-pull-today` (`supabase/sepay-pull-cron.sql`) là dự phòng mỗi 5 phút, kể cả khi không ai mở CRM. Workflow deploy cài lịch theo tên sau khi triển khai API, kiểm tra cấu hình rồi đồng bộ lần đầu; sử dụng pg_cron/pg_net và token máy chủ `sapo_sync_token` trong Vault đã có. Không tạo schema hoặc đọc token ra log. Cài lại cùng tên không tạo lịch trùng. Không dùng token đọc SePay để xác thực endpoint nội bộ.
+- POST `/integrations/sepay/pull` chỉ nhận `{}`, xác thực máy chủ `sapo-sync`; cookie nhân viên không đủ quyền. Tái sử dụng cùng importer với nút tải tay, khóa ID, không ghi đè giao dịch cũ và không tạo phiếu thu. Tất cả giao dịch mới vào trạng thái Cần đối soát. Mỗi lần chỉ lấy ngày hiện tại Việt Nam; webhook xử lý sự kiện ngoài ngày và không tự nhập toàn bộ lịch sử.
+- Trang SePay mở/đang hoạt động làm mới danh sách theo nhịp `/pulse` sẵn có (30 giây), không thêm timer, không gọi SePay từ trình duyệt. Dừng khi ẩn tab, đăng xuất/rời trang, đang ghi hoặc mở chi tiết đối soát; giữ nguyên bộ lọc và biểu mẫu. Khi đóng chi tiết/rời rồi quay lại trang, dữ liệu sẽ cập nhật.
+- Lỗi provider/xác thực ở lượt đầu làm workflow deploy đỏ với mã HTTP, không giả báo đồng bộ thành công. Log chỉ in tổng hợp; không in token, tài khoản hay nội dung giao dịch.
+
+Theo dõi định kỳ: `cron.job_run_details` xác nhận gọi pg_net, còn HTTP 200 của API trong log Edge mới xác nhận nhập thành công; tác vụ cron enqueue thành công không có nghĩa provider/HTTP đã thành công.
+
+Kiểm tra tự đồng bộ: 15 test đạt, 1 test tranh chấp PostgreSQL bỏ qua trong PGlite; browser 1440/390 kiểm tra tự cập nhật, bộ lọc và bảo toàn đối soát. Đo 3 lượt cold/viewport trong fixture cô lập, latency 40 ms: median sẵn sàng PC 3.118 s, mobile 3.075 s; 15 API và 163 JS lúc mở trang như benchmark trước, không phải tốc độ production. Raw: `docs/testing/sepay-auto-performance.json`.

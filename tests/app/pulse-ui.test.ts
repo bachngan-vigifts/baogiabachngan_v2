@@ -6,16 +6,17 @@ import { setupPulse } from '../../trial-ui/pulse.js';
 /** trial-ui/pulse.js: 1 lượt GET /pulse mỗi nhịp; chỉ báo tải lại khi máy chủ báo đổi; rảnh 5 phút / ẩn tab thì ngừng hỏi. */
 function harness() {
   let t = 0, tick: (() => void) | null = null, resp = { stamp: 'a', notifyAt: 'n1', chatUnread: 0 };
+  const ticks: number[] = [];
   const calls: string[] = [], events: string[] = [], listeners = new Map<string, () => void>();
   const target = { addEventListener: (e: string, f: () => void) => listeners.set(e, f) };
   const doc = { ...target, visibilityState: 'visible' };
   const p = setupPulse({
     api: async (path: string) => { calls.push(path); return { ...resp }; },
-    onData: () => events.push('data'), onNotify: () => events.push('notify'), onChat: (n: number) => events.push('chat:' + n),
+    onTick: () => ticks.push(t), onData: () => events.push('data'), onNotify: () => events.push('notify'), onChat: (n: number) => events.push('chat:' + n),
     doc, win: target, now: () => t, schedule: (f: () => void) => { tick = f; return 1; }, cancel: () => { tick = null; },
   } as never);
   const flush = () => new Promise(r => setImmediate(r));
-  return { p, calls, events, doc, listeners, flush, advance: (ms: number) => { t += ms; }, run: async () => { tick?.(); await flush(); }, set: (r: Partial<typeof resp>) => { resp = { ...resp, ...r }; } };
+  return { p, calls, events, ticks, doc, listeners, flush, advance: (ms: number) => { t += ms; }, run: async () => { tick?.(); await flush(); }, set: (r: Partial<typeof resp>) => { resp = { ...resp, ...r }; } };
 }
 
 test('pulse: không đổi thì không tải lại; stamp / thông báo / chat đổi thì gọi đúng việc; rảnh hoặc ẩn tab thì ngừng hỏi', async () => {
@@ -35,4 +36,11 @@ test('pulse: không đổi thì không tải lại; stamp / thông báo / chat �
   assert.equal(h.calls.length, 4, 'thao tác lại → hỏi ngay');
   h.p.stop(); h.advance(30_000); await h.run();
   assert.equal(h.calls.length, 4, 'đã dừng (đăng xuất)');
+});
+
+test('pulse exposes one successful visible heartbeat for SePay refresh without adding a second timer',async()=>{
+ const h=harness();h.p.start();await h.flush();assert.equal(h.ticks.length,0,'initial page load already fetches its data');
+ h.advance(30000);await h.run();assert.equal(h.ticks.length,1);
+ h.doc.visibilityState='hidden';h.advance(30000);await h.run();assert.equal(h.ticks.length,1);
+ h.p.stop();await h.run();assert.equal(h.ticks.length,1);
 });

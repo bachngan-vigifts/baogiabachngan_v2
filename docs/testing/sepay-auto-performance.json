@@ -1,0 +1,133 @@
+{
+  "phase": "auto",
+  "conditions": {
+    "browser": "Chromium",
+    "coldContexts": true,
+    "runsPerViewport": 3,
+    "latencyMs": 40,
+    "downloadBps": 1600000,
+    "source": "isolated real CRM API + synthetic SePay, not production"
+  },
+  "summary": [
+    {
+      "width": 1440,
+      "ready": 3118.087271999999,
+      "ttfb": 5.399999998509884,
+      "load": 3087.5,
+      "fcp": 580,
+      "lcp": 3060,
+      "cls": 0.47363888888888883,
+      "jsRequests": 163,
+      "jsBytes": 2436125,
+      "openingApis": 15
+    },
+    {
+      "width": 390,
+      "ready": 3074.9815570000064,
+      "ttfb": 3.2000000029802322,
+      "load": 3046.5,
+      "fcp": 580,
+      "lcp": 2948,
+      "cls": 0.23407397475961536,
+      "jsRequests": 163,
+      "jsBytes": 2436125,
+      "openingApis": 15
+    }
+  ],
+  "runs": [
+    {
+      "width": 1440,
+      "run": 1,
+      "ready": 3196.498160000001,
+      "ttfb": 7.600000001490116,
+      "load": 3163.89999999851,
+      "fcp": 616,
+      "lcp": 3124,
+      "cls": 0.4564305555555555,
+      "jsRequests": 163,
+      "jsBytes": 2436125,
+      "pullReady": 165.9743899999994,
+      "openingApis": 15,
+      "errors": []
+    },
+    {
+      "width": 1440,
+      "run": 2,
+      "ready": 3076.875417000001,
+      "ttfb": 3.2000000029802322,
+      "load": 3048.1999999955297,
+      "fcp": 576,
+      "lcp": 3048,
+      "cls": 0.47363888888888883,
+      "jsRequests": 163,
+      "jsBytes": 2436125,
+      "pullReady": 167.6004040000007,
+      "openingApis": 15,
+      "errors": []
+    },
+    {
+      "width": 1440,
+      "run": 3,
+      "ready": 3118.087271999999,
+      "ttfb": 5.399999998509884,
+      "load": 3087.5,
+      "fcp": 580,
+      "lcp": 3060,
+      "cls": 0.47363888888888883,
+      "jsRequests": 163,
+      "jsBytes": 2436125,
+      "pullReady": 167.51988300000085,
+      "autoRefresh": true,
+      "detailPreserved": true,
+      "openingApis": 15,
+      "errors": []
+    },
+    {
+      "width": 390,
+      "run": 1,
+      "ready": 3153.850596999997,
+      "ttfb": 3.7999999970197678,
+      "load": 3124.2999999970198,
+      "fcp": 568,
+      "lcp": 3032,
+      "cls": 0.23407397475961536,
+      "jsRequests": 163,
+      "jsBytes": 2436125,
+      "pullReady": 134.63548299999093,
+      "openingApis": 15,
+      "errors": []
+    },
+    {
+      "width": 390,
+      "run": 2,
+      "ready": 3074.9815570000064,
+      "ttfb": 3,
+      "load": 3046.5,
+      "fcp": 608,
+      "lcp": 2944,
+      "cls": 0.23407397475961536,
+      "jsRequests": 163,
+      "jsBytes": 2436125,
+      "pullReady": 158.72835000000487,
+      "openingApis": 15,
+      "errors": []
+    },
+    {
+      "width": 390,
+      "run": 3,
+      "ready": 3070.2977200000023,
+      "ttfb": 3.2000000029802322,
+      "load": 3044.7000000029802,
+      "fcp": 580,
+      "lcp": 2948,
+      "cls": 0.23407397475961536,
+      "jsRequests": 163,
+      "jsBytes": 2436125,
+      "pullReady": 140.42763799999375,
+      "autoRefresh": true,
+      "detailPreserved": true,
+      "openingApis": 15,
+      "errors": []
+    }
+  ]
+}
