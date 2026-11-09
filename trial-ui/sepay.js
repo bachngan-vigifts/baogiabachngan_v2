@@ -48,6 +48,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     params = null,
     data = null,
     event = null,
+    selectedId = null,
     preview = null,
     draft = null,
     mutating = false,
@@ -105,7 +106,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     <div class="sp-stats" data-stats aria-live="polite">${["Tổng tiền SePay", "Đã ghi thu vào CRM", "Chờ đối soát", "Phiếu thu cần kiểm tra"].map((t) => `<section class="card"><span>${t}</span><strong>—</strong><small>Đang tải…</small></section>`).join("")}</div>
     <p class="muted sp-scope">Tổng hợp theo toàn bộ bộ lọc, không chỉ các dòng đang hiển thị. Ngày/giờ Việt Nam.</p><div data-setup></div>
     <div class="sp-layout"><section class="card sp-list"><div class="sp-heading"><h2>Giao dịch nhận từ SePay</h2><span data-count></span></div><div data-list role="status">Đang tải giao dịch…</div><div class="sp-pager" data-pager></div></section>
-    <section class="card sp-detail" data-detail><h2>Đối soát giao dịch</h2><p class="muted">Chọn “Xem / đối soát” để xem chứng từ, đơn và phiếu thu.</p></section></div>`;
+    <section class="card sp-detail" data-detail tabindex="-1" role="region" aria-label="Đối soát giao dịch"><h2>Đối soát giao dịch</h2><p class="muted">Chọn “Xem / đối soát” để xem chứng từ, đơn và phiếu thu.</p></section></div>`;
   }
   function listBusy(b) {
     listLoading = b;
@@ -191,6 +192,8 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
   }
   async function openDetail(id) {
     if (mutating) return;
+    selectedId = id;
+    const back = '<button class="btn secondary small sp-back" type="button" data-back-list>← Về giao dịch</button>';
     const own = epoch,
       d = ++detailEpoch;
     searchEpoch++;
@@ -198,14 +201,18 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     preview = null;
     draft = null;
     $("[data-detail]").innerHTML =
-      '<h2>Đối soát giao dịch</h2><p role="status">Đang tải chứng từ…</p>';
+      back + '<h2>Đối soát giao dịch</h2><p role="status">Đang tải chứng từ…</p>';
+    // On narrow layouts this region follows the entire list. Reveal the response
+    // immediately rather than silently updating content several screens below the button.
+    $("[data-detail]").focus({ preventScroll: true });
+    $("[data-detail]").scrollIntoView({ block: "start", behavior: "instant" });
     try {
       const res = await api("/sepay/transactions/" + encodeURIComponent(id));
       if (!valid(own, d)) return;
       event = res.transaction;
       const r = event;
       $("[data-detail]").innerHTML =
-        `<div class="sp-heading"><h2>Đối soát giao dịch</h2>${badge(r.status)}</div><strong class="sp-bank-amount">${esc(money(r.amount))}</strong><dl class="sp-info"><dt>Mã SePay</dt><dd>${esc(r.providerId)}</dd><dt>Thời gian</dt><dd>${esc(stamp(r.transactionAt))}</dd><dt>Tài khoản nhận</dt><dd>${esc(r.accountNumber)}</dd><dt>Nội dung gốc</dt><dd class="sp-original">${esc(r.content)}</dd></dl>
+        `${back}<div class="sp-heading"><h2>Đối soát giao dịch</h2>${badge(r.status)}</div><strong class="sp-bank-amount">${esc(money(r.amount))}</strong><dl class="sp-info"><dt>Mã SePay</dt><dd>${esc(r.providerId)}</dd><dt>Thời gian</dt><dd>${esc(stamp(r.transactionAt))}</dd><dt>Tài khoản nhận</dt><dd>${esc(r.accountNumber)}</dd><dt>Nội dung gốc</dt><dd class="sp-original">${esc(r.content)}</dd></dl>
       ${r.reason ? `<p class="sp-warning">${esc(r.reason)}</p>` : ""}${receiptView(r)}
       <div data-notice aria-live="polite"></div>
       ${!data?.capabilities.canConfirm ? '<p class="sp-readonly">Kế toán được xem và đối chiếu. Chỉ Manager được xác nhận ghi thu.</p>' : !res.capabilities.canConfirm ? `<p class="sp-readonly">${esc(res.blockReason || "Giao dịch đã được xử lý; không tạo thêm phiếu thu.")}</p>` : !res.accountApproved ? '<p class="sp-warning">Tài khoản này chưa được duyệt nhận tiền cho đơn CRM. Cần cấu hình tài khoản trước khi xác nhận.</p>' : `<section class="sp-match"><h3>Chọn đơn / HĐKT</h3><p class="muted small">Gắn toàn bộ số tiền vào một đơn CRM/HĐKT. Khoản POS, đơn web chưa chuyển CRM và khoản cần chia nhiều đơn xử lý theo luồng riêng.</p><form data-order-search><label>Tìm số đơn hoặc khách hàng<input name="orderQuery" minlength="2" maxlength="120" required placeholder="Nhập ít nhất 2 ký tự"></label><button class="btn secondary" type="submit">Tìm đơn</button></form><div data-order-results></div><div data-preview></div></section>`}
@@ -215,10 +222,14 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
         .forEach((x) =>
           x.classList.toggle("sp-selected", x.dataset.row === id),
         );
+      // Loading content is short and may clamp scrolling at the page bottom.
+      // Reposition once the full form exists, unless the user has already returned to the list.
+      if (document.activeElement === $("[data-detail]"))
+        $("[data-detail]").scrollIntoView({ block: "start", behavior: "instant" });
     } catch (e) {
       if (valid(own, d))
         $("[data-detail]").innerHTML =
-          `<h2>Đối soát giao dịch</h2><p role="alert" class="sp-error">${esc(e.message)}</p>`;
+          `${back}<h2>Đối soát giao dịch</h2><p role="alert" class="sp-error">${esc(e.message)}</p>`;
     }
   }
   async function searchOrders(form) {
@@ -365,6 +376,12 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     if (!b || !active || mutating) return;
     if (b.hasAttribute("data-pull")) pullToday();
     if (b.hasAttribute("data-refresh")) load(epoch);
+    if (b.hasAttribute("data-back-list")) {
+      const target = [...root.querySelectorAll("[data-open]")].find(x => x.dataset.open === selectedId) || $("[data-list]");
+      if (!target.hasAttribute("tabindex") && target.tagName !== "BUTTON") target.tabIndex = -1;
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ block: "center", behavior: "instant" });
+    }
     if (b.hasAttribute("data-clear"))
       navigate(new URLSearchParams(sepayDefaults()));
     if (b.dataset.open) openDetail(b.dataset.open);
