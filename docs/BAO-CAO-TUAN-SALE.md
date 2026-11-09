@@ -1,6 +1,6 @@
 # Báo cáo tuần Sale / Sale Admin → Tiền trách nhiệm
 
-Trang `#/weekly-reports` (menu *Công việc → Báo cáo tuần*; chỉ hiện với Sale, Sale Admin và Manager). Mô-đun `src/modules/staff-reports/`.
+Trang `#/weekly-reports` (menu *Nhân sự & quản trị → Báo cáo tuần*; điện thoại: nhóm *Quản trị*; chỉ hiện với Sale, Sale Admin và Manager). Mô-đun `src/modules/staff-reports/`.
 
 ## Quy định
 

@@ -1,6 +1,6 @@
 # Tài chính & KPI
 
-Trang `#/finance` nằm ở Công việc & tổng quan (điện thoại: menu Công việc). Chỉ Manager được vào trang và các API tài chính mới. Dùng khung giao diện CRM hiện có, không chuyển stack hay tạo bảng mới.
+Trang `#/finance` nằm ở Nhân sự & quản trị (điện thoại: menu Quản trị). Chỉ Manager được vào trang và các API tài chính mới. Dùng khung giao diện CRM hiện có, không chuyển stack hay tạo bảng mới.
 
 ## Cách xem
 
