@@ -56,6 +56,7 @@ export type NearTarget = {
   orderAt: string;
   orderNo: string;
   customerName: string;
+  ghnOrderCode?: string;
   receiptId?: string;
   accountApproved: boolean;
   blocked: string;
@@ -252,6 +253,9 @@ export async function nearbySepayTargets(
       (!manual && refs.length && !refs.includes("DH" + o.externalId))
     )
       blocked = "Mã QR trong giao dịch không thuộc đơn web này.";
+    if (!manual && o.ghnOrderCode)
+      blocked =
+        "Đơn web đã có vận đơn GHN; Manager cần kiểm tra khoản COD trước khi đối soát thủ công.";
     if (o.currency !== "VND" || webOrderPaymentBlocked(o.status, o.ghnStatus))
       blocked = "Đơn web đã huỷ/hoàn hoặc không dùng VND.";
     if (!isBankWebMethod(o.paymentMethod))
@@ -288,6 +292,7 @@ export async function nearbySepayTargets(
       total: o.total,
       orderNo: o.crmOrderNo || o.orderNo,
       customerName: o.customerName,
+      ghnOrderCode: o.ghnOrderCode,
       accountApproved: approved,
       blocked,
     });
@@ -534,6 +539,11 @@ export async function previewNearbySepay(
     },
     debt,
     recordMode: first.kind === "web" ? "web-link" : "pos-link",
+    warning: first.ghnOrderCode
+      ? "Đã có vận đơn GHN " +
+        first.ghnOrderCode +
+        ". Kiểm tra và xử lý tiền COD trên GHN trước khi xác nhận; đối soát SePay không sửa vận đơn."
+      : "",
     canCreate: first.kind === "web" && valid.length === 1,
     accountApproved: first.accountApproved,
     manualConflict: false,

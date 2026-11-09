@@ -481,3 +481,85 @@ test("Woo creation time is verified from the original timestamp and survives sta
   assert.equal(invalid.status, 400);
   assert.equal((await read()).orderedAt, at);
 });
+
+test("bank-paid web order suggests zero COD, rejects extra collection and cart edits; existing GHN needs Manager review", async () => {
+  const f = await fixture();
+  const o = await f.website(at, {
+    source: "minhlong",
+    phone: "0901234567",
+    lines: JSON.stringify([
+      { sku: "TEST", name: "Ly test", quantity: 1, total: 100000 },
+    ]),
+  });
+  const e = await f.incoming("Tien don web Minh Long");
+  assert.equal(e.status, "matched");
+  const board = await f.call("/pos/orders?registerId=" + f.registerId, f.mgr);
+  assert.equal(
+    board.data.orders.find((x: any) => x.id === o.id).suggestedCod,
+    0,
+  );
+  assert.equal(
+    board.data.orders.find((x: any) => x.id === o.id).paymentStatus,
+    "paid",
+  );
+  const detail = await f.call("/orders/web:" + o.id, f.mgr);
+  assert.equal(detail.data.canEdit, false);
+  const edit = await f.call("/orders/web:" + o.id + "/web-edit", f.mgr, "PUT", {
+    clientKey: "bank-paid-edit-key-123",
+  });
+  assert.equal(edit.status, 409, JSON.stringify(edit.data));
+  assert.match(edit.data.error, /đối soát SePay/);
+  f.env.ghnMlToken = "local-ghn-ml-token";
+  f.env.ghnMlShopId = "885001";
+  const calls: any[] = [];
+  f.env.ghnFetch = async (_url, init) => {
+    calls.push(JSON.parse(String(init?.body)));
+    return Response.json({
+      code: 200,
+      data: { order_code: "MLSEPAY001", total_fee: 30000 },
+    });
+  };
+  const address = {
+    addressLine: "12 Test",
+    provinceId: 220,
+    provinceName: "Cần Thơ",
+    districtId: 1574,
+    districtName: "Ninh Kiều",
+    wardCode: "550307",
+    wardName: "Tân An",
+  };
+  const { createWebOrderGhn } = await import(
+    "../../src/modules/sales/api/web-order-ghn.ts"
+  );
+  await assert.rejects(
+    createWebOrderGhn(f.env, o.id, address, { codAmount: 100000 }),
+    /tiền thu hộ phải bằng 0/,
+  );
+  assert.equal(calls.length, 0);
+  await createWebOrderGhn(f.env, o.id, address, { ghnWeight: 1000 });
+  assert.equal(calls[0].cod_amount, 0);
+  assert.equal(
+    (await f.db.select().from(web).where(eq(web.id, o.id)))[0]!
+      .financialSnapshot,
+    o.financialSnapshot,
+  );
+  const shipped = await f.website(at, { ghnOrderCode: "GYEEXIST001" });
+  const waiting = await f.incoming("DH" + shipped.externalId, 100000, {
+    id: "existing-ghn-proof",
+  });
+  assert.equal(waiting.status, "review");
+  const preview = await f.call(
+    "/sepay/orders/web:" + shipped.id + "?transactionId=" + waiting.id,
+    f.mgr,
+  );
+  assert.match(preview.data.warning, /GYEEXIST001/);
+  assert.equal(
+    (await f.confirm(waiting.id, f.choice("web:" + shipped.id))).status,
+    200,
+  );
+  assert.equal(
+    (await f.db.select().from(web).where(eq(web.id, shipped.id)))[0]!
+      .ghnOrderCode,
+    "GYEEXIST001",
+  );
+});

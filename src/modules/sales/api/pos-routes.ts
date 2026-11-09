@@ -411,7 +411,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           paymentMethod: o.paymentMethod, currency: o.currency, financials: readWebOrderFinancials(o.financialSnapshot), ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee,
           actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && (!!c.env.webOrderAction?.minhlongUrl || !!c.env.ghnMlToken),
           // Minh Long chưa có cầu nối: CRM tự tạo vận đơn GHN – giao diện hỏi thêm tiền thu hộ / khối lượng.
-          webRevision:Number(readWebEdit(o.crmEditSnapshot).revision||0),crmEdited:Number(readWebEdit(o.crmEditSnapshot).revision||0)>0,ghnDirect: minhLongDirect(c.env, o)||Number(readWebEdit(o.crmEditSnapshot).revision||0)>0, suggestedCod: minhLongDirect(c.env, o)||Number(readWebEdit(o.crmEditSnapshot).revision||0)>0 ? suggestedWebCod(o) : null }); }),
+          webRevision:Number(readWebEdit(o.crmEditSnapshot).revision||0),crmEdited:Number(readWebEdit(o.crmEditSnapshot).revision||0)>0,ghnDirect: minhLongDirect(c.env, o)||Number(readWebEdit(o.crmEditSnapshot).revision||0)>0, suggestedCod: minhLongDirect(c.env, o)||Number(readWebEdit(o.crmEditSnapshot).revision||0)>0 ? suggestedWebCod(o,o.bankPaidAt) : null }); }),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const board = filterPosOrderBoard(decorated, c.url.searchParams, {analyticsFrom:windowFrom});
       // Danh sách nhân viên cho bộ lọc lấy riêng, không bị thu hẹp bởi chính bộ lọc / khoảng ngày.

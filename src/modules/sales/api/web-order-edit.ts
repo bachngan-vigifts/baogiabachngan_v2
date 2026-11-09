@@ -1,3 +1,4 @@
+import {sepayTransactions as bank} from '../../integrations/schema.ts';
 import {webSourceHash,webEditBlocked} from './web-order-edit-state.ts';
 import {eq,and,inArray} from 'drizzle-orm';
 import type {Router,RouteContext} from '../../../core/http/router.ts';
@@ -46,6 +47,8 @@ export function registerWebOrderEdits(router:Router<StaffEnv>){
    const e=readWebEdit(o.crmEditSnapshot);
    if(e.lastKey===key){if(e.lastHash!==hash)throw new AppError(409,'Cùng mã lưu nhưng khác nội dung.','COMMAND_CONFLICT');return {replayed:true};}
    const blocked=webEditBlocked(o);if(blocked)throw new AppError(409,blocked,'WEB_ORDER_LOCKED');
+   const [bankProof]=await tx.select({id:bank.id}).from(bank).where(and(eq(bank.webOrderId,id),eq(bank.status,'matched'))).limit(1);
+   if(bankProof)throw new AppError(409,'Đơn đã đối soát SePay; cần đối chiếu thu/hoàn tiền trước khi sửa hàng hoặc giá.','PAID_WEB_ORDER_REVIEW_REQUIRED');
    if(b.revision!==Number(e.revision||0)||b.sourceHash!==webSourceHash(o))throw new AppError(409,'Đơn vừa thay đổi. Tải lại trước khi sửa.','WEB_ORDER_CHANGED');
    const reason=typeof b.reason==='string'?b.reason.trim():'';
    if(reason.length<3||reason.length>500||b.pricingReviewed!==true)throw new AppError(400,'Nhập lý do và xác nhận đã kiểm tra giá, chiết khấu, thuế, phí.');
