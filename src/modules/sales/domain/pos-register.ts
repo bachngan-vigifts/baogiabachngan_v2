@@ -1,3 +1,4 @@
+export const LOCK_WEB_REGISTER_NAME = 'CỬA HÀNG LOCKNLOCK CẦN THƠ';
 import { fold } from '../../../core/text/fold.ts';
 
 /** Gợi ý quầy theo chức vụ; đây không phải giới hạn quyền bán ở quầy khác. */

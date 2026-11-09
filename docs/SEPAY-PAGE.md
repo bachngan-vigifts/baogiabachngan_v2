@@ -6,12 +6,28 @@ Mở **Tiền & công nợ → Thanh toán SePay** (`#/sepay`); điện thoại 
 
 Trang hiển thị giao dịch tiền vào đã được webhook CRM hoặc thao tác tải API lưu trong `sepay_transactions`. Trang không tải sao kê lịch sử trực tiếp từ ngân hàng. Dùng migration và cấu hình tài khoản đã có trong [luồng nhận webhook](SEPAY-RECEIPTS.md); phần trang không thêm migration hay tự cấu hình webhook.
 
+## QR thanh toán web Lock
+
+Nội dung ngân hàng `DH<WooCommerce ID>` (gồm dạng phân cách bằng dấu chấm như `.DH21661.CT...`) tự liên kết với **đơn web Lock gốc** qua `web_order_id`. Không tạo thêm `sales_orders` hoặc `customer_payments`, không sửa tồn kho, doanh thu, tổng đơn hay `date_paid` của WooCommerce. Mã `DH21661` không khớp `DH216610`, tiền tố/hậu tố chữ hoặc mã ghép bằng `/`, `_`, `-`.
+
+Chỉ đánh dấu đã đối soát khi khớp duy nhất một đơn `source=lock`, đúng tài khoản quầy đã cấu hình/đang hoạt động, đúng toàn bộ tổng tiền VND, phương thức QR, website đã xác nhận `paidAt`, và đơn không huỷ/hoàn, không bị sửa nội dung hoặc xung đột nguồn. Mã đồng thời khớp CRM/POS, nhiều mã, thiếu/thừa tiền hoặc khoản thu thứ hai cho cùng đơn giữ ở trạng thái cần kiểm tra. Tiền có mã QR vào tài khoản quầy Lock nhưng chưa có đơn web phải chờ nguồn web, không tự ghi sang mã CRM trùng.
+
+Webhook SePay, API tải ngày hiện tại và webhook cập nhật đơn web dùng cùng bộ đối soát. Nếu tiền đến trước đơn hoặc trước xác nhận thu tiền từ website, lưu chứng từ chờ; khi webhook Lock đồng bộ đơn/paidAt sẽ thử lại tối đa 100 giao dịch pending có mã tương ứng. Lượt tải API tiếp theo cũng xét lại các dòng chờ đã có, giữ nguyên chứng từ matched/phiếu thu cũ. Không tự sửa dữ liệu giao dịch khi provider ID có nội dung khác.
+
+Ràng buộc DB chỉ cho một đích CRM hoặc web, một provider ID duy nhất và một giao dịch matched trên mỗi đơn web. Khoá provider dùng chung webhook/import; vùng QR nhỏ dùng khoá giao dịch chung trước khoá dòng web để hai batch đảo thứ tự không deadlock. Mọi khớp web được audit bằng ID dòng SePay, hiển thị nhật ký trong chi tiết.
+
+Trang SePay hiển thị **Đã đối soát đơn web**, đúng số đơn gốc và liên kết hồ sơ `#/orders/web:<id>`. Khoản web không có biểu mẫu gắn sang đơn CRM. Nếu đơn/paidAt/tài khoản nguồn sau đó bị thay đổi, trang báo cần kiểm tra thay vì coi là một phiếu thu CRM bị thiếu. Các thẻ ghi nhận/đối soát chỉ tổng hợp sổ SePay, không cộng tiền vào sổ kế toán thêm lần nữa.
+
+Trước deploy API, chạy tay `migrations/postgres/20261109123446_sepay_lock_web_match.sql`, rồi `scripts/sql/assert-sepay-web.sql` (phải trả `sepay_web_schema_ok`). Migration chỉ thêm cột/check/index; chạy lại an toàn, giữ RLS, không backfill hoặc sửa dữ liệu cũ. Workflow deploy chỉ assert, không tự chạy migration. Không cần sửa quyền Storage hoặc token/ngân hàng mới.
+
+Ví dụ kiểm tra chỉ đọc trên dữ liệu thật ngày 09/11: `DH21661` khớp đơn `21661`, đúng số tiền/tài khoản quầy và website đã đánh dấu thu tiền; trước triển khai sổ SePay còn review. Đây là chẩn đoán, chưa phải kết quả đối soát đã ghi production.
+
 ## Lấy giao dịch hôm nay qua API SePay
 
 - Manager và Kế toán bấm **Lấy giao dịch hôm nay**. Máy chủ tính ngày theo Việt Nam, chỉ GET API SePay bằng token máy chủ; mở trang hoặc làm mới danh sách không gọi SePay. Bộ lọc chuyển sang đúng ngày vừa tải.
 - GitHub Actions Secret `SEPAY_API_TOKEN` được workflow deploy API chuyển vào Supabase Edge Secrets bằng file tạm quyền 600 rồi xoá. Không đưa token vào JS, URL, request của nhân viên hoặc log. Token đọc API độc lập với khoá webhook POS; không thay webhook hay danh sách tài khoản tự ghi thu.
 - API đối chiếu `count_transactions` với danh sách, kiểm tra toàn bộ giao dịch trước khi ghi. Thiếu dữ liệu, dữ liệu vừa thay đổi, lỗi mạng/quyền hoặc phản hồi sai định dạng đều báo lỗi, không giả thành danh sách rỗng. Mỗi lượt giới hạn dưới 1.000 giao dịch và phản hồi tối đa 3 MB; chạm giới hạn thì từ chối đợt nhập, cần phát triển đồng bộ theo đợt trước khi dùng cho khối lượng lớn.
-- Chỉ nhập giao dịch **tiền vào**; hiển thị số dòng không có tiền vào đã bỏ qua. Giao dịch mới có trạng thái **Cần đối soát**, chưa gắn đơn và chưa tạo phiếu thu. Ghi thu vẫn phải qua quy trình đối soát hiện có.
+- Chỉ nhập giao dịch **tiền vào**; hiển thị số dòng không có tiền vào đã bỏ qua. Giao dịch thông thường mới có trạng thái **Cần đối soát**, chưa gắn đơn và chưa tạo phiếu thu. Riêng QR web Lock có đủ chứng từ website được tự đối soát vào đúng đơn nguồn, không tạo phiếu thu CRM. Ghi thu vẫn phải qua quy trình đối soát hiện có.
 - Khoá theo ID SePay dùng chung với webhook. ID đã có và cùng số tiền/tài khoản/nội dung/thời điểm chỉ tính là trùng; giữ nguyên liên kết/phiếu thu, kể cả phiếu đã huỷ. ID có dữ liệu khác làm toàn bộ đợt nhập rollback. Gửi lại sau khi mất phản hồi không nhập trùng. Webhook được cấu hình tự ghi thu vẫn giữ hành vi hiện có; API tải thủ công không tự ghi thu.
 - Không thêm migration. Khi chưa có token ở Edge, nút bị khoá và trang giải thích thiếu cấu hình.
 - Kiểm tra token thực tế: chạy thủ công workflow **Kiểm tra API đọc SePay**. Workflow chỉ GET count/list hôm nay, chỉ in số lượng/tổng tiền, không in tài khoản/nội dung/token và không kết nối CSDL. Không đánh đồng kiểm tra token thành nhập giao dịch vào CRM; sau deploy, nhân viên dùng nút trên trang để nhập.
@@ -53,7 +69,7 @@ Nếu phản hồi mạng bị mất, trạng thái có thể đã ghi thành c�
 
 ## Hiệu năng và kiểm thử
 
-Mã và CSS của trang chỉ tải khi mở SePay; không polling. Danh sách dùng hai truy vấn dữ liệu ngân hàng (tổng hợp và trang dòng) trong snapshot chỉ đọc nhất quán. Không gọi công nợ từng dòng. Công nợ chi tiết chỉ tính khi Manager chọn một đơn. Kết quả đến muộn sau khi rời trang/đổi giao dịch/đăng xuất bị bỏ qua.
+Mã và CSS của trang chỉ tải khi mở SePay; không thêm timer riêng, làm mới theo pulse khi đang hoạt động. Danh sách dùng hai truy vấn dữ liệu ngân hàng (tổng hợp và trang dòng) trong snapshot chỉ đọc nhất quán. Không gọi công nợ từng dòng. Công nợ chi tiết chỉ tính khi Manager chọn một đơn. Kết quả đến muộn sau khi rời trang/đổi giao dịch/đăng xuất bị bỏ qua.
 
 - API: `node --import tsx --test tests/app/sepay-page.test.ts tests/app/sepay-payment.test.ts`
 - Đồng thời trên PostgreSQL kiểm thử: đặt `TEST_PG_URL` tới CSDL giả cục bộ rồi chạy `tests/app/sepay-page.test.ts`; không dùng URL production.
@@ -76,10 +92,12 @@ Kiểm tra chỉ đọc bằng cùng API token: khoảng ngày thuần `2026-11-
 
 - Webhook `/integrations/sepay/payment` vẫn là luồng nhận ngay khi SePay đẩy giao dịch. Cần cấu hình đúng URL và Apikey trong SePay. Log ngày 09/11/2026 có lượt HTTP 401; không thể coi webhook đã hoạt động chỉ vì API đọc thành công. Không thay hoặc xoá webhook POS đang dùng.
 - Lịch Supabase `sepay-pull-today` (`supabase/sepay-pull-cron.sql`) là dự phòng mỗi 5 phút, kể cả khi không ai mở CRM. Workflow deploy cài lịch theo tên sau khi triển khai API, kiểm tra cấu hình rồi đồng bộ lần đầu; sử dụng pg_cron/pg_net và token máy chủ `sapo_sync_token` trong Vault đã có. Không tạo schema hoặc đọc token ra log. Cài lại cùng tên không tạo lịch trùng. Không dùng token đọc SePay để xác thực endpoint nội bộ.
-- POST `/integrations/sepay/pull` chỉ nhận `{}`, xác thực máy chủ `sapo-sync`; cookie nhân viên không đủ quyền. Tái sử dụng cùng importer với nút tải tay, khóa ID, không ghi đè giao dịch cũ và không tạo phiếu thu. Tất cả giao dịch mới vào trạng thái Cần đối soát. Mỗi lần chỉ lấy ngày hiện tại Việt Nam; webhook xử lý sự kiện ngoài ngày và không tự nhập toàn bộ lịch sử.
+- POST `/integrations/sepay/pull` chỉ nhận `{}`, xác thực máy chủ `sapo-sync`; cookie nhân viên không đủ quyền. Tái sử dụng cùng importer với nút tải tay, khóa ID, không ghi đè giao dịch cũ và không tạo phiếu thu. Giao dịch thông thường vào trạng thái Cần đối soát; QR web Lock đủ điều kiện được tự liên kết với khoản thu website. Mỗi lần chỉ lấy ngày hiện tại Việt Nam; webhook xử lý sự kiện ngoài ngày và không tự nhập toàn bộ lịch sử.
 - Trang SePay mở/đang hoạt động làm mới danh sách theo nhịp `/pulse` sẵn có (30 giây), không thêm timer, không gọi SePay từ trình duyệt. Dừng khi ẩn tab, đăng xuất/rời trang, đang ghi hoặc mở chi tiết đối soát; giữ nguyên bộ lọc và biểu mẫu. Khi đóng chi tiết/rời rồi quay lại trang, dữ liệu sẽ cập nhật.
 - Lỗi provider/xác thực ở lượt đầu làm workflow deploy đỏ với mã HTTP, không giả báo đồng bộ thành công. Log chỉ in tổng hợp; không in token, tài khoản hay nội dung giao dịch.
 
 Theo dõi định kỳ: `cron.job_run_details` xác nhận gọi pg_net, còn HTTP 200 của API trong log Edge mới xác nhận nhập thành công; tác vụ cron enqueue thành công không có nghĩa provider/HTTP đã thành công.
 
 Kiểm tra tự đồng bộ: 15 test đạt, 1 test tranh chấp PostgreSQL bỏ qua trong PGlite; browser 1440/390 kiểm tra tự cập nhật, bộ lọc và bảo toàn đối soát. Đo 3 lượt cold/viewport trong fixture cô lập, latency 40 ms: median sẵn sàng PC 3.118 s, mobile 3.075 s; 15 API và 163 JS lúc mở trang như benchmark trước, không phải tốc độ production. Raw: `docs/testing/sepay-auto-performance.json`.
+
+Kiểm thử QR web: 54/54 test liên quan đạt (tranh chấp trên PostgreSQL 17), thêm 20/20 test tập trung sau khi chặn form CRM cho QR đang chờ nguồn. Browser PC/mobile mở đúng đơn web và không sinh phiếu thu CRM. Đo 3 lượt cold/viewport, mạng giả lập 40ms: ready PC 3076→3080ms, mobile 3049→3093ms, vẫn 15 API/163 JS khi mở trang. Raw `docs/testing/sepay-web-performance.json`; không phải phép đo production.

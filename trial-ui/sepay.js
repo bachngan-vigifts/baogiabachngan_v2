@@ -57,15 +57,15 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
   const $ = (s) => root.querySelector(s),
     valid = (id, d) =>
       active && epoch === id && (d === undefined || detailEpoch === d);
-  const badge = (s) =>
-    `<span class="sp-badge sp-${esc(s)}">${esc(sepayStateLabel(s))}</span>`;
+  const badge = (s, web = false) =>
+    `<span class="sp-badge sp-${esc(s)}">${esc(web ? s === "matched" ? "Đã đối soát đơn web" : s === "receipt_issue" ? "Đơn web cần kiểm tra" : sepayStateLabel(s) : sepayStateLabel(s))}</span>`;
   const link = (o) => {
     const href =
-      (o.contractNo ? "#/contracts/" : "#/orders/") +
-      encodeURIComponent(o.orderId || o.id);
+      (o.webOrderId ? "#/orders/web:" : o.contractNo ? "#/contracts/" : "#/orders/") +
+      encodeURIComponent(o.webOrderId || o.orderId || o.id);
     return canOpenOrders()
-      ? `<a href="${href}">${esc(o.contractNo || o.orderNo || "Mở đơn")}</a>`
-      : esc(o.contractNo || o.orderNo || "Đơn CRM");
+      ? `<a href="${href}">${esc(o.webOrderNo || o.contractNo || o.orderNo || "Mở đơn")}</a>`
+      : esc(o.webOrderNo || o.contractNo || o.orderNo || "Đơn CRM");
   };
   function close() {
     active = false;
@@ -92,7 +92,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       ["matched", "Đã ghi thu"],
       ["unmatched", "Chưa khớp đơn"],
       ["review", "Cần đối soát"],
-      ["receipt_issue", "Phiếu thu cần kiểm tra"],
+      ["receipt_issue", "Khoản thu cần kiểm tra"],
     ]
       .map(
         ([v, t]) =>
@@ -103,7 +103,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     <label class="sp-search">Tìm giao dịch / đơn / khách<input name="q" maxlength="120" placeholder="Mã SePay, nội dung, số đơn, khách hàng…" value="${esc(params.get("q"))}"></label>
     <label>Số tiền từ (₫)<input type="number" name="min" min="0" max="1000000000000" step="1" value="${esc(params.get("min"))}"></label><label>Đến (₫)<input type="number" name="max" min="0" max="1000000000000" step="1" value="${esc(params.get("max"))}"></label>
     <div class="sp-filter-actions"><button class="btn navy" type="submit">Lọc giao dịch</button><button class="btn ghost" type="button" data-clear>Bỏ lọc</button></div></form>
-    <div class="sp-stats" data-stats aria-live="polite">${["Tổng tiền SePay", "Đã ghi thu vào CRM", "Chờ đối soát", "Phiếu thu cần kiểm tra"].map((t) => `<section class="card"><span>${t}</span><strong>—</strong><small>Đang tải…</small></section>`).join("")}</div>
+    <div class="sp-stats" data-stats aria-live="polite">${["Tổng tiền SePay", "Đã ghi thu / đối soát", "Chờ đối soát", "Khoản thu cần kiểm tra"].map((t) => `<section class="card"><span>${t}</span><strong>—</strong><small>Đang tải…</small></section>`).join("")}</div>
     <p class="muted sp-scope">Tổng hợp theo toàn bộ bộ lọc, không chỉ các dòng đang hiển thị. Ngày/giờ Việt Nam.</p><div data-setup></div>
     <div class="sp-layout"><section class="card sp-list"><div class="sp-heading"><h2>Giao dịch nhận từ SePay</h2><span data-count></span></div><div data-list role="status">Đang tải giao dịch…</div><div class="sp-pager" data-pager></div></section>
     <section class="card sp-detail" data-detail tabindex="-1" role="region" aria-label="Đối soát giao dịch"><h2>Đối soát giao dịch</h2><p class="muted">Chọn “Xem / đối soát” để xem chứng từ, đơn và phiếu thu.</p></section></div>`;
@@ -126,9 +126,9 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       const s = next.summary;
       $("[data-stats]").innerHTML = [
         ["Tổng tiền SePay", s.amount, s.count, ""],
-        ["Đã ghi thu vào CRM", s.postedAmount, s.postedCount, "posted"],
+        ["Đã ghi thu / đối soát", s.postedAmount, s.postedCount, "posted"],
         ["Chờ đối soát", s.pendingAmount, s.pendingCount, "pending"],
-        ["Phiếu thu cần kiểm tra", s.issueAmount, s.issueCount, "issue"],
+        ["Khoản thu cần kiểm tra", s.issueAmount, s.issueCount, "issue"],
       ]
         .map(
           ([t, a, c, tone]) =>
@@ -137,12 +137,12 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
         .join("");
       $("[data-setup]").innerHTML = next.automationConfigured
         ? ""
-        : `<p class="sp-warning">Tài khoản nhận tiền tự động chưa được cấu hình. Giao dịch vẫn được lưu để đối soát; chưa tự ghi thu.</p>`;
+        : `<p class="sp-warning">Chưa cấu hình tài khoản tự ghi thu cho đơn CRM. Giao dịch vẫn được lưu để đối soát; QR web Lock dùng thông tin thanh toán của đơn nguồn.</p>`;
       if(!next.capabilities?.canPull)$("[data-setup]").insertAdjacentHTML("beforeend",'<p class="sp-warning">Chưa cấu hình API đọc SePay trên máy chủ. Vẫn có thể nhận giao dịch qua webhook.</p>');
       const rows = next.transactions;
       $("[data-count]").textContent = next.pagination.total + " giao dịch";
       $("[data-list]").innerHTML = rows.length
-        ? `<table class="sp-table"><thead><tr><th>Ngày / mã SePay</th><th>Số tiền</th><th>Nội dung / tài khoản</th><th>Trạng thái / đơn</th><th></th></tr></thead><tbody>${rows.map((r) => `<tr data-row="${esc(r.id)}"><td>${esc(stamp(r.transactionAt))}<small>${esc(r.providerId)}</small></td><td class="sp-money">${esc(money(r.amount))}</td><td class="sp-content">${esc(r.content)}<small>TK ${esc(r.accountNumber)}</small></td><td>${badge(r.status)}${r.orderId ? `<small>${link(r)}</small>` : ""}${r.status === "receipt_issue" ? "<small>Kiểm tra phiếu thu đã huỷ, thiếu hoặc không khớp.</small>" : ""}</td><td><button class="btn secondary small" data-open="${esc(r.id)}">Xem / đối soát</button></td></tr>`).join("")}</tbody></table>`
+        ? `<table class="sp-table"><thead><tr><th>Ngày / mã SePay</th><th>Số tiền</th><th>Nội dung / tài khoản</th><th>Trạng thái / đơn</th><th></th></tr></thead><tbody>${rows.map((r) => `<tr data-row="${esc(r.id)}"><td>${esc(stamp(r.transactionAt))}<small>${esc(r.providerId)}</small></td><td class="sp-money">${esc(money(r.amount))}</td><td class="sp-content">${esc(r.content)}<small>TK ${esc(r.accountNumber)}</small></td><td>${badge(r.status, !!r.webOrderId)}${r.orderId || r.webOrderId ? `<small>${link(r)}</small>` : ""}${r.status === "receipt_issue" ? `<small>${r.webOrderId ? "Đơn web hoặc xác nhận thanh toán đã thay đổi; cần kiểm tra." : "Kiểm tra phiếu thu đã huỷ, thiếu hoặc không khớp."}</small>` : ""}</td><td><button class="btn secondary small" data-open="${esc(r.id)}">Xem / đối soát</button></td></tr>`).join("")}</tbody></table>`
         : '<p class="sp-empty">Không có giao dịch trong bộ lọc này.</p>';
       const p = next.pagination;
       $("[data-pager]").innerHTML =
@@ -186,6 +186,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     }
   }
   function receiptView(r) {
+    if(r.webOrderId) return `<div class="sp-receipt"><b>Đơn web Lock ${esc(r.webOrderNo || r.orderNo || "Không còn tìm thấy đơn nguồn")}</b><p>${r.status === 'matched' ? 'Đã đối soát khoản thu website; không tạo thêm phiếu thu CRM.' : 'Khoản thu website cần kiểm tra theo trạng thái giao dịch.'}</p>${link(r)}</div>`;
     return r.paymentId
       ? `<div class="sp-receipt"><b>Phiếu thu ${esc(r.paymentId)}</b><p>${esc(money(r.paymentAmount))} · ${esc(r.paymentDate || "Chưa có ngày thu")}</p><p>${esc(r.paymentReference || "")}</p>${r.status === "receipt_issue" ? '<p class="sp-error">Phiếu thu đã huỷ, thiếu hoặc không khớp. Không tạo lại phiếu từ giao dịch này.</p>' : ""}${r.orderId ? link(r) : ""}</div>`
       : "";
@@ -212,10 +213,10 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       event = res.transaction;
       const r = event;
       $("[data-detail]").innerHTML =
-        `${back}<div class="sp-heading"><h2>Đối soát giao dịch</h2>${badge(r.status)}</div><strong class="sp-bank-amount">${esc(money(r.amount))}</strong><dl class="sp-info"><dt>Mã SePay</dt><dd>${esc(r.providerId)}</dd><dt>Thời gian</dt><dd>${esc(stamp(r.transactionAt))}</dd><dt>Tài khoản nhận</dt><dd>${esc(r.accountNumber)}</dd><dt>Nội dung gốc</dt><dd class="sp-original">${esc(r.content)}</dd></dl>
-      ${r.reason ? `<p class="sp-warning">${esc(r.reason)}</p>` : ""}${receiptView(r)}
+        `${back}<div class="sp-heading"><h2>Đối soát giao dịch</h2>${badge(r.status, !!r.webOrderId)}</div><strong class="sp-bank-amount">${esc(money(r.amount))}</strong><dl class="sp-info"><dt>Mã SePay</dt><dd>${esc(r.providerId)}</dd><dt>Thời gian</dt><dd>${esc(stamp(r.transactionAt))}</dd><dt>Tài khoản nhận</dt><dd>${esc(r.accountNumber)}</dd><dt>Nội dung gốc</dt><dd class="sp-original">${esc(r.content)}</dd></dl>
+      ${r.reason && !(r.webOrderId && r.status === "matched") ? `<p class="sp-warning">${esc(r.reason)}</p>` : ""}${receiptView(r)}
       <div data-notice aria-live="polite"></div>
-      ${!data?.capabilities.canConfirm ? '<p class="sp-readonly">Kế toán được xem và đối chiếu. Chỉ Manager được xác nhận ghi thu.</p>' : !res.capabilities.canConfirm ? `<p class="sp-readonly">${esc(res.blockReason || "Giao dịch đã được xử lý; không tạo thêm phiếu thu.")}</p>` : !res.accountApproved ? '<p class="sp-warning">Tài khoản này chưa được duyệt nhận tiền cho đơn CRM. Cần cấu hình tài khoản trước khi xác nhận.</p>' : `<section class="sp-match"><h3>Chọn đơn / HĐKT</h3><p class="muted small">Gắn toàn bộ số tiền vào một đơn CRM/HĐKT. Khoản POS, đơn web chưa chuyển CRM và khoản cần chia nhiều đơn xử lý theo luồng riêng.</p><form data-order-search><label>Tìm số đơn hoặc khách hàng<input name="orderQuery" minlength="2" maxlength="120" required placeholder="Nhập ít nhất 2 ký tự"></label><button class="btn secondary" type="submit">Tìm đơn</button></form><div data-order-results></div><div data-preview></div></section>`}
+      ${r.webOrderId ? "" : !data?.capabilities.canConfirm ? '<p class="sp-readonly">Kế toán được xem và đối chiếu. Chỉ Manager được xác nhận ghi thu.</p>' : !res.capabilities.canConfirm ? `<p class="sp-readonly">${esc(res.blockReason || "Giao dịch đã được xử lý; không tạo thêm phiếu thu.")}</p>` : !res.accountApproved ? '<p class="sp-warning">Tài khoản này chưa được duyệt nhận tiền cho đơn CRM. Cần cấu hình tài khoản trước khi xác nhận.</p>' : `<section class="sp-match"><h3>Chọn đơn / HĐKT</h3><p class="muted small">Gắn toàn bộ số tiền vào một đơn CRM/HĐKT. Khoản POS, đơn web chưa chuyển CRM và khoản cần chia nhiều đơn xử lý theo luồng riêng.</p><form data-order-search><label>Tìm số đơn hoặc khách hàng<input name="orderQuery" minlength="2" maxlength="120" required placeholder="Nhập ít nhất 2 ký tự"></label><button class="btn secondary" type="submit">Tìm đơn</button></form><div data-order-results></div><div data-preview></div></section>`}
       ${res.history.length ? `<details class="sp-history"><summary>Nhật ký xử lý (${res.history.length})</summary>${res.history.map((h) => `<article><b>${esc(h.actorName || "Hệ thống")}</b> · ${esc(stamp(h.createdAt))}<p>${esc(h.reason || "Kiểm tra lại giao dịch")}</p></article>`).join("")}</details>` : ""}`;
       root
         .querySelectorAll("[data-row]")

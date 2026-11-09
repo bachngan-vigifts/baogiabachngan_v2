@@ -1,3 +1,7 @@
+import {WEB_PAYMENT_BLOCKED_STATUSES} from '../domain/web-order-outcome.ts';
+import {isLockWebQrPayment} from './sepay-web-store.ts';
+import {webStoreOrders as web,posRegisters as webRegisters} from '../pos-schema.ts';
+import {webDocumentStatus} from './web-order-documents.ts';
 import {
   and,
   asc,
@@ -50,7 +54,17 @@ function readAccess(c: Ctx): void {
   if (!canViewSepay(member(c)))
     throw new AppError(403, "Chỉ Manager và Kế toán được xem sổ SePay.");
 }
-const state = sql<string>`case when ${bank.status}='matched' and (${payments.id} is null or ${payments.voidedAt} is not null or ${payments.orderId} is distinct from ${bank.orderId} or ${payments.amount}<>${bank.amount} or ${payments.method}<>'transfer') then 'receipt_issue' else ${bank.status} end`;
+const validWeb = sql`coalesce(${web.id} is not null and ${web.source}='lock' and ${web.currency}='VND' and ${web.total}=${bank.amount}
+ and regexp_replace(lower(trim(${web.status})),'^wc-','') not in (${sql.join(WEB_PAYMENT_BLOCKED_STATUSES.map(s=>sql`${s}`),sql`, `)})
+ and ${webDocumentStatus()}<>'cancelled' and ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is not null
+ and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false)
+ and coalesce((${web.crmEditSnapshot}::jsonb->>'revision')::int,0)=0
+ and lower(${web.paymentMethod}) ~ '(^|[^a-z0-9_])qr([^a-z0-9_]|$)' and ${webRegisters.active}
+ and trim(${webRegisters.bankAccount})<>'' and regexp_replace(${webRegisters.bankAccount},'[[:space:]]','','g')=${bank.accountNumber},false)`;
+const state = sql<string>`case when ${bank.status}='matched' and
+ (case when ${bank.webOrderId} is not null then not (${validWeb}) else
+ (${payments.id} is null or ${payments.voidedAt} is not null or ${payments.orderId} is distinct from ${bank.orderId} or ${payments.amount}<>${bank.amount} or ${payments.method}<>'transfer') end)
+ then 'receipt_issue' else ${bank.status} end`;
 const columns = {
   id: bank.id,
   providerId: bank.providerId,
@@ -61,11 +75,14 @@ const columns = {
   content: bank.content,
   status: state,
   rawStatus: bank.status,
-  reason: bank.reason,
+  reason: sql<string>`case when ${bank.webOrderId} is not null and ${bank.status}='matched' and not (${validWeb}) then 'Đơn web hoặc xác nhận thanh toán đã thay đổi; cần kiểm tra chứng từ nguồn.' else ${bank.reason} end`,
   orderId: bank.orderId,
-  orderNo: orders.orderNo,
+  orderNo: sql<string>`coalesce(nullif(${web.crmOrderNo},''),${web.orderNo},${orders.orderNo})`,
+  webOrderId: bank.webOrderId,
+  webOrderNo: web.orderNo,
+  webPaidAt: sql<string|null>`${web.financialSnapshot}::jsonb->'payment'->>'paidAt'`,
   contractNo: contracts.contractNo,
-  customerName: orders.customerName,
+  customerName: sql<string>`coalesce(${web.customerName},${orders.customerName})`,
   orderStatus: orders.status,
   orderChannel: orders.channel,
   paymentId: bank.paymentId,
@@ -98,6 +115,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
           ? matchAllWords(
               foldSql(
                 bank.providerId,
+                web.orderNo,web.crmOrderNo,web.customerName,
                 bank.content,
                 orders.orderNo,
                 contracts.contractNo,
@@ -121,6 +139,8 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
               issueAmount: sql<number>`coalesce(sum(${bank.amount}) filter(where ${state}='receipt_issue'),0)::float8`,
             })
             .from(bank)
+            .leftJoin(web,eq(web.id,bank.webOrderId))
+            .leftJoin(webRegisters,eq(webRegisters.id,web.registerId))
             .leftJoin(orders, eq(orders.id, bank.orderId))
             .leftJoin(contracts, eq(contracts.orderId, orders.id))
             .leftJoin(payments, eq(payments.id, bank.paymentId))
@@ -128,6 +148,8 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
           const rows = await tx
             .select(columns)
             .from(bank)
+            .leftJoin(web,eq(web.id,bank.webOrderId))
+            .leftJoin(webRegisters,eq(webRegisters.id,web.registerId))
             .leftJoin(orders, eq(orders.id, bank.orderId))
             .leftJoin(contracts, eq(contracts.orderId, orders.id))
             .leftJoin(payments, eq(payments.id, bank.paymentId))
@@ -170,6 +192,8 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
       const [row] = await c.env.db
         .select(columns)
         .from(bank)
+            .leftJoin(web,eq(web.id,bank.webOrderId))
+            .leftJoin(webRegisters,eq(webRegisters.id,web.registerId))
         .leftJoin(orders, eq(orders.id, bank.orderId))
         .leftJoin(contracts, eq(contracts.orderId, orders.id))
         .leftJoin(payments, eq(payments.id, bank.paymentId))
@@ -195,6 +219,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         )
         .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
         .limit(20);
+      const webPayment=!!row.webOrderId||await isLockWebQrPayment(c.env.db,row);
       return json({
         transaction: row,
         history: history.map((h) => {
@@ -218,10 +243,12 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
           canConfirm:
             member(c).role === "manager" &&
             ["review", "unmatched"].includes(row.status) &&
+            !webPayment &&
             !sepayPosIntent(row.content) &&
             row.orderChannel !== "pos",
         },
         blockReason:
+          webPayment ? row.reason || "Giao dịch thuộc đơn web; xem trạng thái thanh toán trên đúng đơn web." :
           sepayPosIntent(row.content) || row.orderChannel === "pos"
             ? "Giao dịch thuộc luồng QR/POS; không gắn vào đơn CRM khác."
             : "",

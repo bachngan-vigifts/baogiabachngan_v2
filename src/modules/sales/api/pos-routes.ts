@@ -1,3 +1,5 @@
+import {LOCK_WEB_REGISTER_NAME} from '../domain/pos-register.ts';
+import {retrySepayWebOrder} from './sepay-web-retry.ts';
 import {webEditFlags} from './web-order-edit-state.ts';
 import {beginWebConfirmation} from './web-order-edit.ts';
 import {readWebEdit} from '../domain/web-order-edit.ts';
@@ -174,7 +176,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (!expected || tokenHash !== expected) throw new AppError(401, 'Webhook không đúng website.');
     const b = await readJson(c.req, 256_000), externalId = posText(String(b.id ?? ''), 80), number = posText(String(b.number ?? b.id ?? ''), 100);
     if (!externalId || !number) throw new AppError(400, 'Đơn WooCommerce thiếu ID hoặc số đơn.');
-    const wantedName = source === 'lock' ? 'CỬA HÀNG LOCKNLOCK CẦN THƠ' : 'Showroom Gốm Sứ Minh Long Cần Thơ';
+    const wantedName = source === 'lock' ? LOCK_WEB_REGISTER_NAME : 'Showroom Gốm Sứ Minh Long Cần Thơ';
     const regs = await c.env.db.select().from(posRegisters).where(eq(posRegisters.active, true));
     const register = regs.find(r => r.name.trim().toLowerCase() === wantedName.toLowerCase());
     if (!register) throw new AppError(409, `CRM chưa có quầy ${wantedName}.`);
@@ -283,6 +285,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     await invoiceTasksChanged(c.env, { webOrderId: saved!.id });
     // Website Lock báo trạng thái GHN qua cầu nối: ghi sổ kho quầy theo trạng thái (web-order-stock.ts).
     await syncWebOrderStock(c.env, saved!.id);
+    if(source==='lock') await retrySepayWebOrder(c.env,saved!.id);
     return json({ ok: true, source, externalId, registerId: register.id });
   }, 'web-order-sync');
   /** Proxy master-data GHN riêng cho checkout Minh Long; token tài khoản GHN không bao giờ đưa ra trình duyệt/WordPress. */
