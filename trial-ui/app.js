@@ -3926,7 +3926,7 @@ var dashboardUi = null;
 /** Phân tích lợi nhuận: chỉ Manager (máy chủ kiểm tra lại). */
 var profitUi = null;
 function profitView() { return profitUi ||= initProfit({ api, root: $('#view-profit'), toast, esc, money }); }
-function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('#view-dashboard'), isManager, money }); }
+function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('#view-dashboard'), isManager, money, user:()=>state.user }); }
 var storeUi = null;
 /** Báo cáo Cửa hàng trưởng: trang #/store-reports + hộp nhắc việc 30 phút (chỉ CHT được gán). */
 /** Báo cáo tuần Sale / Sale Admin: trang #/weekly-reports + nhắc tuần trước chưa nộp. */

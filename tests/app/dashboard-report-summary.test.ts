@@ -16,3 +16,9 @@ test('employee picker merges only authorized current-month projections, retainin
  assert.deepEqual(dashboardScorePeople(k,r,'2026-10'),[]);
  assert.deepEqual(dashboardScorePeople(null,{...r,members:[r.members[1]]},'2026-11'),[{id:'admin',name:'Sale Admin'}]);
 });
+
+test('report-only presentation is limited to the authenticated Sale Admin role, without enabling payroll KPI',async()=>{
+ const {dashboardReportsOnly}=await import(new URL('../../trial-ui/dashboard.js',import.meta.url).href);
+ assert.equal(dashboardReportsOnly({role:'employee',positionId:'sale-admin'}),true);
+ for(const user of [null,{}, {role:'manager',positionId:'sale-admin'},{role:'employee',positionId:'sale'},{role:'customer',positionId:'sale-admin'}])assert.equal(dashboardReportsOnly(user),false);
+});

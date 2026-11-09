@@ -146,6 +146,16 @@ circle.dash-dot { fill: #2a78d6; stroke: var(--surface); stroke-width: 2; pointe
 .dash-kpi-person[aria-pressed="true"] { border-color: #2a78d6; box-shadow: inset 0 0 0 1px #2a78d6; }
 .dash-kpi-person-name { grid-area: name; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dash-kpi-person strong { grid-area: value; }
+.dash-report-person-points { font-size:var(--text-caption);max-width:130px;text-align:right; }
+.dash-report-person-summary { grid-area:bar;color:var(--muted);font-size:var(--text-caption);line-height:1.5; }
+.dash-kpi-card.is-reports-only .dash-report-card > h3 { display:none; }
+.dash-kpi-card.is-reports-only .dash-report-body[aria-busy="true"] { min-height:600px; }
+.dash-kpi-card.is-reports-only .is-details-collapsed .dash-report-body[aria-busy="true"] { min-height:230px; }
+@media(max-width:760px) {
+  .dash-kpi-card.is-reports-only .dash-report-body[aria-busy="true"] { min-height:900px; }
+  .dash-kpi-card.is-reports-only .is-details-collapsed .dash-report-body[aria-busy="true"] { min-height:380px; }
+  .dash-kpi-card.is-reports-only .report-score-heading { flex-direction:column;align-items:flex-start; }
+}
 .dash-kpi-bar { grid-area: bar; height: 6px; border-radius: 3px; background: var(--dash-track, #e3e9e6); overflow: hidden; }
 .dash-kpi-bar i { display: block; height: 100%; border-radius: 3px; }
 .dash-kpi-bar i.is-high { background: #1a9e77; } .dash-kpi-bar i.is-low { background: #eb6834; } .dash-kpi-bar i.is-poor { background: #d92d20; }
