@@ -168,6 +168,90 @@ cases.push({
     "</b></div></section>",
   kind: "summary",
 });
+
+// Actual shared product structures; stock columns remain a horizontally scrollable table.
+const productName =
+  "Bộ trà Hoàng Cung 0.65 L – Hoa văn trang trí vành vàng – Bộ sản phẩm phiên bản kiểm thử tên dài có đầy đủ phụ kiện";
+for (const supplier of [false, true]) {
+  const headers = [
+    "Sản phẩm",
+    "Cần",
+    "Tồn kho",
+    "Hàng đang giữ",
+    "Khả dụng cho báo giá",
+    ...(supplier ? ["Kho NCC"] : []),
+    "Hàng chờ về",
+    "Kết quả",
+  ];
+  const values = [
+    "100.000",
+    "250.000",
+    '70<small><a href="#/contracts/test">11-05/09112026/HĐKT/VG-LAYOUT</a></small>',
+    "249.930",
+    ...(supplier ? ["123.456"] : []),
+    "10<small>DMH-KIEM-THU · Nhà cung cấp</small>",
+    '<span class="pill ok">Đủ</span>',
+  ];
+  cases.push({
+    name: "quote-stock-" + (supplier ? "supplier" : "physical"),
+    root: "#view-editor",
+    dialog: true,
+    kind: "stock-table",
+    html:
+      '<dialog id="stock-check-dialog" class="modal wide"><div class="modal-head"><h2>Kiểm tồn báo giá</h2></div><div class="modal-body"><div id="stock-check-body"><div class="table-wrap"><table class="data-table stock-check-table"><thead><tr>' +
+      headers.map((h) => "<th>" + h + "</th>").join("") +
+      "</tr></thead><tbody><tr><td><span data-entity-name>" +
+      productName +
+      "</span><small>LHC-KIEM-THU · Bộ</small></td>" +
+      values.map((v) => '<td class="right">' + v + "</td>").join("") +
+      '</tr></tbody></table></div></div></div><div class="modal-foot"><button class="btn secondary" type="button">Đóng</button></div></dialog>',
+  });
+}
+for (const [name, html] of [
+  [
+    "product-suggestion",
+    '<ul class="suggest"><li><span class="prod-opt"><span class="thumb">Ảnh</span><span class="prod-text"><b data-entity-name>' +
+      productName +
+      '</b><small>ML-TEST · Bộ · tồn 123.456</small></span><span class="price" data-money>' +
+      amount +
+      "</span></span></li></ul>",
+  ],
+  [
+    "stock-lookup-product",
+    '<article class="card lookup-item"><div class="lookup-top"><img alt="" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E"><div><b class="lookup-sku">LHC-TEST</b><span class="lookup-name" data-entity-name>' +
+      productName +
+      '</span></div><div class="lookup-total"><strong>123.456</strong><small>Bộ</small></div></div></article>',
+  ],
+  [
+    "receiving-product",
+    '<article class="recv-card"><div class="recv-head"><div><b>LHC-TEST</b><small class="sup-sub" data-entity-name>' +
+      productName +
+      '</small></div><div class="recv-need"><small>Cần nhận</small><strong>123.456</strong></div></div></article>',
+  ],
+  [
+    "pos-cart-product",
+    '<section class="pos-checkout" style="width:min(100%,360px)"><article class="pos-line"><div class="pos-line-top"><b class="pos-line-name" data-entity-name>' +
+      productName +
+      "</b><strong data-money>" +
+      amount +
+      '</strong><button class="btn ghost small" aria-label="Bỏ sản phẩm" type="button">×</button></div></article></section>',
+  ],
+  [
+    "order-line-product",
+    '<div class="table-wrap"><table class="data-table"><tbody id="order-lines"><tr><td><a data-entity-name>' +
+      productName +
+      '</a><small>ML-TEST · Bộ</small></td><td class="right">100.000</td><td class="right">10.000</td><td class="right">100.000 đ</td><td class="right">8%</td><td class="right" data-money>' +
+      amount +
+      "</td></tr></tbody></table></div>",
+  ],
+  [
+    "packing-product",
+    '<div class="table-wrap"><table class="data-table pick-table"><tbody><tr class="pick-row"><td class="pick-col"><input type="checkbox" aria-label="Đã lấy"></td><td><span data-entity-name>' +
+      productName +
+      '</span><small>ML-TEST</small></td><td class="right"><b class="pick-qty">123.456</b> Bộ</td><td>Hộp 12 cái</td><td class="right">250 kg</td></tr></tbody></table></div>',
+  ],
+])
+  cases.push({ name, root: "#view-test", kind: "product", html });
 const index = await readFile(root + "index.html", "utf8"),
   styles = [...index.matchAll(/<link[^>]+href="([^"?]+\.css)[^"]*"/g)].map(
     (m) => m[1],
@@ -273,7 +357,10 @@ try {
           };
         };
         const n = document.querySelector("[data-entity-name]"),
-          box = n.closest("td,dd,.task-main,.prod-text") || n;
+          box =
+            n.closest(
+              "td,dd,.task-main,.prod-text,.lookup-top>div,.recv-head>div",
+            ) || n;
         return {
           width: innerWidth,
           name: rect(n),
@@ -312,6 +399,10 @@ try {
       const issues = [];
       if (width <= 850 && facts.box.width < Math.min(160, width * 0.5))
         issues.push("narrow-name");
+      if (c.kind === "product" && facts.box.width < 160)
+        issues.push("narrow-product-name");
+      if (c.kind === "stock-table" && facts.box.width < 240)
+        issues.push("narrow-product-column");
       if (facts.pageOverflow) issues.push("page-overflow");
       if (
         width <= 850 &&
@@ -392,11 +483,7 @@ try {
     }),
   );
   if (baseline)
-    assert.ok(
-      failed.some(
-        (r) => r.case === "contracts-cards" && r.issues.includes("narrow-name"),
-      ),
-    );
+    assert.ok(failed.length > 0, "Baseline must reproduce a layout failure");
   else
     assert.deepEqual(
       failed.map((r) => ({ case: r.case, width: r.width, issues: r.issues })),

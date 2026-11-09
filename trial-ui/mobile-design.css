@@ -4,6 +4,12 @@
 @media screen and (min-width:851px) {
  .crm-list-card .crm-card-title { min-width:240px;overflow-wrap:anywhere; }
 }
+/* Stock has many numeric columns: scroll those columns rather than crush the product name. */
+@media screen {
+ .stock-check-table :is(th,td):first-child { min-width:240px;max-width:360px;white-space:normal;overflow-wrap:anywhere; }
+ .stock-check-table td.right { min-width:76px;white-space:nowrap; }
+ .stock-check-table td.right small { white-space:normal;overflow-wrap:anywhere; }
+}
 .crm-mobile-nav,.crm-home-row,.crm-filter-trigger,.crm-filter-sheet,.crm-required { display:none; }
 .crm-task-complete,.crm-dashboard-more,.crm-task-no-approval,[data-mobile-row-detail] { display:none; }
 .mobile-quote-owner { display:none; }
@@ -174,6 +180,19 @@
  .picker-list li>.price { grid-column:1/-1;grid-row:3;min-width:0;text-align:left;white-space:normal;overflow-wrap:anywhere; }
  .picker-list li>input { grid-column:1;grid-row:4;width:100%;min-width:0; }
  .picker-list li>.pick-add { grid-column:2;grid-row:4;min-width:0;white-space:normal;overflow-wrap:anywhere; }
+ .suggest .prod-opt { grid-template-columns:36px minmax(0,1fr); }
+ .suggest .prod-opt>.thumb { grid-column:1;grid-row:1; }
+ .suggest .prod-opt>.prod-text { grid-column:1/-1;grid-row:2;overflow-wrap:anywhere; }
+ .suggest .prod-opt>.price { grid-column:1/-1;grid-row:3;min-width:0;white-space:normal;overflow-wrap:anywhere; }
+ .lookup-top { display:grid;grid-template-columns:56px minmax(0,1fr); }
+ .lookup-top>img { grid-column:1;grid-row:1; }
+ .lookup-top>div:not(.lookup-total) { grid-column:1/-1;grid-row:2; }
+ .lookup-top>.lookup-total { grid-column:1/-1;grid-row:3;min-width:0;overflow-wrap:anywhere; }
+ .recv-head { flex-wrap:wrap; }
+ .recv-head>div:first-child { flex:1 1 100%; }
+ .recv-head>.recv-need { min-width:0;max-width:100%;margin-left:auto;overflow-wrap:anywhere; }
+ #stock-check-dialog .modal-foot { flex-wrap:wrap;align-items:center; }
+ #stock-check-note { flex-basis:100%;min-width:0; }
 }
 .crm-field-error { display:block;font-size:12px;color:var(--red);font-weight:400; }
 @media screen and (max-width:850px){
@@ -446,4 +465,11 @@
  #view-tasks .task-row .task-main { grid-area:m;min-width:0;overflow-wrap:anywhere; }
  #view-tasks .task-row .task-people { grid-area:p;min-width:0;overflow-wrap:anywhere; }
  #view-tasks .task-row .task-due { grid-area:d;min-width:0;text-align:left;overflow-wrap:anywhere; }
+}
+/* The desktop checkout is a narrow side panel as well. */
+@media screen {
+ .pos-checkout .pos-line-top { display:grid;grid-template-columns:minmax(0,1fr) 28px; }
+ .pos-checkout .pos-line-top>.pos-line-name { grid-column:1/-1;grid-row:1; }
+ .pos-checkout .pos-line-top>strong { grid-column:1;grid-row:2;min-width:0;white-space:normal;overflow-wrap:anywhere; }
+ .pos-checkout .pos-line-top>.btn { grid-column:2;grid-row:2; }
 }
