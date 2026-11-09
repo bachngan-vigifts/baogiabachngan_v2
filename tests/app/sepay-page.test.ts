@@ -1,3 +1,4 @@
+import { customers } from '../../src/modules/customers/schema.ts';
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { eq, sql } from "drizzle-orm";
@@ -304,7 +305,7 @@ test("QR POS and transactions identified to POS cannot be reassigned to CRM", as
   assert.equal((await f.confirm(known.id, f.choice(crm.id))).status, 409);
   assert.equal((await f.db.select().from(customerPayments)).length, 0);
 });
-test("preview is read-only and fresh debt is rechecked at confirmation; search excludes invalid documents", async () => {
+test("preview is read-only and fresh debt is rechecked at confirmation; search excludes POS/cancelled and marks drafts", async () => {
   const f = await setupSepay(),
     o = await f.order("PREVIEW106"),
     e = await f.incoming("Chờ chọn đúng khách 106");
@@ -312,7 +313,9 @@ test("preview is read-only and fresh debt is rechecked at confirmation; search e
   await f.order("PREVIEW106DRAFT", { status: "draft" });
   await f.order("PREVIEW106CANCELLED", { status: "cancelled" });
   const search = await f.call("/sepay/orders?q=PREVIEW106&source=crm", f.mgr);
-  assert.equal(search.data.orders.length, 1);
+  assert.equal(search.data.orders.length, 2);
+  assert.equal(search.data.orders.find((r: any) => r.id === o.id).selectable, true);
+  assert.equal(search.data.orders.find((r: any) => r.status === "draft").selectable, false);
   const preview = await f.call(
     "/sepay/orders/" + o.id + "?transactionId=" + e.id,
     f.mgr,
@@ -332,7 +335,7 @@ test("preview is read-only and fresh debt is rechecked at confirmation; search e
   });
   assert.equal((await f.confirm(e.id, f.choice(o.id))).status, 409);
   assert.equal((await f.db.select().from(customerPayments)).length, 1);
-  assert.equal((await f.call("/sepay/orders?q=x", f.mgr)).status, 400);
+  assert.equal((await f.call("/sepay/orders?q=x", f.mgr)).status, 200);
   assert.equal(
     (await f.call("/sepay/transactions/missing", f.accountant)).status,
     404,
@@ -446,3 +449,39 @@ test(
     );
   },
 );
+
+test("SePay picker lists real documents, searches canonical customer/code, filters and paginates without weakening receipt guards", async () => {
+  const f = await setupSepay();
+  await f.db.update(customers).set({name: "CÔNG TY XƯƠNG LỢI".normalize("NFD"), contact:"Chị Lan", customerCode:"KH_XL"}).where(eq(customers.id,f.customerId));
+  const draft = await f.order("DH_007_06112026",{customerName:"Người liên hệ",status:"draft",orderDate:"2026-11-06"});
+  const contract = {id:crypto.randomUUID(),orderId:draft.id,customerId:f.customerId,contractNo:"11-03/06112026/HĐKT/VG-0822909229",legalEntity:"VG" as const,status:"draft" as const,createdBy:"mgr",createdAt:f.stamp,updatedAt:f.stamp};
+  await f.db.insert(salesContracts).values(contract);
+  const e = await f.incoming("Chờ đối soát khách Xương Lợi");
+  for (const q of ["xưởng lợi", "LOI XUONG", "KH_XL", "Chị Lan", "110306112026HDKTVG0822909229"]) {
+    const r = await f.call("/sepay/orders?q="+encodeURIComponent(q),f.mgr);
+    assert.equal(r.status,200);
+    assert.equal(r.data.orders[0].id,draft.id,q);
+    assert.equal(r.data.orders[0].selectable,false);
+  }
+  assert.equal((await f.confirm(e.id,f.choice(draft.id))).status,409,"draft remains unpayable");
+  assert.equal((await f.call("/sepay/orders?eligibility=eligible",f.mgr)).data.orders.length,0);
+  await f.db.update(salesContracts).set({status:"signed"}).where(eq(salesContracts.id,contract.id));
+  assert.equal((await f.call("/sepay/orders?kind=contract&eligibility=eligible",f.mgr)).data.orders[0].selectable,true);
+  await f.order("XL_CANCELLED",{status:"cancelled"});
+  await f.order("XL_POS",{channel:"pos"});
+  for(let i=0;i<22;i++) await f.order("XL_"+String(i).padStart(2,"0"));
+  const page1 = await f.call("/sepay/orders?kind=all",f.mgr), page2 = await f.call("/sepay/orders?kind=all&offset=20",f.mgr);
+  assert.equal(page1.data.orders.length,20);assert.equal(page1.data.hasMore,true);
+  assert.equal(page2.data.orders.length,3);assert.equal(page2.data.hasMore,false);
+  assert.equal(new Set([...page1.data.orders,...page2.data.orders].map((o:any)=>o.id)).size,23);
+  assert.equal((await f.call("/sepay/orders?kind=contract&from=2026-11-06&to=2026-11-06",f.mgr)).data.orders.length,1);
+  assert.equal((await f.call("/sepay/orders?kind=contract&from=2026-11-07",f.mgr)).data.orders.length,0);
+  const cancelled = await f.call("/sepay/orders?eligibility=cancelled",f.mgr);
+  assert.equal(cancelled.data.orders.length,1);assert.equal(cancelled.data.orders[0].selectable,false);
+  assert.equal((await f.call("/sepay/orders?kind=order",f.mgr)).data.orders.some((o:any)=>o.contractNo),false);
+  for(const query of ["offset=-1","offset=1.5","kind=bad","eligibility=bad","from=2026-02-30","from=2026-11-09&to=2026-11-01"])
+    assert.equal((await f.call("/sepay/orders?"+query,f.mgr)).status,400,query);
+  assert.equal((await f.call("/sepay/orders",f.accountant)).status,403);
+  assert.equal((await f.call("/sepay/orders",f.emp)).status,403);
+  assert.equal((await f.db.select().from(customerPayments)).length,0);
+});

@@ -195,9 +195,9 @@ try {
     }
     await open(pending);
     assert.equal(await p.locator("[data-order-results] li").count(), 20);
-    await p.locator("[data-more-orders]").click();
+    await p.locator('[data-order-offset="20"]').click();
     await p.waitForFunction(
-      () => document.querySelectorAll("[data-order-results] li").length > 20,
+      () => document.querySelector(".sp-order-pages")?.textContent.includes("Trang 2"),
     );
     await filter("pos");
     await p.locator('[data-choose="' + pos.id + '"]').click();

@@ -45,9 +45,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     epoch = 0,
     detailEpoch = 0,
     searchEpoch = 0,
-    orderOffset = 0,
-    orderHasMore = false,
-    orderQuerySignature = "",
+    searchTimer = null,
     params = null,
     data = null,
     event = null,
@@ -78,6 +76,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     active = false;
     epoch++;
     detailEpoch++;
+    clearTimeout(searchTimer);
     searchEpoch++;
     event = null;
     preview = null;
@@ -227,6 +226,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       '<button class="btn secondary small sp-back" type="button" data-back-list>← Về giao dịch</button>';
     const own = epoch,
       d = ++detailEpoch;
+    clearTimeout(searchTimer);
     searchEpoch++;
     event = null;
     preview = null;
@@ -247,7 +247,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
         `${back}<div class="sp-heading"><h2>Đối soát giao dịch</h2>${badge(r.status, !!r.webOrderId)}</div><strong class="sp-bank-amount">${esc(money(r.amount))}</strong><dl class="sp-info"><dt>Mã SePay</dt><dd>${esc(r.providerId)}</dd><dt>Thời gian</dt><dd>${esc(stamp(r.transactionAt))}</dd><dt>Tài khoản nhận</dt><dd>${esc(r.accountNumber)}</dd><dt>Nội dung gốc</dt><dd class="sp-original">${esc(r.content)}</dd></dl>
       ${r.reason && !(r.webOrderId && r.status === "matched") ? `<p class="sp-warning">${esc(r.reason)}</p>` : ""}${receiptView(r)}
       <div data-notice aria-live="polite"></div>
-      ${!data?.capabilities.canConfirm ? '<p class="sp-readonly">Kế toán được xem và đối chiếu. Chỉ Manager được xác nhận ghi thu.</p>' : !res.capabilities.canConfirm ? `<p class="sp-readonly">${esc(res.blockReason || "Giao dịch đã được xử lý; không tạo thêm phiếu thu.")}</p>` : `${!res.accountApproved ? '<p class="sp-warning">Tài khoản nhận chưa được duyệt ghi thu. Vẫn có thể tìm, chọn đơn/HĐKT và xem công nợ; cần duyệt tài khoản trước khi xác nhận thanh toán.</p>' : ""}<section class="sp-match"><h3>Chọn đơn / HĐKT</h3><p class="muted small">Chọn đúng đơn POS/web/CRM hoặc HĐKT. POS gắn phiếu chuyển khoản đã có; đơn web dùng chứng từ ngân hàng, không tạo phiếu thu CRM trùng.</p><form class="sp-order-filters" data-order-search><label class="sp-order-query">Tìm số đơn / HĐKT hoặc khách hàng<input name="orderQuery" minlength="2" maxlength="120" placeholder="Số đơn, khách hàng, điện thoại…"></label><label>Loại đơn<select name="source"><option value="all">Tất cả</option><option value="pos">Đơn POS</option><option value="web">Đơn website</option><option value="crm">Đơn CRM</option><option value="contract">HĐKT</option></select></label><label>Tạo từ ngày<input type="date" name="from" required value="${esc(sepayDefaults(new Date(new Date(r.transactionAt).getTime() - 5 * 60_000)).to)}"></label><label>Đến ngày<input type="date" name="to" required value="${esc(sepayDefaults(new Date(new Date(r.transactionAt).getTime() + 5 * 60_000)).to)}"></label><label>Giá trị đơn từ (₫)<input type="number" name="min" min="0" max="1000000000000" step="1"></label><label>Đến (₫)<input type="number" name="max" min="0" max="1000000000000" step="1"></label><button class="btn secondary" type="submit">Lọc / tìm đơn</button></form><div data-order-results></div><div data-order-pager></div><div data-preview></div></section>`}
+      ${!data?.capabilities.canConfirm ? '<p class="sp-readonly">Kế toán được xem và đối chiếu. Chỉ Manager được xác nhận ghi thu.</p>' : !res.capabilities.canConfirm ? `<p class="sp-readonly">${esc(res.blockReason || "Giao dịch đã được xử lý; không tạo thêm phiếu thu.")}</p>` : `${!res.accountApproved ? '<p class="sp-warning">Tài khoản nhận chưa được duyệt ghi thu. Vẫn có thể tìm, chọn đơn/HĐKT và xem công nợ; cần duyệt tài khoản trước khi xác nhận thanh toán.</p>' : ""}<section class="sp-match"><h3>Chọn đơn / HĐKT</h3><p class="muted small">Chọn đúng đơn POS/web/CRM hoặc HĐKT. POS gắn phiếu chuyển khoản đã có; đơn web dùng chứng từ ngân hàng, không tạo phiếu thu CRM trùng.</p><form class="sp-order-filters" data-order-search><label class="sp-order-query">Tìm số đơn / HĐKT hoặc khách hàng<input name="orderQuery" maxlength="120" placeholder="Số đơn, khách hàng, điện thoại…"></label><label>Loại đơn<select name="source"><option value="all">Tất cả</option><option value="pos">Đơn POS</option><option value="web">Đơn website</option><option value="crm">Đơn CRM</option><option value="contract">HĐKT</option></select></label><label>Ngày đơn từ<input type="date" name="from"></label><label>Đến ngày<input type="date" name="to"></label><label>Trạng thái<select name="eligibility"><option value="active">Chưa hủy (gồm bản nháp)</option><option value="eligible">Có thể chọn đối soát</option><option value="draft">Bản nháp chưa duyệt/ký</option><option value="cancelled">Đã hủy</option><option value="all">Tất cả</option></select></label><label>Giá trị đơn từ (₫)<input type="number" name="min" min="0" max="1000000000000" step="1"></label><label>Đến (₫)<input type="number" name="max" min="0" max="1000000000000" step="1"></label><button class="btn secondary" type="submit">Lọc / tìm đơn</button><button class="btn secondary" type="button" data-clear-orders>Bỏ bộ lọc</button></form><div data-order-results aria-live="polite"></div><div data-preview></div></section>`}
       ${res.history.length ? `<details class="sp-history"><summary>Nhật ký xử lý (${res.history.length})</summary>${res.history.map((h) => `<article><b>${esc(h.actorName || "Hệ thống")}</b> · ${esc(stamp(h.createdAt))}<p>${esc(h.reason || "Kiểm tra lại giao dịch")}</p></article>`).join("")}</details>` : ""}`;
       if ($("[data-order-search]"))
         await searchOrders($("[data-order-search]"));
@@ -270,52 +270,27 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
           `${back}<h2>Đối soát giao dịch</h2><p role="alert" class="sp-error">${esc(e.message)}</p>`;
     }
   }
-  async function searchOrders(form, more = false) {
+  async function searchOrders(form, offset = 0) {
+    clearTimeout(searchTimer);
     if (!event || mutating) return;
     const own = epoch,
       d = detailEpoch,
       s = ++searchEpoch,
-      fields = new FormData(form);
-    const query = new URLSearchParams();
-    for (const key of ["source", "from", "to", "min", "max"]) {
-      const value = String(fields.get(key) || "").trim();
-      if (value) query.set(key, value);
-    }
-    const q = String(fields.get("orderQuery") || "").trim();
-    if (q) query.set("q", q);
-    const signature = query.toString();
-    if (more && signature !== orderQuerySignature) more = false;
-    orderQuerySignature = signature;
-    if (!more) {
-      orderOffset = 0;
-      preview = null;
-      draft = null;
-      $("[data-preview]").replaceChildren();
-      $("[data-order-results]").textContent = "Đang tải danh sách đơn…";
-    }
-    query.set("offset", String(more ? orderOffset : 0));
+      filters = new URLSearchParams();
+    for (const [k,v] of new FormData(form)) if (String(v).trim()) filters.set(k === "orderQuery" ? "q" : k, String(v).trim());
+    filters.set("offset", String(offset));
     form.querySelector('button[type="submit"]').disabled = true;
-    if ($("[data-more-orders]")) $("[data-more-orders]").disabled = true;
+    $("[data-order-results]").textContent = "Đang tìm…";
+    preview = null; draft = null;
+    $("[data-preview]").replaceChildren();
     try {
-      const r = await api("/sepay/orders?" + query.toString());
+      const r = await api("/sepay/orders?" + filters);
       if (!valid(own, d) || s !== searchEpoch) return;
-      const items = r.orders
-        .map(
-          (o) =>
-            `<li><button type="button" data-choose="${esc(o.id)}"><b>${esc(o.contractNo || o.orderNo)}</b><span>${esc(o.customerName)} · ${esc(money(o.total))}</span><small>${esc({ pos: "POS", web: "Website", crm: "Đơn CRM", contract: "HĐKT" }[o.kind] || "Đơn CRM")} · ${esc(stamp(o.createdAt))}</small></button></li>`,
-        )
-        .join("");
-      if (more && $(".sp-order-results"))
-        $(".sp-order-results").insertAdjacentHTML("beforeend", items);
-      else
-        $("[data-order-results]").innerHTML = items
-          ? `<ul class="sp-order-results">${items}</ul>`
-          : '<p class="sp-empty">Không có đơn phù hợp. Đổi ngày, loại đơn hoặc số tiền để tìm thêm.</p>';
-      orderOffset = (r.offset || 0) + r.orders.length;
-      orderHasMore = !!r.hasMore;
-      $("[data-order-pager]").innerHTML = orderHasMore
-        ? '<button type="button" class="btn secondary small" data-more-orders>Xem thêm đơn</button>'
-        : "";
+      const labels = {draft:"Bản nháp",confirmed:"Đã duyệt",delivering:"Đang giao",delivered:"Đã giao",cancelled:"Đã hủy",signed:"Đã ký",completed:"Hoàn tất"};
+      $("[data-order-results]").innerHTML = (r.orders.length
+        ? `<ul class="sp-order-results">${r.orders.map((o) => `<li><button type="button" ${o.selectable ? `data-choose="${esc(o.id)}"` : 'disabled'}><b>${esc(o.contractNo || o.orderNo)}</b><span>${esc(o.customerName)} · ${esc(money(o.total))}</span><span>${esc({pos:"POS",web:"Website",crm:"Đơn CRM",contract:"HĐKT"}[o.kind] || "Đơn CRM")} · ${esc(o.orderNo)} · ${esc(o.orderDate.slice(0,10))} · ${esc(labels[o.contractStatus || o.status] || o.status)}</span>${!o.selectable ? `<span>${o.status === "cancelled" ? "Đã hủy; không thể ghi thu." : "Chưa duyệt đơn / ký HĐKT; cần hoàn tất trước khi ghi thu."}</span>` : ""}</button></li>`).join("")}</ul>`
+        : '<p class="sp-empty">Không có đơn/HĐKT phù hợp. Thử bỏ bộ lọc hoặc tìm theo mã hợp đồng, tên khách không dấu.</p>') +
+        `<div class="sp-order-pages"><button type="button" class="btn secondary" data-order-offset="${Math.max(0,r.offset-r.limit)}" ${r.offset===0 ? "disabled" : ""}>← Trước</button><span>Trang ${Math.floor(r.offset/r.limit)+1}</span><button type="button" class="btn secondary" data-order-offset="${r.offset+r.limit}" ${!r.hasMore ? "disabled" : ""}>Sau →</button></div>`;
     } catch (e) {
       if (valid(own, d) && s === searchEpoch)
         $("[data-order-results]").innerHTML =
@@ -323,11 +298,12 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     } finally {
       if (valid(own, d) && s === searchEpoch) {
         form.querySelector('button[type="submit"]').disabled = false;
-        if ($("[data-more-orders]")) $("[data-more-orders]").disabled = false;
+
       }
     }
   }
   async function chooseOrder(id) {
+    clearTimeout(searchTimer);
     if (!event || mutating) return;
     const own = epoch,
       d = detailEpoch,
@@ -433,12 +409,23 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     else if (e.target.matches("[data-approval-form]")) prepare(e.target);
   });
   root.addEventListener("input", (e) => {
+    const form = e.target.closest("[data-order-search]");
+    if (form) {
+      clearTimeout(searchTimer);
+      searchEpoch++;
+      preview = null; draft = null;
+      $("[data-preview]")?.replaceChildren();
+      $("[data-order-results]").textContent = "Đang tìm…";
+      searchTimer = setTimeout(() => { if(active && form.isConnected) searchOrders(form); },250);
+    }
     if (e.target.closest("[data-approval-form]")) {
       draft = null;
       $("[data-review]")?.replaceChildren();
     }
   });
   root.addEventListener("change", (e) => {
+    const form = e.target.closest("[data-order-search]");
+    if (form && e.target.tagName === "SELECT") searchOrders(form);
     if (e.target.closest("[data-approval-form]")) {
       draft = null;
       $("[data-review]")?.replaceChildren();
@@ -461,10 +448,10 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     }
     if (b.hasAttribute("data-clear"))
       navigate(new URLSearchParams(sepayDefaults()));
+    if (b.hasAttribute("data-clear-orders")) { const form = $("[data-order-search]"); form.reset(); searchOrders(form); }
+    if (b.hasAttribute("data-order-offset")) searchOrders($("[data-order-search]"),Number(b.dataset.orderOffset));
     if (b.dataset.open) openDetail(b.dataset.open);
     if (b.dataset.choose) chooseOrder(b.dataset.choose);
-    if (b.hasAttribute("data-more-orders") && orderHasMore)
-      searchOrders($("[data-order-search]"), true);
     if (b.hasAttribute("data-reload-detail") && event) openDetail(event.id);
     if (b.hasAttribute("data-confirm")) confirm();
     if (b.hasAttribute("data-cancel-review")) {
@@ -490,6 +477,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     active = true;
     const id = ++epoch;
     detailEpoch++;
+    clearTimeout(searchTimer);
     searchEpoch++;
     data = null;
     event = null;
