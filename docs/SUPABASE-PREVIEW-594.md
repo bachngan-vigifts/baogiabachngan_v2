@@ -36,7 +36,7 @@ directory. It adds a missing column without changing existing snapshots and
 is safe to run again. A missing table fails visibly; it is not skipped. It
 does not replace the history repair required before Preview can bootstrap.
 
-`scripts/sql/assert-web-order-replay-history.sql` verifies that the registry
+`supabase/assert-web-order-replay-history.sql` verifies that the registry
 contains CREATE before any web-order reference and that the resulting column
 and RLS exist. This check is read-only.
 

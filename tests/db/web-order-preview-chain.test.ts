@@ -11,7 +11,7 @@ const read=(f:string)=>readFileSync(new URL(f,dir),'utf8');
 const financial='20261021035601_web_order_financial_snapshot.sql';
 const guard='20261109132941_web_order_financial_snapshot_guard.sql';
 const repair=readFileSync(new URL('../../scripts/sql/repair-preview-missing-history.sql',import.meta.url),'utf8');
-const historyCheck=readFileSync(new URL('../../scripts/sql/assert-web-order-replay-history.sql',import.meta.url),'utf8');
+const historyCheck=readFileSync(new URL('../../supabase/assert-web-order-replay-history.sql',import.meta.url),'utf8');
 type Db={exec:(sql:string)=>Promise<unknown>;query:(sql:string)=>Promise<{rows:Record<string,unknown>[]}>;close:()=>Promise<unknown>};
 const opened:Db[]=[];
 afterEach(async()=>{for(const db of opened.splice(0))await db.close();});
