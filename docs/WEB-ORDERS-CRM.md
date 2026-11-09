@@ -2,6 +2,8 @@
 
 ## Hành vi
 
+- Trên bảng đơn cửa hàng ở POS, bấm dòng vẫn vào chi tiết đơn CRM. Nút **Xử lý GHN** riêng của đơn web chờ xử lý/chưa có mã vận đơn mở trực tiếp form địa chỉ GHN hiện có; không tải chi tiết đơn và không tạo vận đơn trước khi người dùng kiểm tra, xác nhận. Quyền và phạm vi cửa hàng vẫn kiểm tra ở API xử lý GHN.
+
 - Trang chi tiết dùng cùng các ô Khách hàng / Đơn hàng / Hàng trong đơn / Giao hàng / Công nợ / Hoá đơn / Thanh toán của CRM; bản in chỉ mở khi bấm In. Kế toán nhập và sửa số, ngày hoá đơn ngay trên đơn web, kể cả khi GHN đã giao thành công.
 - Bấm dòng đơn web trên bảng đơn POS (hoặc Enter/Space khi chọn dòng) mở thẳng `#/orders/web:<id>` cho cả Lock và Minh Long. Nút **Xử lý GHN** trong chi tiết mở riêng thao tác vận đơn; mở dòng không tự gửi lệnh GHN.
 - Dòng đơn POS hiển thị mã GHN và trạng thái hãng bằng tiếng Việt; đơn web/COD chưa có mã ghi “Chưa tạo GHN”. Đơn COD có nhiều chuyến hiển thị từng mã/trạng thái, kể cả vận đơn đã huỷ. Dữ liệu lấy từ snapshot CRM, không gọi GHN khi mở danh sách; giao thành công không đồng nghĩa đã thanh toán. Vận đơn COD được đọc theo lô chỉ cho trang đang xem.

@@ -338,6 +338,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-order-row > b { line-height: 1.5; }
 .pos-order-row:hover { border-color: #1c65d1; }
 .pos-receive-cancelled { white-space: nowrap; }
+.pos-order-quick-ghn { white-space: nowrap; min-height: 40px; }
 .pos-order-state { font-weight: 700; color: #1c65d1; text-align: right; }
 .pos-order-shipping { display: block; margin-top: 3px; color: #334155; line-height: 1.5; }
 .pos-danger {
@@ -561,6 +562,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   .pos-order-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pos-order-row { grid-template-columns: 1fr; gap: 3px; }
   .pos-order-state { text-align: left; }
+  .pos-order-quick-ghn { justify-self: end; min-height: 44px; }
   .pos-layout {
     grid-template-columns: 1fr;
   }

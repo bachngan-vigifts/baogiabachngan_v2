@@ -722,6 +722,23 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       const open = () => {if(st.orderBoardLoading)return;return go('#/orders/' + encodeURIComponent(o.external ? 'web:' + o.id : o.id));};
       row.addEventListener('click', open);
       row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+      if (o.external && o.actionsAvailable && o.bucket === 'pending' && !o.ghnOrderCode) {
+        const ship = button('Xử lý GHN', 'btn secondary small pos-order-quick-ghn', e => {
+          e.stopPropagation();
+          if (st.orderBoardLoading || ship.disabled) return;
+          ship.disabled = true;
+          try {
+            const popup = showGhnAddress(o);
+            popup.dlg.addEventListener('close', () => { ship.disabled = st.orderBoardLoading; });
+          } catch (error) {
+            ship.disabled = false;
+            toast(error.message, 'err');
+          }
+        });
+        ship.setAttribute('aria-label', 'Xử lý GHN đơn ' + o.orderNo);
+        ship.addEventListener('keydown', e => e.stopPropagation());
+        row.append(ship);
+      }
       if (!o.external && o.bucket === 'cancelled' && Number(o.cancelledReturnQty) > 0) {
         const receive = busyButton('Nhận hàng hoàn', 'btn primary small pos-receive-cancelled', 'Đang nhận…', async () => {
           if (!await confirmBox(`Xác nhận đã nhận hàng hoàn của đơn ${o.orderNo} về kho? Hệ thống sẽ cộng lại ${Number(o.cancelledReturnQty).toLocaleString('vi-VN')} sản phẩm vào sổ kho.`, { title: 'Nhận hàng hoàn', ok: 'Xác nhận đã nhận' })) return;
@@ -881,6 +898,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     });
     m.show();
     run(() => ghn.prefill(o.ghnAddress || {}));
+    return m;
   }
   let printingTemporary = false;
   async function printTemporary() {
