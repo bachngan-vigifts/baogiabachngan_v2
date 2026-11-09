@@ -12,12 +12,34 @@ const row=(id='123456789',extra:Record<string,unknown>={})=>({id,account_number:
 function provider(rows:Record<string,unknown>[],seen:string[]=[]):typeof fetch {
  return async(input,init)=>{const u=new URL(String(input));seen.push(u.href);
   assert.equal(u.origin,'https://my.sepay.vn');assert.ok(['/userapi/transactions/list','/userapi/transactions/count'].includes(u.pathname));
-  assert.equal(u.searchParams.get('transaction_date_min'),day);assert.equal(u.searchParams.get('transaction_date_max'),day);
+  assert.equal(u.searchParams.get('transaction_date_min'),day+' 00:00:00');assert.equal(u.searchParams.get('transaction_date_max'),day+' 23:59:59');
   assert.equal(u.searchParams.get('limit'),String(SEPAY_READ_LIMIT));assert.equal(init?.method,'GET');assert.equal(init?.redirect,'error');
   assert.equal(new Headers(init?.headers).get('authorization'),'Bearer '+token);assert.equal(new Headers(init?.headers).get('cookie'),null);
   return Response.json(u.pathname.endsWith('/count')?{status:200,count_transactions:String(rows.length)}:{status:200,transactions:rows});
  };
 }
+test('SePay timestamp bounds include midnight and the final second, excluding adjacent VN days',async()=>{
+ const day='2026-11-07'; // Completed day: the shared payment parser correctly refuses future timestamps.
+ const rows=[
+  row('previous',{transaction_date:'2026-11-06 23:59:59'}),
+  row('start',{transaction_date:day+' 00:00:00'}),
+  row('midday',{transaction_date:day+' 12:00:00'}),
+  row('end',{transaction_date:day+' 23:59:59'}),
+  row('next',{transaction_date:'2026-11-08 00:00:00'}),
+ ];
+ const calls:URL[]=[];
+ const result=await readSepayDay(token,day,async input=>{
+  const url=new URL(String(input));calls.push(url);
+  const min=url.searchParams.get('transaction_date_min')!,max=url.searchParams.get('transaction_date_max')!;
+  // Match SePay's timestamp comparison: a bare YYYY-MM-DD max excludes daytime rows.
+  const selected=rows.filter(r=>r.transaction_date>=min&&r.transaction_date<=max);
+  return Response.json(url.pathname.endsWith('/count')?{status:200,count_transactions:selected.length}:{status:200,transactions:selected});
+ });
+ assert.equal(calls.length,2);
+ assert.equal(result.read,3);
+ assert.deepEqual(result.payments.map(p=>p.providerId),['start','midday','end']);
+ assert.deepEqual(result.payments.map(p=>p.transactionAt),['2026-11-06T17:00:00.000Z','2026-11-07T05:00:00.000Z','2026-11-07T16:59:59.000Z']);
+});
 test('today pull checks permissions, uses VN day and imports pending once without changing receipts/debt',async()=>{
  const f=await setupSepay(),calls:string[]=[];f.env.nowSec=()=>Date.parse(day+'T00:00:00+07:00')/1000;f.env.sepayApiToken=token;
  const order=await f.order('CRM_READ_001');const beforeDebt=await netReceivables(f.db,[order.id],day);f.env.sepayApiFetch=provider([row(),row('123456790',{amount_in:'0.00',amount_out:'5000.00'})],calls);
