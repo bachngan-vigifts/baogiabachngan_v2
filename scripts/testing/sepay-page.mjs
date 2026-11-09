@@ -197,6 +197,9 @@ async function review(p) {
   await p.locator("[data-approval-form] input[type=checkbox]").check();
   await p.locator("[data-approval-form] button[type=submit]").click();
   await p.locator("[data-confirm]").waitFor();
+  assert.equal(await p.locator('[data-confirm]').textContent(),'Xác nhận gán khoản thu');
+  assert.equal(await p.locator('[data-review]').evaluate(el=>document.activeElement===el),true);
+  assert.equal(await p.locator('[data-confirm]').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;}),true);
 }
 try {
   for (const width of [390,1440]) {
@@ -487,12 +490,24 @@ try {
     await view.p.waitForFunction(()=>{ const rows=[...document.querySelectorAll('[data-order-results] [data-choose]')]; return rows.length===20 && rows.every(row=>row.textContent.includes('FILTER_LIST')); });
     assert.equal(await view.p.locator('[data-order-results] [data-choose]').count(),20);
     searchRuns.push({width,run,defaultMs,typeaheadMs:performance.now()-searchStarted});
+    const assign = view.p.locator('[data-order-results] [data-choose]').first();
+    assert.ok((await assign.textContent()).includes('Chọn đơn này để gán khoản thu'));
+    await assign.click();
+    await view.p.locator('[data-account-block]').waitFor();
+    assert.equal(await view.p.locator('[data-order-results] [aria-pressed=true]').count(),1);
+    assert.equal(await view.p.locator('[data-preview]').evaluate(el=>document.activeElement===el),true);
+    assert.equal(await view.p.locator('[data-preview]').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=70&&r.top<innerHeight/2;}),true,'preview is revealed after selection from 20 results');
+    assert.equal(await view.p.getByRole('button',{name:'Gán khoản thu vào đơn này',exact:true}).isDisabled(),true);
+    assert.equal(await view.p.locator('[data-approval-form]').count(),0);
+    await view.p.screenshot({path:out+'/assignment-unapproved-'+width+'.png'});
+
     await view.p.locator('[data-order-offset="20"]').click();
     await view.p.waitForFunction(()=>document.querySelector('.sp-order-pages')?.textContent.includes('Trang 2'));
     assert.equal(await view.p.locator('[data-order-results] [data-choose]').count(),2);
     await query.fill('FILTER_DRAFT');
     await view.p.locator('[data-order-results] button:disabled').filter({hasText:'FILTER_DRAFT'}).waitFor();
     assert.equal(await view.p.locator('[data-order-results] [data-choose]').count(),0);
+    await view.p.locator('[data-order-results] button:disabled').filter({hasText:'Chưa thể gán: cần duyệt đơn hoặc ký HĐKT.'}).waitFor();
     await view.p.locator('[name=eligibility]').selectOption('eligible');
     await view.p.locator('[data-order-results] .sp-empty').waitFor();
     await view.p.locator('[name=eligibility]').selectOption('active');
@@ -528,6 +543,7 @@ try {
   f.env.sepayReceiptAccounts=['123456'];
   await picker.p.locator('[data-reload-detail]').click();
   await picker.p.locator('[data-order-search]').waitFor();await choose(picker.p,'HDKT_PICK_001');
+  assert.equal(await picker.p.getByRole('button',{name:'Xem lại để gán khoản thu',exact:true}).isEnabled(),true);
   await review(picker.p);await picker.p.locator('[data-confirm]').click();
   await picker.p.locator('[data-notice] .sp-success').waitFor();
   const picked=await f.db.select().from(customerPayments).where(eq(customerPayments.orderId,pickerOrder.id));

@@ -145,3 +145,11 @@ Kiểm thử riêng phần tìm kiếm của PR #600: 20 test đạt, 3 test tra
 Đo riêng PR #600 khi mở trang SePay (3 lượt lạnh/viewport, latency 40 ms, 1,6 MB/s): 1440px ready 3156→3108 ms; 390px ready 3125→3053 ms. Vẫn 15 API/163 JS khi mở trang; chỉ thêm một lượt đọc danh sách khi mở chi tiết cần đối soát. Median danh sách sẵn sau mở chi tiết: PC 94 ms/mobile 96 ms; tìm khi gõ gồm debounce: PC 303 ms/mobile 307 ms (không giả lập mạng cho các số picker). Đây là số cục bộ, không khẳng định độ trễ production hoặc đã sửa CLS toàn app.
 
 Sau gộp main vào PR #601: hồi quy 54 đạt, 5 test cần PostgreSQL riêng bỏ qua theo cấu hình; typecheck/UI build đạt. Hai bộ browser PC/mobile đạt: tìm kiếm/bản nháp/quyền/ghi thu và chọn POS/web/CRM, không thu trùng, không sửa snapshot web. Danh sách giữ phân trang Trước/Sau 20 dòng và tìm khi gõ của #600, thêm nguồn/số tiền của #601; không tự giới hạn ngày tìm thủ công. Đo 3 lượt lạnh mỗi viewport, baseline #601 `2b05622a`: 1440px ready 3149→3113 ms; 390px ready 3065→3040 ms. Số API/JS lúc mở trang giữ nguyên; đây là phép đo cục bộ, không phải production. Raw `docs/testing/sepay-601-merge-performance.json`.
+
+### Thao tác gán khoản thu
+
+Mỗi kết quả có nút **Chọn đơn này để gán khoản thu**. Bấm nút chỉ mở bước xem trước, chưa ghi dữ liệu. Màn hình đưa focus tới công nợ/đơn đã chọn, đánh dấu thẻ tương ứng và hiển thị số tiền sẽ gán. Nhập lý do, xác nhận đã đối chiếu, bấm **Xem lại để gán khoản thu**, rồi **Xác nhận gán khoản thu**; bước kiểm tra cuối cũng tự hiện trong vùng nhìn thấy trên điện thoại.
+
+Bản nháp chưa duyệt/ký và đơn hủy ghi rõ lý do không thể chọn. Nếu tài khoản nhận chưa được duyệt, phần xem trước hiện nút gán bị khóa kèm lý do và nút kiểm tra lại tài khoản; không tự bật quyền ghi thu. Không thay đổi API, chứng từ, số dư hoặc cấu hình ngân hàng trong thay đổi giao diện này.
+
+Kiểm thử: 13 test liên quan đạt, 1 test tranh chấp PostgreSQL bỏ qua theo cấu hình. Hai bộ browser PC/mobile đạt: kiểm tra chọn từ 20 kết quả và tự hiện bước gán, số tiền/đơn đích, nút bị khóa cho tài khoản chưa duyệt, xác nhận cuối được nhìn thấy, phân quyền, ghi thu/gắn phiếu một lần và chọn POS/web/CRM. Typecheck và UI build đạt. Số đo mở trang 3 lượt mỗi viewport trước/sau được lưu trong `docs/testing/sepay-assignment-performance.json`; không dùng làm tốc độ production.

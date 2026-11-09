@@ -426,3 +426,10 @@
 .sp-document-filters { grid-column:1/-1; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .sp-document-filters label, .sp-match label { min-width:0; }
 .sp-document-filters input, .sp-document-filters select { width:100%; min-width:0; }
+
+.sp-order-results .sp-choose-action { display:block; font-size:13px; font-weight:700; color:#1d4ed8; margin-top:8px; }
+.sp-order-results button:disabled .sp-choose-action { color:#64748b; }
+.sp-order-results button[aria-pressed="true"] { border-color:#2563eb; background:#eff6ff; }
+.sp-page [data-preview], .sp-page [data-review] { scroll-margin-top:84px; }
+.sp-page [data-preview]:focus-visible { outline:2px solid #2563eb; outline-offset:3px; border-radius:8px; }
+.sp-assignment-amount { padding:10px; background:#eff6ff; border-radius:8px; }
