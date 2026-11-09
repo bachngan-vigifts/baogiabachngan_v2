@@ -490,6 +490,7 @@ function showAuth(message = '', { keepToken = false } = {}) {
   if (typeof financeUi !== 'undefined') financeUi?.close();
   if (typeof sepayUi !== 'undefined') sepayUi?.close();
   if(typeof khoHomeUi!=='undefined')khoHomeUi?.close();
+  stocktakeUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
   homeUi?.reset(); homeNotifications?.clear(); notifier?.reset(); tasksUi?.resetQuick();
   $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
@@ -595,6 +596,7 @@ $('#send-feedback').addEventListener('click', () => { toggleAccountMenu(false); 
 $('#logout').addEventListener('click', async () => {
   const session = token, user = state.user;
   toggleAccountMenu(false);
+  if (stocktakeUi?.hasDraft() && !await stocktakeUi.beforeLeave()) return;
   if (editor.dirty && !await confirmBox('Báo giá đang sửa chưa được lưu. Vẫn đăng xuất?', { ok: 'Đăng xuất' })) return;
   if (session !== token || user !== state.user) return;
   editor.dirty = false;
@@ -874,11 +876,19 @@ const VIEWS = { sepay:'Thanh toán SePay', finance:'Tài chính & KPI', home: 'T
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
-let currentHash = location.hash, suppressHash = false;
+let currentHash = location.hash, suppressHash = false, stocktakeExitPending = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
   if (suppressHash) { suppressHash = false; return; }
   const target = location.hash;
+  if (currentHash.startsWith('#/stocktake') && target !== currentHash && stocktakeUi?.hasDraft()) {
+    history.replaceState(null, '', currentHash);
+    if (stocktakeExitPending) return;
+    stocktakeExitPending = true;
+    try { if (await stocktakeUi.beforeLeave() && state.user) location.hash = target; }
+    finally { stocktakeExitPending = false; }
+    return;
+  }
   if (editor.dirty && currentHash.startsWith('#/quotes/') && target !== currentHash) {
     suppressHash = true; location.hash = currentHash;
     if (!await confirmBox('Báo giá có thay đổi chưa lưu. Rời trang sẽ mất các thay đổi này.', { title: 'Rời khỏi báo giá?', ok: 'Rời trang', danger: true })) return;
@@ -886,7 +896,7 @@ window.addEventListener('hashchange', async () => {
   }
   currentHash = target; route();
 });
-window.addEventListener('beforeunload', e => { if (editor.dirty) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', e => { if (editor.dirty || stocktakeUi?.hasDraft()) { e.preventDefault(); e.returnValue = ''; } });
 
 let lastRoutedHash = '';
 VIEWS['early-requests'] = 'Lấy hàng trước';
@@ -974,7 +984,7 @@ function route() {
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'early-requests') earlyRequestPage().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'inventory') inventoryView().load();
-  if (view === 'stocktake') stocktakeView().load();
+  if (view === 'stocktake') stocktakeView().load(); else stocktakeUi?.close();
   if (view === 'transfers') transfersView().load(id);
   if (view === 'stock-moves') stockMovesView().show(query);
   if (view === 'permissions') { permissionsView().load(); sellerConfigView().load(); }
@@ -3962,7 +3972,7 @@ var khoHomeUi = null; // hoisted: unauthenticated startup can call showAuth befo
 let stockLookupUi = null;
 function khoHome() { return khoHomeUi ||= initWarehouseWorkspace({api,root:$('#view-kho'),toast,identity:()=>JSON.stringify([token,state.user?.id]),legacy:root=>initKhoHome({api,root,today:todayIso})}); }
 function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
-let stocktakeUi;
+var stocktakeUi;
 function stocktakeView() { return stocktakeUi ||= initStocktake({ api, root: $('#view-stocktake'), toast, confirmBox, userId: () => state.user?.id, ensureCatalog: loadCatalogSnapshot, findProducts: q => catalog.items ? searchCatalog(catalog.items, {q}) : null }); }
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
 var transfersUi = null, stockMovesUi = null, sellerConfigUi = null;

@@ -1,0 +1,264 @@
+{
+  "scope": "Stocktake list cold opening plus native editor flows; synthetic stock and staff only",
+  "baselineCommit": "a128606df0d4e43b5572c5a9933aac50386f1693",
+  "conditions": {
+    "runsPerViewport": 3,
+    "coldContexts": true,
+    "latencyMs": 40,
+    "downloadBps": 1600000,
+    "source": "local isolated real API and fixture data, not production"
+  },
+  "before": [
+    {
+      "width": 1440,
+      "ready": 3059.0347980000006,
+      "ttfb": 4.100000001490116,
+      "load": 3030.89999999851,
+      "fcp": 572,
+      "lcp": 2820,
+      "cls": 0.004931188742375809,
+      "jsBytes": 2411784,
+      "jsRequests": 162,
+      "apiRequests": 16
+    },
+    {
+      "width": 390,
+      "ready": 3029.5767269999997,
+      "ttfb": 3.600000001490116,
+      "load": 3001.7999999970198,
+      "fcp": 588,
+      "lcp": 2812,
+      "cls": 0.018921733603697886,
+      "jsBytes": 2411784,
+      "jsRequests": 162,
+      "apiRequests": 16
+    }
+  ],
+  "after": [
+    {
+      "width": 1440,
+      "ready": 3078.732089000001,
+      "ttfb": 2.8000000044703484,
+      "load": 3050.5,
+      "fcp": 604,
+      "lcp": 2840,
+      "cls": 0.004931188742375809,
+      "jsBytes": 2416854,
+      "jsRequests": 162,
+      "apiRequests": 16
+    },
+    {
+      "width": 390,
+      "ready": 3039.269303000001,
+      "ttfb": 4.299999997019768,
+      "load": 3012.6999999955297,
+      "fcp": 600,
+      "lcp": 2816,
+      "cls": 0.018921733603697886,
+      "jsBytes": 2416854,
+      "jsRequests": 162,
+      "apiRequests": 16
+    }
+  ],
+  "runs": {
+    "before": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3078.2544320000006,
+        "ttfb": 10.399999998509884,
+        "load": 3039.2000000029802,
+        "fcp": 612,
+        "lcp": 2872,
+        "cls": 0.004931188742375809,
+        "jsBytes": 2411784,
+        "jsRequests": 162,
+        "apiRequests": 16
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3025.841453000001,
+        "ttfb": 4.100000001490116,
+        "load": 2996.5,
+        "fcp": 572,
+        "lcp": 2812,
+        "cls": 0.00570221497694371,
+        "jsBytes": 2411784,
+        "jsRequests": 162,
+        "apiRequests": 16
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3059.0347980000006,
+        "ttfb": 2.7999999970197678,
+        "load": 3030.89999999851,
+        "fcp": 564,
+        "lcp": 2820,
+        "cls": 0.004931188742375809,
+        "jsBytes": 2411784,
+        "jsRequests": 162,
+        "apiRequests": 16
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3029.5767269999997,
+        "ttfb": 3.600000001490116,
+        "load": 3001.7999999970198,
+        "fcp": 588,
+        "lcp": 2824,
+        "cls": 0.018921733603697886,
+        "jsBytes": 2411784,
+        "jsRequests": 162,
+        "apiRequests": 16
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3035.0182920000007,
+        "ttfb": 2.399999998509884,
+        "load": 3008.3000000044703,
+        "fcp": 588,
+        "lcp": 2808,
+        "cls": 0.018921733603697886,
+        "jsBytes": 2411784,
+        "jsRequests": 162,
+        "apiRequests": 16
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3022.7708650000022,
+        "ttfb": 5.299999997019768,
+        "load": 2996.5,
+        "fcp": 568,
+        "lcp": 2812,
+        "cls": 0.018921733603697886,
+        "jsBytes": 2411784,
+        "jsRequests": 162,
+        "apiRequests": 16
+      }
+    ],
+    "after": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3216.6839470000004,
+        "ttfb": 12.700000002980232,
+        "load": 3179.9000000059605,
+        "fcp": 612,
+        "lcp": 2860,
+        "cls": 0.004931188742375809,
+        "jsBytes": 2416854,
+        "jsRequests": 162,
+        "apiRequests": 16
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3057.0380750000004,
+        "ttfb": 2.7000000029802322,
+        "load": 3025,
+        "fcp": 604,
+        "lcp": 2840,
+        "cls": 0.00570221497694371,
+        "jsBytes": 2416854,
+        "jsRequests": 162,
+        "apiRequests": 16
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3078.732089000001,
+        "ttfb": 2.8000000044703484,
+        "load": 3050.5,
+        "fcp": 596,
+        "lcp": 2840,
+        "cls": 0.004931188742375809,
+        "jsBytes": 2416854,
+        "jsRequests": 162,
+        "apiRequests": 16
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3032.4490989999977,
+        "ttfb": 5,
+        "load": 3007,
+        "fcp": 600,
+        "lcp": 2816,
+        "cls": 0.018921733603697886,
+        "jsBytes": 2416854,
+        "jsRequests": 162,
+        "apiRequests": 16
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3044.685376999998,
+        "ttfb": 2.5,
+        "load": 3017.7999999970198,
+        "fcp": 572,
+        "lcp": 2808,
+        "cls": 0.018921733603697886,
+        "jsBytes": 2416854,
+        "jsRequests": 162,
+        "apiRequests": 16
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3039.269303000001,
+        "ttfb": 4.299999997019768,
+        "load": 3012.6999999955297,
+        "fcp": 600,
+        "lcp": 2820,
+        "cls": 0.018921733603697886,
+        "jsBytes": 2416854,
+        "jsRequests": 162,
+        "apiRequests": 16
+      }
+    ]
+  },
+  "flows": [
+    {
+      "width": 1440,
+      "modal": true,
+      "liveSearch": true,
+      "scopedWarehouseColumns": true,
+      "ledgerPreviewPreservesCount": true,
+      "countdown": true,
+      "nativeBeforeUnload": true,
+      "cancelPreservesDraft": true,
+      "navigationGuard": true,
+      "deviceResume": true,
+      "plusCreatesFresh": true,
+      "submitPendingOnly": true,
+      "managerPostsOnce": true
+    },
+    {
+      "width": 390,
+      "modal": true,
+      "liveSearch": true,
+      "scopedWarehouseColumns": true,
+      "ledgerPreviewPreservesCount": true,
+      "countdown": true,
+      "nativeBeforeUnload": true,
+      "cancelPreservesDraft": true,
+      "navigationGuard": true,
+      "deviceResume": true,
+      "plusCreatesFresh": true,
+      "submitPendingOnly": true,
+      "managerPostsOnce": true
+    }
+  ],
+  "limits": [
+    "Local isolated API/Postgres fixture; not production TTFB or throughput.",
+    "Performance runs sequential, no other browser/test process during measurements.",
+    "Opening API count stays 16 and JS requests stay 162; JS grows by 5070 bytes.",
+    "Warehouse matrix is fetched in a batch only after adding products; ledger module loads only on preview action.",
+    "Browser flows prove no ledger write on edit/preview/submission, then Manager approval posts the count."
+  ]
+}

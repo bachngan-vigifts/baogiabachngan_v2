@@ -235,6 +235,42 @@
 .stocktake-panel[hidden], .stocktake-results:empty { display: none; }
 .stocktake-pending .link-btn { display: block; text-align: left; margin: 3px 0; }
 .stocktake-panel > .card-title-row { margin-bottom: 14px; }
+dialog.stocktake-dialog { width:min(1180px,96vw);max-height:92dvh;padding:0; }
+.stocktake-dialog .stocktake-panel { border:0;box-shadow:none;margin:0; }
+.stocktake-dialog .card-title-row { position:sticky;top:0;background:var(--surface,#fff);z-index:1;padding-bottom:10px; }
+.stocktake-dialog .stocktake-search { grid-column:1/-1; }
+.stocktake-dialog .stocktake-results { max-height:190px; }
+.stocktake-dialog .transfer-search-result { text-align:left;min-height:44px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.stocktake-dialog .stocktake-wh-stock { white-space:nowrap; }
+.stocktake-dialog .table-wrap { max-height:42dvh;overflow:auto; }
+.stocktake-dialog .data-table { table-layout:fixed;width:100%; }
+.stocktake-dialog .data-table th { white-space:normal;font-size:11px; }
+.stocktake-dialog .data-table th,.stocktake-dialog .data-table td { padding:8px; }
+.stocktake-dialog .data-table th:first-child { width:18%; }
+.stocktake-dialog .data-table th:nth-child(2) { width:5%; }
+.stocktake-dialog .data-table th:nth-child(4) { width:12%; }
+.stocktake-dialog .data-table th:last-child { width:14%; }
+.stocktake-dialog .data-table input { width:100%;max-width:110px; }
+.stocktake-dialog .data-table td.first { min-width:0;max-width:280px;overflow-wrap:anywhere; }
+.stocktake-dialog .data-table td:last-child { white-space:nowrap; }
+.stocktake-dialog .data-table td:last-child .btn { margin:2px; }
+dialog.stocktake-ledger { width:min(920px,96vw);max-height:90dvh; }
+.stocktake-ledger .modal-body>select { max-width:100%;margin-bottom:10px; }
+@media(max-width:680px){
+ dialog.stocktake-dialog { width:96vw;max-height:94dvh; }
+ .stocktake-dialog .card-title-row { align-items:center;gap:8px; }
+ .stocktake-dialog .card-title-row .btn { padding:8px;font-size:12px; }
+ .stocktake-dialog .data-table,.stocktake-dialog tbody,.stocktake-dialog tr,.stocktake-dialog td { display:block;min-width:0!important;max-width:none!important;width:100%; }
+ .stocktake-dialog thead { display:none; }
+ .stocktake-dialog tr { border:1px solid var(--line,#dce3ec);border-radius:8px;margin-bottom:10px;padding:6px; }
+ .stocktake-dialog td { padding:7px;border:0; }
+ .stocktake-dialog td[data-label] { display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:right; }
+ .stocktake-dialog td[data-label]::before { content:attr(data-label);font-size:12px;color:var(--muted,#64748b);text-align:left; }
+ .stocktake-dialog .data-table input { min-height:44px;max-width:140px; }
+ .stocktake-dialog .stocktake-tools { gap:6px; }
+ .stocktake-dialog .stocktake-tools select { flex:1 1 150px; }
+ .stocktake-ledger .table-wrap { overflow:auto;max-height:55dvh; }
+}
 .inv-tabs { margin-bottom: 12px; border: 0; padding-left: 0; }
 .inv-compare-filter { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto auto; align-items: end; }
 .transfer-filter-grid.inv-compare-filter label.inv-check { display: inline-flex; align-items: center; align-self: end; min-height: 40px; }
@@ -288,3 +324,10 @@ dialog.stocktake-camera { width: min(520px, 96vw); }
 .transfer-receive-summary { margin: 0; }
 /* Tiêu đề cột không gãy giữa chữ (SL chuyển / SL nhận / Tồn kho…): chỉ xuống dòng giữa các từ. */
 .transfer-detail-table th { overflow-wrap: normal; word-break: keep-all; }
+
+@media(max-width:680px){
+ .stocktake-ledger .data-table,.stocktake-ledger tbody,.stocktake-ledger tr,.stocktake-ledger td{display:block;width:100%;min-width:0}
+ .stocktake-ledger thead{display:none}.stocktake-ledger tr{border-bottom:1px solid var(--line,#dce3ec);padding:6px 0}
+ .stocktake-ledger td{display:flex;justify-content:space-between;gap:12px;border:0;padding:6px}
+ .stocktake-ledger td::before{content:attr(data-label);font-size:12px;color:var(--muted,#64748b)}
+}
