@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { contentVersions, stampVersion } from '../../scripts/stamp-ui-version.ts';
+import { CACHE_EPOCH, contentVersions, stampVersion } from '../../scripts/stamp-ui-version.ts';
 
 test('gắn phiên bản vào JS / CSS của giao diện: import giữa các module, thẻ script / link; bỏ qua link ngoài', () => {
   assert.equal(stampVersion(`import { a } from './alert.js';\nimport { b } from "./avatars.js";\nconst m = await import('./chat.js');`, 'abc1234', 'js'),
@@ -78,7 +78,7 @@ test('import vòng tròn dùng chung một mã; file tham chiếu không có tr�
   assert.throws(() => contentVersions('/ui', 'a"b', fakeUi(site)));
 });
 test('tăng CACHE_EPOCH: mọi file đổi mã (lối thoát khi một file bị lưu đệm sai)', () => {
-  const a = contentVersions('/ui', 'r', fakeUi(site)).versions, b = contentVersions('/ui', 'r', { ...fakeUi(site), epoch: 2 }).versions;
+  const a = contentVersions('/ui', 'r', fakeUi(site)).versions, b = contentVersions('/ui', 'r', { ...fakeUi(site), epoch: CACHE_EPOCH + 1 }).versions;
   assert.deepEqual([...a.keys()].filter(f => a.get(f) === b.get(f)), []);
 });
 test('giao diện thật: mọi file có phiên bản theo nội dung, không còn tham chiếu thiếu ?v=, không file nào rơi về số bản phát hành', () => {

@@ -38,7 +38,8 @@ export function stampVersion(text: string, v: string | ((ref: string) => string)
  * Dùng khi một file bị lưu đệm sai (vd. sự cố 05/11/2026: trang HTML bị lưu 1 năm thay cho file JS – file không đổi nội dung thì
  * giữ URL cũ nên không tự thoát được ở lần triển khai sau).
  */
-export const CACHE_EPOCH = 1;
+// 09/11/2026: khôi phục tab đã nhận HTML mới nhưng giữ module Sản phẩm theo đơn cũ trong cache.
+export const CACHE_EPOCH = 2;
 const kindOf = (f: string) => f.endsWith('.html') ? 'html' as const : f.endsWith('.js') && !f.endsWith('.min.js') ? 'js' as const : null;
 /** Tên file trong thư mục giao diện mà một tham chiếu trỏ tới ('./x.js', 'x.js', './vendor/a/b.min.js' → 'x.js' / 'vendor/a/b.min.js'). */
 const targetOf = (ref: string) => normalize(ref.replace(/^\.\//, '')).replace(/\\/g, '/');
