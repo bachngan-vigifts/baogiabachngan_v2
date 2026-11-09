@@ -9,8 +9,10 @@ export async function readSepayDay(token: string, day: string, fetcher: typeof f
     throw new AppError(503, 'Chưa cấu hình API đọc SePay trên máy chủ.');
   async function request(resource: 'list' | 'count') {
     const url = new URL('https://my.sepay.vn/userapi/transactions/' + resource);
-    url.searchParams.set('transaction_date_min', day);
-    url.searchParams.set('transaction_date_max', day);
+    // SePay interprets a date-only upper bound as midnight, excluding the rest of that day.
+    // Its transaction timestamps use Vietnam local time with second precision.
+    url.searchParams.set('transaction_date_min', day + ' 00:00:00');
+    url.searchParams.set('transaction_date_max', day + ' 23:59:59');
     url.searchParams.set('limit', String(SEPAY_READ_LIMIT));
     let body: Record<string, unknown>;
     try {
