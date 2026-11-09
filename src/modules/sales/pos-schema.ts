@@ -172,6 +172,7 @@ export const webStoreOrders = pgTable('web_store_orders', {
   ghnSortCode: text('ghn_sort_code').notNull().default(''),
   ghnFee: doublePrecision('ghn_fee').notNull().default(0),
   orderedAt: text('ordered_at').notNull(),
+  orderedAtVerified: boolean('ordered_at_verified').notNull().default(false),
   updatedAt: text('updated_at').notNull(),
   /** Sổ kho đơn web (migration 20261029090000): none / issued / returned / blocked / legacy – web-order-stock.ts. */
   stockStatus: text('stock_status', { enum: ['none', 'issued', 'returned', 'blocked', 'legacy'] }).notNull().default('none'),
@@ -180,4 +181,5 @@ export const webStoreOrders = pgTable('web_store_orders', {
 }, t => [
   uniqueIndex('uq_web_store_order').on(t.source, t.externalId),
   index('idx_web_store_orders_register').on(t.registerId, t.updatedAt),
+  index('idx_web_orders_created').on(t.orderedAt),
 ]).enableRLS();

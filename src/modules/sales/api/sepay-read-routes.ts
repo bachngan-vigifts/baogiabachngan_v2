@@ -9,6 +9,7 @@ import { vietnamDate } from '../domain/sales.ts';
 import { cashAudit } from './cash-store.ts';
 
 import {decideWebSepay,saveWebSepay} from './sepay-web-store.ts';
+import {retryNearbySepay} from './sepay-nearby-retry.ts';
 
 export async function pullSepayToday(env: StaffEnv, actorId: string) {
   const day = vietnamDate(new Date((env.nowSec?.() ?? Date.now()/1000)*1000)).iso;
@@ -36,7 +37,7 @@ export async function pullSepayToday(env: StaffEnv, actorId: string) {
       const row = { id: crypto.randomUUID(), providerId: p.providerId, transferType: p.transferType,
         amount: p.amount, accountNumber: p.accountNumber, transactionAt: p.transactionAt, content: p.content,
         payload: p.payload, status: 'review' as const, reason: 'Đã tải từ API SePay; chờ đối soát, chưa ghi thu.',
-        orderId: null, paymentId: null, webOrderId:null, receivedAt: at };
+        orderId: null, paymentId: null, webOrderId:null,matchMethod:'reference' as const,matchedOrderAt:null, receivedAt: at };
       const decision=await decideWebSepay(tx,p);
       if(decision){
         // Flush this special target immediately so another provider ID in this batch sees the proof.
@@ -50,7 +51,8 @@ export async function pullSepayToday(env: StaffEnv, actorId: string) {
       { day, read: result.read, imported: result.payments.length-duplicate, duplicate, outgoing: result.outgoing });
     return { imported: result.payments.length-duplicate, duplicate };
   });
-  return { day, read: result.read, outgoing: result.outgoing, ...totals, receiptsCreated: 0 };
+  const nearby=await retryNearbySepay(env);
+  return { day, read: result.read, outgoing: result.outgoing, ...totals, receiptsCreated: 0, ...(nearby.matched?{nearbyMatched:nearby.matched}:{}) };
 }
 
 export function registerSepayReadRoutes(router: Router<StaffEnv>) {

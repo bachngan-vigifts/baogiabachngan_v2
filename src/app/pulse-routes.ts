@@ -1,3 +1,4 @@
+import { auditLogs } from '../core/db/schema.ts';
 import { cashEntries, cashReconciliations, cashDrawers } from '../modules/sales/cash-schema.ts';
 import { posShifts } from '../modules/sales/pos-schema.ts';
 import { stockBalances } from '../modules/inventory/schema.ts';
@@ -40,7 +41,8 @@ export function registerPulseRoutes(router: Router<StaffEnv>) {
     if(c.env.waitUntil)c.env.waitUntil(transfers);else await transfers;
     const [[row], notifyAt, chatUnread] = await Promise.all([
       db.select({
-        s: sql<string>`concat_ws('|', ${latest(cashEntries.updatedAt)}, ${latest(cashReconciliations.updatedAt)}, ${latest(cashDrawers.updatedAt)}, ${latest(customerPayments.voidedAt)}, ${latest(posShifts.openedAt)}, ${latest(posShifts.closedAt)}, ${latest(stockBalances.updatedAt)}, ${latest(quotations.updatedAt)}, ${latest(salesOrders.updatedAt)}, ${latest(salesContracts.updatedAt)}, ${latest(deliveries.updatedAt)},
+        // Existing created_at index makes this an O(log N) stamp read, including bank-only reconciliation.
+        s: sql<string>`concat_ws('|', ${latest(auditLogs.createdAt)}, ${latest(cashEntries.updatedAt)}, ${latest(cashReconciliations.updatedAt)}, ${latest(cashDrawers.updatedAt)}, ${latest(customerPayments.voidedAt)}, ${latest(posShifts.openedAt)}, ${latest(posShifts.closedAt)}, ${latest(stockBalances.updatedAt)}, ${latest(quotations.updatedAt)}, ${latest(salesOrders.updatedAt)}, ${latest(salesContracts.updatedAt)}, ${latest(deliveries.updatedAt)},
           ${latest(packingSlips.updatedAt)}, ${latest(customerPayments.createdAt)}, ${latest(tasks.updatedAt)}, ${latest(incomingShipments.updatedAt)},
           ${latest(customerActivities.updatedAt)}, ${latest(customerStockRequests.createdAt)}, ${latest(customerStockRequests.answeredAt)}, ${latest(catalogVersions.observedAt)}, ${latest(stockHolds.createdAt)}, ${latest(stockHolds.closedAt)},
           ${total(quotations)}, ${total(salesOrders)}, ${total(tasks)}, ${total(incomingShipments)})`,

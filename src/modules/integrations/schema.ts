@@ -23,14 +23,19 @@ export const sepayTransactions = pgTable('sepay_transactions', {
   orderId: text('order_id'),
   webOrderId: text('web_order_id'),
   paymentId: text('payment_id'),
+  matchMethod: text('match_method',{enum:['reference','amount_time','manual']}).notNull().default('reference'),
+  matchedOrderAt: text('matched_order_at'),
   payload: text('payload').notNull(),
   receivedAt: text('received_at').notNull(),
 }, t => [
   uniqueIndex('uq_sepay_transactions_provider').on(t.providerId),
+  uniqueIndex('uq_sepay_payment_link').on(t.paymentId).where(sql`${t.paymentId} is not null`),
+  index('idx_sepay_pending_time').on(t.transactionAt,t.id).where(sql`${t.status} in ('review','unmatched') and ${t.paymentId} is null`),
   uniqueIndex('uq_sepay_web_matched').on(t.webOrderId).where(sql`${t.webOrderId} is not null and ${t.status}='matched'`),
   check('chk_sepay_one_target', sql`${t.webOrderId} is null or (${t.orderId} is null and ${t.paymentId} is null)`),
   index('idx_sepay_transactions_status_received').on(t.status, t.receivedAt),
   enumCheck('chk_sepay_transactions_status', t.status, SEPAY_TRANSACTION_STATUSES),
+  enumCheck('chk_sepay_match_method',t.matchMethod,['reference','amount_time','manual']),
 ]).enableRLS();
 
 /** Chỉ lưu SHA-256 mã nhận webhook; không dùng khóa SyncTime Client hoặc phiên Sapo. */

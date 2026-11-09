@@ -1,3 +1,4 @@
+import {webSepayPaidAt} from './web-sepay-evidence.ts';
 import {webSapoReference} from '../domain/web-sapo.ts';
 import {webSapoStatuses,webSapoFields} from './web-sapo-status.ts';
 import {invoiceTaskHooks} from './invoice-task-hooks.ts';
@@ -39,10 +40,10 @@ async function scope(c:Ctx){
  return and(inArray(web.source,['lock','minhlong']),store?inArray(web.registerId,store.scope.registers):undefined);
 }
 const invoiceState = () => invoiceTaskHooks.webStatus?.() ?? sql<string>`'unknown'`;
-function asDocument(o:typeof web.$inferSelect,branchName:string,invoiceStatus='unknown'){
+function asDocument(o:typeof web.$inferSelect,branchName:string,invoiceStatus='unknown',bankPaidAt:string|null=null){
  const accounting=readWebAccounting(o.crmEditSnapshot),invoice=accounting.invoice;
  const bucket=webOrderBucket(o.status,o.ghnStatus),status=bucket==='completed'?'delivered':bucket==='cancelled'?'cancelled':bucket==='waiting_delivery'?'delivering':bucket==='packing'?'confirmed':'draft';
- const financials=readWebOrderFinancials(o.financialSnapshot),payment=readWebEdit(o.crmEditSnapshot).sourceConflict?undefined:financials?.payment;
+ const financials=readWebOrderFinancials(o.financialSnapshot),payment=readWebEdit(o.crmEditSnapshot).sourceConflict?undefined:bankPaidAt?{paidAt:bankPaidAt}:financials?.payment;
  const paid=payment?(payment.paidAt?o.total:0):null;
  return {id:'web:'+o.id,webOrderId:o.id,external:true,orderSource:'web',source:o.source,orderNo:o.crmOrderNo||`Web_${o.orderNo}_${o.customerName}`,sourceOrderNo:o.orderNo,customerName:o.customerName,phone:o.phone,address:o.address,
   ownerId:null,ownerName:o.source==='lock'?'Web LocknLock':'Web Minh Long',branchName,registerId:o.registerId,orderDate:o.orderedAt.slice(0,10),createdAt:o.orderedAt,updatedAt:o.updatedAt,
@@ -74,25 +75,25 @@ export async function webDocumentPage(c:Ctx,crmWhere:SQL|undefined,limit:number,
   c.env.db.selectDistinct({id:posRegisters.id,name:posRegisters.name}).from(web).innerJoin(posRegisters,eq(posRegisters.id,web.registerId)).where(base).orderBy(asc(posRegisters.name)),
   c.env.db.select({count:count(),revenue:sql<number>`coalesce(sum(${web.total}),0)::float8`,
    // Missing financial payment metadata is unknown, never silently treated as unpaid.
-   paid:sql<number>`coalesce(sum(case when ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is not null and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) then ${web.total} else 0 end),0)::float8`,
-   remaining:sql<number>`coalesce(sum(case when ${web.financialSnapshot}::jsonb ? 'payment' and ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is null and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) then ${web.total} else 0 end),0)::float8`,
-   unknown:sql<number>`count(*) filter(where not (${web.financialSnapshot}::jsonb ? 'payment') or coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false))::int`,
+   paid:sql<number>`coalesce(sum(case when (${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is not null or ${webSepayPaidAt()} is not null) and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) then ${web.total} else 0 end),0)::float8`,
+   remaining:sql<number>`coalesce(sum(case when ${web.financialSnapshot}::jsonb ? 'payment' and ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is null and ${webSepayPaidAt()} is null and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) then ${web.total} else 0 end),0)::float8`,
+   unknown:sql<number>`count(*) filter(where (not (${web.financialSnapshot}::jsonb ? 'payment') and ${webSepayPaidAt()} is null) or coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false))::int`,
   }).from(web).where(and(where,ne(webDocumentStatus(),'cancelled'))),
   c.env.db.select({n:count()}).from(web).where(and(base,eq(invoiceState(),'requested'))),
  ]);
  const ids=page.filter(x=>x.kind==='web').map(x=>x.id);
- const rows=ids.length?await c.env.db.select({o:{...getTableColumns(web),crmEditSnapshot:webEditFlags},branchName:posRegisters.name,invoiceStatus:invoiceState()}).from(web).innerJoin(posRegisters,eq(posRegisters.id,web.registerId)).where(and(base,inArray(web.id,ids))):[];
+ const rows=ids.length?await c.env.db.select({o:{...getTableColumns(web),crmEditSnapshot:webEditFlags},branchName:posRegisters.name,bankPaidAt:webSepayPaidAt(),invoiceStatus:invoiceState()}).from(web).innerJoin(posRegisters,eq(posRegisters.id,web.registerId)).where(and(base,inArray(web.id,ids))):[];
  const sapo=await webSapoStatuses(c.env.db,rows.map(r=>r.o)),member=(c.state.session as SessionState).member;
- return {page,total:Number(n?.n||0),invoicePending:Number(pending?.n||0),branches,summary:{count:Number(s?.count||0),revenue:Number(s?.revenue||0),paid:Number(s?.paid||0),remaining:Number(s?.remaining||0),unknownPaymentCount:Number(s?.unknown||0)},documents:rows.map(r=>{const {financials,ghnAddress,...row}=asDocument(r.o,r.branchName,r.invoiceStatus);return {...row,...webSapoFields(c.env,r.o,member,row.status,sapo.get(webSapoReference(r.o)))};})};
+ return {page,total:Number(n?.n||0),invoicePending:Number(pending?.n||0),branches,summary:{count:Number(s?.count||0),revenue:Number(s?.revenue||0),paid:Number(s?.paid||0),remaining:Number(s?.remaining||0),unknownPaymentCount:Number(s?.unknown||0)},documents:rows.map(r=>{const {financials,ghnAddress,...row}=asDocument(r.o,r.branchName,r.invoiceStatus,r.bankPaidAt);return {...row,...webSapoFields(c.env,r.o,member,row.status,sapo.get(webSapoReference(r.o)))};})};
 }
 export async function webDocumentDetail(c:Ctx,id:string){
- const [r]=await c.env.db.select({o:web,branchName:posRegisters.name,invoiceStatus:invoiceState(),priceIncludesVat:posRegisters.priceIncludesVat,taxRate:posRegisters.taxRate,active:posRegisters.active}).from(web).innerJoin(posRegisters,eq(posRegisters.id,web.registerId)).where(and(await scope(c),eq(web.id,id))).limit(1);
+ const [r]=await c.env.db.select({o:web,branchName:posRegisters.name,bankPaidAt:webSepayPaidAt(),invoiceStatus:invoiceState(),priceIncludesVat:posRegisters.priceIncludesVat,taxRate:posRegisters.taxRate,active:posRegisters.active}).from(web).innerJoin(posRegisters,eq(posRegisters.id,web.registerId)).where(and(await scope(c),eq(web.id,id))).limit(1);
  if(!r)throw new AppError(404,'Không tìm thấy đơn website trong phạm vi được xem.');
  let items:{sku?:string;name?:string;quantity?:number;total?:number}[]=[];try{const x=JSON.parse(r.o.lines);if(Array.isArray(x))items=x;}catch{/* legacy malformed lines */}
  const units=items.length?await c.env.db.select({sku:products.sku,unit:products.unit}).from(products).where(inArray(products.sku,items.map(l=>String(l.sku||'')))):[];
  items=items.map(l=>({...l,unit:(l as {unit?:string}).unit||units.find(p=>p.sku===l.sku)?.unit||''}));
  const permitted=can((c.state.session as SessionState).member,'pos.sell'),edit=readWebEdit(r.o.crmEditSnapshot);
- const document=asDocument(r.o,r.branchName,r.invoiceStatus),canAccount=canEditWebAccounting((c.state.session as SessionState).member)&&document.status!=='cancelled';
+ const document=asDocument(r.o,r.branchName,r.invoiceStatus,r.bankPaidAt),canAccount=canEditWebAccounting((c.state.session as SessionState).member)&&document.status!=='cancelled';
  const sapo=(await webSapoStatuses(c.env.db,[r.o])).get(webSapoReference(r.o));
- return {document:{...document,...webSapoFields(c.env,r.o,(c.state.session as SessionState).member,document.status,sapo),canIssueInvoice:canAccount,edited:Number(edit.revision||0)>0,sourceConflict:!!edit.sourceConflict,ghnCartReviewRequired:!!edit.ghnCartReviewRequired},canEditBilling:canAccount,items,canManage:permitted&&r.active,canEdit:permitted&&r.active&&!webEditBlocked(r.o),editBlocked:webEditBlocked(r.o),revision:Number(edit.revision||0),sourceHash:webSourceHash(r.o),editor:webEditorModel(r.o),catalogPricing:{priceIncludesVat:r.priceIncludesVat,taxRate:r.taxRate},originalFinancials:edit.original?readWebOrderFinancials(edit.original.financialSnapshot):null};
+ return {document:{...document,...webSapoFields(c.env,r.o,(c.state.session as SessionState).member,document.status,sapo),canIssueInvoice:canAccount,edited:Number(edit.revision||0)>0,sourceConflict:!!edit.sourceConflict,ghnCartReviewRequired:!!edit.ghnCartReviewRequired},canEditBilling:canAccount,items,canManage:permitted&&r.active,canEdit:permitted&&r.active&&!r.bankPaidAt&&!webEditBlocked(r.o),editBlocked:r.bankPaidAt?'Đơn đã đối soát SePay; cần đối chiếu thu/hoàn tiền trước khi sửa.':webEditBlocked(r.o),revision:Number(edit.revision||0),sourceHash:webSourceHash(r.o),editor:webEditorModel(r.o),catalogPricing:{priceIncludesVat:r.priceIncludesVat,taxRate:r.taxRate},originalFinancials:edit.original?readWebOrderFinancials(edit.original.financialSnapshot):null};
 }

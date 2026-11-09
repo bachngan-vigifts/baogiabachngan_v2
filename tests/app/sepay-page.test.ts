@@ -293,7 +293,7 @@ test("QR POS and transactions identified to POS cannot be reassigned to CRM", as
   assert.equal(
     (await f.call("/sepay/transactions/" + qr.id, f.mgr)).data.capabilities
       .canConfirm,
-    false,
+    true,
   );
   assert.equal((await f.confirm(qr.id, f.choice(crm.id))).status, 409);
   const pos = await f.order("SOURCEPOS110", {
@@ -312,7 +312,7 @@ test("preview is read-only and fresh debt is rechecked at confirmation; search e
   await f.order("PREVIEW106POS", { channel: "pos" });
   await f.order("PREVIEW106DRAFT", { status: "draft" });
   await f.order("PREVIEW106CANCELLED", { status: "cancelled" });
-  const search = await f.call("/sepay/orders?q=PREVIEW106", f.mgr);
+  const search = await f.call("/sepay/orders?q=PREVIEW106&source=crm", f.mgr);
   assert.equal(search.data.orders.length, 2);
   assert.equal(search.data.orders.find((r: any) => r.id === o.id).selectable, true);
   assert.equal(search.data.orders.find((r: any) => r.status === "draft").selectable, false);
@@ -470,7 +470,7 @@ test("SePay picker lists real documents, searches canonical customer/code, filte
   await f.order("XL_CANCELLED",{status:"cancelled"});
   await f.order("XL_POS",{channel:"pos"});
   for(let i=0;i<22;i++) await f.order("XL_"+String(i).padStart(2,"0"));
-  const page1 = await f.call("/sepay/orders",f.mgr), page2 = await f.call("/sepay/orders?offset=20",f.mgr);
+  const page1 = await f.call("/sepay/orders?kind=all",f.mgr), page2 = await f.call("/sepay/orders?kind=all&offset=20",f.mgr);
   assert.equal(page1.data.orders.length,20);assert.equal(page1.data.hasMore,true);
   assert.equal(page2.data.orders.length,3);assert.equal(page2.data.hasMore,false);
   assert.equal(new Set([...page1.data.orders,...page2.data.orders].map((o:any)=>o.id)).size,23);

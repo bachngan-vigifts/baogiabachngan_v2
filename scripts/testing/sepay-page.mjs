@@ -450,7 +450,7 @@ try {
    const view=await pageFor(f.mgr,width,'#/sepay?q=qr-web-browser');
    await view.p.locator('[data-open]').waitFor();
    await detail(view.p,webEvent.id);
-   await view.p.locator('[data-detail]').filter({hasText:'Đơn web Lock 21661'}).waitFor();
+   await view.p.locator('[data-detail]').filter({hasText:'Đơn web 21661'}).waitFor();
    assert.equal(await view.p.locator('[data-order-search]').count(),0,'web payment cannot be reassigned to a CRM order');
    assert.equal(await view.p.locator('[data-confirm]').count(),0);
    const target='#/orders/web:'+webOrder.id;
@@ -497,7 +497,7 @@ try {
     await view.p.locator('[data-order-results] .sp-empty').waitFor();
     await view.p.locator('[name=eligibility]').selectOption('active');
     await query.fill('HDKT_PICK_001');
-    await view.p.locator('[name=kind]').selectOption('contract');
+    await view.p.locator('[name=source]').selectOption('contract');
     await view.p.locator('[data-order-results] [data-choose]').filter({hasText:'HDKT_PICK_001'}).click();
     await view.p.locator('[data-account-block]').waitFor();
     assert.equal(await view.p.locator('[data-preview] h3').textContent(),'HDKT_PICK_001');

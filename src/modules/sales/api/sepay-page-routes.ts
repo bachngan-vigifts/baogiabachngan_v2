@@ -1,3 +1,5 @@
+import {validWebSepay} from './web-sepay-evidence.ts';
+import {previewNearbySepay} from './sepay-proximity-store.ts';
 import { customers } from '../../customers/schema.ts';
 import {WEB_PAYMENT_BLOCKED_STATUSES} from '../domain/web-order-outcome.ts';
 import {isLockWebQrPayment} from './sepay-web-store.ts';
@@ -24,7 +26,7 @@ import {
   type Router,
   type RouteContext,
 } from "../../../core/http/router.ts";
-import { foldSql, matchAllWords, searchRank, rankFirst } from "../../../core/text/fold.ts";
+import { foldSql, matchAllWords, searchRank } from "../../../core/text/fold.ts";
 import { auditLogs } from "../../../core/db/schema.ts";
 import type { StaffEnv, SessionState } from "../../staff/api/auth-routes.ts";
 import { employees } from "../../staff/schema.ts";
@@ -55,16 +57,10 @@ function readAccess(c: Ctx): void {
   if (!canViewSepay(member(c)))
     throw new AppError(403, "Chỉ Manager và Kế toán được xem sổ SePay.");
 }
-const validWeb = sql`coalesce(${web.id} is not null and ${web.source}='lock' and ${web.currency}='VND' and ${web.total}=${bank.amount}
- and regexp_replace(lower(trim(${web.status})),'^wc-','') not in (${sql.join(WEB_PAYMENT_BLOCKED_STATUSES.map(s=>sql`${s}`),sql`, `)})
- and ${webDocumentStatus()}<>'cancelled' and ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is not null
- and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false)
- and coalesce((${web.crmEditSnapshot}::jsonb->>'revision')::int,0)=0
- and lower(${web.paymentMethod}) ~ '(^|[^a-z0-9_])qr([^a-z0-9_]|$)' and ${webRegisters.active}
- and trim(${webRegisters.bankAccount})<>'' and regexp_replace(${webRegisters.bankAccount},'[[:space:]]','','g')=${bank.accountNumber},false)`;
+const validWeb = validWebSepay();
 const state = sql<string>`case when ${bank.status}='matched' and
  (case when ${bank.webOrderId} is not null then not (${validWeb}) else
- (${payments.id} is null or ${payments.voidedAt} is not null or ${payments.orderId} is distinct from ${bank.orderId} or ${payments.amount}<>${bank.amount} or ${payments.method}<>'transfer') end)
+ ((${bank.matchMethod}='amount_time' and ${orders.createdAt} is distinct from ${bank.matchedOrderAt}) or ${payments.id} is null or ${payments.voidedAt} is not null or ${payments.orderId} is distinct from ${bank.orderId} or ${payments.amount}<>${bank.amount} or ${payments.method}<>'transfer') end)
  then 'receipt_issue' else ${bank.status} end`;
 const columns = {
   id: bank.id,
@@ -76,6 +72,8 @@ const columns = {
   content: bank.content,
   status: state,
   rawStatus: bank.status,
+  matchMethod:bank.matchMethod,
+  matchedOrderAt:bank.matchedOrderAt,
   reason: sql<string>`case when ${bank.webOrderId} is not null and ${bank.status}='matched' and not (${validWeb}) then 'Đơn web hoặc xác nhận thanh toán đã thay đổi; cần kiểm tra chứng từ nguồn.' else ${bank.reason} end`,
   orderId: bank.orderId,
   orderNo: sql<string>`coalesce(nullif(${web.crmOrderNo},''),${web.orderNo},${orders.orderNo})`,
@@ -221,6 +219,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
         .limit(20);
       const webPayment=!!row.webOrderId||await isLockWebQrPayment(c.env.db,row);
+      const [sourceAccount]=await c.env.db.select({id:webRegisters.id}).from(webRegisters).where(and(eq(webRegisters.active,true),eq(sql`regexp_replace(${webRegisters.bankAccount},'[[:space:]]','','g')`,row.accountNumber))).limit(1);
       return json({
         transaction: row,
         history: history.map((h) => {
@@ -243,19 +242,14 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         capabilities: {
           canConfirm:
             member(c).role === "manager" &&
-            ["review", "unmatched"].includes(row.status) &&
-            !webPayment &&
-            !sepayPosIntent(row.content) &&
-            row.orderChannel !== "pos",
+            ["review", "unmatched"].includes(row.status),
         },
         blockReason:
           webPayment ? row.reason || "Giao dịch thuộc đơn web; xem trạng thái thanh toán trên đúng đơn web." :
           sepayPosIntent(row.content) || row.orderChannel === "pos"
             ? "Giao dịch thuộc luồng QR/POS; không gắn vào đơn CRM khác."
             : "",
-        accountApproved: (c.env.sepayReceiptAccounts || []).includes(
-          row.accountNumber,
-        ),
+        accountApproved: !!sourceAccount || (c.env.sepayReceiptAccounts || []).includes(row.accountNumber),
       });
     },
     "business",
@@ -264,43 +258,67 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
   router.get(
     "/sepay/orders",
     async (c) => {
-      const p = c.url.searchParams;
-      const q = (p.get("q") || "").trim();
-      const kind = p.get("kind") || "all", eligibility = p.get("eligibility") || "active";
-      const offset = Number(p.get("offset") || 0), limit = 20;
-      const from = p.get("from") || "", to = p.get("to") || "";
-      if (q.length > 120 || !["all", "order", "contract"].includes(kind) ||
-          !["active", "eligible", "draft", "cancelled", "all"].includes(eligibility) ||
-          !Number.isInteger(offset) || offset < 0 || offset > 1000000 ||
-          [from,to].some(v => v && (!/^\d{4}-\d{2}-\d{2}$/.test(v) || !Number.isFinite(Date.parse(v)) || new Date(v).toISOString().slice(0,10)!==v)) || (from && to && from > to))
-        throw new AppError(400, "Bộ lọc tìm đơn không hợp lệ.");
-      const eligible = and(ne(orders.status,"cancelled"), or(ne(orders.status,"draft"), inArray(contracts.status,["signed","completed"])));
+      const p = c.url.searchParams, q = (p.get('q') || '').trim();
+      const kind = p.get('kind'), source = p.get('source') || (kind === 'order' ? 'crm' : kind === 'contract' ? 'contract' : kind === 'all' ? 'crm-all' : 'all');
+      const eligibility = p.get('eligibility') || 'active';
+      if (q.length > 120 || (p.has('source') && !['all','crm','contract','pos','web'].includes(source)) ||
+          (kind !== null && !['all','order','contract'].includes(kind)) ||
+          !['active','eligible','draft','cancelled','all'].includes(eligibility))
+        throw new AppError(400,'Bộ lọc đơn không hợp lệ.');
+      const integer = (key: string, fallback: number, max: number) => {
+        const raw = p.get(key); if (!raw) return fallback;
+        if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw)) || Number(raw) > max)
+          throw new AppError(400,'Bộ lọc số không hợp lệ.');
+        return Number(raw);
+      };
+      const min = integer('min',0,1e12), max = integer('max',1e12,1e12), offset = integer('offset',0,1000000), limit = 20;
+      if (min > max) throw new AppError(400,'Khoảng tiền không hợp lệ.');
+      const fromDay = p.get('from') || '', toDay = p.get('to') || '';
+      const day = vietnamDate().iso;
+      // No implicit "today" restriction: a correct search must still find older contracts.
+      const dates = sepayPageFilters(new URLSearchParams({from:fromDay || toDay || day,to:toDay || fromDay || day}),day);
+      const from = fromDay ? dates.start : undefined, to = toDay ? dates.end : undefined;
+      const crmEnd = toDay ? new Date(Date.parse(toDay)+86400000).toISOString().slice(0,10) : undefined;
+      const eligible = and(ne(orders.status,'cancelled'),or(ne(orders.status,'draft'),inArray(contracts.status,['signed','completed'])));
       const name = sql<string>`coalesce(nullif(${customers.name},''),${orders.customerName})`;
-      const rows = await c.env.db
-        .select({
-          id: orders.id, orderNo: orders.orderNo, contractNo: contracts.contractNo,
-          customerName: name, total: orders.total, status: orders.status,
-          contractStatus: contracts.status, orderDate: orders.orderDate,
-          selectable: sql<boolean>`coalesce(${eligible},false)`,
-        })
-        .from(orders)
-        .leftJoin(contracts, eq(contracts.orderId, orders.id))
-        .leftJoin(customers, eq(customers.id, sql`coalesce(${contracts.customerId},${orders.customerId})`))
+      const webStatus = webDocumentStatus(), webEligible = ne(webStatus,'cancelled');
+      const statusFilter = (status: typeof orders.status | typeof webStatus, canSelect: typeof eligible) =>
+        eligibility === 'active' ? ne(sql`${status}`,'cancelled') : eligibility === 'eligible' ? canSelect :
+        eligibility === 'draft' ? and(eq(sql`${status}`,'draft'),sql`not coalesce(${canSelect},false)`) :
+        eligibility === 'cancelled' ? eq(sql`${status}`,'cancelled') : undefined;
+      const rows = await c.env.db.select({
+        id:orders.id, orderNo:orders.orderNo, contractNo:contracts.contractNo, customerName:name, total:orders.total,
+        status:sql<string>`${orders.status}`.as('status'), createdAt:orders.createdAt,
+        kind:sql<string>`case when ${orders.channel}='pos' then 'pos' when ${contracts.id} is not null then 'contract' else 'crm' end`.as('kind'),
+        contractStatus:contracts.status, orderDate:orders.orderDate, selectable:sql<boolean>`coalesce(${eligible},false)`,
+        searchRank:(searchRank([orders.orderNo,contracts.contractNo],name,q) || sql`0`).as('search_rank'),
+      }).from(orders).leftJoin(contracts,eq(contracts.orderId,orders.id))
+        .leftJoin(customers,eq(customers.id,sql`coalesce(${contracts.customerId},${orders.customerId})`))
         .where(and(
-          eq(orders.channel, "crm"),
-          kind === "contract" ? sql`${contracts.id} is not null` : kind === "order" ? isNull(contracts.id) : undefined,
-          eligibility === "active" ? ne(orders.status,"cancelled") :
-          eligibility === "eligible" ? eligible :
-          eligibility === "draft" ? and(eq(orders.status,"draft"),sql`not coalesce(${eligible},false)`) :
-          eligibility === "cancelled" ? eq(orders.status,"cancelled") : undefined,
-          from ? gte(orders.orderDate,from) : undefined,
-          to ? lt(orders.orderDate,new Date(Date.parse(to)+86400000).toISOString().slice(0,10)) : undefined,
+          source === 'web' ? sql`false` : source === 'pos' ? eq(orders.channel,'pos') :
+          source === 'crm' ? and(eq(orders.channel,'crm'),isNull(contracts.id)) :
+          source === 'contract' ? and(eq(orders.channel,'crm'),sql`${contracts.id} is not null`) :
+          source === 'crm-all' ? eq(orders.channel,'crm') : inArray(orders.channel,['crm','pos']),
+          statusFilter(orders.status,eligible),gte(orders.total,min),lte(orders.total,max),
+          fromDay ? or(and(eq(orders.channel,'crm'),gte(orders.orderDate,fromDay)),and(eq(orders.channel,'pos'),gte(orders.createdAt,from!))) : undefined,
+          crmEnd ? or(and(eq(orders.channel,'crm'),lt(orders.orderDate,crmEnd)),and(eq(orders.channel,'pos'),lt(orders.createdAt,to!))) : undefined,
           q ? matchAllWords(foldSql(orders.orderNo,contracts.contractNo,orders.quoteNo,orders.customerName,orders.phone,
             customers.name,customers.contact,customers.phone,customers.customerCode),q) : undefined,
         ))
-        .orderBy(...rankFirst(searchRank([orders.orderNo,contracts.contractNo],name,q)), desc(orders.orderDate),desc(orders.id))
-        .limit(limit+1).offset(offset);
-      return json({ orders: rows.slice(0,limit), hasMore: rows.length>limit, offset, limit });
+        .unionAll(c.env.db.select({
+          id:sql<string>`'web:'||${web.id}`.as('id'),orderNo:sql<string>`coalesce(nullif(${web.crmOrderNo},''),${web.orderNo})`.as('order_no'),
+          contractNo:sql<string|null>`null`.as('contract_no'),customerName:web.customerName,total:web.total,status:webStatus.as('status'),
+          createdAt:web.orderedAt,kind:sql<string>`'web'`.as('kind'),contractStatus:sql<null>`null`.as('contract_status'),
+          orderDate:web.orderedAt,selectable:sql<boolean>`coalesce(${webEligible},false)`,
+          searchRank:(searchRank([web.orderNo,web.crmOrderNo],web.customerName,q) || sql`0`).as('search_rank'),
+        }).from(web).where(and(
+          ['all','web'].includes(source) ? inArray(web.source,['lock','minhlong']) : sql`false`,
+          statusFilter(webStatus,webEligible),gte(web.total,min),lte(web.total,max),
+          from ? gte(web.orderedAt,from) : undefined,to ? lt(web.orderedAt,to) : undefined,
+          q ? matchAllWords(foldSql(web.orderNo,web.crmOrderNo,web.customerName,web.phone),q) : undefined,
+        )))
+        .orderBy(asc(sql`search_rank`),desc(sql`created_at`),desc(sql`id`)).limit(limit+1).offset(offset);
+      return json({orders:rows.slice(0,limit).map(({searchRank: _rank,...row}) => row),hasMore:rows.length>limit,offset,limit});
     },
     "admin",
   );
@@ -316,6 +334,11 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
             .from(bank)
             .where(eq(bank.id, transactionId))
             .limit(1);
+          if(event && (event.status==='matched'||event.paymentId))throw new AppError(409,'Giao dịch đã được xử lý. Tải lại để kiểm tra.');
+          if(event) {
+            const [selected]=c.params.id!.startsWith('web:')?[]:await tx.select({channel:orders.channel}).from(orders).where(eq(orders.id,c.params.id!)).limit(1);
+            if(c.params.id!.startsWith('web:')||selected?.channel==='pos')return previewNearbySepay(tx,parseSepayPayment(JSON.parse(event.payload)),c.params.id!);
+          }
           const [row] = await tx
             .select({
               order: orders,
