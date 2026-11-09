@@ -1,4 +1,5 @@
-import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { SAPO_DOC_KINDS } from './domain/sapo-docs.ts';
 
@@ -20,11 +21,14 @@ export const sepayTransactions = pgTable('sepay_transactions', {
   status: text('status', { enum: SEPAY_TRANSACTION_STATUSES }).notNull(),
   reason: text('reason').notNull().default(''),
   orderId: text('order_id'),
+  webOrderId: text('web_order_id'),
   paymentId: text('payment_id'),
   payload: text('payload').notNull(),
   receivedAt: text('received_at').notNull(),
 }, t => [
   uniqueIndex('uq_sepay_transactions_provider').on(t.providerId),
+  uniqueIndex('uq_sepay_web_matched').on(t.webOrderId).where(sql`${t.webOrderId} is not null and ${t.status}='matched'`),
+  check('chk_sepay_one_target', sql`${t.webOrderId} is null or (${t.orderId} is null and ${t.paymentId} is null)`),
   index('idx_sepay_transactions_status_received').on(t.status, t.receivedAt),
   enumCheck('chk_sepay_transactions_status', t.status, SEPAY_TRANSACTION_STATUSES),
 ]).enableRLS();

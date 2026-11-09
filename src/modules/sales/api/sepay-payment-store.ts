@@ -28,10 +28,13 @@ import {
   sepayPosIntent,
   type SepayManualChoice,
 } from "../domain/sepay-page.ts";
+import {decideWebSepay,saveWebSepay,isLockWebQrPayment} from './sepay-web-store.ts';
+
 export async function assertSepayCrmSource(
   db: CashDb,
-  event: { content: string; orderId: string | null },
+  event: { content: string; orderId: string | null; webOrderId?: string | null; accountNumber?: string },
 ): Promise<void> {
+  if (event.webOrderId || await isLockWebQrPayment(db,event)) throw new AppError(409, 'Giao dịch thuộc đơn web; không gắn vào đơn CRM khác.');
   if (sepayPosIntent(event.content))
     throw new AppError(
       409,
@@ -57,6 +60,7 @@ export async function ingestPayment(
   payment: SepayPayment,
   actorId?: string,
   manual?: SepayManualChoice,
+  webOnly = false,
 ) {
   return env.db.transaction(async (tx) => {
     await tx.execute(
@@ -117,6 +121,11 @@ export async function ingestPayment(
         "Không thể xác nhận giao dịch chưa có trong sổ SePay.",
       );
     if (manual) await assertSepayCrmSource(tx, old!);
+    if (!manual && !old?.orderId) {
+      const webDecision = await decideWebSepay(tx, payment);
+      if (webDecision) return {duplicate: !!old, ...(await saveWebSepay(tx,payment,webDecision,old,actorId))};
+    }
+    if (webOnly) return {duplicate: !!old,status:old?.status||'review',reason:old?.reason||'Chờ đối soát đơn web.',orderId:old?.orderId||null,paymentId:old?.paymentId||null,webOrderId:old?.webOrderId||null};
     const references = sepayReferenceCandidates(payment.content);
     // Constant bounded set, bound JSON parameter, identical Vietnamese folding on stored references.
     const values = sql`(select jsonb_array_elements_text(${JSON.stringify(references)}::jsonb))`;

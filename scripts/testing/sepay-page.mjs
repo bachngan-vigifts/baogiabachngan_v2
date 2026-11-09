@@ -5,6 +5,7 @@ import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import { setupSepay } from "../../tests/helpers/sepay-fixture.ts";
+import { posRegisters,webStoreOrders } from "../../src/modules/sales/pos-schema.ts";
 import { customerPayments } from "../../src/modules/sales/schema.ts";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE || "playwright"
@@ -418,6 +419,32 @@ try {
     pass: true,
   });
   await mobile.context.close();
+  await f.db.update(posRegisters).set({name:'CỬA HÀNG LOCKNLOCK CẦN THƠ'}).where(eq(posRegisters.id,f.registerId));
+  const webSync=await f.call('/integrations/woocommerce/lock/order?token=test-lock-token','','POST',{id:21661,number:'21661',status:'processing',total:'100000',currency:'VND',payment_method_title:'Chuyển khoản ngân hàng (Quét mã QR)',date_paid_gmt:'2026-11-08T03:00:00',billing:{first_name:'Khách QR thử'},line_items:[{sku:'00123',name:'Ly',quantity:1,total:'100000',subtotal:'100000'}]});
+  assert.equal(webSync.status,200,JSON.stringify(webSync.data));
+  const [webOrder]=await f.db.select().from(webStoreOrders).where(eq(webStoreOrders.externalId,'21661'));
+  const receiptsBefore=(await f.db.select().from(customerPayments)).length;
+  const webEvent=await f.incoming('BANK.000.DH21661.CT TEST',100000,{id:'qr-web-browser'});
+  assert.equal(webEvent.status,'matched');
+  for(const width of [1440,390]){
+   const view=await pageFor(f.mgr,width,'#/sepay?q=qr-web-browser');
+   await view.p.locator('[data-open]').waitFor();
+   await detail(view.p,webEvent.id);
+   await view.p.locator('[data-detail]').filter({hasText:'Đơn web Lock 21661'}).waitFor();
+   assert.equal(await view.p.locator('[data-order-search]').count(),0,'web payment cannot be reassigned to a CRM order');
+   assert.equal(await view.p.locator('[data-confirm]').count(),0);
+   const target='#/orders/web:'+webOrder.id;
+   const link=view.p.locator('[data-detail] a').filter({hasText:'21661'});
+   assert.equal(await link.getAttribute('href'),target);
+   await view.p.screenshot({path:out+'/web-qr-'+width+'.png',fullPage:true});
+   await link.click();await view.p.waitForURL('**/'+target);
+   await view.p.locator('#view-order').filter({hasText:'21661'}).waitFor();
+   assert.equal(view.errors.length,0,view.errors.join('\n'));
+   assert.equal(await view.p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+   await view.context.close();
+  }
+  assert.equal((await f.db.select().from(customerPayments)).length,receiptsBefore);
+  results.push({case:'Lock QR links exact original website order on PC/mobile without another CRM receipt',pass:true});
   const emp = await pageFor(f.emp, 1100, "#/sepay");
   await emp.p.waitForTimeout(500);
   assert.ok(!emp.p.url().includes("#/sepay"));
