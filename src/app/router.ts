@@ -1,3 +1,4 @@
+import {catalogueCustomerLinks,registerCatalogueCustomers,reassignCatalogueCustomer} from './catalogue-customer-links.ts';
 import {registerHomeStockValue} from './home-stock-value.ts';
 import {registerWarehouseWorkspace,assertWarehouseTaskMutable} from '../modules/warehouse-workspace/routes.ts';
 import {customerMergeHooks} from '../core/contracts/customer-merge.ts';
@@ -123,12 +124,13 @@ export function createAppRouter() {
   registerAppsheetCustomerRoutes(router);
   registerCatalogRoutes(router);
   registerCustodyRoutes(router);
-  customerMergeHooks.reassign=reassignCustodyCustomer;
+  customerMergeHooks.reassign=async(tx,keep,drop)=>{await reassignCustodyCustomer(tx,keep,drop);await reassignCatalogueCustomer(tx,keep,drop);};
   catalogueLibraryHooks.heldAt=(db,skus,warehouseId)=>reservedBySku(db,skus,warehouseId);
   catalogueLibraryHooks.incoming=(db,skus)=>outstandingLines(db,skus);
   registerCatalogueLibrary(router);
   registerCatalogueLibraryBulk(router);
-  registerCatalogueQuotes(router);
+  registerCatalogueQuotes(router,catalogueCustomerLinks);
+  registerCatalogueCustomers(router);
   registerSapoSyncRoutes(router);
   registerSepayPaymentRoutes(router);
   registerLegacyImageRoutes(router);
@@ -155,7 +157,7 @@ export function createAppRouter() {
   registerNotificationRoutes(router);
   registerTaskRoutes(router,{assertMutable:assertWarehouseTaskMutable});
   registerChatRoutes(router);
-  registerCustomerHubRoutes(router);
+  registerCustomerHubRoutes(router,catalogueCustomerLinks);
   registerProductDetailRoutes(router);
   registerCustomerDuplicateRoutes(router);
   registerCareRoutes(router,{assertKpiOpen:assertActivityKpiOpen,quotes:activityQuotes});

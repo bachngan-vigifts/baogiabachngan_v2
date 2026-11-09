@@ -1,3 +1,4 @@
+import type {CatalogueCustomerLinks} from '../../../core/contracts/catalogue-customer.ts';
 import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -21,7 +22,16 @@ async function command(c:Ctx,id:string,b:Record<string,unknown>,action:string,co
   const result=await apply(tx);await tx.update(commands).set({result:JSON.stringify(result)}).where(and(eq(commands.memberId,who),eq(commands.clientKey,key)));return result;
  });
 }
-export function registerCatalogueQuotes(router:Router<StaffEnv>){
+export function registerCatalogueQuotes(router:Router<StaffEnv>,customers?:CatalogueCustomerLinks){
+ async function linkCustomer(tx:Tx,c:Ctx,state:ReturnType<typeof cleanCatalogueQuote>,previous?:string){
+  const old=previous?JSON.parse(previous).meta?.customerId:undefined;
+  const id=state.meta.customerId===undefined?old:state.meta.customerId;
+  if(!id){if(old)throw new AppError(400,'Chọn khách hàng trước khi lưu báo giá đã liên kết.');return;}
+  if(!customers)throw new AppError(503,'Chưa cấu hình liên kết khách hàng.');
+  if(old&&old!==id)await customers.resolve(tx,actor(c),old);
+  const customer=await customers.resolve(tx,actor(c),id);state.meta.customerId=customer.id;state.meta.customer=customer.name;
+ }
+
  router.get('/catalogue-quotes',async c=>{
   if(c.url.searchParams.get('identity')==='1')return json({memberId:actor(c).id,memberName:actor(c).name});
   const params=c.url.searchParams,q=fold(params.get('q')||'').slice(0,100),offset=Number(params.get('offset')||0),sort=params.get('sort')||'newest';
@@ -53,6 +63,7 @@ export function registerCatalogueQuotes(router:Router<StaffEnv>){
  router.post('/catalogue-quotes',async c=>{
   const b=await readJson(c.req,2_000_000);if(!validId(b.id))throw new AppError(400,'Mã bản báo giá chưa hợp lệ.');const state=cleanCatalogueQuote(b.state),id=b.id;
   return json(await command(c,id,b,'create',state,async tx=>{
+   await linkCustomer(tx,c,state);
    const at=new Date().toISOString(),data=stableJson(state),who=actor(c).id;const [row]=await tx.insert(quotes).values({id,quoteNo:state.meta.quoteNo!,title:state.meta.title!,customer:state.meta.customer!,productCount:state.selected.length,search:fold([state.meta.quoteNo,state.meta.title,state.meta.customer,...state.products.map(p=>p.sku+' '+p.name)].join(' ')),data,createdBy:who,updatedBy:who,createdAt:at,updatedAt:at}).onConflictDoNothing().returning();
    if(!row){const [old]=await tx.select().from(quotes).where(eq(quotes.id,id)).for('update');if(!old||old.deletedAt||old.data!==data)throw new AppError(409,'Báo giá đã có phiên bản khác trên máy chủ. Mở bản chung để đối chiếu, không tạo thêm bản mới.','CATALOGUE_QUOTE_CONFLICT');return{id,revision:old.revision,currentRevision:old.revision,updatedAt:old.updatedAt,reused:true};}
    await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:who,module:'catalog',action:'catalogue-quote-create',entityType:'catalogue-quote',entityId:id,data:JSON.stringify({quoteNo:row.quoteNo,revision:1,hash:sha256Hex(data)}),createdAt:at});return{id,revision:1,currentRevision:1,updatedAt:at};
@@ -61,6 +72,7 @@ export function registerCatalogueQuotes(router:Router<StaffEnv>){
  router.put('/catalogue-quotes/:id',async c=>{
   const b=await readJson(c.req,2_000_000),state=cleanCatalogueQuote(b.state),id=c.params.id!;if(!Number.isSafeInteger(b.revision))throw new AppError(400,'Thiếu phiên bản báo giá đã mở.');
   return json(await command(c,id,b,'update',state,async tx=>{const [old]=await tx.select().from(quotes).where(eq(quotes.id,id)).for('update');if(!old||old.deletedAt)throw new AppError(404,'Báo giá không còn trong danh sách.');if(old.revision!==b.revision)throw new AppError(409,'Nhân viên khác vừa sửa báo giá. Bản anh/chị đang nhập vẫn trên máy; cần mở bản mới để đối chiếu trước khi lưu.','CATALOGUE_QUOTE_CONFLICT');
+   await linkCustomer(tx,c,state,old.data);
    const data=stableJson(state),at=new Date().toISOString();const [next]=await tx.update(quotes).set({quoteNo:state.meta.quoteNo!,title:state.meta.title!,customer:state.meta.customer!,productCount:state.selected.length,search:fold([state.meta.quoteNo,state.meta.title,state.meta.customer,...state.products.map(p=>p.sku+' '+p.name)].join(' ')),data,revision:old.revision+1,updatedBy:actor(c).id,updatedAt:at}).where(eq(quotes.id,id)).returning();
    await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:actor(c).id,module:'catalog',action:'catalogue-quote-update',entityType:'catalogue-quote',entityId:id,data:JSON.stringify({revision:next!.revision,beforeHash:sha256Hex(old.data),afterHash:sha256Hex(data)}),createdAt:at});return{id,revision:next!.revision,currentRevision:next!.revision,updatedAt:at};}));
  },'business');
