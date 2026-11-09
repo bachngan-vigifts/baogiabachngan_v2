@@ -472,8 +472,8 @@ const KHO_HOME = '#/kho';
 const isAccountant = () => state.user?.role === 'employee' && state.user?.positionId === 'accounting';
 /** NVBH ML/LOCK có lối tắt POS trên Trang chủ khi được cấp quyền bán hàng. */
 const isCounterSales = () => state.user?.role === 'employee' && ['sales-ml', 'sales-lock'].includes(state.user?.positionId) && can('pos.sell');
-/** Điểm vào chung; nội dung Trang chủ vẫn theo chức vụ và quyền hiện hành. */
-const homeHash = () => '#/home';
+/** Nhân viên Kho vào không gian công việc riêng; các chức vụ khác giữ Trang chủ chung. */
+const homeHash = () => isWarehouse() ? KHO_HOME : '#/home';
 let loginToHome = false;
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
@@ -909,7 +909,7 @@ function route() {
   if(page==='products'&&!id){const legacySku=new URLSearchParams(query).get('sku');if(legacySku){currentHash='#/products/'+encodeURIComponent(legacySku);history.replaceState(null,'',currentHash);return route();}}
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
   let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'home';
-  if(view==='home'&&page!=='home'){currentHash=homeHash();history.replaceState(null,'',location.pathname+currentHash);return route();}
+  if(view==='home'&&(page!=='home'||isWarehouse())){currentHash=homeHash();history.replaceState(null,'',location.pathname+currentHash);return route();}
   if ((view === 'staff' || view === 'payroll') && !isManager()) { history.replaceState(null, '', homeHash()); return route(); }
   // Trang chức vụ chưa được cấp quyền (link cũ, thông báo…): về trang mở đầu. Báo giá / đơn / khách có mã thì xét theo trang chi tiết.
   const detail = id && view === 'quotes' ? 'editor' : id && (view === 'orders' || view === 'contracts') ? 'order' : id && view === 'customers' ? 'customer' : id && view === 'packing' ? 'packing-slip' : view;

@@ -6,7 +6,11 @@ export async function runHomeFlows({browser,origin,f,out,requests}) {
  const ready=p=>p.waitForFunction(()=>document.querySelector('#view-home')?.dataset.ready==='true');
  for(const id of ['mgr','emp','wh','acct','counter','admin','restricted']) {
   const {c,p,errors}=await contextFor(id,id==='emp'?390:1440),start=requests.length;
-  try{await p.goto(origin);await ready(p);await p.waitForTimeout(300);const actual=(await f.call('/tasks/home',f.cookies[id])).data;
+  try{
+   if(id==='wh'){
+    await p.goto(origin+'/#/home');await p.locator('.ww-page').waitFor();assert.equal(new URL(p.url()).hash,'#/kho');assert.equal(await p.locator('.ww-head h1').textContent(),'Kho của tôi');assert.equal(await p.locator('[data-ww-action=settings],[data-ww-action=approve-month]').count(),0);assert.doesNotMatch(await p.locator('#view-kho').innerText(),/VIỆC RIÊNG KHÔNG ĐƯỢC LỘ/);assert.deepEqual(errors,[]);results.push({role:id,warehouseHomeAlias:true,scope:true,errors});continue;
+   }
+   await p.goto(origin);await ready(p);await p.waitForTimeout(300);const actual=(await f.call('/tasks/home',f.cookies[id])).data;
    assert.equal(await p.locator('[data-home-search], .home-create, .home-head-tools').count(),0,'header search and create menu are removed');
    assert.equal(await p.locator('.home-functions').evaluate(n=>n.previousElementSibling?.classList.contains('home-head')&&n.nextElementSibling?.classList.contains('home-meta')),true,'function groups are directly below the page title');
    assert.equal(await p.locator('[data-home-tab][aria-selected=true]').getAttribute('data-home-tab'),id==='mgr'?'approvals':'priority','default tab respects approval permission');

@@ -10,17 +10,17 @@ const open=source.slice(source.indexOf('function openWorkspace('),source.indexOf
 function harness(positionId:string,role='employee',perms=['pos.sell','page.quotes']){
  const user={positionId,role};
  const context:any={state:{user},location:{hash:'#/orders',pathname:'/index.html'},
-  isWarehouse:()=>positionId==='warehouse',can:(key:string)=>role==='manager'||perms.includes(key),
+  isWarehouse:()=>role==='employee'&&positionId==='warehouse',can:(key:string)=>role==='manager'||perms.includes(key),
   applyWorkspaceUser:()=>true,currentHash:'',route(){},loadAll(){},notifier:{start(){}},
   dataRefresh:{start(){},tick(){}},pulse:{start(){}},requestPriority:{idle:()=>Promise.resolve()},history:{replaceState(_a:unknown,_b:unknown,url:string){context.location.hash=url.slice(url.indexOf('#'));}}};
  runInNewContext(home+'\n'+open+'\nthis.homeHash=homeHash;this.start=(fresh)=>{loginToHome=fresh;openWorkspace(state.user);};',context);
  return context;
 }
 
-test('fresh internal login opens Home for every position without granting extra page permissions',()=>{
+test('warehouse login opens its workbench; other positions keep common Home without granting page permissions',()=>{
  for(const role of ['employee','manager'])for(const position of ['sales-ml','sales-lock','sale','sale-admin','warehouse','accounting','custom']){
-  const app=harness(position,role,[]);assert.equal(app.homeHash(),'#/home');
-  app.start(true);assert.equal(app.location.hash,'#/home');
+  const app=harness(position,role,[]),expected=role==='employee'&&position==='warehouse'?'#/kho':'#/home';assert.equal(app.homeHash(),expected);
+  app.start(true);assert.equal(app.location.hash,expected);
  }
 });
 test('resume and direct document login retain the requested route; login from a generic list opens Home',()=>{
