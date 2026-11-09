@@ -199,6 +199,26 @@ async function review(p) {
   await p.locator("[data-confirm]").waitFor();
 }
 try {
+  for (const width of [390,1440]) {
+    const view=await pageFor(f.mgr,width,'#/sepay?limit=25');
+    await view.p.locator('[data-list] table').waitFor();
+    const selected=await view.p.locator('[data-open]').first().getAttribute('data-open');
+    await view.p.locator('[data-open]').first().click();
+    await view.p.locator('[data-detail] .sp-bank-amount').waitFor();
+    const position=await view.p.locator('[data-detail] .sp-heading').evaluate(el=>({top:el.getBoundingClientRect().top,height:innerHeight}));
+    await view.p.screenshot({path:out+'/open-detail-'+width+'.png'});
+    assert.ok(position.top>=40&&position.top<200,JSON.stringify({width,...position}));
+    assert.equal(await view.p.evaluate(()=>document.activeElement?.hasAttribute('data-detail')),true);
+    const detailCalls=view.calls.length;
+    await view.p.locator('[data-back-list]').click();
+    assert.equal(await view.p.evaluate(()=>document.activeElement?.dataset.open),selected);
+    assert.equal(view.calls.length,detailCalls,'returning to the selected row does not reload or write');
+    assert.equal(await view.p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+    assert.equal(view.errors.length,0);
+    results.push({case:width+'px long list reveals reconciliation and restores selected row focus',pass:true});
+    await view.context.close();
+  }
+
   const m = await pageFor(f.mgr, 1500);
   const p = m.p;
   assert.equal(m.calls.length, 0);

@@ -1,0 +1,249 @@
+{
+  "note": "Isolated real CRM router and synthetic data, sequential cold browser runs; not production metrics",
+  "before": {
+    "phase": "reconcile-before",
+    "conditions": {
+      "browser": "Chromium",
+      "coldContexts": true,
+      "runsPerViewport": 3,
+      "latencyMs": 40,
+      "downloadBps": 1600000,
+      "source": "isolated real CRM API + synthetic SePay, not production"
+    },
+    "summary": [
+      {
+        "width": 1440,
+        "ready": 3072.641088999999,
+        "ttfb": 3,
+        "load": 3045.0999999940395,
+        "fcp": 592,
+        "lcp": 3028,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2440748,
+        "openingApis": 15
+      },
+      {
+        "width": 390,
+        "ready": 3045.2825950000006,
+        "ttfb": 2.399999998509884,
+        "load": 3019.7000000029802,
+        "fcp": 592,
+        "lcp": 2928,
+        "cls": 0.2204277659455128,
+        "jsRequests": 163,
+        "jsBytes": 2440748,
+        "openingApis": 15
+      }
+    ],
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3195.0980009999994,
+        "ttfb": 6.9000000059604645,
+        "load": 3156.10000000149,
+        "fcp": 604,
+        "lcp": 3104,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2440748,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3066.7138909999994,
+        "ttfb": 2.3000000044703484,
+        "load": 3042.60000000149,
+        "fcp": 588,
+        "lcp": 3028,
+        "cls": 0.4564305555555555,
+        "jsRequests": 163,
+        "jsBytes": 2440748,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3072.641088999999,
+        "ttfb": 3,
+        "load": 3045.0999999940395,
+        "fcp": 592,
+        "lcp": 2992,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2440748,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3045.2825950000006,
+        "ttfb": 2.399999998509884,
+        "load": 3019.7000000029802,
+        "fcp": 608,
+        "lcp": 2928,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2440748,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3025.533634000003,
+        "ttfb": 4.5,
+        "load": 2996.8000000044703,
+        "fcp": 592,
+        "lcp": 2900,
+        "cls": 0.22040296474358972,
+        "jsRequests": 163,
+        "jsBytes": 2440748,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3076.5646030000025,
+        "ttfb": 2.2000000029802322,
+        "load": 3049.2999999970198,
+        "fcp": 592,
+        "lcp": 2944,
+        "cls": 0.2204277659455128,
+        "jsRequests": 163,
+        "jsBytes": 2440748,
+        "openingApis": 15,
+        "errors": []
+      }
+    ]
+  },
+  "after": {
+    "phase": "reconcile-after",
+    "conditions": {
+      "browser": "Chromium",
+      "coldContexts": true,
+      "runsPerViewport": 3,
+      "latencyMs": 40,
+      "downloadBps": 1600000,
+      "source": "isolated real CRM API + synthetic SePay, not production"
+    },
+    "summary": [
+      {
+        "width": 1440,
+        "ready": 3073.632951999998,
+        "ttfb": 5.600000001490116,
+        "load": 3043,
+        "fcp": 544,
+        "lcp": 3048,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2442014,
+        "openingApis": 15
+      },
+      {
+        "width": 390,
+        "ready": 3044.984901,
+        "ttfb": 3,
+        "load": 3018.3000000044703,
+        "fcp": 580,
+        "lcp": 2944,
+        "cls": 0.23404917355769228,
+        "jsRequests": 163,
+        "jsBytes": 2442014,
+        "openingApis": 15
+      }
+    ],
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3181.665368000001,
+        "ttfb": 7.300000004470348,
+        "load": 3148.8000000044703,
+        "fcp": 544,
+        "lcp": 3112,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2442014,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3070.634920999999,
+        "ttfb": 2.5,
+        "load": 3042.5,
+        "fcp": 532,
+        "lcp": 3016,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2442014,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3073.632951999998,
+        "ttfb": 5.600000001490116,
+        "load": 3043,
+        "fcp": 584,
+        "lcp": 3048,
+        "cls": 0.47396204185956786,
+        "jsRequests": 163,
+        "jsBytes": 2442014,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3085.1407389999986,
+        "ttfb": 2.899999998509884,
+        "load": 3060.60000000149,
+        "fcp": 592,
+        "lcp": 2980,
+        "cls": 0.23404917355769228,
+        "jsRequests": 163,
+        "jsBytes": 2442014,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3044.984901,
+        "ttfb": 9,
+        "load": 3018.3000000044703,
+        "fcp": 560,
+        "lcp": 2944,
+        "cls": 0.2204277659455128,
+        "jsRequests": 163,
+        "jsBytes": 2442014,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3041.9678120000026,
+        "ttfb": 3,
+        "load": 3008.9000000059605,
+        "fcp": 580,
+        "lcp": 2896,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2442014,
+        "openingApis": 15,
+        "errors": []
+      }
+    ]
+  }
+}
