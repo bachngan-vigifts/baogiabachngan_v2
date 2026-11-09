@@ -42,3 +42,7 @@ Demo chỉ đọc dữ liệu, không lưu bản chốt, không khóa tháng và
 ## Lọc nhân viên và việc nhóm
 
 Manager chọn tên nhân viên để xem riêng công việc, số đếm và hiệu suất của người đó. **Việc nhóm chưa giao** là lựa chọn riêng để giao định mức/người nhận; không cộng vào thẻ thống kê của từng nhân viên. Tài khoản Kho vẫn thấy việc của mình cùng việc nhóm có thể nhận. Bộ lọc giữ nguyên khi chuyển tab/tháng và đặt lại trang danh sách về trang đầu khi đổi nhân viên.
+
+## Điểm khối lượng mặc định
+
+Mỗi việc chưa cấu hình có mặc định **1 điểm khối lượng**. Form Giao định mức tự điền 1; bỏ trống điểm cũng lưu 1. Manager vẫn có thể nhập trọng số riêng khi cần; các định mức và bản chốt đã lưu được giữ nguyên. Điểm mặc định không thay thế **thời gian chuẩn**: vẫn cần duyệt số phút chuẩn để tính tốc độ, cùng thời gian bắt đầu/hoàn thành và xác nhận chất lượng để tính hiệu suất.

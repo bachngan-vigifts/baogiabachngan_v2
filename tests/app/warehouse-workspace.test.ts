@@ -118,3 +118,15 @@ test('Manager employee filter excludes shared and other employee work, team mode
  check(await f.call('/warehouse-workspace?scope=team',c.wh),403);check(await f.call('/warehouse-workspace?member=wh-filter',c.wh),403);check(await f.call('/warehouse-workspace?scope=bad',c.mgr),400);check(await f.call('/warehouse-workspace?scope=team&member=wh',c.mgr),400);
  const expected=other.rows.map((r:any)=>r.id);assert.deepEqual((await list('member=wh-filter')).rows.map((r:any)=>r.id),expected,'repeat employee switch does not retain the shared queue');
 });
+
+test('warehouse tasks default to one workload point when omitted or blank, without inventing standard minutes or changing existing weights',async()=>{
+ const f=await setup(),c=f.cookies;check(await f.call('/warehouse-workspace/settings',c.mgr,'PUT',{calendar,revision:0,reason:'Ca thử điểm mặc định'}));
+ const configure={action:'configure',memberId:'wh',taskRevision:1,revision:0,kind:'picking',standardMinutes:30,note:'Thời gian theo thao tác thực tế'};
+ check(await f.act('ww-one',c.mgr,configure));check(await f.act('ww-two',c.mgr,{...configure,weight:''}));
+ const row=async(id:string)=>(await f.db.select().from(runs).where(eq(runs.taskId,id)))[0]!;
+ assert.equal((await row('ww-one')).weight,1);assert.equal((await row('ww-two')).weight,1);
+ check(await f.act('ww-one',c.mgr,{...configure,taskRevision:2,revision:1,weight:2}));assert.equal((await row('ww-one')).weight,2,'an explicit existing weight is retained until the Manager changes it');
+ for(const weight of [0,-1,'bad',10001])check(await f.act('ww-two',c.mgr,{...configure,taskRevision:2,revision:1,weight}),400);
+ check(await f.act('ww-two',c.mgr,{...configure,taskRevision:2,revision:1,standardMinutes:undefined}),400);
+ assert.equal((await row('ww-one')).weight,2);assert.equal((await row('ww-two')).standardMinutes,30);
+});

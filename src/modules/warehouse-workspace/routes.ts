@@ -119,7 +119,7 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
     if(!text(b.note))fail('Nhập căn cứ định mức.');
     if(Number(b.revision||0)!==(r?.revision||0)||Number(b.taskRevision)!==t.revision)fail('Việc vừa thay đổi. Tải lại.',409);
     const [config]=await db.select().from(settings).where(eq(settings.id,'default'));if(!config||!validCalendar(parseJson(config.calendar,null)))fail('Cài đặt ca làm trước khi giao định mức.');
-    const data={taskId:t.id,memberId:target,kind:b.kind as typeof KINDS[number],weight:positive(b.weight,10000),standardMinutes:positive(b.standardMinutes,100000),calendar:config.calendar,dueAt:due,evidence:'',reviewNote:text(b.note),updatedAt:now};
+    const data={taskId:t.id,memberId:target,kind:b.kind as typeof KINDS[number],weight:b.weight==null||b.weight===''?1:positive(b.weight,10000),standardMinutes:positive(b.standardMinutes,100000),calendar:config.calendar,dueAt:due,evidence:'',reviewNote:text(b.note),updatedAt:now};
     await db.insert(runs).values(data).onConflictDoUpdate({target:runs.taskId,set:{...data,revision:(r?.revision||0)+1}});
     await db.update(tasks).set({assigneeId:target,assigneePosition:null,revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));return {ok:true};
    }
