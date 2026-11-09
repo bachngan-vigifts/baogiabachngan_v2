@@ -7,12 +7,14 @@ import type {CustomerMergeTx} from '../core/contracts/customer-merge.ts';
 import type {StaffEnv,SessionState} from '../modules/staff/api/auth-routes.ts';
 import {employees} from '../modules/staff/schema.ts';
 import {seesAllAsSaleAdmin} from '../modules/staff/domain/roles.ts';
+import {customerIdentityLock} from '../modules/customers/api/identity.ts';
 import {customerAccess} from '../modules/customers/api/routes.ts';
 import {canListRetailCustomers} from '../modules/customers/domain/customer-config.ts';
 import {customers,customerStaff} from '../modules/customers/schema.ts';
 import {catalogueQuotes as quotes} from '../modules/catalog/catalogue-library-schema.ts';
 const linkedId=sql<string>`${quotes.data}::jsonb->'meta'->>'customerId'`;
 export const catalogueCustomerLinks:CatalogueCustomerLinks={
+ lock:customerIdentityLock,
  async resolve(db,actor,id){
   const [row]=await db.select({id:customers.id,name:customers.name,approval:customers.approvalStatus,retail:customers.isRetail}).from(customers).where(eq(customers.id,id)).limit(1);
   if(!row||row.retail&&!canListRetailCustomers(actor))throw new AppError(404,'Không tìm thấy khách hàng có thể sử dụng.');

@@ -4,7 +4,8 @@ import {and,eq} from 'drizzle-orm';
 import {setup} from '../helpers/pos-fixture.ts';
 import {customers,customerStaff} from '../../src/modules/customers/schema.ts';
 import {catalogueQuotes} from '../../src/modules/catalog/catalogue-library-schema.ts';
-import {reassignCatalogueCustomer} from '../../src/app/catalogue-customer-links.ts';
+import {mergeCustomers} from '../../src/modules/customer-hub/api/duplicates.ts';
+import {catalogueCustomerLinks,reassignCatalogueCustomer} from '../../src/app/catalogue-customer-links.ts';
 const {defaultState,validateProduct}=await import(new URL('../../trial-ui/catalogue/core.js',import.meta.url).href);
 function quote(customerId:string){const s=defaultState();s.meta.customerId=customerId;s.meta.customer='Client supplied name';s.products=[validateProduct({id:'product-1',name:'Ly sứ',sku:'00123',brand:'Minh Long',category:'Ly',regular:100000,discount:0,fee:0,qty:1})];s.selected=['product-1'];return s;}
 test('catalogue links the selected ID, validates access/approval and appears only in the corresponding customer profile',async()=>{
@@ -42,4 +43,23 @@ test('catalogue links the selected ID, validates access/approval and appears onl
  const current=(await f.db.select().from(catalogueQuotes).where(eq(catalogueQuotes.id,id)))[0]!;
  assert.equal((await f.call('/catalogue-quotes/'+id+'/archive',f.mgr,'POST',{revision:current.revision,clientKey:crypto.randomUUID()})).status,200);
  assert.equal((await f.call('/customers/catalogue-customer-b/overview',f.mgr)).data.catalogueQuotes.length,0);
+});
+
+test('saving during customer merge never leaves a link to a deleted customer', {skip:!process.env.TEST_PG_URL}, async()=>{
+ const f=await setup(),at=new Date().toISOString(),keep='catalogue-merge-keep',drop='catalogue-merge-drop',id=crypto.randomUUID();
+ await f.db.insert(customers).values([keep,drop].map(id=>({id,name:'Khách đồng thời',contact:'',phone:'',email:'',address:'',search:'khach dong thoi',taxCode:'0101234567',sourceVersion:0,syncedAt:at,approvalStatus:'approved' as const,createdAt:at})));
+ let release!:()=>void,reached!:()=>void;
+ const gate=new Promise<void>(r=>release=r),selected=new Promise<void>(r=>reached=r),resolve=catalogueCustomerLinks.resolve;
+ try{
+  // Pause after validating the old customer, while the quote transaction is still open.
+  catalogueCustomerLinks.resolve=async(db,actor,customerId)=>{const row=await resolve(db,actor,customerId);if(customerId===drop){reached();await gate;}return row;};
+  const saving=f.call('/catalogue-quotes',f.mgr,'POST',{id,clientKey:crypto.randomUUID(),state:quote(drop)});
+  await Promise.race([selected,saving.then(r=>{throw Error('Save ended before customer validation: '+JSON.stringify(r.data));})]);
+  const merging=mergeCustomers(f.db,keep,[drop],'mgr');
+  await new Promise(r=>setTimeout(r,150));release();
+  const [saved]=await Promise.all([saving,merging]);assert.equal(saved.status,200,JSON.stringify(saved.data));
+  const [row]=await f.db.select().from(catalogueQuotes).where(eq(catalogueQuotes.id,id));
+  assert.equal(JSON.parse(row!.data).meta.customerId,keep);
+  assert.equal((await f.db.select().from(customers).where(eq(customers.id,drop))).length,0);
+ }finally{release();catalogueCustomerLinks.resolve=resolve;}
 });

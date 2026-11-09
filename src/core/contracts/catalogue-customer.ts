@@ -5,6 +5,7 @@ export interface CatalogueCustomerActor{id:string;role:string;positionId?:string
 export interface CustomerCatalogueQuote{id:string;quoteNo:string;title:string;productCount:number;createdByName:string;updatedAt:string}
 /** Composition bridges optional catalogue documents and customer profiles. */
 export interface CatalogueCustomerLinks{
+ lock?(tx:CustomerMergeTx):Promise<unknown>;
  resolve(db:CatalogueCustomerDb,actor:CatalogueCustomerActor,id:string):Promise<{id:string;name:string}>;
  list(db:AnyDb,actor:CatalogueCustomerActor,id:string,all:boolean):Promise<CustomerCatalogueQuote[]>;
 }
