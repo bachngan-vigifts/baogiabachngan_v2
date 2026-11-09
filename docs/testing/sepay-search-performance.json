@@ -1,0 +1,304 @@
+{
+  "baselineCommit": "1acd5c0f",
+  "baselineIsolation": "Full git archive, original API and UI; same synthetic fixture and browser conditions.",
+  "before": {
+    "phase": "search-before",
+    "conditions": {
+      "browser": "Chromium",
+      "coldContexts": true,
+      "runsPerViewport": 3,
+      "latencyMs": 40,
+      "downloadBps": 1600000,
+      "source": "isolated real CRM API + synthetic SePay, not production"
+    },
+    "summary": [
+      {
+        "width": 1440,
+        "ready": 3156.0711690000007,
+        "ttfb": 5.700000002980232,
+        "load": 3124.7000000029802,
+        "fcp": 624,
+        "lcp": 3096,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2443851,
+        "openingApis": 15
+      },
+      {
+        "width": 390,
+        "ready": 3125.235547999997,
+        "ttfb": 4.5999999940395355,
+        "load": 3100.7999999970198,
+        "fcp": 608,
+        "lcp": 3004,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2443851,
+        "openingApis": 15
+      }
+    ],
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3279.045523999999,
+        "ttfb": 12.799999997019768,
+        "load": 3238.4000000059605,
+        "fcp": 668,
+        "lcp": 3288,
+        "cls": 0.45675370852623454,
+        "jsRequests": 163,
+        "jsBytes": 2443851,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3114.855671000001,
+        "ttfb": 5.700000002980232,
+        "load": 3080.4000000059605,
+        "fcp": 624,
+        "lcp": 3088,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2443851,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3156.0711690000007,
+        "ttfb": 2.199999988079071,
+        "load": 3124.7000000029802,
+        "fcp": 608,
+        "lcp": 3096,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2443851,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3125.235547999997,
+        "ttfb": 4.5999999940395355,
+        "load": 3100.7999999970198,
+        "fcp": 652,
+        "lcp": 3016,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2443851,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3136.239214000001,
+        "ttfb": 4.5999999940395355,
+        "load": 3103.8999999910593,
+        "fcp": 580,
+        "lcp": 3004,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2443851,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3102.3596260000013,
+        "ttfb": 1.7000000029802322,
+        "load": 3072.3999999910593,
+        "fcp": 608,
+        "lcp": 2976,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2443851,
+        "openingApis": 15,
+        "errors": []
+      }
+    ]
+  },
+  "after": {
+    "phase": "search-after",
+    "conditions": {
+      "browser": "Chromium",
+      "coldContexts": true,
+      "runsPerViewport": 3,
+      "latencyMs": 40,
+      "downloadBps": 1600000,
+      "source": "isolated real CRM API + synthetic SePay, not production"
+    },
+    "summary": [
+      {
+        "width": 1440,
+        "ready": 3107.780928,
+        "ttfb": 6.200000002980232,
+        "load": 3079.9000000059605,
+        "fcp": 600,
+        "lcp": 3052,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2446626,
+        "openingApis": 15
+      },
+      {
+        "width": 390,
+        "ready": 3052.5246689999985,
+        "ttfb": 3.1000000089406967,
+        "load": 3022.4000000059605,
+        "fcp": 588,
+        "lcp": 2956,
+        "cls": 0.23404917355769228,
+        "jsRequests": 163,
+        "jsBytes": 2446626,
+        "openingApis": 15
+      }
+    ],
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3221.8453090000003,
+        "ttfb": 17,
+        "load": 3187.5,
+        "fcp": 564,
+        "lcp": 3168,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2446626,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3079.4346050000004,
+        "ttfb": 6.200000002980232,
+        "load": 3051.300000011921,
+        "fcp": 608,
+        "lcp": 3048,
+        "cls": 0.45675370852623454,
+        "jsRequests": 163,
+        "jsBytes": 2446626,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3107.780928,
+        "ttfb": 5.5,
+        "load": 3079.9000000059605,
+        "fcp": 600,
+        "lcp": 3052,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2446626,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3098.953357000002,
+        "ttfb": 2.300000011920929,
+        "load": 3070.3999999910593,
+        "fcp": 604,
+        "lcp": 2972,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2446626,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3052.5246689999985,
+        "ttfb": 3.1000000089406967,
+        "load": 3022.4000000059605,
+        "fcp": 560,
+        "lcp": 2924,
+        "cls": 0.2204277659455128,
+        "jsRequests": 163,
+        "jsBytes": 2446626,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3045.71343,
+        "ttfb": 3.2000000029802322,
+        "load": 3020.1000000089407,
+        "fcp": 588,
+        "lcp": 2956,
+        "cls": 0.23404917355769228,
+        "jsRequests": 163,
+        "jsBytes": 2446626,
+        "openingApis": 15,
+        "errors": []
+      }
+    ]
+  },
+  "picker": {
+    "conditions": "Real local router/PGlite + synthetic documents, 3 fresh browser contexts per viewport, no network throttling. defaultMs includes transaction detail plus default document list; typeaheadMs includes 250ms debounce. Only after has a default list, so no before/after claim for this metric.",
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "defaultMs": 94.18912400000045,
+        "typeaheadMs": 325.9786880000029
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "defaultMs": 86.60972599999877,
+        "typeaheadMs": 299.78649100000257
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "defaultMs": 105.93005699999776,
+        "typeaheadMs": 302.7415519999995
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "defaultMs": 96.00951800000257,
+        "typeaheadMs": 315.37198999999964
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "defaultMs": 119.93590899999981,
+        "typeaheadMs": 307.3621999999996
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "defaultMs": 90.98609200000647,
+        "typeaheadMs": 306.02472500000295
+      }
+    ],
+    "summary": [
+      {
+        "width": 1440,
+        "defaultMs": 94.18912400000045,
+        "typeaheadMs": 302.7415519999995
+      },
+      {
+        "width": 390,
+        "defaultMs": 96.00951800000257,
+        "typeaheadMs": 307.3621999999996
+      }
+    ]
+  },
+  "limits": "Local measurements, not production latency. Opening-page TTFB is HTML TTFB, not SePay or database latency. Existing app startup CLS remains high. PostgreSQL-only concurrency tests skipped in PGlite."
+}

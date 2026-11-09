@@ -179,7 +179,7 @@ async function detail(p, id) {
   await p.locator("[data-detail] .sp-bank-amount").waitFor();
 }
 async function choose(p, no) {
-  await p.locator("[data-order-search] input").fill(no);
+  await p.locator('[data-order-search] input[name="orderQuery"]').fill(no);
   await p.locator("[data-order-search] button[type=submit]").click();
   await p.locator("[data-order-results] [data-choose]").first().click();
   await p.locator("[data-approval-form]").waitFor();
@@ -470,10 +470,52 @@ try {
   const pickerEvent=await f.incoming('Khoản cần chọn HĐKT',100000,{id:'picker-account-pending'});
   const receiptsAtPicker=(await f.db.select().from(customerPayments)).length;
   f.env.sepayReceiptAccounts=[];
+  // Default list, debounced search, filters, pagination and disabled drafts on both widths.
+  for(let i=0;i<22;i++) await f.order('FILTER_LIST_'+String(i).padStart(2,'0'));
+  await f.order('FILTER_DRAFT',{status:'draft'});
+  const searchRuns=[];
+  for(const width of [1440,390]) for(let run=1;run<=3;run++) {
+    const view=await pageFor(f.mgr,width,'#/sepay?q=picker-account-pending');
+    await view.p.locator('[data-open]').waitFor();
+    const started=performance.now();
+    await detail(view.p,pickerEvent.id);
+    await view.p.locator('[data-order-results] [data-choose]').first().waitFor();
+    const defaultMs=performance.now()-started;
+    const query=view.p.locator('[name=orderQuery]'), searchStarted=performance.now();
+    await query.fill('NO_SUCH_DOCUMENT');
+    await query.fill('FILTER_LIST');
+    await view.p.waitForFunction(()=>{ const rows=[...document.querySelectorAll('[data-order-results] [data-choose]')]; return rows.length===20 && rows.every(row=>row.textContent.includes('FILTER_LIST')); });
+    assert.equal(await view.p.locator('[data-order-results] [data-choose]').count(),20);
+    searchRuns.push({width,run,defaultMs,typeaheadMs:performance.now()-searchStarted});
+    await view.p.locator('[data-order-offset="20"]').click();
+    await view.p.waitForFunction(()=>document.querySelector('.sp-order-pages')?.textContent.includes('Trang 2'));
+    assert.equal(await view.p.locator('[data-order-results] [data-choose]').count(),2);
+    await query.fill('FILTER_DRAFT');
+    await view.p.locator('[data-order-results] button:disabled').filter({hasText:'FILTER_DRAFT'}).waitFor();
+    assert.equal(await view.p.locator('[data-order-results] [data-choose]').count(),0);
+    await view.p.locator('[name=eligibility]').selectOption('eligible');
+    await view.p.locator('[data-order-results] .sp-empty').waitFor();
+    await view.p.locator('[name=eligibility]').selectOption('active');
+    await query.fill('HDKT_PICK_001');
+    await view.p.locator('[name=kind]').selectOption('contract');
+    await view.p.locator('[data-order-results] [data-choose]').filter({hasText:'HDKT_PICK_001'}).click();
+    await view.p.locator('[data-account-block]').waitFor();
+    assert.equal(await view.p.locator('[data-preview] h3').textContent(),'HDKT_PICK_001');
+    assert.equal(await view.p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+    assert.equal(view.errors.length,0,view.errors.join('\n'));
+    await view.p.screenshot({path:out+'/document-search-'+width+'.png',fullPage:true});
+    await view.p.locator('[data-clear-orders]').click();
+    await view.p.locator('[data-order-results] [data-choose]').first().waitFor();
+    assert.equal(await query.inputValue(),'');
+    assert.equal(await view.p.locator('[data-preview] h3').count(),0);
+    await view.context.close();
+  }
+  await writeFile(out+'/search-timing.json',JSON.stringify(searchRuns,null,2));
+  results.push({case:'default document list, typeahead, filters, pagination and visible unselectable drafts on PC/mobile',pass:true});
   const picker=await pageFor(f.mgr,390,'#/sepay?q=picker-account-pending');
   await picker.p.locator('[data-open]').waitFor();await detail(picker.p,pickerEvent.id);
   await picker.p.locator('[data-order-search]').waitFor();
-  await picker.p.locator('[data-order-search] input').fill('HDKT_PICK_001');
+  await picker.p.locator('[data-order-search] input[name="orderQuery"]').fill('HDKT_PICK_001');
   await picker.p.locator('[data-order-search] button[type=submit]').click();
   await picker.p.locator('[data-order-results] [data-choose]').first().click();
   await picker.p.locator('[data-account-block]').waitFor();

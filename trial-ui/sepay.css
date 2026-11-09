@@ -413,3 +413,11 @@
 
 .sp-head-actions{display:flex;flex-wrap:wrap;gap:8px}.sp-head-actions .btn{min-height:44px}[data-pull-notice]:empty{display:none}
 @media(max-width:760px){.sp-page .page-head{flex-direction:column;align-items:stretch;gap:10px}.sp-head-actions{width:100%}.sp-head-actions .btn:first-child{flex:1}}
+
+.sp-order-pages { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.sp-order-results button:disabled { cursor:default; background:#f1f3f6; opacity:.75; }
+.sp-match [data-order-results] { overflow-anchor:none; }
+
+.sp-document-filters { grid-column:1/-1; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.sp-document-filters label, .sp-match label { min-width:0; }
+.sp-document-filters input, .sp-document-filters select { width:100%; min-width:0; }

@@ -1,3 +1,4 @@
+import { customers } from '../../customers/schema.ts';
 import {WEB_PAYMENT_BLOCKED_STATUSES} from '../domain/web-order-outcome.ts';
 import {isLockWebQrPayment} from './sepay-web-store.ts';
 import {webStoreOrders as web,posRegisters as webRegisters} from '../pos-schema.ts';
@@ -23,7 +24,7 @@ import {
   type Router,
   type RouteContext,
 } from "../../../core/http/router.ts";
-import { foldSql, matchAllWords } from "../../../core/text/fold.ts";
+import { foldSql, matchAllWords, searchRank, rankFirst } from "../../../core/text/fold.ts";
 import { auditLogs } from "../../../core/db/schema.ts";
 import type { StaffEnv, SessionState } from "../../staff/api/auth-routes.ts";
 import { employees } from "../../staff/schema.ts";
@@ -263,43 +264,43 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
   router.get(
     "/sepay/orders",
     async (c) => {
-      const q = (c.url.searchParams.get("q") || "").trim();
-      if (q.length < 2 || q.length > 120)
-        throw new AppError(400, "Nhập từ 2–120 ký tự để tìm đơn.");
+      const p = c.url.searchParams;
+      const q = (p.get("q") || "").trim();
+      const kind = p.get("kind") || "all", eligibility = p.get("eligibility") || "active";
+      const offset = Number(p.get("offset") || 0), limit = 20;
+      const from = p.get("from") || "", to = p.get("to") || "";
+      if (q.length > 120 || !["all", "order", "contract"].includes(kind) ||
+          !["active", "eligible", "draft", "cancelled", "all"].includes(eligibility) ||
+          !Number.isInteger(offset) || offset < 0 || offset > 1000000 ||
+          [from,to].some(v => v && (!/^\d{4}-\d{2}-\d{2}$/.test(v) || !Number.isFinite(Date.parse(v)) || new Date(v).toISOString().slice(0,10)!==v)) || (from && to && from > to))
+        throw new AppError(400, "Bộ lọc tìm đơn không hợp lệ.");
+      const eligible = and(ne(orders.status,"cancelled"), or(ne(orders.status,"draft"), inArray(contracts.status,["signed","completed"])));
+      const name = sql<string>`coalesce(nullif(${customers.name},''),${orders.customerName})`;
       const rows = await c.env.db
         .select({
-          id: orders.id,
-          orderNo: orders.orderNo,
-          contractNo: contracts.contractNo,
-          customerName: orders.customerName,
-          total: orders.total,
-          status: orders.status,
+          id: orders.id, orderNo: orders.orderNo, contractNo: contracts.contractNo,
+          customerName: name, total: orders.total, status: orders.status,
+          contractStatus: contracts.status, orderDate: orders.orderDate,
+          selectable: sql<boolean>`coalesce(${eligible},false)`,
         })
         .from(orders)
         .leftJoin(contracts, eq(contracts.orderId, orders.id))
-        .where(
-          and(
-            eq(orders.channel, "crm"),
-            ne(orders.status, "cancelled"),
-            or(
-              ne(orders.status, "draft"),
-              inArray(contracts.status, ["signed", "completed"]),
-            ),
-            matchAllWords(
-              foldSql(
-                orders.orderNo,
-                contracts.contractNo,
-                orders.quoteNo,
-                orders.customerName,
-                orders.phone,
-              ),
-              q,
-            ),
-          ),
-        )
-        .orderBy(desc(orders.orderDate), desc(orders.id))
-        .limit(21);
-      return json({ orders: rows.slice(0, 20), hasMore: rows.length > 20 });
+        .leftJoin(customers, eq(customers.id, sql`coalesce(${contracts.customerId},${orders.customerId})`))
+        .where(and(
+          eq(orders.channel, "crm"),
+          kind === "contract" ? sql`${contracts.id} is not null` : kind === "order" ? isNull(contracts.id) : undefined,
+          eligibility === "active" ? ne(orders.status,"cancelled") :
+          eligibility === "eligible" ? eligible :
+          eligibility === "draft" ? and(eq(orders.status,"draft"),sql`not coalesce(${eligible},false)`) :
+          eligibility === "cancelled" ? eq(orders.status,"cancelled") : undefined,
+          from ? gte(orders.orderDate,from) : undefined,
+          to ? lt(orders.orderDate,new Date(Date.parse(to)+86400000).toISOString().slice(0,10)) : undefined,
+          q ? matchAllWords(foldSql(orders.orderNo,contracts.contractNo,orders.quoteNo,orders.customerName,orders.phone,
+            customers.name,customers.contact,customers.phone,customers.customerCode),q) : undefined,
+        ))
+        .orderBy(...rankFirst(searchRank([orders.orderNo,contracts.contractNo],name,q)), desc(orders.orderDate),desc(orders.id))
+        .limit(limit+1).offset(offset);
+      return json({ orders: rows.slice(0,limit), hasMore: rows.length>limit, offset, limit });
     },
     "admin",
   );
