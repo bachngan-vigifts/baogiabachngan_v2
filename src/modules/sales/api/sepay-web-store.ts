@@ -66,7 +66,7 @@ export async function decideWebSepay(db:CashDb,p:SepayPayment):Promise<WebSepayD
  return {status:'matched',webOrderId:id,reason:'Đã đối soát QR với đơn web Lock; website đã ghi nhận khoản thu, không tạo thêm phiếu thu CRM.'};
 }
 export async function saveWebSepay(db:CashDb,p:SepayPayment,d:WebSepayDecision,old:typeof bank.$inferSelect|undefined,actorId='integration:sepay-web'){
- const row={...d,orderId:null,paymentId:null},id=old?.id||crypto.randomUUID();
+ const row={...d,matchMethod:'reference' as const,matchedOrderAt:null,orderId:null,paymentId:null},id=old?.id||crypto.randomUUID();
  if(old){
   if(old.status===d.status&&old.webOrderId===d.webOrderId&&old.reason===d.reason)return row;
   await db.update(bank).set(row).where(eq(bank.id,old.id));

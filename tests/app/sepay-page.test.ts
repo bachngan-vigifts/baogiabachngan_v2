@@ -292,7 +292,7 @@ test("QR POS and transactions identified to POS cannot be reassigned to CRM", as
   assert.equal(
     (await f.call("/sepay/transactions/" + qr.id, f.mgr)).data.capabilities
       .canConfirm,
-    false,
+    true,
   );
   assert.equal((await f.confirm(qr.id, f.choice(crm.id))).status, 409);
   const pos = await f.order("SOURCEPOS110", {
@@ -311,7 +311,7 @@ test("preview is read-only and fresh debt is rechecked at confirmation; search e
   await f.order("PREVIEW106POS", { channel: "pos" });
   await f.order("PREVIEW106DRAFT", { status: "draft" });
   await f.order("PREVIEW106CANCELLED", { status: "cancelled" });
-  const search = await f.call("/sepay/orders?q=PREVIEW106", f.mgr);
+  const search = await f.call("/sepay/orders?q=PREVIEW106&source=crm", f.mgr);
   assert.equal(search.data.orders.length, 1);
   const preview = await f.call(
     "/sepay/orders/" + o.id + "?transactionId=" + e.id,

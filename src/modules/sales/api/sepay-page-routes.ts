@@ -1,3 +1,5 @@
+import {validWebSepay} from './web-sepay-evidence.ts';
+import {previewNearbySepay} from './sepay-proximity-store.ts';
 import {WEB_PAYMENT_BLOCKED_STATUSES} from '../domain/web-order-outcome.ts';
 import {isLockWebQrPayment} from './sepay-web-store.ts';
 import {webStoreOrders as web,posRegisters as webRegisters} from '../pos-schema.ts';
@@ -54,16 +56,10 @@ function readAccess(c: Ctx): void {
   if (!canViewSepay(member(c)))
     throw new AppError(403, "Chỉ Manager và Kế toán được xem sổ SePay.");
 }
-const validWeb = sql`coalesce(${web.id} is not null and ${web.source}='lock' and ${web.currency}='VND' and ${web.total}=${bank.amount}
- and regexp_replace(lower(trim(${web.status})),'^wc-','') not in (${sql.join(WEB_PAYMENT_BLOCKED_STATUSES.map(s=>sql`${s}`),sql`, `)})
- and ${webDocumentStatus()}<>'cancelled' and ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is not null
- and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false)
- and coalesce((${web.crmEditSnapshot}::jsonb->>'revision')::int,0)=0
- and lower(${web.paymentMethod}) ~ '(^|[^a-z0-9_])qr([^a-z0-9_]|$)' and ${webRegisters.active}
- and trim(${webRegisters.bankAccount})<>'' and regexp_replace(${webRegisters.bankAccount},'[[:space:]]','','g')=${bank.accountNumber},false)`;
+const validWeb = validWebSepay();
 const state = sql<string>`case when ${bank.status}='matched' and
  (case when ${bank.webOrderId} is not null then not (${validWeb}) else
- (${payments.id} is null or ${payments.voidedAt} is not null or ${payments.orderId} is distinct from ${bank.orderId} or ${payments.amount}<>${bank.amount} or ${payments.method}<>'transfer') end)
+ ((${bank.matchMethod}='amount_time' and ${orders.createdAt} is distinct from ${bank.matchedOrderAt}) or ${payments.id} is null or ${payments.voidedAt} is not null or ${payments.orderId} is distinct from ${bank.orderId} or ${payments.amount}<>${bank.amount} or ${payments.method}<>'transfer') end)
  then 'receipt_issue' else ${bank.status} end`;
 const columns = {
   id: bank.id,
@@ -75,6 +71,8 @@ const columns = {
   content: bank.content,
   status: state,
   rawStatus: bank.status,
+  matchMethod:bank.matchMethod,
+  matchedOrderAt:bank.matchedOrderAt,
   reason: sql<string>`case when ${bank.webOrderId} is not null and ${bank.status}='matched' and not (${validWeb}) then 'Đơn web hoặc xác nhận thanh toán đã thay đổi; cần kiểm tra chứng từ nguồn.' else ${bank.reason} end`,
   orderId: bank.orderId,
   orderNo: sql<string>`coalesce(nullif(${web.crmOrderNo},''),${web.orderNo},${orders.orderNo})`,
@@ -220,6 +218,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
         .limit(20);
       const webPayment=!!row.webOrderId||await isLockWebQrPayment(c.env.db,row);
+      const [sourceAccount]=await c.env.db.select({id:webRegisters.id}).from(webRegisters).where(and(eq(webRegisters.active,true),eq(sql`regexp_replace(${webRegisters.bankAccount},'[[:space:]]','','g')`,row.accountNumber))).limit(1);
       return json({
         transaction: row,
         history: history.map((h) => {
@@ -242,19 +241,14 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         capabilities: {
           canConfirm:
             member(c).role === "manager" &&
-            ["review", "unmatched"].includes(row.status) &&
-            !webPayment &&
-            !sepayPosIntent(row.content) &&
-            row.orderChannel !== "pos",
+            ["review", "unmatched"].includes(row.status),
         },
         blockReason:
           webPayment ? row.reason || "Giao dịch thuộc đơn web; xem trạng thái thanh toán trên đúng đơn web." :
           sepayPosIntent(row.content) || row.orderChannel === "pos"
             ? "Giao dịch thuộc luồng QR/POS; không gắn vào đơn CRM khác."
             : "",
-        accountApproved: (c.env.sepayReceiptAccounts || []).includes(
-          row.accountNumber,
-        ),
+        accountApproved: !!sourceAccount || (c.env.sepayReceiptAccounts || []).includes(row.accountNumber),
       });
     },
     "business",
@@ -263,43 +257,24 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
   router.get(
     "/sepay/orders",
     async (c) => {
-      const q = (c.url.searchParams.get("q") || "").trim();
-      if (q.length < 2 || q.length > 120)
-        throw new AppError(400, "Nhập từ 2–120 ký tự để tìm đơn.");
-      const rows = await c.env.db
-        .select({
-          id: orders.id,
-          orderNo: orders.orderNo,
-          contractNo: contracts.contractNo,
-          customerName: orders.customerName,
-          total: orders.total,
-          status: orders.status,
-        })
-        .from(orders)
-        .leftJoin(contracts, eq(contracts.orderId, orders.id))
-        .where(
-          and(
-            eq(orders.channel, "crm"),
-            ne(orders.status, "cancelled"),
-            or(
-              ne(orders.status, "draft"),
-              inArray(contracts.status, ["signed", "completed"]),
-            ),
-            matchAllWords(
-              foldSql(
-                orders.orderNo,
-                contracts.contractNo,
-                orders.quoteNo,
-                orders.customerName,
-                orders.phone,
-              ),
-              q,
-            ),
-          ),
-        )
-        .orderBy(desc(orders.orderDate), desc(orders.id))
-        .limit(21);
-      return json({ orders: rows.slice(0, 20), hasMore: rows.length > 20 });
+      const p=c.url.searchParams,q=(p.get('q')||'').trim(),source=p.get('source')||'all';
+      if(q.length>120||q.length>0&&q.length<2||!['all','crm','contract','pos','web'].includes(source))throw new AppError(400,'Bộ lọc đơn không hợp lệ.');
+      const integer=(key:string,fallback:number,max:number)=>{const raw=p.get(key);if(!raw)return fallback;if(!/^\d+$/.test(raw)||!Number.isSafeInteger(Number(raw))||Number(raw)>max)throw new AppError(400,'Bộ lọc số không hợp lệ.');return Number(raw);};
+      const min=integer('min',0,1e12),max=integer('max',1e12,1e12),offset=integer('offset',0,100000),limit=20;
+      if(min>max)throw new AppError(400,'Khoảng tiền không hợp lệ.');
+      const day=vietnamDate().iso,hasDates=!!p.get('from')||!!p.get('to')||!q;
+      const dates=sepayPageFilters(new URLSearchParams({from:p.get('from')||p.get('to')||day,to:p.get('to')||p.get('from')||day}),day);
+      const from=hasDates?dates.start:undefined,to=hasDates?dates.end:undefined;
+      const rows=await c.env.db.select({id:orders.id,orderNo:orders.orderNo,contractNo:contracts.contractNo,customerName:orders.customerName,total:orders.total,status:sql<string>`${orders.status}`.as('status'),createdAt:orders.createdAt,kind:sql<string>`case when ${orders.channel}='pos' then 'pos' when ${contracts.id} is not null then 'contract' else 'crm' end`.as('kind')})
+        .from(orders).leftJoin(contracts,eq(contracts.orderId,orders.id)).where(and(
+          source==='web'?sql`false`:source==='pos'?eq(orders.channel,'pos'):source==='crm'?and(eq(orders.channel,'crm'),isNull(contracts.id)):source==='contract'?and(eq(orders.channel,'crm'),sql`${contracts.id} is not null`):inArray(orders.channel,['crm','pos']),
+          ne(orders.status,'cancelled'),or(ne(orders.status,'draft'),inArray(contracts.status,['signed','completed'])),gte(orders.total,min),lte(orders.total,max),
+          from?gte(orders.createdAt,from):undefined,to?lt(orders.createdAt,to):undefined,
+          q?matchAllWords(foldSql(orders.orderNo,contracts.contractNo,orders.quoteNo,orders.customerName,orders.phone),q):undefined))
+        .unionAll(c.env.db.select({id:sql<string>`'web:'||${web.id}`.as('id'),orderNo:sql<string>`coalesce(nullif(${web.crmOrderNo},''),${web.orderNo})`.as('order_no'),contractNo:sql<string|null>`null`.as('contract_no'),customerName:web.customerName,total:web.total,status:webDocumentStatus().as('status'),createdAt:web.orderedAt,kind:sql<string>`'web'`.as('kind')})
+          .from(web).where(and(['all','web'].includes(source)?inArray(web.source,['lock','minhlong']):sql`false`,ne(webDocumentStatus(),'cancelled'),gte(web.total,min),lte(web.total,max),from?gte(web.orderedAt,from):undefined,to?lt(web.orderedAt,to):undefined,q?matchAllWords(foldSql(web.orderNo,web.crmOrderNo,web.customerName,web.phone),q):undefined)))
+        .orderBy(desc(sql`created_at`),desc(sql`id`)).limit(limit+1).offset(offset);
+      return json({orders:rows.slice(0,limit),hasMore:rows.length>limit,offset,limit});
     },
     "admin",
   );
@@ -315,6 +290,11 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
             .from(bank)
             .where(eq(bank.id, transactionId))
             .limit(1);
+          if(event && (event.status==='matched'||event.paymentId))throw new AppError(409,'Giao dịch đã được xử lý. Tải lại để kiểm tra.');
+          if(event) {
+            const [selected]=c.params.id!.startsWith('web:')?[]:await tx.select({channel:orders.channel}).from(orders).where(eq(orders.id,c.params.id!)).limit(1);
+            if(c.params.id!.startsWith('web:')||selected?.channel==='pos')return previewNearbySepay(tx,parseSepayPayment(JSON.parse(event.payload)),c.params.id!);
+          }
           const [row] = await tx
             .select({
               order: orders,

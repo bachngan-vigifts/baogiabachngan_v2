@@ -15,6 +15,6 @@ export async function retrySepayWebOrder(env:StaffEnv,id:string){
  for(const row of rows){
   if(!lockQrReferences(row.content).some(ref=>refs.includes(ref)))continue;
   let payment;try{payment=parseSepayPayment(JSON.parse(row.payload));}catch{continue;}
-  await ingestPayment(env,payment,undefined,undefined,true);
+  await ingestPayment(env,payment,undefined,undefined,'web');
  }
 }

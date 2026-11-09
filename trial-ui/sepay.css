@@ -2,6 +2,11 @@
   max-width: 1600px;
   margin: auto;
 }
+.sp-match .sp-order-filters { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+.sp-order-filters .sp-order-query { grid-column:1/-1; }
+.sp-order-filters :is(input,select) { width:100%;min-width:0; }
+[data-order-pager] { margin:10px 0; }
+@media(max-width:480px){.sp-match .sp-order-filters{grid-template-columns:minmax(0,1fr);}}
 .sp-page h2 {
   font-size: 16px;
   margin: 0;

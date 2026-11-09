@@ -4,19 +4,43 @@
 
 Mở **Tiền & công nợ → Thanh toán SePay** (`#/sepay`); điện thoại vào nhóm **Tiền** ở menu chân trang. Manager và Kế toán được xem danh sách, chứng từ gốc và lịch sử xử lý. Chỉ Manager được tìm đơn/HĐKT, xem trước cách ghi nhận và xác nhận. API kiểm tra quyền độc lập với giao diện.
 
-Trang hiển thị giao dịch tiền vào đã được webhook CRM hoặc thao tác tải API lưu trong `sepay_transactions`. Trang không tải sao kê lịch sử trực tiếp từ ngân hàng. Dùng migration và cấu hình tài khoản đã có trong [luồng nhận webhook](SEPAY-RECEIPTS.md); phần trang không thêm migration hay tự cấu hình webhook.
+Trang hiển thị giao dịch tiền vào đã được webhook CRM hoặc thao tác tải API lưu trong `sepay_transactions`. Trang không tải sao kê lịch sử trực tiếp từ ngân hàng. Dùng migration và cấu hình tài khoản đã có trong [luồng nhận webhook](SEPAY-RECEIPTS.md); các thay đổi đối soát theo tiền/thời gian cần migration mới bên dưới; không tự cấu hình webhook.
+
+## Tự đối soát POS/web theo số tiền và thời gian
+
+- Ưu tiên mã chứng từ rõ ràng theo quy trình hiện có. Khi thiếu mã, tìm **đơn POS hoặc web** trong **5 phút trước đến 5 phút sau thời điểm giao dịch ngân hàng** (`transactionAt`, không dùng giờ mở màn hình hoặc giờ import). Số tiền phải khớp chính xác VND; không làm tròn, không dung sai. CRM/HĐKT không được tự gán theo số tiền/thời gian.
+- Chỉ khớp tự động khi có **một** đích/phiếu thu phù hợp. Có nhiều đích cùng tiền, kể cả một đích gần hơn, giữ để Manager chọn. Chạm giới hạn 50 đơn mỗi nguồn cũng không chọn đại từ một danh sách bị cắt.
+- Với khớp theo tiền/thời gian, chờ hết 5 phút phía sau để xét đơn tạo sau. Webhook lưu chứng từ ngay. Lịch SePay 5 phút sẵn có thử lại các dòng đã hết cửa sổ, trong 15 phút gần nhất, tối đa 30 dòng/lượt; không thêm cron/timer hoặc request vào trang POS. Vì có nhịp lịch, trạng thái có thể cập nhật ở lượt tiếp theo, thường 5–10 phút sau giao dịch. Giao dịch cũ hơn phạm vi thử lại vẫn giữ trong sổ để xử lý thủ công; không backfill hàng loạt lịch sử.
+- **POS:** gắn vào phiếu chuyển khoản chưa bị huỷ và chưa gắn SePay khác, cùng số tiền và quầy/tài khoản. Giữ nguyên phiếu, ca, ngày thu và sổ quỹ, kể cả ca đã đóng. Phiếu trước nửa đêm và ngân hàng sau nửa đêm được xét theo thời điểm, không ép cùng ngày. POS chưa có phiếu chuyển khoản phải hoàn tất thu trong POS trước; không tự đổi đơn COD, cập nhật tiền hãng vận chuyển hoặc tạo thêm tiền vào ca.
+- **Web Lock/Minh Long:** đúng tổng đơn VND, đúng tài khoản quầy đang hoạt động, phương thức chuyển khoản/QR và nguồn không huỷ/hoàn/xung đột/sửa giá. Chứng từ SePay đã xác thực là bằng chứng thu riêng; CRM đọc bằng chứng này để hiển thị đã trả tiền. Không ghi `date_paid` giả, không sửa `financial_snapshot` gốc, không gọi Woo payment_complete, không tạo đơn/phiếu thu/tồn kho trùng.
+- Chuẩn hoá thời điểm tạo web: `date_created_gmt` là UTC, `date_created` không có múi giờ là giờ Việt Nam. `ordered_at_verified` chỉ bật khi nguồn thực sự gửi ngày tạo. Bản cũ/chỉ có giờ suy đoán không tự khớp theo thời gian; Manager vẫn có thể đối chiếu và chọn tay. Khi webhook bổ sung ngày tạo thật, cờ này được cập nhật; webhook chỉ đổi trạng thái giữ nguyên ngày tạo đã xác minh.
+- Lưu cách khớp (`match_method`) và thời điểm tạo đơn tại lúc khớp (`matched_order_at`). Nếu nguồn sửa thời điểm tạo của một liên kết theo thời gian, hoặc sửa số tiền/trạng thái/tài khoản, trang báo cần kiểm tra. Không tự chuyển liên kết hay ghi thêm tiền để sửa.
+
+### Danh sách chọn thủ công
+
+Bấm **Xem / đối soát** sẽ mở ngay danh sách đơn theo ngày giao dịch (mở rộng ngày liền kề nếu cửa sổ ±5 phút vượt nửa đêm). Manager lọc theo **POS / website / đơn CRM / HĐKT**, ngày tạo, giá trị đơn, từ khoá khách/mã/điện thoại; mỗi trang 20 dòng, có **Xem thêm đơn**. Có thể để trống từ khoá; từ khoá không rỗng cần tối thiểu 2 ký tự. Giá trị lọc là tổng đơn, không suy đoán số còn phải thu.
+
+Chọn một đơn để xem trước; nhập lý do 10–1.000 ký tự và xác nhận chứng từ. POS phải chọn phiếu có sẵn; web liên kết chứng từ ngân hàng; CRM/HĐKT giữ kiểm tra công nợ và tiền mặt nhân viên đang giữ như trước. Manager có thể giải quyết mã sai trong cùng nguồn, nhưng không chuyển chứng từ đã xác định nguồn POS/web sang luồng khác. Tài khoản chưa duyệt vẫn xem/tìm được; chỉ xác nhận khi đúng tài khoản nhận. Kế toán chỉ xem, không tìm đích hoặc xác nhận qua API quản trị.
+
+### Migration trước merge/deploy
+
+Chạy tay `migrations/postgres/20261109193137_sepay_proximity_indexes.sql` rồi `scripts/sql/assert-sepay-proximity.sql` (kết quả `sepay_proximity_schema_ok`). Thêm 3 trường chứng cứ và 4 index; giữ nguyên số liệu/phiếu thu, không backfill trạng thái tiền hay suy đoán ngày tạo cũ. Unique index chặn hai giao dịch SePay dùng cùng phiếu thu. Nếu dữ liệu cũ vi phạm unique, migration phải dừng để đối chiếu; không tự xoá liên kết. Workflow deploy chỉ kiểm tra schema, không áp dụng migration.
+
+Lịch `sepay-pull-today` hiện có phải hoạt động và có token đọc SePay. Tự đối soát theo thời gian dùng lịch này, không phụ thuộc việc mở trang. Thất bại provider/DB không được coi là đã xử lý thành công. Rollback code giữ nguyên chứng cứ và phiếu thu; không hoàn tiền/xoá dữ liệu để rollback giao diện.
+
+Kiểm tra tập trung: `tests/app/sepay-proximity.test.ts`, `src/modules/sales/domain/sepay-proximity.test.ts`, `tests/db/sepay-proximity-migration.test.ts`. Tranh chấp chạy bằng PostgreSQL cục bộ qua `TEST_PG_URL`; không dùng production. Browser `scripts/testing/sepay-proximity.mjs` dùng module UI và router thật, dữ liệu giả, chặn mọi request ngoài localhost. Fixture PostgreSQL cục bộ với 18.000 đơn web và 6.000 liên kết ngân hàng trải gần ba năm: tìm ứng viên 4,1–15,4 ms; tổng hợp một chỉ số có bằng chứng ngân hàng 197,5–388,7 ms (4 lượt, gồm lượt lạnh). Không phải benchmark toàn trang hay production; raw: `docs/testing/sepay-proximity-performance.json`.
 
 ## QR thanh toán web Lock
 
 Nội dung ngân hàng `DH<WooCommerce ID>` (gồm dạng phân cách bằng dấu chấm như `.DH21661.CT...`) tự liên kết với **đơn web Lock gốc** qua `web_order_id`. Không tạo thêm `sales_orders` hoặc `customer_payments`, không sửa tồn kho, doanh thu, tổng đơn hay `date_paid` của WooCommerce. Mã `DH21661` không khớp `DH216610`, tiền tố/hậu tố chữ hoặc mã ghép bằng `/`, `_`, `-`.
 
-Chỉ đánh dấu đã đối soát khi khớp duy nhất một đơn `source=lock`, đúng tài khoản quầy đã cấu hình/đang hoạt động, đúng toàn bộ tổng tiền VND, phương thức QR, website đã xác nhận `paidAt`, và đơn không huỷ/hoàn, không bị sửa nội dung hoặc xung đột nguồn. Mã đồng thời khớp CRM/POS, nhiều mã, thiếu/thừa tiền hoặc khoản thu thứ hai cho cùng đơn giữ ở trạng thái cần kiểm tra. Tiền có mã QR vào tài khoản quầy Lock nhưng chưa có đơn web phải chờ nguồn web, không tự ghi sang mã CRM trùng.
+Với nhánh đối soát mã QR cũ, đánh dấu khi khớp duy nhất một đơn `source=lock`, đúng tài khoản quầy đã cấu hình/đang hoạt động, đúng toàn bộ tổng tiền VND, phương thức QR, website đã xác nhận `paidAt`, và đơn không huỷ/hoàn, không bị sửa nội dung hoặc xung đột nguồn. Mã đồng thời khớp CRM/POS, nhiều mã, thiếu/thừa tiền hoặc khoản thu thứ hai cho cùng đơn giữ ở trạng thái cần kiểm tra. Tiền có mã QR vào tài khoản quầy Lock nhưng chưa có đơn web phải chờ nguồn web, không tự ghi sang mã CRM trùng.
 
 Webhook SePay, API tải ngày hiện tại và webhook cập nhật đơn web dùng cùng bộ đối soát. Nếu tiền đến trước đơn hoặc trước xác nhận thu tiền từ website, lưu chứng từ chờ; khi webhook Lock đồng bộ đơn/paidAt sẽ thử lại tối đa 100 giao dịch pending có mã tương ứng. Lượt tải API tiếp theo cũng xét lại các dòng chờ đã có, giữ nguyên chứng từ matched/phiếu thu cũ. Không tự sửa dữ liệu giao dịch khi provider ID có nội dung khác.
 
 Ràng buộc DB chỉ cho một đích CRM hoặc web, một provider ID duy nhất và một giao dịch matched trên mỗi đơn web. Khoá provider dùng chung webhook/import; vùng QR nhỏ dùng khoá giao dịch chung trước khoá dòng web để hai batch đảo thứ tự không deadlock. Mọi khớp web được audit bằng ID dòng SePay, hiển thị nhật ký trong chi tiết.
 
-Trang SePay hiển thị **Đã đối soát đơn web**, đúng số đơn gốc và liên kết hồ sơ `#/orders/web:<id>`. Khoản web không có biểu mẫu gắn sang đơn CRM. Nếu đơn/paidAt/tài khoản nguồn sau đó bị thay đổi, trang báo cần kiểm tra thay vì coi là một phiếu thu CRM bị thiếu. Các thẻ ghi nhận/đối soát chỉ tổng hợp sổ SePay, không cộng tiền vào sổ kế toán thêm lần nữa.
+Trang SePay hiển thị **Đã đối soát đơn web**, đúng số đơn gốc và liên kết hồ sơ `#/orders/web:<id>`. Khoản web có biểu mẫu chọn nguồn phù hợp để Manager đối chiếu; API chặn gắn sang đơn CRM. Nếu đơn/paidAt/tài khoản nguồn sau đó bị thay đổi, trang báo cần kiểm tra thay vì coi là một phiếu thu CRM bị thiếu. Các thẻ ghi nhận/đối soát chỉ tổng hợp sổ SePay, không cộng tiền vào sổ kế toán thêm lần nữa.
 
 Trước deploy API, chạy tay `migrations/postgres/20261109123446_sepay_lock_web_match.sql`, rồi `scripts/sql/assert-sepay-web.sql` (phải trả `sepay_web_schema_ok`). Migration chỉ thêm cột/check/index; chạy lại an toàn, giữ RLS, không backfill hoặc sửa dữ liệu cũ. Workflow deploy chỉ assert, không tự chạy migration. Không cần sửa quyền Storage hoặc token/ngân hàng mới.
 
@@ -27,8 +51,8 @@ Ví dụ kiểm tra chỉ đọc trên dữ liệu thật ngày 09/11: `DH21661`
 - Manager và Kế toán bấm **Lấy giao dịch hôm nay**. Máy chủ tính ngày theo Việt Nam, chỉ GET API SePay bằng token máy chủ; mở trang hoặc làm mới danh sách không gọi SePay. Bộ lọc chuyển sang đúng ngày vừa tải.
 - GitHub Actions Secret `SEPAY_API_TOKEN` được workflow deploy API chuyển vào Supabase Edge Secrets bằng file tạm quyền 600 rồi xoá. Không đưa token vào JS, URL, request của nhân viên hoặc log. Token đọc API độc lập với khoá webhook POS; không thay webhook hay danh sách tài khoản tự ghi thu.
 - API đối chiếu `count_transactions` với danh sách, kiểm tra toàn bộ giao dịch trước khi ghi. Thiếu dữ liệu, dữ liệu vừa thay đổi, lỗi mạng/quyền hoặc phản hồi sai định dạng đều báo lỗi, không giả thành danh sách rỗng. Mỗi lượt giới hạn dưới 1.000 giao dịch và phản hồi tối đa 3 MB; chạm giới hạn thì từ chối đợt nhập, cần phát triển đồng bộ theo đợt trước khi dùng cho khối lượng lớn.
-- Chỉ nhập giao dịch **tiền vào**; hiển thị số dòng không có tiền vào đã bỏ qua. Giao dịch thông thường mới có trạng thái **Cần đối soát**, chưa gắn đơn và chưa tạo phiếu thu. Riêng QR web Lock có đủ chứng từ website được tự đối soát vào đúng đơn nguồn, không tạo phiếu thu CRM. Ghi thu vẫn phải qua quy trình đối soát hiện có.
-- Khoá theo ID SePay dùng chung với webhook. ID đã có và cùng số tiền/tài khoản/nội dung/thời điểm chỉ tính là trùng; giữ nguyên liên kết/phiếu thu, kể cả phiếu đã huỷ. ID có dữ liệu khác làm toàn bộ đợt nhập rollback. Gửi lại sau khi mất phản hồi không nhập trùng. Webhook được cấu hình tự ghi thu vẫn giữ hành vi hiện có; API tải thủ công không tự ghi thu.
+- Chỉ nhập giao dịch **tiền vào**; hiển thị số dòng không có tiền vào đã bỏ qua. Giao dịch thông thường mới có trạng thái **Cần đối soát**, chưa gắn đơn và chưa tạo phiếu thu. QR web Lock đủ chứng từ website được tự đối soát như trước; quy tắc tiền/thời gian phía trên bổ sung liên kết POS/web khi đủ điều kiện, không tạo phiếu thu CRM mới. Ghi thu vẫn phải qua quy trình đối soát hiện có.
+- Khoá theo ID SePay dùng chung với webhook. ID đã có và cùng số tiền/tài khoản/nội dung/thời điểm chỉ tính là trùng; giữ nguyên liên kết/phiếu thu, kể cả phiếu đã huỷ. ID có dữ liệu khác làm toàn bộ đợt nhập rollback. Gửi lại sau khi mất phản hồi không nhập trùng. Webhook được cấu hình tự ghi thu vẫn giữ hành vi hiện có; API tải thủ công không tạo phiếu thu mới; có thể liên kết POS/web theo quy tắc đã nêu.
 - Không thêm migration. Khi chưa có token ở Edge, nút bị khoá và trang giải thích thiếu cấu hình.
 - Kiểm tra token thực tế: chạy thủ công workflow **Kiểm tra API đọc SePay**. Workflow chỉ GET count/list hôm nay, chỉ in số lượng/tổng tiền, không in tài khoản/nội dung/token và không kết nối CSDL. Không đánh đồng kiểm tra token thành nhập giao dịch vào CRM; sau deploy, nhân viên dùng nút trên trang để nhập.
 
@@ -51,7 +75,7 @@ Nút đưa focus và cuộn tới khung đối soát ngay khi bắt đầu tải
 
 Nút **Về giao dịch** cuộn/focus về đúng dòng đã chọn, giữ nguyên dữ liệu và nội dung đang nhập, không gọi API ghi. Nếu dòng không còn trong bộ lọc, quay về danh sách. Focus có hiển thị cho bàn phím, khung có nhãn accessible và khoảng cách tránh header cố định.
 
-Thay đổi này không sửa quyền hoặc điều kiện ghi thu. Kế toán chỉ xem/đối chiếu; Manager chỉ xác nhận khi tài khoản nhận đã có trong `SEPAY_RECEIPT_ACCOUNTS`. Nếu khung hiện cảnh báo tài khoản chưa được duyệt, cần cấu hình đúng tài khoản đã được công ty xác nhận theo `docs/SEPAY-RECEIPTS.md`; không bỏ kiểm tra này chỉ để hiện nút xác nhận.
+Thay đổi này không sửa quyền hoặc điều kiện ghi thu. Kế toán chỉ xem/đối chiếu; Manager chỉ xác nhận CRM/HĐKT khi tài khoản nhận đã có trong `SEPAY_RECEIPT_ACCOUNTS`; POS/web phải khớp tài khoản quầy đang hoạt động. Nếu khung hiện cảnh báo tài khoản chưa được duyệt, cần cấu hình đúng tài khoản đã được công ty xác nhận theo `docs/SEPAY-RECEIPTS.md`; không bỏ kiểm tra này chỉ để hiện nút xác nhận.
 
 Kiểm tra browser fixture cô lập: danh sách dài ở 390/1440px, focus và vị trí dưới header, quay lại đúng dòng, tạo/gắn phiếu thu, chống bấm trùng, mất phản hồi sau ghi, lỗi tải danh sách, quyền Kế toán/Sale và nội dung không tin cậy. Không gọi production trong kiểm thử.
 
@@ -69,7 +93,7 @@ Sau khi tài khoản công ty được xác nhận và cấu hình trên máy ch
 4. Ghi lý do 10–1.000 ký tự, tích đã đối chiếu; bấm **Xem trước khi xác nhận** và kiểm tra lại số tiền, tài khoản, chứng từ, đơn/khách và cách ghi nhận.
 5. Bấm **Xác nhận ghi thu**. Máy chủ kiểm tra lại công nợ và chứng từ dưới khoá giao dịch, ghi phiếu thu/liên kết và nhật ký cùng một transaction.
 
-Không thể ép ghi thu vào đơn huỷ, nháp chưa có công nợ, đơn POS, tài khoản chưa được duyệt, hoặc tạo phiếu thu vượt công nợ sau khi trừ tiền nhân viên đang giữ. Nếu có phiếu nhập trước trùng số tiền/ngày hay mã giao dịch, phải đối chiếu và chọn phiếu phù hợp; không tạo thêm để bỏ qua cảnh báo. Trang không đổi đơn đã ghi nhận sang đơn khác.
+Không thể ép ghi thu vào đơn huỷ, nháp chưa có công nợ, tạo mới phiếu POS ngoài luồng quầy, tài khoản chưa được duyệt, hoặc tạo phiếu thu vượt công nợ sau khi trừ tiền nhân viên đang giữ. Nếu có phiếu nhập trước trùng số tiền/ngày hay mã giao dịch, phải đối chiếu và chọn phiếu phù hợp; không tạo thêm để bỏ qua cảnh báo. Trang không đổi đơn đã ghi nhận sang đơn khác.
 
 Nếu phản hồi mạng bị mất, trạng thái có thể đã ghi thành công: bấm tải lại để kiểm tra. Không tự retry ghi tiền. Bấm lặp hoặc hai Manager xác nhận cùng lúc không tạo thêm phiếu cho cùng giao dịch; hai khoản cùng thu một đơn cũng kiểm tra lại giới hạn công nợ.
 

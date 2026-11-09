@@ -29,6 +29,7 @@ import {
   type SepayManualChoice,
 } from "../domain/sepay-page.ts";
 import {decideWebSepay,saveWebSepay,isLockWebQrPayment} from './sepay-web-store.ts';
+import { applyNearbySepay } from './sepay-proximity-store.ts';
 
 export async function assertSepayCrmSource(
   db: CashDb,
@@ -60,7 +61,7 @@ export async function ingestPayment(
   payment: SepayPayment,
   actorId?: string,
   manual?: SepayManualChoice,
-  webOnly = false,
+  mode: 'all' | 'web' | 'nearby' = 'all',
 ) {
   return env.db.transaction(async (tx) => {
     await tx.execute(
@@ -83,6 +84,7 @@ export async function ingestPayment(
           "Mã giao dịch SePay đã tồn tại với nội dung khác.",
         );
       if (old.paymentId || old.status === "matched") {
+        if (manual && old.webOrderId && manual.orderId==='web:'+old.webOrderId) return { duplicate:true,status:old.status,orderId:null,paymentId:null,webOrderId:old.webOrderId,reason:old.reason };
         if (manual) {
           await cashLock(tx);
           const [receipt] = old.paymentId
@@ -120,12 +122,29 @@ export async function ingestPayment(
         409,
         "Không thể xác nhận giao dịch chưa có trong sổ SePay.",
       );
-    if (manual) await assertSepayCrmSource(tx, old!);
+    const now = new Date((env.nowSec?.() ?? Date.now()/1000)*1000).toISOString();
+    if (manual) {
+      const [originalSource]=old?.orderId?await tx.select({channel:salesOrders.channel}).from(salesOrders).where(eq(salesOrders.id,old.orderId)).limit(1):[];
+      if(originalSource?.channel==='pos'&&manual.orderId.startsWith('web:') || old?.webOrderId&&!manual.orderId.startsWith('web:'))throw new AppError(409,'Giao dịch đã xác định nguồn POS/web; không gắn sang luồng khác.');
+      const [selected] = manual.orderId.startsWith('web:') ? [] : await tx.select({channel:salesOrders.channel}).from(salesOrders).where(eq(salesOrders.id,manual.orderId)).limit(1);
+      if (manual.orderId.startsWith('web:') || selected?.channel === 'pos') return applyNearbySepay(tx,payment,old,now,actorId,manual);
+      await assertSepayCrmSource(tx, old!);
+    }
+    if(mode==='nearby') {
+      const [bound] = old?.orderId ? await tx.select({channel:salesOrders.channel}).from(salesOrders).where(eq(salesOrders.id,old.orderId)) : [];
+      if (bound?.channel==='crm') return {duplicate:!!old,status:old!.status,reason:old!.reason,orderId:old!.orderId,paymentId:old!.paymentId};
+      const webDecision=await decideWebSepay(tx,payment);
+      if(webDecision && !webDecision.reason.startsWith('Chờ website xác nhận')) return {duplicate:!!old,...await saveWebSepay(tx,payment,webDecision,old,actorId)};
+      return applyNearbySepay(tx,payment,old,now,actorId,undefined,old?.webOrderId?'web:'+old.webOrderId:old?.orderId||undefined);
+    }
     if (!manual && !old?.orderId) {
       const webDecision = await decideWebSepay(tx, payment);
-      if (webDecision) return {duplicate: !!old, ...(await saveWebSepay(tx,payment,webDecision,old,actorId))};
+      if (webDecision) {
+        if (mode !== 'web' && webDecision.webOrderId && webDecision.reason.startsWith('Chờ website xác nhận')) return applyNearbySepay(tx,payment,old,now,actorId,undefined,'web:'+webDecision.webOrderId);
+        return {duplicate: !!old, ...(await saveWebSepay(tx,payment,webDecision,old,actorId))};
+      }
     }
-    if (webOnly) return {duplicate: !!old,status:old?.status||'review',reason:old?.reason||'Chờ đối soát đơn web.',orderId:old?.orderId||null,paymentId:old?.paymentId||null,webOrderId:old?.webOrderId||null};
+    if (mode==='web') return {duplicate: !!old,status:old?.status||'review',reason:old?.reason||'Chờ đối soát đơn web.',orderId:old?.orderId||null,paymentId:old?.paymentId||null,webOrderId:old?.webOrderId||null};
     const references = sepayReferenceCandidates(payment.content);
     // Constant bounded set, bound JSON parameter, identical Vietnamese folding on stored references.
     const values = sql`(select jsonb_array_elements_text(${JSON.stringify(references)}::jsonb))`;
@@ -181,6 +200,7 @@ export async function ingestPayment(
           payment.accountNumber,
         );
         approvedAccount = accountAllowed && target.channel === "crm";
+        if(target.channel==='crm'&&sepayPosIntent(payment.content)) blockedReason='Giao dịch có mã QR POS; không tự gắn sang chứng từ CRM.';
         if (target.channel === "pos") {
           // The existing POS QR endpoint remains responsible for checkout. Post-sale receipts require the original register's account.
           const [register] = target.shiftId
@@ -260,6 +280,7 @@ export async function ingestPayment(
             orderId: matches[0]!.id,
           }
         : decideSepayMatch(matches, payment.amount);
+    if (!manual && (target?.channel === 'pos' && candidates.length===1 || !candidates.length)) return applyNearbySepay(tx,payment,old,now,actorId,undefined,target?.channel==='pos'?target.id:undefined);
     const receivedAt = new Date().toISOString();
     let paymentId: string | null = null;
     if (manual) {
@@ -349,6 +370,8 @@ export async function ingestPayment(
     const row = {
       status: decision.status,
       reason: decision.reason,
+      matchMethod:manual?'manual' as const:'reference' as const,
+      matchedOrderAt:target?.createdAt||null,
       orderId: decision.orderId ?? null,
       paymentId,
     };

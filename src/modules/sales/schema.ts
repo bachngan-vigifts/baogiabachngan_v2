@@ -92,6 +92,7 @@ export const salesOrders = pgTable('sales_orders', {
   uniqueIndex('uq_pos_checkout_key').on(t.checkoutKey),
   uniqueIndex('uq_pos_order_qr').on(t.posPaymentRequestId),
   index('idx_pos_orders_shift').on(t.shiftId),
+  index('idx_sales_orders_created').on(t.createdAt,t.id),
   // Một báo giá chỉ có một đơn đang hiệu lực (đơn huỷ thì tạo lại được).
   uniqueIndex('idx_sales_orders_quote_active').on(t.quoteId).where(sql`${t.quoteId} IS NOT NULL AND ${t.status} <> 'cancelled'`),
   index('idx_sales_orders_customer').on(t.customerId, t.orderDate),

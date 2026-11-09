@@ -179,7 +179,7 @@ async function detail(p, id) {
   await p.locator("[data-detail] .sp-bank-amount").waitFor();
 }
 async function choose(p, no) {
-  await p.locator("[data-order-search] input").fill(no);
+  await p.locator("[data-order-search] [name=orderQuery]").fill(no);
   await p.locator("[data-order-search] button[type=submit]").click();
   await p.locator("[data-order-results] [data-choose]").first().click();
   await p.locator("[data-approval-form]").waitFor();
@@ -450,7 +450,7 @@ try {
    const view=await pageFor(f.mgr,width,'#/sepay?q=qr-web-browser');
    await view.p.locator('[data-open]').waitFor();
    await detail(view.p,webEvent.id);
-   await view.p.locator('[data-detail]').filter({hasText:'Đơn web Lock 21661'}).waitFor();
+   await view.p.locator('[data-detail]').filter({hasText:'Đơn web 21661'}).waitFor();
    assert.equal(await view.p.locator('[data-order-search]').count(),0,'web payment cannot be reassigned to a CRM order');
    assert.equal(await view.p.locator('[data-confirm]').count(),0);
    const target='#/orders/web:'+webOrder.id;
@@ -473,7 +473,7 @@ try {
   const picker=await pageFor(f.mgr,390,'#/sepay?q=picker-account-pending');
   await picker.p.locator('[data-open]').waitFor();await detail(picker.p,pickerEvent.id);
   await picker.p.locator('[data-order-search]').waitFor();
-  await picker.p.locator('[data-order-search] input').fill('HDKT_PICK_001');
+  await picker.p.locator('[data-order-search] [name=orderQuery]').fill('HDKT_PICK_001');
   await picker.p.locator('[data-order-search] button[type=submit]').click();
   await picker.p.locator('[data-order-results] [data-choose]').first().click();
   await picker.p.locator('[data-account-block]').waitFor();
