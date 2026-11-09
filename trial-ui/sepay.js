@@ -39,6 +39,8 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     document.head.append(l);
   }
   root.dataset.mobileActions = "off";
+  // This page owns all button locks, including refresh/recovery after a failed read.
+  root.setAttribute("data-no-busy", "");
   let active = false,
     epoch = 0,
     detailEpoch = 0,

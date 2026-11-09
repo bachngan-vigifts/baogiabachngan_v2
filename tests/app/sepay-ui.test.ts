@@ -29,4 +29,5 @@ test("SePay page is lazy, versions CSS and closes on logout/navigation without p
   assert.ok(!page.includes("setInterval("));
   assert.ok(!page.includes("Dữ liệu minh hoạ"));
   assert.ok(page.includes("Chưa xác nhận được kết quả"));
+  assert.ok(page.includes('root.setAttribute("data-no-busy", "")'));
 });
