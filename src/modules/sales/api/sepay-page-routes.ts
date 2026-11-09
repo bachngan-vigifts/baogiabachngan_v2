@@ -1,3 +1,4 @@
+import {WEB_PAYMENT_BLOCKED_STATUSES} from '../domain/web-order-outcome.ts';
 import {isLockWebQrPayment} from './sepay-web-store.ts';
 import {webStoreOrders as web,posRegisters as webRegisters} from '../pos-schema.ts';
 import {webDocumentStatus} from './web-order-documents.ts';
@@ -54,6 +55,7 @@ function readAccess(c: Ctx): void {
     throw new AppError(403, "Chỉ Manager và Kế toán được xem sổ SePay.");
 }
 const validWeb = sql`coalesce(${web.id} is not null and ${web.source}='lock' and ${web.currency}='VND' and ${web.total}=${bank.amount}
+ and regexp_replace(lower(trim(${web.status})),'^wc-','') not in (${sql.join(WEB_PAYMENT_BLOCKED_STATUSES.map(s=>sql`${s}`),sql`, `)})
  and ${webDocumentStatus()}<>'cancelled' and ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is not null
  and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false)
  and coalesce((${web.crmEditSnapshot}::jsonb->>'revision')::int,0)=0

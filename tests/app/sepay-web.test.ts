@@ -63,12 +63,15 @@ test('wrong account, amounts, cancelled/non-QR/conflicted orders and second full
  }
  const conflict=await f.sync(21665);await f.db.update(web).set({crmEditSnapshot:JSON.stringify({sourceConflict:true})}).where(eq(web.id,conflict.id));
  assert.equal((await f.incoming('DH21665',100000,{id:'conflicted'})).status,'review');
+ const cancelled=await f.sync(21666);await f.db.update(web).set({status:'wc-cancelled',ghnStatus:'delivered'}).where(eq(web.id,cancelled.id));
+ assert.equal((await f.incoming('DH21666',100000,{id:'cancelled-but-delivered'})).status,'review');
  assert.equal((await f.db.select().from(customerPayments)).length,0);
 });
 test('QR ref matching web and CRM cannot pick either automatically; manual CRM reassignment cannot steal a web payment',async()=>{
  const f=await fixture(),w=await f.sync();
  const crm=await f.order('DH21661');
  assert.equal((await f.incoming('DH21661',100000,{id:'ambiguous'})).status,'review');
+ assert.equal((await f.incoming('BANK.000.DH21661.CT TEST',100000,{id:'ambiguous-dotted'})).status,'review');
  assert.equal((await f.db.select().from(customerPayments)).length,0);
  const w2=await f.sync(21662);const e=await f.incoming('DH21662',99999,{id:'pending-web'});
  const [row]=await f.db.select().from(bank).where(eq(bank.providerId,'pending-web'));assert.equal(row!.webOrderId,w2.id);
