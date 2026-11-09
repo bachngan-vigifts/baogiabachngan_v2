@@ -29,7 +29,7 @@ function harness() {
     isCacheable: () => false, isPassiveWrite: () => false, pageCache: { clear() {} }, customerSearch: { clear() {} },
     toggleAccountMenu() {}, editor: { dirty: false }, quoteDeviceDraft: { logout() {} },
     token: 'old-session', state: { user: {} }, activation: null, chatUi: null, approvalUi: null, API: '/api',
-    homeUi: null, homeNotifications: null, notifier: null, tasksUi: null,
+    homeUi: null, homeNotifications: null, notifier: null, tasksUi: null, stocktakeUi: null,
     location: { hash: '#/quotes' },
     dataRefresh: { stop() {}, observe() {}, saved() {}, tick() {} },
     queueMicrotask: (fn: () => void) => timers.push(fn),
@@ -105,6 +105,26 @@ test('returning to login clears private Home and notification state for expired 
     assert.equal(h.elements['#workspace'].hidden, true);
     assert.equal(h.elements['#auth'].hidden, false);
   }
+});
+
+test('returning to login closes an initialized stocktake editor', () => {
+  const h = harness(); let closed = 0;
+  h.ctx.stocktakeUi = { close() { closed++; } };
+  h.ctx.showAuth('expired');
+  assert.equal(closed, 1);
+  assert.equal(h.ctx.token, '');
+  assert.equal(h.ctx.state.user, null);
+  assert.equal(h.elements['#auth'].hidden, false);
+});
+
+test('canceling stocktake draft confirmation keeps the session without sending logout', async () => {
+  const h = harness(); let confirmed = 0;
+  h.ctx.stocktakeUi = { hasDraft: () => true, async beforeLeave() { confirmed++; return false; } };
+  h.ctx.fetch = () => { throw new Error('Logout must not be sent after canceling'); };
+  await h.elements['#logout'].click();
+  assert.equal(confirmed, 1);
+  assert.equal(h.ctx.token, 'old-session');
+  assert.equal(h.elements['#auth'].hidden, true);
 });
 
 test('concurrent expired requests show expiry once; later response preserves email focus', async () => {
