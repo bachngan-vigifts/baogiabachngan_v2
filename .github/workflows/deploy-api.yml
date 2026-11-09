@@ -45,6 +45,7 @@ jobs:
       GHN_WEBHOOK_TOKEN: ${{ secrets.GHN_WEBHOOK_TOKEN }}
       # Mã băm SHA-256 (hex) của khoá webhook SePay và token webhook WooCommerce. Bắt buộc: code không còn giá trị dự phòng.
       SEPAY_POS_API_KEY_HASH: ${{ secrets.SEPAY_POS_API_KEY_HASH }}
+      SEPAY_API_TOKEN: ${{ secrets.SEPAY_API_TOKEN }}
       WOO_LOCK_TOKEN_HASH: ${{ secrets.WOO_LOCK_TOKEN_HASH }}
       WOO_MINHLONG_TOKEN_HASH: ${{ secrets.WOO_MINHLONG_TOKEN_HASH }}
       PROJECT_REF: taceqfnsorewelsbdckg
@@ -93,6 +94,10 @@ jobs:
           npm run typecheck &&
           node --import tsx --test
           tests/app/catalogue-edge-dependencies.test.ts
+          tests/app/sepay-read.test.ts
+          tests/app/sepay-page.test.ts
+          tests/app/sepay-payment.test.ts
+          tests/app/sepay-ui.test.ts
           tests/app/pos.test.ts
           tests/app/finance-overview.test.ts
           tests/app/finance-ui.test.ts
@@ -187,6 +192,23 @@ jobs:
             if ! [[ "$value" =~ ^[0-9a-f]{64}$ ]]; then missing="$missing $name"; fi
           done
           if [ -n "$missing" ]; then echo "::error::Thiếu hoặc sai định dạng (cần SHA-256 hex 64 ký tự) secret GitHub:$missing"; exit 1; fi
+      - name: Cập nhật API đọc giao dịch SePay
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.SEPAY_API_TOKEN != ''
+        shell: bash
+        run: |
+          # Keep token out of command arguments, logs and tracked files.
+          if [[ "$SEPAY_API_TOKEN" =~ [[:space:]] ]] || (( ${#SEPAY_API_TOKEN} < 16 || ${#SEPAY_API_TOKEN} > 4096 )); then
+            echo "::error::SEPAY_API_TOKEN sai dinh dang. Khong in gia tri token."; exit 1
+          fi
+          token_file=$(mktemp)
+          trap 'rm -f "$token_file"' EXIT
+          chmod 600 "$token_file"
+          SEPAY_SECRET_FILE="$token_file" python3 - <<'PYTOKEN'
+          import json, os
+          with open(os.environ['SEPAY_SECRET_FILE'], 'w') as handle:
+              handle.write('SEPAY_API_TOKEN=' + json.dumps(os.environ['SEPAY_API_TOKEN']) + '\n')
+          PYTOKEN
+          supabase secrets set --project-ref "$PROJECT_REF" --env-file "$token_file"
       - name: Cập nhật mã webhook SePay / WooCommerce
         if: env.SUPABASE_ACCESS_TOKEN != ''
         run: supabase secrets set --project-ref "$PROJECT_REF" SEPAY_POS_API_KEY_HASH="$SEPAY_POS_API_KEY_HASH" WOO_LOCK_TOKEN_HASH="$WOO_LOCK_TOKEN_HASH" WOO_MINHLONG_TOKEN_HASH="$WOO_MINHLONG_TOKEN_HASH"

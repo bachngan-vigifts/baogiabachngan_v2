@@ -51,7 +51,8 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     preview = null,
     draft = null,
     mutating = false,
-    listLoading = false;
+    listLoading = false,
+    pullNotice = "";
   const $ = (s) => root.querySelector(s),
     valid = (id, d) =>
       active && epoch === id && (d === undefined || detailEpoch === d);
@@ -73,6 +74,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     event = null;
     preview = null;
     draft = null;
+    pullNotice = "";
     root.replaceChildren();
   }
   function navigate(next) {
@@ -81,7 +83,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
   }
   function frame() {
     root.classList.add("sp-page");
-    root.innerHTML = `<div class="page-head"><div><p class="eyebrow">TIỀN &amp; CÔNG NỢ</p><h1>Thanh toán SePay</h1><p class="muted">Tiền vào ngân hàng, phiếu thu và các khoản cần đối soát.</p></div><button class="btn secondary" data-refresh>Làm mới</button></div>
+    root.innerHTML = `<div class="page-head"><div><p class="eyebrow">TIỀN &amp; CÔNG NỢ</p><h1>Thanh toán SePay</h1><p class="muted">Tiền vào ngân hàng, phiếu thu và các khoản cần đối soát.</p></div><div class="sp-head-actions"><button class="btn navy" data-pull disabled>Lấy giao dịch hôm nay</button><button class="btn secondary" data-refresh>Làm mới</button></div></div><p class="sp-scope muted" data-pull-notice role="status">${esc(pullNotice)}</p>
     <form class="card sp-filters" data-filters><label>Từ ngày<input type="date" name="from" required value="${esc(params.get("from"))}"></label><label>Đến ngày<input type="date" name="to" required value="${esc(params.get("to"))}"></label>
     <label>Trạng thái<select name="status">${[
       ["all", "Tất cả"],
@@ -111,6 +113,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       .querySelectorAll("input,select,button")
       .forEach((x) => (x.disabled = b || mutating));
     $("[data-refresh]").disabled = b || mutating;
+    $("[data-pull]").disabled = b || mutating || !data?.capabilities?.canPull;
     root.setAttribute("aria-busy", String(b));
   }
   async function load(id) {
@@ -134,6 +137,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       $("[data-setup]").innerHTML = next.automationConfigured
         ? ""
         : `<p class="sp-warning">Tài khoản nhận tiền tự động chưa được cấu hình. Giao dịch vẫn được lưu để đối soát; chưa tự ghi thu.</p>`;
+      if(!next.capabilities?.canPull)$("[data-setup]").insertAdjacentHTML("beforeend",'<p class="sp-warning">Chưa cấu hình API đọc SePay trên máy chủ. Vẫn có thể nhận giao dịch qua webhook.</p>');
       const rows = next.transactions;
       $("[data-count]").textContent = next.pagination.total + " giao dịch";
       $("[data-list]").innerHTML = rows.length
@@ -157,6 +161,27 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       $("[data-pager]").replaceChildren();
     } finally {
       if (valid(id)) listBusy(false);
+    }
+  }
+  async function pullToday() {
+    if (mutating || listLoading || !data?.capabilities?.canPull) return;
+    const own = epoch;
+    mutating = true;detailEpoch++;searchEpoch++;event=null;preview=null;draft=null;
+    $("[data-detail]").innerHTML='<h2>Đối soát giao dịch</h2><p class="muted">Chọn giao dịch sau khi tải xong.</p>';
+    listBusy(true);
+    $("[data-pull-notice]").textContent="Đang lấy giao dịch hôm nay từ SePay… Chỉ tải để đối soát, chưa ghi thu.";
+    try {
+      const r = await api("/sepay/pull-today", "POST", {});
+      if (!valid(own)) return;
+      pullNotice=`Ngày ${r.day}: thêm ${r.imported} giao dịch tiền vào; ${r.duplicate} đã có; bỏ qua ${r.outgoing} giao dịch không có tiền vào. Chưa tạo phiếu thu.`;
+      $("[data-pull-notice]").textContent=pullNotice;
+      mutating=false;
+      const next=new URLSearchParams({from:r.day,to:r.day,status:"all"});
+      if(params.toString()===next.toString())await load(own);else navigate(next);
+    } catch(e) {
+      if(valid(own))$("[data-pull-notice]").textContent="Chưa xác nhận được đợt lấy giao dịch: "+e.message+" Có thể thử lại; hệ thống kiểm tra ID trùng.";
+    } finally {
+      mutating=false;if(valid(own))listBusy(false);
     }
   }
   function receiptView(r) {
@@ -338,6 +363,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
   root.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b || !active || mutating) return;
+    if (b.hasAttribute("data-pull")) pullToday();
     if (b.hasAttribute("data-refresh")) load(epoch);
     if (b.hasAttribute("data-clear"))
       navigate(new URLSearchParams(sepayDefaults()));

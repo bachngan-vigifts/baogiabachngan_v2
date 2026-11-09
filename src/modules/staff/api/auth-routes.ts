@@ -48,6 +48,9 @@ export interface StaffEnv {
   /** Cho phép tạo mới đơn cọc / ship trả trước. Production tắt (đã bỏ tính năng); chỉ bộ kiểm thử bật để dựng dữ liệu đơn cũ. */
   posOrderFlowCreate?: boolean;
   sepayPosApiKeyHash?: string;
+  /** Read-only SePay API token, never returned to browsers; injectable fetch for isolated tests. */
+  sepayApiToken?: string;
+  sepayApiFetch?: typeof fetch;
   /** Server-only approved company accounts for CRM SePay receipts. Missing = reconciliation only. */
   sepayReceiptAccounts?: readonly string[];
   /**

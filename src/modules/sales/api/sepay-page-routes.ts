@@ -156,7 +156,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
           total: result.summary.count,
           hasMore: f.offset + result.transactions.length < result.summary.count,
         },
-        capabilities: { canConfirm: member(c).role === "manager" },
+        capabilities: { canConfirm: member(c).role === "manager", canPull: !!c.env.sepayApiToken },
         automationConfigured: !!c.env.sepayReceiptAccounts?.length,
       });
     },
