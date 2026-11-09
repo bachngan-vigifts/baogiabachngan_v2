@@ -101,7 +101,7 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
    if(t.status==='cancelled')fail('Việc đã hủy.',409);
    if(!r&&t.assigneePosition!=='warehouse'&&t.assigneeId!==target)fail('Công việc không thuộc nhân viên Kho được chọn.',404);
    if(r?.memberId&&r.memberId!==target)fail('Người phụ trách đã thay đổi. Tải lại.',409);
-   const due=r?.dueAt||deadline(t);if(due)await assertOpen(db,target,vietnamMonth(due));
+   const due=r?.dueAt||deadline(t);if(due&&action==='configure')await assertOpen(db,target,vietnamMonth(due));
    if(action==='claim'){
     if(r||t.assigneeId||t.assigneePosition!=='warehouse'||t.status!=='todo')fail('Việc đã được nhận hoặc thay đổi.',409);
     if(Number(b.taskRevision)!==t.revision)fail('Việc vừa thay đổi. Tải lại.',409);

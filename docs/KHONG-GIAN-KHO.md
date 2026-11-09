@@ -27,7 +27,7 @@ Thiếu định mức, thời gian hợp lệ, hoặc còn kết quả/khoảng 
 
 Hệ số thưởng dự kiến: từ 90 điểm hưởng 100% quỹ; 80–dưới 90 hưởng 80%; 70–dưới 80 hưởng 50%; dưới 70 hưởng 0%. Đây là dự kiến đủ công; không thay lương cơ bản và chưa tạo khoản thưởng lương.
 
-Sau khi tháng kết thúc, Manager đối soát và **Duyệt điểm tháng**. Hệ thống lưu bản chụp và kiểm tra dữ liệu chưa thay đổi trước lúc duyệt. Không sửa các bản theo dõi thuộc tháng đã chốt. Việc nguồn có chỉnh sau đó không viết lại bản chụp.
+Sau khi tháng kết thúc, Manager đối soát và **Duyệt điểm tháng**. Hệ thống lưu bản chụp và kiểm tra dữ liệu chưa thay đổi trước lúc duyệt. Không sửa định mức của kỳ đã chốt. Công việc còn dở vẫn được tiếp tục và xác nhận hoàn thành; bản chụp điểm/thưởng của tháng đã duyệt giữ nguyên, không tính lại hoặc thưởng trùng sang tháng sau. Việc nguồn có chỉnh sau đó không viết lại bản chụp.
 
 ## Triển khai
 

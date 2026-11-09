@@ -74,3 +74,15 @@ test('tracked warehouse work cannot be deleted or edited through legacy Tasks an
  check(await f.act('ww-one',c.mgr,{action:'cancel',revision:r!.revision,note:'Không còn nhu cầu thực hiện'}));
  [r]=await f.db.select().from(runs).where(eq(runs.taskId,'ww-one'));assert.equal(r!.stage,'cancelled');assert.equal((await f.db.select().from(tasks).where(eq(tasks.id,'ww-one')))[0]!.status,'cancelled');
 });
+test('closing a warehouse score month freezes the score but does not prevent unfinished operational work from completing later',async()=>{
+ const f=await setup(),c=f.cookies;check(await f.call('/warehouse-workspace/settings',c.mgr,'PUT',{calendar,revision:0,reason:'Ca làm'}));
+ for(const [id,done] of [['ww-closed-done',true],['ww-closed-late',false]] as const){
+  await f.db.insert(tasks).values({id,title:id,assigneeId:'wh',dueDate:'2026-10-09',status:done?'done':'in_progress',createdAt:'2026-10-09T01:00:00Z',updatedAt:'2026-10-09T01:30:00Z'});
+  await f.db.insert(runs).values({taskId:id,memberId:'wh',kind:'manual',stage:done?'confirmed':'working',weight:1,standardMinutes:30,calendar:JSON.stringify(calendar),dueAt:'2026-10-09T02:00:00Z',startedAt:'2026-10-09T01:00:00Z',submittedAt:done?'2026-10-09T01:30:00Z':null,quality:done?'clean':null,updatedAt:'2026-10-09T02:00:00Z'});
+ }
+ const path='/warehouse-workspace?member=wh&month=2026-10',before=check(await f.call(path,c.mgr));assert.equal(before.report.score,72.5);
+ check(await f.call('/warehouse-workspace/approve-month',c.mgr,'POST',{memberId:'wh',month:'2026-10',fingerprint:before.report.fingerprint}));
+ let [r]=await f.db.select().from(runs).where(eq(runs.taskId,'ww-closed-late'));check(await f.act('ww-closed-late',c.wh,{action:'submit',revision:r!.revision,note:'Hoàn tất công việc trễ sang tháng sau'}));
+ [r]=await f.db.select().from(runs).where(eq(runs.taskId,'ww-closed-late'));check(await f.act('ww-closed-late',c.mgr,{action:'confirm',revision:r!.revision,quality:'clean',note:'Đã đối soát và hoàn tất công việc'}));
+ const after=check(await f.call(path,c.mgr));assert.equal(after.report.score,before.report.score);assert.equal(after.report.fingerprint,before.report.fingerprint);assert.equal(after.report.locked,true);assert.equal((await f.db.select().from(tasks).where(eq(tasks.id,'ww-closed-late')))[0]!.status,'done');
+});

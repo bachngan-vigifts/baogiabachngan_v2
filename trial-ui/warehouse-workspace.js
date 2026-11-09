@@ -23,21 +23,21 @@ export function initWarehouseWorkspace({api,root,toast,identity,legacy}){
   return `<h2>Hiệu suất tháng</h2><div class="ww-score"><strong>${r.score==null?'—':formatWarehouseScore(r.score)}</strong><span>/ 100 điểm</span></div>
    <dl class="ww-rates"><div><dt>Đúng hạn · 30%</dt><dd>${pct(r.rates?.onTime)}</dd></div><div><dt>Tốc độ · 25%</dt><dd>${pct(r.rates?.speed)}</dd></div><div><dt>Hoàn thành · 25%</dt><dd>${pct(r.rates?.completion)}</dd></div><div><dt>Chất lượng · 20%</dt><dd>${pct(r.rates?.quality)}</dd></div></dl>
    <p class="ww-bonus"><span>Thưởng dự kiến</span><strong>${money(r.bonusPreview)}</strong></p><small class="muted">Quỹ đủ công × hệ số điểm. Chưa cộng vào bảng lương; chưa điều chỉnh theo ngày công.</small>
-   <p class="${r.score==null?'ww-warning':'muted'}">${r.locked?'Đã duyệt điểm tháng · '+time(r.approvedAt):r.score==null?'Chưa đủ dữ liệu: '+num(r.missing)+' việc thiếu định mức, '+num(r.pending)+' việc có kết quả/khoảng chờ chưa duyệt, '+num(r.missingTiming)+' việc chưa có thời gian làm trong ca.':'Điểm tạm tính · Chờ Manager duyệt'}</p>
+   <p class="${r.score==null?'ww-warning':'muted'}">${r.locked?'Đã duyệt điểm tháng · '+time(r.approvedAt)+' · Việc còn dở vẫn được xử lý, không tính lại điểm đã chốt':r.score==null?'Chưa đủ dữ liệu: '+num(r.missing)+' việc thiếu định mức, '+num(r.pending)+' việc có kết quả/khoảng chờ chưa duyệt, '+num(r.missingTiming)+' việc chưa có thời gian làm trong ca.':'Điểm tạm tính · Chờ Manager duyệt'}</p>
    <small class="muted">${num(r.eligible)} việc đến hạn · ${num(r.future)} việc chưa đến hạn · ${num(r.withoutDeadline)} việc chưa đặt hạn. ${num(r.legacyExcluded)} việc cũ đã hoàn tất trước khi bật theo dõi được loại khỏi điểm.</small>
    ${data.manager&&!r.locked?button('approve-month','Duyệt điểm tháng'):''}`;
  }
  function taskCard(t){const r=t.run,s=r?.stage||(t.taskStatus==='done'?'confirmed':'todo'),claimed=!!t.assigneeId,locked=data.report?.locked&&t.dueAt&&new Date(Date.parse(t.dueAt)+7*3600e3).toISOString().startsWith(month);
-  let actions='';if(!locked){
+  let actions='';{
    if(!r&&!claimed&&!data.manager)actions+=button('claim','Nhận việc','primary');
-   if(data.manager&&(!r||s==='todo')&&t.taskStatus!=='done')actions+=button('configure','Giao định mức');
+   if(!locked&&data.manager&&(!r||s==='todo')&&t.taskStatus!=='done')actions+=button('configure','Giao định mức');
    if(r&&s==='todo')actions+=button('start','Bắt đầu','ww-red');
    if(s==='working')actions+=button('block','Báo vướng mắc')+button('submit','Hoàn thành','primary');
    if(s==='blocked')actions+=button('resume','Tiếp tục làm','primary');
    if(data.manager&&r&&!t.sourceManaged)actions+=button('cancel','Hủy việc thủ công');
    if(data.manager&&s==='submitted')actions+=button('reject','Yêu cầu làm lại')+button('confirm','Xác nhận kết quả','primary');
   }
-  const waits=r?.waits?.length?`<details class="ww-waits"><summary>Khoảng chờ (${r.waits.length})</summary>${r.waits.map(w=>`<div><p>${esc(w.reason)} · ${time(w.start)} → ${w.end?time(w.end):'Đang chờ'}</p><small>${w.decision==='approved'?'Đã duyệt loại trừ':w.decision==='rejected'?'Không loại trừ':'Chờ duyệt, vẫn tính thời gian'}</small>${data.manager&&w.end&&w.decision==='pending'&&!locked?`<button type="button" class="btn secondary small" data-wait="${esc(w.id)}" data-ww-action="review-wait" data-mobile-inline data-no-busy>Duyệt khoảng chờ</button>`:''}</div>`).join('')}</details>`:'';
+  const waits=r?.waits?.length?`<details class="ww-waits"><summary>Khoảng chờ (${r.waits.length})</summary>${r.waits.map(w=>`<div><p>${esc(w.reason)} · ${time(w.start)} → ${w.end?time(w.end):'Đang chờ'}</p><small>${w.decision==='approved'?'Đã duyệt loại trừ':w.decision==='rejected'?'Không loại trừ':'Chờ duyệt, vẫn tính thời gian'}</small>${data.manager&&w.end&&w.decision==='pending'?`<button type="button" class="btn secondary small" data-wait="${esc(w.id)}" data-ww-action="review-wait" data-mobile-inline data-no-busy>Duyệt khoảng chờ</button>`:''}</div>`).join('')}</details>`:'';
   const href=/^#\/[\w/-]+$/.test(t.link||'')?t.link:'#/tasks/'+encodeURIComponent(t.id);
   return `<article class="ww-task" data-task="${esc(t.id)}"><header><small>${esc(kinds[r?.kind]||kinds[t.source]||'Công việc Kho')}</small><span class="ww-state ${s}">${esc(stages[s])}${!r&&t.taskStatus==='done'?' · Chưa theo dõi điểm':''}</span></header><h3>${esc(t.title)}</h3><p class="ww-task-description">${esc(t.description)}</p><p class="${t.dueAt&&Date.parse(t.dueAt)<Date.parse(data.now)&&s!=='confirmed'?'ww-warning':'muted'}">Hạn ${time(t.dueAt)}${r?' · '+num(r.weight)+' điểm khối lượng':''}</p>
    <p>${r?'Đã làm <b>'+num(r.elapsed?.minutes)+' / '+num(r.standardMinutes)+' phút</b>':'Chưa có định mức được duyệt'}</p>${r?.elapsed?`<progress value="${Math.min(100,r.elapsed.minutes/r.standardMinutes*100)}" max="100" aria-label="Thời gian đã dùng"></progress>`:''}
