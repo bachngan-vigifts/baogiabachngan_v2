@@ -6,7 +6,7 @@ const sidebar=readFileSync(new URL('../../trial-ui/index.html',import.meta.url),
 const keys=[...sidebar.matchAll(/data-nav="([^"]+)"/g)].map(m=>m[1]!);
 const expected=[
  'pos','quotes','orders','contracts','products','product-custody','receivables','order-products','deliveries',
- 'cashbook','cash',
+ 'cashbook','cash','sepay',
  'customers','care','stock-requests',
  'tasks','shift-reports','dashboard','finance','profit','flow','store-reports','weekly-reports','monthly-reports','feedback',
  'kho','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving',
@@ -56,4 +56,10 @@ test('custody stays next to products and only appears for permission-visible des
  assert.deepEqual(groupMobileNav(['products','product-custody']).map((g:any)=>[g.key,g.items]),[['sell',['products','product-custody']]]);
  assert.equal(groupMobileNav(['products','orders']).some((g:any)=>g.items.includes('product-custody')),false);
  assert.match(sidebar,/href="#\/product-custody" data-nav="product-custody"/);
+});
+
+test('SePay is only included in the money group when the destination is permission-visible',()=>{
+ assert.deepEqual(groupMobileNav(['cash','sepay']).map((g:any)=>[g.key,g.items]),[['money',['cash','sepay']]]);
+ assert.equal(groupMobileNav(['cash','tasks']).some((g:any)=>g.items.includes('sepay')),false);
+ assert.match(sidebar,/href="#\/sepay" data-nav="sepay" hidden/);
 });
