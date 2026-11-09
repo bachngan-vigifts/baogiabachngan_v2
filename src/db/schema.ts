@@ -49,3 +49,4 @@ export * from '../modules/customer-hub/schema.ts';
 export * from '../modules/profit/schema.ts';
 
 export * from '../modules/product-custody/schema.ts';
+export * from '../modules/warehouse-workspace/schema.ts';

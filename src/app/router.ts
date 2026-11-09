@@ -1,3 +1,4 @@
+import {registerWarehouseWorkspace,assertWarehouseTaskMutable} from '../modules/warehouse-workspace/routes.ts';
 import {customerMergeHooks} from '../core/contracts/customer-merge.ts';
 import {reassignCustodyCustomer,registerCustodyRoutes} from '../modules/product-custody/api/routes.ts';
 import {dashboardReportScoresOf} from './dashboard-report-scores.ts';
@@ -148,7 +149,7 @@ export function createAppRouter() {
   registerEarlyRequestRoutes(router);
   registerPortalRoutes(router);
   registerNotificationRoutes(router);
-  registerTaskRoutes(router);
+  registerTaskRoutes(router,{assertMutable:assertWarehouseTaskMutable});
   registerChatRoutes(router);
   registerCustomerHubRoutes(router);
   registerProductDetailRoutes(router);
@@ -174,6 +175,7 @@ export function createAppRouter() {
   registerBadgeRoutes(router);
   registerNavigationCounts(router);
   registerWarehouseWork(router);
+  registerWarehouseWorkspace(router);
   registerInventoryRoutes(router, { heldQuantitiesOf: stockLookupHolds });
   registerStockIntegrityRoutes(router);
   registerTransferRoutes(router);
