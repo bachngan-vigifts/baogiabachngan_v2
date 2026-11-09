@@ -1,3 +1,4 @@
+import {initHomeStockValue} from './home-stock-value.js';
 /** Permission-filtered launchpad; the server owns task scope/counts and approval authorization. */
 let style;
 function loadStyle() {
@@ -24,6 +25,7 @@ export function homeTaskHref(scope,filter='priority') {
   return '#/tasks?'+new URLSearchParams({home:'1',view:scope==='all'?'all':'mine',...(filter==='overdue'||filter==='today'?{due:filter}:{})});
 }
 export function initHome({root,api,user,canApprove,go,entries=()=>[],actions=()=>[],approvalFeed,notifications=()=>api('/notifications'),noticeHref=()=>'',openBell=()=>{},markRead=id=>api('/notifications/read','POST',{ids:[id]}),navigationRoot}) {
+  let stockValueUi=null;
   let active=false,owner='',sequence=0,taskSequence=0,filter='priority',snapshot=null,approvals=null,notes=null,taskError='',approvalError='',noteError='',loading=false,midnight,navFrame;
   const signature=()=>{const u=user();return JSON.stringify([u?.id,u?.role,u?.positionId,u?.perms,u?.approver]);};
   const current=(who,version)=>active&&who===signature()&&version===sequence;
@@ -36,9 +38,11 @@ export function initHome({root,api,user,canApprove,go,entries=()=>[],actions=()=
       <section class="home-functions" aria-labelledby="home-functions-title"><header class="home-section-head"><h2 id="home-functions-title">Nhóm chức năng</h2><span class="muted small">Theo quyền của bạn</span></header><div class="home-groups" data-home-groups></div></section>
       <div class="home-meta"><span data-home-scope>${scope()==='all'?'Toàn bộ công việc':'Việc của tôi và nhóm'}</span><span data-home-sync role="status">Đang tải…</span><button type="button" class="link-btn" data-home-refresh>Làm mới</button></div>
       <div class="home-kpis" data-home-kpis></div>
+      ${u?.role==='manager'?'<section class="card home-stock-value" data-home-stock aria-labelledby="home-stock-title"></section>':''}
       <div class="home-columns"><section class="card home-priority" aria-labelledby="home-work-title"><header class="home-section-head"><h2 id="home-work-title">Ưu tiên xử lý</h2><a data-home-all href="${homeTaskHref(scope())}">Xem tất cả →</a></header><div class="home-tabs" role="tablist" aria-label="Lọc công việc"><button type="button" role="tab" id="home-tab-priority" aria-controls="home-work-panel" data-home-tab="priority">Tất cả</button><button type="button" role="tab" id="home-tab-overdue" aria-controls="home-work-panel" data-home-tab="overdue">Quá hạn</button><button type="button" role="tab" id="home-tab-today" aria-controls="home-work-panel" data-home-tab="today">Hôm nay</button>${canApprove()?'<button type="button" role="tab" id="home-tab-approvals" aria-controls="home-work-panel" data-home-tab="approvals">Chờ duyệt</button>':''}</div><div data-home-work id="home-work-panel" role="tabpanel" aria-labelledby="home-tab-priority"></div></section>
       <aside class="home-aside"><section class="card"><h2>Thao tác nhanh</h2><div class="home-actions" data-home-actions></div></section><section class="card home-notices"><header class="home-section-head"><h2>Thông báo mới</h2><button type="button" class="link-btn" data-home-bell>Mở chuông</button></header><div data-home-notices><p class="muted">Đang tải thông báo…</p></div></section></aside></div>
 `;
+    stockValueUi?.close();const stockRoot=root.querySelector('[data-home-stock]');stockValueUi=stockRoot?initHomeStockValue({root:stockRoot,api,identity:signature}):null;
     drawNavigation();drawTasks();drawApprovals();drawNotes();
   }
   function drawNavigation(){
@@ -88,14 +92,14 @@ export function initHome({root,api,user,canApprove,go,entries=()=>[],actions=()=
     if(current(who,version))drawApprovals();
   }
   async function loadNotes(){const who=signature(),version=sequence;noteError='';try{const data=await notifications();if(current(who,version))notes=data;}catch(e){if(!current(who,version))return;notes=null;noteError=e.message||'Chưa tải được thông báo.';}if(current(who,version))drawNotes();}
-  async function refresh(){if(!active)return;return Promise.allSettled([loadTasks(),loadApprovals(),loadNotes()]);}
+  async function refresh(){if(!active)return;const who=signature(),version=sequence,stock=stockValueUi,work=loadTasks();void work.then(()=>{if(current(who,version))return stock?.load();});return Promise.allSettled([work,loadApprovals(),loadNotes()]);}
   async function show(){
     const who=signature();if(owner!==who){snapshot=approvals=notes=null;owner=who;}filter=canApprove()?'approvals':'priority';
     active=true;const version=++sequence;root.dataset.ready='false';await loadStyle();if(!current(who,version))return;
     shell();observer?.observe(navigationRoot,{subtree:true,attributes:true,attributeFilter:['hidden'],childList:true});
     return refresh();
   }
-  function hide(){active=false;sequence++;taskSequence++;clearTimeout(midnight);cancelAnimationFrame(navFrame);observer?.disconnect();}
+  function hide(){stockValueUi?.close();stockValueUi=null;active=false;sequence++;taskSequence++;clearTimeout(midnight);cancelAnimationFrame(navFrame);observer?.disconnect();}
   function reset(){hide();snapshot=approvals=notes=null;owner='';root.replaceChildren();root.dataset.ready='false';}
   root.addEventListener('click',e=>{
     const b=e.target.closest('[data-home-action],[data-home-tab],[data-home-stat],[data-home-refresh],[data-home-retry],[data-home-bell],[data-home-notice]');if(!b||!active)return;

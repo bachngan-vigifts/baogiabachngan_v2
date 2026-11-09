@@ -1,4 +1,4 @@
-import {registerFinanceRoutes} from './finance-routes.ts';
+import {registerHomeStockValue} from './home-stock-value.ts';
 import {registerWarehouseWorkspace,assertWarehouseTaskMutable} from '../modules/warehouse-workspace/routes.ts';
 import {customerMergeHooks} from '../core/contracts/customer-merge.ts';
 import {reassignCustodyCustomer,registerCustodyRoutes} from '../modules/product-custody/api/routes.ts';
@@ -87,6 +87,7 @@ import { assertFreeStock } from '../modules/sales/api/stock-free.ts';
 import { registerStockHistoryRoutes, stockRefLinkHooks } from '../modules/inventory/api/history-routes.ts';
 import { registerFlowRoutes } from './flow-routes.ts';
 import { registerCashbookRoutes } from './cashbook-routes.ts';
+import {registerFinanceRoutes} from './finance-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 import { registerFeedbackRoutes } from '../modules/feedback/api/routes.ts';
 import { registerStoreRoutes } from '../modules/store/api/routes.ts';
@@ -176,6 +177,7 @@ export function createAppRouter() {
   registerBadgeRoutes(router);
   registerNavigationCounts(router);
   registerWarehouseWork(router);
+  registerHomeStockValue(router);
   registerWarehouseWorkspace(router);
   registerInventoryRoutes(router, { heldQuantitiesOf: stockLookupHolds });
   registerStockIntegrityRoutes(router);
