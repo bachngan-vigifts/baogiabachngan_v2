@@ -1,3 +1,4 @@
+import {deliveryTone,deliveryIsOverdue,fulfilmentLegend,fulfilmentBadge,compactFulfilmentTable} from './fulfilment-display.js';
 import {initWarehouseWorkspace} from './warehouse-workspace.js';
 import { createNotificationFeed } from './notification-feed.js';
 import {productThumbnailUrl,noteThumbnailFailure} from './product-images.js';
@@ -3538,6 +3539,7 @@ async function loadDeliveries() {
   shipmentCalendarUi?.close();
   // Default to the visible month grid, including its adjacent week days.
   if (!$('#deliveries-from').value) { const [from,to]=deliveryCalendarView().range();$('#deliveries-from').value=from;$('#deliveries-to').value=to; }
+  $('#deliveries-legend').replaceChildren(fulfilmentLegend(['planned','in_transit','delivered','failed','cancelled','overdue']));
   $('#deliveries-list').innerHTML = skeleton(7);
   $('#deliveries-retry').hidden=true;
   const req = ++deliveriesReq;
@@ -3557,13 +3559,22 @@ async function loadDeliveries() {
     $('#deliveries-filter-summary').textContent=`${rows.length} chuyến phù hợp · ${fmtDate($('#deliveries-from').value)} – ${fmtDate($('#deliveries-to').value)}${d.truncated?' · Chỉ hiện 500 chuyến; hãy thu hẹp khoảng ngày hoặc bộ lọc để xem đầy đủ.':''}${focusId?' · Đang xem chuyến từ liên kết trực tiếp; các bộ lọc được bỏ qua.':''}`;
     deliveryCalendarView().render(rows,{from:focusId?rows[0]?.plannedDate:$('#deliveries-from').value,to:focusId?rows[0]?.plannedDate:$('#deliveries-to').value});
     renderDeliveryProducts($('#deliveries-product-lines'),rows,x=>deliveryCalendarView().details(x));
-    fillList('deliveries', rows.map(x => `<tr>
+    fillList('deliveries', rows.map(x => `<tr class="ff-row ff-${deliveryTone(x)}">
       <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(ghnTrackingText(x) || x.carrier)}</small></td>
-      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small><small class="delivery-product-labels">${(x.products||[]).map(p=>esc(`${p.name} (${p.sku}) · ${fmtNum(p.qty)} ${p.unit}`)).join('<br>')}</small>${deliverySlipButtons(x)}</td>
+      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small><small class="delivery-product-labels">${(x.products||[]).map(p=>esc(`${p.name} (${p.sku}) · ${fmtNum(p.qty)} ${p.unit}`)).join('<br>')}</small></td>
       <td>${deliveryReceiver(x)}<small>${esc(x.address || x.customerAddress || '')}</small></td>
       <td>${pill(DELIVERY_STATUS, x.status)}${deliveryConfirmation(x)}${deliveryPhotos(x)}</td>
-      <td>${x.invoiceNo?.trim() ? esc(x.invoiceNo) : x.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
+      <td>${x.invoiceNo?.trim() ? esc(x.invoiceNo) : x.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td><td class="actions-col">${deliveryButtons(x)}${deliverySlipButtons(x)}</td></tr>`),
       'Không có chuyến giao nào trong khoảng ngày này.');
+    const list=$('#deliveries-list');
+    [...list.rows].forEach((tr,i)=>{
+      const x=rows[i];if(!x)return;
+      const open=document.createElement('button');open.type='button';open.className='btn ghost small';open.textContent=x.deliveryNo;
+      open.addEventListener('click',()=>deliveryCalendarView().details(x));tr.cells[1].firstChild.replaceWith(open);
+      tr.cells[4].prepend(fulfilmentBadge(x.status));tr.cells[4].querySelector('.pill')?.remove();
+      if(deliveryIsOverdue(x))tr.cells[4].prepend(fulfilmentBadge('overdue'));
+    });
+    compactFulfilmentTable(list.closest('table'));
   } catch (e) { if(req!==deliveriesReq)return;listError('deliveries', e);$('#deliveries-filter-summary').textContent=e.message||'Không tải được lịch giao hàng.';$('#deliveries-calendar').replaceChildren();$('#deliveries-product-lines').replaceChildren();$('#deliveries-retry').hidden=false; }
   finally { if(req===deliveriesReq)$('#deliveries-calendar').removeAttribute('aria-busy'); }
 }

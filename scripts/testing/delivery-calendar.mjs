@@ -8,7 +8,7 @@ import {salesOrders,salesOrderLines,deliveries,deliveryLines} from '../../src/mo
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
 const f=await setup(), today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}),now=new Date().toISOString();
 await f.db.insert(salesOrders).values({id:'calendar-order',orderNo:'CAL-DEMO',quoteType:'HRC',customerName:'Công ty minh họa',ownerId:'emp',createdBy:'emp',orderDate:today,status:'confirmed',createdAt:now,updatedAt:now});
-await f.db.insert(salesOrderLines).values({id:'calendar-line',orderId:'calendar-order',lineNo:1,sku:'CAL-SKU',name:'Ly kiểm thử <b>nội dung</b>',unit:'Cái',qty:10,unitPrice:1000,taxRate:8,amount:10000});
+await f.db.insert(salesOrderLines).values({id:'calendar-line',orderId:'calendar-order',lineNo:1,sku:'CAL-SKU',name:'Ly kiểm thử <b>nội dung</b> – thông tin sản phẩm rất dài, in logo và đóng hộp riêng theo yêu cầu của khách hàng doanh nghiệp',unit:'Cái',qty:10,unitPrice:1000,taxRate:8,amount:10000});
 for(const [i,status] of ['planned','in_transit','delivered','cancelled'].entries()){
  await f.db.insert(deliveries).values({id:'calendar-'+i,deliveryNo:'CAL-'+i,orderId:'calendar-order',plannedDate:today,timeSlot:'09:00',receiverName:'Người nhận minh họa',receiverPhone:'0900000000',address:i%2?'Cần Thơ':'Sóc Trăng',carrier:'Tự giao',status,createdBy:'emp',createdAt:now,updatedAt:now});
  await f.db.insert(deliveryLines).values({deliveryId:'calendar-'+i,orderLineId:'calendar-line',qty:1});
@@ -50,9 +50,20 @@ try{for(const width of [1440,390]){
  await view.locator('[data-shipment-tab=list]').click();await view.locator('#deliveries-table').waitFor();assert.equal(await view.locator('#deliveries-list tr').count(),4);
  assert.ok(await view.locator('[data-ship]').count()>0,'existing delivery actions remain available');
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.deepEqual(errors,[]);
- await page.goto(origin+'/#/order-products');await page.locator('[data-od-calendar]').first().click();await page.locator('.od-dialog').waitFor();
- assert.ok(page.url().endsWith('#/order-products'),'sample trips must not navigate to the live calendar');
- await page.locator('.od-dialog [data-od-close]').first().click();
+ assert.equal(await view.locator('.ff-legend li').count(),6);
+ for(const tab of ['products','list']){
+  await view.locator('[data-shipment-tab='+tab+']').click();
+  const table=view.locator(tab==='list'?'#deliveries-table .ff-table':'.dc-products.ff-table');await table.waitFor();
+  const geometry=await table.locator('tbody tr').evaluateAll(rows=>rows.map(tr=>({height:tr.getBoundingClientRect().height,display:getComputedStyle(tr).display,wrap:[...tr.querySelectorAll('.ff-cell')].every(n=>getComputedStyle(n).whiteSpace==='nowrap')})));
+  assert.equal(geometry.length,4);for(const r of geometry){assert.ok(r.height<=56,JSON.stringify(r));assert.equal(r.display,'table-row');assert.equal(r.wrap,true);}
+ }
+ await view.locator('#deliveries-list tr').first().getByRole('button',{name:/CAL-/}).click();await page.locator('.delivery-calendar-dialog').waitFor();
+ assert.match(await page.locator('.delivery-calendar-dialog').textContent(),/khách hàng doanh nghiệp/);
+ await page.locator('.delivery-calendar-dialog button[aria-label="Đóng chi tiết chuyến giao"]').click();
+ await view.locator('[data-shipment-tab=calendar]').click();await view.locator('.dc-event').first().waitFor();
+ for(const r of await view.locator('.dc-event').evaluateAll(nodes=>nodes.map(n=>({height:n.getBoundingClientRect().height,nowrap:getComputedStyle(n).whiteSpace,full:n.getAttribute('aria-label')})))){assert.ok(r.height<=46,JSON.stringify(r));assert.equal(r.nowrap,'nowrap');assert.match(r.full,/khách hàng doanh nghiệp/);}
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ await page.screenshot({path:out+'/compact-calendar-'+width+'.png',fullPage:true});
  console.log('PASS '+width+'px: real calendar, day/week/month, product/address filters, empty state, product table, escaped labels, existing actions, no JS errors/overflow');await context.close();
 }
 assert.deepEqual(writes.filter(x=>!x.path.endsWith('/csp-report')),[],'viewing/filtering must not write business data');

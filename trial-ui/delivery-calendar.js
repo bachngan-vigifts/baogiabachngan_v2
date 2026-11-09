@@ -1,5 +1,6 @@
+import {deliveryToday,deliveryIsOverdue,deliveryTone,fulfilmentBadge,compactFulfilmentTable} from './fulfilment-display.js';
+export {deliveryToday,deliveryIsOverdue} from './fulfilment-display.js';
 const LABELS = { planned: 'Chưa giao', in_transit: 'Đang giao', delivered: 'Đã giao', failed: 'Giao lỗi', cancelled: 'Đã huỷ' };
-export const deliveryToday = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
 export function deliveryDay(date, delta) {
   const d = new Date(date + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + delta); return d.toISOString().slice(0, 10);
 }
@@ -9,7 +10,6 @@ export function deliveryCalendarDays(date, mode = 'month') {
   const offset = (new Date(first + 'T12:00:00Z').getUTCDay() + 6) % 7;
   return Array.from({ length: mode === 'month' ? 42 : 7 }, (_, i) => deliveryDay(first, i - offset));
 }
-export const deliveryIsOverdue = (trip, today = deliveryToday()) => trip.plannedDate < today && ['planned', 'in_transit', 'failed'].includes(trip.status);
 const el = (tag, text, cls) => { const n = document.createElement(tag); if (text != null) n.textContent = text; if (cls) n.className = cls; return n; };
 const button = (text, cls, act) => { const b = el('button', text, cls); b.type = 'button'; b.setAttribute('data-mobile-navigation', ''); b.addEventListener('click', act); return b; };
 const dateLabel = d => d.slice(8) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4);
@@ -17,18 +17,19 @@ const dateLabel = d => d.slice(8) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4);
 export function renderDeliveryProducts(root, rows, onOpen) {
   const table = el('table', null, 'data-table dc-products'), head = el('thead'), tr = el('tr');
   const priced = rows.some(r => (r.products || []).some(p => p.unitPrice != null));
-  const headers = ['Sản phẩm / SKU','Ngày hẹn giao','Số lượng','ĐVT','Khách hàng · Đơn / HĐKT','Nhân viên phụ trách','Trạng thái',...(priced ? ['Đơn giá sau CK','Tiền hàng chưa VAT','Tiền hàng có VAT'] : [])];
+  const headers = ['Sản phẩm','Ngày hẹn giao','Số lượng','ĐVT','Khách hàng · Đơn / HĐKT','Nhân viên phụ trách','Trạng thái',...(priced ? ['Đơn giá sau CK','Tiền hàng chưa VAT','Tiền hàng có VAT'] : [])];
   for (const name of headers) tr.append(el('th', name));
   head.append(tr); table.append(head); const body = el('tbody');
   for (const row of rows) for (const p of row.products || []) {
-    const tr = el('tr'), name = el('td'); name.append(button(p.name, 'btn ghost small', () => onOpen(row)), el('small', p.sku));
-    tr.append(name, el('td', dateLabel(row.plannedDate)), el('td', p.qty.toLocaleString('vi-VN')), el('td', p.unit), el('td', `${row.customerName} · ${row.contractNo || row.orderNo} · ${row.deliveryNo}`), el('td', row.ownerName || '—'), el('td', LABELS[row.status]));
+    const tr = el('tr',null,'ff-row ff-'+deliveryTone(row)), name = el('td',null,'ff-product'); name.append(button(p.name, 'btn ghost small', () => onOpen(row)));
+    tr.append(name, el('td', dateLabel(row.plannedDate)), el('td', p.qty.toLocaleString('vi-VN')), el('td', p.unit), el('td', `${row.customerName} · ${row.contractNo || row.orderNo} · ${row.deliveryNo}`), el('td', row.ownerName || '—'), el('td'));
+    tr.children[6].append(fulfilmentBadge(row.status));if(deliveryIsOverdue(row))tr.children[6].append(fulfilmentBadge('overdue'));
     if (priced) for (const amount of [p.unitPrice,p.amount,p.total]) tr.append(el('td', amount == null ? '—' : amount.toLocaleString('vi-VN')+' đ'));
     [...tr.children].forEach((cell, i) => { cell.dataset.label = headers[i]; });
     body.append(tr);
   }
   if (!body.children.length) { const tr = el('tr'), td = el('td', 'Không có sản phẩm trong các chuyến phù hợp.'); td.colSpan = priced ? 10 : 7; tr.append(td); body.append(tr); }
-  table.append(body); root.replaceChildren(el('p', 'Mỗi dòng thuộc một chuyến giao; số lượng là số xếp trong chuyến, không phải tổng số đặt. Giá trị hàng không gồm phí vận chuyển.', 'muted small'), table);
+  table.append(body); compactFulfilmentTable(table); root.replaceChildren(el('p', 'Mỗi dòng thuộc một chuyến giao; số lượng là số xếp trong chuyến, không phải tổng số đặt. Giá trị hàng không gồm phí vận chuyển.', 'muted small'), table);
 }
 
 /** Live calendar: consumes the same permission-scoped response as the delivery table. */
@@ -36,7 +37,7 @@ export function createDeliveryCalendar({ root, onRange, actions, orderLink }) {
   let anchor = deliveryToday(), selected = anchor, mode = 'month', rows = [], dialog = null, from = '', to = '';
   const range = () => { const days = deliveryCalendarDays(anchor, mode); return [days[0], days.at(-1)]; };
   const close = () => { if (dialog) { dialog.close(); dialog.remove(); dialog = null; } };
-  const tone = trip => deliveryIsOverdue(trip) ? 'overdue' : trip.status;
+  const tone = deliveryTone;
   function details(trip) {
     close(); dialog = el('dialog', null, 'modal delivery-calendar-dialog');
     const head = el('div', null, 'modal-head'); head.append(el('h2', trip.deliveryNo), button('×', 'icon-btn', close));
@@ -66,9 +67,9 @@ export function createDeliveryCalendar({ root, onRange, actions, orderLink }) {
   }
   function event(trip) {
     const names = (trip.products || []).map(p => p.name).join(', ');
-    const b = button('', `dc-event dc-${tone(trip)}`, () => details(trip));
+    const b = button('', `dc-event dc-${tone(trip)} ff-${tone(trip)}`, () => details(trip));
     b.append(el('strong', names || trip.deliveryNo), el('small', trip.customerName), el('small', `${trip.timeSlot || 'Chưa có giờ'} · ${trip.contractNo || trip.orderNo} · ${LABELS[trip.status]}`));
-    b.title = `${names} · ${trip.customerName} · ${trip.deliveryNo}`;
+    b.title = `${names} · ${trip.customerName} · ${trip.deliveryNo} · ${LABELS[trip.status]}${deliveryIsOverdue(trip)?' · Quá hạn':''}`;b.setAttribute('aria-label',b.title);
     return b;
   }
   function changeRange() { selected = anchor; const [a, b] = range(); onRange(a, b); }
@@ -99,8 +100,7 @@ export function createDeliveryCalendar({ root, onRange, actions, orderLink }) {
     const selectedTrips = rows.filter(r => r.plannedDate === selected);
     for (const trip of selectedTrips) agenda.append(event(trip));
     if (!selectedTrips.length) agenda.append(el('p', 'Không có chuyến giao phù hợp bộ lọc trong ngày này.', 'muted'));
-    const legend = el('p', 'Quá hạn · Chưa giao · Đang giao · Đã giao · Giao lỗi · Đã huỷ. Nhãn trạng thái luôn hiện trên từng chuyến.', 'muted small');
-    root.replaceChildren(tools, legend, grid, agenda);
+    root.replaceChildren(tools, grid, agenda);
   }
   function move(delta) {
     if (mode === 'month') { const d = new Date(anchor.slice(0,7) + '-01T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() + delta); anchor = d.toISOString().slice(0,10); }
