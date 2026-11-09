@@ -8,7 +8,7 @@ import {homeFixture} from '../../tests/helpers/home-fixture.ts';
 import {tasks} from '../../src/modules/tasks/schema.ts';
 import {warehouseWorkRuns as runs,warehouseWorkMonths as months} from '../../src/modules/warehouse-workspace/schema.ts';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
-const f=await homeFixture(),root=fileURLToPath(new URL('../../trial-ui/',import.meta.url)),out='/tmp/warehouse-member-filter';await mkdir(out,{recursive:true});
+const f=await homeFixture(),root=fileURLToPath(new URL('../../trial-ui/',import.meta.url)),out='/tmp/warehouse-default-weight';await mkdir(out,{recursive:true});
 const check=(r,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
 const calendar={days:[0,1,2,3,4,5,6],start:'00:00',end:'23:59',breakStart:'',breakEnd:''};
 check(await f.call('/warehouse-workspace/settings',f.cookies.mgr,'PUT',{calendar,bonusBudget:1000000,revision:0,reason:'Ca kiểm thử'}));
@@ -18,6 +18,7 @@ const at=new Date().toISOString();for(const id of ['browser-wh-desktop','browser
 }
 await f.client.query("insert into staff_members(id,email,name,phone,role,position_id,active,created_at) values ('wh-filter','wh-filter@x.vn','Kho kiểm thử 2','','employee','warehouse',true,$1)",[at]);
 await f.db.insert(tasks).values({id:'browser-filter-other',title:'Việc riêng Kho kiểm thử 2',assigneeId:'wh-filter',assigneePosition:'warehouse',dueDate:f.yesterday,createdBy:'mgr',createdAt:at,updatedAt:at});
+await f.db.insert(tasks).values({id:'browser-weight-default',title:'Việc dùng điểm mặc định',assigneeId:'wh',dueDate:f.today,dueTime:'23:59',createdBy:'mgr',createdAt:at,updatedAt:at});
 const server=createServer(async(req,res)=>{try{const u=new URL(req.url,'http://local');if(u.pathname.startsWith('/api/staff/')){
  const chunks=[];for await(const x of req)chunks.push(x);const body=chunks.length?JSON.parse(Buffer.concat(chunks).toString()):undefined,token=req.headers.authorization?.replace(/^Bearer /,'');
  const r=await f.call(u.pathname.slice(10)+u.search,token?'__Host-bn-session='+token:'',req.method,body);
@@ -54,7 +55,8 @@ try{for(const width of [1440,390]){
  assert.equal((await f.db.select().from(months)).length,monthsBefore);
  await p.locator('[data-ww-action=settings]').click();d=p.locator('dialog.ww-dialog[open]');assert.ok(await d.evaluate(n=>n.getBoundingClientRect().width<=innerWidth));await d.locator('[name=reason]').fill('Kiểm tra lưu ca làm');await d.locator('[type=submit]').click();await p.locator('dialog.ww-dialog').waitFor({state:'hidden'});
  await p.locator('.ww-tabs [data-tab=priority]').click();const cancelId='browser-cancel-'+width,cancelCard=p.locator('[data-task="'+cancelId+'"]');await cancelCard.locator('[data-ww-action=cancel]').click();d=p.locator('dialog.ww-dialog[open]');await d.locator('[name=note]').fill('Không còn nhu cầu, giữ bản theo dõi để đối chiếu');await d.locator('[type=submit]').click();await p.locator('dialog.ww-dialog').waitFor({state:'hidden'});assert.equal((await f.db.select().from(runs).where(eq(runs.taskId,cancelId)))[0].stage,'cancelled');
- assert.equal((await f.db.select().from(runs).where(eq(runs.taskId,id)))[0].stage,'confirmed');assert.deepEqual(errors,[]);await p.locator('.main').evaluate(n=>n.scrollTo({top:0,behavior:'instant'}));await p.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));await p.screenshot({path:out+'/manager-'+width+'.png',fullPage:true});results.push({width,warehouseLogin:true,performanceNavigation:true,lifecycle:true,managerApproval:true,settings:true,latestMemberWins:true,employeeFilter:true,sharedQueueSeparated:true,currentMonthDemo:true,demoDoesNotLock:true,noOverflow:true,errors});await context.close();
+ const defaultCard=p.locator('[data-task=browser-weight-default]');await defaultCard.locator('[data-ww-action=configure]').click();d=p.locator('dialog.ww-dialog[open]');assert.equal(await d.locator('[name=weight]').inputValue(),'1');await d.locator('[name=weight]').fill('');await d.locator('[name=standardMinutes]').fill('30');await d.locator('[name=note]').fill('Kiểm thử định mức một điểm');await d.locator('[type=submit]').click();await p.locator('dialog.ww-dialog').waitFor({state:'hidden'});await defaultCard.locator('[data-ww-action=start]').waitFor();assert.equal((await f.db.select().from(runs).where(eq(runs.taskId,'browser-weight-default')))[0].weight,1);
+ assert.equal((await f.db.select().from(runs).where(eq(runs.taskId,id)))[0].stage,'confirmed');assert.deepEqual(errors,[]);await p.locator('.main').evaluate(n=>n.scrollTo({top:0,behavior:'instant'}));await p.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));await p.screenshot({path:out+'/manager-'+width+'.png',fullPage:true});results.push({width,warehouseLogin:true,performanceNavigation:true,lifecycle:true,managerApproval:true,settings:true,defaultOnePoint:true,latestMemberWins:true,employeeFilter:true,sharedQueueSeparated:true,currentMonthDemo:true,demoDoesNotLock:true,noOverflow:true,errors});await context.close();
 }
  await writeFile(out+'/results.json',JSON.stringify(results,null,2));process.stdout.write(JSON.stringify(results)+'\n');
 }finally{await browser.close();server.close();await Promise.allSettled([...f.background]);await f.client.close();}
