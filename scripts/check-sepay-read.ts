@@ -7,7 +7,6 @@ try {
   console.log(JSON.stringify({ day, transactions: result.read, incoming: result.payments.length,
     incomingAmount: result.payments.reduce((s,p)=>s+p.amount,0), outgoing: result.outgoing,
     receiptsCreated: 0, databaseWrites: 0 }));
-
 } catch (error) {
   // Provider/transport errors are sanitized by the adapter. Never print token, raw response or stack.
   console.error(error instanceof Error ? error.message : 'Không kiểm tra được API SePay.');

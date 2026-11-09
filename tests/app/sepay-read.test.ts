@@ -19,12 +19,13 @@ function provider(rows:Record<string,unknown>[],seen:string[]=[]):typeof fetch {
  };
 }
 test('SePay timestamp bounds include midnight and the final second, excluding adjacent VN days',async()=>{
+ const day='2026-11-07'; // Completed day: the shared payment parser correctly refuses future timestamps.
  const rows=[
-  row('previous',{transaction_date:'2026-11-08 23:59:59'}),
+  row('previous',{transaction_date:'2026-11-06 23:59:59'}),
   row('start',{transaction_date:day+' 00:00:00'}),
   row('midday',{transaction_date:day+' 12:00:00'}),
   row('end',{transaction_date:day+' 23:59:59'}),
-  row('next',{transaction_date:'2026-11-10 00:00:00'}),
+  row('next',{transaction_date:'2026-11-08 00:00:00'}),
  ];
  const calls:URL[]=[];
  const result=await readSepayDay(token,day,async input=>{
@@ -37,7 +38,7 @@ test('SePay timestamp bounds include midnight and the final second, excluding ad
  assert.equal(calls.length,2);
  assert.equal(result.read,3);
  assert.deepEqual(result.payments.map(p=>p.providerId),['start','midday','end']);
- assert.deepEqual(result.payments.map(p=>p.transactionAt),['2026-11-08T17:00:00.000Z','2026-11-09T05:00:00.000Z','2026-11-09T16:59:59.000Z']);
+ assert.deepEqual(result.payments.map(p=>p.transactionAt),['2026-11-06T17:00:00.000Z','2026-11-07T05:00:00.000Z','2026-11-07T16:59:59.000Z']);
 });
 test('today pull checks permissions, uses VN day and imports pending once without changing receipts/debt',async()=>{
  const f=await setupSepay(),calls:string[]=[];f.env.nowSec=()=>Date.parse(day+'T00:00:00+07:00')/1000;f.env.sepayApiToken=token;
