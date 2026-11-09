@@ -2,6 +2,33 @@ import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, pr
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { SAPO_DOC_KINDS } from './domain/sapo-docs.ts';
 
+const SEPAY_TRANSACTION_STATUSES = ['matched', 'unmatched', 'review'] as const;
+
+/**
+ * Giao dịch vào do SePay đẩy sang. Giữ nguyên payload để kế toán truy vết; id của SePay là
+ * khoá chống ghi nhận hai lần. Liên kết đơn/phiếu thu dùng text để integrations không phụ thuộc
+ * schema sales (quy tắc kiến trúc module).
+ */
+export const sepayTransactions = pgTable('sepay_transactions', {
+  id: text('id').primaryKey(),
+  providerId: text('provider_id').notNull(),
+  transferType: text('transfer_type').notNull(),
+  amount: doublePrecision('amount').notNull(),
+  accountNumber: text('account_number').notNull().default(''),
+  transactionAt: text('transaction_at').notNull(),
+  content: text('content').notNull().default(''),
+  status: text('status', { enum: SEPAY_TRANSACTION_STATUSES }).notNull(),
+  reason: text('reason').notNull().default(''),
+  orderId: text('order_id'),
+  paymentId: text('payment_id'),
+  payload: text('payload').notNull(),
+  receivedAt: text('received_at').notNull(),
+}, t => [
+  uniqueIndex('uq_sepay_transactions_provider').on(t.providerId),
+  index('idx_sepay_transactions_status_received').on(t.status, t.receivedAt),
+  enumCheck('chk_sepay_transactions_status', t.status, SEPAY_TRANSACTION_STATUSES),
+]).enableRLS();
+
 /** Chỉ lưu SHA-256 mã nhận webhook; không dùng khóa SyncTime Client hoặc phiên Sapo. */
 export const synctimeConnections = pgTable('synctime_connections', {
   id: text('id').primaryKey(),
