@@ -15,7 +15,7 @@ await f.db.insert(salesOrderLines).values([
  {id:'live-a',orderId:'live-order',lineNo:1,sku:'00123',name:'Ly sứ in xanh – sản phẩm thử tên rất dài, quy cách in logo và đóng hộp riêng cho khách hàng doanh nghiệp',unit:'Cái',qty:10,deliveredQty:3,unitPrice:1000,taxRate:8,amount:10000},
  {id:'live-b',orderId:'live-order',lineNo:2,sku:'00123',name:'Ly sứ in đỏ <b>chữ</b>',unit:'Bộ',qty:5,deliveredQty:0,unitPrice:2000,taxRate:8,amount:10000},
 ]);
-await f.db.insert(deliveries).values({id:'live-trip',deliveryNo:'LIVE-TRIP',orderId:'live-order',plannedDate:future,status:'planned',createdBy:'emp',createdAt:now,updatedAt:now});
+await f.db.insert(deliveries).values({id:'live-trip',deliveryNo:'LIVE-TRIP',orderId:'live-order',plannedDate:future,carrier:'GHN',trackingCode:'GHN-TEST-001',trackingStatus:'delivering',status:'planned',createdBy:'emp',createdAt:now,updatedAt:now});
 await f.db.insert(deliveryLines).values({deliveryId:'live-trip',orderLineId:'live-a',qty:4});
 const root=fileURLToPath(new URL('../../trial-ui/',import.meta.url)),out='/tmp/live-order-products-browser',writes=[];await mkdir(out,{recursive:true});
 const server=createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost');if(u.pathname.startsWith('/api/staff/')){
@@ -31,6 +31,11 @@ try{for(const width of [1440,390]){
  await context.addInitScript(({user,token})=>{localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));},{user,token:f.mgr.split('=')[1]});
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/#/order-products');
  const view=page.locator('#view-order-products');await view.locator('[data-order-line=live-a]').waitFor();
+ assert.equal(await view.locator('thead th').nth(2).textContent(),'Số đơn GHN / Trạng thái GHN');
+ assert.ok(await view.locator('[data-order-line=live-a] .op-ghn').evaluate(cell=>cell.getBoundingClientRect().width>=270),'tracking column reserves enough width');
+ assert.match(await view.locator('[data-order-line=live-a] .op-ghn').textContent(),/GHN-TEST-001 · Đang giao hàng/);
+ assert.equal(await view.locator('[data-order-line=live-a] .op-ghn a').getAttribute('href'),'#/deliveries?deliveryId=live-trip');
+ assert.equal(await view.locator('[data-order-line=live-b] .op-ghn').textContent(),'Chưa có vận đơn GHN');
  assert.equal(await view.locator('tbody tr').count(),2);assert.equal(await view.getByText('Dữ liệu minh họa',{exact:false}).count(),0);
  assert.equal(await view.locator('[data-order-line=live-b] td b').count(),0,'HTML in product name remains text');
  await view.locator('.op-stats button').filter({hasText:'Giao một phần'}).click();await page.waitForFunction(()=>document.querySelectorAll('#view-order-products [data-order-line]').length===1);
@@ -39,7 +44,7 @@ try{for(const width of [1440,390]){
  await view.locator('.op-panel input[type=search]').fill('do chu');await page.waitForFunction(()=>document.querySelectorAll('#view-order-products [data-order-line]').length===1&&!!document.querySelector('[data-order-line=live-b]'));
  await view.locator('.op-panel input[type=search]').fill('');await view.locator('[data-order-line=live-a]').waitFor();
  await view.locator('[data-order-line=live-a] .op-actions').getByRole('button',{name:'Chi tiết',exact:true}).click();await page.locator('.op-dialog').waitFor();
- assert.match(await page.locator('.op-dialog').textContent(),/Chưa xếp 3/);assert.match(await page.locator('.op-dialog').textContent(),/LIVE-TRIP/);
+ assert.match(await page.locator('.op-dialog').textContent(),/Chưa xếp 3/);assert.match(await page.locator('.op-dialog').textContent(),/LIVE-TRIP/);assert.match(await page.locator('.op-dialog').textContent(),/GHN-TEST-001 · Đang giao hàng/);
  await page.locator('.op-dialog button[aria-label="Đóng chi tiết dòng hàng"]').click();
  assert.equal(await view.locator('.ff-legend li').count(),7);
  assert.equal(await view.locator('[data-order-line=live-a] td:first-child small').count(),0,'no separate SKU label');
@@ -58,7 +63,7 @@ try{for(const width of [1440,390]){
   const actual=await f.call('/order-products?status=all',f.mgr),line=actual.data.lines.find(l=>l.id==='live-a');
   assert.equal(line.availableQty,0);assert.equal(line.scheduledQty,7);assert.equal(line.trips.length,2);
  }else await page.locator('#delivery-dialog').evaluate(d=>d.close());
- assert.deepEqual(errors,[]);console.log('PASS '+width+'px: real lines, duplicate SKU, filters, detail/trips, no HTML injection or overflow, existing schedule form selects only requested line');await context.close();
+ assert.deepEqual(errors,[]);console.log('PASS '+width+'px: GHN code/status per line, real lines, duplicate SKU, filters, detail/trips, no HTML injection or overflow, existing schedule form selects only requested line');await context.close();
 }
 const deliveriesWrites=writes.filter(x=>x.path==='/api/staff/deliveries'&&x.method==='POST');assert.equal(deliveriesWrites.length,1);assert.deepEqual(deliveriesWrites[0].body.lines,[{orderLineId:'live-a',qty:3}]);
 console.log('PASS schedule save: one existing POST, exact line quantity, refreshed facts match DB');

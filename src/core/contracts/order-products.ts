@@ -1,6 +1,7 @@
 /** Native CRM/POS order lines. Unconverted external website orders have no schedulable CRM lines. */
 export interface OrderProductTrip {
   id: string; deliveryNo: string; plannedDate: string; timeSlot: string; status: string; qty: number;
+  carrier?: string; trackingCode?: string; trackingStatus?: string;
 }
 export interface OrderProductLine {
   id: string; orderId: string; orderNo: string; contractNo: string | null;
