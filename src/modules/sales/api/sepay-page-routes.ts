@@ -1,3 +1,4 @@
+import {isLockWebQrPayment} from './sepay-web-store.ts';
 import {webStoreOrders as web,posRegisters as webRegisters} from '../pos-schema.ts';
 import {webDocumentStatus} from './web-order-documents.ts';
 import {
@@ -216,6 +217,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         )
         .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
         .limit(20);
+      const webPayment=!!row.webOrderId||await isLockWebQrPayment(c.env.db,row);
       return json({
         transaction: row,
         history: history.map((h) => {
@@ -239,12 +241,12 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
           canConfirm:
             member(c).role === "manager" &&
             ["review", "unmatched"].includes(row.status) &&
-            !row.webOrderId &&
+            !webPayment &&
             !sepayPosIntent(row.content) &&
             row.orderChannel !== "pos",
         },
         blockReason:
-          row.webOrderId ? row.reason || "Giao dịch thuộc đơn web; xem trạng thái thanh toán trên đúng đơn web." :
+          webPayment ? row.reason || "Giao dịch thuộc đơn web; xem trạng thái thanh toán trên đúng đơn web." :
           sepayPosIntent(row.content) || row.orderChannel === "pos"
             ? "Giao dịch thuộc luồng QR/POS; không gắn vào đơn CRM khác."
             : "",

@@ -106,5 +106,6 @@ test('disjoint API batches visiting two web orders in opposite order do not dead
 test('bank-first reserved Lock QR cannot attach to a coincident CRM number before the website order arrives',async()=>{
  const f=await fixture(),crm=await f.order('DH21661');
  const e=await f.incoming('DH21661',100000,{id:'reserved-before-web'});assert.equal(e.status,'review');assert.equal(e.orderId,null);
+ const detail=await f.call('/sepay/transactions/'+e.id,f.mgr);assert.equal(detail.data.capabilities.canConfirm,false);assert.match(detail.data.blockReason,/chờ nguồn web/);
  assert.equal((await f.confirm(e.id,f.choice(crm.id))).status,409);assert.equal((await f.db.select().from(customerPayments)).length,0);
 });
