@@ -29,6 +29,16 @@ Khoản QR POS cần xử lý theo luồng POS để gắn đúng ca. Đơn web 
 - **Đã ghi thu**: đã gắn một phiếu chuyển khoản còn hiệu lực, khớp đơn và số tiền. **Chờ đối soát**: chưa khớp đơn hoặc cần Manager kiểm tra. **Phiếu thu cần kiểm tra**: phiếu đã huỷ, bị thiếu hoặc không còn khớp; trang không tự tạo lại phiếu.
 - Bấm một giao dịch để xem số tiền, tài khoản, thời điểm, nội dung gốc, đơn/phiếu đã gắn và lịch sử xử lý. Không được sửa các trường chứng từ ngân hàng trên trang.
 
+## Hiển thị khi bấm Xem / đối soát
+
+Nút đưa focus và cuộn tới khung đối soát ngay khi bắt đầu tải; khi form tải xong chỉ căn lại vị trí nếu người dùng vẫn ở khung đó. Khắc phục trường hợp bố cục một cột đặt chi tiết sau toàn bộ danh sách (đã tái hiện trên mobile 390px: tiêu đề nằm ngoài viewport ở tọa độ y=2173px).
+
+Nút **Về giao dịch** cuộn/focus về đúng dòng đã chọn, giữ nguyên dữ liệu và nội dung đang nhập, không gọi API ghi. Nếu dòng không còn trong bộ lọc, quay về danh sách. Focus có hiển thị cho bàn phím, khung có nhãn accessible và khoảng cách tránh header cố định.
+
+Thay đổi này không sửa quyền hoặc điều kiện ghi thu. Kế toán chỉ xem/đối chiếu; Manager chỉ xác nhận khi tài khoản nhận đã có trong `SEPAY_RECEIPT_ACCOUNTS`. Nếu khung hiện cảnh báo tài khoản chưa được duyệt, cần cấu hình đúng tài khoản đã được công ty xác nhận theo `docs/SEPAY-RECEIPTS.md`; không bỏ kiểm tra này chỉ để hiện nút xác nhận.
+
+Kiểm tra browser fixture cô lập: danh sách dài ở 390/1440px, focus và vị trí dưới header, quay lại đúng dòng, tạo/gắn phiếu thu, chống bấm trùng, mất phản hồi sau ghi, lỗi tải danh sách, quyền Kế toán/Sale và nội dung không tin cậy. Không gọi production trong kiểm thử.
+
 ## Manager xử lý giao dịch thiếu hoặc sai mã
 
 1. Mở giao dịch chờ đối soát; kiểm tra chứng từ ngân hàng thật.

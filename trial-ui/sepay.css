@@ -80,6 +80,16 @@
   min-width: 0;
   padding: 18px;
 }
+.sp-detail {
+  scroll-margin-top: 84px;
+}
+.sp-detail:focus-visible {
+  outline: 2px solid var(--blue, #2f73d9);
+  outline-offset: 3px;
+}
+.sp-back {
+  margin-bottom: 12px;
+}
 .sp-heading {
   display: flex;
   gap: 12px;
