@@ -13,7 +13,8 @@ API `POST /api/staff/integrations/sepay/payment` nhận webhook bằng `Authoriz
 
 - Chỉ nhận giao dịch tiền vào, số tiền nguyên VNĐ lớn hơn 0 và tối đa 1.000 tỷ; phải có ID, tài khoản, nội dung và thời điểm giao dịch hợp lệ. Không có thời điểm thì từ chối, không tự gán hôm nay.
 - Ngày/giờ thiếu múi giờ được hiểu theo Việt Nam (+07:00). Inbox giữ timestamp UTC; phiếu thu lưu ngày Việt Nam `YYYY-MM-DD` để thống nhất với sổ quỹ/báo cáo.
-- Khớp **toàn bộ mã** đơn, báo giá, mã Sapo hoặc HĐKT. Bỏ dấu tiếng Việt và các dấu phân cách trong mã, nhưng không khớp `DH10` vào `DH1`. Một nội dung khớp nhiều đơn: `review`. Nội dung quá phức tạp: không tự ghi thu.
+- Khớp **toàn bộ mã** đơn, báo giá, mã Sapo hoặc HĐKT. Bỏ dấu tiếng Việt và các dấu phân cách trong mã, nhưng không khớp `DH10` vào `DH1`. Các phần nối bằng gạch ngang, gạch dưới, dấu chấm hoặc dấu `/` (kể cả khoảng trắng quanh dấu nối) được giữ trong cùng một mã; không lấy tiền tố/hậu tố của mã dài làm mã độc lập. Một nội dung khớp nhiều đơn: `review`. Nội dung quá phức tạp: không tự ghi thu.
+- Khi phát hiện mã mơ hồ, tính cả chứng từ huỷ/nháp: không loại mã dài rồi tự chuyển sang mã ngắn còn hiệu lực. Một mã đầy đủ chỉ trỏ tới chứng từ huỷ/nháp chưa ký vẫn không ghi thu.
 - Chỉ tính đơn còn hiệu lực công nợ; HĐKT nháp đã ký/hoàn tất vẫn có công nợ theo quy tắc chung. Đơn huỷ và nháp chưa ký không được ghi thu tự động.
 - Số còn nợ lấy từ cùng hàm đang xử lý hàng trả, hoàn tiền, đổi hàng và phiếu thu bị huỷ. Khoản vượt số còn nợ: `review`; không âm thầm cắt số tiền.
 - Ghi thu trong transaction, cùng khóa tiền với POS/thu thủ công/COD/hàng trả và khóa dòng đơn. Kiểm tra lại trạng thái và công nợ dưới khóa. Ghi inbox và phiếu thu cùng thành công hoặc cùng rollback.
@@ -38,3 +39,11 @@ Luồng này không đổi trạng thái WooCommerce, không chốt/huỷ/tạo 
 - `node --import tsx --test tests/app/sepay-payment.test.ts src/modules/integrations/domain/sepay-payment.test.ts tests/architecture.test.ts`
 - `TEST_PG_URL=<CSDL kiểm thử cục bộ> node --import tsx --test tests/app/sepay-payment.test.ts` chạy cả ca đồng thời. Helper tạo database tạm riêng rồi xoá; tuyệt đối không trỏ biến này vào production.
 - `npm test`/CI chạy bộ hồi quy đầy đủ, gồm POS, QR, COD, tài chính và WordPress GHN.
+
+## Hồi quy ranh giới mã PR #581
+
+Đã tái hiện trước sửa: nội dung `DH_20261109_001-ABC` có thể tạo phiếu thu vào `DH_20261109_001` và giảm nhầm công nợ, khi mã dài chưa có hoặc thuộc đơn huỷ/nháp. Hai test hồi quy (domain và API) thất bại trên bản cũ trước khi sửa.
+
+Sau sửa, các ca tiền tố/hậu tố qua dấu nối, dấu nối lặp và khoảng trắng quanh dấu nối không tạo phiếu thu; tiền vẫn nằm trong inbox để đối soát. Mã dài bị huỷ/nháp không dẫn tiền sang đơn ngắn khi chuẩn hoá khoảng trắng. Chạy lại webhook và Manager đối soát đều giữ nguyên công nợ đơn ngắn. Mã dài đầy đủ của đơn hợp lệ vẫn được thu đúng và replay không tạo phiếu thứ hai.
+
+Kiểm tra cục bộ: PGlite đạt 26/27 (ca đồng thời chỉ chạy trên PostgreSQL); PostgreSQL 17.11 cô lập đạt 27/27, không bỏ qua ca nào, gồm gửi trùng ID, hai ID cùng đơn, đồng thời với thu thủ công và huỷ đơn. Giữ kiểm tra kiến trúc, không sửa migration hay cấu hình production. CI cần kiểm tra lại đúng commit sửa mới trước khi merge.

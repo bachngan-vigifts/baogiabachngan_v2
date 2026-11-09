@@ -71,24 +71,20 @@ async function ingestPayment(
         sql`upper(regexp_replace(${foldSql(field)}, '[^a-z0-9]', '', 'g'))`,
         values,
       );
+    // Inactive documents also participate in ambiguity detection. Filtering them
+    // first can redirect a space-normalized long reference to an active prefix.
+    // Eligibility is checked under the order lock before any receipt is created.
     const candidates = references.length
       ? await tx
           .select({ id: salesOrders.id })
           .from(salesOrders)
           .leftJoin(salesContracts, eq(salesContracts.orderId, salesOrders.id))
           .where(
-            and(
-              ne(salesOrders.status, "cancelled"),
-              or(
-                ne(salesOrders.status, "draft"),
-                inArray(salesContracts.status, ["signed", "completed"]),
-              ),
-              or(
-                referenceMatches(salesOrders.orderNo),
-                referenceMatches(salesOrders.quoteNo),
-                referenceMatches(salesOrders.sapoOrderCode),
-                referenceMatches(salesContracts.contractNo),
-              ),
+            or(
+              referenceMatches(salesOrders.orderNo),
+              referenceMatches(salesOrders.quoteNo),
+              referenceMatches(salesOrders.sapoOrderCode),
+              referenceMatches(salesContracts.contractNo),
             ),
           )
           .limit(3)

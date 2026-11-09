@@ -26,16 +26,21 @@ export const normalizeSepayReference = (v: string) =>
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
 
-/** Whole references only: a bank may remove separators, but must not turn DH10 into DH1. */
+/**
+ * Keep connected document components atomic, including spaces around separators.
+ * Only whitespace between whole tokens may be normalized by joining tokens; never
+ * emit DH1 from DH1-ABC, PREFIX/DH1, or DH1 / ABC.
+ */
 export function sepayReferenceCandidates(content: string): string[] {
   const words = content
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[đĐ]/g, "D")
     .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, " ")
+    .replace(/([A-Z0-9])(?:\s*[-_/.‐‑‒–—−])+\s*(?=[A-Z0-9])/g, "$1")
     .trim()
-    .split(/ +/)
+    .split(/\s+/)
+    .map(normalizeSepayReference)
     .filter(Boolean);
   if (words.length > 64) return []; // Bound work; complex statements remain available for reconciliation.
   const candidates = new Set<string>();

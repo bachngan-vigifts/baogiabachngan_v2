@@ -204,6 +204,44 @@ test("whole references prevent prefix/suffix false matches; quote, Sapo and Viet
   );
 });
 
+test("long references cannot credit a shorter order, including cancelled/draft and unknown targets", async () => {
+  const f = await fixture(), short = await f.order("DH_20261109_001");
+  await f.order(short.orderNo + "-CANCELLED", { status: "cancelled" });
+  await f.order(short.orderNo + "-DRAFT", { status: "draft" });
+  for (const content of [
+    short.orderNo + "-UNKNOWN", short.orderNo + "/UNKNOWN",
+    short.orderNo + "_UNKNOWN", short.orderNo + ".UNKNOWN",
+    short.orderNo + " - UNKNOWN", short.orderNo + " -- UNKNOWN",
+    short.orderNo + " _ / UNKNOWN", "PREFIX-" + short.orderNo,
+    short.orderNo + "-CANCELLED", short.orderNo + "-DRAFT",
+  ]) {
+    const event = f.payload("Thanh toan " + content);
+    const response = await f.hook(event);
+    assert.equal(response.status, 200);
+    assert.equal(response.data.status, "unmatched", content);
+    const [stored] = await f.db.select().from(sepayTransactions)
+      .where(eq(sepayTransactions.providerId, event.id));
+    assert.ok(stored);
+    assert.equal(stored.paymentId, null);
+    const retry = await f.call("/admin/sepay-transactions/" + stored.id + "/reconcile", f.mgr, "POST", {});
+    assert.equal(retry.status, 200);
+    assert.equal(retry.data.status, "unmatched");
+  }
+  // Space-normalized long codes may be ambiguous: inactive documents must still block a short-code match.
+  for (const suffix of ["CANCELLED", "DRAFT"]) {
+    assert.equal((await f.hook(f.payload(short.orderNo + " " + suffix))).data.status, "review");
+  }
+  assert.equal((await f.receipts(short.id)).length, 0);
+  assert.equal((await returnAccount(f.db, short.id)).balance, 100000);
+  const exact = await f.order(short.orderNo + "-ACTIVE");
+  const event = f.payload("Thanh toán " + exact.orderNo);
+  assert.equal((await f.hook(event)).data.orderId, exact.id);
+  assert.equal((await f.hook(event)).data.duplicate, true);
+  assert.equal((await f.receipts(exact.id)).length, 1);
+  assert.equal((await returnAccount(f.db, exact.id)).balance, 0);
+  assert.equal((await returnAccount(f.db, short.id)).balance, 100000);
+});
+
 test("signed draft contracts count as debt; unsigned drafts and cancelled orders do not", async () => {
   const f = await fixture();
   for (const status of ["signed", "completed", "draft", "cancelled"] as const) {
