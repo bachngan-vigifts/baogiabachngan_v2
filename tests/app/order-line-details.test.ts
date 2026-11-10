@@ -42,7 +42,7 @@ test('CRM receipt shows historical delivery, actual return, sellable restock and
     assert.equal(body.children[0]!.children[2]!.textContent,'2','show cumulative delivery history separately from net progress');
     assert.equal(returnStateText(summary,redeliveryLines),'Đã nhận hoàn một phần');
     renderOrderLineDetails({ head, body, details, lines, order: { channel: 'crm' } });
-    assert.equal(head.children.length, 6); assert.equal(details.children.length, 0);
+    assert.equal(head.children.length, 8); assert.match(details.textContent, /Tổng thanh toán/);
   } finally { Object.assign(globalThis, { document: previous }); }
 });
 
@@ -87,4 +87,33 @@ test('Legacy or stale POS snapshot cannot invent VAT-inclusive prices; use store
       assert.equal(body.children[0]!.children[7]!.textContent, '180.000 đchưa VAT');
     }
   } finally { Object.assign(globalThis, { document: previous }); }
+});
+
+test('CRM and HĐKT share the POS eight-column form, use net price basis, include printing once and retain stored totals', () => {
+  const previous = globalThis.document;
+  Object.assign(globalThis, {document:{createElement:(tag:string)=>new Node(tag)}});
+  try {
+    const head=new Node('tr'),body=new Node('tbody'),details=new Node('div');
+    const crmLine={...line,listUnitPrice:100000,qty:2,discountValue:10,discountAmount:20000,unitPrice:95000,amount:190000};
+    const order={channel:'crm',subtotal:190000,tax:15200,total:205200,note:'<script>Giao tại kho</script>'};
+    const before=JSON.stringify({order,crmLine});
+    renderOrderLineDetails({head,body,details,order,lines:[crmLine]});
+    assert.deepEqual(head.children.map(c=>c.textContent),['Sản phẩm / khoản phí','SL','Đã giao','Đơn giá gốc','CK','Giá sau CK','VAT','Thành tiền']);
+    const cells=body.children[0]!.children;
+    assert.equal(cells[3]!.textContent,'100.000 đchưa VAT');
+    assert.equal(cells[4]!.textContent,'10%Giảm 20.000 đ');
+    assert.equal(cells[5]!.textContent,'95.000 đchưa VAT · Đã gồm phí in 5.000 đ / SP');
+    assert.equal(cells[6]!.textContent,'8%15.200 đ');
+    assert.equal(cells[7]!.textContent,'205.200 đgồm VAT');
+    assert.match(details.textContent,/Tổng thanh toán205.200 đ/);
+    assert.match(details.textContent,/<script>Giao tại kho<\/script>/);
+    assert.equal(before,JSON.stringify({order,crmLine}),'read-only display must not change financial data');
+    renderOrderLineDetails({head,body,details,order,lines:[{...crmLine,listUnitPrice:null,discountAmount:0}]});
+    assert.equal(body.children[0]!.children[3]!.textContent,'Chưa có dữ liệuchưa VAT');
+    assert.equal(body.children[0]!.children[4]!.textContent,'Chưa lưu CK');
+    assert.match(details.textContent,/Chưa có đủ dữ liệu/);
+    assert.match(details.textContent,/Tổng thanh toán205.200 đ/);
+    renderOrderLineDetails({head,body,details,order,lines:[{...crmLine,discountType:'amount',discountValue:10000}]});
+    assert.equal(body.children[0]!.children[4]!.textContent,'10.000 đ / SPGiảm 20.000 đ');
+  } finally {Object.assign(globalThis,{document:previous});}
 });

@@ -37,7 +37,7 @@ test('quy tắc: số chứng từ, pháp nhân, số HĐKT kiểu web cũ, dòn
     { name: 'Ly', sku: 'L1', unit: 'cái', qty: 10, price: 100000, discount: 10, discountType: 'percent', printFee: 5000, taxRate: 10 },
     { name: '', qty: 3, price: 1 }, { name: 'Hộp', qty: 0, price: 9 },
   ] } as any);
-  assert.deepEqual(lines, [{ lineNo: 1, sku: 'L1', name: 'Ly', unit: 'cái', qty: 10, unitPrice: 95000, taxRate: 10, amount: 950000 }]);
+  assert.deepEqual(lines, [{ lineNo: 1, sku: 'L1', name: 'Ly', unit: 'cái', qty: 10, unitPrice: 95000, taxRate: 10, amount: 950000, listUnitPrice: 100000, discountType: 'percent', discountValue: 10, discountAmount: 100000 }]);
   // Phiếu thu trừ vào kỳ đến hạn sớm nhất; phần chưa thu của kỳ đã qua hạn là quá hạn.
   const r = receivable([{ amount: 300, dueDate: '2026-10-01' }, { amount: 700, dueDate: null }], [{ amount: 100 }], '2026-10-06');
   assert.deepEqual(r, { due: 1000, paid: 100, balance: 900, overdue: 200, nextDueDate: null, status: 'overdue', deposit: 0, depositPaid: 0, payState: 'overdue' });
@@ -74,6 +74,7 @@ test('luồng bán hàng: báo giá → đơn đặt hàng → HĐKT → lịch 
   assert.equal(d.order.customerId, '1001'); assert.equal(d.order.quoteNo, 'B2B_BG20261006_001');
   assert.equal(d.order.subtotal, 23_000_000); assert.equal(d.order.tax, 1_840_000); assert.equal(d.order.total, 24_840_000);
   assert.equal(d.lines.length, 2); assert.equal(d.lines[0].unitPrice, 180000);
+  assert.deepEqual([d.lines[0].listUnitPrice,d.lines[0].discountType,d.lines[0].discountValue,d.lines[0].discountAmount],[200000,'percent',10,2000000]);
   // HĐKT có kỳ cọc 30% đến hạn ngày ký (06/10, đã qua) → quá hạn cọc.
   assert.deepEqual(d.receivable, { due: 24_840_000, paid: 0, balance: 24_840_000, overdue: 7_452_000, nextDueDate: null, status: 'overdue', deposit: 7_452_000, depositPaid: 0, payState: 'overdue' });
   // Người khác (không phụ trách) không thấy; Manager thấy.
