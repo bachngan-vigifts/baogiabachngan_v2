@@ -294,6 +294,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   function formModal(title) {
     const m = modal(title),
       form = el('form');
+    m.dlg.classList.add('pos-form-modal');
     m.body.append(form);
     return { ...m, form };
   }

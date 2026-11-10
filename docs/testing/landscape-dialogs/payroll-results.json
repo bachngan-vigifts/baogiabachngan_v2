@@ -1,0 +1,515 @@
+[
+  {
+    "name": "salary-profile",
+    "width": 1440,
+    "box": {
+      "x": 80,
+      "y": 165,
+      "right": 1360,
+      "bottom": 885,
+      "width": 1280,
+      "height": 720
+    },
+    "body": {
+      "x": 80,
+      "y": 215.390625,
+      "right": 1360,
+      "bottom": 811,
+      "width": 1280,
+      "height": 595.609375
+    },
+    "head": {
+      "x": 80,
+      "y": 165,
+      "right": 1360,
+      "bottom": 215.390625,
+      "width": 1280,
+      "height": 50.390625
+    },
+    "foot": {
+      "x": 80,
+      "y": 811,
+      "right": 1360,
+      "bottom": 885,
+      "width": 1280,
+      "height": 74
+    },
+    "buttons": [
+      {
+        "x": 1127.0625,
+        "y": 826,
+        "right": 1187.640625,
+        "bottom": 867,
+        "width": 60.578125,
+        "height": 41
+      },
+      {
+        "x": 1195.640625,
+        "y": 826,
+        "right": 1338,
+        "bottom": 867,
+        "width": 142.359375,
+        "height": 41
+      }
+    ],
+    "wide": true,
+    "overflow": false,
+    "ratio": 1.7777777777777777
+  },
+  {
+    "name": "payroll-params",
+    "width": 1440,
+    "box": {
+      "x": 80,
+      "y": 165,
+      "right": 1360,
+      "bottom": 885,
+      "width": 1280,
+      "height": 720
+    },
+    "body": {
+      "x": 80,
+      "y": 215.390625,
+      "right": 1360,
+      "bottom": 811,
+      "width": 1280,
+      "height": 595.609375
+    },
+    "head": {
+      "x": 80,
+      "y": 165,
+      "right": 1360,
+      "bottom": 215.390625,
+      "width": 1280,
+      "height": 50.390625
+    },
+    "foot": {
+      "x": 80,
+      "y": 811,
+      "right": 1360,
+      "bottom": 885,
+      "width": 1280,
+      "height": 74
+    },
+    "buttons": [
+      {
+        "x": 1150.734375,
+        "y": 826,
+        "right": 1211.3125,
+        "bottom": 867,
+        "width": 60.578125,
+        "height": 41
+      },
+      {
+        "x": 1219.3125,
+        "y": 826,
+        "right": 1338,
+        "bottom": 867,
+        "width": 118.6875,
+        "height": 41
+      }
+    ],
+    "wide": true,
+    "overflow": false,
+    "ratio": 1.7777777777777777
+  },
+  {
+    "name": "bonus-params",
+    "width": 1440,
+    "box": {
+      "x": 80,
+      "y": 165,
+      "right": 1360,
+      "bottom": 885,
+      "width": 1280,
+      "height": 720
+    },
+    "body": {
+      "x": 80,
+      "y": 215.390625,
+      "right": 1360,
+      "bottom": 811,
+      "width": 1280,
+      "height": 595.609375
+    },
+    "head": {
+      "x": 80,
+      "y": 165,
+      "right": 1360,
+      "bottom": 215.390625,
+      "width": 1280,
+      "height": 50.390625
+    },
+    "foot": {
+      "x": 80,
+      "y": 811,
+      "right": 1360,
+      "bottom": 885,
+      "width": 1280,
+      "height": 74
+    },
+    "buttons": [
+      {
+        "x": 1150.734375,
+        "y": 826,
+        "right": 1211.3125,
+        "bottom": 867,
+        "width": 60.578125,
+        "height": 41
+      },
+      {
+        "x": 1219.3125,
+        "y": 826,
+        "right": 1338,
+        "bottom": 867,
+        "width": 118.6875,
+        "height": 41
+      }
+    ],
+    "wide": true,
+    "overflow": false,
+    "ratio": 1.7777777777777777
+  },
+  {
+    "name": "salary-profile",
+    "width": 1024,
+    "box": {
+      "x": 24,
+      "y": 250.5,
+      "right": 1000,
+      "bottom": 799.5,
+      "width": 976,
+      "height": 549
+    },
+    "body": {
+      "x": 24,
+      "y": 300.890625,
+      "right": 1000,
+      "bottom": 725.5,
+      "width": 976,
+      "height": 424.609375
+    },
+    "head": {
+      "x": 24,
+      "y": 250.5,
+      "right": 1000,
+      "bottom": 300.890625,
+      "width": 976,
+      "height": 50.390625
+    },
+    "foot": {
+      "x": 24,
+      "y": 725.5,
+      "right": 1000,
+      "bottom": 799.5,
+      "width": 976,
+      "height": 74
+    },
+    "buttons": [
+      {
+        "x": 767.0625,
+        "y": 740.5,
+        "right": 827.640625,
+        "bottom": 781.5,
+        "width": 60.578125,
+        "height": 41
+      },
+      {
+        "x": 835.640625,
+        "y": 740.5,
+        "right": 978,
+        "bottom": 781.5,
+        "width": 142.359375,
+        "height": 41
+      }
+    ],
+    "wide": true,
+    "overflow": false,
+    "ratio": 1.7777777777777777
+  },
+  {
+    "name": "payroll-params",
+    "width": 1024,
+    "box": {
+      "x": 24,
+      "y": 250.5,
+      "right": 1000,
+      "bottom": 799.5,
+      "width": 976,
+      "height": 549
+    },
+    "body": {
+      "x": 24,
+      "y": 300.890625,
+      "right": 1000,
+      "bottom": 725.5,
+      "width": 976,
+      "height": 424.609375
+    },
+    "head": {
+      "x": 24,
+      "y": 250.5,
+      "right": 1000,
+      "bottom": 300.890625,
+      "width": 976,
+      "height": 50.390625
+    },
+    "foot": {
+      "x": 24,
+      "y": 725.5,
+      "right": 1000,
+      "bottom": 799.5,
+      "width": 976,
+      "height": 74
+    },
+    "buttons": [
+      {
+        "x": 790.734375,
+        "y": 740.5,
+        "right": 851.3125,
+        "bottom": 781.5,
+        "width": 60.578125,
+        "height": 41
+      },
+      {
+        "x": 859.3125,
+        "y": 740.5,
+        "right": 978,
+        "bottom": 781.5,
+        "width": 118.6875,
+        "height": 41
+      }
+    ],
+    "wide": true,
+    "overflow": false,
+    "ratio": 1.7777777777777777
+  },
+  {
+    "name": "bonus-params",
+    "width": 1024,
+    "box": {
+      "x": 24,
+      "y": 250.5,
+      "right": 1000,
+      "bottom": 799.5,
+      "width": 976,
+      "height": 549
+    },
+    "body": {
+      "x": 24,
+      "y": 300.890625,
+      "right": 1000,
+      "bottom": 725.5,
+      "width": 976,
+      "height": 424.609375
+    },
+    "head": {
+      "x": 24,
+      "y": 250.5,
+      "right": 1000,
+      "bottom": 300.890625,
+      "width": 976,
+      "height": 50.390625
+    },
+    "foot": {
+      "x": 24,
+      "y": 725.5,
+      "right": 1000,
+      "bottom": 799.5,
+      "width": 976,
+      "height": 74
+    },
+    "buttons": [
+      {
+        "x": 790.734375,
+        "y": 740.5,
+        "right": 851.3125,
+        "bottom": 781.5,
+        "width": 60.578125,
+        "height": 41
+      },
+      {
+        "x": 859.3125,
+        "y": 740.5,
+        "right": 978,
+        "bottom": 781.5,
+        "width": 118.6875,
+        "height": 41
+      }
+    ],
+    "wide": true,
+    "overflow": false,
+    "ratio": 1.7777777777777777
+  },
+  {
+    "name": "salary-profile",
+    "width": 390,
+    "box": {
+      "x": 0,
+      "y": 84,
+      "right": 390,
+      "bottom": 1050,
+      "width": 390,
+      "height": 966
+    },
+    "body": {
+      "x": 0,
+      "y": 130,
+      "right": 390,
+      "bottom": 2124.890625,
+      "width": 390,
+      "height": 1994.890625
+    },
+    "head": {
+      "x": 0,
+      "y": 84,
+      "right": 390,
+      "bottom": 130,
+      "width": 390,
+      "height": 46
+    },
+    "foot": {
+      "x": 0,
+      "y": 983,
+      "right": 390,
+      "bottom": 1050,
+      "width": 390,
+      "height": 67
+    },
+    "buttons": [
+      {
+        "x": 12,
+        "y": 994,
+        "right": 204.28125,
+        "bottom": 1038,
+        "width": 192.28125,
+        "height": 44
+      },
+      {
+        "x": 212.28125,
+        "y": 994,
+        "right": 378,
+        "bottom": 1038,
+        "width": 165.71875,
+        "height": 44
+      }
+    ],
+    "wide": true,
+    "overflow": false,
+    "ratio": 0.40372670807453415
+  },
+  {
+    "name": "payroll-params",
+    "width": 390,
+    "box": {
+      "x": 0,
+      "y": 181,
+      "right": 390,
+      "bottom": 1050,
+      "width": 390,
+      "height": 869
+    },
+    "body": {
+      "x": 0,
+      "y": 227,
+      "right": 390,
+      "bottom": 983,
+      "width": 390,
+      "height": 756
+    },
+    "head": {
+      "x": 0,
+      "y": 181,
+      "right": 390,
+      "bottom": 227,
+      "width": 390,
+      "height": 46
+    },
+    "foot": {
+      "x": 0,
+      "y": 983,
+      "right": 390,
+      "bottom": 1050,
+      "width": 390,
+      "height": 67
+    },
+    "buttons": [
+      {
+        "x": 12,
+        "y": 994,
+        "right": 204.28125,
+        "bottom": 1038,
+        "width": 192.28125,
+        "height": 44
+      },
+      {
+        "x": 212.28125,
+        "y": 994,
+        "right": 378,
+        "bottom": 1038,
+        "width": 165.71875,
+        "height": 44
+      }
+    ],
+    "wide": true,
+    "overflow": false,
+    "ratio": 0.4487917146144994
+  },
+  {
+    "name": "bonus-params",
+    "width": 390,
+    "box": {
+      "x": 0,
+      "y": 181,
+      "right": 390,
+      "bottom": 1050,
+      "width": 390,
+      "height": 869
+    },
+    "body": {
+      "x": 0,
+      "y": 227,
+      "right": 390,
+      "bottom": 983,
+      "width": 390,
+      "height": 756
+    },
+    "head": {
+      "x": 0,
+      "y": 181,
+      "right": 390,
+      "bottom": 227,
+      "width": 390,
+      "height": 46
+    },
+    "foot": {
+      "x": 0,
+      "y": 983,
+      "right": 390,
+      "bottom": 1050,
+      "width": 390,
+      "height": 67
+    },
+    "buttons": [
+      {
+        "x": 12,
+        "y": 994,
+        "right": 204.28125,
+        "bottom": 1038,
+        "width": 192.28125,
+        "height": 44
+      },
+      {
+        "x": 212.28125,
+        "y": 994,
+        "right": 378,
+        "bottom": 1038,
+        "width": 165.71875,
+        "height": 44
+      }
+    ],
+    "wide": true,
+    "overflow": false,
+    "ratio": 0.4487917146144994
+  }
+]

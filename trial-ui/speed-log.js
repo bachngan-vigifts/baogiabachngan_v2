@@ -145,7 +145,10 @@ export function openSpeedDialog({ doc = document, toast = () => {}, canary = nul
     };
     poolBox.append(toggle, run, out);
   }
-  dlg.append(head, ...(canaryBox ? [canaryBox] : []), ...(poolBox ? [poolBox] : []), note, wrap, actions);
+  head.classList.add('modal-head'); actions.classList.add('modal-foot');
+  const content = el('div', 'modal-body');
+  content.append(...(canaryBox ? [canaryBox] : []), ...(poolBox ? [poolBox] : []), note, wrap);
+  dlg.append(head, content, actions);
   doc.body.append(dlg);
   dlg.addEventListener('close', () => dlg.remove(), { once: true });
   dlg.showModal();

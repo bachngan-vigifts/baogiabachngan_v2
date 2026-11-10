@@ -1,0 +1,60 @@
+/* Form sections keep their DOM order, labels and keyboard navigation on phones. */
+.product-editor-layout { display:grid; gap:18px; min-width:0; }
+.product-editor-layout fieldset { margin:0; padding:14px; border:1px solid var(--line,#dce3ed); border-radius:10px; min-width:0; }
+.product-editor-layout legend { padding:0 6px; font-weight:600; }
+.product-editor-layout label { min-width:0; }
+.product-editor-layout input,.product-editor-layout select { width:100%; min-width:0; box-sizing:border-box; }
+.product-editor-layout > p { margin:0; }
+.product-editor-carton,.product-editor-prices { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.product-editor-image small { display:block; margin-top:8px; }
+
+@media (min-width: 900px) {
+  dialog.landscape-dialog,.sup-drawer.landscape-drawer {
+    /* A few legacy editors set their portrait width inline. Override only the
+       dimensions of forms selected by the layout controller. */
+    width:min(1280px,calc(100vw - 48px),calc((100dvh - 48px) * 16 / 9)) !important;
+    height:auto; aspect-ratio:16 / 9; max-width:calc(100vw - 48px) !important;
+    max-height:calc(100dvh - 48px); padding:0; overflow:hidden; box-sizing:border-box;
+  }
+  dialog.landscape-dialog > .landscape-dialog-form,
+  .landscape-dialog .pos-modal-content > form.landscape-dialog-form,
+  .sup-drawer.landscape-drawer > form.landscape-dialog-form {
+    display:flex; flex-direction:column; height:100%; max-height:100%; min-height:0; margin:0; overflow:hidden;
+  }
+  dialog[open].landscape-dialog.landscape-dialog-form { display:flex; flex-direction:column; }
+  dialog.acct-drawer.landscape-dialog { top:50%; left:50%; right:auto; bottom:auto; transform:translate(-50%,-50%); margin:0; }
+  .landscape-dialog .pos-modal-content { display:flex; flex-direction:column; height:100%; padding:0; overflow:hidden; }
+  .landscape-dialog .pos-modal-content > form.landscape-dialog-form { flex:1; padding:0; }
+  .landscape-dialog .pos-modal-close { position:static; }
+  .sup-drawer.landscape-drawer { top:50%; left:50%; right:auto; bottom:auto; transform:translate(-50%,-50%); display:flex; flex-direction:column; border-radius:14px; }
+  .sup-drawer.landscape-drawer > form.landscape-dialog-form { flex:1; gap:0; }
+  .sup-drawer.landscape-drawer .landscape-dialog-head { padding:18px 22px; }
+  .sup-drawer.landscape-drawer .landscape-dialog-body { display:grid; gap:16px; padding:0 22px 18px; }
+  .sup-drawer.landscape-drawer .landscape-dialog-foot { padding:14px 22px; margin:0; }
+  .landscape-dialog .landscape-dialog-head,.landscape-dialog .landscape-dialog-foot {
+    flex:0 0 auto; position:static; min-width:0;
+  }
+  .landscape-dialog .landscape-dialog-head h2 { overflow-wrap:anywhere; }
+  .landscape-dialog .landscape-dialog-head > button { flex-shrink:0; }
+  .landscape-dialog .landscape-dialog-body {
+    flex:1 1 auto; min-height:0; min-width:0; max-height:none; overflow:auto; overscroll-behavior:contain;
+  }
+  .landscape-dialog .landscape-dialog-foot { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+  .landscape-dialog .form-grid.cols-2 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .landscape-dialog .landscape-dialog-body.form-grid { grid-template-columns:repeat(3,minmax(0,1fr)); align-content:start; }
+  .landscape-dialog .landscape-dialog-body.form-grid > :not(label) { grid-column:1 / -1; }
+  .landscape-dialog .form-grid.cols-2 > .span-2 { grid-column:1 / -1; }
+  .landscape-dialog .form-grid > p { grid-column:1 / -1; }
+  .landscape-dialog label { min-width:0; }
+  .landscape-dialog .product-editor-layout { grid-template-columns:minmax(0,2fr) minmax(0,1fr); align-content:start; }
+  .landscape-dialog .product-editor-info.form-grid.cols-2 { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .landscape-dialog .product-editor-info > .span-2 { grid-column:1 / -1; }
+  .landscape-dialog .product-editor-image { align-content:start; }
+  .landscape-dialog .product-editor-carton,.landscape-dialog .product-editor-prices { grid-column:1 / -1; grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .landscape-dialog .product-editor-layout > p { grid-column:1 / -1; }
+}
+@media (max-width:899px) {
+  .pos-form-modal.landscape-dialog .modal-head { padding:0; }
+  .pos-form-modal.landscape-dialog .modal-body { padding:0; }
+  .pos-form-modal.landscape-dialog .modal-foot { padding:14px 0 0; }
+}

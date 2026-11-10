@@ -43,22 +43,27 @@ export function initProductAdmin(deps) {
     const dlg = document.createElement('dialog'); dlg.className = 'modal product-admin-dialog';
     dlg.setAttribute('aria-label', editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm');
     dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>${editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
-      <div class="modal-body form-grid cols-2">
+      <div class="modal-body product-editor-layout">
+        <fieldset class="product-editor-info form-grid cols-2"><legend>Thông tin sản phẩm</legend>
         <label>Mã sản phẩm (SKU)<input name="sku" required maxlength="64" placeholder="VD: ML-BT-001" autocapitalize="characters"></label>
         <label>Đơn vị tính<input name="unit" maxlength="50" placeholder="cái, bộ, hộp…"></label>
         <label class="span-2">Tên sản phẩm<input name="name" required maxlength="500"></label>
         <label>Thương hiệu<input name="brand" maxlength="200" list="pa-brands"></label>
         <label>Mẫu / hoạ tiết<input name="pattern" maxlength="200"></label>
         <label class="span-2">Thuế sản phẩm (VAT)<select name="taxRate">${editing && !initialTax ? `<option value="" selected disabled>${esc(legacyTaxLabel)}</option>` : ''}<option value="8">8%</option><option value="10">10%</option></select></label>
-        <label class="span-2">Link ảnh (https://…)<input name="imageUrl" type="url" maxlength="2000" placeholder="Không bắt buộc"></label>
-        <div class="span-2 product-image-picker">
+        </fieldset><fieldset class="product-editor-image form-grid"><legend>Ảnh sản phẩm</legend>
+        <label>Link ảnh (https://…)<input name="imageUrl" type="url" maxlength="2000" placeholder="Không bắt buộc"></label>
+        <div class="product-image-picker">
           <button type="button" class="btn secondary small" data-image-choose>Tải ảnh lên</button><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-image-file hidden>
           <button type="button" class="btn ghost small" data-image-clear hidden>Bỏ ảnh đã chọn</button>
           <small class="muted" data-image-status>Chọn ảnh từ máy hoặc điện thoại. Ảnh được lưu khi bấm Lưu.</small>
           <div data-image-preview hidden></div>
         </div>
-        ${editing?`<p class="muted small span-2">Quy cách thùng đóng gói (cm, kg)</p>${[['perCarton','Số sản phẩm / thùng'],['cartonLength','Dài thùng (cm)'],['cartonWidth','Rộng thùng (cm)'],['cartonHeight','Cao thùng (cm)'],['cartonWeight','Cân nặng thùng (kg)']].map(([key,label])=>`<label>${label}<input name="${key}" type="number" min="0.001" max="1000000" step="${key==='perCarton'?'1':'any'}" inputmode="decimal" placeholder="Chưa có"></label>`).join('')}`:''}
+        </fieldset>
+        ${editing?`<fieldset class="product-editor-carton form-grid"><legend>Quy cách thùng đóng gói (cm, kg)</legend>${[['perCarton','Số sản phẩm / thùng'],['cartonLength','Dài thùng (cm)'],['cartonWidth','Rộng thùng (cm)'],['cartonHeight','Cao thùng (cm)'],['cartonWeight','Cân nặng thùng (kg)']].map(([key,label])=>`<label>${label}<input name="${key}" type="number" min="0.001" max="1000000" step="${key==='perCarton'?'1':'any'}" inputmode="decimal" placeholder="Chưa có"></label>`).join('')}</fieldset>`:''}
+        <fieldset class="product-editor-prices form-grid"><legend>Bảng giá</legend>
         ${policies.map(p => `<label>Giá: ${esc(p.name)}${requiredPrices.includes(p) ? ' *' : ''}<input name="price:${esc(p.id)}" inputmode="numeric" ${requiredPrices.includes(p) ? 'required aria-required="true" placeholder="Bắt buộc nhập"' : 'placeholder="0"'}></label>`).join('')}
+        </fieldset>
         ${editing ? '' : '<p class="muted small span-2">* Bắt buộc nhập Giá bán lẻ và Giá lẻ +VAT lớn hơn 0.</p>'}
         <p class="muted small span-2">${editing ? 'Cập nhật danh mục CRM. Nếu sản phẩm được đồng bộ từ Sapo, lần đồng bộ sau có thể ghi đè thông tin. Mã SKU được giữ nguyên.' : isManager() ? 'Bạn là Manager: sản phẩm có hiệu lực ngay sau khi lưu.' : 'Sản phẩm mới cần Manager duyệt mới dùng được khi lập báo giá.'}</p>
         <p class="error span-2" data-err role="alert"></p>
