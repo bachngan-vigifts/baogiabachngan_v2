@@ -52,3 +52,5 @@ Kiểm tra cục bộ: PGlite đạt 26/27 (ca đồng thời chỉ chạy trên
 ## Gán thủ công bởi Manager
 
 Điều kiện tài khoản cho webhook tự động ở trên giữ nguyên. Khi Manager chọn chứng từ và xác nhận trên trang SePay, tài khoản nhận có thể đến từ danh sách CRM hoặc tài khoản ngân hàng đã cấu hình ở quầy đang hoạt động. API chi tiết, xem trước và ghi thu dùng chung phép kiểm tra; ghi thu kiểm tra lại cấu hình hiện tại. Không tự thêm tài khoản vào secret, không bật tự ghi thu cho CRM vì một tài khoản quầy tồn tại. Tài khoản ngoài cấu hình hoặc quầy ngừng hoạt động vẫn bị chặn; POS/web vẫn xác minh đúng nguồn riêng. Xem `docs/SEPAY-PAGE.md`.
+
+HĐKT VG có mã `/HĐKT/VG-…` có mặc định riêng cho gán thủ công: tài khoản 159063909. Dùng mã HĐKT lưu trong CRM để xác định; không ghi đè tài khoản ngân hàng thực nhận và không tự bật webhook/import. Xem `src/modules/sales/domain/sepay-crm-account.ts` và hướng dẫn tại `docs/SEPAY-PAGE.md`.

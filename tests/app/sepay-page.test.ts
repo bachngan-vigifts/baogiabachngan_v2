@@ -1,3 +1,4 @@
+import {defaultSepayCrmAccount} from '../../src/modules/sales/domain/sepay-crm-account.ts';
 import {posRegisters} from '../../src/modules/sales/pos-schema.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
 import { test } from "node:test";
@@ -546,4 +547,35 @@ test("manual CRM reconciliation accepts an active configured register account; a
   const auto=await f.incoming(approvedOrder.orderNo,20000);
   assert.notEqual(auto.status,'matched','registered POS bank alone cannot enable automatic CRM receipts');
   assert.equal((await f.db.select().from(customerPayments)).length,1);
+});
+
+test("VG default receiving account matches the stored contract number, never transfer prose or another entity", () => {
+  for (const no of ['11-03/06112026/HĐKT/VG-TEST','hdkt/vg-test','11/HĐKT/VG-ABC'.normalize('NFD')])
+    assert.equal(defaultSepayCrmAccount(no),'159063909');
+  for (const no of [null,'11/HĐKT/BN-ABC','11/HĐKT/VGX-ABC','11/HĐKT/VG-','VG-ABC','NHKT/VG-ABC'])
+    assert.equal(defaultSepayCrmAccount(no),null);
+});
+test("VG contract defaults to confirmed account for manual receipts without secrets or register; unknown account stays blocked and original bank proof stays immutable", async () => {
+  const f=await setupSepay();f.env.sepayReceiptAccounts=[];
+  await f.db.update(posRegisters).set({active:false}).where(eq(posRegisters.id,f.registerId));
+  const o=await f.order('VG_DEFAULT_101',{status:'draft'});
+  await f.db.insert(salesContracts).values({id:crypto.randomUUID(),orderId:o.id,contractNo:'11/06112026/HĐKT/VG-DEFAULT',legalEntity:'VG',status:'draft',createdBy:'mgr',createdAt:f.stamp,updatedAt:f.stamp});
+  const e=await f.incoming(o.orderNo,30000,{accountNumber:'159063909'});
+  assert.notEqual(e.status,'matched','does not turn on unattended matching');
+  const preview=await f.call('/sepay/orders/'+o.id+'?transactionId='+e.id,f.mgr);
+  assert.equal(preview.data.expectedAccount,'159063909');assert.equal(preview.data.canCreate,true);
+  const other=await f.incoming('Chờ gán VG',30000,{accountNumber:'156036909'});
+  const blocked=await f.call('/sepay/orders/'+o.id+'?transactionId='+other.id,f.mgr);
+  assert.equal(blocked.data.accountApproved,false);assert.match(blocked.data.blockReason,/159063909/);
+  assert.equal((await f.confirm(other.id,f.choice(o.id))).status,409);
+  assert.equal((await f.confirm(e.id,f.choice(o.id),f.accountant)).status,403);
+  assert.equal((await f.confirm(e.id,f.choice(o.id))).status,200);
+  assert.equal((await f.confirm(e.id,f.choice(o.id))).data.duplicate,true);
+  const receipts=await f.db.select().from(customerPayments).where(eq(customerPayments.orderId,o.id));
+  assert.equal(receipts.length,1);assert.equal(receipts[0]!.amount,30000);
+  assert.equal((await f.db.select().from(sepayTransactions).where(eq(sepayTransactions.id,e.id)))[0]!.accountNumber,'159063909');
+  const bn=await f.order('BN_DEFAULT_102',{status:'draft'});
+  await f.db.insert(salesContracts).values({id:crypto.randomUUID(),orderId:bn.id,contractNo:'12/06112026/HĐKT/BN-DEFAULT',legalEntity:'BN',status:'draft',createdBy:'mgr',createdAt:f.stamp,updatedAt:f.stamp});
+  const bnEvent=await f.incoming('Thanh toán BN',30000,{accountNumber:'159063909'});
+  assert.equal((await f.call('/sepay/orders/'+bn.id+'?transactionId='+bnEvent.id,f.mgr)).data.canCreate,false);
 });
