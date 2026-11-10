@@ -1,6 +1,8 @@
 import type { AnyDb } from '../db/client.ts';
 
 export interface ReportPeriodScore {
+  /** Giờ nộp đầu tiên; có thể thiếu trong bản chụp lương cũ. */
+  submittedAt?: string | null;
   period: string; deadline: string; state: string; review: string | null; score: number | null;
 }
 /** Điểm báo cáo của một người trong tháng – giữ weeks cho bản chụp cũ, thêm monthly cho chính sách mới. */

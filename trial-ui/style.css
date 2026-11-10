@@ -2529,10 +2529,10 @@ body:has(.approval-launcher:not([hidden])) .pos-head { padding-left: 76px; }
 .topbar #breadcrumb { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .topbar .topbar-right { flex:none; }
 @media(max-width:850px){ .topbar .crumbs>.muted,.topbar .crumbs>.slash { display:none; }.topbar .page-back { max-width:32vw;font-size:12px; }.topbar .crumbs { gap:6px; } }
-/* Keep navigation usable while a full-page drawer is open; reserve the header's space. */
+/* Shared page-header metrics; popup overlays position independently. */
 #workspace { --crm-page-header-height:56px; }
 #workspace>.main>.topbar { z-index:62; }
-#workspace .sup-drawer,#workspace .sup-shade { top:var(--crm-page-header-height); }
+/* Popup overlays cover the page header; their own layout controls centering. */
 @media(max-width:850px){ #workspace { --crm-page-header-height:40px; } }
 
 /* Long carton forms retain an accessible save/cancel footer. */

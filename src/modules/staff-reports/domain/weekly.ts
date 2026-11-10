@@ -90,10 +90,10 @@ export function monthlyScore(month: string, r: { submittedAt: string; review: We
  */
 export function monthPoints(month: string, reports: ReadonlyMap<string, { submittedAt: string; review: WeeklyReview }>, nowIso: string) {
   const weeks = weeksOfMonth(month).map(period => { const r = reports.get(period) ?? null, st = weekState(period, r?.submittedAt ?? null, nowIso);
-    return { period, deadline: weeklyDeadline(period), state: st.state, review: r?.review ?? null, score: weekScore(period, r, nowIso) }; });
+    return { period, submittedAt: r?.submittedAt ?? null, deadline: weeklyDeadline(period), state: st.state, review: r?.review ?? null, score: weekScore(period, r, nowIso) }; });
   const counted = [...weeks].map(w => w.score ?? 0).sort((a, b) => b - a).slice(0, WEEKLY_REQUIRED);
   const mr = reports.get(month) ?? null;
-  const monthly = monthlyRequired(month) ? { period: month, deadline: monthlyDeadline(month), state: monthlyState(month, mr?.submittedAt ?? null, nowIso).state, review: mr?.review ?? null, score: monthlyScore(month, mr, nowIso) } : null;
+  const monthly = monthlyRequired(month) ? { period: month, submittedAt: mr?.submittedAt ?? null, deadline: monthlyDeadline(month), state: monthlyState(month, mr?.submittedAt ?? null, nowIso).state, review: mr?.review ?? null, score: monthlyScore(month, mr, nowIso) } : null;
   const points = counted.reduce((n, x) => n + x, 0) + (monthly?.score ?? 0);
   return { month, weeks, monthly, points, required: WEEKLY_REQUIRED + (monthly ? 1 : 0),
     pending: weeks.filter(w => w.score === null).length + (monthly && monthly.score === null ? 1 : 0) };

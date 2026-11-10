@@ -209,3 +209,32 @@ test('báo cáo tháng: hạn 10h ngày 02 tháng sau, bắt buộc 4 mục, s�
   assert.equal(responsibility(await f.slip('2026-11')).amount, 520_000, 'Chưa đạt → 0 điểm tháng');
   assert.equal((await f.call('/staff-reports/week?period=2026-11&memberId=emp', f.s.other)).status, 403);
 });
+
+for (const example of [
+  { period:'2026-11-30', submitAt:'2026-12-07T09:00:00', after:'2026-12-20T12:00:00', monthly:false },
+  { period:'2026-12', submitAt:'2027-01-02T09:00:00', after:'2027-01-20T12:00:00', monthly:true },
+]) test(`${example.monthly?'tháng':'tuần'}: chờ duyệt lâu không thành trễ; Chưa đạt tự trừ điểm một lần, giờ nộp giữ nguyên`,async t=>{
+  const f=await setup(t);await f.relog(example.submitAt);ok(await f.salary());
+  ok(await f.call('/hr/members/emp/inputs/2026-12',f.s.mgr,'PUT',{workDays:26}));
+  const extra=example.monthly?{inputs:{evaluation:'Đã hoàn thành kế hoạch',nextTarget:450000000,keyCustomers:'Khách trọng điểm tháng sau',plan:'Chăm sóc khách ngân hàng',support:''}}:{};
+  const report=ok(await f.submit(example.period,extra),201),firstStamp=new Date(at(example.submitAt)).toISOString();
+  const score=async()=>{
+    const d=ok(await f.call('/staff-reports/me?month=2026-12',f.s.emp));
+    return example.monthly?d.monthly:d.weeks.find((w:any)=>w.period===example.period);
+  };
+  assert.equal((await score()).submittedAt,firstStamp);assert.equal((await score()).score,1);
+  await f.relog(example.after);
+  let s=await score();assert.equal(s.state,'on_time');assert.equal(s.review,'pending');assert.equal(s.score,1);
+  ok(await f.submit(example.period,extra)); // Bổ sung sau hạn, vẫn giữ lần nộp đầu.
+  const reviewList=ok(await f.call('/staff-reports/review?month=2026-12',f.s.mgr)).people.find((p:any)=>p.id==='emp');
+  const reviewedPeriod=example.monthly?reviewList.monthly:reviewList.weeks.find((w:any)=>w.period===example.period);
+  assert.equal(reviewedPeriod.submittedAt,firstStamp);
+  const before=responsibility(await f.slip('2026-12')).amount;
+  ok(await f.call(`/staff-reports/${report.id}/review`,f.s.mgr,'POST',{review:'ok'}));
+  assert.equal((await score()).state,'on_time');assert.equal(responsibility(await f.slip('2026-12')).amount,before);
+  for(let repeat=0;repeat<2;repeat++){
+    ok(await f.call(`/staff-reports/${report.id}/review`,f.s.mgr,'POST',{review:'rejected',note:'Nội dung chưa đạt yêu cầu'}));
+    s=await score();assert.equal(s.score,0);assert.equal(s.state,'on_time');assert.equal(s.submittedAt,firstStamp);
+    assert.equal(responsibility(await f.slip('2026-12')).amount,before-520000,'chỉ trừ một phần trách nhiệm 1/5, không trừ lặp');
+  }
+});

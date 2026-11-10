@@ -10,6 +10,7 @@ export async function auditDialog(page,selector,name,width,out,{close=true}={}){
   return{box:rect(n),body:body&&rect(body),head:head&&rect(head),heading:heading&&rect(heading),close:close&&rect(close),foot:foot&&rect(foot),buttons,wide:n.classList.contains('landscape-dialog'),overflow:n.scrollWidth>n.clientWidth+2,ratio:b.width/b.height};
  });
  assert.ok(!metrics.overflow,name+' horizontal overflow');
+ assert.ok(metrics.box.y>=-1&&metrics.box.bottom<=page.viewportSize().height+1,name+' vertically outside viewport: '+JSON.stringify(metrics.box));
  assert.ok(metrics.box.x>=-1&&metrics.box.right<=width+1,name+' outside viewport');
  if(metrics.heading&&metrics.close){const a=metrics.heading,b=metrics.close;assert.ok(a.right<=b.x+1||b.right<=a.x+1||a.bottom<=b.y+1||b.bottom<=a.y+1,name+' title overlaps close button');}
  if(width>=900){assert.ok(metrics.wide,name+' should be landscape');assert.ok(Math.abs(metrics.ratio-16/9)<0.03,name+' ratio '+metrics.ratio);

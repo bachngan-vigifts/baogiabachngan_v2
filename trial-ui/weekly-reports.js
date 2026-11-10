@@ -21,6 +21,7 @@ export function initWeeklyReports({ api, root, toast, esc, go, money, user, mont
   const unavailable = () => { root.innerHTML = `<div class="page-head"><h1>Báo cáo tháng</h1><input type="month" id="wr-month" value="${esc(current.month)}" aria-label="Tháng"></div><div class="empty"><p>Báo cáo tháng áp dụng từ tháng 11/2026. Chọn tháng 11/2026 trở đi để xem và lập báo cáo.</p></div>`; bindMonth(); };
   const pill = (tone, text) => `<span class="pill ${tone}">${esc(text)}</span>`;
   const when = v => new Date(v).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
+  const submissionRule = 'Đúng hạn / trễ tính theo lần nộp chính thức đầu tiên (giờ Việt Nam). Chờ duyệt vẫn ghi nhận điểm theo lúc nộp; Chưa đạt mới trừ điểm. Lưu nháp chưa tính là đã nộp.';
   const vnd = v => v === null || v === undefined ? '—' : money(v);
 
   /** Sau đăng nhập: hiện mục menu; nhắc tuần trước chưa nộp (một lần mỗi phiên). */
@@ -47,7 +48,7 @@ export function initWeeklyReports({ api, root, toast, esc, go, money, user, mont
     const pct = Math.min(100, (points ?? 0) / maxPoints * 100);
     root.innerHTML = `<div class="page-head"><div><h1>${monthlyOnly ? 'Báo cáo tháng' : me.monthly ? 'Báo cáo tuần / tháng' : 'Báo cáo tuần'}</h1><p class="muted">${monthlyOnly ? 'Hạn nộp <b>10h00 ngày 02</b> tháng sau. Trong tháng được lưu nháp; nộp chính thức từ ngày 01 tháng sau.' : `${me.monthly ? '4 báo cáo tuần + 1 báo cáo tháng' : me.maxPoints + ' báo cáo tuần'} bắt buộc · tuần hạn <b>10h00 thứ Hai</b> tuần sau${me.monthly ? ' · tháng hạn <b>10h00 ngày 02</b> tháng sau' : ''}`}</p></div>
         <div class="head-actions"><input type="month" id="wr-month" value="${esc(current.month)}" aria-label="Tháng"></div></div>
-      <div class="card wr-sum"><div class="wr-row"><b>Điểm ${monthlyOnly ? 'báo cáo tháng' : 'tháng'} ${esc(current.month.slice(5))}/${esc(current.month.slice(0, 4))}</b><b class="num">${scoreText(points)} / ${maxPoints}</b></div>
+      <p class="muted small">${submissionRule}</p><div class="card wr-sum"><div class="wr-row"><b>Điểm ${monthlyOnly ? 'báo cáo tháng' : 'tháng'} ${esc(current.month.slice(5))}/${esc(current.month.slice(0, 4))}</b><b class="num">${scoreText(points)} / ${maxPoints}</b></div>
         <div class="wr-bar"><i style="width:${pct}%"></i></div>
         <p class="muted small">${monthlyOnly ? 'Báo cáo tháng đóng góp tối đa 1 điểm, cộng với 4 báo cáo tuần để tính Tiền trách nhiệm. Đúng hạn 1 · trễ dưới 1 ngày 0,5 · trễ từ 1 ngày / không nộp / Chưa đạt 0 · Miễn 1.' : me.applies ? `Tiền trách nhiệm = mức trách nhiệm × ngày công ÷ công chuẩn × điểm ÷ ${me.maxPoints}. ` + 'Đúng hạn 1 điểm · trễ dưới 1 ngày 0,5 · trễ từ 1 ngày / không nộp / Chưa đạt 0 · Miễn 1. Tháng 5 tuần lấy 4 tuần cao nhất.' + (me.monthly ? ' Báo cáo tháng tính thêm 1 điểm.' : '') : 'Tháng này chưa áp dụng vào Tiền trách nhiệm (áp dụng từ 11/2026) – vẫn nên nộp để làm quen.'}</p></div>
       <div class="card"><div class="wr-weeks">${(monthlyOnly ? [] : me.weeks).map((w, i) => { const st = STATE[w.state];
@@ -66,11 +67,11 @@ export function initWeeklyReports({ api, root, toast, esc, go, money, user, mont
     const weeks = monthlyOnly ? [] : d.weeks;
     root.innerHTML = `<div class="page-head"><div><h1>${monthlyOnly ? 'Báo cáo tháng' : 'Báo cáo tuần / tháng'} – Sale / Sale Admin</h1><p class="muted">Duyệt Đạt / Chưa đạt / Miễn · điểm dùng tính Tiền trách nhiệm${d.applies ? '' : ' (tháng này chưa áp dụng)'}</p></div>
         <div class="head-actions"><input type="month" id="wr-month" value="${esc(current.month)}" aria-label="Tháng"></div></div>
-      <div class="card"><div class="table-wrap"><table class="data-table wr-table"><thead><tr><th>Nhân viên</th>${weeks.map(w => `<th>${esc(weekLabel(w))}</th>`).join('')}${d.hasMonthly ? '<th>Báo cáo tháng</th>' : ''}<th class="right">Điểm${monthlyOnly ? ' tháng' : ''}</th></tr></thead>
+      <p class="muted small">${submissionRule}</p><div class="card"><div class="table-wrap"><table class="data-table wr-table"><thead><tr><th>Nhân viên</th>${weeks.map(w => `<th>${esc(weekLabel(w))}</th>`).join('')}${d.hasMonthly ? '<th>Báo cáo tháng</th>' : ''}<th class="right">Điểm${monthlyOnly ? ' tháng' : ''}</th></tr></thead>
       <tbody>${d.people.map(p => `<tr><td>${esc(p.name)}${p.positionId === 'sale-admin' ? ' <small class="muted">Sale Admin</small>' : ''}</td>${(monthlyOnly ? [] : p.weeks).map(w => `<td>${w.reportId
-        ? `<button type="button" class="btn ghost small" data-open="${esc(p.id)}|${esc(w.period)}">${pill(STATE[w.state][1], STATE[w.state][0])}${pill(REVIEW_TONE[w.review], d.reviewLabels[w.review])}</button>`
+        ? `<button type="button" class="btn ghost small" data-open="${esc(p.id)}|${esc(w.period)}">${pill(STATE[w.state][1], STATE[w.state][0])}${pill(REVIEW_TONE[w.review], d.reviewLabels[w.review])}${w.submittedAt ? `<small>Nộp lần đầu: ${esc(when(w.submittedAt))}</small>` : ''}</button>`
         : pill(STATE[w.state][1], STATE[w.state][0])}</td>`).join('')}${p.monthly ? `<td>${p.monthly.reportId
-        ? `<button type="button" class="btn ghost small" data-open="${esc(p.id)}|${esc(p.monthly.period)}">${pill(STATE[p.monthly.state][1], STATE[p.monthly.state][0])}${pill(REVIEW_TONE[p.monthly.review], d.reviewLabels[p.monthly.review])}</button>`
+        ? `<button type="button" class="btn ghost small" data-open="${esc(p.id)}|${esc(p.monthly.period)}">${pill(STATE[p.monthly.state][1], STATE[p.monthly.state][0])}${pill(REVIEW_TONE[p.monthly.review], d.reviewLabels[p.monthly.review])}${p.monthly.submittedAt ? `<small>Nộp lần đầu: ${esc(when(p.monthly.submittedAt))}</small>` : ''}</button>`
         : pill(STATE[p.monthly.state][1], STATE[p.monthly.state][0])}</td>` : ''}<td class="right num"><b>${scoreText(monthlyOnly ? p.monthly?.score : p.points)}</b>/${monthlyOnly ? 1 : p.required}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">Chưa có Sale / Sale Admin.</td></tr>'}</tbody></table></div></div>`;
     bindMonth();
     root.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { const [id, period] = b.dataset.open.split('|'); openWeek(period, id); });

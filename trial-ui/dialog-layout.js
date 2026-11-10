@@ -6,6 +6,12 @@ export function fitDialog(dialog) {
   const drawer = dialog.matches('.sup-drawer');
   if (dialog.matches(excluded) || (drawer ? dialog.hidden : !dialog.open)) return false;
   const form = dialog.querySelector('form');
+  // A purchase drawer is reused for detail -> approve -> detail. Drop the old
+  // fixed form frame when returning to plain details so the whole drawer scrolls.
+  if (drawer && !form) {
+    dialog.classList.remove('landscape-dialog','landscape-drawer','landscape-dialog-form');
+    return false;
+  }
   // POS form dialogs have a title above their form rather than modal-head/body.
   if (dialog.matches('.pos-form-modal') && form && !dialog.querySelector('.landscape-dialog-body')) {
     if (form.querySelectorAll('input:not([type=hidden]),select,textarea').length < 6) return false;

@@ -7,8 +7,8 @@
 .sup-pill.warn { background: var(--amber-50); color: var(--amber); }
 .sup-pill.danger { background: #fdecea; color: #b42318; }
 .sup-pill.info { background: var(--blue-50); color: var(--blue); }
-.sup-shade { position: fixed; inset: 0; z-index: 60; background: #0f1d3338; }
-.sup-drawer { position: fixed; z-index: 61; top: 0; right: 0; bottom: 0; width: min(640px, 100vw); overflow-y: auto; padding: 18px 20px; background: var(--surface); box-shadow: var(--shadow-lg); display: grid; align-content: start; gap: 14px; }
+.sup-shade { position: fixed; inset: 0; z-index: 80; background: #0f1d3338; }
+.sup-drawer { position: fixed; z-index: 81; inset: 0; margin: auto; height: fit-content; max-height: calc(100dvh - 24px); width: min(640px, calc(100vw - 24px)); box-sizing: border-box; border-radius: 14px; overflow-y: auto; padding: 18px 20px; background: var(--surface); box-shadow: var(--shadow-lg); display: grid; align-content: start; gap: 14px; }
 .sup-drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .sup-drawer-head h2 { margin: 2px 0 0; font-size: var(--text-heading); }
 .sup-form { display: grid; gap: 16px; }
@@ -27,7 +27,7 @@
 
 /* Đơn mua NCC (#/purchases) */
 .pur-chips { margin: 0 0 10px; }
-.pur-drawer { width: min(920px, 100vw); }
+.pur-drawer { width: min(920px, calc(100vw - 24px)); }
 .pur-head-tools { display: flex; gap: 6px; align-items: center; }
 .pur-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .pur-info { display: grid; grid-template-columns: max-content 1fr max-content 1fr; gap: 6px 14px; margin: 0; font-size: var(--text-small); }
