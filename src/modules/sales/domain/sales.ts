@@ -3,7 +3,7 @@
  * Báo giá → Đơn đặt hàng → HĐKT → Lịch giao → Công nợ.
  */
 import { nextDocumentNumber } from '../../../core/document-number.ts';
-import { after, rate, quoteStockSku, type QuoteDoc, type QuoteRow } from '../../quotes/domain/quote-math.ts';
+import { after, discounted, rate, quoteStockSku, type QuoteDoc, type QuoteRow } from '../../quotes/domain/quote-math.ts';
 
 const round = (n: number) => Math.round(n);
 const str = (v: unknown) => (v === undefined || v === null ? '' : String(v)).trim();
@@ -41,14 +41,16 @@ export function contractNumber(entity: string, customerCode: string, sequence: n
 export function quoteTotal(data: string): number {
   try { return orderTotals(orderLinesFromQuote(JSON.parse(data))).total; } catch { return 0; }
 }
-export interface OrderLineDraft { lineNo: number; sku: string; name: string; unit: string; qty: number; unitPrice: number; taxRate: number; amount: number }
+export interface OrderLineDraft { lineNo: number; sku: string; name: string; unit: string; qty: number; unitPrice: number; taxRate: number; amount: number; listUnitPrice?: number | null; discountType?: string; discountValue?: number; discountAmount?: number }
 
 /** Dòng đơn từ dữ liệu báo giá: đơn giá = giá sau CK (+ phí in nếu B2B/VIGIFTS), chưa VAT; bỏ dòng trống/số lượng 0. */
 export function orderLinesFromQuote(doc: QuoteDoc): OrderLineDraft[] {
   const rows = (doc.rows || []) as (QuoteRow & { sku?: string; name?: string; unit?: string })[];
   return rows.filter(r => str(r.name) && Number(r.qty) > 0).map((r, i) => {
     const qty = Number(r.qty), unitPrice = after(r, doc);
-    return { lineNo: i + 1, sku: quoteStockSku(r), name: str(r.name), unit: str(r.unit), qty, unitPrice, taxRate: rate(r, doc), amount: unitPrice * qty };
+    return { lineNo: i + 1, sku: quoteStockSku(r), name: str(r.name), unit: str(r.unit), qty, unitPrice, taxRate: rate(r, doc), amount: unitPrice * qty,
+      listUnitPrice: Number(r.price || 0), discountType: r.discountType === 'amount' ? 'amount' : 'percent',
+      discountValue: Number(r.discount || 0), discountAmount: (Number(r.price || 0) - discounted(r)) * qty };
   });
 }
 export function orderTotals(lines: readonly Pick<OrderLineDraft, 'amount' | 'taxRate'>[]) {

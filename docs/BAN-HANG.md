@@ -307,3 +307,15 @@ Hồ sơ đồng nghiệp chỉ trả thông tin nghiệp vụ: `payroll: null`,
 - **Lịch sử đơn** (`/audit?entityType=orders&related=1`) gồm cả thao tác trên HĐKT, chuyến giao, phiếu thu, phiếu đóng gói của đơn.
 - **Sơ đồ quy trình** của Manager chỉ liệt kê đơn nháp đã gửi duyệt (khớp số đếm).
 - Không migration. Test: `tests/app/crm-audit.test.ts`.
+
+## Form hàng trong đơn và HĐKT CRM
+
+Đơn POS và đơn/HĐKT sinh từ CRM dùng cùng bố cục 8 cột: sản phẩm/khoản phí, số lượng, đã giao, đơn giá gốc, CK, giá sau CK, VAT, thành tiền; cùng khối tổng CK, mã giảm giá, tiền hàng/phí chưa VAT, VAT, tổng thanh toán và ghi chú. Khi có hoàn hàng CRM, giữ thêm ba cột lịch sử hoàn/nhập kho/khách giữ và phần lịch sử hiện có.
+
+Giá CRM xuất phát từ báo giá là giá chưa VAT; CK tiền là trên mỗi SP, khác CK tiền POS trên dòng. Khi tạo hoặc sửa đơn từ báo giá, lưu giá gốc/loại CK/giá trị CK/tổng CK vào các cột `sales_order_lines` đã có. Không đổi cách tính `unitPrice`, `amount` hoặc tổng chứng từ. B2B/VIGIFTS đã cộng phí in vào đơn giá sau CK: chỉ chú thích phần đã gồm, không cộng lại hoặc thêm dòng phí lần hai. Khoản phí riêng đã được lập thành dòng trong báo giá hiện như các dòng hàng khác.
+
+Đơn giá gốc/CK của chứng từ cũ không lưu đủ phải hiện chưa có dữ liệu; không lấy giá danh mục hoặc báo giá hiện tại để suy ra giá lịch sử. Tổng tiền/VAT/thanh toán dùng đúng số đã lưu. Giá POS và phí/voucher tiếp tục theo snapshot đã lưu, giữ nhãn gồm/chưa VAT của nguồn. Không tự backfill, sửa chứng từ cũ hoặc thêm migration cho thay đổi này.
+
+Kiểm thử: 26 test liên quan đạt, không skip; gồm renderer POS/CRM, giá lẻ/CK tiền/phí in/nhiều VAT, sửa hợp đồng và hoàn hàng. Kiểm tra API tạo đơn/HĐKT xác nhận giá gốc và CK đi xuyên từ báo giá vào DB. Typecheck/UI build đạt. Browser router thật, dữ liệu giả: 8 trường hợp POS/CRM/HĐKT/chứng từ cũ trên 1440/390 đạt, không lỗi JS/tràn ngang, không request ghi dữ liệu từ thao tác xem.
+
+Đo 3 lượt lạnh/viewport, mạng giả lập 40 ms, 1,6 MB/s: median ready PC 3124→3141 ms, mobile 3081→3074 ms; vẫn 17 API/164 JS. Bản đo đầu biến động, đã lưu cả số chẩn đoán và cặp đo cuối trong `docs/testing/crm-order-line-form-performance.json`. Đây là số cục bộ, không phải tốc độ production. CLS khởi động vẫn cao (PC ~0,466→0,486; mobile ~0,665 giữ nguyên); không coi là bản sửa CLS toàn ứng dụng.
