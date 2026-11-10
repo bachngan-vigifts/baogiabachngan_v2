@@ -224,7 +224,9 @@ export function initRestockPage({ api, host, toast, go, options, loadXlsx, onBac
       el('p', 'muted', 'File gồm 3 cột: Mã hàng · Tên hàng (không bắt buộc) · Số lượng đặt. Tải file mẫu, điền rồi chọn file để xem trước.'),
       (() => { const r = el('div', 'row-gap'); r.append(template, file); return r; })(), status, preview, modeBox);
     const actions = el('div', 'pur-rs-excel-actions'); actions.append(btn('Đóng', 'btn secondary', close), apply); body.append(actions);
-    dlg.append(body); dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
+    const head = el('div', 'modal-head'); head.append(body.querySelector('h2'));
+    body.classList.add('modal-body'); actions.classList.add('modal-foot');
+    dlg.append(head, body, actions); dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
     document.body.append(dlg); dlg.showModal();
     let ready = [];
     file.addEventListener('change', async () => {

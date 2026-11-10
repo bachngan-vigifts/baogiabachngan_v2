@@ -82,7 +82,7 @@ export function clearSpeedEntries() { entries.length = 0; }
  */
 export function openSpeedDialog({ doc = document, toast = () => {}, canary = null, dbPool = null } = {}) {
   const el = (tag, cls, text) => { const n = doc.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; };
-  const dlg = el('dialog', 'speed-dialog'), s = summarize();
+  const dlg = el('dialog', 'modal speed-dialog'), s = summarize();
   const head = el('div', 'speed-head'), close = el('button', 'btn secondary', 'Đóng'); close.type = 'button'; close.onclick = () => dlg.close();
   head.append(el('h2', '', 'Đo tốc độ'), close);
   const note = el('p', 'muted', s.all.count
@@ -145,7 +145,10 @@ export function openSpeedDialog({ doc = document, toast = () => {}, canary = nul
     };
     poolBox.append(toggle, run, out);
   }
-  dlg.append(head, ...(canaryBox ? [canaryBox] : []), ...(poolBox ? [poolBox] : []), note, wrap, actions);
+  head.classList.add('modal-head'); actions.classList.add('modal-foot');
+  const content = el('div', 'modal-body');
+  content.append(...(canaryBox ? [canaryBox] : []), ...(poolBox ? [poolBox] : []), note, wrap);
+  dlg.append(head, content, actions);
   doc.body.append(dlg);
   dlg.addEventListener('close', () => dlg.remove(), { once: true });
   dlg.showModal();

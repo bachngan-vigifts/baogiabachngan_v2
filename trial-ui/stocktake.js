@@ -15,7 +15,7 @@ export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,fi
  create.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
  const resume=button('Tiếp tục phiếu đang nhập',()=>showEditor());resume.hidden=true;actions.append(resume,create);head.append(titles,actions);
  const dialog=el('dialog','modal stocktake-dialog');dialog.setAttribute('aria-label','Phiếu kiểm kê mới');
- const panel=el('section','panel stocktake-panel'),controls=el('fieldset','stocktake-controls');
+ const panel=el('section','panel stocktake-panel'),controls=el('fieldset','stocktake-controls modal-body');
  const warehouse=el('select');warehouse.setAttribute('aria-label','Kho kiểm kê');
  const search=el('input');search.type='search';search.placeholder='Nhập tên, mã SKU, barcode';search.autocomplete='off';search.setAttribute('aria-label','Tìm sản phẩm kiểm kê');
  const reason=el('input');reason.placeholder='Lý do / ghi chú kiểm kê';reason.maxLength=500;reason.setAttribute('aria-label','Lý do kiểm kê');
@@ -41,11 +41,12 @@ export function initStocktake({api,root,toast,confirmBox,userId,ensureCatalog,fi
  thead.append(hr);table.append(thead,tbody);wrap.append(table);
  const summary=el('p','stocktake-summary');summary.setAttribute('role','status');
  const back=button('‹ Danh sách phiếu',()=>beforeLeave());
- const formHead=el('div','card-title-row');formHead.append(el('h2','card-title','Phiếu kiểm kê mới'),back);
+ const formHead=el('div','card-title-row modal-head');formHead.append(el('h2','card-title','Phiếu kiểm kê mới'),back);
  const clear=button('Bỏ bản nháp',async()=>{const id=owner,run=sheetRun;if(!busy&&!pending&&await confirmBox('Bỏ các dòng kiểm kê chưa gửi?',{title:'Bỏ bản nháp',ok:'Bỏ bản nháp',danger:true,delay:3000})){if(id!==userId()||run!==sheetRun||busy||pending)return;stockRun++;lines=[];reason.value='';save();render();}});
  const send=button('Gửi Manager duyệt',()=>submit(),'btn primary');
  controls.append(warehouse,reason,searchField,scanInfo,results,hint,tools,clear,wrap);
- panel.append(formHead,controls,summary,feedback,draftInfo,send);
+ const formFoot=el('div','modal-foot');formFoot.append(send);
+ panel.append(formHead,controls,summary,feedback,draftInfo,formFoot);
  const history=el('section','panel inv-adjustments-panel');dialog.append(panel);page.append(head,dialog,history);root.append(page);
  dialog.addEventListener('cancel',e=>{e.preventDefault();beforeLeave();});
  const queue=initAdjustmentQueue({api,host:history,toast,kind:'stocktake',userId,onChanged:async()=>{await queue.load(config);if(editing)await refreshStock();}});
