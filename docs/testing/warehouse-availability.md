@@ -26,7 +26,7 @@ Apply `migrations/postgres/20261110041042_warehouse_dispatch_availability.sql` b
 
 - `node --import tsx --test --test-concurrency=1 tests/app/warehouse-availability.test.ts tests/app/warehouse-payroll.test.ts tests/app/warehouse-workspace.test.ts`: native PostgreSQL17, pool20: 17 tests passed, including concurrent dispatch and payroll closing.
 - PGlite: new dispatch/payroll files passed, ensuring CI engine compatibility.
-- `PLAYWRIGHT_MODULE=<installed playwright> node --import tsx scripts/testing/warehouse-availability.mjs`: local CRM/router, blocked external requests; Manager1440 and390, worker390, screenshots inspected. Covers blocked/free transitions, queue handoff/rework, stable retry after simulated saved-but-lost response, zero JS errors/no horizontal overflow. Artifacts `/tmp/warehouse-availability-browser`.
-- HR/payroll/profit regression, typecheck, build and CI results recorded on the PR.
+- `PLAYWRIGHT_MODULE=<installed playwright> node --import tsx scripts/testing/warehouse-availability.mjs`: local CRM/router, blocked external requests; Manager1440 and390, worker390, screenshots inspected. Covers blocked/free transitions, queue handoff/rework, stable retry after simulated saved-but-lost response, zero JS errors/no horizontal overflow. Official prior-month approval and reward columns in quick/group payroll also exercised. Artifacts `/tmp/warehouse-availability-browser`.
+- Native HR/payroll/profit regression: 74 tests pass. Sheet/export PGlite suites pass; typecheck and UI build pass. Full CI recorded on the PR.
 
 No production tasks, score approvals, payslips or payments are created by these tests.
