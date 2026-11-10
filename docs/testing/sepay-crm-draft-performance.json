@@ -1,0 +1,250 @@
+{
+  "baselineCommit": "9497db26",
+  "before": {
+    "phase": "crm-draft-before",
+    "conditions": {
+      "browser": "Chromium",
+      "coldContexts": true,
+      "runsPerViewport": 3,
+      "latencyMs": 40,
+      "downloadBps": 1600000,
+      "source": "isolated real CRM API + synthetic SePay, not production"
+    },
+    "summary": [
+      {
+        "width": 1440,
+        "ready": 3064.333015,
+        "ttfb": 5.0999999940395355,
+        "load": 3037.7000000029802,
+        "fcp": 600,
+        "lcp": 3040,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15
+      },
+      {
+        "width": 390,
+        "ready": 3098.6397799999977,
+        "ttfb": 3.1000000089406967,
+        "load": 3070.7000000029802,
+        "fcp": 592,
+        "lcp": 2972,
+        "cls": 0.2204277659455128,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15
+      }
+    ],
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3243.9381269999994,
+        "ttfb": 8.5,
+        "load": 3210.5999999940395,
+        "fcp": 624,
+        "lcp": 3180,
+        "cls": 0.4564305555555555,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3064.333015,
+        "ttfb": 3.7999999970197678,
+        "load": 3037.7000000029802,
+        "fcp": 560,
+        "lcp": 3004,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3058.2332229999993,
+        "ttfb": 5.0999999940395355,
+        "load": 3029.5,
+        "fcp": 600,
+        "lcp": 3040,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3098.6397799999977,
+        "ttfb": 2.5999999940395355,
+        "load": 3070.7000000029802,
+        "fcp": 600,
+        "lcp": 2972,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3108.6279989999966,
+        "ttfb": 3.1000000089406967,
+        "load": 3081.9000000059605,
+        "fcp": 592,
+        "lcp": 2976,
+        "cls": 0.2204277659455128,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3092.605004000001,
+        "ttfb": 3.9000000059604645,
+        "load": 3068,
+        "fcp": 592,
+        "lcp": 2960,
+        "cls": 0.2204277659455128,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      }
+    ]
+  },
+  "after": {
+    "phase": "crm-draft-after",
+    "conditions": {
+      "browser": "Chromium",
+      "coldContexts": true,
+      "runsPerViewport": 3,
+      "latencyMs": 40,
+      "downloadBps": 1600000,
+      "source": "isolated real CRM API + synthetic SePay, not production"
+    },
+    "summary": [
+      {
+        "width": 1440,
+        "ready": 3105.191671999999,
+        "ttfb": 2.5,
+        "load": 3076.5,
+        "fcp": 584,
+        "lcp": 3068,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15
+      },
+      {
+        "width": 390,
+        "ready": 3082.8486190000003,
+        "ttfb": 1.8999999910593033,
+        "load": 3052.8999999910593,
+        "fcp": 588,
+        "lcp": 2960,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15
+      }
+    ],
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3117.660976000001,
+        "ttfb": 11.799999997019768,
+        "load": 3090.2000000029802,
+        "fcp": 584,
+        "lcp": 3108,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3082.5140329999995,
+        "ttfb": 2.3999999910593033,
+        "load": 3053.300000011921,
+        "fcp": 592,
+        "lcp": 3068,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3105.191671999999,
+        "ttfb": 2.5,
+        "load": 3076.5,
+        "fcp": 584,
+        "lcp": 3052,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3056.4888759999994,
+        "ttfb": 1.9000000059604645,
+        "load": 3030.2999999970198,
+        "fcp": 556,
+        "lcp": 2928,
+        "cls": 0.2204277659455128,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3086.261133,
+        "ttfb": 1.5,
+        "load": 3058,
+        "fcp": 608,
+        "lcp": 2960,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3082.8486190000003,
+        "ttfb": 1.8999999910593033,
+        "load": 3052.8999999910593,
+        "fcp": 588,
+        "lcp": 2960,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      }
+    ]
+  },
+  "limits": "Full baseline API/UI git archive; same synthetic fixture and Chromium conditions, 3 cold contexts per viewport, 40 ms latency and 1.6 MB/s. No concurrent tests/build/typecheck for recorded final runs. Local, not production. Existing app startup CLS remains high."
+}

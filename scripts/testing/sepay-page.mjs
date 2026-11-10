@@ -468,8 +468,8 @@ try {
   }
   assert.equal((await f.db.select().from(customerPayments)).length,receiptsBefore);
   results.push({case:'Lock QR links exact original website order on PC/mobile without another CRM receipt',pass:true});
-  const pickerOrder=await f.order('SEPAY_PICK_ORDER');
-  await f.db.insert(salesContracts).values({id:crypto.randomUUID(),contractNo:'HDKT_PICK_001',orderId:pickerOrder.id,legalEntity:'BN',status:'signed',value:100000,createdBy:'mgr',createdAt:f.stamp,updatedAt:f.stamp});
+  const pickerOrder=await f.order('SEPAY_PICK_ORDER',{status:'draft'});
+  await f.db.insert(salesContracts).values({id:crypto.randomUUID(),contractNo:'HDKT_PICK_001',orderId:pickerOrder.id,legalEntity:'BN',status:'draft',value:100000,createdBy:'mgr',createdAt:f.stamp,updatedAt:f.stamp});
   const pickerEvent=await f.incoming('Khoản cần chọn HĐKT',100000,{id:'picker-account-pending'});
   const receiptsAtPicker=(await f.db.select().from(customerPayments)).length;
   f.env.sepayReceiptAccounts=[];
@@ -505,11 +505,11 @@ try {
     await view.p.waitForFunction(()=>document.querySelector('.sp-order-pages')?.textContent.includes('Trang 2'));
     assert.equal(await view.p.locator('[data-order-results] [data-choose]').count(),2);
     await query.fill('FILTER_DRAFT');
-    await view.p.locator('[data-order-results] button:disabled').filter({hasText:'FILTER_DRAFT'}).waitFor();
-    assert.equal(await view.p.locator('[data-order-results] [data-choose]').count(),0);
-    await view.p.locator('[data-order-results] button:disabled').filter({hasText:'Chưa thể gán: cần duyệt đơn hoặc ký HĐKT.'}).waitFor();
+    const draftChoice=view.p.locator('[data-order-results] [data-choose]').filter({hasText:'FILTER_DRAFT'});
+    await draftChoice.waitFor(); assert.equal(await draftChoice.isEnabled(),true);
+    await draftChoice.click(); await view.p.locator('[data-account-block]').waitFor();
     await view.p.locator('[name=eligibility]').selectOption('eligible');
-    await view.p.locator('[data-order-results] .sp-empty').waitFor();
+    await view.p.locator('[data-order-results] [data-choose]').filter({hasText:'FILTER_DRAFT'}).waitFor();
     await view.p.locator('[name=eligibility]').selectOption('active');
     await query.fill('HDKT_PICK_001');
     await view.p.locator('[name=source]').selectOption('contract');
@@ -526,7 +526,7 @@ try {
     await view.context.close();
   }
   await writeFile(out+'/search-timing.json',JSON.stringify(searchRuns,null,2));
-  results.push({case:'default document list, typeahead, filters, pagination and visible unselectable drafts on PC/mobile',pass:true});
+  results.push({case:'default document list, typeahead, filters, pagination and manually selectable CRM drafts on PC/mobile',pass:true});
   const picker=await pageFor(f.mgr,390,'#/sepay?q=picker-account-pending');
   await picker.p.locator('[data-open]').waitFor();await detail(picker.p,pickerEvent.id);
   await picker.p.locator('[data-order-search]').waitFor();
@@ -544,6 +544,7 @@ try {
   await picker.p.locator('[data-reload-detail]').click();
   await picker.p.locator('[data-order-search]').waitFor();await choose(picker.p,'HDKT_PICK_001');
   assert.equal(await picker.p.getByRole('button',{name:'Xem lại để gán khoản thu',exact:true}).isEnabled(),true);
+  await picker.p.locator('[data-preview]').filter({hasText:'Đơn/HĐKT còn nháp'}).waitFor();
   await review(picker.p);await picker.p.locator('[data-confirm]').click();
   await picker.p.locator('[data-notice] .sp-success').waitFor();
   const picked=await f.db.select().from(customerPayments).where(eq(customerPayments.orderId,pickerOrder.id));

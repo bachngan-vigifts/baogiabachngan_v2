@@ -194,7 +194,9 @@ export async function ingestPayment(
         .from(salesContracts)
         .where(eq(salesContracts.orderId, candidates[0]!.id))
         .limit(1);
-      if (!target || !debtCounts(target.status, contract?.status)) matches = [];
+      // Explicit Manager selection follows /payments: CRM can receive before approval.
+      // Automatic matching still requires effective debt (signed/approved documents).
+      if (!target || (manual ? target.channel !== "crm" || target.status === "cancelled" : !debtCounts(target.status, contract?.status))) matches = [];
       else {
         let accountAllowed = (env.sepayReceiptAccounts || []).includes(
           payment.accountNumber,
@@ -285,19 +287,9 @@ export async function ingestPayment(
     let paymentId: string | null = null;
     if (manual) {
       if (
-        !target ||
-        !debtCounts(
-          target.status,
-          (
-            await tx
-              .select({ status: salesContracts.status })
-              .from(salesContracts)
-              .where(eq(salesContracts.orderId, manual.orderId))
-              .limit(1)
-          )[0]?.status,
-        )
+        !target || target.channel !== "crm" || target.status === "cancelled"
       )
-        throw new AppError(409, "Đơn đã huỷ hoặc chưa có hiệu lực công nợ.");
+        throw new AppError(409, "Chỉ gán khoản thu thủ công vào đơn CRM/HĐKT chưa hủy.");
       if (!approvedAccount)
         throw new AppError(
           409,

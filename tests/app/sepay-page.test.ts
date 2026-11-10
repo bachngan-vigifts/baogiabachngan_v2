@@ -219,7 +219,6 @@ test("manual creation cannot bypass account approval, debt, held cash, status, P
   assert.equal((await f.confirm(e.id, f.choice(o.id))).status, 409);
   f.env.sepayReceiptAccounts = ["123456"];
   for (const extra of [
-    { status: "draft" as const },
     { status: "cancelled" as const },
     { channel: "pos" },
     { total: 50000 },
@@ -315,7 +314,7 @@ test("preview is read-only and fresh debt is rechecked at confirmation; search e
   const search = await f.call("/sepay/orders?q=PREVIEW106&source=crm", f.mgr);
   assert.equal(search.data.orders.length, 2);
   assert.equal(search.data.orders.find((r: any) => r.id === o.id).selectable, true);
-  assert.equal(search.data.orders.find((r: any) => r.status === "draft").selectable, false);
+  assert.equal(search.data.orders.find((r: any) => r.status === "draft").selectable, true);
   const preview = await f.call(
     "/sepay/orders/" + o.id + "?transactionId=" + e.id,
     f.mgr,
@@ -461,10 +460,13 @@ test("SePay picker lists real documents, searches canonical customer/code, filte
     const r = await f.call("/sepay/orders?q="+encodeURIComponent(q),f.mgr);
     assert.equal(r.status,200);
     assert.equal(r.data.orders[0].id,draft.id,q);
-    assert.equal(r.data.orders[0].selectable,false);
+    assert.equal(r.data.orders[0].selectable,true);
   }
-  assert.equal((await f.confirm(e.id,f.choice(draft.id))).status,409,"draft remains unpayable");
-  assert.equal((await f.call("/sepay/orders?eligibility=eligible",f.mgr)).data.orders.length,0);
+  const preview = await f.call('/sepay/orders/'+draft.id+'?transactionId='+e.id,f.mgr);
+  assert.equal(preview.status,200); assert.equal(preview.data.canCreate,true);
+  assert.match(preview.data.warning,/còn nháp/);
+  assert.equal((await f.confirm(e.id,f.choice(draft.id),f.accountant)).status,403);
+  assert.equal((await f.call("/sepay/orders?eligibility=eligible",f.mgr)).data.orders.length,1);
   await f.db.update(salesContracts).set({status:"signed"}).where(eq(salesContracts.id,contract.id));
   assert.equal((await f.call("/sepay/orders?kind=contract&eligibility=eligible",f.mgr)).data.orders[0].selectable,true);
   await f.order("XL_CANCELLED",{status:"cancelled"});
@@ -484,4 +486,34 @@ test("SePay picker lists real documents, searches canonical customer/code, filte
   assert.equal((await f.call("/sepay/orders",f.accountant)).status,403);
   assert.equal((await f.call("/sepay/orders",f.emp)).status,403);
   assert.equal((await f.db.select().from(customerPayments)).length,0);
+});
+
+test("Manager may manually assign a bank receipt to an unsigned CRM draft without approving it; automatic matching stays blocked", async () => {
+  const f = await setupSepay();
+  const o = await f.order("CRM_DRAFT_DEPOSIT_101",{status:"draft"});
+  const e = await f.incoming(o.orderNo,30000);
+  assert.notEqual(e.status,"matched");
+  assert.equal((await f.db.select().from(customerPayments)).length,0);
+  const contractId = crypto.randomUUID();
+  await f.db.insert(salesContracts).values({id:contractId,orderId:o.id,contractNo:'DRAFT_CONTRACT_101',legalEntity:'BN',status:'draft',createdBy:'mgr',createdAt:f.stamp,updatedAt:f.stamp});
+  f.env.sepayReceiptAccounts=[];
+  const blocked = await f.call('/sepay/orders/'+o.id+'?transactionId='+e.id,f.mgr);
+  assert.equal(blocked.status,200);assert.equal(blocked.data.canCreate,false);
+  assert.equal((await f.confirm(e.id,f.choice(o.id))).status,409);
+  f.env.sepayReceiptAccounts=['123456'];
+  assert.equal((await f.confirm(e.id,f.choice(o.id),f.accountant)).status,403);
+  assert.equal((await f.confirm(e.id,f.choice(o.id))).status,200);
+  assert.equal((await f.confirm(e.id,f.choice(o.id))).data.duplicate,true);
+  const rows = await f.db.select().from(customerPayments).where(eq(customerPayments.orderId,o.id));
+  assert.equal(rows.length,1);assert.equal(rows[0]!.amount,30000);
+  assert.equal((await f.db.select().from(salesOrders).where(eq(salesOrders.id,o.id)))[0]!.status,'draft');
+  assert.equal((await f.db.select().from(salesContracts).where(eq(salesContracts.id,contractId)))[0]!.status,'draft');
+  const second = await f.incoming('Chờ chọn thủ công lần hai',80000);
+  assert.equal((await f.confirm(second.id,f.choice(o.id))).status,409,'cannot receive beyond remaining 70000');
+  const cancelled = await f.order('CANCELLED_DEPOSIT',{status:'cancelled'});
+  assert.equal((await f.call('/sepay/orders/'+cancelled.id+'?transactionId='+second.id,f.mgr)).status,409);
+  assert.equal((await f.confirm(second.id,f.choice(cancelled.id))).status,409);
+  const otherDraft=await f.order('DRAFT_NO_SCHEDULE',{status:'draft'});
+  await f.db.delete(paymentSchedules).where(eq(paymentSchedules.orderId,otherDraft.id));
+  assert.equal((await f.confirm(second.id,f.choice(otherDraft.id))).status,409,'draft without a valid amount/schedule is blocked');
 });
