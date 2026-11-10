@@ -1,3 +1,4 @@
+import {sepayManualAccountApproved} from './sepay-manual-account.ts';
 import {
   and,
   eq,
@@ -198,9 +199,9 @@ export async function ingestPayment(
       // Automatic matching still requires effective debt (signed/approved documents).
       if (!target || (manual ? target.channel !== "crm" || target.status === "cancelled" : !debtCounts(target.status, contract?.status))) matches = [];
       else {
-        let accountAllowed = (env.sepayReceiptAccounts || []).includes(
-          payment.accountNumber,
-        );
+        let accountAllowed = manual
+          ? await sepayManualAccountApproved(tx,env,payment.accountNumber)
+          : (env.sepayReceiptAccounts || []).includes(payment.accountNumber);
         approvedAccount = accountAllowed && target.channel === "crm";
         if(target.channel==='crm'&&sepayPosIntent(payment.content)) blockedReason='Giao dịch có mã QR POS; không tự gắn sang chứng từ CRM.';
         if (target.channel === "pos") {
@@ -293,7 +294,7 @@ export async function ingestPayment(
       if (!approvedAccount)
         throw new AppError(
           409,
-          "Tài khoản chưa được duyệt cho đơn CRM, hoặc đây là đơn POS. Không ghi thu qua trang SePay.",
+          "Tài khoản nhận chưa được cấu hình cho CRM hoặc quầy đang hoạt động. Không ghi thu qua trang SePay.",
         );
       if (manual.existingPaymentId) {
         const [receipt] = await tx
