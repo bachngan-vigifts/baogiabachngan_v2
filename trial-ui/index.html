@@ -649,15 +649,17 @@
           <dialog class="task-quick-dialog" id="tasks-quick-dialog" aria-labelledby="task-quick-title">
             <form class="task-quick" id="tasks-quick" autocomplete="off" data-no-busy hidden>
               <div class="task-quick-handle" aria-hidden="true"></div>
-              <button type="button" class="task-quick-close" data-cancel aria-label="Đóng">×</button>
-              <h2 id="task-quick-title">Giao việc nhanh</h2>
+              <header class="task-quick-head"><h2 id="task-quick-title">Giao việc nhanh</h2><button type="button" class="task-quick-close" data-cancel aria-label="Đóng">×</button></header>
+              <div class="task-quick-body">
               <label>Tên việc<input name="title" placeholder="VD: Gửi mẫu quà Tết cho khách ABC" maxlength="300" required></label>
               <label>Người nhận<select name="assigneeId" id="tasks-quick-assignee"></select></label>
               <fieldset><legend>Hạn</legend><input type="hidden" name="dueDate"><div class="task-quick-choices" role="group" aria-label="Hạn"><button type="button" data-due="0">Hôm nay</button><button type="button" data-due="1">Mai</button><button type="button" data-due="7">+7 ngày</button><button type="button" data-due="">Không hạn</button></div><small data-custom-due hidden></small></fieldset>
               <fieldset><legend>Ưu tiên</legend><input type="hidden" name="priority" value="normal"><div class="task-quick-choices" role="group" aria-label="Ưu tiên"><button type="button" data-priority="low">Thấp</button><button type="button" data-priority="normal">Bình thường</button><button type="button" data-priority="high">Cao</button><button type="button" data-priority="urgent">Khẩn</button></div></fieldset>
               <p class="error" role="alert" data-quick-error></p>
+              </div><footer class="task-quick-foot">
               <button type="submit" class="btn primary task-quick-submit">Giao việc</button>
               <button type="button" class="btn ghost" data-discard data-no-busy hidden>Bỏ lần giao việc này</button>
+              </footer>
             </form>
           </dialog>
           <div class="stats task-due-cards" id="tasks-stats"></div>

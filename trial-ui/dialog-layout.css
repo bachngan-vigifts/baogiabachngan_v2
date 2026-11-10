@@ -7,6 +7,7 @@
 .product-editor-layout > p { margin:0; }
 .product-editor-carton,.product-editor-prices { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .product-editor-image small { display:block; margin-top:8px; }
+.task-quick-head,.task-quick-body,.task-quick-foot { display:contents; }
 
 @media (min-width: 900px) {
   dialog.landscape-dialog,.sup-drawer.landscape-drawer {
@@ -49,6 +50,14 @@
   .landscape-dialog .care-form > p,
   .landscape-dialog .care-form > label:has(textarea),
   .landscape-dialog .care-form > .care-field:has(.care-seg) { grid-column:1 / -1; }
+  .task-quick-dialog.landscape-dialog .task-quick { padding:0; gap:0; }
+  .task-quick-dialog.landscape-dialog .task-quick-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 22px; }
+  .task-quick-dialog.landscape-dialog .task-quick-head h2 { margin:0; }
+  .task-quick-dialog.landscape-dialog .task-quick-close { position:static; flex-shrink:0; }
+  .task-quick-dialog.landscape-dialog .task-quick-body { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-content:start; gap:20px; padding:18px 22px; }
+  .task-quick-dialog.landscape-dialog .task-quick-body > .error { grid-column:1 / -1; }
+  .task-quick-dialog.landscape-dialog .task-quick-foot { display:flex; padding:14px 22px 18px; border-top:1px solid var(--line,#dce3ed); }
+  .task-quick-dialog.landscape-dialog .task-quick-submit { width:auto; min-width:200px; margin:0; }
   .landscape-dialog label { min-width:0; }
   .landscape-dialog .product-editor-layout { grid-template-columns:minmax(0,2fr) minmax(0,1fr); align-content:start; }
   .landscape-dialog .product-editor-info.form-grid.cols-2 { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -58,7 +67,7 @@
   .landscape-dialog .product-editor-layout > p { grid-column:1 / -1; }
 }
 @media (max-width:899px) {
-  .pos-form-modal.landscape-dialog .modal-head { padding:0 40px 0 0; }
-  .pos-form-modal.landscape-dialog .modal-body { padding:0; }
-  .pos-form-modal.landscape-dialog .modal-foot { padding:14px 0 0; }
+  .pos-form-modal.landscape-dialog .modal-head,.pos-readable-modal.landscape-dialog .modal-head { padding:0 40px 0 0; }
+  .pos-form-modal.landscape-dialog .modal-body,.pos-readable-modal.landscape-dialog .modal-body { padding:0; }
+  .pos-form-modal.landscape-dialog .modal-foot,.pos-readable-modal.landscape-dialog .modal-foot { padding:14px 0 0; }
 }
