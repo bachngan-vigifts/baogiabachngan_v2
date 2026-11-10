@@ -154,6 +154,12 @@
     ]
   },
   {
+    "migration": "20261110041042_warehouse_dispatch_availability.sql",
+    "asserts": [
+      "assert-warehouse-workspace.sql"
+    ]
+  },
+  {
     "migration": "20261111090000_purchase_permissions.sql",
     "asserts": [
       "assert-purchase-permissions.sql"

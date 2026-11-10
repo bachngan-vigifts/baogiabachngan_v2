@@ -1,3 +1,9 @@
+/* Standard popups are centered in the viewport, including phones and custom
+   accounting dialogs. Full-page document editors keep their page layout. */
+body dialog[open]:not(.order-compose,.verify-page) {
+  position:fixed; inset:0 !important; margin:auto !important; transform:none !important;
+  max-height:calc(100dvh - 24px); box-sizing:border-box;
+}
 /* Form sections keep their DOM order, labels and keyboard navigation on phones. */
 .product-editor-layout { display:grid; gap:18px; min-width:0; }
 .product-editor-layout fieldset { margin:0; padding:14px; border:1px solid var(--line,#dce3ed); border-radius:10px; min-width:0; }
@@ -30,7 +36,7 @@
   .sup-drawer.landscape-drawer { top:50%; left:50%; right:auto; bottom:auto; transform:translate(-50%,-50%); display:flex; flex-direction:column; border-radius:14px; }
   .sup-drawer.landscape-drawer > form.landscape-dialog-form { flex:1; gap:0; }
   .sup-drawer.landscape-drawer .landscape-dialog-head { padding:18px 22px; }
-  .sup-drawer.landscape-drawer .landscape-dialog-body { display:grid; gap:16px; padding:0 22px 18px; }
+  .sup-drawer.landscape-drawer .landscape-dialog-body { display:grid; align-content:start; grid-auto-rows:max-content; gap:16px; padding:0 22px 18px; }
   .sup-drawer.landscape-drawer .landscape-dialog-foot { padding:14px 22px; margin:0; }
   .landscape-dialog .landscape-dialog-head,.landscape-dialog .landscape-dialog-foot {
     flex:0 0 auto; position:static; min-width:0;
@@ -67,6 +73,9 @@
   .landscape-dialog .product-editor-layout > p { grid-column:1 / -1; }
 }
 @media (max-width:899px) {
+  .landscape-dialog-head,.sup-drawer-head {
+    position:sticky; top:0; z-index:4; background:var(--surface,#fff);
+  }
   .pos-form-modal.landscape-dialog .modal-head,.pos-readable-modal.landscape-dialog .modal-head { padding:0 40px 0 0; }
   .pos-form-modal.landscape-dialog .modal-body,.pos-readable-modal.landscape-dialog .modal-body { padding:0; }
   .pos-form-modal.landscape-dialog .modal-foot,.pos-readable-modal.landscape-dialog .modal-foot { padding:14px 0 0; }
