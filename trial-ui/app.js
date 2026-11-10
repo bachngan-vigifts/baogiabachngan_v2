@@ -445,18 +445,18 @@ const isWarehouse = () => state.user?.role === 'employee' && state.user?.positio
  */
 const OFFICE_PAGES = ['page.quotes', 'page.orders', 'page.order-products', 'page.contracts', 'page.deliveries', 'page.receivables', 'page.customers', 'page.care', 'page.stock-requests', 'page.dashboard', 'page.flow', 'page.purchases'];
 const legacyPerms = () => isWarehouse() ? ['page.deliveries', 'page.purchases', 'page.packing', 'page.stock-lookup', 'purchases.receive']
-  : state.user?.positionId === 'accounting' ? [...OFFICE_PAGES, 'purchases.prices', 'purchases.pay', 'suppliers.edit'] : OFFICE_PAGES;
+  : state.user?.positionId === 'accounting' ? [...OFFICE_PAGES, 'page.sepay', 'purchases.prices', 'purchases.pay', 'suppliers.edit'] : OFFICE_PAGES;
 const can = key => isManager() || (Array.isArray(state.user?.perms) ? state.user.perms : legacyPerms()).includes(key);
 /** Trang (#/…) → quyền cần có. Trang không có ở đây (Công việc, Sản phẩm…) ai cũng vào được. */
 const PAGE_PERM = {
-  'product-custody':'page.product-custody', cash: 'page.cash', pos: 'pos.sell', 'shift-reports': 'pos.sell',
+  sepay: 'page.sepay', 'product-custody':'page.product-custody', cash: 'page.cash', pos: 'pos.sell', 'shift-reports': 'pos.sell',
   quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', 'order-products':'page.order-products', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
   purchases: 'page.purchases', 'early-requests': 'purchases.early-view', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', stocktake: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
 };
 /** Giá bán: người làm báo giá / đơn / HĐKT (khớp máy chủ – Kho không nhận giá). */
 const seesPrices = () => isManager() || can('page.quotes') || can('page.orders') || can('page.contracts');
-const canPage = view => view === 'sepay' ? isManager() || isAccountant() : view === 'finance' ? isManager() : view === 'order' ? can('page.orders') || can('page.contracts') || can('page.receivables') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
+const canPage = view => view === 'finance' ? isManager() : view === 'order' ? can('page.orders') || can('page.contracts') || can('page.receivables') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
 /** Link "#/<trang>/<id>" mở được với quyền hiện tại (cùng cách `route()` đổi trang chi tiết) – không thì hiện chữ, không đưa người dùng về trang chủ. */
 const linkAllowed = hash => {
   const [view, id] = String(hash).replace(/^#\//, '').split(/[/?]/);
@@ -552,7 +552,6 @@ function applyWorkspaceUser(user) {
   $('#user-avatar').textContent = $('#account-button-m').textContent = initials(user.name);
   showOwnAvatar(user.avatar);
   $$('.manager-only').forEach(el => el.hidden = !isManager());
-  $$('[data-nav="sepay"]').forEach(el=>el.hidden=!(isManager()||isAccountant()));
   $('#my-sales-targets').hidden=user.positionId!=='sale';
   // Kho: Trang kho + thanh dưới riêng (Trang chủ · Đóng gói · Nhận hàng · Giao hàng · Tra tồn).
   $$('.kho-nav, .kho-only').forEach(el => el.hidden = !isWarehouse());

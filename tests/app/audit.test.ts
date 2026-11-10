@@ -15,18 +15,21 @@ const origin = 'https://trial.test';
 async function setup() {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   await db.insert(customers).values({ id: 'K1', name: 'Công ty An Phú', contact: 'Anh Phú', phone: '0902', email: '', address: 'Cần Thơ', search: '', taxCode: '0309', customerCode: 'AP01', sourceVersion: 0, syncedAt: '' });
+  // Migrations may already have recorded setup operations. Login must preserve
+  // that history exactly, rather than require a globally empty audit table.
+  const auditBeforeLogin = await db.select().from(auditLogs).orderBy(auditLogs.id);
   const router = createAppRouter();
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
     const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, passwordIterations: 1000, sapoOrderPush: 'off' as const });
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
-  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn') };
+  return { db, call, auditBeforeLogin, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn') };
 }
 
 test('nhật ký thay đổi: ghi tự động thao tác thành công, Manager xem theo bản ghi / thao tác liên quan', async () => {
-  const { db, call, emp, mgr } = await setup();
-  assert.equal((await db.select().from(auditLogs)).length, 0, 'đăng nhập không ghi nhật ký');
+  const { db, call, auditBeforeLogin, emp, mgr } = await setup();
+  assert.deepEqual(await db.select().from(auditLogs).orderBy(auditLogs.id), auditBeforeLogin, 'đăng nhập không tạo hoặc sửa nhật ký');
 
   // Nhân viên tạo báo giá, Manager duyệt → 2 dòng, đúng người làm và mã báo giá.
   const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_A1', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows: [{ name: 'Bộ trà', qty: 10, price: 100000 }] });
@@ -50,11 +53,11 @@ test('nhật ký thay đổi: ghi tự động thao tác thành công, Manager x
   for (const a of ['POST /orders', 'PUT /orders/:id/status', 'POST /deliveries', 'POST /payments']) assert.ok(rel.includes(a), `liên quan: ${a}`);
 
   // Đọc dữ liệu, tin nhắn, báo cáo CSP không ghi; nhân viên không xem được nhật ký.
-  const before = (await db.select().from(auditLogs)).length;
+  const before = await db.select().from(auditLogs).orderBy(auditLogs.id);
   await call('/quotes', emp); await call(`/orders/${o.data.id}`, mgr);
   assert.equal((await call('/csp-report', emp, 'POST', { directive: 'img-src', blocked: 'https://x.test/a.png', page: '/index.html' })).status, 200);
   assert.equal((await call('/csp-report', '', 'POST', { directive: 'img-src' })).status, 401, 'chưa đăng nhập không gửi được');
-  assert.equal((await db.select().from(auditLogs)).length, before);
+  assert.deepEqual(await db.select().from(auditLogs).orderBy(auditLogs.id), before);
   assert.equal((await call('/audit', emp)).status, 403);
   assert.ok((await call('/audit', mgr)).data.entries.length >= 6, 'Manager xem các thao tác gần nhất');
 });

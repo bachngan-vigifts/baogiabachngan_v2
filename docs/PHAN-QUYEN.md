@@ -36,6 +36,7 @@ Trang **Quản trị › Phân quyền** (`#/permissions`, `trial-ui/permissions
 | Mua hàng NCC | Xác nhận thay NCC | Sale Admin, Kế toán |
 | Kho | Sổ kho – xem; Sổ kho – chốt tồn / phiếu điều chỉnh | Không ai (chỉ Manager) |
 | Tài chính NCC | Xem giá mua NCC, Ghi thanh toán NCC, Danh bạ NCC | Kế toán, Sale Admin |
+| Kế toán | Thanh toán SePay – xem và tải giao dịch (`page.sepay`); xem toàn bộ biến động SePay, không cấp quyền xác nhận gán khoản thu | Kế toán; Manager luôn có quyền |
 | Kế toán | Sổ thu / chi; Huỷ phiếu thu ghi nhầm; Doanh số toàn công ty | Kế toán (migration 0071) |
 | Quản trị | Quản lý phân quyền | Không ai (chỉ Manager) |
 
@@ -150,3 +151,12 @@ NVBH/CHT Lock giới hạn quầy và két Lock; NVBH/CHT Minh Long giới hạn
 - Bốn quyền trước đây gắn cứng theo chức vụ nay bật / tắt được: **`purchases.early-view`**, **`purchases.early-request`**, **`purchases.confirm`**, **`purchases.cancel-approved`**.
 - Kế toán nhận hàng NCC theo đúng công tắc "Nhận hàng NCC về kho" (migration bật sẵn cho Kế toán). Kế toán không vào nhóm việc Kho dù có quyền này.
 - Mặc định giữ y như trước; Xoá / huỷ / tách phiếu xin hàng trước, xác nhận thay NCC ở phiếu xin hàng trước vẫn chỉ Manager.
+
+
+## Quyền Thanh toán SePay
+
+Trong **Bảng quyền → Kế toán**, tích/bỏ **Thanh toán SePay – xem và tải giao dịch** cho từng chức vụ. Quyền `page.sepay` điều khiển menu máy tính, nhóm **Tiền** trên điện thoại, trang `#/sepay` và API đọc/tải giao dịch. Người có quyền xem toàn bộ biến động SePay; phạm vi dữ liệu đơn hàng của chức vụ không lọc lại sổ ngân hàng này. Kế toán được giữ quyền mặc định; Manager luôn có quyền.
+
+Chỉ Manager được tìm/chọn đơn, gán khoản thu, tạo/gắn phiếu thu và dùng API đối soát quản trị. Cấp `page.sepay` không cấp các thao tác này, kể cả khi nhân viên có thêm `perm.manage`. Webhook ngân hàng và worker đồng bộ tiếp tục dùng xác thực máy chủ, độc lập với quyền trang.
+
+Sau kiểm thử và các cổng schema, workflow deploy tự chạy `migrations/postgres/20261110020309_sepay_page_permission.sql` rồi `scripts/sql/assert-sepay-page-permission.sql`, phải trả `sepay_page_permission_ready` trước khi thay Edge Function. Không cần chạy SQL tay cho thay đổi này. Migration chỉ cấp quyền xem cho chức vụ Kế toán đã có và lưu dấu khởi tạo trong audit; không đổi số tiền, phiếu thu hoặc RLS. Chạy lại không khôi phục quyền mà Manager đã thu hồi. Cổng deploy kiểm tra dấu khởi tạo, không bắt Kế toán phải luôn được tích. Sau đó cấp/thu quyền qua bảng như các trang khác, không cần migration mới.

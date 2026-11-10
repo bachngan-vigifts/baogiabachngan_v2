@@ -1,5 +1,6 @@
 import { AppError } from "../../../core/errors.ts";
 import { documentDate } from "../../../core/document-number.ts";
+import { can, type PermissionMember } from "../../staff/domain/permissions.ts";
 import {
   normalizePosReference,
   posQrOrderNumbers,
@@ -20,15 +21,7 @@ export const SEPAY_PAGE_STATES = [
   "receipt_issue",
 ] as const;
 export type SepayPageState = (typeof SEPAY_PAGE_STATES)[number];
-export function canViewSepay(member: {
-  role: string;
-  positionId?: string | null;
-}): boolean {
-  return (
-    member.role === "manager" ||
-    (member.role === "employee" && member.positionId === "accounting")
-  );
-}
+export const canViewSepay = (member: PermissionMember): boolean => can(member, 'page.sepay');
 export function sepayPageFilters(q: URLSearchParams, today: string) {
   const date = (s: string): string => {
     try {

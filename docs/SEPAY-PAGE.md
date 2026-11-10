@@ -2,9 +2,11 @@
 
 ## Quyền và phạm vi
 
-Mở **Tiền & công nợ → Thanh toán SePay** (`#/sepay`); điện thoại vào nhóm **Tiền** ở menu chân trang. Manager và Kế toán được xem danh sách, chứng từ gốc và lịch sử xử lý. Chỉ Manager được tìm đơn/HĐKT, xem trước cách ghi nhận và xác nhận. API kiểm tra quyền độc lập với giao diện.
+Mở **Tiền & công nợ → Thanh toán SePay** (`#/sepay`); điện thoại vào nhóm **Tiền** ở menu chân trang. Manager và chức vụ được cấp **Thanh toán SePay – xem và tải giao dịch** (`page.sepay`, Phân quyền → Bảng quyền → Kế toán) được xem danh sách, chứng từ gốc và lịch sử xử lý. Kế toán giữ quyền mặc định; các chức vụ khác cần được cấp riêng. Đây là quyền xem toàn bộ biến động SePay. Chỉ Manager được tìm đơn/HĐKT, xem trước cách ghi nhận và xác nhận. API kiểm tra quyền độc lập với giao diện.
 
 Trang hiển thị giao dịch tiền vào đã được webhook CRM hoặc thao tác tải API lưu trong `sepay_transactions`. Trang không tải sao kê lịch sử trực tiếp từ ngân hàng. Dùng migration và cấu hình tài khoản đã có trong [luồng nhận webhook](SEPAY-RECEIPTS.md); các thay đổi đối soát theo tiền/thời gian cần migration mới bên dưới; không tự cấu hình webhook.
+
+Quyền xem theo chức vụ dùng `page.sepay`; menu, đường dẫn trang và API cùng kiểm tra quyền này. Workflow khởi tạo quyền Kế toán một lần bằng `20261110020309_sepay_page_permission.sql` rồi kiểm tra `assert-sepay-page-permission.sql`, không khôi phục quyền đã bị Manager thu hồi ở lần deploy sau. Đây chỉ là khởi tạo quyền xem, không tự chạy các migration schema/tài chính khác. Chi tiết ở [Phân quyền](PHAN-QUYEN.md#quyền-thanh-toán-sepay).
 
 ## Tự đối soát POS/web theo số tiền và thời gian
 
@@ -48,7 +50,7 @@ Ví dụ kiểm tra chỉ đọc trên dữ liệu thật ngày 09/11: `DH21661`
 
 ## Lấy giao dịch hôm nay qua API SePay
 
-- Manager và Kế toán bấm **Lấy giao dịch hôm nay**. Máy chủ tính ngày theo Việt Nam, chỉ GET API SePay bằng token máy chủ; mở trang hoặc làm mới danh sách không gọi SePay. Bộ lọc chuyển sang đúng ngày vừa tải.
+- Manager và người được cấp `page.sepay` bấm **Lấy giao dịch hôm nay**. Máy chủ tính ngày theo Việt Nam, chỉ GET API SePay bằng token máy chủ; mở trang hoặc làm mới danh sách không gọi SePay. Bộ lọc chuyển sang đúng ngày vừa tải.
 - GitHub Actions Secret `SEPAY_API_TOKEN` được workflow deploy API chuyển vào Supabase Edge Secrets bằng file tạm quyền 600 rồi xoá. Không đưa token vào JS, URL, request của nhân viên hoặc log. Token đọc API độc lập với khoá webhook POS; không thay webhook hay danh sách tài khoản tự ghi thu.
 - API đối chiếu `count_transactions` với danh sách, kiểm tra toàn bộ giao dịch trước khi ghi. Thiếu dữ liệu, dữ liệu vừa thay đổi, lỗi mạng/quyền hoặc phản hồi sai định dạng đều báo lỗi, không giả thành danh sách rỗng. Mỗi lượt giới hạn dưới 1.000 giao dịch và phản hồi tối đa 3 MB; chạm giới hạn thì từ chối đợt nhập, cần phát triển đồng bộ theo đợt trước khi dùng cho khối lượng lớn.
 - Chỉ nhập giao dịch **tiền vào**; hiển thị số dòng không có tiền vào đã bỏ qua. Giao dịch thông thường mới có trạng thái **Cần đối soát**, chưa gắn đơn và chưa tạo phiếu thu. QR web Lock đủ chứng từ website được tự đối soát như trước; quy tắc tiền/thời gian phía trên bổ sung liên kết POS/web khi đủ điều kiện, không tạo phiếu thu CRM mới. Ghi thu vẫn phải qua quy trình đối soát hiện có.

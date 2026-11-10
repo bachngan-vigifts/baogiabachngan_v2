@@ -563,6 +563,60 @@ try {
     pass: true,
   });
   await emp.context.close();
+  // The permission matrix controls both the API and desktop/mobile navigation.
+  const employee=(await f.call('/me',f.emp)).data.user;
+  const permissionData=(await f.call('/permissions',f.mgr)).data;
+  const position=permissionData.positions.find(p=>p.id===employee.positionId);
+  const definition=permissionData.catalog.find(p=>p.key==='page.sepay');
+  assert.ok(definition);
+  const manager=await pageFor(f.mgr,1440,'#/permissions');
+  const region=manager.p.locator('#view-permissions');
+  const accessBox=region.getByRole('checkbox',{name:definition.label+' – '+position.name,exact:true});
+  await accessBox.waitFor();
+  assert.equal(await accessBox.isChecked(),false);
+  const managerPosition=permissionData.positions.find(p=>p.id==='manager');
+  const managerBox=region.getByRole('checkbox',{name:definition.label+' – '+managerPosition.name,exact:true});
+  assert.equal(await managerBox.isChecked(),true);
+  assert.equal(await managerBox.isDisabled(),true);
+  async function savePermission(){
+    const response=manager.p.waitForResponse(r=>r.url().includes('/permissions/positions/'+position.id)&&r.request().method()==='PUT');
+    await region.getByRole('button',{name:/^Lưu thay đổi/}).click();
+    assert.equal((await response).status(),200);
+    await manager.p.waitForFunction(()=>Array.from(document.querySelectorAll('#view-permissions button')).some(b=>b.textContent==='Lưu thay đổi'&&b.disabled));
+  }
+  await accessBox.check();await savePermission();
+  await accessBox.scrollIntoViewIfNeeded();
+  await manager.p.screenshot({path:out+'/sepay-permission-matrix.png',fullPage:true});
+  const record=await f.incoming('Khoản kiểm thử quyền xem SePay',100000,{id:'permission-browser'});
+  for(const width of [1440,390]){
+    const view=await pageFor(f.emp,width,'#/sepay?q=permission-browser');
+    await view.p.locator('[data-list] table').waitFor();
+    assert.equal(await view.p.locator('a.nav[data-nav=sepay]').evaluate(el=>el.hidden),false);
+    await detail(view.p,record.id);
+    assert.equal(await view.p.locator('[data-order-search]').count(),0,'view permission cannot expose receipt assignment');
+    assert.equal(await view.p.locator('[data-confirm]').count(),0);
+    await view.p.locator('.sp-readonly').filter({hasText:'Chỉ Manager'}).waitFor();
+    if(width===390){
+      await view.p.locator('.crm-mobile-nav button').filter({hasText:'Tiền'}).click();
+      await view.p.locator('.crm-nav-sheet [data-mobile-nav=sepay]').waitFor({state:'visible'});
+      await view.p.locator('.crm-nav-sheet .icon-btn').click();
+    }
+    await view.p.screenshot({path:out+'/sepay-permission-viewer-'+width+'.png',fullPage:true});
+    assert.equal(await view.p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+    assert.deepEqual(view.errors,[]);
+    await view.context.close();
+  }
+  await accessBox.uncheck();await savePermission();
+  const revokedView=await pageFor(f.emp,390,'#/sepay');
+  assert.ok(!revokedView.p.url().includes('#/sepay'));
+  assert.equal(revokedView.calls.length,0);
+  assert.equal(revokedView.assets.length,0);
+  assert.equal(await revokedView.p.locator('a.nav[data-nav=sepay]').evaluate(el=>el.hidden),true);
+  assert.deepEqual(revokedView.errors,[]);
+  await revokedView.context.close();
+  assert.deepEqual(manager.errors,[]);
+  await manager.context.close();
+  results.push({case:'Manager toggles SePay in the real permissions matrix: granted Sale sees PC/mobile menu and read-only page; revocation hides/blocks it without granting confirmation',pass:true});
   await writeFile(
     out + "/browser-results.json",
     JSON.stringify(results, null, 2),
