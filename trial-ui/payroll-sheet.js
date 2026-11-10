@@ -1,7 +1,7 @@
 // A single grouped spreadsheet, matching the company's payroll reference layout.
 export const PAYROLL_SHEET_GROUPS = [
   { label:'NĂNG LỰC', tone:'capacity', columns:[{label:'Hệ số cũ',read:'previousCapacityCoef'}, {label:'Hệ số mới',section:'profile',key:'capacityCoef'}, {label:'Tiền năng lực / thâm niên',line:'capacity'}] },
-  { label:'KPIs', tone:'kpi', columns:[{label:'Trách nhiệm',section:'profile',key:'responsibility'}, {label:'KPI CV (%)',section:'inputs',key:'kpiOverride',scale:100}, {label:'DS tháng',section:'inputs',key:'revenue'}, {label:'Thưởng',section:'adjustments',key:'bonus',bonus:true}] },
+  { label:'KPIs', tone:'kpi', columns:[{label:'Trách nhiệm',section:'profile',key:'responsibility'}, {label:'KPI CV (%)',section:'inputs',key:'kpiOverride',scale:100}, {label:'DS tháng',section:'inputs',key:'revenue'}, {label:'Thưởng',section:'adjustments',key:'bonus',bonus:true}, {label:'Thưởng công việc Kho',line:'warehouseBonus'}] },
   { label:'PHỤ CẤP', tone:'allowance', columns:[{label:'Cơm + xăng',line:'meal'}, {label:'Điện thoại',section:'profile',key:'phoneAllowance'}, {label:'Công tác',section:'adjustments',key:'allowance'}, {label:'Giờ tăng ca',section:'inputs',key:'overtimeHours'}, {label:'Tiền tăng ca',line:'overtime'}] },
   { label:'CÁC KHOẢN TRỪ', tone:'deduction', columns:[{label:'BHXH',section:'profile',key:'insurance'}, {label:'BHYT',section:'inputs',key:'healthInsurance'}, {label:'TNCN',section:'inputs',key:'incomeTax'}, {label:'Vi phạm',section:'adjustments',key:'deduction'}, {label:'Tạm ứng điện thoại',section:'adjustments',key:'phone_advance'}, {label:'Tạm ứng',section:'adjustments',key:'advance'}] },
 ];

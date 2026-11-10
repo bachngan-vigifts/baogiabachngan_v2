@@ -46,3 +46,8 @@ test('empty month still exports headers and zero totals; missing historical snap
  data.rows=[{...employee('Old','confirmed'),payslip:{snapshotUnavailable:true}}];
  await assert.rejects(buildPayrollSheet(data),/thiếu bản chụp/);
 });
+
+test('approved warehouse reward is a read-only column with exact saved amount in export and totals',async()=>{
+ const data:any=board();data.rows=data.rows.slice(0,1);data.rows[0].payslip.income.push({key:'warehouseBonus',amount:800000});
+ const ws=(await buildPayrollSheet(data)).worksheets[0];assert.equal(ws.getCell(5,col('warehouseBonus')).value,800000);assert.equal(ws.getCell(6,col('warehouseBonus')).value,800000);
+});

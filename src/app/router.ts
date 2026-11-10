@@ -1,3 +1,4 @@
+import {warehouseBonusOf,assertWarehousePayrollOpen} from './warehouse-payroll.ts';
 import {catalogueCustomerLinks,registerCatalogueCustomers,reassignCatalogueCustomer} from './catalogue-customer-links.ts';
 import {registerHomeStockValue} from './home-stock-value.ts';
 import {registerWarehouseWorkspace,assertWarehouseTaskMutable} from '../modules/warehouse-workspace/routes.ts';
@@ -165,11 +166,11 @@ export function createAppRouter() {
   registerProductDetailRoutes(router);
   registerCustomerDuplicateRoutes(router);
   registerCareRoutes(router,{assertKpiOpen:assertActivityKpiOpen,quotes:activityQuotes});
-  registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf,teamRevenueOf:teamPayrollRevenues,weeklyReportOf:weeklyPointsFor,
+  registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf,teamRevenueOf:teamPayrollRevenues,warehouseBonusOf,weeklyReportOf:weeklyPointsFor,
     onSelfBankChange: (env, m) => notifyMany(env, 'managers', { eventType: 'hr-bank-changed', title: 'Đổi tài khoản nhận lương', body: `${m.name} vừa tự cập nhật tài khoản nhận lương. Kiểm tra trước khi chuyển lương.`, url: `/index.html#/members/${encodeURIComponent(m.id)}`, actorId: m.id }) }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
   registerAdmsRoutes(router);
   registerSynctimeRoutes(router);
-  registerStaffHubRoutes(router,{crmFactsOf,teamRevenueOf:teamPayrollRevenues,weeklyReportOf:weeklyPointsFor});
+  registerStaffHubRoutes(router,{crmFactsOf,teamRevenueOf:teamPayrollRevenues,warehouseBonusOf,weeklyReportOf:weeklyPointsFor});
   registerTeamPayrollSources(router);
   registerFeedbackRoutes(router); // góp ý phát triển phần mềm (mọi nhân viên)
   registerProfitRoutes(router, { staffCostOf, lineCostFallbackOf }); // phân tích lợi nhuận (chỉ Manager); chi phí nhân sự từ bảng lương; giá vốn bổ sung từ đơn NCC / công thức thương hiệu
@@ -186,7 +187,7 @@ export function createAppRouter() {
   registerNavigationCounts(router);
   registerWarehouseWork(router);
   registerHomeStockValue(router);
-  registerWarehouseWorkspace(router);
+  registerWarehouseWorkspace(router,{assertPayrollOpen:assertWarehousePayrollOpen});
   registerInventoryRoutes(router, { heldQuantitiesOf: stockLookupHolds });
   registerStockIntegrityRoutes(router);
   registerTransferRoutes(router);
