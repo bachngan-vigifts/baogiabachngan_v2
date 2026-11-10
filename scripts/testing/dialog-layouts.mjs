@@ -29,6 +29,15 @@ try{for(const width of[1440,1024,390]){
  // The POS uses the same customer fields with its own form shell.
  await page.evaluate(async()=>{const{customerFormFields}=await import('/customer-form-fields.js');const d=document.createElement('dialog');d.className='pos-modal pos-form-modal pos-customer-create';d.innerHTML='<div class="pos-modal-content"><h2>Khách mới – dùng ngay</h2><button class="icon-btn pos-modal-close">×</button><form><div class="pos-form-actions"><button type="button" class="btn secondary">Huỷ</button><button class="btn primary">Lưu & chọn khách</button></div></form></div>';d.querySelector('form').prepend(customerFormFields().root);document.body.append(d);d.showModal();});
  await audit(page,'.pos-form-modal[open]','pos-customer',width);
+ await page.evaluate(async()=>{const {initFeedback}=await import('/feedback.js');initFeedback({root:document.createElement('section'),api:async()=>({}),toast:()=>{},esc:String,go:()=>{}}).openNew();});
+ await audit(page,'.fb-dialog[open]','feedback-form',width);
+ await page.evaluate(async()=>{const {reviewPurchaseCosts}=await import('/purchase-cost-review.js');void reviewPurchaseCosts(Array.from({length:20},(_,i)=>({sku:'SKU-'+i,name:'Bộ trà Jasmine kiểm thử '+i,qty:2,brand:'MINH LONG I',price:1000000})));});
+ await audit(page,'.purchase-cost-dialog[open]','purchase-cost-review',width);
+ await page.evaluate(async()=>{const {recordApi,openSpeedDialog}=await import('/speed-log.js');for(let i=0;i<26;i++)recordApi({path:'/kiem-tra-'+String.fromCharCode(65+i),ms:200,status:200});openSpeedDialog();});
+ await audit(page,'.speed-dialog[open]','speed-details',width);
+ await page.evaluate(async()=>{const {initCare}=await import('/care.js');await initCare({root:document.createElement('section'),api:async p=>p==='/care/config'?{types:[{key:'call',label:'Gọi điện'},{key:'meet',label:'Gặp khách'}],results:[{key:'consulting',label:'Tư vấn'},{key:'ordered',label:'Đã đặt hàng'}],reminds:[{key:'1d',label:'1 ngày'},{key:'1h',label:'1 giờ'}]}:{customers:[]},toast:()=>{},confirmBox:async()=>false,isManager:()=>false,userId:()=> 'emp'}).openForm();});
+ if(width>=900)assert.equal(await page.locator('.care-dialog .care-form').evaluate(n=>getComputedStyle(n).gridTemplateColumns.split(' ').length),3);
+ await audit(page,'.care-dialog[open]','care-form',width);
  assert.deepEqual(errors,[]);await c.close();
  }await writeFile(out+'/results.json',JSON.stringify(results,null,2));console.log(`PASS ${results.length} dialog/viewport cases; screenshots: ${out}`);
 }finally{await browser.close();await new Promise(r=>server.close(r));}

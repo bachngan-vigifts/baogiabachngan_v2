@@ -36,6 +36,9 @@ try{
    if(width<900)await control.evaluate(n=>n.click());else await control.click();
    results.push(await auditDialog(page,'dialog.pr-params[open]',name,width,out));
   }
+  const revenue=page.locator('#payroll-board [data-act="revenue-targets"]');
+  await revenue.evaluate(n=>n.click());
+  results.push(await auditDialog(page,'dialog.revenue-targets-dialog[open]','annual-targets',width,out));
   assert.deepEqual(errors,[]);await context.close();
  }
  await writeFile(out+'/results.json',JSON.stringify(results,null,2));

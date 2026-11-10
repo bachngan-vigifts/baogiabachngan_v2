@@ -45,6 +45,10 @@
   .landscape-dialog .landscape-dialog-body.form-grid > :not(label) { grid-column:1 / -1; }
   .landscape-dialog .form-grid.cols-2 > .span-2 { grid-column:1 / -1; }
   .landscape-dialog .form-grid > p { grid-column:1 / -1; }
+  .landscape-dialog .care-form { grid-template-columns:repeat(3,minmax(0,1fr)); align-content:start; }
+  .landscape-dialog .care-form > p,
+  .landscape-dialog .care-form > label:has(textarea),
+  .landscape-dialog .care-form > .care-field:has(.care-seg) { grid-column:1 / -1; }
   .landscape-dialog label { min-width:0; }
   .landscape-dialog .product-editor-layout { grid-template-columns:minmax(0,2fr) minmax(0,1fr); align-content:start; }
   .landscape-dialog .product-editor-info.form-grid.cols-2 { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -54,7 +58,7 @@
   .landscape-dialog .product-editor-layout > p { grid-column:1 / -1; }
 }
 @media (max-width:899px) {
-  .pos-form-modal.landscape-dialog .modal-head { padding:0; }
+  .pos-form-modal.landscape-dialog .modal-head { padding:0 40px 0 0; }
   .pos-form-modal.landscape-dialog .modal-body { padding:0; }
   .pos-form-modal.landscape-dialog .modal-foot { padding:14px 0 0; }
 }
