@@ -1,3 +1,4 @@
+import {warehouseAvailability,warehouseDispatchLock,assertWarehouseFree,dispatchWarehouseQueue} from './dispatch.ts';
 import {stockTransfers} from '../inventory/schema.ts';
 import {incomingShipments} from '../suppliers/schema.ts';
 import {deliveries,salesOrders} from '../sales/schema.ts';
@@ -56,9 +57,6 @@ export async function assertWarehouseTaskMutable(db:Db,t:typeof tasks.$inferSele
  const [r]=await db.select({id:runs.taskId}).from(runs).where(eq(runs.taskId,t.id)).limit(1);
  if(r)fail('Việc đã theo dõi hiệu suất Kho. Thao tác tại Kho của tôi; Manager hủy việc thủ công tại đó để giữ lịch sử.',409);
 }
-async function workingJob(db:Db,id:string){
- return (await db.select({id:runs.taskId}).from(runs).innerJoin(tasks,eq(tasks.id,runs.taskId)).where(and(eq(runs.memberId,id),eq(runs.stage,'working'),inArray(tasks.status,['todo','in_progress']))).limit(1)).length>0;
-}
 export function registerWarehouseWorkspace(router:Router<StaffEnv>){
  router.get('/warehouse-workspace',async c=>{
   const m=access(c),p=c.url.searchParams,now=new Date().toISOString(),today=vietnamDate().iso,month=p.get('month')||today.slice(0,7);
@@ -82,54 +80,73 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
   const [closed]=id?await c.env.db.select().from(months).where(and(eq(months.memberId,id),eq(months.month,month))):[];
   const report=closed?{...parseJson<Record<string,unknown>>(closed.snapshot,{}),locked:true,approvedAt:closed.approvedAt}:id?{...await liveReport(c.env.db,id,month,now),locked:false}:null;
   const publicReport=report&&Object.fromEntries(Object.entries(report).filter(([key])=>key!=='tasks'));
-  return json({now,today,month,scope:filter,memberId:id,manager:m.role==='manager',people,config:config?{...config,calendar:parseJson(config.calendar,null)}:null,counts,report:publicReport,page,hasMore:rows.length>30,rows:rows.slice(0,30).map(({task:t,run:r})=>({id:t.id,title:t.title,description:t.description,source:t.source,link:t.link,taskStatus:t.status,taskRevision:t.revision,assigneeId:t.assigneeId,team:t.assigneePosition,dueAt:r?.dueAt||deadline(t),priority:t.priority,sourceManaged:!!t.autoKey,run:r?{...r,waits:parseJson<Wait[]>(r.waits,[]),elapsed:elapsed(r,now)}:null}))});
+  const roster=await warehouseAvailability(c.env.db,now);
+  const [waiting]=await c.env.db.select({count:sql<number>`count(*)`.mapWith(Number)}).from(runs).innerJoin(tasks,eq(tasks.id,runs.taskId)).where(and(eq(runs.stage,'todo'),isNull(runs.offeredAt),sql`${runs.queuedAt} is not null`,sql`${tasks.status} not in ('done','cancelled')`));
+  return json({availability:m.role==='manager'?roster:roster.filter(p=>p.id===m.id),waitingDispatch:m.role==='manager'?waiting?.count||0:0,now,today,month,scope:filter,memberId:id,manager:m.role==='manager',people,config:config?{...config,calendar:parseJson(config.calendar,null)}:null,counts,report:publicReport,page,hasMore:rows.length>30,rows:rows.slice(0,30).map(({task:t,run:r})=>({id:t.id,title:t.title,description:t.description,source:t.source,link:t.link,taskStatus:t.status,taskRevision:t.revision,assigneeId:t.assigneeId,team:t.assigneePosition,dueAt:r?.dueAt||deadline(t),priority:t.priority,sourceManaged:!!t.autoKey,run:r?{...r,waits:parseJson<Wait[]>(r.waits,[]),elapsed:elapsed(r,now)}:null}))});
  },'business');
  router.put('/warehouse-workspace/settings',async c=>{
   const m=access(c);if(m.role!=='manager')fail('Chỉ Manager cài đặt định mức.',403);
   const b=await readJson(c.req,8000);if(!validCalendar(b.calendar))fail('Ca làm / giờ nghỉ / ngày làm không hợp lệ.');
   if(!text(b.reason))fail('Nhập lý do cài đặt.');const budget=b.bonusBudget==null||b.bonusBudget===''?null:Number(b.bonusBudget);if(budget!==null&&(!Number.isFinite(budget)||budget<0||budget>1e9))fail('Quỹ thưởng không hợp lệ.');
-  await c.env.db.transaction(async tx=>{const db=tx as unknown as Db;await db.select().from(employees).where(eq(employees.id,m.id)).for('update');const [old]=await db.select().from(settings).where(eq(settings.id,'default'));
+  if(b.autoDispatch!==undefined&&typeof b.autoDispatch!=='boolean')fail('Chế độ tự giao việc không hợp lệ.');const autoFlag=typeof b.autoDispatch==='boolean'?b.autoDispatch:undefined;
+  await c.env.db.transaction(async tx=>{const db=tx as unknown as Db;await warehouseDispatchLock(db);await db.select().from(employees).where(eq(employees.id,m.id)).for('update');const [old]=await db.select().from(settings).where(eq(settings.id,'default'));
    if(Number(b.revision||0)!==(old?.revision||0))fail('Cài đặt vừa thay đổi. Tải lại trước khi lưu.',409);
-   await db.insert(settings).values({id:'default',createdAt:new Date().toISOString(),calendar:JSON.stringify(b.calendar),bonusBudget:budget,updatedBy:m.id,updatedAt:new Date().toISOString()}).onConflictDoUpdate({target:settings.id,set:{calendar:JSON.stringify(b.calendar),bonusBudget:budget,updatedBy:m.id,updatedAt:new Date().toISOString(),revision:sql`${settings.revision}+1`}});
+   await db.insert(settings).values({id:'default',createdAt:new Date().toISOString(),calendar:JSON.stringify(b.calendar),autoDispatch:autoFlag??old?.autoDispatch??true,bonusBudget:budget,updatedBy:m.id,updatedAt:new Date().toISOString()}).onConflictDoUpdate({target:settings.id,set:{calendar:JSON.stringify(b.calendar),autoDispatch:autoFlag??old?.autoDispatch??true,bonusBudget:budget,updatedBy:m.id,updatedAt:new Date().toISOString(),revision:sql`${settings.revision}+1`}});
+   await dispatchWarehouseQueue(db,new Date().toISOString());
   });return json({ok:true});
+ },'business');
+ router.post('/warehouse-workspace/dispatch-queue',async c=>{
+  const m=access(c),b=await readJson(c.req,1000);if(b.force!==undefined&&typeof b.force!=='boolean')fail('Thao tác không hợp lệ.');if(b.force&&m.role!=='manager')fail('Chỉ Manager giao việc thủ công.',403);
+  const count=await c.env.db.transaction(async tx=>{const db=tx as unknown as Db;await warehouseDispatchLock(db);return (await dispatchWarehouseQueue(db,new Date().toISOString(),b.force===true)).length;});return json({ok:true,count});
  },'business');
  router.post('/warehouse-workspace/:id/action',async c=>{
   const m=access(c),b=await readJson(c.req,12000),action=text(b.action,30),now=new Date().toISOString();
   const result=await c.env.db.transaction(async tx=>{
-   const db=tx as unknown as Db,[initial]=await db.select({task:tasks,run:runs}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(eq(tasks.id,c.params.id!));if(!initial)fail('Không tìm thấy việc.',404);
-   const target=action==='configure'?text(b.memberId,100):initial.run?.memberId||initial.task.assigneeId||m.id;
+   const db=tx as unknown as Db;await warehouseDispatchLock(db);const [initial]=await db.select({task:tasks,run:runs}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(eq(tasks.id,c.params.id!));if(!initial)fail('Không tìm thấy việc.',404);
+   const target=['configure','reoffer'].includes(action)?(b.memberId==='auto'?'':text(b.memberId,100)):initial.run?.memberId||initial.task.assigneeId||(action==='cancel'&&initial.run&&m.role==='manager'?'':m.id);
    if(m.role!=='manager'&&target!==m.id)fail('Không được sửa việc người khác.',403);
-   if(m.role!=='manager'&&['configure','confirm','reject','review-wait','cancel'].includes(action))fail('Chỉ Manager xác nhận kết quả.',403);
-   await lockWorker(db,target);
+   if(m.role!=='manager'&&['configure','reoffer','confirm','reject','review-wait','cancel'].includes(action))fail('Chỉ Manager xác nhận kết quả.',403);
+   if(target)await lockWorker(db,target);
    const [t]=await db.select().from(tasks).where(eq(tasks.id,c.params.id!)).for('update');if(!t)fail('Không tìm thấy việc.',404);
    const [r]=await db.select().from(runs).where(eq(runs.taskId,t.id));
    if(t.status==='cancelled')fail('Việc đã hủy.',409);
-   if(!r&&t.assigneePosition!=='warehouse'&&t.assigneeId!==target)fail('Công việc không thuộc nhân viên Kho được chọn.',404);
-   if(r?.memberId&&r.memberId!==target)fail('Người phụ trách đã thay đổi. Tải lại.',409);
-   const due=r?.dueAt||deadline(t);if(due&&action==='configure')await assertOpen(db,target,vietnamMonth(due));
+   if(!['configure','reoffer'].includes(action)&&!r&&t.assigneePosition!=='warehouse'&&t.assigneeId!==target)fail('Công việc không thuộc nhân viên Kho được chọn.',404);
+   if(!['configure','reoffer'].includes(action)&&r?.memberId&&r.memberId!==target)fail('Người phụ trách đã thay đổi. Tải lại.',409);
+   const due=r?.dueAt||deadline(t);if(due&&['configure','reoffer'].includes(action)&&r?.memberId)await assertOpen(db,r.memberId,vietnamMonth(due));
    if(action==='claim'){
     if(r||t.assigneeId||t.assigneePosition!=='warehouse'||t.status!=='todo')fail('Việc đã được nhận hoặc thay đổi.',409);
     if(Number(b.taskRevision)!==t.revision)fail('Việc vừa thay đổi. Tải lại.',409);
+    await assertWarehouseFree(db,target);
     await db.update(tasks).set({assigneeId:target,assigneePosition:null,revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));return {ok:true};
    }
    if(action==='configure'){
-    if(t.status!=='todo'||r&&r.stage!=='todo')fail('Chỉ cấu hình trước khi bắt đầu.',409);
+    if(!r&&t.assigneePosition!=='warehouse'&&(!t.assigneeId||!(await db.select({id:employees.id}).from(employees).where(and(eq(employees.id,t.assigneeId),eq(employees.positionId,'warehouse'),eq(employees.role,'employee'))).limit(1)).length))fail('Chỉ giao định mức cho công việc Kho.',404);
+    if(t.status!=='todo'||r&&(r.stage!=='todo'||!!r.startedAt))fail('Chỉ cấu hình trước khi bắt đầu.',409);
     if(!due)fail('Đặt hạn công việc trên phiếu Công việc trước khi cấu hình.');
     if(!KINDS.includes(b.kind as never))fail('Loại việc không hợp lệ.');
     if(!text(b.note))fail('Nhập căn cứ định mức.');
     if(Number(b.revision||0)!==(r?.revision||0)||Number(b.taskRevision)!==t.revision)fail('Việc vừa thay đổi. Tải lại.',409);
     const [config]=await db.select().from(settings).where(eq(settings.id,'default'));if(!config||!validCalendar(parseJson(config.calendar,null)))fail('Cài đặt ca làm trước khi giao định mức.');
-    const data={taskId:t.id,memberId:target,kind:b.kind as typeof KINDS[number],weight:b.weight==null||b.weight===''?1:positive(b.weight,10000),standardMinutes:positive(b.standardMinutes,100000),calendar:config.calendar,dueAt:due,evidence:'',reviewNote:text(b.note),updatedAt:now};
+    if(target){await assertWarehouseFree(db,target,t.id);await assertOpen(db,target,vietnamMonth(due));}
+    const data={taskId:t.id,memberId:target||null,queuedAt:r?.queuedAt||now,offeredAt:target?now:null,kind:b.kind as typeof KINDS[number],weight:b.weight==null||b.weight===''?1:positive(b.weight,10000),standardMinutes:positive(b.standardMinutes,100000),calendar:config.calendar,dueAt:due,evidence:'',reviewNote:text(b.note),updatedAt:now};
     await db.insert(runs).values(data).onConflictDoUpdate({target:runs.taskId,set:{...data,revision:(r?.revision||0)+1}});
-    await db.update(tasks).set({assigneeId:target,assigneePosition:null,revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));return {ok:true};
+    await db.update(tasks).set({assigneeId:target||null,assigneePosition:target?null:'warehouse',revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));await dispatchWarehouseQueue(db,now);return {ok:true};
    }
    if(!r)fail('Manager cần duyệt định mức và hạn trước khi bắt đầu.',409);
    if(Number(b.revision)!==r.revision)fail('Công việc vừa thay đổi. Tải lại trước khi thao tác.',409);
+   if(!r.memberId&&action!=='cancel')fail('Việc đang chờ phân công. Chờ được giao trước khi nhận.',409);
+   if(action==='reoffer'){
+    if(r.stage!=='todo'||!r.offeredAt||!target||target===r.memberId||text(b.note).length<3)fail('Chỉ giao lại việc chờ nhận cho người rảnh khác và ghi lý do.',409);
+    await assertWarehouseFree(db,target,t.id);await assertOpen(db,target,vietnamMonth(r.dueAt));
+    await db.update(runs).set({memberId:target,offeredAt:now,updatedAt:now,revision:r.revision+1,reviewNote:text(b.note)}).where(eq(runs.taskId,t.id));
+    await db.update(tasks).set({assigneeId:target,assigneePosition:null,revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));await dispatchWarehouseQueue(db,now);return {ok:true};
+   }
    const patch:Partial<typeof runs.$inferInsert>={updatedAt:now,revision:r.revision+1};const waits=parseJson<Wait[]>(r.waits,[]);
    if(action==='start'){
     if(r.stage!=='todo'||t.status==='done')fail('Không thể bắt đầu việc này.',409);
-    if(await workingJob(db,target))fail('Hoàn thành hoặc báo vướng mắc việc đang làm trước.',409);
-    patch.stage='working';patch.startedAt=now;
+    await assertWarehouseFree(db,target,t.id);
+    if(r.startedAt&&r.queuedAt){waits.push({id:crypto.randomUUID(),start:r.queuedAt,end:r.offeredAt||now,reason:'Chờ lượt làm lại',decision:'approved',reviewNote:'Hệ thống xếp lại hàng chờ',reviewedBy:m.id});patch.waits=JSON.stringify(waits);}
+    patch.stage='working';patch.startedAt=r.startedAt||now;patch.offeredAt=r.offeredAt||now;
     await db.update(tasks).set({status:'in_progress',startedAt:t.startedAt||now,revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));
    }else if(action==='cancel'){
     if(t.autoKey)fail('Hủy trên phiếu nghiệp vụ gốc, không hủy bước kho từ bảng chấm điểm.',409);
@@ -140,7 +157,7 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
     waits.push({id:crypto.randomUUID(),start:now,end:null,reason:text(b.note),decision:'pending'});patch.waits=JSON.stringify(waits);patch.stage='blocked';
    }else if(action==='resume'){
     if(r.stage!=='blocked')fail('Việc không đang chờ.',409);
-    if(await workingJob(db,target))fail('Có việc khác đang làm.',409);
+    await assertWarehouseFree(db,target,t.id);
     const wait=waits.find(w=>!w.end);if(!wait)fail('Khoảng chờ không hợp lệ.',409);wait.end=now;patch.waits=JSON.stringify(waits);patch.stage='working';
    }else if(action==='submit'){
     if(r.stage!=='working'||text(b.note).length<3)fail('Nhập kết quả / bằng chứng trước khi gửi hoàn thành.');
@@ -150,9 +167,9 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
     if(!['approved','rejected'].includes(String(b.decision))||!text(b.note))fail('Chọn kết quả và nhập lý do.');
     wait.decision=b.decision as Wait['decision'];wait.reviewedBy=m.id;wait.reviewNote=text(b.note);patch.waits=JSON.stringify(waits);
    }else if(action==='reject'){
-    if(r.stage!=='submitted'||!text(b.note))fail('Nhập lý do yêu cầu làm lại.');patch.stage='working';patch.submittedAt=null;patch.reviewNote=text(b.note);patch.quality='error';
+    if(r.stage!=='submitted'||!text(b.note))fail('Nhập lý do yêu cầu làm lại.');patch.stage='todo';patch.offeredAt=null;patch.queuedAt=now;patch.submittedAt=null;patch.reviewNote=text(b.note);patch.quality='error';
     waits.push({id:crypto.randomUUID(),start:r.submittedAt!,end:now,reason:'Chờ xác nhận kết quả trước khi yêu cầu làm lại',decision:'approved',reviewedBy:m.id,reviewNote:text(b.note)});patch.waits=JSON.stringify(waits);
-    if(await workingJob(db,target))fail('Nhân viên có việc khác đang làm. Xử lý việc đó trước.',409);
+
    }else if(action==='confirm'){
     if(r.stage!=='submitted'||!['clean','error'].includes(String(b.quality))||!text(b.note))fail('Chọn chất lượng và nhập nhận xét.');
     if(waits.some(w=>w.decision==='pending'))fail('Duyệt các khoảng chờ trước khi xác nhận kết quả.',409);
@@ -161,7 +178,7 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
     patch.stage='confirmed';patch.confirmedAt=now;patch.confirmedBy=m.id;patch.quality=r.quality==='error'?'error':String(b.quality);patch.reviewNote=text(b.note);
     if(!t.autoKey)await db.update(tasks).set({status:'done',completedAt:r.submittedAt,completedBy:target,revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));
    }else fail('Thao tác không hợp lệ.');
-   await db.update(runs).set(patch).where(eq(runs.taskId,t.id));return {ok:true};
+   await db.update(runs).set(patch).where(eq(runs.taskId,t.id));await dispatchWarehouseQueue(db,now);return {ok:true};
   });return json(result);
  },'business');
  router.post('/warehouse-workspace/approve-month',async c=>{

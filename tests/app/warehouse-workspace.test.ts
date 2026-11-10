@@ -18,7 +18,7 @@ test('warehouse workspace restricts data and settings, configures real tasks, se
  check(await f.call('/warehouse-workspace/settings',c.mgr,'PUT',{calendar,bonusBudget:1000000,revision:0,reason:'Thử định mức'}));
  check(await f.call('/warehouse-workspace/settings',c.mgr,'PUT',{calendar,revision:0,reason:'Cũ'}),409);
  check(await f.act('ww-one',c.wh,{action:'configure'}),403);
- for(const id of ['ww-one','ww-two'])check(await f.act(id,c.mgr,{action:'configure',memberId:'wh',taskRevision:1,revision:0,kind:'picking',weight:2,standardMinutes:30,note:'Định mức được duyệt'}));
+ for(const id of ['ww-one','ww-two'])check(await f.act(id,c.mgr,{action:'configure',memberId:id==='ww-one'?'wh':'auto',taskRevision:1,revision:0,kind:'picking',weight:2,standardMinutes:30,note:'Định mức được duyệt'}));
  const row=async(id:string)=>(await f.db.select().from(runs).where(eq(runs.taskId,id)))[0]!;
  check(await f.act('ww-one',c.wh,{action:'start',revision:(await row('ww-one')).revision}));
  check(await f.act('ww-two',c.wh,{action:'start',revision:(await row('ww-two')).revision}),409);
@@ -56,11 +56,11 @@ test('warehouse work cannot complete an auto source document, and rejected work 
  await f.db.insert(tasks).values({id:'ww-source',title:'Nhận hàng nguồn',source:'purchase',autoKey:'po-receive:ww-source',assigneeId:'wh',dueDate:'2026-11-09',createdAt:at,updatedAt:at});
  const row=async(id:string)=>(await f.db.select().from(runs).where(eq(runs.taskId,id)))[0]!;
  const act=async(id:string,action:string,body:any={})=>f.act(id,c.mgr,{action,revision:(await row(id)).revision,...body});
- for(const id of ['ww-source','ww-one'])check(await f.act(id,c.mgr,{action:'configure',memberId:'wh',taskRevision:1,revision:0,kind:'manual',weight:1,standardMinutes:30,note:'Căn cứ định mức'}));
+ for(const id of ['ww-source','ww-one'])check(await f.act(id,c.mgr,{action:'configure',memberId:'auto',taskRevision:1,revision:0,kind:'manual',weight:1,standardMinutes:30,note:'Căn cứ định mức'}));
  check(await act('ww-source','start'));check(await act('ww-source','submit',{note:'Đã đối soát phiếu'}));check(await act('ww-source','confirm',{quality:'clean',note:'Đủ chứng từ'}),409);
  assert.equal((await f.db.select().from(tasks).where(eq(tasks.id,'ww-source')))[0]!.status,'in_progress');
  check(await act('ww-one','start'));mock.timers.tick(600000);check(await act('ww-one','submit',{note:'Kết quả lần đầu'}));mock.timers.tick(1200000);
- check(await act('ww-one','reject',{note:'Cần kiểm lại một dòng hàng'}));mock.timers.tick(300000);check(await act('ww-one','submit',{note:'Đã sửa dòng hàng và bàn giao'}));
+ check(await act('ww-one','reject',{note:'Cần kiểm lại một dòng hàng'}));check(await act('ww-one','start'));mock.timers.tick(300000);check(await act('ww-one','submit',{note:'Đã sửa dòng hàng và bàn giao'}));
  check(await act('ww-one','confirm',{quality:'clean',note:'Đã sửa, ghi nhận lỗi lần đầu'}));const r=await row('ww-one');assert.equal(r.quality,'error');const {elapsed}=await import('../../src/modules/warehouse-workspace/domain.ts');assert.equal(elapsed(r,new Date().toISOString())?.minutes,15);
 });
 test('tracked warehouse work cannot be deleted or edited through legacy Tasks and Manager cancellation preserves its record',async()=>{
@@ -122,11 +122,11 @@ test('Manager employee filter excludes shared and other employee work, team mode
 test('warehouse tasks default to one workload point when omitted or blank, without inventing standard minutes or changing existing weights',async()=>{
  const f=await setup(),c=f.cookies;check(await f.call('/warehouse-workspace/settings',c.mgr,'PUT',{calendar,revision:0,reason:'Ca thử điểm mặc định'}));
  const configure={action:'configure',memberId:'wh',taskRevision:1,revision:0,kind:'picking',standardMinutes:30,note:'Thời gian theo thao tác thực tế'};
- check(await f.act('ww-one',c.mgr,configure));check(await f.act('ww-two',c.mgr,{...configure,weight:''}));
+ check(await f.act('ww-one',c.mgr,configure));check(await f.act('ww-two',c.mgr,{...configure,memberId:'auto',weight:''}));
  const row=async(id:string)=>(await f.db.select().from(runs).where(eq(runs.taskId,id)))[0]!;
  assert.equal((await row('ww-one')).weight,1);assert.equal((await row('ww-two')).weight,1);
  check(await f.act('ww-one',c.mgr,{...configure,taskRevision:2,revision:1,weight:2}));assert.equal((await row('ww-one')).weight,2,'an explicit existing weight is retained until the Manager changes it');
- for(const weight of [0,-1,'bad',10001])check(await f.act('ww-two',c.mgr,{...configure,taskRevision:2,revision:1,weight}),400);
- check(await f.act('ww-two',c.mgr,{...configure,taskRevision:2,revision:1,standardMinutes:undefined}),400);
+ for(const weight of [0,-1,'bad',10001])check(await f.act('ww-two',c.mgr,{...configure,memberId:'auto',taskRevision:2,revision:1,weight}),400);
+ check(await f.act('ww-two',c.mgr,{...configure,memberId:'auto',taskRevision:2,revision:1,standardMinutes:undefined}),400);
  assert.equal((await row('ww-one')).weight,2);assert.equal((await row('ww-two')).standardMinutes,30);
 });
