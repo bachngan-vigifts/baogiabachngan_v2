@@ -13,7 +13,7 @@ import {progressOf} from '../../src/modules/sales/api/progress.ts';
 import {assertFreeStock} from '../../src/modules/sales/api/stock-free.ts';
 import {consumeOrderHolds} from '../../src/modules/sales/api/order-hold-store.ts';
 export interface ApprovedExport {orderId:string;orderNo:string;warehouseId:string;warehouseName:string;approverId:string;revision:number;requestKey:string;lines:{id:string;sku:string;qty:number}[];approval:string}
-const fail=(s:string):never=>{const e=new Error(s);e.name='SupportGuard';throw e;};
+function fail(s:string):never{const e=new Error(s);e.name='SupportGuard';throw e;}
 export async function approvedLegacyExport(db:AnyDb,r:ApprovedExport,apply=false){
  const now=new Date().toISOString();
  return db.transaction(async tx=>{
