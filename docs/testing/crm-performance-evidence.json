@@ -1,0 +1,378 @@
+{
+  "windows": {
+    "api": "2026-11-10T00:00:00Z/2026-11-10T05:30:00Z",
+    "storage": "2026-11-10T06:00:00Z/2026-11-10T07:00:00Z",
+    "pool": "2026-11-09T07:00:00Z/2026-11-10T07:00:00Z"
+  },
+  "sqlBenchmark": {
+    "before": [
+      2493.146,
+      540.831
+    ],
+    "after": [
+      227.084,
+      189.48
+    ],
+    "rows": 1849,
+    "sharedHitsBefore": 18735,
+    "sharedHitsAfter": 1343,
+    "sharedReads": 0,
+    "semanticsCompared": 12044,
+    "mismatches": 0
+  },
+  "matchedRegions": {
+    "result": [
+      {
+        "p50_ms": 709,
+        "p95_ms": 1898.6999999999998,
+        "region": "ap-northeast-2",
+        "requests": 403,
+        "route": "/api/staff/badges"
+      },
+      {
+        "p50_ms": 9965.5,
+        "p95_ms": 15726.25,
+        "region": "ap-southeast-1",
+        "requests": 56,
+        "route": "/api/staff/badges"
+      },
+      {
+        "p50_ms": 734,
+        "p95_ms": 2026.4,
+        "region": "ap-northeast-2",
+        "requests": 967,
+        "route": "/api/staff/orders"
+      },
+      {
+        "p50_ms": 8202,
+        "p95_ms": 15765.099999999971,
+        "region": "ap-southeast-1",
+        "requests": 19,
+        "route": "/api/staff/orders"
+      },
+      {
+        "p50_ms": 1253,
+        "p95_ms": 3477.5,
+        "region": "ap-northeast-2",
+        "requests": 451,
+        "route": "/api/staff/pos/catalog"
+      },
+      {
+        "p50_ms": 7767.5,
+        "p95_ms": 14216,
+        "region": "ap-southeast-1",
+        "requests": 32,
+        "route": "/api/staff/pos/catalog"
+      },
+      {
+        "p50_ms": 1391,
+        "p95_ms": 3600.799999999994,
+        "region": "ap-northeast-2",
+        "requests": 483,
+        "route": "/api/staff/pos/stock-snapshot"
+      },
+      {
+        "p50_ms": 8860,
+        "p95_ms": 11993,
+        "region": "ap-southeast-1",
+        "requests": 21,
+        "route": "/api/staff/pos/stock-snapshot"
+      },
+      {
+        "p50_ms": 521,
+        "p95_ms": 1386.799999999999,
+        "region": "ap-northeast-2",
+        "requests": 485,
+        "route": "/api/staff/products"
+      },
+      {
+        "p50_ms": 5443,
+        "p95_ms": 12279.800000000001,
+        "region": "ap-southeast-1",
+        "requests": 5,
+        "route": "/api/staff/products"
+      }
+    ]
+  },
+  "slowApiSubset": {
+    "result": [
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 1747.9999999999986,
+        "max_ms": 89386,
+        "p50_ms": 9006.5,
+        "p95_ms": 61298.399999999994,
+        "queries_p95": 167.2,
+        "route": "/api/staff/integrations/ghn/pos-lock/pull",
+        "slow_requests": 70
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 1525.9499999999998,
+        "max_ms": 78497,
+        "p50_ms": 6435,
+        "p95_ms": 38412.249999999985,
+        "queries_p95": 30,
+        "route": "/api/staff/orders/:id",
+        "slow_requests": 24
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 2703.599999999997,
+        "max_ms": 67512,
+        "p50_ms": 4372,
+        "p95_ms": 31829.59999999998,
+        "queries_p95": 25,
+        "route": "/api/staff/orders",
+        "slow_requests": 97
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 4048.2499999999986,
+        "max_ms": 62008,
+        "p50_ms": 4442,
+        "p95_ms": 39466.74999999998,
+        "queries_p95": 17,
+        "route": "/api/staff/stock-holds",
+        "slow_requests": 24
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 6348.4,
+        "max_ms": 58379,
+        "p50_ms": 18960,
+        "p95_ms": 53333.2,
+        "queries_p95": 11,
+        "route": "/api/staff/products",
+        "slow_requests": 33
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 2038.45,
+        "max_ms": 56566,
+        "p50_ms": 10584,
+        "p95_ms": 25350,
+        "queries_p95": 37,
+        "route": "/api/staff/badges",
+        "slow_requests": 98
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 2078.399999999992,
+        "max_ms": 56339,
+        "p50_ms": 2354,
+        "p95_ms": 26947.799999999985,
+        "queries_p95": 39,
+        "route": "/api/staff/pos/stock-snapshot",
+        "slow_requests": 160
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 2335,
+        "max_ms": 51874,
+        "p50_ms": 4310,
+        "p95_ms": 28399,
+        "queries_p95": 7,
+        "route": "/api/staff/quotes",
+        "slow_requests": 121
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 1349.7999999999993,
+        "max_ms": 45165,
+        "p50_ms": 4158,
+        "p95_ms": 36363.19999999997,
+        "queries_p95": 10,
+        "route": "/api/staff/pos/options",
+        "slow_requests": 67
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 1783.9999999999925,
+        "max_ms": 44500,
+        "p50_ms": 3199,
+        "p95_ms": 28583.6,
+        "queries_p95": 18,
+        "route": "/api/staff/pos/catalog",
+        "slow_requests": 157
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 3182.350000000002,
+        "max_ms": 40804,
+        "p50_ms": 3726,
+        "p95_ms": 38694.049999999996,
+        "queries_p95": 12,
+        "route": "/api/staff/contracts",
+        "slow_requests": 20
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 0,
+        "max_ms": 38483,
+        "p50_ms": 10808,
+        "p95_ms": 37036.7,
+        "queries_p95": 4,
+        "route": "/api/staff/quotes/:id/hold",
+        "slow_requests": 7
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 2190.5999999999985,
+        "max_ms": 35138,
+        "p50_ms": 15462,
+        "p95_ms": 32724.99999999999,
+        "queries_p95": 10,
+        "route": "/api/staff/pos/preview",
+        "slow_requests": 25
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 2559.6999999999994,
+        "max_ms": 32338,
+        "p50_ms": 3476,
+        "p95_ms": 17915.899999999998,
+        "queries_p95": 8,
+        "route": "/api/staff/pulse",
+        "slow_requests": 184
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 6820.749999999999,
+        "max_ms": 32315,
+        "p50_ms": 6031.5,
+        "p95_ms": 20325.8,
+        "queries_p95": 4,
+        "route": "/api/staff/store/reminders",
+        "slow_requests": 22
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 4463.5,
+        "max_ms": 32100,
+        "p50_ms": 5300,
+        "p95_ms": 14439.25,
+        "queries_p95": 4,
+        "route": "/api/staff/staff-reports/me",
+        "slow_requests": 26
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 859.8,
+        "max_ms": 30411,
+        "p50_ms": 2773,
+        "p95_ms": 25542.59999999999,
+        "queries_p95": 9,
+        "route": "/api/staff/pos/orders",
+        "slow_requests": 65
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 1180.25,
+        "max_ms": 30030,
+        "p50_ms": 13876.5,
+        "p95_ms": 29537,
+        "queries_p95": 13,
+        "route": "/api/staff/pos/web-orders/:id/action",
+        "slow_requests": 6
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 0,
+        "max_ms": 28403,
+        "p50_ms": 20888,
+        "p95_ms": 27651.5,
+        "queries_p95": 18,
+        "route": "/api/staff/order-products",
+        "slow_requests": 3
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 1599.5999999999976,
+        "max_ms": 27644,
+        "p50_ms": 3214,
+        "p95_ms": 12193.699999999992,
+        "queries_p95": 6,
+        "route": "/api/staff/customers",
+        "slow_requests": 98
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 1720,
+        "max_ms": 27087,
+        "p50_ms": 4023.5,
+        "p95_ms": 18731.75,
+        "queries_p95": 16,
+        "route": "/api/staff/catalog-snapshot",
+        "slow_requests": 86
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 893.9999999999999,
+        "max_ms": 25902,
+        "p50_ms": 5230,
+        "p95_ms": 22870,
+        "queries_p95": 5,
+        "route": "/api/staff/quotes/:id",
+        "slow_requests": 17
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 2515.6,
+        "max_ms": 24639,
+        "p50_ms": 17795,
+        "p95_ms": 23954.6,
+        "queries_p95": 24,
+        "route": "/api/staff/tasks/accounting",
+        "slow_requests": 2
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 1410.75,
+        "max_ms": 23809,
+        "p50_ms": 13844,
+        "p95_ms": 23620.75,
+        "queries_p95": 6,
+        "route": "/api/staff/stock-transfers",
+        "slow_requests": 16
+      },
+      {
+        "db_mode": "direct",
+        "db_ready_p95_ms": 4423.6999999999925,
+        "max_ms": 23550,
+        "p50_ms": 3589,
+        "p95_ms": 20663.69999999999,
+        "queries_p95": 13,
+        "route": "/api/staff/tasks",
+        "slow_requests": 47
+      }
+    ]
+  },
+  "pool24h": {
+    "result": [
+      {
+        "category": "08006",
+        "events": 1,
+        "first_seen": "2026-11-09T10:34:21.516000",
+        "last_seen": "2026-11-09T10:34:21.516000",
+        "severity": "FATAL",
+        "source": "postgres_logs"
+      },
+      {
+        "category": "08006",
+        "events": 10,
+        "first_seen": "2026-11-09T07:54:36.166000",
+        "last_seen": "2026-11-10T06:56:47.985000",
+        "severity": "LOG",
+        "source": "postgres_logs"
+      }
+    ]
+  },
+  "sqlLog": {
+    "utc": "2026-11-10T00:33:34.248Z",
+    "durationMs": 11115.62,
+    "loggedQueryId": "-4778443033376470974",
+    "matchingStatementQueryId": "4635181618632353283",
+    "note": "Log query_id currently maps to a different statement in pg_stat_statements; matched by SQL shape, session and overlapping function timing. No one-to-one request_id tag."
+  }
+}

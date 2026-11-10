@@ -31,9 +31,15 @@ async function allScanCodes(db:PosDb){
  for(const r of rows){if(r.clash||r.code===r.sku)continue;const list=bySku.get(r.sku);if(list)list.push(r.code);else bySku.set(r.sku,[r.code]);}
  return (sku:string)=>[...(clashing.has(sku)?[]:[sku]),...(bySku.get(sku)??[])];
 }
-export function posBrandScope(registerName:string){
+export function posBrandScope(registerName:string,{preload=false}:{preload?:boolean}={}){
  const family=posCatalogFamily(registerName);
- return family?sql`${foldSql(products.brand,products.name)} !~ ${family==='lock'?MINH_LONG_CATALOG_PATTERN:LOCK_CATALOG_PATTERN}`:undefined;
+ if(!family)return undefined;
+ const pattern=family==='lock'?MINH_LONG_CATALOG_PATTERN:LOCK_CATALOG_PATTERN;
+ const full=sql`${foldSql(products.brand,products.name)} !~ ${pattern}`;
+ // Bulk preload scans the complete catalog. Reject an opposite brand before folding its longer name.
+ // Keep the full combined check otherwise: a family can span the brand/name boundary.
+ // Paged catalog keeps its original predicate and early LIMIT plan.
+ return preload?sql`case when ${foldSql(products.brand)} ~ ${pattern} then false else ${full} end`:full;
 }
 /** Compact session-only stock preload. No supplier/incoming stock, no stock writes. */
 /** false: không kèm danh mục; true: danh mục dạng đối tượng (giao diện cũ); 'compact': cột cố định CATALOG_COLUMNS, cùng thứ tự với rows. */
@@ -47,7 +53,7 @@ async function readPosStockSnapshot(db:PosDb,member:PosMember,register:{id:strin
   db.select({sku:products.sku,price:productPrices.price,onHand:stockBalances.qty,...(includeCatalog?{name:products.name,brand:products.brand,unit:products.unit,imageUrl:products.imageUrl,pattern:products.pattern}:{})}).from(products)
    .innerJoin(productPrices,and(eq(productPrices.sku,products.sku),eq(productPrices.policyId,policy)))
    .leftJoin(stockBalances,and(eq(stockBalances.sku,products.sku),eq(stockBalances.warehouseId,register.warehouseId)))
-   .where(and(eq(products.active,true),eq(products.approvalStatus,'approved'),sql`${productPrices.price} is not null`,posBrandScope(register.name))).orderBy(...(includeCatalog?productOrder(null):[asc(products.sku)])).limit(20001),
+   .where(and(eq(products.active,true),eq(products.approvalStatus,'approved'),sql`${productPrices.price} is not null`,posBrandScope(register.name,{preload:true}))).orderBy(...(includeCatalog?productOrder(null):[asc(products.sku)])).limit(20001),
  ]);
  if(hidden.has(register.warehouseId))throw new AppError(403,'Bạn không được xem tồn kho riêng của quầy này.');
  // Never silently preload a partial catalog; large installations keep the paged path.

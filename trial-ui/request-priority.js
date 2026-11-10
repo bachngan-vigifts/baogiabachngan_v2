@@ -9,7 +9,7 @@ const QUIET_MS = 150, MAX_WAIT_MS = 4000, BACKGROUND_SLOTS = 3;
 /** [mẫu đường dẫn GET phụ, trang mà ở đó nó là dữ liệu chính (tuỳ chọn)]. */
 const BACKGROUND = [
   [/^\/pos\/(catalog|stock-snapshot)\?[^#]*&background=1(?:&|$)/],
-  [/^\/(pulse|notifications|chat\/unread|navigation-counts|customer-duplicates)(\?|$)/],
+  [/^\/(pulse|badges|notifications|chat\/unread|navigation-counts|customer-duplicates)(\?|$)/],
   [/^\/tasks\/(summary|people)(\?|$)/, 'tasks'],
   [/^\/approvals(\?|$)/, 'approvals'],
   [/^\/admin\/sapo-sync(\?|$)/],

@@ -78,7 +78,9 @@ Deno.serve(async req => {
   try {
     const currentLease=pool.acquire();lease=currentLease;const db=currentLease.db;
     const requestWaitUntil=(work:Promise<unknown>)=>waitUntil(currentLease.track(work));
-    await ready(db);
+    // This exact public GET reads only deployment config; a queued DB probe must not delay login UI.
+    // Router still performs its usual authorization; data endpoints and all writes retain readiness checks.
+    if (!(req.method === 'GET' && path === '/api/staff/auth-config')) await ready(db);
     const dbReady = performance.now();
     if (incoming.pathname.endsWith('/health')) {
       await db.select({id:schema.positions.id}).from(schema.positions).limit(1);
