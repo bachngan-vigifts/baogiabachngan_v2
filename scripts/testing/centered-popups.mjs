@@ -46,7 +46,7 @@ try{for(const viewport of [{width:1692,height:1338},{width:1440,height:900},{wid
  await page.evaluate(()=>{const d=document.createElement('dialog');d.id='center-confirm';d.className='modal narrow';d.innerHTML='<div class="modal-head"><h2>Xác nhận</h2></div><div class="modal-body">Kiểm tra vị trí popup</div><div class="modal-foot"><button>Đóng</button></div>';document.body.append(d);d.showModal();});assertCentered(await bounds(page,'#center-confirm'));await page.locator('#center-confirm').evaluate(n=>n.close());
  if([1440,390].includes(viewport.width)){
   await page.evaluate(async()=>{
-   document.querySelector('#view-purchases').hidden=true;const root=document.createElement('section');root.id='report-timing-probe';root.className='view';document.querySelector('.main').append(root);
+   document.querySelector('#view-purchases').hidden=true;const root=document.createElement('section');root.id='report-timing-probe';root.className='view';root.style.background='#f4f6f9';document.querySelector('.main').append(root);
    const week={period:'2026-11-30',deadline:'2026-12-07T03:00:00Z',submittedAt:'2026-12-07T02:00:00Z',state:'on_time',review:'pending',score:1,reportId:'w'};
    const monthly={period:'2026-12',deadline:'2027-01-02T03:00:00Z',submittedAt:'2027-01-02T02:00:00Z',state:'on_time',review:'pending',score:1,reportId:'m'};
    const{initWeeklyReports}=await import('/weekly-reports.js');
