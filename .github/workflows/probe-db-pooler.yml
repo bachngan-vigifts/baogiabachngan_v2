@@ -1,94 +1,39 @@
-# Read-only probe: inspect only booleans and SELECT 1, never expose credentials or change production configuration.
-name: Kiểm tra kết nối pooler chỉ đọc
+# Support branch only: exact owner-approved DH_20261020_002 application-ledger reconciliation.
+# Does not deploy code or change connection configuration; default is a non-writing preview.
+name: Đối soát xuất kho DH_20261020_002 đã được duyệt
 on:
   workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Ghi 4 bút toán xuất đã được chủ kho xác nhận (55 cái, KHO VIGIFTS)'
+        type: boolean
+        required: true
+        default: false
 permissions:
   contents: read
+concurrency: support-dh-20261020-002
 jobs:
-  probe:
+  reconcile:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 8
     steps:
-      - name: Kiểm tra định dạng và kết nối bằng SELECT 1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Kiểm tra giao dịch, chống trùng và rollback trước khi chạm production
+        run: node --import tsx --test tests/app/approved-legacy-export.test.ts
+      - name: Chạy nghiệp vụ sổ kho của ứng dụng với đúng đơn đã duyệt
         env:
-          POOLER_CONNECTION: ${{ secrets.SUPABASE_POOLER_URL }}
-          SUPABASE_MANAGEMENT_ACCESS: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        shell: python
+          SUPPORT_DATABASE_URL: ${{ secrets.SUPABASE_POOLER_URL }}
+          APPLY_APPROVED_EXPORT: ${{ inputs.apply }}
+        shell: bash
         run: |
-          import os, re, subprocess, sys
-          from urllib.parse import urlsplit, unquote
-          from urllib.request import Request, urlopen
-          import json
-          value = os.environ.get('POOLER_CONNECTION', '')
-          def finish(code):
-              print('POOLER_CHECK=' + code)
-              sys.exit(0 if code == 'CONNECTED_SELECT_1' else 1)
-          if not value:
-              finish('MISSING_GITHUB_SECRET')
-          try:
-              uri = urlsplit(value)
-              password = unquote(uri.password or '')
-              port = uri.port
-          except Exception:
-              finish('INVALID_URI_FORMAT')
-          if uri.scheme not in ('postgres', 'postgresql'):
-              finish('INVALID_URI_SCHEME')
-          if uri.username != 'postgres.taceqfnsorewelsbdckg':
-              finish('INCORRECT_PROJECT_USERNAME')
-          # Read provider metadata without outputting connection strings or authentication values.
-          try:
-              request = Request('https://api.supabase.com/v1/projects/taceqfnsorewelsbdckg/config/database/pooler',
-                  headers={'Authorization':'Bearer ' + os.environ.get('SUPABASE_MANAGEMENT_ACCESS','')})
-              with urlopen(request, timeout=15) as response:
-                  metadata = json.load(response)
-              hosts = set()
-              def collect(node):
-                  if isinstance(node, dict):
-                      for key, value in node.items():
-                          if key in ('db_host','host') and isinstance(value,str) and value.endswith('.pooler.supabase.com'):
-                              hosts.add(value)
-                          elif key == 'connection_string' and isinstance(value,str):
-                              host = urlsplit(value).hostname
-                              if host and host.endswith('.pooler.supabase.com'):
-                                  hosts.add(host)
-                          elif isinstance(value,(dict,list)):
-                              collect(value)
-                  elif isinstance(node,list):
-                      for value in node:
-                          collect(value)
-              collect(metadata)
-              print('PROJECT_POOLER_HOSTS=' + ','.join(sorted(hosts)))
-              if hosts and uri.hostname not in hosts:
-                  finish('POOLER_HOST_DIFFERS_FROM_PROJECT')
-          except Exception:
-              print('PROJECT_POOLER_METADATA_UNAVAILABLE')
-          if not uri.hostname or not uri.hostname.endswith('.pooler.supabase.com') or port != 6543:
-              finish('INCORRECT_TRANSACTION_POOLER_HOST_OR_PORT')
-          if not password:
-              finish('MISSING_DATABASE_PASSWORD')
-          if 'YOUR-PASSWORD' in password.upper() or 'YOUR_PASSWORD' in password.upper():
-              finish('PASSWORD_STILL_PLACEHOLDER')
-          if uri.fragment or re.search(r'%(?![0-9a-fA-F]{2})', uri.netloc):
-              finish('PASSWORD_URL_ENCODING_REQUIRED')
-          try:
-              result = subprocess.run(['psql', '-X', '-w', value, '-At', '-v', 'ON_ERROR_STOP=1', '-c', 'SELECT 1'],
-                  capture_output=True, text=True, timeout=20,
-                  env={**os.environ, 'PGCONNECT_TIMEOUT':'10', 'PGSSLMODE':'require', 'PGOPTIONS':'-c default_transaction_read_only=on -c statement_timeout=5000'})
-          except subprocess.TimeoutExpired:
-              finish('CONNECTION_TIMEOUT')
-          except FileNotFoundError:
-              finish('PSQL_CLIENT_UNAVAILABLE')
-          error = result.stderr.lower()
-          if result.returncode == 0 and result.stdout.strip() == '1':
-              finish('CONNECTED_SELECT_1')
-          if 'password authentication failed' in error or 'authentication failed' in error:
-              finish('DATABASE_AUTHENTICATION_FAILED')
-          if 'tenant or user not found' in error:
-              finish('POOLER_TENANT_OR_USER_NOT_FOUND')
-          if 'percent-encoded' in error or 'invalid uri' in error:
-              finish('PASSWORD_URL_ENCODING_REQUIRED')
-          if 'could not translate host' in error:
-              finish('POOLER_DNS_FAILURE')
-          if 'timeout' in error or 'timed out' in error:
-              finish('CONNECTION_TIMEOUT')
-          finish('CONNECTION_FAILED_REVIEW_PRIVATELY')
+          if [ "$APPLY_APPROVED_EXPORT" = true ]; then
+            node --import tsx scripts/support/run-dh-20261020-002.ts --apply
+          else
+            node --import tsx scripts/support/run-dh-20261020-002.ts
+          fi
