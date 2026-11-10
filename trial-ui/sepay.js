@@ -143,7 +143,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
         .join("");
       $("[data-setup]").innerHTML = next.automationConfigured
         ? ""
-        : `<p class="sp-warning">Chưa cấu hình tài khoản tự ghi thu cho đơn CRM. Giao dịch vẫn được lưu để đối soát; QR web Lock dùng thông tin thanh toán của đơn nguồn.</p>`;
+        : `<p class="sp-warning">Chưa bật tự ghi thu cho đơn CRM. Manager vẫn có thể chọn đơn và xác nhận tạo phiếu thu từ tài khoản ngân hàng đã cấu hình ở quầy; POS/web đối soát theo chứng từ nguồn.</p>`;
       if (!next.capabilities?.canPull)
         $("[data-setup]").insertAdjacentHTML(
           "beforeend",

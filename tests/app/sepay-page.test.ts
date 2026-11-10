@@ -1,3 +1,4 @@
+import {posRegisters} from '../../src/modules/sales/pos-schema.ts';
 import { customers } from '../../src/modules/customers/schema.ts';
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -205,7 +206,7 @@ test("Manager binds unknown content to a valid CRM order, audits the reason, pre
 });
 test("manual creation cannot bypass account approval, debt, held cash, status, POS, or required confirmation", async () => {
   const f = await setupSepay(),
-    e = await f.incoming("Khoản chưa khớp 104"),
+    e = await f.incoming("Khoản chưa khớp 104",100000,{accountNumber:"654321"}),
     o = await f.order("GUARDS104");
   for (const patch of [
     { reason: "" },
@@ -217,7 +218,7 @@ test("manual creation cannot bypass account approval, debt, held cash, status, P
   assert.equal((await f.confirm("missing", f.choice(o.id))).status, 404);
   f.env.sepayReceiptAccounts = [];
   assert.equal((await f.confirm(e.id, f.choice(o.id))).status, 409);
-  f.env.sepayReceiptAccounts = ["123456"];
+  f.env.sepayReceiptAccounts = ["654321"];
   for (const extra of [
     { status: "cancelled" as const },
     { channel: "pos" },
@@ -491,7 +492,7 @@ test("SePay picker lists real documents, searches canonical customer/code, filte
 test("Manager may manually assign a bank receipt to an unsigned CRM draft without approving it; automatic matching stays blocked", async () => {
   const f = await setupSepay();
   const o = await f.order("CRM_DRAFT_DEPOSIT_101",{status:"draft"});
-  const e = await f.incoming(o.orderNo,30000);
+  const e = await f.incoming(o.orderNo,30000,{accountNumber:"654321"});
   assert.notEqual(e.status,"matched");
   assert.equal((await f.db.select().from(customerPayments)).length,0);
   const contractId = crypto.randomUUID();
@@ -500,7 +501,7 @@ test("Manager may manually assign a bank receipt to an unsigned CRM draft withou
   const blocked = await f.call('/sepay/orders/'+o.id+'?transactionId='+e.id,f.mgr);
   assert.equal(blocked.status,200);assert.equal(blocked.data.canCreate,false);
   assert.equal((await f.confirm(e.id,f.choice(o.id))).status,409);
-  f.env.sepayReceiptAccounts=['123456'];
+  f.env.sepayReceiptAccounts=['654321'];
   assert.equal((await f.confirm(e.id,f.choice(o.id),f.accountant)).status,403);
   assert.equal((await f.confirm(e.id,f.choice(o.id))).status,200);
   assert.equal((await f.confirm(e.id,f.choice(o.id))).data.duplicate,true);
@@ -516,4 +517,33 @@ test("Manager may manually assign a bank receipt to an unsigned CRM draft withou
   const otherDraft=await f.order('DRAFT_NO_SCHEDULE',{status:'draft'});
   await f.db.delete(paymentSchedules).where(eq(paymentSchedules.orderId,otherDraft.id));
   assert.equal((await f.confirm(second.id,f.choice(otherDraft.id))).status,409,'draft without a valid amount/schedule is blocked');
+});
+
+test("manual CRM reconciliation accepts an active configured register account; automatic allowlist and confirmation recheck remain independent", async () => {
+  const f=await setupSepay(); f.env.sepayReceiptAccounts=[];
+  const o=await f.order('COMPANY_BANK_101',{status:'draft'});
+  const e=await f.incoming(o.orderNo,30000);
+  assert.notEqual(e.status,'matched');
+  const detail=await f.call('/sepay/transactions/'+e.id,f.mgr);
+  const preview=()=>f.call('/sepay/orders/'+o.id+'?transactionId='+e.id,f.mgr);
+  assert.equal(detail.data.accountApproved,true);
+  assert.equal((await preview()).data.accountApproved,true);
+  assert.equal((await preview()).data.canCreate,true);
+  assert.equal((await f.db.select().from(customerPayments)).length,0);
+  assert.equal((await f.confirm(e.id,f.choice(o.id),f.accountant)).status,403);
+  await f.db.update(posRegisters).set({active:false}).where(eq(posRegisters.id,f.registerId));
+  assert.equal((await preview()).data.accountApproved,false);
+  assert.equal((await f.confirm(e.id,f.choice(o.id))).status,409,'recheck active account at confirmation');
+  await f.db.update(posRegisters).set({active:true,bankAccount:'999999'}).where(eq(posRegisters.id,f.registerId));
+  assert.equal((await f.confirm(e.id,f.choice(o.id))).status,409,'do not trust the preview after account changes');
+  await f.db.update(posRegisters).set({bankAccount:' 123 456 '}).where(eq(posRegisters.id,f.registerId));
+  assert.equal((await f.confirm(e.id,f.choice(o.id))).status,200);
+  assert.equal((await f.confirm(e.id,f.choice(o.id))).data.duplicate,true);
+  const receipts=await f.db.select().from(customerPayments).where(eq(customerPayments.orderId,o.id));
+  assert.equal(receipts.length,1);assert.equal(receipts[0]!.amount,30000);
+  assert.equal(f.env.sepayReceiptAccounts.length,0,'does not turn on automatic CRM matching');
+  const approvedOrder=await f.order('AUTO_STILL_DISABLED_102');
+  const auto=await f.incoming(approvedOrder.orderNo,20000);
+  assert.notEqual(auto.status,'matched','registered POS bank alone cannot enable automatic CRM receipts');
+  assert.equal((await f.db.select().from(customerPayments)).length,1);
 });

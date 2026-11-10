@@ -77,13 +77,13 @@ Nút đưa focus và cuộn tới khung đối soát ngay khi bắt đầu tải
 
 Nút **Về giao dịch** cuộn/focus về đúng dòng đã chọn, giữ nguyên dữ liệu và nội dung đang nhập, không gọi API ghi. Nếu dòng không còn trong bộ lọc, quay về danh sách. Focus có hiển thị cho bàn phím, khung có nhãn accessible và khoảng cách tránh header cố định.
 
-Thay đổi này không sửa quyền hoặc điều kiện ghi thu. Kế toán chỉ xem/đối chiếu; Manager chỉ xác nhận CRM/HĐKT khi tài khoản nhận đã có trong `SEPAY_RECEIPT_ACCOUNTS`; POS/web phải khớp tài khoản quầy đang hoạt động. Nếu khung hiện cảnh báo tài khoản chưa được duyệt, cần cấu hình đúng tài khoản đã được công ty xác nhận theo `docs/SEPAY-RECEIPTS.md`; không bỏ kiểm tra này chỉ để hiện nút xác nhận.
+Thay đổi này không sửa quyền hoặc điều kiện ghi thu. Kế toán chỉ xem/đối chiếu; Manager xác nhận CRM/HĐKT khi tài khoản nhận có trong `SEPAY_RECEIPT_ACCOUNTS` hoặc khớp chính xác tài khoản ngân hàng của quầy đang hoạt động; POS/web phải khớp tài khoản quầy đang hoạt động. Nếu vẫn bị khóa, kiểm tra tài khoản có trong danh sách CRM hoặc cấu hình quầy đang hoạt động; tài khoản ngoài hai nguồn này vẫn bị chặn. Không lấy tài khoản từ nội dung chuyển khoản.
 
 Kiểm tra browser fixture cô lập: danh sách dài ở 390/1440px, focus và vị trí dưới header, quay lại đúng dòng, tạo/gắn phiếu thu, chống bấm trùng, mất phản hồi sau ghi, lỗi tải danh sách, quyền Kế toán/Sale và nội dung không tin cậy. Không gọi production trong kiểm thử.
 
 ## Chọn đơn/HĐKT khi tài khoản nhận chưa được duyệt
 
-Manager vẫn được tìm/chọn đơn hoặc HĐKT và xem công nợ dù tài khoản chưa có trong `SEPAY_RECEIPT_ACCOUNTS`. Đây là bước đọc/đối chiếu, không ghi nhận thanh toán hoặc lưu liên kết tạm vào DB. Giao diện chỉ ẩn phần xác nhận ghi thu, nêu rõ nguyên nhân và có nút kiểm tra lại tài khoản.
+Manager vẫn được tìm/chọn đơn hoặc HĐKT và xem công nợ dù tài khoản chưa có trong danh sách CRM hoặc chưa khớp quầy đang hoạt động. Đây là bước đọc/đối chiếu, không ghi nhận thanh toán hoặc lưu liên kết tạm vào DB. Giao diện chỉ ẩn phần xác nhận ghi thu, nêu rõ nguyên nhân và có nút kiểm tra lại tài khoản.
 
 Sau khi tài khoản công ty được xác nhận và cấu hình trên máy chủ, bấm **Kiểm tra lại tài khoản**, chọn lại chứng từ để lấy công nợ mới nhất, rồi theo luồng xác nhận. Kế toán vẫn chỉ đọc; khoản POS/web giữ luồng riêng. Không bỏ hoặc nới kiểm tra tài khoản ở API. Không cần migration cho thay đổi giao diện này.
 
@@ -161,3 +161,11 @@ Kiểm thử: 13 test liên quan đạt, 1 test tranh chấp PostgreSQL bỏ qua
 Luồng `/payments` hiện có cho phép nhận tiền vào đơn CRM còn nháp; SePay thủ công nay dùng cùng điều kiện. Manager chủ động chọn chứng từ và xác nhận, không tự đổi trạng thái đơn/HĐKT. Xem trước cảnh báo tiền được ghi nhận trước khi duyệt; báo cáo công nợ chỉ đưa đơn vào khi có hiệu lực theo `debtCounts` hiện hành. Khoản nhận được trừ khỏi số còn có thể nhận, giữ kiểm tra lịch phải thu, tiền mặt đang giữ, tài khoản nhận, nguồn POS/web, phiếu nhập tay và giao dịch trùng. Tự động webhook/import không mở quyền này, vẫn yêu cầu hiệu lực công nợ. Không tự bật tài khoản nhận hay chạy migration.
 
 Kiểm thử nhận cọc CRM nháp: 50 test đạt, 5 test PostgreSQL riêng bỏ qua theo cấu hình; bổ sung kiểm tra tập trung chứng minh cả đơn và HĐKT vẫn nháp sau nhận tiền. Browser PC/mobile đạt chọn/gán HĐKT nháp với tài khoản hợp lệ, chặn ngân hàng chưa duyệt, không ghi thu trùng; typecheck và UI build đạt. Đo 3 lượt lạnh/viewport, baseline `9497db26`: 1440px ready 3064→3105 ms; 390px ready 3099→3083 ms. Giữ 15 API/163 JS khi mở trang; số đo cục bộ, không phải production. Raw `docs/testing/sepay-crm-draft-performance.json`.
+
+### Tài khoản nhận khi Manager gán thủ công
+
+Trước đây API chi tiết giao dịch chấp nhận ngân hàng đã cấu hình ở quầy, nhưng API xem trước CRM và ghi thu chỉ đọc `SEPAY_RECEIPT_ACCOUNTS`, làm cùng một tài khoản vừa hợp lệ vừa bị khóa ở các bước khác nhau. Ba bước nay dùng chung `sepayManualAccountApproved`: cho phép danh sách CRM đã duyệt hoặc số tài khoản khớp chính xác quầy đang hoạt động. Chuẩn hóa khoảng trắng ở cấu hình quầy, không khớp theo hậu tố hay nội dung chuyển khoản; không chấp nhận tài khoản rỗng/không biết/quầy ngừng hoạt động. Bước ghi thu kiểm tra lại cấu hình hiện tại trong giao dịch ghi tiền, không tin cờ từ trình duyệt hoặc lần xem trước.
+
+Chỉ Manager được chủ động chọn đơn và xác nhận tạo phiếu thu; tiền/ngày/mã SePay lấy từ chứng từ ngân hàng đã lưu. Không phải tự nhập lại phiếu thu. Tự động webhook/import CRM vẫn chỉ dùng `SEPAY_RECEIPT_ACCOUNTS`; tài khoản quầy không tự bật ghi thu CRM tự động. POS/web vẫn xác minh đúng quầy và chứng từ nguồn riêng. Không sửa cấu hình ngân hàng hoặc ghi tiền production khi kiểm thử; không cần migration mới.
+
+Kiểm thử tài khoản nhận thủ công: 51 test đạt, 5 test PostgreSQL riêng bỏ qua theo cấu hình; typecheck/UI build đạt. Browser 1440/390 đạt 10 nhóm gồm tài khoản quầy hợp lệ tạo đúng một phiếu CRM nháp khi danh sách tự động rỗng, tài khoản lạ vẫn bị chặn. Kiểm tra tài khoản bị đổi/ngừng hoạt động sau xem trước: xác nhận bị chặn. Tự động CRM không được bật vì tài khoản quầy tồn tại. Đo 3 lượt lạnh/viewport, baseline `72cc171f`: 1440px ready 3215→3091 ms; 390px ready 3427→3095 ms. Giữ 15 API/163 JS khi mở trang; số đo cục bộ, không phải production. Raw `docs/testing/sepay-manual-bank-performance.json`.

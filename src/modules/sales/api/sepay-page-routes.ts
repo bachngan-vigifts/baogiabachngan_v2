@@ -1,3 +1,4 @@
+import {sepayManualAccountApproved} from './sepay-manual-account.ts';
 import {validWebSepay} from './web-sepay-evidence.ts';
 import {previewNearbySepay} from './sepay-proximity-store.ts';
 import { customers } from '../../customers/schema.ts';
@@ -219,7 +220,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
         .limit(20);
       const webPayment=!!row.webOrderId||await isLockWebQrPayment(c.env.db,row);
-      const [sourceAccount]=await c.env.db.select({id:webRegisters.id}).from(webRegisters).where(and(eq(webRegisters.active,true),eq(sql`regexp_replace(${webRegisters.bankAccount},'[[:space:]]','','g')`,row.accountNumber))).limit(1);
+      const accountApproved = await sepayManualAccountApproved(c.env.db,c.env,row.accountNumber);
       return json({
         transaction: row,
         history: history.map((h) => {
@@ -249,7 +250,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
           sepayPosIntent(row.content) || row.orderChannel === "pos"
             ? "Giao dịch thuộc luồng QR/POS; không gắn vào đơn CRM khác."
             : "",
-        accountApproved: !!sourceAccount || (c.env.sepayReceiptAccounts || []).includes(row.accountNumber),
+        accountApproved,
       });
     },
     "business",
@@ -415,9 +416,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
               ),
             )
             .limit(1);
-          const accountApproved = (c.env.sepayReceiptAccounts || []).includes(
-            event.accountNumber,
-          );
+          const accountApproved = await sepayManualAccountApproved(tx,c.env,event.accountNumber);
           return {
             order: {
               id: row.order.id,

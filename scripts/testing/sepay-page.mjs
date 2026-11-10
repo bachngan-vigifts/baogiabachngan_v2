@@ -470,7 +470,7 @@ try {
   results.push({case:'Lock QR links exact original website order on PC/mobile without another CRM receipt',pass:true});
   const pickerOrder=await f.order('SEPAY_PICK_ORDER',{status:'draft'});
   await f.db.insert(salesContracts).values({id:crypto.randomUUID(),contractNo:'HDKT_PICK_001',orderId:pickerOrder.id,legalEntity:'BN',status:'draft',value:100000,createdBy:'mgr',createdAt:f.stamp,updatedAt:f.stamp});
-  const pickerEvent=await f.incoming('Khoản cần chọn HĐKT',100000,{id:'picker-account-pending'});
+  const pickerEvent=await f.incoming('Khoản cần chọn HĐKT',100000,{id:'picker-account-pending',accountNumber:'654321'});
   const receiptsAtPicker=(await f.db.select().from(customerPayments)).length;
   f.env.sepayReceiptAccounts=[];
   // Default list, debounced search, filters, pagination and disabled drafts on both widths.
@@ -540,7 +540,7 @@ try {
   assert.equal((await f.confirm(pickerEvent.id,f.choice(pickerOrder.id))).status,409);
   assert.equal((await f.db.select().from(customerPayments)).length,receiptsAtPicker);
   await picker.p.screenshot({path:out+'/picker-unapproved-390.png',fullPage:true});
-  f.env.sepayReceiptAccounts=['123456'];
+  f.env.sepayReceiptAccounts=['654321'];
   await picker.p.locator('[data-reload-detail]').click();
   await picker.p.locator('[data-order-search]').waitFor();await choose(picker.p,'HDKT_PICK_001');
   assert.equal(await picker.p.getByRole('button',{name:'Xem lại để gán khoản thu',exact:true}).isEnabled(),true);
@@ -552,6 +552,23 @@ try {
   assert.equal(picker.errors.length,0,picker.errors.join('\n'));
   await picker.context.close();
   results.push({case:'unapproved account can search/select HĐKT and inspect debt; only after approval can Manager post once',pass:true});
+  f.env.sepayReceiptAccounts=[];
+  for (const width of [1440,390]) {
+    const order=await f.order('CONFIGURED_BANK_'+width,{status:'draft'});
+    const transfer=await f.incoming(order.orderNo,30000);
+    const view=await pageFor(f.mgr,width,'#/sepay?q='+transfer.providerId);
+    await view.p.locator('[data-open]').waitFor(); await detail(view.p,transfer.id);
+    await choose(view.p,order.orderNo);
+    assert.equal(await view.p.locator('[data-account-block]').count(),0);
+    await review(view.p); await view.p.locator('[data-confirm]').click();
+    await view.p.locator('[data-notice] .sp-success').waitFor();
+    const receipts=await f.db.select().from(customerPayments).where(eq(customerPayments.orderId,order.id));
+    assert.equal(receipts.length,1);assert.equal(receipts[0].amount,30000);
+    assert.equal(view.errors.length,0,view.errors.join('\n'));
+    await view.p.screenshot({path:out+'/company-bank-receipt-'+width+'.png'});
+    await view.context.close();
+  }
+  results.push({case:'active configured company bank creates one CRM draft receipt on PC/mobile without enabling automatic matching',pass:true});
   const emp = await pageFor(f.emp, 1100, "#/sepay");
   await emp.p.waitForTimeout(500);
   assert.ok(!emp.p.url().includes("#/sepay"));

@@ -48,3 +48,7 @@ Luồng này không đổi trạng thái WooCommerce, không chốt/huỷ/tạo 
 Sau sửa, các ca tiền tố/hậu tố qua dấu nối, dấu nối lặp và khoảng trắng quanh dấu nối không tạo phiếu thu; tiền vẫn nằm trong inbox để đối soát. Mã dài bị huỷ/nháp không dẫn tiền sang đơn ngắn khi chuẩn hoá khoảng trắng. Chạy lại webhook và Manager đối soát đều giữ nguyên công nợ đơn ngắn. Mã dài đầy đủ của đơn hợp lệ vẫn được thu đúng và replay không tạo phiếu thứ hai.
 
 Kiểm tra cục bộ: PGlite đạt 26/27 (ca đồng thời chỉ chạy trên PostgreSQL); PostgreSQL 17.11 cô lập đạt 27/27, không bỏ qua ca nào, gồm gửi trùng ID, hai ID cùng đơn, đồng thời với thu thủ công và huỷ đơn. Giữ kiểm tra kiến trúc, không sửa migration hay cấu hình production. CI cần kiểm tra lại đúng commit sửa mới trước khi merge.
+
+## Gán thủ công bởi Manager
+
+Điều kiện tài khoản cho webhook tự động ở trên giữ nguyên. Khi Manager chọn chứng từ và xác nhận trên trang SePay, tài khoản nhận có thể đến từ danh sách CRM hoặc tài khoản ngân hàng đã cấu hình ở quầy đang hoạt động. API chi tiết, xem trước và ghi thu dùng chung phép kiểm tra; ghi thu kiểm tra lại cấu hình hiện tại. Không tự thêm tài khoản vào secret, không bật tự ghi thu cho CRM vì một tài khoản quầy tồn tại. Tài khoản ngoài cấu hình hoặc quầy ngừng hoạt động vẫn bị chặn; POS/web vẫn xác minh đúng nguồn riêng. Xem `docs/SEPAY-PAGE.md`.
