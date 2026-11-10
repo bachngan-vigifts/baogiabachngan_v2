@@ -1,0 +1,190 @@
+[
+  {
+    "migration": "20261103094412_crm_catalog_autovacuum.sql",
+    "assert": "assert-crm-catalog-autovacuum.sql",
+    "checks": [
+      "products",
+      "products.autovacuum_vacuum_scale_factor",
+      "products.autovacuum_vacuum_threshold",
+      "products.autovacuum_analyze_scale_factor",
+      "products.autovacuum_analyze_threshold",
+      "product_prices",
+      "product_prices.autovacuum_vacuum_scale_factor",
+      "product_prices.autovacuum_vacuum_threshold",
+      "product_prices.autovacuum_analyze_scale_factor",
+      "product_prices.autovacuum_analyze_threshold",
+      "product_stock",
+      "product_stock.autovacuum_vacuum_scale_factor",
+      "product_stock.autovacuum_vacuum_threshold",
+      "product_stock.autovacuum_analyze_scale_factor",
+      "product_stock.autovacuum_analyze_threshold"
+    ]
+  },
+  {
+    "migration": "20261103095218_product_search_trigram.sql",
+    "assert": "assert-product-search-trigram.sql",
+    "checks": [
+      "pg_trgm",
+      "idx_products_search_fold_trgm",
+      "idx_products_search_compact_trgm"
+    ]
+  },
+  {
+    "migration": "20261104000000_internal_reports.sql",
+    "assert": "assert-internal-reports.sql",
+    "checks": [
+      "chk_hr_payslips_month",
+      "idx_sales_orders_report_date"
+    ]
+  },
+  {
+    "migration": "20261105042029_payroll_attendance_counters.sql",
+    "assert": "assert-payroll-attendance-counters.sql",
+    "checks": [
+      "late_count",
+      "leave_hours",
+      "chk_hr_inputs_attendance_counters"
+    ]
+  },
+  {
+    "migration": "20261107074837_order_products_page_permission.sql",
+    "assert": "assert-order-products-page-permission.sql",
+    "checks": [
+      "seed page.order-products theo page.orders"
+    ]
+  },
+  {
+    "migration": "20261111090000_purchase_permissions.sql",
+    "assert": "assert-purchase-permissions.sql",
+    "checks": [
+      "seed purchases.early-view theo page.purchases",
+      "5 quyền mặc định mua hàng"
+    ]
+  },
+  {
+    "migration": "20261115091000_historical_cost_sources.sql",
+    "assert": "assert-historical-cost-sources.sql",
+    "checks": [
+      "chk_sales_line_costs_source",
+      "chk_sales_line_cost_history_reason"
+    ]
+  },
+  {
+    "migration": "20261105010141_customer_established_date.sql",
+    "assert": "assert-customer-established-date-complete.sql",
+    "checks": [
+      "established_date date",
+      "chk_customer_established_date"
+    ]
+  },
+  {
+    "migration": "20261106011701_hr_revenue_targets.sql",
+    "assert": "assert-hr-revenue-targets-complete.sql",
+    "checks": [
+      "table hr_revenue_targets",
+      "member_id",
+      "month",
+      "amount",
+      "updated_by",
+      "updated_at",
+      "PK member/month",
+      "month index",
+      "month CHECK",
+      "amount CHECK",
+      "FK member_id",
+      "FK updated_by",
+      "hr_revenue_targets RLS",
+      "hr_revenue_targets không cấp trực tiếp PUBLIC/anon/authenticated"
+    ]
+  },
+  {
+    "migration": "20261106032801_hr_revenue_target_requests.sql",
+    "assert": "assert-hr-revenue-target-requests-complete.sql",
+    "checks": [
+      "table hr_revenue_target_requests",
+      "id",
+      "member_id",
+      "year",
+      "changes",
+      "reason",
+      "status",
+      "revision",
+      "submitted_at",
+      "resolved_by",
+      "resolved_at",
+      "resolution_note",
+      "PK id",
+      "CHECK year",
+      "CHECK changes",
+      "CHECK reason",
+      "CHECK revision",
+      "CHECK status",
+      "CHECK resolution",
+      "CHECK note",
+      "uq_hr_revenue_request_pending",
+      "idx_hr_revenue_requests_member_year",
+      "idx_hr_revenue_requests_queue",
+      "idx_hr_revenue_requests_resolver",
+      "FK member_id",
+      "FK resolved_by",
+      "hr_revenue_target_requests RLS",
+      "hr_revenue_target_requests không cấp trực tiếp PUBLIC/anon/authenticated"
+    ]
+  },
+  {
+    "migration": "20261106035214_sales_payroll_team_sources.sql",
+    "assert": "assert-sales-payroll-team-sources-complete.sql",
+    "checks": [
+      "table sales_payroll_team_sources",
+      "effective_month",
+      "bn_register_id",
+      "lock_register_id",
+      "bonus_mode",
+      "updated_by",
+      "updated_at",
+      "PK month",
+      "CHECK month",
+      "CHECK distinct",
+      "CHECK mode",
+      "bn index",
+      "FK bn_register_id",
+      "lock index",
+      "FK lock_register_id",
+      "editor index",
+      "FK updated_by",
+      "sales_payroll_team_sources RLS",
+      "sales_payroll_team_sources không cấp trực tiếp PUBLIC/anon/authenticated"
+    ]
+  },
+  {
+    "migration": "20261111100000_customer_profile_fields.sql",
+    "assert": "assert-customer-profile-fields-complete.sql",
+    "checks": [
+      "sapo_customers.payment_days",
+      "sapo_customers.representative_contact_id",
+      "sapo_customers.reject_reason",
+      "sapo_customers.rejected_by",
+      "sapo_customers.rejected_at",
+      "FK representative SET NULL",
+      "FK rejected_by",
+      "payment_days CHECK",
+      "approval CHECK",
+      "reject reason CHECK",
+      "representative index",
+      "customer_debt_notes",
+      "customer_debt_notes.customer_id",
+      "customer_debt_notes.text",
+      "customer_debt_notes.revision",
+      "customer_debt_notes.updated_by",
+      "customer_debt_notes.updated_at",
+      "debt notes PK",
+      "notes length CHECK",
+      "notes revision CHECK",
+      "notes customer FK CASCADE",
+      "notes editor FK",
+      "customer_debt_notes RLS",
+      "customer_debt_notes không cấp trực tiếp PUBLIC/anon/authenticated",
+      "customer_debt_notes quyền service_role"
+    ]
+  }
+]
