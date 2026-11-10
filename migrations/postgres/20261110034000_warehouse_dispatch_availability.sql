@@ -5,3 +5,5 @@ ALTER TABLE public.warehouse_work_settings ADD COLUMN IF NOT EXISTS auto_dispatc
 ALTER TABLE public.warehouse_work_runs ADD COLUMN IF NOT EXISTS queued_at text;
 --> statement-breakpoint
 ALTER TABLE public.warehouse_work_runs ADD COLUMN IF NOT EXISTS offered_at text;
+--> statement-breakpoint
+ALTER TABLE public.warehouse_work_runs ADD COLUMN IF NOT EXISTS creation_hash text;

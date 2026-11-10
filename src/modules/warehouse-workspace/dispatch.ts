@@ -14,10 +14,10 @@ export async function warehouseAvailability(db:AnyDb,now:string){
  const people=await db.select({id:employees.id,name:employees.name,createdAt:employees.createdAt}).from(employees).where(activeWarehousePeople()).orderBy(asc(employees.id));
  if(!people.length)return [];
  const ids=people.map(p=>p.id);
- const tracked=await db.select({taskId:runs.taskId,memberId:runs.memberId,title:tasks.title,stage:runs.stage,startedAt:runs.startedAt,submittedAt:runs.submittedAt,offeredAt:runs.offeredAt,updatedAt:runs.updatedAt})
+ const tracked=await db.select({taskId:runs.taskId,memberId:runs.memberId,title:tasks.title,revision:runs.revision,taskRevision:tasks.revision,stage:runs.stage,startedAt:runs.startedAt,submittedAt:runs.submittedAt,offeredAt:runs.offeredAt,updatedAt:runs.updatedAt})
   .from(runs).innerJoin(tasks,eq(tasks.id,runs.taskId)).where(and(inArray(runs.memberId,ids),ne(tasks.status,'cancelled'),or(inArray(runs.stage,['working','blocked']),and(eq(runs.stage,'todo'),ne(tasks.status,'done'),isNotNull(runs.offeredAt)))));
- const legacy=await db.select({taskId:tasks.id,memberId:tasks.assigneeId,title:tasks.title,startedAt:tasks.startedAt,updatedAt:tasks.updatedAt}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(inArray(tasks.assigneeId,ids),eq(tasks.status,'in_progress'),isNull(runs.taskId)));
- const jobs=[...tracked,...legacy.map(t=>({...t,stage:'working' as const,submittedAt:null,offeredAt:null}))];
+ const legacy=await db.select({taskId:tasks.id,memberId:tasks.assigneeId,title:tasks.title,taskRevision:tasks.revision,startedAt:tasks.startedAt,updatedAt:tasks.updatedAt}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(inArray(tasks.assigneeId,ids),eq(tasks.status,'in_progress'),isNull(runs.taskId)));
+ const jobs=[...tracked,...legacy.map(t=>({...t,revision:0,stage:'working' as const,submittedAt:null,offeredAt:null}))];
  const legacyReleases=await db.select({id:tasks.assigneeId,at:sql<string|null>`max(coalesce(${tasks.completedAt},${tasks.updatedAt}))`}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(inArray(tasks.assigneeId,ids),inArray(tasks.status,['done','cancelled']),isNull(runs.taskId))).groupBy(tasks.assigneeId);
  const releases=await db.select({id:runs.memberId,at:sql<string|null>`max(case when ${tasks.status}='cancelled' or ${runs.stage}='cancelled' or (${tasks.status}='done' and ${runs.stage}='todo') then greatest(${tasks.updatedAt},${runs.updatedAt}) when ${runs.stage} in ('submitted','confirmed') then ${runs.submittedAt} when ${runs.stage}='todo' and ${runs.startedAt} is not null and ${runs.offeredAt} is null then ${runs.queuedAt} end)`})
   .from(runs).innerJoin(tasks,eq(tasks.id,runs.taskId)).where(inArray(runs.memberId,ids)).groupBy(runs.memberId);

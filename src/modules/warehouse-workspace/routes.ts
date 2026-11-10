@@ -21,7 +21,7 @@ const text=(x:unknown,max=2000)=>String(x??'').trim().slice(0,max);
 const positive=(x:unknown,max:number)=>{const v=Number(x);if(!Number.isFinite(v)||v<=0||v>max)fail('Định mức hoặc khối lượng không hợp lệ.');return v;};
 const deadline=(t:{dueDate:string|null;dueTime:string|null})=>t.dueDate?new Date(t.dueDate+'T'+(t.dueTime||'23:59')+':00+07:00').toISOString():null;
 const warehousePeople=()=>and(eq(employees.positionId,'warehouse'),eq(employees.role,'employee'),eq(employees.active,true),isNull(employees.deletedAt));
-const stageSql=sql<string>`coalesce(${runs.stage},case when ${tasks.status}='done' then 'legacy' when ${tasks.status}='cancelled' then 'cancelled' else 'todo' end)`;
+const stageSql=sql<string>`coalesce(${runs.stage},case when ${tasks.status}='done' then 'legacy' when ${tasks.status}='in_progress' then 'untracked-working' when ${tasks.status}='cancelled' then 'cancelled' else 'todo' end)`;
 const assignedScope=(id:string)=>or(eq(runs.memberId,id),and(isNull(runs.memberId),eq(tasks.assigneeId,id)));
 const teamScope=()=>and(isNull(runs.memberId),isNull(tasks.assigneeId),eq(tasks.assigneePosition,'warehouse'));
 const taskScope=(id:string)=>or(assignedScope(id),teamScope());
@@ -74,9 +74,9 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
   const scope=filter==='team'?teamScope():id?(m.role==='manager'?assignedScope(id):taskScope(id)):sql`false`,active=sql`${tasks.status}<>'cancelled'`;
   const overdueFilter=sql`${stageSql} not in ('confirmed','legacy') and coalesce(${runs.dueAt}::timestamptz,(${tasks.dueDate} || 'T' || coalesce(${tasks.dueTime},'23:59') || ':00+07:00')::timestamptz)<${now}::timestamptz`;
   const doneTodayFilter=sql`${runs.stage}='confirmed' and (${runs.confirmedAt}::timestamptz at time zone 'Asia/Ho_Chi_Minh')::date=${today}::date`;
-  const [counts]=await c.env.db.select({todo:sql<number>`count(*) filter(where ${stageSql}='todo' and ${tasks.status}<>'done')`.mapWith(Number),working:sql<number>`count(*) filter(where ${stageSql} in ('working','blocked'))`.mapWith(Number),review:sql<number>`count(*) filter(where ${stageSql}='submitted')`.mapWith(Number),overdue:sql<number>`count(*) filter(where ${overdueFilter})`.mapWith(Number),doneToday:sql<number>`count(*) filter(where ${doneTodayFilter})`.mapWith(Number)}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(scope,active));
-  const tabs={overdue:overdueFilter,todayDone:doneTodayFilter,priority:sql`${stageSql} not in ('confirmed','legacy')`,working:sql`${stageSql} in ('working','blocked')`,review:eq(runs.stage,'submitted'),done:sql`${stageSql} in ('confirmed','legacy') and ${monthWhere(month)}`};
-  const rows=await c.env.db.select({task:tasks,run:runs}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(scope,active,tabs[selected as keyof typeof tabs])).orderBy(asc(sql`case ${tasks.priority} when 'urgent' then 0 when 'high' then 1 when 'normal' then 2 else 3 end`),asc(tasks.dueDate),asc(tasks.id)).limit(31).offset(page*30);
+  const [counts]=await c.env.db.select({todo:sql<number>`count(*) filter(where ${stageSql}='todo' and ${tasks.status}<>'done')`.mapWith(Number),working:sql<number>`count(*) filter(where ${stageSql} in ('working','blocked','untracked-working'))`.mapWith(Number),review:sql<number>`count(*) filter(where ${stageSql}='submitted')`.mapWith(Number),overdue:sql<number>`count(*) filter(where ${overdueFilter})`.mapWith(Number),doneToday:sql<number>`count(*) filter(where ${doneTodayFilter})`.mapWith(Number)}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(scope,active));
+  const tabs={overdue:overdueFilter,todayDone:doneTodayFilter,priority:sql`${stageSql} not in ('confirmed','legacy')`,working:sql`${stageSql} in ('working','blocked','untracked-working')`,review:eq(runs.stage,'submitted'),done:sql`${stageSql} in ('confirmed','legacy') and ${monthWhere(month)}`};
+  const rows=await c.env.db.select({task:tasks,run:runs}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(scope,active,tabs[selected as keyof typeof tabs])).orderBy(asc(sql`case when ${runs.stage} in ('working','blocked') or (${runs.taskId} is null and ${tasks.status}='in_progress') then 0 when ${runs.stage}='todo' and ${runs.offeredAt} is not null then 1 when ${runs.stage}='todo' and ${runs.queuedAt} is not null then 2 else 3 end`),asc(sql`case ${tasks.priority} when 'urgent' then 0 when 'high' then 1 when 'normal' then 2 else 3 end`),asc(tasks.dueDate),asc(tasks.id)).limit(31).offset(page*30);
   const [closed]=id?await c.env.db.select().from(months).where(and(eq(months.memberId,id),eq(months.month,month))):[];
   const report=closed?{...parseJson<Record<string,unknown>>(closed.snapshot,{}),locked:true,approvedAt:closed.approvedAt}:id?{...await liveReport(c.env.db,id,month,now),locked:false}:null;
   const publicReport=report&&Object.fromEntries(Object.entries(report).filter(([key])=>key!=='tasks'));
@@ -94,6 +94,25 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
    await db.insert(settings).values({id:'default',createdAt:new Date().toISOString(),calendar:JSON.stringify(b.calendar),autoDispatch:autoFlag??old?.autoDispatch??true,bonusBudget:budget,updatedBy:m.id,updatedAt:new Date().toISOString()}).onConflictDoUpdate({target:settings.id,set:{calendar:JSON.stringify(b.calendar),autoDispatch:autoFlag??old?.autoDispatch??true,bonusBudget:budget,updatedBy:m.id,updatedAt:new Date().toISOString(),revision:sql`${settings.revision}+1`}});
    await dispatchWarehouseQueue(db,new Date().toISOString());
   });return json({ok:true});
+ },'business');
+ router.post('/warehouse-workspace/create',async c=>{
+  const m=access(c);if(m.role!=='manager')fail('Chỉ Manager giao việc có thưởng.',403);
+  const b=await readJson(c.req,8000),title=text(b.title,300),description=text(b.description),dueDate=text(b.dueDate,10),dueTime=text(b.dueTime||'23:59',5),requestId=text(b.requestId,36).toLowerCase(),memberId=b.memberId==='auto'?'':text(b.memberId,100),kind=text(b.kind||'manual'),priority=text(b.priority||'normal');
+  if(!title||!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(requestId))fail('Nhập tên việc và mã yêu cầu hợp lệ.');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)||!Number.isFinite(Date.parse(dueDate+'T00:00:00Z'))||new Date(dueDate+'T00:00:00Z').toISOString().slice(0,10)!==dueDate||!/^([01]\d|2[0-3]):[0-5]\d$/.test(dueTime))fail('Hạn công việc không hợp lệ.');
+  if(!KINDS.includes(kind as never)||!['low','normal','high','urgent'].includes(priority))fail('Loại việc / ưu tiên không hợp lệ.');
+  const standardMinutes=positive(b.standardMinutes,100000),weight=b.weight==null||b.weight===''?1:positive(b.weight,10000),now=new Date().toISOString(),due=deadline({dueDate,dueTime})!,id='ww-'+m.id+'-'+requestId;
+  const creationHash=sha256Hex(JSON.stringify({title,description,dueDate,dueTime,memberId,kind,priority,standardMinutes,weight}));
+  const result=await c.env.db.transaction(async tx=>{
+   const db=tx as unknown as Db;await warehouseDispatchLock(db);
+   const [prior]=await db.select().from(runs).where(eq(runs.taskId,id));
+   if(prior){if(prior.creationHash!==creationHash)fail('Mã yêu cầu đã dùng cho nội dung khác. Tải lại trước khi giao.',409);return {ok:true,id,existing:true,memberId:prior.memberId};}
+   const [config]=await db.select().from(settings).where(eq(settings.id,'default'));if(!config||!validCalendar(parseJson(config.calendar,null)))fail('Cài đặt ca làm trước khi giao việc.');
+   if(memberId){await assertWarehouseFree(db,memberId);await assertOpen(db,memberId,vietnamMonth(due));}
+   await db.insert(tasks).values({id,title,description,dueDate,dueTime,priority:priority as 'normal',assigneeId:memberId||null,assigneePosition:memberId?null:'warehouse',createdBy:m.id,createdAt:now,updatedAt:now});
+   await db.insert(runs).values({taskId:id,memberId:memberId||null,creationHash,queuedAt:now,offeredAt:memberId?now:null,kind:kind as typeof KINDS[number],weight,standardMinutes,calendar:config.calendar,dueAt:due,reviewNote:'Manager giao việc có thưởng',updatedAt:now});
+   await dispatchWarehouseQueue(db,now);const [assigned]=await db.select({memberId:runs.memberId}).from(runs).where(eq(runs.taskId,id));return {ok:true,id,existing:false,memberId:assigned?.memberId||null};
+  });return json(result,result.existing?200:201);
  },'business');
  router.post('/warehouse-workspace/dispatch-queue',async c=>{
   const m=access(c),b=await readJson(c.req,1000);if(b.force!==undefined&&typeof b.force!=='boolean')fail('Thao tác không hợp lệ.');if(b.force&&m.role!=='manager')fail('Chỉ Manager giao việc thủ công.',403);

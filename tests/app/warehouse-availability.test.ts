@@ -50,3 +50,12 @@ test('legacy work already in progress blocks new rewarded dispatch without adopt
  await f.db.update(tasks).set({status:'done',completedAt:at}).where(eq(tasks.id,'legacy-working'));ok(await f.configure('dispatch-0','wh'));
  ok(await f.configure('home-manager','auto'),404);
 });
+test('creating a rewarded job is atomic and idempotent, with no duplicate job after lost response',async()=>{
+ const f=await setup(),body={requestId:crypto.randomUUID(),title:'Soạn đơn có thưởng',memberId:'wh',kind:'picking',dueDate:f.today,dueTime:'23:59',standardMinutes:30};
+ const created=ok(await f.call('/warehouse-workspace/create',f.cookies.mgr,'POST',body),201);assert.equal((await f.run(created.id)).weight,1);
+ assert.equal(ok(await f.call('/warehouse-workspace/create',f.cookies.mgr,'POST',body)).id,created.id);
+ ok(await f.call('/warehouse-workspace/create',f.cookies.mgr,'POST',{...body,title:'Nội dung khác'}),409);
+ const another={...body,requestId:crypto.randomUUID()};ok(await f.call('/warehouse-workspace/create',f.cookies.mgr,'POST',another),409);
+ assert.equal((await f.db.select().from(tasks).where(eq(tasks.id,'ww-mgr-'+another.requestId))).length,0);
+ ok(await f.call('/warehouse-workspace/create',f.cookies.wh,'POST',{...body,memberId:'auto'}),403);
+});
