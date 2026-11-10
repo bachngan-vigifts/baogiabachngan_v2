@@ -1,0 +1,273 @@
+{
+  "baselineCommit": "d4533b58",
+  "before": {
+    "phase": "before",
+    "conditions": {
+      "runsPerViewport": 3,
+      "latencyMs": 40,
+      "downloadBps": 1600000,
+      "source": "local CRM API and synthetic data; not production"
+    },
+    "summary": [
+      {
+        "width": 1440,
+        "ready": 3230.8897830000024,
+        "ttfb": 10.299999982118607,
+        "load": 3123.2000000178814,
+        "fcp": 572,
+        "lcp": 2972,
+        "cls": 0.000647442361442272,
+        "jsRequests": 164,
+        "jsBytes": 2435103,
+        "openingApis": 16
+      },
+      {
+        "width": 430,
+        "ready": 3089.5761230000026,
+        "ttfb": 5.5999999940395355,
+        "load": 3055,
+        "fcp": 580,
+        "lcp": 580,
+        "cls": 0.07779259776596142,
+        "jsRequests": 164,
+        "jsBytes": 2435103,
+        "openingApis": 16
+      }
+    ],
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3428.2032679999993,
+        "ttfb": 10.299999982118607,
+        "load": 3294.5999999940395,
+        "fcp": 600,
+        "lcp": 3024,
+        "cls": 0.000647442361442272,
+        "jsRequests": 164,
+        "jsBytes": 2435103,
+        "openingApis": 16
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3076.325946000001,
+        "ttfb": 11.299999982118607,
+        "load": 3035.7999999821186,
+        "fcp": 540,
+        "lcp": 2972,
+        "cls": 0.000647442361442272,
+        "jsRequests": 164,
+        "jsBytes": 2435103,
+        "openingApis": 16
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3230.8897830000024,
+        "ttfb": 3,
+        "load": 3123.2000000178814,
+        "fcp": 572,
+        "lcp": 2956,
+        "cls": 0.000647442361442272,
+        "jsRequests": 164,
+        "jsBytes": 2435103,
+        "openingApis": 16
+      },
+      {
+        "width": 430,
+        "run": 1,
+        "ready": 3089.5761230000026,
+        "ttfb": 5.5999999940395355,
+        "load": 3055,
+        "fcp": 576,
+        "lcp": 576,
+        "cls": 0.07779259776596142,
+        "jsRequests": 164,
+        "jsBytes": 2435103,
+        "openingApis": 16
+      },
+      {
+        "width": 430,
+        "run": 2,
+        "ready": 3115.2909560000007,
+        "ttfb": 6.200000017881393,
+        "load": 3082,
+        "fcp": 580,
+        "lcp": 580,
+        "cls": 0.07779259776596142,
+        "jsRequests": 164,
+        "jsBytes": 2435103,
+        "openingApis": 16
+      },
+      {
+        "width": 430,
+        "run": 3,
+        "ready": 3084.7388979999996,
+        "ttfb": 2.7000000178813934,
+        "load": 3047.5999999940395,
+        "fcp": 604,
+        "lcp": 604,
+        "cls": 0.07779259776596142,
+        "jsRequests": 164,
+        "jsBytes": 2435103,
+        "openingApis": 16
+      }
+    ],
+    "cases": [],
+    "writes": []
+  },
+  "after": {
+    "phase": "after",
+    "conditions": {
+      "runsPerViewport": 3,
+      "latencyMs": 40,
+      "downloadBps": 1600000,
+      "source": "local CRM API and synthetic data; not production"
+    },
+    "summary": [
+      {
+        "width": 1440,
+        "ready": 3235.652581000002,
+        "ttfb": 3.199999988079071,
+        "load": 3146.699999988079,
+        "fcp": 588,
+        "lcp": 2964,
+        "cls": 0.0006473326643882796,
+        "jsRequests": 164,
+        "jsBytes": 2435721,
+        "openingApis": 16
+      },
+      {
+        "width": 430,
+        "ready": 3114.2337640000005,
+        "ttfb": 3.4000000059604645,
+        "load": 3082.5,
+        "fcp": 612,
+        "lcp": 612,
+        "cls": 0.07779259776596142,
+        "jsRequests": 164,
+        "jsBytes": 2435721,
+        "openingApis": 16
+      }
+    ],
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3432.0563409999995,
+        "ttfb": 5.5,
+        "load": 3297.300000011921,
+        "fcp": 596,
+        "lcp": 3000,
+        "cls": 0.0006473326643882796,
+        "jsRequests": 164,
+        "jsBytes": 2435721,
+        "openingApis": 16
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3152.2543069999992,
+        "ttfb": 2.199999988079071,
+        "load": 3056.7000000178814,
+        "fcp": 580,
+        "lcp": 2936,
+        "cls": 0.0006473326643882796,
+        "jsRequests": 164,
+        "jsBytes": 2435721,
+        "openingApis": 16
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3235.652581000002,
+        "ttfb": 3.199999988079071,
+        "load": 3146.699999988079,
+        "fcp": 588,
+        "lcp": 2964,
+        "cls": 0.0006473326643882796,
+        "jsRequests": 164,
+        "jsBytes": 2435721,
+        "openingApis": 16
+      },
+      {
+        "width": 430,
+        "run": 1,
+        "ready": 3132.021625999998,
+        "ttfb": 3.4000000059604645,
+        "load": 3096.2999999821186,
+        "fcp": 632,
+        "lcp": 632,
+        "cls": 0.07779259776596142,
+        "jsRequests": 164,
+        "jsBytes": 2435721,
+        "openingApis": 16
+      },
+      {
+        "width": 430,
+        "run": 2,
+        "ready": 3062.250745999998,
+        "ttfb": 6.800000011920929,
+        "load": 3027.199999988079,
+        "fcp": 560,
+        "lcp": 560,
+        "cls": 0.07779259776596142,
+        "jsRequests": 164,
+        "jsBytes": 2435721,
+        "openingApis": 16
+      },
+      {
+        "width": 430,
+        "run": 3,
+        "ready": 3114.2337640000005,
+        "ttfb": 2.4000000059604645,
+        "load": 3082.5,
+        "fcp": 612,
+        "lcp": 612,
+        "cls": 0.07779259776596142,
+        "jsRequests": 164,
+        "jsBytes": 2435721,
+        "openingApis": 16
+      }
+    ],
+    "cases": [
+      {
+        "width": 320,
+        "relatedTabs": 6,
+        "payrollAndAttendance": true
+      },
+      {
+        "width": 360,
+        "relatedTabs": 6,
+        "payrollAndAttendance": true
+      },
+      {
+        "width": 390,
+        "relatedTabs": 6,
+        "payrollAndAttendance": true
+      },
+      {
+        "width": 430,
+        "relatedTabs": 6,
+        "payrollAndAttendance": true
+      },
+      {
+        "width": 768,
+        "relatedTabs": 6,
+        "payrollAndAttendance": true
+      },
+      {
+        "width": 850,
+        "relatedTabs": 6,
+        "payrollAndAttendance": true
+      },
+      {
+        "width": 1440,
+        "relatedTabs": 6,
+        "payrollAndAttendance": true
+      }
+    ],
+    "writes": []
+  }
+}

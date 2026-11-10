@@ -473,3 +473,20 @@
  .pos-checkout .pos-line-top>strong { grid-column:1;grid-row:2;min-width:0;white-space:normal;overflow-wrap:anywhere; }
  .pos-checkout .pos-line-top>.btn { grid-column:2;grid-row:2; }
 }
+
+/* Member related records: prevent generic member-table rules from squeezing customer names. */
+@media screen and (max-width:850px) {
+ #view-member #member-detail .cd-tabs-card { min-width:0;max-width:100%; }
+ #view-member #member-detail .cd-tabs { min-width:0;max-width:100%;overflow-x:auto;flex-wrap:nowrap; }
+ #view-member #member-detail .cd-tabs .chip { flex:0 0 auto; }
+ #view-member #member-detail .md-related-wrap { overflow:visible!important;min-width:0; }
+ #view-member #member-detail .md-related-table { display:block!important;min-width:0!important;width:100%!important;table-layout:auto; }
+ #view-member #member-detail .md-related-table thead { position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%); }
+ #view-member #member-detail .md-related-table tbody { display:block!important; }
+ #view-member #member-detail .md-related-table tr { display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;margin:0 0 12px;padding:12px;border:1px solid var(--line);border-radius:10px;align-items:start; }
+ #view-member #member-detail .md-related-table td { display:block!important;min-width:0!important;max-width:100%;width:auto!important;margin:0!important;padding:0!important;border:0;white-space:normal!important;overflow-wrap:anywhere;text-align:left!important; }
+ #view-member #member-detail .md-related-table td:first-child { grid-column:1/-1;font-size:var(--text-body); }
+ #view-member #member-detail .md-related-table td:first-child a { display:inline;white-space:normal;overflow-wrap:anywhere; }
+ #view-member #member-detail .md-related-table td.num { font-size:var(--text-small); }
+ #view-member #member-detail .md-related-table td[data-label]::before { content:attr(data-label)!important;display:block;font-size:var(--text-caption);font-weight:400;color:var(--muted);margin-bottom:3px; }
+}
