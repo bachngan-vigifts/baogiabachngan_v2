@@ -55,7 +55,7 @@ type Ctx = RouteContext<StaffEnv>;
 const member = (c: Ctx) => (c.state.session as SessionState).member;
 function readAccess(c: Ctx): void {
   if (!canViewSepay(member(c)))
-    throw new AppError(403, "Chỉ Manager và Kế toán được xem sổ SePay.");
+    throw new AppError(403, "Chức vụ của bạn chưa được cấp quyền Thanh toán SePay.");
 }
 const validWeb = validWebSepay();
 const state = sql<string>`case when ${bank.status}='matched' and

@@ -58,7 +58,7 @@ export async function pullSepayToday(env: StaffEnv, actorId: string) {
 export function registerSepayReadRoutes(router: Router<StaffEnv>) {
   router.post('/sepay/pull-today', async c => {
     const actor = (c.state.session as SessionState).member;
-    if (!canViewSepay(actor)) throw new AppError(403, 'Chỉ Manager và Kế toán được lấy giao dịch SePay.');
+    if (!canViewSepay(actor)) throw new AppError(403, 'Chức vụ của bạn chưa được cấp quyền Thanh toán SePay.');
     const body = await readJson(c.req, 1000);
     if (Object.keys(body).length) throw new AppError(400, 'Thao tác chỉ lấy giao dịch hôm nay; không nhận token hoặc ngày từ trình duyệt.');
     return json(await pullSepayToday(c.env, actor.id));

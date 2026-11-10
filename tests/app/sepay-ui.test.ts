@@ -21,7 +21,7 @@ test("SePay page is lazy, versions CSS and closes on logout/navigation without p
     html = readFileSync(new URL("index.html", root), "utf8");
   assert.ok(app.includes("import('./sepay.js')"));
   assert.ok(!/^import .*sepay/m.test(app));
-  assert.ok(app.includes("view === 'sepay' ? isManager() || isAccountant()"));
+  assert.ok(app.includes("sepay: 'page.sepay'"));
   assert.ok(app.includes("view !== 'sepay'"));
   assert.ok(app.includes("typeof sepayUi !== 'undefined'"));
   assert.ok(html.includes('id="view-sepay"'));
