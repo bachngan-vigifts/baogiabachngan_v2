@@ -18,7 +18,7 @@ Trang hiển thị giao dịch tiền vào đã được webhook CRM hoặc thao
 
 ### Danh sách chọn thủ công
 
-Bấm **Xem / đối soát** mở ngay danh sách **POS / website / đơn CRM / HĐKT**, 20 dòng mỗi trang, có Trước/Sau. Không mặc định giới hạn ngày để tránh ẩn hợp đồng lập trước ngày khách chuyển tiền. Có bộ lọc nguồn, trạng thái, ngày đơn và giá trị; tìm khi ngừng gõ 250 ms, từ khóa có thể để trống. Ngày đơn CRM lấy ngày lập trên chứng từ; POS/web dùng thời điểm nguồn theo ngày Việt Nam. Giá trị lọc là tổng đơn, không suy đoán số còn phải thu. Bản nháp chưa duyệt/ký và đơn hủy hiện lý do không thể chọn; kiểm tra ghi thu vẫn giữ nguyên. Tên công ty/liên hệ/mã khách trong hồ sơ được tìm cùng tên/mã trên đơn, ưu tiên mã khớp chính xác.
+Bấm **Xem / đối soát** mở ngay danh sách **POS / website / đơn CRM / HĐKT**, 20 dòng mỗi trang, có Trước/Sau. Không mặc định giới hạn ngày để tránh ẩn hợp đồng lập trước ngày khách chuyển tiền. Có bộ lọc nguồn, trạng thái, ngày đơn và giá trị; tìm khi ngừng gõ 250 ms, từ khóa có thể để trống. Ngày đơn CRM lấy ngày lập trên chứng từ; POS/web dùng thời điểm nguồn theo ngày Việt Nam. Giá trị lọc là tổng đơn, không suy đoán số còn phải thu. Đơn CRM/HĐKT còn nháp được chọn để đối soát thủ công theo luồng Thu tiền CRM; đơn hủy không được chọn. Tự động khớp vẫn yêu cầu hiệu lực công nợ. Tên công ty/liên hệ/mã khách trong hồ sơ được tìm cùng tên/mã trên đơn, ưu tiên mã khớp chính xác.
 
 Chọn một đơn để xem trước; nhập lý do 10–1.000 ký tự và xác nhận chứng từ. POS phải chọn phiếu có sẵn; web liên kết chứng từ ngân hàng; CRM/HĐKT giữ kiểm tra công nợ và tiền mặt nhân viên đang giữ như trước. Manager có thể giải quyết mã sai trong cùng nguồn, nhưng không chuyển chứng từ đã xác định nguồn POS/web sang luồng khác. Tài khoản chưa duyệt vẫn xem/tìm được; chỉ xác nhận khi đúng tài khoản nhận. Kế toán chỉ xem, không tìm đích hoặc xác nhận qua API quản trị.
 
@@ -88,12 +88,12 @@ Sau khi tài khoản công ty được xác nhận và cấu hình trên máy ch
 ## Manager xử lý giao dịch thiếu hoặc sai mã
 
 1. Mở giao dịch chờ đối soát; kiểm tra chứng từ ngân hàng thật.
-2. Tìm bằng số đơn/HĐKT hoặc tên khách; chọn đúng đơn CRM/HĐKT còn hiệu lực công nợ. Trang hiển thị số còn phải thu, tiền mặt nhân viên đang giữ và số còn có thể thu.
+2. Tìm bằng số đơn/HĐKT hoặc tên khách; chọn đúng đơn CRM/HĐKT chưa hủy (kể cả nháp khi Manager chủ động đối soát). Trang hiển thị số còn phải thu, tiền mặt nhân viên đang giữ và số còn có thể thu.
 3. Chọn **Tạo phiếu thu mới** hoặc **Gắn phiếu thu hiện có**. Chỉ phiếu chuyển khoản còn hiệu lực, cùng đơn, cùng số tiền và ngày thu Việt Nam, chưa gắn giao dịch SePay khác mới được đề xuất. Gắn phiếu có sẵn không cộng thêm tiền.
 4. Ghi lý do 10–1.000 ký tự, tích đã đối chiếu; bấm **Xem trước khi xác nhận** và kiểm tra lại số tiền, tài khoản, chứng từ, đơn/khách và cách ghi nhận.
 5. Bấm **Xác nhận ghi thu**. Máy chủ kiểm tra lại công nợ và chứng từ dưới khoá giao dịch, ghi phiếu thu/liên kết và nhật ký cùng một transaction.
 
-Không thể ép ghi thu vào đơn huỷ, nháp chưa có công nợ, tạo mới phiếu POS ngoài luồng quầy, tài khoản chưa được duyệt, hoặc tạo phiếu thu vượt công nợ sau khi trừ tiền nhân viên đang giữ. Nếu có phiếu nhập trước trùng số tiền/ngày hay mã giao dịch, phải đối chiếu và chọn phiếu phù hợp; không tạo thêm để bỏ qua cảnh báo. Trang không đổi đơn đã ghi nhận sang đơn khác.
+Không thể ép ghi thu vào đơn huỷ, đơn không có lịch phải thu hợp lệ, tạo mới phiếu POS ngoài luồng quầy, tài khoản chưa được duyệt, hoặc tạo phiếu thu vượt công nợ sau khi trừ tiền nhân viên đang giữ. Nếu có phiếu nhập trước trùng số tiền/ngày hay mã giao dịch, phải đối chiếu và chọn phiếu phù hợp; không tạo thêm để bỏ qua cảnh báo. Trang không đổi đơn đã ghi nhận sang đơn khác.
 
 Nếu phản hồi mạng bị mất, trạng thái có thể đã ghi thành công: bấm tải lại để kiểm tra. Không tự retry ghi tiền. Bấm lặp hoặc hai Manager xác nhận cùng lúc không tạo thêm phiếu cho cùng giao dịch; hai khoản cùng thu một đơn cũng kiểm tra lại giới hạn công nợ.
 
@@ -136,7 +136,7 @@ Kiểm thử QR web: 54/54 test liên quan đạt (tranh chấp trên PostgreSQL
 
 Khi Manager mở giao dịch cần đối soát, tải sẵn tối đa 20 đơn POS/web/CRM/HĐKT mỗi trang; không tải toàn bộ đơn hoặc tính công nợ từng dòng. Tìm khi ngừng gõ 250 ms, hỗ trợ tên công ty trong hồ sơ khách, tên trên đơn, liên hệ, điện thoại, mã khách, mã báo giá/đơn/HĐKT; bỏ dấu/hoa thường, nhiều từ khác thứ tự, mã khác dấu phân cách. Mã khớp chính xác được ưu tiên trước ngày lập mới nhất.
 
-Bộ lọc: nguồn chứng từ (POS/web/CRM/HĐKT/tất cả), tình trạng (chưa hủy/có thể chọn/bản nháp/đã hủy/tất cả), khoảng ngày lập. Có phân trang và nút bỏ bộ lọc. Mặc định chưa hủy, gồm bản nháp; bản nháp chưa duyệt/ký hiển thị lý do chưa thể chọn, thay vì mất hẳn khỏi kết quả. Đơn đã hủy chỉ hiện khi lọc tương ứng, không thể chọn. Điều kiện công nợ vẫn dùng quy tắc hiện hành: đơn draft có HĐKT signed/completed được chọn; draft chưa ký không được ghi thu.
+Bộ lọc: nguồn chứng từ (POS/web/CRM/HĐKT/tất cả), tình trạng (chưa hủy/có thể chọn/bản nháp/đã hủy/tất cả), khoảng ngày lập. Có phân trang và nút bỏ bộ lọc. Mặc định chưa hủy, gồm bản nháp; bản nháp CRM có thao tác chọn như đơn đã duyệt, kèm cảnh báo nhận tiền trước khi duyệt trong bước xem trước. Đơn đã hủy chỉ hiện khi lọc tương ứng, không thể chọn. Gán thủ công cho CRM tuân thủ luồng Thu tiền: đơn nháp chưa hủy có thể nhận tiền khi có lịch phải thu và còn số dư. Điều kiện tự động và báo cáo công nợ giữ nguyên: đơn đã duyệt hoặc HĐKT signed/completed mới có hiệu lực công nợ.
 
 Thay từ khóa/bộ lọc bỏ lựa chọn và bản xác nhận trước đó; phản hồi cũ bị bỏ qua khi tìm tiếp, chọn đơn khác, đổi giao dịch hoặc rời trang. Hủy timer tìm khi rời trang; không thêm polling. Giữ quyền Manager, không gán nhầm giữa các nguồn POS/web/CRM, kiểm tra lại công nợ và tài khoản nhận ở lúc ghi thu. Không tự duyệt ngân hàng hoặc chứng từ; không cần migration cho thay đổi tìm kiếm này. Triển khai cả API và UI cùng phiên bản.
 
@@ -150,6 +150,12 @@ Sau gộp main vào PR #601: hồi quy 54 đạt, 5 test cần PostgreSQL riêng
 
 Mỗi kết quả có nút **Chọn đơn này để gán khoản thu**. Bấm nút chỉ mở bước xem trước, chưa ghi dữ liệu. Màn hình đưa focus tới công nợ/đơn đã chọn, đánh dấu thẻ tương ứng và hiển thị số tiền sẽ gán. Nhập lý do, xác nhận đã đối chiếu, bấm **Xem lại để gán khoản thu**, rồi **Xác nhận gán khoản thu**; bước kiểm tra cuối cũng tự hiện trong vùng nhìn thấy trên điện thoại.
 
-Bản nháp chưa duyệt/ký và đơn hủy ghi rõ lý do không thể chọn. Nếu tài khoản nhận chưa được duyệt, phần xem trước hiện nút gán bị khóa kèm lý do và nút kiểm tra lại tài khoản; không tự bật quyền ghi thu. Không thay đổi API, chứng từ, số dư hoặc cấu hình ngân hàng trong thay đổi giao diện này.
+Đơn hủy và bản nháp POS không hợp lệ ghi rõ lý do không thể chọn; bản nháp CRM được Manager chọn để nhận tiền trước khi duyệt. Nếu tài khoản nhận chưa được duyệt, phần xem trước hiện nút gán bị khóa kèm lý do và nút kiểm tra lại tài khoản; không tự bật quyền ghi thu. Không thay đổi API, chứng từ, số dư hoặc cấu hình ngân hàng trong thay đổi giao diện này.
 
 Kiểm thử: 13 test liên quan đạt, 1 test tranh chấp PostgreSQL bỏ qua theo cấu hình. Hai bộ browser PC/mobile đạt: kiểm tra chọn từ 20 kết quả và tự hiện bước gán, số tiền/đơn đích, nút bị khóa cho tài khoản chưa duyệt, xác nhận cuối được nhìn thấy, phân quyền, ghi thu/gắn phiếu một lần và chọn POS/web/CRM. Typecheck và UI build đạt. Số đo mở trang 3 lượt mỗi viewport trước/sau được lưu trong `docs/testing/sepay-assignment-performance.json`; không dùng làm tốc độ production.
+
+### Gán thủ công vào CRM/HĐKT còn nháp
+
+Luồng `/payments` hiện có cho phép nhận tiền vào đơn CRM còn nháp; SePay thủ công nay dùng cùng điều kiện. Manager chủ động chọn chứng từ và xác nhận, không tự đổi trạng thái đơn/HĐKT. Xem trước cảnh báo tiền được ghi nhận trước khi duyệt; báo cáo công nợ chỉ đưa đơn vào khi có hiệu lực theo `debtCounts` hiện hành. Khoản nhận được trừ khỏi số còn có thể nhận, giữ kiểm tra lịch phải thu, tiền mặt đang giữ, tài khoản nhận, nguồn POS/web, phiếu nhập tay và giao dịch trùng. Tự động webhook/import không mở quyền này, vẫn yêu cầu hiệu lực công nợ. Không tự bật tài khoản nhận hay chạy migration.
+
+Kiểm thử nhận cọc CRM nháp: 50 test đạt, 5 test PostgreSQL riêng bỏ qua theo cấu hình; bổ sung kiểm tra tập trung chứng minh cả đơn và HĐKT vẫn nháp sau nhận tiền. Browser PC/mobile đạt chọn/gán HĐKT nháp với tài khoản hợp lệ, chặn ngân hàng chưa duyệt, không ghi thu trùng; typecheck và UI build đạt. Đo 3 lượt lạnh/viewport, baseline `9497db26`: 1440px ready 3064→3105 ms; 390px ready 3099→3083 ms. Giữ 15 API/163 JS khi mở trang; số đo cục bộ, không phải production. Raw `docs/testing/sepay-crm-draft-performance.json`.

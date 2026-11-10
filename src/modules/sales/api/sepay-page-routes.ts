@@ -279,12 +279,12 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
       const dates = sepayPageFilters(new URLSearchParams({from:fromDay || toDay || day,to:toDay || fromDay || day}),day);
       const from = fromDay ? dates.start : undefined, to = toDay ? dates.end : undefined;
       const crmEnd = toDay ? new Date(Date.parse(toDay)+86400000).toISOString().slice(0,10) : undefined;
-      const eligible = and(ne(orders.status,'cancelled'),or(ne(orders.status,'draft'),inArray(contracts.status,['signed','completed'])));
+      const eligible = and(ne(orders.status,'cancelled'),or(eq(orders.channel,'crm'),ne(orders.status,'draft'),inArray(contracts.status,['signed','completed'])));
       const name = sql<string>`coalesce(nullif(${customers.name},''),${orders.customerName})`;
       const webStatus = webDocumentStatus(), webEligible = ne(webStatus,'cancelled');
       const statusFilter = (status: typeof orders.status | typeof webStatus, canSelect: typeof eligible) =>
         eligibility === 'active' ? ne(sql`${status}`,'cancelled') : eligibility === 'eligible' ? canSelect :
-        eligibility === 'draft' ? and(eq(sql`${status}`,'draft'),sql`not coalesce(${canSelect},false)`) :
+        eligibility === 'draft' ? eq(sql`${status}`,'draft') :
         eligibility === 'cancelled' ? eq(sql`${status}`,'cancelled') : undefined;
       const rows = await c.env.db.select({
         id:orders.id, orderNo:orders.orderNo, contractNo:contracts.contractNo, customerName:name, total:orders.total,
@@ -362,11 +362,11 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
             );
           if (
             row.order.channel !== "crm" ||
-            !debtCounts(row.order.status, row.contractStatus)
+            row.order.status === "cancelled"
           )
             throw new AppError(
               409,
-              "Chỉ chọn đơn CRM/HĐKT đang có hiệu lực công nợ.",
+              "Chỉ chọn đơn CRM/HĐKT chưa hủy.",
             );
           const debt = (
               await netReceivables(tx, [row.order.id], vietnamDate().iso)
@@ -439,6 +439,9 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
               event.amount <= available &&
               !manualConflict,
             accountApproved,
+            warning: row.order.status === "draft" && !debtCounts(row.order.status,row.contractStatus)
+              ? "Đơn/HĐKT còn nháp: khoản thu được ghi nhận trước khi duyệt, trạng thái chứng từ giữ nguyên. Khoản này chưa đưa đơn vào công nợ đang có hiệu lực."
+              : "",
             manualConflict: !!manualConflict,
             existingReceipts: receiptRows.slice(0, 50),
             moreReceipts: receiptRows.length > 50,
