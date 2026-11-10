@@ -569,6 +569,20 @@ try {
     await view.context.close();
   }
   results.push({case:'active configured company bank creates one CRM draft receipt on PC/mobile without enabling automatic matching',pass:true});
+  await f.db.update(posRegisters).set({active:false}).where(eq(posRegisters.id,f.registerId));
+  f.env.sepayReceiptAccounts=[];
+  for (const width of [1440,390]) {
+    const order=await f.order('VG_BANK_'+width,{status:'draft'});
+    await f.db.insert(salesContracts).values({id:crypto.randomUUID(),orderId:order.id,contractNo:'11/HĐKT/VG-BANK'+width,legalEntity:'VG',status:'draft',createdBy:'mgr',createdAt:f.stamp,updatedAt:f.stamp});
+    const transfer=await f.incoming(order.orderNo,30000,{accountNumber:'159063909'});
+    const view=await pageFor(f.mgr,width,'#/sepay?q='+transfer.providerId);
+    await view.p.locator('[data-open]').waitFor();await detail(view.p,transfer.id);await choose(view.p,order.orderNo);
+    assert.ok((await view.p.locator('[data-preview]').textContent()).includes('Tài khoản mặc định159063909'));
+    await review(view.p);await view.p.locator('[data-confirm]').click();await view.p.locator('[data-notice] .sp-success').waitFor();
+    assert.equal((await f.db.select().from(customerPayments).where(eq(customerPayments.orderId,order.id))).length,1);
+    assert.equal(view.errors.length,0,view.errors.join('\n'));await view.context.close();
+  }
+  results.push({case:'VG contracts default to confirmed 159063909 account on PC/mobile without register or automatic secret',pass:true});
   const emp = await pageFor(f.emp, 1100, "#/sepay");
   await emp.p.waitForTimeout(500);
   assert.ok(!emp.p.url().includes("#/sepay"));

@@ -1,3 +1,4 @@
+import {defaultSepayCrmAccount} from '../domain/sepay-crm-account.ts';
 import {sepayManualAccountApproved} from './sepay-manual-account.ts';
 import {validWebSepay} from './web-sepay-evidence.ts';
 import {previewNearbySepay} from './sepay-proximity-store.ts';
@@ -220,7 +221,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
         .limit(20);
       const webPayment=!!row.webOrderId||await isLockWebQrPayment(c.env.db,row);
-      const accountApproved = await sepayManualAccountApproved(c.env.db,c.env,row.accountNumber);
+      const accountApproved = await sepayManualAccountApproved(c.env.db,c.env,row.accountNumber,row.contractNo);
       return json({
         transaction: row,
         history: history.map((h) => {
@@ -416,7 +417,8 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
               ),
             )
             .limit(1);
-          const accountApproved = await sepayManualAccountApproved(tx,c.env,event.accountNumber);
+          const accountApproved = await sepayManualAccountApproved(tx,c.env,event.accountNumber,row.contractNo);
+          const expectedAccount = defaultSepayCrmAccount(row.contractNo);
           return {
             order: {
               id: row.order.id,
@@ -438,9 +440,16 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
               event.amount <= available &&
               !manualConflict,
             accountApproved,
-            warning: row.order.status === "draft" && !debtCounts(row.order.status,row.contractStatus)
-              ? "Đơn/HĐKT còn nháp: khoản thu được ghi nhận trước khi duyệt, trạng thái chứng từ giữ nguyên. Khoản này chưa đưa đơn vào công nợ đang có hiệu lực."
+            expectedAccount,
+            blockReason: !accountApproved && expectedAccount && event.accountNumber !== expectedAccount
+              ? `HĐKT VG dùng tài khoản ${expectedAccount}; giao dịch thực nhận tại ${event.accountNumber}. Không gán khoản thu sai tài khoản.`
               : "",
+            warning: [
+              row.order.status === "draft" && !debtCounts(row.order.status,row.contractStatus)
+                ? "Đơn/HĐKT còn nháp: khoản thu được ghi nhận trước khi duyệt, trạng thái chứng từ giữ nguyên. Khoản này chưa đưa đơn vào công nợ đang có hiệu lực." : "",
+              accountApproved && expectedAccount && event.accountNumber !== expectedAccount
+                ? `Tài khoản mặc định của HĐKT VG là ${expectedAccount}, nhưng giao dịch thực nhận tại ${event.accountNumber}. Khi xác nhận, phiếu thu giữ đúng tài khoản thực nhận.` : "",
+            ].filter(Boolean).join(" "),
             manualConflict: !!manualConflict,
             existingReceipts: receiptRows.slice(0, 50),
             moreReceipts: receiptRows.length > 50,

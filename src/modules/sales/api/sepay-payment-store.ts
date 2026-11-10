@@ -191,7 +191,7 @@ export async function ingestPayment(
         .where(eq(salesOrders.id, candidates[0]!.id))
         .for("update");
       const [contract] = await tx
-        .select({ status: salesContracts.status })
+        .select({ status: salesContracts.status, contractNo: salesContracts.contractNo })
         .from(salesContracts)
         .where(eq(salesContracts.orderId, candidates[0]!.id))
         .limit(1);
@@ -200,7 +200,7 @@ export async function ingestPayment(
       if (!target || (manual ? target.channel !== "crm" || target.status === "cancelled" : !debtCounts(target.status, contract?.status))) matches = [];
       else {
         let accountAllowed = manual
-          ? await sepayManualAccountApproved(tx,env,payment.accountNumber)
+          ? await sepayManualAccountApproved(tx,env,payment.accountNumber,contract?.contractNo)
           : (env.sepayReceiptAccounts || []).includes(payment.accountNumber);
         approvedAccount = accountAllowed && target.channel === "crm";
         if(target.channel==='crm'&&sepayPosIntent(payment.content)) blockedReason='Giao dịch có mã QR POS; không tự gắn sang chứng từ CRM.';
