@@ -230,6 +230,9 @@ for (const example of [
   const reviewedPeriod=example.monthly?reviewList.monthly:reviewList.weeks.find((w:any)=>w.period===example.period);
   assert.equal(reviewedPeriod.submittedAt,firstStamp);
   const before=responsibility(await f.slip('2026-12')).amount;
+  ok(await f.call(`/staff-reports/${report.id}/review`,f.s.mgr,'POST',{review:'rejected',note:'Chờ duyệt rồi đánh giá chưa đạt'}));
+  assert.equal((await score()).score,0);assert.equal((await score()).submittedAt,firstStamp);
+  assert.equal(responsibility(await f.slip('2026-12')).amount,before-520000,'từ Chờ duyệt sang Chưa đạt tự trừ ngay');
   ok(await f.call(`/staff-reports/${report.id}/review`,f.s.mgr,'POST',{review:'ok'}));
   assert.equal((await score()).state,'on_time');assert.equal(responsibility(await f.slip('2026-12')).amount,before);
   for(let repeat=0;repeat<2;repeat++){
