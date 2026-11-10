@@ -138,7 +138,7 @@ export const EMPTY_GROUP_MONTH: GroupMonth = { bnRevenue: 0, bnAvgRevenue: 0, lo
 
 // ---------------- Phiếu lương
 export const LINE_LABEL = {
-  salaryByDays: 'Lương theo công', capacity: 'Phụ cấp năng lực', responsibility: 'Trách nhiệm', kpiBonus: 'Thưởng KPI DS',
+  warehouseBonus:'Thưởng công việc Kho',salaryByDays: 'Lương theo công', capacity: 'Phụ cấp năng lực', responsibility: 'Trách nhiệm', kpiBonus: 'Thưởng KPI DS',
   outputBonus: 'Thưởng sản lượng', quarterBonus: 'Thưởng quý', salesBonus: 'Thưởng DS', otherBonus: 'Thưởng khác', contractBonus:'Thưởng HĐKT',contractBonusAdjustment:'Điều chỉnh thưởng HĐKT kỳ trước',
   meal: 'Cơm + xăng', phone: 'Điện thoại', attendanceBonus: 'Chuyên cần', trip: 'Công tác / phụ cấp khác', overtime: 'Tăng ca',
   socialInsurance: 'BHXH', healthInsurance: 'BHYT', incomeTax: 'Thuế TNCN', violation: 'Vi phạm / khấu trừ',
@@ -161,6 +161,7 @@ export const GROUP_DEDUCTION: Record<PayrollGroup, LineKey[]> = {
 export interface PayslipCalc {
   group: PayrollGroup; positionLabel: string; workDays: number; baseSalary: number; revenue: number;
   income: PayLine[]; deductions: PayLine[]; gross: number; deductionTotal: number; net: number;
+  warehouseBonusBasis?:import('../../../core/contracts/warehouse-bonus.ts').WarehouseBonus;
   employment?: {company:'BN'|'VG'|null;department:string|null;leader:boolean};
   weeklyReportBasis?:import('../../../core/contracts/weekly-report.ts').WeeklyReportPoints;
   /** Read-only report score snapshot, including employees whose wage policy does not use report points. */
@@ -241,6 +242,7 @@ export function computePayslip(a: {
   const salesBonus = !f.teamBonus ? 0 : (g==='bn'||g==='lock')&&gm.teamRevenue?monthlyStoreBonus(p,g,gm.teamRevenue[g].revenue,gm.teamRevenue.bonusMode):g === 'bn' ? bnSalesBonus(p, gm.bnRevenue, gm.bnAvgRevenue) : g === 'lock' ? lockSalesBonus(p, gm.lockRevenue) : 0;
   const netPolicy=a.kpiNetRevenue!==undefined,rate = netPolicy?netKpiBonusRate(p,kpi?.used??null):kpiBonusRate(p, kpi?.used ?? null),bonusRevenue=netPolicy?Math.max(0,a.kpiNetRevenue!):revenue, phone = g === 'lock' ? 0 : f.phoneAllowance, phoneAdvance = adj('phone_advance');
   const amounts: Record<LineKey, [number, string]> = {
+    warehouseBonus:[0,''],
     salaryByDays: [lcb * days / p.standardDays, `${vnd(lcb)} × ${days} ngày ÷ ${p.standardDays}`],
     capacity: [f.capacityCoef * p.capacityUnit, f.capacityCoef ? `Hệ số ${f.capacityCoef} × ${vnd(p.capacityUnit)}` : ''],
     responsibility: [responsibility, weekly ? `${vnd(f.responsibility)} × ${days}/${p.standardDays} công × ${String(weeklyPoints).replace('.', ',')}/${weekly.required} điểm báo cáo ${weekly.required > 4 ? '(4 tuần + tháng)' : 'tuần'}` : f.responsibilityMode === 'per_day' ? `${vnd(p.responsibilityDay)} × ${days} ngày` : f.responsibilityMode === 'prorated' ? `${vnd(f.responsibility)} × ${days} ÷ ${p.standardDays}` : ''],

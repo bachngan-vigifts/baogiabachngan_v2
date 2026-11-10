@@ -1,3 +1,5 @@
+import {payrollLock} from '../../core/db/payroll-lock.ts';
+import type {AssertWarehousePayrollOpen} from '../../core/contracts/warehouse-bonus.ts';
 import {warehouseAvailability,warehouseDispatchLock,assertWarehouseFree,dispatchWarehouseQueue} from './dispatch.ts';
 import {stockTransfers} from '../inventory/schema.ts';
 import {incomingShipments} from '../suppliers/schema.ts';
@@ -57,7 +59,7 @@ export async function assertWarehouseTaskMutable(db:Db,t:typeof tasks.$inferSele
  const [r]=await db.select({id:runs.taskId}).from(runs).where(eq(runs.taskId,t.id)).limit(1);
  if(r)fail('Việc đã theo dõi hiệu suất Kho. Thao tác tại Kho của tôi; Manager hủy việc thủ công tại đó để giữ lịch sử.',409);
 }
-export function registerWarehouseWorkspace(router:Router<StaffEnv>){
+export function registerWarehouseWorkspace(router:Router<StaffEnv>,deps:{assertPayrollOpen?:AssertWarehousePayrollOpen}={}){
  router.get('/warehouse-workspace',async c=>{
   const m=access(c),p=c.url.searchParams,now=new Date().toISOString(),today=vietnamDate().iso,month=p.get('month')||today.slice(0,7);
   if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))fail('Tháng không hợp lệ.');
@@ -87,7 +89,7 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
  router.put('/warehouse-workspace/settings',async c=>{
   const m=access(c);if(m.role!=='manager')fail('Chỉ Manager cài đặt định mức.',403);
   const b=await readJson(c.req,8000);if(!validCalendar(b.calendar))fail('Ca làm / giờ nghỉ / ngày làm không hợp lệ.');
-  if(!text(b.reason))fail('Nhập lý do cài đặt.');const budget=b.bonusBudget==null||b.bonusBudget===''?null:Number(b.bonusBudget);if(budget!==null&&(!Number.isFinite(budget)||budget<0||budget>1e9))fail('Quỹ thưởng không hợp lệ.');
+  if(!text(b.reason))fail('Nhập lý do cài đặt.');const budget=b.bonusBudget==null||b.bonusBudget===''?null:Number(b.bonusBudget);if(budget!==null&&(!Number.isSafeInteger(budget)||budget<0||budget>1e9))fail('Quỹ thưởng không hợp lệ.');
   if(b.autoDispatch!==undefined&&typeof b.autoDispatch!=='boolean')fail('Chế độ tự giao việc không hợp lệ.');const autoFlag=typeof b.autoDispatch==='boolean'?b.autoDispatch:undefined;
   await c.env.db.transaction(async tx=>{const db=tx as unknown as Db;await warehouseDispatchLock(db);await db.select().from(employees).where(eq(employees.id,m.id)).for('update');const [old]=await db.select().from(settings).where(eq(settings.id,'default'));
    if(Number(b.revision||0)!==(old?.revision||0))fail('Cài đặt vừa thay đổi. Tải lại trước khi lưu.',409);
@@ -215,10 +217,13 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>){
    return json({ok:true,demo:true,previewOnly:true,month,memberId:id,generatedAt:now,report});
   }
   if(month>=currentMonth)fail('Chỉ duyệt sau khi tháng đã kết thúc. Dùng Demo cho tháng hiện tại.');
-  await c.env.db.transaction(async tx=>{const db=tx as unknown as Db;await lockWorker(db,id);await assertOpen(db,id,month);const report=await liveReport(db,id,month,now);
+  await c.env.db.transaction(async tx=>{const db=tx as unknown as Db;await payrollLock(db);await warehouseDispatchLock(db);await lockWorker(db,id);await assertOpen(db,id,month);
+   if(!deps.assertPayrollOpen)fail('Chưa có kết nối kiểm tra kỳ lương. Không thể duyệt thưởng.',503);await deps.assertPayrollOpen(db,id,month);const report=await liveReport(db,id,month,now);
    if(report.score===null)fail('Chưa đủ dữ liệu hoặc còn kết quả / khoảng chờ chưa xác nhận.',409);
    if(report.fingerprint!==b.fingerprint)fail('Số liệu vừa thay đổi. Tải lại và đối soát trước khi duyệt.',409);
-   await db.insert(months).values({memberId:id,month,snapshot:JSON.stringify(report),approvedBy:m.id,approvedAt:now});
-  });return json({ok:true,previewOnly:true});
+   if(report.bonusPreview===null||report.budget===null||report.factor===null)fail('Cài quỹ thưởng trước khi duyệt tháng.',409);
+   const approved={...report,previewOnly:false,payrollBonus:{version:1,amount:report.bonusPreview,score:report.score,budget:report.budget,factor:report.factor}};
+   await db.insert(months).values({memberId:id,month,snapshot:JSON.stringify(approved),approvedBy:m.id,approvedAt:now});
+  });return json({ok:true,previewOnly:false});
  },'business');
 }

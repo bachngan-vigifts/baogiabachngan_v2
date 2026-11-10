@@ -1,3 +1,4 @@
+import type {WarehouseBonusOf} from '../../../core/contracts/warehouse-bonus.ts';
 import {reportScoreView} from '../../../core/contracts/report-scores.ts';
 import {computeKpiCv,kpiTargetsOf} from '../domain/kpi-cv.ts';
 import {kpiBonusRate,netKpiBonusRate,salaryTransferNote,vietQrUrl} from '../domain/payroll.ts';
@@ -92,7 +93,7 @@ export interface PayrollRow {
  * Bảng lương một tháng cho nhiều người (mặc định: mọi nhân viên đang làm / có hồ sơ lương). Một chỗ tính duy nhất cho
  * trang chi tiết nhân viên, bảng lương công ty và lúc chốt lương.
  */
-export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueOf, onlyIds?: readonly string[],crmFactsOf?:CrmFactsOf,lock=false,teamRevenueOf?:TeamRevenueOf,weeklyOf?:WeeklyReportPointsOf) {
+export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueOf, onlyIds?: readonly string[],crmFactsOf?:CrmFactsOf,lock=false,teamRevenueOf?:TeamRevenueOf,weeklyOf?:WeeklyReportPointsOf,warehouseOf?:WarehouseBonusOf) {
   const r = monthRange(month);
   const [{ params, effectiveMonth }, gm, profiles] = await Promise.all([paramsFor(db, month), groupMonthOf(db, month), profilesFor(db, month, onlyIds)]);
   const teamRevenue=teamRevenueOf?await teamRevenueOf(db,month):null;
@@ -115,6 +116,7 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     quarterBonuses(db, month, params, gm, revenueOf),
     revenueTargetsFor(db,[month],ids),
   ]);
+  const warehouse=warehouseOf?await warehouseOf(db,month,ids):new Map();
   const weekly=weeklyOf?await weeklyOf(db,month,ids):new Map<string,WeeklyReportPoints>();
   const from=String(params.contractBonusFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2'),kpiFrom=String(params.salesAutomationFrom||0).replace(/^(\d{4})(\d{2})$/,'$1-$2');
   const appsheet = appsheetKpiApplies(params,month);
@@ -145,6 +147,7 @@ export async function buildPayroll(db: AnyDb, month: string, revenueOf: RevenueO
     const calc = computePayslip({profile,params,kpiPolicy:appsheet?'appsheet':'legacy',input:kpiApply?resolved:appsheet?{...input,kpiRevenue:resolved.kpiRevenue}:input,adjustments:adj,attendanceDays,systemRevenue,groupMonth:gm,quarterBonusAuto:quarter.map.get(m.id)??0,...(netPolicy&&profile.payrollGroup==='sale'&&profile.kpiEnabled&&profile.kpiEligible!==false?{kpiNetRevenue:fact?.netRevenue||0,kpiNetRevenueIssues:fact?.netRevenueIssues||0}:{}),
      contractBonus:bonusApply?ownAwards.filter(a=>a.isNew).reduce((n,a)=>n+a.amount,0):0,contractBonusAdjustment:bonusApply?ownAwards.filter(a=>!a.isNew).reduce((n,a)=>n+a.amount,0):0,
      ...(weekly.has(m.id)&&profile.payrollGroup==='sale'&&!probation?{weeklyReport:{points:weekly.get(m.id)!.points,required:weekly.get(m.id)!.required}}:{})});
+    const warehouseBonus=warehouse.get(m.id);if(warehouseBonus){calc.warehouseBonusBasis=warehouseBonus;calc.income.push({key:'warehouseBonus',label:'Thưởng công việc Kho',amount:warehouseBonus.amount,note:`Điểm ${warehouseBonus.score}/100 · quỹ ${warehouseBonus.budget.toLocaleString('vi-VN')} đ × ${warehouseBonus.factor} · đã duyệt ${warehouseBonus.approvedAt}`});calc.gross+=warehouseBonus.amount;calc.net+=warehouseBonus.amount;}
     if(weekly.has(m.id))calc.reportScoreBasis=weekly.get(m.id);
     if(weekly.has(m.id)&&profile.payrollGroup==='sale'&&!probation)calc.weeklyReportBasis=weekly.get(m.id);
     if(teamRevenue&&!probation&&profile.teamBonus&&(profile.payrollGroup==='bn'||profile.payrollGroup==='lock')){const t=teamRevenue[profile.payrollGroup];calc.teamRevenueBasis={target:teamRevenue.target,revenue:t.revenue,crm:t.crm,pos:t.pos,issues:t.issues,policyMonth:teamRevenue.policyMonth,bonusMode:teamRevenue.bonusMode};}
@@ -189,10 +192,10 @@ function transferOf(view: ReturnType<typeof payslipView> | null, profile: { bank
   return { bankCode: bank.code, bankAccount: bank.account, bankHolder: bank.holder, amount: Math.max(0, Math.round(view.net)), note: salaryTransferNote(month),
     fromSnapshot: bank.fromSnapshot, qr: vietQrUrl(bank.code, bank.account, view.net, month, bank.holder) };
 }
-export async function payrollOf(db: AnyDb, memberId: string, month: string, revenueOf: RevenueOf,crmFactsOf?:CrmFactsOf,showAllContracts=false,teamRevenueOf?:TeamRevenueOf,weeklyOf?:WeeklyReportPointsOf) {
+export async function payrollOf(db: AnyDb, memberId: string, month: string, revenueOf: RevenueOf,crmFactsOf?:CrmFactsOf,showAllContracts=false,teamRevenueOf?:TeamRevenueOf,weeklyOf?:WeeklyReportPointsOf,warehouseOf?:WarehouseBonusOf) {
   const r = monthRange(month);
   const [board, history, attendance] = await Promise.all([
-    buildPayroll(db, month, revenueOf, [memberId],crmFactsOf,false,teamRevenueOf,weeklyOf),
+    buildPayroll(db, month, revenueOf, [memberId],crmFactsOf,false,teamRevenueOf,weeklyOf,warehouseOf),
     db.select().from(hrSalaryProfiles).where(eq(hrSalaryProfiles.memberId, memberId)).orderBy(desc(hrSalaryProfiles.effectiveMonth)).limit(36),
     db.select({ date: hrAttendance.workDate, status: hrAttendance.status, note: hrAttendance.note }).from(hrAttendance)
       .where(and(eq(hrAttendance.memberId, memberId), gte(hrAttendance.workDate, r.from), lte(hrAttendance.workDate, r.to))).orderBy(asc(hrAttendance.workDate)),

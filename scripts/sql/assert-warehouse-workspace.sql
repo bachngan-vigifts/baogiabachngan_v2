@@ -8,3 +8,11 @@ DO $$ DECLARE t text; relation regclass; BEGIN
   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') AND has_table_privilege('authenticated',relation,'SELECT,INSERT,UPDATE,DELETE') THEN RAISE EXCEPTION 'authenticated cannot access %',t; END IF;
  END LOOP;
 END $$;
+
+-- Additive dispatch metadata must exist before the API loads the new schema.
+DO $$ DECLARE c text; BEGIN
+ FOREACH c IN ARRAY ARRAY['queued_at','offered_at','creation_hash'] LOOP
+  IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='warehouse_work_runs' AND column_name=c) THEN RAISE EXCEPTION 'Apply 20261110041042_warehouse_dispatch_availability.sql: missing warehouse_work_runs.%',c; END IF;
+ END LOOP;
+ IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='warehouse_work_settings' AND column_name='auto_dispatch') THEN RAISE EXCEPTION 'Apply 20261110041042_warehouse_dispatch_availability.sql: missing auto_dispatch'; END IF;
+END $$;
