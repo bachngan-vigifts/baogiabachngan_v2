@@ -26,11 +26,16 @@ async function command(c:Ctx,id:string,b:Record<string,unknown>,action:string,co
 }
 export function registerCatalogueQuotes(router:Router<StaffEnv>,customers?:CatalogueCustomerLinks){
  async function linkCustomer(tx:Tx,c:Ctx,state:ReturnType<typeof cleanCatalogueQuote>,previous?:string){
-  const old=previous?JSON.parse(previous).meta?.customerId:undefined;
+  const before=previous?JSON.parse(previous).meta:undefined,old=before?.customerId;
   const id=state.meta.customerId===undefined?old:state.meta.customerId;
-  if(!id){if(old)throw new AppError(400,'Chọn khách hàng trước khi lưu báo giá đã liên kết.');return;}
+  const group=state.meta.customerGroup===undefined?before?.customerGroup:state.meta.customerGroup;
+  if(id&&group)throw new AppError(400,'Chọn khách hàng hoặc nhóm khách hàng, không chọn đồng thời.');
+  // Moving or clearing a customer link still requires access to the old customer.
+  if(old&&old!==id){if(!customers)throw new AppError(503,'Chưa cấu hình liên kết khách hàng.');await customers.resolve(tx,actor(c),old);}
+  if(before?.customerGroup&&before.customerGroup!==group){if(!customers?.resolveGroup)throw new AppError(503,'Chưa cấu hình nhóm khách hàng.');await customers.resolveGroup(tx,actor(c),before.customerGroup);}
+  if(group){if(!customers?.resolveGroup)throw new AppError(503,'Chưa cấu hình nhóm khách hàng.');state.meta.customerGroup=await customers.resolveGroup(tx,actor(c),group);state.meta.customerId='';state.meta.customer=state.meta.customerGroup;return;}
+  if(!id)return;
   if(!customers)throw new AppError(503,'Chưa cấu hình liên kết khách hàng.');
-  if(old&&old!==id)await customers.resolve(tx,actor(c),old);
   const customer=await customers.resolve(tx,actor(c),id);state.meta.customerId=customer.id;state.meta.customer=customer.name;
  }
 

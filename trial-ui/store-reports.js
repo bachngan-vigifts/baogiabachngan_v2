@@ -8,6 +8,22 @@
 const STATE = { on_time: ['Đúng hạn', 'ok'], late: ['Nộp trễ', 'warn'], missing: ['Chưa nộp – quá hạn', 'danger'], not_due: ['Chưa tới hạn', 'muted'], exempt: ['Miễn – trước ngày triển khai', 'ok'] };
 const REVIEW_TONE = { pending: 'muted', ok: 'ok', cash_error: 'danger', order_error: 'danger', gap_unreported: 'danger', excused: 'info' };
 export const REMIND_EVERY = 30 * 60_000;
+/** Report timestamps always use the same timezone as server deadlines. */
+export const reportTimestampText = value => {
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toLocaleString('vi-VN', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit',timeZone:'Asia/Ho_Chi_Minh'}) : '—';
+};
+/** A submitted report keeps its submission state after its deadline passes. */
+export function reportDeadlineText(d, now = Date.now()) {
+  if (d.report) {
+    const state = d.report.state?.state;
+    return state === 'on_time' ? 'Đã nộp đúng hạn' : state === 'late' ? 'Đã nộp trễ' : 'Đã nộp chính thức';
+  }
+  const ms = Date.parse(d.deadline) - now;
+  if (!Number.isFinite(ms)) return 'Chưa xác định hạn nộp';
+  return ms >= 0 ? `còn ${Math.floor(ms / 3600_000)} giờ ${Math.floor(ms % 3600_000 / 60_000)} phút` : 'Chưa nộp – đã quá hạn';
+}
+
 /** Hướng dẫn báo cáo cho CHT (đổi nội dung → tăng ?v=). */
 export const GUIDE_URL = 'guides/huong-dan-bao-cao-cua-hang-truong.pdf?v=1';
 const guideLink = (cls = 'btn secondary') => `<a class="${cls}" href="${GUIDE_URL}" target="_blank" rel="noopener">Hướng dẫn (PDF)</a>`;
@@ -61,7 +77,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
     const dlg = document.createElement('dialog'); dlg.className = 'modal store-remind';
     dlg.innerHTML = `<div class="modal-head"><h2>Việc cần hoàn thành · ${esc(r.store || '')}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body"><p class="muted small">Nhắc lại mỗi 30 phút đến khi hoàn thành. Báo cáo nộp đúng hạn giữ đủ Tiền Trách nhiệm.</p>
-        <ul class="store-remind-list">${r.items.map((x, i) => `<li class="${x.overdue ? 'overdue' : ''}"><span><b>${esc(x.label)}</b><small>Hạn: ${esc(new Date(x.due).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }))}${x.overdue ? ' · <b class="danger-text">Quá hạn</b>' : ''}</small></span>
+        <ul class="store-remind-list">${r.items.map((x, i) => `<li class="${x.overdue ? 'overdue' : ''}"><span><b>${esc(x.label)}</b><small>Hạn: ${esc(reportTimestampText(x.due))}${x.overdue ? ' · <b class="danger-text">Quá hạn</b>' : ''}</small></span>
           <button type="button" class="btn primary small" data-do="${i}">Làm ngay</button></li>`).join('')}</ul></div>
       <div class="modal-foot">${guideLink('btn ghost')}<button type="button" class="btn secondary" data-x>Nhắc lại sau 30 phút</button></div>`;
     document.body.append(dlg); dlg.showModal();
@@ -90,7 +106,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
     const review = r?.review || 'pending', draft = !r && (data.drafts || []).some(x => x.kind === kind && x.period === period);
     const act = data.isManager && (!r || review === 'pending') ? `<button type="button" class="btn ${r ? 'secondary' : 'primary'} small" data-open="${kind}|${period}">${r ? 'Xem / nộp lại' : draft ? 'Tiếp tục nháp' : 'Làm báo cáo'}</button>`
       : `<button type="button" class="btn ghost small" data-open="${kind}|${period}">${data.canReview && r && review === 'pending' ? 'Duyệt' : 'Xem'}</button>`;
-    return `<tr><td>${esc(periodLabel(kind, period))}</td><td>${pill(STATE[st][1], STATE[st][0])}${r ? `<small class="muted"> ${esc(new Date(r.submittedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }))}</small>` : ''}${draft ? ' ' + pill('muted', 'Có nháp – chưa nộp') : ''}${r?.provisional ? ' ' + pill('warn', 'Tạm tính (ca chưa đóng)') : ''}</td>
+    return `<tr><td>${esc(periodLabel(kind, period))}</td><td>${pill(STATE[st][1], STATE[st][0])}${r ? `<small class="muted">Nộp lần đầu: ${esc(reportTimestampText(r.submittedAt))}</small>` : ''}${draft ? ' ' + pill('muted', 'Có nháp – chưa nộp') : ''}${r?.provisional ? ' ' + pill('warn', 'Tạm tính (ca chưa đóng)') : ''}</td>
       <td>${r ? pill(REVIEW_TONE[review], status.labels.reviews[review]) : ''}${r?.explanation ? ' <span class="pill info">Có giải trình</span>' : ''}</td><td class="right">${(st !== 'not_due' || data.isManager) ? act : ''}</td></tr>`;
   }
   // Hạn nộp phía máy khách (chỉ để hiện trạng thái kỳ chưa có báo cáo; máy chủ tính lại khi nộp).
@@ -249,7 +265,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
       ${must.map(l => `<label class="span-2">Giải trình mã ${esc(l.sku)} ${esc(l.name || '')} (lệch ${l.qty > 0 ? '+' : ''}${l.qty}) *<input name="sku:${esc(l.sku)}" data-sku="${esc(l.sku)}" maxlength="1000" ${ro ? 'readonly' : ''} value="${esc(ex[l.sku] || '')}"></label>`).join('')}
       ${t('scopeNote', 'Phạm vi chưa kiểm và lý do')}${t('damagedNote', 'Hàng hỏng / bể vỡ / chờ xử lý')}${t('gapExplanation', 'Giải trình chung các chênh lệch')}${t('note', 'Ghi chú')}`;
   }
-  const when = v => new Date(v).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
+  const when = reportTimestampText;
   const INPUT_KEYS = ['bankDeposit', 'bankRef', 'cashExplanation', 'incidents', 'officeSupport', 'tomorrowPlan', 'note', 'orderProposal', 'orderRefs', 'slowAction', 'roster', 'nextWeekPlan', 'groupAnalysis', 'staffReview', 'nextMonthPlan', 'scopeNote', 'damagedNote', 'gapExplanation'];
   // ---------------- Báo cáo ngày: 5 phần, chuyển nhanh, đếm ngược hạn, checklist, sự cố theo loại
   const SECTIONS = [['s1', 'Doanh số'], ['s2', 'Tiền & quỹ'], ['s3', 'Vận hành'], ['s4', 'Hàng hoá'], ['s5', 'Sự cố & kế hoạch']];
@@ -294,8 +310,9 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
   /** Gắn thao tác cho báo cáo ngày + tính các mục bắt buộc còn thiếu (máy chủ kiểm lại khi nộp). */
   function wireDaily(dlg, d, editable) {
     const f = dlg.querySelector('form'), hint = dlg.querySelector('[data-hint]'), cd = dlg.querySelector('[data-countdown]');
-    const tick = () => { const ms = Date.parse(d.deadline) - Date.now(); if (!cd) return; cd.textContent = ms > 0 ? `còn ${Math.floor(ms / 3600_000)} giờ ${Math.floor(ms % 3600_000 / 60_000)} phút` : 'đã quá hạn'; };
-    tick(); const timer = setInterval(tick, 30_000); dlg.addEventListener('close', () => clearInterval(timer));
+    const tick = () => { if (cd) cd.textContent = reportDeadlineText(d); };
+    tick();
+    if (!d.report) { const timer = setInterval(tick, 30_000); dlg.addEventListener('close', () => clearInterval(timer), {once:true}); }
     dlg.querySelectorAll('[data-step]').forEach(a => a.onclick = e => { e.preventDefault(); dlg.querySelector('#' + a.dataset.step)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     const update = () => {
       const groups = [...dlg.querySelectorAll('[data-ck]')], answered = groups.filter(g => g.querySelector('[aria-pressed="true"]')).length;
