@@ -29,3 +29,15 @@ test('catalog scopes precede pagination and apply to barcode and local SKU hydra
   const allowedScan=await f.call(path+'&q=893123000001',f.mgr);assert.equal(allowedScan.data.exactSku,'ML-A');
 
 });
+
+test('bulk preload short-circuit preserves full brand/name semantics, Unicode and boundary-spanning names',async()=>{
+ const {posBrandScope}=await import('../../src/modules/sales/api/pos-stock-snapshot.ts');
+ const f=await setup();
+ const cases=[['Minh Long','Chén'],['MINH','LONG Chén'],['','Bình Lock&Lock'],['Lock','nLock'],['Healthy','Cook'],['LÝS','Chén'],['LYS',''],['','Sứ dưỡng sinh'],['Gốm Việt','Chén chung'],['','Túi giấy'],['Minh Long Lock','Hỗn hợp'],['MINH LO\u0302NG','NFD'],['Minh Longx','Tên không trùng'],[null,'Lock & Lock'],['','']];
+ await f.db.insert(products).values(cases.map(([brand,name],i)=>({sku:'EQ-'+i,brand:brand??'',name:name||'',updatedAt:''})));
+ for(const register of ['Quầy Lock','Quầy Minh Long','Quầy chung','MINH LONG - LOCKNLOCK CẦN THƠ']){
+  const old=await f.db.select({sku:products.sku}).from(products).where(posBrandScope(register)).orderBy(products.sku);
+  const bulk=await f.db.select({sku:products.sku}).from(products).where(posBrandScope(register,{preload:true})).orderBy(products.sku);
+  assert.deepEqual(bulk,old,register);
+ }
+});

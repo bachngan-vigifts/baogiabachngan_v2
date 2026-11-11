@@ -176,3 +176,17 @@ test('inflight: số lượt đang xử lý cùng lúc trong isolate; đóng k�
   await Promise.all(h.background); assert.equal(h.stats.closed, 1);
   assert.match((await h.request()).headers.get('server-timing') || '', /inflight;desc="1"/, 'đếm giảm sau khi xong');
 });
+
+test('public auth config does not wait for DB readiness; authenticated reads and writes still fail closed',async()=>{
+ const h=await harness({broken:true});
+ const config=await h.request('GET','/api/staff/auth-config');assert.equal(config.status,200);assert.equal(h.stats.probes,0);assert.equal(h.stats.routed,1);
+ assert.equal((await h.request('GET','/api/staff/me')).status,503);assert.equal(h.stats.probes,1);assert.equal(h.stats.routed,1);
+ assert.equal((await h.request('POST','/api/staff/auth-config')).status,503);assert.equal(h.stats.routed,1);
+});
+
+test('real public auth-config route reads only deployment config, never database or session data',async()=>{
+ const {createAppRouter}=await import('../../src/app/router.ts');
+ const db=new Proxy({},{get(){throw Error('Public config must not touch the database');}});
+ const res=await createAppRouter().handle(new Request('https://trial.test/api/staff/auth-config',{headers:{origin:'https://trial.test'}}),{db:db as any});
+ assert.equal(res.status,200);assert.deepEqual(await res.json(),{turnstileSiteKey:''});
+});

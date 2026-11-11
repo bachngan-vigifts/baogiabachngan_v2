@@ -7,7 +7,7 @@ const deferred = () => { let resolve!: (v?: unknown) => void; const promise = ne
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 test('phân loại: số đếm menu / chuông / nhịp / bản chụp so sánh là phụ; danh sách có tham số, lệnh ghi và dữ liệu đúng trang là chính', () => {
-  for (const p of ['/pulse', '/notifications?since=x', '/chat/unread', '/navigation-counts', '/tasks/summary', '/approvals', '/admin/sapo-sync',
+  for (const p of ['/pulse', '/badges?parts=tasks,navigation,chat', '/notifications?since=x', '/chat/unread', '/navigation-counts', '/tasks/summary', '/approvals', '/admin/sapo-sync',
     '/catalog-snapshot?v=1', '/stock-requests?status=open', '/care?view=follow-ups&limit=1', '/quotes', '/orders', '/contracts', '/customer-duplicates'])
     assert.equal(isBackgroundRequest(p, 'GET', '#/cash'), true, p);
   for (const p of ['/cash', '/quotes?limit=50', '/orders?flow=order', '/tasks?view=mine', '/stock-requests?status=done', '/care?view=follow-ups'])
@@ -67,4 +67,9 @@ test('POS periodic stock and optional warehouse details stay behind checkout; in
  assert.equal(isBackgroundRequest('/pos/options?stock=1','GET','#/pos'),false);
  assert.equal(isBackgroundRequest('/pos/stock-snapshot?registerId=r&pricePolicyId=p','GET','#/pos'),false);
  assert.equal(isBackgroundRequest('/pos/checkout','POST','#/pos'),false);
+});
+
+test('combined menu badges stay background on every CRM page; writes keep foreground priority',()=>{
+ for(const route of ['home','products','pos','orders','tasks','payroll'])assert.equal(isBackgroundRequest('/badges?parts=tasks,navigation,chat','GET','#/'+route),true);
+ assert.equal(isBackgroundRequest('/badges','POST','#/pos'),false);
 });
