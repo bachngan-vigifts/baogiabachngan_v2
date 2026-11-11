@@ -2980,17 +2980,30 @@ async function loadPicker(more = false) {
   pickerItems = more ? [...pickerItems, ...d.products] : d.products; pickerTotal = d.total;
   renderPicker(d.observedAt, min, max);
 }
+/** Existing reservation rules, split into physical/held/sellable columns for this quote. */
+function pickerStockColumns(p) {
+  const byKind = kind => state.warehouses.some(w => w.kind === kind && p.stock?.[w.id] != null && Number.isFinite(Number(p.stock[w.id]))) ? kindStock(p, kind) : null;
+  const physical = byKind('stock'), held = state.holdsLoaded ? heldQty(p.sku) : null;
+  const mine = state.holdsLoaded ? (state.holds.get(p.sku) || []).filter(h => h.quoteId === (editor.id || '')).reduce((n, h) => n + h.qty, 0) : null;
+  return { physical, held, mine, sellable: physical !== null && state.holdsLoaded ? availableStock(p, editor.id || '') : null,
+    incoming: byKind('incoming'), supplier: hasSupplierStock(p) ? byKind('supplier') : null };
+}
 function renderPicker(observedAt, min, max) {
   if (!$('#picker-policy').options.length) pickerPolicyOptions();
   $('#picker-snapshot').textContent = observedAt ? `Tồn kho chụp lúc ${new Date(observedAt).toLocaleString('vi-VN')} · Đơn giá báo giá chưa VAT.` : 'Đơn giá báo giá chưa VAT.';
+  if (state.holdsLoaded && editor.id && pickerItems.some(p => (state.holds.get(p.sku) || []).some(h => h.quoteId === editor.id && h.qty > 0))) $('#picker-snapshot').textContent += ' Có thể bán gồm phần báo giá này đang giữ.';
   // Background stock refresh / pagination must preserve quantities and open details.
   const inQuote = new Set(editor.rows.map(r => r.sku).filter(Boolean));
   const policy = state.policies.find(x => x.id === currentPolicy());
   $('#picker-list').innerHTML = pickerItems.map((p, i) => {
-    const view = pickerRowState.get(p.sku), expanded = !!view?.expanded, has = inQuote.has(p.sku), av = kindStock(p, 'stock') === null ? null : availableStock(p, editor.id || '');
+    const view = pickerRowState.get(p.sku), expanded = !!view?.expanded, has = inQuote.has(p.sku), quantities = pickerStockColumns(p);
     return `<li data-i="${i}" data-sku="${esc(p.sku)}" class="picker-product ${has ? 'added' : ''} ${expanded ? 'is-expanded' : ''}">
       <span class="picker-product-name" title="${esc(p.name)}">${esc(p.name)}</span>
-      <span class="picker-stock" title="Tồn khả dụng${p.unit ? ' · ' + esc(p.unit) : ''}" aria-label="Tồn khả dụng ${stockText(av)}">${stockText(av)}</span>
+      <span class="picker-stock" title="Tồn kho thực tế: ${stockText(quantities.physical)}" aria-label="Tồn kho ${stockText(quantities.physical)}">${stockText(quantities.physical)}</span>
+      <span class="picker-held" title="Tổng đang tạm giữ: ${stockText(quantities.held)}${quantities.mine ? `; báo giá này đang giữ ${fmtNum(quantities.mine)}, vẫn dùng được cho báo giá này` : ''}" aria-label="Tạm giữ ${stockText(quantities.held)}">${stockText(quantities.held)}</span>
+      <span class="picker-sellable ${quantities.sellable !== null && quantities.sellable <= 0 ? 'danger-text' : ''}" title="Có thể bán: ${stockText(quantities.sellable)} cho báo giá này; không trừ phần chính báo giá này đang giữ" aria-label="Có thể bán ${stockText(quantities.sellable)}">${stockText(quantities.sellable)}</span>
+      <span class="picker-incoming" title="Hàng đang về: ${stockText(quantities.incoming)}" aria-label="Đang về ${stockText(quantities.incoming)}">${quantities.incoming > 0 ? incomingCell(p) : stockText(quantities.incoming)}</span>
+      <span class="picker-supplier" title="Tồn kho nhà cung cấp: ${stockText(quantities.supplier)}" aria-label="Kho NCC ${stockText(quantities.supplier)}">${stockText(quantities.supplier)}</span>
       <label class="picker-quantity"><span>Số lượng</span><input class="num-input" inputmode="decimal" value="${esc(view?.qty || '1')}" aria-label="Số lượng ${esc(p.name)}"></label>
       <button type="button" class="btn secondary small pick-add" data-add="${i}" ${has ? 'disabled title="Sản phẩm đã có trong báo giá"' : ''}>${has ? '✓ Đã có' : '＋ Thêm'}</button>
       <button type="button" class="btn ghost small picker-details-toggle" data-picker-details="${i}" aria-expanded="${expanded}" aria-controls="picker-detail-${i}" aria-label="${expanded ? 'Thu gọn' : 'Xem thêm'}: ${esc(p.name)}"><span>${expanded ? 'Thu gọn' : 'Xem thêm'}</span><span class="picker-details-icon" aria-hidden="true">⋯</span></button>
@@ -3003,13 +3016,13 @@ function renderPicker(observedAt, min, max) {
   $('#picker-more-row').hidden = pickerItems.length >= pickerTotal;
 }
 function pickerProductDetails(p) {
-  const policy = state.policies.find(x => x.id === currentPolicy()), price = productPrice(p);
+  const policy = state.policies.find(x => x.id === currentPolicy()), price = productPrice(p), quantities = pickerStockColumns(p);
   const included = /VAT/i.test(policy?.name || '') || p.taxBasis === 'Giá đã bao gồm thuế';
   const vat = p.taxable ? (Number.isFinite(p.taxOut) ? `VAT ${p.taxOut}%` : 'Chưa có thuế đầu ra') : 'Không áp dụng thuế';
   return `${thumb(p)}<div><strong>${esc(p.name)}</strong>
     <span>Mã ${esc(p.sku)} · ${esc(p.unit || '—')} · Nhãn hiệu: ${esc(p.brand || 'Chưa có trên Sapo')}</span>
     <span>Giá: ${price === null ? 'Chưa có giá' : money(price)} · ${included ? 'Đã gồm VAT' : 'Chưa VAT'} · ${vat}</span>
-    <span>Tồn kho: ${stockText(kindStock(p, 'stock'))} · Hàng đang giữ: ${fmtNum(heldQty(p.sku, editor.id || ''))}${hasSupplierStock(p) ? ` · Tồn NCC: ${stockText(kindStock(p, 'supplier'))}` : ''} · Hàng chờ về: ${incomingCell(p)}</span>
+    <span>Tồn kho: ${stockText(quantities.physical)} · Hàng đang giữ: ${stockText(quantities.held)} · Có thể bán: ${stockText(quantities.sellable)}${quantities.mine ? ` (gồm ${fmtNum(quantities.mine)} báo giá này đang giữ)` : ''}${hasSupplierStock(p) ? ` · Tồn NCC: ${stockText(quantities.supplier)}` : ''} · Hàng chờ về: ${quantities.incoming > 0 ? incomingCell(p) : stockText(quantities.incoming)}</span>
   </div>`;
 }
 const reloadPicker = () => { pickerReq++;pickerItems=[];$('#picker-list').innerHTML=''; clearTimeout(pickerTimer); pickerTimer = setTimeout(() => loadPicker(), catalog.items ? 30 : 250); };
