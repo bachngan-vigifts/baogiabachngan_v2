@@ -1,0 +1,110 @@
+{
+  "baselineCommit": "14cadee2",
+  "before": {
+    "conditions": "3 warmed browser reloads; HTTP cache disabled by routing; Chromium; 390x844; localhost/PGlite; identical homeFixture; no throttling; external requests blocked; not production metrics",
+    "trials": [
+      {
+        "loadMs": 568.8000000119209,
+        "ttfbMs": 10,
+        "fcpMs": 140,
+        "lcpMs": 644,
+        "cls": 0.08597769188726266,
+        "readyMs": 662.859888,
+        "workspaceHandlerMs": 25.75035900000057
+      },
+      {
+        "loadMs": 495,
+        "ttfbMs": 8.700000017881393,
+        "fcpMs": 108,
+        "lcpMs": 576,
+        "cls": 0.08597769188726266,
+        "readyMs": 568.6914779999988,
+        "workspaceHandlerMs": 21.164918999998918
+      },
+      {
+        "loadMs": 512.4000000059605,
+        "ttfbMs": 6.799999982118607,
+        "fcpMs": 120,
+        "lcpMs": 664,
+        "cls": 0.08597769188726266,
+        "readyMs": 672.725226999999,
+        "workspaceHandlerMs": 24.93482800000129
+      }
+    ],
+    "median": {
+      "loadMs": 512.4000000059605,
+      "ttfbMs": 8.700000017881393,
+      "fcpMs": 120,
+      "lcpMs": 644,
+      "cls": 0.08597769188726266,
+      "readyMs": 662.859888,
+      "workspaceHandlerMs": 24.93482800000129
+    }
+  },
+  "after": {
+    "conditions": "3 warmed browser reloads; HTTP cache disabled by routing; Chromium; 390x844; localhost/PGlite; identical homeFixture; no throttling; external requests blocked; not production metrics",
+    "trials": [
+      {
+        "loadMs": 502.59999999403954,
+        "ttfbMs": 8.099999994039536,
+        "fcpMs": 124,
+        "lcpMs": 564,
+        "cls": 0.08597769188726266,
+        "readyMs": 574.0384960000001,
+        "workspaceHandlerMs": 29.320067000000563
+      },
+      {
+        "loadMs": 516.0999999940395,
+        "ttfbMs": 7.199999988079071,
+        "fcpMs": 132,
+        "lcpMs": 560,
+        "cls": 0.08597769188726266,
+        "readyMs": 570.3159119999991,
+        "workspaceHandlerMs": 26.017211999998835
+      },
+      {
+        "loadMs": 464,
+        "ttfbMs": 7.4000000059604645,
+        "fcpMs": 104,
+        "lcpMs": 528,
+        "cls": 0.08597769188726266,
+        "readyMs": 537.2419030000001,
+        "workspaceHandlerMs": 25.379237000001012
+      }
+    ],
+    "median": {
+      "loadMs": 502.59999999403954,
+      "ttfbMs": 7.4000000059604645,
+      "fcpMs": 124,
+      "lcpMs": 560,
+      "cls": 0.08597769188726266,
+      "readyMs": 570.3159119999991,
+      "workspaceHandlerMs": 26.017211999998835
+    }
+  },
+  "functionalBrowser": {
+    "desktop1440": true,
+    "mobile390": true,
+    "realSourceSelected": true,
+    "noFreeFormTask": true,
+    "teamParts": 2,
+    "normalizedWeight": 1,
+    "lostResponseRetrySafe": true,
+    "workerOwnPart": true,
+    "noHorizontalOverflow": true,
+    "errors": []
+  },
+  "verification": {
+    "releaseTests": {
+      "pass": 33,
+      "fail": 0
+    },
+    "rebaseSessionPriorityTests": {
+      "pass": 8,
+      "fail": 0
+    },
+    "typecheck": "passed",
+    "uiBuild": "passed"
+  },
+  "productionFeatureDeployed": false
+}

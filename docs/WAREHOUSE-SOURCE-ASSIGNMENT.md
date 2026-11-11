@@ -39,16 +39,16 @@ Nhánh phát triển không tự chạy migration/cron của tính năng này tr
 
 `scripts/testing/warehouse-source-assignment.mjs`: Chromium + UI/API thật trên fixture, chặn mọi request ra ngoài; PC 1440, mobile 390, mất phản hồi sau commit rồi retry, worker mở đúng phần việc, không tràn ngang/không lỗi JS.
 
-`scripts/testing/warehouse-workspace-performance.mjs`: so với commit nền `3dee7437`, cùng `homeFixture`, Chromium mobile 390×844, ba lần reload sau đăng nhập/mỗi bản, không throttling, localhost/PGlite, chặn request ngoài. Median lần đo tuần tự:
+`scripts/testing/warehouse-workspace-performance.mjs`: so với commit nền `14cadee2`, cùng `homeFixture`, Chromium mobile 390×844, ba lần reload sau đăng nhập/mỗi bản, không throttling, localhost/PGlite, chặn request ngoài. Median lần đo tuần tự:
 
 | Chỉ số | Nền | Sau thay đổi |
 |---|---:|---:|
-| Load event | 485,5 ms | 472,8 ms |
-| TTFB HTML | 8,2 ms | 7,6 ms |
-| FCP | 100 ms | 116 ms |
-| LCP | 532 ms | 536 ms |
+| Load event | 512,4 ms | 502,6 ms |
+| TTFB HTML | 8,7 ms | 7,4 ms |
+| FCP | 120,0 ms | 124,0 ms |
+| LCP | 644,0 ms | 560,0 ms |
 | CLS | 0,0860 | 0,0860 |
-| Đợi `.ww-page` | 548,3 ms | 551,9 ms |
-| Handler GET workspace | 27,2 ms | 22,6 ms |
+| Đợi `.ww-page` | 662,9 ms | 570,3 ms |
+| Handler GET workspace | 24,9 ms | 26,0 ms |
 
-Đây là dữ liệu kiểm thử tổng hợp, cache trình duyệt đã khởi động (Playwright routing tắt HTTP cache), không phải production hay bằng chứng cải thiện tốc độ thực tế. Dao động vài ms chưa cho thấy chậm rõ ở fixture nhỏ; chưa suy ra khả năng đáp ứng với hàng nghìn phiếu. LCP được quan sát đến 500 ms sau khi workspace xuất hiện. Khi rollout cần đo lại trên staging có quy mô dữ liệu tương đương.
+Đây là dữ liệu kiểm thử tổng hợp, cache trình duyệt đã khởi động (Playwright routing tắt HTTP cache), không phải production hay bằng chứng cải thiện tốc độ thực tế. Chưa thấy chậm rõ ở fixture nhỏ; số đo có dao động giữa các lần chạy; chưa suy ra khả năng đáp ứng với hàng nghìn phiếu. LCP được quan sát đến 500 ms sau khi workspace xuất hiện. Khi rollout cần đo lại trên staging có quy mô dữ liệu tương đương.
