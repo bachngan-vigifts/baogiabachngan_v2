@@ -12,6 +12,7 @@ import { openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
 import { startBarcodeCamera } from './barcode-camera.js';
 import { printPos } from './pos-print.js';
+import { printPaymentQr } from './pos-payment-qr-print.js';
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -1998,11 +1999,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       if (m.dlg.open !== false) m.lock(false, received);
       if (!st.pending && result !== 'rejected' && result !== 'busy') m.close();
     });
-    const footer = el('div', 'pos-step-footer');
-    footer.append(button('Đóng', 'btn secondary', () => { if (!m.dlg.dataset.busy) m.close(); }), received);
+    const ownerId = user().id;
+    const printQr = button('In mã thanh toán', 'btn secondary pos-qr-print', () => run(async () => {
+      if (printQr.disabled) return;
+      m.lock(true, printQr, 'Đang chuẩn bị in…');
+      try {
+        await printPaymentQr({ ...d, register: st.register }, () => st.qr === d && user().id === ownerId && Date.now() < Date.parse(d.expiresAt));
+      } finally { m.lock(false, printQr); }
+    }));
+    const footer = el('div', 'pos-step-footer pos-qr-footer');
+    footer.append(button('Đóng', 'btn secondary', () => { if (!m.dlg.dataset.busy) m.close(); }), printQr, received);
     m.body.append(amount, info, footer);
     m.show();
-    const ownerId = user().id;
     const timer = setInterval(async () => {
       if (st.qr !== d || completing || user().id !== ownerId || Date.now() > Date.parse(d.expiresAt)) return clearInterval(timer);
       try {
