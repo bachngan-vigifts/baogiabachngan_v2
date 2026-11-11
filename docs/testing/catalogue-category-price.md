@@ -41,3 +41,27 @@ from later shared-library edits. Existing singleton-page export rules remain.
 
 Deploy the API together with the UI so validation accepts the new JSON field.
 Production deployment is not part of the local verification above.
+
+## Optional customer and save-time recipient form
+
+Customer details can stay empty during editing and export. Every explicit save
+now stages a recipient form: select an approved accessible customer, an existing
+accessible customer group (`customer_type`), or explicitly save unassigned.
+Cancel/Escape discards staged changes and sends no write. Group lookup errors
+stay in the form with a retry button; changing identity blocks confirmation.
+
+The optional `meta.customerGroup` is stored in existing quote JSON and survives
+backups, reloads and shared saves. It classifies the quote by group rather than
+creating individual links to every member. The API validates groups against
+approved customers in the actor's existing scope. Moving/clearing a customer or
+group association still validates access to the old association; legacy clients
+that omit association fields preserve them. Both customer and group cannot be
+selected at once. No schema, RLS or grant change.
+
+Additional local Chromium checks passed at both widths: exactly three quote
+writes for group → customer → unassigned; none for cancellation, Escape,
+incomplete customer selection, failed group loading, or an identity change.
+Group selection persisted across reload and customer/group/empty metadata was
+verified against the real local API. Recipient dialog widths were 640/358 px,
+with visible footers and no horizontal overflow. Group and unassigned screenshots
+were visually inspected; no browser JS errors occurred.

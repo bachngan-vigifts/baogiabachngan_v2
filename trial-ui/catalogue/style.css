@@ -63,3 +63,7 @@
 @media(max-width:650px){.bulk-pricing-row{grid-template-columns:1fr}}
 
 .shared-edit .price-band-field{display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
+.recipient-modes{display:grid;gap:12px;margin:0;padding:14px;border:1px solid var(--line);border-radius:8px}
+.recipient-modes label{display:flex;align-items:center;gap:8px}
+.recipient-modes input{width:18px;height:18px;accent-color:var(--green)}
+.quote-recipient-dialog{max-width:640px}

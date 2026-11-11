@@ -2,7 +2,7 @@ import {and,desc,eq,exists,inArray,isNull,sql} from 'drizzle-orm';
 import {AppError} from '../core/errors.ts';
 import {json,type Router} from '../core/http/router.ts';
 import {fold,matchAllWords} from '../core/text/fold.ts';
-import type {CatalogueCustomerLinks} from '../core/contracts/catalogue-customer.ts';
+import type {CatalogueCustomerLinks,CatalogueCustomerDb,CatalogueCustomerActor} from '../core/contracts/catalogue-customer.ts';
 import type {CustomerMergeTx} from '../core/contracts/customer-merge.ts';
 import type {StaffEnv,SessionState} from '../modules/staff/api/auth-routes.ts';
 import {employees} from '../modules/staff/schema.ts';
@@ -13,6 +13,9 @@ import {canListRetailCustomers} from '../modules/customers/domain/customer-confi
 import {customers,customerStaff} from '../modules/customers/schema.ts';
 import {catalogueQuotes as quotes} from '../modules/catalog/catalogue-library-schema.ts';
 const linkedId=sql<string>`${quotes.data}::jsonb->'meta'->>'customerId'`;
+const customerScope=(db:CatalogueCustomerDb,actor:CatalogueCustomerActor)=>and(
+ actor.role==='manager'||seesAllAsSaleAdmin(actor)?undefined:exists(db.select({id:customerStaff.customerId}).from(customerStaff).where(and(eq(customerStaff.customerId,customers.id),eq(customerStaff.memberId,actor.id)))),
+ eq(customers.approvalStatus,'approved'),canListRetailCustomers(actor)?undefined:eq(customers.isRetail,false));
 export const catalogueCustomerLinks:CatalogueCustomerLinks={
  lock:customerIdentityLock,
  async resolve(db,actor,id){
@@ -22,11 +25,21 @@ export const catalogueCustomerLinks:CatalogueCustomerLinks={
   if(!(await customerAccess(db as StaffEnv['db'],id,actor)).canSeeAll)throw new AppError(403,'Chỉ Manager, nhân viên phụ trách hoặc được chia sẻ khách được gắn báo giá Catalogue.');
   return{id:row.id,name:row.name};
  },
+ async resolveGroup(db,actor,name){
+  const [row]=await db.select({name:sql<string>`btrim(${customers.customerType})`}).from(customers).where(and(customerScope(db,actor),eq(sql`btrim(${customers.customerType})`,name))).limit(1);
+  if(!row)throw new AppError(403,'Nhóm khách hàng không còn trong phạm vi được phép sử dụng.');
+  return row.name;
+ },
  async list(db,actor,id,all){return db.select({id:quotes.id,quoteNo:quotes.quoteNo,title:quotes.title,productCount:quotes.productCount,createdByName:sql<string>`coalesce(${employees.name},'Không rõ nhân viên')`,updatedAt:quotes.updatedAt}).from(quotes).leftJoin(employees,eq(quotes.createdBy,employees.id)).where(and(eq(linkedId,id),isNull(quotes.deletedAt),all?undefined:eq(quotes.createdBy,actor.id))).orderBy(desc(quotes.updatedAt),desc(quotes.id)).limit(100);},
 };
 export function registerCatalogueCustomers(router:Router<StaffEnv>){
  router.get('/catalogue-customers',async c=>{
   const actor=(c.state.session as SessionState).member,id=c.url.searchParams.get('id')||'',query=c.url.searchParams.get('q')||'';
+  if(c.url.searchParams.get('groups')==='1'){
+   const name=sql<string>`btrim(${customers.customerType})`;
+   const groups=await c.env.db.selectDistinct({name}).from(customers).where(and(customerScope(c.env.db,actor),sql`${name} is not null and ${name}<>''`)).orderBy(name);
+   return json({groups:groups.map(g=>g.name)});
+  }
   if(id.length>200||query.length>200)throw new AppError(400,'Nội dung tìm khách quá dài.');
   if(id)return json({customer:await catalogueCustomerLinks.resolve(c.env.db,actor,id)});
   if(query.trim().length<2)return json({customers:[]});

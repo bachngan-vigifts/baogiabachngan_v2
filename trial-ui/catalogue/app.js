@@ -1,3 +1,4 @@
+import {createQuoteRecipient} from './quote-recipient.js';
 import {createCatalogueCustomerLink} from './customer-link.js';
 import {syncPreviewProducts} from './preview-selection.js';
 import {libraryPricing,priceBandField} from './core.js';
@@ -52,7 +53,8 @@ const sharedLibrary=createSharedLibrary({api:libraryApi,identity:crmSession,getP
  pending:libraryPending,savePending:(owner,id,value)=>libraryPendingWrite(owner,id,value),removePending:(owner,id)=>libraryPendingWrite(owner,id,null)
 });
 async function quotePendingWrite(owner,id,value){if(!db)throw Error('Cho phép lưu trữ để giữ yêu cầu lưu báo giá.');return new Promise((resolve,reject)=>{const t=db.transaction('kv','readwrite'),kv=t.objectStore('kv'),key='catalogue-quote-save:'+owner+':'+id;if(value)kv.put(value,key);else kv.delete(key);kv.put(structuredClone(state),'current');kv.put(structuredClone(drafts),'drafts');t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error)})}
-const sharedQuotes=createSharedQuotes({api:libraryApi,identity:crmSession,getState:()=>state,requireCustomer:true,getDrafts:()=>drafts,toast,confirm:confirmAction,
+const chooseQuoteRecipient=createQuoteRecipient({api:libraryApi,identity:crmSession,onChange:document=>{if(document===state){scheduleSave();render();}}});
+const sharedQuotes=createSharedQuotes({api:libraryApi,identity:crmSession,getState:()=>state,prepareSave:chooseQuoteRecipient,getDrafts:()=>drafts,toast,confirm:confirmAction,
  setDocument:(snapshot,cloud)=>{state=restoreState(snapshot);state.cloudQuote=cloud;page=0;view='quote';changed();},
  persist:async()=>{clearTimeout(saveTimer);await dbPut('current',structuredClone(state));await dbPut('drafts',structuredClone(drafts));},
  remember:async(id,snapshot,result,owner)=>{const d={id,shared:true,owner,updated:Date.now(),state:{...structuredClone(snapshot),cloudQuote:{id,revision:result.revision,owner}}};const index=drafts.findIndex(v=>v.id===id);if(index<0)drafts.unshift(d);else drafts[index]=d;},
