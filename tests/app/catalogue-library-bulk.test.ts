@@ -9,6 +9,16 @@ import {defaultState,validateProduct} from '../../trial-ui/catalogue/core.js';
 const product={name:'Bộ trà',sku:'00123',brand:'Minh Long',category:'Bộ trà',collection:'Camellia',pattern:'Sen',color:'Trắng',regular:100000};
 async function fixture(){const f=await setupWarehouseWork();const r=await f.call('/catalogue-library',f.cookies.emp,'POST',{products:[{clientId:'one',product},{clientId:'two',product:{...product,sku:'00124'}}]});assert.equal(r.status,200);return{...f,rows:r.data.products,bulk:(body:unknown,cookie=f.cookies.emp)=>f.call('/catalogue-library/bulk',cookie,'POST',body)};}
 const items=(f:Awaited<ReturnType<typeof fixture>>)=>f.rows.map((r:any)=>({id:r.id,revision:r.revision}));
+test('bulk price band persists across accounts and shared quotes; null restores automatic grouping',async()=>{
+ const f=await fixture();const body={action:'edit',clientKey:crypto.randomUUID(),items:items(f),patch:{priceBand:6}};
+ const edited=await f.bulk(body);assert.equal(edited.status,200,JSON.stringify(edited.data));assert(edited.data.products.every((r:any)=>r.product.priceBand===6&&r.product.category==='Bộ trà'));
+ const saved=await f.call('/catalogue-library?includeStock=0',f.cookies.kt);assert(saved.data.products.every((r:any)=>r.product.priceBand===6));
+ const s=defaultState();s.products=edited.data.products.map((r:any)=>validateProduct({...r.product,id:r.id,discount:10,fee:15000}));s.selected=s.products.map((p:any)=>p.id);
+ const q=await f.call('/catalogue-quotes',f.cookies.emp,'POST',{id:crypto.randomUUID(),clientKey:crypto.randomUUID(),state:s});assert.equal(q.status,200,JSON.stringify(q.data));
+ assert(JSON.parse((await f.db.select().from(catalogueQuotes))[0]!.data).products.every((p:any)=>p.priceBand===6));
+ const next=edited.data.products.map((r:any)=>({id:r.id,revision:r.revision}));const cleared=await f.bulk({...body,clientKey:crypto.randomUUID(),items:next,patch:{priceBand:null}});assert.equal(cleared.status,200);assert(cleared.data.products.every((r:any)=>r.product.priceBand===null));
+ assert.equal((await f.bulk({...body,clientKey:crypto.randomUUID(),patch:{priceBand:8}})).status,400);
+});
 test('default library request loads a single category; explicit selection can request other categories',async()=>{
  const f=await fixture();await f.call('/catalogue-library',f.cookies.emp,'POST',{products:[{clientId:'third',product:{...product,sku:'NEW',brand:'A',category:'Bình hoa'}}]});
  const initial=await f.call('/catalogue-library?defaultCategory=1&includeStock=0',f.cookies.emp);assert.equal(initial.status,200,JSON.stringify(initial.data));assert.deepEqual(initial.data.defaultFilters,{brand:'A',category:'Bình hoa'});assert.equal(initial.data.total,1);assert(initial.data.products.every((r:any)=>r.product.category==='Bình hoa'));
