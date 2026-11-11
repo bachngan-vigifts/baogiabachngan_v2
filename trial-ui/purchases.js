@@ -1,4 +1,5 @@
 import { openReceivedEarlyRequests } from './supplier-request-details.js';
+import {createPurchaseSupplierSearch} from './purchase-supplier-search.js';
 import { SUPPLIER_TEMPLATES, suggestedSupplierTemplate, purchaseExportData } from './purchase-export-data.js';
 import { downloadExcel } from './sheet-export.js';
 import { initPurchaseIncoming } from './purchase-incoming.js';
@@ -1115,14 +1116,13 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     };
     q.addEventListener('input', () => { ++rq; results.replaceChildren(); moreSources.hidden = true; clearTimeout(t2); t2 = setTimeout(search, 250); });
     const supBox = el('section', 'sup-section');
-    let pick = supplierSelect(o.suppliers, '');
     supBox.append(el('h3', '', '2. Chọn nhà cung cấp (có thể chia nhiều NCC)'), el('div', 'pur-inline'));
-    // Chọn NCC trong danh sách là thêm luôn vào đơn (không cần bấm thêm nút); nút giữ lại cho người quen thao tác cũ.
-    const addPicked = () => {
-      if (!pick.value || sups.some(s => s.id === pick.value)) { pick.value = ''; return; }
-      if (sups.length >= 6) { toast('Tối đa 6 nhà cung cấp mỗi lần lập.', 'err'); pick.value = ''; return; }
-      sups.push({ id: pick.value, name: pick.selectedOptions[0].textContent });
-      pick.value = ''; err.textContent = ''; renderChips(); renderGrid();
+    // Chọn kết quả tìm kiếm để thêm đúng ID NCC vào bản nháp; gõ tên chưa được tính là đã chọn.
+    const addPicked = supplier => {
+      if (!supplier?.id || sups.some(s => s.id === supplier.id)) return;
+      if (sups.length >= 6) { toast('Tối đa 6 nhà cung cấp mỗi lần lập.', 'err'); return; }
+      sups.push({ id: supplier.id, name: supplier.name });
+      err.textContent = ''; renderChips(); renderGrid();
     };
     // NCC đã chọn hiện thành thẻ ngay dưới ô chọn (bấm × để bỏ) – ô chọn trống lại để thêm NCC tiếp khi cần chia.
     const chips = el('div', 'pur-sup-chips');
@@ -1135,15 +1135,15 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       chips.hidden = !sups.length;
     }
     renderChips();
-    pick.addEventListener('change', addPicked);
-    supBox.lastChild.append(pick, btn('+ Thêm NCC vào đơn', 'btn secondary small', addPicked));
+    const pick = createPurchaseSupplierSearch({api,choose:addPicked,selected:id=>sups.some(s=>s.id===id),active:()=>f.isConnected&&!drawer.hidden});
+    supBox.lastChild.append(pick.root);
     supBox.append(chips);
     // Tạo NCC mới (Manager / Kế toán): mở trang Nhà cung cấp ở tab mới; quay lại tab này thì danh sách NCC tự cập nhật.
     if (o.canEditSuppliers) {
-      supBox.lastChild.append(btn('＋ Tạo NCC mới', 'btn ghost small', () => window.open(location.pathname + '#/suppliers?new=1', '_blank')));
+      supBox.append(btn('＋ Tạo NCC mới', 'btn ghost small', () => window.open(location.pathname + '#/suppliers?new=1', '_blank')));
       const refreshSuppliers = async () => {
         if (!f.isConnected) { window.removeEventListener('focus', refreshSuppliers); return; }
-        try { opts = null; const fresh = await options(); const keep = pick.value; const next = supplierSelect(fresh.suppliers, keep); next.addEventListener('change', addPicked); pick.replaceWith(next); pick = next; noSup.hidden = fresh.suppliers.length > 0; }
+        try { opts = null; const fresh = await options(); pick.refresh(); noSup.hidden = fresh.suppliers.length > 0; }
         catch { /* giữ danh sách cũ */ }
       };
       window.addEventListener('focus', refreshSuppliers);
@@ -1161,7 +1161,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     });
     manual.append(mSku, mName, mUnit, mQty, addManual);
     const lookup = bindManualProductLookup({ api, sku: mSku, name: mName, unit: mUnit, host: manual, add: addManual, active: () => f.isConnected && !drawer.hidden });
-    disposeLookup = () => { lookup.dispose(); catalog?.dispose(); clearTimeout(t2); ++rq; };
+    disposeLookup = () => { lookup.dispose(); pick.dispose(); catalog?.dispose(); clearTimeout(t2); ++rq; };
     const table = el('div', 'table-wrap');
     gridBox.append(el('h3', '', '3. Chia số lượng cho từng NCC'), table);
     if (!catalog) gridBox.append(el('h4', '', 'Mã ngoài chứng từ (hàng dự trữ…)'), manual);
@@ -1234,7 +1234,6 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       e.preventDefault(); err.textContent = '';
       if (!wh.value.trim()) { err.textContent = 'Vui lòng nhập địa chỉ giao hàng.'; wh.focus(); return; }
       if (catalog && rows.some(r => !Number.isSafeInteger(r.want) || r.want <= 0)) { err.textContent = 'SL cần đặt của mỗi mã phải là số nguyên lớn hơn 0.'; return; }
-      if (!sups.length && pick.value) addPicked();
       if (!sups.length) { err.textContent = 'Chọn ít nhất một nhà cung cấp.'; return; }
       for (const r of rows) if (perSupplier(r).slice(1).reduce((a, v) => a + v, 0) > Math.max(0, Math.floor(Number(r.want) || 0))) { err.textContent = `${r.sku}: số chia cho các NCC khác vượt "SL cần đặt".`; return; }
       const lines = sups.map(() => new Map());

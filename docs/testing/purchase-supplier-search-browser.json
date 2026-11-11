@@ -1,0 +1,45 @@
+{
+  "scope": "Local CRM + PGlite; synthetic suppliers/contacts/quotes; no production mail or DB writes",
+  "browser": [
+    {
+      "width": 390,
+      "searchFields": [
+        "name",
+        "taxCode",
+        "phone",
+        "contactName",
+        "contactPhone"
+      ],
+      "keyboard": true,
+      "staleResponseIgnored": true,
+      "duplicatePrevented": true,
+      "supplierId": "a",
+      "quantity": 27,
+      "errors": 0
+    },
+    {
+      "width": 1280,
+      "searchFields": [
+        "name",
+        "taxCode",
+        "phone",
+        "contactName",
+        "contactPhone"
+      ],
+      "keyboard": true,
+      "staleResponseIgnored": true,
+      "duplicatePrevented": true,
+      "supplierId": "a",
+      "quantity": 27,
+      "errors": 0
+    }
+  ],
+  "checks": [
+    "Search by name, tax code, supplier phone, contact name and contact phone; Vietnamese without accents, formatted numbers.",
+    "Typing never selects an ID; ArrowDown/Enter selects once and does not submit purchase.",
+    "Late responses ignored; already selected supplier disabled; Escape closes suggestions and preserves form.",
+    "Actual POST /purchase-orders creates one draft for selected supplier a with original quantity 27.",
+    "Active suppliers only; lookup does not grant directory editing rights; no email/account/bank data returned.",
+    "12 results per page; debounce 220ms; no writes from lookup."
+  ]
+}
