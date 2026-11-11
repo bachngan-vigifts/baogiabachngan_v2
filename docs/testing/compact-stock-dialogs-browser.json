@@ -2,6 +2,35 @@
   "scope": "Synthetic local CRM/router in Chromium; no production requests",
   "viewports": [
     {
+      "width": 2105,
+      "height": 1338,
+      "picker": {
+        "x": 272.5,
+        "y": 12,
+        "width": 1560,
+        "height": 1314,
+        "listHeight": 1051.609375,
+        "visible": 20,
+        "rowHeight": 41,
+        "nameWidth": 811,
+        "horizontal": false,
+        "overflow": false
+      },
+      "stock": {
+        "x": 272.5,
+        "y": 12,
+        "width": 1560,
+        "height": 1314,
+        "scrollHeight": 1117,
+        "overflow": false,
+        "rowHeight": 37
+      },
+      "errors": 0,
+      "writes": 0,
+      "expandedWithoutApi": true,
+      "addedLocally": true
+    },
+    {
       "width": 1693,
       "height": 826,
       "picker": {
@@ -9,10 +38,11 @@
         "y": 12,
         "width": 1560,
         "height": 802,
-        "listHeight": 533.609375,
-        "visible": 12,
+        "listHeight": 539.609375,
+        "visible": 13,
         "rowHeight": 41,
-        "nameWidth": 1135,
+        "nameWidth": 811,
+        "horizontal": false,
         "overflow": false
       },
       "stock": {
@@ -37,10 +67,11 @@
         "y": 12,
         "width": 1256,
         "height": 696,
-        "listHeight": 427.609375,
+        "listHeight": 433.609375,
         "visible": 10,
         "rowHeight": 41,
-        "nameWidth": 831,
+        "nameWidth": 507,
+        "horizontal": false,
         "overflow": false
       },
       "stock": {
@@ -65,10 +96,11 @@
         "y": 12,
         "width": 744,
         "height": 876,
-        "listHeight": 605.671875,
+        "listHeight": 611.671875,
         "visible": 15,
         "rowHeight": 40.1875,
-        "nameWidth": 319,
+        "nameWidth": 323,
+        "horizontal": true,
         "overflow": false
       },
       "stock": {
@@ -93,10 +125,11 @@
         "y": 6,
         "width": 378,
         "height": 832,
-        "listHeight": 522.5625,
+        "listHeight": 528.5625,
         "visible": 11,
         "rowHeight": 46,
-        "nameWidth": 177,
+        "nameWidth": 257,
+        "horizontal": true,
         "overflow": false
       },
       "stock": {
@@ -121,10 +154,11 @@
         "y": 6,
         "width": 308,
         "height": 628,
-        "listHeight": 318.5625,
+        "listHeight": 312.0625,
         "visible": 6,
         "rowHeight": 46,
-        "nameWidth": 107,
+        "nameWidth": 257,
+        "horizontal": true,
         "overflow": false
       },
       "stock": {
@@ -149,10 +183,11 @@
         "y": 12,
         "width": 1000,
         "height": 456,
-        "listHeight": 187.609375,
+        "listHeight": 193.609375,
         "visible": 4,
         "rowHeight": 41,
-        "nameWidth": 575,
+        "nameWidth": 323,
+        "horizontal": true,
         "overflow": false
       },
       "stock": {
@@ -179,6 +214,11 @@
     "Enter adds correct SKU and quantity locally, guards repeat add",
     "close/reopen clears local picker state",
     "stock table compact/details views retain all computed values",
-    "full stock-details regression across HRC/B2B/VIGIFTS and mobile"
+    "full stock-details regression across HRC/B2B/VIGIFTS and mobile",
+    "five explicit stock columns aligned with their headers",
+    "physical stock excludes incoming and supplier quantities",
+    "total held includes own and other quotes; sellable preserves own-quote entitlement",
+    "incoming 25 and Lock supplier stock 40 displayed from authorized fixture data",
+    "horizontal scroll keeps all columns reachable on narrow screens"
   ]
 }
