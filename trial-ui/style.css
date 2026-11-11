@@ -2779,3 +2779,13 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .ww-assignment-stats { display:flex; flex-wrap:wrap; align-items:center; gap:12px; font-size:12px; color:var(--muted); margin:8px 0 0 26px; }.ww-assignment-part { display:grid; grid-template-columns:2fr 1fr 1fr; gap:9px; margin-top:12px; }.ww-assignment-part[hidden] { display:none; }
 .ww-assignment-wait { padding:10px; border-radius:8px; background:#fff5e1; color:#895008; margin:0; }.ww-assignment-foot { padding:14px 22px; border-top:1px solid #dce3ee; display:flex; justify-content:space-between; gap:12px; background:white; }.ww-assignment-loading { padding:24px; }
 @media(max-width:600px) { .ww-assignment-dialog { width:96vw; }.ww-assignment-dialog .modal-head,.ww-assignment-body,.ww-assignment-foot { padding:14px; }.ww-assignment-dialog .modal-head h2 { font-size:20px; }.ww-assignment-part { grid-template-columns:1fr 1fr; }.ww-assignment-part label:first-child { grid-column:1/-1; }.ww-assignment-foot .btn { min-height:44px; }.ww-assignment-foot [type=submit] { flex:1; }.ww-assignment-stats { margin-left:0; gap:8px; } }
+
+.product-brand-trigger { min-width:165px; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.product-brand-dialog { width:min(520px,95vw); padding:0; }
+.product-brand-dialog .modal-head,.product-brand-dialog .modal-body,.product-brand-dialog .modal-foot { padding:16px 20px; }
+.product-brand-dialog .modal-head h2 { margin:0; }
+.product-brand-dialog [data-search] { width:100%; margin-top:6px; box-sizing:border-box; }
+.product-brand-options { max-height:45dvh; overflow:auto; display:grid; gap:4px; }
+.product-brand-options label { display:flex; align-items:center; gap:10px; padding:9px 5px; overflow-wrap:anywhere; }
+.product-brand-options label[hidden] { display:none; }
+.product-brand-options input { width:18px; height:18px; flex:none; }

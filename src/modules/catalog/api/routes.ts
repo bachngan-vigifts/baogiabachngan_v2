@@ -49,11 +49,13 @@ const chunks = <T>(xs: T[], n = 500) => Array.from({ length: Math.ceil(xs.length
 
 /**
  * Điều kiện tìm sản phẩm (trang Sản phẩm và hộp "Tìm nhanh sản phẩm" như web cũ):
- * `q` nhiều từ khoá không dấu · `brand` · `group` nhóm sản phẩm theo tên · `policy` + `min`/`max` khoảng giá theo
+ * `q` nhiều từ khoá không dấu · `brand` lặp lại để chọn nhiều thương hiệu (OR) · `group` nhóm sản phẩm theo tên · `policy` + `min`/`max` khoảng giá theo
  * bảng giá đang chọn · `scope=minhlong|other` sản phẩm theo loại báo giá (HRC/B2B = Minh Long, VIGIFTS = còn lại);
  * gõ đúng một mã SKU thì vẫn ra mã đó dù khác phạm vi (giống web cũ).
  */
-async function searchFilter(db: StaffEnv['db'], params: URLSearchParams, brand: string) {
+async function searchFilter(db: StaffEnv['db'], params: URLSearchParams) {
+  const brands = [...new Set(params.getAll('brand').filter(Boolean))];
+  if (brands.length > 100 || brands.some(b => b.length > 4000)) throw new AppError(400, 'Chọn tối đa 100 thương hiệu hợp lệ mỗi lần.');
   const q = params.get('q'), group = params.get('group'), scope = params.get('scope'), policy = params.get('policy') || '';
   const range = priceRange(params.get('min'), params.get('max'));
   if (!range) throw new AppError(400, 'Giá từ phải nhỏ hơn hoặc bằng giá đến, và không được âm.');
@@ -70,7 +72,7 @@ async function searchFilter(db: StaffEnv['db'], params: URLSearchParams, brand: 
     ${range.min !== null ? sql`AND pp.price >= ${range.min}` : sql``} ${range.max !== null ? sql`AND pp.price <= ${range.max}` : sql``})` : undefined;
   return and(
     eq(products.active, true),
-    brand ? eq(products.brand, brand) : undefined,
+    brands.length ? inArray(products.brand, brands) : undefined,
     // Gõ / quét đúng một mã vạch (bảng mã vạch, khoá chính) cũng ra sản phẩm.
     barcode ? or(matchProductWords(q), eq(products.sku, barcode.sku)) : matchProductWords(q),
     groupCond, priceCond,
@@ -78,6 +80,31 @@ async function searchFilter(db: StaffEnv['db'], params: URLSearchParams, brand: 
   );
 }
 
+
+async function withStockThreshold(db: StaffEnv['db'], params: URLSearchParams, where: SQL | undefined, hidden: Set<string>, viewer: PermissionMember) {
+  const minimumText = params.get('minStock');
+  let thresholdQuantities: Map<string, number> | undefined;
+  if (minimumText !== null && minimumText.trim() !== '') {
+    const minimum = Number(minimumText);
+    if (!Number.isFinite(minimum) || minimum < 0 || minimum > 1e12) throw new AppError(400, 'Tồn từ phải là số không âm, tối đa 1.000.000.000.000.');
+    const warehouseId = params.get('stockWarehouse') || '';
+    const visible = (await db.select({id: warehouses.id}).from(warehouses)
+      .where(and(eq(warehouses.active, true), eq(warehouses.kind, 'stock')))).filter(w => !hidden.has(w.id));
+    if (warehouseId && !visible.some(w => w.id === warehouseId)) throw new AppError(400, 'Kho lọc tồn không hợp lệ hoặc bạn không được xem kho này.');
+    const stockIds = new Set(warehouseId ? [warehouseId] : visible.map(w => w.id));
+    const candidates = (await db.select({sku: products.sku}).from(products).where(where)).map(p => p.sku);
+    const raw = candidates.length ? await db.select().from(productStock).where(inArray(productStock.sku, candidates)) : [];
+    const [effective, held] = await Promise.all([
+      candidates.length ? effectiveCatalogStock(db, raw, candidates) : Promise.resolve([]),
+      !warehouseId && catalogStockHooks.held ? catalogStockHooks.held(db, viewer, candidates) : Promise.resolve(new Map<string, number>()),
+    ]);
+    thresholdQuantities = new Map(candidates.map(sku => [sku, -(held.get(sku) || 0)]));
+    for (const row of effective) if (stockIds.has(row.warehouseId)) thresholdQuantities.set(row.sku, (thresholdQuantities.get(row.sku) || 0) + row.quantity);
+    const matched = candidates.filter(sku => thresholdQuantities!.get(sku)! >= minimum);
+    where = and(where, matched.length ? inArray(products.sku, matched) : sql`false`);
+  }
+  return {where, thresholdQuantities};
+}
 
 /**
  * Danh mục sản phẩm. Dữ liệu được nạp từ bản cũ/Sapo vào các bảng catalog;
@@ -166,32 +193,12 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
 
   router.get('/products', async c => {
     const db = c.env.db, paged = paging(c.url, 50, 200), priced = seesSalePrices(viewerOf(c)), hidden = await hiddenStockWarehouses(db, viewerOf(c));
-    const brand = c.url.searchParams.get('brand') || '';
     // `skus=a,b,c`: lấy đúng các mã (kể cả đã ẩn) – dùng để bổ sung ảnh/thông tin cho dòng báo giá cũ.
     const skuList = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 300);
     const { limit, offset } = skuList.length ? { limit: skuList.length, offset: 0 } : paged;
-    let where = skuList.length ? inArray(products.sku, skuList) : await searchFilter(db, c.url.searchParams, brand);
-    const minimumText = c.url.searchParams.get('minStock');
-    let thresholdQuantities: Map<string, number> | undefined;
-    if (minimumText !== null && minimumText.trim() !== '') {
-      const minimum = Number(minimumText);
-      if (!Number.isFinite(minimum) || minimum < 0 || minimum > 1e12) throw new AppError(400, 'Tồn từ phải là số không âm, tối đa 1.000.000.000.000.');
-      const warehouseId = c.url.searchParams.get('stockWarehouse') || '';
-      const visible = (await db.select({id: warehouses.id}).from(warehouses)
-        .where(and(eq(warehouses.active, true), eq(warehouses.kind, 'stock')))).filter(w => !hidden.has(w.id));
-      if (warehouseId && !visible.some(w => w.id === warehouseId)) throw new AppError(400, 'Kho lọc tồn không hợp lệ hoặc bạn không được xem kho này.');
-      const stockIds = new Set(warehouseId ? [warehouseId] : visible.map(w => w.id));
-      const candidates = (await db.select({sku: products.sku}).from(products).where(where)).map(p => p.sku);
-      const raw = candidates.length ? await db.select().from(productStock).where(inArray(productStock.sku, candidates)) : [];
-      const [effective, held] = await Promise.all([
-        candidates.length ? effectiveCatalogStock(db, raw, candidates) : Promise.resolve([]),
-        !warehouseId && catalogStockHooks.held ? catalogStockHooks.held(db, viewerOf(c), candidates) : Promise.resolve(new Map<string, number>()),
-      ]);
-      thresholdQuantities = new Map(candidates.map(sku => [sku, -(held.get(sku) || 0)]));
-      for (const row of effective) if (stockIds.has(row.warehouseId)) thresholdQuantities.set(row.sku, (thresholdQuantities.get(row.sku) || 0) + row.quantity);
-      const matched = candidates.filter(sku => thresholdQuantities!.get(sku)! >= minimum);
-      where = and(where, matched.length ? inArray(products.sku, matched) : sql`false`);
-    }
+    let where = skuList.length ? inArray(products.sku, skuList) : await searchFilter(db, c.url.searchParams);
+    const filtered = await withStockThreshold(db, c.url.searchParams, where, hidden, viewerOf(c));
+    where = filtered.where; const thresholdQuantities = filtered.thresholdQuantities;
     const [[{ total = 0 } = {}], rows, policies, stores, version] = await Promise.all([
       db.select({ total: count() }).from(products).where(where),
       db.select().from(products).where(where).orderBy(...productOrder(c.url.searchParams.get('q'))).limit(limit).offset(offset),
@@ -231,9 +238,9 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
 
   router.get('/products-export', async c => {
     const db = c.env.db, priced = seesSalePrices(viewerOf(c)), hidden = await hiddenStockWarehouses(db, viewerOf(c));
-    const brand = c.url.searchParams.get('brand') || '';
     const selected = [...new Set((c.url.searchParams.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 50000);
-    const where = selected.length ? and(eq(products.active, true), inArray(products.sku, selected)) : await searchFilter(db, c.url.searchParams, brand);
+    let where = selected.length ? and(eq(products.active, true), inArray(products.sku, selected)) : await searchFilter(db, c.url.searchParams);
+    if (!selected.length) where = (await withStockThreshold(db, c.url.searchParams, where, hidden, viewerOf(c))).where;
     const [rows, policies, stores] = await Promise.all([
       db.select().from(products).where(where).orderBy(...(selected.length ? productOrder(null) : productOrder(c.url.searchParams.get('q')))).limit(50000),
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
