@@ -19,3 +19,28 @@ test('hướng dẫn PDF cho CHT có trong giao diện', async () => {
   assert.ok(existsSync(file), 'file PDF hướng dẫn phải nằm trong trial-ui');
   assert.ok(statSync(file).size > 50_000);
 });
+
+test('báo cáo đã nộp giữ đúng hạn khi chờ duyệt, duyệt muộn hoặc nộp lại; không hiển thị đồng hồ quá hạn', () => {
+  const deadline='2026-11-07T15:00:00.000Z';
+  for(const review of ['pending','ok','cash_error','excused']) {
+    const d={deadline,report:{submittedAt:'2026-11-07T13:56:54.000Z',updatedAt:'2026-11-10T04:00:00Z',review,state:{state:'on_time'}}};
+    for(const now of [Date.parse('2026-11-07T14:00:00Z'),Date.parse('2026-11-10T10:00:00Z')])
+      assert.equal(ui.reportDeadlineText(d,now),'Đã nộp đúng hạn');
+  }
+  assert.equal(ui.reportDeadlineText({deadline,report:{review:'pending',state:{state:'late'}}}),'Đã nộp trễ');
+  assert.equal(ui.reportDeadlineText({deadline,report:{}}),'Đã nộp chính thức','không suy đoán quá hạn từ ngày mở popup');
+});
+
+test('chỉ nháp/chưa nộp mới đếm ngược hạn; thời điểm hiển thị cố định giờ Việt Nam', () => {
+  const d={deadline:'2026-11-07T15:00:00Z',report:null,draft:{updatedAt:'2026-11-07T14:00:00Z'}};
+  assert.match(ui.reportDeadlineText(d,Date.parse('2026-11-07T14:00:00Z')),/còn 1 giờ/);
+  assert.match(ui.reportDeadlineText(d,Date.parse('2026-11-08T00:00:00Z')),/Chưa nộp – đã quá hạn/);
+  assert.equal(ui.reportDeadlineText({deadline:'invalid',report:null}),'Chưa xác định hạn nộp');
+  const old=process.env.TZ;
+  try {
+    for(const timezone of ['UTC','America/Los_Angeles','Asia/Tokyo']) {
+      process.env.TZ=timezone;
+      const shown=ui.reportTimestampText('2026-11-07T02:15:00Z');assert.match(shown,/09:15/);assert.match(shown,/07[-/]11/);
+    }
+  } finally {if(old===undefined)delete process.env.TZ;else process.env.TZ=old;}
+});
