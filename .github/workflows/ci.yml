@@ -11,7 +11,8 @@ concurrency:
 jobs:
   test-shards:
     name: test shard ${{ matrix.shard }}/4
-    runs-on: ubuntu-latest
+    # Keep runner upgrades explicit instead of following ubuntu-latest.
+    runs-on: ubuntu-24.04
     # The two-shard PGlite suite hit the 35m job limit near its final schema tests.
     # Four disjoint file shards keep the same full globs/concurrency as npm test; no tests are skipped.
     timeout-minutes: 35
@@ -27,22 +28,9 @@ jobs:
           cache: npm
       - name: PHP runtime for WordPress contract tests
         run: php --version
-      - name: PDF text extraction for quote export tests
-        run: |
-          # Máy chủ gói Ubuntu đôi khi lỗi DNS tạm thời trên runner GitHub: thử lại vài lần thay vì đỏ cả 4 shard.
-          if ! command -v pdftotext >/dev/null 2>&1; then
-            for attempt in 1 2 3 4; do
-              if sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update \
-                && sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install --no-install-recommends -y poppler-utils; then
-                break
-              fi
-              [ "$attempt" = 4 ] && { echo "::error::Không cài được poppler-utils sau 4 lần (lỗi mạng tới máy chủ gói Ubuntu)."; exit 1; }
-              echo "::warning::Cài poppler-utils lỗi lần $attempt, thử lại sau $((attempt * 15)) giây."
-              sleep $((attempt * 15))
-            done
-          fi
-          command -v pdftotext
       - run: npm ci
+      - name: PDF reader for quote export tests
+        run: node --input-type=module -e "const pdf = await import('pdfjs-dist/legacy/build/pdf.mjs'); console.log('PDF.js', pdf.version)"
       - run: npm run typecheck
       # Node test options must precede the file globs; npm test -- ... appends them too late.
       - run: node --import tsx --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/4 "tests/**/*.test.ts" "src/**/*.test.ts"
@@ -50,7 +38,7 @@ jobs:
   test:
     if: ${{ always() }}
     needs: test-shards
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Require all four test shards
         env:
