@@ -1,6 +1,6 @@
 /** Edits the print snapshot only; does not write business data. */
 const FIELDS = [
-  ['seller', 'Đơn vị bán'], ['department', 'Bộ phận'], ['orderNo', 'Số đơn đặt hàng'], ['quoteNo', 'Số chứng từ / báo giá'],
+  ['orderNo', 'Số đơn đặt hàng'], ['quoteNo', 'Số chứng từ / báo giá'],
   ['customerName', 'Tên khách hàng'], ['customerCode', 'Mã khách hàng'], ['taxCode', 'Mã số thuế'], ['contact', 'Người liên hệ / điện thoại'],
   ['orderDate', 'Ngày đặt'], ['expectedDeliveryDate', 'Ngày hẹn giao'], ['address', 'Địa chỉ giao hàng', 'textarea'],
   ['note', 'Ghi chú đơn hàng', 'textarea'], ['signDate', 'Dòng ngày ký'], ['signers.0', 'Người đặt'], ['signers.1', 'Người phụ trách'], ['signers.2', 'Người phê duyệt'],

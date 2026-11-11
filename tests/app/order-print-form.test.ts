@@ -23,7 +23,8 @@ function setup(before?: (p: any) => void) {
 }
 
 test('form In/Tải đơn: điền thông tin và cập nhật bản xem, ghi chú/ba chữ ký dùng cùng snapshot', () => {
-  const s = setup(); assert.equal(s.controls.size, 16);
+  const s = setup(); assert.equal(s.controls.size, 14);
+  assert.equal(s.controls.has('seller'),false);assert.equal(s.controls.has('department'),false);
   assert.equal(s.controls.get('note')!.value, 'Ghi chú gốc\nDòng 2');
   const note = s.controls.get('note')!; note.value = 'Ghi chú mới\nGọi trước khi giao'; note.emit('input');
   assert.equal(s.data.note, note.value); assert.equal(s.renders(), 1);

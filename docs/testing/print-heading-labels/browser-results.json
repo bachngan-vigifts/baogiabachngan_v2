@@ -1,0 +1,118 @@
+{
+  "results": [
+    {
+      "kind": "order",
+      "brand": "BN",
+      "done": false,
+      "orient": "portrait",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "order",
+      "brand": "VG",
+      "done": false,
+      "orient": "portrait",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "packing",
+      "brand": "BN",
+      "done": false,
+      "orient": "portrait",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "packing",
+      "brand": "BN",
+      "done": false,
+      "orient": "landscape",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "packing",
+      "brand": "VG",
+      "done": false,
+      "orient": "portrait",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "packing",
+      "brand": "VG",
+      "done": false,
+      "orient": "landscape",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "delivery",
+      "brand": "BN",
+      "done": false,
+      "orient": "portrait",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "delivery",
+      "brand": "BN",
+      "done": false,
+      "orient": "landscape",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "delivery",
+      "brand": "VG",
+      "done": false,
+      "orient": "portrait",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "delivery",
+      "brand": "VG",
+      "done": false,
+      "orient": "landscape",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "transfer",
+      "brand": "BN",
+      "done": false,
+      "orient": "portrait",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "transfer",
+      "brand": "BN",
+      "done": false,
+      "orient": "landscape",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "transfer",
+      "brand": "BN",
+      "done": true,
+      "orient": "portrait",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    },
+    {
+      "kind": "transfer",
+      "brand": "BN",
+      "done": true,
+      "orient": "landscape",
+      "duplicateHeaderRemoved": true,
+      "titleCentered": true
+    }
+  ],
+  "errors": [],
+  "source": "real print dialog functions and modules; synthetic data; localhost only"
+}

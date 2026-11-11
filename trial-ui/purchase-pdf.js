@@ -29,8 +29,6 @@ export async function buildPurchasePdf(v, { PDFLib, fontkit, fonts }, options = 
   const rule = top => page.drawLine({ start: { x: 34, y: top }, end: { x: edge, y: top }, thickness: .5, color: black });
   function newPage() {
     page = pdf.addPage([841.89, 595.28]); y = 564;
-    wrap(data.buyer.short, 245, bold, 10).forEach((s, i) => text(s, 34, y - i * 12, bold, 10));
-    text('Phòng Kinh Doanh', 85, y - 28, regular, 9);
     const title = 'ĐƠN ĐẶT HÀNG'; text(title, (841.89 - bold.widthOfTextAtSize(title, 20)) / 2, y, bold, 20);
     y -= 48;
   }

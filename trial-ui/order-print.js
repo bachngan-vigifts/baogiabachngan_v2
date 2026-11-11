@@ -53,7 +53,7 @@ export function orderSheetHtml(p, { prices = false, edit = false } = {}) {
   const totalQty = p.lines.reduce((s, l) => s + Number(l.qty || 0), 0);
   return `<div class="ddh">
     ${p.brand === 'VG' ? letterheadImg('VG') : ''}
-    <div class="ddh-top"><div class="ddh-co"><b${ce('seller')}>${esc(p.seller)}</b><span${ce('department')}>${esc(p.department)}</span></div><h1>ĐƠN ĐẶT HÀNG</h1><div></div></div>
+    <div class="ddh-top"><h1>ĐƠN ĐẶT HÀNG</h1></div>
     <div class="ddh-info">
       <div><span>Số ĐH</span><b${ce('orderNo')}>${esc(p.orderNo)}</b></div><div><span>Số CT</span><b${ce('quoteNo')}>${esc(p.quoteNo)}</b></div>
       <div><span>Tên khách hàng</span><b${ce('customerName')}>${esc(p.customerName)}</b></div><div><span>Ngày đặt</span><b${ce('orderDate')}>${esc(p.orderDate)}</b></div>
@@ -86,7 +86,7 @@ export const deliverySignDate = (now = new Date()) => `Ngày …… Tháng …�
 export const SLIP_KINDS = {
   packing: { title: 'PHIẾU ĐÓNG GÓI', file: 'Phieu-dong-goi', signers: ['Người lập phiếu', 'Thủ kho', 'Người đóng gói', 'Người kiểm tra'] },
   delivery: { title: 'PHIẾU GIAO HÀNG', file: 'Phieu-giao-hang', signers: ['ĐẠI DIỆN BÊN NHẬN', 'ĐẠI DIỆN BÊN GIAO'] },
-  transfer: { title: 'PHIẾU ĐIỀU CHUYỂN KHO', file: 'Phieu-dieu-chuyen', signers: ['Người lập phiếu', 'Thủ kho xuất (kho đi)', 'Người giao hàng', 'Thủ kho nhận (kho đến)'] },
+  transfer: { title: 'PHIẾU ĐIỀU CHUYỂN KHO', file: 'Phieu-dieu-chuyen', signers: ['Người lập phiếu', 'Người nhận hàng', 'Người giao hàng', 'Người phê duyệt'] },
 };
 const contactOf = o => [o.contact, o.phone].filter(Boolean).join(' · ');
 
@@ -146,7 +146,7 @@ export function transferPrintData(t, me = '') {
     lines: t.lines.map(l => ({ sku: l.sku || '', name: l.name || '', unit: l.unit || '', qty: Number(l.qty) || 0, received: received(l),
       note: got && l.receivedQty != null && Number(l.receivedQty) < Number(l.qty) - 0.0005 ? `Thiếu ${num(Number(l.qty) - Number(l.receivedQty))}` : '' })),
     note: [t.shippedNote && `Kho đi: ${t.shippedNote}`, t.doneNote && `Nhận hàng: ${t.doneNote}`].filter(Boolean).join(' · '),
-    signDate: deliverySignDate(), names: [t.requestedByName || me, t.shippedByName || '', '', t.doneByName || ''],
+    signDate: deliverySignDate(), names: [t.requestedByName || me, got ? t.doneByName || '' : '', '', t.approvedByName || ''],
   };
 }
 
@@ -156,7 +156,7 @@ export function slipSheetHtml(p, { edit = false } = {}) {
   const first = p.cols.findIndex(c => c.sum);
   return `<div class="ddh slip${p.kind === 'delivery' ? ' delivery-slip' : ''}">
     ${letterheadImg(p.brand)}
-    <div class="ddh-top"><div class="ddh-co"><b${ce('seller')}>${esc(p.seller)}</b><span${ce('department')}>${esc(p.department)}</span></div><h1>${kind.title}</h1><div></div></div>
+    <div class="ddh-top"><h1>${kind.title}</h1></div>
     <div class="ddh-info">${p.info.map(([label, v], i) => `<div><span>${esc(label)}</span><b${ce(`info.${i}.1`)}>${esc(v)}</b></div>`).join('')}</div>
     <table class="ddh-table">${p.kind === 'delivery' ? '<colgroup>' + [5, 12, 8, 24, 9, 12, 12, 18].map(w => `<col style="width:${w}%">`).join('') + '</colgroup>' : ''}<thead><tr><th>STT</th>${p.cols.map(c => `<th>${esc(c.h)}</th>`).join('')}</tr></thead><tbody>
       ${p.lines.map((l, i) => `<tr><td class="c">${i + 1}</td>${p.cols.map(c => c.image
@@ -194,9 +194,7 @@ export async function downloadOrderExcel(p, { prices = false } = {}) {
   ws.columns = cols.map(([, w]) => ({ width: w }));
   const n = cols.length, last = ws.getColumn(n).letter, thin = { style: 'thin', color: { argb: '000000' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
   const put = (ref, v, st = {}) => { const c = ws.getCell(ref); c.value = v; c.font = { name: 'Arial', size: st.size || 10, bold: !!st.bold, italic: !!st.italic }; c.alignment = { vertical: 'middle', horizontal: st.align || 'left', wrapText: true }; return c; };
-  ws.mergeCells('A1:C1'); put('A1', p.seller, { bold: true, align: 'center' });
-  ws.mergeCells('A2:C2'); put('A2', p.department, { align: 'center' });
-  ws.mergeCells(`D1:${ws.getColumn(n - 2).letter}2`); put('D1', 'ĐƠN ĐẶT HÀNG', { bold: true, size: 18, align: 'center' });
+  ws.mergeCells(`A1:${last}2`); put('A1', 'ĐƠN ĐẶT HÀNG', { bold: true, size: 18, align: 'center' });
   const info = [['Số ĐH', p.orderNo, 'Số CT', p.quoteNo], ['Tên khách hàng', p.customerName, 'Ngày đặt', p.orderDate], ['Mã khách hàng', p.customerCode, 'Ngày hẹn giao', p.expectedDeliveryDate], ['Địa chỉ giao', p.address, 'MST', p.taxCode], ['Liên hệ', p.contact, '', '']];
   const mid = ws.getColumn(n - 2).letter, labR = ws.getColumn(n - 1).letter;
   info.forEach(([a, b, c, d], i) => {
