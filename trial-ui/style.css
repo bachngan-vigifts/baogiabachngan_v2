@@ -2762,3 +2762,20 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
  .task-quick-dialog h2 { font-size:26px; }
  .task-quick-choices button { padding:10px 12px;font-size:14px; }
 }
+
+/* Source-linked warehouse assignment: one-column member cards fit phones without horizontal tables. */
+.ww-assignment-dialog { width:min(860px,96vw); max-width:96vw; padding:0; overflow:hidden; }
+.ww-assignment-dialog form { display:flex; flex-direction:column; max-height:90dvh; }
+.ww-assignment-dialog .modal-head { padding:18px 22px; margin:0; border-bottom:1px solid var(--line,#dce3ed); }
+.ww-assignment-dialog .modal-head h2 { margin:0 0 5px; }.ww-assignment-dialog .modal-head p { margin:0; color:var(--muted); }
+.ww-assignment-body { overflow:auto; padding:18px 22px; display:grid; gap:14px; min-height:0; }
+.ww-assignment-body label { display:grid; gap:6px; min-width:0; }.ww-assignment-body input,.ww-assignment-body select,.ww-assignment-body textarea { width:100%; min-width:0; box-sizing:border-box; }
+.ww-assignment-summary,.ww-assignment-recommendation { display:grid; gap:5px; padding:12px; background:#f1f6fc; border:1px solid #dce5f0; border-radius:10px; overflow-wrap:anywhere; }
+.ww-assignment-summary small { color:var(--muted); }.ww-assignment-recommendation { background:#effaf5; border-color:#c8e9dc; }
+.ww-assignment-modes { display:flex; padding:3px; background:#f1f5fa; border:1px solid #d8e1ef; border-radius:9px; }.ww-assignment-modes button { flex:1; padding:10px; border:0; border-radius:7px; background:transparent; font-weight:700; color:#17365f; }.ww-assignment-modes button[aria-pressed=true] { color:white; background:#13315b; }
+.ww-assignment-members { display:grid; gap:9px; }.ww-assignment-member { border:1px solid #dce3ee; border-radius:10px; padding:12px; }.ww-assignment-member.selected { border-color:#2c7be5; background:#f4f8ff; }
+.ww-assignment-body .ww-assignment-person { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }.ww-assignment-person input { width:18px; height:18px; }.ww-assignment-person b { flex:1; }
+.ww-person-state,.ww-suggested { font-size:12px; padding:3px 8px; border-radius:12px; background:#e4f1ff; color:#1457a0; }.ww-person-state.free { color:#08745d; background:#dcf5eb; }.ww-person-state.busy { color:#925307; background:#fff0d7; }
+.ww-assignment-stats { display:flex; flex-wrap:wrap; align-items:center; gap:12px; font-size:12px; color:var(--muted); margin:8px 0 0 26px; }.ww-assignment-part { display:grid; grid-template-columns:2fr 1fr 1fr; gap:9px; margin-top:12px; }.ww-assignment-part[hidden] { display:none; }
+.ww-assignment-wait { padding:10px; border-radius:8px; background:#fff5e1; color:#895008; margin:0; }.ww-assignment-foot { padding:14px 22px; border-top:1px solid #dce3ee; display:flex; justify-content:space-between; gap:12px; background:white; }.ww-assignment-loading { padding:24px; }
+@media(max-width:600px) { .ww-assignment-dialog { width:96vw; }.ww-assignment-dialog .modal-head,.ww-assignment-body,.ww-assignment-foot { padding:14px; }.ww-assignment-dialog .modal-head h2 { font-size:20px; }.ww-assignment-part { grid-template-columns:1fr 1fr; }.ww-assignment-part label:first-child { grid-column:1/-1; }.ww-assignment-foot .btn { min-height:44px; }.ww-assignment-foot [type=submit] { flex:1; }.ww-assignment-stats { margin-left:0; gap:8px; } }

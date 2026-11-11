@@ -1,4 +1,4 @@
-import {pgTable,text,integer,doublePrecision,index,primaryKey,boolean} from 'drizzle-orm/pg-core';
+import {pgTable,text,integer,doublePrecision,index,primaryKey,boolean,uniqueIndex} from 'drizzle-orm/pg-core';
 import {tasks} from '../tasks/schema.ts';
 import {employees} from '../staff/schema.ts';
 import {enumCheck} from '../../core/db/enum-check.ts';
@@ -14,3 +14,16 @@ export const warehouseWorkRuns=pgTable('warehouse_work_runs',{
 export const warehouseWorkMonths=pgTable('warehouse_work_months',{
  memberId:text('member_id').notNull().references(()=>employees.id),month:text('month').notNull(),snapshot:text('snapshot').notNull(),approvedBy:text('approved_by').notNull().references(()=>employees.id),approvedAt:text('approved_at').notNull(),
 },t=>[primaryKey({columns:[t.memberId,t.month]})]).enableRLS();
+
+/** One assignment per source operation; per-recipient reminder tasks link to the same assignment. */
+export const warehouseWorkAssignments=pgTable('warehouse_work_assignments',{
+ taskId:text('task_id').primaryKey().references(()=>tasks.id),operationKey:text('operation_key').notNull().unique(),
+ mode:text('mode',{enum:['single','team']}).notNull(),leadId:text('lead_id').notNull().references(()=>employees.id),warehouseId:text('warehouse_id').notNull(),
+ prepared:boolean('prepared').notNull().default(false),requestHash:text('request_hash').notNull().default(''),reason:text('reason').notNull().default(''),revision:integer('revision').notNull().default(1),createdBy:text('created_by').references(()=>employees.id),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
+}).enableRLS();
+export const warehouseWorkSourceLinks=pgTable('warehouse_work_source_links',{
+ taskId:text('task_id').primaryKey().references(()=>tasks.id),assignmentId:text('assignment_id').notNull().references(()=>warehouseWorkAssignments.taskId),
+},t=>[index('idx_warehouse_source_assignment').on(t.assignmentId)]).enableRLS();
+export const warehouseWorkParts=pgTable('warehouse_work_parts',{
+ taskId:text('task_id').primaryKey().references(()=>tasks.id),assignmentId:text('assignment_id').notNull().references(()=>warehouseWorkAssignments.taskId),memberId:text('member_id').notNull().references(()=>employees.id),part:text('part').notNull(),share:doublePrecision('share').notNull(),
+},t=>[index('idx_warehouse_parts_assignment').on(t.assignmentId),index('idx_warehouse_parts_member').on(t.memberId),uniqueIndex('warehouse_work_parts_assignment_id_member_id_key').on(t.assignmentId,t.memberId)]).enableRLS();

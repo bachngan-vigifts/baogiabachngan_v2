@@ -1,3 +1,4 @@
+import {warehouseWorkParts} from '../modules/warehouse-workspace/schema.ts';
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { StaffEnv } from '../modules/staff/api/auth-routes.ts';
 import { employees, positions, positionPermissions } from '../modules/staff/schema.ts';
@@ -74,15 +75,19 @@ export async function createNotificationScope(db: StaffEnv['db']) {
           && !TEAM_PERMISSION_EXCLUDED[team]?.includes(m.positionId ?? '');
       });
       // An automatic task must not bypass the source document's recipients/store boundary.
+      const [part]=t.autoKey?[]:await db.select({parent:warehouseWorkParts.assignmentId}).from(warehouseWorkParts).where(eq(warehouseWorkParts.taskId,t.id)).limit(1);
+      const [sourceTask]=part?await db.select().from(tasks).where(eq(tasks.id,part.parent)):[];
+      const sourceKey=sourceTask?.autoKey??t.autoKey;
+      const warehouseAssigned=t.assigneePosition==='warehouse'||!!t.assigneeId&&byId.get(t.assigneeId)?.positionId==='warehouse';
       const linked = refOf({ eventType: event, url: t.link });
       const fallback = t.sourceId && ['order', 'contract', 'delivery', 'receivable'].includes(t.source) ? { kind: 'orders', id: t.sourceId } : null;
       const ref = linked ?? fallback;
       if (ref?.kind === 'tasks') return new Set(); // task links cannot recursively grant document access
       if (ref) {
-        const sourceEvent = t.autoKey?.startsWith('transfer-approve:') ? 'transfer_pending'
-          : t.autoKey?.startsWith('transfer-receive:') ? 'transfer_shipped'
-          : t.autoKey?.startsWith('transfer-move:') ? 'transfer_move'
-          : t.assigneePosition === 'warehouse' ? 'warehouse_task' : event;
+        const sourceEvent = sourceKey?.startsWith('transfer-approve:') ? 'transfer_pending'
+          : sourceKey?.startsWith('transfer-receive:') ? 'transfer_shipped'
+          : sourceKey?.startsWith('transfer-move:') ? 'transfer_move'
+          : warehouseAssigned ? 'warehouse_task' : event;
         const allowed = await matching(ref.kind, ref.id, sourceEvent);
         members = members.filter(m => allowed.has(m.id));
       }

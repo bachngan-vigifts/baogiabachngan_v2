@@ -52,3 +52,12 @@ export function scoreMonth(rows:ScoreInput[],month:string,now:string){
  return {month,score,points,rates,totalWeight:total,completedWeight:completed,missing,missingTiming,pending,eligible:due.length,future:relevant.length-due.length,withoutDeadline:rows.filter(x=>!x.cancelled&&!x.dueAt).length};
 }
 export const bonusFactor=(score:number|null)=>score===null?null:score>=90?1:score>=80?.8:score>=70?.5:0;
+
+export interface AssignmentCandidate {id:string;status:string;freeSince:string;coefficient:number|null;queueCount:number}
+/** Free first. A verified completion ratio ranks busy staff; absent observations never become a fake score. */
+export function recommendWarehouseMember<T extends AssignmentCandidate>(rows:readonly T[]):T|null {
+ const sorted=[...rows].sort((a,b)=>Number(b.status==='free')-Number(a.status==='free')
+  || (a.status!=='free'&&b.status!=='free'?(b.coefficient??-1)-(a.coefficient??-1):0)
+  || a.queueCount-b.queueCount||a.freeSince.localeCompare(b.freeSince)||a.id.localeCompare(b.id));
+ return sorted[0]??null;
+}

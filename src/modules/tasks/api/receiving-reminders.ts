@@ -7,7 +7,7 @@ import {tasks} from '../schema.ts';
 import type {AutoTask} from './auto-tasks.ts';
 export const RECEIVING_REMINDER_PREFIX = 'receiving-due:';
 /** One reminder per document/date/recipient. Past dates only retain existing work, never flood users on rollout. */
-export async function receivingReminderTasks(db:StaffEnv['db'],now=new Date()):Promise<AutoTask[]> {
+export async function receivingReminderTasks(db:StaffEnv['db'],now=new Date(),sourceId?:string):Promise<AutoTask[]> {
   const today=vietnamDate(now).iso;
   const time=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(now);
   const [calendar,people,previous]=await Promise.all([
@@ -17,7 +17,7 @@ export async function receivingReminderTasks(db:StaffEnv['db'],now=new Date()):P
   ]);
   const keys=new Set(previous.map(t=>t.key)),out:AutoTask[]=[];
   for(const row of calendar.rows) {
-    if(!row.date||row.date>today)continue;
+    if(!row.date||row.date>today||sourceId&&(row.requestId||row.orderId)!==sourceId)continue;
     const lines=row.lines.filter(l=>l.left>0&&(row.type==='purchase'||l.status!=='draft'&&l.status!=='rejected'));
     if(!lines.length)continue;
     const label=row.type==='purchase'?row.ticketNumber:'Phiếu lấy trước',id=row.requestId||row.orderId;

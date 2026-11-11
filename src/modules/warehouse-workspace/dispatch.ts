@@ -1,9 +1,10 @@
+import {warehouseSourceHooks} from '../../core/contracts/warehouse-source.ts';
 import {and,asc,eq,inArray,isNotNull,isNull,ne,or,sql} from 'drizzle-orm';
 import type {AnyDb} from '../../core/db/client.ts';
 import {AppError} from '../../core/errors.ts';
 import {employees} from '../staff/schema.ts';
 import {tasks} from '../tasks/schema.ts';
-import {warehouseWorkRuns as runs,warehouseWorkSettings as settings,warehouseWorkMonths as months} from './schema.ts';
+import {warehouseWorkRuns as runs,warehouseWorkSettings as settings,warehouseWorkMonths as months,warehouseWorkParts as parts} from './schema.ts';
 import {vietnamMonth} from './domain.ts';
 
 /** All dispatch/start/release operations take this transaction lock first. */
@@ -40,8 +41,26 @@ export async function assertWarehouseFree(db:AnyDb,id:string,exceptTask?:string)
  const [legacy]=await db.select({id:tasks.id}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(eq(tasks.assigneeId,id),eq(tasks.status,'in_progress'),isNull(runs.taskId),exceptTask?ne(tasks.id,exceptTask):undefined)).limit(1);
  if(occupied||legacy)throw new AppError(409,'Nhân viên đang bận hoặc đã có việc chờ nhận. Chỉ giao việc cho người rảnh.','WAREHOUSE_BUSY');
 }
+/** Source closure never grants unworked team credit; cancellation frees unconfirmed parts. */
+async function releaseClosedParts(db:AnyDb,now:string){
+ const rows=await db.select({part:parts,run:runs}).from(parts).innerJoin(runs,eq(runs.taskId,parts.taskId)).where(inArray(runs.stage,['todo','working','blocked','submitted']));
+ if(!rows.length)return;
+ const ids=[...new Set(rows.map(r=>r.part.assignmentId))],parents=await db.select().from(tasks).where(inArray(tasks.id,ids));
+ const contexts=new Map<string,Awaited<ReturnType<NonNullable<typeof warehouseSourceHooks.resolve>>>>();
+ for(const parent of parents){if(parent.status!=='done'&&parent.status!=='cancelled')continue;contexts.set(parent.id,await warehouseSourceHooks.resolve?.(db,parent)??null);}
+ for(const {part,run} of rows){const parent=parents.find(t=>t.id===part.assignmentId),source=contexts.get(part.assignmentId);
+  if(!parent||!contexts.has(parent.id))continue;
+  const cancelled=parent.status==='cancelled'||source?.cancelled;
+  if(!cancelled&&!(parent.status==='done'&&source?.complete&&run.stage==='todo'&&!run.startedAt))continue;
+  const note=cancelled?'Phiếu nguồn đã hủy · không tính điểm':'Nguồn đã hoàn tất trước khi bắt đầu phần việc · không ghi nhận thời gian/điểm';
+  await db.update(runs).set({stage:'cancelled',reviewNote:note,updatedAt:now,revision:sql`${runs.revision}+1`}).where(eq(runs.taskId,part.taskId));
+  await db.update(tasks).set({status:'cancelled',updatedAt:now,revision:sql`${tasks.revision}+1`}).where(eq(tasks.id,part.taskId));
+ }
+}
+
 /** Only explicitly queued rewarded work is auto-assigned; legacy backlogs are never adopted. */
 export async function dispatchWarehouseQueue(db:AnyDb,now:string,force=false){
+ await releaseClosedParts(db,now);
  const [config]=await db.select().from(settings).where(eq(settings.id,'default'));
  if(!config||!config.autoDispatch&&!force)return [];
  const queue=await db.select({run:runs,task:tasks}).from(runs).innerJoin(tasks,eq(tasks.id,runs.taskId)).where(and(eq(runs.stage,'todo'),isNull(runs.offeredAt),isNotNull(runs.queuedAt),ne(tasks.status,'cancelled'),ne(tasks.status,'done')))

@@ -16,3 +16,14 @@ DO $$ DECLARE c text; BEGIN
  END LOOP;
  IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='warehouse_work_settings' AND column_name='auto_dispatch') THEN RAISE EXCEPTION 'Apply 20261110041042_warehouse_dispatch_availability.sql: missing auto_dispatch'; END IF;
 END $$;
+
+-- Source/team assignment is additive, but must be present before the new API is loaded.
+DO $$ DECLARE t text; r regclass; BEGIN
+ FOREACH t IN ARRAY ARRAY['warehouse_work_assignments','warehouse_work_source_links','warehouse_work_parts'] LOOP
+  r:=to_regclass('public.'||t);
+  IF r IS NULL THEN RAISE EXCEPTION 'Apply 20261111061143_warehouse_source_assignment.sql: missing %',t; END IF;
+  IF NOT EXISTS(SELECT 1 FROM pg_class WHERE oid=r AND relrowsecurity) THEN RAISE EXCEPTION 'RLS required on %',t; END IF;
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') AND has_table_privilege('anon',r,'SELECT,INSERT,UPDATE,DELETE') THEN RAISE EXCEPTION 'anon cannot access %',t; END IF;
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') AND has_table_privilege('authenticated',r,'SELECT,INSERT,UPDATE,DELETE') THEN RAISE EXCEPTION 'authenticated cannot access %',t; END IF;
+ END LOOP;
+END $$;

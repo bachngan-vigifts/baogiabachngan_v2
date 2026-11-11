@@ -1,3 +1,4 @@
+import {initWarehouseAssignment} from './warehouse-assignment.js';
 import {initBulkQuoteDiscount,discountProduct} from './quote-bulk-discount.js';
 import {deliveryTone,deliveryIsOverdue,fulfilmentLegend,fulfilmentBadge,compactFulfilmentTable} from './fulfilment-display.js';
 import {initWarehouseWorkspace} from './warehouse-workspace.js';
@@ -416,6 +417,7 @@ async function apiRequest(path, method = 'GET', body) {
   }
   if (state.user && sameSession) {
     if (method !== 'GET' && /^\/(quotes|orders|contracts|purchase-orders|stock-transfers|customers|products|cash|pos)(\/|\?|$)/.test(path)) approvalUi?.scheduleRefresh();
+    if(method!=='GET'&&state.user?.role==='manager'&&/^\/(packing|stock-transfers|purchase-orders|purchase-early-requests)(\/|$)/.test(path))globalThis.dispatchEvent?.(new CustomEvent('crm:warehouse-source-written',{detail:{path,method,data,body}}));
     if (method === 'GET') dataRefresh.observe(path, data, requestRoute);
     else if (/^\/(quotes|orders|contracts|deliveries|payments|stock-requests|stock-transfers|packing|purchase-orders|purchase-early-requests|supplier-receipts|supplier-payments|customers|products|tasks|care|customer-care|admin\/members|hr|payroll)(\/|\?|$)/.test(path)) dataRefresh.afterWrite(); // một lần làm mới (gồm số đếm menu) sau ~1 giây, không đọc lại 7–20 API nối đuôi
   }
@@ -491,6 +493,7 @@ function showAuth(message = '', { keepToken = false } = {}) {
   if (typeof financeUi !== 'undefined') financeUi?.close();
   if (typeof sepayUi !== 'undefined') sepayUi?.close();
   if(typeof khoHomeUi!=='undefined')khoHomeUi?.close();
+  if(typeof warehouseAssignmentUi!=='undefined')warehouseAssignmentUi?.close();
   stocktakeUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
   homeUi?.reset(); homeNotifications?.clear(); notifier?.reset(); tasksUi?.resetQuick();
@@ -4019,7 +4022,8 @@ function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('
 var inventoryUi = null;
 var khoHomeUi = null; // hoisted: unauthenticated startup can call showAuth before this section
 let stockLookupUi = null;
-function khoHome() { return khoHomeUi ||= initWarehouseWorkspace({api,root:$('#view-kho'),toast,identity:()=>JSON.stringify([token,state.user?.id]),legacy:root=>initKhoHome({api,root,today:todayIso})}); }
+var warehouseAssignmentUi=typeof initWarehouseAssignment==='function'?initWarehouseAssignment({api,toast,identity:()=>JSON.stringify([token,state.user?.id]),isManager:()=>state.user?.role==='manager',onSaved:()=>{if(location.hash==='#/kho')khoHome().load();}}):null;
+function khoHome() { return khoHomeUi ||= initWarehouseWorkspace({api,root:$('#view-kho'),toast,identity:()=>JSON.stringify([token,state.user?.id]),assign:taskId=>warehouseAssignmentUi?.open(taskId),legacy:root=>initKhoHome({api,root,today:todayIso})}); }
 function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
 var stocktakeUi;
 function stocktakeView() { return stocktakeUi ||= initStocktake({ api, root: $('#view-stocktake'), toast, confirmBox, userId: () => state.user?.id, ensureCatalog: loadCatalogSnapshot, findProducts: q => catalog.items ? searchCatalog(catalog.items, {q}) : null }); }
