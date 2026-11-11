@@ -1,3 +1,4 @@
+import {initProductBrandFilter} from './product-brand-filter.js';
 import {initWarehouseAssignment} from './warehouse-assignment.js';
 import {initBulkQuoteDiscount,discountProduct} from './quote-bulk-discount.js';
 import {deliveryTone,deliveryIsOverdue,fulfilmentLegend,fulfilmentBadge,compactFulfilmentTable} from './fulfilment-display.js';
@@ -434,7 +435,7 @@ const state = {
   user: null, quotes: null, customers: null, members: null, positions: [],
   quoteFilter: { q: '', type: '', owner: '', sort: 'created' },
   customerQuery: '', customerTotal: 0, memberQuery: '', memberStatus: '',
-  products: null, productTotal: 0, productQuery: '', productBrand: '', productWarehouse: '', productMinStock: '', policies: [], warehouses: [], selected: new Map(),
+  products: null, productTotal: 0, productQuery: '', productBrand: '', productBrands: [], productWarehouse: '', productMinStock: '', policies: [], warehouses: [], selected: new Map(),
 };
 const isManager = () => state.user?.role === 'manager';
 const canUpdateProducts = () => ['manager', 'employee'].includes(state.user?.role);
@@ -488,6 +489,7 @@ const hashParams = () => new URLSearchParams(location.hash.slice(1));
 let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('token') : null;
 
 function showAuth(message = '', { keepToken = false } = {}) {
+  if (typeof productBrandFilter !== 'undefined') productBrandFilter?.close();
   const auth = $('#auth'), opening = auth.hidden;
   if (typeof shiftReportsUi !== 'undefined') shiftReportsUi?.close();
   if (typeof financeUi !== 'undefined') financeUi?.close();
@@ -2489,7 +2491,8 @@ function localProducts() {
   // Lọc tồn tối thiểu theo kho (GET /products?minStock=) tính ở máy chủ trước phân trang – không lọc tại chỗ.
   if (!catalog.items || state.productMinStock !== '') return null;
   const found = searchCatalog(catalog.items, { q: state.productQuery }) || [];
-  const list = state.productBrand ? found.filter(p => p.brand === state.productBrand) : found;
+  const brands = state.productBrands || (state.productBrand ? [state.productBrand] : []);
+  const list = brands.length ? found.filter(p => brands.includes(p.brand)) : found;
   return list.length || !state.productQuery.trim() ? list : null;
 }
 async function loadProducts() {
@@ -2504,19 +2507,28 @@ async function loadProducts() {
   }
   state.products = null; renderProducts();
   try {
-    const d = await api(`/products?limit=${productPager.limit}&offset=${productPager.offset}&q=${encodeURIComponent(state.productQuery)}&brand=${encodeURIComponent(state.productBrand)}${state.productMinStock !== '' ? '&minStock='+encodeURIComponent(state.productMinStock)+'&stockWarehouse='+encodeURIComponent(state.productWarehouse) : ''}`);
+    const params = productFilterParams(); params.set('limit', productPager.limit); params.set('offset', productPager.offset);
+    const d = await api('/products?' + params);
     if (req !== productReq) return;
     applyCatalogMeta(d);
     state.products = d.products; state.productTotal = d.total; clearGlobalError('products');
   } catch (e) { if (req !== productReq) return; state.products = state.products || []; if (e.status !== 401) showGlobalError(e.message, 'products'); }
   renderProducts(); loadProductBrands();
 }
+let productBrandFilter;
+function productFilterParams() {
+  const params = new URLSearchParams(); if (state.productQuery) params.set('q', state.productQuery);
+  for (const brand of state.productBrands || (state.productBrand ? [state.productBrand] : [])) params.append('brand', brand);
+  if (state.productMinStock !== '') {params.set('minStock', state.productMinStock);params.set('stockWarehouse', state.productWarehouse);}
+  return params;
+}
 function loadProductBrands() {
+  productBrandFilter ||= initProductBrandFilter($('#product-brand'));
   if (!brandsLoaded) {
     brandsLoaded = true;
     api('/product-brands').then(d => {
       $('#product-brand').innerHTML = '<option value="">Mọi thương hiệu</option>' + d.brands.map(b => `<option value="${esc(b.name)}">${esc(b.name)} (${b.count})</option>`).join('');
-      $('#product-brand').value = state.productBrand;
+      productBrandFilter.setValues(state.productBrands || (state.productBrand ? [state.productBrand] : []));
     }).catch(() => { brandsLoaded = false; });
   }
 }
@@ -2628,10 +2640,13 @@ async function openProductExport() {
   const grouped = Map.groupBy ? Map.groupBy(known, x => x[2]) : known.reduce((m, x) => (m.set(x[2], [...(m.get(x[2]) || []), x]), m), new Map());
   dlg.innerHTML = `<form method="dialog"><div class="modal-head"><div><span class="eyebrow">Sản phẩm</span><h2>Xuất danh sách Excel</h2></div><button class="icon-btn" value="cancel" aria-label="Đóng">×</button></div>
     <div class="modal-body"><div class="form-grid cols-2"><label>Phạm vi<select data-scope><option value="filter">Kết quả đang lọc (${fmtNum(state.productTotal || 0)})</option><option value="all">Toàn bộ danh mục</option>${state.selected.size ? `<option value="selected">${fmtNum(state.selected.size)} sản phẩm đã chọn</option>` : ''}</select></label></div>
+    <p class="muted small" data-export-scope-note></p>
     <div class="toolbar"><button type="button" class="btn ghost small" data-all>Chọn tất cả</button><button type="button" class="btn ghost small" data-none>Bỏ chọn</button><button type="button" class="btn ghost small" data-default>Mặc định</button></div>
     <div class="export-columns">${[...grouped].map(([g, xs]) => `<fieldset><legend>${esc(g)}</legend>${xs.map(x => `<label><input type="checkbox" value="${esc(x[0])}" ${saved.includes(x[0]) ? 'checked' : ''}> ${esc(x[1])}</label>`).join('')}</fieldset>`).join('')}</div>
     <p class="error" data-error></p></div><div class="modal-foot"><button class="btn secondary" value="cancel">Huỷ</button><button type="button" class="btn primary" data-export>Xuất Excel</button></div></form>`;
   document.body.append(dlg); const boxes = () => [...dlg.querySelectorAll('input[type=checkbox]')];
+  const scopeNote = () => {const scope=dlg.querySelector('[data-scope]').value;dlg.querySelector('[data-export-scope-note]').textContent=scope==='filter'?'Xuất toàn bộ kết quả đang lọc, gồm các trang sau. Thương hiệu: '+(state.productBrands?.length?state.productBrands.join(' · '):'Mọi thương hiệu')+'.':scope==='all'?'Xuất toàn bộ danh mục được phép xem, không áp dụng bộ lọc trên trang.':'Chỉ xuất các mã đã chọn; không áp dụng bộ lọc thương hiệu hiện tại.';};
+  dlg.querySelector('[data-scope]').addEventListener('change',scopeNote);scopeNote();
   dlg.querySelector('[data-all]').onclick = () => boxes().forEach(x => x.checked = true);
   dlg.querySelector('[data-none]').onclick = () => boxes().forEach(x => x.checked = false);
   dlg.querySelector('[data-default]').onclick = () => boxes().forEach(x => x.checked = defaults.includes(x.value));
@@ -2642,8 +2657,8 @@ async function openProductExport() {
     const b = e.currentTarget; b.disabled = true; b.textContent = 'Đang tạo file…';
     try {
       const scope = dlg.querySelector('[data-scope]').value, params = new URLSearchParams();
-      if (scope === 'selected') params.set('skus', [...state.selected].join(','));
-      else if (scope === 'filter') { if (state.productQuery) params.set('q', state.productQuery); if (state.productBrand) params.set('brand', state.productBrand); }
+      if (scope === 'selected') params.set('skus', [...state.selected.keys()].join(','));
+      else if (scope === 'filter') for (const [key, value] of productFilterParams()) params.append(key, value);
       const d = await api('/products-export?' + params), cols = productExportColumns(d).filter(x => ids.includes(x.id));
       localStorage.setItem(PRODUCT_EXPORT_PREF, JSON.stringify(ids));
       await downloadExcel('danh-sach-san-pham', [{ name: 'Sản phẩm', header: cols.map(x => x.label), rows: d.products.map(p => cols.map(x => x.get(p))), widths: cols.map(x => x.width), autoFilter: true }]);
@@ -2742,7 +2757,7 @@ const rowsFromProducts = list => list.map(rowFromProduct).filter(Boolean);
 let productTimer;
 const reloadProducts = () => { productPager?.reset(); loadProducts(); };
 $('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(reloadProducts, catalog.items ? 40 : 250); });
-$('#product-brand').addEventListener('change', e => { state.productBrand = e.target.value; reloadProducts(); });
+$('#product-brand').addEventListener('change', e => { state.productBrands = [...e.target.selectedOptions].map(o => o.value).filter(Boolean); state.productBrand = state.productBrands[0] || ''; reloadProducts(); });
 $('#product-warehouse').addEventListener('change', e => { state.productWarehouse = e.target.value; if(state.productMinStock !== '') reloadProducts(); else renderProducts(); });
 $('#product-min-stock').addEventListener('input', e => { clearTimeout(productTimer); if(!e.target.validity.valid) return; state.productMinStock = e.target.value; productTimer = setTimeout(reloadProducts, 250); });
 $('#product-policy').addEventListener('change', e => { preferredPolicy = e.target.value; try { localStorage.setItem(POLICY_KEY, preferredPolicy); } catch { /* bỏ qua */ } applyCatalogMeta({}); renderProducts(); });

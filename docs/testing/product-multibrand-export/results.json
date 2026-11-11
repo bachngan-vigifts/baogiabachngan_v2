@@ -1,0 +1,19 @@
+{
+  "desktop1440": true,
+  "mobile390": true,
+  "workbooks": 5,
+  "union58": true,
+  "stock1": true,
+  "selected1": true,
+  "all63": true,
+  "punctuation3": true,
+  "cancelPreserves": true,
+  "noHorizontalOverflow": true,
+  "popupTrialsMs": [
+    75.68418800000018,
+    279.26162699999986,
+    77.0041999999994
+  ],
+  "popupMedianMs": 77.0041999999994,
+  "errors": []
+}
