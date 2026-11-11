@@ -6,7 +6,9 @@ import {employees,positionPermissions} from '../../src/modules/staff/schema.ts';
 import {salesOrders,salesOrderLines,salesContracts,deliveries,deliveryLines} from '../../src/modules/sales/schema.ts';
 import {routePermission} from '../../src/modules/staff/domain/permissions.ts';
 
-test('sản phẩm theo đơn: dữ liệu thật theo ID dòng, giữ scope, tính lịch đúng trước phân trang và không ghi dữ liệu',async()=>{
+test('sản phẩm theo đơn: dữ liệu thật theo ID dòng, giữ scope, tính lịch đúng trước phân trang và không ghi dữ liệu',async t=>{
+ const clock=Date.parse('2026-11-05T03:00:00Z');
+ t.mock.timers.enable({apis:['Date'],now:clock});
  const f=await setup(),now='2026-11-01T00:00:00.000Z';
  const order=(id:string,owner='emp',extra={})=>({id,orderNo:'LIVE-'+id,quoteType:'HRC' as const,ownerId:owner,createdBy:owner,customerName:'Khách hàng '+id,orderDate:'2026-11-01',expectedDeliveryDate:'2026-11-10',status:'confirmed' as const,createdAt:now,updatedAt:now,...extra});
  await f.db.insert(salesOrders).values([order('own'),order('private','mgr'),order('pos','emp',{channel:'pos',status:'delivered'}),order('cancelled','emp',{status:'cancelled'})]);
@@ -38,6 +40,12 @@ test('sản phẩm theo đơn: dữ liệu thật theo ID dòng, giữ scope, t�
  assert.equal(all.lines.find((l:any)=>l.id==='line-pos').remainingQty,0,'POS không có chuyến vẫn dùng số đã giao của dòng');
  assert.deepEqual((await read('status=partial')).lines.map((l:any)=>l.id),['line-1']);
  assert.deepEqual((await read('status=overdue&q=00123')).lines.map((l:any)=>l.id),['line-1']);
+ // The unscheduled balance becomes overdue only after the order's promised date, in Vietnam.
+ t.mock.timers.setTime(Date.parse('2026-11-09T17:00:00Z'));
+ assert.deepEqual((await read('status=overdue&q=00123')).lines.map((l:any)=>l.id),['line-1'],'ngày 10/11 vẫn chưa trễ hạn giao 10/11');
+ t.mock.timers.setTime(Date.parse('2026-11-10T17:00:00Z'));
+ assert.deepEqual((await read('status=overdue&q=00123')).lines.map((l:any)=>l.id),['line-1','line-2'],'sang ngày 11/11 mới trễ phần còn giao chưa lên lịch');
+ t.mock.timers.setTime(clock);
  assert.equal((await read('status=all&q=ly+su+do')).lines[0].id,'line-2','tìm không dấu trên server');
  assert.equal((await read('status=all&q='+encodeURIComponent("' OR 1=1 --"))).total,0);
  assert.equal((await read('status=all&kind=contract')).total,2);assert.equal((await read('status=all&channel=pos')).total,1);
