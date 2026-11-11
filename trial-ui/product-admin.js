@@ -40,12 +40,12 @@ export function initProductAdmin(deps) {
     const policies = editing && deps.canSeePrices && !deps.canSeePrices() ? [] : deps.policies();
     const priceKind = p => p.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const requiredPrices = editing ? [] : [/^gia(ban)?le$/, /^gia(ban)?levat$/].map(pattern => policies.find(p => pattern.test(priceKind(p))));
-    const dlg = document.createElement('dialog'); dlg.className = 'modal product-admin-dialog';
+    const dlg = document.createElement('dialog'); dlg.className = editing ? 'modal product-admin-dialog' : 'modal product-admin-dialog product-create'; // product-create: điện thoại vẫn được tạo mới (trang Sản phẩm mobile chỉ xem)
     dlg.setAttribute('aria-label', editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm');
     dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>${editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body product-editor-layout">
         ${editing ? '' : `<fieldset class="product-editor-link form-grid"><legend>Tạo nhanh từ link sản phẩm</legend>
-          <div class="product-link-row"><input name="sourceUrl" type="url" inputmode="url" maxlength="2500" placeholder="https://website-thuong-hieu.vn/san-pham/…" aria-label="Link trang sản phẩm"><button type="button" class="btn secondary small" data-link-fetch>Lấy thông tin</button></div>
+          <div class="product-link-row"><input name="sourceUrl" type="url" inputmode="url" maxlength="2500" placeholder="https://website-thuong-hieu.vn/san-pham/…" aria-label="Link trang sản phẩm"><button type="button" class="btn secondary small" data-link-fetch data-mobile-inline>Lấy thông tin</button></div>
           <small class="muted" data-link-status>Dán link trang MỘT sản phẩm (Sapo, Haravan, WooCommerce hoặc trang có dữ liệu sản phẩm): hệ thống điền sẵn mã, tên, thương hiệu, ảnh, giá web – kiểm tra lại rồi bấm Lưu.</small>
         </fieldset>`}
         <fieldset class="product-editor-info form-grid cols-2"><legend>Thông tin sản phẩm</legend>

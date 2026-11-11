@@ -44,8 +44,9 @@ async function open(width, height, hash) {
 const noOverflow = async page => assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'không tràn ngang');
 try {
   // 1) Sản phẩm từ link (quản lý sản phẩm dùng trên máy tính / tablet).
-  for (const width of [1280, 1024]) {
-    const { page, errors, context } = await open(width, 940, '#/products');
+  for (const [width, height] of [[1280, 940], [1024, 940], [390, 844]]) {
+    const { page, errors, context } = await open(width, height, '#/products');
+    await page.locator('#new-product').waitFor({ state: 'visible' }); // điện thoại cũng phải thấy nút ＋ Thêm sản phẩm
     await page.locator('#new-product').click();
     const dialog = page.getByRole('dialog', { name: 'Thêm sản phẩm', exact: true }); await dialog.waitFor();
     await dialog.locator('[name="sourceUrl"]').fill('https://ld.example.vn/sp/binh-1.html');
@@ -60,6 +61,7 @@ try {
     assert.match(await dialog.locator('[data-link-status]').textContent(), /Giá web/);
     await noOverflow(page);
     await page.screenshot({ path: `${shots}/product-${width}.png` });
+    if (width === 390) for (const name of ['Lấy thông tin', 'Lưu sản phẩm']) assert.ok(await dialog.getByRole('button', { name, exact: true }).isVisible(), 'điện thoại thấy nút ' + name);
     if (width === 1280) {
       await dialog.getByRole('button', { name: 'Lưu sản phẩm', exact: true }).click();
       await dialog.waitFor({ state: 'hidden', timeout: 10000 }).catch(async e => { throw Error('Không lưu được: ' + await dialog.locator('[data-err]').textContent()); });
