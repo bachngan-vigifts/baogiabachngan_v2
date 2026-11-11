@@ -475,5 +475,12 @@
       "maxConcurrent": 1,
       "jsErrors": 0
     }
-  ]
+  ],
+  "finalQueryCheck": {
+    "executionMs": 33.142,
+    "planningMs": 6.986,
+    "sharedHits": 1097,
+    "rows": 20,
+    "note": "Final SQL includes explicit outer ORDER BY; same materialized aggregate plan, separate non-paired measurement."
+  }
 }

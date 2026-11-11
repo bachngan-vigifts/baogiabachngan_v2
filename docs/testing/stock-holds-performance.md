@@ -51,7 +51,7 @@ Năm phép EXPLAIN ghép cặp, đổi thứ tự before/after, hai nhánh trong
 
 Trung vị branch execution **8,764 → 4,572 ms** (giảm 47,8%); block visits giảm xấp xỉ **66%**. Thời gian là `Actual Total Time` của nhánh EXPLAIN, không gồm planning/network/API queue, không phải p95 trang hoặc số đo sau deploy. Có một lượt mới chậm hơn cũ. Dữ liệu có phát sinh thêm đơn giữa các lượt, nhưng hai nhánh từng lượt dùng chung snapshot.
 
-Các phép đo riêng trước đó dao động lớn: kho có holds, cũ 11,795–102,419 ms, mới 6,803–461,395 ms; không bỏ outlier để tuyên bố tăng tốc toàn hệ thống. Kho còn lại không có dòng legacy: median 1,275 → 1,230 ms, cùng 217 shared hits. Đối chiếu **EXCEPT ALL hai chiều** cùng snapshot: kho thứ nhất 19/19 dòng, 0 khác biệt; kho thứ hai 0/0 dòng, 0 khác biệt.
+Các phép đo riêng trước đó dao động lớn: kho có holds, cũ 11,795–102,419 ms, mới 6,803–461,395 ms; không bỏ outlier để tuyên bố tăng tốc toàn hệ thống. Kho còn lại không có dòng legacy: median 1,275 → 1,230 ms, cùng 217 shared hits. Kiểm tra lại SQL cuối cùng (có ORDER BY ngoài): 33,142 ms, 20 dòng, 1.097 shared hits; plan vẫn chỉ gom mỗi aggregate một lần. Đối chiếu **EXCEPT ALL hai chiều** cùng snapshot: kho thứ nhất 19/19 dòng, 0 khác biệt; kho thứ hai 0/0 dòng, 0 khác biệt.
 
 Dữ liệu tổng hợp và giới hạn đo: [stock-holds-performance-evidence.json](stock-holds-performance-evidence.json).
 
