@@ -45,7 +45,8 @@ export function setupNotifications({ api, root, onNew, onOpen, isManager = () =>
       <button type="button" class="btn ghost small block" data-sound></button><ul class="bell-list"></ul></div>`;
   const btn = root.querySelector('.bell'), panel = root.querySelector('.bell-panel'), badge = root.querySelector('.bell-badge'), list = root.querySelector('.bell-list');
   const pushBtn = root.querySelector('[data-enable-push]'), pushNote = root.querySelector('[data-push-note]'), testBtn = root.querySelector('[data-test-push]');
-  let notes = [], newest = '', timer = null, started = false;
+  let notes = [], newest = '', timer = null, started = false, loaded = false, failed = false, pending = null, retryTimer = null, retryDelay = 5000, generation = 0, refreshAfterPending = false;
+  list.innerHTML = '<li class="muted" role="status">Đang tải thông báo…</li>';
   // Âm báo + rung khi có việc mới lúc app đang mở (trial-ui/alert.js); bật / tắt ngay trong chuông.
   const soundBtn = root.querySelector('[data-sound]');
   const drawSound = () => { soundBtn.textContent = soundOn() ? '🔔 Âm báo & rung: Bật (bấm để tắt)' : '🔕 Âm báo & rung: Tắt (bấm để bật)'; };
@@ -59,15 +60,41 @@ export function setupNotifications({ api, root, onNew, onOpen, isManager = () =>
     list.innerHTML = notes.length ? notes.map(n => `<li class="${n.readAt ? '' : 'unread'}" data-id="${esc(n.id)}"><b>${esc(n.title)}</b><span>${esc(n.body)}</span><small>${esc(ago(n.createdAt))}</small></li>`).join('')
       : '<li class="muted">Chưa có thông báo.</li>';
   };
-  async function check(initial = false) {
-    try {
-      const d = await api('/notifications' + (newest ? '?since=' + encodeURIComponent(newest) : ''));
-      const fresh = d.notifications.filter(n => !notes.some(x => x.id === n.id));
-      if (fresh.length) {
-        notes = [...fresh, ...notes].slice(0, 30); newest = notes[0].createdAt; draw();
-        if (!initial) { onNew(fresh); if (fresh.some(n => !n.readAt)) ding(); } // có việc mới → trang tự làm mới + kêu
-      } else if (initial) draw();
-    } catch { /* mất mạng: lần sau thử lại */ }
+  function retry() {
+    if (!started || retryTimer !== null) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      if (started && document.visibilityState !== 'hidden') check();
+    }, retryDelay);
+    retryDelay = Math.min(60_000, retryDelay * 2);
+  }
+  function check(initial = false, full = false) {
+    if (pending) { refreshAfterPending ||= full; return pending; }
+    if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null; }
+    const run = generation;
+    const request = (async () => {
+      try {
+        const d = await api('/notifications' + (!full && newest ? '?since=' + encodeURIComponent(newest) : ''));
+        if (run !== generation) return;
+        const hadLoaded = loaded, fresh = d.notifications.filter(n => !notes.some(x => x.id === n.id));
+        notes = full ? d.notifications : [...fresh, ...notes].slice(0, 30);
+        newest = notes[0]?.createdAt || '';
+        loaded = true; failed = false; retryDelay = 5000; draw();
+        if (hadLoaded && !initial && fresh.length) { onNew(fresh); if (fresh.some(n => !n.readAt)) ding(); }
+      } catch {
+        if (run !== generation) return;
+        failed = true;
+        if (!loaded) list.innerHTML = '<li class="muted" role="status">Chưa tải được thông báo. Đang chờ kết nối lại; bấm chuông để thử lại.</li>';
+        retry();
+      }
+    })();
+    pending = request;
+    request.finally(() => {
+      if (pending !== request) return;
+      pending = null;
+      if (refreshAfterPending) { refreshAfterPending = false; check(false, true); }
+    });
+    return request;
   }
   const loop = () => { clearInterval(timer); timer = setInterval(() => { if (document.visibilityState === 'visible') check(); }, 30000); };
 
@@ -156,7 +183,7 @@ export function setupNotifications({ api, root, onNew, onOpen, isManager = () =>
   btn.addEventListener('click', e => {
     e.stopPropagation();
     panel.hidden = !panel.hidden; btn.setAttribute('aria-expanded', String(!panel.hidden));
-    if (!panel.hidden) { refreshPushButton(); devBtn.hidden = !isManager(); }
+    if (!panel.hidden) { check(false, true); refreshPushButton(); devBtn.hidden = !isManager(); }
   });
   document.addEventListener('click', e => { if (!root.contains(e.target)) { panel.hidden = true; btn.setAttribute('aria-expanded', 'false'); } });
   root.querySelector('[data-read-all]').addEventListener('click', async () => {
@@ -169,10 +196,19 @@ export function setupNotifications({ api, root, onNew, onOpen, isManager = () =>
     panel.hidden = true; onOpen(n);
   });
   // poll = false: không tự hỏi định kỳ – trial-ui/pulse.js gọi check() khi có thông báo mới.
-  if (poll) document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && started) check(); });
+  const wake = () => { if (started && document.visibilityState !== 'hidden' && (poll || !loaded || failed)) check(); };
+  document.addEventListener('visibilitychange', wake);
+  window.addEventListener('online', wake);
+  function reset() {
+      started = false; generation++; clearInterval(timer); timer = null;
+      if (retryTimer !== null) clearTimeout(retryTimer);
+      retryTimer = null; pending = null; refreshAfterPending = false; retryDelay = 5000;
+      notes = []; newest = ''; loaded = false; failed = false; panel.hidden = true; btn.setAttribute('aria-expanded', 'false'); draw();
+    }
   return {
     start() { if (started) return; started = true; check(true); if (poll) loop(); autoPush(); },
-    reset() { clearInterval(timer);timer=null;started=false;notes=[];newest='';panel.hidden=true;btn.setAttribute('aria-expanded','false');draw(); },
+    stop: reset,
+    reset,
     markRead(id) { const n=notes.find(x=>x.id===id);if(n){n.readAt=n.readAt||new Date().toISOString();draw();} },
     check,
   };
