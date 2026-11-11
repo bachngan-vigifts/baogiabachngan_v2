@@ -3068,6 +3068,7 @@ function renderPicker(observedAt, min, max) {
       <span class="picker-incoming" data-stock-label="Đang về" title="Hàng đang về: ${stockText(quantities.incoming)}" aria-label="Đang về ${stockText(quantities.incoming)}">${quantities.incoming > 0 ? incomingCell(p) : stockText(quantities.incoming)}</span>
       <span class="picker-supplier" data-stock-label="NCC" title="Tồn kho nhà cung cấp: ${stockText(quantities.supplier)}" aria-label="Kho NCC ${stockText(quantities.supplier)}">${stockText(quantities.supplier)}</span>
       </span>
+      <span class="picker-product-thumbnail" aria-hidden="true">${thumb(p)}</span>
       <label class="picker-quantity"><span>Số lượng</span><input class="num-input" inputmode="decimal" value="${esc(view?.qty || '1')}" aria-label="Số lượng ${esc(p.name)}"></label>
       <button type="button" class="btn secondary small pick-add" data-add="${i}" ${has ? 'disabled title="Sản phẩm đã có trong báo giá"' : ''}>${has ? '✓ Đã có' : '＋ Thêm'}</button>
       <button type="button" class="btn ghost small picker-details-toggle" data-picker-details="${i}" aria-expanded="${expanded}" aria-controls="picker-detail-${i}" aria-label="${expanded ? 'Thu gọn' : 'Xem thêm'}: ${esc(p.name)}"><span>${expanded ? 'Thu gọn' : 'Xem thêm'}</span><span class="picker-details-icon" aria-hidden="true">⋯</span></button>
