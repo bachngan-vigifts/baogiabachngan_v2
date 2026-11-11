@@ -1,7 +1,7 @@
 /** Pages entry boundary. The opaque CRM token is never returned in JSON or logged. */
 const identityUrl='https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/api/staff/me';
 const cookieName='__Secure-catalogue-session',tokenPattern=/^[A-Za-z0-9_.~+\/-]{16,3000}={0,2}$/;
-const libraryPaths=new Set(['library','library-stock','library-image','library-bulk','quotes','quote-archive','customers']);
+const libraryPaths=new Set(['crm-products','crm-brands','library','library-stock','library-image','library-bulk','quotes','quote-archive','customers']);
 const safeHeaders={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'DENY','Content-Security-Policy':"frame-ancestors 'none'; base-uri 'self'; object-src 'none'"};
 const json=(data,status=200,extra={})=>Response.json(data,{status,headers:{...safeHeaders,...extra}});
 const cookie=(token,age=300)=>`${cookieName}=${token}; Path=/catalogue; Max-Age=${age}; HttpOnly; Secure; SameSite=Strict`;
