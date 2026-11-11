@@ -160,6 +160,12 @@
     ]
   },
   {
+    "migration": "20261111061143_warehouse_source_assignment.sql",
+    "asserts": [
+      "assert-warehouse-workspace.sql"
+    ]
+  },
+  {
     "migration": "20261111090000_purchase_permissions.sql",
     "asserts": [
       "assert-purchase-permissions.sql"

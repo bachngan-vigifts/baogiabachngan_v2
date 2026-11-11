@@ -1,3 +1,7 @@
+import {syncWarehouseSource,reconcileWarehouseSources} from './warehouse-source-sync.ts';
+import {warehouseAssignmentHooks,warehouseSourceHooks} from '../core/contracts/warehouse-source.ts';
+import {resolveWarehouseSource} from './warehouse-source.ts';
+import {assignFreshWarehouseTasks,warehouseAssignees} from '../modules/warehouse-workspace/assignment.ts';
 import { createNotificationScope } from './notification-recipient-scope.ts';
 import { notificationRecipientHooks } from '../modules/notifications/api/recipient-scope.ts';
 import {warehouseBonusOf,assertWarehousePayrollOpen} from './warehouse-payroll.ts';
@@ -107,6 +111,9 @@ import { saleTargetOf } from './sale-target.ts';
 import { salePayrollPreviewOf } from './sale-payroll-preview.ts';
 import { storeAttendanceOf, storeTargetOf } from './store-report-sources.ts';
 export function createAppRouter() {
+  warehouseSourceHooks.resolve=resolveWarehouseSource;
+  warehouseAssignmentHooks.afterReconcile=assignFreshWarehouseTasks;
+  warehouseAssignmentHooks.assignees=warehouseAssignees;
   notificationRecipientHooks.createScope = createNotificationScope;
   transferTaskHooks.afterCommit = syncTransferTasks;
   invoiceTaskHooks.afterCommit = syncInvoiceTasks;
@@ -123,7 +130,14 @@ export function createAppRouter() {
   catalogStockHooks.ledger = ledgerWarehouses;
   stockHoldHooks.assertFree = assertFreeStock;
   Object.assign(supplierRegistrationHooks, { boundSupplier, bindSupplier, supplierOf });
-  const router = createStaffRouter({ authorizeSynctime, authorizeSession: authorizePosStore });
+  const router = createStaffRouter({ authorizeSynctime, authorizeSession: authorizePosStore,afterBusinessWrite:async(c,info)=>{
+    const path=c.url.pathname.replace(/^\/api\/staff/,'');let body:Record<string,any>={};try{body=JSON.parse(info.requestText);}catch{}
+    let response:Record<string,any>={};try{response=JSON.parse(info.responseText);}catch{}
+    const id=c.params.id||String(body.orderId||response.id||'');
+    if(/^\/packing(?:\/|$)/.test(path)&&id)await syncWarehouseSource(c.env,'packing',id);
+    else if(/^\/purchase-orders\//.test(path)&&c.params.id)await syncWarehouseSource(c.env,'purchase',c.params.id);
+    else if(/^\/purchase-early-requests\//.test(path)&&c.params.id)await syncWarehouseSource(c.env,'early',c.params.id);
+  } });
   registerQuoteRoutes(router, { rememberCustomer: rememberQuoteCustomer });
   registerImageFetchRoutes(router);
   registerCustomerRoutes(router);
@@ -190,7 +204,7 @@ export function createAppRouter() {
   registerNavigationCounts(router);
   registerWarehouseWork(router);
   registerHomeStockValue(router);
-  registerWarehouseWorkspace(router,{assertPayrollOpen:assertWarehousePayrollOpen});
+  registerWarehouseWorkspace(router,{assertPayrollOpen:assertWarehousePayrollOpen,syncSource:syncWarehouseSource,reconcileSources:reconcileWarehouseSources,afterAssignment:(env,ids,taskId,actor)=>notifyMany(env,ids,{eventType:'warehouse_work_assigned',title:'Bạn được phân công việc Kho',body:'Mở Kho của tôi để xem phần việc và phiếu nguồn.',url:'/index.html#/kho',actorId:actor,data:{taskId}})});
   registerInventoryRoutes(router, { heldQuantitiesOf: stockLookupHolds });
   registerStockIntegrityRoutes(router);
   registerTransferRoutes(router);

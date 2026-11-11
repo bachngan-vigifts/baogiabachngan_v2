@@ -1,6 +1,9 @@
+import {isWarehouseSourceWork,sourceWorkKeySql,assignmentCandidates,assignmentRoster,prepareSourceAssignment,warehouseSourceTask,withoutAssignedSource,withoutAnyAssignment,assignFreshWarehouseTasks} from './assignment.ts';
+import {warehouseWorkSourceLinks as sourceLinks,warehouseWorkParts as workParts,warehouseWorkAssignments as sourceAssignments} from './schema.ts';
+import {warehouseSourceHooks} from '../../core/contracts/warehouse-source.ts';
 import {payrollLock} from '../../core/db/payroll-lock.ts';
 import type {AssertWarehousePayrollOpen} from '../../core/contracts/warehouse-bonus.ts';
-import {warehouseAvailability,warehouseDispatchLock,assertWarehouseFree,dispatchWarehouseQueue} from './dispatch.ts';
+import {warehouseAvailability,warehouseDispatchLock,assertWarehouseFree,dispatchWarehouseQueue,waitingWarehouseWork} from './dispatch.ts';
 import {stockTransfers} from '../inventory/schema.ts';
 import {incomingShipments} from '../suppliers/schema.ts';
 import {deliveries,salesOrders} from '../sales/schema.ts';
@@ -31,7 +34,13 @@ const monthWhere=(month:string)=>sql`coalesce(((${runs.dueAt})::timestamptz at t
 async function lockWorker(db:Db,id:string){const [p]=await db.select({id:employees.id}).from(employees).where(and(eq(employees.id,id),warehousePeople())).for('update');if(!p)fail('Chọn nhân viên Kho đang hoạt động.');}
 async function assertOpen(db:Db,id:string,month:string){if((await db.select().from(months).where(and(eq(months.memberId,id),eq(months.month,month))).limit(1)).length)fail('Tháng hiệu suất đã chốt, không sửa dữ liệu của kỳ này.',409);}
 async function assertSourceCompleted(db:Db,t:typeof tasks.$inferSelect){
+ const original=await warehouseSourceTask(db,t);
+ if(original.id!==t.id){if(original.status!=='done')fail('Hoàn tất phiếu nghiệp vụ gốc trước khi xác nhận phần việc.',409);t=original;}
  if(!t.autoKey)return;
+ const resolved=await warehouseSourceHooks.resolve?.(db,t);
+ const [assignment]=await db.select({warehouseId:sourceAssignments.warehouseId}).from(sourceAssignments).where(eq(sourceAssignments.taskId,t.id)).limit(1);
+ if(assignment&&(!resolved||resolved.warehouseId!==assignment.warehouseId))fail('Phiếu nguồn hoặc kho không còn khớp phân công. Kiểm tra chứng từ trước khi xác nhận.',409);
+ if(resolved){if(resolved.cancelled||!resolved.complete)fail('Phiếu nguồn chưa hoàn tất đúng bước hoặc đã bị hủy.',409);return;}
  if(t.source==='transfer'&&t.sourceId){const [doc]=await db.select({status:stockTransfers.status}).from(stockTransfers).where(eq(stockTransfers.id,t.sourceId));
   const allowed=t.autoKey.startsWith('transfer-receive:')?['done']:t.autoKey.startsWith('transfer-move:')?['shipped','done']:['approved','shipped','done'];
   if(!doc||!allowed.includes(doc.status))fail('Phiếu điều chuyển chưa hoàn tất bước tương ứng hoặc đã hủy.',409);
@@ -42,7 +51,7 @@ async function assertSourceCompleted(db:Db,t:typeof tasks.$inferSelect){
  if(t.source==='purchase'&&t.sourceId&&!t.autoKey.includes(':early:')){const [doc]=await db.select({cancelledAt:incomingShipments.cancelledAt}).from(incomingShipments).where(eq(incomingShipments.id,t.sourceId));if(!doc||doc.cancelledAt)fail('Đơn mua nguồn đã hủy hoặc không còn tồn tại.',409);}
 }
 async function liveReport(db:Db,id:string,month:string,now:string){
- const rows=await db.select({task:tasks,run:runs}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(or(eq(runs.memberId,id),and(isNull(runs.memberId),eq(tasks.assigneeId,id))),or(monthWhere(month),and(isNull(tasks.dueDate),isNull(runs.dueAt))))).orderBy(asc(tasks.id));
+ const rows=await db.select({task:tasks,run:runs}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(withoutAssignedSource(),or(eq(runs.memberId,id),and(isNull(runs.memberId),eq(tasks.assigneeId,id))),or(monthWhere(month),and(isNull(tasks.dueDate),isNull(runs.dueAt))))).orderBy(asc(tasks.id));
  const [config]=await db.select().from(settings).where(eq(settings.id,'default'));
  const historical=(x:typeof rows[number])=>!x.run&&x.task.status==='done'&&!!config&&(x.task.completedAt||x.task.updatedAt)<config.createdAt;
  const legacyExcluded=rows.filter(historical).length;
@@ -56,10 +65,41 @@ async function liveReport(db:Db,id:string,month:string,now:string){
 }
 /** Composition-root guard: Tasks does not import warehouse metadata. Source hooks remain authoritative. */
 export async function assertWarehouseTaskMutable(db:Db,t:typeof tasks.$inferSelect){
+ const [linked]=await db.select({id:sourceLinks.taskId}).from(sourceLinks).where(eq(sourceLinks.taskId,t.id)).limit(1);
+ if(linked)fail('Việc nguồn đã phân công Kho. Giữ liên kết phiếu gốc và thao tác tại Kho của tôi.',409);
+ if(isWarehouseSourceWork(t)){const [configured]=await db.select({id:settings.id}).from(settings).where(eq(settings.id,'default'));const [warehouse]=await db.select({id:tasks.id}).from(tasks).where(and(eq(tasks.id,t.id),or(eq(tasks.assigneePosition,'warehouse'),sql`${tasks.assigneeId} in (select id from staff_members where position_id='warehouse' and role='employee')`))).limit(1);if(configured&&warehouse)fail('Việc tự sinh Kho cần được phân công từ phiếu nguồn. Manager kiểm tra kho và người nhận tại Kho của tôi.',409);}
  const [r]=await db.select({id:runs.taskId}).from(runs).where(eq(runs.taskId,t.id)).limit(1);
  if(r)fail('Việc đã theo dõi hiệu suất Kho. Thao tác tại Kho của tôi; Manager hủy việc thủ công tại đó để giữ lịch sử.',409);
 }
-export function registerWarehouseWorkspace(router:Router<StaffEnv>,deps:{assertPayrollOpen?:AssertWarehousePayrollOpen}={}){
+export function registerWarehouseWorkspace(router:Router<StaffEnv>,deps:{assertPayrollOpen?:AssertWarehousePayrollOpen;syncSource?:(env:StaffEnv,type:string,id:string)=>Promise<string[]>;reconcileSources?:(env:StaffEnv)=>Promise<unknown>;afterAssignment?:(env:StaffEnv,ids:string[],taskId:string,actor:string)=>Promise<unknown>}={}){
+ router.post('/warehouse-workspace/source-sync',async c=>{
+  if(access(c).role!=='manager')fail('Chỉ Manager chuẩn bị phân công.',403);
+  const b=await readJson(c.req,2000),type=text(b.type,20),id=text(b.id,100);
+  if(!['packing','transfer','purchase','early'].includes(type)||!id)fail('Nguồn công việc không hợp lệ.');
+  const ids=await deps.syncSource?.(c.env,type,id)??[];return json({taskIds:ids});
+ },'business');
+ router.get('/warehouse-workspace/assignment-options',async c=>{
+  if(access(c).role!=='manager')fail('Chỉ Manager phân công việc nguồn.',403);
+  const taskId=c.url.searchParams.get('taskId')||'',q=(c.url.searchParams.get('q')||'').slice(0,100),page=Number(c.url.searchParams.get('page')||0);
+  if(!Number.isInteger(page)||page<0||page>10000)fail('Trang không hợp lệ.');
+  const now=new Date().toISOString(),result=await assignmentCandidates(c.env.db,now,{taskId,q,page});
+  const selected=result.tasks[0], [task]=selected?await c.env.db.select().from(tasks).where(eq(tasks.id,selected.id)):[];
+  const info=task?await assignmentRoster(c.env.db,task,now):null;
+  return json({...result,selectedTaskId:selected?.id??null,people:info?.people??[],recommended:info?.recommended?.id??null,warehouseId:info?.source.warehouseId??null,reason:!info?.people.length?'Kho chưa có nhân viên được cấp đủ quyền nghiệp vụ':info?.recommended?.status==='free'?'Ưu tiên người rảnh':info?.recommended?.coefficient!=null?'Hệ số hoàn thành đã xác nhận cao hơn':'Chưa đủ hệ số · ưu tiên ít việc chờ',now});
+ },'business');
+ router.post('/warehouse-workspace/:id/assign',async c=>{
+  const m=access(c);if(m.role!=='manager')fail('Chỉ Manager phân công việc nguồn.',403);
+  const result=await prepareSourceAssignment(c.env.db,c.params.id!,m.id,await readJson(c.req,16000),new Date().toISOString());
+  if(!result.existing&&result.members?.length&&deps.afterAssignment){const job=deps.afterAssignment(c.env,result.members,result.id,m.id).catch(()=>{});if(c.env.waitUntil)c.env.waitUntil(job);else await job;}
+  return json(result);
+ },'business');
+ router.post('/integrations/warehouse-work/reconcile',async c=>{
+  await deps.reconcileSources?.(c.env);
+  const now=new Date().toISOString(),pending=await c.env.db.select({id:tasks.id}).from(tasks).where(and(withoutAnyAssignment(),sql`${tasks.autoKey} is not null`,eq(tasks.status,'todo'),or(eq(tasks.assigneePosition,'warehouse'),sql`${tasks.assigneeId} in (select id from staff_members where position_id='warehouse' and role='employee' and active=true and deleted_at is null)`))).orderBy(asc(tasks.createdAt),asc(tasks.id)).limit(100);
+  await assignFreshWarehouseTasks(c.env.db,pending.map(t=>t.id),now);
+  const offered=await c.env.db.transaction(async tx=>{const db=tx as unknown as Db;await warehouseDispatchLock(db);return dispatchWarehouseQueue(db,now);});
+  return json({checked:pending.length,offered:offered.length});
+ },'sapo-sync');
  router.get('/warehouse-workspace',async c=>{
   const m=access(c),p=c.url.searchParams,now=new Date().toISOString(),today=vietnamDate().iso,month=p.get('month')||today.slice(0,7);
   if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))fail('Tháng không hợp lệ.');
@@ -73,18 +113,20 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>,deps:{assertP
   const [config]=await c.env.db.select().from(settings).where(eq(settings.id,'default'));
   const selected=p.get('tab')||'priority';if(!['priority','working','review','done','overdue','todayDone'].includes(selected))fail('Bộ lọc không hợp lệ.');
   const page=Number(p.get('page')||0);if(!Number.isInteger(page)||page<0||page>100000)fail('Trang không hợp lệ.');
-  const scope=filter==='team'?teamScope():id?(m.role==='manager'?assignedScope(id):taskScope(id)):sql`false`,active=sql`${tasks.status}<>'cancelled'`;
+  const scope=filter==='team'?teamScope():id?(m.role==='manager'?assignedScope(id):and(taskScope(id),sql`not (${tasks.assigneeId} is null and ${tasks.assigneePosition}='warehouse' and ${sourceWorkKeySql()})`)):sql`false`,active=sql`${tasks.status}<>'cancelled'`;
   const overdueFilter=sql`${stageSql} not in ('confirmed','legacy') and coalesce(${runs.dueAt}::timestamptz,(${tasks.dueDate} || 'T' || coalesce(${tasks.dueTime},'23:59') || ':00+07:00')::timestamptz)<${now}::timestamptz`;
   const doneTodayFilter=sql`${runs.stage}='confirmed' and (${runs.confirmedAt}::timestamptz at time zone 'Asia/Ho_Chi_Minh')::date=${today}::date`;
-  const [counts]=await c.env.db.select({todo:sql<number>`count(*) filter(where ${stageSql}='todo' and ${tasks.status}<>'done')`.mapWith(Number),working:sql<number>`count(*) filter(where ${stageSql} in ('working','blocked','untracked-working'))`.mapWith(Number),review:sql<number>`count(*) filter(where ${stageSql}='submitted')`.mapWith(Number),overdue:sql<number>`count(*) filter(where ${overdueFilter})`.mapWith(Number),doneToday:sql<number>`count(*) filter(where ${doneTodayFilter})`.mapWith(Number)}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(scope,active));
+  const [counts]=await c.env.db.select({todo:sql<number>`count(*) filter(where ${stageSql}='todo' and (${waitingWarehouseWork()}))`.mapWith(Number),working:sql<number>`count(*) filter(where ${stageSql} in ('working','blocked','untracked-working'))`.mapWith(Number),review:sql<number>`count(*) filter(where ${stageSql}='submitted')`.mapWith(Number),overdue:sql<number>`count(*) filter(where ${overdueFilter})`.mapWith(Number),doneToday:sql<number>`count(*) filter(where ${doneTodayFilter})`.mapWith(Number)}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(withoutAssignedSource(),scope,active));
   const tabs={overdue:overdueFilter,todayDone:doneTodayFilter,priority:sql`${stageSql} not in ('confirmed','legacy')`,working:sql`${stageSql} in ('working','blocked','untracked-working')`,review:eq(runs.stage,'submitted'),done:sql`${stageSql} in ('confirmed','legacy') and ${monthWhere(month)}`};
-  const rows=await c.env.db.select({task:tasks,run:runs}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(scope,active,tabs[selected as keyof typeof tabs])).orderBy(asc(sql`case when ${runs.stage} in ('working','blocked') or (${runs.taskId} is null and ${tasks.status}='in_progress') then 0 when ${runs.stage}='todo' and ${runs.offeredAt} is not null then 1 when ${runs.stage}='todo' and ${runs.queuedAt} is not null then 2 else 3 end`),asc(sql`case ${tasks.priority} when 'urgent' then 0 when 'high' then 1 when 'normal' then 2 else 3 end`),asc(tasks.dueDate),asc(tasks.id)).limit(31).offset(page*30);
+  const rows=await c.env.db.select({task:tasks,run:runs}).from(tasks).leftJoin(runs,eq(runs.taskId,tasks.id)).where(and(withoutAssignedSource(),scope,active,tabs[selected as keyof typeof tabs])).orderBy(asc(sql`case when ${runs.stage} in ('working','blocked') or (${runs.taskId} is null and ${tasks.status}='in_progress') then 0 when ${runs.stage}='todo' and ${runs.offeredAt} is not null then 1 when ${runs.stage}='todo' and ${runs.queuedAt} is not null then 2 else 3 end`),asc(sql`case ${tasks.priority} when 'urgent' then 0 when 'high' then 1 when 'normal' then 2 else 3 end`),asc(tasks.dueDate),asc(tasks.id)).limit(31).offset(page*30);
   const [closed]=id?await c.env.db.select().from(months).where(and(eq(months.memberId,id),eq(months.month,month))):[];
   const report=closed?{...parseJson<Record<string,unknown>>(closed.snapshot,{}),locked:true,approvedAt:closed.approvedAt}:id?{...await liveReport(c.env.db,id,month,now),locked:false}:null;
   const publicReport=report&&Object.fromEntries(Object.entries(report).filter(([key])=>key!=='tasks'));
   const roster=await warehouseAvailability(c.env.db,now);
-  const [waiting]=await c.env.db.select({count:sql<number>`count(*)`.mapWith(Number)}).from(runs).innerJoin(tasks,eq(tasks.id,runs.taskId)).where(and(eq(runs.stage,'todo'),isNull(runs.offeredAt),sql`${runs.queuedAt} is not null`,sql`${tasks.status} not in ('done','cancelled')`));
-  return json({availability:m.role==='manager'?roster:roster.filter(p=>p.id===m.id),waitingDispatch:m.role==='manager'?waiting?.count||0:0,now,today,month,scope:filter,memberId:id,manager:m.role==='manager',people,config:config?{...config,calendar:parseJson(config.calendar,null)}:null,counts,report:publicReport,page,hasMore:rows.length>30,rows:rows.slice(0,30).map(({task:t,run:r})=>({id:t.id,title:t.title,description:t.description,source:t.source,link:t.link,taskStatus:t.status,taskRevision:t.revision,assigneeId:t.assigneeId,team:t.assigneePosition,dueAt:r?.dueAt||deadline(t),priority:t.priority,sourceManaged:!!t.autoKey,run:r?{...r,waits:parseJson<Wait[]>(r.waits,[]),elapsed:elapsed(r,now)}:null}))});
+  const [waiting]=await c.env.db.select({count:sql<number>`count(*)`.mapWith(Number)}).from(runs).innerJoin(tasks,eq(tasks.id,runs.taskId)).where(and(eq(runs.stage,'todo'),isNull(runs.offeredAt),sql`${runs.queuedAt} is not null`,and(sql`${tasks.status}<>'cancelled'`,waitingWarehouseWork())));
+  const partRows=rows.length?await c.env.db.select().from(workParts).where(inArray(workParts.taskId,rows.map(r=>r.task.id))):[];
+  const partIds=new Set(partRows.map(p=>p.taskId)),partDetails=new Map(partRows.map(p=>[p.taskId,{sourceTaskId:p.assignmentId,part:p.part,share:p.share}]));
+  return json({availability:m.role==='manager'?roster:roster.filter(p=>p.id===m.id),waitingDispatch:m.role==='manager'?waiting?.count||0:0,now,today,month,scope:filter,memberId:id,manager:m.role==='manager',people,config:config?{...config,calendar:parseJson(config.calendar,null)}:null,counts,report:publicReport,page,hasMore:rows.length>30,rows:rows.slice(0,30).map(({task:t,run:r})=>({id:t.id,title:t.title,description:t.description,source:t.source,link:t.link,taskStatus:t.status,taskRevision:t.revision,assigneeId:t.assigneeId,team:t.assigneePosition,dueAt:r?.dueAt||deadline(t),priority:t.priority,sourceManaged:!!t.autoKey||partIds.has(t.id),part:partDetails.get(t.id)??null,run:r?{...r,waits:parseJson<Wait[]>(r.waits,[]),elapsed:elapsed(r,now)}:null}))});
  },'business');
  router.put('/warehouse-workspace/settings',async c=>{
   const m=access(c);if(m.role!=='manager')fail('Chỉ Manager cài đặt định mức.',403);
@@ -137,10 +179,13 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>,deps:{assertP
    if(action==='claim'){
     if(r||t.assigneeId||t.assigneePosition!=='warehouse'||t.status!=='todo')fail('Việc đã được nhận hoặc thay đổi.',409);
     if(Number(b.taskRevision)!==t.revision)fail('Việc vừa thay đổi. Tải lại.',409);
+    if(isWarehouseSourceWork(t)){const info=await assignmentRoster(db,t,now);if(!info||!info.people.some(p=>p.id===target))fail('Chưa được phân công tại kho nguồn hoặc thiếu quyền nghiệp vụ.',403);if(info.source.complete)fail('Phiếu nguồn đã hoàn tất.',409);}
     await assertWarehouseFree(db,target);
     await db.update(tasks).set({assigneeId:target,assigneePosition:null,revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));return {ok:true};
    }
    if(action==='configure'){
+    if(!r&&isWarehouseSourceWork(t))fail('Việc tự sinh phải dùng Phân công việc tự sinh để kiểm tra đúng kho và người nhận.',409);
+    if((await db.select().from(workParts).where(eq(workParts.taskId,t.id)).limit(1)).length||(await db.select().from(sourceLinks).where(eq(sourceLinks.taskId,t.id)).limit(1)).length)fail('Việc đã gắn phân công từ phiếu nguồn. Không cấu hình lại như việc thủ công.',409);
     if(!r&&t.assigneePosition!=='warehouse'&&(!t.assigneeId||!(await db.select({id:employees.id}).from(employees).where(and(eq(employees.id,t.assigneeId),eq(employees.positionId,'warehouse'),eq(employees.role,'employee'))).limit(1)).length))fail('Chỉ giao định mức cho công việc Kho.',404);
     if(t.status!=='todo'||r&&(r.stage!=='todo'||!!r.startedAt))fail('Chỉ cấu hình trước khi bắt đầu.',409);
     if(!due)fail('Đặt hạn công việc trên phiếu Công việc trước khi cấu hình.');
@@ -157,18 +202,30 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>,deps:{assertP
    if(Number(b.revision)!==r.revision)fail('Công việc vừa thay đổi. Tải lại trước khi thao tác.',409);
    if(!r.memberId&&action!=='cancel')fail('Việc đang chờ phân công. Chờ được giao trước khi nhận.',409);
    if(action==='reoffer'){
+    if((await db.select().from(workParts).where(eq(workParts.taskId,t.id)).limit(1)).length)fail('Phần việc đã gắn thành viên team. Không giao lại bằng luồng việc đơn.',409);
     if(r.stage!=='todo'||!r.offeredAt||!target||target===r.memberId||text(b.note).length<3)fail('Chỉ giao lại việc chờ nhận cho người rảnh khác và ghi lý do.',409);
+    const sourceTask=await warehouseSourceTask(db,t),info=sourceTask.autoKey?await assignmentRoster(db,sourceTask,now):null;
+    if(info&&!info.people.some(p=>p.id===target))fail('Nhân viên không được phân công tại kho nguồn.',403);
     await assertWarehouseFree(db,target,t.id);await assertOpen(db,target,vietnamMonth(r.dueAt));
+    await db.update(sourceAssignments).set({leadId:target,requestHash:'',reason:text(b.note),revision:sql`${sourceAssignments.revision}+1`,updatedAt:now}).where(and(eq(sourceAssignments.taskId,t.id),eq(sourceAssignments.mode,'single')));
     await db.update(runs).set({memberId:target,offeredAt:now,updatedAt:now,revision:r.revision+1,reviewNote:text(b.note)}).where(eq(runs.taskId,t.id));
     await db.update(tasks).set({assigneeId:target,assigneePosition:null,revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));await dispatchWarehouseQueue(db,now);return {ok:true};
    }
+   let sourceFinished=false;
+   if(['start','resume'].includes(action)){
+    const source=await warehouseSourceTask(db,t),[assignment]=await db.select().from(sourceAssignments).where(eq(sourceAssignments.taskId,source.id)).limit(1);
+    if(assignment){const info=await assignmentRoster(db,source,now);sourceFinished=!!info?.source.complete;
+     if(!info||info.source.cancelled||(info.source.complete&&!(r.startedAt&&r.quality==='error'))||info.source.warehouseId!==assignment.warehouseId)fail('Phiếu nguồn hoặc kho đã thay đổi. Manager cần kiểm tra lại phân công.',409);
+     if(!info.people.some(p=>p.id===target))fail('Nhân viên không còn được phân công tại kho nguồn.',403);
+    }
+   }
    const patch:Partial<typeof runs.$inferInsert>={updatedAt:now,revision:r.revision+1};const waits=parseJson<Wait[]>(r.waits,[]);
    if(action==='start'){
-    if(r.stage!=='todo'||t.status==='done')fail('Không thể bắt đầu việc này.',409);
+    if(r.stage!=='todo'||t.status==='done'&&!sourceFinished)fail('Không thể bắt đầu việc này.',409);
     await assertWarehouseFree(db,target,t.id);
     if(r.startedAt&&r.queuedAt){waits.push({id:crypto.randomUUID(),start:r.queuedAt,end:r.offeredAt||now,reason:'Chờ lượt làm lại',decision:'approved',reviewNote:'Hệ thống xếp lại hàng chờ',reviewedBy:m.id});patch.waits=JSON.stringify(waits);}
     patch.stage='working';patch.startedAt=r.startedAt||now;patch.offeredAt=r.offeredAt||now;
-    await db.update(tasks).set({status:'in_progress',startedAt:t.startedAt||now,revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));
+    await db.update(tasks).set({status:sourceFinished&&t.autoKey?t.status:'in_progress',startedAt:t.startedAt||now,revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));
    }else if(action==='cancel'){
     if(t.autoKey)fail('Hủy trên phiếu nghiệp vụ gốc, không hủy bước kho từ bảng chấm điểm.',409);
     if(!text(b.note))fail('Nhập lý do hủy.');patch.stage='cancelled';patch.reviewNote=text(b.note);
@@ -194,7 +251,8 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>,deps:{assertP
    }else if(action==='confirm'){
     if(r.stage!=='submitted'||!['clean','error'].includes(String(b.quality))||!text(b.note))fail('Chọn chất lượng và nhập nhận xét.');
     if(waits.some(w=>w.decision==='pending'))fail('Duyệt các khoảng chờ trước khi xác nhận kết quả.',409);
-    if(t.autoKey&&t.status!=='done')fail('Hoàn tất phiếu nghiệp vụ gốc trước; xác nhận điểm không thay thao tác nhập/xuất kho.',409);
+    const source=await warehouseSourceTask(db,t);
+    if(source.autoKey&&source.status!=='done')fail('Hoàn tất phiếu nghiệp vụ gốc trước; xác nhận điểm không thay thao tác nhập/xuất kho.',409);
     await assertSourceCompleted(db,t);
     patch.stage='confirmed';patch.confirmedAt=now;patch.confirmedBy=m.id;patch.quality=r.quality==='error'?'error':String(b.quality);patch.reviewNote=text(b.note);
     if(!t.autoKey)await db.update(tasks).set({status:'done',completedAt:r.submittedAt,completedBy:target,revision:t.revision+1,updatedAt:now}).where(eq(tasks.id,t.id));

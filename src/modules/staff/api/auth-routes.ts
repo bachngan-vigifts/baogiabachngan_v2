@@ -125,6 +125,7 @@ export function clientIp(h: Headers): string {
 }
 
 export interface StaffRouterOptions {
+  afterBusinessWrite?: (c:Ctx,info:import('../../../core/http/router.ts').SuccessInfo)=>Promise<void>;
   /** Kiểm phạm vi nghiệp vụ do lớp ứng dụng lắp ráp sau khi xác thực và kiểm quyền. */
   authorizeSession?: (c: Ctx) => Promise<void>;
   /** Lớp ứng dụng cung cấp xác thực webhook; staff không phụ thuộc module tích hợp. */
@@ -332,6 +333,7 @@ export function createStaffRouter(options: StaffRouterOptions = {}): Router<Staf
       const job = writeAudit(c.env.db, { actorId: member?.id ?? null, module: String(c.meta), ...auditFromRequest({ ...info, path, params: c.params }) });
       // Nhật ký ghi nền sau khi trả lời (bớt một lượt gọi DB cho mỗi thao tác ghi); không có waitUntil (test) thì chờ như cũ.
       if (c.env.waitUntil) c.env.waitUntil(job.catch(e => console.error('audit log failed', e instanceof Error ? e.message : e))); else await job;
+      const source=options.afterBusinessWrite?.(c,info);if(source){const safe=source.catch(e=>console.error('warehouse source assignment sync failed',e instanceof Error?e.message:e));if(c.env.waitUntil)c.env.waitUntil(safe);else await safe;}
     } } });
   registerAuthRoutes(router);
   registerMemberRoutes(router);

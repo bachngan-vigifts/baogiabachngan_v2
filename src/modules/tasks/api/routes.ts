@@ -1,3 +1,4 @@
+import {warehouseAssignmentHooks} from '../../../core/contracts/warehouse-source.ts';
 import { registerHomeTasks } from './home.ts';
 import { stockTransfers } from '../../inventory/schema.ts';
 import { receivingReminderTasks, RECEIVING_REMINDER_PREFIX } from './receiving-reminders.ts';
@@ -98,12 +99,18 @@ export async function syncTransferTasks(env: StaffEnv, id: string, actorId: stri
 }
 async function notifyAutoTasks(env: StaffEnv, fresh: Awaited<ReturnType<typeof reconcileAutoTasks>>['fresh'], actorId: string | null) {
   if (!fresh.length) return;
-  const job = Promise.all(fresh.slice(0, 30).map(t => {
+  const job = (async()=>{
+    await warehouseAssignmentHooks.afterReconcile?.(env.db,fresh.map(t=>t.id),new Date().toISOString());
+    const assigned=await warehouseAssignmentHooks.assignees?.(env.db,fresh.map(t=>t.id))??new Map();
+    const seen=new Set<string>();
+    return Promise.all(fresh.slice(0,30).flatMap(t=>{
+      const a=assigned.get(t.id);if(a&&seen.has(a.canonicalId))return[];if(a){seen.add(a.canonicalId);t={...t,assigneeId:a.memberId,assigneePosition:null};}
+      return[(async()=>{
     const n = { eventType: 'task_assigned', title: 'Việc mới', body: t.title, url: `/index.html#/tasks/${t.id}`, data: { taskId: t.id } };
     return t.assigneeId ? notify(env, { ...n, targetMemberId: t.assigneeId })
       : t.assigneePosition ? notifyTeam(env, t.assigneePosition, { ...n, title: `Việc mới cho nhóm ${teamName(t.assigneePosition)}`, actorId })
       : notifyMany(env, 'managers', n);
-  })).catch(e => console.error('notify auto tasks failed', e instanceof Error ? e.message : e));
+  })()];}));})().catch(e => console.error('notify auto tasks failed', e instanceof Error ? e.message : e));
   if (env.waitUntil) env.waitUntil(job); else await job;
 }
 // Lưu báo giá chờ duyệt → tạo ngay việc "Duyệt báo giá" cho Manager và báo, không đợi ai mở trang Công việc.

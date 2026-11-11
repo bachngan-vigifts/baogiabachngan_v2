@@ -1,3 +1,4 @@
+import {warehouseAssignmentHooks} from '../../../core/contracts/warehouse-source.ts';
 import { receivingReminderTasks } from './receiving-reminders.ts';
 import { supplierPaymentTasks } from './accounting-sources.ts';
 import { netReceivables } from '../../sales/api/pos-return-credit.ts';
@@ -240,20 +241,7 @@ export const RULES: Record<string, Rule> = {
    * Phiếu đóng gói đã gửi kho → việc "Đóng gói" cho nhóm Kho (mở trang phiếu #/packing/<id>, kho không cần quyền xem đơn).
    * Kho xác nhận đã đóng (kèm ảnh) hoặc phiếu bị huỷ thì việc tự hoàn thành.
    */
-  async packingSlips(db, today) {
-    const rows = await db.select({ s: packingSlips, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName, due: salesOrders.expectedDeliveryDate })
-      .from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, packingSlips.orderId))
-      .where(eq(packingSlips.status, 'sent')).limit(500);
-    if (!rows.length) return [];
-    const lines = await db.select().from(packingSlipLines).where(inArray(packingSlipLines.slipId, rows.map(r => r.s.id)));
-    const n = (v: number) => new Intl.NumberFormat('vi-VN').format(v);
-    return rows.map(({ s, orderNo, contractNo, customerName, due }) => ({ autoKey: `slip:${s.id}`, source: 'packing' as const, sourceId: s.id,
-      title: `Đóng gói ${s.slipNo} – ${customerName}`,
-      description: [`${docRef(s.orderId, orderNo, contractNo).Label} · ${PACKING_SOURCE_LABEL[s.source]}${s.sourceNote ? ': ' + s.sourceNote : ''}${s.totalWeight ? ` · ~${n(s.totalWeight)} kg` : ''}`,
-        ...lines.filter(l => l.slipId === s.id).map(l => `- ${l.name}: ${n(l.qty)} ${l.unit}`), s.note ? `Ghi chú: ${s.note}` : '', 'Đóng xong: mở phiếu, chụp 1–3 ảnh và xác nhận.'].filter(Boolean).join('\n'),
-      link: `#/packing/${s.id}`, assigneeId: null, assigneePosition: 'warehouse', priority: due && due <= addDaysIso(today, 1) ? 'urgent' as const : 'high' as const,
-      dueDate: due ? addDaysIso(due, -1) : null }));
-  },
+  packingSlips:(db,today)=>packingTasksFor(db,today),
   /**
    * Tiến trình sản phẩm (đơn / HĐKT có phí in): kho đã xuất (đóng gói xong) → việc "In mẫu" cho người phụ trách;
    * hoàn thành "In mẫu" → việc "Sản xuất". Hoàn thành việc = bước trên thanh tiến trình xong (xem tasks/api/routes.ts);
@@ -448,6 +436,7 @@ export async function reconcileTaskSet(db: Db, wanted: Map<string, AutoTask>, no
   const inserted = created.length ? await db.insert(tasks).values(created.map(t => ({ id: t.id, title: t.title, description: t.description ?? '', status: 'todo' as const, priority: t.priority, source: t.source,
     sourceId: t.sourceId, link: t.link, autoKey: t.autoKey, assigneeId: t.assigneeId, assigneePosition: t.assigneeId ? null : (t.assigneePosition ?? null), createdBy: null, dueDate: t.dueDate, dueTime: t.dueTime ?? null, createdAt: stamp, updatedAt: stamp }))).onConflictDoNothing().returning({ id: tasks.id }) : [];
   const insertedIds = new Set(inserted.map(t => t.id));
+  const warehouseAssigned=await warehouseAssignmentHooks.assignees?.(db,existing.map(t=>t.id))??new Map();
   let closed = 0, updated = 0, reopened = 0;
   for (const t of existing) {
     const w = wanted.get(t.autoKey!);
@@ -462,7 +451,7 @@ export async function reconcileTaskSet(db: Db, wanted: Map<string, AutoTask>, no
     if (!w && failed) continue;
     if (!w) { await db.update(tasks).set({ status: 'done', completedAt: stamp, completedBy: null, updatedAt: stamp, revision: sql`${tasks.revision} + 1` }).where(eq(tasks.id, t.id)); closed++; continue; }
     // Mức ưu tiên chỉ đặt lúc tạo (nhân viên có thể nâng / hạ). Việc "chưa giao" / giao cho nhóm mà đã có người nhận (giao tay / bấm Nhận việc) thì giữ người đó.
-    const assigneeId = w.assigneeId ?? who(t.assigneeId), assigneePosition = assigneeId ? null : (w.assigneePosition ?? null);
+    const assigneeId = who(warehouseAssigned.get(t.id)?.memberId) ?? w.assigneeId ?? who(t.assigneeId), assigneePosition = assigneeId ? null : (w.assigneePosition ?? null);
     const dueTime = w.dueTime === undefined ? t.dueTime : w.dueTime;
     if (assigneeId !== t.assigneeId || assigneePosition !== t.assigneePosition || w.dueDate !== t.dueDate || dueTime !== t.dueTime || w.title !== t.title || (w.description ?? '') !== t.description) {
       await db.update(tasks).set({ assigneeId, assigneePosition, dueDate: w.dueDate, dueTime, title: w.title, description: w.description ?? '', updatedAt: stamp }).where(eq(tasks.id, t.id)); updated++;
@@ -471,3 +460,18 @@ export async function reconcileTaskSet(db: Db, wanted: Map<string, AutoTask>, no
   // `fresh`: việc vừa tự sinh (để đẩy thông báo cho người / nhóm nhận).
   return { created: inserted.length, closed, updated, reopened, fresh: created.filter(t => insertedIds.has(t.id)) };
 }
+
+export async function packingTasksFor(db:Db,today:string,ids?:string[]){
+    const rows = await db.select({ s: packingSlips, orderNo: salesOrders.orderNo, contractNo: salesContracts.contractNo, customerName: salesOrders.customerName, due: salesOrders.expectedDeliveryDate })
+      .from(packingSlips).innerJoin(salesOrders, eq(salesOrders.id, packingSlips.orderId)).leftJoin(salesContracts, eq(salesContracts.orderId, packingSlips.orderId))
+      .where(and(eq(packingSlips.status,'sent'),ids?inArray(packingSlips.id,ids):undefined)).limit(500);
+    if (!rows.length) return [];
+    const lines = await db.select().from(packingSlipLines).where(inArray(packingSlipLines.slipId, rows.map(r => r.s.id)));
+    const n = (v: number) => new Intl.NumberFormat('vi-VN').format(v);
+    return rows.map(({ s, orderNo, contractNo, customerName, due }) => ({ autoKey: `slip:${s.id}`, source: 'packing' as const, sourceId: s.id,
+      title: `Đóng gói ${s.slipNo} – ${customerName}`,
+      description: [`${docRef(s.orderId, orderNo, contractNo).Label} · ${PACKING_SOURCE_LABEL[s.source]}${s.sourceNote ? ': ' + s.sourceNote : ''}${s.totalWeight ? ` · ~${n(s.totalWeight)} kg` : ''}`,
+        ...lines.filter(l => l.slipId === s.id).map(l => `- ${l.name}: ${n(l.qty)} ${l.unit}`), s.note ? `Ghi chú: ${s.note}` : '', 'Đóng xong: mở phiếu, chụp 1–3 ảnh và xác nhận.'].filter(Boolean).join('\n'),
+      link: `#/packing/${s.id}`, assigneeId: null, assigneePosition: 'warehouse', priority: due && due <= addDaysIso(today, 1) ? 'urgent' as const : 'high' as const,
+      dueDate: due ? addDaysIso(due, -1) : null }));
+  }
