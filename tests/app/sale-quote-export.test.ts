@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {execFileSync} from 'node:child_process';
+import {getDocument} from 'pdfjs-dist/legacy/build/pdf.mjs';
 import {runInNewContext} from 'node:vm';
 import {after,totals,discounted} from '../../src/modules/quotes/domain/quote-math.ts';
 // @ts-ignore browser exports
@@ -48,7 +48,10 @@ test('actual Vietnamese PDF paginates long names with embedded designs, without 
  const doc=state(),large={...doc,rows:Array.from({length:90},(_,i)=>({...rows[i%3],name:'Bộ quà tặng – thiết kế riêng có tên rất dài '.repeat(i===0?180:2)+i}))};
  const bytes=await c.buildPdf(large,assets,{images:Array.from({length:90},()=>images[0])}),pdf=await c.PDFLib.PDFDocument.load(bytes);assert.ok(pdf.getPageCount()>2);
  const dir=mkdtempSync(join(tmpdir(),'sale-export-'));
- try{const file=join(dir,'sale.pdf');writeFileSync(file,bytes);const text=execFileSync('pdftotext',['-layout',file,'-'],{encoding:'utf8'});
+ try{const file=join(dir,'sale.pdf');writeFileSync(file,bytes);// Decode the actual saved PDF with Mozilla's independent reader. No system package or renderer-specific parser.
+  const loadingTask=getDocument({data:Uint8Array.from(readFileSync(file)),useSystemFonts:false,useWasm:false});
+  const decoded=await loadingTask.promise;
+  let text='';try{assert.equal(decoded.numPages,pdf.getPageCount());for(let page=1;page<=decoded.numPages;page++){const content=await(await decoded.getPage(page)).getTextContent();text+=content.items.map(item=>'str' in item?item.str+(item.hasEOL?'\n':' '):'').join('')+'\n';}}finally{await loadingTask.destroy();}
   for(const title of ['STT','Hình ảnh','Tên sản phẩm','Giá bán','Phí in','Thành tiền'])assert.ok(text.includes(title),title);assert.ok(text.includes('trung bình'));
   assert.ok(text.includes('Bộ quà tặng'));assert.ok(text.includes('89'));
   assert.doesNotMatch(text,/SECRET_|VAT|Chiết khấu|ĐVT|Mã hàng/);

@@ -1,3 +1,4 @@
+import {createProductionFiles,mountProductionFiles} from './production-files.js';
 import {initProductBrandFilter} from './product-brand-filter.js';
 import {initWarehouseAssignment} from './warehouse-assignment.js';
 import {initBulkQuoteDiscount,discountProduct} from './quote-bulk-discount.js';
@@ -4336,6 +4337,7 @@ async function openOrder(id, confirmed = null) {
   id=decodeURIComponent(id);
   const run = ++orderLoadRun, session = token, route = location.hash;
   const onContracts = location.hash.startsWith('#/contracts/');
+  $('#order-production-files').hidden=true;$('#order-production-files').replaceChildren();
   $('#order-holds-card').hidden = true;
   $('#order-holds-card').replaceChildren();
   webOrderUi.invalidate();
@@ -4358,6 +4360,8 @@ async function openOrder(id, confirmed = null) {
   const want = docHref(id, d.contract?.contractNo);
   if (location.hash.split('?')[0] !== want) { history.replaceState(null, '', want); lastRoutedHash = want; currentHash = want; }
   const o = d.order, r = d.receivable, isK = !!d.contract, what = isK ? 'HĐKT' : 'đơn';
+  if(o.quoteId&&o.quoteType!=='HRC'){const host=$('#order-production-files'),fileRoute=location.hash;host.hidden=false;mountProductionFiles({api,transfer:productionTransfer,host,orderId:id,isCurrent:()=>run===orderLoadRun&&session===token&&fileRoute===location.hash,esc,createForm:productionForm});}
+
   const ghnEditNotice = $('#order-pos-ghn-edit'); ghnEditNotice.textContent = posGhnEditNotice(d); ghnEditNotice.hidden = !ghnEditNotice.textContent;
   const ref = orderReference(o, d.contract);
   $('#order-title').textContent = ref.number; $('#breadcrumb').textContent = ref.number; document.title = ref.number + ' · Bách Ngân';
@@ -5239,7 +5243,7 @@ async function openContractForm(t) {
   $('#contract-dialog').showModal();
   const submit=f.querySelector('.modal-foot .btn.primary');submit.disabled=true;t.sourcing=null;
   previewContractNo();
-  try{const sourcing=await initQuoteSourcing({api,confirmBox,host:$('#contract-sourcing'),quoteId:t.quoteId,isCurrent:()=>contractTarget===t});if(contractTarget!==t)return;t.sourcing=sourcing;submit.disabled=false;}catch(ex){if(contractTarget===t)$('#contract-error').textContent=ex.message;}
+  try{const [sourcing,production]=await Promise.all([initQuoteSourcing({api,confirmBox,host:$('#contract-sourcing'),quoteId:t.quoteId,isCurrent:()=>contractTarget===t}),productionForm({host:$('#contract-production-files'),quoteId:t.quoteId,isCurrent:()=>contractTarget===t})]);if(contractTarget!==t)return;t.sourcing=sourcing;t.production=production;submit.disabled=false;}catch(ex){if(contractTarget===t)$('#contract-error').textContent=ex.message;}
 }
 /** Điền số HĐKT tự sinh (theo pháp nhân); người dùng đã sửa số thì giữ số đã sửa. */
 async function previewContractNo() {
@@ -5272,6 +5276,7 @@ $('#contract-form').addEventListener('submit', async e => {
   try {
     Object.assign(body,target.sourcing.read());target.busy=true;f.querySelector('.modal-foot .btn.primary').disabled=true;
     Object.assign(body,await target.sourcing.prepare());
+    if(target.production)Object.assign(body,await target.production.prepare());
     if(contractTarget!==target)return;
     // Use the form's choice once; only a direct Sapo connection may still need a warehouse.
     const r = await sapoPush().choose({ quoteId: target.quoteId }, { title: 'Lập HĐKT', action: 'Lập HĐKT + đơn Sapo',
@@ -5415,8 +5420,15 @@ $('#download-menu').addEventListener('click', () => closeDownloadMenu());
  * Tạo đơn cho báo giá: mở form nhập thông tin trước, sau đó chỉ kiểm Sapo nếu chọn có đẩy.
  * HĐKT dùng form riêng. Báo giá đã có đơn → mở đơn đó. Trả id đơn, null khi huỷ.
  */
+async function productionTransfer(path,file){
+ const session=token,res=await fetch(API+path,{method:file?'PUT':'GET',headers:{authorization:'Bearer '+session,...(file?{'content-type':'application/octet-stream'}:{})},body:file,cache:'no-store',redirect:'error'});
+ if(session!==token)throw Error('Tài khoản đã thay đổi.');
+ if(!res.ok){const d=await res.json().catch(()=>({}));throw Error(d.error||'Chưa xác minh được file Drive. Giữ file và thử lại.');}
+ return file?res.json():res.blob();
+}
+const productionForm=opts=>{const session=token;return createProductionFiles({api,transfer:productionTransfer,esc,...opts,isCurrent:()=>session===token&&opts.isCurrent()});};
 var orderCreateUi = null;
-const orderCreate = () => orderCreateUi ||= initOrderCreate({ api, $, todayIso, confirmBox, createSourcing:opts=>initQuoteSourcing({api,confirmBox,...opts}), chooseSapo: (ref, opts) => sapoPush().choose(ref, opts) });
+const orderCreate = () => orderCreateUi ||= initOrderCreate({ api, $, todayIso, confirmBox, createProductionFiles:productionForm, createSourcing:opts=>initQuoteSourcing({api,confirmBox,...opts}), chooseSapo: (ref, opts) => sapoPush().choose(ref, opts) });
 async function createOrderForQuote(quoteId, quoteNo, debtWarningAccepted = false) {
   let existed = null;
   const post = async (fields, loc, push) => {

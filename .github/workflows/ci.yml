@@ -11,7 +11,8 @@ concurrency:
 jobs:
   test-shards:
     name: test shard ${{ matrix.shard }}/4
-    runs-on: ubuntu-latest
+    # Keep runner upgrades explicit instead of following ubuntu-latest.
+    runs-on: ubuntu-24.04
     # The two-shard PGlite suite hit the 35m job limit near its final schema tests.
     # Four disjoint file shards keep the same full globs/concurrency as npm test; no tests are skipped.
     timeout-minutes: 35
@@ -27,13 +28,9 @@ jobs:
           cache: npm
       - name: PHP runtime for WordPress contract tests
         run: php --version
-      - name: PDF text extraction for quote export tests
-        run: |
-          if ! command -v pdftotext >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install --no-install-recommends -y poppler-utils
-          fi
       - run: npm ci
+      - name: PDF reader for quote export tests
+        run: node --input-type=module -e "const pdf = await import('pdfjs-dist/legacy/build/pdf.mjs'); console.log('PDF.js', pdf.version)"
       - run: npm run typecheck
       # Node test options must precede the file globs; npm test -- ... appends them too late.
       - run: node --import tsx --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/4 "tests/**/*.test.ts" "src/**/*.test.ts"
@@ -41,7 +38,7 @@ jobs:
   test:
     if: ${{ always() }}
     needs: test-shards
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Require all four test shards
         env:

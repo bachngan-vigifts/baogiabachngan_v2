@@ -1,3 +1,4 @@
+import {registerProductionFiles,bindProductionFiles} from './production-files.ts';
 import { ensureLineCosts } from './line-costs.ts';
 import { registerOrderProductsRoutes } from './order-products.ts';
 import { deliveryListFilters } from './delivery-list-filters.ts';
@@ -450,6 +451,7 @@ quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchaseLinks?: (db: StaffEnv['db'], member: SessionState['member'], order: { id: string; quoteId: string | null }) => Promise<{ id: string; number: string; internalNo?: string; supplierName?: string }[]> } = {}) {
   registerWebOrderEdits(router);
   registerOrderProductsRoutes(router, orderScopeFor);
+  registerProductionFiles(router,loadOrder,assertCanEditOrder);
   registerCrmReturnRoutes(router, loadOrder);
   registerCashCollectionRoutes(router,loadOrder,async(db,id)=>(await receivableOf(db,[id])).get(id)?.balance||0);
   registerContractLiquidationRoutes(router,loadOrder);
@@ -679,7 +681,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const warehouseId = await pickSaleWarehouse(c.env.db, quote.assigneeId ?? quote.creatorId, me, body.warehouseId);
     const id = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', submitted, warehouseId, ...input,
       debtWarningAccepted: body.debtWarningAccepted === true, orderNo: customOrderNo || undefined,
-      inTx: async (tx, orderId) => { await saveQuoteStockPlan(tx,orderId,me.id,body.stockPlan); } });
+      inTx: async (tx, orderId) => { await saveQuoteStockPlan(tx,orderId,me.id,body.stockPlan); await bindProductionFiles(tx,c,quote,orderId,body.productionFileIds); } });
     if (viaClaw) sapo = await sendOrderToClaw(c, id, 'order');
     const [o] = await c.env.db.select({ orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
     if (submitted) await notifyMany(c.env, 'approvers', { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${o!.orderNo} – ${o!.customerName} · ${new Intl.NumberFormat('vi-VN').format(o!.total)} đ`,
@@ -1147,7 +1149,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     let orderId = '';
     try {
       orderId = await createOrderFromQuote(c.env.db, quote, { createdBy: me.id, status: 'draft', debtWarningAccepted: body.debtWarningAccepted === true, submitted: me.role === 'manager', warehouseId, note: typeof body.note === 'string' ? text([orderNotesFromQuote(data),body.note].filter(Boolean).join('\n\n'),20000) : undefined, inTx: async (tx, oid) => {
-        await saveQuoteStockPlan(tx,oid,me.id,body.stockPlan);
+        await saveQuoteStockPlan(tx,oid,me.id,body.stockPlan); await bindProductionFiles(tx,c,quote,oid,body.productionFileIds);
         const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id, oid)).limit(1);
         const counterId = `HDKT:${year}:${month}:${entity}`;
         const [row] = await tx.insert(contractCounters).values({ id: counterId, type: 'HDKT', year: Number(year), month: Number(month), legalEntity: entity, lastSequence: 1, updatedAt: now })
