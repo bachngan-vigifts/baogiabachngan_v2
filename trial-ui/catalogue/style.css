@@ -67,3 +67,6 @@
 .recipient-modes label{display:flex;align-items:center;gap:8px}
 .recipient-modes input{width:18px;height:18px;accent-color:var(--green)}
 .quote-recipient-dialog{max-width:640px}
+
+.catalogue-auth{max-width:620px;margin:12vh auto;padding:28px;background:white;border:1px solid var(--line);border-radius:12px}.catalogue-auth .btn{margin:8px 8px 0 0}.catalogue-staff{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px}
+@media(max-width:650px){.catalogue-auth{margin:10vh 16px}.catalogue-staff{max-width:120px}}

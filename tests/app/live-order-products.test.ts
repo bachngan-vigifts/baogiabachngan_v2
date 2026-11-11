@@ -6,7 +6,9 @@ import {employees,positionPermissions} from '../../src/modules/staff/schema.ts';
 import {salesOrders,salesOrderLines,salesContracts,deliveries,deliveryLines} from '../../src/modules/sales/schema.ts';
 import {routePermission} from '../../src/modules/staff/domain/permissions.ts';
 
-test('sản phẩm theo đơn: dữ liệu thật theo ID dòng, giữ scope, tính lịch đúng trước phân trang và không ghi dữ liệu',async()=>{
+test('sản phẩm theo đơn: dữ liệu thật theo ID dòng, giữ scope, tính lịch đúng trước phân trang và không ghi dữ liệu',async t=>{
+ // Keep the unshipped 10 November line in the future, independent of CI's date.
+ t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-05T00:00:00.000Z')});
  const f=await setup(),now='2026-11-01T00:00:00.000Z';
  const order=(id:string,owner='emp',extra={})=>({id,orderNo:'LIVE-'+id,quoteType:'HRC' as const,ownerId:owner,createdBy:owner,customerName:'Khách hàng '+id,orderDate:'2026-11-01',expectedDeliveryDate:'2026-11-10',status:'confirmed' as const,createdAt:now,updatedAt:now,...extra});
  await f.db.insert(salesOrders).values([order('own'),order('private','mgr'),order('pos','emp',{channel:'pos',status:'delivered'}),order('cancelled','emp',{status:'cancelled'})]);

@@ -1,2 +1,3 @@
 import {handleApi} from '../../../catalogue-server/api.mjs';
-export const onRequest = ({request,env}) => handleApi(request,env);
+import {secureCatalogueApi} from '../../../catalogue-server/security.mjs';
+export const onRequest = ({request,env}) => secureCatalogueApi(request,env,handleApi);
