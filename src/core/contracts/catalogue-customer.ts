@@ -7,5 +7,6 @@ export interface CustomerCatalogueQuote{id:string;quoteNo:string;title:string;pr
 export interface CatalogueCustomerLinks{
  lock?(tx:CustomerMergeTx):Promise<unknown>;
  resolve(db:CatalogueCustomerDb,actor:CatalogueCustomerActor,id:string):Promise<{id:string;name:string}>;
+ resolveGroup?(db:CatalogueCustomerDb,actor:CatalogueCustomerActor,name:string):Promise<string>;
  list(db:AnyDb,actor:CatalogueCustomerActor,id:string,all:boolean):Promise<CustomerCatalogueQuote[]>;
 }

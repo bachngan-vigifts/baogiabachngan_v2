@@ -38,3 +38,8 @@ test('customer picker is authenticated, read-only and forwards customer IDs as q
  assert.equal((await libraryProxy(new Request('https://crm.minhlongonline.com/catalogue/api/customers?id=customer%2F..%2Fsame-name&url=https://bad.test',{headers}),fetcher)).status,200);
  assert.equal((await libraryProxy(new Request('https://crm.minhlongonline.com/catalogue/api/customers',{headers,method:'POST',body:'{}'}),fetcher)).status,405);assert.equal(calls,1);
 });
+test('customer group picker forwards only the bounded fixed-route lookup',async()=>{
+ const r=await libraryProxy(new Request('https://crm.minhlongonline.com/catalogue/api/customers?groups=1&url=https://bad.test',{headers:{Authorization:'Bearer TEST_CATALOGUE_PROXY_TOKEN'}}),async(url:string)=>{
+  const u=new URL(url);assert.equal(u.pathname,'/functions/v1/baogia-v2-api/api/staff/catalogue-customers');assert.equal(u.searchParams.get('groups'),'1');assert.equal(u.searchParams.has('url'),false);return Response.json({groups:['Doanh nghiệp']});
+ });assert.equal(r.status,200);
+});
