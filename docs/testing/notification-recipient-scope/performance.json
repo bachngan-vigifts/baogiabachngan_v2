@@ -1,0 +1,23 @@
+{
+  "scope": "Local in-process authenticated GET /notifications; PGlite; same DB with 30 targeted notes / 5 orders; warm cache; synthetic data; excludes network, browser rendering and push delivery",
+  "before": {
+    "runs": [
+      11.19,
+      8.95,
+      13.92,
+      31.99,
+      7.78
+    ],
+    "medianMs": 11.19
+  },
+  "after": {
+    "runs": [
+      58.02,
+      45.74,
+      37.44,
+      37.35,
+      65.93
+    ],
+    "medianMs": 45.74
+  }
+}

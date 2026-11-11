@@ -191,7 +191,7 @@ async function notifyTeam(env: StaffEnv, team: string, n: Omit<Parameters<typeof
   const perm = isTeam(team) ? TEAM_PERMISSION[team] : undefined, excluded = isTeam(team) ? TEAM_PERMISSION_EXCLUDED[team] ?? [] : [];
   const members = await env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'employee'), eq(employees.active, true), isNull(employees.deletedAt),
     or(eq(employees.positionId, team), perm ? sql`${employees.positionId} IN (SELECT ${positionPermissions.positionId} FROM ${positionPermissions} WHERE ${positionPermissions.permission} = ${perm})${excluded.length ? sql` AND ${notInArray(employees.positionId, [...excluded])}` : sql``}` : undefined)));
-  for (const x of members) if (x.id !== n.actorId) await notify(env, { ...n, targetMemberId: x.id });
+  await notifyMany(env, members.map(x => x.id), n);
 }
 
 /** Xem được việc: liên quan trực tiếp, hoặc việc của đồng nghiệp cùng chức vụ (chỉ xem). */

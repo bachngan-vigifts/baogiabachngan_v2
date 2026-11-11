@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-11",
+  "node": "22.22.0",
+  "baseline": "6fcf312d",
+  "targetedRegression": {
+    "tests": 40,
+    "pass": 40,
+    "fail": 0,
+    "skipped": 0
+  },
+  "afterPrivateWarehouseGuard": {
+    "tests": 12,
+    "pass": 12,
+    "fail": 0,
+    "skipped": 0
+  },
+  "typecheck": "passed",
+  "testData": "synthetic PGlite fixtures; fake push transport",
+  "productionActions": "read-only aggregate queries; no notifications sent or data/schema/permissions changed"
+}

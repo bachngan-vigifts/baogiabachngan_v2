@@ -93,7 +93,7 @@ async function notifyWarehouse(c: Ctx, title: string, body: string, url: string)
   // Nhóm Kho = chức vụ Kho + chức vụ có quyền "Phiếu đóng gói" (VD Sale Admin) – khớp với ai xác nhận đóng hàng được.
   const team = await c.env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'employee'), eq(employees.active, true), isNull(employees.deletedAt),
     or(eq(employees.positionId, 'warehouse'), sql`${employees.positionId} IN (SELECT ${positionPermissions.positionId} FROM ${positionPermissions} WHERE ${positionPermissions.permission} = 'page.packing')`)));
-  for (const t of team) await notify(c.env, { eventType: 'packing', title, body, url, targetMemberId: t.id, actorId: viewer(c).id });
+  await notifyMany(c.env, team.map(t => t.id), { eventType: 'packing', title, body, url, actorId: viewer(c).id });
 }
 
 /** Khoá so trùng tên (không dấu, chữ thường, gộp khoảng trắng) – như xưởng in. */
