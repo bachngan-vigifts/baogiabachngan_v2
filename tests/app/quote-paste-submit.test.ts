@@ -30,6 +30,14 @@ test('double submit while lookup is pending adds the lines once',async()=>{
  const first=h.submit('00123\t10');await h.submit('00123\t10');assert.equal(h.requests.length,1);assert.equal(h.elements['#paste-apply'].disabled,true);
  resolve({products:[{sku:'00123',name:'Bộ trà'}]});await first;assert.equal(h.ctx.editor.rows.length,1);assert.equal(h.dirty(),1);assert.equal(h.elements['#paste-apply'].disabled,false);
 });
+test('closing and reopening permits a new paste and ignores both the old response and its finalizer',async()=>{
+ const h=harness(),resolve:((value:any)=>void)[]=[];h.ctx.api=()=>new Promise(r=>resolve.push(r));
+ const old=h.submit('OLD\t10');h.elements['#paste-dialog'].close();h.elements['#paste-dialog'].events.close();h.elements['#paste-lines'].events.click();
+ assert.equal(h.elements['#paste-text'].value,'');assert.equal(h.elements['#paste-preview'].textContent,'');assert.equal(h.elements['#paste-apply'].disabled,false);
+ const next=h.submit('NEW\t20');resolve[0]!({products:[{sku:'OLD',name:'Old'}]});await old;
+ assert.equal(h.elements['#paste-apply'].disabled,true,'old finalizer cannot enable the new pending submit');assert.equal(h.ctx.editor.rows.length,0);
+ resolve[1]!({products:[{sku:'NEW',name:'New'}]});await next;assert.deepEqual(Array.from(h.ctx.editor.rows,(r:any)=>[r.sku,r.qty]),[['NEW',20]]);
+});
 test('cancelled dialog and changed pricing context cannot apply an old response',async()=>{
  for(const change of ['close','policy','customer','quote']){
   const h=harness();let resolve:(v:any)=>void=()=>{};h.ctx.api=()=>new Promise(r=>{resolve=r;});const pending=h.submit('00123\t10');
