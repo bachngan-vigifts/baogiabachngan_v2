@@ -29,10 +29,19 @@ jobs:
         run: php --version
       - name: PDF text extraction for quote export tests
         run: |
+          # Máy chủ gói Ubuntu đôi khi lỗi DNS tạm thời trên runner GitHub: thử lại vài lần thay vì đỏ cả 4 shard.
           if ! command -v pdftotext >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install --no-install-recommends -y poppler-utils
+            for attempt in 1 2 3 4; do
+              if sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update \
+                && sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install --no-install-recommends -y poppler-utils; then
+                break
+              fi
+              [ "$attempt" = 4 ] && { echo "::error::Không cài được poppler-utils sau 4 lần (lỗi mạng tới máy chủ gói Ubuntu)."; exit 1; }
+              echo "::warning::Cài poppler-utils lỗi lần $attempt, thử lại sau $((attempt * 15)) giây."
+              sleep $((attempt * 15))
+            done
           fi
+          command -v pdftotext
       - run: npm ci
       - run: npm run typecheck
       # Node test options must precede the file globs; npm test -- ... appends them too late.
