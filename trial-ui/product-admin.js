@@ -44,6 +44,10 @@ export function initProductAdmin(deps) {
     dlg.setAttribute('aria-label', editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm');
     dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>${editing ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm'}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body product-editor-layout">
+        ${editing ? '' : `<fieldset class="product-editor-link form-grid"><legend>Tạo nhanh từ link sản phẩm</legend>
+          <div class="product-link-row"><input name="sourceUrl" type="url" inputmode="url" maxlength="2500" placeholder="https://website-thuong-hieu.vn/san-pham/…" aria-label="Link trang sản phẩm"><button type="button" class="btn secondary small" data-link-fetch>Lấy thông tin</button></div>
+          <small class="muted" data-link-status>Dán link trang MỘT sản phẩm (Sapo, Haravan, WooCommerce hoặc trang có dữ liệu sản phẩm): hệ thống điền sẵn mã, tên, thương hiệu, ảnh, giá web – kiểm tra lại rồi bấm Lưu.</small>
+        </fieldset>`}
         <fieldset class="product-editor-info form-grid cols-2"><legend>Thông tin sản phẩm</legend>
         <label>Mã sản phẩm (SKU)<input name="sku" required maxlength="64" placeholder="VD: ML-BT-001" autocapitalize="characters"></label>
         <label>Đơn vị tính<input name="unit" maxlength="50" placeholder="cái, bộ, hộp…"></label>
@@ -100,6 +104,47 @@ export function initProductAdmin(deps) {
       finally { if (sequence === imageSequence) imageBusy = false; }
     });
     clearImage.addEventListener('click', () => { imageSequence++; pendingImage = ''; imageBusy = false; imageInput.value = product?.imageUrl || ''; drawImage(imageInput.value); imageStatus.textContent = 'Đã bỏ ảnh vừa chọn.'; });
+    // Tạo nhanh từ link: máy chủ đọc trang (chỉ đọc, chống SSRF), trình duyệt điền form; ảnh tải qua máy chủ rồi thu nhỏ như ảnh chọn từ máy.
+    const linkButton = dlg.querySelector('[data-link-fetch]');
+    if (linkButton) linkButton.addEventListener('click', async () => {
+      const f = dlg.querySelector('form').elements, status = dlg.querySelector('[data-link-status]'), url = f.namedItem('sourceUrl').value.trim();
+      if (!/^https:\/\//i.test(url)) { status.textContent = 'Dán link đầy đủ bắt đầu bằng https://'; return; }
+      linkButton.disabled = true; status.textContent = 'Đang đọc trang sản phẩm…';
+      try {
+        const r = await deps.api('/product-link-preview', 'POST', { url }), p = r.product, notes = [...(r.warnings || [])];
+        if (p.sku) f.namedItem('sku').value = p.sku;
+        f.namedItem('name').value = p.name || f.namedItem('name').value;
+        if (p.brand) f.namedItem('brand').value = p.brand;
+        if (!f.namedItem('unit').value) f.namedItem('unit').value = 'cái';
+        const [retail, retailVat] = requiredPrices;
+        if (p.price && retail && retailVat) {
+          const rate = Number(f.namedItem('taxRate').value) || 8;
+          f.namedItem('price:' + retailVat.id).value = String(p.price);
+          f.namedItem('price:' + retail.id).value = String(Math.round(p.price / (1 + rate / 100)));
+          notes.unshift(`Giá web ${money(p.price)} điền vào ${retailVat.name}; ${retail.name} = giá web ÷ (1 + VAT ${rate}%). Kiểm tra lại giá bán của công ty.`);
+        }
+        if (r.existing) notes.unshift(`⚠ Mã ${r.existing.sku} đã có trong danh mục (${r.existing.name}${r.existing.approvalStatus === 'pending' ? ', đang chờ duyệt' : ''}) – đổi mã nếu là sản phẩm khác.`);
+        status.textContent = (notes.length ? notes.join(' ') : 'Đã điền thông tin từ ' + r.source + '.') + (p.imageUrl ? ' Đang tải ảnh…' : '');
+        if (p.imageUrl) {
+          const sequence = ++imageSequence; imageBusy = true;
+          try {
+            const img = await deps.api('/product-link-image', 'POST', { url: p.imageUrl });
+            // Không dùng fetch(data:) – CSP connect-src không cho data:. Giải mã base64 trực tiếp.
+            const [head, b64] = String(img.dataUrl).split(','), type = /^data:(image\/[a-z]+);base64$/.exec(head)?.[1];
+            if (!type || !b64) throw Error('Ảnh không hợp lệ.');
+            const blob = new Blob([Uint8Array.from(atob(b64), ch => ch.charCodeAt(0))], { type });
+            if (!deps.compress) throw Error('Chưa tải được công cụ xử lý ảnh.');
+            const data = await deps.compress(new File([blob], 'link-image', { type: blob.type }));
+            if (sequence !== imageSequence || !dlg.isConnected) return;
+            pendingImage = data; imageInput.value = ''; drawImage(data);
+            imageStatus.textContent = 'Ảnh lấy từ link — bấm Lưu để tải lên kho ảnh CRM.';
+            status.textContent = status.textContent.replace(' Đang tải ảnh…', '');
+          } catch (ex) { if (sequence === imageSequence) { imageStatus.textContent = 'Chưa lấy được ảnh: ' + ex.message + ' Có thể tải ảnh lên tay.'; status.textContent = status.textContent.replace(' Đang tải ảnh…', ''); } }
+          finally { if (sequence === imageSequence) imageBusy = false; }
+        }
+      } catch (ex) { status.textContent = ex.message; }
+      finally { linkButton.disabled = false; }
+    });
     document.body.append(dlg); dlg.showModal();
     dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', () => dlg.close()));
     dlg.addEventListener('close', () => dlg.remove());

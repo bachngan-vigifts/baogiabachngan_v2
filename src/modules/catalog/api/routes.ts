@@ -12,6 +12,7 @@ import { MINH_LONG_WORDS, PRODUCT_GROUPS, isProductGroup, priceRange } from '../
 import { matchProductWords, newestProducts, productOrder } from './product-query.ts';
 import { historyOf } from './product-history.ts';
 import { registerProductAdminRoutes } from './product-admin.ts';
+import { registerProductLinkRoutes } from './product-link.ts';
 import { registerProductActionRoutes } from './product-actions.ts';
 import { PRODUCT_HISTORY_LIMIT } from '../domain/product-history.ts';
 import { can, type PermissionMember } from '../../staff/domain/permissions.ts';
@@ -138,6 +139,7 @@ const viewerOf = (c: { state: unknown }) => (c.state as { session: SessionState 
 
 export function registerCatalogRoutes(router: Router<StaffEnv>) {
   registerProductAdminRoutes(router);
+  registerProductLinkRoutes(router); // tạo nhanh sản phẩm từ link website ngoài (chỉ đọc, điền sẵn)
   registerBarcodeImportRoutes(router);
   registerProductActionRoutes(router);
   /**

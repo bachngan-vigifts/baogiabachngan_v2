@@ -31,6 +31,8 @@ export interface StaffEnv {
   /** Địa chỉ Sapo admin (mặc định cửa hàng Bách Ngân) và hàm fetch gọi Sapo (test truyền Sapo giả). */
   sapoAdminBase?: string;
   sapoFetch?: typeof fetch;
+  /** Tải website ngoài (tạo nhanh sản phẩm từ link, tra MST): test truyền hàm giả, production dùng fetch mặc định. */
+  externalFetch?: typeof fetch;
   /** Đẩy đơn sang Sapo khi sinh đơn hàng / lập HĐKT: mặc định BẮT BUỘC; 'off' chỉ dùng cho test các luồng không liên quan Sapo. */
   sapoOrderPush?: 'off';
   /** Production routes việc tạo đơn Sapo qua n8n → Claw; bỏ trống giữ adapter trực tiếp cũ cho test/rollback. */
