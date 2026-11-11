@@ -16,6 +16,7 @@ const ALLOWED: Record<string, string[]> = {
   quotes: ['staff', 'notifications', 'integrations'], work: ['staff'],
   tasks: ['staff', 'customers', 'quotes', 'sales', 'portal', 'integrations', 'notifications', 'care', 'suppliers', 'inventory', 'catalog'], chat: ['staff', 'notifications'], notifications: ['staff', 'integrations'], suppliers: ['staff', 'catalog', 'customers', 'quotes', 'sales', 'portal', 'inventory', 'notifications'], // đơn mua lấy nguồn từ báo giá / đơn-HĐKT / khách hỏi tồn · inventory: phiếu nhận ghi sổ kho · notifications: báo gửi duyệt / duyệt / huỷ đơn mua
   'customer-hub': ['staff', 'customers', 'quotes', 'sales', 'portal', 'care'],
+  'warehouse-workspace': ['staff', 'tasks', 'sales', 'suppliers', 'inventory'], // owns tracking metadata; source documents are read-only, reverse task guard is injected by app/router
   'product-custody': ['staff', 'catalog', 'customers', 'suppliers'], // theo dõi bàn giao; không ghi sổ kho
   'product-hub': ['staff', 'catalog', 'quotes', 'sales', 'suppliers'], // tổng hợp chỉ đọc; không đảo phụ thuộc catalog -> sales/suppliers
   care: ['staff', 'customers'],

@@ -45,6 +45,7 @@ jobs:
       GHN_WEBHOOK_TOKEN: ${{ secrets.GHN_WEBHOOK_TOKEN }}
       # Mã băm SHA-256 (hex) của khoá webhook SePay và token webhook WooCommerce. Bắt buộc: code không còn giá trị dự phòng.
       SEPAY_POS_API_KEY_HASH: ${{ secrets.SEPAY_POS_API_KEY_HASH }}
+      SEPAY_API_TOKEN: ${{ secrets.SEPAY_API_TOKEN }}
       WOO_LOCK_TOKEN_HASH: ${{ secrets.WOO_LOCK_TOKEN_HASH }}
       WOO_MINHLONG_TOKEN_HASH: ${{ secrets.WOO_MINHLONG_TOKEN_HASH }}
       PROJECT_REF: taceqfnsorewelsbdckg
@@ -93,7 +94,13 @@ jobs:
           npm run typecheck &&
           node --import tsx --test
           tests/app/catalogue-edge-dependencies.test.ts
+          tests/app/sepay-read.test.ts
+          tests/app/sepay-page.test.ts
+          tests/app/sepay-payment.test.ts
+          tests/app/sepay-ui.test.ts
           tests/app/pos.test.ts
+          tests/app/finance-overview.test.ts
+          tests/app/finance-ui.test.ts
           tests/app/shift-reports-page.test.ts
           tests/app/shift-report-filters.test.ts
           tests/app/invoice-tasks.test.ts
@@ -185,6 +192,23 @@ jobs:
             if ! [[ "$value" =~ ^[0-9a-f]{64}$ ]]; then missing="$missing $name"; fi
           done
           if [ -n "$missing" ]; then echo "::error::Thiếu hoặc sai định dạng (cần SHA-256 hex 64 ký tự) secret GitHub:$missing"; exit 1; fi
+      - name: Cập nhật API đọc giao dịch SePay
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.SEPAY_API_TOKEN != ''
+        shell: bash
+        run: |
+          # Keep token out of command arguments, logs and tracked files.
+          if [[ "$SEPAY_API_TOKEN" =~ [[:space:]] ]] || (( ${#SEPAY_API_TOKEN} < 16 || ${#SEPAY_API_TOKEN} > 4096 )); then
+            echo "::error::SEPAY_API_TOKEN sai dinh dang. Khong in gia tri token."; exit 1
+          fi
+          token_file=$(mktemp)
+          trap 'rm -f "$token_file"' EXIT
+          chmod 600 "$token_file"
+          SEPAY_SECRET_FILE="$token_file" python3 - <<'PYTOKEN'
+          import json, os
+          with open(os.environ['SEPAY_SECRET_FILE'], 'w') as handle:
+              handle.write('SEPAY_API_TOKEN=' + json.dumps(os.environ['SEPAY_API_TOKEN']) + '\n')
+          PYTOKEN
+          supabase secrets set --project-ref "$PROJECT_REF" --env-file "$token_file"
       - name: Cập nhật mã webhook SePay / WooCommerce
         if: env.SUPABASE_ACCESS_TOKEN != ''
         run: supabase secrets set --project-ref "$PROJECT_REF" SEPAY_POS_API_KEY_HASH="$SEPAY_POS_API_KEY_HASH" WOO_LOCK_TOKEN_HASH="$WOO_LOCK_TOKEN_HASH" WOO_MINHLONG_TOKEN_HASH="$WOO_MINHLONG_TOKEN_HASH"
@@ -327,9 +351,77 @@ jobs:
           payload=$(jq -n --rawfile query scripts/sql/assert-product-custody.sql '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra migration Không gian Kho chỉ đọc
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-warehouse-workspace.sql '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra migration giao dịch SePay chỉ đọc
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-sepay-transactions.sql '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra migration đối soát QR web Lock đã chạy tay
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-sepay-web.sql '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra index đối soát SePay theo thời gian đã chạy tay
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-sepay-proximity.sql '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra đầy đủ migration tháng 11 chỉ đọc
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          for query_file in scripts/sql/assert-crm-catalog-autovacuum.sql scripts/sql/assert-product-search-trigram.sql scripts/sql/assert-internal-reports.sql scripts/sql/assert-payroll-attendance-counters.sql scripts/sql/assert-order-products-page-permission.sql scripts/sql/assert-purchase-permissions.sql scripts/sql/assert-historical-cost-sources.sql scripts/sql/assert-customer-established-date-complete.sql scripts/sql/assert-hr-revenue-targets-complete.sql scripts/sql/assert-hr-revenue-target-requests-complete.sql scripts/sql/assert-sales-payroll-team-sources-complete.sql scripts/sql/assert-customer-profile-fields-complete.sql; do
+            payload=$(jq -n --rawfile query "$query_file" '{query:("BEGIN TRANSACTION READ ONLY;\n" + $query + "\nCOMMIT;")}')
+            curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+          done
+      # DML only: preserve the existing Accounting visibility once. The audit marker
+      # prevents subsequent deployments from restoring a Manager-revoked permission.
+      - name: Khởi tạo quyền xem trang SePay một lần
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          query="$(<migrations/postgres/20261110020309_sepay_page_permission.sql)"$'\n'"$(<scripts/sql/assert-sepay-page-permission.sql)"
+          payload=$(jq -n --arg query "$query" '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
       - name: Triển khai Edge Function
         if: env.SUPABASE_ACCESS_TOKEN != ''
         run: supabase functions deploy baogia-v2-api --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
+      - name: Cài lịch và kiểm tra đồng bộ SePay
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.SEPAY_API_TOKEN != '' && env.SAPO_SYNC_TOKEN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          for sql_file in supabase/sepay-pull-cron.sql scripts/sql/assert-sepay-pull-cron.sql; do
+            payload=$(jq -n --rawfile query "$sql_file" '{query:$query}')
+            curl --fail --silent --show-error --max-time 30 -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+          done
+          result_file=$(mktemp)
+          trap 'rm -f "$result_file"' EXIT
+          code=$(curl --silent --show-error --max-time 110 --output "$result_file" --write-out '%{http_code}' \
+            --request POST "https://$PROJECT_REF.supabase.co/functions/v1/baogia-v2-api/api/staff/integrations/sepay/pull" \
+            --header "Authorization: Bearer $SAPO_SYNC_TOKEN" --header 'Content-Type: application/json' --data '{}')
+          if [ "$code" != '200' ]; then
+            echo "::error::Đồng bộ SePay lần đầu lỗi HTTP $code; không in nội dung phản hồi."
+            exit 1
+          fi
+          jq -e '(.day | type == "string") and (.read | type == "number") and .receiptsCreated == 0' "$result_file" >/dev/null
+          jq -c '{day,read,imported,duplicate,outgoing,receiptsCreated}' "$result_file"
       - name: Kiểm tra đồng bộ GHN POS Lock trên production
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.SAPO_SYNC_TOKEN != '' && env.GHN_API_TOKEN != ''
         shell: bash

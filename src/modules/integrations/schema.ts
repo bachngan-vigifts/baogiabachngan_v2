@@ -1,6 +1,42 @@
-import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
 import { enumCheck } from '../../core/db/enum-check.ts';
 import { SAPO_DOC_KINDS } from './domain/sapo-docs.ts';
+
+const SEPAY_TRANSACTION_STATUSES = ['matched', 'unmatched', 'review'] as const;
+
+/**
+ * Giao dịch vào do SePay đẩy sang. Giữ nguyên payload để kế toán truy vết; id của SePay là
+ * khoá chống ghi nhận hai lần. Liên kết đơn/phiếu thu dùng text để integrations không phụ thuộc
+ * schema sales (quy tắc kiến trúc module).
+ */
+export const sepayTransactions = pgTable('sepay_transactions', {
+  id: text('id').primaryKey(),
+  providerId: text('provider_id').notNull(),
+  transferType: text('transfer_type').notNull(),
+  amount: doublePrecision('amount').notNull(),
+  accountNumber: text('account_number').notNull().default(''),
+  transactionAt: text('transaction_at').notNull(),
+  content: text('content').notNull().default(''),
+  status: text('status', { enum: SEPAY_TRANSACTION_STATUSES }).notNull(),
+  reason: text('reason').notNull().default(''),
+  orderId: text('order_id'),
+  webOrderId: text('web_order_id'),
+  paymentId: text('payment_id'),
+  matchMethod: text('match_method',{enum:['reference','amount_time','manual']}).notNull().default('reference'),
+  matchedOrderAt: text('matched_order_at'),
+  payload: text('payload').notNull(),
+  receivedAt: text('received_at').notNull(),
+}, t => [
+  uniqueIndex('uq_sepay_transactions_provider').on(t.providerId),
+  uniqueIndex('uq_sepay_payment_link').on(t.paymentId).where(sql`${t.paymentId} is not null`),
+  index('idx_sepay_pending_time').on(t.transactionAt,t.id).where(sql`${t.status} in ('review','unmatched') and ${t.paymentId} is null`),
+  uniqueIndex('uq_sepay_web_matched').on(t.webOrderId).where(sql`${t.webOrderId} is not null and ${t.status}='matched'`),
+  check('chk_sepay_one_target', sql`${t.webOrderId} is null or (${t.orderId} is null and ${t.paymentId} is null)`),
+  index('idx_sepay_transactions_status_received').on(t.status, t.receivedAt),
+  enumCheck('chk_sepay_transactions_status', t.status, SEPAY_TRANSACTION_STATUSES),
+  enumCheck('chk_sepay_match_method',t.matchMethod,['reference','amount_time','manual']),
+]).enableRLS();
 
 /** Chỉ lưu SHA-256 mã nhận webhook; không dùng khóa SyncTime Client hoặc phiên Sapo. */
 export const synctimeConnections = pgTable('synctime_connections', {

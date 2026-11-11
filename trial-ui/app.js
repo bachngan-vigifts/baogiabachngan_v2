@@ -1,3 +1,6 @@
+import {deliveryTone,deliveryIsOverdue,fulfilmentLegend,fulfilmentBadge,compactFulfilmentTable} from './fulfilment-display.js';
+import {initWarehouseWorkspace} from './warehouse-workspace.js';
+import { createNotificationFeed } from './notification-feed.js';
 import {productThumbnailUrl,noteThumbnailFailure} from './product-images.js';
 import {initOrderProducts} from './order-products.js';
 import { createDeliveryCalendar, renderDeliveryProducts } from './delivery-calendar.js';
@@ -442,18 +445,18 @@ const isWarehouse = () => state.user?.role === 'employee' && state.user?.positio
  */
 const OFFICE_PAGES = ['page.quotes', 'page.orders', 'page.order-products', 'page.contracts', 'page.deliveries', 'page.receivables', 'page.customers', 'page.care', 'page.stock-requests', 'page.dashboard', 'page.flow', 'page.purchases'];
 const legacyPerms = () => isWarehouse() ? ['page.deliveries', 'page.purchases', 'page.packing', 'page.stock-lookup', 'purchases.receive']
-  : state.user?.positionId === 'accounting' ? [...OFFICE_PAGES, 'purchases.prices', 'purchases.pay', 'suppliers.edit'] : OFFICE_PAGES;
+  : state.user?.positionId === 'accounting' ? [...OFFICE_PAGES, 'page.sepay', 'purchases.prices', 'purchases.pay', 'suppliers.edit'] : OFFICE_PAGES;
 const can = key => isManager() || (Array.isArray(state.user?.perms) ? state.user.perms : legacyPerms()).includes(key);
 /** Trang (#/…) → quyền cần có. Trang không có ở đây (Công việc, Sản phẩm…) ai cũng vào được. */
 const PAGE_PERM = {
-  'product-custody':'page.product-custody', cash: 'page.cash', pos: 'pos.sell', 'shift-reports': 'pos.sell',
+  sepay: 'page.sepay', 'product-custody':'page.product-custody', cash: 'page.cash', pos: 'pos.sell', 'shift-reports': 'pos.sell',
   quotes: 'page.quotes', editor: 'page.quotes', orders: 'page.orders', 'order-products':'page.order-products', contracts: 'page.contracts', receiving: 'page.purchases', deliveries: 'page.deliveries', receivables: 'page.receivables', cashbook: 'page.cashbook',
   customers: 'page.customers', customer: 'page.customers', care: 'page.care', 'stock-requests': 'page.stock-requests', dashboard: 'page.dashboard', flow: 'page.flow',
   purchases: 'page.purchases', 'early-requests': 'purchases.early-view', packing: 'page.packing', 'stock-lookup': 'page.stock-lookup', inventory: 'inventory.view', stocktake: 'inventory.view', suppliers: 'suppliers.edit', permissions: 'perm.manage',
 };
 /** Giá bán: người làm báo giá / đơn / HĐKT (khớp máy chủ – Kho không nhận giá). */
 const seesPrices = () => isManager() || can('page.quotes') || can('page.orders') || can('page.contracts');
-const canPage = view => view === 'order' ? can('page.orders') || can('page.contracts') || can('page.receivables') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
+const canPage = view => view === 'finance' ? isManager() : view === 'order' ? can('page.orders') || can('page.contracts') || can('page.receivables') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
 /** Link "#/<trang>/<id>" mở được với quyền hiện tại (cùng cách `route()` đổi trang chi tiết) – không thì hiện chữ, không đưa người dùng về trang chủ. */
 const linkAllowed = hash => {
   const [view, id] = String(hash).replace(/^#\//, '').split(/[/?]/);
@@ -468,10 +471,10 @@ const ghnCancelNote = r => !r?.ghnCancel ? '' : (r.ghnCancel.cancelled.length ? 
 const KHO_HOME = '#/kho';
 /** Kế toán: chức vụ "accounting". */
 const isAccountant = () => state.user?.role === 'employee' && state.user?.positionId === 'accounting';
-/** NVBH ML/LOCK dùng POS làm trang chủ khi được cấp quyền bán hàng. */
+/** NVBH ML/LOCK có lối tắt POS trên Trang chủ khi được cấp quyền bán hàng. */
 const isCounterSales = () => state.user?.role === 'employee' && ['sales-ml', 'sales-lock'].includes(state.user?.positionId) && can('pos.sell');
-/** Trang mở đầu theo chức vụ và quyền hiện hành. */
-const homeHash = () => isAccountant() ? '#/tasks' : state.user?.role==='employee'&&can('page.flow') ? '#/flow' : isWarehouse() ? KHO_HOME : isCounterSales() ? '#/pos' : can('page.quotes') ? '#/quotes' : '#/tasks';
+/** Nhân viên Kho vào không gian công việc riêng; các chức vụ khác giữ Trang chủ chung. */
+const homeHash = () => isWarehouse() ? KHO_HOME : '#/home';
 let loginToHome = false;
 
 // ---------------------------------------------------------------- đăng nhập / kích hoạt
@@ -484,8 +487,13 @@ let activation = /(^|&)token=/.test(location.hash.slice(1)) ? hashParams().get('
 function showAuth(message = '', { keepToken = false } = {}) {
   const auth = $('#auth'), opening = auth.hidden;
   if (typeof shiftReportsUi !== 'undefined') shiftReportsUi?.close();
+  if (typeof financeUi !== 'undefined') financeUi?.close();
+  if (typeof sepayUi !== 'undefined') sepayUi?.close();
+  if(typeof khoHomeUi!=='undefined')khoHomeUi?.close();
+  stocktakeUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
-  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; notifier?.stop(); approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
+  homeUi?.reset(); homeNotifications?.clear(); notifier?.reset(); tasksUi?.resetQuick();
+  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
   // Chỉ tự đặt con trỏ khi vừa mở form; không giành focus người dùng đã chọn.
@@ -549,6 +557,7 @@ function applyWorkspaceUser(user) {
   $$('.kho-nav, .kho-only').forEach(el => el.hidden = !isWarehouse());
   // Menu theo quyền của chức vụ (trang Phân quyền): mục nào chức vụ chưa được cấp thì ẩn.
   $$('[data-nav]').forEach(el => { const k = PAGE_PERM[el.dataset.nav]; if (k && !(el.classList.contains('kho-only') && !isWarehouse())) el.hidden = !can(k); });
+  $$('.ww-nav').forEach(el=>el.hidden=!(isManager()||isWarehouse()));
   $$('.perm-admin-only').forEach(el => el.hidden = !can('perm.manage'));
   $$('[data-nav=tasks]').forEach(el => { if (isWarehouse()) el.hidden = true; });
   document.body.classList.toggle('role-warehouse', isWarehouse());
@@ -557,7 +566,8 @@ function applyWorkspaceUser(user) {
 }
 function openWorkspace(user) {
   if(!applyWorkspaceUser(user))return;
-  if ((loginToHome && state.user?.role==='employee') || !/^#\//.test(location.hash) || (isWarehouse() && /^#\/(quotes|tasks)?$/.test(location.hash.split('?')[0]))) history.replaceState(null, '', location.pathname + homeHash());
+  const directDocument = /^#\/[^/?]+\/(?!new(?:[/?]|$))[^/?]+/.test(location.hash);
+  if ((loginToHome && !directDocument) || !/^#\//.test(location.hash)) history.replaceState(null, '', location.pathname + homeHash());
   currentHash = location.hash;
   route();
   loadAll();
@@ -569,7 +579,7 @@ function refreshWorkspaceUser(user) {
   const access=u=>JSON.stringify([u?.role,u?.positionId,u?.perms,u?.approver,u?.dataScope,u?.departmentId]);
   const previous=access(state.user);
   if(!applyWorkspaceUser(user))return;
-  if(previous!==access(user)){route();loadAll();}
+  if(previous!==access(user)){homeNotifications?.clear();notifier?.reset();notifier?.start();route();loadAll();}
 }
 
 // ---------------------------------------------------------------- tài khoản
@@ -585,6 +595,7 @@ $('#send-feedback').addEventListener('click', () => { toggleAccountMenu(false); 
 $('#logout').addEventListener('click', async () => {
   const session = token, user = state.user;
   toggleAccountMenu(false);
+  if (stocktakeUi?.hasDraft() && !await stocktakeUi.beforeLeave()) return;
   if (editor.dirty && !await confirmBox('Báo giá đang sửa chưa được lưu. Vẫn đăng xuất?', { ok: 'Đăng xuất' })) return;
   if (session !== token || user !== state.user) return;
   editor.dirty = false;
@@ -662,6 +673,12 @@ async function loadNavigationBadges(known) {
 }
 async function loadAll() {
   clearGlobalError();
+  if (location.hash.split('?')[0] === '#/home') {
+    // Home never preloads full quotes/customers/members/catalog or the 500-row task board.
+    loadBadges({startChat:true}); $('#chat-launcher').hidden=false;
+    approvalView().start(); storeView().start(); weeklyView().start();
+    return;
+  }
   // Chỉ tải dữ liệu của trang chức vụ được cấp quyền (máy chủ chặn phần còn lại) – tránh báo lỗi đỏ khi mở app.
   // Danh sách báo giá / khách / nhân viên dùng ở nhiều chỗ nên luôn tải, nhưng nếu đang mở trang khác thì chờ trang đó tải xong.
   const page = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] || 'quotes';
@@ -843,15 +860,34 @@ var shiftReportsUi = null;
 const shiftReportsView = () => shiftReportsUi ||= initShiftReports({api,root:$('#view-shift-reports'),go});
 let receivingUi;
 const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
-const VIEWS = { 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Việc cần làm', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+var financeUi = null, financeLoading = null;
+async function financeView(query) {
+ const hash=location.hash, who=state.user?.id;
+ try { const {initFinance}=await (financeLoading ||= import('./finance.js'));
+  if(!isManager()||state.user?.id!==who||location.hash!==hash)return;
+  financeUi ||= initFinance({api,root:$('#view-finance'),go});
+  await financeUi.show(query);
+ } catch(e) {financeLoading=null;if(location.hash===hash)toast(e.message,'err');}
+}
+var sepayUi=null,sepayLoading=null;
+async function sepayView(query){const hash=location.hash,userId=state.user?.id;try{const {initSepay}=await(sepayLoading ||= import('./sepay.js'));if(location.hash!==hash||!state.user||state.user.id!==userId||!canPage('sepay')||$('#workspace').hidden)return;sepayUi ||= initSepay({api,root:$('#view-sepay'),go,canOpenOrders:()=>canPage('order')});await sepayUi.show(query);}catch(e){sepayLoading=null;if(location.hash===hash)toast(e.message,'err');}}
+const VIEWS = { sepay:'Thanh toán SePay', finance:'Tài chính & KPI', home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Kho của tôi', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
-let currentHash = location.hash, suppressHash = false;
+let currentHash = location.hash, suppressHash = false, stocktakeExitPending = false;
 window.addEventListener('hashchange', async () => {
   if (activation || !state.user) return;
   if (suppressHash) { suppressHash = false; return; }
   const target = location.hash;
+  if (currentHash.startsWith('#/stocktake') && target !== currentHash && stocktakeUi?.hasDraft()) {
+    history.replaceState(null, '', currentHash);
+    if (stocktakeExitPending) return;
+    stocktakeExitPending = true;
+    try { if (await stocktakeUi.beforeLeave() && state.user) location.hash = target; }
+    finally { stocktakeExitPending = false; }
+    return;
+  }
   if (editor.dirty && currentHash.startsWith('#/quotes/') && target !== currentHash) {
     suppressHash = true; location.hash = currentHash;
     if (!await confirmBox('Báo giá có thay đổi chưa lưu. Rời trang sẽ mất các thay đổi này.', { title: 'Rời khỏi báo giá?', ok: 'Rời trang', danger: true })) return;
@@ -859,7 +895,7 @@ window.addEventListener('hashchange', async () => {
   }
   currentHash = target; route();
 });
-window.addEventListener('beforeunload', e => { if (editor.dirty) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', e => { if (editor.dirty || stocktakeUi?.hasDraft()) { e.preventDefault(); e.returnValue = ''; } });
 
 let lastRoutedHash = '';
 VIEWS['early-requests'] = 'Lấy hàng trước';
@@ -886,7 +922,8 @@ function route() {
   const [page = 'quotes', id] = path.split('/');
   if(page==='products'&&!id){const legacySku=new URLSearchParams(query).get('sku');if(legacySku){currentHash='#/products/'+encodeURIComponent(legacySku);history.replaceState(null,'',currentHash);return route();}}
   // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
-  let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'quotes';
+  let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'home';
+  if(view==='home'&&(page!=='home'||isWarehouse())){currentHash=homeHash();history.replaceState(null,'',location.pathname+currentHash);return route();}
   if ((view === 'staff' || view === 'payroll') && !isManager()) { history.replaceState(null, '', homeHash()); return route(); }
   // Trang chức vụ chưa được cấp quyền (link cũ, thông báo…): về trang mở đầu. Báo giá / đơn / khách có mã thì xét theo trang chi tiết.
   const detail = id && view === 'quotes' ? 'editor' : id && (view === 'orders' || view === 'contracts') ? 'order' : id && view === 'customers' ? 'customer' : id && view === 'packing' ? 'packing-slip' : view;
@@ -900,16 +937,22 @@ function route() {
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
   const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? (page === 'contracts' ? 'contracts' : 'orders') : view === 'customer' ? 'customers' : view === 'product' ? 'products' : view === 'member' ? 'staff' : view;
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
+  $$('[data-home-link]').forEach(a => a.classList.toggle('active', view === 'home'));
   const viewTitle = view === 'customers' && new URLSearchParams(query).get('tab') === 'center' ? 'Trung tâm khách hàng' : VIEWS[view];
   $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : viewTitle;
   pageBack.record();
   document.title = (view === 'editor' ? $('#breadcrumb').textContent : viewTitle) + ' · Bách Ngân';
   window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
+  if (view === 'home') showHome(); else homeUi?.hide();
   if (view === 'editor') openEditor(id);
   thuChiTabs(view);
   if (view === 'cash') cashView().load().catch(e=>toast(e.message,'err'));
   if (view !== 'shift-reports') shiftReportsUi?.close();
   if (view === 'shift-reports') shiftReportsView().show(query);
+  if (view !== 'finance') financeUi?.close();
+  if (view === 'finance') financeView(query);
+  if (view !== 'sepay') sepayUi?.close();
+  if (view === 'sepay') sepayView(query);
   if (view === 'pos') posView().load();
   if (view === 'product') productDetail().show(decodeURIComponent(id),query);
   if(view==='product-custody')custodyView().then(ui=>ui.load(id||''));else custodyUi?.close();
@@ -928,7 +971,7 @@ function route() {
   if (view === 'receivables') loadReceivables();
   if (view === 'cashbook') loadCashbook();
   if (view === 'stock-requests') loadStockRequests(id);
-  if (view === 'tasks') tasksView().load(id);
+  if (view === 'tasks') {const target=location.hash,who=state.user?.id;tasksView().load(id,query).then(()=>{if(new URLSearchParams(query).get('new')==='1'&&location.hash===target&&state.user?.id===who)return tasksView().openNew();}).catch(e=>toast(e.message,'err'));}
   if (view === 'dashboard') dashboardView().load();
   if (view === 'profit') profitView().show();
   if (view === 'feedback') feedbackView().show(id ? decodeURIComponent(id) : '');
@@ -940,11 +983,11 @@ function route() {
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'early-requests') earlyRequestPage().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'inventory') inventoryView().load();
-  if (view === 'stocktake') stocktakeView().load();
+  if (view === 'stocktake') stocktakeView().load(); else stocktakeUi?.close();
   if (view === 'transfers') transfersView().load(id);
   if (view === 'stock-moves') stockMovesView().show(query);
   if (view === 'permissions') { permissionsView().load(); sellerConfigView().load(); }
-  if (view === 'kho') khoHome().load();
+  if (view === 'kho') khoHome().load(); else khoHomeUi?.hide();
   if (view === 'stock-lookup') stockLookup().load(new URLSearchParams(query).get('q')||'');
   if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
   if (view === 'order') openOrder(id);
@@ -3457,7 +3500,7 @@ async function loadOrders() {
       <td class="orders-shipping-cell${o.ghnShipments?.length?' has-ghn-tracking':''}">${o.deliveryStatus ? pill(DELIVERY_STATUS, o.deliveryStatus) : o.orderSource === 'ghn' ? '<span class="pill warn">Chờ tạo vận đơn</span>' : '<span class="muted">—</span>'}<small>${esc(o.deliveryCarrier || '')}</small>${o.external?'<small>'+esc(o.ghnOrderCode||'Chưa tạo GHN')+' · '+esc(o.ghnStatus||'')+'</small>':ghnOrderSummary(o.ghnShipments,esc)}</td>
       <td>${o.external&&o.paid===null?'<span class="muted">Chưa rõ thanh toán</span>':payCell(o.receivable, o.debtCounts, o.status)}</td>
       <td class="right num"><b>${money(o.total)}</b><small>${o.external&&o.invoiceStatus==='unknown'?'Chưa có dữ liệu hoá đơn':invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</small></td>
-      <td class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${o.external?'':slipButtons(o.id, o.status)}<span data-order-sapo="${esc(o.id)}"></span>${o.sapoSourceChanged?'<small class="error">Cần đối soát Sapo</small>':''}</td></tr>`),
+      <td class="actions-cell"><div class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${o.external?'':slipButtons(o.id, o.status)}<span data-order-sapo="${esc(o.id)}"></span>${o.sapoSourceChanged?'<small class="error">Cần đối soát Sapo</small>':''}</div></td></tr>`),
       'Chưa có đơn đặt hàng. Bấm ＋ để tạo đơn từ báo giá đã duyệt.');
     for(const row of $('#orders-list').querySelectorAll('[data-order-sapo]')){const o=d.orders.find(o=>o.id===row.dataset.orderSapo);if(!o)continue;const action=orderSapoAction({order:o,api,chooseSapo:(ref,opts)=>sapoPush().choose(ref,opts),onSaved:loadOrders,toast});if(action){action.className+=' small';row.append(action);}}
   } catch (e) { if (req === ordersReq) { salesListSummary('orders', null); listError('orders', e); ordersPager.render(0); } }
@@ -3484,7 +3527,7 @@ async function loadContracts() {
     fillList('contracts', d.contracts.map(k => `<tr class="clickable" data-href="#/contracts/${esc(k.orderId)}">
       <td><a href="#/contracts/${esc(encodeURIComponent(k.orderId))}"><b>${esc(k.contractNo)}</b></a></td><td>${esc(k.customerName)}<small>${k.quoteNo ? 'Báo giá ' + esc(k.quoteNo) : ''}</small></td>
       <td>${esc(k.legalEntity)}<small>${esc(k.ownerName || '')}</small></td><td>${pill(ORDER_STATUS, k.orderStatus === 'draft' && !k.submittedAt ? 'unsubmitted' : k.orderStatus)}<small>${esc(CONTRACT_STATUS[k.status]?.[0] || '')}</small></td><td>${fmtDate(k.signedDate) || '—'}</td>
-      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus, 'HĐKT')}</td><td>${invoiceCell(k.invoiceStatus, k.invoiceNo, k.orderStatus)}</td><td class="row-actions"><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button>${slipButtons(k.orderId, k.orderStatus)}</td></tr>`),
+      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus, 'HĐKT')}</td><td>${invoiceCell(k.invoiceStatus, k.invoiceNo, k.orderStatus)}</td><td class="actions-cell"><div class="row-actions"><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button>${slipButtons(k.orderId, k.orderStatus)}</div></td></tr>`),
       'Chưa có HĐKT. Bấm ＋ để lập HĐKT từ báo giá đã duyệt.');
   } catch (e) { if (req === contractsReq) { salesListSummary('contracts', null); listError('contracts', e); contractsPager.render(0); } }
 }
@@ -3503,7 +3546,7 @@ const DELIVERY_FILTERS = ['owner', 'kind', 'carrier', 'invoice', 'assignee', 'cu
 let deliveriesReq = 0;
 var productOrdersUi=null,shipmentCalendarUi=null;
 function productOrdersView(){return productOrdersUi ||= initOrderProducts({root:$('#view-order-products'),api,go,money,canCalendar:()=>canPage('deliveries'),canOrder:row=>canPage(row.contractNo?'contracts':'orders')});}
-function deliveryCalendarView(){return shipmentCalendarUi ||= createDeliveryCalendar({root:$('#deliveries-calendar'),onRange:(from,to)=>{$('#deliveries-from').value=from;$('#deliveries-to').value=to;loadDeliveries();},actions:x=>deliveryButtons(x)+deliverySlipButtons(x),orderLink:x=>!isWarehouse()&&canPage('order')?(x.contractNo?'#/contracts/':'#/orders/')+encodeURIComponent(x.orderId):null});}
+function deliveryCalendarView(){return shipmentCalendarUi ||= createDeliveryCalendar({root:$('#deliveries-calendar'),onRange:(from,to)=>{$('#deliveries-from').value=from;$('#deliveries-to').value=to;loadDeliveries();},actions:x=>deliveryButtons(x)+deliverySlipButtons(x)+deliveryConfirmation(x)+deliveryPhotos(x),orderLink:x=>!isWarehouse()&&canPage('order')?(x.contractNo?'#/contracts/':'#/orders/')+encodeURIComponent(x.orderId):null});}
 async function loadDeliveries() {
   const query=location.hash.split('?')[1]||'',tab=new URLSearchParams(query).get('view')||'calendar',calendar=!['list','products'].includes(tab);
   $('#deliveries-table').hidden=tab!=='list';$('#deliveries-calendar').hidden=!calendar;$('#deliveries-product-lines').hidden=tab!=='products';
@@ -3511,6 +3554,7 @@ async function loadDeliveries() {
   shipmentCalendarUi?.close();
   // Default to the visible month grid, including its adjacent week days.
   if (!$('#deliveries-from').value) { const [from,to]=deliveryCalendarView().range();$('#deliveries-from').value=from;$('#deliveries-to').value=to; }
+  $('#deliveries-legend').replaceChildren(fulfilmentLegend(['planned','in_transit','delivered','failed','cancelled','overdue']));
   $('#deliveries-list').innerHTML = skeleton(7);
   $('#deliveries-retry').hidden=true;
   const req = ++deliveriesReq;
@@ -3530,13 +3574,22 @@ async function loadDeliveries() {
     $('#deliveries-filter-summary').textContent=`${rows.length} chuyến phù hợp · ${fmtDate($('#deliveries-from').value)} – ${fmtDate($('#deliveries-to').value)}${d.truncated?' · Chỉ hiện 500 chuyến; hãy thu hẹp khoảng ngày hoặc bộ lọc để xem đầy đủ.':''}${focusId?' · Đang xem chuyến từ liên kết trực tiếp; các bộ lọc được bỏ qua.':''}`;
     deliveryCalendarView().render(rows,{from:focusId?rows[0]?.plannedDate:$('#deliveries-from').value,to:focusId?rows[0]?.plannedDate:$('#deliveries-to').value});
     renderDeliveryProducts($('#deliveries-product-lines'),rows,x=>deliveryCalendarView().details(x));
-    fillList('deliveries', rows.map(x => `<tr>
+    fillList('deliveries', rows.map(x => `<tr class="ff-row ff-${deliveryTone(x)}">
       <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(ghnTrackingText(x) || x.carrier)}</small></td>
-      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small><small class="delivery-product-labels">${(x.products||[]).map(p=>esc(`${p.name} (${p.sku}) · ${fmtNum(p.qty)} ${p.unit}`)).join('<br>')}</small>${deliverySlipButtons(x)}</td>
+      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small><small class="delivery-product-labels">${(x.products||[]).map(p=>esc(`${p.name} (${p.sku}) · ${fmtNum(p.qty)} ${p.unit}`)).join('<br>')}</small></td>
       <td>${deliveryReceiver(x)}<small>${esc(x.address || x.customerAddress || '')}</small></td>
       <td>${pill(DELIVERY_STATUS, x.status)}${deliveryConfirmation(x)}${deliveryPhotos(x)}</td>
-      <td>${x.invoiceNo?.trim() ? esc(x.invoiceNo) : x.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td><td class="actions-col">${deliveryButtons(x)}</td></tr>`),
+      <td>${x.invoiceNo?.trim() ? esc(x.invoiceNo) : x.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td><td class="actions-col">${deliveryButtons(x)}${deliverySlipButtons(x)}</td></tr>`),
       'Không có chuyến giao nào trong khoảng ngày này.');
+    const list=$('#deliveries-list');
+    [...list.rows].forEach((tr,i)=>{
+      const x=rows[i];if(!x)return;
+      const open=document.createElement('button');open.type='button';open.className='btn ghost small';open.textContent=x.deliveryNo;
+      open.addEventListener('click',()=>deliveryCalendarView().details(x));tr.cells[1].firstChild.replaceWith(open);
+      tr.cells[4].prepend(fulfilmentBadge(x.status));tr.cells[4].querySelector('.pill')?.remove();
+      if(deliveryIsOverdue(x))tr.cells[4].prepend(fulfilmentBadge('overdue'));
+    });
+    compactFulfilmentTable(list.closest('table'));
   } catch (e) { if(req!==deliveriesReq)return;listError('deliveries', e);$('#deliveries-filter-summary').textContent=e.message||'Không tải được lịch giao hàng.';$('#deliveries-calendar').replaceChildren();$('#deliveries-product-lines').replaceChildren();$('#deliveries-retry').hidden=false; }
   finally { if(req===deliveriesReq)$('#deliveries-calendar').removeAttribute('aria-busy'); }
 }
@@ -3864,13 +3917,14 @@ var dataRefresh = setupDataRefresh({
   enabled: () => !!state.user,
   blocked: () => (location.hash.startsWith('#/shift-reports') && !!document.activeElement?.closest('.srp-filters')) || (location.hash.startsWith('#/pos') && !!posUi?.dirty()) || (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
   routeKey: () => location.hash,
-  primaryPaths: () => location.hash.startsWith('#/cash') ? ['/cash'] : location.hash.startsWith('#/pos') ? ['/pos/options'] : isWarehouse() ? ['/packing?status=sent'] : [can('page.quotes') && '/quotes', can('page.orders') && '/orders', can('page.contracts') && '/contracts'].filter(Boolean),
+  primaryPaths: () => location.hash.startsWith('#/home') ? [] : location.hash.startsWith('#/cash') ? ['/cash'] : location.hash.startsWith('#/pos') ? ['/pos/options'] : isWarehouse() ? ['/packing?status=sent'] : [can('page.quotes') && '/quotes', can('page.orders') && '/orders', can('page.contracts') && '/contracts'].filter(Boolean),
   onDeferred: () => toast('Có dữ liệu mới. Trang sẽ cập nhật sau khi anh/chị lưu thay đổi và đóng biểu mẫu.'),
   // Không tự hỏi định kỳ / khi quay lại tab: `pulse` (GET /pulse mỗi 30 giây) gọi tick() khi máy chủ báo có thay đổi.
   schedule: () => 0, cancel: () => {}, wakeOnFocus: false,
 });
-var notifier = setupNotifications({ // var: showAuth() có thể chạy trước khi khởi tạo xong.
-  api, root: $('#staff-bell'),
+var homeNotifications = createNotificationFeed({api,identity:()=>JSON.stringify([token,state.user?.role,state.user?.positionId,state.user?.perms,state.user?.approver])});
+var notifier = setupNotifications({
+  api:homeNotifications.read, root: $('#staff-bell'),
   onNew(notes) {
     for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`);
     dataRefresh.request(); dataRefresh.tick();
@@ -3879,7 +3933,7 @@ var notifier = setupNotifications({ // var: showAuth() có thể chạy trước
   isManager: () => isManager(),
   poll: false,
 });
-var pulse = setupPulse({ api, onData: () => dataRefresh.tick(), onNotify: () => notifier.check(), onChat: n => chatView().badge(n) }); // eslint-disable-line no-var -- showAuth() dừng nhịp trước khi khởi tạo xong
+var pulse = setupPulse({ api, onData: () => dataRefresh.tick(), onTick: () => sepayUi?.refresh(), onNotify: () => notifier.check(), onChat: n => chatView().badge(n) }); // eslint-disable-line no-var -- showAuth() dừng nhịp trước khi khởi tạo xong
 /** Bảng công việc (trial-ui/tasks.js) – khởi tạo khi cần (sau đăng nhập). */
 var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dòng này (khởi động sau đăng nhập)
 var centerUi = null;
@@ -3898,7 +3952,7 @@ var dashboardUi = null;
 /** Phân tích lợi nhuận: chỉ Manager (máy chủ kiểm tra lại). */
 var profitUi = null;
 function profitView() { return profitUi ||= initProfit({ api, root: $('#view-profit'), toast, esc, money }); }
-function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('#view-dashboard'), isManager, money }); }
+function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('#view-dashboard'), isManager, money, user:()=>state.user }); }
 var storeUi = null;
 /** Báo cáo Cửa hàng trưởng: trang #/store-reports + hộp nhắc việc 30 phút (chỉ CHT được gán). */
 /** Báo cáo tuần Sale / Sale Admin: trang #/weekly-reports + nhắc tuần trước chưa nộp. */
@@ -3913,10 +3967,11 @@ function feedbackView() { return feedbackUi ||= initFeedback({ api, root: $('#vi
 var suppliersUi = null;
 function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('#view-suppliers'), toast, confirmBox, canLinkAccounts: isManager }); }
 var inventoryUi = null;
-let khoHomeUi = null, stockLookupUi = null;
-function khoHome() { return khoHomeUi ||= initKhoHome({ api, root: $('#view-kho'), today: todayIso }); }
+var khoHomeUi = null; // hoisted: unauthenticated startup can call showAuth before this section
+let stockLookupUi = null;
+function khoHome() { return khoHomeUi ||= initWarehouseWorkspace({api,root:$('#view-kho'),toast,identity:()=>JSON.stringify([token,state.user?.id]),legacy:root=>initKhoHome({api,root,today:todayIso})}); }
 function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
-let stocktakeUi;
+var stocktakeUi;
 function stocktakeView() { return stocktakeUi ||= initStocktake({ api, root: $('#view-stocktake'), toast, confirmBox, userId: () => state.user?.id, ensureCatalog: loadCatalogSnapshot, findProducts: q => catalog.items ? searchCatalog(catalog.items, {q}) : null }); }
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
 var transfersUi = null, stockMovesUi = null, sellerConfigUi = null;
@@ -3943,7 +3998,7 @@ function flowView() {
   } });
 }
 function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
-function tasksView() { return tasksUi ||= initTasks({ approvalFeed: sharedApprovalFeed(), api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId, sendOnce }); }
+function tasksView() { return tasksUi ||= initTasks({ approvalFeed: sharedApprovalFeed(), onCreated:()=>homeUi?.refresh(), api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId, sendOnce }); }
 /** Tin nhắn nội bộ (trial-ui/chat.js). */
 var chatUi = null; // eslint-disable-line no-var
 var approvalFeed = null;
@@ -3953,6 +4008,7 @@ function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId
 /** Tải lại dữ liệu đang xem sau khi đã kiểm tra các biểu mẫu chưa lưu. */
 async function refreshData() {
   if (!state.user) return;
+  if(location.hash.split('?')[0]==='#/home'){await Promise.allSettled([homeUi?.refresh(),approvalView().refresh()]);return;}
   const jobs = [approvalView().refresh(), loadQuotes(), loadBadges()];
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page, id] = path.split('/'), params = new URLSearchParams(query);
@@ -5273,7 +5329,7 @@ $('#quote-stock').addEventListener('click', async () => {
         ${anyLock ? `<td class="right">${p && hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : ''}</td>` : ''}<td class="right">${p ? incomingCell(p) : '—'}</td>
         <td class="right">${miss === null ? '<span class="muted">Không có số liệu</span>' : miss ? `<span class="pill danger">Thiếu ${fmtNum(miss)}</span>` : '<span class="pill ok">Đủ</span>'}</td></tr>`;
     });
-    $('#stock-check-body').innerHTML = `<div class="table-wrap"><table class="data-table stock-check-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Tồn kho</th><th class="right">Hàng đang giữ</th><th class="right">Khả dụng cho báo giá</th>${anyLock ? '<th class="right">Kho NCC</th>' : ''}<th class="right">Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+    $('#stock-check-body').innerHTML = `<div class="table-wrap" tabindex="0" aria-label="Bảng kiểm tồn báo giá, cuộn ngang để xem đầy đủ các cột"><table class="data-table stock-check-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Tồn kho</th><th class="right">Hàng đang giữ</th><th class="right">Khả dụng cho báo giá</th>${anyLock ? '<th class="right">Kho NCC</th>' : ''}<th class="right">Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
     bindStockCheckFilter($('#stock-check-body'));
     $('#stock-check-note').textContent = (!holdsReady ? 'Chưa tải được hàng đang giữ; chưa thể kết luận đủ hàng. Đóng và kiểm tồn lại.' : short ? `${short} sản phẩm không đủ tồn khả dụng – xem tồn NCC / hàng chờ về.` : 'Các sản phẩm có số liệu đều đủ tồn khả dụng.')
       + ' Hàng đang giữ gồm báo giá, đơn hàng và HĐKT; phần báo giá này đang giữ vẫn dùng được cho chính báo giá này.';
@@ -5556,3 +5612,26 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('mess
 
 var custodyUi=null,custodyLoading=null;
 function custodyView(){return custodyLoading ||= import('./product-custody.js').then(({initProductCustody})=>custodyUi=initProductCustody({api,root:$('#view-product-custody'),toast,compress:compressImage,identity:()=>token,userId:()=>state.user?.id}));}
+
+// Trang chủ tải module khi mở; phần còn lại của CRM không phải tải giao diện này.
+var homeUi = null, homeLoading = null;
+function homeNavigation(){return [...document.querySelectorAll('.side-nav [data-nav]')].filter(a=>!a.hidden&&!a.closest('[hidden]')&&linkAllowed(a.getAttribute('href'))).map(a=>{const group=a.closest('.nav-group'),heading=group?.querySelector('h2');return{key:a.dataset.nav,label:a.querySelector('span')?.textContent?.trim()||a.textContent.trim(),href:a.getAttribute('href'),groupId:heading?.id||'',group:(heading?.querySelector('.nav-group-toggle>span:first-child')?.textContent||heading?.textContent)?.trim()||'Chức năng khác'};});}
+function homeActions(){return [
+  {key:'new-task',label:'Tạo công việc',icon:'work',run:()=>tasksView().openNew().catch(e=>toast(e.message,'err'))},
+  ...(can('pos.sell')&&isCounterSales()?[{key:'pos',label:'Bán hàng nhanh',icon:'sell',run:()=>go('#/pos')}]:[]),
+  ...(can('page.quotes')?[{key:'new-quote',label:'Lập báo giá',icon:'sell',run:()=>openNewQuote()}]:[]),
+  ...(can('page.customers')?[{key:'new-customer',label:'Thêm khách hàng',icon:'customers',run:()=>openCustomer()}]:[]),
+  ...(can('page.care')?[{key:'new-care',label:'Ghi nhận chăm sóc',icon:'customers',run:()=>careView().openForm({},()=>homeUi?.refresh())}]:[]),
+];}
+function homeView() { if(homeUi)return Promise.resolve(homeUi);return homeLoading ||= import('./home.js').then(({initHome}) => homeUi = initHome({root:$('#view-home'),api,user:()=>state.user,canApprove,go,
+  entries:homeNavigation,actions:homeActions,approvalFeed:sharedApprovalFeed(),notifications:()=>homeNotifications.read('/notifications'),navigationRoot:document.querySelector('.side-nav'),
+  noticeHref:n=>{try{const url=new URL(n.url,location.origin);return url.origin===location.origin&&/^#\/[\w-]+/.test(url.hash)&&linkAllowed(url.hash)?url.hash:'';}catch{return'';}},
+  markRead:id=>{const who=state.user?.id;return homeNotifications.read('/notifications/read','POST',{ids:[id]}).then(()=>{if(who===state.user?.id)notifier.markRead(id);});},
+  openBell:()=>{const button=$('#staff-bell .bell');if(button?.getAttribute('aria-expanded')!=='true')button?.click();window.scrollTo(0,0);},
+})); }
+function showHome() {
+  const who=state.user?.id;
+  homeView().then(ui=>{if(who===state.user?.id&&location.hash.split('?')[0]==='#/home')return ui.show();}).catch(e=>{
+    if(who===state.user?.id&&location.hash.split('?')[0]==='#/home'){homeLoading=null;$('#view-home').innerHTML=`<h1>Trang chủ</h1><p class="error" role="alert">${esc(e.message||'Chưa tải được trang chủ.')}</p><button class="btn secondary" type="button" data-home-boot-retry>Thử lại</button>`;$('#view-home [data-home-boot-retry]').onclick=showHome;}
+  });
+}

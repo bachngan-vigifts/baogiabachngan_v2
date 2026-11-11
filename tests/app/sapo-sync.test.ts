@@ -163,7 +163,10 @@ test('mọi route đồng bộ dưới /integrations/ thuộc khu vực xác th�
     assert.equal(isSync, r.meta === 'sapo-sync' || r.meta === 'transfer-sync' || r.meta === 'synctime-sync' || r.meta === 'sepay-sync' || r.meta === 'web-order-sync' || r.meta === 'ghn-webhook', r.pattern);
     if (r.meta === 'ghn-webhook') assert.equal(r.pattern, new RegExp('^/integrations/ghn/pos-lock/webhook/?$').source);
     if (r.meta === 'synctime-sync') assert.equal(r.pattern, new RegExp('^/integrations/synctime/webhook/?$').source);
-    if (r.meta === 'sepay-sync') assert.equal(r.pattern, new RegExp('^/integrations/sepay/pos-payment/?$').source);
+    if (r.meta === 'sepay-sync') assert.ok([
+      new RegExp('^/integrations/sepay/pos-payment/?$').source,
+      new RegExp('^/integrations/sepay/payment/?$').source,
+    ].includes(r.pattern), r.pattern);
   }
 });
 

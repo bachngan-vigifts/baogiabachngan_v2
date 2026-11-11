@@ -199,14 +199,17 @@ export function setupNotifications({ api, root, onNew, onOpen, isManager = () =>
   const wake = () => { if (started && document.visibilityState !== 'hidden' && (poll || !loaded || failed)) check(); };
   document.addEventListener('visibilitychange', wake);
   window.addEventListener('online', wake);
-  return {
-    start() { if (started) return; started = true; check(true); if (poll) loop(); autoPush(); },
-    stop() {
+  function reset() {
       started = false; generation++; clearInterval(timer); timer = null;
       if (retryTimer !== null) clearTimeout(retryTimer);
       retryTimer = null; pending = null; refreshAfterPending = false; retryDelay = 5000;
       notes = []; newest = ''; loaded = false; failed = false; panel.hidden = true; btn.setAttribute('aria-expanded', 'false'); draw();
-    },
+    }
+  return {
+    start() { if (started) return; started = true; check(true); if (poll) loop(); autoPush(); },
+    stop: reset,
+    reset,
+    markRead(id) { const n=notes.find(x=>x.id===id);if(n){n.readAt=n.readAt||new Date().toISOString();draw();} },
     check,
   };
 }

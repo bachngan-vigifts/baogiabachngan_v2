@@ -1,4 +1,4 @@
-import {createReportScoreCard,reportScoreText} from './report-scores.js';
+import {createReportScoreCard,reportScoreOverview,reportScoreText} from './report-scores.js';
 import { cacheLineNode } from './report-cache.js';
 /** Dashboard doanh số (read-only): biểu đồ SVG dựng bằng DOM API (không chuỗi HTML), dùng API đã xác thực của app. */
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -9,6 +9,14 @@ const RANK = [['actual', 'Thực tế'], ['expected', 'Dự kiến'], ['pipeline
 const PRESETS = [[1, 'Tháng này'], [3, '3 tháng'], [6, '6 tháng'], [12, '12 tháng']];
 // KPI Sale: 4 phần điểm (thứ tự như phiếu lương) – 4 màu phân biệt được khi mù màu; phần chưa đạt tới 100% màu nền.
 const KPI_PARTS = { newCustomers: '#2a78d6', transactions: '#eb6834', contracts: '#1a9e77', revenue: '#8e5bd0' };
+/** Presentation only; the server still enforces each report's viewer scope. */
+export const dashboardReportsOnly=user=>user?.role==='employee'&&user?.positionId==='sale-admin';
+/** Merge only the current month and already authorized API projections. */
+export function dashboardScorePeople(kpi,reports,month){
+ const people=new Map();
+ for(const data of [kpi,reports])if(data?.month===month)for(const p of data.members||[])if(!people.has(p.id))people.set(p.id,{id:p.id,name:p.name});
+ return [...people.values()];
+}
 export const kpiPercent = v => `${(Math.round(v * 1000) / 10).toLocaleString('vi-VN')}%`;
 /** Cùng ngưỡng màu với thanh mức đạt KPI; chỉ dùng để hiển thị. */
 export const kpiAttainmentClass = value => value >= 0.9 ? 'is-high' : value >= 0.6 ? 'is-low' : 'is-poor';
@@ -44,14 +52,16 @@ const monthLabel = (ym, i) => `T${Number(ym.slice(5))}${i === 0 || ym.endsWith('
 const barUp = (x, y, w, h) => { const r = Math.min(4, w / 2, h); return `M${x},${y + h}V${y + r}A${r},${r} 0 0 1 ${x + r},${y}H${x + w - r}A${r},${r} 0 0 1 ${x + w},${y + r}V${y + h}Z`; };
 const barRight = (x, y, w, h) => { const r = Math.min(4, h / 2, w); return `M${x},${y}H${x + w - r}A${r},${r} 0 0 1 ${x + w},${y + r}V${y + h - r}A${r},${r} 0 0 1 ${x + w - r},${y + h}H${x}Z`; };
 
-export function initDashboard({ api, root, isManager, money }) {
+export function initDashboard({ api, root, isManager, money, user=()=>null }) {
   const node = (tag, text, cls) => { const n = document.createElement(tag); if (text != null) n.textContent = String(text); if (cls) n.className = cls; return n; };
   const svgRoot = (W, H, label) => { const s = svg('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': label }); s.style.width = W + 'px'; s.style.height = H + 'px'; return s; };
   const svg = (tag, attrs = {}, text) => { const n = document.createElementNS(SVG_NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v)); if (text != null) n.textContent = String(text); return n; };
   const pct = r => r.closeRate == null ? '—' : `${String(r.closeRate).replace('.', ',')}%`;
-  let requestId = 0, data = null, rankBy = 'actual', preset = 6;
-  let filters = { from: addMonths(thisMonth(), -5), to: thisMonth(), owner: '', group: '', neglectDays: '30', page: '1' };
+  let requestId = 0, data = null, rankBy = 'actual', preset = 1;
+  let filters = { from: thisMonth(), to: thisMonth(), owner: '', group: '', neglectDays: '30', page: '1' };
   let options = { employees: [], groups: [] };
+  const viewerKey=()=>{const u=user();return JSON.stringify([u?.id,u?.role,u?.positionId,Array.isArray(u?.perms)?[...u.perms].sort():null]);};
+  let viewer=viewerKey();
 
   const wrap = node('div', null, 'revenue-dashboard'); root.append(wrap);
   const head = node('div', null, 'dash-head'), meta = node('p', null, 'dash-meta');
@@ -195,10 +205,12 @@ export function initDashboard({ api, root, isManager, money }) {
   const tile = (label, value, sub, cls = '') => { const t = node('div', null, 'dash-tile ' + cls); t.append(node('p', label, 'dash-tile-label'), node('strong', value)); if (sub) t.append(node('p', sub, 'dash-tile-sub')); return t; };
 
   // ---- Điểm KPI Sale (tải riêng sau doanh số; cùng bộ lọc, tháng cuối kỳ mặc định).
-  let kpiData = null, kpiMonth = '', kpiPick = '', kpiRequest = 0;
-  const kpiCard = card('Điểm KPI Sale', null, 'is-wide dash-kpi-card'), kpiBody = node('div', null, 'dash-kpi');
-  const kpiMonthSelect = node('select', null, 'dash-mini'); kpiMonthSelect.setAttribute('aria-label', 'Tháng tính KPI');
-  kpiMonthSelect.addEventListener('change', () => { kpiMonth = kpiMonthSelect.value; loadKpi(); });
+  let kpiData = null, kpiMonth = '', kpiPick = '', kpiRequest = 0, kpiLoading=true, kpiError='';
+  let reportData=null,reportRequest=0,reportLoading=true,reportError='';
+  const reportDetailsOpen=new Map(),ownReportsOnly=()=>dashboardReportsOnly(user());
+  const kpiCard = card('KPI Sale & báo cáo tuần / tháng', null, 'is-wide dash-kpi-card'), kpiBody = node('div', null, 'dash-kpi');
+  const kpiMonthSelect = node('select', null, 'dash-mini'); kpiMonthSelect.setAttribute('aria-label', 'Tháng xem KPI và báo cáo');
+  kpiMonthSelect.addEventListener('change', () => { kpiMonth = kpiMonthSelect.value; loadScorePanels(); });
   kpiCard.firstChild.append(kpiMonthSelect); kpiCard.append(kpiBody);
   const ring = (cx, cy, R, r, a0, a1) => {
     const pt = (rad, a) => [cx + rad * Math.sin(a * 2 * Math.PI), cy - rad * Math.cos(a * 2 * Math.PI)].map(v => Math.round(v * 100) / 100).join(',');
@@ -247,60 +259,96 @@ export function initDashboard({ api, root, isManager, money }) {
     if (m.merchDays || m.tripDays) note(`Đã cộng quy đổi ${m.merchDays} ngày làm hàng, ${m.tripDays} ngày công tác.`);
     box.append(scroll, notes); return box;
   }
+  function loadMessage(body,message,retry){
+    const b=node('button','Thử lại','btn secondary small');b.type='button';b.onclick=retry;
+    body.replaceChildren(node('p',message,'error'),b);
+  }
+  // One employee and one month drive both panels, including Sale Admin without a sales KPI.
   function renderKpi() {
-    const x = kpiData; if (!x) return;
-    kpiCard.hidden = !x.available;
-    kpiMonthSelect.replaceChildren(); for (const mo of data?.months?.map(m => m.month) || [x.month]) { const o = node('option', `T${Number(mo.slice(5))}/${mo.slice(0, 4)}`); o.value = mo; kpiMonthSelect.append(o); }
-    kpiMonthSelect.value = x.month; kpiMonthSelect.hidden = kpiMonthSelect.options.length < 2;
-    const sub = kpiCard.querySelector('.dash-sub') || node('p', null, 'dash-sub'); sub.textContent = `Tháng ${Number(x.month.slice(5))}/${x.month.slice(0, 4)} · điểm thực tế theo các chỉ tiêu KPI`; kpiCard.firstChild.insertBefore(sub, kpiMonthSelect);
-    if (!x.members.length) { kpiBody.replaceChildren(node('p', x.scope === 'self' ? 'Chưa có KPI Sale cho tháng này (hồ sơ lương chưa bật KPI hoặc không thuộc bảng Sale).' : 'Không có nhân viên Sale tính KPI trong phạm vi lọc.', 'dash-sub')); return; }
-    const m = x.members.find(p => p.id === kpiPick) || x.members[0]; kpiPick = m.id;
-    const main = node('div', null, 'dash-kpi-main'), chart = node('div', null, 'dash-kpi-chart'), keys = legend(m.parts.map(p => [KPI_PARTS[p.key], p.label]));
-    chart.append(node('p', m.name, 'dash-kpi-name'), kpiDonut(m), keys);
-    main.append(chart, kpiDetail(m));
-    const out = [];
-    if (x.members.length > 1) {
-      const list = node('ol', null, 'dash-kpi-list'); list.setAttribute('aria-label', 'Chọn nhân viên xem KPI');
-      for (const p of x.members) {
-        const li = node('li'), b = node('button', null, 'dash-kpi-person'); b.type = 'button'; b.setAttribute('aria-pressed', String(p.id === m.id));
-        const bar = node('span', null, 'dash-kpi-bar'), fill = node('i'); fill.style.width = Math.min(100, p.total * 100) + '%'; fill.className = kpiAttainmentClass(p.total); bar.append(fill);
-        b.append(node('span', p.name, 'dash-kpi-person-name'), bar, node('strong', kpiPercent(p.total), `dash-kpi-score ${kpiAttainmentClass(p.total)}`));
-        b.addEventListener('click', () => { kpiPick = p.id; renderKpi(); }); li.append(b); list.append(li);
-      }
-      out.push(list);
+    const people=dashboardScorePeople(kpiData,reportData,kpiMonth);
+    const reportFirst=reportData?.month===kpiMonth&&reportData.members.length&&reportData.members.every(p=>p.positionId==='sale-admin')?people.find(p=>p.id===reportData.members[0].id):null;
+    const person=people.find(p=>p.id===kpiPick)||reportFirst||(!kpiLoading&&(!kpiPick||!reportLoading)?people[0]:null);if(person)kpiPick=person.id;
+    const m=kpiData?.members.find(m=>m.id===kpiPick),selectedReport=reportData?.members.find(p=>p.id===kpiPick);
+    const reportsOnly=ownReportsOnly()||!m&&selectedReport?.positionId==='sale-admin';
+    kpiCard.classList.toggle('is-reports-only',reportsOnly);
+    kpiCard.hidden=!kpiLoading&&!reportLoading&&!kpiError&&!reportError&&!kpiData?.available&&!reportData?.available;
+    kpiMonthSelect.replaceChildren(...(data?.months?.map(m=>m.month)||[kpiMonth]).map(month=>{const o=node('option',`T${Number(month.slice(5))}/${month.slice(0,4)}`);o.value=month;return o;}));
+    kpiMonthSelect.value=kpiMonth;kpiMonthSelect.hidden=kpiMonthSelect.options.length<2;
+    kpiCard.firstChild.querySelector('h2').textContent=reportsOnly?'Báo cáo tuần / tháng · Sale Admin':'KPI Sale & báo cáo tuần / tháng';
+    const sub=kpiCard.firstChild.querySelector('.dash-sub')||node('p',null,'dash-sub');sub.textContent=`Tháng ${Number(kpiMonth.slice(5))}/${kpiMonth.slice(0,4)} · ${reportsOnly?'điểm và trạng thái báo cáo của nhân viên':'KPI và báo cáo hiển thị riêng, cùng nhân viên'}`;kpiCard.firstChild.insertBefore(sub,kpiMonthSelect);
+    const out=[];
+    if(people.length>1){
+      const list=node('ol',null,'dash-kpi-list');list.setAttribute('aria-label','Chọn nhân viên xem KPI và báo cáo');
+      for(const p of people){
+        const li=node('li'),b=node('button',null,'dash-kpi-person');b.type='button';b.setAttribute('aria-pressed',String(p.id===kpiPick));b.dataset.scoreMember=p.id;
+        b.append(node('span',p.name,'dash-kpi-person-name'));
+        const k=kpiData?.members.find(m=>m.id===p.id);
+        if(k){const bar=node('span',null,'dash-kpi-bar'),fill=node('i');fill.style.width=Math.min(100,k.total*100)+'%';fill.className=kpiAttainmentClass(k.total);bar.append(fill);b.append(bar,node('strong',kpiPercent(k.total),`dash-kpi-score ${kpiAttainmentClass(k.total)}`));}
+        else {
+          const report=reportData?.members.find(r=>r.id===p.id),summary=reportScoreOverview(report);
+          b.append(node('strong',report?reportScoreText(report):'Đang tải…','dash-report-person-points'));
+          if(summary)b.append(node('small',`Tuần ${summary.submitted}/${summary.total} đã nộp · Tháng: ${summary.monthly}`,'dash-report-person-summary'));
+        }
+        b.onclick=()=>{kpiPick=p.id;renderKpi();};li.append(b);list.append(li);
+      }out.push(list);
     }
-    if (x.restricted) out.push(node('p', 'Chỉ hiện KPI của bạn – KPI nhân viên khác chỉ Manager xem.', 'dash-sub'));
-    kpiBody.replaceChildren(...out, main);
+    const body=node('div');body.setAttribute('aria-busy',String(kpiLoading));
+    body.hidden=reportsOnly;
+    if(!reportsOnly){
+    if(kpiLoading)body.append(node('p','Đang tính KPI…','dash-sub'));
+    else if(kpiError)loadMessage(body,kpiError,()=>loadKpi(true));
+    else if(m){
+      const main=node('div',null,'dash-kpi-main'),chart=node('div',null,'dash-kpi-chart');
+      chart.append(node('p',m.name,'dash-kpi-name'),kpiDonut(m),legend(m.parts.map(p=>[KPI_PARTS[p.key],p.label])));main.append(chart,kpiDetail(m));body.append(main);
+    }else body.append(node('p',person?`${person.name}: chưa có KPI Sale trong tháng này (chưa bật KPI hoặc không thuộc bảng Sale).`:'Không có KPI Sale trong tháng và phạm vi đang xem.','dash-sub'));
+    }
+    if(kpiData?.restricted)out.push(node('p','Chỉ hiện điểm của bạn – điểm nhân viên khác chỉ Manager xem.','dash-sub'));
+    kpiBody.replaceChildren(...out,body);kpiBody.hidden=reportsOnly&&!out.length;renderReports();
   }
   async function loadKpi(refresh) {
-    const id = ++kpiRequest; if (!data) return;
-    const months = data.months.map(m => m.month); if (!months.includes(kpiMonth)) kpiMonth = months.at(-1);
-    kpiCard.classList.add('is-loading'); if (!kpiData) kpiBody.replaceChildren(node('p', 'Đang tính KPI…', 'dash-sub'));
-    try { const r = await api('/dashboard/kpi?' + new URLSearchParams({ from: filters.from, to: filters.to, owner: filters.owner, group: filters.group, month: kpiMonth, ...fresh(refresh) })); if (id !== kpiRequest) return; kpiData = r; renderKpi(); }
-    catch (e) { if (id !== kpiRequest) return; kpiData = null; kpiCard.hidden = false; const retry = node('button', 'Thử lại', 'btn'); retry.type = 'button'; retry.addEventListener('click', loadKpi); kpiBody.replaceChildren(node('p', e.message || 'Chưa tính được KPI.', 'error'), retry); }
-    finally { if (id === kpiRequest) kpiCard.classList.remove('is-loading'); }
+    const id=++kpiRequest;if(!data)return;kpiLoading=true;kpiError='';renderKpi();
+    try{const result=await api('/dashboard/kpi?'+new URLSearchParams({from:filters.from,to:filters.to,owner:filters.owner,group:filters.group,month:kpiMonth,...fresh(refresh)}));if(id!==kpiRequest)return;kpiData=result;}
+    catch(e){if(id!==kpiRequest)return;kpiData=null;kpiError=e.message||'Chưa tính được KPI.';}
+    finally{if(id===kpiRequest){kpiLoading=false;renderKpi();}}
   }
-
-  // Report scores load independently; monthly totals and settled snapshots use the payroll source.
-  let reportData=null,reportMonth='',reportPick='',reportRequest=0;
-  const reportCard=card('Điểm báo cáo tuần / tháng — Sale & Sale Admin',null,'is-wide dash-report-card'),reportBody=node('div',null,'dash-report-body');
-  const reportMonthSelect=node('select',null,'dash-mini');reportMonthSelect.setAttribute('aria-label','Tháng xem điểm báo cáo');reportMonthSelect.onchange=()=>{reportMonth=reportMonthSelect.value;loadReports();};reportCard.firstChild.append(reportMonthSelect);reportCard.append(reportBody);reportCard.hidden=true;
+  const reportCard=node('section',null,'dash-report-card'),reportBody=node('div',null,'dash-report-body');
+  reportCard.append(node('h3','Báo cáo tuần / tháng'),reportBody);kpiCard.append(reportCard);
   function renderReports(){
-    const x=reportData;if(!x)return;reportCard.hidden=!x.available||(x.scope==='self'&&!x.members.length);
-    reportMonthSelect.replaceChildren(...(data?.months.map(m=>m.month)||[x.month]).map(month=>{const o=node('option','T'+Number(month.slice(5))+'/'+month.slice(0,4));o.value=month;return o;}));reportMonthSelect.value=x.month;reportMonthSelect.hidden=reportMonthSelect.options.length<2;
-    if(!x.members.length){reportBody.replaceChildren(node('p','Không có điểm báo cáo Sale / Sale Admin trong tháng và phạm vi đang xem.','dash-sub'));return;}
-    const member=x.members.find(m=>m.id===reportPick)||x.members[0];reportPick=member.id;
-    const children=[];
-    if(x.members.length>1){const label=node('label',null,'dash-field'),select=node('select');label.append(node('span','Nhân viên xem điểm'),select);select.setAttribute('aria-label','Nhân viên xem điểm báo cáo');for(const m of x.members){const option=node('option',m.name+' · '+reportScoreText(m));option.value=m.id;select.append(option);}select.value=member.id;select.onchange=()=>{reportPick=select.value;renderReports();};children.push(label);}
-    children.push(node('h3',member.name,'dash-kpi-name'),createReportScoreCard(member));reportBody.replaceChildren(...children);
+    const pendingMember=ownReportsOnly()?user()?.id:kpiPick;
+    reportCard.classList.toggle('is-details-collapsed',reportDetailsOpen.get(kpiMonth+':'+pendingMember)===false);
+    reportBody.setAttribute('aria-busy',String(reportLoading));
+    if(reportLoading||kpiLoading&&!dashboardScorePeople(kpiData,reportData,kpiMonth).some(p=>p.id===kpiPick)){reportBody.replaceChildren(node('p','Đang tải điểm báo cáo…','dash-sub'));return;}
+    if(reportError){loadMessage(reportBody,reportError,()=>loadReports(true));return;}
+    const member=reportData?.members.find(m=>m.id===kpiPick);
+    if(!member){reportBody.replaceChildren(node('p','Chưa có điểm báo cáo tuần / tháng cho nhân viên này trong kỳ đang xem.','dash-sub'));return;}
+    const summary=reportScoreOverview(member),children=[node('p',member.name,'dash-kpi-name')];
+    if(summary){
+      const stats=node('div',null,'dash-report-stats');
+      const stat=(key,label,value,sub)=>{const n=tile(label,value,sub);n.dataset.reportStat=key;return n;};
+      stats.append(stat('weekly','Báo cáo tuần',`${summary.submitted} / ${summary.total} đã nộp`,`${summary.onTime} đúng hạn · ${summary.late} trễ · ${summary.missing} chưa nộp · ${summary.notDue} chưa tới hạn · ${summary.excused} miễn`),
+        stat('monthly','Báo cáo tháng',summary.monthly,'Theo kết quả nộp và duyệt'),stat('pending','Chờ duyệt',String(summary.pending),'Kỳ báo cáo tuần / tháng'),stat('points','Tổng điểm báo cáo',summary.points,'Tách riêng với tổng điểm KPI'));
+      children.push(stats);
+    }
+    const details=node('details',null,'dash-report-details'),detailKey=kpiMonth+':'+member.id;
+    details.open=reportDetailsOpen.get(detailKey)??member.positionId==='sale-admin';
+    details.addEventListener('toggle',()=>{if(details.isConnected)reportDetailsOpen.set(detailKey,details.open);});
+    details.append(node('summary','Chi tiết từng tuần / tháng và hạn nộp'),createReportScoreCard(member));children.push(details);
+    const links=node('div',null,'dash-report-links');for(const [path,label]of [['weekly-reports','Xem báo cáo tuần'],['monthly-reports','Xem báo cáo tháng']]){const a=node('a',label,'btn ghost small');a.href='#/'+path+'?month='+encodeURIComponent(kpiMonth);links.append(a);}children.push(links);
+    // Source/snapshot semantics are visible even while the detailed table is collapsed.
+    children.push(node('p',member.source==='snapshot'?'Theo bản lưu lúc chốt lương.':member.source==='live'?'Tạm tính theo báo cáo và kết quả duyệt hiện tại.':'Phiếu đã chốt chưa có bản lưu điểm báo cáo; không thay bằng điểm hiện tại.','dash-sub'));
+    reportBody.replaceChildren(...children);
   }
   async function loadReports(refresh){
-    const id=++reportRequest;if(!data)return;
-    const months=data.months.map(m=>m.month);if(!months.includes(reportMonth))reportMonth=months.at(-1);
-    reportCard.hidden=false;reportBody.replaceChildren(node('p','Đang tải điểm báo cáo…','dash-sub'));reportCard.classList.add('is-loading');
-    try{const result=await api('/dashboard/report-scores?'+new URLSearchParams({from:filters.from,to:filters.to,owner:filters.owner,group:filters.group,month:reportMonth,...fresh(refresh)}));if(id!==reportRequest)return;reportData=result;renderReports();}
-    catch(e){if(id!==reportRequest)return;reportData=null;reportCard.hidden=false;const retry=node('button','Thử lại','btn');retry.type='button';retry.onclick=loadReports;reportBody.replaceChildren(node('p',e.message||'Chưa tải được điểm báo cáo.','error'),retry);}
-    finally{if(id===reportRequest)reportCard.classList.remove('is-loading');}
+    const id=++reportRequest;if(!data)return;reportLoading=true;reportError='';renderReports();
+    try{const result=await api('/dashboard/report-scores?'+new URLSearchParams({from:filters.from,to:filters.to,owner:filters.owner,group:filters.group,month:kpiMonth,...fresh(refresh)}));if(id!==reportRequest)return;reportData=result;}
+    catch(e){if(id!==reportRequest)return;reportData=null;reportError=e.message||'Chưa tải được điểm báo cáo.';}
+    finally{if(id===reportRequest){reportLoading=false;renderKpi();}}
+  }
+  function loadScorePanels(refresh){
+    ++kpiRequest;++reportRequest;kpiData=reportData=null;kpiError=reportError='';kpiLoading=reportLoading=true;
+    const months=data.months.map(m=>m.month);if(!months.includes(kpiMonth))kpiMonth=months.at(-1);
+    if(ownReportsOnly()){kpiLoading=false;kpiData={month:kpiMonth,available:false,scope:'self',members:[]};}
+    renderKpi();if(!ownReportsOnly())loadKpi(refresh);loadReports(refresh);
   }
 
   // ---- Doanh số cửa hàng (NVBH / CHT): DS chung CRM + POS, chỉ tiêu, mốc thưởng, DS từng người. Tải riêng như KPI.
@@ -453,12 +501,20 @@ export function initDashboard({ api, root, isManager, money }) {
     const how = node('details', null, 'dash-how'); how.append(node('summary', 'Cách tính số liệu'),
       node('p', 'Thực tế: đơn hàng/HĐKT trong kỳ (gồm VAT), bỏ đơn huỷ và đơn nháp chưa có hợp đồng ký; mỗi HĐKT tính một lần. Dự kiến và số khách rớt: lần chăm sóc mới nhất của từng cặp khách/nhân viên trong kỳ. Pipeline: trạng thái chăm sóc mới nhất đến cuối kỳ (tư vấn, đã gửi báo giá, thương lượng). Tỷ lệ chốt = báo giá trong kỳ đã sinh đơn còn hiệu lực / tổng báo giá trong kỳ. Dữ liệu Sapo có thể chậm.'));
     // KPI nằm ngoài lưới biểu đồ: trên điện thoại lưới được gom sau "Xem thêm thống kê", KPI vẫn hiện ngay.
-    content.replaceChildren(kpiCard, trend, kpis, reportCard, storeCard, grid, how);
+    content.replaceChildren(kpiCard, trend, kpis, storeCard, grid, how);
     lastWidth = content.clientWidth; redraw();
   }
 
   async function load(refresh) {
-    const id = ++requestId; ++reportRequest;reportData=null;reportCard.hidden=true;reportBody.replaceChildren();syncForm(); hideTip();
+    const nextViewer=viewerKey();
+    if(nextViewer!==viewer){
+      viewer=nextViewer;data=null;kpiPick='';kpiMonth='';preset=1;reportDetailsOpen.clear();
+      filters={from:thisMonth(),to:thisMonth(),owner:'',group:'',neglectDays:'30',page:'1'};
+      options={employees:[],groups:[]};fillSelect(group,[],'Tất cả nhóm');fillSelect(owner,[],'Tất cả nhân viên');
+      ++storeRequest;storeData=null;storeMonth='';storeCard.hidden=true;storeBody.replaceChildren();
+    }
+    if(!isManager()){filters.owner='';filters.group='';}
+    const id = ++requestId; ++kpiRequest;++reportRequest;kpiData=reportData=null;kpiLoading=reportLoading=true;kpiError=reportError='';kpiBody.replaceChildren();reportBody.replaceChildren();syncForm(); hideTip();
     group.parentElement.hidden = owner.parentElement.hidden = !isManager();
     content.classList.add('is-loading'); if (!data) content.replaceChildren(node('p', 'Đang tải tổng quan…', 'dash-sub'));
     try {
@@ -470,7 +526,7 @@ export function initDashboard({ api, root, isManager, money }) {
       }
       fillSelect(group, options.groups, 'Tất cả nhóm'); fillSelect(owner, options.employees, 'Tất cả nhân viên');
       cacheSlot.replaceChildren(cacheLineNode(document, res.cache, () => load(true)));
-      data = res; render(); loadKpi(refresh); loadStore(refresh); loadReports(refresh);
+      data = res; render(); loadScorePanels(refresh); loadStore(refresh);
     } catch (e) {
       if (id !== requestId) return;
       data = null; const retry = node('button', 'Thử lại', 'btn'); retry.type = 'button'; retry.addEventListener('click', load);

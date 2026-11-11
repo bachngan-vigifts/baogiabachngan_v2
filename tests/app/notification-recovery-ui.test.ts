@@ -60,3 +60,14 @@ test('mạng trở lại / tab hiện thì phục hồi lượt đầu bị lỗ
   fail = true; await h.ui.check(); h.doc.visibilityState = 'hidden'; await h.fire(); assert.equal(calls, 3);
   fail = false; h.doc.visibilityState = 'visible'; h.docEvents.get('visibilitychange')!(); await h.flush(); assert.equal(calls, 4, 'lượt cập nhật lỗi cũng phục hồi khi quay lại tab');
 });
+
+test('reset dùng chung với Trang chủ bỏ phản hồi phiên cũ và giữ markRead', async () => {
+  let resolve: ((d: unknown) => void) | undefined, calls = 0;
+  const h = harness(async () => { calls++; if (calls === 1) return { notifications: [note()] }; return new Promise(yes => { resolve = yes; }); });
+  h.ui.start(); await h.flush(); h.ui.markRead('n1'); assert.equal(h.node('.bell-badge').hidden, true);
+  const old = h.ui.check(); h.ui.reset(); assert.equal(h.timers.size, 0); assert.equal(h.node('.bell-badge').hidden, true);
+  resolve!({notifications: [note('private-old-account')]}); await old;
+  assert.doesNotMatch(h.node('.bell-list').innerHTML, /private-old-account/);
+  h.ui.start(); resolve!({notifications: []}); await h.flush();
+  assert.match(h.node('.bell-list').innerHTML, /Chưa có thông báo/); h.ui.stop();
+});

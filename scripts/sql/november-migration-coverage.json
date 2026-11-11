@@ -1,0 +1,235 @@
+[
+  {
+    "migration": "20261102071719_customer_cash_collections.sql",
+    "asserts": [
+      "assert-customer-cash-collections.sql"
+    ]
+  },
+  {
+    "migration": "20261102104511_transfer_received_outbox.sql",
+    "asserts": [
+      "assert-transfer-outbox.sql"
+    ]
+  },
+  {
+    "migration": "20261102120000_transfer_receive.sql",
+    "asserts": [
+      "assert-transfer-outbox.sql"
+    ]
+  },
+  {
+    "migration": "20261102123212_web_order_crm_edit.sql",
+    "asserts": [
+      "assert-web-order-crm-edit.sql"
+    ]
+  },
+  {
+    "migration": "20261103042748_catalogue_shared_library.sql",
+    "asserts": [
+      "assert-catalogue-library.sql"
+    ]
+  },
+  {
+    "migration": "20261103070624_catalogue_library_bulk.sql",
+    "asserts": [
+      "assert-catalogue-library.sql"
+    ]
+  },
+  {
+    "migration": "20261103094412_crm_catalog_autovacuum.sql",
+    "asserts": [
+      "assert-crm-catalog-autovacuum.sql"
+    ]
+  },
+  {
+    "migration": "20261103095218_product_search_trigram.sql",
+    "asserts": [
+      "assert-product-search-trigram.sql"
+    ]
+  },
+  {
+    "migration": "20261104000000_internal_reports.sql",
+    "asserts": [
+      "assert-internal-reports.sql"
+    ]
+  },
+  {
+    "migration": "20261105010141_customer_established_date.sql",
+    "asserts": [
+      "assert-customer-established-date.sql",
+      "assert-customer-established-date-complete.sql"
+    ]
+  },
+  {
+    "migration": "20261105025522_appsheet_customer_sync.sql",
+    "asserts": [
+      "assert-appsheet-customers.sql"
+    ]
+  },
+  {
+    "migration": "20261105030000_hr_member_kpi_targets.sql",
+    "asserts": [
+      "assert-hr-member-kpi-targets.sql"
+    ]
+  },
+  {
+    "migration": "20261105042029_payroll_attendance_counters.sql",
+    "asserts": [
+      "assert-payroll-attendance-counters.sql"
+    ]
+  },
+  {
+    "migration": "20261105060000_software_feedback.sql",
+    "asserts": [
+      "assert-software-feedback.sql"
+    ]
+  },
+  {
+    "migration": "20261106011701_hr_revenue_targets.sql",
+    "asserts": [
+      "assert-hr-revenue-targets.sql",
+      "assert-hr-revenue-targets-complete.sql"
+    ]
+  },
+  {
+    "migration": "20261106032801_hr_revenue_target_requests.sql",
+    "asserts": [
+      "assert-hr-revenue-target-requests.sql",
+      "assert-hr-revenue-target-requests-complete.sql"
+    ]
+  },
+  {
+    "migration": "20261106035214_sales_payroll_team_sources.sql",
+    "asserts": [
+      "assert-sales-payroll-team-sources.sql",
+      "assert-sales-payroll-team-sources-complete.sql"
+    ]
+  },
+  {
+    "migration": "20261107064327_customer_center_campaigns.sql",
+    "asserts": [
+      "assert-customer-center-campaigns.sql"
+    ]
+  },
+  {
+    "migration": "20261107074837_order_products_page_permission.sql",
+    "asserts": [
+      "assert-order-products-page-permission.sql"
+    ]
+  },
+  {
+    "migration": "20261107161337_product_custody.sql",
+    "asserts": [
+      "assert-product-custody.sql"
+    ]
+  },
+  {
+    "migration": "20261108223847_warehouse_workspace.sql",
+    "asserts": [
+      "assert-warehouse-workspace.sql"
+    ]
+  },
+  {
+    "migration": "20261109050000_sepay_transactions.sql",
+    "asserts": [
+      "assert-sepay-transactions.sql"
+    ]
+  },
+  {
+    "migration": "20261109123446_sepay_lock_web_match.sql",
+    "asserts": [
+      "assert-sepay-web.sql"
+    ]
+  },
+  {
+    "migration": "20261109193137_sepay_proximity_indexes.sql",
+    "asserts": [
+      "assert-sepay-proximity.sql"
+    ]
+  },
+  {
+    "migration": "20261110020309_sepay_page_permission.sql",
+    "asserts": [
+      "assert-sepay-page-permission.sql"
+    ]
+  },
+  {
+    "migration": "20261110041042_warehouse_dispatch_availability.sql",
+    "asserts": [
+      "assert-warehouse-workspace.sql"
+    ]
+  },
+  {
+    "migration": "20261111090000_purchase_permissions.sql",
+    "asserts": [
+      "assert-purchase-permissions.sql"
+    ]
+  },
+  {
+    "migration": "20261111100000_customer_profile_fields.sql",
+    "asserts": [
+      "assert-customer-profile-fields.sql",
+      "assert-customer-profile-fields-complete.sql"
+    ]
+  },
+  {
+    "migration": "20261111100000_store_manager_reports.sql",
+    "asserts": [
+      "assert-store-manager-reports.sql"
+    ]
+  },
+  {
+    "migration": "20261112090000_store_report_submission.sql",
+    "asserts": [
+      "assert-store-report-submission.sql"
+    ]
+  },
+  {
+    "migration": "20261112100000_store_report_files.sql",
+    "asserts": [
+      "assert-store-report-files.sql"
+    ]
+  },
+  {
+    "migration": "20261112110000_store_restock_rules.sql",
+    "asserts": [
+      "assert-store-restock-rules.sql"
+    ]
+  },
+  {
+    "migration": "20261113090000_staff_weekly_reports.sql",
+    "asserts": [
+      "assert-staff-weekly-reports.sql"
+    ]
+  },
+  {
+    "migration": "20261114090000_staff_monthly_reports.sql",
+    "asserts": [
+      "assert-staff-monthly-reports.sql"
+    ]
+  },
+  {
+    "migration": "20261115090000_sales_line_costs.sql",
+    "asserts": [
+      "assert-sales-line-costs.sql"
+    ]
+  },
+  {
+    "migration": "20261115091000_historical_cost_sources.sql",
+    "asserts": [
+      "assert-historical-cost-sources.sql"
+    ]
+  },
+  {
+    "migration": "20261116090000_cash_entry_classes.sql",
+    "asserts": [
+      "assert-cash-entry-classes.sql"
+    ]
+  },
+  {
+    "migration": "20261117090000_report_cache.sql",
+    "asserts": [
+      "assert-report-cache.sql"
+    ]
+  }
+]

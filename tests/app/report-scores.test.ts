@@ -114,6 +114,10 @@ test('weekly/monthly new-customer facts keep the approved-profile KPI from #518 
 test('score DTO strips unexpected snapshot fields; UI labels preserve pending, exempt, rejected, half points and unavailable',async()=>{
  const w={period:'2026-11-02',deadline:'2026-11-09T03:00:00Z',state:'on_time',review:'pending',score:0.5};
  const dto=reportScoreView('2026-11','confirmed',{points:0.5,required:4,weeks:[{...w,bankAccount:'secret'}],salary:9000});assert.doesNotMatch(JSON.stringify(dto),/bankAccount|salary/);
+ const stamped=reportScoreView('2026-11','estimate',{points:0.5,required:4,weeks:[{...w,submittedAt:'2026-11-09T02:00:00Z',reviewedAt:'private',salary:9000}]});
+ assert.equal(stamped.basis?.weeks[0]?.submittedAt,'2026-11-09T02:00:00Z');assert.doesNotMatch(JSON.stringify(stamped),/reviewedAt|private|salary/);
+ assert.equal(reportScoreView('2026-11','estimate',{points:0.5,required:4,weeks:[{...w,submittedAt:'bad-time'}]}).source,'unavailable');
+ assert.equal(dto.basis?.weeks[0]?.submittedAt,undefined,'bản chụp cũ không tự bịa giờ nộp');
  assert.equal(reportScoreView('2026-11','confirmed',{points:NaN,required:4,weeks:[]}).source,'unavailable');
  const ui=await import(new URL('../../trial-ui/report-scores.js',import.meta.url).href);
  assert.equal(ui.reportScoreText(dto),'0,5 / 4 điểm');assert.equal(ui.reportScoreText({basis:null}),'Chưa có bản lưu điểm');

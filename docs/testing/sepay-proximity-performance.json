@@ -1,0 +1,28 @@
+{
+  "environment": "Local PostgreSQL 17, synthetic rows only; full test suite concurrently running; not production latency",
+  "webRows": 18000,
+  "matchedBankRows": 6000,
+  "history": "2023-11-09 + 87 minutes per order (~3 years)",
+  "probes": [
+    {
+      "aggregateMs": 388.7,
+      "nearbyMs": 15.4,
+      "candidates": 0
+    },
+    {
+      "aggregateMs": 197.5,
+      "nearbyMs": 4.1,
+      "candidates": 0
+    },
+    {
+      "aggregateMs": 236.1,
+      "nearbyMs": 9.9,
+      "candidates": 0
+    },
+    {
+      "aggregateMs": 226.5,
+      "nearbyMs": 4.8,
+      "candidates": 0
+    }
+  ]
+}

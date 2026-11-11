@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { can } from '../../staff/domain/permissions.ts';
+import { MAX_STOCKTAKE_LINES } from '../../../core/contracts/stocktake.ts';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
@@ -125,7 +126,7 @@ export function registerInventoryRoutes(router: Router<StaffEnv>, deps: {
     const allOpened = whs.length > 0 && whs.every(w => w.openedAt);
     return json({ warehouseId: one?.id ?? null, openedAt: one ? one.openedAt : allOpened ? latest?.openedAt ?? null : null, openedBy: one ? one.openedBy : allOpened ? latest?.openedBy ?? '' : '',
       moveCount: one ? one.moveCount : whs.reduce((t, w) => t + w.moveCount, 0), openedCount: whs.filter(w => w.openedAt).length,
-      canManage: canManage(me(c)), canApproveAdjustment:isManager(me(c)), warehouses: whs, warehouseRestricted: restrictedLedger(c), defaultWarehouseId: restrictedLedger(c) ? whs[0]?.id ?? null : null });
+      canManage: canManage(me(c)), canApproveAdjustment:isManager(me(c)), stocktakeLimit:MAX_STOCKTAKE_LINES, warehouses: whs, warehouseRestricted: restrictedLedger(c), defaultWarehouseId: restrictedLedger(c) ? whs[0]?.id ?? null : null });
   }, 'business');
 
   router.get('/inventory/compare', async c => {

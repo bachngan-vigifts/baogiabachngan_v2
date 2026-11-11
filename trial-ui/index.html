@@ -36,6 +36,9 @@
 <link rel="stylesheet" href="supplier-portal.css">
 <link rel="stylesheet" href="delivery-calendar.css">
 <link rel="stylesheet" href="order-products.css">
+<link rel="stylesheet" href="fulfilment-display.css">
+<link rel="stylesheet" href="warehouse-workspace.css">
+<link rel="stylesheet" href="dialog-layout.css">
 </head>
 <body>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
@@ -74,16 +77,12 @@
   <aside class="sidebar"><!-- Biểu tượng menu: Tabler Icons (MIT, licenses/tabler-icons.txt); thanh dưới điện thoại dùng cùng bộ (mobile-design.js). -->
     <div class="brand light"><b class="brandmark">BN</b><div>BÁCH NGÂN<small>BÁO GIÁ &amp; CRM</small></div></div>
     <nav class="side-nav" aria-label="Điều hướng chính">
+      <a class="nav" href="#/home" data-home-link><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7 M5 9v12h14V9 M9 21v-8h6v8"/></svg><span>Trang chủ</span></a>
       <section class="nav-group" aria-labelledby="nav-group-0">
         <h2 class="nav-label" id="nav-group-0">Công việc &amp; tổng quan</h2>
         <a class="nav" href="#/tasks" data-nav="tasks"><svg viewBox="0 0 24 24"><path d="M9 11l3 3l8 -8" /><path d="M20 12v6a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h9" /></svg><span>Công việc</span><b id="nav-task-count" class="badge" hidden>0</b></a>
-        <a class="nav" href="#/shift-reports" data-nav="shift-reports" hidden><svg viewBox="0 0 24 24"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 3h6v4h-6z" /><path d="M9 17v-3m3 3v-5m3 5v-2" /></svg><span>Báo cáo ca</span></a>
         <a class="nav" href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24"><path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -6" /><path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -10" /><path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -14" /><path d="M4 20h14" /></svg><span>Tổng quan</span></a>
-        <a class="nav manager-only" href="#/profit" data-nav="profit" hidden><svg viewBox="0 0 24 24"><path d="M3 17l6 -6l4 4l8 -8" /><path d="M14 7l7 0l0 7" /></svg><span>Phân tích lợi nhuận</span></a>
         <a class="nav" href="#/flow" data-nav="flow"><svg viewBox="0 0 24 24"><path d="M3 19a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M19 7a2 2 0 1 0 0 -4a2 2 0 0 0 0 4" /><path d="M11 19h5.5a3.5 3.5 0 0 0 0 -7h-8a3.5 3.5 0 0 1 0 -7h4.5" /></svg><span>Sơ đồ quy trình</span></a>
-        <a class="nav" href="#/store-reports" data-nav="store-reports" hidden><svg viewBox="0 0 24 24"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" /><path d="M9 17v-5" /><path d="M12 17v-1" /><path d="M15 17v-3" /></svg><span>Báo cáo CHT</span></a>
-        <a class="nav" href="#/weekly-reports" data-nav="weekly-reports" hidden><svg viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12z" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /><path d="M8 15h2v2h-2z" /></svg><span>Báo cáo tuần</span></a>
-        <a class="nav" href="#/monthly-reports" data-nav="monthly-reports" hidden><svg viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12z" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /><path d="M8 15h2v2h-2z" /></svg><span>Báo cáo tháng</span></a>
         <a class="nav" href="#/feedback" data-nav="feedback"><svg viewBox="0 0 24 24"><path d="M8 9h8" /><path d="M8 13h6" /><path d="M9 18h-3a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-3l-3 3l-3 -3" /></svg><span>Góp ý phần mềm</span></a>
       </section>
       <section class="nav-group" aria-labelledby="nav-group-1">
@@ -107,7 +106,7 @@
       </section>
       <section class="nav-group" aria-labelledby="nav-group-3">
         <h2 class="nav-label" id="nav-group-3">Kho &amp; giao hàng</h2>
-        <a class="nav kho-nav" href="#/kho" data-nav="kho" hidden><svg viewBox="0 0 24 24"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" /><path d="M9 12l.01 0" /><path d="M13 12l2 0" /><path d="M9 16l.01 0" /><path d="M13 16l2 0" /></svg><span>Việc cần làm</span></a>
+        <a class="nav ww-nav" href="#/kho" data-nav="kho" hidden><svg viewBox="0 0 24 24"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" /><path d="M9 12l.01 0" /><path d="M13 12l2 0" /><path d="M9 16l.01 0" /><path d="M13 16l2 0" /></svg><span>Kho của tôi</span></a>
         <a class="nav" href="#/transfers" data-nav="transfers"><svg viewBox="0 0 24 24"><path d="M7 10h14l-4 -4" /><path d="M17 14h-14l4 4" /></svg><span>Điều chuyển kho</span><b id="nav-transfer-count" class="badge danger" hidden>0</b></a>
         <a class="nav" href="#/stock-moves" data-nav="stock-moves"><svg viewBox="0 0 24 24"><path d="M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0" /><path d="M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0" /><path d="M3 6l0 13" /><path d="M12 6l0 13" /><path d="M21 6l0 13" /></svg><span>Sổ kho</span></a>
         <a class="nav" href="#/inventory" data-nav="inventory" hidden><svg viewBox="0 0 24 24"><path d="M7 20l10 0" /><path d="M6 6l6 -1l6 1" /><path d="M12 3l0 17" /><path d="M9 12l-3 -6l-3 6a3 3 0 0 0 6 0" /><path d="M21 12l-3 -6l-3 6a3 3 0 0 0 6 0" /></svg><span>Cân bằng kho</span></a>
@@ -119,6 +118,7 @@
       <section class="nav-group" aria-labelledby="nav-group-4">
         <h2 class="nav-label" id="nav-group-4">Tiền &amp; công nợ</h2>
         <a class="nav" href="#/cash" data-nav="cash" hidden><svg viewBox="0 0 24 24"><path d="M21 15h-2.5c-.398 0 -.779 .158 -1.061 .439c-.281 .281 -.439 .663 -.439 1.061c0 .398 .158 .779 .439 1.061c.281 .281 .663 .439 1.061 .439h1c.398 0 .779 .158 1.061 .439c.281 .281 .439 .663 .439 1.061c0 .398 -.158 .779 -.439 1.061c-.281 .281 -.663 .439 -1.061 .439h-2.5" /><path d="M19 21v1m0 -8v1" /><path d="M13 21h-7c-.53 0 -1.039 -.211 -1.414 -.586c-.375 -.375 -.586 -.884 -.586 -1.414v-10c0 -.53 .211 -1.039 .586 -1.414c.375 -.375 .884 -.586 1.414 -.586h2m12 3.12v-1.12c0 -.53 -.211 -1.039 -.586 -1.414c-.375 -.375 -.884 -.586 -1.414 -.586h-2" /><path d="M16 10v-6c0 -.53 -.211 -1.039 -.586 -1.414c-.375 -.375 -.884 -.586 -1.414 -.586h-4c-.53 0 -1.039 .211 -1.414 .586c-.375 .375 -.586 .884 -.586 1.414v6m8 0h-8m8 0h1m-9 0h-1" /><path d="M8 14v.01" /><path d="M8 17v.01" /><path d="M12 13.99v.01" /><path d="M12 17v.01" /></svg><span>Sổ quỹ</span><b class="badge danger" id="nav-cash-count" hidden></b></a>
+        <a class="nav" href="#/sepay" data-nav="sepay" hidden><svg viewBox="0 0 24 24"><path d="M3 5h18v14H3z M3 9h18 M7 14h4 M16 13v4 M14 15h4"/></svg><span>Thanh toán SePay</span></a>
         <a class="nav" href="#/cashbook" data-nav="cashbook" hidden><svg viewBox="0 0 24 24"><path d="M6 4h11a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-11a1 1 0 0 1 -1 -1v-14a1 1 0 0 1 1 -1m3 0v18" /><path d="M13 8l2 0" /><path d="M13 12l2 0" /></svg><span>Sổ thu / chi</span></a>
         <a class="nav" href="#/receivables" data-nav="receivables"><svg viewBox="0 0 24 24"><path d="M9 14c0 1.657 2.686 3 6 3s6 -1.343 6 -3s-2.686 -3 -6 -3s-6 1.343 -6 3" /><path d="M9 14v4c0 1.656 2.686 3 6 3s6 -1.344 6 -3v-4" /><path d="M3 6c0 1.072 1.144 2.062 3 2.598s4.144 .536 6 0c1.856 -.536 3 -1.526 3 -2.598c0 -1.072 -1.144 -2.062 -3 -2.598s-4.144 -.536 -6 0c-1.856 .536 -3 1.526 -3 2.598" /><path d="M3 6v10c0 .888 .772 1.45 2 2" /><path d="M3 11c0 .888 .772 1.45 2 2" /></svg><span>Công nợ</span></a>
       </section>
@@ -130,6 +130,12 @@
       </section>
       <section class="nav-group" aria-labelledby="nav-group-6">
         <h2 class="nav-label" id="nav-group-6">Nhân sự &amp; quản trị</h2>
+        <a class="nav manager-only" href="#/finance" data-nav="finance" hidden><svg viewBox="0 0 24 24"><path d="M3 6h18v14H3z M3 10h18 M7 14h3 M14 14h3 M7 17h3 M14 17h3"/></svg><span>Tài chính &amp; KPI</span></a>
+        <a class="nav manager-only" href="#/profit" data-nav="profit" hidden><svg viewBox="0 0 24 24"><path d="M3 17l6 -6l4 4l8 -8" /><path d="M14 7l7 0l0 7" /></svg><span>Phân tích lợi nhuận</span></a>
+        <a class="nav" href="#/shift-reports" data-nav="shift-reports" hidden><svg viewBox="0 0 24 24"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 3h6v4h-6z" /><path d="M9 17v-3m3 3v-5m3 5v-2" /></svg><span>Báo cáo ca</span></a>
+        <a class="nav" href="#/store-reports" data-nav="store-reports" hidden><svg viewBox="0 0 24 24"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" /><path d="M9 17v-5" /><path d="M12 17v-1" /><path d="M15 17v-3" /></svg><span>Báo cáo CHT</span></a>
+        <a class="nav" href="#/weekly-reports" data-nav="weekly-reports" hidden><svg viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12z" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /><path d="M8 15h2v2h-2z" /></svg><span>Báo cáo tuần</span></a>
+        <a class="nav" href="#/monthly-reports" data-nav="monthly-reports" hidden><svg viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12z" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /><path d="M8 15h2v2h-2z" /></svg><span>Báo cáo tháng</span></a>
         <a class="nav manager-only" href="#/staff" data-nav="staff"><svg viewBox="0 0 24 24"><path d="M7 12h3v4h-3l0 -4" /><path d="M10 6h-6a1 1 0 0 0 -1 1v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1 -1v-12a1 1 0 0 0 -1 -1h-6" /><path d="M10 4a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v3a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1l0 -3" /><path d="M14 16h2" /><path d="M14 12h4" /></svg><span>Nhân viên</span></a>
         <a class="nav manager-only" href="#/payroll" data-nav="payroll"><svg viewBox="0 0 24 24"><path d="M7 15h-3a1 1 0 0 1 -1 -1v-8a1 1 0 0 1 1 -1h12a1 1 0 0 1 1 1v3" /><path d="M7 10a1 1 0 0 1 1 -1h12a1 1 0 0 1 1 1v8a1 1 0 0 1 -1 1h-12a1 1 0 0 1 -1 -1l0 -8" /><path d="M12 14a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /></svg><span>Bảng lương</span></a>
         <a class="nav perm-admin-only" href="#/permissions" data-nav="permissions" hidden><svg viewBox="0 0 24 24"><path d="M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-6" /><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0" /><path d="M8 11v-4a4 4 0 1 1 8 0v4" /></svg><span>Phân quyền</span></a>
@@ -160,6 +166,7 @@
     <header class="topbar">
       <div class="crumbs"><button type="button" class="page-back" id="page-back" aria-label="Trở lại">‹ Trở lại</button><span class="muted">Bách Ngân</span><span class="slash">/</span><b id="breadcrumb">Báo giá</b></div>
       <div class="topbar-right">
+        <a href="#/home" class="icon-btn home-entry" aria-label="Trang chủ" title="Trang chủ"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7 M5 9v12h14V9 M9 21v-8h6v8"/></svg></a>
         <span id="today" class="muted hide-sm"></span>
         <div class="bell-wrap" id="staff-bell"></div>
         <button class="avatar small mobile-only" id="account-button-m" aria-label="Tài khoản">BN</button>
@@ -169,9 +176,12 @@
 
     <!-- ---------- Danh sách báo giá ---------- -->
     <section class="view" id="view-dashboard" hidden></section>
+    <section class="view" id="view-finance" hidden></section>
+    <section class="view" id="view-sepay" hidden></section>
     <section class="view" id="view-profit" hidden></section>
     <section class="view" id="view-feedback" hidden></section>
     <section class="view" id="view-store-reports" hidden></section>
+    <section class="view" id="view-home" hidden></section>
     <section class="view" id="view-weekly-reports" hidden></section>
     <section class="view" id="view-monthly-reports" hidden></section>
     <section class="view" id="view-cash" hidden></section>
@@ -614,9 +624,10 @@
         </details>
         <p id="deliveries-filter-summary" class="muted small" role="status"></p>
         <button type="button" class="btn secondary" id="deliveries-retry" hidden>Thử tải lại</button>
+        <div id="deliveries-legend"></div>
         <div id="deliveries-calendar"></div>
-        <div id="deliveries-product-lines" class="table-wrap" hidden></div>
-        <div class="table-wrap" id="deliveries-table" hidden><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT · Sản phẩm</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th>Hoá đơn</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
+        <div id="deliveries-product-lines" tabindex="0" aria-label="Bảng sản phẩm chuyến giao, cuộn ngang để xem thêm cột" class="table-wrap" hidden></div>
+        <div class="table-wrap" id="deliveries-table" tabindex="0" aria-label="Bảng chuyến giao, cuộn ngang để xem thêm cột" hidden><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT · Sản phẩm</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th>Hoá đơn</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
         <div id="deliveries-empty" class="empty" hidden><p class="muted" id="deliveries-empty-text"></p></div>
       </div>
       </div>
@@ -635,13 +646,22 @@
             <div class="task-top-actions"><button type="button" class="btn primary" id="tasks-new">+ Giao việc <kbd>N</kbd></button></div>
           </div>
           <div class="task-tabs-row" id="tasks-view" role="tablist" aria-label="Chế độ xem"></div>
-          <form class="task-quick" id="tasks-quick" autocomplete="off" hidden>
-            <input name="title" placeholder="Tên việc cần giao… (Enter để lưu)" maxlength="300" aria-label="Tên công việc">
-            <select name="assigneeId" id="tasks-quick-assignee" aria-label="Người nhận"></select>
-            <select name="priority" aria-label="Ưu tiên"><option value="normal">Bình thường</option><option value="high">Cao</option><option value="urgent">Khẩn</option><option value="low">Thấp</option></select>
-            <span class="task-due-quick"><input type="date" name="dueDate" aria-label="Hạn"><button type="button" class="chip" data-due="0">Hôm nay</button><button type="button" class="chip" data-due="1">Mai</button><button type="button" class="chip" data-due="7">+7 ngày</button></span>
-            <span class="task-quick-btns"><button type="submit" class="btn primary">Giao việc</button><button type="button" class="btn ghost" data-discard data-no-busy hidden>Bỏ lần giao việc này</button><button type="button" class="btn ghost" data-cancel>Đóng</button></span>
-          </form>
+          <dialog class="task-quick-dialog" id="tasks-quick-dialog" aria-labelledby="task-quick-title">
+            <form class="task-quick" id="tasks-quick" autocomplete="off" data-no-busy hidden>
+              <div class="task-quick-handle" aria-hidden="true"></div>
+              <header class="task-quick-head"><h2 id="task-quick-title">Giao việc nhanh</h2><button type="button" class="task-quick-close" data-cancel aria-label="Đóng">×</button></header>
+              <div class="task-quick-body">
+              <label>Tên việc<input name="title" placeholder="VD: Gửi mẫu quà Tết cho khách ABC" maxlength="300" required></label>
+              <label>Người nhận<select name="assigneeId" id="tasks-quick-assignee"></select></label>
+              <fieldset><legend>Hạn</legend><input type="hidden" name="dueDate"><div class="task-quick-choices" role="group" aria-label="Hạn"><button type="button" data-due="0">Hôm nay</button><button type="button" data-due="1">Mai</button><button type="button" data-due="7">+7 ngày</button><button type="button" data-due="">Không hạn</button></div><small data-custom-due hidden></small></fieldset>
+              <fieldset><legend>Ưu tiên</legend><input type="hidden" name="priority" value="normal"><div class="task-quick-choices" role="group" aria-label="Ưu tiên"><button type="button" data-priority="low">Thấp</button><button type="button" data-priority="normal">Bình thường</button><button type="button" data-priority="high">Cao</button><button type="button" data-priority="urgent">Khẩn</button></div></fieldset>
+              <p class="error" role="alert" data-quick-error></p>
+              </div><footer class="task-quick-foot">
+              <button type="submit" class="btn primary task-quick-submit">Giao việc</button>
+              <button type="button" class="btn ghost" data-discard data-no-busy hidden>Bỏ lần giao việc này</button>
+              </footer>
+            </form>
+          </dialog>
           <div class="stats task-due-cards" id="tasks-stats"></div>
           <div class="panel task-list-panel">
             <div class="toolbar task-filterbar">
@@ -1313,5 +1333,6 @@
 <script src="app-startup.js"></script>
 <script src="excel-export.js" defer></script>
   <script type="module" src="app.js"></script>
-<script type="module" src="mobile-actions-init.js"></script></body>
+<script type="module" src="mobile-actions-init.js"></script>
+<script type="module" src="dialog-layout-init.js"></script></body>
 </html>

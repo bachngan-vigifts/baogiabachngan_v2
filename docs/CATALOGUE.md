@@ -94,3 +94,14 @@ Kiểm thử: `tests/app/catalogue-library.test.ts`, `catalogue-quotes.test.ts`,
 - API khoá cả nhóm theo thứ tự ID và kiểm tra mọi revision trước khi ghi; một mã xung đột thì cả nhóm không đổi. Biên nhận clientKey+hash lưu cùng transaction, retry sau mất phản hồi không ghi thêm. Hàng chờ trên máy theo tài khoản; nút đối soát gửi lại đúng yêu cầu cũ, không lấy phiên người khác. Bản báo giá đang sửa và hàng chờ được lưu cùng transaction IndexedDB trước khi gửi.
 
 Migration mới: **20261103070624_catalogue_library_bulk.sql**, chạy tay đúng một lần sau migration thư viện 20261103042748, trước API và giao diện. Chỉ thêm cột xoá mềm và bảng biên nhận bulk có RLS; không xoá sản phẩm/báo giá có sẵn. Chưa chạy production trong quá trình làm tính năng này.
+
+## Catalogue trong Trang chủ và hồ sơ khách hàng
+
+- Nút **Tạo báo giá / Catalogue** nằm ở góc phải đầu Trang chủ, mở tab mới; bỏ shortcut Catalogue khỏi Sơ đồ quy trình.
+- Khi lưu từ giao diện mới, chọn khách đã duyệt trong danh bạ (tìm từ 2 ký tự). Lưu `meta.customerId` trong snapshot hiện có; máy chủ kiểm tra quyền Manager/phụ trách/chia sẻ hoặc quyền xem toàn bộ của Sale Admin và lấy tên chính thức. Không tự gắn bằng tên, kể cả hai khách trùng tên.
+- Báo giá đã gắn khách không thể bị client cũ xoá liên kết; khi chuyển sang khách khác, kiểm tra quyền cả khách cũ và mới. Bản cũ chưa có ID tiếp tục được đọc, không backfill theo tên; chọn đúng khách trước khi lưu lại từ giao diện mới.
+- Hồ sơ khách có tab **Báo giá Catalogue**, hiển thị tối đa 100 bản gần nhất chưa ẩn, chỉ tóm tắt; bấm mới tải snapshot. Người xem toàn bộ hồ sơ thấy mọi báo giá gắn khách; người khác chỉ thấy bản do mình tạo. Quyền mở thư viện Catalogue dùng chung vẫn theo chính sách hiện có, không biến thành kho tài liệu riêng theo khách.
+- Nút **＋ Báo giá Catalogue** trong hồ sơ mở khách được chọn sẵn. Nếu đang có sản phẩm đã chọn, hỏi xác nhận tạo mới và giữ bản khôi phục trên máy; vẫn giữ thư viện sản phẩm. Tham số mở được tiêu thụ để tải lại không ghi đè phần đang sửa.
+- Lưu và gộp khách dùng chung khoá định danh để tránh liên kết mồ côi khi chạy đồng thời. Gộp khách cập nhật ID/tên của các bản Catalogue trong cùng transaction và tăng revision để client cũ không ghi đè. Báo giá Catalogue không phải báo giá CRM được duyệt, không tự cộng doanh số, công nợ hoặc tạo đơn.
+- Không thêm bảng/cột/migration. API phải triển khai trước giao diện; giữ cổng chờ API trong workflow UI.
+- Kiểm tra luồng: `node --import tsx scripts/testing/catalogue-customer-links.mjs` chạy Chromium với API và CSDL thử cô lập, chặn mạng ngoài, ở 1440px và 390px. Kiểm tra quyền/API: `tests/app/catalogue-customer-links.test.ts`; proxy: `tests/app/catalogue-library-proxy.test.ts`.

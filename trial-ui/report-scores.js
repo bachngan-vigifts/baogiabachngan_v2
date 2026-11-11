@@ -8,6 +8,16 @@ export function reportWeekLabel(w){
  const state={on_time:'Đúng hạn',late:'Nộp trễ',missing:'Chưa nộp',not_due:'Chưa tới hạn'}[w.state]||'Chưa xác định';
  return w.review==='pending'?'Chờ duyệt · '+state:w.review==='ok'?'Đạt · '+state:state;
 }
+/** Counts describe the saved/live periods; total points stay authoritative from the server. */
+export function reportScoreOverview(view){
+ const b=view?.basis;if(!b)return null;
+ const weeks=b.weeks.filter(w=>w.state!=='exempt');
+ return {submitted:weeks.filter(w=>['on_time','late'].includes(w.state)).length,total:weeks.length,
+  onTime:weeks.filter(w=>w.state==='on_time').length,late:weeks.filter(w=>w.state==='late').length,
+  missing:weeks.filter(w=>w.state==='missing'&&w.review!=='excused').length,notDue:weeks.filter(w=>w.state==='not_due').length,excused:weeks.filter(w=>w.review==='excused').length,
+  pending:[...b.weeks,...(b.monthly?[b.monthly]:[])].filter(w=>w.review==='pending').length,
+  monthly:b.monthly?reportWeekLabel(b.monthly):'Chưa áp dụng',points:reportScoreText(view)};
+}
 export function createReportScoreCard(view){
  const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=String(text);if(cls)n.className=cls;return n;};
  const root=node('section',null,'report-score-card');root.dataset.reportScores='';
@@ -20,10 +30,11 @@ export function createReportScoreCard(view){
   const table=node('table',null,'report-score-table'),head=node('thead'),tr=node('tr'),body=node('tbody');
   for(const label of [b.monthly?'Tuần / tháng / hạn nộp':'Tuần / hạn nộp','Trạng thái','Điểm'])tr.append(node('th',label));head.append(tr);table.append(head,body);
   const day=iso=>/^\d{4}-\d{2}-\d{2}/.test(iso||'')?iso.slice(0,10).split('-').reverse().join('/'):'—';
-  const addRow=(w,label)=>{const row=node('tr'),week=node('td');week.append(node('b',label),node('small','Hạn: '+(Number.isNaN(Date.parse(w.deadline))?'—':new Date(w.deadline).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',dateStyle:'short',timeStyle:'short'}))));row.append(week,node('td',reportWeekLabel(w)),node('td',scoreNumber(w.score),'num'));body.append(row);};
+  const addRow=(w,label)=>{const row=node('tr'),week=node('td');week.append(node('b',label),node('small','Hạn: '+(Number.isNaN(Date.parse(w.deadline))?'—':new Date(w.deadline).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',dateStyle:'short',timeStyle:'short'}))));if(w.submittedAt)week.append(node('small','Nộp lần đầu: '+new Date(w.submittedAt).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',dateStyle:'short',timeStyle:'short'})));row.append(week,node('td',reportWeekLabel(w)),node('td',scoreNumber(w.score),'num'));body.append(row);};
   b.weeks.forEach((w,i)=>addRow(w,`Tuần ${i+1} · ${day(w.period)}`));if(b.monthly)addRow(b.monthly,'Báo cáo tháng '+month);root.append(table);
   const pending=[...b.weeks,...(b.monthly?[b.monthly]:[])].filter(w=>w.score===null).length;
   const rule=b.monthly?`Tổng tháng = 4 tuần có điểm cao nhất + báo cáo tháng, tối đa ${b.required} điểm.`:`Tổng tháng lấy ${b.required} tuần có điểm cao nhất, tối đa ${b.required} điểm.`;
+  root.append(node('p','Đúng hạn / trễ tính theo lần nộp đầu tiên; chờ duyệt vẫn ghi nhận điểm, Chưa đạt mới trừ điểm.','muted small'));
   root.append(node('p',`${rule} Tuần xếp vào tháng theo hạn nộp.${pending?' Còn '+pending+' kỳ chưa tới hạn.':''}`,'muted small'));
  }
  const link=node('a','Xem báo cáo tuần','btn ghost small');link.href='#/weekly-reports?month='+encodeURIComponent(view?.month||'');root.append(link);return root;

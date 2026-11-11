@@ -1,3 +1,4 @@
+import type {WarehouseBonusOf} from '../../../core/contracts/warehouse-bonus.ts';
 import type { WeeklyReportPointsOf } from '../../../core/contracts/weekly-report.ts';
 import type {TeamRevenueOf,CrmFactsOf} from '../../../core/contracts/sales-payroll.ts';
 import { departmentOwner } from '../../staff/api/department.ts';
@@ -61,7 +62,7 @@ export async function memberRevenues(db: AnyDb, months: readonly string[]) {
  * Trang chi tiết nhân viên: gom một lượt hồ sơ, KPI tháng, khách hàng, báo giá, đơn, HĐKT, giao dịch (phiếu thu), công nợ,
  * công việc, ngày công, lương / thưởng. Manager xem mọi nhân viên; đồng nghiệp cùng nhóm xem nghiệp vụ, không đọc dữ liệu lương.
  */
-export function registerStaffHubRoutes(router: Router<StaffEnv>,deps:{crmFactsOf?:CrmFactsOf;teamRevenueOf?:TeamRevenueOf;weeklyReportOf?:WeeklyReportPointsOf}={}) {
+export function registerStaffHubRoutes(router: Router<StaffEnv>,deps:{crmFactsOf?:CrmFactsOf;teamRevenueOf?:TeamRevenueOf;warehouseBonusOf?:WarehouseBonusOf;weeklyReportOf?:WeeklyReportPointsOf}={}) {
   router.get('/members/:id/overview', async c => {
     const db = c.env.db, me = viewer(c), id = c.params.id!;
     const canViewPayroll = me.id === id || me.role === 'manager';
@@ -119,7 +120,7 @@ export function registerStaffHubRoutes(router: Router<StaffEnv>,deps:{crmFactsOf
     // ----- KPI tháng
     const sales = revenueIn(orderList, month), wonQuotes = new Set(orders.filter(o => o.status !== 'cancelled' && o.quoteId).map(o => o.quoteId));
     const collected = payments.filter(p => monthOf(p.paidAt) === month).reduce((s, p) => s + p.amount, 0);
-    const payroll = canViewPayroll ? await payrollOf(db, id, month, memberRevenues,deps.crmFactsOf,me.role==='manager',deps.teamRevenueOf,deps.weeklyReportOf) : null;
+    const payroll = canViewPayroll ? await payrollOf(db, id, month, memberRevenues,deps.crmFactsOf,me.role==='manager',deps.teamRevenueOf,deps.weeklyReportOf,deps.warehouseBonusOf) : null;
     const target = payroll ? payroll.profile.revenueTarget || (payroll.profile.kpiEnabled ? payroll.params.kpiRevenue : 0) : 0;
     const kpi = {
       revenue: sales.revenue, orders: sales.orders, avgOrder: sales.orders ? Math.round(sales.revenue / sales.orders) : 0,

@@ -1,6 +1,6 @@
 # Phân tích lợi nhuận (giai đoạn 1 – lợi nhuận gộp)
 
-Trang `#/profit` (menu *Công việc → Phân tích lợi nhuận*), **chỉ Manager** (có giá vốn – máy chủ kiểm tra quyền). Mô-đun `src/modules/profit/`, chỉ đọc.
+Trang `#/profit` (menu *Nhân sự & quản trị → Phân tích lợi nhuận*; điện thoại: nhóm *Quản trị*), **chỉ Manager** (có giá vốn – máy chủ kiểm tra quyền). Mô-đun `src/modules/profit/`, chỉ đọc.
 
 ## Cách tính (từng đơn, rồi cộng dồn)
 

@@ -13,3 +13,9 @@ export function webOrderBucket(status:string,ghnStatus=''){
  if(['packing','packed'].includes(s))return 'packing';
  return 'pending';
 }
+
+/** Payment approval is stricter than the shipping projection: a delivered carrier scan cannot override Woo cancellation. */
+export const WEB_PAYMENT_BLOCKED_STATUSES = ['cancelled','failed','refunded','trash','lnl-returning','lnl-returned'] as const;
+export function webOrderPaymentBlocked(status:string,ghnStatus=''){
+ return WEB_PAYMENT_BLOCKED_STATUSES.some(s=>s===normalize(status))||webOrderBucket(status,ghnStatus)==='cancelled';
+}

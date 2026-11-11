@@ -4,6 +4,7 @@
  *  GET /profit/orders/:id                            từng dòng của một đơn: giá bán, giá vốn (nguồn), in, hoa hồng
  * Chỉ đọc. Đơn tính như công nợ / doanh số: bỏ đơn huỷ; đơn nháp chỉ tính khi HĐKT đã ký.
  */
+import { compactProfitOverview } from './profit-overview.ts';
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { json, readJson, type Router } from '../../../core/http/router.ts';
@@ -218,7 +219,8 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
     if (!GRAINS.includes(grain)) throw new AppError(400, 'Kỳ không hợp lệ (ngày / tuần / tháng / năm).');
     const costs = q.get('costs') === 'confirmed' ? 'confirmed' : 'all';
     // Tính một lần cho mọi Manager (số liệu không phụ thuộc người xem), giữ 30 phút; "Cập nhật" (refresh=1) tính lại ngay.
-    return json(await cachedReport(c.env.db, { scope: PROFIT_CACHE, viewer: 'manager', params: q, refresh: q.get('refresh') === '1' }, async () => {
+    const cacheParams = new URLSearchParams(q); cacheParams.delete('view');
+    const report = await cachedReport(c.env.db, { scope: PROFIT_CACHE, viewer: 'manager', params: cacheParams, refresh: q.get('refresh') === '1' }, async () => {
     const all = await profitOrders(c.env.db, from, to, undefined, costs === 'confirmed', deps.lineCostFallbackOf), n = await names(c.env.db, all);
     const branch = q.get('branch') || '', owner = q.get('owner') || '', customer = q.get('customer') || '';
     // Bảng lương mỗi tháng chỉ tính một lần cho cả chi phí Sale (PR-C) và chi nhánh (PR-D).
@@ -286,7 +288,8 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
       ordersTotal: orders.length,
       filterOptions: { branches: groupBy(all, o => o.branchId, n.branch).map(r => ({ id: r.key, name: r.label })), owners: groupBy(all, o => o.ownerId, n.owner).map(r => ({ id: r.key, name: r.label })) },
     };
-    }));
+    });
+    return json(q.get('view') === 'overview' ? compactProfitOverview(report) : report);
   }, 'business');
 
   router.get('/profit/orders/:id', async c => {

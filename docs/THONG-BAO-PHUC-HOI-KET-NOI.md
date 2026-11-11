@@ -17,3 +17,9 @@ Chẩn đoán sự cố 08/11/2026: kiểm tra chỉ đọc cho thấy thông b�
 Không đổi API, schema, quyền hoặc đăng ký Web Push. Không gửi thông báo thử ra ngoài. Không cần migration.
 
 Kiểm thử: `tests/app/notification-recovery-ui.test.ts`; trình duyệt `node --import tsx scripts/testing/notification-recovery.mjs` (Playwright/Chromium; dữ liệu tổng hợp và mạng mô phỏng).
+
+## Tương thích Trang chủ và đổi phiên
+
+Giữ luồng thông báo dùng chung của Trang chủ. `reset()` và `stop()` cùng hủy timer, tăng generation để bỏ phản hồi cũ, xóa danh sách và badge. Giữ `markRead()` để thao tác đọc trên Trang chủ cập nhật chuông. Khi gộp main, giữ các mock phụ thuộc đăng nhập hiện hành; không bỏ test focus/401.
+
+Kiểm tra local sau gộp: 29 test đăng nhập/đổi phiên/Trang chủ/pulse/phục hồi chuông đạt; Chromium 1440/390 đạt với dữ liệu giả, không gọi production.

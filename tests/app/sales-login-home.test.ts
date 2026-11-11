@@ -9,25 +9,25 @@ const open=source.slice(source.indexOf('function openWorkspace('),source.indexOf
 
 function harness(positionId:string,role='employee',perms=['pos.sell','page.quotes']){
  const user={positionId,role};
- const context:any={state:{user},location:{hash:'#/orders/existing',pathname:'/index.html'},
-  isWarehouse:()=>positionId==='warehouse',can:(key:string)=>role==='manager'||perms.includes(key),
+ const context:any={state:{user},location:{hash:'#/orders',pathname:'/index.html'},
+  isWarehouse:()=>role==='employee'&&positionId==='warehouse',can:(key:string)=>role==='manager'||perms.includes(key),
   applyWorkspaceUser:()=>true,currentHash:'',route(){},loadAll(){},notifier:{start(){}},
   dataRefresh:{start(){},tick(){}},pulse:{start(){}},requestPriority:{idle:()=>Promise.resolve()},history:{replaceState(_a:unknown,_b:unknown,url:string){context.location.hash=url.slice(url.indexOf('#'));}}};
  runInNewContext(home+'\n'+open+'\nthis.homeHash=homeHash;this.start=(fresh)=>{loginToHome=fresh;openWorkspace(state.user);};',context);
  return context;
 }
 
-test('fresh employee login opens process flow when allowed; resume preserves the current document',()=>{
- for(const position of ['sales-ml','sales-lock','sale','sale-admin','warehouse']){
-  const app=harness(position,'employee',['pos.sell','page.quotes','page.flow']);assert.equal(app.homeHash(),'#/flow');
-  app.start(true);assert.equal(app.location.hash,'#/flow');app.location.hash='#/orders/existing';app.start(false);assert.equal(app.location.hash,'#/orders/existing');
+test('warehouse login opens its workbench; other positions keep common Home without granting page permissions',()=>{
+ for(const role of ['employee','manager'])for(const position of ['sales-ml','sales-lock','sale','sale-admin','warehouse','accounting','custom']){
+  const app=harness(position,role,[]),expected=role==='employee'&&position==='warehouse'?'#/kho':'#/home';assert.equal(app.homeHash(),expected);
+  app.start(true);assert.equal(app.location.hash,expected);
  }
 });
-test('home never grants process-flow permission and preserves Manager default',()=>{
- assert.equal(harness('sales-lock').homeHash(),'#/pos');
- assert.equal(harness('sale','employee',['page.quotes']).homeHash(),'#/quotes');
- assert.equal(harness('manager','manager').homeHash(),'#/quotes');
- assert.equal(harness('warehouse','employee',[]).homeHash(),'#/kho');
- // Kế toán mở thẳng hàng đợi Việc kế toán (kể cả khi có quyền Sơ đồ quy trình).
- assert.equal(harness('accounting','employee',['page.flow','page.cashbook']).homeHash(),'#/tasks');
+test('resume and direct document login retain the requested route; login from a generic list opens Home',()=>{
+ for(const role of ['employee','manager']){
+  const app=harness('sale',role);app.location.hash='#/orders/existing';app.start(true);assert.equal(app.location.hash,'#/orders/existing');
+  app.location.hash='#/customers/abc';app.start(false);assert.equal(app.location.hash,'#/customers/abc');
+  app.location.hash='#/quotes';app.start(true);assert.equal(app.location.hash,'#/home');
+  app.location.hash='';app.start(false);assert.equal(app.location.hash,'#/home');
+ }
 });

@@ -1,0 +1,239 @@
+{
+  "scope": "Trang chủ; isolated real API and fixture DB, not production latency",
+  "baselineCommit": "4a6506a1fcbf16af9c444f72cfb3862680fae9dc",
+  "conditions": {
+    "browser": "Chromium",
+    "coldContexts": true,
+    "latencyMs": 40,
+    "downloadBps": 1600000,
+    "fixture": "isolated Postgres, real API, no production data",
+    "runsPerViewport": 3
+  },
+  "before": [
+    {
+      "width": 1440,
+      "ready": 3172.418300999998,
+      "ttfb": 3.900000002235174,
+      "load": 2787.7000000029802,
+      "fcp": 580,
+      "lcp": 3228,
+      "cls": 0.006153287187741128,
+      "jsBytes": 2434249,
+      "jsRequests": 164,
+      "apiRequests": 10,
+      "apiBytes": 3963,
+      "errors": []
+    },
+    {
+      "width": 390,
+      "ready": 3159.554640999999,
+      "ttfb": 4,
+      "load": 2833.300000000745,
+      "fcp": 608,
+      "lcp": 3132,
+      "cls": 0.0022115692307692306,
+      "jsBytes": 2434249,
+      "jsRequests": 164,
+      "apiRequests": 10,
+      "apiBytes": 3963,
+      "errors": []
+    }
+  ],
+  "after": [
+    {
+      "width": 1440,
+      "ready": 3243.445017,
+      "ttfb": 3.5,
+      "load": 2802.599999997765,
+      "fcp": 580,
+      "lcp": 3296,
+      "cls": 0.006154146562741127,
+      "jsBytes": 2435230,
+      "jsRequests": 164,
+      "apiRequests": 10,
+      "apiBytes": 3963,
+      "errors": []
+    },
+    {
+      "width": 390,
+      "ready": 3086.1977990000014,
+      "ttfb": 2.600000001490116,
+      "load": 2787.400000002235,
+      "fcp": 596,
+      "lcp": 3072,
+      "cls": 0.002283674038461538,
+      "jsBytes": 2435230,
+      "jsRequests": 164,
+      "apiRequests": 10,
+      "apiBytes": 3963,
+      "errors": []
+    }
+  ],
+  "runs": {
+    "before": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3281.6394689999997,
+        "ttfb": 6.899999998509884,
+        "load": 2774.5,
+        "fcp": 580,
+        "lcp": 3344,
+        "cls": 0.006153287187741128,
+        "jsBytes": 2434249,
+        "jsRequests": 164,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3156.9956760000005,
+        "ttfb": 2.300000000745058,
+        "load": 2791.2000000029802,
+        "fcp": 556,
+        "lcp": 3224,
+        "cls": 0.006153287187741128,
+        "jsBytes": 2434249,
+        "jsRequests": 164,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3172.418300999998,
+        "ttfb": 3.900000002235174,
+        "load": 2787.7000000029802,
+        "fcp": 596,
+        "lcp": 3228,
+        "cls": 0.006153287187741128,
+        "jsBytes": 2434249,
+        "jsRequests": 164,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3159.554640999999,
+        "ttfb": 5.800000000745058,
+        "load": 2833.300000000745,
+        "fcp": 620,
+        "lcp": 3132,
+        "cls": 0.0022115692307692306,
+        "jsBytes": 2434249,
+        "jsRequests": 164,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3160.3946920000017,
+        "ttfb": 3.699999999254942,
+        "load": 2840.89999999851,
+        "fcp": 608,
+        "lcp": 3136,
+        "cls": 0.0022115692307692306,
+        "jsBytes": 2434249,
+        "jsRequests": 164,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3056.9675319999988,
+        "ttfb": 4,
+        "load": 2771.89999999851,
+        "fcp": 584,
+        "lcp": 3036,
+        "cls": 0.0022115692307692306,
+        "jsBytes": 2434249,
+        "jsRequests": 164,
+        "errors": []
+      }
+    ],
+    "after": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3381.1359109999994,
+        "ttfb": 15.300000000745058,
+        "load": 2885.800000000745,
+        "fcp": 600,
+        "lcp": 3444,
+        "cls": 0.006154146562741127,
+        "jsBytes": 2435230,
+        "jsRequests": 164,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3243.445017,
+        "ttfb": 3.5,
+        "load": 2802.599999997765,
+        "fcp": 532,
+        "lcp": 3296,
+        "cls": 0.006154146562741127,
+        "jsBytes": 2435230,
+        "jsRequests": 164,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3165.862186000002,
+        "ttfb": 2.300000000745058,
+        "load": 2771.89999999851,
+        "fcp": 580,
+        "lcp": 3216,
+        "cls": 0.006154146562741127,
+        "jsBytes": 2435230,
+        "jsRequests": 164,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3086.1977990000014,
+        "ttfb": 2.600000001490116,
+        "load": 2787.400000002235,
+        "fcp": 596,
+        "lcp": 3072,
+        "cls": 0.002283674038461538,
+        "jsBytes": 2435230,
+        "jsRequests": 164,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3126.2014039999995,
+        "ttfb": 2.600000001490116,
+        "load": 2812.5,
+        "fcp": 608,
+        "lcp": 3112,
+        "cls": 0.002283674038461538,
+        "jsBytes": 2435230,
+        "jsRequests": 164,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3059.4092029999993,
+        "ttfb": 3.800000000745058,
+        "load": 2782.400000002235,
+        "fcp": 592,
+        "lcp": 3052,
+        "cls": 0.002283674038461538,
+        "jsBytes": 2435230,
+        "jsRequests": 164,
+        "errors": []
+      }
+    ]
+  },
+  "limits": [
+    "Local fixture TTFB does not represent Supabase production latency.",
+    "No additional customer-picker request is made by Home.",
+    "Catalogue does not load until its new tab opens; picker requests only when searching or selecting an explicit profile link."
+  ]
+}

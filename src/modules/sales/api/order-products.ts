@@ -63,7 +63,8 @@ export function registerOrderProductsRoutes(router: Router<StaffEnv>, scopeFor: 
     ]);
     const ids = rows.map(r=>r.id), orderIds = [...new Set(rows.map(r=>r.orderId))];
     const [trips, progress] = await Promise.all([
-      ids.length ? db.select({lineId:deliveryLines.orderLineId,id:deliveries.id,deliveryNo:deliveries.deliveryNo,plannedDate:deliveries.plannedDate,timeSlot:deliveries.timeSlot,status:deliveries.status,qty:deliveryLines.qty})
+      ids.length ? db.select({lineId:deliveryLines.orderLineId,id:deliveries.id,deliveryNo:deliveries.deliveryNo,plannedDate:deliveries.plannedDate,timeSlot:deliveries.timeSlot,status:deliveries.status,qty:deliveryLines.qty,
+          carrier:deliveries.carrier,trackingCode:deliveries.trackingCode,trackingStatus:deliveries.trackingStatus})
         .from(deliveryLines).innerJoin(deliveries,eq(deliveries.id,deliveryLines.deliveryId)).where(inArray(deliveryLines.orderLineId,ids)).orderBy(asc(deliveries.plannedDate),asc(deliveries.id)) : [],
       progressOf(db,orderIds),
     ]);

@@ -1,0 +1,467 @@
+{
+  "baselineCommit": "a08adebc",
+  "before": {
+    "phase": "before",
+    "conditions": {
+      "runsPerViewport": 3,
+      "latencyMs": 40,
+      "downloadBps": 1600000,
+      "source": "real local router + synthetic stored records, not production"
+    },
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3313.679655,
+        "ttfb": 11.799999997019768,
+        "load": 3270.5,
+        "fcp": 612,
+        "lcp": 3044,
+        "cls": 0.46559030043613764,
+        "jsRequests": 164,
+        "jsBytes": 2425187,
+        "openingApis": 17
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3123.7054499999995,
+        "ttfb": 3.6000000089406967,
+        "load": 3084.699999988079,
+        "fcp": 596,
+        "lcp": 2976,
+        "cls": 0.46559030043613764,
+        "jsRequests": 164,
+        "jsBytes": 2425187,
+        "openingApis": 17
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3094.0958139999984,
+        "ttfb": 3.300000011920929,
+        "load": 3056.9000000059605,
+        "fcp": 532,
+        "lcp": 2956,
+        "cls": 0.46559030043613764,
+        "jsRequests": 164,
+        "jsBytes": 2425187,
+        "openingApis": 17
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3045.3598930000007,
+        "ttfb": 1.7000000029802322,
+        "load": 3008.0999999940395,
+        "fcp": 596,
+        "lcp": 2964,
+        "cls": 0.6647983081330129,
+        "jsRequests": 164,
+        "jsBytes": 2425187,
+        "openingApis": 17
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3117.7786220000016,
+        "ttfb": 3.2000000029802322,
+        "load": 3080.7000000029802,
+        "fcp": 536,
+        "lcp": 2956,
+        "cls": 0.6647983081330129,
+        "jsRequests": 164,
+        "jsBytes": 2425187,
+        "openingApis": 17
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3080.6141590000007,
+        "ttfb": 3.2999999970197678,
+        "load": 3042.2000000029802,
+        "fcp": 584,
+        "lcp": 2992,
+        "cls": 0.6647983081330129,
+        "jsRequests": 164,
+        "jsBytes": 2425187,
+        "openingApis": 17
+      }
+    ],
+    "summary": [
+      {
+        "width": 1440,
+        "ready": 3123.7054499999995,
+        "ttfb": 3.6000000089406967,
+        "load": 3084.699999988079,
+        "fcp": 596,
+        "lcp": 2976,
+        "cls": 0.46559030043613764,
+        "jsRequests": 164,
+        "jsBytes": 2425187,
+        "openingApis": 17
+      },
+      {
+        "width": 390,
+        "ready": 3080.6141590000007,
+        "ttfb": 3.2000000029802322,
+        "load": 3042.2000000029802,
+        "fcp": 584,
+        "lcp": 2964,
+        "cls": 0.6647983081330129,
+        "jsRequests": 164,
+        "jsBytes": 2425187,
+        "openingApis": 17
+      }
+    ]
+  },
+  "after": {
+    "phase": "after",
+    "conditions": {
+      "runsPerViewport": 3,
+      "latencyMs": 40,
+      "downloadBps": 1600000,
+      "source": "real local router + synthetic stored records, not production"
+    },
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3210.1634969999996,
+        "ttfb": 9.599999994039536,
+        "load": 3108.7000000029802,
+        "fcp": 636,
+        "lcp": 3056,
+        "cls": 0.485908776976032,
+        "jsRequests": 164,
+        "jsBytes": 2427365,
+        "openingApis": 17
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3113.7769720000015,
+        "ttfb": 5.299999997019768,
+        "load": 3075.5,
+        "fcp": 620,
+        "lcp": 3020,
+        "cls": 0.4859018943579403,
+        "jsRequests": 164,
+        "jsBytes": 2427365,
+        "openingApis": 17
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3140.7584030000016,
+        "ttfb": 3.2999999970197678,
+        "load": 3082.2000000029802,
+        "fcp": 564,
+        "lcp": 2996,
+        "cls": 0.4859018943579403,
+        "jsRequests": 164,
+        "jsBytes": 2427365,
+        "openingApis": 17
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3074.423877999998,
+        "ttfb": 3.5,
+        "load": 3039,
+        "fcp": 548,
+        "lcp": 2996,
+        "cls": 0.6647983081330129,
+        "jsRequests": 164,
+        "jsBytes": 2427365,
+        "openingApis": 17
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3111.5898769999985,
+        "ttfb": 2.3999999910593033,
+        "load": 3075.2999999970198,
+        "fcp": 572,
+        "lcp": 2988,
+        "cls": 0.6647983081330129,
+        "jsRequests": 164,
+        "jsBytes": 2427365,
+        "openingApis": 17
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3040.108332,
+        "ttfb": 3.0999999940395355,
+        "load": 3007.4000000059605,
+        "fcp": 588,
+        "lcp": 2956,
+        "cls": 0.6647983081330129,
+        "jsRequests": 164,
+        "jsBytes": 2427365,
+        "openingApis": 17
+      }
+    ],
+    "summary": [
+      {
+        "width": 1440,
+        "ready": 3140.7584030000016,
+        "ttfb": 5.299999997019768,
+        "load": 3082.2000000029802,
+        "fcp": 620,
+        "lcp": 3020,
+        "cls": 0.4859018943579403,
+        "jsRequests": 164,
+        "jsBytes": 2427365,
+        "openingApis": 17
+      },
+      {
+        "width": 390,
+        "ready": 3074.423877999998,
+        "ttfb": 3.0999999940395355,
+        "load": 3039,
+        "fcp": 572,
+        "lcp": 2988,
+        "cls": 0.6647983081330129,
+        "jsRequests": 164,
+        "jsBytes": 2427365,
+        "openingApis": 17
+      }
+    ]
+  },
+  "diagnostics": {
+    "initialBefore": {
+      "phase": "before",
+      "conditions": {
+        "runsPerViewport": 3,
+        "latencyMs": 40,
+        "downloadBps": 1600000,
+        "source": "real local router + synthetic stored records, not production"
+      },
+      "runs": [
+        {
+          "width": 1440,
+          "run": 1,
+          "ready": 3190.2533700000013,
+          "ttfb": 9.799999997019768,
+          "load": 3098.6000000089407,
+          "fcp": 620,
+          "lcp": 3060,
+          "cls": 0.46559030043613764,
+          "jsRequests": 164,
+          "jsBytes": 2425187,
+          "openingApis": 17
+        },
+        {
+          "width": 1440,
+          "run": 2,
+          "ready": 3199.594747000001,
+          "ttfb": 4.299999997019768,
+          "load": 3127.800000011921,
+          "fcp": 600,
+          "lcp": 3064,
+          "cls": 0.46559030043613764,
+          "jsRequests": 164,
+          "jsBytes": 2425187,
+          "openingApis": 17
+        },
+        {
+          "width": 1440,
+          "run": 3,
+          "ready": 3118.4685360000003,
+          "ttfb": 3.7000000029802322,
+          "load": 3076.7999999970198,
+          "fcp": 580,
+          "lcp": 2952,
+          "cls": 0.4656803534161603,
+          "jsRequests": 164,
+          "jsBytes": 2425187,
+          "openingApis": 17
+        },
+        {
+          "width": 390,
+          "run": 1,
+          "ready": 3084.3730639999994,
+          "ttfb": 4.100000008940697,
+          "load": 3050.2999999970198,
+          "fcp": 612,
+          "lcp": 3016,
+          "cls": 0.6647983081330129,
+          "jsRequests": 164,
+          "jsBytes": 2425187,
+          "openingApis": 17
+        },
+        {
+          "width": 390,
+          "run": 2,
+          "ready": 3104.464452,
+          "ttfb": 5.0999999940395355,
+          "load": 3066.2000000029802,
+          "fcp": 604,
+          "lcp": 2972,
+          "cls": 0.6647983081330129,
+          "jsRequests": 164,
+          "jsBytes": 2425187,
+          "openingApis": 17
+        },
+        {
+          "width": 390,
+          "run": 3,
+          "ready": 3084.4844190000003,
+          "ttfb": 5.4000000059604645,
+          "load": 3044.2000000029802,
+          "fcp": 552,
+          "lcp": 2980,
+          "cls": 0.6647983081330129,
+          "jsRequests": 164,
+          "jsBytes": 2425187,
+          "openingApis": 17
+        }
+      ],
+      "summary": [
+        {
+          "width": 1440,
+          "ready": 3190.2533700000013,
+          "ttfb": 4.299999997019768,
+          "load": 3098.6000000089407,
+          "fcp": 600,
+          "lcp": 3060,
+          "cls": 0.46559030043613764,
+          "jsRequests": 164,
+          "jsBytes": 2425187,
+          "openingApis": 17
+        },
+        {
+          "width": 390,
+          "ready": 3084.4844190000003,
+          "ttfb": 5.0999999940395355,
+          "load": 3050.2999999970198,
+          "fcp": 604,
+          "lcp": 2980,
+          "cls": 0.6647983081330129,
+          "jsRequests": 164,
+          "jsBytes": 2425187,
+          "openingApis": 17
+        }
+      ]
+    },
+    "initialAfter": {
+      "phase": "after",
+      "conditions": {
+        "runsPerViewport": 3,
+        "latencyMs": 40,
+        "downloadBps": 1600000,
+        "source": "real local router + synthetic stored records, not production"
+      },
+      "runs": [
+        {
+          "width": 1440,
+          "run": 1,
+          "ready": 3522.6955450000005,
+          "ttfb": 7.399999991059303,
+          "load": 3370.0999999940395,
+          "fcp": 636,
+          "lcp": 3092,
+          "cls": 0.4859018943579403,
+          "jsRequests": 164,
+          "jsBytes": 2427365,
+          "openingApis": 17
+        },
+        {
+          "width": 1440,
+          "run": 2,
+          "ready": 6464.135924999999,
+          "ttfb": 9.200000002980232,
+          "load": 6387.100000008941,
+          "fcp": 628,
+          "lcp": 5080,
+          "cls": 0.4859018943579403,
+          "jsRequests": 164,
+          "jsBytes": 2427365,
+          "openingApis": 17
+        },
+        {
+          "width": 1440,
+          "run": 3,
+          "ready": 4768.493238000003,
+          "ttfb": 9.5,
+          "load": 4528.70000000298,
+          "fcp": 1188,
+          "lcp": 4532,
+          "cls": 0.485908776976032,
+          "jsRequests": 164,
+          "jsBytes": 2427365,
+          "openingApis": 14
+        },
+        {
+          "width": 390,
+          "run": 1,
+          "ready": 4293.029257999999,
+          "ttfb": 20.600000008940697,
+          "load": 4213.20000000298,
+          "fcp": 1688,
+          "lcp": 4072,
+          "cls": 0.7927983081330129,
+          "jsRequests": 164,
+          "jsBytes": 2427365,
+          "openingApis": 17
+        },
+        {
+          "width": 390,
+          "run": 2,
+          "ready": 3409.3311299999987,
+          "ttfb": 2.7999999970197678,
+          "load": 3341.8999999910593,
+          "fcp": 728,
+          "lcp": 3328,
+          "cls": 0.7927983081330129,
+          "jsRequests": 164,
+          "jsBytes": 2427365,
+          "openingApis": 17
+        },
+        {
+          "width": 390,
+          "run": 3,
+          "ready": 3141.542303000002,
+          "ttfb": 9,
+          "load": 3108.2000000029802,
+          "fcp": 612,
+          "lcp": 3020,
+          "cls": 0.7927983081330129,
+          "jsRequests": 164,
+          "jsBytes": 2427365,
+          "openingApis": 17
+        }
+      ],
+      "summary": [
+        {
+          "width": 1440,
+          "ready": 4768.493238000003,
+          "ttfb": 9.200000002980232,
+          "load": 4528.70000000298,
+          "fcp": 636,
+          "lcp": 4532,
+          "cls": 0.4859018943579403,
+          "jsRequests": 164,
+          "jsBytes": 2427365,
+          "openingApis": 17
+        },
+        {
+          "width": 390,
+          "ready": 3409.3311299999987,
+          "ttfb": 9,
+          "load": 3341.8999999910593,
+          "fcp": 728,
+          "lcp": 3328,
+          "cls": 0.7927983081330129,
+          "jsRequests": 164,
+          "jsBytes": 2427365,
+          "openingApis": 17
+        }
+      ]
+    },
+    "note": "Earlier revision reserved summary space on all viewport widths; timings also varied (PC 3.5–6.5 s). Final reservation is desktop-only; a fresh before/after pair was measured without concurrent tests/build/typecheck. No production latency inference."
+  },
+  "limits": "Real local CRM API + synthetic stored records. Same fixture on baseline/current, 3 cold contexts per viewport, 40 ms latency, 1.6 MB/s. Startup CLS remains high; final PC CLS changes from ~0.466 to ~0.486, mobile stays ~0.665. Functional checks cover eight POS/CRM/contract/legacy cases, all browser HTTP writes blocked."
+}

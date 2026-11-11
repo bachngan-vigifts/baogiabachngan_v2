@@ -1,0 +1,250 @@
+{
+  "baselineCommit": "72cc171f",
+  "before": {
+    "phase": "bank-before",
+    "conditions": {
+      "browser": "Chromium",
+      "coldContexts": true,
+      "runsPerViewport": 3,
+      "latencyMs": 40,
+      "downloadBps": 1600000,
+      "source": "isolated real CRM API + synthetic SePay, not production"
+    },
+    "summary": [
+      {
+        "width": 1440,
+        "ready": 3215.087077,
+        "ttfb": 3.2999999970197678,
+        "load": 3181.7999999970198,
+        "fcp": 592,
+        "lcp": 3160,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15
+      },
+      {
+        "width": 390,
+        "ready": 3426.8050569999978,
+        "ttfb": 5,
+        "load": 3378.3999999910593,
+        "fcp": 604,
+        "lcp": 3300,
+        "cls": 0.2293066175480769,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15
+      }
+    ],
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3215.087077,
+        "ttfb": 9.400000005960464,
+        "load": 3181.7999999970198,
+        "fcp": 592,
+        "lcp": 3160,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3067.8519290000004,
+        "ttfb": 3.2999999970197678,
+        "load": 3037,
+        "fcp": 596,
+        "lcp": 3012,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 5927.659940000001,
+        "ttfb": 2.2000000029802322,
+        "load": 5879.20000000298,
+        "fcp": 576,
+        "lcp": 5912,
+        "cls": 0.47396204185956786,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 4466.4585210000005,
+        "ttfb": 5,
+        "load": 4428.20000000298,
+        "fcp": 604,
+        "lcp": 4388,
+        "cls": 0.2293066175480769,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3332.1730990000033,
+        "ttfb": 15.100000008940697,
+        "load": 3277.4000000059605,
+        "fcp": 692,
+        "lcp": 3272,
+        "cls": 0.22063146674679485,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3426.8050569999978,
+        "ttfb": 4.200000002980232,
+        "load": 3378.3999999910593,
+        "fcp": 588,
+        "lcp": 3300,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2449144,
+        "openingApis": 15,
+        "errors": []
+      }
+    ]
+  },
+  "after": {
+    "phase": "bank-after",
+    "conditions": {
+      "browser": "Chromium",
+      "coldContexts": true,
+      "runsPerViewport": 3,
+      "latencyMs": 40,
+      "downloadBps": 1600000,
+      "source": "isolated real CRM API + synthetic SePay, not production"
+    },
+    "summary": [
+      {
+        "width": 1440,
+        "ready": 3091.3568510000005,
+        "ttfb": 3.7999999970197678,
+        "load": 3059.5999999940395,
+        "fcp": 612,
+        "lcp": 3060,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449189,
+        "openingApis": 15
+      },
+      {
+        "width": 390,
+        "ready": 3095.462373999999,
+        "ttfb": 3.3999999910593033,
+        "load": 3069.300000011921,
+        "fcp": 604,
+        "lcp": 2976,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2449189,
+        "openingApis": 15
+      }
+    ],
+    "runs": [
+      {
+        "width": 1440,
+        "run": 1,
+        "ready": 3245.7869919999994,
+        "ttfb": 9.899999991059303,
+        "load": 3208.5,
+        "fcp": 632,
+        "lcp": 3180,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449189,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 2,
+        "ready": 3087.0966399999998,
+        "ttfb": 3.7999999970197678,
+        "load": 3052,
+        "fcp": 580,
+        "lcp": 3060,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449189,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 1440,
+        "run": 3,
+        "ready": 3091.3568510000005,
+        "ttfb": 3.7000000029802322,
+        "load": 3059.5999999940395,
+        "fcp": 612,
+        "lcp": 3036,
+        "cls": 0.47363888888888883,
+        "jsRequests": 163,
+        "jsBytes": 2449189,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 1,
+        "ready": 3087.7598199999993,
+        "ttfb": 2.6000000089406967,
+        "load": 3059.2000000029802,
+        "fcp": 596,
+        "lcp": 2956,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2449189,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 2,
+        "ready": 3095.462373999999,
+        "ttfb": 3.3999999910593033,
+        "load": 3069.300000011921,
+        "fcp": 616,
+        "lcp": 2976,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2449189,
+        "openingApis": 15,
+        "errors": []
+      },
+      {
+        "width": 390,
+        "run": 3,
+        "ready": 3146.980496999997,
+        "ttfb": 3.6000000089406967,
+        "load": 3114.0999999940395,
+        "fcp": 604,
+        "lcp": 3028,
+        "cls": 0.23407397475961536,
+        "jsRequests": 163,
+        "jsBytes": 2449189,
+        "openingApis": 15,
+        "errors": []
+      }
+    ]
+  },
+  "limits": "Local real CRM router/PGlite and synthetic SePay data; baseline full git archive, same fixture, 3 cold contexts per viewport, 40 ms network latency and 1.6 MB/s download. Tests/build/typecheck completed before final measurements. Not production latency; existing startup CLS remains high."
+}

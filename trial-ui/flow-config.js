@@ -51,7 +51,6 @@ export const NODES = [
     actions: [{ label: 'Mở danh sách hỏi tồn', go: '#/stock-requests' }] },
   { id: 'care', stage: 'customer', row: 3, title: 'Chăm sóc khách', icon: 'heart', page: '#/care',
     desc: 'Lịch hẹn chăm sóc quá hạn / hôm nay của bạn. Ghi lần chăm sóc mới ngay tại đây.',
-    shortcut: { title: 'Tạo báo giá', icon: 'doc', href: './catalogue/', sub: 'Catalogue' },
     actions: [{ label: 'Ghi chăm sóc', open: 'new-care' }, { label: 'Nhật ký chăm sóc', go: '#/care' }] },
 
   { id: 'quotes', stage: 'sales', row: 2, title: 'Báo giá', icon: 'doc', page: '#/quotes',

@@ -6,19 +6,19 @@ const num = n => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).fo
 const money = n => Number.isFinite(n) ? num(n) + ' đ' : 'Chưa có dữ liệu';
 const snapshotOf = order => { try { return JSON.parse(order.posSnapshot || '{}') || {}; } catch { return {}; } };
 
-/** Show persisted POS prices and charges. Rendering never changes the amount due. */
+/** Show persisted sales prices and charges. Rendering never changes the amount due. */
 export function renderOrderLineDetails({ head, body, details, order, lines,returnSummary }) {
-  const pos = order.channel === 'pos', snapshot = pos ? snapshotOf(order) : {};
+  const pos = order.channel === 'pos', crm = order.channel === 'crm', detailed = pos || crm, snapshot = pos ? snapshotOf(order) : {};
   head.replaceChildren(); body.replaceChildren(); details.replaceChildren();
   const showReturns=!pos&&order.channel==='crm'&&!!returnSummary?.requests?.length;
   head.className = showReturns ? 'order-return-columns' : '';
-  const titles = pos
-    ? ['Sản phẩm / khoản phí', 'SL', 'Đã giao', 'Đơn giá gốc', 'CK', 'Giá sau CK', 'VAT', 'Thành tiền']
+  const titles = detailed
+    ? ['Sản phẩm / khoản phí', 'SL', 'Đã giao', ...(showReturns ? ['Đã nhận hoàn','Nhập lại kho','Khách đang giữ'] : []), 'Đơn giá gốc', 'CK', 'Giá sau CK', 'VAT', 'Thành tiền']
     : ['Sản phẩm', 'SL', 'Đã giao',...(showReturns?['Đã nhận hoàn','Nhập lại kho','Khách đang giữ']:[]), 'Đơn giá', 'VAT', 'Thành tiền'];
   for (const [i, text] of titles.entries()) head.append(el('th', text, i ? 'right' : ''));
   const cell = (tr, text, numeric = true, sub = '') => {
     const td = el('td', text, numeric ? 'right num' : '');
-    if (showReturns && numeric) td.dataset.label = titles[tr.children.length];
+    if (crm && numeric) td.dataset.label = titles[tr.children.length];
     if (sub) td.append(el('small', sub)); tr.append(td); return td;
   };
   for (const line of lines) {
@@ -42,13 +42,38 @@ export function renderOrderLineDetails({ head, body, details, order, lines,retur
       cell(tr, gross !== null && line.qty > 0 ? money(gross / line.qty) : money(line.unitPrice), true, gross !== null ? basis : 'chưa VAT');
       cell(tr, num(line.taxRate) + '%', true, saved && Number.isFinite(saved.tax) ? money(saved.tax) : '');
       cell(tr, gross !== null ? money(gross) : money(line.amount), true, gross !== null ? basis : 'chưa VAT');
+    } else if (crm) {
+      const known = Number.isFinite(line.listUnitPrice) && Number.isFinite(line.discountAmount) && Number.isFinite(line.discountValue);
+      const basis = line.taxRate > 0 ? 'chưa VAT' : 'không VAT';
+      cell(tr, money(line.listUnitPrice), true, basis);
+      cell(tr, known ? (line.discountType === 'amount' ? money(line.discountValue) + ' / SP' : num(line.discountValue) + '%') : 'Chưa lưu CK', true, known ? 'Giảm ' + money(line.discountAmount) : '');
+      // CRM unitPrice already contains printing fees. Explain that component; never add it a second time.
+      const printing = known && line.qty > 0 ? line.unitPrice - (line.listUnitPrice - line.discountAmount / line.qty) : 0;
+      cell(tr, money(line.unitPrice), true, basis + (printing > 0.000001 ? ' · Đã gồm phí in ' + money(printing) + ' / SP' : ''));
+      const tax = line.amount * line.taxRate / 100;
+      cell(tr, num(line.taxRate) + '%', true, money(tax));
+      cell(tr, money(line.amount + tax), true, line.taxRate > 0 ? 'gồm VAT' : 'không VAT');
     } else {
       cell(tr, money(line.unitPrice)); cell(tr, num(line.taxRate) + '%'); cell(tr, money(line.amount));
     }
     body.append(tr);
   }
   renderOrderReturns({host:details,order,summary:returnSummary});
-  if (!pos) return;
+  if (!detailed) return;
+  if (crm) {
+    const totals = el('dl', '', 'kv pos-order-totals');
+    const add = (label, value) => totals.append(el('dt', label), el('dd', value));
+    const complete = lines.every(l => Number.isFinite(l.listUnitPrice) && Number.isFinite(l.discountAmount));
+    add('Tổng CK từng dòng (đã trừ trong tiền hàng)', complete ? money(lines.reduce((n,l) => n + l.discountAmount,0)) + ' (chưa VAT)' : 'Chưa có đủ dữ liệu');
+    add('Mã giảm giá', 'Không áp dụng');
+    add('Tiền hàng và phí sau CK, chưa VAT', money(order.subtotal));
+    add('VAT', money(order.tax));
+    add('Tổng thanh toán', money(order.total));
+    details.append(totals);
+    if (!complete) details.append(el('p', 'Chứng từ cũ chưa lưu đầy đủ giá gốc và CK. Tổng thanh toán giữ theo chứng từ đã lưu.', 'muted small'));
+    if (order.note) details.append(el('p', 'Ghi chú đơn hàng: ' + order.note, 'pos-order-note'));
+    return;
+  }
   const fees = order.posFees;
   const services = fees?.services ?? (fees?.service ? [fees.service] : []);
   for (const fee of services.filter(f => f.name || f.amount)) {

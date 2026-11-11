@@ -1,9 +1,13 @@
-import {test} from 'node:test';
+import {test,beforeEach,afterEach,mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {eq,inArray} from 'drizzle-orm';
 import {fixture,ok,sku} from '../helpers/warehouse-lifecycle-fixture.ts';
 import {postMoves} from '../../src/modules/inventory/api/ledger.ts';
 import {orderStockHolds,salesOrders} from '../../src/modules/sales/schema.ts';
+
+// The fixture delivery dates must stay unexpired regardless of when CI runs.
+beforeEach(()=>mock.timers.enable({apis:['Date'],now:Date.parse('2026-11-07T00:00:00.000Z')}));
+afterEach(()=>mock.timers.reset());
 
 /** Chuyển đổi đơn cũ đang giữ toàn bộ (legacy) sang giữ ≤ có thể bán: xem trước không ghi, áp dụng đúng mã kế hoạch, đơn trước giữ trước. */
 async function setup(){

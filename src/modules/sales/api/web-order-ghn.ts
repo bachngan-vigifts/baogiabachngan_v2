@@ -1,3 +1,4 @@
+import {readWebSepayPaidAt} from './web-sepay-evidence.ts';
 import {beginWebConfirmation} from './web-order-edit.ts';
 import {readWebEdit} from '../domain/web-order-edit.ts';
 import {webOrderBucket} from '../domain/web-order-outcome.ts';
@@ -28,8 +29,8 @@ export interface WebGhnAddress { addressLine: string; provinceId: number; provin
 export const minhLongDirect = (env: StaffEnv, order: Pick<WebOrder, 'source'>) => order.source === 'minhlong' && !env.webOrderAction?.minhlongUrl;
 
 /** Tiền thu hộ gợi ý: đơn đã thanh toán (Woo có ngày thanh toán) = 0, còn lại thu đủ tổng đơn. Nhân viên sửa được trước khi tạo. */
-export function suggestedWebCod(order: Pick<WebOrder, 'total' | 'financialSnapshot'>) {
-  return readWebOrderFinancials(order.financialSnapshot)?.payment?.paidAt ? 0 : Math.max(0, Math.round(order.total));
+export function suggestedWebCod(order: Pick<WebOrder, 'total' | 'financialSnapshot'>, bankPaidAt:string|null=null) {
+  return bankPaidAt || readWebOrderFinancials(order.financialSnapshot)?.payment?.paidAt ? 0 : Math.max(0, Math.round(order.total));
 }
 
 async function ghnPost(env: StaffEnv, url: string, body: unknown, shop = MINH_LONG) {
@@ -55,14 +56,18 @@ export async function createWebOrderGhn(env: StaffEnv, orderId: string, address:
   const shop=hint.source==='lock'?'LOCKNLOCK':MINH_LONG;
   const account=await posGhnAccount(env,shop);if(!account?.token)throw new AppError(503,'Chưa cấu hình GHN cho cửa hàng này.');
   parseGhnShip({...input,ghnProvinceId:address.provinceId,ghnDistrictId:address.districtId,ghnWardCode:address.wardCode});
-  const hintedCod=Number(input.codAmount??suggestedWebCod(hint));if(!Number.isFinite(hintedCod)||hintedCod<0||hintedCod>Math.round(hint.total))throw new AppError(400,'Tiền thu hộ không hợp lệ.','cod_invalid');
+  const hintedBankPaidAt=await readWebSepayPaidAt(env.db,orderId);
+  if(hintedBankPaidAt&&Number(input.codAmount||0)>0)throw new AppError(409,'Đơn đã đối soát SePay; tiền thu hộ phải bằng 0.','SEPAY_COD_ALREADY_PAID');
+  const hintedCod=Number(input.codAmount??suggestedWebCod(hint,hintedBankPaidAt));if(!Number.isFinite(hintedCod)||hintedCod<0||hintedCod>Math.round(hint.total))throw new AppError(400,'Tiền thu hộ không hợp lệ.','cod_invalid');
   const intent=await beginWebConfirmation(env,orderId,edited,input.webRevision);
   return env.db.transaction(async tx => {
     const [order] = await tx.select().from(webStoreOrders).where(eq(webStoreOrders.id, orderId)).limit(1).for('update');
     if (!order) throw new AppError(404, 'Không tìm thấy đơn website.');
     if (order.ghnOrderCode) return { order, existing: true, needsReview:!!readWebEdit(order.crmEditSnapshot).ghnCartReviewRequired };
     if(['completed','cancelled'].includes(webOrderBucket(order.status,order.ghnStatus)))throw new AppError(409,'Đơn đã kết thúc; không tạo vận đơn mới.');
-    const cod = Number(input.codAmount ?? suggestedWebCod(order));
+    const bankPaidAt=await readWebSepayPaidAt(tx,orderId);
+    if(bankPaidAt&&Number(input.codAmount||0)>0)throw new AppError(409,'Đơn đã đối soát SePay; tiền thu hộ phải bằng 0.','SEPAY_COD_ALREADY_PAID');
+    const cod = Number(input.codAmount ?? suggestedWebCod(order,bankPaidAt));
     if (!Number.isFinite(cod) || cod < 0 || cod > Math.max(0, Math.round(order.total))) throw new AppError(400, 'Tiền thu hộ phải từ 0 đến tổng đơn.', 'cod_invalid');
     const ship = parseGhnShip({ ...input, ghnProvinceId: address.provinceId, ghnDistrictId: address.districtId, ghnWardCode: address.wardCode });
     if (!ship) throw new AppError(400, 'Vui lòng nhập đủ địa chỉ giao hàng GHN.', 'address_invalid');

@@ -1,3 +1,7 @@
+import {webSepayPaidAt} from './web-sepay-evidence.ts';
+import {LOCK_WEB_REGISTER_NAME} from '../domain/pos-register.ts';
+import {retrySepayWebOrder} from './sepay-web-retry.ts';
+import {webOrderCreatedAt} from '../domain/sepay-proximity.ts';
 import {webEditFlags} from './web-order-edit-state.ts';
 import {beginWebConfirmation} from './web-order-edit.ts';
 import {readWebEdit} from '../domain/web-order-edit.ts';
@@ -174,7 +178,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if (!expected || tokenHash !== expected) throw new AppError(401, 'Webhook không đúng website.');
     const b = await readJson(c.req, 256_000), externalId = posText(String(b.id ?? ''), 80), number = posText(String(b.number ?? b.id ?? ''), 100);
     if (!externalId || !number) throw new AppError(400, 'Đơn WooCommerce thiếu ID hoặc số đơn.');
-    const wantedName = source === 'lock' ? 'CỬA HÀNG LOCKNLOCK CẦN THƠ' : 'Showroom Gốm Sứ Minh Long Cần Thơ';
+    const wantedName = source === 'lock' ? LOCK_WEB_REGISTER_NAME : 'Showroom Gốm Sứ Minh Long Cần Thơ';
     const regs = await c.env.db.select().from(posRegisters).where(eq(posRegisters.active, true));
     const register = regs.find(r => r.name.trim().toLowerCase() === wantedName.toLowerCase());
     if (!register) throw new AppError(409, `CRM chưa có quầy ${wantedName}.`);
@@ -228,7 +232,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       ghnAddressSnapshot: JSON.stringify(ghnAddress),
       total: Math.max(0, Number(b.total) || 0), currency: posText(b.currency, 20) || 'VND', paymentMethod: posText(b.payment_method_title ?? b.payment_method, 200),
       ...(snapshot ? {financialSnapshot: JSON.stringify(snapshot)} : {}),
-      lines: JSON.stringify(lines), orderedAt: posText(b.date_created_gmt ?? b.date_created, 60) || now, updatedAt: posText(b.date_modified_gmt ?? b.date_modified, 60) || now,
+      lines: JSON.stringify(lines), orderedAt: webOrderCreatedAt(b.date_created_gmt,b.date_created,now), orderedAtVerified:!!(typeof b.date_created_gmt==='string'&&b.date_created_gmt.trim()||typeof b.date_created==='string'&&b.date_created.trim()), updatedAt: posText(b.date_modified_gmt ?? b.date_modified, 60) || now,
       ghnOrderCode: posText(metadata.get('_lnl_ghn_order_code'), 100), ghnStatus: posText(metadata.get('_lnl_ghn_last_status'), 100),
       ghnSortCode: posText(metadata.get('_lnl_ghn_sort_code'), 100), ghnFee: Math.max(0, Number(metadata.get('_lnl_ghn_total_fee')) || 0),
     };
@@ -240,7 +244,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     if(b.currency === undefined) delete updateFields.currency;
     if(b.payment_method_title === undefined && b.payment_method === undefined) delete updateFields.paymentMethod;
     if(!Array.isArray(b.line_items)) delete updateFields.lines;
-    if(b.date_created_gmt === undefined && b.date_created === undefined) delete updateFields.orderedAt;
+    if(!fields.orderedAtVerified) {delete updateFields.orderedAt;delete updateFields.orderedAtVerified;}
     if(b.billing === undefined){delete updateFields.customerName;delete updateFields.phone;delete updateFields.email;}
     if(b.shipping === undefined && b.billing === undefined) { delete updateFields.address; delete updateFields.ghnAddressSnapshot; }
     if(!Array.isArray(b.meta_data)){delete updateFields.ghnOrderCode;delete updateFields.ghnStatus;delete updateFields.ghnSortCode;delete updateFields.ghnFee;}
@@ -283,6 +287,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     await invoiceTasksChanged(c.env, { webOrderId: saved!.id });
     // Website Lock báo trạng thái GHN qua cầu nối: ghi sổ kho quầy theo trạng thái (web-order-stock.ts).
     await syncWebOrderStock(c.env, saved!.id);
+    if(source==='lock') await retrySepayWebOrder(c.env,saved!.id);
     return json({ ok: true, source, externalId, registerId: register.id });
   }, 'web-order-sync');
   /** Proxy master-data GHN riêng cho checkout Minh Long; token tài khoản GHN không bao giờ đưa ra trình duyệt/WordPress. */
@@ -378,7 +383,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           windowFrom ? or(notInArray(salesOrders.status, ['delivered', 'cancelled']), gte(salesOrders.orderDate, windowFrom)) : undefined,
           matchAllWords(foldSql(salesOrders.orderNo, salesOrders.customerName, salesOrders.phone, salesOrders.sapoOrderCode, employees.name), q)))
         .orderBy(...rankFirst(searchRank([salesOrders.orderNo, salesOrders.phone, salesOrders.sapoOrderCode], salesOrders.customerName, q)), desc(salesOrders.createdAt));
-      const webRows = !webWanted ? [] : await c.env.db.select({...getTableColumns(webStoreOrders),crmEditSnapshot:webEditFlags}).from(webStoreOrders).where(and(eq(webStoreOrders.registerId, registerId),
+      const webRows = !webWanted ? [] : await c.env.db.select({...getTableColumns(webStoreOrders),crmEditSnapshot:webEditFlags,bankPaidAt:webSepayPaidAt()}).from(webStoreOrders).where(and(eq(webStoreOrders.registerId, registerId),
         from ? gte(webStoreOrders.orderedAt, from) : undefined, to ? lte(webStoreOrders.orderedAt, to + 'T23:59:59.999Z') : undefined,
         windowFrom ? or(notInArray(webStoreOrders.status, ['completed', 'cancelled', 'refunded', 'failed', 'trash']), gte(webStoreOrders.orderedAt, windowFrom)) : undefined))
         .orderBy(desc(webStoreOrders.updatedAt));
@@ -396,7 +401,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           return {...order,cancelReason,cancellationKind:'cancelled',bucket:posOrderBucket(o),source:'crm',external:false,currency:'VND',orderSource:o.fulfillmentMode==='cod'?'cod':'pos',paymentStatus:o.paid>=o.total?'paid':'debt',outstanding:Math.max(0,o.total-o.paid)};}),
         ...webRows.map(o => {
           const payment = readWebEdit(o.crmEditSnapshot).sourceConflict?undefined:readWebOrderFinancials(o.financialSnapshot)?.payment;
-          const paid = payment ? (payment.paidAt ? o.total : 0) : null;
+          const paid = o.bankPaidAt ? o.total : payment ? (payment.paidAt ? o.total : 0) : null;
           const state=o.status.toLowerCase(),carrier=o.ghnStatus.toLowerCase();
           const cancellationKind=state==='refunded'?'refunded':carrier.startsWith('return')||carrier==='waiting_to_return'||['lnl-returning','lnl-returned'].includes(state)?'returned':['lost','damage'].includes(carrier)||state==='failed'?'failed':'cancelled';
           return ({cancelReason:webReasons.get(o.id)||'',cancellationKind, ownerId: '', orderSource: 'web', paymentStatus: paid === null ? 'unknown' : paid >= o.total ? 'paid' : 'debt', paid, outstanding: paid === null ? null : Math.max(0, o.total-paid), id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
@@ -406,7 +411,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           paymentMethod: o.paymentMethod, currency: o.currency, financials: readWebOrderFinancials(o.financialSnapshot), ghnOrderCode: o.ghnOrderCode, ghnStatus: o.ghnStatus, ghnSortCode: o.ghnSortCode, ghnFee: o.ghnFee,
           actionsAvailable: o.source === 'lock' && !!c.env.webOrderAction?.lockUrl || o.source === 'minhlong' && (!!c.env.webOrderAction?.minhlongUrl || !!c.env.ghnMlToken),
           // Minh Long chưa có cầu nối: CRM tự tạo vận đơn GHN – giao diện hỏi thêm tiền thu hộ / khối lượng.
-          webRevision:Number(readWebEdit(o.crmEditSnapshot).revision||0),crmEdited:Number(readWebEdit(o.crmEditSnapshot).revision||0)>0,ghnDirect: minhLongDirect(c.env, o)||Number(readWebEdit(o.crmEditSnapshot).revision||0)>0, suggestedCod: minhLongDirect(c.env, o)||Number(readWebEdit(o.crmEditSnapshot).revision||0)>0 ? suggestedWebCod(o) : null }); }),
+          webRevision:Number(readWebEdit(o.crmEditSnapshot).revision||0),crmEdited:Number(readWebEdit(o.crmEditSnapshot).revision||0)>0,ghnDirect: minhLongDirect(c.env, o)||Number(readWebEdit(o.crmEditSnapshot).revision||0)>0, suggestedCod: minhLongDirect(c.env, o)||Number(readWebEdit(o.crmEditSnapshot).revision||0)>0 ? suggestedWebCod(o,o.bankPaidAt) : null }); }),
       ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const board = filterPosOrderBoard(decorated, c.url.searchParams, {analyticsFrom:windowFrom});
       // Danh sách nhân viên cho bộ lọc lấy riêng, không bị thu hẹp bởi chính bộ lọc / khoảng ngày.

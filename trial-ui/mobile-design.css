@@ -1,4 +1,15 @@
 /* Design reference: he-thong-giao-dien-crm.md + approved HĐKT / 4-screen mobile mockups. */
+/* Keep positioned accessibility labels inside their scrollable table, too. */
+@media screen { .table-wrap { position:relative;min-width:0;max-width:100%; } }
+@media screen and (min-width:851px) {
+ .crm-list-card .crm-card-title { min-width:240px;overflow-wrap:anywhere; }
+}
+/* Stock has many numeric columns: scroll those columns rather than crush the product name. */
+@media screen {
+ .stock-check-table :is(th,td):first-child { min-width:240px;max-width:360px;white-space:normal;overflow-wrap:anywhere; }
+ .stock-check-table td.right { min-width:76px;white-space:nowrap; }
+ .stock-check-table td.right small { white-space:normal;overflow-wrap:anywhere; }
+}
 .crm-mobile-nav,.crm-home-row,.crm-filter-trigger,.crm-filter-sheet,.crm-required { display:none; }
 .crm-task-complete,.crm-dashboard-more,.crm-task-no-approval,[data-mobile-row-detail] { display:none; }
 .mobile-quote-owner { display:none; }
@@ -77,25 +88,27 @@
  .crm-sheet { position:fixed;inset:auto 0 0;margin:0 auto;width:100%;max-width:540px;max-height:88dvh;padding:0;border:0;border-radius:24px 24px 0 0;background:#fff;color:var(--ink);overflow:auto;overscroll-behavior:contain; }
  .crm-sheet[open] { display:block; }
  .crm-sheet-head { position:sticky;top:0;z-index:2;background:#fff; }
- .crm-list-card { display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px!important;margin:0 0 8px;padding:12px!important;background:#fff;border:1px solid var(--line)!important;border-radius:12px;align-items:start!important; }
- .crm-list-card td { margin:0!important;padding:0!important;max-width:100%;min-width:0;flex:none!important;font-size:14px; }
+ .crm-list-card { display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px!important;margin:0 0 8px;padding:12px!important;background:#fff;border:1px solid var(--line)!important;border-radius:12px;align-items:start!important; }
+ .crm-list-card td { margin:0!important;padding:0!important;width:auto!important;max-width:100%;min-width:0;flex:none!important;font-size:14px; }
  .crm-list-card td::before { display:none!important; }
  .crm-card-meta { grid-column:1/-1;grid-row:1;font-size:12px!important;color:var(--muted);overflow-wrap:anywhere; }
  .crm-card-meta small { font-size:12px;font-weight:400; }
- .crm-card-title { grid-column:1;grid-row:2;font-size:15px!important;font-weight:600;overflow-wrap:anywhere; }
+ .crm-card-title { grid-column:1/-1;grid-row:2;font-size:15px!important;font-weight:600;overflow-wrap:anywhere; }
  .crm-card-title small { display:none!important; }
- .crm-card-amount { grid-column:2;grid-row:2;text-align:right;white-space:nowrap;font-size:14px!important;font-weight:600; }
- .crm-card-status { grid-column:1;grid-row:3;font-size:12px!important; }
- .crm-card-substatus { grid-column:2;grid-row:3;text-align:right;font-size:12px!important; }
- .crm-card-owner { grid-column:1;grid-row:4;font-size:12px!important;color:var(--muted); }
+ .crm-card-amount { grid-column:1/-1;grid-row:3;text-align:right;white-space:normal;overflow-wrap:anywhere;font-size:14px!important;font-weight:600; }
+ .crm-card-status { grid-column:1;grid-row:4;font-size:12px!important;white-space:normal;overflow-wrap:anywhere; }
+ .crm-card-substatus { grid-column:2;grid-row:4;text-align:right;font-size:12px!important;white-space:normal;overflow-wrap:anywhere; }
+ .crm-card-owner { grid-column:1/-1;grid-row:5;font-size:12px!important;color:var(--muted);overflow-wrap:anywhere; }
  .crm-card-note { grid-column:1/-1;font-size:12px!important; }
- .crm-list-card .crm-card-actions { grid-column:2;grid-row:4;justify-self:end;display:flex;min-height:0!important; }
+ .crm-list-card .crm-card-actions { grid-column:1/-1;grid-row:6;justify-self:stretch;display:flex;min-height:0!important; }
+ .crm-list-card .crm-card-actions,.crm-list-card .crm-card-actions>.row-actions { width:100%;min-width:0;max-width:100%;justify-content:flex-start;flex-wrap:wrap;gap:6px;white-space:normal; }
+ .crm-list-card :is(.crm-card-actions,.crm-card-status,.crm-card-substatus) :is(.btn,.pill,a) { max-width:100%;white-space:normal;overflow-wrap:anywhere; }
  .crm-card-extra { display:none!important; }
- /* Order actions must not determine the width of the amount column. */
- #orders-list .crm-list-card { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+ /* Names, amounts and actions own separate rows in every designed list. */
  #orders-list .crm-card-amount, #orders-list .crm-card-substatus { white-space:normal;overflow-wrap:anywhere; }
  #orders-list .crm-card-status .pill, #orders-list .crm-card-substatus .pill { white-space:normal; }
- #orders-list .crm-list-card .crm-card-actions { grid-column:1/-1;grid-row:6;justify-self:stretch;justify-content:flex-start;flex-wrap:wrap;gap:6px;white-space:normal; }
+ #orders-list .crm-list-card .orders-shipping-cell.has-ghn-tracking { grid-row:6; }
+ #orders-list .crm-list-card .crm-card-actions { grid-column:1/-1;grid-row:7;justify-self:stretch;justify-content:flex-start;flex-wrap:wrap;gap:6px;white-space:normal; }
  #orders-list .crm-card-actions > [data-order-sapo] { display:inline-flex;min-width:0;max-width:100%; }
  #orders-list .crm-card-actions > [data-order-sapo]:empty { display:none; }
  #orders-list .crm-card-actions .btn { max-width:100%;margin-left:0; }
@@ -108,6 +121,9 @@
  .crm-list-card > td { display:block; }
  .crm-designed-page .empty { padding:20px 0; }
  .crm-designed-page .empty-icon { display:none; }
+ /* Long labels must not consume the value column in document/customer summaries. */
+ .kv { grid-template-columns:minmax(0,120px) minmax(0,1fr); }
+ .kv>dt,.kv>dd { min-width:0;max-width:100%;overflow-wrap:anywhere; }
  .crm-designed-page .task-tabs-row { display:flex;overflow-x:auto;flex-wrap:nowrap;border-bottom:1px solid var(--line); }
  .task-tabs-row button { min-height:44px;white-space:nowrap;font-size:13px; }
  .task-due-cards { display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0; }
@@ -150,6 +166,34 @@
  .cd-tabs button { min-height:44px;white-space:nowrap; }
 }
 @media print{.crm-mobile-nav,.crm-filter-trigger,.crm-filter-sheet,.crm-sheet-head,.crm-required,.quote-device-draft,[data-mobile-line-toggle]{display:none!important;}}
+@media screen and (max-width:480px){
+ .kv { grid-template-columns:minmax(0,1fr);gap:4px; }
+ .kv>dd+dt { margin-top:8px; }
+ .pick-list button { grid-template-columns:minmax(0,1fr); }
+ .pick-list button>* { min-width:0;grid-column:1/-1;overflow-wrap:anywhere; }
+ .pay-summary { grid-template-columns:minmax(0,1fr); }
+ .pay-summary>* { min-width:0;grid-column:1/-1;overflow-wrap:anywhere; }
+ .pay-summary>b { text-align:right; }
+ .picker-list li { grid-template-columns:96px minmax(0,1fr);gap:8px; }
+ .picker-list li>.thumb { grid-column:1;grid-row:1; }
+ .picker-list li>.prod-text { grid-column:1/-1;grid-row:2;overflow-wrap:anywhere; }
+ .picker-list li>.price { grid-column:1/-1;grid-row:3;min-width:0;text-align:left;white-space:normal;overflow-wrap:anywhere; }
+ .picker-list li>input { grid-column:1;grid-row:4;width:100%;min-width:0; }
+ .picker-list li>.pick-add { grid-column:2;grid-row:4;min-width:0;white-space:normal;overflow-wrap:anywhere; }
+ .suggest .prod-opt { grid-template-columns:36px minmax(0,1fr); }
+ .suggest .prod-opt>.thumb { grid-column:1;grid-row:1; }
+ .suggest .prod-opt>.prod-text { grid-column:1/-1;grid-row:2;overflow-wrap:anywhere; }
+ .suggest .prod-opt>.price { grid-column:1/-1;grid-row:3;min-width:0;white-space:normal;overflow-wrap:anywhere; }
+ .lookup-top { display:grid;grid-template-columns:56px minmax(0,1fr); }
+ .lookup-top>img { grid-column:1;grid-row:1; }
+ .lookup-top>div:not(.lookup-total) { grid-column:1/-1;grid-row:2; }
+ .lookup-top>.lookup-total { grid-column:1/-1;grid-row:3;min-width:0;overflow-wrap:anywhere; }
+ .recv-head { flex-wrap:wrap; }
+ .recv-head>div:first-child { flex:1 1 100%; }
+ .recv-head>.recv-need { min-width:0;max-width:100%;margin-left:auto;overflow-wrap:anywhere; }
+ #stock-check-dialog .modal-foot { flex-wrap:wrap;align-items:center; }
+ #stock-check-note { flex-basis:100%;min-width:0; }
+}
 .crm-field-error { display:block;font-size:12px;color:var(--red);font-weight:400; }
 @media screen and (max-width:850px){
  .crm-task-extra-tab { display:none!important; }
@@ -283,22 +327,24 @@
  .crm-customer-call { display:block!important;grid-column:1;grid-row:3; }
  .crm-customer-call a::before { content:'Gọi · '; }
  #view-customers #customer-list tr.crm-list-card td::before { display:none!important; }
- /* Customer content stays in the left column; actions share its top edge. */
- #customer-list .crm-list-card { grid-template-columns:minmax(0,1fr) 104px;grid-template-rows:max-content max-content max-content minmax(min-content,1fr);gap:4px 10px!important; }
- #customer-list .crm-card-title { grid-column:1;grid-row:1; }
- #customer-list .crm-card-meta { grid-column:1;grid-row:2; }
- #customer-list .crm-card-owner { grid-column:1;grid-row:4; }
+ /* Customer names keep the full card width, including with long action labels. */
+ #customer-list .crm-list-card { grid-template-columns:minmax(0,1fr);gap:4px 10px!important; }
+ #customer-list .crm-card-title { grid-column:1/-1;grid-row:1; }
+ #customer-list .crm-card-meta { grid-column:1/-1;grid-row:2; }
+ #customer-list .crm-card-status { grid-column:1/-1;grid-row:4; }
+ #customer-list .crm-card-note { grid-row:5; }
+ #customer-list .crm-card-owner { grid-column:1/-1;grid-row:6; }
  #customer-list .crm-customer-duplicate-contact { display:none!important; }
- #customer-list .crm-list-card .crm-card-actions { grid-column:2;grid-row:1/5;align-self:start;justify-self:stretch; }
- #customer-list .crm-card-actions .row-actions { display:flex;flex-direction:column;align-items:flex-end;gap:6px;width:100%; }
- #customer-list .crm-card-actions [data-quote-for] { min-height:40px;padding:6px 8px;font-size:13px;white-space:nowrap; }
+ #customer-list .crm-list-card .crm-card-actions { grid-column:1/-1;grid-row:7;align-self:start;justify-self:stretch; }
+ #customer-list .crm-card-actions .row-actions { display:flex;align-items:center;gap:6px;width:100%; }
+ #customer-list .crm-card-actions [data-quote-for] { min-height:40px;padding:6px 8px;font-size:13px;white-space:normal; }
 
  .crm-mobile-no-permission { display:none!important; }
  #quote-list .quote-desktop-date { display:none; }
  #quote-list .mobile-quote-owner { display:inline;font-size:12px;color:var(--muted); }
  [data-mobile-row-detail],.crm-task-no-approval { display:inline-flex; }
  #customer-list [data-quote-for] { display:inline-flex!important; }
- #customer-detail .cd-tabs [data-tab]:not([data-tab=overview]):not([data-tab=orders]):not([data-tab=debts]):not([data-tab=care]) { display:none; }
+ #customer-detail .cd-tabs [data-tab]:not([data-tab=overview]):not([data-tab=orders]):not([data-tab=debts]):not([data-tab=care]):not([data-tab=catalogue]) { display:none; }
  #view-care .form-grid,.care-form .form-grid,.care-dialog .care-form { grid-template-columns:1fr!important; }
  :is(#view-members,#view-member,#view-payroll,#view-permissions,#view-flow,#view-inventory,#view-stock-moves,#view-transfers) .table-wrap { overflow:auto!important;max-width:100%;overscroll-behavior:contain; }
  :is(#view-members,#view-member,#view-payroll,#view-permissions) table { display:table!important;min-width:720px; }
@@ -327,7 +373,8 @@
 @media(max-width:850px){
  #view-care .crm-card-channel{grid-column:1/-1;grid-row:3;font-size:12px!important;color:var(--muted)}
  #view-care .crm-card-status{grid-column:1/-1;grid-row:4}
- #view-care .crm-card-owner,#view-care .crm-card-actions{grid-row:5}
+ #view-care .crm-card-owner{grid-row:5}
+ #view-care .crm-card-actions{grid-row:8}
  #view-care .crm-card-note{grid-row:6}
  #view-care .crm-card-followup{grid-column:1/-1;grid-row:7;font-size:12px!important}
  #view-care .crm-card-followup:has(>span.muted:only-child){display:none!important}
@@ -409,4 +456,20 @@
  .crm-nav-sheet-list :is(a,button)[aria-current] { border-color:var(--g, var(--green));color:var(--g, var(--green));background:var(--g-50, #f0fbf4); }
  .crm-nav-sheet-list :is(a,button)[aria-current] svg { background:var(--g, var(--green));color:#fff; }
  .crm-nav-sheet-list :is(a,button):active { transform:scale(.97); }
+}
+
+/* A due date must not squeeze a task's customer/document title on narrow phones. */
+@media screen and (max-width:480px){
+ #view-tasks .task-row { grid-template-columns:28px minmax(0,1fr);grid-template-areas:'c m' 'c p' 'c d'; }
+ #view-tasks .task-row .task-check { grid-area:c; }
+ #view-tasks .task-row .task-main { grid-area:m;min-width:0;overflow-wrap:anywhere; }
+ #view-tasks .task-row .task-people { grid-area:p;min-width:0;overflow-wrap:anywhere; }
+ #view-tasks .task-row .task-due { grid-area:d;min-width:0;text-align:left;overflow-wrap:anywhere; }
+}
+/* The desktop checkout is a narrow side panel as well. */
+@media screen {
+ .pos-checkout .pos-line-top { display:grid;grid-template-columns:minmax(0,1fr) 28px; }
+ .pos-checkout .pos-line-top>.pos-line-name { grid-column:1/-1;grid-row:1; }
+ .pos-checkout .pos-line-top>strong { grid-column:1;grid-row:2;min-width:0;white-space:normal;overflow-wrap:anywhere; }
+ .pos-checkout .pos-line-top>.btn { grid-column:2;grid-row:2; }
 }

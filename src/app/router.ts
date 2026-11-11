@@ -1,3 +1,7 @@
+import {warehouseBonusOf,assertWarehousePayrollOpen} from './warehouse-payroll.ts';
+import {catalogueCustomerLinks,registerCatalogueCustomers,reassignCatalogueCustomer} from './catalogue-customer-links.ts';
+import {registerHomeStockValue} from './home-stock-value.ts';
+import {registerWarehouseWorkspace,assertWarehouseTaskMutable} from '../modules/warehouse-workspace/routes.ts';
 import {customerMergeHooks} from '../core/contracts/customer-merge.ts';
 import {reassignCustodyCustomer,registerCustodyRoutes} from '../modules/product-custody/api/routes.ts';
 import {dashboardReportScoresOf} from './dashboard-report-scores.ts';
@@ -45,6 +49,9 @@ import { registerAppsheetCustomerRoutes } from '../modules/customers/api/appshee
 import { registerCatalogRoutes } from '../modules/catalog/api/routes.ts';
 import { registerLegacyImageRoutes } from '../modules/integrations/api/legacy-images.ts';
 import { registerSapoSyncRoutes } from '../modules/integrations/api/sapo-sync-routes.ts';
+import { registerSepayPaymentRoutes } from '../modules/sales/api/sepay-payment-routes.ts';
+import { registerSepayReadRoutes } from '../modules/sales/api/sepay-read-routes.ts';
+import { registerSepayPageRoutes } from '../modules/sales/api/sepay-page-routes.ts';
 import { registerQuoteSourcingRoutes } from '../modules/sales/api/quote-sourcing-routes.ts';
 import { registerSalesRoutes } from '../modules/sales/api/routes.ts';
 import { registerPaymentDueRepairRoutes } from '../modules/sales/api/payment-terms.ts';
@@ -85,6 +92,7 @@ import { assertFreeStock } from '../modules/sales/api/stock-free.ts';
 import { registerStockHistoryRoutes, stockRefLinkHooks } from '../modules/inventory/api/history-routes.ts';
 import { registerFlowRoutes } from './flow-routes.ts';
 import { registerCashbookRoutes } from './cashbook-routes.ts';
+import {registerFinanceRoutes} from './finance-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 import { registerFeedbackRoutes } from '../modules/feedback/api/routes.ts';
 import { registerStoreRoutes } from '../modules/store/api/routes.ts';
@@ -119,13 +127,17 @@ export function createAppRouter() {
   registerAppsheetCustomerRoutes(router);
   registerCatalogRoutes(router);
   registerCustodyRoutes(router);
-  customerMergeHooks.reassign=reassignCustodyCustomer;
+  customerMergeHooks.reassign=async(tx,keep,drop)=>{await reassignCustodyCustomer(tx,keep,drop);await reassignCatalogueCustomer(tx,keep,drop);};
   catalogueLibraryHooks.heldAt=(db,skus,warehouseId)=>reservedBySku(db,skus,warehouseId);
   catalogueLibraryHooks.incoming=(db,skus)=>outstandingLines(db,skus);
   registerCatalogueLibrary(router);
   registerCatalogueLibraryBulk(router);
-  registerCatalogueQuotes(router);
+  registerCatalogueQuotes(router,catalogueCustomerLinks);
+  registerCatalogueCustomers(router);
   registerSapoSyncRoutes(router);
+  registerSepayPaymentRoutes(router);
+  registerSepayPageRoutes(router);
+  registerSepayReadRoutes(router);
   registerLegacyImageRoutes(router);
   registerSalesRoutes(router, { purchaseLinks: purchaseLinksForOrder });
   registerPaymentDueRepairRoutes(router);
@@ -148,17 +160,17 @@ export function createAppRouter() {
   registerEarlyRequestRoutes(router);
   registerPortalRoutes(router);
   registerNotificationRoutes(router);
-  registerTaskRoutes(router);
+  registerTaskRoutes(router,{assertMutable:assertWarehouseTaskMutable});
   registerChatRoutes(router);
-  registerCustomerHubRoutes(router);
+  registerCustomerHubRoutes(router,catalogueCustomerLinks);
   registerProductDetailRoutes(router);
   registerCustomerDuplicateRoutes(router);
   registerCareRoutes(router,{assertKpiOpen:assertActivityKpiOpen,quotes:activityQuotes});
-  registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf,teamRevenueOf:teamPayrollRevenues,weeklyReportOf:weeklyPointsFor,
+  registerHrRoutes(router, { revenueOf: memberRevenues,crmFactsOf,teamRevenueOf:teamPayrollRevenues,warehouseBonusOf,weeklyReportOf:weeklyPointsFor,
     onSelfBankChange: (env, m) => notifyMany(env, 'managers', { eventType: 'hr-bank-changed', title: 'Đổi tài khoản nhận lương', body: `${m.name} vừa tự cập nhật tài khoản nhận lương. Kiểm tra trước khi chuyển lương.`, url: `/index.html#/members/${encodeURIComponent(m.id)}`, actorId: m.id }) }); // thưởng KPI DS / thưởng quý cần DS đơn hàng (staff-hub) mà hr không phụ thuộc bán hàng
   registerAdmsRoutes(router);
   registerSynctimeRoutes(router);
-  registerStaffHubRoutes(router,{crmFactsOf,teamRevenueOf:teamPayrollRevenues,weeklyReportOf:weeklyPointsFor});
+  registerStaffHubRoutes(router,{crmFactsOf,teamRevenueOf:teamPayrollRevenues,warehouseBonusOf,weeklyReportOf:weeklyPointsFor});
   registerTeamPayrollSources(router);
   registerFeedbackRoutes(router); // góp ý phát triển phần mềm (mọi nhân viên)
   registerProfitRoutes(router, { staffCostOf, lineCostFallbackOf }); // phân tích lợi nhuận (chỉ Manager); chi phí nhân sự từ bảng lương; giá vốn bổ sung từ đơn NCC / công thức thương hiệu
@@ -174,6 +186,8 @@ export function createAppRouter() {
   registerBadgeRoutes(router);
   registerNavigationCounts(router);
   registerWarehouseWork(router);
+  registerHomeStockValue(router);
+  registerWarehouseWorkspace(router,{assertPayrollOpen:assertWarehousePayrollOpen});
   registerInventoryRoutes(router, { heldQuantitiesOf: stockLookupHolds });
   registerStockIntegrityRoutes(router);
   registerTransferRoutes(router);
@@ -181,5 +195,6 @@ export function createAppRouter() {
   registerStockHistoryRoutes(router);
   registerFlowRoutes(router);
   registerCashbookRoutes(router);
+  registerFinanceRoutes(router);
   return router;
 }
