@@ -30,3 +30,17 @@ test('quote save remembers customer atomically, reuses identity and only updates
   assert.ok((await f.db.select().from(quotations).where(eq(quotations.id,post.data.id)))[0]);
  }
 });
+test('Sale save responses include final customer links and private designs without leaking costs or committing on storage failure',async()=>{
+ const f=await setup(),png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+ const upload=await f.call('/quotes/design-images',f.emp,'POST',{image:png});assert.equal(upload.status,201,JSON.stringify(upload.data));
+ const body={...data({type:'B2B',template:'sale',quoteNo:'SALE-MEMORY-1'}),rememberCustomer:true,customerFields:fields,rows:[{sku:'00123',name:'Ly thiết kế',qty:1,price:100000,discount:0,printFee:1000,costPrice:12345,designImage:true,designImageKey:upload.data.key,image:upload.data.imageUrl}]};
+ const post=await f.call('/quotes',f.emp,'POST',body);assert.equal(post.status,201,JSON.stringify(post.data));assert.ok(post.data.data.customerId);assert.equal(post.data.data.rows[0].image,upload.data.imageUrl);assert.equal(post.data.data.rows[0].costPrice,undefined);
+ let [stored]=await f.db.select().from(quotations).where(eq(quotations.id,post.data.id));let snapshot=JSON.parse(stored!.data);
+ assert.equal(post.data.data.customerId,snapshot.customerId);assert.equal(snapshot.rows[0].image,'');assert.equal(snapshot.rows[0].designImageKey,upload.data.key);
+ const put=await f.call('/quotes/'+post.data.id,f.emp,'PUT',{revision:1,data:{...post.data.data,customerId:'',customer:'Khách thứ hai',phone:'0909999012',customerTaxCode:'0312345689'},rememberCustomer:true,customerFields:fields});assert.equal(put.status,200,JSON.stringify(put.data));assert.ok(put.data.data.customerId);assert.notEqual(put.data.data.customerId,post.data.data.customerId);
+ [stored]=await f.db.select().from(quotations).where(eq(quotations.id,post.data.id));snapshot=JSON.parse(stored!.data);assert.equal(put.data.data.customerId,snapshot.customerId);assert.equal(put.data.data.rows[0].image,upload.data.imageUrl);assert.equal(put.data.data.rows[0].costPrice,undefined);assert.equal(snapshot.rows[0].image,'');
+ const sign=f.files.signedUrls;f.files.signedUrls=async()=>{throw Error('Synthetic storage outage');};
+ try{const failed=await f.call('/quotes/'+post.data.id,f.emp,'PUT',{revision:2,data:{...put.data.data,customerId:'',customer:'Không được ghi',phone:'0909999013',customerTaxCode:'0312345690'},rememberCustomer:true,customerFields:fields});assert.equal(failed.status,500);
+  const [after]=await f.db.select().from(quotations).where(eq(quotations.id,post.data.id));assert.equal(after!.revision,2);assert.equal(after!.data,stored!.data);assert.equal((await f.db.select().from(customers).where(eq(customers.phone,'0909999013'))).length,0);
+ }finally{f.files.signedUrls=sign;}
+});

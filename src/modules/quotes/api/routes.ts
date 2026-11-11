@@ -27,6 +27,12 @@ const forViewer = <T extends Record<string, unknown>>(viewer: { role: string }, 
   // Staff may see the saved customer rebate total, never purchase/printing costs or margin inputs.
   staffSummary: { customerCommission: (Array.isArray(data.rows) ? data.rows as PriceRow[] : []).reduce((sum, row) => sum + commissionOf(row), 0) },
 };
+/** Re-project final transaction data, reusing only images resolved before writes. */
+function savedView(viewer:{role:string},data:Record<string,any>,resolved:Record<string,any>){
+  const view=forViewer(viewer,data);
+  const images=new Map<string,string>((resolved.rows||[]).filter((row:Record<string,any>)=>row.designImageKey).map((row:Record<string,any>)=>[row.designImageKey,row.image]));
+  return {...view,rows:(view.rows||[]).map((row:Record<string,any>)=>row.designImageKey?{...row,image:images.get(row.designImageKey)||''}:row)};
+}
 type Tx = Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
 type QuoteRow = typeof quotations.$inferSelect;
 /**
@@ -271,7 +277,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
       if (data.rows.length) await tx.insert(quoteLines).values(quoteLineRows(id, data));
     });
     // Báo giá nhân viên tạo là nháp: Manager chỉ nhận thông báo khi nhân viên bấm "Gửi duyệt".
-    return json({ id, revision: 1, data: {...viewData, quoteNo: data.quoteNo}, approvalStatus: approval.approvalStatus, ...(customerMemory ? {customerMemory} : {}) }, 201);
+    return json({ id, revision: 1, data: savedView(viewer,data,viewData), approvalStatus: approval.approvalStatus, ...(customerMemory ? {customerMemory} : {}) }, 201);
   }, 'business');
   router.put('/quotes/:id', async c => {
     const viewer = (c.state.session as SessionState).member;
@@ -316,7 +322,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
       title: 'Báo giá chờ duyệt vừa được sửa',
       body: `${viewer.name}: ${data.quoteNo} – ${data.customer || ''}`, url: `/index.html#/quotes/${c.params.id}`, actorId: viewer.id, data: { quoteId: c.params.id } });
     if (saved.revoked) await runAfterCommit(c.env);
-    return json({ id: c.params.id, revision: saved.revision, data: {...viewData!, quoteNo: data.quoteNo}, approvalStatus: saved.approvalStatus, approvalRevoked: saved.revoked, ...(customerMemory ? {customerMemory} : {}) });
+    return json({ id: c.params.id, revision: saved.revision, data: savedView(viewer,data,viewData!), approvalStatus: saved.approvalStatus, approvalRevoked: saved.revoked, ...(customerMemory ? {customerMemory} : {}) });
   }, 'business');
 }
 
