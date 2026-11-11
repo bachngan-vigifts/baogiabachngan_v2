@@ -6,7 +6,7 @@ import {runInNewContext} from 'node:vm';
 /** Thẻ "Tài khoản nhận lương" ở Hồ sơ của tôi: nút điền / đổi chỉ cho chính mình; có QR khi có tài khoản và số tiền. */
 const banks:any=await import(new URL('../../trial-ui/salary-banks.js',import.meta.url).href);
 async function render(access:any,transfer:any,profile:any={},hidden=false,tab='',toasts:string[]=[]){
- const root={innerHTML:'',addEventListener(){},querySelectorAll:()=>[]};
+ const root={innerHTML:'',addEventListener(){},querySelector:()=>null,querySelectorAll:()=>[]};
  const context:any={avAttr:()=>'',bankName:banks.bankName,bankOptions:banks.bankOptions,printPayslip(){},openContractBonusDetails(){},
   document:{querySelector:()=>null,getElementById:(id:string)=>id==='member-detail'?root:{textContent:''}},location:{hash:''}};
  const source=readFileSync(new URL('../../trial-ui/member-detail.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('export function initMemberDetail','globalThis.init = function');

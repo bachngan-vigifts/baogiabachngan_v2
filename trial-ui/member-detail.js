@@ -43,7 +43,7 @@ export function initMemberDetail(deps) {
   const docLink = (id, orderNo, contractNo) => `<a href="${docHref(id, contractNo)}">${esc(contractNo ? 'HĐKT ' + contractNo : orderNo)}</a>`;
   const plainOrders = d => d.orders.filter(o => !o.contract);
   const table = (head, rows, empty) => rows.length
-    ? `<div class="table-wrap"><table class="data-table"><thead><tr>${head.map(h => `<th${h.startsWith('>') ? ' class="right"' : ''}>${esc(h.replace(/^>/, ''))}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
+    ? `<div class="table-wrap md-related-wrap"><table class="data-table md-related-table"><thead><tr>${head.map(h => `<th${h.startsWith('>') ? ' class="right"' : ''}>${esc(h.replace(/^>/, ''))}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
     : `<p class="muted cd-empty">${esc(empty)}</p>`;
   const can = () => st.d.access.canManage;
   const locked = () => st.d.payroll.locked;
@@ -271,6 +271,15 @@ export function initMemberDetail(deps) {
         <div class="chips cd-tabs" role="tablist">${tabs.map(t => `<button type="button" class="chip ${t.key === tab.key ? 'active' : ''}" role="tab" aria-selected="${t.key === tab.key}" data-tab="${t.key}">${t.label} <b>${t.count(d)}</b></button>`).join('')}</div>
         <div class="cd-tab-body">${tab.html(d)}</div>
       </div>`;
+    const tabBar = root.querySelector('.cd-tabs');
+    const selectedTab = tabBar?.querySelector('[aria-selected="true"]');
+    if (selectedTab && tabBar.scrollWidth > tabBar.clientWidth) {
+      const left = selectedTab.getBoundingClientRect().left - tabBar.getBoundingClientRect().left;
+      // Keep the selected tab visible without scrolling the salary/profile page vertically.
+      if (left < 0) tabBar.scrollLeft += left;
+      else if (left + selectedTab.offsetWidth > tabBar.clientWidth)
+        tabBar.scrollLeft += left + selectedTab.offsetWidth - tabBar.clientWidth;
+    }
     root.querySelectorAll('.cd-tab-body table.data-table').forEach(t => {
       const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent);
       t.querySelectorAll('tbody tr').forEach(tr => [...tr.children].forEach((td, i) => { if (i && heads[i]) td.dataset.label = heads[i]; }));
