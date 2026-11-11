@@ -10,12 +10,12 @@ test('phiếu điều chuyển để mang theo: thông tin kho đi/đến, cột
   const html = print.slipSheetHtml(p);
   assert.match(html, /PHIẾU ĐIỀU CHUYỂN KHO/);
   assert.deepEqual(['SL chuyển', 'SL nhận'].map(h => html.includes(`<th>${h}</th>`)), [true, true]);
-  for (const label of ['Người lập phiếu', 'Thủ kho xuất (kho đi)', 'Người giao hàng', 'Thủ kho nhận (kho đến)']) assert.ok(html.includes(`<b>${label}</b>`), label);
+  for (const label of ['Người lập phiếu', 'Người nhận hàng', 'Người giao hàng', 'Người phê duyệt']) assert.ok(html.includes(`<b>${label}</b>`), label);
   assert.ok(html.includes('KHO VIGIFTS') && html.includes('SR Minh Long - Lock') && html.includes('PCK20261102-001'));
   assert.ok(html.includes('02/11/2026'), 'ngày theo giờ Việt Nam');
   assert.ok(!html.includes('<đỏ>') && !html.includes('<30>'), 'tên hàng / lý do không chèn HTML');
   assert.deepEqual(p.lines.map((l: any) => l.received), ['', ''], 'chưa nhận: để trống cho kho đến ghi tay');
-  assert.deepEqual(p.names, ['Nguyễn A', 'Trần Kho', '', '']);
+  assert.deepEqual(p.names, ['Nguyễn A', '', '', 'Lê B']);
   assert.equal(p.docNo, 'PCK20261102-001');
 });
 test('phiếu đã nhận hàng in sẵn SL thực nhận, ghi chú thiếu và tên người nhận; nhận 0 vẫn hiện số 0', () => {
@@ -23,7 +23,7 @@ test('phiếu đã nhận hàng in sẵn SL thực nhận, ghi chú thiếu và 
     lines: [{ sku: 'LY1', name: 'Ly sứ', unit: 'cái', qty: 30, receivedQty: 22 }, { sku: 'DIA2', name: 'Đĩa sứ', unit: 'cái', qty: 10, receivedQty: 0 }] });
   assert.deepEqual(p.lines.map((l: any) => [l.received, l.note]), [[22, 'Thiếu 8'], ['0', 'Thiếu 10']]);
   assert.equal(p.note, 'Kho đi: Xe tải 51C · Nhận hàng: Giao thiếu 8 ly');
-  assert.equal(p.names[3], 'Phạm Nhận');
+  assert.deepEqual(p.names, ['Nguyễn A', 'Phạm Nhận', '', 'Lê B']);
   const html = print.slipSheetHtml(p);
   assert.match(html, /<td class="n">22<\/td>/);assert.match(html, /<td class="n">0<\/td>/);
 });

@@ -71,6 +71,8 @@ test('Excel đơn đặt hàng giữ ghi chú và cùng ngày hẹn giao/ba ch�
     for (const prices of [false, true]) {
       await print.downloadOrderExcel(p, { prices });
       const values = [...cells.values()].map(c => c.value);
+      assert.ok(!values.includes(p.seller) && !values.includes(p.department));
+      assert.equal(cells.get('A1')?.value,'ĐƠN ĐẶT HÀNG');
       if (prices) {
         const price = [...cells.values()].find(c => c.value === 255851.64);
         assert.ok(price); assert.equal(price.numFmt, '#,##0.## \"đ\"');
@@ -184,4 +186,16 @@ test('VIGIFTS: phiếu đóng gói, phiếu giao hàng, đơn đặt hàng dùng
   const d = (o: Record<string, unknown>) => ({ order: { orderNo: 'DH1', customerName: 'K', ...o }, lines: [] });
   assert.match(print.orderSheetHtml(print.orderPrintData(d({ quoteType: 'VIGIFTS' }))), /slip-letterhead-vigifts\.jpg/);
   assert.doesNotMatch(print.orderSheetHtml(print.orderPrintData(d({}))), /slip-letterhead/);
+});
+
+
+test('mẫu xem/in không lặp tên công ty và bộ phận bên cạnh tiêu đề',()=>{
+ const data={order:{...order,quoteType:'VIGIFTS'},lines:[]};
+ const models=[print.orderPrintData(data),print.packingPrintData({seller:print.SELLERS.VG.short,order,lines:[]}),print.deliveryPrintData({seller:print.SELLERS.BN.short,order,lines:[]}),print.transferPrintData({transferNo:'TEST',status:'approved',lines:[]})];
+ for(const [i,p] of models.entries())for(const edit of [false,true]){
+  const html=i===0?print.orderSheetHtml(p,{edit}):print.slipSheetHtml(p,{edit});
+  assert.doesNotMatch(html,/class="ddh-co"|data-f="seller"|data-f="department"|Phòng Kinh Doanh|CTY TNHH SX TM/);
+  assert.match(html,/<div class="ddh-top"><h1>[^<]+<\/h1><\/div>/);
+  assert.match(html,/class="slip-letterhead/);
+ }
 });
