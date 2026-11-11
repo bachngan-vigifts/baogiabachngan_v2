@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
 test('hồ sơ đồng nghiệp payroll=null vẫn render; không có thẻ/tab lương hoặc ngày công dù yêu cầu tab lương', async () => {
-  const root = { innerHTML: '', addEventListener() {}, querySelectorAll: () => [] };
+  const root = { innerHTML: '', addEventListener() {}, querySelector: () => null, querySelectorAll: () => [] };
   const breadcrumb = { textContent: '' };
   const context: any = { avAttr: () => '', document: { getElementById: (id: string) => id === 'member-detail' ? root : breadcrumb }, location: { hash: '' } };
   const source = readFileSync(new URL('../../trial-ui/member-detail.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace('export function initMemberDetail', 'globalThis.init = function');
