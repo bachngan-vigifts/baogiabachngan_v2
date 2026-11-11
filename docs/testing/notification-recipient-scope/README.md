@@ -45,3 +45,9 @@ npm run typecheck
 Local API timing: same DB with 30 targeted notes over 5 orders, one warm-up then 5 requests. Median authenticated in-process `GET /notifications`: before 11.19 ms, after 45.74 ms. Extra cost is current recipient authorization. This is PGlite/local handler timing, **not** production page load, TTFB, browser rendering or push latency. The `/pulse` timestamp retains its existing indexed aggregate and does not load the permission directory. Results are in `performance.json`.
 
 Production rollout still requires merging/deploying the PR, then verifying actual notifications for representative employees/warehouses. No migration is needed and stored notification history is not deleted.
+
+## CI module-boundary correction
+
+The full CI architecture test caught the initial recipient resolver importing business modules from the notifications module. The document resolver now lives in `src/app/notification-recipient-scope.ts`; `app/router.ts` injects it through a small notifications contract, matching the existing task/inventory hook pattern. The notifications module only imports permitted dependencies. Missing wiring fails closed through the existing send error handling. No architecture allowlist or test assertion was relaxed.
+
+Verification after this correction: architecture + recipient/Web Push/POS tests 14/14 passed; typecheck passed. Earlier business validation remains applicable because the document recipient rules were moved unchanged.

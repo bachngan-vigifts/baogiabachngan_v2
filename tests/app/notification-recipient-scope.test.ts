@@ -19,6 +19,7 @@ import { b64url } from '../../src/modules/notifications/domain/web-push.ts';
 const at = '2026-11-11T01:00:00.000Z';
 
 async function setup() {
+  createAppRouter(); // wire the same notification authorization contract as the application
   const f = await createTestDb(); await seedStaff(f.d1);
   const { db } = f;
   await db.insert(departments).values([{ id: 'dept-a', name: 'Test A', createdAt: at }, { id: 'dept-b', name: 'Test B', createdAt: at }]);

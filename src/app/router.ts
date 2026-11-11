@@ -1,3 +1,5 @@
+import { createNotificationScope } from './notification-recipient-scope.ts';
+import { notificationRecipientHooks } from '../modules/notifications/api/recipient-scope.ts';
 import {warehouseBonusOf,assertWarehousePayrollOpen} from './warehouse-payroll.ts';
 import {catalogueCustomerLinks,registerCatalogueCustomers,reassignCatalogueCustomer} from './catalogue-customer-links.ts';
 import {registerHomeStockValue} from './home-stock-value.ts';
@@ -105,6 +107,7 @@ import { saleTargetOf } from './sale-target.ts';
 import { salePayrollPreviewOf } from './sale-payroll-preview.ts';
 import { storeAttendanceOf, storeTargetOf } from './store-report-sources.ts';
 export function createAppRouter() {
+  notificationRecipientHooks.createScope = createNotificationScope;
   transferTaskHooks.afterCommit = syncTransferTasks;
   invoiceTaskHooks.afterCommit = syncInvoiceTasks;
   invoiceTaskHooks.webStatus = webInvoiceStatus;
