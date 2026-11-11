@@ -1309,3 +1309,8 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 @media (prefers-reduced-motion:reduce) { .pos-order-count[aria-busy="true"]::after { animation:none; } }
 /* Override generic busy-container blocking: the search field must stay interactive. */
 #view-pos .pos-order-board[aria-busy="true"] { opacity:1; pointer-events:auto; }
+
+/* QR printing is separate from receipt/payment confirmation. */
+.pos-qr-footer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pos-qr-footer > .primary { grid-column: 1 / -1; }
+.pos-qr-footer .btn { white-space: normal; }
