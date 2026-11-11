@@ -1,6 +1,6 @@
 import { orderNotesFromQuote, orderDeliveryAddress, syncOrderDeliveryNotes, orderRecipient } from './order-notes.js';
 /** Open the business form first. Sapo is contacted only after submitting with its creation option enabled. */
-export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox, createSourcing }) {
+export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox, createSourcing, createProductionFiles }) {
   const dialog = $('#order-create-dialog'), form = $('#order-create-form'), submit = $('#order-create-submit');
   const status = $('#order-create-status'), error = $('#order-create-error');
   let current = null;
@@ -29,8 +29,8 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox, crea
       form.elements.note.value = orderNotesFromQuote(q.data);
       me.source = q.data;
       // Nguồn hàng và số đơn tải song song (trước đây nối tiếp: thêm một lượt chờ mới bấm được Sinh đơn hàng).
-      const [sourcing] = await Promise.all([createSourcing ? createSourcing({host:$('#order-create-sourcing'),quoteId:ref.quoteId,isCurrent:()=>current===me}) : null, previewOrderNo(me)]);
-      if (sourcing) me.sourcing = sourcing;
+      const [sourcing,production] = await Promise.all([createSourcing ? createSourcing({host:$('#order-create-sourcing'),quoteId:ref.quoteId,isCurrent:()=>current===me}) : null, createProductionFiles?createProductionFiles({host:$('#order-create-production-files'),quoteId:ref.quoteId,isCurrent:()=>current===me}):null, previewOrderNo(me)]);
+      if (sourcing) me.sourcing = sourcing; me.production=production;
       if(current!==me)return result;
       me.ready = true; submit.disabled = false; status.textContent = '';
     } catch (e) { if (current === me) { error.textContent = e.message; status.textContent = ''; } }
@@ -63,6 +63,7 @@ export function initOrderCreate({ api, $, todayIso, chooseSapo, confirmBox, crea
     const fields = { orderNo, receiverName: form.elements.receiverName.value, receiverPhone: form.elements.receiverPhone.value, orderDate: form.elements.orderDate.value, deliveryDate: form.elements.deliveryDate.value, deliveryAddress: form.elements.deliveryAddress.value, note: form.elements.note.value };
     try {
       if(me.sourcing?.prepare)sourcing=await me.sourcing.prepare();
+      if(me.production)Object.assign(fields,await me.production.prepare());
       if(current!==me)return;
       Object.assign(fields,sourcing,{note:[fields.note,sourcing.note].filter(Boolean).join('\n\n')});
       const push = form.elements.pushSapo.value === 'yes'; submit.textContent = push ? 'Đang sinh đơn hàng + đơn Sapo…' : 'Đang sinh đơn hàng…';

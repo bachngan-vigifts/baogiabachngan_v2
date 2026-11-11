@@ -1,0 +1,21 @@
+{
+  "desktop1440": true,
+  "mobile390": true,
+  "realOrderFlow": true,
+  "realContractFlow": true,
+  "noUploadBeforeConfirm": true,
+  "lostReplyRetryNoDuplicate": true,
+  "appendAfterCreation": true,
+  "scopedDownloadBytes": true,
+  "missingConnectionExplained": true,
+  "optionalNoFileFlow": true,
+  "noHorizontalOverflow": true,
+  "openTrialsMs": [
+    413.32988900000055,
+    513.5007340000011,
+    426.196136999999
+  ],
+  "openMedianMs": 426.196136999999,
+  "drive": "fixture only; production OAuth not configured",
+  "errors": []
+}
