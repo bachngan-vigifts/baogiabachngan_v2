@@ -185,6 +185,12 @@
     ]
   },
   {
+    "migration": "20261111124855_sales_production_files.sql",
+    "asserts": [
+      "assert-production-files.sql"
+    ]
+  },
+  {
     "migration": "20261112090000_store_report_submission.sql",
     "asserts": [
       "assert-store-report-submission.sql"
