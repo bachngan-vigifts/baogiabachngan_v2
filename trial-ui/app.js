@@ -3344,7 +3344,10 @@ async function lookupCustomerTax(){
     if(!r.active){status.classList.add('warn');notes.unshift(`⚠ Tình trạng: ${r.status||'không rõ'} – kiểm tra trước khi giao dịch.`);}
     else notes.unshift(`Đã điền từ ${r.source}${r.status?' · '+r.status:''}${r.updatedAt?' · cập nhật '+new Date(r.updatedAt).toLocaleDateString('vi-VN'):''}.`);
     notes.push('Nhập người liên hệ, điện thoại rồi bấm Lưu.');
-    status.textContent=notes.join(' ');
+    status.textContent=notes.join(' ')+' ';
+    // Người đại diện / ngày thành lập: Cổng ĐKKD yêu cầu Captcha nên CRM không tự lấy – mở trang để nhân viên tự xem khi cần.
+    const portal=document.createElement('a');portal.href='https://dangkykinhdoanh.gov.vn/vn/Pages/Trangchu.aspx';portal.target='_blank';portal.rel='noopener noreferrer';
+    portal.textContent='Xem người đại diện / ngày thành lập trên Cổng ĐKKD ↗';status.append(portal);
     customerDuplicateCheck.refresh();
     // Ô người liên hệ là danh bạ (input contact ẩn): đưa con trỏ tới tên người liên hệ đầu tiên còn trống.
     if(!el('contact').value)[...$('#customer-dialog').querySelectorAll('input')].find(i=>/Tên người liên hệ/.test(i.getAttribute('aria-label')||i.closest('label')?.textContent||'')&&!i.value&&i.offsetParent)?.focus();
