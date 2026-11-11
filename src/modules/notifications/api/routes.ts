@@ -1,3 +1,4 @@
+import { notificationScope } from './recipient-scope.ts';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -42,14 +43,18 @@ export interface NotifyInput {
  * `ids` = 'managers' → mọi Manager đang làm việc · 'approvers' → Manager + nhân viên được Manager bật cờ "Được duyệt" (việc chờ duyệt).
  */
 export async function notifyMany(env: StaffEnv, ids: (string | null | undefined)[] | 'managers' | 'approvers', n: Omit<NotifyInput, 'targetMemberId' | 'targetRole'>, except: readonly (string | null | undefined)[] = []) {
-  const who = ids === 'managers' ? eq(employees.role, 'manager')
-    : ids === 'approvers' ? or(eq(employees.role, 'manager'), and(eq(employees.role, 'employee'), eq(employees.canApprove, true))) : undefined;
-  const list = who
-    ? (await env.db.select({ id: employees.id }).from(employees).where(and(who, eq(employees.active, true), isNull(employees.deletedAt)))).map(r => r.id)
-    : ids as (string | null | undefined)[];
-  const targets = [...new Set(list.filter((x): x is string => !!x && x !== n.actorId && !except.includes(x)))];
-  await Promise.all(targets.map(id => notify(env, { ...n, targetMemberId: id })));
-  return targets.length;
+  try {
+    const scope = await notificationScope(env.db);
+    const list = typeof ids === 'string' ? scope.people.filter(m => ids === 'managers' ? m.role === 'manager'
+      : m.role === 'manager' || m.role === 'employee' && m.canApprove).map(m => m.id) : ids;
+    const candidates = [...new Set(list.filter((x): x is string => !!x && x !== n.actorId && !except.includes(x)))];
+    const targets = await scope.recipients(n, candidates);
+    await Promise.all(targets.map(id => deliver(env, { ...n, targetMemberId: id })));
+    return targets.length;
+  } catch (error) {
+    console.error('notification recipient authorization failed', n.eventType, error instanceof Error ? error.message : error);
+    return 0;
+  }
 }
 
 /** Kết quả gửi tới một thiết bị (trả cho /push/test và ghi nhật ký). */
@@ -81,6 +86,22 @@ async function logAttempts(env: StaffEnv, notificationId: string, eventType: str
  * và trạng thái gần nhất của từng thiết bị (`last_status`, `last_error`), để kiểm tra máy có nhận được không.
  */
 export async function notify(env: StaffEnv, n: NotifyInput): Promise<{ ok: boolean; sent: number; id?: string; results: PushResult[] }> {
+  try {
+    const scope = await notificationScope(env.db);
+    const candidates = n.targetMemberId ? [n.targetMemberId] : scope.people
+      .filter(m => n.targetRole === 'all' || m.role === (n.targetRole ?? 'manager')).map(m => m.id);
+    const targets = await scope.recipients(n, candidates);
+    const results = await Promise.all(targets.map(id => deliver(env, { ...n, targetMemberId: id })));
+    return { ok: results.every(r => r.ok), sent: results.reduce((sum, r) => sum + r.sent, 0),
+      id: results[0]?.id, results: results.flatMap(r => r.results) };
+  } catch (error) {
+    console.error('notification recipient authorization failed', n.eventType, error instanceof Error ? error.message : error);
+    return { ok: false, sent: 0, results: [] };
+  }
+}
+
+/** Only called after recipient authorization; persist and push always use the same explicit recipient. */
+async function deliver(env: StaffEnv, n: NotifyInput): Promise<{ ok: boolean; sent: number; id?: string; results: PushResult[] }> {
   const note = {
     id: crypto.randomUUID(), eventType: clean(n.eventType, 80), title: clean(n.title, 180), body: clean(n.body, 500), url: clean(n.url || '/', 500),
     targetRole: n.targetMemberId ? null : (n.targetRole ?? 'manager'), targetMemberId: n.targetMemberId ?? null, actorId: n.actorId ?? null,
@@ -109,7 +130,7 @@ async function pushTo(env: StaffEnv, n: NotifyInput, note: StoredNote): Promise<
       results.push({ subscriptionId: null, memberId: note.targetMemberId, status: null, error: NO_KEYS });
     } else {
       const subs = await env.db.select({ id: webPushSubscriptions.id, memberId: webPushSubscriptions.memberId, endpoint: webPushSubscriptions.endpoint, p256dh: webPushSubscriptions.p256dh, auth: webPushSubscriptions.auth })
-        .from(webPushSubscriptions).innerJoin(employees, and(eq(employees.id, webPushSubscriptions.memberId), eq(employees.active, true)))
+        .from(webPushSubscriptions).innerJoin(employees, and(eq(employees.id, webPushSubscriptions.memberId), eq(employees.active, true), isNull(employees.deletedAt)))
         .where(and(isNull(webPushSubscriptions.disabledAt), note.targetMemberId ? eq(webPushSubscriptions.memberId, note.targetMemberId)
           : note.targetRole === 'all' ? undefined : eq(employees.role, note.targetRole as 'manager')));
       if (!subs.length) results.push({ subscriptionId: null, memberId: note.targetMemberId, status: null, error: NO_DEVICE });
@@ -147,8 +168,22 @@ async function pushTo(env: StaffEnv, n: NotifyInput, note: StoredNote): Promise<
 const mine = (m: { id: string; role: string }) => or(eq(webNotifications.targetMemberId, m.id),
   and(isNull(webNotifications.targetMemberId), or(eq(webNotifications.targetRole, 'all'), eq(webNotifications.targetRole, m.role))));
 
+/** Recheck current permissions for persisted notes too; revocation must hide existing document previews. */
+async function visibleNotes<T extends { eventType: string; url: string; dataJson: string }>(db: StaffEnv['db'], m: { id: string }, notes: T[]): Promise<T[]> {
+  if (!notes.length) return [];
+  const scope = await notificationScope(db);
+  const checked = await Promise.all(notes.map(async n => {
+    let data: Record<string, unknown> = {};
+    try { data = JSON.parse(n.dataJson); } catch { /* malformed legacy payload has no grants */ }
+    return (await scope.recipients({ ...n, data }, [m.id])).length > 0;
+  }));
+  return notes.filter((_, i) => checked[i]);
+}
+
 /** Thông báo mới nhất của người xem (cho GET /pulse – trình duyệt chỉ tải lại chuông khi giá trị này đổi). */
 export async function latestNotificationAt(db: StaffEnv['db'], m: { id: string; role: string }): Promise<string> {
+  // Pulse only carries a change timestamp, never document content. Keep this indexed aggregate cheap;
+  // /notifications revalidates document authorization before returning any previews.
   const [r] = await db.select({ at: sql<string | null>`max(${webNotifications.createdAt})` }).from(webNotifications).where(mine(m));
   return r?.at ?? '';
 }
@@ -216,7 +251,8 @@ export function registerNotificationRoutes(router: Router<StaffEnv>) {
       .leftJoin(webNotificationReads, and(eq(webNotificationReads.notificationId, webNotifications.id), eq(webNotificationReads.memberId, me.id)))
       .leftJoin(employees, eq(employees.id, webNotifications.actorId))
       .where(and(mine(me), since ? gt(webNotifications.createdAt, since) : undefined)).orderBy(desc(webNotifications.createdAt)).limit(30);
-    const notifications = rows.map(r => ({ id: r.n.id, eventType: r.n.eventType, title: r.n.title, body: r.n.body, url: r.n.url, createdAt: r.n.createdAt,
+    const visible = new Set((await visibleNotes(c.env.db, me, rows.map(r => r.n))).map(n => n.id));
+    const notifications = rows.filter(r => visible.has(r.n.id)).map(r => ({ id: r.n.id, eventType: r.n.eventType, title: r.n.title, body: r.n.body, url: r.n.url, createdAt: r.n.createdAt,
       actorName: r.actorName ?? '', readAt: r.readAt ?? null, data: (() => { try { return JSON.parse(r.n.dataJson); } catch { return {}; } })() }));
     return json({ notifications, unreadCount: notifications.filter(x => !x.readAt).length });
   }, 'self');
@@ -224,9 +260,10 @@ export function registerNotificationRoutes(router: Router<StaffEnv>) {
   router.post('/notifications/read', async c => {
     const me = (c.state.session as SessionState).member, b = await readJson(c.req, 8_000);
     const ids = Array.isArray(b.ids) ? b.ids.filter((x: unknown) => typeof x === 'string' && /^[a-zA-Z0-9-]{1,64}$/.test(x)).slice(0, 50) as string[] : [];
-    const targets = b.all === true
-      ? (await c.env.db.select({ id: webNotifications.id }).from(webNotifications).where(mine(me)).orderBy(desc(webNotifications.createdAt)).limit(100)).map(r => r.id)
-      : ids.length ? (await c.env.db.select({ id: webNotifications.id }).from(webNotifications).where(and(mine(me), inArray(webNotifications.id, ids)))).map(r => r.id) : [];
+    const rows = b.all === true
+      ? (await c.env.db.select().from(webNotifications).where(mine(me)).orderBy(desc(webNotifications.createdAt)).limit(100))
+      : ids.length ? (await c.env.db.select().from(webNotifications).where(and(mine(me), inArray(webNotifications.id, ids)))) : [];
+    const targets = (await visibleNotes(c.env.db, me, rows)).map(r => r.id);
     const at = nowIso();
     for (const id of targets) await c.env.db.insert(webNotificationReads).values({ notificationId: id, memberId: me.id, readAt: at }).onConflictDoNothing();
     return json({ ok: true, read: targets.length });
