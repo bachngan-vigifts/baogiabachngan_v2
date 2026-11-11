@@ -6,7 +6,9 @@ export function bindForgotPassword({button,api,email=()=>'',audience}) {
     const dialog=el('dialog','modal'),form=el('form','modal-body'),title=el('h2','','Quên mật khẩu');
     const label=el('label','','Email đã đăng ký'),input=el('input');input.type='email';input.required=true;input.maxLength=254;input.autocomplete='email';input.autocapitalize='none';input.setAttribute('aria-label','Email nhận liên kết đặt lại mật khẩu');
     const initial=email();input.value=initial.includes('@')?initial:'';label.append(input);
-    const note=el('p','muted','Nhập email của tài khoản NCC hoặc khách hàng. Hệ thống sẽ gửi liên kết đặt mật khẩu mới nếu tài khoản hợp lệ.');
+    const audienceName=audience==='supplier'?'NCC':audience==='customer'?'khách hàng':'NCC hoặc khách hàng';
+    const note=el('p','muted','Nhập email của tài khoản đăng nhập '+audienceName+'. Email chỉ lưu trong danh bạ NCC/khách hàng chưa phải là tài khoản đăng nhập.');
+    const help=el('p','muted small','Tài khoản nhân viên hoặc Manager: liên hệ quản trị viên để đặt lại mật khẩu. Nếu đủ điều kiện mà chưa nhận được thư, kiểm tra cả thư rác.');
     const message=el('p');message.setAttribute('role','status');
     const actions=el('div','row-gap'),submit=el('button','btn primary','Gửi liên kết đặt lại'),close=el('button','btn secondary','Đóng');submit.type='submit';close.type='button';
     dialog.setAttribute('aria-label','Quên mật khẩu');
@@ -18,7 +20,7 @@ export function bindForgotPassword({button,api,email=()=>'',audience}) {
       catch(e){bot?.reset();message.className='error';message.textContent=e?.status===404?'Chức năng đặt lại mật khẩu đang được cập nhật. Vui lòng thử lại sau ít phút.':e?.message||'Không gửi được yêu cầu. Vui lòng thử lại.';}
       finally{busy=false;submit.disabled=close.disabled=input.disabled=false;}
     });
-    actions.append(submit,close);form.append(title,note,label,message,actions);dialog.append(form);document.body.append(dialog);
+    actions.append(submit,close);form.append(title,note,label,message,help,actions);dialog.append(form);document.body.append(dialog);
     dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();bot=mountTurnstile({api,before:actions,action:'forgot_password'});input.focus();
   });
 }

@@ -1,4 +1,5 @@
 import { lockReceiptForWrite } from './receipt-outbox.ts';
+import {registerPurchaseSupplierSearch} from './purchase-supplier-search.ts';
 import { earlyReceiptContext } from './early-receiving.ts';
 import { queueReceiptJob, dispatchReceiptJob, registerReceiptJobRoutes } from './receipt-outbox.ts';
 import { incomingBySkuView } from './incoming-view.ts';
@@ -175,6 +176,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   // Trang Tra tồn (sổ kho) đọc hàng đang về từ đơn mua NCC.
   incomingLookup.read = (db, skus) => outstandingLines(db, skus);
   const guard = (c: Ctx) => { if (!canUsePurchasing(asActor(me(c)))) fail(403, 'Bạn không có quyền với đơn mua hàng.'); };
+  registerPurchaseSupplierSearch(router,guard);
 
   router.get('/purchase-incoming', async c => {
     guard(c);
