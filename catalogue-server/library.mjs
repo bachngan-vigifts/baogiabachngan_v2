@@ -3,14 +3,17 @@ const base='https://taceqfnsorewelsbdckg.supabase.co/functions/v1/baogia-v2-api/
 export async function libraryProxy(request,fetcher=fetch){
  const auth=request.headers.get('authorization')||'';
  if(!/^Bearer [A-Za-z0-9_.~+\/-]{16,3000}={0,2}$/.test(auth))return Response.json({error:'Đăng nhập CRM để sử dụng thư viện chung.'},{status:401});
- const incoming=new URL(request.url),id=incoming.searchParams.get('id')||'',customers=incoming.pathname.endsWith('/customers'),stock=incoming.pathname.endsWith('/library-stock'),image=incoming.pathname.endsWith('/library-image'),quotes=incoming.pathname.endsWith('/quotes'),archive=incoming.pathname.endsWith('/quote-archive'),bulk=incoming.pathname.endsWith('/library-bulk');
+ const incoming=new URL(request.url),crmProducts=incoming.pathname.endsWith('/crm-products'),crmBrands=incoming.pathname.endsWith('/crm-brands'),crm=crmProducts||crmBrands,id=incoming.searchParams.get('id')||'',customers=incoming.pathname.endsWith('/customers'),stock=incoming.pathname.endsWith('/library-stock'),image=incoming.pathname.endsWith('/library-image'),quotes=incoming.pathname.endsWith('/quotes'),archive=incoming.pathname.endsWith('/quote-archive'),bulk=incoming.pathname.endsWith('/library-bulk');
+ if(crm&&(request.method!=='GET'||id))return Response.json({error:'Danh mục CRM chỉ hỗ trợ đọc danh sách.'},{status:405});
  if(id&&!customers&&!(quotes||archive?/^[A-Za-z0-9_-]{8,80}$/:/^[a-f0-9]{64}$/).test(id))return Response.json({error:'Mã sản phẩm chung chưa hợp lệ.'},{status:400});
  if(bulk&&(request.method!=='POST'||id))return Response.json({error:'Thao tác hàng loạt chưa hợp lệ.'},{status:405});
  if(customers&&request.method!=='GET')return Response.json({error:'Chỉ hỗ trợ tìm khách.'},{status:405});
  if(!['GET','POST','PUT'].includes(request.method)||request.method==='PUT'&&!id||stock&&request.method!=='GET'||image&&request.method!=='POST'||archive&&(!id||request.method!=='POST'))return Response.json({error:'Thao tác chưa hỗ trợ.'},{status:405});
- const path=customers?'/catalogue-customers':bulk?'/catalogue-library/bulk':archive?'/catalogue-quotes/'+id+'/archive':quotes?'/catalogue-quotes'+(id?'/'+id:''):image?'/product-images':stock?'/catalogue-library/stock':id?'/catalogue-library/'+id:'/catalogue-library',url=new URL(base+path);
+ const path=crmProducts?'/products':crmBrands?'/product-brands':customers?'/catalogue-customers':bulk?'/catalogue-library/bulk':archive?'/catalogue-quotes/'+id+'/archive':quotes?'/catalogue-quotes'+(id?'/'+id:''):image?'/product-images':stock?'/catalogue-library/stock':id?'/catalogue-library/'+id:'/catalogue-library',url=new URL(base+path);
  if(customers&&id)url.searchParams.set('id',id);
- for(const key of ['groups','identity','defaultCategory','budgets','lockDiscount','minhDiscount','fee','q','brand','category','collection','pattern','color','offset','limit','skus','archived','includeStock','facets',...(quotes&&!id?['createdBy','employee','from','to','sort','facets']:[])])if(incoming.searchParams.has(key))url.searchParams.set(key,incoming.searchParams.get(key));
+ const allowed=crm?(crmProducts?['q','brand','offset','limit']:[]):['groups','identity','defaultCategory','budgets','lockDiscount','minhDiscount','fee','q','brand','category','collection','pattern','color','offset','limit','skus','archived','includeStock','facets',...(quotes&&!id?['createdBy','employee','from','to','sort','facets']:[])];
+ for(const key of allowed)if(incoming.searchParams.has(key))url.searchParams.set(key,incoming.searchParams.get(key));
+ if(crmProducts)url.searchParams.set('limit','50');
  const body=request.method==='GET'?undefined:await request.text();if(body&&body.length>(quotes?2000000:image?350000:250000))return Response.json({error:'Lô dữ liệu quá lớn.'},{status:413});
  const read=request.method==='GET',headers={Authorization:auth,Origin:'https://crm.minhlongonline.com','Content-Type':'application/json'};
  const send=regional=>fetcher(url.href,{method:request.method,headers:{...headers,...(regional?{'x-region':'ap-northeast-2'}:{})},body,redirect:'manual',signal:AbortSignal.timeout(regional?8000:45000)});

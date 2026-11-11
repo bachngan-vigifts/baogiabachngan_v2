@@ -1,0 +1,25 @@
+{
+  "desktop1440": true,
+  "mobile390": true,
+  "page50plus13": true,
+  "searchWithoutAccents": true,
+  "multiSelect": true,
+  "pdfExport": true,
+  "mixedLibraryAndCrm": true,
+  "repeatKeepsPrice": true,
+  "cloudSaveAndReload": true,
+  "noAutoPublish": true,
+  "contactForMissingPrice": true,
+  "warehouseNoPriceLeak": true,
+  "staleSearchDropped": true,
+  "expiredSessionClearsList": true,
+  "accountSwitchDropsOldResult": true,
+  "noHorizontalOverflow": true,
+  "tabTrialsMs": [
+    100.12462500000038,
+    108.84157400000004,
+    98.89576300000044
+  ],
+  "tabMedianMs": 100.12462500000038,
+  "errors": []
+}

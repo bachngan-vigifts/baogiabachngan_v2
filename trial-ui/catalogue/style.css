@@ -70,3 +70,14 @@
 
 .catalogue-auth{max-width:620px;margin:12vh auto;padding:28px;background:white;border:1px solid var(--line);border-radius:12px}.catalogue-auth .btn{margin:8px 8px 0 0}.catalogue-staff{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px}
 @media(max-width:650px){.catalogue-auth{margin:10vh 16px}.catalogue-staff{max-width:120px}}
+
+.catalogue-product-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
+.crm-product-filters { display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:12px; }
+.crm-product-filters label { display:grid; gap:6px; min-width:0; font-size:13px; }
+.crm-product-filters .input { min-width:0; width:100%; box-sizing:border-box; }
+.crm-product-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:16px; }
+.crm-product-actions label,.crm-product-tick { display:flex; gap:8px; align-items:center; font-size:13px; }
+.crm-product-tick { padding:12px; }.crm-product-grid { padding:0 20px 20px; }
+.crm-products .card-name,.crm-products .hint { overflow-wrap:anywhere; }
+@media(max-width:900px){.crm-product-filters { grid-template-columns:1fr 1fr; }}
+@media(max-width:520px){.crm-product-filters { grid-template-columns:1fr; }.crm-product-grid { padding:0 12px 12px; }.crm-product-actions .btn.primary { width:100%; }}
