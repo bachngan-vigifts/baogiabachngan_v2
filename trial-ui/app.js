@@ -967,7 +967,8 @@ function route() {
   if (view === 'products') {
     productAdmin().loadPending(); legacyImagesBox();
   }
-  if (view === 'staff' && isManager()) loadSapoSync();
+  // Mở app từ Trang chủ thì chưa có danh sách nhân viên / chức vụ: tải khi vào trang Nhân viên (hộp Thêm nhân viên cần chức vụ).
+  if (view === 'staff' && isManager()) { loadSapoSync(); loadMembers(); }
   if (view === 'orders') loadOrders();
   if (view === 'contracts') loadContracts();
   if (view === 'receiving') receivingView().load();
@@ -3402,7 +3403,9 @@ $('#member-filter').addEventListener('click', e => {
   state.memberStatus = chip.dataset.status; renderMembers();
 });
 let memberId = null;
-function openMember(id) {
+async function openMember(id) {
+  // Chưa tải chức vụ (vd mở thẳng từ thông báo / trang khác): tải trước, tránh ô Chức vụ trống → "Chức vụ không hợp lệ".
+  if (!state.positions?.length) { await loadMembers(); if (!state.positions?.length) { toast(state.memberLoadError || 'Chưa tải được danh sách chức vụ. Vui lòng thử lại.', 'err'); return; } }
   memberId = id || null;
   const form = $('#member-form'), m = id ? state.members.find(x => x.id === id) : null;
   form.reset(); $('#member-error').textContent = '';
