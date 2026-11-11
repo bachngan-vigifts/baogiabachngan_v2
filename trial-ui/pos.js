@@ -1,3 +1,4 @@
+import { createLatestRead } from './latest-read.js';
 import {setProductThumbnail,suspendProductThumbnail} from './product-images.js';
 import {createPosOrderBoardCache} from './pos-order-board-cache.js';
 import { createPosStockCache } from './pos-stock-cache.js';
@@ -1742,6 +1743,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         suggestions.hidden = !matches.length;
         input.setAttribute('aria-expanded', String(!!matches.length));
       }
+      const latestCustomerRead = createLatestRead();
       async function find(append = false) {
         if (append && (loading || nextOffset === null)) return;
         const n = append ? seq : ++seq, offset = append ? nextOffset : 0, query = input.value.trim();
@@ -1750,7 +1752,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         input.setAttribute('aria-busy', 'true');
         status.textContent = append ? 'Đang tải thêm khách…' : 'Đang tìm khách…';
         try {
-          const d = await api('/pos/customers?q=' + encodeURIComponent(query) + '&kind=' + kind + '&offset=' + offset);
+          const path = '/pos/customers?q=' + encodeURIComponent(query) + '&kind=' + kind + '&offset=' + offset;
+          const d = await latestCustomerRead(() => n === seq && m.dlg.open ? api(path) : undefined);
           if (n !== seq || !m.dlg.open) return;
           canRetail = !!d.canListRetail;
           retail.disabled = !canRetail;
