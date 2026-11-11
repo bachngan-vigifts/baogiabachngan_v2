@@ -37,3 +37,16 @@ refreshes after the saved quote finishes loading.
   browser JS errors occurred. Evidence: `/tmp/quote-popup-discount/results.json`.
 
 No schema, API, RLS, index or production-data changes. This is a frontend release.
+
+## PR #619 CI follow-up
+
+Shard 3 failed in `mobile-quote-capture.test.ts`: the isolated VM fixture for
+`updateQuoteActions` omitted `editor.rows` and the real `discountProduct`
+dependency added by bulk discount availability. The other three shards passed.
+The fixture now supplies the current document rows, loading/inert state and the
+real predicate. It also asserts that bulk discounts keep edit/approval locks;
+all existing capture/download/no-write assertions remain. No production change
+or CI/test bypass was needed.
+
+The failing test plus bulk discount tests passed; the combined mobile-capture
+and quote regression suite passed all 18 files. Typecheck and UI build passed.
