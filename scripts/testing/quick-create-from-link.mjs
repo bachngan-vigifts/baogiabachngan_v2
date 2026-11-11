@@ -62,6 +62,11 @@ try {
     await noOverflow(page);
     await page.screenshot({ path: `${shots}/product-${width}.png` });
     if (width === 390) for (const name of ['Lấy thông tin', 'Lưu sản phẩm']) assert.ok(await dialog.getByRole('button', { name, exact: true }).isVisible(), 'điện thoại thấy nút ' + name);
+    if (width === 390) { // lưu thật từ điện thoại (đổi mã vì KS-1 đã tạo ở khổ máy tính)
+      await dialog.locator('[name="sku"]').fill('KS-1-M'); await dialog.getByRole('button', { name: 'Lưu sản phẩm', exact: true }).click();
+      await dialog.waitFor({ state: 'hidden', timeout: 10000 }).catch(async () => { throw Error('Điện thoại không lưu được: ' + await dialog.locator('[data-err]').textContent()); });
+      assert.equal((await f.db.select().from(products).where(eq(products.sku, 'KS-1-M'))).length, 1, 'điện thoại đã tạo sản phẩm');
+    }
     if (width === 1280) {
       await dialog.getByRole('button', { name: 'Lưu sản phẩm', exact: true }).click();
       await dialog.waitFor({ state: 'hidden', timeout: 10000 }).catch(async e => { throw Error('Không lưu được: ' + await dialog.locator('[data-err]').textContent()); });
