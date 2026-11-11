@@ -28,14 +28,9 @@ jobs:
           cache: npm
       - name: PHP runtime for WordPress contract tests
         run: php --version
-      - name: PDF text extraction for quote export tests
-        run: |
-          if ! command -v pdftotext >/dev/null 2>&1; then
-            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
-            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install --no-install-recommends -y poppler-utils
-          fi
-          pdftotext -v
       - run: npm ci
+      - name: PDF reader for quote export tests
+        run: node --input-type=module -e "const pdf = await import('pdfjs-dist/legacy/build/pdf.mjs'); console.log('PDF.js', pdf.version)"
       - run: npm run typecheck
       # Node test options must precede the file globs; npm test -- ... appends them too late.
       - run: node --import tsx --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/4 "tests/**/*.test.ts" "src/**/*.test.ts"
