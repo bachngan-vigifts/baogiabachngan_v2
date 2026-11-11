@@ -15,7 +15,12 @@ export const salesPayrollFacts:CrmFactsOf=async(db,month,previous=[],lock=false,
  const rows=await(lock?query.for('share'):query),liquidated=await liquidationAwards(db,rows.map(r=>r.k.id));
  const members=new Map<string,{newCustomers:number;transactions:number;contracts:number;netRevenue?:number;netRevenueIssues?:number}>(),member=(id:string)=>{let n=members.get(id);if(!n){n={newCustomers:0,transactions:0,contracts:0};members.set(id,n);}return n;};
  // Customer creation/approval facts are supplied by the customers module in app composition.
- for(const r of rows)if(['signed','completed'].includes(r.k.status)&&r.o.status!=='cancelled'&&(!options?.approvedOnly||['confirmed','delivering','delivered'].includes(r.o.status))&&r.k.signedDate&&r.k.signedDate>=from&&r.k.signedDate<next)member(r.o.ownerId).contracts++;
+ // KPI counts each approved CRM order once, including orders with an unsigned HĐKT.
+ // Use the order date for both forms: issuing/signing an HĐKT later cannot count the same sale in another month.
+ // Keep the contract facts below on signedDate: star/liquidation rewards have their own eligibility rules.
+ const countQuery=db.select({ownerId:salesOrders.ownerId}).from(salesOrders).where(and(eq(salesOrders.channel,'crm'),
+  gte(salesOrders.orderDate,from),lt(salesOrders.orderDate,next),inArray(salesOrders.status,['confirmed','delivering','delivered'])));
+ for(const o of await(lock?countQuery.for('share'):countQuery))member(o.ownerId).contracts++;
  // Thưởng sao còn tính trên đơn hàng CRM đã duyệt không có HĐKT (tháng = ngày đơn). Đơn có HĐKT tính theo HĐKT, không tính hai lần.
  const previousOrders=previous.filter(id=>id.startsWith(ORDER)).map(id=>id.slice(ORDER.length));
  const orderQuery=db.select().from(salesOrders).where(and(eq(salesOrders.channel,'crm'),

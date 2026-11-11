@@ -91,7 +91,7 @@ export function initWeeklyReports({ api, root, toast, esc, go, money, user, mont
       hD = ['Ngày', 'Khách / đơn'], hR = ['Khách / đơn', '>Còn nợ'];
     const dt = x => x ? `${x.slice(8, 10)}/${x.slice(5, 7)}` : '';
     const delta = (a, b) => b > 0 ? `<small class="${a >= b ? 'wr-up' : 'wr-down'}">${a >= b ? '▲' : '▼'} ${pctText(Math.abs(a / b - 1))}</small>` : '';
-    const KPI_LABEL = { newCustomers: 'Khách hàng mới', transactions: 'Giao dịch chăm sóc', contracts: 'HĐKT ký', revenue: 'Doanh số (KPI)' };
+    const KPI_LABEL = { newCustomers: 'Khách hàng mới', transactions: 'Giao dịch chăm sóc', contracts: 'Đơn hàng / HĐKT', revenue: 'Doanh số (KPI)' };
     function monthSections() {
       const pr = f.payroll, b = pr?.bonus, k = pr?.kpi, hK = ['Chỉ số', '>Thực hiện', '>Chỉ tiêu', '>Đạt'], hI = ['Nhóm', '>Doanh số', '>%'], hT = ['Khách', '>Doanh số'];
       const num = x => x === null || x === undefined ? '—' : Math.round(x).toLocaleString('vi-VN');

@@ -14,7 +14,7 @@ Phát triển trên trang `#/care`, giữ nhật ký và lịch hẹn cũ. Menu 
 
 ## Số liệu và quyền
 
-App lắp `crmFactsOf` từ care/sales vào HR; HR không import sales/care. KH mới = khách định danh có đơn CRM đầu tiên đã duyệt, xét toàn lịch sử và loại nháp/huỷ. Không suy đoán khách lẻ POS/đơn web thành KH mới. Số HĐ = HĐKT ký trong tháng, signed/completed, đơn chưa huỷ. Doanh số KPI hiện có vẫn theo `memberRevenues` (gồm VAT); riêng xếp sao HĐKT dùng `subtotal` trước VAT.
+App lắp `crmFactsOf` từ care/sales vào HR; HR không import sales/care. KH mới = khách định danh có đơn CRM đầu tiên đã duyệt, xét toàn lịch sử và loại nháp/huỷ. Không suy đoán khách lẻ POS/đơn web thành KH mới. Chỉ tiêu **Đơn hàng / HĐKT** đếm mỗi đơn CRM `confirmed`/`delivering`/`delivered` một lần theo `order_date`, ghi cho `owner_id`. Đơn có HĐKT chưa ký vẫn tính khi đơn đã duyệt; đơn nháp/chờ duyệt/huỷ và POS không tính. Lập hoặc ký HĐKT sau đó không cộng thêm hay chuyển tháng KPI. Thưởng sao HĐKT vẫn xét trạng thái/ngày ký riêng, thưởng thanh lý vẫn theo duyệt thanh lý; thay cách đếm KPI không tự sinh thưởng. Doanh số KPI hiện có vẫn theo `memberRevenues` (gồm VAT); riêng xếp sao HĐKT dùng `subtotal` trước VAT.
 
 Ô KPI null lấy CRM khi áp dụng; số 0 nhập tay giữ là 0 (phần cộng ngày làm hàng/công tác vẫn theo công thức hiện có). Với Sale, KPI cố định ưu tiên hơn KPI chốt tháng, rồi mới công thức. Sale Admin được loại ở máy chủ dù hồ sơ cũ còn cờ KPI; API không cho bật KPI hay KPI cố định cho chức vụ này. Thưởng KPI chỉ khi hồ sơ bật KPI ở bảng Sale & Văn phòng. Thưởng HĐKT bật độc lập trên hồ sơ Sale / Sale Admin.
 
