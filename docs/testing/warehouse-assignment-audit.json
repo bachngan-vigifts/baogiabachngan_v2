@@ -1,0 +1,122 @@
+{
+  "baselineCommit": "584766b8",
+  "candidate": "PR #623 audit follow-up",
+  "pglite": {
+    "passed": 60,
+    "failed": 0
+  },
+  "postgres17MultiConnection": {
+    "passed": 22,
+    "failed": 0
+  },
+  "migrationGates": {
+    "passed": 3,
+    "failed": 0
+  },
+  "browser": {
+    "desktop1440": true,
+    "mobile390": true,
+    "realSourceSelected": true,
+    "noFreeFormTask": true,
+    "teamParts": 2,
+    "normalizedWeight": 1,
+    "lostResponseRetrySafe": true,
+    "workerOwnPart": true,
+    "noEligibleStaffBlocked": true,
+    "missingWarehouseExplained": true,
+    "noHorizontalOverflow": true,
+    "popupTrialsMs": [
+      94.12395199999992,
+      101.9346660000001,
+      111.74844399999984
+    ],
+    "popupMedianMs": 101.9346660000001,
+    "errors": []
+  },
+  "typecheck": "passed",
+  "uiBuild": "passed",
+  "performanceBefore": {
+    "conditions": "3 warmed browser reloads; HTTP cache disabled by routing; Chromium; 390x844; localhost/PGlite; identical homeFixture; no throttling; external requests blocked; not production metrics",
+    "trials": [
+      {
+        "loadMs": 508.40000000596046,
+        "ttfbMs": 10.599999994039536,
+        "fcpMs": 124,
+        "lcpMs": 580,
+        "cls": 0.08597769188726266,
+        "readyMs": 575.6021720000008,
+        "workspaceHandlerMs": 29.12186500000007
+      },
+      {
+        "loadMs": 479.7999999821186,
+        "ttfbMs": 9,
+        "fcpMs": 128,
+        "lcpMs": 516,
+        "cls": 0.08597769188726266,
+        "readyMs": 538.4395080000013,
+        "workspaceHandlerMs": 25.622294999999212
+      },
+      {
+        "loadMs": 510.80000001192093,
+        "ttfbMs": 8.100000023841858,
+        "fcpMs": 120,
+        "lcpMs": 520,
+        "cls": 0.08597769188726266,
+        "readyMs": 553.898623000001,
+        "workspaceHandlerMs": 24.46771500000068
+      }
+    ],
+    "median": {
+      "loadMs": 508.40000000596046,
+      "ttfbMs": 9,
+      "fcpMs": 124,
+      "lcpMs": 520,
+      "cls": 0.08597769188726266,
+      "readyMs": 553.898623000001,
+      "workspaceHandlerMs": 25.622294999999212
+    }
+  },
+  "performanceAfter": {
+    "conditions": "3 warmed browser reloads; HTTP cache disabled by routing; Chromium; 390x844; localhost/PGlite; identical homeFixture; no throttling; external requests blocked; not production metrics",
+    "trials": [
+      {
+        "loadMs": 456.39999997615814,
+        "ttfbMs": 7,
+        "fcpMs": 124,
+        "lcpMs": 528,
+        "cls": 0.08597769188726266,
+        "readyMs": 535.5977780000003,
+        "workspaceHandlerMs": 18.797755999999936
+      },
+      {
+        "loadMs": 462.2999999821186,
+        "ttfbMs": 6.9000000059604645,
+        "fcpMs": 112,
+        "lcpMs": 508,
+        "cls": 0.08597769188726266,
+        "readyMs": 521.0420550000008,
+        "workspaceHandlerMs": 17.436947000000146
+      },
+      {
+        "loadMs": 464.30000001192093,
+        "ttfbMs": 7.800000011920929,
+        "fcpMs": 108,
+        "lcpMs": 544,
+        "cls": 0.08597769188726266,
+        "readyMs": 533.6029450000005,
+        "workspaceHandlerMs": 21.357420000000275
+      }
+    ],
+    "median": {
+      "loadMs": 462.2999999821186,
+      "ttfbMs": 7,
+      "fcpMs": 112,
+      "lcpMs": 528,
+      "cls": 0.08597769188726266,
+      "readyMs": 533.6029450000005,
+      "workspaceHandlerMs": 18.797755999999936
+    }
+  },
+  "productionBusinessWrites": false,
+  "productionRoleWarehouseChanges": false
+}

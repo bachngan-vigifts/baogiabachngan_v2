@@ -3,7 +3,7 @@ import type {AnyDb} from '../../core/db/client.ts';
 import type {WarehouseSourceTask} from '../../core/contracts/warehouse-source.ts';
 import {warehouseSourceHooks} from '../../core/contracts/warehouse-source.ts';
 import {AppError} from '../../core/errors.ts';
-import {employees} from '../staff/schema.ts';
+import {employees,positionPermissions} from '../staff/schema.ts';
 import {tasks} from '../tasks/schema.ts';
 import {warehouseStaff} from '../inventory/api/transfer-routes.ts';
 import {warehouseWorkAssignments as assignments,warehouseWorkSourceLinks as links,warehouseWorkParts as parts,warehouseWorkRuns as runs,warehouseWorkMonths as months,warehouseWorkSettings as settings} from './schema.ts';
@@ -11,6 +11,8 @@ import {warehouseAvailability,warehouseDispatchLock,dispatchWarehouseQueue} from
 import {recommendWarehouseMember,parseJson,validCalendar,vietnamMonth} from './domain.ts';
 import {sha256Hex} from '../staff/domain/session.ts';
 function fail(message:string,status=409):never{throw new AppError(status,message);}
+export const isWarehouseSourceWork=(t:{autoKey:string|null})=>/^(slip:|pack:|transfer-(?:move|receive):|receiving-due:|po-sapo:|purchase:)/.test(t.autoKey||'');
+export const sourceWorkKeySql=()=>sql`coalesce(${tasks.autoKey},'') ~ '^(slip:|pack:|transfer-(move|receive):|receiving-due:|po-sapo:|purchase:)'`;
 export const withoutAssignedSource=()=>sql`not exists(select 1 from ${links} join ${assignments} on ${assignments.taskId}=${links.assignmentId} where ${links.taskId}=${tasks.id} and (${assignments.mode}='team' or ${links.taskId}<>${assignments.taskId}))`;
 export const withoutAnyAssignment=()=>sql`not exists(select 1 from ${links} where ${links.taskId}=${tasks.id})`;
 export async function warehouseAssignees(db:AnyDb,ids:string[]){
@@ -27,7 +29,10 @@ export async function assignmentRoster(db:AnyDb,t:WarehouseSourceTask,now:string
  if(!warehouseSourceHooks.resolve)fail('Chưa kết nối phân công với phiếu nguồn.',503);
  const source=await warehouseSourceHooks.resolve!(db,t);if(!source||source.cancelled)return null;
  const ids=await warehouseStaff(db,source.warehouseId);
- const people=ids.length?await db.select({id:employees.id,name:employees.name}).from(employees).where(and(inArray(employees.id,ids),eq(employees.positionId,'warehouse'),eq(employees.active,true),isNull(employees.deletedAt))):[];
+ const sourcePermissions=source.kind==='packing'?['page.packing']:source.kind==='transfer'?['stock.transfer']:['page.purchases','purchases.receive',...(t.autoKey?.startsWith('receiving-due:early:')?['purchases.early-view']:[])];
+ const grants=await db.select({key:positionPermissions.permission}).from(positionPermissions).where(eq(positionPermissions.positionId,'warehouse'));
+ const permitted=sourcePermissions.every(key=>grants.some(g=>g.key===key));
+ const people=ids.length&&permitted?await db.select({id:employees.id,name:employees.name}).from(employees).where(and(inArray(employees.id,ids),eq(employees.positionId,'warehouse'),eq(employees.active,true),isNull(employees.deletedAt))):[];
  const roster=await warehouseAvailability(db,now);
  if(!people.length)return{source,people:[],recommended:null};
  const peopleIds=people.map(p=>p.id),since=new Date(Date.parse(now)-30*86400e3).toISOString();
@@ -42,9 +47,9 @@ export async function assignmentRoster(db:AnyDb,t:WarehouseSourceTask,now:string
 const warehouseTask=()=>or(eq(tasks.assigneePosition,'warehouse'),sql`${tasks.assigneeId} in (select id from staff_members where position_id='warehouse' and role='employee')`);
 export async function assignmentCandidates(db:AnyDb,now:string,query={taskId:'',q:'',page:0}){
  const rows=await db.select().from(tasks).where(and(warehouseTask(),sql`${tasks.autoKey} is not null`,eq(tasks.status,'todo'),sql`not exists(select 1 from ${runs} where ${runs.taskId}=${tasks.id})`,query.taskId?eq(tasks.id,query.taskId):undefined,sql`not exists(select 1 from ${links} join ${assignments} on ${assignments.taskId}=${links.assignmentId} where ${links.taskId}=${tasks.id} and ${assignments.prepared}=true)`,query.q?sql`${tasks.title} ilike ${'%'+query.q.replace(/[\\%_]/g,'\\$&')+'%'}`:undefined)).orderBy(asc(tasks.dueDate),asc(tasks.id)).limit(101).offset(query.page*100);
- const groups=new Map<string,typeof rows[number]>();
- for(const t of rows){const guessed=t.autoKey?.startsWith('receiving-due:')?t.autoKey.slice(0,t.autoKey.lastIndexOf(':')):t.autoKey;if(guessed&&groups.has(guessed))continue;const source=await warehouseSourceHooks.resolve?.(db,t);if(source&&!source.cancelled&&!source.complete&&!groups.has(source.operationKey))groups.set(source.operationKey,t);}
- return{tasks:[...groups.values()].map(t=>({id:t.id,title:t.title,source:t.source,sourceId:t.sourceId,link:t.link,dueDate:t.dueDate,dueTime:t.dueTime,taskRevision:t.revision})),hasMore:rows.length>100};
+ const groups=new Map<string,typeof rows[number]>(),blocked:{id:string;title:string;reason:string}[]=[];
+ for(const t of rows){const guessed=t.autoKey?.startsWith('receiving-due:')?t.autoKey.slice(0,t.autoKey.lastIndexOf(':')):t.autoKey;if(guessed&&groups.has(guessed))continue;const source=await warehouseSourceHooks.resolve?.(db,t);if(!source&&isWarehouseSourceWork(t))blocked.push({id:t.id,title:t.title,reason:'Chưa xác định được một kho nguồn hợp lệ. Kiểm tra kho trên phiếu gốc.'});if(source&&!source.cancelled&&!source.complete&&!groups.has(source.operationKey))groups.set(source.operationKey,t);}
+ return{tasks:[...groups.values()].map(t=>({id:t.id,title:t.title,source:t.source,sourceId:t.sourceId,link:t.link,dueDate:t.dueDate,dueTime:t.dueTime,taskRevision:t.revision})),hasMore:rows.length>100,blocked};
 }
 async function linkAliases(db:AnyDb,t:typeof tasks.$inferSelect,operationKey:string,assignmentId:string){
  // Reminder keys include a recipient. Group only warehouse reminders for this exact source step.
@@ -61,7 +66,9 @@ export async function assignFreshWarehouseTasks(db:AnyDb,ids:string[],now:string
   const rows=await d.select().from(tasks).where(and(inArray(tasks.id,ids),warehouseTask(),eq(tasks.status,'todo'))).orderBy(asc(tasks.id));
   for(const t of rows){const info=await assignmentRoster(d,t,now);if(!info||!info.recommended||info.source.complete)continue;
    const [prior]=await d.select().from(assignments).where(eq(assignments.operationKey,info.source.operationKey));
-   const id=prior?.taskId??t.id,lead=prior?.leadId??info.recommended.id;
+   const id=prior?.taskId??t.id,lead=prior&&(prior.prepared||info.people.some(p=>p.id===prior.leadId))?prior.leadId:info.recommended.id;
+   if(prior?.prepared){await linkAliases(d,t,info.source.operationKey,id);if(t.id!==id)await d.update(tasks).set({assigneeId:lead,assigneePosition:null,updatedAt:now,revision:sql`${tasks.revision}+1`}).where(eq(tasks.id,t.id));continue;}
+   if(prior&&(prior.leadId!==lead||prior.warehouseId!==info.source.warehouseId))await d.update(assignments).set({leadId:lead,warehouseId:info.source.warehouseId,updatedAt:now,revision:sql`${assignments.revision}+1`}).where(eq(assignments.taskId,id));
    if((await d.select({id:runs.taskId}).from(runs).where(eq(runs.taskId,t.id)).limit(1)).length)continue;
    const siblings=await d.select().from(tasks).innerJoin(runs,eq(runs.taskId,tasks.id)).where(and(eq(tasks.source,t.source),t.sourceId?eq(tasks.sourceId,t.sourceId):eq(tasks.id,t.id),warehouseTask()));
    let tracked=false;for(const sibling of siblings){if((await warehouseSourceHooks.resolve?.(d,sibling.tasks))?.operationKey===info.source.operationKey){tracked=true;break;}}if(tracked)continue;
@@ -93,9 +100,9 @@ export async function prepareSourceAssignment(db:AnyDb,taskId:string,actorId:str
   const root=prior?.taskId??initial.id,[parent]=await d.select().from(tasks).where(eq(tasks.id,root));if(!parent||parent.status!=='todo')fail('Chỉ phân công việc chưa bắt đầu.');
   const [oldRun]=await d.select().from(runs).where(eq(runs.taskId,root));if(oldRun)fail('Việc đã có dữ liệu theo dõi. Giữ luồng xử lý hiện tại.');
   const [config]=await d.select().from(settings).where(eq(settings.id,'default'));if(!config||!validCalendar(parseJson(config.calendar,null)))fail('Cài đặt ca làm trước khi giao định mức.',400);
-  if(!parent.dueDate)fail('Phiếu nguồn chưa có hạn. Đặt hạn trước khi giao việc.',400);
-  const originalDue=new Date(parent.dueDate+'T'+(parent.dueTime||'23:59')+':00+07:00').toISOString();
-  const parsedDue=Date.parse(requestedDue||originalDue);if(!Number.isFinite(parsedDue)||parsedDue<=Date.parse(now))fail('Chọn hạn theo dõi từ lúc giao việc; không hồi tố điểm việc đã quá hạn.',400);
+  const originalDue=parent.dueDate?new Date(parent.dueDate+'T'+(parent.dueTime||'23:59')+':00+07:00').toISOString():null;
+  if(!originalDue&&!requestedDue)fail('Chọn hạn theo dõi và ghi lý do khi phiếu nguồn chưa có hạn.',400);
+  const parsedDue=Date.parse(requestedDue||originalDue!);if(!Number.isFinite(parsedDue)||parsedDue<=Date.parse(now))fail('Chọn hạn theo dõi từ lúc giao việc; không hồi tố điểm việc đã quá hạn.',400);
   const due=new Date(parsedDue).toISOString();if(due!==originalDue&&!reason)fail('Ghi lý do khi đặt hạn phần việc khác hạn phiếu gốc.',400);
   const closed=await d.select().from(months).where(and(inArray(months.memberId,ids),eq(months.month,vietnamMonth(due))));if(closed.length)fail('Có thành viên đã chốt hiệu suất tháng. Không ghi vào kỳ đã chốt.');
   if(prior)await d.update(assignments).set({mode,warehouseId:info.source.warehouseId,leadId:lead,prepared:true,requestHash:hash,reason,createdBy:actorId,updatedAt:now,revision:prior.revision+1}).where(eq(assignments.taskId,root));

@@ -52,3 +52,22 @@ Nhánh phát triển không tự chạy migration/cron của tính năng này tr
 | Handler GET workspace | 24,9 ms | 26,0 ms |
 
 Đây là dữ liệu kiểm thử tổng hợp, cache trình duyệt đã khởi động (Playwright routing tắt HTTP cache), không phải production hay bằng chứng cải thiện tốc độ thực tế. Chưa thấy chậm rõ ở fixture nhỏ; số đo có dao động giữa các lần chạy; chưa suy ra khả năng đáp ứng với hàng nghìn phiếu. LCP được quan sát đến 500 ms sau khi workspace xuất hiện. Khi rollout cần đo lại trên staging có quy mô dữ liệu tương đương.
+
+
+## Rà soát mở rộng 11/11
+
+Xem [ma trận vai trò/kho và các lỗi đã sửa](testing/warehouse-assignment-audit.md), [kết quả đo và kiểm thử](testing/warehouse-assignment-audit.json). Kiểm tra quyền nghiệp vụ và nhân viên hoạt động khi phân công/bắt đầu; chuẩn bị lại đề xuất chưa duyệt nếu người cũ đã khóa. Cho đặt hạn được duyệt khi phiếu chưa có ngày hẹn, không ghi lại ngày trên chứng từ. Lời nhắc mới nối vào assignment đã chuẩn bị. Phần việc bị trả lại có thể làm lại sau khi nguồn hoàn tất, giữ giờ công và lỗi lần đầu.
+
+So với bản PR `584766b8`, cùng điều kiện browser/fixture như trên, median 3 lần mỗi bản:
+
+| Chỉ số | Trước audit | Sau audit |
+|---|---:|---:|
+| Load event | 508,4 ms | 462,3 ms |
+| TTFB HTML | 9,0 ms | 7,0 ms |
+| FCP | 124,0 ms | 112,0 ms |
+| LCP | 520,0 ms | 528,0 ms |
+| CLS | 0,0860 | 0,0860 |
+| Workspace sẵn sàng | 553,9 ms | 533,6 ms |
+| Handler GET workspace | 25,6 ms | 18,8 ms |
+
+Popup: median 101,9 ms qua 3 lần mở trên fixture. Chưa thấy chậm rõ trong phạm vi thử nghiệm này; không suy ra tốc độ production.
