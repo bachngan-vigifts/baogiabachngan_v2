@@ -1,8 +1,8 @@
 import { documentDate, documentNumberPatterns, nextDocumentNumber } from '../../../core/document-number.ts';
 /** Quote prefixes stay HRC_BG / B2B_BG / VG_BG; displayed numbers use PREFIX_NNN_DDMMYYYY. */
-export const QUOTE_NO_PREFIX = { HRC: 'HRC', B2B: 'B2B', VIGIFTS: 'VG' } as const;
-const OLD_RE = /^((?:HRC|B2B|VG)_BG)(\d{4})(\d{2})(\d{2})_(\d{3,})$/;
-const NEW_RE = /^((?:HRC|B2B|VG)_BG)_(\d{3,})_(\d{2})(\d{2})(\d{4})$/;
+export const QUOTE_NO_PREFIX = { HRC: 'HRC', B2B: 'B2B', VIGIFTS: 'VG', SALE: 'SALE' } as const;
+const OLD_RE = /^((?:HRC|B2B|VG|SALE)_BG)(\d{4})(\d{2})(\d{2})_(\d{3,})$/;
+const NEW_RE = /^((?:HRC|B2B|VG|SALE)_BG)_(\d{3,})_(\d{2})(\d{2})(\d{4})$/;
 /** Internal series key, retained for compatibility; it is not the displayed prefix. */
 export const quoteHeadFor = (type: string, date: string) => {
   documentDate(date);
@@ -16,7 +16,7 @@ export function autoQuoteHead(no: string): string | null {
   return prefix + date.replaceAll('-', '') + '_';
 }
 function series(head: string) {
-  const m = /^((?:HRC|B2B|VG)_BG)(\d{4})(\d{2})(\d{2})_$/.exec(head);
+  const m = /^((?:HRC|B2B|VG|SALE)_BG)(\d{4})(\d{2})(\d{2})_$/.exec(head);
   if (!m) throw new Error('Loại số báo giá không hợp lệ.');
   return { prefix: m[1]!, date: `${m[2]}-${m[3]}-${m[4]}` };
 }

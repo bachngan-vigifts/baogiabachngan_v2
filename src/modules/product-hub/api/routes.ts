@@ -1,4 +1,5 @@
 import {employees} from '../../staff/schema.ts';
+import {registerSalePriceSuggestions} from './sale-price-suggestions.ts';
 import {productQuoteProfit} from '../domain/product-profit.ts';
 import {and,asc,eq,inArray,ne,or,sql,type SQL} from 'drizzle-orm';
 import {AppError} from '../../../core/errors.ts';
@@ -95,6 +96,7 @@ export async function productDocuments(db:Db,sku:string,m:Member,kind:ProductDoc
  })};
 }
 export function registerProductDetailRoutes(router:Router<StaffEnv>){
+ registerSalePriceSuggestions(router);
  router.get('/products/:sku/overview',async c=>{
   const db=c.env.db,m=(c.state.session as SessionState).member,sku=c.params.sku!;
   const [product]=await db.select().from(products).where(eq(products.sku,sku));if(!product)throw new AppError(404,'Không tìm thấy sản phẩm.');

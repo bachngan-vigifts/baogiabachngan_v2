@@ -1,3 +1,4 @@
+import {registerQuoteDesignImages,checkDesignKeys,withDesignImages} from '../../src/modules/quotes/api/design-images.ts';
 import { pendingGhnEdit, assertNoPendingGhnEdit } from '../../src/modules/sales/domain/pos-ghn-edit.ts';
 import { posOrderStoreScope } from '../../src/modules/sales/api/pos-access.ts';
 import assert from 'node:assert/strict';
@@ -132,7 +133,7 @@ test('employee cannot edit or delete an approved quote through the API', async (
   const sql: any = () => null;
   sql.join = () => null; sql.raw = () => null;
   const ctx: any = {
-    quotationPredicate, sql, quotations: table, eq: () => null, and: () => null,
+    quotationPredicate, registerQuoteDesignImages, checkDesignKeys, withDesignImages, sql, quotations: table, eq: () => null, and: () => null,
     quotationEditScope: () => ({ sql: '', bindings: [] }),
     cleanQuotation: (data: any) => data, readJson: async () => ({ revision: 1, data: {} }),
     AppError: class extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status; } },

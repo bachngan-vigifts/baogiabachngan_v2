@@ -40,6 +40,7 @@
 <link rel="stylesheet" href="warehouse-workspace.css">
 <link rel="stylesheet" href="dialog-layout.css">
 <link rel="stylesheet" href="compact-stock-dialogs.css">
+<link rel="stylesheet" href="sale-quote-layout.css">
 </head>
 <body>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
@@ -214,7 +215,7 @@
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><input id="quote-search" type="search" placeholder="Tìm số báo giá, khách hàng, số điện thoại…" aria-label="Tìm báo giá"></label>
           <div class="chips" id="type-filter" role="group" aria-label="Lọc theo loại">
-            <button class="chip active" data-type="">Tất cả</button><button class="chip" data-type="B2B">B2B</button><button class="chip" data-type="HRC">HRC</button><button class="chip" data-type="VIGIFTS">VIGIFTS</button>
+            <button class="chip active" data-type="">Tất cả</button><button class="chip" data-type="B2B">B2B</button><button class="chip" data-type="HRC">HRC</button><button class="chip" data-type="VIGIFTS">VIGIFTS</button><button class="chip" data-type="SALE">Sale</button>
           </div>
           <select id="quote-owner" aria-label="Người tạo" hidden><option value="">Mọi người tạo</option><option value="mine">Của tôi</option><option value="others">Người khác</option></select>
           <select id="quote-sort" aria-label="Sắp xếp">
@@ -263,6 +264,8 @@
                 <button type="button" role="menuitem" id="pdf-quote-nock">PDF A4 theo mẫu – ẩn cột CK</button>
                 <button type="button" role="menuitem" id="print-quote">In nhanh (trình duyệt)</button>
                 <button type="button" role="menuitem" id="excel-quote">Excel (báo giá + phí vận chuyển)</button>
+                <button type="button" role="menuitem" id="pdf-quote-sale" data-export>PDF cho Sale (8 cột)</button>
+                <button type="button" role="menuitem" id="excel-quote-sale" data-export>Excel cho Sale (8 cột)</button>
               </span>
             </span>
             <button type="button" class="btn secondary" id="duplicate-quote" hidden title="Tạo bản sao với số báo giá mới">Nhân bản</button>
@@ -292,6 +295,7 @@
               <button type="button" data-value="HRC" role="radio"><b>HRC</b><small>Không phí in</small></button>
               <button type="button" data-value="B2B" role="radio"><b>B2B</b><small>Có phí in</small></button>
               <button type="button" data-value="VIGIFTS" role="radio"><b>VIGIFTS</b><small>Quà tặng</small></button>
+              <button type="button" data-value="SALE" role="radio"><b>Báo giá Sale</b><small>Ảnh thiết kế riêng</small></button>
             </div>
             <!-- VAT chung không còn nhập tay: mỗi dòng dùng thuế của sản phẩm; giữ giá trị mặc định cho dòng nhập tay. -->
             <input type="hidden" name="vat">
@@ -359,19 +363,19 @@
             </dl>
             <p class="muted small" id="words-total"></p>
           </div>
-          <button type="button" class="btn navy block manager-only" id="toggle-profit" aria-expanded="false">Xem lợi nhuận tạm tính</button>
+          <button type="button" class="btn navy block" id="toggle-profit" aria-expanded="false">Xem lợi nhuận tạm tính</button>
           <!-- Lợi nhuận tạm tính (chỉ Manager) – y như web cũ: doanh thu trước VAT − giá nhập − cước người gửi trả − phí in gia công. -->
           <div class="card profit-card" id="profit-card" hidden>
-            <div class="profit-head"><span>Lợi nhuận nhanh</span>
-              <div class="profit-head-actions"><button type="button" id="refresh-profit-costs">Cập nhật CK mua vào</button><button type="button" id="toggle-cost-fields" aria-pressed="false">Xem giá nhập</button></div>
-              <b id="sum-margin">0%</b></div>
+            <div class="profit-head"><span id="profit-title">Lợi nhuận nhanh</span>
+              <div class="profit-head-actions manager-only"><button type="button" id="refresh-profit-costs">Cập nhật CK mua vào</button><button type="button" id="toggle-cost-fields" aria-pressed="false">Xem giá nhập</button></div>
+              <b class="manager-only" id="sum-margin">0%</b></div>
             <dl class="totals profit">
               <div><dt>Doanh thu trước VAT</dt><dd id="sum-revenue">0 ₫</dd></div>
               <div class="profit-commission"><dt><button type="button" class="link-btn" id="open-commission" title="Nhập CK cho khách theo từng mã hàng">CK khách (tiền cà phê) ›</button></dt><dd id="sum-commission">0 ₫</dd></div>
-              <div><dt>Giá nhập</dt><dd id="sum-cost">0 ₫</dd></div>
+              <div class="manager-only"><dt>Giá nhập</dt><dd id="sum-cost">0 ₫</dd></div>
               <div><dt>Cước vận chuyển</dt><dd id="sum-shipping">Chưa có cước dự toán</dd></div>
             </dl>
-            <section class="profit-printing" id="profit-printing" hidden>
+            <section class="profit-printing manager-only" id="profit-printing" hidden>
               <h3>Phí in gia công</h3>
               <div class="table-wrap"><table class="data-table printing-table"><thead id="printing-head"></thead><tbody id="printing-rows"></tbody></table></div>
               <p class="muted small" id="printing-status" role="status"></p>
@@ -381,8 +385,8 @@
               <label><input type="radio" name="profitShippingPayer" value="receiver" checked> Người nhận trả</label>
             </fieldset>
             <p class="muted small" id="profit-shipping-hint" hidden>Chưa có cước dự toán nên lợi nhuận chưa trừ chi phí vận chuyển.</p>
-            <dl class="totals"><div class="grand"><dt>Lợi nhuận gộp</dt><dd id="sum-gross">0 ₫</dd></div></dl>
-            <p class="muted small">Chỉ Manager thấy mục này. Bấm cập nhật CK mua vào để tự điền giá nhập theo nhóm hàng.</p>
+            <dl class="totals manager-only"><div class="grand"><dt>Lợi nhuận gộp</dt><dd id="sum-gross">0 ₫</dd></div></dl>
+            <p class="muted small" id="profit-privacy-note">Giá nhập, chi phí in gia công và lợi nhuận chỉ Manager xem được.</p>
           </div>
           <div class="card">
             <div class="card-head-row"><h2 class="card-title">Ghi chú báo giá</h2><button type="button" class="btn secondary small" id="edit-terms" title="Đổi tỷ lệ cọc, hạn thanh toán, chiết khấu – ghi chú thanh toán tự cập nhật">Điều khoản thanh toán</button></div>
@@ -1129,6 +1133,7 @@
         <button type="button" data-value="HRC" role="radio"><b>HRC</b></button>
         <button type="button" data-value="B2B" role="radio"><b>B2B</b></button>
         <button type="button" data-value="VIGIFTS" role="radio"><b>Vigifts</b></button>
+        <button type="button" data-value="SALE" role="radio"><b>Báo giá Sale</b></button>
       </div>
       <div class="form-grid cols-2">
         <label class="span-2">Khách hàng (không bắt buộc)
