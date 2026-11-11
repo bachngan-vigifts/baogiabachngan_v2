@@ -1,13 +1,59 @@
 {
-  "scope": "Local CRM/router/PGlite with synthetic quotes; no production requests",
-  "formats": [
+  "scope": "Local real CRM/router/PGlite; synthetic data only; no production requests",
+  "saleTemplate": [
+    {
+      "width": 390,
+      "columns": 8,
+      "draftWithoutImage": true,
+      "privateDesign": true,
+      "average": 100000,
+      "amount": 410000,
+      "pdf": "Sale-SALE_BG_001_11112026.pdf",
+      "excel": "Sale-SALE_BG_001_11112026.xlsx",
+      "errors": 0
+    },
+    {
+      "width": 768,
+      "columns": 8,
+      "draftWithoutImage": true,
+      "privateDesign": true,
+      "average": 100000,
+      "amount": 410000,
+      "pdf": "Sale-SALE_BG_002_11112026.pdf",
+      "excel": "Sale-SALE_BG_002_11112026.xlsx",
+      "errors": 0
+    },
+    {
+      "width": 1280,
+      "columns": 8,
+      "draftWithoutImage": true,
+      "privateDesign": true,
+      "average": 100000,
+      "amount": 410000,
+      "pdf": "Sale-SALE_BG_003_11112026.pdf",
+      "excel": "Sale-SALE_BG_003_11112026.xlsx",
+      "errors": 0
+    },
+    {
+      "width": 1920,
+      "columns": 8,
+      "draftWithoutImage": true,
+      "privateDesign": true,
+      "average": 100000,
+      "amount": 410000,
+      "pdf": "Sale-SALE_BG_004_11112026.pdf",
+      "excel": "Sale-SALE_BG_004_11112026.xlsx",
+      "errors": 0
+    }
+  ],
+  "existingTemplates": [
     {
       "type": "HRC",
       "width": 1280,
       "pdf": "Sale-HRC_SALE_EXPORT_1280.pdf",
       "excel": "Sale-HRC_SALE_EXPORT_1280.xlsx",
-      "columns": 5,
-      "noSourceImages": true,
+      "columns": 8,
+      "embeddedDesign": true,
       "errors": 0
     },
     {
@@ -15,8 +61,8 @@
       "width": 1280,
       "pdf": "Sale-B2B_SALE_EXPORT_1280.pdf",
       "excel": "Sale-B2B_SALE_EXPORT_1280.xlsx",
-      "columns": 5,
-      "noSourceImages": true,
+      "columns": 8,
+      "embeddedDesign": true,
       "errors": 0
     },
     {
@@ -24,18 +70,18 @@
       "width": 390,
       "pdf": "Sale-VIGIFTS_SALE_EXPORT_390.pdf",
       "excel": "Sale-VIGIFTS_SALE_EXPORT_390.xlsx",
-      "columns": 5,
-      "noSourceImages": true,
+      "columns": 8,
+      "embeddedDesign": true,
       "errors": 0
     }
   ],
   "validation": [
-    "draft export blocked for employee",
-    "approved employee exports through the real download menu",
-    "PDF text read with pdftotext; correct headers and amounts",
-    "XLSX serialized/reloaded; one worksheet and five numeric/text columns",
-    "no hidden customer/cost/SKU/unit/note fields",
-    "no source-image fetch or business write during export",
-    "long Vietnamese PDF names paginate across pages"
+    "Draft without design is saved; submit/approve/export require complete designs.",
+    "Private design objects are separate from immutable catalogue images; no signed URLs in stored quote JSON.",
+    "Employee summary exposes saved customer rebate total, hides purchase/printing costs, gross profit and margin.",
+    "Eight-column PDF/XLSX contain embedded designs and numeric price/quantity/amount; no hidden cost/customer/SKU fields.",
+    "Six-month quantity-weighted averages use scoped sales snapshots, exclude VAT/print and effective returned quantity; missing history stays unknown.",
+    "Large SKU lists are batched; no per-product API loop, no business writes during export.",
+    "Responsive checks: 390/768/1280/1920; zero browser JavaScript errors."
   ]
 }

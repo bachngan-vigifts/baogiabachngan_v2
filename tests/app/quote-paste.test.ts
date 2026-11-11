@@ -11,7 +11,7 @@ const blankSource=source.slice(source.indexOf('const defaultLineDiscount ='),sou
 function fixture(){
  let id=0;
  const ctx:any={editor:{defaultDiscount:15,discountMode:'percent',brandDiscounts:null},state:{policies:[{id:'retail',name:'Giá lẻ +VAT'}]},uid:()=>String(++id),PACKAGING_DEFAULT:'Thùng carton',
-  currentPolicy:()=> 'retail',priceOf:(p:any,id:string)=>p.prices?.[id]??null,netPrice,customerDiscount,brandDiscountKey,isManager:()=>false,
+  location:{hash:'#/quotes/new'},currentPolicy:()=> 'retail',priceOf:(p:any,id:string)=>p.prices?.[id]??null,netPrice,customerDiscount,brandDiscountKey,isManager:()=>false,
   defaultCostDiscount:()=>50,purchasePrice:(price:number,d:number)=>price*(1-d/100),savableImage:()=>true,toast:()=>{}};
  runInNewContext(parseSource+blankSource+rowSource+'\nthis.parseNum=parseNum;this.blankRow=blankRow;this.rowFromProduct=rowFromProduct;',ctx);
  const product={sku:'00123',name:'Bộ trà',unit:'Bộ',brand:'MINHLONG',pattern:'Sen',taxable:true,taxOut:8,prices:{retail:108000},imageUrl:'https://example.com/tea.jpg',perCarton:12,cartonWeight:8,cartonLength:40,cartonWidth:30,cartonHeight:20};
@@ -50,4 +50,9 @@ test('unfilled manual quantity/price/discount must be entered before saving; exp
  const base={quoteNo:'BG',customer:'Khách',date:'2026-10-30',vat:8};
  for(const key of ['price','qty','discount'])assert.match(ctx.validate({...base,rows:[{name:'Bộ trà',price:0,qty:1,discount:0,[key]:''}]}),/nhập tay/);
  assert.equal(ctx.validate({...base,rows:[{name:'Bộ trà',price:0,qty:1,discount:0}]}),'');
+});
+
+test('Sale product additions never reuse catalogue images or hidden brand discounts',()=>{
+ const f=fixture();f.ctx.editor.base={template:'sale'};f.ctx.editor.brandDiscounts={minhLong:30};
+ const row=f.make(f.parse('00123\t2'),[f.product]).rows[0];assert.equal(row.image,undefined);assert.equal(row.designImage,undefined);assert.equal(row.discount,0);assert.equal(row.price,100000);
 });

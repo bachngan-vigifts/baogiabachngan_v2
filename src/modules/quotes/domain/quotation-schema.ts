@@ -1,5 +1,6 @@
 import { AppError } from '../../../core/errors.ts';
 import { purchasePrice } from './quote-math.ts';
+import { assertSaleTemplate } from './sale-template.ts';
 
 /*
  * Kiểm tra và làm sạch báo giá trước khi lưu. Port NGUYÊN VĂN logic của `validateQuotation` bản cũ
@@ -54,6 +55,10 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
   const text = (value: unknown, max: number): string => { if (typeof value !== 'string' || value.length > max) throw bad('Nội dung báo giá không hợp lệ.'); return value; };
   const number = (value: unknown, max: number): number => { if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > max) throw bad('Số liệu báo giá không hợp lệ.'); return value; };
   const result: Obj = { type: inp.type };
+  if (inp.template !== undefined) {
+    if (inp.template !== 'sale') throw bad('Mẫu báo giá không hợp lệ.');
+    result.template = 'sale';
+  }
   for (const key of ['quoteNo', 'date', 'customer', 'customerId', 'customerTaxCode', 'customerCode', 'customerAddress', 'contact', 'phone', 'email', 'owner', 'ownerPhone', 'notes']) result[key] = text(inp[key] ?? '', key === 'notes' ? 20000 : 500);
   if (inp.internalNote !== undefined) result.internalNote = text(inp.internalNote, 3000);
   if (!result.quoteNo.trim()) throw bad('Vui lòng nhập số báo giá.');
@@ -123,6 +128,12 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
     if (row.manualDescription !== undefined) clean.manualDescription = text(row.manualDescription, 2000);
     for (const key of ['sku', 'name', 'unit', 'brand', 'pattern', 'image']) clean[key] = text(row[key] ?? '', key === 'image' ? 250000 : 4000);
     if (clean.image && !/^https:\/\//i.test(clean.image) && !/^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(clean.image)) throw bad('Hình ảnh phải dùng HTTPS hoặc ảnh JPEG, PNG, WebP.');
+    if (row.designImage === true) clean.designImage = true;
+    if (row.designImageKey !== undefined) {
+      clean.designImageKey = text(row.designImageKey, 250);
+      if (!/^quote-designs\/[\w-]+\/[a-f0-9-]{36}\.(?:jpg|png|webp)$/.test(clean.designImageKey)) throw bad('Khoá ảnh thiết kế không hợp lệ.');
+      clean.image = ''; // Signed URLs are response-only and must never be persisted.
+    }
     for (const key of ['qty', 'price', 'discount', 'printFee', 'perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight']) clean[key] = number(row[key] ?? 0, key === 'discount' ? (row.discountType === 'amount' ? Number(row.price || 0) : 100) : 1e12);
     if (row.purchaseDiscount !== undefined && row.purchaseDiscount !== null) clean.purchaseDiscount = number(row.purchaseDiscount, 100);
     if (row.costPrice !== undefined) clean.costPrice = number(row.costPrice, 1e12);
@@ -154,6 +165,7 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
     for (const key of ['status', 'productStatus']) if (row[key] !== undefined) clean[key] = text(row[key], 120);
     return clean;
   });
+  assertSaleTemplate(result, false); // Incomplete designs may be saved as drafts; submit/approve enforce completeness.
   // Tài liệu JSON có giới hạn kích thước để dòng D1 không phình to; ảnh tải lên lớn phải dùng R2/Drive.
   if (new TextEncoder().encode(JSON.stringify(result)).length > maxBytes) throw bad('Báo giá có quá nhiều ảnh tải lên. Vui lòng dùng đường dẫn ảnh Drive.', 413);
   return result;
