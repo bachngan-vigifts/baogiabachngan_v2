@@ -2789,3 +2789,6 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .product-brand-options label { display:flex; align-items:center; gap:10px; padding:9px 5px; overflow-wrap:anywhere; }
 .product-brand-options label[hidden] { display:none; }
 .product-brand-options input { width:18px; height:18px; flex:none; }
+
+.production-files { border:1px solid var(--line,#dce3ee); border-radius:10px; padding:14px; margin:12px 0; }
+.production-file-row { display:flex; align-items:center; gap:10px; margin:10px 0; overflow-wrap:anywhere; }.production-file-row span { flex:1; min-width:0; }.production-file-row small { display:block; color:var(--muted); }.production-files [type=file] { max-width:100%; }

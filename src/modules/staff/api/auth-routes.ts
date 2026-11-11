@@ -77,6 +77,8 @@ export interface StaffEnv {
   pushFetch?: typeof fetch;
   /** Kho file (đính kèm tin nhắn): Supabase Storage ở Edge, bộ nhớ trong khi test. Thiếu thì không gửi được file. */
   files?: FileStore;
+  productionDrive?: import('../../../core/storage/production-drive.ts').ProductionDrive;
+  productionFilesRequired?: boolean;
   /** Hàm fetch tải ảnh ngoài cho PDF / Excel báo giá (test truyền máy chủ ảnh giả). */
   imageFetch?: typeof fetch;
   /** Kho ảnh sản phẩm (bucket public product-images): ảnh chuyển từ web cũ sang. */
@@ -322,7 +324,7 @@ export const isSyncPath = (url: URL) => url.pathname.startsWith(SYNC_PREFIX);
  */
 const AUDIT_AREAS = new Set<unknown>(['business', 'admin', 'ncc-admin', 'customer-portal', 'supplier-portal']);
 // AppSheet imports record a counts-only run inside their transaction; never duplicate source PII in generic request logs.
-const AUDIT_SKIP = /^\/api\/staff\/(appsheet-customers(?:\/|$)|images\/fetch|chat\/|notifications\/read|push\/|csp-report)/;
+const AUDIT_SKIP = /^\/api\/staff\/(appsheet-customers(?:\/|$)|quotes\/[^/]+\/production-files\/[^/]+|images\/fetch|chat\/|notifications\/read|push\/|csp-report)/;
 const auditable = (c: RouteContext<StaffEnv>) => AUDIT_AREAS.has(c.meta) && !AUDIT_SKIP.test(c.url.pathname);
 
 export function createStaffRouter(options: StaffRouterOptions = {}): Router<StaffEnv> {

@@ -405,3 +405,15 @@ export const orderStockHolds = pgTable('order_stock_holds', {
   index('idx_order_stock_holds_line').on(t.orderLineId),
   index('idx_order_stock_holds_expiry').on(t.status, t.expiresAt),
 ]);
+
+/** Private Drive destinations and immutable production-file versions; access only through scoped CRM routes. */
+export const productionFolders=pgTable('sales_production_folders',{
+ quoteId:text('quote_id').primaryKey().references(()=>quotations.id),driveId:text('drive_id').notNull().unique(),createdAt:text('created_at').notNull(),
+}).enableRLS();
+export const productionFiles=pgTable('sales_production_files',{
+ id:text('id').primaryKey(),quoteId:text('quote_id').notNull().references(()=>quotations.id),
+ quoteRevision:bigint('quote_revision',{mode:'number'}).notNull(),name:text('name').notNull(),mime:text('mime').notNull(),bytes:bigint('bytes',{mode:'number'}).notNull(),sha256:text('sha256').notNull(),md5:text('md5').notNull(),driveId:text('drive_id').notNull().unique(),
+ status:text('status',{enum:['uploading','ready']}).notNull().default('uploading'),createdBy:text('created_by').notNull().references(()=>employees.id),createdAt:text('created_at').notNull(),
+},t=>[uniqueIndex('production_quote_hash').on(t.quoteId,t.quoteRevision,t.sha256),check('production_file_size',sql`${t.bytes}>0 AND ${t.bytes}<=10485760`),enumCheck('production_file_status',t.status,['uploading','ready'])]).enableRLS();
+
+export const productionFileLinks=pgTable('sales_production_file_links',{orderId:text('order_id').notNull().references(()=>salesOrders.id),fileId:text('file_id').notNull().references(()=>productionFiles.id)},t=>[primaryKey({columns:[t.orderId,t.fileId]})]).enableRLS();

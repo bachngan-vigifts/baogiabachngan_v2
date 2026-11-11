@@ -256,6 +256,8 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
     } catch (e) {
       // Còn đơn đặt hàng / HĐKT trỏ tới báo giá (khoá ngoại) → không xoá.
       const code = (e as { code?: string; cause?: { code?: string } })?.code ?? (e as { cause?: { code?: string } })?.cause?.code;
+      const constraint=(e as {constraint?:string;cause?:{constraint?:string}})?.constraint||(e as {cause?:{constraint?:string}})?.cause?.constraint||'';
+      if(code==='23503'&&/^sales_production_(files|folders).*quote_id/.test(constraint))throw new AppError(409,'Báo giá đã có hồ sơ file sản xuất. Giữ báo giá để bảo toàn lịch sử file Drive.');
       if (code === '23503') throw new AppError(409, 'Báo giá đã có đơn đặt hàng hoặc HĐKT nên không xoá được.');
       throw e;
     }
