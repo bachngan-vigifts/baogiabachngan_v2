@@ -6,7 +6,8 @@ import {employees,positionPermissions} from '../../src/modules/staff/schema.ts';
 import {salesOrders,salesOrderLines,salesContracts,deliveries,deliveryLines} from '../../src/modules/sales/schema.ts';
 import {routePermission} from '../../src/modules/staff/domain/permissions.ts';
 
-test('sản phẩm theo đơn: dữ liệu thật theo ID dòng, giữ scope, tính lịch đúng trước phân trang và không ghi dữ liệu',async()=>{
+test('sản phẩm theo đơn: dữ liệu thật theo ID dòng, giữ scope, tính lịch đúng trước phân trang và không ghi dữ liệu',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-09T12:00:00.000Z')});
  const f=await setup(),now='2026-11-01T00:00:00.000Z';
  const order=(id:string,owner='emp',extra={})=>({id,orderNo:'LIVE-'+id,quoteType:'HRC' as const,ownerId:owner,createdBy:owner,customerName:'Khách hàng '+id,orderDate:'2026-11-01',expectedDeliveryDate:'2026-11-10',status:'confirmed' as const,createdAt:now,updatedAt:now,...extra});
  await f.db.insert(salesOrders).values([order('own'),order('private','mgr'),order('pos','emp',{channel:'pos',status:'delivered'}),order('cancelled','emp',{status:'cancelled'})]);
@@ -55,6 +56,11 @@ test('sản phẩm theo đơn: dữ liệu thật theo ID dòng, giữ scope, t�
  assert.equal('unitPrice' in warehouse.lines[0],false);assert.equal('amount' in warehouse.lines[0],false);assert.equal(warehouse.lines[0].canSchedule,false);
  for(const q of ['status=bad','sort=bad','kind=bad','channel=bad','orderStatus=processing','from=2026-02-30','from=2027-01-01&to=2026-01-01','limit=0','limit=201','offset=-1','offset=1.5','q='+'a'.repeat(201)])assert.equal((await f.call('/order-products?'+q,f.mgr)).status,400,q);
  const [stored]=await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.id,'line-1'));assert.ok(stored);assert.equal(stored.deliveredQty,3,'GET không ghi lại số đã giao');
+ // Hạn giao 10/11 chỉ quá hạn khi đã sang 11/11 theo giờ Việt Nam.
+ t.mock.timers.setTime(new Date('2026-11-10T16:59:59.000Z').getTime());
+ const onDueDate=await read('status=overdue&q=00123');assert.equal(onDueDate.calculatedDate,'2026-11-10');assert.deepEqual(onDueDate.lines.map((l:any)=>l.id),['line-1']);
+ t.mock.timers.setTime(new Date('2026-11-10T17:00:00.000Z').getTime());
+ const afterMidnight=await read('status=overdue&q=00123');assert.equal(afterMidnight.calculatedDate,'2026-11-11');assert.deepEqual(afterMidnight.lines.map((l:any)=>l.id),['line-1','line-2']);
 });
 
 test('quyền API và đường dẫn thao tác dùng luồng đơn / lịch thật',async()=>{
