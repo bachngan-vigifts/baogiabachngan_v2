@@ -7,7 +7,7 @@ const deferred = () => { let resolve!: (v: any) => void, reject!: (e: any) => vo
 function editorSetup() {
   const calls: Record<string, ReturnType<typeof deferred>> = {}, applied: any[] = [], errors: any[] = [];
   const context: any = { location: { hash: '#/quotes/ttc' }, document: {}, editor: { id: null, dirty: false, pending: null }, qf: { contains: () => true },
-    $: () => ({}), field: () => ({ focus() {} }), setTimeout() {}, newQuoteData: () => ({ customer: '' }), markDirty() {}, syncEditorQuoteNo() {},
+    $: () => ({}), field: () => ({ focus() {} }), setTimeout() {}, newQuoteData: () => ({ customer: '' }), markDirty() {}, syncEditorQuoteNo() {}, updateQuoteActions() {},
     api: (path: string) => (calls[path] ||= deferred()).promise,
     fillEditor: (id: string, _r: number, data: any) => { applied.push({ id, customer: data.customer }); context.editor.id=id; context.editor.dirty=false; },
     toast: (...args: any[]) => errors.push(args), go: (...args: any[]) => errors.push(args) };

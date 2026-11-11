@@ -332,9 +332,10 @@
             <div><h2 class="card-title">Sản phẩm báo giá <span class="muted" id="line-count"></span></h2><small class="muted" id="type-hint"></small></div>
             <div class="row-gap">
               <button type="button" class="btn ghost small" id="toggle-subs" aria-pressed="false" title="Ẩn / hiện 3 dòng Bộ gồm, Mô tả in ấn, Đóng gói (chỉ ẩn trên màn hình, dữ liệu và file in giữ nguyên)">Ẩn mô tả</button>
-              <button type="button" class="btn ghost small" id="paste-lines">Dán từ Excel</button>
+              <button type="button" class="btn ghost small" id="bulk-discount" data-mobile-inline>Chỉnh CK hàng loạt</button>
+              <button type="button" class="btn ghost small" id="paste-lines" data-no-busy>Dán từ Excel</button>
               <button type="button" class="btn secondary small" id="add-line">＋ Thêm dòng trống</button>
-              <button type="button" class="btn navy small" id="pick-products">＋ Thêm sản phẩm</button>
+              <button type="button" class="btn navy small" id="pick-products" data-no-busy>＋ Thêm sản phẩm</button>
               <button type="button" class="btn secondary small mobile-quote-capture" id="quote-capture">📷 Chụp báo giá</button>
             </div>
           </div>
@@ -949,7 +950,19 @@
   </form>
 </dialog>
 
-<dialog id="paste-dialog" class="modal wide">
+<dialog id="bulk-discount-dialog" data-no-busy class="modal narrow">
+  <form novalidate>
+    <div class="modal-head"><h2>Chỉnh chiết khấu hàng loạt</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-body form-grid">
+      <label>Chiết khấu mới (%)<input name="discount" type="number" min="0" max="100" step="0.01" required placeholder="Ví dụ: 20"></label>
+      <label>Áp dụng cho<select name="scope"><option value="all">Tất cả dòng sản phẩm</option><option value="zero">Chỉ dòng sản phẩm CK bằng 0</option></select></label>
+      <p class="muted" data-summary></p><p class="error" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button type="submit" class="btn primary">Áp dụng CK</button></div>
+  </form>
+</dialog>
+
+<dialog id="paste-dialog" data-no-busy class="modal wide">
   <form id="paste-form" novalidate>
     <div class="modal-head"><h2>Dán sản phẩm từ Excel</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
     <div class="modal-body">
@@ -1240,7 +1253,7 @@
   </form>
 </dialog>
 
-<dialog id="picker-dialog" class="modal wide">
+<dialog id="picker-dialog" data-no-busy class="modal wide">
   <div class="modal-head"><div><span class="eyebrow">Danh mục Sapo</span><h2>Tìm nhanh sản phẩm</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
   <div class="modal-body picker-body">
     <div class="catalog-options">

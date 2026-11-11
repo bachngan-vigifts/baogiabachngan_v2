@@ -1,3 +1,4 @@
+import {initBulkQuoteDiscount,discountProduct} from './quote-bulk-discount.js';
 import {deliveryTone,deliveryIsOverdue,fulfilmentLegend,fulfilmentBadge,compactFulfilmentTable} from './fulfilment-display.js';
 import {initWarehouseWorkspace} from './warehouse-workspace.js';
 import { createNotificationFeed } from './notification-feed.js';
@@ -1276,7 +1277,7 @@ async function openEditor(id) {
     if (!current()) return;
     toast(e.message, 'err');
     if (e.status !== 401) { editor.dirty = false; go('#/quotes'); }
-  } finally { if (current()) { editor.loading = false; qf.inert = false; } }
+  } finally { if (current()) { editor.loading = false; qf.inert = false; updateQuoteActions(); } }
 }
 
 function fillEditor(id, revision, data, meta = {}) {
@@ -1429,6 +1430,7 @@ function renderLines(focus) {
   // Báo giá chưa có sản phẩm: thay dòng trống số 1 bằng lời mời "+ Thêm sản phẩm".
   $('#line-list').innerHTML = editor.rows.length ? editor.rows.map(lineCell).join('')
     : `<tr class="line-empty"><td colspan="${$$('#line-head th').length || 1}"><button type="button" class="add-first" data-add-first>＋ Thêm sản phẩm</button></td></tr>`;
+  $('#bulk-discount').disabled=quoteDiscountLocked()||!editor.rows.some(discountProduct);
   $('#line-count').textContent = `(${editor.rows.length})`;
   $('#m-line-count').textContent = `${editor.rows.length} sản phẩm`;
   if ($('#shipping-card').open) renderShippingRows();
@@ -2128,12 +2130,15 @@ $('#save-to-contacts').addEventListener('click', async () => {
   finally { btn.disabled = false; }
 });
 
+const quoteDiscountLocked=()=>editor.loading||qf.inert||(!!editor.id&&(editor.approval?.canEdit===false||editor.approval?.status==='approved'&&!isManager()));
+initBulkQuoteDiscount({button:$('#bulk-discount'),dialog:$('#bulk-discount-dialog'),getRows:()=>editor.rows,isLocked:quoteDiscountLocked,context:()=>editorLoadSequence+':'+(editor.id||'new'),apply:result=>{editor.rows=result.rows;editor.discountMode='percent';markDirty();renderLines();toast('Đã cập nhật CK cho '+result.count+' dòng. Bấm Lưu báo giá để ghi nhận.');}});
 // ----- dán từ Excel: SKU + số lượng, thông tin và chính sách lấy từ dữ liệu CRM.
 const parsePaste = text => parseSkuQuantities(text, parseNum);
-let pasteBusy = false;
+let pasteBusy = false, pasteGeneration=0;
+function resetPasteDialog(){pasteGeneration++;pasteBusy=false;$('#paste-text').value='';$('#paste-text').disabled=false;$('#paste-preview').textContent='';$('#paste-apply').disabled=false;$('#paste-apply').textContent='Thêm vào báo giá';}
+$('#paste-dialog').addEventListener('close',resetPasteDialog);
 $('#paste-lines').addEventListener('click', () => {
-  if(pasteBusy)return;
-  $('#paste-text').value = ''; $('#paste-preview').textContent = ''; $('#paste-dialog').showModal();
+  resetPasteDialog(); $('#paste-dialog').showModal();
 });
 $('#paste-text').addEventListener('input', e => {
   try { const rows=parsePaste(e.target.value);$('#paste-preview').textContent=rows.length?`Nhận được ${rows.length} dòng. Giá và chiết khấu theo chính sách hiện tại; ô thiếu để nhập tay.`:''; }
@@ -2146,8 +2151,9 @@ $('#paste-form').addEventListener('submit', async e => {
   try{items=parsePaste(text.value);}catch(error){preview.textContent=error.message;return;}
   if(!items.length){preview.textContent='Dán cột Mã hàng và Số lượng từ Excel.';return;}
   if(items.length>300){preview.textContent='Báo giá tối đa 300 dòng.';return;}
+  const generation=pasteGeneration;
   const context={sequence:editorLoadSequence,id:editor.id,customerId:editor.customerId,policy:preferredPolicy,discount:editor.defaultDiscount,mode:editor.discountMode};
-  const current=()=>dialog.open&&context.sequence===editorLoadSequence&&context.id===editor.id&&context.customerId===editor.customerId&&context.policy===preferredPolicy&&context.discount===editor.defaultDiscount&&context.mode===editor.discountMode;
+  const current=()=>generation===pasteGeneration&&dialog.open&&context.sequence===editorLoadSequence&&context.id===editor.id&&context.customerId===editor.customerId&&context.policy===preferredPolicy&&context.discount===editor.defaultDiscount&&context.mode===editor.discountMode;
   pasteBusy=true;button.disabled=true;text.disabled=true;button.textContent='Đang tìm mã hàng…';preview.textContent='Đang lấy thông tin sản phẩm và chính sách…';
   try{
     const wanted=new Set(items.map(item=>item.sku).filter(Boolean));
@@ -2155,13 +2161,13 @@ $('#paste-form').addEventListener('submit', async e => {
     const found=new Set(products.map(product=>product.sku)),missing=[...wanted].filter(sku=>!found.has(sku));
     const lookup=missing.length?api('/products?skus='+encodeURIComponent(missing.join(','))):Promise.resolve(null);
     const [data]=await Promise.all([lookup,loadBrandDiscounts({strict:true})]);
-    if(!current()){if(dialog.open)preview.textContent='Báo giá, khách hàng hoặc chính sách đã đổi. Bấm thêm lại để áp đúng chính sách.';return;}
+    if(!current()){if(generation===pasteGeneration&&dialog.open)preview.textContent='Báo giá, khách hàng hoặc chính sách đã đổi. Bấm thêm lại để áp đúng chính sách.';return;}
     if(data){products.push(...data.products);if(!state.policies.length&&data.policies)state.policies=data.policies;}
     const {rows,warnings}=pasteRows(items,products,{blankRow,rowFromProduct});
     if(!addRowsToQuote(rows)){preview.textContent='Báo giá tối đa 300 dòng.';return;}
     dialog.close();toast(`Đã thêm ${rows.length} dòng.${warnings.length?' Có '+warnings.length+' dòng cần nhập tay thông tin/giá.':''}`);
   }catch(error){if(current())preview.textContent=error.message;}
-  finally{pasteBusy=false;button.disabled=false;text.disabled=false;button.textContent='Thêm vào báo giá';}
+  finally{if(generation===pasteGeneration){pasteBusy=false;button.disabled=false;text.disabled=false;button.textContent='Thêm vào báo giá';}}
 });
 
 // ----- lưu
@@ -2942,6 +2948,10 @@ function pickerOptions() {
     scope: $('#picker-all').checked ? '' : editor.type === 'VIGIFTS' ? 'other' : 'minhlong' };
 }
 async function loadPicker(more = false) {
+  if(!$('#picker-dialog').open)return;
+  if(!more)delete $('#picker-list').dataset.loading;
+  const generation=pickerGeneration,sequence=editorLoadSequence;
+  const current=()=>generation===pickerGeneration&&sequence===editorLoadSequence&&$('#picker-dialog').open&&req===pickerReq;
   const req = ++pickerReq, offset = more ? pickerItems.length : 0;
   const min = $('#picker-min').value, max = $('#picker-max').value;
   if ((min !== '' && Number(min) < 0) || (max !== '' && Number(max) < 0) || (min !== '' && max !== '' && Number(min) > Number(max))) {
@@ -2962,8 +2972,8 @@ async function loadPicker(more = false) {
   }
   let d;
   try { d = await api('/products?' + pickerQuery(offset)); }
-  catch (e) { if (req === pickerReq) { $('#picker-status').textContent = ''; $('#picker-empty').textContent = e.message; $('#picker-empty').hidden = false; } return; }
-  if (req !== pickerReq || catalog.items) return;
+  catch (e) { if (current()) { $('#picker-status').textContent = ''; $('#picker-empty').textContent = e.message; $('#picker-empty').hidden = false; } return; }
+  if (!current() || catalog.items) return;
   $('#picker-list').removeAttribute('aria-busy');
   applyCatalogMeta(d);
   pickerItems = more ? [...pickerItems, ...d.products] : d.products; pickerTotal = d.total;
@@ -2991,7 +3001,16 @@ function renderPicker(observedAt, min, max) {
   $('#picker-empty').textContent = pickerTotal ? '' : $('#picker-search').value || $('#picker-group').value || min || max ? 'Không tìm thấy sản phẩm phù hợp. Thử bỏ bớt bộ lọc hoặc tick "Tìm trên tất cả sản phẩm".' : 'Chưa có dữ liệu sản phẩm.';
   $('#picker-more-row').hidden = pickerItems.length >= pickerTotal;
 }
-const reloadPicker = () => { clearTimeout(pickerTimer); pickerTimer = setTimeout(() => loadPicker(), catalog.items ? 30 : 250); };
+const reloadPicker = () => { pickerReq++;pickerItems=[];$('#picker-list').innerHTML=''; clearTimeout(pickerTimer); pickerTimer = setTimeout(() => loadPicker(), catalog.items ? 30 : 250); };
+let pickerGeneration=0;
+function resetPickerDialog(){
+  pickerGeneration++;pickerReq++;clearTimeout(pickerTimer);clearTimeout(pickerScrollTimer);
+  pickerItems=[];pickerTotal=0;pickerShown=20;pickerAdded=0;
+  for(const id of ['picker-search','picker-group','picker-range','picker-min','picker-max'])$('#'+id).value='';
+  $('#picker-all').checked=false;$('#picker-list').innerHTML='';$('#picker-list').scrollTop=0;delete $('#picker-list').dataset.loading;$('#picker-list').removeAttribute('aria-busy');
+  $('#picker-status').textContent='Giá lọc theo chính sách đang chọn.';$('#picker-snapshot').textContent='';$('#picker-empty').textContent='';$('#picker-empty').hidden=true;$('#picker-more-row').hidden=true;$('#picker-added').textContent='';
+}
+$('#picker-dialog').addEventListener('close',resetPickerDialog);
 /** Thêm dòng vào báo giá; dòng trống duy nhất (mới tạo) được thay luôn. */
 function addRowsToQuote(rows) {
   const blank = editor.rows.length === 1 && !editor.rows[0].name && !Number(editor.rows[0].price) && !editor.rows[0].sku;
@@ -3000,12 +3019,13 @@ function addRowsToQuote(rows) {
   editor.rows = [...base, ...rows]; markDirty(); renderLines(); return true;
 }
 $('#pick-products').addEventListener('click', () => {
+  resetPickerDialog();const generation=pickerGeneration;
   pickerAdded = 0; $('#picker-added').textContent = '';
   pickerPolicyOptions();
   $('#picker-filters').hidden = true;
   $('#picker-filter-toggle').textContent = 'Xem bộ lọc ▾';
   $('#picker-filter-toggle').setAttribute('aria-expanded', 'false');
-  $('#picker-dialog').showModal(); $('#picker-search').focus(); loadHolds().then(loadPicker);
+  $('#picker-dialog').showModal(); $('#picker-search').focus(); loadHolds().then(()=>{if(generation===pickerGeneration&&$('#picker-dialog').open)loadPicker();});
   loadCatalogSnapshot(); // kiểm tra nền: Sapo có dữ liệu mới thì cập nhật kết quả
 });
 $('#picker-search').addEventListener('input', reloadPicker);
@@ -3022,7 +3042,8 @@ $('#picker-list').addEventListener('scroll', () => {
     const list = $('#picker-list');
     if (list.scrollTop + list.clientHeight < list.scrollHeight - 100 || pickerItems.length >= pickerTotal || list.dataset.loading === '1') return;
     list.dataset.loading = '1';
-    loadPicker(true).finally(() => { delete list.dataset.loading; });
+    const generation=pickerGeneration,request=pickerReq+1;
+    loadPicker(true).finally(() => { if(generation===pickerGeneration&&request===pickerReq)delete list.dataset.loading; });
   }, 80);
 });
 $('#picker-policy').addEventListener('change', e => {
@@ -3044,7 +3065,7 @@ $('#picker-clear').addEventListener('click', () => {
 $('#picker-more').addEventListener('click', () => loadPicker(true));
 $('#picker-list').addEventListener('click', e => {
   const b = e.target.closest('[data-add]'); if (!b) return;
-  const li = b.closest('li'), p = pickerItems[b.dataset.add], qty = parseNum(li.querySelector('input').value);
+  const li = b.closest('li'), p = pickerItems[b.dataset.add];if(!p||!$('#picker-dialog').open)return;const qty = parseNum(li.querySelector('input').value);
   if (!(qty > 0)) { li.querySelector('input').classList.add('invalid'); return; }
   const row = rowFromProduct(p);
   if (!row || !addRowsToQuote([{ ...row, qty }])) return;
@@ -5229,6 +5250,7 @@ function updateQuoteActions() {
     else if (!locked && el.dataset.approvalLock) { delete el.dataset.approvalLock; el.disabled = false; }
   }
   $('#save-quote').disabled = $('#save-quote-m').disabled = saving || locked;
+  $('#bulk-discount').disabled=locked||editor.loading||qf.inert||!editor.rows.some(discountProduct);
   const pill = $('#editor-approval');
   const draft = editor.approval?.status === 'draft';
   pill.hidden = !saved; pill.className = 'pill ' + (approved ? 'ok' : draft ? '' : 'warn');
