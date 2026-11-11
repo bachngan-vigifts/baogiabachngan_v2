@@ -39,6 +39,7 @@ dialog.compact-stock-dialog[open] { display: flex; flex-direction: column; }
 .picker-list-head > .picker-stock-head { text-align: right; }
 .picker-head-quantity { text-align: center; }
 .picker-head-actions { grid-column: 8 / -1; }
+#picker-list .picker-stock-summary { display: contents; }
 #picker-list .picker-product-name { grid-column: 1; grid-row: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 650; }
 #picker-list :is(.picker-stock,.picker-held,.picker-sellable,.picker-incoming,.picker-supplier) { grid-row: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: right; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 #picker-list .picker-stock { grid-column: 2; }
@@ -85,23 +86,22 @@ dialog.compact-stock-dialog[open] { display: flex; flex-direction: column; }
   #picker-dialog .catalog-policy { font-size: 12px; }
   #picker-dialog .catalog-policy select { font-size: 16px; }
   #picker-dialog #picker-snapshot { font-size: 10px; line-height: 1.25; }
-  #picker-list > .picker-product { grid-template-columns: var(--picker-columns); padding: 3px 4px; gap: 4px; }
-  #picker-dialog .picker-list-head { grid-template-columns: var(--picker-columns); padding-inline: 4px 20px; gap: 4px; }
-  #picker-dialog .picker-results { --picker-columns: minmax(220px, 1fr) 64px 68px 82px 68px 68px 64px 36px; }
-  #picker-dialog .picker-results > .picker-list-head, #picker-dialog .picker-results > .picker-list { min-width: 760px; }
-  .picker-head-quantity { display: none; }
-  .picker-head-actions { grid-column: 7 / -1; }
-  #picker-list .picker-product-name { grid-row: 1; grid-column: 1; }
-  #picker-list .picker-stock { grid-row: 1; grid-column: 2; }
-  #picker-list .pick-add { grid-column: 7; min-height: 38px; }
-  #picker-list .picker-details-toggle { grid-column: 8; min-height: 38px; }
+  #picker-dialog .picker-results { overflow-x: hidden; }
+  #picker-dialog .picker-results > .picker-list { min-width: 0; scrollbar-gutter: auto; overflow-x: hidden; }
+  #picker-dialog .picker-results > .picker-list-head { display: none; }
+  #picker-list > .picker-product { grid-template-columns: minmax(0, 1fr) auto auto; padding: 10px 6px; gap: 8px; }
+  #picker-list .picker-product-name { grid-row: 1; grid-column: 1 / -1; }
+  #picker-list .picker-stock-summary { display: flex; flex-wrap: wrap; gap: 4px 10px; grid-row: 2; grid-column: 1 / -1; min-width: 0; }
+  #picker-list .picker-stock-summary > span { display: inline-flex; align-items: baseline; gap: 3px; overflow: visible; font-size: 11px; text-align: left; }
+  #picker-list [data-stock-label]::before { content: attr(data-stock-label); color: var(--muted); font-weight: 400; }
+  #picker-list .pick-add { grid-column: 2; grid-row: 3; min-height: 44px; padding-inline: 12px; }
+  #picker-list .picker-details-toggle { grid-column: 3; grid-row: 3; min-height: 44px; min-width: 44px; }
   #picker-list .picker-details-toggle > span:first-child { display: none; }
   .picker-details-icon { display: inline; font-size: 20px; }
-  #picker-list .picker-quantity { display: none; }
-  #picker-list .is-expanded .picker-quantity { display: flex; grid-row: 2; grid-column: 1 / -1; align-items: center; gap: 8px; }
-  #picker-list .is-expanded .picker-quantity > span { display: inline; }
-  #picker-list .picker-quantity input { width: 76px; min-height: 40px; font-size: 16px; }
-  #picker-list .picker-product-details { grid-row: 3; }
+  #picker-list .picker-quantity, #picker-list .is-expanded .picker-quantity { display: flex; grid-row: 3; grid-column: 1; align-items: center; gap: 6px; }
+  #picker-list .picker-quantity > span { display: inline; font-size: 12px; }
+  #picker-list .picker-quantity input { width: 70px; max-width: 100%; min-width: 0; min-height: 44px; font-size: 16px; }
+  #picker-list .picker-product-details { grid-row: 4; }
   #stock-check-table:not(.show-details) :is(th,td) { padding: 6px 4px; font-size: 12px; }
   #stock-check-table:not(.show-details) th:nth-child(2) { width: 36px; }
   #stock-check-table:not(.show-details) .stock-check-available { width: 60px; }
@@ -127,3 +127,9 @@ dialog.compact-stock-dialog[open] { display: flex; flex-direction: column; }
 }
 
 #picker-list .picker-incoming .link-btn { max-width: 100%; padding: 0; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+
+/* Keep the price selector usable on the narrowest phones. */
+@media (max-width: 360px) {
+  #picker-dialog .catalog-options { grid-template-columns: minmax(0, 1fr); }
+  #picker-dialog .catalog-scope { grid-column: 1; grid-row: 2; }
+}
