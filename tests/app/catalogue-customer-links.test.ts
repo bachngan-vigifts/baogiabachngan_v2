@@ -6,8 +6,34 @@ import {customers,customerStaff} from '../../src/modules/customers/schema.ts';
 import {catalogueQuotes} from '../../src/modules/catalog/catalogue-library-schema.ts';
 import {mergeCustomers} from '../../src/modules/customer-hub/api/duplicates.ts';
 import {catalogueCustomerLinks,reassignCatalogueCustomer} from '../../src/app/catalogue-customer-links.ts';
-const {defaultState,validateProduct}=await import(new URL('../../trial-ui/catalogue/core.js',import.meta.url).href);
+const {defaultState,validateProduct,restoreState}=await import(new URL('../../trial-ui/catalogue/core.js',import.meta.url).href);
 function quote(customerId:string){const s=defaultState();s.meta.customerId=customerId;s.meta.customer='Client supplied name';s.products=[validateProduct({id:'product-1',name:'Ly sứ',sku:'00123',brand:'Minh Long',category:'Ly',regular:100000,discount:0,fee:0,qty:1})];s.selected=['product-1'];return s;}
+test('backup restores the entire recipient group name',()=>{
+ const state=quote('');state.meta.customerGroup='N'.repeat(200);assert.equal(restoreState(state).meta.customerGroup,state.meta.customerGroup);
+});
+test('recipient groups are scoped and validated; blank and group saves persist without creating customer links',async()=>{
+ const f=await setup(),at=new Date().toISOString();
+ await f.db.insert(customers).values([
+  {id:'recipient-owned',name:'Khách thử nghiệm',customerType:'Doanh nghiệp',approvalStatus:'approved' as const},
+  {id:'recipient-hidden',name:'Khách riêng',customerType:'Nhóm riêng',approvalStatus:'approved' as const},
+  {id:'recipient-pending',name:'Khách chờ duyệt',customerType:'Nhóm chờ duyệt',approvalStatus:'pending' as const},
+ ].map(row=>({contact:'',phone:'',email:'',address:'',search:'khach thu nghiem',sourceVersion:0,syncedAt:at,createdAt:at,...row})));
+ await f.db.insert(customerStaff).values({customerId:'recipient-owned',memberId:'emp',role:'owner',createdAt:at});
+ const groups=await f.call('/catalogue-customers?groups=1',f.emp);assert.equal(groups.status,200);assert.deepEqual(groups.data.groups,['Doanh nghiệp']);
+ const state=quote('');state.meta.customerGroup='Doanh nghiệp';const id=crypto.randomUUID();
+ const saved=await f.call('/catalogue-quotes',f.emp,'POST',{id,clientKey:crypto.randomUUID(),state});assert.equal(saved.status,200,JSON.stringify(saved.data));
+ const snapshot=(await f.call('/catalogue-quotes/'+id,f.emp)).data.state;assert.equal(snapshot.meta.customerId,'');assert.equal(snapshot.meta.customerGroup,'Doanh nghiệp');assert.equal(snapshot.meta.customer,'Doanh nghiệp');
+ const oldClient=structuredClone(snapshot);delete oldClient.meta.customerGroup;
+ assert.equal((await f.call('/catalogue-quotes/'+id,f.emp,'PUT',{revision:1,clientKey:crypto.randomUUID(),state:oldClient})).status,200);
+ assert.equal((await f.call('/catalogue-quotes/'+id,f.emp)).data.state.meta.customerGroup,'Doanh nghiệp');
+ const invalid=quote('');invalid.meta.customerGroup='Nhóm riêng';assert.equal((await f.call('/catalogue-quotes',f.emp,'POST',{id:crypto.randomUUID(),clientKey:crypto.randomUUID(),state:invalid})).status,403);
+ invalid.meta.customerId='recipient-owned';assert.equal((await f.call('/catalogue-quotes',f.emp,'POST',{id:crypto.randomUUID(),clientKey:crypto.randomUUID(),state:invalid})).status,400);
+ assert.equal((await f.call('/catalogue-quotes',f.emp,'POST',{id:crypto.randomUUID(),clientKey:crypto.randomUUID(),state:quote('')})).status,200);
+ const linked=crypto.randomUUID();assert.equal((await f.call('/catalogue-quotes',f.emp,'POST',{id:linked,clientKey:crypto.randomUUID(),state:quote('recipient-owned')})).status,200);
+ assert.equal((await f.call('/catalogue-quotes/'+linked,f.other,'PUT',{revision:1,clientKey:crypto.randomUUID(),state:quote('')})).status,403);
+ assert.equal((await f.call('/catalogue-quotes/'+linked,f.emp,'PUT',{revision:1,clientKey:crypto.randomUUID(),state:quote('')})).status,200);
+ assert.equal((await f.call('/catalogue-quotes/'+linked,f.emp)).data.state.meta.customerId,'');
+});
 test('catalogue links the selected ID, validates access/approval and appears only in the corresponding customer profile',async()=>{
  const f=await setup(),at=new Date().toISOString();
  await f.db.insert(customers).values([
