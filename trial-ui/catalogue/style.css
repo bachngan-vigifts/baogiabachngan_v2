@@ -54,3 +54,12 @@
 #shared-library-root .library-picture>.card-image{display:block;height:100%}
 @media(max-width:650px){#shared-library-root .library-picture{height:135px}}
 .catalogue-customer-results{display:grid;gap:6px;max-height:290px;overflow:auto}.catalogue-customer-choice{display:flex;flex-direction:column;align-items:flex-start;white-space:normal;min-height:44px;text-align:left}.catalogue-customer-choice strong,.catalogue-customer-choice small{max-width:100%;overflow-wrap:anywhere}.catalogue-customer-choice small{color:var(--muted);font-size:11px}
+.bulk-pricing-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.price-band-field{display:grid;gap:6px;font-size:11px;min-width:0}
+.shared-library-dialog>form{display:flex;flex-direction:column;max-height:92vh}
+.shared-library-dialog .modal-head,.shared-library-dialog .modal-foot{flex-shrink:0}
+.shared-library-dialog .modal-body{overflow-y:auto;min-height:0}
+.shared-edit .input{min-width:0;width:100%}
+@media(max-width:650px){.bulk-pricing-row{grid-template-columns:1fr}}
+
+.shared-edit .price-band-field{display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
