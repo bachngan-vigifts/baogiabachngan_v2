@@ -41,7 +41,7 @@ export function initWarehouseWorkspace({api,root,toast,identity,legacy,assign}){
    if(!r&&!claimed&&!data.manager&&(data.availability||[])[0]?.status==='free')actions+=button('claim','Chọn việc nhóm','primary');
    if(!locked&&data.manager&&(!r||s==='todo')&&t.taskStatus==='todo')actions+=button('configure','Giao việc có thưởng');
    const worker=(data.availability||[]).find(p=>p.id===r?.memberId);
-   if(!data.manager&&r&&s==='todo'&&r.memberId&&t.taskStatus!=='done'&&(worker?.status==='free'||worker?.job?.taskId===t.id))actions+=button('start','Nhận việc','ww-red');
+   if(!data.manager&&r&&s==='todo'&&r.memberId&&(t.taskStatus!=='done'||r.startedAt&&r.quality==='error')&&(worker?.status==='free'||worker?.job?.taskId===t.id))actions+=button('start','Nhận việc','ww-red');
    if(data.manager&&!locked&&r?.offeredAt&&s==='todo')actions+=button('reoffer','Giao lại');
    if(!data.manager&&s==='working')actions+=button('block','Báo vướng mắc')+button('submit','Hoàn thành','primary');
    if(!data.manager&&s==='blocked')actions+=button('resume','Tiếp tục làm','primary');
