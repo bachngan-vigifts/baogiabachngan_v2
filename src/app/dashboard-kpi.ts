@@ -33,7 +33,7 @@ export const dashboardKpiOf: DashboardKpiOf = async (db, month, memberIds) => {
     const parts: DashboardKpiPart[] = [
       { key: 'newCustomers', label: 'KH mới', actual: basis ? basis.newCustomers : pick(input.kpiNewCustomers, auto?.newCustomers), extra: p.kpiCustomersPerExtraDay * days, target: t.newCustomers, own: t.own.newCustomers, points: kpi.points.newCustomers, max: kpi.policy==='appsheet'?p.kpiNewCustomersWeight:Math.max(p.kpiNewCustomersWeight, p.kpiNewCustomersOver) },
       { key: 'transactions', label: 'Giao dịch', actual: basis ? basis.transactions : pick(input.kpiTransactions, auto?.transactions), extra: p.kpiTransactionsPerExtraDay * days, target: t.transactions, own: t.own.transactions, points: kpi.points.transactions, max: p.kpiTransactionsWeight },
-      { key: 'contracts', label: 'Số HĐKT', actual: basis ? basis.contracts : pick(input.kpiContracts, auto?.contracts), extra: 0, target: t.contracts, own: t.own.contracts, points: kpi.points.contracts, max: p.kpiContractsWeight },
+      { key: 'contracts', label: 'Đơn hàng / HĐKT', actual: basis ? basis.contracts : pick(input.kpiContracts, auto?.contracts), extra: 0, target: t.contracts, own: t.own.contracts, points: kpi.points.contracts, max: p.kpiContractsWeight },
       { key: 'revenue', label: kpi.policy==='appsheet'?'Doanh số ghi nhận':'Doanh số cá nhân', actual: revenueActual, extra: 0, target: t.revenue, own: t.own.revenue, points: kpi.points.revenue, max: null },
     ];
     const netFrom = String(p.saleKpiNetFrom || 0).replace(/^(\d{4})(\d{2})$/, '$1-$2'), net = kpi.policy==='appsheet' || netFrom !== '0' && month >= netFrom;

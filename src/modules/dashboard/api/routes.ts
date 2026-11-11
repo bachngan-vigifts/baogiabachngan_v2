@@ -63,7 +63,8 @@ export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?
       f.owner ? eq(employees.id, f.owner) : undefined,
       manager && f.group ? eq(employees.positionId, f.group) : undefined))).map(r => r.id);
     const kpiOf = deps.kpiOf;
-    return json(await cachedReport(c.env.db, cacheOf(c, 'dashboard-kpi', me, f), async () => {
+    // New counting rules must not reuse a cached signed-contract-only KPI after deployment.
+    return json(await cachedReport(c.env.db, cacheOf(c, 'dashboard-kpi-documents-v1', me, f), async () => {
       const members = (await kpiOf(c.env.db, month, ids)).sort((a, b) => b.used - a.used || a.name.localeCompare(b.name, 'vi'));
       return { month, available: true, scope: manager && !f.owner ? 'company' : 'self', restricted: !manager && f.manager, members };
     }));

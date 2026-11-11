@@ -4,7 +4,7 @@ import { payrollSheetHtml } from './payroll-sheet.js';
 export const QUICK_COLUMNS = {
   inputs: [ ['workDays','Ngày công',true,true], ['overtimeHours','Giờ tăng ca',true], ['lateCount','Số lần đi trễ',true], ['leaveHours','Số giờ nghỉ trong ngày',true], ['revenue','Doanh số tháng',false,true],
     ['outputQty','Sản lượng',true], ['quarterBonus','Thưởng quý',false,true], ['healthInsurance','BHYT'], ['incomeTax','Thuế TNCN'],
-    ['kpiNewCustomers','KH mới',true,true], ['kpiTransactions','Giao dịch',true,true], ['kpiContracts','Số HĐ',true,true],
+    ['kpiNewCustomers','KH mới',true,true], ['kpiTransactions','Giao dịch',true,true], ['kpiContracts','Đơn / HĐKT',true,true],
     ['kpiRevenue','DS KPI',false,true], ['kpiMerchDays','Ngày làm hàng',true], ['kpiTripDays','Ngày công tác',true], ['kpiOverride','KPI chốt (1 = 100%)',true,true] ],
   profile: [ ['baseSalary','LCB / lương thỏa thuận'], ['capacityCoef','Hệ số năng lực',true], ['responsibility','Trách nhiệm / đơn giá'],
     ['phoneAllowance','PC điện thoại'], ['attendanceBonus','Chuyên cần'], ['insurance','BHXH'], ['outputRate','Đơn giá / tỷ lệ sản lượng',true], ['mealAllowance','Hưởng cơm / xăng','boolean'], ['positionLabel','Vị trí','text'] ],

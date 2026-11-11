@@ -131,7 +131,7 @@ export function initMemberDetail(deps) {
           ${s.snapshotUnavailable?'<p class="error">Phiếu cũ thiếu bản chụp chi tiết. Giữ nguyên tổng tiền đã chốt; cần Manager đối soát trước khi in.</p>':''}<table class="md-slip-table"><tbody>
             <tr><td>KH mới <small>${k.basis?.newCustomers ?? inp.kpiNewCustomers ?? ((s.salesCrm?.kpiApply??s.salesCrm?.apply)?s.salesCrm.facts.newCustomers:'—')} KH${kpiGoal(k, s, 'newCustomers')}</small></td><td class="right num">${pctTxt(k.points.newCustomers)}</td></tr>
             <tr><td>Giao dịch <small>${k.basis?.transactions ?? inp.kpiTransactions ?? ((s.salesCrm?.kpiApply??s.salesCrm?.apply)?s.salesCrm.facts.transactions:'—')} GD${kpiGoal(k, s, 'transactions')}</small></td><td class="right num">${pctTxt(k.points.transactions)}</td></tr>
-            <tr><td>Số hợp đồng <small>${k.basis?.contracts ?? inp.kpiContracts ?? ((s.salesCrm?.kpiApply??s.salesCrm?.apply)?s.salesCrm.facts.contracts:'—')} HĐ${kpiGoal(k, s, 'contracts')}</small></td><td class="right num">${pctTxt(k.points.contracts)}</td></tr>
+            <tr><td>Đơn hàng / HĐKT <small>${k.basis?.contracts ?? inp.kpiContracts ?? ((s.salesCrm?.kpiApply??s.salesCrm?.apply)?s.salesCrm.facts.contracts:'—')} đơn${kpiGoal(k, s, 'contracts')}</small></td><td class="right num">${pctTxt(k.points.contracts)}</td></tr>
             <tr><td>${k.policy==='appsheet'?'DS ghi nhận':'DS cá nhân'} <small>${money(k.basis?.revenue ?? inp.kpiRevenue ?? s.revenue)}${kpiGoal(k, s, 'revenue')}</small></td><td class="right num">${pctTxt(k.points.revenue)}</td></tr>
             <tr class="sum"><td>KPI CV${k.used !== k.total ? ` <small>${inp.kpiOverride !== null && ctxProfile.fixedKpi == null ? 'Dùng KPI chốt nhập tay' : 'Dùng KPI cố định'} thay kết quả tính ${pctTxt(k.total)} – đổi chỉ tiêu không làm đổi thưởng</small>` : ''}</td><td class="right num">${pctTxt(k.used)}</td></tr>
           </tbody></table></div>` : ''}
@@ -388,7 +388,7 @@ export function initMemberDetail(deps) {
         ${moneyInput('healthInsurance', 'BHYT', i.healthInsurance)}${moneyInput('incomeTax', 'Thuế TNCN', i.incomeTax)}`}
       ${kpi ? `<p class="cd-field-label span-2">KPI công việc (sheet "KPI CV")</p>
         ${numInput('kpiNewCustomers', 'KH mới (trống = CRM khi áp dụng)', i.kpiNewCustomers,`placeholder="Tự động: ${p.systemFacts?.newCustomers??'chưa bật'}"`)}${numInput('kpiTransactions', 'Giao dịch hợp lệ (trống = CRM khi áp dụng)', i.kpiTransactions,`placeholder="Tự động: ${p.systemFacts?.transactions??'chưa bật'}"`)}
-        ${numInput('kpiContracts', 'Số hợp đồng', i.kpiContracts)}
+        ${numInput('kpiContracts', 'Số đơn hàng / HĐKT', i.kpiContracts)}
         <label>DS cá nhân tính KPI (trống = DS tháng)<input name="kpiRevenue" data-money inputmode="numeric" value="${i.kpiRevenue === null ? '' : Number(i.kpiRevenue).toLocaleString('vi-VN')}"></label>
         ${numInput('kpiMerchDays', 'Ngày làm hàng', i.kpiMerchDays || '')}${numInput('kpiTripDays', 'Ngày công tác', i.kpiTripDays || '')}
         ${numInput('kpiOverride', 'KPI chốt (%) – nhập tay thay kết quả', i.kpiOverride === null ? '' : +(i.kpiOverride * 100).toFixed(2))}` : ''}

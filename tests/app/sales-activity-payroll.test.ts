@@ -72,7 +72,7 @@ test('liquidation bonus belongs to Manager approval month, not signed/completed 
  let view=(await f.overview()).data.payroll;assert.equal(view.payslip.salesCrm.awards.filter((a:any)=>a.kind==='liquidation').length,0);
  await f.db.update(salesContracts).set({signedDate:'2026-09-30'}).where(eq(salesContracts.id,'liq-contract'));
  assert.equal((await f.award()).status,200);
- view=(await f.overview()).data.payroll;assert.equal(view.systemFacts.contracts,0);assert.equal(amount(view.payslip,'contractBonus'),10000);assert.equal(view.payslip.salesCrm.awards[0].kind,'liquidation');
+ view=(await f.overview()).data.payroll;assert.equal(view.systemFacts.contracts,1,'KPI đếm đơn đã duyệt theo ngày đơn, độc lập ngày ký/thanh lý');assert.equal(amount(view.payslip,'contractBonus'),10000);assert.equal(view.payslip.salesCrm.awards[0].kind,'liquidation');
 });
 
 test('concurrent individual and batch confirmation book the entitlement once',async()=>{

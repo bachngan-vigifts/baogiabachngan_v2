@@ -254,7 +254,7 @@ export function initDashboard({ api, root, isManager, money, user=()=>null }) {
     if (m.adjustedBy) note(`Điểm thực tế theo chỉ tiêu: ${kpiPercent(m.total)}. Bảng lương áp dụng ${m.adjustedBy === 'fixed' ? 'KPI cố định trong hồ sơ' : 'KPI chốt'} ${kpiPercent(m.used)}; mức này không thay thế điểm thực tế trên Tổng quan.`);
     note((m.adjustedBy ? 'Theo KPI áp dụng trên bảng lương: ' : '') + kpiBonus(m) + '.');
     note(m.status === 'estimate' ? 'Tạm tính theo số liệu hiện tại; chốt lương sẽ giữ cố định.' : 'Theo phiếu lương đã chốt (số lúc chốt).');
-    note(m.source === 'crm' ? 'KH mới: hồ sơ đã duyệt trong kỳ, tính cho người tạo, không cần đơn hàng. Giao dịch và số HĐKT lấy tự động từ CRM.' : 'KH mới, giao dịch, số HĐKT theo số nhập trên bảng lương.');
+    note(m.source === 'crm' ? 'KH mới: hồ sơ đã duyệt trong kỳ, tính cho người tạo, không cần đơn hàng. Giao dịch lấy tự động từ CRM. Đơn hàng / HĐKT: mỗi đơn đã duyệt tính một lần theo ngày đơn, kể cả HĐKT chưa ký.' : 'KH mới, giao dịch, số đơn hàng / HĐKT theo số nhập trên bảng lương.');
     if (m.crmPreview != null) note(`KPI tính từ CRM (đối chiếu, chưa áp dụng): ${kpiPercent(m.crmPreview)}.`);
     if (m.merchDays || m.tripDays) note(`Đã cộng quy đổi ${m.merchDays} ngày làm hàng, ${m.tripDays} ngày công tác.`);
     box.append(scroll, notes); return box;
