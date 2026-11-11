@@ -121,5 +121,5 @@ globalThis.QuoteExcel=(()=>{
  }
  async function build(state,{images=[],banner=null}={}){if(!globalThis.ExcelJS)throw Error('Chưa tải được bộ tạo Excel.');const workbook=new ExcelJS.Workbook();workbook.creator='Phần mềm báo giá Bách Ngân - VIGIFTS';workbook.created=new Date();workbook.modified=new Date();workbook.calcProperties.fullCalcOnLoad=true;addQuoteSheet(workbook,state,images,banner);addShippingSheet(workbook,state);return workbook;}
  async function download(state,assets={}){await loadExcelJs();const workbook=await build(state,assets),bytes=await workbook.xlsx.writeBuffer(),blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`${cleanFile(state.quoteNo)} - ${cleanFile(state.customer)}.xlsx`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
- return {build,download};
+ return {build,download,ready:loadExcelJs};
 })();

@@ -5645,6 +5645,31 @@ $('#excel-quote').addEventListener('click', async () => {
   } catch (ex) { console.error(ex); toast(ex?.message || 'Không thể tạo file Excel. Vui lòng thử lại.', 'err'); }
   finally { excelBusy = false; }
 });
+async function downloadSaleQuote(format) {
+  const block=approvalBlock();if(block)return toast(block,'err');
+  if(format==='pdf'?pdfBusy:excelBusy)return;
+  const data=collectQuote();if(!data.rows.length)return toast('Chưa có sản phẩm để xuất báo giá Sale.','err');
+  const tab=format==='pdf'&&isIos()?window.open('about:blank','_blank'):null;
+  if(tab)tab.document.body.textContent='Đang tạo PDF cho Sale…';
+  if(format==='pdf')pdfBusy=true;else excelBusy=true;
+  toast(`Đang tạo ${format==='pdf'?'PDF':'Excel'} cho Sale…`);
+  try{
+    const module=await import('./sale-quote-export.js');
+    const bytes=await (format==='pdf'?module.salePdfBytes(data):module.saleExcelBytes(data));
+    const mime=format==='pdf'?'application/pdf':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const url=URL.createObjectURL(new Blob([bytes],{type:mime}));
+    if(tab&&!tab.closed)tab.location.href=url;
+    else{
+      const link=document.createElement('a');link.href=url;link.download='Sale-'+String(data.quoteNo||'Bao-gia').replace(/[\\/:*?"<>|]+/g,'-')+(format==='pdf'?'.pdf':'.xlsx');
+      document.body.append(link);link.click();link.remove();
+    }
+    setTimeout(()=>URL.revokeObjectURL(url),60000);toast('Đã tạo báo giá Sale với 5 cột.');
+  }catch(error){if(tab&&!tab.closed)tab.close();toast(error?.message||'Không thể xuất báo giá Sale.','err');}
+  finally{if(format==='pdf')pdfBusy=false;else excelBusy=false;}
+}
+$('#pdf-quote-sale').addEventListener('click',()=>downloadSaleQuote('pdf'));
+$('#excel-quote-sale').addEventListener('click',()=>downloadSaleQuote('excel'));
+
 // Tin nhắn mới đến qua Web Push: cập nhật huy hiệu ngay (không chờ 20 giây).
 if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) { chatView().refresh(); dataRefresh.request(); dataRefresh.tick(); } });
 

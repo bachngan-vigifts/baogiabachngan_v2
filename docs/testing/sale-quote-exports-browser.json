@@ -1,0 +1,41 @@
+{
+  "scope": "Local CRM/router/PGlite with synthetic quotes; no production requests",
+  "formats": [
+    {
+      "type": "HRC",
+      "width": 1280,
+      "pdf": "Sale-HRC_SALE_EXPORT_1280.pdf",
+      "excel": "Sale-HRC_SALE_EXPORT_1280.xlsx",
+      "columns": 5,
+      "noSourceImages": true,
+      "errors": 0
+    },
+    {
+      "type": "B2B",
+      "width": 1280,
+      "pdf": "Sale-B2B_SALE_EXPORT_1280.pdf",
+      "excel": "Sale-B2B_SALE_EXPORT_1280.xlsx",
+      "columns": 5,
+      "noSourceImages": true,
+      "errors": 0
+    },
+    {
+      "type": "VIGIFTS",
+      "width": 390,
+      "pdf": "Sale-VIGIFTS_SALE_EXPORT_390.pdf",
+      "excel": "Sale-VIGIFTS_SALE_EXPORT_390.xlsx",
+      "columns": 5,
+      "noSourceImages": true,
+      "errors": 0
+    }
+  ],
+  "validation": [
+    "draft export blocked for employee",
+    "approved employee exports through the real download menu",
+    "PDF text read with pdftotext; correct headers and amounts",
+    "XLSX serialized/reloaded; one worksheet and five numeric/text columns",
+    "no hidden customer/cost/SKU/unit/note fields",
+    "no source-image fetch or business write during export",
+    "long Vietnamese PDF names paginate across pages"
+  ]
+}
