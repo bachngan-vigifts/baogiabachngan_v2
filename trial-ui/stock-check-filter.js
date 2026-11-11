@@ -5,6 +5,18 @@ export function bindStockCheckFilter(host) {
   const toolbar = document.createElement('div'); toolbar.className = 'toolbar';
   const group = document.createElement('div'); group.className = 'chips'; group.setAttribute('role', 'group'); group.setAttribute('aria-label', 'Lọc kết quả kiểm tồn');
   toolbar.append(group);
+  const stockTable = host.querySelector('.stock-check-table');
+  if (stockTable) {
+    const details = document.createElement('button'); details.type = 'button'; details.className = 'btn secondary small';
+    details.dataset.stockDetails = ''; details.textContent = 'Xem thêm';
+    details.setAttribute('aria-expanded', 'false'); details.setAttribute('aria-controls', stockTable.id);
+    details.addEventListener('click', () => {
+      const expanded = stockTable.classList.toggle('show-details');
+      details.textContent = expanded ? 'Thu gọn' : 'Xem thêm';
+      details.setAttribute('aria-expanded', String(expanded));
+    });
+    toolbar.append(details);
+  }
   const empty = document.createElement('p'); empty.className = 'muted'; empty.hidden = true; empty.setAttribute('role', 'status');
   const buttons = [];
   for (const [key, label] of [['all', 'Tất cả'], ['enough', 'Đủ'], ['missing', 'Thiếu']]) {
