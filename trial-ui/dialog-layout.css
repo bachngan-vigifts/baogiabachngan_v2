@@ -71,6 +71,7 @@ body dialog[open]:not(.order-compose,.verify-page) {
   .landscape-dialog .product-editor-image { align-content:start; }
   .landscape-dialog .product-editor-carton,.landscape-dialog .product-editor-prices { grid-column:1 / -1; grid-template-columns:repeat(4,minmax(0,1fr)); }
   .landscape-dialog .product-editor-layout > p { grid-column:1 / -1; }
+  .landscape-dialog .product-editor-link { grid-column:1 / -1; }
 }
 @media (max-width:899px) {
   .landscape-dialog-head,.sup-drawer-head {
@@ -80,3 +81,10 @@ body dialog[open]:not(.order-compose,.verify-page) {
   .pos-form-modal.landscape-dialog .modal-body,.pos-readable-modal.landscape-dialog .modal-body { padding:0; }
   .pos-form-modal.landscape-dialog .modal-foot,.pos-readable-modal.landscape-dialog .modal-foot { padding:14px 0 0; }
 }
+/* Tạo nhanh từ link (sản phẩm) / từ MST (khách hàng): ô link + nút trên một hàng, xuống dòng trên điện thoại hẹp. */
+.product-link-row,.tax-lookup-row { display:flex; gap:8px; align-items:center; min-width:0; }
+.product-link-row input,.tax-lookup-row input { flex:1 1 auto; min-width:0; }
+.product-link-row .btn,.tax-lookup-row .btn { flex:0 0 auto; white-space:nowrap; }
+@media (max-width:420px){ .product-link-row,.tax-lookup-row { flex-wrap:wrap; } .product-link-row .btn,.tax-lookup-row .btn { width:100%; } }
+.tax-lookup { margin:0 0 12px; padding:12px; border:1px dashed var(--line,#dce3ed); border-radius:10px; }
+.tax-lookup .warn { color:var(--danger,#b42318); }

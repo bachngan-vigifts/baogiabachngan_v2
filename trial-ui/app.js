@@ -3303,6 +3303,7 @@ async function openCustomer(id, known) {
     const profile=id?await api('/customers/'+encodeURIComponent(id)+'?refresh=1'):null;
     if(request!==customerOpenSeq)return;
     customerId=id||null;customerDuplicateCheck.reset();
+    $('#customer-tax-lookup').hidden=!!id;$('#customer-tax-input').value='';$('#customer-tax-status').textContent=CUSTOMER_TAX_HINT;$('#customer-tax-status').classList.remove('warn');
     const form=$('#customer-form');form.reset();$('#customer-error').textContent='';
     customerFields.setRequiredProfile(!id);
     const c=profile?.customer;
@@ -3326,6 +3327,35 @@ const customerDuplicateCheck = bindCustomerDuplicateCheck({
   onChoose: c => { $('#customer-dialog').close(); go('#/customers/' + encodeURIComponent(c.id)); },
 });
 $('#new-customer').addEventListener('click', () => openCustomer());
+// Tạo nhanh khách từ MST / link trang tra cứu: máy chủ chỉ lấy số MST (kiểm tra số kiểm tra) rồi tra VietQR; điền sẵn tên, MST, địa chỉ.
+// Tạo khách vẫn qua Lưu như thường (bắt buộc người liên hệ, kiểm trùng MST, khách nhân viên tạo chờ duyệt).
+const CUSTOMER_TAX_HINT=$('#customer-tax-status').textContent;
+async function lookupCustomerTax(){
+  const input=$('#customer-tax-input').value.trim(),status=$('#customer-tax-status'),btn=$('#customer-tax-fetch'),form=$('#customer-form');
+  if(!input){status.textContent='Nhập mã số thuế hoặc dán link trang tra cứu.';return;}
+  btn.disabled=true;status.classList.remove('warn');status.textContent='Đang tra mã số thuế…';
+  try{
+    const r=await api('/customer-tax-lookup','POST',{input}),el=k=>form.elements.namedItem(k),notes=[];
+    const prevName=el('name').value.trim();
+    el('name').value=r.name;el('taxCode').value=r.taxCode;if(r.address)el('address').value=r.address;
+    for(const k of ['name','taxCode','address'])el(k).dispatchEvent(new Event('input',{bubbles:true}));
+    if(prevName&&prevName!==r.name)notes.push(`Đã thay tên "${prevName}".`);
+    if(r.shortName||r.internationalName)notes.push('Tên viết tắt / tiếng Anh: '+[r.shortName,r.internationalName].filter(Boolean).join(' · ')+'.');
+    if(!r.active){status.classList.add('warn');notes.unshift(`⚠ Tình trạng: ${r.status||'không rõ'} – kiểm tra trước khi giao dịch.`);}
+    else notes.unshift(`Đã điền từ ${r.source}${r.status?' · '+r.status:''}${r.updatedAt?' · cập nhật '+new Date(r.updatedAt).toLocaleDateString('vi-VN'):''}.`);
+    notes.push('Nhập người liên hệ, điện thoại rồi bấm Lưu.');
+    status.textContent=notes.join(' ')+' ';
+    // Người đại diện / ngày thành lập: Cổng ĐKKD yêu cầu Captcha nên CRM không tự lấy – mở trang để nhân viên tự xem khi cần.
+    const portal=document.createElement('a');portal.href='https://dangkykinhdoanh.gov.vn/vn/Pages/Trangchu.aspx';portal.target='_blank';portal.rel='noopener noreferrer';
+    portal.textContent='Xem người đại diện / ngày thành lập trên Cổng ĐKKD ↗';status.append(portal);
+    customerDuplicateCheck.refresh();
+    // Ô người liên hệ là danh bạ (input contact ẩn): đưa con trỏ tới tên người liên hệ đầu tiên còn trống.
+    if(!el('contact').value)[...$('#customer-dialog').querySelectorAll('input')].find(i=>/Tên người liên hệ/.test(i.getAttribute('aria-label')||i.closest('label')?.textContent||'')&&!i.value&&i.offsetParent)?.focus();
+  }catch(ex){status.classList.add('warn');status.textContent=ex.message;}
+  finally{btn.disabled=false;}
+}
+$('#customer-tax-fetch').addEventListener('click',lookupCustomerTax);
+$('#customer-tax-input').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();lookupCustomerTax();}});
 $('#customer-appsheet').addEventListener('click', () => { if (isManager()) openAppsheetCustomers({ api, esc, onSaved: loadCustomers }); });
 $('#customer-anniversaries').addEventListener('click', async () => {
   const button = $('#customer-anniversaries'); button.disabled = true;

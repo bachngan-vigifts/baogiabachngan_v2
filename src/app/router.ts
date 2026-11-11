@@ -1,3 +1,4 @@
+import { registerTaxLookupRoutes } from '../modules/customers/api/tax-lookup.ts';
 import {syncWarehouseSource,reconcileWarehouseSources} from './warehouse-source-sync.ts';
 import {warehouseAssignmentHooks,warehouseSourceHooks} from '../core/contracts/warehouse-source.ts';
 import {resolveWarehouseSource} from './warehouse-source.ts';
@@ -141,6 +142,7 @@ export function createAppRouter() {
   registerQuoteRoutes(router, { rememberCustomer: rememberQuoteCustomer });
   registerImageFetchRoutes(router);
   registerCustomerRoutes(router);
+  registerTaxLookupRoutes(router); // tra MST (VietQR) để điền sẵn khi thêm khách hàng
   registerAppsheetCustomerRoutes(router);
   registerCatalogRoutes(router);
   registerCustodyRoutes(router);

@@ -866,6 +866,11 @@
   <form id="customer-form" novalidate>
     <div class="modal-head"><h2 id="customer-dialog-title">Thêm khách hàng</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
     <div class="modal-body">
+      <div class="tax-lookup" id="customer-tax-lookup" hidden>
+        <label for="customer-tax-input"><b>Tạo nhanh từ mã số thuế</b></label>
+        <div class="tax-lookup-row"><input id="customer-tax-input" maxlength="2500" placeholder="Nhập MST (VD 0101243150) hoặc dán link trang tra cứu MST" inputmode="text" autocomplete="off"><button type="button" class="btn secondary small" id="customer-tax-fetch">Tra MST</button></div>
+        <small class="muted" id="customer-tax-status">Nhập MST rồi bấm Tra MST: CRM điền sẵn tên, MST, địa chỉ, tình trạng hoạt động theo dữ liệu Tổng cục Thuế (qua VietQR). Vẫn cần nhập người liên hệ và kiểm tra lại trước khi lưu.</small>
+      </div>
       <div id="customer-fields"></div>
       <p class="muted small">Các trường có dấu * là bắt buộc khi tạo khách tại danh sách Khách hàng.</p>
       <div id="customer-new-profile"></div>
