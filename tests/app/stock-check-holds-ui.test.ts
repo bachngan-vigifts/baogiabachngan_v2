@@ -105,7 +105,7 @@ async function render({
 test('Kiểm tồn luôn có cột Hàng đang giữ kể cả khi bằng 0', async () => {
   const d = await render();
   assert.match(d.html, /<th[^>]*>Hàng đang giữ<\/th>/);
-  assert.match(d.html, /<td class="right">10<\/td><td class="right">0<\/td>/);
+  assert.match(d.html, /<td class="right"[^>]*>10<\/td><td class="right"[^>]*>0<\/td>/);
   assert.match(d.html, /data-stock-result="enough"/);
 });
 
@@ -124,7 +124,7 @@ test('cột giữ gộp báo giá và HĐKT đúng một lần; phần chính b�
       },
     ],
   });
-  assert.match(d.html, /<td class="right">7<small>/);
+  assert.match(d.html, /<td class="right"[^>]*>7<small>/);
   assert.match(d.html, /báo giá này đang giữ 3/);
   assert.match(d.html, /href="#\/contracts\/order-contract"/);
   assert.match(d.html, /Thiếu 2/);

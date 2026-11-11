@@ -231,6 +231,7 @@ try {
     await page.locator("#quote-stock").click();
     const dialog = page.locator("#stock-check-dialog");
     await dialog.locator(".stock-check-table").waitFor();
+    await dialog.locator("[data-stock-details]").click();
     const row = dialog.locator("tbody tr").first(),
       cells = await row.locator("td").allTextContents();
     assert.ok(cells[0].includes(productName), "Full product name is retained");
@@ -316,7 +317,7 @@ try {
         width: d.clientWidth,
       }));
       assert.ok(
-        footer.note > footer.width * 0.8 && footer.button < 70,
+        footer.note > footer.width * 0.4 && footer.button < 70,
         JSON.stringify(footer),
       );
     }

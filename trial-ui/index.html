@@ -39,6 +39,7 @@
 <link rel="stylesheet" href="fulfilment-display.css">
 <link rel="stylesheet" href="warehouse-workspace.css">
 <link rel="stylesheet" href="dialog-layout.css">
+<link rel="stylesheet" href="compact-stock-dialogs.css">
 </head>
 <body>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
@@ -1044,7 +1045,7 @@
   </form>
 </dialog>
 
-<dialog id="stock-check-dialog" class="modal wide">
+<dialog id="stock-check-dialog" data-no-busy class="modal wide compact-stock-dialog">
   <div class="modal-head"><div><span class="eyebrow">Kiểm tồn</span><h2 id="stock-check-title">Báo giá</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
   <div class="modal-body"><div id="stock-check-body"></div></div>
   <div class="modal-foot"><span class="muted small grow" id="stock-check-note"></span><button type="button" class="btn secondary" data-close>Đóng</button></div>
@@ -1253,17 +1254,21 @@
   </form>
 </dialog>
 
-<dialog id="picker-dialog" data-no-busy class="modal wide">
+<dialog id="picker-dialog" data-no-busy class="modal wide compact-stock-dialog">
   <div class="modal-head"><div><span class="eyebrow">Danh mục Sapo</span><h2>Tìm nhanh sản phẩm</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
   <div class="modal-body picker-body">
+    <div class="picker-controls">
     <div class="catalog-options">
       <label class="catalog-policy">Chính sách giá <select id="picker-policy" aria-label="Chính sách giá"></select></label>
       <label class="catalog-scope"><input id="picker-all" type="checkbox"> Tìm trên tất cả sản phẩm</label>
     </div>
-    <p class="search-help" id="picker-snapshot"></p>
     <div class="search-box"><span aria-hidden="true">⌕</span><input id="picker-search" type="search" autocomplete="off" placeholder="Nhập mã hoặc tên, ví dụ: chén cơm jas…" aria-label="Tìm sản phẩm để thêm"></div>
-    <p class="search-help">Có thể nhập nhiều từ khóa. Kết quả sẽ khớp dần theo tất cả từ đã gõ.</p>
-    <button type="button" class="btn ghost small" id="picker-filter-toggle" aria-expanded="false">Xem bộ lọc ▾</button>
+    </div>
+    <p class="search-help" id="picker-snapshot"></p>
+    <p class="search-help picker-search-help">Có thể nhập nhiều từ khóa. Kết quả sẽ khớp dần theo tất cả từ đã gõ.</p>
+    <div class="picker-toolbar"><button type="button" class="btn ghost small" id="picker-filter-toggle" aria-expanded="false">Xem bộ lọc ▾</button>
+      <p class="search-help" id="picker-status" aria-live="polite">Giá lọc theo chính sách đang chọn.</p>
+    </div>
     <div class="catalog-filters" id="picker-filters" hidden>
       <label><span>Nhóm sản phẩm</span><select id="picker-group"><option value="">Tất cả nhóm</option><option value="dinner">Bộ đồ ăn</option><option value="tea">Bộ trà</option><option value="thermalCup">Ly / cốc giữ nhiệt</option><option value="thermalBottle">Bình giữ nhiệt</option><option value="tableware">Chén, tô, đĩa</option><option value="vase">Bình hoa</option><option value="cookware">Nồi, chảo</option></select></label>
       <label><span>Khoảng giá</span><select id="picker-range"><option value="">Tất cả giá</option><option value="0:500000">Đến 500 nghìn</option><option value="500000:1000000">500 nghìn – 1 triệu</option><option value="1000000:2000000">1 – 2 triệu</option><option value="2000000:5000000">2 – 5 triệu</option><option value="5000000:">Từ 5 triệu</option><option value="custom">Tự nhập khoảng giá</option></select></label>
@@ -1271,12 +1276,11 @@
       <label><span>Giá đến (đ)</span><input id="picker-max" type="number" min="0" step="1000" inputmode="numeric" placeholder="Ví dụ: 2000000"></label>
       <button type="button" class="btn secondary" id="picker-clear">Xoá bộ lọc</button>
     </div>
-    <p class="search-help" id="picker-status" aria-live="polite">Giá lọc theo chính sách đang chọn.</p>
-    <ul class="picker-list" id="picker-list"></ul>
+    <div class="picker-list-head" aria-hidden="true"><span>Sản phẩm</span><span title="Tồn khả dụng">Tồn</span><span class="picker-head-quantity">SL</span><span class="picker-head-actions"></span></div>
+    <ul class="picker-list" id="picker-list" aria-label="Sản phẩm và tồn khả dụng"></ul>
     <p class="muted small picker-empty" id="picker-empty" hidden></p>
-    <div class="more-row" id="picker-more-row" hidden><button type="button" class="btn secondary small" id="picker-more">Xem thêm</button></div>
   </div>
-  <div class="modal-foot"><span class="muted small picker-added" id="picker-added"></span><button type="button" class="btn primary" data-close>Xong</button></div>
+  <div class="modal-foot picker-footer"><span class="muted small picker-added" id="picker-added"></span><div class="more-row" id="picker-more-row" hidden><button type="button" class="btn secondary small" id="picker-more">Tải thêm sản phẩm</button></div><button type="button" class="btn primary" data-close>Xong</button></div>
 </dialog>
 
 <dialog id="image-dialog" class="modal">

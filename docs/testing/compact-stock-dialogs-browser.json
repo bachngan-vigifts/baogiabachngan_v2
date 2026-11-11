@@ -1,0 +1,184 @@
+{
+  "scope": "Synthetic local CRM/router in Chromium; no production requests",
+  "viewports": [
+    {
+      "width": 1693,
+      "height": 826,
+      "picker": {
+        "x": 66.5,
+        "y": 12,
+        "width": 1560,
+        "height": 802,
+        "listHeight": 533.609375,
+        "visible": 12,
+        "rowHeight": 41,
+        "nameWidth": 1135,
+        "overflow": false
+      },
+      "stock": {
+        "x": 66.5,
+        "y": 12,
+        "width": 1560,
+        "height": 802,
+        "scrollHeight": 605,
+        "overflow": false,
+        "rowHeight": 37
+      },
+      "errors": 0,
+      "writes": 0,
+      "expandedWithoutApi": true,
+      "addedLocally": true
+    },
+    {
+      "width": 1280,
+      "height": 720,
+      "picker": {
+        "x": 12,
+        "y": 12,
+        "width": 1256,
+        "height": 696,
+        "listHeight": 427.609375,
+        "visible": 10,
+        "rowHeight": 41,
+        "nameWidth": 831,
+        "overflow": false
+      },
+      "stock": {
+        "x": 12,
+        "y": 12,
+        "width": 1256,
+        "height": 696,
+        "scrollHeight": 499,
+        "overflow": false,
+        "rowHeight": 37
+      },
+      "errors": 0,
+      "writes": 0,
+      "expandedWithoutApi": true,
+      "addedLocally": true
+    },
+    {
+      "width": 768,
+      "height": 900,
+      "picker": {
+        "x": 12,
+        "y": 12,
+        "width": 744,
+        "height": 876,
+        "listHeight": 605.671875,
+        "visible": 15,
+        "rowHeight": 40.1875,
+        "nameWidth": 319,
+        "overflow": false
+      },
+      "stock": {
+        "x": 12,
+        "y": 12,
+        "width": 744,
+        "height": 876,
+        "scrollHeight": 668,
+        "overflow": false,
+        "rowHeight": 36.390625
+      },
+      "errors": 0,
+      "writes": 0,
+      "expandedWithoutApi": true,
+      "addedLocally": true
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "picker": {
+        "x": 6,
+        "y": 6,
+        "width": 378,
+        "height": 832,
+        "listHeight": 522.5625,
+        "visible": 11,
+        "rowHeight": 46,
+        "nameWidth": 177,
+        "overflow": false
+      },
+      "stock": {
+        "x": 6,
+        "y": 6,
+        "width": 378,
+        "height": 832,
+        "scrollHeight": 603,
+        "overflow": false,
+        "rowHeight": 31.84375
+      },
+      "errors": 0,
+      "writes": 0,
+      "expandedWithoutApi": true,
+      "addedLocally": true
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "picker": {
+        "x": 6,
+        "y": 6,
+        "width": 308,
+        "height": 628,
+        "listHeight": 318.5625,
+        "visible": 6,
+        "rowHeight": 46,
+        "nameWidth": 107,
+        "overflow": false
+      },
+      "stock": {
+        "x": 6,
+        "y": 6,
+        "width": 308,
+        "height": 628,
+        "scrollHeight": 343,
+        "overflow": false,
+        "rowHeight": 31.84375
+      },
+      "errors": 0,
+      "writes": 0,
+      "expandedWithoutApi": true,
+      "addedLocally": true
+    },
+    {
+      "width": 1024,
+      "height": 480,
+      "picker": {
+        "x": 12,
+        "y": 12,
+        "width": 1000,
+        "height": 456,
+        "listHeight": 187.609375,
+        "visible": 4,
+        "rowHeight": 41,
+        "nameWidth": 575,
+        "overflow": false
+      },
+      "stock": {
+        "x": 12,
+        "y": 12,
+        "width": 1000,
+        "height": 456,
+        "scrollHeight": 259,
+        "overflow": false,
+        "rowHeight": 37
+      },
+      "errors": 0,
+      "writes": 0,
+      "expandedWithoutApi": true,
+      "addedLocally": true
+    }
+  ],
+  "validated": [
+    "native desktop vertical resize",
+    "filters remain operable in short viewport",
+    "collapsed rows do not create product images",
+    "details and stock filters use existing data without extra stock API requests",
+    "policy change and pagination retain quantity/open details",
+    "Enter adds correct SKU and quantity locally, guards repeat add",
+    "close/reopen clears local picker state",
+    "stock table compact/details views retain all computed values",
+    "full stock-details regression across HRC/B2B/VIGIFTS and mobile"
+  ]
+}

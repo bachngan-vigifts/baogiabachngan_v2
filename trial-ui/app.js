@@ -2851,6 +2851,7 @@ addEventListener('scroll', () => { if (!pSuggest.hidden) placeProductSuggest(); 
 
 // ----- chọn sản phẩm từ danh mục ngay trong báo giá
 let pickerReq = 0, pickerItems = [], pickerTotal = 0, pickerAdded = 0, pickerTimer;
+const pickerRowState = new Map(); // Local inputs only; cleared for every dialog session.
 /** Chỉ hàng Lock&Lock có kho NCC (tồn bên nhà cung cấp); hãng khác ẩn cho gọn. */
 const hasSupplierStock = p => brandDiscountKey(p?.brand || p?.name) === 'lock'; // chưa có nhãn hiệu trên Sapo thì nhận theo tên
 const kindStock = (p, kind) => { const ws = state.warehouses.filter(w => w.kind === kind && p.stock?.[w.id] !== undefined); return ws.length ? ws.reduce((t, w) => t + Number(p.stock[w.id] || 0), 0) : null; };
@@ -2982,18 +2983,18 @@ async function loadPicker(more = false) {
 function renderPicker(observedAt, min, max) {
   if (!$('#picker-policy').options.length) pickerPolicyOptions();
   $('#picker-snapshot').textContent = observedAt ? `Tồn kho chụp lúc ${new Date(observedAt).toLocaleString('vi-VN')} · Đơn giá báo giá chưa VAT.` : 'Đơn giá báo giá chưa VAT.';
+  // Background stock refresh / pagination must preserve quantities and open details.
   const inQuote = new Set(editor.rows.map(r => r.sku).filter(Boolean));
   const policy = state.policies.find(x => x.id === currentPolicy());
   $('#picker-list').innerHTML = pickerItems.map((p, i) => {
-    const price = productPrice(p), included = /VAT/i.test(policy?.name || '') || p.taxBasis === 'Giá đã bao gồm thuế', has = inQuote.has(p.sku);
-    const vat = p.taxable ? (Number.isFinite(p.taxOut) ? `VAT ${p.taxOut}%` : 'Chưa có thuế đầu ra') : 'Không áp dụng thuế';
-    return `<li data-i="${i}" class="${has ? 'added' : ''}">${thumb(p)}
-      <span class="prod-text"><b>${esc(p.name)}</b><small>Nhãn hiệu: ${esc(p.brand || 'Chưa có trên Sapo')}</small>
-        <small>Mã ${esc(p.sku)} · ${esc(p.unit || '—')} · ${vat}</small>
-        <small>Tồn khả dụng: <strong>${kindStock(p, 'stock') === null ? stockText(null) : fmtNum(availableStock(p, editor.id || ''))}</strong>${heldQty(p.sku, editor.id || '') ? ` (đang treo ${fmtNum(heldQty(p.sku, editor.id || ''))})` : ''} | ${hasSupplierStock(p) ? `Tồn NCC: ${stockText(kindStock(p, 'supplier'))} – ` : ''}Hàng chờ về: ${stockText(kindStock(p, 'incoming'))}</small></span>
-      <span class="price">${price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}<small>${included ? 'Đã gồm VAT' : 'Chưa VAT'}</small></span>
-      <input class="num-input" inputmode="decimal" value="1" aria-label="Số lượng ${esc(p.name)}">
+    const view = pickerRowState.get(p.sku), expanded = !!view?.expanded, has = inQuote.has(p.sku), av = kindStock(p, 'stock') === null ? null : availableStock(p, editor.id || '');
+    return `<li data-i="${i}" data-sku="${esc(p.sku)}" class="picker-product ${has ? 'added' : ''} ${expanded ? 'is-expanded' : ''}">
+      <span class="picker-product-name" title="${esc(p.name)}">${esc(p.name)}</span>
+      <span class="picker-stock" title="Tồn khả dụng${p.unit ? ' · ' + esc(p.unit) : ''}" aria-label="Tồn khả dụng ${stockText(av)}">${stockText(av)}</span>
+      <label class="picker-quantity"><span>Số lượng</span><input class="num-input" inputmode="decimal" value="${esc(view?.qty || '1')}" aria-label="Số lượng ${esc(p.name)}"></label>
       <button type="button" class="btn secondary small pick-add" data-add="${i}" ${has ? 'disabled title="Sản phẩm đã có trong báo giá"' : ''}>${has ? '✓ Đã có' : '＋ Thêm'}</button>
+      <button type="button" class="btn ghost small picker-details-toggle" data-picker-details="${i}" aria-expanded="${expanded}" aria-controls="picker-detail-${i}" aria-label="${expanded ? 'Thu gọn' : 'Xem thêm'}: ${esc(p.name)}"><span>${expanded ? 'Thu gọn' : 'Xem thêm'}</span><span class="picker-details-icon" aria-hidden="true">⋯</span></button>
+      <div id="picker-detail-${i}" class="picker-product-details" ${expanded ? '' : 'hidden'}>${expanded ? pickerProductDetails(p) : ''}</div>
     </li>`;
   }).join('');
   $('#picker-status').textContent = `${fmtNum(pickerTotal)} sản phẩm phù hợp · Giá theo chính sách "${policy?.name || ''}"${$('#picker-all').checked ? '' : editor.type === 'VIGIFTS' ? ' · Sản phẩm Vigifts' : ' · Sản phẩm Minh Long'}.`;
@@ -3001,11 +3002,21 @@ function renderPicker(observedAt, min, max) {
   $('#picker-empty').textContent = pickerTotal ? '' : $('#picker-search').value || $('#picker-group').value || min || max ? 'Không tìm thấy sản phẩm phù hợp. Thử bỏ bớt bộ lọc hoặc tick "Tìm trên tất cả sản phẩm".' : 'Chưa có dữ liệu sản phẩm.';
   $('#picker-more-row').hidden = pickerItems.length >= pickerTotal;
 }
+function pickerProductDetails(p) {
+  const policy = state.policies.find(x => x.id === currentPolicy()), price = productPrice(p);
+  const included = /VAT/i.test(policy?.name || '') || p.taxBasis === 'Giá đã bao gồm thuế';
+  const vat = p.taxable ? (Number.isFinite(p.taxOut) ? `VAT ${p.taxOut}%` : 'Chưa có thuế đầu ra') : 'Không áp dụng thuế';
+  return `${thumb(p)}<div><strong>${esc(p.name)}</strong>
+    <span>Mã ${esc(p.sku)} · ${esc(p.unit || '—')} · Nhãn hiệu: ${esc(p.brand || 'Chưa có trên Sapo')}</span>
+    <span>Giá: ${price === null ? 'Chưa có giá' : money(price)} · ${included ? 'Đã gồm VAT' : 'Chưa VAT'} · ${vat}</span>
+    <span>Tồn kho: ${stockText(kindStock(p, 'stock'))} · Hàng đang giữ: ${fmtNum(heldQty(p.sku, editor.id || ''))}${hasSupplierStock(p) ? ` · Tồn NCC: ${stockText(kindStock(p, 'supplier'))}` : ''} · Hàng chờ về: ${incomingCell(p)}</span>
+  </div>`;
+}
 const reloadPicker = () => { pickerReq++;pickerItems=[];$('#picker-list').innerHTML=''; clearTimeout(pickerTimer); pickerTimer = setTimeout(() => loadPicker(), catalog.items ? 30 : 250); };
 let pickerGeneration=0;
 function resetPickerDialog(){
   pickerGeneration++;pickerReq++;clearTimeout(pickerTimer);clearTimeout(pickerScrollTimer);
-  pickerItems=[];pickerTotal=0;pickerShown=20;pickerAdded=0;
+  pickerItems=[];pickerTotal=0;pickerShown=20;pickerAdded=0;pickerRowState.clear();
   for(const id of ['picker-search','picker-group','picker-range','picker-min','picker-max'])$('#'+id).value='';
   $('#picker-all').checked=false;$('#picker-list').innerHTML='';$('#picker-list').scrollTop=0;delete $('#picker-list').dataset.loading;$('#picker-list').removeAttribute('aria-busy');
   $('#picker-status').textContent='Giá lọc theo chính sách đang chọn.';$('#picker-snapshot').textContent='';$('#picker-empty').textContent='';$('#picker-empty').hidden=true;$('#picker-more-row').hidden=true;$('#picker-added').textContent='';
@@ -3064,6 +3075,19 @@ $('#picker-clear').addEventListener('click', () => {
 });
 $('#picker-more').addEventListener('click', () => loadPicker(true));
 $('#picker-list').addEventListener('click', e => {
+  const toggle = e.target.closest('[data-picker-details]');
+  if (toggle) {
+    const li = toggle.closest('li'), p = pickerItems[toggle.dataset.pickerDetails];
+    if (!p || !$('#picker-dialog').open) return;
+    const panel = li.querySelector('.picker-product-details'), show = panel.hidden;
+    if (show && !panel.childElementCount) panel.innerHTML = pickerProductDetails(p);
+    panel.hidden = !show; li.classList.toggle('is-expanded', show);
+    pickerRowState.set(p.sku, { qty: li.querySelector('input').value, expanded: show });
+    toggle.setAttribute('aria-expanded', String(show));
+    toggle.setAttribute('aria-label', `${show ? 'Thu gọn' : 'Xem thêm'}: ${p.name}`);
+    toggle.querySelector('span').textContent = show ? 'Thu gọn' : 'Xem thêm';
+    return;
+  }
   const b = e.target.closest('[data-add]'); if (!b) return;
   const li = b.closest('li'), p = pickerItems[b.dataset.add];if(!p||!$('#picker-dialog').open)return;const qty = parseNum(li.querySelector('input').value);
   if (!(qty > 0)) { li.querySelector('input').classList.add('invalid'); return; }
@@ -3071,6 +3095,11 @@ $('#picker-list').addEventListener('click', e => {
   if (!row || !addRowsToQuote([{ ...row, qty }])) return;
   pickerAdded++; li.classList.add('added'); b.textContent = '✓ Đã thêm'; b.disabled = true;
   $('#picker-added').textContent = `Đã thêm ${pickerAdded} sản phẩm vào báo giá`;
+});
+$('#picker-list').addEventListener('input', e => {
+  if (!e.target.matches('.picker-quantity input')) return;
+  const li = e.target.closest('li'), p = pickerItems[li.dataset.i];
+  if (p && $('#picker-dialog').open) pickerRowState.set(p.sku, { qty: e.target.value, expanded: li.classList.contains('is-expanded') });
 });
 $('#picker-list').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); e.target.closest('li').querySelector('[data-add]').click(); } });
 
@@ -5345,13 +5374,13 @@ $('#quote-stock').addEventListener('click', async () => {
       const p = i.sku ? stock.get(i.sku) : null, av = p && holdsReady ? availableStock(p, me) : null, miss = av === null ? null : Math.max(0, i.qty - av);
       const mine = i.sku && holdsReady ? (state.holds.get(i.sku) || []).filter(h => h.quoteId === me).reduce((t, h) => t + h.qty, 0) : 0;
       if (miss) short++;
-      return `<tr data-stock-result="${miss === null ? 'unknown' : miss ? 'missing' : 'enough'}"><td>${esc(i.name)}<small>${esc(i.sku || 'Chưa có mã hàng')}${i.unit ? ' · ' + esc(i.unit) : ''}${mine ? ` · <b>báo giá này đang giữ ${fmtNum(mine)}</b>` : ''}</small></td><td class="right">${fmtNum(i.qty)}</td>
-        <td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${holdsReady ? heldQty(i.sku) > 0 ? heldCell(i.sku) : '0' : 'Chưa tải được'}</td>
+      return `<tr data-stock-result="${miss === null ? 'unknown' : miss ? 'missing' : 'enough'}"><td><span class="stock-check-name" title="${esc(i.name)}">${esc(i.name)}</span><small>${esc(i.sku || 'Chưa có mã hàng')}${i.unit ? ' · ' + esc(i.unit) : ''}${mine ? ` · <b>báo giá này đang giữ ${fmtNum(mine)}</b>` : ''}</small></td><td class="right">${fmtNum(i.qty)}</td>
+        <td class="right" data-stock-extra>${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right" data-stock-extra>${holdsReady ? heldQty(i.sku) > 0 ? heldCell(i.sku) : '0' : 'Chưa tải được'}</td>
         <td class="right ${miss ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
-        ${anyLock ? `<td class="right">${p && hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : ''}</td>` : ''}<td class="right">${p ? incomingCell(p) : '—'}</td>
+        ${anyLock ? `<td class="right" data-stock-extra>${p && hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : ''}</td>` : ''}<td class="right" data-stock-extra>${p ? incomingCell(p) : '—'}</td>
         <td class="right">${miss === null ? '<span class="muted">Không có số liệu</span>' : miss ? `<span class="pill danger">Thiếu ${fmtNum(miss)}</span>` : '<span class="pill ok">Đủ</span>'}</td></tr>`;
     });
-    $('#stock-check-body').innerHTML = `<div class="table-wrap" tabindex="0" aria-label="Bảng kiểm tồn báo giá, cuộn ngang để xem đầy đủ các cột"><table class="data-table stock-check-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right">Tồn kho</th><th class="right">Hàng đang giữ</th><th class="right">Khả dụng cho báo giá</th>${anyLock ? '<th class="right">Kho NCC</th>' : ''}<th class="right">Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+    $('#stock-check-body').innerHTML = `<div class="table-wrap" tabindex="0" aria-label="Bảng kiểm tồn báo giá, cuộn ngang để xem đầy đủ các cột"><table id="stock-check-table" class="data-table stock-check-table"><thead><tr><th>Sản phẩm</th><th class="right">Cần</th><th class="right" data-stock-extra>Tồn kho</th><th class="right" data-stock-extra>Hàng đang giữ</th><th class="right stock-check-available">Khả dụng</th>${anyLock ? '<th class="right" data-stock-extra>Kho NCC</th>' : ''}<th class="right" data-stock-extra>Hàng chờ về</th><th class="right">Kết quả</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
     bindStockCheckFilter($('#stock-check-body'));
     $('#stock-check-note').textContent = (!holdsReady ? 'Chưa tải được hàng đang giữ; chưa thể kết luận đủ hàng. Đóng và kiểm tồn lại.' : short ? `${short} sản phẩm không đủ tồn khả dụng – xem tồn NCC / hàng chờ về.` : 'Các sản phẩm có số liệu đều đủ tồn khả dụng.')
       + ' Hàng đang giữ gồm báo giá, đơn hàng và HĐKT; phần báo giá này đang giữ vẫn dùng được cho chính báo giá này.';
