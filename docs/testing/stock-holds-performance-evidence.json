@@ -1,0 +1,486 @@
+{
+  "baseCommit": "d4533b58d8e37f1a946d11c3f6d7db54921ae7d3",
+  "method": "Read-only PostgreSQL EXPLAIN ANALYZE BUFFERS FORMAT JSON, 8s local timeout; alternating before/after branches in the same UNION ALL statement/snapshot. No data writes or DDL.",
+  "queryId": "-4778443033376470974",
+  "initialStatementStats": {
+    "queryid": "-4778443033376470974",
+    "calls": 4295,
+    "total_exec_time": 101302.343338,
+    "mean_exec_time": 23.586110206752,
+    "max_exec_time": 1811.27379,
+    "min_exec_time": 0.315552,
+    "rows": 58273,
+    "shared_blks_hit": 13230542,
+    "shared_blks_read": 0,
+    "temp_blks_read": 0,
+    "temp_blks_written": 0
+  },
+  "correlationChecks": {
+    "elevenSecondLog": {
+      "result": [
+        {
+          "duration_ms": 11115.62,
+          "order_lines": 0,
+          "product_prices": 1,
+          "query_id": "-4778443033376470974",
+          "stock_moves": 0,
+          "timestamp": "2026-11-10T00:33:34.248000"
+        }
+      ]
+    },
+    "poolerEvents": {
+      "result": [
+        {
+          "gracefully": 0,
+          "level": "info",
+          "no_subscribers": 1,
+          "shutting_down": 1,
+          "timestamp": "2026-11-10T04:44:01.160041"
+        },
+        {
+          "gracefully": 1,
+          "level": "info",
+          "no_subscribers": 0,
+          "shutting_down": 1,
+          "timestamp": "2026-11-10T04:44:01.160269"
+        },
+        {
+          "gracefully": 0,
+          "level": "info",
+          "no_subscribers": 1,
+          "shutting_down": 1,
+          "timestamp": "2026-11-10T05:11:52.921122"
+        },
+        {
+          "gracefully": 1,
+          "level": "info",
+          "no_subscribers": 0,
+          "shutting_down": 1,
+          "timestamp": "2026-11-10T05:11:52.921320"
+        }
+      ]
+    },
+    "currentStatementStats": [
+      {
+        "id": "4635181618632353283",
+        "calls": 3780,
+        "mean_exec_time": 726.669461560053,
+        "max_exec_time": 12457.223877,
+        "product_prices": true,
+        "order_lines": false
+      },
+      {
+        "id": "-4778443033376470974",
+        "calls": 4338,
+        "mean_exec_time": 23.5032836855694,
+        "max_exec_time": 1811.27379,
+        "product_prices": false,
+        "order_lines": true
+      }
+    ]
+  },
+  "pairedMeasurements": [
+    {
+      "iteration": 0,
+      "planning": 9.413,
+      "sample": [
+        {
+          "kind": "before",
+          "ms": 8.554,
+          "blocks": 3104,
+          "rows": 19
+        },
+        {
+          "kind": "after",
+          "ms": 5.08,
+          "blocks": 1063,
+          "rows": 19
+        }
+      ]
+    },
+    {
+      "iteration": 1,
+      "planning": 10.172,
+      "sample": [
+        {
+          "kind": "after",
+          "ms": 12.084,
+          "blocks": 1066,
+          "rows": 19
+        },
+        {
+          "kind": "before",
+          "ms": 9.206,
+          "blocks": 3101,
+          "rows": 19
+        }
+      ]
+    },
+    {
+      "iteration": 2,
+      "planning": 9.921,
+      "sample": [
+        {
+          "kind": "before",
+          "ms": 8.861,
+          "blocks": 3104,
+          "rows": 19
+        },
+        {
+          "kind": "after",
+          "ms": 3.797,
+          "blocks": 1063,
+          "rows": 19
+        }
+      ]
+    },
+    {
+      "iteration": 3,
+      "planning": 9.885,
+      "sample": [
+        {
+          "kind": "after",
+          "ms": 4.572,
+          "blocks": 1097,
+          "rows": 20
+        },
+        {
+          "kind": "before",
+          "ms": 8.213,
+          "blocks": 3216,
+          "rows": 20
+        }
+      ]
+    },
+    {
+      "iteration": 4,
+      "planning": 15.354,
+      "sample": [
+        {
+          "kind": "before",
+          "ms": 8.764,
+          "blocks": 3219,
+          "rows": 20
+        },
+        {
+          "kind": "after",
+          "ms": 3.717,
+          "blocks": 1094,
+          "rows": 20
+        }
+      ]
+    }
+  ],
+  "medianExecutionMs": {
+    "before": 8.764,
+    "after": 4.572
+  },
+  "unpairedMeasurements": [
+    {
+      "warehouse": "catalog-warehouse-0",
+      "iteration": 0,
+      "kind": "before",
+      "planning": 8.548,
+      "execution": 47.985,
+      "blocks": 3104,
+      "rows": 19
+    },
+    {
+      "warehouse": "catalog-warehouse-0",
+      "iteration": 0,
+      "kind": "after",
+      "planning": 7.72,
+      "execution": 6.803,
+      "blocks": 1066,
+      "rows": 19
+    },
+    {
+      "warehouse": "catalog-warehouse-0",
+      "iteration": 1,
+      "kind": "after",
+      "planning": 149.095,
+      "execution": 461.395,
+      "blocks": 1066,
+      "rows": 19
+    },
+    {
+      "warehouse": "catalog-warehouse-0",
+      "iteration": 1,
+      "kind": "before",
+      "planning": 1203.349,
+      "execution": 102.419,
+      "blocks": 3104,
+      "rows": 19
+    },
+    {
+      "warehouse": "catalog-warehouse-0",
+      "iteration": 2,
+      "kind": "before",
+      "planning": 10.805,
+      "execution": 11.795,
+      "blocks": 3104,
+      "rows": 19
+    },
+    {
+      "warehouse": "catalog-warehouse-0",
+      "iteration": 2,
+      "kind": "after",
+      "planning": 8.829,
+      "execution": 16.589,
+      "blocks": 1066,
+      "rows": 19
+    },
+    {
+      "warehouse": "catalog-warehouse-1",
+      "iteration": 0,
+      "kind": "before",
+      "planning": 6.076,
+      "execution": 1.226,
+      "blocks": 217,
+      "rows": 0
+    },
+    {
+      "warehouse": "catalog-warehouse-1",
+      "iteration": 0,
+      "kind": "after",
+      "planning": 6.525,
+      "execution": 1.242,
+      "blocks": 217,
+      "rows": 0
+    },
+    {
+      "warehouse": "catalog-warehouse-1",
+      "iteration": 1,
+      "kind": "after",
+      "planning": 6.452,
+      "execution": 1.228,
+      "blocks": 217,
+      "rows": 0
+    },
+    {
+      "warehouse": "catalog-warehouse-1",
+      "iteration": 1,
+      "kind": "before",
+      "planning": 7.863,
+      "execution": 1.275,
+      "blocks": 217,
+      "rows": 0
+    },
+    {
+      "warehouse": "catalog-warehouse-1",
+      "iteration": 2,
+      "kind": "before",
+      "planning": 7.242,
+      "execution": 1.303,
+      "blocks": 217,
+      "rows": 0
+    },
+    {
+      "warehouse": "catalog-warehouse-1",
+      "iteration": 2,
+      "kind": "after",
+      "planning": 6.92,
+      "execution": 1.23,
+      "blocks": 217,
+      "rows": 0
+    }
+  ],
+  "equalityChecks": [
+    {
+      "warehouse": "catalog-warehouse-0",
+      "result": [
+        {
+          "before_count": 19,
+          "after_count": 19,
+          "differences": 0
+        }
+      ]
+    },
+    {
+      "warehouse": "catalog-warehouse-1",
+      "result": [
+        {
+          "before_count": 0,
+          "after_count": 0,
+          "differences": 0
+        }
+      ]
+    }
+  ],
+  "slowLogSummary": {
+    "result": [
+      {
+        "max_inflight": 10,
+        "modes": [
+          "direct"
+        ],
+        "slow_count": 130
+      }
+    ]
+  },
+  "slowRoutes": {
+    "result": [
+      {
+        "max_inflight": 5,
+        "max_ms": 4258,
+        "max_queries": 39,
+        "n": 11,
+        "route": "/api/staff/pos/stock-snapshot"
+      },
+      {
+        "max_inflight": 6,
+        "max_ms": 4281,
+        "max_queries": 19,
+        "n": 10,
+        "route": "/api/staff/pos/catalog"
+      },
+      {
+        "max_inflight": 4,
+        "max_ms": 8288,
+        "max_queries": 19,
+        "n": 9,
+        "route": "/api/staff/integrations/sepay/pull"
+      },
+      {
+        "max_inflight": 4,
+        "max_ms": 78461,
+        "max_queries": 165,
+        "n": 9,
+        "route": "/api/staff/integrations/ghn/pos-lock/pull"
+      },
+      {
+        "max_inflight": 8,
+        "max_ms": 22449,
+        "max_queries": 7,
+        "n": 7,
+        "route": "/api/staff/quotes"
+      },
+      {
+        "max_inflight": 9,
+        "max_ms": 8028,
+        "max_queries": 8,
+        "n": 6,
+        "route": "/api/staff/pulse"
+      },
+      {
+        "max_inflight": 5,
+        "max_ms": 23167,
+        "max_queries": 37,
+        "n": 6,
+        "route": "/api/staff/badges"
+      },
+      {
+        "max_inflight": 9,
+        "max_ms": 7297,
+        "max_queries": 11,
+        "n": 6,
+        "route": "/api/staff/approvals"
+      },
+      {
+        "max_inflight": 3,
+        "max_ms": 4348,
+        "max_queries": 9,
+        "n": 6,
+        "route": "/api/staff/pos/orders"
+      },
+      {
+        "max_inflight": 6,
+        "max_ms": 7549,
+        "max_queries": 4,
+        "n": 5,
+        "route": "/api/staff/admin/members"
+      },
+      {
+        "max_inflight": 7,
+        "max_ms": 26569,
+        "max_queries": 12,
+        "n": 5,
+        "route": "/api/staff/catalog-snapshot"
+      },
+      {
+        "max_inflight": 6,
+        "max_ms": 4091,
+        "max_queries": 2,
+        "n": 4,
+        "route": "/api/staff/notifications"
+      },
+      {
+        "max_inflight": 6,
+        "max_ms": 16732,
+        "max_queries": 27,
+        "n": 4,
+        "route": "/api/staff/orders/:id"
+      },
+      {
+        "max_inflight": 7,
+        "max_ms": 18655,
+        "max_queries": 6,
+        "n": 4,
+        "route": "/api/staff/customers"
+      },
+      {
+        "max_inflight": 10,
+        "max_ms": 20699,
+        "max_queries": 4,
+        "n": 4,
+        "route": "/api/staff/store/status"
+      },
+      {
+        "max_inflight": 4,
+        "max_ms": 4628,
+        "max_queries": 2,
+        "n": 3,
+        "route": "/api/staff/push/subscribe"
+      },
+      {
+        "max_inflight": 5,
+        "max_ms": 2467,
+        "max_queries": 13,
+        "n": 3,
+        "route": "/api/staff/tasks/summary"
+      },
+      {
+        "max_inflight": 4,
+        "max_ms": 2754,
+        "max_queries": 10,
+        "n": 3,
+        "route": "/api/staff/pos/options"
+      },
+      {
+        "max_inflight": 4,
+        "max_ms": 22316,
+        "max_queries": 5,
+        "n": 2,
+        "route": "/api/staff/stock-transfers"
+      },
+      {
+        "max_inflight": 2,
+        "max_ms": 2446,
+        "max_queries": 11,
+        "n": 2,
+        "route": "/api/staff/integrations/tasks/receiving-reminders"
+      }
+    ]
+  },
+  "browserChecks": [
+    {
+      "viewport": 390,
+      "requestsForInitialAndFourInputs": 2,
+      "maxConcurrent": 1,
+      "jsErrors": 0
+    },
+    {
+      "viewport": 1440,
+      "requestsForInitialAndFourInputs": 2,
+      "maxConcurrent": 1,
+      "jsErrors": 0
+    }
+  ],
+  "finalQueryCheck": {
+    "executionMs": 33.142,
+    "planningMs": 6.986,
+    "sharedHits": 1097,
+    "rows": 20,
+    "note": "Final SQL includes explicit outer ORDER BY; same materialized aggregate plan, separate non-paired measurement."
+  }
+}
