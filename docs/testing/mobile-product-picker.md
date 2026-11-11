@@ -13,3 +13,9 @@ At widths up to 640px, each product now has one name line, a labeled stock summa
 - Screenshots captured and reviewed in `/tmp/mobile-product-picker/`; results in `results.json`. No browser JavaScript errors.
 
 No schema, authorization, production data or storage changes.
+
+## Thumbnail follow-up
+
+Mobile controls now reserve a 44×44 thumbnail slot on the left; quantity is immediately beside Add on the right. The existing `thumb(p)` helper preserves thumbnail URL handling, lazy loading, async decoding, dimensions and error/empty fallbacks. Desktop columns remain unchanged. At up to 360px the quantity label is shortened to SL, while the input retains its complete accessible label.
+
+The browser fixture also checks successful image decoding, thumbnail placement before quantity, quantity aligned beside Add and the existing no-overflow/add-3 checks. Screenshots are under `/tmp/mobile-product-picker-thumbnail/`. Reduced viewport height simulates available keyboard space, not a real iOS keyboard.

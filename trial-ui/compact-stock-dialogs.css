@@ -40,6 +40,7 @@ dialog.compact-stock-dialog[open] { display: flex; flex-direction: column; }
 .picker-head-quantity { text-align: center; }
 .picker-head-actions { grid-column: 8 / -1; }
 #picker-list .picker-stock-summary { display: contents; }
+#picker-list .picker-product-thumbnail { display: none; }
 #picker-list .picker-product-name { grid-column: 1; grid-row: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 650; }
 #picker-list :is(.picker-stock,.picker-held,.picker-sellable,.picker-incoming,.picker-supplier) { grid-row: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: right; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 #picker-list .picker-stock { grid-column: 2; }
@@ -89,18 +90,20 @@ dialog.compact-stock-dialog[open] { display: flex; flex-direction: column; }
   #picker-dialog .picker-results { overflow-x: hidden; }
   #picker-dialog .picker-results > .picker-list { min-width: 0; scrollbar-gutter: auto; overflow-x: hidden; }
   #picker-dialog .picker-results > .picker-list-head { display: none; }
-  #picker-list > .picker-product { grid-template-columns: minmax(0, 1fr) auto auto; padding: 10px 6px; gap: 8px; }
+  #picker-list > .picker-product { grid-template-columns: minmax(44px, 1fr) auto auto 44px; padding: 10px 6px; gap: 8px; }
   #picker-list .picker-product-name { grid-row: 1; grid-column: 1 / -1; }
   #picker-list .picker-stock-summary { display: flex; flex-wrap: wrap; gap: 4px 10px; grid-row: 2; grid-column: 1 / -1; min-width: 0; }
   #picker-list .picker-stock-summary > span { display: inline-flex; align-items: baseline; gap: 3px; overflow: visible; font-size: 11px; text-align: left; }
   #picker-list [data-stock-label]::before { content: attr(data-stock-label); color: var(--muted); font-weight: 400; }
-  #picker-list .pick-add { grid-column: 2; grid-row: 3; min-height: 44px; padding-inline: 12px; }
-  #picker-list .picker-details-toggle { grid-column: 3; grid-row: 3; min-height: 44px; min-width: 44px; }
+  #picker-list .picker-product-thumbnail { display: block; grid-column: 1; grid-row: 3; width: 44px; height: 44px; }
+  #picker-list .picker-product-thumbnail .thumb { width: 44px; height: 44px; object-fit: contain; }
+  #picker-list .pick-add { grid-column: 3; grid-row: 3; min-height: 44px; padding-inline: 12px; }
+  #picker-list .picker-details-toggle { grid-column: 4; grid-row: 3; min-height: 44px; min-width: 44px; }
   #picker-list .picker-details-toggle > span:first-child { display: none; }
   .picker-details-icon { display: inline; font-size: 20px; }
-  #picker-list .picker-quantity, #picker-list .is-expanded .picker-quantity { display: flex; grid-row: 3; grid-column: 1; align-items: center; gap: 6px; }
+  #picker-list .picker-quantity, #picker-list .is-expanded .picker-quantity { display: flex; grid-row: 3; grid-column: 2; align-items: center; gap: 6px; }
   #picker-list .picker-quantity > span { display: inline; font-size: 12px; }
-  #picker-list .picker-quantity input { width: 70px; max-width: 100%; min-width: 0; min-height: 44px; font-size: 16px; }
+  #picker-list .picker-quantity input { width: 60px; max-width: 100%; min-width: 0; min-height: 44px; font-size: 16px; }
   #picker-list .picker-product-details { grid-row: 4; }
   #stock-check-table:not(.show-details) :is(th,td) { padding: 6px 4px; font-size: 12px; }
   #stock-check-table:not(.show-details) th:nth-child(2) { width: 36px; }
@@ -132,4 +135,6 @@ dialog.compact-stock-dialog[open] { display: flex; flex-direction: column; }
 @media (max-width: 360px) {
   #picker-dialog .catalog-options { grid-template-columns: minmax(0, 1fr); }
   #picker-dialog .catalog-scope { grid-column: 1; grid-row: 2; }
+  #picker-list .picker-quantity > span { display: none; }
+  #picker-list .picker-quantity::before { content: "SL"; font-size: 12px; }
 }
