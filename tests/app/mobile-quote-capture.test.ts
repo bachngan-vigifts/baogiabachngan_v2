@@ -1,3 +1,5 @@
+// @ts-ignore browser module
+import {saleDesignProblem} from '../../trial-ui/sale-quote-layout.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {pathToFileURL} from 'node:url';
@@ -39,7 +41,7 @@ test('chụp báo giá không cần lưu/duyệt, không ghi API; tải file v�
   const nodes:Record<string,any>={},captures:any[]=[],writes:any[]=[],doc={type:'HRC',quoteNo:'BG',rows:[{name:'Nội dung chưa lưu',sku:'LY',qty:2,price:100000}]};let click!:()=>Promise<void>;
   const node=(id:string)=>nodes[id]||=( {dataset:{},disabled:false,hidden:false,addEventListener:(_name:string,fn:any)=>{if(id==='#quote-capture')click=fn;}} );
   const block=scenario.dirty?'Lưu thay đổi trước.':scenario.status!=='approved'?'Chờ duyệt':null;
-  const ctx:any={editor:{...scenario,rows:doc.rows,loading:false,approval:{status:scenario.status,canEdit:scenario.canEdit}},discountProduct,isManager:()=>false,approvalBlock:()=>block,saving:false,$:node,qf:{inert:false,querySelectorAll:()=>[node('#quote-capture'),node('#edit-input')]},closeDownloadMenu(){},window:{matchMedia:()=>({matches:true})},collectQuote:()=>doc,openMobileQuoteCapture:async(opts:any)=>captures.push(opts),api:(...args:any[])=>writes.push(args),toast:(message:string)=>{throw Error(message);}};
+  const ctx:any={saleDesignProblem,isSaleEditor:()=>false,editor:{...scenario,rows:doc.rows,loading:false,approval:{status:scenario.status,canEdit:scenario.canEdit}},discountProduct,isManager:()=>false,approvalBlock:()=>block,saving:false,$:node,qf:{inert:false,querySelectorAll:()=>[node('#quote-capture'),node('#edit-input')]},closeDownloadMenu(){},window:{matchMedia:()=>({matches:true})},collectQuote:()=>doc,openMobileQuoteCapture:async(opts:any)=>captures.push(opts),api:(...args:any[])=>writes.push(args),toast:(message:string)=>{throw Error(message);}};
   runInNewContext(actions+'\n'+handler+'\nupdateQuoteActions();',ctx);
   assert.equal(node('#quote-capture').disabled,false,JSON.stringify(scenario));
   assert.equal(node('#quote-download').disabled,!!block,'download approval unchanged');

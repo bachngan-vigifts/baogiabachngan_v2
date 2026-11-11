@@ -285,8 +285,8 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
       const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), quotationPredicate(viewer, true));
       const [old] = await tx.select().from(quotations).where(condition).limit(1);
       if (!old) throw new AppError(409, 'Báo giá đã thay đổi hoặc anh không có quyền sửa. Vui lòng tải lại.');
-      checkDesignKeys(viewer, data, JSON.parse(old.data));
       if (old.approvalStatus === 'approved' && !isManager(viewer)) throw new AppError(403, 'Báo giá đã duyệt. Chỉ Manager được chỉnh sửa.', 'QUOTE_APPROVED');
+      checkDesignKeys(viewer, data, JSON.parse(old.data));
       // Nhân viên không thấy giá vốn → giữ nguyên giá vốn cũ của từng dòng (theo id dòng).
       if (!isManager(viewer)) data = cleanQuotation(keepCosts(body.data as Record<string, unknown>, JSON.parse(old.data)));
       // Resolve attachments before any write: storage failures cannot report failure after committing the quote.

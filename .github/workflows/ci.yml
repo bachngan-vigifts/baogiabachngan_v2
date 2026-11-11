@@ -27,6 +27,12 @@ jobs:
           cache: npm
       - name: PHP runtime for WordPress contract tests
         run: php --version
+      - name: PDF text extraction for quote export tests
+        run: |
+          if ! command -v pdftotext >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y poppler-utils
+          fi
       - run: npm ci
       - run: npm run typecheck
       # Node test options must precede the file globs; npm test -- ... appends them too late.
