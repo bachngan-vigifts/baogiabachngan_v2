@@ -9,3 +9,7 @@
 .breathing-frame-host iframe{border:0;display:block;width:100%;height:100%;background:#eef7f4}
 .breathing-load-status{padding:16px;line-height:1.5}
 @media(max-width:600px){.breathing-entry span{display:none}.breathing-dialog{width:calc(100vw - 8px);height:calc(100dvh - 8px);max-height:calc(100dvh - 8px);border-radius:12px}.breathing-dialog-head{padding:8px}.breathing-dialog-head h2{font-size:14px}.breathing-dialog-head button{font-size:12px}}
+
+.breathing-entry{min-width:44px;min-height:44px;text-decoration:none;touch-action:manipulation;box-sizing:border-box}
+.breathing-external{font:500 12px/1.4 system-ui;color:#136e61;white-space:nowrap}
+@media(max-width:600px){.breathing-dialog-head{flex-wrap:wrap}.breathing-dialog-head h2{flex:1}.breathing-external{order:3;width:100%}}
