@@ -43,25 +43,49 @@ const probe = () => {
   const r = d.getBoundingClientRect();
   return { title: (d.querySelector('h2,h3,[class*=title]')?.textContent || d.getAttribute('aria-label') || d.id || d.className).trim().slice(0, 50), cls: d.className, landscape: d.classList.contains('landscape-dialog'), size: [Math.round(r.width), Math.round(r.height)], controls: out };
 };
+// Gõ thử vào ô chữ trong popup: danh sách gợi ý (khách/sản phẩm) hiện ra có nhìn thấy và bấm trúng được không.
+async function typeProbe(page) {
+  const n = await page.evaluate(() => { const d = [...document.querySelectorAll('dialog[open],.sup-drawer:not([hidden])')].pop(); return [...d.querySelectorAll('input:not([type]),input[type=text],input[type=search]')].filter(e => e.offsetParent && !e.readOnly && !e.disabled).map((e, i) => { e.dataset.probeInput = String(i); return e.name || e.id || e.placeholder || String(i); }); });
+  const out = {};
+  for (let i = 0; i < n.length; i++) {
+    const input = page.locator(`[data-probe-input="${i}"]`);
+    for (const q of ['Ng', 'Ly', '001']) {
+      try { await input.fill(''); await input.pressSequentially(q, { delay: 30, timeout: 3000 }); } catch { break; }
+      await page.waitForTimeout(900);
+      const r = await page.evaluate(() => {
+        const opts = [...document.querySelectorAll('li[role=option],.suggest li,[data-suggest] li,[role=listbox] [role=option],.combo-list li,ul[class*=suggest] li')].filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden' && !e.closest('[hidden]'); });
+        if (!opts.length) return null;
+        const e = opts[0], r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + Math.min(r.height / 2, 10);
+        if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return 'offscreen';
+        const h = document.elementFromPoint(x, y); return h && (h === e || e.contains(h)) ? 'ok' : 'clipped:' + String(h?.className || h?.tagName).slice(0, 40);
+      });
+      if (r) { out[n[i] + ' ← ' + q] = r; break; }
+    }
+    try { await input.fill(''); } catch {}
+  }
+  return out;
+}
 const result = {};
 try {
   for (const hash of routes) {
     const ctx = await browser.newContext({ viewport: { width: W, height: H } });
     await ctx.route('**/*', route => route.request().url().startsWith(origin + '/') ? route.continue() : route.abort());
     await ctx.addInitScript(({ token, user }) => { localStorage.setItem('bn-api-region-manual-off', '1'); localStorage.setItem('bn-v2-session', token); localStorage.setItem('bn-v2-session-profile', JSON.stringify({ session: token, user })); window.confirm = () => false; }, { token, user });
-    const page = await ctx.newPage(); page.on('dialog', d => (d.type() === 'beforeunload' ? d.accept() : d.dismiss()).catch(() => {}));
+    const page = await ctx.newPage(); const errs = []; page.on('pageerror', e => errs.push(e.message.slice(0, 120))); page.on('dialog', d => (d.type() === 'beforeunload' ? d.accept() : d.dismiss()).catch(() => {}));
     await page.goto(origin + '/' + hash); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(600);
-    const openers = await page.evaluate(([o, s]) => [...document.querySelectorAll('main .view:not([hidden]) button, main .view:not([hidden]) a.btn')].filter(b => b.offsetParent && !b.disabled && new RegExp(o, 'i').test((b.textContent || b.title || '').trim()) && !new RegExp(s, 'i').test((b.textContent || b.title || '').trim())).map((b, i) => { b.dataset.probeOpener = String(i); return (b.textContent || b.title).trim().replace(/\s+/g, ' ').slice(0, 40); }), [OPENER.source, SKIP.source]);
+    const openers = await page.evaluate(([o, s]) => [...document.querySelectorAll('main .view:not([hidden]) button, main .view:not([hidden]) a.btn'), ...[...document.querySelectorAll('main .view:not([hidden]) tbody tr')].slice(0, 2)].filter(b => b.offsetParent && !b.disabled && new RegExp(o, 'i').test((b.textContent || b.title || '').trim()) && !new RegExp(s, 'i').test((b.textContent || b.title || '').trim())).map((b, i) => { b.dataset.probeOpener = String(i); return (b.textContent || b.title).trim().replace(/\s+/g, ' ').slice(0, 40); }), [OPENER.source, SKIP.source]);
     if (process.env.DEBUG) console.error(hash, openers.join(" · "));
     const seen = new Set();
     for (let i = 0; i < openers.length && i < 45; i++) {
       if (seen.has(openers[i])) continue; seen.add(openers[i]);
       try {
         await page.goto('about:blank'); await page.goto(origin + '/' + hash); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(500);
-        await page.evaluate(([o, s]) => { [...document.querySelectorAll('main .view:not([hidden]) button, main .view:not([hidden]) a.btn')].filter(b => b.offsetParent && !b.disabled && new RegExp(o, 'i').test((b.textContent || b.title || '').trim()) && !new RegExp(s, 'i').test((b.textContent || b.title || '').trim())).forEach((b, i) => b.dataset.probeOpener = String(i)); }, [OPENER.source, SKIP.source]);
+        await page.evaluate(([o, s]) => { [...document.querySelectorAll('main .view:not([hidden]) button, main .view:not([hidden]) a.btn'), ...[...document.querySelectorAll('main .view:not([hidden]) tbody tr')].slice(0, 2)].filter(b => b.offsetParent && !b.disabled && new RegExp(o, 'i').test((b.textContent || b.title || '').trim()) && !new RegExp(s, 'i').test((b.textContent || b.title || '').trim())).forEach((b, i) => b.dataset.probeOpener = String(i)); }, [OPENER.source, SKIP.source]);
         const b = page.locator(`[data-probe-opener="${i}"]`); if (!(await b.count())) continue;
-        await b.first().click({ timeout: 3000 }); await page.waitForTimeout(700);
+        errs.length = 0; await b.first().click({ timeout: 3000 }); await page.waitForTimeout(700);
         const p = await page.evaluate(probe); if (p) result[`${hash} › ${openers[i]}`] = p;
+        if (p && process.env.TYPE) p.suggest = await typeProbe(page);
+        if (p) p.errors = [...errs];
       } catch (e) { if (process.env.DEBUG) console.error("  !", openers[i], e.message.split("\n")[0]); }
     }
     await ctx.close();
