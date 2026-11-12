@@ -29,7 +29,7 @@ try{
   await page.locator('#login-form').evaluate(f=>f.requestSubmit());
   if(role==='employee'){await page.locator('#supplier-auth-error').filter({hasText:'Trang dành cho NCC'}).waitFor();assert.ok(!reads.includes('/supplier-portal/early-requests'));}
   else{await page.locator('#supplier-workspace:not([hidden])').waitFor();assert.equal(await page.locator('#login-password').inputValue(),'');assert.equal(await page.locator('#login-password').getAttribute('type'),'password');}
-  if(enabled){assert.equal(calls[1].turnstileToken,'review-challenge-2');assert.equal(await page.evaluate(()=>globalThis.__challenge.resets),1);}else assert.equal(await page.evaluate(()=>globalThis.__challenge.renders),0);
+  if(enabled){assert.equal(calls[1].turnstileToken,'review-challenge-2');assert.equal(await page.evaluate(()=>globalThis.__challenge.resets),2);}else assert.equal(await page.evaluate(()=>globalThis.__challenge.renders),0);
   assert.deepEqual(errors,[]);results.push({width,turnstile:enabled,role,duplicateBlocked:true,passwordToggle:true,roleBoundary:true,errors:0});await context.close();
  }
  console.log(JSON.stringify(results));

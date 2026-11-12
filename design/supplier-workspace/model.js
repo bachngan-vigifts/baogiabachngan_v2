@@ -3,17 +3,20 @@ export const normalized=s=>String(s??'').normalize('NFD').replace(/[\u0300-\u036
 export const STATUS={active:['Đang cung cấp','green'],inactive:['Ngừng cung cấp','neutral'],awaiting_confirmation:['Chờ NCC xác nhận','amber'],confirmed:['Đã xác nhận','blue'],preparing:['Đang chuẩn bị','blue'],shipping:['Đang giao','blue'],completed:['Hoàn tất','green'],cancelled:['Đã hủy','neutral'],waiting_reply:['Chờ phản hồi','amber'],accepted:['Đã đồng ý','green'],partially_fulfilled:['Giao một phần','blue'],fulfilled:['Đã giao đủ','green'],rejected:['Đã từ chối','red'],waiting_pickup:['Chờ lấy hàng','amber'],in_transit:['Đang vận chuyển','blue'],received:['Đã nhận hàng','green'],waiting_confirmation:['Chờ xác nhận','amber'],pending:['Chờ duyệt','amber'],approved:['Đã duyệt','blue'],paid:['Đã nhận tiền','green'],partial:['Nhận một phần','blue'],verified:['Đã đối chiếu','green'],needs_review:['Cần kiểm tra','amber'],missing:['Chưa có số','neutral'],owing:['Còn phải thu','blue'],overdue:['Quá hạn','red'],settled:['Đã thanh toán đủ','green'],overpaid:['Nhận thừa theo đơn','blue'],available:['Có thể giao','green'],low:['Tồn thấp','amber'],out:['Hết hàng','neutral'],unknown:['Chưa có số liệu','neutral']};
 export function ledger(data,supplierId,asOf){
  const payments=scoped(data.payments,supplierId).filter(p=>p.status==='posted'&&!p.voidedAt&&p.date<=asOf),credits=scoped(data.credits,supplierId).filter(c=>c.effectiveDate&&c.effectiveDate<=asOf);
- const dedup=rows=>[...new Map(rows.map(r=>[r.id,r])).values()];const unique=dedup(payments),uniqueCredits=dedup(credits);
+ const dedup=rows=>[...new Map(rows.map(r=>[r.id,r])).values()];
+ const sumByOrder=rows=>{const totals=new Map();for(const r of dedup(rows))totals.set(r.orderId,(totals.get(r.orderId)||0)+r.amount);return totals;};
+ const paidByOrder=sumByOrder(payments),creditsByOrder=sumByOrder(credits);
  return scoped(data.orders,supplierId).filter(o=>o.approvalStatus==='approved'&&o.status!=='cancelled'&&o.date<=asOf).map(o=>{
-  const paid=unique.filter(p=>p.orderId===o.id).reduce((s,p)=>s+p.amount,0),credit=uniqueCredits.filter(c=>c.orderId===o.id).reduce((s,c)=>s+c.amount,0),remaining=o.total-paid-credit;
+  const paid=paidByOrder.get(o.id)||0,credit=creditsByOrder.get(o.id)||0,remaining=o.total-paid-credit;
   return{...o,id:o.id,paid,credit,remaining,status:remaining<0?'overpaid':remaining===0?'settled':o.dueDate&&o.dueDate<asOf?'overdue':'owing',orderStatus:o.status};
  });
 }
 export function pageRows(page,data,asOf='2026-11-12'){
  const id=data.supplier.id;if(page==='balances')return ledger(data,id,asOf);
  if(page==='stock')return scoped(data.stock,id).map(r=>{const available=typeof r.onHand==='number'&&typeof r.reserved==='number'?Math.max(0,r.onHand-r.reserved):null;return{...r,available,status:available===null?'unknown':available===0?'out':available<50?'low':'available'};});
- const rows=scoped(data[page]||[],id);const balances=new Map(ledger(data,id,asOf).map(o=>[o.id,o]));
- return rows.map(r=>page==='orders'?{...r,paid:balances.get(r.id)?.paid??0,remaining:balances.get(r.id)?.remaining??null}:r);
+ const rows=scoped(data[page]||[],id);if(page!=='orders')return rows;
+ const balances=new Map(ledger(data,id,asOf).map(o=>[o.id,o]));
+ return rows.map(r=>({...r,paid:balances.get(r.id)?.paid??0,remaining:balances.get(r.id)?.remaining??null}));
 }
 export function validateFilters(filters){
  for(const key of ['from','to','asOf'])if(filters[key]){const date=new Date(filters[key]+'T00:00:00Z');if(!Number.isFinite(+date)||date.toISOString().slice(0,10)!==filters[key])return 'Ngày lọc không hợp lệ.';}
@@ -43,6 +46,6 @@ export function metrics(page,rows){
  return[{label:page==='requests'?'Phiếu xin hàng':page==='transfers'?'Phiếu điều chuyển':'Phiếu giao hàng',value:rows.length},{label:'Tổng số lượng theo phiếu',value:sum('quantity')},{label:'Đang xử lý',value:rows.filter(r=>!['received','fulfilled','rejected'].includes(r.status)).length,tone:'blue'},{label:'Đã hoàn tất',value:count('received')+count('fulfilled'),tone:'green'}];
 }
 export function csv(columns,rows){
- const value=v=>{const s=String(v??'');return '"'+(typeof v==='string'&&/^[=+\-@]/.test(s)?"'"+s:s).replaceAll('"','""')+'"';};
+ const value=v=>{const s=String(v??'');return '"'+(typeof v==='string'&&/^[\s\uFEFF]*[=+\-@]/.test(s)?"'"+s:s).replaceAll('"','""')+'"';};
  return '\ufeff'+[columns.map(c=>value(c.label)).join(','),...rows.map(r=>columns.map(c=>value(r[c.key])).join(','))].join('\r\n');
 }

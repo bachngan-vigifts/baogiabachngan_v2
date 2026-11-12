@@ -2,6 +2,8 @@
 
 Ngày: 12/11/2026. Nền mã đã đọc: `origin/main` tại `7094a6a7`.
 
+Bổ sung kiểm thử trước triển khai: [NCC-PREDEPLOY-TEST-REPORT.md](NCC-PREDEPLOY-TEST-REPORT.md), gồm tình huống bất lợi, lỗi đã tái hiện/sửa, đo trước/sau và giới hạn của bản duyệt.
+
 ## Phạm vi bàn giao lần này
 
 - Đã sửa form đăng nhập NCC thực tế, dùng bố cục/CSS xác thực của form nhân viên; thêm hiện mật khẩu, chống gửi trùng và tích hợp Turnstile hiện có. Không thay API đăng nhập, phiên đăng nhập hoặc quyền.

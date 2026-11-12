@@ -51,3 +51,26 @@ test('CSV exports only requested columns and escapes spreadsheet formulas',()=>{
 test('three-year-sized sample is filtered without rendering its entire data set',()=>{
  const rows=Array.from({length:10000},(_,i)=>({...data.orders[i%data.orders.length],id:'perf-'+i}));const started=performance.now();const found=filterRows(rows,{q:'DMH',from:'2026-01-01',to:'2026-12-31'});assert.equal(found.length,10000);const elapsed=performance.now()-started;assert.ok(elapsed<2000,'10k rows took '+elapsed+'ms');console.log('10k local review rows: '+elapsed.toFixed(1)+' ms; not a production API benchmark');
 });
+test('spreadsheet formulas stay inert even after leading spaces or control whitespace',()=>{
+ for(const name of ['  =SUM(1,2)','\t+1+1','\r@SUM(1,1)','\uFEFF-HYPERLINK("x")']){const out=csv([{key:'name',label:'Tên'}],[{name}]);assert.ok(out.includes('"\''+name.replaceAll('"','""')+'"'));}
+});
+test('date and numeric filters reject impossible days, Infinity and partial input',()=>{
+ for(const f of [{from:'2026-02-29'},{asOf:'2026-1-2'},{max:'Infinity'},{min:'12abc'},{from:'2026-11-12" autofocus'}])assert.ok(validateFilters(f));
+ assert.equal(validateFilters({from:'2024-02-29',to:'2024-02-29',min:'0',max:'0'}),'');
+ assert.deepEqual(filterRows([{date:'',total:1}],{to:'2026-11-12'}),[]);
+});
+test('partly paid, due today and confirmed credits have independent states',()=>{
+ const base={id:'o',supplierId:sid,approvalStatus:'approved',status:'confirmed',date:'2026-11-01',dueDate:REVIEW_DATE,total:1000};
+ const d={orders:[base],payments:[{id:'p',supplierId:sid,orderId:'o',date:REVIEW_DATE,amount:300,status:'posted'}],credits:[]};
+ let row=ledger(d,sid,REVIEW_DATE)[0];assert.equal(row.paid,300);assert.equal(row.remaining,700);assert.equal(row.status,'owing');
+ row=ledger(d,sid,'2026-11-13')[0];assert.equal(row.status,'overdue');
+ d.credits.push({id:'c',supplierId:sid,orderId:'o',effectiveDate:'2026-11-13',amount:700});assert.equal(ledger(d,sid,REVIEW_DATE)[0].remaining,700);assert.equal(ledger(d,sid,'2026-11-13')[0].status,'settled');
+});
+test('10k-order ledger aggregates 20k payments without counting another supplier or duplicates',()=>{
+ const orders=Array.from({length:10000},(_,i)=>({id:String(i),supplierId:sid,approvalStatus:'approved',status:'confirmed',date:'2026-11-01',dueDate:'2026-11-15',total:100000}));
+ const payments=orders.flatMap(o=>[1,2].map(n=>({id:o.id+'-'+n,supplierId:sid,orderId:o.id,date:'2026-11-02',amount:10000,status:'posted'})));
+ payments.push({...payments[0]},{...payments[0],supplierId:'other',amount:999999});
+ const started=performance.now(),rows=ledger({orders,payments,credits:[]},sid,REVIEW_DATE),elapsed=performance.now()-started;
+ assert.equal(rows.length,10000);assert.equal(rows.reduce((n,r)=>n+r.remaining,0),800000000);assert.ok(rows.every(r=>r.paid===20000));
+ console.log('10k orders / 20k payments ledger: '+elapsed.toFixed(1)+' ms (synthetic local model, not production database)');
+});
