@@ -1,3 +1,4 @@
+import {customerStaffOptions,validateNewCustomerShares} from './share-options.ts';
 import {customerProvince,provinceOptions} from '../domain/province.ts';
 import {provinceCodeSql} from './province.ts';
 import {registerProvinceSharing} from './province-sharing.ts';
@@ -185,6 +186,8 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     return json({ ...values, updatedBy: me.name });
   }, 'business');
 
+  router.get('/customers/staff-options',async c=>json({people:await customerStaffOptions(c.env.db)}),'business');
+
   // All existing group names, independent of the customer page's pagination.
   router.get('/customers/types', async c => {
     const name=sql<string>`btrim(${customers.customerType})`;
@@ -297,8 +300,6 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const [ownerId] = update || !wanted ? [] : await activeStaff(c.env.db, [wanted]);
     if (!update && wanted && !ownerId) throw new AppError(400, 'Nhân viên phụ trách không còn hoạt động.');
     const sharedIds = initial?.sharedIds.filter(id => id !== ownerId) ?? [];
-    if (sharedIds.length && (await activeStaff(c.env.db, sharedIds)).length !== sharedIds.length)
-      throw new AppError(400, 'Danh sách chia sẻ có nhân viên không hợp lệ hoặc đã ngừng hoạt động.');
     // Khách nhân viên tạo chờ Manager duyệt mới dùng được cho báo giá / đơn; Manager tạo thì có hiệu lực ngay.
     const mgr = me.role === 'manager';
     await c.env.db.transaction(async tx => {
@@ -315,6 +316,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
         await tx.update(customers).set(row).where(eq(customers.id, id));
         return;
       }
+      await validateNewCustomerShares(tx,sharedIds);
       await tx.insert(customers).values({ id, createdAt: now, ...row, dataSource: 'web', approvalStatus: mgr ? 'approved' : 'pending', createdBy: me.id, approvedBy: mgr ? me.id : null, approvedAt: mgr ? now : null });
       if (ownerId) await tx.insert(customerStaff).values({ customerId: id, memberId: ownerId, role: 'owner', createdBy: me.id, createdAt: now });
       if (sharedIds.length) await tx.insert(customerStaff).values(sharedIds.map(memberId => ({ customerId: id, memberId, role: 'shared' as const, createdBy: me.id, createdAt: now })));
@@ -401,11 +403,12 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       if (!Array.isArray(body.sharedIds) || body.sharedIds.some(x => typeof x !== 'string')) throw new AppError(400, 'Danh sách chia sẻ không hợp lệ.');
       const wanted = [...new Set(body.sharedIds as string[])];
       if (wanted.length > CUSTOMER_LIMITS.shared) throw new AppError(400, `Chia sẻ tối đa ${CUSTOMER_LIMITS.shared} nhân viên.`);
-      sharedIds = await activeStaff(db, wanted);
-      if (sharedIds.length !== wanted.length) throw new AppError(400, 'Có nhân viên không hợp lệ trong danh sách chia sẻ.');
+      sharedIds = wanted;
     }
     await db.transaction(async tx => {
       await tx.select({id:customers.id}).from(customers).where(eq(customers.id,id)).for('update');
+      const freshAccess=await customerAccess(tx as unknown as Db,id,me);
+      if((changeOwner&&!freshAccess.canChangeOwner)||(changeShared&&!freshAccess.canManageStaff))throw new AppError(403,'Quyền phân công/chia sẻ vừa thay đổi. Tải lại khách hàng.');
       if (ownerId !== undefined) {
         await tx.delete(customerStaff).where(and(eq(customerStaff.customerId, id), eq(customerStaff.role, 'owner')));
         if (ownerId) {
@@ -414,9 +417,12 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
         }
       }
       if (sharedIds) {
+        const existing=await tx.select({id:customerStaff.memberId}).from(customerStaff).where(and(eq(customerStaff.customerId,id),eq(customerStaff.role,'shared')));
         const [owner] = await tx.select({ id: customerStaff.memberId }).from(customerStaff).where(and(eq(customerStaff.customerId, id), eq(customerStaff.role, 'owner'))).limit(1);
-        await tx.delete(customerStaff).where(and(eq(customerStaff.customerId, id), eq(customerStaff.role, 'shared')));
-        const rows = sharedIds.filter(x => x !== owner?.id).map(memberId => ({ customerId: id, memberId, role: 'shared' as const, createdBy: me.id, createdAt: now }));
+        await validateNewCustomerShares(tx,sharedIds.filter(x=>x!==owner?.id&&!existing.some(s=>s.id===x)));
+        const target=sharedIds.filter(x=>x!==owner?.id),removed=existing.filter(s=>!target.includes(s.id)).map(s=>s.id);
+        if(removed.length)await tx.delete(customerStaff).where(and(eq(customerStaff.customerId,id),eq(customerStaff.role,'shared'),inArray(customerStaff.memberId,removed)));
+        const rows = target.filter(x=>!existing.some(s=>s.id===x)).map(memberId => ({ customerId: id, memberId, role: 'shared' as const, createdBy: me.id, createdAt: now }));
         if (rows.length) await tx.insert(customerStaff).values(rows);
       }
     });

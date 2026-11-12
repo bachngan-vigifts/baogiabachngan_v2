@@ -85,7 +85,7 @@ test('customer form marks exactly the four CRM required fields and no required f
     const strict=customerFormFields({requirePhone:true});assert.equal(strict.controls.phone.required,true,'explicit phone requirement in other flows is retained');
     const pos=customerFormFields({requireName:false});assert.equal(Object.values(pos.controls).some((c:any)=>c.required),false);
     fields.setRequiredProfile(false);assert.deepEqual(Object.keys(fields.controls).filter(key=>fields.controls[key].required),['name']);
-    const profile=customerCreateProfile({document:doc,mainContact:fields.controls.contact,api:async()=>({people:[{id:'mgr',name:'Manager',role:'manager'},{id:'emp',name:'Nhân viên',role:'employee'}]})});
+    const profile=customerCreateProfile({document:doc,mainContact:fields.controls.contact,api:async()=>({people:[{id:'mgr',name:'Manager',role:'manager',canShare:true},{id:'emp',name:'Nhân viên',role:'employee',canShare:true}]})});
     profile.reset({id:'mgr',name:'Manager',role:'manager'},true);await new Promise(r=>setTimeout(r,0));
     const add=profile.directory.all().find((n:Node)=>n.text==='＋ Thêm người liên hệ');assert.ok(add);
     const name=profile.directory.all().find((n:Node)=>n.attributes['aria-label']==='Tên người liên hệ');name.value='Anh A';name.fire('input');

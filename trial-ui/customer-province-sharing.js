@@ -1,6 +1,6 @@
 /** Manager-only, additive sharing. A reviewed server snapshot is required before any write. */
 export async function openProvinceSharing({api,esc,toast,provinces,province='',onSaved}){
- const {people}=await api('/tasks/people'),staff=people.filter(p=>['manager','employee'].includes(p.role));
+ const {people}=await api('/customers/staff-options'),staff=people.filter(p=>p.canShare===true&&['manager','employee'].includes(p.role));
  const dlg=document.createElement('dialog');dlg.className='modal customer-province-sharing';
  dlg.innerHTML=`<form novalidate><div class="modal-head"><h2>Chia sẻ khách hàng theo tỉnh</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
  <div class="modal-body"><p>Tất cả khách <b>đã duyệt</b> trong tỉnh được chọn, gồm khách doanh nghiệp và khách lẻ. Các bộ lọc tìm kiếm khác ở danh sách không áp dụng tại đây.</p>

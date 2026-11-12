@@ -1,0 +1,50 @@
+[
+  {
+    "role": "manager",
+    "width": 390,
+    "excluded": [
+      "it",
+      "thiet-ke",
+      "warehouse"
+    ],
+    "ownerOptionsUnchanged": true,
+    "legacySharePreserved": true,
+    "jsErrors": []
+  },
+  {
+    "role": "manager",
+    "width": 1440,
+    "excluded": [
+      "it",
+      "thiet-ke",
+      "warehouse"
+    ],
+    "ownerOptionsUnchanged": true,
+    "legacySharePreserved": true,
+    "jsErrors": []
+  },
+  {
+    "role": "owner",
+    "width": 390,
+    "excluded": [
+      "it",
+      "thiet-ke",
+      "warehouse"
+    ],
+    "ownerOptionsUnchanged": true,
+    "legacySharePreserved": true,
+    "jsErrors": []
+  },
+  {
+    "role": "owner",
+    "width": 1440,
+    "excluded": [
+      "it",
+      "thiet-ke",
+      "warehouse"
+    ],
+    "ownerOptionsUnchanged": true,
+    "legacySharePreserved": true,
+    "jsErrors": []
+  }
+]
