@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { setup } from '../../tests/helpers/pos-fixture.ts';
 const pw = await import(process.env.PLAYWRIGHT_MODULE || 'playwright'), chromium = pw.chromium ?? pw.default.chromium;
 const f = await setup(), off = process.env.LAYOUT === 'off';
-const root = fileURLToPath(new URL('../../trial-ui/', import.meta.url));
+const root = process.env.UI_ROOT || fileURLToPath(new URL('../../trial-ui/', import.meta.url));
 const user = (await f.call('/me', f.mgr)).data.user, token = f.mgr.split('=')[1];
 const server = createServer(async (req, res) => {
   try {
@@ -37,11 +37,12 @@ const probe = () => {
   const d = [...document.querySelectorAll('dialog[open],.sup-drawer:not([hidden])')].pop(); if (!d) return null;
   const vis = e => { const s = getComputedStyle(e); if (s.display === 'none' || s.visibility === 'hidden') return false; for (let p = e; p && p !== d; p = p.parentElement) if (getComputedStyle(p).display === 'none' || p.hidden) return false; return true; };
   const key = e => [e.tagName.toLowerCase(), e.name || e.id || '', (e.getAttribute('aria-label') || e.textContent || e.placeholder || e.value || '').trim().replace(/\s+/g, ' ').slice(0, 30)].join('|');
-  const hit = e => { e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(); if (r.width < 1 || r.height < 1) return 'size0'; const x = r.x + r.width / 2, y = r.y + r.height / 2; if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return 'offscreen'; const h = document.elementFromPoint(x, y); if (!h) return 'nohit'; if (h === e || e.contains(h) || h.contains(e) || h.closest('label')?.contains(e) || (h.closest('label') && h.closest('label').control === e)) return 'ok'; return 'covered:' + (h.className || h.tagName).toString().slice(0, 40); };
+  const hit = e => { for (let p = e.parentElement; p; p = p.parentElement) { if (p.scrollTop) p.scrollTop = 0; if (p === d) break; } e.scrollIntoView({ block: 'center', inline: 'center' }); for (let p = e.parentElement; p; p = p.parentElement) { const s = getComputedStyle(p); if ((s.overflowY === 'hidden' || s.overflowY === 'clip') && p.scrollTop > 0) { p.scrollTop = 0; return 'hiddenScroll:' + String(p.className).slice(0, 40); } if (p === d) break; } const r = e.getBoundingClientRect(); if (r.width < 1 || r.height < 1) return 'size0'; const x = r.x + r.width / 2, y = r.y + r.height / 2; if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return 'offscreen'; const h = document.elementFromPoint(x, y); if (!h) return 'nohit'; if (h === e || e.contains(h) || h.contains(e) || h.closest('label')?.contains(e) || (h.closest('label') && h.closest('label').control === e)) return 'ok'; return 'covered:' + (h.className || h.tagName).toString().slice(0, 40); };
   const controls = [...d.querySelectorAll('button,input:not([type=hidden]),select,textarea,a.btn,[role=tab]')].filter(vis);
   const out = {}; for (const e of controls) { const k = key(e); if (e.type === 'checkbox' || e.type === 'radio' || e.type === 'file') { const l = e.closest('label') || (e.id && document.querySelector(`label[for="${e.id}"]`)); out[k] = l && vis(l) ? hit(l) : hit(e); } else out[k] = hit(e); }
   const r = d.getBoundingClientRect();
-  return { title: (d.querySelector('h2,h3,[class*=title]')?.textContent || d.getAttribute('aria-label') || d.id || d.className).trim().slice(0, 50), cls: d.className, landscape: d.classList.contains('landscape-dialog'), size: [Math.round(r.width), Math.round(r.height)], controls: out };
+  const foot = d.querySelector('.landscape-dialog-foot'), fr = foot?.getBoundingClientRect();
+  return { clip: d.scrollHeight - d.clientHeight, footInside: !fr || (fr.bottom <= r.bottom + 1 && fr.top >= r.top - 1), title: (d.querySelector('h2,h3,[class*=title]')?.textContent || d.getAttribute('aria-label') || d.id || d.className).trim().slice(0, 50), cls: d.className, landscape: d.classList.contains('landscape-dialog'), size: [Math.round(r.width), Math.round(r.height)], controls: out };
 };
 // Gõ thử vào ô chữ trong popup: danh sách gợi ý (khách/sản phẩm) hiện ra có nhìn thấy và bấm trúng được không.
 async function typeProbe(page) {

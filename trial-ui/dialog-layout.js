@@ -60,6 +60,13 @@ export function fitDialog(dialog) {
   head?.classList.add('landscape-dialog-head');
   body.classList.add('landscape-dialog-body');
   foot?.classList.add('landscape-dialog-foot');
+  if (foot && !body.dataset.landscapeMore) {
+    // Báo "còn nội dung bên dưới" bằng bóng ở chân form; chỉ đọc kích thước, không đổi bố cục.
+    body.dataset.landscapeMore = '1';
+    const sync = () => foot.classList.toggle('landscape-more', body.scrollHeight - body.scrollTop - body.clientHeight > 4);
+    body.addEventListener('scroll', sync, { passive: true });
+    requestAnimationFrame(sync);
+  } else if (foot) requestAnimationFrame(() => foot.classList.toggle('landscape-more', body.scrollHeight - body.scrollTop - body.clientHeight > 4));
   return true;
 }
 

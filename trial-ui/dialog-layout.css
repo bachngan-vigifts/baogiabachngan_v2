@@ -19,18 +19,25 @@ body dialog[open]:not(.order-compose,.verify-page) {
   dialog.landscape-dialog,.sup-drawer.landscape-drawer {
     /* A few legacy editors set their portrait width inline. Override only the
        dimensions of forms selected by the layout controller. */
-    width:min(1280px,calc(100vw - 48px),calc((100dvh - 48px) * 16 / 9)) !important;
-    height:auto; aspect-ratio:16 / 9; max-width:calc(100vw - 48px) !important;
-    max-height:calc(100dvh - 48px); padding:0; overflow:hidden; box-sizing:border-box;
+    /* 16:9 là KHUNG TỐI ĐA: form ngắn co theo nội dung, form dài cuộn bên trong (đầu/chân form luôn nhìn thấy). */
+    --landscape-w:min(1280px,calc(100vw - 48px),calc((100dvh - 48px) * 16 / 9));
+    width:var(--landscape-w) !important;
+    height:auto; max-width:calc(100vw - 48px) !important;
+    max-height:min(calc(100dvh - 48px),calc(var(--landscape-w) * 9 / 16)); padding:0; overflow:hidden; box-sizing:border-box;
   }
+  /* Chiều cao không còn cố định: khung là cột flex để phần thân co lại và cuộn, không đẩy chân form ra ngoài. */
+  dialog[open].landscape-dialog { display:flex; flex-direction:column; }
+  dialog.landscape-dialog > *:not(.landscape-dialog-head):not(.landscape-dialog-foot):not(.landscape-dialog-body):not(.landscape-dialog-form) { flex-shrink:0; }
+  /* Còn nội dung bên dưới (máy ẩn thanh cuộn): bóng mờ ở mép chân form. */
+  .landscape-dialog .landscape-dialog-foot.landscape-more { box-shadow:0 -10px 14px -10px rgba(15,23,42,.35); position:relative; z-index:1; }
   dialog.landscape-dialog > .landscape-dialog-form,
   .landscape-dialog .pos-modal-content > form.landscape-dialog-form,
   .sup-drawer.landscape-drawer > form.landscape-dialog-form {
-    display:flex; flex-direction:column; height:100%; max-height:100%; min-height:0; margin:0; overflow:hidden;
+    display:flex; flex-direction:column; flex:1 1 auto; max-height:100%; min-height:0; margin:0; overflow:hidden;
   }
   dialog[open].landscape-dialog.landscape-dialog-form { display:flex; flex-direction:column; }
   dialog.acct-drawer.landscape-dialog { top:50%; left:50%; right:auto; bottom:auto; transform:translate(-50%,-50%); margin:0; }
-  .landscape-dialog .pos-modal-content { display:flex; flex-direction:column; height:100%; padding:0; overflow:hidden; }
+  .landscape-dialog .pos-modal-content { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; max-height:100%; padding:0; overflow:hidden; }
   .landscape-dialog .pos-modal-content > form.landscape-dialog-form { flex:1; padding:0; }
   .landscape-dialog .pos-modal-close { position:static; }
   .sup-drawer.landscape-drawer { top:50%; left:50%; right:auto; bottom:auto; transform:translate(-50%,-50%); display:flex; flex-direction:column; border-radius:14px; }
