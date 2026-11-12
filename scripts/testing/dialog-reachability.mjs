@@ -83,6 +83,7 @@ try {
         await page.evaluate(([o, s]) => { [...document.querySelectorAll('main .view:not([hidden]) button, main .view:not([hidden]) a.btn'), ...[...document.querySelectorAll('main .view:not([hidden]) tbody tr')].slice(0, 2)].filter(b => b.offsetParent && !b.disabled && new RegExp(o, 'i').test((b.textContent || b.title || '').trim()) && !new RegExp(s, 'i').test((b.textContent || b.title || '').trim())).forEach((b, i) => b.dataset.probeOpener = String(i)); }, [OPENER.source, SKIP.source]);
         const b = page.locator(`[data-probe-opener="${i}"]`); if (!(await b.count())) continue;
         errs.length = 0; await b.first().click({ timeout: 3000 }); await page.waitForTimeout(700);
+        if (process.env.SHOTS && await page.locator('dialog[open],.sup-drawer:not([hidden])').count()) await page.screenshot({ path: `${process.env.SHOTS}/${(off ? 'off' : 'on')}-${hash.slice(2)}-${i}.png` });
         const p = await page.evaluate(probe); if (p) result[`${hash} › ${openers[i]}`] = p;
         if (p && process.env.TYPE) p.suggest = await typeProbe(page);
         if (p) p.errors = [...errs];
