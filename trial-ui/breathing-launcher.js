@@ -6,7 +6,7 @@ export function initBreathingLauncher({doc = document, win = window, fetchPage =
   const dialog = doc.createElement('dialog');
   dialog.className = 'breathing-dialog';
   dialog.setAttribute('aria-labelledby', 'breathing-dialog-title');
-  dialog.innerHTML = '<div class="breathing-dialog-head"><h2 id="breathing-dialog-title">Khoảng nghỉ · Bài tập thở</h2><button type="button" class="btn ghost" data-breath-close>Đóng · Dừng bài</button></div><p class="breathing-load-status" role="status"></p><div class="breathing-frame-host"></div>';
+  dialog.innerHTML = '<div class="breathing-dialog-head"><h2 id="breathing-dialog-title">Khoảng nghỉ · Bài tập thở</h2><a class="breathing-external" href="breathing.html" target="_blank" rel="noopener">Mở trang riêng</a><button type="button" class="btn ghost" data-breath-close>Đóng · Dừng bài</button></div><p class="breathing-load-status" role="status"></p><div class="breathing-frame-host"></div>';
   doc.body.append(dialog);
   const status = dialog.querySelector('[role="status"]');
   const host = dialog.querySelector('.breathing-frame-host');
@@ -52,7 +52,18 @@ export function initBreathingLauncher({doc = document, win = window, fetchPage =
       status.textContent = 'Chưa mở được bài tập. Đóng rồi thử lại; công việc CRM vẫn được giữ nguyên.';
     }
   }
-  button.addEventListener('click', open);
+  // A real link remains usable before/without JS. Touch browsers use a dedicated
+  // tab instead of relying on nested srcdoc/dialog support; CRM drafts stay put.
+  function activate(event) {
+    if (event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (win.matchMedia?.('(hover: none), (pointer: coarse)').matches || typeof dialog.showModal !== 'function') return;
+    const opening = open();
+    // showModal runs before the first await. Cancel native navigation ONLY after
+    // the dialog really opened; unsupported/failed opening keeps the link alive.
+    if (dialog.open) event.preventDefault();
+    opening.catch(() => { if (!dialog.open) cleanup(); });
+  }
+  button.addEventListener('click', activate);
   closeButton.addEventListener('click', close);
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
   dialog.addEventListener('close', () => { if (dialog.open) return; cleanup(); if (!workspace.hidden) button.focus(); });
@@ -62,6 +73,6 @@ export function initBreathingLauncher({doc = document, win = window, fetchPage =
   win.addEventListener('pagehide', onNavigation);
   const observer = new win.MutationObserver(() => { if (workspace.hidden) close(); });
   observer.observe(workspace, {attributes: true, attributeFilter: ['hidden']});
-  return {open, close, destroy() { close(); observer.disconnect(); button.removeEventListener('click', open); for (const event of ['hashchange', 'popstate', 'pagehide']) win.removeEventListener(event, onNavigation); dialog.remove(); }};
+  return {open, close, destroy() { close(); observer.disconnect(); button.removeEventListener('click', activate); for (const event of ['hashchange', 'popstate', 'pagehide']) win.removeEventListener(event, onNavigation); dialog.remove(); }};
 }
 if (typeof document !== 'undefined') initBreathingLauncher();
