@@ -22,7 +22,7 @@ export async function crmStockFulfilment(db:ReadDb,ids:readonly string[],options
  ]);
  const [issues,legacy]=await Promise.all([
   db.select({slipId:packingSlips.id,warehouseId:stockMoves.warehouseId,sku:stockMoves.sku,qty:sql<number>`greatest(0,-sum(${stockMoves.qty}))`.mapWith(Number)})
-   .from(stockMoves).innerJoin(packingSlips,eq(packingSlips.id,stockMoves.refId)).where(and(inArray(packingSlips.orderId,[...ids]),eq(stockMoves.refType,'packing_slip')))
+   .from(stockMoves).innerJoin(packingSlips,sql`${packingSlips.id}=split_part(${stockMoves.refId},'#',1)`).where(and(inArray(packingSlips.orderId,[...ids]),eq(stockMoves.refType,'packing_slip')))
    .groupBy(packingSlips.id,stockMoves.warehouseId,stockMoves.sku),
   db.select({orderId:salesOrders.id,warehouseId:stockMoves.warehouseId,sku:stockMoves.sku,qty:sql<number>`greatest(0,-sum(${stockMoves.qty}))`.mapWith(Number)})
    .from(stockMoves).innerJoin(salesOrders,sql`${stockMoves.refId}=${salesOrders.id} or ${stockMoves.refId} like ${salesOrders.id}||'#%'`)

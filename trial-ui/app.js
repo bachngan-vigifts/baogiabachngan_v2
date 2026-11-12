@@ -4909,7 +4909,7 @@ async function openPacking(id) {
   $('#packing-status').innerHTML = pill(PACK_STATUS, k.status);
   $('#packing-back').href = d.canOpenOrder ? docHref(o.id, o.contractNo) : isWarehouse() ? '#/packing' : '#/tasks'; $('#packing-back').textContent = d.canOpenOrder ? (o.contractNo ? '‹ HĐKT' : '‹ Đơn hàng') : isWarehouse() ? '‹ Phiếu đóng gói' : '‹ Công việc';
   packingView = d;
-  $('#packing-actions').innerHTML = '<button class="btn secondary" data-slip-print="packing">In phiếu đóng gói</button><button class="btn secondary" data-slip-print="delivery">In phiếu giao hàng</button>' + (d.canSend ? `<button class="btn primary" data-slip-send="${esc(k.id)}">Gửi kho</button>` : '') + (d.canCancel ? `<button class="btn ghost" data-slip-cancel="${esc(k.id)}">Huỷ phiếu</button>` : '');
+  $('#packing-actions').innerHTML = (d.canAdjustQuantities ? '<button class="btn primary" data-packed-adjust data-mobile-confirmation-page data-mobile-inline>Điều chỉnh số lượng</button><button class="btn ghost" data-packed-history data-mobile-navigation>Lịch sử điều chỉnh</button>' : '') + '<button class="btn secondary" data-slip-print="packing">In phiếu đóng gói</button><button class="btn secondary" data-slip-print="delivery">In phiếu giao hàng</button>' + (d.canSend ? `<button class="btn primary" data-slip-send="${esc(k.id)}">Gửi kho</button>` : '') + (d.canCancel ? `<button class="btn ghost" data-slip-cancel="${esc(k.id)}">Huỷ phiếu</button>` : '');
   const at = v => v ? new Date(v).toLocaleString('vi-VN') : '';
   body.innerHTML = `<div class="editor-grid">
     <div class="card"><h2 class="card-title">${k.shipTo === 'workshop' ? '🖨️ Giao về xưởng in' : '🏠 Giao thẳng cho khách'}</h2><dl class="kv"><dt>Khách hàng</dt><dd><b>${esc(o.customerName)}</b></dd><dt>${orderReference(o).label}</dt><dd>${esc(orderReference(o).number)}</dd>
@@ -4951,6 +4951,12 @@ async function openPacking(id) {
     drawSlipGate();
   }).catch(() => {});
 }
+document.addEventListener('click',async e=>{
+  if(e.target.closest?.('[data-packed-adjust]')&&packingView?.canAdjustQuantities){
+    try{const module=await import('./packing-adjustment.js');const data=packingView;module.showPackingAdjustment({data,api,toast,esc,onSaved:()=>{if(location.hash==='#/packing/'+data.slip.id)return openPacking(data.slip.id);}});}catch(ex){toast(ex.message,'err');}
+  }
+  if(e.target.closest?.('[data-packed-history]')&&packingView?.canAdjustQuantities)showAudit({api,toast,entityType:'packing_slips',entityId:packingView.slip.id,title:'Lịch sử '+packingView.slip.slipNo});
+});
 let stockWarehouseList = null;
 /** Kho thật đang dùng (GET /stock-warehouses) – dùng chung cho chọn kho xuất / kho nhận. */
 function stockWarehouses() { return stockWarehouseList ||= api('/stock-warehouses').then(r => r.warehouses).catch(e => { stockWarehouseList = null; throw e; }); }

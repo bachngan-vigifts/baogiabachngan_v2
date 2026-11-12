@@ -4,6 +4,7 @@ const when = iso => new Date(iso).toLocaleString('vi-VN', { hour: '2-digit', min
 
 /** Tên dễ hiểu cho từng thao tác (route). Thao tác chưa có tên thì hiện nguyên route. */
 const ACTIONS = {
+  'adjust_packed_quantities':'Điều chỉnh số lượng đã đóng', 'POST /packing/:id/adjust-quantities':'Yêu cầu điều chỉnh số lượng',
   'PUT /orders/:id/pos': 'Sửa đơn POS', 'amend-pos-order': 'Sửa đơn POS (trước / sau)',
   'POST /quotes': 'Tạo báo giá', 'PUT /quotes/:id': 'Sửa báo giá', 'POST /quotes/:id/approve': 'Duyệt báo giá', 'POST /quotes/:id/submit': 'Gửi duyệt báo giá', 'POST /quotes/:id/reject': 'Trả lại báo giá', 'DELETE /quotes/:id': 'Xoá báo giá',
   'POST /orders': 'Tạo đơn hàng', 'PUT /orders/:id/status': 'Duyệt / huỷ đơn hoặc HĐKT', 'PUT /orders/:id/delivery-date': 'Đổi ngày giao dự kiến',
@@ -17,6 +18,11 @@ const STATUS = { confirmed: 'Đã duyệt', cancelled: 'Đã huỷ', delivered: 
 
 /** Tóm tắt ngắn nội dung thao tác (trạng thái mới, số tiền, ngày…) thay vì in cả thân yêu cầu. */
 function detail(e) {
+  if(e.action==='adjust_packed_quantities'){
+    const d=e.data||{},before=new Map((d.before||[]).map(l=>[l.id,l.qty]));
+    const changes=(d.after||[]).filter(l=>l.qty!==before.get(l.id)).map(l=>`${l.sku||l.id}: ${before.get(l.id)} → ${l.qty}`);
+    return [...changes,d.reason?'Lý do: '+d.reason:''].filter(Boolean).join(' · ');
+  }
   const b = e.data?.body || (e.action === 'amend-pos-order' ? e.data : {}) || {}, parts = [];
   if (b.status) parts.push('→ ' + (STATUS[b.status] || b.status));
   if (b.amount) parts.push(new Intl.NumberFormat('vi-VN').format(b.amount) + ' đ');

@@ -1,3 +1,4 @@
+import {adjustPackedQuantities} from './packing-adjustment.ts';
 import {redeliveryByLine} from './crm-redelivery.ts';
 import { assertNoPendingGhnEdit } from '../domain/pos-ghn-edit.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
@@ -293,6 +294,7 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
       order: { id: order.id, orderNo: order.orderNo, contractNo: contracts[0]?.contractNo ?? '', legalEntity: contracts[0]?.legalEntity ?? null, quoteType: order.quoteType, customerName: order.customerName, contact: order.contact, phone: order.phone, receiverName: order.receiverName, receiverPhone: order.receiverPhone, email: order.email, address: order.address,
         taxCode: order.taxCode, customerCode: cust?.code ?? '', note: order.note, expectedDeliveryDate: order.expectedDeliveryDate },
       requiresWarehouseIssue: slip.source==='warehouse'||lines.some(l=>l.sku.trim()),
+      canAdjustQuantities: m.role==='manager'&&slip.status==='packed'&&order.channel==='crm'&&!['draft','cancelled'].includes(order.status),
       canOpenOrder: manage, canSend: manage && slip.status === 'draft', canCancel: manage && (slip.status === 'draft' || slip.status === 'sent'), canConfirm: canConfirm(m, slip.status),
     });
   }, 'business');
@@ -354,6 +356,12 @@ export function registerPackingRoutes(router: Router<StaffEnv>, options: {
     });
     return json({ ok: true });
   }, 'business');
+
+  router.post('/packing/:id/adjust-quantities',async c=>{
+    if(viewer(c).role!=='manager')throw new AppError(403,'Chỉ Manager được điều chỉnh phiếu đã đóng.');
+    const {slip,order}=await loadSlip(c,c.params.id!);
+    return json(await adjustPackedQuantities(c,slip.id,order.id,await readJson(c.req,64000)));
+  },'business');
 
   /** Kho xác nhận đã đóng hàng: bắt buộc 1–3 ảnh. Người lập phiếu được báo; việc của kho tự hoàn thành. */
   router.post('/packing/:id/confirm', async c => {

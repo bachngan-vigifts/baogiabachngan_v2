@@ -2797,3 +2797,12 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 
 .production-files { border:1px solid var(--line,#dce3ee); border-radius:10px; padding:14px; margin:12px 0; }
 .production-file-row { display:flex; align-items:center; gap:10px; margin:10px 0; overflow-wrap:anywhere; }.production-file-row span { flex:1; min-width:0; }.production-file-row small { display:block; color:var(--muted); }.production-files [type=file] { max-width:100%; }
+
+/* Manager correction of packed quantities: readable rows on narrow screens. */
+.packed-adjust-modal{width:min(720px,calc(100vw - 24px))}
+.packed-adjust-lines{max-height:48vh;overflow-y:auto}
+.packed-adjust-row{display:grid;grid-template-columns:minmax(0,1fr) 130px;gap:16px;padding:12px 0;border-bottom:1px solid var(--line,#dce3ed)}
+.packed-adjust-row b,.packed-adjust-row small{display:block;overflow-wrap:anywhere}
+.packed-adjust-row input{width:100%;min-width:0}
+.packed-adjust-modal textarea{width:100%;box-sizing:border-box}
+@media(max-width:480px){.packed-adjust-row{grid-template-columns:minmax(0,1fr) 100px;gap:10px}.packed-adjust-modal .row-gap{display:flex;flex-wrap:wrap}.packed-adjust-modal .row-gap .btn{flex:1}}

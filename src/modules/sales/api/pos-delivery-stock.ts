@@ -44,7 +44,7 @@ export async function issuePosDelivery(
     .where(
       and(
         eq(stockMoves.warehouseId, row.warehouseId),
-        sql`(${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} where ${packingSlips.id}=${stockMoves.refId} and ${packingSlips.orderId}=${orderId})) or (${stockMoves.warehouseId}=${row.warehouseId} and ${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} where ${deliveries.id}=${stockMoves.refId} and ${deliveries.orderId}=${orderId}))`,
+        sql`(${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} where ${packingSlips.id}=split_part(${stockMoves.refId},'#',1) and ${packingSlips.orderId}=${orderId})) or (${stockMoves.warehouseId}=${row.warehouseId} and ${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} where ${deliveries.id}=${stockMoves.refId} and ${deliveries.orderId}=${orderId}))`,
       ),
     )
     .groupBy(stockMoves.sku);

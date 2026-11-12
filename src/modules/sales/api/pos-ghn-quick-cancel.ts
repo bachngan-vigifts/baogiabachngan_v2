@@ -28,7 +28,7 @@ const terminal=new Set(['cancel','returned']);
 function manager(c:Ctx){if(actor(c).role!=='manager')throw new AppError(403,'Chỉ Manager được huỷ nhanh đơn GHN.');}
 const issueRefs=(id:string)=>sql`(${stockMoves.refType}='pos_order' and ${stockMoves.refId}=${id}) or
  (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${id})) or
- (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${id}))`;
+ (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=split_part(${stockMoves.refId},'#',1) and p.order_id=${id}))`;
 
 async function local(c:Ctx,db:CashDb,id:string){
  manager(c);const [o]=await db.select().from(salesOrders).where(eq(salesOrders.id,id));
