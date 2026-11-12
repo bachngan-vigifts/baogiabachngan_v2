@@ -9,13 +9,13 @@ import {sha256Hex} from '../../staff/domain/session.ts';
 import {vietnamDate} from '../../sales/domain/sales.ts';
 import {SUPPLIER_WORKSPACE_PAGES,type SupplierWorkspacePage} from '../../../core/contracts/supplier-workspace.ts';
 import {supplierAccounts,suppliers,incomingShipments,incomingShipmentLines,incomingShipmentFiles,supplierPaymentSchedules,supplierPayments,supplierOrderEvents,supplierReceipts,supplierReceiptLines} from '../schema.ts';
-import {supplierPortalDeliveries,supplierPortalDeliveryLines,supplierPortalInvoices,supplierPublishedStock,supplierTransferShares} from '../workspace-schema.ts';
+import {supplierPortalDeliveries,supplierPortalDeliveryLines,supplierPortalInvoices,supplierPublishedStock,supplierTransferShares,supplierStockChecks,supplierStockCheckLines} from '../workspace-schema.ts';
 import {stockTransfers,stockTransferLines} from '../../inventory/schema.ts';
 import {computeOrderTotals} from '../domain/order-totals.ts';
 import {supplierDebt,receiptProgress} from '../domain/purchasing.ts';
 import {checkAction,type OrderFacts} from '../domain/workflow.ts';
 import {isIsoDate} from '../domain/quantity.ts';
-import {queryRows,workspaceFacts,workspaceList} from './workspace-store.ts';
+import {queryRows,workspaceFacts,workspaceList,workspaceProductOrders} from './workspace-store.ts';
 
 type Ctx=RouteContext<StaffEnv>;type Tx=Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
 const member=(c:Ctx)=>(c.state.session as SessionState).member;
@@ -53,9 +53,10 @@ export function registerSupplierWorkspaceRoutes(router:Router<StaffEnv>){
  router.get('/supplier-portal/workspace/overview',async c=>{
   const s=await supplierContext(c),params=new URLSearchParams(c.url.search);params.set('limit','5');
   const orders=await workspaceList(c.env.db,s.supplierId,'orders',params,today());
-  const pending=await queryRows<{orders:number;requests:number;remaining:number|null;overdue:number}>(c.env.db,sql`with ${workspaceFacts(s.supplierId,today())} select (select count(*)::int from facts where status='awaiting_confirmation') orders,(select count(distinct a.request_line_id)::int from purchase_early_request_allocations a join incoming_shipment_lines l on l.id=a.purchase_line_id join facts f on f.id=l.shipment_id join purchase_early_request_lines el on el.id=a.request_line_id join purchase_early_requests er on er.id=el.request_id where a.supplier_id=${s.supplierId} and a.status='pending' and er.status='submitted' and er.deleted_at is null) requests,(select sum(remaining) from facts where cancelled_at is null) remaining,(select coalesce(sum(overdue),0) from facts where cancelled_at is null) overdue`);
+  const pending=await queryRows<{orders:number;requests:number;products:number;remainingQuantity:number}>(c.env.db,sql`with ${workspaceFacts(s.supplierId,today())} select (select count(*)::int from facts where status='awaiting_confirmation') orders,(select count(distinct a.request_line_id)::int from purchase_early_request_allocations a join incoming_shipment_lines l on l.id=a.purchase_line_id join scope f on f.id=l.shipment_id join purchase_early_request_lines el on el.id=a.request_line_id join purchase_early_requests er on er.id=el.request_id where a.supplier_id=${s.supplierId} and f.cancelled_at is null and a.status='pending' and er.status='submitted' and er.deleted_at is null) requests,(select count(distinct l.sku)::int from line_facts l join scope s on s.id=l.shipment_id where s.cancelled_at is null) products,(select coalesce(sum(greatest(0,floor(l.quantity+0.5)-l.good)),0)::double precision from line_facts l join scope s on s.id=l.shipment_id where s.cancelled_at is null) "remainingQuantity"`);
   return json({...orders,overview:pending[0]});
  },'supplier-portal');
+ router.get('/supplier-portal/workspace/products/:sku/orders',async c=>{const s=await supplierContext(c);return json(await workspaceProductOrders(c.env.db,s.supplierId,c.params.sku!,c.url.searchParams,today()));},'supplier-portal');
  router.get('/supplier-portal/workspace/:page',async c=>{const s=await supplierContext(c),page=c.params.page as SupplierWorkspacePage;if(!SUPPLIER_WORKSPACE_PAGES.includes(page)||page==='overview')fail(404,'Không tìm thấy trang.');return json(await workspaceList(c.env.db,s.supplierId,page as Exclude<SupplierWorkspacePage,'overview'>,c.url.searchParams,today()));},'supplier-portal');
  router.get('/supplier-portal/workspace/:page/export',async c=>{const s=await supplierContext(c),page=c.params.page as SupplierWorkspacePage;if(!SUPPLIER_WORKSPACE_PAGES.includes(page)||page==='overview')fail(404,'Không tìm thấy trang.');const result=await workspaceList(c.env.db,s.supplierId,page as Exclude<SupplierWorkspacePage,'overview'>,c.url.searchParams,today(),true);return json({...result,exported:true});},'supplier-portal');
  router.get('/supplier-portal/workspace/:page/:id',async c=>{
@@ -71,6 +72,35 @@ export function registerSupplierWorkspaceRoutes(router:Router<StaffEnv>){
    c.env.db.select({lineId:supplierReceiptLines.lineId,goodQty:supplierReceiptLines.goodQty,damagedQty:supplierReceiptLines.damagedQty,cancelledAt:supplierReceipts.cancelledAt}).from(supplierReceiptLines).innerJoin(supplierReceipts,eq(supplierReceiptLines.receiptId,supplierReceipts.id)).where(eq(supplierReceipts.shipmentId,o.id))]);
   const totals=computeOrderTotals({rows:lines,depositRate:o.depositRate,paidAmount:0}),progress=receiptProgress(lines.map(l=>({...l,lineId:l.id})),got.filter(r=>!r.cancelledAt)),complete=lines.every(l=>l.price!==null),facts=await orderFacts(c.env.db,o);
   return json({item,order:{id:o.id,no:o.ticketNumber,internalNo:o.supplierInternalOrderNumber,revision:o.revision,warehouse:o.warehouse,expected:o.arrivalDate,cancelled:!!o.cancelledAt,hasSignature:facts.hasSignatureStep},lines:lines.map((l,i)=>({...l,lineTotal:l.price===null?null:totals.rows[i]!.lineTotal,vat:l.price===null?null:totals.rows[i]!.lineVat})),totals:complete?{subtotal:totals.subtotal,tax:totals.vat,total:totals.total,deposit:totals.depositAmount}:null,debt:complete?supplierDebt(totals.total,schedules,payments,today()):null,progress,payments:payments.filter(p=>!p.voidedAt).map(({voidedAt:_void,...p})=>p),receipts});
+ },'supplier-portal');
+ // New stock checks use their own documents; they never update purchases, published stock or the ledger.
+ router.post('/supplier-workspace-admin/stock-checks',async c=>{
+  admin(c);const s=await supplierContext(c),body=await readJson(c.req,40000),clientKey=key(body),checkNo=text(body.checkNo,100),neededDate=typeof body.neededDate==='string'?body.neededDate.trim():'',note=text(body.note,1000);
+  if(!checkNo||neededDate&&!isIsoDate(neededDate))fail(400,'Nhập số phiếu và ngày cần hàng hợp lệ.');
+  if(!Array.isArray(body.lines)||!body.lines.length||body.lines.length>100)fail(400,'Phiếu cần từ 1 đến 100 mã hàng.');
+  const lines=(body.lines as Record<string,unknown>[]).map(l=>{if(!l||typeof l!=='object')fail(400,'Dòng kiểm tồn không hợp lệ.');const sku=text(l.sku,200),qty=l.quantity;if(!sku||typeof qty!=='number'||!Number.isFinite(qty)||qty<=0||qty>1e9)fail(400,'Mã hàng hoặc số lượng cần kiểm không hợp lệ.');return{sku,quantity:qty as number};}).sort((a,b)=>a.sku.localeCompare(b.sku));
+  if(new Set(lines.map(l=>l.sku)).size!==lines.length)fail(400,'Không lặp mã trong một phiếu kiểm.');
+  const hash=await sha256Hex(JSON.stringify({checkNo,neededDate,note,lines})),id=crypto.randomUUID();
+  const result=await c.env.db.transaction(async tx=>{
+   const [old]=await tx.select().from(supplierStockChecks).where(and(eq(supplierStockChecks.supplierId,s.supplierId),eq(supplierStockChecks.clientKey,clientKey))).limit(1);
+   if(old){if(old.requestHash!==hash)fail(409,'Mã gửi lặp có nội dung khác.');return{id:old.id,replay:true};}
+   const products=await queryRows<{sku:string;name:string;unit:string}>(tx as unknown as StaffEnv['db'],sql`select distinct on(l.sku) l.sku,l.name,l.unit from incoming_shipment_lines l join incoming_shipments o on o.id=l.shipment_id where o.supplier_id=${s.supplierId} and o.source='supplier-order' and o.approval_status='approved' and o.cancelled_at is null and l.sku in (${sql.join(lines.map(l=>sql`${l.sku}`),sql`,`)}) order by l.sku,o.created_at desc,l.id desc`);
+   if(products.length!==lines.length)fail(404,'Mã hàng chưa thuộc đơn mua đã duyệt của NCC này.');
+   const inserted=await tx.insert(supplierStockChecks).values({id,supplierId:s.supplierId,checkNo,neededDate,note,clientKey,requestHash:hash,createdAt:now(),createdBy:s.m.id,updatedAt:now()}).onConflictDoNothing().returning({id:supplierStockChecks.id});
+   if(!inserted.length){const [retry]=await tx.select().from(supplierStockChecks).where(and(eq(supplierStockChecks.supplierId,s.supplierId),eq(supplierStockChecks.clientKey,clientKey))).limit(1);if(retry?.requestHash===hash)return{id:retry.id,replay:true};fail(409,'Số phiếu hoặc mã gửi đã tồn tại.');}
+   await tx.insert(supplierStockCheckLines).values(lines.map(l=>{const p=products.find(p=>p.sku===l.sku)!;return{id:crypto.randomUUID(),checkId:id,sku:l.sku,name:p.name,unit:p.unit,requestedQuantity:l.quantity};}));return{id,replay:false};
+  });return json(result,201);
+ },'supplier-portal');
+ router.post('/supplier-portal/workspace/stock/:id/respond',async c=>{
+  const s=await supplierContext(c);writable(s);const body=await readJson(c.req,10000),qty=body.availableQuantity,promisedDate=typeof body.promisedDate==='string'?body.promisedDate.trim():'',note=text(body.note,1000);
+  if(typeof qty!=='number'||!Number.isFinite(qty)||qty<0||qty>1e9||promisedDate&&!isIsoDate(promisedDate)||(qty>0&&!promisedDate))fail(400,'Nhập số đáp ứng hợp lệ và ngày có thể giao khi có hàng.');
+  await c.env.db.transaction(async tx=>{
+   const [line]=await tx.select().from(supplierStockCheckLines).where(eq(supplierStockCheckLines.id,c.params.id!)).limit(1);if(!line)fail(404,'Không tìm thấy dòng kiểm tồn.');
+   const [check]=await tx.select().from(supplierStockChecks).where(and(eq(supplierStockChecks.id,line!.checkId),eq(supplierStockChecks.supplierId,s.supplierId))).for('update');if(!check)fail(404,'Không tìm thấy phiếu kiểm của NCC.');revision(check!.revision,body.revision);
+   const at=now();await tx.update(supplierStockCheckLines).set({availableQuantity:qty as number,promisedDate,responseNote:note,respondedAt:at,respondedBy:s.m.id}).where(eq(supplierStockCheckLines.id,line!.id));
+   const remaining=await tx.select({id:supplierStockCheckLines.id}).from(supplierStockCheckLines).where(and(eq(supplierStockCheckLines.checkId,check!.id),isNull(supplierStockCheckLines.availableQuantity))).limit(1);
+   await tx.update(supplierStockChecks).set({revision:check!.revision+1,updatedAt:at,respondedAt:remaining.length?null:at,respondedBy:remaining.length?null:s.m.id}).where(eq(supplierStockChecks.id,check!.id));
+  });return json({ok:true});
  },'supplier-portal');
  router.post('/supplier-portal/workspace/orders/:id/confirm',async c=>{
   const s=await supplierContext(c);writable(s);const body=await readJson(c.req,20000);

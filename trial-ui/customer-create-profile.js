@@ -19,11 +19,11 @@ export function customerCreateProfile({api,mainContact,document:doc=document}) {
   const fillStaff=async()=>{
     const request=++seq;retry.hidden=true;notice.textContent='Đang tải nhân viên…';owner.disabled=true;
     try{
-      const d=await api('/tasks/people');if(request!==seq)return;
+      const d=await api('/customers/staff-options');if(request!==seq)return;
       const members=d.people.filter(p=>p.role==='employee'||p.role==='manager'),selected=owner.value||user.id;
       owner.replaceChildren(option('','Chưa phân công'),...members.map(p=>option(p.id,p.name)));
       owner.value=members.some(p=>p.id===selected)?selected:user.id;owner.disabled=user.role!=='manager';
-      people.replaceChildren(...members.map(p=>{const label=make('label'),check=make('input');check.type='checkbox';check.value=p.id;check.setAttribute('aria-label','Chia sẻ cho '+p.name);label.append(check,make('span',p.name));return label;}));
+      people.replaceChildren(...members.filter(p=>p.canShare===true).map(p=>{const label=make('label'),check=make('input');check.type='checkbox';check.value=p.id;check.setAttribute('aria-label','Chia sẻ cho '+p.name);label.append(check,make('span',p.name));return label;}));
       notice.textContent=user.role==='manager'?'':'Người tạo là người phụ trách. Chỉ Manager được đổi người phụ trách.';
     }catch{if(request!==seq)return;notice.textContent='Chưa tải được nhân viên. Vẫn có thể lưu với người tạo phụ trách; thử tải lại để chia sẻ.';retry.hidden=false;}
   };

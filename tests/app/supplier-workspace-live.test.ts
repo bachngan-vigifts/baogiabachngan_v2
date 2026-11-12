@@ -91,7 +91,8 @@ test('supplier documents and published stock persist without changing receipts, 
  const stock={sku:'031106000',warehouse:'Kho NCC thực',onHand:100,reserved:20,incoming:50,revision:0};
  assert.equal((await call('/supplier-portal/workspace/stock',c.ncc,'PUT',stock)).status,200);
  assert.equal((await call('/supplier-portal/workspace/stock',c.ncc,'PUT',stock)).status,409);
- const stocks=await call('/supplier-portal/workspace/stock',c.ncc);assert.equal(stocks.data.items[0].available,80);
+ const published=await client.query<{available:number}>('select on_hand-reserved available from supplier_published_stock where supplier_id=$1',['a']);assert.equal(published.rows[0]!.available,80);
+ const stocks=await call('/supplier-portal/workspace/stock',c.ncc);assert.equal(stocks.data.total,0,'published stock must not masquerade as a check slip');
  const other=await call('/supplier-portal/workspace/stock',c.ncc2);assert.ok(other.data.items.every((r:any)=>r.onHand===null));
  const invoice={clientKey:'invoice-test-0001',orderId:'a1',invoiceNo:'0000123',series:'AA26',date:'2026-11-12',subtotal:1000,tax:80,total:1080};
  const inv=await call('/supplier-portal/workspace/invoices',c.ncc,'POST',invoice);assert.equal(inv.status,201,JSON.stringify(inv.data));assert.equal((await call('/supplier-portal/workspace/invoices',c.ncc,'POST',invoice)).data.replayed,true);

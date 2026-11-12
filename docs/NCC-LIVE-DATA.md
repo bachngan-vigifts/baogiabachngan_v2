@@ -1,5 +1,7 @@
 # Cổng NCC: kết nối dữ liệu CRM
 
+> Bản tiếp theo đang review: [giao diện và phiếu kiểm tồn theo mã](NCC-VISUAL-STOCK-CHECKS.md). Bản đó tạm ngưng hai trang Tạm ứng/Công nợ trên UI và thay nguồn Kiểm tồn bằng phiếu yêu cầu kiểm, không dùng tồn công bố làm phiếu.
+
 Ngày 12/11/2026. Thay bản mẫu trong luồng đăng nhập mặc định bằng `trial-ui/supplier-workspace.js`; bản thiết kế ngoại tuyến vẫn giữ riêng ở `design/`, không được import vào trang thật.
 
 ## Các trang đã nối

@@ -298,8 +298,9 @@ export function initCustomerDetail(deps) {
   }
   async function staffDialog() {
     const d = st.d, a = d.access;
-    try { st.people ||= (await api('/tasks/people')).people; } catch (e) { toast(e.message, 'err'); return; }
-    const people = st.people, shared = new Set(d.shared.map(p => p.id));
+    try { st.people = (await api('/customers/staff-options', 'GET', undefined, {fresh:true})).people; } catch (e) { toast(e.message, 'err'); return; }
+    const people = st.people, sharePeople=people.filter(p=>p.canShare===true), shared = new Set(d.shared.map(p => p.id));
+    const retained=d.shared.filter(p=>!sharePeople.some(s=>s.id===p.id)).map(p=>p.id);
     const dlg = dialog('Phân công / chia sẻ khách hàng', `
       <label class="cd-field">Nhân viên phụ trách
         <select name="owner" ${a.canChangeOwner ? '' : 'disabled'}><option value="">— Chưa phân công —</option>
@@ -307,11 +308,12 @@ export function initCustomerDetail(deps) {
       ${a.canChangeOwner ? '' : '<p class="muted small">Chỉ Manager đổi được người phụ trách.</p>'}
       <p class="cd-field-label">Chia sẻ cho <small class="muted">(xem được mọi báo giá, đơn, HĐKT, công nợ của khách)</small></p>
       <input type="search" class="cd-people-search" placeholder="Tìm nhân viên…" aria-label="Tìm nhân viên">
-      <ul class="cd-people">${people.map(p => `<li><label><input type="checkbox" value="${esc(p.id)}" ${shared.has(p.id) ? 'checked' : ''}> ${esc(p.name)}</label></li>`).join('')}</ul>`, 'Lưu');
+      ${retained.length?'<p class="muted small">Các quyền chia sẻ đã cấp trước đây ngoài danh sách này được giữ nguyên.</p>':''}
+      <ul class="cd-people">${sharePeople.map(p => `<li><label><input type="checkbox" value="${esc(p.id)}" ${shared.has(p.id) ? 'checked' : ''}> ${esc(p.name)}</label></li>`).join('')}</ul>`, 'Lưu');
     dlg.querySelector('.cd-people-search').addEventListener('input', e => { const f = e.target.value.toLowerCase(); dlg.querySelectorAll('.cd-people li').forEach(li => { li.hidden = !li.textContent.toLowerCase().includes(f); }); });
     dlg.querySelector('form').addEventListener('submit', async e => {
       e.preventDefault();
-      const body = { sharedIds: [...dlg.querySelectorAll('.cd-people input:checked')].map(i => i.value) };
+      const body = { sharedIds: [...new Set([...retained,...[...dlg.querySelectorAll('.cd-people input:checked')].map(i => i.value)])] };
       if (a.canChangeOwner) body.ownerId = e.target.elements.owner.value || null;
       try { await api(`/customers/${encodeURIComponent(st.id)}/staff`, 'PUT', body); dlg.close(); toast('Đã cập nhật phân công.'); reload(); }
       catch (ex) { dlg.querySelector('[data-err]').textContent = ex.message; }
