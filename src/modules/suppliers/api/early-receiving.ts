@@ -5,7 +5,7 @@ import { incomingShipments, incomingShipmentLines, supplierReceipts, supplierRec
 import type { Db } from './purchase-store.ts';
 type ReadDb = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
 /** Receipt provenance lives in the existing receive event, in the receipt transaction. No second receipt/stock path. */
-export async function earlyReceiptAvailability(db: ReadDb, requestIds: string[]) {
+export async function earlyReceiptAvailability(db: ReadDb, requestIds: string[], supplierId?:string) {
   if (!requestIds.length) return [];
   const rows = await db.select({requestId:purchaseEarlyRequests.id,requestStatus:purchaseEarlyRequests.status,
     allocationId:purchaseEarlyRequestAllocations.id,status:purchaseEarlyRequestAllocations.status,quantity:purchaseEarlyRequestAllocations.quantity,
@@ -15,7 +15,7 @@ export async function earlyReceiptAvailability(db: ReadDb, requestIds: string[])
     .innerJoin(purchaseEarlyRequestAllocations,eq(purchaseEarlyRequestAllocations.requestLineId,purchaseEarlyRequestLines.id))
     .innerJoin(incomingShipmentLines,eq(incomingShipmentLines.id,purchaseEarlyRequestAllocations.purchaseLineId))
     .innerJoin(incomingShipments,eq(incomingShipments.id,incomingShipmentLines.shipmentId))
-    .where(and(isNull(purchaseEarlyRequests.deletedAt),inArray(purchaseEarlyRequests.id,requestIds)));
+    .where(and(isNull(purchaseEarlyRequests.deletedAt),inArray(purchaseEarlyRequests.id,requestIds),supplierId?eq(purchaseEarlyRequestAllocations.supplierId,supplierId):undefined));
   const orders=[...new Set(rows.map(r=>r.orderId))];
   if(!orders.length)return [];
   const [receipts,events]=await Promise.all([
