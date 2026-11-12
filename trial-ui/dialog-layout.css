@@ -31,7 +31,6 @@ body dialog[open]:not(.order-compose,.verify-page) {
   .sup-drawer.landscape-drawer > form.landscape-dialog-form { height:100%; }
   /* Chiều cao không còn cố định: khung là cột flex để phần thân co lại và cuộn, không đẩy chân form ra ngoài. */
   dialog[open].landscape-dialog { display:flex; flex-direction:column; }
-  dialog.landscape-dialog > *:not(.landscape-dialog-head):not(.landscape-dialog-foot):not(.landscape-dialog-body):not(.landscape-dialog-form) { flex-shrink:0; }
   /* Còn nội dung bên dưới (máy ẩn thanh cuộn): bóng mờ ở mép chân form. */
   .landscape-dialog .landscape-dialog-foot.landscape-more { box-shadow:0 -10px 14px -10px rgba(15,23,42,.35); }
   dialog.landscape-dialog > .landscape-dialog-form,
