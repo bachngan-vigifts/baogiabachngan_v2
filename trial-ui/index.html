@@ -1177,6 +1177,7 @@
   <form id="order-create-form">
     <div class="modal-head"><div><span class="eyebrow">Đơn đặt hàng</span><h2>Sinh đơn hàng từ <span id="order-create-quote"></span></h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
     <div class="modal-body order-compose-body">
+      <div class="order-compose-sidebar">
       <section class="order-compose-details form-grid cols-2" aria-label="Thông tin đơn hàng">
       <label class="span-2">Số đơn hàng <small class="muted">(tự sinh – sửa được)</small><input name="orderNo" maxlength="120" autocomplete="off" spellcheck="false" placeholder="Đang lấy số…" required></label>
       <label class="span-2">Tên khách hàng<input name="customerName" maxlength="500" readonly></label>
@@ -1194,6 +1195,7 @@
       <p class="muted small span-2">Số đơn tự sinh theo ngày đặt và có thể sửa. Hệ thống dùng đúng số đã xác nhận; nếu số vừa được người khác dùng, cần lấy số mới rồi xác nhận lại.</p>
       </section>
       <section id="order-create-production-files"></section>
+      </div>
       <section id="order-create-sourcing" class="order-compose-sourcing" aria-label="Phân bổ nguồn hàng"></section>
     </div>
     <div class="order-compose-feedback">
@@ -1208,6 +1210,7 @@
   <form id="contract-form" novalidate>
     <div class="modal-head"><div><span class="eyebrow">Lập hợp đồng kinh tế</span><h2>Lập HĐKT từ <span id="contract-order-no"></span></h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
     <div class="modal-body order-compose-body">
+      <div class="order-compose-sidebar">
       <section class="order-compose-details form-grid cols-2" aria-label="Thông tin hợp đồng kinh tế">
       <label class="span-2">Pháp nhân bên bán<select name="legalEntity"><option value="BN">Bách Ngân (BN)</option><option value="VG">Vigifts (VG)</option><option value="QTV">QTV</option></select></label>
       <label class="span-2">Số HĐKT <small class="muted">(tự sinh – sửa được)</small><input name="contractNo" maxlength="120" autocomplete="off" spellcheck="false" placeholder="Đang lấy số…"></label>
@@ -1223,6 +1226,7 @@
       <p class="muted small span-2">Số HĐKT tự sinh: tháng-số thứ tự/ngày/HĐKT/pháp nhân-mã khách; giữ nguyên thì lúc lập máy chủ cấp số kế tiếp, sửa thì dùng đúng số đã sửa. Kỳ phải thu được lập lại = cọc + phần còn lại.</p>
       </section>
       <section id="contract-production-files"></section>
+      </div>
       <section id="contract-sourcing" class="order-compose-sourcing" aria-label="Phân bổ nguồn hàng"></section>
     </div>
     <div class="order-compose-feedback">
