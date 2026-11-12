@@ -5,22 +5,23 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {getDocument} from 'pdfjs-dist/legacy/build/pdf.mjs';
 import {runInNewContext} from 'node:vm';
-import {after,totals,discounted} from '../../src/modules/quotes/domain/quote-math.ts';
+import {after,totals,discounted,manualLineDescription} from '../../src/modules/quotes/domain/quote-math.ts';
 // @ts-ignore browser exports
 import {saleExportRows,buildSalePdf,buildSaleWorkbook,SALE_EXPORT_COLUMNS} from '../../trial-ui/sale-quote-export.js';
 // @ts-ignore browser module
 import {SALE_LAYOUT_COLUMNS,saleDesignProblem} from '../../trial-ui/sale-quote-layout.js';
 const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+const banner={width:1688,height:212,dataUrl:'data:image/png;base64,'+readFileSync(new URL('../../trial-ui/vigifts-letterhead.png',import.meta.url)).toString('base64')};
 const images=Array.from({length:3},()=>({dataUrl:PNG,width:1,height:1}));
 const root=new URL('../../trial-ui/',import.meta.url);
 const c:any={Uint8Array,ArrayBuffer,TextEncoder,TextDecoder,setTimeout,clearTimeout,Buffer};
-for(const file of ['pdf-lib.min.js','fontkit.umd.min.js','exceljs.min.js'])runInNewContext(readFileSync(new URL(file,root),'utf8'),c);
-Object.assign(c,{after,discounted,SALE_LAYOUT_COLUMNS,saleDesignProblem});runInNewContext(readFileSync(new URL('sale-quote-export.js',root),'utf8').replace(/^import .*;\n/gm,'').replaceAll('export ','')+';globalThis.buildPdf=buildSalePdf;globalThis.buildWorkbook=buildSaleWorkbook;',c);
+for(const file of ['pdf-lib.min.js','fontkit.umd.min.js','exceljs.min.js','hrc-pdf.js','editable-pdf.js'])runInNewContext(readFileSync(new URL(file,root),'utf8'),c);
+Object.assign(c,{after,discounted,SALE_LAYOUT_COLUMNS,saleDesignProblem,QuoteMath:{after,totals,manualLineDescription}});runInNewContext(readFileSync(new URL('sale-quote-export.js',root),'utf8').replace(/^import .*;\n/gm,'').replaceAll('export ','')+';globalThis.buildPdf=buildSalePdf;globalThis.buildWorkbook=buildSaleWorkbook;',c);
 const assets={PDFLib:c.PDFLib,fontkit:c.fontkit,fonts:['TimesNewRoman.ttf','TimesNewRomanBold.ttf'].map(f=>new Uint8Array(readFileSync(new URL('fonts/'+f,root))))};
 const rows=[{name:'Bình gốm tiếng Việt',qty:100,price:280556,discount:45,discountType:'percent',printFee:8000,suggestedAverage:150000,image:'https://example.invalid/image.png',sku:'SECRET_SKU',unit:'SECRET_UNIT',costPrice:321,commission:{value:123}},
  {name:'Túi giấy',qty:2.5,price:20000,discount:1000,discountType:'amount',printFee:500,taxRate:10,manualDescription:'SECRET_DESCRIPTION'},
  {name:'=SUM(A1:A9)',qty:1,price:1,discount:0,printFee:0}];
-const state=(type='B2B')=>({type,rows,vat:8,customer:'SECRET_CUSTOMER',internalNote:'SECRET_INTERNAL',notes:'SECRET_NOTES',shipping:{rate:999,payer:'sender'}});
+const state=(type='B2B')=>({type,rows,vat:8,quoteNo:'SALE-BG-TEST',date:'2026-11-12',owner:'Nhân viên thử nghiệm',ownerPhone:'0900000000',contact:'Liên hệ thử nghiệm',customer:'Khách kiểm thử',internalNote:'SECRET_INTERNAL',notes:'Thanh toán theo thỏa thuận thử nghiệm',shipping:{rate:999,payer:'sender'}});
 test('eight-column allowlist retains exact quote net amounts for HRC, B2B and VIGIFTS without changing source rows',()=>{
  for(const type of ['HRC','B2B','VIGIFTS']){
   const doc=state(type),before=JSON.stringify(doc),result=saleExportRows(doc);
@@ -44,16 +45,48 @@ test('actual XLSX contains one sheet, exactly eight columns with embedded design
  assert.doesNotMatch(JSON.stringify(values),/SECRET_/);assert.ok(sheet.columns.every((col:any)=>!col.hidden));assert.equal(book.model.media.length,3);assert.equal(sheet.getImages().length,3);assert.equal(sheet.getRow(2).getCell(5).value,150000);assert.equal(sheet.getRow(3).getCell(5).value,null);
  assert.throws(()=>c.buildWorkbook({...state(),template:'sale',rows:[{...rows[0],designImage:true}]},c.ExcelJS),/đủ ảnh thiết kế/);
 });
-test('actual Vietnamese PDF paginates long names with embedded designs, without exporting notes or private fields',async()=>{
- const doc=state(),large={...doc,rows:Array.from({length:90},(_,i)=>({...rows[i%3],name:'Bộ quà tặng – thiết kế riêng có tên rất dài '.repeat(i===0?180:2)+i}))};
- const bytes=await c.buildPdf(large,assets,{images:Array.from({length:90},()=>images[0])}),pdf=await c.PDFLib.PDFDocument.load(bytes);assert.ok(pdf.getPageCount()>2);
+test('actual Sale PDF preserves Vigifts frame and notes, paginates long names and excludes private product fields',async()=>{
+ const doc=state(),large={...doc,notes:doc.notes+'\nThanh toán: '+('Nội dung điều kiện thanh toán dài để kiểm tra xuống dòng. '.repeat(80)),rows:Array.from({length:90},(_,i)=>({...rows[i%3],name:'Bộ quà tặng – thiết kế riêng có tên rất dài '.repeat(i===0?180:2)+i}))};
+ const bytes=await c.buildPdf(large,assets,{images:Array.from({length:90},()=>images[0]),banner}),pdf=await c.PDFLib.PDFDocument.load(bytes);assert.ok(pdf.getPageCount()>2);
  const dir=mkdtempSync(join(tmpdir(),'sale-export-'));
  try{const file=join(dir,'sale.pdf');writeFileSync(file,bytes);// Decode the actual saved PDF with Mozilla's independent reader. No system package or renderer-specific parser.
   const loadingTask=getDocument({data:Uint8Array.from(readFileSync(file)),useSystemFonts:false,useWasm:false});
   const decoded=await loadingTask.promise;
-  let text='';try{assert.equal(decoded.numPages,pdf.getPageCount());for(let page=1;page<=decoded.numPages;page++){const content=await(await decoded.getPage(page)).getTextContent();text+=content.items.map(item=>'str' in item?item.str+(item.hasEOL?'\n':' '):'').join('')+'\n';}}finally{await loadingTask.destroy();}
+  let text='';try{assert.equal(decoded.numPages,pdf.getPageCount());for(let page=1;page<=decoded.numPages;page++){const content=await(await decoded.getPage(page)).getTextContent();for(const item of content.items)if('str' in item&&item.str.trim()){assert.ok(item.transform[4]>=20&&item.transform[4]+item.width<=575.3,`text stays within horizontal margins: ${item.str}`);assert.ok(item.transform[5]>=20&&item.transform[5]<=822,`text stays on page: ${item.str}`);}text+=content.items.map(item=>'str' in item?item.str+(item.hasEOL?'\n':' '):'').join('')+'\n';}}finally{await loadingTask.destroy();}
   for(const title of ['STT','Hình ảnh','Tên sản phẩm','Giá bán','Phí in','Thành tiền'])assert.ok(text.includes(title),title);assert.ok(text.includes('trung bình'));
   assert.ok(text.includes('Bộ quà tặng'));assert.ok(text.includes('89'));
-  assert.doesNotMatch(text,/SECRET_|VAT|Chiết khấu|ĐVT|Mã hàng/);
+  assert.doesNotMatch(text,/SECRET_|Chiết khấu|ĐVT|Mã hàng/);
+  for(const expected of ['BẢNG CHÀO GIÁ','SALE-BG-TEST','Khách kiểm thử','Nhân viên thử nghiệm','Tổng thành tiền','Tổng thanh toán','Số tiền bằng chữ','Thanh toán theo thỏa thuận thử nghiệm','Phụ trách kinh doanh'])assert.ok(text.includes(expected),expected);
+  assert.ok(pdf.getPages().every((p:any)=>Math.abs(p.getWidth()-595.28)<.01&&Math.abs(p.getHeight()-841.89)<.01),'A4 portrait, matching Vigifts');
  }finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+async function pdfText(bytes:Uint8Array){
+ const task=getDocument({data:Uint8Array.from(bytes),useSystemFonts:false,useWasm:false});
+ try{const pdf=await task.promise,items:any[]=[];for(let p=1;p<=pdf.numPages;p++){const content=await(await pdf.getPage(p)).getTextContent();for(const item of content.items)if('str' in item)items.push({...item,page:p});}return items;}finally{await task.destroy();}
+}
+test('Sale uses the exact Vigifts header geometry and original quote totals for every quote type',async()=>{
+ for(const type of ['HRC','B2B','VIGIFTS']){
+  const doc=state(type),before=JSON.stringify(doc);
+  const sale=await pdfText(await c.buildPdf(doc,assets,{images,banner}));
+  const reference=await pdfText(await c.EditableQuotePdf.create({state:{...doc,type:'VIGIFTS'},images,banner,resources:assets}));
+  for(const label of ['BẢNG CHÀO GIÁ','Số BG: SALE-BG-TEST','Tên khách hàng: Khách kiểm thử','Phụ trách: Nhân viên thử nghiệm','Kính gửi: Khách kiểm thử;']){
+   const actual=sale.find(x=>x.str===label),expected=reference.find(x=>x.str===label);assert.ok(actual,label);assert.ok(expected,label);assert.deepEqual(actual.transform,expected.transform,label);
+  }
+  const expected=totals(doc as never);for(const amount of [expected.subtotal,expected.tax,expected.total])assert.ok(sale.some(x=>x.str===Math.round(amount).toLocaleString('vi-VN')),`${type}: ${amount}`);
+  assert.equal(JSON.stringify(doc),before);assert.ok(sale.some(x=>x.str.includes(doc.notes)));
+  const tableTop=sale.find(x=>x.str==='STT')!.transform[5],tableBottom=sale.find(x=>x.str==='Tổng thành tiền')!.transform[5];
+  const table=sale.filter(x=>x.page===1&&x.transform[5]<=tableTop&&x.transform[5]>tableBottom).map(x=>x.str).join(' ');
+  assert.doesNotMatch(table,/SECRET_|VAT|CK|ĐVT|Mã hàng/);
+ }
+ await assert.rejects(()=>c.buildPdf(state(),assets,{images}),/tiêu đề Vigifts/);
+});
+
+test('ordinary HRC, B2B and Vigifts PDF exports retain their original product columns',async()=>{
+ for(const type of ['HRC','B2B','VIGIFTS']){
+  const items=await pdfText(await c.EditableQuotePdf.create({state:state(type),images,banner,resources:assets}));
+  const text=items.map(x=>x.str).join(' ');
+  assert.match(text,/ĐVT/);assert.match(text,/SECRET_SKU/);assert.doesNotMatch(text,/trung bình/);
+  assert.ok(text.includes(type==='HRC'?'BẢNG BÁO GIÁ':'BẢNG CHÀO GIÁ'));
+ }
 });

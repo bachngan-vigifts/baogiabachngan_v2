@@ -1,0 +1,46 @@
+[
+  {
+    "width": 390,
+    "columns": 8,
+    "draftWithoutImage": true,
+    "privateDesign": true,
+    "average": 100000,
+    "amount": 410000,
+    "pdf": "Sale-SALE_BG_001_12112026.pdf",
+    "excel": "Sale-SALE_BG_001_12112026.xlsx",
+    "errors": 0
+  },
+  {
+    "width": 768,
+    "columns": 8,
+    "draftWithoutImage": true,
+    "privateDesign": true,
+    "average": 100000,
+    "amount": 410000,
+    "pdf": "Sale-SALE_BG_002_12112026.pdf",
+    "excel": "Sale-SALE_BG_002_12112026.xlsx",
+    "errors": 0
+  },
+  {
+    "width": 1280,
+    "columns": 8,
+    "draftWithoutImage": true,
+    "privateDesign": true,
+    "average": 100000,
+    "amount": 410000,
+    "pdf": "Sale-SALE_BG_003_12112026.pdf",
+    "excel": "Sale-SALE_BG_003_12112026.xlsx",
+    "errors": 0
+  },
+  {
+    "width": 1920,
+    "columns": 8,
+    "draftWithoutImage": true,
+    "privateDesign": true,
+    "average": 100000,
+    "amount": 410000,
+    "pdf": "Sale-SALE_BG_004_12112026.pdf",
+    "excel": "Sale-SALE_BG_004_12112026.xlsx",
+    "errors": 0
+  }
+]
