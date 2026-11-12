@@ -2749,7 +2749,7 @@ function renderProducts() {
       <td class="right num" data-label="Đang tạm giữ" title="Tổng số đang giữ trên tất cả kho; báo giá có thể chưa phân kho">${stockText(held)}</td>
       <td class="right num" data-label="Hàng đang về">${incomingCell(p)}</td>
       <td class="right num" data-label="Tồn NCC">${hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : '<span class="muted">—</span>'}</td>
-      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small mobile-desktop-only" data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
+      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-mobile-inline data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
   $('#product-empty').hidden = list.length > 0;

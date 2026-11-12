@@ -350,7 +350,7 @@
  :is(#view-members,#view-member,#view-payroll,#view-permissions) table { display:table!important;min-width:720px; }
  :is(#view-members,#view-member,#view-payroll,#view-permissions) table tr { display:table-row!important; }
  :is(#view-members,#view-member,#view-payroll,#view-permissions) table :is(td,th) { display:table-cell!important; }
- [data-update-product-card] { display:none!important; }
+ #product-table [data-update-product], [data-update-product-card] { min-height:44px; }
  #view-dashboard:not(.crm-dashboard-expanded) .dash-kpis>:nth-child(n+5),#view-dashboard:not(.crm-dashboard-expanded) :is(.dash-grid,.dash-how) { display:none; }
  #view-dashboard .dash-kpis { display:grid;grid-template-columns:repeat(2,minmax(0,1fr)); }
  #view-dashboard .dash-kpis>.is-hero { grid-column:auto; }
