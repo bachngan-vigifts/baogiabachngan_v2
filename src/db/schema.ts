@@ -7,6 +7,7 @@ export * from '../modules/catalog/schema.ts';
 export * from '../modules/quotes/schema.ts';
 export * from '../modules/contracts/schema.ts';
 export * from '../modules/suppliers/schema.ts';
+export * from '../modules/suppliers/workspace-schema.ts';
 export * from '../modules/suppliers/early-request-schema.ts';
 export * from '../modules/printing/schema.ts';
 export * from '../modules/crm/schema.ts';

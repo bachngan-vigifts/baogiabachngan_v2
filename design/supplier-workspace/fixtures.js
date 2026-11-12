@@ -1,0 +1,39 @@
+/** Deliberately synthetic review data. This module is outside trial-ui and is never deployed with CRM. */
+export const REVIEW_DATE='2026-11-12';
+export const SUPPLIER={id:'review-an-loc',code:'NCC-0008',name:'Công ty TNHH Quà tặng An Lộc',shortName:'An Lộc',contact:'Minh Phát',email:'doitac@example.test',initials:'MP'};
+export const WAREHOUSES=['Kho Bình Dương','Kho TP. Hồ Chí Minh'];
+const catalogue=[
+ ['LHC3249BEG','Bình giữ nhiệt LocknLock Metro Two Way 475 ml – Màu kem','LocknLock','Bình & ly giữ nhiệt','Cái',185000,'bottle'],
+ ['031106000','Bộ trà 0.7 L Jasmine Trắng Ngà – Bộ 14 sản phẩm','Minh Long','Bộ trà','Bộ',420000,'tea'],
+ ['LCB595YEL','Hộp cơm chia ngăn LocknLock 1.4 L – Màu vàng','LocknLock','Hộp & đồ gia dụng','Cái',154000,'box'],
+ ['VGF-GB01','Hộp quà cao cấp nắp nam châm, ép nhũ logo theo thiết kế','An Lộc','Bao bì & thiết kế','Hộp',38000,'box'],
+ ['LHC1430RED','Bình giữ nhiệt LocknLock Easy Take 500 ml – Đỏ','LocknLock','Bình & ly giữ nhiệt','Cái',162000,'bottle'],
+ ['019399015','Bộ đồ ăn 9 sản phẩm Daisy Chỉ Vàng','Minh Long','Bộ đồ ăn','Bộ',530000,'tea'],
+ ['VGF-TB02','Túi vải canvas in logo, quai đeo đôi','An Lộc','Bao bì & thiết kế','Cái',27000,'bag'],
+ ['LHC4160BLU','Ly giữ nhiệt LocknLock Swing Tumbler 700 ml – Xanh','LocknLock','Bình & ly giữ nhiệt','Cái',215000,'bottle'],
+ ['VGF-NB03','Sổ tay A5 bìa da, khắc tên theo yêu cầu','An Lộc','Văn phòng phẩm','Cuốn',62000,'book'],
+ ['042700000','Bình hoa 27 cm Jasmine Trắng – Hộp quà','Minh Long','Bình hoa','Cái',245000,'vase'],
+ ['VGF-GB04','Hộp quà kết hợp bình giữ nhiệt và sổ tay','An Lộc','Bộ quà tặng','Bộ',298000,'box'],
+ ['032345000','Dĩa tròn 23 cm Daisy Trắng Ngà','Minh Long','Bộ đồ ăn','Cái',68000,'tea'],
+ ['VGF-BP05','Bút ký kim loại màu xanh navy, hộp đơn','An Lộc','Văn phòng phẩm','Cây',45000,'book'],
+ ['LHC4131GRN','Ly giữ nhiệt LocknLock New Clip 540 ml – Xanh lá','LocknLock','Bình & ly giữ nhiệt','Cái',195000,'bottle'],
+];
+export const products=catalogue.map(([sku,name,brand,category,unit,price,art],i)=>({id:sku,supplierId:SUPPLIER.id,sku,name,brand,category,unit,price,art,status:i===12?'inactive':'active',date:'2026-11-'+String(12-i%5).padStart(2,'0'),warehouse:WAREHOUSES[i%2],note:'Sản phẩm mẫu để duyệt cách hiển thị. Giá tham khảo thuộc đơn của NCC này.'}));
+const states=['awaiting_confirmation','preparing','confirmed','shipping','completed','preparing','completed','shipping','confirmed','completed','cancelled','completed','completed','confirmed','completed','preparing','completed','completed'];
+export const orders=states.map((status,i)=>{
+ const lines=Array.from({length:i%3+1},(_,j)=>{const p=products[(i+j)%products.length],qty=(i%4+1)*20;return{sku:p.sku,name:p.name,unit:p.unit,qty,price:p.price,subtotal:qty*p.price};});
+ const subtotal=lines.reduce((s,l)=>s+l.subtotal,0),tax=Math.round(subtotal*.08),date=i<12?'2026-11-'+String(12-i).padStart(2,'0'):'2026-10-'+String(31-(i-12)).padStart(2,'0');
+ return{id:'order-'+i,supplierId:SUPPLIER.id,no:'DMH_'+String(18-i).padStart(3,'0')+'_'+date.slice(8)+date.slice(5,7)+date.slice(0,4),supplierNo:'AL-1126-'+String(108-i),date,expected:i<5?'2026-11-'+String(13+i).padStart(2,'0'):'2026-11-'+String(8+i%5).padStart(2,'0'),dueDate:i===0?'2026-11-20':i%3===0?'2026-11-10':'2026-11-20',status,warehouse:WAREHOUSES[i%2],lines,subtotal,tax,total:subtotal+tax,quantity:lines.reduce((s,l)=>s+l.qty,0),contact:'Người phụ trách mua hàng',note:i===1?'In logo theo thiết kế đã thống nhất. Giao đủ phụ kiện và hộp quà.':'Đối chiếu mã hàng và số lượng trên đơn trước khi giao.',approvalStatus:'approved'};
+});
+export const payments=orders.filter(o=>o.status!=='cancelled'&&o.status!=='awaiting_confirmation').flatMap((o,i)=>{
+ const deposit=Math.round(o.total*.3),rows=[{id:'payment-deposit-'+o.id,supplierId:SUPPLIER.id,orderId:o.id,kind:'deposit',date:o.date,amount:deposit,status:'posted',reference:'UNC-1126-'+String(42+i),method:'Chuyển khoản'}];
+ if(i%3===1)rows.push({id:'payment-balance-'+o.id,supplierId:SUPPLIER.id,orderId:o.id,kind:'balance',date:'2026-11-11',amount:o.total-deposit,status:'posted',reference:'UNC-1126-'+String(82+i),method:'Chuyển khoản'});return rows;
+});
+export const credits=[{id:'credit-1',supplierId:SUPPLIER.id,orderId:'order-5',effectiveDate:'2026-11-11',amount:540000,reason:'Điều chỉnh 2 sản phẩm lỗi đã được hai bên xác nhận.'}];
+export const stock=products.map((p,i)=>({id:'stock-'+i,supplierId:SUPPLIER.id,sku:p.sku,name:p.name,brand:p.brand,unit:p.unit,art:p.art,warehouse:p.warehouse,date:i===9?'':'2026-11-12',onHand:i===9?null:i===3?0:[520,184,96,240,68,315][i%6],reserved:i===9?null:i===3?0:[80,24,16,60,8,45][i%6],incoming:i===9?null:[120,0,200,0][i%4],source:'NCC công bố'}));
+export const requests=orders.slice(0,10).map((o,i)=>({id:'request-'+i,supplierId:SUPPLIER.id,no:'XH_'+String(15-i).padStart(3,'0')+'_112026',orderId:o.id,orderNo:o.no,date:o.date,pickupDate:'2026-11-'+String(12+i%5).padStart(2,'0'),status:['waiting_reply','accepted','partially_fulfilled','fulfilled','waiting_reply','rejected'][i%6],warehouse:o.warehouse,quantity:Math.min(o.quantity,40+i*10),received:i%6===3?Math.min(o.quantity,40+i*10):i%6===2?Math.min(o.quantity,10+i*5):0,priority:i%4===0?'high':'normal',sku:o.lines[0].sku,name:o.lines[0].name,note:i===0?'Ưu tiên giao trước 14:00, hàng cần đóng gói riêng theo từng mã.':'Xin lấy trước theo đơn đặt đã xác nhận. Chỉ phản hồi phần phân bổ cho NCC này.'}));
+export const transfers=Array.from({length:8},(_,i)=>({id:'transfer-'+i,supplierId:SUPPLIER.id,no:'DC_'+String(10-i).padStart(3,'0')+'_112026',orderId:orders[i+2].id,orderNo:orders[i+2].no,date:'2026-11-'+String(12-i).padStart(2,'0'),status:['waiting_pickup','in_transit','received','waiting_confirmation'][i%4],direction:i===3?'Nhận về':'Giao đi',warehouse:i===3?'Kho trả hàng Bách Ngân':WAREHOUSES[i%2],destination:i===3?WAREHOUSES[1]:'Kho nhận hàng Bách Ngân',quantity:(i+1)*20,sku:products[i].sku,name:products[i].name,note:'Bản thiết kế chỉ hiển thị phiếu có NCC này tham gia. Xác nhận không tự ghi sổ kho.'}));
+export const advances=orders.slice(0,9).map((o,i)=>({id:'advance-'+i,supplierId:SUPPLIER.id,no:'TU_'+String(12-i).padStart(3,'0')+'_112026',orderId:o.id,orderNo:o.no,date:o.date,amount:Math.round(o.total*.3),status:['pending','approved','paid','rejected'][i%4],warehouse:o.warehouse,requestedDate:'2026-11-'+String(12+i%5).padStart(2,'0'),note:i===3?'Cần bổ sung xác nhận tiến độ trước khi tạm ứng.':'Đề nghị ứng/cọc theo điều khoản đơn đặt hàng. Khoản đề nghị chưa được tính là đã nhận tiền.'}));
+export const invoices=orders.filter(o=>['shipping','completed'].includes(o.status)).map((o,i)=>({id:'invoice-'+i,supplierId:SUPPLIER.id,no:i===3?'':'0000'+String(128-i),series:'1C26TAL',orderId:o.id,orderNo:o.no,date:o.date,status:i===3?'missing':i===1?'needs_review':'verified',subtotal:o.subtotal,tax:o.tax,total:o.total,warehouse:o.warehouse,note:i===1?'Đối chiếu lại thông tin MST bên mua trước khi xác nhận.':'Số hóa đơn là dữ liệu minh họa; nguồn hóa đơn đầu vào NCC cần bổ sung trước khi nối thật.'}));
+export const deliveries=orders.filter(o=>['shipping','completed'].includes(o.status)).map((o,i)=>({id:'delivery-'+i,supplierId:SUPPLIER.id,no:'PGH-AL-'+String(206-i),crmNo:o.status==='completed'?'PNH_'+String(29-i).padStart(3,'0')+'_112026':'',orderId:o.id,orderNo:o.no,date:o.date,expected:o.expected,status:o.status==='completed'?'received':'in_transit',warehouse:o.warehouse,destination:'Điểm nhận hàng Bách Ngân',quantity:o.status==='completed'?o.quantity:Math.floor(o.quantity*.4),invoiceNo:invoices.find(v=>v.orderId===o.id)?.no||'',contact:'Bộ phận giao nhận',note:'Đối chiếu số phiếu NCC với phiếu nhận tại công ty. Hai số chứng từ được giữ riêng.'}));
+export const REVIEW_DATA={supplier:SUPPLIER,products,stock,orders,payments,credits,requests,transfers,advances,invoices,deliveries};
