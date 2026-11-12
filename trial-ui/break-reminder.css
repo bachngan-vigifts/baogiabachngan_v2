@@ -1,0 +1,50 @@
+/* Nhắc nghỉ Madam Sen: thẻ ngang, ảnh nhân vật mờ dần chiếm ~3/4 thẻ ở góc phải, chữ bên trái. */
+dialog.break-dialog { padding:0; border:0; border-radius:20px; width:min(760px,calc(100vw - 32px)); max-width:none; min-height:440px; max-height:calc(100dvh - 24px); overflow:hidden; background:var(--surface,#fff); color:var(--ink,#17243c); box-shadow:0 30px 80px rgba(0,0,0,.35); }
+dialog.break-dialog[open] { display:grid; }
+dialog.break-dialog::backdrop { background:rgba(12,20,36,.62); }
+.break-sen { position:absolute; right:-17%; bottom:0; width:75%; height:100%; max-width:none; object-fit:cover; object-position:50% 30%; opacity:.9; filter:blur(.5px) brightness(.74) contrast(1.05); pointer-events:none;
+  -webkit-mask-image:radial-gradient(120% 115% at 100% 100%,#000 34%,rgba(0,0,0,.6) 58%,transparent 84%); mask-image:radial-gradient(120% 115% at 100% 100%,#000 34%,rgba(0,0,0,.6) 58%,transparent 84%); }
+.break-body { position:relative; display:grid; gap:14px; align-content:center; padding:34px; max-width:480px; min-width:0; }
+.break-body::before { content:""; position:absolute; inset:0 -90px 0 0; z-index:-1; background:linear-gradient(90deg,var(--surface,#fff) 62%,transparent); }
+.break-body h2 { margin:0; font-size:26px; line-height:1.25; color:var(--navy,#142036); text-wrap:balance; outline:none; }
+.break-body p { margin:0; font-size:16px; line-height:1.6; }
+.break-eyebrow { font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--red,#c8212b); }
+.break-quote { font-style:italic; color:var(--muted,#66748a); }
+.break-timer { display:flex; align-items:center; gap:12px; }
+.break-timer small { display:block; font-size:13px; color:var(--muted,#66748a); }
+.break-ring { width:58px; height:58px; flex:none; }
+.break-ring circle { fill:none; stroke-width:5; }
+.break-ring-track { stroke:var(--line,#e3e8ef); }
+.break-ring-bar { stroke:var(--green,#12805c); stroke-linecap:round; transform:rotate(-90deg); transform-origin:50% 50%; transition:stroke-dashoffset .25s linear; }
+.break-clock { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--navy,#142036); }
+.break-choices { display:grid; gap:10px; }
+.break-choice { display:grid; gap:2px; text-align:left; min-height:64px; padding:10px 18px; border:1.5px solid var(--line,#e3e8ef); border-radius:10px; background:var(--surface,#fff); color:inherit; font:inherit; cursor:pointer; }
+.break-choice b { font-size:16px; } .break-choice span { font-size:13.5px; color:var(--muted,#66748a); }
+.break-choice:hover,.break-choice:focus-visible { border-color:var(--green,#12805c); background:var(--green-50,#e9f7f1); outline:none; }
+.break-snooze { justify-self:start; padding:8px 10px; margin-left:-10px; border:0; border-radius:8px; background:rgba(255,255,255,.82); background:color-mix(in srgb,var(--surface,#fff) 82%,transparent); color:var(--muted,#66748a); font:inherit; font-size:13.5px; text-decoration:underline; cursor:pointer; min-height:36px; }
+.break-snooze:hover,.break-snooze:focus-visible { color:var(--ink,#17243c); }
+/* Bước tập thở: khung cao, bài tập hiện trong iframe, đồng hồ ở thanh trên. */
+dialog.break-dialog.break-exercise { width:min(720px,calc(100vw - 24px)); height:min(900px,calc(100dvh - 24px)); min-height:0; }
+.break-exercise .break-sen { display:none; }
+.break-exercise .break-body { max-width:none; padding:0; gap:0; display:flex; flex-direction:column; height:100%; min-height:0; }
+.break-exercise .break-body::before { display:none; }
+.break-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 18px; border-bottom:1px solid var(--line,#e3e8ef); }
+.break-bar h2 { font-size:18px; }
+.break-bar .break-ring { width:44px; height:44px; }
+.break-status { padding:16px 18px; }
+.break-frame { flex:1 1 auto; min-height:0; }
+.break-frame iframe { border:0; display:block; width:100%; height:100%; background:#eef7f4; }
+.break-done { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px 18px; border-top:1px solid var(--line,#e3e8ef); background:var(--green-50,#e9f7f1); }
+.break-done p { font-weight:600; }
+/* POS: nhắc nhẹ ở góc dưới, không che màn hình bán hàng. */
+.break-nudge { position:fixed; left:50%; bottom:calc(16px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%); z-index:70; display:flex; align-items:center; gap:10px; width:min(560px,calc(100vw - 24px)); padding:12px 14px; border:1px solid var(--line,#e3e8ef); border-radius:12px; background:var(--surface,#fff); color:var(--ink,#17243c); box-shadow:0 12px 32px rgba(0,0,0,.22); font-size:14px; line-height:1.45; }
+.break-nudge span { flex:1; min-width:0; }
+@media (prefers-reduced-motion:reduce) { .break-ring-bar { transition:none; } }
+@media (max-width:560px) {
+  dialog.break-dialog { min-height:480px; }
+  .break-sen { right:0; width:100%; height:75%; opacity:.7; }
+  .break-body { padding:24px; align-content:start; max-width:none; }
+  .break-body::before { inset:0 0 -70px 0; background:linear-gradient(180deg,var(--surface,#fff) 70%,transparent); }
+  .break-body h2 { font-size:22px; }
+  .break-bar h2 { font-size:15px; }
+}

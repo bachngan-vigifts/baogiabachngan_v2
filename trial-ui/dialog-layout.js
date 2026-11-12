@@ -1,6 +1,6 @@
 // Standard form dialogs share a landscape frame on desktop. Document previews,
 // cameras and short confirmations keep their purpose-built layout.
-const excluded = '.compact-stock-dialog,.order-compose,.verify-page,.scan-dialog,.stocktake-camera,.stocktake-camera-dialog,.quote-capture-dialog,.order-print-dialog,.contract-docs,#image-dialog,#print-preview,.photo-box';
+const excluded = '.compact-stock-dialog,.order-compose,.verify-page,.scan-dialog,.stocktake-camera,.stocktake-camera-dialog,.quote-capture-dialog,.order-print-dialog,.contract-docs,#image-dialog,#print-preview,.photo-box,.break-dialog,.breathing-dialog';
 
 export function fitDialog(dialog) {
   const drawer = dialog.matches('.sup-drawer');
