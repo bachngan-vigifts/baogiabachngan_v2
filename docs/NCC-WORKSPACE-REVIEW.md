@@ -17,6 +17,8 @@ node scripts/review-supplier-workspace.mjs
 # http://localhost:4175/#login
 ```
 
+Có thể sinh một file mở độc lập bằng `node scripts/testing/supplier-review-portable.mjs`; file `ban-tuong-tac.html` trong bộ bàn giao không cần server, dùng dữ liệu giả và form đăng nhập chỉ xem thử.
+
 Chọn menu để chuyển trang; mở bộ lọc chi tiết; bấm mã chứng từ để xem chi tiết/liên kết; chọn hành động để xem thử biểu mẫu. Xuất danh sách là CSV theo bộ lọc, ghi rõ MINH-HOA-NCC trong tên file. Form đăng nhập xem thử không gửi thông tin đến production.
 
 ## Các trang và bộ lọc
@@ -103,6 +105,7 @@ Mỗi đợt là PR riêng; chạy typecheck, kiểm thử liên quan/kiến tr�
 - Mô hình dữ liệu mẫu: 13 ca `supplier-workspace-model.test.mjs`, gồm phạm vi NCC, VAT/tiền dòng, payment/credit trùng, hủy/future/unposted, số dư ngày, null/0, CSV injection.
 - Bộ lọc 10.000 dòng mẫu khoảng 83 ms ở một lượt chạy local; **không phải benchmark API/database production**. Số DOM vẫn theo trang 8/16/32.
 - 24 test liên quan/kiến trúc đạt; browser với router/PGlite thật đạt cho Manager/NCC ở 390/1280 px, không gọi API nội bộ bằng tài khoản NCC, không ghi dữ liệu khi điều hướng.
+- Bản HTML độc lập: 20 lượt mở trang ở 390/1440 px qua localhost; form preview không gửi tài khoản/email; không tải tài nguyên ngoài. Đã kiểm tra 5 test ràng buộc UI sinh tự động.
 - `npm run typecheck`, `npm run ui:build`: đạt. Không chạy toàn bộ mọi test của repo; CI sẽ được theo dõi riêng.
 
 Kết quả và ảnh được xuất vào thư mục `supplier-workspace-review` của bộ bàn giao. Khi sửa giao diện tiếp, chạy lại script sinh ảnh để ảnh không lệch với code.

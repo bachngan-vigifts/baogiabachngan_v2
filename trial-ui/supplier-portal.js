@@ -38,7 +38,7 @@ async function enter(){
     $('supplier-startup').hidden=true;$('supplier-auth').hidden=true;$('supplier-workspace').hidden=false;$('logout').hidden=false;$('supplier-requests').hidden=false;
     $('supplier-who').textContent=user.name+(user.role==='manager'?' · Chỉ xem, không phản hồi thay NCC':'');
     await list.load(new URLSearchParams(location.search).get('request')||'');
-  }catch(e){$('supplier-startup').hidden=true;$('supplier-error').textContent=e.message;if(e.status===401||$('supplier-workspace').hidden){showAuth();$('supplier-auth-error').textContent=e.message;}}
+  }catch(e){$('supplier-startup').hidden=true;$('supplier-error').textContent=e.message;if(e.status===401||$('supplier-workspace').hidden){showAuth();$('supplier-auth-error').textContent=e.status===401&&!token?'':e.message;}}
 }
 $('supplier-show-password').addEventListener('change',e=>{$('login-password').type=e.target.checked?'text':'password';});
 $('login-form').addEventListener('submit',async e=>{e.preventDefault();if(loginBusy||!e.currentTarget.reportValidity())return;loginBusy=true;$('login-submit').disabled=true;$('supplier-auth-error').textContent='';
