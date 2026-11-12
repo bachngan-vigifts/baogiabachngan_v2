@@ -105,7 +105,7 @@ export async function postMoves(db: LedgerDb, by: string, moves: readonly MoveIn
 export async function reverseRef(db: LedgerDb, by: string, refType: StockRefType, refId: string, note: string, now = new Date().toISOString()): Promise<number> {
   return db.transaction(async tx => {
     await lockLedger(tx);
-    const rows = await tx.select().from(stockMoves).where(and(eq(stockMoves.refType, refType), eq(stockMoves.refId, refId), ne(stockMoves.kind, 'reverse')));
+    const rows = await tx.select().from(stockMoves).where(and(eq(stockMoves.refType, refType), (refType === 'packing_slip' ? sql`split_part(${stockMoves.refId},'#',1)=${refId}` : eq(stockMoves.refId, refId)), ne(stockMoves.kind, 'reverse')));
     return postMoves(tx, by, rows.map(r => ({ sku: r.sku, warehouseId: r.warehouseId, qty: -r.qty, kind: 'reverse' as const, refType, refId, refNo: r.refNo, note })), now);
   });
 }

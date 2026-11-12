@@ -35,11 +35,11 @@ BEGIN
     select sku,sum(qty) qty from packing_slip_lines where slip_id=s.id and trim(sku)<>'' group by sku
    ) a full join jsonb_to_recordset(p->'lines') as b(sku text,qty double precision) using(sku)
    where a.qty is null or b.qty is null or abs(a.qty-b.qty)>0.0005) THEN RAISE EXCEPTION 'REPAIR_LINES_CHANGED'; END IF;
- IF EXISTS(select 1 from stock_moves where ref_type='packing_slip' and ref_id=s.id and warehouse_id<>w.id) THEN RAISE EXCEPTION 'REPAIR_OTHER_WAREHOUSE_MOVES'; END IF;
+ IF EXISTS(select 1 from stock_moves where ref_type='packing_slip' and split_part(ref_id,'#',1)=s.id and warehouse_id<>w.id) THEN RAISE EXCEPTION 'REPAIR_OTHER_WAREHOUSE_MOVES'; END IF;
  -- Replay is a no-op only when the full target state already exists.
  IF s.stock_warehouse_id=w.id AND NOT EXISTS(
   select 1 from jsonb_to_recordset(p->'lines') as a(sku text,qty double precision)
-  where abs(a.qty+coalesce((select sum(qty) from stock_moves where ref_type='packing_slip' and ref_id=s.id and sku=a.sku and warehouse_id=w.id),0))>0.0005
+  where abs(a.qty+coalesce((select sum(qty) from stock_moves where ref_type='packing_slip' and split_part(ref_id,'#',1)=s.id and sku=a.sku and warehouse_id=w.id),0))>0.0005
  ) THEN RETURN; END IF;
  IF s.revision<>(p->>'expectedRevision')::bigint THEN RAISE EXCEPTION 'REPAIR_REVISION_CHANGED'; END IF;
  PERFORM pg_advisory_xact_lock_shared(hashtext('stock_ledger_opening'));
@@ -60,9 +60,9 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'REPAIR_MISSING_BALANCE'; END IF;
   IF abs(have-coalesce((select sum(qty) from stock_moves where sku=l.sku and warehouse_id=w.id),0))>0.0005 THEN RAISE EXCEPTION 'REPAIR_LEDGER_BALANCE_MISMATCH'; END IF;
   IF NOT EXISTS(select 1 from stock_moves where sku=l.sku and warehouse_id=w.id and qty>0 and created_at<=s.packed_at) THEN RAISE EXCEPTION 'REPAIR_INBOUND_REQUIRED'; END IF;
-  SELECT coalesce(sum(qty),0) INTO own FROM stock_moves WHERE ref_type='packing_slip' and ref_id=s.id and sku=l.sku and warehouse_id=w.id;
+  SELECT coalesce(sum(qty),0) INTO own FROM stock_moves WHERE ref_type='packing_slip' and split_part(ref_id,'#',1)=s.id and sku=l.sku and warehouse_id=w.id;
   IF abs(own+l.qty)<=0.0005 THEN CONTINUE; END IF;
-  IF abs(own)>0.0005 OR EXISTS(select 1 from stock_moves where ref_type='packing_slip' and ref_id=s.id and sku=l.sku) THEN RAISE EXCEPTION 'REPAIR_PARTIAL_MOVES_REVIEW_REQUIRED'; END IF;
+  IF abs(own)>0.0005 OR EXISTS(select 1 from stock_moves where ref_type='packing_slip' and split_part(ref_id,'#',1)=s.id and sku=l.sku) THEN RAISE EXCEPTION 'REPAIR_PARTIAL_MOVES_REVIEW_REQUIRED'; END IF;
   IF have+0.0005<l.qty THEN RAISE EXCEPTION 'REPAIR_STOCK_SHORT'; END IF;
   INSERT INTO stock_moves(id,sku,warehouse_id,qty,kind,ref_type,ref_id,ref_no,note,created_by,created_at)
    VALUES(gen_random_uuid()::text,l.sku,w.id,-l.qty,'issue','packing_slip',s.id,s.slip_no,left(p->>'reason',500),p->>'actorId',stamp);
@@ -89,7 +89,7 @@ export function packingStockReviewSql(plan:{slipId:string;actorId:string;expecte
  IF position(marker in coalesce(s.packed_note,''))>0 AND EXISTS(select 1 from audit_logs where entity_id=s.id and action='review_packing_stock') THEN RETURN; END IF;
  IF NOT EXISTS(select 1 from staff_members where id=p->>'actorId' and role='manager' and active=true) THEN RAISE EXCEPTION 'REVIEW_MANAGER_REQUIRED'; END IF;
  IF s.status<>'packed' OR s.revision<>(p->>'expectedRevision')::bigint THEN RAISE EXCEPTION 'REVIEW_SLIP_CHANGED'; END IF;
- IF EXISTS(select 1 from stock_moves where (ref_type='packing_slip' and ref_id=s.id) or (ref_type='sales_order' and (ref_id=s.order_id or ref_id like s.order_id||'#%'))) THEN RAISE EXCEPTION 'REVIEW_EXISTING_ISSUE_REQUIRED'; END IF;
+ IF EXISTS(select 1 from stock_moves where (ref_type='packing_slip' and split_part(ref_id,'#',1)=s.id) or (ref_type='sales_order' and (ref_id=s.order_id or ref_id like s.order_id||'#%'))) THEN RAISE EXCEPTION 'REVIEW_EXISTING_ISSUE_REQUIRED'; END IF;
  IF NOT EXISTS(select 1 from sales_orders where id=s.order_id and channel='crm' and status<>'cancelled') THEN RAISE EXCEPTION 'REVIEW_ORDER_SCOPE'; END IF;
  SELECT coalesce(s.packed_at<=min(created_at),true) INTO old_period FROM stock_moves WHERE ref_type='opening';
  IF old_period THEN
