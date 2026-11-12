@@ -5770,7 +5770,9 @@ async function downloadSaleQuote(format) {
     const skus=[...new Set(data.rows.map(r=>r.sku).filter(Boolean))];
     const suggestions=await fetchSaleSuggestions(api,skus);
     const prices=new Map(suggestions.map(p=>[p.sku,p.average]));data={...data,rows:data.rows.map(r=>({...r,suggestedAverage:prices.get(r.sku)??null}))};
+    if(format==='pdf')await loadPdfTools();
     const module=await import('./sale-quote-export.js'),options={images:module.canvasExportImages(await loadQuoteImages(data.rows))};
+    if(format==='pdf'){const banner=await loadCanvasImage('vigifts-letterhead.png');if(!banner)throw Error('Chưa tải được tiêu đề Vigifts. Tải lại trang rồi xuất PDF Sale.');options.banner=module.canvasExportImages([banner])[0];}
     if(editor.id!==exportId||editor.revision!==exportRevision||editor.dirty)throw Error('Báo giá đang được sửa. Lưu và kiểm tra lại trước khi xuất.');
     const bytes=await (format==='pdf'?module.salePdfBytes(data,options):module.saleExcelBytes(data,options));
     const mime=format==='pdf'?'application/pdf':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';

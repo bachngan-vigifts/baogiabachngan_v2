@@ -13,40 +13,13 @@ export function saleExportRows(state) {
     return{index:index+1,name:String(row.name||''),quantity,average,unitPrice,printFee,amount};
   });
 }
-const formatted=n=>n==null?'—':Number(n).toLocaleString('vi-VN',{maximumFractionDigits:6});
 function requiredImages(state,images){if(state.template==='sale'&&state.rows.some((_,i)=>!images[i]?.dataUrl))throw Error('Không tải đủ ảnh thiết kế. Mở lại báo giá hoặc đính kèm lại ảnh rồi xuất file.');}
 const cells=row=>[row.index,'',row.name,row.quantity,row.average,row.unitPrice,row.printFee,row.amount];
-export async function buildSalePdf(state,assets,{images=[]}={}){
+export async function buildSalePdf(state,assets,{images=[],banner}={}){
  const rows=saleExportRows(state);requiredImages(state,images);
- const{PDFLib,fontkit,fonts}=assets,pdf=await PDFLib.PDFDocument.create();pdf.registerFontkit(fontkit);
- const normal=await pdf.embedFont(fonts[0],{subset:true}),bold=await pdf.embedFont(fonts[1],{subset:true});
- const widths=[28,82,238,45,106,84,76,110],left=36,bottom=42,size=9,step=12,right=805;
- let page,y;const draw=(text,x,top,font=normal,fontSize=size)=>page.drawText(String(text),{x,y:top-fontSize,font,size:fontSize});
- function wrap(value,width){
-  const lines=[];let line='';for(const char of String(value).replace(/\s+/g,' ').trim()){
-   if(normal.widthOfTextAtSize(line+char,size)>width&&line){const space=line.lastIndexOf(' ');if(space>line.length/2){lines.push(line.slice(0,space));line=line.slice(space+1);}else{lines.push(line);line='';}}
-   line+=char;
-  }if(line||!lines.length)lines.push(line);return lines;
- }
- function newPage(){
-  page=pdf.addPage([841.89,595.28]);draw('BÁO GIÁ CHO SALE',left,560,bold,15);let x=left;
-  SALE_EXPORT_COLUMNS.forEach((label,i)=>{wrap(label,widths[i]-8).forEach((s,j)=>draw(s,x+4,529-j*step,bold));x+=widths[i];});
-  page.drawLine({start:{x:left,y:486},end:{x:right,y:486},thickness:.6});y=476;
- }
- const embedded=new Map();newPage();
- for(const [i,row]of rows.entries()){
-  const content=cells(row).map((v,j)=>wrap(j>=3?formatted(v):v,widths[j]-8)),count=Math.max(...content.map(c=>c.length));let offset=0;
-  let photo=null;const src=images[i]?.dataUrl;
-  if(src){if(!embedded.has(src))embedded.set(src,src.startsWith('data:image/png')?await pdf.embedPng(src):await pdf.embedJpg(src));photo=embedded.get(src);}
-  while(offset<count){
-   if(y<bottom+76)newPage();const take=Math.min(count-offset,Math.max(1,Math.floor((y-bottom-8)/step))),height=Math.max(72,take*step+8);let x=left;
-   content.forEach((lines,j)=>{lines.slice(offset,offset+take).forEach((text,k)=>draw(text,j>=3?x+widths[j]-4-normal.widthOfTextAtSize(text,size):x+4,y-k*step));x+=widths[j];});
-   if(photo&&offset===0){const ratio=Math.min(74/photo.width,60/photo.height),w=photo.width*ratio,h=photo.height*ratio;page.drawImage(photo,{x:left+widths[0]+(widths[1]-w)/2,y:y-h,width:w,height:h});}
-   page.drawLine({start:{x:left,y:y-height+4},end:{x:right,y:y-height+4},thickness:.35,color:PDFLib.rgb(.8,.82,.85)});y-=height;offset+=take;if(offset<count)newPage();
-  }
- }
- const pages=pdf.getPages();pages.forEach((p,i)=>p.drawText(`${i+1}/${pages.length}`,{x:770,y:20,font:normal,size:9}));
- pdf.setTitle('Báo giá cho Sale');pdf.setSubject('8 cột: hình thiết kế, giá tham khảo và giá bán');return pdf.save();
+ if(!banner)throw Error('Chưa tải được tiêu đề Vigifts. Tải lại trang rồi xuất PDF Sale.');
+ if(!globalThis.EditableQuotePdf)throw Error('Chưa tải được mẫu PDF. Tải lại trang rồi thử lại.');
+ return globalThis.EditableQuotePdf.create({state,images,banner,saleRows:rows,saleColumns:SALE_EXPORT_COLUMNS,resources:assets});
 }
 export function buildSaleWorkbook(state,ExcelJS,{images=[]}={}){
  const rows=saleExportRows(state);requiredImages(state,images);const book=new ExcelJS.Workbook(),sheet=book.addWorksheet('Bao gia Sale');
