@@ -22,14 +22,18 @@ body dialog[open]:not(.order-compose,.verify-page) {
     /* 16:9 là KHUNG TỐI ĐA: form ngắn co theo nội dung, form dài cuộn bên trong (đầu/chân form luôn nhìn thấy). */
     --landscape-w:min(1280px,calc(100vw - 48px),calc((100dvh - 48px) * 16 / 9));
     width:var(--landscape-w) !important;
-    height:auto; max-width:calc(100vw - 48px) !important;
-    max-height:min(calc(100dvh - 48px),calc(var(--landscape-w) * 9 / 16)); padding:0; overflow:hidden; box-sizing:border-box;
+    /* fit-content: popup căn giữa bằng inset:0 sẽ giãn hết màn hình nếu để height:auto. */
+    height:fit-content; max-width:calc(100vw - 48px) !important;
+    max-height:min(calc(100dvh - 48px),calc(var(--landscape-w) * 9 / 16)) !important; padding:0; overflow:hidden; box-sizing:border-box;
   }
+  /* Ngăn kéo NCC/đơn mua (div, không phải dialog) giữ khung 16:9 cố định như trước. */
+  .sup-drawer.landscape-drawer { aspect-ratio:16 / 9; height:auto; }
+  .sup-drawer.landscape-drawer > form.landscape-dialog-form { height:100%; }
   /* Chiều cao không còn cố định: khung là cột flex để phần thân co lại và cuộn, không đẩy chân form ra ngoài. */
   dialog[open].landscape-dialog { display:flex; flex-direction:column; }
   dialog.landscape-dialog > *:not(.landscape-dialog-head):not(.landscape-dialog-foot):not(.landscape-dialog-body):not(.landscape-dialog-form) { flex-shrink:0; }
   /* Còn nội dung bên dưới (máy ẩn thanh cuộn): bóng mờ ở mép chân form. */
-  .landscape-dialog .landscape-dialog-foot.landscape-more { box-shadow:0 -10px 14px -10px rgba(15,23,42,.35); position:relative; z-index:1; }
+  .landscape-dialog .landscape-dialog-foot.landscape-more { box-shadow:0 -10px 14px -10px rgba(15,23,42,.35); }
   dialog.landscape-dialog > .landscape-dialog-form,
   .landscape-dialog .pos-modal-content > form.landscape-dialog-form,
   .sup-drawer.landscape-drawer > form.landscape-dialog-form {

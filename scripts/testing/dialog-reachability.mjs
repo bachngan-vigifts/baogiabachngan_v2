@@ -42,7 +42,9 @@ const probe = () => {
   const out = {}; for (const e of controls) { const k = key(e); if (e.type === 'checkbox' || e.type === 'radio' || e.type === 'file') { const l = e.closest('label') || (e.id && document.querySelector(`label[for="${e.id}"]`)); out[k] = l && vis(l) ? hit(l) : hit(e); } else out[k] = hit(e); }
   const r = d.getBoundingClientRect();
   const foot = d.querySelector('.landscape-dialog-foot'), fr = foot?.getBoundingClientRect();
-  return { clip: d.scrollHeight - d.clientHeight, footInside: !fr || (fr.bottom <= r.bottom + 1 && fr.top >= r.top - 1), title: (d.querySelector('h2,h3,[class*=title]')?.textContent || d.getAttribute('aria-label') || d.id || d.className).trim().slice(0, 50), cls: d.className, landscape: d.classList.contains('landscape-dialog'), size: [Math.round(r.width), Math.round(r.height)], controls: out };
+  const dbg = [d, d.querySelector('.landscape-dialog-form'), d.querySelector('.landscape-dialog-body'), foot].map(e => { if (!e) return null; const c = getComputedStyle(e); return [e.className.toString().slice(0, 50), Math.round(e.getBoundingClientRect().height), e.scrollHeight, c.display, c.flex, c.overflowY, c.minHeight, c.height]; });
+  const kids = [...(d.querySelector('.landscape-dialog-body')?.children || [])].map(e => [e.tagName + '.' + String(e.className).slice(0, 30) + '#' + e.id, Math.round(e.getBoundingClientRect().height), getComputedStyle(e).display]);
+  return { kids, dbg, clip: d.scrollHeight - d.clientHeight, footInside: !fr || (fr.bottom <= r.bottom + 1 && fr.top >= r.top - 1), title: (d.querySelector('h2,h3,[class*=title]')?.textContent || d.getAttribute('aria-label') || d.id || d.className).trim().slice(0, 50), cls: d.className, landscape: d.classList.contains('landscape-dialog'), size: [Math.round(r.width), Math.round(r.height)], controls: out };
 };
 // Gõ thử vào ô chữ trong popup: danh sách gợi ý (khách/sản phẩm) hiện ra có nhìn thấy và bấm trúng được không.
 async function typeProbe(page) {
