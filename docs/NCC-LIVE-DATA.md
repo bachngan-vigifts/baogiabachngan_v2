@@ -51,7 +51,9 @@ BEGIN TRANSACTION READ ONLY;
 COMMIT;
 ```
 
-Assert kiểm tra bảng/cột/index, RLS, quyền Data API và policy. Workflow deploy API đã gắn assert này; thiếu schema sẽ dừng trước deploy. Chưa chạy SQL trên production trong lần bàn giao này.
+Assert kiểm tra bảng/cột/index, RLS, quyền Data API và policy. Workflow deploy API đã gắn assert này và khai báo trong `scripts/sql/november-migration-coverage.json`; thiếu schema sẽ dừng trước deploy.
+
+Ngày 12/11/2026, sau xác nhận của anh Thái, đã chạy đúng nội dung migration trên Supabase production `taceqfnsorewelsbdckg` bằng `apply_migration(name: supplier_workspace)`. Kết quả `success: true`; lịch sử Supabase ghi version `20261112090212` (timestamp thực thi, khác timestamp file nguồn). Đã chạy toàn bộ `assert-supplier-workspace.sql` trong transaction READ ONLY và nhận `assert_supplier_workspace_passed`. Không cập nhật chứng từ nghiệp vụ cũ. API/UI mới chưa triển khai; chờ CI đúng HEAD xanh.
 
 Thứ tự đưa lên thật: duyệt SQL → chạy migration → assert chỉ đọc pass → CI đúng HEAD xanh → merge/triển khai API → triển khai UI → smoke test bằng hai NCC khác nhau và Manager. Không merge trước migration để tránh lặp tình trạng deploy bị chặn.
 
@@ -73,4 +75,4 @@ Browser đi qua router, PostgreSQL/PGlite và memory Storage thật của môi t
 
 API tests đối chiếu `computeOrderTotals`/`supplierDebt` kể cả số lẻ và khoản bị hủy, nhận đạt/hỏng/hủy phiếu, giá thiếu, giá lọc sau CK/phí in, export/phân trang, payload SQL injection, ID/supplierId giả, ghi lặp, quyền NCC/Manager, chia sẻ/thu hồi và sửa phiếu sau chia sẻ. Migration/assert chạy read-only/lặp và có ca thiếu index/quyền sai.
 
-Giới hạn xác minh: chưa đọc dữ liệu production, chưa xác nhận email production đến hộp thư, chưa chạy migration/deploy production. Ghi dữ liệu trong kiểm thử không tác động tiền, kho hoặc vận chuyển thật.
+Giới hạn xác minh: mới kiểm tra metadata/schema production và chạy migration/assert đã được duyệt; chưa đọc chứng từ nghiệp vụ production, chưa xác nhận email production đến hộp thư, chưa triển khai API/UI mới. Ghi dữ liệu trong kiểm thử không tác động tiền, kho hoặc vận chuyển thật.

@@ -191,6 +191,12 @@
     ]
   },
   {
+    "migration": "20261112073225_supplier_workspace.sql",
+    "asserts": [
+      "assert-supplier-workspace.sql"
+    ]
+  },
+  {
     "migration": "20261112090000_store_report_submission.sql",
     "asserts": [
       "assert-store-report-submission.sql"
