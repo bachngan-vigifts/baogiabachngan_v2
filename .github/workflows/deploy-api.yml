@@ -388,6 +388,13 @@ jobs:
             curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
           done
+      - name: Kiểm tra cấu trúc cổng NCC chỉ đọc
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-supplier-workspace.sql '{query:("BEGIN TRANSACTION READ ONLY;\n" + $query + "\nCOMMIT;")}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
       # DML only: preserve the existing Accounting visibility once. The audit marker
       # prevents subsequent deployments from restoring a Manager-revoked permission.
       - name: Khởi tạo quyền xem trang SePay một lần

@@ -1,5 +1,7 @@
 # Kiểm thử bổ sung cổng NCC trước triển khai
 
+**Phạm vi tài liệu:** giai đoạn prototype và sửa đăng nhập. Kiểm thử tích hợp dữ liệu thật được bổ sung tại [NCC-LIVE-DATA.md](NCC-LIVE-DATA.md); không dùng các giới hạn API của bản mẫu bên dưới để mô tả bản code hiện tại.
+
 Ngày 12/11/2026 (giờ Việt Nam). PR nháp: [#638](https://github.com/bachngan-vigifts/baogiabachngan_v2/pull/638).
 
 ## Phạm vi và kết luận

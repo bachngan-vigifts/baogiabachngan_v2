@@ -49,7 +49,7 @@ async function scenario(name,config,check){
  const p=await context.newPage();p.setDefaultTimeout(3500);p.on('pageerror',e=>errors.push(e.message));
  const auth=()=>p.locator('#supplier-auth:not([hidden])').waitFor(),workspace=()=>p.locator('#supplier-workspace:not([hidden])').waitFor();
  const submit=async()=>{await p.locator('#login-name').fill('supplier@example.test');await p.locator('#login-password').fill(password);await p.locator('#login-form').evaluate(f=>f.requestSubmit());};
- try{await p.goto(origin+'/crm/supplier.html');await check({p,state,calls,auth,workspace,submit});assert.deepEqual(errors,[]);assert.deepEqual(external,[]);results.push({name,passed:true,requests:calls.map(c=>c.method+' '+c.path)});}
+ try{await p.goto(origin+'/crm/supplier.html?request=fixture-request');await check({p,state,calls,auth,workspace,submit});assert.deepEqual(errors,[]);assert.deepEqual(external,[]);results.push({name,passed:true,requests:calls.map(c=>c.method+' '+c.path)});}
  catch(error){results.push({name,passed:false,error:error.message.split('\n').slice(0,3).join(' ')});}
  finally{await context.close();}
 }

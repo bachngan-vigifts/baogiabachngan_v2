@@ -20,7 +20,7 @@ try{
    if(p==='/supplier-portal/early-requests')return route.fulfill({json:{requests:[],canRespond:true}});
    return route.fulfill({status:404,json:{error:'Unexpected fixture route'}});
   }if(url.origin===origin)return route.continue();return route.abort();});
-  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/supplier.html');await page.locator('#supplier-auth:not([hidden])').waitFor();
+  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/supplier.html?request=fixture-request');await page.locator('#supplier-auth:not([hidden])').waitFor();
   assert.ok(await page.locator('#supplier-auth .auth-logo img').isVisible());assert.equal(await page.locator('#login-name').getAttribute('type'),'email');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
   if(!enabled&&role==='supplier')await page.screenshot({path:out+'/login-'+width+'.png'});
   await page.locator('#login-name').fill('partner@example.test');await page.locator('#login-password').fill('review-password-123');await page.locator('#supplier-show-password').check();assert.equal(await page.locator('#login-password').getAttribute('type'),'text');await page.locator('#supplier-show-password').uncheck();

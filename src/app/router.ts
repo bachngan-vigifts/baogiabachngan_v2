@@ -68,6 +68,7 @@ import { registerOrderHoldRoutes } from '../modules/sales/api/order-hold-routes.
 import { registerProgressRoutes } from '../modules/sales/api/progress-routes.ts';
 import { registerPrintingRoutes } from '../modules/printing/api/routes.ts';
 import { registerSupplierDirectoryRoutes, packingSupplierChoices } from '../modules/suppliers/api/directory-routes.ts';
+import { registerSupplierWorkspaceRoutes } from '../modules/suppliers/api/workspace-routes.ts';
 import { registerPurchaseRoutes } from '../modules/suppliers/api/purchase-routes.ts';
 import { registerEarlyRequestRoutes } from '../modules/suppliers/api/early-request-routes.ts';
 import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
@@ -177,6 +178,7 @@ export function createAppRouter() {
   registerSupplierDirectoryRoutes(router);
   registerPurchaseRoutes(router);
   registerEarlyRequestRoutes(router);
+  registerSupplierWorkspaceRoutes(router);
   registerPortalRoutes(router);
   registerNotificationRoutes(router);
   registerTaskRoutes(router,{assertMutable:assertWarehouseTaskMutable});

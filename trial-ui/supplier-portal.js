@@ -1,5 +1,6 @@
 import { bindForgotPassword } from './forgot-password.js';
 import { mountTurnstile } from './turnstile.js';
+import { mountSupplierWorkspace } from './supplier-workspace.js';
 import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
 import { initEarlyRequests } from './purchase-early-requests.js';
 import { openSupplierRequestDetails } from './supplier-request-details.js';
@@ -9,17 +10,19 @@ const key='bn-v2-session',$=id=>document.getElementById(id);let token='';
 try{token=localStorage.getItem(key)||sessionStorage.getItem(key)||'';}catch{}
 const saveToken=value=>{token=value||'';try{if(token)localStorage.setItem(key,token);else localStorage.removeItem(key);sessionStorage.removeItem(key);}catch{}};
 installBusyButtons();
-let loginBot=null,loginBusy=false;
+let loginBot=null,loginBusy=false,workspace=null;
 function showAuth(){
+  document.documentElement.classList.add('app-shell');
   const reopening=$('supplier-auth').hidden;
+  workspace?.dispose();workspace=null;$('supplier-live-root').hidden=true;
   $('supplier-startup').hidden=true;$('supplier-auth').hidden=false;$('supplier-workspace').hidden=true;$('supplier-requests').hidden=true;
   if(loginBot&&reopening)loginBot.reset();
   loginBot ||= mountTurnstile({api,before:$('login-submit'),action:'login'});
 }
-function api(path,method='GET',body){return withBusy(method,apiRequest(path,method,body),path);}
-async function apiRequest(path,method='GET',body) {
+function api(path,method='GET',body,options={}){return withBusy(method,apiRequest(path,method,body,options),path);}
+async function apiRequest(path,method='GET',body,options={}) {
   const headers={'content-type':'application/json'};if(token)headers.authorization='Bearer '+token;
-  let r;try{r=await apiFetch(API+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});}catch{throw method==='GET'?Error('Không kết nối được máy chủ. Vui lòng thử lại.'):Object.assign(Error(writeFailureMessage(body)),{status:0,code:UNKNOWN_OUTCOME});}
+  let r;try{r=await apiFetch(API+path,{method,headers,signal:options.signal,body:body===undefined?undefined:JSON.stringify(body)});}catch(e){if(options.signal?.aborted)throw e;throw method==='GET'?Error('Không kết nối được máy chủ. Vui lòng thử lại.'):Object.assign(Error(writeFailureMessage(body)),{status:0,code:UNKNOWN_OUTCOME});}
   let d=null;try{d=await r.json();}catch{/* Upstream errors may be HTML instead of the API JSON envelope. */}
   const valid=!!d&&typeof d==='object'&&!Array.isArray(d);
   if(valid&&typeof d.sessionToken==='string')saveToken(d.sessionToken);
@@ -42,9 +45,13 @@ async function enter(){
     $('supplier-back').href=canBrowse?'/#/early-requests'+(id?'/'+encodeURIComponent(id):''):location.pathname;
     $('supplier-back').textContent=canBrowse?'‹ Về Lấy hàng trước':'‹ Quay lại danh sách';
     $('supplier-back').hidden=!canBrowse&&!id;
+    document.documentElement.classList.remove('app-shell');
     $('supplier-startup').hidden=true;$('supplier-auth').hidden=true;$('supplier-workspace').hidden=false;$('logout').hidden=false;$('supplier-requests').hidden=false;
     $('supplier-who').textContent=user.name+(user.role==='manager'?' · Chỉ xem, không phản hồi thay NCC':'');
-    await list.load(new URLSearchParams(location.search).get('request')||'');
+    const requestId=new URLSearchParams(location.search).get('request')||'';
+    $('supplier-workspace').classList.toggle('supplier-is-live',!requestId);
+    if(requestId)await list.load(requestId);
+    else{$('supplier-requests').hidden=true;workspace?.dispose();workspace=mountSupplierWorkspace({host:$('supplier-live-root'),api,onLogout:logout});await workspace.ready;}
   }catch(e){$('supplier-startup').hidden=true;$('supplier-error').textContent=e.message;if(e.status===401||$('supplier-workspace').hidden){showAuth();$('supplier-auth-error').textContent=e.status===401&&!token?'':e.message;}}
 }
 $('supplier-show-password').addEventListener('change',e=>{$('login-password').type=e.target.checked?'text':'password';});
@@ -52,5 +59,6 @@ $('login-form').addEventListener('submit',async e=>{e.preventDefault();if(loginB
   try{if(loginBot)await loginBot.ready;await api('/login','POST',{email:$('login-name').value.trim(),password:$('login-password').value,turnstileToken:loginBot?.token()||''});loginBot?.reset();$('login-password').value='';$('supplier-show-password').checked=false;$('login-password').type='password';await enter();}
   catch(e){loginBot?.reset();$('supplier-auth-error').textContent=e.message;}finally{loginBusy=false;$('login-submit').disabled=false;}
 });
-$('logout').addEventListener('click',async()=>{try{await api('/logout','POST',{});saveToken('');location.reload();}catch(e){$('supplier-error').textContent=e.message;}});
+async function logout(){await api('/logout','POST',{});saveToken('');location.reload();}
+$('logout').addEventListener('click',()=>logout().catch(e=>{$('supplier-error').textContent=e.message;}));
 enter();

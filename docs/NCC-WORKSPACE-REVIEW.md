@@ -1,5 +1,7 @@
 # Cổng NCC — hồ sơ duyệt giao diện
 
+**Cập nhật:** đã bổ sung cổng API dữ liệu thật và giao diện production trong cùng PR. Tài liệu này ghi nhận giai đoạn duyệt mẫu; trạng thái hiện tại và thứ tự triển khai nằm tại [NCC-LIVE-DATA.md](NCC-LIVE-DATA.md).
+
 Ngày: 12/11/2026. Nền mã đã đọc: `origin/main` tại `7094a6a7`.
 
 Bổ sung kiểm thử trước triển khai: [NCC-PREDEPLOY-TEST-REPORT.md](NCC-PREDEPLOY-TEST-REPORT.md), gồm tình huống bất lợi, lỗi đã tái hiện/sửa, đo trước/sau và giới hạn của bản duyệt.
