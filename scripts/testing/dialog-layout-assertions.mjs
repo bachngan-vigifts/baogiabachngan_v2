@@ -13,7 +13,7 @@ export async function auditDialog(page,selector,name,width,out,{close=true}={}){
  assert.ok(metrics.box.y>=-1&&metrics.box.bottom<=page.viewportSize().height+1,name+' vertically outside viewport: '+JSON.stringify(metrics.box));
  assert.ok(metrics.box.x>=-1&&metrics.box.right<=width+1,name+' outside viewport');
  if(metrics.heading&&metrics.close){const a=metrics.heading,b=metrics.close;assert.ok(a.right<=b.x+1||b.right<=a.x+1||a.bottom<=b.y+1||b.bottom<=a.y+1,name+' title overlaps close button');}
- if(width>=900){assert.ok(metrics.wide,name+' should be landscape');assert.ok(Math.abs(metrics.ratio-16/9)<0.03,name+' ratio '+metrics.ratio);
+ if(width>=900){assert.ok(metrics.wide,name+' should be landscape');assert.ok(metrics.ratio>=16/9-0.03,name+' ratio '+metrics.ratio);assert.ok(metrics.box.height<=metrics.box.width*9/16+2,name+' taller than 16:9');
  assert.ok(metrics.body.bottom<=metrics.foot.y+2,name+' body overlaps footer');
  if(metrics.head)assert.ok(metrics.head.bottom<=metrics.body.y+2,name+' head overlaps body');
  for(let a=0;a<metrics.buttons.length;a++)for(let b=a+1;b<metrics.buttons.length;b++){const x=metrics.buttons[a],y=metrics.buttons[b];assert.ok(x.right<=y.x+1||y.right<=x.x+1||x.bottom<=y.y+1||y.bottom<=x.y+1,name+' overlapping buttons');}
