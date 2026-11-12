@@ -209,6 +209,10 @@
     ]
   },
   {
+    "migration": "20261112104633_supplier_stock_checks.sql",
+    "asserts": ["assert-supplier-stock-checks.sql"]
+  },
+  {
     "migration": "20261112110000_store_restock_rules.sql",
     "asserts": [
       "assert-store-restock-rules.sql"

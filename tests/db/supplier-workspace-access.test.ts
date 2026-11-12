@@ -13,3 +13,14 @@ test('supplier workspace migration is repeatable and tables have RLS, no browser
  await client.exec('GRANT SELECT ON public.supplier_published_stock TO anon;');await assert.rejects(client.exec(gate),/chưa được thu hồi/);await client.exec(migration);
  await client.exec('BEGIN TRANSACTION READ ONLY;'+gate+'COMMIT;');
 });
+
+test('supplier stock check migration is repeatable, private and read-only assertion catches omissions',async()=>{
+ const{client}=await createTestDb();
+ await client.exec('CREATE ROLE anon;CREATE ROLE authenticated;');
+ const migration=readFileSync(new URL('../../migrations/postgres/20261112104633_supplier_stock_checks.sql',import.meta.url),'utf8'),gate=readFileSync(new URL('../../scripts/sql/assert-supplier-stock-checks.sql',import.meta.url),'utf8');
+ await client.exec(migration);await client.exec(migration);await client.exec('BEGIN TRANSACTION READ ONLY;'+gate+'COMMIT;');
+ await client.exec('GRANT SELECT ON supplier_stock_checks TO PUBLIC');await assert.rejects(client.exec(gate),/chưa được thu hồi/);await client.exec(migration);
+ await client.exec('DROP INDEX idx_supplier_stock_checks_supplier_date');await assert.rejects(client.exec(gate),/Thiếu index/);await client.exec(migration);
+ await client.exec('ALTER TABLE supplier_stock_check_lines DISABLE ROW LEVEL SECURITY');await assert.rejects(client.exec(gate),/chưa bật RLS/);await client.exec(migration);
+ await client.exec('ALTER TABLE supplier_stock_check_lines DROP CONSTRAINT chk_supplier_stock_check_response');await assert.rejects(client.exec(gate),/Thiếu kiểm tra phản hồi/);
+});
