@@ -1,3 +1,4 @@
+import {customerSharePositionAllowed} from './share-options.ts';
 import {and,asc,eq,inArray,isNull} from 'drizzle-orm';
 import {AppError} from '../../../core/errors.ts';
 import {json,readJson,type Router,type RouteContext} from '../../../core/http/router.ts';
@@ -18,8 +19,8 @@ export function registerProvinceSharing(router:Router<StaffEnv>){
   if(!Array.isArray(b.memberIds)||!b.memberIds.length||b.memberIds.length>10||b.memberIds.some(x=>typeof x!=='string'||!x||x.length>200))throw new AppError(400,'Chọn từ 1 đến 10 nhân viên nhận chia sẻ.');
   const memberIds=[...new Set(b.memberIds as string[])].sort();
   return c.env.db.transaction(async tx=>{
-   const staff=await tx.select({id:employees.id,name:employees.name}).from(employees).where(and(inArray(employees.id,memberIds),eq(employees.active,true),isNull(employees.deletedAt),inArray(employees.role,['manager','employee']))).orderBy(asc(employees.id)).for('share');
-   if(staff.length!==memberIds.length)throw new AppError(400,'Có nhân viên đã ngừng hoạt động hoặc không hợp lệ.');
+   const staff=await tx.select({id:employees.id,name:employees.name}).from(employees).where(and(inArray(employees.id,memberIds),eq(employees.active,true),isNull(employees.deletedAt),inArray(employees.role,['manager','employee']),customerSharePositionAllowed())).orderBy(asc(employees.id)).for('share');
+   if(staff.length!==memberIds.length)throw new AppError(400,'Không chia sẻ mới cho IT, Thiết kế, Kho hoặc tài khoản không còn hoạt động.');
    const query=tx.select({id:customers.id,name:customers.name,address:customers.address}).from(customers).where(and(eq(customers.approvalStatus,'approved'),eq(provinceCodeSql(customers.address),province.code))).orderBy(asc(customers.id)).limit(5001);
    const rows=await (apply?query.for('update'):query);
    if(rows.length>5000)throw new AppError(400,'Tỉnh có hơn 5.000 khách. Cần chia thành đợt nhỏ trước khi chia sẻ.');
