@@ -35,3 +35,12 @@
 @media(max-width:850px){ .early-list-bulk>.btn.primary { flex:1 1 180px; } .early-list-title { min-height:36px; } }
 
 .early-page-card .early-received-summary { color:#166534;background:#dcfce7;white-space:normal;line-height:1.5; }
+
+/* The header, scrolling body and actions share one form frame. */
+dialog.early-quick-receipt > form { display:flex;flex-direction:column;min-height:0;max-height:inherit;margin:0; }
+.early-quick-receipt .modal-head,.early-quick-receipt .modal-foot { flex:none; }
+.early-quick-receipt .modal-body { flex:1;min-height:0; }
+.early-quick-quantities { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
+.early-quick-quantities label { min-width:0; }
+.early-quick-receipt .modal-foot { display:flex;gap:12px;justify-content:flex-end; }
+@media(max-width:600px){ .early-quick-quantities { grid-template-columns:minmax(0,1fr); } }

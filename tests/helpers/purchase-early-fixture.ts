@@ -3,7 +3,8 @@ import { seedStaff, PASSWORD } from './staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
 import { createAppRouter } from '../../src/app/router.ts';
 import { incomingShipments, incomingShipmentLines, suppliers, supplierAccounts, supplierOrderEvents } from '../../src/modules/suppliers/schema.ts';
-export async function setupEarly() {
+import type {FileStore} from '../../src/core/storage/file-store.ts';
+export async function setupEarly({files}:{files?:FileStore}={}) {
   const s=await createTestDb();await seedStaff(s.d1);const now='2026-10-21T00:00:00Z',pw=await hashPassword(PASSWORD,1000);
   for(const [id,pos,role] of [['sa','sale-admin','employee'],['kho','warehouse','employee'],['kt','accounting','employee'],['ncc2','supplier','supplier'],['unmapped','supplier','supplier']] as const) {
     await s.d1.sqlite.prepare("insert into staff_members(id,email,name,phone,role,position_id,active,created_at) values (?,?,?,'',?,?,1,?)").run(id,id+'@x.vn',id,role,pos,now);
@@ -16,7 +17,7 @@ export async function setupEarly() {
     await s.db.insert(incomingShipmentLines).values({id:'line-'+id,shipmentId:id,lineNo:1,sku,name:'Hàng '+sku,unit:'Cái',quantity:qty,promisedDate:due});
   }
   await s.db.insert(supplierOrderEvents).values({id:'import',shipmentId:'excel',actorId:'mgr',at:now,action:'import',summary:'Nhập Excel'});
-  const router=createAppRouter(),env={db:s.db,passwordIterations:1000,sapoOrderPush:'off' as const};
+  const router=createAppRouter(),env={db:s.db,files,passwordIterations:1000,sapoOrderPush:'off' as const};
   const call=async(path:string,cookie='',method='GET',body?:unknown)=>{
     const r=await router.handle(new Request('https://trial.test/api/staff'+path,{method,headers:{origin:'https://trial.test',cookie,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)}),env);
     return {status:r.status,data:await r.json() as any,cookie:r.headers.get('set-cookie')?.split(';')[0]||''};

@@ -1,4 +1,5 @@
 import {test} from 'node:test';
+import {memoryFileStore} from '../../src/core/storage/file-store.ts';
 import assert from 'node:assert/strict';
 import {and,eq} from 'drizzle-orm';
 import {setupEarly} from '../helpers/purchase-early-fixture.ts';
@@ -7,8 +8,8 @@ import {incomingShipments,incomingShipmentLines,supplierReceipts,receiptJobs} fr
 import {stockBalances,stockMoves} from '../../src/modules/inventory/schema.ts';
 import {postMoves} from '../../src/modules/inventory/api/ledger.ts';
 const ok=(r:any,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
-async function fixture(quantity=10){
- const f=await setupEarly(),c=f.cookies;
+async function fixture(quantity=10,withPhotos=false){
+ const f=await setupEarly({files:withPhotos?memoryFileStore():undefined}),c=f.cookies;
  await f.db.insert(products).values({sku:'031106000',name:'Ly',unit:'Cái',updatedAt:'2026-10-01T00:00:00Z'});
  await f.db.insert(warehouses).values({id:'receive',name:'KHO NHẬN',kind:'stock'});
  await postMoves(f.db,'mgr',[{sku:'031106000',warehouseId:'receive',qty:1,kind:'opening',refType:'opening',refId:'opening'}]);
@@ -86,4 +87,15 @@ test('simultaneous retries of the same receipt key create exactly one receipt an
  assert.deepEqual(results.map(r=>r.status).sort(),[200,201]);assert.equal(results[0].data.receiptId,results[1].data.receiptId);
  assert.equal(await f.balance(),5);assert.equal((await f.db.select().from(supplierReceipts)).length,1);
  assert.equal(ok(await f.context()).lines[0].remaining,6);
+});
+
+test('early receipt quality evidence: only good units enter stock; damaged/refused units stay due, with safe replay',async()=>{
+ const f=await fixture(10,true);ok(await f.accept());
+ const photo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
+ const mixed={clientKey:crypto.randomUUID(),earlyRequestId:f.id,createSapo:false,receivedDate:'2026-10-24',warehouse:'KHO NHẬN',note:'Hàng lỗi khi giao',lines:[{lineId:'line-a1',goodQty:7,damagedQty:3,note:'Bể vỡ'}]};
+ ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',mixed),400);assert.equal(await f.balance(),1);assert.equal((await f.db.select().from(supplierReceipts)).length,0);
+ const body={...mixed,photos:[photo]};ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',body),201);assert.equal(await f.balance(),8);assert.equal(ok(await f.context()).lines[0].remaining,3);
+ ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',body));assert.equal(await f.balance(),8);
+ const refused={...body,clientKey:crypto.randomUUID(),note:'Từ chối nhận / trả NCC: giao hàng bể vỡ',lines:[{lineId:'line-a1',goodQty:0,damagedQty:3,note:'NCC cần giao bù'}]};
+ ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',refused),201);ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',refused));assert.equal(await f.balance(),8);assert.equal(ok(await f.context()).lines[0].remaining,3);assert.equal((await f.db.select().from(supplierReceipts)).length,2);assert.equal((await f.db.select().from(receiptJobs)).length,0);
 });
