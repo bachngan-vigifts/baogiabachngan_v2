@@ -1,0 +1,74 @@
+[
+  {
+    "role": "manager",
+    "width": 390,
+    "detailMedianMs": 493,
+    "samplesMs": [
+      817,
+      493,
+      472
+    ],
+    "detailRequestsPerLoad": 1,
+    "jsErrors": []
+  },
+  {
+    "role": "manager",
+    "width": 1440,
+    "detailMedianMs": 543,
+    "samplesMs": [
+      747,
+      507,
+      543
+    ],
+    "detailRequestsPerLoad": 1,
+    "jsErrors": []
+  },
+  {
+    "role": "employee",
+    "width": 390,
+    "detailMedianMs": 497,
+    "samplesMs": [
+      730,
+      497,
+      492
+    ],
+    "detailRequestsPerLoad": 1,
+    "jsErrors": []
+  },
+  {
+    "role": "employee",
+    "width": 1440,
+    "detailMedianMs": 524,
+    "samplesMs": [
+      747,
+      493,
+      524
+    ],
+    "detailRequestsPerLoad": 1,
+    "jsErrors": []
+  },
+  {
+    "role": "warehouse",
+    "width": 390,
+    "detailMedianMs": 553,
+    "samplesMs": [
+      738,
+      530,
+      553
+    ],
+    "detailRequestsPerLoad": 1,
+    "jsErrors": []
+  },
+  {
+    "role": "warehouse",
+    "width": 1440,
+    "detailMedianMs": 491,
+    "samplesMs": [
+      711,
+      471,
+      491
+    ],
+    "detailRequestsPerLoad": 1,
+    "jsErrors": []
+  }
+]

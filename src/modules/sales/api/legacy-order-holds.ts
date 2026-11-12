@@ -48,7 +48,7 @@ export function legacyOrderHoldsQuery(db: Db, skus?: string[], warehouseId?: str
     qty: sql<number>`greatest(0,-sum(issued.qty))`.as('issued_qty'),
   }).from(sql`(
     select ${packingSlips.orderId} as order_id, ${stockMoves.sku} as sku, ${stockMoves.qty} as qty
-    from ${stockMoves} join ${packingSlips} on ${packingSlips.id}=${stockMoves.refId}
+    from ${stockMoves} join ${packingSlips} on ${packingSlips.id}=split_part(${stockMoves.refId},'#',1)
     join ${lines} on ${lines.orderId}=${packingSlips.orderId} and ${lines.sku}=${stockMoves.sku}
     where ${stockMoves.refType}='packing_slip' ${warehouseId ? sql`and ${stockMoves.warehouseId}=${warehouseId}` : sql``}
     union all

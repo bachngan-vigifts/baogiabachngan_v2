@@ -953,7 +953,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       if(cashHistory)throw new AppError(409,'Đơn có lịch sử tiền mặt nhân viên giữ; giữ chứng từ để đối soát, không xoá.','ORDER_HAS_HISTORY');
       const [ledger] = await tx.select({ id: stockMoves.id }).from(stockMoves).where(sql`
         (${stockMoves.refType} in ('pos_order','sales_order') and (${stockMoves.refId}=${order.id} or ${stockMoves.refId} like ${order.id + '#%'})) or
-        (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${order.id})) or
+        (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=split_part(${stockMoves.refId},'#',1) and p.order_id=${order.id})) or
         (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${order.id}))`).limit(1);
       if (ledger) throw new AppError(409, 'Đơn đã có lịch sử kho. Giữ chứng từ để nhận hoàn và đối chiếu sổ kho, không xoá.', 'ORDER_HAS_HISTORY');
       const [[paid], lines, [shipped]] = await Promise.all([

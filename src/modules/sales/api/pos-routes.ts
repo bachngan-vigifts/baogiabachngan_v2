@@ -370,7 +370,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           when exists(select 1 from pos_returns r where r.order_id=${salesOrders.id} and r.status not in ('cancelled','rejected')) then 0
           else greatest(0, -coalesce((select sum(x.qty) from (
             select m.qty from ${stockMoves} m where m.ref_type='pos_order' and m.ref_id=${salesOrders.id}
-            union all select m.qty from ${packingSlips} p join ${stockMoves} m on m.ref_type='packing_slip' and m.ref_id=p.id where p.order_id=${salesOrders.id}
+            union all select m.qty from ${packingSlips} p join ${stockMoves} m on m.ref_type='packing_slip' and split_part(m.ref_id,'#',1)=p.id where p.order_id=${salesOrders.id}
             union all select m.qty from ${deliveries} d join ${stockMoves} m on m.ref_type='pos_delivery' and m.ref_id=d.id where d.order_id=${salesOrders.id}
           ) x), 0)) end`.mapWith(Number),
       }).from(salesOrders)
@@ -457,7 +457,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       warehouseName: warehouses.name, qty: sql<number>`greatest(0,-sum(${stockMoves.qty}))`.mapWith(Number) })
       .from(stockMoves).innerJoin(warehouses, eq(warehouses.id, stockMoves.warehouseId))
       .where(sql`(${stockMoves.refType}='pos_order' and ${stockMoves.refId}=${orderId}) or
-        (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${orderId})) or
+        (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=split_part(${stockMoves.refId},'#',1) and p.order_id=${orderId})) or
         (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${orderId}))`)
       .groupBy(stockMoves.sku, stockMoves.warehouseId, warehouses.name);
     return json({ lines: lines.filter(l => l.qty > 0.0005), blockedReason: '' });
@@ -479,20 +479,20 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       if (locked?.status !== 'cancelled') throw new AppError(409, 'Đơn không còn ở trạng thái đã huỷ. Tải lại danh sách.');
       const before = await tx.select({ sku: stockMoves.sku, qty: sql<number>`greatest(0,-sum(${stockMoves.qty}))`.mapWith(Number) })
         .from(stockMoves).where(sql`(${stockMoves.refType}='pos_order' and ${stockMoves.refId}=${orderId}) or
-          (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${orderId})) or
+          (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=split_part(${stockMoves.refId},'#',1) and p.order_id=${orderId})) or
           (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${orderId}))`)
         .groupBy(stockMoves.sku, stockMoves.warehouseId);
       const pending = before.filter(x => x.qty > 0);
       if (!pending.length) return { received: false, replayed: true, lines: [] as { sku: string; qty: number }[] };
       const refs = await tx.selectDistinct({ refType: stockMoves.refType, refId: stockMoves.refId }).from(stockMoves)
         .where(and(ne(stockMoves.kind, 'reverse'), sql`(${stockMoves.refType}='pos_order' and ${stockMoves.refId}=${orderId}) or
-          (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${orderId})) or
+          (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=split_part(${stockMoves.refId},'#',1) and p.order_id=${orderId})) or
           (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${orderId}))`));
       const at = new Date().toISOString();
       for (const ref of refs) await reverseRef(tx, m.id, ref.refType as StockRefType, ref.refId, `Nhận hàng hoàn đơn đã huỷ ${locked.orderNo}`, at);
       const after = await tx.select({ sku: stockMoves.sku, qty: sql<number>`greatest(0,-sum(${stockMoves.qty}))`.mapWith(Number) })
         .from(stockMoves).where(sql`(${stockMoves.refType}='pos_order' and ${stockMoves.refId}=${orderId}) or
-          (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=${stockMoves.refId} and p.order_id=${orderId})) or
+          (${stockMoves.refType}='packing_slip' and exists(select 1 from ${packingSlips} p where p.id=split_part(${stockMoves.refId},'#',1) and p.order_id=${orderId})) or
           (${stockMoves.refType}='pos_delivery' and exists(select 1 from ${deliveries} d where d.id=${stockMoves.refId} and d.order_id=${orderId}))`)
         .groupBy(stockMoves.sku, stockMoves.warehouseId);
       if (after.some(x => x.qty > 1e-9)) throw new AppError(409, 'Chưa hoàn đủ bút toán kho. Tải lại và kiểm tra sổ kho.', 'CANCELLED_STOCK_RETURN_INCOMPLETE');
