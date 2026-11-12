@@ -131,3 +131,11 @@
 @media(max-width:1000px){.ncc-overview-grid{grid-template-columns:1fr}}
 @media(max-width:760px){.ncc-panel-head{padding:17px}.ncc-panel-body{padding:5px 17px 17px}.ncc-panel-head h2{font-size:15px}.ncc-priority strong,.ncc-shipment strong{font-size:12px}}
 .ncc-open{display:block!important}.ncc-table td.date-cell{white-space:nowrap;min-width:105px}
+/* The SKU popup must show the delivery date without horizontal scrolling on phones. */
+@media(max-width:760px){
+ .ncc-drawer .ncc-sku-orders{display:block;min-width:0}.ncc-drawer .ncc-sku-orders thead{display:none}.ncc-drawer .ncc-sku-orders tbody{display:block;padding:0}
+ .ncc-drawer .ncc-sku-orders tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:17px 0;border-bottom:1px solid var(--ncc-line)}
+ .ncc-drawer .ncc-sku-orders td{display:block;min-width:0;padding:0;border:0;font-size:12px}.ncc-drawer .ncc-sku-orders td:first-child{grid-column:1/-1;min-width:0!important}
+ .ncc-drawer .ncc-sku-orders td:before{display:block;content:attr(data-label);font-size:11px;color:var(--ncc-muted);margin-bottom:4px}.ncc-drawer .ncc-sku-orders td:first-child:before{display:none}
+ .ncc-drawer .ncc-sku-orders td:last-child{grid-column:1/-1;padding:9px 12px;background:#edf4fd;border-radius:7px;color:#204f87}
+}
