@@ -1,17 +1,29 @@
 <!doctype html>
-<html lang="vi">
+<html lang="vi" class="app-shell">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cổng NCC · Bách Ngân</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="typography.css">
 <link rel="stylesheet" href="mobile-actions.css"><link rel="stylesheet" href="supplier-portal.css">
 </head>
 <body class="portal">
-<main class="sup-page" style="padding:20px;max-width:1200px;margin:auto">
+<section id="supplier-startup" class="auth" aria-label="Đang mở cổng NCC"><div class="auth-card"><div class="auth-logo"><img src="brand-strip.jpeg" alt="VIGIFTS – Bách Ngân" width="1139" height="188"></div><h1>Cổng nhà cung cấp</h1><p role="status">Đang kiểm tra phiên đăng nhập…</p></div></section>
+<section id="supplier-auth" class="auth" hidden>
+  <main class="auth-card">
+    <div class="auth-logo"><img src="brand-strip.jpeg" alt="VIGIFTS – Cung cấp quà tặng · Bách Ngân – Cam kết chất lượng" width="1139" height="188"></div>
+    <p class="eyebrow auth-brand-name">Phần mềm báo giá Bách Ngân - Vigifts</p>
+    <h1>Đăng nhập nhà cung cấp</h1><p>Dùng email đã được cấp tài khoản NCC.</p>
+    <form id="login-form" novalidate>
+      <label>Email đã đăng ký<input id="login-name" type="email" autocomplete="username" maxlength="254" autocapitalize="none" required></label>
+      <label>Mật khẩu<input id="login-password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
+      <label class="show-password"><input id="supplier-show-password" type="checkbox"> Hiện mật khẩu</label>
+      <p id="supplier-auth-error" class="error" role="alert"></p>
+      <button id="login-submit" class="btn primary block">Đăng nhập</button>
+    </form>
+    <button type="button" class="btn ghost" id="supplier-forgot-password">Quên mật khẩu?</button>
+    <p class="auth-help">Dùng tài khoản đăng nhập đã được gắn với nhà cung cấp. Nếu cần hỗ trợ, liên hệ người phụ trách mua hàng Bách Ngân.</p>
+  </main>
+</section>
+<main id="supplier-workspace" class="sup-page" style="padding:20px;max-width:1200px;margin:auto" hidden>
   <a id="supplier-back" class="btn secondary supplier-back" href="supplier.html">‹ Quay lại danh sách</a>
   <header class="page-head"><div><h1>Cổng nhà cung cấp</h1><p>Yêu cầu xin lấy trước — phản hồi từng mã của NCC mình.</p></div><button id="logout" class="btn secondary" hidden>Đăng xuất</button></header>
-  <section id="supplier-auth" class="card" hidden><h2>Đăng nhập NCC</h2><form id="login-form">
-    <label>Email hoặc số điện thoại<input id="login-name" autocomplete="username" maxlength="254" required></label>
-    <label>Mật khẩu<input id="login-password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
-    <button id="login-submit" class="btn primary">Đăng nhập</button>
-  </form><button type="button" class="btn ghost" id="supplier-forgot-password">Quên mật khẩu?</button></section>
   <p id="supplier-error" class="error" role="alert"></p>
   <p id="supplier-who" class="muted"></p>
   <section id="supplier-requests" hidden></section>
