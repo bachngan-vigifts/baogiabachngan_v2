@@ -33,6 +33,10 @@ export async function editPosOrder(db: PosDb, order: typeof salesOrders.$inferSe
     db.select().from(salesContracts).where(and(eq(salesContracts.orderId, order.id), ne(salesContracts.status, 'cancelled'))),
   ]);
   const snapshot = JSON.parse(order.posSnapshot || '{}');
+  if(snapshot.promotion?.enabled&&b.lines!==undefined){
+    if(!Array.isArray(b.lines)||b.lines.length!==oldLines.length||(b.lines as any[]).some((l,i)=>{const old=oldLines[i];return !old||l.id!==old.id||Number(l.qty)!==old.qty||Number(l.price)!==(old.listUnitPrice??old.unitPrice)||l.discountType!==old.discountType||Number(l.discountValue)!==old.discountValue;}))throw new AppError(409,'Đơn thuộc chương trình khuyến mãi: giữ nguyên dòng hàng và chính sách đã chốt. Hủy đơn chưa giao rồi lập lại nếu cần đổi hàng.','POS_PROMOTION_LOCKED');
+    b={...b};delete b.lines;
+  }
   const customerId = b.customerId === undefined ? order.customerId : posText(b.customerId) || null;
   if (customerId !== order.customerId) await assertNoReturnActivity(db, order.id);
   if (customerId !== order.customerId && receipts.length) throw new AppError(409, 'Đơn đã thu tiền: cần xử lý phiếu thu trước khi đổi khách liên kết.');

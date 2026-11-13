@@ -1,3 +1,4 @@
+import {promotionPanel,configurePromotion} from './pos-promotions.js';
 import { createLatestRead } from './latest-read.js';
 import {setProductThumbnail,suspendProductThumbnail} from './product-images.js';
 import {createPosOrderBoardCache} from './pos-order-board-cache.js';
@@ -75,7 +76,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     policy: '',
     cart: [],
     customer: null,
-    serviceFees: [], shippingFee: '', note: '', exchangeAllocationId: '', voucher: emptyVoucher(),
+    serviceFees: [], shippingFee: '', note: '', promotionOptOutReason: '', exchangeAllocationId: '', voucher: emptyVoucher(),
     preview: null,
     method: 'cash',
     qr: null,
@@ -168,7 +169,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     st.policy = '';
     st.cart = [];
     st.customer = null;
-    st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.voucher = emptyVoucher(); st.exchangeAllocationId = '';
+    st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.promotionOptOutReason = ''; st.voucher = emptyVoucher(); st.exchangeAllocationId = '';
     st.preview = null;
     st.pending = null;
     st.method = 'cash';
@@ -201,6 +202,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     pricePolicyId: st.policy,
     customerId: st.customer?.id || '',
     ...(st.note.trim() ? { note: st.note } : {}),
+    ...(st.promotionOptOutReason?{promotionOptOutReason:st.promotionOptOutReason}:{}),
+    ...(st.preview?.promotion?{promotionRevision:st.preview.promotion.revision}:{}),
     ...(st.exchangeAllocationId ? {exchangeAllocationId:st.exchangeAllocationId} : {}),
     ...(voucherInput() ? { voucher: voucherInput() } : {}),
     ...(st.serviceFees.length || st.shippingFee ? { serviceFees: st.serviceFees.map(f => ({ name: f.name, quantity: f.quantity || 1, unitPrice: f.unitPrice || 0 })), shippingFee: st.shippingFee || 0 } : {}),
@@ -942,7 +945,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       try { await api('/pos/exchanges/' + encodeURIComponent(st.exchangeAllocationId) + '/cancel', 'POST', {}); }
       catch (e) { return toast('Chưa nhả được tiền đổi hàng: ' + e.message, 'err'); }
     }
-    st.cart = []; st.customer = null; st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.voucher = emptyVoucher(); st.exchangeAllocationId = ''; st.preview = null; st.qr = null; st.method = 'cash';
+    st.cart = []; st.customer = null; st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.promotionOptOutReason = ''; st.voucher = emptyVoucher(); st.exchangeAllocationId = ''; st.preview = null; st.qr = null; st.method = 'cash';
     draw(); if (st.register) await search(false);
   }
   async function flowOrders(orderId=''){
@@ -1195,7 +1198,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     note.addEventListener('input', () => { st.note = note.value; });
     noteBox.append(el('span', '', 'Ghi chú đơn hàng'), note);
     box.append(list, add, noteBox);
-    right.append(drawVoucher(), box);
+    nodes.promotion = el('section','pos-promotion');
+    st.promotionProgram=null;
+    right.append(drawVoucher(), nodes.promotion, box);
+    const host=nodes.promotion,registerId=st.register.id;
+    api('/pos/promotions?registerId='+encodeURIComponent(registerId)).then(d=>{if(nodes.promotion!==host||st.register?.id!==registerId)return;st.promotionProgram=d.program||null;updateTotals();}).catch(()=>{});
     nodes.feeControls = box;
     nodes.shippingField = shipping.box;
   }
@@ -1219,6 +1226,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   function updateTotals() {
     nodes.totals.replaceChildren();
     const d = st.preview;
+    if(nodes.promotion)promotionPanel({root:nodes.promotion,program:d?.promotion||st.promotionProgram,manager:user()?.role==='manager',onConfigure:()=>run(async()=>{await configurePromotion({api,register:st.register,document,toast});st.promotionProgram=(await api('/pos/promotions?registerId='+encodeURIComponent(st.register.id))).program;invalidate();updateTotals();}),reason:st.promotionOptOutReason,onReason:value=>{if(value&&value.length<5){toast('Lý do cần ít nhất 5 ký tự.','err');return;}st.promotionOptOutReason=value;invalidate();}});
     for (const [label, value] of [
       ['Tạm tính', d ? money(d.total + d.discount) : st.cart.length ? 'Đang tính…' : '0 đ'],
       ['Giảm giá', d ? '−' + money(d.discount - (d.voucher?.amount || 0)) : '—'],
@@ -1233,7 +1241,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       row.append(el('span', '', label), el('strong', '', value));
       nodes.totals.append(row);
     }
-    for (const x of d?.lines || []) {
+    for (const x of (d?.lines || []).filter(x=>!x.isPromotionGift)) {
       const cell=lineTotals.get(x.sku);if(!cell)continue;
       cell.amount.replaceChildren(document.createTextNode(money(x.total)));
       // Same price basis as the price list; line CK only, before whole-order voucher.
@@ -2226,7 +2234,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       persistPending(null);
       st.cart = [];
       st.customer = null;
-      st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.voucher = emptyVoucher(); st.exchangeAllocationId = '';
+      st.serviceFees = []; st.shippingFee = ''; st.note = ''; st.promotionOptOutReason = ''; st.voucher = emptyVoucher(); st.exchangeAllocationId = '';
       st.preview = null;
       st.qr = null;
       st.policy = st.register.pricePolicyId;
