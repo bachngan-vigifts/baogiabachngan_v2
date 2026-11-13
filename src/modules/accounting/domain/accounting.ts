@@ -58,8 +58,8 @@ export interface Document {
   lines: Line[];
 }
 export function validateLines(raw: unknown): Line[] {
-  if (!Array.isArray(raw) || !raw.length || raw.length > 300)
-    throw new AppError(400, "Chứng từ cần 1–300 dòng.");
+  if (!Array.isArray(raw) || !raw.length || raw.length > 5000)
+    throw new AppError(400, "Chứng từ cần 1–5.000 dòng.");
   const seen = new Set<string>();
   return raw.map((l: any) => {
     if (!l || typeof l !== "object" || Array.isArray(l))

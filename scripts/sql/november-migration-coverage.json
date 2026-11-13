@@ -264,5 +264,6 @@
   {
     "migration": "20261113054030_pos_promotion_programs.sql",
     "asserts": ["assert-pos-promotion-programs.sql"]
-  }
+  },
+  {"migration":"20261113062905_accounting_resumable_imports.sql","asserts":["assert-accounting-imports.sql"]}
 ]

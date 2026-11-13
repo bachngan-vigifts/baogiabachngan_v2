@@ -45,12 +45,12 @@ export async function documentsOf(db: Db, bookIds: string[], to: string) {
             headers.map((h) => h.id),
           ),
         )
-        .limit(10001)
+        .limit(50001)
     : [];
-  if (rows.length > 10000)
+  if (rows.length > 50000)
     throw new AppError(
       413,
-      "Phạm vi vượt 10.000 dòng. Chưa thể tính chính xác trong lượt này.",
+      "Phạm vi vượt 50.000 dòng. Chưa thể tính chính xác trong lượt này.",
     );
   const grouped = new Map<string, typeof rows>();
   for (const row of rows) {
@@ -277,10 +277,7 @@ export async function snapshot(
         .where(
           and(
             eq(reviews.entityId, entityId),
-            inArray(
-              reviews.fingerprint,
-              alerts.map((a) => a.fingerprint),
-            ),
+            sql`${reviews.fingerprint} in (select jsonb_array_elements_text(${JSON.stringify(alerts.map(a => a.fingerprint))}::jsonb))`,
           ),
         )
     : [];

@@ -1,3 +1,4 @@
+import {registerAccountingImportRoutes} from "./import-routes.ts";
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import {
   json,
@@ -8,6 +9,8 @@ import {
 import { AppError } from "../../../core/errors.ts";
 import type { StaffEnv, SessionState } from "../../staff/api/auth-routes.ts";
 import { salesOrders, salesOrderLines } from "../../sales/schema.ts";
+import { products, productPrices, pricePolicies } from "../../catalog/schema.ts";
+import { fold } from "../../../core/text/fold.ts";
 import { posReturns } from "../../sales/return-schema.ts";
 import { vietnamDate } from "../../sales/domain/sales.ts";
 import {
@@ -142,6 +145,7 @@ async function sourceOrder(db: Db, id: string, lock = false) {
   return { order: o, lines: proposed };
 }
 export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
+  registerAccountingImportRoutes(router);
   router.get(
     "/accounting/options",
     async (c) => {
@@ -164,6 +168,24 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
     },
     "business",
   );
+  router.post("/accounting/import-products", async (c) => {
+    access(c);
+    const body = await readJson(c.req, 400000);
+    if (!Array.isArray(body.skus) || !body.skus.length || body.skus.length > 5000)
+      throw new AppError(400, "Chọn 1–5.000 SKU.");
+    const skus = [...new Set(body.skus.map((s: unknown) => short(s, 64)))];
+    const policies = await c.env.db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.id));
+    // Only the regular retail/list policy, never wholesale or VAT-inclusive fallback.
+    const names = ["gia ban le", "gia le", "gia niem yet"];
+    const policy = names.map(name => policies.find(p => fold(p.name) === name)).find(Boolean);
+    const rows = await c.env.db.select({ sku: products.sku, name: products.name, unit: products.unit,
+      unitPrice: productPrices.price })
+      .from(products).leftJoin(productPrices, and(eq(productPrices.sku, products.sku),
+        policy ? eq(productPrices.policyId, policy.id) : sql`false`))
+      .where(inArray(products.sku, skus));
+    return json({ products: rows.map(p => ({ ...p, unitPrice: typeof p.unitPrice === "number" && Number.isFinite(p.unitPrice) && p.unitPrice >= 0 && p.unitPrice <= 1e12 ? p.unitPrice : null })),
+      pricePolicy: policy ? {id: policy.id, name: policy.name, basis: "before-vat"} : null, priceAsOf: now() });
+  }, "business");
   router.post(
     "/accounting/entities",
     async (c) => {
@@ -351,13 +373,18 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
             sql`set transaction isolation level repeatable read read only`,
           );
           await db.execute(sql`set local statement_timeout='6000ms'`);
-          return snapshot(
+          const result = await snapshot(
             db,
             short(p.get("entityId"), 100),
             day(p.get("from")),
             day(p.get("to")),
             p.get("bookId") || undefined,
           );
+          if (p.get("paged") !== "1") return result;
+          const offset = (key:string) => {const n=Number(p.get(key)||0); if(!Number.isInteger(n)||n<0||n>50000) throw new AppError(400,"Trang báo cáo không hợp lệ.");return n;};
+          const stockOffset=offset("stockOffset"),alertOffset=offset("alertOffset");
+          return {...result,stockCount:result.stock.length,alertCount:result.alerts.length,
+            stock:result.stock.slice(stockOffset,stockOffset+50),alerts:result.alerts.slice(alertOffset,alertOffset+25)};
         }),
       );
     },
@@ -388,7 +415,7 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
     "/accounting/books/:id/documents",
     async (c) => {
       const m = access(c),
-        b = await readJson(c.req, 300000),
+        b = await readJson(c.req, 6000000),
         kind = b.kind as Kind,
         date = day(b.date),
         reference = short(b.reference, 120),
@@ -476,6 +503,11 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
           .limit(1);
         if (dup.length)
           throw new AppError(409, "Chứng từ đã tồn tại. Không tạo bản trùng.");
+        const [usage] = await db.select({ n: sql<number>`count(*)::int` })
+          .from(lines).innerJoin(docs, eq(lines.documentId, docs.id))
+          .where(eq(docs.entityId, book.entityId));
+        if (Number(usage?.n || 0) + draftLines.length > 50000)
+          throw new AppError(413, "Tổng phạm vi pháp nhân vượt 50.000 dòng báo cáo hiện hỗ trợ. Chưa lưu chứng từ; cần nâng cấp báo cáo trước, không cắt dữ liệu.");
         await db.insert(docs).values({
           id,
           bookId: book.id,
@@ -490,16 +522,18 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
           createdBy: m.id,
           createdAt: now(),
         });
-        if (draftLines.length)
+        // Bound parameters per insert; all batches share the same transaction.
+        for (let start = 0; start < draftLines.length; start += 200) {
           await db.insert(lines).values(
-            draftLines.map((l, i) => ({
+            draftLines.slice(start, start + 200).map((l, i) => ({
               ...l,
               quantity: String(l.quantity),
               taxRate: l.taxRate === null ? null : String(l.taxRate),
               documentId: id,
-              lineNo: i + 1,
+              lineNo: start + i + 1,
             })),
           );
+        }
       });
       return json(
         { id, state: "draft", physicalInventoryAffected: false },
