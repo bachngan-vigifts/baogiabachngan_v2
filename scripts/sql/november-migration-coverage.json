@@ -260,5 +260,9 @@
       "assert-accounting-workspace.sql"
     ]
   },
-  {"migration":"20261113010807_accounting_supplier_links.sql","asserts":["assert-accounting-workspace.sql"]}
+  {"migration":"20261113010807_accounting_supplier_links.sql","asserts":["assert-accounting-workspace.sql"]},
+  {
+    "migration": "20261113054030_pos_promotion_programs.sql",
+    "asserts": ["assert-pos-promotion-programs.sql"]
+  }
 ]

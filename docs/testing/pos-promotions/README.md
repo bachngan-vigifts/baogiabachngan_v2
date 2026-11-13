@@ -47,3 +47,9 @@ PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs REVIEW_DIR=/tmp/pos-promotions n
 ![Quà trên mobile](gift-mobile.png)
 
 ![Cấu hình mobile](config-mobile.png)
+
+## PR #653 CI correction
+
+The November migration coverage test failed because `20261113054030_pos_promotion_programs.sql` had no entry in `november-migration-coverage.json`. Added a dedicated read-only SQL gate and wired it before Edge Function deployment. The gate checks all required column types/nullability, primary key, foreign keys, validated value constraint and RLS. It neither seeds nor repairs data, so Manager changes to promotion configuration are preserved.
+
+Validation: 10 targeted tests pass (POS promotions, migration coverage and the new gate); the final gate-only run passes 4 tests, including missing/partial schema and repeated READ ONLY execution. Typecheck, UI build and diff whitespace checks pass. Production already has the promotion table: the new gate was run inside `BEGIN READ ONLY` / `ROLLBACK` and passed. No migration or production data changes were made in this correction.
