@@ -1,7 +1,8 @@
 import { anniversarySuggestion, vietnamToday } from './customer-anniversary.js';
 /** Shared customer fields for the directory and POS. Build server values as text only. */
 /** `paymentDays`: ô Số ngày công nợ chỉ có ở danh bạ khách (CRM); POS giữ form gọn. */
-export function customerFormFields({ requirePhone = false, requireProfile = false, requireName = true, paymentDays = false, contactDirectory = false } = {}) {
+/** `companyLabels`: form danh bạ khách (CRM) ghi rõ điện thoại / email là của công ty và không bắt buộc. */
+export function customerFormFields({ requirePhone = false, requireProfile = false, requireName = true, paymentDays = false, contactDirectory = false, companyLabels = false } = {}) {
   const root = document.createElement('div');
   root.className = 'form-grid cols-2 customer-form-fields';
   const controls = {};
@@ -9,8 +10,8 @@ export function customerFormFields({ requirePhone = false, requireProfile = fals
   const fields = [
     ['name', 'Tên khách hàng / công ty', 'text', 500, true],
     ['contact', 'Người liên hệ', 'text', 500],
-    ['phone', 'Điện thoại', 'tel', 40],
-    ['email', 'Email', 'email', 500],
+    ['phone', companyLabels ? 'Điện thoại công ty (không bắt buộc)' : 'Điện thoại', 'tel', 40],
+    ['email', companyLabels ? 'Email công ty (không bắt buộc)' : 'Email', 'email', 500],
     ['taxCode', 'Mã số thuế', 'text', 500],
     ['establishedDate', 'Ngày thành lập', 'date', 10],
     ['customerCode', 'Mã khách hàng', 'text', 500],

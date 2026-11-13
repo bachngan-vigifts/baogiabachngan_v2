@@ -27,7 +27,7 @@ const founded=String(next.getUTCFullYear()-10)+next.toISOString().slice(4,10);
 try{for(const width of [1440,390]){
  const context=await browser.newContext({viewport:{width,height:1000},locale:'vi-VN'});await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
  await context.addInitScript(({user,token})=>{localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));},{user,token:cookie.split('=')[1]});
- const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/#/customers');
+ const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/#/customers');/* Script này kiểm tra danh bạ / ngày kỷ niệm, không kiểm tra chia bước: hiện mọi ô của form 3 bước (xem customer-form-steps.mjs). */await page.addStyleTag({content:'#customer-dialog .cstep-off{display:revert!important}#customer-dialog #save-customer[hidden]{display:inline-flex!important}'});
  await page.locator('#new-customer').click();const dialog=page.locator('#customer-dialog');await dialog.locator('[name="name"]').fill('Công ty kỷ niệm '+width);
  await dialog.locator('[name="establishedDate"]').fill(founded);assert.match(await dialog.innerText(),/Kỷ niệm 10 năm/);
  await dialog.locator('#save-customer').click();await page.locator('#customer-detail').getByRole('heading',{name:'Công ty kỷ niệm '+width,exact:true}).waitFor();

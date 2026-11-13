@@ -47,6 +47,7 @@ import { initReceivingCalendar } from './receiving-calendar.js';
 import { documentSequence, nextDocumentNumber } from './document-number.js';
 import { orderRecipient } from './order-notes.js';
 import { customerFormFields } from './customer-form-fields.js';
+import { initCustomerFormSteps } from './customer-form-steps.js';
 import { bindCustomerTypeOptions } from './customer-type-options.js';
 import { customerCreateProfile } from './customer-create-profile.js';
 import { initPackingSupplierChoices } from './packing-supplier-choices.js';
@@ -3311,15 +3312,18 @@ async function openCustomer(id, known) {
     customerNewProfile.reset(state.user,!id,profile?.contactDirectory??[],profile?.contactDirectoryVersion);
     customerFields.refreshAnniversary();customerTypeOptions.refresh();
     $('#customer-dialog-title').textContent=c?'Sửa khách hàng':'Thêm khách hàng';
+    customerSteps.reset(!id);
     $('#customer-dialog').showModal();customerDuplicateCheck.refresh();
   }catch(ex){toast(ex.message,'err');}
 }
-const customerFields = customerFormFields({requireProfile:true,paymentDays:true,contactDirectory:true});
+const customerFields = customerFormFields({requireProfile:true,paymentDays:true,contactDirectory:true,companyLabels:true});
 const customerTypeOptions = bindCustomerTypeOptions({input:customerFields.controls.customerType,api});
 $('#customer-fields').append(customerFields.root);
 const customerNewProfile=customerCreateProfile({api,mainContact:customerFields.controls.contact});
 $('#customer-new-profile').append(customerNewProfile.root);
 customerFields.contactSlot.append(customerNewProfile.directory);
+// Nhập theo 3 bước: Công ty → Người liên hệ → Kiểm tra và lưu (trial-ui/customer-form-steps.js).
+const customerSteps=initCustomerFormSteps({dialog:$('#customer-dialog'),form:$('#customer-form'),fields:customerFields,profileRoot:$('#customer-new-profile'),taxLookup:$('#customer-tax-lookup'),note:$('#customer-required-note'),error:$('#customer-error')});
 const customerDuplicateCheck = bindCustomerDuplicateCheck({
   api, root: $('#customer-fields'), exceptId: () => customerId,
   active: () => $('#customer-dialog').open,
@@ -3343,7 +3347,7 @@ async function lookupCustomerTax(){
     if(r.shortName||r.internationalName)notes.push('Tên viết tắt / tiếng Anh: '+[r.shortName,r.internationalName].filter(Boolean).join(' · ')+'.');
     if(!r.active){status.classList.add('warn');notes.unshift(`⚠ Tình trạng: ${r.status||'không rõ'} – kiểm tra trước khi giao dịch.`);}
     else notes.unshift(`Đã điền từ ${r.source}${r.status?' · '+r.status:''}${r.updatedAt?' · cập nhật '+new Date(r.updatedAt).toLocaleDateString('vi-VN'):''}.`);
-    notes.push('Nhập người liên hệ, điện thoại rồi bấm Lưu.');
+    notes.push('Kiểm tra lại rồi bấm Tiếp tục để nhập người liên hệ.');
     status.textContent=notes.join(' ')+' ';
     // Người đại diện / ngày thành lập: Cổng ĐKKD yêu cầu Captcha nên CRM không tự lấy – mở trang để nhân viên tự xem khi cần.
     const portal=document.createElement('a');portal.href='https://dangkykinhdoanh.gov.vn/vn/Pages/Trangchu.aspx';portal.target='_blank';portal.rel='noopener noreferrer';
@@ -3379,7 +3383,7 @@ $('#customer-form').addEventListener('submit', async e => {
   if (data.email && !/^\S+@\S+\.\S+$/.test(data.email)) { err.textContent = 'Email chưa đúng định dạng.'; return; }
   try{Object.assign(data,customerNewProfile.read());data.contact=customerFields.controls.contact.value;}catch(ex){err.textContent=ex.message;return;}
   if(!customerId) {
-    for(const [key,label] of [['phone','số điện thoại'],['taxCode','mã số thuế'],['address','địa chỉ']])if(!data[key]){err.textContent='Vui lòng nhập '+label+' khách hàng.';customerFields.controls[key].focus();return;}
+    for(const [key,label] of [['taxCode','mã số thuế'],['address','địa chỉ']])if(!data[key]){err.textContent='Vui lòng nhập '+label+' khách hàng.';customerFields.controls[key].focus();return;}
   }
   if(e.target.reportValidity&&!e.target.reportValidity())return;
   const btn = $('#save-customer'); btn.disabled = true;

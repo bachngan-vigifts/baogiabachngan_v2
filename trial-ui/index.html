@@ -872,10 +872,10 @@
       <div class="tax-lookup" id="customer-tax-lookup" hidden>
         <label for="customer-tax-input"><b>Tạo nhanh từ mã số thuế</b></label>
         <div class="tax-lookup-row"><input id="customer-tax-input" maxlength="2500" placeholder="Nhập MST (VD 0101243150) hoặc dán link trang tra cứu MST" inputmode="text" autocomplete="off"><button type="button" class="btn secondary small" id="customer-tax-fetch">Tra MST</button></div>
-        <small class="muted" id="customer-tax-status">Nhập MST rồi bấm Tra MST: CRM điền sẵn tên, MST, địa chỉ, tình trạng hoạt động theo dữ liệu Tổng cục Thuế (qua VietQR). Vẫn cần nhập người liên hệ và kiểm tra lại trước khi lưu.</small>
+        <small class="muted" id="customer-tax-status">Nhập MST rồi bấm Tra MST: CRM điền sẵn tên, MST, địa chỉ, tình trạng hoạt động theo dữ liệu Tổng cục Thuế (qua VietQR). Người liên hệ nhập ở bước 2.</small>
       </div>
       <div id="customer-fields"></div>
-      <p class="muted small">Các trường có dấu * là bắt buộc khi tạo khách tại danh sách Khách hàng.</p>
+      <p class="muted small" id="customer-required-note">Ô có dấu * là bắt buộc. Các ô khác có thể bỏ trống.</p>
       <div id="customer-new-profile"></div>
       <p class="error span-2" id="customer-error" role="alert"></p>
     </div>
