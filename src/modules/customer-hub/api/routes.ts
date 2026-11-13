@@ -15,7 +15,7 @@ import { orderScopeFor } from '../../sales/api/routes.ts';
 import { debtCounts, quoteTotal, vietnamDate } from '../../sales/domain/sales.ts';
 import { customerAccounts, customerStockRequests } from '../../portal/schema.ts';
 import { HUB_LIMITS, purchaseHistory } from '../domain/overview.ts';
-import {purchaseSuppliers,purchaseSupplierKey} from './purchase-suppliers.ts';
+import {purchaseSupplierKey} from '../../../core/contracts/purchase-supplier.ts';
 import { parseDiscounts, shownEmail } from '../../portal/domain/portal.ts';
 import { customerActivities } from '../../care/schema.ts';
 import { careScope } from '../../care/api/routes.ts';
@@ -31,7 +31,7 @@ const viewer = (c: Ctx) => (c.state.session as SessionState).member;
  * (hồ sơ, người liên hệ, nhân viên phụ trách / chia sẻ, báo giá, đơn, HĐKT, giao hàng, phiếu thu, công nợ, lịch sử mua, hỏi tồn, tài khoản).
  * Manager / người phụ trách / người được chia sẻ thấy toàn bộ; nhân viên khác chỉ thấy phần mình phụ trách hoặc tạo.
  */
-export function registerCustomerHubRoutes(router: Router<StaffEnv>, catalogue?: CatalogueCustomerLinks) {
+export function registerCustomerHubRoutes(router: Router<StaffEnv>, catalogue?: CatalogueCustomerLinks, supplierLookup?: (db:StaffEnv['db'],me:SessionState['member'],orderIds:string[])=>Promise<Map<string,string[]>>) {
   registerCustomerCenterRoutes(router);
   router.get('/customers/:id/overview', async c => {
     const db = c.env.db, me = viewer(c), id = c.params.id!;
@@ -77,7 +77,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>, catalogue?: 
     });
     const counted = orderList.filter(o => o.counted), sum = (k: 'due' | 'paid' | 'balance' | 'overdue') => counted.reduce((s, o) => s + (o.receivable?.[k] ?? 0), 0);
     const confirmedIds = new Set(counted.map(o => o.id));
-    const suppliers=await purchaseSuppliers(db,me,[...confirmedIds]);
+    const suppliers=supplierLookup?await supplierLookup(db,me,[...confirmedIds]):new Map<string,string[]>();
     const quotes = quoteRows.map(({ q, assigneeName }) => ({ id: q.id, quoteNo: q.quoteNo, quoteType: q.quoteType, quoteDate: q.quoteDate, approvalStatus: q.approvalStatus,
       total: quoteTotal(q.data), assigneeName, updatedAt: q.updatedAt, orderId: orders.find(r => r.o.quoteId === q.id && r.o.status !== 'cancelled')?.o.id ?? null }))
       .map(q => ({ ...q, contractNo: q.orderId ? contractNo.get(q.orderId) ?? null : null }));
