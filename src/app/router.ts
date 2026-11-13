@@ -100,6 +100,7 @@ import { assertFreeStock } from '../modules/sales/api/stock-free.ts';
 import { registerStockHistoryRoutes, stockRefLinkHooks } from '../modules/inventory/api/history-routes.ts';
 import { registerFlowRoutes } from './flow-routes.ts';
 import { registerCashbookRoutes } from './cashbook-routes.ts';
+import {registerAccountingWorkspaceRoutes} from '../modules/accounting/api/routes.ts';
 import {registerFinanceRoutes} from './finance-routes.ts';
 import { registerDashboardRoutes } from '../modules/dashboard/api/routes.ts';
 import { registerFeedbackRoutes } from '../modules/feedback/api/routes.ts';
@@ -217,5 +218,6 @@ export function createAppRouter() {
   registerFlowRoutes(router);
   registerCashbookRoutes(router);
   registerFinanceRoutes(router);
+  registerAccountingWorkspaceRoutes(router);
   return router;
 }

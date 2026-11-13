@@ -253,5 +253,11 @@
     "asserts": [
       "assert-report-cache.sql"
     ]
+  },
+  {
+    "migration": "20261113002619_accounting_workspace.sql",
+    "asserts": [
+      "assert-accounting-workspace.sql"
+    ]
   }
 ]

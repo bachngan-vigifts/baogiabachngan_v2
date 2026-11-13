@@ -19,6 +19,8 @@ import { isEmail, mailerReady, sendMail, type MailerConfig } from '../../../core
 
 /** Môi trường mà các route của `staff` cần. Nơi lắp ráp ứng dụng (src/app) tạo ra từ bindings của Cloudflare. */
 export interface StaffEnv {
+  /** Optional server-only accounting explanation adapter. Disabled until provider approval. */
+  accountingAi?: import('../../accounting/api/assistant.ts').AccountingAiConfig;
   db: AnyDb;
   /** Kết nối API chấm công ADMS: cấu hình server, không gửi URL/token ra trình duyệt. */
   adms?: import('../../hr/domain/adms.ts').AdmsConfig;

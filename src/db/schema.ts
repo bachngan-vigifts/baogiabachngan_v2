@@ -51,3 +51,4 @@ export * from '../modules/profit/schema.ts';
 
 export * from '../modules/product-custody/schema.ts';
 export * from '../modules/warehouse-workspace/schema.ts';
+export * from '../modules/accounting/schema.ts';
