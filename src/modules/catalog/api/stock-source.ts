@@ -11,6 +11,7 @@ export interface CatalogStockRow {
 }
 /** App assembly injects an authoritative local warehouse reader without catalog depending on sales/inventory. */
 export const catalogStockHooks: {
+  archiveBlockReason?: (db:StockReadDb,sku:string)=>Promise<string|null>;
   held?: (db: StockReadDb, member: PermissionMember, skus: string[]) => Promise<Map<string, number>>;
   overlay?: (db: StockReadDb, rows: CatalogStockRow[], skus?: readonly string[]) => Promise<CatalogStockRow[]>;
   stamp?: (db: StockReadDb) => Promise<string>;

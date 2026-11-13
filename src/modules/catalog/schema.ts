@@ -64,6 +64,8 @@ export const products = pgTable('products', {
   cartonHeight: doublePrecision('carton_height'),
   sapoProductId: text('sapo_product_id'),
   active: boolean('active').notNull().default(true),
+  archivedAt: text('archived_at'),
+  archivedBy: text('archived_by'),
   updatedAt: text('updated_at').notNull(),
   /** Giờ tạo (ISO, máy chủ CSDL tự điền khi thêm). Sản phẩm có trước cột này: null – xếp theo mã Sapo. */
   createdAt: text('created_at').default(sql`to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`),
@@ -73,6 +75,8 @@ export const products = pgTable('products', {
   approvedBy: text('approved_by'),
   approvedAt: text('approved_at'),
 }, t => [
+  check('chk_products_archived_inactive',sql`${t.archivedAt} is null or ${t.active}=false`),
+  index('idx_products_archived').on(t.archivedAt).where(sql`${t.archivedAt} is not null`),
   index('idx_products_approval').on(t.approvalStatus),
   enumCheck('chk_products_approval', t.approvalStatus, PRODUCT_APPROVAL_STATUSES),
   index('idx_products_brand').on(t.brand),
