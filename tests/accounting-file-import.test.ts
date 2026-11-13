@@ -54,6 +54,8 @@ test('5000-line draft is atomic, can be approved once and does not touch physica
   assert.equal((await f.client.query<{n:number}>("select count(*)::int n from accounting_documents where reference='ROLLBACK'")).rows[0]?.n,0);
   await f.client.exec('drop trigger reject_import_test on accounting_lines');
   await send(`/books/${book.id}/documents`, {...body, kind:'purchase', reference:'SECOND-5000'});
+  await f.client.exec(`insert into accounting_lines(document_id,line_no,sku,name,unit,quantity,net_value)
+    select '${d.id}',5000+n,'LIMIT-'||n,'Synthetic limit','Cái',1,0 from generate_series(1,40000)n`);
   const beyond = await f.call(`/accounting/books/${book.id}/documents`,f.cookies.mgr,'POST',{...body,kind:'purchase',reference:'BEYOND-REPORT',lines:lines.slice(0,1)});
   assert.equal(beyond.status,413);
   assert.equal((await f.client.query<{n:number}>("select count(*)::int n from accounting_documents where reference='BEYOND-REPORT'")).rows[0]?.n,0);

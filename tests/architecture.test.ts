@@ -26,6 +26,7 @@ const ALLOWED: Record<string, string[]> = {
   'staff-reports': ['staff', 'customers', 'sales', 'quotes', 'care'], // báo cáo tuần Sale / Sale Admin: đọc đơn / báo giá / chăm sóc / giao hàng / công nợ của chính người nộp, loại khách để chia ngành (chỉ đọc) // báo cáo Cửa hàng trưởng: đọc ca POS / đơn / tồn kho cửa hàng (chỉ đọc)
 
   profit: ['staff', 'sales', 'quotes', 'catalog'], // phân tích lợi nhuận (chỉ đọc, Manager): đơn / báo giá (giá vốn) / sổ sản phẩm (giá nhập)
+  accounting: ['staff', 'catalog', 'sales', 'suppliers'], // sổ riêng: xác thực, danh mục/giá, chứng từ bán và đối chiếu NCC; không ghi kho vật lý
   hr: ['staff'], 'staff-hub': ['staff', 'customers', 'quotes', 'sales', 'tasks', 'hr'],
 };
 

@@ -22,15 +22,34 @@ export function parseAccountingRows(rows) {
   return output;
 }
 
+// Staged mode reports row-level issues on the server instead of dropping bad rows.
+export function parseStagedAccountingRows(rows) {
+  if (!rows.length) throw Error('File trống.');
+  const h=rows[0].map(v=>String(v).trim().toLowerCase());
+  if(h.length!==2||h[0]!=="sku"||!["sl","số lượng","so luong","quantity"].includes(h[1])) throw Error('Dùng mẫu gồm đúng hai cột: SKU, SL.');
+  const output=[];
+  for(let i=1;i<rows.length;i++) {
+    if(rows[i].every(v=>String(v).trim()==="")) continue;
+    if(output.length>=30000) throw Error('Tối đa 30.000 dòng/file; chưa nhận file.');
+    output.push({sku:String(rows[i][0]??'').trim().slice(0,200),quantity:String(rows[i][1]??'').trim().slice(0,64),sourceRow:i+1});
+  }
+  if(!output.length)throw Error('File chưa có dòng hàng.');
+  return output;
+}
+
 // Parsing happens outside the UI thread, bounded by file size, row limit and time.
-export function readAccountingFile(file) {
-  if (file.size > 5 * 1024 * 1024) return Promise.reject(Error('File tối đa 5 MB.'));
+export function readAccountingFile(file, { staged = false, signal } = {}) {
+  if (file.size > (staged ? 20 : 5) * 1024 * 1024) return Promise.reject(Error(staged ? 'File tối đa 20 MB.' : 'File tối đa 5 MB.'));
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./accounting-file-worker.js', import.meta.url));
-    const end = (error, rows) => { clearTimeout(timer); worker.terminate(); error ? reject(Error(error)) : resolve(rows); };
-    const timer = setTimeout(() => end('Đọc file quá 15 giây. Hãy chia file nhỏ hơn.'), 15000);
+    let settled=false;
+    const end = (error, rows) => { if(settled)return;settled=true;clearTimeout(timer); worker.terminate();signal?.removeEventListener('abort', abort); error ? reject(Error(error)) : resolve(rows); };
+    const abort=()=>end('Đã dừng đọc file.');
+    const timer = setTimeout(() => end('Đọc file quá thời gian cho phép. Hãy dùng file nhỏ hơn.'), staged ? 45000 : 15000);
     worker.onmessage = ({ data }) => end(data.error, data.rows);
     worker.onerror = () => end('Không đọc được file. Hãy dùng file mẫu Excel.');
-    worker.postMessage(file);
+    if(signal?.aborted)return abort();
+    signal?.addEventListener('abort',abort,{once:true});
+    worker.postMessage({file,staged});
   });
 }

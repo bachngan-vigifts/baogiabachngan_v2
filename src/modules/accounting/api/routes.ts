@@ -1,3 +1,4 @@
+import {registerAccountingImportRoutes} from "./import-routes.ts";
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import {
   json,
@@ -144,6 +145,7 @@ async function sourceOrder(db: Db, id: string, lock = false) {
   return { order: o, lines: proposed };
 }
 export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
+  registerAccountingImportRoutes(router);
   router.get(
     "/accounting/options",
     async (c) => {
@@ -371,13 +373,18 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
             sql`set transaction isolation level repeatable read read only`,
           );
           await db.execute(sql`set local statement_timeout='6000ms'`);
-          return snapshot(
+          const result = await snapshot(
             db,
             short(p.get("entityId"), 100),
             day(p.get("from")),
             day(p.get("to")),
             p.get("bookId") || undefined,
           );
+          if (p.get("paged") !== "1") return result;
+          const offset = (key:string) => {const n=Number(p.get(key)||0); if(!Number.isInteger(n)||n<0||n>50000) throw new AppError(400,"Trang báo cáo không hợp lệ.");return n;};
+          const stockOffset=offset("stockOffset"),alertOffset=offset("alertOffset");
+          return {...result,stockCount:result.stock.length,alertCount:result.alerts.length,
+            stock:result.stock.slice(stockOffset,stockOffset+50),alerts:result.alerts.slice(alertOffset,alertOffset+25)};
         }),
       );
     },
@@ -499,8 +506,8 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
         const [usage] = await db.select({ n: sql<number>`count(*)::int` })
           .from(lines).innerJoin(docs, eq(lines.documentId, docs.id))
           .where(eq(docs.entityId, book.entityId));
-        if (Number(usage?.n || 0) + draftLines.length > 10000)
-          throw new AppError(413, "Tổng phạm vi pháp nhân vượt 10.000 dòng báo cáo hiện hỗ trợ. Chưa lưu chứng từ; cần nâng cấp báo cáo trước, không cắt dữ liệu.");
+        if (Number(usage?.n || 0) + draftLines.length > 50000)
+          throw new AppError(413, "Tổng phạm vi pháp nhân vượt 50.000 dòng báo cáo hiện hỗ trợ. Chưa lưu chứng từ; cần nâng cấp báo cáo trước, không cắt dữ liệu.");
         await db.insert(docs).values({
           id,
           bookId: book.id,
