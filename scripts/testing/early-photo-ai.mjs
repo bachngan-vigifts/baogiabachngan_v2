@@ -25,7 +25,7 @@ const server=createServer(async(req,res)=>{try{const u=new URL(req.url,'http://l
 const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({executablePath:process.env.CHROMIUM||'/usr/bin/chromium',args:['--no-sandbox']});
 const open=(page,role,localRows)=>page.evaluate(async({role,localRows})=>{const {openEarlyRequestPhoto}=await import('/purchase-early-photo.js');
  const api=async(path,method='GET',body)=>{const r=await fetch('/api/staff'+path,{method,headers:{'content-type':'application/json','x-role':role},body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw Object.assign(Error(d.error||'Lỗi'),{status:r.status,code:d.code});return d;};
- window.localCalls=[];openEarlyRequestPhoto({api,suppliers:[{id:'a',name:'NCC a'},{id:'b',name:'NCC b'}],today:'2026-11-13',go:()=>{},requestHref:id=>'#/early-requests/'+id},{recognize:async(file,o)=>{window.localCalls.push(o.rotate);return {blocks:localRows};}});},{role,localRows});
+ window.localCalls=[];openEarlyRequestPhoto({api,suppliers:[{id:'a',name:'NCC a'},{id:'b',name:'NCC b'}],today:'2026-11-13',go:()=>{},requestHref:id=>'#/early-requests/'+id},{recognize:async(file,o)=>{window.localCalls.push(o.orientation);return {blocks:localRows};}});},{role,localRows});
 const results=[];
 try{
  for(const width of [1440,390]){
@@ -45,8 +45,8 @@ try{
   await page.screenshot({path:out+'/ai-read-'+width+'.png',fullPage:false});
   // Chưa đánh dấu đã kiểm thì không đi tiếp.
   await page.getByRole('button',{name:'Kiểm phiếu / đối chiếu đơn mua'}).click();assert.match(await page.getByRole('alert').innerText(),/Cần kiểm tra/);
-  // Xoay ảnh: lượt đọc sau gửi ảnh đã xoay (900×1600).
-  await page.getByRole('button',{name:'Xoay ảnh 90°'}).click();await page.getByRole('button',{name:'Đọc ảnh',exact:true}).click();await page.getByLabel('Mã hàng dòng 3').waitFor();
+  // Chọn hướng thủ công: lượt đọc sau gửi ảnh đã xoay (900×1600).
+  await page.getByLabel('Hướng ảnh khi đọc').selectOption('90');await page.getByRole('button',{name:'Đọc ảnh',exact:true}).click();await page.getByLabel('Mã hàng dòng 3').waitFor();
   assert.equal(seen.at(-1).width,900);assert.equal(seen.at(-1).height,1600);
   // Tổng lệch: cảnh báo rõ.
   mode='mismatch';await page.getByRole('button',{name:'Đọc ảnh',exact:true}).click();await page.getByText('KHÁC tổng in trên phiếu').waitFor();
@@ -55,9 +55,9 @@ try{
   // AI từ chối ảnh: báo lỗi, hiện nút đọc trên máy, không tự chuyển.
   mode='rejected';await page.getByRole('button',{name:'Đọc ảnh',exact:true}).click();await page.getByText('không được bộ đọc AI chấp nhận').waitFor();
   assert.equal(await page.getByRole('button',{name:'Đọc bằng bộ đọc trên máy'}).isVisible(),true);assert.equal((await page.evaluate(()=>window.localCalls)).length,0);
-  // AI quá tải: tự chuyển sang bộ đọc trên máy, giữ góc xoay.
+  // AI quá tải: tự chuyển sang bộ đọc trên máy, giữ hướng đã chọn.
   mode='down';await page.getByRole('button',{name:'Đọc ảnh',exact:true}).click();await page.getByText('Bộ đọc AI chưa dùng được nên đã đọc bằng bộ đọc trên máy').waitFor();
-  assert.deepEqual(await page.evaluate(()=>window.localCalls),[90]);
+  assert.deepEqual(await page.evaluate(()=>window.localCalls),['90']);
   // Đọc lại bằng AI, bỏ dòng mã lạ, xác nhận và sang bước đối chiếu đơn mua.
   mode='ok';await page.getByRole('button',{name:'Đọc ảnh',exact:true}).click();await page.getByLabel('Mã hàng dòng 3').waitFor();
   await page.getByRole('button',{name:'Xoá dòng 3'}).click();await page.getByLabel('Đã kiểm tra mã hàng và số lượng với ảnh gốc').check();
