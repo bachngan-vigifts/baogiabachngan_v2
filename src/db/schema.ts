@@ -27,6 +27,7 @@ export * from '../modules/inventory/schema.ts';
 export * from '../modules/inventory/transfer-outbox-schema.ts';
 
 export * from '../modules/sales/pos-schema.ts';
+export * from '../modules/sales/promotion-schema.ts';
 
 export * from '../modules/sales/cash-schema.ts';
 
