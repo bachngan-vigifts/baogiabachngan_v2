@@ -4,6 +4,7 @@
     "realOcr": true,
     "confirmedBeforeValidation": true,
     "saveViaExistingApi": true,
+    "orderAndPxkReviewed": true,
     "jsErrors": []
   },
   {
@@ -11,6 +12,7 @@
     "realOcr": true,
     "confirmedBeforeValidation": true,
     "saveViaExistingApi": true,
+    "orderAndPxkReviewed": true,
     "jsErrors": []
   }
 ]
