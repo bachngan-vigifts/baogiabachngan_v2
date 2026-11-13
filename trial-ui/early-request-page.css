@@ -44,3 +44,5 @@ dialog.early-quick-receipt > form { display:flex;flex-direction:column;min-heigh
 .early-quick-quantities label { min-width:0; }
 .early-quick-receipt .modal-foot { display:flex;gap:12px;justify-content:flex-end; }
 @media(max-width:600px){ .early-quick-quantities { grid-template-columns:minmax(0,1fr); } }
+
+.early-photo-dialog .modal-body > img{display:block;max-width:100%;max-height:340px;object-fit:contain;margin:12px auto}.early-photo-dialog .modal-body > img[hidden]{display:none}.early-photo-dialog td input{min-width:100px;max-width:190px;width:100%}.early-photo-confirm{display:flex;gap:10px;align-items:center;margin-top:16px}.early-photo-confirm input{width:auto;flex:none}

@@ -1,0 +1,16 @@
+[
+  {
+    "width": 1440,
+    "realOcr": true,
+    "confirmedBeforeValidation": true,
+    "saveViaExistingApi": true,
+    "jsErrors": []
+  },
+  {
+    "width": 390,
+    "realOcr": true,
+    "confirmedBeforeValidation": true,
+    "saveViaExistingApi": true,
+    "jsErrors": []
+  }
+]

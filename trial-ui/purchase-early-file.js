@@ -91,11 +91,11 @@ export function earlyRequestTemplate(X) {
 const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=String(text);return n;};
 const button=(text,fn,cls='btn secondary')=>{const b=el('button',cls,text);b.type='button';b.addEventListener('click',fn);return b;};
 const label=(text,node)=>{const n=el('label');n.append(el('span','',text),node);return n;};
-export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go,requestHref=id=>'#/purchases?mode=incoming&request='+encodeURIComponent(id)}) {
+export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go,initialRows=null,requestHref=id=>'#/purchases?mode=incoming&request='+encodeURIComponent(id)}) {
   const dialog=el('dialog','modal early-request-dialog early-file-dialog'),head=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');
   let busy=false,parsed=null,resolvedGroups=null,valid=false,saved=null,attempt=null,uncertain=false,sequence=0;
   const close=button('Đóng',()=>{if(!busy)dialog.close();});
-  head.append(el('h2','','Xin hàng trước bằng file'),close);
+  head.append(el('h2','',initialRows?'Đối chiếu phiếu từ ảnh':'Xin hàng trước bằng file'),close);
   const supplier=el('select');supplier.setAttribute('aria-label','Nhà cung cấp của file');
   supplier.append(Object.assign(el('option','','Tất cả NCC — phân bổ theo đơn mua'),{value:''}));
   for(const s of suppliers)supplier.append(Object.assign(el('option','',s.name),{value:s.id}));
@@ -179,5 +179,6 @@ export function openEarlyRequestFile({api,loadXlsx,suppliers,today,go,requestHre
     label('Nhà cung cấp',supplier),label('Ngày lấy *',date),template,label('File Excel / CSV (tối đa 2 MB)',file),status,error,preview);
   foot.append(save);dialog.append(head,body,foot);document.body.append(dialog);
   dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>{++sequence;dialog.remove();},{once:true});dialog.showModal();sync();
+  if(initialRows){file.parentElement.hidden=true;template.hidden=true;parsed=parseEarlyRequestSheet([EARLY_FILE_HEADER,...initialRows.map(r=>[r.sku,r.quantity,r.orderNo||'',r.supplierOrderNo||'',r.pxkNo||''])]);validate();}
   return dialog;
 }
