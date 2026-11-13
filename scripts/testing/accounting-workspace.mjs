@@ -206,6 +206,43 @@ try {
       await page.locator("[data-action=document]").click();
       const d = page.locator("dialog.ac-dialog");
       await d.waitFor();
+      if (role === "mgr" && [390, 1440].includes(width)) {
+        const downloadEvent = page.waitForEvent("download");
+        await d.locator("[data-template]").click();
+        const download = await downloadEvent;
+        assert.equal(download.suggestedFilename(), "mau-ton-ke-toan-SKU-SL.xlsx");
+        const bytes = await page.evaluate(() => {
+          const x = globalThis.XLSX;
+          const ws = x.utils.aoa_to_sheet([["SKU", "SL"], ...Array.from({length:5000}, (_,i) => ["00" + String(i).padStart(6,"0"), i === 0 ? 1000 : 1])]);
+          ws.B2.z = "#,##0";
+          const wb=x.utils.book_new(); x.utils.book_append_sheet(wb,ws,"Test");
+          return Array.from(new Uint8Array(x.write(wb,{type:"array",bookType:"xlsx"})));
+        });
+        const started=Date.now();
+        await d.locator("[data-import]").setInputFiles({name:"5000.xlsx",mimeType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",buffer:Buffer.from(bytes)});
+        await d.locator("[data-import-status]").filter({hasText:"Đã nạp 5000 dòng"}).waitFor();
+        console.log(JSON.stringify({width,import5000Ms:Date.now()-started}));
+        assert.equal(await d.locator(".ac-line").count(),25);
+        assert.equal(await d.locator('[data-key=sku]').first().inputValue(),"00000000");
+        assert.equal(await d.locator('[data-key=quantity]').first().inputValue(),"1000");
+        await d.locator('[data-key=netValue]').first().fill("12000");
+        await d.locator('[data-next]').click();
+        await d.locator('[data-prev]').click();
+        assert.equal(await d.locator('[data-key=netValue]').first().inputValue(),"12000");
+        // Reject oversized files atomically, retaining every existing row/edit.
+        await d.locator('[data-import]').setInputFiles({name:"30000.csv",mimeType:"text/csv",buffer:Buffer.from("SKU,SL\n"+Array.from({length:30000},(_,i)=>`OTHER-${i},1`).join("\n"))});
+        await d.locator('[data-import-status]').filter({hasText:"Tối đa 5.000"}).waitFor();
+        assert.equal(await d.locator('[data-key=netValue]').first().inputValue(),"12000");
+        assert.match(await d.locator('[data-page]').innerText(),/5000/);
+        const g=await d.evaluate(r=>({width:r.clientWidth,scroll:r.scrollWidth,footer:r.querySelector('footer').getBoundingClientRect().bottom}));
+        assert(g.scroll <= g.width+1 && g.footer<=950, JSON.stringify(g));
+        await d.locator(".ac-modal-body").evaluate(el => el.scrollTop = 0);
+        await page.screenshot({path:out+`/import-5000-${width}.png`});
+        await d.locator('[data-close]').last().click();
+        await page.locator('[data-action=document]').click();
+        assert.equal(await d.locator('.ac-line').count(),1);
+        assert.equal(await d.locator('[data-key=sku]').inputValue(),"");
+      }
       await d.locator("[name=reference]").fill("UI-DRAFT");
       await d.locator("[data-key=sku]").fill("TEST");
       await d.locator("[data-key=name]").fill("Hàng thử");

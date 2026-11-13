@@ -8,6 +8,7 @@ import {
 import { AppError } from "../../../core/errors.ts";
 import type { StaffEnv, SessionState } from "../../staff/api/auth-routes.ts";
 import { salesOrders, salesOrderLines } from "../../sales/schema.ts";
+import { products } from "../../catalog/schema.ts";
 import { posReturns } from "../../sales/return-schema.ts";
 import { vietnamDate } from "../../sales/domain/sales.ts";
 import {
@@ -164,6 +165,17 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
     },
     "business",
   );
+  router.post("/accounting/import-products", async (c) => {
+    access(c);
+    const body = await readJson(c.req, 400000);
+    if (!Array.isArray(body.skus) || !body.skus.length || body.skus.length > 5000)
+      throw new AppError(400, "Chọn 1–5.000 SKU.");
+    const skus = [...new Set(body.skus.map((s: unknown) => short(s, 64)))];
+    // One lookup, no prices, tax defaults, stock quantities or supplier data.
+    const rows = await c.env.db.select({ sku: products.sku, name: products.name, unit: products.unit })
+      .from(products).where(inArray(products.sku, skus));
+    return json({ products: rows });
+  }, "business");
   router.post(
     "/accounting/entities",
     async (c) => {
@@ -388,7 +400,7 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
     "/accounting/books/:id/documents",
     async (c) => {
       const m = access(c),
-        b = await readJson(c.req, 300000),
+        b = await readJson(c.req, 6000000),
         kind = b.kind as Kind,
         date = day(b.date),
         reference = short(b.reference, 120),
@@ -476,6 +488,11 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
           .limit(1);
         if (dup.length)
           throw new AppError(409, "Chứng từ đã tồn tại. Không tạo bản trùng.");
+        const [usage] = await db.select({ n: sql<number>`count(*)::int` })
+          .from(lines).innerJoin(docs, eq(lines.documentId, docs.id))
+          .where(eq(docs.entityId, book.entityId));
+        if (Number(usage?.n || 0) + draftLines.length > 10000)
+          throw new AppError(413, "Tổng phạm vi pháp nhân vượt 10.000 dòng báo cáo hiện hỗ trợ. Chưa lưu chứng từ; cần nâng cấp báo cáo trước, không cắt dữ liệu.");
         await db.insert(docs).values({
           id,
           bookId: book.id,
@@ -490,16 +507,18 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
           createdBy: m.id,
           createdAt: now(),
         });
-        if (draftLines.length)
+        // Bound parameters per insert; all batches share the same transaction.
+        for (let start = 0; start < draftLines.length; start += 200) {
           await db.insert(lines).values(
-            draftLines.map((l, i) => ({
+            draftLines.slice(start, start + 200).map((l, i) => ({
               ...l,
               quantity: String(l.quantity),
               taxRate: l.taxRate === null ? null : String(l.taxRate),
               documentId: id,
-              lineNo: i + 1,
+              lineNo: start + i + 1,
             })),
           );
+        }
       });
       return json(
         { id, state: "draft", physicalInventoryAffected: false },

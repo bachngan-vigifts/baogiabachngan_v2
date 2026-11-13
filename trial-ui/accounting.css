@@ -264,3 +264,5 @@
     min-height: 44px;
   }
 }
+.ac-dialog [data-import] { max-width: 100%; width: 240px; display: block; }
+.ac-dialog .ac-actions { flex-wrap: wrap; gap: 8px; }

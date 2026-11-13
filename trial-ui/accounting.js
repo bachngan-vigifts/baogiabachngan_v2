@@ -1,3 +1,4 @@
+import { readAccountingFile } from "./accounting-file.js";
 const esc = (s) =>
   String(s ?? "").replace(
     /[&<>"']/g,
@@ -161,16 +162,14 @@ export function initAccounting({ api, root }) {
     if (!book?.entityId) return notice("Chọn một sổ đã gán pháp nhân trước.");
     const d = modal(
       "Nhập chứng từ kế toán",
-      `<p>Chỉ nhập chứng từ có thật đã được đối soát. Số lượng và tiền trước VAT; tiền tính bằng đồng. Phiếu nháp chưa ảnh hưởng số dư.</p><div class="ac-form"><label>Loại<select name="kind"><option value="opening">Đầu kỳ</option><option value="purchase">Nhập mua</option><option value="sale">Xuất bán từ chứng từ ngoài CRM</option></select></label>${field("Ngày", "date", "date", filters.to, "required")}${field("Số chứng từ gốc", "reference", "text", "", 'required maxlength="120"')}${field("Ký hiệu", "series", "text", "", 'maxlength="50"')}${field("MST đối tác (nếu có)", "counterpartyTaxCode", "text", "", 'maxlength="20"')}${field("Ghi chú nguồn đối soát", "note", "text", "", 'required maxlength="1500"')}</div><div class="ac-line-head"><b>Dòng hàng</b><button type="button" data-add-line>+ Thêm dòng</button></div><div class="ac-lines"></div><label class="ac-check"><input type="checkbox" name="confirmedZero"> Xác nhận sổ đầu kỳ không có hàng, số dư bằng 0.</label><p>Chỉ đánh dấu sổ rỗng nếu đã kiểm kê và đối chiếu chứng từ. Chưa bật trả/điều chỉnh vì cần đối soát giá trị gốc.</p>`,
+      `<p>Chỉ nhập chứng từ có thật đã được đối soát. Số lượng và tiền trước VAT; tiền tính bằng đồng. Phiếu nháp chưa ảnh hưởng số dư.</p><div class="ac-form"><label>Loại<select name="kind"><option value="opening">Đầu kỳ</option><option value="purchase">Nhập mua</option><option value="sale">Xuất bán từ chứng từ ngoài CRM</option></select></label>${field("Ngày", "date", "date", filters.to, "required")}${field("Số chứng từ gốc", "reference", "text", "", 'required maxlength="120"')}${field("Ký hiệu", "series", "text", "", 'maxlength="50"')}${field("MST đối tác (nếu có)", "counterpartyTaxCode", "text", "", 'maxlength="20"')}${field("Ghi chú nguồn đối soát", "note", "text", "", 'required maxlength="1500"')}</div><div class="ac-line-head"><b>Dòng hàng</b><div class="ac-actions"><button type="button" data-template>Tải file mẫu SKU/SL</button><label>Nhập từ file (tối đa 5.000 dòng)<input type="file" data-import accept=".xlsx,.xls,.csv"></label><button type="button" data-add-line>+ Thêm dòng</button></div></div><p data-import-status role="status">File chỉ có SKU và SL. Đọc trang tính đầu tiên; SKU lưu dạng Text. Tên hàng và đơn vị lấy theo SKU hiện có; cần bổ sung giá trị trước VAT trước khi lưu. Không tự lấy giá bán/giá nhập hay áp thuế.</p><div class="ac-lines"></div><div class="ac-actions"><button type="button" data-prev>Trang trước</button><span data-page></span><button type="button" data-next>Trang sau</button></div><label class="ac-check"><input type="checkbox" name="confirmedZero"> Xác nhận sổ đầu kỳ không có hàng, số dư bằng 0.</label><p>Chỉ đánh dấu sổ rỗng nếu đã kiểm kê và đối chiếu chứng từ. Chưa bật trả/điều chỉnh vì cần đối soát giá trị gốc.</p>`,
       (f) => {
-        const rows = [...d.querySelectorAll(".ac-line")].map((row) =>
-          Object.fromEntries(
-            [...row.querySelectorAll("input")].map((i) => [
-              i.dataset.key,
-              i.value,
-            ]),
-          ),
-        );
+        syncRows();
+        const missing = rows.findIndex(r => !r.sku || !r.name || !r.unit || r.netValue === "" || r.netValue === undefined);
+        if (!f.has("confirmedZero") && missing >= 0) {
+          page = Math.floor(missing / pageSize); paintRows();
+          throw Error("Dòng " + (missing + 1) + ": bổ sung tên hàng, đơn vị và tổng tiền trước VAT theo chứng từ gốc.");
+        }
         return request("/books/" + book.id + "/documents", "POST", {
           ...Object.fromEntries(f),
           lines:
@@ -179,29 +178,74 @@ export function initAccounting({ api, root }) {
         });
       },
     );
+    const pageSize = 25, owner = epoch;
+    let rows = [], page = 0, importSeq = 0;
+    const syncRows = () => {
+      d.querySelectorAll(".ac-line").forEach(row => {
+        rows[Number(row.dataset.index)] = Object.fromEntries([...row.querySelectorAll("input")].map(i => [i.dataset.key, i.value]));
+      });
+    };
+    const paintRows = () => {
+      const box = d.querySelector(".ac-lines"); box.replaceChildren();
+      page = Math.min(page, Math.max(0, Math.ceil(rows.length / pageSize) - 1));
+      for (let index = page * pageSize; index < Math.min(rows.length, (page + 1) * pageSize); index++) {
+        const row = document.createElement("div"); row.className = "ac-line"; row.dataset.index = index;
+        row.innerHTML = [["sku", "SKU", "text"], ["name", "Tên hàng", "text"], ["unit", "Đơn vị", "text"], ["quantity", "Số lượng", "number"], ["netValue", "Tổng tiền trước VAT", "number"], ["taxRate", "Thuế suất %", "number"]]
+          .map(([key,label,type]) => `<label>${label}<input data-key="${key}" type="${type}" ${["quantity", "netValue", "taxRate"].includes(key) ? 'min="0" step="any"' : ""} ${key === "taxRate" ? "" : "required"}></label>`).join("") + '<button type="button" data-remove>Xóa</button>';
+        row.querySelectorAll("input").forEach(i => { i.value = rows[index][i.dataset.key] ?? ""; i.disabled = d.querySelector("[name=confirmedZero]").checked; });
+        row.querySelector("[data-remove]").onclick = () => { syncRows(); rows.splice(index, 1); paintRows(); };
+        box.append(row);
+      }
+      d.querySelector("[data-page]").textContent = `Trang ${page + 1}/${Math.max(1, Math.ceil(rows.length/pageSize))} · ${rows.length}/5.000 dòng`;
+      d.querySelector("[data-prev]").disabled = page === 0;
+      d.querySelector("[data-next]").disabled = (page + 1) * pageSize >= rows.length;
+    };
+    d.querySelector("[data-prev]").onclick = () => { syncRows(); page--; paintRows(); };
+    d.querySelector("[data-next]").onclick = () => { syncRows(); page++; paintRows(); };
     const add = () => {
-      const row = document.createElement("div");
-      row.className = "ac-line";
-      row.innerHTML =
-        [
-          ["sku", "SKU", "text"],
-          ["name", "Tên hàng", "text"],
-          ["unit", "Đơn vị", "text"],
-          ["quantity", "Số lượng", "number"],
-          ["netValue", "Tiền trước VAT", "number"],
-          ["taxRate", "Thuế suất %", "number"],
-        ]
-          .map(
-            ([key, label, type]) =>
-              `<label>${label}<input data-key="${key}" type="${type}" ${["quantity", "netValue", "taxRate"].includes(key) ? 'min="0" step="any"' : ""} ${key === "taxRate" ? "" : "required"}></label>`,
-          )
-          .join("") + '<button type="button" data-remove>Xóa</button>';
-      row.querySelector("[data-remove]").onclick = () => row.remove();
-      d.querySelector(".ac-lines").append(row);
+      syncRows();
+      if (rows.length >= 5000) return void (d.querySelector(".ac-error").textContent = "Tối đa 5.000 dòng/chứng từ.");
+      rows.push({}); page = Math.floor((rows.length - 1)/pageSize); paintRows();
     };
     d.querySelector("[data-add-line]").onclick = add;
+    d.querySelector("[data-template]").onclick = async () => {
+      const button = d.querySelector("[data-template]"); button.disabled = true;
+      try {
+        const { downloadAccountingTemplate } = await import("./accounting-template.js");
+        if (valid(owner) && dialog === d) await downloadAccountingTemplate();
+      } catch(e) { if (valid(owner) && dialog === d) d.querySelector(".ac-error").textContent = e.message; }
+      finally { if (!busy) button.disabled = false; }
+    };
+    d.querySelector("[data-import]").onchange = async (event) => {
+      const file = event.target.files?.[0];
+      if (!file || busy) return;
+      const seq = ++importSeq;
+      const status = d.querySelector("[data-import-status]");
+      const submit = d.querySelector('button[type=submit]');
+      busy = true; submit.disabled = true; status.textContent = "Đang kiểm tra file…";
+      try {
+        const imported = await readAccountingFile(file);
+        if (!valid(owner) || dialog !== d || seq !== importSeq) return;
+        const found = await request("/import-products", "POST", { skus: imported.map(r => r.sku) });
+        if (!valid(owner) || dialog !== d || seq !== importSeq) return;
+        syncRows();
+        const existing = rows.filter(r => Object.values(r).some(v => String(v).trim() !== ""));
+        if (existing.length + imported.length > 5000) throw Error("Tổng chứng từ vượt 5.000 dòng. Chưa nạp thêm dòng nào.");
+        const seen = new Set(existing.map(r => r.sku));
+        if (imported.some(r => seen.has(r.sku))) throw Error("File trùng SKU với dòng đang nhập. Chưa nạp thêm dòng nào.");
+        const bySku = new Map(found.products.map(p => [p.sku, p]));
+        rows = [...existing, ...imported.map(r => ({ ...r, name: bySku.get(r.sku)?.name || "", unit: bySku.get(r.sku)?.unit || "", netValue: "", taxRate: "" }))];
+        page = Math.floor(existing.length / pageSize);
+        d.querySelector("[name=confirmedZero]").checked = false;
+        paintRows();
+        status.textContent = `Đã nạp ${imported.length} dòng. Chưa lưu vào sổ. Bổ sung tổng tiền trước VAT từng dòng; ${imported.filter(r => !bySku.has(r.sku)).length} SKU chưa có trong danh mục cần bổ sung tên/đơn vị.`;
+        d.querySelector(".ac-error").textContent = "";
+      } catch(e) { if (valid(owner) && dialog === d && seq === importSeq) status.textContent = e.message; }
+      finally { if (valid(owner) && dialog === d && seq === importSeq) { busy = false; submit.disabled = false; event.target.value = ""; } }
+    };
     add();
     d.querySelector("[name=confirmedZero]").onchange = (e) => {
+      syncRows();
       if (
         e.target.checked &&
         d.querySelector("[name=kind]").value !== "opening"
@@ -224,7 +268,7 @@ export function initAccounting({ api, root }) {
     if (!valid(owner)) return;
     modal(
       "Chứng từ " + d.reference,
-      `<p>${esc(kindName[d.kind] || d.kind)} · ${esc(stateName[d.state])} · ${esc(d.date)}</p><p>${esc(d.note)}</p><div class="ac-table"><table><thead><tr><th>SKU · sản phẩm</th><th>ĐVT</th><th>Số lượng</th><th>Trước VAT</th><th>Thuế</th></tr></thead><tbody>${d.lines.map((l) => `<tr><td>${esc(l.sku)} · ${esc(l.name)}</td><td>${esc(l.unit)}</td><td>${esc(l.quantity)}</td><td>${money(l.netValue)}</td><td>${l.taxRate === null ? "Chưa rõ" : esc(l.taxRate) + "%"}</td></tr>`).join("")}</tbody></table></div>${options.canApprove && d.state === "draft" ? '<label class="ac-check"><input type="checkbox" name="confirmed" required> Đã kiểm tra chứng từ gốc, pháp nhân, số lượng và giá trị đầu kỳ. Ghi sổ kế toán riêng.</label>' : "<p>Chứng từ ngoài trạng thái nháp không được sửa trực tiếp.</p>"}`,
+      `<p>${esc(kindName[d.kind] || d.kind)} · ${esc(stateName[d.state])} · ${esc(d.date)}</p><p>${esc(d.note)}</p><div class="ac-table"><table><thead><tr><th>SKU · sản phẩm</th><th>ĐVT</th><th>Số lượng</th><th>Trước VAT</th><th>Thuế</th></tr></thead><tbody>${d.lines.slice(0, 50).map((l) => `<tr><td>${esc(l.sku)} · ${esc(l.name)}</td><td>${esc(l.unit)}</td><td>${esc(l.quantity)}</td><td>${money(l.netValue)}</td><td>${l.taxRate === null ? "Chưa rõ" : esc(l.taxRate) + "%"}</td></tr>`).join("")}</tbody></table></div><div class="ac-actions"><button type="button" data-detail-prev>Trang trước</button><span data-detail-page></span><button type="button" data-detail-next>Trang sau</button></div>${options.canApprove && d.state === "draft" ? '<label class="ac-check"><input type="checkbox" name="confirmed" required> Đã kiểm tra chứng từ gốc, pháp nhân, số lượng và giá trị đầu kỳ. Ghi sổ kế toán riêng.</label>' : "<p>Chứng từ ngoài trạng thái nháp không được sửa trực tiếp.</p>"}`,
       (f) => {
         if (!options.canApprove || d.state !== "draft")
           return Promise.resolve();
@@ -235,6 +279,17 @@ export function initAccounting({ api, root }) {
       },
       options.canApprove && d.state === "draft" ? "Duyệt ghi sổ" : "Đóng",
     );
+    let linePage = 0;
+    const detailDialog = dialog;
+    const paint = () => {
+      detailDialog.querySelector("tbody").innerHTML = d.lines.slice(linePage * 50, (linePage + 1) * 50).map(l => `<tr><td>${esc(l.sku)} · ${esc(l.name)}</td><td>${esc(l.unit)}</td><td>${esc(l.quantity)}</td><td>${money(l.netValue)}</td><td>${l.taxRate === null ? "Chưa rõ" : esc(l.taxRate) + "%"}</td></tr>`).join("");
+      detailDialog.querySelector("[data-detail-page]").textContent = `Trang ${linePage + 1}/${Math.max(1, Math.ceil(d.lines.length / 50))} · ${d.lines.length} dòng`;
+      detailDialog.querySelector("[data-detail-prev]").disabled = linePage === 0;
+      detailDialog.querySelector("[data-detail-next]").disabled = (linePage + 1) * 50 >= d.lines.length;
+    };
+    detailDialog.querySelector("[data-detail-prev]").onclick = () => { linePage--; paint(); };
+    detailDialog.querySelector("[data-detail-next]").onclick = () => { linePage++; paint(); };
+    paint();
     if (options.canApprove && d.state !== "voided") {
       const button = document.createElement("button");
       button.type = "button";
@@ -360,7 +415,7 @@ export function initAccounting({ api, root }) {
       )
       .join(
         "",
-      )}</select></label>${field("Từ ngày", "from", "date", filters.from, "required")}${field("Đến ngày", "to", "date", filters.to, "required")}<button type="submit">Xem báo cáo</button></form>${report ? `<section class="ac-stats"><article><span>Giá trị tồn sổ (trước VAT)</span><strong>${money(report.totals.stockValue)}</strong></article><article><span>Nhập mua ròng</span><strong>${money(report.totals.purchases)}</strong></article><article><span>Xuất bán ròng</span><strong>${money(report.totals.sales)}</strong></article></section><section class="card ac-panel"><h2>Đối chiếu tỷ lệ theo MST</h2><p>${report.k.ratio === null ? "Chưa đủ dữ liệu" : Number(report.k.ratio).toFixed(4)} · ${esc(report.k.state === "unknown" ? "Chưa xác nhận đủ chứng từ" : report.k.state === "unconfigured" ? "Chưa cấu hình K tham chiếu" : report.k.state === "review" ? "Cần đối soát" : "Trong mức tham chiếu đã nhập")}</p><p>${esc(report.k.message)}</p><small>${esc(report.k.scope)} · Nguồn: ${esc(report.k.source || "chưa cung cấp")}</small>${options.canConfigure ? '<div class="ac-actions"><button data-action="policy">Ngưỡng đối soát</button><button data-action="period">Xác nhận đủ chứng từ kỳ</button></div>' : ""}</section><section class="card ac-panel"><h2>Cảnh báo cần đối soát (${report.alerts.length})</h2>${report.alerts.map((a, i) => `<article class="ac-alert"><div><b>${esc(a.sku || "Thiết lập sổ")}</b><p>${esc(a.message)}</p><small>${esc(a.source)}${a.review ? " · " + esc(a.review.status) + ": " + esc(a.review.note) : ""}</small></div><div class="ac-actions"><button data-review="${i}">Đối soát</button>${options.aiAvailable ? `<button data-ai="${i}">Trợ lý AI</button>` : ""}</div></article>`).join("") || "<p>Chưa có cảnh báo từ dữ liệu hiện có; không đồng nghĩa đã đủ chứng từ hoặc tuân thủ thuế.</p>"}<p>AI ${options.aiAvailable ? "đã cấu hình" : "chưa bật"}. Quy tắc cảnh báo không thay thế rà soát của kế toán.</p></section><section class="card ac-panel"><h2>Tồn theo mã hàng</h2><div class="ac-table"><table><thead><tr><th>SKU · tên hàng</th><th>ĐVT</th><th>Tồn</th><th>Giá trị sổ</th></tr></thead><tbody>${report.stock.map((s) => `<tr><td>${esc(s.sku)} · ${esc(s.name)}</td><td>${esc(s.unit)}</td><td>${esc(s.quantity)}</td><td>${money(s.value)}</td></tr>`).join("")}</tbody></table></div></section><section class="card ac-panel"><div class="ac-line-head"><h2>Chứng từ</h2><div class="ac-actions">${b?.entityId ? '<button data-action="document">Nhập chứng từ / đầu kỳ</button>' : ""}${b?.openingDate ? '<button data-action="source">Đối chiếu đơn bán</button>' : ""}</div></div><div class="ac-table"><table><thead><tr><th>Số chứng từ</th><th>Ngày</th><th>Loại</th><th>Trước VAT</th><th>Trạng thái</th></tr></thead><tbody>${report.documents.map((d) => `<tr><td><button data-document="${esc(d.id)}">${esc(d.reference)}</button></td><td>${esc(d.date)}</td><td>${esc(kindName[d.kind] || d.kind)}</td><td>${money(d.total)}</td><td>${esc(stateName[d.state])}</td></tr>`).join("")}</tbody></table></div><p>Chọn một sổ để nhập chứng từ. Manager duyệt mới ảnh hưởng số dư kế toán. Chưa tích hợp ký số hoặc phát hành Viettel/VNPT.</p></section><p>${report.limitations.map(esc).join(" ")}</p>` : '<section class="card ac-panel"><p>Chọn pháp nhân đã cấu hình để xem báo cáo. Chưa có MST và số dư đầu kỳ thì hệ thống chưa tính giá trị tồn hay đánh giá tỷ lệ.</p></section>'}`;
+      )}</select></label>${field("Từ ngày", "from", "date", filters.from, "required")}${field("Đến ngày", "to", "date", filters.to, "required")}<button type="submit">Xem báo cáo</button></form>${report ? `<section class="ac-stats"><article><span>Giá trị tồn sổ (trước VAT)</span><strong>${money(report.totals.stockValue)}</strong></article><article><span>Nhập mua ròng</span><strong>${money(report.totals.purchases)}</strong></article><article><span>Xuất bán ròng</span><strong>${money(report.totals.sales)}</strong></article></section><section class="card ac-panel"><h2>Đối chiếu tỷ lệ theo MST</h2><p>${report.k.ratio === null ? "Chưa đủ dữ liệu" : Number(report.k.ratio).toFixed(4)} · ${esc(report.k.state === "unknown" ? "Chưa xác nhận đủ chứng từ" : report.k.state === "unconfigured" ? "Chưa cấu hình K tham chiếu" : report.k.state === "review" ? "Cần đối soát" : "Trong mức tham chiếu đã nhập")}</p><p>${esc(report.k.message)}</p><small>${esc(report.k.scope)} · Nguồn: ${esc(report.k.source || "chưa cung cấp")}</small>${options.canConfigure ? '<div class="ac-actions"><button data-action="policy">Ngưỡng đối soát</button><button data-action="period">Xác nhận đủ chứng từ kỳ</button></div>' : ""}</section><section class="card ac-panel"><h2>Cảnh báo cần đối soát (${report.alerts.length})</h2>${report.alerts.map((a, i) => `<article class="ac-alert"><div><b>${esc(a.sku || "Thiết lập sổ")}</b><p>${esc(a.message)}</p><small>${esc(a.source)}${a.review ? " · " + esc(a.review.status) + ": " + esc(a.review.note) : ""}</small></div><div class="ac-actions"><button data-review="${i}">Đối soát</button>${options.aiAvailable ? `<button data-ai="${i}">Trợ lý AI</button>` : ""}</div></article>`).join("") || "<p>Chưa có cảnh báo từ dữ liệu hiện có; không đồng nghĩa đã đủ chứng từ hoặc tuân thủ thuế.</p>"}<p>AI ${options.aiAvailable ? "đã cấu hình" : "chưa bật"}. Quy tắc cảnh báo không thay thế rà soát của kế toán.</p></section><section class="card ac-panel"><h2>Tồn theo mã hàng</h2><div class="ac-table"><table><thead><tr><th>SKU · tên hàng</th><th>ĐVT</th><th>Tồn</th><th>Giá trị sổ</th></tr></thead><tbody>${report.stock.map((s) => `<tr><td>${esc(s.sku)} · ${esc(s.name)}</td><td>${esc(s.unit)}</td><td>${esc(s.quantity)}</td><td>${money(s.value)}</td></tr>`).join("")}</tbody></table></div></section><section class="card ac-panel"><div class="ac-line-head"><h2>Chứng từ</h2><div class="ac-actions">${b?.entityId ? '<button data-action="document">Nhập chứng từ / đầu kỳ</button><button data-action="import-document">Nhập file SKU / SL</button>' : ""}${b?.openingDate ? '<button data-action="source">Đối chiếu đơn bán</button>' : ""}</div></div><div class="ac-table"><table><thead><tr><th>Số chứng từ</th><th>Ngày</th><th>Loại</th><th>Trước VAT</th><th>Trạng thái</th></tr></thead><tbody>${report.documents.map((d) => `<tr><td><button data-document="${esc(d.id)}">${esc(d.reference)}</button></td><td>${esc(d.date)}</td><td>${esc(kindName[d.kind] || d.kind)}</td><td>${money(d.total)}</td><td>${esc(stateName[d.state])}</td></tr>`).join("")}</tbody></table></div><p>Chọn một sổ để nhập chứng từ. Manager duyệt mới ảnh hưởng số dư kế toán. Chưa tích hợp ký số hoặc phát hành Viettel/VNPT.</p></section><p>${report.limitations.map(esc).join(" ")}</p>` : '<section class="card ac-panel"><p>Chọn pháp nhân đã cấu hình để xem báo cáo. Chưa có MST và số dư đầu kỳ thì hệ thống chưa tính giá trị tồn hay đánh giá tỷ lệ.</p></section>'}`;
     $(".ac-filters [name=entityId]").value = filters.entityId;
     $(".ac-filters [name=bookId]").value = filters.bookId;
     $(".ac-filters [name=entityId]").onchange = async (e) => {
@@ -425,6 +480,7 @@ export function initAccounting({ api, root }) {
       policy,
       period: confirmPeriod,
       document: documentForm,
+      "import-document": () => { documentForm(); dialog?.querySelector("[data-import]")?.click(); },
       source: sourceForm,
     };
     root
