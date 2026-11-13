@@ -377,7 +377,7 @@ test('kế hoạch nguồn hàng: duyệt tự có lịch; gửi phiếu cũ b�
   assert.equal((await s.db.select().from(deliveries).where(eq(deliveries.orderId,id))).length,0,'chưa duyệt không lên lịch');
   assert.equal((await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
   const trips=await s.db.select().from(deliveries).where(eq(deliveries.orderId,id));assert.equal(trips.length,1);assert.equal(trips[0]!.plannedDate,'2026-10-28');
-  assert.equal((await s.db.select().from(deliveryLines).where(eq(deliveryLines.deliveryId,trips[0]!.id))).reduce((n,l)=>n+l.qty,0),50);
+  assert.equal((await s.db.select().from(deliveryLines).where(eq(deliveryLines.deliveryId,trips[0]!.id))).reduce((n,l)=>n+l.qty,0),30,'phần xin hàng chưa chốt ngày không gộp vào chuyến có sẵn');
   const slips=await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,id));assert.equal(slips.length,2);
   const packing=await s.call(`/orders/${id}/packing`,s.emp);assert.equal(packing.data.scheduled,true);assert.equal(packing.data.lines.every((l:any)=>l.left===0),true);
   // Simulate legacy quote stock plans created without a trip, as reported in production.
@@ -575,4 +575,32 @@ test('rà nguồn hàng chỉ áp dụng cho Minh Long / Lock&Lock: mã khác b�
   const plain = await s.call('/orders', s.emp, 'POST', { quoteId: onlyOther.data.id });
   assert.equal(plain.status, 201, JSON.stringify(plain.data));
   assert.equal((await s.db.select().from(packingSlips).where(eq(packingSlips.orderId, plain.data.id))).length, 0);
+});
+
+test('split source dates create 170/16-Nov and 80/19-Nov trips; same-SKU print allocations stay per trip and approval does not issue stock',async()=>{
+ const s=await setup(),q=await quote(s,'BG_SPLIT_170_80',250),before=await bal(s,'vig');
+ const made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',deliveryDate:'2026-11-16',stockPlan:[{sku:'LY1',qty:170,type:'stock',plannedDate:'2026-11-16'},{sku:'LY1',qty:80,type:'incoming',note:'Đơn NCC kiểm thử, ngày NCC không tự dùng làm ngày giao khách',plannedDate:'2026-11-19'}]});
+ assert.equal(made.status,201,JSON.stringify(made.data));const id=made.data.id;
+ assert.equal((await s.call('/orders/'+id+'/status',s.kho,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,403);
+ assert.equal((await s.call('/orders/'+id+'/status',s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+ const detail=await s.call('/orders/'+id,s.emp);assert.equal(detail.status,200,JSON.stringify(detail.data));
+ assert.deepEqual(detail.data.deliveries.map((d:any)=>[d.plannedDate,d.lines.reduce((n:number,l:any)=>n+l.qty,0)]),[['2026-11-16',170],['2026-11-19',80]]);
+ assert.equal(detail.data.lines[0].qty,250);assert.equal(detail.data.lines[0].deliveredQty,0);assert.equal(await bal(s,'vig'),before);
+ const slips=await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,id));assert.deepEqual(slips.map(p=>p.plannedDeliveryDate).sort(),['2026-11-16','2026-11-19']);
+ const again=await s.call('/orders/'+id+'/status',s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});assert.equal(again.status,409);
+ assert.equal((await s.db.select().from(deliveries).where(eq(deliveries.orderId,id))).length,2);
+});
+
+test('source planning rejects invalid dates atomically, groups only explicitly equal dates, and never infers incoming dates from notes',async()=>{
+ const s=await setup(),q=await quote(s,'BG_SOURCE_DATES',50);
+ for(const plannedDate of ['2026-02-31','2026-13-01','19/11/2026',42]){
+  const bad=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',stockPlan:[{sku:'LY1',qty:50,type:'incoming',note:'NCC hẹn 19/11/2026',plannedDate}]});assert.equal(bad.status,400,JSON.stringify(bad.data));
+ }
+ const made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',deliveryDate:'2026-11-16',stockPlan:[{sku:'LY1',qty:30,type:'stock'},{sku:'LY1',qty:20,type:'incoming',note:'NCC hẹn 19/11/2026'}]});assert.equal(made.status,201,JSON.stringify(made.data));
+ assert.equal((await s.call('/orders/'+made.data.id+'/status',s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+ const trips=await s.db.select().from(deliveries).where(eq(deliveries.orderId,made.data.id));assert.equal(trips.length,1);assert.equal(trips[0]!.plannedDate,'2026-11-16');
+ assert.equal((await s.db.select().from(deliveryLines).where(eq(deliveryLines.deliveryId,trips[0]!.id)))[0]!.qty,30);
+ const q2=await quote(s,'BG_EXPLICIT_SAME_DATE',10),same=await s.call('/orders',s.emp,'POST',{quoteId:q2,warehouseId:'vig',stockPlan:[{sku:'LY1',qty:5,type:'stock',plannedDate:'2026-11-19'},{sku:'LY1',qty:5,type:'purchase',note:'Đặt NCC',plannedDate:'2026-11-19'}]});assert.equal(same.status,201);
+ assert.equal((await s.call('/orders/'+same.data.id+'/status',s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+ const sameTrips=await s.db.select().from(deliveries).where(eq(deliveries.orderId,same.data.id));assert.equal(sameTrips.length,1);assert.equal((await s.db.select().from(deliveryLines).where(eq(deliveryLines.deliveryId,sameTrips[0]!.id)))[0]!.qty,10);
 });

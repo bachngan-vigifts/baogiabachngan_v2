@@ -837,7 +837,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       await tx.update(salesOrders).set({ status, warehouseId, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
       // Duyệt không ghi sổ kho; khi huỷ chỉ hoàn các dòng trừ kiểu cũ. Phiếu xuất được đảo ở cancelDocumentChildren.
       await syncOrderStock(tx, viewer(c).id, order.id, status === 'confirmed' ? `Duyệt bán – ${order.customerName}` : `Huỷ ${order.orderNo} – hàng về lại kho bán`);
-      if (status === 'confirmed') await ensurePackingSchedule(tx,order.id,viewer(c).id);
+      if (status === 'confirmed') {const firstTrip=await ensurePackingSchedule(tx,order.id,viewer(c).id);if(firstTrip)order.expectedDeliveryDate=firstTrip.plannedDate;}
       // Giữ hàng tự động lúc duyệt: chỉ khi có ngày giao dự kiến, tối đa có thể bán, hạn ngày giao + 3 ngày (order-hold-store.ts).
       if (status === 'confirmed' && order.channel === 'crm' && order.holdMode === 'capped') {
         // Phần giữ của báo giá gốc chuyển sang đơn: đóng trước rồi mới tính có thể bán (không đếm hai lần).

@@ -64,18 +64,20 @@ export async function saveQuoteStockPlan(tx: Tx, orderId: string, by: string, ra
   const scope = await sourcingScope(tx, lines.filter(l => l.sku).map(l => ({ sku: l.sku!, name: l.name })));
   for (const l of lines) if (l.sku && scope.has(l.sku)) needs.set(l.sku, (needs.get(l.sku) || 0) + l.qty);
   const allocated = new Map<string, number>();
-  const groups = new Map<string, {sku:string;qty:number;note:string}[]>();
+  const groups = new Map<string, {sku:string;qty:number;note:string;planSource:'stock'|'transfer'|'purchase'|'incoming';plannedDate:string|null}[]>();
   for (const x of raw) {
     if (!x || typeof x !== 'object') throw new AppError(400, 'Nguồn hàng không hợp lệ.');
     const sku = typeof x.sku === 'string' ? x.sku.trim() : '', qty = x.qty;
     if (!needs.has(sku) || typeof qty !== 'number' || !Number.isFinite(qty) || qty <= 0 || Math.abs(qty * 1000 - Math.round(qty * 1000)) > 0.00001 || !['stock','transfer','purchase','incoming'].includes(x.type))
       throw new AppError(400, 'Mã hàng, nguồn hoặc số lượng trong kế hoạch không hợp lệ.');
     const description = typeof x.note === 'string' ? x.note.trim().slice(0, 170) : '';
+    const plannedDate=x.plannedDate===undefined||x.plannedDate===''?null:x.plannedDate;
+    if(plannedDate!==null&&(typeof plannedDate!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(plannedDate)||!Number.isFinite(Date.parse(plannedDate+'T00:00:00Z'))||new Date(plannedDate+'T00:00:00Z').toISOString().slice(0,10)!==plannedDate))throw new AppError(400,'Ngày giao khách của nguồn hàng không hợp lệ.');
     if (x.type !== 'stock' && !description) throw new AppError(400, 'Ghi rõ nguồn cho phần hàng cần bổ sung.');
     const note = ({stock:'Hàng có sẵn',transfer:'Xin hàng',purchase:'Đặt hàng NCC',incoming:'Hàng đang chờ về'} as Record<string,string>)[x.type]! + (description ? ' · ' + description : '');
     allocated.set(sku, (allocated.get(sku) || 0) + qty);
-    const key = x.type + ':' + note;
-    groups.set(key, [...(groups.get(key) || []), {sku, qty, note}]);
+    const key = JSON.stringify([x.type,note,plannedDate]);
+    groups.set(key, [...(groups.get(key) || []), {sku, qty, note,planSource:x.type,plannedDate}]);
   }
   for (const [sku, qty] of needs) if (Math.abs((allocated.get(sku) || 0) - qty) > 0.0005)
     throw new AppError(400, `${sku}: tổng nguồn hàng phải bằng số lượng đơn (${qty}).`, 'STOCK_PLAN_INVALID');
@@ -85,7 +87,7 @@ export async function saveQuoteStockPlan(tx: Tx, orderId: string, by: string, ra
   const remaining = new Map(lines.map(l=>[l.id,l.qty]));
   for (const items of groups.values()) {
     const id = crypto.randomUUID(), slipNo = nextDocNo('DG',today,used); used.push(slipNo);
-    await tx.insert(packingSlips).values({id,slipNo,orderId,source:'warehouse',sourceNote:items[0]!.note.slice(0,200),stockWarehouseId:order.warehouseId,
+    await tx.insert(packingSlips).values({id,slipNo,orderId,source:'warehouse',sourceNote:items[0]!.note.slice(0,200),stockWarehouseId:order.warehouseId,planSource:items[0]!.planSource,plannedDeliveryDate:items[0]!.plannedDate,
       status:'draft',totalQty:items.reduce((n,i)=>n+i.qty,0),note:'Kế hoạch từ báo giá: duyệt trước, xuất từng phần khi hàng thực có tại kho bán.',
       shipName:order.receiverName||order.customerName,shipAddress:order.address,shipPhone:order.receiverPhone||order.phone,createdBy:by,createdAt:now,updatedAt:now});
     for (const item of items) {

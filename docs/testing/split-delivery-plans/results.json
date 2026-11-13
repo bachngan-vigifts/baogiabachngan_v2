@@ -1,0 +1,78 @@
+[
+  {
+    "role": "manager",
+    "width": 390,
+    "sheets": [
+      {
+        "date": "16/11/2026",
+        "qty": 170,
+        "ordered": 250
+      },
+      {
+        "date": "19/11/2026",
+        "qty": 80,
+        "ordered": 250
+      }
+    ],
+    "sourcePlanDates": true,
+    "jsErrors": [],
+    "orderMedianMs": 71
+  },
+  {
+    "role": "manager",
+    "width": 1440,
+    "sheets": [
+      {
+        "date": "16/11/2026",
+        "qty": 170,
+        "ordered": 250
+      },
+      {
+        "date": "19/11/2026",
+        "qty": 80,
+        "ordered": 250
+      }
+    ],
+    "sourcePlanDates": true,
+    "jsErrors": [],
+    "orderMedianMs": 30
+  },
+  {
+    "role": "owner",
+    "width": 390,
+    "sheets": [
+      {
+        "date": "16/11/2026",
+        "qty": 170,
+        "ordered": 250
+      },
+      {
+        "date": "19/11/2026",
+        "qty": 80,
+        "ordered": 250
+      }
+    ],
+    "sourcePlanDates": true,
+    "jsErrors": [],
+    "orderMedianMs": 28
+  },
+  {
+    "role": "owner",
+    "width": 1440,
+    "sheets": [
+      {
+        "date": "16/11/2026",
+        "qty": 170,
+        "ordered": 250
+      },
+      {
+        "date": "19/11/2026",
+        "qty": 80,
+        "ordered": 250
+      }
+    ],
+    "sourcePlanDates": true,
+    "jsErrors": [],
+    "orderMedianMs": 27
+  }
+]

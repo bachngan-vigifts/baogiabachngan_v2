@@ -260,6 +260,8 @@ export const customerPayments = pgTable('customer_payments', {
  * NCC, đại lý…) một phiếu. Gửi kho → việc cho nhóm Kho; kho đóng xong xác nhận kèm 1–3 ảnh.
  */
 export const packingSlips = pgTable('packing_slips', {
+  planSource: text('plan_source', {enum:['stock','transfer','purchase','incoming']}),
+  plannedDeliveryDate: text('planned_delivery_date'),
   id: text('id').primaryKey(),
   slipNo: text('slip_no').notNull(),
   orderId: text('order_id').notNull().references(() => salesOrders.id),
