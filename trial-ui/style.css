@@ -635,7 +635,7 @@ table { width: 100%; border-collapse: collapse; }
 .paper .ps-table { min-width: 560px; }
 @media print {
   @page { size: A4; margin: 14mm 12mm; }
-  body { background: #fff; }
+  html, body { background: #fff !important; }
   /* Khung app trên điện thoại khoá chiều cao trang (html.app-shell) → khi in phải bỏ, không thì chỉ in được trang đầu, phần dưới bị cắt. */
   html, body, html.app-shell, html.app-shell body { height: auto !important; min-height: 0 !important; overflow: visible !important; position: static !important; }
   body > *:not(.print-sheet) { display: none !important; }
