@@ -46,3 +46,12 @@ test('nút lịch dùng đúng mã đơn/chuyến và không mời truy cập AP
   warehouse = true; assert.equal(render(row), '');
   warehouse = false; allowed = false; assert.equal(render(row), '');
 });
+
+test('split trip print preserves 170/80 independently and never substitutes the 250 ordered quantity',async()=>{
+ let opened:any;const data={order:{},contract:null,lines:[{id:'line',qty:250,deliveredQty:0}],deliveries:[{id:'one',deliveryNo:'GH-16',status:'planned',lines:[{orderLineId:'line',qty:170}]},{id:'two',deliveryNo:'GH-19',status:'planned',lines:[{orderLineId:'line',qty:80}]}]};
+ const print=runInNewContext(printSource+';printDeliveryForOrder',{api:async()=>data,deliveryProductImages:async()=>{},openSlipPrint:(v:any)=>{opened=v;},fmtDate:()=>'',DELIVERY_STATUS:{},NO_SCHEDULE:'Lên lịch trước',sellerName:()=>'',state:{},deliveryPrintData:(v:any)=>v});
+ await print('order');assert.equal(opened.build('one').lines[0].qty,170);assert.equal(opened.build('two').lines[0].qty,80);assert.equal(opened.build('two').lines[0].ordered,250);
+ assert.throws(()=>opened.build('stale-trip'),/Không tìm thấy chuyến/);
+ data.lines[0]!.deliveredQty=250;assert.equal(opened.build('').lines.length,0,'all remaining never reprints the entire delivered order');
+ data.deliveries[1]!.lines[0]!.qty=999;assert.throws(()=>opened.build('two'),/không khớp/);
+});

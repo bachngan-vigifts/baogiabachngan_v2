@@ -191,3 +191,11 @@ test('nguồn hàng UI: chỉ rà mã Minh Long / Lock&Lock; ghi chú mã bỏ q
   assert.equal(all(none.host).some(n=>n.attrs['aria-label']==='Kho bán / kho xuất'),false,'không bắt chọn kho');
   assert.deepEqual(JSON.parse(JSON.stringify(none.ui.read())),{});assert.deepEqual(JSON.parse(JSON.stringify(await none.ui.prepare())),{});assert.equal(none.posts.length,0);
 });
+
+test('source dates remain distinct for stock and incoming allocations; blank supplemental date stays unscheduled metadata',async()=>{
+ const s=await setup();s.label('Kho xin hàng X').value='b';
+ s.label('Ngày giao khách từ kho X').value='2026-11-16';s.label('Ngày giao khách nguồn bổ sung X 1').value='2026-11-19';
+ let plan=s.ui.read();assert.deepEqual(JSON.parse(JSON.stringify(plan.stockPlan)).map((p:any)=>[p.qty,p.plannedDate]),[[2,'2026-11-16'],[1,'2026-11-19']]);
+ s.label('Ngày giao khách nguồn bổ sung X 1').value='';plan=s.ui.read();assert.equal('plannedDate' in plan.stockPlan[1],false);
+ s.label('Ngày giao khách nguồn bổ sung X 1').value='2026-02-31';assert.throws(()=>s.ui.read(),/Ngày giao khách/);
+});

@@ -4515,6 +4515,8 @@ async function openOrder(id, confirmed = null) {
       ${o.expectedDeliveryDate ? duePill(o.expectedDeliveryDate, { fmt: fmtDate }) : '<span class="muted">Chưa có</span>'}<small class="muted">Đổi ngày giao bằng nút "＋ Lên lịch giao".</small></div>`)
     + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · <a href="#/deliveries?deliveryId=${encodeURIComponent(x.id)}">${esc(x.deliveryNo)}</a><small>${[ghnTrackingText(x), x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${line?.name || ''}: ${fmtNum(l.qty)}`; }).join(' · ')].filter(Boolean).map(esc).join(' · ')}</small>${deliveryConfirmation(x)}</span>${pill(DELIVERY_STATUS, x.status)}${deliveryPhotos(x)}<span class="row-gap">${deliveryButtons(x)}</span></li>`).join('')}</ul>`
     : '<p class="muted">Chưa có lịch giao.</p>');
+  const unscheduled=d.lines.map(l=>({line:l,qty:Math.max(0,l.qty-(l.deliveredQty||0)-d.deliveries.filter(t=>['planned','in_transit'].includes(t.status)).flatMap(t=>t.lines).filter(x=>x.orderLineId===l.id).reduce((sum,x)=>sum+x.qty,0))})).filter(x=>x.qty>0.0005);
+  if(!shipDone&&unscheduled.length)$('#order-deliveries').insertAdjacentHTML('beforeend',`<p class="warn small" id="order-delivery-unscheduled">Còn hàng chưa lên lịch giao: ${unscheduled.map(x=>`${esc(x.line.name)}: ${fmtNum(x.qty)} ${esc(x.line.unit||'')}`).join(' · ')}. Chọn “＋ Lên lịch giao” khi đã chốt ngày giao khách.</p>`);
   loadOrderPacking(o.id);
   // Giữ hàng theo đơn CRM (order-holds.js): ≤ có thể bán, tự giữ khi duyệt có ngày giao, giữ thêm / huỷ / gia hạn.
   if ((o.channel || 'crm') === 'crm' && (isK || ['confirmed', 'delivering'].includes(o.status))) {
@@ -5195,13 +5197,13 @@ async function printDeliveryForOrder(orderId, deliveryId = '') {
   await deliveryProductImages(d.lines);
   const trips = (d.deliveries || []).filter(x => x.status !== 'cancelled' || x.id === deliveryId);
   if (!trips.length) throw new Error(NO_SCHEDULE);
-  const choices = [...trips.map(x => ({ value: x.id, label: `${x.deliveryNo} · ${fmtDate(x.plannedDate)}${x.timeSlot ? ' ' + x.timeSlot : ''} · ${DELIVERY_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: 'Toàn bộ hàng chưa giao' }];
+  const choices = [...trips.map(x => ({ value: x.id, label: `${x.deliveryNo} · ${fmtDate(x.plannedDate)}${x.timeSlot ? ' ' + x.timeSlot : ''} · ${DELIVERY_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: 'Toàn bộ hàng chưa giao (gộp các chuyến)' }];
   const next = trips.find(x => x.status !== 'delivered');
   openSlipPrint({ kind: 'delivery', choices, initial: deliveryId || next?.id || (trips.length ? trips.at(-1).id : ''), build: v => {
     const trip = trips.find(x => x.id === v);
+    if(v&&!trip)throw new Error('Không tìm thấy chuyến giao đã chọn. Tải lại lịch giao hàng.');
     const left = d.lines.map(l => ({ ...l, ordered: l.qty, qty: Math.max(0, Math.round((l.qty - (l.deliveredQty || 0)) * 1000) / 1000) })).filter(l => l.qty > 0);
-    const lines = trip ? trip.lines.map(x => { const l = byId.get(x.orderLineId) || {}; return { ...l, ordered: l.qty, qty: x.qty }; })
-      : left.length ? left : d.lines.map(l => ({ ...l, ordered: l.qty }));
+    const lines = trip ? trip.lines.map(x => { const l = byId.get(x.orderLineId);if(!l||!Number.isFinite(x.qty)||x.qty<=0||x.qty>l.qty)throw new Error('Số lượng chuyến giao không khớp đơn. Kiểm tra lịch trước khi in.');return { ...l, ordered: l.qty, qty: x.qty }; }) : left;
     return deliveryPrintData({ seller: sellerName(d), order: d.order, contract: d.contract, delivery: trip, lines }, state.user?.name || '');
   } });
 }

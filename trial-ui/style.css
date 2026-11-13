@@ -2830,3 +2830,6 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .packed-adjust-row input{width:100%;min-width:0}
 .packed-adjust-modal textarea{width:100%;box-sizing:border-box}
 @media(max-width:480px){.packed-adjust-row{grid-template-columns:minmax(0,1fr) 100px;gap:10px}.packed-adjust-modal .row-gap{display:flex;flex-wrap:wrap}.packed-adjust-modal .row-gap .btn{flex:1}}
+.quote-source-date-label { display:grid;gap:4px;min-width:0;flex:1 1 180px; }
+.quote-source-date-label .quote-source-date { width:100%;min-width:0;max-width:100%;flex:auto; }
+.quote-source-date-label small { white-space:normal; }
