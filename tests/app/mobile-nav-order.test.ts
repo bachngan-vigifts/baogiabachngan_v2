@@ -6,7 +6,7 @@ const sidebar=readFileSync(new URL('../../trial-ui/index.html',import.meta.url),
 const keys=[...sidebar.matchAll(/data-nav="([^"]+)"/g)].map(m=>m[1]!);
 const expected=[
  'pos','quotes','orders','contracts','products','product-custody','receivables','order-products','deliveries',
- 'cashbook','cash','sepay',
+ 'cashbook','cash','sepay','accounting',
  'customers','care','stock-requests',
  'tasks','dashboard','flow','feedback',
  'kho','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving',
@@ -80,3 +80,9 @@ test('SePay is only included in the money group when the destination is permissi
  assert.equal(groupMobileNav(['cash','tasks']).some((g:any)=>g.items.includes('sepay')),false);
  assert.match(sidebar,/href="#\/sepay" data-nav="sepay" hidden/);
 });
+
+ test('accounting is in Money only when the permission-filtered sidebar includes it',()=>{
+ assert.deepEqual(groupMobileNav(['accounting','cash','sepay']).map((g:any)=>[g.key,g.items]),[['money',['cash','sepay','accounting']]]);
+ assert.equal(groupMobileNav(['cash','tasks']).some((g:any)=>g.items.includes('accounting')),false);
+ assert.match(sidebar,/href="#\/accounting" data-nav="accounting" hidden/);
+ });
