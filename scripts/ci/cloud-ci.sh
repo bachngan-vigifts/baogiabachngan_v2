@@ -11,7 +11,7 @@ set -u
 cd "$(git rev-parse --show-toplevel)"
 OUT=${CLOUD_CI_OUT:-.cloud-ci}
 SHARDS=${CLOUD_CI_SHARDS:-4}
-SHARD_TIMEOUT=${CLOUD_CI_SHARD_TIMEOUT:-2700}   # 45 phút mỗi phần, quá giờ coi là lỗi
+SHARD_TIMEOUT=${CLOUD_CI_SHARD_TIMEOUT:-5400}   # 90 phút mỗi phần (máy 4 nhân chạy đủ bộ khoảng 60 phút), quá giờ coi là lỗi
 rm -rf "$OUT"; mkdir -p "$OUT"
 SHA=$(git rev-parse HEAD); BRANCH=$(git rev-parse --abbrev-ref HEAD); STARTED=$(date +%s)
 step() { printf '[cloud-ci %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
