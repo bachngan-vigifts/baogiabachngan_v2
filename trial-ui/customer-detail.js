@@ -56,8 +56,8 @@ export function initCustomerDetail(deps) {
           <td class="right num">${money(o.receivable.due)}</td><td class="right num paid-text">${money(o.receivable.paid)}</td>
           <td class="right num strong">${money(o.receivable.balance)}</td><td class="right num ${o.receivable.overdue ? 'danger-text' : 'muted'}">${o.receivable.overdue ? money(o.receivable.overdue) : '—'}</td></tr>`), 'Khách không còn công nợ.');
       } },
-    { key: 'purchases', label: 'Lịch sử mua', count: d => d.purchases.length, html: d => table(['Sản phẩm', '>Số lượng', '>Số đơn', 'Mua gần nhất', '>Đơn giá gần nhất', '>Tổng tiền'], d.purchases.map(p => `<tr>
-        <td><span class="strong">${esc(p.name)}</span>${p.sku ? `<small>${esc(p.sku)}</small>` : ''}</td><td class="right num">${p.qty.toLocaleString('vi-VN')} ${esc(p.unit)}</td>
+    { key: 'purchases', label: 'Lịch sử mua', count: d => d.purchases.length, html: d => table(['Sản phẩm', 'Nhà cung cấp', '>Số lượng', '>Số đơn', 'Mua gần nhất', '>Đơn giá gần nhất', '>Tổng tiền'], d.purchases.map(p => `<tr>
+        <td><span class="strong">${esc(p.name)}</span>${p.sku ? `<small>${esc(p.sku)}</small>` : ''}</td><td>${p.supplierNames?.length?p.supplierNames.map(name=>`<span class="cd-purchase-supplier">${esc(name)}</span>`).join('<br>'):'<span class="muted">Chưa có thông tin NCC</span>'}</td><td class="right num">${p.qty.toLocaleString('vi-VN')} ${esc(p.unit)}</td>
         <td class="right num">${p.orders}</td><td>${fmtDate(p.lastDate)}</td><td class="right num">${money(p.lastPrice)}</td><td class="right num">${money(p.amount)}</td></tr>`), 'Chưa mua hàng (chỉ tính đơn đã xác nhận).') },
     { key: 'deliveries', label: 'Giao hàng', count: d => d.deliveries.length, html: d => table(['Chuyến giao', 'Ngày giao', 'Tình trạng', 'Đơn / HĐKT'], d.deliveries.map(x => `<tr class="clickable" data-href="${docHref(x.orderId, x.contractNo)}">
         <td>${esc(x.deliveryNo)}</td><td>${fmtDate(x.plannedDate)}${x.timeSlot ? `<small>${esc(x.timeSlot)}</small>` : ''}</td><td>${pill(DELIVERY_STATUS, x.status)}</td><td>${docLink(x.orderId, x.orderNo, x.contractNo)}</td></tr>`), 'Chưa có chuyến giao.') },

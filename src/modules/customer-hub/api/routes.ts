@@ -15,6 +15,7 @@ import { orderScopeFor } from '../../sales/api/routes.ts';
 import { debtCounts, quoteTotal, vietnamDate } from '../../sales/domain/sales.ts';
 import { customerAccounts, customerStockRequests } from '../../portal/schema.ts';
 import { HUB_LIMITS, purchaseHistory } from '../domain/overview.ts';
+import {purchaseSuppliers,purchaseSupplierKey} from './purchase-suppliers.ts';
 import { parseDiscounts, shownEmail } from '../../portal/domain/portal.ts';
 import { customerActivities } from '../../care/schema.ts';
 import { careScope } from '../../care/api/routes.ts';
@@ -76,6 +77,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>, catalogue?: 
     });
     const counted = orderList.filter(o => o.counted), sum = (k: 'due' | 'paid' | 'balance' | 'overdue') => counted.reduce((s, o) => s + (o.receivable?.[k] ?? 0), 0);
     const confirmedIds = new Set(counted.map(o => o.id));
+    const suppliers=await purchaseSuppliers(db,me,[...confirmedIds]);
     const quotes = quoteRows.map(({ q, assigneeName }) => ({ id: q.id, quoteNo: q.quoteNo, quoteType: q.quoteType, quoteDate: q.quoteDate, approvalStatus: q.approvalStatus,
       total: quoteTotal(q.data), assigneeName, updatedAt: q.updatedAt, orderId: orders.find(r => r.o.quoteId === q.id && r.o.status !== 'cancelled')?.o.id ?? null }))
       .map(q => ({ ...q, contractNo: q.orderId ? contractNo.get(q.orderId) ?? null : null }));
@@ -92,7 +94,7 @@ export function registerCustomerHubRoutes(router: Router<StaffEnv>, catalogue?: 
       contracts: cts.map(k => ({ ...k, orderNo: orderNo.get(k.orderId) ?? '' })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
       deliveries: ships.map(d => ({ ...d, orderNo: orderNo.get(d.orderId) ?? '', contractNo: contractNo.get(d.orderId) ?? null })),
       payments: pays.map(p => ({ ...p, orderNo: orderNo.get(p.orderId) ?? '', contractNo: contractNo.get(p.orderId) ?? null })),
-      purchases: purchaseHistory(lines.filter(l => confirmedIds.has(l.orderId)).map(l => ({ ...l, orderDate: orders.find(r => r.o.id === l.orderId)!.o.orderDate }))),
+      purchases: purchaseHistory(lines.filter(l => confirmedIds.has(l.orderId)).map(l => ({ ...l, supplierNames:suppliers.get(purchaseSupplierKey(l.orderId,l.sku))||[], orderDate: orders.find(r => r.o.id === l.orderId)!.o.orderDate }))),
       stockRequests: stockRows.map(r => { let items: unknown[] = []; try { items = JSON.parse(r.items); } catch { /* bỏ qua */ } return { ...r, items: Array.isArray(items) ? items.length : 0 }; }),
       care: careRows.map(({ a, ownerName }) => ({ ...a, ownerName, typeLabel: CARE_TYPE_LABEL[a.type], resultLabel: CARE_RESULT_LABEL[a.result], remindLabel: CARE_REMIND_LABEL[a.remindBefore], canEdit: me.role === 'manager' || a.ownerId === me.id })),
       accounts: accountRows.map(a => ({ memberId: a.memberId, name: a.name, email: shownEmail(a.email), phone: a.phone ?? '', active: a.active, discounts: parseDiscounts(a.discounts) })),
