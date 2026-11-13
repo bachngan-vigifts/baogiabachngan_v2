@@ -45,3 +45,13 @@ PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs REVIEW_DIR=/tmp/split-delivery n
 ![Phiếu đợt 2 — 80](trip-80.png)
 
 ![Nhập ngày trên mobile](source-dates-mobile.png)
+
+## Sửa gate CI của PR #654
+
+Hai check đỏ (`test shard 1/4` và job tổng hợp `test`) có cùng nguyên nhân: migration `20261113074715_split_packing_delivery_dates.sql` thiếu mapping trong November migration coverage. Đã thêm gate `assert-split-packing-delivery-dates.sql`, mapping và bước kiểm tra chỉ đọc trước khi triển khai API. Gate kiểm tra hai cột text nullable/không default và hai constraints hợp lệ; không tự sửa schema, backfill ngày hoặc tạo lại lịch giao.
+
+Đã merge main mới nhất vào nhánh PR một cách thông thường, giữ cả bản sửa nền trắng khi in. Không sửa nội dung migration đã áp dụng production.
+
+Validation sau sửa: 53/53 test về gate, migration coverage, lịch cũ, warehouse-sales, nguồn hàng và link phiếu giao đạt; typecheck, UI build và diff check đạt. Chromium trên 390/1440px với Manager/người phụ trách xác nhận đúng 170 ngày 16/11 và 80 ngày 19/11 (SL đặt tổng 250), không lỗi JS hoặc tràn form. Kết quả tại `/tmp/pr654-fix-browser`.
+
+Gate mới cũng đã chạy trên production trong `BEGIN READ ONLY` / `ROLLBACK` và đạt. Không chạy lại migration, không thay đổi dữ liệu đơn hàng, lịch giao, tồn kho hoặc thanh toán trong lần sửa CI này.
