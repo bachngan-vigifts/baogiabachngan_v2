@@ -1,0 +1,30 @@
+[
+  {
+    "role": "manager",
+    "width": 390,
+    "supplierNamesVisible": true,
+    "jsErrors": [],
+    "localOverviewMedianMs": 27
+  },
+  {
+    "role": "manager",
+    "width": 1440,
+    "supplierNamesVisible": true,
+    "jsErrors": [],
+    "localOverviewMedianMs": 24
+  },
+  {
+    "role": "owner",
+    "width": 390,
+    "supplierNamesVisible": true,
+    "jsErrors": [],
+    "localOverviewMedianMs": 20
+  },
+  {
+    "role": "owner",
+    "width": 1440,
+    "supplierNamesVisible": true,
+    "jsErrors": [],
+    "localOverviewMedianMs": 23
+  }
+]

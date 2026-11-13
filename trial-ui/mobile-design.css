@@ -344,7 +344,7 @@
  #quote-list .mobile-quote-owner { display:inline;font-size:12px;color:var(--muted); }
  [data-mobile-row-detail],.crm-task-no-approval { display:inline-flex; }
  #customer-list [data-quote-for] { display:inline-flex!important; }
- #customer-detail .cd-tabs [data-tab]:not([data-tab=overview]):not([data-tab=orders]):not([data-tab=debts]):not([data-tab=care]):not([data-tab=catalogue]) { display:none; }
+ #customer-detail .cd-tabs [data-tab]:not([data-tab=overview]):not([data-tab=orders]):not([data-tab=debts]):not([data-tab=care]):not([data-tab=catalogue]):not([data-tab=purchases]) { display:none; }
  #view-care .form-grid,.care-form .form-grid,.care-dialog .care-form { grid-template-columns:1fr!important; }
  :is(#view-members,#view-member,#view-payroll,#view-permissions,#view-flow,#view-inventory,#view-stock-moves,#view-transfers) .table-wrap { overflow:auto!important;max-width:100%;overscroll-behavior:contain; }
  :is(#view-members,#view-member,#view-payroll,#view-permissions) table { display:table!important;min-width:720px; }
