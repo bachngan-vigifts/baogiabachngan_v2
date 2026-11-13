@@ -1,17 +1,45 @@
-# Kiểm tra mỗi PR: TypeScript + toàn bộ test (PostgreSQL chạy bằng PGlite, không cần Supabase).
-# Không chạy lại khi merge vào main (PR đã kiểm tra; "Triển khai API" vẫn chạy test trước khi deploy) để tiết kiệm phút GitHub Actions.
+# Kiểm tra NHẸ mỗi PR: TypeScript + nhóm test trọng yếu, một máy, vài phút. Giữ tên check `test` (quy tắc chặn merge đang dùng).
+# Bộ test ĐẦY ĐỦ (khoảng 2.400 test) chạy trên cloud Claude khi PR sẵn sàng merge: scripts/ci/cloud-ci.sh, docs/CLOUD-CI.md.
+# Cần chạy đủ trên GitHub (ví dụ cloud Claude không dùng được): Actions → Kiểm tra → Run workflow → chọn "full".
 # Đẩy commit mới lên cùng PR thì lượt kiểm tra cũ đang chạy tự huỷ.
 name: Kiểm tra
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      full:
+        description: 'Chạy đủ 4 phần test trên GitHub (bình thường chạy trên cloud Claude)'
+        type: boolean
+        default: false
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
-  test-shards:
-    name: test shard ${{ matrix.shard }}/4
+  test:
     # Keep runner upgrades explicit instead of following ubuntu-latest.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Nhóm trọng yếu, chạy nhanh: ranh giới kiến trúc, cổng migration trước deploy, vòng đời kết nối CSDL của Edge,
+      # phụ thuộc của máy chủ catalogue, và toàn bộ test giao diện tĩnh (*-ui.test.ts).
+      - run: >-
+          node --import tsx --test --test-concurrency=2
+          tests/architecture.test.ts
+          tests/db/november-migration-gates.test.ts
+          tests/app/edge-db-lifecycle.test.ts
+          tests/app/catalogue-edge-dependencies.test.ts
+          tests/app/appsheet-schema-gate.test.ts
+          "tests/app/*-ui.test.ts"
+  full-shards:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full }}
+    name: test shard ${{ matrix.shard }}/4
     runs-on: ubuntu-24.04
     # The two-shard PGlite suite hit the 35m job limit near its final schema tests.
     # Four disjoint file shards keep the same full globs/concurrency as npm test; no tests are skipped.
@@ -34,13 +62,3 @@ jobs:
       - run: npm run typecheck
       # Node test options must precede the file globs; npm test -- ... appends them too late.
       - run: node --import tsx --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/4 "tests/**/*.test.ts" "src/**/*.test.ts"
-  # Preserve the existing required check name; failure/cancellation in any shard fails the gate.
-  test:
-    if: ${{ always() }}
-    needs: test-shards
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Require all four test shards
-        env:
-          RESULT: ${{ needs.test-shards.result }}
-        run: test "$RESULT" = success
