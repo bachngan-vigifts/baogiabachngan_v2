@@ -499,6 +499,7 @@ function showAuth(message = '', { keepToken = false } = {}) {
   if (typeof financeUi !== 'undefined') financeUi?.close();
   if (typeof sepayUi !== 'undefined') sepayUi?.close();
   if (typeof accountingUi !== 'undefined') accountingUi?.close();
+  if (typeof suppliersUi !== 'undefined') suppliersUi?.close();
   if(typeof khoHomeUi!=='undefined')khoHomeUi?.close();
   if(typeof warehouseAssignmentUi!=='undefined')warehouseAssignmentUi?.close();
   stocktakeUi?.close();
@@ -996,6 +997,7 @@ function route() {
   if (view === 'weekly-reports') weeklyView().show(query);
   if (view === 'monthly-reports') monthlyView().show(query);
   if (view === 'flow') flowView().load();
+  if (view !== 'suppliers') suppliersUi?.close();
   if (view === 'suppliers') { suppliersView().load(); if (new URLSearchParams(query).get('new') === '1') suppliersView().openNew(); else if (id) suppliersView().open(decodeURIComponent(id)); }
   if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
   if (view === 'early-requests') earlyRequestPage().show(id ? decodeURIComponent(id) : '', query);
@@ -4138,7 +4140,7 @@ var feedbackUi = null;
 function feedbackView() { return feedbackUi ||= initFeedback({ api, root: $('#view-feedback'), toast, esc, go, fmtDate,
   compressPhoto: f => compressImage(f, [[1600, .75], [1280, .72], [1024, .68], [800, .62]], 600000, 'Ảnh quá lớn, chụp lại giúp.'), appVersion: () => $('#app-version')?.textContent || '' }); }
 var suppliersUi = null;
-function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('#view-suppliers'), toast, confirmBox, canLinkAccounts: isManager }); }
+function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('#view-suppliers'), toast, confirmBox, canLinkAccounts: isManager, identity:()=>JSON.stringify([token,state.user?.id]) }); }
 var inventoryUi = null;
 var khoHomeUi = null; // hoisted: unauthenticated startup can call showAuth before this section
 let stockLookupUi = null;

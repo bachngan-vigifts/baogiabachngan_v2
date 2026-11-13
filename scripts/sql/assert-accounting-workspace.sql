@@ -21,3 +21,12 @@ DO $$ DECLARE required record; BEGIN
  END LOOP;
  IF NOT EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='uq_accounting_source_order' AND indexdef LIKE 'CREATE UNIQUE INDEX%') THEN RAISE EXCEPTION 'Missing source-order uniqueness in 20261113002619_accounting_workspace.sql'; END IF;
 END $$;
+
+-- Explicit invoice publication requires private reconciliation links.
+DO $$ DECLARE r regclass:=to_regclass('public.accounting_supplier_links'); BEGIN
+ IF r IS NULL THEN RAISE EXCEPTION 'Apply 20261113010807_accounting_supplier_links.sql: missing accounting_supplier_links'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_class WHERE oid=r AND relrowsecurity) THEN RAISE EXCEPTION 'RLS required on accounting_supplier_links'; END IF;
+ IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') AND has_table_privilege('anon',r,'SELECT,INSERT,UPDATE,DELETE') THEN RAISE EXCEPTION 'anon cannot access accounting_supplier_links'; END IF;
+ IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') AND has_table_privilege('authenticated',r,'SELECT,INSERT,UPDATE,DELETE') THEN RAISE EXCEPTION 'authenticated cannot access accounting_supplier_links'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='uq_accounting_supplier_invoice' AND indexdef LIKE 'CREATE UNIQUE INDEX%') THEN RAISE EXCEPTION 'Missing invoice uniqueness in 20261113010807_accounting_supplier_links.sql'; END IF;
+END $$;

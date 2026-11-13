@@ -69,3 +69,27 @@ Chromium dùng app/API thật với dữ liệu thử: Manager ở 320/390/1440p
 Security Advisor chỉ có 6 thông báo INFO `rls_enabled_no_policy` liên quan bảng mới: đây là chủ đích chặn truy cập Data API trực tiếp (cũng đã REVOKE quyền anon/authenticated), còn phiên nhân viên được API xác minh. Không thêm policy mở quyền để xóa thông báo. [Giải thích của Supabase](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy).
 
 43 kiểm thử liên quan đã pass; 6 ca Chromium pass. Typecheck, build và kiểm tra cú pháp JS pass. Nhánh được merge main mới nhất `c8fd0b08` trước khi mở PR. Chưa merge PR hoặc phát hành API/UI production trong tác vụ này; database bổ sung tương thích với ứng dụng cũ.
+
+## Kết nối danh bạ và cổng NCC
+
+Bổ sung theo yêu cầu nối **cả trang quản lý NCC và cổng NCC**:
+
+- CRM: Nhà cung cấp → chọn NCC → tab **Hóa đơn & công nợ**. Tab tách khỏi form sửa NCC, không submit lẫn thông tin danh bạ. Manager đối chiếu hóa đơn NCC theo luồng hiện có; Manager/Kế toán chọn chứng từ mua đã ghi sổ phù hợp và xác nhận pháp nhân. Có phân trang riêng cho hóa đơn/đơn và thu hồi liên kết với lý do, giữ lịch sử.
+- Chỉ đề xuất chứng từ khớp số, ký hiệu, ngày, MST NCC, tiền trước VAT và VAT. Khi lưu, kiểm tra thêm SKU/đơn vị/số lượng thuộc đơn mua gốc; không tự gán từ tên/MST. Mỗi hóa đơn và chứng từ chỉ có một liên kết đang hiệu lực.
+- Cổng NCC: tab Hóa đơn thêm trạng thái/ngày ghi sổ; tab Công nợ mở và thêm số tiền hóa đơn đã ghi sổ được chia sẻ theo đơn. Hóa đơn vẫn là hóa đơn của NCC này trong đơn mua đã duyệt. NCC không được đọc bảng/link API nội bộ; không nhận tên sổ, pháp nhân nội bộ, giá vốn, tồn, ghi chú, documentId hay dữ liệu NCC khác qua list/detail/export.
+- Chia sẻ mặc định tắt. Người liên kết phải chọn rõ có chia sẻ hay không. Chỉ phản ánh link đang hiệu lực, được chia sẻ, hóa đơn verified, chứng từ purchase/posted và đơn không hủy. Thu hồi liên kết/hủy chứng từ/từ chối hóa đơn làm trạng thái chia sẻ mất hiệu lực ở lượt đọc tiếp theo.
+- **Công nợ vẫn tính từ đơn mua và supplier_payments không hủy** theo hàm/SQL hiện hành, không cộng hóa đơn thêm lần nữa và không lấy toàn bộ tồn sổ làm khoản nợ. Chưa phân bổ thanh toán theo từng hóa đơn/MST; số hóa đơn ghi sổ là chỉ số đối chiếu riêng. Không phát hành/nhập hóa đơn tự động từ Viettel/VNPT.
+- Tạm ứng vẫn chưa mở; tác vụ này mở Công nợ và nối Hóa đơn.
+
+Migration bổ sung do CLI tạo: `20261113010807_accounting_supplier_links.sql`. Chỉ thêm bảng liên kết private có RLS, FK, unique partial index chống liên kết trùng và trạng thái thu hồi. Không sửa migration đã áp dụng, không backfill/gán chứng từ thật tự động, không thêm khoản nợ/phiếu chi/stock move. Assertion deploy đã bổ sung kiểm tra bảng này và khai báo trong coverage tháng 11.
+
+Kiểm thử bổ sung:
+
+```sh
+node --import tsx --test tests/app/accounting-supplier-links.test.ts tests/app/supplier-workspace-live.test.ts tests/app/suppliers-directory.test.ts tests/app/supplier-workspace-review.test.ts tests/app/supplier-portal-boundary.test.ts tests/db/november-migration-gates.test.ts tests/db/migration.test.ts tests/app/trial-ui.test.ts
+PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node --import tsx scripts/testing/accounting-supplier-links.mjs
+```
+
+39 kiểm thử regression pass. Chromium 6 ca Manager/Kế toán/NCC/NCC khác ở 390/1440px: lưu liên kết có chia sẻ từ UI, đọc trạng thái trên cổng, kiểm tra công nợ giữ nguyên, thu hồi từ UI, không tràn ngang/không lỗi JS. Ảnh `/tmp/accounting-supplier-links`. Fixture: hóa đơn 540đ, thanh toán 100đ, nợ theo đơn vẫn 863.900đ trước/sau liên kết; stock_moves không phát sinh, supplier_payments vẫn đúng một khoản thử.
+
+Production trước migration liên kết: 0 chứng từ sổ, 0 hóa đơn NCC, 0 khoản thanh toán NCC và 4 kho vận hành. Vì chưa có dữ liệu nguồn, không tự suy ra số dư hoặc gán liên kết.
