@@ -95,6 +95,10 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .icon-btn:disabled { opacity: .3; cursor: default; }
 .icon-btn.danger:hover { background: var(--red-50); color: var(--red); }
 .icon-btn svg { width: 16px; height: 16px; }
+/* Keep the home shortcut prominent without resizing other toolbar icons. */
+.topbar .home-entry { width: 40px; height: 40px; flex: none; color: #2563eb; background: #eff6ff; border-radius: 8px; }
+.topbar .home-entry:hover { color: #1d4ed8; background: #dbeafe; }
+.topbar .home-entry svg { width: 28px; height: 28px; }
 
 /* ---------- Ô nhập ---------- */
 label { display: grid; gap: 5px; font-size: var(--text-caption); font-weight: 600; color: #3a4860; }
