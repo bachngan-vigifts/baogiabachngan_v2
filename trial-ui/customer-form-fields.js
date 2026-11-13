@@ -1,8 +1,9 @@
 import { anniversarySuggestion, vietnamToday } from './customer-anniversary.js';
 /** Shared customer fields for the directory and POS. Build server values as text only. */
 /** `paymentDays`: ô Số ngày công nợ chỉ có ở danh bạ khách (CRM); POS giữ form gọn. */
+/** `requireCode`: form tạo khách ở CRM bắt buộc Mã khách hàng (chỉ khi tạo, cùng lúc với requireProfile). */
 /** `companyLabels`: form danh bạ khách (CRM) ghi rõ điện thoại / email là của công ty và không bắt buộc. */
-export function customerFormFields({ requirePhone = false, requireProfile = false, requireName = true, paymentDays = false, contactDirectory = false, companyLabels = false } = {}) {
+export function customerFormFields({ requirePhone = false, requireProfile = false, requireName = true, paymentDays = false, contactDirectory = false, companyLabels = false, requireCode = false } = {}) {
   const root = document.createElement('div');
   root.className = 'form-grid cols-2 customer-form-fields';
   const controls = {};
@@ -25,7 +26,7 @@ export function customerFormFields({ requirePhone = false, requireProfile = fals
   for (const [name, label, type, max, wide, placeholder] of fields) {
     const box = document.createElement('label');
     if (wide) box.className = 'span-2';
-    const required = name === 'name' && requireName || name === 'phone' && requirePhone || requireProfile && ['name','contact','taxCode','address'].includes(name);
+    const required = name === 'name' && requireName || name === 'phone' && requirePhone || requireProfile && (['name','contact','taxCode','address'].includes(name) || requireCode && name === 'customerCode');
     const title = document.createElement('span'); title.textContent = label + (required ? ' *' : '');
     const input = document.createElement(type === 'textarea' ? 'textarea' : 'input');
     input.name = name; input.maxLength = max;
@@ -54,7 +55,7 @@ export function customerFormFields({ requirePhone = false, requireProfile = fals
   const setRequiredProfile = value => {
     requireProfile=value;
     for(const [name,input] of Object.entries(controls)){
-      const required=name==='name'&&requireName||name==='phone'&&requirePhone||value&&['name','contact','taxCode','address'].includes(name);
+      const required=name==='name'&&requireName||name==='phone'&&requirePhone||value&&(['name','contact','taxCode','address'].includes(name)||requireCode&&name==='customerCode');
       input.required=required&&!(contactDirectory&&name==='contact');input.setAttribute('aria-required',String(required&&!(contactDirectory&&name==='contact')));titles[name].title.textContent=titles[name].label+(required?' *':'');
     }
   };

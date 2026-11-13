@@ -52,10 +52,15 @@ try {
     assert.equal(await dialog.locator('.customer-contact-directory').isVisible(), false); assert.equal(await save.isVisible(), false); assert.equal(await back.isVisible(), false);
     assert.match(await dialog.locator('label', { has: page.locator('[name="phone"]') }).innerText(), /Điện thoại công ty \(không bắt buộc\)/);
     await next.click(); assert.match(await err.innerText(), /Nhập đủ các ô có dấu \*/); assert.equal(await page.evaluate(() => document.querySelector('#customer-dialog').dataset.customerStep), '1');
+    // Mã khách hàng: ô đầu tiên của bước 1, bắt buộc.
+    assert.equal(await page.evaluate(() => { const v = [...document.querySelectorAll('#customer-form .customer-form-fields label')].filter(l => l.offsetParent).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top || a.getBoundingClientRect().left - b.getBoundingClientRect().left)[0]; return v.querySelector('input').name; }), 'customerCode', 'Mã khách hàng đứng đầu');
+    assert.match(await dialog.locator('label', { has: page.locator('[name="customerCode"]') }).innerText(), /Mã khách hàng \*/);
     await page.locator('#customer-tax-input').fill(mst); await page.locator('#customer-tax-fetch').click();
     await page.waitForFunction(() => /Tổng cục Thuế/.test(document.querySelector('#customer-tax-status')?.textContent || ''));
     assert.equal(await page.locator('#customer-form [name="name"]').inputValue(), 'CÔNG TY CỔ PHẦN MẪU');
-    await dialog.getByRole('button', { name: /Ngày thành lập, nhóm khách, mã khách/ }).click(); assert.equal(await vis(page, 'establishedDate'), true, 'mở được phần không bắt buộc');
+    await next.click(); assert.match(await err.innerText(), /Nhập đủ các ô có dấu \*/, 'thiếu mã khách thì không qua bước 1'); assert.equal(await page.evaluate(() => document.querySelector('#customer-dialog').dataset.customerStep), '1');
+    await page.locator('#customer-form [name="customerCode"]').fill('KH-' + tag);
+    await dialog.getByRole('button', { name: /Ngày thành lập, nhóm khách/ }).click(); assert.equal(await vis(page, 'establishedDate'), true, 'mở được phần không bắt buộc');
     await noOverflow(page); await page.screenshot({ path: `${shots}/${tag}-1.png` });
     // Bước 2: chỉ người liên hệ; không nhập tên thì không qua được.
     await next.click(); assert.equal(await page.evaluate(() => document.querySelector('#customer-dialog').dataset.customerStep), '2');
@@ -67,13 +72,13 @@ try {
     // Bước 3: thẻ xem lại + nút Lưu; SĐT công ty để trống vẫn lưu được.
     await next.click(); assert.equal(await save.isVisible(), true); assert.equal(await next.isVisible(), false);
     const sum = await dialog.locator('.customer-step-summary').innerText();
-    assert.match(sum, /CÔNG TY CỔ PHẦN MẪU/); assert.match(sum, /Chị Lan/); assert.match(sum, /ĐT công ty: —/); assert.doesNotMatch(sum, /chưa nhập/);
+    assert.match(sum, /CÔNG TY CỔ PHẦN MẪU/); assert.match(sum, new RegExp('Mã KH: KH-' + tag)); assert.match(sum, /Chị Lan/); assert.match(sum, /ĐT công ty: —/); assert.doesNotMatch(sum, /chưa nhập/);
     assert.equal(await vis(page, 'depositRate'), false); await dialog.getByRole('button', { name: /Điều khoản bán hàng/ }).click(); assert.equal(await vis(page, 'depositRate'), true);
     await noOverflow(page); await page.screenshot({ path: `${shots}/${tag}-3.png` });
     await back.click(); assert.equal(await dialog.getByLabel('Tên người liên hệ', { exact: true }).first().inputValue(), 'Chị Lan', 'quay lại không mất dữ liệu'); await next.click();
     await save.click(); await dialog.waitFor({ state: 'hidden', timeout: 10000 }).catch(async () => { throw Error('Không lưu được: ' + await err.innerText()); });
     const [c] = await f.db.select().from(customers).where(eq(customers.taxCode, mst));
-    assert.ok(c, 'đã tạo khách'); assert.equal(c.phone ?? '', '', 'không cần điện thoại công ty'); assert.equal(c.contact, 'Chị Lan'); assert.equal(c.address, 'Số 1 Duy Tân, Cầu Giấy, Hà Nội');
+    assert.ok(c, 'đã tạo khách'); assert.equal(c.phone ?? '', '', 'không cần điện thoại công ty'); assert.equal(c.contact, 'Chị Lan'); assert.equal(c.customerCode, 'KH-' + tag); assert.equal(c.address, 'Số 1 Duy Tân, Cầu Giấy, Hà Nội');
     assert.deepEqual(errors, []); await context.close();
   }
   // Sửa khách: mở ở bước 1 với dữ liệu cũ, đi tới bước 3, lưu được; mở lại form Thêm thì quay về bước 1 trống.

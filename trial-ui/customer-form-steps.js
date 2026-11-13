@@ -1,7 +1,7 @@
 /** Form Thêm / Sửa khách hàng nhập theo 3 bước: Công ty → Người liên hệ → Kiểm tra và lưu.
  *  Chỉ ẩn / hiện các ô sẵn có theo bước (không di chuyển, không đổi tên ô) nên dữ liệu gửi máy chủ, kiểm trùng và tra MST giữ nguyên. */
 const STEPS = [[1, 'Công ty'], [2, 'Người liên hệ'], [3, 'Kiểm tra và lưu']];
-const COMPANY = ['taxCode', 'name', 'address', 'phone', 'email'], COMPANY_EXTRA = ['establishedDate', 'customerType', 'customerCode'];
+const COMPANY = ['customerCode', 'taxCode', 'name', 'address', 'phone', 'email'], COMPANY_EXTRA = ['establishedDate', 'customerType'];
 const TERMS = ['depositRate', 'paymentTerm', 'paymentDays', 'creditLimit'];
 
 export function initCustomerFormSteps({ dialog, form, fields, profileRoot, taxLookup, note, error, doc = document }) {
@@ -55,7 +55,7 @@ export function initCustomerFormSteps({ dialog, form, fields, profileRoot, taxLo
     const entries = [...fields.contactSlot.querySelectorAll('.customer-contact-entry')];
     const main = entries.find(e => e.querySelector('.customer-primary-choice input')?.checked) ?? entries[0];
     const of = label => main?.querySelector(`[aria-label="${label}"]`)?.value.trim() ?? '';
-    const company = card('is-company', 'Công ty', value('name'), [line('MST', value('taxCode'), !editing), line('Địa chỉ', value('address'), !editing), line('ĐT công ty', value('phone')), line('Email công ty', value('email'))]);
+    const company = card('is-company', 'Công ty', value('name'), [line('Mã KH', value('customerCode'), !editing), line('MST', value('taxCode'), !editing), line('Địa chỉ', value('address'), !editing), line('ĐT công ty', value('phone')), line('Email công ty', value('email'))]);
     const person = card('is-person', 'Người liên hệ chính', of('Tên người liên hệ'), [line('Chức vụ', of('Chức vụ')), line('ĐT', of('Điện thoại liên hệ')), line('Email', of('Email liên hệ')),
       ...(entries.length > 1 ? [text('muted', `và ${entries.length - 1} người liên hệ khác`)] : [])]);
     summary.replaceChildren(company, person);
@@ -64,7 +64,7 @@ export function initCustomerFormSteps({ dialog, form, fields, profileRoot, taxLo
     step = n;
     for (const el of tagged) el.classList.toggle('cstep-off', Number(el.dataset.cstep) !== n || (el.dataset.cextra === '1' && !open[n]));
     stepButtons.forEach((b, i) => { b.classList.toggle('done', i + 1 < n); if (i + 1 === n) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current'); });
-    more1.textContent = (open[1] ? '－' : '＋') + ' Ngày thành lập, nhóm khách, mã khách · không bắt buộc';
+    more1.textContent = (open[1] ? '－' : '＋') + ' Ngày thành lập, nhóm khách · không bắt buộc';
     more3.textContent = (open[3] ? '－' : '＋') + (editing ? ' Điều khoản bán hàng riêng · không bắt buộc' : ' Điều khoản bán hàng, phụ trách, ghi chú · không bắt buộc, để trống dùng mặc định');
     more1.setAttribute('aria-expanded', String(open[1])); more3.setAttribute('aria-expanded', String(open[3]));
     h2.textContent = 'Bước 2 · Người liên hệ' + (value('name') ? ' của ' + value('name') : '');

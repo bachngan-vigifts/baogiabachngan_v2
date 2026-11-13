@@ -3316,7 +3316,7 @@ async function openCustomer(id, known) {
     $('#customer-dialog').showModal();customerDuplicateCheck.refresh();
   }catch(ex){toast(ex.message,'err');}
 }
-const customerFields = customerFormFields({requireProfile:true,paymentDays:true,contactDirectory:true,companyLabels:true});
+const customerFields = customerFormFields({requireProfile:true,paymentDays:true,contactDirectory:true,companyLabels:true,requireCode:true});
 const customerTypeOptions = bindCustomerTypeOptions({input:customerFields.controls.customerType,api});
 $('#customer-fields').append(customerFields.root);
 const customerNewProfile=customerCreateProfile({api,mainContact:customerFields.controls.contact});
@@ -3383,7 +3383,7 @@ $('#customer-form').addEventListener('submit', async e => {
   if (data.email && !/^\S+@\S+\.\S+$/.test(data.email)) { err.textContent = 'Email chưa đúng định dạng.'; return; }
   try{Object.assign(data,customerNewProfile.read());data.contact=customerFields.controls.contact.value;}catch(ex){err.textContent=ex.message;return;}
   if(!customerId) {
-    for(const [key,label] of [['taxCode','mã số thuế'],['address','địa chỉ']])if(!data[key]){err.textContent='Vui lòng nhập '+label+' khách hàng.';customerFields.controls[key].focus();return;}
+    for(const [key,label] of [['customerCode','mã'],['taxCode','mã số thuế'],['address','địa chỉ']])if(!data[key]){err.textContent='Vui lòng nhập '+label+' khách hàng.';customerFields.controls[key].focus();return;}
   }
   if(e.target.reportValidity&&!e.target.reportValidity())return;
   const btn = $('#save-customer'); btn.disabled = true;

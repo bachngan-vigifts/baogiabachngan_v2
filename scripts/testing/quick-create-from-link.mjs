@@ -97,7 +97,7 @@ try {
     await page.screenshot({ path: `${shots}/customer-${width}.png` });
     // Form nhập theo 3 bước: Công ty → Người liên hệ → Kiểm tra và lưu.
     const nextStep = dialog.getByRole('button', { name: 'Tiếp tục', exact: true });
-    await form.locator('[name="phone"]').fill(width === 390 ? '0901112223' : '0903334445'); await nextStep.click();
+    await form.locator('[name="customerCode"]').fill('KH-' + width); await form.locator('[name="phone"]').fill(width === 390 ? '0901112223' : '0903334445'); await nextStep.click();
     await dialog.getByLabel('Tên người liên hệ', { exact: true }).first().fill('Chị Lan'); await nextStep.click();
     await page.locator('#save-customer').click();
     await dialog.waitFor({ state: 'hidden' });

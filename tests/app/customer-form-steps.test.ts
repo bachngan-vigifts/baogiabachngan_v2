@@ -18,11 +18,18 @@ test('điện thoại và email công ty ghi rõ là của công ty, không bắ
   const fields = read('customer-form-fields.js'), app = read('app.js');
   assert.match(fields, /companyLabels \? 'Điện thoại công ty \(không bắt buộc\)' : 'Điện thoại'/);
   assert.match(fields, /companyLabels \? 'Email công ty \(không bắt buộc\)' : 'Email'/);
-  assert.match(app, /customerFormFields\(\{requireProfile:true,paymentDays:true,contactDirectory:true,companyLabels:true\}\)/);
+  assert.match(app, /customerFormFields\(\{requireProfile:true,paymentDays:true,contactDirectory:true,companyLabels:true,requireCode:true\}\)/);
   assert.doesNotMatch(app, /\['phone','số điện thoại'\]/, 'giao diện không còn chặn lưu khi thiếu SĐT công ty');
   const server = readFileSync(join(ui, '../src/modules/customers/domain/customer-input.ts'), 'utf8');
   assert.match(server, /\[\['contact','người liên hệ'\],\['taxCode','mã số thuế'\],\['address','địa chỉ'\]\]/, 'máy chủ bắt buộc: người liên hệ, MST, địa chỉ');
 });
+test('Mã khách hàng nằm đầu bước 1 và bắt buộc khi tạo khách ở CRM', () => {
+  const steps = read('customer-form-steps.js'), fields = read('customer-form-fields.js'), app = read('app.js');
+  assert.match(steps, /const COMPANY = \['customerCode', 'taxCode', 'name', 'address', 'phone', 'email'\]/);
+  assert.doesNotMatch(steps, /COMPANY_EXTRA = \[[^\]]*customerCode/);
+  assert.match(fields, /requireCode && name === 'customerCode'/);
+  assert.match(app, /\['customerCode','mã'\],\['taxCode','mã số thuế'\],\['address','địa chỉ'\]/);
+});
 test('POS vẫn dùng nhãn cũ (form khách lẻ không đổi)', () => {
-  assert.doesNotMatch(read('pos-customer.js') + read('pos.js'), /companyLabels/);
+  assert.doesNotMatch(read('pos-customer.js') + read('pos.js'), /companyLabels|requireCode/);
 });
