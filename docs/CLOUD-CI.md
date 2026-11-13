@@ -1,4 +1,4 @@
-# Kiểm tra PR trên cloud Claude (thay bước test của GitHub Actions)
+# Kiểm tra PR trên cloud Claude (bổ sung cho GitHub Actions)
 
 Bộ test đầy đủ (khoảng 2.300 test, 4 phần) chiếm khoảng 90% phút GitHub Actions. Tài liệu này mô tả cách chạy đúng bộ đó
 trên cloud Claude mỗi khi PR được mở hoặc có commit mới, và báo kết quả bằng bình luận trên PR.
@@ -36,10 +36,19 @@ Mỗi sự kiện mở một phiên riêng; hai lần đẩy commit là hai phi�
 - Sự kiện GitHub có trần số lượt mỗi giờ cho từng tác vụ và cho cả tài khoản.
 - Kết quả là bình luận trên PR, không phải check của GitHub.
 
-## Thu gọn CI trên GitHub (bước sau, làm bằng PR riêng)
+## CI trên GitHub: tiết kiệm nhưng giữ kiểm tra đầy đủ
 
-Chỉ làm sau khi tester trên cloud đã chạy ổn vài PR. Phương án: `ci.yml` giữ job `test` (tên check đang dùng để chặn merge)
-nhưng chỉ chạy `npm run typecheck` và nhóm test trọng yếu trên một máy; bỏ 4 phần test đầy đủ.
+- Chỉ kích hoạt trên PR, không chạy trùng cùng bộ test trên sự kiện push.
+- PR nháp: TypeScript và nhóm test nhanh. Chuyển sang **Ready for review** tự kích hoạt lại; mọi PR sẵn sàng merge chạy toàn bộ 4 phần test, không phân loại đường dẫn để bỏ qua test nghiệp vụ.
+- Commit mới tự huỷ lượt CI cũ của cùng PR. Chuyển lại thành draft cũng huỷ lượt cũ. Lượt chạy tay được tách riêng, không huỷ lượt kiểm tra PR; không đổi cơ chế triển khai production.
+- Cache npm theo `package-lock.json`, vẫn dùng `npm ci` để kiểm tra lockfile và cài sạch. Cache không chứa `node_modules`; không dùng kết quả test của commit trước.
+- TypeScript chạy một lần trước các shard, thay vì chạy thêm trên từng shard. Nhóm test nhanh không lặp lại khi đã chạy full suite.
+- Check tổng hợp `test` chỉ thành công trên PR ready khi TypeScript và đủ 4 shard thành công. Shard lỗi, bị huỷ hoặc bị bỏ qua đều làm check tổng hợp thất bại.
+- Actions → Kiểm tra → Run workflow → `full=true` vẫn chạy toàn bộ; `full=false` chỉ là smoke check, không phải bằng chứng full suite cho PR.
+
+**Giới hạn:** cấu hình workflow không tự bật bảo vệ nhánh. Cần quy tắc riêng yêu cầu check `test` để GitHub chặn merge; bình luận cloud không thay thế quy tắc đó. Không merge PR nháp, không coi smoke check hoặc kết quả SHA cũ là kiểm thử đầy đủ. Trước release, kiểm tra full suite đạt trên revision hiện tại và giữ các cổng migration/deploy hiện có.
+
+Đây là tiết kiệm so với chạy full suite lặp lại trên mọi draft/push, không phải cam kết giảm chi phí so với cấu hình chỉ chạy smoke. Chưa đo mức tiết kiệm thực tế; số phút còn phụ thuộc cache hit và thời gian test.
 
 ## Chạy tay
 
