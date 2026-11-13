@@ -27,3 +27,8 @@ test('row reference columns keep separate purchase orders and PXKs instead of ap
  assert.deepEqual(d.rows.map((r:any)=>[r.supplierOrderNo,r.pxkNo]),[['A-001','0001'],['A-002','0002']]);
  const mapped=photoRequestRows(d.rows,{pxkNo:'DEFAULT'});assert.deepEqual(mapped.map((r:any)=>r.pxkNo),['0001','0002']);
 });
+test('Minh Long delivery slip headings "Mã Số" and "SL Giao" are recognised as code and quantity columns',()=>{
+ const header=[word('STT',5,10),word('Mã',60,10),word('Số',85,10),word('Tên',220,10),word('hàng',250,10),word('ĐVT',520,10),word('SL',600,10),word('Giao',625,10),word('Ghi',760,10),word('chú',790,10)];
+ const d=extractEarlyPhotoRows(data([[word('Mã',20,-40),word('số',45,-40),word('thuế:',70,-40),word('0301234567',130,-40)],header,[word('1',5,40),word('011006000',60,40),word('Chén',220,40),word('Cái',520,40),word('1000',605,40)],[word('2',5,70),word('031106000',60,70),word('Dĩa',220,70),word('Cái',520,70),word('160',605,70)]]));
+ assert.deepEqual(d.rows.map((r:any)=>[r.sku,r.quantity]),[['011006000','1000'],['031106000','160']]);
+});

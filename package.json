@@ -20,6 +20,7 @@
     "ui:demo": "node --import tsx scripts/build-trial-demo.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.8.0",
     "@noble/hashes": "^2.0.1",
     "@supabase/supabase-js": "2.117.2",
     "drizzle-orm": "0.45.2",

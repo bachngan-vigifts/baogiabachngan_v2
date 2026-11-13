@@ -66,6 +66,8 @@ export interface StaffEnv {
   wooMinhLongTokenHash?: string;
   /** Cầu nối máy chủ → WooCommerce để chốt/huỷ/làm mới đơn web; token không bao giờ gửi ra trình duyệt. */
   webOrderAction?: { token: string; lockUrl: string; minhlongUrl: string; fetch?: typeof fetch };
+  /** Bộ đọc ảnh phiếu bằng AI (xin hàng trước). Thiếu thì giao diện dùng bộ đọc trên máy. Khoá API không bao giờ gửi ra trình duyệt. */
+  photoReader?: import('../../suppliers/api/photo-ai.ts').PhotoReader;
   /** Token GHN phía máy chủ để tải danh mục tỉnh/huyện/xã; không bao giờ gửi ra trình duyệt. */
   ghnToken?: string;
   /** Token/shop GHN riêng của showroom Minh Long; ShopId có thể bỏ trống để lấy từ API shop/all. */
@@ -328,7 +330,7 @@ export const isSyncPath = (url: URL) => url.pathname.startsWith(SYNC_PREFIX);
  */
 const AUDIT_AREAS = new Set<unknown>(['business', 'admin', 'ncc-admin', 'customer-portal', 'supplier-portal']);
 // AppSheet imports record a counts-only run inside their transaction; never duplicate source PII in generic request logs.
-const AUDIT_SKIP = /^\/api\/staff\/(appsheet-customers(?:\/|$)|quotes\/[^/]+\/production-files\/[^/]+|images\/fetch|chat\/|notifications\/read|push\/|csp-report)/;
+const AUDIT_SKIP = /^\/api\/staff\/(appsheet-customers(?:\/|$)|quotes\/[^/]+\/production-files\/[^/]+|images\/fetch|purchase-early-photo\/read|chat\/|notifications\/read|push\/|csp-report)/;
 const auditable = (c: RouteContext<StaffEnv>) => AUDIT_AREAS.has(c.meta) && !AUDIT_SKIP.test(c.url.pathname);
 
 export function createStaffRouter(options: StaffRouterOptions = {}): Router<StaffEnv> {

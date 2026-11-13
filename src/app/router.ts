@@ -72,6 +72,7 @@ import { registerSupplierDirectoryRoutes, packingSupplierChoices } from '../modu
 import { registerSupplierWorkspaceRoutes } from '../modules/suppliers/api/workspace-routes.ts';
 import { registerPurchaseRoutes } from '../modules/suppliers/api/purchase-routes.ts';
 import { registerEarlyRequestRoutes } from '../modules/suppliers/api/early-request-routes.ts';
+import { registerEarlyPhotoRoutes } from '../modules/suppliers/api/early-photo-routes.ts';
 import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
 import { notifyMany, registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
 import { registerTaskRoutes, syncInvoiceTasks, syncTransferTasks } from '../modules/tasks/api/routes.ts';
@@ -182,6 +183,7 @@ export function createAppRouter() {
   registerPrintingRoutes(router);
   registerSupplierDirectoryRoutes(router);
   registerPurchaseRoutes(router);
+  registerEarlyPhotoRoutes(router);
   registerEarlyRequestRoutes(router);
   registerSupplierWorkspaceRoutes(router);
   registerPortalRoutes(router);

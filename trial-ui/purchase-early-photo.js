@@ -1,4 +1,5 @@
 import {recognizeEarlyPhoto,extractEarlyPhotoRows} from './early-photo-ocr.js';
+import {readEarlyPhotoWithAi,aiCanFallBack} from './early-photo-ai.js';
 import {openEarlyRequestFile,parseEarlyRequestSheet,EARLY_FILE_HEADER} from './purchase-early-file.js';
 export function photoRequestRows(rows,common={}){return rows.map(row=>{
  const out={...row};for(const key of ['orderNo','supplierOrderNo','pxkNo'])out[key]=row[key]||common[key]||'';
@@ -6,18 +7,18 @@ export function photoRequestRows(rows,common={}){return rows.map(row=>{
  if(reference){if(!['crm','supplier'].includes(type))throw Error('Số đơn '+reference+': chọn loại Đơn mua CRM hoặc Đơn NCC trước khi kiểm phiếu.');const key=type==='crm'?'orderNo':'supplierOrderNo';if(out[key]&&out[key]!==reference)throw Error('Số đơn '+reference+' khác số đã nhập. Kiểm tra lại trước khi gán.');out[key]=reference;}return out;
 });}
 const node=(tag,text='')=>{const n=document.createElement(tag);n.textContent=text;return n;};
-export function openEarlyRequestPhoto(options,{recognize=recognizeEarlyPhoto}={}){
+export function openEarlyRequestPhoto(options,{recognize=recognizeEarlyPhoto,readAi=readEarlyPhotoWithAi}={}){
  const dialog=node('dialog');dialog.className='modal early-request-dialog early-photo-dialog';
  const head=node('div'),body=node('div'),foot=node('div');head.className='modal-head';body.className='modal-body';foot.className='modal-foot';
  const button=(text,fn)=>{const b=node('button',text);b.type='button';b.className='btn secondary';b.onclick=fn;return b;};
- let busy=false,rows=[],url='',controller=null,confirmed=false,common={},conflicts=[];
+ let busy=false,rows=[],url='',controller=null,confirmed=false,common={},conflicts=[],rotate=0,aiReady=false;
  const close=button('Đóng',()=>{if(busy){controller?.abort();return;}if(rows.length&&!confirmed&&!confirm('Đóng và bỏ phần ảnh đang kiểm tra?'))return;dialog.close();});
  head.append(node('h2','Xin hàng trước bằng ảnh'),close);
  const file=node('input');file.type='file';file.accept='image/jpeg,image/png,image/webp';file.setAttribute('aria-label','Ảnh phiếu xin hàng');
  const photo=node('img');photo.alt='Ảnh gốc để đối chiếu mã hàng và số lượng';photo.hidden=true;
  const full=node('a','Xem ảnh gốc phóng lớn ↗');full.target='_blank';full.rel='noopener';full.className='btn secondary small';full.hidden=true;
  const status=node('p'),error=node('p');status.className='muted small';status.setAttribute('role','status');error.className='error';error.setAttribute('role','alert');
- const table=node('table');table.className='data-table';const tableHead=node('thead'),tr=node('tr'),tbody=node('tbody');for(const t of ['Mã hàng *','Số lượng *','Đơn mua CRM','Đơn NCC','Số PXK','Số đơn chưa rõ loại','Độ tin cậy OCR',''])tr.append(node('th',t));tableHead.append(tr);table.append(tableHead,tbody);const wrap=node('div');wrap.className='table-wrap';wrap.append(table);
+ const table=node('table');table.className='data-table';const tableHead=node('thead'),tr=node('tr'),tbody=node('tbody');for(const t of ['Mã hàng *','Số lượng *','Đơn mua CRM','Đơn NCC','Số PXK','Số đơn chưa rõ loại','Kết quả đọc',''])tr.append(node('th',t));tableHead.append(tr);table.append(tableHead,tbody);const wrap=node('div');wrap.className='table-wrap';wrap.append(table);
  const check=node('input');check.type='checkbox';check.setAttribute('aria-label','Đã kiểm tra mã hàng và số lượng với ảnh gốc');const checked=node('label');checked.className='early-photo-confirm';checked.append(check,document.createTextNode(' Tôi đã kiểm đủ các dòng, mã hàng, số lượng, số đơn và số PXK với ảnh gốc.'));
  function invalidate(){check.checked=false;confirmed=false;}
  const referenceFields=node('fieldset');referenceFields.className='early-photo-references';referenceFields.append(node('legend','Số chứng từ chung — áp dụng cho dòng để trống'));
@@ -26,15 +27,32 @@ export function openEarlyRequestPhoto(options,{recognize=recognizeEarlyPhoto}={}
  function setCommon(value={}){Object.keys(common).forEach(key=>delete common[key]);Object.assign(common,value);for(const [key,input]of Object.entries(commonInputs))input.value=common[key]||'';referenceFields.querySelector('select').value='';}
  function render(){tbody.replaceChildren();for(const [i,row]of rows.entries()){
   const tr=node('tr');for(const [key,name]of [['sku','Mã hàng'],['quantity','Số lượng'],['orderNo','Số đơn mua CRM'],['supplierOrderNo','Số đơn NCC'],['pxkNo','Số PXK'],['orderReference','Số đơn chưa rõ loại']]){const td=node('td'),input=node('input');input.type='text';input.value=row[key]||'';input.maxLength=key==='sku'?100:key==='quantity'?15:200;if(key==='quantity')input.inputMode='numeric';input.setAttribute('aria-label',name+' dòng '+(i+1));input.oninput=()=>{row[key]=input.value.trim();invalidate();};td.dataset.label=name;td.append(input);if(key==='orderReference')td.append(referenceType(row,'Loại số đơn dòng '+(i+1)));tr.append(td);}
-  const confidence=node('td',row.confidence===undefined?'Nhập tay':Math.round(row.confidence)+'% · cần kiểm tra');confidence.dataset.label='Độ tin cậy';tr.append(confidence);const td=node('td');td.append(button('Xoá dòng '+(i+1),()=>{rows.splice(i,1);invalidate();render();}));tr.append(td);tbody.append(tr);
+  const confidence=node('td',row.review??(row.confidence===undefined?'Nhập tay':Math.round(row.confidence)+'% · cần kiểm tra'));confidence.dataset.label='Kết quả đọc';if(row.flagged){confidence.className='early-photo-flag';tr.className='early-photo-row-flag';}if(row.name)confidence.append(node('small',row.name));tr.append(confidence);const td=node('td');td.append(button('Xoá dòng '+(i+1),()=>{rows.splice(i,1);invalidate();render();}));tr.append(td);tbody.append(tr);
  }}
  const add=button('＋ Thêm dòng',()=>{if(rows.length>=300){error.textContent='Tối đa 300 dòng.';return;}rows.push({sku:'',quantity:''});invalidate();render();});
- const read=button('Đọc ảnh',async()=>{
-  if(busy||!file.files?.[0])return;busy=true;controller=new AbortController();file.disabled=read.disabled=add.disabled=next.disabled=true;check.disabled=true;close.textContent='Dừng đọc ảnh';error.textContent='';invalidate();rows=[];setCommon();conflicts=[];for(const n of referenceFields.querySelectorAll('input,select'))n.disabled=true;render();
-  try{const data=await recognize(file.files[0],{signal:controller.signal,progress:text=>{status.textContent=text;}});if(!dialog.open)return;const result=extractEarlyPhotoRows(data);rows=result.rows;setCommon(result.document);conflicts=result.conflicts||[];status.textContent=result.message;if(!rows.length)rows=[{sku:'',quantity:''}];render();}
-  catch(e){error.textContent=e.message||'Không đọc được ảnh. Thử ảnh rõ hơn.';status.textContent='Chưa tạo hoặc gửi phiếu.';}
-  finally{busy=false;file.disabled=read.disabled=add.disabled=next.disabled=check.disabled=false;close.textContent='Đóng';controller=null;for(const n of referenceFields.querySelectorAll('input,select'))n.disabled=false;}
- });read.className='btn primary';
+ async function runRead(useAi){
+  if(busy||!file.files?.[0])return;busy=true;controller=new AbortController();file.disabled=read.disabled=local.disabled=turn.disabled=add.disabled=next.disabled=true;check.disabled=true;close.textContent='Dừng đọc ảnh';error.textContent='';status.classList.remove('early-photo-ok','early-photo-warn');invalidate();rows=[];setCommon();conflicts=[];for(const n of referenceFields.querySelectorAll('input,select'))n.disabled=true;render();
+  const progress=text=>{status.textContent=text;},signal=controller.signal;
+  const viaDevice=async()=>extractEarlyPhotoRows(await recognize(file.files[0],{signal,rotate,progress}));
+  try{
+   let result;
+   if(useAi){
+    try{result=await readAi(options.api,file.files[0],{signal,rotate,progress});}
+    catch(e){if(signal.aborted||!aiCanFallBack(e)){local.hidden=false;throw e;}progress('Bộ đọc AI chưa dùng được, chuyển sang bộ đọc trên máy…');result=await viaDevice();result.message='Bộ đọc AI chưa dùng được nên đã đọc bằng bộ đọc trên máy (kém chính xác hơn). '+result.message;}
+   }else result=await viaDevice();
+   if(!dialog.open)return;rows=result.rows;setCommon(result.document);conflicts=result.conflicts||[];status.textContent=result.message;if(result.totalCheck)status.classList.add(result.ok?'early-photo-ok':'early-photo-warn');if(!rows.length)rows=[{sku:'',quantity:''}];render();
+  }
+  catch(e){error.textContent=signal.aborted?'Đã dừng đọc ảnh.':e.message||'Không đọc được ảnh. Thử ảnh rõ hơn.';status.textContent='Chưa tạo hoặc gửi phiếu.';if(!rows.length){rows=[{sku:'',quantity:''}];render();}}
+  finally{busy=false;file.disabled=read.disabled=local.disabled=turn.disabled=add.disabled=next.disabled=check.disabled=false;close.textContent='Đóng';controller=null;for(const n of referenceFields.querySelectorAll('input,select'))n.disabled=false;}
+ }
+ const read=button('Đọc ảnh',()=>runRead(aiReady));read.className='btn primary';
+ const local=button('Đọc bằng bộ đọc trên máy',()=>runRead(false));local.hidden=true;
+ const frame=node('div');frame.className='early-photo-frame';frame.hidden=true;frame.append(photo);
+ const fitFrame=()=>{const side=rotate%180!==0;photo.classList.toggle('early-photo-turned',side);photo.style.transform=rotate?'rotate('+rotate+'deg)':'';frame.style.height=side&&photo.offsetWidth?photo.offsetWidth+'px':'';};photo.addEventListener('load',fitFrame);
+ const turn=button('Xoay ảnh 90°',()=>{rotate=(rotate+90)%360;fitFrame();invalidate();});turn.hidden=true;
+ const notice=node('p');
+ const describe=()=>{notice.textContent=aiReady?'Chụp rõ phần bảng có mã hàng và số lượng; ảnh nghiêng hoặc xoay ngang vẫn đọc được. Ảnh được gửi qua máy chủ CRM tới dịch vụ AI (Anthropic) để đọc mã hàng, số lượng, số đơn và số PXK; không lấy đơn giá, VAT, tổng tiền. Chỉ chụp phiếu hàng, không chụp giấy tờ cá nhân. Tên hàng lấy từ CRM.':'Chụp thẳng, rõ phần bảng có cột Mã hàng và Số lượng; ảnh nằm ngang thì bấm Xoay ảnh 90° cho chữ đứng thẳng. Đọc mã hàng, số lượng, số đơn và số PXK; không lấy đơn giá, VAT, tổng tiền hoặc chữ ký. Bộ đọc chạy trên thiết bị, ảnh không gửi ra ngoài. Tên hàng lấy từ CRM. Lần đầu tải bộ đọc khoảng 12 MB.';};describe();
+ Promise.resolve().then(()=>options.api('/purchase-early-photo/read')).then(d=>{aiReady=d?.available===true;describe();},()=>{});
  const next=button('Kiểm phiếu / đối chiếu đơn mua',()=>{
   if(busy)return;error.textContent='';
   if(!check.checked){error.textContent='Cần kiểm tra mã, số lượng, số đơn và số PXK với ảnh gốc rồi đánh dấu xác nhận.';return;}
@@ -44,8 +62,8 @@ export function openEarlyRequestPhoto(options,{recognize=recognizeEarlyPhoto}={}
   if(parsed.errors.length){error.textContent=parsed.errors.join('\n');return;}
   confirmed=true;dialog.close();openEarlyRequestFile({...options,initialRows:parsed.lines});
  });next.className='btn primary';
- file.onchange=()=>{invalidate();rows=[];setCommon();conflicts=[];render();error.textContent=status.textContent='';if(url)URL.revokeObjectURL(url);url='';photo.hidden=full.hidden=true;const f=file.files?.[0];if(!f)return;if(!['image/jpeg','image/png','image/webp'].includes(f.type)||f.size>10485760||!f.size){error.textContent='Chọn JPG, PNG hoặc WebP tối đa 10 MB. HEIC cần đổi sang JPG.';file.value='';return;}url=URL.createObjectURL(f);photo.src=full.href=url;photo.hidden=full.hidden=false;};
- body.append(node('p','Chụp thẳng, rõ phần bảng có cột Mã hàng và Số lượng. Đọc mã hàng, số lượng, số đơn và số PXK; không lấy đơn giá, VAT, tổng tiền hoặc chữ ký. OCR chạy trên thiết bị, ảnh không gửi ra ngoài. Tên hàng lấy từ CRM. Lần đầu tải bộ đọc khoảng 12 MB.'),file,photo,full,read,status,error,referenceFields,wrap,add,checked,node('p','Bước sau chọn NCC/ngày lấy, đối chiếu đơn mua còn hàng và lưu nháp như nhập file. Chưa gửi NCC, chưa nhận hàng và chưa cộng kho.'));
+ file.onchange=()=>{invalidate();rows=[];setCommon();conflicts=[];render();error.textContent=status.textContent='';if(url)URL.revokeObjectURL(url);url='';photo.hidden=full.hidden=turn.hidden=frame.hidden=true;local.hidden=true;rotate=0;fitFrame();status.classList.remove('early-photo-ok','early-photo-warn');const f=file.files?.[0];if(!f)return;if(!['image/jpeg','image/png','image/webp'].includes(f.type)||f.size>10485760||!f.size){error.textContent='Chọn JPG, PNG hoặc WebP tối đa 10 MB. HEIC cần đổi sang JPG.';file.value='';return;}url=URL.createObjectURL(f);photo.src=full.href=url;photo.hidden=full.hidden=turn.hidden=frame.hidden=false;};
+ body.append(notice,file,frame,full,turn,read,local,status,error,referenceFields,wrap,add,checked,node('p','Bước sau chọn NCC/ngày lấy, đối chiếu đơn mua còn hàng và lưu nháp như nhập file. Chưa gửi NCC, chưa nhận hàng và chưa cộng kho.'));
  foot.append(next);dialog.append(head,body,foot);document.body.append(dialog);
  dialog.addEventListener('cancel',e=>{e.preventDefault();close.click();});dialog.addEventListener('close',()=>{controller?.abort();if(url)URL.revokeObjectURL(url);photo.removeAttribute('src');dialog.remove();},{once:true});dialog.showModal();return dialog;
 }
