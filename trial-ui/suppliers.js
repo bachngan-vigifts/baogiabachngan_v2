@@ -1,3 +1,4 @@
+import {initSupplierAccounting} from './supplier-accounting.js';
 import { initEarlyRequests } from './purchase-early-requests.js';
 /**
  * DANH BẠ NHÀ CUNG CẤP (trang #/suppliers, chỉ Manager) – xem docs/NCC-PAGE.md mục "Quản lý NCC".
@@ -7,8 +8,8 @@ import { initEarlyRequests } from './purchase-early-requests.js';
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; };
 const FIELDS = [['name', 'Tên nhà cung cấp *', 180], ['taxCode', 'Mã số thuế', 40], ['phone', 'Điện thoại', 40], ['email', 'Email chung', 254], ['address', 'Địa chỉ', 1000], ['note', 'Ghi chú', 2000]];
 
-export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = () => true }) {
-  let rows = [], current = null, candidates = null, req = 0;
+export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = () => true, identity = () => '' }) {
+  let rows = [], current = null, candidates = null, req = 0, detailReq=0, accountingPanel=null;
   const page = el('div', 'sup-page');
   const head = el('div', 'page-head'), titles = el('div');
   titles.append(el('span', 'eyebrow', 'Mua hàng'), el('h1', '', 'Nhà cung cấp'), el('p', 'muted', 'Danh bạ NCC, email nhận đơn đặt hàng và tài khoản NCC đăng nhập (Manager và Kế toán). NCC đã có đơn không xoá được – chuyển "Ngừng hoạt động".'));
@@ -48,19 +49,21 @@ export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = 
   }
 
   async function load() {
-    const id = ++req;
+    const id = ++req,who=identity();
     try {
       const qs = new URLSearchParams({ q: search.value.trim(), active: status.value });
-      const d = await api('/suppliers?' + qs); if (id !== req) return;
+      const d = await api('/suppliers?' + qs); if (id !== req||who!==identity()) return;
       rows = d.suppliers; renderList();
     } catch (e) { if (id === req) toast(e.message || 'Không tải được nhà cung cấp.', 'err'); }
   }
 
   // ---- Bảng sửa
-  const closeEditor = () => { drawer.hidden = true; shade.hidden = true; current = null; };
+  const closeEditor = () => { detailReq++;accountingPanel?.close();accountingPanel=null;drawer.replaceChildren();drawer.hidden = true; shade.hidden = true; current = null; };
   async function openEditor(id) {
+    const n=++detailReq,who=identity();accountingPanel?.close();
     try {
       const [d, c] = await Promise.all([id ? api('/suppliers/' + encodeURIComponent(id)) : null, candidates || !canLinkAccounts() ? null : api('/supplier-account-candidates')]);
+      if(n!==detailReq||who!==identity())return;
       if (c) candidates = c.accounts;
       current = d || { supplier: null, contacts: [], accounts: [], orders: 0 };
       renderEditor(); drawer.hidden = false; shade.hidden = false; drawer.querySelector('input')?.focus();
@@ -173,8 +176,15 @@ export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = 
         current = d; renderEditor(); load();
       } catch (e2) { err.textContent = e2.message || 'Không lưu được.'; save.disabled = false; }
     }
+    accountingPanel?.close();
     drawer.replaceChildren(top, form);
+    drawer.classList.remove('sup-finance-active');
+    if(!isNew){
+      const tabs=el('div','pur-actions'),info=el('button','btn secondary','Thông tin NCC'),finance=el('button','btn secondary','Hóa đơn & công nợ');info.type=finance.type='button';info.dataset.supInfo='';finance.dataset.supAccounting='';tabs.append(info,finance);
+      const host=el('section','sup-section sup-accounting');host.hidden=true;drawer.insertBefore(tabs,form);drawer.append(host);const who=identity();accountingPanel=initSupplierAccounting({api,host,supplierId:s.id,confirmBox,isCurrent:()=>who===identity()&&current?.supplier?.id===s.id&&drawer.contains(host)&&!drawer.hidden});
+      info.onclick=()=>{form.hidden=false;host.hidden=true;drawer.classList.remove('sup-finance-active');};finance.onclick=()=>{form.hidden=true;host.hidden=false;drawer.classList.add('sup-finance-active');host.querySelector('[data-open-accounting]')?.click();};
+    }
   }
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !drawer.hidden) closeEditor(); });
-  return { load, openNew: () => openEditor(null), open: openEditor };
+  return { close:()=>{req++;closeEditor();rows=[];candidates=null;renderList();}, load, openNew: () => openEditor(null), open: openEditor };
 }
