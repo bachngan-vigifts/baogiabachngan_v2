@@ -40,6 +40,20 @@ class EvidenceTests(unittest.TestCase):
                           'tests/**/*.test.ts', 'src/**/*.test.ts']},
                 {'label': f'clean-{index}', 'exitCode': 0, 'signal': None, 'timedOut': False}])
             (self.reports / f'junit-{index}.xml').write_text('<testsuites><testsuite tests="1" failures="0" errors="0"><testcase name="synthetic-safety-fixture"/></testsuite></testsuites>')
+        quality = {
+            'source-clean': ('git', ['diff', '--exit-code', 'HEAD', '--']),
+            'quality-clean': ('git', ['diff', '--exit-code', 'HEAD', '--']),
+            'typecheck': ('npm', ['run', 'typecheck']),
+            'ui-build': ('npm', ['run', 'ui:build']),
+            'pdf-runtime': ('/opt/node22/bin/node', ['--input-type=module', '-e', "const pdf=await import('pdfjs-dist/legacy/build/pdf.mjs'); console.log(pdf.version)"]),
+        }
+        for command in commands:
+            if command['label'] in quality:
+                command['binary'], command['args'] = quality[command['label']]
+            elif command['label'].startswith('tests-'):
+                command['binary'] = '/opt/node22/bin/node'
+            elif command['label'].startswith('clean-'):
+                command.update(binary='git', args=['diff', '--exit-code', 'HEAD', '--'])
         self.summary = {'status': 'passed', 'expectedSha': '1' * 40, 'node': 'v22.22.0', 'php': '8.3.36',
                         'python': '3.13.5', 'jq': 'jq-1.8.1', 'curl': 'curl 8.14.1', 'startedAt': '2026-01-01T00:00:01Z', 'commands': commands,
                         'shards': [{'index': i, 'total': 4, 'status': 'passed'} for i in range(1, 5)]}
@@ -81,6 +95,24 @@ class EvidenceTests(unittest.TestCase):
 
     def test_complete_evidence_is_eligible_locally(self):
         self.assertEqual(self.verdict(), 'success')
+
+    def test_false_command_exit_is_not_numeric_zero(self):
+        self.summary['commands'][0]['exitCode'] = False
+        self.assertEqual(self.verdict(), 'failure')
+
+    def test_noop_typecheck_cannot_be_labelled_as_pass(self):
+        next(c for c in self.summary['commands'] if c['label'] == 'typecheck')['args'] = ['run', 'unrelated']
+        self.assertEqual(self.verdict(), 'failure')
+
+    def test_boolean_shard_index_is_not_a_real_shard(self):
+        self.summary['shards'][0]['index'] = True
+        self.assertEqual(self.verdict(), 'failure')
+
+    def test_optional_skips_remain_visible_in_check_summary(self):
+        (self.reports / 'junit-1.xml').write_text('<testsuites><testsuite><testcase name="passed"/><testcase name="requires-isolated-postgres"><skipped/></testcase></testsuite></testsuites>')
+        code, calls = self.invoke_main('finish')
+        self.assertEqual(code, 0)
+        self.assertIn('4 passed, 1 skipped', calls[0][2]['output']['summary'])
 
     def test_failed_process_cannot_become_success(self):
         self.process['exit_code'] = 1
@@ -204,6 +236,16 @@ class EvidenceTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 publisher.credentials()
             network.assert_not_called()
+
+    def test_inline_or_relative_key_binding_never_reaches_openssl(self):
+        for key in ('inline-key\nnot-a-path', 'relative-key.pem', '/' + 'x' * 4100):
+            with self.subTest(key_type='invalid binding'), patch.dict(os.environ, {
+                    'CHATGPT_CI_APP_ID': '1234', 'CHATGPT_CI_INSTALLATION_ID': '5678',
+                    'CHATGPT_CI_APP_KEY_FILE': key}, clear=True), patch.object(publisher, '_token', None), patch.object(publisher.subprocess, 'run') as process, patch.object(publisher.urllib.request, 'urlopen') as network:
+                with self.assertRaises(RuntimeError):
+                    publisher.credentials()
+                process.assert_not_called()
+                network.assert_not_called()
 
     def invoke_main(self, mode, app_id=1234):
         calls = []

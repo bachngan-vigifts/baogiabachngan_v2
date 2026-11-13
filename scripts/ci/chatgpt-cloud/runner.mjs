@@ -8,6 +8,7 @@ const [source = '/source', reports = '/reports', expectedSha] = process.argv.sli
 if (!/^[a-f0-9]{40}$/.test(expectedSha || '')) throw new Error('Exact expected SHA is required');
 await mkdir(reports, { recursive: true });
 const summary = { schemaVersion: 1, expectedSha, pid: process.pid, startedAt: new Date().toISOString(), node: process.version, platform: `${os.platform()}/${os.arch()}`, commands: [], shards: [], status: 'running' };
+const dependencies = process.env.CHATGPT_TESTER_NODE_MODULES_DIR || join(source, 'node_modules');
 const active = new Set();
 let cancelled = false;
 let saves = Promise.resolve();
@@ -72,7 +73,7 @@ async function checkout(label) {
   await command(`clone-${label}`, 'git', ['clone', '--shared', '--no-checkout', source, dir], '/job');
   await command(`checkout-${label}`, 'git', ['checkout', '--detach', expectedSha], dir);
   if (sha(dir) !== expectedSha) throw new Error('Checkout SHA mismatch');
-  await symlink(join(source, 'node_modules'), join(dir, 'node_modules'), 'dir');
+  await symlink(dependencies, join(dir, 'node_modules'), 'dir');
   await mkdir(join(dir, '.test-tmp'), { recursive: true });
   return dir;
 }

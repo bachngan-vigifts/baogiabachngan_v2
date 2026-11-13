@@ -19,6 +19,20 @@ if git -C "$checkout_dir" config --local --name-only --get-regexp 'credential|ex
   echo 'Refusing checkout with local credential configuration.' >&2
   exit 2
 fi
+python3 - "$checkout_dir" "$state_dir" "$engine_dir" <<'PY_GUARD'
+import os,subprocess,sys
+from pathlib import Path
+repo=Path(sys.argv[1]).resolve()
+if Path(sys.argv[2]).resolve().is_relative_to(repo) or Path(sys.argv[3]).resolve().is_relative_to(repo):
+ raise SystemExit('State and trusted controller must be outside the tested checkout.')
+raw=subprocess.check_output(['git','-C',str(repo),'ls-files','--others','--exclude-standard','-z'])
+raw+=subprocess.check_output(['git','-C',str(repo),'ls-files','--others','--ignored','--exclude-standard','-z'])
+if any(p and not p.startswith(b'node_modules/') for p in raw.split(b'\0')):
+ raise SystemExit('Fresh checkout required: local files outside node_modules are not mounted into tests.')
+key=os.environ.get('CHATGPT_CI_APP_KEY_FILE')
+if key and Path(key).resolve().is_relative_to(repo):
+ raise SystemExit('Credential binding must be outside the source checkout.')
+PY_GUARD
 mkdir -p "$state_dir"/{jobs,artifacts,cache/npm,runtime/node22}
 exec 9>"$state_dir/worker.lock"
 flock --nonblock 9 || { echo 'Worker busy; keep request queued.' >&2; exit 75; }
@@ -86,30 +100,31 @@ if [[ -n "$pr_number" ]]; then
   python3 "$engine_dir/publish.py" start "$control_dir"
   publish_started=true
 fi
-# npm itself is trusted; repository/dependency lifecycle code is not executed on the host.
-network_env=()
-for key in HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy SSL_CERT_FILE SSL_CERT_DIR; do
-  [[ -z "${!key:-}" ]] || network_env+=("$key=${!key}")
-done
 cloud_ca=${CODEX_PROXY_CERT:-/etc/ssl/certs/ca-certificates.crt}
-(
-  cd "$checkout_dir"
-  timeout 600 env -i "${network_env[@]}" PATH="$node_root/bin:/usr/local/bin:/usr/bin:/bin" NODE_EXTRA_CA_CERTS="$cloud_ca" CI=true "$node_root/bin/npm" ci --ignore-scripts --no-audit --no-fund --userconfig=/dev/null --cache="$state_dir/cache/npm"
-) >"$control_dir/dependencies.log" 2>&1
+test -f "$cloud_ca"
 docker_local run -d --name "$container_name" --cpus 4 --memory 12g --pids-limit 1024 --init --security-opt no-new-privileges:true --workdir /job \
   --mount "type=bind,src=$node_root,dst=/opt/node22,readonly" \
   --mount "type=bind,src=$checkout_dir,dst=/source,readonly" \
   --mount "type=bind,src=$engine_dir/runner.mjs,dst=/opt/cloud-runner.mjs,readonly" \
   --mount "type=bind,src=$report_dir,dst=/reports" \
-  --env PATH=/opt/node22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin --env CI=true \
+  --mount "type=bind,src=$cloud_ca,dst=/run/cloud-ca.pem,readonly" \
+  --mount "type=bind,src=$state_dir/cache/npm,dst=/npm-cache" \
+  --env PATH=/opt/node22/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin --env CI=true --env NODE_EXTRA_CA_CERTS=/run/cloud-ca.pem \
   php@sha256:98d555ff97b3865140ad31032508c3ca089fa97a8944b14ca9dc03ea05d788cd sleep infinity >"$control_dir/container-id.txt"
 container_created=true
-timeout 600 env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH docker --host=unix:///var/run/docker.sock exec "$container_name" bash -lc 'set -e; apt-get update; apt-get install -y --no-install-recommends git util-linux passwd python3 jq curl libfontconfig1; useradd --uid "$1" --create-home --shell /bin/bash cloudtester; chown cloudtester:cloudtester /job; rm -rf /var/lib/apt/lists/*' bootstrap "$worker_uid" >"$control_dir/runtime-setup.log" 2>&1
+timeout 600 env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH docker --host=unix:///var/run/docker.sock exec "$container_name" bash -lc 'set -e; cp /run/cloud-ca.pem /usr/local/share/ca-certificates/cloud-tester-ca.crt; update-ca-certificates; apt-get update; apt-get install -y --no-install-recommends git util-linux passwd python3 jq curl libfontconfig1; useradd --uid "$1" --create-home --shell /bin/bash cloudtester; chown cloudtester:cloudtester /job; rm -rf /var/lib/apt/lists/*' bootstrap "$worker_uid" >"$control_dir/runtime-setup.log" 2>&1
+# Prepare dependencies inside the isolated worker, never with application code on the host.
+# No lifecycle scripts run while egress is enabled; no host home/auth/key is mounted.
+docker_local exec "$container_name" bash -lc 'set -e; mkdir /deps; chown cloudtester:cloudtester /deps'
+docker_local exec "$container_name" runuser -u cloudtester -- git clone --shared --no-checkout /source /deps >"$control_dir/dependencies.log" 2>&1
+docker_local exec "$container_name" runuser -u cloudtester -- git -C /deps checkout --detach "$source_sha" >>"$control_dir/dependencies.log" 2>&1
+timeout 600 env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH docker --host=unix:///var/run/docker.sock exec --workdir /deps "$container_name" runuser -u cloudtester -- /opt/node22/bin/npm ci --ignore-scripts --no-audit --no-fund --userconfig=/dev/null --cache=/npm-cache >>"$control_dir/dependencies.log" 2>&1
+docker_local exec "$container_name" bash -lc 'set -e; test -d /deps/node_modules; test ! -L /deps/node_modules; chown -Rh root:root /deps; chmod -R a-w /deps'
 docker_local network disconnect bridge "$container_name"
 test "$(docker_local inspect "$container_name" --format '{{len .NetworkSettings.Networks}}')" = 0
 job_phase=test
 set +e
-docker_local exec "$container_name" runuser -u cloudtester -- /opt/node22/bin/node /opt/cloud-runner.mjs /source /reports "$source_sha" >"$report_dir/runner.log" 2>&1
+docker_local exec --env CHATGPT_TESTER_NODE_MODULES_DIR=/deps/node_modules "$container_name" runuser -u cloudtester -- /opt/node22/bin/node /opt/cloud-runner.mjs /source /reports "$source_sha" >"$report_dir/runner.log" 2>&1
 test_exit=$?
 set -e
 job_phase=complete

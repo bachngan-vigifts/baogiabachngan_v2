@@ -43,6 +43,9 @@ def credentials():
         raise RuntimeError('Invalid GitHub App identifiers')
     def b64(value):
         return base64.urlsafe_b64encode(value).rstrip(b'=')
+    key_path = os.environ[names[2]]
+    if not key_path.startswith('/') or '\n' in key_path or len(key_path) > 4096 or not Path(key_path).is_file():
+        raise RuntimeError('Private key binding must point to a readable secret file, not key text')
     now = int(time.time())
     data = b64(json.dumps({'alg': 'RS256', 'typ': 'JWT'}).encode()) + b'.' + b64(json.dumps(
         {'iat': now - 30, 'exp': now + 540, 'iss': os.environ[names[0]]}).encode())
@@ -102,7 +105,7 @@ def local_verdict(manifest, control):
         return 'error', 'Stale test artifact'
     shards = summary.get('shards', [])
     if len(shards) != 4 or {s.get('index') for s in shards} != {1, 2, 3, 4} or not all(
-            s.get('total') == 4 and s.get('status') == 'passed' for s in shards):
+            type(s.get('index')) is int and type(s.get('total')) is int and s.get('total') == 4 and s.get('status') == 'passed' for s in shards):
         return 'failure', 'All four disjoint shards are required'
     commands = summary.get('commands', [])
     labels = [entry.get('label') for entry in commands]
@@ -110,8 +113,22 @@ def local_verdict(manifest, control):
     required += [f'{prefix}-{index}' for index in range(1, 5) for prefix in ('tests', 'clean')]
     if any(labels.count(name) != 1 for name in required):
         return 'failure', 'Required commands are missing or duplicated'
-    if any(entry.get('exitCode') != 0 or entry.get('signal') or entry.get('timedOut') for entry in commands):
+    if any(type(entry.get('exitCode')) is not int or entry['exitCode'] != 0 or entry.get('signal') is not None or entry.get('timedOut') is not False for entry in commands):
         return 'failure', 'A command failed, timed out, or was cancelled'
+    exact = {
+        'source-clean': ('git', ['diff', '--exit-code', 'HEAD', '--']),
+        'quality-clean': ('git', ['diff', '--exit-code', 'HEAD', '--']),
+        'typecheck': ('npm', ['run', 'typecheck']),
+        'ui-build': ('npm', ['run', 'ui:build']),
+        'pdf-runtime': ('/opt/node22/bin/node', ['--input-type=module', '-e', "const pdf=await import('pdfjs-dist/legacy/build/pdf.mjs'); console.log(pdf.version)"]),
+    }
+    exact.update({f'clean-{i}': ('git', ['diff', '--exit-code', 'HEAD', '--']) for i in range(1, 5)})
+    for label, (binary, args) in exact.items():
+        entry = next(item for item in commands if item['label'] == label)
+        if entry.get('binary') != binary or entry.get('args') != args:
+            return 'failure', 'Required quality command differs from the trusted plan'
+    total_cases = 0
+    total_skipped = 0
     for index in range(1, 5):
         entry = next(item for item in commands if item['label'] == f'tests-{index}')
         args = entry.get('args', [])
@@ -119,18 +136,20 @@ def local_verdict(manifest, control):
                          '--test-reporter=spec', '--test-reporter-destination=stdout',
                          '--test-reporter=junit', f'--test-reporter-destination=/reports/junit-{index}.xml',
                          'tests/**/*.test.ts', 'src/**/*.test.ts']
-        if args != expected_args:
+        if entry.get('binary') != '/opt/node22/bin/node' or args != expected_args:
             return 'failure', 'Test command does not cover the full declared suite'
         result_file = reports / f'junit-{index}.xml'
         if not result_file.is_file() or result_file.stat().st_size > 25 * 1024**2:
             return 'error', 'JUnit result missing or oversized'
         root = ET.parse(result_file).getroot()
         cases = list(root.iter('testcase'))
+        total_cases += len(cases)
+        total_skipped += sum(case.find('skipped') is not None for case in cases)
         counters_failed = any(int(suite.get('failures', '0')) or int(suite.get('errors', '0'))
                               for suite in root.iter('testsuite'))
         if not cases or all(case.find('skipped') is not None for case in cases) or list(root.iter('failure')) or list(root.iter('error')) or counters_failed:
             return 'failure', 'JUnit result is empty or contains failures'
-    return 'success', 'All four shards, typecheck and UI build passed'
+    return 'success', f'All four shards, typecheck and UI build passed; {total_cases - total_skipped} passed, {total_skipped} skipped by suite conditions'
 
 
 def current_target(manifest):
