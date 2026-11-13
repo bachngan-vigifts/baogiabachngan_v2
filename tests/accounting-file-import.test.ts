@@ -60,3 +60,21 @@ test('5000-line draft is atomic, can be approved once and does not touch physica
   for (const role of ['emp','kho','ncc']) assert.equal((await f.call('/accounting/import-products', f.cookies[role], 'POST', {skus:['FILE-1']})).status,403);
   assert.equal((await f.call('/accounting/import-products',f.cookies.kt,'POST',{skus:lines.map(l=>l.sku)})).status,200);
 });
+
+test('imports share CRM retail list prices without wholesale/VAT fallback or missing-to-zero conversion', async () => {
+  const f=await setupEarly();
+  await f.client.exec(`insert into price_policies(id,name,sort_order) values ('wholesale','Giá sỉ',0),('vat','Giá lẻ +VAT',1),('list','Giá bán lẻ',2);
+    insert into products(sku,name,unit,updated_at) values ('LIST-A','Synthetic A','Cái','2026-11-01'),('LIST-MISSING','Synthetic missing','Bộ','2026-11-01');
+    insert into product_prices(sku,policy_id,price) values ('LIST-A','list',12345),('LIST-A','wholesale',1),('LIST-A','vat',13332.6),('LIST-MISSING','wholesale',10);`);
+  const lookup=await f.call('/accounting/import-products',f.cookies.kt,'POST',{skus:['LIST-A','LIST-MISSING','UNKNOWN']});
+  assert.equal(lookup.status,200);
+  assert.equal(lookup.data.pricePolicy.id,'list');
+  assert.equal(lookup.data.pricePolicy.basis,'before-vat');
+  assert.equal(lookup.data.products.find((p:any)=>p.sku==='LIST-A').unitPrice,12345);
+  assert.equal(lookup.data.products.find((p:any)=>p.sku==='LIST-MISSING').unitPrice,null);
+  assert.ok(lookup.data.priceAsOf);
+  await f.client.exec("delete from product_prices where policy_id='list'; delete from price_policies where id='list';");
+  const noRetail=await f.call('/accounting/import-products',f.cookies.mgr,'POST',{skus:['LIST-A']});
+  assert.equal(noRetail.data.pricePolicy,null);
+  assert.equal(noRetail.data.products[0].unitPrice,null);
+});

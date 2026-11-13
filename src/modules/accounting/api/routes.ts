@@ -8,7 +8,8 @@ import {
 import { AppError } from "../../../core/errors.ts";
 import type { StaffEnv, SessionState } from "../../staff/api/auth-routes.ts";
 import { salesOrders, salesOrderLines } from "../../sales/schema.ts";
-import { products } from "../../catalog/schema.ts";
+import { products, productPrices, pricePolicies } from "../../catalog/schema.ts";
+import { fold } from "../../../core/text/fold.ts";
 import { posReturns } from "../../sales/return-schema.ts";
 import { vietnamDate } from "../../sales/domain/sales.ts";
 import {
@@ -171,10 +172,17 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
     if (!Array.isArray(body.skus) || !body.skus.length || body.skus.length > 5000)
       throw new AppError(400, "Chọn 1–5.000 SKU.");
     const skus = [...new Set(body.skus.map((s: unknown) => short(s, 64)))];
-    // One lookup, no prices, tax defaults, stock quantities or supplier data.
-    const rows = await c.env.db.select({ sku: products.sku, name: products.name, unit: products.unit })
-      .from(products).where(inArray(products.sku, skus));
-    return json({ products: rows });
+    const policies = await c.env.db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.id));
+    // Only the regular retail/list policy, never wholesale or VAT-inclusive fallback.
+    const names = ["gia ban le", "gia le", "gia niem yet"];
+    const policy = names.map(name => policies.find(p => fold(p.name) === name)).find(Boolean);
+    const rows = await c.env.db.select({ sku: products.sku, name: products.name, unit: products.unit,
+      unitPrice: productPrices.price })
+      .from(products).leftJoin(productPrices, and(eq(productPrices.sku, products.sku),
+        policy ? eq(productPrices.policyId, policy.id) : sql`false`))
+      .where(inArray(products.sku, skus));
+    return json({ products: rows.map(p => ({ ...p, unitPrice: typeof p.unitPrice === "number" && Number.isFinite(p.unitPrice) && p.unitPrice >= 0 && p.unitPrice <= 1e12 ? p.unitPrice : null })),
+      pricePolicy: policy ? {id: policy.id, name: policy.name, basis: "before-vat"} : null, priceAsOf: now() });
   }, "business");
   router.post(
     "/accounting/entities",

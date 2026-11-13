@@ -55,6 +55,9 @@ await post("/documents/" + draft.id + "/post", {
   revision: 1,
   confirmed: true,
 });
+await f.client.exec(`insert into price_policies(id,name,sort_order) values ('import-retail','Giá bán lẻ',0);
+  insert into products(sku,name,unit,updated_at) values ('00000000','Sản phẩm giá niêm yết thử nghiệm','Cái','2026-11-01');
+  insert into product_prices(sku,policy_id,price) values ('00000000','import-retail',12345);`);
 const stamp = new Date().toISOString();
 await f.db
   .insert(salesOrders)
@@ -225,6 +228,13 @@ try {
         assert.equal(await d.locator(".ac-line").count(),25);
         assert.equal(await d.locator('[data-key=sku]').first().inputValue(),"00000000");
         assert.equal(await d.locator('[data-key=quantity]').first().inputValue(),"1000");
+        assert.equal(await d.locator('[data-key=netValue]').first().inputValue(),"12345000");
+        assert.equal(await d.locator('[data-key=netValue]').nth(1).inputValue(),"");
+        await d.locator('[data-key=quantity]').first().fill("2");
+        assert.equal(await d.locator('[data-key=netValue]').first().inputValue(),"24690");
+        await d.locator('[data-key=quantity]').first().fill("1000");
+        assert.equal(await d.locator('[data-key=netValue]').first().inputValue(),"12345000");
+        assert.match(await d.locator('[name=note]').inputValue(),/Giá bán lẻ/);
         await d.locator('[data-key=netValue]').first().fill("12000");
         await d.locator('[data-next]').click();
         await d.locator('[data-prev]').click();

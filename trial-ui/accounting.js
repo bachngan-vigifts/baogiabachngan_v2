@@ -162,7 +162,7 @@ export function initAccounting({ api, root }) {
     if (!book?.entityId) return notice("Chọn một sổ đã gán pháp nhân trước.");
     const d = modal(
       "Nhập chứng từ kế toán",
-      `<p>Chỉ nhập chứng từ có thật đã được đối soát. Số lượng và tiền trước VAT; tiền tính bằng đồng. Phiếu nháp chưa ảnh hưởng số dư.</p><div class="ac-form"><label>Loại<select name="kind"><option value="opening">Đầu kỳ</option><option value="purchase">Nhập mua</option><option value="sale">Xuất bán từ chứng từ ngoài CRM</option></select></label>${field("Ngày", "date", "date", filters.to, "required")}${field("Số chứng từ gốc", "reference", "text", "", 'required maxlength="120"')}${field("Ký hiệu", "series", "text", "", 'maxlength="50"')}${field("MST đối tác (nếu có)", "counterpartyTaxCode", "text", "", 'maxlength="20"')}${field("Ghi chú nguồn đối soát", "note", "text", "", 'required maxlength="1500"')}</div><div class="ac-line-head"><b>Dòng hàng</b><div class="ac-actions"><button type="button" data-template>Tải file mẫu SKU/SL</button><label>Nhập từ file (tối đa 5.000 dòng)<input type="file" data-import accept=".xlsx,.xls,.csv"></label><button type="button" data-add-line>+ Thêm dòng</button></div></div><p data-import-status role="status">File chỉ có SKU và SL. Đọc trang tính đầu tiên; SKU lưu dạng Text. Tên hàng và đơn vị lấy theo SKU hiện có; cần bổ sung giá trị trước VAT trước khi lưu. Không tự lấy giá bán/giá nhập hay áp thuế.</p><div class="ac-lines"></div><div class="ac-actions"><button type="button" data-prev>Trang trước</button><span data-page></span><button type="button" data-next>Trang sau</button></div><label class="ac-check"><input type="checkbox" name="confirmedZero"> Xác nhận sổ đầu kỳ không có hàng, số dư bằng 0.</label><p>Chỉ đánh dấu sổ rỗng nếu đã kiểm kê và đối chiếu chứng từ. Chưa bật trả/điều chỉnh vì cần đối soát giá trị gốc.</p>`,
+      `<p>Chỉ nhập chứng từ có thật đã được đối soát. Số lượng và tiền trước VAT; tiền tính bằng đồng. Phiếu nháp chưa ảnh hưởng số dư.</p><div class="ac-form"><label>Loại<select name="kind"><option value="opening">Đầu kỳ</option><option value="purchase">Nhập mua</option><option value="sale">Xuất bán từ chứng từ ngoài CRM</option></select></label>${field("Ngày", "date", "date", filters.to, "required")}${field("Số chứng từ gốc", "reference", "text", "", 'required maxlength="120"')}${field("Ký hiệu", "series", "text", "", 'maxlength="50"')}${field("MST đối tác (nếu có)", "counterpartyTaxCode", "text", "", 'maxlength="20"')}${field("Ghi chú nguồn đối soát", "note", "text", "", 'required maxlength="1500"')}</div><div class="ac-line-head"><b>Dòng hàng</b><div class="ac-actions"><button type="button" data-template>Tải file mẫu SKU/SL</button><label>Nhập từ file (tối đa 5.000 dòng)<input type="file" data-import accept=".xlsx,.xls,.csv"></label><button type="button" data-add-line>+ Thêm dòng</button></div></div><p data-import-status role="status">File chỉ có SKU và SL. Đọc trang tính đầu tiên; SKU lưu dạng Text. Tên hàng, đơn vị và giá bán niêm yết lấy theo SKU trên CRM; tổng tiền = SL × giá bán niêm yết trước VAT. Đây là định giá theo giá bán, không phải giá vốn kế toán. Mã thiếu giá cần bổ sung trước khi lưu; không tự áp thuế.</p><div class="ac-lines"></div><div class="ac-actions"><button type="button" data-prev>Trang trước</button><span data-page></span><button type="button" data-next>Trang sau</button></div><label class="ac-check"><input type="checkbox" name="confirmedZero"> Xác nhận sổ đầu kỳ không có hàng, số dư bằng 0.</label><p>Chỉ đánh dấu sổ rỗng nếu đã kiểm kê và đối chiếu chứng từ. Chưa bật trả/điều chỉnh vì cần đối soát giá trị gốc.</p>`,
       (f) => {
         syncRows();
         const missing = rows.findIndex(r => !r.sku || !r.name || !r.unit || r.netValue === "" || r.netValue === undefined);
@@ -182,7 +182,7 @@ export function initAccounting({ api, root }) {
     let rows = [], page = 0, importSeq = 0;
     const syncRows = () => {
       d.querySelectorAll(".ac-line").forEach(row => {
-        rows[Number(row.dataset.index)] = Object.fromEntries([...row.querySelectorAll("input")].map(i => [i.dataset.key, i.value]));
+        rows[Number(row.dataset.index)] = { ...rows[Number(row.dataset.index)], ...Object.fromEntries([...row.querySelectorAll("input[data-key]")].map(i => [i.dataset.key, i.value])) };
       });
     };
     const paintRows = () => {
@@ -194,6 +194,23 @@ export function initAccounting({ api, root }) {
           .map(([key,label,type]) => `<label>${label}<input data-key="${key}" type="${type}" ${["quantity", "netValue", "taxRate"].includes(key) ? 'min="0" step="any"' : ""} ${key === "taxRate" ? "" : "required"}></label>`).join("") + '<button type="button" data-remove>Xóa</button>';
         row.querySelectorAll("input").forEach(i => { i.value = rows[index][i.dataset.key] ?? ""; i.disabled = d.querySelector("[name=confirmedZero]").checked; });
         row.querySelector("[data-remove]").onclick = () => { syncRows(); rows.splice(index, 1); paintRows(); };
+        if (rows[index].unitPrice !== undefined) {
+          const source = document.createElement("small"); source.style.gridColumn = "1 / -1";
+          source.textContent = rows[index].unitPrice === null ? "Chưa có giá bán niêm yết trên CRM; bổ sung tổng tiền trước khi lưu." : `Giá bán niêm yết CRM: ${money(rows[index].unitPrice)} / ${rows[index].unit || "đơn vị"} · ${rows[index].pricePolicyName}`;
+          row.append(source);
+          const amount = row.querySelector('[data-key=netValue]');
+          row.querySelector('[data-key=quantity]').oninput = event => {
+            const price = rows[index].unitPrice;
+            const total = price === null ? null : Math.round(Number(event.target.value) * price);
+            amount.value = event.target.value && total !== null && Number.isSafeInteger(total) && total <= 9e12 ? total : "";
+          };
+          const invalidatePrice = () => {
+            rows[index].unitPrice = null; amount.value = "";
+            source.textContent = "Đã đổi SKU/đơn vị; kiểm tra lại đơn giá và tổng tiền trước khi lưu.";
+          };
+          row.querySelector('[data-key=sku]').oninput = invalidatePrice;
+          row.querySelector('[data-key=unit]').oninput = invalidatePrice;
+        }
         box.append(row);
       }
       d.querySelector("[data-page]").textContent = `Trang ${page + 1}/${Math.max(1, Math.ceil(rows.length/pageSize))} · ${rows.length}/5.000 dòng`;
@@ -234,11 +251,21 @@ export function initAccounting({ api, root }) {
         const seen = new Set(existing.map(r => r.sku));
         if (imported.some(r => seen.has(r.sku))) throw Error("File trùng SKU với dòng đang nhập. Chưa nạp thêm dòng nào.");
         const bySku = new Map(found.products.map(p => [p.sku, p]));
-        rows = [...existing, ...imported.map(r => ({ ...r, name: bySku.get(r.sku)?.name || "", unit: bySku.get(r.sku)?.unit || "", netValue: "", taxRate: "" }))];
+        const sourceNote = `Giá bán niêm yết CRM: ${found.pricePolicy?.name || "chưa có bảng giá phù hợp"} · ${found.priceAsOf}. Định giá theo giá bán, không phải giá vốn kế toán.`;
+        const note = d.querySelector("[name=note]");
+        if ((note.value + "\n" + sourceNote).trim().length > 1500) throw Error("Ghi chú quá dài để thêm nguồn giá. Rút gọn ghi chú rồi nhập lại file.");
+        const priced = imported.map(r => {
+          const product = bySku.get(r.sku), price = product?.unitPrice ?? null;
+          const total = price === null ? null : Math.round(r.quantity * price);
+          return { ...r, name: product?.name || "", unit: product?.unit || "", unitPrice: price,
+            pricePolicyName: found.pricePolicy?.name || "", netValue: total !== null && Number.isSafeInteger(total) && total <= 9e12 ? total : "", taxRate: "" };
+        });
+        rows = [...existing, ...priced];
+        note.value = (note.value + "\n" + sourceNote).trim();
         page = Math.floor(existing.length / pageSize);
         d.querySelector("[name=confirmedZero]").checked = false;
         paintRows();
-        status.textContent = `Đã nạp ${imported.length} dòng. Chưa lưu vào sổ. Bổ sung tổng tiền trước VAT từng dòng; ${imported.filter(r => !bySku.has(r.sku)).length} SKU chưa có trong danh mục cần bổ sung tên/đơn vị.`;
+        status.textContent = `Đã nạp ${imported.length} dòng. Chưa lưu vào sổ. Dùng ${found.pricePolicy?.name || "chưa có bảng giá niêm yết phù hợp"}; ${priced.filter(r => r.netValue === "").length} dòng thiếu giá/hợp lệ cần bổ sung tổng tiền. Giá bán niêm yết không phải giá vốn kế toán; kiểm tra trước khi duyệt.`;
         d.querySelector(".ac-error").textContent = "";
       } catch(e) { if (valid(owner) && dialog === d && seq === importSeq) status.textContent = e.message; }
       finally { if (valid(owner) && dialog === d && seq === importSeq) { busy = false; submit.disabled = false; event.target.value = ""; } }

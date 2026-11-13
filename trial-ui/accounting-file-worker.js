@@ -1,4 +1,4 @@
-importScripts('./xlsx.full.min.js');
+importScripts(new URL('./xlsx.full.min.js', self.location.href).href);
 self.onmessage = async ({ data: file }) => {
   try {
     const { parseAccountingRows } = await import('./accounting-file.js');
