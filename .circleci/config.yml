@@ -1,0 +1,109 @@
+version: 2.1
+
+# Prepared external tester. Cut over only after real runs and required-check setup.
+jobs:
+  crm-tester:
+    machine:
+      image: ubuntu-2404:2026.10.1
+    resource_class: medium
+    parallelism: 4
+    working_directory: ~/crm
+    steps:
+      - checkout
+      - run:
+          name: Verify checkout and shard identity
+          command: |
+            set -euo pipefail
+            [[ "${CIRCLE_SHA1:-}" =~ ^[0-9a-f]{40}$ ]]
+            test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
+            test "${CIRCLE_NODE_TOTAL:-}" = 4
+            [[ "${CIRCLE_NODE_INDEX:-}" =~ ^[0-3]$ ]]
+            mkdir -p .ci-artifacts/results
+            git rev-parse HEAD > .ci-artifacts/commit.txt
+            sha256sum package-lock.json > .ci-artifacts/lockfile.sha256
+            for key in DATABASE_URL DB_POOLER_URL SUPABASE_ACCESS_TOKEN SUPABASE_SERVICE_ROLE_KEY CLOUDFLARE_API_TOKEN SEPAY_API_KEY SAPO_ACCESS_TOKEN; do
+              if [[ -n "${!key:-}" ]]; then
+                printf 'Refusing application credential variable: %s\n' "$key" >&2
+                exit 1
+              fi
+            done
+      - run:
+          name: Install pinned Node and PHP 8.3
+          no_output_timeout: 10m
+          command: |
+            set -euo pipefail
+            test "$(uname -m)" = x86_64
+            node_version=22.22.0
+            node_file="node-v${node_version}-linux-x64.tar.xz"
+            node_tmp=$(mktemp -d)
+            trap 'rm -rf "$node_tmp"' EXIT
+            curl --fail --silent --show-error --location "https://nodejs.org/dist/v${node_version}/${node_file}" -o "$node_tmp/$node_file"
+            curl --fail --silent --show-error --location "https://nodejs.org/dist/v${node_version}/SHASUMS256.txt" -o "$node_tmp/SHASUMS256.txt"
+            (cd "$node_tmp" && awk -v name="$node_file" '$2 == name {print}' SHASUMS256.txt > CHECKSUM && test -s CHECKSUM && sha256sum --check CHECKSUM)
+            mkdir -p "$HOME/crm-node"
+            tar -xJf "$node_tmp/$node_file" -C "$HOME/crm-node" --strip-components=1
+            printf 'export PATH="%s/crm-node/bin:$PATH"\n' "$HOME" >> "$BASH_ENV"
+            export PATH="$HOME/crm-node/bin:$PATH"
+            test "$(node --version)" = v22.22.0
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends php8.3-cli
+            php -r 'exit(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION === 3 ? 0 : 1);'
+            node --version
+            npm --version
+            php --version
+      - restore_cache:
+          keys:
+            - crm-npm-v1-node22.22.0-{{ arch }}-{{ checksum "package-lock.json" }}
+      - run:
+          name: Install exact dependencies
+          no_output_timeout: 10m
+          command: npm ci --no-audit --no-fund
+      - save_cache:
+          key: crm-npm-v1-node22.22.0-{{ arch }}-{{ checksum "package-lock.json" }}
+          paths:
+            - ~/.npm
+      - run:
+          name: TypeScript, UI build and PDF runtime
+          command: |
+            set -euo pipefail
+            node --input-type=module -e "const pdf = await import('pdfjs-dist/legacy/build/pdf.mjs'); console.log('PDF.js', pdf.version)"
+            if [[ "$CIRCLE_NODE_INDEX" = 0 ]]; then
+              npm run typecheck
+              npm run ui:build
+            fi
+      - run:
+          name: Full test suite - one of four disjoint shards
+          no_output_timeout: 30m
+          command: |
+            set -euo pipefail
+            [[ "${CIRCLE_NODE_INDEX:-}" =~ ^[0-3]$ ]]
+            test "${CIRCLE_NODE_TOTAL:-}" = 4
+            shard=$((CIRCLE_NODE_INDEX + 1))
+            set +e
+            node --import tsx --test --test-concurrency=2 \
+              --test-shard="${shard}/4" \
+              --test-reporter=spec --test-reporter-destination=stdout \
+              --test-reporter=junit --test-reporter-destination=".ci-artifacts/results/junit-${shard}.xml" \
+              "tests/**/*.test.ts" "src/**/*.test.ts"
+            test_exit=$?
+            set -e
+            TEST_EXIT="$test_exit" TEST_SHARD="$shard" node --input-type=module -e '
+              import { writeFileSync } from "node:fs";
+              writeFileSync(`.ci-artifacts/result-${process.env.TEST_SHARD}.json`, JSON.stringify({
+                sha: process.env.CIRCLE_SHA1, shard: Number(process.env.TEST_SHARD), total: 4,
+                exitCode: Number(process.env.TEST_EXIT), node: process.version, finishedAt: new Date().toISOString()
+              }, null, 2));'
+            if [[ "$test_exit" = 0 ]]; then
+              test -s ".ci-artifacts/results/junit-${shard}.xml"
+            fi
+            exit "$test_exit"
+      - store_test_results:
+          path: .ci-artifacts/results
+      - store_artifacts:
+          path: .ci-artifacts
+          destination: crm-tester
+
+workflows:
+  crm-ci:
+    jobs:
+      - crm-tester
