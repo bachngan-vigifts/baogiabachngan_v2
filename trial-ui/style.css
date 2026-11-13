@@ -355,6 +355,26 @@ table { width: 100%; border-collapse: collapse; }
 .customer-profile-dialog form { display:flex; flex-direction:column; max-height:calc(100dvh - 24px); }
 .customer-profile-dialog .modal-body { overflow-y:auto; }
 .customer-profile-dialog .modal-head,.customer-profile-dialog .modal-foot { flex-shrink:0; }
+/* Form khách hàng nhập theo bước (customer-form-steps.js): chỉ ẩn/hiện ô sẵn có. */
+.cstep-off { display:none !important; }
+.customer-steps { display:flex; align-items:center; gap:6px; flex:0 0 auto; padding:12px 22px; border-bottom:1px solid var(--line); background:var(--surface-2); }
+.customer-steps > i { flex:1 1 24px; min-width:16px; height:2px; background:var(--line); }
+.customer-step { display:flex; align-items:center; gap:8px; min-height:36px; padding:4px 6px; border:0; background:none; color:var(--muted); font:inherit; font-weight:600; cursor:pointer; }
+.customer-step b { display:grid; place-items:center; width:26px; height:26px; border-radius:50%; border:2px solid var(--line-strong); background:var(--surface); font-size:13px; }
+.customer-step[aria-current="step"] { color:var(--navy); }
+.customer-step[aria-current="step"] b { border-color:var(--blue); background:var(--blue); color:#fff; }
+.customer-step.done b { border-color:var(--green); background:var(--green); color:#fff; }
+.customer-step-title { margin:0; font-size:18px; color:var(--navy); }
+.customer-step-more { justify-self:start; padding:8px 0; border:0; background:none; color:var(--blue); font:inherit; font-weight:600; cursor:pointer; text-align:left; }
+.customer-step-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+.customer-step-card { display:grid; gap:4px; min-width:0; padding:12px 14px; border:1px solid var(--line); border-radius:12px; overflow-wrap:anywhere; }
+.customer-step-card.is-company { background:var(--blue-50); border-color:#c4d6f0; }
+.customer-step-card.is-person { background:var(--green-50); border-color:#bfe3d4; }
+.customer-step-card small { font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.customer-step-card b { font-size:16px; color:var(--navy); }
+.customer-step-miss { color:var(--red); font-style:italic; }
+.customer-stepped .customer-create-profile { margin-top:8px; }
+@media(max-width:700px) { .customer-steps { padding:10px 14px; } .customer-step span { display:none; } .customer-step[aria-current="step"] span { display:inline; } }
 .customer-create-profile { display:grid; gap:18px; margin-top:20px; }
 .customer-create-profile fieldset,.customer-contact-directory { min-width:0; border:1px solid var(--line); border-radius:10px; padding:14px; display:grid; gap:12px; }
 .customer-create-profile legend,.customer-contact-directory legend { font-weight:700; padding:0 6px; }

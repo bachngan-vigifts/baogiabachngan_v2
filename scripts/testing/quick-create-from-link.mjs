@@ -95,7 +95,10 @@ try {
     assert.equal(await form.locator('[name="address"]').inputValue(), 'Số 1 Duy Tân, Cầu Giấy, Hà Nội');
     await noOverflow(page);
     await page.screenshot({ path: `${shots}/customer-${width}.png` });
-    await dialog.getByLabel('Tên người liên hệ', { exact: true }).first().fill('Chị Lan'); await form.locator('[name="phone"]').fill(width === 390 ? '0901112223' : '0903334445');
+    // Form nhập theo 3 bước: Công ty → Người liên hệ → Kiểm tra và lưu.
+    const nextStep = dialog.getByRole('button', { name: 'Tiếp tục', exact: true });
+    await form.locator('[name="customerCode"]').fill('KH-' + width); await form.locator('[name="phone"]').fill(width === 390 ? '0901112223' : '0903334445'); await nextStep.click();
+    await dialog.getByLabel('Tên người liên hệ', { exact: true }).first().fill('Chị Lan'); await nextStep.click();
     await page.locator('#save-customer').click();
     await dialog.waitFor({ state: 'hidden' });
     const saved = await f.db.select().from(customers).where(eq(customers.taxCode, mst.includes('-001') ? '0101243150-001' : '0101243150'));
