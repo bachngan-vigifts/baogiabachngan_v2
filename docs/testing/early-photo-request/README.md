@@ -27,3 +27,11 @@ PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node --import tsx scripts/testin
 ![Kiểm ảnh PC](review-1440.png)
 ![Kiểm ảnh mobile](review-390.png)
 ![Đối chiếu nguồn mua trước khi lưu](validated-1440.png)
+
+## Sửa CI PR #656
+
+Hai test asset cache thất bại vì loader ghép chuỗi đường dẫn `tesseract.min.js`/`worker.min.js`, trong khi bộ stamp chưa hỗ trợ thư mục có dấu chấm như `ocr-6.0.1`. Loader nay dùng `new URL` với đường dẫn đầy đủ; bộ stamp và bộ kiểm tra asset hỗ trợ thư mục phiên bản, không bỏ qua hoặc whitelist lỗi. Không thay byte/checksum của thư viện, mô hình OCR hoặc CSP.
+
+Kiểm tra sau sửa: 37/37 test OCR/asset/cache/nhập file/list/Manager UI/trial-ui/architecture đạt, typecheck và UI build đạt. Test riêng xác nhận đổi byte engine hoặc worker sẽ đổi hash asset và loader. Harness Chromium phục vụ chính nội dung đã stamp như deploy, xác nhận request engine/worker có `?v=<hash nội dung>`; OCR thật, đối chiếu chứng từ và lưu nháp PC 1440/mobile 390 đều đạt, không JS error và không request ra ngoài localhost. Trang fixture khai báo UTF-8 như trang CRM thật. Kết quả/ảnh local: `/tmp/pr656-fix-browser`.
+
+Chỉ sửa cách tải/đóng phiên bản asset và kiểm thử. Không migration, thay đổi API hoặc dữ liệu production; PR chưa merge/deploy trong lần sửa CI này.

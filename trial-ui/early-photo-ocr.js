@@ -1,8 +1,10 @@
 /** Local-only OCR. All executable/model assets are pinned and served by this CRM. */
 const base=new URL('./vendor/ocr-6.0.1/',import.meta.url).href;
+const engineUrl=new URL('./vendor/ocr-6.0.1/tesseract.min.js',import.meta.url).href;
+const workerUrl=new URL('./vendor/ocr-6.0.1/worker.min.js',import.meta.url).href;
 let engine;
 function loadEngine(){return engine||=(new Promise((resolve,reject)=>{
- const script=document.createElement('script');script.src=base+'tesseract.min.js';
+ const script=document.createElement('script');script.src=engineUrl;
  const fail=()=>{clearTimeout(timer);script.remove();engine=null;reject(Error('Không tải được bộ đọc ảnh. Kiểm tra mạng rồi thử lại.'));};const timer=setTimeout(fail,20000);script.onload=()=>{clearTimeout(timer);resolve(globalThis.Tesseract);};script.onerror=fail;document.head.append(script);
 }));}
 export async function recognizeEarlyPhoto(file,{progress=()=>{},signal}={}){
@@ -18,7 +20,7 @@ export async function recognizeEarlyPhoto(file,{progress=()=>{},signal}={}){
  let worker,stopped=false,rejectStop;const stoppedPromise=new Promise((_,reject)=>{rejectStop=reject;});const stop=()=>{stopped=true;worker?.terminate();rejectStop(Error('Đọc ảnh đã dừng hoặc quá 2 phút. Chụp phần bảng rõ hơn rồi thử lại.'));};signal?.addEventListener('abort',stop,{once:true});const timeout=setTimeout(stop,120000);
  try{
   return await Promise.race([stoppedPromise,(async()=>{
-  worker=await T.createWorker('vie+eng',1,{workerPath:base+'worker.min.js',corePath:base,langPath:base,workerBlobURL:false,logger:m=>progress(m.status==='recognizing text'?'Đang đọc chữ '+Math.round(m.progress*100)+'%':'Đang chuẩn bị bộ đọc ảnh…')});
+  worker=await T.createWorker('vie+eng',1,{workerPath:workerUrl,corePath:base,langPath:base,workerBlobURL:false,logger:m=>progress(m.status==='recognizing text'?'Đang đọc chữ '+Math.round(m.progress*100)+'%':'Đang chuẩn bị bộ đọc ảnh…')});
   if(stopped||signal?.aborted){await worker.terminate();throw Error('Đã dừng đọc ảnh.');}
   await worker.setParameters({preserve_interword_spaces:'1',tessedit_pageseg_mode:'6'});
   const result=await worker.recognize(canvas,{}, {text:true,blocks:true});return result.data;
