@@ -71,6 +71,8 @@ jobs:
       - run: node --import tsx --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/4 "tests/**/*.test.ts" "src/**/*.test.ts"
   test:
     # Stable aggregate name. Branch protection is a separate repository setting.
+    # Manual smoke results must not impersonate the PR's required check.
+    name: ${{ github.event_name == 'pull_request' && 'test' || 'manual validation' }}
     needs: [prepare, full-shards]
     if: always()
     runs-on: ubuntu-24.04

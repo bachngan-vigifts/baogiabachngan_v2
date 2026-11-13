@@ -44,6 +44,7 @@ Mỗi sự kiện mở một phiên riêng; hai lần đẩy commit là hai phi�
 - Cache npm theo `package-lock.json`, vẫn dùng `npm ci` để kiểm tra lockfile và cài sạch. Cache không chứa `node_modules`; không dùng kết quả test của commit trước.
 - TypeScript chạy một lần trước các shard, thay vì chạy thêm trên từng shard. Nhóm test nhanh không lặp lại khi đã chạy full suite.
 - Check tổng hợp `test` chỉ thành công trên PR ready khi TypeScript và đủ 4 shard thành công. Shard lỗi, bị huỷ hoặc bị bỏ qua đều làm check tổng hợp thất bại.
+- Check chạy tay có tên riêng `manual validation`, không dùng tên `test` của PR.
 - Actions → Kiểm tra → Run workflow → `full=true` vẫn chạy toàn bộ; `full=false` chỉ là smoke check, không phải bằng chứng full suite cho PR.
 
 **Giới hạn:** cấu hình workflow không tự bật bảo vệ nhánh. Cần quy tắc riêng yêu cầu check `test` để GitHub chặn merge; bình luận cloud không thay thế quy tắc đó. Không merge PR nháp, không coi smoke check hoặc kết quả SHA cũ là kiểm thử đầy đủ. Trước release, kiểm tra full suite đạt trên revision hiện tại và giữ các cổng migration/deploy hiện có.
