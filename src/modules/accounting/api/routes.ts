@@ -59,6 +59,7 @@ const revision = (value: unknown, current: number) => {
 };
 const optional = (v: unknown, max = 1000) =>
   v === undefined || v === "" ? "" : short(v, max);
+const counterpartyTax=(value:unknown)=>value===undefined||value===null||value===''?'':taxCode(value);
 async function sourceOrder(db: Db, id: string, lock = false) {
   const q = db.select().from(salesOrders).where(eq(salesOrders.id, id));
   const [o] = lock ? await q.for("update") : await q.limit(1);
@@ -90,7 +91,8 @@ async function sourceOrder(db: Db, id: string, lock = false) {
     .select()
     .from(salesOrderLines)
     .where(eq(salesOrderLines.orderId, id))
-    .orderBy(asc(salesOrderLines.lineNo));
+    .orderBy(asc(salesOrderLines.lineNo))
+    .limit(301);
   if (
     !original.length ||
     original.length > 300 ||
@@ -185,16 +187,14 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
           409,
           "MST đã được cấu hình. Dùng lại pháp nhân hiện có.",
         );
-      await c.env.db
-        .insert(entities)
-        .values({
-          id,
-          name: short(body.name, 500),
-          taxCode: code,
-          createdBy: m.id,
-          createdAt: date,
-          updatedAt: date,
-        });
+      await c.env.db.insert(entities).values({
+        id,
+        name: short(body.name, 500),
+        taxCode: code,
+        createdBy: m.id,
+        createdAt: date,
+        updatedAt: date,
+      });
       return json({ id }, 201);
     },
     "business",
@@ -267,20 +267,18 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
           .where(eq(books.name, name))
           .limit(1);
         if (existing.length) throw new AppError(409, "Tên sổ kho đã tồn tại.");
-        await db
-          .insert(books)
-          .values({
-            id,
-            name,
-            invoiceProvider:
-              b.invoiceProvider === "viettel" || b.invoiceProvider === "vnpt"
-                ? b.invoiceProvider
-                : null,
-            entityId: b.entityId ? String(b.entityId) : null,
-            createdBy: m.id,
-            createdAt: date,
-            updatedAt: date,
-          });
+        await db.insert(books).values({
+          id,
+          name,
+          invoiceProvider:
+            b.invoiceProvider === "viettel" || b.invoiceProvider === "vnpt"
+              ? b.invoiceProvider
+              : null,
+          entityId: b.entityId ? String(b.entityId) : null,
+          createdBy: m.id,
+          createdAt: date,
+          updatedAt: date,
+        });
       });
       return json({ id }, 201);
     },
@@ -471,41 +469,37 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
               eq(docs.kind, kind),
               eq(docs.reference, reference),
               eq(docs.series, optional(b.series, 50)),
-              eq(docs.counterpartyTaxCode, optional(b.counterpartyTaxCode, 20)),
+              eq(docs.counterpartyTaxCode, counterpartyTax(b.counterpartyTaxCode)),
               ne(docs.state, "voided"),
             ),
           )
           .limit(1);
         if (dup.length)
           throw new AppError(409, "Chứng từ đã tồn tại. Không tạo bản trùng.");
-        await db
-          .insert(docs)
-          .values({
-            id,
-            bookId: book.id,
-            entityId: book.entityId,
-            kind,
-            date,
-            reference,
-            series: optional(b.series, 50),
-            counterpartyTaxCode: optional(b.counterpartyTaxCode, 20),
-            relatedId: b.relatedId ? String(b.relatedId) : null,
-            note: optional(b.note, 1500),
-            createdBy: m.id,
-            createdAt: now(),
-          });
+        await db.insert(docs).values({
+          id,
+          bookId: book.id,
+          entityId: book.entityId,
+          kind,
+          date,
+          reference,
+          series: optional(b.series, 50),
+          counterpartyTaxCode: counterpartyTax(b.counterpartyTaxCode),
+          relatedId: b.relatedId ? String(b.relatedId) : null,
+          note: optional(b.note, 1500),
+          createdBy: m.id,
+          createdAt: now(),
+        });
         if (draftLines.length)
-          await db
-            .insert(lines)
-            .values(
-              draftLines.map((l, i) => ({
-                ...l,
-                quantity: String(l.quantity),
-                taxRate: l.taxRate === null ? null : String(l.taxRate),
-                documentId: id,
-                lineNo: i + 1,
-              })),
-            );
+          await db.insert(lines).values(
+            draftLines.map((l, i) => ({
+              ...l,
+              quantity: String(l.quantity),
+              taxRate: l.taxRate === null ? null : String(l.taxRate),
+              documentId: id,
+              lineNo: i + 1,
+            })),
+          );
       });
       return json(
         { id, state: "draft", physicalInventoryAffected: false },
@@ -899,37 +893,33 @@ export function registerAccountingWorkspaceRoutes(router: Router<StaffEnv>) {
             409,
             "Đơn đã có bản đối chiếu; không tạo hóa đơn trùng.",
           );
-        await db
-          .insert(docs)
-          .values({
-            id,
-            bookId: book.id,
-            entityId: book.entityId,
-            kind: "sale",
-            date: day(b.date),
-            reference: short(b.reference, 120),
-            series: optional(b.series, 50),
-            counterpartyTaxCode: source.order.taxCode,
-            sourceOrderId: source.order.id,
-            sourceRevision: source.order.revision,
-            note:
-              "Bản đối chiếu từ đơn " +
-              source.order.orderNo +
-              "; chưa phát hành hóa đơn.",
-            createdBy: m.id,
-            createdAt: now(),
-          });
-        await db
-          .insert(lines)
-          .values(
-            source.lines.map((l, i) => ({
-              ...l,
-              quantity: String(l.quantity),
-              taxRate: String(l.taxRate),
-              documentId: id,
-              lineNo: i + 1,
-            })),
-          );
+        await db.insert(docs).values({
+          id,
+          bookId: book.id,
+          entityId: book.entityId,
+          kind: "sale",
+          date: day(b.date),
+          reference: short(b.reference, 120),
+          series: optional(b.series, 50),
+          counterpartyTaxCode: counterpartyTax(source.order.taxCode),
+          sourceOrderId: source.order.id,
+          sourceRevision: source.order.revision,
+          note:
+            "Bản đối chiếu từ đơn " +
+            source.order.orderNo +
+            "; chưa phát hành hóa đơn.",
+          createdBy: m.id,
+          createdAt: now(),
+        });
+        await db.insert(lines).values(
+          source.lines.map((l, i) => ({
+            ...l,
+            quantity: String(l.quantity),
+            taxRate: String(l.taxRate),
+            documentId: id,
+            lineNo: i + 1,
+          })),
+        );
       });
       return json(
         {

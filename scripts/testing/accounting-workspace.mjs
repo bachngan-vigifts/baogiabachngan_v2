@@ -4,6 +4,10 @@ import { createServer } from "node:http";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { setupEarly } from "../../tests/helpers/purchase-early-fixture.ts";
+import {
+  salesOrders,
+  salesOrderLines,
+} from "../../src/modules/sales/schema.ts";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE || "playwright"
 );
@@ -51,6 +55,39 @@ await post("/documents/" + draft.id + "/post", {
   revision: 1,
   confirmed: true,
 });
+const stamp = new Date().toISOString();
+await f.db
+  .insert(salesOrders)
+  .values({
+    id: "demo-order",
+    orderNo: "DEMO-ORDER",
+    quoteType: "HRC",
+    customerName: "Test",
+    ownerId: "mgr",
+    createdBy: "mgr",
+    orderDate: "2026-11-05",
+    status: "delivered",
+    subtotal: 120000,
+    tax: 9600,
+    total: 129600,
+    createdAt: stamp,
+    updatedAt: stamp,
+  });
+await f.db
+  .insert(salesOrderLines)
+  .values({
+    id: "demo-order-line",
+    orderId: "demo-order",
+    lineNo: 1,
+    sku: "DEMO-A",
+    name: "Bộ trà thử nghiệm",
+    unit: "Bộ",
+    qty: 1,
+    unitPrice: 120000,
+    amount: 120000,
+    taxRate: 8,
+    deliveredQty: 1,
+  });
 const before = await f.client.query("select * from stock_moves");
 const server = createServer(async (req, res) => {
   try {
@@ -149,14 +186,12 @@ try {
           .first()
           .isVisible(),
       );
-      const geometry = await page
-        .locator("#view-accounting")
-        .evaluate((r) => ({
-          width: r.clientWidth,
-          scroll: r.scrollWidth,
-          page: document.documentElement.scrollWidth,
-          viewport: innerWidth,
-        }));
+      const geometry = await page.locator("#view-accounting").evaluate((r) => ({
+        width: r.clientWidth,
+        scroll: r.scrollWidth,
+        page: document.documentElement.scrollWidth,
+        viewport: innerWidth,
+      }));
       assert(
         geometry.scroll <= geometry.width + 1 &&
           geometry.page <= geometry.viewport + 1,
@@ -206,6 +241,63 @@ try {
         "",
       );
       await page.locator("dialog.ac-dialog [data-close]").last().click();
+      if (width === 390 && role === "mgr") {
+        await page.locator("[data-action=document]").click();
+        const edit = page.locator("dialog.ac-dialog");
+        await edit.locator("[name=kind]").selectOption("purchase");
+        await edit.locator("[name=date]").fill("2026-11-02");
+        await edit.locator("[name=reference]").fill("PURCHASE-UI");
+        await edit.locator("[name=note]").fill("Chứng từ thử nghiệm");
+        for (const [key, value] of Object.entries({
+          sku: "DEMO-A",
+          name: "Bộ trà thử nghiệm",
+          unit: "Bộ",
+          quantity: "2",
+          netValue: "200000",
+          taxRate: "8",
+        }))
+          await edit.locator("[data-key=" + key + "]").fill(value);
+        await edit.locator("button[type=submit]").click();
+        await edit.waitFor({ state: "detached" });
+        await page
+          .getByRole("button", { name: "PURCHASE-UI", exact: true })
+          .click();
+        const detail = page.locator("dialog.ac-dialog");
+        await detail.locator("[name=confirmed]").check();
+        await detail
+          .getByRole("button", { name: "Duyệt ghi sổ", exact: true })
+          .click();
+        await detail.waitFor({ state: "detached" });
+        await page.locator(".ac-stats").waitFor();
+        const report = await f.call(
+          "/accounting/report?entityId=" +
+            entity.id +
+            "&bookId=accounting-vigifts&from=2026-11-01&to=2026-11-30",
+          f.cookies.mgr,
+        );
+        assert.equal(report.data.stock[0].quantity, 22);
+        assert.equal(report.data.totals.stockValue, 2200000);
+      }
+      if (width === 1440 && role === "mgr") {
+        await page.locator("[data-action=source]").click();
+        const edit = page.locator("dialog.ac-dialog");
+        await edit.locator("[name=q]").fill("DEMO-ORDER");
+        await edit.locator("[data-search]").click();
+        await edit.locator("[data-results] button").first().click();
+        await edit.locator("[data-proposal] h3").waitFor();
+        assert(
+          (await edit.locator("[data-proposal]").innerText()).includes(
+            "DEMO-A",
+          ),
+        );
+        await edit.locator("[name=reference]").fill("SOURCE-UI");
+        await edit.locator("[name=confirmedEntity]").check();
+        await edit.locator("button[type=submit]").click();
+        await edit.waitFor({ state: "detached" });
+        await page
+          .getByRole("button", { name: "SOURCE-UI", exact: true })
+          .waitFor();
+      }
       if (role === "kt")
         assert.equal(await page.locator("[data-action=entity]").count(), 0);
     } else {

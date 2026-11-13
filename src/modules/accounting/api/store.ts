@@ -121,7 +121,8 @@ export async function snapshot(
   const allBooks = await db
     .select()
     .from(books)
-    .where(eq(books.entityId, entityId));
+    .where(eq(books.entityId, entityId))
+    .orderBy(asc(books.id));
   if (onlyBook && !allBooks.some((b) => b.id === onlyBook))
     throw new AppError(404, "Kho không thuộc pháp nhân đang chọn.");
   const documents = await documentsOf(
@@ -140,7 +141,8 @@ export async function snapshot(
   const verified = await db
     .select()
     .from(periods)
-    .where(and(eq(periods.entityId, entityId), inArray(periods.month, months)));
+    .where(and(eq(periods.entityId, entityId), inArray(periods.month, months)))
+    .orderBy(asc(periods.month));
   const opened =
     allBooks.length > 0 &&
     allBooks.every((b) => b.openingDate !== null && b.openingDate <= from);

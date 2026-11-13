@@ -62,6 +62,8 @@ export function validateLines(raw: unknown): Line[] {
     throw new AppError(400, "Chứng từ cần 1–300 dòng.");
   const seen = new Set<string>();
   return raw.map((l: any) => {
+    if (!l || typeof l !== "object" || Array.isArray(l))
+      throw new AppError(400, "Dòng chứng từ không hợp lệ.");
     const quantity = Number(l.quantity),
       netValue = Number(l.netValue),
       rate =

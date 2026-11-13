@@ -60,4 +60,12 @@ PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node --import tsx scripts/testin
 
 Đã chạy PostgreSQL WASM trên database trống, toàn bộ chuỗi migration, chạy lại migration mới, kiểm tra cổng trong transaction READ ONLY và schema thiếu cột. Kiểm tra API quyền, duyệt, chống trùng/stale, đầu kỳ rỗng, K chưa đủ dữ liệu, vô hiệu xác nhận kỳ, đối chiếu SKU thật và tồn vật lý giữ nguyên. PGlite có một kết nối; chưa xác minh cạnh tranh nhiều kết nối trên PostgreSQL thật.
 
-Chromium dùng app/API thật với dữ liệu thử: Manager ở 320/390/1440px, Kế toán 430px; Kho 390px và Sale 1440px bị chặn URL trực tiếp. Kiểm tra không tràn ngang, popup desktop 16:9, nút nằm trong viewport, mở lại form sạch và không lỗi JS. Ảnh: `/tmp/accounting-workspace`.
+Chromium dùng app/API thật với dữ liệu thử: Manager ở 320/390/1440px, Kế toán 430px; Kho 390px và Sale 1440px bị chặn URL trực tiếp. Kiểm tra không tràn ngang, popup desktop 16:9, nút nằm trong viewport, mở lại form sạch và không lỗi JS. Đã lưu phiếu mua và duyệt qua UI mobile, xác minh số dư 22 bộ / 2.200.000đ trên dữ liệu thử; UI desktop tìm đơn thật, giữ SKU và tạo nháp. Đổi từ khóa xóa lựa chọn đơn cũ. Ảnh: `/tmp/accounting-workspace`.
+
+## Xác minh production ngày 13/11/2026
+
+Đã áp dụng migration bổ sung bằng Supabase MCP theo yêu cầu triển khai database. Chạy thành công assertion chỉ đọc sau migration. Hai sổ đúng tên/nhà cung cấp, pháp nhân và đầu kỳ đều NULL; 0 pháp nhân tự sinh, 0 chứng từ, 0 dòng. Kho vận hành vẫn 4 trước và sau migration.
+
+Security Advisor chỉ có 6 thông báo INFO `rls_enabled_no_policy` liên quan bảng mới: đây là chủ đích chặn truy cập Data API trực tiếp (cũng đã REVOKE quyền anon/authenticated), còn phiên nhân viên được API xác minh. Không thêm policy mở quyền để xóa thông báo. [Giải thích của Supabase](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy).
+
+43 kiểm thử liên quan đã pass; 6 ca Chromium pass. Typecheck, build và kiểm tra cú pháp JS pass. Nhánh được merge main mới nhất `c8fd0b08` trước khi mở PR. Chưa merge PR hoặc phát hành API/UI production trong tác vụ này; database bổ sung tương thích với ứng dụng cũ.

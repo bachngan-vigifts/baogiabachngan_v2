@@ -301,7 +301,15 @@ export function initAccounting({ api, root }) {
         },
       );
     let searchEpoch = 0;
+    d.querySelector("[name=q]").oninput = () => {
+      searchEpoch++;
+      proposal = null;
+      d.querySelector("[data-proposal]").textContent = "";
+      d.querySelector("[data-results]").replaceChildren();
+    };
     d.querySelector("[data-search]").onclick = async () => {
+      proposal = null;
+      d.querySelector("[data-proposal]").textContent = "";
       const seq = ++searchEpoch;
       try {
         const r = await request(
