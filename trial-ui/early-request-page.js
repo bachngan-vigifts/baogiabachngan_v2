@@ -1,6 +1,7 @@
 import {earlyListBulk} from './early-list-bulk.js';
 import { initEarlyRequests } from './purchase-early-requests.js';
 import { openEarlyRequestFile } from './purchase-early-file.js';
+import {openEarlyRequestPhoto} from './purchase-early-photo.js';
 const node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=String(text);return n;};
 const button=(text,fn,cls='btn secondary')=>{const n=node('button',cls,text);n.type='button';n.onclick=fn;return n;};
 const label=(text,input)=>{const n=node('label','early-page-field');n.append(node('span','small muted',text),input);return n;};
@@ -19,8 +20,9 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
  const header=node('div','page-head'),intro=node('div');intro.append(node('span','eyebrow','Mua hàng'),node('h1','','Lấy hàng trước'),node('p','muted','Quản lý phiếu xin hàng, phản hồi NCC và nhận hàng theo phiếu.'));
  const actions=node('div','head-actions row-gap');
  const file=button('Xin bằng file',()=>openEarlyRequestFile({api,loadXlsx,suppliers,today:today(),go,requestHref}),'btn primary');file.hidden=true;file.setAttribute('aria-label','Xin hàng bằng file');
+ const photo=button('Xin bằng ảnh',()=>openEarlyRequestPhoto({api,loadXlsx,suppliers,today:today(),go,requestHref}));photo.hidden=true;photo.setAttribute('aria-label','Xin hàng bằng ảnh chụp');
  const incoming=node('a','btn secondary','Chọn hàng đang về');incoming.href='#/purchases?mode=incoming';incoming.hidden=true;
- actions.append(file,incoming);header.append(intro,actions);
+ actions.append(file,photo,incoming);header.append(intro,actions);
  const back=node('a','btn secondary early-page-back','‹ Danh sách lấy hàng trước');back.href='#/early-requests';back.hidden=true;
  const section=node('section','early-page-index'),detail=node('section','early-page-detail');detail.hidden=true;
  const search=node('input');search.type='search';search.placeholder='Tìm phiếu, mã hàng, tên hàng, NCC, số đơn CRM/NCC';search.setAttribute('aria-label','Tìm phiếu lấy hàng trước');
@@ -46,7 +48,7 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
   const saved=params();if(offset)saved.set('offset',String(offset));
   if(location.hash.split('?')[0]==='#/early-requests')historyReplace(saved);
   try{const data=await api('/purchase-early-requests?'+p);if(mine!==sequence)return;
-   canSend=!!data.canSend;file.hidden=incoming.hidden=!canSend;nextOffset=data.nextOffset;list.replaceChildren();selection.reset(data.requests,data);
+   canSend=!!data.canSend;file.hidden=photo.hidden=incoming.hidden=!canSend;nextOffset=data.nextOffset;list.replaceChildren();selection.reset(data.requests,data);
    for(const request of data.requests){
     const card=node('article','card early-page-card'),head=node('div','early-page-card-head'),open=node('a','data-link',request.ticketNumber||'Phiếu '+request.id.slice(0,8).toUpperCase());open.href=requestHref(request.id);
     const title=node('div','early-list-title'),check=selection.checkbox(request);if(check)title.append(check);title.append(open);head.append(title);
@@ -74,7 +76,7 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
  return {async show(id='',query=''){
   const mine=++sequence;clearTimeout(timer);detailId=id;selection.reset();back.hidden=!id;section.hidden=!!id;detail.hidden=!id;fail();
   try{const options=await api('/purchase-options');if(mine!==sequence)return;
-   suppliers=options.suppliers||[];canSend=!!options.canRequestEarly;file.hidden=incoming.hidden=!canSend;
+   suppliers=options.suppliers||[];canSend=!!options.canRequestEarly;file.hidden=photo.hidden=incoming.hidden=!canSend;
    const keep=supplier.value;supplier.replaceChildren(...select([['','Tất cả NCC'],...suppliers.map(s=>[s.id,s.name])]).children);supplier.value=keep;
    if(id){await history.load(id);return;}
    const p=new URLSearchParams(query);search.value=p.get('q')||'';supplier.value=p.get('supplierId')||'';status.value=p.get('status')||'';dateBy.value=p.get('dateBy')||'pickup';from.value=p.get('from')||'';to.value=p.get('to')||'';offset=Number(p.get('offset')||0);await load();

@@ -33,7 +33,7 @@ test('sau khi gắn phiên bản, không còn tham chiếu JS / CSS nội bộ n
     const kind = f.endsWith('.html') ? 'html' : f.endsWith('.js') && !f.endsWith('.min.js') ? 'js' : null;
     if (!kind) continue;
     const stamped = stampVersion(readFileSync(new URL(f, dir), 'utf8'), 'r1', kind);
-    for (const m of stamped.matchAll(/(['"])((?:\.\/)?(?:[\w-]+\/)*[\w.-]+\.(?:js|css))(\?[^'"]*)?\1/g))
+    for (const m of stamped.matchAll(/(['"])((?:\.\/)?(?:[\w-][\w.-]*\/)*[\w.-]+\.(?:js|css))(\?[^'"]*)?\1/g))
       if (m[3] !== '?v=r1' && m[2] !== 'push-sw.js') leftovers.push(`${f}: ${m[0]}`);
   }
   assert.deepEqual(leftovers, []);
@@ -87,7 +87,7 @@ test('giao diện thật: mọi file có phiên bản theo nội dung, không c�
   assert.deepEqual([...versions].filter(([, v]) => v === 'r1').map(([f]) => f), []);
   const leftovers: string[] = [];
   for (const [f, text] of stamped)
-    for (const m of text.matchAll(/(['"])((?:\.\/)?(?:[\w-]+\/)*[\w.-]+\.(?:js|css))(\?[^'"]*)?\1/g))
+    for (const m of text.matchAll(/(['"])((?:\.\/)?(?:[\w-][\w.-]*\/)*[\w.-]+\.(?:js|css))(\?[^'"]*)?\1/g))
       if (!/^\?v=[0-9a-f]{10}$/.test(m[3] ?? '') && m[2] !== 'push-sw.js') leftovers.push(`${f}: ${m[0]}`);
   assert.deepEqual(leftovers, []);
 });
