@@ -1,0 +1,38 @@
+[
+  {
+    "role": "manager",
+    "width": 390,
+    "automaticGift": true,
+    "optOut": true,
+    "configSaved": true,
+    "jsErrors": [],
+    "previewMedianMs": 11
+  },
+  {
+    "role": "manager",
+    "width": 1440,
+    "automaticGift": true,
+    "optOut": true,
+    "configSaved": true,
+    "jsErrors": [],
+    "previewMedianMs": 12
+  },
+  {
+    "role": "cashier",
+    "width": 390,
+    "automaticGift": true,
+    "optOut": true,
+    "configSaved": false,
+    "jsErrors": [],
+    "previewMedianMs": 16
+  },
+  {
+    "role": "cashier",
+    "width": 1440,
+    "automaticGift": true,
+    "optOut": true,
+    "configSaved": false,
+    "jsErrors": [],
+    "previewMedianMs": 15
+  }
+]

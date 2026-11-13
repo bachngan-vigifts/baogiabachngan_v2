@@ -1,4 +1,5 @@
 import { ensureLineCosts } from './line-costs.ts';
+import {cartPromotion} from './pos-promotions.ts';
 import { orderNoForCheckout } from './pos-number.ts';
 import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { posOrderReservations, posPaymentIntents } from '../pos-order-flow-schema.ts';
@@ -105,6 +106,8 @@ export const emptyCart = (b: Record<string, unknown>) => {
     ...(note ? { note } : {}),
     ...(b.exchangeAllocationId ? { exchangeAllocationId: posKey(b.exchangeAllocationId) } : {}),
     ...(voucher ? { voucher } : {}),
+    ...(b.promotionOptOutReason?{promotionOptOutReason:b.promotionOptOutReason}:{}),
+    ...(b.promotionRevision!==undefined?{promotionRevision:b.promotionRevision}:{}),
   };
 };
 export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
@@ -147,6 +150,8 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
   // Voucher của đơn: chia vào các dòng theo tiền hàng sau chiết khấu dòng, trừ thẳng vào giá đã gồm VAT, VAT tách lại (pos-money.ts › allocatePosVoucher).
   const base = lineOf([]), voucherSplit = allocatePosVoucher(base.map((l) => l.listAmount - l.discountAmount), input.voucher ?? null);
   const lines = voucherSplit.amount ? lineOf(voucherSplit.shares) : base;
+  const offer=await cartPromotion(db,r.id,lines.reduce((n,l)=>n+l.total,0),b.promotionOptOutReason,withVat?r.taxRate:0);
+  if(offer.gift)lines.push(offer.gift);
   const voucher = input.voucher ? { ...input.voucher, amount: voucherSplit.amount } : null;
   const [customer] = input.customerId
     ? await db
@@ -171,8 +176,11 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
     ...posFeeInput(b),
     ...(input.exchangeAllocationId ? { exchangeAllocationId: input.exchangeAllocationId } : {}),
     ...(input.voucher ? { voucher: input.voucher } : {}),
-    rows: lines.map((l) => ({ sku: l.sku, qty: l.qty, discountType: l.discountType, discountValue: l.discountValue })),
+    rows: raw.map((l) => ({ sku: posText(l.sku,100), qty: Number(l.qty), discountType: l.discountType??'percent', discountValue: Number(l.discountValue||0) })),
+    ...(offer.promotion?{promotionRevision:offer.promotion.revision,promotionOptOutReason:offer.promotion.optOutReason}:{}),
   };
+  // Gifts change fulfillment, not the amount already collected by the bank. Keep paid QR detection stable when a free offer changes.
+  const financialCanonical={...canonical};delete financialCanonical.promotionRevision;delete financialCanonical.promotionOptOutReason;
   return {
     register: r,
     customer,
@@ -180,13 +188,14 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
     exchange, payable,
     fees,
     lines,
+    promotion:offer.promotion,
     subtotal,
     tax,
     discount,
     voucher,
     total,
     canonical,
-    fingerprint: sha256Hex(JSON.stringify({ canonical, lines, total })),
+    fingerprint: sha256Hex(JSON.stringify({ canonical:financialCanonical, lines:offer.gift?lines.slice(0,-1):lines, total })),
   };
 }
 /** Phần giữ không gắn kho (báo giá, đơn chưa chọn kho) rơi vào `warehouseId`: tổng giữ trừ tồn trống ở các kho thật khác (tồn − hàng đơn đang giữ ở kho đó). */
@@ -396,6 +405,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     assertOpen(s, m);
     if (posText(b.registerId) !== s.registerId) throw new AppError(400, 'Quầy không khớp ca.');
     const c = await calculateCart(tx, b);
+    if(c.promotion&&b.promotionRevision!==c.promotion.revision)throw new AppError(409,'Chương trình khuyến mãi vừa thay đổi. Tính lại giỏ trước khi thanh toán.','POS_PROMOTION_CHANGED');
     const customerIssue = posCustomerIssue(c.customer);
     if (customerIssue) throw new AppError(400, customerIssue, 'POS_CUSTOMER_REQUIRED');
     const initialAmount = flow ? flowInitialAmount(flow, c.total, b.initialAmount) : 0;
@@ -447,9 +457,11 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       .orderBy(asc(stockBalances.sku))
       .for('update');
     const reserved = await reservedBySku(tx, skus, c.register.warehouseId);
-    for (const l of c.lines) {
+    const quantities=new Map<string,number>();for(const l of c.lines)quantities.set(l.sku,(quantities.get(l.sku)||0)+l.qty);
+    for (const [sku,qty] of quantities) {
+      const l=c.lines.find(l=>l.sku===sku)!;
       const available = (balances.find((x) => x.sku === l.sku)?.qty ?? 0) - (reserved.get(l.sku) ?? 0);
-      if (l.qty > available + 1e-9)
+      if (qty > available + 1e-9)
         throw new AppError(409, `${l.name}: chỉ còn khả dụng ${Math.max(0, available)}.`, 'POS_STOCK_SHORT');
     }
     const tendered = flow ? receivedInitial : mode === 'cod' ? depositAmount : method === 'cash' ? posMoney(b.tendered, 'Tiền khách đưa') : c.payable;
@@ -466,6 +478,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       customer: c.customer?.name ?? 'Khách lẻ',
       note: c.note,
       lines: c.lines,
+      ...(c.promotion?{promotion:c.promotion}:{}),
       fees: c.fees,
       subtotal: c.subtotal,
       tax: c.tax,

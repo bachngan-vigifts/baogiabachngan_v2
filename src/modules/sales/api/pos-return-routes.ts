@@ -1,4 +1,5 @@
 import { flowIssued } from './pos-order-flow-guards.ts';
+import {assertPromotionReturn} from './pos-promotions.ts';
 import {
   posOrderReservations,
   posPaymentIntents,
@@ -126,7 +127,7 @@ async function detail(c: Ctx, db: CashDb, orderId: string) {
     lines: lines.map((l) => ({
       ...l,
       returnableQty: recoveringIssued
-        ? issued.find((i) => i.sku === l.sku)?.qty || 0
+        ? issuedLineQuantity(l,lines,issued)
         : l.deliveredQty,
     })),
     recoveringIssued,
@@ -162,13 +163,19 @@ async function quickCancelData(c: Ctx, db: CashDb, id: string) {
       moves.some(m=>m.warehouseId!==snap.register.warehouseId||m.qty!==quantities.get(m.sku)))
     throw new AppError(409, 'Số hàng đã xuất hoặc kho gốc không khớp bill. Cần đối soát kho trước khi huỷ nhanh.');
   const fees = snapshotPosFees(snap);
-  const returned = lines.map(l=>{const original=snap.lines?.find((x:{sku:string})=>x.sku===l.sku);
+  const returned = lines.map(l=>{const original=snap.promotion?snap.lines?.[l.lineNo-1]:snap.lines?.find((x:{sku:string})=>x.sku===l.sku);
     if(!original||original.subtotal!==l.amount)throw new AppError(409,'Snapshot giá không khớp bill gốc.');
     return {...l,refundTax:posMoney(original.tax)};
   });
   if(returned.reduce((n,l)=>n+l.amount,0)+fees.subtotal!==o.subtotal || returned.reduce((n,l)=>n+l.refundTax,0)+fees.tax!==o.tax)
     throw new AppError(409,'Tổng tiền hàng/phí/VAT không khớp bill gốc.');
   return {o,s,snap,lines:returned,fees};
+}
+/** Allocate SKU-level recovery stock once across paid and free lines of the same SKU. */
+function issuedLineQuantity(line:{sku:string;qty:number;lineNo:number},lines:{sku:string;qty:number;lineNo:number}[],issued:{sku:string;qty:number}[]){
+ const total=issued.find(x=>x.sku===line.sku)?.qty||0;
+ const earlier=lines.filter(x=>x.sku===line.sku&&x.lineNo<line.lineNo).reduce((n,l)=>n+l.qty,0);
+ return Math.max(0,Math.min(line.qty,total-earlier));
 }
 export function registerPosReturnRoutes(router: Router<StaffEnv>) {
   router.get('/pos/orders/:id/quick-cancel',async c=>{
@@ -339,7 +346,7 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
           recoveringIssued &&
           (rs.length ||
             old.some((l) => {
-              const qty = issued.find((i) => i.sku === l.sku)?.qty || 0;
+              const qty = issuedLineQuantity(l,old,issued);
               return (
                 qty > 0 &&
                 !(b.lines as any[]).some(
@@ -359,7 +366,7 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
           const l = old.find((l) => l.id === x?.orderLineId);
           const returnable = l
             ? recoveringIssued
-              ? issued.find((i) => i.sku === l.sku)?.qty || 0
+              ? issuedLineQuantity(l,old,issued)
               : l.deliveredQty
             : 0;
           if (!l || returnable <= 0)
@@ -369,7 +376,7 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             wanted = Number(x.qty);
           // Validate both sold and delivered caps; allocate money against all active requests, including pending.
           returnPortion(0, returnable, qty, x.qty, 0);
-          const original = snap.lines?.find(
+          const original = snap.promotion?snap.lines?.[l.lineNo-1]:snap.lines?.find(
             (row: { sku: string }) => row.sku === l.sku,
           );
           if (!original || original.subtotal !== l.amount)
@@ -407,6 +414,7 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             total: subtotal + tax,
           };
         });
+        assertPromotionReturn(snap,old,claimed,rs,lines);
         const fees = snapshotPosFees(snap),
           service = posMoney(b.serviceFee ?? 0),
           shipping = posMoney(b.shippingFee ?? 0);
