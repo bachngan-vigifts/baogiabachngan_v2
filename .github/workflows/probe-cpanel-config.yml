@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       focus:
-        description: 'all = đọc đủ; home = chỉ đo thư mục home (lscache, thư mục ẩn)'
+        description: 'all = đọc đủ; home = đo thư mục home (lscache, ẩn); docroot = đo thư mục gốc web trừ wp-content'
         type: choice
-        options: [all, home]
+        options: [all, home, docroot]
         default: all
 permissions:
   contents: read

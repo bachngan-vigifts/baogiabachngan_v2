@@ -139,7 +139,7 @@ async function listDir(dir) {
   return r.ok ? (r.data || []) : null;
 }
 const FOCUS = (process.env.FOCUS || 'all').trim();
-const WALK_MAX_CALLS = FOCUS === 'home' ? 900 : 600, PER_DIR_CALLS = 90, WALK_DEADLINE = Date.now() + 8 * 60_000;
+const WALK_MAX_CALLS = FOCUS === 'home' || FOCUS === 'docroot' ? 900 : 600, PER_DIR_CALLS = 90, WALK_DEADLINE = Date.now() + 8 * 60_000;
 let walkCalls = 0;
 async function walkSize(dir, cap = PER_DIR_CALLS) {
   let bytes = 0, files = 0, dirs = 0, truncated = false, errors = 0;
@@ -169,16 +169,31 @@ if (docroot) {
   const rank = l => { const i = order.indexOf(l); return l === 'wp-content/plugins' ? 999 : i < 0 ? 500 : i; };
   targets.sort((a, b) => rank(a[0]) - rank(b[0]));
   out.deep.sizes = {};
-  if (FOCUS !== 'home') for (const [label, path] of targets) out.deep.sizes[label] = await safe(() => walkSize(path));
+  if (FOCUS !== 'home' && FOCUS !== 'docroot') for (const [label, path] of targets) out.deep.sizes[label] = await safe(() => walkSize(path));
   out.deep.walkCalls = walkCalls;
   const root = await safe(() => listDir(docroot));
   if (Array.isArray(root)) out.deep.rootFiles = root.filter(f => f.type === 'file' && Number(f.size) > 1048576).map(f => ({ file: f.file, mb: Math.round(Number(f.size) / 1048576) }));
   const wp = Array.isArray(wpc) ? wpc.filter(f => f.type === 'file').map(f => ({ file: f.file, bytes: Number(f.size) || 0 })) : null;
   out.deep.wpContentFiles = wp;
 
+  if (FOCUS === 'docroot') {
+    out.deep.docrootDirs = {};
+    const top = await safe(() => listDir(docroot));
+    for (const d of (Array.isArray(top) ? top : []).filter(f => f.type === 'dir' && f.file !== 'wp-content' && f.file !== '.' && f.file !== '..')) {
+      if (d.file === 'public_html') {
+        // thư mục lồng: đo từng thư mục con riêng để biết phần nào nặng
+        const inner = await safe(() => listDir(`${docroot}/public_html`));
+        out.deep.docrootDirs['public_html (lồng)'] = { entries: Array.isArray(inner) ? inner.slice(0, 60).map(f => `${f.type === 'dir' ? 'd' : 'f'}:${f.file}`) : inner };
+        for (const f of (Array.isArray(inner) ? inner : []).filter(f => f.type === 'dir').slice(0, 20)) out.deep.docrootDirs[`public_html/${f.file}`] = await safe(() => walkSize(`${docroot}/public_html/${f.file}`, 120));
+        const bigIn = (Array.isArray(inner) ? inner : []).filter(f => f.type === 'file' && Number(f.size) > 20 * 1048576).map(f => ({ file: f.file, mb: Math.round(Number(f.size) / 1048576) }));
+        out.deep.docrootDirs['public_html (file lớn ở gốc)'] = bigIn;
+      } else out.deep.docrootDirs[d.file] = await safe(() => walkSize(`${docroot}/${d.file}`, 150));
+    }
+  }
+
   // Thư mục home (cha của public_html): 13 GB đĩa có thể nằm ngoài web (sao lưu, log, mail, tmp).
   const home = docroot.replace(/\/[^/]+$/, '');
-  out.deep.home = await safe(async () => {
+  if (FOCUS !== 'docroot') out.deep.home = await safe(async () => {
     const items = await listDir(home);
     if (!Array.isArray(items)) return { ok: false };
     const dirs = items.filter(f => f.type === 'dir' && f.file !== 'public_html' && f.file !== '.' && f.file !== '..');
