@@ -90,9 +90,9 @@ test('changing or deleting a registered target invalidates previously reviewed p
   assert.equal((await f.call('/hr/members/emp/payslips/2026-09',f.mgr,'POST',{confirmationHash:before.confirmationHash})).status,409);
   assert.equal((await f.confirm('2026-09')).status,201);
 });
-test('annual board includes only Sale and atomically rejects plans for every other position',async()=>{
+test('annual board includes Sale / Sale Admin and atomically rejects other positions',async()=>{
   const f=await setup();
-  for(const positionId of ['manager','sale-admin','sales-ml','sales-lock','warehouse','accounting','thiet-ke','it',null]){
+  for(const positionId of ['manager','sales-ml','sales-lock','warehouse','accounting','thiet-ke','it',null]){
     if(positionId)await f.db.insert(positions).values({id:positionId,name:'Vị trí kiểm thử '+positionId}).onConflictDoNothing();
     await f.db.update(employees).set({positionId}).where(eq(employees.id,'emp'));
     assert.ok(!(await board(f)).data.rows.some((r:any)=>r.member.id==='emp'),String(positionId));

@@ -565,7 +565,7 @@ function applyWorkspaceUser(user) {
   $('#user-avatar').textContent = $('#account-button-m').textContent = initials(user.name);
   showOwnAvatar(user.avatar);
   $$('.manager-only').forEach(el => el.hidden = !isManager());
-  $('#my-sales-targets').hidden=user.positionId!=='sale';
+  $('#my-sales-targets').hidden=!['sale','sale-admin'].includes(user.positionId);
   // Kho: Trang kho + thanh dưới riêng (Trang chủ · Đóng gói · Nhận hàng · Giao hàng · Tra tồn).
   $$('.kho-nav, .kho-only').forEach(el => el.hidden = !isWarehouse());
   // Menu theo quyền của chức vụ (trang Phân quyền): mục nào chức vụ chưa được cấp thì ẩn.

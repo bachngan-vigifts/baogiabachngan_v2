@@ -28,7 +28,7 @@ test('self endpoints cannot read or write another person; non-Sale cannot submit
  assert.equal((await f.call(ROOT+'/'+r.data.id,f.other)).status,403);
  assert.equal((await send(f,{'2026-10':3e8},{memberId:'new'})).status,400);
  assert.equal((await f.call(own+'?memberId=new',f.emp)).data.member.id,'emp');
- await f.db.update(employees).set({positionId:'sale-admin'}).where(eq(employees.id,'new'));assert.equal((await f.call(own,f.other)).status,403);
+ await f.db.update(employees).set({positionId:'accounting'}).where(eq(employees.id,'new'));assert.equal((await f.call(own,f.other)).status,403);
  assert.equal((await f.call(own,f.mgr)).status,403);assert.equal((await f.call(own,f.ncc)).status,403);
 });
 test('editing a pending request keeps one record and invalidates stale employee/Manager versions',async()=>{

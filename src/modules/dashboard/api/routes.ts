@@ -1,3 +1,4 @@
+import {sha256Hex} from '../../staff/domain/session.ts';
 import type {DashboardReportScoresOf} from '../../../core/contracts/report-scores.ts';
 import { and, asc, count, desc, eq, exists, gte, inArray, isNull, lt, max, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
@@ -41,8 +42,9 @@ export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?
     if(!f.months.includes(month))throw new AppError(400,'Tháng điểm báo cáo phải nằm trong kỳ đang xem.');
     const manager=me.role==='manager';
     if(!manager&&f.owner&&f.owner!==me.id)throw new AppError(403,'Chỉ Manager xem được điểm báo cáo của nhân viên khác.');
-    const ids=(await c.env.db.select({id:employees.id}).from(employees).where(and(inArray(employees.role,['manager','employee']),isNull(employees.deletedAt),manager?undefined:eq(employees.id,me.id),f.owner?eq(employees.id,f.owner):undefined,manager&&f.group?eq(employees.positionId,f.group):undefined))).map(r=>r.id);
-    return json(await cachedReport(c.env.db,cacheOf(c,'dashboard-report-scores',me,f),async()=>{
+    const people=(await c.env.db.select({id:employees.id,name:employees.name,positionId:employees.positionId,workDepartmentId:employees.workDepartmentId}).from(employees).where(and(inArray(employees.role,['manager','employee']),isNull(employees.deletedAt),eq(employees.active,true),inArray(employees.positionId,['sale','sale-admin','manager']),manager?undefined:eq(employees.id,me.id),f.owner?eq(employees.id,f.owner):undefined,manager&&f.group?eq(employees.positionId,f.group):undefined))).sort((a,b)=>a.id.localeCompare(b.id));
+    const ids=people.map(p=>p.id),roster=sha256Hex(JSON.stringify(people));
+    return json(await cachedReport(c.env.db,{...cacheOf(c,'dashboard-report-scores-current-staff-v2',me,f),viewer:viewerKey(me,f)+':'+roster},async()=>{
       const members=deps.reportScoresOf?await deps.reportScoresOf(c.env.db,month,ids):[];
       return {month,available:!!deps.reportScoresOf,scope:manager&&!f.owner?'company':'self',members};
     }));
@@ -57,14 +59,15 @@ export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?
     const manager = me.role === 'manager';
     if (!manager && f.owner && f.owner !== me.id) throw new AppError(403, 'Chỉ Manager xem được KPI của nhân viên khác.');
     if (!deps.kpiOf) return json({ month, available: false, scope: manager ? 'company' : 'self', members: [] });
-    const ids = (await c.env.db.select({ id: employees.id }).from(employees).where(and(
-      inArray(employees.role, ['manager', 'employee']), isNull(employees.deletedAt),
+    const people = (await c.env.db.select({ id: employees.id, name:employees.name, positionId:employees.positionId,workDepartmentId:employees.workDepartmentId }).from(employees).where(and(
+      inArray(employees.role, ['manager', 'employee']), isNull(employees.deletedAt),eq(employees.active,true),inArray(employees.positionId,['sale','sale-admin','manager']),
       manager ? undefined : eq(employees.id, me.id),
       f.owner ? eq(employees.id, f.owner) : undefined,
-      manager && f.group ? eq(employees.positionId, f.group) : undefined))).map(r => r.id);
+      manager && f.group ? eq(employees.positionId, f.group) : undefined))).sort((a,b)=>a.id.localeCompare(b.id));
+    const ids=people.map(p=>p.id),roster=sha256Hex(JSON.stringify(people));
     const kpiOf = deps.kpiOf;
     // New counting rules must not reuse a cached signed-contract-only KPI after deployment.
-    return json(await cachedReport(c.env.db, cacheOf(c, 'dashboard-kpi-documents-v1', me, f), async () => {
+    return json(await cachedReport(c.env.db, {...cacheOf(c, 'dashboard-kpi-tracking-v2', me, f),viewer:viewerKey(me,f)+':'+roster}, async () => {
       const members = (await kpiOf(c.env.db, month, ids)).sort((a, b) => b.used - a.used || a.name.localeCompare(b.name, 'vi'));
       return { month, available: true, scope: manager && !f.owner ? 'company' : 'self', restricted: !manager && f.manager, members };
     }));

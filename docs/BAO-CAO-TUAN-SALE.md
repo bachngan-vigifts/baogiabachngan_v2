@@ -74,3 +74,11 @@ Bảng lương nhận điểm qua contract `src/core/contracts/weekly-report.ts`
 Tổng điểm tháng là tổng các tuần theo chính sách báo cáo đang dùng (lấy 4 tuần có điểm cao nhất, tối đa 4 điểm), không phải một loại báo cáo tháng mới. Báo cáo chờ duyệt có nhãn riêng; tuần chưa tới hạn hiện dấu “—” thay vì coi là chưa nộp. Điểm trên phiếu tạm tính cập nhật theo báo cáo hiện tại; phiếu đã chốt/đã trả giữ bản điểm lúc chốt. Phiếu cũ không lưu điểm hiển thị “Chưa có bản lưu điểm”, không tự thay bằng điểm mới.
 
 Nhân viên thử việc vẫn theo dõi được điểm, nhưng có thông báo nếu phiếu lương không dùng điểm đó tính tiền trách nhiệm. Việc hiển thị không đổi công thức lương. Điểm được lưu thêm trong JSON phiếu lương khi chốt; không cần migration.
+
+## KPI theo dõi của Sale Admin trên Tổng quan
+
+- Sale và Sale Admin mở **Đăng ký chỉ tiêu doanh số** trong menu cá nhân, nhập chỉ tiêu từng tháng và gửi Manager duyệt. Chỉ tiêu được duyệt mới áp dụng; giữ kiểm tra phiên bản và khóa tháng đã chốt lương.
+- Sale Admin xem đủ KH mới, giao dịch, đơn hàng/HĐKT và doanh số trên Tổng quan như Sale. Số thực tế lấy từ CRM theo chính sách KPI của tháng; chỉ tiêu riêng đã duyệt được ưu tiên, chưa có thì dùng mức mặc định.
+- KPI Sale Admin chỉ để theo dõi: tỷ lệ thưởng KPI luôn bằng 0, không bật KPI lương hay thưởng quý. Thưởng sao/thanh lý hiện có vẫn theo chính sách riêng. Điểm theo dõi cập nhật theo CRM, độc lập với phiếu lương đã chốt.
+- Bảng KPI/báo cáo dùng tên và chức vụ hiện tại của nhân viên đang hoạt động. Chuyển sang Kế toán/Kho/IT/Thiết kế thì không còn trên bảng này; hồ sơ báo cáo và phiếu lương lịch sử vẫn giữ nguyên. Đổi tên/chức vụ/phòng ban làm đổi khóa bản tính sẵn, nên lần tải tiếp theo không dùng danh sách cũ trong 30 phút.
+- Quyền không đổi: nhân viên chỉ xem điểm của mình; Manager mới xem điểm người khác. Quyền xem doanh số toàn công ty không mở điểm KPI/báo cáo của đồng nghiệp.
