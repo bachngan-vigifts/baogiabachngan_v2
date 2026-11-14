@@ -141,12 +141,13 @@ export function groupBy(orders: readonly OrderProfit[], keyOf: (o: OrderProfit) 
 }
 /** Gộp theo sản phẩm (mã) – chỉ dòng đủ giá vốn tính LN. */
 export function groupByProduct(orders: readonly OrderProfit[]) {
-  const m = new Map<string, ProfitRow & { qty: number }>();
+  const m = new Map<string, ProfitRow & { qty: number }>(), counted = new Map<string, Set<string>>(), missing = new Map<string, Set<string>>(), pending = new Map<string, Set<string>>();
+  const first = (map: Map<string, Set<string>>, key: string, id: string) => { const set = map.get(key) ?? map.set(key, new Set<string>()).get(key)!; const seen = set.has(id); set.add(id); return !seen; };
   for (const o of orders) for (const l of o.lines) {
     const k = l.sku || `(không mã) ${l.name}`, r = m.get(k) ?? m.set(k, { ...emptyRow(k, l.name), qty: 0 }).get(k)!;
-    r.orders++; r.qty += l.qty; r.revenue += l.revenue; r.revenueBy[l.pending?.confidence ?? l.confidence ?? 'missing'] += l.revenue;
-    if (l.pending) { r.unconfirmedOrders++; r.unconfirmedRevenue += l.revenue; }
-    else if (l.gross === null) { r.missingOrders++; r.missingRevenue += l.revenue; }
+    if (first(counted, k, o.id)) r.orders++; r.qty += l.qty; r.revenue += l.revenue; r.revenueBy[l.pending?.confidence ?? l.confidence ?? 'missing'] += l.revenue;
+    if (l.pending) { if (first(pending, k, o.id)) r.unconfirmedOrders++; r.unconfirmedRevenue += l.revenue; }
+    else if (l.gross === null) { if (first(missing, k, o.id)) r.missingOrders++; r.missingRevenue += l.revenue; }
     else { r.coveredRevenue += l.revenue; r.cost += l.cost; r.direct += l.printing + l.commission; r.gross += l.gross; r.net += l.gross; }
     r.margin = r.coveredRevenue > 0 ? r.gross / r.coveredRevenue : null;
   }

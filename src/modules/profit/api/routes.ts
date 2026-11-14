@@ -38,7 +38,7 @@ import {
 
 type Ctx = Parameters<Parameters<Router<StaffEnv>['get']>[1]>[0];
 const member = (c: Ctx) => (c.state.session as SessionState).member;
-const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z'));
+const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v;
 const MAX_DAYS = 3 * 366;
 const CRM_BRANCH = 'crm';
 const parseDoc = (s: string | null): QuoteDoc | null => { try { const d = JSON.parse(s || 'null'); return d && Array.isArray(d.rows) ? d : null; } catch { return null; } };
@@ -217,9 +217,13 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
     if (!isDay(from) || !isDay(to) || from > to) throw new AppError(400, 'Khoảng ngày không hợp lệ.');
     if ((Date.parse(to) - Date.parse(from)) / 86400_000 > MAX_DAYS) throw new AppError(400, 'Khoảng ngày tối đa 3 năm.');
     if (!GRAINS.includes(grain)) throw new AppError(400, 'Kỳ không hợp lệ (ngày / tuần / tháng / năm).');
+    const chartGrain = (q.get('chartGrain') || grain) as Grain;
+    if (!GRAINS.includes(chartGrain)) throw new AppError(400, 'Kỳ biểu đồ không hợp lệ.');
+    const groupOffset = (key: string) => { const raw = q.get(key) || '0'; const value = Number(raw); if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value > 1000000) throw new AppError(400, 'Vị trí trang không hợp lệ.'); return value; };
+    const requestedProductsOffset = groupOffset('productsOffset'), requestedCustomersOffset = groupOffset('customersOffset'), groupLimit = 300;
     const costs = q.get('costs') === 'confirmed' ? 'confirmed' : 'all';
     // Tính một lần cho mọi Manager (số liệu không phụ thuộc người xem), giữ 30 phút; "Cập nhật" (refresh=1) tính lại ngay.
-    const cacheParams = new URLSearchParams(q); cacheParams.delete('view');
+    const cacheParams = new URLSearchParams(q); cacheParams.delete('view'); cacheParams.delete('productsOffset'); cacheParams.delete('customersOffset'); cacheParams.set('_profitVersion', '3');
     const report = await cachedReport(c.env.db, { scope: PROFIT_CACHE, viewer: 'manager', params: cacheParams, refresh: q.get('refresh') === '1' }, async () => {
     const all = await profitOrders(c.env.db, from, to, undefined, costs === 'confirmed', deps.lineCostFallbackOf), n = await names(c.env.db, all);
     const branch = q.get('branch') || '', owner = q.get('owner') || '', customer = q.get('customer') || '';
@@ -228,7 +232,8 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
     const staff = await applyStaffCosts(c.env.db, all, from, to, getCosts ? (_db, m) => getCosts(m) : undefined);
     const bc = await branchCosts(c.env.db, all, from, to, getCosts, n.branch);
     const saleUnallocated = staff.unallocated.reduce((s, u) => s + u.salary + u.bonus, 0);
-    const branchRows = bc.rows.filter(r => !branch || r.id === branch);
+    // Shared branch overhead has no employee/customer allocation rule. Never attach all-branch net to a filtered order subtotal.
+    const branchRows = owner || customer ? [] : bc.rows.filter(r => !branch || r.id === branch);
     const companyNet = bc.rows.reduce((s, r) => s + r.net, 0) - saleUnallocated - bc.overheadTotal;
     const filtered = !!(branch || owner || customer);
     const orders = all.filter(o => (!branch || o.branchId === branch) && (!owner || o.ownerId === owner) && (!customer || o.customerId === customer));
@@ -252,11 +257,11 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
     const customerKey = (o: OrderProfit) => o.customerId ?? `name:${o.customerName}`;
     const customerName = new Map(orders.map(o => [customerKey(o), o.customerName]));
     return {
-      from, to, grain, costs, compare, costSources: COST_SOURCE_LABEL, confidenceLabels: LINE_COST_CONFIDENCE_LABEL,
+      from, to, grain, chartGrain, costs, compare, costSources: COST_SOURCE_LABEL, confidenceLabels: LINE_COST_CONFIDENCE_LABEL,
       summary: summary ?? emptyRow('all', 'Tổng'),
       direct: { printing: orders.reduce((s, o) => s + o.printing, 0), commission: orders.reduce((s, o) => s + o.commission, 0), shipping: orders.reduce((s, o) => s + o.shipping, 0) },
       cardFees: { available: false, note: 'CRM chưa ghi nhận thanh toán thẻ / phí cổng thanh toán – chưa tính.' },
-      branchCosts: { months: bc.months, rows: branchRows, cash: bc.cash, classOptions: CASH_CLASSES.map(k => ({ cls: k, ...CASH_CLASS_LABEL[k] })), review: bc.review.filter(r => !branch || r.branch === n.branch(branch)), officeExpenses: bc.officeExpenses,
+      branchCosts: { filtered: !!(owner || customer), months: bc.months, rows: branchRows, cash: bc.cash, classOptions: CASH_CLASSES.map(k => ({ cls: k, ...CASH_CLASS_LABEL[k] })), review: bc.review.filter(r => !branch || r.branch === n.branch(branch)), officeExpenses: bc.officeExpenses,
         // Toàn công ty: chỉ khi không lọc (chi phí chung / lương Sale chưa phân bổ không thuộc riêng chi nhánh / nhân viên nào).
         company: filtered ? null : {
           ordersNet: all.reduce((s, o) => s + o.net, 0), petty: bc.rows.reduce((s, r) => s + r.petty, 0), storeStaff: bc.storeStaff, saleUnallocated,
@@ -277,24 +282,30 @@ export function registerProfitRoutes(router: Router<StaffEnv>, deps: { staffCost
           reconcile: { payroll: staff.payroll.salary + staff.payroll.bonus, allocated, unallocated: unTotal, ok: allocated + unTotal === staff.payroll.salary + staff.payroll.bonus } };
       })(),
       series: groupBy(orders, o => bucketOf(o.orderDate, grain), k => bucketLabel(k, grain), 'key'),
+      chartSeries: groupBy(orders, o => bucketOf(o.orderDate, chartGrain), k => bucketLabel(k, chartGrain), 'key'),
       branches: groupBy(orders, o => o.branchId, n.branch),
       owners: groupBy(orders, o => o.ownerId, n.owner),
-      customers: groupBy(orders, customerKey, k => customerName.get(k) ?? k).slice(0, 300),
-      products: groupByProduct(orders).slice(0, 300),
+      customers: groupBy(orders, customerKey, k => customerName.get(k) ?? k),
+      products: groupByProduct(orders),
       orders: [...orders].sort((a, b) => b.orderDate.localeCompare(a.orderDate) || b.revenue - a.revenue).slice(0, 500)
         .map(o => ({ id: o.id, orderNo: o.orderNo, orderDate: o.orderDate, customerName: o.customerName, ownerName: n.owner(o.ownerId), branch: n.branch(o.branchId),
-          revenue: o.revenue, cost: o.cost, direct: o.printing + o.commission + o.shipping, gross: o.gross, margin: o.coveredRevenue > 0 ? o.gross / o.coveredRevenue : null, missingLines: o.missingLines, unconfirmedLines: o.unconfirmedLines,
+          revenue: o.revenue, coveredRevenue: o.coveredRevenue, cost: o.cost, direct: o.printing + o.commission + o.shipping, gross: o.gross, margin: o.coveredRevenue > 0 ? o.gross / o.coveredRevenue : null, missingLines: o.missingLines, unconfirmedLines: o.unconfirmedLines,
           feeRevenue: o.feeRevenue, carrierFee: o.carrierFee, staffCost: o.staffSalary + o.staffBonus, net: o.net, carrierUnknown: o.carrierUnknown })),
       ordersTotal: orders.length,
       filterOptions: { branches: groupBy(all, o => o.branchId, n.branch).map(r => ({ id: r.key, name: r.label })), owners: groupBy(all, o => o.ownerId, n.owner).map(r => ({ id: r.key, name: r.label })) },
     };
     });
-    return json(q.get('view') === 'overview' ? compactProfitOverview(report) : report);
+    const pageOffset = (requested: number, total: number) => Math.min(requested, Math.max(0, Math.floor((total - 1) / groupLimit) * groupLimit));
+    const productsOffset = pageOffset(requestedProductsOffset, report.products.length), customersOffset = pageOffset(requestedCustomersOffset, report.customers.length);
+    return json(q.get('view') === 'overview' ? compactProfitOverview(report) : { ...report,
+      products: report.products.slice(productsOffset, productsOffset + groupLimit), productsTotal: report.products.length, productsOffset,
+      customers: report.customers.slice(customersOffset, customersOffset + groupLimit), customersTotal: report.customers.length, customersOffset, groupLimit,
+    });
   }, 'business');
 
   router.get('/profit/orders/:id', async c => {
     requireManager(c);
-    const [o] = await profitOrders(c.env.db, '', '', [String(c.params.id)], false, deps.lineCostFallbackOf);
+    const [o] = await profitOrders(c.env.db, '', '', [String(c.params.id)], c.url.searchParams.get('costs') === 'confirmed', deps.lineCostFallbackOf);
     if (!o) throw new AppError(404, 'Không tìm thấy đơn (hoặc đơn không tính doanh số).');
     const n = await names(c.env.db, [o]);
     const [snaps, history] = await Promise.all([
