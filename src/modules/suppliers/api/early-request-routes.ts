@@ -33,6 +33,7 @@ async function supplierFor(c:Ctx) {
   return mapping.id;
 }
 type OrderSource = {orderNo:string;supplierOrderNo:string;quantity:number};
+function allowUnresolvedDraft(body:Record<string,unknown>){if(body.allowUnresolvedSources!==undefined&&typeof body.allowUnresolvedSources!=='boolean')fail(400,'Tuỳ chọn nháp chưa chốt nguồn không hợp lệ.');return body.allowUnresolvedSources===true;}
 const sourceKey = (value:string) => value.trim().toLocaleLowerCase('vi');
 function cleanSources(raw:unknown,quantity:number,sku:string):OrderSource[]|undefined {
   if(raw===undefined)return;
@@ -174,14 +175,14 @@ async function withReceiptAvailability(db:Db, rows:Awaited<ReturnType<typeof ear
 export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   router.get('/purchase-early-requests/order-options',async c=>{
     guard(c);if(!canSendEarlyRequest(me(c)))fail(403,'Bạn chưa được cấp quyền chọn đơn mua.');
-    const sku=(c.url.searchParams.get('sku')||'').trim(),supplierOrderNo=(c.url.searchParams.get('supplierOrderNo')||'').trim().toLocaleLowerCase('vi');
-    if(!sku||sku.length>200)fail(400,'Mã hàng không hợp lệ.');
+    const sku=(c.url.searchParams.get('sku')||'').trim(),supplierOrderNo=(c.url.searchParams.get('supplierOrderNo')||'').trim().toLocaleLowerCase('vi'),supplierId=(c.url.searchParams.get('supplierId')||'').trim();
+    if(!sku||sku.length>200||supplierOrderNo.length>200||supplierId.length>200)fail(400,'Mã hàng không hợp lệ.');
     const rows=await c.env.db.select({orderId:incomingShipments.id,lineId:incomingShipmentLines.id,ticketNumber:incomingShipments.ticketNumber,
       supplierOrderNo:incomingShipments.supplierInternalOrderNumber,supplierId:incomingShipments.supplierId,supplierName:suppliers.name,
       approvalStatus:incomingShipments.approvalStatus,submittedAt:incomingShipments.submittedAt,quantity:incomingShipmentLines.quantity,
       unit:incomingShipmentLines.unit,warehouse:incomingShipments.warehouse,createdAt:incomingShipments.createdAt})
       .from(incomingShipmentLines).innerJoin(incomingShipments,eq(incomingShipments.id,incomingShipmentLines.shipmentId)).innerJoin(suppliers,eq(suppliers.id,incomingShipments.supplierId))
-      .where(and(eq(incomingShipmentLines.sku,sku),eq(incomingShipments.source,'supplier-order'),isNull(incomingShipments.cancelledAt))).orderBy(desc(incomingShipments.createdAt));
+      .where(and(eq(incomingShipmentLines.sku,sku),eq(incomingShipments.source,'supplier-order'),isNull(incomingShipments.cancelledAt),supplierId?eq(incomingShipments.supplierId,supplierId):undefined)).orderBy(desc(incomingShipments.createdAt));
     const options=rows.map(r=>({...r,exactSupplierOrderNo:!!supplierOrderNo&&r.supplierOrderNo.trim().toLocaleLowerCase('vi')===supplierOrderNo}));
     options.sort((a,b)=>Number(b.exactSupplierOrderNo)-Number(a.exactSupplierOrderNo)||b.createdAt.localeCompare(a.createdAt));
     return json({sku,options});
@@ -227,7 +228,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       for(const [i,input] of inputs.entries()){
         const id=crypto.randomUUID();
         await tx.insert(requests).values({id,clientKey:'file_'+sha256Hex(batchId+':'+i),payloadHash,createdBy:m.id,createdAt:now,status:'draft',pickupDate:input.pickupDate,scope:JSON.stringify(input.scope),updatedAt:now});
-        await replaceDraftLines(tx,id,input,used,true);requestIds.push(id);
+        await replaceDraftLines(tx,id,input,used);requestIds.push(id);
         await audit(tx,m,id,'early-request-draft-create',{lines:input.selected,scope:input.scope,pickupDate:input.pickupDate});
       }
       await tx.insert(auditLogs).values({id:batchId,actorId:m.id,module:'suppliers',action:'early-request-file-create',entityType:'purchase-early-requests',entityId:requestIds[0]!,data:JSON.stringify({payloadHash,requestIds}),createdAt:now});
@@ -238,16 +239,17 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   },'business');
   router.post('/purchase-early-requests',async c=>{
     guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
-    const body=await readJson(c.req,300000),input=cleanInput(body),groupBySupplierOrder=body.groupBySupplierOrder===true;
+    const body=await readJson(c.req,300000),input=cleanInput(body),groupBySupplierOrder=body.groupBySupplierOrder===true,allowUnresolved=allowUnresolvedDraft(body);
     if(body.groupBySupplierOrder!==undefined&&typeof body.groupBySupplierOrder!=='boolean')fail(400,'Tuỳ chọn gom phiếu không hợp lệ.');
-    const payloadHash=sha256Hex(JSON.stringify({lines:input.selected,scope:input.scope,pickupDate:input.pickupDate,...(groupBySupplierOrder?{groupBySupplierOrder:true}:{})}));
+    const payloadHash=sha256Hex(JSON.stringify({lines:input.selected,scope:input.scope,pickupDate:input.pickupDate,...(groupBySupplierOrder?{groupBySupplierOrder:true}:{}),...(allowUnresolved?{allowUnresolvedSources:true}:{})}));
     const result=await c.env.db.transaction(async tx=>{
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'early-key:'+m.id+':'+input.clientKey}))`);
       const [old]=await tx.select().from(requests).where(and(eq(requests.createdBy,m.id),eq(requests.clientKey,input.clientKey))).limit(1);
       if(old) { if(old.payloadHash!==payloadHash) fail(409,'Khóa gửi đã được dùng cho nội dung khác.','IDEMPOTENCY_CONFLICT');if(old.deletedAt&&!await splitResult(tx,old.id))fail(409,'Phiếu đã xoá, không tạo lại bằng lần gửi cũ.');return {id:old.id,replayed:true,requestIds:await splitResult(tx,old.id)||[old.id]}; }
       const now=new Date().toISOString(),id=crypto.randomUUID();
       await tx.insert(requests).values({id,clientKey:input.clientKey,payloadHash,createdBy:m.id,createdAt:now,status:'draft',pickupDate:input.pickupDate,scope:JSON.stringify(input.scope),updatedAt:now});
-      await replaceDraftLines(tx,id,input,undefined,true);
+      await replaceDraftLines(tx,id,input,undefined,allowUnresolved);
+      if(groupBySupplierOrder&&input.scope.unresolvedOrders)fail(409,'Chốt nguồn đơn mua trước khi tách phiếu theo NCC.','EARLY_UNRESOLVED');
       await audit(tx,m,id,'early-request-draft-create',{lines:input.selected,scope:input.scope,pickupDate:input.pickupDate});
       return {id,replayed:false,requestIds:groupBySupplierOrder?await splitEarlyRequest(tx,id,m.id):[id]};
     });
@@ -257,7 +259,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   },'business');
   router.put('/purchase-early-requests/:id',async c=>{
     guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
-    const body=await readJson(c.req,300000),id=c.params.id!;
+    const body=await readJson(c.req,300000),id=c.params.id!,allowUnresolved=allowUnresolvedDraft(body);
     await c.env.db.transaction(async tx=>{
       const [draft]=await tx.select().from(requests).where(eq(requests.id,id)).for('update');
       if(!draft) fail(404,'Không tìm thấy phiếu nháp.');
@@ -265,7 +267,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       if(draft.status!=='draft') fail(409,'Phiếu đã gửi NCC, không sửa như phiếu nháp.');
       if(body.revision!==draft.revision) fail(409,'Phiếu đã được sửa bởi người khác. Vui lòng tải lại.');
       const input=cleanInput({...body,clientKey:draft.clientKey,scope:JSON.parse(draft.scope)},JSON.parse(JSON.parse(draft.scope).orderSources||'{}'));
-      await replaceDraftLines(tx,id,input,undefined,true);
+      await replaceDraftLines(tx,id,input,undefined,allowUnresolved);
       await tx.update(requests).set({pickupDate:input.pickupDate,scope:JSON.stringify(input.scope),updatedAt:new Date().toISOString(),revision:draft.revision+1}).where(eq(requests.id,id));
       await audit(tx,m,id,'early-request-draft-update',{lines:input.selected,pickupDate:input.pickupDate,revision:draft.revision+1});
     });return json({request:(await earlyRequestList(c.env.db,null,id))[0]});
