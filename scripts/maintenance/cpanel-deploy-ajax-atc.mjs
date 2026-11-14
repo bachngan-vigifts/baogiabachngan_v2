@@ -62,7 +62,7 @@ async function health() {
     const t0 = performance.now();
     try {
       const r = await fetch(`${SITE}${path}?hc=${Date.now()}`, { redirect: 'follow', headers: { 'User-Agent': 'cpanel-deploy-health' }, signal: AbortSignal.timeout(30_000) });
-      const text = (await r.text()).slice(0, 900_000);
+      const text = (await r.text()).slice(0, 8_000_000);
       out[name] = { status: r.status, ms: Math.round(performance.now() - t0), phpError: bad.test(text) };
       if (name === 'product' || name.startsWith('p_')) out[name].atc = (/__lnlAtc=\\?"?([\w-]+)/.exec(text) || [])[1] || 'none';
     } catch { out[name] = { status: 0, ms: Math.round(performance.now() - t0), phpError: false }; }
