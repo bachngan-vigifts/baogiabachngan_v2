@@ -30,3 +30,5 @@ Kiểm tra toàn trang phát hiện policy mobile cũ ẩn thao tác xoá trên 
 ![Nút xoá trên toàn trang PC — dữ liệu thử](products-1440.png)
 ![Nút xoá trên toàn trang mobile — dữ liệu thử](products-390.png)
 ![Xác nhận mobile giữ đầy đủ nút](confirm-390.png)
+
+Cột thao tác được ghim phía phải và các nút được xuống dòng khi bảng rộng, để nút Xoá không bị cắt khỏi màn hình PC. Kiểm thử toàn trang kiểm cả vị trí nút trong viewport.
