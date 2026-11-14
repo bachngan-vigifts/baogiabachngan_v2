@@ -10,6 +10,9 @@ on:
         description: 'Chạy đủ 4 phần test trên GitHub'
         type: boolean
         default: false
+permissions:
+  contents: read
+  pull-requests: read
 concurrency:
   # A manual smoke run must never cancel the PR's full validation (or a manual full run).
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.full || false }}
@@ -27,6 +30,15 @@ jobs:
           FULL: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && inputs.full) }}
         run: echo "full=$FULL" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require current PR head and base
+        uses: actions/github-script@v7
+        with:
+          retries: 0
+          script: |
+            await require('./scripts/ci/pr-freshness.cjs')({ github, context });
       - uses: actions/setup-node@v4
         with:
           node-version: 22.22.0
@@ -34,6 +46,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci --prefer-offline --no-audit --no-fund
       # Typecheck once, not once in each of the four shards as well.
+      - run: node --test tests/ci/*.test.cjs
       - run: npm run typecheck
       # These tests also belong to the full suite; do not run them twice on ready PRs.
       - if: steps.mode.outputs.full != 'true'
@@ -45,10 +58,19 @@ jobs:
           tests/app/catalogue-edge-dependencies.test.ts
           tests/app/appsheet-schema-gate.test.ts
           "tests/app/*-ui.test.ts"
+      - name: Require current PR head and base
+        uses: actions/github-script@v7
+        with:
+          retries: 0
+          script: |
+            await require('./scripts/ci/pr-freshness.cjs')({ github, context });
   full-shards:
+    permissions:
+      contents: read
     needs: prepare
-    if: needs.prepare.outputs.full == 'true'
-    name: test shard ${{ matrix.shard }}/4
+    # Materialize all four required names; manual smoke has no required contexts.
+    if: always() && (github.event_name == 'pull_request' || inputs.full)
+    name: ${{ github.event_name == 'pull_request' && 'test shard' || 'manual shard' }} ${{ matrix.shard }}/4
     runs-on: ubuntu-24.04
     # Four disjoint file shards preserve npm test's complete globs and concurrency.
     timeout-minutes: 35
@@ -57,7 +79,19 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
     steps:
+      - name: Refuse unvalidated or draft runs before installing dependencies
+        env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          FULL: ${{ needs.prepare.outputs.full }}
+        run: |
+          if [ "$PREPARE_RESULT" != success ] || [ "$FULL" != true ]; then
+            echo "::error::Full shard not run. Resolve prepare failure / Update branch, or mark Ready for review."
+            exit 1
+          fi
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22.22.0
@@ -78,12 +112,27 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require current PR head and base
+        uses: actions/github-script@v7
+        with:
+          retries: 0
+          script: |
+            await require('./scripts/ci/pr-freshness.cjs')({ github, context });
       - name: Require every expected check to pass
         env:
+          IS_PR: ${{ github.event_name == 'pull_request' }}
           PREPARE_RESULT: ${{ needs.prepare.result }}
           FULL_REQUIRED: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && inputs.full) }}
           SHARD_RESULT: ${{ needs.full-shards.result }}
         run: |
+          if [ "$IS_PR" = true ] && [ "$FULL_REQUIRED" != true ]; then
+            echo "::error::Draft feedback only. Mark Ready for review to run all four required shards."
+            exit 1
+          fi
           test "$PREPARE_RESULT" = success || exit 1
           if [ "$FULL_REQUIRED" = true ]; then
             test "$SHARD_RESULT" = success || exit 1
