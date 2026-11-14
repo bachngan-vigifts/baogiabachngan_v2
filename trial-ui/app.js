@@ -1688,16 +1688,48 @@ function productLedger(dlg, sku, close) {
   load();
 }
 // ----- hình của dòng (HRC: hình sản phẩm; B2B/VIGIFTS: maquette) – link ảnh hoặc tải ảnh lên, như web cũ
-let imageRow = -1, pendingImage = '', pendingDesignKey = '', imageGeneration = 0, imageBusy = false;
+let imageTarget = null, imageSession = 0, productImage = '';
+let pendingImage = '', pendingDesignKey = '', imageGeneration = 0, imageBusy = false;
 function drawImagePreview() { $('#image-preview').innerHTML = pendingImage ? imgTag(pendingImage, 'thumb big') : '<span class="muted">Chưa có ảnh</span>'; $('#image-remove').hidden = !pendingImage; }
 function openImage(i) {
   imageGeneration++; imageBusy = false; $('#image-save').disabled = false;
-  for (const id of ['image-url','image-file','image-remove']) $('#'+id).disabled = false;
-  imageRow = i; pendingImage = editor.rows[i].image || ''; pendingDesignKey = editor.rows[i].designImageKey || '';
+  for (const id of ['image-url','image-file','image-remove','image-use-product']) $('#'+id).disabled = false;
+  imageTarget = editor.rows[i]; const session = ++imageSession;
+  pendingImage = !isSaleEditor() || imageTarget.designImage === true ? imageTarget.image || '' : '';
+  pendingDesignKey = pendingImage ? imageTarget.designImageKey || '' : '';
+  productImage = ''; $('#image-use-product').disabled = true;
+  $('#image-product-preview').innerHTML = '';
+  $('#image-product-status').textContent = imageTarget.sku ? 'Đang tìm ảnh sản phẩm…' : 'Dòng này chưa có mã sản phẩm.';
+
   $('#image-title').textContent = isSaleEditor() ? 'Ảnh thiết kế riêng cho sản phẩm' : editor.type === 'HRC' ? 'Hình sản phẩm' : 'Maquette';
   $('#image-url').value = pendingImage.startsWith('data:') ? '' : pendingImage; $('#image-error').textContent = '';
   drawImagePreview(); $('#image-dialog').showModal();
+  if (imageTarget.sku) loadImageProduct(imageTarget, session);
 }
+async function loadImageProduct(row, session) {
+  const current = () => session === imageSession && imageTarget === row && editor.rows.includes(row) && $('#image-dialog').open;
+  try {
+    const cached = catalog.items?.find(p => p.sku === row.sku);
+    const product = cached || (await api('/products?skus=' + encodeURIComponent(row.sku))).products.find(p => p.sku === row.sku);
+    if (!current()) return;
+    productImage = savableImage(product?.imageUrl) ? product.imageUrl : '';
+    $('#image-product-preview').innerHTML = productImage ? imgTag(productImage, 'thumb big') : '';
+    $('#image-product-status').textContent = productImage ? 'Ảnh sản phẩm ' + row.sku + ' — chỉ dùng khi bạn chọn.' : 'Sản phẩm chưa có ảnh.';
+    $('#image-use-product').disabled = !productImage || imageBusy;
+  } catch {
+    if (current()) $('#image-product-status').textContent = 'Không tải được ảnh sản phẩm. Bạn vẫn có thể dán link hoặc tải ảnh mới.';
+  }
+}
+$('#image-use-product').addEventListener('click', () => {
+  if (!productImage || imageBusy || !imageTarget || !$('#image-dialog').open) return;
+  imageGeneration++; pendingImage = productImage; pendingDesignKey = '';
+  $('#image-url').value = productImage; $('#image-error').textContent = '';
+  $('#image-save').disabled = false; drawImagePreview();
+});
+$('#image-dialog').addEventListener('close', () => {
+  imageGeneration++; imageSession++; imageTarget = null; productImage = ''; imageBusy = false;
+});
+
 $('#image-url').addEventListener('input', e => {
   const v = e.target.value.trim(); pendingDesignKey = ''; imageGeneration++; $('#image-save').disabled = false; $('#image-error').textContent = '';
   if (!v) { pendingImage = ''; drawImagePreview(); return; }
@@ -1714,11 +1746,11 @@ $('#image-file').addEventListener('change', async e => {
 });
 $('#image-remove').addEventListener('click', () => { imageGeneration++; $('#image-save').disabled = false; pendingDesignKey = ''; pendingImage = ''; $('#image-url').value = ''; drawImagePreview(); });
 $('#image-save').addEventListener('click', async () => {
-  const r = editor.rows[imageRow], stamp = imageGeneration, sequence = editorLoadSequence, sale = isSaleEditor(); if (!r || imageBusy) return;
+  const r = imageTarget, stamp = imageGeneration, sequence = editorLoadSequence, sale = isSaleEditor(); if (!r || imageBusy) return;
 
   if ($('#image-url').value.trim() && !/^https:\/\//i.test($('#image-url').value.trim())) { $('#image-error').textContent = 'Link ảnh phải bắt đầu bằng https://'; return; }
   imageBusy = true; $('#image-save').disabled = true;
-  for (const id of ['image-url','image-file','image-remove']) $('#'+id).disabled = true;
+  for (const id of ['image-url','image-file','image-remove','image-use-product']) $('#'+id).disabled = true;
   try {
     let image = pendingImage, key = pendingDesignKey;
     // Private quote attachments; never update the public product image or catalogue.
@@ -1729,7 +1761,7 @@ $('#image-save').addEventListener('click', async () => {
     if (sale) r.designImage = !!image;
     $('#image-dialog').close(); markDirty(); renderLines();
   } catch (error) { if (stamp === imageGeneration) $('#image-error').textContent = error.message; }
-  finally { if (stamp === imageGeneration) { imageBusy = false; $('#image-save').disabled = false; for (const id of ['image-url','image-file','image-remove']) $('#'+id).disabled = false; } }
+  finally { if (stamp === imageGeneration) { imageBusy = false; $('#image-save').disabled = false; for (const id of ['image-url','image-file','image-remove']) $('#'+id).disabled = false; $('#image-use-product').disabled = !productImage; } }
 });
 /** Dòng có mã hàng nhưng chưa có ảnh (vd báo giá cũ): lấy ảnh từ danh mục, như imageMap của web cũ. */
 async function fillMissingImages() {
@@ -2943,6 +2975,7 @@ addEventListener('scroll', () => { if (!pSuggest.hidden) placeProductSuggest(); 
 
 // ----- chọn sản phẩm từ danh mục ngay trong báo giá
 let pickerReq = 0, pickerItems = [], pickerTotal = 0, pickerAdded = 0, pickerTimer;
+let pickerDetailsExpanded = false;
 const pickerRowState = new Map(); // Local inputs only; cleared for every dialog session.
 /** Chỉ hàng Lock&Lock có kho NCC (tồn bên nhà cung cấp); hãng khác ẩn cho gọn. */
 const hasSupplierStock = p => brandDiscountKey(p?.brand || p?.name) === 'lock'; // chưa có nhãn hiệu trên Sapo thì nhận theo tên
@@ -3088,7 +3121,7 @@ function renderPicker(observedAt, min, max) {
   const inQuote = new Set(editor.rows.map(r => r.sku).filter(Boolean));
   const policy = state.policies.find(x => x.id === currentPolicy());
   $('#picker-list').innerHTML = pickerItems.map((p, i) => {
-    const view = pickerRowState.get(p.sku), expanded = !!view?.expanded, has = inQuote.has(p.sku), quantities = pickerStockColumns(p);
+    const view = pickerRowState.get(p.sku), expanded = pickerDetailsExpanded, has = inQuote.has(p.sku), quantities = pickerStockColumns(p);
     return `<li data-i="${i}" data-sku="${esc(p.sku)}" class="picker-product ${has ? 'added' : ''} ${expanded ? 'is-expanded' : ''}">
       <span class="picker-product-name" title="${esc(p.name)}">${esc(p.name)}</span>
       <span class="picker-stock-summary">
@@ -3101,7 +3134,6 @@ function renderPicker(observedAt, min, max) {
       <span class="picker-product-thumbnail" aria-hidden="true">${thumb(p)}</span>
       <label class="picker-quantity"><span>Số lượng</span><input class="num-input" inputmode="decimal" value="${esc(view?.qty || '1')}" aria-label="Số lượng ${esc(p.name)}"></label>
       <button type="button" class="btn secondary small pick-add" data-add="${i}" ${has ? 'disabled title="Sản phẩm đã có trong báo giá"' : ''}>${has ? '✓ Đã có' : '＋ Thêm'}</button>
-      <button type="button" class="btn ghost small picker-details-toggle" data-picker-details="${i}" aria-expanded="${expanded}" aria-controls="picker-detail-${i}" aria-label="${expanded ? 'Thu gọn' : 'Xem thêm'}: ${esc(p.name)}"><span>${expanded ? 'Thu gọn' : 'Xem thêm'}</span><span class="picker-details-icon" aria-hidden="true">⋯</span></button>
       <div id="picker-detail-${i}" class="picker-product-details" ${expanded ? '' : 'hidden'}>${expanded ? pickerProductDetails(p) : ''}</div>
     </li>`;
   }).join('');
@@ -3125,6 +3157,7 @@ let pickerGeneration=0;
 function resetPickerDialog(){
   pickerGeneration++;pickerReq++;clearTimeout(pickerTimer);clearTimeout(pickerScrollTimer);
   pickerItems=[];pickerTotal=0;pickerShown=20;pickerAdded=0;pickerRowState.clear();
+  pickerDetailsExpanded = false; syncPickerDetailsToggle();
   for(const id of ['picker-search','picker-group','picker-range','picker-min','picker-max'])$('#'+id).value='';
   $('#picker-all').checked=isSaleEditor();$('#picker-list').innerHTML='';$('#picker-list').scrollTop=0;delete $('#picker-list').dataset.loading;$('#picker-list').removeAttribute('aria-busy');
   $('#picker-status').textContent='Giá lọc theo chính sách đang chọn.';$('#picker-snapshot').textContent='';$('#picker-empty').textContent='';$('#picker-empty').hidden=true;$('#picker-more-row').hidden=true;$('#picker-added').textContent='';
@@ -3182,20 +3215,24 @@ $('#picker-clear').addEventListener('click', () => {
   loadPicker(); $('#picker-search').focus();
 });
 $('#picker-more').addEventListener('click', () => loadPicker(true));
-$('#picker-list').addEventListener('click', e => {
-  const toggle = e.target.closest('[data-picker-details]');
-  if (toggle) {
-    const li = toggle.closest('li'), p = pickerItems[toggle.dataset.pickerDetails];
-    if (!p || !$('#picker-dialog').open) return;
-    const panel = li.querySelector('.picker-product-details'), show = panel.hidden;
-    if (show && !panel.childElementCount) panel.innerHTML = pickerProductDetails(p);
-    panel.hidden = !show; li.classList.toggle('is-expanded', show);
-    pickerRowState.set(p.sku, { qty: li.querySelector('input').value, expanded: show });
-    toggle.setAttribute('aria-expanded', String(show));
-    toggle.setAttribute('aria-label', `${show ? 'Thu gọn' : 'Xem thêm'}: ${p.name}`);
-    toggle.querySelector('span').textContent = show ? 'Thu gọn' : 'Xem thêm';
-    return;
+function syncPickerDetailsToggle() {
+  const button = $('#picker-details-toggle');
+  button.textContent = pickerDetailsExpanded ? 'Thu gọn' : 'Xem thêm';
+  button.setAttribute('aria-expanded', String(pickerDetailsExpanded));
+  button.setAttribute('aria-label', button.textContent + ' chi tiết tất cả sản phẩm');
+}
+$('#picker-details-toggle').addEventListener('click', () => {
+  pickerDetailsExpanded = !pickerDetailsExpanded; syncPickerDetailsToggle();
+  // Update only loaded rows in place: preserve quantities/focus and never fetch the full catalogue.
+  for (const li of $('#picker-list').children) {
+    const panel = li.querySelector('.picker-product-details'), p = pickerItems[li.dataset.i];
+    if (!panel || !p) continue;
+    if (pickerDetailsExpanded && !panel.childElementCount) panel.innerHTML = pickerProductDetails(p);
+    panel.hidden = !pickerDetailsExpanded; li.classList.toggle('is-expanded', pickerDetailsExpanded);
   }
+});
+
+$('#picker-list').addEventListener('click', e => {
   const b = e.target.closest('[data-add]'); if (!b) return;
   const li = b.closest('li'), p = pickerItems[b.dataset.add];if(!p||!$('#picker-dialog').open)return;const qty = parseNum(li.querySelector('input').value);
   if (!(qty > 0)) { li.querySelector('input').classList.add('invalid'); return; }
@@ -3207,7 +3244,7 @@ $('#picker-list').addEventListener('click', e => {
 $('#picker-list').addEventListener('input', e => {
   if (!e.target.matches('.picker-quantity input')) return;
   const li = e.target.closest('li'), p = pickerItems[li.dataset.i];
-  if (p && $('#picker-dialog').open) pickerRowState.set(p.sku, { qty: e.target.value, expanded: li.classList.contains('is-expanded') });
+  if (p && $('#picker-dialog').open) pickerRowState.set(p.sku, { qty: e.target.value });
 });
 $('#picker-list').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); e.target.closest('li').querySelector('[data-add]').click(); } });
 

@@ -7,7 +7,7 @@ import {setup} from '../../tests/helpers/pos-fixture.ts';
 import {products, productPrices, productStock, warehouses} from '../../src/modules/catalog/schema.ts';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright'),f=await setup(),user=(await f.call('/me',f.mgr)).data.user,token=f.mgr.split('=')[1];
 const root=fileURLToPath(new URL('../../trial-ui/',import.meta.url)),out=process.env.QUOTE_SCREENSHOT_DIR||'/tmp/mobile-product-picker-thumbnail';await mkdir(out,{recursive:true});
-await f.db.insert(products).values([...Array.from({length:20},(_,i)=>({sku:'BULK-'+i,name:'Sản phẩm kiểm thử '+i,brand:'MINH LONG I',unit:'Cái',updatedAt:new Date().toISOString(),taxable:true,taxOut:8})),{sku:'LATE',imageUrl:'https://images.example.test/product.png',name:'Bộ đồ ăn Minh Long Hoàng Cung Sen Ngọc Bích nhiều chi tiết' ,brand:'LOCK&LOCK',updatedAt:new Date().toISOString()}]);
+await f.db.insert(products).values([...Array.from({length:60},(_,i)=>({sku:'BULK-'+i,name:'Sản phẩm kiểm thử '+i,brand:'MINH LONG I',unit:'Cái',updatedAt:new Date().toISOString(),taxable:true,taxOut:8})),{sku:'LATE',imageUrl:'https://images.example.test/product.png',name:'Bộ đồ ăn Minh Long Hoàng Cung Sen Ngọc Bích nhiều chi tiết' ,brand:'LOCK&LOCK',updatedAt:new Date().toISOString()}]);
 await f.db.insert(productPrices).values([{sku:'LATE',policyId:'retail',price:100000},{sku:'LATE',policyId:'retail-vat',price:108000}]);
 await f.db.insert(warehouses).values([{id:'test-incoming',name:'Hàng đang về',kind:'incoming'},{id:'test-supplier',name:'NCC',kind:'supplier'}]);
 await f.db.insert(productStock).values([{sku:'LATE',warehouseId:'pos-wh',quantity:12345},{sku:'LATE',warehouseId:'test-incoming',quantity:1250},{sku:'LATE',warehouseId:'test-supplier',quantity:24680}].map(r=>({...r,updatedAt:new Date().toISOString()})));
@@ -23,7 +23,7 @@ const server=createServer(async(req,res)=>{try{const u=new URL(req.url,'http://l
 const base='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']}),results=[];
 try { for (const width of [320,390,430,1440]) {
  const context=await browser.newContext({viewport:{width,height:932}});
- await context.route('**/*',r=>r.request().url()==='https://images.example.test/product.png'?r.fulfill({status:200,contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" fill="white"/><path d="M43 25h7c10 0 10 15 0 15h-7" fill="none" stroke="#8194a8" stroke-width="3"/><path d="M13 23h32v19c0 13-32 13-32 0z" fill="#e7eef8" stroke="#8194a8" stroke-width="2"/><ellipse cx="29" cy="23" rx="16" ry="4" fill="#bca48d"/><path d="M9 54h42" stroke="#8194a8" stroke-width="2"/></svg>' }):r.request().url().startsWith(base+'/')?r.continue():r.abort());
+ await context.route('**/*',r=>r.request().url().startsWith('https://images.example.test/')?r.fulfill({status:200,contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" fill="white"/><path d="M43 25h7c10 0 10 15 0 15h-7" fill="none" stroke="#8194a8" stroke-width="3"/><path d="M13 23h32v19c0 13-32 13-32 0z" fill="#e7eef8" stroke="#8194a8" stroke-width="2"/><ellipse cx="29" cy="23" rx="16" ry="4" fill="#bca48d"/><path d="M9 54h42" stroke="#8194a8" stroke-width="2"/></svg>' }):r.request().url().startsWith(base+'/')?r.continue():r.abort());
  await context.addInitScript(({token,user})=>{localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));},{token,user});
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base+'/#/quotes/new');await page.locator('#pick-products').waitFor({state:'attached'});
@@ -32,10 +32,62 @@ try { for (const width of [320,390,430,1440]) {
  const target=page.locator('#picker-list [data-sku="LATE"]');await target.waitFor();
  const inspect=()=>target.evaluate(li=>{const d=li.closest('dialog'),list=li.parentElement,results=list.parentElement,r=li.getBoundingClientRect(),input=li.querySelector('input').getBoundingClientRect(),add=li.querySelector('[data-add]').getBoundingClientRect(),thumb=li.querySelector('.picker-product-thumbnail').getBoundingClientRect();return {dialogFits:d.scrollWidth<=d.clientWidth+1,listFits:list.scrollWidth<=list.clientWidth+1,resultsFits:results.scrollWidth<=results.clientWidth+1,inputFits:input.left>=r.left&&input.right<=r.right,addFits:add.left>=r.left&&add.right<=r.right,quantityVisible:input.width>0&&input.height>=32,thumbnailVisible:thumb.width===44&&thumb.height===44,thumbnailBeforeQuantity:thumb.right<=input.left,quantityBesideAdd:input.right<=add.left&&Math.abs(input.top-add.top)<2,labels:[...li.querySelectorAll('[data-stock-label]')].map(s=>s.dataset.stockLabel)};});
  if(width<=640){await target.scrollIntoViewIfNeeded();await target.locator('.picker-product-thumbnail img').evaluate(img=>img.decode());const metrics=await inspect();assert(Object.entries(metrics).filter(([k])=>k!=='labels').every(([,v])=>v),JSON.stringify(metrics));assert.deepEqual(metrics.labels,['Tồn','Tạm giữ','Khả dụng','Đang về','NCC']);}
- await target.locator('input').fill('3');await target.locator('[data-picker-details]').click();assert.equal(await target.locator('input').inputValue(),'3');assert(await target.locator('.picker-product-details').isVisible());await target.locator('[data-picker-details]').click();assert.equal(await target.locator('input').inputValue(),'3');
+ await target.locator('input').fill('3');await page.locator('#picker-details-toggle').click();assert.equal(await target.locator('input').inputValue(),'3');assert(await target.locator('.picker-product-details').isVisible());await page.locator('#picker-details-toggle').click();assert.equal(await target.locator('input').inputValue(),'3');
+
+ assert.equal(await page.locator('[data-picker-details]').count(),0);
+ const toggle=page.locator('#picker-details-toggle'), rows=page.locator('#picker-list > li');
+ await toggle.click();
+ assert.equal(await page.locator('#picker-list .picker-product-details:not([hidden])').count(),await rows.count());
+ const before=await rows.count();await page.locator('#picker-more').click();
+ await page.waitForFunction(n=>document.querySelectorAll('#picker-list > li').length>n,before);
+ assert.equal(await page.locator('#picker-list .picker-product-details:not([hidden])').count(),await rows.count());
+ await page.locator('#picker-search').fill('LATE');
+ await page.waitForFunction(()=>document.querySelectorAll('#picker-list > li').length===1);
+ assert(await target.locator('.picker-product-details').isVisible());assert.equal(await target.locator('input').inputValue(),'3');
+ await page.locator('#picker-search').fill('no-match-fixture');
+ await page.waitForFunction(()=>document.querySelectorAll('#picker-list > li').length===0);
+ await toggle.click();await toggle.click();
+ await page.locator('#picker-search').fill('LATE');
+ await target.waitFor();assert(await target.locator('.picker-product-details').isVisible());
+ await toggle.click();
  await target.scrollIntoViewIfNeeded();await page.screenshot({path:`${out}/${width}-picker.png`});
  if(width<=640){await page.setViewportSize({width,height:520});await target.locator('input').focus();await target.scrollIntoViewIfNeeded();const compact=await inspect();assert(compact.listFits&&compact.inputFits&&compact.addFits);await page.screenshot({path:`${out}/${width}-keyboard-height.png`});await page.setViewportSize({width,height:932});}
  await target.locator('[data-add]').click();await page.locator('#picker-dialog [data-close]').first().click();assert.equal(await page.locator('#line-list [data-k=qty]').last().inputValue(),'3');
+
+ const lineImage=page.locator('#line-list [data-image]').last();
+ await lineImage.click();
+ await page.waitForFunction(()=>!document.querySelector('#image-use-product').disabled);
+ assert.equal(await page.locator('#image-preview img').count(),0,'design initially empty');
+ await page.screenshot({path:out+'/'+width+'-image-empty.png'});
+ await page.locator('#image-use-product').click();
+ assert.equal(await page.locator('#image-preview img').getAttribute('src'),'https://images.example.test/product.png');
+ await page.locator('#image-dialog').getByRole('button',{name:'Huỷ',exact:true}).click();
+ await lineImage.click();assert.equal(await page.locator('#image-preview img').count(),0,'cancel does not assign');
+ await page.waitForFunction(()=>!document.querySelector('#image-use-product').disabled);
+ await page.locator('#image-use-product').click();await page.locator('#image-save').click();
+ await lineImage.click();assert.equal(await page.locator('#image-preview img').getAttribute('src'),'https://images.example.test/product.png');
+ await page.locator('#image-url').fill('https://images.example.test/custom.png');
+ await page.locator('#image-dialog').getByRole('button',{name:'Huỷ',exact:true}).click();
+ await lineImage.click();assert.equal(await page.locator('#image-url').inputValue(),'https://images.example.test/product.png');
+ await page.locator('#image-url').fill('https://images.example.test/custom.png');await page.locator('#image-save').click();
+ await lineImage.click();assert.equal(await page.locator('#image-url').inputValue(),'https://images.example.test/custom.png');
+ await page.locator('#image-file').setInputFiles({name:'design.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64')});
+ await page.waitForFunction(()=>document.querySelector('#image-preview img')?.getAttribute('src')?.startsWith('data:'));
+ await page.locator('#image-save').click();
+ await page.waitForFunction(()=>!document.querySelector('#image-dialog').open);
+ await lineImage.click();assert(await page.locator('#image-preview img').getAttribute('src'));
+ const fits=await page.locator('#image-dialog').evaluate(d=>d.scrollWidth<=d.clientWidth+1&&d.getBoundingClientRect().width<=innerWidth);
+ assert(fits,'image dialog fits');await page.screenshot({path:out+'/'+width+'-image-chosen.png'});
+ await page.locator('#image-dialog').getByRole('button',{name:'Huỷ',exact:true}).click();
+ // Save through the UI; verify the persisted quote and the original catalogue image.
+ await page.locator('[name=customer]').evaluate(e=>{e.value='Fixture customer';e.dispatchEvent(new Event('input',{bubbles:true}));});
+ const saved=page.waitForResponse(r=>r.url().endsWith('/api/staff/quotes')&&r.request().method()==='POST');
+ await page.keyboard.press('Control+s');const response=await saved;assert.equal(response.status(),201);
+ const quote=await response.json(),loaded=(await f.call('/quotes/'+quote.id,f.mgr)).data;
+ assert.equal(loaded.data.rows[0].designImage,true);assert(loaded.data.rows[0].designImageKey);
+ assert.equal((await f.call('/products?skus=LATE',f.mgr)).data.products[0].imageUrl,'https://images.example.test/product.png');
+ await page.reload();await page.locator('#line-list [data-image]').last().click();assert(await page.locator('#image-preview img').count());
+ await page.locator('#image-dialog').getByRole('button',{name:'Huỷ',exact:true}).click();
  assert.deepEqual(errors,[]);results.push({width,quantity3Added:true,noHorizontalScroll:width<=640?'passed':'desktop columns retained',detailsPreserveQuantity:true,thumbnailBesideQuantity:width<=640?'passed':'mobile only',errors});await context.close();
  }await writeFile(out+'/results.json',JSON.stringify(results,null,2));console.log(JSON.stringify(results));
 }finally{await browser.close();server.close();await f.client.close();}

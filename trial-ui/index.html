@@ -1290,6 +1290,7 @@
     <p class="search-help" id="picker-snapshot"></p>
     <p class="search-help picker-search-help">Có thể nhập nhiều từ khóa. Kết quả sẽ khớp dần theo tất cả từ đã gõ.</p>
     <div class="picker-toolbar"><button type="button" class="btn ghost small" id="picker-filter-toggle" aria-expanded="false">Xem bộ lọc ▾</button>
+      <button type="button" class="btn secondary small" id="picker-details-toggle" aria-expanded="false" aria-controls="picker-list" aria-label="Xem thêm chi tiết tất cả sản phẩm">Xem thêm</button>
       <p class="search-help" id="picker-status" aria-live="polite">Giá lọc theo chính sách đang chọn.</p>
     </div>
     <div class="catalog-filters" id="picker-filters" hidden>
@@ -1314,6 +1315,11 @@
     <div class="image-preview" id="image-preview"></div>
     <label>Link ảnh (https, Google Drive dán link chia sẻ được)<input id="image-url" inputmode="url" placeholder="https://drive.google.com/file/d/…"></label>
     <label class="btn secondary file-btn">Tải ảnh từ máy<input type="file" id="image-file" accept="image/jpeg,image/png,image/webp" hidden></label>
+    <div class="image-product-choice">
+      <p class="muted small" id="image-product-status" aria-live="polite"></p>
+      <div id="image-product-preview"></div>
+      <button type="button" class="btn secondary" id="image-use-product" disabled>Chọn ảnh sản phẩm có sẵn</button>
+    </div>
     <p class="error" id="image-error" role="alert"></p>
   </div>
   <div class="modal-foot"><button type="button" class="btn ghost danger-text" id="image-remove">Xoá hình</button><span class="spacer"></span><button type="button" class="btn secondary" data-close>Huỷ</button><button type="button" class="btn primary" id="image-save">Dùng hình này</button></div>
