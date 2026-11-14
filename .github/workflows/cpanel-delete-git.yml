@@ -10,6 +10,10 @@ on:
         type: choice
         options: [dry-run, apply]
         default: dry-run
+  # Chạy từ nhánh khi file đánh dấu đổi (nội dung: dry-run hoặc apply). Không có file thì bỏ qua.
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/cpanel-delete-git.run']
 concurrency: cpanel-delete-git
 permissions:
   contents: read
@@ -22,13 +26,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Xác định chế độ
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            if [ -f .github/cpanel-delete-git.run ]; then m=$(tr -d ' \r\n' < .github/cpanel-delete-git.run); else m=skip; fi
+          else m="${{ inputs.mode }}"; fi
+          case "$m" in dry-run|apply) ;; *) m=skip ;; esac
+          echo "Chế độ: $m"
+          echo "mode=$m" >> "$GITHUB_OUTPUT"
       - name: Kiểm tra và xóa .git
+        if: steps.mode.outputs.mode != 'skip'
         env:
           CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
           CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
           CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
           LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
-          MODE: ${{ inputs.mode }}
+          MODE: ${{ steps.mode.outputs.mode }}
         run: node scripts/maintenance/cpanel-delete-git.mjs
       - uses: actions/upload-artifact@v4
         if: always()
