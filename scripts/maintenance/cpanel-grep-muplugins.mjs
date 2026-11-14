@@ -17,10 +17,10 @@ async function uapi(fn, params) {
   const r = await fetch(url, { headers, signal: AbortSignal.timeout(60_000) }); const b = await r.json().catch(() => null);
   return b && b.status !== 0 ? b.data : null;
 }
-const PAT = /wc_fragment_refresh|fragment refresh, DOM replacement|added_to_cart/i;
+const PAT = new RegExp(process.env.PAT || 'wc_fragment_refresh|added_to_cart', 'i');
 async function grep(dir, file) {
   const d = await uapi('get_file_content', { dir, file }); const t = String(d?.content || '');
-  const hits = t.split('\n').map((l, i) => [i + 1, l.trim()]).filter(([, l]) => PAT.test(l)).slice(0, 8);
+  const hits = t.split('\n').map((l, i) => [i + 1, l.trim()]).filter(([, l]) => PAT.test(l)).slice(0, 12);
   if (hits.length) { log(`# ${dir.replace(ROOT, '')}/${file}`); for (const [n, l] of hits) log(`  ${n}: ${l.slice(0, 170)}`); }
 }
 const files = await uapi('list_files', { dir: ROOT, types: 'file' }) || [];

@@ -23,4 +23,4 @@ jobs:
           CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
           LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
         run: |
-          if [ -f .github/cpanel-grep-muplugins.run ]; then node scripts/maintenance/cpanel-grep-muplugins.mjs; else echo "Không có file đánh dấu, bỏ qua"; fi
+          if [ -f .github/cpanel-grep-muplugins.run ]; then PAT="$(tr -d "\r\n" < .github/cpanel-grep-muplugins.run)" node scripts/maintenance/cpanel-grep-muplugins.mjs; else echo "Không có file đánh dấu, bỏ qua"; fi
