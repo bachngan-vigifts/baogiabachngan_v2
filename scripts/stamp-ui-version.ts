@@ -15,8 +15,8 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, normalize } from 'node:path';
 
 const LOCAL = String.raw`(?:\.\/)?[\w.-]+\.(?:js|css)`;
-/** Đường dẫn trong thư mục con (./vendor/x.min.js) – chỉ ở các chỗ nạp script động bên dưới. */
-const LOCAL_NESTED = String.raw`(?:\.\/)?(?:[\w-]+\/)*[\w.-]+\.(?:js|css)`;
+/** Đường dẫn trong thư mục con, kể cả thư mục phiên bản (./vendor/ocr-6.0.1/x.min.js). */
+const LOCAL_NESTED = String.raw`(?:\.\/)?(?:[\w-][\w.-]*\/)*[\w.-]+\.(?:js|css)`;
 /** Chỉ đụng tới file cùng thư mục (./x.js, x.css); bỏ qua link ngoài và đường đã có `?`. */
 export function stampVersion(text: string, v: string | ((ref: string) => string), kind: 'html' | 'js'): string {
   const version = (ref: string) => { const out = typeof v === 'function' ? v(ref) : v; if (!/^[\w.-]{1,40}$/.test(out)) throw new Error('Phiên bản không hợp lệ.'); return out; };

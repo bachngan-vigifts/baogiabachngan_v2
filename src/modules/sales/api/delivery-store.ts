@@ -4,7 +4,7 @@ import { saleFlowOf } from '../domain/pos-order-flow.ts';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
-import { deliveries, deliveryLines, packingSlips, salesOrderLines, salesOrders } from '../schema.ts';
+import { deliveries, deliveryLines, packingSlips, packingSlipLines, salesOrderLines, salesOrders } from '../schema.ts';
 import { nextDocNo, vietnamDate } from '../domain/sales.ts';
 
 type Tx = Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
@@ -64,15 +64,28 @@ export async function createScheduledDelivery(tx: Tx, orderId: string, body: Rec
   return { id, plannedDate: date };
 }
 
-/** Packing plans imply one initial customer trip. Caller holds the order lock; no stock is issued here. */
+/** Only schedule the quantities/date of each source plan. Undated replenishment stays unscheduled. */
 export async function ensurePackingSchedule(tx: Tx, orderId: string, actorId: string) {
   const [order] = await tx.select().from(salesOrders).where(eq(salesOrders.id,orderId)).for('update');
   if (!order || order.channel !== 'crm' || ['draft','cancelled','delivered'].includes(order.status)) return;
-  const [packing] = await tx.select({id:packingSlips.id}).from(packingSlips).where(and(eq(packingSlips.orderId,orderId),ne(packingSlips.status,'cancelled'))).limit(1);
-  if (!packing) return;
+  const packing = await tx.select({id:packingSlips.id,no:packingSlips.slipNo,source:packingSlips.planSource,date:packingSlips.plannedDeliveryDate}).from(packingSlips).where(and(eq(packingSlips.orderId,orderId),ne(packingSlips.status,'cancelled')));
+  if (!packing.length) return;
   const [existing] = await tx.select({id:deliveries.id}).from(deliveries).where(eq(deliveries.orderId,orderId)).limit(1);
   if (existing) return; // Do not undo an explicit cancellation.
-  const made = await createScheduledDelivery(tx,orderId,{plannedDate:order.expectedDeliveryDate||vietnamDate().iso},actorId);
-  if (!order.expectedDeliveryDate) await tx.update(salesOrders).set({expectedDeliveryDate:made.plannedDate}).where(eq(salesOrders.id,orderId));
-  return made;
+  const rows=await tx.select().from(packingSlipLines).where(inArray(packingSlipLines.slipId,packing.map(p=>p.id)));
+  const groups=new Map<string,{quantities:Map<string,number>;slips:string[]}>();
+  for(const p of packing){
+    // A single legacy packing slip can safely supply its own quantities. Multiple legacy slips need an explicit schedule.
+    const date=p.date||((p.source==='stock'||(!p.source&&packing.length===1))?(order.expectedDeliveryDate||vietnamDate().iso):null);
+    if(!date)continue;
+    const group=groups.get(date)||{quantities:new Map<string,number>(),slips:[]};group.slips.push(p.no);
+    for(const l of rows.filter(l=>l.slipId===p.id))group.quantities.set(l.orderLineId,(group.quantities.get(l.orderLineId)||0)+l.qty);
+    groups.set(date,group);
+  }
+  let first:Awaited<ReturnType<typeof createScheduledDelivery>>|undefined;
+  for(const [date,group]of [...groups].sort(([a],[b])=>a.localeCompare(b))){
+    const made=await createScheduledDelivery(tx,orderId,{plannedDate:date,lines:[...group.quantities].map(([orderLineId,qty])=>({orderLineId,qty})),note:'Lịch theo kế hoạch nguồn hàng: '+group.slips.join(', ')},actorId);first??=made;
+  }
+  if(first&&order.expectedDeliveryDate!==first.plannedDate)await tx.update(salesOrders).set({expectedDeliveryDate:first.plannedDate}).where(eq(salesOrders.id,orderId));
+  return first;
 }

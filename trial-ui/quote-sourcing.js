@@ -39,7 +39,7 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
   const selling=data.warehouses.filter(w=>w.canSell);
   const warehouse=select([['','Chọn kho bán / kho xuất'],...selling.map(w=>[w.id,w.name+(w.opened?'':' · Chưa chốt đầu kỳ')])],'Kho bán / kho xuất');
   const heading=el('h3','','Lấy hàng từ đâu?'),label=el('label','','Kho bán / kho xuất');label.append(warehouse);
-  const hint=el('p','muted small','Duyệt đơn trước, xuất từng phần theo nguồn. Chỉ xác nhận xuất khi hàng đã có tại kho bán và kho đã chốt đầu kỳ. Khi sinh đơn/HĐKT: phần xin hàng từ kho khác tự lập phiếu điều chuyển chờ duyệt; phần đặt NCC bạn chọn tạo đơn mua nháp ngay hoặc đặt sau. Các mã xin giao trước được gom vào một phiếu nháp khi sinh đơn/HĐKT, chưa gửi NCC. Các nút xin kho / đặt NCC riêng vẫn lưu yêu cầu ngay, kể cả khi đóng hộp này.');
+  const hint=el('p','muted small','Chọn ngày giao khách riêng cho từng nguồn để tự tạo đúng chuyến và số lượng. Phần bổ sung chưa chọn ngày sẽ chưa lên lịch, không tự gộp vào chuyến có sẵn. Ngày hẹn NCC không tự coi là ngày giao khách. Duyệt đơn trước, xuất từng phần theo nguồn. Chỉ xác nhận xuất khi hàng đã có tại kho bán và kho đã chốt đầu kỳ. Khi sinh đơn/HĐKT: phần xin hàng từ kho khác tự lập phiếu điều chuyển chờ duyệt; phần đặt NCC bạn chọn tạo đơn mua nháp ngay hoặc đặt sau. Các mã xin giao trước được gom vào một phiếu nháp khi sinh đơn/HĐKT, chưa gửi NCC. Các nút xin kho / đặt NCC riêng vẫn lưu yêu cầu ngay, kể cả khi đóng hộp này.');
   const summary=el('p','quote-source-summary',`${data.lines.length} mã ${scopeLabel} · Rà số lượng và nguồn cho từng mã`);
   const toolbar=el('div','quote-source-toolbar');toolbar.append(heading,summary,label,hint);if(skipped.length)toolbar.append(skippedNote());
   const prompt=el('p','muted','Chọn kho bán / kho xuất để xem hàng hoá và phân bổ nguồn hàng.');prompt.setAttribute('role','status');
@@ -58,8 +58,10 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
     })().catch(e=>{incomingCache.delete(sku);throw e;}));
     return incomingCache.get(sku);
   }
+  const dateInput=label=>{const input=el('input','quote-source-date');input.type='date';input.setAttribute('aria-label',label);return input;};
+  const readDate=input=>{const value=input.value||'';if(value&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(Date.parse(value+'T00:00:00Z'))||new Date(value+'T00:00:00Z').toISOString().slice(0,10)!==value))throw Error('Ngày giao khách không hợp lệ.');return value?{plannedDate:value}:{};};
   const requireWarehouse=()=>{const w=selling.find(w=>w.id===warehouse.value);if(!w)throw Error('Chọn kho bán / kho xuất trước.');return w;};
-  const markBusy=value=>{busy=value;warehouse.disabled=value||cards.some(c=>c.sources.some(s=>s.saved||s.uncertain));for(const c of cards){c.from.disabled=value;for(const s of c.sources){for(const i of [s.type,s.location,s.supplier,s.order,s.amount,s.remove])i.disabled=value||!!s.saved||!!s.uncertain||i===s.order&&s.loading;s.action.disabled=value||!!s.saved||!!s.uncertain||(s.type.value==='incoming'&&(!data.canRequestEarly||s.loading||!s.order.value))||(s.type.value==='purchase'&&!data.canPurchase);}}syncIncomingSummary();};
+  const markBusy=value=>{busy=value;warehouse.disabled=value||cards.some(c=>c.sources.some(s=>s.saved||s.uncertain));for(const c of cards){c.from.disabled=value;c.shipDate.disabled=value;for(const s of c.sources){s.shipDate.disabled=value;for(const i of [s.type,s.location,s.supplier,s.order,s.amount,s.remove])i.disabled=value||!!s.saved||!!s.uncertain||i===s.order&&s.loading;s.action.disabled=value||!!s.saved||!!s.uncertain||(s.type.value==='incoming'&&(!data.canRequestEarly||s.loading||!s.order.value))||(s.type.value==='purchase'&&!data.canPurchase);}}syncIncomingSummary();};
   function source(card,initial) {
     const row=el('div','quote-source-row'),type=select([['transfer','Xin hàng từ kho khác'],['purchase','Đặt hàng NCC'],['incoming','Hàng đang chờ về · Xin giao trước']],'Nguồn hàng '+card.line.sku);
     const location=select([['','Chọn kho xin hàng'],...data.warehouses.filter(w=>w.id!==warehouse.value).map(w=>[w.id,w.name])],'Kho xin hàng '+card.line.sku);
@@ -68,7 +70,8 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
     const amount=qty(initial,'Số lượng nguồn hàng '+card.line.sku),result=el('div','small');result.setAttribute('role','status');
     const action=button('Xin hàng',()=>save()),remove=button('×',()=>{if(!busy&&!entry.saved&&!entry.uncertain){card.sources.splice(card.sources.indexOf(entry),1);row.remove();syncIncomingSummary();}});
     remove.setAttribute('aria-label','Bỏ nguồn hàng '+card.line.sku);
-    const entry={type,location,supplier,order,amount,result,action,row,remove,saved:null,loading:false,orders:null};card.sources.push(entry);
+    const shipDate=dateInput('Ngày giao khách nguồn bổ sung '+card.line.sku+' '+(card.sources.length+1)),dateLabel=el('label','quote-source-date-label','Ngày giao khách phần này');dateLabel.append(shipDate,el('small','muted','Chưa hẹn: chưa tạo chuyến, không gộp vào phần có sẵn.'));
+    const entry={type,location,supplier,order,amount,result,action,row,remove,shipDate,saved:null,loading:false,orders:null};card.sources.push(entry);
     order.addEventListener('change',()=>{result.textContent=order.value?order.selectedOptions[0]?.textContent||'':'';order.title=result.textContent;markBusy(busy);});
     async function sync(){row.className='quote-source-row'+(type.value==='incoming'?' quote-source-incoming':'');location.hidden=type.value!=='transfer';supplier.hidden=type.value!=='purchase';order.hidden=type.value!=='incoming';
       action.textContent=type.value==='transfer'?'Xin hàng':type.value==='purchase'?'Lập đơn mua nháp':'Xin giao trước';action.hidden=type.value==='incoming';
@@ -96,16 +99,17 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
         const link=el('a','',text);link.href=href;link.target='_blank';link.rel='noopener';result.replaceChildren(link);
       }catch(e){error.textContent=e.message;if(busy&&(!e.status||e.status>=500)){entry.uncertain=true;error.textContent+=' Chưa xác định yêu cầu đã lưu hay chưa. Kiểm tra danh sách điều chuyển / đơn mua / xin lấy trước theo báo giá trước khi tạo thêm.';}}finally{markBusy(false);await sync();}
     }
-    row.append(type,location,supplier,order,amount,action,remove,result);card.sourcesHost.append(row);sync();return entry;
+    row.append(type,location,supplier,order,amount,dateLabel,action,remove,result);card.sourcesHost.append(row);sync();return entry;
   }
   function draw(){list.replaceChildren();cards.length=0;const chosen=selling.some(w=>w.id===warehouse.value);list.hidden=!chosen;prompt.hidden=chosen;hint.hidden=!chosen;if(!chosen){syncIncomingSummary();return;}for(const [index,line] of data.lines.entries()){
     const box=el('div','pack-line'),head=el('div','pack-head');head.append(el('b','',`${index+1}. ${line.name}`),el('small','',`${line.sku} · ${num(line.qty)} ${line.unit}`));
     const grid=el('div','pack-grid'),need=el('label','','Cần lấy'),total=qty(line.qty,'Cần lấy '+line.sku);total.readOnly=true;need.append(total);
     const available=el('label','','Tồn kho bán'),stock=el('span','pack-av');available.append(stock);
     const take=el('label','','Lấy từ kho'),from=qty(0,'Lấy từ kho '+line.sku);take.append(from);grid.append(need,available,take);
-    const sourcesHost=el('div'),card={line,from,stock,sourcesHost,sources:[]};cards.push(card);
+    const shipDate=dateInput('Ngày giao khách từ kho '+line.sku),stockDate=el('label','quote-source-date-label','Ngày giao khách phần có sẵn');stockDate.append(shipDate,el('small','muted','Để trống: dùng ngày giao của đơn.'));
+    const sourcesHost=el('div'),card={line,from,stock,shipDate,sourcesHost,sources:[]};cards.push(card);
     const allocation=el('div','quote-source-allocation'),stockBlock=el('div','quote-source-stock'),requests=el('div','quote-source-requests');
-    stockBlock.append(grid);
+    stockBlock.append(grid,stockDate);
     if(line.incoming>0)stockBlock.append(el('p','pack-incoming-hint',`Có hàng đang chờ về: ${num(line.incoming)} ${line.unit}`));
     requests.append(sourcesHost,button('＋ Thêm nguồn hàng',()=>{if(busy)return;source(card,Math.max(0,line.qty-Number(from.value)-card.sources.reduce((n,s)=>n+Number(s.amount.value),0)));}));
     allocation.append(stockBlock,requests);box.append(head,allocation);list.append(box);
@@ -174,7 +178,7 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
     for(const c of cards){const take=Number(c.from.value),amounts=c.sources.map(s=>Number(s.amount.value));
       if(!Number.isFinite(take)||take<0||amounts.some(q=>!Number.isFinite(q)||q<0)||Math.abs(take+amounts.reduce((a,b)=>a+b,0)-c.line.qty)>0.0005)throw Error(`${c.line.sku}: tổng lấy từ kho và nguồn khác phải bằng ${num(c.line.qty)}.`);
       if(take>Math.max(0,Number(c.line.stock[w.id]||0))+0.0005)throw Error(`${c.line.sku}: phần lấy từ kho vượt tồn; chọn nguồn cho phần thiếu.`);
-      if(take>0)stockPlan.push({sku:c.line.sku,qty:take,type:'stock',note:w.name});
+      if(take>0)stockPlan.push({sku:c.line.sku,qty:take,type:'stock',note:w.name,...readDate(c.shipDate)});
       plan.push(`${c.line.sku}: lấy từ ${w.name} ${num(take)} ${c.line.unit}`);
       for(const s of c.sources)if(Number(s.amount.value)>0){
         if(s.uncertain)throw Error(`${c.line.sku}: chưa xác định yêu cầu đã lưu hay chưa. Kiểm tra danh sách theo báo giá trước khi tiếp tục.`);
@@ -187,7 +191,7 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
         }
         const origin=s.saved?.from||(s.type.value==='transfer'?s.location.selectedOptions[0]?.textContent:s.type.value==='purchase'?s.supplier.selectedOptions[0]?.textContent:s.order.selectedOptions[0]?.textContent);
         const note=`${origin}${s.saved?' · '+s.saved.href:' · Chưa tạo yêu cầu'}`;
-        stockPlan.push({sku:c.line.sku,qty:Number(s.amount.value),type:s.type.value,note});
+        stockPlan.push({sku:c.line.sku,qty:Number(s.amount.value),type:s.type.value,note,...readDate(s.shipDate)});
         plan.push(`  ${s.saved?.text||s.type.selectedOptions[0].textContent}: ${num(Number(s.amount.value))} ${c.line.unit} · ${note}`);
       }
     }

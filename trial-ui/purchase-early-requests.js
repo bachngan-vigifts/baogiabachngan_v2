@@ -4,7 +4,7 @@ const btn=(text,fn,cls='btn secondary small')=>{const b=el('button',cls,text);b.
 const number=n=>Number(n||0).toLocaleString('vi-VN');
 const date=d=>d?String(d).slice(0,10).split('-').reverse().join('/'):'Chưa nhập';
 const time=d=>new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeStyle:'short',timeZone:'Asia/Ho_Chi_Minh'}).format(new Date(d));
-const labels={draft:'Nháp — chưa gửi NCC',pending:'Chờ NCC xác nhận',accepted:'NCC đồng ý',rejected:'NCC từ chối',mixed:'NCC phản hồi khác nhau'};
+const labels={unresolved:'Chưa chốt đơn mua',draft:'Nháp — chưa gửi NCC',pending:'Chờ NCC xác nhận',accepted:'NCC đồng ý',rejected:'NCC từ chối',mixed:'NCC phản hồi khác nhau'};
 /** Split a saved request into operational slips without changing its persisted ID or allocations. */
 function supplierSlips(request) {
   const groups=new Map();
@@ -178,16 +178,45 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     const editLines=initial.lines.flatMap(line=>pinned[line.sku]?.length?pinned[line.sku].map(source=>({...line,quantity:source.quantity,source})):[line]);
     for(const line of editLines) {
       const row=el('tr'),qty=el('input');qty.type='number';qty.min='1';qty.step='1';qty.value=line.quantity;qty.setAttribute('aria-label','Số lượng nháp mã '+line.sku+(line.source?' · '+line.source.orderNo:''));
+      const orderCell=el('td'),orderSelect=el('select');orderSelect.setAttribute('aria-label','Đơn mua cho mã '+line.sku);
+      orderSelect.append(Object.assign(el('option','',line.source?.orderNo||line.source?.supplierOrderNo?'Đang kiểm tra đơn đã ghi…':'Chưa chốt đơn mua'),{value:''}));
+      let creatingBackfill=false;const createBackfill=btn('Tạo đơn mua bù',async()=>{
+        if(creatingBackfill)return;creatingBackfill=true;createBackfill.disabled=true;
+        try{
+          const options=await api('/purchase-options'),names=options.suppliers.map((s,i)=>`${i+1}. ${s.name}`).join('\n');
+          const picked=Number(prompt('Chọn NCC bằng số:\n'+names));if(!Number.isInteger(picked)||!options.suppliers[picked-1])return;
+          const warehouse=prompt('Nhập kho/địa chỉ giao hàng của đơn mua bù:','Kho SR');if(!warehouse?.trim())return;
+          createBackfill.disabled=true;
+          const created=await api('/purchase-orders','POST',{orders:[{supplierId:options.suppliers[picked-1].id,warehouse:warehouse.trim(),note:'Đơn mua bù cho phiếu '+(initial.pxkNo||initial.scope?.pxkNo||''),lines:[{sku:line.sku,name:line.name||'',unit:line.unit||'',quantity:Number(qty.value),price:null,taxRate:null,sources:[]}]}]});
+          await loadOrders(created.ids?.[0]||'');
+        }catch(e){fail(e.message||'Không tạo được đơn mua bù.');}finally{creatingBackfill=false;createBackfill.disabled=false;}
+      });
+      orderCell.append(orderSelect,createBackfill);
       const td=el('td');td.append(qty);const remove=el('td');let removed=false;
       remove.append(btn('Bỏ mã '+line.sku,()=>{removed=true;row.remove();changed();}));
-      row.append(el('td','',line.sku),el('td','',line.name||''),el('td','',line.source?line.source.orderNo+(line.source.supplierOrderNo?' · NCC: '+line.source.supplierOrderNo:''):'Tự phân bổ'),td,remove);rows.append(row);
-      fields.push({sku:line.sku,source:line.source,qty,removed:()=>removed});qty.addEventListener('input',changed);
+      row.append(el('td','',line.sku),el('td','',line.name||''),orderCell,td,remove);rows.append(row);
+      const field={sku:line.sku,source:line.source,qty,removed:()=>removed};fields.push(field);qty.addEventListener('input',changed);orderSelect.addEventListener('change',()=>{const option=orderSelect.selectedOptions[0];field.source=option?.value?JSON.parse(option.value):line.source;changed();});
+      let orderLoad=0,selectionChanged=false;orderSelect.addEventListener('change',()=>{selectionChanged=true;});
+      async function loadOrders(createdId=''){
+        const n=++orderLoad,wanted=field.source?.supplierOrderNo||line.source?.supplierOrderNo||'',q=new URLSearchParams({sku:line.sku,supplierOrderNo:wanted});if(initial.scope?.supplierId)q.set('supplierId',initial.scope.supplierId);
+        const result=await api('/purchase-early-requests/order-options?'+q);if(n!==orderLoad||!modal.open||removed)return;
+        if(selectionChanged&&!createdId)return;
+        const exact=result.options.filter(o=>o.exactSupplierOrderNo),pinnedOrder=field.source?.orderNo;
+        const matches=createdId?result.options.filter(o=>o.orderId===createdId):pinnedOrder?result.options.filter(o=>o.ticketNumber===pinnedOrder):exact;
+        const chosen=matches.length===1?matches[0]:null;
+        orderSelect.replaceChildren(Object.assign(el('option','',matches.length>1?'Nhiều đơn trùng mã NCC — chọn đúng đơn':line.source?'Giữ số đơn đã ghi (chưa khớp)':'Chưa chọn / tự phân bổ'),{value:'',disabled:!!line.source}));
+        for(const order of result.options){const source={orderNo:order.ticketNumber,supplierOrderNo:order.supplierOrderNo||'',quantity:Number(qty.value)},label=order.ticketNumber+' · '+order.supplierName+(order.supplierOrderNo?' · NCC: '+order.supplierOrderNo:' · chưa có mã NCC')+(order.approvalStatus==='approved'?'':' · chưa duyệt');const option=Object.assign(el('option','',label),{value:JSON.stringify(source),selected:order===chosen});orderSelect.append(option);}
+        if(!chosen)orderSelect.selectedIndex=0;
+        createBackfill.hidden=result.options.length>0;
+        if(chosen){const source={orderNo:chosen.ticketNumber,supplierOrderNo:chosen.supplierOrderNo||'',quantity:Number(qty.value)},before=JSON.stringify(field.source);field.source=source;if(JSON.stringify(source)!==before)changed();}
+      }
+      loadOrders().catch(e=>fail(e.message||'Không tải được danh sách đơn mua của '+line.sku+'.'));
     }
     const save=btn('Lưu nháp',()=>saveDraft(),'btn primary'),send=btn('Gửi NCC',()=>submit(),'btn primary'),state=el('span','muted small');
     const back=btn('Đóng',()=>{if(!busy)dialog.close();});foot.append(state,back,save,send);body.append(label,hint,wrap,error);form.append(header,body,foot);dialog.append(form);
     form.addEventListener('submit',e=>{e.preventDefault();saveDraft();});dateInput.addEventListener('input',changed);
     modal.addEventListener('cancel',e=>{if(busy)e.preventDefault();});modal.addEventListener('close',()=>modal.remove(),{once:true});
-    function sync(){save.disabled=busy;send.disabled=busy||!draft||dirty||!dateInput.value;send.title=!dateInput.value?'Nhập ngày lấy và lưu nháp trước khi gửi':dirty?'Lưu nháp trước khi gửi':'';state.textContent=draft?`Đã lưu nháp · phiên bản ${draft.revision}`:'Chưa lưu';}
+    function sync(){const unresolved=Object.keys(JSON.parse(draft?.scope?.unresolvedOrders||'{}')).length>0;save.disabled=busy;send.disabled=busy||!draft||dirty||!dateInput.value||unresolved;send.title=unresolved?'Chốt đơn mua và lưu lại nháp trước khi gửi NCC.':!dateInput.value?'Nhập ngày lấy và lưu nháp trước khi gửi':dirty?'Lưu nháp trước khi gửi':'';state.textContent=draft?`Đã lưu nháp · phiên bản ${draft.revision}`:'Chưa lưu';}
     function fail(message){error.textContent=message;error.hidden=!message;}
     function values(){
       const groups=new Map();
@@ -202,7 +231,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     async function saveDraft(){if(busy)return;fail('');let items;try{items=values();}catch(e){fail(e.message);return;}
       busy=true;sync();
       try {
-        const body={lines:items,pickupDate:dateInput.value,scope:initial.scope||{}};
+        const body={lines:items,pickupDate:dateInput.value,scope:initial.scope||{},allowUnresolvedSources:true};
         let result;
         if(draft) result=await api('/purchase-early-requests/'+encodeURIComponent(draft.id),'PUT',{...body,revision:draft.revision});
         else {const fingerprint=JSON.stringify(body);if(lastAttempt?.fingerprint!==fingerprint)lastAttempt={fingerprint,key:crypto.randomUUID()};

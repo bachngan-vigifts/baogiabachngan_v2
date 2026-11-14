@@ -1,0 +1,24 @@
+/** Synthetic supplier-slip layout, actual browser OCR, including sideways captures. No customer image/data. */
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+const root=fileURLToPath(new URL('../../trial-ui/',import.meta.url)),out=process.env.REVIEW_DIR||'/tmp/supplier-slip-ocr';await mkdir(out,{recursive:true});
+const server=createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost');if(u.pathname==='/test'){res.writeHead(200,{'content-type':'text/html'}).end('<html><body>Local synthetic OCR fixture</body></html>');return;}const body=await readFile(root+u.pathname);res.writeHead(200,{'content-type':u.pathname.endsWith('.js')?'text/javascript':'application/octet-stream'}).end(body);}catch{res.writeHead(404).end();}}).listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+const origin='http://127.0.0.1:'+server.address().port,{chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright'),browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']}),results=[];
+try{const page=await browser.newPage();await page.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());await page.goto(origin+'/test');page.setDefaultTimeout(180000);
+ for(const angle of [0,90,270,3]){
+  const result=await page.evaluate(async angle=>{
+   const c=document.createElement('canvas');c.width=1800;c.height=1100;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.fillStyle='#111';x.font='26px Arial';x.fillText('SỐ PXK: TEST20261113_1',500,70);x.fillText('PHIẾU CHUẨN BỊ HÀNG - DỮ LIỆU THỬ',300,130);
+   const bounds=[40,105,300,690,760,850,1000,1120,1190,1400,1650,1760],headers=['STT','Mã Số','Tên hàng','ĐVT','Bộ','Hoa Văn','SL Giao','Loại','Đơn Hàng','CT Xuất Kho','Ghi Chú'];
+   x.font='bold 20px Arial';for(let i=0;i<headers.length;i++){x.fillText(headers[i],(bounds[i]+bounds[i+1]-x.measureText(headers[i]).width)/2,230);}
+   const quantities=['500','200','200','280','480','2,000','200','300'];x.font='22px Arial';
+   for(let i=0;i<8;i++){const y=275+i*45,code='00001000'+(i+1);for(const [text,column]of [[String(i+1),0],[code,1],['Sản phẩm thử '+(i+1),2],['Cái',3],['JAS',4],['Trắng',5],['L1',7],['DDTEST001/26',8],['BLTEST001/X',9]])x.fillText(text,bounds[column]+8,y);x.fillText(quantities[i],bounds[7]-10-x.measureText(quantities[i]).width,y);}
+   x.lineWidth=1;x.strokeStyle='#444';for(const b of bounds){x.beginPath();x.moveTo(b,200);x.lineTo(b,605);x.stroke();}for(let y=200;y<=605;y+=45){x.beginPath();x.moveTo(40,y);x.lineTo(1760,y);x.stroke();}x.fillText('Tổng SL Giao: 4,160',870,655);
+   const rotated=document.createElement('canvas');const rad=angle*Math.PI/180;rotated.width=Math.ceil(Math.abs(c.width*Math.cos(rad))+Math.abs(c.height*Math.sin(rad)));rotated.height=Math.ceil(Math.abs(c.height*Math.cos(rad))+Math.abs(c.width*Math.sin(rad)));const ctx=rotated.getContext('2d');ctx.translate(rotated.width/2,rotated.height/2);ctx.rotate(angle*Math.PI/180);ctx.drawImage(c,-c.width/2,-c.height/2);if(angle===3){ctx.setTransform(1,0,0,1,0,0);ctx.globalCompositeOperation='multiply';const shadow=ctx.createLinearGradient(0,0,rotated.width,0);shadow.addColorStop(0,'#b0b0b0');shadow.addColorStop(1,'#ffffff');ctx.fillStyle=shadow;ctx.fillRect(0,0,rotated.width,rotated.height);}
+   document.body.replaceChildren(rotated);
+   const blob=await new Promise(resolve=>rotated.toBlob(resolve,'image/png'));const {recognizeEarlyPhoto,extractEarlyPhotoRows}=await import('/early-photo-ocr.js');const started=performance.now(),data=await recognizeEarlyPhoto(new File([blob],'synthetic-slip.png',{type:'image/png'}));const extracted=extractEarlyPhotoRows(data);return {angle,orientation:data.orientationDegrees,deskewDegrees:data.deskewDegrees,elapsedMs:Math.round(performance.now()-started),rows:extracted.rows,document:extracted.document,text:data.text};
+  },angle);
+  await page.screenshot({path:out+'/fixture-'+angle+'.png',fullPage:true});await writeFile(out+'/result-'+angle+'.json',JSON.stringify(result,null,2));assert.equal(result.rows.length,8,JSON.stringify(result));assert.deepEqual(result.rows.map(r=>r.quantity),['500','200','200','280','480','2000','200','300']);assert.equal(result.rows.reduce((n,r)=>n+Number(r.quantity),0),4160);assert.match(result.document.pxkNo,/^TEST20261113[_ ]1$/);assert.ok(result.rows.every(r=>r.orderReference==='DDTEST001/26'));assert.deepEqual(result.rows.map(r=>r.sku),Array.from({length:8},(_,i)=>'00001000'+(i+1)));results.push({angle,orientation:result.orientation,rows:8,total:4160,deskewDegrees:result.deskewDegrees,elapsedMs:result.elapsedMs});
+ }
+ await writeFile(out+'/results.json',JSON.stringify(results,null,2));console.log(JSON.stringify(results));}finally{await browser.close();await new Promise(r=>server.close(r));}

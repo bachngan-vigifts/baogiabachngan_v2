@@ -372,6 +372,13 @@ jobs:
           payload=$(jq -n --rawfile query scripts/sql/assert-accounting-imports.sql '{query:$query}')
           curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
+      - name: Kiểm tra migration ngày giao theo từng nguồn chỉ đọc
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        shell: bash
+        run: |
+          payload=$(jq -n --rawfile query scripts/sql/assert-split-packing-delivery-dates.sql '{query:$query}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
       - name: Kiểm tra migration Không gian Kho chỉ đọc
         if: env.SUPABASE_ACCESS_TOKEN != ''
         shell: bash

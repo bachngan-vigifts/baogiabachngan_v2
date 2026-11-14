@@ -33,6 +33,7 @@ async function supplierFor(c:Ctx) {
   return mapping.id;
 }
 type OrderSource = {orderNo:string;supplierOrderNo:string;quantity:number};
+function allowUnresolvedDraft(body:Record<string,unknown>){if(body.allowUnresolvedSources!==undefined&&typeof body.allowUnresolvedSources!=='boolean')fail(400,'Tuỳ chọn nháp chưa chốt nguồn không hợp lệ.');return body.allowUnresolvedSources===true;}
 const sourceKey = (value:string) => value.trim().toLocaleLowerCase('vi');
 function cleanSources(raw:unknown,quantity:number,sku:string):OrderSource[]|undefined {
   if(raw===undefined)return;
@@ -88,42 +89,46 @@ export async function earlyRequestList(db:Db, supplierId:string|null, id:string|
   if(!headers.length) return [];
   const details=await db.select({line:lines,catalogName:products.name,allocation:allocations,orderId:incomingShipments.id,ticketNumber:incomingShipments.ticketNumber,supplierOrderNo:incomingShipments.supplierInternalOrderNumber,
     supplierName:suppliers.name,due:sql<string>`coalesce(nullif(${incomingShipmentLines.promisedDate},''),${incomingShipments.arrivalDate},'')`})
-    .from(lines).innerJoin(allocations,eq(allocations.requestLineId,lines.id)).innerJoin(incomingShipmentLines,eq(incomingShipmentLines.id,allocations.purchaseLineId))
-    .innerJoin(incomingShipments,eq(incomingShipments.id,incomingShipmentLines.shipmentId)).innerJoin(suppliers,eq(suppliers.id,allocations.supplierId)).leftJoin(products,eq(products.sku,lines.sku))
+    .from(lines).leftJoin(allocations,eq(allocations.requestLineId,lines.id)).leftJoin(incomingShipmentLines,eq(incomingShipmentLines.id,allocations.purchaseLineId))
+    .leftJoin(incomingShipments,eq(incomingShipments.id,incomingShipmentLines.shipmentId)).leftJoin(suppliers,eq(suppliers.id,allocations.supplierId)).leftJoin(products,eq(products.sku,lines.sku))
     .where(and(inArray(lines.requestId,headers.map(r=>r.id)),supplierId?eq(allocations.supplierId,supplierId):undefined)).orderBy(asc(lines.lineNo),asc(allocations.id));
   return headers.map(h=>{
     const own=details.filter(d=>d.line.requestId===h.id),groups=new Map<string,typeof own>();
     for(const d of own) { const group=groups.get(d.line.id)||[];group.push(d);groups.set(d.line.id,group); }
     return {id:h.id,ticketNumber:h.ticketNumber,createdAt:h.createdAt,updatedAt:h.updatedAt||h.createdAt,pickupDate:h.pickupDate,revision:h.revision,requestStatus:h.status,pxkNo:JSON.parse(h.scope).pxkNo||'',
-      ...(!supplierId?{createdBy:h.createdBy,scope:JSON.parse(h.scope)}:{}),status:h.status==='draft'?'draft':stateOf(own.map(d=>d.allocation.status)),
+      ...(!supplierId?{createdBy:h.createdBy,scope:JSON.parse(h.scope)}:{}),status:h.status==='draft'?'draft':stateOf(own.flatMap(d=>d.allocation?[d.allocation.status]:[])),
       lines:[...groups].map(([lineId,group])=>({id:lineId,sku:group[0]!.line.sku,name:group[0]!.catalogName?.trim()||group[0]!.line.name,unit:group[0]!.line.unit,
         // Supplier sees ONLY its quantities/statuses, never a cross-supplier line total.
-        quantity:group.reduce((sum,d)=>sum+d.allocation.quantity,0),status:stateOf(group.map(d=>d.allocation.status)),
-        allocations:group.map(d=>({id:d.allocation.id,orderId:d.orderId,ticketNumber:d.ticketNumber,supplierOrderNo:d.supplierOrderNo,supplierId:d.allocation.supplierId,
-          supplierName:d.supplierName,quantity:d.allocation.quantity,due:d.due,status:d.allocation.status,
-          respondedAt:d.allocation.respondedAt,responseNote:d.allocation.responseNote}))}))};
+        quantity:supplierId?group.reduce((sum,d)=>sum+(d.allocation?.quantity||0),0):group[0]!.line.quantity,status:group.some(d=>d.allocation)?stateOf(group.flatMap(d=>d.allocation?[d.allocation.status]:[])):'unresolved',
+        allocations:group.filter(d=>d.allocation).map(d=>({id:d.allocation!.id,orderId:d.orderId,ticketNumber:d.ticketNumber,supplierOrderNo:d.supplierOrderNo,supplierId:d.allocation!.supplierId,
+          supplierName:d.supplierName,quantity:d.allocation!.quantity,due:d.due,status:d.allocation!.status,
+          respondedAt:d.allocation!.respondedAt,responseNote:d.allocation!.responseNote}))}))};
   });
 }
 
-async function replaceDraftLines(tx:Tx,id:string,input:ReturnType<typeof cleanInput>,used?:Map<string,number>) {
+async function replaceDraftLines(tx:Tx,id:string,input:ReturnType<typeof cleanInput>,used?:Map<string,number>,allowUnresolved=false) {
   for(const l of input.selected) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'early-sku:'+l.sku}))`);
   const q=new URLSearchParams(input.scope);q.set('selected','1');for(const l of input.selected) q.append('sku',l.sku);
   const initial=await incomingBySku(asDb(tx),q,vietnamDate().iso,false);
   const orderIds=[...new Set(initial.rows.flatMap(r=>r.orders.map(o=>o.id)))].sort();
-  if(!orderIds.length) fail(409,'Các mã đã chọn không còn hàng đang về.');
-  await tx.select({id:incomingShipments.id}).from(incomingShipments).where(inArray(incomingShipments.id,orderIds)).orderBy(asc(incomingShipments.id)).for('update');
+  if(!orderIds.length&&!allowUnresolved) fail(409,'Các mã đã chọn không còn hàng đang về.');
+  if(orderIds.length)await tx.select({id:incomingShipments.id}).from(incomingShipments).where(inArray(incomingShipments.id,orderIds)).orderBy(asc(incomingShipments.id)).for('update');
   const current=await incomingBySku(asDb(tx),q,vietnamDate().iso,false);
   const oldLines=await tx.select({id:lines.id}).from(lines).where(eq(lines.requestId,id));
   if(oldLines.length) await tx.delete(allocations).where(inArray(allocations.requestLineId,oldLines.map(l=>l.id)));
   await tx.delete(lines).where(eq(lines.requestId,id));
-  const resolvedSources:Record<string,OrderSource[]>={};
+  const resolvedSources:Record<string,OrderSource[]>={},unresolved:Record<string,string>={};
+  const catalog=new Map((await tx.select({sku:products.sku,name:products.name,unit:products.unit}).from(products).where(inArray(products.sku,input.selected.map(l=>l.sku)))).map(p=>[p.sku,p]));
   for(const [i,want] of input.selected.entries()) {
     const row=current.rows.find(r=>r.sku===want.sku),allOrders=(row?.orders.filter(o=>orderIds.includes(o.id))||[]).map(o=>({...o,quantity:Math.max(0,o.quantity-(used?.get(o.lineId)||0))}));
     let resolved;
     try{resolved=resolveEarlyOrderSources(allOrders,want.sourceOrders??[{orderNo:'',supplierOrderNo:'',quantity:want.quantity}]);}
-    catch(e){if(e instanceof EarlySourceError)fail(409,`${want.sku}: ${e.message}`,e.code);throw e;}
-    if(want.sourceOrders)resolvedSources[want.sku]=resolved.sources;
-    const lineId=crypto.randomUUID();await tx.insert(lines).values({id:lineId,requestId:id,lineNo:i+1,sku:row!.sku,name:row!.name,unit:resolved.unit,quantity:want.quantity});
+    catch(e){if(e instanceof EarlySourceError&&allowUnresolved){unresolved[want.sku]=e.message;}else if(e instanceof EarlySourceError)fail(409,`${want.sku}: ${e.message}`,e.code);else throw e;}
+    if(want.sourceOrders)resolvedSources[want.sku]=resolved?.sources.length?resolved.sources:want.sourceOrders;
+    const item=catalog.get(want.sku),lineId=crypto.randomUUID();
+    if(!row&&!item)fail(409,`${want.sku}: không tìm thấy mã hàng trong danh mục.`);
+    await tx.insert(lines).values({id:lineId,requestId:id,lineNo:i+1,sku:want.sku,name:row?.name||item?.name||'',unit:resolved?.unit||item?.unit||'',quantity:want.quantity});
+    if(!resolved)continue;
     for(const {order,quantity} of resolved.allocations){
       if(used)used.set(order.lineId,(used.get(order.lineId)||0)+quantity);
       if(!order.supplierId)fail(409,`${want.sku}: đơn mua chưa có NCC.`);
@@ -133,8 +138,9 @@ async function replaceDraftLines(tx:Tx,id:string,input:ReturnType<typeof cleanIn
   if(Object.keys(resolvedSources).length){
     if(Object.values(resolvedSources).reduce((n,s)=>n+s.length,0)>300)fail(400,'Phân bổ vượt 300 nguồn đơn mua; tách thành phiếu nhỏ hơn.');
     input.scope.orderSources=JSON.stringify(resolvedSources);
-    await tx.update(requests).set({scope:JSON.stringify(input.scope)}).where(eq(requests.id,id));
   }
+  if(Object.keys(unresolved).length)input.scope.unresolvedOrders=JSON.stringify(unresolved);else delete input.scope.unresolvedOrders;
+  await tx.update(requests).set({scope:JSON.stringify(input.scope)}).where(eq(requests.id,id));
 }
 async function audit(tx:Tx,m:Member,id:string,action:string,data:Record<string,unknown>) {
   await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:m.id,module:'suppliers',action,entityType:'purchase-early-requests',entityId:id,data:JSON.stringify(data),createdAt:new Date().toISOString()});
@@ -167,6 +173,20 @@ async function withReceiptAvailability(db:Db, rows:Awaited<ReturnType<typeof ear
 }
 
 export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
+  router.get('/purchase-early-requests/order-options',async c=>{
+    guard(c);if(!canSendEarlyRequest(me(c)))fail(403,'Bạn chưa được cấp quyền chọn đơn mua.');
+    const sku=(c.url.searchParams.get('sku')||'').trim(),supplierOrderNo=(c.url.searchParams.get('supplierOrderNo')||'').trim().toLocaleLowerCase('vi'),supplierId=(c.url.searchParams.get('supplierId')||'').trim();
+    if(!sku||sku.length>200||supplierOrderNo.length>200||supplierId.length>200)fail(400,'Mã hàng không hợp lệ.');
+    const rows=await c.env.db.select({orderId:incomingShipments.id,lineId:incomingShipmentLines.id,ticketNumber:incomingShipments.ticketNumber,
+      supplierOrderNo:incomingShipments.supplierInternalOrderNumber,supplierId:incomingShipments.supplierId,supplierName:suppliers.name,
+      approvalStatus:incomingShipments.approvalStatus,submittedAt:incomingShipments.submittedAt,quantity:incomingShipmentLines.quantity,
+      unit:incomingShipmentLines.unit,warehouse:incomingShipments.warehouse,createdAt:incomingShipments.createdAt})
+      .from(incomingShipmentLines).innerJoin(incomingShipments,eq(incomingShipments.id,incomingShipmentLines.shipmentId)).innerJoin(suppliers,eq(suppliers.id,incomingShipments.supplierId))
+      .where(and(eq(incomingShipmentLines.sku,sku),eq(incomingShipments.source,'supplier-order'),isNull(incomingShipments.cancelledAt),supplierId?eq(incomingShipments.supplierId,supplierId):undefined)).orderBy(desc(incomingShipments.createdAt));
+    const options=rows.map(r=>({...r,exactSupplierOrderNo:!!supplierOrderNo&&r.supplierOrderNo.trim().toLocaleLowerCase('vi')===supplierOrderNo}));
+    options.sort((a,b)=>Number(b.exactSupplierOrderNo)-Number(a.exactSupplierOrderNo)||b.createdAt.localeCompare(a.createdAt));
+    return json({sku,options});
+  },'business');
   router.get('/purchase-early-requests',async c=>{
     guard(c);if(!canViewEarlyRequests(me(c)))fail(403,'Bạn chưa được cấp quyền xem phiếu xin hàng trước.');const supplierId=c.url.searchParams.get('supplierId')||null,page=earlyListFilter(c.url.searchParams,supplierId);
     const id=c.url.searchParams.get('id')||'';
@@ -219,16 +239,17 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   },'business');
   router.post('/purchase-early-requests',async c=>{
     guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
-    const body=await readJson(c.req,300000),input=cleanInput(body),groupBySupplierOrder=body.groupBySupplierOrder===true;
+    const body=await readJson(c.req,300000),input=cleanInput(body),groupBySupplierOrder=body.groupBySupplierOrder===true,allowUnresolved=allowUnresolvedDraft(body);
     if(body.groupBySupplierOrder!==undefined&&typeof body.groupBySupplierOrder!=='boolean')fail(400,'Tuỳ chọn gom phiếu không hợp lệ.');
-    const payloadHash=sha256Hex(JSON.stringify({lines:input.selected,scope:input.scope,pickupDate:input.pickupDate,...(groupBySupplierOrder?{groupBySupplierOrder:true}:{})}));
+    const payloadHash=sha256Hex(JSON.stringify({lines:input.selected,scope:input.scope,pickupDate:input.pickupDate,...(groupBySupplierOrder?{groupBySupplierOrder:true}:{}),...(allowUnresolved?{allowUnresolvedSources:true}:{})}));
     const result=await c.env.db.transaction(async tx=>{
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'early-key:'+m.id+':'+input.clientKey}))`);
       const [old]=await tx.select().from(requests).where(and(eq(requests.createdBy,m.id),eq(requests.clientKey,input.clientKey))).limit(1);
       if(old) { if(old.payloadHash!==payloadHash) fail(409,'Khóa gửi đã được dùng cho nội dung khác.','IDEMPOTENCY_CONFLICT');if(old.deletedAt&&!await splitResult(tx,old.id))fail(409,'Phiếu đã xoá, không tạo lại bằng lần gửi cũ.');return {id:old.id,replayed:true,requestIds:await splitResult(tx,old.id)||[old.id]}; }
       const now=new Date().toISOString(),id=crypto.randomUUID();
       await tx.insert(requests).values({id,clientKey:input.clientKey,payloadHash,createdBy:m.id,createdAt:now,status:'draft',pickupDate:input.pickupDate,scope:JSON.stringify(input.scope),updatedAt:now});
-      await replaceDraftLines(tx,id,input);
+      await replaceDraftLines(tx,id,input,undefined,allowUnresolved);
+      if(groupBySupplierOrder&&input.scope.unresolvedOrders)fail(409,'Chốt nguồn đơn mua trước khi tách phiếu theo NCC.','EARLY_UNRESOLVED');
       await audit(tx,m,id,'early-request-draft-create',{lines:input.selected,scope:input.scope,pickupDate:input.pickupDate});
       return {id,replayed:false,requestIds:groupBySupplierOrder?await splitEarlyRequest(tx,id,m.id):[id]};
     });
@@ -238,7 +259,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   },'business');
   router.put('/purchase-early-requests/:id',async c=>{
     guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
-    const body=await readJson(c.req,300000),id=c.params.id!;
+    const body=await readJson(c.req,300000),id=c.params.id!,allowUnresolved=allowUnresolvedDraft(body);
     await c.env.db.transaction(async tx=>{
       const [draft]=await tx.select().from(requests).where(eq(requests.id,id)).for('update');
       if(!draft) fail(404,'Không tìm thấy phiếu nháp.');
@@ -246,7 +267,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       if(draft.status!=='draft') fail(409,'Phiếu đã gửi NCC, không sửa như phiếu nháp.');
       if(body.revision!==draft.revision) fail(409,'Phiếu đã được sửa bởi người khác. Vui lòng tải lại.');
       const input=cleanInput({...body,clientKey:draft.clientKey,scope:JSON.parse(draft.scope)},JSON.parse(JSON.parse(draft.scope).orderSources||'{}'));
-      await replaceDraftLines(tx,id,input);
+      await replaceDraftLines(tx,id,input,undefined,allowUnresolved);
       await tx.update(requests).set({pickupDate:input.pickupDate,scope:JSON.stringify(input.scope),updatedAt:new Date().toISOString(),revision:draft.revision+1}).where(eq(requests.id,id));
       await audit(tx,m,id,'early-request-draft-update',{lines:input.selected,pickupDate:input.pickupDate,revision:draft.revision+1});
     });return json({request:(await earlyRequestList(c.env.db,null,id))[0]});

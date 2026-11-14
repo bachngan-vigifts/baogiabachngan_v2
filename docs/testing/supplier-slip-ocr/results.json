@@ -1,0 +1,34 @@
+[
+  {
+    "angle": 0,
+    "orientation": 0,
+    "rows": 8,
+    "total": 4160,
+    "deskewDegrees": 0,
+    "elapsedMs": 4176
+  },
+  {
+    "angle": 90,
+    "orientation": 270,
+    "rows": 8,
+    "total": 4160,
+    "deskewDegrees": 0,
+    "elapsedMs": 8080
+  },
+  {
+    "angle": 270,
+    "orientation": 90,
+    "rows": 8,
+    "total": 4160,
+    "deskewDegrees": 0,
+    "elapsedMs": 4370
+  },
+  {
+    "angle": 3,
+    "orientation": 0,
+    "rows": 8,
+    "total": 4160,
+    "deskewDegrees": 3,
+    "elapsedMs": 3642
+  }
+]
