@@ -34,3 +34,5 @@ for (const sec of ['thanh toán', 'giao hàng', 'ghi chú', 'cổng thanh toán'
 }
 
 if (process.env.EXPECT_NO_ATTRIBUTION === '1') { const n = rows.filter(r => /^wc_order_attribution_/.test(r.name)).length; console.log(n ? `KẾT LUẬN: CHƯA ĐẠT (còn ${n} trường theo dõi nguồn đơn): cần gỡ` : 'KẾT LUẬN: ĐẠT (không còn trường theo dõi nguồn đơn)'); if (n) process.exitCode = 4; }
+
+if (process.env.EXPECT_QR_DEFAULT === '1') { const q = rows.find(r => r.name === 'payment_method' && r.value === 'sepay'); const c = rows.find(r => r.name === 'payment_method' && r.value === 'cod'); const ok = !!q?.checked && !c?.checked; console.log(ok ? 'KẾT LUẬN: ĐẠT (mặc định chọn QR, vẫn còn thanh toán khi nhận hàng)' : `KẾT LUẬN: CHƯA ĐẠT (qr=${q?.checked} cod=${c?.checked}, cod còn hiện=${!!c}): cần gỡ`); if (!ok || !c) process.exitCode = 4; }
