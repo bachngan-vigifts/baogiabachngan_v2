@@ -139,7 +139,7 @@ async function listDir(dir) {
   return r.ok ? (r.data || []) : null;
 }
 const FOCUS = (process.env.FOCUS || 'all').trim();
-const WALK_MAX_CALLS = FOCUS === 'home' || FOCUS === 'docroot' ? 900 : 600, PER_DIR_CALLS = 90, WALK_DEADLINE = Date.now() + 8 * 60_000;
+const WALK_MAX_CALLS = ['home', 'docroot', 'git'].includes(FOCUS) ? 900 : 600, PER_DIR_CALLS = 90, WALK_DEADLINE = Date.now() + 8 * 60_000;
 let walkCalls = 0;
 async function walkSize(dir, cap = PER_DIR_CALLS) {
   let bytes = 0, files = 0, dirs = 0, truncated = false, errors = 0;
@@ -169,7 +169,7 @@ if (docroot) {
   const rank = l => { const i = order.indexOf(l); return l === 'wp-content/plugins' ? 999 : i < 0 ? 500 : i; };
   targets.sort((a, b) => rank(a[0]) - rank(b[0]));
   out.deep.sizes = {};
-  if (FOCUS !== 'home' && FOCUS !== 'docroot') for (const [label, path] of targets) out.deep.sizes[label] = await safe(() => walkSize(path));
+  if (!['home', 'docroot', 'git'].includes(FOCUS)) for (const [label, path] of targets) out.deep.sizes[label] = await safe(() => walkSize(path));
   out.deep.walkCalls = walkCalls;
   const root = await safe(() => listDir(docroot));
   if (Array.isArray(root)) out.deep.rootFiles = root.filter(f => f.type === 'file' && Number(f.size) > 1048576).map(f => ({ file: f.file, mb: Math.round(Number(f.size) / 1048576) }));
@@ -191,9 +191,52 @@ if (docroot) {
     }
   }
 
+  if (FOCUS === 'git') {
+    // Xem .git chứa gì: cấu hình đã che, nhánh, lịch sử (ngày + nội dung commit, không email), thư mục lớn. Không đọc object.
+    const G = `${docroot}/.git`;
+    const g = out.deep.git = {};
+    const top = await safe(() => listDir(G));
+    g.entries = Array.isArray(top) ? top.map(f => `${f.type === 'dir' ? 'd' : 'f'}:${f.file}${f.type === 'file' ? ` (${Number(f.size) || 0}B)` : ''}`) : top;
+    const read = async (rel, max = 200000) => {
+      const dirName = rel.includes('/') ? `${G}/${rel.replace(/\/[^/]+$/, '')}` : G;
+      const file = rel.split('/').pop();
+      const listing = await listDir(dirName);
+      const meta = Array.isArray(listing) ? listing.find(f => f.file === file) : null;
+      if (!meta) return { ok: false, error: 'không có' };
+      if (Number(meta.size) > max) return { ok: false, error: `quá lớn (${Math.round(Number(meta.size) / 1024)} KB)` };
+      return call('Fileman', 'get_file_content', { dir: dirName, file });
+    };
+    const maskUrl = t => t.replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^@/\s]+@/gi, '$1<che>@');
+    g.head = await safe(async () => { const r = await read('HEAD'); return r.ok ? redact(String(r.data?.content || '').trim()).slice(0, 120) : r; });
+    g.config = await safe(async () => {
+      const r = await read('config', 20000); if (!r.ok) return r;
+      const keep = String(r.data?.content || '').split('\n').filter(l => /^\s*\[|\burl\s*=|\bfetch\s*=|\bremote\s*=|\bmerge\s*=|\bbare\s*=|\bfilemode|\bignorecase|\blogallrefupdates|\brepositoryformatversion|\bsparsecheckout|\bautocrlf/i.test(l));
+      return { ok: true, lines: keep.map(l => redact(maskUrl(l.trim())).slice(0, 140)).slice(0, 40) };
+    });
+    g.packedRefs = await safe(async () => { const r = await read('packed-refs', 400000); if (!r.ok) return r; const l = String(r.data?.content || '').split('\n').filter(x => x && !x.startsWith('#') && !x.startsWith('^')); return { ok: true, count: l.length, sample: l.slice(0, 15).map(x => redact(x.split(' ')[1] || '').slice(0, 100)) }; });
+    g.fetchHead = await safe(async () => { const r = await read('FETCH_HEAD', 20000); if (!r.ok) return r; return { ok: true, lines: String(r.data?.content || '').split('\n').filter(Boolean).slice(0, 5).map(l => redact(maskUrl(l.replace(/^[0-9a-f]{40}\s*/, ''))).slice(0, 140)) }; });
+    g.history = await safe(async () => {
+      const r = await read('logs/HEAD', 3_000_000); if (!r.ok) return r;
+      const lines = String(r.data?.content || '').split('\n').filter(Boolean);
+      const parsed = lines.map(l => { const tab = l.indexOf('\t'); const meta = tab < 0 ? l : l.slice(0, tab); const msg = tab < 0 ? '' : l.slice(tab + 1); const ts = (meta.match(/>\s+(\d{9,11})\s+[+-]\d{4}\s*$/) || [])[1]; return { at: ts ? new Date(Number(ts) * 1000).toISOString().slice(0, 16) : '?', msg: redact(maskUrl(msg)).slice(0, 110) }; });
+      return { ok: true, total: parsed.length, first: parsed.slice(0, 3), last: parsed.slice(-12) };
+    });
+    g.hooks = await safe(async () => { const l = await listDir(`${G}/hooks`); return Array.isArray(l) ? l.filter(f => !/\.sample$/.test(f.file)).map(f => f.file) : l; });
+    g.refsHeads = await safe(async () => { const l = await listDir(`${G}/refs/heads`); return Array.isArray(l) ? l.map(f => f.file) : l; });
+    g.objects = await safe(async () => {
+      const pack = await listDir(`${G}/objects/pack`);
+      const packFiles = Array.isArray(pack) ? pack.filter(f => f.type === 'file').map(f => ({ file: f.file.length > 24 ? f.file.slice(0, 12) + '…' + f.file.slice(-8) : f.file, mb: Math.round(Number(f.size) / 1048576) })).sort((a, b) => b.mb - a.mb).slice(0, 10) : pack;
+      const loose = await listDir(`${G}/objects`);
+      return { ok: true, packFiles, looseDirs: Array.isArray(loose) ? loose.filter(f => f.type === 'dir' && /^[0-9a-f]{2}$/.test(f.file)).length : null };
+    });
+    g.subdirSizes = {};
+    for (const d of ['objects', 'logs', 'refs', 'lfs', 'modules']) g.subdirSizes[d] = await safe(() => walkSize(`${G}/${d}`, 80));
+    out.deep.gitRootTracked = await safe(async () => { const r = await call('Fileman', 'list_files', { dir: docroot, showdotfiles: 1, show_hidden: 1 }); return r.ok ? (r.data || []).filter(f => /^\.git/.test(f.file)).map(f => `${f.type === 'dir' ? 'd' : 'f'}:${f.file}`) : null; });
+  }
+
   // Thư mục home (cha của public_html): 13 GB đĩa có thể nằm ngoài web (sao lưu, log, mail, tmp).
   const home = docroot.replace(/\/[^/]+$/, '');
-  if (FOCUS !== 'docroot') out.deep.home = await safe(async () => {
+  if (FOCUS !== 'docroot' && FOCUS !== 'git') out.deep.home = await safe(async () => {
     const items = await listDir(home);
     if (!Array.isArray(items)) return { ok: false };
     const dirs = items.filter(f => f.type === 'dir' && f.file !== 'public_html' && f.file !== '.' && f.file !== '..');
