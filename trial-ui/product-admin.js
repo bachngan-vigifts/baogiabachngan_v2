@@ -203,7 +203,7 @@ export function initProductAdmin(deps) {
   async function openRemove(sku){
     if(!isManager()||removing)return;removing=true;
     try{const {product:p}=await api('/products/'+encodeURIComponent(sku));
-      if(!await confirmBox(`Xoá ${p.name} (${sku}) khỏi danh mục? Chỉ thực hiện khi không còn tồn, hàng đang về hoặc giữ hàng. Lịch sử, chứng từ và giá được giữ nguyên; có thể khôi phục trong Đã xoá.`,{ok:'Xoá khỏi danh mục',danger:true}))return;
+      if(!await confirmBox(`Xoá ${p.name} (${sku}) khỏi danh mục? Chỉ thực hiện khi không còn tồn, hàng đang về hoặc giữ hàng. Lịch sử, chứng từ và giá được giữ nguyên; có thể khôi phục trong Đã xoá.`,{ok:'Xoá khỏi danh mục',danger:true,mobileAllowed:true}))return;
       await api('/products/'+encodeURIComponent(sku)+'/archive','POST',{expectedUpdatedAt:p.updatedAt});toast('Đã xoá khỏi danh mục. Có thể khôi phục tại Đã xoá.');deps.onChanged();
     }catch(e){toast(e.message,'err');}finally{removing=false;}
   }
@@ -213,12 +213,12 @@ export function initProductAdmin(deps) {
     let offset=0,next=null,seq=0,timer,busy=false;const search=dlg.querySelector('input'),list=dlg.querySelector('[data-list]'),err=dlg.querySelector('[role=alert]');
     const load=async()=>{const n=++seq;err.textContent='';try{const d=await api('/archived-products?'+new URLSearchParams({q:search.value.trim(),offset:String(offset)}));if(n!==seq||!dlg.open)return;next=d.nextOffset;list.replaceChildren();
       if(!d.products.length)list.textContent='Không có sản phẩm đã xoá phù hợp.';
-      for(const p of d.products){const row=document.createElement('div');row.className='row-gap';const name=document.createElement('span');name.textContent=p.sku+' · '+p.name;const restore=document.createElement('button');restore.type='button';restore.className='btn secondary small';restore.textContent='Khôi phục';restore.setAttribute('aria-label','Khôi phục '+p.sku);restore.onclick=async()=>{if(busy)return;if(!await confirmBox('Khôi phục '+p.sku+' vào danh mục?',{ok:'Khôi phục'}))return;busy=true;restore.disabled=true;try{await api('/products/'+encodeURIComponent(p.sku)+'/restore','POST',{expectedUpdatedAt:p.updatedAt});toast('Đã khôi phục '+p.sku);await deps.onChanged();await load();}catch(e){err.textContent=e.message;}finally{busy=false;restore.disabled=false;}};row.append(name,restore);list.append(row);}
+      for(const p of d.products){const row=document.createElement('div');row.className='row-gap';const name=document.createElement('span');name.textContent=p.sku+' · '+p.name;const restore=document.createElement('button');restore.type='button';restore.className='btn secondary small';restore.dataset.mobileInline='';restore.textContent='Khôi phục';restore.setAttribute('aria-label','Khôi phục '+p.sku);restore.onclick=async()=>{if(busy)return;if(!await confirmBox('Khôi phục '+p.sku+' vào danh mục?',{ok:'Khôi phục',mobileAllowed:true}))return;busy=true;restore.disabled=true;try{await api('/products/'+encodeURIComponent(p.sku)+'/restore','POST',{expectedUpdatedAt:p.updatedAt});toast('Đã khôi phục '+p.sku);await deps.onChanged();await load();}catch(e){err.textContent=e.message;}finally{busy=false;restore.disabled=false;}};row.append(name,restore);list.append(row);}
       dlg.querySelector('[data-prev]').disabled=offset===0;dlg.querySelector('[data-next]').disabled=next===null;
     }catch(e){if(n===seq)err.textContent=e.message;}};
     search.oninput=()=>{++seq;clearTimeout(timer);timer=setTimeout(()=>{offset=0;load();},250);};dlg.querySelector('[data-prev]').onclick=()=>{offset=Math.max(0,offset-25);load();};dlg.querySelector('[data-next]').onclick=()=>{if(next!==null){offset=next;load();}};
     dlg.querySelector('[data-close]').onclick=()=>dlg.close();dlg.addEventListener('close',()=>{++seq;clearTimeout(timer);dlg.remove();},{once:true});document.body.append(dlg);dlg.showModal();load();
   }
-  {const b=archivedButton=document.createElement('button');b.type='button';b.className='btn secondary';b.textContent='Đã xoá';b.hidden=!isManager();b.onclick=openArchived;document.getElementById('new-product')?.parentElement?.append(b);}
+  {const b=archivedButton=document.createElement('button');b.type='button';b.className='btn secondary';b.textContent='Đã xoá';b.dataset.mobileNavigation='';b.hidden=!isManager();b.onclick=openArchived;document.getElementById('new-product')?.parentElement?.append(b);}
   return { openCreate: () => openForm(), openEdit, openRemove,openArchived,loadPending };
 }
