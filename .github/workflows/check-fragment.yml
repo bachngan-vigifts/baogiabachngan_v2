@@ -15,4 +15,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: if [ -f .github/check-fragment.run ]; then node scripts/maintenance/check-fragment.mjs; fi
+      - run: if [ -f .github/check-fragment.run ]; then node scripts/maintenance/check-fragment-string.mjs; fi
