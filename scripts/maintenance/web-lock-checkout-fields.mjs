@@ -19,7 +19,7 @@ const rows = await page.evaluate(() => {
     const row = e.closest('.form-row, p, .woocommerce-input-wrapper, div');
     const lab = (form.querySelector(`label[for="${e.id}"]`)?.textContent || e.placeholder || '').replace(/\s+/g, ' ').replace(/\*|\(tùy chọn\)|\(optional\)/gi, '').trim().slice(0, 40);
     const section = e.closest('.woocommerce-shipping-fields') ? 'giao hàng' : e.closest('.woocommerce-billing-fields') ? 'thanh toán' : e.closest('.woocommerce-additional-fields') ? 'ghi chú' : e.closest('#payment') ? 'cổng thanh toán' : 'khác';
-    out.push({ name: e.name || e.id, type: e.tagName.toLowerCase() === 'input' ? e.type : e.tagName.toLowerCase(), label: lab, required: !!(e.required || row?.classList.contains('validate-required')), visible: vis(e), section });
+    out.push({ name: e.name || e.id, type: e.tagName.toLowerCase() === 'input' ? e.type : e.tagName.toLowerCase(), label: lab, required: !!(e.required || row?.classList.contains('validate-required')), visible: vis(e), section, value: e.type === 'radio' ? e.value : '', checked: !!e.checked });
   }
   return out;
 });
@@ -29,7 +29,7 @@ console.log(`TỔNG ${rows.length} trường; đang hiện ${rows.filter(r => r.
 for (const sec of ['thanh toán', 'giao hàng', 'ghi chú', 'cổng thanh toán', 'khác']) {
   const rs = rows.filter(r => r.section === sec); if (!rs.length) continue;
   console.log(`## ${sec} (${rs.length})`);
-  for (const r of rs) console.log(`F| ${r.visible ? 'HIỆN' : 'ẨN '} | ${r.required ? 'BẮT BUỘC' : 'tùy chọn'} | ${r.name} | ${r.type} | ${r.label}`);
+  for (const r of rs) console.log(`F| ${r.visible ? 'HIỆN' : 'ẨN '} | ${r.required ? 'BẮT BUỘC' : 'tùy chọn'} | ${r.name} | ${r.type} | ${r.label}${r.value ? ' | value=' + r.value + ' | checked=' + r.checked : ''}`);
 }
 
 if (process.env.EXPECT_NO_ATTRIBUTION === '1') { const n = rows.filter(r => /^wc_order_attribution_/.test(r.name)).length; console.log(n ? `KẾT LUẬN: CHƯA ĐẠT (còn ${n} trường theo dõi nguồn đơn): cần gỡ` : 'KẾT LUẬN: ĐẠT (không còn trường theo dõi nguồn đơn)'); if (n) process.exitCode = 4; }
