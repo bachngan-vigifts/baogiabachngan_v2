@@ -1,3 +1,4 @@
+import {employees} from '../../staff/schema.ts';
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { earlyListFilter } from './early-list-filter.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -87,16 +88,20 @@ export async function earlyRequestList(db:Db, supplierId:string|null, id:string|
   const headers=await db.select().from(requests).where(and(isNull(requests.deletedAt),id?(typeof id==='string'?eq(requests.id,id):inArray(requests.id,[...id])):undefined,scope,submittedOnly?eq(requests.status,'submitted'):undefined,page?.where)).orderBy(desc(requests.createdAt),desc(requests.id)).limit(typeof id!=='string'?id.length:page?.limit??50).offset(page?.offset??0);
   if(id && !headers.length) fail(404,'Không tìm thấy yêu cầu lấy trước.');
   if(!headers.length) return [];
-  const details=await db.select({line:lines,catalogName:products.name,allocation:allocations,orderId:incomingShipments.id,ticketNumber:incomingShipments.ticketNumber,supplierOrderNo:incomingShipments.supplierInternalOrderNumber,
+  const [creatorRows,details]=await Promise.all([
+    !supplierId?db.select({id:employees.id,name:employees.name}).from(employees).where(inArray(employees.id,[...new Set(headers.map(h=>h.createdBy))])):Promise.resolve([]),
+    db.select({line:lines,catalogName:products.name,allocation:allocations,orderId:incomingShipments.id,ticketNumber:incomingShipments.ticketNumber,supplierOrderNo:incomingShipments.supplierInternalOrderNumber,
     supplierName:suppliers.name,due:sql<string>`coalesce(nullif(${incomingShipmentLines.promisedDate},''),${incomingShipments.arrivalDate},'')`})
     .from(lines).leftJoin(allocations,eq(allocations.requestLineId,lines.id)).leftJoin(incomingShipmentLines,eq(incomingShipmentLines.id,allocations.purchaseLineId))
     .leftJoin(incomingShipments,eq(incomingShipments.id,incomingShipmentLines.shipmentId)).leftJoin(suppliers,eq(suppliers.id,allocations.supplierId)).leftJoin(products,eq(products.sku,lines.sku))
-    .where(and(inArray(lines.requestId,headers.map(r=>r.id)),supplierId?eq(allocations.supplierId,supplierId):undefined)).orderBy(asc(lines.lineNo),asc(allocations.id));
+    .where(and(inArray(lines.requestId,headers.map(r=>r.id)),supplierId?eq(allocations.supplierId,supplierId):undefined)).orderBy(asc(lines.lineNo),asc(allocations.id)),
+  ]);
+  const creators=new Map(creatorRows.map(p=>[p.id,p.name]));
   return headers.map(h=>{
     const own=details.filter(d=>d.line.requestId===h.id),groups=new Map<string,typeof own>();
     for(const d of own) { const group=groups.get(d.line.id)||[];group.push(d);groups.set(d.line.id,group); }
     return {id:h.id,ticketNumber:h.ticketNumber,createdAt:h.createdAt,updatedAt:h.updatedAt||h.createdAt,pickupDate:h.pickupDate,revision:h.revision,requestStatus:h.status,pxkNo:JSON.parse(h.scope).pxkNo||'',
-      ...(!supplierId?{createdBy:h.createdBy,scope:JSON.parse(h.scope)}:{}),status:h.status==='draft'?'draft':stateOf(own.flatMap(d=>d.allocation?[d.allocation.status]:[])),
+      ...(!supplierId?{createdBy:h.createdBy,createdByName:creators.get(h.createdBy)||'',scope:JSON.parse(h.scope)}:{}),status:h.status==='draft'?'draft':stateOf(own.flatMap(d=>d.allocation?[d.allocation.status]:[])),
       lines:[...groups].map(([lineId,group])=>({id:lineId,sku:group[0]!.line.sku,name:group[0]!.catalogName?.trim()||group[0]!.line.name,unit:group[0]!.line.unit,
         // Supplier sees ONLY its quantities/statuses, never a cross-supplier line total.
         quantity:supplierId?group.reduce((sum,d)=>sum+(d.allocation?.quantity||0),0):group[0]!.line.quantity,status:group.some(d=>d.allocation)?stateOf(group.flatMap(d=>d.allocation?[d.allocation.status]:[])):'unresolved',

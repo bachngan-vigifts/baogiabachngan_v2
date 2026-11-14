@@ -195,7 +195,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     if (!rows.length) { const tr = el('tr'), td = el('td', 'muted', 'Chưa có đơn mua nào.'); td.colSpan = prices ? 8 : 6; tr.append(td); tbody.append(tr); return; }
     for (const r of rows) {
       const tr = el('tr', 'clickable' + (r.state === 'cancelled' ? ' is-off' : '')); tr.tabIndex = 0;
-      const no = el('td'); no.append(el('b', '', r.ticketNumber || '—'), el('small', 'muted sup-sub', (r.internalNo ? 'NCC: ' + r.internalNo + ' · ' : '') + r.lineCount + ' mã'));
+      const no = el('td'); no.append(el('b', '', r.ticketNumber || '—'), el('small', 'muted sup-sub', (r.internalNo ? 'NCC: ' + r.internalNo + ' · ' : '') + r.lineCount + ' mã'),el('small','muted sup-sub','Người tạo: '+(r.createdByName||'Chưa có thông tin')));
       const arr = el('td', r.late ? 'pur-late' : '', dmy(r.arrivalDate)); if (r.late) arr.title = 'Quá ngày hẹn, chưa nhận đủ';
       const prog = el('td'); prog.append(el('span', '', `${num(r.good)}/${num(r.ordered)}`)); if (r.damaged) prog.append(el('small', 'muted sup-sub', `hỏng ${num(r.damaged)}`));
       tr.append(no, el('td', '', r.supplierName || '—'), el('td', '', dmy(r.createdAt)), arr, prog);
