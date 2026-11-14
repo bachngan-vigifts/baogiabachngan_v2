@@ -11,7 +11,7 @@ const page = await ctx.newPage();
 await page.goto(simple + `?cb=${Date.now()}`, { waitUntil: 'load', timeout: 60_000 }); await page.waitForTimeout(3000);
 const added = page.waitForResponse(r => /wc-ajax=lnl_add_to_cart/.test(r.url()), { timeout: 45_000 }).catch(() => null);
 const reqs = []; const t0 = { v: 0 };
-page.on('response', async r => { const u = r.url(); if (/locknlockonline\.com/.test(u) && !/\.(png|jpe?g|webp|svg|woff2?|ico|css)(\?|$)/i.test(u)) reqs.push(`${Math.round(Date.now() - t0.v)}ms ${r.request().method()} ${r.status()} ${u.replace(SITE, '').slice(0, 110)}`); });
+page.on('response', async r => { if (r.request().isNavigationRequest() || /wc-ajax/.test(r.url())) {} ; const u = r.url(); if (/locknlockonline\.com/.test(u) && !/\.(png|jpe?g|webp|svg|woff2?|ico|css)(\?|$)/i.test(u)) reqs.push(`${Math.round(Date.now() - t0.v)}ms ${r.request().method()} ${r.status()} ${u.replace(SITE, '').slice(0, 110)}`); });
 const info = await page.evaluate(() => {
   const b = [...document.querySelectorAll('button,a,input[type=submit]')].filter(e => /mua ngay|buy now/i.test((e.textContent || '') + (e.value || '')));
   return b.slice(0, 3).map(e => e.outerHTML.slice(0, 600) + ' | form=' + (e.closest('form') ? e.closest('form').getAttribute('class') : 'none'));
@@ -20,8 +20,8 @@ console.log('NUT', JSON.stringify(info, null, 1));
 const btn = page.locator('button,a,input[type=submit]').filter({ hasText: /mua ngay/i }).first();
 if (!(await btn.count())) { console.log('Không thấy nút Mua ngay'); await browser.close(); process.exit(0); }
 t0.v = Date.now();
-await btn.click({ timeout: 10000 });
-await page.waitForURL(/thanh-toan|checkout|gio-hang/, { timeout: 60000 }).catch(() => console.log('Không chuyển trang trong 60s'));
+await btn.click({ timeout: 10000, noWaitAfter: true });
+await page.waitForURL(/thanh-toan|checkout|gio-hang/, { timeout: 60000, waitUntil: 'commit' }).catch(() => console.log('Không chuyển trang trong 60s'));
 const tNav = Date.now() - t0.v; console.log('Đến URL ' + page.url().replace(SITE, '') + ' sau ' + tNav + 'ms');
 await page.waitForLoadState('load', { timeout: 60000 }).catch(() => {}); console.log('Tải xong sau ' + (Date.now() - t0.v) + 'ms');
 await page.waitForTimeout(3000);
