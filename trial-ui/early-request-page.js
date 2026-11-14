@@ -1,3 +1,4 @@
+import {initEarlyQuickCreate} from './early-request-quick-create.js';
 import {earlyListBulk} from './early-list-bulk.js';
 import { initEarlyRequests } from './purchase-early-requests.js';
 import { openEarlyRequestFile } from './purchase-early-file.js';
@@ -16,13 +17,15 @@ function loadXlsx(){return globalThis.XLSX?Promise.resolve(globalThis.XLSX):(exc
 
 /** Dedicated index of persisted requests; all writes/receiving reuse existing workflows. */
 export function initEarlyRequestPage({api,root,go,today,toast}){
- let sequence=0,timer,offset=0,nextOffset=null,detailId='',canSend=false,suppliers=[];
+ let sequence=0,timer,offset=0,nextOffset=null,detailId='',canSend=false,suppliers=[],creator=null;
  const header=node('div','page-head'),intro=node('div');intro.append(node('span','eyebrow','Mua hàng'),node('h1','','Lấy hàng trước'),node('p','muted','Quản lý phiếu xin hàng, phản hồi NCC và nhận hàng theo phiếu.'));
  const actions=node('div','head-actions row-gap');
+ const quick=node('a','btn secondary early-quick-entry');quick.href='#/early-requests/new';quick.setAttribute('aria-label','Tạo đơn lấy hàng nhanh');quick.setAttribute('data-mobile-primary','');const plus=node('span','','+');plus.setAttribute('aria-hidden','true');quick.append(plus,node('span','','Tạo đơn lấy hàng nhanh'));quick.hidden=true;
  const file=button('Xin bằng file',()=>openEarlyRequestFile({api,loadXlsx,suppliers,today:today(),go,requestHref}),'btn primary');file.hidden=true;file.setAttribute('aria-label','Xin hàng bằng file');
  const photo=button('Xin bằng ảnh',()=>openEarlyRequestPhoto({api,loadXlsx,suppliers,today:today(),go,requestHref}));photo.hidden=true;photo.setAttribute('aria-label','Xin hàng bằng ảnh chụp');
  const incoming=node('a','btn secondary','Chọn hàng đang về');incoming.href='#/purchases?mode=incoming';incoming.hidden=true;
- actions.append(file,photo,incoming);header.append(intro,actions);
+ actions.append(quick,file,photo,incoming);header.append(intro,actions);
+ const createHost=node('section','early-quick-host');createHost.hidden=true;
  const back=node('a','btn secondary early-page-back','‹ Danh sách lấy hàng trước');back.href='#/early-requests';back.hidden=true;
  const section=node('section','early-page-index'),detail=node('section','early-page-detail');detail.hidden=true;
  const search=node('input');search.type='search';search.placeholder='Tìm phiếu, mã hàng, tên hàng, NCC, số đơn CRM/NCC';search.setAttribute('aria-label','Tìm phiếu lấy hàng trước');
@@ -35,9 +38,9 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
  const error=node('p','error');error.hidden=true;error.setAttribute('role','alert');
  const feedback=node('p','muted small');feedback.setAttribute('role','status');
  const list=node('div','early-page-list'),pager=node('div','early-page-pager');
- const prev=button('‹ Trang trước',()=>{offset=Math.max(0,offset-20);load();}),next=button('Trang tiếp ›',()=>{if(nextOffset!==null){offset=nextOffset;load();}}),refresh=button('Làm mới',()=>detailId?history.load(detailId):load());
+ const prev=button('‹ Trang trước',()=>{offset=Math.max(0,offset-20);load();}),next=button('Trang tiếp ›',()=>{if(nextOffset!==null){offset=nextOffset;load();}}),refresh=button('Làm mới',()=>detailId==='new'?creator?.refresh():detailId?history.load(detailId):load());
  const selection=earlyListBulk({api,onSaved:async()=>{await load();toast('Đã cập nhật các phiếu đã chọn.');}});
- pager.append(prev,next);actions.append(refresh);section.append(search,filters,feedback,selection.host,list,pager);root.append(header,back,error,section,detail);
+ pager.append(prev,next);actions.append(refresh);section.append(search,filters,feedback,selection.host,list,pager);root.append(header,back,error,section,detail,createHost);
  const history=initEarlyRequests({api,host:detail,canWrite:()=>canSend,requestHref,currentRequest:()=>detailId,onDeleted:()=>detailId?go('#/early-requests'):load(),onSaved:()=>toast('Đã cập nhật phiếu lấy hàng trước.')});
  function params(){const p=new URLSearchParams();for(const [key,value] of [['q',search.value.trim()],['supplierId',supplier.value],['status',status.value],['dateBy',dateBy.value],['from',from.value],['to',to.value]])if(value)p.set(key,value);return p;}
  function fail(message=''){error.textContent=message;error.hidden=!message;}
@@ -48,7 +51,7 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
   const saved=params();if(offset)saved.set('offset',String(offset));
   if(location.hash.split('?')[0]==='#/early-requests')historyReplace(saved);
   try{const data=await api('/purchase-early-requests?'+p);if(mine!==sequence)return;
-   canSend=!!data.canSend;file.hidden=photo.hidden=incoming.hidden=!canSend;nextOffset=data.nextOffset;list.replaceChildren();selection.reset(data.requests,data);
+   canSend=!!data.canSend;quick.hidden=file.hidden=photo.hidden=incoming.hidden=!canSend;nextOffset=data.nextOffset;list.replaceChildren();selection.reset(data.requests,data);
    for(const request of data.requests){
     const card=node('article','card early-page-card'),head=node('div','early-page-card-head'),open=node('a','data-link',request.ticketNumber||'Phiếu '+request.id.slice(0,8).toUpperCase());open.href=requestHref(request.id);
     const title=node('div','early-list-title'),check=selection.checkbox(request);if(check)title.append(check);title.append(open);head.append(title);
@@ -74,12 +77,13 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
  const changed=()=>{offset=0;load();};for(const input of [supplier,status,dateBy,from,to])input.addEventListener('change',changed);
  search.addEventListener('input',()=>{++sequence;selection.reset();clearTimeout(timer);timer=setTimeout(changed,250);});
  return {async show(id='',query=''){
-  const mine=++sequence;clearTimeout(timer);detailId=id;selection.reset();back.hidden=!id;section.hidden=!!id;detail.hidden=!id;fail();
+  const mine=++sequence;clearTimeout(timer);detailId=id;selection.reset();creator?.hide();creator=null;createHost.hidden=true;back.hidden=!id;section.hidden=!!id;detail.hidden=!id||id==='new';intro.querySelector('h1').textContent=id==='new'?'Tạo đơn lấy hàng nhanh':'Lấy hàng trước';intro.querySelector('p').textContent=id==='new'?'Chọn mã hàng và đơn mua NCC đã đặt để tạo phiếu lấy trước.':'Quản lý phiếu xin hàng, phản hồi NCC và nhận hàng theo phiếu.';fail();
   try{const options=await api('/purchase-options');if(mine!==sequence)return;
-   suppliers=options.suppliers||[];canSend=!!options.canRequestEarly;file.hidden=photo.hidden=incoming.hidden=!canSend;
+   suppliers=options.suppliers||[];canSend=!!options.canRequestEarly;quick.hidden=file.hidden=photo.hidden=incoming.hidden=!canSend;
    const keep=supplier.value;supplier.replaceChildren(...select([['','Tất cả NCC'],...suppliers.map(s=>[s.id,s.name])]).children);supplier.value=keep;
+   if(id==='new'){quick.hidden=file.hidden=photo.hidden=incoming.hidden=true;if(!canSend){fail('Bạn chưa được cấp quyền tạo phiếu lấy hàng trước.');return;}createHost.hidden=false;creator=initEarlyQuickCreate({api,host:createHost,go,today,toast});await creator.show();return;}
    if(id){await history.load(id);return;}
    const p=new URLSearchParams(query);search.value=p.get('q')||'';supplier.value=p.get('supplierId')||'';status.value=p.get('status')||'';dateBy.value=p.get('dateBy')||'pickup';from.value=p.get('from')||'';to.value=p.get('to')||'';offset=Number(p.get('offset')||0);await load();
   }catch(e){if(mine===sequence)fail(e.message);}
- },refresh(){return detailId?history.load(detailId):load();}};
+ },refresh(){return detailId==='new'?creator?.refresh():detailId?history.load(detailId):load();}};
 }

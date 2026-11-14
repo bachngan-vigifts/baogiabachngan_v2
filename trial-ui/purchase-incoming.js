@@ -6,21 +6,22 @@ const date = iso => iso ? iso.slice(0, 10).split('-').reverse().join('/') : 'Ch�
 const labelled = (text, node) => { const label = el('label', 'incoming-field'); label.append(el('span', 'muted small', text), node); return label; };
 
 /** Incoming quantities and persisted draft → explicit supplier submission. */
-export function initPurchaseIncoming({ api, host, go }) {
+export function initPurchaseIncoming({ api, host, go, onCreate = null }) {
   let data = null, offset = 0, pending = 0, mode = 'all', visible = false, timer, canRequest = false;
   const selected = new Map(), expanded = new Set();
   const kpis = el('div', 'incoming-kpis'), filters = el('div', 'incoming-filters');
   const search = el('input'); search.type = 'search'; search.placeholder = 'Tìm mã hàng hoặc tên sản phẩm'; search.setAttribute('aria-label', 'Tìm hàng đang về');
   const documentType = el('select'); documentType.setAttribute('aria-label','Loại phiếu');
   for(const [value,text] of [['all','Tất cả loại phiếu'],['purchase','Mua hàng'],['early','Lấy hàng trước']]){const option=el('option','',text);option.value=value;documentType.append(option);}
-  documentType.value='all';
+  documentType.value=onCreate?'purchase':'all';
   const supplier = el('select'); supplier.setAttribute('aria-label', 'Nhà cung cấp');
   const from = el('input'), to = el('input'); from.type = to.type = 'date';
   const chips = el('div', 'chips incoming-chips');
   for (const [key, title] of [['all', 'Tất cả'], ['late', 'Quá hẹn'], ['week', 'Hẹn trong 7 ngày'], ['selected', 'Đã chọn']]) {
     const b = button(title, 'chip', () => { mode = key; offset = 0; load(); }); b.dataset.mode = key; chips.append(b);
   }
-  filters.append(labelled('Sản phẩm', search), labelled('Loại phiếu',documentType), labelled('NCC', supplier), labelled('Hẹn từ', from), labelled('Đến', to), chips);
+  const documentField=labelled('Loại phiếu',documentType);documentField.hidden=!!onCreate;
+  filters.append(labelled('Sản phẩm', search), documentField, labelled('NCC', supplier), labelled('Hẹn từ', from), labelled('Đến', to), chips);
   filters.append(button('Làm mới','btn secondary',()=>refresh()));
   const documentHint=el('p','muted small');
   const error = el('p', 'error incoming-error'); error.setAttribute('role', 'alert'); error.hidden = true;
@@ -31,15 +32,17 @@ export function initPurchaseIncoming({ api, host, go }) {
   const prev = button('← Trước', 'btn secondary small', () => { offset = Math.max(0, offset - 50); load(); });
   const next = button('Sau →', 'btn secondary small', () => { offset += 50; load(); }); pagination.append(pageLabel, prev, next);
   const footer = el('div', 'incoming-selection'), summary = el('div'), clear = button('Bỏ chọn', 'btn secondary', () => { selected.clear(); render(); if (mode === 'selected') load(); });
-  const save = button('Lưu và gửi NCC', 'btn primary', () => {
+  const save = button(onCreate?'Tạo phiếu nháp':'Lưu và gửi NCC', 'btn primary', () => {
     if(documentType.value==='early'||!selectionSummary())return;
     const orderSources=Object.fromEntries([...selected].filter(([,r])=>r.sourceOrders?.length).map(([sku,r])=>[sku,r.sourceOrders.map(({orderNo,supplierOrderNo,quantity})=>({orderNo,supplierOrderNo,quantity}))]));
-    history.newDraft({lines:[...selected].map(([sku,r])=>({sku,quantity:r.quantity,name:r.name,unit:r.unit})),scope:{supplierId:supplier.value,from:from.value,to:to.value,status:mode==='selected'?'all':mode,...(Object.keys(orderSources).length?{orderSources:JSON.stringify(orderSources)}:{})}});
+    const initial = {lines:[...selected].map(([sku,r])=>({sku,quantity:r.quantity,name:r.name,unit:r.unit})),scope:{supplierId:supplier.value,from:from.value,to:to.value,status:mode==='selected'?'all':mode,...(Object.keys(orderSources).length?{orderSources:JSON.stringify(orderSources)}:{})}};
+    if(onCreate){void onCreate(initial);return;}
+    history.newDraft(initial);
   }); save.disabled = true;
   const note = el('p', 'muted small', 'Các lựa chọn chưa được lưu hoặc gửi NCC.');
   note.setAttribute('role', 'alert');
   footer.append(summary, clear, save); host.append(kpis, filters, documentHint,error, wrap, pagination, footer, note);
-  const historyHost=el('section','early-request-history');host.append(historyHost);
+  const historyHost=el('section','early-request-history');historyHost.hidden=!!onCreate;host.append(historyHost);
   const history=initEarlyRequests({api,host:historyHost,canWrite:()=>canRequest,onSaved:()=>{selected.clear();load();}});
   documentType.addEventListener('change',()=>{offset=0;if(mode==='selected')mode='all';expanded.clear();render();return load();});
   for (const node of [supplier, from, to]) node.addEventListener('change', () => { offset = 0; load(); });
@@ -114,7 +117,7 @@ export function initPurchaseIncoming({ api, host, go }) {
           const sourceLine=el('div','incoming-source'),label=el('label','incoming-source-choice'),pick=el('input');pick.type='checkbox';
           const pinned=chosen?.sourceOrders?.find(s=>s.orderId===order.id);
           pick.checked=!!pinned;pick.disabled=check.disabled;pick.setAttribute('aria-label',`Lấy mã ${row.sku} từ ${order.ticketNumber}`);
-          label.append(pick,el('span','',`${order.ticketNumber} · còn ${number(order.quantity)} · hẹn ${date(order.due)}`));sourceLine.append(label);
+          label.append(pick,el('span','',`${order.ticketNumber}${order.internalNo?' · NCC: '+order.internalNo:''} · còn ${number(order.quantity)} · hẹn ${date(order.due)}`));sourceLine.append(label);
           pick.addEventListener('change',()=>{
             const current=selected.get(row.sku),list=[...(current?.sourceOrders||[])].filter(s=>s.orderId!==order.id);
             if(pick.checked)list.push({orderId:order.id,orderNo:order.ticketNumber,supplierOrderNo:order.internalNo||'',quantity:Math.min(order.quantity,current?.sourceOrders?.length?1:current?.quantity||1),max:order.quantity});
@@ -146,7 +149,7 @@ export function initPurchaseIncoming({ api, host, go }) {
       qty.addEventListener('input', update);
       validateQuantity(chosen?.quantity ?? null);
       check.addEventListener('change', () => { qty.value = check.checked ? (chosen?.quantity || 1) : ''; update(); });
-      tr.append(checkCell, code, name, el('td', 'num', number(row.quantity)), orders, due, status, qtyCell); tbody.append(tr);
+      tr.append(checkCell, code, name, el('td', 'num', number(row.quantity)), orders, due, status, qtyCell); if(onCreate)[...tr.children].forEach((cell,i)=>cell.setAttribute('data-label',hr.children[i].textContent)); tbody.append(tr);
       if (expanded.has(row.sku)) {
         const detail = el('tr', 'incoming-details'), td = el('td'); td.colSpan = 8;
         const list = el('div', 'incoming-orders');
@@ -183,6 +186,6 @@ export function initPurchaseIncoming({ api, host, go }) {
     } catch (e) { if (request === pending && visible) fail(e.message || 'Không tải được hàng đang về.'); }
     finally { if (request === pending) host.setAttribute('aria-busy', 'false'); }
   }
-  async function refresh(){if(!visible)return;await load();await history.load();}
-  return {refresh, async show(id='') { visible = true; host.hidden = false; await load();if(id)await history.open(id);else await history.load(); }, hide() { visible = false; ++pending; clearTimeout(timer); host.hidden = true; } };
+  async function refresh(){if(!visible)return;await load();if(!onCreate)await history.load();}
+  return {refresh, async show(id='') { visible = true; host.hidden = false; await load();if(!onCreate){if(id)await history.open(id);else await history.load();} }, hide() { visible = false; ++pending; clearTimeout(timer); host.hidden = true; } };
 }
