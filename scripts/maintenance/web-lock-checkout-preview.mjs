@@ -32,6 +32,16 @@ if (process.env.OUTLINE === '1') {
   });
   for (const r of out) console.log('DOM| ' + r);
 }
+if (process.env.OUTLINE === '1') {
+  const o2 = await page.evaluate(() => {
+    const lines = [];
+    const cbs = [...document.querySelectorAll('form.checkout input[type=checkbox]')];
+    for (const c of cbs) { const chain = []; for (let e = c; e && e.id !== 'customer_details' && e.tagName !== 'FORM'; e = e.parentElement) chain.push(e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(/\s+/).slice(0, 3).join('.') : '')); lines.push('CB ' + (c.name || c.id) + ' :: ' + chain.join(' < ')); }
+    const cd = document.querySelector('#customer_details'); if (cd) { const walk = (e, d) => { if (d > 3) return; for (const k of e.children) { lines.push('TREE ' + ' '.repeat(d * 2) + k.tagName.toLowerCase() + (k.id ? '#' + k.id : '') + '.' + String(k.className).trim().split(/\s+/).slice(0, 3).join('.') + ' h=' + Math.round(k.getBoundingClientRect().height)); walk(k, d + 1); } }; walk(cd, 0); }
+    return lines;
+  });
+  for (const r of o2) console.log('DOM2| ' + r);
+}
 await shot('truoc');
 if (process.env.CSS_FROM) {
   const src = readFileSync(process.env.CSS_FROM, 'utf8'); const m = /<<<'CSS'\n([\s\S]*?)\nCSS;/.exec(src); if (!m) { console.log('Không thấy khối CSS'); process.exit(1); }
