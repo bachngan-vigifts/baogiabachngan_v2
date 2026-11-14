@@ -51,7 +51,22 @@ function lnl_checkout_mobile_css() {
   }
   body.page-template-page-checkout .woocommerce-additional-fields textarea { min-height: 72px; font-size: 16px; border-radius: 8px; }
 
-  /* Checkbox rows */
+  /* Remove the theme's inner card so we do not double the padding */
+  body.page-template-page-checkout .large-7.col > .col-inner,
+  body.page-template-page-checkout #customer_details .col-inner { padding: 0 !important; border: 0 !important; box-shadow: none !important; background: transparent !important; }
+  body.page-template-page-checkout .large-7.col { padding: 0 0 0; }
+  body.page-template-page-checkout .woocommerce-billing-fields::before,
+  body.page-template-page-checkout .woocommerce-billing-fields > h3::before { display: none; }
+  body.page-template-page-checkout input.input-text::placeholder { font-size: 14px; }
+
+  /* Checkbox rows: aligned, big tap target */
+  body.page-template-page-checkout .form-row.woocommerce-form__label-for-checkbox,
+  body.page-template-page-checkout .woocommerce-form__label-for-checkbox,
+  body.page-template-page-checkout #ship-to-different-address label,
+  body.page-template-page-checkout .woocommerce-form-login-toggle label { display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 6px 0; font-size: 14px; font-weight: 500; }
+  body.page-template-page-checkout .woocommerce-form__label-for-checkbox input,
+  body.page-template-page-checkout #ship-to-different-address input { margin: 2px 0 0; flex: 0 0 20px; }
+  body.page-template-page-checkout #ship-to-different-address { padding: 0; margin: 0; }
   body.page-template-page-checkout .form-row.woocommerce-form__label-for-checkbox,
   body.page-template-page-checkout #ship-to-different-address { margin: 4px 0; }
   body.page-template-page-checkout input[type=checkbox] { width: 20px; height: 20px; }
