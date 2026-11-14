@@ -17,7 +17,7 @@ try{for(const width of [1440,390]){
   globalThis.stockUi=initStockMoves({api,root:document.querySelector('main'),createPager,toast:m=>toasts.push(m)});await stockUi.show('from=2026-10-16&to=2026-11-14');
  });
  await page.locator('.ledger-pending-detail').first().waitFor();assert.equal(await page.getByRole('columnheader',{name:'Hàng đang treo (hiện tại)',includeHidden:true}).count(),1);
- await page.locator('.ledger-pending-detail summary').first().click();assert.match(await page.locator('.ledger-pending-detail').first().innerText(),/Chờ giao: 6/);assert.match(await page.locator('.ledger-pending-detail').first().innerText(),/Hoàn chờ nhận: 4/);assert.match(await page.locator('.ledger-pending-detail').first().innerText(),/Tạm giữ: 2/);assert.match(await page.locator('.ledger-pending-detail').first().innerText(),/Giữ chưa gắn kho: 3/);
+ assert.equal(await page.locator('.ledger-pending-unassigned').first().isVisible(),true);await page.locator('.ledger-pending-detail summary').first().click();assert.match(await page.locator('.ledger-pending-detail').first().innerText(),/Chờ giao: 6/);assert.match(await page.locator('.ledger-pending-detail').first().innerText(),/Hoàn chờ nhận: 4/);assert.match(await page.locator('.ledger-pending-detail').first().innerText(),/Tạm giữ: 2/);assert.match(await page.locator('.ledger-pending-detail').first().innerText(),/Giữ chưa gắn kho: 3/);
  assert.match(await page.locator('.ledger-pending-detail summary').nth(1).innerText(),/12 \+ \?/);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.getByRole('button',{name:/Xuất file/}).click();await page.waitForFunction(()=>exportDone);

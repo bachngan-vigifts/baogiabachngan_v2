@@ -2851,3 +2851,6 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .ledger-pending-detail summary { cursor:pointer;font-weight:700; }
 .ledger-pending-detail>div { margin-top:8px;line-height:1.6;color:var(--ink);text-align:left;min-width:160px; }
 @media(max-width:640px){.ledger-table .ledger-pending{flex-basis:100%;min-width:0}.ledger-pending-detail{flex:1}.ledger-pending-detail>div{min-width:0}}
+
+.ledger-pending-unassigned { display:block;white-space:normal;margin-top:4px;font-size:var(--text-caption); }
+@media(max-width:640px){.ledger-pending-unassigned{flex-basis:100%;text-align:right}}

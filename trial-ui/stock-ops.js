@@ -440,7 +440,7 @@ export function initStockMoves({ api, root, toast, createPager, linkAllowed = ()
     const info=el('div','small');for(const [label,value]of [['Chờ giao',p.packed],['Hoàn chờ nhận',p.returning],['Tạm giữ',p.held]])info.append(el('div','',label+': '+num(value||0)));
     if(p.uncertain)info.append(el('p','muted','Thiếu chứng từ giao/nguồn kho để phân bổ chính xác phần chờ giao; chưa cộng phần chưa xác định.'));
     if(p.unassignedHeld>0)info.append(el('p','muted','Giữ chưa gắn kho: '+num(p.unassignedHeld)+' (không cộng vào tổng kho này).'));
-    summary.append(info);td.append(summary);return td;
+    summary.append(info);td.append(summary);if(p.unassignedHeld>0)td.append(el('small','muted ledger-pending-unassigned','Giữ chưa gắn kho: '+num(p.unassignedHeld)));return td;
   }
   async function load() {
     const my = ++req;
