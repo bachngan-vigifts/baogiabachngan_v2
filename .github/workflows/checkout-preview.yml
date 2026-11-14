@@ -21,6 +21,6 @@ jobs:
           mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
           npx playwright install --with-deps chromium >/dev/null
           cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-checkout-preview.mjs" . 
-          CSS_FILE="$GITHUB_WORKSPACE/web-lock/mu-plugins/woo-checkout-mobile.php"
-          if [ -f "$CSS_FILE" ]; then export CSS_FROM="$CSS_FILE"; fi
+          export CSS_FROM="$GITHUB_WORKSPACE/web-lock/mu-plugins/woo-checkout-mobile.php"
+          [ -f "$GITHUB_WORKSPACE/web-lock/mu-plugins/woo-checkout-mobile-top.php" ] && CSS_FROM="$CSS_FROM,$GITHUB_WORKSPACE/web-lock/mu-plugins/woo-checkout-mobile-top.php"
           OUTLINE=1 node web-lock-checkout-preview.mjs

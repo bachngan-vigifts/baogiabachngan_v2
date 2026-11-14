@@ -44,8 +44,8 @@ if (process.env.OUTLINE === '1') {
 }
 await shot('truoc');
 if (process.env.CSS_FROM) {
-  const src = readFileSync(process.env.CSS_FROM, 'utf8'); const m = /<<<'CSS'\n([\s\S]*?)\nCSS;/.exec(src); if (!m) { console.log('Không thấy khối CSS'); process.exit(1); }
-  await page.addStyleTag({ content: m[1] }); await page.waitForTimeout(1500);
+  let css = ''; for (const f of process.env.CSS_FROM.split(',')) { const src = readFileSync(f, 'utf8'); const m = /<<<'CSS'\n([\s\S]*?)\nCSS;/.exec(src); if (!m) { console.log('Không thấy khối CSS ' + f); process.exit(1); } css += m[1] + '\n'; }
+  await page.addStyleTag({ content: css }); await page.waitForTimeout(1500);
   const over = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1); console.log('Tràn ngang sau khi áp CSS: ' + over);
   await shot('sau');
 }
