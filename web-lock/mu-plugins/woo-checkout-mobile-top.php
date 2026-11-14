@@ -24,7 +24,7 @@ function lnl_checkout_mobile_top_css() {
   body.page-template-page-checkout .woocommerce-billing-fields { order: 1; }
   body.page-template-page-checkout .woocommerce-account-fields { order: 2; }
   body.page-template-page-checkout .woocommerce-shipping-fields { order: 3; }
-  body.page-template-page-checkout #order_comments_field { order: 4; }
+  body.page-template-page-checkout .woocommerce-additional-fields__field-wrapper { order: 4; }
 
   /* Invoice box: highlighted */
   body.page-template-page-checkout .claw-lnl-invoice-request {
