@@ -10,7 +10,10 @@ const page = await ctx.newPage();
 await page.goto(simple + `?cb=${Date.now()}`, { waitUntil: 'load', timeout: 60_000 }); await page.waitForTimeout(3000);
 const added = page.waitForResponse(r => /wc-ajax=lnl_add_to_cart/.test(r.url()), { timeout: 45_000 }).catch(() => null);
 await page.locator('button.single_add_to_cart_button').first().click(); await added; await page.waitForTimeout(2000);
-await page.goto(`${SITE}/thanh-toan/?cb=${Date.now()}`, { waitUntil: 'load', timeout: 60_000 }); await page.waitForTimeout(6000);
+const uor = []; page.on('request', r => { if (/wc-ajax=update_order_review/.test(r.url())) { const m = /payment_method=([a-z_]+)/.exec(String(r.postData() || '')); uor.push(m ? m[1] : '?'); } });
+const cresp = await page.goto(`${SITE}/thanh-toan/?cb=${Date.now()}`, { waitUntil: 'load', timeout: 60_000 });
+try { const html = await cresp.text(); const inputs = [...html.matchAll(/<input[^>]*name="payment_method"[^>]*>/g)].map(m => m[0]); console.log('KHỞI ĐẦU (HTML máy chủ trả về): ' + inputs.map(x => `${/value="([^"]+)"/.exec(x)?.[1]}:${/\schecked/.test(x) ? 'checked' : '-'}`).join(' | ')); } catch (e) { console.log('KHỞI ĐẦU: không đọc được'); }
+await page.waitForTimeout(6000); console.log('update_order_review gửi payment_method theo thứ tự: ' + (uor.join(' > ') || 'không có'));
 const rows = await page.evaluate(() => {
   const form = document.querySelector('form.checkout, form.woocommerce-checkout'); if (!form) return null;
   const vis = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);

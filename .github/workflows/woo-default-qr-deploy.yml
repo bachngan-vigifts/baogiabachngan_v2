@@ -40,7 +40,7 @@ jobs:
       - name: Đo trước
         if: steps.mode.outputs.mode != 'skip'
         working-directory: /tmp/pw
-        run: node web-lock-checkout-fields.mjs | grep -E '^TỔNG|payment_method|KẾT LUẬN' || true
+        run: node web-lock-checkout-fields.mjs | grep -E '^TỔNG|payment_method|KẾT LUẬN|KHỞI ĐẦU|update_order_review' || true
       - name: Kiểm tra và thêm file
         if: steps.mode.outputs.mode != 'skip'
         env:
