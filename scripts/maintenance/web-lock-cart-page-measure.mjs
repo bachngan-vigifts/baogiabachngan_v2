@@ -8,6 +8,7 @@ let simple = null;
 try { const j = await (await fetch(`${SITE}/wp-json/wc/store/v1/products?type=simple&per_page=5&stock_status=instock`)).json(); simple = (Array.isArray(j) ? j : []).find(x => x.permalink)?.permalink; } catch {}
 if (!simple) { console.log('Không tìm thấy sản phẩm'); process.exit(1); }
 const browser = await chromium.launch();
+let bad = false;
 for (let i = 0; i < RUNS; i++) {
   const ctx = await browser.newContext({ userAgent: UA, viewport: { width: 412, height: 915 }, isMobile: true });
   const page = await ctx.newPage();
@@ -22,8 +23,10 @@ for (let i = 0; i < RUNS; i++) {
     try { const resp = await page.goto(`${SITE}${path}?cb=${Date.now()}${i}`, { waitUntil: 'load', timeout: 60_000 }); status = resp?.status() || 0; } catch (e) { errs.push('goto ' + String(e.message).slice(0, 60)); }
     const loadMs = Date.now() - t0; await page.waitForTimeout(8000);
     const nav = await page.evaluate(() => { const n = performance.getEntriesByType('navigation')[0]; return n ? { ttfb: Math.round(n.responseStart), dcl: Math.round(n.domContentLoadedEventEnd) } : {}; }).catch(() => ({}));
+    const zx = done.some(r => /zxcvbn/i.test(r.u));
+    if (process.env.EXPECT_NO_ZXCVBN === '1' && name === 'checkout' && (zx || status !== 200)) bad = true;
     const ajax = done.filter(r => /wc-ajax|admin-ajax/.test(r.u));
-    console.log(`[lần${i + 1}] ${name}: http=${status} ttfb=${nav.ttfb}ms dcl=${nav.dcl}ms load=${loadMs}ms req=${done.length} js=${Math.round(done.filter(r => r.t === 'script').reduce((s, r) => s + r.kb, 0))}KB lỗiConsole=${errs.length}${errs[0] ? ' mẫu=' + errs[0] : ''}`);
+    console.log(`[lần${i + 1}] ${name}: http=${status} ttfb=${nav.ttfb}ms dcl=${nav.dcl}ms load=${loadMs}ms req=${done.length} js=${Math.round(done.filter(r => r.t === 'script').reduce((s, r) => s + r.kb, 0))}KB zxcvbn=${zx} lỗiConsole=${errs.length}${errs[0] ? ' mẫu=' + errs[0] : ''}`);
     console.log(`   gọi ajax: ${ajax.map(r => `${r.m} ${r.u} ${r.ms}ms`).join(' | ') || 'không'}`);
     console.log(`   chậm nhất: ${[...done].sort((a, b) => b.ms - a.ms).slice(0, 4).map(r => `${r.m} ${r.u} ${r.ms}ms`).join(' | ')}`);
     page.off('requestfinished', onFin);
@@ -31,3 +34,5 @@ for (let i = 0; i < RUNS; i++) {
   await ctx.close();
 }
 await browser.close();
+
+if (process.env.EXPECT_NO_ZXCVBN === '1') { console.log(bad ? 'KẾT LUẬN: CHƯA ĐẠT (thanh toán vẫn tải zxcvbn hoặc lỗi): cần gỡ' : 'KẾT LUẬN: ĐẠT (thanh toán không tải zxcvbn)'); if (bad) process.exitCode = 4; }
