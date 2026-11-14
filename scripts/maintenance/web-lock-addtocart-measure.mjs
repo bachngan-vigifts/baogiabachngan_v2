@@ -85,3 +85,9 @@ if (LABEL === 'sau' && existsSync('addtocart-truoc.json')) {
   console.log('=== SO SÁNH TRƯỚC → SAU ===');
   for (const k of Object.keys(out.products)) { const x = b.products[k], y = out.products[k]; if (x) console.log(`${k}: giỏ cập nhật ${x.cartUpdatedMsMedian} → ${y.cartUpdatedMsMedian}ms; tải lại cả trang ${x.fullReload} → ${y.fullReload}`); }
 }
+
+if (LABEL === 'sau') {
+  const bad = Object.entries(out.products).filter(([, p]) => p.okRuns < p.runs || p.fullReload);
+  if (!Object.keys(out.products).length || bad.length) { console.log(`KẾT LUẬN: CHƯA ĐẠT (${bad.map(([k]) => k).join(', ') || 'không có sản phẩm để đo'}): cần gỡ plugin`); process.exitCode = 4; }
+  else console.log('KẾT LUẬN: ĐẠT (không tải lại cả trang, giỏ cập nhật)');
+}
