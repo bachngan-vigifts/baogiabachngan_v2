@@ -24,10 +24,12 @@ const rows = await page.evaluate(() => {
   return out;
 });
 await browser.close();
-if (!rows) { console.log('Không thấy biểu mẫu thanh toán'); process.exit(1); }
+if (!rows) { console.log('Không thấy biểu mẫu thanh toán'); process.exit(process.env.EXPECT_NO_ATTRIBUTION === '1' ? 4 : 1); }
 console.log(`TỔNG ${rows.length} trường; đang hiện ${rows.filter(r => r.visible).length}; ẩn ${rows.filter(r => !r.visible).length}`);
 for (const sec of ['thanh toán', 'giao hàng', 'ghi chú', 'cổng thanh toán', 'khác']) {
   const rs = rows.filter(r => r.section === sec); if (!rs.length) continue;
   console.log(`## ${sec} (${rs.length})`);
   for (const r of rs) console.log(`F| ${r.visible ? 'HIỆN' : 'ẨN '} | ${r.required ? 'BẮT BUỘC' : 'tùy chọn'} | ${r.name} | ${r.type} | ${r.label}`);
 }
+
+if (process.env.EXPECT_NO_ATTRIBUTION === '1') { const n = rows.filter(r => /^wc_order_attribution_/.test(r.name)).length; console.log(n ? `KẾT LUẬN: CHƯA ĐẠT (còn ${n} trường theo dõi nguồn đơn): cần gỡ` : 'KẾT LUẬN: ĐẠT (không còn trường theo dõi nguồn đơn)'); if (n) process.exitCode = 4; }
