@@ -19,18 +19,28 @@ export function priceLabelRows(products,policyId,{copies=1,qrMode='sku',origin='
   return Array.from({length:copies},()=>({sku:String(p.sku),name:String(p.name),price:Math.round(price),qrText:qrMode==='sku'?String(p.sku):origin+'/#/products/'+encodeURIComponent(p.sku)}));
  });
 }
+/** Tách sản phẩm in được (đang bán, đã duyệt, có giá ở bảng đã chọn) và lý do bỏ qua từng mã còn lại. */
+export function splitPrintable(products,policyId){
+ const ok=[],skipped=[];
+ for(const p of products){const price=Array.isArray(p.prices)?p.prices.find(v=>v.policyId===policyId)?.price:p.prices?.[policyId];
+  if(p.active===false||p.approvalStatus&&p.approvalStatus!=='approved')skipped.push({sku:p.sku,reason:'ngừng bán hoặc chưa duyệt'});
+  else if(typeof price!=='number'||!Number.isFinite(price)||price<0)skipped.push({sku:p.sku,reason:'chưa có giá bán lẻ + VAT'});
+  else ok.push(p);}
+ return {ok,skipped};
+}
 const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=String(text);return n;};
 const money=n=>Number(n).toLocaleString('vi-VN',{maximumFractionDigits:0});
 const field=(text,input)=>{const l=el('label');l.append(el('span','',text),input);return l;};
 function input(label,value,min,max){const n=el('input');n.type='number';n.value=value;n.min=min;n.max=max;n.step='any';n.setAttribute('aria-label',label);return n;}
 function select(label,options){const n=el('select');n.setAttribute('aria-label',label);for(const [value,name]of options){const o=el('option','',name);o.value=value;n.append(o);}return n;}
-export async function loadLabelProducts(api,skus){
+export async function loadLabelProducts(api,skus,{allowMissing=false}={}){
  if(!skus.length||skus.length>300)throw Error('Chọn từ 1 đến 300 sản phẩm để in tem.');
  const found=new Map();let policies=[];
  for(let start=0;start<skus.length;start+=50){const data=await api('/products?'+new URLSearchParams({skus:skus.slice(start,start+50).join(',')}));
   policies=data.policies||data.pricePolicies||policies;for(const p of data.products)found.set(p.sku,p);
  }
- return {products:skus.map(sku=>{const p=found.get(sku);if(!p)throw Error(sku+': không tìm thấy sản phẩm để in.');return p;}),policies};
+ const missing=skus.filter(sku=>!found.has(sku));if(missing.length&&!allowMissing)throw Error(missing[0]+': không tìm thấy sản phẩm để in.');
+ return {products:skus.filter(sku=>found.has(sku)).map(sku=>found.get(sku)),policies,missing};
 }
 function qrImage(writer,value){
  // ZXing EncodeHintType: ERROR_CORRECTION=0, CHARACTER_SET=1, MARGIN=5.
@@ -68,25 +78,37 @@ function fitLabels(root){
  if(tooLong.length)throw Error('Nội dung tem quá dài tại '+[...new Set(tooLong)].join(', ')+'. Tăng kích thước tem để in đủ chữ.');
 }
 /** Read-only labels. No quotation, inventory, price or approval writes. */
-export async function openPriceLabels({api,skus,origin=location.origin}){
- const data=await loadLabelProducts(api,skus),policies=retailVatPolicies(data.policies);
+/**
+ * `skipUnavailable` (in từ báo giá): mã không có trong danh mục, ngừng bán hoặc chưa có giá bán lẻ + VAT được bỏ qua và liệt kê,
+ * thay vì chặn cả lượt in. Trang Sản phẩm giữ cách cũ: báo lỗi ngay mã đầu tiên.
+ */
+export async function openPriceLabels({api,skus,origin=location.origin,skipUnavailable=false,title='In nhanh tem giá',copiesFor=null}){
+ const data=await loadLabelProducts(api,skus,{allowMissing:skipUnavailable}),policies=retailVatPolicies(data.policies);
+ if(!data.products.length)throw Error('Các mã trong báo giá chưa có trong danh mục sản phẩm nên chưa in được tem.');
  if(!policies.length)throw Error('Chưa có bảng giá Giá bán lẻ + VAT. Cần cấu hình đúng bảng giá trước khi in.');
  const library=await loadBarcodeLibrary(),writer=new library.BrowserQRCodeSvgWriter(),qrCache=new Map(),qrFor=value=>{if(!qrCache.has(value))qrCache.set(value,qrImage(writer,value));return qrCache.get(value);};
  const modal=el('dialog','modal price-label-dialog'),form=el('form'),head=el('div','modal-head'),body=el('div','modal-body price-label-config'),foot=el('div','modal-foot');modal.setAttribute('aria-label','In tem giá');modal.dataset.mobileActions='off';
- head.append(el('h2','','In nhanh tem giá'));const close=el('button','btn secondary','Đóng');close.type='button';close.dataset.mobileInline='';close.onclick=()=>modal.close();
+ head.append(el('h2','',title));const close=el('button','btn secondary','Đóng');close.type='button';close.dataset.mobileInline='';close.onclick=()=>modal.close();
  const template=select('Mẫu tem',[['lock','LocknLock'],['minhlong','Minh Long']]);template.value=data.products.every(p=>/lock/i.test(p.brand||p.name))?'lock':'minhlong';
  const policy=select('Bảng giá tem',policies.map(p=>[p.id,p.name]));if(policies.length>1){policy.prepend(Object.assign(el('option','','Chọn đúng bảng giá'),{value:''}));policy.value='';}
  const width=input('Rộng tem (mm)',templates[template.value].width,45,210),height=input('Cao tem (mm)',templates[template.value].height,30,297),margin=input('Lề A4 (mm)',0,0,15),copies=input('Số tem mỗi sản phẩm',1,1,100),qr=select('Nội dung QR',[['sku','Mã SKU (quét tìm hàng tại POS)'],['link','Link chi tiết CRM (cần đăng nhập)']]);copies.step='1';
- const controls=el('div','price-label-fields');controls.append(field('Mẫu tem',template),field('Giá bán lẻ + VAT',policy),field('Rộng tem (mm)',width),field('Cao tem (mm)',height),field('Lề A4 (mm)',margin),field('Số tem mỗi sản phẩm',copies),field('Nội dung QR',qr));
- const summary=el('p','price-label-summary'),error=el('p','error');error.setAttribute('role','alert');
+ const copiesMode=select('Số tem',[['fixed','Số tem cố định mỗi mã'],['quote','Theo số lượng trong báo giá (tối đa 100/mã)']]);
+ const controls=el('div','price-label-fields');controls.append(field('Mẫu tem',template),field('Giá bán lẻ + VAT',policy),field('Rộng tem (mm)',width),field('Cao tem (mm)',height),field('Lề A4 (mm)',margin));if(copiesFor)controls.append(field('Số tem',copiesMode));controls.append(field('Số tem mỗi sản phẩm',copies),field('Nội dung QR',qr));
+ const syncCopies=()=>{copies.closest('label').hidden=!!copiesFor&&copiesMode.value==='quote';};copiesMode.addEventListener('change',()=>{syncCopies();render();});syncCopies();
+ const summary=el('p','price-label-summary'),skippedNote=el('p','price-label-skipped'),error=el('p','error');error.setAttribute('role','alert');skippedNote.hidden=true;
  const hint=el('p','muted small','Giá lấy nguyên từ bảng bán lẻ + VAT, không cộng thuế lần nữa. Lề 0 mm cần máy in hỗ trợ sát mép; chọn 3 mm nếu máy in có lề cứng. In ở tỷ lệ 100%, tắt đầu/chân trang.');
  const frame=el('div','price-label-preview-frame'),preview=el('div','price-label-preview');frame.append(preview);
- const print=el('button','btn primary','In A4');print.type='submit';print.dataset.mobilePrimary='';foot.append(close,print);body.append(controls,summary,hint,error,frame);form.append(head,body,foot);modal.append(form);document.body.append(modal);
+ const print=el('button','btn primary','In A4');print.type='submit';print.dataset.mobilePrimary='';foot.append(close,print);body.append(controls,summary,skippedNote,hint,error,frame);form.append(head,body,foot);modal.append(form);document.body.append(modal);
  let job=null,busy=false,revision=0;
  function scale(){const value=frame.clientWidth/(210*96/25.4);preview.style.transform='scale('+value+')';frame.style.height=frame.clientWidth*297/210+'px';}
  async function render(){const current=++revision;error.textContent='';print.disabled=true;job=null;try{
   if(!policy.value)throw Error('Chọn bảng Giá bán lẻ + VAT dùng cho tem.');
-  const layout=labelLayout({width:Number(width.value),height:Number(height.value),margin:Number(margin.value)}),rows=priceLabelRows(data.products,policy.value,{copies:Number(copies.value),qrMode:qr.value,origin});
+  let products=data.products,skipped=(data.missing||[]).map(sku=>({sku,reason:'không có trong danh mục'}));
+  if(skipUnavailable){const split=splitPrintable(products,policy.value);products=split.ok;skipped=[...skipped,...split.skipped];}
+  skippedNote.hidden=!skipped.length;skippedNote.textContent=skipped.length?'Bỏ qua '+skipped.length+' mã: '+skipped.slice(0,8).map(x=>x.sku+' ('+x.reason+')').join(', ')+(skipped.length>8?'…':''):'';
+  if(!products.length)throw Error('Không còn mã nào in được với bảng giá đã chọn.');
+  const layout=labelLayout({width:Number(width.value),height:Number(height.value),margin:Number(margin.value)}),rows=copiesFor&&copiesMode.value==='quote'?products.flatMap(p=>priceLabelRows([p],policy.value,{copies:Math.max(1,Math.min(100,copiesFor(p.sku)||1)),qrMode:qr.value,origin})):priceLabelRows(products,policy.value,{copies:Number(copies.value),qrMode:qr.value,origin});
+  if(rows.length>1000)throw Error('Tối đa 1.000 tem/lần. Giảm số tem mỗi mã.');
   const pages=buildLabelPages(rows,template.value,layout,qrFor);preview.replaceChildren(pages[0]);
   await document.fonts.ready;await readyImages(preview);if(!modal.open||current!==revision)return;fitLabels(preview);scale();
   summary.textContent=rows.length+' tem · '+layout.columns+' cột × '+layout.rows+' hàng · '+layout.perPage+' tem/A4 · '+pages.length+' tờ. Xem trước trang 1.';
