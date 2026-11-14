@@ -99,8 +99,8 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   let v = (await call(`/purchase-orders/${id}`, mgr)).data;
   assert.equal((await call(`/purchase-orders/${id}/approve`, emp, 'POST', {})).status, 403, 'chỉ Manager duyệt');
   assert.equal((await call(`/purchase-orders/${id}/receipts`, mgr, 'POST', { clientKey: 'k-00000001', warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 1 }] })).status, 409, 'chưa duyệt chưa nhận');
-  assert.equal((await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100 }] })).status, 400, 'thiếu giá đĩa');
-  const ap = await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100, purchaseDiscount: 10 }, { lineId: v.lines[1].id, price: 200 }],
+  assert.equal((await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { internalNo: 'ML-FIXTURE', lines: [{ lineId: v.lines[0].id, price: 100 }] })).status, 400, 'thiếu giá đĩa');
+  const ap = await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { internalNo: 'ML-FIXTURE', lines: [{ lineId: v.lines[0].id, price: 100, purchaseDiscount: 10 }, { lineId: v.lines[1].id, price: 200 }],
     payment: { deposit: { mode: 'percent', value: 30, dueDate: '2026-01-05' }, balanceDueDate: '2099-01-01' } });
   assert.equal(ap.status, 200, JSON.stringify(ap.data)); v = ap.data;
   assert.equal(v.state, 'awaiting_confirmation'); assert.equal(v.totals.total, 1900);
@@ -206,7 +206,7 @@ test('việc tự sinh + sơ đồ: chờ duyệt → chờ xác nhận → nh�
   await call(`/purchase-orders/${id}/submit`, emp, 'POST', { revision: v.revision });
   assert.deepEqual(await keys(), [['po-approve', 'manager']]);
   v = (await call(`/purchase-orders/${id}`, mgr)).data;
-  await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100 }], payment: { balanceDueDate: today } });
+  await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { internalNo: 'ML-FIXTURE', lines: [{ lineId: v.lines[0].id, price: 100 }], payment: { balanceDueDate: today } });
   assert.deepEqual(await keys(), [['po-confirm', 'manager'], ['po-pay', 'accounting']]);
   await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
   assert.deepEqual((await keys()).map(k => k[0]).sort(), ['po-pay'] /* Nhắc nhận hàng đã chuyển sang receivingReminders lúc 08:00, có test riêng. */);
@@ -230,7 +230,7 @@ test('email NCC: hỏi tồn (ai xem đơn cũng gửi, không kèm giá) / gử
   assert.equal((await call(`/purchase-orders/${id}/mail`, emp, 'POST', { kind: 'order' })).status, 403, 'nhân viên không gửi đơn (có giá)');
   assert.equal((await call(`/purchase-orders/${id}/mail`, mgr, 'POST', { kind: 'order' })).status, 409, 'chưa duyệt chưa gửi đơn');
   const v = (await call(`/purchase-orders/${id}`, mgr)).data;
-  await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100 }], supplierEmail: 'chot@ncc.vn' });
+  await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { internalNo: 'ML-FIXTURE', lines: [{ lineId: v.lines[0].id, price: 100 }], supplierEmail: 'chot@ncc.vn' });
   const order = await call(`/purchase-orders/${id}/mail`, mgr, 'POST', { kind: 'order' });
   assert.equal(order.data.to, 'chot@ncc.vn', 'dùng người nhận Manager chốt khi duyệt');
   assert.equal((await call(`/purchase-orders/${id}/mail`, kho, 'POST', { kind: 'order' })).status, 403);
@@ -251,7 +251,7 @@ test('gửi email đơn đặt hàng từ máy chủ (Resend): kèm PDF, ngườ
   assert.equal((await call(`/purchase-orders/${id}/send-email`, emp, 'POST', { pdf })).status, 403, 'nhân viên không gửi đơn có giá');
   assert.equal((await call(`/purchase-orders/${id}/send-email`, mgr, 'POST', { pdf })).status, 409, 'chưa duyệt chưa gửi');
   const v = (await call(`/purchase-orders/${id}`, mgr)).data;
-  await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100 }], supplierEmail: 'chot@ncc.vn', cc: ['kt@ncc.vn'] });
+  await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { internalNo: 'ML-FIXTURE', lines: [{ lineId: v.lines[0].id, price: 100 }], supplierEmail: 'chot@ncc.vn', cc: ['kt@ncc.vn'] });
   assert.equal((await call(`/purchase-orders/${id}/send-email`, mgr, 'POST', { pdf: Buffer.from('<html>').toString('base64') })).status, 400, 'không phải PDF');
   assert.equal((await call(`/purchase-orders/${id}/send-email`, mgr, 'POST', {})).status, 400);
   const r = await call(`/purchase-orders/${id}/send-email`, kt, 'POST', { pdf, to: 'ke-gian@evil.test' });
@@ -267,7 +267,7 @@ test('gửi email đơn đặt hàng từ máy chủ (Resend): kèm PDF, ngườ
   // Manager lập đơn từ HĐKT do emp phụ trách → CC cả Manager (người lập) và emp (người phụ trách chứng từ).
   const id3 = (await call('/purchase-orders', mgr, 'POST', { orders: [{ supplierId: a, warehouse: '12 Đường Giao Hàng', lines: [{ sku: 'LY1', quantity: 4, sources: [{ type: 'order', id: 'o1', quantity: 4 }] }] }] })).data.ids[0];
   const v3 = (await call(`/purchase-orders/${id3}`, mgr)).data;
-  await call(`/purchase-orders/${id3}/approve`, mgr, 'POST', { lines: [{ lineId: v3.lines[0].id, price: 100 }] });
+  await call(`/purchase-orders/${id3}/approve`, mgr, 'POST', { internalNo: 'ML-FIXTURE', lines: [{ lineId: v3.lines[0].id, price: 100 }] });
   assert.equal((await call(`/purchase-orders/${id3}/send-email`, mgr, 'POST', { pdf })).status, 200);
   assert.deepEqual(sent[1].body.cc, ['mgr@x.vn', 'emp@x.vn', 'luu@bn.test', 'KT@ncc.vn']);
   fail = 401;
@@ -277,7 +277,7 @@ test('gửi email đơn đặt hàng từ máy chủ (Resend): kèm PDF, ngườ
   const none = await setup();
   const id2 = (await none.call('/purchase-orders', none.mgr, 'POST', { orders: [{ supplierId: none.a, warehouse: '12 Đường Giao Hàng', lines: [{ sku: 'LY1', quantity: 1 }] }] })).data.ids[0];
   const v2 = (await none.call(`/purchase-orders/${id2}`, none.mgr)).data;
-  await none.call(`/purchase-orders/${id2}/approve`, none.mgr, 'POST', { lines: [{ lineId: v2.lines[0].id, price: 100 }] });
+  await none.call(`/purchase-orders/${id2}/approve`, none.mgr, 'POST', { internalNo: 'ML-FIXTURE', lines: [{ lineId: v2.lines[0].id, price: 100 }] });
   const nc = await none.call(`/purchase-orders/${id2}/send-email`, none.mgr, 'POST', { pdf });
   assert.equal(nc.status, 503); assert.equal(nc.data.code, 'mail_not_configured');
 });
@@ -298,7 +298,7 @@ test('lưu giá nhập khi chưa duyệt: chỉ Manager, đơn vẫn nháp, ô g
   assert.equal((await call(`/purchase-orders/${id}/prices`, mgr, 'POST', body)).status, 409, 'revision cũ bị từ chối');
   assert.ok(r.data.events.some((e: any) => e.summary === 'Lưu giá nhập 1/2 dòng (chưa duyệt)'));
   // Duyệt sau đó dùng giá đã lưu cho dòng không gửi lại giá.
-  const ok = await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { revision: r.data.revision, lines: [{ lineId: l2.id, price: 1000, purchaseDiscount: 25, taxRate: 10 }] });
+  const ok = await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { internalNo: 'ML-FIXTURE', revision: r.data.revision, lines: [{ lineId: l2.id, price: 1000, purchaseDiscount: 25, taxRate: 10 }] });
   assert.equal(ok.status, 200, JSON.stringify(ok.data)); assert.equal(ok.data.lines.find((l: any) => l.id === l1.id).price, 74000); assert.equal(ok.data.lines.find((l: any) => l.id === l1.id).purchaseDiscount, 19);
 });
 
@@ -454,7 +454,7 @@ test('Sale Admin/Kế toán: đủ sáu thao tác đơn mua trên API, giữ ch�
     assert.equal(made.status,201,JSON.stringify(made.data));const id=made.data.ids[0];
     const draft=(await s.call('/purchase-orders/'+id,s.mgr)).data;
     assert.equal((await s.call(`/purchase-orders/${id}/approve`,cookie,'POST',{})).status,403);
-    const ap=await s.call(`/purchase-orders/${id}/approve`,s.mgr,'POST',{lines:draft.lines.map((l:any)=>({lineId:l.id,price:100}))});
+    const ap=await s.call(`/purchase-orders/${id}/approve`,s.mgr,'POST',{internalNo:'ML-FIXTURE',lines:draft.lines.map((l:any)=>({lineId:l.id,price:100}))});
     assert.equal(ap.status,200,JSON.stringify(ap.data));
     const view=(await s.call('/purchase-orders/'+id,cookie)).data;
     for(const action of ['confirm','receive','pay','schedule','pdf']) assert.ok(view.actions.includes(action),action);
@@ -527,7 +527,7 @@ test('Sale Admin thiếu purchases.prices: đủ nút trên đơn đã duyệt, 
     const made=await s.call('/purchase-orders',s.emp,'POST',{orders:[{supplierId:s.a,warehouse:'Kho nhận',lines:[{sku:'LY1',quantity:2}]}]});
     assert.equal(made.status,201,JSON.stringify(made.data));return made.data.ids[0];
   };
-  const approve=async(id:string)=>{const d=(await s.call('/purchase-orders/'+id,s.mgr)).data;const r=await s.call(`/purchase-orders/${id}/approve`,s.mgr,'POST',{lines:d.lines.map((l:any)=>({lineId:l.id,price:100}))});assert.equal(r.status,200,JSON.stringify(r.data));};
+  const approve=async(id:string)=>{const d=(await s.call('/purchase-orders/'+id,s.mgr)).data;const r=await s.call(`/purchase-orders/${id}/approve`,s.mgr,'POST',{internalNo:'ML-FIXTURE',lines:d.lines.map((l:any)=>({lineId:l.id,price:100}))});assert.equal(r.status,200,JSON.stringify(r.data));};
   const id=await make();
   const draft=(await s.call('/purchase-orders/'+id,s.sa)).data;
   assert.equal(draft.priceHidden,true);assert.equal(draft.totals,null);assert.equal(draft.actions.includes('approve'),false);assert.equal(draft.actions.includes('pdf'),false);

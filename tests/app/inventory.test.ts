@@ -59,7 +59,7 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   const sup = (await call('/suppliers', mgr, 'POST', { name: 'Minh Long', contacts: [{ kind: 'order', email: 'ml@ncc.vn' }] })).data.supplier.id;
   const po = await call('/purchase-orders', mgr, 'POST', { orders: [{ supplierId: sup, warehouse: '12 Đường Giao Hàng', lines: [{ sku: 'LY1', quantity: 6 }] }] }); assert.equal(po.status, 201, JSON.stringify(po.data)); const id = po.data.ids[0];
   const v = (await call(`/purchase-orders/${id}`, mgr)).data;
-  await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { lines: [{ lineId: v.lines[0].id, price: 100 }] });
+  await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { internalNo: 'ML-FIXTURE', lines: [{ lineId: v.lines[0].id, price: 100 }] });
   await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
   const rc = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-12345678', warehouse: ' kho cần thơ ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }], photos: ['data:image/jpeg;base64,/9j/4AAA'] });
   assert.equal(rc.status, 201, JSON.stringify(rc.data));

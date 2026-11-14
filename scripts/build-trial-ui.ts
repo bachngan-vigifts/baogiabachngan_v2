@@ -26,6 +26,9 @@ export const PRODUCT_SEARCH_OUT = join(root, 'trial-ui', 'product-search.js');
 export const EARLY_ORDER_SOURCES_OUT = join(root, 'trial-ui', 'early-order-sources.js');
 export const bundleEarlyOrderSources = () => bundle('src/modules/suppliers/domain/early-order-sources.ts');
 
+export const SUPPLIER_ORDER_NUMBER_OUT = join(root, 'trial-ui', 'supplier-order-number.js');
+export const bundleSupplierOrderNumber = () => bundle('src/modules/suppliers/domain/order-number.ts');
+
 function bundle(entry: string): string {
   const result = buildSync({
     entryPoints: [join(root, entry)],
@@ -37,7 +40,7 @@ export const bundleQuoteMath = () => bundle('src/modules/quotes/domain/quote-mat
 export const bundleProductSearch = () => bundle('src/modules/catalog/domain/product-search.ts');
 
 if (process.argv[1] && import.meta.filename === process.argv[1]) {
-  for (const [out, code] of [[CUSTODY_CONTRACT_OUT,bundleProductCustody()], [CUSTOMER_ANNIVERSARY_OUT,bundleCustomerAnniversary()], [POS_CATALOG_BRAND_OUT,bundlePosCatalogBrand()], [DOCUMENT_NUMBER_OUT, bundleDocumentNumber()], [QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()], [POS_CUSTOMER_OUT, bundlePosCustomer()], [EARLY_ORDER_SOURCES_OUT,bundleEarlyOrderSources()]] as const) {
+  for (const [out, code] of [[SUPPLIER_ORDER_NUMBER_OUT,bundleSupplierOrderNumber()], [CUSTODY_CONTRACT_OUT,bundleProductCustody()], [CUSTOMER_ANNIVERSARY_OUT,bundleCustomerAnniversary()], [POS_CATALOG_BRAND_OUT,bundlePosCatalogBrand()], [DOCUMENT_NUMBER_OUT, bundleDocumentNumber()], [QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()], [POS_CUSTOMER_OUT, bundlePosCustomer()], [EARLY_ORDER_SOURCES_OUT,bundleEarlyOrderSources()]] as const) {
     if (readFileSync(out, { encoding: 'utf8', flag: 'a+' }) !== code) writeFileSync(out, code);
     console.log('Đã ghi', out);
   }
