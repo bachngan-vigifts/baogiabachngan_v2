@@ -707,7 +707,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const err = errorBox(), status = el('p', 'muted small'); status.setAttribute('role', 'status');
     let catalogRequested = false;
     async function catalog() {
-      if (catalogRequested || kind.value === 'pdf') return; catalogRequested = true;
+      if (catalogRequested || kind.value === 'pdf' || kind.value === 'lock') return; catalogRequested = true;
       status.textContent = 'Đang bổ sung hoa văn và quy cách từ danh mục…';
       try {
         const skus = [...new Set(v.lines.map(l => l.sku))];
@@ -725,11 +725,11 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       } catch { if (dlg.open) status.textContent = 'Không lấy được quy cách từ danh mục; anh/chị có thể nhập bổ sung.'; }
     }
     const updateKind = () => {
-      if (kind.value === 'lock') entity.value = 'VG';
       entity.disabled = kind.value === 'lock';
-      entity.title = kind.value === 'lock' ? 'Mẫu Lock dùng pháp nhân VIGIFTS.' : '';
+      entity.title = kind.value === 'lock' ? 'Mẫu Lock để trống thông tin khách hàng theo mẫu đã duyệt.' : '';
       logo.hidden = kind.value !== 'minh-long-logo';
-      specs.hidden = kind.value === 'pdf';
+      specs.hidden = kind.value === 'pdf' || kind.value === 'lock';
+      hint.textContent = kind.value === 'lock' ? 'Mẫu Lock giữ công thức và danh mục gốc; điền mã hàng, số lượng đặt. Cột xác nhận số lượng để trống cho NCC.' : 'Các ô bổ sung chỉ dùng cho file tải về. Mã ERP hoặc quy cách chưa có dữ liệu sẽ để trống.';
       catalog();
     };
     kind.addEventListener('change', updateKind);
