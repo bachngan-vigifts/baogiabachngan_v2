@@ -252,6 +252,10 @@ if (docroot) {
       const r = await getText(`${home}/.cl.selector`, f.file, 20000);
       a.clSelector[f.file] = r.ok ? r.text.split('\n').map(l => redact(l.trim())).filter(Boolean).slice(0, 60) : r;
     }
+    const feat = await call('Features', 'list_features');
+    a.allFeatures = feat.ok ? (Array.isArray(feat.data) ? feat.data : Object.keys(feat.data || {})).map(x => (typeof x === 'object' ? x.id || x.name : x)).filter(Boolean).map(String).sort() : feat;
+    const clw = await listDir(`${home}/.clwpos`);
+    a.clwpos = Array.isArray(clw) ? clw.map(f => `${f.type === 'dir' ? 'd' : 'f'}:${f.file}`) : clw;
     // 2) Rà mu-plugins (chỉ thống kê móc/hàm rủi ro, không in mã)
     const mu = await listDir(`${docroot}/wp-content/mu-plugins`);
     a.muPlugins = {};
