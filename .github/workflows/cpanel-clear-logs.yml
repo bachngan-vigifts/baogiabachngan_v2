@@ -1,0 +1,52 @@
+# Làm rỗng 2 file log lỗi PHP của web Lock trên hosting (logs/php.error.log và <thư mục web>/error_log).
+# Chạy từ nhánh khi file đánh dấu .github/cpanel-clear-logs.run đổi (nội dung: dry-run hoặc apply). Không có file thì bỏ qua.
+# Khóa cứng đúng 2 đường dẫn; tự dừng nếu web lỗi. Không in token/tên đăng nhập/máy chủ.
+name: Làm rỗng log lỗi PHP
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run = chỉ kiểm tra; apply = thực hiện'
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/cpanel-clear-logs.run']
+concurrency: cpanel-clear-logs
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Xác định chế độ
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            if [ -f .github/cpanel-clear-logs.run ]; then m=$(tr -d ' \r\n' < .github/cpanel-clear-logs.run); else m=skip; fi
+          else m="${{ inputs.mode }}"; fi
+          case "$m" in dry-run|apply) ;; *) m=skip ;; esac
+          echo "Chế độ: $m"
+          echo "mode=$m" >> "$GITHUB_OUTPUT"
+      - name: Làm rỗng log lỗi PHP
+        if: steps.mode.outputs.mode != 'skip'
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: node scripts/maintenance/cpanel-clear-logs.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cpanel-clear-logs
+          path: cpanel-clear-logs.json
+          retention-days: 3
+          if-no-files-found: ignore
