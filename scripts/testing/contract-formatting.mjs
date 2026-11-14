@@ -11,22 +11,27 @@ const server=createServer(async(req,res)=>{try{
  res.end(path==='/'?'<!doctype html><html><body><main></main></body></html>':await readFile(root+path));
 }catch(e){res.writeHead(404).end(String(e.message));}}).listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
 const origin='http://127.0.0.1:'+server.address().port;
-const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});
 const dir='/workspace/scratch/contract-formatting';await mkdir(dir,{recursive:true});
 const results=[];
 try{for(const brand of ['BN','VG']){
  const page=await browser.newPage({viewport:{width:1440,height:1100}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin);
  for(const f of ['style.css','typography.css','mobile-design.css'])await page.addStyleTag({url:origin+'/'+f});
- await page.evaluate(async brand=>{
+ const base=JSON.parse(await readFile(new URL('../../src/modules/sales/domain/contract-template-manifest.json',import.meta.url),'utf8'))[brand];
+ await page.evaluate(async ({brand,base})=>{
   const {openContractDocs}=await import('/contract-ui.js');
-  const detail={order:{id:'o',quoteType:brand==='VG'?'VIGIFTS':'B2B',quoteNo:'BG_TEST',customerName:'Khách kiểm thử',contact:'Trần Văn An',address:'Kho thử',subtotal:300000,tax:24000,total:324000},contract:{id:'k',contractNo:'TEST/2026',legalEntity:brand,canEdit:true,canEditFinancial:true,revision:1,signedDate:'2026-11-14',depositRate:30,paymentDays:15,data:{}},lines:[{sku:'SP1',name:'Sản phẩm minh họa',unit:'Bộ',qty:2,unitPrice:150000,amount:300000,taxRate:8}]};
-  const api=async(path,method,body)=>{if(method==='PUT'){await new Promise(r=>setTimeout(r,250));globalThis.savedBody=structuredClone(body);return {ok:true};}return {};};
+  const detail={order:{id:'o',quoteType:brand==='VG'?'VIGIFTS':'B2B',quoteNo:'BG_TEST',customerName:'Khách kiểm thử',contact:'Trần Văn An',address:'Kho thử',subtotal:300000,tax:24000,total:324000},contract:{id:'k',contractNo:'TEST/2026',legalEntity:brand,canEdit:true,canEditFinancial:true,canManageTemplates:true,revision:1,signedDate:'2026-11-14',depositRate:30,paymentDays:15,data:{}},lines:[{sku:'SP1',name:'Sản phẩm minh họa',unit:'Bộ',qty:2,unitPrice:150000,amount:300000,taxRate:8}]};
+  let master={brand,revision:0,sourceHash:base.sourceHash,edits:[],locked:base.paragraphs.filter(p=>p.locked).map(p=>p.index)};
+  const api=async(path,method,body)=>{if(path.startsWith('/contract-templates/')){if(method==='PUT'){master={...master,...body,revision:master.revision+1};globalThis.savedMaster=structuredClone(master);}return structuredClone(master);}if(method==='PUT'){await new Promise(r=>setTimeout(r,250));globalThis.savedBody=structuredClone(body);return {ok:true};}return {};};
   globalThis.toasts=[];globalThis.fixture={detail,api,toast:(message,kind)=>toasts.push({message,kind})};await openContractDocs(fixture);
- },brand);
+ },{brand,base});
  const ready=()=>page.waitForFunction(()=>!document.querySelector('.contract-docs')?.matches('[aria-busy="true"]')&&document.querySelector('.cd-frame')?.contentDocument.querySelector('[data-word-index]'));
  await ready();const frame=page.frameLocator('.cd-frame'),p=frame.locator('[data-word-index]').filter({hasText:'Sản phẩm minh họa'}).first();
  await p.fill('Sản phẩm minh họa | chữ thử định dạng <nội dung> & ký hiệu');
  const selectText=()=>p.evaluate(p=>{const walker=p.ownerDocument.createTreeWalker(p,NodeFilter.SHOW_TEXT);let n;while(n=walker.nextNode()){const start=n.textContent.indexOf('chữ thử');if(start>=0){const r=p.ownerDocument.createRange();r.setStart(n,start);r.setEnd(n,start+7);p.focus();const s=p.ownerDocument.getSelection();s.removeAllRanges();s.addRange(r);return;}}throw Error('text selection missing');});
+ assert.equal(await page.locator('[data-format]').isHidden(),true);
+ await page.locator('[data-format-toggle]').click();
+ assert.equal(await page.locator('[data-format-toggle]').getAttribute('aria-expanded'),'true');
  await p.click();await page.waitForTimeout(50);if(await page.getByRole('button',{name:'Đậm',exact:true}).getAttribute('aria-pressed')==='true')await page.getByRole('button',{name:'Đậm',exact:true}).click();
  await selectText();await page.getByRole('button',{name:'Đậm',exact:true}).click();await page.getByRole('button',{name:'Nghiêng',exact:true}).click();await page.getByRole('button',{name:'Gạch chân',exact:true}).click();await page.getByRole('button',{name:'Gạch ngang',exact:true}).click();
  await page.getByRole('combobox',{name:'Phông chữ',exact:true}).selectOption('Arial');await page.getByRole('combobox',{name:'Cỡ chữ',exact:true}).selectOption('18');await page.getByRole('combobox',{name:'Màu chữ',exact:true}).selectOption('1D4ED8');
@@ -63,7 +68,15 @@ try{for(const brand of ['BN','VG']){
  // Both operation failure and success restore the explicit action label.
  await page.evaluate(()=>{globalThis.oldPrepare=ContractDocument.prepareDocument;ContractDocument.prepareDocument=async()=>{throw Error('Fixture failure');};});await page.locator('[data-one]').click();await page.waitForFunction(()=>toasts.some(t=>t.message==='Fixture failure'));assert.equal(await page.locator('[data-one]').textContent(),'Tải Word (.docx)');assert.equal(await page.locator('[data-one]').isEnabled(),true);await page.evaluate(()=>ContractDocument.prepareDocument=oldPrepare);
  for(const width of [1440,390]){await page.setViewportSize({width,height:1000});assert.equal(await page.locator('.contract-docs').evaluate(d=>d.scrollWidth<=d.clientWidth),true);assert.equal(await page.locator('.contract-docs .modal-foot').evaluate(d=>d.getBoundingClientRect().bottom<=innerHeight),true);await page.screenshot({path:dir+'/'+brand+'-'+width+'.png'});}
- await page.locator('.modal-foot [data-x]').click();await page.evaluate(async()=>{fixture.detail.contract.canEdit=false;fixture.detail.contract.canEditFinancial=false;const {openContractDocs}=await import('/contract-ui.js');await openContractDocs(fixture);});await page.waitForFunction(()=>!document.querySelector('.contract-docs').matches('[aria-busy="true"]'));
+ // Original template mode uses the same dialog; saving it never updates this contract.
+ await page.locator('[data-template]').click();await page.waitForFunction(()=>document.querySelector('[data-save]').textContent==='Lưu mẫu chung');await ready();
+ assert.equal(await page.locator('.cd-form').isHidden(),true);assert.equal(await page.locator('[data-format]').isHidden(),true);
+ assert.match(await frame.locator('body').innerText(),/<<\[/);
+ await frame.locator('[data-word-index]').first().fill('Điều khoản chung kiểm thử '+brand);
+ await page.locator('[data-save]').click();await page.waitForFunction(()=>globalThis.savedMaster?.revision===1&&document.querySelector('[data-save]').textContent==='Lưu mẫu chung');
+ await page.locator('[data-template]').click();await ready();assert.equal(await frame.locator('body').innerText().then(s=>s.includes('Điều khoản chung kiểm thử')),false);
+ await page.locator('.modal-foot [data-x]').click();await page.evaluate(async()=>{fixture.detail.contract.data.templateSnapshot=savedMaster;const {openContractDocs}=await import('/contract-ui.js');await openContractDocs(fixture);});await ready();assert.match(await frame.locator('body').innerText(),/Điều khoản chung kiểm thử/);
+ await page.locator('.modal-foot [data-x]').click();await page.evaluate(async()=>{fixture.detail.contract.canEdit=false;fixture.detail.contract.canEditFinancial=false;fixture.detail.contract.canManageTemplates=false;const {openContractDocs}=await import('/contract-ui.js');await openContractDocs(fixture);});await page.waitForFunction(()=>!document.querySelector('.contract-docs').matches('[aria-busy="true"]'));
  assert.equal(await page.locator('[data-format]').isHidden(),true);assert.equal(await frame.locator('[contenteditable]').count(),0);assert.equal(await page.locator('[data-save]').isHidden(),true);
- assert.deepEqual(errors,[]);results.push({brand,selectedText:true,saved:true,reopened:true,wordAndZip:true,bbntNumbering:true,readOnly:true,mobile:true});await page.close();
+ assert.deepEqual(errors,[]);results.push({brand,selectedText:true,saved:true,reopened:true,wordAndZip:true,bbntNumbering:true,readOnly:true,mobile:true,sharedTemplate:true});await page.close();
 }console.log(JSON.stringify(results));}finally{await writeFile(dir+'/results.json',JSON.stringify(results,null,2));await browser.close();server.close();}

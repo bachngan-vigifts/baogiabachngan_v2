@@ -1,3 +1,4 @@
+import {registerContractTemplateRoutes,contractTemplateSnapshot} from './contract-templates.ts';
 import {cleanWordEdits} from '../../quotes/domain/quotation-schema.ts';
 import {registerProductionFiles,bindProductionFiles} from './production-files.ts';
 import { ensureLineCosts } from './line-costs.ts';
@@ -456,6 +457,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
   registerCrmReturnRoutes(router, loadOrder);
   registerCashCollectionRoutes(router,loadOrder,async(db,id)=>(await receivableOf(db,[id])).get(id)?.balance||0);
   registerContractLiquidationRoutes(router,loadOrder);
+  registerContractTemplateRoutes(router);
   /** Claw báo kết quả sau khi n8n tạo đơn Sapo; dùng cùng Bearer SAPO_SYNC_TOKEN, không dùng phiên trình duyệt. */
   router.post('/integrations/sapo/order-status', async c => {
     const body = await readJson(c.req, 128_000), status = text(body.status, 40), code = text(body.quote_number ?? body.sapo_order_code, 160);
@@ -629,7 +631,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         canIssueInvoice: canIssueInvoice(viewer(c)), canCreateSapo: !order.sapoOrderId && (canSalesCreateSapo(viewer(c), order) || await canEditOrderInDepartment(c, order)), canEdit: await canEditOrderInDepartment(c, order),
         // Đơn Sapo đã đẩy (mã đang giữ chỗ "pending:…" khi đang đẩy thì chưa tính).
         sapoOrderCode: order.sapoOrderId ? order.sapoOrderCode : null,
-        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines:displayedLines, contract: contract[0] ? { ...contract[0], canEditFinancial: viewer(c).role === 'manager', canEdit: await canEditOrderInDepartment(c, order), data: JSON.parse(contract[0].data) } : null,
+        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines:displayedLines, contract: contract[0] ? { ...contract[0], canManageTemplates: viewer(c).role === 'manager', canEditFinancial: viewer(c).role === 'manager', canEdit: await canEditOrderInDepartment(c, order), data: JSON.parse(contract[0].data) } : null,
       deliveries: ships.map(s => ({ ...s,...confirmations.get(s.id),canConfirm:canConfirmDelivery(viewer(c),order),canCancel:!isWarehouseMember(viewer(c))&&canConfirmDelivery(viewer(c),order),lines: shipLines.filter(l => l.deliveryId === s.id), photos: shipPhotos.get(s.id) ?? [] })),
       // Phiếu đã huỷ vẫn trả về (hiện gạch ngang + lý do) nhưng không tính vào đã thu.
       schedules, payments: payments.map(p => ({ ...p, voidedByName: p.voidedBy ? person(p.voidedBy)?.name ?? '' : '' })),
@@ -1168,7 +1170,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
           id, contractNo, orderId: oid, quoteId: quote.id, customerId: order!.customerId, legalEntity: entity, status: 'draft', signedDate: null,
           value: order!.total, depositRate, depositAmount: Math.round(order!.total * depositRate / 100), paymentDays,
           paymentMethod: text(body.paymentMethod, 1000), deliveryAddress: text(body.deliveryAddress, 2000) || sourceTerms.deliveryAddress || order!.address,
-          data: JSON.stringify(body.details && typeof body.details === 'object' ? body.details : {}), createdBy: me.id, createdAt: now, updatedAt: now,
+          data: JSON.stringify({...(body.details && typeof body.details === 'object' && !Array.isArray(body.details) ? body.details : {}),templateSnapshot:await contractTemplateSnapshot(tx,entity)}), createdBy: me.id, createdAt: now, updatedAt: now,
         });
         // Kỳ phải thu theo HĐKT (cọc + phần còn lại) thay cho kỳ "thanh toán khi giao" mặc định.
         await tx.delete(paymentSchedules).where(eq(paymentSchedules.orderId, oid));
@@ -1237,6 +1239,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
           if(!data.edits||typeof data.edits!=='object'||Array.isArray(data.edits)||Object.keys(data.edits).some(k=>!['HDKT','TAM_UNG','BBNT'].includes(k)))throw new AppError(400,'Loại hồ sơ chỉnh sửa không hợp lệ.');
           data.edits=Object.fromEntries(Object.entries(data.edits).map(([key,value])=>[key,cleanWordEdits(value)]));
         }
+        // Template choice is fixed by the server at creation, never by an edit payload.
+        delete data.templateSnapshot;
+        const originalSnapshot=JSON.parse(contract.data).templateSnapshot;
+        if(originalSnapshot)data.templateSnapshot=originalSnapshot;
         set.data=JSON.stringify(data);
       }
       if (body.syncQuoteTerms === true) {

@@ -55,3 +55,5 @@ export * from '../modules/warehouse-workspace/schema.ts';
 export * from '../modules/accounting/schema.ts';
 export * from '../modules/accounting/supplier-schema.ts';
 export * from '../modules/accounting/import-schema.ts';
+
+export * from '../modules/sales/contract-template-schema.ts';

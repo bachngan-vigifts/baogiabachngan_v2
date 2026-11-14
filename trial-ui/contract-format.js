@@ -17,15 +17,13 @@ export function initContractFormatting({host,doc,record,onError}){
  let active=null,selection=null;
  const node=(tag,text)=>{const n=document.createElement(tag);if(text)n.textContent=text;return n;};
  host.replaceChildren();host.setAttribute('role','group');host.setAttribute('aria-label','Định dạng văn bản');
- const hint=node('p','Bấm vào đoạn văn, bôi đen chữ rồi chọn định dạng. Căn lề, danh sách và giãn dòng áp dụng cho đoạn.');hint.className='small muted cd-format-hint';
  const controls=node('div');controls.className='cd-format-controls';
- const fieldset=node('fieldset');fieldset.disabled=true;fieldset.append(controls);host.append(hint,fieldset);
+ const fieldset=node('fieldset');fieldset.disabled=true;fieldset.append(controls);host.append(fieldset);
  const capture=()=>{
   const s=doc.getSelection();if(!s?.rangeCount)return;const r=s.getRangeAt(0),el=n=>n.nodeType===1?n:n.parentElement;
   const a=el(r.startContainer)?.closest('[data-word-index]'),b=el(r.endContainer)?.closest('[data-word-index]');
-  if(!a||a!==b){active=null;selection=null;fieldset.disabled=true;hint.textContent='Chọn chữ trong một đoạn có thể sửa để dùng thanh định dạng. Các ô đã khóa lấy theo thông tin nguồn hoặc tab HĐKT.';return;}
+  if(!a||a!==b){active=null;selection=null;fieldset.disabled=true;return;}
   active=a;selection=r.cloneRange();fieldset.disabled=false;
-  hint.textContent='Đang sửa đoạn '+(Number(a.dataset.wordIndex)+1)+'. '+(s.isCollapsed?'Bôi đen chữ để định dạng một phần; chưa bôi đen sẽ áp dụng cho cả đoạn.':'Định dạng phần chữ đã bôi đen.');
   for(const button of controls.querySelectorAll('[data-command]'))button.setAttribute('aria-pressed',String(doc.queryCommandState(button.dataset.command)));
  };
  const restore=(whole=false)=>{
