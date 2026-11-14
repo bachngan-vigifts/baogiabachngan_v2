@@ -1,10 +1,7 @@
 # Đọc cấu trúc cửa hàng Web Lock (WooCommerce REST, chỉ GET). Không in thông tin khách, không in khoá.
-# Chạy khi đẩy lên nhánh probe/web-lock-structure (nhánh thăm dò, không merge) hoặc bấm tay sau khi có trên main.
+# Chỉ chạy khi bấm tay (Actions → Đọc cấu trúc Web Lock → Run workflow). Kết quả đầy đủ ở artifact, giữ 3 ngày.
 name: Đọc cấu trúc Web Lock
 on:
-  push:
-    branches: [probe/web-lock-structure]
-    paths: ['scripts/maintenance/probe-woo-lock-structure.mjs', '.github/workflows/probe-woo-lock-structure.yml']
   workflow_dispatch:
 permissions:
   contents: read
