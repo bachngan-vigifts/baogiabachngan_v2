@@ -1,0 +1,18 @@
+# Kiểm tra trang sản phẩm thật của web Lock có đoạn thêm giỏ mới không (chỉ đọc). Chạy khi file .github/check-fragment.run đổi.
+name: Kiểm tra chuỗi làm mới giỏ hàng
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/check-fragment.run']
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: if [ -f .github/check-fragment.run ]; then node scripts/maintenance/check-fragment.mjs; fi
