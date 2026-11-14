@@ -47,6 +47,18 @@ function lnl_checkout_mobile_top_css() {
 
   /* Order note as its own card */
   body.page-template-page-checkout #order_comments_field { background: #fff; border-radius: 12px; padding: 12px 14px; margin: 0 0 12px; }
+  /* Tighten the three checkbox rows */
+  body.page-template-page-checkout .woocommerce-billing-fields > label.woocommerce-form__label-for-checkbox { margin: 0 !important; padding: 2px 0 !important; min-height: 0; }
+  body.page-template-page-checkout #mailpoet_woocommerce_checkout_optin_present_field { display: none; }
+  body.page-template-page-checkout .woocommerce-billing-fields { padding-bottom: 6px; margin-bottom: 4px; }
+  body.page-template-page-checkout .woocommerce-account-fields,
+  body.page-template-page-checkout .woocommerce-shipping-fields { padding: 0 14px; margin: 0 0 2px; }
+  body.page-template-page-checkout .woocommerce-account-fields label,
+  body.page-template-page-checkout #ship-to-different-address label { min-height: 30px; padding: 0; margin: 0; }
+  body.page-template-page-checkout .woocommerce-account-fields .form-row,
+  body.page-template-page-checkout .woocommerce-shipping-fields h3 { margin: 0 !important; padding: 0 !important; }
+  body.page-template-page-checkout .woocommerce-shipping-fields .shipping_address,
+  body.page-template-page-checkout .woocommerce-account-fields div.create-account { margin: 0; padding: 0; }
 }
 CSS;
     return $css;
