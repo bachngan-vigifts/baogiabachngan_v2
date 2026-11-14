@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 const ui = readFileSync(new URL('../../trial-ui/contract-ui.js', import.meta.url), 'utf8');
 const context: any = {};
-runInNewContext(ui.slice(0, ui.indexOf('/** Đổi đơn +')).replaceAll('export ', '') + '\nglobalThis.details = contractDetails;', context);
+runInNewContext(ui.slice(0, ui.indexOf('/** Đổi đơn +')).replace(/^import .*;\n/gm,'').replaceAll('export ', '') + '\nglobalThis.details = contractDetails;', context);
 
 test('đại diện bên A: tách danh xưng khỏi tên cũ; lựa chọn lưu riêng ưu tiên và không đoán theo tên', () => {
   for (const [raw, selected, honorific, name] of [
@@ -54,7 +54,7 @@ test('biên bản: danh xưng theo lựa chọn khi mẫu không có Ông sẵn'
 
 test('đọc ô chọn hiện tại khi dựng hồ sơ dù input không phát; không lấy lại danh xưng cũ', async () => {
   const formContext: any = {};
-  runInNewContext(ui.slice(0, ui.indexOf('/**\n * Mở hộp xem')).replaceAll('export ', '') + '\nglobalThis.readForm = readContractForm;', formContext);
+  runInNewContext(ui.slice(0, ui.indexOf('/**\n * Mở hộp xem')).replace(/^import .*;\n/gm,'').replaceAll('export ', '') + '\nglobalThis.readForm = readContractForm;', formContext);
   const old = { representativeHonorific: 'Ông', representativeName: 'Vũ Thị Lệ Hà', depositRate: 30, paymentDays: 5 };
   const selected = { dataset: { d: 'representativeHonorific' }, value: 'Bà' };
   const form = { querySelectorAll: () => [selected, { dataset: { d: 'depositRate' }, value: '99', readOnly: true }] };

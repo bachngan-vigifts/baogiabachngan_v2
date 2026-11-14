@@ -1332,3 +1332,5 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
  .pos-bill-lines tr { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px;padding:10px 0;border-bottom:1px solid #e2e8f0; }
  .pos-bill-lines td { border:0;padding:0; } .pos-bill-lines td:first-child { grid-column:1/-1; }
  .pos-bill-lines td.num { text-align:left; } .pos-bill-lines td.num::before { content:attr(data-label);display:block;font-size:12px;color:var(--muted,#64748b); } }
+.pos-scan-actions { display:flex;flex-wrap:wrap;gap:10px;margin-top:12px; }
+.pos-scan-actions .btn { flex:1 1 140px;min-height:44px; }

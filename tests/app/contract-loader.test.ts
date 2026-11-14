@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const ui=readFileSync(new URL('../../trial-ui/contract-ui.js',import.meta.url),'utf8');
-const loader=ui.slice(0,ui.indexOf('export const DOCS'))+'\nglobalThis.loadBuilderForTest = loadBuilder;';
+const loader=ui.slice(0,ui.indexOf('export const DOCS')).replace(/^import .*$/gm,'')+'\nglobalThis.loadBuilderForTest = loadBuilder;';
 function fixture(mode:'stale'|'broken'|'network'){
- const calls:string[]=[];let attempts=0,healthy=false;const context:any={};
+ const calls:string[]=[];let attempts=0,healthy=false;const context:any={setTimeout,clearTimeout};
  context.document={createElement:()=>({remove(){}}),head:{append:(script:any)=>queueMicrotask(()=>{
   calls.push(script.src);const file=script.src.split('?')[0];
   if(file==='contract-document.js'){

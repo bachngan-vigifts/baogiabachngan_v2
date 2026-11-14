@@ -1,0 +1,52 @@
+name: Nén lại ảnh sản phẩm
+
+# Chạy tay. Mặc định chỉ đo (không ghi). Chọn "apply" mới ghi đè ảnh trong bucket product-images.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run = chỉ đo; apply = ghi đè ảnh đã nén'
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+      limit:
+        description: 'Chỉ xử lý N ảnh nặng nhất (0 = tất cả)'
+        type: string
+        default: '0'
+      backup:
+        description: 'Khi apply: lưu bản gốc thành artifact 14 ngày'
+        type: boolean
+        default: true
+
+concurrency:
+  group: recompress-product-images
+  cancel-in-progress: false
+
+jobs:
+  recompress:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PROJECT_REF: taceqfnsorewelsbdckg
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      MODE: ${{ inputs.mode }}
+      LIMIT: ${{ inputs.limit }}
+      BACKUP_DIR: ${{ inputs.mode == 'apply' && inputs.backup && 'product-image-originals' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+      - name: Cài thư viện xử lý ảnh (chỉ cho lượt chạy này)
+        run: npm install --no-save --no-package-lock --no-audit --no-fund sharp@0.33.5
+      - name: Nén ảnh
+        run: node scripts/maintenance/recompress-product-images.mjs
+      - name: Lưu bản gốc
+        if: always() && inputs.mode == 'apply' && inputs.backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: product-image-originals
+          path: product-image-originals
+          retention-days: 14
+          if-no-files-found: ignore
+          compression-level: 0

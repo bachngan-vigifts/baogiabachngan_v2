@@ -50,7 +50,7 @@ test('trả lại báo giá: chỉ người duyệt, phải có lý do, về nh�
 
 test('giao hàng: đi đúng thứ tự trạng thái; giao xong báo người phụ trách; lịch sử đơn có thao tác chuyến giao', async () => {
   const s = await setup(), qid = await quote(s, 'BG_GH');
-  assert.equal((await s.call(`/quotes/${qid}/approve`, s.mgr, 'POST', { revision: 1 })).status, 200);
+  assert.equal((await s.call(`/quotes/${qid}/approve`, s.mgr, 'POST', { internalNo: 'ML-FIXTURE', revision: 1 })).status, 200);
   const o = await s.call('/orders', s.emp, 'POST', { quoteId: qid }), orderId = (o.data.order?.id ?? o.data.id) as string;
   // Đơn CRM nháp nay được ghi thu trước khi duyệt (bdd00c8) – kiểm ở tests/app/crm-early-receipts.test.ts.
   assert.equal((await s.call(`/orders/${orderId}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
@@ -91,10 +91,10 @@ test('đơn mua NCC: gửi duyệt vào hộp Cần duyệt + báo người duy�
   assert.equal(box.items.find((i: any) => i.kind === 'purchase').link, `#/purchases/${a}`);
   assert.ok((await notes(s, s.mgr)).some(x => x.eventType === 'purchase_pending'));
   const rev = (await s.call(`/purchase-orders/${a}`, s.mgr)).data.revision;
-  const ok = await s.call(`/purchase-orders/${a}/approve`, s.mgr, 'POST', { revision: rev, lines: [] });
+  const ok = await s.call(`/purchase-orders/${a}/approve`, s.mgr, 'POST', { internalNo: 'ML-FIXTURE', revision: rev, lines: [] });
   assert.equal(ok.status, 400, 'chưa nhập giá mua thì chưa duyệt được');
   const lineId = (await s.call(`/purchase-orders/${a}`, s.mgr)).data.lines[0].id;
-  assert.equal((await s.call(`/purchase-orders/${a}/approve`, s.mgr, 'POST', { revision: rev, lines: [{ lineId, price: 500 }] })).status, 200);
+  assert.equal((await s.call(`/purchase-orders/${a}/approve`, s.mgr, 'POST', { internalNo: 'ML-FIXTURE', revision: rev, lines: [{ lineId, price: 500 }] })).status, 200);
   assert.equal((await s.call('/approvals', s.mgr)).data.counts.purchase, 0, 'duyệt xong rời hộp');
   assert.ok((await notes(s, s.emp)).some(x => x.eventType === 'purchase_approved'));
   const b = await po(), revB = (await s.call(`/purchase-orders/${b}`, s.mgr)).data.revision;

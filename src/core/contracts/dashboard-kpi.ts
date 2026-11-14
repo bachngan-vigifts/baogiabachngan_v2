@@ -29,6 +29,8 @@ export interface DashboardKpiMember {
   adjustedBy: 'fixed' | 'override' | null;
   /** Tỷ lệ thưởng KPI tương ứng mức đạt (không phải số tiền). */
   bonusRate: number;
+  /** Sale Admin: live tracking only; never a salary or bonus basis. */
+  trackingOnly?: boolean;
   /** Chế độ đối chiếu: KPI tính từ CRM để so với số đang dùng (chưa áp dụng vào lương). */
   crmPreview: number | null;
   parts: DashboardKpiPart[];
