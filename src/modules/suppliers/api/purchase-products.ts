@@ -16,7 +16,7 @@ export const isVigiftsWarehouse = (name: string) => /vigifts/i.test(name);
 const round = (n: number) => Math.round(n * 1000) / 1000;
 
 export interface PurchaseProduct {
-  sku: string; name: string; unit: string; brand: string;
+  sku: string; name: string; unit: string; brand: string; imageUrl: string;
   sr: number; vigifts: number; incoming: number;
   /** Tồn từng kho (tên kho → số) để xem chi tiết khi rê chuột. */
   warehouses: { name: string; qty: number; group: 'sr' | 'vigifts' | 'other' }[];
@@ -29,7 +29,7 @@ export async function purchaseProducts(db: Db, m: Member, o: { q?: string; skus?
   const where = and(eq(products.active, true), eq(products.approvalStatus, 'approved'),
     // Theo mã (file Excel): không phân biệt hoa thường – "ly01" vẫn ra "LY01".
     skus ? inArray(sql`lower(${products.sku})`, skus.length ? skus.map(s => s.toLowerCase()) : ['']) : matchProductWords(o.q ?? ''));
-  const rows = await db.select({ sku: products.sku, name: products.name, unit: products.unit, brand: products.brand }).from(products).where(where)
+  const rows = await db.select({ sku: products.sku, name: products.name, unit: products.unit, brand: products.brand, imageUrl: products.imageUrl }).from(products).where(where)
     .orderBy(...productOrder(skus ? null : o.q ?? '')).limit(skus ? 500 : limit + 1).offset(skus ? 0 : offset);
   const page = skus ? rows : rows.slice(0, limit);
   const codes = page.map(p => p.sku);
