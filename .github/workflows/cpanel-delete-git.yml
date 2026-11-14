@@ -1,0 +1,39 @@
+# Xóa thư mục .git (kho bản chụp do công cụ AI tạo) trong thư mục web của web Lock.
+# Mặc định dry-run: chỉ kiểm tra an toàn. Chọn apply mới xóa (xóa hẳn, không hoàn tác được).
+# Khóa cứng đường dẫn <thư mục web>/.git; tự dừng nếu web chậm hoặc lỗi. Không in token/tên đăng nhập/máy chủ.
+name: Xóa .git trên hosting
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run = chỉ kiểm tra; apply = xóa thật'
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+concurrency: cpanel-delete-git
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Kiểm tra và xóa .git
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+          MODE: ${{ inputs.mode }}
+        run: node scripts/maintenance/cpanel-delete-git.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cpanel-delete-git
+          path: cpanel-delete-git.json
+          retention-days: 3
+          if-no-files-found: ignore
