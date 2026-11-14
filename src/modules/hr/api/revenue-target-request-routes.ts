@@ -6,7 +6,7 @@ import {AppError} from '../../../core/errors.ts';
 import {json,readJson,type Router,type RouteContext} from '../../../core/http/router.ts';
 import type {SessionState,StaffEnv} from '../../staff/api/auth-routes.ts';
 import {employees} from '../../staff/schema.ts';
-import {SALE_POSITION_ID} from '../../staff/domain/roles.ts';
+import {tracksSalesKpi} from '../../staff/domain/roles.ts';
 import {sha256Hex} from '../../staff/domain/session.ts';
 import {hrPayslips} from '../schema.ts';
 import {hrRevenueTargets} from '../revenue-target-schema.ts';
@@ -29,8 +29,8 @@ async function memberOf(db:AnyDb,id:string,lock=false){
  const query=db.select({id:employees.id,name:employees.name,positionId:employees.positionId,role:employees.role,active:employees.active,deletedAt:employees.deletedAt}).from(employees).where(eq(employees.id,id)).limit(1);
  const [m]=await(lock?query.for('update'):query);return m;
 }
-const isSale=(m:Awaited<ReturnType<typeof memberOf>>)=>!!m&&m.active&&m.deletedAt===null&&m.positionId===SALE_POSITION_ID&&!['customer','supplier'].includes(m.role);
-async function ownMember(db:AnyDb,id:string,lock=false){const m=await memberOf(db,id,lock);if(!isSale(m))throw new AppError(403,'Chỉ nhân viên chức vụ Sale được đăng ký chỉ tiêu của chính mình.');return m!;}
+const isSale=(m:Awaited<ReturnType<typeof memberOf>>)=>!!m&&m.active&&m.deletedAt===null&&tracksSalesKpi(m.positionId)&&!['customer','supplier'].includes(m.role);
+async function ownMember(db:AnyDb,id:string,lock=false){const m=await memberOf(db,id,lock);if(!isSale(m))throw new AppError(403,'Chỉ nhân viên Sale / Sale Admin được đăng ký chỉ tiêu của chính mình.');return m!;}
 async function yearState(db:AnyDb,id:string,year:string){
  const next=String(+year+1)+'-01';
  const [entries,locks,history]=await Promise.all([
@@ -90,7 +90,7 @@ export function registerRevenueTargetRequests(router:Router<StaffEnv>){
   const note=b.decision==='rejected'?reasonOf(b.reason):typeof b.reason==='string'&&b.reason.trim()?reasonOf(b.reason):'Duyệt đăng ký chỉ tiêu của Sale';
   const now=new Date().toISOString();
   if(b.decision==='approved'){
-   const m=await memberOf(db,r.memberId,true);if(!isSale(m))throw new AppError(409,'Nhân viên không còn ở chức vụ Sale đang hoạt động. Chỉ có thể từ chối đăng ký này.');
+   const m=await memberOf(db,r.memberId,true);if(!isSale(m))throw new AppError(409,'Nhân viên không còn ở chức vụ Sale / Sale Admin đang hoạt động. Chỉ có thể từ chối đăng ký này.');
    const state=await yearState(db,r.memberId,r.year),changes=storedChanges(r);
    if(changes.some(x=>state.lockedMonths.includes(x.month)))throw new AppError(409,'Có tháng đã chốt lương. Yêu cầu Sale điều chỉnh và gửi lại.');
    if(changes.some(x=>state.values[x.month]!==x.from))throw new AppError(409,'Chỉ tiêu hiện hành đã đổi từ khi đăng ký. Yêu cầu Sale tải lại và gửi lại.');

@@ -17,8 +17,8 @@ test('employee picker merges only authorized current-month projections, retainin
  assert.deepEqual(dashboardScorePeople(null,{...r,members:[r.members[1]]},'2026-11'),[{id:'admin',name:'Sale Admin'}]);
 });
 
-test('report-only presentation is limited to the authenticated Sale Admin role, without enabling payroll KPI',async()=>{
- const {dashboardReportsOnly}=await import(new URL('../../trial-ui/dashboard.js',import.meta.url).href);
- assert.equal(dashboardReportsOnly({role:'employee',positionId:'sale-admin'}),true);
- for(const user of [null,{}, {role:'manager',positionId:'sale-admin'},{role:'employee',positionId:'sale'},{role:'customer',positionId:'sale-admin'}])assert.equal(dashboardReportsOnly(user),false);
+test('Sale Admin KPI is explicitly tracking-only even at a high score',async()=>{
+ const {kpiBonusText}=await import(new URL('../../trial-ui/dashboard.js',import.meta.url).href);
+ assert.match(kpiBonusText({trackingOnly:true,bonusRate:0.01}),/không tính thưởng/);
+ assert.match(kpiBonusText({bonusRate:0.01}),/Thưởng KPI 1%/);
 });

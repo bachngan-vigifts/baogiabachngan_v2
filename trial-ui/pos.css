@@ -1315,3 +1315,5 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-qr-footer > .primary { grid-column: 1 / -1; }
 .pos-qr-footer .btn { white-space: normal; }
 .pos-promotion{padding:12px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.pos-promotion p{margin:6px 0}.pos-promotion-head,.pos-promotion-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.pos-promotion-dialog{width:min(540px,calc(100vw - 24px));max-height:90dvh;overflow:auto}.pos-promotion-dialog form{display:grid;gap:12px;padding:16px}.pos-promotion-fields{display:grid;gap:10px}.pos-promotion-dialog input{max-width:100%}
+.pos-scan-actions { display:flex;flex-wrap:wrap;gap:10px;margin-top:12px; }
+.pos-scan-actions .btn { flex:1 1 140px;min-height:44px; }

@@ -139,3 +139,34 @@
  .ncc-drawer .ncc-sku-orders td:before{display:block;content:attr(data-label);font-size:11px;color:var(--ncc-muted);margin-bottom:4px}.ncc-drawer .ncc-sku-orders td:first-child:before{display:none}
  .ncc-drawer .ncc-sku-orders td:last-child{grid-column:1/-1;padding:9px 12px;background:#edf4fd;border-radius:7px;color:#204f87}
 }
+/* Lịch giao theo ngày */
+.ncc-panel-action{margin-left:auto;flex:none}
+.ncc-cal-bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:16px 21px;border-bottom:1px solid var(--ncc-line)}
+.ncc-cal-bar strong{font-size:16px;color:#193e67;min-width:128px;text-align:center}.ncc-cal-sum{margin-left:auto;font-size:12px;color:var(--ncc-muted)}
+.ncc-cal .ncc-message{margin:14px 21px 0}
+.ncc-cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;padding:16px 21px 21px}
+.ncc-cal-week{font-size:11px;font-weight:600;color:var(--ncc-muted);text-align:center;padding:4px 0}
+.ncc-cal-cell{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:78px;padding:8px 9px;border:1px solid #e2eaf4;border-radius:9px;background:#fbfcfe;color:var(--ncc-muted);text-align:left;font:inherit}
+.ncc-cal-cell.empty{border-color:transparent;background:none}
+.ncc-cal-cell b{font-size:14px;font-weight:600}
+button.ncc-cal-cell{cursor:pointer}
+.ncc-cal-cell.has{background:#edf4ff;border-color:#c8d9ee;color:var(--ncc-ink)}
+.ncc-cal-cell.has:hover{border-color:#7ea6dc}
+.ncc-cal-count{font-size:12px;font-weight:600;color:#215494}.ncc-cal-cell small{font-size:11px;color:var(--ncc-muted)}
+.ncc-cal-cell.today b{display:inline-grid;place-items:center;min-width:24px;height:24px;border-radius:50%;background:var(--ncc-green);color:#fff;padding:0 4px}
+.ncc-cal-cell.selected{outline:2px solid var(--ncc-blue);outline-offset:1px;background:#dfeafd}
+.ncc-cal-orders{padding:6px 21px 18px}
+.ncc-cal-order{padding:16px 0;border-bottom:1px solid #e2eaf4}.ncc-cal-order:last-child{border-bottom:0}
+.ncc-cal-order header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.ncc-cal-order header strong{display:block;font-size:14px;overflow-wrap:anywhere}.ncc-cal-order header small{display:block;font-size:12px;color:var(--ncc-muted);margin-top:3px}
+.ncc-cal-order p{margin:8px 0 10px;font-size:13px}
+.ncc-cal-order-lines{margin-top:10px}.ncc-cal-order-lines:empty{display:none}
+#ncc-cal-day-title:focus{outline:none}
+@media(max-width:760px){
+ .ncc-panel-head{flex-wrap:wrap}.ncc-panel-action{margin-left:0;width:100%}
+ .ncc-cal-bar{padding:14px 15px}.ncc-cal-bar strong{min-width:0;flex:1}.ncc-cal-sum{margin-left:0;width:100%}
+ .ncc-cal-grid{gap:3px;padding:12px 10px 15px}.ncc-cal-cell{min-height:54px;padding:5px 3px;align-items:center;text-align:center;border-radius:7px}
+ .ncc-cal-cell small{display:none}.ncc-cal-count{font-size:10px}.ncc-cal-cell b{font-size:13px}
+ .ncc-cal-orders{padding:4px 15px 15px}.ncc-cal-order header{flex-direction:column;gap:7px}
+}
+

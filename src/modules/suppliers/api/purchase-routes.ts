@@ -1,3 +1,4 @@
+import { supplierOrderNumberProblem } from '../domain/order-number.ts';
 import { lockReceiptForWrite } from './receipt-outbox.ts';
 import {registerPurchaseSupplierSearch} from './purchase-supplier-search.ts';
 import { earlyReceiptContext } from './early-receiving.ts';
@@ -61,6 +62,11 @@ const nowIso = () => new Date().toISOString();
 const today = () => vietnamDate().iso;
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim() : '').slice(0, max);
 const fail = (status: number, message: string): never => { throw new AppError(status, message); };
+function internalOrderNumber(value: unknown, supplierName = '', required = false): string {
+  const problem = supplierOrderNumberProblem(supplierName, value, required);
+  if (problem) fail(400, problem);
+  return typeof value === 'string' ? value.trim() : '';
+}
 function deliveryAddress(value: unknown): string {
   const address = typeof value === 'string' ? value.trim() : '';
   if (!address) fail(400, 'Vui lòng nhập địa chỉ giao hàng.');
@@ -231,7 +237,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     if (!list.length || list.length > 20) fail(400, 'Cần từ 1 đến 20 đơn mua (mỗi nhà cung cấp một đơn).');
     const prepared = await Promise.all(list.map(async o => {
       const arrivalDate = o.arrivalDate ? (isIsoDate(o.arrivalDate) ? o.arrivalDate : fail(400, 'Ngày hàng về dự kiến không hợp lệ.')) : null;
-      return { supplier: await activeSupplier(db, o.supplierId), lines: cleanLines(o.lines, prices), arrivalDate, note: str(o.note, 2000), warehouse: deliveryAddress(o.warehouse) };
+      return { supplier: await activeSupplier(db, o.supplierId), lines: cleanLines(o.lines, prices), internalNo: internalOrderNumber(o.internalNo), arrivalDate, note: str(o.note, 2000), warehouse: deliveryAddress(o.warehouse) };
     }));
     if (new Set(prepared.map(p => p.supplier.id)).size !== prepared.length) fail(400, 'Mỗi nhà cung cấp chỉ một đơn trong một lần lập – gộp các mã cùng NCC.');
     const needs = await checkSources(db, m, prepared.map(p => p.lines));
@@ -244,7 +250,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
         const id = crypto.randomUUID(), now = nowIso(), ticket = await nextNumber(tx as unknown as Db, 'DMH', today());
         // Nhân viên lập = nháp (chưa vào hàng chờ duyệt, bấm "Gửi duyệt" khi xong); Manager lập thì coi như đã gửi.
         await tx.insert(incomingShipments).values({ id, ticketNumber: ticket, source: 'supplier-order', approvalStatus: 'pending', submittedAt: m.role === 'manager' ? now : null, warehouse: p.warehouse, arrivalDate: p.arrivalDate,
-          supplierId: p.supplier.id, supplierName: p.supplier.name, note: p.note, createdAt: now, createdBy: m.id, updatedAt: now, updatedBy: m.id });
+          supplierId: p.supplier.id, supplierName: p.supplier.name, supplierInternalOrderNumber: p.internalNo, note: p.note, createdAt: now, createdBy: m.id, updatedAt: now, updatedBy: m.id });
         await insertLines(tx, id, p.lines, needs);
         await event(tx, id, m.id, 'create', `Tạo đơn mua ${m.role === 'manager' ? '' : 'nháp '}${ticket} (${p.lines.length} mã)`, { sources: [...new Set(p.lines.flatMap(l => l.sources.map(s => needs.get(s.type + ':' + s.id)!.no)))] });
         ids.push(id);
@@ -380,6 +386,8 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     await db.transaction(async tx => {
       await lockSources(tx);
       const p = await lockAndCheck(c, tx, id, 'edit', body.revision);
+      // A number belongs to its supplier; omitted values survive same-supplier edits only.
+      const internalNo = internalOrderNumber(body.internalNo === undefined ? (p.raw.order.supplierId === supplier.id ? p.raw.order.supplierInternalOrderNumber : '') : body.internalNo);
       const warehouse = deliveryAddress(body.warehouse);
       const needs = await checkSources(tx as unknown as Db, m, [lines], id);
       // Nhân viên sửa nháp: giữ giá Manager đã nhập (không thấy, không xoá được).
@@ -387,7 +395,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await tx.delete(supplierOrderSources).where(eq(supplierOrderSources.shipmentId, id));
       await tx.delete(incomingShipmentLines).where(eq(incomingShipmentLines.shipmentId, id));
       await insertLines(tx, id, lines, needs);
-      await bump(tx, id, m.id, { supplierId: supplier.id, supplierName: supplier.name, arrivalDate, note: str(body.note, 2000), warehouse });
+      await bump(tx, id, m.id, { supplierId: supplier.id, supplierName: supplier.name, supplierInternalOrderNumber: internalNo, arrivalDate, note: str(body.note, 2000), warehouse });
       const before = new Map(p.raw.lines.map(l => [l.sku, l.quantity])), after = new Map(lines.map(l => [l.sku, l.quantity]));
       const diff = [...new Set([...before.keys(), ...after.keys()])].filter(k => before.get(k) !== after.get(k)).map(k => `${k}: ${before.get(k) ?? 0} → ${after.get(k) ?? 0}`);
       await event(tx, id, m.id, 'update', 'Sửa đơn nháp' + (diff.length ? ' – ' + diff.slice(0, 8).join('; ') : '') + (p.raw.order.supplierId !== supplier.id ? ` · đổi NCC sang ${supplier.name}` : ''), { diff });
@@ -401,6 +409,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 100_000);
     await db.transaction(async tx => {
       const p = await lockAndCheck(c, tx, id, 'approve', body.revision);
+      const internalNo = internalOrderNumber(body.internalNo === undefined ? p.raw.order.supplierInternalOrderNumber : body.internalNo, p.view.supplier?.name, true);
       const input = new Map((Array.isArray(body.lines) ? body.lines as Record<string, unknown>[] : []).map(l => [String(l.lineId), l]));
       const rows = p.raw.lines.map(l => {
         const r = input.get(l.id), rawPrice = r?.price ?? l.price, price = rawPrice === null || rawPrice === undefined || rawPrice === '' ? NaN : Number(rawPrice), taxRate = Number(r?.taxRate ?? l.taxRate ?? 0), discount = Number(r?.purchaseDiscount ?? l.purchaseDiscount ?? 0);
@@ -416,7 +425,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       const deposit = (body.payment as { deposit?: { mode?: string; value?: number } } | undefined)?.deposit;
       await tx.delete(supplierPaymentSchedules).where(eq(supplierPaymentSchedules.shipmentId, id));
       if (schedules.length) await tx.insert(supplierPaymentSchedules).values(schedules.map(s => ({ id: crypto.randomUUID(), shipmentId: id, ...s, createdAt: nowIso() })));
-      await bump(tx, id, m.id, { approvalStatus: 'approved', approvedAt: nowIso(), approvedBy: m.id, supplierEmail: str(body.supplierEmail, 254) || rec.to, ccEmail: (Array.isArray(body.cc) ? body.cc.join(',') : rec.cc.join(',')).slice(0, 2000),
+      await bump(tx, id, m.id, { approvalStatus: 'approved', supplierInternalOrderNumber: internalNo, approvedAt: nowIso(), approvedBy: m.id, supplierEmail: str(body.supplierEmail, 254) || rec.to, ccEmail: (Array.isArray(body.cc) ? body.cc.join(',') : rec.cc.join(',')).slice(0, 2000),
         depositRate: deposit?.mode === 'percent' ? Number(deposit.value) : deposit?.mode === 'none' || !deposit ? 0 : null });
       await event(tx, id, m.id, 'approve', `Manager duyệt đơn – tổng ${Math.round(total).toLocaleString('vi-VN')} đ, ${schedules.length} kỳ trả`, { rows, schedules });
     });
@@ -467,6 +476,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 100_000);
     await db.transaction(async tx => {
       const p = await lockAndCheck(c, tx, id, 'confirm', body.revision);
+      const internalNo = internalOrderNumber(body.internalNo === undefined ? p.raw.order.supplierInternalOrderNumber : body.internalNo, p.view.supplier?.name, true);
       const arrival = body.arrivalDate ? (isIsoDate(body.arrivalDate) ? body.arrivalDate : fail(400, 'Ngày hẹn giao không hợp lệ.')) : p.raw.order.arrivalDate;
       const input = new Map((Array.isArray(body.lines) ? body.lines as Record<string, unknown>[] : []).map(l => [String(l.lineId), l]));
       const changes: string[] = [];
@@ -478,7 +488,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       }
       const first = p.raw.order.supplierStatus !== 'confirmed';
       await bump(tx, id, m.id, { supplierStatus: 'confirmed', supplierConfirmedAt: first ? nowIso() : p.raw.order.supplierConfirmedAt, supplierConfirmedBy: first ? m.id : p.raw.order.supplierConfirmedBy,
-        confirmedOnBehalf: true, arrivalDate: arrival, supplierInternalOrderNumber: body.internalNo !== undefined ? str(body.internalNo, 100) : p.raw.order.supplierInternalOrderNumber });
+        confirmedOnBehalf: true, arrivalDate: arrival, supplierInternalOrderNumber: internalNo });
       await event(tx, id, m.id, 'confirm', (first ? 'Ghi nhận NCC đã xác nhận đơn' : 'Cập nhật ngày hẹn') + (arrival ? ` – hẹn giao ${arrival.split('-').reverse().join('/')}` : '') + (changes.length ? ' · ' + changes.slice(0, 6).join('; ') : '') + (str(body.note, 300) ? ` · ${str(body.note, 300)}` : ''), { changes });
     });
     return json(await viewOf(c, id));

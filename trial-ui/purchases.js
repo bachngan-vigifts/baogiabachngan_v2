@@ -1,3 +1,4 @@
+import { requiresSupplierOrderNumber, supplierOrderNumberProblem } from './supplier-order-number.js';
 import { openReceivedEarlyRequests } from './supplier-request-details.js';
 import {createPurchaseSupplierSearch} from './purchase-supplier-search.js';
 import { SUPPLIER_TEMPLATES, suggestedSupplierTemplate, purchaseExportData } from './purchase-export-data.js';
@@ -195,7 +196,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     if (!rows.length) { const tr = el('tr'), td = el('td', 'muted', 'Chưa có đơn mua nào.'); td.colSpan = prices ? 8 : 6; tr.append(td); tbody.append(tr); return; }
     for (const r of rows) {
       const tr = el('tr', 'clickable' + (r.state === 'cancelled' ? ' is-off' : '')); tr.tabIndex = 0;
-      const no = el('td'); no.append(el('b', '', r.ticketNumber || '—'), el('small', 'muted sup-sub', (r.internalNo ? 'NCC: ' + r.internalNo + ' · ' : '') + r.lineCount + ' mã'));
+      const no = el('td'); no.append(el('b', '', r.ticketNumber || '—'), el('small', 'muted sup-sub', (r.internalNo ? 'NCC: ' + r.internalNo + ' · ' : '') + r.lineCount + ' mã'),el('small','muted sup-sub','Người tạo: '+(r.createdByName||'Chưa có thông tin')));
       const arr = el('td', r.late ? 'pur-late' : '', dmy(r.arrivalDate)); if (r.late) arr.title = 'Quá ngày hẹn, chưa nhận đủ';
       const prog = el('td'); prog.append(el('span', '', `${num(r.good)}/${num(r.ordered)}`)); if (r.damaged) prog.append(el('small', 'muted sup-sub', `hỏng ${num(r.damaged)}`));
       tr.append(no, el('td', '', r.supplierName || '—'), el('td', '', dmy(r.createdAt)), arr, prog);
@@ -706,7 +707,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const err = errorBox(), status = el('p', 'muted small'); status.setAttribute('role', 'status');
     let catalogRequested = false;
     async function catalog() {
-      if (catalogRequested || kind.value === 'pdf') return; catalogRequested = true;
+      if (catalogRequested || kind.value === 'pdf' || kind.value === 'lock') return; catalogRequested = true;
       status.textContent = 'Đang bổ sung hoa văn và quy cách từ danh mục…';
       try {
         const skus = [...new Set(v.lines.map(l => l.sku))];
@@ -724,11 +725,11 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       } catch { if (dlg.open) status.textContent = 'Không lấy được quy cách từ danh mục; anh/chị có thể nhập bổ sung.'; }
     }
     const updateKind = () => {
-      if (kind.value === 'lock') entity.value = 'VG';
       entity.disabled = kind.value === 'lock';
-      entity.title = kind.value === 'lock' ? 'Mẫu Lock dùng pháp nhân VIGIFTS.' : '';
+      entity.title = kind.value === 'lock' ? 'Mẫu Lock để trống thông tin khách hàng theo mẫu đã duyệt.' : '';
       logo.hidden = kind.value !== 'minh-long-logo';
-      specs.hidden = kind.value === 'pdf';
+      specs.hidden = kind.value === 'pdf' || kind.value === 'lock';
+      hint.textContent = kind.value === 'lock' ? 'Mẫu Lock giữ công thức và danh mục gốc; điền mã hàng, số lượng đặt. Cột xác nhận số lượng để trống cho NCC.' : 'Các ô bổ sung chỉ dùng cho file tải về. Mã ERP hoặc quy cách chưa có dữ liệu sẽ để trống.';
       catalog();
     };
     kind.addEventListener('change', updateKind);
@@ -802,7 +803,11 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const d = frame('Sửa đơn nháp', current.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
     const sup = supplierSelect(o.suppliers, current.supplier?.id);
     const arrival = input('date', current.arrivalDate || ''), wh = input('text', current.warehouse || '', { maxLength: 120, required: true, placeholder: 'Nhập địa chỉ giao hàng' }), note = el('textarea'); note.rows = 2; note.value = current.note || '';
-    const grid = el('div', 'form-grid two'); grid.append(field('Nhà cung cấp', sup), field('Hẹn giao (dự kiến)', arrival), field('Địa chỉ giao hàng *', wh), field('Ghi chú', note, 'span-2'));
+    const internal = input('text', current.internalNo || '', { maxLength: 100, placeholder: 'Có thể bổ sung trước khi duyệt' });
+    const internalField = field('Số đơn phía NCC Minh Long', internal);
+    const updateInternal = () => { internalField.hidden = !requiresSupplierOrderNumber(o.suppliers.find(s => s.id === sup.value)?.name); };
+    sup.addEventListener('change', () => { internal.value = ''; updateInternal(); }); updateInternal();
+    const grid = el('div', 'form-grid two'); grid.append(internalField, field('Nhà cung cấp', sup), field('Hẹn giao (dự kiến)', arrival), field('Địa chỉ giao hàng *', wh), field('Ghi chú', note, 'span-2'));
     const t = el('table', 'data-table pur-lines'), tb = el('tbody');
     t.append(el('thead'), tb); const th = el('tr'); for (const h of ['Mã / tên', 'Từ chứng từ', 'SL đặt', '']) th.append(el('th', '', h)); t.tHead.append(th);
     const lines = current.lines.map(l => ({ ...l }));
@@ -820,7 +825,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     f.addEventListener('submit', e => {
       e.preventDefault();
       if (!wh.value.trim()) { err.textContent = 'Vui lòng nhập địa chỉ giao hàng.'; wh.focus(); return; }
-      const body = { revision: current.revision, supplierId: sup.value, arrivalDate: arrival.value, warehouse: wh.value.trim(), note: note.value,
+      const body = { revision: current.revision, supplierId: sup.value, internalNo: internal.value.trim(), arrivalDate: arrival.value, warehouse: wh.value.trim(), note: note.value,
         lines: lines.filter(l => !l.removed).map(l => {
           let left = Math.max(0, Math.floor(l.quantity) || 0);
           const sources = l.sources.map(s => { const q = Math.min(s.quantity, left); left -= q; return { type: s.type, id: s.id, quantity: q }; }).filter(s => s.quantity > 0);
@@ -841,6 +846,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const v = current, approve = mode === 'approve';
     const d = frame(approve ? 'Manager duyệt đơn' : 'Lịch trả NCC', v.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
     const price = new Map();
+    const internal = input('text', v.internalNo || '', { maxLength: 100, required: requiresSupplierOrderNumber(v.supplier?.name) });
+    if (approve && internal.required) f.append(field('Số đơn phía NCC Minh Long *', internal), el('p', 'muted small', 'Bắt buộc khi duyệt; vẫn có thể lưu giá nhập trước khi có số đơn NCC.'));
     if (approve) {
       const t = el('table', 'data-table pur-lines'), tb = el('tbody'), th = el('tr');
       for (const h of ['Mã / tên', 'SL', 'Giá mua *', 'CK %', 'VAT %']) th.append(el('th', '', h));
@@ -904,8 +911,10 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
         installments: [...inst.querySelectorAll('.pur-inst')].map(r => ({ amount: Number(r.querySelector('input[type=number]').value || 0), dueDate: r.querySelector('input[type=date]').value || undefined })).filter(x => x.amount > 0),
         balanceDueDate: balDue.value || undefined };
       if (!approve) return run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/schedules`, 'PUT', { payment }), 'Đã lưu lịch trả.');
+      const problem = supplierOrderNumberProblem(v.supplier?.name, internal.value, true);
+      if (problem) { err.textContent = problem; internal.focus(); return; }
       const lines = priceLines();
-      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/approve`, 'POST', { revision, lines, payment,
+      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/approve`, 'POST', { revision, lines, payment, internalNo: internal.value.trim(),
         ...(to.value.trim() ? { supplierEmail: to.value.trim() } : {}), ...(cc.value.trim() ? { cc: cc.value.split(',').map(s => s.trim()).filter(Boolean) } : {}) }), 'Đã duyệt đơn mua.');
     });
     d.append(f);
@@ -945,8 +954,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
   function confirmForm() {
     const v = current, d = frame('Ghi nhận thay NCC', v.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
     f.append(el('p', 'muted', 'Dùng khi NCC xác nhận qua điện thoại / email (chưa có cổng NCC). Lịch sử ghi rõ nhân viên ghi nhận thay.'));
-    const arrival = input('date', v.arrivalDate || ''), internal = input('text', v.internalNo || '', { maxLength: 100 }), note = input('text', '', { maxLength: 300, placeholder: 'VD: chị Hoa xác nhận qua Zalo' });
-    const g = el('div', 'form-grid two'); g.append(field('Ngày hẹn giao', arrival), field('Số đơn phía NCC', internal), field('Ghi chú', note, 'span-2'));
+    const arrival = input('date', v.arrivalDate || ''), internal = input('text', v.internalNo || '', { maxLength: 100, required: requiresSupplierOrderNumber(v.supplier?.name) }), note = input('text', '', { maxLength: 300, placeholder: 'VD: chị Hoa xác nhận qua Zalo' });
+    const g = el('div', 'form-grid two'); g.append(field('Ngày hẹn giao', arrival), field(internal.required ? 'Số đơn phía NCC Minh Long *' : 'Số đơn phía NCC', internal), field('Ghi chú', note, 'span-2'));
     const t = el('table', 'data-table pur-lines'), tb = el('tbody'), th = el('tr'); for (const h of ['Mã / tên', 'SL', 'Hẹn riêng', 'Ghi chú NCC']) th.append(el('th', '', h));
     t.append(el('thead'), tb); t.tHead.append(th);
     const ins = v.lines.map(l => {
@@ -960,6 +969,8 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     f.append(g, tw, err, foot(ok));
     f.addEventListener('submit', e => {
       e.preventDefault();
+      const problem = supplierOrderNumberProblem(v.supplier?.name, internal.value, true);
+      if (problem) { err.textContent = problem; internal.focus(); return; }
       run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/confirm`, 'POST', { revision: v.revision, arrivalDate: arrival.value || undefined, internalNo: internal.value, note: note.value,
         lines: ins.map(x => ({ lineId: x.l.id, promisedDate: x.pd.value, note: x.nt.value })) }), 'Đã ghi nhận NCC xác nhận.');
     });
@@ -1125,7 +1136,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       err.textContent = ''; renderChips(); renderGrid();
     };
     // NCC đã chọn hiện thành thẻ ngay dưới ô chọn (bấm × để bỏ) – ô chọn trống lại để thêm NCC tiếp khi cần chia.
-    const chips = el('div', 'pur-sup-chips');
+    const chips = el('div', 'pur-sup-chips'), numberFields = el('div', 'form-grid two');
     function renderChips() {
       chips.replaceChildren(...sups.map((x, i) => {
         const c = el('span', 'sup-pill info pur-sup-chip'); c.append(el('span', '', (i === 0 && sups.length > 1 ? '★ ' : '✓ ') + x.name));
@@ -1133,11 +1144,17 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
         return c;
       }));
       chips.hidden = !sups.length;
+      numberFields.replaceChildren(...sups.filter(x => requiresSupplierOrderNumber(x.name)).map(x => {
+        const number = input('text', x.internalNo || '', { maxLength: 100, placeholder: 'Có thể để trống khi lưu nháp' });
+        number.addEventListener('input', () => { x.internalNo = number.value; });
+        return field('Số đơn phía NCC · ' + x.name, number);
+      }));
+      numberFields.hidden = !numberFields.childElementCount;
     }
     renderChips();
     const pick = createPurchaseSupplierSearch({api,choose:addPicked,selected:id=>sups.some(s=>s.id===id),active:()=>f.isConnected&&!drawer.hidden});
     supBox.lastChild.append(pick.root);
-    supBox.append(chips);
+    supBox.append(chips, numberFields);
     // Tạo NCC mới (Manager / Kế toán): mở trang Nhà cung cấp ở tab mới; quay lại tab này thì danh sách NCC tự cập nhật.
     if (o.canEditSuppliers) {
       supBox.append(btn('＋ Tạo NCC mới', 'btn ghost small', () => window.open(location.pathname + '#/suppliers?new=1', '_blank')));
@@ -1248,7 +1265,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
           lines[i].set(k, cur);
         });
       }
-      const orders = sups.map((x, i) => ({ supplierId: x.id, lines: [...lines[i].values()], arrivalDate: arrival.value || undefined, warehouse: wh.value.trim(), note: note.value })).filter(x => x.lines.length);
+      const orders = sups.map((x, i) => ({ supplierId: x.id, internalNo: (x.internalNo || '').trim(), lines: [...lines[i].values()], arrivalDate: arrival.value || undefined, warehouse: wh.value.trim(), note: note.value })).filter(x => x.lines.length);
       if (!orders.length) { err.textContent = 'Chưa có số lượng nào để đặt.'; return; }
       run(ok, err, async () => {
         const r = await api('/purchase-orders', 'POST', { orders });

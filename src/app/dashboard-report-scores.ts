@@ -10,7 +10,7 @@ export const dashboardReportScoresOf:DashboardReportScoresOf=async(db,month,ids)
  const [live,slips,people]=await Promise.all([
   weeklyPointsFor(db,month,ids),
   db.select({memberId:hrPayslips.memberId,data:hrPayslips.data,status:hrPayslips.status}).from(hrPayslips).where(and(eq(hrPayslips.month,month),inArray(hrPayslips.memberId,[...ids]))),
-  db.select({id:employees.id,name:employees.name,positionId:employees.positionId}).from(employees).where(and(inArray(employees.id,[...ids]),isNull(employees.deletedAt))),
+  db.select({id:employees.id,name:employees.name,positionId:employees.positionId}).from(employees).where(and(inArray(employees.id,[...ids]),isNull(employees.deletedAt),eq(employees.active,true),inArray(employees.positionId,['sale','sale-admin','manager']))),
  ]);
  const saved=new Map(slips.map(s=>[s.memberId,s]));
  return people.flatMap(p=>{

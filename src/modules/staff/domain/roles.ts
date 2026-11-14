@@ -41,3 +41,7 @@ export function roleConsistencyIssue(m: MemberLike): string | null {
   const expected = roleFromPosition(m.positionId);
   return m.role === expected ? null : `vai trò "${m.role}" không khớp chức vụ "${m.positionId ?? ''}" (mong đợi "${expected}")`;
 }
+
+/** Target registration and dashboard tracking; never grants salary bonus eligibility. */
+export const SALES_KPI_POSITIONS = [SALE_POSITION_ID, SALE_ADMIN_POSITION_ID] as const;
+export const tracksSalesKpi = (positionId: string | null | undefined) => SALES_KPI_POSITIONS.some(id => id === positionId);

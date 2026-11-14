@@ -9,8 +9,6 @@ const RANK = [['actual', 'Thực tế'], ['expected', 'Dự kiến'], ['pipeline
 const PRESETS = [[1, 'Tháng này'], [3, '3 tháng'], [6, '6 tháng'], [12, '12 tháng']];
 // KPI Sale: 4 phần điểm (thứ tự như phiếu lương) – 4 màu phân biệt được khi mù màu; phần chưa đạt tới 100% màu nền.
 const KPI_PARTS = { newCustomers: '#2a78d6', transactions: '#eb6834', contracts: '#1a9e77', revenue: '#8e5bd0' };
-/** Presentation only; the server still enforces each report's viewer scope. */
-export const dashboardReportsOnly=user=>user?.role==='employee'&&user?.positionId==='sale-admin';
 /** Merge only the current month and already authorized API projections. */
 export function dashboardScorePeople(kpi,reports,month){
  const people=new Map();
@@ -30,7 +28,7 @@ export function kpiSlices(member) {
   return parts.map(p => { const from = at / whole; at += p.value; return { ...p, from, to: at / whole }; });
 }
 /** Mức thưởng KPI theo mức đạt (chỉ tỷ lệ). */
-const kpiBonus = m => m.bonusRate > 0 ? `Thưởng KPI ${(Math.round(m.bonusRate * 10000) / 100).toLocaleString('vi-VN')}% doanh số tính thưởng` : 'Chưa đạt mức thưởng KPI (dưới 60%)';
+export const kpiBonusText = m => m.trackingOnly ? 'Sale Admin: KPI chỉ để theo dõi, không tính thưởng' : m.bonusRate > 0 ? `Thưởng KPI ${(Math.round(m.bonusRate * 10000) / 100).toLocaleString('vi-VN')}% doanh số tính thưởng` : 'Chưa đạt mức thưởng KPI (dưới 60%)';
 
 const thisMonth = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).slice(0, 7);
 const monthIndex = ym => Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5)) - 1;
@@ -207,7 +205,7 @@ export function initDashboard({ api, root, isManager, money, user=()=>null }) {
   // ---- Điểm KPI Sale (tải riêng sau doanh số; cùng bộ lọc, tháng cuối kỳ mặc định).
   let kpiData = null, kpiMonth = '', kpiPick = '', kpiRequest = 0, kpiLoading=true, kpiError='';
   let reportData=null,reportRequest=0,reportLoading=true,reportError='';
-  const reportDetailsOpen=new Map(),ownReportsOnly=()=>dashboardReportsOnly(user());
+  const reportDetailsOpen=new Map();
   const kpiCard = card('KPI Sale & báo cáo tuần / tháng', null, 'is-wide dash-kpi-card'), kpiBody = node('div', null, 'dash-kpi');
   const kpiMonthSelect = node('select', null, 'dash-mini'); kpiMonthSelect.setAttribute('aria-label', 'Tháng xem KPI và báo cáo');
   kpiMonthSelect.addEventListener('change', () => { kpiMonth = kpiMonthSelect.value; loadScorePanels(); });
@@ -252,8 +250,8 @@ export function initDashboard({ api, root, isManager, money, user=()=>null }) {
     const notes = node('ul', null, 'dash-kpi-notes');
     const note = text => notes.append(node('li', text));
     if (m.adjustedBy) note(`Điểm thực tế theo chỉ tiêu: ${kpiPercent(m.total)}. Bảng lương áp dụng ${m.adjustedBy === 'fixed' ? 'KPI cố định trong hồ sơ' : 'KPI chốt'} ${kpiPercent(m.used)}; mức này không thay thế điểm thực tế trên Tổng quan.`);
-    note((m.adjustedBy ? 'Theo KPI áp dụng trên bảng lương: ' : '') + kpiBonus(m) + '.');
-    note(m.status === 'estimate' ? 'Tạm tính theo số liệu hiện tại; chốt lương sẽ giữ cố định.' : 'Theo phiếu lương đã chốt (số lúc chốt).');
+    note((m.adjustedBy ? 'Theo KPI áp dụng trên bảng lương: ' : '') + kpiBonusText(m) + '.');
+    note(m.trackingOnly ? 'Điểm theo dữ liệu CRM hiện tại; không đưa vào tính thưởng hoặc thay đổi phiếu lương đã chốt.' : m.status === 'estimate' ? 'Tạm tính theo số liệu hiện tại; chốt lương sẽ giữ cố định.' : 'Theo phiếu lương đã chốt (số lúc chốt).');
     note(m.source === 'crm' ? 'KH mới: hồ sơ đã duyệt trong kỳ, tính cho người tạo, không cần đơn hàng. Giao dịch lấy tự động từ CRM. Đơn hàng / HĐKT: mỗi đơn đã duyệt tính một lần theo ngày đơn, kể cả HĐKT chưa ký.' : 'KH mới, giao dịch, số đơn hàng / HĐKT theo số nhập trên bảng lương.');
     if (m.crmPreview != null) note(`KPI tính từ CRM (đối chiếu, chưa áp dụng): ${kpiPercent(m.crmPreview)}.`);
     if (m.merchDays || m.tripDays) note(`Đã cộng quy đổi ${m.merchDays} ngày làm hàng, ${m.tripDays} ngày công tác.`);
@@ -263,19 +261,17 @@ export function initDashboard({ api, root, isManager, money, user=()=>null }) {
     const b=node('button','Thử lại','btn secondary small');b.type='button';b.onclick=retry;
     body.replaceChildren(node('p',message,'error'),b);
   }
-  // One employee and one month drive both panels, including Sale Admin without a sales KPI.
+  // One employee and one month drive both panels, including Sale Admin tracking KPI without bonuses.
   function renderKpi() {
     const people=dashboardScorePeople(kpiData,reportData,kpiMonth);
     const reportFirst=reportData?.month===kpiMonth&&reportData.members.length&&reportData.members.every(p=>p.positionId==='sale-admin')?people.find(p=>p.id===reportData.members[0].id):null;
     const person=people.find(p=>p.id===kpiPick)||reportFirst||(!kpiLoading&&(!kpiPick||!reportLoading)?people[0]:null);if(person)kpiPick=person.id;
-    const m=kpiData?.members.find(m=>m.id===kpiPick),selectedReport=reportData?.members.find(p=>p.id===kpiPick);
-    const reportsOnly=ownReportsOnly()||!m&&selectedReport?.positionId==='sale-admin';
-    kpiCard.classList.toggle('is-reports-only',reportsOnly);
+    const m=kpiData?.members.find(m=>m.id===kpiPick);
     kpiCard.hidden=!kpiLoading&&!reportLoading&&!kpiError&&!reportError&&!kpiData?.available&&!reportData?.available;
     kpiMonthSelect.replaceChildren(...(data?.months?.map(m=>m.month)||[kpiMonth]).map(month=>{const o=node('option',`T${Number(month.slice(5))}/${month.slice(0,4)}`);o.value=month;return o;}));
     kpiMonthSelect.value=kpiMonth;kpiMonthSelect.hidden=kpiMonthSelect.options.length<2;
-    kpiCard.firstChild.querySelector('h2').textContent=reportsOnly?'Báo cáo tuần / tháng · Sale Admin':'KPI Sale & báo cáo tuần / tháng';
-    const sub=kpiCard.firstChild.querySelector('.dash-sub')||node('p',null,'dash-sub');sub.textContent=`Tháng ${Number(kpiMonth.slice(5))}/${kpiMonth.slice(0,4)} · ${reportsOnly?'điểm và trạng thái báo cáo của nhân viên':'KPI và báo cáo hiển thị riêng, cùng nhân viên'}`;kpiCard.firstChild.insertBefore(sub,kpiMonthSelect);
+    kpiCard.firstChild.querySelector('h2').textContent='KPI Sale & báo cáo tuần / tháng';
+    const sub=kpiCard.firstChild.querySelector('.dash-sub')||node('p',null,'dash-sub');sub.textContent=`Tháng ${Number(kpiMonth.slice(5))}/${kpiMonth.slice(0,4)} · KPI và báo cáo hiển thị riêng, cùng nhân viên`;kpiCard.firstChild.insertBefore(sub,kpiMonthSelect);
     const out=[];
     if(people.length>1){
       const list=node('ol',null,'dash-kpi-list');list.setAttribute('aria-label','Chọn nhân viên xem KPI và báo cáo');
@@ -293,17 +289,14 @@ export function initDashboard({ api, root, isManager, money, user=()=>null }) {
       }out.push(list);
     }
     const body=node('div');body.setAttribute('aria-busy',String(kpiLoading));
-    body.hidden=reportsOnly;
-    if(!reportsOnly){
     if(kpiLoading)body.append(node('p','Đang tính KPI…','dash-sub'));
     else if(kpiError)loadMessage(body,kpiError,()=>loadKpi(true));
     else if(m){
       const main=node('div',null,'dash-kpi-main'),chart=node('div',null,'dash-kpi-chart');
       chart.append(node('p',m.name,'dash-kpi-name'),kpiDonut(m),legend(m.parts.map(p=>[KPI_PARTS[p.key],p.label])));main.append(chart,kpiDetail(m));body.append(main);
     }else body.append(node('p',person?`${person.name}: chưa có KPI Sale trong tháng này (chưa bật KPI hoặc không thuộc bảng Sale).`:'Không có KPI Sale trong tháng và phạm vi đang xem.','dash-sub'));
-    }
     if(kpiData?.restricted)out.push(node('p','Chỉ hiện điểm của bạn – điểm nhân viên khác chỉ Manager xem.','dash-sub'));
-    kpiBody.replaceChildren(...out,body);kpiBody.hidden=reportsOnly&&!out.length;renderReports();
+    kpiBody.replaceChildren(...out,body);kpiBody.hidden=false;renderReports();
   }
   async function loadKpi(refresh) {
     const id=++kpiRequest;if(!data)return;kpiLoading=true;kpiError='';renderKpi();
@@ -314,7 +307,7 @@ export function initDashboard({ api, root, isManager, money, user=()=>null }) {
   const reportCard=node('section',null,'dash-report-card'),reportBody=node('div',null,'dash-report-body');
   reportCard.append(node('h3','Báo cáo tuần / tháng'),reportBody);kpiCard.append(reportCard);
   function renderReports(){
-    const pendingMember=ownReportsOnly()?user()?.id:kpiPick;
+    const pendingMember=kpiPick;
     reportCard.classList.toggle('is-details-collapsed',reportDetailsOpen.get(kpiMonth+':'+pendingMember)===false);
     reportBody.setAttribute('aria-busy',String(reportLoading));
     if(reportLoading||kpiLoading&&!dashboardScorePeople(kpiData,reportData,kpiMonth).some(p=>p.id===kpiPick)){reportBody.replaceChildren(node('p','Đang tải điểm báo cáo…','dash-sub'));return;}
@@ -347,8 +340,7 @@ export function initDashboard({ api, root, isManager, money, user=()=>null }) {
   function loadScorePanels(refresh){
     ++kpiRequest;++reportRequest;kpiData=reportData=null;kpiError=reportError='';kpiLoading=reportLoading=true;
     const months=data.months.map(m=>m.month);if(!months.includes(kpiMonth))kpiMonth=months.at(-1);
-    if(ownReportsOnly()){kpiLoading=false;kpiData={month:kpiMonth,available:false,scope:'self',members:[]};}
-    renderKpi();if(!ownReportsOnly())loadKpi(refresh);loadReports(refresh);
+    renderKpi();loadKpi(refresh);loadReports(refresh);
   }
 
   // ---- Doanh số cửa hàng (NVBH / CHT): DS chung CRM + POS, chỉ tiêu, mốc thưởng, DS từng người. Tải riêng như KPI.

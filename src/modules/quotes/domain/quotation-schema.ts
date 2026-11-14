@@ -24,15 +24,29 @@ export function validDeliveryDate(value: unknown): string {
   return Number.isFinite(+d) && d.toISOString().slice(0, 10) === iso ? iso : '';
 }
 
-export interface WordEdit { index: number; hash: string; text: string; bold?: boolean; italic?: boolean; underline?: boolean; align?: 'left' | 'center' | 'right' | 'both' }
+export interface WordRun { text:string;bold?:boolean;italic?:boolean;underline?:boolean;strike?:boolean;fontFamily?:string;fontSize?:number;color?:string }
+export interface WordEdit extends WordRun { index:number;hash:string;align?:'left'|'center'|'right'|'both';runs?:WordRun[];lineSpacing?:number;indent?:number;list?:'none'|'bullet'|'decimal' }
+function cleanWordFormat(e:Obj):Obj{
+  const result:Obj={};
+  for(const k of ['bold','italic','underline','strike'])if(e[k]!==undefined){if(typeof e[k]!=='boolean')throw bad('Định dạng Word không hợp lệ.');result[k]=e[k];}
+  if(e.fontFamily!==undefined){if(!['Times New Roman','Arial','Calibri','Tahoma'].includes(e.fontFamily))throw bad('Phông chữ Word không hợp lệ.');result.fontFamily=e.fontFamily;}
+  if(e.fontSize!==undefined){if(typeof e.fontSize!=='number'||!Number.isFinite(e.fontSize)||e.fontSize<6||e.fontSize>72||!Number.isInteger(e.fontSize*2))throw bad('Cỡ chữ Word phải từ 6 đến 72 pt.');result.fontSize=e.fontSize;}
+  if(e.color!==undefined){if(typeof e.color!=='string'||!/^([A-Fa-f0-9]{6})$/.test(e.color))throw bad('Màu chữ Word không hợp lệ.');result.color=e.color.toUpperCase();}
+  return result;
+}
 export function cleanWordEdits(value: unknown = []): WordEdit[] {
   if (!Array.isArray(value) || value.length > 1000 || JSON.stringify(value).length > 300000) throw bad('Nội dung chỉnh Word quá lớn.');
   const seen = new Set<number>();
   return value.map((e: Obj) => {
     if (!e || !Number.isInteger(e.index) || e.index < 0 || e.index > 20000 || seen.has(e.index) || !/^[a-f0-9]{64}$/.test(e.hash) || typeof e.text !== 'string' || e.text.length > 20000) throw bad('Đoạn chỉnh Word không hợp lệ.');
     seen.add(e.index);
-    const result: Obj = { index: e.index, hash: e.hash, text: e.text };
-    for (const k of ['bold', 'italic', 'underline']) if (e[k] !== undefined) { if (typeof e[k] !== 'boolean') throw bad('Định dạng Word không hợp lệ.'); result[k] = e[k]; }
+    const result: Obj = { index: e.index, hash: e.hash, text: e.text,...cleanWordFormat(e) };
+    if(e.runs!==undefined){
+      if(!Array.isArray(e.runs)||e.runs.length>2000)throw bad('Quá nhiều phần định dạng trong đoạn Word.');
+      const runs=e.runs.map((r:unknown)=>{if(!isObj(r)||typeof r.text!=='string'||r.text.length>20000)throw bad('Nội dung chữ Word không hợp lệ.');return {text:r.text,...cleanWordFormat(r)};});
+      if(runs.map((r:Obj)=>r.text).join('')!==e.text)throw bad('Định dạng chữ không khớp nội dung đoạn Word.');result.runs=runs;
+    }
+    for(const [key,values]of [['lineSpacing',[1,1.15,1.5,2]],['indent',[0,360,720,1080,1440]],['list',['none','bullet','decimal']]] as const)if(e[key]!==undefined){if(!(values as readonly unknown[]).includes(e[key]))throw bad('Định dạng đoạn Word không hợp lệ.');result[key]=e[key];}
     if (e.align !== undefined) { if (!['left', 'center', 'right', 'both'].includes(e.align)) throw bad('Căn lề Word không hợp lệ.'); result.align = e.align; }
     return result as WordEdit;
   });

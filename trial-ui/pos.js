@@ -1643,7 +1643,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const m = modal('Quét mã bằng camera'), video = el('video', 'pos-camera'),
       hint = el('p', 'pos-note', 'Cho phép camera, đưa mã vạch vào giữa khung và giữ máy ổn định.');
     video.style.width = '100%';
-    m.body.append(video, hint, button('Đóng camera', 'btn secondary', m.close));
+    const scanActions = el('div', 'pos-scan-actions');
+    scanActions.append(button('Đóng camera', 'btn secondary', m.close));
+    m.body.append(video, hint, scanActions);
     let handle, closed = false;
     const controller = new AbortController();
     const leave = () => m.close();
@@ -1665,7 +1667,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         : e.name === 'NotFoundError' ? 'Không tìm thấy camera trên thiết bị này.'
         : e.name === 'NotReadableError' ? 'Camera đang được ứng dụng khác sử dụng. Đóng ứng dụng đó rồi thử lại.' : e.message;
       video.hidden = true;
-      m.body.append(button('Nhập mã thủ công', 'btn secondary', () => { m.close(); nodes.search.focus(); }));
+      scanActions.append(button('Nhập mã thủ công', 'btn primary', () => { m.close(); nodes.search.focus(); }));
     }
   }
   function chooseCustomer(forPayment = false) {

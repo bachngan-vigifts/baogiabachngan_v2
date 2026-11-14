@@ -28,3 +28,11 @@ test('nhóm chưa có doanh thu đủ giá vốn hiển thị gạch ngang, khô
  assert.match(root.innerHTML,/data-label="Giá vốn hàng bán"[^>]*><span[^>]*>—<\/span>/);
  tabs[0]!.onclick();assert.match(root.innerHTML,/Chưa đủ giá vốn theo bộ lọc/);assert.doesNotMatch(root.innerHTML,/class="pf-chart"/);
 });
+
+
+test('product margin uses line margin and labels unallocated order costs explicitly',async()=>{
+ const data:any=profitLayoutFixture();data.products=[{...emptyRow('SKU','Ly'),qty:1,orders:1,revenue:1000000,coveredRevenue:1000000,cost:600000,direct:100000,gross:300000,margin:.3,net:300000,netMargin:null,revenueBy:{confirmed:1000000,estimate:0,backfill:0,missing:0}}];
+ const nodes=new Map<string,any>(),tabs=[{dataset:{tab:'products'},onclick:null as any}],root:any={innerHTML:'',setAttribute(){},removeAttribute(){},querySelector:(key:string)=>{if(!nodes.has(key))nodes.set(key,{addEventListener(){}});return nodes.get(key);},querySelectorAll:(key:string)=>key==='[data-tab]'?tabs:[]};
+ await initProfit({root,api:async()=>data,toast(){},esc:String,money:String}).show();tabs[0]!.onclick();
+ assert.match(root.innerHTML,/data-label="Biên dòng"[^>]*>30%<\/td>/);assert.match(root.innerHTML,/chưa phân bổ ship\/phí cấp đơn và lương\/thưởng/);
+});

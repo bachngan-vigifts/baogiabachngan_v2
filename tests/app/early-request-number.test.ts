@@ -1,3 +1,4 @@
+import {employees} from '../../src/modules/staff/schema.ts';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -18,7 +19,11 @@ test('PXH numbers match the shared document rule, survive edits/submit and retry
  const edited=ok(await f.call('/purchase-early-requests/'+a.id,f.cookies.mgr,'PUT',{revision:a.request.revision,pickupDate:'2026-11-01',lines:[{sku:'031106000',quantity:7}]}));assert.equal(edited.request.ticketNumber,a.request.ticketNumber);
  const sent=ok(await f.call('/purchase-early-requests/'+a.id+'/submit',f.cookies.mgr,'POST',{revision:edited.request.revision}));assert.equal(sent.request.ticketNumber,a.request.ticketNumber);
  const found=ok(await f.call('/purchase-early-requests?q='+encodeURIComponent(a.request.ticketNumber),f.cookies.mgr));assert.deepEqual(found.requests.map((r:any)=>r.id),[a.id]);
- const portal=ok(await f.call('/supplier-portal/early-requests?id='+a.id,f.cookies.ncc));assert.equal(portal.requests[0].ticketNumber,a.request.ticketNumber);
+ assert.equal(found.requests[0].createdBy,'mgr');
+ await f.db.update(employees).set({name:'Người tạo đã đổi tên'}).where(eq(employees.id,'mgr'));
+ const named=ok(await f.call('/purchase-early-requests?id='+a.id,f.cookies.mgr));assert.equal(named.requests[0].createdByName,'Người tạo đã đổi tên');
+ const purchases=ok(await f.call('/purchase-orders',f.cookies.mgr));assert.ok(purchases.orders.every((o:any)=>o.createdByName==='Người tạo đã đổi tên'));
+ const portal=ok(await f.call('/supplier-portal/early-requests?id='+a.id,f.cookies.ncc));assert.equal(portal.requests[0].ticketNumber,a.request.ticketNumber);assert.equal(portal.requests[0].createdByName,undefined);assert.equal(portal.requests[0].createdBy,undefined);
  const calendar=ok(await f.call('/purchase-receiving-calendar?type=early&q='+a.request.ticketNumber,f.cookies.mgr));assert.ok(calendar.rows.some((r:any)=>r.requestId===a.id&&r.ticketNumber===a.request.ticketNumber));
  const incoming=ok(await f.call('/purchase-incoming?type=early',f.cookies.mgr));assert.ok(incoming.rows.some((r:any)=>r.earlyRequests.some((e:any)=>e.id===a.id&&e.ticketNumber===a.request.ticketNumber)));
  const rows=await Promise.all([f.call('/purchase-early-requests',f.cookies.mgr,'POST',body()),f.call('/purchase-early-requests',f.cookies.sa,'POST',body())]);const numbers=rows.map(r=>ok(r,201).request.ticketNumber);assert.equal(new Set(numbers).size,2);assert.ok(numbers.every(n=>n!==a.request.ticketNumber));

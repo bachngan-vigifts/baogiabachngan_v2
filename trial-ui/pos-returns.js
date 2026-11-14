@@ -36,6 +36,24 @@ const select = (items) => {
   }
   return n;
 };
+/**
+ * Phí dịch vụ / phí ship đã tính cho khách trên bill mà chưa có yêu cầu hoàn nào (đang chờ / đã duyệt) giữ.
+ * Dùng làm mặc định khi trả / thu hồi TOÀN BỘ hàng còn lại; máy chủ vẫn kiểm lại không vượt phí gốc.
+ */
+export function remainingPosFees(order, returns = []) {
+  let fees = {};
+  try { fees = JSON.parse(order?.posSnapshot || '{}').fees || {}; } catch { fees = {}; }
+  const active = returns.filter((r) => !['cancelled', 'rejected'].includes(r.status));
+  const used = (k) => active.reduce((n, r) => n + Number(r[k] || 0), 0);
+  return {
+    service: Math.max(0, Math.round(Number(fees.service?.amount || 0) - used('requestedServiceFee'))),
+    shipping: Math.max(0, Math.round(Number(fees.shippingFee ?? fees.shipping?.amount ?? 0) - used('requestedShippingFee'))),
+  };
+}
+/** Trả hết phần còn lại của bill (mọi dòng còn được trả đều nhập đủ số lượng) thì hoàn luôn phí. */
+export function returnsEverything(rows) {
+  return rows.length > 0 && rows.every((x) => Number(x.qty.value) >= Number(x.left) - 1e-9);
+}
 /** Linked POS returns only; every amount/state transition is checked again by the API. */
 export async function openPosReturns({
   api,
@@ -200,8 +218,9 @@ export async function openPosReturns({
         d.canApprove &&
         (r.createdBy !== d.viewerId || d.manager)
       ) {
-        const service = field('Phí dịch vụ được hoàn', 'number', 0),
-          shipping = field('Phí ship được hoàn', 'number', 0),
+        // Manager: mặc định duyệt đúng phí nhân viên đã đề nghị (có thể giảm). Người được chỉ định không duyệt phí.
+        const service = field('Phí dịch vụ được hoàn', 'number', d.manager ? r.requestedServiceFee || 0 : 0),
+          shipping = field('Phí ship được hoàn', 'number', d.manager ? r.requestedShippingFee || 0 : 0),
           note = field('Ghi chú duyệt');
         service.input.max = r.requestedServiceFee;
         shipping.input.max = r.requestedShippingFee;
@@ -427,7 +446,7 @@ export async function openPosReturns({
         condition.setAttribute('aria-label', 'Tình trạng ' + l.name);
         row.append(qty.box, condition);
         form.append(row);
-        rows.push({ id: l.id, qty: qty.input, condition });
+        rows.push({ id: l.id, qty: qty.input, condition, left });
       }
       const reason = field('Lý do đổi/trả (bắt buộc)'),
         kind = select([
@@ -436,11 +455,32 @@ export async function openPosReturns({
         ]),
         service = field('Đề nghị hoàn thêm phí dịch vụ', 'number', 0),
         shipping = field('Đề nghị hoàn thêm phí ship', 'number', 0),
+        feeNote = el('p', 'pos-note pos-return-fee-note'),
         requestKey = crypto.randomUUID();
       kind.setAttribute('aria-label', 'Loại yêu cầu');
+      // Bill có thu phí ship / phí dịch vụ: trả hoặc thu hồi toàn bộ hàng còn lại thì mặc định đề nghị hoàn luôn phần phí còn lại.
+      // Trả một phần giữ 0 đ. Nhân viên sửa tay ô phí thì không tự ghi đè nữa.
+      const feesLeft = remainingPosFees(d.order, d.returns);
+      let feesTouched = false;
+      service.input.max = feesLeft.service;
+      shipping.input.max = feesLeft.shipping;
+      const syncFees = () => {
+        if (feesTouched || (!feesLeft.service && !feesLeft.shipping)) { feeNote.hidden = true; return; }
+        const all = d.recoveringIssued || returnsEverything(rows);
+        service.input.value = all ? feesLeft.service : 0;
+        shipping.input.value = all ? feesLeft.shipping : 0;
+        feeNote.hidden = false;
+        feeNote.textContent = all
+          ? 'Trả toàn bộ hàng: tự đề nghị hoàn luôn phí đã thu của khách (dịch vụ ' + money(feesLeft.service) + ', ship ' + money(feesLeft.shipping) + '). Sửa nếu cần.'
+          : 'Trả một phần: chưa đề nghị hoàn phí. Trả hết hàng thì phí ' + money(feesLeft.service + feesLeft.shipping) + ' được tự điền.';
+      };
+      for (const input of [service.input, shipping.input]) input.addEventListener('input', () => { feesTouched = true; feeNote.hidden = true; });
+      for (const x of rows) x.qty.addEventListener('input', syncFees);
+      syncFees();
       form.append(
         kind,
         reason.box,
+        feeNote,
         service.box,
         shipping.box,
         button(

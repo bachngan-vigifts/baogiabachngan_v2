@@ -1,3 +1,4 @@
+import { requiresSupplierOrderNumber } from './supplier-order-number.js';
 import { setProductThumbnail } from './product-images.js';
 /**
  * LẬP ĐƠN MUA BỔ SUNG – trang riêng `#/purchases/new?mode=restock` (thay cho popup chọn sản phẩm dạng catalogue).
@@ -52,11 +53,12 @@ export function initRestockPage({ api, host, toast, go, options, loadXlsx, onBac
   const supSel = el('select'), chips = el('div', 'pur-sup-chips'), supField = el('label', 'pur-rs-field pur-rs-sup');
   supSel.setAttribute('aria-label', 'Thêm nhà cung cấp');
   supField.append(el('span', '', 'Nhà cung cấp *'), supSel, chips);
+  const numberFields = el('div', 'form-grid two pur-rs-note');
   const arrival = el('input'); arrival.type = 'date';
   const address = el('input'); address.maxLength = 120; address.placeholder = 'Nhập địa chỉ giao hàng';
   const note = el('textarea'); note.rows = 1; note.maxLength = 2000; note.placeholder = 'Ghi chú cho NCC (không bắt buộc)';
   const f = (label, input, cls = '') => { const l = el('label', 'pur-rs-field ' + cls); l.append(el('span', '', label), input); return l; };
-  info.append(supField, f('Hẹn giao dự kiến', arrival), f('Địa chỉ giao hàng *', address), f('Ghi chú', note, 'pur-rs-note'));
+  info.append(supField, f('Hẹn giao dự kiến', arrival), f('Địa chỉ giao hàng *', address), f('Ghi chú', note, 'pur-rs-note'), numberFields);
   // ----- danh sách mua
   const listBox = el('section', 'panel pur-rs-list'), bar = el('div', 'pur-rs-bar');
   const searchWrap = el('div', 'pur-rs-search'), q = el('input');
@@ -90,6 +92,13 @@ export function initRestockPage({ api, host, toast, go, options, loadXlsx, onBac
       const rm = btn('×', 'icon-btn', () => { sups.splice(i, 1); fillSuppliers(); render(); }); rm.setAttribute('aria-label', 'Bỏ ' + x.name); c.append(rm);
       return c;
     }));
+    numberFields.replaceChildren(...sups.filter(x => requiresSupplierOrderNumber(x.name)).map(x => {
+      const number = el('input'); number.type = 'text'; number.maxLength = 100;
+      number.value = x.internalNo || ''; number.placeholder = 'Có thể để trống khi lưu nháp';
+      number.addEventListener('input', () => { x.internalNo = number.value; persist(); });
+      return f('Số đơn phía NCC · ' + x.name, number);
+    }));
+    numberFields.hidden = !numberFields.childElementCount;
   }
   supSel.addEventListener('change', () => {
     const s = o.suppliers.find(x => x.id === supSel.value);
@@ -287,7 +296,7 @@ export function initRestockPage({ api, host, toast, go, options, loadXlsx, onBac
     if (bad) { err.textContent = `${bad.sku}: SL đặt phải là số nguyên lớn hơn 0.`; focusRow(bad.sku); return; }
     const over = rows.find(r => perSupplier(r).slice(1).reduce((a, v) => a + v, 0) > Number(r.want));
     if (over) { err.textContent = `${over.sku}: số chia cho các NCC khác vượt "SL đặt (tổng)".`; return; }
-    const orders = sups.map((x, i) => ({ supplierId: x.id, arrivalDate: arrival.value || undefined, warehouse: address.value.trim(), note: note.value,
+    const orders = sups.map((x, i) => ({ supplierId: x.id, internalNo: (x.internalNo || '').trim(), arrivalDate: arrival.value || undefined, warehouse: address.value.trim(), note: note.value,
       lines: rows.map(r => ({ sku: r.sku, name: r.name, unit: r.unit, quantity: perSupplier(r)[i], sources: [] })).filter(l => l.quantity > 0) })).filter(x => x.lines.length);
     if (!orders.length) { err.textContent = 'Chưa có số lượng nào để đặt.'; return; }
     busy = true; summarize(); const label = submit.textContent; submit.textContent = 'Đang tạo…';
