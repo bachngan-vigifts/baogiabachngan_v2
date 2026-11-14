@@ -40,9 +40,21 @@ add_action('wc_ajax_lnl_add_to_cart', function () {
 });
 
 add_action('wp_footer', function () {
-    if (is_admin() || !function_exists('is_product') || !is_product()) { return; }
-    $product = wc_get_product(get_the_ID());
-    if (!$product || !$product->is_type(array('simple', 'variable'))) { return; }
+    if (is_admin()) { return; }
+    $why = 'on';
+    $product = false;
+    if (!function_exists('is_product') || !is_product()) {
+        $why = 'not-product';
+    } else {
+        $product = wc_get_product(get_the_ID());
+        if (!$product) {
+            $why = 'no-product';
+        } elseif (!$product->is_type(array('simple', 'variable'))) {
+            $why = 'type-' . preg_replace('/[^a-z0-9_]/', '', (string) $product->get_type());
+        }
+    }
+    echo '<script>window.__lnlAtc="' . esc_js($why) . '";</script>' . "\n";
+    if ($why !== 'on') { return; }
     $cfg = array(
         'url'  => add_query_arg('wc-ajax', 'lnl_add_to_cart', home_url('/')),
         'cart' => wc_get_cart_url(),

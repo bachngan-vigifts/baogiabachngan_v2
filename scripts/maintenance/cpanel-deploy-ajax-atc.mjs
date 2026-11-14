@@ -18,7 +18,7 @@ const log = (...a) => console.log(redact(a.join(' ')));
 const headers = { Authorization: `cpanel ${user}:${token}`, Accept: 'application/json', 'User-Agent': 'cpanel-deploy-ajax-atc' };
 
 const newSrc = readFileSync(SRC, 'utf8');
-if (!newSrc.startsWith('<?php') || newSrc.length > 9000 || /[^\x00-\x7f]/.test(newSrc) || /\beval\s*\(|base64_decode|shell_exec|passthru|\bexec\s*\(|system\s*\(/i.test(newSrc) || !/wc_ajax_lnl_add_to_cart/.test(newSrc)) throw new Error('Bản mới không đạt kiểm tra nội dung');
+if (!newSrc.startsWith('<?php') || newSrc.length > 9000 || /[^\x00-\x7f]/.test(newSrc) || /\beval\s*\(|base64_decode|shell_exec|passthru|\bexec\s*\(|system\s*\(/i.test(newSrc) || !/wc_ajax_lnl_add_to_cart/.test(newSrc) || !/__lnlAtc/.test(newSrc)) throw new Error('Bản mới không đạt kiểm tra nội dung');
 
 async function listMu() {
   const url = new URL(`${origin}/execute/Fileman/list_files`); url.searchParams.set('dir', DIR);
@@ -41,18 +41,34 @@ async function removeFile() {
   const r = await fetch(url, { headers, signal: AbortSignal.timeout(60_000) }); const b = await r.json().catch(() => null);
   return r.ok && b?.cpanelresult?.event?.result === 1;
 }
+async function discover() {
+  const out = {};
+  for (const type of ['simple', 'variable']) {
+    try {
+      const r = await fetch(`${SITE}/wp-json/wc/store/v1/products?type=${type}&per_page=5&stock_status=instock`, { headers: { 'User-Agent': 'cpanel-deploy-health' }, signal: AbortSignal.timeout(30_000) });
+      const j = await r.json(); const p = (Array.isArray(j) ? j : []).find(x => x.permalink && x.is_purchasable !== false);
+      if (p) out[type] = new URL(p.permalink).pathname;
+    } catch { /* bỏ qua */ }
+  }
+  return out;
+}
+let found = null;
 async function health() {
+  found = found || await discover();
   const out = {}; const bad = /Fatal error|critical error|Parse error|There has been a critical/i;
-  for (const [name, path] of [['home', '/'], ['product', '/san-pham/binh-giu-nhiet-locknlock-lhc6150ivy/'], ['cart', '/gio-hang/']]) {
+  const pages = [['home', '/'], ['product', '/san-pham/binh-giu-nhiet-locknlock-lhc6150ivy/'], ['cart', '/gio-hang/']];
+  for (const [k, v] of Object.entries(found)) pages.push([`p_${k}`, v]);
+  for (const [name, path] of pages) {
     const t0 = performance.now();
     try {
       const r = await fetch(`${SITE}${path}?hc=${Date.now()}`, { redirect: 'follow', headers: { 'User-Agent': 'cpanel-deploy-health' }, signal: AbortSignal.timeout(30_000) });
-      const text = (await r.text()).slice(0, 600_000);
+      const text = (await r.text()).slice(0, 900_000);
       out[name] = { status: r.status, ms: Math.round(performance.now() - t0), phpError: bad.test(text) };
-      if (name === 'product') out[name].hasScript = /lnl-ajax-atc/.test(text);
+      if (name === 'product' || name.startsWith('p_')) out[name].atc = (/__lnlAtc=\\?"?([\w-]+)/.exec(text) || [])[1] || 'none';
     } catch { out[name] = { status: 0, ms: Math.round(performance.now() - t0), phpError: false }; }
   }
-  out.ok = ['home', 'product', 'cart'].every(k => out[k].status === 200 && !out[k].phpError);
+  out.ok = pages.every(([k]) => out[k].status === 200 && !out[k].phpError);
+  out.atcOn = Object.keys(found).length > 0 && Object.keys(found).every(k => out[`p_${k}`]?.atc === 'on');
   return out;
 }
 
@@ -76,7 +92,7 @@ if (MODE === 'apply') {
   log(`Ghi file mới: ${same ? 'đạt (đọc lại khớp)' : 'LỖI'}`);
   let after = null;
   if (same) { await new Promise(r => setTimeout(r, 3000)); after = await health(); log('Web sau khi thêm:', JSON.stringify(after)); }
-  if (!same || !after.ok || !after.product.hasScript) {
+  if (!same || !after.ok || !after.atcOn) {
     log('GỠ LẠI do web bất thường, ghi lỗi hoặc trang sản phẩm chưa có đoạn script (có thể còn cache cũ)');
     const rm = await removeFile(); const gone = !(await listMu() || []).includes(FILE); const h2 = await health();
     log(`Gỡ lại: ${rm && gone ? 'đạt' : 'LỖI'}; web: ${JSON.stringify(h2)}`); process.exit(2);
