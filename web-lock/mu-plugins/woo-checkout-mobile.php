@@ -67,6 +67,9 @@ function lnl_checkout_mobile_css() {
   body.page-template-page-checkout .woocommerce-form__label-for-checkbox input,
   body.page-template-page-checkout #ship-to-different-address input { margin: 2px 0 0; flex: 0 0 20px; }
   body.page-template-page-checkout #ship-to-different-address { padding: 0; margin: 0; }
+  body.page-template-page-checkout .woocommerce-account-fields .form-row,
+  body.page-template-page-checkout .create-account { margin-left: 0 !important; padding-left: 0 !important; }
+  body.page-template-page-checkout .woocommerce-account-fields input[type=checkbox] { position: static; margin-left: 0; }
   body.page-template-page-checkout .form-row.woocommerce-form__label-for-checkbox,
   body.page-template-page-checkout #ship-to-different-address { margin: 4px 0; }
   body.page-template-page-checkout input[type=checkbox] { width: 20px; height: 20px; }
