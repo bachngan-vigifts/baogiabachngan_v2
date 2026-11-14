@@ -62,7 +62,7 @@ const routeSource = readFileSync(new URL('../../src/modules/sales/api/routes.ts'
   .replace(/^import[\s\S]*?;\n/gm, '').replace(/^export /gm, '');
 function handler(body: any, role = 'manager', orderStatus = 'confirmed', path = 'put/contracts/:id') {
   const handlers = new Map<string, any>(), updates: any[] = [], inserts: any[] = [];
-  const contract = { id: 'k', orderId: 'o', revision: 2, status: 'signed', value: 1000, depositRate: 30, depositAmount: 300, paymentDays: 5, signedDate: '2026-10-09' };
+  const contract = { data:'{}', id: 'k', orderId: 'o', revision: 2, status: 'signed', value: 1000, depositRate: 30, depositAmount: 300, paymentDays: 5, signedDate: '2026-10-09' };
   const order = { id: 'o', status: orderStatus, total: 1000 };
   const rows = [[path.includes('/orders/') ? order : { order }], [contract], [], [], []];
   const query = (result: any) => {
@@ -79,7 +79,7 @@ function handler(body: any, role = 'manager', orderStatus = 'confirmed', path = 
   const table = new Proxy({}, { get: (_, key) => String(key) });
   const ctx: any = {
     // This VM isolates contract handlers; return and order-product APIs have real-router integration tests.
-    registerProductionFiles, bindProductionFiles, registerCrmReturnRoutes: () => {}, registerContractLiquidationRoutes: () => {}, registerCashCollectionRoutes: () => {}, registerWebOrderEdits: () => {}, registerOrderProductsRoutes: () => {}, pendingGhnEdit, assertNoPendingGhnEdit,
+    registerProductionFiles, bindProductionFiles, registerCrmReturnRoutes: () => {}, registerContractTemplateRoutes: () => {}, registerContractLiquidationRoutes: () => {}, registerCashCollectionRoutes: () => {}, registerWebOrderEdits: () => {}, registerOrderProductsRoutes: () => {}, pendingGhnEdit, assertNoPendingGhnEdit,
     departmentOwner, quotationPredicate, seesAllAsSaleAdmin, canApprove, can, posOrderStoreScope, isNotNull: () => null, isNull: () => null, quoteSaveHooks: { beforeSave: [], afterSave: [] },
     customerStaff: table, salesOrders: table, salesContracts: table, paymentSchedules: table, customerPayments: table, deliveries: table,
     or: () => null, eq: () => null, and: () => null, desc: () => null, sql: () => null,

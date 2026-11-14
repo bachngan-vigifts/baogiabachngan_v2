@@ -2873,3 +2873,6 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .contract-docs[open] { display:flex;flex-direction:column;max-height:calc(100dvh - 24px); }
 .contract-docs .modal-head,.contract-docs .modal-foot { flex-shrink:0; }
 .contract-docs .cd-body { min-height:0;overflow:auto; }
+
+.cd-body.cd-template-mode{grid-template-columns:minmax(0,1fr)}
+.contract-docs [hidden]{display:none!important}

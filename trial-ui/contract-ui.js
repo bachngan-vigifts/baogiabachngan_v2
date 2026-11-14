@@ -74,14 +74,29 @@ function legacyQuote(detail, quoteRows, edits) {
   };
 }
 
+async function templateEdits(bytes,edits){
+  const prepared=await globalThis.ContractWordEdit.prepare(bytes);
+  return edits.map(edit=>{
+    const original=prepared.paragraphs.find(p=>p.index===edit.index);
+    if(!original)throw Error('Đoạn chỉnh sửa không còn thuộc mẫu gốc.');
+    return {...edit,hash:original.hash};
+  });
+}
 const templateBytes = new Map();
-async function templatesFor(quote) {
+async function templatesFor(quote, snapshot) {
   return Promise.all(globalThis.ContractDocument.templatesFor(quote).map(async t => {
     if (!templateBytes.has(t.path)) {
       const res = await fetch(t.path,{signal:AbortSignal.timeout(30000)}); if (!res.ok) throw Error('Không tải được mẫu biểu HĐKT.');
       templateBytes.set(t.path, await res.arrayBuffer());
     }
-    return { ...t, templateBytes: templateBytes.get(t.path) };
+    let bytes=templateBytes.get(t.path);
+    if(t.file==='HDKT'&&snapshot){
+      const brand=quote.quote_type==='VIGIFTS'?'VG':'BN';
+      const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');
+      if(snapshot.brand!==brand||snapshot.sourceHash!==hash)throw Error('File mẫu không khớp phiên bản của hồ sơ. Liên hệ Manager.');
+      bytes=await globalThis.ContractWordEdit.apply(bytes,await templateEdits(bytes,snapshot.edits));
+    }
+    return { ...t, templateBytes: bytes };
   }));
 }
 const saveBlob = (bytes, name, type) => {
@@ -106,19 +121,22 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   const dlg = document.createElement('dialog'); dlg.className = 'modal xwide contract-docs';
   dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">HĐKT ${esc(k.contractNo)}</span><h2>${canEdit ? 'Xem, chỉnh sửa và tải hồ sơ HĐKT' : 'Xem và tải hồ sơ HĐKT'}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
     <div class="modal-body cd-body">
-      <aside class="cd-form"><h3>Thông tin điền mẫu</h3><p class="muted small">Dùng chung cho cả 3 hồ sơ. ${canEditFinancial ? 'Manager được sửa tỷ lệ cọc và số ngày thanh toán; khi lưu, kỳ công nợ sẽ cập nhật theo.' : 'Tỷ lệ cọc và số ngày thanh toán theo báo giá nguồn.'} Bốn điều khoản tạm ứng, hạn thanh toán, thời gian và địa chỉ giao hàng lấy từ báo giá nguồn; <b>Lưu chỉnh sửa</b> sẽ cập nhật ngược về báo giá. Đổi thông tin rồi bấm <b>Cập nhật bản xem</b>. Ngày ký và địa điểm giao hàng luôn theo các ô bên dưới. Bảng biên bản lấy từ HĐKT. Với các đoạn khác đã sửa trực tiếp, cần <b>Đặt lại theo mẫu</b> hồ sơ đó để nhận dữ liệu mới.</p>
+      <aside class="cd-form"><h3>Thông tin điền mẫu</h3>
         ${FIELDS.map(([f, label, type]) => `<label><span>${label}</span>${type === 'honorific' ? `<select data-d="${f}"><option value="">Chọn danh xưng</option><option value="Ông">Ông</option><option value="Bà">Bà</option></select>` : type === 'area' ? `<textarea rows="2" data-d="${f}"></textarea>` : `<input data-d="${f}" type="${type || 'text'}" ${type === 'number' ? 'min="0"' : ''}>`}</label>`).join('')}
         <button type="button" class="btn secondary small" data-refresh>Cập nhật bản xem</button></aside>
       <section class="cd-preview"><div class="cd-tabs chips" role="tablist">${DOCS.map(([t, label], i) => `<button type="button" class="chip" role="tab" data-doc="${t}" aria-selected="${i === 0}">${label}</button>`).join('')}</div>
         <p class="muted small" data-status role="status" aria-live="polite">Đang dựng bản xem…</p>
-        <div class="cd-tools" role="group" aria-label="Thao tác với hồ sơ đang xem"><span class="small cd-current" data-current></span><div class="row-gap"><button type="button" class="btn secondary" data-print>In / Lưu PDF</button><button type="button" class="btn primary" data-one>Tải Word (.docx)</button><button type="button" class="btn ghost small" data-rebuild title="Bỏ các chỗ sửa trực tiếp của hồ sơ này, dựng lại từ thông tin điền mẫu">Đặt lại theo mẫu</button></div><span class="muted small">In và tải Word áp dụng cho tab đang mở. Tải bộ hồ sơ bên dưới gồm cả 3 file Word.</span></div><div class="cd-format" data-format hidden></div>
+        <div class="cd-tools" role="group" aria-label="Thao tác với hồ sơ đang xem"><span class="small cd-current" data-current></span><div class="row-gap"><button type="button" class="btn secondary" data-template hidden>Mẫu HĐKT gốc</button><button type="button" class="btn secondary" data-format-toggle aria-expanded="false" aria-controls="contract-format-panel">Định dạng văn bản</button><button type="button" class="btn secondary" data-print>In / Lưu PDF</button><button type="button" class="btn primary" data-one>Tải Word (.docx)</button><button type="button" class="btn ghost small" data-rebuild title="Bỏ các chỗ sửa trực tiếp của hồ sơ này, dựng lại từ thông tin điền mẫu">Đặt lại theo mẫu</button></div></div><div class="cd-format" id="contract-format-panel" data-format hidden></div>
         <iframe class="cd-frame" title="Bản xem HĐKT"></iframe></section>
     </div>
     <div class="modal-foot"><span class="muted small" data-dirty></span><button type="button" class="btn secondary" data-x>Đóng</button><button type="button" class="btn secondary" data-save>Lưu chỉnh sửa</button><button type="button" class="btn primary" data-zip>Tải 3 file Word (.zip)</button></div>`;
   document.body.append(dlg); dlg.showModal();
-  const $d = s => dlg.querySelector(s), status = t => { $d('[data-status]').textContent = t; };
+  const $d = s => dlg.querySelector(s), status = t => { $d('[data-status]').textContent = t; $d('[data-status]').hidden = !t; };
   const details = contractDetails(detail), edits = { HDKT: [], TAM_UNG: [], BBNT: [], ...(k.data?.edits || {}) };
-  let busy=false,previewReady=false,disposeFormat=null;
+  let busy=false,previewReady=false,disposeFormat=null,formatExpanded=false;
+  let master=null,templateMode=false,templateDirty=false;
+  const canManageTemplates=k.canManageTemplates===true;
+  $d('[data-template]').hidden=!canManageTemplates;
   let current = 'HDKT', dirty = false, quoteRows = null, quoteRowsPromise = null, renderSeq = 0;
   const ensureQuoteRows = () => quoteRowsPromise ||= (detail.order.quoteId ? api('/quotes/' + encodeURIComponent(detail.order.quoteId)).catch(() => null) : Promise.resolve(null)).then(result => { quoteRows = result?.data?.rows || []; });
   for (const el of dlg.querySelectorAll('[data-d]')) {
@@ -128,16 +146,23 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
     el.addEventListener('input', changed);
     el.addEventListener('change', changed);
   }
-  for (const selector of ['[data-save]', '[data-refresh]', '[data-rebuild]']) $d(selector).hidden = !canEdit;
-  const markDirty = () => { dirty = true; $d('[data-dirty]').textContent = 'Có thay đổi chưa lưu'; };
-  const close = () => { if(busy)return; if (dirty && !confirm('Đóng mà không lưu các chỉnh sửa?')) return; disposeFormat?.(); dlg.close(); dlg.remove(); };
+  for (const selector of ['[data-save]', '[data-refresh]', '[data-rebuild]', '[data-format-toggle]']) $d(selector).hidden = !canEdit;
+  const markDirty = () => { if(templateMode)templateDirty=true;else dirty=true; $d('[data-dirty]').textContent = 'Có thay đổi chưa lưu'; };
+  const close = () => { if(busy)return; if ((dirty||templateDirty) && !confirm('Đóng mà không lưu các chỉnh sửa?')) return; disposeFormat?.(); dlg.close(); dlg.remove(); };
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
 
   const currentDetails = () => canEdit ? readContractForm(dlg, details) : cleanDetails(details);
   const quote = () => legacyQuote(detail, quoteRows, edits);
   async function prepareDoc(type){
+    if(templateMode){
+      const templates=await templatesFor(quote());
+      const base=templates.find(t=>t.file==='HDKT').templateBytes;
+      const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',base))].map(n=>n.toString(16).padStart(2,'0')).join('');
+      if(hash!==master.sourceHash)throw Error('Mẫu gốc đã thay đổi. Tải lại trang trước khi chỉnh sửa.');
+      return {base,edits:await templateEdits(base,master.edits),locked:master.locked};
+    }
     await ensureQuoteRows();
-    const selectedDetails=currentDetails(),q=quote(),templates=await templatesFor(q);
+    const selectedDetails=currentDetails(),q=quote(),templates=await templatesFor(q,k.data?.templateSnapshot);
     const hdkt=templates.find(t=>t.file==='HDKT'),t=templates.find(t=>t.file===type);
     const contractBytes=type==='BBNT'?await globalThis.ContractDocument.build({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateBytes:hdkt.templateBytes}):undefined;
     return globalThis.ContractDocument.prepareDocument({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateBytes:t.templateBytes,documentType:type,contractBytes});
@@ -156,20 +181,22 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
     if(busy)return;lockUi(true,button,label);try{await run();}catch(e){toast(e.message,'err');}finally{lockUi(false,button);}
   }
   function recordParagraph(p){
-    const index=Number(p.dataset.wordIndex),info=p._wordInfo;if(!canEdit||!info)return;
+    const index=Number(p.dataset.wordIndex),info=p._wordInfo;if(!(templateMode?canManageTemplates:canEdit)||!info)return;
     const runs=paragraphRuns(p),text=runs.map(r=>r.text).join('');
     const format={};for(const key of ['align','list','lineSpacing','indent'])if(p.dataset[key]!==undefined)format[key]=['lineSpacing','indent'].includes(key)?Number(p.dataset[key]):p.dataset[key];
-    edits[current]=[...edits[current].filter(e=>e.index!==index),{index,hash:info.hash,text,runs,...format}].sort((a,b)=>a.index-b.index);
+    const changed=[...(templateMode?master.edits:edits[current]).filter(e=>e.index!==index),{index,hash:info.hash,text,runs,...format}].sort((a,b)=>a.index-b.index);
+    if(templateMode)master.edits=changed;else edits[current]=changed;
     p.classList.add('edited');markDirty();
   }
   async function render() {
-    if(busy)return;const seq = ++renderSeq;previewReady=false;disposeFormat?.();disposeFormat=null;lockUi(true);status('Đang dựng bản xem từ file Word…');$d('[data-current]').textContent='Đang xem: '+DOCS.find(([type])=>type===current)[1];
+    if(busy)return;const seq = ++renderSeq;previewReady=false;disposeFormat?.();disposeFormat=null;lockUi(true);status('Đang dựng bản xem từ file Word…');$d('[data-current]').textContent=templateMode?'Mẫu chung '+(k.legalEntity==='VG'?'Vigifts':'Bách Ngân')+' · Áp dụng cho HĐKT tạo mới':'Đang xem: '+DOCS.find(([type])=>type===current)[1];
+    const empty=$d('.cd-frame').contentDocument;empty.open();empty.write('<!doctype html><html><body></body></html>');empty.close();
     try {
       await Promise.all([loadBuilder(), loadPreview()]);
       await ensureQuoteRows();
       const type=current,{base,edits:normalized,locked}=await prepareDoc(type),prepared=await globalThis.ContractWordEdit.prepare(base,normalized);
       if (seq !== renderSeq) return;
-      edits[type]=normalized;
+      if(templateMode)master.edits=normalized;else edits[type]=normalized;
       const frame = $d('.cd-frame'), doc = frame.contentDocument;
       doc.open(); doc.write('<!doctype html><html lang="vi"><head><meta charset="utf-8"><style>body{margin:0;background:#edf0f5}.docx-wrapper{padding:16px!important}[data-word-index]{outline:1px dashed transparent;outline-offset:3px;cursor:text}[data-word-index]:hover{outline-color:#9db8e0}[data-word-index]:focus{outline-color:#2459a9;background:#f3f7fd}[data-word-index].edited{background:#fff8e6}body{counter-reset:bn-editor}[data-list="none"]::before{content:none!important}.cd-list-bullet::before{content:"• "!important;white-space:pre}.cd-list-decimal{counter-increment:bn-editor}.cd-list-decimal::before{content:counter(bn-editor) ". "!important;white-space:pre}@media print{[data-word-index].edited,[data-word-index]:focus{background:transparent!important;outline:none!important}@page{size:A4;margin:0}body{background:#fff}.docx-wrapper{padding:0!important;background:#fff!important;zoom:1!important}section.docx{box-shadow:none!important;margin:0!important;break-after:page}section.docx:last-child{break-after:auto}}</style></head><body><main></main></body></html>'); doc.close();
       await globalThis.docx.renderAsync(prepared.preview, doc.querySelector('main'), undefined, { inWrapper: true, hideWrapperOnPrint: true, breakPages: true, ignoreLastRenderedPageBreak: false, renderAltChunks: false, useBase64URL: true });
@@ -177,11 +204,12 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
       const wrapper = doc.querySelector('.docx-wrapper'); if (wrapper) wrapper.style.zoom = String(Math.min(1, Math.max(0.35, (frame.clientWidth - 32) / 794)));
       for (const info of prepared.paragraphs) {
         const p = doc.getElementById('bnword_' + info.index)?.closest('p'); if (!p) continue;
-        if (!canEdit || locked.includes(info.index)) continue;
+        if(templateMode&&locked.includes(info.index))p.title='Phần tự điền từ dữ liệu HĐKT; chỉnh tại thông tin hồ sơ.';
+        if (!(templateMode?canManageTemplates:canEdit) || locked.includes(info.index)) continue;
         p.contentEditable = 'true'; p.dataset.wordIndex = String(info.index);p._wordInfo=info;
-        const saved=edits[type].find(e=>e.index===info.index);for(const key of ['align','list','lineSpacing','indent'])if(saved?.[key]!==undefined)p.dataset[key]=String(saved[key]);
+        const saved=(templateMode?master.edits:edits[type]).find(e=>e.index===info.index);for(const key of ['align','list','lineSpacing','indent'])if(saved?.[key]!==undefined)p.dataset[key]=String(saved[key]);
         p.classList.toggle('cd-list-bullet',saved?.list==='bullet');p.classList.toggle('cd-list-decimal',saved?.list==='decimal');
-        if (edits[current].some(e => e.index === info.index)) p.classList.add('edited');
+        if ((templateMode?master.edits:edits[current]).some(e => e.index === info.index)) p.classList.add('edited');
         const record = () => recordParagraph(p);
         p.addEventListener('input', record);
         // Xoá hết chữ của một dòng (không nằm trong ô bảng) = xoá hẳn dòng đó: ẩn ngay, file Word bỏ đoạn này (ContractWordEdit).
@@ -195,18 +223,50 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
         if (!p.innerText.trim() && p.classList.contains('edited') && !p.closest('td')) p.style.display = 'none';
       }
       previewReady=true;
-      if(canEdit){$d('[data-format]').hidden=false;disposeFormat=initContractFormatting({host:$d('[data-format]'),doc,record:recordParagraph,onError:m=>toast(m,'err')});}
-      if (!canEdit) { status('HĐKT đã duyệt: nhân viên chỉ được xem và tải. Chỉ Manager được chỉnh sửa.'); return; }
-      status((current==='BBNT'?'Bảng sản phẩm và tiền lấy từ HĐKT; muốn sửa bảng, hãy sửa ở tab Hợp đồng kinh tế. ':'')+'Bấm vào đoạn văn hoặc ô bảng để sửa trực tiếp; xoá hết chữ một dòng rồi bấm Backspace để bỏ hẳn dòng đó. Sửa chữ không tự tính lại giá / thuế. Ngắt trang có thể khác Microsoft Word.' + (edits[current].length ? ` · Hồ sơ này có ${edits[current].length} đoạn đã sửa.` : ''));
+      if(templateMode?canManageTemplates:canEdit){$d('[data-format]').hidden=!formatExpanded;disposeFormat=initContractFormatting({host:$d('[data-format]'),doc,record:recordParagraph,onError:m=>toast(m,'err')});}
+      status('');
     } catch (e) { if (seq === renderSeq) status(e.message); }finally{if(seq===renderSeq)lockUi(false);}
   }
   dlg.querySelectorAll('[data-doc]').forEach(b => b.addEventListener('click', () => {
     if(busy)return;current = b.dataset.doc; dlg.querySelectorAll('[data-doc]').forEach(x => x.setAttribute('aria-selected', String(x === b))); render();
   }));
+  $d('[data-format-toggle]').addEventListener('click', () => {
+    if (!(templateMode?canManageTemplates:canEdit) || busy) return;
+    formatExpanded = !formatExpanded;
+    $d('[data-format]').hidden = !formatExpanded;
+    $d('[data-format-toggle]').setAttribute('aria-expanded', String(formatExpanded));
+  });
+  $d('[data-template]').addEventListener('click',async()=>{
+    if(busy||!canManageTemplates)return;
+    if(!templateMode&&!master){
+      let loaded=false;
+      await action($d('[data-template]'),'Đang mở mẫu…',async()=>{
+        master=await api('/contract-templates/'+(k.legalEntity==='VG'?'VG':'BN'));loaded=true;
+      });
+      if(!loaded)return;
+    }
+    templateMode=!templateMode;
+    $d('[data-template]').textContent=templateMode?'Quay lại hồ sơ':'Mẫu HĐKT gốc';
+    for(const selector of ['.cd-form','.cd-tabs','[data-zip]'])$d(selector).hidden=templateMode;
+    $d('.cd-body').classList.toggle('cd-template-mode',templateMode);
+    for(const selector of ['[data-save]','[data-format-toggle]','[data-rebuild]'])$d(selector).hidden=!(templateMode?canManageTemplates:canEdit);
+    $d('[data-save]').textContent=templateMode?'Lưu mẫu chung':'Lưu chỉnh sửa';
+    $d('[data-dirty]').textContent=(templateMode?templateDirty:dirty)?'Có thay đổi chưa lưu':'';
+    formatExpanded=false;$d('[data-format-toggle]').setAttribute('aria-expanded','false');
+    await render();
+  });
   $d('[data-refresh]').addEventListener('click', render);
-  $d('[data-rebuild]').addEventListener('click', () => { if (!edits[current].length || confirm('Đặt lại hồ sơ đang xem theo mẫu? Các thay đổi chữ và định dạng trong tab này sẽ bị bỏ. Hai hồ sơ còn lại được giữ nguyên.')) { edits[current] = []; markDirty(); render(); } });
+  $d('[data-rebuild]').addEventListener('click', () => { if (templateMode) { if(confirm('Đặt lại mẫu chung về file gốc? Thay đổi chỉ có hiệu lực sau khi lưu mẫu.')){master.edits=[];markDirty();render();}return; } if (!edits[current].length || confirm('Đặt lại hồ sơ đang xem theo mẫu? Các thay đổi chữ và định dạng trong tab này sẽ bị bỏ. Hai hồ sơ còn lại được giữ nguyên.')) { edits[current] = []; markDirty(); render(); } });
   $d('[data-print]').addEventListener('click', () => $d('.cd-frame').contentWindow.print());
   $d('[data-save]').addEventListener('click', e => {
+    if(templateMode){
+      if(!canManageTemplates)return;
+      return action(e.currentTarget,'Đang lưu mẫu…',async()=>{
+        await buildDoc('HDKT');
+        const saved=await api('/contract-templates/'+master.brand,'PUT',{revision:master.revision,sourceHash:master.sourceHash,edits:master.edits});
+        master={...master,...saved};templateDirty=false;$d('[data-dirty]').textContent='Đã lưu mẫu chung';toast('Đã lưu mẫu cho HĐKT tạo mới.');
+      });
+    }
     if (!canEdit) return;
     return action(e.currentTarget,'Đang lưu chỉnh sửa…',async()=>{
       const selectedDetails = currentDetails();
@@ -228,11 +288,11 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   });
   const wordName = type => `${type}_${String(k.contractNo).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').replace(/[^a-zA-Z0-9]+/g, '-')}.docx`;
   $d('[data-one]').addEventListener('click', e => action(e.currentTarget,'Đang tạo Word (.docx)…',async()=>{
-    await loadBuilder();saveBlob(await buildDoc(current),wordName(current),'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    await loadBuilder();saveBlob(await buildDoc(current),templateMode?'Mau_HDKT_'+master.brand+'.docx':wordName(current),'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
   }));
   $d('[data-zip]').addEventListener('click', e => action(e.currentTarget,'Đang tạo bộ 3 file Word…',async()=>{
     const selectedDetails=currentDetails();await Promise.all([loadBuilder(),ensureQuoteRows()]);const q=quote();
-    const pack=await globalThis.ContractDocument.buildPack({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateFiles:await templatesFor(q)});
+    const pack=await globalThis.ContractDocument.buildPack({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateFiles:await templatesFor(q,k.data?.templateSnapshot)});
     saveBlob(pack.bytes,`${pack.folder}.zip`,'application/zip');
   }));
   render();
