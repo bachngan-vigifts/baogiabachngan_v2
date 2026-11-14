@@ -1,0 +1,26 @@
+# Đọc mã giao diện web Lock (chỉ đọc) để tìm cách thêm giỏ hàng. Chạy từ nhánh khi file .github/cpanel-grep-theme.run đổi.
+name: Đọc mã giao diện web Lock
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/cpanel-grep-theme.run']
+permissions:
+  contents: read
+concurrency: cpanel-grep-theme
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Đọc
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: |
+          if [ -f .github/cpanel-grep-theme.run ]; then node scripts/maintenance/cpanel-grep-theme.mjs; else echo "Không có file đánh dấu, bỏ qua"; fi
