@@ -164,7 +164,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     if(!canWrite()||portal)return;
     dialog?.close();dialog?.remove();
     const modal=dialog=el('dialog','modal early-request-dialog');document.body.append(modal);
-    let draft=initial.id?initial:null,busy=false,dirty=!draft,lastAttempt=null;
+    let draft=initial.id?initial:null,busy=false,dirty=!draft,lastAttempt=null,adding=false;
     const form=el('form'),header=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');
     header.append(el('h2','','Phiếu xin lấy trước — nháp'),btn('Đóng',()=>{if(!busy)dialog.close();}));
     const dateInput=el('input');dateInput.type='date';dateInput.value=initial.pickupDate||'';dateInput.setAttribute('aria-label','Ngày lấy');
@@ -176,12 +176,12 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     const changed=()=>{dirty=true;sync();};
     const pinned=JSON.parse(initial.scope?.orderSources||'{}');
     const editLines=initial.lines.flatMap(line=>pinned[line.sku]?.length?pinned[line.sku].map(source=>({...line,quantity:source.quantity,source})):[line]);
-    for(const line of editLines) {
+    function appendLine(line,options) {
       const row=el('tr'),qty=el('input');qty.type='number';qty.min='1';qty.step='1';qty.value=line.quantity;qty.setAttribute('aria-label','Số lượng nháp mã '+line.sku+(line.source?' · '+line.source.orderNo:''));
       const orderCell=el('td'),orderSelect=el('select');orderSelect.setAttribute('aria-label','Đơn mua cho mã '+line.sku);
       orderSelect.append(Object.assign(el('option','',line.source?.orderNo||line.source?.supplierOrderNo?'Đang kiểm tra đơn đã ghi…':'Chưa chốt đơn mua'),{value:''}));
       let creatingBackfill=false;const createBackfill=btn('Tạo đơn mua bù',async()=>{
-        if(creatingBackfill)return;creatingBackfill=true;createBackfill.disabled=true;
+        if(creatingBackfill||busy||adding)return;creatingBackfill=true;createBackfill.disabled=true;
         try{
           const options=await api('/purchase-options'),names=options.suppliers.map((s,i)=>`${i+1}. ${s.name}`).join('\n');
           const picked=Number(prompt('Chọn NCC bằng số:\n'+names));if(!Number.isInteger(picked)||!options.suppliers[picked-1])return;
@@ -193,13 +193,13 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
       });
       orderCell.append(orderSelect,createBackfill);
       const td=el('td');td.append(qty);const remove=el('td');let removed=false;
-      remove.append(btn('Bỏ mã '+line.sku,()=>{removed=true;row.remove();changed();}));
+      const removeButton=btn('Xoá dòng',()=>{if(busy||adding)return;removed=true;row.remove();changed();});removeButton.setAttribute('aria-label','Bỏ mã '+line.sku);remove.append(removeButton);
       row.append(el('td','',line.sku),el('td','',line.name||''),orderCell,td,remove);rows.append(row);
-      const field={sku:line.sku,source:line.source,qty,removed:()=>removed};fields.push(field);qty.addEventListener('input',changed);orderSelect.addEventListener('change',()=>{const option=orderSelect.selectedOptions[0];field.source=option?.value?JSON.parse(option.value):line.source;changed();});
+      const field={sku:line.sku,source:line.source,qty,row,removed:()=>removed};fields.push(field);qty.addEventListener('input',changed);orderSelect.addEventListener('change',()=>{const option=orderSelect.selectedOptions[0];field.source=option?.value?JSON.parse(option.value):line.source;changed();});
       let orderLoad=0,selectionChanged=false;orderSelect.addEventListener('change',()=>{selectionChanged=true;});
       async function loadOrders(createdId=''){
         const n=++orderLoad,wanted=field.source?.supplierOrderNo||line.source?.supplierOrderNo||'',q=new URLSearchParams({sku:line.sku,supplierOrderNo:wanted});if(initial.scope?.supplierId)q.set('supplierId',initial.scope.supplierId);
-        const result=await api('/purchase-early-requests/order-options?'+q);if(n!==orderLoad||!modal.open||removed)return;
+        const result=options&&!createdId?{options}:await api('/purchase-early-requests/order-options?'+q);if(n!==orderLoad||!modal.open||removed)return;
         if(selectionChanged&&!createdId)return;
         const exact=result.options.filter(o=>o.exactSupplierOrderNo),pinnedOrder=field.source?.orderNo;
         const matches=createdId?result.options.filter(o=>o.orderId===createdId):pinnedOrder?result.options.filter(o=>o.ticketNumber===pinnedOrder):exact;
@@ -212,23 +212,40 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
       }
       loadOrders().catch(e=>fail(e.message||'Không tải được danh sách đơn mua của '+line.sku+'.'));
     }
+    const manual=el('div','early-draft-add'),skuInput=el('input');skuInput.type='text';skuInput.maxLength=200;skuInput.placeholder='Nhập mã SKU';skuInput.setAttribute('aria-label','Mã hàng thêm thủ công');
+    const add=btn('Thêm mã',addManual,'btn secondary');manual.append(skuInput,add);
+    skuInput.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();void addManual();}});
     const save=btn('Lưu nháp',()=>saveDraft(),'btn primary'),send=btn('Gửi NCC',()=>submit(),'btn primary'),state=el('span','muted small');
-    const back=btn('Đóng',()=>{if(!busy)dialog.close();});foot.append(state,back,save,send);body.append(label,hint,wrap,error);form.append(header,body,foot);dialog.append(form);
+    const back=btn('Đóng',()=>{if(!busy)dialog.close();});foot.append(state,back,save,send);body.append(label,hint,manual,wrap,error);form.append(header,body,foot);dialog.append(form);
     form.addEventListener('submit',e=>{e.preventDefault();saveDraft();});dateInput.addEventListener('input',changed);
     modal.addEventListener('cancel',e=>{if(busy)e.preventDefault();});modal.addEventListener('close',()=>modal.remove(),{once:true});
-    function sync(){const unresolved=Object.keys(JSON.parse(draft?.scope?.unresolvedOrders||'{}')).length>0;save.disabled=busy;send.disabled=busy||!draft||dirty||!dateInput.value||unresolved;send.title=unresolved?'Chốt đơn mua và lưu lại nháp trước khi gửi NCC.':!dateInput.value?'Nhập ngày lấy và lưu nháp trước khi gửi':dirty?'Lưu nháp trước khi gửi':'';state.textContent=draft?`Đã lưu nháp · phiên bản ${draft.revision}`:'Chưa lưu';}
+    function sync(){const unresolved=Object.keys(JSON.parse(draft?.scope?.unresolvedOrders||'{}')).length>0;save.disabled=busy||adding;add.disabled=busy||adding;skuInput.disabled=busy||adding;dateInput.disabled=busy||adding;for(const f of fields.filter(f=>!f.removed()))for(const control of f.row.querySelectorAll('input,select,button'))control.disabled=busy||adding;send.disabled=busy||adding||!draft||dirty||!dateInput.value||unresolved;send.title=unresolved?'Chốt đơn mua và lưu lại nháp trước khi gửi NCC.':!dateInput.value?'Nhập ngày lấy và lưu nháp trước khi gửi':dirty?'Lưu nháp trước khi gửi':'';state.textContent=draft?`Đã lưu nháp · phiên bản ${draft.revision}`:'Chưa lưu';}
+    for(const line of editLines)appendLine(line);
+    async function addManual(){
+      if(busy||adding)return;fail('');const sku=skuInput.value.trim();
+      if(!sku){fail('Nhập mã SKU cần thêm.');skuInput.focus();return;}
+      if(fields.some(f=>!f.removed()&&f.sku===sku)){fail('Mã '+sku+' đã có trên phiếu. Chỉnh số lượng ở dòng hiện có.');return;}
+      if(new Set(fields.filter(f=>!f.removed()).map(f=>f.sku)).size>=300){fail('Mỗi phiếu tối đa 300 mã.');return;}
+      adding=true;sync();
+      try{const q=new URLSearchParams({sku});if(initial.scope?.supplierId)q.set('supplierId',initial.scope.supplierId);
+        const result=await api('/purchase-early-requests/order-options?'+q);if(!modal.open)return;
+        if(!result.options.length){fail('Không tìm thấy mã '+sku+' trong đơn mua của NCC đang chọn. Kiểm tra mã và đơn mua trước khi thêm.');return;}
+        appendLine({sku,name:result.options[0].name||'',unit:result.options[0].unit||'',quantity:1},result.options);skuInput.value='';changed();
+      }catch(e){if(modal.open)fail(e.message||'Không kiểm tra được mã hàng. Thử lại.');}
+      finally{adding=false;if(modal.open){sync();skuInput.focus();}}
+    }
     function fail(message){error.textContent=message;error.hidden=!message;}
     function values(){
       const groups=new Map();
       for(const f of fields.filter(f=>!f.removed())){
         const quantity=Number(f.qty.value);if(!Number.isSafeInteger(quantity)||quantity<=0)throw Error('Số lượng phải là số nguyên dương.');
-        const line=groups.get(f.sku)||{sku:f.sku,quantity:0,...(f.source?{sourceOrders:[]}:{})};line.quantity+=quantity;
+        const line=groups.get(f.sku)||{sku:f.sku,quantity:0,sourceOrders:[]};line.quantity+=quantity;
         if(!Number.isSafeInteger(line.quantity))throw Error('Tổng số lượng quá lớn.');
-        if(f.source)line.sourceOrders.push({...f.source,quantity});groups.set(f.sku,line);
+        line.sourceOrders.push({...f.source,quantity});groups.set(f.sku,line);
       }
       if(!groups.size)throw Error('Chọn ít nhất một mã.');return [...groups.values()];
     }
-    async function saveDraft(){if(busy)return;fail('');let items;try{items=values();}catch(e){fail(e.message);return;}
+    async function saveDraft(){if(busy||adding)return;fail('');let items;try{items=values();}catch(e){fail(e.message);return;}
       busy=true;sync();
       try {
         const body={lines:items,pickupDate:dateInput.value,scope:initial.scope||{},allowUnresolvedSources:true};
@@ -239,7 +256,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
         draft=result.request;dirty=false;onSaved(draft);await load();
       }catch(e){fail(e.message||'Không lưu được nháp.');}finally{busy=false;sync();}
     }
-    async function submit(){if(busy||!draft||dirty)return;fail('');busy=true;sync();
+    async function submit(){if(busy||adding||!draft||dirty)return;fail('');busy=true;sync();
       try{const result=await api('/purchase-early-requests/'+encodeURIComponent(draft.id)+'/submit','POST',{revision:draft.revision});onSaved(result.request);dialog.close();await load();}
       catch(e){fail(e.message||'Không gửi được NCC.');}finally{busy=false;sync();}
     }

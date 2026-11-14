@@ -2136,7 +2136,7 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .early-request-operations>.row-gap { margin: 8px 0; flex-wrap: wrap; }
 .sup-pill.early-status-draft { color: #475569; background: #e2e8f0; }
 .sup-pill.early-status-pending { color: #92400e; background: #fef3c7; }
-.sup-pill.early-status-accepted { color: #166534; background: #dcfce7; }
+.sup-pill.early-status-accepted { color: var(--blue); background: var(--blue-50); }
 .sup-pill.early-status-rejected { color: #991b1b; background: #fee2e2; }
 .sup-pill.early-status-mixed { color: #6b21a8; background: #f3e8ff; }
 .receipt-sapo-choice .modal-foot { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
@@ -2833,3 +2833,8 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .quote-source-date-label { display:grid;gap:4px;min-width:0;flex:1 1 180px; }
 .quote-source-date-label .quote-source-date { width:100%;min-width:0;max-width:100%;flex:auto; }
 .quote-source-date-label small { white-space:normal; }
+
+.early-draft-add { display:flex; gap:8px; align-items:center; margin:12px 0; flex-wrap:wrap; }
+.early-draft-add input { flex:1 1 180px; min-width:0; }
+
+.btn.status-confirmed { color:var(--blue); background:var(--blue-50); border-color:var(--blue); }
