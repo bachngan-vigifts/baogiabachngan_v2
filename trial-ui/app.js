@@ -2439,6 +2439,20 @@ $('#pdf-quote').addEventListener('click', () => downloadQuotePdf(false));
 $('#quote-history').addEventListener('click', () => editor.id && showAudit({ api, toast, entityType: 'quotes', entityId: editor.id, title: 'Báo giá ' + (collectQuote().quoteNo || '') }));
 $('#pdf-quote-nock').addEventListener('click', () => downloadQuotePdf(true));
 
+// ----- in tem giá cho các sản phẩm trong báo giá (giá niêm yết bán lẻ + VAT của danh mục, không dùng giá trong báo giá)
+$('#quote-price-labels').addEventListener('click', async e => {
+  if (!seesPrices()) return toast('Chưa có quyền xem giá để in tem.', 'err');
+  const rows = collectQuote().rows.filter(r => String(r.sku || '').trim());
+  const qty = new Map(); for (const r of rows) { const sku = String(r.sku).trim(); qty.set(sku, (qty.get(sku) || 0) + Math.max(0, Math.round(Number(r.qty) || 0))); }
+  const skus = [...qty.keys()];
+  if (!skus.length) return toast('Báo giá chưa có mã sản phẩm để in tem.', 'err');
+  if (skus.length > 300) return toast('Báo giá có hơn 300 mã; chọn bớt sản phẩm ở trang Sản phẩm để in tem.', 'err');
+  const b = $('#quote-download'); b.disabled = true;
+  try { await openPriceLabels({ api, skus, skipUnavailable: true, title: 'In tem giá · ' + (collectQuote().quoteNo || 'báo giá'), copiesFor: sku => qty.get(sku) || 1 }); }
+  catch (error) { toast(error.message, 'err'); }
+  finally { b.disabled = false; }
+});
+
 // ----- in nhanh trên trình duyệt
 $('#print-quote').addEventListener('click', () => {
   const block = approvalBlock(); if (block) return toast(block, 'err');
