@@ -65,3 +65,44 @@ test('biểu đồ tròn: lát theo điểm từng phần; dưới 100% thêm ph
  assert.equal(ui.kpiPercent(1.048),'104,8%');
  const {readFileSync}=await import('node:fs');assert.doesNotMatch(readFileSync(new URL('../../trial-ui/dashboard.js',import.meta.url),'utf8'),/innerHTML/);
 });
+
+test('Sale Admin registers and approves targets, gets CRM KPI without KPI pay, and cannot see peers',async()=>{
+ const f=await sale();
+ await f.db.update(employees).set({positionId:'sale-admin'}).where(eq(employees.id,'emp'));
+ const before=(await f.overview()).data.payroll.payslip;
+ const root='/hr/revenue-target-requests',url=root+'/me/2026';
+ const state=await f.call(url,f.emp);assert.equal(state.status,200,JSON.stringify(state.data));
+ const request=await f.call(url,f.emp,'PUT',{version:state.data.version,values:{...state.data.values,'2026-10':10_000_000},reason:'Kế hoạch Sale Admin'});
+ assert.equal(request.status,200,JSON.stringify(request.data));
+ const detail=await f.call(root+'/'+request.data.id,f.mgr);assert.equal(detail.data.canApprove,true);
+ const approved=await f.call(root+'/'+request.data.id+'/review',f.mgr,'POST',{revision:request.data.revision,decision:'approved',reason:'Duyệt chỉ tiêu theo dõi'});
+ assert.equal(approved.status,200,JSON.stringify(approved.data));
+ const targets=await f.call('/hr/revenue-targets/2026',f.mgr);
+ assert.equal(targets.data.rows.find((r:any)=>r.member.id==='emp').values['2026-10'],10_000_000);
+ const [member]=(await kpi(f,f.emp)).data.members;
+ assert.equal(member.id,'emp');assert.equal(member.trackingOnly,true);assert.equal(member.source,'crm');assert.equal(member.bonusRate,0);assert.ok(member.total>0);
+ assert.equal(member.parts.find((p:any)=>p.key==='revenue').target,10_000_000);
+ assert.deepEqual(member.parts.slice(0,3).map((p:any)=>p.actual),[1,1,1]);
+ assert.equal((await kpi(f,f.emp,'&owner=mgr')).status,403);
+ const after=(await f.overview()).data.payroll.payslip;
+ assert.equal(after.net,before.net);assert.equal(after.kpi,null);assert.equal(after.salesCrm.previewKpi,null);assert.equal(after.salesCrm.kpiBonusPreview,0);
+ assert.equal(after.income.find((p:any)=>p.key==='kpiBonus')?.amount??0,0);
+ assert.equal((await f.confirm()).status,201);
+ const closed=(await f.overview()).data.payroll.payslip;
+ const tracking=(await kpi(f,f.emp)).data.members[0];
+ assert.equal(tracking.status,'estimate','tracking does not borrow a settled payslip');assert.equal(tracking.bonusRate,0);assert.ok(tracking.total>0);
+ assert.deepEqual((await f.overview()).data.payroll.payslip,closed,'reading tracking KPI never changes salary snapshots');
+});
+
+test('cached KPI uses current staff names and excludes an accounting transfer without refreshing or changing a closed payslip',async()=>{
+ const f=await sale();assert.equal((await f.confirm()).status,201);
+ const salary=(await f.overview()).data.payroll.payslip;
+ const url='/dashboard/kpi?from=2026-10&to=2026-10';
+ assert.ok((await f.call(url,f.mgr)).data.members.some((p:any)=>p.id==='emp'));
+ assert.equal((await f.call(url,f.mgr)).data.cache.hit,true);
+ await f.db.update(employees).set({name:'Tên mới kiểm thử'}).where(eq(employees.id,'emp'));
+ const renamed=await f.call(url,f.mgr);assert.equal(renamed.data.cache.hit,false);assert.equal(renamed.data.members.find((p:any)=>p.id==='emp').name,'Tên mới kiểm thử');
+ await f.db.update(employees).set({positionId:'accounting'}).where(eq(employees.id,'emp'));
+ assert.equal((await f.call(url,f.mgr)).data.members.some((p:any)=>p.id==='emp'),false);
+ assert.deepEqual((await f.overview()).data.payroll.payslip,salary,'historical salary remains available unchanged');
+});

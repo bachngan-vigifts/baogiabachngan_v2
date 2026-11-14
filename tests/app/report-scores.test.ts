@@ -31,7 +31,7 @@ async function seed(f:Awaited<ReturnType<typeof setup>>,memberId='emp'){
 test('weekly and monthly scores match across dashboard, personal and company payroll; five weeks use the best four without exposing salary',async t=>{
  const f=await setup(t);await f.salary();await f.salary('new');await seed(f);await seed(f,'new');
  const board=ok(await f.scores()),person=ok(await f.overview()).payroll;
- assert.equal(board.members.length,3);assert.ok(board.members.every((m:any)=>['sale','sale-admin'].includes(m.positionId)));assert.equal(board.scope,'company');
+ assert.equal(board.members.length,2,'inactive Sale is excluded from the current dashboard');assert.ok(board.members.every((m:any)=>['sale','sale-admin'].includes(m.positionId)));assert.equal(board.scope,'company');
  const score=board.members.find((m:any)=>m.id==='emp');assert.deepEqual(score.basis.weeks.map((w:any)=>w.score),[1,1,0.5,0,1]);assert.equal(score.basis.points,3.5);assert.equal(score.basis.required,5);assert.equal(score.source,'live');
  assert.equal(score.basis.monthly.period,'2026-11');assert.equal(score.basis.monthly.score,0);
  assert.deepEqual(score.basis,person.reportScores.basis);assert.deepEqual(score.basis,person.payslip.weeklyReportBasis);
@@ -128,4 +128,21 @@ test('probation report points remain visible and freeze with payroll without add
  const f=await setup(t);await f.salary('emp',{positionLabel:'THỬ VIỆC'});await seed(f);ok(await f.call('/hr/members/emp/inputs/2026-11',f.mgr,'PUT',{workDays:26}));
  const before=ok(await f.overview());assert.equal(before.reportScores.basis.points,3.5);assert.equal(before.reportScores.applied,false);assert.equal(before.payroll.payslip.weeklyReportBasis,undefined);assert.ok(before.payroll.payslip.income.filter((l:any)=>l.amount).every((l:any)=>l.key==='salaryByDays'));
  ok(await f.call('/hr/members/emp/payslips/2026-11',f.mgr,'POST',{confirmationHash:before.payroll.confirmationHash}),201);await f.db.update(staffWeeklyReports).set({review:'rejected'}).where(eq(staffWeeklyReports.memberId,'emp'));const score=ok(await f.scores(f.mgr,'&owner=emp')).members[0];assert.equal(score.source,'snapshot');assert.equal(score.basis.points,3.5);assert.equal(score.applied,false);
+});
+
+test('cached report cards follow current names, position and active status even when an old salary snapshot contains report scores',async t=>{
+ const f=await setup(t);await f.salary();await seed(f);
+ const current=ok(await f.overview());ok(await f.call('/hr/members/emp/payslips/2026-11',f.mgr,'POST',{confirmationHash:current.payroll.confirmationHash}),201);
+ const [before]=await f.db.select().from(hrPayslips).where(eq(hrPayslips.memberId,'emp'));
+ const url='/dashboard/report-scores?from=2026-11&to=2026-11';
+ assert.ok(ok(await f.call(url,f.mgr)).members.some((p:any)=>p.id==='emp'));
+ assert.equal(ok(await f.call(url,f.mgr)).cache.hit,true);
+ await f.db.update(employees).set({name:'Tên sau đổi'}).where(eq(employees.id,'emp'));
+ const renamed=ok(await f.call(url,f.mgr));assert.equal(renamed.cache.hit,false);assert.equal(renamed.members.find((p:any)=>p.id==='emp').name,'Tên sau đổi');
+ await f.db.update(employees).set({positionId:'accounting'}).where(eq(employees.id,'emp'));
+ assert.ok(!ok(await f.call(url,f.mgr)).members.some((p:any)=>p.id==='emp'));
+ assert.deepEqual(ok(await f.call(url,f.emp)).members,[]);
+ const [after]=await f.db.select().from(hrPayslips).where(eq(hrPayslips.memberId,'emp'));assert.equal(after!.data,before!.data);
+ await f.db.update(employees).set({active:false}).where(eq(employees.id,'new'));
+ assert.ok(!ok(await f.call(url,f.mgr)).members.some((p:any)=>p.id==='new'));
 });
