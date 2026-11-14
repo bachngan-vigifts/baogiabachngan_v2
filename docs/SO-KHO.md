@@ -278,3 +278,19 @@ Mỗi dòng là **một giao dịch** trong `stock_moves`, mới nhất trước
    - chứng từ của module khác (inventory không được import sales / suppliers) → viết hàm tra link trong module đó, rồi gắn vào `stockRefLinkHooks` ở `src/app/router.ts`. Ví dụ có sẵn: `sales/api/stock-ref-links.ts`, `suppliers/api/stock-ref-links.ts`.
 5. Thêm vào nhóm lọc `GROUPS` (history-routes.ts và `trial-ui/stock-ops.js`) nếu cần, và thêm một dòng vào bảng trên.
 6. Test: `tests/app/warehouse-sales.test.ts` (Sổ kho: tồn sau giao dịch, tổng, lọc, phân trang, kho riêng); link qua hook: `tests/app/inventory.test.ts` (phiếu nhận NCC), `tests/app/pos-order-flow.test.ts` (giao COD), `tests/app/pos-returns.test.ts` (khách trả).
+
+## Cột Hàng đang treo trên Sổ kho
+
+Cột **Hàng đang treo (hiện tại)** nằm cạnh **Tồn kho sau giao dịch**. Bấm số để xem ba phần:
+
+- **Chờ giao:** phiếu đã đóng gói tại kho thật, chưa ghi nhận giao thành công. Trừ đúng phần đã giao của từng dòng/chuyến; hàng đóng lại để giao tiếp được tính riêng theo thời điểm.
+- **Hoàn chờ nhận:** phiếu trả/hoàn còn hiệu lực chưa xác nhận nhận lại; hoặc GHN báo `returned` chưa có xác nhận nhận hàng. Phiếu trả trước khi xuất không được tính. Nhận lại xong thì bỏ phần tương ứng.
+- **Tạm giữ:** giữ hàng còn hiệu lực cho đơn/HĐKT/POS theo cơ chế giữ hàng hiện có, trừ phần trùng với hàng đóng gói/hoàn chưa xuất sổ. Giữ hết hạn/đã giải phóng không tính.
+
+Giữ báo giá/đơn **chưa gắn kho** được ghi riêng trong chi tiết, không phân bổ hoặc cộng lặp vào từng kho; giữ báo giá đã có đơn đang hoạt động không cộng thêm lần nữa. Kho riêng vẫn theo quyền xem Sổ kho, không trả thông tin khách hàng/đơn của người khác trong cột này.
+
+Đây là số **tại lần đọc hiện tại**, có thời gian cập nhật; không phải số treo ngay sau giao dịch lịch sử và không bị giới hạn bởi bộ lọc ngày giao dịch. Cùng mã/kho trên nhiều dòng sẽ có cùng số hiện tại: **không cộng các dòng đó** để tính tổng hàng treo. Không trừ cột này lần nữa khỏi tồn sau giao dịch: phần đã xuất/đóng gói có thể đã được trừ trong sổ.
+
+Nếu dữ liệu cũ thiếu chứng từ giao hoặc không đủ bằng chứng phân bổ phần đã giao giữa nhiều kho, hiện `số đã xác định + ?`, không đoán số còn lại. Nếu nguồn đọc lỗi, hiện `—` và thông báo chưa tải được; Sổ kho vẫn hiển thị tồn, không thay số lỗi thành 0.
+
+Excel có tổng hàng treo đã xác định, từng phần, giữ chưa gắn kho, dấu thiếu dữ liệu và thời điểm đọc. Khi nguồn lỗi, các ô số hàng treo để trống kèm trạng thái chưa tải được. Phần bổ sung chỉ đọc và dùng dữ liệu hiện có, không cần migration, không ghi phiếu hay thay đổi tồn kho.

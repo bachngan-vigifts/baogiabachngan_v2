@@ -1,3 +1,4 @@
+import {stockPendingOf} from './stock-pending.ts';
 import {productArchiveBlockReason} from './product-archive-guards.ts';
 import { registerTaxLookupRoutes } from '../modules/customers/api/tax-lookup.ts';
 import {syncWarehouseSource,reconcileWarehouseSources} from './warehouse-source-sync.ts';
@@ -220,7 +221,7 @@ export function createAppRouter() {
   registerStockIntegrityRoutes(router);
   registerTransferRoutes(router);
   registerTransferIntegrationRoutes(router);
-  registerStockHistoryRoutes(router);
+  registerStockHistoryRoutes(router,{pendingOf:stockPendingOf});
   registerFlowRoutes(router);
   registerCashbookRoutes(router);
   registerFinanceRoutes(router);

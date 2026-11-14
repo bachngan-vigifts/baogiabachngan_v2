@@ -369,9 +369,11 @@ export function initStockMoves({ api, root, toast, createPager, linkAllowed = ()
   for (const [t, d] of [['Ngày ghi nhận', 'Lúc chứng từ ghi vào sổ kho (duyệt đơn, nhận hàng, xác nhận đóng gói / giao, điều chuyển xong…).'],
     ['Giao dịch', 'Số chứng từ gốc (bấm để mở) và loại giao dịch.'], ['Nhập kho / Xuất kho', 'Số lượng cộng vào / trừ khỏi kho của dòng đó.'],
     ['Tồn kho sau giao dịch', 'Tồn của mã đó tại chi nhánh ngay sau giao dịch (cộng dồn toàn bộ sổ kho, không phụ thuộc bộ lọc). Số âm = đã xuất nhiều hơn tồn ghi nhận.'],
+    ['Hàng đang treo (hiện tại)', 'Chờ giao: đã đóng gói nhưng chưa giao thành công. Hoàn chờ nhận: phiếu trả/hoàn còn hiệu lực hoặc GHN báo hoàn, chưa xác nhận nhận lại. Tạm giữ: phần giữ còn hiệu lực, đã trừ phần trùng với hàng đóng gói/hoàn. Số hiện tại theo mã và kho, không phải tồn treo tại thời điểm giao dịch; không cộng các dòng trùng mã/kho. Giữ chưa gắn kho hiện riêng, không cộng vào tổng kho. Dấu + ? nghĩa là chứng từ cũ thiếu dữ liệu để phân bổ chắc chắn.'],
     ['Chi nhánh', 'Kho thật ghi nhận giao dịch. Kho riêng chỉ người được bán kho đó thấy.'], ['Huỷ chứng từ', 'Huỷ / sửa chứng từ không xoá dòng cũ mà ghi thêm dòng ngược lại.']]) dl.append(el('dt', '', t), el('dd', '', d));
   help.append(sum, dl); tools.append(exp); head.append(titles, tools);
 
+  const pendingStamp=el('p','small muted ledger-pending-stamp');
   const panel = el('div', 'panel'), bar = el('div', 'toolbar ledger-bar');
   const wh = select([['', 'Tất cả chi nhánh']], '', 'Chi nhánh'), from = input('date'), to = input('date');
   const q = input('search', '', { placeholder: 'Tìm theo mã SKU, tên sản phẩm, số chứng từ…' }); q.setAttribute('aria-label', 'Tìm sổ kho');
@@ -383,10 +385,10 @@ export function initStockMoves({ api, root, toast, createPager, linkAllowed = ()
   bar.lastChild.append(q);
   const chips = el('div', 'chips ledger-chips');
   const wrap = el('div', 'table-wrap'), table = el('table', 'data-table ledger-table'), thead = el('thead'), tbody = el('tbody'), hr = el('tr');
-  for (const [h, c] of [['#', 'num'], ['Ngày ghi nhận', ''], ['Giao dịch', ''], ['Phiên bản sản phẩm', ''], ['Nhập kho', 'num'], ['Xuất kho', 'num'], ['Tồn kho sau giao dịch', 'num'], ['Chi nhánh', '']]) hr.append(el('th', c, h));
+  for (const [h, c] of [['#', 'num'], ['Ngày ghi nhận', ''], ['Giao dịch', ''], ['Phiên bản sản phẩm', ''], ['Nhập kho', 'num'], ['Xuất kho', 'num'], ['Tồn kho sau giao dịch', 'num'], ['Hàng đang treo (hiện tại)', 'num'], ['Chi nhánh', '']]) hr.append(el('th', c, h));
   thead.append(hr); table.append(thead, tbody); wrap.append(table);
   const pagerEl = el('div', 'pager'), pager = createPager(pagerEl, 'stock-moves', () => load(), 20);
-  panel.append(bar, chips, help, wrap, pagerEl); page.append(head, panel); root.append(page);
+  panel.append(bar, chips, help, pendingStamp,wrap, pagerEl); page.append(head, panel); root.append(page);
 
   /** Mặc định 30 ngày gần nhất (như Sapo). */
   function defaults() { const now = new Date(), past = new Date(now.getTime() - 29 * 86400000); return { from: isoDay(past), to: isoDay(now) }; }
@@ -430,20 +432,30 @@ export function initStockMoves({ api, root, toast, createPager, linkAllowed = ()
     if (m.note || m.by) td.title = [m.note, m.by && 'Người làm: ' + m.by].filter(Boolean).join('\n');
     return td;
   }
+  function pendingCell(m){
+    const td=labeled(el('td','num ledger-pending'),'Đang treo hiện tại');
+    if(m.pendingQty==null){td.append(el('span','muted','—'));return td;}
+    const p=m.pending||{},summary=el('details','ledger-pending-detail'),open=el('summary','',num(m.pendingQty)+(p.uncertain?' + ?':''));
+    open.setAttribute('aria-label','Xem chi tiết hàng đang treo của '+m.sku+' tại '+m.warehouse);summary.append(open);
+    const info=el('div','small');for(const [label,value]of [['Chờ giao',p.packed],['Hoàn chờ nhận',p.returning],['Tạm giữ',p.held]])info.append(el('div','',label+': '+num(value||0)));
+    if(p.uncertain)info.append(el('p','muted','Thiếu chứng từ giao/nguồn kho để phân bổ chính xác phần chờ giao; chưa cộng phần chưa xác định.'));
+    if(p.unassignedHeld>0)info.append(el('p','muted','Giữ chưa gắn kho: '+num(p.unassignedHeld)+' (không cộng vào tổng kho này).'));
+    summary.append(info);td.append(summary);if(p.unassignedHeld>0)td.append(el('small','muted ledger-pending-unassigned','Giữ chưa gắn kho: '+num(p.unassignedHeld)));return td;
+  }
   async function load() {
     const my = ++req;
     let d; try { d = await api('/stock-moves?' + params()); } catch (e) { if (my === req) toast(e.message, 'err'); return; }
     if (my !== req) return;
     fillOptions(wh, d.warehouses.map(w => [w.id, w.name]), f.warehouseId); fillOptions(brand, d.brands.map(b => [b, b]), f.brand);
     renderChips();
-    rows = d.moves; pager.render(d.total);
+    rows = d.moves; pager.render(d.total);pendingStamp.textContent=d.pendingAvailable===false?'Chưa tải được hàng đang treo; tải lại trang để thử lại. Số tồn sau giao dịch vẫn hiển thị bình thường.':d.pendingAsOf?'Hàng đang treo cập nhật '+day(d.pendingAsOf)+' '+time(d.pendingAsOf)+' · Số hiện tại, độc lập với ngày giao dịch.':'';
     const total = el('tr', 'ledger-total'), lbl = el('td', '', `Tổng ${num(d.total)} giao dịch`); lbl.colSpan = 4;
-    total.append(lbl, labeled(el('td', 'num ledger-in', movementQty(d.totals.inQty, '+', '0')), 'Nhập'), labeled(el('td', 'num ledger-out', movementQty(d.totals.outQty, '−', '0')), 'Xuất'), el('td', 'ledger-empty'), el('td', 'ledger-empty'));
-    if (!rows.length) { const tr = el('tr'), td = el('td', 'muted', 'Không có giao dịch nào khớp bộ lọc.'); td.colSpan = 8; tr.append(td); tbody.replaceChildren(total, tr); return; }
+    total.append(lbl, labeled(el('td', 'num ledger-in', movementQty(d.totals.inQty, '+', '0')), 'Nhập'), labeled(el('td', 'num ledger-out', movementQty(d.totals.outQty, '−', '0')), 'Xuất'), el('td', 'ledger-empty'), el('td', 'ledger-empty'),el('td','ledger-empty'));
+    if (!rows.length) { const tr = el('tr'), td = el('td', 'muted', 'Không có giao dịch nào khớp bộ lọc.'); td.colSpan = 9; tr.append(td); tbody.replaceChildren(total, tr); return; }
     tbody.replaceChildren(total, ...rows.map((m, i) => {
       const tr = el('tr'), when = el('td', 'nowrap'); when.append(document.createTextNode(day(m.at)), el('small', '', time(m.at)));
       tr.append(el('td', 'num muted ledger-no', pager.offset + i + 1), when, refCell(m), itemCell(m), labeled(el('td', 'num' + (m.inQty ? ' ledger-in' : ''), movementQty(m.inQty, '+')), 'Nhập'), labeled(el('td', 'num' + (m.outQty ? ' ledger-out' : ''), movementQty(m.outQty, '−')), 'Xuất'),
-        labeled(el('td', 'num ledger-balance', num(m.balanceAfter)), 'Tồn sau'), labeled(el('td', 'ledger-wh', m.warehouse), 'Chi nhánh'));
+        labeled(el('td', 'num ledger-balance', num(m.balanceAfter)), 'Tồn sau'),pendingCell(m), labeled(el('td', 'ledger-wh', m.warehouse), 'Chi nhánh'));
       return tr;
     }));
   }
@@ -451,8 +463,8 @@ export function initStockMoves({ api, root, toast, createPager, linkAllowed = ()
     let d; try { d = await api('/stock-moves?' + params({ export: '1' })); } catch (e) { toast(e.message, 'err'); return; }
     if (d.total > d.moves.length) toast(`Bộ lọc có ${num(d.total)} giao dịch – file lấy ${num(d.moves.length)} dòng mới nhất. Thu hẹp ngày để lấy đủ.`);
     await downloadExcel(`so-kho_${f.from || 'tu-dau'}_den_${f.to || isoDay(new Date())}`, [{ name: 'Sổ kho', autoFilter: true,
-      header: ['Ngày ghi nhận', 'Giờ', 'Số chứng từ', 'Giao dịch', 'Mã SKU', 'Tên sản phẩm', 'Nhãn hiệu', 'ĐVT', 'Nhập kho', 'Xuất kho', 'Tồn sau giao dịch', 'Chi nhánh', 'Ghi chú', 'Người làm'],
-      rows: d.moves.map(m => [day(m.at), time(m.at), m.refNo, m.description, m.sku, m.name, m.brand, m.unit, m.inQty || null, m.outQty || null, m.balanceAfter, m.warehouse, m.note, m.by]) }]).catch(e => toast(e.message, 'err'));
+      header: ['Ngày ghi nhận', 'Giờ', 'Số chứng từ', 'Giao dịch', 'Mã SKU', 'Tên sản phẩm', 'Nhãn hiệu', 'ĐVT', 'Nhập kho', 'Xuất kho', 'Tồn sau giao dịch','Hàng đang treo hiện tại (đã xác định)','Chờ giao','Hoàn chờ nhận','Tạm giữ','Giữ chưa gắn kho (không cộng)','Chưa đủ dữ liệu phân bổ','Thời điểm đọc hàng treo', 'Chi nhánh', 'Ghi chú', 'Người làm'],
+      rows: d.moves.map(m => [day(m.at), time(m.at), m.refNo, m.description, m.sku, m.name, m.brand, m.unit, m.inQty || null, m.outQty || null, m.balanceAfter,m.pendingQty??null,m.pendingQty==null?null:m.pending?.packed??null,m.pendingQty==null?null:m.pending?.returning??null,m.pendingQty==null?null:m.pending?.held??null,m.pendingQty==null?null:m.pending?.unassignedHeld??null,m.pendingQty==null?'Chưa tải được':m.pending?.uncertain?'Có':'',d.pendingAsOf||'',m.warehouse,m.note,m.by]) }]).catch(e => toast(e.message, 'err'));
   }
   /** Mở trang: lấy bộ lọc từ link (#/stock-moves?…); không có ngày thì 30 ngày gần nhất. */
   function show(query = '') {
