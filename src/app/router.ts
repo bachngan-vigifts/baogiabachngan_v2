@@ -1,3 +1,4 @@
+import {productArchiveBlockReason} from './product-archive-guards.ts';
 import { registerTaxLookupRoutes } from '../modules/customers/api/tax-lookup.ts';
 import {syncWarehouseSource,reconcileWarehouseSources} from './warehouse-source-sync.ts';
 import {warehouseAssignmentHooks,warehouseSourceHooks} from '../core/contracts/warehouse-source.ts';
@@ -129,6 +130,7 @@ export function createAppRouter() {
   stockRefLinkHooks.pos_delivery = posDeliveryStockLinks;
   stockRefLinkHooks.pos_return = posReturnStockLinks;
   stockRefLinkHooks.supplier_receipt = supplierReceiptStockLinks;
+  catalogStockHooks.archiveBlockReason=productArchiveBlockReason;
   catalogStockHooks.overlay = overlayPosStock;
   catalogStockHooks.held = catalogHeldQuantities;
   catalogStockHooks.stamp = posStockStamp;

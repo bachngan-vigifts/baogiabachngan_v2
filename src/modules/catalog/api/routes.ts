@@ -334,7 +334,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
           name: sql`excluded.name`, brand: sql`excluded.brand`, pattern: sql`excluded.pattern`, unit: sql`excluded.unit`, imageUrl: sql`excluded.image_url`,
           taxBasis: sql`excluded.tax_basis`, taxIn: sql`excluded.tax_in`, taxOut: sql`excluded.tax_out`, taxable: sql`excluded.taxable`,
           perCarton: sql`excluded.per_carton`, cartonWeight: sql`excluded.carton_weight`, cartonLength: sql`excluded.carton_length`,
-          cartonWidth: sql`excluded.carton_width`, cartonHeight: sql`excluded.carton_height`, active: sql`true`, updatedAt: sql`excluded.updated_at`,
+          cartonWidth: sql`excluded.carton_width`, cartonHeight: sql`excluded.carton_height`, active: sql`${products.archivedAt} is null`, updatedAt: sql`excluded.updated_at`,
           approvalStatus: sql`'approved'`, // mã có trong file danh mục = đã có hiệu lực
         } });
       }

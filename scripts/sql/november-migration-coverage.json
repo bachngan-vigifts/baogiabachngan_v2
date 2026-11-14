@@ -266,5 +266,6 @@
     "asserts": ["assert-pos-promotion-programs.sql"]
   },
   {"migration":"20261113062905_accounting_resumable_imports.sql","asserts":["assert-accounting-imports.sql"]},
-  {"migration":"20261113074715_split_packing_delivery_dates.sql","asserts":["assert-split-packing-delivery-dates.sql"]}
+  {"migration":"20261113074715_split_packing_delivery_dates.sql","asserts":["assert-split-packing-delivery-dates.sql"]},
+  {"migration":"20261113104533_product_archive_controls.sql","asserts":["assert-product-archive.sql"]}
 ]

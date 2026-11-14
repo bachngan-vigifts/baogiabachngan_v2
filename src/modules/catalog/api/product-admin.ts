@@ -1,3 +1,4 @@
+import {registerProductArchiveRoutes} from './product-archive.ts';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -52,6 +53,7 @@ function cleanProduct(body: Record<string, unknown>, existingSku?: string) {
  *  - Duyệt / từ chối: Manager hoặc người được Manager bật cờ "Được duyệt"; người tạo tự xoá được sản phẩm còn chờ duyệt của mình.
  */
 export function registerProductAdminRoutes(router: Router<StaffEnv>) {
+  registerProductArchiveRoutes(router);
   router.get('/product-approvals', async c => {
     const me = viewer(c), db = c.env.db;
     const rows = await db.select({ p: products, createdByName: employees.name }).from(products).leftJoin(employees, eq(employees.id, products.createdBy))

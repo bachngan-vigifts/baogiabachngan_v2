@@ -261,8 +261,9 @@ window.addEventListener('unhandledrejection', e => reportUiError(e.reason));
  *  - `typeToConfirm`: phải gõ đúng mã (vd số báo giá) mới bấm được – dùng cho dữ liệu quan trọng, không khôi phục được.
  */
 const foldText = v => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().replace(/\s+/g, '');
-function confirmBox(text, { title = 'Xác nhận', ok = 'Đồng ý', danger = false, delay = danger ? 1500 : 0, typeToConfirm = '' } = {}) {
+function confirmBox(text, { title = 'Xác nhận', ok = 'Đồng ý', danger = false, delay = danger ? 1500 : 0, typeToConfirm = '', mobileAllowed = false } = {}) {
   const dlg = $('#confirm-dialog'), okBtn = $('#confirm-ok'), cancelBtn = $('#confirm-cancel'), wrap = $('#confirm-type'), input = $('#confirm-type-input');
+  if(mobileAllowed){dlg.setAttribute('data-mobile-confirmation-page','');okBtn.classList.remove('mobile-desktop-only');cancelBtn.classList.remove('mobile-desktop-only');}else dlg.removeAttribute('data-mobile-confirmation-page');
   $('#confirm-title').textContent = title; $('#confirm-text').textContent = text;
   okBtn.classList.toggle('danger-bg', danger); cancelBtn.textContent = danger ? 'Không, giữ lại' : 'Huỷ';
   wrap.hidden = !typeToConfirm; input.value = '';
@@ -273,7 +274,7 @@ function confirmBox(text, { title = 'Xác nhận', ok = 'Đồng ý', danger = f
   draw();
   if (wait > 0) timer = setInterval(() => { wait--; draw(); if (wait <= 0) clearInterval(timer); }, 1000);
   return new Promise(resolve => {
-    const done = v => { clearInterval(timer); dlg.close(); okBtn.onclick = cancelBtn.onclick = input.oninput = input.onkeydown = null; okBtn.disabled = false; okBtn.textContent = ok; resolve(v); };
+    const done = v => { clearInterval(timer); dlg.close();dlg.removeAttribute('data-mobile-confirmation-page'); okBtn.onclick = cancelBtn.onclick = input.oninput = input.onkeydown = null; okBtn.disabled = false; okBtn.textContent = ok; resolve(v); };
     okBtn.onclick = () => { if (!okBtn.disabled) done(true); }; cancelBtn.onclick = () => done(false);
     input.oninput = draw; input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); if (!okBtn.disabled) done(true); } };
     dlg.oncancel = e => { e.preventDefault(); done(false); };
@@ -2759,7 +2760,7 @@ function renderProducts() {
       <td class="right num" data-label="Đang tạm giữ" title="Tổng số đang giữ trên tất cả kho; báo giá có thể chưa phân kho">${stockText(held)}</td>
       <td class="right num" data-label="Hàng đang về">${incomingCell(p)}</td>
       <td class="right num" data-label="Tồn NCC">${hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : '<span class="muted">—</span>'}</td>
-      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-mobile-inline data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
+      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-mobile-inline data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${isManager() ? `<button type="button" class="btn ghost small danger-text" data-mobile-inline data-mobile-confirmation-page aria-label="Xoá khỏi danh mục ${esc(p.sku)}" data-remove-product="${esc(p.sku)}">Xoá</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
   $('#product-empty').hidden = list.length > 0;
@@ -2825,6 +2826,7 @@ $('#product-list').addEventListener('change', e => {
   renderSelection();
 });
 $('#product-list').addEventListener('click', e => {
+  const remove=e.target.closest('[data-remove-product]');if(remove){productAdmin().openRemove(remove.dataset.removeProduct);return;}
   const update = e.target.closest('[data-update-product]');
   if (update) { productAdmin().openEdit(update.dataset.updateProduct); return; }
   const b = e.target.closest('[data-quote-product]'); if (!b) return;
