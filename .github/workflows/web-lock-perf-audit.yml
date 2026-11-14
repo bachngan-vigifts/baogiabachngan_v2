@@ -1,0 +1,38 @@
+# Đo tốc độ web Lock như khách truy cập (không đặt đơn) + PageSpeed + thông số máy chủ. Nhánh tạm, không merge.
+name: Đo tốc độ web Lock
+on:
+  push:
+    branches: [perf/web-lock-audit]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Cài trình duyệt
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-perf-audit.mjs" /tmp/pw/
+      - name: Đo
+        working-directory: /tmp/pw
+        env:
+          WC_BASE_URL: ${{ secrets.WC_BASE_URL }}
+          WC_CONSUMER_KEY: ${{ secrets.WC_CONSUMER_KEY }}
+          WC_CONSUMER_SECRET: ${{ secrets.WC_CONSUMER_SECRET }}
+        run: node web-lock-perf-audit.mjs > report.log; status=$?; tail -c 60000 report.log; exit $status
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-lock-perf
+          path: |
+            /tmp/pw/web-lock-perf.json
+            /tmp/pw/perf-*.png
+          retention-days: 7
+          if-no-files-found: ignore
