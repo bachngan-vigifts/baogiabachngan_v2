@@ -138,16 +138,17 @@ async function listDir(dir) {
   const r = await call('Fileman', 'list_files', { dir, include_mime: 0, include_hash: 0, include_permissions: 0 });
   return r.ok ? (r.data || []) : null;
 }
-const WALK_MAX_CALLS = 260, WALK_DEADLINE = Date.now() + 4 * 60_000;
+const WALK_MAX_CALLS = 600, PER_DIR_CALLS = 90, WALK_DEADLINE = Date.now() + 7 * 60_000;
 let walkCalls = 0;
 async function walkSize(dir) {
   let bytes = 0, files = 0, dirs = 0, truncated = false, errors = 0;
   const big = [];
   const queue = [dir];
+  let used = 0;
   while (queue.length) {
-    if (walkCalls >= WALK_MAX_CALLS || Date.now() > WALK_DEADLINE) { truncated = true; break; }
+    if (used >= PER_DIR_CALLS || walkCalls >= WALK_MAX_CALLS || Date.now() > WALK_DEADLINE) { truncated = true; break; }
     const d = queue.shift();
-    walkCalls++;
+    walkCalls++; used++;
     const items = await listDir(d);
     if (!items) { errors++; continue; }
     for (const f of items) {
@@ -163,6 +164,9 @@ if (docroot) {
   const targets = [];
   if (Array.isArray(wpc)) for (const f of wpc) if (f.type === 'dir') targets.push([`wp-content/${f.file}`, `${docroot}/wp-content/${f.file}`]);
   targets.push(['old', `${docroot}/old`], ['minhlongonline.com', `${docroot}/minhlongonline.com`]);
+  const order = ['old', 'wp-content/upgrade-temp-backup', 'wp-content/upgrade', 'wp-content/litespeed-off', 'wp-content/litespeed_', 'minhlongonline.com', 'wp-content/uploads', 'wp-content/themes', 'wp-content/ai1wm-backups'];
+  const rank = l => { const i = order.indexOf(l); return l === 'wp-content/plugins' ? 999 : i < 0 ? 500 : i; };
+  targets.sort((a, b) => rank(a[0]) - rank(b[0]));
   out.deep.sizes = {};
   for (const [label, path] of targets) out.deep.sizes[label] = await safe(() => walkSize(path));
   out.deep.walkCalls = walkCalls;
@@ -171,13 +175,30 @@ if (docroot) {
   const wp = Array.isArray(wpc) ? wpc.filter(f => f.type === 'file').map(f => ({ file: f.file, bytes: Number(f.size) || 0 })) : null;
   out.deep.wpContentFiles = wp;
 
+  // Thư mục home (cha của public_html): 13 GB đĩa có thể nằm ngoài web (sao lưu, log, mail, tmp).
+  const home = docroot.replace(/\/[^/]+$/, '');
+  out.deep.home = await safe(async () => {
+    const items = await listDir(home);
+    if (!Array.isArray(items)) return { ok: false };
+    const dirs = items.filter(f => f.type === 'dir' && f.file !== 'public_html' && f.file !== '.' && f.file !== '..');
+    const sizes = {};
+    for (const d of dirs.slice(0, 25)) sizes[d.file] = await safe(() => walkSize(`${home}/${d.file}`));
+    const bigFiles = items.filter(f => f.type === 'file' && Number(f.size) > 20 * 1048576).map(f => ({ file: f.file, mb: Math.round(Number(f.size) / 1048576) }));
+    return { ok: true, dirs: dirs.map(d => d.file), sizes, bigFiles };
+  });
+
   // .htaccess: chỉ các dòng liên quan PHP/cache/nén, đã che.
   out.deep.htaccess = await safe(async () => {
     const r = await call('Fileman', 'get_file_content', { dir: docroot, file: '.htaccess' });
     if (!r.ok) return r;
     const lines = String(r.data?.content || '').split('\n');
     const want = /php|handler|litespeed|cache|expires|deflate|gzip|brotli|etag|keep-?alive|cloudflare|rewritecond.*%\{http|wordpress/i;
-    return { ok: true, totalLines: lines.length, matched: lines.filter(l => want.test(l)).map(l => redact(l.trim()).slice(0, 140)).slice(0, 60) };
+    const handler = /addhandler|addtype.*php|sethandler|suphp|lsphp|php_(value|flag)|ea-php|alt-php/i;
+    return {
+      ok: true, totalLines: lines.length,
+      phpHandlerLines: lines.filter(l => handler.test(l)).map(l => redact(l.trim()).slice(0, 140)).slice(0, 20),
+      matched: lines.filter(l => want.test(l) && !/ExpiresByType/i.test(l)).map(l => redact(l.trim()).slice(0, 140)).slice(0, 60),
+    };
   });
 
   // object-cache.php.bak: chỉ dòng chú thích đầu file (tên/ phiên bản drop-in), không đọc phần mã/cấu hình.
