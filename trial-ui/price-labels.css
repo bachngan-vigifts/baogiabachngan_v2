@@ -27,3 +27,5 @@
 
 .product-select-page { display:flex;align-items:center;gap:6px;font-size:13px; }
 .product-select-page input { width:18px;height:18px; }
+.price-label-skipped{margin:6px 0;padding:8px 10px;border-radius:8px;background:#fff7ed;color:#9a3412;font-size:13px;overflow-wrap:anywhere}
+.price-label-skipped[hidden],.price-label-fields label[hidden]{display:none}
