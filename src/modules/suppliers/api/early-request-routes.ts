@@ -185,7 +185,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
     const rows=await c.env.db.select({orderId:incomingShipments.id,lineId:incomingShipmentLines.id,ticketNumber:incomingShipments.ticketNumber,
       supplierOrderNo:incomingShipments.supplierInternalOrderNumber,supplierId:incomingShipments.supplierId,supplierName:suppliers.name,
       approvalStatus:incomingShipments.approvalStatus,submittedAt:incomingShipments.submittedAt,quantity:incomingShipmentLines.quantity,
-      unit:incomingShipmentLines.unit,warehouse:incomingShipments.warehouse,createdAt:incomingShipments.createdAt})
+      name:incomingShipmentLines.name,unit:incomingShipmentLines.unit,warehouse:incomingShipments.warehouse,createdAt:incomingShipments.createdAt})
       .from(incomingShipmentLines).innerJoin(incomingShipments,eq(incomingShipments.id,incomingShipmentLines.shipmentId)).innerJoin(suppliers,eq(suppliers.id,incomingShipments.supplierId))
       .where(and(eq(incomingShipmentLines.sku,sku),eq(incomingShipments.source,'supplier-order'),isNull(incomingShipments.cancelledAt),supplierId?eq(incomingShipments.supplierId,supplierId):undefined)).orderBy(desc(incomingShipments.createdAt));
     const options=rows.map(r=>({...r,exactSupplierOrderNo:!!supplierOrderNo&&r.supplierOrderNo.trim().toLocaleLowerCase('vi')===supplierOrderNo}));
