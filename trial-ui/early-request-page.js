@@ -58,7 +58,7 @@ export function initEarlyRequestPage({api,root,go,today,toast}){
     const quantities=`SL xin ${number(requested)} · Đã nhận ${number(received)}`;
     head.append(complete?node('span','sup-pill early-received-summary',quantities):node('span','sup-pill early-status early-status-'+request.status,labels[request.status]||request.status));
     const created=new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeZone:'Asia/Ho_Chi_Minh'}).format(new Date(request.createdAt));
-    card.append(head,node('p','small muted','Lập '+created+' · Ngày lấy: '+(request.pickupDate?request.pickupDate.split('-').reverse().join('/'):'Chưa nhập')),
+    card.append(head,node('p','small muted','Người tạo: '+(request.createdByName||'Chưa có thông tin')),node('p','small muted','Lập '+created+' · Ngày lấy: '+(request.pickupDate?request.pickupDate.split('-').reverse().join('/'):'Chưa nhập')),
       node('p','',names.join(' · ')),node('p','small',orders.join(' · ')),node('p','small muted',request.lines.map(l=>l.sku+' · '+l.name).join('; ')),
       node('p','small',`${request.lines.length} mã${complete?'':' · '+quantities}`));
     if(request.pxkNo)card.append(node('p','small','Số PXK: '+request.pxkNo));
