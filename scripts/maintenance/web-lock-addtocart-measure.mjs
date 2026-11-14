@@ -37,7 +37,7 @@ for (const [kind, url] of Object.entries(products)) {
     const page = await ctx.newPage();
     const starts = new Map(); const reqs = []; let navs = 0; let t0 = 0;
     page.on('request', r => starts.set(r, Date.now()));
-    page.on('requestfinished', r => { if (t0) reqs.push({ m: r.method(), u: short(r.url()), t: r.resourceType(), ms: Date.now() - (starts.get(r) || Date.now()), at: Date.now() - t0 }); });
+    page.on('requestfinished', r => { if (t0) reqs.push({ m: r.method(), u: short(r.url()) + (/admin-ajax|wc-ajax/.test(r.url()) ? ' [' + String(r.postData() || '').replace(/(nonce|security|_wpnonce)=[^&]*/gi, '$1=x').slice(0, 70) + ']' : ''), t: r.resourceType(), ms: Date.now() - (starts.get(r) || Date.now()), at: Date.now() - t0 }); });
     page.on('framenavigated', f => { if (t0 && f === page.mainFrame()) navs++; });
     const res = { kind, ok: false };
     try {
@@ -64,7 +64,7 @@ for (const [kind, url] of Object.entries(products)) {
         await page.waitForTimeout(150);
       }
       await page.waitForTimeout(3000);
-      const slow = [...reqs].sort((a, b) => b.ms - a.ms).slice(0, 3).map(r => `${r.m} ${r.u} ${r.ms}ms`);
+      const slow = [...reqs].sort((a, b) => b.ms - a.ms).slice(0, 6).map(r => `${r.m} ${r.u} ${r.ms}ms`);
       const addReq = reqs.find(r => /add[_-]to[_-]cart|add_to_cart/i.test(r.u)) || reqs.find(r => r.m === 'POST');
       Object.assign(res, { ok: true, fullReload: navs > 0, navs, cartUpdatedMs, addRequestMs: addReq ? addReq.ms : null, addRequest: addReq ? `${addReq.m} ${addReq.u}` : null, requestsAfterClick: reqs.length, slowest: slow });
     } catch (e) { res.error = String(e.message || e).slice(0, 100); }
