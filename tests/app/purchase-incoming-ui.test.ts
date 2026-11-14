@@ -23,8 +23,8 @@ class Node {
 }
 const all=(n:Node):Node[]=>[n,...n.children.flatMap(all)];
 
-async function setup(multiple=false){
-  const host=new Node(),calls:string[]=[],navigation:string[]=[];let historyLoads=0,savedOptions:any,accepted=false,drafts=0,draftInitial:any;
+async function setup(multiple=false,quick=false){
+  const host=new Node(),calls:string[]=[],navigation:string[]=[];let historyLoads=0,savedOptions:any,accepted=false,drafts=0,draftInitial:any;const created:any[]=[];
   const request={id:'request-1',lineId:'line-1',createdAt:'2026-10-23T10:34:00Z',pickupDate:'2026-10-24',requestStatus:'submitted',status:'pending',quantity:300,supplierName:'NCC A',orders:[]};
   const context:any={initEarlyRequests:(opts:any)=>{savedOptions=opts;return{load:async()=>historyLoads++,open:async()=>{},newDraft:(initial:any)=>{drafts++;draftInitial=initial;}};},document:{createElement:(tag:string)=>new Node(tag)},URLSearchParams};
   const source=readFileSync(new URL('../../trial-ui/purchase-incoming.js',import.meta.url),'utf8').replace(/^import .*;\n/,'').replace('export function initPurchaseIncoming','globalThis.initPurchaseIncoming = function');
@@ -36,8 +36,8 @@ async function setup(multiple=false){
       rows:[{sku:'X',name:'Ly sứ',unit:'Cái',quantity:20000,unitConflict:false,orderCount:1,supplierNames:['NCC A'],earliestDue:'2026-10-24',late:false,confirmed:false,earlyRequests:early,earlyQuantity:early.length?300:0,
         orders:[{id:'po-1',ticketNumber:'PO-1',quantity:multiple?19900:20000,supplierId:'a',supplierName:'NCC A',unit:'Cái',due:'2026-10-24'},...(multiple?[{id:'po-2',ticketNumber:'PO-2',internalNo:'00042',quantity:100,supplierId:'a',supplierName:'NCC A',unit:'Cái',due:'2026-10-25'}]:[])]}]};
   };
-  const ui=context.initPurchaseIncoming({api,host,go:(hash:string)=>navigation.push(hash)});await ui.show();
-  return{host,ui,calls,navigation,get historyLoads(){return historyLoads;},get drafts(){return drafts;},get draftInitial(){return draftInitial;},accept:()=>{accepted=true;},onSaved:()=>savedOptions.onSaved(),label:(text:string)=>all(host).find(n=>n.attrs['aria-label']===text)!,button:(text:string)=>all(host).find(n=>n.tag==='button'&&n.textContent===text)!};
+  const ui=context.initPurchaseIncoming({api,host,go:(hash:string)=>navigation.push(hash),...(quick?{onCreate:(initial:any)=>created.push(initial)}:{})});await ui.show();
+  return{host,ui,calls,navigation,created,get historyLoads(){return historyLoads;},get drafts(){return drafts;},get draftInitial(){return draftInitial;},accept:()=>{accepted=true;},onSaved:()=>savedOptions.onSaved(),label:(text:string)=>all(host).find(n=>n.attrs['aria-label']===text)!,button:(text:string)=>all(host).find(n=>n.tag==='button'&&n.textContent===text)!};
 }
 test('hàng đang về UI: lọc mua/lấy trước, hiện link phiếu và không tạo phiếu thứ hai trong chế độ lấy trước',async()=>{
   const s=await setup();assert.match(s.host.textContent,/Phiếu lấy trước/);assert.match(s.host.textContent,/20.000/);assert.match(s.host.textContent,/SL đã xin 300/);
@@ -79,4 +79,12 @@ test('chọn đúng đơn mua nguồn, sửa SL từng đơn và chuyển nguyê
   assert.equal(s.label('SL cần lấy trước mã X').value,10);
   const last=s.label('Lấy mã X từ PO-1');last.checked=false;await last.events.change!();
   assert.equal(s.button('Lưu và gửi NCC').disabled,true,'bỏ hết đơn nguồn không tự chuyển về phân bổ tự động');
+});
+
+
+test('quick-create reuses source picker without loading saved history or opening another draft dialog',async()=>{
+ const s=await setup(true,true);assert.equal(s.historyLoads,0);assert.equal(s.label('Loại phiếu').value,'purchase');
+ const pick=s.label('Lấy mã X từ PO-2');pick.checked=true;await pick.events.change!();const qty=s.label('SL mã X lấy từ PO-2');qty.value='25';qty.events.input!();
+ await s.button('Tạo phiếu nháp').click();assert.equal(s.created.length,1);assert.equal(s.drafts,0);assert.equal(s.created[0].lines[0].quantity,25);assert.deepEqual(JSON.parse(s.created[0].scope.orderSources),{X:[{orderNo:'PO-2',supplierOrderNo:'00042',quantity:25}]});
+ await s.button('Làm mới').click();assert.equal(s.historyLoads,0);assert.ok(s.calls.every(path=>new URLSearchParams(path.split('?')[1]).get('type')==='purchase'));
 });
