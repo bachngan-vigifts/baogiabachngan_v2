@@ -22,4 +22,8 @@ const out = await page.evaluate(() => {
 console.log('VOUCHER_DUMP', JSON.stringify(out, null, 1));
 const link = await page.evaluate(() => [...document.querySelectorAll('link[href*=voucher],script[src*=voucher]')].map(e => e.href || e.src));
 console.log('ASSETS', JSON.stringify(link));
+const code = await page.evaluate(() => { const s = [...document.scripts].find(x => /lnl_get_vouchers|data-lnl-voucher-list-endpoint|voucherListEndpoint|lnl-voucher-list/.test(x.textContent || '') && (x.textContent||'').length > 5000); return s ? s.textContent : ''; });
+console.log('CODE_START'); for (let i = 0; i < code.length; i += 1500) console.log('C' + code.slice(i, i + 1500).replace(/\n/g, '\u23ce')); console.log('CODE_END');
+const resp = await page.evaluate(async () => { const w = document.querySelector('[data-lnl-voucher-list-endpoint]'); const u = w.getAttribute('data-lnl-voucher-list-endpoint'); const r = await fetch(u, { credentials: 'same-origin' }); return r.status + ' ' + (await r.text()).slice(0, 2500); });
+console.log('RESP', resp);
 await browser.close();
