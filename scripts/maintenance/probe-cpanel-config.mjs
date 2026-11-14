@@ -36,7 +36,7 @@ const secrets = [token, user, baseUrl.hostname, baseUrl.host].filter(s => s && s
 function redact(text) {
   let out = String(text);
   for (const s of secrets) out = out.split(s).join('<che>');
-  out = out.replace(/((?:pass(?:word|wd)?|token|secret|key|auth)[=:\s]+)\S+/gi, '$1<che>');
+  out = out.replace(/((?:pass(?:word|wd)?|token|secret|key|auth)[=:\s]+)[^\s"',;\\]+/gi, '$1<che>');
   return out;
 }
 
@@ -139,7 +139,7 @@ async function listDir(dir) {
   return r.ok ? (r.data || []) : null;
 }
 const FOCUS = (process.env.FOCUS || 'all').trim();
-const WALK_MAX_CALLS = ['home', 'docroot', 'git'].includes(FOCUS) ? 900 : 600, PER_DIR_CALLS = 90, WALK_DEADLINE = Date.now() + 8 * 60_000;
+const WALK_MAX_CALLS = ['home', 'docroot', 'git', 'analyze'].includes(FOCUS) ? 900 : 600, PER_DIR_CALLS = 90, WALK_DEADLINE = Date.now() + 8 * 60_000;
 let walkCalls = 0;
 async function walkSize(dir, cap = PER_DIR_CALLS) {
   let bytes = 0, files = 0, dirs = 0, truncated = false, errors = 0;
@@ -169,7 +169,7 @@ if (docroot) {
   const rank = l => { const i = order.indexOf(l); return l === 'wp-content/plugins' ? 999 : i < 0 ? 500 : i; };
   targets.sort((a, b) => rank(a[0]) - rank(b[0]));
   out.deep.sizes = {};
-  if (!['home', 'docroot', 'git'].includes(FOCUS)) for (const [label, path] of targets) out.deep.sizes[label] = await safe(() => walkSize(path));
+  if (!['home', 'docroot', 'git', 'analyze'].includes(FOCUS)) for (const [label, path] of targets) out.deep.sizes[label] = await safe(() => walkSize(path));
   out.deep.walkCalls = walkCalls;
   const root = await safe(() => listDir(docroot));
   if (Array.isArray(root)) out.deep.rootFiles = root.filter(f => f.type === 'file' && Number(f.size) > 1048576).map(f => ({ file: f.file, mb: Math.round(Number(f.size) / 1048576) }));
@@ -234,9 +234,60 @@ if (docroot) {
     out.deep.gitRootTracked = await safe(async () => { const r = await call('Fileman', 'list_files', { dir: docroot, showdotfiles: 1, show_hidden: 1 }); return r.ok ? (r.data || []).filter(f => /^\.git/.test(f.file)).map(f => `${f.type === 'dir' ? 'd' : 'f'}:${f.file}`) : null; });
   }
 
+  if (FOCUS === 'analyze') {
+    const a = out.deep.analyze = {};
+    const home = docroot.replace(/\/[^/]+$/, '');
+    const getText = async (dir, file, max) => {
+      const l = await listDir(dir); const m = Array.isArray(l) ? l.find(f => f.file === file) : null;
+      if (!m) return { ok: false, error: 'không có' };
+      if (Number(m.size) > max) return { ok: false, error: `quá lớn (${Math.round(Number(m.size) / 1048576)} MB)` };
+      const r = await call('Fileman', 'get_file_content', { dir, file }); return r.ok ? { ok: true, text: String(r.data?.content || ''), bytes: Number(m.size) } : r;
+    };
+    // 1) Tên file ẩn ở thư mục gốc web (.user.ini, php.ini …) và CloudLinux PHP Selector (.cl.selector) quyết định PHP/extension thật
+    const rootL = await listDir(docroot);
+    a.rootHidden = Array.isArray(rootL) ? rootL.filter(f => String(f.file).startsWith('.') || /php\.ini|\.user\.ini/i.test(f.file)).map(f => `${f.type === 'dir' ? 'd' : 'f'}:${f.file}`) : rootL;
+    const sel = await listDir(`${home}/.cl.selector`);
+    a.clSelector = {};
+    for (const f of (Array.isArray(sel) ? sel : []).filter(x => x.type === 'file')) {
+      const r = await getText(`${home}/.cl.selector`, f.file, 20000);
+      a.clSelector[f.file] = r.ok ? r.text.split('\n').map(l => redact(l.trim())).filter(Boolean).slice(0, 60) : r;
+    }
+    // 2) Rà mu-plugins (chỉ thống kê móc/hàm rủi ro, không in mã)
+    const mu = await listDir(`${docroot}/wp-content/mu-plugins`);
+    a.muPlugins = {};
+    const RISK = { remoteHttp: /wp_remote_(get|post|request)|file_get_contents\(\s*['"]http|curl_exec/g, sleep: /\b(u?sleep)\(/g, wpQuery: /new\s+WP_Query|get_posts\(|query_posts\(/g, wpdb: /\$wpdb->(get_(results|var|row|col)|query)\(/g, options: /\bget_option\(/g, transients: /(get|set)_transient\(/g, objCache: /wp_cache_(get|set)\(/g, setcookie: /setcookie\(|session_start\(/g, orderby_rand: /RAND\(\)|orderby['"]?\s*=>\s*['"]rand/gi, loops: /\b(foreach|while)\s*\(/g };
+    for (const f of (Array.isArray(mu) ? mu : []).filter(x => x.type === 'file' && /\.php$/i.test(x.file))) {
+      const r = await getText(`${docroot}/wp-content/mu-plugins`, f.file, 400000);
+      if (!r.ok) { a.muPlugins[f.file] = r; continue; }
+      const hooks = {}; for (const m of r.text.matchAll(/add_(?:action|filter)\(\s*['"]([^'"]+)['"]/g)) hooks[m[1]] = (hooks[m[1]] || 0) + 1;
+      const risk = {}; for (const [k, re] of Object.entries(RISK)) risk[k] = (r.text.match(re) || []).length;
+      a.muPlugins[f.file] = { bytes: r.bytes, lines: r.text.split('\n').length, hooks: Object.entries(hooks).sort((x, y) => y[1] - x[1]).slice(0, 14), risk };
+    }
+    // 3) Log lỗi PHP: gom theo loại lỗi (đã chuẩn hóa, che email/đường dẫn), không in dòng gốc
+    const analyzeLog = async (dir, file, label) => {
+      const r = await getText(dir, file, 40 * 1048576);
+      if (!r.ok) return { label, ...r };
+      const lines = r.text.split('\n').filter(Boolean);
+      const levels = {}, kinds = {}, plugins = {}, themes = {}; let first = '', last = '';
+      for (const l of lines) {
+        const ts = l.match(/^\[(\d{2}-[A-Za-z]{3}-\d{4}) /); if (ts) { if (!first) first = ts[1]; last = ts[1]; }
+        const lv = l.match(/PHP (Fatal error|Warning|Notice|Deprecated|Parse error|Strict Standards)/); if (lv) levels[lv[1]] = (levels[lv[1]] || 0) + 1;
+        const pl = l.match(/wp-content\/plugins\/([^/\s]+)/); if (pl) plugins[pl[1]] = (plugins[pl[1]] || 0) + 1;
+        const th = l.match(/wp-content\/themes\/([^/\s]+)/); if (th) themes[th[1]] = (themes[th[1]] || 0) + 1;
+        if (/mu-plugins\/([^/\s]+)/.test(l)) { const m = l.match(/mu-plugins\/([^/\s]+)/)[1]; plugins['mu:' + m] = (plugins['mu:' + m] || 0) + 1; }
+        let k = l.replace(/^\[[^\]]*\]\s*/, '').replace(/\/home\/[^/\s]+\/public_html/g, '.').replace(/[\w.+-]+@[\w.-]+/g, '<email>').replace(/\d+/g, 'N').replace(/\s+/g, ' ').slice(0, 170);
+        kinds[k] = (kinds[k] || 0) + 1;
+      }
+      const top = o => Object.entries(o).sort((x, y) => y[1] - x[1]).slice(0, 12);
+      return { label, ok: true, lines: lines.length, from: first, to: last, levels, topPlugins: top(plugins), topThemes: top(themes), topKinds: top(kinds).slice(0, 18).map(([k, n]) => [redact(k), n]) };
+    };
+    a.errorLogDocroot = await safe(() => analyzeLog(docroot, 'error_log', 'docroot/error_log'));
+    a.phpErrorLogHome = await safe(() => analyzeLog(`${home}/logs`, 'php.error.log', 'logs/php.error.log'));
+  }
+
   // Thư mục home (cha của public_html): 13 GB đĩa có thể nằm ngoài web (sao lưu, log, mail, tmp).
   const home = docroot.replace(/\/[^/]+$/, '');
-  if (FOCUS !== 'docroot' && FOCUS !== 'git') out.deep.home = await safe(async () => {
+  if (FOCUS !== 'docroot' && FOCUS !== 'git' && FOCUS !== 'analyze') out.deep.home = await safe(async () => {
     const items = await listDir(home);
     if (!Array.isArray(items)) return { ok: false };
     const dirs = items.filter(f => f.type === 'dir' && f.file !== 'public_html' && f.file !== '.' && f.file !== '..');
