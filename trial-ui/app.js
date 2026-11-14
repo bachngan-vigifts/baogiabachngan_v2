@@ -25,6 +25,7 @@ import {openPriceLabels} from './price-labels.js';
 import {ghnOrderSummary} from './ghn-order-summary.js';
 import {initProductDetail} from './product-detail.js';
 import { createPageBack } from './page-back.js';
+import { installChatFab } from './mobile-chat-fab.js';
 import { bindForgotPassword } from './forgot-password.js';
 import { mountTurnstile } from './turnstile.js';
 import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
@@ -888,6 +889,7 @@ async function sepayView(query){const hash=location.hash,userId=state.user?.id;t
 var accountingUi=null,accountingLoading=null;
 async function accountingView(){const hash=location.hash,userId=state.user?.id;try{const {initAccounting}=await(accountingLoading ||= import('./accounting.js'));if(location.hash!==hash||state.user?.id!==userId||!canAccounting()||$('#workspace').hidden)return;accountingUi ||= initAccounting({api,root:$('#view-accounting')});await accountingUi.show();}catch(e){accountingLoading=null;if(location.hash===hash)toast(e.message,'err');}}
 const VIEWS = { accounting:'Không gian kế toán', sepay:'Thanh toán SePay', finance:'Tài chính & KPI', home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving: 'Lịch nhận hàng', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Kho của tôi', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+installChatFab();
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
  label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
