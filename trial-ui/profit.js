@@ -26,7 +26,7 @@ const short = v => { const a = Math.abs(v), s = v < 0 ? '−' : '';
   return a >= 1e9 ? s + (Math.round(a / 1e7) / 100).toLocaleString('vi-VN') + ' tỷ' : a >= 1e6 ? s + Math.round(a / 1e6).toLocaleString('vi-VN') + ' tr' : s + Math.round(a).toLocaleString('vi-VN'); };
 const csvCell = v => /[",\n;]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
 
-const CONF_TONE = { confirmed: 'ok', estimate: 'warn', backfill: 'muted' };
+const CONF_TONE = { confirmed: 'info', estimate: 'warn', backfill: 'muted' };
 const REASON = { create: 'Tạo đơn', amend: 'Sửa đơn', confirm: 'Duyệt đơn', pos: 'Bán POS', pos_edit: 'Sửa đơn POS', adjust: 'Manager điều chỉnh', recover: 'Hệ thống khôi phục giá tham chiếu' };
 export function initProfit({ api, root, toast, esc, money }) {
   const pill = (tone, text) => `<span class="pill ${tone}">${esc(text)}</span>`;
