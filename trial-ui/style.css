@@ -2844,3 +2844,22 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
  #product-table td.actions-cell .row-actions{flex-wrap:wrap;min-width:160px;max-width:180px;white-space:normal;gap:4px}
  #product-table td.actions-cell .row-actions .btn+.btn{margin-left:0}
 }
+
+/* Contract document editing: explicit actions and a wrapping, keyboard-accessible ribbon. */
+.cd-tools { display:grid;gap:8px;padding:12px;background:#f2f6fc;border:1px solid var(--line);border-radius:8px; }
+.cd-current { font-weight:700;color:var(--ink); }
+.cd-tools .row-gap { flex-wrap:wrap; }
+.cd-format { border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff; }
+.cd-format fieldset { border:0;padding:0;margin:8px 0 0;min-width:0; }
+.cd-format-controls { display:flex;flex-wrap:wrap;gap:10px; }
+.cd-format-group { display:flex;align-items:end;flex-wrap:wrap;gap:6px;padding-right:10px;border-right:1px solid var(--line);min-width:0; }
+.cd-format-group label { display:grid;gap:3px;font-size:12px;font-weight:600;max-width:100%; }
+.cd-format-group select { width:auto;max-width:100%;min-height:36px; }
+.cd-format-group button { min-height:36px; }
+.cd-format button[aria-pressed="true"] { background:#dbeafe;border-color:#1d4ed8;color:#153b73; }
+.contract-docs [aria-busy="true"] { cursor:progress; }
+@media(max-width:600px){.cd-tools .btn{min-height:44px}.cd-format-group{border-right:0;padding:0}.cd-format-group button,.cd-format-group select{min-height:44px}.contract-docs .modal-foot{flex-wrap:wrap}.cd-format{padding:8px}.cd-frame{height:65vh}}
+
+.contract-docs[open] { display:flex;flex-direction:column;max-height:calc(100dvh - 24px); }
+.contract-docs .modal-head,.contract-docs .modal-foot { flex-shrink:0; }
+.contract-docs .cd-body { min-height:0;overflow:auto; }

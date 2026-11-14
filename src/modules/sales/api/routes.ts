@@ -1,3 +1,4 @@
+import {cleanWordEdits} from '../../quotes/domain/quotation-schema.ts';
 import {registerProductionFiles,bindProductionFiles} from './production-files.ts';
 import { ensureLineCosts } from './line-costs.ts';
 import { registerOrderProductsRoutes } from './order-products.ts';
@@ -1230,7 +1231,14 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       }
       if (body.paymentMethod !== undefined) set.paymentMethod = text(body.paymentMethod, 1000);
       if (body.deliveryAddress !== undefined) set.deliveryAddress = text(body.deliveryAddress, 2000);
-      if (body.details !== undefined) set.data = JSON.stringify(body.details && typeof body.details === 'object' ? body.details : {});
+      if (body.details !== undefined) {
+        const data=body.details&&typeof body.details==='object'&&!Array.isArray(body.details)?{...body.details as Record<string,unknown>}:{};
+        if(data.edits!==undefined){
+          if(!data.edits||typeof data.edits!=='object'||Array.isArray(data.edits)||Object.keys(data.edits).some(k=>!['HDKT','TAM_UNG','BBNT'].includes(k)))throw new AppError(400,'Loại hồ sơ chỉnh sửa không hợp lệ.');
+          data.edits=Object.fromEntries(Object.entries(data.edits).map(([key,value])=>[key,cleanWordEdits(value)]));
+        }
+        set.data=JSON.stringify(data);
+      }
       if (body.syncQuoteTerms === true) {
         if (contract.status === 'cancelled') throw new AppError(409, 'HĐKT đã huỷ, không cập nhật báo giá nguồn.');
         const deliveryTime = body.deliveryTime === undefined ? undefined : text(body.deliveryTime, 2000);

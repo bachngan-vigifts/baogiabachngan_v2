@@ -319,3 +319,14 @@ Giá CRM xuất phát từ báo giá là giá chưa VAT; CK tiền là trên m�
 Kiểm thử: 26 test liên quan đạt, không skip; gồm renderer POS/CRM, giá lẻ/CK tiền/phí in/nhiều VAT, sửa hợp đồng và hoàn hàng. Kiểm tra API tạo đơn/HĐKT xác nhận giá gốc và CK đi xuyên từ báo giá vào DB. Typecheck/UI build đạt. Browser router thật, dữ liệu giả: 8 trường hợp POS/CRM/HĐKT/chứng từ cũ trên 1440/390 đạt, không lỗi JS/tràn ngang, không request ghi dữ liệu từ thao tác xem.
 
 Đo 3 lượt lạnh/viewport, mạng giả lập 40 ms, 1,6 MB/s: median ready PC 3124→3141 ms, mobile 3081→3074 ms; vẫn 17 API/164 JS. Bản đo đầu biến động, đã lưu cả số chẩn đoán và cặp đo cuối trong `docs/testing/crm-order-line-form-performance.json`. Đây là số cục bộ, không phải tốc độ production. CLS khởi động vẫn cao (PC ~0,466→0,486; mobile ~0,665 giữ nguyên); không coi là bản sửa CLS toàn ứng dụng.
+
+## Chỉnh định dạng hồ sơ HĐKT
+
+Trong **Xem, chỉnh sửa và tải hồ sơ HĐKT**, chọn tab Hợp đồng / Đề nghị tạm ứng / Biên bản. Bấm vào đoạn có thể sửa, bôi đen chữ rồi dùng thanh định dạng: đậm, nghiêng, gạch chân/gạch ngang, phông/cỡ chữ và màu chữ. Nếu chưa bôi đen, lệnh áp dụng cho cả đoạn đang chọn. Căn lề, giãn dòng, thụt lề và danh sách áp dụng cho đoạn. Mỗi lần chỉ chọn chữ trong một đoạn; ô đã khóa vẫn sửa qua thông tin nguồn.
+
+- **Lưu chỉnh sửa** lưu thông tin điền mẫu và định dạng của cả ba hồ sơ, không tự tải file.
+- **Tải Word (.docx)** và **In / Lưu PDF** dùng hồ sơ trong tab đang mở, kể cả chỉnh sửa chưa lưu. Lưu PDF bằng hộp in của trình duyệt.
+- **Tải bộ 3 file (.zip)** chứa cả ba file Word, giữ định dạng đã chỉnh. Bảng sản phẩm của biên bản lấy từ HĐKT; chỉnh bảng ở tab Hợp đồng.
+- **Đặt lại theo mẫu** chỉ bỏ chỉnh sửa chữ/định dạng của tab đang xem, có xác nhận; không đổi hai hồ sơ còn lại.
+
+Quyền sửa giữ nguyên: nhân viên chỉ sửa hồ sơ còn được phép sửa, HĐKT đã duyệt chỉ Manager sửa; quyền chỉ xem không có thanh định dạng. Định dạng chữ không tự tính lại số lượng, giá hay thuế. Dán từ nguồn khác chỉ nhận văn bản thuần. Bản xem/ngắt trang có thể khác Microsoft Word. Không cần migration vì lưu trong dữ liệu văn bản JSON hiện có.
