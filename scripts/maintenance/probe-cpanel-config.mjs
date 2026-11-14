@@ -265,6 +265,7 @@ if (docroot) {
       if (!r.ok) { a.muPlugins[f.file] = r; continue; }
       const hooks = {}; for (const m of r.text.matchAll(/add_(?:action|filter)\(\s*['"]([^'"]+)['"]/g)) hooks[m[1]] = (hooks[m[1]] || 0) + 1;
       const risk = {}; for (const [k, re] of Object.entries(RISK)) risk[k] = (r.text.match(re) || []).length;
+      if (r.bytes <= 4000 && /cart|redirect|wishlist/i.test(f.file)) (a.muSource ||= {})[f.file] = r.text.split('\n').map(l => redact(l.replace(/\s+$/, ''))).slice(0, 90);
       a.muPlugins[f.file] = { bytes: r.bytes, lines: r.text.split('\n').length, hooks: Object.entries(hooks).sort((x, y) => y[1] - x[1]).slice(0, 14), risk };
     }
     // 3) Log lỗi PHP: gom theo loại lỗi (đã chuẩn hóa, che email/đường dẫn), không in dòng gốc
