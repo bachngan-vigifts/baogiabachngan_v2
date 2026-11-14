@@ -6,9 +6,52 @@ globalThis.ContractWordEdit=(()=>{
  const editable=p=>!['drawing','pict','fldChar','fldSimple','object','sdt'].some(tag=>p.getElementsByTagNameNS(W,tag).length)&&p.getElementsByTagNameNS(W,'t').length>0;
  function open(bytes){const files=globalThis.fflate.unzipSync(new Uint8Array(bytes)),raw=globalThis.fflate.strFromU8(files['word/document.xml']);const xml=new DOMParser().parseFromString(raw,'application/xml');if(xml.getElementsByTagName('parsererror').length)throw Error('Không đọc được nội dung Word.');return {files,xml,paragraphs:Array.from(xml.getElementsByTagNameNS(W,'p'))};}
  function pack(files,xml){files['word/document.xml']=globalThis.fflate.strToU8(serialize(xml));return globalThis.fflate.zipSync(files,{level:6});}
+ const fonts=['Times New Roman','Arial','Calibri','Tahoma'];
+ function runProps(xml,old,format){
+  const props=old?.cloneNode(true)||xml.createElementNS(W,'w:rPr');
+  const set=(tag,attrs)=>{for(const n of Array.from(props.childNodes))if(n.localName===tag)props.removeChild(n);const n=xml.createElementNS(W,'w:'+tag);for(const [k,v]of Object.entries(attrs))n.setAttributeNS(W,'w:'+k,String(v));props.appendChild(n);};
+  for(const [key,tag]of [['bold','b'],['italic','i'],['underline','u'],['strike','strike']])if(typeof format[key]==='boolean')set(tag,{val:format[key]?(tag==='u'?'single':'1'):(tag==='u'?'none':'0')});
+  if(fonts.includes(format.fontFamily))set('rFonts',{ascii:format.fontFamily,hAnsi:format.fontFamily,eastAsia:format.fontFamily,cs:format.fontFamily});
+  if(Number.isFinite(format.fontSize)&&format.fontSize>=6&&format.fontSize<=72){set('sz',{val:Math.round(format.fontSize*2)});set('szCs',{val:Math.round(format.fontSize*2)});}
+  if(/^[A-Fa-f0-9]{6}$/.test(format.color||''))set('color',{val:format.color});
+  return props;
+ }
+ function paragraphProps(xml,pPr,edit,numbering){
+  const set=(tag,attrs)=>{for(const n of Array.from(pPr.childNodes))if(n.localName===tag)pPr.removeChild(n);const n=xml.createElementNS(W,'w:'+tag);for(const [k,v]of Object.entries(attrs))n.setAttributeNS(W,'w:'+k,String(v));pPr.appendChild(n);return n;};
+  if(['left','center','right','both'].includes(edit.align))set('jc',{val:edit.align});
+  if([1,1.15,1.5,2].includes(edit.lineSpacing)){let n=Array.from(pPr.childNodes).find(n=>n.localName==='spacing');if(!n){n=xml.createElementNS(W,'w:spacing');pPr.appendChild(n);}n.setAttributeNS(W,'w:line',String(Math.round(edit.lineSpacing*240)));n.setAttributeNS(W,'w:lineRule','auto');}
+  if([0,360,720,1080,1440].includes(edit.indent))set('ind',{left:edit.indent});
+  if(['none','bullet','decimal'].includes(edit.list)){
+   const n=set('numPr',{}),id=xml.createElementNS(W,'w:numId');id.setAttributeNS(W,'w:val',String(edit.list==='none'?0:numbering(edit.list)));n.appendChild(id);
+   const level=xml.createElementNS(W,'w:ilvl');level.setAttributeNS(W,'w:val','0');n.insertBefore(level,id);
+  }
+ }
+ function numberingFor(files){
+  let xml;
+  return kind=>{
+   if(!xml){
+    xml=new DOMParser().parseFromString(files['word/numbering.xml']?globalThis.fflate.strFromU8(files['word/numbering.xml']):'<w:numbering xmlns:w="'+W+'"/>','application/xml');
+    const paths=[['[Content_Types].xml','http://schemas.openxmlformats.org/package/2006/content-types','Override','PartName','/word/numbering.xml',{ContentType:'application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml'}],['word/_rels/document.xml.rels','http://schemas.openxmlformats.org/package/2006/relationships','Relationship','Type','http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering',{Target:'numbering.xml'}]];
+    for(const [path,ns,tag,key,value,attrs]of paths){
+     const doc=new DOMParser().parseFromString(files[path]?globalThis.fflate.strFromU8(files[path]):'<Relationships xmlns="'+ns+'"/>','application/xml');
+     if(!Array.from(doc.documentElement.children).some(n=>n.getAttribute(key)===value)){
+      const n=doc.createElementNS(ns,tag);n.setAttribute(key,value);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);
+      if(tag==='Relationship'){let i=1;const ids=new Set(Array.from(doc.documentElement.children).map(n=>n.getAttribute('Id')));while(ids.has('rIdBnEditor'+i))i++;n.setAttribute('Id','rIdBnEditor'+i);}doc.documentElement.appendChild(n);files[path]=globalThis.fflate.strToU8(serialize(doc));
+     }
+    }
+   }
+   const abstracts=Array.from(xml.getElementsByTagNameNS(W,'abstractNum')),nums=Array.from(xml.getElementsByTagNameNS(W,'num'));
+   let a=abstracts.find(n=>Array.from(n.getElementsByTagNameNS(W,'name')).some(x=>x.getAttributeNS(W,'val')==='BachNganEditor-'+kind));
+   const element=(tag,attrs={})=>{const n=xml.createElementNS(W,'w:'+tag);for(const [k,v]of Object.entries(attrs))n.setAttributeNS(W,'w:'+k,String(v));return n;};
+   if(!a){const id=Math.max(-1,...abstracts.map(n=>Number(n.getAttributeNS(W,'abstractNumId'))))+1;a=element('abstractNum',{abstractNumId:id});a.appendChild(element('multiLevelType',{val:'singleLevel'}));a.appendChild(element('name',{val:'BachNganEditor-'+kind}));const lvl=element('lvl',{ilvl:0});lvl.appendChild(element('start',{val:1}));lvl.appendChild(element('numFmt',{val:kind==='bullet'?'bullet':'decimal'}));lvl.appendChild(element('lvlText',{val:kind==='bullet'?'•':'%1.'}));const pr=element('pPr');pr.appendChild(element('ind',{left:720,hanging:360}));lvl.appendChild(pr);a.appendChild(lvl);xml.documentElement.insertBefore(a,nums[0]||null);}
+   const aid=a.getAttributeNS(W,'abstractNumId');let n=nums.find(n=>n.getElementsByTagNameNS(W,'abstractNumId')[0]?.getAttributeNS(W,'val')===aid);
+   if(!n){n=element('num',{numId:Math.max(0,...nums.map(n=>Number(n.getAttributeNS(W,'numId'))))+1});n.appendChild(element('abstractNumId',{val:aid}));xml.documentElement.appendChild(n);}files['word/numbering.xml']=globalThis.fflate.strToU8(serialize(xml));return n.getAttributeNS(W,'numId');
+  };
+ }
  // Sửa trực tiếp trên DOM của document.xml. Đoạn bị xoá hết chữ thì XOÁ HẲN đoạn đó (không để lại dòng trống);
  // riêng đoạn duy nhất trong một ô bảng thì giữ (Word bắt buộc ô có ít nhất một đoạn) nhưng để trống.
- async function applyTo(xml,paragraphs,edits){
+ async function applyTo(xml,paragraphs,edits,files){
+  const numbering=numberingFor(files);
   const removed=new Set();
   for(const edit of edits){const p=paragraphs[edit.index];if(!p||!editable(p)||await digest(serialize(p))!==edit.hash)throw Error('Mẫu hoặc dữ liệu HĐKT đã thay đổi. Cần bỏ bản chỉnh văn bản cũ để dựng lại từ dữ liệu mới.');
    const parent=p.parentNode,onlyInCell=parent?.localName==='tc'&&Array.from(parent.childNodes).filter(n=>n.localName==='p').length===1;
@@ -18,10 +61,13 @@ globalThis.ContractWordEdit=(()=>{
    const oldProps=p.getElementsByTagNameNS(W,'rPr')[0]?.cloneNode(true);
    const pPr=Array.from(p.childNodes).find(n=>n.localName==='pPr')?.cloneNode(true)||xml.createElementNS(W,'w:pPr');
    while(p.firstChild)p.removeChild(p.firstChild);p.appendChild(pPr);
-   if(edit.align){for(const n of Array.from(pPr.childNodes))if(n.localName==='jc')pPr.removeChild(n);const jc=xml.createElementNS(W,'w:jc');jc.setAttributeNS(W,'w:val',edit.align);pPr.appendChild(jc);}
-   const r=xml.createElementNS(W,'w:r'),props=oldProps||xml.createElementNS(W,'w:rPr');
-   for(const [key,tag] of [['bold','b'],['italic','i'],['underline','u']])if(typeof edit[key]==='boolean'){for(const n of Array.from(props.childNodes))if(n.localName===tag)props.removeChild(n);const n=xml.createElementNS(W,'w:'+tag);n.setAttributeNS(W,'w:val',edit[key]?(tag==='u'?'single':'1'):(tag==='u'?'none':'0'));props.appendChild(n);}
-   r.appendChild(props);text.split('\n').forEach((line,i)=>{if(i)r.appendChild(xml.createElementNS(W,'w:br'));const t=xml.createElementNS(W,'w:t');t.setAttribute('xml:space','preserve');t.appendChild(xml.createTextNode(line));r.appendChild(t);});p.appendChild(r);
+   paragraphProps(xml,pPr,edit,numbering);
+   const runs=Array.isArray(edit.runs)?edit.runs:null;
+   if(runs&&(runs.length>2000||runs.some(r=>!r||typeof r.text!=='string')||runs.map(r=>r.text).join('')!==String(edit.text??'')))throw Error('Định dạng chữ không khớp nội dung đoạn.');
+   for(const format of runs||[{...edit,text}]){
+    const r=xml.createElementNS(W,'w:r');r.appendChild(runProps(xml,oldProps,format));
+    for(const part of format.text.split(/(\n|\t)/)){if(part==='\n'||part==='\t'){r.appendChild(xml.createElementNS(W,part==='\n'?'w:br':'w:tab'));continue;}const t=xml.createElementNS(W,'w:t');t.setAttribute('xml:space','preserve');t.appendChild(xml.createTextNode(part));r.appendChild(t);}p.appendChild(r);
+   }
   }
   // Xoá sau cùng: các đoạn khác vẫn so khớp đúng theo vị trí ban đầu.
   for(const index of removed)paragraphs[index].parentNode.removeChild(paragraphs[index]);
@@ -29,12 +75,12 @@ globalThis.ContractWordEdit=(()=>{
  }
  async function apply(bytes,edits=[]){
   if(!edits.length)return bytes;const {files,xml,paragraphs}=open(bytes);
-  await applyTo(xml,paragraphs,edits);return pack(files,xml);
+  await applyTo(xml,paragraphs,edits,files);return pack(files,xml);
  }
  async function prepare(bytes,edits=[]){
   const {files,xml,paragraphs}=open(bytes),info=[];
   for(const [index,p] of paragraphs.entries())if(editable(p))info.push({index,hash:await digest(serialize(p))});
-  const removed=await applyTo(xml,paragraphs,edits),saved=edits.length?pack(files,xml):bytes;
+  const removed=await applyTo(xml,paragraphs,edits,files),saved=edits.length?pack(files,xml):bytes;
   // Đánh dấu (bookmark) từng đoạn sửa được trên CHÍNH bản đã áp chỉnh sửa – đánh theo vị trí gốc nên không lệch khi có đoạn bị xoá.
   const visible=info.filter(x=>!removed.has(x.index));
   for(const {index} of visible){const p=paragraphs[index],mark=xml.createElementNS(W,'w:bookmarkStart');mark.setAttributeNS(W,'w:name','bnword_'+index);mark.setAttributeNS(W,'w:id',String(900000+index));p.appendChild(mark);const end=xml.createElementNS(W,'w:bookmarkEnd');end.setAttributeNS(W,'w:id',String(900000+index));p.appendChild(end);}
@@ -55,7 +101,7 @@ globalThis.ContractWordEdit=(()=>{
   return Promise.all(edits.map(async edit=>{
    const current=paragraphs[edit.index],text=String(edit.text??'');
    if(!current||!text.toLocaleLowerCase('vi').includes(name.toLocaleLowerCase('vi')))return edit;
-   return {...edit,hash:await digest(serialize(current)),text:representativeText(text,details)};
+   const next=representativeText(text,details),result={...edit,hash:await digest(serialize(current)),text:next};if(next!==text)delete result.runs;return result;
   }));
  }
  // Form fields remain authoritative even when a saved paragraph contains an older date/address.
@@ -66,7 +112,7 @@ globalThis.ContractWordEdit=(()=>{
   const {paragraphs}=open(bytes);
   return Promise.all(edits.map(async edit=>{
    const p=paragraphs[edit.index],kind=p&&fieldKind(textOf(p));
-   return kind&&kind===fieldKind(String(edit.text??''))?{...edit,hash:await digest(serialize(p)),text:textOf(p)}:edit;
+   if(!kind||kind!==fieldKind(String(edit.text??'')))return edit;const result={...edit,hash:await digest(serialize(p)),text:textOf(p)};if(result.text!==edit.text)delete result.runs;return result;
   }));
  }
  // A font-only update must not invalidate saved edits in unchanged source paragraphs.
@@ -108,7 +154,17 @@ globalThis.ContractWordEdit=(()=>{
   const oldParagraphs=target.paragraphs,oldHashes=await Promise.all(oldParagraphs.map(p=>digest(serialize(p))));
   const oldInside=oldParagraphs.map(p=>oldTable.contains(p));
   copyTableStyles(target,source,table);
-  const copied=target.xml.importNode(table,true);oldTable.parentNode.replaceChild(copied,oldTable);
+  const copied=target.xml.importNode(table,true);
+  if(source.files['word/numbering.xml']){
+   const numbering=new DOMParser().parseFromString(globalThis.fflate.strFromU8(source.files['word/numbering.xml']),'application/xml'),assign=numberingFor(target.files);
+   for(const ref of copied.getElementsByTagNameNS(W,'numId')){
+    const num=Array.from(numbering.getElementsByTagNameNS(W,'num')).find(n=>n.getAttributeNS(W,'numId')===ref.getAttributeNS(W,'val'));
+    const aid=num?.getElementsByTagNameNS(W,'abstractNumId')[0]?.getAttributeNS(W,'val'),abstract=Array.from(numbering.getElementsByTagNameNS(W,'abstractNum')).find(n=>n.getAttributeNS(W,'abstractNumId')===aid);
+    const name=abstract?.getElementsByTagNameNS(W,'name')[0]?.getAttributeNS(W,'val');
+    if(['BachNganEditor-bullet','BachNganEditor-decimal'].includes(name))ref.setAttributeNS(W,'w:val',String(assign(name.slice('BachNganEditor-'.length))));
+   }
+  }
+  oldTable.parentNode.replaceChild(copied,oldTable);
   const paragraphs=Array.from(target.xml.getElementsByTagNameNS(W,'p')),hashes=await Promise.all(paragraphs.map(p=>digest(serialize(p))));
   const locked=paragraphs.flatMap((p,i)=>copied.contains(p)?[i]:[]),normalized=[];
   for(const edit of edits){
@@ -126,5 +182,5 @@ globalThis.ContractWordEdit=(()=>{
   return {base:pack(target.files,target.xml),edits:normalized,locked};
  }
  const formFieldParagraphs=bytes=>open(bytes).paragraphs.flatMap((p,index)=>fieldKind(textOf(p))?[index]:[]);
- return {apply,prepare,rebaseTypography,rebaseRepresentative,representativeText,rebaseFields,copyContractTable,formFieldParagraphs};
+ return {formatVersion:1,apply,prepare,rebaseTypography,rebaseRepresentative,representativeText,rebaseFields,copyContractTable,formFieldParagraphs};
 })();

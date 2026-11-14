@@ -38,7 +38,7 @@ test('editing delivery does not replace textual payment conditions; flexible del
 test('editor uses live quote terms over stale document details and keeps representative/signing fields', () => {
   const source = readFileSync(new URL('../../trial-ui/contract-ui.js', import.meta.url), 'utf8');
   const ctx: any = {};
-  runInNewContext(source.slice(0, source.indexOf('/** Đổi đơn +')).replaceAll('export ', '') + '\nthis.resolve = contractDetails', ctx);
+  runInNewContext(source.slice(0, source.indexOf('/** Đổi đơn +')).replace(/^import .*;\n/gm,'').replaceAll('export ', '') + '\nthis.resolve = contractDetails', ctx);
   const actual = ctx.resolve({ order: { contact: 'Bà Mai' }, contract: { depositRate: 30, paymentDays: 5, data: { details: { deliveryAddress: 'Cũ', representativeTitle: 'Giám đốc' } }, sourceTerms: contractTermsFromQuote(quote()) } });
   assert.equal(actual.depositRate, 40); assert.equal(actual.paymentDays, 12); assert.equal(actual.deliveryAddress, 'Kho khách Tầng 2');
   assert.equal(actual.representativeName, 'Mai'); assert.equal(actual.representativeTitle, 'Giám đốc');

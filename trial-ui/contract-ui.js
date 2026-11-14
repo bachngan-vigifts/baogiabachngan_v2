@@ -1,3 +1,4 @@
+import {initContractFormatting,paragraphRuns} from './contract-format.js';
 // HĐKT theo mẫu Word của web báo giá cũ: xem trước + chỉnh sửa rồi tải.
 // Bộ tải về là 1 file .zip gồm 3 file Word: HDKT.docx (hợp đồng), TAM_UNG.docx (đề nghị tạm ứng), BBNT.docx (biên bản nghiệm thu).
 // Dựng file: contract-document.js (chép web cũ, mẫu .docx + thay <<[Trường]>>). Chỉnh trực tiếp: contract-word-edit.js (lưu theo đoạn văn).
@@ -9,13 +10,13 @@ const script = (src, refresh = false) => {
   const task = new Promise((resolve, reject) => {
     const s = document.createElement('script');
     s.src = src + (refresh ? (src.includes('?') ? '&' : '?') + '_reload=' + Date.now() : '');
-    s.onload = resolve;
-    s.onerror = () => { if (loaded.get(src) === task) loaded.delete(src); s.remove(); reject(Error('Không tải được ' + src + '. Vui lòng thử Cập nhật bản xem.')); };
+    const failed=()=>{clearTimeout(timer);if(loaded.get(src)===task)loaded.delete(src);s.remove();reject(Error('Không tải được '+src+'. Vui lòng thử Cập nhật bản xem.'));};
+    const timer=setTimeout(failed,30000);s.onload=()=>{clearTimeout(timer);resolve();};s.onerror=failed;
     document.head.append(s);
   });
   loaded.set(src, task); return task;
 };
-const builderReady = () => typeof globalThis.fflate?.unzipSync === 'function'
+const builderReady = () => globalThis.ContractWordEdit?.formatVersion===1 && typeof globalThis.fflate?.unzipSync === 'function'
   && ['prepare', 'apply'].every(k => typeof globalThis.ContractWordEdit?.[k] === 'function')
   && ['prepareDocument', 'build', 'buildPack', 'templatesFor'].every(k => typeof globalThis.ContractDocument?.[k] === 'function');
 let builderTask;
@@ -77,7 +78,7 @@ const templateBytes = new Map();
 async function templatesFor(quote) {
   return Promise.all(globalThis.ContractDocument.templatesFor(quote).map(async t => {
     if (!templateBytes.has(t.path)) {
-      const res = await fetch(t.path); if (!res.ok) throw Error('Không tải được mẫu biểu HĐKT.');
+      const res = await fetch(t.path,{signal:AbortSignal.timeout(30000)}); if (!res.ok) throw Error('Không tải được mẫu biểu HĐKT.');
       templateBytes.set(t.path, await res.arrayBuffer());
     }
     return { ...t, templateBytes: templateBytes.get(t.path) };
@@ -105,18 +106,19 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   const dlg = document.createElement('dialog'); dlg.className = 'modal xwide contract-docs';
   dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">HĐKT ${esc(k.contractNo)}</span><h2>${canEdit ? 'Xem, chỉnh sửa và tải hồ sơ HĐKT' : 'Xem và tải hồ sơ HĐKT'}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
     <div class="modal-body cd-body">
-      <aside class="cd-form"><h3>Thông tin điền mẫu</h3><p class="muted small">Dùng chung cho cả 3 hồ sơ. ${canEditFinancial ? 'Manager được sửa tỷ lệ cọc và số ngày thanh toán; khi lưu, kỳ công nợ sẽ cập nhật theo.' : 'Tỷ lệ cọc và số ngày thanh toán theo báo giá nguồn.'} Bốn điều khoản tạm ứng, hạn thanh toán, thời gian và địa chỉ giao hàng lấy từ báo giá nguồn; <b>Lưu chỉnh sửa</b> sẽ cập nhật ngược về báo giá. Đổi thông tin rồi bấm <b>Cập nhật bản xem</b>. Ngày ký và địa điểm giao hàng luôn theo các ô bên dưới. Bảng biên bản lấy từ HĐKT. Với các đoạn khác đã sửa trực tiếp, cần <b>Dựng lại</b> hồ sơ đó để nhận dữ liệu mới.</p>
+      <aside class="cd-form"><h3>Thông tin điền mẫu</h3><p class="muted small">Dùng chung cho cả 3 hồ sơ. ${canEditFinancial ? 'Manager được sửa tỷ lệ cọc và số ngày thanh toán; khi lưu, kỳ công nợ sẽ cập nhật theo.' : 'Tỷ lệ cọc và số ngày thanh toán theo báo giá nguồn.'} Bốn điều khoản tạm ứng, hạn thanh toán, thời gian và địa chỉ giao hàng lấy từ báo giá nguồn; <b>Lưu chỉnh sửa</b> sẽ cập nhật ngược về báo giá. Đổi thông tin rồi bấm <b>Cập nhật bản xem</b>. Ngày ký và địa điểm giao hàng luôn theo các ô bên dưới. Bảng biên bản lấy từ HĐKT. Với các đoạn khác đã sửa trực tiếp, cần <b>Đặt lại theo mẫu</b> hồ sơ đó để nhận dữ liệu mới.</p>
         ${FIELDS.map(([f, label, type]) => `<label><span>${label}</span>${type === 'honorific' ? `<select data-d="${f}"><option value="">Chọn danh xưng</option><option value="Ông">Ông</option><option value="Bà">Bà</option></select>` : type === 'area' ? `<textarea rows="2" data-d="${f}"></textarea>` : `<input data-d="${f}" type="${type || 'text'}" ${type === 'number' ? 'min="0"' : ''}>`}</label>`).join('')}
         <button type="button" class="btn secondary small" data-refresh>Cập nhật bản xem</button></aside>
       <section class="cd-preview"><div class="cd-tabs chips" role="tablist">${DOCS.map(([t, label], i) => `<button type="button" class="chip" role="tab" data-doc="${t}" aria-selected="${i === 0}">${label}</button>`).join('')}</div>
-        <p class="muted small" data-status>Đang dựng bản xem…</p>
-        <div class="row-gap cd-tools"><button type="button" class="btn ghost small" data-rebuild title="Bỏ các chỗ sửa trực tiếp của hồ sơ này, dựng lại từ thông tin điền mẫu">Dựng lại hồ sơ này</button><button type="button" class="btn ghost small" data-print>In hồ sơ này</button><button type="button" class="btn ghost small" data-one>Tải file Word này</button></div>
+        <p class="muted small" data-status role="status" aria-live="polite">Đang dựng bản xem…</p>
+        <div class="cd-tools" role="group" aria-label="Thao tác với hồ sơ đang xem"><span class="small cd-current" data-current></span><div class="row-gap"><button type="button" class="btn secondary" data-print>In / Lưu PDF</button><button type="button" class="btn primary" data-one>Tải Word (.docx)</button><button type="button" class="btn ghost small" data-rebuild title="Bỏ các chỗ sửa trực tiếp của hồ sơ này, dựng lại từ thông tin điền mẫu">Đặt lại theo mẫu</button></div><span class="muted small">In và tải Word áp dụng cho tab đang mở. Tải bộ hồ sơ bên dưới gồm cả 3 file Word.</span></div><div class="cd-format" data-format hidden></div>
         <iframe class="cd-frame" title="Bản xem HĐKT"></iframe></section>
     </div>
-    <div class="modal-foot"><span class="muted small" data-dirty></span><button type="button" class="btn secondary" data-x>Đóng</button><button type="button" class="btn secondary" data-save>Lưu chỉnh sửa</button><button type="button" class="btn primary" data-zip>Tải bộ 3 file (.zip)</button></div>`;
+    <div class="modal-foot"><span class="muted small" data-dirty></span><button type="button" class="btn secondary" data-x>Đóng</button><button type="button" class="btn secondary" data-save>Lưu chỉnh sửa</button><button type="button" class="btn primary" data-zip>Tải 3 file Word (.zip)</button></div>`;
   document.body.append(dlg); dlg.showModal();
   const $d = s => dlg.querySelector(s), status = t => { $d('[data-status]').textContent = t; };
   const details = contractDetails(detail), edits = { HDKT: [], TAM_UNG: [], BBNT: [], ...(k.data?.edits || {}) };
+  let busy=false,previewReady=false,disposeFormat=null;
   let current = 'HDKT', dirty = false, quoteRows = null, quoteRowsPromise = null, renderSeq = 0;
   const ensureQuoteRows = () => quoteRowsPromise ||= (detail.order.quoteId ? api('/quotes/' + encodeURIComponent(detail.order.quoteId)).catch(() => null) : Promise.resolve(null)).then(result => { quoteRows = result?.data?.rows || []; });
   for (const el of dlg.querySelectorAll('[data-d]')) {
@@ -128,7 +130,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   }
   for (const selector of ['[data-save]', '[data-refresh]', '[data-rebuild]']) $d(selector).hidden = !canEdit;
   const markDirty = () => { dirty = true; $d('[data-dirty]').textContent = 'Có thay đổi chưa lưu'; };
-  const close = () => { if (dirty && !confirm('Đóng mà không lưu các chỉnh sửa?')) return; dlg.close(); dlg.remove(); };
+  const close = () => { if(busy)return; if (dirty && !confirm('Đóng mà không lưu các chỉnh sửa?')) return; disposeFormat?.(); dlg.close(); dlg.remove(); };
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
 
   const currentDetails = () => canEdit ? readContractForm(dlg, details) : cleanDetails(details);
@@ -144,8 +146,24 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
     const {base,edits:normalized}=await prepareDoc(type);
     return globalThis.ContractWordEdit.apply(base,normalized);
   }
+  function lockUi(on,button,label){
+    busy=on;dlg.setAttribute('aria-busy',String(on));$d('.cd-body').inert=on;
+    for(const b of dlg.querySelectorAll('button')){if(on){b.dataset.wasDisabled=String(b.disabled);b.disabled=true;}else{b.disabled=b.dataset.wasDisabled==='true';delete b.dataset.wasDisabled;}}
+    $d('[data-print]').disabled=on||!previewReady;
+    if(button){if(on){button.dataset.idleLabel=button.textContent;button.textContent=label;}else{button.textContent=button.dataset.idleLabel;delete button.dataset.idleLabel;}}
+  }
+  async function action(button,label,run){
+    if(busy)return;lockUi(true,button,label);try{await run();}catch(e){toast(e.message,'err');}finally{lockUi(false,button);}
+  }
+  function recordParagraph(p){
+    const index=Number(p.dataset.wordIndex),info=p._wordInfo;if(!canEdit||!info)return;
+    const runs=paragraphRuns(p),text=runs.map(r=>r.text).join('');
+    const format={};for(const key of ['align','list','lineSpacing','indent'])if(p.dataset[key]!==undefined)format[key]=['lineSpacing','indent'].includes(key)?Number(p.dataset[key]):p.dataset[key];
+    edits[current]=[...edits[current].filter(e=>e.index!==index),{index,hash:info.hash,text,runs,...format}].sort((a,b)=>a.index-b.index);
+    p.classList.add('edited');markDirty();
+  }
   async function render() {
-    const seq = ++renderSeq; status('Đang dựng bản xem từ file Word…');
+    if(busy)return;const seq = ++renderSeq;previewReady=false;disposeFormat?.();disposeFormat=null;lockUi(true);status('Đang dựng bản xem từ file Word…');$d('[data-current]').textContent='Đang xem: '+DOCS.find(([type])=>type===current)[1];
     try {
       await Promise.all([loadBuilder(), loadPreview()]);
       await ensureQuoteRows();
@@ -153,19 +171,18 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
       if (seq !== renderSeq) return;
       edits[type]=normalized;
       const frame = $d('.cd-frame'), doc = frame.contentDocument;
-      doc.open(); doc.write('<!doctype html><html lang="vi"><head><meta charset="utf-8"><style>body{margin:0;background:#edf0f5}.docx-wrapper{padding:16px!important}[data-word-index]{outline:1px dashed transparent;outline-offset:3px;cursor:text}[data-word-index]:hover{outline-color:#9db8e0}[data-word-index]:focus{outline-color:#2459a9;background:#f3f7fd}[data-word-index].edited{background:#fff8e6}@media print{@page{size:A4;margin:0}body{background:#fff}.docx-wrapper{padding:0!important;background:#fff!important;zoom:1!important}section.docx{box-shadow:none!important;margin:0!important;break-after:page}section.docx:last-child{break-after:auto}}</style></head><body><main></main></body></html>'); doc.close();
+      doc.open(); doc.write('<!doctype html><html lang="vi"><head><meta charset="utf-8"><style>body{margin:0;background:#edf0f5}.docx-wrapper{padding:16px!important}[data-word-index]{outline:1px dashed transparent;outline-offset:3px;cursor:text}[data-word-index]:hover{outline-color:#9db8e0}[data-word-index]:focus{outline-color:#2459a9;background:#f3f7fd}[data-word-index].edited{background:#fff8e6}body{counter-reset:bn-editor}[data-list="none"]::before{content:none!important}.cd-list-bullet::before{content:"• "!important;white-space:pre}.cd-list-decimal{counter-increment:bn-editor}.cd-list-decimal::before{content:counter(bn-editor) ". "!important;white-space:pre}@media print{[data-word-index].edited,[data-word-index]:focus{background:transparent!important;outline:none!important}@page{size:A4;margin:0}body{background:#fff}.docx-wrapper{padding:0!important;background:#fff!important;zoom:1!important}section.docx{box-shadow:none!important;margin:0!important;break-after:page}section.docx:last-child{break-after:auto}}</style></head><body><main></main></body></html>'); doc.close();
       await globalThis.docx.renderAsync(prepared.preview, doc.querySelector('main'), undefined, { inWrapper: true, hideWrapperOnPrint: true, breakPages: true, ignoreLastRenderedPageBreak: false, renderAltChunks: false, useBase64URL: true });
       if (seq !== renderSeq) return;
       const wrapper = doc.querySelector('.docx-wrapper'); if (wrapper) wrapper.style.zoom = String(Math.min(1, Math.max(0.35, (frame.clientWidth - 32) / 794)));
       for (const info of prepared.paragraphs) {
         const p = doc.getElementById('bnword_' + info.index)?.closest('p'); if (!p) continue;
         if (!canEdit || locked.includes(info.index)) continue;
-        p.contentEditable = 'plaintext-only'; p.dataset.wordIndex = String(info.index);
+        p.contentEditable = 'true'; p.dataset.wordIndex = String(info.index);p._wordInfo=info;
+        const saved=edits[type].find(e=>e.index===info.index);for(const key of ['align','list','lineSpacing','indent'])if(saved?.[key]!==undefined)p.dataset[key]=String(saved[key]);
+        p.classList.toggle('cd-list-bullet',saved?.list==='bullet');p.classList.toggle('cd-list-decimal',saved?.list==='decimal');
         if (edits[current].some(e => e.index === info.index)) p.classList.add('edited');
-        const record = () => {
-          edits[current] = [...edits[current].filter(e => e.index !== info.index), { index: info.index, hash: info.hash, text: p.innerText }].sort((a, b) => a.index - b.index);
-          p.classList.add('edited'); markDirty();
-        };
+        const record = () => recordParagraph(p);
         p.addEventListener('input', record);
         // Xoá hết chữ của một dòng (không nằm trong ô bảng) = xoá hẳn dòng đó: ẩn ngay, file Word bỏ đoạn này (ContractWordEdit).
         const dropIfEmpty = () => { if (p.innerText.trim() || p.closest('td')) return false; p.textContent = ''; record(); p.style.display = 'none'; return true; };
@@ -177,20 +194,21 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
         p.addEventListener('blur', () => { if (p.classList.contains('edited')) dropIfEmpty(); });
         if (!p.innerText.trim() && p.classList.contains('edited') && !p.closest('td')) p.style.display = 'none';
       }
+      previewReady=true;
+      if(canEdit){$d('[data-format]').hidden=false;disposeFormat=initContractFormatting({host:$d('[data-format]'),doc,record:recordParagraph,onError:m=>toast(m,'err')});}
       if (!canEdit) { status('HĐKT đã duyệt: nhân viên chỉ được xem và tải. Chỉ Manager được chỉnh sửa.'); return; }
       status((current==='BBNT'?'Bảng sản phẩm và tiền lấy từ HĐKT; muốn sửa bảng, hãy sửa ở tab Hợp đồng kinh tế. ':'')+'Bấm vào đoạn văn hoặc ô bảng để sửa trực tiếp; xoá hết chữ một dòng rồi bấm Backspace để bỏ hẳn dòng đó. Sửa chữ không tự tính lại giá / thuế. Ngắt trang có thể khác Microsoft Word.' + (edits[current].length ? ` · Hồ sơ này có ${edits[current].length} đoạn đã sửa.` : ''));
-    } catch (e) { if (seq === renderSeq) status(e.message); }
+    } catch (e) { if (seq === renderSeq) status(e.message); }finally{if(seq===renderSeq)lockUi(false);}
   }
   dlg.querySelectorAll('[data-doc]').forEach(b => b.addEventListener('click', () => {
-    current = b.dataset.doc; dlg.querySelectorAll('[data-doc]').forEach(x => x.setAttribute('aria-selected', String(x === b))); render();
+    if(busy)return;current = b.dataset.doc; dlg.querySelectorAll('[data-doc]').forEach(x => x.setAttribute('aria-selected', String(x === b))); render();
   }));
   $d('[data-refresh]').addEventListener('click', render);
-  $d('[data-rebuild]').addEventListener('click', () => { if (!edits[current].length || confirm('Bỏ các chỗ đã sửa trực tiếp của hồ sơ này?')) { edits[current] = []; markDirty(); render(); } });
+  $d('[data-rebuild]').addEventListener('click', () => { if (!edits[current].length || confirm('Đặt lại hồ sơ đang xem theo mẫu? Các thay đổi chữ và định dạng trong tab này sẽ bị bỏ. Hai hồ sơ còn lại được giữ nguyên.')) { edits[current] = []; markDirty(); render(); } });
   $d('[data-print]').addEventListener('click', () => $d('.cd-frame').contentWindow.print());
-  $d('[data-save]').addEventListener('click', async e => {
+  $d('[data-save]').addEventListener('click', e => {
     if (!canEdit) return;
-    e.target.disabled = true;
-    try {
+    return action(e.currentTarget,'Đang lưu chỉnh sửa…',async()=>{
       const selectedDetails = currentDetails();
       const saved = await api('/contracts/' + encodeURIComponent(k.id), 'PUT', {
         revision: k.revision, syncQuoteTerms: !!detail.order.quoteId, quoteRevision: k.quoteRevision,
@@ -206,24 +224,16 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
       k.data = { ...(k.data || {}), details: selectedDetails, edits };
       k.depositRate = selectedDetails.depositRate; k.paymentDays = selectedDetails.paymentDays;
       dirty = false; $d('[data-dirty]').textContent = 'Đã lưu'; toast('Đã lưu hồ sơ HĐKT.'); onSaved?.();
-    }
-    catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; }
+    });
   });
   const wordName = type => `${type}_${String(k.contractNo).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').replace(/[^a-zA-Z0-9]+/g, '-')}.docx`;
-  $d('[data-one]').addEventListener('click', async e => {
-    e.target.disabled = true;
-    try { await loadBuilder(); saveBlob(await buildDoc(current), wordName(current), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'); }
-    catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; }
-  });
-  $d('[data-zip]').addEventListener('click', async e => {
-    e.target.disabled = true;
-    try {
-      const selectedDetails = currentDetails(); await Promise.all([loadBuilder(), ensureQuoteRows()]); const q = quote();
-      const pack = await globalThis.ContractDocument.buildPack({ quote: q, contractNumber: k.contractNo, details: selectedDetails, templateFiles: await templatesFor(q) });
-      saveBlob(pack.bytes, `${pack.folder}.zip`, 'application/zip');
-    } catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; }
-  });
+  $d('[data-one]').addEventListener('click', e => action(e.currentTarget,'Đang tạo Word (.docx)…',async()=>{
+    await loadBuilder();saveBlob(await buildDoc(current),wordName(current),'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  }));
+  $d('[data-zip]').addEventListener('click', e => action(e.currentTarget,'Đang tạo bộ 3 file Word…',async()=>{
+    const selectedDetails=currentDetails();await Promise.all([loadBuilder(),ensureQuoteRows()]);const q=quote();
+    const pack=await globalThis.ContractDocument.buildPack({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateFiles:await templatesFor(q)});
+    saveBlob(pack.bytes,`${pack.folder}.zip`,'application/zip');
+  }));
   render();
 }
-
-
