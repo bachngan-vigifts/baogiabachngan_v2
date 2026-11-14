@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
 import { setupEarly } from '../helpers/purchase-early-fixture.ts';
 import { purchaseEarlyRequests, purchaseEarlyRequestLines, purchaseEarlyRequestAllocations } from '../../src/modules/suppliers/early-request-schema.ts';
-import { incomingShipmentLines } from '../../src/modules/suppliers/schema.ts';
+import { incomingShipmentLines,incomingShipments } from '../../src/modules/suppliers/schema.ts';
 
 test('gửi nhiều mã: phân bổ ngày sớm, pending, cùng key chỉ một lần, audit đầy đủ, không tạo task/phiếu nhận/chi',async()=>{
   const {db,call,cookies:c,client}=await setupEarly();
@@ -33,18 +33,21 @@ test('gửi nhiều mã: phân bổ ngày sớm, pending, cùng key chỉ một 
   assert.equal(scope.data.request.lines[0].allocations.every((a:any)=>a.supplierId==='b'),true);
 });
 
-test('kiểm quyền và validate server, rollback cả yêu cầu nếu một mã vượt, đọc lại lượng mới',async()=>{
-  const {db,call,cookies:c}=await setupEarly(),valid={clientKey:'validate-001',lines:[{sku:'031106000',quantity:100}]};
+test('kiểm quyền và validate server; nháp giữ dòng thiếu nguồn nhưng chưa cho gửi NCC',async()=>{
+  const {db,call,cookies:c}=await setupEarly(),valid={clientKey:'validate-001',allowUnresolvedSources:true,lines:[{sku:'031106000',quantity:100}]};
   for(const id of ['emp','kho','kt','ncc']) assert.equal((await call('/purchase-early-requests',c[id],'POST',valid)).status,403,id);
   assert.equal((await call('/purchase-early-requests','','POST',valid)).status,401);
   for(const lines of [[],[{sku:'031106000',quantity:0}],[{sku:'031106000',quantity:-1}],[{sku:'031106000',quantity:1.5}],[{sku:'031106000',quantity:'1'}],[{sku:'031106000',quantity:1},{sku:'031106000',quantity:2}]]) {
     assert.equal((await call('/purchase-early-requests',c.mgr,'POST',{...valid,lines})).status,400);
   }
-  const exceed=await call('/purchase-early-requests',c.mgr,'POST',{...valid,lines:[{sku:'01654020803',quantity:2},{sku:'031106000',quantity:20001}]});
-  assert.equal(exceed.status,409);assert.equal((await db.select().from(purchaseEarlyRequests)).length,0);assert.equal((await db.select().from(purchaseEarlyRequestLines)).length,0);
+  const exceed=await call('/purchase-early-requests',c.mgr,'POST',{...valid,clientKey:'validate-exceed-001',lines:[{sku:'01654020803',quantity:2},{sku:'031106000',quantity:20001}]});
+  assert.equal(exceed.status,201);assert.equal(exceed.data.request.status,'draft');
+  assert.equal(exceed.data.request.lines.find((l:any)=>l.sku==='031106000').status,'unresolved','nháp giữ dòng chưa đủ đơn mua để người dùng xử lý sau');
+  assert.equal((await call('/purchase-early-requests/'+exceed.data.id+'/submit',c.mgr,'POST',{revision:1})).status,400,'chưa có ngày lấy vẫn không được gửi NCC');
   await db.update(incomingShipmentLines).set({quantity:1}).where(eq(incomingShipmentLines.id,'line-excel'));
-  assert.equal((await call('/purchase-early-requests',c.mgr,'POST',{...valid,lines:[{sku:'01654020803',quantity:2}]})).status,409);
-  const filtered=await call('/purchase-early-requests',c.mgr,'POST',{...valid,scope:{supplierId:'b'},lines:[{sku:'031106000',quantity:5001}]});assert.equal(filtered.status,409);
+  const noLongerAvailable=await call('/purchase-early-requests',c.mgr,'POST',{...valid,lines:[{sku:'01654020803',quantity:2}]});
+  assert.equal(noLongerAvailable.status,201);assert.equal(noLongerAvailable.data.request.lines[0].status,'unresolved');
+  const filtered=await call('/purchase-early-requests',c.mgr,'POST',{...valid,clientKey:'validate-filter-001',scope:{supplierId:'b'},lines:[{sku:'031106000',quantity:5001}]});assert.equal(filtered.status,201);
   for(const id of ['mgr','sa','emp','kho','kt']) assert.equal((await call('/purchase-early-requests',c[id])).status,200);
   assert.equal((await call('/purchase-early-requests',c.ncc)).status,403);
   await db.execute((await import('drizzle-orm')).sql`delete from staff_position_permissions where position_id='sale' and permission='page.purchases'`);
@@ -156,4 +159,28 @@ test('lịch nhận: phiếu xin mới trên cùng, lọc loại/SKU/NCC trướ
   const page=await call('/purchase-receiving-calendar?type=early&sku=031106000',c.mgr);
   assert.equal(page.data.total,55);assert.equal(page.data.rows.length,50);
   assert.equal((await call('/purchase-receiving-calendar?type=early&sku=031106000&offset=50',c.mgr)).data.rows.length,5);
+});
+
+test('unresolved draft is explicit and idempotent, never submits ambiguous/missing sources or leaks to supplier',async()=>{
+ const f=await setupEarly(),body={clientKey:'explicit-unresolved-key',allowUnresolvedSources:true,pickupDate:'2026-10-25',lines:[{sku:'031106000',quantity:5,sourceOrders:[{supplierOrderNo:'NOT-YET-BOUND',quantity:5}]}]};
+ const draft=await f.call('/purchase-early-requests',f.cookies.sa,'POST',body);assert.equal(draft.status,201,JSON.stringify(draft.data));assert.equal(draft.data.request.lines[0].status,'unresolved');assert.equal(draft.data.request.lines[0].allocations.length,0);
+ assert.equal((await f.call('/purchase-early-requests',f.cookies.sa,'POST',body)).data.id,draft.data.id);
+ assert.equal((await f.call('/purchase-early-requests',f.cookies.sa,'POST',{...body,allowUnresolvedSources:false})).status,409,'mode participates in retry fingerprint');
+ assert.equal((await f.call('/purchase-early-requests/'+draft.data.id+'/submit',f.cookies.sa,'POST',{revision:draft.data.request.revision,allowUnresolvedSources:true})).status,409,'submit always validates source even if a caller sends the flag');
+ assert.equal((await f.call('/supplier-portal/early-requests',f.cookies.ncc)).data.requests.length,0);
+ const split=await f.call('/purchase-early-requests',f.cookies.sa,'POST',{...body,clientKey:'unresolved-cannot-split',groupBySupplierOrder:true});assert.equal(split.status,409);assert.equal(split.data.code,'EARLY_UNRESOLVED');
+ const update=await f.call('/purchase-early-requests/'+draft.data.id,f.cookies.sa,'PUT',{revision:draft.data.request.revision,allowUnresolvedSources:true,pickupDate:body.pickupDate,lines:[{sku:'031106000',quantity:5,sourceOrders:[{orderNo:'PO-a2',quantity:5}]}]});assert.equal(update.status,200,JSON.stringify(update.data));assert.equal(update.data.request.lines[0].allocations[0].ticketNumber,'PO-a2');assert.equal(update.data.request.scope.unresolvedOrders,undefined);
+ assert.equal((await f.call('/purchase-early-requests/'+draft.data.id+'/submit',f.cookies.sa,'POST',{revision:update.data.request.revision})).status,200);
+ for(const value of ['true',1,null])assert.equal((await f.call('/purchase-early-requests',f.cookies.mgr,'POST',{...body,clientKey:crypto.randomUUID(),allowUnresolvedSources:value})).status,400);
+ for(const table of ['stock_moves','supplier_receipts'])assert.equal((await f.client.query<{n:number}>('select count(*)::int n from '+table)).rows[0]!.n,0);
+});
+
+
+test('order options preserve exact matching, supplier scope and write permissions',async()=>{
+ const f=await setupEarly();await f.db.update(incomingShipments).set({supplierInternalOrderNumber:'000123'}).where(eq(incomingShipments.id,'a2'));await f.db.update(incomingShipments).set({supplierInternalOrderNumber:'0001234'}).where(eq(incomingShipments.id,'b1'));
+ const path='/purchase-early-requests/order-options?sku=031106000&supplierOrderNo=000123';
+ for(const id of ['emp','kho','kt','ncc'])assert.equal((await f.call(path,f.cookies[id])).status,403,id);
+ const result=await f.call(path,f.cookies.sa);assert.equal(result.status,200);assert.deepEqual(result.data.options.filter((o:any)=>o.exactSupplierOrderNo).map((o:any)=>o.ticketNumber),['PO-a2']);
+ const scoped=await f.call(path+'&supplierId=b',f.cookies.mgr);assert.equal(scoped.status,200);assert.ok(scoped.data.options.every((o:any)=>o.supplierId==='b'));assert.ok(scoped.data.options.every((o:any)=>!o.exactSupplierOrderNo));
+ assert.equal((await f.call(path+'&supplierId='+ 'x'.repeat(201),f.cookies.mgr)).status,400);
 });
