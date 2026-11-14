@@ -13,8 +13,8 @@ async function setup(allowed=true){
  return{ui,button,badge,attrs,calls,navigation,events,timeouts,setCount:(n:number)=>count=n,fail:()=>failure=true,setPending:(p:Promise<any>)=>pending=p,logout:()=>{uid='';manager=false;ui.stop();}};
 }
 test('icon cần duyệt: hiện tổng/theo loại, mở đúng hộp và cập nhật sau duyệt',async()=>{
- const s=await setup();await s.ui.start();assert.equal(s.button.hidden,false);assert.equal(s.badge.textContent,'7');assert.equal(s.button.dataset.pending,'true');assert.match(s.button.title,/Báo giá: 3/);assert.equal(s.calls[0],'/approvals?summary=1');
- s.events.click!();assert.deepEqual(s.navigation,['#/tasks/approvals']);s.setCount(0);s.ui.scheduleRefresh();await s.timeouts.at(-1)!();assert.equal(s.badge.textContent,'0');assert.equal(s.button.dataset.pending,'false');assert.match(s.button.title,/Không có việc/);
+ const s=await setup();await s.ui.start();assert.equal(s.button.hidden,false);assert.equal(s.badge.textContent,'7');assert.equal(s.badge.hidden,false);assert.equal(s.button.dataset.pending,'true');assert.match(s.button.title,/Báo giá: 3/);assert.equal(s.calls[0],'/approvals?summary=1');
+ s.events.click!();assert.deepEqual(s.navigation,['#/tasks/approvals']);s.setCount(0);s.ui.scheduleRefresh();await s.timeouts.at(-1)!();assert.equal(s.badge.textContent,'0');assert.equal(s.badge.hidden,true,'không hiện chấm đỏ số 0');assert.equal(s.button.dataset.pending,'false');assert.match(s.button.title,/Không có việc/);
 });
 test('icon cần duyệt: ẩn với người không được duyệt; lỗi không biến thành số 0',async()=>{
  const denied=await setup(false);await denied.ui.start();assert.equal(denied.calls.length,0);assert.equal(denied.button.hidden,true);

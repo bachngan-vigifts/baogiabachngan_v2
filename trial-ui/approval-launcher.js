@@ -10,7 +10,7 @@ export function initApprovalLauncher({api,button,badge,canApprove,userId,go,appr
       const data=await (approvalFeed ? approvalFeed.load() : api('/approvals?summary=1'));
       if(!data||request!==sequence||who!==userId()||!active||!canApprove())return;
       const total=Number(data.counts.total)||0;
-      badge.textContent=total.toLocaleString('vi-VN');badge.hidden=false;
+      badge.textContent=total.toLocaleString('vi-VN');badge.hidden=total===0;
       button.dataset.empty=String(total===0);button.dataset.pending=String(total>0);
       button.setAttribute('aria-label',`Cần duyệt: ${total} việc`);
       button.title=total ? `Cần duyệt: ${total} việc\n`+Object.entries(kinds).filter(([kind])=>data.counts[kind]>0).map(([kind,label])=>`${label}: ${data.counts[kind]}`).join('\n') : 'Không có việc đang chờ duyệt';
