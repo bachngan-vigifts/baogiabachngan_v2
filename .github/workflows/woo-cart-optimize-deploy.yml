@@ -1,0 +1,72 @@
+# Thay mu-plugin woo-cart-optimize.php trên hosting web Lock bằng bản trong repo (web-lock/mu-plugins/woo-cart-optimize.php).
+# Quy trình: đo trước (trình duyệt thật, trang công khai, giỏ trống) → sao lưu bản cũ → ghi bản mới → kiểm tra web (lỗi thì tự khôi phục) → đo sau → so sánh.
+# Chạy từ nhánh khi file đánh dấu .github/woo-cart-optimize.run đổi (nội dung: dry-run hoặc apply). Không có file thì bỏ qua.
+name: Tối ưu giỏ hàng web Lock
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run = chỉ đo và kiểm tra; apply = thay file'
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/woo-cart-optimize.run']
+concurrency: woo-cart-optimize
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Xác định chế độ
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            if [ -f .github/woo-cart-optimize.run ]; then m=$(tr -d ' \r\n' < .github/woo-cart-optimize.run); else m=skip; fi
+          else m="${{ inputs.mode }}"; fi
+          case "$m" in dry-run|apply) ;; *) m=skip ;; esac
+          echo "Chế độ: $m"
+          echo "mode=$m" >> "$GITHUB_OUTPUT"
+      - name: Cài trình duyệt đo
+        if: steps.mode.outputs.mode != 'skip'
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-cart-measure.mjs" /tmp/pw/
+      - name: Đo trước
+        if: steps.mode.outputs.mode != 'skip'
+        working-directory: /tmp/pw
+        env:
+          LABEL: truoc
+        run: node web-lock-cart-measure.mjs
+      - name: Kiểm tra và thay file
+        if: steps.mode.outputs.mode != 'skip'
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: node scripts/maintenance/cpanel-deploy-woo-cart.mjs
+      - name: Đo sau và so sánh
+        if: steps.mode.outputs.mode == 'apply'
+        working-directory: /tmp/pw
+        env:
+          LABEL: sau
+        run: node web-lock-cart-measure.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: woo-cart-optimize
+          path: |
+            /tmp/pw/measure-*.json
+            woo-cart-optimize.original.php
+          retention-days: 7
+          if-no-files-found: ignore
