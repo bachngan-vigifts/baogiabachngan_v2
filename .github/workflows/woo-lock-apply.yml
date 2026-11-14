@@ -1,0 +1,47 @@
+# Sửa web Lock theo kế hoạch web-lock/changes/<tên>.json (sản phẩm, biến thể, danh mục, thẻ, thương hiệu, thuộc tính).
+# Mặc định chỉ xem trước (dry-run). Chọn apply mới ghi; mỗi lượt ghi tối đa "limit" thao tác.
+# Kết quả, bản sao lưu giá trị cũ và kế hoạch hoàn tác nằm trong artifact (giữ 30 ngày).
+# Có thể chạy trên nhánh PR: Run workflow → chọn nhánh chứa file kế hoạch.
+name: Sửa web Lock
+on:
+  workflow_dispatch:
+    inputs:
+      plan:
+        description: 'File kế hoạch (web-lock/changes/<tên>.json)'
+        required: true
+      mode:
+        description: 'dry-run = chỉ xem trước; apply = ghi lên web'
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+      limit:
+        description: 'Số thao tác tối đa lượt này'
+        default: '20'
+concurrency: woo-lock-apply
+permissions:
+  contents: read
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Áp kế hoạch
+        env:
+          WC_BASE_URL: ${{ secrets.WC_BASE_URL }}
+          WC_CONSUMER_KEY: ${{ secrets.WC_CONSUMER_KEY }}
+          WC_CONSUMER_SECRET: ${{ secrets.WC_CONSUMER_SECRET }}
+          PLAN: ${{ inputs.plan }}
+          MODE: ${{ inputs.mode }}
+          LIMIT: ${{ inputs.limit }}
+        run: node scripts/maintenance/woo-lock-apply.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: woo-lock-apply-${{ inputs.mode }}-${{ github.run_id }}
+          path: woo-apply-out/
+          retention-days: 30
+          if-no-files-found: ignore

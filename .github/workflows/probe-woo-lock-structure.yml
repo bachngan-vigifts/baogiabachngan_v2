@@ -1,0 +1,29 @@
+# Đọc cấu trúc cửa hàng Web Lock (WooCommerce REST, chỉ GET). Không in thông tin khách, không in khoá.
+# Chỉ chạy khi bấm tay (Actions → Đọc cấu trúc Web Lock → Run workflow). Kết quả đầy đủ ở artifact, giữ 3 ngày.
+name: Đọc cấu trúc Web Lock
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Đọc cấu trúc qua REST API
+        env:
+          WC_BASE_URL: ${{ secrets.WC_BASE_URL }}
+          WC_CONSUMER_KEY: ${{ secrets.WC_CONSUMER_KEY }}
+          WC_CONSUMER_SECRET: ${{ secrets.WC_CONSUMER_SECRET }}
+        run: node scripts/maintenance/probe-woo-lock-structure.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: woo-lock-structure
+          path: woo-lock-structure.json
+          retention-days: 3
+          if-no-files-found: ignore
