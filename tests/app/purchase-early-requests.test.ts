@@ -33,18 +33,21 @@ test('gửi nhiều mã: phân bổ ngày sớm, pending, cùng key chỉ một 
   assert.equal(scope.data.request.lines[0].allocations.every((a:any)=>a.supplierId==='b'),true);
 });
 
-test('kiểm quyền và validate server, rollback cả yêu cầu nếu một mã vượt, đọc lại lượng mới',async()=>{
+test('kiểm quyền và validate server; nháp giữ dòng thiếu nguồn nhưng chưa cho gửi NCC',async()=>{
   const {db,call,cookies:c}=await setupEarly(),valid={clientKey:'validate-001',lines:[{sku:'031106000',quantity:100}]};
   for(const id of ['emp','kho','kt','ncc']) assert.equal((await call('/purchase-early-requests',c[id],'POST',valid)).status,403,id);
   assert.equal((await call('/purchase-early-requests','','POST',valid)).status,401);
   for(const lines of [[],[{sku:'031106000',quantity:0}],[{sku:'031106000',quantity:-1}],[{sku:'031106000',quantity:1.5}],[{sku:'031106000',quantity:'1'}],[{sku:'031106000',quantity:1},{sku:'031106000',quantity:2}]]) {
     assert.equal((await call('/purchase-early-requests',c.mgr,'POST',{...valid,lines})).status,400);
   }
-  const exceed=await call('/purchase-early-requests',c.mgr,'POST',{...valid,lines:[{sku:'01654020803',quantity:2},{sku:'031106000',quantity:20001}]});
-  assert.equal(exceed.status,409);assert.equal((await db.select().from(purchaseEarlyRequests)).length,0);assert.equal((await db.select().from(purchaseEarlyRequestLines)).length,0);
+  const exceed=await call('/purchase-early-requests',c.mgr,'POST',{...valid,clientKey:'validate-exceed-001',lines:[{sku:'01654020803',quantity:2},{sku:'031106000',quantity:20001}]});
+  assert.equal(exceed.status,201);assert.equal(exceed.data.request.status,'draft');
+  assert.equal(exceed.data.request.lines.find((l:any)=>l.sku==='031106000').status,'unresolved','nháp giữ dòng chưa đủ đơn mua để người dùng xử lý sau');
+  assert.equal((await call('/purchase-early-requests/'+exceed.data.id+'/submit',c.mgr,'POST',{revision:1})).status,400,'chưa có ngày lấy vẫn không được gửi NCC');
   await db.update(incomingShipmentLines).set({quantity:1}).where(eq(incomingShipmentLines.id,'line-excel'));
-  assert.equal((await call('/purchase-early-requests',c.mgr,'POST',{...valid,lines:[{sku:'01654020803',quantity:2}]})).status,409);
-  const filtered=await call('/purchase-early-requests',c.mgr,'POST',{...valid,scope:{supplierId:'b'},lines:[{sku:'031106000',quantity:5001}]});assert.equal(filtered.status,409);
+  const noLongerAvailable=await call('/purchase-early-requests',c.mgr,'POST',{...valid,lines:[{sku:'01654020803',quantity:2}]});
+  assert.equal(noLongerAvailable.status,201);assert.equal(noLongerAvailable.data.request.lines[0].status,'unresolved');
+  const filtered=await call('/purchase-early-requests',c.mgr,'POST',{...valid,clientKey:'validate-filter-001',scope:{supplierId:'b'},lines:[{sku:'031106000',quantity:5001}]});assert.equal(filtered.status,201);
   for(const id of ['mgr','sa','emp','kho','kt']) assert.equal((await call('/purchase-early-requests',c[id])).status,200);
   assert.equal((await call('/purchase-early-requests',c.ncc)).status,403);
   await db.execute((await import('drizzle-orm')).sql`delete from staff_position_permissions where position_id='sale' and permission='page.purchases'`);
