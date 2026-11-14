@@ -1,6 +1,8 @@
 # PR-only CI: no duplicate push run. Drafts get fast feedback; ready PRs get the full suite.
 # Cloud CI comments remain supplementary, not a substitute for the full suite before merge.
 name: Kiểm tra
+run-name: >-
+  ${{ github.event_name == 'pull_request' && (github.event.pull_request.draft && 'NHÁP — chưa kiểm thử đầy đủ' || 'PR — kiểm thử đầy đủ') || (inputs.full && 'CHẠY TAY — đầy đủ, không thay check PR' || 'CHẠY TAY — smoke, không thay check PR') }} · ${{ github.event.pull_request.number || github.ref_name }}
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
@@ -38,7 +40,18 @@ jobs:
         with:
           retries: 0
           script: |
-            await require('./scripts/ci/pr-freshness.cjs')({ github, context });
+            try {
+              await require('./scripts/ci/pr-freshness.cjs')({ github, context });
+            } catch (error) {
+              const stale = String(error.message).startsWith('Update branch:');
+              await core.summary
+                .addHeading(stale ? 'CHƯA CẬP NHẬT NHÁNH — chưa đủ điều kiện' : 'LỖI XÁC MINH — chưa đủ điều kiện')
+                .addRaw(stale
+                  ? 'Update branch rồi chờ lượt CI mới. Không sử dụng kết quả của merge SHA cũ.'
+                  : 'Không xác minh được PR/head/base hiện tại. Xem log bước này để phân biệt lỗi API, dữ liệu hoặc PR đã thay đổi. Không coi đây là full pass.')
+                .write();
+              throw error;
+            }
       - uses: actions/setup-node@v4
         with:
           node-version: 22.22.0
@@ -63,7 +76,27 @@ jobs:
         with:
           retries: 0
           script: |
-            await require('./scripts/ci/pr-freshness.cjs')({ github, context });
+            try {
+              await require('./scripts/ci/pr-freshness.cjs')({ github, context });
+            } catch (error) {
+              const stale = String(error.message).startsWith('Update branch:');
+              await core.summary
+                .addHeading(stale ? 'CHƯA CẬP NHẬT NHÁNH — chưa đủ điều kiện' : 'LỖI XÁC MINH — chưa đủ điều kiện')
+                .addRaw(stale
+                  ? 'Update branch rồi chờ lượt CI mới. Không sử dụng kết quả của merge SHA cũ.'
+                  : 'Không xác minh được PR/head/base hiện tại. Xem log bước này để phân biệt lỗi API, dữ liệu hoặc PR đã thay đổi. Không coi đây là full pass.')
+                .write();
+              throw error;
+            }
+      - name: Summarize completed preparation
+        env:
+          FULL: ${{ steps.mode.outputs.full }}
+        run: |
+          if [ "$FULL" = true ]; then
+            echo "Chuẩn bị và TypeScript đạt. Chưa xác nhận full pass; còn chờ đủ bốn shard và aggregate." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "TypeScript và smoke đạt. CHƯA chạy bộ test đầy đủ; đây không phải điều kiện cho phép merge PR." >> "$GITHUB_STEP_SUMMARY"
+          fi
   full-shards:
     permissions:
       contents: read
@@ -83,9 +116,22 @@ jobs:
         env:
           PREPARE_RESULT: ${{ needs.prepare.result }}
           FULL: ${{ needs.prepare.outputs.full }}
+          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
         run: |
-          if [ "$PREPARE_RESULT" != success ] || [ "$FULL" != true ]; then
-            echo "::error::Full shard not run. Resolve prepare failure / Update branch, or mark Ready for review."
+          if [ "$PREPARE_RESULT" != success ]; then
+            message="CHƯA CHẠY SHARD: bước chuẩn bị lỗi/bị huỷ/thiếu kết quả. Xem prepare để biết lỗi API, stale hay test; không phải full pass."
+            echo "$message" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            echo "::error::$message"
+            exit 1
+          fi
+          if [ "$FULL" != true ]; then
+            if [ "$IS_DRAFT" = true ]; then
+              message="NHÁP — CHƯA CHẠY FULL SUITE: prepare đạt; shard chưa chạy theo chế độ nháp. Check đỏ cố ý chặn merge, không phải test shard bị lỗi. Khi sẵn sàng review, chuyển Ready để chạy đủ."
+            else
+              message="LỖI CHẾ ĐỘ CI: không có xác nhận full=true từ prepare. Shard chưa chạy; không coi đây là full pass."
+            fi
+            echo "$message" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            echo "::error::$message"
             exit 1
           fi
       - uses: actions/checkout@v4
@@ -121,7 +167,18 @@ jobs:
         with:
           retries: 0
           script: |
-            await require('./scripts/ci/pr-freshness.cjs')({ github, context });
+            try {
+              await require('./scripts/ci/pr-freshness.cjs')({ github, context });
+            } catch (error) {
+              const stale = String(error.message).startsWith('Update branch:');
+              await core.summary
+                .addHeading(stale ? 'CHƯA CẬP NHẬT NHÁNH — chưa đủ điều kiện' : 'LỖI XÁC MINH — chưa đủ điều kiện')
+                .addRaw(stale
+                  ? 'Update branch rồi chờ lượt CI mới. Không sử dụng kết quả của merge SHA cũ.'
+                  : 'Không xác minh được PR/head/base hiện tại. Xem log bước này để phân biệt lỗi API, dữ liệu hoặc PR đã thay đổi. Không coi đây là full pass.')
+                .write();
+              throw error;
+            }
       - name: Require every expected check to pass
         env:
           IS_PR: ${{ github.event_name == 'pull_request' }}
@@ -129,13 +186,23 @@ jobs:
           FULL_REQUIRED: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && inputs.full) }}
           SHARD_RESULT: ${{ needs.full-shards.result }}
         run: |
-          if [ "$IS_PR" = true ] && [ "$FULL_REQUIRED" != true ]; then
-            echo "::error::Draft feedback only. Mark Ready for review to run all four required shards."
+          report() {
+            echo "$1" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            echo "::error::$1"
+          }
+          if [ "$PREPARE_RESULT" != success ]; then
+            report "CHƯA ĐỦ ĐIỀU KIỆN: prepare lỗi/bị huỷ/thiếu kết quả. Xem prepare; không coi đây là smoke hoặc full pass."
             exit 1
           fi
-          test "$PREPARE_RESULT" = success || exit 1
+          if [ "$IS_PR" = true ] && [ "$FULL_REQUIRED" != true ]; then
+            report "NHÁP — CHƯA KIỂM THỬ ĐẦY ĐỦ: TypeScript và smoke đạt; bốn shard chưa chạy. Required checks đỏ cố ý chặn merge. Khi sẵn sàng review, chuyển Ready để chạy đủ."
+            exit 1
+          fi
           if [ "$FULL_REQUIRED" = true ]; then
-            test "$SHARD_RESULT" = success || exit 1
+            if [ "$SHARD_RESULT" != success ]; then
+              report "CHƯA ĐẠT FULL SUITE: shard lỗi/bị huỷ/skipped/thiếu kết quả. Cần đủ bốn shard thành công trên lượt CI hợp lệ."
+              exit 1
+            fi
             echo "TypeScript and all four full-suite shards passed."
           else
             test "$SHARD_RESULT" = skipped || exit 1

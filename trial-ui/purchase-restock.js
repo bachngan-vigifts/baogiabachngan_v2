@@ -1,3 +1,4 @@
+import { setProductThumbnail } from './product-images.js';
 /**
  * LẬP ĐƠN MUA BỔ SUNG – trang riêng `#/purchases/new?mode=restock` (thay cho popup chọn sản phẩm dạng catalogue).
  *  - Thông tin đơn ở đầu trang (NCC – chia được nhiều NCC, hẹn giao, địa chỉ giao, ghi chú).
@@ -116,10 +117,13 @@ export function initRestockPage({ api, host, toast, go, options, loadXlsx, onBac
       // Thêm xong: con trỏ nhảy vào ô SL của dòng vừa thêm (gõ số, Enter để quay lại ô tìm).
       const row = btn('', 'pur-rs-hit' + (i === active ? ' is-active' : '') + (added ? ' is-added' : ''), () => { hideResults(); addProduct(p); });
       row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(i === active)); row.title = breakdown(p);
+      const thumb = el('span', 'pur-rs-hit-thumb'); thumb.setAttribute('aria-hidden', 'true');
+      const noImage = () => { thumb.replaceChildren(); thumb.textContent = '—'; thumb.title = 'Chưa có ảnh'; };
+      if (/^https:\/\//i.test(p.imageUrl || '')) { const image = el('img'); image.alt = ''; setProductThumbnail(image, p.imageUrl, 'list', noImage); thumb.append(image); } else noImage();
       const name = el('span', 'pur-rs-hit-name'); name.append(el('b', '', p.sku), el('span', '', p.name));
       const st = el('span', 'pur-rs-hit-stock');
       for (const [k, v] of [['SR', p.sr], ['VIG', p.vigifts], ['Về', p.incoming]]) st.append(el('span', Number(v) > 0 ? '' : 'zero', `${k} ${num(v)}`));
-      row.append(name, el('span', 'muted pur-rs-hit-unit', p.unit || ''), st, el('span', 'pur-rs-hit-add', added ? '✓ Đã thêm' : '+ Thêm'));
+      row.append(thumb, name, el('span', 'muted pur-rs-hit-unit', p.unit || ''), st, el('span', 'pur-rs-hit-add', added ? '✓ Đã thêm' : '+ Thêm'));
       results.append(row);
     });
     if (more != null) results.append(btn('Xem thêm sản phẩm', 'btn ghost small pur-rs-more', () => search(true)));

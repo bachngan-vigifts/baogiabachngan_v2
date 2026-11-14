@@ -1,6 +1,7 @@
 # PR freshness guard
 
-Based on main 3d18892c62b5ba91a8a78378e6f011cbd7d3aeec, building on #662.
+Initially based on main 3d18892c62b5ba91a8a78378e6f011cbd7d3aeec, building on #662.
+Updated with main 73a481a125db059bfc9b86f507902cdbb2da42f1 before the authorized ready run.
 Open PRs #666–#676 were inspected: no open CI freshness change found.
 The complete main tree has no AGENTS.md or .agents/skills; the local .agents directory is empty.
 
@@ -67,7 +68,7 @@ revision. Publishing this draft can automatically run draft CI; no manual run wa
 
 ## Validation
 
-148 local Node tests pass: fresh/stale/diverged/unknown ancestry, malformed responses,
+158 local Node tests pass (including 10 display/summary regressions): fresh/stale/diverged/unknown ancestry, malformed responses,
 HTTP 403/404/429/500 across all endpoints, timeout, head/base/state/draft races,
 manual bypass, 100 real aggregate-shell combinations, 15 real shard-guard combinations,
 and workflow invariants. YAML parses successfully. Live read-only PR #676 confirms
@@ -82,3 +83,15 @@ GitHub references:
 - https://docs.github.com/rest/commits/commits#compare-two-commits
 
 Rollback: revert this PR; do not relax required checks or strict protection.
+
+## Display clarification
+
+Run titles distinguish draft/full/manual. Summaries separate successful smoke from
+full validation, and stale ancestry from API/state verification errors. Preparation
+failure takes priority over the draft explanation. Required names and failure
+conclusions are unchanged. Summary writing never converts a guard failure to success.
+
+The draft run 43571701843 passed preparation (typecheck, guard tests and smoke) on
+GitHub; its five required checks intentionally failed because no full suite ran.
+The updated branch is authorized to become Ready and run full CI once; this note
+is not evidence of that future full run passing.

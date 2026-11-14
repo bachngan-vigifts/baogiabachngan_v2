@@ -22,7 +22,7 @@ test('GET /purchase-products: tìm như trang Sản phẩm, tồn Kho SR / VIGIF
   const mgr = await login('mgr@x.vn'), ncc = await login('ncc@x.vn');
   await db.insert(warehouses).values([{ id: 'vig', name: 'KHO VIGIFTS', kind: 'stock', sortOrder: 1 }, { id: 'sr', name: 'SR Minh Long - Lock', kind: 'stock', sortOrder: 2 },
     { id: 'other', name: 'Kho Quận 1', kind: 'stock', sortOrder: 3 }]);
-  await db.insert(products).values([{ sku: 'BT07', name: 'Bộ trà 0.7 L Chim Lạc', unit: 'bộ', updatedAt: now }, { sku: 'LY01', name: 'Ly sứ trắng', unit: 'cái', updatedAt: now },
+  await db.insert(products).values([{ sku: 'BT07', name: 'Bộ trà 0.7 L Chim Lạc', imageUrl: 'https://example.test/tea.png', unit: 'bộ', updatedAt: now }, { sku: 'LY01', name: 'Ly sứ trắng', unit: 'cái', updatedAt: now },
     { sku: 'OFF', name: 'Bộ trà ngừng bán', unit: 'bộ', active: false, updatedAt: now }]);
   await db.insert(productStock).values([{ sku: 'BT07', warehouseId: 'vig', quantity: 999, updatedAt: now }, { sku: 'BT07', warehouseId: 'sr', quantity: 3, updatedAt: now }]);
   // Kho VIGIFTS đã chốt đầu kỳ: tồn lấy sổ kho (40), không lấy số Sapo (999).
@@ -34,6 +34,7 @@ test('GET /purchase-products: tìm như trang Sản phẩm, tồn Kho SR / VIGIF
   const found = await call('/purchase-products?q=' + encodeURIComponent('bo tra chim lac'), mgr);
   assert.equal(found.status, 200, JSON.stringify(found.data));
   assert.deepEqual(found.data.products.map((p: any) => [p.sku, p.sr, p.vigifts, p.incoming]), [['BT07', 3, 40, 12]], 'không dấu, nhiều từ; bỏ mã ngừng bán');
+  assert.equal(found.data.products[0].imageUrl, 'https://example.test/tea.png');
   assert.deepEqual(found.data.products[0].warehouses.map((w: any) => [w.name, w.qty, w.group]), [['KHO VIGIFTS', 40, 'vigifts'], ['SR Minh Long - Lock', 3, 'sr']]);
 
   const bySku = await call('/purchase-products?skus=' + encodeURIComponent('ly01,KHONG-CO,BT07'), mgr);
@@ -47,7 +48,7 @@ test('GET /purchase-products: tìm như trang Sản phẩm, tồn Kho SR / VIGIF
 test('đọc file Excel cập nhật danh sách: theo tiêu đề hoặc cột A/B/C, cộng dồn mã trùng, báo dòng lỗi', () => {
   const src = readFileSync(new URL('../../trial-ui/purchase-restock.js', import.meta.url), 'utf8');
   const ctx: any = {};
-  runInNewContext(src.replace(/export function initRestockPage[\s\S]*$/, '').replaceAll('export ', '') + '\nglobalThis.parse = parseRestockSheet; globalThis.HEAD = RESTOCK_TEMPLATE_HEAD;', ctx);
+  runInNewContext(src.replace(/^import .*;$/gm, '').replace(/export function initRestockPage[\s\S]*$/, '').replaceAll('export ', '') + '\nglobalThis.parse = parseRestockSheet; globalThis.HEAD = RESTOCK_TEMPLATE_HEAD;', ctx);
   const withHead = ctx.parse([['Đơn mua bổ sung'], ctx.HEAD, ['BT07', 'Bộ trà', '5'], ['LY01', '', '1.200'], ['bt07', '', '2'], ['', '', ''], ['X1', '', '0'], ['', 'thiếu mã', '3']]);
   assert.deepEqual(JSON.parse(JSON.stringify(withHead.lines)), [{ row: 3, sku: 'BT07', name: 'Bộ trà', qty: 7 }, { row: 4, sku: 'LY01', name: '', qty: 1200 }]);
   assert.deepEqual(JSON.parse(JSON.stringify(withHead.errors.map((e: any) => [e.row, e.sku]))), [[7, 'X1'], [8, '']]);
