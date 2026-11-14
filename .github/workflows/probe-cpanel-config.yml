@@ -1,0 +1,32 @@
+# Đọc cấu hình hosting cPanel của web Lock (UAPI, chỉ GET theo danh sách cho phép). Không ghi gì lên hosting.
+# Không in token/tên đăng nhập/máy chủ. Chỉ chạy khi bấm tay (Actions → Đọc cấu hình cPanel → Run workflow).
+# Kết quả đã che hiện trong log và ở artifact (giữ 3 ngày).
+name: Đọc cấu hình cPanel
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency: probe-cpanel-config
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Đọc cấu hình qua cPanel UAPI
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: node scripts/maintenance/probe-cpanel-config.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cpanel-config
+          path: cpanel-config.json
+          retention-days: 3
+          if-no-files-found: ignore
