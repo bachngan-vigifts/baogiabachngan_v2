@@ -1,0 +1,137 @@
+// Đọc cấu hình hosting cPanel của web Lock (chỉ GET tới UAPI, không ghi gì).
+// Mục tiêu: biết PHP, bộ nhớ đệm đối tượng (Redis/Memcached), cron, dung lượng, giới hạn tài nguyên để tăng tốc web.
+// Chỉ gọi các hàm trong DANH SÁCH CHO PHÉP bên dưới (đều là hàm đọc). Không đọc nội dung file (tránh wp-config).
+// Mọi kết quả đi qua bước che: không in token, tên đăng nhập, máy chủ; lệnh cron chỉ in đầu lệnh đã che.
+import { writeFileSync } from 'node:fs';
+
+const rawBase = (process.env.CPANEL_BASE_URL || '').trim();
+const user = (process.env.CPANEL_USERNAME || '').trim();
+const token = (process.env.CPANEL_API_TOKEN || '').trim();
+const docroot = (process.env.LOCKNLOCK_DOCROOT || '').trim().replace(/\/+$/, '');
+if (!rawBase || !user || !token) throw new Error('Thiếu CPANEL_BASE_URL / CPANEL_USERNAME / CPANEL_API_TOKEN');
+
+const baseUrl = new URL(/^https?:\/\//i.test(rawBase) ? rawBase : `https://${rawBase}`);
+if (!baseUrl.port) baseUrl.port = '2083';
+const origin = baseUrl.origin;
+
+// Danh sách cho phép: "Module/hàm". Thêm hàm ghi vào đây là sai quy tắc của workflow này.
+const ALLOWED = new Set([
+  'LangPHP/php_get_system_default_version',
+  'LangPHP/php_get_vhost_versions',
+  'LangPHP/php_get_installed_versions',
+  'LangPHP/php_ini_get_user_basic_directives',
+  'Features/list_features',
+  'Cron/list_cron',
+  'Quota/get_quota_info',
+  'StatsBar/get_stats',
+  'Mysql/list_databases',
+  'ResourceUsage/get_usages',
+  'DomainInfo/domains_data',
+  'Fileman/list_files',
+]);
+
+// Che mọi giá trị nhạy cảm trong kết quả trước khi in/lưu.
+const secrets = [token, user, baseUrl.hostname, baseUrl.host].filter(s => s && s.length >= 3);
+function redact(text) {
+  let out = String(text);
+  for (const s of secrets) out = out.split(s).join('<che>');
+  out = out.replace(/((?:pass(?:word|wd)?|token|secret|key|auth)[=:\s]+)\S+/gi, '$1<che>');
+  return out;
+}
+
+async function call(mod, fn, params = {}) {
+  const id = `${mod}/${fn}`;
+  if (!ALLOWED.has(id)) throw new Error(`Hàm không nằm trong danh sách cho phép: ${id}`);
+  const url = new URL(`${origin}/execute/${mod}/${fn}`);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `cpanel ${user}:${token}`, Accept: 'application/json', 'User-Agent': 'cpanel-config-probe' },
+      signal: AbortSignal.timeout(45_000),
+    });
+    const text = await res.text();
+    let body; try { body = JSON.parse(text); } catch { body = null; }
+    if (!res.ok || !body) return { ok: false, status: res.status, error: redact(text.slice(0, 160)) };
+    if (body.status === 0) return { ok: false, status: res.status, error: redact((body.errors || []).join('; ').slice(0, 200)) };
+    return { ok: true, data: body.data, metadata: body.metadata?.result === undefined ? undefined : body.metadata.result };
+  } catch (e) {
+    return { ok: false, error: redact(String(e?.cause?.code || e?.message || e)).slice(0, 160) };
+  }
+}
+
+const safe = async (fn) => { try { return await fn(); } catch (e) { return { ok: false, error: redact(String(e?.message || e)) }; } };
+const trimList = (v, n = 60) => (Array.isArray(v) ? v.slice(0, n) : v);
+
+const out = { at: new Date().toISOString(), note: 'Chỉ đọc. Giá trị nhạy cảm đã được che.' };
+
+// 1) PHP
+out.php = {
+  systemDefault: await safe(() => call('LangPHP', 'php_get_system_default_version')),
+  installed: await safe(() => call('LangPHP', 'php_get_installed_versions')),
+  vhosts: await safe(async () => {
+    const r = await call('LangPHP', 'php_get_vhost_versions');
+    if (r.ok) r.data = trimList(r.data, 40);
+    return r;
+  }),
+};
+
+// 2) Tên miền → php.ini cơ bản (memory_limit, max_execution_time, …) của tên miền chính
+const domains = await safe(() => call('DomainInfo', 'domains_data', { format: 'hash' }));
+out.domains = domains.ok ? { main: domains.data?.main_domain?.domain ? redact(domains.data.main_domain.domain) : null, docroot: redact(domains.data?.main_domain?.documentroot || '') } : domains;
+const mainDomain = domains.ok ? domains.data?.main_domain?.domain : null;
+if (mainDomain) out.php.ini = await safe(() => call('LangPHP', 'php_ini_get_user_basic_directives', { type: 'vhost', vhost: mainDomain }));
+
+// 3) Tính năng của gói hosting (xem có Redis/Memcached/LiteSpeed/Node… không)
+out.features = await safe(async () => {
+  const r = await call('Features', 'list_features');
+  if (!r.ok) return r;
+  const names = (Array.isArray(r.data) ? r.data : Object.keys(r.data || {})).map(x => (typeof x === 'object' ? x.id || x.name : x)).filter(Boolean).map(String).sort();
+  const want = /redis|memcache|litespeed|lsws|cache|varnish|node|ruby|python|cron|ssh|php|mysql|postgres|backup|cdn|optimiz|ssl|image/i;
+  return { ok: true, total: names.length, relevant: names.filter(n => want.test(n)) };
+});
+
+// 4) Cron: chỉ lịch + đầu lệnh đã che
+out.cron = await safe(async () => {
+  const r = await call('Cron', 'list_cron');
+  if (!r.ok) return r;
+  const list = (r.data || []).map(c => ({
+    schedule: [c.minute, c.hour, c.day, c.month, c.weekday].join(' '),
+    command: redact(String(c.command || '').split('?')[0]).slice(0, 70),
+  }));
+  return { ok: true, count: list.length, jobs: list.slice(0, 30) };
+});
+
+// 5) Dung lượng, hạn mức, CSDL
+out.quota = await safe(() => call('Quota', 'get_quota_info'));
+out.stats = await safe(() => call('StatsBar', 'get_stats', { display: 'diskusage|mysqldiskusage|inodeusage|addondomains|cachedmysqldiskusage' }));
+out.databases = await safe(async () => {
+  const r = await call('Mysql', 'list_databases');
+  if (!r.ok) return r;
+  return { ok: true, count: (r.data || []).length, items: (r.data || []).slice(0, 20).map(d => ({ name: redact(d.database || ''), diskMB: d.disk_usage != null ? Math.round(d.disk_usage / 1048576) : undefined })) };
+});
+
+// 6) Giới hạn tài nguyên CloudLinux (CPU/RAM/số tiến trình): nguyên nhân thường gặp khiến PHP chậm
+out.resourceUsage = await safe(async () => {
+  const r = await call('ResourceUsage', 'get_usages');
+  if (!r.ok) return r;
+  return { ok: true, items: (r.data || []).map(x => ({ id: x.id, description: x.description, usage: x.usage, maximum: x.maximum, percent: x.maximum ? Math.round((100 * x.usage) / x.maximum) : undefined, faults: x.error ? 1 : 0 })) };
+});
+
+// 7) Cây thư mục web: chỉ liệt kê TÊN (không đọc nội dung) để thấy object-cache.php, advanced-cache.php, .htaccess…
+async function names(dir) {
+  const r = await call('Fileman', 'list_files', { dir, 'include_mime': 0, 'include_hash': 0, 'include_permissions': 0 });
+  if (!r.ok) return r;
+  return { ok: true, names: (r.data || []).map(f => `${f.type === 'dir' ? 'd' : 'f'}:${f.file}`).slice(0, 120) };
+}
+if (docroot) {
+  out.files = {
+    docroot: await safe(() => names(docroot)),
+    wpContent: await safe(() => names(`${docroot}/wp-content`)),
+    muPlugins: await safe(() => names(`${docroot}/wp-content/mu-plugins`)),
+  };
+}
+
+const json = redact(JSON.stringify(out, null, 2));
+writeFileSync('cpanel-config.json', json);
+console.log(json.slice(0, 60000));
