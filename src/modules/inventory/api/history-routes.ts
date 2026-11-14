@@ -1,3 +1,4 @@
+import type {StockPendingOf} from '../../../core/contracts/stock-pending.ts';
 import { and, asc, desc, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -55,7 +56,7 @@ const linkVisible = (m: SessionState['member'], link: string) => { const need = 
 /** refId của dòng đảo / sửa đơn có hậu tố "#xxxx" (mỗi lần đồng bộ một mã riêng) – chứng từ gốc là phần trước "#". */
 const baseRef = (refId: string) => refId.split('#')[0]!;
 
-export function registerStockHistoryRoutes(router: Router<StaffEnv>) {
+export function registerStockHistoryRoutes(router: Router<StaffEnv>, deps:{pendingOf?:StockPendingOf}={}) {
   router.get('/stock-moves', async c => {
     const db = c.env.db, p = c.url.searchParams, wh = p.get('warehouseId') || '', group = p.get('group') || '', q = (p.get('q') || '').trim().slice(0, 80).replace(/[\\%_]/g, ''), sku = (p.get('sku') || '').trim().slice(0, 200);
     const from = p.get('from'), to = p.get('to'), brand = (p.get('brand') || '').trim().slice(0, 120), status = p.get('status') || '';
@@ -70,7 +71,8 @@ export function registerStockHistoryRoutes(router: Router<StaffEnv>) {
     // Nhãn hiệu có phát sinh ở các kho được xem (không theo kho đang lọc – ô chọn giữ nguyên khi đổi chi nhánh).
     const brands = whs.length ? (await db.selectDistinct({ brand: products.brand }).from(stockMoves).innerJoin(products, eq(products.sku, stockMoves.sku))
       .where(inArray(stockMoves.warehouseId, whs.map(w => w.id))).orderBy(asc(products.brand))).map(b => b.brand).filter(Boolean) : [];
-    const empty = { warehouses: whs, brands, kinds: STOCK_KIND_LABEL, moves: [], total: 0, totals: { inQty: 0, outQty: 0 }, page, size };
+    const pendingAsOf=new Date().toISOString();
+    const empty = { pendingAsOf,pendingAvailable:!!deps.pendingOf,warehouses: whs, brands, kinds: STOCK_KIND_LABEL, moves: [], total: 0, totals: { inQty: 0, outQty: 0 }, page, size };
     if (!ids.length) return json(empty);
     // Ngày lọc theo giờ Việt Nam (như trang Đơn hàng): giao dịch 6h sáng 22/10 thuộc ngày 22/10, không lùi về 21/10 theo UTC.
     const kinds = GROUPS[group], fromStart = isDate(from) ? new Date(from + 'T00:00:00+07:00').toISOString() : null, toEnd = isDate(to) ? new Date(to + 'T23:59:59.999+07:00').toISOString() : null;
@@ -91,6 +93,9 @@ export function registerStockHistoryRoutes(router: Router<StaffEnv>) {
         outQty: sql<number>`coalesce(sum(case when ${stockMoves.qty} < 0 then -${stockMoves.qty} else 0 end), 0)`.mapWith(Number) })
         .from(stockMoves).leftJoin(products, eq(products.sku, stockMoves.sku)).where(where),
     ]);
+    let pendingAvailable=!!deps.pendingOf,pending:Awaited<ReturnType<StockPendingOf>>=[];
+    if(deps.pendingOf&&rows.length)try{pending=await deps.pendingOf(db,[...new Set(rows.map(r=>r.m.sku))],ids,pendingAsOf);}catch{pendingAvailable=false;console.warn('stock-pending source unavailable');}
+    const pendingByKey=new Map(pending.map(r=>[JSON.stringify([r.sku,r.warehouseId]),r]));
     // Link chứng từ của module khác: tra một lần cho cả trang.
     const resolved = new Map<string, string>();
     for (const [refType, resolve] of Object.entries(stockRefLinkHooks) as [StockRefType, StockRefLinkResolver][]) {
@@ -99,10 +104,10 @@ export function registerStockHistoryRoutes(router: Router<StaffEnv>) {
     }
     const viewer = me(c), linkOf = (refType: string, ref: string) => { const l = directLink(refType, ref) || resolved.get(refType + '\u0000' + ref) || ''; return l && linkVisible(viewer, l) ? l : ''; };
     const wName = new Map(whs.map(w => [w.id, w.name])), round = (v: number) => Math.round(v * 1000) / 1000;
-    return json({ ...empty, total: sum?.n ?? 0, totals: { inQty: round(sum?.inQty ?? 0), outQty: round(sum?.outQty ?? 0) },
+    return json({ ...empty,pendingAvailable, total: sum?.n ?? 0, totals: { inQty: round(sum?.inQty ?? 0), outQty: round(sum?.outQty ?? 0) },
       moves: rows.map(({ m, balanceAfter, by, name, unit, brand, active }) => {
-        const ref = baseRef(m.refId);
-        return { id: m.id, at: m.createdAt, sku: m.sku, name: name ?? '', unit: unit ?? '', brand: brand ?? '', active: active ?? true,
+        const ref = baseRef(m.refId),pending=pendingByKey.get(JSON.stringify([m.sku,m.warehouseId]))??{packed:0,returning:0,held:0,unassignedHeld:pendingByKey.get(JSON.stringify([m.sku,'']))?.unassignedHeld??0,uncertain:false};
+        return { pending,pendingQty:pendingAvailable?round(pending.packed+pending.returning+pending.held):null,id: m.id, at: m.createdAt, sku: m.sku, name: name ?? '', unit: unit ?? '', brand: brand ?? '', active: active ?? true,
           warehouseId: m.warehouseId, warehouse: wName.get(m.warehouseId) ?? '', qty: m.qty, inQty: m.qty > 0 ? m.qty : 0, outQty: m.qty < 0 ? -m.qty : 0, balanceBefore: round(balanceAfter - m.qty), balanceAfter: round(balanceAfter),
           kind: m.kind, kindLabel: STOCK_KIND_LABEL[m.kind as StockMoveKind] ?? m.kind, description: stockMoveDescription(m.kind as StockMoveKind, m.refType as StockRefType),
           refType: m.refType, refNo: m.refNo, note: m.note, by: by ?? '', link: linkOf(m.refType, ref) };
