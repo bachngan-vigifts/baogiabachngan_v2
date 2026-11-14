@@ -1,56 +1,20 @@
-# PR-only CI: no duplicate push run. Drafts get fast feedback; ready PRs get the full suite.
-# Cloud CI comments remain supplementary, not a substitute for the full suite before merge.
+# Kiểm tra mỗi PR: TypeScript + toàn bộ test (PostgreSQL chạy bằng PGlite, không cần Supabase).
+# Không chạy lại khi merge vào main (PR đã kiểm tra; "Triển khai API" vẫn chạy test trước khi deploy) để tiết kiệm phút GitHub Actions.
+# Đẩy commit mới lên cùng PR thì lượt kiểm tra cũ đang chạy tự huỷ.
 name: Kiểm tra
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   workflow_dispatch:
-    inputs:
-      full:
-        description: 'Chạy đủ 4 phần test trên GitHub'
-        type: boolean
-        default: false
 concurrency:
-  # A manual smoke run must never cancel the PR's full validation (or a manual full run).
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.full || false }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
-  prepare:
-    name: TypeScript and draft feedback
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    outputs:
-      full: ${{ steps.mode.outputs.full }}
-    steps:
-      - id: mode
-        env:
-          FULL: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && inputs.full) }}
-        run: echo "full=$FULL" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.22.0
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm ci --prefer-offline --no-audit --no-fund
-      # Typecheck once, not once in each of the four shards as well.
-      - run: npm run typecheck
-      # These tests also belong to the full suite; do not run them twice on ready PRs.
-      - if: steps.mode.outputs.full != 'true'
-        run: >-
-          node --import tsx --test --test-concurrency=2
-          tests/architecture.test.ts
-          tests/db/november-migration-gates.test.ts
-          tests/app/edge-db-lifecycle.test.ts
-          tests/app/catalogue-edge-dependencies.test.ts
-          tests/app/appsheet-schema-gate.test.ts
-          "tests/app/*-ui.test.ts"
-  full-shards:
-    needs: prepare
-    if: needs.prepare.outputs.full == 'true'
+  test-shards:
     name: test shard ${{ matrix.shard }}/4
+    # Keep runner upgrades explicit instead of following ubuntu-latest.
     runs-on: ubuntu-24.04
-    # Four disjoint file shards preserve npm test's complete globs and concurrency.
+    # The two-shard PGlite suite hit the 35m job limit near its final schema tests.
+    # Four disjoint file shards keep the same full globs/concurrency as npm test; no tests are skipped.
     timeout-minutes: 35
     strategy:
       fail-fast: false
@@ -62,33 +26,21 @@ jobs:
         with:
           node-version: 22.22.0
           cache: npm
-          cache-dependency-path: package-lock.json
       - name: PHP runtime for WordPress contract tests
         run: php --version
-      - run: npm ci --prefer-offline --no-audit --no-fund
+      - run: npm ci
       - name: PDF reader for quote export tests
         run: node --input-type=module -e "const pdf = await import('pdfjs-dist/legacy/build/pdf.mjs'); console.log('PDF.js', pdf.version)"
+      - run: npm run typecheck
+      # Node test options must precede the file globs; npm test -- ... appends them too late.
       - run: node --import tsx --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/4 "tests/**/*.test.ts" "src/**/*.test.ts"
+  # Preserve the existing required check name; failure/cancellation in any shard fails the gate.
   test:
-    # Stable aggregate name. Branch protection is a separate repository setting.
-    # Manual smoke results must not impersonate the PR's required check.
-    name: ${{ github.event_name == 'pull_request' && 'test' || 'manual validation' }}
-    needs: [prepare, full-shards]
-    if: always()
+    if: ${{ always() }}
+    needs: test-shards
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
     steps:
-      - name: Require every expected check to pass
+      - name: Require all four test shards
         env:
-          PREPARE_RESULT: ${{ needs.prepare.result }}
-          FULL_REQUIRED: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && inputs.full) }}
-          SHARD_RESULT: ${{ needs.full-shards.result }}
-        run: |
-          test "$PREPARE_RESULT" = success || exit 1
-          if [ "$FULL_REQUIRED" = true ]; then
-            test "$SHARD_RESULT" = success || exit 1
-            echo "TypeScript and all four full-suite shards passed."
-          else
-            test "$SHARD_RESULT" = skipped || exit 1
-            echo "Draft/manual smoke checks only. Full suite is required when the PR becomes ready."
-          fi
+          RESULT: ${{ needs.test-shards.result }}
+        run: test "$RESULT" = success

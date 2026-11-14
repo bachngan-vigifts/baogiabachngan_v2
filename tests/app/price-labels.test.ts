@@ -26,3 +26,12 @@ test('label product refresh is batched, ordered, read-only and fails on missing 
  assert.deepEqual(result.products.map((p:any)=>p.sku),skus);assert.equal(calls.length,2);assert.ok(calls.every(p=>p.startsWith('/products?skus=')));
  await assert.rejects(loadLabelProducts(async()=>({products:[]}),['missing']),/không tìm thấy/);
 });
+// @ts-ignore browser JS module
+import {splitPrintable} from '../../trial-ui/price-labels.js';
+test('quote labels skip unknown, inactive and unpriced codes instead of blocking the whole print',async()=>{
+ const loaded=await loadLabelProducts(async()=>({products:[{sku:'A'},{sku:'C'}],policies:[]}),['A','B','C'],{allowMissing:true});
+ assert.deepEqual(loaded.products.map((p:any)=>p.sku),['A','C']);assert.deepEqual(loaded.missing,['B']);
+ const split=splitPrintable([{sku:'A',prices:[{policyId:'v',price:108000}]},{sku:'B',prices:[{policyId:'r',price:1}]},{sku:'C',active:false,prices:[{policyId:'v',price:5}]},{sku:'D',approvalStatus:'pending',prices:{v:5}},{sku:'E',prices:{v:0}}],'v');
+ assert.deepEqual(split.ok.map((p:any)=>p.sku),['A','E']);
+ assert.deepEqual(split.skipped,[{sku:'B',reason:'chưa có giá bán lẻ + VAT'},{sku:'C',reason:'ngừng bán hoặc chưa duyệt'},{sku:'D',reason:'ngừng bán hoặc chưa duyệt'}]);
+});
