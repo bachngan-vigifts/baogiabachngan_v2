@@ -6,7 +6,7 @@ import { runInNewContext } from 'node:vm';
 const source = readFileSync(new URL('../../trial-ui/app.js', import.meta.url), 'utf8');
 const render = source.slice(source.indexOf('function renderProducts()'), source.indexOf('function renderSelection()'));
 const stockHelpers = source.slice(source.indexOf('const kindStock ='), source.indexOf("document.addEventListener('click', e => { const b = e.target.closest('[data-incoming-sku]')"));
-function harness() {
+function harness({manager=false}={}) {
   const elements: Record<string, any> = {};
   const $ = (id: string) => elements[id] ||= { hidden: false, textContent: '', innerHTML: '', title: '' };
   const p = { sku: 'L1', name: 'Product', brand: 'Lock', unit: 'Cái', stock: { a: 10, b: 5, incoming: 7, supplier: 30 } };
@@ -15,7 +15,7 @@ function harness() {
       warehouses: [{ id: 'a', kind: 'stock', name: 'Kho A' }, { id: 'b', kind: 'stock', name: 'Kho B' }, { id: 'incoming', kind: 'incoming' }, { id: 'supplier', kind: 'supplier' }] },
     productPrice: () => 100, heldQty: () => 3, availableStock: () => 12, stockDetail: () => 'Kho A: 10; Kho B: 5',
     fmtNum: (n: number) => String(n), esc: (s: unknown) => String(s ?? ''), thumb: () => '', markWords: (s: string) => s,
-    seesPrices: () => true, money: (n: number) => String(n), canUpdateProducts: () => true, can: () => true,
+    isManager:()=>manager, seesPrices: () => true, money: (n: number) => String(n), canUpdateProducts: () => true, can: () => true,
     hasSupplierStock: (p: any) => p.brand === 'Lock', renderSelection() {}, productPager: { render() {} }, skeleton: (n: number) => `skeleton:${n}`,
   };
   runInNewContext(stockHelpers + render + '\nthis.renderProducts = renderProducts;', ctx);
@@ -77,4 +77,8 @@ test('loading state aligns with all ten table columns', () => {
   ctx.state.products = null;
   ctx.renderProducts();
   assert.equal($('#product-list').innerHTML, 'skeleton:10');
+});
+
+test('delete control is visible only to Manager while stock columns stay intact',()=>{
+ for(const manager of [false,true]){const {ctx,$,cell}=harness({manager});ctx.renderProducts();const html=$('#product-list').innerHTML;assert.equal(html.includes('data-remove-product="L1"'),manager);assert.equal(cell('Tồn'),'12');}
 });

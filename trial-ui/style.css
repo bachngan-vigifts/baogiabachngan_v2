@@ -2833,3 +2833,9 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .quote-source-date-label { display:grid;gap:4px;min-width:0;flex:1 1 180px; }
 .quote-source-date-label .quote-source-date { width:100%;min-width:0;max-width:100%;flex:auto; }
 .quote-source-date-label small { white-space:normal; }
+/* Keep product controls reachable when the stock table needs horizontal space. */
+@media (min-width:851px){
+ #product-table td.actions-cell{position:sticky;right:0;background:var(--surface);min-width:160px;box-shadow:-4px 0 8px -6px #64748b}
+ #product-table td.actions-cell .row-actions{flex-wrap:wrap;min-width:160px;max-width:180px;white-space:normal;gap:4px}
+ #product-table td.actions-cell .row-actions .btn+.btn{margin-left:0}
+}

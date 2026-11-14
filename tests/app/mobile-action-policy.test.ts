@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import {actionKind} from '../../trial-ui/mobile-action-policy.js';
 // @ts-ignore browser module; only the grouping threshold is read here
 import {GROUP_MIN} from '../../trial-ui/mobile-actions.js';
-function control(text:string,{dialog=false,field=false,primary=false,desktop=false,navigation=false}={}){
+function control(text:string,{dialog=false,field=false,primary=false,desktop=false,navigation=false,confirmationPage=false}={}){
  return {textContent:text,title:'',getAttribute:()=>null,classList:{contains:(key:string)=>desktop&&key==='mobile-desktop-only'},
-  matches:(selector:string)=>selector==='[data-mobile-navigation]'?navigation:selector==='label'?false:primary&&selector.includes('.btn.primary'),querySelector:()=>field?{}:null,closest:()=>dialog?{}:null};
+  matches:(selector:string)=>selector==='[data-mobile-navigation]'?navigation:selector==='label'?false:primary&&selector.includes('.btn.primary'),querySelector:()=>field?{}:null,closest:(selector:string)=>dialog||confirmationPage&&selector.includes('[data-mobile-confirmation-page]')?{}:null};
 }
 test('mobile saves, submits, confirmations and field-bearing controls never enter a secondary menu',()=>{
  for(const text of ['Lưu báo giá','Gửi duyệt','Xác nhận nhận hàng','Thanh toán','Nhận theo phiếu','Đã giao','Thu tiền','Đóng phiếu','Gọi','Báo giá','Xuất Excel','Xem / Tải hồ sơ'])assert.equal(actionKind(control(text)),'inline',text);
@@ -32,4 +32,8 @@ test('read-only navigation containing workflow status stays visible; real destru
  assert.equal(actionKind(control('Xem đơn đã huỷ: 4',{navigation:true})),'inline');
  assert.equal(actionKind(control('Xóa lọc',{navigation:true})),'inline');
  assert.equal(actionKind(control('Huỷ phiếu')),'desktop');
+});
+
+test('product removal opens an explicit confirmation context without changing default destructive policy',()=>{
+ assert.equal(actionKind(control('Xoá khỏi danh mục TEST-SKU',{confirmationPage:true})),'inline');assert.equal(actionKind(control('Xoá khỏi danh mục TEST-SKU')),'desktop');
 });
