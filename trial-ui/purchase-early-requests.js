@@ -178,10 +178,30 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     const editLines=initial.lines.flatMap(line=>pinned[line.sku]?.length?pinned[line.sku].map(source=>({...line,quantity:source.quantity,source})):[line]);
     for(const line of editLines) {
       const row=el('tr'),qty=el('input');qty.type='number';qty.min='1';qty.step='1';qty.value=line.quantity;qty.setAttribute('aria-label','Số lượng nháp mã '+line.sku+(line.source?' · '+line.source.orderNo:''));
+      const orderCell=el('td'),orderSelect=el('select');orderSelect.setAttribute('aria-label','Đơn mua cho mã '+line.sku);
+      orderSelect.append(new Option(line.source?.orderNo||line.source?.supplierOrderNo?'Đang kiểm tra đơn đã ghi…':'Chưa chốt đơn mua',''));
+      const createBackfill=btn('Tạo đơn mua bù',async()=>{
+        try{
+          const options=await api('/purchase-options'),names=options.suppliers.map((s,i)=>`${i+1}. ${s.name}`).join('\n');
+          const picked=Number(prompt('Chọn NCC bằng số:\n'+names));if(!Number.isInteger(picked)||!options.suppliers[picked-1])return;
+          const warehouse=prompt('Nhập kho/địa chỉ giao hàng của đơn mua bù:','Kho SR');if(!warehouse?.trim())return;
+          createBackfill.disabled=true;
+          await api('/purchase-orders','POST',{orders:[{supplierId:options.suppliers[picked-1].id,warehouse:warehouse.trim(),note:'Đơn mua bù cho phiếu '+(initial.pxkNo||initial.scope?.pxkNo||''),lines:[{sku:line.sku,name:line.name||'',unit:line.unit||'',quantity:Number(qty.value),price:null,taxRate:null,sources:[]}]}]});
+          await loadOrders(true);
+        }catch(e){fail(e.message||'Không tạo được đơn mua bù.');}finally{createBackfill.disabled=false;}
+      });
+      orderCell.append(orderSelect,createBackfill);
       const td=el('td');td.append(qty);const remove=el('td');let removed=false;
       remove.append(btn('Bỏ mã '+line.sku,()=>{removed=true;row.remove();changed();}));
-      row.append(el('td','',line.sku),el('td','',line.name||''),el('td','',line.source?line.source.orderNo+(line.source.supplierOrderNo?' · NCC: '+line.source.supplierOrderNo:''):'Tự phân bổ'),td,remove);rows.append(row);
-      fields.push({sku:line.sku,source:line.source,qty,removed:()=>removed});qty.addEventListener('input',changed);
+      row.append(el('td','',line.sku),el('td','',line.name||''),orderCell,td,remove);rows.append(row);
+      const field={sku:line.sku,source:line.source,qty,removed:()=>removed};fields.push(field);qty.addEventListener('input',changed);orderSelect.addEventListener('change',()=>{const option=orderSelect.selectedOptions[0];field.source=option?.value?JSON.parse(option.value):undefined;changed();});
+      async function loadOrders(selectNewest=false){
+        const wanted=line.source?.supplierOrderNo||line.source?.orderNo||'',result=await api('/purchase-early-requests/order-options?sku='+encodeURIComponent(line.sku)+'&supplierOrderNo='+encodeURIComponent(wanted));
+        orderSelect.replaceChildren(new Option('Chưa chốt đơn mua',''));
+        for(const order of result.options){const source={orderNo:order.ticketNumber,supplierOrderNo:order.supplierOrderNo||'',quantity:Number(qty.value)},label=order.ticketNumber+' · '+order.supplierName+(order.supplierOrderNo?' · NCC: '+order.supplierOrderNo:' · chưa có mã NCC')+(order.approvalStatus==='approved'?'':' · chưa duyệt');const option=new Option(label,JSON.stringify(source));option.selected=selectNewest?order===result.options[0]:order.exactSupplierOrderNo||order.ticketNumber===line.source?.orderNo;orderSelect.append(option);if(option.selected)field.source=source;}
+        createBackfill.hidden=result.options.length>0;if(selectNewest&&result.options[0]){field.source=JSON.parse(orderSelect.selectedOptions[0].value);changed();}else if(result.options.some(o=>o.exactSupplierOrderNo)){field.source=JSON.parse(orderSelect.selectedOptions[0].value);changed();}
+      }
+      loadOrders().catch(e=>fail(e.message||'Không tải được danh sách đơn mua của '+line.sku+'.'));
     }
     const save=btn('Lưu nháp',()=>saveDraft(),'btn primary'),send=btn('Gửi NCC',()=>submit(),'btn primary'),state=el('span','muted small');
     const back=btn('Đóng',()=>{if(!busy)dialog.close();});foot.append(state,back,save,send);body.append(label,hint,wrap,error);form.append(header,body,foot);dialog.append(form);
