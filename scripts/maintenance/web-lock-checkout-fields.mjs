@@ -8,7 +8,8 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({ userAgent: UA, viewport: { width: 412, height: 915 }, isMobile: true });
 const page = await ctx.newPage();
 await page.goto(simple + `?cb=${Date.now()}`, { waitUntil: 'load', timeout: 60_000 }); await page.waitForTimeout(3000);
-await page.locator('button.single_add_to_cart_button').first().click(); await page.waitForTimeout(5000);
+const added = page.waitForResponse(r => /wc-ajax=lnl_add_to_cart/.test(r.url()), { timeout: 45_000 }).catch(() => null);
+await page.locator('button.single_add_to_cart_button').first().click(); await added; await page.waitForTimeout(2000);
 await page.goto(`${SITE}/thanh-toan/?cb=${Date.now()}`, { waitUntil: 'load', timeout: 60_000 }); await page.waitForTimeout(6000);
 const rows = await page.evaluate(() => {
   const form = document.querySelector('form.checkout, form.woocommerce-checkout'); if (!form) return null;
