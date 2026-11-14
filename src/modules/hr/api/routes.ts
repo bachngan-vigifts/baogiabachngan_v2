@@ -167,7 +167,7 @@ export function registerHrRoutes(router: Router<StaffEnv>, deps: { revenueOf: Re
   router.put('/hr/members/:id/salary', write(async c => {
     const db = c.env.db, id = await staffMember(db, c.params.id!), b = await readJson(c.req, 6_000);
     const [person]=await db.select({positionId:employees.positionId}).from(employees).where(eq(employees.id,id));const eligible=salaryKpiEligible(person?.positionId);
-    if(!eligible&&(b.kpiEnabled===true||b.fixedKpi!==undefined&&b.fixedKpi!==null&&b.fixedKpi!==''))throw new AppError(400,'Sale Admin không áp dụng KPI; chỉ bật thưởng sao HĐKT và thưởng thanh lý.');
+    if(!eligible&&(b.kpiEnabled===true||b.fixedKpi!==undefined&&b.fixedKpi!==null&&b.fixedKpi!==''))throw new AppError(400,'Sale Admin chỉ theo dõi KPI trên Tổng quan, không áp dụng KPI vào lương; chỉ bật thưởng sao HĐKT và thưởng thanh lý.');
     const [prior]=await db.select().from(hrSalaryProfiles).where(and(eq(hrSalaryProfiles.memberId,id),lte(hrSalaryProfiles.effectiveMonth,month(b.effectiveMonth)))).orderBy(desc(hrSalaryProfiles.effectiveMonth)).limit(1);
     const legacyTarget=b.revenueTarget===undefined?prior?.revenueTarget??0:Math.round(num(b.revenueTarget,'Chỉ tiêu DS',1e13));
     if(legacyTarget!==(prior?.revenueTarget??0)&&await hasRevenueTargetHistory(db,id))throw new AppError(409,'Chỉ tiêu doanh số được quản lý ở bảng Đăng ký doanh số năm. Tải lại giao diện và sửa chỉ tiêu ở bảng năm.','REVENUE_TARGET_REGISTERED');

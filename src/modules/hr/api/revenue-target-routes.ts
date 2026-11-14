@@ -1,4 +1,4 @@
-import {and,asc,eq,gte,isNull,lt,notInArray,sql} from 'drizzle-orm';
+import {and,asc,inArray,eq,gte,isNull,lt,notInArray,sql} from 'drizzle-orm';
 import type {AnyDb} from '../../../core/db/client.ts';
 import {auditLogs} from '../../../core/db/schema.ts';
 import {payrollLock} from '../../../core/db/payroll-lock.ts';
@@ -6,7 +6,7 @@ import {AppError} from '../../../core/errors.ts';
 import {json,readJson,type Router} from '../../../core/http/router.ts';
 import type {SessionState,StaffEnv} from '../../staff/api/auth-routes.ts';
 import {employees} from '../../staff/schema.ts';
-import {SALE_POSITION_ID} from '../../staff/domain/roles.ts';
+import {SALES_KPI_POSITIONS,tracksSalesKpi} from '../../staff/domain/roles.ts';
 import {sha256Hex} from '../../staff/domain/session.ts';
 import {hrPayslips} from '../schema.ts';
 import {hrRevenueTargets} from '../revenue-target-schema.ts';
@@ -23,7 +23,7 @@ async function yearState(db:AnyDb,year:string){
 }
 async function people(db:AnyDb,saleOnly=true,lock=false){
   const query=db.select({id:employees.id,name:employees.name,positionId:employees.positionId,active:employees.active}).from(employees)
-    .where(and(isNull(employees.deletedAt),notInArray(employees.role,['customer','supplier']),saleOnly?eq(employees.positionId,SALE_POSITION_ID):undefined)).orderBy(asc(employees.name));
+    .where(and(isNull(employees.deletedAt),notInArray(employees.role,['customer','supplier']),saleOnly?inArray(employees.positionId,[...SALES_KPI_POSITIONS]):undefined)).orderBy(asc(employees.name));
   return lock?query.for('update'):query;
 }
 
@@ -58,7 +58,7 @@ export function registerRevenueTargets(router:Router<StaffEnv>){
       const mutations:Array<{memberId:string;month:string;amount:number|null;before:number|null}>=[];
       for(const r of changes){
         if(!members.has(r.memberId))throw new AppError(404,'Không tìm thấy nhân viên nội bộ.');
-        if(members.get(r.memberId)!.positionId!==SALE_POSITION_ID)throw new AppError(400,'Chỉ đăng ký doanh số năm cho nhân viên có chức vụ Sale.','REVENUE_TARGET_SALE_ONLY');
+        if(!tracksSalesKpi(members.get(r.memberId)!.positionId))throw new AppError(400,'Chỉ đăng ký doanh số năm cho nhân viên có chức vụ Sale / Sale Admin.','REVENUE_TARGET_SALE_ONLY');
         const key=targetKey(r.memberId,r.month),before=prior.get(key)??null;if(before===r.amount)continue;
         if(locked.has(key))throw new AppError(409,'Tháng '+r.month+' đã chốt lương. Mở lại phiếu trước khi điều chỉnh chỉ tiêu.','TARGET_MONTH_CLOSED');
         mutations.push({...r,before});
