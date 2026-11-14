@@ -10,7 +10,7 @@ Thao tác khoá và kiểm phiên bản cập nhật trước khi đổi trạng
 
 ## Triển khai
 
-Migration **20261113104533_product_archive_controls.sql** thêm `products.archived_at`, `archived_by` nullable và index. **Chưa áp dụng production.** Cần chạy trước khi deploy API/giao diện. Workflow có kiểm tra chỉ đọc và coverage để chặn deploy thiếu schema. Không có data backfill hoặc thao tác xoá sản phẩm thực tế trong migration.
+Migration **20261113104533_product_archive_controls.sql** thêm `products.archived_at`, `archived_by` nullable và index. **Đã áp dụng production ngày 14/11/2026**, đồng bộ lịch sử đúng version và kiểm tra 2 cột nullable/constraint; chưa xoá sản phẩm thực tế. Cần giữ schema này trước khi deploy API/giao diện. Workflow có kiểm tra chỉ đọc và coverage để chặn deploy thiếu schema. Không có data backfill hoặc thao tác xoá sản phẩm thực tế trong migration.
 
 ## Kiểm thử
 
@@ -20,3 +20,7 @@ Migration **20261113104533_product_archive_controls.sql** thêm `products.archiv
 
 ![Danh sách khôi phục PC](archived-1440.png)
 ![Danh sách khôi phục mobile](archived-390.png)
+
+## Sửa check chặn PR (14/11/2026)
+
+Run 43412874371 lỗi 4 test bảng tồn vì VM harness chưa khai báo `isManager` khi render thêm nút Xoá. Bổ sung dependency đúng vai trò và kiểm tra Manager có nút, nhân viên không có; giữ các kiểm tra tồn/giữ/hàng về và cột giá. Đồng bộ main mới, giữ cả hai danh sách migration coverage. Product-stock-columns, product-archive, November migration gates và architecture đều đạt sau đồng bộ. Sau kiểm tra đã áp dụng migration production ngày 14/11/2026; dữ liệu sản phẩm không bị xoá/ẩn bởi migration.
