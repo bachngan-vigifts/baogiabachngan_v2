@@ -1,5 +1,11 @@
 import { purchaseExportData } from './purchase-export-data.js';
-let ready;
+import { buildLockSupplierFile, LOCK_TEMPLATE_URL } from './purchase-lock-template.js';
+let ready, zipReady;
+const loadZip = () => zipReady ||= new Promise((resolve, reject) => {
+  if (globalThis.fflate) return resolve(globalThis.fflate);
+  const script = document.createElement('script'); script.src = new URL('./fflate.min.js', import.meta.url).href;
+  script.onload = () => resolve(globalThis.fflate); script.onerror = () => { zipReady = null; reject(Error('Không tải được công cụ Excel Lock.')); }; document.head.append(script);
+});
 const loadExcel = () => ready ||= new Promise((resolve, reject) => {
   if (globalThis.ExcelJS) return resolve(globalThis.ExcelJS);
   const s = document.createElement('script'); s.src = new URL('./exceljs.min.js', import.meta.url).href;
@@ -7,10 +13,10 @@ const loadExcel = () => ready ||= new Promise((resolve, reject) => {
 });
 const copy = o => JSON.parse(JSON.stringify(o));
 const money = '#,##0.00';
-/** Layout/style descriptors are extracted from the three supplied workbooks, without sample orders/catalogs. */
+/** Minh Long uses its existing layout descriptors; Lock preserves its native workbook separately. */
 export async function buildSupplierWorkbook(v, kind, { ExcelJS, templates }, options = {}) {
-  if (!['lock', 'minh-long', 'minh-long-logo'].includes(kind)) throw Error('Chọn mẫu Excel Minh Long hoặc Lock.');
-  const data = purchaseExportData(v, kind === 'lock' ? { ...options, entity: 'VG' } : options), template = templates[kind];
+  if (!['minh-long', 'minh-long-logo'].includes(kind)) throw Error('Chọn mẫu Excel Minh Long.');
+  const data = purchaseExportData(v, options), template = templates[kind];
   if (!template) throw Error('Không tải được mẫu Excel NCC.');
   const wb = new ExcelJS.Workbook(); wb.creator = data.buyer.name; wb.calcProperties.fullCalcOnLoad = true;
   function create(def) {
@@ -38,27 +44,12 @@ export async function buildSupplierWorkbook(v, kind, { ExcelJS, templates }, opt
       if (i === 0) cell.numFmt = '0';
     });
   }
-  const formula = (expression, result) => ({ formula: expression, result });
   if (kind === 'minh-long') {
     const def = template.sheets[0], ws = create(def);
     [6, 18, 58, 22, 24, 12, 12, 34, 30].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
     data.lines.forEach((l, i) => {
       line(ws, def, 2 + i, [i + 1, l.sku, l.name, l.collection, l.pattern, l.quality, l.quantity, data.supplier.name, `${l.promisedDate} · ${data.ticketNumber}`]);
     });
-  } else if (kind === 'lock') {
-    const def = template.sheets[0], ws = create(def);
-    for (const [ref, value] of Object.entries({ A2: `SALES ORDER / ĐƠN ĐẶT HÀNG ${data.ticketNumber}`, A3: `Orderer (NV đặt hàng): ${data.contact}`,
-      A4: `Customer (Khách hàng): ${data.buyer.name}`, A5: `Address Deliver (Địa chỉ giao): ${data.address}`, A6: `Contact Person (Liên hệ): ${data.contact} · ${data.phone}`,
-      A7: `Order Date (Ngày đặt): ${data.orderDate}`, A8: `Request Delivery Date (Ngày giao): ${data.arrivalDate}`, A9: `Supplier (Nhà cung cấp): ${data.supplier.name}` })) put(ws, ref, value);
-    ['A5:I5','A6:I6','A7:I7','A8:I8'].forEach(r => ws.mergeCells(r));
-    data.lines.forEach((l, i) => { const r = 12 + i;
-      line(ws, def, r, [i + 1, l.erp, l.sku, l.name, l.perCarton, l.quantity, l.price * (1 + l.taxRate / 100),
-        formula(`(G${r}*(1-${l.discount}/100)+${l.printFee}*(1+${l.taxRate}/100))`, l.total / l.quantity), formula(`H${r}*F${r}`, l.total)]);
-    });
-    const end = 12 + data.lines.length; ws.mergeCells(`A${end}:E${end}`); put(ws, `A${end}`, 'G-Total (Tổng cộng)');
-    put(ws, `F${end}`, formula(`SUM(F12:F${end - 1})`, data.lines.reduce((t, l) => t + l.quantity, 0)));
-    put(ws, `I${end}`, formula(`SUM(I12:I${end - 1})`, data.totals.total), money);
-    ws.mergeCells(`A${end + 1}:I${end + 1}`); put(ws, `A${end + 1}`, data.note); ws.getRow(end + 1).height = 40;
   } else {
     const def = template.sheets[0], ws = create(def);
     put(ws, 'A1', `TRIỂN KHAI MẪU · ${data.ticketNumber}`); ws.mergeCells('A1:G1');
@@ -76,10 +67,18 @@ export async function buildSupplierWorkbook(v, kind, { ExcelJS, templates }, opt
   return wb;
 }
 export async function downloadSupplierExcel(v, kind, options = {}) {
+  if (kind === 'lock') {
+    const [zip, response] = await Promise.all([loadZip(), fetch(new URL(LOCK_TEMPLATE_URL, import.meta.url))]);
+    if (!response.ok) throw Error('Không tải được mẫu Excel Lock.');
+    saveSupplierExcel(v, kind, buildLockSupplierFile(v, await response.arrayBuffer(), zip, options));
+    return;
+  }
   const [ExcelJS, response] = await Promise.all([loadExcel(), fetch(new URL('./templates/supplier-orders.json', import.meta.url))]);
   if (!response.ok) throw Error('Không tải được mẫu Excel NCC.');
   const wb = await buildSupplierWorkbook(v, kind, { ExcelJS, templates: await response.json() }, options);
-  const bytes = await wb.xlsx.writeBuffer();
+  saveSupplierExcel(v, kind, await wb.xlsx.writeBuffer());
+}
+function saveSupplierExcel(v, kind, bytes) {
   const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   const a = document.createElement('a'); a.href = url; a.download = `${v.ticketNumber}-${kind}.xlsx`; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
 }

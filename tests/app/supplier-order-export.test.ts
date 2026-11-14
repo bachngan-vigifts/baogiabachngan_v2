@@ -17,18 +17,17 @@ const purchase = (): any => ({ ticketNumber: 'DMH_20261015_TEST', internalNo: ''
     { id: 'l2', sku: 'LHC1487GRY', name: 'Bình giữ nhiệt', unit: 'Cái', quantity: 3, price: 50000, purchaseDiscount: 10, taxRate: 10, printFee: 0, lineTotal: 135000 }],
   totals: { subtotal: 301000, vat: 26780, total: 327780 }, schedules: [{ kind: 'deposit', amount: 100000, dueDate: '2026-10-16' }] });
 const roundtrip = async (workbook: any) => { const bytes = await workbook.xlsx.writeBuffer(); const loaded = new ctx.ExcelJS.Workbook(); await loaded.xlsx.load(bytes); return { loaded, bytes }; };
-test('all three supplied layouts: real XLSX roundtrip, original text SKUs, current quantities, no sample orders/external links', async () => {
+test('Minh Long layouts: real XLSX roundtrip, original text SKUs, current quantities, no sample orders/external links', async () => {
   const v = purchase();
-  for (const kind of ['minh-long', 'minh-long-logo', 'lock']) {
+  for (const kind of ['minh-long', 'minh-long-logo']) {
     const wb = await buildSupplierWorkbook(v, kind, dependencies, { lines: { l1: { erp: 'ERP-TEST', collection: 'Jasmine', pattern: 'Trắng', quality: 'L1', perCarton: 8 } }, supplierContact: 'NV NCC', logoContent: 'LOGO MỚI' });
     const { loaded, bytes } = await roundtrip(wb);
     assert.equal(loaded.worksheets.length, 1); assert.equal(templates[kind].sourceSheetIndex, 2);
     const ws = loaded.worksheets[0];
-    const ref = kind === 'minh-long' ? 'B2' : kind === 'lock' ? 'C12' : 'B9';
+    const ref = kind === 'minh-long' ? 'B2' : 'B9';
     assert.equal(ws.getCell(ref).value, '031106000'); assert.equal(ws.getCell(ref).numFmt, '@');
-    assert.equal(ws.getCell(kind === 'minh-long' ? 'G2' : kind === 'lock' ? 'F12' : 'G9').value, 2);
+    assert.equal(ws.getCell(kind === 'minh-long' ? 'G2' : 'G9').value, 2);
     if (kind === 'minh-long') { assert.equal(ws.getCell('H2').value, v.supplier.name); assert.match(ws.getCell('I2').value, /20\/10\/2026/); }
-    if (kind === 'lock') { assert.equal(ws.getCell('B12').value, 'ERP-TEST'); assert.equal(ws.getCell('I14').result, v.totals.total); }
     if (kind === 'minh-long-logo') { assert.equal(ws.getCell('C12').value, 'LOGO MỚI'); assert.equal(ws.getCell('C2').value, 'NV NCC'); }
     assert.ok(bytes.length > 3000);
     if (process.env.EXPORT_REVIEW_DIR) writeFileSync(`${process.env.EXPORT_REVIEW_DIR}/${kind}.xlsx`, bytes);
@@ -36,21 +35,12 @@ test('all three supplied layouts: real XLSX roundtrip, original text SKUs, curre
     assert.doesNotMatch(manifest, /VLOOKUP|externalLinks|VIỆT HOA|QHOME|sale01s\.cantho/);
   }
 });
-test('Lock totals use confirmed discount, fee and mixed VAT from authorized purchase, not hard-coded 58%/8%', async () => {
-  const v = purchase(), data = purchaseExportData(v);
-  assert.equal(data.lines[0].printFee, 2000); assert.equal(data.totals.vat, 26780);
-  const lock = (await buildSupplierWorkbook(v, 'lock', dependencies)).worksheets[0];
-  assert.equal(lock.getCell('G12').value, 108000); assert.equal(lock.getCell('H12').result, 89640); assert.equal(lock.getCell('I12').result, 179280);
-  assert.equal(lock.getCell('I13').result, 148500); assert.equal(lock.getCell('I14').result, v.totals.total);
-  assert.doesNotMatch(lock.getCell('H12').formula, /58%/);
-});
 test('many lines expand each sheet-2 layout safely; text is not a formula', async () => {
   const v = purchase(); v.lines = Array.from({ length: 80 }, (_, i) => ({ ...v.lines[0], id: 'l'+i, sku: '00'+i, name: i === 0 ? '=HYPERLINK("https://invalid")' : 'Hàng ' + i }));
-  for (const kind of ['minh-long', 'minh-long-logo', 'lock']) {
+  for (const kind of ['minh-long', 'minh-long-logo']) {
     const wb = await buildSupplierWorkbook(v, kind, dependencies), ws = wb.worksheets[0];
-    assert.ok(ws.rowCount > 80); assert.equal(ws.getCell(kind === 'minh-long' ? 'C2' : kind === 'lock' ? 'D12' : 'C9').value, '=HYPERLINK("https://invalid")');
+    assert.ok(ws.rowCount > 80); assert.equal(ws.getCell(kind === 'minh-long' ? 'C2' : 'C9').value, '=HYPERLINK("https://invalid")');
     if (kind === 'minh-long') assert.equal(ws.getCell('B81').value, '0079');
-    else if (kind === 'lock') assert.match(ws.getCell('I92').formula, /SUM/);
     else assert.equal(ws.getCell('B88').value, '0079');
   }
 });
@@ -59,8 +49,8 @@ test('permissions and incomplete prices block export; template choice does not h
   assert.equal(suggestedSupplierTemplate({ supplier: { name: 'Lock & Lock' } }), 'lock');
   const v = purchase(); assert.throws(() => purchaseExportData({ ...v, priceHidden: true }), /quyền/);
   assert.throws(() => purchaseExportData({ ...v, actions: [] }), /quyền/);
-  await assert.rejects(buildSupplierWorkbook({ ...v, totals: null }, 'lock', dependencies), /quyền/);
-  await assert.rejects(buildSupplierWorkbook({ ...v, lines: [{ ...v.lines[0], price: null }] }, 'lock', dependencies), /giá mua/);
+  await assert.rejects(buildSupplierWorkbook({ ...v, totals: null }, 'minh-long', dependencies), /quyền/);
+  await assert.rejects(buildSupplierWorkbook({ ...v, lines: [{ ...v.lines[0], price: null }] }, 'minh-long', dependencies), /giá mua/);
 });
 runInThisContext(readFileSync(new URL('pdf-lib.min.js', ui), 'utf8'));
 runInThisContext(readFileSync(new URL('fontkit.umd.min.js', ui), 'utf8'));
@@ -102,14 +92,7 @@ test('keeps the main email attachment helper producing a real PDF as base64', as
   } finally { globalThis.fetch = previous; }
 });
 
-test('Excel Lock luôn dùng pháp nhân VIGIFTS, kể cả lựa chọn cũ đang là Bách Ngân', async () => {
-  const name = 'CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI QUẢNG CÁO VIGIFTS';
-  for (const entity of [undefined, 'BN', 'VG']) {
-    const wb = await buildSupplierWorkbook(purchase(), 'lock', dependencies, { entity });
-    const { loaded } = await roundtrip(wb);
-    assert.equal(loaded.worksheets[0].getCell('A4').value, 'Customer (Khách hàng): ' + name);
-    assert.equal(loaded.creator, name);
-  }
+test('Excel Minh Long logo retains the selected buyer entity', async () => {
   for (const [entity, expected] of [['BN', 'CTY TNHH SX TM BÁCH NGÂN'], ['VG', 'CTY TNHH SX TM QC VIGIFTS']]) {
     const wb = await buildSupplierWorkbook(purchase(), 'minh-long-logo', dependencies, { entity });
     assert.equal(wb.worksheets[0].getCell('C4').value, expected);
