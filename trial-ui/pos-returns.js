@@ -36,6 +36,50 @@ const select = (items) => {
   }
   return n;
 };
+const ORDER_STATUS = { draft: 'Nháp', confirmed: 'Đã xác nhận', delivering: 'Đang giao', delivered: 'Đã giao', cancelled: 'Đã huỷ', completed: 'Hoàn tất' };
+const PAY_METHOD = { cash: 'Tiền mặt', transfer: 'Chuyển khoản', card: 'Quẹt thẻ', cod: 'Thu hộ COD (giao hàng)', mixed: 'Nhiều hình thức' };
+const qtyText = (n) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
+/** Xem nhanh bill gốc trong màn trả hàng. Chỉ đọc dữ liệu đã tải (cùng quyền với màn trả hàng); không gọi API ghi. */
+export function openBillPreview(d, { open = (url) => window.open(url, '_blank', 'noopener') } = {}) {
+  const o = d.order || {}, snap = (() => { try { return JSON.parse(o.posSnapshot || '{}'); } catch { return {}; } })();
+  const fees = snap.fees || {}, ship = Number(fees.shippingFee ?? fees.shipping?.amount ?? 0), service = Number(fees.service?.amount ?? 0);
+  const dlg = el('dialog', 'pos-modal pos-bill-preview'), box = el('div', 'pos-modal-content'), head = el('div', 'pos-return-head');
+  dlg.setAttribute('aria-label', 'Chi tiết bill ' + (o.orderNo || ''));
+  const close = el('button', 'btn secondary', 'Đóng'); close.type = 'button'; close.onclick = () => dlg.close();
+  head.append(el('h2', '', 'Bill ' + (o.orderNo || '')), close);
+  const info = el('dl', 'pos-bill-info');
+  const row = (label, value) => { if (value === '' || value == null) return; info.append(el('dt', '', label), el('dd', '', value)); };
+  row('Ngày bán', String(o.orderDate || o.createdAt || '').slice(0, 10).split('-').reverse().join('/'));
+  row('Trạng thái', ORDER_STATUS[o.status] || o.status);
+  row('Quầy', d.registerName);
+  row('Khách hàng', o.customerName);
+  row('Điện thoại', o.phone);
+  row('Người nhận', [o.receiverName, o.receiverPhone].filter(Boolean).join(' · '));
+  row('Địa chỉ giao', o.deliveryAddress || o.address);
+  row('Thanh toán', PAY_METHOD[snap.method] || snap.method);
+  if (snap.ghn?.fee != null) row('Phí GHN tính cho shop', money(snap.ghn.fee));
+  if (snap.ghn?.expectedDelivery) row('GHN hẹn giao', String(snap.ghn.expectedDelivery).slice(0, 10).split('-').reverse().join('/'));
+  row('Ghi chú', o.note);
+  const table = el('table', 'pos-bill-lines'), thead = el('thead'), tbody = el('tbody'), hr = el('tr');
+  for (const t of ['Mã / tên hàng', 'SL', 'Đơn giá', 'Thành tiền', 'Đã giao']) hr.append(el('th', '', t));
+  thead.append(hr); table.append(thead, tbody);
+  for (const l of d.lines || []) {
+    const tr = el('tr'), name = el('td');
+    name.append(el('strong', '', l.sku || ''), el('span', '', l.name || ''));
+    const cell = (label, text) => { const td = el('td', 'num', text); td.dataset.label = label; return td; };
+    tr.append(name, cell('SL', qtyText(l.qty) + (l.unit ? ' ' + l.unit : '')), cell('Đơn giá', money(l.unitPrice)), cell('Thành tiền', money(l.amount)), cell('Đã giao', qtyText(l.deliveredQty)));
+    tbody.append(tr);
+  }
+  const wrap = el('div', 'pos-bill-lines-wrap'); wrap.append(table);
+  const totals = el('div', 'pos-return-summary');
+  for (const [label, value] of [['Tiền hàng + phí trước VAT', o.subtotal], ...(service ? [['Phí dịch vụ (gồm VAT)', service]] : []), ...(ship ? [['Phí ship thu khách', ship]] : []), ['VAT', o.tax], ['Tổng bill', o.total], ['Còn phải thu', Math.max(0, d.account?.balance ?? 0)]])
+    totals.append(el('span', '', label), el('strong', '', money(value)));
+  const full = el('button', 'btn secondary', 'Mở trang đơn hàng đầy đủ (tab mới)'); full.type = 'button';
+  full.onclick = () => open(location.pathname + location.search + '#/orders/' + encodeURIComponent(o.id));
+  box.append(head, info, wrap, totals, full); dlg.append(box); document.body.append(dlg);
+  dlg.addEventListener('close', () => dlg.remove(), { once: true });
+  dlg.showModal(); return dlg;
+}
 /**
  * Phí dịch vụ / phí ship đã tính cho khách trên bill mà chưa có yêu cầu hoàn nào (đang chờ / đã duyệt) giữ.
  * Dùng làm mặc định khi trả / thu hồi TOÀN BỘ hàng còn lại; máy chủ vẫn kiểm lại không vượt phí gốc.
@@ -170,7 +214,13 @@ export async function openPosReturns({
     content.replaceChildren();
     content.append(
       button('‹ Danh sách yêu cầu', home),
-      el('h3', '', d.order.orderNo + ' · ' + d.order.customerName),
+      (() => {
+        const h = el('h3', 'pos-return-bill-title'), link = el('button', 'pos-bill-link', d.order.orderNo);
+        link.type = 'button'; link.title = 'Xem nhanh chi tiết bill ' + d.order.orderNo;
+        link.onclick = () => openBillPreview(d);
+        h.append(link, el('span', '', ' · ' + d.order.customerName));
+        return h;
+      })(),
     );
     const summary = el('div', 'pos-return-summary');
     for (const [label, value] of [

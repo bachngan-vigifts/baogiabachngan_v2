@@ -1315,5 +1315,22 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-qr-footer > .primary { grid-column: 1 / -1; }
 .pos-qr-footer .btn { white-space: normal; }
 .pos-promotion{padding:12px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.pos-promotion p{margin:6px 0}.pos-promotion-head,.pos-promotion-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.pos-promotion-dialog{width:min(540px,calc(100vw - 24px));max-height:90dvh;overflow:auto}.pos-promotion-dialog form{display:grid;gap:12px;padding:16px}.pos-promotion-fields{display:grid;gap:10px}.pos-promotion-dialog input{max-width:100%}
+.pos-bill-link { border:0;background:none;padding:0;font:inherit;font-weight:700;color:#1d4ed8;text-decoration:underline;text-underline-offset:3px;cursor:pointer; }
+.pos-bill-link:hover { color:#1e3a8a; }
+.pos-bill-preview { width:min(760px,calc(100vw - 16px)); }
+.pos-bill-info { display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:12px 0;font-size:14px; }
+.pos-bill-info dt { color:var(--muted,#64748b); }
+.pos-bill-info dd { margin:0;overflow-wrap:anywhere; }
+.pos-bill-lines-wrap { overflow-x:auto; }
+.pos-bill-lines { width:100%;border-collapse:collapse;font-size:14px; }
+.pos-bill-lines th,.pos-bill-lines td { padding:8px 6px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top; }
+.pos-bill-lines td.num,.pos-bill-lines th:nth-child(n+2) { text-align:right;white-space:nowrap; }
+.pos-bill-lines td strong,.pos-bill-lines td span { display:block; }
+.pos-bill-lines td span { color:var(--muted,#64748b);font-size:13px; }
+@media (max-width:600px){ .pos-bill-info { grid-template-columns:1fr; gap:2px; } .pos-bill-info dd { margin-bottom:6px; }
+ .pos-bill-lines thead { display:none; } .pos-bill-lines,.pos-bill-lines tbody { display:block; }
+ .pos-bill-lines tr { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px;padding:10px 0;border-bottom:1px solid #e2e8f0; }
+ .pos-bill-lines td { border:0;padding:0; } .pos-bill-lines td:first-child { grid-column:1/-1; }
+ .pos-bill-lines td.num { text-align:left; } .pos-bill-lines td.num::before { content:attr(data-label);display:block;font-size:12px;color:var(--muted,#64748b); } }
 .pos-scan-actions { display:flex;flex-wrap:wrap;gap:10px;margin-top:12px; }
 .pos-scan-actions .btn { flex:1 1 140px;min-height:44px; }
