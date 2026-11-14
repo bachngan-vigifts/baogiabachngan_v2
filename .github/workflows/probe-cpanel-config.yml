@@ -4,6 +4,12 @@
 name: Đọc cấu hình cPanel
 on:
   workflow_dispatch:
+    inputs:
+      focus:
+        description: 'all = đọc đủ; home = chỉ đo thư mục home (lscache, thư mục ẩn)'
+        type: choice
+        options: [all, home]
+        default: all
 permissions:
   contents: read
 concurrency: probe-cpanel-config
@@ -22,6 +28,7 @@ jobs:
           CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
           CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
           LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+          FOCUS: ${{ inputs.focus }}
         run: node scripts/maintenance/probe-cpanel-config.mjs
       - uses: actions/upload-artifact@v4
         if: always()

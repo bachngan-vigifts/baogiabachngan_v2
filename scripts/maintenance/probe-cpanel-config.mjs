@@ -135,18 +135,19 @@ if (docroot) {
 
 // 8) Đào sâu (có giới hạn): kích thước thư mục nghi ngờ, .htaccess (chỉ dòng PHP/cache), phần đầu object-cache.php.bak.
 async function listDir(dir) {
-  const r = await call('Fileman', 'list_files', { dir, include_mime: 0, include_hash: 0, include_permissions: 0 });
+  const r = await call('Fileman', 'list_files', { dir, include_mime: 0, include_hash: 0, include_permissions: 0, showdotfiles: 1, show_hidden: 1 });
   return r.ok ? (r.data || []) : null;
 }
-const WALK_MAX_CALLS = 600, PER_DIR_CALLS = 90, WALK_DEADLINE = Date.now() + 7 * 60_000;
+const FOCUS = (process.env.FOCUS || 'all').trim();
+const WALK_MAX_CALLS = FOCUS === 'home' ? 900 : 600, PER_DIR_CALLS = 90, WALK_DEADLINE = Date.now() + 8 * 60_000;
 let walkCalls = 0;
-async function walkSize(dir) {
+async function walkSize(dir, cap = PER_DIR_CALLS) {
   let bytes = 0, files = 0, dirs = 0, truncated = false, errors = 0;
   const big = [];
   const queue = [dir];
   let used = 0;
   while (queue.length) {
-    if (used >= PER_DIR_CALLS || walkCalls >= WALK_MAX_CALLS || Date.now() > WALK_DEADLINE) { truncated = true; break; }
+    if (used >= cap || walkCalls >= WALK_MAX_CALLS || Date.now() > WALK_DEADLINE) { truncated = true; break; }
     const d = queue.shift();
     walkCalls++; used++;
     const items = await listDir(d);
@@ -168,7 +169,7 @@ if (docroot) {
   const rank = l => { const i = order.indexOf(l); return l === 'wp-content/plugins' ? 999 : i < 0 ? 500 : i; };
   targets.sort((a, b) => rank(a[0]) - rank(b[0]));
   out.deep.sizes = {};
-  for (const [label, path] of targets) out.deep.sizes[label] = await safe(() => walkSize(path));
+  if (FOCUS !== 'home') for (const [label, path] of targets) out.deep.sizes[label] = await safe(() => walkSize(path));
   out.deep.walkCalls = walkCalls;
   const root = await safe(() => listDir(docroot));
   if (Array.isArray(root)) out.deep.rootFiles = root.filter(f => f.type === 'file' && Number(f.size) > 1048576).map(f => ({ file: f.file, mb: Math.round(Number(f.size) / 1048576) }));
@@ -182,9 +183,9 @@ if (docroot) {
     if (!Array.isArray(items)) return { ok: false };
     const dirs = items.filter(f => f.type === 'dir' && f.file !== 'public_html' && f.file !== '.' && f.file !== '..');
     const sizes = {};
-    for (const d of dirs.slice(0, 25)) sizes[d.file] = await safe(() => walkSize(`${home}/${d.file}`));
+    for (const d of dirs.slice(0, 40)) sizes[d.file] = await safe(() => walkSize(`${home}/${d.file}`, FOCUS === 'home' && d.file === 'lscache' ? 500 : FOCUS === 'home' ? 60 : 30));
     const bigFiles = items.filter(f => f.type === 'file' && Number(f.size) > 20 * 1048576).map(f => ({ file: f.file, mb: Math.round(Number(f.size) / 1048576) }));
-    return { ok: true, dirs: dirs.map(d => d.file), sizes, bigFiles };
+    return { ok: true, sawHidden: items.some(f => String(f.file).startsWith('.')), dirs: dirs.map(d => d.file), sizes, bigFiles };
   });
 
   // .htaccess: chỉ các dòng liên quan PHP/cache/nén, đã che.
