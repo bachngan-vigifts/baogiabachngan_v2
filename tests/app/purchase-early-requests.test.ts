@@ -184,3 +184,20 @@ test('order options preserve exact matching, supplier scope and write permission
  const scoped=await f.call(path+'&supplierId=b',f.cookies.mgr);assert.equal(scoped.status,200);assert.ok(scoped.data.options.every((o:any)=>o.supplierId==='b'));assert.ok(scoped.data.options.every((o:any)=>!o.exactSupplierOrderNo));
  assert.equal((await f.call(path+'&supplierId='+ 'x'.repeat(201),f.cookies.mgr)).status,400);
 });
+
+test('draft replaces removed SKU with a manual SKU atomically; failed edits preserve the saved draft',async()=>{
+ const f=await setupEarly();
+ const made=await f.call('/purchase-early-requests',f.cookies.mgr,'POST',{clientKey:'manual-replace-lines',pickupDate:'2026-11-14',scope:{supplierId:'b'},lines:[{sku:'031106000',quantity:2}]});assert.equal(made.status,201);
+ const path='/purchase-early-requests/'+made.data.id;
+ const update=(lines:any[],revision=1)=>f.call(path,f.cookies.mgr,'PUT',{revision,pickupDate:'2026-11-14',lines});
+ for(const lines of [[],[{sku:'MISSING',quantity:1}],[{sku:'01654020803',quantity:11}],[{sku:'01654020803',quantity:0}],[{sku:'01654020803',quantity:1},{sku:'01654020803',quantity:1}],[{sku:'031106000',quantity:1,sourceOrders:[{orderNo:'PO-a1',quantity:1}]}]]){
+  assert.ok((await update(lines)).status>=400);
+  const saved=(await f.call('/purchase-early-requests?id='+made.data.id,f.cookies.mgr)).data.requests[0];assert.equal(saved.revision,1);assert.equal(saved.lines[0].sku,'031106000');assert.equal(saved.lines[0].quantity,2);
+ }
+ const options=(await f.call('/purchase-early-requests/order-options?sku=01654020803&supplierId=b',f.cookies.mgr)).data.options;assert.equal(options[0].name,'Hàng 01654020803');
+ const edited=await update([{sku:'01654020803',quantity:3}]);assert.equal(edited.status,200,JSON.stringify(edited.data));assert.deepEqual(edited.data.request.lines.map((l:any)=>[l.sku,l.quantity]),[['01654020803',3]]);assert.equal(edited.data.request.lines[0].allocations[0].supplierId,'b');
+ assert.equal((await update([{sku:'031106000',quantity:1}])).status,409);
+ assert.equal((await f.call(path+'/submit',f.cookies.mgr,'POST',{revision:2})).status,200);
+ assert.equal((await update([{sku:'031106000',quantity:1}],3)).status,409);
+ assert.equal((await f.client.query<{n:number}>('select count(*)::int n from stock_moves')).rows[0]!.n,0);
+});
