@@ -28,6 +28,7 @@ const ALLOWED = new Set([
   'ResourceUsage/get_usages',
   'DomainInfo/domains_data',
   'Fileman/list_files',
+  'Fileman/get_file_content', // chỉ dùng cho .htaccess (lọc dòng PHP/cache) và phần đầu object-cache.php.bak
 ]);
 
 // Che mọi giá trị nhạy cảm trong kết quả trước khi in/lưu.
@@ -132,6 +133,64 @@ if (docroot) {
   };
 }
 
+// 8) Đào sâu (có giới hạn): kích thước thư mục nghi ngờ, .htaccess (chỉ dòng PHP/cache), phần đầu object-cache.php.bak.
+async function listDir(dir) {
+  const r = await call('Fileman', 'list_files', { dir, include_mime: 0, include_hash: 0, include_permissions: 0 });
+  return r.ok ? (r.data || []) : null;
+}
+const WALK_MAX_CALLS = 260, WALK_DEADLINE = Date.now() + 4 * 60_000;
+let walkCalls = 0;
+async function walkSize(dir) {
+  let bytes = 0, files = 0, dirs = 0, truncated = false, errors = 0;
+  const big = [];
+  const queue = [dir];
+  while (queue.length) {
+    if (walkCalls >= WALK_MAX_CALLS || Date.now() > WALK_DEADLINE) { truncated = true; break; }
+    const d = queue.shift();
+    walkCalls++;
+    const items = await listDir(d);
+    if (!items) { errors++; continue; }
+    for (const f of items) {
+      if (f.type === 'dir') { dirs++; queue.push(`${d}/${f.file}`); }
+      else if (f.type === 'file') { files++; const sz = Number(f.size) || 0; bytes += sz; if (sz > 20 * 1048576) big.push({ file: `${d.replace(docroot, '.')}/${f.file}`, mb: Math.round(sz / 1048576) }); }
+    }
+  }
+  return { mb: Math.round(bytes / 1048576), files, dirs, truncated: truncated || queue.length > 0, errors, big };
+}
+if (docroot) {
+  out.deep = {};
+  const wpc = await safe(() => listDir(`${docroot}/wp-content`));
+  const targets = [];
+  if (Array.isArray(wpc)) for (const f of wpc) if (f.type === 'dir') targets.push([`wp-content/${f.file}`, `${docroot}/wp-content/${f.file}`]);
+  targets.push(['old', `${docroot}/old`], ['minhlongonline.com', `${docroot}/minhlongonline.com`]);
+  out.deep.sizes = {};
+  for (const [label, path] of targets) out.deep.sizes[label] = await safe(() => walkSize(path));
+  out.deep.walkCalls = walkCalls;
+  const root = await safe(() => listDir(docroot));
+  if (Array.isArray(root)) out.deep.rootFiles = root.filter(f => f.type === 'file' && Number(f.size) > 1048576).map(f => ({ file: f.file, mb: Math.round(Number(f.size) / 1048576) }));
+  const wp = Array.isArray(wpc) ? wpc.filter(f => f.type === 'file').map(f => ({ file: f.file, bytes: Number(f.size) || 0 })) : null;
+  out.deep.wpContentFiles = wp;
+
+  // .htaccess: chỉ các dòng liên quan PHP/cache/nén, đã che.
+  out.deep.htaccess = await safe(async () => {
+    const r = await call('Fileman', 'get_file_content', { dir: docroot, file: '.htaccess' });
+    if (!r.ok) return r;
+    const lines = String(r.data?.content || '').split('\n');
+    const want = /php|handler|litespeed|cache|expires|deflate|gzip|brotli|etag|keep-?alive|cloudflare|rewritecond.*%\{http|wordpress/i;
+    return { ok: true, totalLines: lines.length, matched: lines.filter(l => want.test(l)).map(l => redact(l.trim()).slice(0, 140)).slice(0, 60) };
+  });
+
+  // object-cache.php.bak: chỉ dòng chú thích đầu file (tên/ phiên bản drop-in), không đọc phần mã/cấu hình.
+  out.deep.objectCacheBak = await safe(async () => {
+    const r = await call('Fileman', 'get_file_content', { dir: `${docroot}/wp-content`, file: 'object-cache.php.bak' });
+    if (!r.ok) return r;
+    const text = String(r.data?.content || '');
+    const head = text.split('\n').slice(0, 40).filter(l => /^\s*(\/\/|\/\*|\*|#|<\?php)/.test(l)).map(l => redact(l.trim()).slice(0, 120));
+    return { ok: true, bytes: text.length, header: head.slice(0, 25), mentionsRedis: /redis/i.test(text), mentionsMemcache: /memcache/i.test(text), mentionsLitespeed: /litespeed/i.test(text) };
+  });
+}
+
 const json = redact(JSON.stringify(out, null, 2));
 writeFileSync('cpanel-config.json', json);
 console.log(json.slice(0, 60000));
+if (out.deep) console.log('=== DEEP ===\n' + redact(JSON.stringify(out.deep, null, 2)).slice(0, 40000));
