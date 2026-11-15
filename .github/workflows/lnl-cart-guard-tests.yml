@@ -1,0 +1,16 @@
+name: Test LocknLock cart duplicate guard
+on:
+  push:
+    branches: ['fix/lnl-cart-single-add-20261115']
+    paths: ['web-lock/cart-fix/**', '.github/workflows/lnl-cart-guard-tests.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: php -l web-lock/cart-fix/lnl-cart-single-add.php
+      - run: php web-lock/cart-fix/test.php
