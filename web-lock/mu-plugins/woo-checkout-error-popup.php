@@ -32,7 +32,7 @@ function lnl_checkout_popup_js() {
 (function () {
   if (!window.jQuery) { return; }
   var $ = window.jQuery;
-  var MAP = [[/Tỉnh|Thành phố/i, '#billing_ghn_province_id_field'], [/Quận|Huyện/i, '#billing_ghn_district_id_field'], [/Phường|Xã/i, '#billing_ghn_ward_code_field']];
+  var MAP = [[/T\u1ec9nh|Th\u00e0nh ph\u1ed1/i, '#billing_ghn_province_id_field'], [/Qu\u1eadn|Huy\u1ec7n/i, '#billing_ghn_district_id_field'], [/Ph\u01b0\u1eddng|X\u00e3/i, '#billing_ghn_ward_code_field']];
   function close(target) {
     var w = document.getElementById('lnl-err-popup-wrap'); if (w) { w.parentNode.removeChild(w); }
     if (target && target.scrollIntoView) {
@@ -52,10 +52,10 @@ function lnl_checkout_popup_js() {
     close(null);
     var wrap = document.createElement('div'); wrap.id = 'lnl-err-popup-wrap'; wrap.setAttribute('role', 'alertdialog'); wrap.setAttribute('aria-modal', 'true');
     var box = document.createElement('div'); box.id = 'lnl-err-popup-box';
-    var h = document.createElement('h4'); h.textContent = 'Vui lòng kiểm tra lại';
+    var h = document.createElement('h4'); h.textContent = 'Vui l\u00f2ng ki\u1ec3m tra l\u1ea1i';
     var ul = document.createElement('ul');
     for (i = 0; i < texts.length; i++) { var li = document.createElement('li'); li.textContent = texts[i]; ul.appendChild(li); }
-    var ok = document.createElement('button'); ok.type = 'button'; ok.id = 'lnl-err-popup-ok'; ok.textContent = 'Đã hiểu';
+    var ok = document.createElement('button'); ok.type = 'button'; ok.id = 'lnl-err-popup-ok'; ok.textContent = '\u0110\u00e3 hi\u1ec3u';
     box.appendChild(h); box.appendChild(ul); box.appendChild(ok); wrap.appendChild(box); document.body.appendChild(wrap);
     ok.addEventListener('click', function () { close(target); });
     wrap.addEventListener('click', function (e) { if (e.target === wrap) { close(target); } });
