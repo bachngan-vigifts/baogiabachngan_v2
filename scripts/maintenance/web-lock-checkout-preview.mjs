@@ -49,4 +49,17 @@ if (process.env.CSS_FROM) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1); console.log('Tràn ngang sau khi áp CSS: ' + over);
   await shot('sau');
 }
+if (process.env.POPUP_FROM || process.env.POPUP_LIVE === '1') {
+  if (process.env.POPUP_FROM) { const src = readFileSync(process.env.POPUP_FROM, 'utf8'); await page.addStyleTag({ content: /<<<'CSS'\n([\s\S]*?)\nCSS;/.exec(src)[1] }); await page.addScriptTag({ content: /<<<'JS'\n([\s\S]*?)\nJS;/.exec(src)[1] }); }
+  const orders = []; page.on('response', r => { if (/wc-ajax=checkout/.test(r.url())) r.text().then(t => orders.push(r.status() + ' ' + t.slice(0, 160))).catch(() => {}); });
+  await page.evaluate(() => { const n = document.querySelector('#billing_first_name'); if (n) n.value = ''; });
+  await page.locator('#place_order').click({ noWaitAfter: true }); await page.waitForSelector('#lnl-err-popup-wrap', { timeout: 30_000 }).catch(() => console.log('KHÔNG thấy popup lỗi'));
+  await page.waitForTimeout(800);
+  const pop = await page.evaluate(() => { const w = document.querySelector('#lnl-err-popup-wrap'); return w ? [...w.querySelectorAll('li')].map(l => l.textContent) : null; });
+  console.log('POPUP ' + JSON.stringify(pop)); console.log('PHẢN HỒI ĐẶT HÀNG (phải là failure, không tạo đơn): ' + orders.join(' || '));
+  const b64 = (await page.screenshot({ type: 'jpeg', quality: 65 })).toString('base64'); console.log('IMGSTART popup'); for (let i = 0; i < b64.length; i += 3000) console.log('IMG popup ' + b64.slice(i, i + 3000)); console.log('IMGEND popup');
+  if (pop) { await page.locator('#lnl-err-popup-ok').click(); await page.waitForTimeout(1200); console.log('Sau khi đóng: popup còn=' + await page.evaluate(() => !!document.querySelector('#lnl-err-popup-wrap')) + ' cuộn tới y=' + await page.evaluate(() => Math.round(scrollY))); }
+  if (process.env.POPUP_LIVE === '1' && !pop) process.exitCode = 1;
+  if (orders.some(o => /"result":"success"/.test(o))) { console.log('CẢNH BÁO: có phản hồi success'); process.exitCode = 1; }
+}
 await browser.close();

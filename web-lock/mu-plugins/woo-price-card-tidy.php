@@ -14,6 +14,7 @@ add_action('wp_head', function () {
 function lnl_price_tidy_css() {
     $css = <<<'CSS'
 .price.product-page-price:not(:has(del)) { flex-direction: row !important; justify-content: flex-start !important; flex-wrap: wrap; column-gap: 6px; }
+.product-small .price:not(:has(del)) { flex-direction: row !important; justify-content: flex-start !important; flex-wrap: wrap; column-gap: 4px; }
 CSS;
     return $css;
 }

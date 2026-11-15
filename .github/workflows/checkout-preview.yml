@@ -23,4 +23,5 @@ jobs:
           cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-checkout-preview.mjs" . 
           export CSS_FROM="$GITHUB_WORKSPACE/web-lock/mu-plugins/woo-checkout-mobile.php"
           [ -f "$GITHUB_WORKSPACE/web-lock/mu-plugins/woo-checkout-mobile-top.php" ] && CSS_FROM="$CSS_FROM,$GITHUB_WORKSPACE/web-lock/mu-plugins/woo-checkout-mobile-top.php"
-          OUTLINE=1 node web-lock-checkout-preview.mjs
+          P="$GITHUB_WORKSPACE/web-lock/mu-plugins/woo-checkout-error-popup.php"; [ -f "$P" ] && export POPUP_FROM="$P"
+          node web-lock-checkout-preview.mjs
