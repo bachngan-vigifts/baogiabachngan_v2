@@ -24,7 +24,7 @@ Cập nhật: 2026-11-15 19:40 (giờ Việt Nam). Nhánh làm việc: `probe/cp
 
 - Công cụ dọn cache (`scripts/maintenance/cpanel-purge-lscache.mjs`) mặc định chỉ dọn cache trang của LiteSpeed và bản lưu ở Cloudflare, giữ Redis. `PURGE_SCOPE=all` mới dọn toàn bộ; tránh dùng vì làm giỏ hàng và thanh toán chậm.
 - Thay đổi chỉ ở giỏ hàng hoặc thanh toán thì không cần dọn cache.
-- Làm nóng cache: workflow `cache-warm.yml` trên main, 1 luồng, lịch 6 giờ/lần. Chưa thấy lần chạy theo lịch nào trong danh sách; cần kiểm tra lại.
+- Làm nóng cache: workflow `cache-warm.yml` trên main, 1 luồng, lịch 6 giờ/lần. Đến 19:50 ngày 15/11 vẫn chưa có lần chạy theo lịch nào (lẽ ra đã chạy 13:17 và 19:17); cần kiểm tra lại.
 - Không chạy làm nóng tay ngay sau khi dọn cache: máy chủ từng bị chậm nặng.
 
 ## Các mu-plugin đang chạy trên web thật
@@ -60,7 +60,7 @@ Không có trên web thật (chỉ còn trong kho mã): `woo-ajax-buy-now.php` (
 ## Việc còn mở
 
 1. Anh Thái chưa trả lời: giữ file chặn Jetpack/Query Monitor, hay tự bấm Deactivate trong trang quản trị rồi gỡ file.
-2. Mua ngay với sản phẩm có biến thể: chưa thử trên web thật.
+2. ~~Mua ngay với sản phẩm có biến thể~~: đã thử 15/11 (3/3 lần đạt: vào thẳng thanh toán, giỏ đúng 1 món, một lượt). Chưa chọn biến thể thì nút giữ nguyên trang. Lúc thử máy chủ chậm (lệnh rỗng 2,1–2,8 giây) nên thời gian 3,4–9,8 giây.
 3. Khoảng trống dưới giá ở các băng chuyền trang chủ: đã hỏi, chưa có trả lời.
 4. Voucher Shop mở chậm (2,2–4,6 giây): cần mã snippet 221 trong Code Snippets, hoặc giao Open Claw in sẵn danh sách vào trang.
 5. Dòng "Đã bán": muốn xoá hẳn thì phải tắt ở đoạn mã gốc (chưa biết nằm ở đâu).
@@ -68,8 +68,8 @@ Không có trên web thật (chỉ còn trong kho mã): `woo-ajax-buy-now.php` (
 7. Sau khi chặn Jetpack, máy chủ chậm nặng khoảng 2 phút rồi tự hết; chưa rõ nguyên nhân.
 8. Action Scheduler: file SQL `web-lock/changes/action-scheduler-cleanup.sql`, anh Thái tự chạy trong phpMyAdmin, chưa báo đã chạy.
 9. MailPoet: anh Thái tự tắt "Opt-in on checkout" trong cài đặt MailPoet.
-10. PR #683 vẫn chờ anh Thái gộp. Không gộp các workflow chạy một lần (xóa `.git`, dọn log).
-11. Còn 2 file đánh dấu cũ chưa gỡ: `.github/woo-checkout-mobile.run`, `.github/woo-checkout-mobile-top.run`.
+10. ~~PR #683~~ đã gộp ngày 14/11. Không gộp các workflow chạy một lần (xóa `.git`, dọn log).
+11. ~~2 file đánh dấu cũ~~: đã gỡ 15/11.
 
 ## Công cụ đo (đều chỉ đọc, giỏ khách tạm, không đặt đơn)
 
