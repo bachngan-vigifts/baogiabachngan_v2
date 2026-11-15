@@ -1,0 +1,27 @@
+# CHẨN ĐOÁN CHỈ ĐỌC giỏ mini trang danh mục (khách, giỏ tạm). Chạy khi .github/minicart-probe.run đổi.
+name: Chẩn đoán giỏ mini web Lock (chỉ đọc)
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/minicart-probe.run']
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          [ -f .github/minicart-probe.run ] || exit 0
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE/scripts/diagnose/lock-minicart-probe.mjs" .
+          node lock-minicart-probe.mjs
+          echo "##### HTML trang danh mục (khách): vùng giỏ mini và script"
+          curl -s -A 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)' https://locknlockonline.com/danh-muc/binh-nuoc/binh-nuoc-mang-di/binh-giu-nhiet/ -o cat.html -D cat.h; grep -i 'cf-cache-status\|x-litespeed\|cache-control' cat.h
+          for f in cat.html; do echo "widget_shopping_cart_content: $(grep -o 'widget_shopping_cart_content' $f | wc -l); cart-fragments: $(grep -o 'cart-fragments[^\"]*' $f | head -2 | tr '\n' ' '); wc_cart_fragments_params: $(grep -c wc_cart_fragments_params $f); cart-icon: $(grep -o '<[^>]*cart-icon[^>]*>[^<]*<strong>[^<]*' $f | head -2 | tr '\n' ' ')"; done
+          curl -s -A 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)' https://locknlockonline.com/ -o home.html; echo "TRANG CHỦ widget: $(grep -o 'widget_shopping_cart_content' home.html | wc -l); cart-fragments: $(grep -o 'cart-fragments[^\"]*' home.html | head -2 | tr '\n' ' '); params: $(grep -c wc_cart_fragments_params home.html)"
