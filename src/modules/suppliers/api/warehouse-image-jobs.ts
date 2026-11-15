@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, or, isNotNull } from 'drizzle-orm';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -32,7 +32,7 @@ export async function dispatchNextWarehouseImageJob(env: StaffEnv): Promise<void
   const job = await env.db.transaction(async tx => {
     await tx.insert(queue).values({ id: queueId, updatedAt: now }).onConflictDoNothing();
     await tx.select().from(queue).where(eq(queue.id, queueId)).for('update');
-    const [active] = await tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.status, 'processing')).limit(1);
+    const [active] = await tx.select({ id: jobs.id }).from(jobs).where(or(eq(jobs.status, 'processing'), and(eq(jobs.status, 'needs_review'), isNotNull(jobs.callbackTokenHash)))).limit(1);
     if (active) return null;
     const [next] = await tx.select().from(jobs).where(eq(jobs.status, 'queued')).orderBy(asc(jobs.createdAt), asc(jobs.id)).limit(1).for('update');
     if (!next) return null;
@@ -50,9 +50,9 @@ export async function dispatchNextWarehouseImageJob(env: StaffEnv): Promise<void
     });
     await response.body?.cancel();
     if (!response.ok) throw new Error(`N8N_HTTP_${response.status}`);
-  } catch (error) {
-    await env.db.update(jobs).set({ status: 'failed', imagePayload: '', callbackTokenHash: null, finishedAt: nowIso(), lastError: error instanceof Error ? error.message : 'Không gửi được sang Madam Sen.', updatedAt: nowIso() }).where(and(eq(jobs.id, job.id), eq(jobs.callbackTokenHash, tokenHash)));
-    await dispatchNextWarehouseImageJob(env).catch(() => undefined);
+  } catch {
+    // HTTP/transport failure does not prove the remote worker stopped. Preserve the token/image and global slot for a late callback.
+    await env.db.update(jobs).set({ status: 'needs_review', lastError: 'Chưa xác định Madam Sen đã nhận ảnh. Giữ hàng đợi để chờ callback hoặc đối soát.', updatedAt: nowIso() }).where(and(eq(jobs.id, job.id), eq(jobs.callbackTokenHash, tokenHash), eq(jobs.status, 'processing')));
   }
 }
 
@@ -85,7 +85,7 @@ async function acceptResult(env: StaffEnv, id: string, token: string, b: Record<
     const [j] = await tx.select().from(jobs).where(eq(jobs.id, id)).for('update');
     if (!j) throw new AppError(404, 'Không có việc xử lý ảnh này.');
     if (!j.callbackTokenHash || j.callbackTokenHash !== got) throw new AppError(401, 'Callback không hợp lệ hoặc đã sử dụng.');
-    if (j.status !== 'processing') throw new AppError(409, 'Việc xử lý ảnh không còn chờ kết quả.');
+    if (j.status !== 'processing' && j.status !== 'needs_review') throw new AppError(409, 'Việc xử lý ảnh không còn chờ kết quả.');
     const status = String(b.status || '');
     if (!['completed', 'needs_review', 'failed'].includes(status)) throw new AppError(422, 'Trạng thái kết quả không hợp lệ.');
     const text = (key: string, max = 300) => typeof b[key] === 'string' ? (b[key] as string).trim().slice(0, max) : '';
