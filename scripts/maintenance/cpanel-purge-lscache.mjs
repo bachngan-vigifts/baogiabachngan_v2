@@ -45,6 +45,7 @@ add_action('wp_loaded', function () {
         foreach ($lnl_urls as $lnl_u) { do_action('litespeed_purge_url', esc_url_raw($lnl_u)); }
     } elseif ($lnl_scope !== 'all' && class_exists('\\LiteSpeed\\Purge') && method_exists('\\LiteSpeed\\Purge', 'purge_all_lscache')) {
         \\LiteSpeed\\Purge::purge_all_lscache(true);
+        if (class_exists('\\LiteSpeed\\CDN\\Cloudflare') && method_exists('\\LiteSpeed\\CDN\\Cloudflare', 'purge_all')) { try { \\LiteSpeed\\CDN\\Cloudflare::purge_all('lnl deploy'); } catch (\\Throwable $e) {} }
     } else {
         do_action('litespeed_purge_all');
     }
