@@ -13,7 +13,7 @@ add_action('wp_head', function () {
 
 function lnl_ui_align2_css() {
     $css = <<<'CSS'
-.product-small.box > .box-text > .ux-swatches:not(.js-ux-swatches):not(:has(.ux-swatch)) { display: none !important; }
+.product-small.box > .box-text > .ux-swatches:not(:has(.ux-swatch)) { display: none !important; }
 .product-small.box > .box-text:not(:has(.claw-lnl-wdr-sale-badge))::before { height: 30px !important; }
 CSS;
     return $css;
