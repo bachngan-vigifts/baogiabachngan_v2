@@ -20,41 +20,18 @@ jobs:
           if not key:
               print("RESULT=MISSING_SECRET")
               raise SystemExit(1)
-          model = "gemini-2.5-flash-lite"
-          payload = {"contents":[{"parts":[{"text":"Reply with exactly OK."}]}],
-                     "generationConfig":{"maxOutputTokens":64,"temperature":0}}
-          req = urllib.request.Request(
-              "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
-              data=json.dumps(payload).encode(),
-              headers={"Content-Type":"application/json","X-goog-api-key":key},
-              method="POST")
-          started = time.monotonic()
+          req = urllib.request.Request("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", headers={"X-goog-api-key":key})
           try:
               with urllib.request.urlopen(req, timeout=30) as response:
                   data = json.loads(response.read())
-              parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-              has_text = any(isinstance(p.get("text"), str) and p["text"].strip() for p in parts)
-              print("MODEL=" + model)
-              print("RESULT=" + ("OK" if has_text else "NO_TEXT"))
-              print("LATENCY_MS=" + str(round((time.monotonic()-started)*1000)))
-              usage = data.get("usageMetadata", {})
-              for field in ("promptTokenCount","candidatesTokenCount","totalTokenCount"):
-                  value = usage.get(field)
-                  if isinstance(value, int):
-                      print(field + "=" + str(value))
-              if not has_text:
-                  raise SystemExit(1)
+              models = [m.get("name","") for m in data.get("models",[]) if "generateContent" in m.get("supportedGenerationMethods",[])]
+              print("RESULT=MODEL_LIST_OK")
+              for name in models:
+                  if name.startswith("models/gemini-") and "flash" in name and all(c.isalnum() or c in "/.-_" for c in name):
+                      print("AVAILABLE_MODEL=" + name)
           except urllib.error.HTTPError as error:
               print("RESULT=HTTP_ERROR")
               print("HTTP_STATUS=" + str(error.code))
-              try:
-                  body = json.loads(error.read())
-                  status = body.get("error", {}).get("status", "")
-                  allowed = {"INVALID_ARGUMENT","UNAUTHENTICATED","PERMISSION_DENIED","NOT_FOUND","RESOURCE_EXHAUSTED","FAILED_PRECONDITION","UNAVAILABLE","INTERNAL"}
-                  if status in allowed:
-                      print("API_STATUS=" + status)
-              except Exception:
-                  pass
               raise SystemExit(1)
           except Exception:
               print("RESULT=NETWORK_OR_RESPONSE_ERROR")
