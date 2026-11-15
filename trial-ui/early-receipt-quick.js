@@ -17,7 +17,7 @@ export async function openEarlyQuickReceipt({api,request,requests=request?[reque
  if(active?.isConnected){active.focus();return;}
  const modal=active=el('dialog','modal early-request-dialog early-quick-receipt'),head=el('div','modal-head'),form=el('form'),body=el('div','modal-body'),foot=el('div','modal-foot');
  modal.dataset.mobileActions='off';
- const title=el('div');title.append(el('h2','','Nhận hàng nhanh theo phiếu xin'),el('p','small muted',requests.map(r=>'Phiếu '+(r.ticketNumber||r.id.slice(0,8).toUpperCase())+(r.slipLabel?' · '+r.slipLabel:'')).join(' · ')));
+ const title=el('div');title.append(el('h2','','Nhận hàng theo phiếu lấy trước'),el('p','small muted',requests.map(r=>'Phiếu '+(r.ticketNumber||r.id.slice(0,8).toUpperCase())+(r.slipLabel?' · '+r.slipLabel:'')).join(' · ')));
  const close=el('button','btn secondary','Đóng');close.type='button';close.dataset.noBusy='';head.append(title,close);
  const status=el('p','small muted','Đang tải các mã còn được nhận…'),error=el('p','error');error.setAttribute('role','alert');status.setAttribute('role','status');
  const today=new Date(Date.now()+7*3600000).toISOString().slice(0,10),date=Object.assign(el('input'),{type:'date',value:today,max:today,required:true});date.setAttribute('aria-label','Ngày nhận');

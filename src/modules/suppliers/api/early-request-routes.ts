@@ -82,6 +82,18 @@ function cleanInput(body:Record<string,unknown>,preserved:Record<string,OrderSou
 }
 const stateOf = (statuses:readonly string[]) => statuses.every(s=>s==='accepted')?'accepted':statuses.every(s=>s==='rejected')?'rejected':statuses.some(s=>s==='pending')?'pending':'mixed';
 
+/** Số phiếu theo từng trạng thái với cùng bộ lọc (trừ trạng thái), cho các ô đếm ở đầu trang Lấy hàng trước. */
+export async function earlyStatusCounts(db:Db, params:URLSearchParams, supplierId:string|null) {
+  const scope=supplierId?sql`exists(select 1 from ${lines} join ${allocations} on ${allocations.requestLineId}=${lines.id} where ${lines.requestId}=${requests.id} and ${allocations.supplierId}=${supplierId})`:undefined;
+  const out:Record<string,number>={};
+  for(const [key,status] of [['all',''],['draft','draft'],['pending','pending'],['accepted','accepted'],['rejected','rejected'],['mixed','mixed']] as const){
+    const p=new URLSearchParams(params);p.set('status',status);p.delete('offset');p.delete('limit');
+    const [row]=await db.select({n:sql<number>`count(*)::int`}).from(requests).where(and(isNull(requests.deletedAt),scope,earlyListFilter(p,supplierId).where));
+    out[key]=Number(row?.n||0);
+  }
+  return out;
+}
+
 /** Header pagination precedes line loading, so a multi-line request is never truncated. NCC filtering happens in SQL. */
 export async function earlyRequestList(db:Db, supplierId:string|null, id:string|readonly string[]='', submittedOnly=false, page?:{where?:SQL;limit:number;offset:number}) {
   const scope=supplierId?sql`exists(select 1 from ${lines} join ${allocations} on ${allocations.requestLineId}=${lines.id} where ${lines.requestId}=${requests.id} and ${allocations.supplierId}=${supplierId})`:undefined;
@@ -198,7 +210,8 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
     const replacements=id?await splitResult(c.env.db,id):null;
     const requests=await earlyRequestList(c.env.db,supplierId,replacements||id,false,{...page,limit:page.limit+1});
     const nextOffset=!id&&requests.length>page.limit?page.offset+page.limit:null;if(nextOffset!==null)requests.pop();
-    return json({requests:await withReceiptAvailability(c.env.db,requests),nextOffset,canSend:canSendEarlyRequest(me(c)),canViewPortal:me(c).role==='manager',canReceive:canReceive(me(c))});
+    const counts=!id&&c.url.searchParams.get('counts')==='1'?await earlyStatusCounts(c.env.db,c.url.searchParams,supplierId):undefined;
+    return json({requests:await withReceiptAvailability(c.env.db,requests),nextOffset,counts,canSend:canSendEarlyRequest(me(c)),canViewPortal:me(c).role==='manager',canReceive:canReceive(me(c))});
   },'business');
   router.get('/purchase-early-requests/:id/receiving',async c=>{
     guard(c);if(!canReceive(me(c)))fail(403,'Bạn không có quyền nhận hàng NCC.');

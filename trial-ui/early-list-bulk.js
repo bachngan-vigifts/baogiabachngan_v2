@@ -10,12 +10,12 @@ export function earlyListBulk({api,onSaved}){
  host.dataset.mobileActions='off';
  const all=el('input');all.type='checkbox';all.setAttribute('aria-label','Chọn tất cả phiếu có thể thao tác trên trang này');
  const label=el('label','early-list-select');label.append(all,el('span','','Chọn trang này'));
- const count=el('span','small'),confirm=button('Xác nhận thay NCC',()=>run('confirm'),'btn primary'),receive=button('Nhận hàng nhanh',()=>run('receive'),'btn primary'),clear=button('Bỏ chọn',()=>{selected.clear();sync();});
+ const count=el('span','small'),confirm=button('Xác nhận thay NCC',()=>run('confirm'),'btn primary'),receive=button('Nhận hàng',()=>run('receive'),'btn primary'),clear=button('Bỏ chọn',()=>{selected.clear();sync();});
  const hint=el('p','small muted','Chọn phiếu trên trang này. Đổi trang hoặc bộ lọc sẽ bỏ chọn. Xác nhận NCC và nhận vào kho là hai thao tác riêng.'),error=el('p','error');error.setAttribute('role','alert');
  host.append(label,count,confirm,receive,clear,hint,error);host.hidden=true;
  const checks=new Map();
  const eligible=r=>(canConfirm&&pending(r))||(canReceive&&receivable(r));
- function sync(){count.textContent='Đã chọn '+selected.size+' phiếu';confirm.hidden=!canConfirm;receive.hidden=!canReceive;
+ function sync(){count.textContent='Đã chọn '+selected.size+' phiếu';const none=!selected.size;confirm.hidden=!canConfirm||none;receive.hidden=!canReceive||none;count.hidden=clear.hidden=hint.hidden=none;host.dataset.selected=none?'0':'1';
   confirm.disabled=busy||![...selected.values()].some(pending);receive.disabled=busy||![...selected.values()].some(receivable);clear.disabled=busy||!selected.size;all.disabled=busy||!checks.size;
   for(const [id,input]of checks){input.checked=selected.has(id);input.disabled=busy;}
   all.checked=checks.size>0&&selected.size===checks.size;all.indeterminate=selected.size>0&&!all.checked;

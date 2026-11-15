@@ -23,7 +23,7 @@ function setup(){const body=new Node('body'),calls:any[]=[],quick:any[]=[];let f
 function check(input:Node){input.checked=true;input.onchange();}
 test('index checkbox eligibility follows existing confirmation/receipt rights and resets on page/filter reload',()=>{
  const s=setup(),rows=[request('pending'),request('accepted','accepted'),request('rejected','rejected'),{...request('draft'),requestStatus:'draft'}];
- let checks=s.set(rows);assert.ok(checks[0]);assert.ok(checks[1]);assert.equal(checks[2],null);assert.equal(checks[3],null);check(checks[0]);assert.equal(s.button('Xác nhận thay NCC').disabled,false);assert.equal(s.button('Nhận hàng nhanh').disabled,true);
+ let checks=s.set(rows);assert.ok(checks[0]);assert.ok(checks[1]);assert.equal(checks[2],null);assert.equal(checks[3],null);check(checks[0]);assert.equal(s.button('Xác nhận thay NCC').disabled,false);assert.equal(s.button('Nhận hàng').disabled,true);
  s.ui.reset();assert.equal(s.ui.host.hidden,true);assert.equal(s.button('Xác nhận thay NCC').disabled,true);
  checks=s.set(rows,{canViewPortal:false,canReceive:true});assert.equal(checks[0],null);assert.ok(checks[1]);assert.equal(s.button('Xác nhận thay NCC').hidden,true);
  checks=s.set(rows,{canViewPortal:false,canReceive:false});assert.ok(checks.every((c:any)=>c===null));assert.equal(s.ui.host.hidden,true);
@@ -37,7 +37,7 @@ test('rejects oversized confirmation and stale selected requests without writes'
  const stale=setup();check(stale.set([request('stale')])[0]);stale.fail();await stale.button('Xác nhận thay NCC').click();assert.match(stale.ui.host.textContent,/Phiếu đã thay đổi/);assert.equal(stale.calls.length,0);
 });
 test('receiving passes freshly loaded selected headers in page order, not checkbox click order',async()=>{
- const s=setup(),checks=s.set([request('first','accepted'),request('second','accepted')]);check(checks[1]);check(checks[0]);await s.button('Nhận hàng nhanh').click();assert.equal(s.quick.length,1);assert.deepEqual(JSON.parse(JSON.stringify(s.quick[0].requests.map((r:any)=>r.id))),['first','second']);assert.equal(s.calls.length,0);
+ const s=setup(),checks=s.set([request('first','accepted'),request('second','accepted')]);check(checks[1]);check(checks[0]);await s.button('Nhận hàng').click();assert.equal(s.quick.length,1);assert.deepEqual(JSON.parse(JSON.stringify(s.quick[0].requests.map((r:any)=>r.id))),['first','second']);assert.equal(s.calls.length,0);
 });
 
 test('checkbox uses the persisted PXH number instead of the UUID fragment',()=>{const s=setup(),r:any=request('uuid');r.ticketNumber='PXH_001_27102026';assert.equal(s.set([r])[0].attrs['aria-label'],'Chọn phiếu PXH_001_27102026');});

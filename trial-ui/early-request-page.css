@@ -4,19 +4,17 @@
 .early-page-filter-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin-top: 12px; align-items: end; }
 .early-page-field { display: grid; gap: 4px; min-width: 0; }
 .early-page-field :is(input,select) { width: 100%; min-width: 0; }
-.early-page-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
-.early-page-card { min-width: 0; padding: 16px; }
-.early-page-card p { overflow-wrap: anywhere; margin: 8px 0 0; }
-.early-page-card-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
-.early-page-card-head .data-link { font-weight: 700; }
+.early-page-table tr.early-page-card { cursor: pointer; }
+.early-page-table tr.early-page-card:hover { background: var(--surface-2); }
+.early-page-table td { min-width: 0; overflow-wrap: anywhere; }
+.early-page-card-head small { display: block; }
 .early-slip-actions { margin: 8px 0; }
 .early-page-card-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
-.early-page-pager { display: flex; justify-content: center; gap: 12px; margin: 16px 0; }
+.early-page-pager { justify-content: center; }
 .early-page-back { margin-bottom: 16px; }
 @media(max-width:850px) {
  #view-early-requests .page-head h1 { font-size: 18px; line-height: 1.3; }
- .early-page-list,.early-page-filter-grid { grid-template-columns: minmax(0,1fr); }
- .early-page-card { padding: 12px; font-size: 14px; }
+ .early-page-filter-grid { grid-template-columns: minmax(0,1fr); }
  #view-early-requests .early-request-card .row-gap { flex-wrap: wrap; }
  #view-early-requests :is(.early-request-line,.early-request-card) { min-width: 0; overflow-wrap: anywhere; }
 }
@@ -28,7 +26,8 @@
 
 .early-list-title,.early-list-select { display:flex;align-items:center;gap:10px;min-width:0; }
 .early-list-check,.early-list-select input { flex:0 0 auto;width:22px;height:22px;margin:0; }
-.early-list-bulk { display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px;margin:12px 0;background:#fff;border:1px solid var(--line);border-radius:10px; }
+.early-list-bulk { display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 12px;margin:0;background:var(--surface);border-bottom:1px solid var(--line); }
+.early-list-bulk[data-selected="1"] { background:var(--blue-50); }
 .early-list-bulk[hidden] { display:none; }
 .early-list-bulk p { flex-basis:100%;margin:0; }
 .early-list-bulk .error:empty { display:none; }
