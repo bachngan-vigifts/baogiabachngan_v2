@@ -19,7 +19,8 @@ jobs:
           [ -f .github/minicart-probe.run ] || exit 0
           mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
           npx playwright install --with-deps chromium >/dev/null
-          cp "$GITHUB_WORKSPACE/scripts/diagnose/lock-minicart-probe.mjs" .
+          cp "$GITHUB_WORKSPACE"/scripts/diagnose/lock-minicart-probe.mjs "$GITHUB_WORKSPACE"/scripts/diagnose/lock-browser-cache-probe.mjs .
+          if [ "$(cat "$GITHUB_WORKSPACE/.github/minicart-probe.run")" = cache ]; then node lock-browser-cache-probe.mjs; exit 0; fi
           node lock-minicart-probe.mjs
           echo "##### HTML trang danh mục (khách): vùng giỏ mini và script"
           curl -s -A 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)' https://locknlockonline.com/danh-muc/binh-nuoc/binh-nuoc-mang-di/binh-giu-nhiet/ -o cat.html -D cat.h; grep -i 'cf-cache-status\|x-litespeed\|cache-control' cat.h
