@@ -1,0 +1,29 @@
+# CHẨN ĐOÁN CHỈ ĐỌC nút Đặt hàng (không tạo đơn: để trống họ tên/SĐT, có chốt chặn). Chạy khi .github/place-order-probe.run đổi.
+name: Chẩn đoán nút Đặt hàng web Lock (chỉ đọc)
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/place-order-probe.run']
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          [ -f .github/place-order-probe.run ] || exit 0
+          echo "##### PLUGIN"; node scripts/diagnose/lock-plugin-check.mjs | grep -E "Danh sách|mu-plugins" || true
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE/scripts/diagnose/lock-place-order-probe.mjs" .
+          echo "##### NÚT ĐẶT HÀNG"; node lock-place-order-probe.mjs
