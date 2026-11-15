@@ -1,0 +1,23 @@
+# Đo luồng mua hàng (chỉ đọc, giỏ khách tạm). Chạy khi .github/flow-measure.run đổi.
+name: Đo luồng mua hàng web Lock
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/flow-measure.run']
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          [ -f .github/flow-measure.run ] || exit 0
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-flow-measure.mjs" .
+          node web-lock-flow-measure.mjs
