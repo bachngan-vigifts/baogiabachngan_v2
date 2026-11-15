@@ -19,5 +19,5 @@ jobs:
           [ -f .github/ttfb-measure.run ] || exit 0
           mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && true
           true
-          cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-ttfb-measure.mjs" .
-          node web-lock-ttfb-measure.mjs
+          cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-ttfb.mjs" .
+          node web-lock-ttfb.mjs
