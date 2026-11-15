@@ -19,7 +19,7 @@ function lnl_sticky_tidy_css() {
     box-shadow: 0 -2px 10px rgba(0,0,0,.1);
   }
   .sticky-add-to-cart--active .sticky-add-to-cart__product {
-    display: flex !important; align-items: center; flex-wrap: nowrap; gap: 8px; margin: 0; padding: 0;
+    display: flex !important; align-items: center; justify-content: flex-start; flex-wrap: nowrap; gap: 8px; margin: 0; padding: 0; width: 100%; max-width: none;
   }
   .sticky-add-to-cart--active .sticky-add-to-cart-img {
     width: 40px !important; height: 40px !important; flex: 0 0 40px; margin: 0 !important; border-radius: 6px;
@@ -30,14 +30,14 @@ function lnl_sticky_tidy_css() {
   .sticky-add-to-cart--active .ux-quantity { display: none !important; }
 
   .sticky-add-to-cart--active form.cart {
-    display: flex !important; flex: 1 1 auto; align-items: center; gap: 8px; margin: 0 !important; padding: 0;
+    display: flex !important; flex: 1 1 0; min-width: 0; width: 100%; align-items: center; gap: 8px; margin: 0 !important; padding: 0;
   }
   .sticky-add-to-cart--active form.cart .button,
   .sticky-add-to-cart--active .sticky-add-to-cart-select-options-button {
     height: 44px; min-height: 0; line-height: 1.15; font-size: 13px; padding: 0 8px; margin: 0 !important;
     border-radius: 8px; white-space: nowrap;
   }
-  .sticky-add-to-cart--active form.cart .button { flex: 1 1 0; width: auto; }
+  .sticky-add-to-cart--active form.cart .button { flex: 1 1 0; min-width: 0; width: auto; font-size: 12px; letter-spacing: 0; }
   .sticky-add-to-cart--active .sticky-add-to-cart-select-options-button { margin-left: auto !important; flex: 0 0 auto; padding: 0 14px; }
   .sticky-add-to-cart--active .woocommerce-Price-amount { font-size: 14px; font-weight: 700; white-space: nowrap; }
 
