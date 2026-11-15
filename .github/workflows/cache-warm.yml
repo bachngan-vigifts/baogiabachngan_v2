@@ -1,0 +1,18 @@
+# Làm nóng cache LiteSpeed của web Lock (chỉ đọc, khách ẩn danh, 2 luồng có nghỉ). Tự chạy 6 giờ/lần và chạy tay được.
+name: Làm nóng cache web Lock
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/maintenance/web-lock-cache-warm.mjs
