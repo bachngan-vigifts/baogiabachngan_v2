@@ -20,4 +20,4 @@ jobs:
           mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
           npx playwright install --with-deps chromium >/dev/null
           cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-buy-test.mjs" .
-          ONLY=${ONLY:-6,7} EXPECT_DIRECT=1 node web-lock-buy-test.mjs
+          ONLY=$(tr -d " \r\n" < "$GITHUB_WORKSPACE/.github/buy-test.run" | grep -E "^[0-9,]+$" || echo 6,7) EXPECT_DIRECT=1 node web-lock-buy-test.mjs
