@@ -46,6 +46,7 @@ Cập nhật: 2026-11-15 19:40 (giờ Việt Nam). Nhánh làm việc: `probe/cp
 | `woo-card-buttons.php` | Nút "Chọn" lên dòng nhãn giảm giá, "Thêm vào giỏ" thành biểu tượng |
 | `woo-hide-sold.php` | Ẩn dòng "Đã bán" |
 | `woo-wdr-dedupe.php` | Woo Discount Rules: mỗi bảng giảm giá chỉ hỏi máy chủ 1 lần/trang (trước 3 lần giống hệt khi mở trang biến thể), thêm 15/11 |
+| `woo-wdr-bulk-table-off.php` | Tắt tải động bảng giảm giá rỗng của Woo Discount Rules (filter của plugin), thêm 16/11; đã gỡ `woo-wdr-dedupe.php` |
 | `lnl-block-php-probe.php` | Trả 404 sớm cho bot dò file PHP giả (1,6–3,3 giây xuống 0,4 giây), thêm 15/11 |
 | `woo-buy-now-direct.php` | Mua ngay đi thẳng tới thanh toán trong một lượt |
 
@@ -95,3 +96,6 @@ Không có trên web thật (chỉ còn trong kho mã): `lnl-disable-plugins.php
 - Anh Thái đã XOÁ hẳn Jetpack và Jetpack Boost (thư mục plugins không còn, readme 404). REST vẫn còn namespace `jetpack/v4` do gói jetpack-connection đi kèm plugin khác (bình thường). `/wp-json/` gốc đang bị Cloudflare cache bản cũ.
 - Đo ngay sau khi xoá: lệnh rỗng 2,2–4,3 giây, chưa thấy cải thiện; cần đo lại lúc yên.
 - Việc tiếp theo đề xuất (chờ duyệt): tắt bảng giảm giá động WDR bằng filter `advanced_woo_discount_rules_disable_load_dynamic_bulk_table` → 'off', rồi gỡ `woo-wdr-dedupe.php`; tắt LiteSpeed Debug Log; Redis maxmemory.
+- 16/11: việc 2 xong (0 lệnh wdr_ajax). Việc 5 (`woo-fragments-guest-skip.php`) TỰ GỠ vì không đạt: đoạn mã không được gắn (seed=0) — WooCommerce nạp `wc-cart-fragments` muộn (khi vẽ giỏ mini), sau `wp_enqueue_scripts`, nên `wp_script_is('enqueued')` sai. Cần gắn ở `wp_print_footer_scripts` hoặc kiểm tra `wp_script_is` lúc in.
+- Lỗi có sẵn (cả TRƯỚC khi đổi, 3/3): thêm vào giỏ ở trang sản phẩm rồi mở trang danh mục bình giữ nhiệt → giỏ mini hiện 0 dù Store API = 1; trang chủ hiện đúng 1. Chưa rõ nguyên nhân.
+- Việc 3 (tắt Debug Log) và 4 (Redis maxmemory) đã gửi hướng dẫn cho anh Thái; chưa xác nhận.
