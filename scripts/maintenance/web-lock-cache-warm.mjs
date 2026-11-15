@@ -1,6 +1,6 @@
-// Làm nóng cache LiteSpeed của web Lock: gọi lần lượt trang chủ, danh mục, sản phẩm (khách ẩn danh, chỉ đọc, nhẹ nhàng: 2 luồng, có nghỉ).
+// Làm nóng cache LiteSpeed của web Lock: gọi lần lượt trang chủ, danh mục, sản phẩm (khách ẩn danh, chỉ đọc, nhẹ nhàng: 1 luồng, có nghỉ).
 const SITE = (process.env.HEALTH_BASE || 'https://locknlockonline.com').replace(/\/+$/, '');
-const MAX = Number(process.env.MAX_URLS || 600), CONC = 2, PAUSE = 150;
+const MAX = Number(process.env.MAX_URLS || 600), CONC = 1, PAUSE = 400;
 const UAS = { mobile: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1', desktop: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36' };
 const get = async (u, ua = UAS.desktop) => fetch(u, { headers: { 'User-Agent': ua }, signal: AbortSignal.timeout(60_000) });
 const locs = t => [...t.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)].map(m => m[1].replace(/&amp;/g, '&'));
