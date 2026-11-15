@@ -13,15 +13,16 @@ console.log(`Số lượt đọc được: ${rows.length}; lỗi: ${redact(j?.cp
 if (rows[0]) console.log('Các trường: ' + Object.keys(rows[0]).join(', '));
 const top = (m, n = 15) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
 const inc = (m, k) => m.set(k, (m.get(k) || 0) + 1);
-const ua = new Map(), ip = new Map(), kind = new Map(), path = new Map(), code = new Map(); let t0 = null, t1 = null;
+const combo = new Map(), ua = new Map(), ip = new Map(), kind = new Map(), path = new Map(), code = new Map(); let t0 = null, t1 = null;
 for (const x of rows) {
-  const url = String(x.url || x.request || ''); const agent = String(x.agent || x.useragent || '');
-  const tm = String(x.time || x.date || ''); if (!t0) t0 = tm; t1 = tm;
+  const url = String(x.path || x.url || x.request || ''); const agent = String(x.agent || x.useragent || '');
+  const tm = String(x.timestamp || x.time || ''); if (!t0) t0 = tm; t1 = tm;
   inc(ua, agent.replace(/\d+(\.\d+)+/g, 'x').slice(0, 90));
-  inc(ip, String(x.ip || '').split('.').slice(0, 2).join('.') + '.*');
+  inc(ip, String(x.ip || '').split(/[.:]/).slice(0, 2).join('.') + '.*');
   inc(code, String(x.code || x.status || '?'));
   const k = /add-to-cart=/.test(url) ? 'add-to-cart trong URL' : /wc-ajax=/.test(url) ? 'wc-ajax=' + (url.match(/wc-ajax=([\w-]+)/) || [])[1] : /admin-ajax/.test(url) ? 'admin-ajax' : /wp-json/.test(url) ? 'wp-json' : /wp-cron/.test(url) ? 'wp-cron' : /[?&](filter_|orderby=|min_price|max_price|query_type|s=|product_tag)/.test(url) ? 'lọc/sắp xếp/tìm (không cache)' : /\.(css|js|png|jpe?g|webp|gif|svg|woff2?|ico)(\?|$)/i.test(url) ? 'file tĩnh' : /\?/.test(url) ? 'trang có tham số khác' : 'trang thường';
+  inc(combo, `${String(x.ip || '').split(/[.:]/).slice(0, 2).join('.')}.* | ${agent.slice(0, 40)} | ${k}`);
   inc(kind, k); if (!/file tĩnh/.test(k)) inc(path, url.replace(/^(GET|POST|HEAD) /, m => m).slice(0, 100));
 }
 console.log(`Khoảng thời gian: ${t0} → ${t1}`);
-for (const [t, m] of [['LOẠI YÊU CẦU', kind], ['MÃ TRẢ VỀ', code], ['TRÌNH DUYỆT/BOT', ua], ['DẢI IP', ip], ['URL ĐỘNG NHIỀU NHẤT', path]]) { console.log(`\n== ${t}`); for (const [k, v] of top(m)) console.log(`   ${v}  ${redact(k)}`); }
+for (const [t, m] of [['LOẠI YÊU CẦU', kind], ['MÃ TRẢ VỀ', code], ['TRÌNH DUYỆT/BOT', ua], ['DẢI IP', ip], ['DẢI IP + TRÌNH DUYỆT + LOẠI', combo], ['URL ĐỘNG NHIỀU NHẤT', path]]) { console.log(`\n== ${t}`); for (const [k, v] of top(m)) console.log(`   ${v}  ${redact(k)}`); }
