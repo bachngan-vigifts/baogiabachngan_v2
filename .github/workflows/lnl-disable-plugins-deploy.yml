@@ -1,6 +1,6 @@
 # Thêm mu-plugin lnl-disable-plugins.php (nút trên thẻ sản phẩm thẳng hàng, nút chat máy tính né nút mua) lên web Lock.
 # Quy trình: đo trước -> thêm file mới (web lỗi thì tự gỡ) -> dọn cache LiteSpeed -> đo sau -> không đạt thì tự gỡ và dọn cache lại.
-# Chạy từ nhánh khi file .github/lnl-disable-plugins.run đổi (nội dung: dry-run hoặc apply). Không có file thì bỏ qua.
+# Chạy từ nhánh khi file .github/lnl-disable-plugins.run đổi (nội dung: dry-run, apply hoặc rollback; rollback = gỡ file sau khi đã Deactivate trong quản trị). Không có file thì bỏ qua.
 name: Tắt Query Monitor và Jetpack web Lock
 on:
   push:
@@ -28,7 +28,7 @@ jobs:
         id: mode
         run: |
           if [ -f .github/lnl-disable-plugins.run ]; then m=$(tr -d ' \r\n' < .github/lnl-disable-plugins.run); else m=skip; fi
-          case "$m" in dry-run|apply) ;; *) m=skip ;; esac
+          case "$m" in dry-run|apply|rollback) ;; *) m=skip ;; esac
           echo "Chế độ: $m"
           echo "mode=$m" >> "$GITHUB_OUTPUT"
       - name: Cài trình duyệt đo
@@ -47,13 +47,13 @@ jobs:
           MODE: ${{ steps.mode.outputs.mode }}
         run: node scripts/maintenance/cpanel-deploy-newfile.mjs
       - name: Dọn cache LiteSpeed
-        if: steps.mode.outputs.mode == 'apply'
+        if: steps.mode.outputs.mode == 'apply' || steps.mode.outputs.mode == 'rollback'
         env:
           MODE: apply
         run: node scripts/maintenance/cpanel-purge-lscache.mjs
       - name: Đo sau
         id: verify
-        if: steps.mode.outputs.mode == 'apply'
+        if: steps.mode.outputs.mode == 'apply' || steps.mode.outputs.mode == 'rollback'
         continue-on-error: true
         working-directory: /tmp/pw
         env:
@@ -67,3 +67,11 @@ jobs:
           node scripts/maintenance/cpanel-deploy-newfile.mjs
           MODE=apply node scripts/maintenance/cpanel-purge-lscache.mjs
           echo "ĐÃ GỠ plugin vì đo sau không đạt"; exit 1
+      - name: Gỡ file mà Jetpack nạp lại thì đặt file chặn trở lại
+        if: steps.mode.outputs.mode == 'rollback' && steps.verify.outcome == 'failure'
+        env:
+          MODE: apply
+        run: |
+          node scripts/maintenance/cpanel-deploy-newfile.mjs
+          node scripts/maintenance/cpanel-purge-lscache.mjs
+          echo "ĐÃ ĐẶT LẠI file chặn vì Jetpack vẫn được nạp sau khi gỡ"; exit 1
