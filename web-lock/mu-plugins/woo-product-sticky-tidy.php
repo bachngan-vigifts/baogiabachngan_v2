@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Lock product sticky bar tidy
- * Description: CSS only. On phones, the sticky buy bar on product pages becomes one clean row (thumbnail + two buttons), and the floating chat/contact buttons move up so they no longer cover it. Delete this file to roll back.
+ * Description: Product page sticky buy bar. Its duplicate (slow, full page reload) form is retired: its buttons now press the main form's buttons, so add-to-cart uses the fast AJAX path. On phones, the sticky buy bar on product pages becomes one clean row (thumbnail + two buttons), and the floating chat/contact buttons move up so they no longer cover it. Delete this file to roll back.
  */
 if (!defined('ABSPATH')) { exit; }
 
@@ -48,4 +48,38 @@ function lnl_sticky_tidy_css() {
 }
 CSS;
     return $css;
+}
+
+add_action('wp_footer', function () {
+    if (is_admin() || !function_exists('is_product') || !is_product()) { return; }
+    if (defined('LNL_STICKY_TIDY_OFF') && LNL_STICKY_TIDY_OFF) { return; }
+    echo '<script id="lnl-sticky-proxy">' . lnl_sticky_proxy_js() . '</script>';
+}, 100);
+
+function lnl_sticky_proxy_js() {
+    $js = <<<'JS'
+(function () {
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!f || !f.closest || !f.closest('.sticky-add-to-cart')) { return; }
+    var forms = document.querySelectorAll('form.cart'), main = null;
+    for (var i = 0; i < forms.length; i++) { if (!forms[i].closest('.sticky-add-to-cart')) { main = forms[i]; break; } }
+    if (!main) { return; }
+    var s = e.submitter;
+    var buy = !!(s && s.name === 'ux-buy-now');
+    var btn = main.querySelector(buy ? 'button[name="ux-buy-now"]' : '.single_add_to_cart_button');
+    if (!btn || btn.disabled) { return; }
+    e.preventDefault(); e.stopImmediatePropagation();
+    var q = f.querySelector('input.qty'), mq = main.querySelector('input.qty');
+    if (q && mq && q.offsetParent !== null) { mq.value = q.value; }
+    if (s && !buy && window.jQuery) {
+      s.classList.add('loading');
+      var done = function () { s.classList.remove('loading'); };
+      window.jQuery(document.body).one('added_to_cart', done); setTimeout(done, 10000);
+    }
+    btn.click();
+  }, true);
+})();
+JS;
+    return $js;
 }
