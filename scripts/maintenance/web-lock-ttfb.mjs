@@ -5,7 +5,7 @@ async function list(type) { const j = await (await fetch(`${SITE}/wp-json/wc/sto
 for (const type of ['simple', 'variable']) {
   for (const u of (await list(type)).slice(0, 2)) {
     const ts = [];
-    for (let i = 0; i < 3; i++) { const t = Date.now(); const r = await fetch(u + (i === 0 ? '' : `?cb=${Date.now()}`), { headers: { 'User-Agent': UA } }); const ttfb = Date.now() - t; const body = await r.text(); ts.push(`${r.status} ttfb=${ttfb}ms tổng=${Date.now() - t}ms ${Math.round(body.length / 1024)}KB cache=${r.headers.get('x-litespeed-cache') || r.headers.get('cf-cache-status') || '-'}`); }
+    for (let i = 0; i < 3; i++) { const t = Date.now(); const r = await fetch(u + '', { headers: { 'User-Agent': UA } }); const ttfb = Date.now() - t; const body = await r.text(); ts.push(`${r.status} ttfb=${ttfb}ms tổng=${Date.now() - t}ms ${Math.round(body.length / 1024)}KB cache=${r.headers.get('x-litespeed-cache') || r.headers.get('cf-cache-status') || '-'}`); }
     console.log(type, u.replace(SITE, '').slice(0, 60)); for (const s of ts) console.log('   ' + s);
   }
 }
