@@ -1,0 +1,25 @@
+// Đo thẻ sản phẩm (nút có thẳng hàng không) trên máy tính và điện thoại, ở trang chủ và trang danh mục. Chỉ đọc. CSS_FROM: áp thử CSS trong trình duyệt, không đổi web.
+import { chromium } from 'playwright';
+import { readFileSync, existsSync } from 'node:fs';
+const SITE = (process.env.HEALTH_BASE || 'https://locknlockonline.com').replace(/\/+$/, '');
+const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+let css = ''; if (process.env.CSS_FROM && existsSync(process.env.CSS_FROM)) { const m = /<<<'CSS'\n([\s\S]*?)\nCSS;/.exec(readFileSync(process.env.CSS_FROM, 'utf8')); if (m) css = m[1]; }
+const CAT = SITE + '/danh-muc/binh-nuoc/binh-nuoc-mang-di/binh-giu-nhiet/';
+const browser = await chromium.launch();
+const stat = p => p.evaluate(() => { const rows = {}; for (const b of document.querySelectorAll('.product-small.box .add-to-cart-button')) { const r = b.getBoundingClientRect(); if (!r.width) continue; const col = b.closest('.col'); const key = Math.round((col.getBoundingClientRect().top + scrollY) / 10); (rows[key] = rows[key] || []).push(Math.round(r.top + scrollY)); } let bad = 0, n = 0, worst = 0, firstBad = null; for (const k in rows) { if (rows[k].length < 2) continue; n++; const d = Math.max(...rows[k]) - Math.min(...rows[k]); if (d > 2) { bad++; if (firstBad === null) firstBad = Number(k) * 10; } worst = Math.max(worst, d); } const sw = [...document.querySelectorAll('.product-small.box > .box-text > .ux-swatches-in-loop')]; return { bad, n, worst, firstBad, cards: document.querySelectorAll('.product-small.box').length, swVisible: sw.filter(e => e.getBoundingClientRect().height > 1).length, swTotal: sw.length }; });
+const detail = (p, y) => p.evaluate((y) => { const out = []; const bs = [...document.querySelectorAll('.product-small.box .add-to-cart-button')].filter(b => { const c = b.closest('.col').getBoundingClientRect(); return b.getBoundingClientRect().width && Math.abs(c.top + scrollY - y) < 12; }); const tops = bs.map(b => b.getBoundingClientRect().top); const pick = [bs[tops.indexOf(Math.min(...tops))], bs[tops.indexOf(Math.max(...tops))]];
+  for (const b of pick) { if (!b) continue; const bt = b.closest('.box-text'), cs = getComputedStyle(bt); const Y = e => Math.round((e.getBoundingClientRect().top + scrollY) * 10) / 10; out.push(`THẺ nút y=${Y(b)} box-text h=${bt.getBoundingClientRect().height.toFixed(1)} style="${bt.getAttribute('style')}" display=${cs.display} wrap=${cs.flexWrap} gap=${cs.rowGap} | ảnh h=${bt.parentElement.querySelector('.box-image').getBoundingClientRect().height.toFixed(1)}`); for (const c of bt.children) { const s = getComputedStyle(c); if (s.position === 'absolute') continue; out.push(`      ${String(c.className).split(' ').slice(0, 2).join('.').padEnd(40)} y=${Y(c)} h=${c.getBoundingClientRect().height.toFixed(1)} disp=${s.display} style="${(c.getAttribute('style') || '').slice(0, 40)}" con=${[...c.children].map(k => String(k.className).split(' ')[0] + ':' + k.getBoundingClientRect().height.toFixed(0)).join(',').slice(0, 120)}`); } }
+  return out; }, y);
+async function shot(p, name, y) { const w = await p.evaluate(() => innerWidth); const b64 = (await p.screenshot({ type: 'jpeg', quality: 55, fullPage: true, clip: { x: 0, y: Math.max(0, y - 20), width: w, height: 620 } })).toString('base64'); console.log('IMGSTART ' + name); for (let i = 0; i < b64.length; i += 3000) console.log('IMG ' + name + ' ' + b64.slice(i, i + 3000)); console.log('IMGEND ' + name); }
+const M = { userAgent: UA, viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true }, D = { viewport: { width: 1366, height: 800 } };
+for (const [tag, opts, url] of [['d-home', D, SITE + '/'], ['d-cat', D, CAT], ['m-cat', M, CAT], ['m-home', M, SITE + '/']]) {
+  const ctx = await browser.newContext(opts); const p = await ctx.newPage();
+  await p.goto(url, { waitUntil: 'load', timeout: 60_000 }).catch(() => {}); await p.waitForTimeout(2500);
+  await p.evaluate(() => { const c = document.querySelector('.mltv-popup__close'); if (c) c.click(); }); await p.waitForTimeout(400);
+  await p.evaluate(async () => { for (let y = 0; y < Math.min(document.body.scrollHeight, 14000); y += 600) { scrollTo(0, y); await new Promise(r => setTimeout(r, 120)); } scrollTo(0, 0); }); await p.waitForTimeout(1500);
+  const a = await stat(p); console.log(`ĐO ${tag} TRƯỚC: ` + JSON.stringify(a));
+  if (a.firstBad !== null) { for (const l of await detail(p, a.firstBad)) console.log(`CT ${tag}| ` + l); if (tag.startsWith('d-')) await shot(p, tag + '-truoc', a.firstBad); }
+  if (css) { await p.addStyleTag({ content: css }); await p.waitForTimeout(1200); const b = await stat(p); console.log(`ĐO ${tag} SAU: ` + JSON.stringify(b)); if (a.firstBad !== null && tag.startsWith('d-')) await shot(p, tag + '-sau', a.firstBad); console.log(`Tràn ngang ${tag}: ` + await p.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)); }
+  await ctx.close();
+}
+await browser.close();
