@@ -2961,3 +2961,14 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .buy-choice { display: grid; gap: 3px; text-align: left; border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 14px 16px; background: var(--surface); cursor: pointer; font: inherit; color: var(--ink); }
 .buy-choice:hover, .buy-choice:focus-visible { border-color: var(--brand-navy); background: var(--surface-2); }
 .buy-choice small { color: var(--muted); font-size: var(--text-small); }
+/* Đơn mua NCC: thanh thao tác trong ngăn chi tiết */
+.buy-d-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; padding: 10px 0; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+.buy-d-actions .pur-main-action { order: 3; }
+.buy-d-actions .buy-danger { order: 2; margin-right: auto; }
+.buy-d-actions .pur-more { order: 1; position: relative; margin-right: auto; }
+.buy-d-actions .buy-danger + .pur-main-action, .buy-d-actions .pur-more ~ .buy-danger { margin-right: 0; }
+.pur-more > summary { list-style: none; cursor: pointer; }
+.pur-more > summary::-webkit-details-marker { display: none; }
+.pur-more-list { position: absolute; left: 0; top: calc(100% + 6px); z-index: 40; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-lg); min-width: 240px; padding: 6px; display: grid; }
+.pur-more-list .buy-menu-item:disabled { opacity: .5; cursor: not-allowed; }
+.pur-orders td.buy-next { white-space: nowrap; }
