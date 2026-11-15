@@ -28,18 +28,18 @@ jobs:
         id: mode
         run: |
           if [ -f .github/woo-ajax-buy-now.run ]; then m=$(tr -d ' \r\n' < .github/woo-ajax-buy-now.run); else m=skip; fi
-          case "$m" in dry-run|apply) ;; *) m=skip ;; esac
+          case "$m" in dry-run|apply|rollback) ;; *) m=skip ;; esac
           echo "Chế độ: $m"
           echo "mode=$m" >> "$GITHUB_OUTPUT"
       - name: Cài trình duyệt đo
-        if: steps.mode.outputs.mode != 'skip'
+        if: steps.mode.outputs.mode == 'dry-run' || steps.mode.outputs.mode == 'apply'
         run: |
           mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
           npx playwright install --with-deps chromium >/dev/null
           cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-buynow-measure.mjs" /tmp/pw/
       - name: Đo trước
         continue-on-error: true
-        if: steps.mode.outputs.mode != 'skip'
+        if: steps.mode.outputs.mode == 'dry-run' || steps.mode.outputs.mode == 'apply'
         working-directory: /tmp/pw
         run: node web-lock-buynow-measure.mjs
       - name: Kiểm tra và thêm file
@@ -48,7 +48,7 @@ jobs:
           MODE: ${{ steps.mode.outputs.mode }}
         run: node scripts/maintenance/cpanel-deploy-newfile.mjs
       - name: Dọn cache LiteSpeed
-        if: steps.mode.outputs.mode == 'apply'
+        if: steps.mode.outputs.mode == 'apply' || steps.mode.outputs.mode == 'rollback'
         env:
           MODE: apply
         run: node scripts/maintenance/cpanel-purge-lscache.mjs
