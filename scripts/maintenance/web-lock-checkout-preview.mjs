@@ -55,6 +55,8 @@ if (process.env.POPUP_FROM || process.env.POPUP_LIVE === '1') {
   await page.evaluate(() => { const n = document.querySelector('#billing_first_name'); if (n) n.value = ''; });
   await page.locator('#place_order').click({ noWaitAfter: true }); await page.waitForSelector('#lnl-err-popup-wrap', { timeout: 30_000 }).catch(() => console.log('KHÔNG thấy popup lỗi'));
   await page.waitForTimeout(800);
+  const vl = await page.evaluate(() => [...document.querySelectorAll('form.checkout *, .woocommerce-notices-wrapper *, body > *')].filter(e => e.children.length === 0 && /Vui lòng/.test(e.textContent || '') && e.getBoundingClientRect().height > 0 && e.id !== 'lnl-err-popup-wrap' && !e.closest('#lnl-err-popup-wrap')).map(e => { const ch = []; for (let x = e, i = 0; x && i < 4; x = x.parentElement, i++) ch.push(x.tagName.toLowerCase() + (x.id ? '#' + x.id : '') + '.' + String(x.className).trim().split(/\s+/).slice(0, 3).join('.')); return e.textContent.trim().slice(0, 60) + ' :: ' + ch.join(' < '); }));
+  for (const l of vl) console.log('VL| ' + l);
   const pop = await page.evaluate(() => { const w = document.querySelector('#lnl-err-popup-wrap'); return w ? [...w.querySelectorAll('li')].map(l => l.textContent) : null; });
   console.log('POPUP ' + JSON.stringify(pop)); console.log('PHẢN HỒI ĐẶT HÀNG (phải là failure, không tạo đơn): ' + orders.join(' || '));
   const b64 = (await page.screenshot({ type: 'jpeg', quality: 65 })).toString('base64'); console.log('IMGSTART popup'); for (let i = 0; i < b64.length; i += 3000) console.log('IMG popup ' + b64.slice(i, i + 3000)); console.log('IMGEND popup');
