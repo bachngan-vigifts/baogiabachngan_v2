@@ -23,6 +23,7 @@ function report() {
 phase('MỞ TRANG SẢN PHẨM'); await page.goto(simple, { waitUntil: 'load', timeout: 60_000 }); console.log('  tải xong sau ' + (Date.now() - t0) + 'ms'); await page.waitForTimeout(5000); report();
 phase('BẤM THÊM VÀO GIỎ (form chính)');
 { const r = page.waitForResponse(x => /wc-ajax=lnl_add_to_cart/.test(x.url()), { timeout: 45_000 }).catch(() => null); await page.locator('form.cart .single_add_to_cart_button').first().click(); await r; console.log('  giỏ cập nhật sau ' + (Date.now() - t0) + 'ms'); await page.waitForTimeout(5000); report(); }
+await page.goto(simple, { waitUntil: 'load', timeout: 60_000 }); await page.waitForTimeout(4000);
 phase('BẤM MUA NGAY (form chính)');
 { await page.locator('form.cart button[name="ux-buy-now"]').first().click({ noWaitAfter: true }); await page.waitForURL(/thanh-toan/, { timeout: 60_000, waitUntil: 'commit' }).catch(() => console.log('  không tới thanh toán trong 60s')); console.log('  tới trang thanh toán sau ' + (Date.now() - t0) + 'ms'); await page.waitForLoadState('load', { timeout: 60_000 }).catch(() => {}); console.log('  tải xong sau ' + (Date.now() - t0) + 'ms'); await page.waitForTimeout(8000); report(); }
 phase('ĐỔI PHƯƠNG THỨC THANH TOÁN');
