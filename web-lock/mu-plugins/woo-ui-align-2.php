@@ -13,8 +13,7 @@ add_action('wp_head', function () {
 
 function lnl_ui_align2_css() {
     $css = <<<'CSS'
-.product-small.box > .box-text > .ux-swatches:not(.js-ux-swatches):empty { display: none !important; }
-.product-small.box > .box-text > .js-ux-swatches[style*="height: 0"] { display: none !important; }
+.product-small.box > .box-text > .ux-swatches { margin: 0 !important; padding: 0 !important; min-height: 0 !important; height: 0 !important; overflow: hidden; }
 CSS;
     return $css;
 }
