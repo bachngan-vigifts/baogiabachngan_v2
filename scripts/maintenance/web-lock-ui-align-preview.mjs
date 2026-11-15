@@ -14,7 +14,7 @@ await p.goto(SITE + '/', { waitUntil: 'load', timeout: 60_000 }); await p.waitFo
 await p.keyboard.press('Escape').catch(() => {}); await p.evaluate(() => { const c = document.querySelector('.mfp-close'); if (c) c.click(); }); await p.waitForTimeout(600);
 await p.evaluate(async () => { for (let y = 0; y < 6000; y += 500) { scrollTo(0, y); await new Promise(r => setTimeout(r, 150)); } scrollTo(0, 0); }); await p.waitForTimeout(1500);
 const stat = () => p.evaluate(() => { const rows = {}; for (const b of document.querySelectorAll('.product-small.box .add-to-cart-button')) { const r = b.getBoundingClientRect(); if (!r.width) continue; const col = b.closest('.col'); const key = Math.round((col.getBoundingClientRect().top + scrollY) / 10); (rows[key] = rows[key] || []).push(Math.round(r.top + scrollY)); } let bad = 0, n = 0; for (const k in rows) { if (rows[k].length < 2) continue; n++; if (Math.max(...rows[k]) - Math.min(...rows[k]) > 3) bad++; } return `hàng thẻ có nút lệch nhau: ${bad}/${n}`; });
-console.log('TRƯỚC ' + await stat());
+console.log('TRƯỚC ' + await stat()); console.log('Trang chủ có style lnl-ui-align: ' + await p.evaluate(() => !!document.getElementById('lnl-ui-align')) + ', lnl-price-tidy: ' + await p.evaluate(() => !!document.getElementById('lnl-price-tidy')) + ', lnl-tap-bar: ' + await p.evaluate(() => !!document.getElementById('lnl-tap-bar')));
 for (const l of await p.evaluate(() => { const out = []; const b = [...document.querySelectorAll('.product-small *')].find(e => e.children.length === 0 && /^Giảm \d+%$/.test(e.textContent.trim()) && e.getBoundingClientRect().width > 0); if (!b) return ['không thấy nhãn giảm']; for (let e = b, i = 0; e && i < 7; e = e.parentElement, i++) { const s = getComputedStyle(e), r = e.getBoundingClientRect(); out.push(`${e.tagName.toLowerCase()}.${String(e.className).trim().split(/\s+/).slice(0, 5).join('.')} | pos=${s.position} display=${s.display} ${Math.round(r.width)}x${Math.round(r.height)} style="${(e.getAttribute('style') || '').slice(0, 60)}" con=${[...e.children].map(k => k.tagName.toLowerCase() + '.' + String(k.className).split(' ')[0] + ':' + Math.round(k.getBoundingClientRect().height)).join(',').slice(0, 200)}`); } return out; })) console.log('NHÃN| ' + l);
 const A = { x: 0, y: 1180, width: 390, height: 600 }, B = { x: 0, y: 3900, width: 390, height: 900 };
 await shot(p, 'a-truoc', A); await shot(p, 'b-truoc', B);
@@ -22,5 +22,6 @@ if (css) { await p.addStyleTag({ content: css }); await p.waitForTimeout(1200); 
 await m.close();
 const d = await browser.newContext({ viewport: { width: 1366, height: 800 } }); const q = await d.newPage();
 await q.goto(simple, { waitUntil: 'load', timeout: 60_000 }); await q.waitForTimeout(3000);
+console.log('Trang SP (máy tính) có style lnl-ui-align: ' + await q.evaluate(() => !!document.getElementById('lnl-ui-align')) + ', lnl-price-tidy: ' + await q.evaluate(() => !!document.getElementById('lnl-price-tidy')));
 await shot(q, 'd-truoc'); if (css) { await q.addStyleTag({ content: css }); await q.waitForTimeout(800); await shot(q, 'd-sau'); }
 await browser.close();
