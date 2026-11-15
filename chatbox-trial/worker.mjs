@@ -28,7 +28,7 @@ export async function handle(request, env, upstream = fetch) {
     for(const part of content.parts){if(typeof part.text!=='string' || Object.keys(part).some(k=>k!=='text'))return reply('Text chat only',400);length+=part.text.length;}
   }
   if(length>12000)return reply('Conversation too long',413);
-  const payload={contents:raw.contents,systemInstruction:{parts:[{text:'Bạn là trợ lý thử nghiệm của LocknLockOnline. Trả lời bằng tiếng Việt, ngắn gọn. Chưa kết nối dữ liệu cửa hàng: không khẳng định giá, tồn kho, chính sách hoặc thông tin đơn hàng khi chưa được cung cấp. Không yêu cầu thông tin thanh toán hay mật khẩu.'}]},generationConfig:{maxOutputTokens:512,temperature:0.3,thinkingConfig:{thinkingBudget:0}}};
+  const payload={contents:raw.contents,systemInstruction:{parts:[{text:'Bạn là trợ lý thử nghiệm của LocknLockOnline. Trả lời bằng tiếng Việt, ngắn gọn. Chưa kết nối dữ liệu cửa hàng: không khẳng định giá, tồn kho, chính sách hoặc thông tin đơn hàng khi chưa được cung cấp. Không yêu cầu thông tin thanh toán hay mật khẩu.'}]},generationConfig:{maxOutputTokens:512,temperature:0.3}};
   try {
     const result=await upstream('https://generativelanguage.googleapis.com/v1beta/models/'+MODEL+(stream?':streamGenerateContent?alt=sse':':generateContent'),{method:'POST',headers:{'Content-Type':'application/json','X-goog-api-key':env.GEMINI_API_KEY},body:JSON.stringify(payload),signal:AbortSignal.timeout(45000)});
     if(!result.ok)return reply(result.status===429?'AI quota exceeded':'AI temporarily unavailable',result.status===429?429:502);
