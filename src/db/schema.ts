@@ -9,6 +9,7 @@ export * from '../modules/contracts/schema.ts';
 export * from '../modules/suppliers/schema.ts';
 export * from '../modules/suppliers/workspace-schema.ts';
 export * from '../modules/suppliers/early-request-schema.ts';
+export * from '../modules/suppliers/warehouse-image-job-schema.ts';
 export * from '../modules/printing/schema.ts';
 export * from '../modules/crm/schema.ts';
 export * from '../modules/work/schema.ts';
