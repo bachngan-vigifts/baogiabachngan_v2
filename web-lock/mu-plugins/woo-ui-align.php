@@ -14,7 +14,7 @@ add_action('wp_head', function () {
 function lnl_ui_align_css() {
     $css = <<<'CSS'
 .product-small.box > .box-text { position: static !important; }
-.product-small.box > .box-text > .claw-lnl-wdr-sale-badge { position: absolute; top: 8px; left: 8px; margin: 0 !important; z-index: 3; }
+.product-small.box > .box-text > .claw-lnl-wdr-sale-badge { position: absolute !important; top: 8px !important; left: 8px !important; bottom: auto !important; margin: 0 !important; z-index: 3; }
 @media (min-width: 850px) {
   body.single-product #claw-ai-launcher { top: auto !important; bottom: 2px !important; right: 180px !important; }
 }
