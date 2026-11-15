@@ -13,17 +13,15 @@ const added = page.waitForResponse(r => /wc-ajax=lnl_add_to_cart/.test(r.url()),
 await page.locator('button.single_add_to_cart_button').first().click(); await added; await page.waitForTimeout(2000);
 await page.goto(`${SITE}/thanh-toan/?cb=${Date.now()}`, { waitUntil: 'load', timeout: 60_000 }); await page.waitForTimeout(6000);
 await page.goto(`${SITE}/gio-hang/?cb=${Date.now()}`, { waitUntil: 'load', timeout: 60_000 }); await page.waitForTimeout(5000);
-const out = await page.evaluate(() => {
-  const els = [...document.querySelectorAll('*')].filter(e => /voucher/i.test(e.className?.toString?.() || '') || /voucher/i.test(e.id || ''));
-  const roots = els.filter(e => !els.some(o => o !== e && o.contains(e))).slice(0, 4);
-  const scripts = [...document.scripts].filter(s => /voucher|LNL\d+K/i.test(s.textContent || '') || /voucher/i.test(s.src)).map(s => (s.src || 'inline') + ' ' + (s.textContent || '').length);
-  return { roots: roots.map(e => e.outerHTML.slice(0, 3500)), scripts, count: els.length };
-});
-console.log('VOUCHER_DUMP', JSON.stringify(out, null, 1));
-const link = await page.evaluate(() => [...document.querySelectorAll('link[href*=voucher],script[src*=voucher]')].map(e => e.href || e.src));
-console.log('ASSETS', JSON.stringify(link));
-const code = await page.evaluate(() => { const s = [...document.scripts].find(x => /lnl_get_vouchers|data-lnl-voucher-list-endpoint|voucherListEndpoint|lnl-voucher-list/.test(x.textContent || '') && (x.textContent||'').length > 5000); return s ? s.textContent : ''; });
-console.log('CODE_START'); for (let i = 0; i < code.length; i += 1500) console.log('C' + code.slice(i, i + 1500).replace(/\n/g, '\u23ce')); console.log('CODE_END');
-const resp = await page.evaluate(async () => { const w = document.querySelector('[data-lnl-voucher-list-endpoint]'); const u = w.getAttribute('data-lnl-voucher-list-endpoint'); const r = await fetch(u, { credentials: 'same-origin' }); return r.status + ' ' + (await r.text()).slice(0, 2500); });
-console.log('RESP', resp);
+for (let k = 1; k <= 3; k++) {
+  const resp = page.waitForResponse(r => /lnl_get_vouchers/.test(r.url()), { timeout: 30_000 }).catch(() => null);
+  const t0 = Date.now(); await page.locator('[data-lnl-voucher-open]').first().click(); const r = await resp; const ms = Date.now() - t0;
+  const txt = r ? await r.text().catch(() => '') : '';
+  console.log(`LẦN ${k}: mở Voucher Shop -> danh sách về sau ${ms}ms, mã ${r ? r.status() : 'không có'}, ${txt.length} byte`);
+  if (k === 1) console.log('DỮ LIỆU ' + txt.slice(0, 1500));
+  await page.waitForTimeout(800); await page.locator('.lnl-voucher-modal.is-open [data-lnl-voucher-close]').last().click().catch(() => {}); await page.waitForTimeout(500);
+  await page.evaluate(() => window.jQuery && jQuery(document.body).trigger('updated_cart_totals'));
+}
+const t1 = Date.now(); const fr = await page.evaluate(async () => { const t = performance.now(); const r = await fetch('/?wc-ajax=get_refreshed_fragments', { method: 'POST', credentials: 'same-origin' }); await r.text(); return Math.round(performance.now() - t); });
+console.log('So sánh: get_refreshed_fragments ' + fr + 'ms');
 await browser.close();
