@@ -88,3 +88,10 @@ Không có trên web thật (chỉ còn trong kho mã): `lnl-disable-plugins.php
 - Link quảng cáo Google có `gad_source`, `gbraid` làm trượt cache (2,2 giây so với 0,3 giây khi có gclid/utm). Đã nhờ anh Thái thêm `gad_*, gbraid, wbraid, srsltid, ttclid` vào LiteSpeed Cache → Cache → Advanced → Drop Query String. Anh Thái đã lưu 15/11; đo lại: link có mã quảng cáo 0,33–0,39 giây (mã lạ không có trong danh sách vẫn 2,2 giây).
 - Lúc 21:20 CPU vẫn 95–99% dù đã chặn bot và sửa cache quảng cáo; luồng mua vẫn 2–12 giây. Nguồn tải còn lại chưa xác định hết. Lưu ý: chính các bài đo cũng góp tải, đừng chạy nhiều bài đo cùng lúc khi máy chủ đang chậm.
 - Mỗi lần đổi biến thể, Flatsome gửi `flatsome_additional_variation_images_load_images_ajax_frontend` (cần thiết, giữ).
+
+## 16/11 sáng (giờ VN)
+
+- Chẩn đoán chỉ đọc: xem `web-lock/CHAN-DOAN-2026-11-15.md`. Anh Thái yêu cầu chỉ đọc trước khi sửa tiếp; mọi thay đổi phải hỏi.
+- Anh Thái đã XOÁ hẳn Jetpack và Jetpack Boost (thư mục plugins không còn, readme 404). REST vẫn còn namespace `jetpack/v4` do gói jetpack-connection đi kèm plugin khác (bình thường). `/wp-json/` gốc đang bị Cloudflare cache bản cũ.
+- Đo ngay sau khi xoá: lệnh rỗng 2,2–4,3 giây, chưa thấy cải thiện; cần đo lại lúc yên.
+- Việc tiếp theo đề xuất (chờ duyệt): tắt bảng giảm giá động WDR bằng filter `advanced_woo_discount_rules_disable_load_dynamic_bulk_table` → 'off', rồi gỡ `woo-wdr-dedupe.php`; tắt LiteSpeed Debug Log; Redis maxmemory.
