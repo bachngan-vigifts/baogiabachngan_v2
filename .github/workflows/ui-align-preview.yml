@@ -20,6 +20,6 @@ jobs:
           mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
           npx playwright install --with-deps chromium >/dev/null
           cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-ui-align-preview.mjs" .
-          F="$GITHUB_WORKSPACE/web-lock/mu-plugins/woo-ui-align.php"
+          F="$GITHUB_WORKSPACE/web-lock/mu-plugins/woo-ui-align-2.php"
           if [ -f "$F" ]; then export CSS_FROM="$F"; fi
           node web-lock-ui-align-preview.mjs
