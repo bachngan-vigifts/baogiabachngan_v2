@@ -45,6 +45,7 @@ Cập nhật: 2026-11-15 19:40 (giờ Việt Nam). Nhánh làm việc: `probe/cp
 | `woo-ui-align.php`, `-2`, `-3` | Căn thẳng thẻ sản phẩm (điện thoại, máy tính, trang chủ, danh mục) |
 | `woo-card-buttons.php` | Nút "Chọn" lên dòng nhãn giảm giá, "Thêm vào giỏ" thành biểu tượng |
 | `woo-hide-sold.php` | Ẩn dòng "Đã bán" |
+| `woo-wdr-dedupe.php` | Woo Discount Rules: mỗi bảng giảm giá chỉ hỏi máy chủ 1 lần/trang (trước 3 lần giống hệt khi mở trang biến thể), thêm 15/11 |
 | `lnl-block-php-probe.php` | Trả 404 sớm cho bot dò file PHP giả (1,6–3,3 giây xuống 0,4 giây), thêm 15/11 |
 | `woo-buy-now-direct.php` | Mua ngay đi thẳng tới thanh toán trong một lượt |
 
@@ -85,3 +86,5 @@ Không có trên web thật (chỉ còn trong kho mã): `lnl-disable-plugins.php
 - Hosting giới hạn CPU 200% (2 nhân); lúc chậm CPU chạm 199/200. RAM dư (dưới 40%). Công cụ: `resource-usage.yml`.
 - Lượt truy cập gần nhất (`last-visitors.yml`): khoảng 120/870 lượt là bot không khai tên trình duyệt dò file PHP giả, nay đã chặn sớm bằng `lnl-block-php-probe.php`.
 - Link quảng cáo Google có `gad_source`, `gbraid` làm trượt cache (2,2 giây so với 0,3 giây khi có gclid/utm). Đã nhờ anh Thái thêm `gad_*, gbraid, wbraid, srsltid, ttclid` vào LiteSpeed Cache → Cache → Advanced → Drop Query String. Anh Thái đã lưu 15/11; đo lại: link có mã quảng cáo 0,33–0,39 giây (mã lạ không có trong danh sách vẫn 2,2 giây).
+- Lúc 21:20 CPU vẫn 95–99% dù đã chặn bot và sửa cache quảng cáo; luồng mua vẫn 2–12 giây. Nguồn tải còn lại chưa xác định hết. Lưu ý: chính các bài đo cũng góp tải, đừng chạy nhiều bài đo cùng lúc khi máy chủ đang chậm.
+- Mỗi lần đổi biến thể, Flatsome gửi `flatsome_additional_variation_images_load_images_ajax_frontend` (cần thiết, giữ).
