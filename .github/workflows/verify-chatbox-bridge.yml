@@ -1,0 +1,46 @@
+name: Verify Chatbox Gemini bridge
+on:
+  push:
+    branches: ['probe/gemini-chatbox-20261115']
+    paths: ['chatbox-trial/**', '.github/workflows/verify-chatbox-bridge.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test chatbox-trial/worker.test.mjs
+      - name: Verify live Gemini bridge without exposing secrets
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          node --input-type=module <<'JS'
+          import {handle} from './chatbox-trial/worker.mjs';
+          import {randomBytes} from 'node:crypto';
+          const password=randomBytes(32).toString('hex');
+          const env={GEMINI_API_KEY:process.env.GEMINI_API_KEY,CHATBOX_TRIAL_PASSWORD:password};
+          for(const method of ['generateContent','streamGenerateContent']){
+            const start=Date.now();
+            const request=new Request('https://trial.example/api/v1beta/models/gemini-flash-lite-latest:'+method,{method:'POST',headers:{Authorization:'Basic '+btoa('thai:'+password),'Content-Type':'application/json',Origin:'https://trial.example'},body:JSON.stringify({contents:[{role:'user',parts:[{text:'Reply only OK'}]}]})});
+            const result=await handle(request,env);
+            const body=await result.text();
+            const hasText=method==='generateContent'?Boolean(JSON.parse(body).candidates?.[0]?.content?.parts?.some(p=>p.text)):body.split('\n').some(line=>{if(!line.startsWith('data: '))return false;try{return JSON.parse(line.slice(6)).candidates?.[0]?.content?.parts?.some(p=>p.text);}catch{return false;}});
+            console.log(JSON.stringify({method,status:result.status,hasText,latencyMs:Date.now()-start}));
+            if(!result.ok || !hasText)process.exit(1);
+          }
+          JS
+      - name: Check private preview prerequisites
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CHATBOX_TRIAL_PASSWORD: ${{ secrets.CHATBOX_TRIAL_PASSWORD }}
+        run: |
+          node --input-type=module <<'JS'
+          for(const name of ['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','CHATBOX_TRIAL_PASSWORD'])console.log(name+'='+(process.env[name]?'PRESENT':'MISSING'));
+          JS
