@@ -1,0 +1,116 @@
+name: Deploy private Chatbox trial
+on:
+  push:
+    branches: ['probe/gemini-chatbox-20261115']
+    paths: ['.github/workflows/deploy-chatbox-trial.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency: private-chatbox-trial
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check required secrets
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CHATBOX_TRIAL_PASSWORD: ${{ secrets.CHATBOX_TRIAL_PASSWORD }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node <<'JS'
+          let missing=false;
+          for(const name of ['GEMINI_API_KEY','CHATBOX_TRIAL_PASSWORD','CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID'])if(!process.env[name]){console.log('MISSING='+name);missing=true;}
+          const password=process.env.CHATBOX_TRIAL_PASSWORD||'';
+          if(!/^[\x21-\x7e]{16,128}$/.test(password)){console.log('PASSWORD_REQUIREMENT=16_to_128_printable_ASCII_characters_without_spaces');missing=true;}
+          if(missing)process.exit(1);
+          console.log('REQUIRED_SECRETS=OK');
+          JS
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: chatboxai/chatbox
+          ref: 75bb9355f826f9070ff5c53527674aab93eb8b9f
+          path: upstream
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+      - run: npm install --global pnpm@10.33.0
+      - run: node --test chatbox-trial/worker.test.mjs
+      - run: node chatbox-trial/prepare.mjs upstream
+      - name: Install upstream dependencies
+        working-directory: upstream
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build Chatbox with no credentials
+        working-directory: upstream
+        env:
+          CHATBOX_BUILD_PLATFORM: web
+          CHATBOX_ELECTRON_VITE_TARGET: renderer
+        run: node --max-old-space-size=5120 node_modules/electron-vite/bin/electron-vite.js build
+      - name: Prepare private Pages bundle
+        run: |
+          cp chatbox-trial/worker.mjs upstream/release/app/dist/renderer/_worker.js
+          cp upstream/LICENSE upstream/release/app/dist/renderer/LICENSE.txt
+          python3 <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('upstream/release/app/dist/renderer')
+          for f in p.rglob('*.map'): f.unlink()
+          (p/'stats.html').unlink(missing_ok=True)
+          (p/'_routes.json').write_text(json.dumps({'version':1,'include':['/*'],'exclude':[]}))
+          PY
+          tar --exclude=.git --exclude=node_modules --exclude=release/app/dist -czf upstream/release/app/dist/renderer/chatbox-source.tar.gz -C upstream .
+      - name: Configure dedicated private project and deploy
+        id: publish
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CHATBOX_TRIAL_PASSWORD: ${{ secrets.CHATBOX_TRIAL_PASSWORD }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node --input-type=module <<'JS'
+          import {execFileSync} from 'node:child_process';
+          import {appendFileSync} from 'node:fs';
+          const name='lnl-chatbox-trial-20261115';
+          const base='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+'/pages/projects';
+          const headers={'Authorization':'Bearer '+process.env.CLOUDFLARE_API_TOKEN,'Content-Type':'application/json'};
+          const env_vars={GEMINI_API_KEY:{type:'secret_text',value:process.env.GEMINI_API_KEY},CHATBOX_TRIAL_PASSWORD:{type:'secret_text',value:process.env.CHATBOX_TRIAL_PASSWORD}};
+          async function call(url,method,body){const response=await fetch(url,{method,headers,body:body?JSON.stringify(body):undefined});let data;try{data=await response.json()}catch{throw Error('Cloudflare invalid response')};return {status:response.status,data};}
+          try{
+            let current=await call(base+'/'+name,'GET');
+            if(current.status===404){current=await call(base,'POST',{name,production_branch:'main',deployment_configs:{production:{env_vars,compatibility_date:'2026-11-15'},preview:{env_vars,compatibility_date:'2026-11-15'}}});}
+            else if(current.data.success){current=await call(base+'/'+name,'PATCH',{deployment_configs:{production:{env_vars,compatibility_date:'2026-11-15'},preview:{env_vars,compatibility_date:'2026-11-15'}}});}
+            if(!current.data.success){console.log('CLOUDFLARE_HTTP_STATUS='+current.status);process.exit(1);}
+            const host=current.data.result.subdomain;
+            if(typeof host!=='string'||!host.endsWith('.pages.dev'))throw Error('Invalid project domain');
+            execFileSync('npx',['--yes','wrangler@3','pages','deploy','upstream/release/app/dist/renderer','--project-name',name,'--branch','main','--commit-dirty=true'],{stdio:['ignore','pipe','pipe'],env:{...process.env,CI:'true'},maxBuffer:8*1024*1024});
+            console.log('TRIAL_URL=https://'+host);
+            appendFileSync(process.env.GITHUB_OUTPUT,'url=https://'+host+'\n');
+          }catch{console.log('PRIVATE_DEPLOYMENT_FAILED_NO_CREDENTIALS_LOGGED');process.exit(1);}
+          JS
+      - name: Verify deployed access control and Gemini
+        env:
+          TRIAL_URL: ${{ steps.publish.outputs.url }}
+          CHATBOX_TRIAL_PASSWORD: ${{ secrets.CHATBOX_TRIAL_PASSWORD }}
+        run: |
+          node --input-type=module <<'JS'
+          const base=process.env.TRIAL_URL;
+          const Authorization='Basic '+Buffer.from('thai:'+process.env.CHATBOX_TRIAL_PASSWORD).toString('base64');
+          try{
+            let publicPage;
+            for(let attempt=0;attempt<6;attempt++){try{publicPage=await fetch(base);if(publicPage.status===401)break;}catch{}await new Promise(r=>setTimeout(r,5000));}
+            if(publicPage?.status!==401)throw Error('Access gate failed');
+            console.log('UNAUTHENTICATED=401');
+            const page=await fetch(base,{headers:{Authorization}});const html=await page.text();if(page.status!==200||!html.includes('Chatbox'))throw Error('Page failed');
+            console.log('AUTHENTICATED_PAGE=200');
+            const response=await fetch(base+'/api/v1beta/models/gemini-flash-lite-latest:streamGenerateContent',{method:'POST',headers:{Authorization,'Content-Type':'application/json',Origin:base},body:JSON.stringify({contents:[{role:'user',parts:[{text:'Reply only OK'}]}]})});
+            const data=await response.text();
+            const hasText=data.split('\n').some(line=>{if(!line.startsWith('data: '))return false;try{return JSON.parse(line.slice(6)).candidates?.[0]?.content?.parts?.some(p=>p.text);}catch{return false;}});
+            if(!response.ok||!hasText)throw Error('AI failed');
+            console.log('DEPLOYED_GEMINI_STREAM=OK');
+          }catch{console.log('DEPLOYED_VERIFICATION_FAILED');process.exit(1);}
+          JS
