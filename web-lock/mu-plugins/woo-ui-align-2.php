@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Lock UI align 2
- * Description: CSS only. Product cards: an empty colour-swatch holder no longer takes its own (6px) line, and the reserved badge space matches the badge exactly, so titles and buy buttons line up. Delete this file to roll back.
+ * Description: CSS only. Product cards: on phones the colour-swatch holder (already invisible, zero height) no longer takes its own 6px line, and the reserved badge space matches the badge exactly, so titles and buy buttons line up. Delete this file to roll back.
  */
 if (!defined('ABSPATH')) { exit; }
 
@@ -13,7 +13,7 @@ add_action('wp_head', function () {
 
 function lnl_ui_align2_css() {
     $css = <<<'CSS'
-.product-small.box > .box-text > .ux-swatches:not(:has(.ux-swatch)) { display: none !important; }
+@media (max-width: 849px) { .product-small.box > .box-text > .ux-swatches-in-loop { display: none !important; } }
 .product-small.box > .box-text:not(:has(.claw-lnl-wdr-sale-badge))::before { height: 30px !important; }
 CSS;
     return $css;
