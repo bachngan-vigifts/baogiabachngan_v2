@@ -45,10 +45,10 @@ Cập nhật: 2026-11-15 19:40 (giờ Việt Nam). Nhánh làm việc: `probe/cp
 | `woo-ui-align.php`, `-2`, `-3` | Căn thẳng thẻ sản phẩm (điện thoại, máy tính, trang chủ, danh mục) |
 | `woo-card-buttons.php` | Nút "Chọn" lên dòng nhãn giảm giá, "Thêm vào giỏ" thành biểu tượng |
 | `woo-hide-sold.php` | Ẩn dòng "Đã bán" |
-| `lnl-disable-plugins.php` | Chặn Jetpack và Query Monitor không cho nạp |
+| `lnl-block-php-probe.php` | Trả 404 sớm cho bot dò file PHP giả (1,6–3,3 giây xuống 0,4 giây), thêm 15/11 |
 | `woo-buy-now-direct.php` | Mua ngay đi thẳng tới thanh toán trong một lượt |
 
-Không có trên web thật (chỉ còn trong kho mã): `woo-ajax-buy-now.php` (đã gỡ vì anh Thái báo treo), `woo-default-qr-payment.php` (không hiệu quả, việc QR mặc định do Open Claw làm).
+Không có trên web thật (chỉ còn trong kho mã): `lnl-disable-plugins.php` (gỡ 15/11 sau khi anh Thái Deactivate Jetpack và Query Monitor trong quản trị), `woo-ajax-buy-now.php` (đã gỡ vì anh Thái báo treo), `woo-default-qr-payment.php` (không hiệu quả, việc QR mặc định do Open Claw làm).
 
 ## Số liệu mới nhất (điện thoại, giỏ khách tạm)
 
@@ -59,7 +59,7 @@ Không có trên web thật (chỉ còn trong kho mã): `woo-ajax-buy-now.php` (
 
 ## Việc còn mở
 
-1. Anh Thái chưa trả lời: giữ file chặn Jetpack/Query Monitor, hay tự bấm Deactivate trong trang quản trị rồi gỡ file.
+1. ~~File chặn Jetpack~~: đã gỡ 15/11, hai plugin đã Deactivate.
 2. ~~Mua ngay với sản phẩm có biến thể~~: đã thử 15/11 (3/3 lần đạt: vào thẳng thanh toán, giỏ đúng 1 món, một lượt). Chưa chọn biến thể thì nút giữ nguyên trang. Lúc thử máy chủ chậm (lệnh rỗng 2,1–2,8 giây) nên thời gian 3,4–9,8 giây.
 3. Khoảng trống dưới giá ở các băng chuyền trang chủ: đã hỏi, chưa có trả lời.
 4. Voucher Shop mở chậm (2,2–4,6 giây): cần mã snippet 221 trong Code Snippets, hoặc giao Open Claw in sẵn danh sách vào trang.
@@ -79,3 +79,9 @@ Không có trên web thật (chỉ còn trong kho mã): `woo-ajax-buy-now.php` (
 - `web-lock-boot-measure.mjs`: đo thời gian máy chủ xử lý lệnh rỗng.
 - `web-lock-checkout-preview.mjs`: xem thử trang thanh toán, thử popup lỗi.
 - Mỗi công cụ có workflow cùng tên, kích hoạt bằng file `.github/<tên>.run`.
+
+## Phát hiện 15/11 tối
+
+- Hosting giới hạn CPU 200% (2 nhân); lúc chậm CPU chạm 199/200. RAM dư (dưới 40%). Công cụ: `resource-usage.yml`.
+- Lượt truy cập gần nhất (`last-visitors.yml`): khoảng 120/870 lượt là bot không khai tên trình duyệt dò file PHP giả, nay đã chặn sớm bằng `lnl-block-php-probe.php`.
+- Link quảng cáo Google có `gad_source`, `gbraid` làm trượt cache (2,2 giây so với 0,3 giây khi có gclid/utm). Đã nhờ anh Thái thêm `gad_source, gad_campaignid, gbraid, wbraid, srsltid` vào LiteSpeed Cache → Cache → Advanced → Drop Query String. Chưa xác nhận.
