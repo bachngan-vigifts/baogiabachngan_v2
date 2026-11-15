@@ -32,8 +32,8 @@ console.log('\n== LƯỢT KHÔNG CÓ TÊN TRÌNH DUYỆT'); for (const [k, v] of
 console.log('Mẫu thời gian: ' + rows.slice(0, 2).concat(rows.slice(-2)).map(x => x.timestamp || x.line).join(' | '));
 // Trang có tham số quảng cáo Google có được lấy từ cache không (mỗi lượt bấm quảng cáo có mã khác nhau)
 const SITE = 'https://' + DOMAIN;
-for (const q of ['', '?gad_source=1&gad_campaignid=1&gbraid=TEST' + Date.now(), '?gclid=TEST' + Date.now(), '?utm_source=test' + Date.now()]) {
+for (const q of ['', '', '?gad_source=1&gad_campaignid=' + Date.now(), '?gbraid=TEST' + Date.now(), '?srsltid=TEST' + Date.now(), '?ttclid=TEST' + Date.now(), '?gclid=TEST' + Date.now(), '?abc=' + Date.now()]) {
   const t = Date.now(); const res = await fetch(SITE + '/danh-muc/binh-nuoc/binh-nuoc-mang-di/binh-giu-nhiet/' + q, { headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1' }, signal: AbortSignal.timeout(60_000) }).catch(e => null);
   if (res) await res.text();
-  console.log(`CACHE ${q.slice(0, 24) || '(không tham số)'}: ${res ? res.status : 'lỗi'} ${Date.now() - t}ms litespeed=${res?.headers.get('x-litespeed-cache') || '-'} cf=${res?.headers.get('cf-cache-status') || '-'}`);
+  console.log(`CACHE ${q.slice(0, 30) || '(không tham số)'}: ${res ? res.status : 'lỗi'} ${Date.now() - t}ms litespeed=${res?.headers.get('x-litespeed-cache') || '-'} cf=${res?.headers.get('cf-cache-status') || '-'}`);
 }
