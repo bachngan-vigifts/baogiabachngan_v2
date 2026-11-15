@@ -24,6 +24,6 @@ jobs:
       - run: |
           [ -f .github/lock-verify.run ] || exit 0
           MODE=sample SAMPLE_SECONDS=150 node scripts/diagnose/lock-server-read.mjs > sample.log 2>&1 &
-          echo "##### PLUGIN / TRANG"; node scripts/diagnose/lock-diag2.mjs 2>&1 | grep -E "REST namespaces|Trang giỏ|Tất cả namespace" || true
+          echo "##### PLUGIN"; node scripts/diagnose/lock-plugin-check.mjs || true; [ "$(cat .github/lock-verify.run)" = plugin ] && exit 0
           echo "##### THỜI GIAN MÁY CHỦ"; PARALLEL=0 node scripts/diagnose/lock-server-timing.mjs || true
           wait; echo "##### CPU/RAM"; cat sample.log
