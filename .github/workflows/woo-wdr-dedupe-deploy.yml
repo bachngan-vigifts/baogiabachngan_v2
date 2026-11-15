@@ -27,7 +27,7 @@ jobs:
       - name: Xác định chế độ
         id: mode
         run: |
-          if [ -f .github/woo-wdr-dedupe.run ]; then m=$(tr -d ' \r\n' < .github/woo-wdr-dedupe.run); else m=skip; fi
+          if [ -f .github/woo-wdr-dedupe.run ]; then m=$(head -c 20 .github/woo-wdr-dedupe.run | awk '{print $1}'); else m=skip; fi
           case "$m" in dry-run|apply|rollback) ;; *) m=skip ;; esac
           echo "Chế độ: $m"
           echo "mode=$m" >> "$GITHUB_OUTPUT"

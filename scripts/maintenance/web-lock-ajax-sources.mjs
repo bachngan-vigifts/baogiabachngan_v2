@@ -15,8 +15,8 @@ for (const path of pages) {
   await p.waitForTimeout(8000);
   if (path.includes('/san-pham/')) { const r = await p.evaluate(() => { const f = document.querySelector('form.variations_form'); if (!f || !window.jQuery) return 'không có form'; let vs = []; try { vs = JSON.parse(f.getAttribute('data-product_variations') || '[]'); } catch (e) {} const ok = (vs || []).filter(x => x.is_in_stock).slice(0, 2); for (const v of ok) for (const k in v.attributes) { const sel = f.querySelector('select[name="' + k + '"]'); if (sel && v.attributes[k]) jQuery(sel).val(v.attributes[k]).trigger('change'); } return 'đổi ' + ok.length + ' biến thể'; }); console.log('   ' + r); await p.waitForTimeout(8000); }
   const hasScript = await p.evaluate(() => !!document.getElementById('lnl-wdr-dedupe')).catch(() => false);
-  const nW = out.filter(l => l.includes('wdr_ajax')).length;
-  if (process.env.EXPECT_WDR_MAX && nW > Number(process.env.EXPECT_WDR_MAX)) { bad++; console.log(`KHÔNG ĐẠT: ${nW} lệnh wdr_ajax`); }
+  const wl = out.filter(l => l.includes('wdr_ajax')).map(l => l.replace(/^\d+ms /, '')); const dup = wl.length - new Set(wl).size;
+  if (process.env.EXPECT_WDR_MAX && dup > 0) { bad++; console.log(`KHÔNG ĐẠT: ${dup} lệnh wdr_ajax trùng`); } else console.log(`   wdr_ajax: ${wl.length} lệnh, trùng ${dup}`);
   if (errs.length) console.log('   Lỗi JS: ' + errs.join(' | '));
   if (process.env.EXPECT_WDR_MAX && errs.some(e => /lnl|ajaxTransport|Promise/i.test(e))) { bad++; console.log('KHÔNG ĐẠT: lỗi JS liên quan'); }
   console.log(`   script gộp lệnh có trên trang: ${hasScript}`);
