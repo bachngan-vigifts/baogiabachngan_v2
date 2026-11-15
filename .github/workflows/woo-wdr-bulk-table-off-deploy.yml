@@ -1,0 +1,66 @@
+# Thêm mu-plugin woo-wdr-bulk-table-off.php (tắt tải động bảng giảm giá rỗng của Woo Discount Rules) lên web Lock.
+# Quy trình: kiểm tra trước -> thêm file mới (web lỗi thì tự gỡ) -> kiểm tra sau -> không đạt thì tự gỡ. Dọn cache trang để trang sản phẩm có đoạn mã mới.
+# Chạy khi file .github/woo-wdr-bulk-table-off.run đổi (nội dung: dry-run, apply hoặc rollback). Không có file thì bỏ qua.
+name: Tắt bảng giảm giá động web Lock
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/woo-wdr-bulk-table-off.run']
+concurrency: woo-wdr-bulk-table-off
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+      FILE: woo-wdr-bulk-table-off.php
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Xác định chế độ
+        id: mode
+        run: |
+          if [ -f .github/woo-wdr-bulk-table-off.run ]; then m=$(head -c 20 .github/woo-wdr-bulk-table-off.run | awk '{print $1}'); else m=skip; fi
+          case "$m" in dry-run|apply|rollback) ;; *) m=skip ;; esac
+          echo "Chế độ: $m"
+          echo "mode=$m" >> "$GITHUB_OUTPUT"
+      - name: Cài trình duyệt
+        if: steps.mode.outputs.mode == 'dry-run' || steps.mode.outputs.mode == 'apply'
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-ajax-sources.mjs" /tmp/pw/
+      - name: Kiểm tra và thêm file
+        if: steps.mode.outputs.mode != 'skip'
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: node scripts/maintenance/cpanel-deploy-newfile.mjs
+      - name: Dọn cache trang
+        if: steps.mode.outputs.mode == 'apply' || steps.mode.outputs.mode == 'rollback'
+        continue-on-error: true
+        env:
+          MODE: apply
+        run: node scripts/maintenance/cpanel-purge-lscache.mjs
+      - name: Kiểm tra sau
+        id: verify
+        if: steps.mode.outputs.mode == 'apply'
+        continue-on-error: true
+        working-directory: /tmp/pw
+        env:
+          EXPECT_WDR_NONE: '1'
+        run: node web-lock-ajax-sources.mjs
+      - name: Tự gỡ nếu kiểm tra sau không đạt
+        if: steps.mode.outputs.mode == 'apply' && steps.verify.outcome == 'failure'
+        env:
+          MODE: rollback
+        run: |
+          node scripts/maintenance/cpanel-deploy-newfile.mjs
+          MODE=apply node scripts/maintenance/cpanel-purge-lscache.mjs
+          echo "ĐÃ GỠ plugin vì kiểm tra sau không đạt"; exit 1
