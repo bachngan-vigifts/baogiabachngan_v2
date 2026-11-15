@@ -21,7 +21,7 @@ const btn = page.locator('button,a,input[type=submit]').filter({ hasText: /mua n
 if (!(await btn.count())) { console.log('Không thấy nút Mua ngay'); await browser.close(); process.exit(0); }
 t0.v = Date.now();
 await btn.click({ timeout: 10000, noWaitAfter: true });
-await page.waitForURL(/thanh-toan|checkout|gio-hang/, { timeout: 60000, waitUntil: 'commit' }).catch(() => console.log('Không chuyển trang trong 60s'));
+await page.waitForURL(/thanh-toan|checkout|gio-hang/, { timeout: 60000, waitUntil: 'commit' }).catch(() => { console.log('Không chuyển trang trong 60s'); process.exitCode = 1; });
 const tNav = Date.now() - t0.v; console.log('Đến URL ' + page.url().replace(SITE, '') + ' sau ' + tNav + 'ms');
 await page.waitForLoadState('load', { timeout: 60000 }).catch(() => {}); console.log('Tải xong sau ' + (Date.now() - t0.v) + 'ms');
 await page.waitForTimeout(3000);
