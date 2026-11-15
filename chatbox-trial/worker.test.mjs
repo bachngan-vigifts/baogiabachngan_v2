@@ -1,0 +1,13 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {handle} from './worker.mjs';
+const env={CHATBOX_TRIAL_PASSWORD:'test-password',GEMINI_API_KEY:'test-only-key',ASSETS:{fetch:()=>new Response('asset')}};
+const headers={'Authorization':'Basic '+btoa('thai:test-password'),'Content-Type':'application/json','Origin':'https://trial.example'};
+const make=(body,path='/api/v1beta/models/gemini-flash-lite-latest:streamGenerateContent')=>new Request('https://trial.example'+path,{method:'POST',headers,body:JSON.stringify(body)});
+const body={contents:[{role:'user',parts:[{text:'Xin chao'}]}]};
+test('no unauthenticated AI calls',async()=>{let calls=0;const r=await handle(new Request('https://trial.example/api/v1beta/models'),env,()=>{calls++});assert.equal(r.status,401);assert.equal(calls,0)});
+test('closed when configuration missing',async()=>assert.equal((await handle(new Request('https://trial.example/'),{})).status,503));
+test('reject arbitrary models and nontext uploads',async()=>{assert.equal((await handle(make(body,'/api/v1beta/models/expensive:generateContent'),env)).status,404);assert.equal((await handle(make({contents:[{parts:[{inlineData:{data:'x'}}]}]}),env)).status,400)});
+test('reject long context and foreign origin',async()=>{assert.equal((await handle(make({contents:[{parts:[{text:'x'.repeat(12001)}]}]}),env)).status,413);const req=make(body);req.headers.set('Origin','https://other.example');assert.equal((await handle(req,env)).status,403)});
+test('server controls secret, budget, tools and streaming',async()=>{const r=await handle(make({...body,tools:[{googleSearch:{}}],generationConfig:{maxOutputTokens:99999}}),env,async(url,options)=>{assert.match(url,/streamGenerateContent\?alt=sse$/);assert.equal(options.headers['X-goog-api-key'],'test-only-key');const payload=JSON.parse(options.body);assert.equal(payload.generationConfig.maxOutputTokens,512);assert.equal(payload.tools,undefined);return new Response('data: {"candidates":[]}\n\n')});assert.equal(r.status,200);assert.match(r.headers.get('Content-Type'),/event-stream/);assert.equal(await r.text(),'data: {"candidates":[]}\n\n')});
+test('upstream diagnostics are never returned',async()=>{const r=await handle(make(body),env,async()=>new Response('test-only-key',{status:403}));assert.equal(r.status,502);assert.ok(!(await r.text()).includes('test-only-key'))});
