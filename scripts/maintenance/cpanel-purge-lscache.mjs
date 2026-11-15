@@ -54,7 +54,7 @@ add_action('wp_loaded', function () {
 const SCOPE = process.env.PURGE_SCOPE === 'all' ? 'all' : 'pages';
 const PURGE_LIST = (process.env.PURGE_URLS || '').split(',').map(x => x.trim()).filter(x => /^https:\/\/locknlockonline\.com\/[A-Za-z0-9\/_.%-]*$/.test(x)).join(',');
 const SRC_FINAL = SRC.replace('__SCOPE__', SCOPE).replace('__URLS__', PURGE_LIST);
-console.log('Phạm vi dọn:', URLS ? 'các trang ' + URLS : (SCOPE === 'all' ? 'TOÀN BỘ' : 'chỉ cache trang'));
+console.log('Phạm vi dọn:', PURGE_LIST ? 'các trang ' + PURGE_LIST : (SCOPE === 'all' ? 'TOÀN BỘ' : 'chỉ cache trang'));
 
 async function listMu() {
   const url = new URL(`${origin}/execute/Fileman/list_files`); url.searchParams.set('dir', DIR);
