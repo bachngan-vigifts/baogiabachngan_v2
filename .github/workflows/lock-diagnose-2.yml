@@ -1,0 +1,34 @@
+# CHẨN ĐOÁN CHỈ ĐỌC lượt 2 (không ghi gì lên hosting). Chạy khi .github/lock-diagnose-2.run đổi.
+name: Chẩn đoán chậm web Lock lượt 2 (chỉ đọc)
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/lock-diagnose-2.run']
+concurrency: lock-diagnose
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          [ -f .github/lock-diagnose-2.run ] || exit 0
+          echo "##### A. TRANG / WDR / JETPACK / SCRIPT INLINE"; node scripts/diagnose/lock-diag2.mjs || true
+          echo "##### B. REDIS / LOG DEBUG LITESPEED"; MODE=redis node scripts/diagnose/lock-server-read.mjs || true
+          echo "##### C. MÃ NGUỒN JS WOO DISCOUNT RULES 2.6.15"
+          cd /tmp && curl -s -L -o w.zip https://downloads.wordpress.org/plugin/woo-discount-rules.2.6.15.zip && unzip -q -o w.zip
+          F=/tmp/woo-discount-rules/v2/Assets/Js/site_main.js; sed -n '100,260p' "$F"
+          echo "##### D. HÀM PHP showBulkTableInPositionManually"
+          grep -rn "function showBulkTableInPositionManually" /tmp/woo-discount-rules/v2 | head -2
+          f=$(grep -rln "function showBulkTableInPositionManually" /tmp/woo-discount-rules/v2 | head -1); n=$(grep -n "function showBulkTableInPositionManually" "$f" | cut -d: -f1); sed -n "$n,$((n+40))p" "$f"
+          grep -rn "awdr_dynamic_bulk_table_status\|awdr_dynamic_bulk_table_off\|js_init_trigger" /tmp/woo-discount-rules/v2/App --include=*.php | head -8

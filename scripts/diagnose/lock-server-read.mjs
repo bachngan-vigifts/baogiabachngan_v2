@@ -13,6 +13,21 @@ async function call(mod, fn, params = {}) {
   const j = await r.json().catch(() => null); return j && j.status ? { ok: true, data: j.data } : { ok: false, err: redact((j && j.errors || []).join('; ') || r.status) };
 }
 const MODE = process.env.MODE || 'state';
+if (MODE === 'redis') {
+  // Đọc log debug LiteSpeed: dòng Redis/Object Cache có ngày giờ, thống kê hit/miss gần nhất. Che IP/đường dẫn.
+  const dir = `${docroot}/wp-content/litespeed/debug`;
+  const fl = await (async () => { const r = await call('Fileman', 'list_files', { dir, include_mime: 0, include_hash: 0, include_permissions: 0, showdotfiles: 1 }); return r.ok ? r.data : []; })();
+  for (const f of fl) console.log(`file debug: ${f.file} ${Math.round((Number(f.size) || 0) / 1024)}KB sửa ${f.mtime ? new Date(f.mtime * 1000).toISOString() : '?'}`);
+  const dbg = fl.find(f => /^debug.*\.log$/.test(f.file));
+  if (dbg) { const r = await call('Fileman', 'get_file_content', { dir, file: dbg.file }); const L = String(r.ok ? r.data?.content : '').split('\n');
+    console.log(`dòng đầu: ${redact(L[0]).slice(0, 60)} | dòng cuối: ${redact(L[L.length - 2] || '').slice(0, 60)}`);
+    const oom = L.filter(l => /Redis|Object_Cache\]/.test(l) && !/<!-- Object Cache/.test(l)); console.log(`Dòng Redis/Object_Cache (không kể thống kê): ${oom.length}`); for (const l of oom.slice(-15)) console.log('   ' + redact(l).slice(0, 220));
+    const st = L.filter(l => /<!-- Object Cache/.test(l)); console.log(`Thống kê object cache (${st.length} trang), 12 gần nhất:`); for (const l of st.slice(-12)) console.log('   ' + redact(l).slice(0, 160));
+    const reqs = L.filter(l => /\[Router\]|URI|REQUEST_URI|Query String|HTTP_USER_AGENT/i.test(l)).length; console.log(`Số dòng ghi về request (ước lượng mức ghi log): ${reqs}; tổng dòng ${L.length}`);
+    const kinds = {}; for (const l of L) { const m = /\]\s*\[([A-Za-z_]+)\]/.exec(l); if (m) kinds[m[1]] = (kinds[m[1]] || 0) + 1; } console.log('Nhóm log: ' + Object.entries(kinds).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => `${k}:${v}`).join(', '));
+  }
+  process.exit(0);
+}
 if (MODE === 'sample') {
   const until = Date.now() + Number(process.env.SAMPLE_SECONDS || 600) * 1000;
   while (Date.now() < until) {
