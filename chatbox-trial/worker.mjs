@@ -1,11 +1,9 @@
 const MODEL = 'gemini-flash-lite-latest';
 const reply = (message, status) => Response.json({error:{message}}, {status, headers:{'Cache-Control':'no-store'}});
 export async function handle(request, env, upstream = fetch) {
-  if (!env.CHATBOX_TRIAL_PASSWORD || !env.GEMINI_API_KEY) return reply('Trial is not configured', 503);
-  const expected = 'Basic ' + btoa('thai:' + env.CHATBOX_TRIAL_PASSWORD);
-  if (request.headers.get('Authorization') !== expected) return new Response('Private Chatbox trial', {status:401, headers:{'WWW-Authenticate':'Basic realm="Chatbox trial", charset="UTF-8"','Cache-Control':'no-store'}});
   const url = new URL(request.url);
   if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+  if (!env.GEMINI_API_KEY || !env.CHAT_LIMITS) return reply('Trợ lý đang được cấu hình, vui lòng thử lại sau.',503);
   const origin = request.headers.get('Origin');
   if (origin && origin !== url.origin) return reply('Origin denied',403);
   if (request.method === 'GET' && url.pathname === '/api/v1beta/models') return Response.json({models:[{name:'models/'+MODEL,displayName:'Gemini Flash Lite',supportedGenerationMethods:['generateContent','streamGenerateContent']}]});
@@ -28,7 +26,10 @@ export async function handle(request, env, upstream = fetch) {
     for(const part of content.parts){if(typeof part.text!=='string' || Object.keys(part).some(k=>k!=='text'))return reply('Text chat only',400);length+=part.text.length;}
   }
   if(length>12000)return reply('Conversation too long',413);
-  const payload={contents:raw.contents,systemInstruction:{parts:[{text:'Bạn là trợ lý thử nghiệm của LocknLockOnline. Trả lời bằng tiếng Việt, ngắn gọn. Chưa kết nối dữ liệu cửa hàng: không khẳng định giá, tồn kho, chính sách hoặc thông tin đơn hàng khi chưa được cung cấp. Không yêu cầu thông tin thanh toán hay mật khẩu.'}]},generationConfig:{maxOutputTokens:512,temperature:0.3}};
+  try {
+    if (!(await reserveUsage(request,env))) return reply('Đã đạt giới hạn sử dụng. Vui lòng thử lại sau.',429);
+  } catch { return reply('Trợ lý tạm thời không khả dụng.',503); }
+  const payload={contents:raw.contents,systemInstruction:{parts:[{text:'Bạn là trợ lý AI của LocknLockOnline. Trả lời bằng tiếng Việt, ngắn gọn. Chưa kết nối dữ liệu cửa hàng: không khẳng định giá, tồn kho, chính sách hoặc thông tin đơn hàng khi chưa được cung cấp. Không yêu cầu thông tin thanh toán hay mật khẩu.'}]},generationConfig:{maxOutputTokens:512,temperature:0.3}};
   try {
     const result=await upstream('https://generativelanguage.googleapis.com/v1beta/models/'+MODEL+(stream?':streamGenerateContent?alt=sse':':generateContent'),{method:'POST',headers:{'Content-Type':'application/json','X-goog-api-key':env.GEMINI_API_KEY},body:JSON.stringify(payload),signal:AbortSignal.timeout(45000)});
     if(!result.ok)return reply(result.status===429?'AI quota exceeded':'AI temporarily unavailable',result.status===429?429:502);
@@ -36,3 +37,22 @@ export async function handle(request, env, upstream = fetch) {
   } catch {return reply('AI temporarily unavailable',502);}
 }
 export default {fetch(request, env) { return handle(request, env); }};
+
+export const COUNTER_SQL = 'INSERT INTO chat_usage (bucket,n,expires) VALUES (?,1,?) ON CONFLICT(bucket) DO UPDATE SET n=n+1 WHERE n < ? RETURNING n';
+export async function reserveUsage(request,env,now=Date.now()) {
+  const ip=request.headers.get('CF-Connecting-IP');
+  if(!ip) return false;
+  const day=Math.floor(now/86400000),minute=Math.floor(now/60000);
+  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(env.GEMINI_API_KEY),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const digest=await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(day+':'+ip));
+  const id=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+  const stmt=env.CHAT_LIMITS.prepare(COUNTER_SQL);
+  const result=await env.CHAT_LIMITS.batch([
+    env.CHAT_LIMITS.prepare('DELETE FROM chat_usage WHERE expires < ?').bind(now),
+    stmt.bind('m:'+minute+':'+id,now+120000,6),
+    stmt.bind('d:'+day+':'+id,(day+2)*86400000,30)
+  ]);
+  if(result.slice(1).some(r=>!r.success || r.results.length!==1)) return false;
+  const global=await stmt.bind('g:'+day,(day+2)*86400000,1000).all();
+  return global.success && global.results.length===1;
+}
