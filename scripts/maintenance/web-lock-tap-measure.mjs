@@ -1,4 +1,4 @@
-// Đọc cấu trúc phần Voucher Shop trên trang giỏ hàng (chỉ đọc, giỏ khách tạm).
+// Đo chạm vào sản phẩm trên điện thoại (chỉ đọc).
 import { chromium } from 'playwright';
 import { readFileSync } from 'node:fs';
 const SITE = (process.env.HEALTH_BASE || 'https://locknlockonline.com').replace(/\/+$/, '');
@@ -12,7 +12,7 @@ for (const path of ['/', '/shop/', '/cua-hang/']) {
   const resp = await page.goto(SITE + path + `?cb=${Date.now()}`, { waitUntil: 'load', timeout: 60_000 }).catch(() => null);
   if (!resp || resp.status() !== 200) { console.log('Bỏ qua ' + path + ' ' + (resp && resp.status())); continue; }
   await page.waitForTimeout(3000);
-  const cards = page.locator('.product-small .name a, .product-small .box-image a').first();
+  const cards = page.locator('.product-small .name a:visible, .product-small .box-image a:visible').first();
   if (!(await cards.count())) { console.log('Không thấy thẻ sản phẩm ở ' + path); continue; }
   const info = await cards.evaluate(e => { const r = e.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { href: e.getAttribute('href'), cls: e.className, top: top ? top.tagName + '.' + String(top.className).slice(0, 60) : null, vis: r.width + 'x' + r.height }; });
   console.log('THẺ', path, JSON.stringify(info));
