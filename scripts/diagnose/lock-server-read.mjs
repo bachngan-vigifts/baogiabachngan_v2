@@ -57,8 +57,8 @@ for (const [d, f, size, mt] of logs) {
   console.log(`\nLOG ${d.replace(docroot, '.')}/${f}: ${Math.round(size / 1024)}KB, sửa lần cuối ${mt ? new Date(mt * 1000).toISOString() : '?'}`);
   if (size > 12 * 1048576) { console.log('   quá lớn, bỏ qua đọc'); continue; }
   const t = await read(d, f); if (!t) { console.log('   không đọc được'); continue; }
-  const L = t.split('\n'); const hit = L.filter(l => /redis|object.?cache|memcache|connection refused|no such file|timed? ?out|max_children|resource temporarily|allowed memory|maximum execution|wdr|discount|deadlock|too many connections|mysql server has gone/i.test(l));
-  const today = hit.filter(l => /15-Nov-2026|2026-11-15/.test(l));
+  const L = t.split('\n'); const hit = L.filter(l => /redis|object.?cache|memcache|connection refused|no such file|timed? ?out|max_children|resource temporarily|allowed memory|maximum execution|wdr|discount|deadlock|too many connections|mysql server has gone|fatal|jetpack|uncaught/i.test(l));
+  const today = hit.filter(l => /1[56]-Nov-2026|2026-11-1[56]/.test(l));
   console.log(`   ${L.length} dòng; khớp từ khoá: ${hit.length}; trong hôm nay: ${today.length}`);
   const kinds = {}; for (const l of hit) { const k = redact(l.replace(/^\[[^\]]*\]\s*/, '').replace(/\d+/g, 'N')).slice(0, 140); kinds[k] = (kinds[k] || 0) + 1; }
   for (const [k, v] of Object.entries(kinds).sort((a, b) => b[1] - a[1]).slice(0, 12)) console.log(`   ${v}x ${k}`);
