@@ -13,7 +13,7 @@ add_action('wp_head', function () {
 
 function lnl_ui_align_css() {
     $css = <<<'CSS'
-.product-small.box > .box-text:not(:has(.claw-lnl-wdr-sale-badge))::before { content: ""; display: block; flex: 0 0 100%; width: 100%; height: 36px; }
+.product-small.box > .box-text:not(:has(.claw-lnl-wdr-sale-badge))::before { content: ""; display: block; flex: 0 0 100%; width: 100%; height: 29px; }
 @media (min-width: 850px) {
   body.single-product #claw-ai-launcher { top: auto !important; bottom: 2px !important; right: 180px !important; }
 }
