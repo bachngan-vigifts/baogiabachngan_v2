@@ -17,7 +17,8 @@ for (const [tag, opts, url] of [['d-home', D, SITE + '/'], ['d-cat', D, CAT], ['
   const ctx = await browser.newContext(opts); const p = await ctx.newPage();
   await p.goto(url, { waitUntil: 'load', timeout: 60_000 }).catch(() => {}); await p.waitForTimeout(2500);
   await p.evaluate(() => { const c = document.querySelector('.mltv-popup__close'); if (c) c.click(); }); await p.waitForTimeout(400);
-  await p.evaluate(async () => { for (let y = 0; y < Math.min(document.body.scrollHeight, 14000); y += 600) { scrollTo(0, y); await new Promise(r => setTimeout(r, 120)); } scrollTo(0, 0); }); await p.waitForTimeout(1500);
+  for (let k = 0; k < 3; k++) { try { await p.evaluate(async () => { for (let y = 0; y < Math.min(document.body.scrollHeight, 14000); y += 600) { scrollTo(0, y); await new Promise(r => setTimeout(r, 120)); } scrollTo(0, 0); }); break; } catch (e) { console.log(`${tag}: trang tự chuyển hướng, thử lại. URL hiện tại: ` + p.url().replace(SITE, '')); await p.waitForLoadState('load').catch(() => {}); await p.waitForTimeout(2500); } }
+  await p.waitForTimeout(1500); console.log(`${tag} URL: ` + p.url().replace(SITE, ''));
   const a = await stat(p); console.log(`ĐO ${tag} TRƯỚC: ` + JSON.stringify(a));
   if (a.firstBad !== null) { try { for (const l of await detail(p, a.firstBad)) console.log(`CT ${tag}| ` + l); } catch (e) { console.log(`CT ${tag}| lỗi đọc chi tiết: ` + String(e.message).slice(0, 200)); } if (tag.startsWith('d-')) await shot(p, tag + '-truoc', a.firstBad); }
   if (css) { await p.addStyleTag({ content: css }); await p.waitForTimeout(1200); const b = await stat(p); console.log(`ĐO ${tag} SAU: ` + JSON.stringify(b)); if (a.firstBad !== null && tag.startsWith('d-')) await shot(p, tag + '-sau', a.firstBad); console.log(`Tràn ngang ${tag}: ` + await p.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)); }
