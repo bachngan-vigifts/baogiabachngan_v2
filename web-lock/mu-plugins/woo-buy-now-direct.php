@@ -58,7 +58,7 @@ function lnl_buy_direct_js() {
     e.preventDefault(); e.stopImmediatePropagation();
     if (busy) { return; }
     busy = true;
-    try { s.style.opacity = '.7'; s.textContent = 'Đang xử lý…'; } catch (x) {}
+    try { s.style.opacity = '.7'; s.textContent = '\u0110ang x\u1eed l\u00fd\u2026'; } catch (x) {}
     setTimeout(function () { busy = false; }, 15000);
     window.location.assign(CHECKOUT + (CHECKOUT.indexOf('?') === -1 ? '?' : '&') + p.toString());
   }, true);
