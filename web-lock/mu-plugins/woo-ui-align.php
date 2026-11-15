@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Lock UI align
- * Description: CSS only. Product cards: equal height, buy button pinned to the bottom so buttons line up. Desktop product page: the chat launcher sits beside the contact bar so it no longer covers the buy buttons. Delete this file to roll back.
+ * Description: CSS only. Product cards: the sale badge sits on the image corner instead of pushing the text down, so buy buttons line up. Desktop product page: the chat launcher sits beside the contact bar so it no longer covers the buy buttons. Delete this file to roll back.
  */
 if (!defined('ABSPATH')) { exit; }
 
@@ -13,12 +13,8 @@ add_action('wp_head', function () {
 
 function lnl_ui_align_css() {
     $css = <<<'CSS'
-.col.product-small > .col-inner { height: 100%; display: flex; flex-direction: column; }
-.col.product-small > .col-inner > .product-small.box { flex: 1 1 auto; display: flex; flex-direction: column; }
-.product-small.box > .box-text { flex: 1 1 auto; height: auto !important; display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; }
-.product-small.box > .box-text > .price-wrapper { height: auto !important; }
-.product-small.box > .box-text > .add-to-cart-button { margin-top: auto !important; padding-top: 10px; }
-.flickity-slider > .col.product-small { height: 100%; }
+.product-small.box > .box-text { position: static !important; }
+.product-small.box > .box-text > .claw-lnl-wdr-sale-badge { position: absolute; top: 8px; left: 8px; margin: 0 !important; z-index: 3; }
 @media (min-width: 850px) {
   body.single-product #claw-ai-launcher { top: auto !important; bottom: 2px !important; right: 180px !important; }
 }
