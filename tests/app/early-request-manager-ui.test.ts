@@ -34,28 +34,28 @@ async function setup({manager=true,portal=false,status='submitted',receive=false
     return{canViewPortal:manager,canReceive:receive,requests:[{id:'r1',createdAt:'2026-10-23T01:00:00Z',pickupDate:'2026-10-24',requestStatus:status,status:accepted?'accepted':'pending',lines:[{id:'l1',sku:'SKU1',name:'Ly',quantity:20,unit:'Cái',status:accepted?'accepted':'pending',allocations:[{id:'a1',supplierId:'s1',supplierName:'NCC A',quantity:20,remainingToReceive:accepted?remaining:0,status:accepted?'accepted':'pending',orderId:'o1',ticketNumber:'PO1'}]}]}]};
   };
   const ui=context.initEarlyRequests({api,host,portal,onSaved:async()=>saved++});await ui.load();
-  return{host,body,calls,get saved(){return saved;},fail:()=>fail=true,quick,quickButton:()=>all(host).find(n=>n.tag==='button'&&n.textContent==='Nhận hàng nhanh'),button:(text:string)=>all(body).concat(all(host)).find(n=>n.tag==='button'&&n.textContent===text)};
+  return{host,body,calls,get saved(){return saved;},fail:()=>fail=true,quick,quickButton:()=>all(host).find(n=>n.tag==='button'&&n.textContent==='Nhận hàng'),button:(text:string)=>all(body).concat(all(host)).find(n=>n.tag==='button'&&n.textContent===text)};
 }
 test('Manager xác nhận từ cạnh trạng thái: đúng mã/NCC, tải lại và không gửi trùng',async()=>{
-  const s=await setup();await s.button('Manager xác nhận thay NCC')!.click();
+  const s=await setup();await s.button('Xác nhận thay NCC')!.click();
   assert.match(s.body.textContent,/NCC A · SKU1 · 20 Cái/);assert.match(s.body.textContent,/không nhận hàng hoặc cộng tồn/);
   const action=s.button('Xác nhận 1 phiếu')!;await Promise.all([action.click(),action.click()]);
   assert.equal(s.calls.length,1);assert.equal(s.calls[0].path,'/purchase-early-requests/manager-confirm-batch');assert.equal(JSON.stringify(s.calls[0].data.allocationIds),JSON.stringify(['a1']));assert.equal(s.saved,1);
-  assert.match(s.host.textContent,/NCC đồng ý/);assert.equal(s.button('Manager xác nhận thay NCC'),undefined);
+  assert.match(s.host.textContent,/NCC đồng ý/);assert.equal(s.button('Xác nhận thay NCC'),undefined);
 });
 test('không hiện xác nhận thay cho nhân viên, cổng NCC hoặc phiếu nháp',async()=>{
-  for(const options of [{manager:false},{portal:true},{status:'draft'}])assert.equal((await setup(options)).button('Manager xác nhận thay NCC'),undefined);
+  for(const options of [{manager:false},{portal:true},{status:'draft'}])assert.equal((await setup(options)).button('Xác nhận thay NCC'),undefined);
 });
 test('xác nhận lỗi hiện thông báo server và cho thử lại',async()=>{
-  const s=await setup();s.fail();await s.button('Manager xác nhận thay NCC')!.click();await s.button('Xác nhận 1 phiếu')!.click();
+  const s=await setup();s.fail();await s.button('Xác nhận thay NCC')!.click();await s.button('Xác nhận 1 phiếu')!.click();
   assert.match(s.body.textContent,/Phiếu đã thay đổi/);assert.equal(s.button('Xác nhận 1 phiếu')!.disabled,false);assert.equal(s.saved,0);
 });
 
 test('quick receipt appears after acceptance only for receiving staff and passes the exact displayed request scope',async()=>{
  const s=await setup({receive:true});assert.equal(s.quickButton(),undefined);
- await s.button('Manager xác nhận thay NCC')!.click();await s.button('Xác nhận 1 phiếu')!.click();
+ await s.button('Xác nhận thay NCC')!.click();await s.button('Xác nhận 1 phiếu')!.click();
  await s.quickButton()!.click();assert.equal(s.quick.length,1);assert.equal(s.quick[0].id,'r1');assert.equal(s.quick[0].lines[0].allocations[0].orderId,'o1');assert.equal(s.quick[0].lines[0].sku,'SKU1');
  for(const opts of [{receive:false},{receive:true,portal:true},{receive:true,remaining:0}]){
-  const blocked=await setup(opts);if(!opts.portal){await blocked.button('Manager xác nhận thay NCC')!.click();await blocked.button('Xác nhận 1 phiếu')!.click();}assert.equal(blocked.quickButton(),undefined);
+  const blocked=await setup(opts);if(!opts.portal){await blocked.button('Xác nhận thay NCC')!.click();await blocked.button('Xác nhận 1 phiếu')!.click();}assert.equal(blocked.quickButton(),undefined);
  }
 });

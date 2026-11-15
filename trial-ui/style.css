@@ -2956,3 +2956,8 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
   .buy-list td { border: 0; padding: 2px 0; }
   .buy-list td:empty { display: none; }
 }
+.buy-chooser { width: min(520px, calc(100% - 24px)); }
+.buy-chooser-list { display: grid; gap: 10px; }
+.buy-choice { display: grid; gap: 3px; text-align: left; border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 14px 16px; background: var(--surface); cursor: pointer; font: inherit; color: var(--ink); }
+.buy-choice:hover, .buy-choice:focus-visible { border-color: var(--brand-navy); background: var(--surface-2); }
+.buy-choice small { color: var(--muted); font-size: var(--text-small); }

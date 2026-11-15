@@ -10,7 +10,7 @@ function supplierSlips(request) {
   const groups=new Map();
   for(const line of request.lines)for(const a of line.allocations){
     const ref=String(a.supplierOrderNo||'').trim(),key=JSON.stringify([a.supplierId,ref?'ncc':'crm',ref?ref.toLocaleLowerCase('vi'):a.orderId]);
-    if(!groups.has(key))groups.set(key,{...request,groupKey:request.id+':'+key,slipLabel:ref?'NCC: '+ref:'Đơn CRM: '+a.ticketNumber,supplierName:a.supplierName,lines:[]});
+    if(!groups.has(key))groups.set(key,{...request,groupKey:request.id+':'+key,slipLabel:ref?'NCC: '+ref:'Đơn mua '+a.ticketNumber,supplierName:a.supplierName,lines:[]});
     const group=groups.get(key);let item=group.lines.find(l=>l.id===line.id);
     if(!item){item={...line,quantity:0,allocations:[]};group.lines.push(item);}
     item.quantity+=a.quantity;item.allocations.push(a);
@@ -24,14 +24,14 @@ function supplierSlips(request) {
 }
 export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supplierId='',onSaved=()=>{},onDeleted=()=>{},requestHref=id=>'#/purchases?mode=incoming&request='+encodeURIComponent(id),currentRequest=()=>'',portalNavigation=null}) {
   let requestNo=0,dialog=null,batchBusy=false,confirmDialog=null,renderedRequests=[],renderedMeta={};const selected=new Map();
-  const title=el('h2','card-title',portal?'Yêu cầu xin lấy trước':'Phiếu xin lấy trước đã lưu'),list=el('div','early-request-list');
+  const title=el('h2','card-title',portal?'Yêu cầu xin lấy trước':'Chi tiết phiếu lấy hàng trước'),list=el('div','early-request-list');
   const operations=el('div','early-request-operations');
   operations.dataset.mobileActions='off';
   const bulk=el('div','row-gap early-request-bulk'),all=el('input');all.type='checkbox';all.setAttribute('aria-label','Chọn tất cả phiếu chờ xác nhận');
   const allLabel=el('label');allLabel.append(all,el('span','','Chọn tất cả'));
-  const batch=btn('Xác nhận đã chọn (0)',()=>confirmSlips([...selected.values()]),'btn primary small');batch.disabled=true;
+  const batch=btn('Xác nhận thay NCC (0)',()=>confirmSlips([...selected.values()]),'btn primary small');batch.disabled=true;
   bulk.append(allLabel,batch);bulk.hidden=true;host.append(title,operations,bulk,list);
-  const syncBatch=()=>{batch.textContent='Xác nhận đã chọn ('+selected.size+')';batch.disabled=batchBusy||!selected.size;};
+  const syncBatch=()=>{batch.textContent='Xác nhận thay NCC ('+selected.size+')';batch.disabled=batchBusy||!selected.size;};
   all.addEventListener('change',()=>{for(const entry of selectable){entry.check.checked=all.checked;if(all.checked)selected.set(entry.request.groupKey,entry.request);else selected.delete(entry.request.groupKey);}syncBatch();});
   let selectable=[];
   async function load(id='') {
@@ -68,17 +68,17 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
       if(!portal&&canViewPortal&&request.groupKey&&request.lines.some(l=>l.allocations.some(a=>a.status==='pending'))){
         const check=el('input');check.type='checkbox';check.setAttribute('aria-label','Chọn phiếu '+request.slipLabel+' · '+request.supplierName);
         check.addEventListener('change',()=>{if(check.checked)selected.set(request.groupKey,request);else selected.delete(request.groupKey);all.checked=selectable.length>0&&selectable.every(e=>e.check.checked);syncBatch();});
-        selectable.push({check,request});head.replaceChildren(check,...head.children);head.append(btn('Manager xác nhận thay NCC',()=>confirmSlips([request]),'btn primary small'));
+        selectable.push({check,request});head.replaceChildren(check,...head.children);head.append(btn('Xác nhận thay NCC',()=>confirmSlips([request]),'btn primary small'));
       }
       card.append(head,el('p','small',(request.supplierName?request.supplierName+' · ':'')+'Ngày lấy: '+date(request.pickupDate)));if(request.groupKey)card.dataset.supplierSlip=request.groupKey;
       if(!portal&&canViewPortal){
         const actions=el('div','row-gap early-slip-actions');actions.dataset.mobileActions='off';
         if(request.lines.some(l=>l.allocations.some(a=>a.receivedQty>0)))actions.append(el('span','small muted','Đã nhận hàng · giữ phiếu để đối soát'));
-        else actions.append(btn(request.requestStatus==='submitted'?'Huỷ phiếu và xoá':'Xoá phiếu',()=>changeRequest(request,request.requestStatus==='submitted'?'cancel-slip':'delete'),'btn primary danger-bg small'));card.append(actions);
+        else actions.append(btn(request.requestStatus==='submitted'?'Huỷ phiếu':'Xoá phiếu',()=>changeRequest(request,request.requestStatus==='submitted'?'cancel-slip':'delete'),'btn danger-outline small'));card.append(actions);
       }
       if(!portal&&canReceive&&request.requestStatus==='submitted'&&request.lines.some(l=>l.allocations.some(a=>a.status==='accepted'&&a.remainingToReceive>0))){
         const receive=el('div','row-gap early-slip-actions');receive.dataset.mobileActions='off';
-        receive.append(btn('Nhận hàng nhanh',()=>openEarlyQuickReceipt({api,request,onSaved:async()=>{await load(currentRequest());await onSaved(request);}}),'btn primary small'));card.append(receive);
+        receive.append(btn('Nhận hàng',()=>openEarlyQuickReceipt({api,request,onSaved:async()=>{await load(currentRequest());await onSaved(request);}}),'btn primary small'));card.append(receive);
       }
       if(!portal) {
         const open=el('a','small','Mở phiếu');open.href=requestHref(request.id);card.append(open);
@@ -118,19 +118,19 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
       }
       list.append(card);
     }
-    bulk.hidden=portal||!canViewPortal||!selectable.length;
+    bulk.hidden=portal||!canViewPortal||selectable.length<2; // Một phiếu thì dùng nút trên phiếu, không cần thanh chọn nhiều.
   }
   function changeRequest(request,action,reload=true){
     if(batchBusy||confirmDialog)return;
     const slip=action==='cancel-slip',remove=action==='delete'||action==='cancel-delete'||slip,cancel=action==='cancel-delete'||slip,modal=confirmDialog=el('dialog','modal early-request-dialog'),head=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');let busy=false;
-    const close=btn('Đóng',()=>{if(!busy)modal.close();});head.append(el('h2','',cancel?'Huỷ phiếu xin hàng và xoá':remove?'Xoá phiếu xin hàng':'Tách theo số đơn NCC'),close);
+    const close=btn('Đóng',()=>{if(!busy)modal.close();});head.append(el('h2','',cancel?'Huỷ phiếu lấy hàng trước':remove?'Xoá phiếu xin hàng':'Tách theo số đơn NCC'),close);
     const groups=supplierSlips(request);
     body.append(el('p','',slip?'Huỷ và xoá '+request.slipLabel+', gồm '+request.lines.length+' mã hàng.':remove?(cancel?'Huỷ yêu cầu xin lấy trước và xoá toàn bộ phiếu ':'Xoá toàn bộ phiếu ')+(request.ticketNumber||request.id.slice(0,8).toUpperCase())+', gồm '+groups.length+' nhóm nguồn và '+request.lines.length+' mã hàng.':'Lưu '+groups.length+' phiếu riêng theo NCC + số đơn NCC; giữ nguyên số lượng và trạng thái phản hồi.'));
     if(slip)body.append(el('p','','Chỉ huỷ phiếu NCC này. Các phiếu NCC khác được giữ nguyên.'));
     for(const group of groups)body.append(el('p','small',group.supplierName+' · '+group.slipLabel+' · '+group.lines.map(l=>l.sku+' × '+number(l.quantity)).join('; ')));
     body.append(el('p','muted small',cancel?'Sau xác nhận, phiếu không còn trên CRM và cổng NCC, không thể tiếp tục nhận theo phiếu này. Phiếu NCC đã phát sinh nhận hàng sẽ bị chặn. Phiếu NCC chưa nhận vẫn được huỷ riêng. Đơn mua NCC, tồn kho và nhật ký đối soát được giữ nguyên.':'Phiếu đã phát sinh nhận hàng sẽ bị chặn. Không thay đổi tồn kho hoặc xoá đơn mua NCC.'));
     const error=el('p','error');error.setAttribute('role','alert');body.append(error);
-    const submit=btn(cancel?'Xác nhận huỷ và xoá':remove?'Xác nhận xoá phiếu':'Xác nhận tách phiếu',async()=>{
+    const submit=btn(cancel?'Xác nhận huỷ phiếu':remove?'Xác nhận xoá phiếu':'Xác nhận tách phiếu',async()=>{
       if(busy)return;busy=batchBusy=true;close.disabled=submit.disabled=true;syncBatch();error.textContent='';
       try{const result=await api('/purchase-early-requests/'+encodeURIComponent(request.id)+(slip?'/cancel-slip':remove?'':'/split'),remove&&!slip?'DELETE':'POST',slip?{allocationIds:request.lines.flatMap(l=>l.allocations.map(a=>a.id))}:{});modal.close();
         if(slip&&(result.remainingRequestIds?.length||currentRequest()&&currentRequest()!==request.id)){const remaining=await load(currentRequest());if(remaining?.length){await onSaved(request);return;}}
@@ -144,7 +144,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
     if(batchBusy||confirmDialog||!requests.length)return;
     const allocationIds=[...new Set(requests.flatMap(r=>r.lines.flatMap(l=>l.allocations.filter(a=>a.status==='pending').map(a=>a.id))))];
     const modal=confirmDialog=el('dialog','modal early-request-dialog'),header=el('div','modal-head'),body=el('div','modal-body'),foot=el('div','modal-foot');
-    let busy=false;const close=btn('Đóng',()=>{if(!busy)modal.close();});header.append(el('h2','','Manager xác nhận thay NCC'),close);
+    let busy=false;const close=btn('Đóng',()=>{if(!busy)modal.close();});header.append(el('h2','','Xác nhận thay NCC'),close);
     body.append(el('p','muted','Chỉ xác nhận những phiếu NCC đã đồng ý. Thao tác này không nhận hàng hoặc cộng tồn kho.'));
     for(const r of requests)body.append(el('p','',r.slipLabel+' · '+r.supplierName+' · '+r.lines.map(l=>l.sku+' · '+number(l.quantity)+' '+(l.unit||'')).join('; ')));
     const error=el('p','error');error.setAttribute('role','alert');body.append(error);

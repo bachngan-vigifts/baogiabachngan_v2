@@ -36,5 +36,5 @@ try{for(const width of [390,1280]){
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/#/early-requests?q='+made.id);await page.locator('.early-page-card').waitFor();
  assert.equal(await page.locator('.early-page-index button').filter({hasText:/Huỷ phiếu|Xoá phiếu/}).count(),0);assert.equal(await page.locator('[data-early-list-remove]').count(),0);
  await page.screenshot({path:out+'/list-no-delete-'+width+'.png'});await page.locator('.early-page-card .data-link').click();await page.locator('.early-request-card').first().waitFor();
- assert.equal(await page.locator('.early-request-card').getByRole('button',{name:'Huỷ phiếu và xoá',exact:true}).count(),3);assert.equal(writes.length,0);assert.deepEqual(errors,[]);results.push({width,noListCancel:true,detailCardCancel:true,noWrites:true,errors});await context.close();
+ assert.equal(await page.locator('.early-request-card').getByRole('button',{name:'Huỷ phiếu',exact:true}).count(),3);assert.equal(writes.length,0);assert.deepEqual(errors,[]);results.push({width,noListCancel:true,detailCardCancel:true,noWrites:true,errors});await context.close();
 }console.log(JSON.stringify(results));await writeFile(out+'/results.json',JSON.stringify(results,null,2));}finally{await browser.close();server.close();await f.client.close();}
