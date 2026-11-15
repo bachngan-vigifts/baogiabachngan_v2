@@ -1,0 +1,24 @@
+# Tổng hợp lượt truy cập gần nhất của web Lock (chỉ đọc). Chạy khi .github/last-visitors.run đổi.
+name: Đọc lượt truy cập gần nhất web Lock
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/last-visitors.run']
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+        run: |
+          [ -f .github/last-visitors.run ] || exit 0
+          node scripts/maintenance/cpanel-last-visitors.mjs
