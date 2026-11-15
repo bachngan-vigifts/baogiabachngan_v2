@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Lock UI align
- * Description: CSS only. Product cards: the sale badge sits on the image corner instead of pushing the text down, so buy buttons line up. Desktop product page: the chat launcher sits beside the contact bar so it no longer covers the buy buttons. Delete this file to roll back.
+ * Description: CSS only. Product cards: cards without a sale badge reserve the badge's space, so titles and buy buttons line up with cards that have one. Desktop product page: the chat launcher sits beside the contact bar so it no longer covers the buy buttons. Delete this file to roll back.
  */
 if (!defined('ABSPATH')) { exit; }
 
@@ -13,8 +13,7 @@ add_action('wp_head', function () {
 
 function lnl_ui_align_css() {
     $css = <<<'CSS'
-.product-small.box > .box-text { position: static !important; }
-.product-small.box > .box-text > .claw-lnl-wdr-sale-badge { position: absolute !important; top: 8px !important; left: 8px !important; bottom: auto !important; margin: 0 !important; z-index: 3; }
+.product-small.box > .box-text:not(:has(.claw-lnl-wdr-sale-badge))::before { content: ""; display: block; flex: 0 0 100%; width: 100%; height: 36px; }
 @media (min-width: 850px) {
   body.single-product #claw-ai-launcher { top: auto !important; bottom: 2px !important; right: 180px !important; }
 }
