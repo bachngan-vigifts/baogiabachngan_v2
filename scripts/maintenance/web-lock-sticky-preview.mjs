@@ -20,11 +20,12 @@ async function run(tag, url, opts, y) {
   }
   await shot(page, 'truoc-' + tag);
   if (css) { await page.addStyleTag({ content: css }); await page.waitForTimeout(1200); await shot(page, 'sau-' + tag); }
-  if (js && tag === 'm-simple') {
-    await page.addScriptTag({ content: js }); const u0 = page.url(); let navs = 0; page.on('framenavigated', f => { if (f === page.mainFrame()) navs++; });
+  if ((js || process.env.LIVE === '1') && tag === 'm-simple') {
+    if (process.env.LIVE !== '1') await page.addScriptTag({ content: js }); const u0 = page.url(); let navs = 0; page.on('framenavigated', f => { if (f === page.mainFrame()) navs++; });
     const resp = page.waitForResponse(r => /wc-ajax=lnl_add_to_cart/.test(r.url()), { timeout: 25_000 }).catch(() => null);
     const t0 = Date.now(); await page.locator('.sticky-add-to-cart--active .single_add_to_cart_button').click({ noWaitAfter: true }); const r = await resp; await page.waitForTimeout(2000);
     const body = r ? await r.json().catch(() => null) : null;
+    if (process.env.LIVE === '1' && (!body || !body.success || navs > 0)) process.exitCode = 1;
     console.log(`THỬ NÚT THANH DÍNH: yêu cầu AJAX=${r ? r.status() : 'không có'} sau ${Date.now() - t0}ms; success=${body && body.success}; tải lại trang=${navs > 0 || page.url() !== u0}; số trong giỏ=` + await page.evaluate(() => (document.querySelector('.cart-icon strong, .header-cart-link .cart-icon strong, [data-icon-label]') || {}).textContent || (document.querySelector('[data-icon-label]') || { getAttribute() {} }).getAttribute('data-icon-label')));
   }
   await ctx.close();

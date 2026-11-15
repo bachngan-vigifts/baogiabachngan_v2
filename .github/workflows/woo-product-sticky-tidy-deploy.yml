@@ -1,0 +1,69 @@
+# Thêm mu-plugin woo-product-sticky-tidy.php (thanh mua dính đáy gọn, nút dùng đường thêm giỏ nhanh) lên web Lock.
+# Quy trình: đo trước -> thêm file mới (web lỗi thì tự gỡ) -> dọn cache LiteSpeed -> đo sau -> không đạt thì tự gỡ và dọn cache lại.
+# Chạy từ nhánh khi file .github/woo-product-sticky-tidy.run đổi (nội dung: dry-run hoặc apply). Không có file thì bỏ qua.
+name: Thanh mua dính đáy gọn web Lock
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/woo-product-sticky-tidy.run']
+concurrency: woo-product-sticky-tidy
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+      FILE: woo-product-sticky-tidy.php
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Xác định chế độ
+        id: mode
+        run: |
+          if [ -f .github/woo-product-sticky-tidy.run ]; then m=$(tr -d ' \r\n' < .github/woo-product-sticky-tidy.run); else m=skip; fi
+          case "$m" in dry-run|apply) ;; *) m=skip ;; esac
+          echo "Chế độ: $m"
+          echo "mode=$m" >> "$GITHUB_OUTPUT"
+      - name: Cài trình duyệt đo
+        if: steps.mode.outputs.mode != 'skip'
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-sticky-preview.mjs" /tmp/pw/
+      - name: Đo trước
+        if: steps.mode.outputs.mode != 'skip'
+        working-directory: /tmp/pw
+        run: node web-lock-sticky-preview.mjs
+      - name: Kiểm tra và thêm file
+        if: steps.mode.outputs.mode != 'skip'
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: node scripts/maintenance/cpanel-deploy-newfile.mjs
+      - name: Dọn cache LiteSpeed
+        if: steps.mode.outputs.mode == 'apply'
+        env:
+          MODE: apply
+        run: node scripts/maintenance/cpanel-purge-lscache.mjs
+      - name: Đo sau
+        id: verify
+        if: steps.mode.outputs.mode == 'apply'
+        continue-on-error: true
+        working-directory: /tmp/pw
+        env:
+          LIVE: '1'
+        run: node web-lock-sticky-preview.mjs
+      - name: Tự gỡ nếu đo sau không đạt
+        if: steps.mode.outputs.mode == 'apply' && steps.verify.outcome == 'failure'
+        env:
+          MODE: rollback
+        run: |
+          node scripts/maintenance/cpanel-deploy-newfile.mjs
+          MODE=apply node scripts/maintenance/cpanel-purge-lscache.mjs
+          echo "ĐÃ GỠ plugin vì đo sau không đạt"; exit 1
