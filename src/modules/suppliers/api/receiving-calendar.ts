@@ -27,8 +27,9 @@ export async function receivingCalendar(db: Db, params: URLSearchParams, today: 
   type Line = {lineId:string;sku:string;name:string;unit:string;left:number;requestedQty?:number;status?:string;canConfirm?:boolean;receiptOptions?:{orderId:string;ticketNumber:string;remaining:number}[]};
   type Row = {type:'purchase'|'early';orderId:string;requestId?:string;supplierId:string|null;ticketNumber:string;supplierName:string;date:string|null;createdAt:string;lines:Line[]};
   const groups = new Map<string,Row>();
-  const matchesDate = (date:string|null) => !(date && ((from && date < from) || (to && date > to))) &&
-    !(state === 'late' && (!date || date >= today)) && !(state === 'scheduled' && (!date || date < today)) && !(state === 'undated' && date);
+  // Lọc trạng thái (quá hẹn / sắp tới / chưa hẹn) áp sau khi gom nhóm để đếm được từng trạng thái theo các bộ lọc còn lại.
+  const matchesDate = (date:string|null) => !(date && ((from && date < from) || (to && date > to)));
+  const matchesState = (date:string|null) => !(state === 'late' && (!date || date >= today)) && !(state === 'scheduled' && (!date || date < today)) && !(state === 'undated' && date);
   for (const l of type === 'early' ? [] : all) {
     const date = l.promisedDate || l.arrivalDate || null;
     if ((supplier && l.supplierId !== supplier) || !matchesDate(date)) continue;
@@ -65,9 +66,12 @@ export async function receivingCalendar(db: Db, params: URLSearchParams, today: 
     saved.left+=allocation.status==='accepted'&&request.status==='submitted'?(receipt?.remaining??0):Math.min(allocation.quantity,purchase.left);
     if(receipt?.remaining)saved.receiptOptions!.push({orderId:receipt.orderId,ticketNumber:receipt.ticketNumber,remaining:receipt.remaining});
   }
-  const rows=[...groups.values()].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.type.localeCompare(b.type)||a.ticketNumber.localeCompare(b.ticketNumber)||a.orderId.localeCompare(b.orderId)||(a.date||'').localeCompare(b.date||''));
+  const grouped=[...groups.values()];
+  const counts={all:grouped.length,late:grouped.filter(r=>r.date&&r.date<today).length,today:grouped.filter(r=>r.date===today).length,
+    scheduled:grouped.filter(r=>r.date&&r.date>=today).length,undated:grouped.filter(r=>!r.date).length};
+  const rows=grouped.filter(r=>matchesState(r.date)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.type.localeCompare(b.type)||a.ticketNumber.localeCompare(b.ticketNumber)||a.orderId.localeCompare(b.orderId)||(a.date||'').localeCompare(b.date||''));
   const offset=Math.max(0,Math.floor(Number(params.get('offset'))||0)),limit=50;
   return {suppliers,total:rows.length,orderCount:new Set(rows.map(r=>r.type+':'+(r.requestId||r.orderId))).size,
     overdue:rows.filter(r=>r.date&&r.date<today).length,undated:rows.filter(r=>!r.date).length,
-    rows:options.paginate===false?rows:rows.slice(offset,offset+limit),offset,limit,today};
+    rows:options.paginate===false?rows:rows.slice(offset,offset+limit),offset,limit,today,counts};
 }

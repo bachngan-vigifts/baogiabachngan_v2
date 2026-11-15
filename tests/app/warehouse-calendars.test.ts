@@ -26,7 +26,10 @@ test('warehouse calendars: remaining supplier receipts, date overrides, paginati
   await db.insert(supplierReceipts).values(['partial','full','void'].map(id=>({id,receiptNo:'PNH-'+id,shipmentId:id==='void'?'partial':id,receivedDate:'2026-10-21',receivedBy:'mgr',clientKey:id,createdAt:now,cancelledAt:id==='void'?now:null})));
   await db.insert(supplierReceiptLines).values([{receiptId:'partial',lineId:'l-partial',sku:'SKU-partial',goodQty:4,damagedQty:2},{receiptId:'full',lineId:'l-full',sku:'SKU-full',goodQty:10},{receiptId:'void',lineId:'l-partial',sku:'SKU-partial',goodQty:6}]);
   const filtered = await receivingCalendar(db,new URLSearchParams({state:'late'}),'2026-10-22');
-  assert.equal(filtered.total,1); assert.equal(filtered.rows[0]!.date,'2026-10-20'); assert.equal(filtered.rows[0]!.lines[0]!.left,6,'damaged goods and voided receipts do not reduce remaining');
+  assert.equal(filtered.total,1); assert.equal(filtered.rows[0]!.date,'2026-10-20');
+  assert.deepEqual(filtered.counts,{all:53,late:1,today:0,scheduled:51,undated:1},'status counts ignore the selected status so the quick-filter cards stay stable');
+  assert.deepEqual((await receivingCalendar(db,new URLSearchParams({state:'undated'}),'2026-10-23')).counts,{all:53,late:1,today:51,scheduled:51,undated:1});
+  assert.equal((await receivingCalendar(db,new URLSearchParams({state:'scheduled',q:'SKU-partial'}),'2026-10-22')).counts.late,1,'counts follow the other filters'); assert.equal(filtered.rows[0]!.lines[0]!.left,6,'damaged goods and voided receipts do not reduce remaining');
   const first = await call('/purchase-receiving-calendar',kho);
   assert.equal(first.status,200); assert.equal(first.data.total,53); assert.equal(first.data.rows.length,50);
   assert.equal(first.data.orderCount,53); assert.equal(first.data.undated,1);
