@@ -16,11 +16,12 @@ function lnl_ui_align3_css() {
 .product-small.box > .box-text { row-gap: 6px !important; }
 .product-small.box > .box-text > .claw-lnl-wdr-sale-badge,
 .product-small.box > .box-text > .ux-swatches-in-loop { margin-top: 0 !important; margin-bottom: 0 !important; }
+.product-small.box > .box-text > .ux-swatches-in-loop[style*="visibility: hidden"] { display: none !important; }
 @media (min-width: 850px) {
   .product-small.box > .box-text > .title-wrapper,
   .product-small.box > .box-text > .price-wrapper,
   .product-small.box > .box-text > .add-to-cart-button { order: 2; }
-  .product-small.box > .box-text > .ux-swatches-in-loop { order: 1; flex: 0 0 100% !important; min-height: 20px; }
+  .product-small.box > .box-text > .ux-swatches-in-loop:not([style*="visibility: hidden"]) { order: 1; flex: 0 0 100% !important; min-height: 20px; }
   .product-small.box > .box-text:not(:has(> .ux-swatches-in-loop:not([style*="visibility: hidden"])))::after { content: ""; display: block; order: 1; flex: 0 0 100%; width: 100%; height: 20px; }
 }
 CSS;
