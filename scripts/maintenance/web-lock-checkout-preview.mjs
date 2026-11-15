@@ -52,7 +52,7 @@ if (process.env.CSS_FROM) {
 if (process.env.POPUP_FROM || process.env.POPUP_LIVE === '1') {
   if (process.env.POPUP_FROM) { const src = readFileSync(process.env.POPUP_FROM, 'utf8'); await page.addStyleTag({ content: /<<<'CSS'\n([\s\S]*?)\nCSS;/.exec(src)[1] }); await page.addScriptTag({ content: /<<<'JS'\n([\s\S]*?)\nJS;/.exec(src)[1] }); }
   const orders = []; page.on('response', r => { if (/wc-ajax=checkout/.test(r.url())) r.text().then(t => orders.push(r.status() + ' ' + t.slice(0, 160))).catch(() => {}); });
-  await page.evaluate(() => { const n = document.querySelector('#billing_first_name'); if (n) n.value = ''; });
+  await page.fill('#billing_first_name', ''); await page.fill('#billing_address_1', '').catch(() => {}); await page.fill('#billing_phone', '0912345678'); await page.locator('#billing_phone').blur().catch(() => {}); await page.waitForTimeout(1500);
   await page.locator('#place_order').click({ noWaitAfter: true }); await page.waitForSelector('#lnl-err-popup-wrap', { timeout: 30_000 }).catch(() => console.log('KHÔNG thấy popup lỗi'));
   await page.waitForTimeout(800);
   const vl = await page.evaluate(() => [...document.querySelectorAll('form.checkout *, .woocommerce-notices-wrapper *, body > *')].filter(e => e.children.length === 0 && /Vui lòng/.test(e.textContent || '') && e.getBoundingClientRect().height > 0 && e.id !== 'lnl-err-popup-wrap' && !e.closest('#lnl-err-popup-wrap')).map(e => { const ch = []; for (let x = e, i = 0; x && i < 4; x = x.parentElement, i++) ch.push(x.tagName.toLowerCase() + (x.id ? '#' + x.id : '') + '.' + String(x.className).trim().split(/\s+/).slice(0, 3).join('.')); return e.textContent.trim().slice(0, 60) + ' :: ' + ch.join(' < '); }));
