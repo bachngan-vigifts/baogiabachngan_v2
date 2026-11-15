@@ -1,0 +1,22 @@
+# Làm nóng cache LiteSpeed web Lock (chỉ đọc, khách ẩn danh). Chạy khi .github/cache-warm.run đổi; có thể chạy tay (workflow_dispatch).
+# Muốn tự chạy định kỳ: cần khối schedule bên dưới nằm trên nhánh mặc định (cần anh Thái đồng ý gộp vào main).
+name: Làm nóng cache web Lock
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/cache-warm.run']
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/maintenance/web-lock-cache-warm.mjs
