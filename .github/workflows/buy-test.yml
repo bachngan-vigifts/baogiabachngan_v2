@@ -20,4 +20,5 @@ jobs:
           mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
           npx playwright install --with-deps chromium >/dev/null
           cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-buy-test.mjs" .
-          node web-lock-buy-test.mjs
+          F="$GITHUB_WORKSPACE/web-lock/mu-plugins/woo-buy-now-direct.php"; [ -f "$F" ] && export JS_FROM="$F"
+          ONLY=4,5 node web-lock-buy-test.mjs

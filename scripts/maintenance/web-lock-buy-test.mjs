@@ -5,14 +5,19 @@ const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/6
 const CAT = SITE + '/danh-muc/binh-nuoc/binh-nuoc-mang-di/binh-giu-nhiet/';
 const j = await (await fetch(`${SITE}/wp-json/wc/store/v1/products?type=simple&per_page=5&stock_status=instock`)).json();
 const simple = (Array.isArray(j) ? j : []).find(x => x.permalink)?.permalink;
+import { readFileSync, existsSync } from 'node:fs';
+let INJ = ''; if (process.env.JS_FROM && existsSync(process.env.JS_FROM)) { const m = /<<<'JS'\n([\s\S]*?)\nJS;/.exec(readFileSync(process.env.JS_FROM, 'utf8')); if (m) INJ = m[1].replace('%%CHECKOUT%%', SITE + '/thanh-toan/'); }
+const ONLY = (process.env.ONLY || '').split(',').filter(Boolean);
 const browser = await chromium.launch();
 const sum = {};
 async function run(name, url, prep, act, doneRe, navRe) {
+  if (ONLY.length && !ONLY.includes(name[0])) return;
   for (let k = 1; k <= 3; k++) {
     const ctx = await browser.newContext({ userAgent: UA, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); const p = await ctx.newPage();
     try {
       await p.goto(url, { waitUntil: 'load', timeout: 60_000 }); await p.waitForTimeout(3500);
       await p.evaluate(() => { const c = document.querySelector('.mltv-popup__close'); if (c) c.click(); });
+      if (INJ && navRe) await p.addScriptTag({ content: INJ });
       const el = await prep(p); await p.waitForTimeout(600);
       const log = []; const st = new Map(); let t0 = 0;
       p.on('request', r => st.set(r, Date.now()));
@@ -26,7 +31,8 @@ async function run(name, url, prep, act, doneRe, navRe) {
       if (navRe) { await p.waitForURL(navRe, { timeout: 60_000, waitUntil: 'commit' }).then(() => { tNav = Date.now() - t0; }).catch(() => {}); await p.waitForLoadState('load', { timeout: 60_000 }).then(() => { tLoad = Date.now() - t0; }).catch(() => {}); }
       const tFb = navRe ? null : await fb; await p.waitForTimeout(3000);
       const cart = await p.evaluate(async () => { try { return (await (await fetch('/wp-json/wc/store/v1/cart', { credentials: 'same-origin' })).json()).items_count; } catch (e) { return '?'; } });
-      console.log(`\n== ${name} lần ${k}: ${tDone !== null ? 'giỏ cập nhật sau ' + tDone + 'ms; ' : ''}${tNav !== null ? 'thấy trang thanh toán sau ' + tNav + 'ms; tải xong ' + tLoad + 'ms; ' : (navRe ? 'KHÔNG tới trang thanh toán; ' : '')}${tFb !== null && tFb !== undefined ? 'nút đổi trạng thái sau ' + tFb + 'ms; ' : ''}món trong giỏ=${cart}; URL=${p.url().replace(SITE, '').slice(0, 40)}`);
+      console.log(`\n== ${name} lần ${k}: ${tDone !== null ? 'giỏ cập nhật sau ' + tDone + 'ms; ' : ''}${tNav !== null ? 'thấy trang thanh toán sau ' + tNav + 'ms; tải xong ' + tLoad + 'ms; ' : (navRe ? 'KHÔNG tới trang thanh toán; ' : '')}${tFb !== null && tFb !== undefined ? 'nút đổi trạng thái sau ' + tFb + 'ms; ' : ''}món trong giỏ=${cart}; URL=${p.url().replace(SITE, '').slice(0, 70)}; thông báo trên trang=${JSON.stringify(await p.evaluate(() => [...document.querySelectorAll('.woocommerce-message, .woocommerce-error li, .woocommerce-info')].map(e => e.textContent.trim().slice(0, 50)).slice(0, 3)).catch(() => []))}`);
+      if (process.env.EXPECT_DIRECT === '1' && navRe && (cart !== 1 || !/thanh-toan/.test(p.url()) || log.some(l => / POST 30\d /.test(l)))) { console.log('KHÔNG ĐẠT'); process.exitCode = 1; }
       for (const l of log) console.log('   ' + l);
       (sum[name] = sum[name] || []).push(navRe ? tNav : tDone);
     } catch (e) { console.log(`\n== ${name} lần ${k}: LỖI ${String(e.message).split('\n')[0].slice(0, 160)}`); (sum[name] = sum[name] || []).push(null); }
