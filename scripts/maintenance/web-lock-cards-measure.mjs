@@ -29,9 +29,11 @@ for (const [tag, opts, url] of [['d-home', D, SITE + '/'], ['d-cat', D, CAT], ['
   if (process.env.CLICK === '1' && tag === 'm-cat') {
     const btn = p.locator('.product-small.box a.product_type_simple.add_to_cart_button[href*="add-to-cart"]').first();
     if (await btn.count()) { await btn.scrollIntoViewIfNeeded(); const u0 = p.url(); const before = await p.evaluate(() => (document.querySelector('.header-cart-link .cart-icon strong, .cart-icon strong') || {}).textContent || '');
-      const resp = p.waitForResponse(r => /wc-ajax=add_to_cart|add-to-cart=/.test(r.url()), { timeout: 25_000 }).catch(() => null);
+      const seen = []; p.on('response', r => { if (/add_to_cart|add-to-cart/.test(r.url())) seen.push(r.request().method() + ' ' + r.status() + ' ' + r.url().replace(SITE, '').slice(0, 50) + (r.request().headers()['sec-purpose'] ? ' [tải trước]' : '')); });
+      const count = () => p.evaluate(async () => { try { const r = await fetch('/wp-json/wc/store/v1/cart', { credentials: 'same-origin' }); const j = await r.json(); return j.items_count; } catch (e) { return 'lỗi'; } }); const c0 = await count();
+      const resp = p.waitForResponse(r => /wc-ajax=add_to_cart/.test(r.url()), { timeout: 25_000 }).catch(() => null);
       await btn.click({ noWaitAfter: true }); const r = await resp; await p.waitForTimeout(3500);
-      console.log(`BẤM BIỂU TƯỢNG GIỎ: phản hồi=${r ? r.status() + ' ' + r.url().replace(SITE, '').slice(0, 60) : 'không có'}; chuyển trang=${p.url() !== u0}; số trên giỏ trước/sau=${before}/` + await p.evaluate(() => (document.querySelector('.header-cart-link .cart-icon strong, .cart-icon strong') || {}).textContent || '') + '; lớp nút=' + await btn.evaluate(e => e.className).catch(() => '?'));
+      console.log('Các yêu cầu liên quan: ' + seen.join(' | ') + '; số món trong giỏ trước/sau = ' + c0 + '/' + await count()); console.log(`BẤM BIỂU TƯỢNG GIỎ: phản hồi=${r ? r.status() + ' ' + r.url().replace(SITE, '').slice(0, 60) : 'không có'}; chuyển trang=${p.url() !== u0}; số trên giỏ trước/sau=${before}/` + await p.evaluate(() => (document.querySelector('.header-cart-link .cart-icon strong, .cart-icon strong') || {}).textContent || '') + '; lớp nút=' + await btn.evaluate(e => e.className).catch(() => '?'));
       if (process.env.EXPECT_ALIGNED === '1' && !r) process.exitCode = 1;
     } else console.log('BẤM BIỂU TƯỢNG GIỎ: không thấy nút thêm giỏ loại đơn giản');
   }
