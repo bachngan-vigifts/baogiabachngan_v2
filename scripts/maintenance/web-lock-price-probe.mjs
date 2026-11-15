@@ -15,6 +15,7 @@ const desc = () => page.evaluate(() => { const out = []; const cs = (e) => { con
   return out; });
 await page.goto(variable, { waitUntil: 'load', timeout: 60_000 }); await page.waitForTimeout(2500);
 for (const l of await desc()) console.log('DOM| ' + l);
+if (process.env.EXPECT_ROW === '1') { const d = await page.evaluate(() => getComputedStyle(document.querySelector('.price.product-page-price')).flexDirection); console.log('Hướng khối giá trên web thật: ' + d); if (d !== 'row') { console.log('KHÔNG ĐẠT'); process.exitCode = 1; } }
 const box = await page.evaluate(() => { const p = document.querySelector('.product-main .price-wrapper, .product-info .price-wrapper'); const r = p.getBoundingClientRect(); return { x: 0, y: Math.max(0, r.y + scrollY - 20), width: 390, height: r.height + 40 }; });
 await shot('gia-truoc', box);
 if (css) { await page.addStyleTag({ content: css }); await page.waitForTimeout(600); await shot('gia-sau', box); }
