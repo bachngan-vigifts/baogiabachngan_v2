@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Lock UI align 3
- * Description: CSS only. Desktop product cards: colour swatches always sit on their own line and cards without visible swatches reserve that line, so titles and buy buttons line up with cards that show swatches. Delete this file to roll back.
+ * Description: CSS only. Product cards use the same spacing on every page (home, category). Desktop product cards: colour swatches always sit on their own line and cards without visible swatches reserve that line, so titles and buy buttons line up with cards that show swatches. Delete this file to roll back.
  */
 if (!defined('ABSPATH')) { exit; }
 
@@ -13,6 +13,9 @@ add_action('wp_head', function () {
 
 function lnl_ui_align3_css() {
     $css = <<<'CSS'
+.product-small.box > .box-text { row-gap: 6px !important; }
+.product-small.box > .box-text > .claw-lnl-wdr-sale-badge,
+.product-small.box > .box-text > .ux-swatches-in-loop { margin-top: 0 !important; margin-bottom: 0 !important; }
 @media (min-width: 850px) {
   .product-small.box > .box-text > .title-wrapper,
   .product-small.box > .box-text > .price-wrapper,
