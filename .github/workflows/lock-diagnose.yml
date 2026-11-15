@@ -1,0 +1,43 @@
+# CHẨN ĐOÁN CHỈ ĐỌC nguyên nhân chậm web Lock. Không ghi gì lên hosting, không đăng nhập, không đặt đơn.
+# Chạy khi .github/lock-diagnose.run đổi. Kết quả in trong log (đã che thông tin nhạy cảm).
+name: Chẩn đoán chậm web Lock (chỉ đọc)
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/lock-diagnose.run']
+concurrency: lock-diagnose
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Cài trình duyệt
+        run: |
+          [ -f .github/lock-diagnose.run ] || exit 0
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE"/scripts/diagnose/*.mjs /tmp/pw/
+      - name: Lấy mẫu CPU/RAM chạy nền + đo thời gian máy chủ + ghi request trang sản phẩm
+        run: |
+          [ -f .github/lock-diagnose.run ] || exit 0
+          cd /tmp/pw
+          MODE=sample SAMPLE_SECONDS=1500 node lock-server-read.mjs > sample.log 2>&1 &
+          echo "##### 1. THỜI GIAN MÁY CHỦ"; node lock-server-timing.mjs || true
+          echo "##### 2. GHI REQUEST (3 lượt mỗi luồng)"; RUNS=3 node lock-product-trace.mjs || true
+          echo "##### 3. MÃ ĐO LƯỜNG VÀ SCRIPT INLINE"; node lock-html-tags.mjs || true
+          kill %1 2>/dev/null; sleep 1
+          echo "##### 4. MẪU CPU/RAM (mỗi 10 giây, UTC)"; cat sample.log
+          echo "##### 5. OBJECT CACHE / REDIS / LOG"; MODE=state node lock-server-read.mjs || true
+          echo "##### 6. MÃ NGUỒN WOO DISCOUNT RULES"; bash "$GITHUB_WORKSPACE/scripts/diagnose/lock-wdr-source.sh" || true
+          echo "##### 7. BÁO CÁO REQUEST"; node lock-trace-report.mjs trace.json || true
