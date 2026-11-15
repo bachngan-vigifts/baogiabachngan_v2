@@ -1,4 +1,5 @@
-// Dọn toàn bộ cache trang của LiteSpeed Cache (web Lock) bằng lệnh chính thức do_action('litespeed_purge_all').
+// Dọn cache trang của LiteSpeed Cache (web Lock). Mặc định CHỈ dọn cache trang (giữ Redis object cache và opcode cache để giỏ hàng/thanh toán không bị chậm).
+// PURGE_URLS=url1,url2: chỉ dọn các trang đó. PURGE_SCOPE=all: dọn toàn bộ như cũ (do_action('litespeed_purge_all')) - chỉ dùng khi thật cần.
 // Cách làm: đặt 1 mu-plugin tạm, chỉ chạy khi request có mã riêng, tự xóa sau khi chạy; kích hoạt bằng 1 request GET.
 // Trước/sau: đo header Cloudflare/LiteSpeed và xem HTML còn đoạn script cũ (wc_fragment_refresh) không.
 // Khóa cứng: chỉ ghi/xóa đúng 1 file lnl-purge-once.php trong mu-plugins. Không in token/tên đăng nhập/máy chủ.
@@ -39,10 +40,21 @@ add_action('wp_loaded', function () {
     if (!isset($_GET['lnl_purge']) || $_GET['lnl_purge'] !== '${CODE}') {
         return;
     }
-    do_action('litespeed_purge_all');
+    $lnl_scope = '__SCOPE__'; $lnl_urls = array_filter(explode(',', '__URLS__'));
+    if ($lnl_urls) {
+        foreach ($lnl_urls as $lnl_u) { do_action('litespeed_purge_url', esc_url_raw($lnl_u)); }
+    } elseif ($lnl_scope !== 'all' && class_exists('\\LiteSpeed\\Purge') && method_exists('\\LiteSpeed\\Purge', 'purge_all_lscache')) {
+        \\LiteSpeed\\Purge::purge_all_lscache(true);
+    } else {
+        do_action('litespeed_purge_all');
+    }
     @unlink(__FILE__);
 }, 99);
 `;
+const SCOPE = process.env.PURGE_SCOPE === 'all' ? 'all' : 'pages';
+const PURGE_LIST = (process.env.PURGE_URLS || '').split(',').map(x => x.trim()).filter(x => /^https:\/\/locknlockonline\.com\/[A-Za-z0-9\/_.%-]*$/.test(x)).join(',');
+const SRC_FINAL = SRC.replace('__SCOPE__', SCOPE).replace('__URLS__', PURGE_LIST);
+console.log('Phạm vi dọn:', URLS ? 'các trang ' + URLS : (SCOPE === 'all' ? 'TOÀN BỘ' : 'chỉ cache trang'));
 
 async function listMu() {
   const url = new URL(`${origin}/execute/Fileman/list_files`); url.searchParams.set('dir', DIR);
@@ -51,7 +63,7 @@ async function listMu() {
 }
 async function saveTemp() {
   const res = await fetch(`${origin}/execute/Fileman/save_file_content`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ dir: DIR, file: FILE, content: SRC, from_charset: 'UTF-8', to_charset: 'UTF-8', fallback: '0' }), signal: AbortSignal.timeout(60_000) });
+    body: new URLSearchParams({ dir: DIR, file: FILE, content: SRC_FINAL, from_charset: 'UTF-8', to_charset: 'UTF-8', fallback: '0' }), signal: AbortSignal.timeout(60_000) });
   const b = await res.json().catch(() => null); return res.ok && b && b.status !== 0;
 }
 async function removeTemp() {
