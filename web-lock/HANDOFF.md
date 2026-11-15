@@ -84,4 +84,4 @@ Không có trên web thật (chỉ còn trong kho mã): `lnl-disable-plugins.php
 
 - Hosting giới hạn CPU 200% (2 nhân); lúc chậm CPU chạm 199/200. RAM dư (dưới 40%). Công cụ: `resource-usage.yml`.
 - Lượt truy cập gần nhất (`last-visitors.yml`): khoảng 120/870 lượt là bot không khai tên trình duyệt dò file PHP giả, nay đã chặn sớm bằng `lnl-block-php-probe.php`.
-- Link quảng cáo Google có `gad_source`, `gbraid` làm trượt cache (2,2 giây so với 0,3 giây khi có gclid/utm). Đã nhờ anh Thái thêm `gad_source, gad_campaignid, gbraid, wbraid, srsltid` vào LiteSpeed Cache → Cache → Advanced → Drop Query String. Chưa xác nhận.
+- Link quảng cáo Google có `gad_source`, `gbraid` làm trượt cache (2,2 giây so với 0,3 giây khi có gclid/utm). Đã nhờ anh Thái thêm `gad_*, gbraid, wbraid, srsltid, ttclid` vào LiteSpeed Cache → Cache → Advanced → Drop Query String. Anh Thái đã lưu 15/11; đo lại: link có mã quảng cáo 0,33–0,39 giây (mã lạ không có trong danh sách vẫn 2,2 giây).
