@@ -1,0 +1,29 @@
+# KIỂM TRA CHỈ ĐỌC sau một thay đổi do anh Thái làm trong quản trị: plugin còn nạp không, thời gian khởi động WordPress, CPU. Chạy khi .github/lock-verify.run đổi.
+name: Kiểm tra nhanh web Lock (chỉ đọc)
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/lock-verify.run']
+concurrency: lock-diagnose
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          [ -f .github/lock-verify.run ] || exit 0
+          MODE=sample SAMPLE_SECONDS=150 node scripts/diagnose/lock-server-read.mjs > sample.log 2>&1 &
+          echo "##### PLUGIN / TRANG"; node scripts/diagnose/lock-diag2.mjs 2>&1 | grep -E "REST namespaces|Trang giỏ|Tất cả namespace" || true
+          echo "##### THỜI GIAN MÁY CHỦ"; PARALLEL=0 node scripts/diagnose/lock-server-timing.mjs || true
+          wait; echo "##### CPU/RAM"; cat sample.log
