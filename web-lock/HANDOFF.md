@@ -47,6 +47,8 @@ Cập nhật: 2026-11-15 19:40 (giờ Việt Nam). Nhánh làm việc: `probe/cp
 | `woo-hide-sold.php` | Ẩn dòng "Đã bán" |
 | `woo-wdr-dedupe.php` | Woo Discount Rules: mỗi bảng giảm giá chỉ hỏi máy chủ 1 lần/trang (trước 3 lần giống hệt khi mở trang biến thể), thêm 15/11 |
 | `woo-wdr-bulk-table-off.php` | Tắt tải động bảng giảm giá rỗng của Woo Discount Rules (filter của plugin), thêm 16/11; đã gỡ `woo-wdr-dedupe.php` |
+| `woo-defer-emails.php` | Email đơn hàng gửi ở nền (`woocommerce_defer_transactional_emails`), thêm 16/11 |
+| `lnl-checkout-timing.php` | Ghi thời gian từng bước khi bấm Đặt hàng vào `wp-content/lnl-logs/checkout-timing.log` (web 403, không dữ liệu khách). Đọc: `.github/checkout-defer.run` = `log`. Gỡ khi xong đo |
 | `lnl-block-php-probe.php` | Trả 404 sớm cho bot dò file PHP giả (1,6–3,3 giây xuống 0,4 giây), thêm 15/11 |
 | `woo-buy-now-direct.php` | Mua ngay đi thẳng tới thanh toán trong một lượt |
 
@@ -101,3 +103,4 @@ Không có trên web thật (chỉ còn trong kho mã): `lnl-disable-plugins.php
 - Việc 3 (tắt Debug Log) và 4 (Redis maxmemory) đã gửi hướng dẫn cho anh Thái; chưa xác nhận.
 - 16/11 ĐÃ XÁC NHẬN (3/3): giỏ mini hiện 0 ở trang đã xem trước khi thêm giỏ vì Cloudflare gắn `Cache-Control: max-age=2678400` (31 ngày) cho HTML được cache (máy chủ gốc không gửi Cache-Control). Trình duyệt lấy lại trang từ bộ nhớ của nó, không hỏi máy chủ; trang danh mục và trang chủ không nạp cart-fragments nên không tự sửa. Hệ quả rộng hơn: giá/tồn kho/khuyến mãi trên trang khách đã xem có thể cũ tới 31 ngày trong trình duyệt của khách. Sửa đúng: Cloudflare → Browser Cache TTL / Cache Rule cho HTML: "Respect origin" (hoặc ngắn), giữ Edge TTL. Chờ anh Thái (cần quyền Cloudflare).
 - 16/11 05:34 VN: email "lỗi nghiêm trọng Jetpack" = 1 request đang chạy code Jetpack đúng lúc thư mục bị xoá (Fatal: Failed opening required .../jetpack/.../class-wc-analytics-tracking.php), chỉ 1 lần, sau đó không còn lỗi. Còn sót: bảng `*_jetpack_sync_queue`, option `jpsq_*`, sự kiện cron `jetpack_sync_cron`/`jetpack_sync_full_cron` (vô hại, dọn sau nếu muốn). Lệnh rỗng sau khi xoá Jetpack vẫn 2,5–2,8 giây (chưa cải thiện). Debug log LiteSpeed vẫn đang ghi (2,7 MB) → việc 3 chưa làm.
+- 16/11: bấm Đặt hàng (bị từ chối, không tạo đơn) 2,3–2,9 giây; WordPress khởi động tới lúc kiểm tra 1,2–1,8 giây. Mỗi lần còn gọi CHỜ 2 dịch vụ ngoài: online-gateway.ghn.vn ~0,2 giây (phí ship) và public-api.wordpress.com ~0,4 giây (chưa rõ plugin nào, có thể gói kết nối Jetpack đi kèm plugin khác). Chờ 1 đơn thật để đo phần sau khi lưu đơn.
