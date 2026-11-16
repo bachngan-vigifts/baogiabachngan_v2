@@ -28,8 +28,8 @@ try {
  };
 
  stage='inspect';
- const current=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8'});
- const privateData=await api('get_file_content',{dir:privateDir,file:configName,from_charset:'utf-8',to_charset:'utf-8'});
+ const current=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
+ const privateData=await api('get_file_content',{dir:privateDir,file:configName,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
  if(typeof current.content!=='string'||typeof privateData.content!=='string') throw Error('file_shape');
  const probe=privateData.content.match(/define\(\s*'LNL_GEMINI_PROBE',\s*'([a-f0-9]+)'/)[1];
  const expected=readFileSync('web-lock/chatbot/baseline-ui.php','utf8').replace('__LNL_PRIVATE_CONFIG__',privateDir+'/'+configName);
@@ -50,7 +50,7 @@ try {
  cleanup=()=>upload(dir,candidate,"<?php\ndefined('ABSPATH') || exit;\n// Candidate test completed.\n");
  stage='stage_candidate';
  await upload(dir,candidate,code);
- const check=await api('get_file_content',{dir,file:candidate,from_charset:'utf-8',to_charset:'utf-8'});
+ const check=await api('get_file_content',{dir,file:candidate,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
  if(check.content!==code){
   let i=0;while(i<code.length&&code[i]===check.content[i])i++;
   console.log(JSON.stringify({candidate_difference_at:i,expected_codes:Array.from(code.slice(i,i+60)).map(x=>x.codePointAt(0)),actual_codes:Array.from(check.content.slice(i,i+60)).map(x=>x.codePointAt(0))}));
@@ -68,14 +68,14 @@ try {
   history.push({role:'user',content:message},{role:'assistant',content:j.reply||''});
  }
  stage='activate';
- const latest=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8'});
+ const latest=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
  if(latest.content!==current.content) throw Error('concurrent_change');
  const finalCode=readFileSync('web-lock/chatbot/lnl-store-ai-bridge.php','utf8').replace('__LNL_PRIVATE_CONFIG__',privateDir+'/'+configName);
  stage='activate_upload';
  changed=true;
  await upload(dir,pluginName,finalCode);
  stage='activate_readback';
- const verified=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8'});
+ const verified=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
  if(verified.content!==finalCode){console.log(JSON.stringify({expected_bytes:finalCode.length,actual_bytes:verified.content?.length,expected_hash:createHash('sha256').update(finalCode).digest('hex'),actual_hash:typeof verified.content==='string'?createHash('sha256').update(verified.content).digest('hex'):null}));throw Error('readback');}
  await cleanup(); cleanup=null;
  await new Promise(resolve=>setTimeout(resolve,3000));
