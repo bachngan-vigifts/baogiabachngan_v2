@@ -1,0 +1,24 @@
+# Đổi tần suất cron webhook runner Minh Long. Chạy khi .github/cron-webhook.run đổi; nội dung = giá trị phút (vd */3, hoặc * để trả về mỗi phút).
+name: Tần suất cron webhook
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/cron-webhook.run']
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          [ -f .github/cron-webhook.run ] || exit 0
+          MINUTE="$(head -1 .github/cron-webhook.run | tr -d ' \r')" node scripts/maintenance/cpanel-cron-webhook.mjs
