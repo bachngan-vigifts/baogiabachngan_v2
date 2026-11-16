@@ -1,32 +1,70 @@
-# Đọc cấu hình hosting cPanel của web Lock (UAPI, chỉ GET theo danh sách cho phép). Không ghi gì lên hosting.
-# Không in token/tên đăng nhập/máy chủ. Chỉ chạy khi bấm tay (Actions → Đọc cấu hình cPanel → Run workflow).
-# Kết quả đã che hiện trong log và ở artifact (giữ 3 ngày).
-name: Đọc cấu hình cPanel
+# One-time host cron setup for the authorized LNL GHN catalogue deployment.
+# No credentials, hosting metadata, API payloads, or artifacts are emitted.
+name: Configure LNL catalogue cron
 on:
   workflow_dispatch:
-permissions:
-  contents: read
-concurrency: probe-cpanel-config
+permissions: {}
+concurrency: lnl-host-cron-setup
 jobs:
-  probe:
+  configure:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Đọc cấu hình qua cPanel UAPI
+      - name: Ensure host cron exists without exporting hosting configuration
         env:
           CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
           CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
           CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
           LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
-        run: node scripts/maintenance/probe-cpanel-config.mjs
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: cpanel-config
-          path: cpanel-config.json
-          retention-days: 3
-          if-no-files-found: ignore
+        shell: python
+        run: |
+          import os, json, urllib.request, urllib.parse, sys
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+          phase = "configuration"
+          try:
+              base = os.environ["CPANEL_BASE_URL"].strip().rstrip("/")
+              user = os.environ["CPANEL_USERNAME"].strip()
+              token = os.environ["CPANEL_API_TOKEN"].strip()
+              root = os.environ["LOCKNLOCK_DOCROOT"].strip().rstrip("/")
+              u = urllib.parse.urlsplit(base)
+              if u.scheme != "https" or not u.hostname or u.username or u.password or not user or not token or not root:
+                  raise ValueError()
+              base = urllib.parse.urlunsplit((u.scheme,u.netloc,"/json-api/cpanel","",""))
+              opener = urllib.request.build_opener(NoRedirect)
+              def api(function, extra=None):
+                  data={"cpanel_jsonapi_apiversion":"2","cpanel_jsonapi_module":"Cron","cpanel_jsonapi_func":function,"cpanel_jsonapi_user":user}
+                  data.update(extra or {})
+                  req=urllib.request.Request(base,data=urllib.parse.urlencode(data).encode(),headers={"Authorization":"cpanel "+user+":"+token,"Content-Type":"application/x-www-form-urlencoded"})
+                  with opener.open(req,timeout=30) as response:
+                      result=json.load(response).get("cpanelresult",{})
+                  if int(result.get("event",{}).get("result",0)) != 1 or result.get("error"):
+                      raise ValueError()
+                  return result.get("data",[])
+              phase="read"
+              rows=api("listcron")
+              def is_target(row):
+                  cmd=row.get("command","")
+                  return "wp-cron.php" in cmd and ("locknlockonline.com/wp-cron.php" in cmd or root+"/wp-cron.php" in cmd)
+              existing=[r for r in rows if is_target(r)]
+              if existing:
+                  fast=any(str(r.get("minute")) in ("*","*/1","*/2","*/5") and all(str(r.get(k))=="*" for k in ("hour","day","month","weekday")) for r in existing)
+                  if fast:
+                      print("Host cron already provides a regular WordPress heartbeat; no changes.")
+                      sys.exit(0)
+                  print("An existing WordPress cron needs manual review; no changes.")
+                  sys.exit(2)
+              command="/usr/bin/curl --fail --silent --show-error --max-time 50 https://locknlockonline.com/wp-cron.php >/dev/null 2>&1"
+              phase="create"
+              result=api("add_line",{"command":command,"minute":"*","hour":"*","day":"*","month":"*","weekday":"*"})
+              if not any(int(r.get("status",0))==1 for r in result):
+                  raise ValueError()
+              phase="verify"
+              rows=api("listcron")
+              if not any(r.get("command")==command and all(str(r.get(k))=="*" for k in ("minute","hour","day","month","weekday")) for r in rows):
+                  raise ValueError()
+              print("Host cron configured and verified. Catalogue refresh is scheduled by WordPress at 00:00 Asia/Ho_Chi_Minh.")
+          except Exception:
+              print("Host cron setup failed during "+phase+"; private response withheld.")
+              sys.exit(1)
