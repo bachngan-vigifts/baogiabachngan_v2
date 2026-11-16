@@ -1,0 +1,61 @@
+name: Lock Gemini direct preflight
+on:
+  push:
+    branches: [codex/lock-gemini-direct-20261116]
+    paths: [.github/workflows/lock-gemini-direct-preflight.yml]
+  workflow_dispatch:
+permissions: {}
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check Gemini and hosting without exposing credentials
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        shell: python
+        run: |
+          import os,json,urllib.request,urllib.parse,urllib.error,time,sys
+          def req(url, headers, body=None):
+              r=urllib.request.urlopen(urllib.request.Request(url,headers=headers,data=body),timeout=35)
+              return json.load(r)
+          stage='secrets'
+          try:
+              names=['GEMINI_API_KEY','CPANEL_BASE_URL','CPANEL_USERNAME','CPANEL_API_TOKEN','LOCKNLOCK_DOCROOT']
+              for name in names:
+                  if not os.environ.get(name,'').strip():
+                      print('MISSING='+name); sys.exit(1)
+              print('REQUIRED_SECRETS_PRESENT')
+              stage='gemini'
+              model='gemini-flash-lite-latest'
+              start=time.monotonic()
+              r=req('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',
+                  {'Content-Type':'application/json','X-goog-api-key':os.environ['GEMINI_API_KEY'].strip()},
+                  json.dumps({'contents':[{'role':'user','parts':[{'text':'Reply with exactly OK.'}]}],'generationConfig':{'maxOutputTokens':64}}).encode())
+              out=''.join(p.get('text','') for c in r.get('candidates',[]) for p in c.get('content',{}).get('parts',[]))
+              if not out.strip(): raise RuntimeError('no_response')
+              print('GEMINI_OK MODEL='+model+' LATENCY_MS='+str(round(1000*(time.monotonic()-start))))
+              stage='hosting'
+              raw=os.environ['CPANEL_BASE_URL'].strip()
+              u=urllib.parse.urlsplit(raw if '://' in raw else 'https://'+raw)
+              if u.scheme!='https': raise RuntimeError('https_required')
+              root='https://'+u.hostname+':'+str(u.port or 2083)
+              headers={'Authorization':'cpanel '+os.environ['CPANEL_USERNAME'].strip()+':'+os.environ['CPANEL_API_TOKEN'].strip()}
+              d=os.environ['LOCKNLOCK_DOCROOT'].strip().rstrip('/')
+              for label,path in [('root',d),('mu_plugins',d+'/wp-content/mu-plugins'),('child_theme',d+'/wp-content/themes/flatsome-child')]:
+                  r=req(root+'/execute/Fileman/list_files?'+urllib.parse.urlencode({'dir':path}),headers)
+                  if not r.get('status'): raise RuntimeError('cpanel_denied')
+                  files=[x.get('file','') for x in r.get('data',[])]
+                  if label=='root' and 'wp-config.php' not in files: raise RuntimeError('wrong_docroot')
+                  print('HOSTING_'+label.upper()+'_OK COUNT='+str(len(files)))
+                  if label=='mu_plugins':
+                      print('EXISTING_CHAT_FILES='+json.dumps([f for f in files if any(k in f.lower() for k in ['gemini','chatbot','claw-ai'])]))
+              print('PREFLIGHT_OK_NO_HOSTING_WRITES')
+          except urllib.error.HTTPError as e:
+              print('FAILED_STAGE='+stage+' HTTP_STATUS='+str(e.code));sys.exit(1)
+          except Exception:
+              print('FAILED_STAGE='+stage+' DETAILS_WITHHELD');sys.exit(1)
