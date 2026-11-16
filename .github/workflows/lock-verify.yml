@@ -24,6 +24,6 @@ jobs:
       - run: |
           [ -f .github/lock-verify.run ] || exit 0
           MODE=sample SAMPLE_SECONDS=150 node scripts/diagnose/lock-server-read.mjs > sample.log 2>&1 &
-          if [ "$(cat .github/lock-verify.run)" = errors ]; then echo "##### LOG LỖI"; MODE=state node scripts/diagnose/lock-server-read.mjs; node scripts/diagnose/lock-plugin-check.mjs; PARALLEL=0 RUNS=3 node scripts/diagnose/lock-server-timing.mjs 2>&1 | head -20; exit 0; fi; echo "##### PLUGIN"; node scripts/diagnose/lock-plugin-check.mjs || true; [ "$(cat .github/lock-verify.run)" = plugin ] && exit 0
+          if [ "$(cat .github/lock-verify.run)" = admin ]; then echo "##### QUẢN TRỊ"; node scripts/diagnose/lock-admin-check.mjs; echo "##### LOG LỖI"; MODE=state node scripts/diagnose/lock-server-read.mjs; exit 0; fi; if [ "$(cat .github/lock-verify.run)" = errors ]; then echo "##### LOG LỖI"; MODE=state node scripts/diagnose/lock-server-read.mjs; node scripts/diagnose/lock-plugin-check.mjs; PARALLEL=0 RUNS=3 node scripts/diagnose/lock-server-timing.mjs 2>&1 | head -20; exit 0; fi; echo "##### PLUGIN"; node scripts/diagnose/lock-plugin-check.mjs || true; [ "$(cat .github/lock-verify.run)" = plugin ] && exit 0
           echo "##### THỜI GIAN MÁY CHỦ"; PARALLEL=0 node scripts/diagnose/lock-server-timing.mjs || true
           wait; echo "##### CPU/RAM"; cat sample.log
