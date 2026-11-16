@@ -13,7 +13,7 @@ for (let r = 1; r <= Number(process.env.RUNS || 3); r++) {
   await p.route(/wc-ajax=checkout(&|$)/, async route => { const q = new URLSearchParams(route.request().postData() || ''); for (const k of [...q.keys()]) if (/^(billing|shipping)_(first_name|last_name|phone|email)$/.test(k)) q.set(k, ''); q.set('payment_method', 'lnl_khong_ton_tai'); sent++; return route.continue({ postData: q.toString() }); });
   const log = []; const st = new Map(); let t0 = 0;
   p.on('request', q => { if (q.url().startsWith(SITE) && ['xhr', 'fetch', 'document'].includes(q.resourceType())) st.set(q, Date.now()); });
-  p.on('requestfinished', async q => { if (!st.has(q) || !t0) return; const res = await q.response().catch(() => null); const a = (q.url().match(/wc-ajax=(\w+)/) || [, q.url().replace(SITE, '').slice(0, 40)])[1]; let extra = ''; if (/wc-ajax=checkout/.test(q.url())) { try { const jj = await res.json(); extra = ` result=${jj.result} lỗi=${(jj.messages || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)}`; } catch {} } log.push(`+${st.get(q) - t0}ms chờ ${Date.now() - st.get(q)}ms ${q.method()} ${res ? res.status() : '?'} ${a}${extra}`); });
+  p.on('requestfinished', async q => { if (!st.has(q) || !t0) return; const res = await q.response().catch(() => null); const a = (q.url().match(/wc-ajax=(\w+)/) || [, q.url().replace(SITE, '').slice(0, 40)])[1]; let extra = ''; if (/wc-ajax=checkout/.test(q.url())) { try { const jj = await res.json(); if (jj.result !== 'failure') { console.log('!!! KẾT QUẢ BẤT THƯỜNG: ' + jj.result); process.exitCode = 1; } extra = ` result=${jj.result} lỗi=${(jj.messages || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)}`; } catch {} } log.push(`+${st.get(q) - t0}ms chờ ${Date.now() - st.get(q)}ms ${q.method()} ${res ? res.status() : '?'} ${a}${extra}`); });
   try {
     await p.goto(SITE + simple, { waitUntil: 'load', timeout: 90000 }); await p.waitForTimeout(3000);
     const btn = p.locator('form.cart .single_add_to_cart_button').first(); await btn.scrollIntoViewIfNeeded();
@@ -38,4 +38,5 @@ for (let r = 1; r <= Number(process.env.RUNS || 3); r++) {
   await ctx.close();
 }
 console.log(`\nTÓM TẮT chờ máy chủ lệnh checkout (ms): ${sum.join(', ')}`);
+if (process.env.EXPECT_OK === '1' && sum.some(x => !x)) { console.log('KHÔNG ĐẠT: có lượt không nhận được phản hồi đặt hàng'); process.exitCode = 1; }
 await b.close();

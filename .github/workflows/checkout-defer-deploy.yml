@@ -1,0 +1,58 @@
+# Thêm 2 mu-plugin: lnl-checkout-timing.php (ghi thời gian đặt hàng, không lưu dữ liệu khách) và woo-defer-emails.php (gửi email đơn ở nền).
+# Kiểm tra sau: bấm Đặt hàng với lệnh bị sửa để máy chủ từ chối (KHÔNG tạo đơn) 3 lượt + đọc log. Không đạt thì gỡ cả 2.
+# Chạy khi .github/checkout-defer.run đổi (từ đầu: apply | rollback | log).
+name: Đặt hàng nhanh hơn web Lock
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/checkout-defer.run']
+concurrency: checkout-defer
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Xác định chế độ
+        id: mode
+        run: |
+          if [ -f .github/checkout-defer.run ]; then m=$(head -c 20 .github/checkout-defer.run | awk '{print $1}'); else m=skip; fi
+          case "$m" in apply|rollback|log) ;; *) m=skip ;; esac
+          echo "Chế độ: $m"; echo "mode=$m" >> "$GITHUB_OUTPUT"
+      - name: Đọc log
+        if: steps.mode.outputs.mode == 'log'
+        run: TAIL=40 node scripts/diagnose/lock-read-timing-log.mjs
+      - name: Thêm file ghi thời gian
+        if: steps.mode.outputs.mode == 'apply'
+        env: { MODE: apply, FILE: lnl-checkout-timing.php }
+        run: node scripts/maintenance/cpanel-deploy-newfile.mjs
+      - name: Thêm file gửi email ở nền
+        if: steps.mode.outputs.mode == 'apply'
+        env: { MODE: apply, FILE: woo-defer-emails.php }
+        run: node scripts/maintenance/cpanel-deploy-newfile.mjs
+      - name: Kiểm tra sau (không tạo đơn)
+        id: verify
+        if: steps.mode.outputs.mode == 'apply'
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE/scripts/diagnose/lock-place-order-probe.mjs" .
+          EXPECT_OK=1 node lock-place-order-probe.mjs
+          cd "$GITHUB_WORKSPACE" && TAIL=5 node scripts/diagnose/lock-read-timing-log.mjs
+      - name: Gỡ cả 2 nếu không đạt, hoặc khi chọn rollback
+        if: (steps.mode.outputs.mode == 'apply' && steps.verify.outcome == 'failure') || steps.mode.outputs.mode == 'rollback'
+        run: |
+          MODE=rollback FILE=woo-defer-emails.php node scripts/maintenance/cpanel-deploy-newfile.mjs || true
+          MODE=rollback FILE=lnl-checkout-timing.php node scripts/maintenance/cpanel-deploy-newfile.mjs || true
+          [ "${{ steps.mode.outputs.mode }}" = rollback ] || { echo "ĐÃ GỠ vì kiểm tra sau không đạt"; exit 1; }
