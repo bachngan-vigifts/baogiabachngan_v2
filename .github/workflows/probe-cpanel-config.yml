@@ -1,10 +1,10 @@
-# One-time host cron setup for the authorized LNL GHN catalogue deployment.
+# One-time host cron setup for the authorized Minh Long GHN catalogue deployment.
 # No credentials, hosting metadata, API payloads, or artifacts are emitted.
-name: Configure LNL catalogue cron
+name: Configure Minh Long catalogue cron
 on:
   workflow_dispatch:
 permissions: {}
-concurrency: lnl-host-cron-setup
+concurrency: ml-host-cron-setup
 jobs:
   configure:
     runs-on: ubuntu-24.04
@@ -15,7 +15,6 @@ jobs:
           CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
           CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
           CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
-          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
         shell: python
         run: |
           import os, json, urllib.request, urllib.parse, sys
@@ -27,9 +26,8 @@ jobs:
               base = os.environ["CPANEL_BASE_URL"].strip().rstrip("/")
               user = os.environ["CPANEL_USERNAME"].strip()
               token = os.environ["CPANEL_API_TOKEN"].strip()
-              root = os.environ["LOCKNLOCK_DOCROOT"].strip().rstrip("/")
               u = urllib.parse.urlsplit(base)
-              if u.scheme != "https" or not u.hostname or u.username or u.password or not user or not token or not root:
+              if u.scheme != "https" or not u.hostname or u.username or u.password or not user or not token:
                   raise ValueError()
               base = urllib.parse.urlunsplit((u.scheme,u.netloc,"/json-api/cpanel","",""))
               opener = urllib.request.build_opener(NoRedirect)
@@ -46,7 +44,7 @@ jobs:
               rows=api("listcron")
               def is_target(row):
                   cmd=row.get("command","")
-                  return "wp-cron.php" in cmd and ("locknlockonline.com/wp-cron.php" in cmd or root+"/wp-cron.php" in cmd)
+                  return "wp-cron.php" in cmd and ("minhlongonline.com/wp-cron.php" in cmd)
               existing=[r for r in rows if is_target(r)]
               if existing:
                   fast=any(str(r.get("minute")) in ("*","*/1","*/2","*/5") and all(str(r.get(k))=="*" for k in ("hour","day","month","weekday")) for r in existing)
@@ -55,7 +53,7 @@ jobs:
                       sys.exit(0)
                   print("An existing WordPress cron needs manual review; no changes.")
                   sys.exit(2)
-              command="/usr/bin/curl --fail --silent --show-error --max-time 50 https://locknlockonline.com/wp-cron.php >/dev/null 2>&1"
+              command="/usr/bin/curl --fail --silent --show-error --max-time 50 https://minhlongonline.com/wp-cron.php >/dev/null 2>&1"
               phase="create"
               result=api("add_line",{"command":command,"minute":"*","hour":"*","day":"*","month":"*","weekday":"*"})
               if not any(int(r.get("status",0))==1 for r in result):
