@@ -2,7 +2,7 @@ name: Refresh Lock chat interface
 on:
   push:
     branches: [codex/lock-chat-ui-20261116]
-    paths: [web-lock/chatbot/chat-ui-deploy.mjs, .github/workflows/lock-chat-ui.yml]
+    paths: [web-lock/chatbot/chat-ui-deploy.mjs, web-lock/chatbot/chat-ui-tests.mjs, web-lock/chatbot/lnl-store-ai-bridge.php, .github/workflows/lock-chat-ui.yml]
   workflow_dispatch:
 permissions:
   contents: read

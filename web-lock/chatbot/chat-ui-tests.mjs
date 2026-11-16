@@ -4,7 +4,7 @@ import { chromium } from 'playwright';
 const code=readFileSync('web-lock/chatbot/lnl-store-ai-bridge.php','utf8');
 const start=code.indexOf('<style id="lnl-chat-ui-v2">'),end=code.indexOf('</script>',start)+9;
 assert(start>0);
-const html='<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><button id="claw-ai-launcher">Old chat</button><section id="claw-ai-panel">Old suggestions</section>'+code.slice(start,end);
+const html='<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><button id="claw-ai-launcher">Old chat</button><section id="claw-ai-panel">Old suggestions</section>'+code.slice(start,end);
 const browser=await chromium.launch();
 try{
 for(const viewport of [{width:1280,height:900},{width:390,height:844},{width:320,height:568}]){
