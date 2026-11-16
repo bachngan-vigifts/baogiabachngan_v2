@@ -50,6 +50,12 @@ try {
  cleanup=()=>upload(dir,candidate,"<?php\ndefined('ABSPATH') || exit;\n// Candidate test completed.\n");
  stage='stage_candidate';
  await upload(dir,candidate,code);
+ const check=await api('get_file_content',{dir,file:candidate,from_charset:'utf-8',to_charset:'utf-8'});
+ if(check.content!==code){
+  let i=0;while(i<code.length&&code[i]===check.content[i])i++;
+  console.log(JSON.stringify({candidate_difference_at:i,expected_codes:Array.from(code.slice(i,i+60)).map(x=>x.codePointAt(0)),actual_codes:Array.from(check.content.slice(i,i+60)).map(x=>x.codePointAt(0))}));
+  throw Error('candidate_readback');
+ }
  const history=[];
  for(const message of ['Tôi cần bình giữ nhiệt dưới 500.000đ, gợi ý 2 sản phẩm và giá hiện tại.','Trong hai mẫu đó, mẫu nào dung tích 500ml?']){
   stage='probe';
