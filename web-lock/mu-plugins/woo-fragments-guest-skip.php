@@ -6,11 +6,12 @@
 if (!defined('ABSPATH')) { exit; }
 if (defined('LNL_FRAG_SKIP_OFF') && LNL_FRAG_SKIP_OFF) { return; }
 
-add_action('wp_enqueue_scripts', function () {
-    if (is_admin() || !wp_script_is('wc-cart-fragments', 'enqueued')) { return; }
+// WooCommerce enqueues cart-fragments late (when the mini cart is rendered), so attach right before footer scripts are printed.
+add_action('wp_footer', function () {
+    if (is_admin() || !wp_script_is('wc-cart-fragments', 'enqueued') || wp_script_is('wc-cart-fragments', 'done')) { return; }
     if (function_exists('is_checkout') && (is_checkout() || is_cart())) { return; }
     wp_add_inline_script('wc-cart-fragments', lnl_frag_skip_js(), 'before');
-}, 999);
+}, 19);
 
 function lnl_frag_skip_js() {
     $js = <<<'JS'

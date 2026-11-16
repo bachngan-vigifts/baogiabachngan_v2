@@ -1,0 +1,68 @@
+# Triển khai 3 file: lnl-ghn-location-cache.php (lưu danh sách tỉnh/huyện/xã GHN 12 giờ), lnl-live-search-lite.php (tìm kiếm gợi ý gửi ít lệnh), woo-fragments-guest-skip.php (khách chưa có giỏ không gọi giỏ mini).
+# Chỉ dọn cache đúng vài trang dùng để kiểm tra (không dọn toàn bộ trong giờ đông khách). Mỗi file kiểm tra riêng, không đạt thì gỡ riêng file đó.
+# Chạy khi .github/speed-batch2.run đổi (từ đầu: apply | rollback).
+name: Tăng tốc đợt 2 web Lock
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/speed-batch2.run']
+concurrency: speed-batch2
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Xác định chế độ
+        id: mode
+        run: |
+          if [ -f .github/speed-batch2.run ]; then m=$(head -c 20 .github/speed-batch2.run | awk '{print $1}'); else m=skip; fi
+          case "$m" in apply|rollback) ;; *) m=skip ;; esac
+          echo "Chế độ: $m"; echo "mode=$m" >> "$GITHUB_OUTPUT"
+      - name: Gỡ cả 3 (rollback)
+        if: steps.mode.outputs.mode == 'rollback'
+        run: for f in lnl-ghn-location-cache.php lnl-live-search-lite.php woo-fragments-guest-skip.php; do MODE=rollback FILE=$f node scripts/maintenance/cpanel-deploy-newfile.mjs || true; done
+      - name: Cài trình duyệt + đo trước
+        if: steps.mode.outputs.mode == 'apply'
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE"/scripts/maintenance/web-lock-search-ghn-check.mjs "$GITHUB_WORKSPACE"/scripts/maintenance/web-lock-fragments-check.mjs .
+          echo "##### TRƯỚC"; RUNS=1 node web-lock-search-ghn-check.mjs || true
+      - name: Thêm 3 file + dọn cache đúng trang kiểm tra
+        if: steps.mode.outputs.mode == 'apply'
+        run: |
+          for f in lnl-ghn-location-cache.php lnl-live-search-lite.php woo-fragments-guest-skip.php; do MODE=apply FILE=$f node scripts/maintenance/cpanel-deploy-newfile.mjs; done
+          P=$(curl -s "https://locknlockonline.com/wp-json/wc/store/v1/products?type=simple&per_page=5&stock_status=instock" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.find(x=>x.permalink).permalink)})')
+          MODE=apply PURGE_URLS="https://locknlockonline.com/,https://locknlockonline.com/danh-muc/binh-nuoc/,$P" node scripts/maintenance/cpanel-purge-lscache.mjs || true
+      - name: Kiểm tra tìm kiếm + GHN
+        id: v1
+        if: steps.mode.outputs.mode == 'apply'
+        continue-on-error: true
+        working-directory: /tmp/pw
+        run: echo "##### SAU"; EXPECT=1 RUNS=2 node web-lock-search-ghn-check.mjs | tee v1.txt
+      - name: Kiểm tra giỏ mini khách mới
+        id: v2
+        if: steps.mode.outputs.mode == 'apply'
+        continue-on-error: true
+        working-directory: /tmp/pw
+        run: EXPECT_SKIP=1 RUNS=3 node web-lock-fragments-check.mjs
+      - name: Gỡ riêng file không đạt
+        if: steps.mode.outputs.mode == 'apply' && (steps.v1.outcome == 'failure' || steps.v2.outcome == 'failure')
+        run: |
+          if [ "${{ steps.v2.outcome }}" = failure ]; then MODE=rollback FILE=woo-fragments-guest-skip.php node scripts/maintenance/cpanel-deploy-newfile.mjs || true; echo "ĐÃ GỠ woo-fragments-guest-skip.php"; fi
+          if [ "${{ steps.v1.outcome }}" = failure ]; then
+            if grep -q "Tìm kiếm.*KHÔNG ĐẠT\|^  KHÔNG ĐẠT" /tmp/pw/v1.txt && grep -B1 "^  KHÔNG ĐẠT" /tmp/pw/v1.txt | grep -q "Tìm kiếm"; then MODE=rollback FILE=lnl-live-search-lite.php node scripts/maintenance/cpanel-deploy-newfile.mjs || true; echo "ĐÃ GỠ lnl-live-search-lite.php"; fi
+            if grep -B1 "^  KHÔNG ĐẠT" /tmp/pw/v1.txt | grep -q "lnl_ghn\|GHN" || grep -q "GHN LỖI" /tmp/pw/v1.txt; then MODE=rollback FILE=lnl-ghn-location-cache.php node scripts/maintenance/cpanel-deploy-newfile.mjs || true; echo "ĐÃ GỠ lnl-ghn-location-cache.php"; fi
+          fi
+          exit 1

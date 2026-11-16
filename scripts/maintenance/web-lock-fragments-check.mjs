@@ -27,7 +27,7 @@ for (let r = 1; r <= RUNS; r++) {
     const done = p.waitForResponse(x => /wc-ajax=lnl_add_to_cart|add-to-cart/.test(x.url()), { timeout: 60000 }).catch(() => null);
     await btn.tap({ noWaitAfter: true }); await done; await p.waitForTimeout(3000);
     const api = await p.evaluate(async () => (await (await fetch('/wp-json/wc/store/v1/cart', { credentials: 'same-origin' })).json()).items_count);
-    for (const path of [CAT, '/']) { await p.goto(SITE + path, { waitUntil: 'load', timeout: 90000 }); await p.waitForTimeout(7000); const m = await miniCount(); const ok = m.items >= 1 || (m.label !== '?' && Number(m.label) >= 1); console.log(`  sau thêm giỏ, ${path}: Store API=${api}, giỏ mini sản phẩm=${m.items} nhãn=${m.label} ${ok ? 'ĐẠT' : 'KHÔNG ĐẠT'}`); if (!ok) bad++; }
+    for (const path of ['/danh-muc/binh-nuoc/', '/']) { await p.goto(SITE + path, { waitUntil: 'load', timeout: 90000 }); await p.waitForTimeout(7000); const m = await miniCount(); const ok = m.items >= 1 || (m.label !== '?' && Number(m.label) >= 1); console.log(`  sau thêm giỏ, ${path}: Store API=${api}, giỏ mini sản phẩm=${m.items} nhãn=${m.label} ${ok ? 'ĐẠT' : 'KHÔNG ĐẠT'}`); if (!ok) bad++; }
     await p.goto(SITE + '/thanh-toan/', { waitUntil: 'load', timeout: 90000 }); await p.waitForTimeout(5000);
     const tot = await p.evaluate(() => (document.querySelector('.order-total .amount') || {}).textContent || ''); console.log(`  thanh toán: tổng "${tot.trim()}"; lỗi JS: ${errs.join(' | ') || 'không'}`);
     if (!tot.trim()) { bad++; console.log('  KHÔNG ĐẠT: thanh toán không có tổng'); }
