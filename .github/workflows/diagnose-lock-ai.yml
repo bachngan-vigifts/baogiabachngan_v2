@@ -1,0 +1,34 @@
+name: Diagnose Lock AI response limits
+on:
+  push:
+    branches: [codex/lock-chat-reliability-20261116]
+    paths: [.github/workflows/diagnose-lock-ai.yml]
+  workflow_dispatch:
+permissions: {}
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Inspect safe provider metadata only
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        shell: python
+        run: |
+          import os,json,time,urllib.request,urllib.error
+          key=os.environ['GEMINI_API_KEY'].strip()
+          prompt='Bạn là trợ lý tư vấn LocknLock. Trả lời tiếng Việt tối đa 180 từ. Chỉ dùng dữ liệu này: bình LHC3255 500ml giá 214120đ; bình LHC3268YEL 270ml giá 217830đ. Không bịa chính sách hay tồn kho.'
+          tests=[('baseline',{'maxOutputTokens':700}),('larger_output',{'maxOutputTokens':2048}),('no_thinking',{'maxOutputTokens':1024,'thinkingConfig':{'thinkingBudget':0}})]
+          for label,config in tests:
+              start=time.monotonic()
+              payload={'systemInstruction':{'parts':[{'text':prompt}]},'contents':[{'role':'user','parts':[{'text':'Tôi cần bình giữ nhiệt dưới 500.000đ, gợi ý 2 sản phẩm và giá hiện tại. Trong hai mẫu đó mẫu nào 500ml?'}]}],'generationConfig':config}
+              try:
+                  request=urllib.request.Request('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json','X-goog-api-key':key})
+                  with urllib.request.urlopen(request,timeout=35) as response: data=json.load(response)
+                  c=data.get('candidates',[{}])[0]
+                  text=''.join(p.get('text','') for p in c.get('content',{}).get('parts',[]) if not p.get('thought'))
+                  print(json.dumps({'test':label,'ms':round(1000*(time.monotonic()-start)),'model':data.get('modelVersion'),'finish':c.get('finishReason'),'text_chars':len(text),'tokens':data.get('usageMetadata')},ensure_ascii=False))
+              except urllib.error.HTTPError as e:
+                  print(json.dumps({'test':label,'http':e.code}))
+              except Exception:
+                  print(json.dumps({'test':label,'error':'transport'}))
