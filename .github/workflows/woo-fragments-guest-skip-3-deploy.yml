@@ -1,0 +1,75 @@
+# Thêm mu-plugin woo-fragments-guest-skip-3.php (khách chưa có giỏ không gọi cart fragments) lên web Lock.
+# Quy trình: đo trước (3 lượt) -> thêm file mới (web lỗi thì tự gỡ) -> dọn cache trang -> kiểm tra sau (3 lượt: khách mới 0 lệnh fragments, giỏ mini đúng sau thêm giỏ, thanh toán có tổng) -> không đạt thì tự gỡ.
+# Chạy khi .github/woo-fragments-guest-skip-3.run đổi (từ đầu tiên: dry-run, apply hoặc rollback).
+name: Bớt cart fragments cho khách mới web Lock (lần 3)
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/woo-fragments-guest-skip-3.run']
+concurrency: woo-fragments-guest-skip-3
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+      FILE: woo-fragments-guest-skip-3.php
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Xác định chế độ
+        id: mode
+        run: |
+          if [ -f .github/woo-fragments-guest-skip-3.run ]; then m=$(head -c 20 .github/woo-fragments-guest-skip-3.run | awk '{print $1}'); else m=skip; fi
+          case "$m" in dry-run|apply|rollback) ;; *) m=skip ;; esac
+          echo "Chế độ: $m"; echo "mode=$m" >> "$GITHUB_OUTPUT"
+      - name: Cài trình duyệt
+        if: steps.mode.outputs.mode == 'dry-run' || steps.mode.outputs.mode == 'apply'
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE/scripts/maintenance/web-lock-fragments-check.mjs" /tmp/pw/
+      - name: Đo trước
+        if: steps.mode.outputs.mode == 'dry-run' || steps.mode.outputs.mode == 'apply'
+        working-directory: /tmp/pw
+        run: node web-lock-fragments-check.mjs || true
+      - name: Kiểm tra và thêm file
+        if: steps.mode.outputs.mode != 'skip'
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: node scripts/maintenance/cpanel-deploy-newfile.mjs
+      - name: Dọn cache trang
+        if: steps.mode.outputs.mode == 'apply' || steps.mode.outputs.mode == 'rollback'
+        continue-on-error: true
+        env:
+          MODE: apply
+        run: |
+          P=$(curl -s "https://locknlockonline.com/wp-json/wc/store/v1/products?type=simple&per_page=5&stock_status=instock" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{console.log(JSON.parse(s).find(x=>x.permalink).permalink)})')
+          PURGE_URLS="https://locknlockonline.com/,https://locknlockonline.com/danh-muc/binh-nuoc/,$P" node scripts/maintenance/cpanel-purge-lscache.mjs
+      - name: Xem đoạn mã có trong trang
+        if: steps.mode.outputs.mode == 'apply'
+        run: |
+          P=$(curl -s "https://locknlockonline.com/wp-json/wc/store/v1/products?type=simple&per_page=5&stock_status=instock" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{console.log(JSON.parse(s).find(x=>x.permalink).permalink)})')
+          for u in "$P" https://locknlockonline.com/; do echo "$u: lnl-frag-skip3 $(curl -s -A 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)' "$u" | grep -c 'lnl-frag-skip3') lần; cf $(curl -sI -A 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)' "$u" | grep -i cf-cache-status | tr -d '\r')"; done
+      - name: Kiểm tra sau
+        id: verify
+        if: steps.mode.outputs.mode == 'apply'
+        continue-on-error: true
+        working-directory: /tmp/pw
+        env:
+          EXPECT_SKIP: '1'
+        run: node web-lock-fragments-check.mjs
+      - name: Tự gỡ nếu kiểm tra sau không đạt
+        if: steps.mode.outputs.mode == 'apply' && steps.verify.outcome == 'failure'
+        env:
+          MODE: rollback
+        run: |
+          node scripts/maintenance/cpanel-deploy-newfile.mjs
+          echo "ĐÃ GỠ plugin vì kiểm tra sau không đạt"; exit 1
