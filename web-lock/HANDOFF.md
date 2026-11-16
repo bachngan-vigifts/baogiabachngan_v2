@@ -49,6 +49,10 @@ Cập nhật: 2026-11-15 19:40 (giờ Việt Nam). Nhánh làm việc: `probe/cp
 | `woo-wdr-bulk-table-off.php` | Tắt tải động bảng giảm giá rỗng của Woo Discount Rules (filter của plugin), thêm 16/11; đã gỡ `woo-wdr-dedupe.php` |
 | `woo-defer-emails.php` | Email đơn hàng gửi ở nền (`woocommerce_defer_transactional_emails`), thêm 16/11 |
 | `lnl-checkout-timing.php` | Ghi thời gian từng bước khi bấm Đặt hàng vào `wp-content/lnl-logs/checkout-timing.log` (web 403, không dữ liệu khách). Đọc: `.github/checkout-defer.run` = `log`. Gỡ khi xong đo |
+| `woo-admin-lite.php` | Tắt khung Hoạt động/ghi chú/tiếp thị của WooCommerce Admin (16/11) |
+| `lnl-heartbeat.php` | Heartbeat 60 giây khi sửa bài, 120 giây chỗ khác (16/11) |
+| `lnl-ajax-timing.php` | Log tên + thời gian lệnh admin-ajax/wc-ajax vào `wp-content/lnl-logs/ajax-timing.log`; đọc: `.github/admin-speed.run` = `log` (16/11) |
+| `lnl-disable-wp-cron.php` | `DISABLE_WP_CRON` (16/11) |
 | `lnl-block-php-probe.php` | Trả 404 sớm cho bot dò file PHP giả (1,6–3,3 giây xuống 0,4 giây), thêm 15/11 |
 | `woo-buy-now-direct.php` | Mua ngay đi thẳng tới thanh toán trong một lượt |
 
@@ -113,3 +117,4 @@ Không có trên web thật (chỉ còn trong kho mã): `lnl-disable-plugins.php
 - Đã TẠO luật giới hạn: `/wp-admin/admin-ajax.php`, `/wp-login.php`, `/wp-json/*`, `/xmlrpc.php` quá 40 lệnh/10 giây/IP → chặn 10 giây; chừa bot xác minh.
 - Trước khi sửa (24 giờ): 14.742 lỗi 504, 6.843 lỗi 525. Nguồn lệnh động lớn nhất: phiên trang quản trị, 2 công cụ tự động đăng nhập quản trị (HeadlessChrome; Chrome Linux sửa Code Snippets), máy chủ tự gọi wp-cron 1.379 lần/ngày.
 - 16/11 chiều: error_log có 151 cảnh báo PHP trong hôm nay: Redis::get() không tìm thấy socket Redis (dịch vụ Redis trên hosting không chạy). Cũng có lỗi database "Commands out of sync" lúc 13:53–13:57 VN. Cần nhờ hosting bật lại Redis trước khi bật lại object cache.
+- Cron hosting có sẵn (16/11): hằng giờ phút 31 chạy `php wp-cron.php` trong thư mục web; MỖI PHÚT `curl https://locknlockonline.com/wp-cron.php` (đi qua Cloudflare, nguồn của ~1.400 lệnh wp-cron/ngày và nhiều 504); mỗi phút webhook runner của Minh Long; mỗi phút curl wp-cron Minh Long. Công cụ không thêm cron mới vì đã có. Đề xuất: đổi dòng curl mỗi phút của Lock sang `php -q wp-cron.php` chạy tại chỗ (chờ duyệt).
