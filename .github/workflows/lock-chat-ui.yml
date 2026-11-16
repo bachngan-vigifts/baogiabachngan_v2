@@ -1,0 +1,38 @@
+name: Refresh Lock chat interface
+on:
+  push:
+    branches: [codex/lock-chat-ui-20261116]
+    paths: [web-lock/chatbot/chat-ui-deploy.mjs, .github/workflows/lock-chat-ui.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lock-store-ai-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check syntax and product constraints
+        run: |
+          php -l web-lock/chatbot/lnl-store-ai-bridge.php
+          php web-lock/chatbot/tests.php
+          node --check web-lock/chatbot/chat-ui-deploy.mjs
+      - name: Check desktop and mobile conversation UI
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+          node web-lock/chatbot/chat-ui-tests.mjs
+      - name: Stage, test, switch and verify with rollback
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: node web-lock/chatbot/chat-ui-deploy.mjs

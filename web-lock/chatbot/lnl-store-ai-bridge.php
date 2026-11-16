@@ -2,7 +2,7 @@
 /**
  * Plugin Name: LNL Store AI Bridge
  * Description: Server-side assistant using public WooCommerce product data.
- * Version: 1.2.0
+ * Version: 1.3.0
  */
 defined( 'ABSPATH' ) || exit;
 $lnl_settings_file = '__LNL_PRIVATE_CONFIG__';
@@ -278,3 +278,107 @@ add_action( 'wp_footer', function () {
 	</script>
 	<?php
 }, 999 );
+
+add_action( 'wp_footer', function () {
+ if ( ! defined( 'LNL_GEMINI_ACTIVE' ) || ! LNL_GEMINI_ACTIVE ) { return; }
+ ?>
+<style id="lnl-chat-ui-v2">
+html.lnl-chat-v2-ready #claw-ai-launcher,html.lnl-chat-v2-ready #claw-ai-panel{display:none!important}
+#lnl-chat-launch,#lnl-chat-dialog{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:normal;text-transform:none}
+#lnl-chat-launch{position:fixed;right:22px;bottom:82px;z-index:99990;border:1px solid #d6e4fa;background:#fff;color:#21538b;border-radius:30px;box-shadow:0 6px 24px #17365e26;padding:12px 18px;min-height:48px;margin:0;line-height:1.4;font-size:14px;font-weight:650;display:flex;align-items:center;gap:9px;cursor:pointer}
+#lnl-chat-launch span{font-size:22px;color:#3578d4}
+#lnl-chat-dialog{position:fixed;inset:auto 22px 24px auto;margin:0;padding:0;width:410px;max-width:calc(100vw - 32px);height:610px;max-height:calc(100dvh - 48px);border:1px solid #dce6f2;border-radius:20px;background:#fff;color:#243447;box-shadow:0 16px 60px #16345a33;overflow:hidden;z-index:100000}
+#lnl-chat-dialog[open]{display:flex;flex-direction:column}
+#lnl-chat-dialog::backdrop{background:#11243a0d}
+#lnl-chat-dialog *{box-sizing:border-box}
+#lnl-chat-dialog button{font-family:inherit;text-transform:none;letter-spacing:normal;margin:0;min-width:0;cursor:pointer}
+#lnl-chat-dialog button:focus-visible,#lnl-chat-dialog a:focus-visible,#lnl-chat-launch:focus-visible{outline:3px solid #609ce8;outline-offset:2px}
+.lnl-chat-header{display:flex;align-items:center;gap:10px;padding:16px;border-bottom:1px solid #e9eef5;background:#f7faff;flex-shrink:0}
+.lnl-chat-mark{display:grid;place-items:center;width:37px;height:37px;border-radius:12px;background:#e4efff;color:#2868ba;font-size:23px}
+.lnl-chat-heading{flex:1;min-width:0}
+#lnl-chat-dialog .lnl-chat-heading strong{display:block;font-size:15px;color:#173e6c}
+.lnl-chat-heading small{display:block;font-size:11px;color:#66778b;margin-top:2px}
+#lnl-chat-dialog .lnl-chat-icon{display:grid;place-items:center;width:34px;height:34px;padding:0;border:0;border-radius:9px;background:transparent;color:#536b85;font-size:23px;line-height:1;text-decoration:none}
+#lnl-chat-dialog .lnl-chat-icon:hover{background:#e9f0fa}
+#lnl-chat-log{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:20px 18px;scrollbar-width:thin}
+.lnl-chat-welcome{min-height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:20px 12px;color:#63758b}
+.lnl-chat-welcome .lnl-chat-mark{width:60px;height:60px;font-size:34px;border-radius:20px;margin-bottom:18px}
+#lnl-chat-dialog .lnl-chat-welcome h2{font-size:21px;font-weight:650;color:#234368;margin:0 0 9px}
+#lnl-chat-dialog .lnl-chat-welcome p{font-size:14px;line-height:1.6;margin:0;max-width:270px}
+.lnl-chat-msg{margin:0 0 20px;max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.65}
+.lnl-chat-msg.user{background:#edf4ff;padding:11px 14px;border-radius:16px 16px 4px 16px;margin-left:35px;color:#234368}
+.lnl-chat-msg.bot{padding:0 2px}
+.lnl-chat-label{font-size:11px;font-weight:650;color:#68809b;display:block;margin-bottom:7px}
+#lnl-chat-compose{margin:0;padding:12px 14px max(10px,env(safe-area-inset-bottom));border-top:1px solid #edf1f6;background:#fff;flex-shrink:0}
+.lnl-chat-input-wrap{display:flex;align-items:flex-end;gap:8px;border:1px solid #dce5f0;border-radius:16px;background:#f8fafc;padding:8px 8px 8px 13px}
+.lnl-chat-input-wrap:focus-within{border-color:#7ba9e5;box-shadow:0 0 0 2px #eaf2ff}
+#lnl-chat-input{font-family:inherit;font-size:16px;line-height:1.5;resize:none;flex:1;min-width:0;height:28px;min-height:28px;max-height:112px;padding:2px 0;margin:0;border:0;background:transparent;box-shadow:none;color:#243447;outline:none}
+#lnl-chat-submit{width:36px;height:36px;min-height:36px;padding:0;border:0;border-radius:11px;background:#2d69b7;color:white;font-size:22px;line-height:1}
+#lnl-chat-submit:disabled{background:#e1e8f0;color:#94a5ba;cursor:default;opacity:1}
+#lnl-chat-status{font-size:11px;line-height:1.5;min-height:17px;margin:7px 2px 0;color:#6b7d91}
+.lnl-chat-pending{font-size:13px;color:#5f7b9d;padding:6px 2px 18px}
+#lnl-chat-dialog details{margin:8px 0 20px;border:1px solid #e3eaf3;border-radius:12px;padding:10px 12px;font-size:13px}
+#lnl-chat-dialog summary{cursor:pointer;color:#39648f;font-weight:600}
+.lnl-chat-card{display:block;border-top:1px solid #edf1f6;padding:10px 0;color:#2c609b;text-decoration:none;line-height:1.5}
+.lnl-chat-card:first-of-type{margin-top:8px}
+#lnl-chat-dialog .lnl-chat-card small{display:block;color:#68798b;margin-top:4px}
+@media(max-width:600px){#lnl-chat-launch{right:15px;bottom:78px;padding:10px 14px}#lnl-chat-dialog{inset:0;margin:0;width:100%;max-width:100%;height:100dvh;max-height:100dvh;border:0;border-radius:0}.lnl-chat-header{padding-top:max(14px,env(safe-area-inset-top))}#lnl-chat-log{padding:20px 16px}}
+</style>
+<button type="button" id="lnl-chat-launch" aria-haspopup="dialog" aria-controls="lnl-chat-dialog"><span aria-hidden="true">✦</span>Chat với AI</button>
+<dialog id="lnl-chat-dialog" aria-labelledby="lnl-chat-title">
+ <header class="lnl-chat-header">
+  <span class="lnl-chat-mark" aria-hidden="true">✦</span>
+  <div class="lnl-chat-heading"><strong id="lnl-chat-title">Trợ lý LocknLock</strong><small>AI hỗ trợ mua sắm</small></div>
+  <a class="lnl-chat-icon" href="https://zalo.me/0939961969" target="_blank" rel="noopener" aria-label="Chat với nhân viên qua Zalo" title="Nhân viên tư vấn">☏</a>
+  <button type="button" class="lnl-chat-icon" id="lnl-chat-new" aria-label="Cuộc trò chuyện mới" title="Cuộc trò chuyện mới">+</button>
+  <button type="button" class="lnl-chat-icon" id="lnl-chat-close" aria-label="Đóng cửa sổ chat" title="Đóng">×</button>
+ </header>
+ <div id="lnl-chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
+ <form id="lnl-chat-compose">
+  <div class="lnl-chat-input-wrap"><textarea id="lnl-chat-input" rows="1" maxlength="1200" aria-label="Tin nhắn" placeholder="Nhập tin nhắn..." required></textarea><button type="submit" id="lnl-chat-submit" aria-label="Gửi tin nhắn" disabled>↑</button></div>
+  <p id="lnl-chat-status" role="status">AI có thể nhầm lẫn. Bạn có thể hỏi thêm để làm rõ.</p>
+ </form>
+</dialog>
+<script id="lnl-chat-ui-script">
+(function(){
+ 'use strict';
+ if(window.lnlChatV2Loaded)return;
+ const dialog=document.getElementById('lnl-chat-dialog'),launch=document.getElementById('lnl-chat-launch'),log=document.getElementById('lnl-chat-log'),input=document.getElementById('lnl-chat-input'),form=document.getElementById('lnl-chat-compose'),submit=document.getElementById('lnl-chat-submit'),status=document.getElementById('lnl-chat-status'),fresh=document.getElementById('lnl-chat-new');
+ if(!dialog||typeof dialog.showModal!=='function')return;
+ window.lnlChatV2Loaded=true;
+ let history=[],busy=false;
+ const note='AI có thể nhầm lẫn. Bạn có thể hỏi thêm để làm rõ.';
+ function welcome(){log.replaceChildren();const box=document.createElement('div');box.className='lnl-chat-welcome';box.innerHTML='<span class="lnl-chat-mark" aria-hidden="true">✦</span><h2>Mình có thể giúp gì cho bạn?</h2><p>Cứ trò chuyện tự nhiên về điều bạn đang cần nhé.</p>';log.append(box);}
+ function bottom(){log.scrollTop=log.scrollHeight;}
+ function message(text,role){const el=document.createElement('div');el.className='lnl-chat-msg '+role;if(role==='bot'){const label=document.createElement('span');label.className='lnl-chat-label';label.textContent='Trợ lý LocknLock';el.append(label);}el.append(document.createTextNode(text));log.append(el);bottom();}
+ function sync(){submit.disabled=busy||!input.value.trim();input.style.height='28px';input.style.height=Math.min(input.scrollHeight,112)+'px';}
+ function products(items){if(!Array.isArray(items)||!items.length)return;const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Xem sản phẩm liên quan ('+Math.min(items.length,6)+')';details.append(summary);items.slice(0,6).forEach(p=>{let url;try{url=new URL(p.url,location.origin);}catch(e){return;}if(url.origin!==location.origin||url.protocol!=='https:')return;const link=document.createElement('a');link.className='lnl-chat-card';link.href=url.href;link.textContent=p.name||'Xem sản phẩm';const price=document.createElement('small');price.textContent=new DOMParser().parseFromString(String(p.price||''),'text/html').body.textContent;link.append(price);details.append(link);});log.append(details);bottom();}
+ welcome();
+ launch.addEventListener('click',()=>{dialog.showModal();input.focus();});
+ document.getElementById('lnl-chat-close').addEventListener('click',()=>dialog.close());
+ dialog.addEventListener('close',()=>launch.focus());
+ fresh.addEventListener('click',()=>{if(busy)return;history=[];welcome();input.value='';status.textContent=note;sync();input.focus();});
+ input.addEventListener('input',sync);
+ input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(!submit.disabled)form.requestSubmit();}});
+ form.addEventListener('submit',async e=>{
+  e.preventDefault();const text=input.value.trim();if(!text||busy)return;
+  if(!history.length)log.replaceChildren();
+  const prior=history.slice(-6);message(text,'user');input.value='';busy=true;fresh.disabled=true;sync();
+  const pending=document.createElement('div');pending.className='lnl-chat-pending';pending.textContent='Đang trả lời…';log.append(pending);bottom();status.textContent='Đang chờ phản hồi';log.setAttribute('aria-busy','true');
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),25000);
+  try{
+   const response=await fetch('/wp-json/claw-ai/v1/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,history:prior}),signal:controller.signal});
+   const data=await response.json();pending.remove();
+   if(!response.ok&&response.status!==429)throw Error('response');
+   const reply=typeof data.reply==='string'&&data.reply.trim()?data.reply:'Chưa nhận được câu trả lời. Bạn thử gửi lại nhé.';
+   message(reply,'bot');products(data.products);
+   if(response.ok){history.push({role:'user',content:text},{role:'assistant',content:reply});history=history.slice(-12);}
+   status.textContent=data.provider==='fallback'?'AI tạm thời chưa phản hồi · Đang dùng dữ liệu cửa hàng':data.provider==='limited'?'Đã đạt giới hạn lượt chat. Bạn thử lại sau nhé.':note;
+  }catch(error){pending.remove();message('Kết nối đang gián đoạn. Bạn thử gửi lại sau một chút nhé.','bot');input.value=text;status.textContent='Tin nhắn được giữ lại để bạn gửi lại.';}
+  finally{clearTimeout(timeout);busy=false;fresh.disabled=false;log.removeAttribute('aria-busy');sync();if(dialog.open)input.focus();}
+ });
+ document.documentElement.classList.add('lnl-chat-v2-ready');
+})();
+</script>
+ <?php
+}, 1001 );
