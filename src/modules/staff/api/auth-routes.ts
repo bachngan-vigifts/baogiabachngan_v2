@@ -47,6 +47,8 @@ export interface StaffEnv {
   sapoWebhookFetch?: typeof fetch;
   /** Tách credential điều chuyển khỏi Sapo; không nhận từ trình duyệt hay query string. */
   transferIntegration?: { webhookUrl: string; webhookToken: string; syncToken: string; destinationOrigin: string; fetch?: typeof fetch };
+  /** Hàng đợi ảnh xin hàng: CRM giữ khóa tuần tự, Madam Sen trả kết quả bằng callback dùng một lần. */
+  warehouseImageIntegration?: { webhookUrl: string; webhookToken: string; callbackOrigin?: string; fetch?: typeof fetch };
   /** Báo cáo kết ca POS được đẩy bất đồng bộ sang hàng đợi Claw/Zalo. */
   posShiftReportWebhook?: { url: string; token: string; fetch?: typeof fetch };
   /** Cho phép tạo mới đơn cọc / ship trả trước. Production tắt (đã bỏ tính năng); chỉ bộ kiểm thử bật để dựng dữ liệu đơn cũ. */
@@ -153,6 +155,11 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
     let diff = 0; for (let i=0;i<want.length;i++) diff |= want.charCodeAt(i)^got.charCodeAt(i);
     if (diff) throw new AppError(401, 'Không được phép tích hợp điều chuyển.');
     return;
+  }
+  if (area === 'warehouse-image-sync') {
+    const token = /^Bearer ([0-9a-f-]{36})$/i.exec(c.req.headers.get('authorization') || '')?.[1] || '';
+    if (!token) throw new AppError(401, 'Callback xử lý ảnh không hợp lệ.');
+    return; // Mã chỉ dùng một lần được băm và kiểm tra với đúng job trong handler.
   }
   if (area === 'sepay-sync') {
     const auth = c.req.headers.get('authorization') || '';
