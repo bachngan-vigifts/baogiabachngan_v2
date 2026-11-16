@@ -1,0 +1,65 @@
+# Triển khai 4 việc làm nhẹ trang quản trị web Lock: woo-admin-lite.php, lnl-heartbeat.php, lnl-ajax-timing.php, cron hosting 5 phút + lnl-disable-wp-cron.php.
+# Kiểm tra sau: trang chủ/sản phẩm/giỏ (công cụ thêm file), trang đăng nhập, nút Thêm giỏ/Mua ngay, bấm Đặt hàng bị từ chối (không tạo đơn). Không đạt thì gỡ tất cả.
+# Chạy khi .github/admin-speed.run đổi (từ đầu: apply | rollback | log).
+name: Làm nhẹ trang quản trị web Lock
+on:
+  push:
+    branches: [probe/cpanel-readonly]
+    paths: ['.github/admin-speed.run']
+concurrency: admin-speed
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Xác định chế độ
+        id: mode
+        run: |
+          if [ -f .github/admin-speed.run ]; then m=$(head -c 20 .github/admin-speed.run | awk '{print $1}'); else m=skip; fi
+          case "$m" in apply|rollback|log) ;; *) m=skip ;; esac
+          echo "Chế độ: $m"; echo "mode=$m" >> "$GITHUB_OUTPUT"
+      - name: Đọc log ajax
+        if: steps.mode.outputs.mode == 'log'
+        run: |
+          node -e '
+          const b=new URL(/^https?:\/\//i.test(process.env.CPANEL_BASE_URL)?process.env.CPANEL_BASE_URL:"https://"+process.env.CPANEL_BASE_URL); if(!b.port)b.port="2083";
+          const u=new URL(b.origin+"/execute/Fileman/get_file_content"); u.searchParams.set("dir",process.env.LOCKNLOCK_DOCROOT.replace(/\/+$/,"")+"/wp-content/lnl-logs"); u.searchParams.set("file","ajax-timing.log");
+          fetch(u,{headers:{Authorization:`cpanel ${process.env.CPANEL_USERNAME}:${process.env.CPANEL_API_TOKEN}`}}).then(r=>r.json()).then(j=>{const t=String(j?.data?.content||""); const L=t.trim().split("\n").filter(Boolean); const g={}; for(const l of L){const [ts,a,ms,who]=l.split("\t"); const k=a+" ("+who+")"; (g[k]||=[]).push(+ms);} console.log("Tổng "+L.length+" dòng, từ "+(L[0]||"").split("\t")[0]+" đến "+(L[L.length-1]||"").split("\t")[0]); const rows=Object.entries(g).map(([k,v])=>{v.sort((a,b)=>a-b);return [k,v.length,v.reduce((a,b)=>a+b,0),v[Math.floor(v.length/2)],v[v.length-1]]}).sort((a,b)=>b[2]-a[2]); for(const r of rows.slice(0,30)) console.log(`${String(r[1]).padStart(5)} lần  tổng ${Math.round(r[2]/1000)}s  giữa ${r[3]}ms  lâu nhất ${r[4]}ms  ${r[0]}`);});'
+      - name: Thêm 3 file (admin nhẹ, heartbeat, log ajax)
+        if: steps.mode.outputs.mode == 'apply'
+        run: |
+          for f in woo-admin-lite.php lnl-heartbeat.php lnl-ajax-timing.php; do MODE=apply FILE=$f node scripts/maintenance/cpanel-deploy-newfile.mjs; done
+      - name: Thêm cron hosting rồi tắt wp-cron theo lượt truy cập
+        if: steps.mode.outputs.mode == 'apply'
+        run: |
+          MODE=add node scripts/maintenance/cpanel-cron-wpcron.mjs
+          MODE=apply FILE=lnl-disable-wp-cron.php node scripts/maintenance/cpanel-deploy-newfile.mjs
+      - name: Kiểm tra sau
+        id: verify
+        if: steps.mode.outputs.mode == 'apply'
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y >/dev/null && npm i --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE"/scripts/diagnose/lock-login-probe.mjs "$GITHUB_WORKSPACE"/scripts/diagnose/lock-place-order-probe.mjs "$GITHUB_WORKSPACE"/scripts/maintenance/web-lock-buy-test.mjs .
+          node lock-login-probe.mjs | tee login.txt; grep -c "không được đăng ký" login.txt | grep -q 3
+          ONLY=2,4 EXPECT_DIRECT=1 node web-lock-buy-test.mjs | sed -n '/TÓM TẮT/,$p'
+          RUNS=1 EXPECT_OK=1 node lock-place-order-probe.mjs | tail -4
+      - name: Gỡ tất cả nếu không đạt, hoặc khi chọn rollback
+        if: (steps.mode.outputs.mode == 'apply' && steps.verify.outcome == 'failure') || steps.mode.outputs.mode == 'rollback'
+        run: |
+          MODE=rollback FILE=lnl-disable-wp-cron.php node scripts/maintenance/cpanel-deploy-newfile.mjs || true
+          MODE=remove node scripts/maintenance/cpanel-cron-wpcron.mjs || true
+          for f in lnl-ajax-timing.php lnl-heartbeat.php woo-admin-lite.php; do MODE=rollback FILE=$f node scripts/maintenance/cpanel-deploy-newfile.mjs || true; done
+          [ "${{ steps.mode.outputs.mode }}" = rollback ] || { echo "ĐÃ GỠ vì kiểm tra sau không đạt"; exit 1; }
