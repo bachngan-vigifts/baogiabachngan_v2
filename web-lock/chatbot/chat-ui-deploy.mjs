@@ -18,7 +18,7 @@ try {
    const isForm=params instanceof FormData;
    if(!isForm) for(const [k,v] of Object.entries(params)) url.searchParams.set(k,String(v));
    const r=await fetch(url,{method:isForm?'POST':'GET',headers:{Authorization:'cpanel '+user+':'+token},body:isForm?params:undefined,signal:AbortSignal.timeout(40000)});
-   const j=await r.json();if(!r.ok||!j.status) throw Error('cpanel');
+   const j=await r.json();if(!r.ok||!j.status){console.log(JSON.stringify({cpanel_function:fn,http:r.status,status:j.status}));throw Error('cpanel');}
    return j.data;
  };
  upload=async(dest,name,content)=>{
@@ -65,10 +65,12 @@ try {
  const latest=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8'});
  if(latest.content!==current.content) throw Error('concurrent_change');
  const finalCode=readFileSync('web-lock/chatbot/lnl-store-ai-bridge.php','utf8').replace('__LNL_PRIVATE_CONFIG__',privateDir+'/'+configName);
+ stage='activate_upload';
  changed=true;
  await upload(dir,pluginName,finalCode);
+ stage='activate_readback';
  const verified=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8'});
- if(verified.content!==finalCode) throw Error('readback');
+ if(verified.content!==finalCode){console.log(JSON.stringify({expected_bytes:finalCode.length,actual_bytes:verified.content?.length,expected_hash:createHash('sha256').update(finalCode).digest('hex'),actual_hash:typeof verified.content==='string'?createHash('sha256').update(verified.content).digest('hex'):null}));throw Error('readback');}
  await cleanup(); cleanup=null;
  await new Promise(resolve=>setTimeout(resolve,3000));
  stage='verify_live';
