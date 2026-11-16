@@ -22,4 +22,4 @@ jobs:
           node-version: 22
       - run: |
           [ -f .github/cron-lockwp.run ] || exit 0
-          MODE="$(head -1 .github/cron-lockwp.run | awk '{print $1}')" node scripts/maintenance/cpanel-cron-lockwp.mjs
+          MODE="$(head -1 .github/cron-lockwp.run | awk '{print $1}')" SITE="$(head -1 .github/cron-lockwp.run | awk '{print $2}')" node scripts/maintenance/cpanel-cron-lockwp.mjs
