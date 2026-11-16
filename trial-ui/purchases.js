@@ -961,14 +961,15 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       for (const { l, p, dc, tx } of empty) {
         const prod = bySku.get(String(l.sku));
         const raw = prod?.prices?.find(x => x.policyId === policy?.id)?.price, disc = defaultCostDiscount(prod || l);
-        if (!prod || !Number.isFinite(raw) || disc === null) { missing.push(l.sku); continue; }
+        const reason = !prod ? 'không tìm thấy sản phẩm' : !Number.isFinite(raw) ? 'chưa có giá ở bảng giá đang chọn' : disc === null ? 'chưa có quy tắc CK mua vào' : '';
+        if (reason) { missing.push(`${l.sku} (${reason})`); continue; }
         const tax = prod.taxable ? (Number.isFinite(prod.taxIn) ? prod.taxIn : Number.isFinite(prod.taxOut) ? prod.taxOut : 8) : 0;
         const included = /VAT/i.test(policy?.name || '') || prod.taxBasis === 'Giá đã bao gồm thuế';
         if (p.value === '') p.value = String(Math.round(netPrice(raw, prod.taxable ? (prod.taxOut ?? 0) : 0, included)));
         if (!Number(dc.value)) dc.value = String(disc);
         if (l.taxRate == null) tx.value = String(tax);
       }
-      hint.textContent = `Đã điền sẵn giá niêm yết${policy ? ` (${policy.name})` : ''} + CK mua vào theo thương hiệu, kiểm tra lại rồi bấm Duyệt.`
+      hint.textContent = `Gợi ý từ giá niêm yết${policy ? ` (${policy.name})` : ''} + CK mua vào theo thương hiệu. Giá mua là đơn giá trước CK, chưa VAT; giá sau CK = Giá mua × (1 − CK/100). Kiểm tra lại rồi bấm Duyệt.`
         + (missing.length ? ` Chưa xác định được: ${missing.join(', ')} – nhập tay.` : '');
     } catch { hint.textContent = 'Không lấy được giá niêm yết – nhập giá mua tay.'; }
   }

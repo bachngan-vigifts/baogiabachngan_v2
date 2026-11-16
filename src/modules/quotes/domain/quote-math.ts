@@ -118,7 +118,8 @@ export const netPrice = (raw: number, tax: number, included: boolean): number =>
 export function defaultCostDiscount(product?: Pick<QuoteRow, 'brand' | 'name' | 'sku' | 'pattern'> | null): number | null {
   const text = normalize([product?.brand, product?.name, product?.sku, product?.pattern].filter(Boolean).join(' '));
   if (!text) return null;
-  if (text.includes('healthy cook')) return 15;
+  // Website/catalogues use both Healthy Cook and Healthycook for the same brand.
+  if (/\bhealthy\s*cook\b/.test(text)) return 15;
   if (/\blys\b/.test(text) || text.includes('minh long - lys')) return 19;
   if (/\blocknlock\b/.test(text) || /\block n lock\b/.test(text) || text.includes('lock&lock') || text.includes('lock & lock') || /\block\b/.test(text)) return 58;
   if (/(?:^|[^a-z0-9đ])(?:hoang cung|[dđ]ai cac)(?=$|[^a-z0-9đ])/.test(text)) return 27;
