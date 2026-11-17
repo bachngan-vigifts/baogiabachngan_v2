@@ -27,6 +27,7 @@ export async function verify(browser,live=false){
  const thumbs=async()=>{if(!live)await page.evaluate(src=>document.querySelectorAll('.woocommerce-checkout-review-order-table .cart_item .product-name').forEach(e=>{if(!e.querySelector('.bnco-product-thumb')){const i=document.createElement('img');i.src=src;i.className='bnco-product-thumb';e.prepend(i);}}),src);};
  await thumbs();
  await page.locator('#bnco-shell').waitFor({state:'visible'});
+ await page.waitForFunction(id=>document.querySelector('input[name="payment_method"]:checked')?.value===id,bank,{timeout:30000});
  const settle=async()=>{await page.waitForFunction(()=>!document.querySelector('form.checkout.processing,.blockUI')&&!document.querySelector('#bnco-next')?.disabled,{},{timeout:90000});await page.waitForTimeout(300);};
  await settle();
  for(const width of [390,320,430]){

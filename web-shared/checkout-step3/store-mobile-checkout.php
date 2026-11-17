@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Store mobile checkout option 3
- * Version: 1.0.3
+ * Version: 1.0.4
  * Presentation only; WooCommerce remains the order and pricing authority.
  */
 defined('ABSPATH') || exit;
@@ -246,6 +246,15 @@ const gift=document.querySelector('.claw-gift-checkout-mobile'),giftAnchor=docum
 if(gift)gift.before(giftAnchor);
 const invoice=document.querySelector('.claw-lnl-invoice-request--checkout,.claw-ml-invoice-request--checkout'),invoiceAnchor=document.createComment('checkout invoice location');
 if(invoice)invoice.before(invoiceAnchor);
+let customerPaymentChoice=null,settingPayment=false;
+form.addEventListener('change',event=>{if(!settingPayment&&event.isTrusted&&event.target.matches('input[name="payment_method"]'))customerPaymentChoice=event.target.value;},true);
+function syncPayment(){
+ if(form.classList.contains('processing'))return;
+ const available=[...form.querySelectorAll('input[name="payment_method"]')];
+ const bank=available.find(e=>e.value==='sepay')||available.find(e=>e.value==='bacs');
+ const desired=available.find(e=>e.value===customerPaymentChoice)||bank;
+ if(desired&&!desired.checked&&!desired.disabled){settingPayment=true;desired.click();settingPayment=false;}
+}
 const mq=matchMedia('(max-width:549px)');
 let step=1,pending=false,updateFailed=false,advanceWhenReady=false,timer=0;
 const shell=document.createElement('section');shell.id='bnco-shell';
@@ -321,6 +330,7 @@ function structure(){
  }
 }
 function sync(){
+ syncPayment();
  structure();
  const mobile=mq.matches;document.body.classList.toggle('bnco-active',mobile);
  const isShipping=document.getElementById('ship-to-different-address-checkbox')?.checked,prefix=isShipping?'shipping':'billing';
@@ -371,6 +381,7 @@ form.addEventListener('submit',e=>{if(mq.matches&&step===1){e.preventDefault();e
 form.addEventListener('keydown',e=>{if(mq.matches&&step===1&&e.key==='Enter'&&e.target.matches('input:not([type=checkbox]):not([type=radio])')){e.preventDefault();next.click();}});
 form.addEventListener('input',schedule);form.addEventListener('change',schedule);
 if(window.jQuery){
+ jQuery(()=>setTimeout(schedule,150));
  jQuery(document.body).on('update_checkout.bnco',()=>{pending=true;updateFailed=false;schedule();});
  jQuery(document.body).on('updated_checkout.bnco',()=>{pending=false;updateFailed=false;retry.hidden=true;if(advanceWhenReady){advanceWhenReady=false;if(validate())setStep(2);}schedule();});
  jQuery(document.body).on('checkout_error.bnco',()=>{pending=false;if(customer.querySelector('.woocommerce-invalid'))setStep(1);schedule();});
