@@ -6,9 +6,8 @@
 defined('ABSPATH') || exit;
 
 function ml_si_config() {
-    $token = defined('ML_SHIPPING_GHN_TOKEN') ? (string) ML_SHIPPING_GHN_TOKEN : (string) getenv('ML_SHIPPING_GHN_TOKEN');
-    $shop = defined('ML_SHIPPING_GHN_SHOP_ID') ? (int) ML_SHIPPING_GHN_SHOP_ID : (int) getenv('ML_SHIPPING_GHN_SHOP_ID');
-    return array($token, $shop);
+    // Provisioned server-side by the approved deployment; never expose in browser output.
+    return array('__ML_GHN_TOKEN__', (int)'__ML_GHN_SHOP_ID__');
 }
 function ml_si_api($path, $payload = null) {
     list($token, $shop) = ml_si_config();
@@ -102,7 +101,9 @@ function ml_si_queue_refresh() {
 }
 add_action('ml_si_route_refresh',function($district,$ward,$type){ml_si_estimate($district,$ward,$type,true);},10,3);
 add_action('ml_si_midnight',function(){ ml_si_seed_regions(); ml_si_queue_refresh(); });
+add_action('ml_si_seed','ml_si_seed_regions');
 add_action('init',function(){
+    if(!get_option('ml_si_regions') && !wp_next_scheduled('ml_si_seed')) wp_schedule_single_event(time()+5,'ml_si_seed');
     if(!wp_next_scheduled('ml_si_midnight')){
         $next=new DateTimeImmutable('tomorrow 00:00:00',new DateTimeZone('Asia/Ho_Chi_Minh'));
         wp_schedule_event($next->getTimestamp(),'daily','ml_si_midnight');
@@ -123,6 +124,12 @@ function ml_si_policy_update() {
     if(!is_wp_error($id)){update_option('ml_si_policy_status','updated',false);do_action('litespeed_purge_url',get_permalink($p->ID));}
 }
 add_action('init','ml_si_policy_update',30);
+add_action('init',function(){
+ if(get_option('ml_si_deploy_version')==='20261117-v1')return;
+ do_action('litespeed_purge_url',home_url('/'));
+ do_action('litespeed_purge_url',home_url('/chinh-sach-van-chuyen-giao-nhan-kiem-hang/'));
+ update_option('ml_si_deploy_version','20261117-v1',false);
+},40);
 add_filter('woocommerce_update_order_review_fragments',function($fragments){
  if(function_exists('WC')&&WC()->cart){$type=wc_get_weight(WC()->cart->get_cart_contents_weight(),'g')>=20000?5:2;$fragments['#ml-shipping-service-type']='<span id="ml-shipping-service-type" hidden data-type="'.$type.'"></span>';}
  return $fragments;
@@ -133,7 +140,7 @@ add_action('wp_footer',function(){
     if(function_exists('WC')&&WC()->cart){$config['type']=wc_get_weight(WC()->cart->get_cart_contents_weight(),'g')>=20000?5:2;}
 ?>
 <style id="ml-shipping-information">
-.ml-ship-hit{position:absolute!important;bottom:0!important;left:0!important;width:32%!important;height:15%!important;min-height:28px!important;margin:0!important;padding:0!important;opacity:1!important;background:transparent!important;border:0!important;box-shadow:none!important;z-index:6;cursor:help}
+.ml-ship-hit{position:absolute!important;bottom:0!important;left:58%!important;width:20%!important;height:12%!important;min-height:28px!important;margin:0!important;padding:0!important;opacity:1!important;background:transparent!important;border:0!important;box-shadow:none!important;z-index:10;cursor:help}
 .ml-ship-hit:focus-visible{outline:2px solid #2563eb!important;outline-offset:-2px}
 #ml-ship-tip{position:fixed;z-index:100001;width:290px;max-width:calc(100vw - 24px);padding:12px 14px;background:#fff;color:#253e53;border:1px solid #bdd8ec;border-radius:12px;box-shadow:0 8px 28px #163b602b;font-size:13px;line-height:1.45}
 #ml-ship-tip[hidden],#ml-shipping-eta[hidden]{display:none!important}
@@ -206,7 +213,8 @@ const r=button.getBoundingClientRect();const w=tip.offsetWidth,h=tip.offsetHeigh
 tip.style.left=Math.max(12,Math.min(r.left,innerWidth-w-12))+'px';
 tip.style.top=Math.max(12,r.top>h+16?r.top-h-8:Math.min(r.bottom+8,innerHeight-h-12))+'px';
 }
-document.querySelectorAll('.product-small .box-image[data-ml-freeship-badge="1"]').forEach(box=>{
+document.querySelectorAll('.product-small .box-image').forEach(box=>{
+if(!getComputedStyle(box,'::after').backgroundImage.includes('KHUNG-SAN-PHAM-WEB_MINH-LONG-ONLINE-thang-11-03.webp'))return;
 if(box.querySelector('.ml-ship-hit'))return;
 const button=document.createElement('button');button.type='button';button.className='ml-ship-hit';button.setAttribute('aria-label','Xem chính sách miễn phí vận chuyển');button.setAttribute('aria-describedby',tip.id);button.setAttribute('aria-expanded','false');
 box.style.position='relative';box.append(button);
