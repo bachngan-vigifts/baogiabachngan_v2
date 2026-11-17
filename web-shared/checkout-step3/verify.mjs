@@ -61,7 +61,7 @@ console.log('PHASE_1_FORM_LAYOUT_OK '+host);
  await choose('billing_ghn_district_id','1572');
  await choose('billing_ghn_ward_code','550111');
  await settle();await thumbs();
- if(live){await page.waitForFunction(()=>document.getElementById('bnco-footnote')?.textContent.startsWith('Phí vận chuyển:'));await page.waitForFunction(()=>document.getElementById('bnco-amount').textContent===document.querySelector('.order-total .amount').textContent.trim());console.log('ADDRESS_SHIPPING_TOTAL_VISIBLE_OK '+host);}
+ if(live){await page.waitForFunction(()=>document.getElementById('bnco-footnote')?.textContent.startsWith('Phí vận chuyển:'));await page.waitForFunction(()=>document.getElementById('bnco-amount').textContent===document.querySelector('.order-total .amount').textContent.trim());const fee=await page.evaluate(()=>document.getElementById('bnco-shipping-state').dataset.fee);if(Number(fee.replace(/\D/g,''))!==(host==='minhlongonline.com'?38500:33000))throw Error('Shop tariff mismatch: '+fee);console.log('ADDRESS_SHIPPING_TOTAL_VISIBLE_OK '+host+' '+fee);}
  await page.locator('#bnco-next').click();
  await page.waitForFunction(()=>document.body.classList.contains('bnco-step2'),{},{timeout:90000});
  if(!(await page.locator('#bnco-address-copy').textContent()).includes('123 Đường kiểm thử'))throw Error('Address missing');
@@ -103,6 +103,7 @@ console.log('PHASE_1_FORM_LAYOUT_OK '+host);
  const coupon=host==='minhlongonline.com'?'ml10k':'lnl10k';
  const modal=page.locator('.lnl-voucher-modal[aria-hidden="false"]');
  await modal.locator('input:not([type="hidden"])').first().fill(coupon);
+ page.on('response',async r=>{if(/admin-ajax|apply_coupon/.test(r.url())&&r.request().method()==='POST'){const body=await r.text().catch(()=> '');console.log('VOUCHER_RESPONSE '+host+' '+body.slice(0,1800));}});
  await modal.getByRole('button',{name:'ÁP DỤNG',exact:true}).click();
  await page.waitForFunction(()=>!!document.querySelector('.woocommerce-checkout-review-order-table .cart-discount'),{},{timeout:90000});
  await settle();await thumbs();
