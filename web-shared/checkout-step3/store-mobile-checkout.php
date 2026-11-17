@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Store mobile checkout option 3
- * Version: 1.0.0
+ * Version: 1.0.1
  * Presentation only; WooCommerce remains the order and pricing authority.
  */
 defined('ABSPATH') || exit;
@@ -202,6 +202,15 @@ body.bnco-active #customer_details>.claw-lnl-invoice-request,body.bnco-active #c
 }
 @media(max-width:549px){
 body.bnco-active #main #customer_details>.claw-lnl-invoice-request,body.bnco-active #main #customer_details>.claw-ml-invoice-request{display:block!important;position:static!important;float:none!important;transform:none!important;width:100%!important;order:999!important;margin:12px 0!important;padding:12px!important;border:1px solid #dce4ec!important;border-radius:10px!important;background:#fff!important}
+}
+@media(max-width:549px){
+body.bnco-active .bnco-removed-option,
+body.bnco-active #ship-to-different-address,
+body.bnco-active .woocommerce-shipping-fields,
+body.bnco-active .shipping_address{display:none!important}
+body.bnco-active #main .woocommerce-additional-fields{padding-top:0!important;margin-top:0!important}
+body.bnco-active #main #order_comments_field{margin-top:0!important;padding-top:0!important}
+body.bnco-active #main .woocommerce-additional-fields__field-wrapper{margin:0!important;padding:0!important}
 }</style>
 <?php
 },9999);
@@ -259,6 +268,11 @@ function setStep(n,scroll=true){
 function structure(){
  if(!mq.matches){if(invoice&&invoiceAnchor.parentNode&&invoiceAnchor.nextSibling!==invoice)invoiceAnchor.after(invoice);if(gift&&giftAnchor.parentNode&&giftAnchor.nextSibling!==gift)giftAnchor.after(gift);const moved=review.querySelector(':scope > .bnco-native-place-order');if(moved)document.getElementById('payment')?.append(moved);return;}
  if(invoice&&(invoice.parentElement!==customer||customer.lastElementChild!==invoice))customer.append(invoice);
+ for(const id of ['mailpoet_woocommerce_checkout_optin','ship-to-different-address-checkbox']){
+ const field=document.getElementById(id);if(!field)continue;
+ if(id==='mailpoet_woocommerce_checkout_optin'){const row=field.closest('.form-row')||field.closest('p')||field.closest('label');if(row&&!row.classList.contains('bnco-removed-option'))row.classList.add('bnco-removed-option');}
+ if(field.checked){field.checked=false;if(window.jQuery)jQuery(field).trigger('change');else field.dispatchEvent(new Event('change',{bubbles:true}));}
+}
  const nameInput=document.getElementById('billing_first_name');if(nameInput&&!nameInput.placeholder)nameInput.placeholder='Họ và tên';
  const wrap=document.querySelector('.woocommerce-billing-fields__field-wrapper');
  if(wrap&&!wrap.querySelector('.bnco-address-tip')){
