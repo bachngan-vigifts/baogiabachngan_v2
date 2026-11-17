@@ -1,8 +1,6 @@
 name: Deploy Minh Long preorder policy
 on:
-  push:
-    branches: [codex/minhlong-approved-shipping-20261117]
-    paths: [web-minhlong/preorder/**, .github/workflows/minhlong-preorder.yml]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

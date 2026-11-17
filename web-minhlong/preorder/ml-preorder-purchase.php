@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Minh Long Preorder Purchase
  * Description: Tagged coming-soon products: extra 10%, no coupons on preorder lines, separate free delivery.
- * Version: 1.0.0
+ * Version: 1.1.0
  */
 defined('ABSPATH') || exit;
 function mlpo_eligible($product) {
@@ -134,7 +134,20 @@ add_action('wp_footer',function(){?>
 function refresh(){
 document.querySelectorAll('[data-mlpo-product]').forEach(function(n){
 const wrap=n.closest('.product-small')||n.closest('.product');if(!wrap)return;wrap.classList.add('mlpo-product');
-const quick=wrap.querySelector('.ml-popup-buy-now');if(quick&&quick.textContent==='MUA NGAY')quick.textContent='ĐẶT TRƯỚC NGAY';
+const scope=wrap.classList.contains('product-small')?wrap:(wrap.querySelector('.product-info')||wrap.querySelector('.summary')||wrap);
+scope.classList.add('mlpo-purchase-scope');
+scope.querySelectorAll('a,button').forEach(function(button){
+const label=button.textContent.trim().replace(/\s+/g,' ').toLocaleUpperCase('vi');
+if(button.matches('.ml-popup-buy-now,#buy_now_button,.ux-buy-now-button')||label==='MUA NGAY'||label==='ĐẶT TRƯỚC NGAY'){
+button.style.setProperty('display','none','important');button.setAttribute('aria-hidden','true');button.tabIndex=-1;
+}
+});
+scope.querySelectorAll('form.cart .single_add_to_cart_button').forEach(function(button){
+button.classList.remove('ml-popup-cart-icon');button.classList.add('mlpo-order-button');
+if(button.textContent.trim()!=='ĐẶT TRƯỚC')button.textContent='ĐẶT TRƯỚC';
+button.setAttribute('aria-label','Đặt trước');button.title='Đặt trước';
+button.style.setProperty('font-size','14px','important');button.style.setProperty('width','auto','important');button.style.setProperty('max-width','none','important');button.style.setProperty('min-width','140px','important');button.style.setProperty('grid-column','1 / -1','important');
+});
 });
 document.body.classList.toggle('mlpo-only-cart',!!document.querySelector('[data-mlpo-only="1"]'));
 }
@@ -144,6 +157,6 @@ refresh();
 </script>
 <?php },120);
 add_action('init',function(){
- if(get_option('mlpo_cache_version')==='1')return;
- do_action('litespeed_purge_all');update_option('mlpo_cache_version','1',false);
+ if(get_option('mlpo_cache_version')==='2')return;
+ do_action('litespeed_purge_all');update_option('mlpo_cache_version','2',false);
 },30);

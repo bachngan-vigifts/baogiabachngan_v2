@@ -1,0 +1,33 @@
+name: Keep one preorder purchase button
+on:
+  push:
+    branches: [codex/minhlong-approved-shipping-20261117]
+    paths: [web-minhlong/preorder-ui/deploy.mjs, .github/workflows/minhlong-preorder-ui.yml]
+permissions:
+  contents: read
+concurrency:
+  group: minhlong-shipping-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          php -l web-minhlong/preorder/ml-preorder-purchase.php
+          node --check web-minhlong/preorder-ui/deploy.mjs
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Deploy and verify preorder buttons
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+        run: node web-minhlong/preorder-ui/deploy.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: minhlong-preorder-one-button
+          path: ml-preorder-one-button-*.png
+          retention-days: 3
