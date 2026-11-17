@@ -188,6 +188,11 @@ add_action('wp_footer',function(){
 #lnl-ship-tip p{margin:5px 0}#lnl-ship-tip a{color:#145c96;text-decoration:underline}
 #lnl-shipping-eta{clear:both;margin:12px 0;padding:12px 14px;background:#f1f8fd;border:1px solid #c7e0f0;border-radius:10px;font-size:14px;line-height:1.5}
 #lnl-shipping-eta p{margin:4px 0}#lnl-shipping-eta small{display:block;color:#53677a}
+#lnl-shipping-eta .lnl-express-note{margin-top:12px;padding:12px 14px;border:1px solid #f0d398;border-left:4px solid #d88a16;border-radius:9px;background:#fff8e9;color:#49381f}
+#lnl-shipping-eta .lnl-express-title{display:block;margin:0 0 5px;font-size:16px;line-height:1.4;font-weight:750;color:#88500b}
+#lnl-shipping-eta .lnl-express-note p{margin:5px 0 8px;font-size:14px;line-height:1.6}
+#lnl-shipping-eta .lnl-express-note a{font-weight:750;color:#145c96;text-decoration:underline;text-underline-offset:3px}
+#lnl-shipping-eta .lnl-express-condition{display:block;padding-top:8px;border-top:1px solid #ecd7ad;font-size:13px;font-weight:650;line-height:1.5;color:#8a4315}
 </style>
 <script id="lnl-shipping-information-js">
 (function(){
@@ -197,7 +202,7 @@ function init(){
 if(cfg.checkout){
  const form=document.querySelector('form.checkout');if(!form)return;
  const panel=document.createElement('section');panel.id='lnl-shipping-eta';panel.hidden=true;panel.setAttribute('aria-live','polite');
- panel.innerHTML='<span id="lnl-shipping-service-type" hidden data-type="'+cfg.type+'"></span><strong>Dự kiến nhận hàng</strong><p class="lnl-eta-result"></p><small>Thời gian tham khảo từ GHN; shop cần 0–1 ngày làm việc để xử lý đơn. Thời gian thực tế có thể thay đổi theo thời điểm bàn giao và điều kiện vận chuyển.</small><p>Quý khách cần nhận hàng gấp, vui lòng liên hệ <a href="tel:0939961966">Mr Thái – 0939 961 966</a> để được hỗ trợ giao hỏa tốc.</p><small>Các ưu đãi hiện hành không áp dụng cho đơn giao hỏa tốc.</small>';
+ panel.innerHTML='<span id="lnl-shipping-service-type" hidden data-type="'+cfg.type+'"></span><strong>Dự kiến nhận hàng</strong><p class="lnl-eta-result"></p><small>Thời gian tham khảo từ GHN; shop cần 0–1 ngày làm việc để xử lý đơn. Thời gian thực tế có thể thay đổi theo thời điểm bàn giao và điều kiện vận chuyển.</small><div class="lnl-express-note"><strong class="lnl-express-title">Cần giao hỏa tốc?</strong><p>Quý khách cần nhận hàng gấp, vui lòng liên hệ <a href="tel:0939961966">Mr Thái – 0939 961 966</a> để được hỗ trợ.</p><small class="lnl-express-condition">Lưu ý: Các ưu đãi hiện hành không áp dụng cho đơn giao hỏa tốc.</small></div>';
  const wrapper=form.querySelector('.woocommerce-billing-fields__field-wrapper');if(!wrapper)return;wrapper.append(panel);
  let timer,controller,version=0,last='',memory=new Map();
  function refresh(){

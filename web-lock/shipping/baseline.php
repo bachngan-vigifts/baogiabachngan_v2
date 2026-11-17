@@ -21,6 +21,31 @@ function lnl_si_api($path, $payload = null) {
     if (200 !== wp_remote_retrieve_response_code($res) || 200 !== (int)($j['code']??0)) { return new WP_Error('unavailable','Chưa nhận được dự kiến từ GHN.'); }
     return $j['data']??array();
 }
+add_filter('rest_post_dispatch',function($response,$server,$request){
+    if(strpos($request->get_route(),'/lnl-shipping/v1/')===0 && $response instanceof WP_REST_Response){$response->header('Cache-Control','private, no-store, max-age=0');}
+    return $response;
+},10,3);
+
+add_action('rest_api_init',function(){
+    register_rest_route('lnl-shipping/v1','/purge',array('methods'=>'POST','permission_callback'=>'lnl_si_permission','callback'=>function(){
+        $zone=(string)get_option('litespeed.conf.cdn-cloudflare_zone','');
+        $key=(string)get_option('litespeed.conf.cdn-cloudflare_key','');
+        $email=(string)get_option('litespeed.conf.cdn-cloudflare_email','');
+        if(!$key || !preg_match('/^[a-f0-9]{32}$/i',$zone))return array('purged'=>false,'configured'=>false);
+        $headers=array('Content-Type'=>'application/json');
+        if($email){$headers['X-Auth-Email']=$email;$headers['X-Auth-Key']=$key;}else{$headers['Authorization']='Bearer '.$key;}
+        $r=wp_remote_post('https://api.cloudflare.com/client/v4/zones/'.$zone.'/purge_cache',array('timeout'=>20,'headers'=>$headers,'body'=>wp_json_encode(array('files'=>array(home_url('/'),home_url('/chinh-sach-van-chuyen/'))))));
+        if(is_wp_error($r))return array('purged'=>false,'configured'=>true);
+        $j=json_decode(wp_remote_retrieve_body($r),true);
+        if(empty($j['success']) && $email && in_array(wp_remote_retrieve_response_code($r),array(400,401,403),true)){
+            $r=wp_remote_post('https://api.cloudflare.com/client/v4/zones/'.$zone.'/purge_cache',array('timeout'=>20,'headers'=>array('Content-Type'=>'application/json','Authorization'=>'Bearer '.$key),'body'=>wp_json_encode(array('files'=>array(home_url('/'),home_url('/chinh-sach-van-chuyen/'))))));
+            if(is_wp_error($r))return array('purged'=>false,'configured'=>true);
+            $j=json_decode(wp_remote_retrieve_body($r),true);
+        }
+        return array('purged'=>!empty($j['success']),'configured'=>true,'status'=>wp_remote_retrieve_response_code($r),'error_codes'=>array_map(function($e){return (int)($e['code']??0);},$j['errors']??array()));
+    }));
+});
+
 function lnl_si_today() { return wp_date('Y-m-d',time(),new DateTimeZone('Asia/Ho_Chi_Minh')); }
 function lnl_si_key($district,$ward,$type) {
     list($token,$shop)=lnl_si_config();
@@ -48,6 +73,32 @@ function lnl_si_estimate($district,$ward,$type=2,$force=false) {
     update_option('lnl_si_routes',$routes,false);
     return $result;
 }
+
+function lnl_si_seed_regions() {
+    // Representative destination wards from the store's GHN catalogue; validate each against live leadtime.
+    $specs=array(array('label'=>'Miền Nam · TP.HCM','district'=>1442,'ward'=>'20110'),array('label'=>'Miền Trung · Đà Nẵng','district'=>1526,'ward'=>'40113'),array('label'=>'Miền Bắc · Hà Nội','district'=>1489,'ward'=>'1A0218'));
+    $out=array();
+    foreach($specs as $spec){
+        $estimate=lnl_si_estimate($spec['district'],$spec['ward']);
+        if(!is_wp_error($estimate)){$out[]=$spec;}
+    }
+    if($out)update_option('lnl_si_regions',$out,false);
+    return count($out);
+}
+function lnl_si_regions() {
+    $out=array();$tz=new DateTimeZone('Asia/Ho_Chi_Minh');
+    foreach(get_option('lnl_si_regions',array()) as $r){
+        $cached=get_transient(lnl_si_key($r['district'],$r['ward'],2));
+        if(!is_array($cached)||($cached['day']??'')!==lnl_si_today())continue;
+        $out[]=array('label'=>$r['label'],'from'=>wp_date('d/m',$cached['from'],$tz),'to'=>wp_date('d/m',$cached['to'],$tz));
+    }
+    return $out;
+}
+add_action('rest_api_init',function(){
+    register_rest_route('lnl-shipping/v1','/seed-regions',array('methods'=>'POST','permission_callback'=>'lnl_si_permission','callback'=>function(){return array('regions'=>lnl_si_seed_regions());}));
+    register_rest_route('lnl-shipping/v1','/regions',array('methods'=>'GET','permission_callback'=>'__return_true','callback'=>'lnl_si_regions'));
+});
+
 function lnl_si_permission($r) {
     return hash_equals('__LNL_SHIPPING_PROBE__',(string)$r->get_header('X-LNL-Shipping'));
 }
@@ -56,6 +107,11 @@ add_action('rest_api_init',function(){
         list($token,$shop)=lnl_si_config();
         do_action('litespeed_purge_url',home_url('/'));
         $out=array('configured'=>(bool)($token&&$shop),'policy'=>get_option('lnl_si_policy_status','pending'));
+        global $wpdb;
+        $out['next_refresh_local']=wp_date('Y-m-d H:i:s',wp_next_scheduled('lnl_si_midnight'),new DateTimeZone('Asia/Ho_Chi_Minh'));
+        $out['cache_plugins']=array_values(array_filter(get_option('active_plugins',array()),function($p){return preg_match('/cloudflare|litespeed|cache/i',$p);}));
+        $cf=get_option('litespeed.conf',array());$out['cache_config_keys']=is_array($cf)?array_values(array_filter(array_keys($cf),function($k){return preg_match('/cloudflare|cf[_-]/i',$k);})):array();
+        $out['cloudflare_option_names']=$wpdb->get_col("SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE '%cloudflare%' OR option_name LIKE '%cloudflare_%'");
         if (!$out['configured']) { return $out; }
         $shops=lnl_si_api('/v2/shop/all?offset=0&limit=100');
         if(is_wp_error($shops)){ $out['ghn_available']=false;return $out; }
@@ -72,6 +128,7 @@ add_action('rest_api_init',function(){
     }));
     register_rest_route('lnl-shipping/v1','/eta',array('methods'=>'POST','permission_callback'=>function($r){return (bool)wp_verify_nonce($r->get_header('X-LNL-Nonce'),'lnl_shipping');},'callback'=>function($r){
         $district=absint($r->get_param('district'));$ward=(string)$r->get_param('ward');$type=(int)$r->get_param('type')===5?5:2;
+        if(function_exists('wc_load_cart') && function_exists('WC')){if(!WC()->cart)wc_load_cart();if(WC()->cart){$type=wc_get_weight(WC()->cart->get_cart_contents_weight(),'g')>=20000?5:2;}}
         if(!$district || !preg_match('/^[0-9A-Za-z_-]{1,15}$/D',$ward)){return new WP_Error('invalid','Chọn đủ quận/huyện và phường/xã.',array('status'=>400));}
         $rate='lnl_si_rate_'.hash_hmac('sha256',$_SERVER['REMOTE_ADDR']??'',wp_salt());
         $n=(int)get_transient($rate);if($n>=40){return new WP_Error('limited','Vui lòng thử lại sau.',array('status'=>429));}
@@ -114,9 +171,13 @@ function lnl_si_policy_update() {
     if(!is_wp_error($id)){update_option('lnl_si_policy_status','updated',false);do_action('litespeed_purge_url',get_permalink(5457));}
 }
 add_action('init','lnl_si_policy_update',30);
+add_filter('woocommerce_update_order_review_fragments',function($fragments){
+ if(function_exists('WC')&&WC()->cart){$type=wc_get_weight(WC()->cart->get_cart_contents_weight(),'g')>=20000?5:2;$fragments['#lnl-shipping-service-type']='<span id="lnl-shipping-service-type" hidden data-type="'.$type.'"></span>';}
+ return $fragments;
+});
 add_action('wp_footer',function(){
     if(!is_front_page() && !(function_exists('is_checkout')&&is_checkout()&&!is_order_received_page()))return;
-    $config=array('endpoint'=>rest_url('lnl-shipping/v1/eta'),'nonce'=>wp_create_nonce('lnl_shipping'),'checkout'=>(bool)is_checkout(),'type'=>2);
+    $config=array('restNonce'=>wp_create_nonce('wp_rest'),'regions'=>rest_url('lnl-shipping/v1/regions'),'endpoint'=>rest_url('lnl-shipping/v1/eta'),'nonce'=>wp_create_nonce('lnl_shipping'),'checkout'=>(bool)is_checkout(),'type'=>2);
     if(function_exists('WC')&&WC()->cart){$config['type']=wc_get_weight(WC()->cart->get_cart_contents_weight(),'g')>=20000?5:2;}
 ?>
 <style id="lnl-shipping-information">
@@ -136,7 +197,7 @@ function init(){
 if(cfg.checkout){
  const form=document.querySelector('form.checkout');if(!form)return;
  const panel=document.createElement('section');panel.id='lnl-shipping-eta';panel.hidden=true;panel.setAttribute('aria-live','polite');
- panel.innerHTML='<strong>Dự kiến nhận hàng</strong><p class="lnl-eta-result"></p><small>Thời gian tham khảo từ GHN; shop cần 0–1 ngày làm việc để xử lý đơn. Thời gian thực tế có thể thay đổi theo thời điểm bàn giao và điều kiện vận chuyển.</small><p>Quý khách cần nhận hàng gấp, vui lòng liên hệ <a href="tel:0939961966">Mr Thái – 0939 961 966</a> để được hỗ trợ giao hỏa tốc.</p><small>Các ưu đãi hiện hành không áp dụng cho đơn giao hỏa tốc.</small>';
+ panel.innerHTML='<span id="lnl-shipping-service-type" hidden data-type="'+cfg.type+'"></span><strong>Dự kiến nhận hàng</strong><p class="lnl-eta-result"></p><small>Thời gian tham khảo từ GHN; shop cần 0–1 ngày làm việc để xử lý đơn. Thời gian thực tế có thể thay đổi theo thời điểm bàn giao và điều kiện vận chuyển.</small><p>Quý khách cần nhận hàng gấp, vui lòng liên hệ <a href="tel:0939961966">Mr Thái – 0939 961 966</a> để được hỗ trợ giao hỏa tốc.</p><small>Các ưu đãi hiện hành không áp dụng cho đơn giao hỏa tốc.</small>';
  const wrapper=form.querySelector('.woocommerce-billing-fields__field-wrapper');if(!wrapper)return;wrapper.append(panel);
  let timer,controller,version=0,last='',memory=new Map();
  function refresh(){
@@ -145,28 +206,44 @@ if(cfg.checkout){
  const district=val('ghn_district_id'),ward=val('ghn_ward_code'),address=val('address_1'),province=val('ghn_province_id');
  version++;const seq=version;if(controller)controller.abort();
  if(!district||!ward||!address||!province){panel.hidden=true;last='';return;}
+ const destination=form.querySelector(prefix==='shipping'?'.woocommerce-shipping-fields__field-wrapper':'.woocommerce-billing-fields__field-wrapper');
+ if(destination&&panel.parentElement!==destination)destination.append(panel);
  const key=district+'|'+ward+'|'+cfg.type;
  panel.hidden=false;
  const output=panel.querySelector('.lnl-eta-result');
  function show(data){output.textContent=data.from===data.to?'Dự kiến: '+data.to:'Dự kiến: '+data.from+' – '+data.to;}
  if(memory.has(key)){show(memory.get(key));last=key;return;}
  last=key;output.textContent='Đang tra dự kiến nhận hàng…';controller=new AbortController();
- fetch(cfg.endpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-LNL-Nonce':cfg.nonce},body:JSON.stringify({district,ward,type:cfg.type}),signal:controller.signal})
+ fetch(cfg.endpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-LNL-Nonce':cfg.nonce,'X-WP-Nonce':cfg.restNonce},body:JSON.stringify({district,ward,type:cfg.type}),signal:controller.signal})
  .then(async r=>{const data=await r.json();if(!r.ok)throw Error();return data;})
  .then(data=>{if(seq!==version)return;memory.set(key,data);show(data);})
  .catch(err=>{if(seq===version&&err.name!=='AbortError')output.textContent='Shop sẽ xác nhận thời gian giao hàng khi tiếp nhận đơn.';});
  }
  function schedule(){clearTimeout(timer);timer=setTimeout(refresh,450);}
  form.addEventListener('input',schedule);form.addEventListener('change',schedule);
- if(window.jQuery)window.jQuery(document.body).on('updated_checkout',schedule);
+ if(window.jQuery)window.jQuery(document.body).on('updated_checkout',function(){
+ const type=Number(document.getElementById('lnl-shipping-service-type')?.dataset.type)||cfg.type;
+ if(type!==cfg.type){cfg.type=type;memory.clear();}
+ schedule();
+});
  refresh();
 }
 if(!document.body.classList.contains('home'))return;
 const tip=document.createElement('aside');tip.id='lnl-ship-tip';tip.hidden=true;tip.setAttribute('role','tooltip');
-tip.innerHTML='<strong>Hỗ trợ vận chuyển</strong><p>Miễn phí vận chuyển cho đơn từ <b>1.000.000đ</b>. Đơn dưới ngưỡng này: xem phí tại bước thanh toán.</p><p>Dự kiến GHN theo địa chỉ nhận hàng sẽ hiển thị tại trang thanh toán.</p><p><a href="/chinh-sach-van-chuyen/">Xem chính sách vận chuyển</a></p>';
-document.body.append(tip);let active=null,closeTimer;
+tip.innerHTML='<strong>Hỗ trợ vận chuyển</strong><p>Miễn phí vận chuyển cho đơn từ <b>1.000.000đ</b>. Đơn dưới ngưỡng này: xem phí tại bước thanh toán.</p><p>Dự kiến GHN theo tuyến tham khảo:</p><div class="lnl-region-times">Chọn địa chỉ tại thanh toán để xem dự kiến cụ thể.</div><small>Tuyến đại diện từng miền, không áp dụng chung cho mọi tỉnh. Chưa gồm thời gian xử lý đơn.</small><p><a href="/chinh-sach-van-chuyen/">Xem chính sách vận chuyển</a></p>';
+document.body.append(tip);let active=null,closeTimer,regionsPromise;
+function loadRegions(){
+ if(regionsPromise)return;
+ regionsPromise=fetch(cfg.regions).then(r=>{if(!r.ok)throw Error();return r.json();}).then(rows=>{
+ if(!Array.isArray(rows)||!rows.length)return;
+ const el=tip.querySelector('.lnl-region-times');el.replaceChildren();
+ rows.forEach(row=>{const p=document.createElement('p');p.textContent=row.label+': '+(row.from===row.to?row.to:row.from+' – '+row.to);el.append(p);});
+ }).catch(()=>{});
+}
+
 function close(){tip.hidden=true;if(active)active.setAttribute('aria-expanded','false');active=null;}
 function show(button){
+loadRegions();
 clearTimeout(closeTimer);if(active&&active!==button)active.setAttribute('aria-expanded','false');active=button;tip.hidden=false;button.setAttribute('aria-expanded','true');
 const r=button.getBoundingClientRect();const w=tip.offsetWidth,h=tip.offsetHeight;
 tip.style.left=Math.max(12,Math.min(r.left,innerWidth-w-12))+'px';
@@ -187,7 +264,7 @@ document.addEventListener('click',e=>{if(!tip.contains(e.target)&&!e.target.clos
 document.addEventListener('focusin',e=>{if(active&&!tip.contains(e.target)&&e.target!==active)close();});
 window.addEventListener('scroll',close,{passive:true});window.addEventListener('resize',close);
 }
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+init();
 })();
 </script>
 <?php
