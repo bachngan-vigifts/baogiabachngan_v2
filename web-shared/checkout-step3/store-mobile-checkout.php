@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Store mobile checkout option 3
- * Version: 1.0.8
+ * Version: 1.0.9
  * Presentation only; WooCommerce remains the order and pricing authority.
  */
 defined('ABSPATH') || exit;
@@ -21,6 +21,16 @@ add_action('woocommerce_before_checkout_form', function() {
  }
 }, 99999);
 
+
+
+// Remove the redundant SePay paragraph without changing gateway/payment handling.
+add_filter('woocommerce_gateway_description', function($description, $gateway_id) {
+ if ($gateway_id !== 'sepay') return $description;
+ $text = 'Quét mã QR hoặc chuyển khoản vào tài khoản VIGIFTS. Đơn hàng sẽ được tự động cập nhật khi hệ thống SePay xác nhận giao dịch đúng mã thanh toán.';
+ $plain = trim(preg_replace('/\\s+/u', ' ', html_entity_decode(wp_strip_all_tags($description), ENT_QUOTES, 'UTF-8')));
+ if ($plain === $text) return '';
+ return str_replace($text, '', $description);
+}, 99999, 2);
 
 function bnco_shipping_snapshot() {
  if (!function_exists('WC') || !WC()->cart) return '<span id="bnco-shipping-state" hidden></span>';

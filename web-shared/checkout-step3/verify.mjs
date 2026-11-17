@@ -88,6 +88,7 @@ console.log('PHASE_1_FORM_LAYOUT_OK '+host);
  console.log('GHN_DATE_VISIBLE_IN_REVIEW_OK '+host);
  if(await page.locator('.claw-gift-checkout-mobile').count())throw Error('Duplicate static gift banner still present');
  console.log('DUPLICATE_GIFT_BANNER_REMOVED_OK '+host);
+ if(live&&host==='locknlockonline.com'&&(await page.locator('#payment').textContent()).includes('Đơn hàng sẽ được tự động cập nhật khi hệ thống SePay'))throw Error('Redundant SePay description remains');
  console.log('PHASE_2_ADDRESS_VALIDATION_BACK_PERSISTENCE_OK '+host);
  for(const width of [390,320,430]){
  await page.setViewportSize({width,height:844});await page.waitForTimeout(300);
