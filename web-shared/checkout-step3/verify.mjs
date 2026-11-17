@@ -7,6 +7,7 @@ export async function verify(browser,live=false){
  for(const [host,pid] of [['minhlongonline.com','21035'],['locknlockonline.com','19320']]){
  const origin='https://'+host,ctx=await browser.newContext({viewport:{width:390,height:844}}),page=await ctx.newPage();
  try{
+ await page.route('**/*wc-ajax=checkout*',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({result:'failure',messages:'<ul class="woocommerce-error"><li>Kiểm thử: chặn tạo đơn hàng.</li></ul>',refresh:false,reload:false})}));
  const add=await ctx.request.post(origin+'/?wc-ajax=add_to_cart',{timeout:90000,form:{product_id:pid,quantity:'1'}});if((await add.json()).error)throw Error('Guest cart failed');
  await page.goto(origin+'/gio-hang/',{waitUntil:'domcontentloaded',timeout:90000});
  const src=await page.locator('.cart_item .product-thumbnail img').first().getAttribute('src');
@@ -15,6 +16,7 @@ export async function verify(browser,live=false){
  if(!live){await page.addStyleTag({content:css});await page.addScriptTag({content:js});}
  const thumbs=async()=>{if(!live)await page.evaluate(src=>document.querySelectorAll('.woocommerce-checkout-review-order-table .cart_item .product-name').forEach(e=>{if(!e.querySelector('.bnco-product-thumb')){const i=document.createElement('img');i.src=src;i.className='bnco-product-thumb';e.prepend(i);}}),src);};
  await thumbs();
+ if(live)await page.waitForFunction(()=>[...document.querySelectorAll('.bnco-product-thumb')].length>0&&[...document.querySelectorAll('.bnco-product-thumb')].every(i=>i.complete&&i.naturalWidth>0));
  await page.locator('#bnco-shell').waitFor({state:'visible'});
  const settle=async()=>{await page.waitForFunction(()=>!document.querySelector('form.checkout.processing,.blockUI')&&!document.querySelector('#bnco-next')?.disabled,{},{timeout:90000});await page.waitForTimeout(300);};
  await settle();
@@ -26,6 +28,7 @@ export async function verify(browser,live=false){
  });if(checks.overflow||!checks.footer||!checks.input||!checks.hidden||!checks.review)throw Error('Step1 geometry '+host+' '+width+' '+JSON.stringify(checks));
  await page.screenshot({path:'checkout-step1-'+host+'-'+width+'.png',fullPage:true});
  }
+ const ordered=await page.evaluate(()=>{const inv=document.querySelector('.claw-lnl-invoice-request--checkout,.claw-ml-invoice-request--checkout'),bill=document.querySelector('.woocommerce-billing-fields');return !inv||inv.getBoundingClientRect().top>=bill.getBoundingClientRect().bottom-1;});if(!ordered)throw Error('Invoice must appear after address fields');
  console.log('PHASE_1_FORM_LAYOUT_OK '+host);
  console.log('FORM_SPACING '+host+' '+JSON.stringify(await page.evaluate(()=>({gap:document.querySelector('label[for="billing_first_name"]').getBoundingClientRect().top-document.querySelector('.woocommerce-billing-fields').getBoundingClientRect().top,children:[...document.querySelector('.woocommerce-billing-fields__field-wrapper').children].map(e=>({id:e.id,cls:e.className,h:e.getBoundingClientRect().height,display:getComputedStyle(e).display,order:getComputedStyle(e).order}))}))));
  console.log('PROMO_LABEL_STRUCTURE '+host+' '+JSON.stringify(await page.evaluate(()=>({promo:[...document.querySelectorAll('body *')].filter(e=>e.children.length===0&&e.textContent.includes('QUÀ TẶNG BLACK FRIDAY')).map(e=>({html:e.parentElement.outerHTML.slice(0,4500),parent:e.parentElement.parentElement.className})),labels:[...document.querySelectorAll('label[for="billing_first_name"]')].map(e=>({html:e.outerHTML,style:getComputedStyle(e).cssText,display:getComputedStyle(e).display,position:getComputedStyle(e).position,clip:getComputedStyle(e).clip,color:getComputedStyle(e).color,parent:e.parentElement.outerHTML.slice(0,1500)}))}))));

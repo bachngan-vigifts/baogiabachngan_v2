@@ -1,0 +1,36 @@
+name: Deploy approved mobile checkout option 3
+on:
+  push:
+    branches: [codex/minhlong-approved-shipping-20261117]
+    paths: [web-shared/checkout-step3/deploy.mjs, .github/workflows/checkout-step3-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: storefront-checkout-step3
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          php -l web-shared/checkout-step3/store-mobile-checkout.php
+          node --check web-shared/checkout-step3/deploy.mjs
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Verify exact candidate before any hosting write
+        run: node web-shared/checkout-step3/verify.mjs
+      - name: Deploy verified candidate and check both storefronts
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: node web-shared/checkout-step3/deploy.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkout-step3-deploy
+          path: checkout-*.png
+          retention-days: 5

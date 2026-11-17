@@ -196,6 +196,9 @@ body.bnco-active .woocommerce-billing-fields__field-wrapper>.bnco-address-tip{or
 body.bnco-active #customer_details .form-row:has(input[type="hidden"]):not(:has(input:not([type="hidden"]),select,textarea)){display:none!important}
 body.bnco-active #customer_details>.claw-lnl-invoice-request,body.bnco-active #customer_details>.claw-ml-invoice-request{margin:12px 0!important;padding:12px!important;border:1px solid #dce4ec!important;border-radius:10px!important;background:#fff!important;box-shadow:none!important;outline:0!important}
 body.bnco-active #customer_details [class$="invoice-request__label"]{color:#19334f!important;font-weight:500!important;font-size:13px!important}
+}
+@media(max-width:549px){
+body.bnco-active #customer_details>.claw-lnl-invoice-request,body.bnco-active #customer_details>.claw-ml-invoice-request{order:99!important}
 }</style>
 <?php
 },9999);
@@ -252,7 +255,8 @@ function setStep(n,scroll=true){
 }
 function structure(){
  if(!mq.matches){if(invoice&&invoiceAnchor.parentNode)invoiceAnchor.after(invoice);if(gift&&giftAnchor.parentNode)giftAnchor.after(gift);const moved=review.querySelector(':scope > .bnco-native-place-order');if(moved)document.getElementById('payment')?.append(moved);return;}
- if(invoice&&invoice.parentElement!==customer)customer.append(invoice);
+ if(invoice&&(invoice.parentElement!==customer||customer.lastElementChild!==invoice))customer.append(invoice);
+ const nameInput=document.getElementById('billing_first_name');if(nameInput&&!nameInput.placeholder)nameInput.placeholder='Họ và tên';
  const wrap=document.querySelector('.woocommerce-billing-fields__field-wrapper');
  if(wrap&&!wrap.querySelector('.bnco-address-tip')){
  const tip=document.createElement('p');tip.className='bnco-address-tip';tip.textContent='Chọn đủ địa chỉ để xem phí và dự kiến giao hàng.';wrap.append(tip);

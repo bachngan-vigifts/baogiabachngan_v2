@@ -1,8 +1,6 @@
 name: Preview mobile checkout option 3
 on:
-  push:
-    branches: [codex/minhlong-approved-shipping-20261117]
-    paths: [web-shared/checkout-step3/store-mobile-checkout.php, web-shared/checkout-step3/verify.mjs, .github/workflows/checkout-step3-preview.yml]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
