@@ -17,6 +17,7 @@ jobs:
       - run: |
           php -l web-shared/checkout-step3/store-mobile-checkout.php
           node --check web-shared/checkout-step3/deploy.mjs
+          node --check web-shared/checkout-step3/verify.mjs
           npm install --no-save --package-lock=false playwright
           npx playwright install --with-deps chromium
       - name: Verify exact candidate before any hosting write

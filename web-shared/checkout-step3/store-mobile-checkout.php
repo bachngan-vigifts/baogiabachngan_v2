@@ -199,6 +199,9 @@ body.bnco-active #customer_details [class$="invoice-request__label"]{color:#1933
 }
 @media(max-width:549px){
 body.bnco-active #customer_details>.claw-lnl-invoice-request,body.bnco-active #customer_details>.claw-ml-invoice-request{order:99!important}
+}
+@media(max-width:549px){
+body.bnco-active #main #customer_details>.claw-lnl-invoice-request,body.bnco-active #main #customer_details>.claw-ml-invoice-request{display:block!important;position:static!important;float:none!important;transform:none!important;width:100%!important;order:999!important;margin:12px 0!important;padding:12px!important;border:1px solid #dce4ec!important;border-radius:10px!important;background:#fff!important}
 }</style>
 <?php
 },9999);
@@ -254,7 +257,7 @@ function setStep(n,scroll=true){
  sync();if(scroll)window.scrollTo({top:0,behavior:'smooth'});
 }
 function structure(){
- if(!mq.matches){if(invoice&&invoiceAnchor.parentNode)invoiceAnchor.after(invoice);if(gift&&giftAnchor.parentNode)giftAnchor.after(gift);const moved=review.querySelector(':scope > .bnco-native-place-order');if(moved)document.getElementById('payment')?.append(moved);return;}
+ if(!mq.matches){if(invoice&&invoiceAnchor.parentNode&&invoiceAnchor.nextSibling!==invoice)invoiceAnchor.after(invoice);if(gift&&giftAnchor.parentNode&&giftAnchor.nextSibling!==gift)giftAnchor.after(gift);const moved=review.querySelector(':scope > .bnco-native-place-order');if(moved)document.getElementById('payment')?.append(moved);return;}
  if(invoice&&(invoice.parentElement!==customer||customer.lastElementChild!==invoice))customer.append(invoice);
  const nameInput=document.getElementById('billing_first_name');if(nameInput&&!nameInput.placeholder)nameInput.placeholder='Họ và tên';
  const wrap=document.querySelector('.woocommerce-billing-fields__field-wrapper');
