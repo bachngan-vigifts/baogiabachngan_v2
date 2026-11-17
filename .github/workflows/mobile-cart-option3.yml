@@ -1,0 +1,34 @@
+name: Deploy approved mobile cart option 3
+on:
+  push:
+    branches: [codex/minhlong-approved-shipping-20261117]
+    paths: [web-shared/mobile-cart/**, .github/workflows/mobile-cart-option3.yml]
+permissions:
+  contents: read
+concurrency:
+  group: storefront-mobile-cart
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          php -l web-shared/mobile-cart/store-mobile-cart.php
+          node --check web-shared/mobile-cart/deploy.mjs
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Preview, deploy and verify both storefronts
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: node web-shared/mobile-cart/deploy.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mobile-cart-option3
+          path: cart-*.png
+          retention-days: 5
