@@ -21,6 +21,8 @@ export async function verify(browser,live=false){
  });
  await page.goto(origin+'/thanh-toan/',{waitUntil:'domcontentloaded',timeout:90000});
  await page.waitForTimeout(4000);
+ const bank=host==='locknlockonline.com'?'sepay':'bacs';
+ if(live){await page.waitForFunction(id=>document.querySelector('input[name="payment_method"]:checked')?.value===id,bank,{timeout:30000});console.log('BANK_DEFAULT_MOBILE_OK '+host);}
  if(!live){const active=await page.locator('#bnco-script').allTextContents();if(active.length){if(active.length!==1||active[0].trim()!==js.trim())throw Error('Different checkout candidate already active');}else{await page.addStyleTag({content:css});await page.addScriptTag({content:js});}}
  const thumbs=async()=>{if(!live)await page.evaluate(src=>document.querySelectorAll('.woocommerce-checkout-review-order-table .cart_item .product-name').forEach(e=>{if(!e.querySelector('.bnco-product-thumb')){const i=document.createElement('img');i.src=src;i.className='bnco-product-thumb';e.prepend(i);}}),src);};
  await thumbs();
@@ -101,6 +103,9 @@ console.log('PHASE_1_FORM_LAYOUT_OK '+host);
  console.log('VOUCHER_NATIVE_TOTAL_SYNC_OK '+host);
  }
  await page.locator('#payment_method_cod').check();await settle();
+ await page.evaluate(()=>jQuery(document.body).trigger('update_checkout'));await page.waitForTimeout(1500);await settle();
+ if(!await page.locator('#payment_method_cod').isChecked())throw Error('Explicit COD choice was overwritten');
+ console.log('EXPLICIT_COD_PRESERVED_AFTER_UPDATE_OK '+host);
  if(await page.locator('#terms').count())await page.locator('#terms').check();
  if(await page.locator('#bnco-review-confirm').count())await page.locator('#bnco-review-confirm').check();
  let submitted=false;
@@ -121,6 +126,7 @@ console.log('PHASE_1_FORM_LAYOUT_OK '+host);
  await page.screenshot({path:'checkout-desktop-'+host+'.png',fullPage:true});
  const changes=await page.evaluate(async()=>{const e=document.querySelector('.claw-lnl-invoice-request--checkout,.claw-ml-invoice-request--checkout');let n=0;const o=new MutationObserver(rs=>rs.forEach(r=>{if([...r.addedNodes].includes(e))n++;}));o.observe(document.querySelector('form.checkout'),{childList:true,subtree:true});await new Promise(r=>setTimeout(r,1000));o.disconnect();return n;});if(changes>1)throw Error('Repeated desktop invoice movement');
  console.log('DESKTOP_NATIVE_LAYOUT_OK '+host);
+ if(live){await page.reload({waitUntil:'domcontentloaded',timeout:90000});await page.waitForFunction(id=>document.querySelector('input[name="payment_method"]:checked')?.value===id,bank,{timeout:30000});console.log('BANK_DEFAULT_DESKTOP_OK '+host);}
  }catch(e){console.log('CHECKOUT_DIAGNOSTIC '+host+' '+JSON.stringify(await page.evaluate(()=>({error:document.getElementById('bnco-error')?.textContent,images:[...document.querySelectorAll('.bnco-product-thumb')].map(i=>({src:i.currentSrc||i.src,loaded:i.complete,width:i.naturalWidth})),modal:document.querySelector('.lnl-voucher-modal[aria-hidden="false"]')?.textContent.slice(0,2200),step:document.body.className,fields:[...document.querySelectorAll('#customer_details input:not([type=hidden]),#customer_details select')].filter(e=>e.id.startsWith('billing_')).map(e=>({id:e.id,value:e.value})),cards:[...document.querySelectorAll('form.checkout,#customer_details,.woocommerce-billing-fields,.woocommerce-billing-fields__field-wrapper')].map(e=>({cls:e.className,padding:getComputedStyle(e).padding,margin:getComputedStyle(e).margin})),above:[...document.querySelector('form.checkout').parentElement.children].map(e=>({tag:e.tagName,id:e.id,cls:e.className,text:e.textContent.trim().slice(0,90)}))}))));await page.screenshot({path:'checkout-failure-'+host+'.png',fullPage:true});throw e;}finally{await ctx.close();}
  }
 }

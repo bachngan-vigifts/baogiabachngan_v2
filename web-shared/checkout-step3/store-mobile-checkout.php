@@ -1,13 +1,26 @@
 <?php
 /**
  * Plugin Name: Store mobile checkout option 3
- * Version: 1.0.1
+ * Version: 1.0.2
  * Presentation only; WooCommerce remains the order and pricing authority.
  */
 defined('ABSPATH') || exit;
 function bnco_is_checkout() {
  return function_exists('is_checkout') && is_checkout() && !is_order_received_page() && !is_wc_endpoint_url('order-pay');
 }
+
+// Select bank transfer on entry; AJAX updates retain the customer's explicit choice.
+add_action('woocommerce_before_checkout_form', function() {
+ if (!bnco_is_checkout() || wp_doing_ajax() || !WC()->session) return;
+ $gateways = WC()->payment_gateways()->get_available_payment_gateways();
+ foreach (array('sepay', 'bacs') as $id) {
+  if (!isset($gateways[$id])) continue;
+  WC()->session->set('chosen_payment_method', $id);
+  foreach ($gateways as $key => $gateway) $gateway->chosen = ($key === $id);
+  break;
+ }
+}, 99999);
+
 add_filter('woocommerce_cart_item_name', function($name,$item,$key) {
  if (!(bnco_is_checkout() || (defined('WOOCOMMERCE_CHECKOUT') && WOOCOMMERCE_CHECKOUT))) return $name;
  if (strpos($name,'bnco-product-thumb') !== false || empty($item['data'])) return $name;
