@@ -20,3 +20,14 @@ for(const host of ['locknlockonline.com','minhlongonline.com']){
  }
 }
 console.log('SHIPPING_FEE_READ_ONLY_COMPLETE');
+
+for(const host of ['locknlockonline.com','minhlongonline.com']){
+ const root=rootFor(host),dir=root+'/wp-content/themes/flatsome-child';
+ try{const {content:s}=await api('Fileman','get_file_content',{dir,file:'functions.php',from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
+ const lines=(s||'').split('\n'),indices=new Set();
+ lines.forEach((line,i)=>{if(/package_rates|shipping-order\/fee|flat_rate|calculate_shipping|set_cost|shipping_total|ghn.*fee|fee.*ghn/i.test(line))for(let n=Math.max(0,i-8);n<Math.min(lines.length,i+18);n++)indices.add(n);});
+ console.log('THEME_FEE_SOURCE '+host+'\n'+[...indices].sort((a,b)=>a-b).map(i=>(i+1)+': '+(/token|secret|password|api.?key|authorization/i.test(lines[i])?'[credential-related line omitted]':lines[i])).join('\n').slice(0,20000));
+ }catch{console.log('THEME_READ_UNAVAILABLE '+host);}
+ const plugins=await api('Fileman','list_files',{dir:root+'/wp-content/plugins'});
+ console.log('PLUGIN_NAMES '+host+' '+JSON.stringify(plugins.map(f=>f.file)));
+}
