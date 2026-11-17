@@ -27,6 +27,7 @@ export async function verify(browser,live=false){
  await page.screenshot({path:'checkout-step1-'+host+'-'+width+'.png',fullPage:true});
  }
  console.log('PHASE_1_FORM_LAYOUT_OK '+host);
+ console.log('PROMO_LABEL_STRUCTURE '+host+' '+JSON.stringify(await page.evaluate(()=>({promo:[...document.querySelectorAll('body *')].filter(e=>e.children.length===0&&e.textContent.includes('QUÀ TẶNG BLACK FRIDAY')).map(e=>({html:e.parentElement.outerHTML.slice(0,4500),parent:e.parentElement.parentElement.className})),labels:[...document.querySelectorAll('label[for="billing_first_name"]')].map(e=>({html:e.outerHTML,style:getComputedStyle(e).cssText,display:getComputedStyle(e).display,position:getComputedStyle(e).position,clip:getComputedStyle(e).clip,color:getComputedStyle(e).color,parent:e.parentElement.outerHTML.slice(0,1500)}))}))));
  console.log('LAYOUT_STRUCTURE '+host+' '+JSON.stringify(await page.evaluate(()=>({above:[...document.querySelector('form.checkout').parentElement.children].map(e=>({tag:e.tagName,id:e.id,cls:e.className,text:e.textContent.trim().slice(0,70)})),parents:(()=>{let e=document.querySelector('form.checkout'),a=[];for(let i=0;e&&i<5;i++,e=e.parentElement)a.push({cls:e.className,padding:getComputedStyle(e).padding,margin:getComputedStyle(e).margin});return a;})()}))));
  await page.setViewportSize({width:390,height:844});
  await page.locator('#bnco-next').click();
@@ -55,6 +56,25 @@ export async function verify(browser,live=false){
  await page.screenshot({path:'checkout-step2-'+host+'-'+width+'.png',fullPage:true});
  }
  await page.setViewportSize({width:390,height:844});
+ 
+ const qty=page.locator('.claw-checkout-qty-input,.lnl-checkout-qty-input').first();
+ const oldSubtotal=await page.locator('.cart-subtotal .amount').first().textContent();
+ await qty.fill('2');await qty.dispatchEvent('change');
+ await page.waitForFunction(old=>document.querySelector('.cart-subtotal .amount')?.textContent!==old,oldSubtotal,{timeout:90000});
+ await settle();await thumbs();
+ if(await qty.inputValue()!=='2')throw Error('Quantity update lost');
+ await page.waitForFunction(()=>document.getElementById('bnco-amount').textContent===document.querySelector('.order-total .amount').textContent.trim());
+ console.log('QUANTITY_AND_NATIVE_TOTAL_SYNC_OK '+host);
+ const opener=page.locator('.context-checkout [data-lnl-voucher-open]').first();
+ if(await opener.isVisible()){
+ await opener.click();
+ const coupon=host==='minhlongonline.com'?'ml10k':'lnl10k';
+ await page.locator('.lnl-voucher-modal[aria-hidden="false"] [data-lnl-voucher-code="'+coupon+'"]').click();
+ await page.waitForFunction(()=>!!document.querySelector('.woocommerce-checkout-review-order-table .cart-discount'),{},{timeout:90000});
+ await settle();await thumbs();
+ await page.waitForFunction(()=>document.getElementById('bnco-amount').textContent===document.querySelector('.order-total .amount').textContent.trim());
+ console.log('VOUCHER_NATIVE_TOTAL_SYNC_OK '+host);
+ }
  await page.locator('#payment_method_cod').check();await settle();
  if(await page.locator('#terms').count())await page.locator('#terms').check();
  if(await page.locator('#bnco-review-confirm').count())await page.locator('#bnco-review-confirm').check();

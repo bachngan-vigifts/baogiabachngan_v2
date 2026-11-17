@@ -161,6 +161,21 @@ body.bnco-active .woocommerce-billing-fields__field-wrapper{padding:0!important;
 body.bnco-active .bnco-step.done b{font-size:0}
 body.bnco-active .bnco-step.done b:after{content:'✓';font-size:16px}
 body.bnco-active #bnco-edit{text-transform:none}
+}
+.bnco-product-copy{display:contents}
+@media(max-width:549px){
+body.bnco-active .woocommerce-checkout-review-order-table .cart_item{grid-template-columns:64px minmax(0,1fr)!important;column-gap:10px!important}
+body.bnco-active .woocommerce-checkout-review-order-table .cart_item>.product-name{display:contents!important}
+body.bnco-active .bnco-product-thumb{float:none;margin:0;grid-column:1;grid-row:1 / span 2}
+body.bnco-active .bnco-product-copy{display:block;grid-column:2;grid-row:1;font-size:13px;line-height:1.5;min-width:0}
+body.bnco-active .woocommerce-checkout-review-order-table .cart_item>.product-total{grid-column:2;grid-row:2}
+body.bnco-active .ux-free-shipping{order:5;font-size:12px!important;padding:10px!important;margin:0!important}
+body.bnco-active .ux-free-shipping__bar{height:4px!important;margin-top:6px!important}
+}
+@media(max-width:549px){
+body.bnco-active #main form.checkout{padding:12px 0 0!important;background:transparent!important;border-radius:0!important;box-shadow:none!important;border:0!important}
+body.bnco-active #main #customer_details .form-row>label{display:block!important;position:static!important;clip:auto!important;clip-path:none!important;width:auto!important;height:auto!important;overflow:visible!important;visibility:visible!important;opacity:1!important;transform:none!important;text-indent:0!important}
+body.bnco-active #payment .wc_payment_method>label{color:#182b40!important}
 }</style>
 <?php
 },9999);
@@ -219,6 +234,9 @@ function structure(){
  Object.entries(captions).forEach(([id,text])=>{
  const label=document.querySelector('label[for="'+id+'"]');if(label&&!label.dataset.bncoLabel){label.dataset.bncoLabel='1';label.replaceChildren(document.createTextNode(text+' '));const star=document.createElement('abbr');star.className='required';star.title='bắt buộc';star.textContent='*';label.append(star);}
  });
+ document.querySelectorAll('.woocommerce-checkout-review-order-table .cart_item .product-name').forEach(cell=>{
+ if(!cell.querySelector('.bnco-product-copy')){const copy=document.createElement('div');copy.className='bnco-product-copy';[...cell.childNodes].filter(n=>!(n.nodeType===1&&n.classList.contains('bnco-product-thumb'))).forEach(n=>copy.append(n));cell.append(copy);}
+ });
  const currentReview=document.getElementById('order_review');if(!currentReview)return;
  if(!currentReview.contains(address))currentReview.prepend(address);
  if(!currentReview.contains(eta))currentReview.insertBefore(eta,address.nextSibling);
@@ -243,7 +261,7 @@ function sync(){
  const addressCopy=document.getElementById('bnco-address-copy');if(addressCopy.textContent!==addressText)addressCopy.textContent=addressText;
  const realEta=document.querySelector('#lnl-shipping-eta,#ml-shipping-eta');
  const etaResult=realEta?.querySelector('.lnl-eta-result,.ml-eta-result')?.textContent.trim();
- const etaText=realEta&&!realEta.hidden&&etaResult?realEta.innerText.trim():'';
+ const etaText=realEta&&!realEta.hidden&&etaResult?[...realEta.children].map(e=>e.textContent.trim()).filter(Boolean).join('\n'):'';
  eta.hidden=!etaText;if(eta.textContent!==etaText)eta.textContent=etaText;
  const amount=document.querySelector(step===1?'.woocommerce-checkout-review-order-table .cart-subtotal .amount':'.woocommerce-checkout-review-order-table .order-total .amount');
  if(amount){const dest=document.getElementById('bnco-amount');if(dest.textContent!==amount.textContent.trim())dest.textContent=amount.textContent.trim();}
