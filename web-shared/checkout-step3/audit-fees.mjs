@@ -9,20 +9,16 @@ const domains=await api('DomainInfo','domains_data',{format:'hash'});
 function rootFor(host){let root;function visit(x){if(!x||typeof x!=='object')return;if(x.domain===host&&x.documentroot)root=x.documentroot;for(const v of Object.values(x))if(typeof v==='object')visit(v);}visit(domains);if(host==='locknlockonline.com'&&!root)root=process.env.LOCKNLOCK_DOCROOT?.trim();if(!root||!root.startsWith('/home/'+user+'/')||root.includes('..'))throw Error('Domain root not verified '+host);return root.replace(/\/+$/,'');}
 
 
+
 const root=rootFor('locknlockonline.com');
-async function inspect(dir,depth=0){
- const files=await api('Fileman','list_files',{dir});
- console.log('FILES '+dir.replace(root,'LOCK')+' '+JSON.stringify(files.map(f=>({name:f.file,type:f.type}))));
- for(const f of files){
-  if(f.file==='.'||f.file==='..')continue;
-  if(f.file.endsWith('.php')&&(/sepay|gateway|payment|thank|order/i.test(f.file)||depth>0)){
-   const {content:s}=await api('Fileman','get_file_content',{dir,file:f.file,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
-   const lines=(s||'').split('\n');
-   const keep=new Set();lines.forEach((line,i)=>{if(/process_payment|payment_complete|update_status|thankyou|receipt|webhook|callback|redirect|on-hold|pending|processing|woocommerce_api|check_payment/i.test(line))for(let n=Math.max(0,i-6);n<Math.min(lines.length,i+28);n++)keep.add(n);});
-   console.log('SOURCE '+dir.replace(root,'LOCK')+'/'+f.file+'\n'+[...keep].sort((a,b)=>a-b).map(i=>(i+1)+': '+(/secret|password|token|api.?key|authorization/i.test(lines[i])?'[credential-related line omitted]':lines[i].replace(/(['"])[A-Za-z0-9_-]{32,}\1/g,'"[identifier omitted]"'))).join('\n').slice(0,40000));
-  } else if(depth<2&&(/sepay|includes|inc|templates/i.test(f.file))&&!f.file.includes('.')){await inspect(dir+'/'+f.file,depth+1);}
- }
+async function read(dir,file){
+const {content:s}=await api('Fileman','get_file_content',{dir,file,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
+const lines=(s||'').split('\n'),keep=new Set();
+lines.forEach((line,i)=>{if(/woocommerce.*(order|email|payment)|on-hold|webhook|processing|sepay|crm|wp_remote_post|defer_transactional/i.test(line))for(let n=Math.max(0,i-5);n<Math.min(lines.length,i+18);n++)keep.add(n);});
+console.log('SOURCE '+file+'\n'+[...keep].sort((a,b)=>a-b).map(i=>(i+1)+': '+(/secret|password|token|api.?key|authorization|https:\/\/.*(workers.dev|supabase)/i.test(lines[i])?'[sensitive line omitted]':lines[i])).join('\n').slice(0,40000));
 }
-await inspect(root+'/wp-content/mu-plugins');
-await inspect(root+'/wp-content/plugins');
-console.log('SEPAY_READ_ONLY_COMPLETE');
+const dir=root+'/wp-content/mu-plugins';
+for(const f of await api('Fileman','list_files',{dir}))if(f.file.endsWith('.php'))await read(dir,f.file);
+await read(root+'/wp-content/themes/flatsome-child','functions.php');
+await read(root+'/wp-content/plugins/woocommerce/includes/emails','class-wc-email-new-order.php');
+console.log('NOTIFICATIONS_READ_ONLY_COMPLETE');
