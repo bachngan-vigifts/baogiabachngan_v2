@@ -1567,6 +1567,13 @@ label.check { display: flex; align-items: center; gap: 8px; }
 .care-next { display: block; margin-top: 4px; color: var(--muted); }
 .care-type { white-space: nowrap; font-weight: 600; }
 tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+.quote-care-dialog .modal-body { max-height:65vh; overflow:auto; }
+.quote-care-dialog fieldset { border:1px solid var(--line); border-radius:10px; margin:14px 0 0; padding:14px; min-width:0; display:grid; gap:10px; }
+.quote-care-dialog fieldset label { display:grid; gap:5px; min-width:0; }
+.quote-care-dialog .quote-care-existing { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); overflow-wrap:anywhere; }
+.quote-care-dialog .kv dd { overflow-wrap:anywhere; }
+@media(max-width:600px){.quote-care-dialog .modal-foot .btn{white-space:normal;min-height:44px;}}
+
 .care-dialog { width: min(680px, calc(100vw - 24px)); }
 .care-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
 .care-form label { display: grid; gap: 4px; font-size: var(--text-small); font-weight: 600; } .care-form .span2 { grid-column: 1 / -1; }
@@ -2988,3 +2995,9 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .approval-cost-section input,.approval-cost-section select { width:100%;min-width:0; }
 .verify-dialog .approval-cost-section .verify-field { margin:0; }
 @media(max-width:640px){.approval-cost-section{padding:10px}.approval-cost-section input,.approval-cost-section select{min-height:44px}}
+/* Staff submission review: readable operational facts, separate from Manager-only costs. */
+.submission-summary { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+.submission-summary h4 { margin:0 0 10px; color:var(--brand-navy); }
+.submit-bulk-confirm { display:flex; align-items:flex-start; gap:8px; line-height:1.5; }
+.submit-bulk-confirm input[type="checkbox"] { flex:0 0 20px; width:20px; min-width:20px; max-width:20px; height:20px; min-height:20px; margin:3px 0 0; padding:0; }
+.submit-bulk-confirm span { flex:1; min-width:0; overflow-wrap:anywhere; }

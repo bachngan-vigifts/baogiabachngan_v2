@@ -269,5 +269,6 @@
   {"migration":"20261113074715_split_packing_delivery_dates.sql","asserts":["assert-split-packing-delivery-dates.sql"]},
   {"migration":"20261113104533_product_archive_controls.sql","asserts":["assert-product-archive.sql"]},
   {"migration":"20261114110000_contract_templates.sql","asserts":["assert-contract-templates.sql"]},
-  {"migration":"20261115233000_warehouse_image_job_queue.sql","asserts":["assert-warehouse-image-jobs.sql"]}
+  {"migration":"20261115233000_warehouse_image_job_queue.sql","asserts":["assert-warehouse-image-jobs.sql"]},
+  {"migration":"20261117130655_order_submission_review.sql","asserts":["assert-order-submission-review.sql"]}
 ]

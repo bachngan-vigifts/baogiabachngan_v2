@@ -1,3 +1,4 @@
+import {requestOrderApproval,submissionSummary} from './order-submit.js';
 import {createProductionFiles,mountProductionFiles} from './production-files.js';
 import {initProductBrandFilter} from './product-brand-filter.js';
 import {initWarehouseAssignment} from './warehouse-assignment.js';
@@ -99,6 +100,7 @@ import { orderReference, orderPrintData, orderSheetHtml, readEdits, downloadOrde
 import { openContractDocs } from './contract-ui.js';
 import { initTasks } from './tasks.js';
 import { initCare } from './care.js';
+import {initQuoteCarePrompt} from './quote-care-prompt.js';
 import { initChat } from './chat.js';
 import { setupPulse } from './pulse.js';
 import { initInventory } from './inventory.js';
@@ -2301,8 +2303,10 @@ function validateQuote(data) {
   if (incomplete >= 0) return `Dòng ${incomplete + 1}: nhập tay số lượng, đơn giá và chiết khấu còn trống (nhập 0 nếu không chiết khấu).`;
   return '';
 }
+let quoteCarePrompt;
+const quoteCareAfterSave=()=>quoteCarePrompt ||=initQuoteCarePrompt({api,toast,onChanged:()=>{if(state.user)void loadBadges().catch(()=>{});}});
 let saving = false;
-async function saveQuote() {
+async function saveQuote({promptCare=false}={}) {
   if (saving) return;
   if (editor.id && !isManager() && editor.approval?.status === 'approved' && !editor.approval?.editRequest?.canEditApproved) return toast('Báo giá đã duyệt. Gửi yêu cầu và chờ Manager cho phép sửa.', 'err');
   const err = $('#quote-error'); err.textContent = '';
@@ -2331,6 +2335,7 @@ async function saveQuote() {
     else if (saved.approvalStatus === 'draft') toast((wasNew ? 'Đã lưu nháp ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision) + ' · bấm "Gửi duyệt" khi xong.');
     else toast(wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision);
     loadQuotes(); if (saved.customerMemory && saved.customerMemory.status !== 'skipped') loadCustomers();
+    if(promptCare&&can('page.care')){try{await quoteCareAfterSave().offer({id:saved.id,revision:saved.revision},{isCurrent:()=>editor.id===saved.id&&editor.revision===saved.revision&&!$('#view-editor').hidden&&location.hash==='#/quotes/'+encodeURIComponent(saved.id)});}catch(ex){toast('Báo giá đã lưu. Chưa mở được lịch chăm sóc: '+ex.message,'err');}}
     return true;
   } catch (e) {
     if (saveSequence !== editorLoadSequence || location.hash !== saveHash) { toast(e.message, 'err'); return; }
@@ -2340,14 +2345,14 @@ async function saveQuote() {
     } else { err.textContent = e.message; toast(e.message, 'err'); }
   } finally { saving = false; updateQuoteActions(); }
 }
-qf.addEventListener('submit', e => { e.preventDefault(); saveQuote(); });
-$('#save-quote-m').addEventListener('click', async e => { e.preventDefault(); const usedEditPermission=editor.approval?.status==='approved'&&!!editor.approval?.editRequest?.canEditApproved; const saved=await saveQuote(); if(saved===true&&!usedEditPermission&&!editor.dirty&&editor.id&&editor.approval?.status==='draft'&&!saleDesignProblem(collectQuote()))await submitQuoteForApproval(); });
+qf.addEventListener('submit', e => { e.preventDefault(); saveQuote({promptCare:true}); });
+$('#save-quote-m').addEventListener('click', async e => { e.preventDefault(); const usedEditPermission=editor.approval?.status==='approved'&&!!editor.approval?.editRequest?.canEditApproved; const saved=await saveQuote({promptCare:true}); if(saved===true&&!$('#view-editor').hidden&&location.hash==='#/quotes/'+encodeURIComponent(editor.id)&&!usedEditPermission&&!editor.dirty&&editor.id&&editor.approval?.status==='draft'&&!saleDesignProblem(collectQuote()))await submitQuoteForApproval(); });
 $('#reload-quote').addEventListener('click', async () => {
   if (!await confirmBox('Tải bản mới nhất sẽ bỏ các thay đổi chưa lưu của anh/chị.', { ok: 'Tải lại', danger: true })) return;
   editor.dirty = false; openEditor(editor.id);
 });
 document.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !$('#view-editor').hidden) { e.preventDefault(); saveQuote(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !$('#view-editor').hidden) { e.preventDefault(); saveQuote({promptCare:true}); }
   if (e.key === '/' && !e.target.closest('input, textarea, select') && !document.querySelector('dialog[open]')) {
     const s = $('#view-quotes').hidden ? ($('#view-customers').hidden ? $('#member-search') : $('#customer-search')) : $('#quote-search');
     if (s && !s.closest('[hidden]')) { e.preventDefault(); s.focus(); }
@@ -4487,9 +4492,8 @@ async function openOrder(id, confirmed = null) {
   $('#order-actions').innerHTML = (isK ? '<button class="btn secondary" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / tải hồ sơ HĐKT</button>'
       : '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>')
     + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
-    + (o.status === 'draft' ? (canApprove() ? `<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt ${what}</button>`
-      : o.submittedAt === null ? (o.canEdit !== false ? `<button class="btn primary" id="order-submit" title="Xem kỹ ${what} rồi gửi Manager duyệt">Gửi duyệt</button>` : `<span class="pill" title="Người phụ trách chưa gửi duyệt">Nháp</span>`)
-      : `<span class="pill warn" title="Còn nháp: sửa báo giá thì ${what} tự cập nhật theo">Chờ Manager duyệt</span>`) : '')
+    + (o.status==='draft'?(canApprove()?`<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}">Duyệt ${what}</button>`:'')
+      + (!o.submittedAt&&o.canEdit!==false&&(o.channel||'crm')==='crm'?`<button class="btn primary" id="order-submit">Gửi yêu cầu phê duyệt</button>`:o.submittedAt&&!canApprove()?'<span class="pill warn">Chờ Manager duyệt</span>':''):'')
     + ((isManager() || (o.status === 'draft' && o.canEdit !== false)) && o.status !== 'cancelled' && !d.payments.some(p => !p.voidedAt) && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
     + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
@@ -4563,6 +4567,7 @@ async function openOrder(id, confirmed = null) {
     <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd>${saleWarehouseRow(o)}<dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
     <dt>Thanh toán</dt><dd>${o.channel === 'pos' ? esc(posPaymentText(d)) : 'Theo HĐ nguyên tắc với khách'}</dd></dl>
     <div class="row-gap"><button class="btn primary small" id="order-print-card" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button></div>`;
+  if(d.submissionReview)$('#order-contract').insertAdjacentHTML('beforeend',submissionSummary(d.submissionReview,esc));
   if(d.purchases?.length) $('#order-contract').insertAdjacentHTML('beforeend', '<p class="small">Đơn mua NCC: ' + d.purchases.map(p => `<a class="data-link" href="#/purchases/${encodeURIComponent(p.id)}">${esc(p.number)}</a>`).join(' · ') + '</p>');
   if(k)mountContractLiquidation({api,host:$('#order-contract'),contract:k,compressPhoto:f=>compressImage(f,[[1280,.72],[1024,.68],[800,.62],[640,.6]],450000,'Ảnh hồ sơ quá lớn. Chụp lại rồi thử lại.'),confirmBox,toast,isCurrent:()=>sales.order?.id===o.id&&token===session&&location.hash===route});
   renderInvoice(o); renderProgress(d);
@@ -5311,7 +5316,7 @@ document.addEventListener('click', async e => {
   if (sub && sales.detail?.order) {
     const o = sales.detail.order, what = sales.detail.contract ? 'HĐKT' : 'đơn hàng';
     sub.disabled = true;
-    try { await api('/orders/' + encodeURIComponent(o.id) + '/submit', 'POST', {}); toast(`Đã gửi Manager duyệt ${what}.`); openOrder(o.id); }
+    try { if(await requestOrderApproval({id:o.id,api,verifyBox,esc})){toast(`Đã gửi Manager duyệt ${what}.`);openOrder(o.id);}else sub.disabled=false; }
     catch (ex) { toast(ex.message, 'err'); sub.disabled = false; }
   }
   if (e.target.closest('#order-history')) showAudit({ api, toast, entityType: 'orders', entityId: sales.order.id, title: (isContractDoc() ? 'HĐKT ' : 'Đơn ') + docNo() });

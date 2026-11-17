@@ -2,11 +2,11 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 const {customerContactChoices,bindCareContactPicker}=await import(new URL('../../trial-ui/care-contacts.js',import.meta.url).href);
 const data=(name:string)=>({customer:{contact:name,phone:'0900'},contacts:[]});
-function setup(api:Function){
+function setup(api:Function,matchUniqueName=false){
  const select:any={value:'',disabled:false,children:[],events:{},replaceChildren(...nodes:any[]){this.children=nodes;this.value=nodes[0]?.value||'';},addEventListener(key:string,fn:Function){this.events[key]=fn;}};
  const input:any={value:'',hidden:false,required:false},status:any={textContent:''},retry:any={hidden:true,events:{},addEventListener(key:string,fn:Function){this.events[key]=fn;}};
  let id:any='a',connected=true;
- const picker=bindCareContactPicker({select,input,status,retry,api,getCustomerId:()=>id,isConnected:()=>connected,doc:{createElement:()=>({value:'',textContent:''})}});
+ const picker=bindCareContactPicker({select,input,status,retry,api,getCustomerId:()=>id,isConnected:()=>connected,doc:{createElement:()=>({value:'',textContent:''})},matchUniqueName});
  return{picker,select,input,status,retry,setId:(v:any)=>id=v,close:()=>connected=false};
 }
 test('contact picker loads the primary and full directory, deduplicates and keeps stored values within API limits',()=>{
@@ -31,4 +31,9 @@ test('loading failure allows manual input and retry; editing preserves historica
  let fail=true;const s=setup(async()=>{if(fail)throw Error('offline');return data('An');});await s.picker.load('a','Tên đã lưu');assert.equal(s.picker.isLoading(),false);assert.equal(s.retry.hidden,false);assert.equal(s.input.value,'Tên đã lưu');assert.equal(s.input.hidden,false);
  fail=false;await s.retry.events.click();assert.equal(s.input.value,'Tên đã lưu');assert.equal(s.select.value,'__manual__');assert.equal(s.retry.hidden,true);
  const empty=setup(async()=>({contacts:[]}));await empty.picker.load('a');assert.equal(empty.input.hidden,false);assert.equal(empty.input.required,true);
+});
+
+test('quote reminder may match a unique saved contact name, but never guesses among identical names',async()=>{
+ const one=setup(async()=>data('An'),true);await one.picker.load('a','An');assert.equal(one.select.value,'0');assert.equal(one.input.value,'An – 0900');
+ const two=setup(async()=>({customer:{contact:'An',phone:'0900'},contacts:[{name:'An',phone:'0911'}]}),true);await two.picker.load('a','An');assert.equal(two.select.value,'__manual__');assert.equal(two.input.value,'An');
 });
