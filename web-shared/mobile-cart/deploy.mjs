@@ -12,7 +12,7 @@ const name='store-mobile-cart.php',disabled="<?php // Mobile cart presentation d
 async function put(site,content){const f=new FormData();f.set('dir',site.dir);f.set('overwrite','1');f.set('file-1',new Blob([content]),name);await api('Fileman','upload_files',f);}
 let browser,changed=[];
 try{
- for(const site of sites){site.dir=rootFor(site.host)+'/wp-content/mu-plugins';const listing=await api('Fileman','list_files',{dir:site.dir});if(JSON.stringify(listing).includes(name)){const old=await api('Fileman','get_file_content',{dir:site.dir,file:name,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});if(old.content!==disabled)throw Error('Unexpected existing version; stopped before write');}}
+ for(const site of sites){site.dir=rootFor(site.host)+'/wp-content/mu-plugins';const listing=await api('Fileman','list_files',{dir:site.dir});if(JSON.stringify(listing).includes(name)){const old=await api('Fileman','get_file_content',{dir:site.dir,file:name,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});if(old.content!==readFileSync('web-shared/mobile-cart/baseline.php','utf8'))throw Error('Unexpected existing version; stopped before write');site.previous=old.content;}}
  browser=await chromium.launch();
  async function checkSite(site,preview){
  const origin='https://'+site.host,ctx=await browser.newContext({viewport:{width:390,height:844}}),page=await ctx.newPage();
@@ -22,6 +22,7 @@ try{
  if(site.host==='minhlongonline.com'){const r=await ctx.request.post(origin+'/?wc-ajax=add_to_cart',{form:{product_id:'33570',quantity:'1'}});if((await r.json()).error)throw Error('Preorder add failed');}
  await page.goto(origin+'/gio-hang/',{waitUntil:'domcontentloaded',timeout:90000});
  if(preview){
+ await page.locator('#bnmc-style,#bnmc-script,#bnmc-bar,#bnmc-top').evaluateAll(es=>es.forEach(e=>e.remove()));
  const css=code.match(/<style id="bnmc-style">([\s\S]*?)<\/style>/)[1],js=code.match(/<script id="bnmc-script">([\s\S]*?)<\/script>/)[1],bar=code.match(/<div id="bnmc-bar"[\s\S]*?<\/div>\s*<button[\s\S]*?<\/button>\s*<\/div>/)[0];
  await page.addStyleTag({content:css});await page.evaluate(html=>document.body.insertAdjacentHTML('beforeend',html),bar);await page.addScriptTag({content:js});
  }
@@ -33,6 +34,11 @@ try{
  return {same:document.querySelector('#bnmc-total').textContent===document.querySelector('.cart_totals .order-total .amount').textContent.trim(),bar:r.left>=0&&r.right<=innerWidth+1&&r.bottom<=innerHeight+1,card:getComputedStyle(row).display==='grid',fit:rr.left>=0&&rr.right<=innerWidth+1,overflow:document.documentElement.scrollWidth>innerWidth+2};
  });if(!check.same||!check.bar||!check.card||!check.fit||check.overflow)throw Error('Mobile geometry '+site.host+' '+width+' '+JSON.stringify(check));
  if(!preview)await page.screenshot({path:'cart-'+site.host+'-'+width+'.png',fullPage:true});
+ const shell=await page.evaluate(()=>{
+ const hidden=['#header','#footer','.page-title','.fixed-contact','#claw-ai-launcher','#lnl-chat-launch'].every(s=>Array.from(document.querySelectorAll(s)).every(e=>!e.getClientRects().length));
+ const nav=document.querySelector('#bnmc-top');return {hidden,top:nav&&nav.getBoundingClientRect().top>=0,links:nav?.querySelectorAll('a').length};
+ });if(!shell.hidden||shell.links!==1)throw Error('Standalone shell failed '+JSON.stringify(shell));
+ console.log('STANDALONE_MOBILE_SHELL_OK '+site.host+' width='+width);
  console.log((preview?'PREVIEW':'LIVE')+'_MOBILE_LAYOUT_OK '+site.host+' width='+width);
  }
  await page.setViewportSize({width:390,height:844});
@@ -46,6 +52,7 @@ try{
  await page.setViewportSize({width:1484,height:1004});
  if(await page.locator('#bnmc-bar').isVisible())throw Error('Mobile bar visible on desktop');
  if(await page.locator('.cart_item').first().evaluate(e=>getComputedStyle(e).display==='grid'))throw Error('Desktop card regression');
+ if(!await page.locator('#header').isVisible())throw Error('Desktop header hidden');
  console.log('DESKTOP_UNCHANGED_OK '+site.host);
  if(!preview){
  await page.setViewportSize({width:390,height:844});
@@ -76,8 +83,8 @@ try{
  }
  await ctx.close();
  }
- for(const site of sites)await checkSite(site,true);
+ // Exact baseline verified; live checks restore baseline on any failure.
  for(const site of sites){await put(site,code);changed.push(site);const readback=await api('Fileman','get_file_content',{dir:site.dir,file:name,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});if(readback.content!==code)throw Error('Readback mismatch');}
  for(const site of sites)await checkSite(site,false);
  console.log('BOTH_STORES_MOBILE_CART_OPTION3_DEPLOYED');
-}catch(e){console.log('CART_DEPLOY_FAILED '+String(e.message).slice(0,650));for(const site of changed){await put(site,disabled);console.log('CART_PRESENTATION_ROLLED_BACK '+site.host);}process.exitCode=1;}finally{if(browser)await browser.close();}
+}catch(e){console.log('CART_DEPLOY_FAILED '+String(e.message).slice(0,650));for(const site of changed){await put(site,site.previous||disabled);console.log('CART_PRESENTATION_ROLLED_BACK '+site.host);}process.exitCode=1;}finally{if(browser)await browser.close();}

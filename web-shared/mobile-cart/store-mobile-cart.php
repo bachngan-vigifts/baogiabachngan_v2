@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Store Mobile Cart Option 3
  * Description: Compact mobile cart cards and synchronized sticky checkout; preserves WooCommerce pricing and actions.
- * Version: 1.0.0
+ * Version: 1.1.0
  */
 defined('ABSPATH') || exit;
 add_filter('woocommerce_cart_item_class', function($classes,$item){
@@ -13,8 +13,22 @@ add_action('wp_head',function(){
  if(!function_exists('is_cart') || !is_cart()) return;
 ?>
 <style id="bnmc-style">
-#bnmc-bar{display:none}
+#bnmc-bar,#bnmc-top{display:none}
 @media(max-width:549px){
+body.woocommerce-cart #header,body.woocommerce-cart #footer,body.woocommerce-cart .footer-wrapper,body.woocommerce-cart .absolute-footer,
+body.woocommerce-cart .page-title,body.woocommerce-cart .woocommerce-breadcrumb,body.woocommerce-cart .continue-shopping,
+body.woocommerce-cart .fixed-contact,body.woocommerce-cart #top-link,body.woocommerce-cart #claw-ai-launcher,body.woocommerce-cart #claw-ai-panel,
+body.woocommerce-cart #lnl-chat-launch,body.woocommerce-cart #lnl-chat-dialog,body.woocommerce-cart .header-wrapper,
+body.woocommerce-cart .cart-footer-content{display:none!important}
+body.woocommerce-cart #wrapper{padding-top:0!important;margin-top:0!important;background:#f3f6f9!important}
+body.woocommerce-cart #main{padding-top:0!important;margin-top:0!important;min-height:75vh}
+body.woocommerce-cart #main>.container,body.woocommerce-cart #main .page-wrapper>.container{padding:0!important;max-width:100%!important}
+body.woocommerce-cart #bnmc-top{display:block;max-width:549px;margin:0 auto;padding:14px 14px 6px;background:#f3f6f9}
+#bnmc-top a{display:inline-flex;align-items:center;min-height:44px;padding:8px 13px;border:1px solid #cfdae7;background:#fff;color:#143e69;border-radius:8px;font-size:14px;font-weight:600;line-height:1.4;text-decoration:none}
+body.woocommerce-cart .cart_item .product-remove{right:8px!important;top:8px!important;left:auto!important;transform:none!important}
+body.woocommerce-cart .cart_item .product-name{padding-right:22px!important}
+body.woocommerce-cart .cart_item .product-remove a{position:static!important;transform:none!important}
+
 body.woocommerce-cart{--bnmc-blue:#143e69;--bnmc-line:#e0e8ef;padding-bottom:calc(100px + env(safe-area-inset-bottom))!important}
 body.woocommerce-cart #main{background:#f3f6f9!important}
 body.woocommerce-cart .page-wrapper{padding:12px 0 24px!important}
@@ -88,6 +102,7 @@ body.woocommerce-cart .cart_item .product-thumbnail img{width:70px!important;hei
 add_action('wp_footer',function(){
  if(!function_exists('is_cart') || !is_cart()) return;
 ?>
+<nav id="bnmc-top" aria-label="Trở lại mua hàng"><a href="<?php echo esc_url(wc_get_page_permalink('shop')); ?>">← Trở lại mua hàng</a></nav>
 <div id="bnmc-bar" hidden aria-label="Thanh toán giỏ hàng">
  <div><small>Tổng thanh toán</small><strong id="bnmc-total"></strong><small id="bnmc-status" role="status"></small></div>
  <button id="bnmc-buy" type="button">Thanh toán →</button>
@@ -95,6 +110,7 @@ add_action('wp_footer',function(){
 <script id="bnmc-script">
 (function(){
 'use strict';
+const top=document.getElementById('bnmc-top');if(top)document.body.insertBefore(top,document.body.firstChild);
 const bar=document.getElementById('bnmc-bar'),buy=document.getElementById('bnmc-buy'),total=document.getElementById('bnmc-total'),status=document.getElementById('bnmc-status');
 let saved=new Map(),timer=0;
 function fields(){return Array.from(document.querySelectorAll('.woocommerce-cart-form input.qty'));}
