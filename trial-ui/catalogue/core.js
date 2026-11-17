@@ -29,13 +29,13 @@ export function quotePrice(p,state){return price(p)*(isBundle(p,state)?10:1)}
 export function quoteBudget(p,state){return budget({...p,override:quotePrice(p,state)})}
 export function budget(p){if(p.priceOnRequest)return 5;if(validPriceBand(p.priceBand))return p.priceBand;const n=price(p);const b=limits.findIndex(l=>n<=l);return b<0?4:b}
 export function selectedProducts(state){const byId=new Map(state.products.map(p=>[p.id,p]));return [...new Set(state.selected)].map(id=>byId.get(id)).filter(Boolean)}
-export const SELECTION_SORTS = [['manual','Tự sắp xếp'],['newest','Sản phẩm mới'],['price','Giá tăng dần'],['collection','Bộ sưu tập'],['category','Danh mục'],['pattern','Hoa văn'],['color','Màu sắc']];
+export const SELECTION_SORTS = [['manual','Tự sắp xếp'],['newest','Sản phẩm mới'],['price','Giá tăng dần'],['price-desc','Giá giảm dần'],['brand','Thương hiệu'],['name','Tên sản phẩm A–Z'],['collection','Bộ sưu tập'],['category','Danh mục'],['pattern','Hoa văn'],['color','Màu sắc']];
 const collator=new Intl.Collator('vi',{numeric:true,sensitivity:'base'});
 export function sortedProducts(state){
  const products=selectedProducts(state),mode=state.settings.selectionSort==='price'&&!state.settings.sortPrice?'manual':state.settings.selectionSort||(state.settings.sortPrice?'price':'manual');
  if(mode==='manual')return products;
  return products.sort((a,b)=>{
-  if(mode==='price')return quotePrice(a,state)-quotePrice(b,state);
+  if(mode==='price'||mode==='price-desc')return (quotePrice(a,state)-quotePrice(b,state))*(mode==='price-desc'?-1:1);
   if(mode==='newest'){const x=Date.parse(a.createdAt),y=Date.parse(b.createdAt);return Number.isFinite(x)&&Number.isFinite(y)?y-x:Number.isFinite(x)?-1:Number.isFinite(y)?1:0;}
   const x=String(a[mode]||'').trim(),y=String(b[mode]||'').trim();return x&&y?collator.compare(x,y):x?-1:y?1:0;
  });
@@ -61,10 +61,22 @@ export function makeSlides(state){
    const cats=[...new Set(group.filter(p=>p.brand===brand).map(p=>p.category))].sort((a,b)=>a.localeCompare(b,'vi'));
    for(const category of cats)for(const bundle10 of [false,true]){
     const items=group.filter(p=>p.brand===brand&&p.category===category&&isBundle(p,state)===bundle10);
-    for(let i=0,size=[6,8].includes(state.settings.productsPerPage)?state.settings.productsPerPage:4;i<items.length;i+=size){const chunk=items.slice(i,i+size);if(chunk.length>1)bandPages.push({type:'products',band,brand,category,bundle10,layout:size,items:chunk});}
+    for(let i=0,size=[6,8].includes(state.settings.productsPerPage)?state.settings.productsPerPage:4;i<items.length;i+=size){const chunk=items.slice(i,i+size);if(chunk.length>1||state.settings.mergedQuote)bandPages.push({type:'products',band,brand,category,bundle10,layout:size,items:chunk});}
    }
   }
-  if(bandPages.length){if(state.settings.dividers)pages.push({type:'divider',band,count:bandPages.reduce((n,p)=>n+p.items.length,0)});pages.push(...bandPages)}
+  if(bandPages.length){if(state.settings.dividers&&!state.settings.mergedQuote)pages.push({type:'divider',band,count:bandPages.reduce((n,p)=>n+p.items.length,0)});pages.push(...bandPages)}
+ }
+ if(state.settings.mergedQuote){
+  const mode=state.settings.pageSort||'brand',keys=state.settings.pageOrder||[],rank=new Map(keys.map((k,i)=>[k,i]));
+  pages.sort((a,b)=>{
+   if(mode==='manual')return (rank.get(slideKey(a))??keys.length)-(rank.get(slideKey(b))??keys.length);
+   const text=(x,y)=>collator.compare(x,y),first=p=>p.items[0]?.name||'',cost=p=>Math.min(...p.items.map(i=>quotePrice(i,state)));
+   if(mode==='brand')return text(a.brand,b.brand)||text(a.category,b.category)||cost(a)-cost(b);
+   if(mode==='category')return text(a.category,b.category)||text(a.brand,b.brand)||cost(a)-cost(b);
+   if(mode==='name')return text(first(a),first(b));
+   if(mode==='price'||mode==='price-desc')return (cost(a)-cost(b))*(mode==='price-desc'?-1:1);
+   return 0;
+  });
  }
  if(!pages.length)return [{type:'empty',band:0,brand:'VIGIFTS - BÁCH NGÂN',category:'CHƯA ĐỦ SẢN PHẨM',items:[]}];
  if(state.settings.cover)pages.unshift({type:'cover'});if(state.settings.closing)pages.push({type:'closing'});return pages;
@@ -78,6 +90,9 @@ export function restoreState(raw){
  settings.selectionSort=SELECTION_SORTS.some(([key])=>key===raw.settings?.selectionSort)?raw.settings.selectionSort:(settings.sortPrice?'price':'manual');if(settings.selectionSort==='price'&&!settings.sortPrice)settings.selectionSort='manual';settings.sortPrice=settings.selectionSort==='price';
  settings.bundle10Ids=Array.isArray(raw.settings?.bundle10Ids)?[...new Set(raw.settings.bundle10Ids)].filter(id=>products.some(p=>p.id===id)):[];
  for(const k of ['lockDiscount','minhDiscount','fee']){const n=Number(raw.settings?.[k]??settings[k]);if(!Number.isFinite(n)||n<0||n>(k==='fee'?1e8:100))throw Error('Thiết lập giá không hợp lệ.');settings[k]=n;}
+ settings.mergedQuote=raw.settings?.mergedQuote===true;
+ settings.pageSort=['source','brand','category','name','price','price-desc','manual'].includes(raw.settings?.pageSort)?raw.settings.pageSort:'brand';
+ settings.pageOrder=Array.isArray(raw.settings?.pageOrder)?[...new Set(raw.settings.pageOrder.filter(k=>typeof k==='string'&&k.length<=800))].slice(0,1000):[];
  const cloudQuote=raw.cloudQuote&&/^[A-Za-z0-9_-]{8,80}$/.test(raw.cloudQuote.id||'')&&Number.isSafeInteger(raw.cloudQuote.revision)&&raw.cloudQuote.revision>=0?{id:raw.cloudQuote.id,revision:raw.cloudQuote.revision,owner:String(raw.cloudQuote.owner||'').slice(0,100)}:null;
  return {version:1,cloudQuote,customBrands:Array.isArray(raw.customBrands)?raw.customBrands.filter(b=>b&&typeof b.name==='string'&&typeof b.origin==='string').slice(0,30):[],pageText,products,selected:Array.isArray(raw.selected)?raw.selected.filter(id=>products.some(p=>p.id===id)):[],meta,settings};
 }
@@ -91,3 +106,10 @@ export async function mapConcurrent(items,limit,worker){let cursor=0;const resul
 
 
 
+
+export function moveQuotePage(state,id,target,after=false){
+ if(!state.settings.mergedQuote||id===target)return false;
+ const keys=makeSlides(state).filter(s=>s.type==='products').map(slideKey);if(!keys.includes(id)||!keys.includes(target))return false;
+ const next=keys.filter(k=>k!==id);next.splice(next.indexOf(target)+(after?1:0),0,id);if(next.every((k,i)=>k===keys[i]))return false;
+ state.settings.pageSort='manual';state.settings.pageOrder=next;return true;
+}
