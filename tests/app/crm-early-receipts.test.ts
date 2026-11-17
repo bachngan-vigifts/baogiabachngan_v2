@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
@@ -20,7 +21,7 @@ for(const contract of [false,true])test(`${contract?'HĐKT':'đơn hàng'} nháp
   assert.equal(ok(await f.call('/payments',f.emp,'POST',body),201).id,r.id);
   const d=ok(await f.call('/orders/'+f.id,f.emp));assert.equal(d.order.status,'draft');assert.equal(d.payments.length,1);assert.equal(d.receivable.paid,1000);assert.equal(d.receivable.balance,d.receivable.due-1000);
   if(contract)assert.equal(d.contract.status,'draft');
-  ok(await f.call('/orders/'+f.id+'/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
+  ok(await approveFixtureOrder(f,'/orders/'+f.id+'/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
   const approved=ok(await f.call('/orders/'+f.id,f.emp));assert.equal(approved.order.status,'confirmed');assert.equal(approved.payments[0].id,r.id);assert.equal(approved.receivable.paid,1000);
 });
 test('thu trước duyệt: chặn vượt dư nợ, ngoài phạm vi và đơn đã huỷ; không tạo phiếu',async()=>{

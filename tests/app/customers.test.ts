@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,7 +32,7 @@ test('lịch sử mua hàng: gộp theo mã, số đơn, lần mua gần nhất'
 });
 
 test('khách hàng: thêm mới (người tạo phụ trách), người liên hệ, phụ trách / chia sẻ, trang chi tiết đúng quyền', async () => {
-  const { call, emp, mgr, other, old } = await setup();
+  const { db, call, emp, mgr, other, old } = await setup();
   // Thêm khách: nhân viên tạo → mình phụ trách; Manager chọn được người phụ trách.
   const k = await call('/customers', emp, 'POST', customerCreateFixture({ name: 'Công ty Hoàng Long', phone: '0901', taxCode: '0101234567' }));
   assert.equal(k.status, 201);
@@ -75,7 +76,7 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
   assert.equal((await call(`/customers/${k.data.id}/approve`, mgr, 'POST', {})).status, 200, 'khách nhân viên tạo: Manager duyệt mới lập đơn được');
   await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 1 });
   const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201);
-  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
+  await approveFixtureOrder({db,call},`/orders/${o.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
 
   // Trang chi tiết: người phụ trách thấy đủ; người được chia sẻ (old) thấy đơn và mở được đơn; đồng nghiệp cùng nhóm (new) thấy nghiệp vụ nhưng không có quyền chia sẻ khách.
   let ov = (await call(`/customers/${k.data.id}/overview`, emp)).data;
@@ -116,7 +117,7 @@ test('khách hàng: thêm mới (người tạo phụ trách), người liên h�
 
 
 test('điều khoản riêng của khách: % cọc, hạn thanh toán, giới hạn công nợ – lưu, sửa, xoá về mặc định, chặn giá trị sai', async () => {
-  const { call, mgr } = await setup();
+  const { db, call, mgr } = await setup();
   const c = await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Khách điều khoản', depositRate: '50', paymentTerm: '7', creditLimit: '20.000.000' }));
   assert.equal(c.status, 201, JSON.stringify(c.data));
   let got = (await call('/customers/' + c.data.id, mgr)).data.customer;

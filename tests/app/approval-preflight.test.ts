@@ -9,7 +9,7 @@ const ok=(r:any,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data
 
 test('Chi phí: phân biệt thiếu với số 0 đã nhập; đơn không in không bắt phí in',()=>{
   const doc={type:'B2B' as const,rows:[{name:'Ly',qty:2,printFee:1000}]};
-  assert.deepEqual(approvalCosts(doc),{missingPrinting:true,missingCommission:true,missingShipping:true});
+  assert.deepEqual(approvalCosts(doc),{missingPurchase:true,missingPrinting:true,missingCommission:true,missingShipping:true,missingShippingPayer:true,missingShippingCost:false});
   assert.equal(approvalCosts({...doc,printing:{totalCost:0}}).missingPrinting,false);
   assert.equal(approvalCosts({...doc,rows:[{...doc.rows[0],printing:{unitPrice:0},commission:{value:0}}],shipping:{payer:'receiver'}}).missingCommission,false);
   assert.equal(approvalCosts({...doc,type:'HRC'}).missingPrinting,false);
@@ -18,7 +18,7 @@ test('Chi phí: phân biệt thiếu với số 0 đã nhập; đơn không in k
 
 test('Kiểm tra duyệt có kiểm quyền, thiếu phí in bị chặn ở server; CK/ship cần xác nhận',async()=>{
   const f=await setup();
-  const q=ok(await f.call('/quotes',f.mgr,'POST',{type:'B2B',quoteNo:'REVIEW_001',customer:'Khách kiểm tra',date:'2026-10-21',vat:8,rows:[{name:'Ly',sku:'00123',qty:1,price:100000,printFee:2000}]}),201);
+  const q=ok(await f.call('/quotes',f.mgr,'POST',{type:'B2B',quoteNo:'REVIEW_001',customer:'Khách kiểm tra',date:'2026-10-21',vat:8,rows:[{name:'Ly',sku:'00123',qty:1,price:100000,printFee:2000,costPrice:40000}]}),201);
   const order=ok(await f.call('/orders',f.mgr,'POST',{quoteId:q.id}),201);
   assert.equal((await f.call('/orders/'+order.id+'/approval-preflight',f.ncc)).status,403);
   assert.equal((await f.call('/orders/'+order.id+'/approval-preflight',f.emp)).status,403);
@@ -29,10 +29,10 @@ test('Kiểm tra duyệt có kiểm quyền, thiếu phí in bị chặn ở ser
   assert.equal(delegated.costPrice,undefined);assert.equal(delegated.data,undefined);
   assert.equal((await f.call('/quotes/'+q.id+'/approval-preflight',f.emp)).status,404,'quyền duyệt không mở phạm vi báo giá đã duyệt của người khác');
   const quoteReview=ok(await f.call('/quotes/'+q.id+'/approval-preflight',f.mgr));
-  assert.equal(quoteReview.purchaseCostsReady,false);assert.equal(quoteReview.rows,undefined);
+  assert.equal(quoteReview.purchaseCostsReady,true);assert.equal(quoteReview.rows,undefined);
   const status='/orders/'+order.id+'/status';
   assert.equal((await f.call(status,f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).data.code,'PRINTING_COST_REQUIRED');
-  const data=ok(await f.call('/quotes/'+q.id,f.mgr));data.data.rows[0].printing={unitPrice:0};
+  const data=ok(await f.call('/quotes/'+q.id,f.mgr));data.data.rows[0].printing={unitPrice:0};data.data.shipping={payer:'receiver'};
   ok(await f.call('/quotes/'+q.id,f.mgr,'PUT',{revision:data.revision,data:data.data}));
   assert.equal((await f.call(status,f.mgr,'PUT',{status:'confirmed',verified:true})).data.code,'COST_REVIEW_REQUIRED');
   ok(await f.call(status,f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
@@ -47,7 +47,7 @@ test('Nợ quá hạn cần xác nhận để tạo/duyệt; không mở quyền
   const review=ok(await f.call('/orders/new-draft/approval-preflight',f.mgr));
   assert.equal(review.debt.total,1000);assert.equal(review.debt.orders[0].no,'OLD');
   assert.equal((await f.call('/orders/new-draft/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).data.code,'CUSTOMER_DEBT_OVERDUE');
-  const quote=ok(await f.call('/quotes',f.mgr,'POST',{type:'HRC',quoteNo:'DEBT_001',customer:'Khách cùng MST',customerTaxCode:base.taxCode,customerCode:'C001',date:'2026-10-21',vat:8,rows:[{name:'Ly',qty:1,price:1000}]}),201);
+  const quote=ok(await f.call('/quotes',f.mgr,'POST',{type:'HRC',quoteNo:'DEBT_001',customer:'Khách cùng MST',customerTaxCode:base.taxCode,customerCode:'C001',date:'2026-10-21',vat:8,shipping:{payer:'receiver'},rows:[{name:'Ly',qty:1,price:1000,costPrice:500}]}),201);
   assert.equal((await f.call('/orders',f.mgr,'POST',{quoteId:quote.id})).data.code,'CUSTOMER_DEBT_OVERDUE');
   assert.equal((await f.call('/contracts',f.mgr,'POST',{quoteId:quote.id,legalEntity:'BN'})).data.code,'CUSTOMER_DEBT_OVERDUE');
   assert.equal(ok(await f.call('/quotes/'+quote.id+'/approval-preflight',f.mgr)).debt.total,1000);
@@ -55,7 +55,7 @@ test('Nợ quá hạn cần xác nhận để tạo/duyệt; không mở quyền
   const continued=ok(await f.call('/orders',f.mgr,'POST',{quoteId:quote.id,debtWarningAccepted:true}),201);
   assert.ok([403,404].includes((await f.call('/orders/'+continued.id+'/status',f.emp,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true,debtWarningAccepted:true})).status),'xác nhận cảnh báo không mở quyền duyệt');
   ok(await f.call('/orders/'+continued.id+'/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true,debtWarningAccepted:true}));
-  const contractQuote=ok(await f.call('/quotes',f.mgr,'POST',{type:'HRC',quoteNo:'DEBT_002',customer:'Khách cùng MST',customerTaxCode:base.taxCode,customerCode:'C001',date:'2026-10-21',vat:8,rows:[{name:'Ly',qty:1,price:1000}]}),201);
+  const contractQuote=ok(await f.call('/quotes',f.mgr,'POST',{type:'HRC',quoteNo:'DEBT_002',customer:'Khách cùng MST',customerTaxCode:base.taxCode,customerCode:'C001',date:'2026-10-21',vat:8,shipping:{payer:'receiver'},rows:[{name:'Ly',qty:1,price:1000,costPrice:500}]}),201);
   const contract=ok(await f.call('/contracts',f.mgr,'POST',{quoteId:contractQuote.id,legalEntity:'BN',debtWarningAccepted:true}),201);
   ok(await f.call('/orders/'+contract.orderId+'/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true,debtWarningAccepted:true}));
   assert.equal((await f.call('/orders',f.ncc,'POST',{quoteId:contractQuote.id,debtWarningAccepted:true})).status,403);

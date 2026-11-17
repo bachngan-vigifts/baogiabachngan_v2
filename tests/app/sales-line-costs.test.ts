@@ -26,7 +26,7 @@ async function setup() {
   const mgr = await login('mgr@x.vn'), emp = await login('emp@x.vn');
   await db.insert(productMovements).values([buy('b1', 'BINH', '2026-10-01T02:00:00Z', 100000)]);
   // Báo giá Manager: dòng 1 nhập tay giá vốn 60.000 (chính xác); dòng 2 không có giá vốn → lấy giá nhập gần nhất (ước tính).
-  const q = ok(await call('/quotes', mgr, 'POST', { type: 'HRC', quoteNo: 'BG-COST', customer: 'Khách giá vốn', vat: 8, rows: [
+  const q = ok(await call('/quotes', mgr, 'POST', { type: 'HRC', quoteNo: 'BG-COST', customer: 'Khách giá vốn', vat: 8, shipping:{payer:'receiver'}, rows: [
     { name: 'Ly sứ', sku: 'LY1', unit: 'cái', qty: 10, price: 100000, costMode: 'manual', costPrice: 60000 },
     { name: 'Bình giữ nhiệt', sku: 'BINH', unit: 'cái', qty: 2, price: 150000 },
   ] }), 201);

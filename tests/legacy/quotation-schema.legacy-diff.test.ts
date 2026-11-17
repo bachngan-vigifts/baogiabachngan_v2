@@ -94,6 +94,12 @@ test('KIỂM TRA BÁO GIÁ ↔ bản cũ: cùng nhận/từ chối, cùng mã l�
     const mine = run(() => cleanQuotation(structuredClone(input), { maxBytes }));
     const ctx = `#${i} ${JSON.stringify(input).slice(0, 400)}`;
     assert.equal(mine.ok, legacy.ok, `${ctx}: ${mine.ok ? 'bản mới nhận, bản cũ từ chối: ' + (legacy as any).message : 'bản mới từ chối: ' + (mine as any).message}`);
+    // Intentional safety change: missing expense/payer stays missing in drafts, never auto-filled as zero/customer-paid.
+    if(legacy.ok&&mine.ok){
+      if(input.shipping?.payer==null&&legacy.value.shipping)delete legacy.value.shipping.payer;
+      if(input.printing?.totalCost==null&&legacy.value.printing)delete legacy.value.printing.totalCost;
+      for(let j=0;j<(input.rows||[]).length;j++)if(input.rows[j]?.printing?.unitPrice==null&&legacy.value.rows[j]?.printing)delete legacy.value.rows[j].printing.unitPrice;
+    }
     if (legacy.ok && mine.ok) { accepted++; assert.deepStrictEqual(norm(mine.value, hadClosed), norm(legacy.value, hadClosed), ctx); }
     else if (!legacy.ok && !mine.ok) { messages.add(legacy.message); assert.deepStrictEqual({ status: mine.status, message: mine.message }, { status: legacy.status, message: legacy.message }, ctx); }
   }

@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from './approval-cost-fixture.ts';
 import assert from 'node:assert/strict';
 import {and,eq} from 'drizzle-orm';
 import {setupEarly} from './purchase-early-fixture.ts';
@@ -27,7 +28,7 @@ export async function fixture(){
  ok(await call('/quotes/'+q.id+'/approve',f.cookies.mgr,'POST',{revision:1}));
  const order=ok(await call('/orders',f.cookies.emp,'POST',{quoteId:q.id,warehouseId:'vig'}),201);
  const lines=await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,order.id)).orderBy(salesOrderLines.lineNo);
- ok(await call(`/orders/${order.id}/status`,f.cookies.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
+ ok(await approveFixtureOrder({db:f.db,call},`/orders/${order.id}/status`,f.cookies.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
  const trip=ok(await call('/deliveries',f.cookies.emp,'POST',{orderId:order.id,plannedDate:'2026-10-24',lines:lines.map(l=>({orderLineId:l.id,qty:l.qty}))}),201);
  const balance=async(wh='vig')=>(await f.db.select().from(stockBalances).where(and(eq(stockBalances.sku,sku),eq(stockBalances.warehouseId,wh))))[0]?.qty??0;
  const pack=async(index:number,source='warehouse')=>{

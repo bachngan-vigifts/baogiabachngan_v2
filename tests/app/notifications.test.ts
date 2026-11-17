@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -109,7 +110,7 @@ test('Web Push như web cũ: khách đặt hàng / gửi báo giá / hỏi tồn
   assert.deepEqual([khNotes[0].eventType, khNotes[0].url], ['stock_answer', '/customer.html#stock']);
 
   // Nhân viên xác nhận đơn / báo giá của khách → khách nhận thông báo.
-  await call('/orders/' + o.data.orderId + '/status', mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await approveFixtureOrder({db,call},'/orders/' + o.data.orderId + '/status',mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   assert.equal((await call('/notifications', kh)).data.notifications[0].eventType, 'order_confirmed');
   const qid = (await call('/portal/quotes', kh)).data.quotes.find((x: any) => !x.order)?.id;
   await call('/quotes/' + qid + '/approve', mgr, 'POST', { revision: 1 }); // phê duyệt: Manager / người được chỉ định

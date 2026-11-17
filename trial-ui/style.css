@@ -2982,3 +2982,9 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .quote-edit-request-form .modal-foot { display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;flex-shrink:0; }
 @media(max-width:850px) { .quote-edit-request-form { aspect-ratio:auto; } }
 .quote-edit-request-reason { overflow-wrap:anywhere;white-space:pre-wrap; }
+
+.approval-cost-section { display:grid;gap:10px;margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:8px; }
+.approval-cost-section h3 { margin:0;font-size:var(--text-body); }
+.approval-cost-section input,.approval-cost-section select { width:100%;min-width:0; }
+.verify-dialog .approval-cost-section .verify-field { margin:0; }
+@media(max-width:640px){.approval-cost-section{padding:10px}.approval-cost-section input,.approval-cost-section select{min-height:44px}}

@@ -77,14 +77,17 @@ test('giá vốn: nhân viên không thấy, lưu lại không mất; Manager th
   const q = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_GV1', customer: 'Khách', vat: 8, rows: [{ name: 'Ly sứ', sku: 'LY1', unit: 'cái', qty: 10, price: 100000, costPrice: 1, purchaseDiscount: 50 }] });
   assert.equal(q.status, 201);
   assert.equal((await call(`/quotes/${q.data.id}`, mgr)).data.data.rows[0].costPrice, undefined, 'nhân viên không tự đặt giá vốn');
-  // Manager nhập giá vốn.
+  // Manager nhập giá vốn và chi phí vận chuyển nội bộ.
   const mq = (await call(`/quotes/${q.data.id}`, mgr)).data;
+  mq.data.shipping={payer:'sender',cost:25000};
   mq.data.rows[0] = { ...mq.data.rows[0], costPrice: 60000, purchaseDiscount: 40, commission: { mode: 'amount', value: 2000 } };
   const ms = await call(`/quotes/${q.data.id}`, mgr, 'PUT', { revision: mq.revision, data: mq.data });
   assert.equal(ms.status, 200, JSON.stringify(ms.data));
   assert.equal(ms.data.data.rows[0].costPrice, 60000);
 
   const eq = (await call(`/quotes/${q.data.id}`, emp)).data;
+  assert.equal(eq.data.shipping.cost,undefined,'không trả chi phí vận chuyển nội bộ cho nhân viên');
+  eq.data.shipping.cost=1; // cố ghi đè chi phí Manager
   const row = eq.data.rows[0];
   for (const k of ['costPrice', 'purchaseDiscount', 'printing', 'commission']) assert.equal(row[k], undefined, k);
   // Nhân viên sửa số lượng + thêm dòng, cố gửi giá vốn → giá vốn dòng cũ giữ nguyên, dòng mới không có.
@@ -93,7 +96,10 @@ test('giá vốn: nhân viên không thấy, lưu lại không mất; Manager th
   const es = await call(`/quotes/${q.data.id}`, emp, 'PUT', { revision: eq.revision, data: eq.data });
   assert.equal(es.status, 200, JSON.stringify(es.data));
   assert.equal(es.data.data.rows[0].costPrice, undefined, 'phản hồi cho nhân viên cũng không có giá vốn');
-  const after = (await call(`/quotes/${q.data.id}`, mgr)).data.data.rows;
+  assert.equal(es.data.data.shipping.cost,undefined,'phản hồi lưu cũng không lộ chi phí');
+  const managerAfter=(await call(`/quotes/${q.data.id}`,mgr)).data.data;
+  assert.equal(managerAfter.shipping.cost,25000,'nhân viên không ghi đè chi phí Manager');
+  const after = managerAfter.rows;
   assert.deepEqual(after.map((r: any) => [r.qty, r.costPrice, r.purchaseDiscount, r.commission?.value]), [[20, 60000, 40, 2000], [1, undefined, undefined, undefined]]);
 });
 

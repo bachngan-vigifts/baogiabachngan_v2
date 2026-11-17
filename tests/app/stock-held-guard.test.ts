@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {and,eq} from 'drizzle-orm';
@@ -24,7 +25,7 @@ async function setup(){
  const orderB=async(qty:number,holdIt=false)=>{
   const q=ok(await f.call('/quotes',c.emp,'POST',{type:'B2B',quoteNo:'B-'+crypto.randomUUID(),customer:'Khách B',vat:8,rows:[{sku,name:'Bộ trà',unit:'Bộ',qty,price:2000}]}),201);
   ok(await f.call('/quotes/'+q.id+'/approve',c.mgr,'POST',{revision:1}));const o=ok(await f.call('/orders',c.emp,'POST',{quoteId:q.id,warehouseId:'vig'}),201);
-  ok(await f.call(`/orders/${o.id}/status`,c.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
+  ok(await approveFixtureOrder(f,`/orders/${o.id}/status`,c.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
   const lines=await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,o.id));
   ok(await f.call('/deliveries',c.emp,'POST',{orderId:o.id,plannedDate:'2026-10-24',lines:lines.map(l=>({orderLineId:l.id,qty:l.qty}))}),201);
   if(holdIt)await f.hold(o.id);

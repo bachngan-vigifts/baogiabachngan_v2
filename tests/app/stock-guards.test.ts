@@ -1,3 +1,5 @@
+import {quotations} from '../../src/modules/quotes/schema.ts';
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
@@ -116,8 +118,12 @@ test('đóng gói CRM đủ tồn: ghi đúng một lần; điều chỉnh dươ
 });
 
 for(const opened of [false,true]) test(`duyệt đơn CRM: ${opened?'chưa đủ hàng':'chưa chốt'} chỉ giữ hàng, không ghi xuất`,async()=>{
-  const f=await fixture(opened);await seedOrder(f,'draft','a',11);const before=await f.snapshot();
-  const r=await f.call('/orders/o/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
+  const f=await fixture(opened);await seedOrder(f,'draft','a',11);
+  // Complete synthetic expense source; this test isolates stock opening/availability.
+  await f.db.insert(quotations).values({id:'cost-q',creatorId:'mgr',quoteNo:'COST-Q',quoteType:'B2B',customer:'Khách',createdAt:at,updatedAt:at,data:JSON.stringify({type:'B2B',rows:[{sku:'X',name:'X',unit:'cái',qty:11,price:100,costPrice:50,costMode:'manual'}],shipping:{payer:'receiver'}})});
+  await f.db.update(salesOrders).set({quoteId:'cost-q'}).where(eq(salesOrders.id,'o'));
+  const before=await f.snapshot();
+  const r=await approveFixtureOrder(f,'/orders/o/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
   assert.equal(r.status,200,JSON.stringify(r.data));
   const after=await f.snapshot();assert.deepEqual(after.counts,before.counts);assert.deepEqual(after.balances,before.balances);
   assert.equal(after.orders[0]!.status,'confirmed');

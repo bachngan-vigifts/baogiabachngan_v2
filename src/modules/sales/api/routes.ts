@@ -33,7 +33,7 @@ import { ensurePackingSchedule } from './delivery-store.ts';
 import { saveQuoteStockPlan, assertPlannedDispatch } from './quote-sourcing-routes.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { cancelGhnShipments } from './pos-ghn-cancel.ts';
-import { approvalDebt, assertApprovalDebt, approvalCosts } from './approval-preflight.ts';
+import { approvalDebt, assertApprovalDebt, approvalCosts,assertOrderCostSource,orderCostReview } from './approval-preflight.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { posOrderStoreScope } from './pos-access.ts';
 import { stockMoves } from '../../inventory/schema.ts';
@@ -776,7 +776,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     const data = JSON.parse(quote.data);
     return json({ customerName: quote.customer, asOf: vietnamDate().iso,
-      ...(canApprove(viewer(c)) ? { purchaseCostsReady: data.rows.filter((r: { qty?: number }) => Number(r.qty) > 0).every((r: { costPrice?: number }) => Number.isFinite(r.costPrice)) } : {}),
+      ...(canApprove(viewer(c)) ? { purchaseCostsReady: !approvalCosts(data).missingPurchase } : {}),
       debt: await approvalDebt(c.env.db, data.customerId || null, String(data.customerTaxCode || '')) });
   }, 'business');
 
@@ -784,10 +784,12 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (!canApprove(viewer(c))) throw new AppError(403, 'Chỉ người được duyệt xem kiểm tra phê duyệt.', 'APPROVER_ONLY');
     const order = await loadOrder(c, c.params.id!);
     const [quote] = order.quoteId ? await c.env.db.select().from(quotations).where(eq(quotations.id, order.quoteId)) : [];
+    const costReview=quote?await orderCostReview(c.env.db,order.id,JSON.parse(quote.data)):null;
     return json({ customerName: order.customerName, asOf: vietnamDate().iso,
+      ...(viewer(c).role==='manager'&&costReview?{purchaseCosts:costReview.purchaseCosts}:{}),
       debt: await approvalDebt(c.env.db, order.customerId, order.taxCode, order.id),
-      costs: quote ? approvalCosts(JSON.parse(quote.data)) : null,
-      quoteId: can(viewer(c), 'page.quotes') ? order.quoteId : null });
+      costs: costReview?.costs??{missingSource:true},
+      quoteRevision:quote?.revision??null,quoteId: can(viewer(c), 'page.quotes') ? order.quoteId : null });
   }, 'business');
 
   router.put('/orders/:id/status', async c => {
@@ -828,15 +830,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         if (warehouseId !== locked.warehouseId && (await tx.select({id:packingSlips.id}).from(packingSlips).where(and(eq(packingSlips.orderId,order.id),ne(packingSlips.status,'cancelled'))).limit(1)).length) throw new AppError(409,'Huỷ các phiếu kế hoạch nguồn hàng rồi lập lại trước khi đổi kho bán.','STOCK_PLAN_IN_USE');
         assertApprovalDebt(await approvalDebt(tx, order.customerId, order.taxCode, order.id), body.debtWarningAccepted === true);
         const [quote] = order.quoteId ? await tx.select().from(quotations).where(eq(quotations.id, order.quoteId)) : [];
-        if (quote) {
-          const costs = approvalCosts(JSON.parse(quote.data));
-          if (costs.missingPrinting) throw new AppError(409, 'Vui lòng nhập chi phí in/khắc trước khi duyệt.', 'PRINTING_COST_REQUIRED');
-          if ((costs.missingCommission || costs.missingShipping) && body.costWarningsReviewed !== true)
-            throw new AppError(409, 'Vui lòng kiểm tra CK khách và phí vận chuyển trước khi duyệt.', 'COST_REVIEW_REQUIRED');
-        }
+        if(body.costQuoteRevision!==undefined&&(!quote||!Number.isSafeInteger(body.costQuoteRevision)||body.costQuoteRevision!==quote.revision))throw new AppError(409,'Chi phí báo giá vừa thay đổi. Mở lại phần kiểm tra chi phí trước khi duyệt.','COSTS_CHANGED');
+        await ensureLineCosts(tx,order.id,'confirm',viewer(c).id);
+        if(order.channel==='crm')await assertOrderCostSource(tx,order.id,quote?JSON.parse(quote.data):null);
+        if(quote&&approvalCosts(JSON.parse(quote.data)).missingCommission&&body.costWarningsReviewed!==true)
+          throw new AppError(409,'Vui lòng kiểm tra CK khách trước khi duyệt.','COST_REVIEW_REQUIRED');
       }
-      // Duyệt: chốt giá vốn lúc bán (đơn nháp còn cập nhật theo báo giá / giá nhập; sau duyệt khoá) – chạy trước khi đổi trạng thái.
-      if (status === 'confirmed') await ensureLineCosts(tx, order.id, 'confirm', viewer(c).id);
+      // Giá vốn đã được chốt và kiểm tra trong giao dịch trước khi đổi trạng thái.
       await tx.update(salesOrders).set({ status, warehouseId, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
       // Duyệt không ghi sổ kho; khi huỷ chỉ hoàn các dòng trừ kiểu cũ. Phiếu xuất được đảo ở cancelDocumentChildren.
       await syncOrderStock(tx, viewer(c).id, order.id, status === 'confirmed' ? `Duyệt bán – ${order.customerName}` : `Huỷ ${order.orderNo} – hàng về lại kho bán`);
@@ -971,6 +971,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       await tx.delete(deliveries).where(eq(deliveries.orderId, order.id));
       await tx.delete(paymentSchedules).where(eq(paymentSchedules.orderId, order.id));
       await tx.delete(salesContracts).where(eq(salesContracts.orderId, order.id));
+      // Delete lines first so their cost snapshots cascade before the separate snapshot → order FK is checked. Cost history remains.
+      await tx.delete(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
       await tx.delete(salesOrders).where(eq(salesOrders.id, order.id));
     });
     await removeMovements(c.env.db, `sale:${order.id}:`);

@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,12 +16,12 @@ async function setup() {
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
-  return { call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn') };
+  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn') };
 }
 
 test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / giao dịch / công nợ, lương – ngày công – thưởng; quyền xem / sửa; chốt lương khoá tháng', async t => {
   t.mock.timers.enable({apis:['Date'],now:new Date('2026-10-31T02:00:00Z')});
-  const { call, emp, mgr } = await setup();
+  const { db, call, emp, mgr } = await setup();
   const month = vietnamDate().iso.slice(0, 7), day = (d: number) => `${month}-${String(d).padStart(2, '0')}`;
 
   // Doanh số: nhân viên lập 2 báo giá, 1 báo giá lên đơn 2.160.000, khách trả 1.000.000.
@@ -33,7 +34,7 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
   assert.equal(reviewed.status,200);
   await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: reviewed.data.revision });
   const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201);
-  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
+  await approveFixtureOrder({db,call},`/orders/${o.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   assert.equal((await call('/payments', emp, 'POST', { orderId: o.data.id, amount: 1_000_000, paidAt: day(2), method: 'transfer' })).status, 201);
 
   // Quyền: nhân viên không xem hồ sơ người khác, không sửa lương.

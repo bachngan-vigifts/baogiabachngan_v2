@@ -28,9 +28,13 @@ function totals(s) {
   }
   return { subtotal, tax, total: subtotal + tax, label: rates.size > 1 ? "Thu\u1EBF VAT theo s\u1EA3n ph\u1EA9m" : `Thu\u1EBF VAT ${rates.size ? [...rates][0] : s.vat || 0}%` };
 }
+function requiresPrinting(row) {
+  const description = normalize(row.printDescription || "").trim();
+  return Number(row.printFee) > 0 || !!description && !/^(khong( in| co)?|khong in logo|none|no)$/.test(description);
+}
 function printingInfo(s) {
-  const rows = (s.rows || []).filter((row) => Number(row.printFee) > 0 && Number(row.qty) > 0);
-  const enabled = ["B2B", "VIGIFTS"].includes(s.type) && rows.length > 0;
+  const rows = (s.rows || []).filter((row) => requiresPrinting(row) && Number(row.qty) > 0);
+  const enabled = rows.length > 0 && (["B2B", "VIGIFTS"].includes(s.type) || rows.some((r) => !!normalize(r.printDescription || "").trim() && requiresPrinting(r)));
   const minhLong = rows.length > 0 && rows.every((row) => /minh long|healthy cook|su duong sinh/.test(normalize(`${row.brand || ""} ${row.name || ""}`)));
   return { enabled, defaultWorkshop: minhLong ? printingWorkshops[0] : printingWorkshops[1] };
 }
@@ -42,7 +46,8 @@ function commissionOf(r) {
 function profit(s, shippingFee = null) {
   const revenue = totals(s).subtotal;
   const cost = s.rows.reduce((sum, row) => sum + (Number(row.costPrice) || 0) * Number(row.qty || 0), 0);
-  const shippingCost = s.shipping?.payer === "sender" && Number.isFinite(shippingFee) ? Math.max(0, shippingFee) : 0;
+  const declared = s.shipping?.cost;
+  const shippingCost = s.shipping?.payer === "sender" ? typeof declared === "number" && Number.isFinite(declared) ? Math.max(0, declared) : Number.isFinite(shippingFee) ? Math.max(0, shippingFee) : 0 : 0;
   const hasLineCosts = s.rows.some((row) => row.printing && Number.isFinite(row.printing.unitPrice));
   const printingCost = printingInfo(s).enabled ? hasLineCosts ? s.rows.reduce((sum, row) => sum + Math.round(Math.max(0, Number(row.printing?.unitPrice) || 0) * Math.max(0, Number(row.qty) || 0)), 0) : Math.max(0, Number(s.printing?.totalCost) || 0) : 0;
   const commission = s.rows.reduce((sum, row) => sum + commissionOf(row), 0);
@@ -143,6 +148,7 @@ export {
   purchasePrice,
   quoteStockSku,
   rate,
+  requiresPrinting,
   syncPurchaseCost,
   totals
 };

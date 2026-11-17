@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { like } from 'drizzle-orm';
 import { confirmWarehouseSupply } from '../helpers/confirmed-warehouse-supply.ts';
 import { receivingReminderTasks } from '../../src/modules/tasks/api/receiving-reminders.ts';
@@ -58,7 +59,7 @@ test('bảng công việc: việc tự sinh từ báo giá / đơn / HĐKT tự 
   // Lập HĐKT thẳng từ báo giá (luồng độc lập với đơn hàng) → Manager duyệt → việc "Lên lịch giao" + "Ký HĐKT", mở trang HĐKT.
   const k = await call('/contracts', emp, 'POST', { quoteId: quote.data.id, legalEntity: 'BN', depositRate: 30 }); assert.equal(k.status, 201, JSON.stringify(k.data));
   const o = { data: { id: k.data.orderId as string } };
-  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await approveFixtureOrder({db,call},`/orders/${o.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   let mine = (await call('/tasks?refresh=1', emp)).data.tasks;
   const plan = mine.find((t: any) => t.source === 'delivery');
   assert.ok(plan && plan.link === `#/contracts/${o.data.id}` && plan.title.includes(k.data.contractNo) && !plan.title.includes('DH_'), JSON.stringify(mine));
@@ -113,7 +114,7 @@ test('đơn đến hạn giao → việc cho NV phụ trách; bấm "Yêu cầu 
   await call('/quotes/' + quote.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
   await call('/quotes/' + quote.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const o = await call('/orders', emp, 'POST', { quoteId: quote.data.id });
-  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
+  await approveFixtureOrder({db,call},`/orders/${o.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   let mine = (await call('/tasks?refresh=1', emp)).data.tasks;
   const due = mine.find((t: any) => t.title.startsWith('Đến hạn giao'));
   assert.ok(due, JSON.stringify(mine.map((t: any) => t.title))); assert.equal(due.priority, 'high');
@@ -154,12 +155,12 @@ test('đơn đến hạn giao → việc cho NV phụ trách; bấm "Yêu cầu 
 });
 
 test('việc tự sinh của nhân viên đã khoá / đã xoá chuyển về "chưa giao" để Manager thấy và giao lại', async () => {
-  const { call, emp, mgr } = await setup();
+  const { db, call, emp, mgr } = await setup();
   const quote = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_9', customer: 'Công ty A', vat: 8, rows: [{ name: 'Ly', sku: 'L', unit: 'cái', qty: 1, price: 100000 }] });
   await call('/quotes/' + quote.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
   await call('/quotes/' + quote.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const o = await call('/orders', emp, 'POST', { quoteId: quote.data.id });
-  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
+  await approveFixtureOrder({db,call},`/orders/${o.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   const plan = () => call('/tasks?view=all&refresh=1', mgr).then(r => r.data.tasks.find((t: any) => t.source === 'delivery' && t.link === `#/orders/${o.data.id}`));
   assert.equal((await plan()).assigneeId, 'emp');
   // Khoá tài khoản người phụ trách đơn → việc đang mở về "chưa giao".
@@ -243,7 +244,7 @@ test('thẻ thống kê: hạn lọc ở server trước LIMIT, đúng ngày Vi�
 });
 
 test('trang Công việc: số đếm theo tab (summary.views), số theo mốc hạn (dueCounts), lọc 7 ngày tới và người nhận', async () => {
-  const { call, emp, mgr, kho } = await setup();
+  const { db, call, emp, mgr, kho } = await setup();
   const today = (await call('/tasks', mgr)).data.today as string;
   const add = async (cookie: string, title: string, assigneeId: string | undefined, dueDate?: string) => {
     const r = await call('/tasks', cookie, 'POST', { title, assigneeId, dueDate }); assert.equal(r.status, 201, JSON.stringify(r.data)); return r.data;
@@ -274,7 +275,7 @@ test('trang Công việc: số đếm theo tab (summary.views), số theo mốc 
 });
 
 test('danh sách công việc: việc sinh sau (mới tạo) lên trên cùng, không xếp theo hạn', async () => {
-  const { call, mgr } = await setup();
+  const { db, call, mgr } = await setup();
   for (const [title, dueDate] of [['Việc 1 hạn gần', '2026-10-24'], ['Việc 2 không hạn', undefined], ['Việc 3 hạn xa', '2027-01-01']] as const) {
     assert.equal((await call('/tasks', mgr, 'POST', { title, ...(dueDate ? { dueDate } : {}) })).status, 201);
     await new Promise(r => setTimeout(r, 5));
@@ -284,7 +285,7 @@ test('danh sách công việc: việc sinh sau (mới tạo) lên trên cùng, k
 });
 
 test('mạng rớt sau khi đã lưu: tạo việc gửi lại cùng mã không sinh việc thứ hai (cả khi gửi đồng thời); cập nhật gửi lại báo thành công', async () => {
-  const { call, mgr, emp } = await setup();
+  const { db, call, mgr, emp } = await setup();
   const body = { title: 'Gọi lại khách An Phát', assigneeId: 'emp', priority: 'high', clientKey: 'task-key-0001' };
   const first = await call('/tasks', mgr, 'POST', body); assert.equal(first.status, 201, JSON.stringify(first.data));
   const again = await call('/tasks', mgr, 'POST', body); assert.equal(again.status, 200); assert.deepEqual([again.data.id, again.data.replayed], [first.data.id, true]);

@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -36,7 +37,7 @@ async function setup() {
     return (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id as string;
   };
   const progress = async (id: string) => (await call(`/orders/${id}`, emp)).data.progress;
-  return { call, emp, mgr, kho, order, progress };
+  return { db, call, emp, mgr, kho, order, progress };
 }
 const photo = 'data:image/jpeg;base64,' + Buffer.from('anh').toString('base64');
 
@@ -52,12 +53,12 @@ test('tiến trình: hàm thuần – bước theo đơn có / không in, bướ
 });
 
 test('tiến trình: duyệt → kho xác nhận đóng gói → việc In mẫu → việc Sản xuất → Manager hoàn thành nhanh / bỏ đánh dấu', async () => {
-  const { call, emp, mgr, kho, order, progress } = await setup();
+  const { db, call, emp, mgr, kho, order, progress } = await setup();
   const id = await order('B2B_IN1', 5000);
   let p = await progress(id);
   assert.deepEqual([p.current, p.label, p.printing], ['approve', 'Đợi duyệt', true]);
 
-  await call(`/orders/${id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await approveFixtureOrder({db,call},`/orders/${id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   assert.equal((await progress(id)).current, 'export');
   // Kho xác nhận đóng gói xong → bước Xuất kho tự xong → việc "In mẫu" cho người phụ trách.
   const line = (await call(`/orders/${id}`, emp)).data.lines[0];
@@ -95,12 +96,12 @@ test('tiến trình: duyệt → kho xác nhận đóng gói → việc In mẫu
 });
 
 test('tiến trình hàng có SKU không được bấm Xong thay duyệt/xuất thực tế', async () => {
-  const { call, mgr, order, progress } = await setup();
+  const { db, call, mgr, order, progress } = await setup();
   const id = await order('B2B_KIN', 0);
   assert.deepEqual((await progress(id)).stages.map((s: any) => s.key), ['approve', 'export', 'delivered']);
   assert.equal((await call(`/orders/${id}/progress`, mgr, 'POST', { stage: 'sample' })).status, 400);
   assert.equal((await call(`/orders/${id}/progress`, mgr, 'POST', { stage: 'export' })).data.code,'ORDER_NOT_APPROVED');
-  assert.equal((await call(`/orders/${id}/status`,mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+  assert.equal((await approveFixtureOrder({db,call},`/orders/${id}/status`,mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
   assert.equal((await call(`/orders/${id}/progress`,mgr,'POST',{stage:'export'})).data.code,'STOCK_NOT_PACKED');
   assert.equal((await call(`/orders/${id}/progress`,mgr,'POST',{stage:'all'})).data.code,'STOCK_NOT_PACKED');
   assert.equal((await progress(id)).stages.find((s:any)=>s.key==='export').done,false);

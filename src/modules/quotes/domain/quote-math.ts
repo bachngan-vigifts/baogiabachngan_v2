@@ -45,7 +45,7 @@ export interface QuoteDoc {
   type: QuoteType;
   vat?: number;
   rows: QuoteRow[];
-  shipping?: { payer?: string };
+  shipping?: { payer?: string;cost?:number };
   printing?: { totalCost?: number; workshop?: string; workshopExplicit?: boolean };
 }
 
@@ -81,9 +81,13 @@ export function totals(s: QuoteDoc): Totals {
   return { subtotal, tax, total: subtotal + tax, label: rates.size > 1 ? 'Thuế VAT theo sản phẩm' : `Thuế VAT ${rates.size ? [...rates][0] : s.vat || 0}%` };
 }
 
+export function requiresPrinting(row:QuoteRow):boolean {
+ const description=normalize(row.printDescription||'').trim();
+ return Number(row.printFee)>0||!!description&&!/^(khong( in| co)?|khong in logo|none|no)$/.test(description);
+}
 export function printingInfo(s: Pick<QuoteDoc, 'type' | 'rows'>): { enabled: boolean; defaultWorkshop: string } {
-  const rows = (s.rows || []).filter(row => Number(row.printFee) > 0 && Number(row.qty) > 0);
-  const enabled = ['B2B', 'VIGIFTS'].includes(s.type) && rows.length > 0;
+  const rows = (s.rows || []).filter(row => requiresPrinting(row) && Number(row.qty) > 0);
+  const enabled = rows.length>0&&(['B2B','VIGIFTS'].includes(s.type)||rows.some(r=>!!normalize(r.printDescription||'').trim()&&requiresPrinting(r)));
   const minhLong = rows.length > 0 && rows.every(row => /minh long|healthy cook|su duong sinh/.test(normalize(`${row.brand || ''} ${row.name || ''}`)));
   return { enabled, defaultWorkshop: minhLong ? printingWorkshops[0] : printingWorkshops[1] };
 }
@@ -99,7 +103,8 @@ export interface Profit { revenue: number; cost: number; commission: number; shi
 export function profit(s: QuoteDoc, shippingFee: number | null = null): Profit {
   const revenue = totals(s).subtotal;
   const cost = s.rows.reduce((sum, row) => sum + (Number(row.costPrice) || 0) * Number(row.qty || 0), 0);
-  const shippingCost = s.shipping?.payer === 'sender' && Number.isFinite(shippingFee) ? Math.max(0, shippingFee as number) : 0;
+  const declared=s.shipping?.cost;
+  const shippingCost = s.shipping?.payer === 'sender' ? typeof declared==='number'&&Number.isFinite(declared)?Math.max(0,declared):Number.isFinite(shippingFee)?Math.max(0,shippingFee as number):0 : 0;
   const hasLineCosts = s.rows.some(row => row.printing && Number.isFinite(row.printing.unitPrice));
   const printingCost = printingInfo(s).enabled
     ? (hasLineCosts

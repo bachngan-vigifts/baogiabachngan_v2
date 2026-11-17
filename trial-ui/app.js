@@ -1831,7 +1831,7 @@ function renderProfit(doc = currentDoc()) {
   $('#sum-commission').textContent = Number.isFinite(commission) ? money(commission) + (!manager && editor.dirty ? ' (bản đã lưu)' : '') : editor.id ? 'Chưa xác minh' : '0 ₫';
   $('#open-commission').disabled = !manager; $('#open-commission').textContent = manager ? 'CK khách (tiền cà phê) ›' : 'CK khách (tiền cà phê)';
   $('#sum-cost').textContent = p ? money(p.cost) : '';
-  $('#sum-shipping').textContent = ship.fee === null ? 'Chưa có cước dự toán' : money(ship.fee);
+  $('#sum-shipping').textContent = manager&&Number.isFinite(doc.shipping?.cost)?money(p.shippingCost)+' (chi phí đã khai báo)':ship.fee===null?'Chưa có cước dự toán':money(ship.fee);
   $$('input[name="profitShippingPayer"]').forEach(i => { i.checked = i.value === payer; });
   $('#profit-shipping-hint').hidden = !manager || payer !== 'sender' || ship.fee !== null;
   $('#sum-gross').textContent = p ? money(p.gross) : ''; $('#sum-gross').className = p && p.gross < 0 ? 'neg' : '';
@@ -5114,14 +5114,14 @@ document.addEventListener('click', async e => {
 /** Xác nhận đơn của khách: bắt buộc kiểm tra các thông tin quan trọng trước khi duyệt. */
 async function verifyAndConfirmOrder() {
   const d = sales.detail, o = d.order, dash = v => v ? esc(v) : '';
-  let debtWarningAccepted=false;
+  let debtWarningAccepted=false,costQuoteRevision=null;
   try {
     const review = await api(`/orders/${encodeURIComponent(o.id)}/approval-preflight`);
     if (review.debt.total > 0) {
       debtWarningAccepted=await confirmApprovalDebt(review,isContractDoc(d)?'Vẫn duyệt HĐKT':'Vẫn duyệt đơn');
       if(!debtWarningAccepted)return;
     }
-    if (!await reviewOrderCosts({review,api,isManager:isManager(),verifyBox,esc,toast})) return;
+    if (!await reviewOrderCosts({review,api,isManager:isManager(),verifyBox,esc,toast,onReviewed:v=>{costQuoteRevision=v.quoteRevision;}})) return;
   } catch (ex) { toast(ex.message, 'err'); return; }
   const items = d.lines.map(l => `${esc(l.name)} × ${fmtNum(l.qty)} ${esc(l.unit || '')}`).join('<br>');
   // Kho bán (đơn CRM): duyệt giữ hàng; phiếu kho xác nhận mới trừ sổ kho. Chỉ kho người phụ trách được bán (Manager: mọi kho) – docs/SO-KHO.md.
@@ -5155,7 +5155,7 @@ async function verifyAndConfirmOrder() {
   if (!v) return;
   try {
     if (v.deliveryDate !== (o.expectedDeliveryDate || '')) await api(`/orders/${encodeURIComponent(o.id)}/delivery-date`, 'PUT', { date: v.deliveryDate });
-    await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true, debtWarningAccepted, ...(v.warehouseId ? { warehouseId: v.warehouseId } : {}) });
+    await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true, debtWarningAccepted,...(costQuoteRevision!=null?{costQuoteRevision}:{}), ...(v.warehouseId ? { warehouseId: v.warehouseId } : {}) });
     toast(isContractDoc(d) ? 'Đã duyệt HĐKT. Báo giá của HĐKT đã được khoá.' : 'Đã duyệt đơn. Báo giá của đơn đã được khoá.'); openOrder(o.id);
   } catch (ex) {
     if (ex.code === 'CUSTOMER_DEBT_OVERDUE') {
