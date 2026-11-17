@@ -2,6 +2,7 @@ import {promotionPanel,configurePromotion} from './pos-promotions.js';
 import { createLatestRead } from './latest-read.js';
 import {setProductThumbnail,suspendProductThumbnail} from './product-images.js';
 import {createPosOrderBoardCache} from './pos-order-board-cache.js';
+import {createWebOrderReminder} from './web-order-reminder.js';
 import { createPosStockCache } from './pos-stock-cache.js';
 import { posCatalogProductVisible } from './pos-catalog-brand.js';
 import { bindCustomerDuplicateCheck } from './customer-duplicate-check.js';
@@ -108,6 +109,21 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     pendingUser = '',
     nodes = {},
     lineTotals = new Map();
+  const contactReminder=createWebOrderReminder({api,root,
+    context:()=>({userId:user()?.id,registerId:st.orderRegisterId||st.register?.id,active:!root.hidden&&(globalThis.location?.hash||'').startsWith('#/pos'),busy:dirty()||st.orderBoardLoading}),
+    onGhn:id=>openReminderOrder(id,'ghn'),onCancel:id=>openReminderOrder(id,'cancel'),
+  });
+  async function openReminderOrder(id,action){
+    const owner=user()?.id,register=st.orderRegisterId||st.register?.id;
+    const d=await api('/orders/'+encodeURIComponent('web:'+id));
+    if(owner!==user()?.id||register!==(st.orderRegisterId||st.register?.id)||!location.hash.startsWith('#/pos'))return;
+    if(!d.canManage)throw Error('Bạn không được xử lý đơn của cửa hàng này.');
+    const o={...d.document,id:d.document.webOrderId,external:true,orderNo:d.document.sourceOrderNo,lines:JSON.stringify(d.items),bucket:d.document.status==='draft'?'pending':d.document.status,actionsAvailable:d.canManage,ghnDirect:d.document.source==='minhlong'||d.document.edited,webRevision:d.revision,suggestedCod:d.document.paid?0:d.document.total};
+    if(o.bucket!=='pending'||o.ghnOrderCode)throw Error('Đơn đã được xử lý hoặc đã có vận đơn GHN. Tải lại danh sách.');
+    const popup=action==='ghn'?showGhnAddress(o):cancelWebOrder(o);
+    popup?.dlg.addEventListener('close',()=>void contactReminder.refresh({force:true}),{once:true});
+    return popup;
+  }
   const catalogMedia = window.matchMedia?.('(max-width: 850px)');
   const mobileCatalog = () => catalogMedia?.matches === true;
   const pendingScans = new Map();
@@ -573,7 +589,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         st.orderBoardError={message:e.message,criteria};
       }finally{
         if(orderBoardInFlight===request)orderBoardInFlight=null;
-        if(current()){st.orderBoardLoading=false;renderOrderBoard();}
+        if(current()){st.orderBoardLoading=false;renderOrderBoard();void contactReminder.refresh();}
       }
     })();return request.promise;
   }
@@ -694,7 +710,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       cards.append(b);
     }
     if(d.analytics){const a=d.analytics,pct=a.successRate==null?'—':new Intl.NumberFormat('vi-VN',{maximumFractionDigits:1}).format(a.successRate)+'%';const report=button('','pos-order-count pos-cancellation-report',()=>showCancellationAnalytics(d));report.setAttribute('aria-label','Xem tỷ lệ hoàn thành và lý do huỷ đơn');report.append(el('strong','',pct),el('span','','Tỷ lệ hoàn thành'));cards.append(report);}
-    box.append(cards,nodes.orderBoardFeedback);
+    box.append(cards,nodes.orderBoardFeedback,contactReminder.banner);
     const adRisk=advertisingNotice(d.analytics?.advertising);if(adRisk)box.append(adRisk);
     const search = el('input', 'pos-order-search');
     search.type = 'search'; search.placeholder = 'Tìm số đơn, khách hàng, điện thoại, nhân viên…'; search.value = st.orderQuery;
@@ -706,6 +722,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if (!d.orders.length) list.append(el('p', 'pos-note', 'Không có đơn trong trạng thái này.'));
     for (const o of d.orders) {
       const row = el('div', 'pos-order-row');
+      if(o.external)row.dataset.webOrderId=o.id;
       row.tabIndex = 0; row.setAttribute('role', 'button');
       const source = el('span', 'pos-note', (o.ownerName || 'Chưa có nhân viên') + ' · ' + (o.external ? 'Đơn website' : o.fulfillmentMode === 'cod' ? 'Giao COD' : 'Nhận tại quầy'));
       const shipments = o.external
@@ -758,7 +775,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       }
       list.append(row);
     }
-    box.append(list);
+    box.append(list);contactReminder.paint();
     if (d.nextOffset != null) {
       box.append(busyButton(`Xem thêm (${d.orders.length}/${d.totalOrders} đơn)`, 'btn secondary pos-order-more', 'Đang tải…', async () => {
         if(st.orderBoardLoading)return;
@@ -828,7 +845,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         m.lock(false, submit); m.close(); toast('Đã huỷ đơn ' + o.orderNo + (o.ghnOrderCode ? ' và vận đơn GHN.' : '.'), 'ok'); await run(loadOrderBoard);
       } catch (ex) { m.lock(false, submit); error.textContent = ex.message || 'Chưa huỷ được đơn.'; }
     });
-    m.show(); reason.focus?.();
+    m.show(); reason.focus?.();return m;
   }
   /** Đơn website chờ xử lý: chọn địa chỉ chuẩn GHN → kiểm tra lại → tạo vận đơn. Form khoá trong lúc gửi; lỗi thì giữ dữ liệu để sửa. */
   function showGhnAddress(o) {
