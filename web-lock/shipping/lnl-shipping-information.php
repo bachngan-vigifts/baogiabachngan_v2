@@ -54,6 +54,7 @@ function lnl_si_permission($r) {
 add_action('rest_api_init',function(){
     register_rest_route('lnl-shipping/v1','/inspect',array('methods'=>'GET','permission_callback'=>'lnl_si_permission','callback'=>function(){
         list($token,$shop)=lnl_si_config();
+        do_action('litespeed_purge_url',home_url('/'));
         $out=array('configured'=>(bool)($token&&$shop),'policy'=>get_option('lnl_si_policy_status','pending'));
         if (!$out['configured']) { return $out; }
         $shops=lnl_si_api('/v2/shop/all?offset=0&limit=100');

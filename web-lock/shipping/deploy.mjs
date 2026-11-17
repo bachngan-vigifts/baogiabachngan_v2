@@ -29,7 +29,10 @@ try {
 
 
  const files=await api('list_files',{dir});
- if(files.some(f=>f.file===pluginName))throw Error('already_exists');
+ if(files.some(f=>f.file===pluginName)){
+ const previous=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
+ if(previous.content!=="<?php\ndefined('ABSPATH') || exit;\n// Disabled after verification failure.\n")throw Error('unexpected_existing_file');
+ }
  const probe=createHash('sha256').update(token+':lnl-shipping-v1').digest('hex');
  const code=readFileSync('web-lock/shipping/lnl-shipping-information.php','utf8').replace('__LNL_SHIPPING_PROBE__',probe);
  rollback=()=>upload(dir,pluginName,"<?php\ndefined('ABSPATH') || exit;\n// Disabled after verification failure.\n");
@@ -44,7 +47,9 @@ try {
  browser=await chromium.launch();
  const context=await browser.newContext({viewport:{width:1360,height:1004}});
  const page=await context.newPage();
- await page.goto('https://locknlockonline.com/?lnl_shipping_check='+process.env.GITHUB_RUN_ID,{waitUntil:'domcontentloaded',timeout:60000});
+ stage='homepage_navigation';
+ await page.goto('https://locknlockonline.com/?lnl_shipping_check='+process.env.GITHUB_RUN_ID,{waitUntil:'commit',timeout:90000});
+ stage='homepage_tooltip';
  const hit=page.locator('.lnl-ship-hit').first();await hit.waitFor();await hit.scrollIntoViewIfNeeded();await hit.hover();
  await page.locator('#lnl-ship-tip:visible').waitFor();
  if(!(await page.locator('#lnl-ship-tip').innerText()).includes('1.000.000'))throw Error('threshold');
@@ -55,7 +60,9 @@ try {
  if(!id)throw Error('test_product');
  const cart=await context.request.post('https://locknlockonline.com/?wc-ajax=add_to_cart',{form:{product_id:id,quantity:'1'}});
  const cartData=await cart.json();if(cartData.error)throw Error('test_cart');
- await page.goto('https://locknlockonline.com/thanh-toan/',{waitUntil:'domcontentloaded',timeout:60000});
+ stage='checkout_navigation';
+ await page.goto('https://locknlockonline.com/thanh-toan/',{waitUntil:'commit',timeout:90000});
+ stage='checkout_address';
  await page.locator('#lnl-shipping-eta').waitFor({state:'attached'});
  console.log('CHECKOUT_FIELDS='+JSON.stringify(await page.locator('[id*="ghn"]').evaluateAll(es=>es.map(e=>e.id).filter(Boolean))));
  await page.locator('#billing_ghn_province_id').selectOption(String(data.origin.province));
@@ -73,8 +80,8 @@ try {
  await page.screenshot({path:'shipping-checkout-mobile.png'});
  await context.close();
  console.log('SHIPPING_DEPLOY_OK');
-}catch{
- console.log('FAILED_STAGE='+stage);
+}catch(error){
+ console.log('FAILED_STAGE='+stage+' ERROR='+String(error.message).slice(0,200));
  if(activated&&rollback)try{await rollback();console.log('SHIPPING_PLUGIN_DISABLED');}catch{console.log('ROLLBACK_FAILED');}
  process.exitCode=1;
 }finally{if(browser)await browser.close();}
