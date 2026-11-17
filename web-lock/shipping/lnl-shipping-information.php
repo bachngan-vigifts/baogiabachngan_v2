@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: LNL Shipping Information
- * Version: 1.0.0
+ * Version: 1.1.0
  */
 defined('ABSPATH') || exit;
 
@@ -175,6 +175,11 @@ add_filter('woocommerce_update_order_review_fragments',function($fragments){
  if(function_exists('WC')&&WC()->cart){$type=wc_get_weight(WC()->cart->get_cart_contents_weight(),'g')>=20000?5:2;$fragments['#lnl-shipping-service-type']='<span id="lnl-shipping-service-type" hidden data-type="'.$type.'"></span>';}
  return $fragments;
 });
+add_action('init',function(){
+ if(get_option('lnl_si_mobile_eta_version')==='1')return;
+ do_action('litespeed_purge_url',home_url('/'));do_action('litespeed_purge_url',home_url('/thanh-toan/'));
+ update_option('lnl_si_mobile_eta_version','1',false);
+},40);
 add_action('wp_footer',function(){
     if(!is_front_page() && !(function_exists('is_checkout')&&is_checkout()&&!is_order_received_page()))return;
     $config=array('restNonce'=>wp_create_nonce('wp_rest'),'regions'=>rest_url('lnl-shipping/v1/regions'),'endpoint'=>rest_url('lnl-shipping/v1/eta'),'nonce'=>wp_create_nonce('lnl_shipping'),'checkout'=>(bool)is_checkout(),'type'=>2);
@@ -210,7 +215,7 @@ if(cfg.checkout){
  const val=n=>document.getElementById(prefix+'_'+n)?.value?.trim()||'';
  const district=val('ghn_district_id'),ward=val('ghn_ward_code'),address=val('address_1'),province=val('ghn_province_id');
  version++;const seq=version;if(controller)controller.abort();
- if(!district||!ward||!address||!province){panel.hidden=true;last='';return;}
+ if(!district||!ward||!province){panel.hidden=true;last='';return;}
  const destination=form.querySelector(prefix==='shipping'?'.woocommerce-shipping-fields__field-wrapper':'.woocommerce-billing-fields__field-wrapper');
  if(destination&&panel.parentElement!==destination)destination.append(panel);
  const key=district+'|'+ward+'|'+cfg.type;
@@ -226,6 +231,7 @@ if(cfg.checkout){
  }
  function schedule(){clearTimeout(timer);timer=setTimeout(refresh,450);}
  form.addEventListener('input',schedule);form.addEventListener('change',schedule);
+ if(window.jQuery)window.jQuery(form).on('change.lnlShipping select2:select.lnlShipping select2:clear.lnlShipping','select[id^="billing_ghn_"],select[id^="shipping_ghn_"],#ship-to-different-address-checkbox',schedule);
  if(window.jQuery)window.jQuery(document.body).on('updated_checkout',function(){
  const type=Number(document.getElementById('lnl-shipping-service-type')?.dataset.type)||cfg.type;
  if(type!==cfg.type){cfg.type=type;memory.clear();}

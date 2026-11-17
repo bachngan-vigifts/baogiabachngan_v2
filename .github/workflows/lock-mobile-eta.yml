@@ -1,0 +1,34 @@
+name: Fix Lock mobile delivery estimate
+on:
+  push:
+    branches: [codex/minhlong-approved-shipping-20261117]
+    paths: [web-lock/shipping/fix-mobile-eta.mjs, .github/workflows/lock-mobile-eta.yml]
+permissions:
+  contents: read
+concurrency:
+  group: lock-store-ai-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          php -l web-lock/shipping/lnl-shipping-information.php
+          node --check web-lock/shipping/fix-mobile-eta.mjs
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Deploy and check address changes on mobile and desktop
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: node web-lock/shipping/fix-mobile-eta.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lock-mobile-delivery-estimate
+          path: lock-mobile-eta-*.png
+          retention-days: 3
