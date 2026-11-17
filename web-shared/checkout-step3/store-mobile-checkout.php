@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Store mobile checkout option 3
- * Version: 1.0.7
+ * Version: 1.0.8
  * Presentation only; WooCommerce remains the order and pricing authority.
  */
 defined('ABSPATH') || exit;
@@ -216,7 +216,7 @@ body.bnco-active #bnco-retry:not([hidden]){display:inline-block}
 body.bnco-active #bnco-error:not([hidden]){display:block}
 body.bnco-active #main #customer_details .form-row label.fl-label{display:block!important;position:static!important;clip:auto!important;clip-path:none!important;width:auto!important;height:auto!important;overflow:visible!important;visibility:visible!important;opacity:1!important;transform:none!important;text-indent:0!important;left:auto!important;top:auto!important}
 body.bnco-active #customer_details .fl-wrap{padding:0!important}
-body.bnco-active .claw-gift-checkout-mobile{order:2}
+body.bnco-active .claw-gift-checkout-mobile{display:none!important}
 body.bnco-active .claw-gift-checkout-mobile br{display:none!important}
 body.bnco-active .woocommerce-billing-fields:before,body.bnco-active .woocommerce-billing-fields__field-wrapper:before{display:none!important;content:none!important}
 }
