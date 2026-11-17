@@ -12,7 +12,7 @@ const name='store-mobile-cart.php',disabled="<?php // Mobile cart presentation d
 async function put(site,content){const f=new FormData();f.set('dir',site.dir);f.set('overwrite','1');f.set('file-1',new Blob([content]),name);await api('Fileman','upload_files',f);}
 let browser,changed=[];
 try{
- for(const site of sites){site.dir=rootFor(site.host)+'/wp-content/mu-plugins';const listing=await api('Fileman','list_files',{dir:site.dir});if(JSON.stringify(listing).includes(name))throw Error('Target already exists; inspect before replacement');}
+ for(const site of sites){site.dir=rootFor(site.host)+'/wp-content/mu-plugins';const listing=await api('Fileman','list_files',{dir:site.dir});if(JSON.stringify(listing).includes(name)){const old=await api('Fileman','get_file_content',{dir:site.dir,file:name,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});if(old.content!==disabled)throw Error('Unexpected existing version; stopped before write');}}
  browser=await chromium.launch();
  async function checkSite(site,preview){
  const origin='https://'+site.host,ctx=await browser.newContext({viewport:{width:390,height:844}}),page=await ctx.newPage();
@@ -52,8 +52,8 @@ try{
  const qty=page.locator('.cart_item').filter({has:page.locator('[data-product_id="'+site.pid+'"]')}).locator('input.qty');
  await qty.fill('3');await qty.dispatchEvent('change');
  await page.waitForTimeout(150);
- const update=page.locator('[name="update_cart"]');
- if(await update.isEnabled())await update.click();
+ const sticky=page.locator('#bnmc-buy');
+ if((await sticky.textContent()).includes('Cập nhật'))await sticky.click();
  await page.waitForTimeout(5000);
  await page.waitForFunction(()=>!document.querySelector('.woocommerce-cart-form.processing,.cart_totals.processing,.blockUI'),{},{timeout:45000});
  await page.reload({waitUntil:'domcontentloaded',timeout:90000});
