@@ -27,6 +27,7 @@ export async function verify(browser,live=false){
  await page.screenshot({path:'checkout-step1-'+host+'-'+width+'.png',fullPage:true});
  }
  console.log('PHASE_1_FORM_LAYOUT_OK '+host);
+ console.log('LAYOUT_STRUCTURE '+host+' '+JSON.stringify(await page.evaluate(()=>({above:[...document.querySelector('form.checkout').parentElement.children].map(e=>({tag:e.tagName,id:e.id,cls:e.className,text:e.textContent.trim().slice(0,70)})),parents:(()=>{let e=document.querySelector('form.checkout'),a=[];for(let i=0;e&&i<5;i++,e=e.parentElement)a.push({cls:e.className,padding:getComputedStyle(e).padding,margin:getComputedStyle(e).margin});return a;})()}))));
  await page.setViewportSize({width:390,height:844});
  await page.locator('#bnco-next').click();
  if(!await page.locator('#bnco-error').isVisible())throw Error('Empty address accepted');
@@ -39,7 +40,7 @@ export async function verify(browser,live=false){
  await choose('billing_ghn_ward_code','550111');
  await settle();await thumbs();
  await page.locator('#bnco-next').click();
- await page.waitForFunction(()=>document.body.classList.contains('bnco-step2'));
+ await page.waitForFunction(()=>document.body.classList.contains('bnco-step2'),{},{timeout:90000});
  if(!(await page.locator('#bnco-address-copy').textContent()).includes('123 Đường kiểm thử'))throw Error('Address missing');
  await page.locator('#bnco-edit').click();
  if(await page.locator('#billing_first_name').inputValue()!=='Kiểm thử giao diện')throw Error('Address lost on back');
@@ -73,7 +74,7 @@ export async function verify(browser,live=false){
  if(await page.locator('#payment #place_order').count()!==1)throw Error('Desktop payment row not restored');
  await page.screenshot({path:'checkout-desktop-'+host+'.png',fullPage:true});
  console.log('DESKTOP_NATIVE_LAYOUT_OK '+host);
- }finally{await ctx.close();}
+ }catch(e){console.log('CHECKOUT_DIAGNOSTIC '+host+' '+JSON.stringify(await page.evaluate(()=>({error:document.getElementById('bnco-error')?.textContent,step:document.body.className,fields:[...document.querySelectorAll('#customer_details input:not([type=hidden]),#customer_details select')].filter(e=>e.id.startsWith('billing_')).map(e=>({id:e.id,value:e.value})),cards:[...document.querySelectorAll('form.checkout,#customer_details,.woocommerce-billing-fields,.woocommerce-billing-fields__field-wrapper')].map(e=>({cls:e.className,padding:getComputedStyle(e).padding,margin:getComputedStyle(e).margin})),above:[...document.querySelector('form.checkout').parentElement.children].map(e=>({tag:e.tagName,id:e.id,cls:e.className,text:e.textContent.trim().slice(0,90)}))}))));await page.screenshot({path:'checkout-failure-'+host+'.png',fullPage:true});throw e;}finally{await ctx.close();}
  }
 }
 try{await verify(browser,process.env.LIVE==='1');}finally{await browser.close();}

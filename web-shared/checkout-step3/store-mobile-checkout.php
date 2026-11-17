@@ -20,7 +20,8 @@ add_filter('woocommerce_cart_item_name', function($name,$item,$key) {
 add_action('wp_head',function(){
  if(!bnco_is_checkout())return;
 ?>
-<style id="bnco-style">
+<style id="bnco-style">.bnco-preorder{display:none}
+
 #bnco-shell,#bnco-footer,.bnco-review-address,.bnco-review-eta,.bnco-product-thumb,.bnco-address-tip,.bnco-confirm-row{display:none}
 @media(max-width:549px){
 body.bnco-active{background:#f3f6fa!important;color:#182b40!important;padding-bottom:calc(100px + env(safe-area-inset-bottom))!important}
@@ -148,6 +149,18 @@ body.bnco-active .lnl-checkout-qty-input,body.bnco-active .claw-checkout-qty-inp
 body.bnco-active .lnl-checkout-qty-control button,body.bnco-active .claw-checkout-qty button{min-width:25px!important;width:25px!important;height:28px!important;min-height:0!important;padding:0!important;margin:0!important;line-height:1!important}
 body.bnco-active .bnco-preorder{display:block;font-size:10px;color:#8b611f;font-weight:700}
 body.bnco-active #bnco-shell *,body.bnco-active #bnco-footer *{box-sizing:border-box}
+}
+@media(max-width:549px){body.bnco-active{font-family:Arial,Helvetica,sans-serif!important}body.bnco-active .bnco-preorder{display:block}}
+
+@media(max-width:549px){
+body.bnco-active #customer_details .form-row>label{display:block!important}
+body.bnco-active #customer_details .form-row>label.checkbox{display:inline!important}
+body.bnco-active #main .woocommerce{padding:0!important;background:transparent!important;box-shadow:none!important;border:0!important;border-radius:0!important}
+body.bnco-active #customer_details .woocommerce-billing-fields{padding:16px!important;margin:0!important}
+body.bnco-active .woocommerce-billing-fields__field-wrapper{padding:0!important;margin:0!important}
+body.bnco-active .bnco-step.done b{font-size:0}
+body.bnco-active .bnco-step.done b:after{content:'✓';font-size:16px}
+body.bnco-active #bnco-edit{text-transform:none}
 }</style>
 <?php
 },9999);
@@ -160,7 +173,7 @@ add_action('wp_footer',function(){
 const form=document.querySelector('form.checkout'),customer=document.getElementById('customer_details'),review=document.getElementById('order_review');
 if(!form||!customer||!review)return;
 const mq=matchMedia('(max-width:549px)');
-let step=1,pending=false,updateFailed=false,timer=0;
+let step=1,pending=false,updateFailed=false,advanceWhenReady=false,timer=0;
 const shell=document.createElement('section');shell.id='bnco-shell';
 shell.innerHTML='<div class="bnco-head"><button id="bnco-back" type="button" aria-label="Quay lại">←</button><h1 id="bnco-title">Thông tin nhận hàng</h1><img id="bnco-logo" alt=""></div><div class="bnco-steps" aria-label="Tiến trình thanh toán"><span class="bnco-step active" data-step="1"><b>1</b>Địa chỉ</span><span class="bnco-line"></span><span class="bnco-step" data-step="2"><b>2</b>Xác nhận</span></div>';
 const logo=document.querySelector('#header img.header_logo,#header img.header-logo,#logo img');
@@ -230,12 +243,12 @@ function sync(){
  const addressCopy=document.getElementById('bnco-address-copy');if(addressCopy.textContent!==addressText)addressCopy.textContent=addressText;
  const realEta=document.querySelector('#lnl-shipping-eta,#ml-shipping-eta');
  const etaResult=realEta?.querySelector('.lnl-eta-result,.ml-eta-result')?.textContent.trim();
- const etaText=realEta&&!realEta.hidden&&etaResult?('GHN · '+etaResult+'\nThời gian tham khảo; shop sẽ xác nhận khi xử lý đơn.'):'';
+ const etaText=realEta&&!realEta.hidden&&etaResult?realEta.innerText.trim():'';
  eta.hidden=!etaText;if(eta.textContent!==etaText)eta.textContent=etaText;
  const amount=document.querySelector(step===1?'.woocommerce-checkout-review-order-table .cart-subtotal .amount':'.woocommerce-checkout-review-order-table .order-total .amount');
  if(amount){const dest=document.getElementById('bnco-amount');if(dest.textContent!==amount.textContent.trim())dest.textContent=amount.textContent.trim();}
  const busy=updateFailed||pending||form.classList.contains('processing')||!!document.querySelector('#order_review .blockUI,.woocommerce-checkout-review-order-table.processing');
- next.disabled=busy;
+ next.disabled=busy&&step===2;
  const buttonText=busy?'Đang cập nhật…':step===1?'Tiếp tục →':'Đặt hàng';
  if(next.textContent!==buttonText)next.textContent=buttonText;
  document.getElementById('bnco-total-label').textContent=step===1?'Tiền hàng':'Tổng thanh toán';
@@ -247,6 +260,7 @@ document.getElementById('bnco-back').addEventListener('click',()=>{if(step===2)s
 document.getElementById('bnco-edit').addEventListener('click',()=>setStep(1));
 next.addEventListener('click',()=>{
  sync();if(next.disabled)return;
+ if(pending&&step===1){advanceWhenReady=true;return;}
  if(!validate())return;
  if(step===1){setStep(2);return;}
  const confirmation=document.getElementById('bnco-review-confirm');
@@ -258,9 +272,9 @@ form.addEventListener('keydown',e=>{if(mq.matches&&step===1&&e.key==='Enter'&&e.
 form.addEventListener('input',schedule);form.addEventListener('change',schedule);
 if(window.jQuery){
  jQuery(document.body).on('update_checkout.bnco',()=>{pending=true;updateFailed=false;schedule();});
- jQuery(document.body).on('updated_checkout.bnco',()=>{pending=false;updateFailed=false;schedule();});
+ jQuery(document.body).on('updated_checkout.bnco',()=>{pending=false;updateFailed=false;if(advanceWhenReady){advanceWhenReady=false;if(validate())setStep(2);}schedule();});
  jQuery(document.body).on('checkout_error.bnco',()=>{pending=false;if(customer.querySelector('.woocommerce-invalid'))setStep(1);schedule();});
- jQuery(document).ajaxError((e,xhr,settings)=>{if(settings.url?.includes('update_order_review')){pending=false;updateFailed=true;showError('Chưa cập nhật được tổng tiền. Vui lòng kiểm tra kết nối và thử lại.');next.disabled=true;}});
+ jQuery(document).ajaxError((e,xhr,settings)=>{if(settings.url?.includes('update_order_review')){pending=false;updateFailed=true;advanceWhenReady=false;showError('Chưa cập nhật được tổng tiền. Vui lòng kiểm tra kết nối và thử lại.');next.disabled=true;}});
 }
 new MutationObserver(records=>{if(records.some(r=>!footer.contains(r.target)&&!shell.contains(r.target)&&!address.contains(r.target)&&!eta.contains(r.target)))schedule();}).observe(form,{childList:true,subtree:true,attributes:true,attributeFilter:['class','hidden','aria-hidden']});
 mq.addEventListener('change',()=>{sync();});window.addEventListener('resize',schedule);
