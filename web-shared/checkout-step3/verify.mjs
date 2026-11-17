@@ -38,6 +38,16 @@ export async function verify(browser,live=false){
  });if(checks.overflow||!checks.footer||!checks.input||!checks.hidden||!checks.review)throw Error('Step1 geometry '+host+' '+width+' '+JSON.stringify(checks));
  await page.screenshot({path:'checkout-step1-'+host+'-'+width+'.png',fullPage:true});
  }
+ for(const width of [320,390,430]){
+ await page.setViewportSize({width,height:844});
+ const notes=page.locator('#order_comments');
+ await notes.evaluate(e=>e.scrollIntoView({block:'center'}));await notes.focus();await page.waitForTimeout(200);
+ const visible=await notes.evaluate(e=>{const r=e.getBoundingClientRect(),bar=document.getElementById('bnco-footer').getBoundingClientRect();return {height:r.height,belowBar:r.bottom>bar.top-8,covered:[r.top+10,r.bottom-10].some(y=>document.elementFromPoint(r.left+20,y)!==e),scroll:e.scrollHeight,client:e.clientHeight};});
+ if(visible.height<110||visible.belowBar||visible.covered)throw Error('Order notes obscured '+host+' '+width+' '+JSON.stringify(visible));
+ await page.screenshot({path:'checkout-notes-'+host+'-'+width+'.png'});
+}
+console.log('ORDER_NOTES_VISIBLE_AND_CLEAR_OF_FOOTER_OK '+host);
+await page.evaluate(()=>window.scrollTo(0,0));
  const ordered=await page.evaluate(()=>{const inv=document.querySelector('.claw-lnl-invoice-request--checkout,.claw-ml-invoice-request--checkout'),bill=document.querySelector('.woocommerce-billing-fields');return !inv||inv.getBoundingClientRect().top>=bill.getBoundingClientRect().bottom-1;});if(!ordered){console.log('INVOICE_LAYOUT '+host+' '+JSON.stringify(await page.evaluate(()=>{const e=document.querySelector('.claw-lnl-invoice-request--checkout,.claw-ml-invoice-request--checkout');const d=n=>({cls:n.className,id:n.id,display:getComputedStyle(n).display,order:getComputedStyle(n).order,position:getComputedStyle(n).position,y:n.getBoundingClientRect().y,h:n.getBoundingClientRect().height});return {invoice:d(e),parent:d(e.parentElement),siblings:[...e.parentElement.children].map(d)};})));throw Error('Invoice must appear after address fields');}
  const compact=await page.evaluate(()=>{
 const ids=['mailpoet_woocommerce_checkout_optin','ship-to-different-address-checkbox'];

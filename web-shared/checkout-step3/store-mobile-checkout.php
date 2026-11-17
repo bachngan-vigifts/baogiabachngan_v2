@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Store mobile checkout option 3
- * Version: 1.0.6
+ * Version: 1.0.7
  * Presentation only; WooCommerce remains the order and pricing authority.
  */
 defined('ABSPATH') || exit;
@@ -244,6 +244,14 @@ body.bnco-active .shipping_address{display:none!important}
 body.bnco-active #main .woocommerce-additional-fields{padding-top:0!important;margin-top:0!important}
 body.bnco-active #main #order_comments_field{margin-top:0!important;padding-top:0!important}
 body.bnco-active #main .woocommerce-additional-fields__field-wrapper{margin:0!important;padding:0!important}
+
+/* Keep multiline notes clear of theme input heights and the fixed checkout bar. */
+body.bnco-active #main #order_comments_field{display:block!important;height:auto!important;max-height:none!important;overflow:visible!important;margin-bottom:14px!important}
+body.bnco-active #main #order_comments_field .woocommerce-input-wrapper,
+body.bnco-active #main #order_comments_field .fl-wrap{display:block!important;height:auto!important;max-height:none!important;overflow:visible!important}
+body.bnco-active #main #order_comments_field label{position:static!important;display:block!important;transform:none!important;margin-bottom:6px!important}
+body.bnco-active #main #order_comments{display:block!important;box-sizing:border-box!important;width:100%!important;height:112px!important;min-height:112px!important;max-height:none!important;padding:12px!important;line-height:1.5!important;resize:vertical!important;overflow:auto!important;scroll-margin-top:20px;scroll-margin-bottom:140px}
+
 }
 @media(max-width:549px){
 body.bnco-active .bnco-eta-express{margin-top:12px;padding:13px 14px;background:#fff7e6;border:1px solid #e7bd73;border-left:4px solid #c28b2d;border-radius:9px;color:#643f12;white-space:normal}
