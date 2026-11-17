@@ -12,7 +12,7 @@ const name='store-mobile-cart.php',disabled="<?php // Mobile cart presentation d
 async function put(site,content){const f=new FormData();f.set('dir',site.dir);f.set('overwrite','1');f.set('file-1',new Blob([content]),name);await api('Fileman','upload_files',f);}
 let browser,changed=[];
 try{
- for(const site of sites){site.dir=rootFor(site.host)+'/wp-content/mu-plugins';const listing=await api('Fileman','list_files',{dir:site.dir});if(JSON.stringify(listing).includes(name)){const old=await api('Fileman','get_file_content',{dir:site.dir,file:name,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});if(!['baseline-v111.php'].some(f=>old.content===readFileSync('web-shared/mobile-cart/'+f,'utf8')))throw Error('Unexpected existing version; stopped before write');site.previous=old.content;}}
+ for(const site of sites){site.dir=rootFor(site.host)+'/wp-content/mu-plugins';const listing=await api('Fileman','list_files',{dir:site.dir});if(JSON.stringify(listing).includes(name)){const old=await api('Fileman','get_file_content',{dir:site.dir,file:name,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});if(!['baseline-v12.php'].some(f=>old.content===readFileSync('web-shared/mobile-cart/'+f,'utf8')))throw Error('Unexpected existing version; stopped before write');site.previous=old.content;}}
  browser=await chromium.launch();
  async function checkSite(site,preview){
  const origin='https://'+site.host,ctx=await browser.newContext({viewport:{width:390,height:844}}),page=await ctx.newPage();
@@ -42,6 +42,11 @@ try{
  const row=document.querySelector('.cart_item').getBoundingClientRect(),v=document.querySelector('.lnl-voucher-shop-row').getBoundingClientRect(),s=document.querySelector('.bnmc-summary').getBoundingClientRect();
  return {aligned:Math.abs(row.left-v.left)<3&&Math.abs(s.left-v.left)<3&&Math.abs(row.width-v.width)<3&&Math.abs(s.width-v.width)<3,gap:s.top-v.bottom};
  });if(!cohesive.aligned||cohesive.gap<0||cohesive.gap>18)throw Error('Cohesive layout '+JSON.stringify(cohesive));
+ if(width===390)console.log('LAYOUT_DIAGNOSTIC '+site.host+' '+JSON.stringify(await page.evaluate(()=>{
+ const first=document.querySelector('.cart_item').getBoundingClientRect(),last=[...document.querySelectorAll('.cart_item')].at(-1).getBoundingClientRect(),voucher=document.querySelector('.lnl-voucher-shop-row').getBoundingClientRect();
+ const describe=e=>({tag:e.tagName,id:e.id,cls:e.className,y:Math.round(e.getBoundingClientRect().top),h:Math.round(e.getBoundingClientRect().height),border:getComputedStyle(e).borderTop,outline:getComputedStyle(e).outline});
+ return {top:document.elementsFromPoint(15,first.top-7).slice(0,6).map(describe),gap:document.elementsFromPoint(30,last.bottom+20).slice(0,6).map(describe),spacing:voucher.top-last.bottom};
+ })));
  console.log('COHESIVE_CART_STACK_OK '+site.host+' width='+width);
  console.log('STANDALONE_MOBILE_SHELL_OK '+site.host+' width='+width);
  console.log((preview?'PREVIEW':'LIVE')+'_MOBILE_LAYOUT_OK '+site.host+' width='+width);

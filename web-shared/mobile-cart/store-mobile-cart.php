@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Store Mobile Cart Option 3
  * Description: Compact mobile cart cards and synchronized sticky checkout; preserves WooCommerce pricing and actions.
- * Version: 1.2.0
+ * Version: 1.2.1
  */
 defined('ABSPATH') || exit;
 add_filter('woocommerce_cart_item_class', function($classes,$item){
@@ -143,6 +143,14 @@ body.woocommerce-cart .vigifts-reward-points-box{order:4!important;margin:0!impo
 body.woocommerce-cart .bnmc-summary .order-total .amount{font-size:17px!important}
 }
 
+@media(max-width:549px){
+body.woocommerce-cart .bnmc-summary .shipping__table th:after,body.woocommerce-cart .bnmc-summary .shipping__table th:before{content:none!important}
+body.woocommerce-cart .bnmc-summary .shipping__table{margin:0!important}
+body.woocommerce-cart .bnmc-summary .shipping__table th,body.woocommerce-cart .bnmc-summary .shipping__table td{padding:5px 0!important;vertical-align:top!important}
+body.woocommerce-cart .bnmc-summary .woocommerce-shipping-destination,body.woocommerce-cart .bnmc-summary .woocommerce-shipping-contents{display:none!important}
+body.woocommerce-cart .bnmc-summary .shipping__list{margin:0!important}
+body.woocommerce-cart .bnmc-summary .shipping__list_item{margin:0!important;line-height:1.4!important}
+}
 </style>
 <?php
 },999);
@@ -173,6 +181,7 @@ function arrange(){
  }
  const note=document.querySelector('.mlpo-checkout-note');
  if(note&&note.parentElement!==totals)totals.append(note);
+ totals.querySelectorAll('.shipping__table th').forEach(e=>{if(e.textContent.trim()==='Shipment')e.textContent='Vận chuyển';});
  const label=totals.querySelector('.lnl-voucher-shop-copy strong');
  if(label&&label.textContent!=='Voucher Shop')label.textContent='Voucher Shop';
 }
