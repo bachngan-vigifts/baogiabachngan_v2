@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Minh Long Preorder Purchase
  * Description: Tagged coming-soon products: extra 10%, no coupons on preorder lines, separate free delivery.
- * Version: 1.1.0
+ * Version: 1.2.0
  */
 defined('ABSPATH') || exit;
 function mlpo_eligible($product) {
@@ -118,6 +118,9 @@ add_action('wp_head',function(){?>
 .mlpo-product .mlreq-v12-actions{display:block!important}.mlpo-product .mlreq-v12-actions>.add-to-cart-button{max-width:100%!important;width:100%!important}
 body.mlpo-only-cart #ml-shipping-eta,body.mlpo-only-cart #lnl-shipping-eta{display:none!important}
 .mlpo-checkout-note{margin:10px 0;padding:12px;border:1px solid #dfc291;background:#fff9ee;border-radius:8px;font-size:13px;color:#654a21}
+.mlpo-badge-host{position:relative!important}
+.mlpo-preorder-badge{position:absolute!important;top:12px!important;left:12px!important;z-index:15!important;display:inline-flex!important;align-items:center;justify-content:center;padding:8px 12px!important;border:2px solid #fff;border-radius:7px;background:#a44317;color:#fff!important;font-family:inherit;font-size:12px!important;font-weight:800!important;line-height:1.2!important;letter-spacing:.3px;box-shadow:0 3px 10px #75300c30;pointer-events:none!important;white-space:nowrap}
+@media(max-width:549px){.product-small .mlpo-preorder-badge{top:8px!important;left:8px!important;font-size:10px!important;padding:6px 8px!important}}
 </style>
 <?php });
 function mlpo_checkout_notice(){
@@ -136,6 +139,17 @@ document.querySelectorAll('[data-mlpo-product]').forEach(function(n){
 const wrap=n.closest('.product-small')||n.closest('.product');if(!wrap)return;wrap.classList.add('mlpo-product');
 const scope=wrap.classList.contains('product-small')?wrap:(wrap.querySelector('.product-info')||wrap.querySelector('.summary')||wrap);
 scope.classList.add('mlpo-purchase-scope');
+const isCard=wrap.classList.contains('product-small');
+const slider=wrap.querySelector('.product-gallery-slider');
+const gallery=isCard?wrap.querySelector('.box-image'):(wrap.querySelector('.product-gallery')||wrap.querySelector('.woocommerce-product-gallery')||slider?.parentElement||wrap.querySelector('.product-images'));
+if(gallery){
+gallery.classList.add('mlpo-badge-host');
+if(!gallery.querySelector(':scope > .mlpo-preorder-badge')){
+const badge=document.createElement('span');badge.className='mlpo-preorder-badge';badge.textContent='ĐẶT TRƯỚC';badge.title='Hàng đặt trước — shop liên hệ giao khi có hàng';gallery.append(badge);
+}
+const saleRoot=isCard?(wrap.closest('.col-inner')||wrap):gallery;
+saleRoot.querySelectorAll('.onsale,.badge-container').forEach(function(sale){sale.style.setProperty('display','none','important');});
+}
 scope.querySelectorAll('a,button').forEach(function(button){
 const label=button.textContent.trim().replace(/\s+/g,' ').toLocaleUpperCase('vi');
 if(button.matches('.ml-popup-buy-now,#buy_now_button,.ux-buy-now-button')||label==='MUA NGAY'||label==='ĐẶT TRƯỚC NGAY'){
@@ -157,6 +171,6 @@ refresh();
 </script>
 <?php },120);
 add_action('init',function(){
- if(get_option('mlpo_cache_version')==='2')return;
- do_action('litespeed_purge_all');update_option('mlpo_cache_version','2',false);
+ if(get_option('mlpo_cache_version')==='3')return;
+ do_action('litespeed_purge_all');update_option('mlpo_cache_version','3',false);
 },30);
