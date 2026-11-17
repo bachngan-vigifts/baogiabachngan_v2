@@ -13,10 +13,9 @@ export async function verify(browser,live=false){
  const src=await page.locator('.cart_item .product-thumbnail img').first().getAttribute('src');
  await page.goto(origin+'/thanh-toan/',{waitUntil:'domcontentloaded',timeout:90000});
  await page.waitForTimeout(4000);
- if(!live){await page.addStyleTag({content:css});await page.addScriptTag({content:js});}
+ if(!live){const active=await page.locator('#bnco-script').allTextContents();if(active.length){if(active.length!==1||active[0].trim()!==js.trim())throw Error('Different checkout candidate already active');}else{await page.addStyleTag({content:css});await page.addScriptTag({content:js});}}
  const thumbs=async()=>{if(!live)await page.evaluate(src=>document.querySelectorAll('.woocommerce-checkout-review-order-table .cart_item .product-name').forEach(e=>{if(!e.querySelector('.bnco-product-thumb')){const i=document.createElement('img');i.src=src;i.className='bnco-product-thumb';e.prepend(i);}}),src);};
  await thumbs();
- if(live)await page.waitForFunction(()=>[...document.querySelectorAll('.bnco-product-thumb')].length>0&&[...document.querySelectorAll('.bnco-product-thumb')].every(i=>i.complete&&i.naturalWidth>0));
  await page.locator('#bnco-shell').waitFor({state:'visible'});
  const settle=async()=>{await page.waitForFunction(()=>!document.querySelector('form.checkout.processing,.blockUI')&&!document.querySelector('#bnco-next')?.disabled,{},{timeout:90000});await page.waitForTimeout(300);};
  await settle();
@@ -51,6 +50,7 @@ export async function verify(browser,live=false){
  if(await page.locator('#billing_first_name').inputValue()!=='Kiểm thử giao diện')throw Error('Address lost on back');
  await page.locator('#bnco-next').click();await settle();await thumbs();
  await page.waitForFunction(()=>/\d{2}\/\d{2}\/\d{4}/.test(document.querySelector('.bnco-review-eta')?.textContent||''),{},{timeout:60000});
+  if(live)await page.waitForFunction(()=>[...document.querySelectorAll('.bnco-product-thumb')].length>0&&[...document.querySelectorAll('.bnco-product-thumb')].every(i=>i.complete&&i.naturalWidth>0));
  console.log('GHN_DATE_VISIBLE_IN_REVIEW_OK '+host);
  console.log('PHASE_2_ADDRESS_VALIDATION_BACK_PERSISTENCE_OK '+host);
  for(const width of [390,320,430]){
@@ -106,7 +106,7 @@ export async function verify(browser,live=false){
  await page.screenshot({path:'checkout-desktop-'+host+'.png',fullPage:true});
  const changes=await page.evaluate(async()=>{const e=document.querySelector('.claw-lnl-invoice-request--checkout,.claw-ml-invoice-request--checkout');let n=0;const o=new MutationObserver(rs=>rs.forEach(r=>{if([...r.addedNodes].includes(e))n++;}));o.observe(document.querySelector('form.checkout'),{childList:true,subtree:true});await new Promise(r=>setTimeout(r,1000));o.disconnect();return n;});if(changes>1)throw Error('Repeated desktop invoice movement');
  console.log('DESKTOP_NATIVE_LAYOUT_OK '+host);
- }catch(e){console.log('CHECKOUT_DIAGNOSTIC '+host+' '+JSON.stringify(await page.evaluate(()=>({error:document.getElementById('bnco-error')?.textContent,modal:document.querySelector('.lnl-voucher-modal[aria-hidden="false"]')?.textContent.slice(0,2200),step:document.body.className,fields:[...document.querySelectorAll('#customer_details input:not([type=hidden]),#customer_details select')].filter(e=>e.id.startsWith('billing_')).map(e=>({id:e.id,value:e.value})),cards:[...document.querySelectorAll('form.checkout,#customer_details,.woocommerce-billing-fields,.woocommerce-billing-fields__field-wrapper')].map(e=>({cls:e.className,padding:getComputedStyle(e).padding,margin:getComputedStyle(e).margin})),above:[...document.querySelector('form.checkout').parentElement.children].map(e=>({tag:e.tagName,id:e.id,cls:e.className,text:e.textContent.trim().slice(0,90)}))}))));await page.screenshot({path:'checkout-failure-'+host+'.png',fullPage:true});throw e;}finally{await ctx.close();}
+ }catch(e){console.log('CHECKOUT_DIAGNOSTIC '+host+' '+JSON.stringify(await page.evaluate(()=>({error:document.getElementById('bnco-error')?.textContent,images:[...document.querySelectorAll('.bnco-product-thumb')].map(i=>({src:i.currentSrc||i.src,loaded:i.complete,width:i.naturalWidth})),modal:document.querySelector('.lnl-voucher-modal[aria-hidden="false"]')?.textContent.slice(0,2200),step:document.body.className,fields:[...document.querySelectorAll('#customer_details input:not([type=hidden]),#customer_details select')].filter(e=>e.id.startsWith('billing_')).map(e=>({id:e.id,value:e.value})),cards:[...document.querySelectorAll('form.checkout,#customer_details,.woocommerce-billing-fields,.woocommerce-billing-fields__field-wrapper')].map(e=>({cls:e.className,padding:getComputedStyle(e).padding,margin:getComputedStyle(e).margin})),above:[...document.querySelector('form.checkout').parentElement.children].map(e=>({tag:e.tagName,id:e.id,cls:e.className,text:e.textContent.trim().slice(0,90)}))}))));await page.screenshot({path:'checkout-failure-'+host+'.png',fullPage:true});throw e;}finally{await ctx.close();}
  }
 }
 try{await verify(browser,process.env.LIVE==='1');}finally{await browser.close();}
