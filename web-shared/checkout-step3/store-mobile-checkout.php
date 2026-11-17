@@ -186,6 +186,11 @@ body.bnco-active #customer_details .fl-wrap{padding:0!important}
 body.bnco-active .claw-gift-checkout-mobile{order:2}
 body.bnco-active .claw-gift-checkout-mobile br{display:none!important}
 body.bnco-active .woocommerce-billing-fields:before,body.bnco-active .woocommerce-billing-fields__field-wrapper:before{display:none!important;content:none!important}
+}
+@media(max-width:549px){
+body.bnco-active .woocommerce-billing-fields__field-wrapper>*{order:9}
+body.bnco-active .woocommerce-billing-fields__field-wrapper:after,body.bnco-active .woocommerce-billing-fields__field-wrapper>.clear,body.bnco-active .woocommerce-billing-fields__field-wrapper>br{display:none!important;content:none!important}
+body.bnco-active .woocommerce-billing-fields__field-wrapper>.bnco-address-tip{order:99}
 }</style>
 <?php
 },9999);
@@ -276,7 +281,8 @@ function sync(){
  const addressCopy=document.getElementById('bnco-address-copy');if(addressCopy.textContent!==addressText)addressCopy.textContent=addressText;
  const realEta=document.querySelector('#lnl-shipping-eta,#ml-shipping-eta');
  const etaResult=realEta?.querySelector('.lnl-eta-result,.ml-eta-result')?.textContent.trim();
- const etaText=realEta&&!realEta.hidden&&etaResult?[...realEta.children].map(e=>e.textContent.trim()).filter(Boolean).join('\n'):'';
+ const etaParts=realEta?[...realEta.querySelectorAll('p,h3,h4,.lnl-eta-result,.ml-eta-result')].filter(e=>!e.parentElement.closest('p,h3,h4')).map(e=>e.textContent.trim()).filter(Boolean):[];
+ const etaText=realEta&&!realEta.hidden&&etaResult?(etaParts.length?etaParts.join('\n'):realEta.textContent.trim()):'';
  eta.hidden=!etaText;if(eta.textContent!==etaText)eta.textContent=etaText;
  const amount=document.querySelector(step===1?'.woocommerce-checkout-review-order-table .cart-subtotal .amount':'.woocommerce-checkout-review-order-table .order-total .amount');
  if(amount){const dest=document.getElementById('bnco-amount');if(dest.textContent!==amount.textContent.trim())dest.textContent=amount.textContent.trim();}

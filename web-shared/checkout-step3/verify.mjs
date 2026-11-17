@@ -27,6 +27,7 @@ export async function verify(browser,live=false){
  await page.screenshot({path:'checkout-step1-'+host+'-'+width+'.png',fullPage:true});
  }
  console.log('PHASE_1_FORM_LAYOUT_OK '+host);
+ console.log('FORM_SPACING '+host+' '+JSON.stringify(await page.evaluate(()=>({gap:document.querySelector('label[for="billing_first_name"]').getBoundingClientRect().top-document.querySelector('.woocommerce-billing-fields').getBoundingClientRect().top,children:[...document.querySelector('.woocommerce-billing-fields__field-wrapper').children].map(e=>({id:e.id,cls:e.className,h:e.getBoundingClientRect().height,display:getComputedStyle(e).display,order:getComputedStyle(e).order}))}))));
  console.log('PROMO_LABEL_STRUCTURE '+host+' '+JSON.stringify(await page.evaluate(()=>({promo:[...document.querySelectorAll('body *')].filter(e=>e.children.length===0&&e.textContent.includes('QUÀ TẶNG BLACK FRIDAY')).map(e=>({html:e.parentElement.outerHTML.slice(0,4500),parent:e.parentElement.parentElement.className})),labels:[...document.querySelectorAll('label[for="billing_first_name"]')].map(e=>({html:e.outerHTML,style:getComputedStyle(e).cssText,display:getComputedStyle(e).display,position:getComputedStyle(e).position,clip:getComputedStyle(e).clip,color:getComputedStyle(e).color,parent:e.parentElement.outerHTML.slice(0,1500)}))}))));
  console.log('LAYOUT_STRUCTURE '+host+' '+JSON.stringify(await page.evaluate(()=>({above:[...document.querySelector('form.checkout').parentElement.children].map(e=>({tag:e.tagName,id:e.id,cls:e.className,text:e.textContent.trim().slice(0,70)})),parents:(()=>{let e=document.querySelector('form.checkout'),a=[];for(let i=0;e&&i<5;i++,e=e.parentElement)a.push({cls:e.className,padding:getComputedStyle(e).padding,margin:getComputedStyle(e).margin});return a;})()}))));
  await page.setViewportSize({width:390,height:844});
@@ -46,6 +47,8 @@ export async function verify(browser,live=false){
  await page.locator('#bnco-edit').click();
  if(await page.locator('#billing_first_name').inputValue()!=='Kiểm thử giao diện')throw Error('Address lost on back');
  await page.locator('#bnco-next').click();await settle();await thumbs();
+ await page.waitForFunction(()=>/\d{2}\/\d{2}\/\d{4}/.test(document.querySelector('.bnco-review-eta')?.textContent||''),{},{timeout:60000});
+ console.log('GHN_DATE_VISIBLE_IN_REVIEW_OK '+host);
  console.log('PHASE_2_ADDRESS_VALIDATION_BACK_PERSISTENCE_OK '+host);
  for(const width of [390,320,430]){
  await page.setViewportSize({width,height:844});await page.waitForTimeout(300);
