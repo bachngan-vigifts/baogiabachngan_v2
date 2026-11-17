@@ -3,7 +3,7 @@ import { receivingReminderTasks } from './receiving-reminders.ts';
 import { supplierPaymentTasks } from './accounting-sources.ts';
 import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { invoiceTasks } from './invoice-tasks.ts';
-import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, isNull, like, lte, ne, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
