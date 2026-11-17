@@ -28,3 +28,5 @@ try{
 // Mobile static gift node detached to override its inline important display rule.
 
 // Wait for quantity debounce before the voucher regression check.
+
+// Guest-cart verification requests uncompressed JSON to avoid proxy stream resets.
