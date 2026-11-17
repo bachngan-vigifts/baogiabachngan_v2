@@ -12,7 +12,7 @@ const name='store-mobile-cart.php',disabled="<?php // Mobile cart presentation d
 async function put(site,content){const f=new FormData();f.set('dir',site.dir);f.set('overwrite','1');f.set('file-1',new Blob([content]),name);await api('Fileman','upload_files',f);}
 let browser,changed=[];
 try{
- for(const site of sites){site.dir=rootFor(site.host)+'/wp-content/mu-plugins';const listing=await api('Fileman','list_files',{dir:site.dir});if(JSON.stringify(listing).includes(name)){const old=await api('Fileman','get_file_content',{dir:site.dir,file:name,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});if(!['baseline.php','baseline-v11.php'].some(f=>old.content===readFileSync('web-shared/mobile-cart/'+f,'utf8')))throw Error('Unexpected existing version; stopped before write');site.previous=old.content;}}
+ for(const site of sites){site.dir=rootFor(site.host)+'/wp-content/mu-plugins';const listing=await api('Fileman','list_files',{dir:site.dir});if(JSON.stringify(listing).includes(name)){const old=await api('Fileman','get_file_content',{dir:site.dir,file:name,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});if(!['baseline-v111.php'].some(f=>old.content===readFileSync('web-shared/mobile-cart/'+f,'utf8')))throw Error('Unexpected existing version; stopped before write');site.previous=old.content;}}
  browser=await chromium.launch();
  async function checkSite(site,preview){
  const origin='https://'+site.host,ctx=await browser.newContext({viewport:{width:390,height:844}}),page=await ctx.newPage();
@@ -38,6 +38,11 @@ try{
  const hidden=['#header','#footer','.page-title','.fixed-contact','#claw-ai-launcher','#lnl-chat-launch','.section_breadcrumb'].every(s=>Array.from(document.querySelectorAll(s)).every(e=>!e.getClientRects().length));
  const nav=document.querySelector('#bnmc-top');return {hidden,top:nav&&nav.getBoundingClientRect().top>=0,links:nav?.querySelectorAll('a').length};
  });if(!shell.hidden||shell.links!==1)throw Error('Standalone shell failed '+JSON.stringify(shell));
+ const cohesive=await page.evaluate(()=>{
+ const row=document.querySelector('.cart_item').getBoundingClientRect(),v=document.querySelector('.lnl-voucher-shop-row').getBoundingClientRect(),s=document.querySelector('.bnmc-summary').getBoundingClientRect();
+ return {aligned:Math.abs(row.left-v.left)<3&&Math.abs(s.left-v.left)<3&&Math.abs(row.width-v.width)<3&&Math.abs(s.width-v.width)<3,gap:s.top-v.bottom};
+ });if(!cohesive.aligned||cohesive.gap<0||cohesive.gap>18)throw Error('Cohesive layout '+JSON.stringify(cohesive));
+ console.log('COHESIVE_CART_STACK_OK '+site.host+' width='+width);
  console.log('STANDALONE_MOBILE_SHELL_OK '+site.host+' width='+width);
  console.log((preview?'PREVIEW':'LIVE')+'_MOBILE_LAYOUT_OK '+site.host+' width='+width);
  }

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Store Mobile Cart Option 3
  * Description: Compact mobile cart cards and synchronized sticky checkout; preserves WooCommerce pricing and actions.
- * Version: 1.1.1
+ * Version: 1.2.0
  */
 defined('ABSPATH') || exit;
 add_filter('woocommerce_cart_item_class', function($classes,$item){
@@ -98,6 +98,51 @@ body.woocommerce-cart .cart_item{grid-template-columns:70px minmax(0,1fr)!import
 body.woocommerce-cart .cart_item .product-thumbnail img{width:70px!important;height:88px!important}
 #bnmc-total{font-size:18px}#bnmc-buy{padding:11px;font-size:13px}
 }
+
+.bnmc-summary{display:contents}
+.bnmc-summary-title{display:none}
+@media(max-width:549px){
+body.woocommerce-cart{background:#f3f6f9!important}
+body.woocommerce-cart #bnmc-top{max-width:549px;padding:12px 12px 10px!important}
+body.woocommerce-cart #main .cart-container.container.page-wrapper{width:100%!important;max-width:549px!important;padding:0 12px 18px!important;margin:0 auto!important}
+body.woocommerce-cart .cart-container .woocommerce,
+body.woocommerce-cart .cart-container .woocommerce>.row,
+body.woocommerce-cart .cart-container .woocommerce>.row>.col,
+body.woocommerce-cart .cart-sidebar,body.woocommerce-cart .cart-sidebar>.col-inner,
+body.woocommerce-cart .woocommerce-cart-form,body.woocommerce-cart .cart-wrapper{
+padding:0!important;margin:0!important;border:0!important;outline:0!important;box-shadow:none!important;background:transparent!important;width:100%!important;max-width:100%!important
+}
+body.woocommerce-cart .woocommerce>.row{display:flex!important;flex-direction:column!important;gap:12px!important}
+body.woocommerce-cart .woocommerce>.row>.col{flex-basis:auto!important}
+body.woocommerce-cart .cart-container,body.woocommerce-cart .woocommerce-notices-wrapper{outline:0!important;box-shadow:none!important}
+body.woocommerce-cart .cart_item{margin:0 0 10px!important;padding:12px!important;border-radius:12px!important;gap:6px 10px!important;box-shadow:0 2px 6px #173b6507!important}
+body.woocommerce-cart .cart_item .product-name{font-size:14px!important;line-height:1.4!important}
+body.woocommerce-cart .cart_item .product-name>a{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+body.woocommerce-cart .cart_item .product-subtotal{font-size:12px!important;line-height:1.4!important}
+body.woocommerce-cart .cart_item .product-subtotal br{display:none}
+body.woocommerce-cart .cart_item .product-subtotal .awdr-you-saved-text{display:none!important}
+body.woocommerce-cart .bnmc-preorder .backorder_notification{display:none!important}
+body.woocommerce-cart .bnmc-preorder dl.variation{font-size:11px!important;line-height:1.35!important}
+body.woocommerce-cart .freeship-notice-simple{font-size:12px!important;padding:0 4px 8px!important;text-align:left!important;border:0!important}
+body.woocommerce-cart.bnmc-has-voucher .woocommerce-cart-form__contents>tbody>tr:has(>.actions){display:none!important}
+body.woocommerce-cart .cart_totals{display:flex!important;flex-direction:column!important;gap:12px!important;padding:0!important;margin:0!important;border:0!important;background:transparent!important;box-shadow:none!important;border-radius:0!important}
+body.woocommerce-cart .cart_totals .bnmc-summary{display:block!important;order:1;background:white;border:1px solid #e0e8ef;border-radius:12px;padding:14px!important;margin:0!important}
+body.woocommerce-cart .bnmc-summary>h2,body.woocommerce-cart .bnmc-summary>table:not(.shop_table){display:none!important}
+body.woocommerce-cart .bnmc-summary-title{display:block;font-size:16px;font-weight:750;color:#143e69;line-height:1.4;margin:0 0 10px}
+body.woocommerce-cart .bnmc-summary>.shop_table{margin:0!important}
+body.woocommerce-cart .bnmc-summary .shop_table th,body.woocommerce-cart .bnmc-summary .shop_table td{padding:10px 0!important;font-size:13px!important;border-color:#edf0f4!important}
+body.woocommerce-cart .bnmc-summary [class*="invoice-request--cart"]{margin:10px 0 0!important;padding:10px 0 0!important;border:0!important;border-top:1px solid #e0e8ef!important;background:transparent!important;box-shadow:none!important;border-radius:0!important}
+body.woocommerce-cart .lnl-voucher-shop-wrap.context-cart{order:0!important;margin:0!important;padding:0!important;width:100%!important}
+body.woocommerce-cart .lnl-voucher-shop-row{background:white!important;border:1px solid #e0e8ef!important;border-radius:12px!important;margin:0!important;min-height:60px!important;padding:11px 12px!important;gap:9px!important;width:100%!important}
+body.woocommerce-cart .lnl-voucher-shop-copy{text-transform:none!important;letter-spacing:0!important;flex:1;min-width:0}
+body.woocommerce-cart .lnl-voucher-shop-copy strong{text-transform:none!important;font-size:14px!important;line-height:1.4!important}
+body.woocommerce-cart .lnl-voucher-shop-copy small{text-transform:none!important;font-size:11px!important;line-height:1.3!important}
+body.woocommerce-cart .lnl-voucher-shop-action{text-transform:none!important}
+body.woocommerce-cart .mlpo-checkout-note{order:3!important;font-size:11px!important;line-height:1.5!important;margin:0!important;padding:10px 12px!important;border-radius:10px!important}
+body.woocommerce-cart .vigifts-reward-points-box{order:4!important;margin:0!important}
+body.woocommerce-cart .bnmc-summary .order-total .amount{font-size:17px!important}
+}
+
 </style>
 <?php
 },999);
@@ -118,7 +163,21 @@ let saved=new Map(),timer=0;
 function fields(){return Array.from(document.querySelectorAll('.woocommerce-cart-form input.qty'));}
 function snapshot(){saved=new Map(fields().map(e=>[e.name,e.value]));}
 function dirty(){return fields().some(e=>saved.get(e.name)!==e.value);}
+function arrange(){
+ const totals=document.querySelector('.cart_totals');if(!totals)return;
+ if(!totals.querySelector(':scope > .bnmc-summary')){
+ const summary=document.createElement('div');summary.className='bnmc-summary';
+ const title=document.createElement('h3');title.className='bnmc-summary-title';title.textContent='Chi tiết thanh toán';summary.append(title);
+ Array.from(totals.children).filter(e=>e.matches('table,h2,[class*="invoice-request--cart"]')).forEach(e=>summary.append(e));
+ totals.append(summary);
+ }
+ const note=document.querySelector('.mlpo-checkout-note');
+ if(note&&note.parentElement!==totals)totals.append(note);
+ const label=totals.querySelector('.lnl-voucher-shop-copy strong');
+ if(label&&label.textContent!=='Voucher Shop')label.textContent='Voucher Shop';
+}
 function sync(){
+ arrange();
  const form=document.querySelector('.woocommerce-cart-form'),link=document.querySelector('.wc-proceed-to-checkout a.checkout-button'),amount=document.querySelector('.cart_totals .order-total .amount');
  const ok=!!(form&&link&&amount&&fields().length);
  bar.hidden=!ok;document.body.classList.toggle('bnmc-ready',ok);
