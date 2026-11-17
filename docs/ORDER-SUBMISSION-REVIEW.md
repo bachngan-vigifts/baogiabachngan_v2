@@ -17,3 +17,5 @@ Không thay đổi giá trị hợp đồng, tỷ lệ cọc, lịch thanh toán
 ## Trước khi deploy
 
 Chạy `migrations/postgres/20261117130655_order_submission_review.sql` trước khi deploy API/UI. Migration thêm cột nullable `sales_orders.submission_review`, không sửa bản ghi cũ, không đổi RLS. Đã kiểm tra trên database thử và chạy lặp; chưa chạy production trong PR này.
+
+Pipeline deploy chạy `scripts/sql/assert-order-submission-review.sql` ở chế độ chỉ đọc, kiểm tra cột đúng kiểu/nullable/không default và RLS còn bật. Thiếu hoặc sai schema thì chặn deploy, không tự chạy migration hay sửa dữ liệu.

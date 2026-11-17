@@ -186,5 +186,6 @@
       "customer_debt_notes không cấp trực tiếp PUBLIC/anon/authenticated",
       "customer_debt_notes quyền service_role"
     ]
-  }
+  },
+  {"migration":"20261117130655_order_submission_review.sql","assert":"assert-order-submission-review.sql","checks":["submission_review text nullable without default","sales_orders RLS"]}
 ]
