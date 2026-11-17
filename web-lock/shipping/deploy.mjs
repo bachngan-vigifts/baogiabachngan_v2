@@ -58,7 +58,12 @@ try {
  stage='homepage_navigation';
  await page.goto('https://locknlockonline.com/?lnl_shipping_check='+process.env.GITHUB_RUN_ID,{waitUntil:'commit',timeout:90000});
  stage='homepage_tooltip';
- const hit=page.locator('.lnl-ship-hit').first();await hit.waitFor();await hit.scrollIntoViewIfNeeded();await hit.hover();
+ await page.locator('.lnl-ship-hit').first().waitFor({state:'attached'});
+ await page.locator('.lnl-ship-hit').evaluateAll(buttons=>{const b=buttons.find(b=>b.getBoundingClientRect().width>0);if(b)b.scrollIntoView({block:'center',inline:'center'});});
+ await page.waitForTimeout(700);
+ const index=await page.locator('.lnl-ship-hit').evaluateAll(buttons=>buttons.findIndex(b=>{const r=b.getBoundingClientRect();return r.width>0&&r.top>100&&r.bottom<innerHeight&&document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)===b;}));
+ if(index<0)throw Error('no_uncovered_shipping_target');
+ const hit=page.locator('.lnl-ship-hit').nth(index);await hit.hover();
  await page.locator('#lnl-ship-tip:visible').waitFor();
  if(!(await page.locator('#lnl-ship-tip').innerText()).includes('1.000.000'))throw Error('threshold');
  await page.screenshot({path:'shipping-tooltip-desktop.png'});

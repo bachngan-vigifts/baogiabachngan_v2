@@ -37,7 +37,12 @@ add_action('rest_api_init',function(){
         $r=wp_remote_post('https://api.cloudflare.com/client/v4/zones/'.$zone.'/purge_cache',array('timeout'=>20,'headers'=>$headers,'body'=>wp_json_encode(array('files'=>array(home_url('/'),home_url('/chinh-sach-van-chuyen/'))))));
         if(is_wp_error($r))return array('purged'=>false,'configured'=>true);
         $j=json_decode(wp_remote_retrieve_body($r),true);
-        return array('purged'=>!empty($j['success']),'configured'=>true);
+        if(empty($j['success']) && $email && in_array(wp_remote_retrieve_response_code($r),array(400,401,403),true)){
+            $r=wp_remote_post('https://api.cloudflare.com/client/v4/zones/'.$zone.'/purge_cache',array('timeout'=>20,'headers'=>array('Content-Type'=>'application/json','Authorization'=>'Bearer '.$key),'body'=>wp_json_encode(array('files'=>array(home_url('/'),home_url('/chinh-sach-van-chuyen/'))))));
+            if(is_wp_error($r))return array('purged'=>false,'configured'=>true);
+            $j=json_decode(wp_remote_retrieve_body($r),true);
+        }
+        return array('purged'=>!empty($j['success']),'configured'=>true,'status'=>wp_remote_retrieve_response_code($r),'error_codes'=>array_map(function($e){return (int)($e['code']??0);},$j['errors']??array()));
     }));
 });
 
@@ -166,6 +171,10 @@ function lnl_si_policy_update() {
     if(!is_wp_error($id)){update_option('lnl_si_policy_status','updated',false);do_action('litespeed_purge_url',get_permalink(5457));}
 }
 add_action('init','lnl_si_policy_update',30);
+add_filter('woocommerce_update_order_review_fragments',function($fragments){
+ if(function_exists('WC')&&WC()->cart){$type=wc_get_weight(WC()->cart->get_cart_contents_weight(),'g')>=20000?5:2;$fragments['#lnl-shipping-service-type']='<span id="lnl-shipping-service-type" hidden data-type="'.$type.'"></span>';}
+ return $fragments;
+});
 add_action('wp_footer',function(){
     if(!is_front_page() && !(function_exists('is_checkout')&&is_checkout()&&!is_order_received_page()))return;
     $config=array('restNonce'=>wp_create_nonce('wp_rest'),'regions'=>rest_url('lnl-shipping/v1/regions'),'endpoint'=>rest_url('lnl-shipping/v1/eta'),'nonce'=>wp_create_nonce('lnl_shipping'),'checkout'=>(bool)is_checkout(),'type'=>2);
@@ -188,7 +197,7 @@ function init(){
 if(cfg.checkout){
  const form=document.querySelector('form.checkout');if(!form)return;
  const panel=document.createElement('section');panel.id='lnl-shipping-eta';panel.hidden=true;panel.setAttribute('aria-live','polite');
- panel.innerHTML='<strong>Dự kiến nhận hàng</strong><p class="lnl-eta-result"></p><small>Thời gian tham khảo từ GHN; shop cần 0–1 ngày làm việc để xử lý đơn. Thời gian thực tế có thể thay đổi theo thời điểm bàn giao và điều kiện vận chuyển.</small><p>Quý khách cần nhận hàng gấp, vui lòng liên hệ <a href="tel:0939961966">Mr Thái – 0939 961 966</a> để được hỗ trợ giao hỏa tốc.</p><small>Các ưu đãi hiện hành không áp dụng cho đơn giao hỏa tốc.</small>';
+ panel.innerHTML='<span id="lnl-shipping-service-type" hidden data-type="'+cfg.type+'"></span><strong>Dự kiến nhận hàng</strong><p class="lnl-eta-result"></p><small>Thời gian tham khảo từ GHN; shop cần 0–1 ngày làm việc để xử lý đơn. Thời gian thực tế có thể thay đổi theo thời điểm bàn giao và điều kiện vận chuyển.</small><p>Quý khách cần nhận hàng gấp, vui lòng liên hệ <a href="tel:0939961966">Mr Thái – 0939 961 966</a> để được hỗ trợ giao hỏa tốc.</p><small>Các ưu đãi hiện hành không áp dụng cho đơn giao hỏa tốc.</small>';
  const wrapper=form.querySelector('.woocommerce-billing-fields__field-wrapper');if(!wrapper)return;wrapper.append(panel);
  let timer,controller,version=0,last='',memory=new Map();
  function refresh(){
@@ -212,7 +221,11 @@ if(cfg.checkout){
  }
  function schedule(){clearTimeout(timer);timer=setTimeout(refresh,450);}
  form.addEventListener('input',schedule);form.addEventListener('change',schedule);
- if(window.jQuery)window.jQuery(document.body).on('updated_checkout',function(){memory.clear();schedule();});
+ if(window.jQuery)window.jQuery(document.body).on('updated_checkout',function(){
+ const type=Number(document.getElementById('lnl-shipping-service-type')?.dataset.type)||cfg.type;
+ if(type!==cfg.type){cfg.type=type;memory.clear();}
+ schedule();
+});
  refresh();
 }
 if(!document.body.classList.contains('home'))return;
