@@ -53,6 +53,7 @@ import { registerPosGhnSyncRoutes } from '../modules/sales/api/pos-ghn-sync.ts';
 import { registerPosGhnCreateRoutes } from '../modules/sales/api/pos-ghn-create.ts';
 import { createStaffRouter } from '../modules/staff/api/auth-routes.ts';
 import { registerQuoteRoutes } from '../modules/quotes/api/routes.ts';
+import {registerWebOrderAttention} from '../modules/sales/api/web-order-attention.ts';
 import { registerImageFetchRoutes } from '../modules/quotes/api/image-fetch.ts';
 import { registerCustomerRoutes } from '../modules/customers/api/routes.ts';
 import { registerAppsheetCustomerRoutes } from '../modules/customers/api/appsheet-routes.ts';
@@ -171,6 +172,7 @@ export function createAppRouter() {
   registerPaymentDueRepairRoutes(router);
   registerQuoteSourcingRoutes(router);
   registerPosRoutes(router);
+  registerWebOrderAttention(router);
   registerPosPromotions(router);
   registerShiftReportRoutes(router);
   registerPosGhnSyncRoutes(router);
