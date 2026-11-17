@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Minh Long Homepage Category Product Icons
  * Description: Small product thumbnails for the desktop hero category menu.
- * Version: 1.1.0
+ * Version: 1.2.0
  */
 defined( 'ABSPATH' ) || exit;
 add_action('init',function(){
- if(get_option('ml_hero_size_version')==='2')return;
+ if(get_option('ml_hero_size_version')==='3')return;
  do_action('litespeed_purge_url',home_url('/'));
- update_option('ml_hero_size_version','2',false);
+ update_option('ml_hero_size_version','3',false);
 });
 add_action( 'wp_footer', function () {
     if ( ! is_front_page() || ! function_exists( 'wc_get_products' ) ) { return; }
@@ -38,6 +38,13 @@ add_action( 'wp_footer', function () {
 .home nav.qvg-ux-menu p a.ml-has-product-icon::after{display:none!important}
 .home nav.qvg-ux-menu .ml-category-product-icon{position:absolute;left:5px;top:50%;transform:translateY(-50%);width:38px;height:38px;max-width:38px;object-fit:contain;border-radius:6px;background:#fff;margin:0}
 }
+@media(min-width:850px){
+.home nav.qvg-ux-menu.ml-height-matched{height:var(--ml-menu-height)!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;padding-top:8px!important;padding-bottom:8px!important}
+.home nav.qvg-ux-menu.ml-height-matched .qvg-ux-menu-title{flex:0 0 36px!important;min-height:36px!important;margin-bottom:4px!important}
+.home nav.qvg-ux-menu.ml-height-matched p{display:flex!important;flex-direction:column!important;flex:1 1 0!important;min-height:0!important;margin:0!important;gap:3px!important}
+.home nav.qvg-ux-menu.ml-height-matched p a{flex:1 1 0!important;min-height:0!important;margin:0!important;padding-top:1px!important;padding-bottom:1px!important;display:flex!important;align-items:center!important}
+.home nav.qvg-ux-menu.ml-height-matched p a img{max-height:calc(100% - 4px)!important}
+}
 @media(max-width:849px){.ml-category-product-icon{display:none!important}}
 </style>
 <script id="ml-hero-product-icons-js">
@@ -48,7 +55,17 @@ function init(){
 if(!window.matchMedia('(min-width:850px)').matches)return;
 document.querySelectorAll('.home nav.qvg-ux-menu').forEach(function(menu){
 const col=menu.closest('.col');
-if(col&&col.nextElementSibling?.classList.contains('col')){col.classList.add('ml-hero-menu-column');col.nextElementSibling.classList.add('ml-hero-banner-column');}
+if(col&&col.nextElementSibling?.classList.contains('col')){col.classList.add('ml-hero-menu-column');col.nextElementSibling.classList.add('ml-hero-banner-column');
+if(!menu.mlHeightObserver){
+const banner=col.nextElementSibling.querySelector('.col-inner')||col.nextElementSibling;
+let pending=false;
+function fit(){pending=false;if(!matchMedia('(min-width:850px)').matches)return;
+const b=banner.getBoundingClientRect(),m=menu.getBoundingClientRect(),h=Math.floor(b.bottom-m.top);
+if(h>=300){menu.style.setProperty('--ml-menu-height',h+'px');menu.classList.add('ml-height-matched');}}
+function schedule(){if(!pending){pending=true;requestAnimationFrame(fit);}}
+menu.mlHeightObserver=new ResizeObserver(schedule);menu.mlHeightObserver.observe(banner);
+window.addEventListener('resize',schedule);window.addEventListener('load',schedule);schedule();
+}}
 });
 document.querySelectorAll('.home nav.qvg-ux-menu p a').forEach(function(link){
 if(link.querySelector('.ml-category-product-icon'))return;
