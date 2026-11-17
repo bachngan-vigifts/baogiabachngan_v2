@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Store Mobile Cart Option 3
  * Description: Compact mobile cart cards and synchronized sticky checkout; preserves WooCommerce pricing and actions.
- * Version: 1.2.3
+ * Version: 1.2.4
  */
 defined('ABSPATH') || exit;
 add_filter('woocommerce_cart_item_class', function($classes,$item){
@@ -163,6 +163,7 @@ body.woocommerce-cart .cart-collaterals:before,body.woocommerce-cart .cart-colla
 body.woocommerce-cart .cart_totals:before,body.woocommerce-cart .cart_totals:after,
 body.woocommerce-cart .wc-proceed-to-checkout:before,body.woocommerce-cart .wc-proceed-to-checkout:after{display:none!important;content:none!important}
 }
+@media(max-width:549px){body.woocommerce-cart .cart_totals{margin-top:calc(-1px * var(--bnmc-gap-trim,0))!important}}
 </style>
 <?php
 },999);
@@ -197,8 +198,22 @@ function arrange(){
  const label=totals.querySelector('.lnl-voucher-shop-copy strong');
  if(label&&label.textContent!=='Voucher Shop')label.textContent='Voucher Shop';
 }
+function compactGap(){
+ const totals=document.querySelector('.cart_totals'),form=document.querySelector('.woocommerce-cart-form');
+ if(!totals||!form)return;
+ if(!matchMedia('(max-width:549px)').matches){totals.style.removeProperty('--bnmc-gap-trim');return;}
+ const cards=Array.from(form.querySelectorAll('.cart_item'));if(!cards.length)return;
+ let end=cards.at(-1).getBoundingClientRect().bottom;
+ form.querySelectorAll('.freeship-notice-simple,.woocommerce-error,.woocommerce-message').forEach(e=>{
+ if(e.getClientRects().length&&e.textContent.trim())end=Math.max(end,e.getBoundingClientRect().bottom);
+ });
+ const previous=Number(totals.style.getPropertyValue('--bnmc-gap-trim'))||0;
+ const naturalGap=totals.getBoundingClientRect().top-end+previous;
+ const trim=Math.max(0,Math.min(80,Math.round(naturalGap-12)));
+ if(trim!==previous)totals.style.setProperty('--bnmc-gap-trim',String(trim));
+}
 function sync(){
- arrange();
+ arrange();compactGap();
  const form=document.querySelector('.woocommerce-cart-form'),link=document.querySelector('.wc-proceed-to-checkout a.checkout-button'),amount=document.querySelector('.cart_totals .order-total .amount');
  const ok=!!(form&&link&&amount&&fields().length);
  bar.hidden=!ok;document.body.classList.toggle('bnmc-ready',ok);
