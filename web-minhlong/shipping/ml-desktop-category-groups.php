@@ -1,13 +1,13 @@
 <?php
 /**
  * Plugin Name: Minh Long Desktop Grouped Category Menu
- * Version: 1.0.0
+ * Version: 1.0.1
  */
 defined('ABSPATH')||exit;
 add_action('init',function(){
- if(get_option('ml_desktop_needs_version')==='1')return;
+ if(get_option('ml_desktop_needs_version')==='2')return;
  do_action('litespeed_purge_all');
- update_option('ml_desktop_needs_version','1',false);
+ update_option('ml_desktop_needs_version','2',false);
 });
 add_action('wp_footer',function(){
 ?>
@@ -47,6 +47,7 @@ add_action('wp_footer',function(){
 }
 @media(min-width:850px){
 .ml-desktop-needs.lnl-needs-ready>.menu-menu-doc-container{display:none!important}
+.header-vertical-menu:focus-within .header-vertical-menu__fly-out.ml-desktop-needs{display:block!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important}
 .header-vertical-menu__fly-out.ml-desktop-needs{width:390px!important;max-width:calc(100vw - 32px)!important;max-height:calc(100dvh - 150px)!important;border:1px solid #cde3f5;border-radius:0 0 14px 14px;overflow:auto!important;background:#fff}
 .ml-desktop-needs .lnl-needs-menu{padding:16px!important}
 .ml-desktop-needs .lnl-needs-menu h2{font-size:18px!important;margin-bottom:12px!important}

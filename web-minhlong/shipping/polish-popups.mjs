@@ -33,6 +33,29 @@ await button.click();await page.locator('.mfp-content .product').first().waitFor
 await page.locator('.mfp-content .ml-popup-buy-now').waitFor();
 if(await page.locator('.mfp-content .ml-popup-cart-icon[aria-label="Thêm vào giỏ hàng"]').count()!==1)throw Error('Cart icon missing');
 console.log('QUICK_VIEW_ACTIONS_OK width='+width);
+const form=page.locator('.mfp-content .product form.cart');
+const selects=form.locator('select[name^="attribute_"]');
+if(width===1484&&await selects.count()){
+const variation=form.locator('[name=variation_id]');
+if(!Number(await variation.inputValue())){
+await form.locator('.ml-popup-buy-now').click();
+await form.locator('.ml-popup-validation').waitFor({state:'visible'});
+console.log('QUICK_VIEW_VARIATION_REQUIRED_OK');
+}
+for(let i=0;i<await selects.count();i++){
+const select=selects.nth(i),value=await select.locator('option').evaluateAll(es=>es.find(e=>e.value&&!e.disabled)?.value);
+if(value)await select.selectOption(value);
+}
+await page.waitForFunction(()=>Number(document.querySelector('.mfp-content [name=variation_id]')?.value)>0,{},{timeout:20000});
+const chosen=await variation.inputValue();
+await form.locator('input[name=quantity]').fill('2');
+await Promise.all([page.waitForURL('**/thanh-toan/**',{timeout:60000}),form.locator('.ml-popup-buy-now').click()]);
+await page.locator('#order_review').waitFor({state:'visible'});
+const checkout=await page.locator('#order_review').innerText();
+if(!checkout.trim())throw Error('Empty checkout after Buy Now');
+console.log('QUICK_VIEW_BUY_NOW_CHECKOUT_OK variation='+chosen+' quantity=2; no order submitted');
+continue;
+}
 await page.keyboard.press('Escape');
 }
 
@@ -49,8 +72,8 @@ console.log('PRODUCT_DETAILS_OK width='+width+' '+JSON.stringify(detail));
 await page.screenshot({path:'ml-detail-'+width+'.png'});
 const wish=page.locator('.ml-review-wishlist-row .woosw-btn');await wish.click();
 await page.locator('.woosw-popup.woosw-show .woosw-item').first().waitFor({timeout:30000});
-const layout=await page.locator('.woosw-popup.woosw-show').evaluate(e=>{const c=e.querySelector('.woosw-popup-content');return {overflow:c.scrollWidth>c.clientWidth+1,buttons:Array.from(e.querySelectorAll('.woosw-item--atc .button')).map(b=>({text:b.textContent.trim(),width:b.getBoundingClientRect().width,height:b.getBoundingClientRect().height,white:getComputedStyle(b).whiteSpace}))};});
-if(layout.overflow||layout.buttons.some(b=>b.white!=='nowrap'))throw Error('Wishlist layout '+JSON.stringify(layout));
+const layout=await page.locator('.woosw-popup.woosw-show').evaluate(e=>{const c=e.querySelector('.woosw-popup-content');return {overflow:c.scrollWidth>c.clientWidth+1,buttons:Array.from(e.querySelectorAll('.woosw-item--atc .button')).map(b=>({text:b.textContent.trim(),width:b.getBoundingClientRect().width,height:b.getBoundingClientRect().height,white:getComputedStyle(b).whiteSpace,y:b.getBoundingClientRect().y}))};});
+if(layout.overflow||layout.buttons.some(b=>b.white!=='nowrap')||(layout.buttons.length>1&&Math.abs(layout.buttons[0].y-layout.buttons[1].y)>4))throw Error('Wishlist layout '+JSON.stringify(layout));
 console.log('WISHLIST_LAYOUT_OK width='+width+' '+JSON.stringify(layout));
 await page.screenshot({path:'ml-wishlist-'+width+'.png'});
 await page.evaluate(()=>document.querySelector('.woosw-popup.woosw-show .woosw-popup-close')?.click());

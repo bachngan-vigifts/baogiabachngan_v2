@@ -12,7 +12,8 @@ const dir=root+'/wp-content/mu-plugins',files=await api('Fileman','list_files',{
 
 
 const name='ml-desktop-category-groups.php';
-if(files.some(f=>(f.file||f.name)===name))throw Error('Existing desktop menu requires review');
+const previous=await api('Fileman','get_file_content',{dir,file:name,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
+if(previous.content!=="<?php defined('ABSPATH')||exit; // Disabled after failed verification.\n")throw Error('Unexpected desktop menu baseline');
 async function put(content){const f=new FormData();f.set('dir',dir);f.set('overwrite','1');f.set('file-1',new Blob([content]),name);await api('Fileman','upload_files',f);}
 let changed=false,browser;
 try{
@@ -30,6 +31,7 @@ return {groups:e.querySelectorAll('.lnl-need').length,photos:e.querySelectorAll(
 });if(result.groups!==6||result.photos!==6||result.missing.length||result.overflow||result.oldVisible)throw Error('Desktop menu '+JSON.stringify(result));
 await menu.locator('input[type=search]').fill('binh hoa');
 await page.waitForFunction(()=>Array.from(document.querySelectorAll('.ml-desktop-needs .lnl-need:not([hidden])')).length===1);
+await page.locator('.header-vertical-menu__opener').first().hover();
 await menu.locator('.lnl-needs-reset').click();
 if(await menu.locator('.lnl-need:not([hidden])').count()!==6)throw Error('Menu reset failed');
 await menu.locator('.lnl-need summary').first().click();
@@ -46,4 +48,4 @@ await page.goto(origin+'/san-pham/bo-do-an-9-san-pham-jasmine-trang/',{waitUntil
 await page.locator('.ml-review-wishlist-row .woosw-btn').waitFor({state:'visible'});
 console.log('PUBLIC_PRODUCT_CACHE_UPDATED_OK');
 console.log('DESKTOP_MENU_DEPLOY_OK');
-}catch(e){console.log('DESKTOP_MENU_FAILED '+String(e.message).slice(0,400));if(changed){await put("<?php defined('ABSPATH')||exit; // Disabled after failed verification.\n");console.log('NEW_DESKTOP_MENU_DISABLED');}process.exitCode=1;}finally{if(browser)await browser.close();}
+}catch(e){console.log('DESKTOP_MENU_FAILED '+String(e.message).slice(0,1800));if(changed){await put("<?php defined('ABSPATH')||exit; // Disabled after failed verification.\n");console.log('NEW_DESKTOP_MENU_DISABLED');}process.exitCode=1;}finally{if(browser)await browser.close();}

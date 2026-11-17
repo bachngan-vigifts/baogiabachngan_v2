@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Minh Long Centered Product Quick View
- * Version: 1.1.0
+ * Version: 1.2.0
  */
 defined('ABSPATH')||exit;
 add_action('wp_head',function(){
@@ -49,14 +49,16 @@ box-shadow:0 3px 12px #123b6e40!important;
 .single-product .product-main .ml-sku-category-row{display:flex!important;align-items:center;gap:10px;flex-wrap:nowrap!important;width:100%;min-width:0;border-bottom:1px solid #edf0f4;padding:7px 0}
 .single-product .product-main .product_meta .ml-sku-category-row>span{display:inline-block!important;width:auto!important;flex:0 0 auto!important;white-space:nowrap!important;padding:0!important;margin:0!important;border:0!important;font-size:inherit!important;line-height:1.3!important}
 .single-product .product-main .product_meta .ml-sku-category-row a{font-size:inherit!important;white-space:nowrap!important}
+.woosw-popup .woosw-item--atc,.woosw-popup .woosw-item--atc p,.woosw-popup .woosw-item--atc>div{display:flex!important;flex-direction:row!important;align-items:center!important;gap:8px!important;flex-wrap:nowrap!important}
+.woosw-popup .woosw-item--atc .button{border-radius:6px!important}
 </style>
 <?php
 },99);
 add_action('init',function(){
- if(get_option('ml_quick_view_position_version')==='2')return;
- do_action('litespeed_purge_url',home_url('/'));
+ if(get_option('ml_quick_view_position_version')==='3')return;
+ do_action('litespeed_purge_all');
  do_action('litespeed_purge_url',home_url('/danh-muc/minh-long/bo-do-an-minh-long/'));
- update_option('ml_quick_view_position_version','2',false);
+ update_option('ml_quick_view_position_version','3',false);
 });
 
 add_filter('woocommerce_add_to_cart_redirect',function($url){
