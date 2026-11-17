@@ -1,0 +1,42 @@
+name: Lock homepage product category icons
+on:
+  push:
+    branches: [codex/lock-category-icons-20261117]
+    paths: [web-lock/category-icons/**, .github/workflows/lock-category-icons.yml]
+permissions:
+  contents: read
+concurrency:
+  group: lock-store-ai-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate syntax
+        run: |
+          php -l web-lock/category-icons/lnl-home-category-icons.php
+          node --check web-lock/category-icons/deploy.mjs
+      - name: Install browser for visual checks
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Test scoped desktop and mobile behavior
+        run: node web-lock/category-icons/tests.mjs
+      - name: Install scoped icons and verify with rollback
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: node web-lock/category-icons/deploy.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: category-icon-screenshots
+          path: category-icons-*.png
+          retention-days: 3
