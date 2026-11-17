@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Store Mobile Cart Option 3
  * Description: Compact mobile cart cards and synchronized sticky checkout; preserves WooCommerce pricing and actions.
- * Version: 1.2.2
+ * Version: 1.2.3
  */
 defined('ABSPATH') || exit;
 add_filter('woocommerce_cart_item_class', function($classes,$item){
@@ -155,6 +155,13 @@ body.woocommerce-cart .bnmc-summary .shipping__list_item{margin:0!important;line
 body.woocommerce-cart .cart-container .woocommerce>.row>.col,
 body.woocommerce-cart .cart-sidebar{display:contents!important}
 body.woocommerce-cart .woocommerce-message.message-wrapper{outline:0!important;padding:0!important;min-height:0!important;margin:0!important}
+}
+@media(max-width:549px){
+body.woocommerce-cart .woocommerce.row:before,body.woocommerce-cart .woocommerce.row:after,
+body.woocommerce-cart .cart-sidebar:before,body.woocommerce-cart .cart-sidebar:after,
+body.woocommerce-cart .cart-collaterals:before,body.woocommerce-cart .cart-collaterals:after,
+body.woocommerce-cart .cart_totals:before,body.woocommerce-cart .cart_totals:after,
+body.woocommerce-cart .wc-proceed-to-checkout:before,body.woocommerce-cart .wc-proceed-to-checkout:after{display:none!important;content:none!important}
 }
 </style>
 <?php
