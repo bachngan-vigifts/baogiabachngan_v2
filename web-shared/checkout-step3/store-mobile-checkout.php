@@ -348,7 +348,7 @@ function structure(){
  if(!cell.querySelector('.bnco-product-copy')){const copy=document.createElement('div');copy.className='bnco-product-copy';[...cell.childNodes].filter(n=>!(n.nodeType===1&&n.classList.contains('bnco-product-thumb'))).forEach(n=>copy.append(n));cell.append(copy);}
  });
  const currentReview=document.getElementById('order_review');if(!currentReview)return;
- if(gift&&gift.parentElement!==currentReview)currentReview.append(gift);
+ if(gift&&gift.parentNode)gift.remove();
  if(!currentReview.contains(address))currentReview.prepend(address);
  if(!currentReview.contains(eta))currentReview.insertBefore(eta,address.nextSibling);
  currentReview.querySelectorAll('.shipping__table th').forEach(e=>{if(e.textContent.trim()==='Shipment')e.textContent='Vận chuyển';});

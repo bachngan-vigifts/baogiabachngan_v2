@@ -24,3 +24,5 @@ try{
 // Preview navigation removes an already-active presentation script before injecting this candidate.
 
 // Verify confirmed shop tariffs: Lock 33000 VND; Minh Long 38500 VND VAT included.
+
+// Mobile static gift node detached to override its inline important display rule.
