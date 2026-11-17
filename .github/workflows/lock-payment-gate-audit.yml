@@ -1,0 +1,18 @@
+name: Read Lock payment notification routing
+on:
+  push:
+    branches: [codex/minhlong-approved-shipping-20261117]
+    paths: [web-lock/payment-gate/audit.mjs]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          WC_BASE_URL: ${{ secrets.WC_BASE_URL }}
+          WC_CONSUMER_KEY: ${{ secrets.WC_CONSUMER_KEY }}
+          WC_CONSUMER_SECRET: ${{ secrets.WC_CONSUMER_SECRET }}
+        run: node web-lock/payment-gate/audit.mjs
