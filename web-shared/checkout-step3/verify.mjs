@@ -107,6 +107,8 @@ console.log('PHASE_1_FORM_LAYOUT_OK '+host);
  if(await qty.inputValue()!=='2')throw Error('Quantity update lost');
  await page.waitForFunction(()=>document.getElementById('bnco-amount').textContent===document.querySelector('.order-total .amount').textContent.trim());
  console.log('QUANTITY_AND_NATIVE_TOTAL_SYNC_OK '+host);
+ // Let the debounced native checkout refresh finish before applying a coupon to the same session.
+ await page.waitForTimeout(2000);await settle();
  const opener=page.locator('.context-checkout [data-lnl-voucher-open]').first();
  if(await opener.isVisible()){
  await opener.click();
