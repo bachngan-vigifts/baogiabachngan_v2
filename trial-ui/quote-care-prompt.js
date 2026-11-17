@@ -63,8 +63,8 @@ export function initQuoteCarePrompt({api,toast,onChanged=()=>{}}){
     try{onChanged(result.activity);}catch{}
     finish(true);
    }catch(ex){
-    busy=false;if(!dlg.isConnected)return;$('[data-error]').textContent='Báo giá đã lưu. Chưa lưu được lịch nhắc: '+ex.message;
-    if(!ex.status||ex.status>=500){$('[data-error]').textContent+=' Chưa rõ kết quả; thử lại sẽ giữ cùng nội dung và mã gửi.';$('[data-save]').textContent='Kiểm tra lại lần gửi';for(const b of form.querySelectorAll('[data-close],[data-save]'))b.disabled=false;}
+    busy=false;if(!dlg.isConnected)return;const uncertain=!ex.status||ex.status>=500;$('[data-error]').textContent='Báo giá đã lưu. '+(uncertain?'Chưa rõ kết quả tạo lịch nhắc. Bấm kiểm tra lại để tránh tạo trùng.':'Chưa tạo được lịch nhắc: '+ex.message);
+    if(uncertain){$('[data-save]').textContent='Kiểm tra lại lần gửi';for(const b of form.querySelectorAll('[data-close],[data-save]'))b.disabled=false;}
     else{attempt=null;for(const el of form.querySelectorAll('input,select,textarea,button'))el.disabled=false;}
    }
   });
