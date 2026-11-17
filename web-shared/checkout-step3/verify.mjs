@@ -71,6 +71,9 @@ export async function verify(browser,live=false){
  const opener=page.locator('.context-checkout [data-lnl-voucher-open]').first();
  if(await opener.isVisible()){
  await opener.click();
+ await page.locator('.lnl-voucher-modal[aria-hidden="false"] .lnl-voucher-close').click();
+ await page.waitForFunction(()=>getComputedStyle(document.getElementById('bnco-footer')).visibility==='visible');
+ await opener.click();
  const coupon=host==='minhlongonline.com'?'ml10k':'lnl10k';
  const modal=page.locator('.lnl-voucher-modal[aria-hidden="false"]');
  await modal.locator('input:not([type="hidden"])').first().fill(coupon);
