@@ -20,3 +20,5 @@ try{
  if(run.status!==0)throw Error('Live checkout verification failed');
  console.log('BOTH_STORES_CHECKOUT_OPTION3_DEPLOYED_AND_VERIFIED');
 }catch(e){console.log('CHECKOUT_DEPLOY_FAILED '+String(e.message).slice(0,350));for(const site of changed){try{await put(site,site.previous||disabled);const back=await api('Fileman','get_file_content',{dir:site.dir,file:name,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});if(back.content!==(site.previous||disabled))throw Error('Rollback readback mismatch');console.log('CHECKOUT_PRESENTATION_ROLLED_BACK '+site.host);}catch{console.log('CHECKOUT_ROLLBACK_NEEDS_ATTENTION '+site.host);}}process.exitCode=1;}
+
+// Preview navigation removes an already-active presentation script before injecting this candidate.

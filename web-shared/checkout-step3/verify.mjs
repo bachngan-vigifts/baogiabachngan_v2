@@ -11,6 +11,14 @@ export async function verify(browser,live=false){
  const add=await ctx.request.post(origin+'/?wc-ajax=add_to_cart',{timeout:90000,form:{product_id:pid,quantity:'1'}});if((await add.json()).error)throw Error('Guest cart failed');
  await page.goto(origin+'/gio-hang/',{waitUntil:'domcontentloaded',timeout:90000});
  const src=await page.locator('.cart_item .product-thumbnail img').first().getAttribute('src');
+
+ if(!live)await page.route('**/thanh-toan/**',async route=>{
+  if(!route.request().isNavigationRequest())return route.fallback();
+  if(route.request().method()!=='GET')return route.fulfill({status:400,contentType:'text/plain',body:'Checkout navigation submission blocked in test'});
+  const response=await route.fetch({timeout:90000});
+  const html=(await response.text()).replace(/<script\b[^>]*\bid=["']bnco-script["'][^>]*>[\s\S]*?<\/script>/gi,'').replace(/<style\b[^>]*\bid=["']bnco-style["'][^>]*>[\s\S]*?<\/style>/gi,'');
+  await route.fulfill({response,body:html});
+ });
  await page.goto(origin+'/thanh-toan/',{waitUntil:'domcontentloaded',timeout:90000});
  await page.waitForTimeout(4000);
  if(!live){const active=await page.locator('#bnco-script').allTextContents();if(active.length){if(active.length!==1||active[0].trim()!==js.trim())throw Error('Different checkout candidate already active');}else{await page.addStyleTag({content:css});await page.addScriptTag({content:js});}}
