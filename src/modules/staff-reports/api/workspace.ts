@@ -1,16 +1,13 @@
-import {and,asc,desc,eq,gte,inArray,like,lte,ne,notInArray,sql} from 'drizzle-orm';
+import {and,asc,desc,eq,gte,inArray,lte,notInArray,sql} from 'drizzle-orm';
 import type {AnyDb} from '../../../core/db/client.ts';
-import {tasks} from '../../tasks/schema.ts';
-import type {AutoTask} from '../../tasks/api/auto-tasks.ts';
 import {staffWeeklyReports} from '../schema.ts';
 import {salesOrders} from '../../sales/schema.ts';
 import {quotations} from '../../quotes/schema.ts';
 import {customers,customerStaff} from '../../customers/schema.ts';
 import {orderLinesFromQuote,quoteTotal} from '../../sales/domain/sales.ts';
 import {addDays,shiftMonths} from '../domain/weekly.ts';
-import {workspaceActions,workspaceForecast,sectorOf,SECTOR_LABELS,type WorkspaceFacts,type WorkspaceInputs} from '../domain/workspace.ts';
+import {sectorOf,SECTOR_LABELS,type WorkspaceFacts,type WorkspaceInputs} from '../domain/workspace.ts';
 
-export const REPORT_TASK_PREFIX='weekly-report:';
 const parse=(raw:string)=>{try{return JSON.parse(raw);}catch{return{};}};
 /** Bounded owner-scoped reads. The old report and payroll facts keep their original basis. */
 export async function weeklyWorkspaceFacts(db:AnyDb,memberId:string,period:string){
@@ -38,30 +35,10 @@ export async function weeklyWorkspaceFacts(db:AnyDb,memberId:string,period:strin
  return{openQuotes:quotes,openQuotesLimited:open.length>200,commitments,netRevenue:totals[0]?.current??0,previousNetRevenue:totals[0]?.previous??0,idleCustomers:idle,monthIndustries:[...industries.values()].sort((a,b)=>b.revenue-a.revenue),production};
 }
 export function workspaceFactView(f:WorkspaceFacts&{openQuotes?:WorkspaceFacts['quotes'];production?:WorkspaceFacts['deliveries']}){return{...f,quotes:f.openQuotes||f.quotes,deliveries:f.production||f.deliveries};}
-/** Same transaction as the official report: retry/resubmit cannot create a second task for an entry. */
-export async function syncWorkspaceActions(db:AnyDb,memberId:string,reportId:string,period:string,v:WorkspaceInputs,f:WorkspaceFacts,stamp:string){
- const actions=workspaceActions(reportId,v,f),prefix=REPORT_TASK_PREFIX+reportId+':';
- const old=await db.select().from(tasks).where(and(eq(tasks.sourceId,reportId),like(tasks.autoKey,prefix+'%'))),byKey=new Map(old.map(t=>[t.autoKey,t]));
- for(const a of actions){const prior=byKey.get(a.key),values={title:a.title,description:a.description,dueDate:a.dueDate,updatedAt:stamp};
-  if(prior)await db.update(tasks).set({...values,revision:sql`${tasks.revision}+1`}).where(eq(tasks.id,prior.id));
-  else await db.insert(tasks).values({id:crypto.randomUUID(),...values,autoKey:a.key,source:'manual',sourceId:reportId,link:`#/weekly-reports?month=${addDays(period,7).slice(0,7)}&week=${period}`,assigneeId:memberId,createdBy:memberId,status:'todo',priority:a.kind==='debt'?'high':'normal',createdAt:stamp}).onConflictDoNothing();
- }
- const keys=new Set(actions.map(a=>a.key));
- for(const task of old)if(!keys.has(task.autoKey!)&&['todo','in_progress'].includes(task.status))await db.update(tasks).set({status:'cancelled',completedAt:stamp,completedBy:memberId,updatedAt:stamp,revision:sql`${tasks.revision}+1`}).where(eq(tasks.id,task.id));
- return{opportunities:actions.filter(a=>a.kind==='opportunity').length,events:actions.filter(a=>a.kind==='event').length,tasks:actions.length};
-}
-/** These manually completed follow-ups remain wanted; a generic source reconciliation must not close them. */
-export async function weeklyReportTaskSources(db:AnyDb):Promise<AutoTask[]>{
- const rows=await db.select().from(tasks).where(and(eq(tasks.source,'manual'),like(tasks.autoKey,REPORT_TASK_PREFIX+'%'),inArray(tasks.status,['todo','in_progress'])));
- return rows.map(t=>({autoKey:t.autoKey!,source:'manual',sourceId:t.sourceId!,title:t.title,description:t.description,link:t.link,assigneeId:t.assigneeId,priority:t.priority,dueDate:t.dueDate,dueTime:t.dueTime}));
-}
-export async function weeklyReportActions(db:AnyDb,memberId:string){
- return db.select({id:tasks.id,reportId:tasks.sourceId,key:tasks.autoKey,title:tasks.title,description:tasks.description,status:tasks.status,dueDate:tasks.dueDate,link:tasks.link}).from(tasks)
-  .where(and(eq(tasks.assigneeId,memberId),like(tasks.autoKey,REPORT_TASK_PREFIX+'%'),notInArray(tasks.status,['done','cancelled']))).orderBy(asc(tasks.dueDate)).limit(100);
-}
-export function frozenWorkspaceForecast(v:WorkspaceInputs,f:WorkspaceFacts){return workspaceForecast(v,f.quotes);}
 
-export async function weeklyEventReminders(db:AnyDb,memberId:string,today:string){
- const [row]=await db.select({count:sql<number>`count(*)`.mapWith(Number)}).from(tasks).where(and(eq(tasks.assigneeId,memberId),like(tasks.autoKey,'weekly-report:%:event:%'),inArray(tasks.status,['todo','in_progress']),lte(tasks.dueDate,today)));
- return{count:row?.count??0};
+/** Injected at the application boundary; report code does not depend on the task module. */
+export interface WeeklyTaskServices {
+ sync(db:AnyDb,memberId:string,reportId:string,period:string,inputs:WorkspaceInputs,facts:WorkspaceFacts,stamp:string):Promise<unknown>;
+ actions(db:AnyDb,memberId:string):Promise<unknown[]>;
+ reminders(db:AnyDb,memberId:string,today:string):Promise<{count:number}>;
 }

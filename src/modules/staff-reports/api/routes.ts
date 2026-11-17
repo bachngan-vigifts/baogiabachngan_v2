@@ -1,5 +1,5 @@
 import {workspaceSchema,workspaceProblems,workspaceForecast,type WorkspaceInputs} from '../domain/workspace.ts';
-import {weeklyWorkspaceFacts,workspaceFactView,syncWorkspaceActions,weeklyReportActions,weeklyEventReminders} from './workspace.ts';
+import {weeklyWorkspaceFacts,workspaceFactView,type WeeklyTaskServices} from './workspace.ts';
 /**
  * BÁO CÁO TUẦN Sale / Sale Admin – khu vực `business`. Xem domain/weekly.ts cho hạn nộp, điểm, công thức Tiền trách nhiệm.
  *  GET  /staff-reports/me?month                 các tuần của tháng (trạng thái, điểm) + việc cần nộp
@@ -205,7 +205,7 @@ function monthlyInputsOf(b: Record<string, unknown>): MonthlyInputs {
 }
 
 /** Kỳ báo cáo: tuần (thứ Hai 'YYYY-MM-DD') hoặc tháng ('YYYY-MM'). Mọi quy tắc hạn / điểm / số liệu theo kỳ. */
-type StaffReportDeps = { targetOf?: SaleTargetOf; payrollPreviewOf?: SalePayrollPreviewOf };
+type StaffReportDeps = { workspaceTasks: WeeklyTaskServices; targetOf?: SaleTargetOf; payrollPreviewOf?: SalePayrollPreviewOf };
 function specOf(period: unknown, deps: StaffReportDeps) {
   if (isWeek(period)) return { kind: 'weekly' as const, period, label: 'tuần', deadline: weeklyDeadline(period), opensAt: weeklyOpensAt(period),
     started: (now: string) => weekStarted(period, now), official: (now: string) => canSubmitWeek(period, now),
@@ -228,7 +228,7 @@ function specOf(period: unknown, deps: StaffReportDeps) {
   throw new AppError(400, 'Kỳ báo cáo không hợp lệ (tuần: chọn thứ Hai; tháng: từ 11/2026).');
 }
 
-export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: StaffReportDeps = {}) {
+export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: StaffReportDeps) {
   router.get('/staff-reports/me', async c => {
     const m = me(c), db = c.env.db, now = nowIso(), month = isMonth(c.url.searchParams.get('month')) ? c.url.searchParams.get('month')! : vnDay(now).slice(0, 7);
     if (!reports(m)) return json({ required: false, canReview: isManager(m), month });
@@ -236,7 +236,7 @@ export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: StaffR
     const [rows, drafts, eventReminders] = await Promise.all([
       db.select().from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), inArray(staffWeeklyReports.period, periods))),
       db.select({ period: staffWeeklyReportDrafts.period, updatedAt: staffWeeklyReportDrafts.updatedAt }).from(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId, m.id), inArray(staffWeeklyReportDrafts.period, periods))),
-      weeklyEventReminders(db,m.id,vnDay(now)),
+      deps.workspaceTasks.reminders(db,m.id,vnDay(now)),
     ]);
     const pts = monthPoints(month, new Map(rows.map(r => [r.period, { submittedAt: r.submittedAt, review: r.review as WeeklyReview }])), now);
     const lastWeek = addDays(mondayOf(vnDay(now)), -7);
@@ -274,7 +274,7 @@ export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: StaffR
       reviewLabels: WEEKLY_REVIEW_LABEL });
   }, 'business');
 
-  router.get('/staff-reports/actions',async c=>{const m=me(c),memberId=c.url.searchParams.get('memberId')||m.id;if(memberId!==m.id&&!isManager(m))throw new AppError(403,'Chỉ xem việc phát sinh từ báo cáo của mình.');if(memberId===m.id&&!reports(m)&&!isManager(m))throw new AppError(403,'Không có quyền xem báo cáo.');return json({actions:await weeklyReportActions(c.env.db,memberId)});},'business');
+  router.get('/staff-reports/actions',async c=>{const m=me(c),memberId=c.url.searchParams.get('memberId')||m.id;if(memberId!==m.id&&!isManager(m))throw new AppError(403,'Chỉ xem việc phát sinh từ báo cáo của mình.');if(memberId===m.id&&!reports(m)&&!isManager(m))throw new AppError(403,'Không có quyền xem báo cáo.');return json({actions:await deps.workspaceTasks.actions(c.env.db,memberId)});},'business');
 
   router.put('/staff-reports/draft', async c => {
     const m = me(c), db = c.env.db, b = await readJson(c.req, 300_000), now = nowIso();
@@ -332,7 +332,7 @@ export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: StaffR
         const [last] = await tx.select({ v: sql<number>`coalesce(max(${staffWeeklyReportVersions.version}),0)`.mapWith(Number) }).from(staffWeeklyReportVersions).where(eq(staffWeeklyReportVersions.reportId, existing.id));
         if((inputs as {workspaceVersion?:number}).workspaceVersion===2&&b.expectedVersion!==(last?.v??0))throw new AppError(409,'Báo cáo đã có phiên bản mới. Tải lại để đối chiếu.','REPORT_CONFLICT');
         const version = (last?.v ?? 0) + 1;
-        if(sp.kind==='weekly'&&(inputs as {workspaceVersion?:number}).workspaceVersion===2)await syncWorkspaceActions(tx as AnyDb,m.id,existing.id,period,inputs as WorkspaceInputs,workspaceFactView(facts as WeekFacts),now);
+        if(sp.kind==='weekly'&&(inputs as {workspaceVersion?:number}).workspaceVersion===2)await deps.workspaceTasks.sync(tx as AnyDb,m.id,existing.id,period,inputs as WorkspaceInputs,workspaceFactView(facts as WeekFacts),now);
         await tx.update(staffWeeklyReports).set({ data, updatedAt: now, clientKey }).where(eq(staffWeeklyReports.id, existing.id));
         await tx.insert(staffWeeklyReportVersions).values({ id: crypto.randomUUID(), reportId: existing.id, version, data, submittedAt: now });
         await tx.delete(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId, m.id), eq(staffWeeklyReportDrafts.period, period)));
@@ -341,7 +341,7 @@ export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: StaffR
       if((inputs as {workspaceVersion?:number}).workspaceVersion===2&&b.expectedVersion!==0)throw new AppError(409,'Thiếu phiên bản báo cáo đã mở.','REPORT_CONFLICT');
       const id = crypto.randomUUID();
       const inserted = await tx.insert(staffWeeklyReports).values({ id, memberId: m.id, period, data, submittedAt: now, updatedAt: now, clientKey }).onConflictDoNothing().returning({ id: staffWeeklyReports.id });
-      if(sp.kind==='weekly'&&(inputs as {workspaceVersion?:number}).workspaceVersion===2)await syncWorkspaceActions(tx as AnyDb,m.id,id,period,inputs as WorkspaceInputs,workspaceFactView(facts as WeekFacts),now);
+      if(sp.kind==='weekly'&&(inputs as {workspaceVersion?:number}).workspaceVersion===2)await deps.workspaceTasks.sync(tx as AnyDb,m.id,id,period,inputs as WorkspaceInputs,workspaceFactView(facts as WeekFacts),now);
       if (!inserted.length) throw new AppError(409, `Báo cáo ${sp.label} này vừa được nộp ở máy khác. Tải lại trang.`);
       await tx.insert(staffWeeklyReportVersions).values({ id: crypto.randomUUID(), reportId: id, version: 1, data, submittedAt: now });
       await tx.delete(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId, m.id), eq(staffWeeklyReportDrafts.period, period)));

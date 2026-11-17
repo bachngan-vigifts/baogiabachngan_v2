@@ -1,4 +1,3 @@
-import {weeklyReportTaskSources} from '../../staff-reports/api/workspace.ts';
 import {warehouseAssignmentHooks} from '../../../core/contracts/warehouse-source.ts';
 import { receivingReminderTasks } from './receiving-reminders.ts';
 import { supplierPaymentTasks } from './accounting-sources.ts';
@@ -89,6 +88,12 @@ export async function transferTasks(db: Db, today: string, transferId?: string):
     const approve = { ...base, title: `Duyệt phiếu xin hàng ${what}`, description: `Bấm Cho hoặc Từ chối trên phiếu. Lý do xin: ${t.reason}`, priority: 'high' as const, dueDate: day(t.createdAt) };
     return deciders.length ? deciders.map(id => ({ ...approve, autoKey: `transfer-approve:${t.id}:${id}`, assigneeId: id })) : [{ ...approve, autoKey: `transfer-approve:${t.id}`, assigneeId: null,assigneePosition:'manager' }];
   }).flat();
+}
+
+/** These manually completed follow-ups remain wanted; a generic source reconciliation must not close them. */
+export async function weeklyReportTaskSources(db:Db):Promise<AutoTask[]>{
+ const rows=await db.select().from(tasks).where(and(eq(tasks.source,'manual'),like(tasks.autoKey,'weekly-report:%'),inArray(tasks.status,['todo','in_progress'])));
+ return rows.map(t=>({autoKey:t.autoKey!,source:'manual',sourceId:t.sourceId!,title:t.title,description:t.description,link:t.link,assigneeId:t.assigneeId,priority:t.priority,dueDate:t.dueDate,dueTime:t.dueTime}));
 }
 
 export const RULES: Record<string, Rule> = {

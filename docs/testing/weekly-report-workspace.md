@@ -83,3 +83,9 @@ Screenshots are produced under `/workspace/artifacts/weekly-report-redesign/`.
 Synthetic local tests do not establish production load capacity or real-user
 production deployment. Check the PR's CI and deployed CRM separately before
 reporting the feature live.
+
+PR #715 CI correction: the architecture test caught a forbidden report/task
+module dependency. Task persistence/reminder reads now live in
+`src/app/weekly-report-tasks.ts` and are injected by the application router.
+The task reconciliation source reads its own table within the task module.
+The architecture allow-list and cycle checks are unchanged.

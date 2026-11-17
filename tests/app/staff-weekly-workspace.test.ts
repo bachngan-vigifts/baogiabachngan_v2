@@ -6,7 +6,7 @@ import {PASSWORD} from '../helpers/staff-fixture.ts';
 import {workspaceSchema} from '../../src/modules/staff-reports/domain/workspace.ts';
 import {staffWeeklyReports,staffWeeklyReportVersions} from '../../src/modules/staff-reports/schema.ts';
 import {tasks} from '../../src/modules/tasks/schema.ts';
-import {weeklyReportTaskSources} from '../../src/modules/staff-reports/api/workspace.ts';
+import {weeklyReportTaskSources} from '../../src/modules/tasks/api/auto-tasks.ts';
 const good=()=>workspaceSchema.parse({workspaceVersion:2,overview:'Chăm sóc các khối khách',sectors:['bank','agri','aqua'].map(key=>({key,actions:'Gọi khách và gửi mẫu',result:'potential'})),priority:'Chốt các báo giá đã gửi',planTasks:[0,1,2].map(n=>({id:'plan-row-'+n,title:'Việc trọng tâm '+n,customer:'Khách thử',date:'2026-12-10'})),selfScore:4,opportunities:[{id:'opportunity-row-1',customer:'Khách thử',sector:'bank',amount:100,need:'100 ca sứ',occasion:'Hội nghị',dueDate:'2026-12-10'}],events:[{id:'event-row-1',customer:'Khách thử',occasion:'Hội nghị khách hàng',date:'2027-01-20',type:'conference',note:'Cần gửi mẫu'}]});
 async function fixture(t:TestContext){const f=await setupLiquidation();t.mock.timers.enable({apis:['Date'],now:new Date('2026-12-07T02:00:00Z').getTime()});const login=async(email:string)=>(await f.call('/login','','POST',{email,password:PASSWORD})).cookie;return{...f,emp:await login('emp@x.vn'),mgr:await login('mgr@x.vn'),other:await login('new@x.vn')};}
 test('autosave compare-and-set rejects a stale tab and legacy downgrade without losing the saved draft',async t=>{
