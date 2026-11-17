@@ -43,6 +43,7 @@ export async function verify(browser,live=false){
 const ids=['mailpoet_woocommerce_checkout_optin','ship-to-different-address-checkbox'];
 return ids.every(id=>{const e=document.getElementById(id);return !e||(!e.checked&&!e.getClientRects().length);});
 });if(!compact)throw Error('Removed mobile options still visible or selected');
+if(live){await page.waitForFunction(()=>document.getElementById('bnco-footnote')?.textContent.includes('sau khi nhập địa chỉ'));const goods=await page.evaluate(()=>document.getElementById('bnco-amount').textContent===document.getElementById('bnco-shipping-state').dataset.goods);if(!goods)throw Error('Unconfirmed shipping fee included before address');console.log('PAID_SHIPPING_WAITING_FOR_ADDRESS_OK '+host);}
 console.log('COMPACT_ADDRESS_OPTIONS_OK '+host);
 console.log('PHASE_1_FORM_LAYOUT_OK '+host);
  console.log('FORM_SPACING '+host+' '+JSON.stringify(await page.evaluate(()=>({gap:document.querySelector('label[for="billing_first_name"]').getBoundingClientRect().top-document.querySelector('.woocommerce-billing-fields').getBoundingClientRect().top,children:[...document.querySelector('.woocommerce-billing-fields__field-wrapper').children].map(e=>({id:e.id,cls:e.className,h:e.getBoundingClientRect().height,display:getComputedStyle(e).display,order:getComputedStyle(e).order}))}))));
@@ -60,6 +61,7 @@ console.log('PHASE_1_FORM_LAYOUT_OK '+host);
  await choose('billing_ghn_district_id','1572');
  await choose('billing_ghn_ward_code','550111');
  await settle();await thumbs();
+ if(live){await page.waitForFunction(()=>document.getElementById('bnco-footnote')?.textContent.startsWith('Phí vận chuyển:'));await page.waitForFunction(()=>document.getElementById('bnco-amount').textContent===document.querySelector('.order-total .amount').textContent.trim());console.log('ADDRESS_SHIPPING_TOTAL_VISIBLE_OK '+host);}
  await page.locator('#bnco-next').click();
  await page.waitForFunction(()=>document.body.classList.contains('bnco-step2'),{},{timeout:90000});
  if(!(await page.locator('#bnco-address-copy').textContent()).includes('123 Đường kiểm thử'))throw Error('Address missing');
@@ -70,6 +72,7 @@ console.log('PHASE_1_FORM_LAYOUT_OK '+host);
   if(live)await page.waitForFunction(()=>[...document.querySelectorAll('.bnco-product-thumb')].length>0&&[...document.querySelectorAll('.bnco-product-thumb')].every(i=>i.complete&&i.naturalWidth>0));
  await page.locator('.bnco-eta-express a[href="tel:0939961966"]').waitFor({state:'visible'});
  if(!(await page.locator('.bnco-express-note').textContent()).includes('không áp dụng cho đơn giao hỏa tốc'))throw Error('Express promotion notice missing');
+ if(await page.locator('#bnco-review-confirm').count()){if(!await page.locator('#bnco-review-confirm').isChecked())throw Error('Order information confirmation not preselected');await page.locator('#bnco-review-confirm').uncheck();await page.evaluate(()=>jQuery(document.body).trigger('update_checkout'));await page.waitForTimeout(1500);await settle();if(await page.locator('#bnco-review-confirm').isChecked())throw Error('Customer unchecked confirmation overwritten');await page.locator('#bnco-review-confirm').check();console.log('CONFIRMATION_DEFAULT_AND_USER_CHOICE_OK '+host);}
  console.log('EXPRESS_CONTACT_HIGHLIGHT_OK '+host);
  console.log('GHN_DATE_VISIBLE_IN_REVIEW_OK '+host);
  console.log('PHASE_2_ADDRESS_VALIDATION_BACK_PERSISTENCE_OK '+host);
@@ -130,7 +133,9 @@ console.log('PHASE_1_FORM_LAYOUT_OK '+host);
  await page.screenshot({path:'checkout-desktop-'+host+'.png',fullPage:true});
  const changes=await page.evaluate(async()=>{const e=document.querySelector('.claw-lnl-invoice-request--checkout,.claw-ml-invoice-request--checkout');let n=0;const o=new MutationObserver(rs=>rs.forEach(r=>{if([...r.addedNodes].includes(e))n++;}));o.observe(document.querySelector('form.checkout'),{childList:true,subtree:true});await new Promise(r=>setTimeout(r,1000));o.disconnect();return n;});if(changes>1)throw Error('Repeated desktop invoice movement');
  console.log('DESKTOP_NATIVE_LAYOUT_OK '+host);
- if(live){await page.reload({waitUntil:'domcontentloaded',timeout:90000});await page.waitForFunction(id=>document.querySelector('input[name="payment_method"]:checked')?.value===id,bank,{timeout:30000});console.log('BANK_DEFAULT_DESKTOP_OK '+host);}
+ if(live){await page.reload({waitUntil:'domcontentloaded',timeout:90000});await page.waitForFunction(id=>document.querySelector('input[name="payment_method"]:checked')?.value===id,bank,{timeout:30000});console.log('BANK_DEFAULT_DESKTOP_OK '+host);
+ const freeCtx=await browser.newContext({viewport:{width:390,height:844}});try{const added=await freeCtx.request.post(origin+'/?wc-ajax=add_to_cart',{timeout:90000,form:{product_id:pid,quantity:'4'}});if((await added.json()).error)throw Error('Free shipping cart failed');const freePage=await freeCtx.newPage();await freePage.goto(origin+'/thanh-toan/',{waitUntil:'domcontentloaded',timeout:90000});await freePage.waitForFunction(()=>document.getElementById('bnco-footnote')?.textContent==='Miễn phí vận chuyển',{},{timeout:45000});console.log('FREE_SHIPPING_BEFORE_ADDRESS_OK '+host);await freePage.screenshot({path:'checkout-freeship-'+host+'.png'});}finally{await freeCtx.close();}
+ }
  }catch(e){console.log('CHECKOUT_DIAGNOSTIC '+host+' '+JSON.stringify(await page.evaluate(()=>({error:document.getElementById('bnco-error')?.textContent,images:[...document.querySelectorAll('.bnco-product-thumb')].map(i=>({src:i.currentSrc||i.src,loaded:i.complete,width:i.naturalWidth})),modal:document.querySelector('.lnl-voucher-modal[aria-hidden="false"]')?.textContent.slice(0,2200),step:document.body.className,fields:[...document.querySelectorAll('#customer_details input:not([type=hidden]),#customer_details select')].filter(e=>e.id.startsWith('billing_')).map(e=>({id:e.id,value:e.value})),cards:[...document.querySelectorAll('form.checkout,#customer_details,.woocommerce-billing-fields,.woocommerce-billing-fields__field-wrapper')].map(e=>({cls:e.className,padding:getComputedStyle(e).padding,margin:getComputedStyle(e).margin})),above:[...document.querySelector('form.checkout').parentElement.children].map(e=>({tag:e.tagName,id:e.id,cls:e.className,text:e.textContent.trim().slice(0,90)}))}))));await page.screenshot({path:'checkout-failure-'+host+'.png',fullPage:true});throw e;}finally{await ctx.close();}
  }
 }

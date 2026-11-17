@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Store mobile checkout option 3
- * Version: 1.0.4
+ * Version: 1.0.5
  * Presentation only; WooCommerce remains the order and pricing authority.
  */
 defined('ABSPATH') || exit;
@@ -20,6 +20,26 @@ add_action('woocommerce_before_checkout_form', function() {
   break;
  }
 }, 99999);
+
+
+function bnco_shipping_snapshot() {
+ if (!function_exists('WC') || !WC()->cart) return '<span id="bnco-shipping-state" hidden></span>';
+ $cart=WC()->cart;
+ $shipping=(float)$cart->get_shipping_total()+(float)$cart->get_shipping_tax();
+ $goods=max(0,(float)$cart->get_total('edit')-$shipping);
+ $valid=!$cart->needs_shipping();
+ if($cart->needs_shipping() && WC()->shipping()) {
+  $packages=WC()->shipping()->get_packages();$valid=!empty($packages);
+  foreach($packages as $package){if(empty($package['rates'])){$valid=false;break;}}
+ }
+ $posted=array();
+ if(isset($_POST['post_data']))parse_str(wp_unslash($_POST['post_data']),$posted);
+ $prefix=!empty($posted['ship_to_different_address'])?'shipping':'billing';
+ $key=implode('|',array_map(function($suffix)use($posted,$prefix){return sanitize_text_field($posted[$prefix.$suffix]??'');},array('_ghn_province_id','_ghn_district_id','_ghn_ward_code')));
+ $price=function($n){return html_entity_decode(wp_strip_all_tags(wc_price($n)),ENT_QUOTES,'UTF-8');};
+ return '<span id="bnco-shipping-state" hidden data-free="'.($valid && $shipping<0.01?'1':'0').'" data-address="'.esc_attr($key).'" data-fee="'.esc_attr($price($shipping)).'" data-goods="'.esc_attr($price($goods)).'"></span>';
+}
+add_filter('woocommerce_update_order_review_fragments',function($fragments){$fragments['#bnco-shipping-state']=bnco_shipping_snapshot();return $fragments;},99999);
 
 add_filter('woocommerce_cart_item_name', function($name,$item,$key) {
  if (!(bnco_is_checkout() || (defined('WOOCOMMERCE_CHECKOUT') && WOOCOMMERCE_CHECKOUT))) return $name;
@@ -231,11 +251,14 @@ body.bnco-active .bnco-express-title{display:block;font-size:15px;line-height:1.
 body.bnco-active .bnco-eta-express p{font-size:13px;line-height:1.65;margin:0!important}
 body.bnco-active .bnco-eta-express a{display:inline-block;color:#784a0d;font-size:16px;font-weight:800;text-decoration:underline;text-underline-offset:3px;white-space:nowrap;padding:3px 0}
 body.bnco-active .bnco-eta-express .bnco-express-note{margin-top:9px!important;padding-top:9px;border-top:1px solid #edcf9c;font-weight:600;color:#823e13;font-size:12.5px}
-}</style>
+}
+@media(max-width:549px){#bnco-footer>div{min-width:0;flex:1}#bnco-footnote{max-width:220px}#bnco-next{flex-shrink:0}}
+</style>
 <?php
 },9999);
 add_action('wp_footer',function(){
  if(!bnco_is_checkout())return;
+ echo bnco_shipping_snapshot();
  echo '<script>window.bncoCartUrl='.wp_json_encode(wc_get_cart_url()).';</script>';
 ?>
 <script id="bnco-script">(function(){
@@ -256,6 +279,8 @@ function syncPayment(){
  if(desired&&!desired.checked&&!desired.disabled){settingPayment=true;desired.click();settingPayment=false;}
 }
 const mq=matchMedia('(max-width:549px)');
+let confirmationChoice=true;
+form.addEventListener('change',e=>{if(e.target.id==='bnco-review-confirm')confirmationChoice=e.target.checked;});
 let step=1,pending=false,updateFailed=false,advanceWhenReady=false,timer=0;
 const shell=document.createElement('section');shell.id='bnco-shell';
 shell.innerHTML='<div class="bnco-head"><button id="bnco-back" type="button" aria-label="Quay lại">←</button><h1 id="bnco-title">Thông tin nhận hàng</h1><img id="bnco-logo" alt=""></div><div class="bnco-steps" aria-label="Tiến trình thanh toán"><span class="bnco-step active" data-step="1"><b>1</b>Địa chỉ</span><span class="bnco-line"></span><span class="bnco-step" data-step="2"><b>2</b>Xác nhận</span></div>';
@@ -323,7 +348,7 @@ function structure(){
  const native=document.querySelector('#payment > .place-order');
  if(native){currentReview.querySelectorAll(':scope > .bnco-native-place-order').forEach(e=>e.remove());native.classList.add('bnco-native-place-order');currentReview.append(native);}
  if(!document.getElementById('terms')&&!document.getElementById('bnco-review-confirm')){
- const row=document.createElement('label');row.className='bnco-confirm-row';row.innerHTML='<input type="checkbox" id="bnco-review-confirm"> Tôi xác nhận thông tin đặt hàng ở trên là chính xác';currentReview.querySelector('.bnco-native-place-order')?.prepend(row);
+ const row=document.createElement('label');row.className='bnco-confirm-row';row.innerHTML='<input type="checkbox" id="bnco-review-confirm"> Tôi xác nhận thông tin đặt hàng ở trên là chính xác';row.querySelector('input').checked=confirmationChoice;currentReview.querySelector('.bnco-native-place-order')?.prepend(row);
  }
  }else{
  const moved=currentReview.querySelector(':scope > .bnco-native-place-order');if(moved)document.getElementById('payment')?.append(moved);
@@ -355,14 +380,20 @@ function sync(){
    eta.append(box);
   }
  }
- const amount=document.querySelector(step===1?'.woocommerce-checkout-review-order-table .cart-subtotal .amount':'.woocommerce-checkout-review-order-table .order-total .amount');
- if(amount){const dest=document.getElementById('bnco-amount');if(dest.textContent!==amount.textContent.trim())dest.textContent=amount.textContent.trim();}
+ const shippingState=document.getElementById('bnco-shipping-state')?.dataset||{};
+ const addressKey=[value(prefix+'_ghn_province_id'),value(prefix+'_ghn_district_id'),value(prefix+'_ghn_ward_code')].join('|');
+ const hasAddress=!!(value(prefix+'_address_1')&&value(prefix+'_ghn_province_id')&&value(prefix+'_ghn_district_id')&&value(prefix+'_ghn_ward_code'));
+ const free=shippingState.free==='1';
+ const feeReady=hasAddress&&shippingState.address===addressKey&&!pending&&!updateFailed;
+ const includeFee=step===2||free||feeReady;
+ const amount=document.querySelector(includeFee?'.woocommerce-checkout-review-order-table .order-total .amount':'.woocommerce-checkout-review-order-table .cart-subtotal .amount');
+ if(amount){const dest=document.getElementById('bnco-amount'),text=step===1&&!includeFee&&shippingState.goods?shippingState.goods:amount.textContent.trim();if(dest.textContent!==text)dest.textContent=text;}
  const busy=updateFailed||pending||form.classList.contains('processing')||!!document.querySelector('#order_review .blockUI,.woocommerce-checkout-review-order-table.processing');
  next.disabled=busy&&step===2;
  const buttonText=busy?'Đang cập nhật…':step===1?'Tiếp tục →':'Đặt hàng';
  if(next.textContent!==buttonText)next.textContent=buttonText;
- document.getElementById('bnco-total-label').textContent=step===1?'Tiền hàng':'Tổng thanh toán';
- document.getElementById('bnco-footnote').textContent=step===1?'Chưa gồm phí giao hàng':'Đã gồm phí giao hàng hiển thị';
+ document.getElementById('bnco-total-label').textContent=step===1?(includeFee?'Tổng tạm tính':'Tiền hàng'):'Tổng thanh toán';
+ document.getElementById('bnco-footnote').textContent=step===2?'Đã gồm phí giao hàng hiển thị':free?'Miễn phí vận chuyển':feeReady?'Phí vận chuyển: '+shippingState.fee:hasAddress?'Đang cập nhật phí vận chuyển…':'Phí vận chuyển tính sau khi nhập địa chỉ';
  document.body.classList.toggle('bnco-modal',!!document.querySelector('.lnl-voucher-modal[aria-hidden="false"]'));
 }
 function schedule(){clearTimeout(timer);timer=setTimeout(sync,80);}
