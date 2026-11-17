@@ -69,7 +69,9 @@ export async function verify(browser,live=false){
  if(await opener.isVisible()){
  await opener.click();
  const coupon=host==='minhlongonline.com'?'ml10k':'lnl10k';
- await page.locator('.lnl-voucher-modal[aria-hidden="false"] [data-lnl-voucher-code="'+coupon+'"]').click();
+ const modal=page.locator('.lnl-voucher-modal[aria-hidden="false"]');
+ await modal.locator('input:not([type="hidden"])').first().fill(coupon);
+ await modal.getByRole('button',{name:'ÁP DỤNG',exact:true}).click();
  await page.waitForFunction(()=>!!document.querySelector('.woocommerce-checkout-review-order-table .cart-discount'),{},{timeout:90000});
  await settle();await thumbs();
  await page.waitForFunction(()=>document.getElementById('bnco-amount').textContent===document.querySelector('.order-total .amount').textContent.trim());
@@ -94,7 +96,7 @@ export async function verify(browser,live=false){
  if(await page.locator('#payment #place_order').count()!==1)throw Error('Desktop payment row not restored');
  await page.screenshot({path:'checkout-desktop-'+host+'.png',fullPage:true});
  console.log('DESKTOP_NATIVE_LAYOUT_OK '+host);
- }catch(e){console.log('CHECKOUT_DIAGNOSTIC '+host+' '+JSON.stringify(await page.evaluate(()=>({error:document.getElementById('bnco-error')?.textContent,step:document.body.className,fields:[...document.querySelectorAll('#customer_details input:not([type=hidden]),#customer_details select')].filter(e=>e.id.startsWith('billing_')).map(e=>({id:e.id,value:e.value})),cards:[...document.querySelectorAll('form.checkout,#customer_details,.woocommerce-billing-fields,.woocommerce-billing-fields__field-wrapper')].map(e=>({cls:e.className,padding:getComputedStyle(e).padding,margin:getComputedStyle(e).margin})),above:[...document.querySelector('form.checkout').parentElement.children].map(e=>({tag:e.tagName,id:e.id,cls:e.className,text:e.textContent.trim().slice(0,90)}))}))));await page.screenshot({path:'checkout-failure-'+host+'.png',fullPage:true});throw e;}finally{await ctx.close();}
+ }catch(e){console.log('CHECKOUT_DIAGNOSTIC '+host+' '+JSON.stringify(await page.evaluate(()=>({error:document.getElementById('bnco-error')?.textContent,modal:document.querySelector('.lnl-voucher-modal[aria-hidden="false"]')?.textContent.slice(0,2200),step:document.body.className,fields:[...document.querySelectorAll('#customer_details input:not([type=hidden]),#customer_details select')].filter(e=>e.id.startsWith('billing_')).map(e=>({id:e.id,value:e.value})),cards:[...document.querySelectorAll('form.checkout,#customer_details,.woocommerce-billing-fields,.woocommerce-billing-fields__field-wrapper')].map(e=>({cls:e.className,padding:getComputedStyle(e).padding,margin:getComputedStyle(e).margin})),above:[...document.querySelector('form.checkout').parentElement.children].map(e=>({tag:e.tagName,id:e.id,cls:e.className,text:e.textContent.trim().slice(0,90)}))}))));await page.screenshot({path:'checkout-failure-'+host+'.png',fullPage:true});throw e;}finally{await ctx.close();}
  }
 }
 try{await verify(browser,process.env.LIVE==='1');}finally{await browser.close();}

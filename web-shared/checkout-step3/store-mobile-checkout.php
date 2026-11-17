@@ -176,6 +176,16 @@ body.bnco-active .ux-free-shipping__bar{height:4px!important;margin-top:6px!impo
 body.bnco-active #main form.checkout{padding:12px 0 0!important;background:transparent!important;border-radius:0!important;box-shadow:none!important;border:0!important}
 body.bnco-active #main #customer_details .form-row>label{display:block!important;position:static!important;clip:auto!important;clip-path:none!important;width:auto!important;height:auto!important;overflow:visible!important;visibility:visible!important;opacity:1!important;transform:none!important;text-indent:0!important}
 body.bnco-active #payment .wc_payment_method>label{color:#182b40!important}
+}
+#bnco-retry,#bnco-error{display:none}
+@media(max-width:549px){
+body.bnco-active #bnco-retry:not([hidden]){display:inline-block}
+body.bnco-active #bnco-error:not([hidden]){display:block}
+body.bnco-active #main #customer_details .form-row label.fl-label{display:block!important;position:static!important;clip:auto!important;clip-path:none!important;width:auto!important;height:auto!important;overflow:visible!important;visibility:visible!important;opacity:1!important;transform:none!important;text-indent:0!important;left:auto!important;top:auto!important}
+body.bnco-active #customer_details .fl-wrap{padding:0!important}
+body.bnco-active .claw-gift-checkout-mobile{order:2}
+body.bnco-active .claw-gift-checkout-mobile br{display:none!important}
+body.bnco-active .woocommerce-billing-fields:before,body.bnco-active .woocommerce-billing-fields__field-wrapper:before{display:none!important;content:none!important}
 }</style>
 <?php
 },9999);
@@ -187,6 +197,8 @@ add_action('wp_footer',function(){
 'use strict';
 const form=document.querySelector('form.checkout'),customer=document.getElementById('customer_details'),review=document.getElementById('order_review');
 if(!form||!customer||!review)return;
+const gift=document.querySelector('.claw-gift-checkout-mobile'),giftAnchor=document.createComment('checkout gift location');
+if(gift)gift.before(giftAnchor);
 const mq=matchMedia('(max-width:549px)');
 let step=1,pending=false,updateFailed=false,advanceWhenReady=false,timer=0;
 const shell=document.createElement('section');shell.id='bnco-shell';
@@ -196,6 +208,8 @@ if(logo){shell.querySelector('img').src=logo.currentSrc||logo.src;shell.querySel
 else shell.querySelector('img').hidden=true;
 document.body.prepend(shell);
 const error=document.createElement('div');error.id='bnco-error';error.hidden=true;error.setAttribute('role','alert');form.prepend(error);
+const retry=document.createElement('button');retry.type='button';retry.id='bnco-retry';retry.textContent='Cập nhật lại';retry.hidden=true;error.after(retry);
+retry.addEventListener('click',()=>{if(window.jQuery){pending=true;updateFailed=false;retry.hidden=true;jQuery(document.body).trigger('update_checkout');sync();}});
 const address=document.createElement('div');address.className='bnco-review-address';address.innerHTML='<span class="bnco-address-icon" aria-hidden="true">⌖</span><div id="bnco-address-copy"></div><button type="button" id="bnco-edit">Sửa</button>';review.prepend(address);
 const eta=document.createElement('div');eta.className='bnco-review-eta';eta.hidden=true;review.insertBefore(eta,address.nextSibling);
 const footer=document.createElement('div');footer.id='bnco-footer';footer.innerHTML='<div><small id="bnco-total-label">Tiền hàng</small><strong id="bnco-amount"></strong><small id="bnco-footnote">Chưa gồm phí giao hàng</small></div><button type="button" id="bnco-next">Tiếp tục →</button>';document.body.append(footer);
@@ -225,7 +239,7 @@ function setStep(n,scroll=true){
  sync();if(scroll)window.scrollTo({top:0,behavior:'smooth'});
 }
 function structure(){
- if(!mq.matches){const moved=review.querySelector(':scope > .bnco-native-place-order');if(moved)document.getElementById('payment')?.append(moved);return;}
+ if(!mq.matches){if(gift&&giftAnchor.parentNode)giftAnchor.after(gift);const moved=review.querySelector(':scope > .bnco-native-place-order');if(moved)document.getElementById('payment')?.append(moved);return;}
  const wrap=document.querySelector('.woocommerce-billing-fields__field-wrapper');
  if(wrap&&!wrap.querySelector('.bnco-address-tip')){
  const tip=document.createElement('p');tip.className='bnco-address-tip';tip.textContent='Chọn đủ địa chỉ để xem phí và dự kiến giao hàng.';wrap.append(tip);
@@ -238,6 +252,7 @@ function structure(){
  if(!cell.querySelector('.bnco-product-copy')){const copy=document.createElement('div');copy.className='bnco-product-copy';[...cell.childNodes].filter(n=>!(n.nodeType===1&&n.classList.contains('bnco-product-thumb'))).forEach(n=>copy.append(n));cell.append(copy);}
  });
  const currentReview=document.getElementById('order_review');if(!currentReview)return;
+ if(gift&&gift.parentElement!==currentReview)currentReview.append(gift);
  if(!currentReview.contains(address))currentReview.prepend(address);
  if(!currentReview.contains(eta))currentReview.insertBefore(eta,address.nextSibling);
  currentReview.querySelectorAll('.shipping__table th').forEach(e=>{if(e.textContent.trim()==='Shipment')e.textContent='Vận chuyển';});
@@ -290,9 +305,9 @@ form.addEventListener('keydown',e=>{if(mq.matches&&step===1&&e.key==='Enter'&&e.
 form.addEventListener('input',schedule);form.addEventListener('change',schedule);
 if(window.jQuery){
  jQuery(document.body).on('update_checkout.bnco',()=>{pending=true;updateFailed=false;schedule();});
- jQuery(document.body).on('updated_checkout.bnco',()=>{pending=false;updateFailed=false;if(advanceWhenReady){advanceWhenReady=false;if(validate())setStep(2);}schedule();});
+ jQuery(document.body).on('updated_checkout.bnco',()=>{pending=false;updateFailed=false;retry.hidden=true;if(advanceWhenReady){advanceWhenReady=false;if(validate())setStep(2);}schedule();});
  jQuery(document.body).on('checkout_error.bnco',()=>{pending=false;if(customer.querySelector('.woocommerce-invalid'))setStep(1);schedule();});
- jQuery(document).ajaxError((e,xhr,settings)=>{if(settings.url?.includes('update_order_review')){pending=false;updateFailed=true;advanceWhenReady=false;showError('Chưa cập nhật được tổng tiền. Vui lòng kiểm tra kết nối và thử lại.');next.disabled=true;}});
+ jQuery(document).ajaxError((e,xhr,settings)=>{if(!mq.matches)return;if(settings.url?.includes('update_order_review')){pending=false;updateFailed=true;advanceWhenReady=false;retry.hidden=false;showError('Chưa cập nhật được tổng tiền. Vui lòng kiểm tra kết nối và thử lại.');next.disabled=true;}});
 }
 new MutationObserver(records=>{if(records.some(r=>!footer.contains(r.target)&&!shell.contains(r.target)&&!address.contains(r.target)&&!eta.contains(r.target)))schedule();}).observe(form,{childList:true,subtree:true,attributes:true,attributeFilter:['class','hidden','aria-hidden']});
 mq.addEventListener('change',()=>{sync();});window.addEventListener('resize',schedule);
