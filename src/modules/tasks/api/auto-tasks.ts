@@ -100,7 +100,7 @@ export const RULES: Record<string, Rule> = {
     const rows = await dueFollowUps(db, today);
     return rows.map(r => ({ autoKey: `care:${r.id}:${r.nextAt}`, source: 'care' as const, sourceId: r.id,
       title: `Chăm sóc lại ${r.customerName}${r.contactName ? ' – ' + r.contactName : ''}`.slice(0, 200),
-      description: `Lần trước (${CARE_TYPE_LABEL[r.type].toLowerCase()}): ${(r.nextAction || r.content || r.subject).slice(0, 300)}`,
+      description: `${r.completion==='not_completed'?'Việc cần làm':'Lần trước'} (${CARE_TYPE_LABEL[r.type].toLowerCase()}): ${(r.nextAction || r.content || r.subject).slice(0, 300)}`,
       link: `#/care/${r.id}`, assigneeId: r.ownerId, priority: r.nextAt! < today ? 'high' as const : 'normal' as const, dueDate: r.nextAt }));
   },
   /** Báo giá chờ duyệt (khách gửi hoặc nhân viên lập): việc chưa giao người – Manager / người được duyệt duyệt (người phụ trách có thông báo riêng). */

@@ -100,6 +100,7 @@ import { orderReference, orderPrintData, orderSheetHtml, readEdits, downloadOrde
 import { openContractDocs } from './contract-ui.js';
 import { initTasks } from './tasks.js';
 import { initCare } from './care.js';
+import {initQuoteCarePrompt} from './quote-care-prompt.js';
 import { initChat } from './chat.js';
 import { setupPulse } from './pulse.js';
 import { initInventory } from './inventory.js';
@@ -2302,8 +2303,10 @@ function validateQuote(data) {
   if (incomplete >= 0) return `Dòng ${incomplete + 1}: nhập tay số lượng, đơn giá và chiết khấu còn trống (nhập 0 nếu không chiết khấu).`;
   return '';
 }
+let quoteCarePrompt;
+const quoteCareAfterSave=()=>quoteCarePrompt ||=initQuoteCarePrompt({api,toast,onChanged:()=>{if(state.user)void loadBadges().catch(()=>{});}});
 let saving = false;
-async function saveQuote() {
+async function saveQuote({promptCare=false}={}) {
   if (saving) return;
   if (editor.id && !isManager() && editor.approval?.status === 'approved' && !editor.approval?.editRequest?.canEditApproved) return toast('Báo giá đã duyệt. Gửi yêu cầu và chờ Manager cho phép sửa.', 'err');
   const err = $('#quote-error'); err.textContent = '';
@@ -2332,6 +2335,7 @@ async function saveQuote() {
     else if (saved.approvalStatus === 'draft') toast((wasNew ? 'Đã lưu nháp ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision) + ' · bấm "Gửi duyệt" khi xong.');
     else toast(wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision);
     loadQuotes(); if (saved.customerMemory && saved.customerMemory.status !== 'skipped') loadCustomers();
+    if(promptCare&&can('page.care')){try{await quoteCareAfterSave().offer({id:saved.id,revision:saved.revision},{isCurrent:()=>editor.id===saved.id&&editor.revision===saved.revision&&!$('#view-editor').hidden&&location.hash==='#/quotes/'+encodeURIComponent(saved.id)});}catch(ex){toast('Báo giá đã lưu. Chưa mở được lịch chăm sóc: '+ex.message,'err');}}
     return true;
   } catch (e) {
     if (saveSequence !== editorLoadSequence || location.hash !== saveHash) { toast(e.message, 'err'); return; }
@@ -2341,14 +2345,14 @@ async function saveQuote() {
     } else { err.textContent = e.message; toast(e.message, 'err'); }
   } finally { saving = false; updateQuoteActions(); }
 }
-qf.addEventListener('submit', e => { e.preventDefault(); saveQuote(); });
-$('#save-quote-m').addEventListener('click', async e => { e.preventDefault(); const usedEditPermission=editor.approval?.status==='approved'&&!!editor.approval?.editRequest?.canEditApproved; const saved=await saveQuote(); if(saved===true&&!usedEditPermission&&!editor.dirty&&editor.id&&editor.approval?.status==='draft'&&!saleDesignProblem(collectQuote()))await submitQuoteForApproval(); });
+qf.addEventListener('submit', e => { e.preventDefault(); saveQuote({promptCare:true}); });
+$('#save-quote-m').addEventListener('click', async e => { e.preventDefault(); const usedEditPermission=editor.approval?.status==='approved'&&!!editor.approval?.editRequest?.canEditApproved; const saved=await saveQuote({promptCare:true}); if(saved===true&&!$('#view-editor').hidden&&location.hash==='#/quotes/'+encodeURIComponent(editor.id)&&!usedEditPermission&&!editor.dirty&&editor.id&&editor.approval?.status==='draft'&&!saleDesignProblem(collectQuote()))await submitQuoteForApproval(); });
 $('#reload-quote').addEventListener('click', async () => {
   if (!await confirmBox('Tải bản mới nhất sẽ bỏ các thay đổi chưa lưu của anh/chị.', { ok: 'Tải lại', danger: true })) return;
   editor.dirty = false; openEditor(editor.id);
 });
 document.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !$('#view-editor').hidden) { e.preventDefault(); saveQuote(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !$('#view-editor').hidden) { e.preventDefault(); saveQuote({promptCare:true}); }
   if (e.key === '/' && !e.target.closest('input, textarea, select') && !document.querySelector('dialog[open]')) {
     const s = $('#view-quotes').hidden ? ($('#view-customers').hidden ? $('#member-search') : $('#customer-search')) : $('#quote-search');
     if (s && !s.closest('[hidden]')) { e.preventDefault(); s.focus(); }

@@ -26,7 +26,7 @@ export function followUpCell(a) {
   return `<span class="due-date ${tone}"><b>${dmy(a.nextAt)}</b><small>${note}</small></span>${a.remindLabel && !done ? `<small class="care-next">Nhắc trước ${esc(a.remindLabel.toLowerCase())}</small>` : ''}${a.nextAction ? `<small class="care-next">${esc(a.nextAction)}</small>` : ''}`;
 }
 /** Nội dung một lần chăm sóc (tiêu đề + nội dung + người liên hệ) dùng chung cho bảng ở trang Chăm sóc và trang chi tiết khách. */
-export const careSummary = a => `${a.subject ? `<b>${esc(a.subject)}</b>` : ''}${a.content ? `<small class="care-content">${esc(a.content)}</small>` : ''}${a.contactName ? `<small>Trao đổi với: ${esc(a.contactName)}</small>` : ''}`;
+export const careSummary = a => `${a.subject ? `<b>${esc(a.subject)}</b>` : ''}${a.content ? `<small class="care-content">${esc(a.content)}</small>` : ''}${a.contactName ? `<small>Người liên hệ: ${esc(a.contactName)}</small>` : ''}${a.quoteId?`<small><a href="#/quotes/${encodeURIComponent(a.quoteId)}">Báo giá liên quan · bản ${esc(a.quoteRevision)}</a></small>`:''}`;
 export const careType = a => `<span class="care-type">${TYPE_ICON[a.type] || ''} ${esc(a.typeLabel || a.type)}</span>${a.purpose==='after_sales'?'<small>Chăm sóc sau bán</small>':''}`;
 export const careResult = a => `<span class="pill ${RESULT_TONE[a.result] || ''}">${esc(a.resultLabel || a.result)}</span>${a.expectedRevenue ? `<small class="care-next">DS dự kiến ${new Intl.NumberFormat('vi-VN').format(a.expectedRevenue)} đ</small>` : ''}`;
 
@@ -187,7 +187,7 @@ export function initCare(deps) {
       e.preventDefault();if(submitting)return;err.textContent = '';if(contactPicker.isLoading()){err.textContent='Đang tải người liên hệ. Vui lòng chờ hoặc thử lại.';return;}if(!attempt&&!form.reportValidity())return;
       if (!picked?.id) { err.textContent = 'Chọn khách hàng trong danh sách gợi ý.'; f.customerQ?.focus(); return; }
       const body = { customerId: picked.id, ownerId: f.ownerId?.value || undefined, occurredAt: f.occurredAt.value, contactName: f.contactName.value, content: f.content.value,
-        completion:f.completion.value,purpose:f.purpose.value,quoteId:f.quoteId.selectedOptions?.[0]?.dataset.quoteId||null,quoteRevision:Number(f.quoteId.selectedOptions?.[0]?.dataset.revision)||null,type: f.type.value, expectedRevenue: parseMoney(f.expectedRevenue.value), result: f.result.value, nextAt: f.nextAt.value, remindBefore: f.remindBefore.value,
+        completion:f.completion.value,purpose:f.purpose.value,quoteId:f.type.value==='quote'?(f.quoteId.selectedOptions?.[0]?.dataset.quoteId||null):(a?.quoteId||null),quoteRevision:f.type.value==='quote'?(Number(f.quoteId.selectedOptions?.[0]?.dataset.revision)||null):(a?.quoteRevision??null),type: f.type.value, expectedRevenue: parseMoney(f.expectedRevenue.value), result: f.result.value, nextAt: f.nextAt.value, remindBefore: f.remindBefore.value,
         ...(a ? { subject: '', nextAction: a.nextAction || '', revision: a.revision } : {}) };
       const btn = dlg.querySelector('[data-save]');submitting=true;btn.disabled=true;if(!attempt)attempt={...body,...(!a?{clientKey:crypto.randomUUID()}:{})};for(const x of form.querySelectorAll('input,select,textarea,button'))x.disabled=true;
       try {
