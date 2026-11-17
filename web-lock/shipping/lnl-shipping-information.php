@@ -176,9 +176,9 @@ add_filter('woocommerce_update_order_review_fragments',function($fragments){
  return $fragments;
 });
 add_action('init',function(){
- if(get_option('lnl_si_mobile_eta_version')==='1')return;
+ if(get_option('lnl_si_mobile_eta_version')==='2')return;
  do_action('litespeed_purge_url',home_url('/'));do_action('litespeed_purge_url',home_url('/thanh-toan/'));
- update_option('lnl_si_mobile_eta_version','1',false);
+ update_option('lnl_si_mobile_eta_version','2',false);
 },40);
 add_action('wp_footer',function(){
     if(!is_front_page() && !(function_exists('is_checkout')&&is_checkout()&&!is_order_received_page()))return;
@@ -229,7 +229,13 @@ if(cfg.checkout){
  .then(data=>{if(seq!==version)return;memory.set(key,data);show(data);})
  .catch(err=>{if(seq===version&&err.name!=='AbortError')output.textContent='Shop sẽ xác nhận thời gian giao hàng khi tiếp nhận đơn.';});
  }
- function schedule(){clearTimeout(timer);timer=setTimeout(refresh,450);}
+ function schedule(event){
+ clearTimeout(timer);
+ if(event?.target?.matches('select[id^="billing_ghn_"],select[id^="shipping_ghn_"],#ship-to-different-address-checkbox')){
+  panel.hidden=true;version++;if(controller)controller.abort();
+ }
+ timer=setTimeout(refresh,450);
+}
  form.addEventListener('input',schedule);form.addEventListener('change',schedule);
  if(window.jQuery)window.jQuery(form).on('change.lnlShipping select2:select.lnlShipping select2:clear.lnlShipping','select[id^="billing_ghn_"],select[id^="shipping_ghn_"],#ship-to-different-address-checkbox',schedule);
  if(window.jQuery)window.jQuery(document.body).on('updated_checkout',function(){

@@ -63,7 +63,12 @@ try {
  await page.waitForFunction(()=>!document.getElementById('lnl-shipping-eta').hidden&&document.querySelector('.lnl-eta-result').textContent.includes('Dự kiến:'));
  console.log('CLEAR_RESELECT_ETA_OK width='+width);
  responseData=null;
- await select('billing_ghn_province_id','201');await select('billing_ghn_district_id','1489');await select('billing_ghn_ward_code','1A0218');
+ await select('billing_ghn_province_id','201');await select('billing_ghn_district_id','1489');
+ const changedResponse=page.waitForResponse(r=>{if(!r.url().includes('/lnl-shipping/v1/eta')||!r.ok())return false;try{const b=r.request().postDataJSON();return Number(b.district)===1489&&b.ward==='1A0218';}catch{return false;}},{timeout:45000});
+ await select('billing_ghn_ward_code','1A0218');
+ const expectedRoute=await (await changedResponse).json();
+ await page.waitForFunction(data=>{const text=document.querySelector('.lnl-eta-result')?.textContent;return text===(data.from===data.to?'Dự kiến: '+data.to:'Dự kiến: '+data.from+' – '+data.to);},expectedRoute,{timeout:15000});
+ responseData=expectedRoute;
  await page.waitForFunction(()=>!document.getElementById('lnl-shipping-eta').hidden&&document.querySelector('.lnl-eta-result').textContent.includes('Dự kiến:'),{},{timeout:45000});
  result=await page.locator('.lnl-eta-result').innerText();
  if(!responseData||!result.includes(responseData.to))throw Error('Changed destination ETA stale');
