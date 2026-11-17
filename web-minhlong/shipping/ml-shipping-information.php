@@ -169,7 +169,7 @@ if(cfg.checkout){
  const val=n=>document.getElementById(prefix+'_'+n)?.value?.trim()||'';
  const district=val('ghn_district_id'),ward=val('ghn_ward_code'),address=val('address_1'),province=val('ghn_province_id');
  version++;const seq=version;if(controller)controller.abort();
- if(!district||!ward||!address||!province){panel.hidden=true;last='';return;}
+ if(!district||!ward||!province){panel.hidden=true;last='';return;}
  const destination=form.querySelector(prefix==='shipping'?'.woocommerce-shipping-fields__field-wrapper':'.woocommerce-billing-fields__field-wrapper');
  if(destination&&panel.parentElement!==destination)destination.append(panel);
  const key=district+'|'+ward+'|'+cfg.type;
@@ -185,6 +185,9 @@ if(cfg.checkout){
  }
  function schedule(){clearTimeout(timer);timer=setTimeout(refresh,450);}
  form.addEventListener('input',schedule);form.addEventListener('change',schedule);
+ // Select2 and GHN dependent selects emit jQuery events, not native DOM change.
+ if(window.jQuery)window.jQuery(form).on('change.mlShipping select2:select.mlShipping select2:clear.mlShipping',
+ '[id^="billing_ghn_"],[id^="shipping_ghn_"],#billing_address_1,#shipping_address_1,#ship-to-different-address-checkbox',schedule);
  if(window.jQuery)window.jQuery(document.body).on('updated_checkout',function(){
  const type=Number(document.getElementById('ml-shipping-service-type')?.dataset.type)||cfg.type;
  if(type!==cfg.type){cfg.type=type;memory.clear();}
