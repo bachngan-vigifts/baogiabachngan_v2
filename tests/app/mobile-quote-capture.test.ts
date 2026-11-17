@@ -37,15 +37,17 @@ test('chụp báo giá không cần lưu/duyệt, không ghi API; tải file v�
  const source=readFileSync('trial-ui/app.js','utf8');
  const actions=source.slice(source.indexOf('function updateQuoteActions()'),source.indexOf('function closeDownloadMenu()'));
  const handler=source.slice(source.indexOf("$('#quote-capture').addEventListener"),source.indexOf("$('#quote-download').addEventListener"));
- for(const scenario of [{id:null,dirty:true,status:'draft',canEdit:true},{id:'q1',dirty:true,status:'draft',canEdit:true},{id:'q1',dirty:false,status:'pending',canEdit:true},{id:'q1',dirty:false,status:'approved',canEdit:false}]){
+ for(const scenario of [{id:null,dirty:true,status:'draft',canEdit:true},{id:'q1',dirty:true,status:'draft',canEdit:true},{id:'q1',dirty:false,status:'pending',canEdit:true},{id:'q1',dirty:false,status:'approved',canEdit:false},{id:'q1',dirty:true,status:'approved',canEdit:true,editRequest:{canEditApproved:true}}]){
   const nodes:Record<string,any>={},captures:any[]=[],writes:any[]=[],doc={type:'HRC',quoteNo:'BG',rows:[{name:'Nội dung chưa lưu',sku:'LY',qty:2,price:100000}]};let click!:()=>Promise<void>;
   const node=(id:string)=>nodes[id]||=( {dataset:{},disabled:false,hidden:false,addEventListener:(_name:string,fn:any)=>{if(id==='#quote-capture')click=fn;}} );
   const block=scenario.dirty?'Lưu thay đổi trước.':scenario.status!=='approved'?'Chờ duyệt':null;
-  const ctx:any={saleDesignProblem,isSaleEditor:()=>false,editor:{...scenario,rows:doc.rows,loading:false,approval:{status:scenario.status,canEdit:scenario.canEdit}},discountProduct,isManager:()=>false,approvalBlock:()=>block,saving:false,$:node,qf:{inert:false,querySelectorAll:()=>[node('#quote-capture'),node('#edit-input')]},closeDownloadMenu(){},window:{matchMedia:()=>({matches:true})},collectQuote:()=>doc,openMobileQuoteCapture:async(opts:any)=>captures.push(opts),api:(...args:any[])=>writes.push(args),toast:(message:string)=>{throw Error(message);}};
+  let editControlsRendered=0;
+  const ctx:any={saleDesignProblem,isSaleEditor:()=>false,editor:{...scenario,rows:doc.rows,loading:false,approval:{status:scenario.status,canEdit:scenario.canEdit,editRequest:scenario.editRequest}},quoteEditUi:{render(){editControlsRendered++;}},discountProduct,isManager:()=>false,approvalBlock:()=>block,saving:false,$:node,qf:{inert:false,querySelectorAll:()=>[node('#quote-capture'),node('#edit-input')]},closeDownloadMenu(){},window:{matchMedia:()=>({matches:true})},collectQuote:()=>doc,openMobileQuoteCapture:async(opts:any)=>captures.push(opts),api:(...args:any[])=>writes.push(args),toast:(message:string)=>{throw Error(message);}};
   runInNewContext(actions+'\n'+handler+'\nupdateQuoteActions();',ctx);
   assert.equal(node('#quote-capture').disabled,false,JSON.stringify(scenario));
   assert.equal(node('#quote-download').disabled,!!block,'download approval unchanged');
-  assert.equal(node('#bulk-discount').disabled,scenario.status==='approved'||!scenario.canEdit,'bulk discounts retain the edit/approval lock');
+  assert.equal(editControlsRendered,1,'capture refresh also renders edit-request controls');
+  assert.equal(node('#bulk-discount').disabled,(scenario.status==='approved'&&!scenario.editRequest?.canEditApproved)||!scenario.canEdit,'bulk discounts retain the edit/approval lock unless explicitly permitted');
   await click();assert.equal(captures.length,1);assert.equal(captures[0].doc,doc,'use current form contents');assert.equal(captures[0].canExport,undefined,'no approval check on PNG sharing');assert.equal(writes.length,0,'capture does not save or submit');
  }
 });

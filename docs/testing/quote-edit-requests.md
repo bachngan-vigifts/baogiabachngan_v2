@@ -20,6 +20,8 @@ Notifications are sent after commit through the existing notification functions.
 npm run typecheck
 npm run ui:build
 node --import tsx tests/app/quote-edit-requests.test.ts
+node --import tsx tests/app/contract-amendments.test.ts
+node --import tsx tests/app/mobile-quote-capture.test.ts
 node --import tsx --test --test-concurrency=2 tests/app/quote-edit-requests.test.ts tests/app/quote-approval.test.ts tests/app/quote-approval-steps.test.ts tests/app/approval-inbox.test.ts tests/app/approvals.test.ts tests/app/approval-roles.test.ts tests/app/department-access.test.ts tests/app/quote-purchase-cost-ui.test.ts tests/app/trial-ui.test.ts tests/app/quote-mobile-ui.test.ts tests/app/quote-device-draft.test.ts tests/app/contract-quote-terms.test.ts
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node --import tsx scripts/testing/quote-edit-requests.mjs
 ```
@@ -27,3 +29,5 @@ PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node --import tsx scripts/testin
 The API tests use the real router/PostgreSQL migrations in local PGlite: pending/rejected requests cannot edit, only Managers decide, other employees cannot reuse grants, view-only shares cannot request, revoked shares cannot save, supplier/anonymous requests are blocked, stale/cross-quote decisions fail, duplicate requests/decisions do not duplicate notifications, private costs remain protected, and approved linked orders block earlier grants.
 
 The browser script uses the actual local CRM/router at 1440px and 430px with synthetic employee/Manager sessions. It checks cancel/reopen resets, double-click suppression, reason text displayed without HTML execution, full reason readability, rejection reason validation, visible dialog actions, no horizontal dialog overflow, permission unlocking and save returning to draft. Screenshots default to `/workspace/artifacts/quote-edit-requests`. Production records and external push/Sapo endpoints are not used. PGlite validates atomic behavior but is not a load/concurrency benchmark against a live PostgreSQL server.
+
+The older isolated VM tests must provide the new dependencies as well: the contract amendment harness registers the real edit-request routes and state reader, models row locking, and returns no audit events when testing an unpermitted employee. The mobile capture harness supplies the edit-control renderer and checks both locked and explicitly permitted states. These fixtures retain the API edit/delete and download gates; production checks are not relaxed for test compatibility.
