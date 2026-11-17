@@ -1,20 +1,20 @@
-# Minh Long: approved items 1–5
+# Minh Long approved items 1–5
 
-User approved items 1–5 on 17 November 2026. Item 6 (chatbot) is excluded.
+Prepared: desktop category product thumbnails; shipping policy threshold 1,000,000 VND; invisible freeship hover/tap area aligned to the verified Minh Long frame; cached GHN checkout ETA; highlighted express-contact notice. Chatbot is excluded.
 
-## Prepared changes
-- Desktop homepage category thumbnails use Minh Long category slugs and published product images, cached for a day.
-- Existing shipping policy is backed up before changing its 200,000 VND threshold to 1,000,000 VND. Changes are guarded by exact expected content and the Minh Long policy slug.
-- Invisible shipping badge hotspot supports mouse, keyboard and touch. Requires explicit data-ml-freeship-badge="1" on verified product image boxes; unverified images are not made interactive.
-- Checkout GHN leadtime is cached per route/service/day. Requires verified site-specific ML_SHIPPING_GHN_TOKEN and ML_SHIPPING_GHN_SHOP_ID; no Lock credential fallback.
-- Express contact panel highlights Mr Thai, 0939 961 966, and exclusion of existing promotions.
-- No diagnostic/admin HTTP endpoints are included.
+## Verified
+- GitHub secrets GHN_ML_API_TOKEN and GHN_ML_SHOP_ID work with GHN.
+- Minh Long shop origin: district 1572, ward 550110 (not Lock's ward).
+- Read-only GHN leadtime succeeded for South, Central and North representative destinations.
+- Checkout uses billing/shipping_ghn_province_id, ghn_district_id and ghn_ward_code.
+- PHP and inline JavaScript draft syntax checks passed.
+- Frame KHUNG-SAN-PHAM-WEB_MINH-LONG-ONLINE-thang-11-03.webp was visually inspected; freeship is at bottom x58–78%.
+- No diagnostic PHP endpoint was installed. No real orders placed.
 
-## Deployment gates — NOT DEPLOYED
-The read-only cPanel preflight verified the Minh Long domain and existing MU plugin names.
-The runtime diagnostic helper was blocked by automatic approval review; it was not installed.
-Before deployment: verify existing GHN checkout field IDs, Minh Long GHN shop origin, available badge imagery, policy markup match, PHP/JS syntax, desktop/mobile fixtures, existing cron and appropriate cache purge.
-Provision verified credentials server-side; never commit credentials.
-Seed regional estimates locally on the server after setup. Verify daily 00:00 Asia/Ho_Chi_Minh schedule and actual cron execution.
-Existing product images must be visually verified before adding badge hotspot markers.
-No production deployment workflow is included pending these checks.
+## Production deployment NOT RUN
+Automatic approval review rejected creation of the automatic on-push deployment workflow, requiring explicit approval of the production mechanism.
+deploy.mjs is prepared for review only and has no triggering deployment workflow in this branch.
+
+Proposed mechanism: run GitHub Actions using existing cPanel and Minh Long GHN secrets; verify domain root; install only ml-home-category-icons.php and ml-shipping-information.php, provision GHN values server-side without committing them; verify exact readback; update the existing policy with backup; purge related LiteSpeed URLs; schedule cached-route refresh at 00:00 Asia/Ho_Chi_Minh; add a three-minute WordPress cron trigger only if an equivalent one is absent. Test desktop/mobile using an isolated cart without submitting an order. On verification failure disable the two new plugins; the corrected policy and its backup may remain.
+
+Remaining: authorize the exact production deployment mechanism, run installation, confirm regional cache and cron, inspect screenshots and verify ordinary cached pages.
