@@ -1,0 +1,33 @@
+name: Improve Minh Long desktop category menu size
+on:
+  push:
+    branches: [codex/minhlong-approved-shipping-20261117]
+    paths: [web-minhlong/shipping/fix-menu-size.mjs, .github/workflows/minhlong-menu-size.yml]
+permissions:
+  contents: read
+concurrency:
+  group: minhlong-shipping-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          php -l web-minhlong/shipping/ml-home-category-icons.php
+          node --check web-minhlong/shipping/fix-menu-size.mjs
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Apply and check four desktop widths
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+        run: node web-minhlong/shipping/fix-menu-size.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: minhlong-menu-sizes
+          path: ml-menu-*.png
+          retention-days: 3
