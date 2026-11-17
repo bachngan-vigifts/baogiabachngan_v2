@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { quotationPredicate } from '../../src/modules/quotes/api/department-access.ts';
+import {quoteEditState,registerQuoteEditRequests} from '../../src/modules/quotes/api/edit-requests.ts';
 import { departmentOwner } from '../../src/modules/staff/api/department.ts';
 import { amendmentLines, amendmentSchedules } from '../../src/modules/sales/domain/amendments.ts';
 
@@ -134,7 +135,7 @@ test('employee cannot edit or delete an approved quote through the API', async (
   const sql: any = () => null;
   sql.join = () => null; sql.raw = () => null;
   const ctx: any = {
-    quotationPredicate, registerQuoteDesignImages, checkDesignKeys, withDesignImages, sql, quotations: table, eq: () => null, and: () => null,
+    quotationPredicate, registerQuoteDesignImages, registerQuoteEditRequests, quoteEditState, checkDesignKeys, withDesignImages, sql, quotations: table, eq: () => null, and: () => null,
     quotationEditScope: () => ({ sql: '', bindings: [] }),
     cleanQuotation: (data: any) => data, readJson: async () => ({ revision: 1, data: {} }),
     AppError: class extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status; } },
@@ -144,8 +145,11 @@ test('employee cannot edit or delete an approved quote through the API', async (
   for (const method of ['get', 'post', 'put', 'delete']) router[method] = (path: string, fn: any) => handlers.set(method + path, fn);
   ctx.register(router);
   const query: any = {};
-  for (const method of ['from', 'where', 'limit']) query[method] = () => query;
-  query.then = (resolve: any) => Promise.resolve([{ approvalStatus: 'approved' }]).then(resolve);
+  // The approved quote exists, but there are no edit-request/permission audit events.
+  let selected: unknown;
+  query.from = (source: unknown) => { selected = source; return query; };
+  for (const method of ['where', 'limit', 'for', 'orderBy']) query[method] = () => query;
+  query.then = (resolve: any) => Promise.resolve(selected === table ? [{ id:'q',revision:1,approvalStatus:'approved' }] : []).then(resolve);
   const db: any = { transaction: (fn: any) => fn(db), select: () => query };
   const c = { req: {}, params: { id: 'q' }, env: { db }, state: { session: { member: { id: 'employee', role: 'employee' } } } };
   for (const path of ['put/quotes/:id', 'delete/quotes/:id']) await assert.rejects(handlers.get(path)(c), (e: any) => e.status === 403);

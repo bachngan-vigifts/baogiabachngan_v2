@@ -7,6 +7,7 @@ import {deliveryTone,deliveryIsOverdue,fulfilmentLegend,fulfilmentBadge,compactF
 import {initWarehouseWorkspace} from './warehouse-workspace.js';
 import { createNotificationFeed } from './notification-feed.js';
 import {productThumbnailUrl,noteThumbnailFailure} from './product-images.js';
+import {bindQuoteEditRequests} from './quote-edit-requests.js';
 import {initOrderProducts} from './order-products.js';
 import { createDeliveryCalendar, renderDeliveryProducts } from './delivery-calendar.js';
 import {initCustomerCenter} from './customer-center.js';
@@ -1306,7 +1307,7 @@ async function openEditor(id) {
 function fillEditor(id, revision, data, meta = {}) {
   // Lưu xong (cùng báo giá) thì giữ nguyên mục lợi nhuận / cột giá nhập đang mở; mở báo giá khác thì đóng lại.
   const keepProfit = !!id && (editor.id === id || (!editor.id && saving));
-  editor.approval = id ? { status: meta.approvalStatus || 'pending', at: meta.approvedAt || '', by: meta.approvedByName || '', canApprove: meta.canApprove ?? (keepProfit ? editor.approval?.canApprove : undefined), fromCustomer: meta.fromCustomer ?? (keepProfit ? editor.approval?.fromCustomer : false), canEdit: meta.canEdit ?? (keepProfit ? editor.approval?.canEdit : undefined) } : null;
+  editor.approval = id ? { status: meta.approvalStatus || 'pending', at: meta.approvedAt || '', by: meta.approvedByName || '', canApprove: meta.canApprove ?? (keepProfit ? editor.approval?.canApprove : undefined), fromCustomer: meta.fromCustomer ?? (keepProfit ? editor.approval?.fromCustomer : false), canEdit: meta.canEdit ?? (keepProfit ? editor.approval?.canEdit : undefined), editRequest: meta.editRequest ?? (keepProfit && editor.revision === revision ? editor.approval?.editRequest : null) } : null;
   editor.id = id; editor.revision = revision; editor.base = structuredClone(data);
   editor.type = ['B2B', 'HRC', 'VIGIFTS'].includes(data.type) ? data.type : 'B2B';
   editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : ''; loadBrandDiscounts();
@@ -2223,7 +2224,7 @@ $('#save-to-contacts').addEventListener('click', async () => {
   finally { btn.disabled = false; }
 });
 
-const quoteDiscountLocked=()=>isSaleEditor()||editor.loading||qf.inert||(!!editor.id&&(editor.approval?.canEdit===false||editor.approval?.status==='approved'&&!isManager()));
+const quoteDiscountLocked=()=>isSaleEditor()||editor.loading||qf.inert||(!!editor.id&&(editor.approval?.canEdit===false||editor.approval?.status==='approved'&&!isManager()&&!editor.approval?.editRequest?.canEditApproved));
 initBulkQuoteDiscount({button:$('#bulk-discount'),dialog:$('#bulk-discount-dialog'),getRows:()=>editor.rows,isLocked:quoteDiscountLocked,context:()=>editorLoadSequence+':'+(editor.id||'new'),apply:result=>{editor.rows=result.rows;editor.discountMode='percent';markDirty();renderLines();toast('Đã cập nhật CK cho '+result.count+' dòng. Bấm Lưu báo giá để ghi nhận.');}});
 // ----- dán từ Excel: SKU + số lượng, thông tin và chính sách lấy từ dữ liệu CRM.
 const parsePaste = text => parseSkuQuantities(text, parseNum);
@@ -2303,7 +2304,7 @@ function validateQuote(data) {
 let saving = false;
 async function saveQuote() {
   if (saving) return;
-  if (editor.id && !isManager() && editor.approval?.status === 'approved') return toast('Báo giá đã duyệt. Chỉ Manager được chỉnh sửa.', 'err');
+  if (editor.id && !isManager() && editor.approval?.status === 'approved' && !editor.approval?.editRequest?.canEditApproved) return toast('Báo giá đã duyệt. Gửi yêu cầu và chờ Manager cho phép sửa.', 'err');
   const err = $('#quote-error'); err.textContent = '';
   const data = collectQuote(), problem = validateQuote(data);
   if (problem) {
@@ -2340,7 +2341,7 @@ async function saveQuote() {
   } finally { saving = false; updateQuoteActions(); }
 }
 qf.addEventListener('submit', e => { e.preventDefault(); saveQuote(); });
-$('#save-quote-m').addEventListener('click', async e => { e.preventDefault(); const saved=await saveQuote(); if(saved===true&&!editor.dirty&&editor.id&&editor.approval?.status==='draft'&&!saleDesignProblem(collectQuote()))await submitQuoteForApproval(); });
+$('#save-quote-m').addEventListener('click', async e => { e.preventDefault(); const usedEditPermission=editor.approval?.status==='approved'&&!!editor.approval?.editRequest?.canEditApproved; const saved=await saveQuote(); if(saved===true&&!usedEditPermission&&!editor.dirty&&editor.id&&editor.approval?.status==='draft'&&!saleDesignProblem(collectQuote()))await submitQuoteForApproval(); });
 $('#reload-quote').addEventListener('click', async () => {
   if (!await confirmBox('Tải bản mới nhất sẽ bỏ các thay đổi chưa lưu của anh/chị.', { ok: 'Tải lại', danger: true })) return;
   editor.dirty = false; openEditor(editor.id);
@@ -5464,10 +5465,15 @@ function approvalBlock() {
   if (editor.approval?.status !== 'approved') return 'Báo giá đang đợi Manager duyệt.';
   return null;
 }
+const quoteEditUi=bindQuoteEditRequests({button:$('#request-quote-edit'),api,
+ getContext:()=>({id:editor.id,revision:editor.revision,approved:editor.approval?.status==='approved',manager:isManager(),canRequest:state.user?.role==='employee'&&editor.approval?.canEdit!==false,editRequest:editor.approval?.editRequest}),
+ reload:async id=>{if(location.hash.split('?')[0]==='#/quotes/'+id)await openEditor(id);},
+});
 function updateQuoteActions() {
   const saved = !!editor.id, approved = editor.approval?.status === 'approved', mgr = isManager(), block = approvalBlock();
   const readOnly = saved && editor.approval?.canEdit === false; // xem được, không sửa được (máy chủ cũng chặn)
-  const locked = (saved && approved && !mgr) || readOnly;
+  const locked = (saved && approved && !mgr && !editor.approval?.editRequest?.canEditApproved) || readOnly;
+  quoteEditUi.render();
   for (const el of qf.querySelectorAll('.editor-grid input, .editor-grid select, .editor-grid textarea, .editor-grid button, .card input, .card select, .card textarea, .card button')) {
     if (locked && !el.disabled) { el.dataset.approvalLock = '1'; el.disabled = true; }
     else if (!locked && el.dataset.approvalLock) { delete el.dataset.approvalLock; el.disabled = false; }
