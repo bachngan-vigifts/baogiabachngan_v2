@@ -1,4 +1,5 @@
 import { quoteTotalsData } from './list-data.ts';
+import {quoteEditState,registerQuoteEditRequests} from './edit-requests.ts';
 import {checkDesignKeys,withDesignImages,registerQuoteDesignImages} from './design-images.ts';
 import { quotationPredicate } from './department-access.ts';
 import { canApprove } from '../../staff/domain/permissions.ts';
@@ -79,6 +80,7 @@ export async function assignQuoteNo(tx: Tx, quoteNo: string, exceptId?: string):
 export type QuoteCustomerMemory = (tx: Tx, data: Record<string, any>, previous: Record<string, any> | null,
   viewer: SessionState['member'], fields: string[]) => Promise<{ status: string; message?: string }>;
 export function registerQuoteRoutes(router: Router<StaffEnv>, options: { rememberCustomer?: QuoteCustomerMemory } = {}) {
+  registerQuoteEditRequests(router,async(tx,quote,member)=>{for(const hook of quoteSaveHooks.beforeSave)await hook(tx,quote,member);});
   registerQuoteDesignImages(router);
   /**
    * Danh sách báo giá – lọc, sắp xếp, phân trang trên máy chủ (`?q=&type=&owner=mine|others&sort=created|updated|date|no|value&limit=&offset=`).
@@ -165,7 +167,8 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
     const [approver] = row.approvedBy ? await c.env.db.select({ name: employees.name }).from(employees).where(eq(employees.id, row.approvedBy)).limit(1) : [];
     const [creator] = await c.env.db.select({ role: employees.role, name: employees.name }).from(employees).where(eq(employees.id, row.creatorId)).limit(1);
     const fromCustomer = creator?.role === 'customer';
-    return json({ id: row.id, revision: row.revision, data: await withDesignImages(c.env, forViewer(viewer, JSON.parse(row.data))), approvalStatus: row.approvalStatus, approvedAt: row.approvedAt, approvedByName: approver?.name ?? '',
+    const editRequest=await quoteEditState(c.env.db,row,viewer);
+    return json({ id: row.id, revision: row.revision, data: await withDesignImages(c.env, forViewer(viewer, JSON.parse(row.data))), approvalStatus: row.approvalStatus, approvedAt: row.approvedAt, approvedByName: approver?.name ?? '',editRequest,
       fromCustomer, canApprove: canApprove(viewer),
       // Xem được nhưng không sửa được (Sale Admin "chỉ xem", người được duyệt mở báo giá chờ duyệt): giao diện ẩn Lưu / Xoá / Gửi duyệt.
       canEdit: (await c.env.db.select({ id: quotations.id }).from(quotations).where(and(eq(quotations.id, row.id), quotationPredicate(viewer, true))).limit(1)).length > 0 });
@@ -291,9 +294,10 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
     const now = new Date().toISOString();
     const saved = await c.env.db.transaction(async tx => {
       const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), quotationPredicate(viewer, true));
-      const [old] = await tx.select().from(quotations).where(condition).limit(1);
+      const [old] = await tx.select().from(quotations).where(condition).limit(1).for('update');
       if (!old) throw new AppError(409, 'Báo giá đã thay đổi hoặc anh không có quyền sửa. Vui lòng tải lại.');
-      if (old.approvalStatus === 'approved' && !isManager(viewer)) throw new AppError(403, 'Báo giá đã duyệt. Chỉ Manager được chỉnh sửa.', 'QUOTE_APPROVED');
+      if (old.approvalStatus === 'approved' && !isManager(viewer) && !(await quoteEditState(tx,old,viewer)).canEditApproved)
+        throw new AppError(403, 'Báo giá đã duyệt. Gửi yêu cầu và chờ Manager cho phép sửa.', 'QUOTE_APPROVED');
       checkDesignKeys(viewer, data, JSON.parse(old.data));
       // Nhân viên không thấy giá vốn → giữ nguyên giá vốn cũ của từng dòng (theo id dòng).
       if (!isManager(viewer)) data = cleanQuotation(keepCosts(body.data as Record<string, unknown>, JSON.parse(old.data)));
@@ -303,9 +307,9 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
       if (data.quoteNo !== old.quoteNo) data.quoteNo = await assignQuoteNo(tx, data.quoteNo, old.id);
       if (body.rememberCustomer === true && options.rememberCustomer) customerMemory = await options.rememberCustomer(tx, data, JSON.parse(old.data), viewer, Array.isArray(body.customerFields) ? body.customerFields.filter((k: unknown): k is string => typeof k === 'string') : []);
       const next = old.revision + 1, encoded = JSON.stringify(data);
-      // Nhân viên sửa nội dung báo giá đã duyệt → mất duyệt, về nháp, phải bấm "Gửi duyệt" lại. Manager sửa thì giữ trạng thái; lưu mà không đổi gì cũng giữ.
+      // Nhân viên sửa nội dung báo giá đã duyệt → mất duyệt, về nháp, phải bấm "Gửi duyệt" lại. Manager sửa thì giữ trạng thái; mỗi lần lưu bằng quyền sửa được cấp đều phải duyệt lại.
       const changed = contentKey(data) !== contentKey(old.data);
-      const revoke = (!isManager(viewer) && old.approvalStatus === 'approved' && changed)
+      const revoke = (!isManager(viewer) && old.approvalStatus === 'approved')
         || (old.approvalStatus !== 'draft' && missingSaleDesign(data));
       const approval = revoke ? { approvalStatus: 'draft' as const, approvedAt: null, approvedBy: null } : {};
       const rows = await tx.update(quotations).set({ quoteNo: data.quoteNo, quoteType: data.type, customer: data.customer, ...quoteHeaderIndex(data), data: encoded, revision: next, ...approval, updatedAt: now }).where(condition).returning({ id: quotations.id });

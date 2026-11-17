@@ -2972,3 +2972,13 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .pur-more-list { position: absolute; left: 0; top: calc(100% + 6px); z-index: 40; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-lg); min-width: 240px; padding: 6px; display: grid; }
 .pur-more-list .buy-menu-item:disabled { opacity: .5; cursor: not-allowed; }
 .pur-orders td.buy-next { white-space: nowrap; }
+
+/* Quote edit permission: short landscape form, scrollable body and reachable actions. */
+.quote-edit-request-dialog { width:min(880px,calc(100vw - 32px));max-height:calc(100dvh - 40px); }
+.quote-edit-request-form { display:flex;flex-direction:column;aspect-ratio:16/9;max-height:calc(100dvh - 40px); }
+.quote-edit-request-form .modal-body { flex:1;min-height:0;overflow:auto;display:grid;align-content:start;gap:12px; }
+.quote-edit-request-form textarea,.quote-edit-request-form select { width:100%;min-width:0;max-width:100%; }
+.quote-edit-request-form textarea { resize:vertical;min-height:110px; }
+.quote-edit-request-form .modal-foot { display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;flex-shrink:0; }
+@media(max-width:850px) { .quote-edit-request-form { aspect-ratio:auto; } }
+.quote-edit-request-reason { overflow-wrap:anywhere;white-space:pre-wrap; }
