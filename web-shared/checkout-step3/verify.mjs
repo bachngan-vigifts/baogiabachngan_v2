@@ -72,6 +72,7 @@ console.log('PHASE_1_FORM_LAYOUT_OK '+host);
   if(live)await page.waitForFunction(()=>[...document.querySelectorAll('.bnco-product-thumb')].length>0&&[...document.querySelectorAll('.bnco-product-thumb')].every(i=>i.complete&&i.naturalWidth>0));
  await page.locator('.bnco-eta-express a[href="tel:0939961966"]').waitFor({state:'visible'});
  if(!(await page.locator('.bnco-express-note').textContent()).includes('không áp dụng cho đơn giao hỏa tốc'))throw Error('Express promotion notice missing');
+ if(await page.locator('#bnco-review-confirm').count()!==1)throw Error('Missing order information confirmation');
  if(await page.locator('#bnco-review-confirm').count()){if(!await page.locator('#bnco-review-confirm').isChecked())throw Error('Order information confirmation not preselected');await page.locator('#bnco-review-confirm').uncheck();await page.evaluate(()=>jQuery(document.body).trigger('update_checkout'));await page.waitForTimeout(1500);await settle();if(await page.locator('#bnco-review-confirm').isChecked())throw Error('Customer unchecked confirmation overwritten');await page.locator('#bnco-review-confirm').check();console.log('CONFIRMATION_DEFAULT_AND_USER_CHOICE_OK '+host);}
  console.log('EXPRESS_CONTACT_HIGHLIGHT_OK '+host);
  console.log('GHN_DATE_VISIBLE_IN_REVIEW_OK '+host);

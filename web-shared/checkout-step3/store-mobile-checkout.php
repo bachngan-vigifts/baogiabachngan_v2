@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Store mobile checkout option 3
- * Version: 1.0.5
+ * Version: 1.0.6
  * Presentation only; WooCommerce remains the order and pricing authority.
  */
 defined('ABSPATH') || exit;
@@ -347,7 +347,7 @@ function structure(){
  if(mq.matches){
  const native=document.querySelector('#payment > .place-order');
  if(native){currentReview.querySelectorAll(':scope > .bnco-native-place-order').forEach(e=>e.remove());native.classList.add('bnco-native-place-order');currentReview.append(native);}
- if(!document.getElementById('terms')&&!document.getElementById('bnco-review-confirm')){
+ if(!document.getElementById('bnco-review-confirm')){
  const row=document.createElement('label');row.className='bnco-confirm-row';row.innerHTML='<input type="checkbox" id="bnco-review-confirm"> Tôi xác nhận thông tin đặt hàng ở trên là chính xác';row.querySelector('input').checked=confirmationChoice;currentReview.querySelector('.bnco-native-place-order')?.prepend(row);
  }
  }else{
