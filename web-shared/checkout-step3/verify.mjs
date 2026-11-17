@@ -67,6 +67,9 @@ console.log('PHASE_1_FORM_LAYOUT_OK '+host);
  await page.locator('#bnco-next').click();await settle();await thumbs();
  await page.waitForFunction(()=>/\d{2}\/\d{2}\/\d{4}/.test(document.querySelector('.bnco-review-eta')?.textContent||''),{},{timeout:60000});
   if(live)await page.waitForFunction(()=>[...document.querySelectorAll('.bnco-product-thumb')].length>0&&[...document.querySelectorAll('.bnco-product-thumb')].every(i=>i.complete&&i.naturalWidth>0));
+ await page.locator('.bnco-eta-express a[href="tel:0939961966"]').waitFor({state:'visible'});
+ if(!(await page.locator('.bnco-express-note').textContent()).includes('không áp dụng cho đơn giao hỏa tốc'))throw Error('Express promotion notice missing');
+ console.log('EXPRESS_CONTACT_HIGHLIGHT_OK '+host);
  console.log('GHN_DATE_VISIBLE_IN_REVIEW_OK '+host);
  console.log('PHASE_2_ADDRESS_VALIDATION_BACK_PERSISTENCE_OK '+host);
  for(const width of [390,320,430]){

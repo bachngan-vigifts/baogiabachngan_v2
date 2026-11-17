@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Store mobile checkout option 3
- * Version: 1.0.2
+ * Version: 1.0.3
  * Presentation only; WooCommerce remains the order and pricing authority.
  */
 defined('ABSPATH') || exit;
@@ -224,6 +224,13 @@ body.bnco-active .shipping_address{display:none!important}
 body.bnco-active #main .woocommerce-additional-fields{padding-top:0!important;margin-top:0!important}
 body.bnco-active #main #order_comments_field{margin-top:0!important;padding-top:0!important}
 body.bnco-active #main .woocommerce-additional-fields__field-wrapper{margin:0!important;padding:0!important}
+}
+@media(max-width:549px){
+body.bnco-active .bnco-eta-express{margin-top:12px;padding:13px 14px;background:#fff7e6;border:1px solid #e7bd73;border-left:4px solid #c28b2d;border-radius:9px;color:#643f12;white-space:normal}
+body.bnco-active .bnco-express-title{display:block;font-size:15px;line-height:1.4;margin-bottom:7px;color:#784a0d}
+body.bnco-active .bnco-eta-express p{font-size:13px;line-height:1.65;margin:0!important}
+body.bnco-active .bnco-eta-express a{display:inline-block;color:#784a0d;font-size:16px;font-weight:800;text-decoration:underline;text-underline-offset:3px;white-space:nowrap;padding:3px 0}
+body.bnco-active .bnco-eta-express .bnco-express-note{margin-top:9px!important;padding-top:9px;border-top:1px solid #edcf9c;font-weight:600;color:#823e13;font-size:12.5px}
 }</style>
 <?php
 },9999);
@@ -325,7 +332,19 @@ function sync(){
  const etaResult=realEta?.querySelector('.lnl-eta-result,.ml-eta-result')?.textContent.trim();
  function readEta(node){if(node.nodeType===3)return node.textContent;if(node.nodeType!==1||node.tagName==='SCRIPT')return '';const inner=[...node.childNodes].map(readEta).join('');return /^(P|DIV|SECTION|H[1-6]|BR)$/.test(node.tagName)?'\n'+inner+'\n':inner;}
  const etaText=realEta&&!realEta.hidden&&etaResult?readEta(realEta).replace(/\n{2,}/g,'\n').trim():'';
- eta.hidden=!etaText;if(eta.textContent!==etaText)eta.textContent=etaText;
+ eta.hidden=!etaText;
+ if(eta.dataset.bncoText!==etaText){
+  eta.dataset.bncoText=etaText;eta.replaceChildren();
+  const urgentAt=etaText.indexOf('Quý khách cần nhận hàng gấp');
+  const timing=document.createElement('div');timing.className='bnco-eta-timing';
+  timing.textContent=urgentAt<0?etaText:etaText.slice(0,urgentAt).replace(/Cần giao[^\n]*\?\s*$/i,'').trim();
+  eta.append(timing);
+  if(urgentAt>=0){
+   const box=document.createElement('div');box.className='bnco-eta-express';
+   box.innerHTML='<strong class="bnco-express-title">Hỗ trợ giao hỏa tốc</strong><p>Quý khách cần nhận hàng gấp, vui lòng liên hệ <strong>Mr Thái</strong> – <a href="tel:0939961966" aria-label="Gọi Mr Thái: 0939 961 966">0939 961 966</a> để được hỗ trợ.</p><p class="bnco-express-note"><strong>Lưu ý:</strong> Các ưu đãi hiện hành không áp dụng cho đơn giao hỏa tốc.</p>';
+   eta.append(box);
+  }
+ }
  const amount=document.querySelector(step===1?'.woocommerce-checkout-review-order-table .cart-subtotal .amount':'.woocommerce-checkout-review-order-table .order-total .amount');
  if(amount){const dest=document.getElementById('bnco-amount');if(dest.textContent!==amount.textContent.trim())dest.textContent=amount.textContent.trim();}
  const busy=updateFailed||pending||form.classList.contains('processing')||!!document.querySelector('#order_review .blockUI,.woocommerce-checkout-review-order-table.processing');
