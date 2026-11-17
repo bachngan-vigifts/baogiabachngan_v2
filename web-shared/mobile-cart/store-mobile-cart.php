@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Store Mobile Cart Option 3
  * Description: Compact mobile cart cards and synchronized sticky checkout; preserves WooCommerce pricing and actions.
- * Version: 1.1.0
+ * Version: 1.1.1
  */
 defined('ABSPATH') || exit;
 add_filter('woocommerce_cart_item_class', function($classes,$item){
@@ -19,7 +19,9 @@ body.woocommerce-cart #header,body.woocommerce-cart #footer,body.woocommerce-car
 body.woocommerce-cart .page-title,body.woocommerce-cart .woocommerce-breadcrumb,body.woocommerce-cart .continue-shopping,
 body.woocommerce-cart .fixed-contact,body.woocommerce-cart #top-link,body.woocommerce-cart #claw-ai-launcher,body.woocommerce-cart #claw-ai-panel,
 body.woocommerce-cart #lnl-chat-launch,body.woocommerce-cart #lnl-chat-dialog,body.woocommerce-cart .header-wrapper,
-body.woocommerce-cart .cart-footer-content{display:none!important}
+body.woocommerce-cart .cart-footer-content,body.woocommerce-cart .section_breadcrumb,body.woocommerce-cart #breadcrumbs{display:none!important}
+body.woocommerce-cart .woocommerce-notices-wrapper:empty{display:none!important;outline:0!important;border:0!important}
+body.woocommerce-cart .woocommerce:focus,body.woocommerce-cart .woocommerce-notices-wrapper:focus{outline:none!important}
 body.woocommerce-cart #wrapper{padding-top:0!important;margin-top:0!important;background:#f3f6f9!important}
 body.woocommerce-cart #main{padding-top:0!important;margin-top:0!important;min-height:75vh}
 body.woocommerce-cart #main>.container,body.woocommerce-cart #main .page-wrapper>.container{padding:0!important;max-width:100%!important}
