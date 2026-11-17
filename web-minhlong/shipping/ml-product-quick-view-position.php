@@ -55,10 +55,10 @@ box-shadow:0 3px 12px #123b6e40!important;
 <?php
 },99);
 add_action('init',function(){
- if(get_option('ml_quick_view_position_version')==='4')return;
+ if(get_option('ml_quick_view_position_version')==='5')return;
  do_action('litespeed_purge_all');
  do_action('litespeed_purge_url',home_url('/danh-muc/minh-long/bo-do-an-minh-long/'));
- update_option('ml_quick_view_position_version','4',false);
+ update_option('ml_quick_view_position_version','5',false);
 });
 
 add_filter('woocommerce_add_to_cart_redirect',function($url){
@@ -79,8 +79,8 @@ if(sku&&category){
 let line=meta.querySelector('.ml-sku-category-row');
 if(!line){line=document.createElement('div');line.className='ml-sku-category-row';sku.before(line);line.append(sku,category);
 const fit=()=>{let size=13;line.style.fontSize=size+'px';while(line.scrollWidth>line.clientWidth+1&&size>6){size-=.25;line.style.fontSize=size+'px';}};
-new ResizeObserver(fit).observe(line);fit();
-}
+line.mlFit=fit;new ResizeObserver(fit).observe(line);fit();
+}else if(line.mlFit){line.mlFit();}
 }
 const button=summary.querySelector('button.woosw-btn');if(!button)return;
 let row=summary.querySelector('.ml-review-wishlist-row');
@@ -95,7 +95,14 @@ add.classList.add('ml-popup-cart-icon');add.setAttribute('aria-label','Thêm và
 add.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h3l3 13h11l3-10H6M9 21h.01M18 21h.01" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 form.querySelectorAll('#buy_now_button,.ux-buy-now-button').forEach(e=>e.remove());
 const buy=document.createElement('button');buy.type='button';buy.className='button ml-popup-buy-now';buy.textContent='MUA NGAY';add.after(buy);
-buy.addEventListener('click',function(){
+
+});
+}
+document.addEventListener('click',function(event){
+const buy=event.target.closest('.ml-popup-buy-now');if(!buy||!buy.closest('.mfp-content'))return;
+event.preventDefault();event.stopImmediatePropagation();
+const form=buy.closest('form.cart'),add=form?.querySelector('.single_add_to_cart_button');if(!form||!add)return;
+
 const variation=form.querySelector('[name="variation_id"]');
 if((variation&&!Number(variation.value))||add.disabled||add.classList.contains('disabled')){
 let msg=form.querySelector('.ml-popup-validation');if(!msg){msg=document.createElement('p');msg.className='ml-popup-validation';msg.setAttribute('role','alert');buy.after(msg);}msg.textContent='Vui lòng chọn đầy đủ tùy chọn sản phẩm trước khi mua.';return;
@@ -106,9 +113,7 @@ if(!/^\d+$/.test(id||''))return;
 function hidden(name,value){let e=form.querySelector('input[name="'+name+'"]');if(!e){e=document.createElement('input');e.type='hidden';e.name=name;form.append(e);}e.value=value;}
 hidden('add-to-cart',id);hidden('ml_popup_buy_now','1');
 form.method='post';form.action=checkout;buy.disabled=true;buy.textContent='ĐANG CHUYỂN…';HTMLFormElement.prototype.submit.call(form);
-});
-});
-}
+},true);
 let pending=false;function schedule(){if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;enhance();});}
 new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true});schedule();
 })();
