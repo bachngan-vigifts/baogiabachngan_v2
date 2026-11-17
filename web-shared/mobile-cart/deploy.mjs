@@ -18,8 +18,8 @@ try{
  const origin='https://'+site.host,ctx=await browser.newContext({viewport:{width:390,height:844}}),page=await ctx.newPage();
  await page.goto(origin+'/?cart_layout_check='+process.env.GITHUB_RUN_ID,{waitUntil:'domcontentloaded',timeout:90000});
  if(!site.pid)site.pid=await page.locator('.ajax_add_to_cart[data-product_id]').first().getAttribute('data-product_id');
- const add=await ctx.request.post(origin+'/?wc-ajax=add_to_cart',{form:{product_id:site.pid,quantity:'2'}});if((await add.json()).error)throw Error('Guest cart add failed '+site.host);
- if(site.host==='minhlongonline.com'){const r=await ctx.request.post(origin+'/?wc-ajax=add_to_cart',{form:{product_id:'33570',quantity:'1'}});if((await r.json()).error)throw Error('Preorder add failed');}
+ const add=await ctx.request.post(origin+'/?wc-ajax=add_to_cart',{timeout:90000,form:{product_id:site.pid,quantity:'2'}});if((await add.json()).error)throw Error('Guest cart add failed '+site.host);
+ if(site.host==='minhlongonline.com'){const r=await ctx.request.post(origin+'/?wc-ajax=add_to_cart',{timeout:90000,form:{product_id:'33570',quantity:'1'}});if((await r.json()).error)throw Error('Preorder add failed');}
  await page.goto(origin+'/gio-hang/',{waitUntil:'domcontentloaded',timeout:90000});
  if(preview){
  await page.locator('#bnmc-style,#bnmc-script,#bnmc-bar,#bnmc-top').evaluateAll(es=>es.forEach(e=>e.remove()));
