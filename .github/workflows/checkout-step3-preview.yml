@@ -1,0 +1,29 @@
+name: Preview mobile checkout option 3
+on:
+  push:
+    branches: [codex/minhlong-approved-shipping-20261117]
+    paths: [web-shared/checkout-step3/store-mobile-checkout.php, web-shared/checkout-step3/verify.mjs, .github/workflows/checkout-step3-preview.yml]
+permissions:
+  contents: read
+concurrency:
+  group: storefront-checkout-preview
+  cancel-in-progress: false
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          php -l web-shared/checkout-step3/store-mobile-checkout.php
+          node --check web-shared/checkout-step3/verify.mjs
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Test candidate in isolated browsers without deploying
+        run: node web-shared/checkout-step3/verify.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkout-step3-preview
+          path: checkout-*.png
+          retention-days: 5
