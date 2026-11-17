@@ -21,6 +21,10 @@ function lnl_si_api($path, $payload = null) {
     if (200 !== wp_remote_retrieve_response_code($res) || 200 !== (int)($j['code']??0)) { return new WP_Error('unavailable','Chưa nhận được dự kiến từ GHN.'); }
     return $j['data']??array();
 }
+add_filter('rest_post_dispatch',function($response,$server,$request){
+    if(strpos($request->get_route(),'/lnl-shipping/v1/')===0 && $response instanceof WP_REST_Response){$response->header('Cache-Control','private, no-store, max-age=0');}
+    return $response;
+},10,3);
 function lnl_si_today() { return wp_date('Y-m-d',time(),new DateTimeZone('Asia/Ho_Chi_Minh')); }
 function lnl_si_key($district,$ward,$type) {
     list($token,$shop)=lnl_si_config();
@@ -53,7 +57,7 @@ function lnl_si_seed_regions() {
     $specs=array(array('label'=>'Miền Nam · TP.HCM','district'=>1442),array('label'=>'Miền Trung · Đà Nẵng','district'=>1526),array('label'=>'Miền Bắc · Hà Nội','district'=>1489));
     $out=array();
     foreach($specs as $spec){
-        $wards=lnl_si_api('/master-data/ward?district_id='.$spec['district']);
+        $wards=lnl_si_api('/master-data/ward',array('district_id'=>$spec['district']));
         if(is_wp_error($wards)||empty($wards))continue;
         foreach($wards as $ward){
             if(isset($ward['SupportType']) && (int)$ward['SupportType']===3)continue;
@@ -89,6 +93,7 @@ add_action('rest_api_init',function(){
         do_action('litespeed_purge_url',home_url('/'));
         $out=array('configured'=>(bool)($token&&$shop),'policy'=>get_option('lnl_si_policy_status','pending'));
         global $wpdb;
+        $out['next_refresh_local']=wp_date('Y-m-d H:i:s',wp_next_scheduled('lnl_si_midnight'),new DateTimeZone('Asia/Ho_Chi_Minh'));
         $out['cache_plugins']=array_values(array_filter(get_option('active_plugins',array()),function($p){return preg_match('/cloudflare|litespeed|cache/i',$p);}));
         $cf=get_option('litespeed.conf',array());$out['cache_config_keys']=is_array($cf)?array_values(array_filter(array_keys($cf),function($k){return preg_match('/cloudflare|cf[_-]/i',$k);})):array();
         $out['cloudflare_option_names']=$wpdb->get_col("SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE '%cloudflare%' OR option_name LIKE 'litespeed%conf%'");
@@ -108,6 +113,7 @@ add_action('rest_api_init',function(){
     }));
     register_rest_route('lnl-shipping/v1','/eta',array('methods'=>'POST','permission_callback'=>function($r){return (bool)wp_verify_nonce($r->get_header('X-LNL-Nonce'),'lnl_shipping');},'callback'=>function($r){
         $district=absint($r->get_param('district'));$ward=(string)$r->get_param('ward');$type=(int)$r->get_param('type')===5?5:2;
+        if(function_exists('wc_load_cart') && function_exists('WC')){if(!WC()->cart)wc_load_cart();if(WC()->cart){$type=wc_get_weight(WC()->cart->get_cart_contents_weight(),'g')>=20000?5:2;}}
         if(!$district || !preg_match('/^[0-9A-Za-z_-]{1,15}$/D',$ward)){return new WP_Error('invalid','Chọn đủ quận/huyện và phường/xã.',array('status'=>400));}
         $rate='lnl_si_rate_'.hash_hmac('sha256',$_SERVER['REMOTE_ADDR']??'',wp_salt());
         $n=(int)get_transient($rate);if($n>=40){return new WP_Error('limited','Vui lòng thử lại sau.',array('status'=>429));}
@@ -152,7 +158,7 @@ function lnl_si_policy_update() {
 add_action('init','lnl_si_policy_update',30);
 add_action('wp_footer',function(){
     if(!is_front_page() && !(function_exists('is_checkout')&&is_checkout()&&!is_order_received_page()))return;
-    $config=array('regions'=>rest_url('lnl-shipping/v1/regions'),'endpoint'=>rest_url('lnl-shipping/v1/eta'),'nonce'=>wp_create_nonce('lnl_shipping'),'checkout'=>(bool)is_checkout(),'type'=>2);
+    $config=array('restNonce'=>wp_create_nonce('wp_rest'),'regions'=>rest_url('lnl-shipping/v1/regions'),'endpoint'=>rest_url('lnl-shipping/v1/eta'),'nonce'=>wp_create_nonce('lnl_shipping'),'checkout'=>(bool)is_checkout(),'type'=>2);
     if(function_exists('WC')&&WC()->cart){$config['type']=wc_get_weight(WC()->cart->get_cart_contents_weight(),'g')>=20000?5:2;}
 ?>
 <style id="lnl-shipping-information">
@@ -181,20 +187,22 @@ if(cfg.checkout){
  const district=val('ghn_district_id'),ward=val('ghn_ward_code'),address=val('address_1'),province=val('ghn_province_id');
  version++;const seq=version;if(controller)controller.abort();
  if(!district||!ward||!address||!province){panel.hidden=true;last='';return;}
+ const destination=form.querySelector(prefix==='shipping'?'.woocommerce-shipping-fields__field-wrapper':'.woocommerce-billing-fields__field-wrapper');
+ if(destination&&panel.parentElement!==destination)destination.append(panel);
  const key=district+'|'+ward+'|'+cfg.type;
  panel.hidden=false;
  const output=panel.querySelector('.lnl-eta-result');
  function show(data){output.textContent=data.from===data.to?'Dự kiến: '+data.to:'Dự kiến: '+data.from+' – '+data.to;}
  if(memory.has(key)){show(memory.get(key));last=key;return;}
  last=key;output.textContent='Đang tra dự kiến nhận hàng…';controller=new AbortController();
- fetch(cfg.endpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-LNL-Nonce':cfg.nonce},body:JSON.stringify({district,ward,type:cfg.type}),signal:controller.signal})
+ fetch(cfg.endpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-LNL-Nonce':cfg.nonce,'X-WP-Nonce':cfg.restNonce},body:JSON.stringify({district,ward,type:cfg.type}),signal:controller.signal})
  .then(async r=>{const data=await r.json();if(!r.ok)throw Error();return data;})
  .then(data=>{if(seq!==version)return;memory.set(key,data);show(data);})
  .catch(err=>{if(seq===version&&err.name!=='AbortError')output.textContent='Shop sẽ xác nhận thời gian giao hàng khi tiếp nhận đơn.';});
  }
  function schedule(){clearTimeout(timer);timer=setTimeout(refresh,450);}
  form.addEventListener('input',schedule);form.addEventListener('change',schedule);
- if(window.jQuery)window.jQuery(document.body).on('updated_checkout',schedule);
+ if(window.jQuery)window.jQuery(document.body).on('updated_checkout',function(){memory.clear();schedule();});
  refresh();
 }
 if(!document.body.classList.contains('home'))return;

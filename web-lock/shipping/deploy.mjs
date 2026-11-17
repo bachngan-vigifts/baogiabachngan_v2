@@ -43,20 +43,12 @@ try {
  const verified=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
  if(verified.content!==code)throw Error('readback');
  stage='ghn_readonly_probe';
- const res=await fetch('https://locknlockonline.com/wp-json/lnl-shipping/v1/inspect',{headers:{'X-LNL-Shipping':probe},signal:AbortSignal.timeout(60000)});
+ const res=await fetch('https://locknlockonline.com/wp-json/lnl-shipping/v1/inspect?check='+process.env.GITHUB_RUN_ID,{headers:{'X-LNL-Shipping':probe},signal:AbortSignal.timeout(60000)});
  const data=await res.json();console.log(JSON.stringify(data));
  if(!res.ok||!data.configured||!data.estimate_ok||data.policy!=='updated')throw Error('ghn_probe');
  stage='regions';
  const seed=await fetch('https://locknlockonline.com/wp-json/lnl-shipping/v1/seed-regions',{method:'POST',headers:{'X-LNL-Shipping':probe},signal:AbortSignal.timeout(90000)});
  const seeded=await seed.json();console.log('REGION_ESTIMATES='+JSON.stringify(seeded));if(!seed.ok||seeded.regions!==3)throw Error('regions');
- try{
- const cronURL=new URL('/execute/Cron/list_cron',base);
- const cronResp=await fetch(cronURL,{headers:{Authorization:'cpanel '+user+':'+token},signal:AbortSignal.timeout(15000)});
- const cronJSON=await cronResp.json();
- const cronData=cronJSON.data;
- const rows=Array.isArray(cronData)?cronData:Array.isArray(cronData?.entries)?cronData.entries:[];
- console.log('WORDPRESS_CRON_PRESENT='+rows.some(x=>/wp-cron|wp cron event run/.test(x.command||'')));
- }catch{console.log('CRON_READ_UNAVAILABLE');}
  stage='verify_browser';
  browser=await chromium.launch();
  const context=await browser.newContext({viewport:{width:1360,height:1004}});
@@ -93,6 +85,29 @@ try {
  await page.locator('#lnl-shipping-eta').scrollIntoViewIfNeeded();
  await page.screenshot({path:'shipping-checkout-mobile.png'});
  await context.close();
+
+ stage='cron';
+ async function cronApi(fn,params={}){
+ const url=new URL('/json-api/cpanel',base);
+ for(const [k,v] of Object.entries({cpanel_jsonapi_user:user,cpanel_jsonapi_apiversion:'2',cpanel_jsonapi_module:'Cron',cpanel_jsonapi_func:fn,...params}))url.searchParams.set(k,String(v));
+ const res=await fetch(url,{headers:{Authorization:'cpanel '+user+':'+token},signal:AbortSignal.timeout(20000)});
+ const json=await res.json();
+ if(!res.ok||json.cpanelresult?.error||json.cpanelresult?.event?.result===0)throw Error('cron_api');
+ return json.cpanelresult?.data;
+ }
+ try{
+ const entries=await cronApi('listcron');
+ if(!Array.isArray(entries))throw Error('cron_shape');
+ const existing=entries.some(row=>/wp-cron|wp cron event run/.test(row.command||'')&&((row.command||'').includes(root)||(row.command||'').includes('locknlockonline.com')));
+ if(existing){console.log('WORDPRESS_SYSTEM_CRON_EXISTS');}
+ else{
+ const command="/usr/bin/curl --fail --silent --show-error --max-time 45 'https://locknlockonline.com/wp-cron.php?doing_wp_cron' >/dev/null 2>&1";
+ const added=await cronApi('add_line',{command,minute:'0',hour:'*',day:'*',month:'*',weekday:'*'});
+ const check=await cronApi('listcron');
+ if(!Array.isArray(check)||!check.some(row=>row.command===command))throw Error('cron_verify');
+ console.log('WORDPRESS_HOURLY_CRON_INSTALLED');
+ }
+ }catch{console.log('SYSTEM_CRON_NOT_VERIFIED');}
  console.log('SHIPPING_DEPLOY_OK');
 }catch(error){
  console.log('FAILED_STAGE='+stage+' ERROR='+String(error.message).slice(0,200));
