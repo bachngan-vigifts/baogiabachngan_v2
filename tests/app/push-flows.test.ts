@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -23,11 +24,11 @@ async function setup() {
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
-  return { call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kho: await login('kho@x.vn') };
+  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kho: await login('kho@x.vn') };
 }
 
 test('đẩy thông báo: báo giá mới → Manager; duyệt → người lập; đơn / HĐKT mới → Manager; duyệt đơn → phụ trách; việc mới / nhận việc / hoàn thành', async () => {
-  const { call, emp, mgr, kho } = await setup();
+  const { db, call, emp, mgr, kho } = await setup();
   const events = async (who: string) => (await call('/notifications', who)).data.notifications.map((n: any) => n.eventType as string);
   const has = async (who: string, type: string) => (await events(who)).includes(type);
 
@@ -62,7 +63,7 @@ test('đẩy thông báo: báo giá mới → Manager; duyệt → người lậ
   const k2 = await call('/contracts', emp, 'POST', { quoteId: q2.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15 }); assert.equal(k2.status, 201);
   await call(`/orders/${k2.data.orderId}/submit`, emp, 'POST', {});
   assert.ok(await has(mgr, 'contract_pending'));
-  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await approveFixtureOrder({db,call},`/orders/${o.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   assert.ok(await has(emp, 'order_approved'));
 
   // Việc giao cho nhóm Kho → kho nhận "việc mới"; kho nhận việc → người giao nhận "đã có người nhận"; hoàn thành → người giao nhận.

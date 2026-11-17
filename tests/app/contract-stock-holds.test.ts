@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
@@ -53,7 +54,7 @@ async function setup(holdQuote = false) {
   );
   const base = `/orders/${contract.orderId}/holds`;
   const approve = () =>
-    f.call(`/orders/${contract.orderId}/status`, c.mgr, 'PUT', {
+    approveFixtureOrder(f,`/orders/${contract.orderId}/status`,c.mgr,'PUT',{
       status: 'confirmed',
       verified: true,
       costWarningsReviewed: true,

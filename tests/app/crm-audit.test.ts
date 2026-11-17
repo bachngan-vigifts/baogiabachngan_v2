@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
@@ -53,7 +54,7 @@ test('giao hàng: đi đúng thứ tự trạng thái; giao xong báo người p
   assert.equal((await s.call(`/quotes/${qid}/approve`, s.mgr, 'POST', { internalNo: 'ML-FIXTURE', revision: 1 })).status, 200);
   const o = await s.call('/orders', s.emp, 'POST', { quoteId: qid }), orderId = (o.data.order?.id ?? o.data.id) as string;
   // Đơn CRM nháp nay được ghi thu trước khi duyệt (bdd00c8) – kiểm ở tests/app/crm-early-receipts.test.ts.
-  assert.equal((await s.call(`/orders/${orderId}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
+  assert.equal((await approveFixtureOrder(s,`/orders/${orderId}/status`,s.mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
   await s.db.insert(deliveries).values({ id: 'dl1', deliveryNo: 'GH1', orderId, plannedDate: '2026-10-20', status: 'failed', createdBy: 'emp', createdAt: now, updatedAt: now });
   assert.equal((await s.call('/deliveries/dl1/status', s.mgr, 'PUT', { status: 'delivered' })).data.code, 'DELIVERY_STATUS_FLOW', 'thất bại → phải lên lịch lại trước');
   assert.equal((await s.call('/deliveries/dl1/status', s.mgr, 'PUT', { status: 'planned' })).status, 200);

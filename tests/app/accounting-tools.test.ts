@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
@@ -37,7 +38,7 @@ async function confirmedOrder(s: Awaited<ReturnType<typeof setup>>, no: string) 
   const q = await s.call('/quotes', s.emp, 'POST', { type: 'B2B', quoteNo: no, customer: 'Khách ' + no, vat: 8, rows: [{ name: 'Ly sứ', sku: 'LY1', unit: 'cái', qty: 10, price: 1000 }] });
   assert.equal((await s.call(`/quotes/${q.data.id}/approve`, s.mgr, 'POST', { revision: 1 })).status, 200);
   const o = await s.call('/orders', s.emp, 'POST', { quoteId: q.data.id }), orderId = (o.data.order?.id ?? o.data.id) as string;
-  assert.equal((await s.call(`/orders/${orderId}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
+  assert.equal((await approveFixtureOrder(s,`/orders/${orderId}/status`,s.mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
   return orderId;
 }
 

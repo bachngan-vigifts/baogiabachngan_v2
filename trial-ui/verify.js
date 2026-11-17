@@ -20,7 +20,7 @@ export function duePill(date, { done = false, fmt = v => v } = {}) {
  * `layout: 'page'` mở không gian toàn màn hình; `review` là HTML đã escape của phần đối chiếu bên trái.
  * Trả về object { tên ô: giá trị } khi đồng ý, null khi huỷ.
  */
-export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '', rows = [], checks = [], fields = '', ok = 'Xác nhận', validate, layout = 'dialog', subtitle = '', review = '' } = {}) {
+export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '', rows = [], checks = [], fields = '', ok = 'Xác nhận', validate,onMount, layout = 'dialog', subtitle = '', review = '' } = {}) {
   const dlg = document.createElement('dialog');
   const page = layout === 'page';
   dlg.className = 'modal verify-dialog' + (page ? ' verify-page' : '');
@@ -52,7 +52,7 @@ export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '
       const err = validate?.(values); if (err) { dlg.querySelector('[data-err]').textContent = err; return; }
       done(values);
     });
-    dlg.showModal();
+    onMount?.(dlg);dlg.showModal();
   });
 }
 

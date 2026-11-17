@@ -107,7 +107,8 @@ async function profitOrders(db: AnyDb, from: string, to: string, orderIds?: stri
       const cost = quoteLineCost(r, null)?.unitCost;
       return { ...base, quoteCost: cost, printingCost: Math.round(printing), commission };
     });
-    const shippingCost = doc?.shipping?.payer === 'sender' ? ships.filter(s => s.orderId === o.id).reduce((n, s) => n + Math.max(0, s.fee || 0), 0) : 0;
+    const actualShipping=ships.filter(s=>s.orderId===o.id).reduce((n,s)=>n+Math.max(0,s.fee||0),0);
+    const shippingCost=doc?.shipping?.payer==='sender'?(actualShipping>0?actualShipping:Math.max(0,Number(doc.shipping.cost)||0)):0;
     const branchId = o.channel === 'pos' && o.shiftId ? registerOf.get(o.shiftId) ?? 'pos' : CRM_BRANCH;
     const profit = orderProfit({ id: o.id, orderNo: o.orderNo, orderDate: o.orderDate, ownerId: o.ownerId, customerId: o.customerId, customerName: o.customerName, branchId, shippingCost },
       inputs, (sku, line) => { const c = pickLineCost(null, null, history.get(sku), o.orderDate, sku, fallback.get(sku), line.unit); return c ? { cost: c.unitCost, source: c.source } : null; }, onlyConfirmed);

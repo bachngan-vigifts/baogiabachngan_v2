@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import {test,beforeEach,afterEach,mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {eq} from 'drizzle-orm';
@@ -22,7 +23,7 @@ async function setup(stock=0){
   const q=ok(await f.call('/quotes',c.emp,'POST',{type:'B2B',quoteNo:'H-'+crypto.randomUUID(),customer:'Khách giữ',vat:8,rows:[{sku,name:'Bộ trà',unit:'Bộ',qty,price:2000}]}),201);
   ok(await f.call('/quotes/'+q.id+'/approve',c.mgr,'POST',{revision:1}));
   const o=ok(await f.call('/orders',c.emp,'POST',{quoteId:q.id,warehouseId:'vig',...(date?{deliveryDate:date}:{})}),201);
-  const approved=ok(await f.call(`/orders/${o.id}/status`,c.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
+  const approved=ok(await approveFixtureOrder(f,`/orders/${o.id}/status`,c.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
   return {id:o.id as string,approved};
  };
  const view=async(id:string)=>ok(await f.call(`/orders/${id}/holds`,c.emp));

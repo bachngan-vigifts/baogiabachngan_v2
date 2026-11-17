@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -43,7 +44,7 @@ test('file SQL xoá dữ liệu chạy thử: xoá đúng bảng, giữ dữ li�
   assert.equal((await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 2 })).status, 200);
   const k = await call('/contracts', emp, 'POST', { quoteId: q.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15, signedDate: '2026-10-06' }); assert.equal(k.status, 201, JSON.stringify(k.data));
   const o = { data: { id: k.data.orderId as string } };
-  const approved = await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager đã xem cảnh báo CK khách / cước.
+  const approved = await approveFixtureOrder({db,call},`/orders/${o.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager đã xem cảnh báo CK khách / cước.
   assert.equal(approved.status, 200, JSON.stringify(approved.data));
   const line = (await call(`/orders/${o.data.id}`, emp)).data.lines[0];
   assert.equal((await call('/deliveries', emp, 'POST', { orderId: o.data.id, plannedDate: '2026-10-10', lines: [{ orderLineId: line.id, qty: 50 }] })).status, 201);
@@ -71,7 +72,7 @@ test('file SQL xoá dữ liệu chạy thử: xoá đúng bảng, giữ dữ li�
   assert.equal(q2.status, 201, 'số báo giá cũ dùng lại được');
   await call(`/quotes/${q2.data.id}/approve`, mgr, 'POST', { revision: 1 });
   const o2 = await call('/orders', emp, 'POST', { quoteId: q2.data.id });
-  const approved2 = await call(`/orders/${o2.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  const approved2 = await approveFixtureOrder({db,call},`/orders/${o2.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   assert.equal(approved2.status, 200, JSON.stringify(approved2.data));
   assert.match((await call(`/orders/${o2.data.id}`, emp)).data.order.orderNo, /^DH_001_\d{8}$/);
 });
