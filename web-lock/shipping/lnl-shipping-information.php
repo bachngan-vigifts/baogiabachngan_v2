@@ -48,6 +48,38 @@ function lnl_si_estimate($district,$ward,$type=2,$force=false) {
     update_option('lnl_si_routes',$routes,false);
     return $result;
 }
+
+function lnl_si_seed_regions() {
+    $specs=array(array('label'=>'Miền Nam · TP.HCM','district'=>1442),array('label'=>'Miền Trung · Đà Nẵng','district'=>1526),array('label'=>'Miền Bắc · Hà Nội','district'=>1489));
+    $out=array();
+    foreach($specs as $spec){
+        $wards=lnl_si_api('/master-data/ward?district_id='.$spec['district']);
+        if(is_wp_error($wards)||empty($wards))continue;
+        foreach($wards as $ward){
+            if(isset($ward['SupportType']) && (int)$ward['SupportType']===3)continue;
+            $code=(string)($ward['WardCode']??'');if(!$code)continue;
+            $estimate=lnl_si_estimate($spec['district'],$code);
+            if(!is_wp_error($estimate)){$spec['ward']=$code;$out[]=$spec;break;}
+            break;
+        }
+    }
+    if($out)update_option('lnl_si_regions',$out,false);
+    return count($out);
+}
+function lnl_si_regions() {
+    $out=array();$tz=new DateTimeZone('Asia/Ho_Chi_Minh');
+    foreach(get_option('lnl_si_regions',array()) as $r){
+        $cached=get_transient(lnl_si_key($r['district'],$r['ward'],2));
+        if(!is_array($cached)||($cached['day']??'')!==lnl_si_today())continue;
+        $out[]=array('label'=>$r['label'],'from'=>wp_date('d/m',$cached['from'],$tz),'to'=>wp_date('d/m',$cached['to'],$tz));
+    }
+    return $out;
+}
+add_action('rest_api_init',function(){
+    register_rest_route('lnl-shipping/v1','/seed-regions',array('methods'=>'POST','permission_callback'=>'lnl_si_permission','callback'=>function(){return array('regions'=>lnl_si_seed_regions());}));
+    register_rest_route('lnl-shipping/v1','/regions',array('methods'=>'GET','permission_callback'=>'__return_true','callback'=>'lnl_si_regions'));
+});
+
 function lnl_si_permission($r) {
     return hash_equals('__LNL_SHIPPING_PROBE__',(string)$r->get_header('X-LNL-Shipping'));
 }
@@ -56,6 +88,10 @@ add_action('rest_api_init',function(){
         list($token,$shop)=lnl_si_config();
         do_action('litespeed_purge_url',home_url('/'));
         $out=array('configured'=>(bool)($token&&$shop),'policy'=>get_option('lnl_si_policy_status','pending'));
+        global $wpdb;
+        $out['cache_plugins']=array_values(array_filter(get_option('active_plugins',array()),function($p){return preg_match('/cloudflare|litespeed|cache/i',$p);}));
+        $cf=get_option('litespeed.conf',array());$out['cache_config_keys']=is_array($cf)?array_values(array_filter(array_keys($cf),function($k){return preg_match('/cloudflare|cf[_-]/i',$k);})):array();
+        $out['cloudflare_option_names']=$wpdb->get_col("SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE '%cloudflare%' OR option_name LIKE 'litespeed%conf%'");
         if (!$out['configured']) { return $out; }
         $shops=lnl_si_api('/v2/shop/all?offset=0&limit=100');
         if(is_wp_error($shops)){ $out['ghn_available']=false;return $out; }
@@ -116,7 +152,7 @@ function lnl_si_policy_update() {
 add_action('init','lnl_si_policy_update',30);
 add_action('wp_footer',function(){
     if(!is_front_page() && !(function_exists('is_checkout')&&is_checkout()&&!is_order_received_page()))return;
-    $config=array('endpoint'=>rest_url('lnl-shipping/v1/eta'),'nonce'=>wp_create_nonce('lnl_shipping'),'checkout'=>(bool)is_checkout(),'type'=>2);
+    $config=array('regions'=>rest_url('lnl-shipping/v1/regions'),'endpoint'=>rest_url('lnl-shipping/v1/eta'),'nonce'=>wp_create_nonce('lnl_shipping'),'checkout'=>(bool)is_checkout(),'type'=>2);
     if(function_exists('WC')&&WC()->cart){$config['type']=wc_get_weight(WC()->cart->get_cart_contents_weight(),'g')>=20000?5:2;}
 ?>
 <style id="lnl-shipping-information">
@@ -163,10 +199,20 @@ if(cfg.checkout){
 }
 if(!document.body.classList.contains('home'))return;
 const tip=document.createElement('aside');tip.id='lnl-ship-tip';tip.hidden=true;tip.setAttribute('role','tooltip');
-tip.innerHTML='<strong>Hỗ trợ vận chuyển</strong><p>Miễn phí vận chuyển cho đơn từ <b>1.000.000đ</b>. Đơn dưới ngưỡng này: xem phí tại bước thanh toán.</p><p>Dự kiến GHN theo địa chỉ nhận hàng sẽ hiển thị tại trang thanh toán.</p><p><a href="/chinh-sach-van-chuyen/">Xem chính sách vận chuyển</a></p>';
-document.body.append(tip);let active=null,closeTimer;
+tip.innerHTML='<strong>Hỗ trợ vận chuyển</strong><p>Miễn phí vận chuyển cho đơn từ <b>1.000.000đ</b>. Đơn dưới ngưỡng này: xem phí tại bước thanh toán.</p><p>Dự kiến GHN theo tuyến tham khảo:</p><div class="lnl-region-times">Chọn địa chỉ tại thanh toán để xem dự kiến cụ thể.</div><small>Tuyến đại diện từng miền, không áp dụng chung cho mọi tỉnh. Chưa gồm thời gian xử lý đơn.</small><p><a href="/chinh-sach-van-chuyen/">Xem chính sách vận chuyển</a></p>';
+document.body.append(tip);let active=null,closeTimer,regionsPromise;
+function loadRegions(){
+ if(regionsPromise)return;
+ regionsPromise=fetch(cfg.regions).then(r=>{if(!r.ok)throw Error();return r.json();}).then(rows=>{
+ if(!Array.isArray(rows)||!rows.length)return;
+ const el=tip.querySelector('.lnl-region-times');el.replaceChildren();
+ rows.forEach(row=>{const p=document.createElement('p');p.textContent=row.label+': '+(row.from===row.to?row.to:row.from+' – '+row.to);el.append(p);});
+ }).catch(()=>{});
+}
+
 function close(){tip.hidden=true;if(active)active.setAttribute('aria-expanded','false');active=null;}
 function show(button){
+loadRegions();
 clearTimeout(closeTimer);if(active&&active!==button)active.setAttribute('aria-expanded','false');active=button;tip.hidden=false;button.setAttribute('aria-expanded','true');
 const r=button.getBoundingClientRect();const w=tip.offsetWidth,h=tip.offsetHeight;
 tip.style.left=Math.max(12,Math.min(r.left,innerWidth-w-12))+'px';
@@ -187,7 +233,7 @@ document.addEventListener('click',e=>{if(!tip.contains(e.target)&&!e.target.clos
 document.addEventListener('focusin',e=>{if(active&&!tip.contains(e.target)&&e.target!==active)close();});
 window.addEventListener('scroll',close,{passive:true});window.addEventListener('resize',close);
 }
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+init();
 })();
 </script>
 <?php

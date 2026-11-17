@@ -28,14 +28,17 @@ try {
  };
 
 
+ const probe=createHash('sha256').update(token+':lnl-shipping-v1').digest('hex');
+ let previousCode=null;
  const files=await api('list_files',{dir});
  if(files.some(f=>f.file===pluginName)){
  const previous=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
- if(previous.content!=="<?php\ndefined('ABSPATH') || exit;\n// Disabled after verification failure.\n")throw Error('unexpected_existing_file');
+ const expected=readFileSync('web-lock/shipping/baseline.php','utf8').replace('__LNL_SHIPPING_PROBE__',probe);
+ if(previous.content!==expected)throw Error('unexpected_existing_file');
+ previousCode=previous.content;
  }
- const probe=createHash('sha256').update(token+':lnl-shipping-v1').digest('hex');
  const code=readFileSync('web-lock/shipping/lnl-shipping-information.php','utf8').replace('__LNL_SHIPPING_PROBE__',probe);
- rollback=()=>upload(dir,pluginName,"<?php\ndefined('ABSPATH') || exit;\n// Disabled after verification failure.\n");
+ rollback=()=>upload(dir,pluginName,previousCode||"<?php\ndefined('ABSPATH') || exit;\n// Disabled after verification failure.\n");
  stage='install';activated=true;await upload(dir,pluginName,code);
  const verified=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
  if(verified.content!==code)throw Error('readback');
@@ -43,6 +46,17 @@ try {
  const res=await fetch('https://locknlockonline.com/wp-json/lnl-shipping/v1/inspect',{headers:{'X-LNL-Shipping':probe},signal:AbortSignal.timeout(60000)});
  const data=await res.json();console.log(JSON.stringify(data));
  if(!res.ok||!data.configured||!data.estimate_ok||data.policy!=='updated')throw Error('ghn_probe');
+ stage='regions';
+ const seed=await fetch('https://locknlockonline.com/wp-json/lnl-shipping/v1/seed-regions',{method:'POST',headers:{'X-LNL-Shipping':probe},signal:AbortSignal.timeout(90000)});
+ const seeded=await seed.json();console.log('REGION_ESTIMATES='+JSON.stringify(seeded));if(!seed.ok||seeded.regions!==3)throw Error('regions');
+ try{
+ const cronURL=new URL('/execute/Cron/list_cron',base);
+ const cronResp=await fetch(cronURL,{headers:{Authorization:'cpanel '+user+':'+token},signal:AbortSignal.timeout(15000)});
+ const cronJSON=await cronResp.json();
+ const cronData=cronJSON.data;
+ const rows=Array.isArray(cronData)?cronData:Array.isArray(cronData?.entries)?cronData.entries:[];
+ console.log('WORDPRESS_CRON_PRESENT='+rows.some(x=>/wp-cron|wp cron event run/.test(x.command||'')));
+ }catch{console.log('CRON_READ_UNAVAILABLE');}
  stage='verify_browser';
  browser=await chromium.launch();
  const context=await browser.newContext({viewport:{width:1360,height:1004}});
@@ -82,6 +96,6 @@ try {
  console.log('SHIPPING_DEPLOY_OK');
 }catch(error){
  console.log('FAILED_STAGE='+stage+' ERROR='+String(error.message).slice(0,200));
- if(activated&&rollback)try{await rollback();console.log('SHIPPING_PLUGIN_DISABLED');}catch{console.log('ROLLBACK_FAILED');}
+ if(activated&&rollback)try{await rollback();console.log('SHIPPING_PREVIOUS_RESTORED');}catch{console.log('ROLLBACK_FAILED');}
  process.exitCode=1;
 }finally{if(browser)await browser.close();}
