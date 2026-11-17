@@ -57,6 +57,8 @@ export const salesOrders = pgTable('sales_orders', {
   status: text('status', { enum: ORDER_STATUSES }).notNull().default('confirmed'),
   /** Đơn / HĐKT nháp: null = nhân viên chưa bấm "Gửi duyệt" (Nháp); có giá trị = đã gửi Manager duyệt (Chờ duyệt). */
   submittedAt: text('submitted_at'),
+  /** Operational checklist captured atomically when staff submit a draft for approval; no internal costs. */
+  submissionReview: text('submission_review'),
   subtotal: doublePrecision('subtotal').notNull().default(0),
   tax: doublePrecision('tax').notNull().default(0),
   total: doublePrecision('total').notNull().default(0),

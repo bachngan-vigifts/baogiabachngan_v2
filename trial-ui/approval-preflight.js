@@ -38,6 +38,7 @@ export async function reviewOrderCosts({review,api,isManager,verifyBox,esc,toast
  const quote=await api('/quotes/'+encodeURIComponent(review.quoteId));
  if(review.quoteRevision!=null&&quote.revision!==review.quoteRevision){toast('Báo giá vừa thay đổi. Mở lại kiểm tra chi phí để lấy số mới.','err');return false;}
  const doc=quote.data,rows=doc.rows||[];
+ if(review.shippingPayer)doc.shipping={...doc.shipping,payer:review.shippingPayer};
  const printed=printingInfo(doc).enabled?rows.map((r,index)=>({r,index})).filter(({r})=>Number(r.qty)>0&&requiresPrinting(r)):[];
  const totalMode=printed.length>0&&!rows.some(r=>Number.isFinite(r.printing?.unitPrice))&&Number.isFinite(doc.printing?.totalCost);
  const field=(name,label,value,attrs='')=>`<label class="verify-field"><span>${esc(label)}</span><input type="number" name="${name}" min="0" max="1000000000000" step="any" ${attrs} value="${Number.isFinite(value)?value:''}"></label>`;
