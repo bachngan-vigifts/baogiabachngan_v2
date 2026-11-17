@@ -1,3 +1,5 @@
+import {workspaceSchema,workspaceProblems,workspaceForecast,type WorkspaceInputs} from '../domain/workspace.ts';
+import {weeklyWorkspaceFacts,workspaceFactView,syncWorkspaceActions,weeklyReportActions,weeklyEventReminders} from './workspace.ts';
 /**
  * BÁO CÁO TUẦN Sale / Sale Admin – khu vực `business`. Xem domain/weekly.ts cho hạn nộp, điểm, công thức Tiền trách nhiệm.
  *  GET  /staff-reports/me?month                 các tuần của tháng (trạng thái, điểm) + việc cần nộp
@@ -34,6 +36,8 @@ const me = (c: Ctx) => (c.state.session as SessionState).member;
 const nowIso = () => new Date().toISOString();
 const text = (v: unknown, max: number = WEEKLY_LIMITS.text) => String(v ?? '').replace(/\r\n/g, '\n').trim().slice(0, max);
 const isMonth = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v);
+const canonical=(v:unknown):string=>Array.isArray(v)?'['+v.map(canonical).join(',')+']':v&&typeof v==='object'?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical((v as Record<string,unknown>)[k])).join(',')+'}':JSON.stringify(v);
+const payloadHash=async(v:unknown)=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(canonical(v))))].map(n=>n.toString(16).padStart(2,'0')).join('');
 const parse = (s: string | null) => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
 const reports = (m: { role: string; positionId?: string | null }) => m.role === 'employee' && WEEKLY_POSITIONS.includes(m.positionId as never);
 const isManager = (m: { role: string }) => m.role === 'manager';
@@ -73,7 +77,7 @@ async function weekFacts(db: AnyDb, memberId: string, monday: string, targetOf?:
   const counted = and(eq(salesOrders.ownerId, memberId), ne(salesOrders.status, 'cancelled'), ne(salesOrders.status, 'draft'));
   const quoteOwner = sql<string>`coalesce(${quotations.assigneeId}, ${quotations.creatorId})`;
   const quoteDay = sql<string>`coalesce(nullif(${quotations.quoteDate}, ''), substr(${quotations.createdAt}, 1, 10))`;
-  const [weekOrders, mtd, newCustomers, quoteRows, contracts, care, target, ships, recv] = await Promise.all([
+  const [weekOrders, mtd, newCustomers, quoteRows, contracts, care, target, ships, recv, workspace] = await Promise.all([
     db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total }).from(salesOrders)
       .where(and(counted, gte(salesOrders.orderDate, monday), lte(salesOrders.orderDate, sunday))).orderBy(desc(salesOrders.total)),
     db.select({ revenue: sql<number>`coalesce(sum(${salesOrders.total}),0)`.mapWith(Number) }).from(salesOrders)
@@ -88,11 +92,11 @@ async function weekFacts(db: AnyDb, memberId: string, monday: string, targetOf?:
     activityFacts(db, monday, next, [memberId]),
     targetOf ? targetOf(db, memberId, month) : Promise.resolve(null),
     // Giao hàng chưa xong của đơn mình phụ trách, hẹn tới hết 2 tuần sau.
-    db.select({ plannedDate: deliveries.plannedDate, status: deliveries.status, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName })
+    db.select({ id: deliveries.id, orderId: deliveries.orderId, plannedDate: deliveries.plannedDate, status: deliveries.status, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName })
       .from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
       .where(and(eq(salesOrders.ownerId, memberId), inArray(deliveries.status, ['planned', 'in_transit', 'failed']), lte(deliveries.plannedDate, addDays(sunday, 14))))
       .orderBy(asc(deliveries.plannedDate)).limit(30),
-    ownReceivables(db, memberId, today),
+    ownReceivables(db, memberId, today),weeklyWorkspaceFacts(db,memberId,monday),
   ]);
   const orderIds = weekOrders.map(o => o.id);
   const careRows = care.rows.filter(a => care.marks.get(a.id)?.counted), careCustomerIds = [...new Set(careRows.map(a => a.customerId))];
@@ -119,10 +123,11 @@ async function weekFacts(db: AnyDb, memberId: string, monday: string, targetOf?:
     orderList: weekOrders.map(o => ({ orderNo: o.orderNo, customerName: o.customerName, total: o.total, items: itemsText(lines.filter(l => l.orderId === o.id)) })),
     quotes, care: [...careBy.values()].map(g => ({ industry: g.industry, label: g.label, oldCustomers: g.oldCustomers.size, newCustomers: g.newCustomers.size, activities: g.activities })),
     deliveries: ships, receivables,
-    receivableTotals: recv.totals };
+    receivableTotals: recv.totals,...workspace };
 }
 type WeekFacts = Awaited<ReturnType<typeof weekFacts>>;
 function inputsOf(b: Record<string, unknown>, quotes?: WeekFacts['quotes']): WeeklyInputs {
+  if(b.workspaceVersion===2){const parsed=workspaceSchema.safeParse(b);if(!parsed.success)throw new AppError(400,'Kiểm tra nội dung báo cáo: '+parsed.error.issues.slice(0,3).map(i=>i.path.join('.')+' '+i.message).join('; '));const v=parsed.data;v.quoteNotes=Object.fromEntries(Object.entries(v.quoteFollowups).filter(([,p])=>p.feedback).map(([id,p])=>[id,p.feedback]));v.highlights=v.overview;v.nextWeekPlan=[v.priority,...v.planTasks.map(t=>t.title+' · '+t.date)].join('\n').slice(0,2000);return v;}
   const raw = (b.quoteNotes && typeof b.quoteNotes === 'object' ? b.quoteNotes : {}) as Record<string, unknown>;
   // Chỉ giữ ghi chú của báo giá thuộc tuần (khi đã biết danh sách) – không nhận khoá lạ từ client.
   const keys = quotes ? quotes.map(q => q.id) : Object.keys(raw).slice(0, 200);
@@ -137,8 +142,8 @@ async function ownReceivables(db: AnyDb, memberId: string, today: string) {
     contractNo: sql<string | null>`(select k.contract_no from ${salesContracts} k where k.order_id = "sales_orders"."id" and k.status <> 'cancelled' limit 1)` })
     .from(salesOrders).where(and(eq(salesOrders.ownerId, memberId), ne(salesOrders.status, 'cancelled')));
   const debtOrders = owned.filter(o => debtCounts(o.status, o.contract)), net = await netReceivables(db, debtOrders.map(o => o.id), today);
-  const list = debtOrders.map(o => ({ orderNo: o.orderNo, contractNo: o.contractNo, customerName: o.customerName, ...net.get(o.id)! }))
-    .filter(r => r.balance > 0).map(r => ({ orderNo: r.orderNo, contractNo: r.contractNo, customerName: r.customerName, balance: r.balance, overdue: r.overdue, nextDueDate: r.nextDueDate }))
+  const list = debtOrders.map(o => ({ orderId:o.id,orderNo: o.orderNo, contractNo: o.contractNo, customerName: o.customerName, ...net.get(o.id)! }))
+    .filter(r => r.balance > 0).map(r => ({ orderId:r.orderId,orderNo: r.orderNo, contractNo: r.contractNo, customerName: r.customerName, balance: r.balance, overdue: r.overdue, nextDueDate: r.nextDueDate }))
     .sort((a, b) => b.overdue - a.overdue || b.balance - a.balance);
   return { list, totals: { balance: list.reduce((n, r) => n + r.balance, 0), overdue: list.reduce((n, r) => n + r.overdue, 0) } };
 }
@@ -209,7 +214,7 @@ function specOf(period: unknown, deps: StaffReportDeps) {
     openMsg: 'Tuần chưa kết thúc – chỉ lưu nháp được, chưa nộp chính thức.', openCode: 'WEEK_OPEN',
     blockerOpen: 'Tuần chưa kết thúc – chỉ lưu nháp; nộp chính thức từ 00:00 thứ Hai tuần sau.', notStarted: 'Tuần chưa bắt đầu.',
     draftInputs: (b: Record<string, unknown>) => inputsOf(b) as unknown,
-    validate: (b: Record<string, unknown>, facts: unknown) => { const f = facts as WeekFacts, v = inputsOf(b, f.quotes); return { inputs: v as unknown, issues: weeklyProblems(v, f.quotes.filter(q => !q.won)) }; },
+    validate: (b: Record<string, unknown>, facts: unknown) => { const f = facts as WeekFacts, v = inputsOf(b, f.quotes); return { inputs: v as unknown, issues: 'workspaceVersion' in v&&v.workspaceVersion===2?workspaceProblems(v as WorkspaceInputs,workspaceFactView(f)):weeklyProblems(v, f.quotes.filter(q => !q.won)) }; },
     sources: ['sales_orders', 'sales_order_lines', 'quotations', 'sales_contracts', 'customer_activities', 'deliveries', 'payment_schedules', 'customer_payments', 'hr_revenue_targets'] };
   if (isMonthPeriod(period) && period >= MONTHLY_REPORT_FROM) return { kind: 'monthly' as const, period, label: 'tháng', deadline: monthlyDeadline(period), opensAt: monthlyOpensAt(period),
     started: (now: string) => monthStarted(period, now), official: (now: string) => canSubmitMonth(period, now),
@@ -228,14 +233,15 @@ export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: StaffR
     const m = me(c), db = c.env.db, now = nowIso(), month = isMonth(c.url.searchParams.get('month')) ? c.url.searchParams.get('month')! : vnDay(now).slice(0, 7);
     if (!reports(m)) return json({ required: false, canReview: isManager(m), month });
     const periods = [...weeksOfMonth(month), month];
-    const [rows, drafts] = await Promise.all([
+    const [rows, drafts, eventReminders] = await Promise.all([
       db.select().from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), inArray(staffWeeklyReports.period, periods))),
       db.select({ period: staffWeeklyReportDrafts.period, updatedAt: staffWeeklyReportDrafts.updatedAt }).from(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId, m.id), inArray(staffWeeklyReportDrafts.period, periods))),
+      weeklyEventReminders(db,m.id,vnDay(now)),
     ]);
     const pts = monthPoints(month, new Map(rows.map(r => [r.period, { submittedAt: r.submittedAt, review: r.review as WeeklyReview }])), now);
     const lastWeek = addDays(mondayOf(vnDay(now)), -7);
     const [last] = await db.select({ id: staffWeeklyReports.id }).from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), eq(staffWeeklyReports.period, lastWeek))).limit(1);
-    return json({ required: true, applies: appliesTo(month), canReview: false, month, points: pts.points, maxPoints: pts.required,
+    return json({recommendedPeriod: !last && !beforeLaunch(lastWeek) ? lastWeek : mondayOf(vnDay(now)), eventReminders, required: true, applies: appliesTo(month), canReview: false, month, points: pts.points, maxPoints: pts.required,
       weeks: pts.weeks.map(w => { const r = rows.find(x => x.period === w.period);
         return { ...w, reportId: r?.id ?? null, submittedAt: r?.submittedAt ?? null, reviewNote: r?.reviewNote ?? '', draftAt: drafts.find(d => d.period === w.period)?.updatedAt ?? null }; }),
       monthly: pts.monthly ? (() => { const r = rows.find(x => x.period === month);
@@ -268,48 +274,74 @@ export function registerStaffReportRoutes(router: Router<StaffEnv>, deps: StaffR
       reviewLabels: WEEKLY_REVIEW_LABEL });
   }, 'business');
 
+  router.get('/staff-reports/actions',async c=>{const m=me(c),memberId=c.url.searchParams.get('memberId')||m.id;if(memberId!==m.id&&!isManager(m))throw new AppError(403,'Chỉ xem việc phát sinh từ báo cáo của mình.');if(memberId===m.id&&!reports(m)&&!isManager(m))throw new AppError(403,'Không có quyền xem báo cáo.');return json({actions:await weeklyReportActions(c.env.db,memberId)});},'business');
+
   router.put('/staff-reports/draft', async c => {
-    const m = me(c), db = c.env.db, b = await readJson(c.req, 30_000), now = nowIso();
+    const m = me(c), db = c.env.db, b = await readJson(c.req, 300_000), now = nowIso();
     if (!reports(m)) throw new AppError(403, 'Chức vụ của bạn không phải nộp báo cáo tuần / tháng.');
     const sp = specOf(b.period, deps), period = sp.period;
     if (!sp.started(now)) throw new AppError(400, sp.notStarted);
     const [r] = await db.select({ review: staffWeeklyReports.review }).from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), eq(staffWeeklyReports.period, period))).limit(1);
     if (r && r.review !== 'pending') throw new AppError(409, 'Báo cáo đã được duyệt, không sửa được.');
-    const inputs = JSON.stringify(sp.draftInputs((b.inputs ?? {}) as Record<string, unknown>));
-    await db.insert(staffWeeklyReportDrafts).values({ memberId: m.id, period, inputs, updatedAt: now })
-      .onConflictDoUpdate({ target: [staffWeeklyReportDrafts.memberId, staffWeeklyReportDrafts.period], set: { inputs, updatedAt: now } });
-    return json({ ok: true, updatedAt: now });
+    const normalized=sp.draftInputs((b.inputs??{}) as Record<string,unknown>),inputs=JSON.stringify(normalized);
+    const updatedAt=await db.transaction(async tx=>{
+      await tx.select({id:employees.id}).from(employees).where(eq(employees.id,m.id)).for('update');
+      const [report]=await tx.select().from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId,m.id),eq(staffWeeklyReports.period,period))).limit(1).for('update');
+      if(report&&report.review!=='pending')throw new AppError(409,'Báo cáo đã được duyệt, không sửa được.');
+      const [prior]=await tx.select().from(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId,m.id),eq(staffWeeklyReportDrafts.period,period))).limit(1);
+      if(Object.hasOwn(b,'expectedDraftAt')&&(b.expectedDraftAt??null)!==(prior?.updatedAt??null))throw new AppError(409,'Nháp đã thay đổi ở cửa sổ khác. Nội dung đang nhập được giữ; mở lại để đối chiếu.','DRAFT_CONFLICT');
+      if(parse(prior?.inputs??null)?.workspaceVersion===2&&(normalized as {workspaceVersion?:number}).workspaceVersion!==2)throw new AppError(409,'Có bản nháp theo mẫu mới. Tải lại ứng dụng trước khi lưu.','REPORT_CLIENT_OLD');
+      const stamp=new Date(Math.max(Date.parse(now),prior?Date.parse(prior.updatedAt)+1:0)).toISOString();
+      await tx.insert(staffWeeklyReportDrafts).values({memberId:m.id,period,inputs,updatedAt:stamp}).onConflictDoUpdate({target:[staffWeeklyReportDrafts.memberId,staffWeeklyReportDrafts.period],set:{inputs,updatedAt:stamp}});return stamp;
+    });
+    return json({ok:true,updatedAt});
   }, 'business');
 
   router.post('/staff-reports', async c => {
-    const m = me(c), db = c.env.db, b = await readJson(c.req, 30_000), clientKey = text(b.clientKey, 80), now = nowIso();
+    const m = me(c), db = c.env.db, b = await readJson(c.req, 300_000), clientKey = text(b.clientKey, 80), now = nowIso();
     if (!reports(m)) throw new AppError(403, 'Chức vụ của bạn không phải nộp báo cáo tuần / tháng.');
     const sp = specOf(b.period, deps), period = sp.period;
     if (clientKey.length < 8) throw new AppError(400, 'Thiếu mã chống gửi lặp. Tải lại trang rồi thử lại.');
     if (!sp.started(now)) throw new AppError(400, sp.notStarted);
     if (!sp.official(now)) throw new AppError(409, sp.openMsg, sp.openCode);
-    const [replay] = await db.select({ id: staffWeeklyReports.id }).from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), eq(staffWeeklyReports.clientKey, clientKey))).limit(1);
-    if (replay) return json({ ok: true, id: replay.id, replayed: true });
+    const requestInputs=sp.draftInputs((b.inputs??{}) as Record<string,unknown>),clientHash=await payloadHash(requestInputs),workspaceRequest=(requestInputs as {workspaceVersion?:number}).workspaceVersion===2;
+    const [replay] = await db.select({ id: staffWeeklyReports.id,data:staffWeeklyReports.data }).from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), eq(staffWeeklyReports.clientKey, clientKey))).limit(1);
+    if (replay){if(workspaceRequest&&parse(replay.data)?.meta?.clientHash!==clientHash)throw new AppError(409,'Mã lần nộp đã dùng cho nội dung khác.','COMMAND_CONFLICT');return json({ok:true,id:replay.id,replayed:true});}
+    if(workspaceRequest){
+      const [priorCommand]=await db.select({id:staffWeeklyReports.id,version:staffWeeklyReportVersions.version,data:staffWeeklyReportVersions.data}).from(staffWeeklyReportVersions).innerJoin(staffWeeklyReports,eq(staffWeeklyReports.id,staffWeeklyReportVersions.reportId)).where(and(eq(staffWeeklyReports.memberId,m.id),eq(staffWeeklyReports.period,period),sql`${staffWeeklyReportVersions.data}::jsonb->'meta'->>'clientKey'=${clientKey}`)).limit(1);
+      if(priorCommand){if(parse(priorCommand.data)?.meta?.clientHash!==clientHash)throw new AppError(409,'Mã lần nộp đã dùng cho nội dung khác.','COMMAND_CONFLICT');return json({ok:true,id:priorCommand.id,replayed:true,version:priorCommand.version,historical:true});}
+      if(!Number.isSafeInteger(b.expectedVersion)||Number(b.expectedVersion)<0||!Object.hasOwn(b,'expectedDraftAt'))throw new AppError(400,'Thiếu phiên bản báo cáo / bản nháp đã mở. Tải lại để đối chiếu.');
+    }
     const [locked] = await db.select({ review: staffWeeklyReports.review }).from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), eq(staffWeeklyReports.period, period))).limit(1);
     if (locked && locked.review !== 'pending') throw new AppError(409, 'Báo cáo đã được duyệt, không sửa được.');
     // Số liệu CRM luôn tính ở máy chủ lúc nộp – bỏ qua mọi số liệu client gửi lên.
     const facts = await sp.facts(db, m.id);
     const { inputs, issues } = sp.validate((b.inputs ?? {}) as Record<string, unknown>, facts);
     if (issues.length) throw new AppError(400, issues.join(' '));
-    const data = JSON.stringify({ kind: sp.kind, facts, inputs, meta: { factsAt: now, sources: sp.sources } });
+    const forecast=sp.kind==='weekly'&&(inputs as {workspaceVersion?:number}).workspaceVersion===2?workspaceForecast(inputs as WorkspaceInputs,workspaceFactView(facts as WeekFacts).quotes):undefined;
+    const data = JSON.stringify({ kind: sp.kind, facts, inputs,...(forecast?{forecast}:{}), meta: { factsAt: now, sources: sp.sources,clientKey,clientHash } });
     const result = await db.transaction(async tx => {
+      await tx.select({id:employees.id}).from(employees).where(eq(employees.id,m.id)).for('update');
       const [existing] = await tx.select().from(staffWeeklyReports).where(and(eq(staffWeeklyReports.memberId, m.id), eq(staffWeeklyReports.period, period))).limit(1).for('update');
+      if(existing?.clientKey===clientKey){if(workspaceRequest&&parse(existing.data)?.meta?.clientHash!==clientHash)throw new AppError(409,'Mã lần nộp đã dùng cho nội dung khác.','COMMAND_CONFLICT');return{status:200,body:{ok:true,id:existing.id,replayed:true}};}
+      const [liveDraft]=await tx.select().from(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId,m.id),eq(staffWeeklyReportDrafts.period,period))).limit(1);
+      if(workspaceRequest&&(b.expectedDraftAt??null)!==(liveDraft?.updatedAt??null))throw new AppError(409,'Bản nháp đã thay đổi ở cửa sổ khác. Chưa nộp dữ liệu cũ.','DRAFT_CONFLICT');
+      if(!workspaceRequest&&(parse(existing?.data??null)?.inputs?.workspaceVersion===2||parse(liveDraft?.inputs??null)?.workspaceVersion===2))throw new AppError(409,'Báo cáo đã dùng mẫu mới. Tải lại ứng dụng để tiếp tục.','REPORT_CLIENT_OLD');
       if (existing) {
         if (existing.review !== 'pending') throw new AppError(409, 'Báo cáo đã được duyệt, không sửa được.');
         const [last] = await tx.select({ v: sql<number>`coalesce(max(${staffWeeklyReportVersions.version}),0)`.mapWith(Number) }).from(staffWeeklyReportVersions).where(eq(staffWeeklyReportVersions.reportId, existing.id));
+        if((inputs as {workspaceVersion?:number}).workspaceVersion===2&&b.expectedVersion!==(last?.v??0))throw new AppError(409,'Báo cáo đã có phiên bản mới. Tải lại để đối chiếu.','REPORT_CONFLICT');
         const version = (last?.v ?? 0) + 1;
+        if(sp.kind==='weekly'&&(inputs as {workspaceVersion?:number}).workspaceVersion===2)await syncWorkspaceActions(tx as AnyDb,m.id,existing.id,period,inputs as WorkspaceInputs,workspaceFactView(facts as WeekFacts),now);
         await tx.update(staffWeeklyReports).set({ data, updatedAt: now, clientKey }).where(eq(staffWeeklyReports.id, existing.id));
         await tx.insert(staffWeeklyReportVersions).values({ id: crypto.randomUUID(), reportId: existing.id, version, data, submittedAt: now });
         await tx.delete(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId, m.id), eq(staffWeeklyReportDrafts.period, period)));
         return { status: 200, body: { ok: true, id: existing.id, version, state: sp.state(existing.submittedAt, now) } };
       }
+      if((inputs as {workspaceVersion?:number}).workspaceVersion===2&&b.expectedVersion!==0)throw new AppError(409,'Thiếu phiên bản báo cáo đã mở.','REPORT_CONFLICT');
       const id = crypto.randomUUID();
       const inserted = await tx.insert(staffWeeklyReports).values({ id, memberId: m.id, period, data, submittedAt: now, updatedAt: now, clientKey }).onConflictDoNothing().returning({ id: staffWeeklyReports.id });
+      if(sp.kind==='weekly'&&(inputs as {workspaceVersion?:number}).workspaceVersion===2)await syncWorkspaceActions(tx as AnyDb,m.id,id,period,inputs as WorkspaceInputs,workspaceFactView(facts as WeekFacts),now);
       if (!inserted.length) throw new AppError(409, `Báo cáo ${sp.label} này vừa được nộp ở máy khác. Tải lại trang.`);
       await tx.insert(staffWeeklyReportVersions).values({ id: crypto.randomUUID(), reportId: id, version: 1, data, submittedAt: now });
       await tx.delete(staffWeeklyReportDrafts).where(and(eq(staffWeeklyReportDrafts.memberId, m.id), eq(staffWeeklyReportDrafts.period, period)));

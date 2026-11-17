@@ -1,3 +1,4 @@
+import {weeklyReportTaskSources} from '../../staff-reports/api/workspace.ts';
 import {warehouseAssignmentHooks} from '../../../core/contracts/warehouse-source.ts';
 import { receivingReminderTasks } from './receiving-reminders.ts';
 import { supplierPaymentTasks } from './accounting-sources.ts';
@@ -91,6 +92,7 @@ export async function transferTasks(db: Db, today: string, transferId?: string):
 }
 
 export const RULES: Record<string, Rule> = {
+  weeklyReportFollowUps:db=>weeklyReportTaskSources(db),
   receivingReminders: (db, _today, now = new Date()) => receivingReminderTasks(db, now),
   /**
    * Hẹn chăm sóc khách (nhật ký chăm sóc) tới mốc "nhắc tôi trước" (1 ngày / 1 tuần / 1 tháng trước ngày hẹn) → việc cho nhân viên phụ trách. Khoá gồm ngày hẹn: dời hẹn = việc mới;
