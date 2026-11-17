@@ -29,7 +29,10 @@ try {
 
  stage='install_scoped_cache_helper';
  const files=await api('list_files',{dir});
- if(files.some(f=>f.file===pluginName))throw Error('existing_helper');
+ if(files.some(f=>f.file===pluginName)){
+ const existing=await api('get_file_content',{dir,file:pluginName,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
+ if(existing.content!=="<?php\ndefined('ABSPATH') || exit;\n// Cache verification completed.\n")throw Error('unexpected_helper');
+ }
  const probe=createHash('sha256').update(token+':lnl-shipping-v1').digest('hex');
  const code=readFileSync('web-lock/cache-check/target.php','utf8').replace('__PROBE__',probe);
  rollback=()=>upload(dir,pluginName,"<?php\ndefined('ABSPATH') || exit;\n// Cache verification completed.\n");
