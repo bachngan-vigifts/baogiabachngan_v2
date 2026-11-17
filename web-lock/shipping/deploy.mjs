@@ -49,6 +49,8 @@ try {
  stage='regions';
  const seed=await fetch('https://locknlockonline.com/wp-json/lnl-shipping/v1/seed-regions',{method:'POST',headers:{'X-LNL-Shipping':probe},signal:AbortSignal.timeout(90000)});
  const seeded=await seed.json();console.log('REGION_ESTIMATES='+JSON.stringify(seeded));if(!seed.ok||seeded.regions!==3)throw Error('regions');
+ const purge=await fetch('https://locknlockonline.com/wp-json/lnl-shipping/v1/purge',{method:'POST',headers:{'X-LNL-Shipping':probe},signal:AbortSignal.timeout(30000)});
+ console.log('CLOUDFLARE_PURGE='+JSON.stringify(await purge.json()));
  stage='verify_browser';
  browser=await chromium.launch();
  const context=await browser.newContext({viewport:{width:1360,height:1004}});

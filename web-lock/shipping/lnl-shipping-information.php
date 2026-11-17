@@ -25,6 +25,22 @@ add_filter('rest_post_dispatch',function($response,$server,$request){
     if(strpos($request->get_route(),'/lnl-shipping/v1/')===0 && $response instanceof WP_REST_Response){$response->header('Cache-Control','private, no-store, max-age=0');}
     return $response;
 },10,3);
+
+add_action('rest_api_init',function(){
+    register_rest_route('lnl-shipping/v1','/purge',array('methods'=>'POST','permission_callback'=>'lnl_si_permission','callback'=>function(){
+        $zone=(string)get_option('litespeed.conf.cdn-cloudflare_zone','');
+        $key=(string)get_option('litespeed.conf.cdn-cloudflare_key','');
+        $email=(string)get_option('litespeed.conf.cdn-cloudflare_email','');
+        if(!$key || !preg_match('/^[a-f0-9]{32}$/i',$zone))return array('purged'=>false,'configured'=>false);
+        $headers=array('Content-Type'=>'application/json');
+        if($email){$headers['X-Auth-Email']=$email;$headers['X-Auth-Key']=$key;}else{$headers['Authorization']='Bearer '.$key;}
+        $r=wp_remote_post('https://api.cloudflare.com/client/v4/zones/'.$zone.'/purge_cache',array('timeout'=>20,'headers'=>$headers,'body'=>wp_json_encode(array('files'=>array(home_url('/'),home_url('/chinh-sach-van-chuyen/'))))));
+        if(is_wp_error($r))return array('purged'=>false,'configured'=>true);
+        $j=json_decode(wp_remote_retrieve_body($r),true);
+        return array('purged'=>!empty($j['success']),'configured'=>true);
+    }));
+});
+
 function lnl_si_today() { return wp_date('Y-m-d',time(),new DateTimeZone('Asia/Ho_Chi_Minh')); }
 function lnl_si_key($district,$ward,$type) {
     list($token,$shop)=lnl_si_config();
@@ -54,18 +70,12 @@ function lnl_si_estimate($district,$ward,$type=2,$force=false) {
 }
 
 function lnl_si_seed_regions() {
-    $specs=array(array('label'=>'Miền Nam · TP.HCM','district'=>1442),array('label'=>'Miền Trung · Đà Nẵng','district'=>1526),array('label'=>'Miền Bắc · Hà Nội','district'=>1489));
+    // Representative destination wards from the store's GHN catalogue; validate each against live leadtime.
+    $specs=array(array('label'=>'Miền Nam · TP.HCM','district'=>1442,'ward'=>'20110'),array('label'=>'Miền Trung · Đà Nẵng','district'=>1526,'ward'=>'40113'),array('label'=>'Miền Bắc · Hà Nội','district'=>1489,'ward'=>'1A0218'));
     $out=array();
     foreach($specs as $spec){
-        $wards=lnl_si_api('/master-data/ward',array('district_id'=>$spec['district']));
-        if(is_wp_error($wards)||empty($wards))continue;
-        foreach($wards as $ward){
-            if(isset($ward['SupportType']) && (int)$ward['SupportType']===3)continue;
-            $code=(string)($ward['WardCode']??'');if(!$code)continue;
-            $estimate=lnl_si_estimate($spec['district'],$code);
-            if(!is_wp_error($estimate)){$spec['ward']=$code;$out[]=$spec;break;}
-            break;
-        }
+        $estimate=lnl_si_estimate($spec['district'],$spec['ward']);
+        if(!is_wp_error($estimate)){$out[]=$spec;}
     }
     if($out)update_option('lnl_si_regions',$out,false);
     return count($out);
@@ -96,7 +106,7 @@ add_action('rest_api_init',function(){
         $out['next_refresh_local']=wp_date('Y-m-d H:i:s',wp_next_scheduled('lnl_si_midnight'),new DateTimeZone('Asia/Ho_Chi_Minh'));
         $out['cache_plugins']=array_values(array_filter(get_option('active_plugins',array()),function($p){return preg_match('/cloudflare|litespeed|cache/i',$p);}));
         $cf=get_option('litespeed.conf',array());$out['cache_config_keys']=is_array($cf)?array_values(array_filter(array_keys($cf),function($k){return preg_match('/cloudflare|cf[_-]/i',$k);})):array();
-        $out['cloudflare_option_names']=$wpdb->get_col("SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE '%cloudflare%' OR option_name LIKE 'litespeed%conf%'");
+        $out['cloudflare_option_names']=$wpdb->get_col("SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE '%cloudflare%' OR option_name LIKE '%cloudflare_%'");
         if (!$out['configured']) { return $out; }
         $shops=lnl_si_api('/v2/shop/all?offset=0&limit=100');
         if(is_wp_error($shops)){ $out['ghn_available']=false;return $out; }
