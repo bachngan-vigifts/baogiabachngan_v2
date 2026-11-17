@@ -1,0 +1,23 @@
+name: Verify public Minh Long preorder purchase
+on:
+  push:
+    branches: [codex/minhlong-approved-shipping-20261117]
+    paths: [web-minhlong/verification/preorder-public.mjs, .github/workflows/minhlong-preorder-public.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+          node web-minhlong/verification/preorder-public.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: minhlong-preorder-public
+          path: ml-preorder-public-*.png
+          retention-days: 3
