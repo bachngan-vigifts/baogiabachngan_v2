@@ -1,0 +1,23 @@
+name: Inspect public checkout structure
+on:
+  push:
+    branches: [codex/minhlong-approved-shipping-20261117]
+    paths: [web-shared/checkout-step3/audit.mjs, .github/workflows/checkout-step3-audit.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+          node web-shared/checkout-step3/audit.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkout-before
+          path: checkout-before-*.png
+          retention-days: 3
