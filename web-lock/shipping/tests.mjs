@@ -1,0 +1,36 @@
+import {readFileSync} from 'node:fs';
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+const php=readFileSync('web-lock/shipping/lnl-shipping-information.php','utf8');
+const css=php.match(/<style[^>]*>([\s\S]*?)<\/style>/)[1];
+const raw=php.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1];
+const browser=await chromium.launch();
+try{
+const page=await browser.newPage({viewport:{width:1360,height:1004}});
+await page.setContent('<html><head><meta charset="utf-8"><style>'+css+'</style></head><body class="home"><div class="product-small"><div class="box-image" style="width:250px;height:250px"><a href="https://example.com/product">Product</a></div></div></body></html>');
+await page.addScriptTag({content:raw.replace(/<\?php[\s\S]*?\?>/,JSON.stringify({checkout:false}))});
+assert.equal(await page.locator('.lnl-ship-hit').count(),1);
+await page.locator('.box-image').hover({position:{x:200,y:30}});
+assert.equal(await page.locator('#lnl-ship-tip').isVisible(),false);
+await page.locator('.lnl-ship-hit').hover();assert.equal(await page.locator('#lnl-ship-tip').isVisible(),true);
+await page.keyboard.press('Escape');assert.equal(await page.locator('#lnl-ship-tip').isVisible(),false);
+console.log('SHIPPING_HOVER_SCOPE_OK');
+await page.setViewportSize({width:390,height:844});
+await page.locator('.lnl-ship-hit').click();
+assert.equal(await page.locator('#lnl-ship-tip').isVisible(),true);
+const b=await page.locator('#lnl-ship-tip').boundingBox();assert(b.x>=0&&b.x+b.width<=390);
+console.log('SHIPPING_MOBILE_OK');
+await page.close();
+const checkout=await browser.newPage();
+await checkout.setContent('<html><head><meta charset="utf-8"><style>'+css+'</style></head><body><form class="checkout"><div class="woocommerce-billing-fields__field-wrapper">'+['address_1','ghn_province_id','ghn_district_id','ghn_ward_code'].map(n=>'<input id="billing_'+n+'">').join('')+'</div></form></body></html>');
+await checkout.evaluate(()=>{window.calls=0;window.fetch=async()=>{window.calls++;return {ok:true,json:async()=>({from:'19/11/2026',to:'20/11/2026'})};};});
+await checkout.addScriptTag({content:raw.replace(/<\?php[\s\S]*?\?>/,JSON.stringify({checkout:true,endpoint:'/eta',nonce:'test',type:2}))});
+assert.equal(await checkout.locator('#lnl-shipping-eta').isVisible(),false);
+for(const [n,v] of Object.entries({address_1:'1 test',ghn_province_id:'202',ghn_district_id:'1444',ghn_ward_code:'20308'}))await checkout.locator('#billing_'+n).fill(v);
+await checkout.waitForFunction(()=>document.querySelector('.lnl-eta-result').textContent.includes('20/11/2026'));
+assert.equal(await checkout.evaluate(()=>window.calls),1);
+await checkout.locator('#billing_address_1').fill('');
+await checkout.waitForFunction(()=>document.querySelector('#lnl-shipping-eta').hidden);
+console.log('SHIPPING_COMPLETE_ADDRESS_OK');
+await checkout.close();
+}finally{await browser.close();}

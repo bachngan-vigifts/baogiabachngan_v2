@@ -1,0 +1,41 @@
+name: Verify public Lock pages
+on:
+  push:
+    branches: [codex/lock-shipping-20261117]
+    paths: [.github/workflows/lock-public-check.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read public homepage and shipping catalogue
+        run: |
+          node --input-type=module <<'JS'
+          for(const path of ['/','/wp-json/lnl-shipping/v1/regions','/wp-json/wp/v2/pages/5457']){
+            const r=await fetch('https://locknlockonline.com'+path,{signal:AbortSignal.timeout(45000)});
+            const s=await r.text();
+            console.log(JSON.stringify({path,status:r.status,cache:r.headers.get('cf-cache-status'),age:r.headers.get('age'),bytes:s.length,icons:s.includes('lnl-hero-product-icons-js'),shipping:s.includes('lnl-shipping-information-js'),regions:path.includes('/regions')?JSON.parse(s):undefined,threshold:path.includes('/5457')?s.includes('1.000.000'):undefined}));
+          }
+          JS
+      - name: Inspect cron cadence without logging commands
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: |
+          node --input-type=module <<'JS'
+          const raw=process.env.CPANEL_BASE_URL.trim();const base=new URL(raw.includes('://')?raw:'https://'+raw);if(!base.port)base.port='2083';
+          const url=new URL('/json-api/cpanel',base);
+          for(const [k,v]of Object.entries({cpanel_jsonapi_user:process.env.CPANEL_USERNAME,cpanel_jsonapi_apiversion:'2',cpanel_jsonapi_module:'Cron',cpanel_jsonapi_func:'listcron'}))url.searchParams.set(k,v);
+          const r=await fetch(url,{headers:{Authorization:'cpanel '+process.env.CPANEL_USERNAME.trim()+':'+process.env.CPANEL_API_TOKEN.trim()},signal:AbortSignal.timeout(20000)});
+          const j=await r.json();
+          const rows=j.cpanelresult?.data;
+          if(!Array.isArray(rows))throw Error('cron_unavailable');
+          console.log(JSON.stringify(rows.filter(x=>/wp-cron|wp cron event run/.test(x.command||'')&&((x.command||'').includes(process.env.LOCKNLOCK_DOCROOT.trim())||(x.command||'').includes('locknlockonline.com'))).map(x=>({minute:x.minute,hour:x.hour,day:x.day,month:x.month,weekday:x.weekday}))));
+          JS

@@ -1,0 +1,27 @@
+name: Verify Lock target cache
+on:
+  push:
+    branches: [codex/lock-shipping-20261117]
+    paths: [web-lock/cache-check/**, .github/workflows/lock-cache-check.yml]
+permissions:
+  contents: read
+concurrency:
+  group: lock-store-ai-deploy
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: php -l web-lock/cache-check/target.php
+      - name: Verify target zone and refresh only changed pages
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: node web-lock/cache-check/run.mjs
