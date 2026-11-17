@@ -67,7 +67,7 @@ try{
  stage='schedule';
  const cronApi=async(fn,params={})=>{const u=new URL('/json-api/cpanel',base);for(const[k,v]of Object.entries({cpanel_jsonapi_user:user,cpanel_jsonapi_apiversion:'2',cpanel_jsonapi_module:'Cron',cpanel_jsonapi_func:fn,...params}))u.searchParams.set(k,String(v));const r=await fetch(u,{headers:{Authorization:'cpanel '+user+':'+token},signal:AbortSignal.timeout(20000)});const j=await r.json();if(!r.ok||j.cpanelresult?.error||j.cpanelresult?.event?.result===0)throw Error('Cron API');return j.cpanelresult?.data;};
  let jobs=await cronApi('listcron');if(!Array.isArray(jobs))throw Error('Cron response');
- const covers=jobs.some(j=>/wp-cron|wp cron event run/.test(j.command||'')&&((j.command||'').includes(host)||(j.command||'').includes(root))&&(j.minute==='*'||/^\\*\\/[1-5]$/.test(j.minute))&&j.hour==='*');
+ const covers=jobs.some(j=>/wp-cron|wp cron event run/.test(j.command||'')&&((j.command||'').includes(host)||(j.command||'').includes(root))&&['*','*/1','*/2','*/3','*/4','*/5'].includes(j.minute)&&j.hour==='*');
  if(!covers){const command="/usr/bin/curl --fail --silent --show-error --max-time 45 'https://minhlongonline.com/wp-cron.php?doing_wp_cron' >/dev/null 2>&1";await cronApi('add_line',{command,minute:'*/3',hour:'*',day:'*',month:'*',weekday:'*'});jobs=await cronApi('listcron');if(!jobs.some(j=>j.command===command))throw Error('Cron verification');}
  console.log('SYSTEM_CRON_VERIFIED');
 
