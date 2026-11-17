@@ -1,3 +1,4 @@
+import {syncWorkspaceActions,weeklyReportActions,weeklyEventReminders} from './weekly-report-tasks.ts';
 import {stockPendingOf} from './stock-pending.ts';
 import {productArchiveBlockReason} from './product-archive-guards.ts';
 import { registerTaxLookupRoutes } from '../modules/customers/api/tax-lookup.ts';
@@ -208,7 +209,7 @@ export function createAppRouter() {
   registerFeedbackRoutes(router); // góp ý phát triển phần mềm (mọi nhân viên)
   registerProfitRoutes(router, { staffCostOf, lineCostFallbackOf }); // phân tích lợi nhuận (chỉ Manager); chi phí nhân sự từ bảng lương; giá vốn bổ sung từ đơn NCC / công thức thương hiệu
   setLineCostFallback(lineCostFallbackOf); // giá vốn lúc bán: cùng nguyên tắc (sales không đọc dữ liệu NCC trực tiếp)
-  registerStaffReportRoutes(router, { targetOf: saleTargetOf, payrollPreviewOf: salePayrollPreviewOf }); // báo cáo tuần Sale / Sale Admin (căn cứ Tiền trách nhiệm)
+  registerStaffReportRoutes(router, { workspaceTasks: {sync:syncWorkspaceActions,actions:weeklyReportActions,reminders:weeklyEventReminders}, targetOf: saleTargetOf, payrollPreviewOf: salePayrollPreviewOf }); // báo cáo tuần Sale / Sale Admin (căn cứ Tiền trách nhiệm)
   registerStoreRoutes(router, { targetOf: storeTargetOf, attendanceOf: storeAttendanceOf }); // báo cáo Cửa hàng trưởng (CHT): nộp, duyệt, Tiền Trách nhiệm, nhắc nhở
   registerDashboardRoutes(router, { kpiOf: dashboardKpiOf, storeOf: dashboardStoreOf,reportScoresOf:dashboardReportScoresOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR
   registerAuditRoutes(router);

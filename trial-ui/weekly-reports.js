@@ -1,3 +1,4 @@
+import {createWeeklyWorkspace} from './weekly-workspace.js';
 /**
  * BÁO CÁO TUẦN Sale / Sale Admin – trang #/weekly-reports[?month=].
  *  - Sale / Sale Admin: 4 báo cáo bắt buộc / tháng (hạn 10h thứ Hai tuần sau), lưu nháp / nộp chính thức; điểm → Tiền trách nhiệm.
@@ -15,6 +16,7 @@ export const scoreText = s => s === null || s === undefined ? '—' : String(s).
 export const canSeeStaffReports = member => member?.role === 'manager' || member?.role === 'employee' && ['sale', 'sale-admin'].includes(member.positionId);
 
 export function initWeeklyReports({ api, root, toast, esc, go, money, user, monthlyOnly = false }) {
+  let workspace=null,loadEpoch=0,reminderUser='',reminderDay='',reminderTimer=null;
   let current = { month: '' }, me = null, reminded = false;
   const reportPath = monthlyOnly ? 'monthly-reports' : 'weekly-reports';
   const bindMonth = () => { root.querySelector('#wr-month').onchange = e => { if (e.target.value) go(`#/${reportPath}?month=${e.target.value}`); }; };
@@ -26,22 +28,33 @@ export function initWeeklyReports({ api, root, toast, esc, go, money, user, mont
 
   /** Sau đăng nhập: hiện mục menu; nhắc tuần trước chưa nộp (một lần mỗi phiên). */
   async function start() {
+    clearTimeout(reminderTimer);
     const member = user?.();
     const navigation = visible => document.querySelectorAll('[data-nav="weekly-reports"], [data-nav="monthly-reports"]').forEach(a => { a.hidden = !visible; });
     // This menu must not depend on a background request succeeding during login.
     // API permissions remain authoritative when opening/saving any report.
     if (user) { navigation(canSeeStaffReports(member)); if (!canSeeStaffReports(member)) return; }
-    try { me = await api('/staff-reports/me'); } catch { return; }
+    let status;try { status = await api('/staff-reports/me'); } catch { return; }
     if (user && user()?.id !== member?.id) return;
-    navigation(me.required || me.canReview);
-    if (me.required && me.remind && !reminded) { reminded = true; toast(`Chưa nộp báo cáo tuần ${weekLabel(me.remind.period)} – hạn ${when(me.remind.deadline)}.`, 'warn'); }
+    navigation(status.required || status.canReview);
+    if(reminderUser!==member?.id){reminderUser=member?.id||'';reminderDay='';reminded=false;}
+    const today=vnNow().slice(0,10);const eventMessage=status.required&&status.eventReminders?.count&&reminderDay!==today?'Có '+status.eventReminders.count+' dịp khách hàng đã tới lịch nhắc trước 45 ngày. Mở Công việc để chuẩn bị. ':'';
+    reminderDay=today;
+    if(status.required){const nextDay=addDays(today,1),delay=Math.max(60000,Date.parse(nextDay+'T00:05:00+07:00')-Date.now());reminderTimer=setTimeout(()=>void start(),delay);reminderTimer.unref?.();}
+    const reportReminder=status.required&&status.remind&&!reminded;
+    if (reportReminder) { reminded = true; toast(eventMessage+`Chưa nộp báo cáo tuần ${weekLabel(status.remind.period)} – hạn ${when(status.remind.deadline)}.`, 'warn'); }
+    if(eventMessage&&!reportReminder)toast(eventMessage,'warn');
   }
   async function show(query = '') {
+    workspace?.dispose();workspace=null;const generation=++loadEpoch,owner=user?.()?.id;
     const q = new URLSearchParams(query);
     current.month = q.get('month') || current.month || vnNow().slice(0, 7);
     root.innerHTML = '<p class="muted">Đang tải…</p>';
     try { me = await api(`/staff-reports/me?month=${current.month}`); } catch (e) { root.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; return; }
+    if(generation!==loadEpoch||(user&&user()?.id!==owner))return;
+    if(!monthlyOnly&&q.get('week'))return openWeek(q.get('week'),q.get('memberId')||'');
     if (me.canReview) return showReview();
+    if(!monthlyOnly&&!q.has('month')&&me.required&&me.recommendedPeriod)return openPeriod(me.recommendedPeriod);
     if (!me.required) { root.innerHTML = '<div class="empty"><h3>Báo cáo tuần</h3><p class="muted">Chức vụ của bạn không phải nộp báo cáo tuần.</p></div>'; return; }
     if (monthlyOnly && !me.monthly) return unavailable();
     const points = monthlyOnly ? me.monthly.score : me.points, maxPoints = monthlyOnly ? 1 : me.maxPoints;
@@ -59,7 +72,7 @@ export function initWeeklyReports({ api, root, toast, esc, go, money, user, mont
           <small>${w.submittedAt ? 'Nộp ' + esc(when(w.submittedAt)) : 'Hạn ' + esc(when(w.deadline))}${w.draftAt && !w.submittedAt ? ' · có nháp' : ''}</small></span>
           <span class="wr-tags">${pill(STATE[w.state][1], STATE[w.state][0])}${w.review ? pill(REVIEW_TONE[w.review], me.reviewLabels[w.review]) : ''}${w.score !== null ? pill('info', scoreText(w.score) + ' điểm') : ''}</span></button>`)(me.monthly) : ''}</div></div>`;
     bindMonth();
-    root.querySelectorAll('[data-week]').forEach(b => b.onclick = () => openWeek(b.dataset.week));
+    root.querySelectorAll('[data-week]').forEach(b => b.onclick = () => openPeriod(b.dataset.week));
   }
   async function showReview() {
     let d; try { d = await api(`/staff-reports/review?month=${current.month}`); } catch (e) { root.innerHTML = `<div class="empty"><p>${esc(e.message)}</p></div>`; return; }
@@ -74,12 +87,16 @@ export function initWeeklyReports({ api, root, toast, esc, go, money, user, mont
         ? `<button type="button" class="btn ghost small" data-open="${esc(p.id)}|${esc(p.monthly.period)}">${pill(STATE[p.monthly.state][1], STATE[p.monthly.state][0])}${pill(REVIEW_TONE[p.monthly.review], d.reviewLabels[p.monthly.review])}${p.monthly.submittedAt ? `<small>Nộp lần đầu: ${esc(when(p.monthly.submittedAt))}</small>` : ''}</button>`
         : pill(STATE[p.monthly.state][1], STATE[p.monthly.state][0])}</td>` : ''}<td class="right num"><b>${scoreText(monthlyOnly ? p.monthly?.score : p.points)}</b>/${monthlyOnly ? 1 : p.required}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">Chưa có Sale / Sale Admin.</td></tr>'}</tbody></table></div></div>`;
     bindMonth();
-    root.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { const [id, period] = b.dataset.open.split('|'); openWeek(period, id); });
+    root.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { const [id, period] = b.dataset.open.split('|'); openPeriod(period, id); });
     root.querySelectorAll('table.data-table').forEach(t => { const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent);
       t.querySelectorAll('tbody tr').forEach(tr => [...tr.children].forEach((td, i) => { if (heads[i]) td.dataset.label = heads[i]; })); });
   }
+  function openPeriod(period,memberId=''){if(period.length===7)return openWeek(period,memberId);go('#/weekly-reports?month='+addDays(period,7).slice(0,7)+'&week='+encodeURIComponent(period)+(memberId?'&memberId='+encodeURIComponent(memberId):''));}
   async function openWeek(period, memberId = '') {
+    const generation=loadEpoch,owner=user?.()?.id;
     let d; try { d = await api(`/staff-reports/week?period=${period}${memberId ? '&memberId=' + encodeURIComponent(memberId) : ''}`); } catch (e) { toast(e.message, 'err'); return; }
+    if(generation!==loadEpoch||(user&&user()?.id!==owner))return;
+    if(d.kind==='weekly'){workspace?.dispose();workspace=createWeeklyWorkspace({api,root,detail:d,esc,money,user,toast,onBack:()=>go('#/weekly-reports?month='+current.month),onSubmitted:()=>go('#/weekly-reports?month='+current.month)});return;}
     const rep = d.report, f = d.canEdit || !rep ? d.facts : rep.data.facts, v = d.draft?.inputs || rep?.data?.inputs || {}, ro = !d.canEdit, clientKey = crypto.randomUUID();
     const ta = (name, label, hint, req) => `<label class="span-2">${esc(label)}${req ? ' *' : ''}<textarea name="${name}" rows="3" ${ro ? 'readonly' : ''} placeholder="${esc(hint)}">${esc(v[name] || '')}</textarea></label>`;
     const mo = f.month || {}, notes = v.quoteNotes || {}, quotes = f.quotes || [], open = quotes.filter(q => !q.won);
@@ -172,5 +189,6 @@ export function initWeeklyReports({ api, root, toast, esc, go, money, user, mont
       try { await api(`/staff-reports/${rep.id}/review`, 'POST', { review, note: form.elements.reviewNote.value }); after('Đã lưu kết quả duyệt.'); } catch (ex) { err.textContent = ex.message; }
     });
   }
+  if(typeof document!=='undefined')document.addEventListener?.('visibilitychange',()=>{if(document.visibilityState==='visible'&&user?.()&&reminderDay!==vnNow().slice(0,10))void start();});
   return { start, show, openWeek };
 }

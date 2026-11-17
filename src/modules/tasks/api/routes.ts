@@ -147,7 +147,7 @@ const PRIVATE_DESC_SOURCES = new Set<string>(['care', 'receivable', 'invoice']);
 const completionFromSource = (t: Task) => sourceManaged(t.autoKey);
 const canComment = (c: Ctx, t: Task) => accountingKind(t.autoKey) ? me(c).role === 'manager' || t.assigneeId === me(c).id : involved(c, t);
 const forViewer = (c: Ctx, t: Task) => ({ ...t, canComment: canComment(c, t), completionFromSource: completionFromSource(t), completionHelp: sourceCompletionHelp(t.autoKey),
-  ...(!involved(c, t) && PRIVATE_DESC_SOURCES.has(t.source) ? { description: '' } : {}) });
+  ...(!involved(c, t) && (PRIVATE_DESC_SOURCES.has(t.source)||t.autoKey?.startsWith('weekly-report:')) ? { description: '' } : {}) });
 /** Điều kiện SQL "việc tôi trực tiếp liên quan" (để tìm kiếm trong mô tả chỉ trên các việc này). */
 const involvedSql = (c: Ctx): SQL | undefined => {
   const m = me(c);

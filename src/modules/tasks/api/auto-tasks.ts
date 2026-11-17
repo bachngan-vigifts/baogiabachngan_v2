@@ -3,7 +3,7 @@ import { receivingReminderTasks } from './receiving-reminders.ts';
 import { supplierPaymentTasks } from './accounting-sources.ts';
 import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { invoiceTasks } from './invoice-tasks.ts';
-import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, isNull, like, lte, ne, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
@@ -90,7 +90,14 @@ export async function transferTasks(db: Db, today: string, transferId?: string):
   }).flat();
 }
 
+/** These manually completed follow-ups remain wanted; a generic source reconciliation must not close them. */
+export async function weeklyReportTaskSources(db:Db):Promise<AutoTask[]>{
+ const rows=await db.select().from(tasks).where(and(eq(tasks.source,'manual'),like(tasks.autoKey,'weekly-report:%'),inArray(tasks.status,['todo','in_progress'])));
+ return rows.map(t=>({autoKey:t.autoKey!,source:'manual',sourceId:t.sourceId!,title:t.title,description:t.description,link:t.link,assigneeId:t.assigneeId,priority:t.priority,dueDate:t.dueDate,dueTime:t.dueTime}));
+}
+
 export const RULES: Record<string, Rule> = {
+  weeklyReportFollowUps:db=>weeklyReportTaskSources(db),
   receivingReminders: (db, _today, now = new Date()) => receivingReminderTasks(db, now),
   /**
    * Hẹn chăm sóc khách (nhật ký chăm sóc) tới mốc "nhắc tôi trước" (1 ngày / 1 tuần / 1 tháng trước ngày hẹn) → việc cho nhân viên phụ trách. Khoá gồm ngày hẹn: dời hẹn = việc mới;

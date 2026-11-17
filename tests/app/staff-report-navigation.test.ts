@@ -47,3 +47,10 @@ test('trang tháng chỉ hiện kỳ tháng và đổi tháng vẫn ở đúng �
  field.onchange({target:{value:'2026-12'}});assert.deepEqual(moves,['#/monthly-reports?month=2026-12']);
  await ui.show('month=2026-10');assert.match(root.innerHTML,/áp dụng từ tháng 11\/2026/);assert.doesNotMatch(root.innerHTML,/data-week=/);
 });
+
+
+test('weekly menu opens the recommended workspace in its deadline month; monthly mode keeps its list',async()=>{
+ const moves:string[]=[],root:any={innerHTML:''};
+ const ui=initWeeklyReports({root,api:async()=>({required:true,canReview:false,recommendedPeriod:'2026-11-30'}),go:(path:string)=>moves.push(path),toast:()=>{},esc:String,money:String});
+ await ui.show();assert.deepEqual(moves,['#/weekly-reports?month=2026-12&week=2026-11-30']);
+});
