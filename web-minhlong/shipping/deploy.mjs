@@ -13,7 +13,10 @@ function visit(x){if(!x||typeof x!=='object')return;if(x.domain===host&&x.docume
 if(!root||!root.startsWith('/home/'+user+'/')||root.includes('..'))throw Error('Domain root not verified');
 const dir=root+'/wp-content/mu-plugins',files=await api('Fileman','list_files',{dir});
 const names=['ml-home-category-icons.php','ml-shipping-information.php'];
-if(names.some(n=>files.some(f=>f.file===n)))throw Error('Existing deployment requires explicit version comparison');
+for(const n of names.filter(n=>files.some(f=>f.file===n))){
+ const old=await api('Fileman','get_file_content',{dir,file:n,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
+ if(old.content!=="<?php defined('ABSPATH')||exit; // Disabled after verification failure.\n")throw Error('Existing deployment requires explicit version comparison');
+}
 const esc=s=>s.replaceAll('\\','\\\\').replaceAll("'","\\'");
 const sources=Object.fromEntries(names.map(n=>[n,readFileSync('web-minhlong/shipping/'+n,'utf8').replace('__ML_GHN_TOKEN__',esc(gh)).replace('__ML_GHN_SHOP_ID__',shop)]));
 async function put(name,code){const f=new FormData();f.set('dir',dir);f.set('overwrite','1');f.set('file-1',new Blob([code]),name);await api('Fileman','upload_files',f);}
@@ -61,7 +64,14 @@ try{
  await ctx.close();
  stage='regional_seed';
  await fetch(origin+'/wp-cron.php?doing_wp_cron',{signal:AbortSignal.timeout(60000)});
- const regions=await fetch(origin+'/wp-json/ml-shipping/v1/regions',{signal:AbortSignal.timeout(30000)});const rows=await regions.json();if(!Array.isArray(rows)||rows.length!==3)throw Error('Regional cache not seeded');
+ let seeded=false;
+ for(let attempt=0;attempt<12;attempt++){
+ const regions=await fetch(origin+'/wp-json/ml-shipping/v1/regions?verify='+Date.now(),{signal:AbortSignal.timeout(30000)});
+ const rows=await regions.json();if(Array.isArray(rows)&&rows.length===3){seeded=true;break;}
+ await new Promise(r=>setTimeout(r,5000));
+ if(attempt%3===2)await fetch(origin+'/wp-cron.php?doing_wp_cron',{signal:AbortSignal.timeout(60000)});
+ }
+ if(!seeded)throw Error('Regional cache not seeded after background wait');
  console.log('REGION_CACHE_OK=3');
 
  stage='schedule';
