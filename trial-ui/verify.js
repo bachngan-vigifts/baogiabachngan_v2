@@ -20,7 +20,7 @@ export function duePill(date, { done = false, fmt = v => v } = {}) {
  * `layout: 'page'` mở không gian toàn màn hình; `review` là HTML đã escape của phần đối chiếu bên trái.
  * Trả về object { tên ô: giá trị } khi đồng ý, null khi huỷ.
  */
-export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '', rows = [], checks = [], fields = '', ok = 'Xác nhận', validate,onMount, layout = 'dialog', subtitle = '', review = '' } = {}) {
+export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '', rows = [], checks = [], fields = '', ok = 'Xác nhận', validate,onMount,requireValidFields=false, layout = 'dialog', subtitle = '', review = '' } = {}) {
   const dlg = document.createElement('dialog');
   const page = layout === 'page';
   dlg.className = 'modal verify-dialog' + (page ? ' verify-page' : '');
@@ -40,7 +40,8 @@ export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '
   </form>`;
   document.body.append(dlg);
   const boxes = [...dlg.querySelectorAll('[data-check]')], okBtn = dlg.querySelector('[data-ok]');
-  const sync = () => { const left = boxes.filter(b => !b.checked).length; okBtn.disabled = left > 0; dlg.querySelector('[data-left]').textContent = left ? `Còn ${left} mục cần đánh dấu` : 'Đã kiểm tra đủ'; };
+  const values=()=>Object.fromEntries([...dlg.querySelectorAll('[name]')].map(i=>[i.name,requireValidFields&&i.type==='checkbox'?String(i.checked):i.value]));
+  const sync = () => { const left = boxes.filter(b => !b.checked).length; const invalid=requireValidFields&&(validate?.(values())||!dlg.querySelector('form').checkValidity());okBtn.disabled=left>0||!!invalid; dlg.querySelector('[data-left]').textContent = left ? `Còn ${left} mục cần đánh dấu` : invalid?'Điền đủ thông tin để gửi duyệt':'Đã kiểm tra đủ'; };
   boxes.forEach(b => b.addEventListener('change', sync)); sync();
   return new Promise(resolve => {
     const done = v => { dlg.close(); dlg.remove(); resolve(v); };
@@ -48,11 +49,11 @@ export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '
     dlg.addEventListener('cancel', e => { e.preventDefault(); done(null); });
     dlg.querySelector('form').addEventListener('submit', e => {
       e.preventDefault(); if (boxes.some(b => !b.checked)) return;
-      const values = Object.fromEntries([...dlg.querySelectorAll('[name]')].map(i => [i.name, i.value]));
-      const err = validate?.(values); if (err) { dlg.querySelector('[data-err]').textContent = err; return; }
-      done(values);
+      const result=values();
+      const err = validate?.(result); if (err) { dlg.querySelector('[data-err]').textContent = err; return; }
+      done(result);
     });
-    onMount?.(dlg);dlg.showModal();
+    onMount?.(dlg);if(requireValidFields){dlg.addEventListener('input',sync);dlg.addEventListener('change',sync);}sync();dlg.showModal();
   });
 }
 

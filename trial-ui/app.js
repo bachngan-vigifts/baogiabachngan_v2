@@ -1,3 +1,4 @@
+import {requestOrderApproval,submissionSummary} from './order-submit.js';
 import {createProductionFiles,mountProductionFiles} from './production-files.js';
 import {initProductBrandFilter} from './product-brand-filter.js';
 import {initWarehouseAssignment} from './warehouse-assignment.js';
@@ -4487,9 +4488,8 @@ async function openOrder(id, confirmed = null) {
   $('#order-actions').innerHTML = (isK ? '<button class="btn secondary" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / tải hồ sơ HĐKT</button>'
       : '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>')
     + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
-    + (o.status === 'draft' ? (canApprove() ? `<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt ${what}</button>`
-      : o.submittedAt === null ? (o.canEdit !== false ? `<button class="btn primary" id="order-submit" title="Xem kỹ ${what} rồi gửi Manager duyệt">Gửi duyệt</button>` : `<span class="pill" title="Người phụ trách chưa gửi duyệt">Nháp</span>`)
-      : `<span class="pill warn" title="Còn nháp: sửa báo giá thì ${what} tự cập nhật theo">Chờ Manager duyệt</span>`) : '')
+    + (o.status==='draft'?(canApprove()?`<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}">Duyệt ${what}</button>`:'')
+      + (!o.submittedAt&&o.canEdit!==false&&(o.channel||'crm')==='crm'?`<button class="btn primary" id="order-submit">Gửi yêu cầu phê duyệt</button>`:o.submittedAt&&!canApprove()?'<span class="pill warn">Chờ Manager duyệt</span>':''):'')
     + ((isManager() || (o.status === 'draft' && o.canEdit !== false)) && o.status !== 'cancelled' && !d.payments.some(p => !p.voidedAt) && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
     + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
@@ -4563,6 +4563,7 @@ async function openOrder(id, confirmed = null) {
     <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd>${saleWarehouseRow(o)}<dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
     <dt>Thanh toán</dt><dd>${o.channel === 'pos' ? esc(posPaymentText(d)) : 'Theo HĐ nguyên tắc với khách'}</dd></dl>
     <div class="row-gap"><button class="btn primary small" id="order-print-card" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button></div>`;
+  if(d.submissionReview)$('#order-contract').insertAdjacentHTML('beforeend',submissionSummary(d.submissionReview,esc));
   if(d.purchases?.length) $('#order-contract').insertAdjacentHTML('beforeend', '<p class="small">Đơn mua NCC: ' + d.purchases.map(p => `<a class="data-link" href="#/purchases/${encodeURIComponent(p.id)}">${esc(p.number)}</a>`).join(' · ') + '</p>');
   if(k)mountContractLiquidation({api,host:$('#order-contract'),contract:k,compressPhoto:f=>compressImage(f,[[1280,.72],[1024,.68],[800,.62],[640,.6]],450000,'Ảnh hồ sơ quá lớn. Chụp lại rồi thử lại.'),confirmBox,toast,isCurrent:()=>sales.order?.id===o.id&&token===session&&location.hash===route});
   renderInvoice(o); renderProgress(d);
@@ -5311,7 +5312,7 @@ document.addEventListener('click', async e => {
   if (sub && sales.detail?.order) {
     const o = sales.detail.order, what = sales.detail.contract ? 'HĐKT' : 'đơn hàng';
     sub.disabled = true;
-    try { await api('/orders/' + encodeURIComponent(o.id) + '/submit', 'POST', {}); toast(`Đã gửi Manager duyệt ${what}.`); openOrder(o.id); }
+    try { if(await requestOrderApproval({id:o.id,api,verifyBox,esc})){toast(`Đã gửi Manager duyệt ${what}.`);openOrder(o.id);}else sub.disabled=false; }
     catch (ex) { toast(ex.message, 'err'); sub.disabled = false; }
   }
   if (e.target.closest('#order-history')) showAudit({ api, toast, entityType: 'orders', entityId: sales.order.id, title: (isContractDoc() ? 'HĐKT ' : 'Đơn ') + docNo() });

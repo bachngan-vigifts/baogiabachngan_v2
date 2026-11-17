@@ -1,3 +1,4 @@
+import {submitFixtureOrder} from '../helpers/submission-review-fixture.ts';
 import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -54,14 +55,14 @@ test('đẩy thông báo: báo giá mới → Manager; duyệt → người lậ
 
   // Sinh đơn hàng + HĐKT → Manager nhận "đơn / HĐKT chờ duyệt"; duyệt đơn → nhân viên phụ trách nhận.
   const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201);
-  await call(`/orders/${o.data.id}/submit`, emp, 'POST', {}); // Manager chỉ được báo khi nhân viên gửi duyệt
+  await submitFixtureOrder(call,o.data.id,emp); // Manager chỉ được báo khi nhân viên gửi duyệt
   assert.ok(await has(mgr, 'order_pending'));
   // HĐKT là luồng riêng: lập thẳng từ một báo giá khác.
   const q2 = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_N2', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows: [{ name: 'Bộ trà', qty: 10, price: 100000 }] });
   await call('/quotes/' + q2.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
   await call(`/quotes/${q2.data.id}/approve`, mgr, 'POST', { revision: 1 });
   const k2 = await call('/contracts', emp, 'POST', { quoteId: q2.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15 }); assert.equal(k2.status, 201);
-  await call(`/orders/${k2.data.orderId}/submit`, emp, 'POST', {});
+  await submitFixtureOrder(call,k2.data.orderId,emp);
   assert.ok(await has(mgr, 'contract_pending'));
   await approveFixtureOrder({db,call},`/orders/${o.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   assert.ok(await has(emp, 'order_approved'));

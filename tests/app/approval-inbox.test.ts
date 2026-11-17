@@ -1,3 +1,4 @@
+import {submitFixtureOrder} from '../helpers/submission-review-fixture.ts';
 import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
@@ -48,7 +49,7 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
   // Đơn / HĐKT nhân viên sinh là nháp: chỉ vào hộp "Cần duyệt" sau khi bấm Gửi duyệt.
   assert.equal((await call(`/orders/${o2.data.id}`, emp)).data.order.submittedAt, null, 'mới sinh: nháp, chưa gửi duyệt');
   assert.deepEqual([(await inbox()).counts.order, (await inbox()).counts.contract], [0, 0]);
-  for (const oid of [o2.data.id, k3.data.orderId]) assert.equal((await call(`/orders/${oid}/submit`, emp, 'POST', {})).status, 200);
+  for (const oid of [o2.data.id, k3.data.orderId]) assert.equal((await submitFixtureOrder(call,oid,emp)).status, 200);
   assert.equal((await call(`/orders/${o2.data.id}/submit`, emp, 'POST', {})).status, 200, 'bấm lặp không lỗi');
   const o3 = { data: { id: k3.data.orderId as string } };
   // Khách hàng và sản phẩm nhân viên tạo.

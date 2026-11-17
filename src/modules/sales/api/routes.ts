@@ -1,3 +1,5 @@
+import {registerSubmissionReview,submissionQuoteFingerprint,submissionDeliveryFingerprint} from './submission-review.ts';
+import {readSubmissionRecord} from '../domain/submission-review.ts';
 import {registerContractTemplateRoutes,contractTemplateSnapshot} from './contract-templates.ts';
 import {cleanWordEdits} from '../../quotes/domain/quotation-schema.ts';
 import {registerProductionFiles,bindProductionFiles} from './production-files.ts';
@@ -363,6 +365,10 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
   const order = await linkedOrder(tx, quote.id);
   if (!order || (order.status !== 'draft' && member.role !== 'manager')) return;
   const data = JSON.parse(quote.data), lines = orderLinesFromQuote(data);
+  const submittedReview=readSubmissionRecord(order.submissionReview);
+  const [reviewSourceHash,deliverySourceHash]=submittedReview?await Promise.all([submissionQuoteFingerprint(data),submissionDeliveryFingerprint(data)]):[null,null];
+  const invalidateSubmission=order.status==='draft'&&submittedReview&&submittedReview.quoteFingerprint!==reviewSourceHash;
+  const keepReviewedDelivery=submittedReview&&submittedReview.deliveryFingerprint===deliverySourceHash;
   if (!lines.length) throw new AppError(400, `Báo giá đã sinh ${docRef(order.id, order.orderNo, (await contractNosOf(tx, [order.id])).get(order.id)).label}: phải còn ít nhất một dòng có số lượng.`);
   const t = orderTotals(lines), now = nowIso();
   const oldLines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
@@ -398,10 +404,10 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
     else await tx.insert(salesOrderLines).values({ id: crypto.randomUUID(), orderId: order.id, ...values });
   }
   await ensureLineCosts(tx, order.id, 'amend', member.id);
-  await tx.update(salesOrders).set({ ...t, quoteNo: quote.quoteNo, quoteType: quote.quoteType,
+  await tx.update(salesOrders).set({ ...(invalidateSubmission?{submittedAt:null,submissionReview:null}:{}),...t, quoteNo: quote.quoteNo, quoteType: quote.quoteType,
     customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
-    taxCode: text(data.customerTaxCode, 100), address: text(data.customerAddress, 2000),
-    ...(isDate(data.deliveryDate) ? { expectedDeliveryDate: data.deliveryDate } : {}), updatedAt: now, revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+    taxCode: text(data.customerTaxCode, 100), address: keepReviewedDelivery?submittedReview.deliveryAddress:text(orderDeliveryAddress(data),2000),
+    ...(keepReviewedDelivery?{expectedDeliveryDate:submittedReview.deliveryDate}:isDate(data.deliveryDate) ? { expectedDeliveryDate: data.deliveryDate } : {}), updatedAt: now, revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
   const [k] = await tx.select().from(salesContracts).where(and(eq(salesContracts.orderId, order.id), ne(salesContracts.status, 'cancelled'))).limit(1).for('update');
   const linkedTerms = contractTermsFromQuote(data);
   const financialTerms = { ...(linkedTerms.depositRate !== undefined ? { depositRate: linkedTerms.depositRate } : {}), ...(linkedTerms.paymentDays !== undefined ? { paymentDays: linkedTerms.paymentDays } : {}) };
@@ -413,7 +419,7 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
       delete doc.edits;
     }
     doc.details = { ...(doc.details || {}), ...Object.fromEntries(Object.entries(linkedTerms).filter(([, v]) => v !== undefined)) };
-    await tx.update(salesContracts).set({ ...financialTerms, ...(linkedTerms.deliveryAddress !== undefined ? { deliveryAddress: linkedTerms.deliveryAddress } : {}), value: t.total, depositAmount: Math.round(t.total * (linkedTerms.depositRate ?? k.depositRate) / 100), data: JSON.stringify(doc), updatedAt: now, revision: sql`${salesContracts.revision} + 1` }).where(eq(salesContracts.id, k.id));
+    await tx.update(salesContracts).set({ ...financialTerms, ...(keepReviewedDelivery?{deliveryAddress:submittedReview.deliveryAddress}:linkedTerms.deliveryAddress!==undefined?{deliveryAddress:linkedTerms.deliveryAddress}:{}), value: t.total, depositAmount: Math.round(t.total * (linkedTerms.depositRate ?? k.depositRate) / 100), data: JSON.stringify(doc), updatedAt: now, revision: sql`${salesContracts.revision} + 1` }).where(eq(salesContracts.id, k.id));
   }
   await syncPaymentSchedules(tx, { ...order, ...t, status: orderStatusFromLines(order.status, plan.updates) }, k ? { ...k, ...financialTerms } : undefined);
   if (order.status !== 'draft') {
@@ -619,7 +625,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const net=netReturnInputs(schedules,payments.filter(p=>!p.voidedAt),adjustment);
     const cashCollectionRows=order.channel==='crm'?await cashCollectionsForOrder(db,order.id):[];
     return {
-      purchases,
+      purchases,submissionReview:readSubmissionRecord(order.submissionReview),
       cashCollections: cashCollectionRows, cashHeld: cashCollectionRows.filter(r=>r.status==='held').reduce((sum,r)=>sum+r.amount,0), canConfirmCashCollection: viewer(c).role==='manager',
       canCollectCashWithoutDrawer: order.channel === 'crm' && canCollectCrmCashWithoutDrawer(viewer(c)),
       returnAdjustment: adjustment || null,
@@ -692,23 +698,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     return json({ id, orderNo: o!.orderNo, sapo }, 201);
   }, 'business');
 
-  /** Nhân viên xem kỹ đơn / HĐKT nháp rồi bấm "Gửi duyệt" → Manager nhận thông báo + việc "Duyệt". */
-  router.post('/orders/:id/submit', async c => {
-    const me = viewer(c), order = await loadOrder(c, c.params.id!);
-    if (order.status !== 'draft') throw new AppError(409, 'Chỉ gửi duyệt được đơn / HĐKT còn nháp.');
-    await assertCanEditOrder(c, order);
-    if (order.submittedAt) return json({ ok: true, submittedAt: order.submittedAt });
-    const now = nowIso();
-    const rows = await c.env.db.update(salesOrders).set({ submittedAt: now, updatedAt: now, revision: sql`${salesOrders.revision} + 1` })
-      .where(and(eq(salesOrders.id, order.id), eq(salesOrders.status, 'draft'), isNull(salesOrders.submittedAt))).returning({ id: salesOrders.id });
-    if (rows.length) {
-      const [k] = await c.env.db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1);
-      await notifyMany(c.env, 'approvers', k
-        ? { eventType: 'contract_pending', title: 'HĐKT mới chờ duyệt', body: `${me.name}: ${k.no} – ${order.customerName}`, url: `/index.html#/contracts/${order.id}`, actorId: me.id, data: { orderId: order.id } }
-        : { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${order.orderNo} – ${order.customerName} · ${new Intl.NumberFormat('vi-VN').format(order.total)} đ`, url: `/index.html#/orders/${order.id}`, actorId: me.id, data: { orderId: order.id } });
-    }
-    return json({ ok: true, submittedAt: now });
-  }, 'business');
+  registerSubmissionReview(router,loadOrder,assertCanEditOrder);
 
   /**
    * Đổi kho bán của đơn / HĐKT. Nháp: người phụ trách / người tạo (kho người phụ trách được bán). Đã duyệt: chỉ Manager – sổ kho
@@ -784,12 +774,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (!canApprove(viewer(c))) throw new AppError(403, 'Chỉ người được duyệt xem kiểm tra phê duyệt.', 'APPROVER_ONLY');
     const order = await loadOrder(c, c.params.id!);
     const [quote] = order.quoteId ? await c.env.db.select().from(quotations).where(eq(quotations.id, order.quoteId)) : [];
+    const requestedPayer=readSubmissionRecord(order.submissionReview)?.shippingPayer;
     const costReview=quote?await orderCostReview(c.env.db,order.id,JSON.parse(quote.data)):null;
     return json({ customerName: order.customerName, asOf: vietnamDate().iso,
       ...(viewer(c).role==='manager'&&costReview?{purchaseCosts:costReview.purchaseCosts}:{}),
       debt: await approvalDebt(c.env.db, order.customerId, order.taxCode, order.id),
-      costs: costReview?.costs??{missingSource:true},
-      quoteRevision:quote?.revision??null,quoteId: can(viewer(c), 'page.quotes') ? order.quoteId : null });
+      costs: costReview?{...costReview.costs,missingShipping:costReview.costs.missingShipping||!!requestedPayer&&JSON.parse(quote!.data).shipping?.payer!==requestedPayer}:{missingSource:true},
+      shippingPayer:readSubmissionRecord(order.submissionReview)?.shippingPayer??null,quoteRevision:quote?.revision??null,quoteId: can(viewer(c), 'page.quotes') ? order.quoteId : null });
   }, 'business');
 
   router.put('/orders/:id/status', async c => {
@@ -823,7 +814,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       // Duyệt có thể giữ hàng tự động: khoá giữ hàng trước khoá đơn (cùng thứ tự với xác nhận xuất kho / POS).
       if (status === 'confirmed' && order.channel === 'crm') await lockHolds(tx);
       // Khoá đơn rồi kiểm lại trong giao dịch: phiếu thu / chuyến giao vừa ghi cùng lúc không lọt qua khi huỷ.
-      const [locked] = await tx.select({ status: salesOrders.status, warehouseId:salesOrders.warehouseId }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      const [locked] = await tx.select({ status: salesOrders.status, warehouseId:salesOrders.warehouseId,submissionReview:salesOrders.submissionReview }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
       if (locked?.status !== order.status) throw new AppError(409, 'Đơn hàng / HĐKT vừa thay đổi. Tải lại trang.', 'ORDER_CHANGED');
       if (status === 'cancelled') await assertCanCancelDocument(tx,order.id);
       if (status === 'confirmed') {
@@ -832,6 +823,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
         const [quote] = order.quoteId ? await tx.select().from(quotations).where(eq(quotations.id, order.quoteId)) : [];
         if(body.costQuoteRevision!==undefined&&(!quote||!Number.isSafeInteger(body.costQuoteRevision)||body.costQuoteRevision!==quote.revision))throw new AppError(409,'Chi phí báo giá vừa thay đổi. Mở lại phần kiểm tra chi phí trước khi duyệt.','COSTS_CHANGED');
         await ensureLineCosts(tx,order.id,'confirm',viewer(c).id);
+        const submittedReview=readSubmissionRecord(locked.submissionReview);
+        if(submittedReview&&quote&&JSON.parse(quote.data).shipping?.payer!==submittedReview.shippingPayer)throw new AppError(409,'Bên chịu phí vận chuyển chưa khớp nội dung nhân viên đã xác nhận. Manager kiểm tra lại chi phí trước khi duyệt.','SHIPPING_PAYER_CHANGED');
         if(order.channel==='crm')await assertOrderCostSource(tx,order.id,quote?JSON.parse(quote.data):null);
         if(quote&&approvalCosts(JSON.parse(quote.data)).missingCommission&&body.costWarningsReviewed!==true)
           throw new AppError(409,'Vui lòng kiểm tra CK khách trước khi duyệt.','COST_REVIEW_REQUIRED');

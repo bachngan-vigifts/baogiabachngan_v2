@@ -1,3 +1,4 @@
+import {submitFixtureOrder} from '../helpers/submission-review-fixture.ts';
 import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -47,7 +48,7 @@ test('đơn nháp: Kế toán xem được nhưng không huỷ / gửi duyệt �
   assert.equal((await s.call(`/orders/${orderId}/submit`, s.kt, 'POST', {})).status, 403);
   assert.equal((await s.call(`/orders/${orderId}/status`, s.kt, 'PUT', { status: 'cancelled' })).status, 403);
   assert.equal((await s.call(`/orders/${orderId}`, s.emp)).data.order.canEdit, true);
-  assert.equal((await s.call(`/orders/${orderId}/submit`, s.emp, 'POST', {})).status, 200);
+  assert.equal((await submitFixtureOrder(s.call,orderId,s.emp)).status, 200);
 });
 
 test('huỷ đơn: phiếu đóng gói / chuyến giao còn mở huỷ theo, hàng đã đóng ghi đảo về kho; đơn huỷ không giao, không ghi thu được', async () => {

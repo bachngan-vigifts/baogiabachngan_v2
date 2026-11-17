@@ -2988,3 +2988,9 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .approval-cost-section input,.approval-cost-section select { width:100%;min-width:0; }
 .verify-dialog .approval-cost-section .verify-field { margin:0; }
 @media(max-width:640px){.approval-cost-section{padding:10px}.approval-cost-section input,.approval-cost-section select{min-height:44px}}
+/* Staff submission review: readable operational facts, separate from Manager-only costs. */
+.submission-summary { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+.submission-summary h4 { margin:0 0 10px; color:var(--brand-navy); }
+.submit-bulk-confirm { display:flex; align-items:flex-start; gap:8px; line-height:1.5; }
+.submit-bulk-confirm input[type="checkbox"] { flex:0 0 20px; width:20px; min-width:20px; max-width:20px; height:20px; min-height:20px; margin:3px 0 0; padding:0; }
+.submit-bulk-confirm span { flex:1; min-width:0; overflow-wrap:anywhere; }
