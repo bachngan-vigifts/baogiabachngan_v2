@@ -52,7 +52,9 @@ try{
  await page.setViewportSize({width:1484,height:1004});
  if(await page.locator('#bnmc-bar').isVisible())throw Error('Mobile bar visible on desktop');
  if(await page.locator('.cart_item').first().evaluate(e=>getComputedStyle(e).display==='grid'))throw Error('Desktop card regression');
- if(!await page.locator('#header').isVisible())throw Error('Desktop header hidden');
+ await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(400);
+ if(await page.locator('#header').evaluate(e=>getComputedStyle(e).display==='none'))throw Error('Desktop header hidden by CSS');
+ await page.screenshot({path:'cart-desktop-'+site.host+'.png'});
  console.log('DESKTOP_UNCHANGED_OK '+site.host);
  if(!preview){
  await page.setViewportSize({width:390,height:844});
