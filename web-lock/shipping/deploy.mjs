@@ -55,14 +55,16 @@ try {
  browser=await chromium.launch();
  const context=await browser.newContext({viewport:{width:1360,height:1004}});
  const page=await context.newPage();
- await page.addLocatorHandler(page.locator('#mltv-popup.mltv-popup--show'),async()=>{await page.locator('#mltv-popup .mltv-popup__close').click();});
+ await page.addLocatorHandler(page.locator('#mltv-popup.mltv-popup--show'),async()=>{await page.locator('#mltv-popup .mltv-popup__close').evaluate(button=>button.click());});
  stage='homepage_navigation';
  await page.goto('https://locknlockonline.com/?lnl_shipping_check='+process.env.GITHUB_RUN_ID,{waitUntil:'commit',timeout:90000});
  stage='homepage_tooltip';
  await page.locator('.lnl-ship-hit').first().waitFor({state:'attached'});
  await page.locator('.lnl-ship-hit').evaluateAll(buttons=>{const b=buttons.find(b=>b.getBoundingClientRect().width>0);if(b)b.scrollIntoView({block:'center',inline:'center'});});
  await page.waitForTimeout(1200);
- if(await page.locator('#mltv-popup.mltv-popup--show .mltv-popup__close').isVisible())await page.locator('#mltv-popup .mltv-popup__close').click();
+ if(await page.locator('#mltv-popup.mltv-popup--show .mltv-popup__close').isVisible())await page.locator('#mltv-popup .mltv-popup__close').evaluate(button=>button.click());
+ await page.locator('.lnl-ship-hit').evaluateAll(buttons=>{const b=buttons.find(b=>b.getBoundingClientRect().width>0);if(b)b.scrollIntoView({block:'center',inline:'center'});});
+ await page.waitForTimeout(700);
  const index=await page.locator('.lnl-ship-hit').evaluateAll(buttons=>buttons.findIndex(b=>{const r=b.getBoundingClientRect();return r.width>0&&r.top>100&&r.bottom<innerHeight&&document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)===b;}));
  if(index<0){
  console.log('TARGET_DIAGNOSTICS='+JSON.stringify(await page.locator('.lnl-ship-hit').evaluateAll(bs=>bs.slice(0,8).map(b=>{const r=b.getBoundingClientRect();const e=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {x:r.x,y:r.y,w:r.width,h:r.height,cover:e?.className};}))));
@@ -122,7 +124,7 @@ try {
  }catch{console.log('SYSTEM_CRON_NOT_VERIFIED');}
  console.log('SHIPPING_DEPLOY_OK');
 }catch(error){
- console.log('FAILED_STAGE='+stage+' ERROR='+String(error.message).slice(0,200));
+ console.log('FAILED_STAGE='+stage+' ERROR='+String(error.message).slice(0,2000));
  if(activated&&rollback)try{await rollback();console.log('SHIPPING_PREVIOUS_RESTORED');}catch{console.log('ROLLBACK_FAILED');}
  process.exitCode=1;
 }finally{if(browser)await browser.close();}
