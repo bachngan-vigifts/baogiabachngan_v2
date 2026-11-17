@@ -8,26 +8,21 @@ async function api(mod,fn,p={}){const f=p instanceof FormData,u=new URL('/execut
 const domains=await api('DomainInfo','domains_data',{format:'hash'});
 function rootFor(host){let root;function visit(x){if(!x||typeof x!=='object')return;if(x.domain===host&&x.documentroot)root=x.documentroot;for(const v of Object.values(x))if(typeof v==='object')visit(v);}visit(domains);if(host==='locknlockonline.com'&&!root)root=process.env.LOCKNLOCK_DOCROOT?.trim();if(!root||!root.startsWith('/home/'+user+'/')||root.includes('..'))throw Error('Domain root not verified '+host);return root.replace(/\/+$/,'');}
 
-for(const host of ['locknlockonline.com','minhlongonline.com']){
- const dir=rootFor(host)+'/wp-content/mu-plugins',files=await api('Fileman','list_files',{dir});
- console.log('SHIPPING_FILES '+host+' '+JSON.stringify(files.map(f=>f.file).filter(f=>/ghn|shipping|checkout|freeship/i.test(f))));
- for(const f of files.filter(f=>/ghn|shipping|freeship/i.test(f.file)&&f.file.endsWith('.php'))){
- const {content:s}=await api('Fileman','get_file_content',{dir,file:f.file,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
- const lines=(s||'').split('\n'),indices=new Set();
- lines.forEach((line,i)=>{if(/package_rates|shipping-order\/fee|flat_rate|calculate_shipping|set_cost|shipping_total/i.test(line))for(let n=Math.max(0,i-6);n<Math.min(lines.length,i+12);n++)indices.add(n);});
- const excerpt=[...indices].sort((a,b)=>a-b).map(i=>{const line=lines[i];return (i+1)+': '+(/token|secret|password|api.?key|authorization|shop.?id.*[=]|config\(/i.test(line)?'[credential-related line omitted]':line.replace(/(['"])[A-Za-z0-9_\-]{30,}\1/g,'"[long identifier omitted]"'));}).join('\n');
- if(excerpt)console.log('FEE_SOURCE '+host+' '+f.file+'\n'+excerpt.slice(0,14000));
+
+const root=rootFor('locknlockonline.com');
+async function inspect(dir,depth=0){
+ const files=await api('Fileman','list_files',{dir});
+ console.log('FILES '+dir.replace(root,'LOCK')+' '+JSON.stringify(files.map(f=>({name:f.file,type:f.type}))));
+ for(const f of files){
+  if(f.file==='.'||f.file==='..')continue;
+  if(f.file.endsWith('.php')&&(/sepay|gateway|payment|thank|order/i.test(f.file)||depth>0)){
+   const {content:s}=await api('Fileman','get_file_content',{dir,file:f.file,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
+   const lines=(s||'').split('\n');
+   const keep=new Set();lines.forEach((line,i)=>{if(/process_payment|payment_complete|update_status|thankyou|receipt|webhook|callback|redirect|on-hold|pending|processing|woocommerce_api|check_payment/i.test(line))for(let n=Math.max(0,i-6);n<Math.min(lines.length,i+28);n++)keep.add(n);});
+   console.log('SOURCE '+dir.replace(root,'LOCK')+'/'+f.file+'\n'+[...keep].sort((a,b)=>a-b).map(i=>(i+1)+': '+(/secret|password|token|api.?key|authorization/i.test(lines[i])?'[credential-related line omitted]':lines[i].replace(/(['"])[A-Za-z0-9_-]{32,}\1/g,'"[identifier omitted]"'))).join('\n').slice(0,40000));
+  } else if(depth<2&&(/sepay|includes|inc|templates/i.test(f.file))&&!f.file.includes('.')){await inspect(dir+'/'+f.file,depth+1);}
  }
 }
-console.log('SHIPPING_FEE_READ_ONLY_COMPLETE');
-
-for(const host of ['locknlockonline.com','minhlongonline.com']){
- const root=rootFor(host),dir=root+'/wp-content/themes/flatsome-child';
- try{const {content:s}=await api('Fileman','get_file_content',{dir,file:'functions.php',from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});
- const lines=(s||'').split('\n'),indices=new Set();
- lines.forEach((line,i)=>{if(/package_rates|shipping-order\/fee|flat_rate|calculate_shipping|set_cost|shipping_total|ghn.*fee|fee.*ghn/i.test(line))for(let n=Math.max(0,i-8);n<Math.min(lines.length,i+18);n++)indices.add(n);});
- console.log('THEME_FEE_SOURCE '+host+'\n'+[...indices].sort((a,b)=>a-b).map(i=>(i+1)+': '+(/token|secret|password|api.?key|authorization/i.test(lines[i])?'[credential-related line omitted]':lines[i])).join('\n').slice(0,20000));
- }catch{console.log('THEME_READ_UNAVAILABLE '+host);}
- const plugins=await api('Fileman','list_files',{dir:root+'/wp-content/plugins'});
- console.log('PLUGIN_NAMES '+host+' '+JSON.stringify(plugins.map(f=>f.file)));
-}
+await inspect(root+'/wp-content/mu-plugins');
+await inspect(root+'/wp-content/plugins');
+console.log('SEPAY_READ_ONLY_COMPLETE');
