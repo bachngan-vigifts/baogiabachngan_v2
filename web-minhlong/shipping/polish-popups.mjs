@@ -18,7 +18,7 @@ let changed=false,browser;
 try{
 const code=readFileSync('web-minhlong/shipping/'+name,'utf8');await put(code);changed=true;
 const check=await api('Fileman','get_file_content',{dir,file:name,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0});if(check.content!==code)throw Error('Readback mismatch');
-browser=await chromium.launch();const page=await browser.newPage();
+browser=await chromium.launch();const page=await browser.newPage();page.on('framenavigated',f=>{if(f===page.mainFrame())console.log('TEST_NAV '+f.url().split('?')[0]);});page.on('pageerror',e=>console.log('TEST_JS_ERROR '+e.message.slice(0,150)));
 for(const width of [1484,1024]){
 await page.setViewportSize({width,height:1004});
 await page.goto(origin+'/danh-muc/minh-long/bo-do-an-minh-long/?quickview_check='+process.env.GITHUB_RUN_ID,{waitUntil:'domcontentloaded',timeout:90000});
@@ -49,7 +49,8 @@ if(value)await select.selectOption(value);
 await page.waitForFunction(()=>Number(document.querySelector('.mfp-content [name=variation_id]')?.value)>0,{},{timeout:20000});
 const chosen=await variation.inputValue();
 await form.locator('input[name=quantity]').fill('2');
-await Promise.all([page.waitForURL('**/thanh-toan/**',{timeout:60000}),form.locator('.ml-popup-buy-now').click()]);
+console.log('BUY_NOW_STATE '+JSON.stringify(await form.evaluate(f=>({action:f.action,fields:Array.from(f.querySelectorAll('input,select,button')).map(e=>({name:e.name,type:e.type,value:e.value,disabled:e.disabled})),valid:f.checkValidity()}))));
+await Promise.all([page.waitForURL('**/thanh-toan/**',{timeout:60000,waitUntil:'domcontentloaded'}),form.locator('.ml-popup-buy-now').click()]);
 await page.locator('#order_review').waitFor({state:'visible'});
 const checkout=await page.locator('#order_review').innerText();
 if(!checkout.trim())throw Error('Empty checkout after Buy Now');
@@ -79,4 +80,4 @@ await page.screenshot({path:'ml-wishlist-'+width+'.png'});
 await page.evaluate(()=>document.querySelector('.woosw-popup.woosw-show .woosw-popup-close')?.click());
 }
 console.log('QUICK_VIEW_DEPLOY_OK');
-}catch(e){console.log('QUICK_VIEW_FAILED '+String(e.message).slice(0,300));if(changed){await put(old.content);console.log('POPUP_PREVIOUS_RESTORED');}process.exitCode=1;}finally{if(browser)await browser.close();}
+}catch(e){console.log('QUICK_VIEW_FAILED '+String(e.message).slice(0,1500));if(changed){await put(old.content);console.log('POPUP_PREVIOUS_RESTORED');}process.exitCode=1;}finally{if(browser)await browser.close();}

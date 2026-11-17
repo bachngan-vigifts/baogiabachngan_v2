@@ -55,10 +55,10 @@ box-shadow:0 3px 12px #123b6e40!important;
 <?php
 },99);
 add_action('init',function(){
- if(get_option('ml_quick_view_position_version')==='3')return;
+ if(get_option('ml_quick_view_position_version')==='4')return;
  do_action('litespeed_purge_all');
  do_action('litespeed_purge_url',home_url('/danh-muc/minh-long/bo-do-an-minh-long/'));
- update_option('ml_quick_view_position_version','3',false);
+ update_option('ml_quick_view_position_version','4',false);
 });
 
 add_filter('woocommerce_add_to_cart_redirect',function($url){
