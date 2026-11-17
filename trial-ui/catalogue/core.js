@@ -53,6 +53,22 @@ export function moveSelectedProduct(state,id,targetId,after=false){
  state.selected=next;state.settings.sortPrice=false;state.settings.selectionSort='manual';return true;
 }
 export function makeSlides(state){
+ if(state.pageComposition){
+  const sources=new Map(state.pageComposition.sources.map(source=>[source.id,source]));
+  const result=state.pageComposition.pages.map(ref=>{const source=sources.get(ref.sourceId),context={...source.state,frozenSlides:source.slides};const slide=makeSlides(context)[ref.index];return {...slide,compositionId:ref.id,sourceState:context};});
+  const mode=state.settings.pageSort||'source',rank=new Map((state.settings.pageOrder||[]).map((id,i)=>[id,i]));
+  if(mode==='manual')result.sort((a,b)=>(rank.get(a.compositionId)??result.length)-(rank.get(b.compositionId)??result.length));
+  else if(mode!=='source'){
+   const key=p=>mode==='category'?p.category:mode==='name'?p.items?.[0]?.name:p.brand;
+   const cost=p=>p.items?.length?Math.min(...p.items.map(item=>quotePrice(item,p.sourceState))):null;
+   // Covers/dividers/closing stay as complete pages in their source slots; only product-page slots are sorted.
+   const productPages=result.filter(p=>p.type==='products');productPages.sort((a,b)=>mode==='price'||mode==='price-desc'?(cost(a)-cost(b))*(mode==='price-desc'?-1:1):collator.compare(key(a)||'',key(b)||''));
+   let i=0;return result.map(p=>p.type==='products'?productPages[i++]:p);
+  }
+  return result;
+ }
+ if(state.frozenSlides){const byId=new Map(state.products.map(p=>[p.id,p]));return state.frozenSlides.map(s=>({...s,...(s.items?{items:s.items.map(id=>byId.get(id))}:{})}));}
+
  const products=sortedProducts(state),pages=[];
  for(const band of priceBandOrder){
   const group=products.filter(p=>quoteBudget(p,state)===band),bandPages=[];
@@ -94,10 +110,11 @@ export function restoreState(raw){
  settings.pageSort=['source','brand','category','name','price','price-desc','manual'].includes(raw.settings?.pageSort)?raw.settings.pageSort:'brand';
  settings.pageOrder=Array.isArray(raw.settings?.pageOrder)?[...new Set(raw.settings.pageOrder.filter(k=>typeof k==='string'&&k.length<=800))].slice(0,1000):[];
  const cloudQuote=raw.cloudQuote&&/^[A-Za-z0-9_-]{8,80}$/.test(raw.cloudQuote.id||'')&&Number.isSafeInteger(raw.cloudQuote.revision)&&raw.cloudQuote.revision>=0?{id:raw.cloudQuote.id,revision:raw.cloudQuote.revision,owner:String(raw.cloudQuote.owner||'').slice(0,100)}:null;
- return {version:1,cloudQuote,customBrands:Array.isArray(raw.customBrands)?raw.customBrands.filter(b=>b&&typeof b.name==='string'&&typeof b.origin==='string').slice(0,30):[],pageText,products,selected:Array.isArray(raw.selected)?raw.selected.filter(id=>products.some(p=>p.id===id)):[],meta,settings};
+ const pageComposition=raw.pageComposition?restorePageComposition(raw.pageComposition):null;
+ return {...(pageComposition?{pageComposition}:{}),version:1,cloudQuote,customBrands:Array.isArray(raw.customBrands)?raw.customBrands.filter(b=>b&&typeof b.name==='string'&&typeof b.origin==='string').slice(0,30):[],pageText,products,selected:Array.isArray(raw.selected)?raw.selected.filter(id=>products.some(p=>p.id===id)):[],meta,settings};
 }
 
-export function slideKey(slide){return slide.type==='products'?'products:photo:'+([6,8].includes(slide.layout)?slide.layout+':':'')+slide.items.map(p=>p.id).sort().join('|'):slide.type+(slide.type==='divider'?':'+slide.band:'');}
+export function slideKey(slide){if(slide.compositionId)return slide.compositionId;return slide.type==='products'?'products:photo:'+([6,8].includes(slide.layout)?slide.layout+':':'')+slide.items.map(p=>p.id).sort().join('|'):slide.type+(slide.type==='divider'?':'+slide.band:'');}
 export async function mapConcurrent(items,limit,worker){let cursor=0;const results=new Array(items.length);await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(cursor<items.length){const i=cursor++;results[i]=await worker(items[i],i)}}));return results;}
 
 
@@ -109,7 +126,34 @@ export async function mapConcurrent(items,limit,worker){let cursor=0;const resul
 
 export function moveQuotePage(state,id,target,after=false){
  if(!state.settings.mergedQuote||id===target)return false;
- const keys=makeSlides(state).filter(s=>s.type==='products').map(slideKey);if(!keys.includes(id)||!keys.includes(target))return false;
+ const keys=makeSlides(state).filter(s=>state.pageComposition||s.type==='products').map(slideKey);if(!keys.includes(id)||!keys.includes(target))return false;
  const next=keys.filter(k=>k!==id);next.splice(next.indexOf(target)+(after?1:0),0,id);if(next.every((k,i)=>k===keys[i]))return false;
  state.settings.pageSort='manual';state.settings.pageOrder=next;return true;
+}
+
+export function restorePageComposition(raw){
+ if(!raw||!Array.isArray(raw.sources)||!raw.sources.length||raw.sources.length>100||!Array.isArray(raw.pages)||!raw.pages.length||raw.pages.length>1500)throw Error('Cấu trúc trang gộp không hợp lệ.');
+ const sources=raw.sources.map(source=>{
+  if(typeof source.id!=='string'||source.id.length>80||source.state?.pageComposition||!Array.isArray(source.slides)||!source.slides.length||source.slides.length>1500)throw Error('Nguồn trang gộp không hợp lệ.');
+  const state=restoreState(source.state),ids=new Set(state.selected);
+  const slides=source.slides.map(p=>{
+   if(!p||!['products','cover','divider','closing','empty'].includes(p.type))throw Error('Loại trang gộp không hợp lệ.');
+   const clean={type:p.type};
+   for(const key of ['brand','category'])if(p[key]!==undefined){if(typeof p[key]!=='string'||p[key].length>100)throw Error('Nhãn trang không hợp lệ.');clean[key]=p[key];}
+   if(p.band!==undefined){if(!Number.isInteger(p.band)||p.band<0||p.band>7)throw Error('Khoảng giá trang không hợp lệ.');clean.band=p.band;}
+   if(p.layout!==undefined){if(![4,6,8].includes(p.layout))throw Error('Bố cục trang không hợp lệ.');clean.layout=p.layout;}
+   if(p.bundle10!==undefined){if(typeof p.bundle10!=='boolean')throw Error('Giá bộ trên trang không hợp lệ.');clean.bundle10=p.bundle10;}
+   if(p.count!==undefined){if(!Number.isInteger(p.count)||p.count<0||p.count>1000)throw Error('Số sản phẩm trang không hợp lệ.');clean.count=p.count;}
+   if(p.items!==undefined){if(!Array.isArray(p.items)||p.items.length>8||p.items.some(id=>!ids.has(id))||new Set(p.items).size!==p.items.length)throw Error('Sản phẩm trang không khớp nguồn.');clean.items=[...p.items];}
+   if(p.type==='products'&&(!clean.items?.length||clean.band===undefined||!clean.brand||!clean.category))throw Error('Thiếu nội dung trang sản phẩm.');
+   if(p.type==='divider'&&(clean.band===undefined||clean.count===undefined))throw Error('Thiếu nội dung trang ngân sách.');
+   return clean;
+  });
+  return{id:source.id,state,slides};
+ });
+ if(new Set(sources.map(s=>s.id)).size!==sources.length||sources.reduce((n,s)=>n+s.state.selected.length,0)>1000)throw Error('Nguồn trang gộp trùng hoặc vượt 1.000 sản phẩm.');
+ const byId=new Map(sources.map(s=>[s.id,s]));
+ const pages=raw.pages.map(p=>{if(!p||typeof p.id!=='string'||!/^page:[A-Za-z0-9_-]{1,80}$/.test(p.id)||!byId.has(p.sourceId)||!Number.isInteger(p.index)||p.index<0||p.index>=byId.get(p.sourceId).slides.length)throw Error('Tham chiếu trang nguồn không hợp lệ.');return{id:p.id,sourceId:p.sourceId,index:p.index};});
+ if(new Set(pages.map(p=>p.id)).size!==pages.length)throw Error('Trùng mã trang gộp.');
+ return{sources,pages};
 }
