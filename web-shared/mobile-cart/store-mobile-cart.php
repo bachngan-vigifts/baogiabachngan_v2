@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Store Mobile Cart Option 3
  * Description: Compact mobile cart cards and synchronized sticky checkout; preserves WooCommerce pricing and actions.
- * Version: 1.2.4
+ * Version: 1.2.5
  */
 defined('ABSPATH') || exit;
 add_filter('woocommerce_cart_item_class', function($classes,$item){
@@ -208,7 +208,8 @@ function compactGap(){
  if(e.getClientRects().length&&e.textContent.trim())end=Math.max(end,e.getBoundingClientRect().bottom);
  });
  const previous=Number(totals.style.getPropertyValue('--bnmc-gap-trim'))||0;
- const naturalGap=totals.getBoundingClientRect().top-end+previous;
+ const firstVisible=totals.querySelector('.lnl-voucher-shop-row')||totals;
+ const naturalGap=firstVisible.getBoundingClientRect().top-end+previous;
  const trim=Math.max(0,Math.min(80,Math.round(naturalGap-12)));
  if(trim!==previous)totals.style.setProperty('--bnmc-gap-trim',String(trim));
 }
