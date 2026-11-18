@@ -4,12 +4,12 @@ import {eq,and} from 'drizzle-orm';
 import {setup} from '../helpers/pos-fixture.ts';
 import {salesOrders,salesContracts,orderProgressMarks} from '../../src/modules/sales/schema.ts';
 import {auditLogs} from '../../src/core/db/schema.ts';
-import {submissionReviewProblem,readSubmissionRecord} from '../../src/modules/sales/domain/submission-review.ts';
+import {submissionReviewProblem,readSubmissionRecord,submissionQuoteBasis} from '../../src/modules/sales/domain/submission-review.ts';
 const ok=(r:any,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
 const complete=(extra:any={})=>({deliveryDate:'2026-12-20',deliveryAddress:'Địa chỉ giao hàng kiểm thử',receiverName:'Anh nhận hàng',receiverPhone:'0901234567',shippingPayer:'receiver',paymentMethod:'transfer',paymentOther:'',printMode:'',printInstructions:'',sampleDate:'',bulkConfirmed:false,confirmations:{products:true,delivery:true,payment:true,printing:false},...extra});
-async function fixture(printing=false,contract=false){
+async function fixture(printing=false,contract=false,choice:'B2B'|'VIGIFTS'|'SALE'='B2B'){
  const f=await setup();
- const q=ok(await f.call('/quotes',f.emp,'POST',{type:'B2B',quoteNo:'SUBMIT-'+crypto.randomUUID(),customer:'Khách kiểm thử',customerTaxCode:'0312345678',customerCode:'SUBMIT-FIXTURE',customerAddress:'Địa chỉ khách trên báo giá',vat:8,shipping:{payer:'receiver'},rows:[{name:printing?'Ly sứ in logo':'Ly sứ',sku:'00123',unit:'cái',qty:2,price:100000,printFee:0,...(printing?{printDescription:'In logo miễn phí'}:{})}]}),201);
+ const q=ok(await f.call('/quotes',f.emp,'POST',{type:choice==='SALE'?'B2B':choice,...(choice==='SALE'?{template:'sale'}:{}),quoteNo:'SUBMIT-'+crypto.randomUUID(),customer:'Khách kiểm thử',customerTaxCode:'0312345678',customerCode:'SUBMIT-FIXTURE',customerAddress:'Địa chỉ khách trên báo giá',vat:8,shipping:{payer:'receiver'},rows:[{name:printing?'Ly sứ in logo':'Ly sứ',sku:'00123',unit:'cái',qty:2,price:100000,printFee:0,...(choice==='SALE'?{image:'https://example.test/sale-design.png',designImage:true}:{}),...(printing?{printDescription:'In logo miễn phí'}:{})}]}),201);
  ok(await f.call('/quotes/'+q.id+'/approve',f.mgr,'POST',{revision:1}));
  const made=ok(await f.call(contract?'/contracts':'/orders',f.emp,'POST',{quoteId:q.id,...(contract?{legalEntity:'BN'}:{})}),201);
  const id=made.orderId||made.id,path='/orders/'+id;
@@ -79,4 +79,27 @@ test('Logo HĐKT requires explicit sample/bulk; Manager cost-only edits preserve
  ok(await f.call('/quotes/'+f.q.id,f.mgr,'PUT',{revision:later.revision,data:later.data}));
  order=(await f.db.select().from(salesOrders).where(eq(salesOrders.id,f.id)))[0]!;
  assert.equal(order.expectedDeliveryDate,'2026-12-25');assert.equal(order.address,'Địa chỉ mới được Manager cập nhật','historical staff review does not freeze Manager delivery edits after approval');
+});
+
+test('B2B, Vigifts and Sale share the required confirmations for both generated orders and contracts',async()=>{
+ for(const choice of ['B2B','VIGIFTS','SALE'] as const)for(const contract of [false,true]){
+  const f=await fixture(true,contract,choice),pre=ok(await f.pre());assert.equal(pre.kind,contract?'HĐKT':'Đơn hàng');assert.equal(pre.printing,true);
+  assert.equal((await f.call(f.path+'/status',f.mgr,'PUT',{status:'confirmed'})).data.code,'VERIFY_REQUIRED');
+  assert.equal((await f.call(f.path+'/status',f.emp,'PUT',{status:'confirmed',verified:true})).status,403);
+  assert.equal((await f.send(complete())).data.code,'SUBMISSION_REVIEW_REQUIRED',choice+' requires print instructions and choice');
+  const details=complete({printMode:'bulk',printInstructions:'In logo 01 màu 01 vị trí',bulkConfirmed:false,confirmations:{products:true,delivery:true,payment:true,printing:true}});
+  assert.equal((await f.send(details)).data.code,'SUBMISSION_REVIEW_REQUIRED',choice+' cannot bypass bulk confirmation');
+  details.bulkConfirmed=true;ok(await f.send(details));
+  const [order]=await f.db.select().from(salesOrders).where(eq(salesOrders.id,f.id));assert.equal(order!.status,'draft');assert.equal(readSubmissionRecord(order!.submissionReview)?.printing,true);
+ }
+});
+
+test('changing new Sale product specifications requires re-confirmation while legacy and cost-only facts stay stable',()=>{
+ const row={sku:'LG-143509',name:'Bộ ly',qty:1,price:100,brand:'Gốc',materialDescription:'Thủy tinh',brandDescription:'Lucky Thái Lan',volumeDescription:'255ml',packagingDescription:'Hộp carton'};
+ const doc={type:'B2B',template:'sale',rows:[row]},basis=submissionQuoteBasis(doc);
+ assert.equal(submissionQuoteBasis({...doc,rows:[{...row,costPrice:999,purchaseDiscount:50}]}),basis);
+ for(const key of ['materialDescription','brandDescription','volumeDescription','packagingDescription'])assert.notEqual(submissionQuoteBasis({...doc,rows:[{...row,[key]:'Đã đổi'}]}),basis,key);
+ const old={type:'B2B',rows:[{sku:'A',name:'Ly',qty:1,price:100}]};
+ assert(!Object.hasOwn(JSON.parse(submissionQuoteBasis(old)),'saleSpecifications'));
+ assert.equal(submissionQuoteBasis({...old,rows:[{...old.rows[0],materialDescription:'Không dùng cho mẫu cũ'}]}),submissionQuoteBasis(old));
 });

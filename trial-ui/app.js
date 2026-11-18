@@ -1452,7 +1452,7 @@ function lineCell(r, i) {
     <td class="line-actions"><button type="button" class="icon-btn danger" data-del title="Xoá dòng" aria-label="Xoá dòng ${i + 1}">×</button></td>
   </tr>`;
 }
-// Ẩn / hiện 3 dòng Bộ gồm · Mô tả in ấn · Đóng gói của mọi dòng (chỉ ẩn trên màn hình; dữ liệu, PDF, Excel giữ nguyên).
+// Ẩn / hiện phần mô tả chi tiết của mỗi dòng (chỉ ẩn trên màn hình; dữ liệu, PDF, Excel giữ nguyên).
 // Nhớ lựa chọn trên máy này (localStorage; không đọc được thì mặc định hiện).
 const SUBS_KEY = 'bn-quote-hide-subs';
 function applySubs(hide) {
@@ -1478,7 +1478,7 @@ function renderLines(focus) {
   $('#m-line-count').textContent = `${editor.rows.length} sản phẩm`;
   if ($('#shipping-card').open) renderShippingRows();
   qf.classList.toggle('type-hrc', editor.type === 'HRC');
-  $('#toggle-subs').hidden = editor.type === 'HRC' || isSaleEditor();
+  $('#toggle-subs').hidden = editor.type === 'HRC';
   $('#bulk-discount').hidden = isSaleEditor();
   if (isSaleEditor()) salePriceSuggestions.request(state.user?.id || '', editor.rows); // HRC không có 3 dòng mô tả
   calculate();

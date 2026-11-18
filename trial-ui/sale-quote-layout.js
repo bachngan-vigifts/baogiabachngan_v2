@@ -9,11 +9,25 @@ export function saleLineHead() {
   const classes = ['col-idx', 'col-img', 'col-product', 'col-qty', 'col-average', 'col-price', 'col-print', 'col-total'];
   return '<tr>' + SALE_LAYOUT_COLUMNS.map((s, i) => `<th class="${classes[i]}">${s}</th>`).join('') + '</tr>';
 }
+/** Only customer-visible product notes; keep private catalogue and costing fields out of exports. */
+export function saleProductDescription(row) {
+  const notes = [['Chất liệu', row.materialDescription], ['Thương hiệu', row.brandDescription ?? row.brand], ['Mã sản phẩm', row.sku], ['Thể tích', row.volumeDescription], ['Bộ gồm', row.bundleContents], ['Chế tác', row.printDescription], ['Đóng gói', row.packagingDescription ?? 'theo tiêu chuẩn nhà sản xuất']];
+  return [String(row.name || ''), ...notes.filter(([,value])=>String(value??'').trim()).map(([label,value])=>`- ${label}: ${String(value).trim()}`)].join('\n');
+}
 export function saleLineCell(r, i, {esc, fmtNum, image, average}) {
   const input = (k, label) => `<input class="num-input" inputmode="decimal" data-k="${k}" value="${r[k] === '' ? '' : fmtNum(Number(r[k] || 0), k === 'qty' ? 4 : 2)}" aria-label="${label} dòng ${i + 1}">`;
+  const detail=(key,label,placeholder,fallback='')=>{
+    const value=esc(r[key] ?? fallback), attrs=`data-k="${key}" placeholder="${placeholder}" maxlength="2000" aria-label="${label} dòng ${i+1}"`;
+    return `<label class="sub-field"><span>${label}</span>${['printDescription','packagingDescription'].includes(key)?`<textarea ${attrs} rows="2">${value}</textarea>`:`<input ${attrs} value="${value}">`}</label>`;
+  };
+  const specs=detail('materialDescription','Chất liệu','Ví dụ: Thủy tinh')+detail('brandDescription','Thương hiệu','Thương hiệu sản phẩm',r.brand||'')
+    +`<label class="sub-field"><span>Mã sản phẩm</span><input value="${esc(r.sku||'')}" readonly aria-label="Mã sản phẩm dòng ${i+1}"></label>`
+    +detail('volumeDescription','Thể tích','Ví dụ: 255ml')+detail('printDescription','Chế tác','Ví dụ: In logo 01 màu, 01 vị trí trên sản phẩm')
+    +detail('packagingDescription','Đóng gói','Ví dụ: Hộp carton','theo tiêu chuẩn nhà sản xuất')
+    +(String(r.bundleContents||'').trim()?detail('bundleContents','Bộ gồm','Các thành phần trong bộ'):'');
   return `<tr data-i="${i}"><td class="col-idx">${i + 1}<button type="button" class="icon-btn danger" data-del aria-label="Xoá dòng ${i + 1}">×</button></td>
     <td class="col-img" data-label="Hình ảnh"><button type="button" class="img-btn${r.image && r.designImage === true ? '' : ' sale-design-missing'}" data-image aria-label="Ảnh thiết kế dòng ${i + 1}">${r.image && r.designImage === true ? image(r.image) : '<span class="thumb add"><small>Đính kèm ảnh *</small></span>'}</button></td>
-    <td class="col-product" data-label="Tên sản phẩm"><input class="name-input" data-k="name" value="${esc(r.name || '')}" maxlength="4000" placeholder="Tên sản phẩm…" aria-label="Tên sản phẩm dòng ${i + 1}"></td>
+    <td class="col-product" data-label="Tên sản phẩm"><input class="name-input" data-k="name" value="${esc(r.name || '')}" maxlength="4000" placeholder="Tên sản phẩm…" aria-label="Tên sản phẩm dòng ${i + 1}">${specs}</td>
     <td class="col-qty" data-label="SL">${input('qty', 'Số lượng')}</td>
     <td class="col-average" data-label="Giá trung bình đề xuất">${average(r.sku)}</td>
     <td class="col-price" data-label="Giá bán">${input('price', 'Giá bán')}</td>

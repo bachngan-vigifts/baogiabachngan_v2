@@ -8,6 +8,7 @@ export type QuoteType = 'HRC' | 'B2B' | 'VIGIFTS';
 
 export interface QuoteRow {
   manualLine?: boolean; manualDescription?: string;
+  materialDescription?: string; brandDescription?: string; volumeDescription?: string;
   bundleContents?: string; printDescription?: string; packagingDescription?: string;
   sku?: string; name?: string; brand?: string; pattern?: string;
   price?: number; qty?: number;

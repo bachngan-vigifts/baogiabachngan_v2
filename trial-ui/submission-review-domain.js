@@ -41,7 +41,11 @@ function submissionPaymentLabel(review) {
   return review.paymentMethod === "other" ? review.paymentOther : SUBMISSION_PAYMENT_METHODS[review.paymentMethod];
 }
 function submissionQuoteBasis(doc) {
-  return JSON.stringify({ type: doc.type, deliveryDate: doc.deliveryDate || doc.delivery_date || "", customer: doc.customer, customerAddress: doc.customerAddress, notes: doc.notes || "", paymentTerms: doc.paymentTerms || null, rows: (doc.rows || []).map((r) => Object.fromEntries(["sku", "name", "unit", "qty", "price", "discount", "discountType", "printFee", "printDescription", "taxRate", "manualLine", "manualDescription", "designImageKey"].map((k) => [k, r[k] ?? null]))) });
+  const basis = { type: doc.type, deliveryDate: doc.deliveryDate || doc.delivery_date || "", customer: doc.customer, customerAddress: doc.customerAddress, notes: doc.notes || "", paymentTerms: doc.paymentTerms || null, rows: (doc.rows || []).map((r) => Object.fromEntries(["sku", "name", "unit", "qty", "price", "discount", "discountType", "printFee", "printDescription", "taxRate", "manualLine", "manualDescription", "designImageKey"].map((k) => [k, r[k] ?? null]))) };
+  if (doc.template === "sale" && (doc.rows || []).some((r) => ["materialDescription", "brandDescription", "volumeDescription"].some((k) => r[k] !== void 0))) {
+    return JSON.stringify({ ...basis, saleSpecifications: (doc.rows || []).map((r) => [r.materialDescription ?? null, r.brandDescription ?? r.brand ?? null, r.volumeDescription ?? null, r.packagingDescription ?? null, r.bundleContents ?? null]) });
+  }
+  return JSON.stringify(basis);
 }
 export {
   SUBMISSION_PAYMENT_METHODS,

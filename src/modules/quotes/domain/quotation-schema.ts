@@ -172,6 +172,7 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
     if (row.discountType !== undefined && !['percent', 'amount'].includes(row.discountType)) throw bad('Loại chiết khấu không hợp lệ.');
     clean.discountType = row.discountType || 'percent';
     if (row.taxRate !== undefined && row.taxRate !== null) clean.taxRate = number(row.taxRate, 100);
+    for (const key of ['materialDescription','brandDescription','volumeDescription']) if (row[key] !== undefined) clean[key] = text(row[key], 2000);
     if (row.bundleContents !== undefined) clean.bundleContents = text(row.bundleContents, 2000);
     if (row.packagingDescription !== undefined) clean.packagingDescription = text(row.packagingDescription, 2000);
     if (row.printDescription !== undefined) clean.printDescription = text(row.printDescription, 2000);
