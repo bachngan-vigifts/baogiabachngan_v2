@@ -88,7 +88,7 @@ function ml_sepay_webhook($r){
     $account=preg_replace('/\D/','',(string)($d['accountNumber']??$d['subAccount']??''));
     if($account!=='579268' || strtoupper((string)($d['gateway']??''))!=='ACB') return ml_sepay_review('wrong_account',$d);
     $content=(string)($d['content']??$d['description']??'');
-    if(!preg_match('/(?:^|\D)ML(\d+)(?:\D|$)/i',$content,$m)) return ml_sepay_review('wrong_code',$d);
+    if(!preg_match('/(?<![A-Z0-9])ML(\d+)(?![A-Z0-9])/i',$content,$m)) return ml_sepay_review('wrong_code',$d);
     $o=wc_get_order(absint($m[1])); if(!$o || !ml_sepay_is_qr_order($o) || (string)$o->get_meta('_ml_sepay_version')!=='1') return ml_sepay_review('ineligible_order',$d,$o);
     if(in_array($o->get_status(),array('cancelled','refunded','failed'),true)) return ml_sepay_review('late_for_closed_order',$d,$o);
     $tx=sanitize_text_field((string)($d['id']??$d['transactionId']??$d['referenceCode']??'')); if($tx==='') return ml_sepay_review('missing_transaction_id',$d,$o);
