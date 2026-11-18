@@ -1,7 +1,8 @@
 {
   "version": 1,
   "include": [
-    "/catalogue/api/*"
+    "/catalogue/api/*",
+    "/api/staff/integrations/ai-chat/*"
   ],
   "exclude": []
 }
