@@ -289,6 +289,29 @@ globalThis.ContractDocument = (() => {
       files[path] = strToU8(source);
     }
   }
+  const qualityLines = printing => printing ? [
+    '2.1 Kiểu dáng và chất lượng sản phẩm:',
+    '- Kiểu dáng sản phẩm, nội dung in, kích thước và vị trí in ấn trên sản phẩm theo mẫu thiết kế đã được bên A đồng ý và kí duyệt. Về màu sắc sau khi in ấn trên sản phẩm đạt từ 80% trở lên, vị trí logo có thể chênh lệch 2-3mm so với mẫu bên A đã kí duyệt',
+    '- Trường hợp sau khi ra mẫu thật, Bên A thay đổi nội dung hoặc kích thước hoặc vị trí in thì bên A phải chịu chi trả khoản chi phí phát sinh do việc thay đổi này',
+    '- Chất lượng hàng hóa theo tiêu chuẩn NSX',
+  ] : ['2.1 Quy cách sản phẩm:', '- Chất lượng hàng hóa theo tiêu chuẩn NSX'];
+  const qualityRange = source => {
+    const paragraphs=[...source.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)],text=p=>[...p.matchAll(/<w:t\b[^>]*>([^<]*)<\/w:t>/g)].map(m=>m[1]).join('');
+    const chapter=paragraphs.findIndex(p=>/ĐIỀU II\s*:/i.test(text(p[0]))),from=paragraphs.findIndex((p,i)=>i>chapter&&/^\s*2\.1\s/.test(text(p[0]))),to=paragraphs.findIndex((p,i)=>i>from&&/^\s*2\.2\s/.test(text(p[0])));
+    if(chapter<0||from<0||to<0)throw Error('Mẫu HĐKT thiếu mục 2.1 hoặc 2.2; cần Manager kiểm tra mẫu trước khi dựng điều khoản hàng hóa.');
+    return {paragraphs,from,to};
+  };
+  function qualityClause(source,printing){
+    const {paragraphs,from,to}=qualityRange(source),heading=paragraphs[from][0],body=paragraphs[Math.min(from+1,to-1)][0];
+    const paragraph=(text,style)=>'<w:p>'+ (style.match(/<w:pPr\b[\s\S]*?<\/w:pPr>/)?.[0]||'')+'<w:r>'+(style.match(/<w:rPr\b[\s\S]*?<\/w:rPr>/)?.[0]||'')+'<w:t xml:space="preserve">'+xml(text)+'</w:t></w:r></w:p>';
+    const replacement=qualityLines(printing).map((line,i)=>paragraph(line,i?body:heading)).join('');
+    return source.slice(0,paragraphs[from].index)+replacement+source.slice(paragraphs[to].index);
+  }
+  function rebaseQualityEdits(oldXml,newXml,edits){
+    const old=qualityRange(oldXml),next=qualityRange(newXml),shift=next.to-old.to;
+    // Only the generated 2.1 clause is replaced. Other edits keep their text/runs/hash.
+    return edits.filter(e=>e.index<old.from||e.index>=old.to).map(e=>({...e,index:e.index>=old.to?e.index+shift:e.index}));
+  }
   async function prepareDocument({quote, contractNumber, templateBytes, details, documentType = 'HDKT', contractBytes}) {
     if (!unzipSync) throw new Error('Chưa tải được bộ tạo file HĐKT. Vui lòng tải lại trang.');
     if (!['HRC', 'B2B', 'VIGIFTS'].includes(quote.quote_type)) throw new Error('Loại báo giá không hỗ trợ tải HĐKT.');
@@ -306,7 +329,18 @@ globalThis.ContractDocument = (() => {
     normalizeFonts(files);
     let base=zipSync(files, {level: 6});
     let edits=(documentType==='HDKT'?quote.contract_word_edits:quote.contract_document_edits?.[documentType])||[],locked=[];
-    if(edits.length && globalThis.ContractWordEdit?.rebaseTypography) edits=await globalThis.ContractWordEdit.rebaseTypography(oldTypography,base,edits);
+    let rawEditBasis=oldTypography,editBasis=base;
+    const generatedQuality=documentType==='HDKT'&&typeof quote.printing_enabled==='boolean';
+    if(generatedQuality){
+      const previous=quote.contract_print_clause;
+      if(previous?.version===1&&typeof previous.printing==='boolean'){
+        const raw=unzipSync(oldTypography);raw[path]=strToU8(qualityClause(strFromU8(raw[path]),previous.printing));rawEditBasis=zipSync(raw,{level:6});
+        const old=unzipSync(base);old[path]=strToU8(qualityClause(strFromU8(old[path]),previous.printing));editBasis=zipSync(old,{level:6});
+      }
+      files[path]=strToU8(qualityClause(strFromU8(files[path]),quote.printing_enabled));base=zipSync(files,{level:6});
+    }
+    if(edits.length && globalThis.ContractWordEdit?.rebaseTypography) edits=await globalThis.ContractWordEdit.rebaseTypography(rawEditBasis,editBasis,edits);
+    if(generatedQuality)edits=rebaseQualityEdits(strFromU8(unzipSync(editBasis)[path]),strFromU8(files[path]),edits);
     if(documentType==='BBNT'&&contractBytes){
       if(!globalThis.ContractWordEdit)throw new Error('Chưa tải công cụ chỉnh Word.');
       ({base,edits,locked}=await globalThis.ContractWordEdit.copyContractTable(base,contractBytes,edits));
@@ -317,6 +351,7 @@ globalThis.ContractDocument = (() => {
       if(documentType==='HDKT')edits=await globalThis.ContractWordEdit.rebaseFields(base,edits);
     }
     if(documentType==='HDKT'&&globalThis.ContractWordEdit?.formFieldParagraphs)locked=globalThis.ContractWordEdit.formFieldParagraphs(base);
+    if(generatedQuality){const range=qualityRange(strFromU8(files[path]));locked=[...locked,...Array.from({length:range.to-range.from},(_,i)=>range.from+i)];}
     return {base,edits,locked};
   }
   async function build(options){
@@ -346,5 +381,5 @@ globalThis.ContractDocument = (() => {
     link.href = URL.createObjectURL(blob); link.download = `${archive.folder}.zip`; link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
-  return {build, buildPack, download, paymentDetails, prepareDocument, contractUnitPrice, templatesFor, archiveName};
+  return {printingClauseVersion:1, build, buildPack, download, paymentDetails, prepareDocument, contractUnitPrice, templatesFor, archiveName};
 })();

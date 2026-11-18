@@ -76,3 +76,26 @@ test('both HĐKT templates use the form signing date and section 5.2 delivery ad
     assert.doesNotMatch(xml, /bắt buộc sửa lại/);
   }
 });
+
+test('Điều 2.1 uses the requested printing/nonprinting terms for both legal entities without changing section 2.2 or amounts',async()=>{
+ for(const set of ['bach-ngan','vigifts'])for(const printing of [true,false]){
+  const options={quote:{quote_type:set==='vigifts'?'VIGIFTS':'B2B',printing_enabled:printing,quote_date:'2026-11-18',subtotal:1000000,vat_amount:80000,total:1080000,items:[{name:'Sản phẩm thử',quantity:10,price_after_discount:100000,line_total:1000000,tax_percent:8}],customer:{name:'Khách thử'}},contractNumber:'TEST-CLAUSE',templateBytes:readFileSync(join(ui,`mau-hop-dong-${set}-hdkt.docx`)),details:{depositRate:30,paymentDays:7}};
+  const out=await g.ContractDocument.build(options),source=g.fflate.strFromU8(g.fflate.unzipSync(out)['word/document.xml']!);
+  const paragraphs=[...source.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)].map(p=>[...p[0].matchAll(/<w:t\b[^>]*>([^<]*)<\/w:t>/g)].map(t=>t[1]).join(''));
+  const start=paragraphs.findIndex(p=>/^2\.1/.test(p)),end=paragraphs.findIndex((p,i)=>i>start&&/^\s*2\.2/.test(p)),clause=paragraphs.slice(start,end).join('\n');
+  assert.equal(end-start,printing?4:2);assert.match(clause,/Chất lượng hàng hóa theo tiêu chuẩn NSX/);
+  if(printing){assert.match(clause,/2\.1 Kiểu dáng và chất lượng sản phẩm/);assert.match(clause,/80% trở lên/);assert.match(clause,/2-3mm/);assert.match(clause,/chi phí phát sinh/);}else{assert.match(clause,/2\.1 Quy cách sản phẩm/);assert.doesNotMatch(clause,/logo|80%|chi phí phát sinh|may mặc/);}
+  assert.match(paragraphs[end]!,/nhà cung cấp/);assert.match(source,/1\.080\.000/);assert.match(source,/ĐIỀU III/);
+ }
+});
+
+
+test('contract printing uses confirmed order facts first and quote printing rules for legacy records',async()=>{
+ const {contractPrinting}=await import('../../trial-ui/contract-ui.js');
+ const detail={order:{quoteType:'B2B'}},paid=[{name:'SP',qty:1,printFee:100}],none=[{name:'SP',qty:1,printDescription:'Không in',printFee:0}];
+ assert.equal(contractPrinting({...detail,submissionReview:{printing:false}},paid),false);
+ assert.equal(contractPrinting({...detail,submissionReview:{printing:true}},none),true);
+ assert.equal(contractPrinting(detail,paid),true);assert.equal(contractPrinting(detail,none),false);
+ assert.equal(contractPrinting({order:{quoteType:'HRC'}},[{qty:1,printFee:0,printDescription:'In logo theo mẫu'}]),true);
+ assert.equal(contractPrinting(detail,[{qty:0,printFee:100}]),false);
+});
