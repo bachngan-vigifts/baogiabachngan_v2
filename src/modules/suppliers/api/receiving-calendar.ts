@@ -1,5 +1,5 @@
 import { earlyReceiptAvailability } from './early-receiving.ts';
-import { eq,isNull } from 'drizzle-orm';
+import { and,eq,isNull } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import { purchaseEarlyRequests, purchaseEarlyRequestLines, purchaseEarlyRequestAllocations } from '../early-request-schema.ts';
@@ -8,7 +8,7 @@ import { outstandingLines } from './incoming-stock.ts';
 import type { Db } from './purchase-store.ts';
 
 /** Purchase receipts and early-pickup requests are distinct rows; quantities are never added together. */
-export async function receivingCalendar(db: Db, params: URLSearchParams, today: string, options: {paginate?:boolean; reminderOnly?:boolean} = {}) {
+export async function receivingCalendar(db: Db, params: URLSearchParams, today: string, options: {paginate?:boolean; reminderOnly?:boolean; sourceId?:string} = {}) {
   const from = params.get('from') || '', to = params.get('to') || '';
   if ((from && !isIsoDate(from)) || (to && !isIsoDate(to)) || (from && to && from > to))
     throw new AppError(400, 'Khoảng ngày nhận hàng không hợp lệ.');
@@ -17,11 +17,11 @@ export async function receivingCalendar(db: Db, params: URLSearchParams, today: 
   if (!['', 'purchase', 'early'].includes(type)) throw new AppError(400, 'Loại phiếu không hợp lệ.');
   const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').toLowerCase();
   const q = fold((params.get('q') || '').trim().slice(0, 100)), sku = fold((params.get('sku') || '').trim().slice(0, 200));
-  const all = await outstandingLines(db);
   const early = type === 'purchase' ? [] : await db.select({request:purchaseEarlyRequests,line:purchaseEarlyRequestLines,allocation:purchaseEarlyRequestAllocations,supplierName:supplierTable.name})
     .from(purchaseEarlyRequests).innerJoin(purchaseEarlyRequestLines,eq(purchaseEarlyRequestLines.requestId,purchaseEarlyRequests.id))
     .innerJoin(purchaseEarlyRequestAllocations,eq(purchaseEarlyRequestAllocations.requestLineId,purchaseEarlyRequestLines.id))
-    .innerJoin(supplierTable,eq(supplierTable.id,purchaseEarlyRequestAllocations.supplierId)).where(isNull(purchaseEarlyRequests.deletedAt));
+    .innerJoin(supplierTable,eq(supplierTable.id,purchaseEarlyRequestAllocations.supplierId)).where(and(isNull(purchaseEarlyRequests.deletedAt), options.sourceId ? eq(purchaseEarlyRequests.id, options.sourceId) : undefined));
+  const all = await outstandingLines(db, undefined, false, options.sourceId ? (early.length ? { lineIds: [...new Set(early.map(e => e.allocation.purchaseLineId))] } : { orderId: options.sourceId }) : undefined);
   const suppliers = [...new Map([...all.map(l => ({id:l.supplierId,name:l.supplierName})),...early.map(l=>({id:l.allocation.supplierId,name:l.supplierName}))].map(s=>[s.id,s])).values()]
     .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
   type Line = {lineId:string;sku:string;name:string;unit:string;left:number;requestedQty?:number;status?:string;canConfirm?:boolean;receiptOptions?:{orderId:string;ticketNumber:string;remaining:number}[]};

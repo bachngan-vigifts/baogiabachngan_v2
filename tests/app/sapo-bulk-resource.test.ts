@@ -1,0 +1,22 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {drizzle} from 'drizzle-orm/pglite';
+import {eq} from 'drizzle-orm';
+import {createTestDb} from '../helpers/postgres.ts';
+import * as schema from '../../src/db/schema.ts';
+import {syncProducts} from '../../src/modules/integrations/api/sapo-sync-routes.ts';
+import type {AnyDb} from '../../src/core/db/client.ts';
+const {pricePolicies,warehouses,products,productPrices,productStock}=schema;
+test('50 Sapo variants / 6 policies / 2 warehouses stay within 60 queries; repeated SKU uses last supplied price/stock',async()=>{
+ const {client}=await createTestDb();let queries=0;
+ const db=drizzle(client,{schema,logger:{logQuery:()=>queries++}}) as unknown as AnyDb;
+ await db.insert(pricePolicies).values(Array.from({length:6},(_,i)=>({id:'p'+i,name:'Policy '+i,sortOrder:i})));
+ await db.insert(warehouses).values([{id:'w1',name:'Warehouse 1'},{id:'w2',name:'Warehouse 2'}]);
+ const input={products:Array.from({length:50},(_,i)=>({id:i+1,name:'Synthetic '+i,variants:[{sku:'B'+i,price:100,variant_prices:Array.from({length:6},(_,p)=>({price_list_name:'Policy '+p,value:100+p})),inventories:[{location_name:'Warehouse 1',available:i},{location_name:'Warehouse 2',available:i+1}]}]}))};
+ queries=0;const result=await syncProducts(db,input);assert('created' in result);assert.equal(result.created,50);assert(queries<=60,`used ${queries} queries`);
+ assert.equal((await db.select().from(productPrices)).length,300);assert.equal((await db.select().from(productStock)).length,100);
+ await syncProducts(db,{products:[{id:1,name:'First',variants:[{sku:'B0',price:120,inventories:[{location_name:'Warehouse 1',available:8}]}]},{id:1,name:'Last',variants:[{sku:'B0',price:150,inventories:[{location_name:'Warehouse 1',available:9}]}]}]});
+ assert.equal((await db.select().from(products).where(eq(products.sku,'B0')))[0]!.name,'Last (B0)');
+ assert.equal((await db.select().from(productPrices).where(eq(productPrices.sku,'B0'))).find(p=>p.policyId==='p0')!.price,150);
+ assert.equal((await db.select().from(productStock).where(eq(productStock.sku,'B0'))).find(p=>p.warehouseId==='w1')!.quantity,9);
+});

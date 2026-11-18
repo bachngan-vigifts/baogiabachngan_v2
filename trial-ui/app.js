@@ -1,3 +1,4 @@
+import { fetchCatalogSnapshot } from './catalog-snapshot-loader.js';
 import {requestOrderApproval,submissionSummary} from './order-submit.js';
 import {createProductionFiles,mountProductionFiles} from './production-files.js';
 import {initProductBrandFilter} from './product-brand-filter.js';
@@ -812,12 +813,13 @@ const viTime = iso => new Date(iso).toLocaleString('vi-VN');
 async function loadSapoSync() {
   let d; try { d = await api('/admin/sapo-sync'); } catch { $('#sapo-sync').hidden = true; return; }
   const n = v => Number(v || 0).toLocaleString('vi-VN'), at = iso => iso ? 'Lần cuối ' + viTime(iso) : 'Chưa nhận dữ liệu';
-  const s = d.session || {}, p = d.pull || {}, pullFailed = p.ok === false && !p.stale;
+  const s = d.session || {}, p = d.pull || {}, queued = ['queued','running'].includes(p.job?.status), pullFailed = p.job?.status === 'failed' || p.ok === false && !p.stale;
   $('#sapo-sync').hidden = false;
-  $('#sync-state').textContent = !d.configured ? 'Chưa bật' : !s.connected ? 'Chưa kết nối' : s.expired ? 'Phiên hết hạn' : pullFailed ? 'Lỗi' : 'Đang chạy';
+  $('#sync-state').textContent = !d.configured ? 'Chưa bật' : !s.connected ? 'Chưa kết nối' : s.expired ? 'Phiên hết hạn' : queued ? 'Đang chờ / xử lý' : pullFailed ? 'Lỗi' : 'Đang chạy';
   $('#sync-state').classList.toggle('warn', !!(s.expired || pullFailed));
   $('#sync-note').textContent = !d.configured ? 'Cần cài mã SAPO_SYNC_TOKEN'
     : !s.connected ? 'Bấm "Kết nối Sapo" để bắt đầu'
+    : queued ? 'Yêu cầu đã được lưu; worker xử lý từng phần, không cần giữ trang mở.'
     : s.expired || pullFailed ? (p.error || 'Cần kết nối lại Sapo')
     : p.finishedAt && !p.stale ? 'Đồng bộ lúc ' + viTime(p.finishedAt) : 'Kết nối lúc ' + viTime(s.updatedAt);
   $('#sapo-connect').textContent = s.connected ? 'Kết nối lại' : 'Kết nối Sapo';
@@ -848,6 +850,7 @@ $('#sapo-pull').addEventListener('click', async () => {
   const btn = $('#sapo-pull'); btn.disabled = true; btn.textContent = 'Đang đồng bộ…';
   try {
     const r = await api('/admin/sapo-pull', 'POST', {}), x = r.results || {};
+    if (r.queued) { toast('Đã đưa yêu cầu đồng bộ vào hàng đợi. CRM sẽ xử lý từng phần; xem trạng thái đồng bộ để theo dõi.'); return; }
     const docs = ['purchase_order', 'stock_transfer', 'stock_adjustment'].reduce((t, k) => t + (x[k]?.created || 0) + (x[k]?.updated || 0), 0);
     toast(`Đã đồng bộ: ${(x.products?.created || 0) + (x.products?.updated || 0)} sản phẩm, tồn kho ${(x.stock?.created || 0) + (x.stock?.updated || 0)} mã, ${x.customers?.applied || 0} khách hàng, ${(x.staff?.created || 0) + (x.staff?.linked || 0)} nhân viên mới, ${docs} chứng từ kho (nhập hàng, điều chuyển, kiểm hàng).`
       + (r.warnings?.length ? ' Chưa đọc được: ' + r.warnings.join('; ') : ''));
@@ -3060,9 +3063,9 @@ function loadCatalogSnapshot({ maxAgeMs = 120000 } = {}) {
   catalog.loading = (async () => {
     if (!catalog.items) { try { const saved = await idb('readonly', st => st.get(IDB.key)); if (saved?.version) useSnapshot(saved); } catch { /* trình duyệt chặn IndexedDB */ } }
     try {
-      let d = await api('/catalog-snapshot' + (catalog.version ? '?v=' + encodeURIComponent(catalog.version) : ''));
+      let d = await fetchCatalogSnapshot(api,catalog.version);
       // Chỉ tồn kho đổi: ghép tồn mới vào bản đang có (không tải lại ~3 MB danh mục). Thiếu bản gốc thì tải đủ.
-      if (d.stockOnly) d = catalog.raw ? mergeSnapshotStock(catalog.raw, d) : await api('/catalog-snapshot');
+      if (d.stockOnly) d = catalog.raw ? mergeSnapshotStock(catalog.raw, d) : await fetchCatalogSnapshot(api);
       catalog.checkedAt = Date.now();
       if (!d.unchanged) {
         useSnapshot(d);

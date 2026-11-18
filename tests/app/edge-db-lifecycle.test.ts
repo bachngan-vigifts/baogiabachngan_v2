@@ -1,3 +1,4 @@
+import { edgeBody } from '../../src/core/http/edge-body.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -17,8 +18,8 @@ async function harness({ canaryUrl = '', pooled = false, legacyPooler = false, b
   const connections: {url:string;max?:number}[] = [];
   const hooks: { onQuery?: () => void } = {};
   runInNewContext(code, {
-    Deno: { env: { get: (key: string) => env[key] }, serve: (fn: typeof serve) => { serve = fn; } },
-    createDbLifecycle, createDbReadiness, sql: () => 'select 1', schema: { positions: { id: 'id' } },
+    crypto, Deno: { env: { get: (key: string) => env[key] }, serve: (fn: typeof serve) => { serve = fn; } },
+    edgeBody, createDbLifecycle, createDbReadiness, sql: () => 'select 1', schema: { positions: { id: 'id' } },
     createDb: (_url: string, _schema: unknown, opts: { onQuery?: () => void; max?: number }) => {
       connections.push({url:_url,max:opts.max});
       stats.created++; hooks.onQuery = opts.onQuery;

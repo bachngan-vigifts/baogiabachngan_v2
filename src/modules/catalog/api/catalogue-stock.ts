@@ -1,3 +1,4 @@
+import { boundedMap } from '../../../core/async/bounded-map.ts';
 import { asc, eq, inArray } from 'drizzle-orm';
 import type { AnyDb } from '../../../core/db/client.ts';
 import { products, warehouses } from '../schema.ts';
@@ -13,7 +14,7 @@ export async function catalogueStockFacts(db:AnyDb,member:Member,input:string[])
  const matched=known.filter(p=>p.active).map(p=>p.sku);if(!matched.length)return skus.map(unknown);
  const [all,hidden]=await Promise.all([db.select().from(warehouses).where(eq(warehouses.active,true)).orderBy(asc(warehouses.sortOrder),asc(warehouses.name)),hiddenStockWarehouses(db,member)]);
  const visible=all.filter(w=>!hidden.has(w.id)),real=visible.filter(w=>w.kind==='stock');
- const [stockResult,incomingResult,heldResult,opened,heldTotal]=await Promise.all([readCatalogStock(db,matched).then(rows=>({rows,error:false})).catch(()=>({rows:[],error:true})),catalogueLibraryHooks.incoming?catalogueLibraryHooks.incoming(db,matched).then(rows=>({rows,error:false})).catch(()=>({rows:[],error:true})):Promise.resolve({rows:[],error:true}),catalogueLibraryHooks.heldAt?Promise.all(real.map(async w=>[w.id,await catalogueLibraryHooks.heldAt!(db,matched,w.id)] as const)).catch(()=>null):Promise.resolve(null),catalogStockHooks.ledger?catalogStockHooks.ledger(db):Promise.resolve([] as string[]),catalogStockHooks.held?catalogStockHooks.held(db,member,matched).catch(()=>null):Promise.resolve(null)]);
+ const [stockResult,incomingResult,heldResult,opened,heldTotal]=await Promise.all([readCatalogStock(db,matched).then(rows=>({rows,error:false})).catch(()=>({rows:[],error:true})),catalogueLibraryHooks.incoming?catalogueLibraryHooks.incoming(db,matched).then(rows=>({rows,error:false})).catch(()=>({rows:[],error:true})):Promise.resolve({rows:[],error:true}),catalogueLibraryHooks.heldAt?boundedMap(real,2,async w=>[w.id,await catalogueLibraryHooks.heldAt!(db,matched,w.id)] as const).catch(()=>null):Promise.resolve(null),catalogStockHooks.ledger?catalogStockHooks.ledger(db):Promise.resolve([] as string[]),catalogStockHooks.held?catalogStockHooks.held(db,member,matched).catch(()=>null):Promise.resolve(null)]);
  const held=heldResult?new Map(heldResult):null;
  return skus.map(sku=>{
   const p=known.find(p=>p.sku===sku);if(!p||!p.active)return unknown(sku);
