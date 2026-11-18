@@ -6,6 +6,10 @@ export interface ProductionDrive {
  put(id:string,parent:string,name:string,bytes:Uint8Array,mime:string,sha256:string,md5:string):Promise<void>;
  read(id:string,proof:{parent:string;bytes:number;sha256:string;md5:string}):Promise<Response>;
 }
+interface DrivePermission {type?:string;role?:string;view?:string;inheritedPermissionsDisabled?:boolean;permissionDetails?:{inherited?:boolean}[];}
+// Google limited-access folders expose inherited metadata without granting access to contents.
+// Missing/contradictory proof must keep the public-access rejection.
+const metadataOnly=(p:DrivePermission)=>p.role==='reader'&&p.view==='metadata'&&p.inheritedPermissionsDisabled===true&&(p.permissionDetails===undefined||Array.isArray(p.permissionDetails)&&p.permissionDetails.every(d=>d?.inherited===true));
 const valid=(s:string)=>/^[A-Za-z0-9_-]{10,160}$/.test(s);
 export function productionDrive(config:{clientId:string;clientSecret:string;refreshToken:string;folderId:string;fetch?:typeof fetch}):ProductionDrive {
  if(!valid(config.folderId))throw new Error('Invalid production Drive folder');
@@ -18,7 +22,7 @@ export function productionDrive(config:{clientId:string;clientSecret:string;refr
  async function send(path:string,init:RequestInit={},upload=false){try{const authorization='Bearer '+await access();const r=await fetcher('https://www.googleapis.com/'+(upload?'upload/drive/v3/':'drive/v3/')+path,{...init,headers:{...Object.fromEntries(new Headers(init.headers)),Authorization:authorization},redirect:'manual',signal:AbortSignal.timeout(45000)});if(r.status===401){token='';until=0;}return r;}catch(e){if(e instanceof AppError)throw e;throw fail();}}
  const fail=()=>new AppError(503,'Chưa xác minh được file trên Google Drive. Giữ file đã chọn và bấm thử lại; chưa đánh dấu đã lưu.','DRIVE_UNCERTAIN');
  async function privateFolder(id:string){
-  let page='';for(let i=0;i<10;i++){const query=new URLSearchParams({supportsAllDrives:'true',fields:'permissions(type),nextPageToken',pageSize:'100',...(page?{pageToken:page}:{})});const r=await send('files/'+id+'/permissions?'+query);if(!r.ok)throw new AppError(503,'Chưa xác minh được quyền thư mục/file Drive. Quản trị cần kiểm tra quyền truy cập.');const d=await r.json();if(!Array.isArray(d.permissions))throw fail();if(d.permissions.some((p:{type:string})=>p.type==='anyone'))throw new AppError(403,'Thư mục/file Drive đang chia sẻ công khai. Chưa lưu hoặc tải file SX; quản trị cần chọn nơi lưu riêng.','DRIVE_PUBLIC');page=d.nextPageToken||'';if(!page)return;}throw fail();
+  let page='';for(let i=0;i<10;i++){const query=new URLSearchParams({supportsAllDrives:'true',fields:'permissions(type,role,view,inheritedPermissionsDisabled,permissionDetails(inherited)),nextPageToken',pageSize:'100',...(page?{pageToken:page}:{})});const r=await send('files/'+id+'/permissions?'+query);if(!r.ok)throw new AppError(503,'Chưa xác minh được quyền thư mục/file Drive. Quản trị cần kiểm tra quyền truy cập.');const d=await r.json();if(!Array.isArray(d.permissions))throw fail();if(d.permissions.some((p:DrivePermission)=>p.type==='anyone'&&!metadataOnly(p)))throw new AppError(403,'Thư mục/file Drive đang chia sẻ công khai. Chưa lưu hoặc tải file SX; quản trị cần chọn nơi lưu riêng.','DRIVE_PUBLIC');page=d.nextPageToken||'';if(!page)return;}throw fail();
  }
  async function metadata(id:string){if(!valid(id))throw fail();const r=await send('files/'+id+'?supportsAllDrives=true&fields=id,mimeType,parents,trashed,size,md5Checksum,appProperties');if(r.status===404)return null;if(!r.ok)throw fail();return r.json();}
  return{
