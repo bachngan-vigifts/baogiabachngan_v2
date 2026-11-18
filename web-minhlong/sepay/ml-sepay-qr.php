@@ -128,6 +128,21 @@ function ml_sepay_webhook($r){
 }
 add_action('ml_sepay_release_crm',function($id){
     $o=wc_get_order($id); if(!$o||!ml_sepay_proof($o))return;
-    foreach(array(1,2) as $wid){$key='_ml_sepay_crm_webhook_'.$wid;if($o->get_meta($key))continue;$h=new WC_Webhook($wid);if(!$h->get_id()||$h->get_status()!=='active')throw new Exception('CRM webhook '.$wid.' is not active.');$res=$h->deliver($id);if(!is_wp_error($res)&&(int)wp_remote_retrieve_response_code($res)>=200&&(int)wp_remote_retrieve_response_code($res)<300){$o->update_meta_data($key,current_time('mysql',true));$o->save();}else{throw new Exception('CRM webhook '.$wid.' failed; Action Scheduler will retry.');}}
+    foreach(array(1,2) as $wid){
+        $key='_ml_sepay_crm_webhook_'.$wid;if($o->get_meta($key))continue;$h=new WC_Webhook($wid);
+        if(!$h->get_id()||$h->get_status()!=='active'){ml_sepay_schedule_crm_retry($o,'webhook_'.$wid.'_inactive');return;}
+        $response=null;$capture=function($args,$res,$duration,$arg,$webhook_id)use(&$response,$id,$wid){if((int)$arg===(int)$id&&(int)$webhook_id===(int)$wid)$response=$res;};
+        add_action('woocommerce_webhook_delivery',$capture,999,5);$h->deliver($id);remove_action('woocommerce_webhook_delivery',$capture,999);
+        $http=is_wp_error($response)?0:(int)wp_remote_retrieve_response_code($response);
+        if($http>=200&&$http<300){$o->update_meta_data($key,current_time('mysql',true));$o->save();}else{ml_sepay_schedule_crm_retry($o,'webhook_'.$wid.'_http_'.$http);return;}
+    }
     $o->update_meta_data('_ml_sepay_crm_released',current_time('mysql',true));$o->save();
 },10,1);
+function ml_sepay_schedule_crm_retry($order,$reason){
+    $attempt=(int)$order->get_meta('_ml_sepay_crm_retry_count')+1;$order->update_meta_data('_ml_sepay_crm_retry_count',$attempt);$order->add_order_note('CRM tạm lỗi, sẽ gửi lại: '.$reason);$order->save();
+    if($attempt<=8){$when=time()+min(900,15*(2**min($attempt,6)));if(function_exists('as_schedule_single_action'))as_schedule_single_action($when,'ml_sepay_release_crm',array($order->get_id()),'ml-sepay');else wp_schedule_single_event($when,'ml_sepay_release_crm',array($order->get_id()));}
+}
+add_action('wp_loaded',function(){
+    if(!ml_sepay_enabled()||get_transient('ml_sepay_crm_recovery_scan'))return;set_transient('ml_sepay_crm_recovery_scan',1,5*MINUTE_IN_SECONDS);
+    foreach(wc_get_orders(array('limit'=>20,'status'=>array('processing','completed'),'meta_key'=>'_ml_sepay_verified_tx','meta_compare'=>'EXISTS')) as $o){if(!$o->get_meta('_ml_sepay_crm_released')&&(!function_exists('as_has_scheduled_action')||!as_has_scheduled_action('ml_sepay_release_crm',array($o->get_id()),'ml-sepay'))) {if(function_exists('as_enqueue_async_action'))as_enqueue_async_action('ml_sepay_release_crm',array($o->get_id()),'ml-sepay');else wp_schedule_single_event(time()+2,'ml_sepay_release_crm',array($o->get_id()));}}
+},20);
