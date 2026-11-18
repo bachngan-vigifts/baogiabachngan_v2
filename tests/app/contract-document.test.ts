@@ -91,7 +91,7 @@ test('Điều 2.1 uses the requested printing/nonprinting terms for both legal e
 
 
 test('contract printing uses confirmed order facts first and quote printing rules for legacy records',async()=>{
- const {contractPrinting}=await import('../../trial-ui/contract-ui.js');
+ const {contractPrinting}=await import(new URL('../../trial-ui/contract-ui.js',import.meta.url).href);
  const detail={order:{quoteType:'B2B'}},paid=[{name:'SP',qty:1,printFee:100}],none=[{name:'SP',qty:1,printDescription:'Không in',printFee:0}];
  assert.equal(contractPrinting({...detail,submissionReview:{printing:false}},paid),false);
  assert.equal(contractPrinting({...detail,submissionReview:{printing:true}},none),true);
