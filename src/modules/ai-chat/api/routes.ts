@@ -80,7 +80,8 @@ export function registerAiChatRoutes(router: Router<StaffEnv>) {
     const status = clean(b.status, 30), answer = clean(b.answer, 12_000), error = clean(b.error, 1000);
     if (status === 'answered' && answer.length < 2) throw new AppError(422, 'Kết quả phải có câu trả lời.');
     if (!['answered', 'needs_review', 'failed'].includes(status)) throw new AppError(422, 'Trạng thái callback không hợp lệ.');
-    await c.env.db.update(questions).set({ status, answer: status === 'answered' ? answer : '', error: status === 'answered' ? '' : error || 'AI chưa thể trả lời; cần quản lý hỗ trợ.', callbackTokenHash: null, answeredAt: status === 'answered' ? at : null, updatedAt: at }).where(eq(questions.id, id));
+    const [saved] = await c.env.db.update(questions).set({ status, answer: status === 'answered' ? answer : '', error: status === 'answered' ? '' : error || 'AI chưa thể trả lời; cần quản lý hỗ trợ.', callbackTokenHash: null, answeredAt: status === 'answered' ? at : null, updatedAt: at }).where(and(eq(questions.id, id), eq(questions.callbackTokenHash, got), or(eq(questions.status, 'pending'), eq(questions.status, 'needs_review')))).returning({id:questions.id});
+    if (!saved) throw new AppError(401, 'Callback không hợp lệ hoặc đã sử dụng.');
     return json({ ok: true });
   }, 'ai-chat-sync');
 }

@@ -8,7 +8,7 @@ const expected=[
  'pos','quotes','orders','contracts','products','product-custody','receivables','order-products','deliveries',
  'cashbook','cash','sepay','accounting',
  'customers','care','stock-requests',
- 'tasks','dashboard','flow','feedback',
+ 'tasks','dashboard','flow','feedback','ai-chat',
  'kho','stock-lookup','transfers','stock-moves','inventory','stocktake','packing','receiving',
  'early-requests','purchases','suppliers',
  'finance','profit','shift-reports','store-reports','weekly-reports','monthly-reports','staff','payroll','permissions',
@@ -65,7 +65,7 @@ test('finance, profit and reports belong to Administration in both menus without
  for(const key of moved.slice(2))assert.match(admin,new RegExp(`<a class="nav" href="#/${key}" data-nav="${key}" hidden>`),'employee reports must not gain a Manager-only restriction');
  assert.deepEqual(groupMobileNav(['tasks','weekly-reports','monthly-reports']).map((g:any)=>[g.key,g.items]),[['work',['tasks']],['admin',['weekly-reports','monthly-reports']]]);
  assert.equal(groupMobileNav(['tasks','quotes']).some((g:any)=>g.key==='admin'),false,'no Administration group when no destination is permitted');
- for(const key of ['tasks','dashboard','flow','feedback'])assert.ok(work.includes(`data-nav="${key}"`));
+ for(const key of ['tasks','dashboard','flow','feedback','ai-chat'])assert.ok(work.includes(`data-nav="${key}"`));
 });
 
 test('custody stays next to products and only appears for permission-visible destinations',()=>{
@@ -85,4 +85,10 @@ test('SePay is only included in the money group when the destination is permissi
  assert.deepEqual(groupMobileNav(['accounting','cash','sepay']).map((g:any)=>[g.key,g.items]),[['money',['cash','sepay','accounting']]]);
  assert.equal(groupMobileNav(['cash','tasks']).some((g:any)=>g.items.includes('accounting')),false);
  assert.match(sidebar,/href="#\/accounting" data-nav="accounting" hidden/);
+ });
+
+ test('Chat AI stays in Work only when the authenticated sidebar exposes it',()=>{
+ assert.deepEqual(groupMobileNav(['ai-chat','tasks']).map((g:any)=>[g.key,g.items]),[['work',['tasks','ai-chat']]]);
+ assert.equal(groupMobileNav(['tasks']).some((g:any)=>g.items.includes('ai-chat')),false);
+ assert.deepEqual(orderedMobileNavKeys(['ai-chat','feedback','orders']),['orders','feedback','ai-chat']);
  });

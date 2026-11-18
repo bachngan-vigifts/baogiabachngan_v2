@@ -24,3 +24,11 @@ CREATE TABLE IF NOT EXISTS ai_chat_helpful_votes (
 );
 ALTER TABLE ai_chat_helpful_votes ENABLE ROW LEVEL SECURITY;
 CREATE INDEX IF NOT EXISTS idx_ai_chat_helpful_member ON ai_chat_helpful_votes(member_id);
+
+-- CRM routes own authorization; these tables are not a direct browser API.
+REVOKE ALL ON TABLE public.ai_chat_questions, public.ai_chat_helpful_votes FROM PUBLIC;
+DO $$ BEGIN
+ IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') THEN REVOKE ALL ON TABLE public.ai_chat_questions,public.ai_chat_helpful_votes FROM anon; END IF;
+ IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN REVOKE ALL ON TABLE public.ai_chat_questions,public.ai_chat_helpful_votes FROM authenticated; END IF;
+ IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.ai_chat_questions,public.ai_chat_helpful_votes TO service_role; END IF;
+END $$;
