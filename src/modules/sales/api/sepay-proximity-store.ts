@@ -41,7 +41,7 @@ import {
   sepayPosIntent,
   type SepayManualChoice,
 } from "../domain/sepay-page.ts";
-import { lockQrReferences } from "./sepay-web-store.ts";
+import { webQrReferences } from "./sepay-web-store.ts";
 import { cashAudit, cashLock, type CashDb } from "./cash-store.ts";
 import { netReceivables } from "./pos-return-credit.ts";
 import { readWebOrderFinancials } from "../domain/web-order-financials.ts";
@@ -75,7 +75,7 @@ export async function nearbySepayTargets(
   manual = false,
 ) {
   const window = sepayWindow(p.transactionAt),
-    refs = lockQrReferences(p.content),
+    refs = webQrReferences(p.content),
     posIntent = sepayPosIntent(p.content);
   const webId = targetId?.startsWith("web:") ? targetId.slice(4) : undefined;
   const posId = targetId && !webId ? targetId : undefined;

@@ -1,12 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {eq} from 'drizzle-orm';
+import {and,eq} from 'drizzle-orm';
 import {setupSepay} from '../helpers/sepay-fixture.ts';
 import {sepayTransactions as bank} from '../../src/modules/integrations/schema.ts';
 import {customerPayments,salesOrders} from '../../src/modules/sales/schema.ts';
 import {posRegisters,webStoreOrders as web} from '../../src/modules/sales/pos-schema.ts';
 import {stockMoves} from '../../src/modules/inventory/schema.ts';
-import {lockQrReferences} from '../../src/modules/sales/api/sepay-web-store.ts';
+import {lockQrReferences,minhLongQrReferences} from '../../src/modules/sales/api/sepay-web-store.ts';
 
 async function fixture(){
  const f=await setupSepay();
@@ -24,6 +24,24 @@ test('Lock QR references stay atomic: DH21661 cannot match DH216610, prefix or s
  assert.deepEqual(lockQrReferences('BANK.000.DH21661.CT TEST'),['DH21661']);
  for(const s of ['XDH21661','DH21661ABC','DH21661/ABC','PREFIX-DH21661'])assert.ok(!lockQrReferences(s).includes('DH21661'),s);
  assert.ok(!lockQrReferences('DH216610').includes('DH21661'));
+});
+test('Minh Long QR references stay atomic and do not treat the Sapo WEB_ML code as bank evidence',()=>{
+ assert.deepEqual(minhLongQrReferences('ACB.ML33593.THANH TOAN'),['ML33593']);
+ for(const s of ['XML33593','ML33593ABC','ML33593/ABC','WEB_ML_33593'])assert.ok(!minhLongQrReferences(s).includes('ML33593'),s);
+ assert.ok(!minhLongQrReferences('ML335930').includes('ML33593'));
+});
+test('paid Minh Long QR ML{id} reconciles to WEB_ML_{id} source order without a CRM receipt',async()=>{
+ const f=await setupSepay();
+ await f.db.update(posRegisters).set({name:'Showroom Gốm Sứ Minh Long Cần Thơ'}).where(eq(posRegisters.id,f.registerId));
+ const body={id:33593,number:'33593',status:'processing',total:'100000',currency:'VND',payment_method:'bacs',payment_method_title:'Chuyển khoản ngân hàng (Quét mã QR)',date_paid_gmt:'2026-11-08T03:00:00',billing:{first_name:'Khách Minh Long',phone:'0901'},line_items:[{sku:'00123',name:'Ly',quantity:1,total:'100000',subtotal:'100000',total_tax:'0',subtotal_tax:'0'}]};
+ const sync=await f.call('/integrations/woocommerce/minhlong/order?token=test-ml-token','','POST',body);
+ assert.equal(sync.status,200,JSON.stringify(sync.data));
+ const [w]=await f.db.select().from(web).where(and(eq(web.source,'minhlong'),eq(web.externalId,'33593')));
+ assert.ok(w);
+ const before=(await f.db.select().from(customerPayments)).length;
+ const e=await f.incoming('ACB.ML33593.THANH TOAN',100000,{id:'ml-paid'});
+ assert.equal(e.status,'matched');assert.equal(e.webOrderId,w!.id);assert.equal(e.orderId,null);assert.equal(e.paymentId,null);
+ assert.equal((await f.db.select().from(customerPayments)).length,before);
 });
 test('paid Lock QR auto reconciles to original web number without another CRM receipt, revenue or stock move',async()=>{
  const f=await fixture(),w=await f.sync();
