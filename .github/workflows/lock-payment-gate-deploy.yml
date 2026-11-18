@@ -1,0 +1,28 @@
+name: Deploy Lock paid-order notification gate
+on:
+  push:
+    branches: [codex/minhlong-approved-shipping-20261117]
+    paths: [web-lock/payment-gate/lock-sepay-paid-notifications.php, web-lock/payment-gate/deploy.mjs, web-lock/payment-gate/test.php, .github/workflows/lock-payment-gate-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: lock-payment-gate
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify unpaid, paid, repeat, COD and Minh Long cases without sending emails
+        run: |
+          php -l web-lock/payment-gate/lock-sepay-paid-notifications.php
+          php web-lock/payment-gate/test.php
+          node --check web-lock/payment-gate/deploy.mjs
+      - name: Install only on Lock and read back exact file
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: node web-lock/payment-gate/deploy.mjs
