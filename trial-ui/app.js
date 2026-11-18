@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 132667)
-Total output lines: 5940
-
 import {requestOrderApproval,submissionSummary} from './order-submit.js';
 import {createProductionFiles,mountProductionFiles} from './production-files.js';
 import {initProductBrandFilter} from './product-brand-filter.js';
@@ -810,7 +807,4449 @@ async function loadMembers() {
   catch (e) { state.memberLoadError=e.message||'Không tải được danh sách nhân viên.'; if (e.status !== 401) showGlobalError(e.message, 'staff'); }
   renderMembers();
 }
-// Tình trạng đồng bộ Sapo → app (s…102667 tokens truncated… initial: live[0]?.id || '', build: v => {
+// Tình trạng đồng bộ Sapo → app (sản phẩm, khách hàng, nhân viên): Sapo đẩy sang, hoặc app tự lấy bằng phiên Sapo của Manager.
+const viTime = iso => new Date(iso).toLocaleString('vi-VN');
+async function loadSapoSync() {
+  let d; try { d = await api('/admin/sapo-sync'); } catch { $('#sapo-sync').hidden = true; return; }
+  const n = v => Number(v || 0).toLocaleString('vi-VN'), at = iso => iso ? 'Lần cuối ' + viTime(iso) : 'Chưa nhận dữ liệu';
+  const s = d.session || {}, p = d.pull || {}, pullFailed = p.ok === false && !p.stale;
+  $('#sapo-sync').hidden = false;
+  $('#sync-state').textContent = !d.configured ? 'Chưa bật' : !s.connected ? 'Chưa kết nối' : s.expired ? 'Phiên hết hạn' : pullFailed ? 'Lỗi' : 'Đang chạy';
+  $('#sync-state').classList.toggle('warn', !!(s.expired || pullFailed));
+  $('#sync-note').textContent = !d.configured ? 'Cần cài mã SAPO_SYNC_TOKEN'
+    : !s.connected ? 'Bấm "Kết nối Sapo" để bắt đầu'
+    : s.expired || pullFailed ? (p.error || 'Cần kết nối lại Sapo')
+    : p.finishedAt && !p.stale ? 'Đồng bộ lúc ' + viTime(p.finishedAt) : 'Kết nối lúc ' + viTime(s.updatedAt);
+  $('#sapo-connect').textContent = s.connected ? 'Kết nối lại' : 'Kết nối Sapo';
+  $('#sapo-connect').hidden = !d.configured; $('#sapo-pull').hidden = !d.configured || !s.connected; $('#sapo-disconnect').hidden = !s.connected;
+  $('#sync-products').textContent = n(d.products.count); $('#sync-products-at').textContent = at(d.products.lastSyncedAt);
+  $('#sync-customers').textContent = n(d.customers.count); $('#sync-customers-at').textContent = at(d.customers.lastSyncedAt);
+  $('#sync-staff').textContent = n(d.staff.count); $('#sync-staff-note').textContent = d.staff.linked ? `+ ${n(d.staff.linked)} đã khớp tài khoản web` : 'Hồ sơ mới cần cấp liên kết';
+  const docs = d.docs || {}, dc = k => n(docs[k]?.count);
+  $('#sync-docs').textContent = n(['purchase_order', 'stock_transfer', 'stock_adjustment'].reduce((t, k) => t + Number(docs[k]?.count || 0), 0));
+  $('#sync-docs-note').textContent = `Nhập hàng ${dc('purchase_order')} · Điều chuyển ${dc('stock_transfer')} · Kiểm hàng ${dc('stock_adjustment')}` + (p.warnings?.length && !p.stale ? ' · Chưa đọc được: ' + p.warnings.map(w => w.split(':')[0]).join(', ') : '');
+}
+$('#sapo-connect').addEventListener('click', () => { $('#sapo-form').reset(); $('#sapo-error').textContent = ''; $('#sapo-dialog').showModal(); });
+$('#sapo-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('#save-sapo'), err = $('#sapo-error'), cookie = String(new FormData(e.target).get('cookie') || '').trim();
+  err.textContent = '';
+  if (!/(^|;\s*)(_admin_session_id|sapo-admin)=/.test(cookie)) { err.textContent = 'Chuỗi cookie cần có sapo-admin (hoặc _admin_session_id). Kiểm tra lại bước 3.'; return; }
+  btn.disabled = true;
+  try { await api('/admin/sapo-session', 'POST', { cookie }); $('#sapo-dialog').close(); toast('Đã kết nối Sapo.'); await loadSapoSync(); }
+  catch (ex) { err.textContent = ex.message; }
+  finally { btn.disabled = false; }
+});
+$('#sapo-disconnect').addEventListener('click', async () => {
+  if (!await confirmBox('App sẽ ngừng tự lấy dữ liệu từ Sapo cho tới khi kết nối lại.', { title: 'Ngắt kết nối Sapo?', ok: 'Ngắt kết nối', danger: true })) return;
+  try { await api('/admin/sapo-session', 'DELETE', {}); $('#sapo-dialog').close(); toast('Đã ngắt kết nối Sapo.'); await loadSapoSync(); } catch (ex) { toast(ex.message, 'error'); }
+});
+$('#sapo-pull').addEventListener('click', async () => {
+  const btn = $('#sapo-pull'); btn.disabled = true; btn.textContent = 'Đang đồng bộ…';
+  try {
+    const r = await api('/admin/sapo-pull', 'POST', {}), x = r.results || {};
+    const docs = ['purchase_order', 'stock_transfer', 'stock_adjustment'].reduce((t, k) => t + (x[k]?.created || 0) + (x[k]?.updated || 0), 0);
+    toast(`Đã đồng bộ: ${(x.products?.created || 0) + (x.products?.updated || 0)} sản phẩm, tồn kho ${(x.stock?.created || 0) + (x.stock?.updated || 0)} mã, ${x.customers?.applied || 0} khách hàng, ${(x.staff?.created || 0) + (x.staff?.linked || 0)} nhân viên mới, ${docs} chứng từ kho (nhập hàng, điều chuyển, kiểm hàng).`
+      + (r.warnings?.length ? ' Chưa đọc được: ' + r.warnings.join('; ') : ''));
+    loadMembers(); state.products = null; loadCustomers();
+  } catch (ex) { toast(ex.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = 'Đồng bộ ngay'; loadSapoSync(); }
+});
+
+// ---------------------------------------------------------------- điều hướng
+var posUi = null;
+var cashUi = null;
+const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:()=>state.user,go,onShiftClosed:async()=>{await loadNavigationBadges();if(location.hash.startsWith('#/pos'))await posUi?.load();},onChanged:()=>{loadNavigationBadges();tasksView().badge();}});
+// Bán hàng nhanh tìm trên danh mục tải sẵn như trang Sản phẩm: chỉ mã có giá ở bảng giá đang chọn (máy chủ vẫn lọc lại).
+const posLocalSearch = (q, policy) => {
+  if (!catalog.items) return null;
+  // Ô tìm trống (mở quầy / xoá ô): cả danh mục theo thứ tự sẵn có – quầy hiện ngay rồi chỉ hỏi máy chủ giá / tồn của trang đang xem
+  // (/pos/catalog?skus=), không bắt máy chủ bỏ dấu + xếp hạng toàn bộ sản phẩm mỗi lần mở quầy.
+  const found = q ? searchCatalog(catalog.items, { q }) || [] : catalog.items;
+  // Bản danh mục không giá (người không xem giá): không lọc theo giá tại chỗ – máy chủ vẫn chỉ trả mã có giá.
+  const priced = catalog.items.some(p => p.prices?.[policy] != null);
+  // Trả sẵn tên / giá / ảnh để quầy hiện kết quả ngay; tồn có thể bán vẫn lấy từ máy chủ (/pos/catalog?skus=).
+  return (priced ? found.filter(p => p.prices?.[policy] != null) : found)
+    .map(p => ({ sku: p.sku, name: p.name, unit: p.unit, brand: p.brand, imageUrl: p.imageUrl, price: p.prices?.[policy] ?? null }));
+};
+// Kiểm tra nhanh đã có danh mục chưa (không dựng cả danh sách chỉ để biết có hay không).
+posLocalSearch.ready = () => !!catalog.items;
+const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
+var shiftReportsUi = null;
+const shiftReportsView = () => shiftReportsUi ||= initShiftReports({api,root:$('#view-shift-reports'),go});
+let receivingUi;
+const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
+var financeUi = null, financeLoading = null;
+async function financeView(query) {
+ const hash=location.hash, who=state.user?.id;
+ try { const {initFinance}=await (financeLoading ||= import('./finance.js'));
+  if(!isManager()||state.user?.id!==who||location.hash!==hash)return;
+  financeUi ||= initFinance({api,root:$('#view-finance'),go});
+  await financeUi.show(query);
+ } catch(e) {financeLoading=null;if(location.hash===hash)toast(e.message,'err');}
+}
+var sepayUi=null,sepayLoading=null;
+async function sepayView(query){const hash=location.hash,userId=state.user?.id;try{const {initSepay}=await(sepayLoading ||= import('./sepay.js'));if(location.hash!==hash||!state.user||state.user.id!==userId||!canPage('sepay')||$('#workspace').hidden)return;sepayUi ||= initSepay({api,root:$('#view-sepay'),go,canOpenOrders:()=>canPage('order')});await sepayUi.show(query);}catch(e){sepayLoading=null;if(location.hash===hash)toast(e.message,'err');}}
+var accountingUi=null,accountingLoading=null;
+async function accountingView(){const hash=location.hash,userId=state.user?.id;try{const {initAccounting}=await(accountingLoading ||= import('./accounting.js'));if(location.hash!==hash||state.user?.id!==userId||!canAccounting()||$('#workspace').hidden)return;accountingUi ||= initAccounting({api,root:$('#view-accounting')});await accountingUi.show();}catch(e){accountingLoading=null;if(location.hash===hash)toast(e.message,'err');}}
+const VIEWS = { accounting:'Không gian kế toán', sepay:'Thanh toán SePay', finance:'Tài chính & KPI', home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'ai-chat':'Chat cùng AI', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving:'Nhận hàng NCC', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Kho của tôi', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+installChatFab();
+const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
+ canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
+ label:hash=>VIEWS[hash.slice(2).split(/[/?]/)[0]]||'Trang trước',go:hash=>go(hash)});
+let currentHash = location.hash, suppressHash = false, stocktakeExitPending = false;
+window.addEventListener('hashchange', async () => {
+  if (activation || !state.user) return;
+  if (suppressHash) { suppressHash = false; return; }
+  const target = location.hash;
+  if (currentHash.startsWith('#/stocktake') && target !== currentHash && stocktakeUi?.hasDraft()) {
+    history.replaceState(null, '', currentHash);
+    if (stocktakeExitPending) return;
+    stocktakeExitPending = true;
+    try { if (await stocktakeUi.beforeLeave() && state.user) location.hash = target; }
+    finally { stocktakeExitPending = false; }
+    return;
+  }
+  if (editor.dirty && currentHash.startsWith('#/quotes/') && target !== currentHash) {
+    suppressHash = true; location.hash = currentHash;
+    if (!await confirmBox('Báo giá có thay đổi chưa lưu. Rời trang sẽ mất các thay đổi này.', { title: 'Rời khỏi báo giá?', ok: 'Rời trang', danger: true })) return;
+    editor.dirty = false; location.hash = target; return;
+  }
+  currentHash = target; route();
+});
+window.addEventListener('beforeunload', e => { if (editor.dirty || stocktakeUi?.hasDraft()) { e.preventDefault(); e.returnValue = ''; } });
+
+let lastRoutedHash = '';
+VIEWS['early-requests'] = 'Lấy hàng trước';
+/** Thu chi = Sổ thu / chi (tất cả) + Sổ quỹ (két cửa hàng): hai tab ở đầu hai trang cho người được vào cả hai. */
+function thuChiTabs(view) {
+  for (const n of $$('.thu-chi-tabs')) n.remove();
+  if (!['cash', 'cashbook'].includes(view) || !can('page.cash') || !can('page.cashbook')) return;
+  const nav = document.createElement('nav'); nav.className = 'chips thu-chi-tabs'; nav.setAttribute('aria-label', 'Thu chi');
+  for (const [k, text] of [['cashbook', 'Tất cả thu chi'], ['cash', 'Két cửa hàng (Sổ quỹ)']]) {
+    const a = document.createElement('a'); a.className = 'chip' + (k === view ? ' active' : ''); a.href = '#/' + k; a.textContent = text;
+    if (k === view) a.setAttribute('aria-current', 'page');
+    nav.append(a);
+  }
+  $('#view-' + view).before(nav);
+}
+function route() {
+  if (globalErrorPage() !== globalErrorOwner) clearGlobalError();
+  // #/chat/<id> (bấm thông báo tin nhắn): mở khung chat nổi, giữ nguyên trang đang xem.
+  const chatMatch = /^#\/chat(?:\/([\w-]+))?/.exec(location.hash);
+  if (chatMatch) { chatView().show(chatMatch[1]); history.replaceState(null, '', lastRoutedHash || homeHash()); if (lastRoutedHash) return; }
+  document.querySelectorAll('dialog.product-card').forEach(dlg => { dlg.close(); dlg.remove(); });
+  lastRoutedHash = location.hash;
+  const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
+  const [page = 'quotes', id] = path.split('/');
+  if(page==='products'&&!id){const legacySku=new URLSearchParams(query).get('sku');if(legacySku){currentHash='#/products/'+encodeURIComponent(legacySku);history.replaceState(null,'',currentHash);return route();}}
+  // #/members/<id>?month=YYYY-MM: hồ sơ nhân viên (Manager xem mọi người; nhân viên chỉ xem của mình – máy chủ kiểm tra).
+  let view = VIEWS[page] ? page : page === 'members' && id ? 'member' : 'home';
+  if(view==='home'&&(page!=='home'||isWarehouse())){currentHash=homeHash();history.replaceState(null,'',location.pathname+currentHash);return route();}
+  if ((view === 'staff' || view === 'payroll') && !isManager()) { history.replaceState(null, '', homeHash()); return route(); }
+  // Trang chức vụ chưa được cấp quyền (link cũ, thông báo…): về trang mở đầu. Báo giá / đơn / khách có mã thì xét theo trang chi tiết.
+  const detail = id && view === 'quotes' ? 'editor' : id && (view === 'orders' || view === 'contracts') ? 'order' : id && view === 'customers' ? 'customer' : id && view === 'packing' ? 'packing-slip' : view;
+  if (!canPage(detail) && location.hash.split('?')[0] !== homeHash()) { toast('Chức vụ của bạn chưa được cấp quyền vào trang này.', 'err'); history.replaceState(null, '', homeHash()); return route(); }
+  if (view === 'quotes' && id) view = 'editor';
+  if (view === 'orders' && id) view = 'order';
+  // HĐKT là luồng riêng: #/contracts/<id> mở trang chi tiết HĐKT (dùng chung khung trang với đơn hàng, nội dung theo HĐKT).
+  if (view === 'contracts' && id) view = 'order';
+  if (view === 'customers' && id) view = 'customer';
+  if (view === 'products' && id) view = 'product';
+  for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
+  const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? (page === 'contracts' ? 'contracts' : 'orders') : view === 'customer' ? 'customers' : view === 'product' ? 'products' : view === 'member' ? 'staff' : view;
+  $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
+  $$('[data-home-link]').forEach(a => a.classList.toggle('active', view === 'home'));
+  const viewTitle = view === 'customers' && new URLSearchParams(query).get('tab') === 'center' ? 'Trung tâm khách hàng' : VIEWS[view];
+  $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : viewTitle;
+  pageBack.record();
+  document.title = (view === 'editor' ? $('#breadcrumb').textContent : viewTitle) + ' · Bách Ngân';
+  window.scrollTo(0, 0); document.querySelector('.main')?.scrollTo(0, 0); // điện thoại: vùng nội dung tự cuộn
+  if (view === 'home') showHome(); else homeUi?.hide();
+  if (view === 'editor') openEditor(id);
+  thuChiTabs(view);
+  if (view === 'cash') cashView().load().catch(e=>toast(e.message,'err'));
+  if (view !== 'shift-reports') shiftReportsUi?.close();
+  if (view === 'shift-reports') shiftReportsView().show(query);
+  if (view !== 'finance') financeUi?.close();
+  if (view === 'finance') financeView(query);
+  if (view !== 'sepay') sepayUi?.close();
+  if (view === 'sepay') sepayView(query);
+  if (view !== 'accounting') accountingUi?.close();
+  if (view === 'accounting') accountingView();
+  if (view === 'pos') posView().load();
+  if (view === 'product') productDetail().show(decodeURIComponent(id),query);
+  if(view==='product-custody')custodyView().then(ui=>ui.load(id||''));else custodyUi?.close();
+  if (view === 'products' && !state.products) loadProducts();
+  if (view === 'products') {
+    productAdmin().loadPending(); legacyImagesBox();
+  }
+  // Mở app từ Trang chủ thì chưa có danh sách nhân viên / chức vụ: tải khi vào trang Nhân viên (hộp Thêm nhân viên cần chức vụ).
+  if (view === 'staff' && isManager()) { loadSapoSync(); loadMembers(); }
+  if (view === 'orders') loadOrders();
+  if (view === 'contracts') loadContracts();
+  if (view === 'receiving') receivingView().load();
+  if (view === 'deliveries') loadDeliveries();
+  if (view === 'order-products') productOrdersView().load();
+  if(view!=='order-products')productOrdersUi?.close();
+  if(view!=='deliveries')shipmentCalendarUi?.close();
+  if (view === 'receivables') loadReceivables();
+  if (view === 'cashbook') loadCashbook();
+  if (view === 'stock-requests') loadStockRequests(id);
+  if (view === 'tasks') {const target=location.hash,who=state.user?.id;tasksView().load(id,query).then(()=>{if(new URLSearchParams(query).get('new')==='1'&&location.hash===target&&state.user?.id===who)return tasksView().openNew();}).catch(e=>toast(e.message,'err'));}
+  if (view === 'dashboard') dashboardView().load();
+  if (view === 'profit') profitView().show();
+  if (view === 'feedback') feedbackView().show(id ? decodeURIComponent(id) : '');
+  if (view === 'ai-chat') aiChatView().show();
+  if (view === 'store-reports') storeView().show(query);
+  if (view === 'weekly-reports') weeklyView().show(query);
+  if (view === 'monthly-reports') monthlyView().show(query);
+  if (view === 'flow') flowView().load();
+  if (view !== 'suppliers') suppliersUi?.close();
+  if (view === 'suppliers') { suppliersView().load(); if (new URLSearchParams(query).get('new') === '1') suppliersView().openNew(); else if (id) suppliersView().open(decodeURIComponent(id)); }
+  if (view === 'purchases') purchasesView().show(id ? decodeURIComponent(id) : '', query);
+  if (view === 'early-requests') earlyRequestPage().show(id ? decodeURIComponent(id) : '', query);
+  if (view === 'inventory') inventoryView().load();
+  if (view === 'stocktake') stocktakeView().load(); else stocktakeUi?.close();
+  if (view === 'transfers') transfersView().load(id);
+  if (view === 'stock-moves') stockMovesView().show(query);
+  if (view === 'permissions') { permissionsView().load(); sellerConfigView().load(); }
+  if (view === 'kho') khoHome().load(); else khoHomeUi?.hide();
+  if (view === 'stock-lookup') stockLookup().load(new URLSearchParams(query).get('q')||'');
+  if (view === 'care') careView().load(id ? decodeURIComponent(id) : '');
+  if (view === 'order') openOrder(id);
+  if (view === 'customers') customerScreen(query);
+  else centerUi?.invalidate();
+  if (view === 'customer') customerDetail().open(decodeURIComponent(id));
+  if (view === 'member') memberDetail().open(decodeURIComponent(id), new URLSearchParams(query).get('month') || '', new URLSearchParams(query).get('tab') || '');
+  if (view === 'payroll') payrollBoard().open(new URLSearchParams(query).get('month') || '');
+  if (view === 'packing') openPacking(id ? decodeURIComponent(id) : '');
+  hideProductSuggest();
+}
+const go = hash => { if (location.hash === hash) route(); else location.hash = hash; };
+
+// ---------------------------------------------------------------- danh sách báo giá
+const skeleton = cols => Array.from({ length: 4 }, () => `<tr class="skeleton">${'<td><span></span></td>'.repeat(cols)}</tr>`).join('');
+function renderStats() {
+  const all = state.quotes, m = state.quoteMeta;
+  if (!all || !m) return;
+  $('#stat-count').textContent = m.total.toLocaleString('vi-VN');
+  $('#stat-count-note').textContent = m.total === m.all ? 'Tất cả báo giá' : `Lọc từ ${m.all.toLocaleString('vi-VN')} báo giá`;
+  // Giá trị: máy chủ cộng sẵn khi số báo giá khớp lọc vừa phải; nhiều quá thì cộng trang đang xem.
+  $('#stat-value').textContent = shortMoney(m.value ?? all.reduce((s, q) => s + q.total, 0));
+  $('#stat-value-note').textContent = m.value === null ? 'Trang đang xem · gồm VAT' : 'Đã gồm VAT';
+  $('#stat-month').textContent = (m.month?.count ?? 0).toLocaleString('vi-VN');
+  $('#stat-month-value').textContent = m.month?.count ? shortMoney(m.month.value) : 'Chưa có báo giá';
+  $('#stat-customers').textContent = state.customerGrandTotal !== undefined ? state.customerGrandTotal.toLocaleString('vi-VN') : '–';
+  $('#nav-quote-count').textContent = m.all;
+}
+/** Cột "Đơn / HĐKT" của danh sách báo giá: đã sinh đơn / HĐKT → nút xem; chưa → nhãn loại báo giá như cũ. */
+function quoteDocCell(q) {
+  const k = state.quoteDocs?.[q.id];
+  if (!k) return `<span class="pill type-${esc(q.quoteType)}">${q.template === 'sale' ? 'Sale' : esc(q.quoteType)}</span>`;
+  const label = k.contractNo ? 'Xem HĐKT' : 'Xem đơn hàng', no = k.contractNo || k.orderNo;
+  return `<a class="btn ghost small quote-doc-btn" data-doc-link href="#/${k.contractNo ? 'contracts' : 'orders'}/${esc(encodeURIComponent(k.orderId))}" title="${esc((k.contractNo ? 'HĐKT ' : 'Đơn hàng ') + no)}">${label}<small>${esc(no)}</small></a>`;
+}
+const mobileQuoteOwners=new Map();let mobileOwnerObserver,ownerActive=0;const ownerQueue=[];
+function hydrateMobileQuoteOwners(){
+  if(!matchMedia('(max-width: 850px)').matches||!('IntersectionObserver' in window))return;
+  const pump=()=>{while(ownerActive<2&&ownerQueue.length){ownerActive++;const job=ownerQueue.shift();if(state.user?.id!==job.user){ownerActive--;job.resolve('Chưa xác minh');continue;}api('/quotes/'+encodeURIComponent(job.id)).then(r=>job.resolve(String(r.data?.owner||'').trim()||'Chưa ghi')).catch(()=>{mobileQuoteOwners.delete(job.key);job.resolve('Chưa xác minh');}).finally(()=>{ownerActive--;pump();});}};
+  mobileOwnerObserver ||= new IntersectionObserver(entries=>{for(const entry of entries){if(!entry.isIntersecting)continue;const node=entry.target;mobileOwnerObserver.unobserve(node);const id=node.dataset.mobileQuoteId,user=state.user.id,key=user+':'+id+':'+node.dataset.mobileQuoteUpdated;
+    if(!mobileQuoteOwners.has(key)){mobileQuoteOwners.set(key,new Promise(resolve=>ownerQueue.push({id,user,key,resolve})));if(mobileQuoteOwners.size>200)mobileQuoteOwners.delete(mobileQuoteOwners.keys().next().value);pump();}
+    mobileQuoteOwners.get(key).then(name=>{if(node.isConnected&&state.user?.id===user)node.textContent='Phụ trách bản in: '+name;});
+  }},{rootMargin:'100px'});
+  for(const node of document.querySelectorAll('.mobile-quote-owner'))mobileOwnerObserver.observe(node);
+}
+function renderQuotes() {
+  const tbody = $('#quote-list');
+  if (!state.quotes) { tbody.innerHTML = skeleton(7); return; }
+  $('#quote-owner').hidden = !state.quoteMeta?.hasOthers;
+  const list = state.quotes;
+  renderStats(); quotePager.render(state.quoteMeta?.total ?? list.length);
+  $('#view-quotes').dataset.resultCount=String(state.quoteMeta?.total??list.length);
+  tbody.innerHTML = list.map(q => `
+    <tr class="clickable" data-open="${esc(q.id)}">
+      <td class="first"><span class="strong">${esc(q.quoteNo)}</span><small>${q.lineCount ?? ''} sản phẩm · phiên bản ${esc(q.revision)} · ${q.approvalStatus === 'approved' ? '<span class="pill ok">Đã duyệt</span>' : q.approvalStatus === 'draft' ? '<span class="pill">Nháp</span>' : '<span class="pill warn">Chờ duyệt</span>'}${q.fromCustomer ? ' · <span class="pill blue">Khách gửi</span>' : q.mine ? '' : ' · <span class="pill blue">Được chia sẻ</span>'}</small></td>
+      <td data-label="Khách">${esc(q.customer) || '<span class="muted">—</span>'}${q.contact || q.phone ? `<small>${esc([q.contact, q.phone].filter(Boolean).join(' · '))}</small>` : ''}</td>
+      <td data-label="Đơn / HĐKT">${quoteDocCell(q)}</td>
+      <td data-label="Ngày"><span class="quote-desktop-date">${fmtDate(q.quoteDate) || '—'}</span><span class="mobile-quote-owner" data-mobile-quote-id="${esc(q.id)}" data-mobile-quote-updated="${esc(q.updatedAt)}">Phụ trách: đang tải…</span></td>
+      <td class="right num">${money(q.total)}</td>
+      <td data-label="Cập nhật" title="${esc(new Date(q.updatedAt).toLocaleString('vi-VN'))}">${ago(q.updatedAt)}</td>
+      <td class="actions-cell"><div class="row-actions">
+        <button class="icon-btn" data-buy="${esc(q.id)}" title="Đặt hàng NCC" aria-label="Đặt hàng NCC cho ${esc(q.quoteNo)}"><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3z M14 10h4l3 3v3h-7 M7 19a1.5 1.5 0 1 0 0-.01 M17 19a1.5 1.5 0 1 0 0-.01 M6 11h5 M9 9l2 2-2 2"/></svg></button>
+        <button class="icon-btn" data-dup="${esc(q.id)}" title="Nhân bản" aria-label="Nhân bản ${esc(q.quoteNo)}"><svg viewBox="0 0 24 24"><path d="M9 9h11v11H9z M5 15H4V4h11v1"/></svg></button>
+        <button class="icon-btn" data-open="${esc(q.id)}" title="Mở" aria-label="Mở ${esc(q.quoteNo)}"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
+      </div></td>
+    </tr>`).join('');
+  const empty = $('#quote-empty'), none = !state.quoteMeta?.all;
+  empty.hidden = list.length > 0;
+  $('#quote-empty-title').textContent = none ? 'Chưa có báo giá' : 'Không có báo giá phù hợp';
+  $('#quote-empty-text').textContent = none ? 'Tạo báo giá đầu tiên để bắt đầu làm việc.' : 'Thử từ khoá khác hoặc bỏ bớt bộ lọc.';
+  $('#quote-empty-action').hidden = !none;
+  $('#quote-table').hidden = list.length === 0;
+  hydrateMobileQuoteOwners();
+}
+$('#quote-list').addEventListener('click', e => {
+  const dup = e.target.closest('[data-dup]');
+  if (dup) { e.stopPropagation(); duplicateFromList(dup.dataset.dup); return; }
+  const buy = e.target.closest('[data-buy]');
+  if (buy) { e.stopPropagation(); go('#/purchases/new?type=quote&id=' + encodeURIComponent(buy.dataset.buy)); return; }
+  if (e.target.closest('[data-doc-link]')) return; // nút xem đơn / HĐKT: theo link, không mở báo giá
+  const open = e.target.closest('[data-open]');
+  if (open) go('#/quotes/' + encodeURIComponent(open.dataset.open));
+});
+let quoteTimer;
+const reloadQuotes = () => { quotePager.reset(); loadQuotes(); };
+$('#quote-search').addEventListener('input', e => { state.quoteFilter.q = e.target.value; clearTimeout(quoteTimer); quoteTimer = setTimeout(reloadQuotes, 250); });
+$('#quote-sort').addEventListener('change', e => { state.quoteFilter.sort = e.target.value; reloadQuotes(); });
+$('#quote-owner').addEventListener('change', e => { state.quoteFilter.owner = e.target.value; reloadQuotes(); });
+$('#type-filter').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  $$('#type-filter .chip').forEach(c => c.classList.toggle('active', c === chip));
+  state.quoteFilter.type = chip.dataset.type; reloadQuotes();
+});
+
+// ---------------------------------------------------------------- soạn báo giá
+/** Danh mục sản phẩm tải sẵn về trình duyệt (xem loadCatalogSnapshot). */
+const catalog = { version: '', observedAt: null, items: null, checkedAt: 0, loading: null };
+const editor = { id: null, revision: 0, base: {}, rows: [], type: 'B2B', dirty: false, customerId: '', pending: null, loading: false, approval: null };
+const qf = $('#quote-form');
+const field = name => qf.elements.namedItem(name);
+const MOBILE_QUOTE_STEPS = ['info', 'products', 'review'];
+function setMobileQuoteStep(step, scroll = true) {
+  if (!MOBILE_QUOTE_STEPS.includes(step)) step = 'info';
+  qf.dataset.mobileStep = step;
+  const index = MOBILE_QUOTE_STEPS.indexOf(step);
+  $$('.quote-mobile-steps [data-quote-step]', qf).forEach((b, i) => {
+    b.setAttribute('aria-current', i === index ? 'step' : 'false');
+    b.classList.toggle('done', i < index);
+  });
+  $('#quote-step-back').disabled = index === 0;
+  $('#quote-step-next').hidden = index === MOBILE_QUOTE_STEPS.length - 1;
+  $('#save-quote-m').hidden = false;
+  $('#m-step-label').textContent = `Bước ${index + 1}/3 · ${['Thông tin', 'Sản phẩm', 'Kiểm tra'][index]}`;
+  if (scroll && matchMedia('(max-width: 850px)').matches) $('#view-editor').scrollIntoView({ block: 'start' });
+}
+$('.quote-mobile-steps').addEventListener('click', e => {
+  const b = e.target.closest('[data-quote-step]'); if (b) setMobileQuoteStep(b.dataset.quoteStep);
+});
+$('#quote-step-back').addEventListener('click', () => setMobileQuoteStep(MOBILE_QUOTE_STEPS[Math.max(0, MOBILE_QUOTE_STEPS.indexOf(qf.dataset.mobileStep) - 1)]));
+$('#quote-step-next').addEventListener('click', () => setMobileQuoteStep(MOBILE_QUOTE_STEPS[Math.min(2, MOBILE_QUOTE_STEPS.indexOf(qf.dataset.mobileStep) + 1)]));
+$('#quote-mobile-more').addEventListener('click', e => {
+  e.stopPropagation();
+  const open = qf.classList.toggle('quote-mobile-actions-open');
+  e.currentTarget.setAttribute('aria-expanded', String(open));
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('.quote-actions, #quote-mobile-more')) {
+    qf.classList.remove('quote-mobile-actions-open');
+    $('#quote-mobile-more').setAttribute('aria-expanded', 'false');
+  }
+});
+/** Ghi chú & điều kiện mặc định theo loại báo giá – lấy nguyên từ web báo giá cũ (`public/quote-notes.js`). */
+const QUOTE_NOTES = {
+  HRC: '- Tổng thanh toán đã bao gồm thuế VAT theo từng sản phẩm.\n- Báo giá có hiệu lực 7 ngày kể ngày ký.\n- Phương thức thanh toán: Chuyển khoản.\n- Đơn vị bán hàng: CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI BÁCH NGÂN\n- Mã số thuế: 1801686576\n- Số tài khoản: 579268 tại Ngân hàng TMCP Á Châu - Chi Nhánh Cần Thơ\n- Thời gian giao hàng: Cập nhật cụ thể sau khi thống nhất chốt đơn hàng.\n- Địa chỉ giao hàng: Theo thoả thuận.\n- Thanh toán: 100% giá trị hợp đồng trong vòng 30 ngày kể từ ngày nhận được hàng và hóa đơn GTGT.\nTrân trọng kính chào.',
+  B2B: '- Tổng giá trị thanh toán đã bao gồm thuế VAT theo từng sản phẩm.\n- Giá trên chỉ có hiệu lực trong 30 ngày.\n- Thời gian giao hàng: Cập nhật cụ thể sau khi thống nhất chốt đơn hàng.\n- Địa chỉ giao hàng: Theo thoả thuận.\n- Phương thức thanh toán: Chuyển khoản.\n- Đơn vị bán hàng: CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI BÁCH NGÂN\n- Mã số thuế: 1801686576\n- Số tài khoản: 579268 tại Ngân hàng TMCP Á Châu - Chi Nhánh Cần Thơ\n- Bên Mua sẽ tiến hành tạm ứng 30% trị giá hợp đồng ngay sau khi Hợp đồng ký kết.\n- 70% trị giá còn lại của hợp đồng sẽ thanh toán trước khi nhận hàng.\nHy vọng bảng chào giá đáp ứng được yêu cầu của Quý Khách hàng.\nTrân trọng kính chào.',
+  VIGIFTS: '- Tổng giá trị thanh toán đã bao gồm thuế VAT theo từng sản phẩm.\n- Giá trên chỉ có hiệu lực trong vòng 7 ngày kể từ ngày gửi chào giá.\n- Thời gian giao hàng: Cập nhật cụ thể sau khi thống nhất chốt đơn hàng.\n- Địa chỉ giao hàng: Theo thoả thuận.\n- Phương thức thanh toán: Chuyển khoản.\nTài khoản: CÔNG TY TNHH SẢN XUẤT THƯƠNG MẠI QUẢNG CÁO VIGIFTS.\nSố tài khoản: 159063909 tại Ngân Hàng TMCP Á Châu, CN Cần Thơ.\n+ Bên Mua sẽ tiến hành tạm ứng 50% trị giá hợp đồng ngay sau khi Hợp đồng ký kết.\n+ 50% trị giá còn lại của hợp đồng sẽ thanh toán khi nhận đầy đủ hàng hoá và chứng từ kèm theo.\nHy vọng bảng chào giá đáp ứng được yêu cầu của Quý Khách hàng.\nTrân trọng kính chào,',
+};
+const defaultNotes = type => withPaymentNotes(QUOTE_NOTES[type] || QUOTE_NOTES.HRC, defaultPaymentTerms(type), 0, moneyWords);
+function syncPaymentNotes(total = totals(currentDoc()).total) {
+  if (editor.base.paymentTerms && !editor.base.paymentNotesManual) field('notes').value = withPaymentNotes(field('notes').value, editor.base.paymentTerms, total, moneyWords);
+}
+/** Ngày giao dự kiến là nguồn cho dòng thời gian giao hàng; giữ nguyên các ghi chú khác. */
+function notesWithDeliveryDate(notes, date) {
+  const text = String(notes || '');
+  const formatted = fmtDate(date);
+  const fallback = 'Cập nhật cụ thể sau khi thống nhất chốt đơn hàng.';
+  if (formatted) {
+    const line = '- Thời gian giao hàng: giao hàng ngày ' + formatted + '.';
+    return /^[ \t]*[-–•]?[ \t]*Thời gian giao hàng:[^\r\n]*/im.test(text)
+      ? text.replace(/^([ \t]*[-–•]?[ \t]*Thời gian giao hàng:)[^\r\n]*/im, '$1 giao hàng ngày ' + formatted + '.')
+      : text + (text && !text.endsWith('\n') ? '\n' : '') + line;
+  }
+  // Xoá ngày đã chọn: chỉ đưa dòng tự sinh về mặc định, không xoá ghi chú tự viết.
+  return text.replace(/^([ \t]*[-–•]?[ \t]*Thời gian giao hàng:)[ \t]*giao hàng ngày \d{2}\/\d{2}\/\d{4}\.?[ \t]*$/im, '$1 ' + fallback);
+}
+function syncDeliveryNotes() {
+  field('notes').value = notesWithDeliveryDate(field('notes').value, field('deliveryDate').value);
+}
+
+$('#reset-notes').addEventListener('click', async () => {
+  const notes = field('notes');
+  if (notes.value.trim() && notes.value !== notesWithDeliveryDate(defaultNotes(editor.type), field('deliveryDate').value) && !await confirmBox('Thay nội dung ghi chú hiện tại bằng ghi chú mặc định?', { ok: 'Thay' })) return;
+  notes.value = defaultNotes(editor.type);
+  editor.base.paymentNotesManual = false;
+  editor.base.paymentTerms ||= defaultPaymentTerms(editor.type);
+  syncPaymentNotes(); syncDeliveryNotes(); markDirty();
+});
+/** Kiểm tra điều khoản thanh toán (dùng chung hộp Tạo báo giá và hộp Điều khoản thanh toán). '' = hợp lệ. */
+function termsError(depositRate, balanceTerm) {
+  if (!Number.isFinite(depositRate) || depositRate < 0 || depositRate > 100) return 'Tỷ lệ đặt cọc phải từ 0 đến 100%.';
+  if (depositRate < 100 && (!balanceTerm || balanceTerm.length > 500 || /^[+-]?\d+(?:[.,]\d+)?\s*(?:ngày)?$/i.test(balanceTerm) && (!/^\d+\s*(?:ngày)?$/i.test(balanceTerm) || parseInt(balanceTerm, 10) > 3650)))
+    return 'Nhập thời hạn thanh toán phần còn lại: số ngày (0–3650) hoặc điều kiện bằng chữ.';
+  return '';
+}
+/**
+ * Hộp "Điều khoản thanh toán" trên báo giá (Manager xem lại khi duyệt, hoặc người lập khi còn sửa được): tỷ lệ cọc, hạn thanh toán phần còn lại,
+ * chiết khấu (khách có CK riêng → áp lại CK theo thương hiệu; không thì CK toàn bảng cho mọi dòng). Ghi chú thanh toán tự cập nhật; bấm Lưu báo giá để lưu.
+ */
+$('#edit-terms').addEventListener('click', async () => {
+  const t = editor.base.paymentTerms || defaultPaymentTerms(editor.type);
+  let profile = null;
+  if (editor.customerId) profile = await api('/customers/' + encodeURIComponent(editor.customerId)).catch(() => null);
+  const credit = profile?.customer?.creditLimit, brand = brandDiscountText(profile?.discounts || editor.brandDiscounts);
+  const dlg = document.createElement('dialog'); dlg.className = 'modal narrow';
+  dlg.innerHTML = `<form method="dialog" novalidate><div class="modal-head"><div><span class="eyebrow">Báo giá ${esc(field('quoteNo').value || '')}</span><h2>Điều khoản thanh toán</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body"><div class="form-grid cols-2">
+      <label>Tỷ lệ đặt cọc (%)<input name="rate" inputmode="decimal" value="${esc(t.depositRate ?? '')}"></label>
+      <label>Thời hạn thanh toán phần còn lại<input name="term" list="nq-payment-options" maxlength="500" value="${esc(t.balanceTerm ?? '')}"></label>
+      ${credit != null ? `<p class="muted small span-2">Giới hạn công nợ của ${esc(profile.customer.name || 'khách')}: ${money(credit)}</p>` : ''}
+      <p class="muted small span-2">Áp dụng sẽ tạo lại dòng thanh toán trong ghi chú, thay phần thanh toán đã nhập tay.</p>
+      <p class="muted small span-2">Nhập số ngày tính từ ngày giao hàng (0 = ngay sau giao), hoặc điều kiện bằng chữ. Đặt cọc 100% = thanh toán toàn bộ trước khi giao hàng.</p>
+      ${isSaleEditor() ? '' : brand ? `<label class="span-2 check-line"><input type="checkbox" name="brand"> Áp lại CK riêng của khách cho các dòng (${esc(brand)})</label>`
+        : `<label class="span-2">Chiết khấu toàn bảng (%)<input name="disc" inputmode="decimal" placeholder="Để trống = giữ CK từng dòng"></label>`}
+    </div><p class="error" data-err role="alert"></p></div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button class="btn primary">Áp dụng</button></div></form>`;
+  document.body.append(dlg); dlg.showModal();
+  const close = () => { dlg.close(); dlg.remove(); };
+  dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close));
+  dlg.addEventListener('cancel', close);
+  dlg.querySelector('form').addEventListener('submit', e => {
+    e.preventDefault();
+    const f = e.target.elements, rateText = f.rate.value.trim(), depositRate = rateText ? parseNum(rateText) : NaN, balanceTerm = f.term.value.trim();
+    const discText = f.disc?.value.trim() || '', disc = discText ? parseNum(discText) : null, err = termsError(depositRate, balanceTerm);
+    if (err || (disc !== null && !(disc >= 0 && disc <= 100))) { dlg.querySelector('[data-err]').textContent = err || 'Chiết khấu toàn bảng phải từ 0 đến 100%.'; return; }
+    editor.base.paymentTerms = { depositRate, balanceTerm };
+    editor.base.paymentNotesManual = false;
+    const pct = r => f.brand?.checked ? customerDiscount(r.brand, profile.discounts, 'percent') : disc;
+    if (f.brand?.checked || disc !== null) for (const r of editor.rows) {
+      if (simpleManualLine(r)) continue;
+      const p = pct(r); if (!(p > 0) && !(disc !== null)) continue; // áp lại CK khách: dòng ngoài 3 thương hiệu giữ nguyên
+      r.discount = r.discountType === 'amount' ? Math.round((Number(r.price) || 0) * p / 100) : p;
+    }
+    renderLines(); syncPaymentNotes(); markDirty(); close();
+    toast('Đã cập nhật điều khoản – bấm "Lưu báo giá" để lưu.');
+  });
+});
+const PACKAGING_DEFAULT = 'theo tiêu chuẩn nhà sản xuất';
+
+/**
+ * Số báo giá tự sinh: HRC_BG_001_06102026, B2B_BG_002_06102026, VG_BG_001_06102026 (đếm theo loại + ngày trên TOÀN CÔNG TY).
+ * Số kế tiếp lấy từ máy chủ (GET /quotes/next-no, `refreshQuoteNo`) vì nhân viên chỉ thấy báo giá của mình; lúc lưu máy chủ
+ * vẫn kiểm lại – số tự sinh bị người khác lấy trước thì tự đổi sang số kế tiếp còn trống.
+ */
+const QUOTE_PREFIX = { HRC: 'HRC', B2B: 'B2B', VIGIFTS: 'VG', SALE: 'SALE' };
+const isSaleEditor = () => editor.base?.template === 'sale';
+const editorQuoteChoice = () => isSaleEditor() ? 'SALE' : editor.type;
+const quoteKind = type => `${QUOTE_PREFIX[type] || 'B2B'}_BG`;
+const quoteSeriesKey = (type, date) => `${quoteKind(type)}|${date}`;
+const quoteLegacyHead = (type, date) => `${quoteKind(type)}${date.replaceAll('-', '')}_`;
+const serverQuoteNo = new Map();
+function nextQuoteNo(type = 'B2B', date = todayIso()) {
+  date = date || todayIso();
+  const prefix = quoteKind(type), legacy = quoteLegacyHead(type, date);
+  const local = nextDocumentNumber(prefix, date, (state.quotes || []).map(q => q.quoteNo || ''), legacy);
+  const remote = serverQuoteNo.get(quoteSeriesKey(type, date));
+  return (documentSequence(remote || '', prefix, date, legacy) || 0) > (documentSequence(local, prefix, date, legacy) || 0) ? remote : local;
+}
+async function refreshQuoteNo(type, date) {
+  date = date || todayIso();
+  try { const r = await api(`/quotes/next-no?type=${encodeURIComponent(type)}&date=${encodeURIComponent(date)}`); serverQuoteNo.set(quoteSeriesKey(type, date), r.quoteNo); } catch { /* số tạm; máy chủ kiểm lại lúc lưu */ }
+}
+const isAutoQuoteNo = (no, type, date) => {
+  date = date || todayIso();
+  return documentSequence(no, quoteKind(type), date, quoteLegacyHead(type, date)) != null;
+};
+/** Báo giá mới chưa lưu: cập nhật số tự sinh theo máy chủ (nếu người dùng chưa tự gõ số). */
+async function syncEditorQuoteNo() {
+  if (editor.id) return;
+  const type = editorQuoteChoice(), date = field('date').value || todayIso();
+  await refreshQuoteNo(type, date);
+  const f = field('quoteNo');
+  if (!editor.id && editorQuoteChoice() === type && isAutoQuoteNo(f.value.trim(), type, date)) f.value = nextQuoteNo(type, date);
+}
+/** Chiết khấu toàn bảng chọn lúc tạo báo giá: áp cho mọi dòng mới (vẫn sửa riêng từng dòng được). */
+const defaultLineDiscount = () => editor.defaultDiscount > 0 ? { discount: editor.defaultDiscount, discountType: 'percent' } : {};
+const blankRow = () => ({ id: uid(), name: '', sku: '', unit: '', qty: 1, price: 0, discount: 0, discountType: editor.discountMode || 'percent', printFee: 0, packagingDescription: PACKAGING_DEFAULT, ...defaultLineDiscount() });
+function newQuoteData(extra = {}) {
+  const choice = extra.type || 'B2B', type = choice === 'SALE' ? 'B2B' : choice, date = extra.date || todayIso();
+  const paymentTerms = extra.paymentTerms || defaultPaymentTerms(type);
+  return { type, quoteNo: nextQuoteNo(choice, date), date, vat: 8, customer: '', owner: state.user?.name || '', ownerPhone: state.user?.phone || '', notes: withPaymentNotes(QUOTE_NOTES[type] || QUOTE_NOTES.HRC, paymentTerms, 0, moneyWords), notesVersion: 2, paymentTerms, ...extra, type, ...(choice === 'SALE' ? {template: 'sale'} : {}), rows: extra.rows || [] };
+}
+
+let editorLoadSequence = 0;
+async function openEditor(id) {
+  const sequence = ++editorLoadSequence, requestedHash = location.hash;
+  const current = () => sequence === editorLoadSequence && location.hash === requestedHash;
+  $('#quote-error').textContent = ''; $('#conflict-banner').hidden = true; $('#quote-customer-memory-status').hidden = true;
+  if (id === 'new') {
+    editor.loading = false; qf.inert = false;
+    const pending = editor.pending; editor.pending = null;
+    editor.defaultDiscount = Number(pending?.defaultDiscount) || 0;
+    if (pending) delete pending.defaultDiscount;
+    fillEditor(null, 0, pending || newQuoteData());
+    if (pending) markDirty();
+    syncEditorQuoteNo();
+    setTimeout(() => { if (current() && !qf.contains(document.activeElement)) (pending?.customer ? field('quoteNo') : field('customer')).focus(); }, 50);
+    return;
+  }
+  if (editor.id === id && !editor.loading && editor.dirty) return; // quay lại đúng báo giá đang sửa
+  editor.loading = true;
+  $('#editor-title').textContent = 'Đang tải báo giá…';
+  qf.inert = true;
+  try {
+    const q = await api('/quotes/' + encodeURIComponent(id));
+    if (!current() || editor.dirty) return;
+    fillEditor(q.id, q.revision, q.data, q);
+  } catch (e) {
+    if (!current()) return;
+    toast(e.message, 'err');
+    if (e.status !== 401) { editor.dirty = false; go('#/quotes'); }
+  } finally { if (current()) { editor.loading = false; qf.inert = false; updateQuoteActions(); } }
+}
+
+function fillEditor(id, revision, data, meta = {}) {
+  // Lưu xong (cùng báo giá) thì giữ nguyên mục lợi nhuận / cột giá nhập đang mở; mở báo giá khác thì đóng lại.
+  const keepProfit = !!id && (editor.id === id || (!editor.id && saving));
+  editor.approval = id ? { status: meta.approvalStatus || 'pending', at: meta.approvedAt || '', by: meta.approvedByName || '', canApprove: meta.canApprove ?? (keepProfit ? editor.approval?.canApprove : undefined), fromCustomer: meta.fromCustomer ?? (keepProfit ? editor.approval?.fromCustomer : false), canEdit: meta.canEdit ?? (keepProfit ? editor.approval?.canEdit : undefined), editRequest: meta.editRequest ?? (keepProfit && editor.revision === revision ? editor.approval?.editRequest : null) } : null;
+  editor.id = id; editor.revision = revision; editor.base = structuredClone(data);
+  editor.type = ['B2B', 'HRC', 'VIGIFTS'].includes(data.type) ? data.type : 'B2B';
+  editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : ''; loadBrandDiscounts();
+  editor.rows = (data.rows || []).map(r => ({ ...r, id: r.id || uid(), discountType: r.discountType || 'percent' }));
+  setMobileQuoteStep('info', false);
+  qf.reset();
+  for (const name of ['quoteNo', 'date', 'owner', 'ownerPhone', 'customer', 'contact', 'phone', 'email', 'customerTaxCode', 'customerAddress', 'notes', 'internalNote'])
+    field(name).value = data[name] ?? '';
+  field('deliveryDate').value = data.deliveryDate || data.delivery_date || '';
+  syncDeliveryNotes();
+  field('vat').value = fmtNum(Number(data.vat ?? 8));
+  editor.discountMode = data.discountMode || editor.rows[0]?.discountType || 'percent';
+  if (!keepProfit) editor.showCostFields = false;
+  setProfit(keepProfit && editor.showProfit);
+  setType(data.template === 'sale' ? 'SALE' : editor.type, false);
+  $('#editor-title').textContent = id ? data.quoteNo || 'Báo giá' : 'Tạo báo giá';
+  $('#editor-revision').hidden = !id; $('#editor-revision').textContent = 'Phiên bản ' + revision;
+  $('#duplicate-quote').hidden = !id;
+  $('#breadcrumb').textContent = id ? data.quoteNo || 'Sửa báo giá' : 'Tạo báo giá';
+  $$('input, textarea', qf).forEach(i => i.classList.remove('invalid'));
+  renderLines(); updateContactsButton();
+  editor.dirty = false; $('#editor-dirty').hidden = true;
+  refreshQuoteDocument(id); refreshQuoteHold(id);
+  updateQuoteActions();
+  fillMissingImages();
+  quoteDeviceDraft.offer();
+}
+const quoteDeviceDraft=bindQuoteDeviceDraft({form:qf,user:()=>state.user?.id,id:()=>editor.id,revision:()=>editor.revision,dirty:()=>editor.dirty,readData:collectQuote,restore:data=>{fillEditor(editor.id,editor.revision,data);markDirty();}});
+function markDirty() { if (!editor.dirty) { editor.dirty = true; $('#editor-dirty').hidden = false; updateQuoteActions(); } quoteDeviceDraft.schedule(); }
+qf.addEventListener('input', e => {
+  if (e.target.name === 'notes') editor.base.paymentNotesManual = true;
+  markDirty();
+  if (e.target.name === 'deliveryDate') syncDeliveryNotes();
+  if (e.target.name === 'vat') { const v = parseNum(e.target.value); e.target.classList.toggle('invalid', !(v >= 0 && v <= 100)); calculate(); }
+  if (['customer', 'phone'].includes(e.target.name)) {
+    if (editor.customerName && e.target.name === 'customer' && e.target.value.trim() !== editor.customerName) { editor.customerId = ''; editor.customerName = ''; editor.base.customerCode = ''; editor.brandDiscounts = null; }
+    updateContactsButton();
+  }
+  if (e.target.name === 'quoteNo') $('#editor-title').textContent = e.target.value || 'Báo giá';
+});
+field('vat').addEventListener('blur', e => { const v = parseNum(e.target.value); if (v >= 0) e.target.value = fmtNum(v); });
+
+function setType(choice, dirty = true) {
+  const sale = choice === 'SALE', type = sale ? 'B2B' : choice, oldChoice = editorQuoteChoice();
+  if (dirty && sale && !isSaleEditor() && editor.rows.length) return toast('Chọn mẫu Sale trước khi thêm sản phẩm. Tạo báo giá Sale mới để giữ nguyên giá và ảnh của báo giá hiện tại.', 'err');
+  // Ghi chú còn là mặc định của loại cũ (hoặc trống) thì đổi theo loại mới, như web cũ.
+  const notes = field('notes');
+  if (dirty && (!notes.value.trim() || notes.value === notesWithDeliveryDate(defaultNotes(editor.type), field('deliveryDate').value))) notes.value = defaultNotes(type);
+  syncDeliveryNotes();
+  // Báo giá chưa lưu còn số tự sinh của loại cũ thì đổi sang tiền tố của loại mới.
+  const reNumber = dirty && !editor.id && isAutoQuoteNo(field('quoteNo').value.trim(), oldChoice, field('date').value);
+  if (reNumber) field('quoteNo').value = nextQuoteNo(choice, field('date').value);
+  editor.type = type;
+  if (sale) { editor.base.template = 'sale'; editor.defaultDiscount = 0; } else delete editor.base.template;
+  qf.classList.toggle('type-sale', sale);
+  if (reNumber) syncEditorQuoteNo();
+  $$('#type-seg button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === choice)));
+  $('#type-hint').textContent = sale ? 'Cho lưu nháp khi thiếu ảnh; bắt buộc đủ ảnh thiết kế riêng trước khi gửi duyệt, duyệt và xuất file. Thành tiền = SL × (Giá bán + Phí in), chưa VAT. Giá TB tham khảo từ đơn được xem trong 6 tháng, chưa VAT và phí in; không tự thay giá bán.' : type === 'HRC' ? 'Báo giá HRC: không có cột phí in.' : 'Phí in (F7) được cộng vào giá sau chiết khấu.';
+  qf.classList.toggle('type-hrc', type === 'HRC');
+  if (dirty) { markDirty(); }
+  renderLines();
+}
+$('#type-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.value !== editorQuoteChoice()) setType(b.dataset.value); });
+// Manager: "Xem lợi nhuận tạm tính" mở mục "Lợi nhuận nhanh" như web cũ; nút "Xem giá nhập" trong mục đó mới hiện 2 cột CK mua vào / Giá nhập.
+function setProfit(on) {
+  editor.showProfit = on && ['manager','employee'].includes(state.user?.role);
+  $('#profit-card').hidden = !editor.showProfit;
+  if(!isManager()){for(const id of ['sum-cost','sum-gross','sum-margin'])$('#'+id).textContent='';$('#printing-head').replaceChildren();$('#printing-rows').replaceChildren();}
+  $('#toggle-profit').textContent = isManager() ? (editor.showProfit ? 'Ẩn lợi nhuận tạm tính' : 'Xem lợi nhuận tạm tính') : (editor.showProfit ? 'Ẩn tổng hợp báo giá' : 'Xem tổng hợp báo giá');
+  $('#profit-title').textContent = isManager() ? 'Lợi nhuận nhanh' : 'Tổng hợp báo giá';
+  $('#toggle-profit').setAttribute('aria-expanded', String(editor.showProfit));
+  refreshCostToggle();
+}
+function refreshCostToggle() {
+  const b = $('#toggle-cost-fields');
+  b.textContent = editor.showCostFields ? 'Ẩn giá nhập' : 'Xem giá nhập'; b.setAttribute('aria-pressed', String(!!editor.showCostFields));
+}
+$('#toggle-profit').addEventListener('click', () => { setProfit(!editor.showProfit); renderLines(); });
+$('#toggle-cost-fields').addEventListener('click', () => {
+  if (!isManager()) return;
+  editor.showCostFields = !editor.showCostFields; refreshCostToggle(); renderLines();
+  toast(editor.showCostFields ? 'Đã hiện cột giá nhập' : 'Đã ẩn cột giá nhập');
+});
+
+// ----- dòng sản phẩm (cột theo web cũ: HRC không có Phí in; B2B/VIGIFTS có Phí in F7, Bộ gồm, Mô tả in ấn, Đóng gói)
+const NUM_FIELDS = { qty: 4, price: 2, discount: 2, printFee: 2 };
+// Dòng thêm trống chỉ tính SL × đơn giá, kể cả sau khi chèn hình/nhập mã.
+// Giữ điều khiển cho dòng cũ có CK/phí in để không âm thầm thay đổi số tiền đã lưu.
+const simpleManualLine = r => (r.manualLine === true || !String(r.sku || '').trim()) && !Number(r.discount) && !Number(r.printFee);
+const showCostCols = () => !!editor.showCostFields && isManager();
+function lineHead() {
+  if (isSaleEditor()) return saleLineHead();
+  const modes = new Set(editor.rows.map(r => r.discountType || 'percent'));
+  const mode = modes.size > 1 ? 'mixed' : [...modes][0] || editor.discountMode || 'percent';
+  const disc = `<span class="disc-head">CK (F6)<select id="discount-mode" aria-label="Đơn vị chiết khấu cả cột">${mode === 'mixed' ? '<option value="mixed" selected disabled>Nhiều loại</option>' : ''}<option value="percent" ${mode === 'percent' ? 'selected' : ''}>%</option><option value="amount" ${mode === 'amount' ? 'selected' : ''}>đ/SP</option></select></span>`;
+  const hrc = editor.type === 'HRC';
+  return `<tr><th class="col-idx">STT</th><th class="col-img">Hình ảnh</th><th class="col-product">${hrc ? 'Sản phẩm / Mã hàng' : 'Tên hàng / Mã hàng'}</th><th class="col-unit">ĐVT</th><th class="col-qty">Số lượng</th><th class="col-price">Đơn giá</th><th class="col-disc">${disc}</th>${hrc ? '' : '<th class="col-print">Phí in (F7)</th>'}<th class="col-after right">${hrc ? 'Đơn giá CK' : 'Giá sau CK'}</th><th class="col-total right">Thành tiền</th>${showCostCols() ? '<th class="col-pd">Giá nhập / CK mua</th><th class="col-cost right">Giá nhập</th>' : ''}<th class="col-act"><span class="sr-only">Xoá</span></th></tr>`;
+}
+function packingSpec(r) {
+  const n = v => Number(v).toLocaleString('vi-VN', { maximumFractionDigits: 3 }), parts = [];
+  if (Number(r.perCarton) > 0) parts.push(`${n(r.perCarton)} ${r.unit || 'cái'}/thùng`);
+  if (Number(r.cartonWeight) > 0) parts.push(`nặng ${n(r.cartonWeight)} kg/thùng`);
+  return parts.join('; ');
+}
+function lineCell(r, i) {
+  if (isSaleEditor()) return saleLineCell(r, i, {esc, fmtNum, image: imgTag, average: sku => salePriceSuggestions.view(sku, {esc, money})});
+  const n = (k, label, extra = '') => `<input class="num-input" inputmode="decimal" data-k="${k}" value="${r[k] === '' ? '' : fmtNum(Number(r[k] || 0), NUM_FIELDS[k])}" aria-label="${label} dòng ${i + 1}" ${extra}>`;
+  const costMode = costModeOf(r), costValue = costMode === 'manual' ? r.costPrice : r.purchaseDiscount;
+  const hrc = editor.type === 'HRC';
+  const meta = [r.brand, r.pattern, r.pricePolicy, Number.isFinite(r.taxRate) ? `VAT ${fmtNum(r.taxRate)}%` : ''].filter(Boolean).join(' · ');
+  const text = (k, label, ph) => `<label class="sub-field${k === 'manualDescription' ? ' manual-note' : ''}"><span>${label}</span><input data-k="${k}" value="${esc(r[k] ?? '')}" placeholder="${ph}" maxlength="2000"></label>`;
+  const custom = manualLineDescription(r) !== null;
+  if(custom && r.manualDescription === undefined) r.manualDescription = manualLineNote(r);
+  if (!custom && !hrc && r.packagingDescription === undefined) r.packagingDescription = PACKAGING_DEFAULT;
+  const manual = simpleManualLine(r);
+  return `<tr data-i="${i}" class="${manual ? 'manual-line' : ''}">
+    <td class="col-idx">${i + 1}</td>
+    <td class="col-img"><button type="button" class="img-btn" data-image title="${r.image ? 'Đổi hình' : 'Chèn hình'}">${r.image ? imgTag(r.image) : `<span class="thumb add">${PLACEHOLDER}<small>Chèn hình</small></span>`}</button></td>
+    <td class="col-product" data-label="Sản phẩm">
+      <input class="name-input" data-k="name" value="${esc(r.name)}" placeholder="${manual ? 'Tên phụ phí / nội dung thêm…' : 'Gõ tên hoặc mã để tìm sản phẩm…'}" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
+      ${custom ? '' : `<div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}"><span class="quote-stock-warning" data-stock-warning hidden role="img" aria-label="">!</span>${r.sku ? '<button type="button" class="link-btn" data-stock title="Tồn các kho + lịch sử 20 giao dịch gần nhất">Tồn kho · Lịch sử</button>' : ''}</div>`}
+      ${!custom && meta ? `<div class="product-meta">${esc(meta)}</div>` : ''}
+      ${!custom && hrc && packingSpec(r) ? `<div class="product-meta">Đóng gói: ${esc(packingSpec(r))}</div>` : ''}
+      ${custom ? '<small class="muted">Phụ phí · Không kiểm tồn / xuất kho</small>' : ''}
+      ${custom ? text('manualDescription', 'Mô tả phụ', 'Nội dung bổ sung (không bắt buộc)') : hrc ? '' : text('bundleContents', 'Bộ gồm', 'Ví dụ: 01 ly + 01 nắp') + text('printDescription', 'Mô tả in ấn', 'Ví dụ: in logo màu tại 01 vị trí') + text('packagingDescription', 'Đóng gói', PACKAGING_DEFAULT)}
+    </td>
+    <td class="col-unit" data-label="ĐVT"><input class="plain" data-k="unit" value="${esc(r.unit)}" placeholder="—" maxlength="40" aria-label="Đơn vị tính dòng ${i + 1}"></td>
+    <td class="col-qty" data-label="Số lượng">${n('qty', 'Số lượng')}</td>
+    <td class="col-price" data-label="Đơn giá"><div class="unit-field">${n('price', 'Đơn giá')}<b>đ</b></div></td>
+    <td class="col-disc" data-label="CK (F6)">${manual ? '' : `<div class="unit-field">${n('discount', 'Chiết khấu')}<b>${r.discountType === 'amount' ? 'đ' : '%'}</b></div>`}</td>
+    ${hrc ? '' : `<td class="col-print" data-label="Phí in (F7)">${manual ? '' : `<div class="unit-field">${n('printFee', 'Phí in')}<b>đ</b></div>`}</td>`}
+    <td class="col-after num-cell" data-label="${hrc ? 'Đơn giá CK' : 'Giá sau CK'}"></td>
+    <td class="line-total" data-label="Thành tiền"></td>
+    ${showCostCols() ? `<td class="col-pd" data-label="Giá nhập / CK mua"><select data-cost-mode aria-label="Cách nhập giá vốn dòng ${i + 1}"><option value="discount"${costMode === 'discount' ? ' selected' : ''}>CK mua vào %</option><option value="manual"${costMode === 'manual' ? ' selected' : ''}>Giá trực tiếp</option></select><div class="unit-field"><input class="num-input" inputmode="text" data-k="purchaseCost" value="${Number.isFinite(costValue) ? fmtNum(costValue, 2) : ''}" placeholder="${costMode === 'manual' ? 'VD: 160k' : 'VD: 58%'}" aria-label="Giá nhập hoặc CK mua dòng ${i + 1}"><b data-cost-unit>${costMode === 'manual' ? 'đ' : '%'}</b></div></td><td class="col-cost num-cell" data-label="Giá nhập"></td>` : ''}
+    <td class="line-actions"><button type="button" class="icon-btn danger" data-del title="Xoá dòng" aria-label="Xoá dòng ${i + 1}">×</button></td>
+  </tr>`;
+}
+// Ẩn / hiện 3 dòng Bộ gồm · Mô tả in ấn · Đóng gói của mọi dòng (chỉ ẩn trên màn hình; dữ liệu, PDF, Excel giữ nguyên).
+// Nhớ lựa chọn trên máy này (localStorage; không đọc được thì mặc định hiện).
+const SUBS_KEY = 'bn-quote-hide-subs';
+function applySubs(hide) {
+  $('.lines-wrap').classList.toggle('hide-subs', hide);
+  const b = $('#toggle-subs'); b.textContent = hide ? 'Hiện mô tả' : 'Ẩn mô tả'; b.setAttribute('aria-pressed', String(hide));
+}
+try { applySubs(localStorage.getItem(SUBS_KEY) === '1'); } catch { applySubs(false); }
+$('#toggle-subs').addEventListener('click', () => {
+  const hide = !$('.lines-wrap').classList.contains('hide-subs'); applySubs(hide);
+  try { localStorage.setItem(SUBS_KEY, hide ? '1' : '0'); } catch { /* chế độ riêng tư: chỉ nhớ trong lượt này */ }
+});
+const salePriceSuggestions = createSalePriceSuggestions({api, changed: () => {
+  if (!isSaleEditor() || $('#view-editor').hidden) return;
+  $$('#line-list tr[data-i]').forEach(tr => { const row = editor.rows[Number(tr.dataset.i)], cell = tr.querySelector('.col-average'); if (cell && row) cell.innerHTML = salePriceSuggestions.view(row.sku, {esc, money}); });
+}});
+function renderLines(focus) {
+  $('#line-head').innerHTML = lineHead();
+  // Báo giá chưa có sản phẩm: thay dòng trống số 1 bằng lời mời "+ Thêm sản phẩm".
+  $('#line-list').innerHTML = editor.rows.length ? editor.rows.map(lineCell).join('')
+    : `<tr class="line-empty"><td colspan="${$$('#line-head th').length || 1}"><button type="button" class="add-first" data-add-first>＋ Thêm sản phẩm</button></td></tr>`;
+  $('#bulk-discount').disabled=quoteDiscountLocked()||!editor.rows.some(discountProduct);
+  $('#line-count').textContent = `(${editor.rows.length})`;
+  $('#m-line-count').textContent = `${editor.rows.length} sản phẩm`;
+  if ($('#shipping-card').open) renderShippingRows();
+  qf.classList.toggle('type-hrc', editor.type === 'HRC');
+  $('#toggle-subs').hidden = editor.type === 'HRC' || isSaleEditor();
+  $('#bulk-discount').hidden = isSaleEditor();
+  if (isSaleEditor()) salePriceSuggestions.request(state.user?.id || '', editor.rows); // HRC không có 3 dòng mô tả
+  calculate();
+  if (focus !== undefined) $(`#line-list tr[data-i="${focus}"] [data-k="name"]`)?.focus();
+}
+function validateRowInput(input, r) {
+  const k = input.dataset.k, v = parseNum(input.value);
+  let ok = Number.isFinite(v) && v >= 0;
+  if (k === 'discount') ok = ok && (r.discountType === 'amount' ? v <= Number(r.price || 0) : v <= 100);
+  input.classList.toggle('invalid', !ok);
+  return ok ? v : null;
+}
+/** Dòng theo CK tính lại từ đơn giá; dòng giá thủ công giữ nguyên. */
+function syncCost(r) {
+  syncPurchaseCost(r);
+}
+$('#line-head').addEventListener('change', e => {
+  if (e.target.id !== 'discount-mode') return;
+  const mode = e.target.value;
+  for (const r of editor.rows) {
+    if ((r.discountType || 'percent') === mode) continue;
+    const v = Number(r.discount) || 0;
+    r.discount = mode === 'amount' ? Number(r.price || 0) * v / 100 : (r.price ? v / r.price * 100 : 0);
+    r.discountType = mode;
+  }
+  editor.discountMode = mode; markDirty(); renderLines();
+});
+function costInput(input, r) {
+  const parsed = parsePurchaseCost(input.value, costModeOf(r));
+  input.classList.toggle('invalid', parsed === null);
+  if (!parsed) return false;
+  applyPurchaseCost(r, parsed);
+  const tr = input.closest('tr');
+  tr.querySelector('[data-cost-mode]').value = parsed.mode;
+  tr.querySelector('[data-cost-unit]').textContent = parsed.mode === 'manual' ? 'đ' : '%';
+  input.placeholder = parsed.mode === 'manual' ? 'VD: 160k' : 'VD: 58%';
+  return true;
+}
+$('#line-list').addEventListener('change', e => {
+  const select = e.target.closest('[data-cost-mode]'); if (!select || !isManager()) return;
+  const tr = select.closest('tr'), r = editor.rows[tr.dataset.i], mode = select.value;
+  applyPurchaseCost(r, { mode, value: mode === 'manual' && Number.isFinite(r.costPrice) ? r.costPrice : null });
+  markDirty(); renderLines();
+  $(`#line-list tr[data-i="${tr.dataset.i}"] [data-k="purchaseCost"]`)?.focus();
+});
+$('#line-list').addEventListener('input', e => {
+  const input = e.target.closest('[data-k]'); if (!input) return;
+  const r = editor.rows[input.closest('tr').dataset.i], k = input.dataset.k;
+  if (k === 'purchaseCost') { if (!isManager()) return; costInput(input, r); }
+  else if (k in NUM_FIELDS) {
+    const v = validateRowInput(input, r);
+    r[k] = input.value.trim() === '' && ['price','qty','discount'].includes(k) ? '' : v ?? 0;
+    if (k === 'price') { const d = input.closest('tr').querySelector('[data-k="discount"]'); if (d) validateRowInput(d, r); }
+    syncCost(r);
+  } else r[k] = input.value;
+  markDirty(); calculate();
+});
+$('#line-list').addEventListener('focusout', e => {
+  const cost = e.target.closest('[data-k="purchaseCost"]');
+  if (cost && !cost.classList.contains('invalid')) {
+    const r = editor.rows[cost.closest('tr').dataset.i], value = costModeOf(r) === 'manual' ? r.costPrice : r.purchaseDiscount;
+    cost.value = Number.isFinite(value) ? fmtNum(value, 2) : ''; return;
+  }
+  const input = e.target.closest('[data-k]'); if (!input || !(input.dataset.k in NUM_FIELDS) || input.classList.contains('invalid')) return;
+  const r = editor.rows[input.closest('tr').dataset.i], k = input.dataset.k;
+  input.value = r[k] === '' ? '' : fmtNum(Number(r[k] || 0), NUM_FIELDS[k]);
+});
+let selectedLine = 0;
+$('#line-list').addEventListener('focusin', e => {
+  const tr = e.target.closest('tr[data-i]'); if (tr) selectedLine = Number(tr.dataset.i);
+  if (e.target.classList?.contains('num-input')) setTimeout(() => e.target.select(), 0);
+});
+$('#line-list').addEventListener('keydown', e => {
+  // Enter → xuống ô cùng cột ở dòng dưới; ở dòng cuối thì thêm dòng trống.
+  if (e.key !== 'Enter' || !e.target.matches('input')) return;
+  e.preventDefault();
+  const tr = e.target.closest('tr'), i = Number(tr.dataset.i);
+  if (i === editor.rows.length - 1) addLine(); else $(`#line-list tr[data-i="${i + 1}"] [data-k="${e.target.dataset.k}"]`)?.focus();
+});
+// F6: chiết khấu, F7: phí in của dòng đang chọn (như web cũ).
+document.addEventListener('keydown', e => {
+  if (!['F6', 'F7'].includes(e.key) || e.ctrlKey || e.altKey || e.metaKey || $('#view-editor').hidden || document.querySelector('dialog[open]')) return;
+  e.preventDefault();
+  const tr = $(`#line-list tr[data-i="${selectedLine}"]`) || $('#line-list tr');
+  const input = tr?.querySelector(`[data-k="${e.key === 'F6' ? 'discount' : 'printFee'}"]`);
+  if (!input) { toast(tr?.classList.contains('manual-line') ? 'Dòng thêm trống chỉ nhập số lượng và đơn giá.' : e.key === 'F7' ? 'Phí in có trên báo giá B2B và Vigifts.' : 'Thêm sản phẩm trước khi nhập chiết khấu.', 'err'); return; }
+  input.focus(); input.select(); input.scrollIntoView({ block: 'nearest' });
+});
+$('#line-list').addEventListener('click', async e => {
+  if (e.target.closest('[data-add-first]')) return $('#pick-products').click();
+  const tr = e.target.closest('tr'); if (!tr) return;
+  const i = Number(tr.dataset.i), rows = editor.rows;
+  if (e.target.closest('[data-stock]')) return showProductCard(rows[i].sku, rows[i].name);
+  if (e.target.closest('[data-image]')) return openImage(i);
+  if (!e.target.closest('[data-del]')) return;
+  const r = rows[i];
+  if ((r.name || r.price) && !await confirmBox(`Xoá dòng "${r.name || 'sản phẩm ' + (i + 1)}"?`, { ok: 'Xoá', danger: true, delay: 0 })) return;
+  rows.splice(i, 1);
+  markDirty(); renderLines();
+});
+/** 4 kho xem nhanh trên báo giá, đúng thứ tự web cũ (`quoteWebWarehouses` trong lib/product-catalog.mjs). */
+const QUOTE_WAREHOUSES = ['MINH LONG - LOCKNLOCK CẦN THƠ', 'KHO VIGIFTS', 'NCC', 'Hàng chờ về'];
+/** Tồn kho của một mã (đúng 4 kho xem nhanh như web cũ; tên kho không khớp thì hiện mọi kho). */
+async function stockHtml(sku) {
+  const d = await api('/products?skus=' + encodeURIComponent(sku));
+  const p = d.products.find(x => normalize(x.sku) === normalize(sku));
+  if (!p) return { html: '<p class="muted">Chưa tìm thấy mã hàng này trong dữ liệu tồn kho hiện tại.</p>', product: null };
+  const byName = new Map(d.warehouses.map(w => [normalize(w.name), w]));
+  const list = (QUOTE_WAREHOUSES.some(n => byName.has(normalize(n))) ? QUOTE_WAREHOUSES.map(n => byName.get(normalize(n)) || { name: n }) : d.warehouses)
+    .filter(w => hasSupplierStock(p) || !(w.kind === 'supplier' || normalize(w.name) === normalize('NCC')));
+  const rows = list.map(w => { const v = w.id ? p.stock?.[w.id] : undefined; return `<div><span>${esc(w.name)}</span><strong>${v === undefined || v === null ? '—' : fmtNum(Number(v))}</strong></div>`; }).join('');
+  const at = p.stockUpdatedAt || d.observedAt;
+  return { product: p, html: `<div class="inventory-list">${rows}</div><p class="muted small">Cập nhật tồn gần nhất: ${esc(at ? new Date(at).toLocaleString('vi-VN') : 'Chưa có thời điểm cập nhật')}</p>` };
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-product-card]'); if (b) { if(location.hash.startsWith('#/quotes/')||location.hash.startsWith('#/pos'))showProductCard(b.dataset.productCard,b.dataset.name);else go('#/products/'+encodeURIComponent(b.dataset.productCard)); } });
+/** Loại biến động trong lịch sử sản phẩm: nhãn, màu, chiều (+ nhập / − xuất). Cùng khoá với PRODUCT_MOVE_KINDS ở máy chủ. */
+const MOVE_UI = {
+  sale: ['Bán', 'order', ''], delivery: ['Giao hàng', 'debt', '−'], purchase: ['Nhập hàng', 'stock', '+'], transfer: ['Điều chuyển', 'delivery', ''],
+  adjustment: ['Cân bằng kho', 'purchase', '±'], customer_return: ['Khách trả hàng', 'contract', '+'], supplier_return: ['Trả hàng NCC', 'quote', '−'],
+};
+/**
+ * Thẻ sản phẩm: tồn các kho + LỊCH SỬ SẢN PHẨM (20 giao dịch gần nhất: bán, xuất kho, nhập hàng, điều chuyển, cân bằng kho, trả hàng).
+ * Mở khi bấm vào sản phẩm ở trang Sản phẩm, hoặc "Tồn kho · Lịch sử" ở dòng báo giá.
+ */
+var productDetailUi=null;
+function productDetail(){return productDetailUi ||= initProductDetail({api,root:$('#product-detail'),go,esc,money,fmtDate,canEdit:canUpdateProducts,onEdit:(sku,d)=>{if(seesPrices())state.policies=d.prices.map(p=>({id:p.policyId,name:p.name}));productAdmin().openEdit(sku);},userId:()=>state.user?.id});}
+async function showProductCard(sku, name) {
+  const dlg = document.createElement('dialog'); dlg.className = 'modal wide product-card';
+  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">Sản phẩm · ${esc(sku)}</span><h2>${esc(name || sku)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body"><h3 class="pc-title">Tồn kho hiện tại</h3><div data-stock-box><p class="muted">Đang tải tồn kho…</p></div>
+      <div class="pc-head"><h3 class="pc-title">Lịch sử nhập / xuất kho <small class="muted">· số lượng +/− và tồn trước → sau</small></h3><select class="pc-wh" data-ledger-wh aria-label="Lọc theo kho"><option value="">Tất cả kho</option></select></div><div data-ledger><p class="muted">Đang tải sổ kho…</p></div>
+      <div class="pc-head"><h3 class="pc-title">Lịch sử bán &amp; chứng từ <small class="muted">· 20 giao dịch gần nhất</small></h3><div class="chips pc-filter" data-filter></div></div><div data-history><p class="muted">Đang tải lịch sử…</p></div></div>
+    <div class="modal-foot"><a class="btn primary" href="#/products/${encodeURIComponent(sku)}">Xem trang chi tiết</a>${canUpdateProducts() ? '<button type="button" class="btn secondary" data-update-product-card>Cập nhật sản phẩm</button>' : ''}<button type="button" class="btn navy" data-x>Đóng</button></div>`;
+  document.body.append(dlg); dlg.showModal();
+  const close = () => { dlg.close(); };
+  dlg.querySelector('[data-update-product-card]')?.addEventListener('click', () => { close(); productAdmin().openEdit(sku); });
+  dlg.addEventListener('close', () => {
+    const params = new URLSearchParams(location.hash.split('?')[1] || '');
+    if (location.hash.startsWith('#/products?') && params.get('sku') === sku) {
+      params.delete('sku');
+      history.replaceState(null, '', location.pathname + location.search + '#/products' + (params.size ? '?' + params : ''));
+    }
+  });
+  dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
+  stockHtml(sku).then(r => {
+    if (!dlg.isConnected) return;
+    dlg.querySelector('[data-stock-box]').innerHTML = r.html;
+    if (!name && r.product?.name) dlg.querySelector('h2').textContent = r.product.name;
+  }).catch(ex => { if (!dlg.isConnected) return; dlg.querySelector('[data-stock-box]').innerHTML = `<p class="error">${esc(ex.message)}</p>`; });
+  productLedger(dlg, sku, close);
+  const box = dlg.querySelector('[data-history]');
+  let d;
+  try { d = await api('/products/' + encodeURIComponent(sku) + '/history'); } catch (ex) { box.innerHTML = `<p class="error">${esc(ex.message)}</p>`; return; }
+  if (!d.history.length) { box.innerHTML = '<p class="muted">Chưa có giao dịch nào cho mã này (bán, xuất kho, nhập hàng, điều chuyển, cân bằng kho, trả hàng).</p>'; return; }
+  const kinds = [...new Set(d.history.map(h => h.kind))];
+  let filter = '';
+  const qtyCell = h => { const m = MOVE_UI[h.kind] || ['', '', '']; const sign = m[2] === '±' ? (h.qty > 0 ? '+' : h.qty < 0 ? '−' : '') : m[2]; const tone = sign === '+' ? 'paid-text' : sign === '−' ? 'danger-text' : '';
+    return `<b class="${tone}">${sign}${fmtNum(Math.abs(h.qty))}</b>${h.unit ? ' ' + esc(h.unit) : ''}`; };
+  // Lịch sử đầy đủ: trang đầu 20 dòng, "Xem thêm" nạp phát sinh cũ hơn (GET …/history?before=).
+  let loadingMore = false;
+  const more = async () => {
+    if (loadingMore || !d.nextCursor) return; loadingMore = true;
+    try { const n = await api('/products/' + encodeURIComponent(sku) + '/history?before=' + encodeURIComponent(d.nextCursor)); d.history.push(...n.history); d.nextCursor = n.nextCursor; render(); }
+    catch (ex) { toast(ex.message, 'err'); } finally { loadingMore = false; }
+  };
+  const render = () => {
+    const rows = d.history.filter(h => !filter || h.kind === filter);
+    box.innerHTML = (d.sales ? `<div class="stats sh-stats">${[['Giá bán gần nhất', d.sales.last], ['Thấp nhất', d.sales.min], ['Cao nhất', d.sales.max], ['Trung bình', d.sales.avg]].map(([k, v]) => `<article class="stat"><small>${k}</small><strong>${money(v)}</strong></article>`).join('')}</div>` : '')
+      + `<div class="table-wrap"><table class="data-table pc-table"><thead><tr><th>Thời gian</th><th>Loại</th><th>Chứng từ</th><th>Khách / NCC · Kho</th><th class="right">Số lượng</th><th class="right">Đơn giá</th></tr></thead><tbody>
+      ${rows.map(h => `<tr><td>${fmtDate(h.occurredAt)}<small>${new Date(h.occurredAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</small></td>
+        <td><span class="pill src ${MOVE_UI[h.kind]?.[1] || ''}">${esc(MOVE_UI[h.kind]?.[0] || h.kind)}</span>${h.status ? `<small>${esc(h.status)}</small>` : ''}</td>
+        <td>${h.link && linkAllowed(h.link) ? `<a href="${esc(h.link)}" data-close-card>${esc(h.refCode)}</a>` : esc(h.refCode) || '—'}</td>
+        <td>${esc(h.partner) || '<span class="muted">—</span>'}${h.location ? `<small>${esc(h.location)}</small>` : ''}${h.note ? `<small>${esc(h.note)}</small>` : ''}</td>
+        <td class="right">${qtyCell(h)}</td><td class="right num">${h.unitPrice === null || h.unitPrice === undefined ? '—' : money(h.unitPrice)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="muted small">Bán: đơn đặt hàng đã xác nhận (đơn giá sau CK, chưa VAT) · Giao hàng: chuyến giao "Đã giao" (chưa phải bút toán xuất kho; xem Lịch sử nhập / xuất kho bên trên) · Nhập hàng, điều chuyển, cân bằng kho, trả hàng: chứng từ kho đồng bộ từ Sapo.</p>`;
+    if (d.nextCursor) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost small'; b.textContent = 'Xem thêm phát sinh cũ'; b.addEventListener('click', more); box.append(b); }
+    box.querySelectorAll('[data-close-card]').forEach(a => a.addEventListener('click', close));
+  };
+  const chipsBox = dlg.querySelector('[data-filter]');
+  chipsBox.innerHTML = kinds.length > 1 ? [['', 'Tất cả'], ...kinds.map(k => [k, MOVE_UI[k]?.[0] || k])].map(([k, l]) => `<button type="button" class="chip" data-k="${esc(k)}" aria-pressed="${k === filter}">${esc(l)}</button>`).join('') : '';
+  chipsBox.addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (!b) return; filter = b.dataset.k; chipsBox.querySelectorAll('[data-k]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); render(); });
+  render();
+}
+/**
+ * Thẻ sản phẩm – SỔ KHO CỦA MÃ (GET /stock-moves?sku=): mỗi lần nhập / xuất một dòng, mới nhất trước:
+ * thời gian, chứng từ (link), diễn giải, kho, tồn trước, số lượng +/−, tồn sau (của mã ở kho đó), người làm. Lọc kho, "Xem thêm" 20 dòng / lần.
+ */
+function productLedger(dlg, sku, close) {
+  const box = dlg.querySelector('[data-ledger]'), whSel = dlg.querySelector('[data-ledger-wh]');
+  let page = 1, rows = [], total = 0, seq = 0;
+  const signed = v => `<b class="${v > 0 ? 'paid-text' : 'danger-text'}">${v > 0 ? '+' : '−'}${fmtNum(Math.abs(v), 3)}</b>`;
+  const draw = () => {
+    if (!rows.length) { box.innerHTML = '<p class="muted">Chưa có phát sinh sổ kho cho mã này' + (whSel.value ? ' ở kho đã chọn' : '') + ' (nhập NCC, bán / xuất kho, điều chuyển, trả hàng, điều chỉnh).</p>'; return; }
+    box.innerHTML = `<div class="pc-ledger">${rows.map(m => `<div class="pc-led-row">
+        <div class="pc-led-main">${m.link && linkAllowed(m.link) ? `<a href="${esc(m.link)}" data-close-card>${esc(m.refNo || m.kindLabel)}</a>` : `<b>${esc(m.refNo) || '—'}</b>`}
+          <small>${esc(m.description || m.kindLabel)} · ${esc(m.warehouse)}</small>${m.note ? `<small>${esc(m.note)}</small>` : ''}
+          <small>${fmtDate(m.at)} ${new Date(m.at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}${m.by ? ' · ' + esc(m.by) : ''}</small></div>
+        <div class="pc-led-qty"><span><small>Tồn trước</small>${fmtNum(m.balanceBefore, 3)}</span><span><small>${m.qty > 0 ? 'Nhập' : 'Xuất'}</small>${signed(m.qty)}</span><span><small>Tồn sau</small><b>${fmtNum(m.balanceAfter, 3)}</b></span></div>
+      </div>`).join('')}</div>
+      <p class="muted small">${rows.length}/${total} phát sinh · Tồn trước / sau là tồn của mã tại đúng kho đó.</p>${rows.length < total ? '<button type="button" class="btn secondary small" data-more>Xem thêm</button>' : ''}`;
+    box.querySelectorAll('[data-close-card]').forEach(a => a.addEventListener('click', close));
+    box.querySelector('[data-more]')?.addEventListener('click', e => { e.target.disabled = true; e.target.textContent = 'Đang tải…'; page++; load(); });
+  };
+  const load = async () => {
+    const mine = ++seq, q = new URLSearchParams({ sku, page: String(page), size: '20' });
+    if (whSel.value) q.set('warehouseId', whSel.value);
+    try {
+      const d = await api('/stock-moves?' + q);
+      if (mine !== seq || !dlg.isConnected) return;
+      if (whSel.options.length === 1) for (const w of d.warehouses) whSel.append(new Option(w.name, w.id));
+      rows = page === 1 ? d.moves : [...rows, ...d.moves]; total = d.total; draw();
+    } catch (ex) { if (mine === seq && dlg.isConnected) box.innerHTML = `<p class="error">${esc(ex.message)}</p>`; }
+  };
+  whSel.addEventListener('change', () => { page = 1; rows = []; box.innerHTML = '<p class="muted">Đang tải sổ kho…</p>'; load(); });
+  load();
+}
+// ----- hình của dòng (HRC: hình sản phẩm; B2B/VIGIFTS: maquette) – link ảnh hoặc tải ảnh lên, như web cũ
+let imageTarget = null, imageSession = 0, productImage = '';
+let pendingImage = '', pendingDesignKey = '', imageGeneration = 0, imageBusy = false;
+function drawImagePreview() { $('#image-preview').innerHTML = pendingImage ? imgTag(pendingImage, 'thumb big') : '<span class="muted">Chưa có ảnh</span>'; $('#image-remove').hidden = !pendingImage; }
+function openImage(i) {
+  imageGeneration++; imageBusy = false; $('#image-save').disabled = false;
+  for (const id of ['image-url','image-file','image-remove','image-use-product']) $('#'+id).disabled = false;
+  imageTarget = editor.rows[i]; const session = ++imageSession;
+  pendingImage = !isSaleEditor() || imageTarget.designImage === true ? imageTarget.image || '' : '';
+  pendingDesignKey = pendingImage ? imageTarget.designImageKey || '' : '';
+  productImage = ''; $('#image-use-product').disabled = true;
+  $('#image-product-preview').innerHTML = '';
+  $('#image-product-status').textContent = imageTarget.sku ? 'Đang tìm ảnh sản phẩm…' : 'Dòng này chưa có mã sản phẩm.';
+
+  $('#image-title').textContent = isSaleEditor() ? 'Ảnh thiết kế riêng cho sản phẩm' : editor.type === 'HRC' ? 'Hình sản phẩm' : 'Maquette';
+  $('#image-url').value = pendingImage.startsWith('data:') ? '' : pendingImage; $('#image-error').textContent = '';
+  drawImagePreview(); $('#image-dialog').showModal();
+  if (imageTarget.sku) loadImageProduct(imageTarget, session);
+}
+async function loadImageProduct(row, session) {
+  const current = () => session === imageSession && imageTarget === row && editor.rows.includes(row) && $('#image-dialog').open;
+  try {
+    const cached = catalog.items?.find(p => p.sku === row.sku);
+    const product = cached || (await api('/products?skus=' + encodeURIComponent(row.sku))).products.find(p => p.sku === row.sku);
+    if (!current()) return;
+    productImage = savableImage(product?.imageUrl) ? product.imageUrl : '';
+    $('#image-product-preview').innerHTML = productImage ? imgTag(productImage, 'thumb big') : '';
+    $('#image-product-status').textContent = productImage ? 'Ảnh sản phẩm ' + row.sku + ' — chỉ dùng khi bạn chọn.' : 'Sản phẩm chưa có ảnh.';
+    $('#image-use-product').disabled = !productImage || imageBusy;
+  } catch {
+    if (current()) $('#image-product-status').textContent = 'Không tải được ảnh sản phẩm. Bạn vẫn có thể dán link hoặc tải ảnh mới.';
+  }
+}
+$('#image-use-product').addEventListener('click', () => {
+  if (!productImage || imageBusy || !imageTarget || !$('#image-dialog').open) return;
+  imageGeneration++; pendingImage = productImage; pendingDesignKey = '';
+  $('#image-url').value = productImage; $('#image-error').textContent = '';
+  $('#image-save').disabled = false; drawImagePreview();
+});
+$('#image-dialog').addEventListener('close', () => {
+  imageGeneration++; imageSession++; imageTarget = null; productImage = ''; imageBusy = false;
+});
+
+$('#image-url').addEventListener('input', e => {
+  const v = e.target.value.trim(); pendingDesignKey = ''; imageGeneration++; $('#image-save').disabled = false; $('#image-error').textContent = '';
+  if (!v) { pendingImage = ''; drawImagePreview(); return; }
+  if (!/^https:\/\//i.test(v)) { $('#image-error').textContent = 'Link ảnh phải bắt đầu bằng https://'; return; }
+  pendingImage = v; drawImagePreview();
+});
+$('#image-file').addEventListener('change', async e => {
+  const file = e.target.files?.[0]; e.target.value = ''; if (!file) return;
+  $('#image-error').textContent = 'Đang xử lý ảnh…';
+  const stamp = ++imageGeneration; $('#image-save').disabled = true;
+  try { const image = await compressImage(file); if (stamp !== imageGeneration || !$('#image-dialog').open) return; pendingImage = image; pendingDesignKey = ''; $('#image-url').value = ''; $('#image-error').textContent = ''; drawImagePreview(); }
+  catch (ex) { if (stamp === imageGeneration) $('#image-error').textContent = ex.message; }
+  finally { if (stamp === imageGeneration) $('#image-save').disabled = false; }
+});
+$('#image-remove').addEventListener('click', () => { imageGeneration++; $('#image-save').disabled = false; pendingDesignKey = ''; pendingImage = ''; $('#image-url').value = ''; drawImagePreview(); });
+$('#image-save').addEventListener('click', async () => {
+  const r = imageTarget, stamp = imageGeneration, sequence = editorLoadSequence, sale = isSaleEditor(); if (!r || imageBusy) return;
+
+  if ($('#image-url').value.trim() && !/^https:\/\//i.test($('#image-url').value.trim())) { $('#image-error').textContent = 'Link ảnh phải bắt đầu bằng https://'; return; }
+  imageBusy = true; $('#image-save').disabled = true;
+  for (const id of ['image-url','image-file','image-remove','image-use-product']) $('#'+id).disabled = true;
+  try {
+    let image = pendingImage, key = pendingDesignKey;
+    // Private quote attachments; never update the public product image or catalogue.
+    if (sale && image.startsWith('data:') && !key) { const uploaded = await api('/quotes/design-images', 'POST', {image}); image = uploaded.imageUrl; key = uploaded.key; }
+    if (stamp !== imageGeneration || sequence !== editorLoadSequence || !editor.rows.includes(r) || !$('#image-dialog').open) return;
+    if (image) r.image = image; else delete r.image;
+    if (key) r.designImageKey = key; else delete r.designImageKey;
+    if (sale) r.designImage = !!image;
+    $('#image-dialog').close(); markDirty(); renderLines();
+  } catch (error) { if (stamp === imageGeneration) $('#image-error').textContent = error.message; }
+  finally { if (stamp === imageGeneration) { imageBusy = false; $('#image-save').disabled = false; for (const id of ['image-url','image-file','image-remove']) $('#'+id).disabled = false; $('#image-use-product').disabled = !productImage; } }
+});
+/** Dòng có mã hàng nhưng chưa có ảnh (vd báo giá cũ): lấy ảnh từ danh mục, như imageMap của web cũ. */
+async function fillMissingImages() {
+  if (isSaleEditor()) return;
+  const skus = [...new Set(editor.rows.filter(r => r.sku && !r.image).map(r => r.sku))].slice(0, 300);
+  if (!skus.length) return;
+  try {
+    const sourceRows = editor.rows, d = await api('/products?skus=' + encodeURIComponent(skus.join(',')));
+    if (editor.rows !== sourceRows || isSaleEditor()) return;
+    const bySku = new Map(d.products.filter(p => savableImage(p.imageUrl)).map(p => [p.sku, p.imageUrl]));
+    let changed = false;
+    for (const r of editor.rows) if (r.sku && !r.image && bySku.has(r.sku)) { r.image = bySku.get(r.sku); changed = true; }
+    if (changed) renderLines();
+  } catch { /* không có ảnh thì giữ nguyên */ }
+}
+
+function addLine() {
+  if (editor.rows.length >= 300) return toast('Báo giá tối đa 300 dòng.', 'err');
+  editor.rows.push({ ...blankRow(), manualLine: true, manualDescription: '', packagingDescription: '', discount: 0, printFee: 0 }); markDirty(); renderLines(editor.rows.length - 1);
+}
+$('#add-line').addEventListener('click', addLine);
+
+function currentDoc() {
+  return { type: editor.type, vat: parseNum(field('vat').value) || 0, rows: editor.rows, shipping: editor.base.shipping, printing: editor.base.printing };
+}
+let quoteStockWarnings;
+function refreshQuoteStockWarnings() {
+  if (isSaleEditor()) return;
+  if (!quoteStockWarnings) quoteStockWarnings = initQuoteStockWarnings({
+    root: $('#line-list'), getRows: () => editor.rows, skuOf: quoteStockSku,
+    ensureHolds: () => loadHolds(),
+    fetchProducts: async skus => { const data = await api('/products?skus=' + encodeURIComponent(skus.join(','))); applyCatalogMeta(data); return data.products; },
+    available: product => state.holdsLoaded && state.warehouses.some(w => w.kind === 'stock' && product.stock?.[w.id] != null && Number.isFinite(Number(product.stock[w.id]))) ? availableStock(product, editor.id || '') : null,
+    format: fmtNum,
+  });
+  quoteStockWarnings.refresh();
+}
+function calculate() {
+  refreshQuoteStockWarnings();
+  const doc = currentDoc(), t = totals(doc);
+  syncPaymentNotes(t.total);
+  editor.rows.forEach((r, i) => {
+    const tr = $(`#line-list tr[data-i="${i}"]`); if (!tr) return;
+    const unit = after(r, doc);
+    const afterCell = tr.querySelector('.col-after'); if (afterCell) afterCell.textContent = fmtNum(unit) + ' đ';
+    tr.querySelector('.line-total').textContent = money(unit * Number(r.qty || 0));
+    const cost = tr.querySelector('.col-cost'); if (cost) cost.textContent = Number.isFinite(r.costPrice) ? money(r.costPrice) : '—';
+  });
+  if ($('#shipping-card').open) renderShippingSummary();
+  $('#sum-subtotal').textContent = money(t.subtotal);
+  $('#sum-tax-label').textContent = t.label;
+  $('#sum-tax').textContent = money(t.tax);
+  $('#sum-total').textContent = $('#m-total').textContent = money(t.total);
+  $('#words-total').textContent = t.total > 0 ? 'Bằng chữ: ' + moneyWords(t.total) + '.' : '';
+  if (editor.showProfit) renderProfit(doc);
+  return t;
+}
+
+// ----- Lợi nhuận tạm tính (port refreshProfit / refreshPrintingCosts / updatePurchaseCosts của web cũ)
+let workshopList = DEFAULT_WORKSHOPS.map(name => ({ name })), workshopLoad = null, workshopTarget = '';
+function renderProfit(doc = currentDoc()) {
+  const ship = shippingCalc(editor.rows, shipOpts()), manager = isManager(), p = manager ? profit(doc, ship.fee) : null, payer = shipOpts().payer || 'receiver';
+  if (manager) renderPrintingCosts(doc); else $('#profit-printing').hidden = true;
+  $('#sum-revenue').textContent = money(p ? p.revenue : totals(doc).subtotal);
+  const commission = p ? p.commission : editor.base.staffSummary?.customerCommission;
+  $('#sum-commission').textContent = Number.isFinite(commission) ? money(commission) + (!manager && editor.dirty ? ' (bản đã lưu)' : '') : editor.id ? 'Chưa xác minh' : '0 ₫';
+  $('#open-commission').disabled = !manager; $('#open-commission').textContent = manager ? 'CK khách (tiền cà phê) ›' : 'CK khách (tiền cà phê)';
+  $('#sum-cost').textContent = p ? money(p.cost) : '';
+  $('#sum-shipping').textContent = manager&&Number.isFinite(doc.shipping?.cost)?money(p.shippingCost)+' (chi phí đã khai báo)':ship.fee===null?'Chưa có cước dự toán':money(ship.fee);
+  $$('input[name="profitShippingPayer"]').forEach(i => { i.checked = i.value === payer; });
+  $('#profit-shipping-hint').hidden = !manager || payer !== 'sender' || ship.fee !== null;
+  $('#sum-gross').textContent = p ? money(p.gross) : ''; $('#sum-gross').className = p && p.gross < 0 ? 'neg' : '';
+  $('#sum-margin').textContent = p ? fmtNum(p.margin, 1) + '%' : ''; $('#sum-margin').classList.toggle('neg', !!p && p.margin < 0);
+  $('#profit-privacy-note').textContent = manager ? 'Giá nhập, chi phí in gia công và lợi nhuận chỉ Manager xem được.' : 'CK khách là số tiền trên bản đã lưu, chỉ xem. Lưu thay đổi để cập nhật số liệu.';
+}
+/**
+ * CK cho khách ("tiền cà phê"): popup theo từng mã hàng – đơn giá sau CK (không phí in), SL, CK theo % hoặc đ/SP, tiền CK.
+ * Lưu ở `row.commission` {mode, value, excluded}; lợi nhuận gộp trừ tổng CK (quote-math `commissionOf`).
+ */
+const commissionRows = () => editor.rows.filter(r => (r.name || '').trim() || (r.sku || '').trim() || Number(r.price));
+function renderCommission() {
+  const rows = commissionRows(), active = rows.filter(r => !r.commission?.excluded), off = rows.filter(r => r.commission?.excluded);
+  const host = $('#commission-rows'), typing = host.contains(document.activeElement) && document.activeElement.matches('[data-commission-value]');
+  if (typing) host.querySelectorAll('[data-commission-total]').forEach(el => { const r = editor.rows.find(x => x.id === el.dataset.commissionTotal); if (r) el.textContent = money(commissionOf(r)); });
+  else host.innerHTML = active.length ? active.map(r => `<tr data-commission-id="${esc(r.id)}"><td><b>${esc(r.sku || 'Chưa có mã')}</b><small>${esc(r.name || '')}</small></td>
+      <td class="right num" data-label="Đơn giá sau CK">${money(discounted(r))}</td><td class="right" data-label="SL">${fmtNum(Number(r.qty || 0))}</td>
+      <td><div class="commission-input"><input class="num-input" type="number" inputmode="decimal" min="0" step="any" data-commission-value aria-label="CK cho khách ${esc(r.sku || r.name || '')}" value="${r.commission?.value || ''}" placeholder="0">
+        <select data-commission-mode aria-label="Kiểu CK"><option value="percent"${r.commission?.mode !== 'amount' ? ' selected' : ''}>%</option><option value="amount"${r.commission?.mode === 'amount' ? ' selected' : ''}>đ/SP</option></select></div></td>
+      <td class="right num" data-label="Tiền CK"><b data-commission-total="${esc(r.id)}">${money(commissionOf(r))}</b></td>
+      <td><button type="button" class="icon-btn" data-commission-exclude title="Không tính CK cho dòng này" aria-label="Bỏ dòng ${esc(r.sku || r.name || '')}">×</button></td></tr>`).join('')
+    : '<tr><td colspan="6" class="muted">Không có dòng nào tính CK.</td></tr>';
+  $('#commission-total').textContent = money(rows.reduce((s, r) => s + commissionOf(r), 0));
+  $('#commission-excluded').innerHTML = off.length ? `<p class="muted small">Không tính CK: ${off.map(r => `<button type="button" class="chip" data-commission-include="${esc(r.id)}" title="Tính CK lại cho dòng này">${esc(r.sku || r.name || 'Dòng')} ↺</button>`).join(' ')}</p>` : '';
+}
+const commissionRowOf = el => editor.rows.find(x => x.id === el.closest('[data-commission-id]')?.dataset.commissionId);
+function commissionChanged() { markDirty(); renderCommission(); renderProfit(); }
+$('#open-commission').addEventListener('click', () => { if (!isManager()) return; renderCommission(); $('#commission-dialog').showModal(); });
+$('#commission-rows').addEventListener('input', e => {
+  if (!e.target.matches('[data-commission-value]')) return;
+  const r = commissionRowOf(e.target); if (!r) return;
+  const mode = r.commission?.mode === 'amount' ? 'amount' : 'percent';
+  r.commission = { ...r.commission, mode, value: Math.min(mode === 'percent' ? 100 : 1e12, Math.max(0, Number(e.target.value) || 0)), excluded: false };
+  commissionChanged();
+});
+$('#commission-rows').addEventListener('change', e => {
+  if (!e.target.matches('[data-commission-mode]')) return;
+  const r = commissionRowOf(e.target); if (!r) return;
+  const mode = e.target.value === 'amount' ? 'amount' : 'percent';
+  r.commission = { ...r.commission, mode, value: Math.min(mode === 'percent' ? 100 : 1e12, Number(r.commission?.value) || 0), excluded: false };
+  commissionChanged();
+});
+$('#commission-rows').addEventListener('click', e => {
+  if (!e.target.closest('[data-commission-exclude]')) return;
+  const r = commissionRowOf(e.target); if (!r) return;
+  r.commission = { mode: r.commission?.mode === 'amount' ? 'amount' : 'percent', value: Number(r.commission?.value) || 0, excluded: true };
+  commissionChanged();
+});
+$('#commission-excluded').addEventListener('click', e => {
+  const b = e.target.closest('[data-commission-include]'); if (!b) return;
+  const r = editor.rows.find(x => x.id === b.dataset.commissionInclude); if (!r) return;
+  r.commission = { ...r.commission, excluded: false }; commissionChanged();
+});
+$('#commission-all-apply').addEventListener('click', () => {
+  const mode = $('#commission-all-mode').value === 'amount' ? 'amount' : 'percent', value = Math.min(mode === 'percent' ? 100 : 1e12, Math.max(0, Number($('#commission-all-value').value) || 0));
+  for (const r of commissionRows()) if (!r.commission?.excluded) r.commission = { mode, value, excluded: false };
+  commissionChanged();
+});
+
+/** Mỗi dòng có `printing` {xưởng, đơn giá in}; báo giá cũ chỉ có tổng chi phí in thì dồn vào dòng đầu (như initializePrintingLines). */
+function initPrintingLines() {
+  const rows = editor.rows, legacy = editor.base.printing, first = rows.find(r => Number(r.qty) > 0), hasLines = rows.some(r => r.printing);
+  for (const r of rows) {
+    if (!r.printing) r.printing = { unitPrice: !hasLines && r === first && legacy?.totalCost > 0 ? legacy.totalCost / r.qty : 0, workshop: legacy?.workshop || '', workshopExplicit: legacy?.workshopExplicit === true };
+    if (!r.printing.workshopExplicit) r.printing.workshop = printingInfo({ type: editor.type, rows: [{ ...r, qty: 1, printFee: 1 }] }).defaultWorkshop;
+  }
+}
+function loadWorkshops() {
+  if (workshopLoad || !isManager()) return;
+  workshopLoad = api('/printing-workshops').then(d => { workshopList = d.workshops || workshopList; if (editor.showProfit) renderPrintingCosts(); })
+    .catch(() => { $('#printing-status').textContent = 'Chưa tải được danh sách xưởng dùng chung. Có thể chọn các xưởng mặc định hoặc thêm xưởng mới.'; });
+}
+function workshopOptions(selected) {
+  const names = [...new Set([...workshopList.map(w => w.name), selected].filter(Boolean))];
+  return '<option value="__add__">+ Thêm xưởng in mới</option>' + names.map(n => `<option value="${esc(n)}" ${n === selected ? 'selected' : ''}>${esc(n)}</option>`).join('');
+}
+function renderPrintingCosts(doc = currentDoc()) {
+  const section = $('#profit-printing');
+  section.hidden = !isManager() || !printingInfo(doc).enabled; if (section.hidden) return;
+  initPrintingLines(); loadWorkshops();
+  const host = $('#printing-rows'), multiple = editor.rows.length >= 2;
+  // Đang gõ đơn giá in thì chỉ cập nhật cột tổng, không vẽ lại ô đang nhập.
+  if (host.contains(document.activeElement) && document.activeElement.matches('[data-printing-unit]')) {
+    host.querySelectorAll('[data-printing-total]').forEach(el => { const r = editor.rows.find(x => x.id === el.dataset.printingTotal); if (r) el.textContent = money(Math.round(r.printing.unitPrice * r.qty)); });
+    return;
+  }
+  $('#printing-head').innerHTML = `<tr>${multiple ? '<th>Mã hàng</th>' : ''}<th>Xưởng in</th><th>SL</th><th>Đơn giá in (đ/SP)</th><th class="right">Tổng chi phí in</th></tr>`;
+  host.innerHTML = editor.rows.map((r, i) => `<tr data-printing-id="${esc(r.id)}">${multiple ? `<td><b>${esc(r.sku || 'Chưa có mã')}</b><br><small class="muted">${esc(r.name || 'Dòng ' + (i + 1))}</small></td>` : ''}<td><select data-printing-workshop aria-label="Xưởng in dòng ${i + 1}">${workshopOptions(r.printing.workshop)}</select></td><td>${fmtNum(Number(r.qty || 0))}</td><td><input class="num-input" type="number" inputmode="decimal" min="0" max="1000000000000" step="any" data-printing-unit aria-label="Đơn giá in dòng ${i + 1}" value="${r.printing.unitPrice || ''}" placeholder="0"></td><td class="right"><b data-printing-total="${esc(r.id)}">${money(Math.round(r.printing.unitPrice * r.qty))}</b></td></tr>`).join('');
+}
+$('#printing-rows').addEventListener('input', e => {
+  if (!e.target.matches('[data-printing-unit]')) return;
+  const r = editor.rows.find(x => x.id === e.target.closest('tr').dataset.printingId); if (!r) return;
+  r.printing = { ...r.printing, unitPrice: Math.min(1e12, Math.max(0, Number(e.target.value) || 0)) };
+  markDirty(); renderProfit();
+});
+$('#printing-rows').addEventListener('change', e => {
+  if (!e.target.matches('[data-printing-workshop]')) return;
+  const r = editor.rows.find(x => x.id === e.target.closest('tr').dataset.printingId); if (!r) return;
+  if (e.target.value === '__add__') {
+    workshopTarget = r.id; $('#workshop-form').reset(); $('#workshop-error').textContent = '';
+    e.target.value = r.printing.workshop; $('#workshop-dialog').showModal(); $('#workshop-form [name=name]').focus(); return;
+  }
+  r.printing = { ...r.printing, workshop: e.target.value, workshopExplicit: true };
+  markDirty(); renderProfit();
+});
+$('#workshop-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const form = e.target, btn = form.querySelector('button.primary'); btn.disabled = true; $('#workshop-error').textContent = '';
+  try {
+    const { workshop } = await api('/printing-workshops', 'POST', Object.fromEntries(new FormData(form)));
+    workshopList = [...workshopList.filter(w => w.id !== workshop.id), workshop];
+    const r = editor.rows.find(x => x.id === workshopTarget);
+    if (r) { r.printing = { ...r.printing, workshop: workshop.name, workshopExplicit: true }; markDirty(); }
+    $('#workshop-dialog').close(); renderProfit(); toast('Đã thêm xưởng in vào danh sách dùng chung');
+  } catch (err) { $('#workshop-error').textContent = err.message || 'Chưa lưu được xưởng in.'; }
+  finally { btn.disabled = false; }
+});
+$$('input[name="profitShippingPayer"]').forEach(i => i.addEventListener('change', () => {
+  if (!isManager() || !i.checked) return;
+  editor.base.shipping = { divisor: 5000, rate: 0, extra: 0, ...shipOpts(), payer: i.value };
+  markDirty(); renderProfit();
+}));
+/** Review each SKU before saving; preserve existing percentages and manual unit costs. */
+async function refreshPurchaseCosts({ onlyMissing = false, approval = false } = {}) {
+  const btn = $('#refresh-profit-costs'); if (!isManager() || btn.disabled) return;
+  const targetId=editor.id, targetRevision=editor.revision, sourceRows=editor.rows;
+  btn.disabled = true; btn.textContent = 'Đang tải CK…';
+  try {
+    const selectedRows=onlyMissing?sourceRows.filter(missingPurchaseCost):sourceRows;
+    if(!selectedRows.length)return true;
+    const skus=[...new Set(selectedRows.map(r=>(r.sku||'').trim()).filter(Boolean))],found=[];
+    try { for(let i=0;i<skus.length;i+=200)found.push(...(await api('/products?skus='+encodeURIComponent(skus.slice(i,i+200).join(',')))).products); }
+    catch { /* Review can use the product information already saved on each row. */ }
+    if(editor.id!==targetId || editor.revision!==targetRevision || editor.rows!==sourceRows)return false;
+    btn.textContent='Đang kiểm tra CK…';
+    const edits=await reviewPurchaseCosts(sourceRows,found,{onlyMissing,approval});
+    if(!edits)return false;
+    if(editor.id!==targetId || editor.revision!==targetRevision || editor.rows!==sourceRows)throw new Error('Báo giá đang xem đã thay đổi. Vui lòng kiểm tra CK lại.');
+    for(const entry of edits)applyPurchaseCost(sourceRows[entry.index],entry);
+    editor.showCostFields=true;refreshCostToggle();markDirty();renderLines();
+    await saveQuote();
+    if(editor.dirty)throw new Error('Chưa lưu được CK mua vào lên hệ thống.');
+    toast('Đã lưu CK / giá mua theo từng mã.');return true;
+  } catch(err){toast(err.message||'Chưa lưu được CK mua vào.','err');return false;}
+  finally{btn.disabled=false;btn.textContent='Cập nhật CK mua vào';}
+}
+$('#refresh-profit-costs').addEventListener('click',refreshPurchaseCosts);
+
+// ----- hộp "Tạo báo giá mới" (như web cũ, gọn hơn): mẫu, khách hàng, ngày, số báo giá, chiết khấu toàn bảng
+const nq = { type: 'HRC', customer: null, autoNo: '', brandDiscounts: null, onCustomerChange: () => { nqApplyTerms(); nqBrandDiscounts(); } };
+/** Tên + % CK theo thương hiệu của khách (trang chi tiết khách hàng); '' nếu khách chưa thiết lập. */
+const brandDiscountText = d => [['minhLong', 'Minh Long'], ['lys', 'Lys'], ['lock', 'Lock&Lock']].filter(([k]) => typeof d?.[k] === 'number').map(([k, t]) => `${t} ${fmtNum(d[k])}%`).join(' · ');
+/** Khách đã có CK riêng: ẩn ô "Chiết khấu toàn bảng", báo CK sẽ tự áp theo thương hiệu (Minh Long / Lys / Lock&Lock) khi thêm sản phẩm. */
+async function nqBrandDiscounts() {
+  const c = nq.customer, id = c?.id; nq.brandDiscounts = null;
+  const show = text => { if (nq.type === 'SALE') { $('#nq-discount-field').hidden = $('#nq-discount-help').hidden = $('#nq-brand-discounts').hidden = true; return; } $('#nq-discount-field').hidden = $('#nq-discount-help').hidden = !!text; $('#nq-brand-discounts').hidden = !text; $('#nq-brand-discounts').textContent = text ? `Khách có chiết khấu riêng: ${text}. Tự áp đúng theo thương hiệu khi thêm sản phẩm.` : ''; };
+  show('');
+  if (!id) return;
+  try { const { discounts } = await api(`/customers/${encodeURIComponent(id)}/discounts`); if (nq.customer?.id !== id) return; nq.brandDiscounts = discounts; show(brandDiscountText(discounts)); } catch { /* không có CK riêng */ }
+}
+function nqSetType(type, fetchServer = true) {
+  const date = $('#nq-date').value || todayIso(), no = $('#nq-no');
+  const keepAuto = !no.value.trim() || no.value.trim() === nq.autoNo;
+  nqApplyTerms();
+  nq.type = type; $('#nq-type-name').textContent = type === 'SALE' ? 'Sale' : type === 'VIGIFTS' ? 'Vigifts' : type;
+  nqBrandDiscounts();
+  $$('#nq-type button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.value === type)));
+  nq.autoNo = nextQuoteNo(type, date); if (keepAuto) no.value = nq.autoNo;
+  // Lấy số kế tiếp trên toàn công ty rồi điền lại (nếu người dùng chưa tự gõ số).
+  if (fetchServer) refreshQuoteNo(type, date).then(() => { if (nq.type === type && ($('#nq-date').value || todayIso()) === date) nqSetType(type, false); });
+}
+/** Điền điều khoản thanh toán: của khách đã chọn (nếu khách có đặt riêng), không thì mặc định cọc 30% / 5 ngày. Hiện giới hạn công nợ của khách. */
+function nqApplyTerms() {
+  const d = defaultPaymentTerms(nq.type), c = nq.customer;
+  if (!nq.paymentTouched) { $('#nq-deposit-rate').value = c?.depositRate ?? d.depositRate; $('#nq-payment-term').value = c?.paymentTerm || d.balanceTerm; }
+  const depositPolicy = $('#nq-deposit-policy'), paymentPolicy = $('#nq-payment-policy');
+  depositPolicy.hidden = c?.depositRate == null;
+  depositPolicy.textContent = c?.depositRate != null ? `Chính sách khách hàng: đặt cọc ${fmtNum(c.depositRate)}%.` : '';
+  const term = String(c?.paymentTerm ?? '').trim();
+  paymentPolicy.hidden = !term;
+  paymentPolicy.textContent = term ? `Chính sách khách hàng: ${/^\d+$/.test(term) ? (Number(term) === 0 ? 'thanh toán ngay sau khi giao hàng' : `thanh toán sau ${term} ngày kể từ ngày giao hàng`) : term}.` : '';
+  const credit = $('#nq-credit');
+  credit.hidden = !(c && c.creditLimit != null);
+  credit.textContent = c && c.creditLimit != null ? `Giới hạn công nợ của ${c.name}: ${money(c.creditLimit)}` : '';
+}
+async function openNewQuote() {
+  if (editor.dirty && currentHash.startsWith('#/quotes/')) {
+    if (!await confirmBox('Báo giá đang sửa có thay đổi chưa lưu. Tạo báo giá mới sẽ bỏ các thay đổi này.', { title: 'Bỏ thay đổi chưa lưu?', ok: 'Tạo báo giá mới', danger: true })) return;
+    editor.dirty = false;
+  }
+  nq.customer = null; nq.autoNo = ''; nq.resetCustomerSearch?.(); nqBrandDiscounts();
+  nq.paymentTouched = false;
+  $('#new-quote-form').reset(); $('#nq-error').textContent = '';
+  $('#nq-date').value = todayIso(); $('#nq-no').value = '';
+  nqSetType(nq.type);
+  $('#new-quote-dialog').showModal();
+  // Máy tính: đặt sẵn con trỏ vào ô khách hàng; điện thoại thì không (tránh bật bàn phím che hộp).
+  if (matchMedia('(pointer: fine)').matches) $('#nq-customer').focus(); else $('#nq-date').blur();
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-new-quote]'); if (!a) return;
+  e.preventDefault(); openNewQuote();
+});
+$('#nq-type').addEventListener('click', e => { const b = e.target.closest('button'); if (b) nqSetType(b.dataset.value); });
+$('#nq-date').addEventListener('change', () => nqSetType(nq.type));
+for (const id of ['#nq-deposit-rate', '#nq-payment-term']) $(id).addEventListener('input', () => { nq.paymentTouched = true; });
+/** Bật/tắt vòng xoay "đang tìm" trên ô tìm khách hàng. */
+const comboBusy = (input, on) => input.closest('.combo')?.classList.toggle('busy', on);
+{
+  const input = $('#nq-customer'), list = $('#nq-suggest'); let items = [], timer, req = 0;
+  const hide = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); };
+  const reset = nq.resetCustomerSearch = () => {
+    clearTimeout(timer); req++; items = []; list.replaceChildren(); hide(); comboBusy(input, false);
+  };
+  const draw = found => {
+    items = found;
+    list.innerHTML = found.length ? found.map((c, i) => `<li role="option" data-i="${i}"><b>${esc(c.name)}</b><small>${esc([c.contact, c.phone, c.taxCode && 'MST ' + c.taxCode].filter(Boolean).join(' · '))}</small></li>`).join('')
+      : `<li class="none">Không có trong danh bạ – vẫn tạo được, điền thông tin khách trong báo giá.</li>`;
+    list.hidden = false; input.setAttribute('aria-expanded', 'true');
+  };
+  input.addEventListener('input', () => {
+    nq.customer = null; reset(); nq.onCustomerChange?.();
+    const ticket = req, query = input.value;
+    const ready = query.trim() ? customerSearch.local(query) : null;
+    if (ready) { draw(ready); return; } // đã có trên máy: hiện ngay, không gọi máy chủ
+    comboBusy(input, true);
+    timer = setTimeout(async () => {
+      let found = [];
+      try { found = query.trim() ? await customerSearch.remote(query) : (await api(`/customers?limit=8&usable=1&q=`)).customers; } catch { /* để trống */ }
+      if (ticket !== req || query !== input.value || !$('#new-quote-dialog').open) return;
+      comboBusy(input, false);
+      if (document.activeElement !== input) return;
+      draw(found);
+    }, query.trim() ? 120 : 180);
+  });
+  input.addEventListener('blur', () => { clearTimeout(timer); req++; comboBusy(input, false); setTimeout(hide, 150); });
+  list.addEventListener('mousedown', e => { if (e.target.closest('li[data-i]')) e.preventDefault(); });
+  list.addEventListener('click', e => {
+    const li = e.target.closest('li[data-i]'), customer = li && items[li.dataset.i];
+    if (!customer || list.hidden) return;
+    e.preventDefault(); nq.customer = customer; input.value = customer.name; reset();
+    nq.onCustomerChange?.();
+  });
+}
+$('#new-quote-form').addEventListener('submit', e => {
+  e.preventDefault();
+  // Khách có CK riêng theo thương hiệu: không dùng CK toàn bảng (ô đã ẩn).
+  const err = $('#nq-error'), date = $('#nq-date').value, no = $('#nq-no').value.trim(), discText = $('#nq-discount-field').hidden ? '' : $('#nq-discount').value.trim(), disc = discText ? parseNum(discText) : 0;
+  err.textContent = '';
+  if (!date || !no) { err.textContent = 'Vui lòng nhập ngày và số báo giá.'; return; }
+  if (!(disc >= 0 && disc <= 100)) { err.textContent = 'Chiết khấu toàn bảng phải từ 0 đến 100%.'; return; }
+  const rateText = $('#nq-deposit-rate').value.trim(), depositRate = rateText ? parseNum(rateText) : NaN, balanceTerm = $('#nq-payment-term').value.trim();
+  if (!Number.isFinite(depositRate) || depositRate < 0 || depositRate > 100) { err.textContent = 'Tỷ lệ đặt cọc phải từ 0 đến 100%.'; return; }
+  if (depositRate < 100 && (!balanceTerm || balanceTerm.length > 500 || /^[+-]?\d+(?:[.,]\d+)?\s*(?:ngày)?$/i.test(balanceTerm) && (!/^\d+\s*(?:ngày)?$/i.test(balanceTerm) || parseInt(balanceTerm, 10) > 3650))) { err.textContent = 'Nhập thời hạn thanh toán: số ngày từ 0 đến 3650 hoặc nội dung như “Thanh toán trước khi giao hàng”.'; return; }
+  const paymentTerms = { depositRate, balanceTerm };
+  const typed = $('#nq-customer').value.trim(), c = nq.customer?.name === typed ? nq.customer : null;
+  const customer = c ? { customerId: c.id, customer: c.name, contact: c.contact || '', phone: c.phone || '', email: c.email || '', customerTaxCode: c.taxCode || '', customerAddress: c.address || '', customerCode: c.customerCode || '' } : typed ? { customer: typed } : {};
+  editor.defaultDiscount = disc;
+  editor.pending = { ...newQuoteData({ type: nq.type, date, quoteNo: no, paymentTerms, ...customer, rows: [] }), defaultDiscount: disc };
+  $('#new-quote-dialog').close();
+  if (location.hash === '#/quotes/new') route(); else go('#/quotes/new');
+});
+
+// ----- đóng thùng & phí vận chuyển (port Shipping.calculate của web cũ)
+const PACK_FIELDS = ['perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight'];
+function shippingCalc(rows, opt = {}) {
+  const groups = []; let cartons = 0, kg = 0, m3 = 0, billable = 0, missing = 0;
+  const divisor = Number(opt.divisor) || 5000;
+  for (const r of rows) {
+    const qty = Number(r.qty); if (!(qty > 0)) continue;
+    const n = Number(r.perCarton), w = Number(r.cartonWeight), l = Number(r.cartonLength), b = Number(r.cartonWidth), h = Number(r.cartonHeight);
+    if (!Number.isInteger(n) || n <= 0) { missing++; continue; } // có SP/thùng là đếm được thùng; kg và kích thước chỉ ảnh hưởng cước
+    const hasW = w > 0, hasDim = [l, b, h].every(v => v > 0);
+    const full = Math.floor(qty / n), rest = qty - full * n, count = qty / n, unit = String(r.unit || 'cái').trim() || 'cái';
+    const note = [full ? `${full} thùng x ${n} ${unit}` : '', rest ? `lẻ ${fmtNum(rest)} ${unit}` : ''].filter(Boolean).join(' + ');
+    groups.push({ sku: r.sku, name: r.name, qty, count, note, kg: hasW ? w : null, dims: hasDim ? [l, b, h] : null });
+    cartons += count;
+    if (hasW) kg += count * w;
+    if (hasDim) m3 += count * l * b * h / 1e6;
+    if (hasW || hasDim) billable += count * Math.max(hasW ? w : 0, hasDim ? l * b * h / divisor : 0);
+    if (!hasW || !hasDim) missing++;
+  }
+  const rate = Number(opt.rate) || 0, extra = Number(opt.extra) || 0;
+  // Đơn giá 0đ + phụ phí = cước trọn gói, không cần kg/kích thước.
+  const fee = rate === 0 && extra > 0 ? Math.ceil(extra) : !missing && cartons && rate > 0 ? Math.ceil(billable * rate + extra) : null;
+  return { groups, cartons, kg, m3, billable, missing, fee };
+}
+const shipOpts = () => editor.base.shipping || {};
+function renderShippingRows() {
+  $('#ship-rows').innerHTML = editor.rows.map((r, i) => (r.name || r.sku) ? `<tr><td>${esc(r.sku || '—')}<br><small class="muted">${esc(r.name || '')}</small></td><td>${fmtNum(Number(r.qty) || 0)}</td>${PACK_FIELDS.map(k =>
+    `<td><input class="num-input" type="number" min="0" step="${k === 'perCarton' ? 1 : 'any'}" data-pack="${k}" data-i="${i}" value="${Number(r[k]) > 0 ? r[k] : ''}" placeholder="Chưa có" aria-label="${k} ${esc(r.sku || r.name || '')}"></td>`).join('')}</tr>` : '').join('')
+    || '<tr><td colspan="7" class="muted">Chưa có sản phẩm.</td></tr>';
+  const o = shipOpts();
+  $('#ship-divisor').value = o.divisor || 5000; $('#ship-rate').value = Number(o.rate) > 0 ? o.rate : ''; $('#ship-extra').value = Number(o.extra) > 0 ? o.extra : '';
+  renderShippingSummary();
+}
+function renderShippingSummary() {
+  const c = shippingCalc(editor.rows, shipOpts()), shown = v => v > 0 ? fmtNum(v, 3) : '—';
+  $('#ship-summary').textContent = `${fmtNum(c.cartons, 3)} thùng · ${fmtNum(c.kg, 3)} kg dự toán · ${fmtNum(c.m3, 3)} m³ · ${fmtNum(c.billable, 3)} kg tính cước${c.missing ? ` · ${c.missing} dòng còn thiếu dữ liệu cước` : ''}`;
+  $('#ship-fee').textContent = c.fee === null ? 'Chưa đủ dữ liệu hoặc chưa nhập đơn giá' : money(c.fee);
+  $('#ship-groups').innerHTML = c.groups.map(g => `<tr><td>${esc(g.sku || '—')}<br><small class="muted">${esc(g.name || '')}</small></td><td>${fmtNum(g.qty)}</td><td>${fmtNum(g.count, 3)}</td><td>${esc(g.note)}</td><td>${g.dims ? g.dims.map(shown).join(' × ') : '— × — × —'}</td><td>${shown(g.kg)}</td></tr>`).join('')
+    || '<tr><td colspan="6" class="muted">Nhập SP/thùng để tính số thùng.</td></tr>';
+}
+$('#ship-rows').addEventListener('change', e => {
+  const el = e.target.closest('[data-pack]'); if (!el) return;
+  let v = Number(el.value);
+  if (el.value === '' || !Number.isFinite(v) || v < 0 || v > 1e6 || (el.dataset.pack === 'perCarton' && !Number.isInteger(v))) { if (el.value !== '') toast('Quy cách không hợp lệ (SP/thùng phải là số nguyên).', 'err'); el.value = ''; v = 0; }
+  editor.rows[Number(el.dataset.i)][el.dataset.pack] = v; markDirty(); renderShippingSummary();
+});
+for (const [id, key] of [['#ship-divisor', 'divisor'], ['#ship-rate', 'rate'], ['#ship-extra', 'extra']]) $(id).addEventListener('change', e => {
+  let v = Number(e.target.value); if (!Number.isFinite(v) || v < 0 || v > 1e12) v = 0;
+  if (key === 'divisor') v = Math.max(1, v || 5000);
+  editor.base.shipping = { divisor: 5000, rate: 0, extra: 0, payer: 'receiver', ...shipOpts(), [key]: v };
+  markDirty(); renderShippingSummary();
+});
+$('#shipping-card').addEventListener('toggle', e => { if (e.target.open) renderShippingRows(); });
+$('#fill-packing').addEventListener('click', async () => {
+  const skus = [...new Set(editor.rows.map(r => (r.sku || '').trim()).filter(Boolean))];
+  if (!skus.length) return toast('Báo giá chưa có mã sản phẩm để tra quy cách.', 'err');
+  let found = [];
+  try { for (let i = 0; i < skus.length; i += 200) found.push(...(await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(',')))).products); }
+  catch (e) { return toast(e.message, 'err'); }
+  const bySku = new Map(found.map(p => [p.sku, p])); let count = 0;
+  for (const r of editor.rows) { const p = bySku.get((r.sku || '').trim()); if (!p) continue; for (const k of PACK_FIELDS) if (!(Number(r[k]) > 0) && Number(p[k]) > 0) { r[k] = Number(p[k]); count++; } }
+  if (count) markDirty();
+  renderShippingRows(); toast(count ? `Đã điền ${count} ô quy cách từ danh mục.` : 'Danh mục không có thêm quy cách cho các mã này.');
+});
+
+// ----- khách hàng trong báo giá
+const suggest = $('#customer-suggest'), searchInput = field('customer');
+let suggestIndex = -1, suggestItems = [];
+let suggestTimer, suggestReq = 0;
+function showSuggest() {
+  clearTimeout(suggestTimer); const req = ++suggestReq, query = searchInput.value;
+  suggestItems = []; suggestIndex = -1; suggest.replaceChildren(); hideSuggest();
+  const ready = query.trim() ? customerSearch.local(query) : null;
+  if (ready) { drawSuggest(ready); return; } // đã có trên máy: hiện ngay
+  comboBusy(searchInput, true);
+  suggestTimer = setTimeout(async () => {
+    let items = [];
+    try { items = query.trim() ? await customerSearch.remote(query) : (await api(`/customers?limit=8&usable=1&q=`)).customers; } catch { /* hiện thông báo trống */ }
+    if (req !== suggestReq || query !== searchInput.value) return;
+    comboBusy(searchInput, false);
+    if (document.activeElement !== searchInput) return;
+    drawSuggest(items);
+  }, query.trim() ? 120 : 180);
+}
+function drawSuggest(items) {
+    suggestItems = items; suggestIndex = items.length ? 0 : -1;
+    suggest.innerHTML = items.length
+      ? items.map((c, i) => `<li role="option" data-i="${i}" aria-selected="${i === suggestIndex}"><b>${esc(c.name)}</b><small>${esc([c.contact, c.phone, c.taxCode && 'MST ' + c.taxCode].filter(Boolean).join(' · ') || c.address || '')}</small></li>`).join('')
+      : `<li class="none">${searchInput.value.trim() ? 'Không có trong danh bạ. Điền tiếp thông tin bên dưới; khách được lưu khi lưu báo giá.' : 'Danh bạ đang trống.'}</li>`;
+    suggest.hidden = false; searchInput.setAttribute('aria-expanded', 'true');
+}
+function hideSuggest() { suggest.hidden = true; searchInput.setAttribute('aria-expanded', 'false'); }
+function pickCustomer(c) {
+  editor.customerId = c.id; editor.customerName = c.name; loadBrandDiscounts();
+  field('customer').value = c.name; field('contact').value = c.contact || ''; field('phone').value = c.phone || '';
+  field('email').value = c.email || ''; field('customerTaxCode').value = c.taxCode || ''; field('customerAddress').value = c.address || '';
+  editor.base.customerCode = c.customerCode || '';
+  hideSuggest(); markDirty(); updateContactsButton();
+  toast('Đã điền thông tin ' + c.name);
+}
+searchInput.addEventListener('focus', () => { if (!editor.customerId) showSuggest(); });
+searchInput.addEventListener('input', showSuggest);
+searchInput.addEventListener('blur', () => { clearTimeout(suggestTimer); suggestReq++; comboBusy(searchInput, false); setTimeout(hideSuggest, 150); });
+searchInput.addEventListener('keydown', e => {
+  if (suggest.hidden) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault(); if (!suggestItems.length) return;
+    suggestIndex = (suggestIndex + (e.key === 'ArrowDown' ? 1 : -1) + suggestItems.length) % suggestItems.length;
+    $$('li', suggest).forEach((li, i) => li.setAttribute('aria-selected', String(i === suggestIndex)));
+  } else if (e.key === 'Enter') { e.preventDefault(); if (suggestItems[suggestIndex]) pickCustomer(suggestItems[suggestIndex]); }
+  else if (e.key === 'Escape') hideSuggest();
+});
+suggest.addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); if (li) { e.preventDefault(); pickCustomer(suggestItems[li.dataset.i]); } });
+function updateContactsButton() {
+  const name = field('customer').value.trim();
+  $('#save-to-contacts').hidden = !name || !!editor.customerId;
+}
+$('#save-to-contacts').addEventListener('click', async () => {
+  const body = { name: field('customer').value.trim(), contact: field('contact').value.trim(), phone: field('phone').value.trim().slice(0, 40), email: field('email').value.trim(), taxCode: field('customerTaxCode').value.trim(), address: field('customerAddress').value.trim() };
+  const btn = $('#save-to-contacts'); btn.disabled = true;
+  try {
+    const { id } = await api('/customers', 'POST', body);
+    editor.customerId = id; editor.customerName = body.name; markDirty();
+    updateContactsButton(); loadCustomers();
+    toast('Đã lưu ' + body.name + ' vào danh bạ.');
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; }
+});
+
+const quoteDiscountLocked=()=>isSaleEditor()||editor.loading||qf.inert||(!!editor.id&&(editor.approval?.canEdit===false||editor.approval?.status==='approved'&&!isManager()&&!editor.approval?.editRequest?.canEditApproved));
+initBulkQuoteDiscount({button:$('#bulk-discount'),dialog:$('#bulk-discount-dialog'),getRows:()=>editor.rows,isLocked:quoteDiscountLocked,context:()=>editorLoadSequence+':'+(editor.id||'new'),apply:result=>{editor.rows=result.rows;editor.discountMode='percent';markDirty();renderLines();toast('Đã cập nhật CK cho '+result.count+' dòng. Bấm Lưu báo giá để ghi nhận.');}});
+// ----- dán từ Excel: SKU + số lượng, thông tin và chính sách lấy từ dữ liệu CRM.
+const parsePaste = text => parseSkuQuantities(text, parseNum);
+let pasteBusy = false, pasteGeneration=0;
+function resetPasteDialog(){pasteGeneration++;pasteBusy=false;$('#paste-text').value='';$('#paste-text').disabled=false;$('#paste-preview').textContent='';$('#paste-apply').disabled=false;$('#paste-apply').textContent='Thêm vào báo giá';}
+$('#paste-dialog').addEventListener('close',resetPasteDialog);
+$('#paste-lines').addEventListener('click', () => {
+  resetPasteDialog(); $('#paste-dialog').showModal();
+});
+$('#paste-text').addEventListener('input', e => {
+  try { const rows=parsePaste(e.target.value);$('#paste-preview').textContent=rows.length?`Nhận được ${rows.length} dòng. Giá và chiết khấu theo chính sách hiện tại; ô thiếu để nhập tay.`:''; }
+  catch(error){$('#paste-preview').textContent=error.message;}
+});
+$('#paste-form').addEventListener('submit', async e => {
+  e.preventDefault();if(pasteBusy)return;
+  const preview=$('#paste-preview'),button=$('#paste-apply'),text=$('#paste-text'),dialog=$('#paste-dialog');
+  let items;
+  try{items=parsePaste(text.value);}catch(error){preview.textContent=error.message;return;}
+  if(!items.length){preview.textContent='Dán cột Mã hàng và Số lượng từ Excel.';return;}
+  if(items.length>300){preview.textContent='Báo giá tối đa 300 dòng.';return;}
+  const generation=pasteGeneration;
+  const context={sequence:editorLoadSequence,id:editor.id,customerId:editor.customerId,policy:preferredPolicy,discount:editor.defaultDiscount,mode:editor.discountMode};
+  const current=()=>generation===pasteGeneration&&dialog.open&&context.sequence===editorLoadSequence&&context.id===editor.id&&context.customerId===editor.customerId&&context.policy===preferredPolicy&&context.discount===editor.defaultDiscount&&context.mode===editor.discountMode;
+  pasteBusy=true;button.disabled=true;text.disabled=true;button.textContent='Đang tìm mã hàng…';preview.textContent='Đang lấy thông tin sản phẩm và chính sách…';
+  try{
+    const wanted=new Set(items.map(item=>item.sku).filter(Boolean));
+    const products=(catalog.items||[]).filter(product=>wanted.has(product.sku));
+    const found=new Set(products.map(product=>product.sku)),missing=[...wanted].filter(sku=>!found.has(sku));
+    const lookup=missing.length?api('/products?skus='+encodeURIComponent(missing.join(','))):Promise.resolve(null);
+    const [data]=await Promise.all([lookup,loadBrandDiscounts({strict:true})]);
+    if(!current()){if(generation===pasteGeneration&&dialog.open)preview.textContent='Báo giá, khách hàng hoặc chính sách đã đổi. Bấm thêm lại để áp đúng chính sách.';return;}
+    if(data){products.push(...data.products);if(!state.policies.length&&data.policies)state.policies=data.policies;}
+    const {rows,warnings}=pasteRows(items,products,{blankRow,rowFromProduct});
+    if(!addRowsToQuote(rows)){preview.textContent='Báo giá tối đa 300 dòng.';return;}
+    dialog.close();toast(`Đã thêm ${rows.length} dòng.${warnings.length?' Có '+warnings.length+' dòng cần nhập tay thông tin/giá.':''}`);
+  }catch(error){if(current())preview.textContent=error.message;}
+  finally{if(generation===pasteGeneration){pasteBusy=false;button.disabled=false;text.disabled=false;button.textContent='Thêm vào báo giá';}}
+});
+
+// ----- lưu
+function collectQuote() {
+  syncPaymentNotes();
+  syncDeliveryNotes();
+  const f = name => field(name).value.trim();
+  const data = { ...editor.base };
+  delete data.delivery_date;
+  Object.assign(data, {
+    type: editor.type, discountMode: editor.discountMode === 'amount' ? 'amount' : 'percent', notesVersion: 2, quoteNo: f('quoteNo'), date: f('date'), vat: parseNum(field('vat').value),
+    customer: f('customer'), customerId: editor.customerId || '', contact: f('contact'), phone: f('phone'), email: f('email'),
+    customerTaxCode: f('customerTaxCode'), customerAddress: f('customerAddress'), owner: f('owner'), ownerPhone: f('ownerPhone'),
+    notes: field('notes').value, internalNote: field('internalNote').value,
+    rows: editor.rows.filter(r => (r.name || '').trim() || Number(r.price) || (r.sku || '').trim()).map(r => {
+      const row = { ...r, name: (r.name || '').trim(), sku: (r.sku || '').trim(), unit: (r.unit || '').trim() };
+      if (!Number.isFinite(r.costPrice)) delete row.costPrice;
+      if (!Number.isFinite(row.taxRate)) delete row.taxRate;
+      return row;
+    }),
+  });
+  if (f('deliveryDate')) data.deliveryDate = f('deliveryDate'); else delete data.deliveryDate;
+  return data;
+}
+function validateQuote(data) {
+  const problems = [];
+  const mark = (name, bad) => { field(name).classList.toggle('invalid', bad);field(name).dispatchEvent?.(new CustomEvent('crm-field-validity',{bubbles:true,detail:{invalid:bad}})); if (bad) problems.push(name); };
+  mark('quoteNo', !data.quoteNo); mark('customer', !data.customer); mark('date', !data.date);
+  mark('vat', !(data.vat >= 0 && data.vat <= 100));
+  if (problems.length) return 'Vui lòng điền đủ các ô được đánh dấu đỏ.';
+  if (!data.rows.length) return 'Vui lòng thêm ít nhất một sản phẩm.';
+  if (data.template === 'sale' && data.rows.some(r => Number(r.discount || 0))) return 'Mẫu Sale dùng giá bán thực tế, không dùng chiết khấu ẩn.';
+  if ($$('#line-list input.invalid').length) return 'Có số liệu sản phẩm chưa hợp lệ (ô đỏ). Chiết khấu % tối đa 100, chiết khấu tiền không vượt đơn giá.';
+  const unnamed = data.rows.findIndex(r => !r.name);
+  if (unnamed >= 0) return `Dòng sản phẩm số ${editor.rows.indexOf(editor.rows.find(r => r.id === data.rows[unnamed].id)) + 1} chưa có tên.`;
+  const incomplete = data.rows.findIndex(r => r.price === '' || r.qty === '' || r.discount === '');
+  if (incomplete >= 0) return `Dòng ${incomplete + 1}: nhập tay số lượng, đơn giá và chiết khấu còn trống (nhập 0 nếu không chiết khấu).`;
+  return '';
+}
+let quoteCarePrompt;
+const quoteCareAfterSave=()=>quoteCarePrompt ||=initQuoteCarePrompt({api,toast,onChanged:()=>{if(state.user)void loadBadges().catch(()=>{});}});
+let saving = false;
+async function saveQuote({promptCare=false}={}) {
+  if (saving) return;
+  if (editor.id && !isManager() && editor.approval?.status === 'approved' && !editor.approval?.editRequest?.canEditApproved) return toast('Báo giá đã duyệt. Gửi yêu cầu và chờ Manager cho phép sửa.', 'err');
+  const err = $('#quote-error'); err.textContent = '';
+  const data = collectQuote(), problem = validateQuote(data);
+  if (problem) {
+    const invalid = qf.querySelector('.invalid'), panel = invalid?.closest('[data-quote-panel]');
+    setMobileQuoteStep(panel?.dataset.quotePanel || (data.rows.length ? 'products' : 'products'));
+    err.textContent = problem; toast(problem, 'err'); invalid?.focus(); return;
+  }
+  const saveSequence = editorLoadSequence, saveHash = location.hash, wasNew = !editor.id, deviceDraftId=editor.id;
+  saving = true; $('#save-quote').disabled = $('#save-quote-m').disabled = true;
+  try {
+    const customerFields = ['customer','contact','phone','email','customerTaxCode','customerAddress'].filter(k => data[k] !== (editor.base?.[k] || ''));
+    const saved = editor.id
+      ? await api('/quotes/' + encodeURIComponent(editor.id), 'PUT', { revision: editor.revision, data, rememberCustomer: true, customerFields })
+      : await api('/quotes', 'POST', { ...data, rememberCustomer: true, customerFields });
+    if (saveSequence !== editorLoadSequence || location.hash !== saveHash) { toast('Đã lưu ' + saved.data.quoteNo); loadQuotes(); return; }
+    const keepApproval = !wasNew && saved.approvalStatus === 'approved' ? { approvedAt: editor.approval?.at, approvedByName: editor.approval?.by } : {};
+    fillEditor(saved.id, saved.revision, saved.data, { ...keepApproval, approvalStatus: saved.approvalStatus });
+    $('#quote-customer-memory-status').textContent = saved.customerMemory?.message || '';
+    $('#quote-customer-memory-status').hidden = !saved.customerMemory?.message;
+    quoteDeviceDraft.saved(deviceDraftId);
+    if (wasNew) { suppressHash = true; location.hash = '#/quotes/' + encodeURIComponent(saved.id); currentHash = location.hash; }
+    if (saved.approvalRevoked) toast('Đã lưu. Báo giá chuyển về "Nháp" – bấm "Gửi duyệt" để Manager duyệt lại.');
+    else if (saved.approvalStatus === 'pending') toast((wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision) + ' · đang đợi Manager duyệt.');
+    else if (saved.approvalStatus === 'draft') toast((wasNew ? 'Đã lưu nháp ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision) + ' · bấm "Gửi duyệt" khi xong.');
+    else toast(wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision);
+    loadQuotes(); if (saved.customerMemory && saved.customerMemory.status !== 'skipped') loadCustomers();
+    if(promptCare&&can('page.care')){try{await quoteCareAfterSave().offer({id:saved.id,revision:saved.revision},{isCurrent:()=>editor.id===saved.id&&editor.revision===saved.revision&&!$('#view-editor').hidden&&location.hash==='#/quotes/'+encodeURIComponent(saved.id)});}catch(ex){toast('Báo giá đã lưu. Chưa mở được lịch chăm sóc: '+ex.message,'err');}}
+    return true;
+  } catch (e) {
+    if (saveSequence !== editorLoadSequence || location.hash !== saveHash) { toast(e.message, 'err'); return; }
+    if (e.status === 409) {
+      $('#conflict-text').textContent = e.message + ' Thay đổi của anh/chị chưa được lưu.';
+      $('#conflict-banner').hidden = false; $('#conflict-banner').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else { err.textContent = e.message; toast(e.message, 'err'); }
+  } finally { saving = false; updateQuoteActions(); }
+}
+qf.addEventListener('submit', e => { e.preventDefault(); saveQuote({promptCare:true}); });
+$('#save-quote-m').addEventListener('click', async e => { e.preventDefault(); const usedEditPermission=editor.approval?.status==='approved'&&!!editor.approval?.editRequest?.canEditApproved; const saved=await saveQuote({promptCare:true}); if(saved===true&&!$('#view-editor').hidden&&location.hash==='#/quotes/'+encodeURIComponent(editor.id)&&!usedEditPermission&&!editor.dirty&&editor.id&&editor.approval?.status==='draft'&&!saleDesignProblem(collectQuote()))await submitQuoteForApproval(); });
+$('#reload-quote').addEventListener('click', async () => {
+  if (!await confirmBox('Tải bản mới nhất sẽ bỏ các thay đổi chưa lưu của anh/chị.', { ok: 'Tải lại', danger: true })) return;
+  editor.dirty = false; openEditor(editor.id);
+});
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !$('#view-editor').hidden) { e.preventDefault(); saveQuote({promptCare:true}); }
+  if (e.key === '/' && !e.target.closest('input, textarea, select') && !document.querySelector('dialog[open]')) {
+    const s = $('#view-quotes').hidden ? ($('#view-customers').hidden ? $('#member-search') : $('#customer-search')) : $('#quote-search');
+    if (s && !s.closest('[hidden]')) { e.preventDefault(); s.focus(); }
+  }
+});
+
+// ----- nhân bản
+function cloneData(data) {
+  const copy = structuredClone(data);
+  if(copy.template==='sale')for(const row of copy.rows)if(row.designImageKey&&!row.designImageKey.startsWith('quote-designs/'+state.user.id+'/')&&!isManager()){delete row.designImageKey;row.image='';row.designImage=false;}
+  delete copy.contractDocument; delete copy.careStatus; delete copy.careDueDate; delete copy.careClosedAt;
+  return { ...copy, quoteNo: nextQuoteNo(copy.template === 'sale' ? 'SALE' : copy.type, todayIso()), date: todayIso(), rows: copy.rows.map(r => ({ ...r, id: uid() })) };
+}
+$('#duplicate-quote').addEventListener('click', async () => {
+  if (editor.dirty && !await confirmBox('Báo giá hiện tại có thay đổi chưa lưu. Bản sao sẽ gồm cả các thay đổi này, còn báo giá gốc không được lưu.', { ok: 'Tiếp tục' })) return;
+  editor.pending = cloneData(collectQuote()); editor.dirty = false;
+  go('#/quotes/new'); toast('Đã tạo bản sao. Kiểm tra rồi bấm Lưu.');
+});
+async function duplicateFromList(id) {
+  try { const q = await api('/quotes/' + encodeURIComponent(id)); editor.pending = cloneData(q.data); go('#/quotes/new'); toast('Đã tạo bản sao ' + q.data.quoteNo + '. Kiểm tra rồi bấm Lưu.'); }
+  catch (e) { toast(e.message, 'err'); }
+}
+
+// ----- PDF theo 3 mẫu của web cũ (HRC / B2B / VIGIFTS): hrc-pdf.js (bố cục) + editable-pdf.js (pdf-lib, chữ chọn được).
+// Thư viện PDF + font Times New Roman (~3,6 MB) chỉ tải khi bấm tải PDF.
+// scriptAsset(): đánh dấu để bước triển khai gắn số phiên bản (scripts/stamp-ui-version.ts) – bản mới không dùng lại script cũ trong cache.
+const scriptAsset = src => src;
+const PDF_SCRIPTS = [scriptAsset('pdf-lib.min.js'), scriptAsset('fontkit.umd.min.js'), scriptAsset('hrc-pdf.js'), scriptAsset('editable-pdf.js')];
+let pdfReady = null;
+function loadPdfTools() {
+  if (pdfReady) return pdfReady;
+  pdfReady = PDF_SCRIPTS.reduce((chain, src) => chain.then(() => new Promise((resolve, reject) => {
+    const el = document.createElement('script'); el.src = src; el.onload = resolve;
+    el.onerror = () => { el.remove(); reject(new Error('Không tải được bộ tạo PDF. Kiểm tra mạng rồi thử lại.')); };
+    document.head.appendChild(el);
+  })), Promise.resolve()).then(() => {
+    if (typeof globalThis.EditableQuotePdf?.create !== 'function'
+      || typeof globalThis.EditableQuotePdf?.hrcRows !== 'function'
+      || typeof globalThis.HrcPdf?.createPages !== 'function') {
+      throw new Error('Bộ tạo PDF chưa đồng bộ phiên bản. Tải lại trang rồi thử lại.');
+    }
+    // hrc-pdf.js thay globalThis.HrcPdf: giữ đọc số tiền bằng chữ của app (dùng chung cho HĐKT, Excel).
+    globalThis.HrcPdf = { ...globalThis.HrcPdf, amountInWords: n => moneyWords(n) };
+    globalThis.QuoteMath = { ...(globalThis.QuoteMath || {}), totals, after, manualLineDescription };
+  }).catch(error => {
+    pdfReady = null;
+    throw error;
+  });
+  return pdfReady;
+}
+const isIos = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let pdfBusy = false;
+/** Ảnh để HIỂN THỊ (không đọc nội dung): như thẻ <img> của bản in nhanh – trình duyệt gửi kèm phiên web cũ, Drive đổi sang ảnh thật. */
+function loadDisplayImage(src) {
+  return new Promise(resolve => {
+    if (!src) return resolve(null);
+    const list = [...new Set([displayImage(src), fallbackImage(src), src].filter(Boolean))];
+    const next = () => {
+      const u = list.shift(); if (!u) return resolve(null);
+      const img = new Image(); const t = setTimeout(() => { img.src = ''; next(); }, 12000);
+      img.onload = () => { clearTimeout(t); resolve(img); }; img.onerror = () => { clearTimeout(t); next(); }; img.src = u;
+    };
+    next();
+  });
+}
+let templateFonts = null;
+/** Font Times New Roman cho bản vẽ canvas (máy không có sẵn font, vd Android). */
+function loadTemplateFonts() {
+  return templateFonts ||= Promise.all([['fonts/TimesNewRoman.ttf', 'normal'], ['fonts/TimesNewRomanBold.ttf', 'bold']].map(([u, w]) => {
+    const f = new FontFace('Times New Roman', `url(${u})`, { weight: w }); document.fonts.add(f); return f.load().catch(() => null);
+  }));
+}
+/**
+ * Bản in theo MẪU WEB CŨ (HRC / B2B / VIGIFTS): vẽ bằng chính bộ dựng trang của web cũ (hrc-pdf.js) lên canvas A4 rồi in qua
+ * trình duyệt – ảnh hiển thị như in nhanh nên luôn có, kể cả ảnh chỉ xem được khi đăng nhập web cũ.
+ */
+async function printQuoteTemplate(state) {
+  await Promise.all([loadPdfTools(), loadTemplateFonts()]);
+  const images = await Promise.all(state.rows.map(r => loadDisplayImage(r.image)));
+  const banner = await loadCanvasImage(state.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
+  const data = state.type === 'HRC' ? { ...state, rows: globalThis.EditableQuotePdf.hrcRows(state) } : state;
+  const pages = globalThis.HrcPdf.createPages({ state: data, images, banner, createCanvas: (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h }) });
+  $('#print-sheet').replaceChildren(...pages);
+  // Mỗi canvas đã là một trang A4 đủ lề → in lề 0; canvas co theo vùng in (Safari vẫn giữ lề riêng thì cũng không bị cắt).
+  printSheet({ page: { size: 'A4', margin: '0' }, cls: 'canvas-pages', title: `${state.quoteNo || 'Bao-gia'}`.replace(/[^\w.-]+/g, '-') });
+}
+async function downloadQuotePdf(hideDiscount) {
+  const block = approvalBlock(); if (block) return toast(block, 'err');
+  if (pdfBusy) return;
+  const d = collectQuote(); if (!d.rows.length) return toast('Chưa có sản phẩm để xuất PDF.', 'err');
+  // iPhone chặn mở tab sau khi chờ: mở tab trống ngay lúc bấm rồi đổ PDF vào sau (như web cũ).
+  const tab = isIos() ? window.open('about:blank', '_blank') : null;
+  if (tab) tab.document.body.innerHTML = '<p style="font:16px Arial;padding:24px">Đang tạo file PDF, vui lòng chờ…</p>';
+  pdfBusy = true; toast('Đang tạo file PDF…');
+  try {
+    await loadPdfTools();
+    const state = { ...d, ...(d.type === 'HRC' ? { hideHrcDiscountColumn: !!hideDiscount } : {}), ...(d.type === 'B2B' ? { hideB2bDiscountColumn: !!hideDiscount } : {}) };
+    const images = await loadQuoteImages(d.rows);
+    // Ảnh máy chủ không đọc được nội dung (vd ảnh web cũ khi chưa cài secret LEGACY_STAFF_*): KHÔNG báo lỗi mà in theo đúng
+    // mẫu PDF bằng trình duyệt, lấy ảnh y như "In nhanh" (thẻ <img>, cùng nguồn ảnh – trình duyệt tự gửi phiên web cũ)
+    // → hộp in mở ra, chọn "Lưu dưới dạng PDF". Cùng bố cục, cùng cột (kể cả bản ẩn cột CK).
+    if (d.rows.some((r, i) => r.image && !images[i])) {
+      if (tab && !tab.closed) tab.close();
+      await printQuoteTemplate(state);
+      toast('Đã mở bản in theo mẫu PDF (ảnh lấy như In nhanh): chọn "Lưu dưới dạng PDF" / "Save as PDF" để tải file.');
+      return;
+    }
+    const banner = await loadCanvasImage(d.type === 'VIGIFTS' ? 'vigifts-letterhead.png' : 'hrc-letterhead.jpg');
+    const bytes = await globalThis.EditableQuotePdf.create({ state, images, banner });
+    
+    // Tên file không dấu: vài trình duyệt / máy bỏ tên có dấu và lưu thành "download".
+    const clean = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, c => c === 'đ' ? 'd' : 'D').replace(/[\\/:*?"<>|]+/g, ' ').trim();
+    const name = `${clean(d.quoteNo)} - ${clean(d.customer)} - ${(d.date || todayIso()).split('-').reverse().join('-')}.pdf`;
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    if (tab && !tab.closed) { tab.location.href = url; toast('Đã mở PDF – bấm Chia sẻ để lưu hoặc gửi.'); }
+    else { const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast('Đã tải file PDF A4.'); }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (ex) { console.error(ex); if (tab && !tab.closed) tab.close(); toast(ex?.message || 'Không thể tạo PDF. Vui lòng thử lại.', 'err'); }
+  finally { pdfBusy = false; }
+}
+$('#pdf-quote').addEventListener('click', () => downloadQuotePdf(false));
+$('#quote-history').addEventListener('click', () => editor.id && showAudit({ api, toast, entityType: 'quotes', entityId: editor.id, title: 'Báo giá ' + (collectQuote().quoteNo || '') }));
+$('#pdf-quote-nock').addEventListener('click', () => downloadQuotePdf(true));
+
+// ----- in tem giá cho các sản phẩm trong báo giá (giá niêm yết bán lẻ + VAT của danh mục, không dùng giá trong báo giá)
+$('#quote-price-labels').addEventListener('click', async e => {
+  if (!seesPrices()) return toast('Chưa có quyền xem giá để in tem.', 'err');
+  const rows = collectQuote().rows.filter(r => String(r.sku || '').trim());
+  const qty = new Map(); for (const r of rows) { const sku = String(r.sku).trim(); qty.set(sku, (qty.get(sku) || 0) + Math.max(0, Math.round(Number(r.qty) || 0))); }
+  const skus = [...qty.keys()];
+  if (!skus.length) return toast('Báo giá chưa có mã sản phẩm để in tem.', 'err');
+  if (skus.length > 300) return toast('Báo giá có hơn 300 mã; chọn bớt sản phẩm ở trang Sản phẩm để in tem.', 'err');
+  const b = $('#quote-download'); b.disabled = true;
+  try { await openPriceLabels({ api, skus, skipUnavailable: true, title: 'In tem giá · ' + (collectQuote().quoteNo || 'báo giá'), copiesFor: sku => qty.get(sku) || 1 }); }
+  catch (error) { toast(error.message, 'err'); }
+  finally { b.disabled = false; }
+});
+
+// ----- in nhanh trên trình duyệt
+$('#print-quote').addEventListener('click', () => {
+  const block = approvalBlock(); if (block) return toast(block, 'err');
+  const d = collectQuote();
+  if (!d.rows.length) { toast('Chưa có sản phẩm để in.', 'err'); return; }
+  const doc = { type: d.type, vat: d.vat, rows: d.rows }, t = totals(doc);
+  const showPrint = d.type !== 'HRC' && d.rows.some(r => Number(r.printFee) > 0);
+  const showDisc = d.rows.some(r => Number(r.discount) > 0);
+  const showTax = new Set(d.rows.map(r => Number.isFinite(r.taxRate) ? r.taxRate : d.vat)).size > 1;
+  const showImg = d.rows.some(r => r.image);
+  const cols = 6 + (showImg ? 1 : 0) + (showDisc ? 1 : 0) + (showPrint ? 1 : 0) + (showTax ? 1 : 0);
+  $('#print-sheet').innerHTML = `
+    <div class="ps-head">
+      <div class="ps-brand"><span class="ps-mark">BN</span><div><b>BÁCH NGÂN</b><br><small>Quà tặng doanh nghiệp</small></div></div>
+      <div class="ps-meta">Số: <b>${esc(d.quoteNo)}</b><br>Ngày: ${fmtDate(d.date)}${d.deliveryDate ? `<br>Giao dự kiến: ${fmtDate(d.deliveryDate)}` : ''}</div>
+    </div>
+    <h1>BẢNG BÁO GIÁ</h1>
+    <p class="ps-sub">Kính gửi: ${esc(d.customer)}</p>
+    <div class="ps-info">
+      ${d.contact ? `<p>Người liên hệ: <b>${esc(d.contact)}</b></p>` : ''}${d.phone ? `<p>Điện thoại: ${esc(d.phone)}</p>` : ''}
+      ${d.email ? `<p>Email: ${esc(d.email)}</p>` : ''}${d.customerTaxCode ? `<p>MST: ${esc(d.customerTaxCode)}</p>` : ''}
+      ${d.customerAddress ? `<p style="grid-column:1/-1">Địa chỉ: ${esc(d.customerAddress)}</p>` : ''}
+    </div>
+    <table class="ps-table">
+      <thead><tr><th>STT</th>${showImg ? '<th>Hình ảnh</th>' : ''}<th>Sản phẩm</th><th>ĐVT</th><th>SL</th><th>Đơn giá</th>${showDisc ? '<th>Chiết khấu</th>' : ''}${showPrint ? '<th>Phí in</th>' : ''}${showTax ? '<th>VAT</th>' : ''}<th>Thành tiền</th></tr></thead>
+      <tbody>${d.rows.map((r, i) => `<tr>
+        <td class="c">${i + 1}</td>${showImg ? `<td class="c">${r.image ? `<img class="ps-img" src="${esc(displayImage(r.image))}" alt="" referrerpolicy="no-referrer">` : ''}</td>` : ''}<td>${esc(r.name)}${r.sku ? `<br><small>Mã: ${esc(r.sku)}</small>` : ''}</td><td class="c">${esc(r.unit)}</td>
+        <td class="n">${fmtNum(Number(r.qty), 4)}</td><td class="n">${money(r.price)}</td>
+        ${showDisc ? `<td class="n">${Number(r.discount) > 0 ? (r.discountType === 'amount' ? money(r.discount) : fmtNum(Number(r.discount)) + '%') : ''}</td>` : ''}
+        ${showPrint ? `<td class="n">${Number(r.printFee) > 0 ? money(r.printFee) : ''}</td>` : ''}
+        ${showTax ? `<td class="n">${fmtNum(Number.isFinite(r.taxRate) ? r.taxRate : d.vat)}%</td>` : ''}
+        <td class="n">${money(after(r, doc) * Number(r.qty || 0))}</td></tr>`).join('')}
+        <tr class="ps-total"><td colspan="${cols - 1}" class="n">Cộng tiền hàng</td><td class="n">${money(t.subtotal)}</td></tr>
+        <tr class="ps-total"><td colspan="${cols - 1}" class="n">${esc(t.label)}</td><td class="n">${money(t.tax)}</td></tr>
+        <tr class="ps-total grand"><td colspan="${cols - 1}" class="n">TỔNG CỘNG</td><td class="n">${money(t.total)}</td></tr>
+      </tbody>
+    </table>
+    <p class="ps-words">Bằng chữ: ${esc(moneyWords(t.total))}.</p>
+    ${d.notes.trim() ? `<div class="ps-notes"><b>Ghi chú:</b>\n${esc(d.notes.trim())}</div>` : ''}
+    <div class="ps-sign"><div><p><b>XÁC NHẬN CỦA KHÁCH HÀNG</b></p><p><i>(Ký, ghi rõ họ tên)</i></p><div class="space"></div></div>
+      <div><p><b>NGƯỜI LẬP BÁO GIÁ</b></p><p><i>(Ký, ghi rõ họ tên)</i></p><div class="space"></div><p><b>${esc(d.owner)}</b>${d.ownerPhone ? `<br>${esc(d.ownerPhone)}` : ''}</p></div></div>`;
+  // Bản demo chạy trong khung không cho mở hộp thoại in → xem trước bản in trên màn hình.
+  if (window.BN_DEMO) { $('#print-preview-body').innerHTML = $('#print-sheet').innerHTML; $('#print-preview').showModal(); return; }
+  printSheet({ title: `Bao-gia-${d.quoteNo}`.replace(/[^\w.-]+/g, '-') });
+});
+
+// ---------------------------------------------------------------- sản phẩm
+const POLICY_KEY = 'bn-price-policy';
+let preferredPolicy = '';
+try { preferredPolicy = localStorage.getItem(POLICY_KEY) || ''; } catch { /* bỏ qua */ }
+const currentPolicy = () => (state.policies.find(p => p.id === preferredPolicy) || state.policies[0])?.id || '';
+/** Giá theo bảng giá đang chọn; nếu trống thì lấy bảng giá đầu tiên có giá. */
+const priceOf = (p, policyId) => {
+  const v = Array.isArray(p.prices) ? p.prices.find(x => x.policyId === policyId)?.price : p.prices?.[policyId];
+  return Number.isFinite(v) ? v : null;
+};
+/** Giá niêm yết theo bảng giá đang chọn (null = bảng giá này chưa có giá, như bản cũ). */
+const productPrice = p => priceOf(p, currentPolicy());
+/** Tồn khả dụng = tổng các kho thật (không tính NCC và hàng chờ về). */
+/** Hàng đang treo (GET /stock-holds): sku → [{ qty, quoteId, quoteNo, customer, expiresAt }] của báo giá giữ 5 ngày,
+ *  và [{ qty, quoteId, orderId, orderNo, contractNo, customer }] của đơn / HĐKT giữ đến khi giao / huỷ. Tải lại tối đa 30 giây/lần. */
+let holdsAt = 0, holdsReq = null;
+state.holds = new Map();
+state.holdsLoaded = false;
+function loadHolds(force = false) {
+  if (!force && Date.now() - holdsAt < 30000) return holdsReq || Promise.resolve(state.holdsLoaded);
+  holdsAt = Date.now();
+  return holdsReq = api('/stock-holds').then(r => { const m = new Map(); for (const h of r.holds) (m.get(h.sku) ?? m.set(h.sku, []).get(h.sku)).push(h); state.holds = m; state.holdsLoaded = true; return true; })
+    .catch(() => { holdsAt = 0; state.holdsLoaded = false; return false; }).finally(() => { holdsReq = null; });
+}
+/** Số đang treo của một mã (bỏ phần treo cho chính báo giá `exceptQuote`). */
+const heldQty = (sku, exceptQuote = '') => (state.holds.get(sku) || []).filter(h => h.quoteId !== exceptQuote).reduce((t, h) => t + h.qty, 0);
+/** Ô "Đang treo": số + link báo giá / đơn / HĐKT đang giữ (bấm mở). */
+const holdLink = h => h.orderId
+  ? `<a href="${docHref(h.orderId, h.contractNo)}" title="${esc(h.customer)} · ${fmtNum(h.qty)} · giữ theo đơn (tối đa có thể bán)">${esc(h.contractNo ? 'HĐKT ' + h.contractNo : h.orderNo)}</a>`
+  : `<a href="#/quotes/${esc(h.quoteId)}" title="${esc(h.customer)} · ${fmtNum(h.qty)} · giữ đến ${esc(new Date(h.expiresAt).toLocaleString('vi-VN'))}">${esc(h.quoteNo)}</a>`;
+const heldCell = (sku, exceptQuote = '') => {
+  const list = (state.holds.get(sku) || []).filter(h => h.quoteId !== exceptQuote);
+  return list.length ? `${fmtNum(heldQty(sku, exceptQuote))}<small>${list.map(holdLink).join(', ')}</small>` : '<span class="muted">—</span>';
+};
+const stockTotal = p => state.warehouses.filter(w => w.kind === 'stock').reduce((s, w) => s + (Number(p.stock?.[w.id]) || 0), 0);
+/** Tồn khả dụng = tổng kho thật − đang treo cho báo giá khác (treo tự hết khi quá hạn 5 ngày). */
+const availableStock = (p, exceptQuote = '') => stockTotal(p) - heldQty(p.sku, exceptQuote);
+const stockDetail = p => state.warehouses.filter(w => p.stock?.[w.id] !== undefined).map(w => `${w.name}: ${fmtNum(Number(p.stock[w.id]))}`).join('\n');
+const thumb = p => imgTag(p.imageUrl);
+function applyCatalogMeta(d) {
+  if (d.policies) state.policies = d.policies;
+  if (d.warehouses) state.warehouses = d.warehouses;
+  const stockWarehouses = state.warehouses.filter(w => w.kind === 'stock');
+  if (state.productWarehouse && !stockWarehouses.some(w => w.id === state.productWarehouse)) state.productWarehouse = '';
+  const warehouse = $('#product-warehouse');
+  warehouse.innerHTML = '<option value="">Tất cả kho</option>' + stockWarehouses.map(w => `<option value="${esc(w.id)}">${esc(w.name)}</option>`).join('');
+  warehouse.value = state.productWarehouse;
+  const sel = $('#product-policy');
+  sel.innerHTML = state.policies.map(p => `<option value="${esc(p.id)}">Bảng giá: ${esc(p.name)}</option>`).join('');
+  sel.value = currentPolicy(); sel.hidden = state.policies.length < 2;
+  $('#product-price-head').textContent = state.policies.find(p => p.id === currentPolicy())?.name || 'Giá';
+  $('#product-sub').textContent = d.observedAt ? `Danh mục cập nhật lúc ${new Date(d.observedAt).toLocaleString('vi-VN')}. Chọn sản phẩm để tạo báo giá nhanh.` : 'Danh mục, giá bán và tồn kho để chọn nhanh khi lập báo giá.';
+}
+let productReq = 0, brandsLoaded = false;
+let productPager;
+/**
+ * Trang Sản phẩm lọc NGAY trên danh mục đã tải sẵn (GET /catalog-snapshot, cùng quy tắc khớp + xếp hạng với máy chủ – product-rank.ts):
+ * gõ là ra, không chờ máy chủ quét bỏ dấu cả danh mục. Chưa có bản chụp, hoặc bản chụp không có kết quả (quét mã vạch, sản phẩm vừa thêm)
+ * thì hỏi máy chủ như trước.
+ */
+function localProducts() {
+  // Lọc tồn tối thiểu theo kho (GET /products?minStock=) tính ở máy chủ trước phân trang – không lọc tại chỗ.
+  if (!catalog.items || state.productMinStock !== '') return null;
+  const found = searchCatalog(catalog.items, { q: state.productQuery }) || [];
+  const brands = state.productBrands || (state.productBrand ? [state.productBrand] : []);
+  const list = brands.length ? found.filter(p => brands.includes(p.brand)) : found;
+  return list.length || !state.productQuery.trim() ? list : null;
+}
+async function loadProducts() {
+  loadHolds().then(() => { if (state.products) renderProducts?.(); });
+  const req = ++productReq;
+  productPager ||= createPager($('#product-pager'), 'products', () => loadProducts(), 50);
+  const local = localProducts();
+  if (local) {
+    state.products = local.slice(productPager.offset, productPager.offset + productPager.limit); state.productTotal = local.length;
+    clearGlobalError('products');
+    renderProducts(); loadProductBrands(); return;
+  }
+  state.products = null; renderProducts();
+  try {
+    const params = productFilterParams(); params.set('limit', productPager.limit); params.set('offset', productPager.offset);
+    const d = await api('/products?' + params);
+    if (req !== productReq) return;
+    applyCatalogMeta(d);
+    state.products = d.products; state.productTotal = d.total; clearGlobalError('products');
+  } catch (e) { if (req !== productReq) return; state.products = state.products || []; if (e.status !== 401) showGlobalError(e.message, 'products'); }
+  renderProducts(); loadProductBrands();
+}
+let productBrandFilter;
+function productFilterParams() {
+  const params = new URLSearchParams(); if (state.productQuery) params.set('q', state.productQuery);
+  for (const brand of state.productBrands || (state.productBrand ? [state.productBrand] : [])) params.append('brand', brand);
+  if (state.productMinStock !== '') {params.set('minStock', state.productMinStock);params.set('stockWarehouse', state.productWarehouse);}
+  return params;
+}
+function loadProductBrands() {
+  productBrandFilter ||= initProductBrandFilter($('#product-brand'));
+  if (!brandsLoaded) {
+    brandsLoaded = true;
+    api('/product-brands').then(d => {
+      $('#product-brand').innerHTML = '<option value="">Mọi thương hiệu</option>' + d.brands.map(b => `<option value="${esc(b.name)}">${esc(b.name)} (${b.count})</option>`).join('');
+      productBrandFilter.setValues(state.productBrands || (state.productBrand ? [state.productBrand] : []));
+    }).catch(() => { brandsLoaded = false; });
+  }
+}
+/** Thêm sản phẩm + duyệt sản phẩm mới (trial-ui/product-admin.js). */
+$('#barcode-import').addEventListener('click', () => openBarcodeImport({ api, isManager, toast }).catch(e => toast(e.message, 'err')));
+var productAdminUi = null; // eslint-disable-line no-var
+/**
+ * Ảnh sản phẩm còn nằm trên web cũ (chỉ xem được khi đăng nhập web cũ → PDF / Excel không chèn được): Manager bấm chuyển
+ * sang kho ảnh mới, chạy từng đợt 20 mã tới khi hết (API /catalog/legacy-images, src/modules/integrations/api/legacy-images.ts).
+ */
+let legacyRunning = false;
+async function legacyImagesBox() {
+  const box = $('#legacy-images');
+  if (!isManager()) { box.hidden = true; return; }
+  let st; try { st = await api('/catalog/legacy-images'); } catch { box.hidden = true; return; }
+  if (!st.remaining) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = `<div><b>Còn ${fmtNum(st.remaining)} sản phẩm dùng ảnh trên web cũ</b>
+      <small>Ảnh này chỉ xem được khi đăng nhập web cũ nên file PDF / Excel báo giá không chèn được. Chuyển một lần sang kho ảnh mới là xong.</small>
+      ${st.configured ? '' : '<small class="error">Chưa cấu hình: cần secret LEGACY_STAFF_EMAIL / LEGACY_STAFF_PASSWORD (tài khoản web cũ) trên Supabase và chạy migration 0042.</small>'}
+      <small data-progress></small></div>
+    <button type="button" class="btn primary small" data-legacy-run${st.configured ? '' : ' disabled'}>${legacyRunning ? 'Đang chuyển…' : 'Chuyển ảnh từ web cũ'}</button>`;
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-legacy-run]'); if (!b || legacyRunning) return;
+  legacyRunning = true; b.disabled = true; b.textContent = 'Đang chuyển…';
+  const progress = () => document.querySelector('#legacy-images [data-progress]');
+  let after = '', moved = 0, failed = [], legacySession = null, pauses = 0;
+  const memberId = state.user?.id;
+  try {
+    for (;;) {
+      const r = await api('/catalog/legacy-images/migrate', 'POST', { limit: 20, after, legacySession });
+      moved += r.migrated; failed = failed.concat(r.failed); after = r.next || after;
+      legacySession = r.legacySession || null;
+      const p = progress(); if (p) p.textContent = `Đã chuyển ${fmtNum(moved)} ảnh · còn ${fmtNum(r.remaining)}${failed.length ? ` · ${failed.length} ảnh lỗi` : ''}`;
+      if (r.paused) {
+        if (++pauses > 3) throw new Error('Web cũ vẫn giới hạn đăng nhập (429). Ảnh đã chuyển được giữ nguyên; thử lại sau.');
+        const resumeAt = Date.now() + Math.max(1, Number(r.retryAfter) || 900) * 1000;
+        while (Date.now() < resumeAt) {
+          if (state.user?.id !== memberId) return;
+          const waiting = progress(); if (waiting) waiting.textContent = 'Web cũ giới hạn đăng nhập (429). Tự tiếp tục sau ' + Math.ceil((resumeAt - Date.now()) / 1000) + ' giây. Đã chuyển ' + fmtNum(moved) + ' ảnh.';
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        continue;
+      }
+      if (state.user?.id !== memberId) return;
+      if (r.finished || !r.next) break;
+    }
+    toast(`Đã chuyển ${fmtNum(moved)} ảnh sang kho mới.` + (failed.length ? ` ${failed.length} ảnh lỗi (vd ${failed[0].sku}: ${failed[0].error}) – giữ link cũ.` : ''), failed.length ? 'err' : 'ok');
+    state.products = null; // tải lại danh mục để thấy link ảnh mới
+  } catch (ex) { toast(ex.message, 'err'); }
+  finally { legacyRunning = false; legacyImagesBox(); }
+});
+/** Popup chọn kho Sapo khi sinh đơn hàng / lập HĐKT (trial-ui/sapo-push.js). */
+var sapoPushUi = null; // eslint-disable-line no-var
+const sapoPush = () => sapoPushUi ||= initSapoPush({ api, esc, $ });
+/** Báo kết quả đẩy Sapo (kèm cảnh báo: chưa khớp NV phụ trách Sapo, tổng tiền lệch…). */
+function sapoToast(s) {
+  if (!s) return;
+  if (s.status === 'updating') toast(s.message || `Đã giao Claw tạo đơn Sapo ${s.code}.`);
+  else toast(`${s.status === 'existing' ? 'Đã liên kết đơn Sapo có sẵn' : 'Đã tạo đơn nháp Sapo'} ${s.code}${s.location ? ` · ${s.location}` : ''}.`);
+  for (const w of s.warnings || []) toast(w, 'err');
+}
+function productAdmin() {
+  return productAdminUi ||= initProductAdmin({ api, toast, esc, money, confirmBox, compress: compressImage, isManager, canApprove, canUpdate: canUpdateProducts, canSeePrices: seesPrices, userId: () => state.user?.id, policies: () => state.policies || [], onChanged: () => { catalog.checkedAt = 0; catalog.items = null; brandsLoaded = false; loadProducts(); loadCatalogSnapshot(); if(location.hash.startsWith('#/products/'))productDetailUi?.refresh(); } });
+}
+$('#new-product').addEventListener('click', () => productAdmin().openCreate());
+var productActionsUi = null;
+function productActions() {
+  return productActionsUi ||= initProductActions({ api, toast, esc, money, isManager, policy: currentPolicy, warehouses: () => state.warehouses || [], onChanged: () => { catalog.checkedAt = 0; catalog.items = null; loadProducts(); loadCatalogSnapshot(); } });
+}
+const PRODUCT_EXPORT_PREF = 'bn-product-export-columns-v1';
+const productExportColumns = d => [
+  { id: 'sku', label: 'Mã SKU', group: 'Cơ bản', width: 18, get: p => p.sku },
+  { id: 'barcodes', label: 'Barcode', group: 'Cơ bản', width: 20, get: p => (p.barcodes || []).join(', ') },
+  { id: 'name', label: 'Tên sản phẩm', group: 'Cơ bản', width: 55, get: p => p.name },
+  { id: 'brand', label: 'Thương hiệu', group: 'Cơ bản', width: 18, get: p => p.brand },
+  { id: 'pattern', label: 'Mẫu / phiên bản', group: 'Cơ bản', width: 20, get: p => p.pattern },
+  { id: 'unit', label: 'Đơn vị tính', group: 'Cơ bản', width: 14, get: p => p.unit },
+  { id: 'sapoProductId', label: 'Sapo Product ID', group: 'Sapo', width: 18, get: p => p.sapoProductId },
+  { id: 'taxBasis', label: 'Loại giá / thuế', group: 'Thuế', width: 22, get: p => p.taxBasis },
+  { id: 'taxIn', label: 'Thuế đầu vào (%)', group: 'Thuế', width: 16, get: p => p.taxIn },
+  { id: 'taxOut', label: 'Thuế đầu ra (%)', group: 'Thuế', width: 16, get: p => p.taxOut },
+  { id: 'perCarton', label: 'Số lượng / thùng', group: 'Quy cách', width: 18, get: p => p.perCarton },
+  { id: 'cartonWeight', label: 'Kg / thùng', group: 'Quy cách', width: 14, get: p => p.cartonWeight },
+  { id: 'cartonLength', label: 'Dài thùng (cm)', group: 'Quy cách', width: 16, get: p => p.cartonLength },
+  { id: 'cartonWidth', label: 'Rộng thùng (cm)', group: 'Quy cách', width: 16, get: p => p.cartonWidth },
+  { id: 'cartonHeight', label: 'Cao thùng (cm)', group: 'Quy cách', width: 16, get: p => p.cartonHeight },
+  { id: 'imageUrl', label: 'Link hình ảnh', group: 'Khác', width: 45, get: p => p.imageUrl },
+  { id: 'stockUpdatedAt', label: 'Cập nhật tồn lúc', group: 'Tồn kho', width: 22, get: p => p.stockUpdatedAt },
+  ...(d.priced ? d.policies.map(x => ({ id: 'price:' + x.id, label: x.name, group: 'Bảng giá', width: 18, get: p => p.prices?.[x.id] ?? null })) : []),
+  ...d.warehouses.map(x => ({ id: 'stock:' + x.id, label: 'Tồn · ' + x.name, group: 'Tồn kho', width: 18, get: p => p.stock?.[x.id] ?? 0 })),
+  { id: 'stock:total', label: 'Tổng tồn', group: 'Tồn kho', width: 14, get: p => Object.values(p.stock || {}).reduce((a, v) => a + (Number(v) || 0), 0) },
+];
+async function openProductExport() {
+  const dlg = document.createElement('dialog'); dlg.className = 'modal';
+  const defaults = ['sku', 'barcodes', 'name', 'brand', 'unit', 'stock:total'];
+  let saved = defaults; try { saved = JSON.parse(localStorage.getItem(PRODUCT_EXPORT_PREF)) || defaults; } catch { /* mặc định */ }
+  const known = [
+    ['sku', 'Mã SKU', 'Cơ bản'], ['barcodes', 'Barcode', 'Cơ bản'], ['name', 'Tên sản phẩm', 'Cơ bản'], ['brand', 'Thương hiệu', 'Cơ bản'],
+    ['pattern', 'Mẫu / phiên bản', 'Cơ bản'], ['unit', 'Đơn vị tính', 'Cơ bản'], ['sapoProductId', 'Sapo Product ID', 'Sapo'],
+    ['taxBasis', 'Loại giá / thuế', 'Thuế'], ['taxIn', 'Thuế đầu vào (%)', 'Thuế'], ['taxOut', 'Thuế đầu ra (%)', 'Thuế'],
+    ['perCarton', 'Số lượng / thùng', 'Quy cách'], ['cartonWeight', 'Kg / thùng', 'Quy cách'], ['cartonLength', 'Dài thùng', 'Quy cách'],
+    ['cartonWidth', 'Rộng thùng', 'Quy cách'], ['cartonHeight', 'Cao thùng', 'Quy cách'], ['imageUrl', 'Link hình ảnh', 'Khác'],
+    ['stockUpdatedAt', 'Cập nhật tồn lúc', 'Tồn kho'],
+    ...((seesPrices() ? state.policies : []) || []).map(x => ['price:' + x.id, x.name, 'Bảng giá']),
+    ...(state.warehouses || []).map(x => ['stock:' + x.id, 'Tồn · ' + x.name, 'Tồn kho']), ['stock:total', 'Tổng tồn', 'Tồn kho'],
+  ];
+  const grouped = Map.groupBy ? Map.groupBy(known, x => x[2]) : known.reduce((m, x) => (m.set(x[2], [...(m.get(x[2]) || []), x]), m), new Map());
+  dlg.innerHTML = `<form method="dialog"><div class="modal-head"><div><span class="eyebrow">Sản phẩm</span><h2>Xuất danh sách Excel</h2></div><button class="icon-btn" value="cancel" aria-label="Đóng">×</button></div>
+    <div class="modal-body"><div class="form-grid cols-2"><label>Phạm vi<select data-scope><option value="filter">Kết quả đang lọc (${fmtNum(state.productTotal || 0)})</option><option value="all">Toàn bộ danh mục</option>${state.selected.size ? `<option value="selected">${fmtNum(state.selected.size)} sản phẩm đã chọn</option>` : ''}</select></label></div>
+    <p class="muted small" data-export-scope-note></p>
+    <div class="toolbar"><button type="button" class="btn ghost small" data-all>Chọn tất cả</button><button type="button" class="btn ghost small" data-none>Bỏ chọn</button><button type="button" class="btn ghost small" data-default>Mặc định</button></div>
+    <div class="export-columns">${[...grouped].map(([g, xs]) => `<fieldset><legend>${esc(g)}</legend>${xs.map(x => `<label><input type="checkbox" value="${esc(x[0])}" ${saved.includes(x[0]) ? 'checked' : ''}> ${esc(x[1])}</label>`).join('')}</fieldset>`).join('')}</div>
+    <p class="error" data-error></p></div><div class="modal-foot"><button class="btn secondary" value="cancel">Huỷ</button><button type="button" class="btn primary" data-export>Xuất Excel</button></div></form>`;
+  document.body.append(dlg); const boxes = () => [...dlg.querySelectorAll('input[type=checkbox]')];
+  const scopeNote = () => {const scope=dlg.querySelector('[data-scope]').value;dlg.querySelector('[data-export-scope-note]').textContent=scope==='filter'?'Xuất toàn bộ kết quả đang lọc, gồm các trang sau. Thương hiệu: '+(state.productBrands?.length?state.productBrands.join(' · '):'Mọi thương hiệu')+'.':scope==='all'?'Xuất toàn bộ danh mục được phép xem, không áp dụng bộ lọc trên trang.':'Chỉ xuất các mã đã chọn; không áp dụng bộ lọc thương hiệu hiện tại.';};
+  dlg.querySelector('[data-scope]').addEventListener('change',scopeNote);scopeNote();
+  dlg.querySelector('[data-all]').onclick = () => boxes().forEach(x => x.checked = true);
+  dlg.querySelector('[data-none]').onclick = () => boxes().forEach(x => x.checked = false);
+  dlg.querySelector('[data-default]').onclick = () => boxes().forEach(x => x.checked = defaults.includes(x.value));
+  dlg.addEventListener('close', () => dlg.remove(), { once: true });
+  dlg.querySelector('[data-export]').onclick = async e => {
+    const ids = boxes().filter(x => x.checked).map(x => x.value), err = dlg.querySelector('[data-error]');
+    if (!ids.length) { err.textContent = 'Chọn ít nhất một cột.'; return; }
+    const b = e.currentTarget; b.disabled = true; b.textContent = 'Đang tạo file…';
+    try {
+      const scope = dlg.querySelector('[data-scope]').value, params = new URLSearchParams();
+      if (scope === 'selected') params.set('skus', [...state.selected.keys()].join(','));
+      else if (scope === 'filter') for (const [key, value] of productFilterParams()) params.append(key, value);
+      const d = await api('/products-export?' + params), cols = productExportColumns(d).filter(x => ids.includes(x.id));
+      localStorage.setItem(PRODUCT_EXPORT_PREF, JSON.stringify(ids));
+      await downloadExcel('danh-sach-san-pham', [{ name: 'Sản phẩm', header: cols.map(x => x.label), rows: d.products.map(p => cols.map(x => x.get(p))), widths: cols.map(x => x.width), autoFilter: true }]);
+      dlg.close(); toast(`Đã xuất ${fmtNum(d.products.length)} sản phẩm.`);
+    } catch (ex) { err.textContent = ex.message; b.disabled = false; b.textContent = 'Xuất Excel'; }
+  };
+  dlg.showModal();
+}
+$('#product-export').addEventListener('click', openProductExport);
+$('#product-actions').addEventListener('click', e => {
+  const action = e.target.closest('[data-product-action]')?.dataset.productAction;
+  if (action === 'value' || action === 'audit') productActions().report(action);
+  else if (action === 'sapo-stock') openSapoStockImport({ api, isManager, toast, onChanged: () => { catalog.checkedAt = 0; catalog.items = null; loadProducts(); loadCatalogSnapshot(); } }).catch(ex => toast(ex.message, 'err'));
+  else if (action === 'stock' || action === 'packing') productActions().openImport(action).catch(ex => toast(ex.message, 'err'));
+});
+/** Tô đậm từ khoá đang tìm (không dấu, không phân biệt hoa thường) – chuỗi đã escape. */
+const markWords = (text, q) => {
+  const t = String(text ?? ''), ranges = q ? matchRanges(t, q) : [];
+  let out = '', i = 0;
+  for (const [a, b] of ranges) { out += esc(t.slice(i, a)) + '<mark>' + esc(t.slice(a, b)) + '</mark>'; i = b; }
+  return out + esc(t.slice(i));
+};
+function renderProducts() {
+  const tbody = $('#product-list');
+  if (!state.products) { tbody.innerHTML = skeleton(10); $('#product-empty').hidden = true; return; }
+  const list = state.products, filtered = state.productQuery || state.productBrand || state.productMinStock !== '';
+  const warehouse = state.warehouses.find(w => w.id === state.productWarehouse);
+  $('#product-stock-head').textContent = warehouse ? `Tồn · ${warehouse.name}` : 'Tồn kho';
+  $('#product-stock-head').title = warehouse ? 'Tồn của kho đang chọn' : 'Tồn khả dụng: tổng kho thực trừ số đang tạm giữ';
+  $('#product-count').textContent = state.productTotal ? `${state.productTotal.toLocaleString('vi-VN')} sản phẩm` : '';
+  tbody.innerHTML = list.map(p => {
+    const price = productPrice(p), stock = state.productMinStock !== '' && p.filteredStock !== undefined ? Number(p.filteredStock) : warehouse ? (Number(p.stock?.[warehouse.id]) || 0) : availableStock(p), sel = state.selected.has(p.sku);
+    // Giữ báo giá hiện chưa gắn theo kho: không trừ toàn bộ số treo vào từng kho riêng.
+    const held = state.holdsLoaded ? heldQty(p.sku) : null;
+    const stockHint = warehouse ? `${warehouse.name}: ${fmtNum(stock)}` : stockDetail(p);
+    return `<tr>
+      <td class="check-cell"><input type="checkbox" data-select="${esc(p.sku)}" ${sel ? 'checked' : ''} aria-label="Chọn ${esc(p.name)}"></td>
+      <td class="first"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${markWords(p.name, state.productQuery)}</span><small>${markWords(p.sku, state.productQuery)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
+      <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
+      <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
+      <td class="right num" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
+      <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockHint)}">${fmtNum(stock)}</td>
+      <td class="right num" data-label="Đang tạm giữ" title="Tổng số đang giữ trên tất cả kho; báo giá có thể chưa phân kho">${stockText(held)}</td>
+      <td class="right num" data-label="Hàng đang về">${incomingCell(p)}</td>
+      <td class="right num" data-label="Tồn NCC">${hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : '<span class="muted">—</span>'}</td>
+      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-mobile-inline data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${isManager() ? `<button type="button" class="btn ghost small danger-text" data-mobile-inline data-mobile-confirmation-page aria-label="Xoá khỏi danh mục ${esc(p.sku)}" data-remove-product="${esc(p.sku)}">Xoá</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
+    </tr>`;
+  }).join('');
+  $('#product-empty').hidden = list.length > 0;
+  $('#product-empty-title').textContent = filtered ? 'Không tìm thấy sản phẩm' : 'Chưa có dữ liệu sản phẩm';
+  $('#product-empty-text').textContent = filtered ? 'Thử từ khoá khác hoặc bỏ lọc thương hiệu.' : 'Danh mục sẽ hiện ở đây sau khi nhập dữ liệu từ web cũ.';
+  $('#product-table').hidden = list.length === 0;
+  productPager?.render(state.productTotal);
+  renderSelection();
+}
+function renderSelection() {
+  const n = state.selected.size;
+  $('#product-print-labels').hidden=!seesPrices();
+  const page=state.products||[],all=$('#product-select-page'),count=page.filter(p=>state.selected.has(p.sku)).length;all.checked=!!page.length&&count===page.length;all.indeterminate=count>0&&count<page.length;all.disabled=!page.length;
+  $('#product-selection').hidden = n === 0;
+  $('#product-selection-text').textContent = `Đã chọn ${n} sản phẩm`;
+}
+/** Chiết khấu theo thương hiệu của khách đang chọn trên báo giá (trang chi tiết khách hàng) – điền sẵn CK khi thêm sản phẩm. */
+async function loadBrandDiscounts({ strict = false } = {}) {
+  const id = editor.customerId;
+  editor.brandDiscounts = null;
+  if (!id) return;
+  try { const { discounts } = await api(`/customers/${encodeURIComponent(id)}/discounts`); if (editor.customerId === id) editor.brandDiscounts = discounts; } catch(error) { if(strict)throw Error('Chưa lấy được chiết khấu của khách hàng. Thử lại trước khi thêm sản phẩm.'); }
+}
+/**
+ * Dòng báo giá từ sản phẩm trong danh mục – port `catalogChoice`/`addProduct` của bản cũ:
+ * VAT dòng = thuế đầu ra (không chịu thuế → 0%); bảng giá có chữ "VAT" hoặc sản phẩm "Giá đã bao gồm thuế"
+ * thì quy về giá chưa thuế; Manager được điền sẵn giá vốn theo chiết khấu mua vào mặc định của thương hiệu.
+ * Trả null (kèm thông báo) nếu bảng giá chưa có giá hoặc sản phẩm chịu thuế mà chưa có thuế đầu ra.
+ */
+function rowFromProduct(p, { allowMissingPrice = false } = {}) {
+  const policy = state.policies.find(x => x.id === currentPolicy()), raw = priceOf(p, currentPolicy());
+  if (raw === null && !allowMissingPrice) { toast(`${p.sku}: bảng giá "${policy?.name || ''}" chưa có giá. Chọn bảng giá khác.`, 'err'); return null; }
+  if (p.taxable && !Number.isFinite(p.taxOut)) { toast(`${p.sku}: chưa có thuế đầu ra. Cập nhật thuế trên Sapo trước.`, 'err'); return null; }
+  const tax = p.taxable ? p.taxOut : 0;
+  const included = /VAT/i.test(policy?.name || '') || p.taxBasis === 'Giá đã bao gồm thuế';
+  const price = raw === null ? '' : netPrice(raw, tax, included);
+  const row = { ...blankRow(), name: p.name, sku: p.sku, unit: p.unit || '', brand: p.brand || '', pattern: p.pattern || '', price, taxRate: tax, pricePolicy: policy?.name || '', packagingDescription: PACKAGING_DEFAULT };
+  // CK theo thương hiệu của khách (Minh Long / Lys / Lock) – thay CK mặc định của dòng khi khách có thiết lập.
+  const brandKey = brandDiscountKey(row.brand), configured = brandKey && editor.brandDiscounts?.[brandKey];
+  if(typeof configured === 'number' && Number.isFinite(configured) && configured>=0 && configured<=100){
+    const brandDisc = customerDiscount(row.brand,editor.brandDiscounts,row.discountType==='amount'?'amount':'percent',price===''?0:price);
+    row.discount = row.discountType==='amount'&&price===''&&configured>0?'':row.discountType==='amount'?Math.round(brandDisc):brandDisc;
+  }
+  if (isManager()) { const d = defaultCostDiscount(p); if (d !== null) { row.purchaseDiscount = d; if(price!=='')row.costPrice = purchasePrice(price, d); } }
+  if (editor.base?.template === 'sale' && location.hash.startsWith('#/quotes/')) { row.discount = 0; row.discountType = 'percent'; }
+  else if (savableImage(p.imageUrl)) row.image = p.imageUrl;
+  for (const k of ['perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight']) if (Number(p[k]) > 0) row[k] = Number(p[k]);
+  return row;
+}
+const rowsFromProducts = list => list.map(rowFromProduct).filter(Boolean);
+let productTimer;
+const reloadProducts = () => { productPager?.reset(); loadProducts(); };
+$('#product-search').addEventListener('input', e => { state.productQuery = e.target.value; clearTimeout(productTimer); productTimer = setTimeout(reloadProducts, catalog.items ? 40 : 250); });
+$('#product-brand').addEventListener('change', e => { state.productBrands = [...e.target.selectedOptions].map(o => o.value).filter(Boolean); state.productBrand = state.productBrands[0] || ''; reloadProducts(); });
+$('#product-warehouse').addEventListener('change', e => { state.productWarehouse = e.target.value; if(state.productMinStock !== '') reloadProducts(); else renderProducts(); });
+$('#product-min-stock').addEventListener('input', e => { clearTimeout(productTimer); if(!e.target.validity.valid) return; state.productMinStock = e.target.value; productTimer = setTimeout(reloadProducts, 250); });
+$('#product-policy').addEventListener('change', e => { preferredPolicy = e.target.value; try { localStorage.setItem(POLICY_KEY, preferredPolicy); } catch { /* bỏ qua */ } applyCatalogMeta({}); renderProducts(); });
+$('#product-list').addEventListener('change', e => {
+  const box = e.target.closest('[data-select]'); if (!box) return;
+  const p = state.products.find(x => x.sku === box.dataset.select);
+  if(!p)return;
+  if (box.checked) state.selected.set(p.sku, p); else state.selected.delete(p.sku);
+  renderSelection();
+});
+$('#product-list').addEventListener('click', e => {
+  const remove=e.target.closest('[data-remove-product]');if(remove){productAdmin().openRemove(remove.dataset.removeProduct);return;}
+  const update = e.target.closest('[data-update-product]');
+  if (update) { productAdmin().openEdit(update.dataset.updateProduct); return; }
+  const b = e.target.closest('[data-quote-product]'); if (!b) return;
+  const rows = rowsFromProducts([state.products.find(x => x.sku === b.dataset.quoteProduct)]);
+  if (!rows.length) return;
+  editor.pending = newQuoteData({ rows }); go('#/quotes/new');
+});
+$('#product-select-page').addEventListener('change',e=>{for(const p of state.products||[]){if(e.target.checked)state.selected.set(p.sku,p);else state.selected.delete(p.sku);}renderProducts();});
+$('#product-print-labels').addEventListener('click',async e=>{const b=e.currentTarget;if(!seesPrices())return; b.disabled=true;try{await openPriceLabels({api,skus:[...state.selected.keys()]});}catch(error){toast(error.message,'err');}finally{b.disabled=false;}});
+$('#product-clear').addEventListener('click', () => { state.selected.clear(); renderProducts(); });
+$('#product-to-quote').addEventListener('click', () => {
+  const rows = rowsFromProducts([...state.selected.values()]);
+  if (!rows.length) return;
+  editor.pending = newQuoteData({ rows });
+  state.selected.clear(); renderSelection(); go('#/quotes/new');
+});
+
+// ----- Manager nhập file danh mục (JSON từ web cũ: /api/staff/catalog)
+$('#catalog-file').addEventListener('change', async e => {
+  const file = e.target.files?.[0]; e.target.value = '';
+  if (!file) return;
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { toast('File không phải JSON hợp lệ.', 'err'); return; }
+  const n = Array.isArray(data?.products) ? data.products.length : 0;
+  if (data?.format !== 'sapo-catalog-v1' || !n) { toast('Đây không phải file danh mục của web báo giá cũ (định dạng sapo-catalog-v1).', 'err'); return; }
+  if (!await confirmBox(`Nhập ${n.toLocaleString('vi-VN')} sản phẩm, ${data.pricePolicies?.length || 0} bảng giá, ${data.warehouses?.length || 0} kho từ "${file.name}"? Giá và tồn kho sẽ được cập nhật theo file; sản phẩm không có trong file sẽ bị ẩn.`, { title: 'Nhập danh mục', ok: 'Nhập' })) return;
+  const label = $('#catalog-import-label'); label.classList.add('busy');
+  // Gửi theo lô 500 mã; lô cuối kèm replaceAll + toàn bộ mã của file để ẩn sản phẩm không còn. Lỗi giữa chừng: chọn lại file chạy lại.
+  const BATCH = 500, allSkus = data.products.map(p => p?.sku).filter(x => typeof x === 'string').map(x => x.trim());
+  try {
+    for (let i = 0; i < n; i += BATCH) {
+      const last = i + BATCH >= n;
+      await api('/admin/catalog-import', 'POST', { ...data, products: data.products.slice(i, i + BATCH), ...(last ? { replaceAll: true, allSkus } : {}) });
+      $('#product-count').textContent = `Đang nhập ${Math.min(i + BATCH, n).toLocaleString('vi-VN')}/${n.toLocaleString('vi-VN')}…`;
+    }
+    toast(`Đã nhập ${n.toLocaleString('vi-VN')} sản phẩm.`);
+    brandsLoaded = false; state.selected.clear(); catalog.checkedAt = 0; loadProducts(); loadCatalogSnapshot();
+  } catch (ex) { toast(ex.message + ' Chọn lại file để nhập tiếp.', 'err'); loadProducts(); }
+  finally { label.classList.remove('busy'); }
+});
+
+// ----- tìm sản phẩm ngay trong dòng báo giá (gõ tên hoặc mã SKU)
+const pSuggest = $('#product-suggest');
+let pTimer, pReq = 0, pItems = [], pIndex = -1, pInput = null;
+function hideProductSuggest() { pSuggest.hidden = true; pItems = []; pIndex = -1; }
+function placeProductSuggest() {
+  if (!pInput) return;
+  const r = pInput.getBoundingClientRect();
+  // position: fixed → toạ độ theo màn hình (đúng cả khi trang cuộn hay chỉ vùng nội dung cuộn trên điện thoại).
+  pSuggest.style.left = Math.max(8, Math.min(r.left, innerWidth - pSuggest.offsetWidth - 8)) + 'px';
+  pSuggest.style.top = r.bottom + 4 + 'px';
+}
+function searchProducts(input) {
+  pInput = input; clearTimeout(pTimer);
+  const q = input.value.trim();
+  if (q.length < 2) { hideProductSuggest(); return; }
+  pTimer = setTimeout(async () => {
+    const req = ++pReq;
+    let found;
+    if (catalog.items) found = (searchCatalog(catalog.items, { q }) || []).slice(0, 8); // danh mục đã tải sẵn: lọc ngay
+    else {
+      let d;
+      try { d = await api(`/products?limit=8&q=${encodeURIComponent(q)}`); } catch { return; }
+      applyCatalogMeta(d); found = d.products;
+    }
+    if (req !== pReq || document.activeElement !== input) return;
+    pItems = found; pIndex = pItems.length ? 0 : -1;
+    if (!pItems.length) { hideProductSuggest(); return; }
+    pSuggest.innerHTML = pItems.map((p, i) => {
+      const price = productPrice(p);
+      return `<li role="option" data-i="${i}" aria-selected="${i === pIndex}"><span class="prod-opt">${thumb(p)}<span class="prod-text"><b>${esc(p.name)}</b><small>${esc([p.sku, p.brand, p.unit].filter(Boolean).join(' · '))} · tồn ${fmtNum(availableStock(p))}</small></span><span class="price">${price === null ? '' : money(price)}</span></span></li>`;
+    }).join('');
+    pSuggest.hidden = false; placeProductSuggest();
+  }, catalog.items ? 30 : 200);
+}
+function pickProduct(p) {
+  const tr = pInput?.closest('tr'); if (!tr) return;
+  const i = Number(tr.dataset.i), old = editor.rows[i], row = rowFromProduct(p);
+  if (!row) return;
+  editor.rows[i] = { ...row, id: old.id, qty: old.qty || 1, discount: old.discount, discountType: old.discountType, printFee: old.printFee };
+  hideProductSuggest(); markDirty(); renderLines();
+  $(`#line-list tr[data-i="${i}"] [data-k="qty"]`)?.focus();
+}
+$('#line-list').addEventListener('input', e => { if (e.target.matches('[data-k="name"], [data-k="sku"]')) searchProducts(e.target); });
+$('#line-list').addEventListener('focusout', e => { if (e.target === pInput) setTimeout(hideProductSuggest, 150); });
+$('#line-list').addEventListener('keydown', e => {
+  if (pSuggest.hidden || e.target !== pInput) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault(); e.stopImmediatePropagation();
+    pIndex = (pIndex + (e.key === 'ArrowDown' ? 1 : -1) + pItems.length) % pItems.length;
+    $$('li', pSuggest).forEach((li, i) => li.setAttribute('aria-selected', String(i === pIndex)));
+  } else if (e.key === 'Enter' && pItems[pIndex]) { e.preventDefault(); e.stopImmediatePropagation(); pickProduct(pItems[pIndex]); }
+  else if (e.key === 'Escape') hideProductSuggest();
+}, true);
+pSuggest.addEventListener('mousedown', e => { const li = e.target.closest('li[data-i]'); if (li) { e.preventDefault(); pickProduct(pItems[li.dataset.i]); } });
+addEventListener('resize', () => { if (!pSuggest.hidden) placeProductSuggest(); });
+addEventListener('scroll', () => { if (!pSuggest.hidden) placeProductSuggest(); }, true); // cuộn bất kỳ vùng nào: ô gợi ý đi theo ô nhập
+
+// ----- chọn sản phẩm từ danh mục ngay trong báo giá
+let pickerReq = 0, pickerItems = [], pickerTotal = 0, pickerAdded = 0, pickerTimer;
+let pickerDetailsExpanded = false;
+const pickerRowState = new Map(); // Local inputs only; cleared for every dialog session.
+/** Chỉ hàng Lock&Lock có kho NCC (tồn bên nhà cung cấp); hãng khác ẩn cho gọn. */
+const hasSupplierStock = p => brandDiscountKey(p?.brand || p?.name) === 'lock'; // chưa có nhãn hiệu trên Sapo thì nhận theo tên
+const kindStock = (p, kind) => { const ws = state.warehouses.filter(w => w.kind === kind && p.stock?.[w.id] !== undefined); return ws.length ? ws.reduce((t, w) => t + Number(p.stock[w.id] || 0), 0) : null; };
+const stockText = v => v === null ? '—' : fmtNum(v);
+/** Ô "Hàng chờ về": có số > 0 thì bấm được → hộp các đơn mua NCC đang về của mã (số đơn, NCC, ngày hẹn). */
+const incomingCell = p => { const v = kindStock(p, 'incoming'); return v > 0 ? `<button type="button" class="link-btn" data-incoming-sku="${esc(p.sku)}" title="Xem các đơn mua NCC đang về">${fmtNum(v)}</button>` : stockText(v); };
+document.addEventListener('click', e => { const b = e.target.closest('[data-incoming-sku]'); if (b) { e.preventDefault(); showIncoming(b.dataset.incomingSku); } });
+async function showIncoming(sku) {
+  const dlg = document.createElement('dialog'); dlg.className = 'modal incoming-dialog';
+  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">Hàng chờ về</span><h2>${esc(sku)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body"><p class="muted">Đang tải…</p></div><div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button></div>`;
+  document.body.append(dlg);
+  const close = () => { dlg.close(); dlg.remove(); };
+  // Bấm mở đơn mua: đóng luôn các hộp đang mở (Kiểm tồn…) để thấy trang đơn mua.
+  dlg.addEventListener('click', e => { if (e.target.closest('[data-x]')) close(); else if (e.target.closest('a')) { close(); $$('dialog[open]').forEach(d => d.close()); } });
+  dlg.addEventListener('cancel', close); dlg.showModal();
+  const body = dlg.querySelector('.modal-body');
+  try {
+    const p = (await api('/inventory/lookup?q=' + encodeURIComponent(sku))).products.find(x => x.sku.toLowerCase() === sku.toLowerCase());
+    const orders = p?.incoming?.orders || [], dmy = d => d ? d.slice(0, 10).split('-').reverse().join('/') : '';
+    body.innerHTML = !orders.length ? '<p class="muted">Không còn đơn mua NCC nào đang về cho mã này.</p>'
+      : `<p class="small muted">${esc(p.name)} · tổng đang về <b>${fmtNum(p.incoming.qty)}</b></p>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Đơn mua</th><th>NCC</th><th>Ngày hẹn về</th><th class="right">Còn về</th></tr></thead><tbody>
+        ${orders.map(o => `<tr><td>${can('page.purchases') ? `<a href="#/purchases/${esc(encodeURIComponent(o.orderId))}">${esc(o.ticketNumber)}</a>` : esc(o.ticketNumber)}${o.internalNo ? `<small>Số NCC ${esc(o.internalNo)}</small>` : ''}</td>
+          <td>${esc(o.supplierName || '—')}</td><td>${o.arrivalDate ? esc(dmy(o.arrivalDate)) : '<span class="muted">Chưa hẹn</span>'}</td><td class="right">${fmtNum(o.qty)}</td></tr>`).join('')}
+        </tbody></table></div>`;
+  } catch (ex) { body.innerHTML = `<p class="error">${esc(ex.message)}</p>`; }
+}
+/** Bộ lọc giống "Tìm nhanh sản phẩm" của web cũ: phạm vi theo loại báo giá, nhóm, khoảng giá theo chính sách đang chọn. */
+function pickerQuery(offset) {
+  const v = id => $(id).value.trim(), params = new URLSearchParams({ limit: '20', offset: String(offset), q: v('#picker-search'), policy: currentPolicy() });
+  if (!$('#picker-all').checked) params.set('scope', editor.type === 'VIGIFTS' ? 'other' : 'minhlong');
+  if (v('#picker-group')) params.set('group', v('#picker-group'));
+  if (v('#picker-min')) params.set('min', v('#picker-min'));
+  if (v('#picker-max')) params.set('max', v('#picker-max'));
+  return params;
+}
+function pickerPolicyOptions() {
+  $('#picker-policy').innerHTML = state.policies.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  $('#picker-policy').value = currentPolicy();
+}
+// ----- Danh mục tải sẵn về trình duyệt (như web cũ): gõ là lọc ngay, không phải hỏi máy chủ mỗi lần.
+const IDB = { db: 'bn-catalog', store: 'snapshot', key: 'current' };
+function idb(mode, fn) {
+  return new Promise((resolve, reject) => {
+    try {
+      const open = indexedDB.open(IDB.db, 1);
+      open.onupgradeneeded = () => open.result.createObjectStore(IDB.store);
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const tx = open.result.transaction(IDB.store, mode), req = fn(tx.objectStore(IDB.store));
+        tx.oncomplete = () => { open.result.close(); resolve(req?.result); };
+        tx.onerror = () => { open.result.close(); reject(tx.error); };
+      };
+    } catch (e) { reject(e); }
+  });
+}
+function useSnapshot(snap) {
+  catalog.raw = snap; catalog.version = snap.version; catalog.observedAt = snap.observedAt; catalog.items = hydrateSnapshot(snap);
+  applyCatalogMeta({ policies: snap.policies, warehouses: snap.warehouses });
+}
+/** Bản chụp + phần tồn kho mới (GET /catalog-snapshot trả `stockOnly`): thay cột tồn (cuối mỗi dòng) và thời điểm tồn của từng mã. */
+function mergeSnapshotStock(raw, delta) {
+  const stock = new Map(delta.stock.map(([sku, qty, at]) => [sku, [qty, at]])), empty = raw.warehouses.map(() => null), at = raw.columns.indexOf('stockUpdatedAt');
+  return { ...raw, version: delta.version, observedAt: delta.observedAt, products: raw.products.map(row => {
+    const s = stock.get(row[0]), next = [...row]; next[next.length - 1] = s ? s[0] : empty; next[at] = s ? s[1] : null; return next;
+  }) };
+}
+/** Lấy bản chụp danh mục: bộ nhớ → IndexedDB (mở trang là có) → máy chủ (chỉ tải lại khi Sapo có thay đổi). */
+function loadCatalogSnapshot({ maxAgeMs = 120000 } = {}) {
+  if (catalog.loading) return catalog.loading;
+  if (catalog.items && Date.now() - catalog.checkedAt < maxAgeMs) return Promise.resolve(catalog.items);
+  catalog.loading = (async () => {
+    if (!catalog.items) { try { const saved = await idb('readonly', st => st.get(IDB.key)); if (saved?.version) useSnapshot(saved); } catch { /* trình duyệt chặn IndexedDB */ } }
+    try {
+      let d = await api('/catalog-snapshot' + (catalog.version ? '?v=' + encodeURIComponent(catalog.version) : ''));
+      // Chỉ tồn kho đổi: ghép tồn mới vào bản đang có (không tải lại ~3 MB danh mục). Thiếu bản gốc thì tải đủ.
+      if (d.stockOnly) d = catalog.raw ? mergeSnapshotStock(catalog.raw, d) : await api('/catalog-snapshot');
+      catalog.checkedAt = Date.now();
+      if (!d.unchanged) {
+        useSnapshot(d);
+        idb('readwrite', st => st.put(d, IDB.key)).catch(() => {});
+        if ($('#picker-dialog').open) loadPicker(); // đang mở hộp tìm thì cập nhật kết quả theo dữ liệu mới
+        if (state.products && location.hash.startsWith('#/products')) loadProducts(); // trang Sản phẩm: lọc lại trên dữ liệu mới
+      }
+    } catch { /* lỗi mạng: dùng bản đang có, hoặc tìm qua máy chủ */ }
+    return catalog.items;
+  })().finally(() => { catalog.loading = null; });
+  return catalog.loading;
+}
+let pickerShown = 20;
+function pickerOptions() {
+  const v = id => $(id).value.trim();
+  return { q: v('#picker-search'), group: v('#picker-group'), policy: currentPolicy(), min: v('#picker-min'), max: v('#picker-max'),
+    scope: $('#picker-all').checked ? '' : editor.type === 'VIGIFTS' ? 'other' : 'minhlong' };
+}
+async function loadPicker(more = false) {
+  if(!$('#picker-dialog').open)return;
+  if(!more)delete $('#picker-list').dataset.loading;
+  const generation=pickerGeneration,sequence=editorLoadSequence;
+  const current=()=>generation===pickerGeneration&&sequence===editorLoadSequence&&$('#picker-dialog').open&&req===pickerReq;
+  const req = ++pickerReq, offset = more ? pickerItems.length : 0;
+  const min = $('#picker-min').value, max = $('#picker-max').value;
+  if ((min !== '' && Number(min) < 0) || (max !== '' && Number(max) < 0) || (min !== '' && max !== '' && Number(min) > Number(max))) {
+    $('#picker-status').textContent = 'Giá từ phải nhỏ hơn hoặc bằng giá đến, và không được âm.'; $('#picker-list').innerHTML = ''; $('#picker-more-row').hidden = true; return;
+  }
+  if (catalog.items) { // lọc ngay trên máy
+    pickerShown = more ? pickerShown + 20 : 20;
+    const found = searchCatalog(catalog.items, pickerOptions()) || [];
+    pickerItems = found.slice(0, pickerShown); pickerTotal = found.length;
+    $('#picker-list').removeAttribute('aria-busy');
+    renderPicker(catalog.observedAt, min, max);
+    return;
+  }
+  if (!more) {
+    // Bộ lọc/loại báo giá đổi: ẩn kết quả cũ cho tới khi có kết quả mới.
+    pickerItems = []; $('#picker-list').innerHTML = ''; $('#picker-empty').hidden = true; $('#picker-more-row').hidden = true;
+    $('#picker-status').textContent = 'Đang lọc sản phẩm…'; $('#picker-list').setAttribute('aria-busy', 'true');
+  }
+  let d;
+  try { d = await api('/products?' + pickerQuery(offset)); }
+  catch (e) { if (current()) { $('#picker-status').textContent = ''; $('#picker-empty').textContent = e.message; $('#picker-empty').hidden = false; } return; }
+  if (!current() || catalog.items) return;
+  $('#picker-list').removeAttribute('aria-busy');
+  applyCatalogMeta(d);
+  pickerItems = more ? [...pickerItems, ...d.products] : d.products; pickerTotal = d.total;
+  renderPicker(d.observedAt, min, max);
+}
+/** Existing reservation rules, split into physical/held/sellable columns for this quote. */
+function pickerStockColumns(p) {
+  const byKind = kind => state.warehouses.some(w => w.kind === kind && p.stock?.[w.id] != null && Number.isFinite(Number(p.stock[w.id]))) ? kindStock(p, kind) : null;
+  const physical = byKind('stock'), held = state.holdsLoaded ? heldQty(p.sku) : null;
+  const mine = state.holdsLoaded ? (state.holds.get(p.sku) || []).filter(h => h.quoteId === (editor.id || '')).reduce((n, h) => n + h.qty, 0) : null;
+  return { physical, held, mine, sellable: physical !== null && state.holdsLoaded ? availableStock(p, editor.id || '') : null,
+    incoming: byKind('incoming'), supplier: hasSupplierStock(p) ? byKind('supplier') : null };
+}
+function renderPicker(observedAt, min, max) {
+  if (!$('#picker-policy').options.length) pickerPolicyOptions();
+  $('#picker-snapshot').textContent = observedAt ? `Tồn kho chụp lúc ${new Date(observedAt).toLocaleString('vi-VN')} · Đơn giá báo giá chưa VAT.` : 'Đơn giá báo giá chưa VAT.';
+  if (state.holdsLoaded && editor.id && pickerItems.some(p => (state.holds.get(p.sku) || []).some(h => h.quoteId === editor.id && h.qty > 0))) $('#picker-snapshot').textContent += ' Có thể bán gồm phần báo giá này đang giữ.';
+  // Background stock refresh / pagination must preserve quantities and open details.
+  const inQuote = new Set(editor.rows.map(r => r.sku).filter(Boolean));
+  const policy = state.policies.find(x => x.id === currentPolicy());
+  $('#picker-list').innerHTML = pickerItems.map((p, i) => {
+    const view = pickerRowState.get(p.sku), expanded = pickerDetailsExpanded, has = inQuote.has(p.sku), quantities = pickerStockColumns(p);
+    return `<li data-i="${i}" data-sku="${esc(p.sku)}" class="picker-product ${has ? 'added' : ''} ${expanded ? 'is-expanded' : ''}">
+      <span class="picker-product-name" title="${esc(p.name)}">${esc(p.name)}</span>
+      <span class="picker-stock-summary">
+      <span class="picker-stock" data-stock-label="Tồn" title="Tồn kho thực tế: ${stockText(quantities.physical)}" aria-label="Tồn kho ${stockText(quantities.physical)}">${stockText(quantities.physical)}</span>
+      <span class="picker-held" data-stock-label="Tạm giữ" title="Tổng đang tạm giữ: ${stockText(quantities.held)}${quantities.mine ? `; báo giá này đang giữ ${fmtNum(quantities.mine)}, vẫn dùng được cho báo giá này` : ''}" aria-label="Tạm giữ ${stockText(quantities.held)}">${stockText(quantities.held)}</span>
+      <span data-stock-label="Khả dụng" class="picker-sellable ${quantities.sellable !== null && quantities.sellable <= 0 ? 'danger-text' : ''}" title="Có thể bán: ${stockText(quantities.sellable)} cho báo giá này; không trừ phần chính báo giá này đang giữ" aria-label="Có thể bán ${stockText(quantities.sellable)}">${stockText(quantities.sellable)}</span>
+      <span class="picker-incoming" data-stock-label="Đang về" title="Hàng đang về: ${stockText(quantities.incoming)}" aria-label="Đang về ${stockText(quantities.incoming)}">${quantities.incoming > 0 ? incomingCell(p) : stockText(quantities.incoming)}</span>
+      <span class="picker-supplier" data-stock-label="NCC" title="Tồn kho nhà cung cấp: ${stockText(quantities.supplier)}" aria-label="Kho NCC ${stockText(quantities.supplier)}">${stockText(quantities.supplier)}</span>
+      </span>
+      <span class="picker-product-thumbnail" aria-hidden="true">${thumb(p)}</span>
+      <label class="picker-quantity"><span>Số lượng</span><input class="num-input" inputmode="decimal" value="${esc(view?.qty || '1')}" aria-label="Số lượng ${esc(p.name)}"></label>
+      <button type="button" class="btn secondary small pick-add" data-add="${i}" ${has ? 'disabled title="Sản phẩm đã có trong báo giá"' : ''}>${has ? '✓ Đã có' : '＋ Thêm'}</button>
+      <div id="picker-detail-${i}" class="picker-product-details" ${expanded ? '' : 'hidden'}>${expanded ? pickerProductDetails(p) : ''}</div>
+    </li>`;
+  }).join('');
+  $('#picker-status').textContent = `${fmtNum(pickerTotal)} sản phẩm phù hợp · Giá theo chính sách "${policy?.name || ''}"${$('#picker-all').checked ? '' : editor.type === 'VIGIFTS' ? ' · Sản phẩm Vigifts' : ' · Sản phẩm Minh Long'}.`;
+  $('#picker-empty').hidden = pickerItems.length > 0;
+  $('#picker-empty').textContent = pickerTotal ? '' : $('#picker-search').value || $('#picker-group').value || min || max ? 'Không tìm thấy sản phẩm phù hợp. Thử bỏ bớt bộ lọc hoặc tick "Tìm trên tất cả sản phẩm".' : 'Chưa có dữ liệu sản phẩm.';
+  $('#picker-more-row').hidden = pickerItems.length >= pickerTotal;
+}
+function pickerProductDetails(p) {
+  const policy = state.policies.find(x => x.id === currentPolicy()), price = productPrice(p), quantities = pickerStockColumns(p);
+  const included = /VAT/i.test(policy?.name || '') || p.taxBasis === 'Giá đã bao gồm thuế';
+  const vat = p.taxable ? (Number.isFinite(p.taxOut) ? `VAT ${p.taxOut}%` : 'Chưa có thuế đầu ra') : 'Không áp dụng thuế';
+  return `${thumb(p)}<div><strong>${esc(p.name)}</strong>
+    <span>Mã ${esc(p.sku)} · ${esc(p.unit || '—')} · Nhãn hiệu: ${esc(p.brand || 'Chưa có trên Sapo')}</span>
+    <span>Giá: ${price === null ? 'Chưa có giá' : money(price)} · ${included ? 'Đã gồm VAT' : 'Chưa VAT'} · ${vat}</span>
+    <span>Tồn kho: ${stockText(quantities.physical)} · Hàng đang giữ: ${stockText(quantities.held)} · Có thể bán: ${stockText(quantities.sellable)}${quantities.mine ? ` (gồm ${fmtNum(quantities.mine)} báo giá này đang giữ)` : ''}${hasSupplierStock(p) ? ` · Tồn NCC: ${stockText(quantities.supplier)}` : ''} · Hàng chờ về: ${quantities.incoming > 0 ? incomingCell(p) : stockText(quantities.incoming)}</span>
+  </div>`;
+}
+const reloadPicker = () => { pickerReq++;pickerItems=[];$('#picker-list').innerHTML=''; clearTimeout(pickerTimer); pickerTimer = setTimeout(() => loadPicker(), catalog.items ? 30 : 250); };
+let pickerGeneration=0;
+function resetPickerDialog(){
+  pickerGeneration++;pickerReq++;clearTimeout(pickerTimer);clearTimeout(pickerScrollTimer);
+  pickerItems=[];pickerTotal=0;pickerShown=20;pickerAdded=0;pickerRowState.clear();
+  pickerDetailsExpanded = false; syncPickerDetailsToggle();
+  for(const id of ['picker-search','picker-group','picker-range','picker-min','picker-max'])$('#'+id).value='';
+  $('#picker-all').checked=isSaleEditor();$('#picker-list').innerHTML='';$('#picker-list').scrollTop=0;delete $('#picker-list').dataset.loading;$('#picker-list').removeAttribute('aria-busy');
+  $('#picker-status').textContent='Giá lọc theo chính sách đang chọn.';$('#picker-snapshot').textContent='';$('#picker-empty').textContent='';$('#picker-empty').hidden=true;$('#picker-more-row').hidden=true;$('#picker-added').textContent='';
+}
+$('#picker-dialog').addEventListener('close',resetPickerDialog);
+/** Thêm dòng vào báo giá; dòng trống duy nhất (mới tạo) được thay luôn. */
+function addRowsToQuote(rows) {
+  const blank = editor.rows.length === 1 && !editor.rows[0].name && !Number(editor.rows[0].price) && !editor.rows[0].sku;
+  const base = blank ? [] : editor.rows;
+  if (base.length + rows.length > 300) { toast('Báo giá tối đa 300 dòng.', 'err'); return false; }
+  editor.rows = [...base, ...rows]; markDirty(); renderLines(); return true;
+}
+$('#pick-products').addEventListener('click', () => {
+  resetPickerDialog();const generation=pickerGeneration;
+  pickerAdded = 0; $('#picker-added').textContent = '';
+  pickerPolicyOptions();
+  $('#picker-filters').hidden = true;
+  $('#picker-filter-toggle').textContent = 'Xem bộ lọc ▾';
+  $('#picker-filter-toggle').setAttribute('aria-expanded', 'false');
+  $('#picker-dialog').showModal(); $('#picker-search').focus(); loadHolds().then(()=>{if(generation===pickerGeneration&&$('#picker-dialog').open)loadPicker();});
+  loadCatalogSnapshot(); // kiểm tra nền: Sapo có dữ liệu mới thì cập nhật kết quả
+});
+$('#picker-search').addEventListener('input', reloadPicker);
+$('#picker-filter-toggle').addEventListener('click', () => {
+  const filters = $('#picker-filters'), show = filters.hidden;
+  filters.hidden = !show;
+  $('#picker-filter-toggle').textContent = show ? 'Ẩn bộ lọc ▴' : 'Xem bộ lọc ▾';
+  $('#picker-filter-toggle').setAttribute('aria-expanded', String(show));
+});
+let pickerScrollTimer;
+$('#picker-list').addEventListener('scroll', () => {
+  clearTimeout(pickerScrollTimer);
+  pickerScrollTimer = setTimeout(() => {
+    const list = $('#picker-list');
+    if (list.scrollTop + list.clientHeight < list.scrollHeight - 100 || pickerItems.length >= pickerTotal || list.dataset.loading === '1') return;
+    list.dataset.loading = '1';
+    const generation=pickerGeneration,request=pickerReq+1;
+    loadPicker(true).finally(() => { if(generation===pickerGeneration&&request===pickerReq)delete list.dataset.loading; });
+  }, 80);
+});
+$('#picker-policy').addEventListener('change', e => {
+  preferredPolicy = e.target.value; try { localStorage.setItem(POLICY_KEY, preferredPolicy); } catch { /* bỏ qua */ }
+  applyCatalogMeta({}); loadPicker();
+});
+$('#picker-all').addEventListener('change', () => loadPicker());
+$('#picker-group').addEventListener('change', () => loadPicker());
+$('#picker-range').addEventListener('change', e => {
+  if (e.target.value === 'custom') { $('#picker-min').focus(); return; }
+  const [min = '', max = ''] = e.target.value.split(':');
+  $('#picker-min').value = min; $('#picker-max').value = max; loadPicker();
+});
+for (const id of ['#picker-min', '#picker-max']) $(id).addEventListener('input', () => { $('#picker-range').value = 'custom'; reloadPicker(); });
+$('#picker-clear').addEventListener('click', () => {
+  for (const id of ['#picker-search', '#picker-group', '#picker-range', '#picker-min', '#picker-max']) $(id).value = '';
+  loadPicker(); $('#picker-search').focus();
+});
+$('#picker-more').addEventListener('click', () => loadPicker(true));
+function syncPickerDetailsToggle() {
+  const button = $('#picker-details-toggle');
+  button.textContent = pickerDetailsExpanded ? 'Thu gọn' : 'Xem thêm';
+  button.setAttribute('aria-expanded', String(pickerDetailsExpanded));
+  button.setAttribute('aria-label', button.textContent + ' chi tiết tất cả sản phẩm');
+}
+$('#picker-details-toggle').addEventListener('click', () => {
+  pickerDetailsExpanded = !pickerDetailsExpanded; syncPickerDetailsToggle();
+  // Update only loaded rows in place: preserve quantities/focus and never fetch the full catalogue.
+  for (const li of $('#picker-list').children) {
+    const panel = li.querySelector('.picker-product-details'), p = pickerItems[li.dataset.i];
+    if (!panel || !p) continue;
+    if (pickerDetailsExpanded && !panel.childElementCount) panel.innerHTML = pickerProductDetails(p);
+    panel.hidden = !pickerDetailsExpanded; li.classList.toggle('is-expanded', pickerDetailsExpanded);
+  }
+});
+
+$('#picker-list').addEventListener('click', e => {
+  const b = e.target.closest('[data-add]'); if (!b) return;
+  const li = b.closest('li'), p = pickerItems[b.dataset.add];if(!p||!$('#picker-dialog').open)return;const qty = parseNum(li.querySelector('input').value);
+  if (!(qty > 0)) { li.querySelector('input').classList.add('invalid'); return; }
+  const row = rowFromProduct(p);
+  if (!row || !addRowsToQuote([{ ...row, qty }])) return;
+  pickerAdded++; li.classList.add('added'); b.textContent = '✓ Đã thêm'; b.disabled = true;
+  $('#picker-added').textContent = `Đã thêm ${pickerAdded} sản phẩm vào báo giá`;
+});
+$('#picker-list').addEventListener('input', e => {
+  if (!e.target.matches('.picker-quantity input')) return;
+  const li = e.target.closest('li'), p = pickerItems[li.dataset.i];
+  if (p && $('#picker-dialog').open) pickerRowState.set(p.sku, { qty: e.target.value });
+});
+$('#picker-list').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); e.target.closest('li').querySelector('[data-add]').click(); } });
+
+// ---------------------------------------------------------------- khách hàng
+let customerId = null;
+/** Số báo giá của các khách trên trang đang xem (máy chủ đếm trong phạm vi người xem, so tên không dấu). */
+async function loadCustomerQuoteCounts(req) {
+  const names = [...new Set((state.customers || []).map(c => c.name).filter(Boolean))];
+  // Không có quyền Báo giá (VD Kế toán): không đếm, cột hiện "—".
+  if (!can('page.quotes')) { state.customerQuoteCounts = {}; return; }
+  try {
+    const d = names.length ? await api('/quotes/customer-counts?' + names.map(n => 'name=' + encodeURIComponent(n)).join('&')) : { counts: {} };
+    if (req !== customerReq) return;
+    state.customerQuoteCounts = d.counts; renderCustomers();
+  } catch { /* cột "Báo giá" để trống */ }
+}
+const quoteCountOf = name => state.customerQuoteCounts?.[name];
+function renderCustomers() {
+  const tbody = $('#customer-list');
+  if (!state.customers) { tbody.innerHTML = skeleton(10); return; }
+  const list = state.customers;
+  $('#customer-count').textContent = `${state.customerTotal.toLocaleString('vi-VN')} khách hàng`;
+  $('#view-customers').dataset.resultCount=String(state.customerTotal);
+  customerPager?.render(state.customerTotal);
+  tbody.innerHTML = list.map(c => `
+    <tr class="clickable" data-href="#/customers/${esc(encodeURIComponent(c.id))}">
+      <td class="first"><a class="strong" href="#/customers/${esc(encodeURIComponent(c.id))}">${esc(c.name)}</a>${c.approvalStatus === 'pending' ? ' <span class="pill warn">Chờ duyệt</span>' : c.approvalStatus === 'rejected' ? ' <span class="pill danger">Bị từ chối</span>' : ''}${c.address ? `<small>${esc(c.address)}</small>` : ''}</td>
+      <td data-label="Tỉnh/thành">${esc(c.province?.name)||'Chưa xác định'}</td>
+      <td data-label="Liên hệ">${esc(c.contact) || '—'}</td>
+      <td data-label="ĐT">${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a>` : '—'}</td>
+      <td data-label="Email · MST">${esc(c.email) || '—'}${c.taxCode ? `<small>MST ${esc(c.taxCode)}</small>` : ''}</td>
+      <td data-label="Ngày thành lập">${c.establishedDate ? esc(c.establishedDate.split('-').reverse().join('/')) : '—'}</td>
+      <td data-label="Kỷ niệm thành lập">${c.anniversary ? `<span class="${c.anniversary.upcoming ? 'pill warn' : 'muted'}">${c.anniversary.years} năm · ${esc(c.anniversary.date.split('-').reverse().join('/'))}</span>${c.anniversary.upcoming ? `<small>${c.anniversary.daysUntil === 0 ? 'Hôm nay' : 'Còn ' + c.anniversary.daysUntil + ' ngày'} · Gợi ý liên hệ tư vấn quà tặng</small>` : ''}` : '—'}</td>
+      <td data-label="Phụ trách">${c.owner ? esc(c.owner.name) : '<span class="muted">—</span>'}${c.sharedCount ? `<small>+${c.sharedCount} được chia sẻ</small>` : ''}</td>
+      <td class="right" data-label="Báo giá">${!can('page.quotes') ? '<span class="muted">—</span>' : quoteCountOf(c.name) ?? (state.customerQuoteCounts ? 0 : '…')}</td>
+      <td class="actions-cell"><div class="row-actions">
+        ${can('page.care') && c.approvalStatus === 'approved' ? `<button type="button" class="btn ghost small" data-mobile-inline data-care-for="${esc(c.id)}" title="Ghi giao dịch cho khách này">＋ Giao dịch</button>` : ''}
+        ${c.approvalStatus === 'rejected' ? `${canApprove() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt lại</button>` : ''}<span class="pill danger">Bị từ chối</span>`
+        : c.approvalStatus === 'pending' ? `${canApprove() ? `<button class="btn primary small" data-approve-customer="${esc(c.id)}">Duyệt</button>` : ''}
+        ${canApprove() || c.createdBy === state.user?.id ? `<button class="btn ghost small danger-text" data-reject-customer="${esc(c.id)}">${canApprove() ? 'Từ chối' : 'Xoá'}</button>` : '<span class="pill warn">Chờ duyệt</span>'}` : `<button class="btn ghost small" data-quote-for="${esc(c.id)}" title="Tạo báo giá cho khách này">＋ Báo giá</button>`}
+        <button class="btn ghost small" data-accounts-for="${esc(c.id)}" title="Tài khoản đăng nhập trang khách hàng">Tài khoản</button>
+        <button class="icon-btn" data-edit-customer="${esc(c.id)}" ${isManager() || c.owner?.id === state.user?.id ? '' : 'hidden '}title="Sửa" aria-label="Sửa ${esc(c.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
+      </div></td>
+    </tr>`).join('');
+  const none = !state.customerQuery && !hasCustomerListFilters($) && list.length === 0;
+  $('#customer-empty').hidden = list.length > 0;
+  $('#customer-empty-title').textContent = none ? 'Chưa có khách hàng' : 'Không tìm thấy khách hàng';
+  $('#customer-empty-text').textContent = none ? 'Thêm khách hàng để chọn nhanh khi lập báo giá.' : 'Thử từ khoá khác hoặc xóa bộ lọc.';
+  $('#customer-table').hidden = list.length === 0;
+}
+let customerTimer;
+const reloadCustomers = () => { customerPager?.reset(); loadCustomers(); };
+$('#customer-search').addEventListener('input', e => { state.customerQuery = e.target.value; clearTimeout(customerTimer); customerTimer = setTimeout(reloadCustomers, 250); });
+/** Tạo báo giá mới điền sẵn thông tin khách. */
+function quoteForCustomer(c) {
+  editor.pending = newQuoteData({ customerId: c.id, customer: c.name, contact: c.contact || '', phone: c.phone || '', email: c.email || '', customerTaxCode: c.taxCode || '', customerAddress: c.address || '', customerCode: c.customerCode || '' });
+  go('#/quotes/new');
+}
+$('#customer-list').addEventListener('click', e => {
+  const care = e.target.closest('[data-care-for]');
+  if (care) {
+    const c = state.customers?.find(x => x.id === care.dataset.careFor);
+    if (c && can('page.care') && c.approvalStatus === 'approved') return careView().openForm({ customer: { id: c.id, name: c.name, contact: c.contact } }, reloadCustomers);
+    return;
+  }
+  const edit = e.target.closest('[data-edit-customer]'); if (edit) return openCustomer(edit.dataset.editCustomer);
+  const accBtn = e.target.closest('[data-accounts-for]'); if (accBtn) return openAccounts(state.customers.find(x => x.id === accBtn.dataset.accountsFor));
+  const qb = e.target.closest('[data-quote-for]');
+  if (qb) return quoteForCustomer(state.customers.find(x => x.id === qb.dataset.quoteFor));
+  const ap = e.target.closest('[data-approve-customer]'), rj = e.target.closest('[data-reject-customer]');
+  if (ap || rj) return reviewCustomer(ap ? ap.dataset.approveCustomer : rj.dataset.rejectCustomer, !!ap);
+  // Bấm vào dòng: mở trang chi tiết khách hàng.
+  const row = e.target.closest('tr[data-href]'); if (row && !e.target.closest('a, button')) go(row.dataset.href);
+});
+bindCustomerListFilters($, reloadCustomers);
+$('#customer-share-province').addEventListener('click',async()=>{try{await openProvinceSharing({api,esc,toast,provinces:state.customerProvinces||[],province:$('#customer-province').value,onSaved:reloadCustomers});}catch(e){toast(e.message,'err');}});
+/** Người duyệt duyệt / duyệt lại khách hoặc từ chối kèm lý do (giữ hồ sơ); người tạo (không có quyền duyệt) xoá khách đang chờ duyệt. */
+async function reviewCustomer(id, approve) {
+  const c = state.customers?.find(x => x.id === id);
+  try {
+    if (approve) { await api(`/customers/${encodeURIComponent(id)}/approve`, 'POST', {}); toast('Đã duyệt khách hàng.'); }
+    else if (canApprove()) {
+      const reason = await reasonBox({ title: 'Từ chối khách hàng', text: `Lý do từ chối "${c?.name || 'khách hàng này'}" (người tạo sẽ thấy lý do này):`, placeholder: 'Ví dụ: sai mã số thuế, trùng khách đã có…', ok: 'Từ chối' });
+      if (!reason) return;
+      await api(`/customers/${encodeURIComponent(id)}/reject`, 'POST', { reason }); toast('Đã từ chối khách hàng.');
+    } else {
+      if (!await confirmBox(`Xoá khách hàng chờ duyệt "${c?.name || ''}"?`, { ok: 'Xoá', danger: true })) return;
+      await api(`/customers/${encodeURIComponent(id)}`, 'DELETE'); toast('Đã xoá khách hàng chờ duyệt.');
+      if (location.hash.startsWith('#/customers/')) go('#/customers');
+    }
+    await loadCustomers();
+    if (location.hash.startsWith('#/customers/') && (approve || canApprove())) customerDetail().reload();
+  } catch (ex) { toast(ex.message, 'err'); }
+}
+/** Bảng lương công ty (trial-ui/payroll.js) – Manager. */
+var payrollUi = null; // eslint-disable-line no-var
+const payrollBoard = () => payrollUi ||= initPayroll({ api, toast, esc, money, pill, confirmBox, userId: () => state.user?.id });
+/** Trang chi tiết nhân viên (trial-ui/member-detail.js): KPI, khách, báo giá, đơn, HĐKT, giao dịch, công nợ, ngày công, lương. */
+var memberUi = null; // eslint-disable-line no-var
+function memberDetail() {
+  return memberUi ||= initMemberDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, initials, ORDER_STATUS, CONTRACT_STATUS, moneyWords,
+    onEdit: async m => { if (!state.members?.some(x => x.id === m.id)) await loadMembers(); openMember(m.id); },
+    onPhoto: async m => {
+      const key = await uploadAvatar(m.id === state.user.id ? '/avatar' : `/admin/members/${encodeURIComponent(m.id)}/avatar`); if (!key) return false;
+      if (m.id === state.user.id) { state.user.avatar = key; showOwnAvatar(key); }
+      const row = state.members?.find(x => x.id === m.id); if (row) { row.avatar = key; renderMembers(); }
+      toast('Đã cập nhật ảnh đại diện.'); return true;
+    } });
+}
+/** Trang chi tiết khách hàng (trial-ui/customer-detail.js). */
+var customerUi = null; // eslint-disable-line no-var
+function customerDetail() {
+  return customerUi ||= initCustomerDetail({ api, toast, esc, money, fmtDate, pill, payCell, confirmBox, canApprove, ORDER_STATUS, CONTRACT_STATUS, DELIVERY_STATUS,
+    onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, onCare: (c, a, after) => careView().openForm(a ? { activity: a } : { customer: { id: c.id, name: c.name, contact: c.contact } }, after), isManager, userId: () => state.user?.id, onReview: reviewCustomer });
+}
+let customerOpenSeq=0;
+async function openCustomer(id, known) {
+  const request=++customerOpenSeq;
+  try{
+    // Always load the current directory before editing; a stale cached form must not replace newer contacts.
+    const profile=id?await api('/customers/'+encodeURIComponent(id)+'?refresh=1'):null;
+    if(request!==customerOpenSeq)return;
+    customerId=id||null;customerDuplicateCheck.reset();
+    $('#customer-tax-lookup').hidden=!!id;$('#customer-tax-input').value='';$('#customer-tax-status').textContent=CUSTOMER_TAX_HINT;$('#customer-tax-status').classList.remove('warn');
+    const form=$('#customer-form');form.reset();$('#customer-error').textContent='';
+    customerFields.setRequiredProfile(!id);
+    const c=profile?.customer;
+    if(c)for(const k of ['name','contact','phone','email','taxCode','customerCode','customerType','address','depositRate','paymentTerm','paymentDays','creditLimit','establishedDate'])form.elements.namedItem(k).value=c[k]??'';
+    customerNewProfile.reset(state.user,!id,profile?.contactDirectory??[],profile?.contactDirectoryVersion);
+    customerFields.refreshAnniversary();customerTypeOptions.refresh();
+    $('#customer-dialog-title').textContent=c?'Sửa khách hàng':'Thêm khách hàng';
+    customerSteps.reset(!id);
+    $('#customer-dialog').showModal();customerDuplicateCheck.refresh();
+  }catch(ex){toast(ex.message,'err');}
+}
+const customerFields = customerFormFields({requireProfile:true,paymentDays:true,contactDirectory:true,companyLabels:true,requireCode:true});
+const customerTypeOptions = bindCustomerTypeOptions({input:customerFields.controls.customerType,api});
+$('#customer-fields').append(customerFields.root);
+const customerNewProfile=customerCreateProfile({api,mainContact:customerFields.controls.contact});
+$('#customer-new-profile').append(customerNewProfile.root);
+customerFields.contactSlot.append(customerNewProfile.directory);
+// Nhập theo 3 bước: Công ty → Người liên hệ → Kiểm tra và lưu (trial-ui/customer-form-steps.js).
+const customerSteps=initCustomerFormSteps({dialog:$('#customer-dialog'),form:$('#customer-form'),fields:customerFields,profileRoot:$('#customer-new-profile'),taxLookup:$('#customer-tax-lookup'),note:$('#customer-required-note'),error:$('#customer-error')});
+const customerDuplicateCheck = bindCustomerDuplicateCheck({
+  api, root: $('#customer-fields'), exceptId: () => customerId,
+  active: () => $('#customer-dialog').open,
+  read: () => Object.fromEntries(['name', 'phone', 'taxCode'].map(k => [k, $('#customer-form').elements.namedItem(k).value])),
+  onChoose: c => { $('#customer-dialog').close(); go('#/customers/' + encodeURIComponent(c.id)); },
+});
+$('#new-customer').addEventListener('click', () => openCustomer());
+// Tạo nhanh khách từ MST / link trang tra cứu: máy chủ chỉ lấy số MST (kiểm tra số kiểm tra) rồi tra VietQR; điền sẵn tên, MST, địa chỉ.
+// Tạo khách vẫn qua Lưu như thường (bắt buộc người liên hệ, kiểm trùng MST, khách nhân viên tạo chờ duyệt).
+const CUSTOMER_TAX_HINT=$('#customer-tax-status').textContent;
+async function lookupCustomerTax(){
+  const input=$('#customer-tax-input').value.trim(),status=$('#customer-tax-status'),btn=$('#customer-tax-fetch'),form=$('#customer-form');
+  if(!input){status.textContent='Nhập mã số thuế hoặc dán link trang tra cứu.';return;}
+  btn.disabled=true;status.classList.remove('warn');status.textContent='Đang tra mã số thuế…';
+  try{
+    const r=await api('/customer-tax-lookup','POST',{input}),el=k=>form.elements.namedItem(k),notes=[];
+    const prevName=el('name').value.trim();
+    el('name').value=r.name;el('taxCode').value=r.taxCode;if(r.address)el('address').value=r.address;
+    for(const k of ['name','taxCode','address'])el(k).dispatchEvent(new Event('input',{bubbles:true}));
+    if(prevName&&prevName!==r.name)notes.push(`Đã thay tên "${prevName}".`);
+    if(r.shortName||r.internationalName)notes.push('Tên viết tắt / tiếng Anh: '+[r.shortName,r.internationalName].filter(Boolean).join(' · ')+'.');
+    if(!r.active){status.classList.add('warn');notes.unshift(`⚠ Tình trạng: ${r.status||'không rõ'} – kiểm tra trước khi giao dịch.`);}
+    else notes.unshift(`Đã điền từ ${r.source}${r.status?' · '+r.status:''}${r.updatedAt?' · cập nhật '+new Date(r.updatedAt).toLocaleDateString('vi-VN'):''}.`);
+    notes.push('Kiểm tra lại rồi bấm Tiếp tục để nhập người liên hệ.');
+    status.textContent=notes.join(' ')+' ';
+    // Người đại diện / ngày thành lập: Cổng ĐKKD yêu cầu Captcha nên CRM không tự lấy – mở trang để nhân viên tự xem khi cần.
+    const portal=document.createElement('a');portal.href='https://dangkykinhdoanh.gov.vn/vn/Pages/Trangchu.aspx';portal.target='_blank';portal.rel='noopener noreferrer';
+    portal.textContent='Xem người đại diện / ngày thành lập trên Cổng ĐKKD ↗';status.append(portal);
+    customerDuplicateCheck.refresh();
+    // Ô người liên hệ là danh bạ (input contact ẩn): đưa con trỏ tới tên người liên hệ đầu tiên còn trống.
+    if(!el('contact').value)[...$('#customer-dialog').querySelectorAll('input')].find(i=>/Tên người liên hệ/.test(i.getAttribute('aria-label')||i.closest('label')?.textContent||'')&&!i.value&&i.offsetParent)?.focus();
+  }catch(ex){status.classList.add('warn');status.textContent=ex.message;}
+  finally{btn.disabled=false;}
+}
+$('#customer-tax-fetch').addEventListener('click',lookupCustomerTax);
+$('#customer-tax-input').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();lookupCustomerTax();}});
+$('#customer-appsheet').addEventListener('click', () => { if (isManager()) openAppsheetCustomers({ api, esc, onSaved: loadCustomers }); });
+$('#customer-anniversaries').addEventListener('click', async () => {
+  const button = $('#customer-anniversaries'); button.disabled = true;
+  try {
+    const d = await api('/customers/anniversaries'), dlg = document.createElement('dialog'); dlg.className = 'modal wide';
+    dlg.innerHTML = `<div class="modal-head"><h2>Gợi ý kỷ niệm thành lập</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+      <div class="modal-body"><p>Các mốc ${d.intervalYears}, ${d.intervalYears*2}, ${d.intervalYears*3}… năm trong ${d.leadDays} ngày tới, theo phạm vi khách hàng được phân quyền. Manager xem toàn công ty.</p>
+      ${d.reminders.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Khách hàng</th><th>Kỷ niệm</th><th>Ngày</th><th>Gợi ý cho sale</th></tr></thead><tbody>${d.reminders.map(r => `<tr><td><a href="#/customers/${encodeURIComponent(r.id)}" data-open-customer>${esc(r.name)}</a></td><td>${r.anniversary.years} năm</td><td>${esc(r.anniversary.date.split('-').reverse().join('/'))}<small>${r.anniversary.daysUntil === 0 ? 'Hôm nay' : 'Còn '+r.anniversary.daysUntil+' ngày'}</small></td><td>${esc(r.anniversary.suggestion)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Chưa có khách hàng đến mốc kỷ niệm trong kỳ này. Bổ sung ngày thành lập trong hồ sơ khách hàng để nhận gợi ý.</p>'}
+      <p class="muted small">${d.total} khách hàng phù hợp${d.total>d.reminders.length ? ' · Hiển thị 100 khách gần nhất' : ''}.</p></div>`;
+    document.body.append(dlg); dlg.querySelector('[data-close]').onclick = () => dlg.close();
+    dlg.querySelectorAll('[data-open-customer]').forEach(a => a.addEventListener('click', () => dlg.close()));
+    dlg.addEventListener('close', () => dlg.remove()); dlg.showModal();
+  } catch(e) { toast(e.message,'err'); } finally { button.disabled = false; }
+});
+
+$('#customer-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const data = customerFields.read();
+  const err = $('#customer-error'); err.textContent = '';
+  if (!data.name) { err.textContent = 'Vui lòng nhập tên khách hàng.'; e.target.elements.name.focus(); return; }
+  if (data.email && !/^\S+@\S+\.\S+$/.test(data.email)) { err.textContent = 'Email chưa đúng định dạng.'; return; }
+  try{Object.assign(data,customerNewProfile.read());data.contact=customerFields.controls.contact.value;}catch(ex){err.textContent=ex.message;return;}
+  if(!customerId) {
+    for(const [key,label] of [['customerCode','mã'],['taxCode','mã số thuế'],['address','địa chỉ']])if(!data[key]){err.textContent='Vui lòng nhập '+label+' khách hàng.';customerFields.controls[key].focus();return;}
+  }
+  if(e.target.reportValidity&&!e.target.reportValidity())return;
+  const btn = $('#save-customer'); btn.disabled = true;
+  try {
+    const saved = await api(customerId ? '/customers/' + encodeURIComponent(customerId) : '/customers', customerId ? 'PUT' : 'POST', data);
+    $('#customer-dialog').close(); toast(customerId ? 'Đã cập nhật khách hàng.' : saved.approvalStatus === 'pending' ? `Đã thêm ${data.name} – chờ Manager duyệt.` : 'Đã thêm ' + data.name + '.');
+    // Khách mới: mở luôn trang chi tiết để thêm người liên hệ / phân công; đang ở trang chi tiết thì tải lại.
+    if (!customerId) go('#/customers/' + encodeURIComponent(saved.id));
+    else if (location.hash.startsWith('#/customers/')) customerDetail().reload();
+    await loadCustomers();
+  } catch (ex) { err.textContent = ex.message; }
+  finally { btn.disabled = false; }
+});
+
+// ---------------------------------------------------------------- nhân viên (Manager)
+const memberStatus = m => !m.active ? 'locked' : !m.activated ? 'pending' : 'active';
+const STATUS_PILL = { active: '<span class="pill ok">Đang hoạt động</span>', pending: '<span class="pill warn">Chờ kích hoạt</span>', locked: '<span class="pill off">Đã khoá</span>' };
+function renderMembers() {
+  const tbody = $('#member-list');
+  $('#member-load-error').hidden=!state.memberLoadError;
+  $('#member-load-error-message').textContent=state.memberLoadError ? 'Không tải được danh sách nhân viên. '+state.memberLoadError : '';
+  if (!state.members) { tbody.innerHTML = state.memberLoadError ? '' : skeleton(7); $('#member-empty').hidden=true;$('#member-table').hidden=!!state.memberLoadError; return; }
+  const pos = new Map(state.positions.map(p => [p.id, p.name])), q = normalize(state.memberQuery);
+  const list = state.members.filter(m => (!state.memberStatus || memberStatus(m) === state.memberStatus) && (!q || normalize(`${m.name} ${m.email} ${m.phone} ${m.workCompany||''} ${(state.memberDepartments||[]).find(d=>d.id===m.workDepartmentId)?.name||''}`).includes(q)));
+  tbody.innerHTML = list.map(m => {
+    const self = m.id === state.user.id, st = memberStatus(m);
+    return `<tr>
+      <td class="first"><span class="row-gap"><span class="avatar"${avAttr(m.avatar)}>${esc(initials(m.name))}</span><span><a class="name-btn strong" href="#/members/${esc(encodeURIComponent(m.id))}">${esc(m.name)}</a>${self ? ' <span class="pill blue">Bạn</span>' : ''}<small>${esc(m.email)}</small></span></span></td>
+      <td data-label="ĐT">${esc(m.phone) || '—'}</td>
+      <td data-label="Làm việc tại">${esc(m.workCompany==='BN'?'Bách Ngân':m.workCompany==='VG'?'VIGIFTS':'Chưa chọn')}</td>
+      <td data-label="Phòng ban">${esc((state.memberDepartments||[]).find(d=>d.id===m.workDepartmentId)?.name||'Chưa chọn')}${m.isLeader?' <span class="pill blue">Leader</span>':''}</td>
+      <td data-label="Chức vụ">${esc(pos.get(m.positionId) || m.positionId)}${m.role === 'manager' ? ' <span class="pill">Manager</span>' : ''}
+        ${m.role === 'employee' ? `<label class="approver-toggle" title="Cho phép duyệt báo giá, khách mới, sản phẩm mới, đơn / HĐKT, đơn mua NCC (chỉ Manager bật / tắt)"><input type="checkbox" data-approver="${esc(m.id)}" ${m.approver ? 'checked' : ''}> Được duyệt</label>` : ''}</td>
+      <td>${STATUS_PILL[st]}</td>
+      <td class="actions-cell"><div class="row-actions">${m.role!=='supplier'?`<button class="btn ghost small" data-mobile-inline data-employment="${esc(m.id)}">Đơn vị & phòng ban</button>`:''}${self ? '' : `
+        ${st !== 'locked' ? `<button class="btn ghost small" data-reset="${esc(m.id)}" title="Cấp liên kết đặt lại mật khẩu">${st === 'pending' ? 'Gửi lại liên kết' : 'Đặt lại mật khẩu'}</button>` : ''}
+        <button class="icon-btn" data-edit-member="${esc(m.id)}" title="Sửa" aria-label="Sửa ${esc(m.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z M14 6l4 4"/></svg></button>
+        ${st === 'locked'
+          ? `<button class="btn ghost small" data-unlock="${esc(m.id)}">Mở khoá</button>`
+          : `<button class="icon-btn danger" data-lock="${esc(m.id)}" title="Khoá tài khoản" aria-label="Khoá ${esc(m.name)}"><svg viewBox="0 0 24 24"><path d="M6 11h12v9H6z M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>`}
+        <button class="icon-btn danger" data-delete-member="${esc(m.id)}" title="Xoá nhân viên" aria-label="Xoá ${esc(m.name)}"><svg viewBox="0 0 24 24"><path d="M5 7h14 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3"/></svg></button>`}
+      </div></td>
+    </tr>`;
+  }).join('');
+  $('#member-empty').hidden = list.length > 0 || !!state.memberLoadError;
+  $('#member-table').hidden = list.length === 0;
+}
+$('#member-retry').addEventListener('click',()=>loadMembers());
+$('#member-search').addEventListener('input', e => { state.memberQuery = e.target.value; renderMembers(); });
+$('#member-filter').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  $$('#member-filter .chip').forEach(c => c.classList.toggle('active', c === chip));
+  state.memberStatus = chip.dataset.status; renderMembers();
+});
+let memberId = null;
+async function openMember(id) {
+  // Chưa tải chức vụ (vd mở thẳng từ thông báo / trang khác): tải trước, tránh ô Chức vụ trống → "Chức vụ không hợp lệ".
+  if (!state.positions?.length) { await loadMembers(); if (!state.positions?.length) { toast(state.memberLoadError || 'Chưa tải được danh sách chức vụ. Vui lòng thử lại.', 'err'); return; } }
+  memberId = id || null;
+  const form = $('#member-form'), m = id ? state.members.find(x => x.id === id) : null;
+  form.reset(); $('#member-error').textContent = '';
+  $('#member-position').innerHTML = state.positions.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  if (m) { for (const k of ['name', 'email', 'phone', 'positionId']) form.elements.namedItem(k).value = m[k] || ''; form.elements.active.checked = !!m.active; }
+  else form.elements.positionId.value = state.positions.find(p => p.id === 'sale')?.id || state.positions[0]?.id || '';
+  $('#member-active-row').hidden = !m;
+  $('#member-note').hidden = !!m;
+  $('#member-photo-row').hidden = !m;
+  $('#save-member').hidden = m?.id === state.user.id; // tài khoản của mình: chỉ đổi ảnh (thông tin do Manager khác sửa)
+  if (m) showMemberPhoto(m);
+  $('#member-dialog-title').textContent = m ? 'Chi tiết nhân viên' : 'Thêm nhân viên';
+  $('#save-member').textContent = m ? 'Lưu thay đổi' : 'Tạo tài khoản';
+  $('#member-dialog').showModal();
+}
+function showMemberPhoto(m) {
+  const el = $('#member-photo'); el.textContent = initials(m.name);
+  if (m.avatar) el.dataset.av = m.avatar; else delete el.dataset.av;
+  $('#member-photo-remove').hidden = !m.avatar;
+}
+/** Ảnh đại diện nhân viên đang mở: Manager tải lên / xoá (chính mình thì dùng đường /avatar). */
+async function changeMemberPhoto(remove) {
+  const m = state.members.find(x => x.id === memberId); if (!m) return;
+  const path = m.id === state.user.id ? '/avatar' : `/admin/members/${encodeURIComponent(m.id)}/avatar`;
+  try {
+    if (remove) { if (!await confirmBox(`Xoá ảnh đại diện của ${m.name}?`, { ok: 'Xoá ảnh', danger: true })) return; await api(path, 'DELETE'); m.avatar = null; }
+    else { const key = await uploadAvatar(path); if (!key) return; m.avatar = key; }
+    if (m.id === state.user.id) { state.user.avatar = m.avatar; showOwnAvatar(m.avatar); }
+    showMemberPhoto(m); renderMembers(); toast(remove ? 'Đã xoá ảnh đại diện.' : 'Đã cập nhật ảnh đại diện.');
+  } catch (ex) { toast(ex.message, 'err'); }
+}
+$('#member-photo-upload').addEventListener('click', () => changeMemberPhoto(false));
+$('#member-photo-remove').addEventListener('click', () => changeMemberPhoto(true));
+$('#new-member').addEventListener('click', () => openMember());
+$('#member-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const form = e.target, err = $('#member-error'); err.textContent = '';
+  const v = k => form.elements.namedItem(k).value.trim();
+  const body = { name: v('name'), email: v('email'), phone: v('phone'), positionId: v('positionId') };
+  if (!body.name || !/^\S+@\S+\.\S+$/.test(body.email)) { err.textContent = 'Nhập họ tên và địa chỉ email hợp lệ.'; return; }
+  if (!body.phone) { err.textContent = 'Vui lòng nhập số điện thoại nhân viên.'; return; }
+  const btn = $('#save-member'); btn.disabled = true;
+  try {
+    if (memberId) {
+      const m = state.members.find(x => x.id === memberId);
+      await api('/admin/member', 'PUT', { id: memberId, ...body, role: m.role, active: form.elements.active.checked });
+      $('#member-dialog').close(); toast('Đã cập nhật ' + body.name + '.');
+      if (location.hash.startsWith('#/members/')) memberDetail().reload();
+    } else {
+      const res = await api('/admin/members', 'POST', body);
+      $('#member-dialog').close();
+      showLink(res.url, 'Đã tạo tài khoản', `Gửi liên kết này cho ${body.name} để đặt mật khẩu. Liên kết chỉ dùng một lần và hết hạn sau 15 phút.`);
+    }
+    loadMembers();
+  } catch (ex) { err.textContent = ex.message; }
+  finally { btn.disabled = false; }
+});
+let employmentMemberId = null;
+$('#member-list').addEventListener('click', e=>{
+  const b=e.target.closest('[data-employment]');if(!b)return;
+  const m=state.members.find(m=>m.id===b.dataset.employment);if(!m)return;
+  employmentMemberId=m.id;const f=$('#member-employment-form');f.reset();
+  $('#member-employment-name').textContent=m.name;
+  f.elements.workCompany.value=m.workCompany||'';
+  f.elements.workDepartmentId.innerHTML='<option value="">Chưa chọn phòng ban</option>'+(state.memberDepartments||[]).map(d=>`<option value="${esc(d.id)}">${esc(d.name)}</option>`).join('');
+  f.elements.workDepartmentId.value=m.workDepartmentId||'';f.elements.isLeader.checked=!!m.isLeader;
+  $('#member-employment-error').textContent='';$('#member-employment-dialog').showModal();
+});
+$('#member-employment-form').addEventListener('submit',async e=>{
+  e.preventDefault();const f=e.target,b=f.querySelector('[type="submit"]');b.disabled=true;
+  try{const r=await api(`/admin/members/${encodeURIComponent(employmentMemberId)}/employment`,'PUT',{workCompany:f.elements.workCompany.value||null,workDepartmentId:f.elements.workDepartmentId.value||null,isLeader:f.elements.isLeader.checked});
+    Object.assign(state.members.find(m=>m.id===employmentMemberId),r.employment);renderMembers();$('#member-employment-dialog').close();toast('Đã lưu đơn vị và phòng ban.');
+  }catch(ex){$('#member-employment-error').textContent=ex.message;}finally{b.disabled=false;}
+});
+// Cờ "Được duyệt" (chỉ Manager – máy chủ kiểm lại ở PUT /admin/members/:id/approver).
+$('#member-list').addEventListener('change', async e => {
+  const box = e.target.closest('[data-approver]'); if (!box) return;
+  const m = state.members.find(x => x.id === box.dataset.approver), on = box.checked;
+  if (!await confirmBox(on ? `Cho ${m.name} quyền phê duyệt (báo giá, khách hàng mới, sản phẩm mới, đơn hàng / HĐKT, đơn mua NCC)?` : `Thu quyền phê duyệt của ${m.name}?`, { title: on ? 'Cấp quyền duyệt' : 'Thu quyền duyệt', ok: on ? 'Cấp quyền' : 'Thu quyền', danger: !on })) { box.checked = !on; return; }
+  box.disabled = true;
+  try { await api(`/admin/members/${encodeURIComponent(m.id)}/approver`, 'PUT', { approver: on }); m.approver = on; toast(on ? `Đã cho ${m.name} quyền duyệt.` : `Đã thu quyền duyệt của ${m.name}.`); }
+  catch (ex) { box.checked = !on; toast(ex.message, 'err'); } finally { box.disabled = false; }
+});
+$('#member-list').addEventListener('click', async e => {
+  const t = e.target.closest('[data-edit-member],[data-reset],[data-lock],[data-unlock],[data-delete-member]'); if (!t) return;
+  const id = t.dataset.editMember || t.dataset.reset || t.dataset.lock || t.dataset.unlock || t.dataset.deleteMember, m = state.members.find(x => x.id === id);
+  if (t.dataset.editMember) return openMember(id);
+  try {
+    if (t.dataset.reset) {
+      if (!await confirmBox(`Cấp liên kết đặt mật khẩu mới cho ${m.name}? Mật khẩu cũ sẽ hết hiệu lực và ${m.name} bị đăng xuất khỏi mọi thiết bị.`, { ok: 'Cấp liên kết' })) return;
+      const res = await api('/admin/reset', 'POST', { id });
+      showLink(res.url, 'Liên kết đặt mật khẩu', `Gửi liên kết này cho ${m.name}. Liên kết chỉ dùng một lần và hết hạn sau 15 phút.`);
+    } else if (t.dataset.lock) {
+      if (!await confirmBox(`Khoá tài khoản ${m.name}? Người này sẽ bị đăng xuất và không đăng nhập được nữa.`, { title: 'Khoá tài khoản', ok: 'Khoá', danger: true })) return;
+      await api('/admin/member', 'DELETE', { id }); toast('Đã khoá ' + m.name + '.');
+    } else if (t.dataset.deleteMember) {
+      if (!await confirmBox(`Xoá ${m.name} khỏi danh sách nhân viên? Tài khoản bị đăng xuất, không đăng nhập được nữa và email được giải phóng (tạo lại được). Báo giá, đơn… cũ vẫn giữ tên ${m.name}. Không hoàn tác được.`, { title: 'Xoá nhân viên', ok: 'Xoá nhân viên', danger: true, typeToConfirm: 'XOA' })) return;
+      await api(`/admin/members/${encodeURIComponent(id)}`, 'DELETE'); toast('Đã xoá ' + m.name + '.');
+    } else if (t.dataset.unlock) {
+      await api('/admin/member', 'PUT', { id, name: m.name, email: m.email, phone: m.phone, positionId: m.positionId, role: m.role, active: true });
+      toast('Đã mở khoá ' + m.name + '.');
+    }
+    loadMembers();
+  } catch (ex) { toast(ex.message, 'err'); }
+});
+function showLink(url, title, text) {
+  $('#link-title').textContent = title; $('#link-text').textContent = text; $('#link-value').value = url;
+  $('#copy-link').textContent = 'Sao chép';
+  $('#link-dialog').showModal(); $('#link-value').select();
+}
+$('#copy-link').addEventListener('click', async () => {
+  const input = $('#link-value');
+  try { await navigator.clipboard.writeText(input.value); } catch { input.select(); document.execCommand('copy'); }
+  $('#copy-link').textContent = 'Đã chép ✓';
+});
+
+// ---------------------------------------------------------------- khởi động
+$('#today').textContent = new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+renderQuotes(); renderCustomers();
+if (activation) { setupActivationForm(); showAuth(); }
+else if (token) resume();
+else showAuth();
+/**
+ * Mở ngay giao diện bằng hồ sơ phiên đã lưu; /me cập nhật nền. Chưa có hồ sơ thì xác minh một lần.
+ * Mất mạng/5xx không đóng giao diện đang mở; 401 vẫn thu hồi phiên như các API khác.
+ */
+function resume() {
+  sessionResume.resume().catch(e => {
+    if(state.user&&token)return;
+    if (e.status === 401) return showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    showAuth(e.message, { keepToken: true });
+    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'btn secondary small'; retry.textContent = 'Thử lại';
+    retry.style.marginLeft = '8px'; retry.addEventListener('click', () => { $('#auth-error').textContent = 'Đang kết nối lại…'; resume(); });
+    $('#auth-error').append(retry);
+    window.addEventListener('online', () => { if (!state.user && token) resume(); }, { once: true });
+  });
+}
+
+
+// ================================================================ BÁN HÀNG: đơn đặt hàng · HĐKT · lịch giao · công nợ
+// Luồng: Báo giá → Đơn đặt hàng → HĐKT → Lịch giao → Công nợ. Mọi trang đều dẫn về trang chi tiết đơn (#/orders/<id>).
+/** `unsubmitted` = đơn / HĐKT nháp nhân viên chưa bấm "Gửi duyệt" (submittedAt = null). */
+const ORDER_STATUS = { unsubmitted: ['Nháp – chưa gửi duyệt', 'muted'], draft: ['Chờ Manager duyệt', 'warn'], confirmed: ['Đã duyệt', 'info'], delivering: ['Đang giao', 'warn'], delivered: ['Đã giao xong', 'ok'], cancelled: ['Đã huỷ', 'muted'] };
+const CONTRACT_STATUS = { draft: ['Chưa ký', 'warn'], signed: ['Đã ký', 'info'], completed: ['Hoàn tất', 'ok'], cancelled: ['Đã huỷ', 'muted'] };
+const DELIVERY_STATUS = { planned: ['Chờ giao', 'warn'], in_transit: ['Đang giao', 'info'], delivered: ['Đã giao', 'ok'], failed: ['Giao lỗi', 'danger'], cancelled: ['Đã huỷ', 'muted'] };
+const ghnTrackingText = x => x.trackingCode ? `GHN ${x.trackingCode}${x.trackingStatus ? ' · ' + x.trackingStatus : ''}` : '';
+const DEBT_STATUS = { open: ['Còn nợ', 'warn'], overdue: ['Quá hạn', 'danger'], paid: ['Đã thu đủ', 'ok'], none: ['—', 'muted'] };
+/** Trạng thái thanh toán / đặt cọc của đơn (danh sách đơn và HĐKT). */
+const PAY_STATE = { unpaid: ['Chưa thanh toán', 'warn'], deposit_due: ['Chờ đặt cọc', 'warn'], deposit_paid: ['Đã cọc', 'info'], partial: ['Đã thu một phần', 'info'],
+  overdue: ['Quá hạn', 'danger'], paid: ['Đã thanh toán đủ', 'ok'], none: ['Chưa có kỳ thu', 'muted'] };
+function payCell(r, counts, orderStatus, what = 'Đơn') {
+  if (orderStatus === 'cancelled') return `<span class="muted">${what} đã huỷ</span>`;
+  if (!counts) return `<span class="pill muted">Chưa phát sinh</span><small>${what} chờ ${what === 'HĐKT' ? 'duyệt / ký' : 'xác nhận'}</small>`;
+  if (!r) return '—';
+  const sub = r.payState === 'paid' ? `Đã thu ${money(r.paid)}`
+    : [r.deposit > 0 ? `Cọc ${money(r.depositPaid)}/${money(r.deposit)}` : r.paid > 0 ? `Đã thu ${money(r.paid)}` : '', `Còn ${money(r.balance)}`].filter(Boolean).join(' · ');
+  return `${pill(PAY_STATE, r.payState)}<small>${sub}</small>${r.overdue ? `<small class="danger-text">Quá hạn ${money(r.overdue)}</small>` : ''}`;
+}
+/** Xuất hoá đơn của đơn / HĐKT. */
+const INVOICE_STATUS = { none: ['Chưa yêu cầu', 'muted'], requested: ['Chờ xuất HĐ', 'warn'], issued: ['Đã xuất HĐ', 'ok'], handled: ['Đã xử lý việc hoá đơn', 'muted'] };
+const invoiceCell = (status, no, orderStatus) => orderStatus === 'cancelled' ? '<span class="muted">—</span>'
+  : status === 'issued' ? `${pill(INVOICE_STATUS, 'issued')}<small>Số ${esc(no)}</small>` : pill(INVOICE_STATUS, status || 'none');
+const pill = (map, k) => { const [t, c] = map[k] || [k, '']; return `<span class="pill ${c}">${esc(t)}</span>`; };
+const orderLink = (id, text) => `<a href="#/orders/${encodeURIComponent(id)}">${esc(text)}</a>`;
+/** Đơn hàng và HĐKT là 2 luồng độc lập: bản ghi có HĐKT hiện "HĐKT <số>" và mở #/contracts/<id>, không bao giờ hiện số đơn. */
+const docHref = (id, contractNo) => `#/${contractNo ? 'contracts' : 'orders'}/${encodeURIComponent(id)}`;
+const docLink = (id, orderNo, contractNo) => `<a href="${docHref(id, contractNo)}">${esc(contractNo ? 'HĐKT ' + contractNo : orderNo)}</a>`;
+/** Số chứng từ đang mở ở trang chi tiết: số HĐKT nếu là HĐKT, không thì số đơn. */
+const docNo = (d = sales.detail) => d?.contract?.contractNo || d?.order?.orderNo || '';
+const isContractDoc = (d = sales.detail) => !!d?.contract;
+const debounce = (fn, ms = 250) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+function fillList(key, rows, emptyText) {
+  const view=$('#view-'+key);if(view)view.dataset.loadState='ready';
+  $(`#${key}-list`).innerHTML = rows.join('');
+  $(`#${key}-empty`).hidden = rows.length > 0; $(`#${key}-empty-text`).textContent = emptyText;
+}
+const listError = (key, e) => { const view=$('#view-'+key);if(view)view.dataset.loadState='error';$(`#${key}-list`).innerHTML = ''; $(`#${key}-empty`).hidden = false; $(`#${key}-empty-text`).textContent = e.message; };
+window.addEventListener('crm-reload-current',e=>{if(!state.user)return;const reload={quotes:loadQuotes,orders:loadOrders,contracts:loadContracts,customers:()=>customerScreen(location.hash.split('?')[1]||''),tasks:()=>tasksView().load(),care:()=>careView().load()}[e.detail?.view];reload?.();});
+
+const NO_SCHEDULE = 'Lên lịch giao trước rồi mới yêu cầu đóng gói / in phiếu đóng gói, phiếu giao hàng.';
+/** Nút in nhanh phiếu đóng gói / phiếu giao hàng trên dòng đơn / HĐKT (đơn đã xác nhận, chưa huỷ). */
+const slipButtons = (orderId, status) => status === 'draft' || status === 'cancelled' ? ''
+  : `<button type="button" class="btn ghost small" data-pack-print-for="${esc(orderId)}" title="In phiếu đóng gói">Phiếu ĐG</button><button type="button" class="btn ghost small" data-ship-print-for="${esc(orderId)}" title="In phiếu giao hàng">Phiếu GH</button>`;
+// ----- danh sách đơn
+let ordersPager, ordersReq = 0, ordersData = null;
+const ORDER_SOURCE = { crm: 'CRM', pos: 'POS tại quầy', ghn: 'COD / GHN',web:'Đơn website' };
+function ordersQuery(exportMode = false) {
+  const status = $('#orders-status-tabs .chip.active')?.dataset.status || '', inv = $('#orders-filters .chip.active')?.dataset.invoice || '';
+  const p = new URLSearchParams({ flow: 'order', q: $('#orders-search').value, limit: String(exportMode ? 5000 : ordersPager.limit), offset: String(exportMode ? 0 : ordersPager.offset) });
+  for (const [key, value] of [['status', status], ['invoice', inv], ['source', $('#orders-source').value], ['owner', $('#orders-owner').value], ['branch', $('#orders-branch').value], ['from', $('#orders-from').value], ['to', $('#orders-to').value]]) if (value) p.set(key, value);
+  if (exportMode) p.set('export', '1');
+  return p.toString();
+}
+function fillOrderFilter(id, first, rows) {
+  const select = $(id), value = select.value;
+  select.replaceChildren(Object.assign(document.createElement('option'), { value: '', textContent: first }));
+  for (const row of rows || []) select.append(Object.assign(document.createElement('option'), { value: row.id, textContent: row.name }));
+  if ([...select.options].some(x => x.value === value)) select.value = value;
+}
+async function loadOrders() {
+  const req = ++ordersReq;
+  ordersPager ||= createPager($('#orders-pager'), 'orders', () => loadOrders(), 50);
+  $('#orders-list').innerHTML = skeleton(7);
+  try {
+    // Đơn hàng và HĐKT là 2 luồng song song: trang này chỉ hiện đơn không có HĐKT.
+    const d = await api('/orders?' + ordersQuery());
+    if (req !== ordersReq) return;
+    ordersData = d;
+    $('#view-orders').dataset.resultCount=String(d.total??d.orders.length);
+    fillOrderFilter('#orders-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
+    fillOrderFilter('#orders-branch', 'Tất cả chi nhánh', d.filterOptions?.branches);
+    invoiceCount('orders', d.invoicePending);
+    if (req !== ordersReq) return;
+    salesListSummary('orders', d.summary);
+    ordersPager.render(d.total ?? d.orders.length);
+    fillList('orders', d.orders.map(o => `<tr class="clickable" data-href="#/orders/${esc(o.id)}">
+      <td>${orderLink(o.id, o.orderNo)}<small>${esc(o.external?'Web '+o.sourceOrderNo:(o.quoteNo || 'Không từ báo giá'))} · ${fmtDate(String(o.createdAt || o.orderDate).slice(0, 10))}</small></td>
+      <td>${esc(o.customerName)}<small>${esc([o.contact, o.phone].filter(Boolean).join(' · '))}</small></td>
+      <td><span class="pill ${o.orderSource === 'ghn' ? 'warn' : o.orderSource === 'pos' ? 'ok' : 'blue'}">${esc(ORDER_SOURCE[o.orderSource] || o.orderSource)}</span><small>${esc(o.branchName || '—')}</small></td>
+      <td>${esc(o.ownerName || '—')}</td>
+      <td>${o.external?'<span class="pill info">'+esc(o.statusLabel)+'</span>':pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</td>
+      <td class="orders-shipping-cell${o.ghnShipments?.length?' has-ghn-tracking':''}">${o.deliveryStatus ? pill(DELIVERY_STATUS, o.deliveryStatus) : o.orderSource === 'ghn' ? '<span class="pill warn">Chờ tạo vận đơn</span>' : '<span class="muted">—</span>'}<small>${esc(o.deliveryCarrier || '')}</small>${o.external?'<small>'+esc(o.ghnOrderCode||'Chưa tạo GHN')+' · '+esc(o.ghnStatus||'')+'</small>':ghnOrderSummary(o.ghnShipments,esc)}</td>
+      <td>${o.external&&o.paid===null?'<span class="muted">Chưa rõ thanh toán</span>':payCell(o.receivable, o.debtCounts, o.status)}</td>
+      <td class="right num"><b>${money(o.total)}</b><small>${o.external&&o.invoiceStatus==='unknown'?'Chưa có dữ liệu hoá đơn':invoiceCell(o.invoiceStatus, o.invoiceNo, o.status)}</small></td>
+      <td class="actions-cell"><div class="row-actions"><button type="button" class="btn secondary small" data-order-print-for="${esc(o.id)}" title="Xem, sửa rồi in / lưu PDF / tải Excel đơn đặt hàng">In / Tải</button>${o.external?'':slipButtons(o.id, o.status)}<span data-order-sapo="${esc(o.id)}"></span>${o.sapoSourceChanged?'<small class="error">Cần đối soát Sapo</small>':''}</div></td></tr>`),
+      'Chưa có đơn đặt hàng. Bấm ＋ để tạo đơn từ báo giá đã duyệt.');
+    for(const row of $('#orders-list').querySelectorAll('[data-order-sapo]')){const o=d.orders.find(o=>o.id===row.dataset.orderSapo);if(!o)continue;const action=orderSapoAction({order:o,api,chooseSapo:(ref,opts)=>sapoPush().choose(ref,opts),onSaved:loadOrders,toast});if(action){action.className+=' small';row.append(action);}}
+  } catch (e) { if (req === ordersReq) { salesListSummary('orders', null); listError('orders', e); ordersPager.render(0); } }
+}
+// ----- danh sách HĐKT
+let contractsPager, contractsReq = 0;
+async function loadContracts() {
+  const req = ++contractsReq;
+  contractsPager ||= createPager($('#contracts-pager'), 'contracts', () => loadContracts(), 50);
+  $('#contracts-list').innerHTML = skeleton(9);
+  try {
+    const p = new URLSearchParams({ limit: String(contractsPager.limit), offset: String(contractsPager.offset), q: $('#contracts-search').value });
+    const status = $('#contracts-status-tabs .chip.active')?.dataset.status || '', inv = $('#contracts-filters .chip.active')?.dataset.invoice || '';
+    for (const [key, value] of [['status', status], ['invoice', inv], ['entity', $('#contracts-entity').value], ['owner', $('#contracts-owner').value],
+      ['dateBy', $('#contracts-date-by').value], ['from', $('#contracts-from').value], ['to', $('#contracts-to').value]]) if (value) p.set(key, value);
+    const d = await api('/contracts?' + p);
+    invoiceCount('contracts', d.invoicePending);
+    if (req !== contractsReq) return;
+    $('#view-contracts').dataset.resultCount=String(d.total??d.contracts.length);
+    fillOrderFilter('#contracts-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
+    salesListSummary('contracts', d.summary);
+    contractsPager.render(d.total ?? d.contracts.length);
+    // HĐKT là luồng riêng: mở #/contracts/<id>, dòng phụ là số báo giá (không hiện số đơn).
+    fillList('contracts', d.contracts.map(k => `<tr class="clickable" data-href="#/contracts/${esc(k.orderId)}">
+      <td><a href="#/contracts/${esc(encodeURIComponent(k.orderId))}"><b>${esc(k.contractNo)}</b></a></td><td>${esc(k.customerName)}<small>${k.quoteNo ? 'Báo giá ' + esc(k.quoteNo) : ''}</small></td>
+      <td>${esc(k.legalEntity)}<small>${esc(k.ownerName || '')}</small></td><td>${pill(ORDER_STATUS, k.orderStatus === 'draft' && !k.submittedAt ? 'unsubmitted' : k.orderStatus)}<small>${esc(CONTRACT_STATUS[k.status]?.[0] || '')}</small></td><td>${fmtDate(k.signedDate) || '—'}</td>
+      <td class="right num">${money(k.value)}</td><td class="right num">${money(k.depositAmount)}<small>${fmtNum(k.depositRate)}%</small></td><td>${payCell(k.receivable, k.debtCounts, k.orderStatus, 'HĐKT')}</td><td>${invoiceCell(k.invoiceStatus, k.invoiceNo, k.orderStatus)}</td><td class="actions-cell"><div class="row-actions"><button type="button" class="btn secondary small" data-contract-docs-for="${esc(k.orderId)}" title="Xem, sửa, tải bộ 3 file Word">Xem / Tải hồ sơ</button>${slipButtons(k.orderId, k.orderStatus)}</div></td></tr>`),
+      'Chưa có HĐKT. Bấm ＋ để lập HĐKT từ báo giá đã duyệt.');
+  } catch (e) { if (req === contractsReq) { salesListSummary('contracts', null); listError('contracts', e); contractsPager.render(0); } }
+}
+/** Tổng đơn / HĐKT theo bộ lọc trên mọi trang, không tính chứng từ đã huỷ. */
+function salesListSummary(key, s) {
+  const noun = key === 'orders' ? 'đơn hàng' : 'HĐKT';
+  const box = $(`#${key}-stats`); if (!box) return;
+  if (!s) { box.innerHTML = ''; return; }
+  box.innerHTML = [[key === 'orders' ? 'Số đơn hàng' : 'Số HĐKT', fmtNum(s.count), '', s.cancelled ? `Không tính ${fmtNum(s.cancelled)} ${noun} đã huỷ` : ''], ['Doanh thu', money(s.revenue), ''], ['Tiền cọc', money(s.deposit), ''],
+    ['Đã thu', money(s.paid), ''], ['Còn phải thu', money(s.remaining), s.remaining > 0 ? 'danger-text' : '',s.unknownPaymentCount?`Chưa gồm ${fmtNum(s.unknownPaymentCount)} đơn web chưa rõ thanh toán`:'']]
+    .map(([t, v, c, note]) => `<article class="stat"><small>${t}</small><strong class="${c}">${v}</strong>${note ? `<span class="stat-note">${note}</span>` : ''}</article>`).join('');
+}
+// ----- lịch giao hàng (mặc định 7 ngày trước → 30 ngày tới)
+/** Bộ lọc chi tiết Lịch giao hàng (máy chủ lọc): nhân viên phụ trách, loại chứng từ, đơn vị giao, hoá đơn. */
+const DELIVERY_FILTERS = ['owner', 'kind', 'carrier', 'invoice', 'assignee', 'customer', 'product', 'receiver', 'address', 'due', 'tracking', 'confirmation', 'sort'];
+let deliveriesReq = 0;
+var productOrdersUi=null,shipmentCalendarUi=null;
+function productOrdersView(){return productOrdersUi ||= initOrderProducts({root:$('#view-order-products'),api,go,money,canCalendar:()=>canPage('deliveries'),canOrder:row=>canPage(row.contractNo?'contracts':'orders')});}
+function deliveryCalendarView(){return shipmentCalendarUi ||= createDeliveryCalendar({root:$('#deliveries-calendar'),onRange:(from,to)=>{$('#deliveries-from').value=from;$('#deliveries-to').value=to;loadDeliveries();},actions:x=>deliveryButtons(x)+deliverySlipButtons(x)+deliveryConfirmation(x)+deliveryPhotos(x),orderLink:x=>!isWarehouse()&&canPage('order')?(x.contractNo?'#/contracts/':'#/orders/')+encodeURIComponent(x.orderId):null});}
+async function loadDeliveries() {
+  const query=location.hash.split('?')[1]||'',tab=new URLSearchParams(query).get('view')||'calendar',calendar=!['list','products'].includes(tab);
+  $('#deliveries-table').hidden=tab!=='list';$('#deliveries-calendar').hidden=!calendar;$('#deliveries-product-lines').hidden=tab!=='products';
+  for(const a of $$('[data-shipment-tab]')){const active=a.dataset.shipmentTab===(calendar?'calendar':tab);a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}
+  shipmentCalendarUi?.close();
+  // Default to the visible month grid, including its adjacent week days.
+  if (!$('#deliveries-from').value) { const [from,to]=deliveryCalendarView().range();$('#deliveries-from').value=from;$('#deliveries-to').value=to; }
+  $('#deliveries-legend').replaceChildren(fulfilmentLegend(['planned','in_transit','delivered','failed','cancelled','overdue']));
+  $('#deliveries-list').innerHTML = skeleton(7);
+  $('#deliveries-retry').hidden=true;
+  const req = ++deliveriesReq;
+  $('#deliveries-filter-summary').textContent='Đang tải chuyến giao…';
+  $('#deliveries-calendar').setAttribute('aria-busy','true');
+  try {
+    const focusId = new URLSearchParams(location.hash.split('?')[1] || '').get('deliveryId');
+    const params = new URLSearchParams({ id: focusId || '', from: $('#deliveries-from').value, to: $('#deliveries-to').value, status: $('#deliveries-status .chip.active')?.dataset.status ?? '' });
+    for (const k of DELIVERY_FILTERS) { const v = $('#deliveries-' + k).value; if (v) params.set(k, v); }
+    if (!focusId && $('#deliveries-search').value.trim()) params.set('q',$('#deliveries-search').value.trim());
+    const d = await api('/deliveries?' + params);
+    if (req !== deliveriesReq) return;
+    fillOrderFilter('#deliveries-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
+    fillOrderFilter('#deliveries-assignee', 'Tất cả người giao', d.filterOptions?.assignees);
+    fillOrderFilter('#deliveries-carrier', 'Tất cả', (d.filterOptions?.carriers || []).map(c => ({ id: c, name: c })));
+    const rows = d.deliveries;
+    $('#deliveries-filter-summary').textContent=`${rows.length} chuyến phù hợp · ${fmtDate($('#deliveries-from').value)} – ${fmtDate($('#deliveries-to').value)}${d.truncated?' · Chỉ hiện 500 chuyến; hãy thu hẹp khoảng ngày hoặc bộ lọc để xem đầy đủ.':''}${focusId?' · Đang xem chuyến từ liên kết trực tiếp; các bộ lọc được bỏ qua.':''}`;
+    deliveryCalendarView().render(rows,{from:focusId?rows[0]?.plannedDate:$('#deliveries-from').value,to:focusId?rows[0]?.plannedDate:$('#deliveries-to').value});
+    renderDeliveryProducts($('#deliveries-product-lines'),rows,x=>deliveryCalendarView().details(x));
+    fillList('deliveries', rows.map(x => `<tr class="ff-row ff-${deliveryTone(x)}">
+      <td><b>${fmtDate(x.plannedDate)}</b><small>${esc(x.timeSlot)}</small></td><td>${esc(x.deliveryNo)}<small>${esc(ghnTrackingText(x) || x.carrier)}</small></td>
+      <td>${esc(x.customerName)}<small>${isWarehouse() ? esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo) : docLink(x.orderId, x.orderNo, x.contractNo)}${x.ownerName ? ' · ' + esc(x.ownerName) : ''}</small><small class="delivery-product-labels">${(x.products||[]).map(p=>esc(`${p.name} (${p.sku}) · ${fmtNum(p.qty)} ${p.unit}`)).join('<br>')}</small></td>
+      <td>${deliveryReceiver(x)}<small>${esc(x.address || x.customerAddress || '')}</small></td>
+      <td>${pill(DELIVERY_STATUS, x.status)}${deliveryConfirmation(x)}${deliveryPhotos(x)}</td>
+      <td>${x.invoiceNo?.trim() ? esc(x.invoiceNo) : x.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td><td class="actions-col">${deliveryButtons(x)}${deliverySlipButtons(x)}</td></tr>`),
+      'Không có chuyến giao nào trong khoảng ngày này.');
+    const list=$('#deliveries-list');
+    [...list.rows].forEach((tr,i)=>{
+      const x=rows[i];if(!x)return;
+      const open=document.createElement('button');open.type='button';open.className='btn ghost small';open.textContent=x.deliveryNo;
+      open.addEventListener('click',()=>deliveryCalendarView().details(x));tr.cells[1].firstChild.replaceWith(open);
+      tr.cells[4].prepend(fulfilmentBadge(x.status));tr.cells[4].querySelector('.pill')?.remove();
+      if(deliveryIsOverdue(x))tr.cells[4].prepend(fulfilmentBadge('overdue'));
+    });
+    compactFulfilmentTable(list.closest('table'));
+  } catch (e) { if(req!==deliveriesReq)return;listError('deliveries', e);$('#deliveries-filter-summary').textContent=e.message||'Không tải được lịch giao hàng.';$('#deliveries-calendar').replaceChildren();$('#deliveries-product-lines').replaceChildren();$('#deliveries-retry').hidden=false; }
+  finally { if(req===deliveriesReq)$('#deliveries-calendar').removeAttribute('aria-busy'); }
+}
+/** In từ lịch: GH theo đúng chuyến; ĐG chọn các phiếu của đơn vì không có liên kết 1–1 với chuyến. */
+function deliverySlipButtons(x) {
+  if (isWarehouse() || !canPage('order')) return '';
+  return `<div class="delivery-slip-links"><button type="button" class="btn ghost small" data-ship-print-for="${esc(x.orderId)}" data-delivery-id="${esc(x.id)}" title="Xem / in phiếu giao hàng ${esc(x.deliveryNo)}">Phiếu giao hàng</button><button type="button" class="btn ghost small" data-pack-print-for="${esc(x.orderId)}" title="Chọn phiếu đóng gói của đơn / HĐKT này">Phiếu đóng gói</button></div>`;
+}
+/** Người nhận của chuyến giao: người nhận ghi trên chuyến, không có thì người liên hệ / SĐT của khách trên đơn (bấm để gọi). */
+function deliveryReceiver(x) {
+  const name = x.receiverName || x.customerContact || '', phone = x.receiverPhone || x.customerPhone || '';
+  const tel = phone ? `<a href="tel:${esc(phone.replace(/[^\d+]/g, ''))}">${esc(phone)}</a>` : '';
+  return [esc(name), tel].filter(Boolean).join(' · ') || '<span class="muted">—</span>';
+}
+// Kho: nút "Đã giao" to, không có "Huỷ" (chỉ nhân viên phụ trách / Manager huỷ chuyến – máy chủ cũng chặn).
+const deliveryButtons = x => x.canConfirm!==false&&['planned', 'in_transit'].includes(x.status)
+  ? `${x.status === 'planned' ? `<button class="btn ghost small" data-ship="${esc(x.id)}" data-to="in_transit">Đang giao</button>` : ''}<button class="btn ${isWarehouse() ? 'primary ship-done' : 'secondary small'}" data-ship="${esc(x.id)}" data-to="delivered">${isWarehouse() ? '✅ Đã giao' : 'Đã giao'}</button>${isWarehouse()||x.canCancel===false ? '' : `<button class="btn ghost small" data-ship="${esc(x.id)}" data-to="cancelled">Huỷ</button>`}` : '';
+const deliveryConfirmation=x=>x.confirmedBy&&x.confirmedAt?`<small class="ship-confirmation">Xác nhận ${esc(DELIVERY_STATUS[x.confirmedStatus]?.[0]||'giao hàng')} · ${esc(x.confirmedByName||x.confirmedBy)} · ${esc(new Date(x.confirmedAt).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}))}</small>`:'';
+/** Ảnh xác nhận đã giao (hàng đã giao / biên bản ký nhận) – bấm để xem lớn. */
+const deliveryPhotos = x => x.photos?.length ? `<span class="ship-photos">${x.photos.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Ảnh giao hàng ${i + 1}" loading="lazy"></a>`).join('')}</span>` : '';
+// ----- công nợ
+/** Bộ lọc chi tiết trang Công nợ (máy chủ lọc trước khi cộng tổng). */
+const RECEIVABLE_FILTERS = ['source', 'kind', 'owner', 'branch', 'invoice', 'delivery', 'from', 'to'];
+let receivablesReq = 0;
+async function loadReceivables() {
+  $('#receivables-list').innerHTML = skeleton(9);
+  try {
+    const status = $('#receivables-filters .chip.active')?.dataset.status ?? '';
+    const params = new URLSearchParams({ q: $('#receivables-search').value });
+    if (status) params.set('status', status);
+    for (const k of RECEIVABLE_FILTERS) { const v = $('#receivables-' + k).value; if (v) params.set(k, v); }
+    const req = ++receivablesReq, d = await api('/receivables?' + params);
+    if (req !== receivablesReq) return;
+    fillOrderFilter('#receivables-owner', 'Tất cả nhân viên', d.filterOptions?.owners);
+    fillOrderFilter('#receivables-branch', 'Tất cả chi nhánh', d.filterOptions?.branches);
+    const a = d.totals.aging || { d30: 0, d60: 0, over60: 0 };
+    $('#receivable-stats').innerHTML = [['Phải thu', d.totals.due, ''], ['Đã thu', d.totals.paid, ''], ['Còn lại', d.totals.balance, ''], ['Quá hạn', d.totals.overdue, d.totals.overdue > 0 ? 'danger-text' : '']]
+      .map(([t, v, c]) => `<article class="stat"><small>${t}</small><strong class="${c}">${money(v)}</strong></article>`).join('')
+      // Tuổi nợ quá hạn: 1–30 / 31–60 / trên 60 ngày.
+      + (d.totals.overdue > 0 ? `<article class="stat aging-stat"><small>Tuổi nợ quá hạn</small><span><b>1–30 ngày</b> ${money(a.d30)}</span><span><b>31–60 ngày</b> ${money(a.d60)}</span>` + (a.d90 === undefined ? `<span class="${a.over60 ? 'danger-text' : ''}"><b>Trên 60 ngày</b> ${money(a.over60)}</span>` : `<span class="${a.d90 ? 'danger-text' : ''}"><b>61–90 ngày</b> ${money(a.d90)}</span><span class="${a.over90 ? 'danger-text' : ''}"><b>Trên 90 ngày</b> ${money(a.over90)}</span>`) + '</article>' : '');
+    state.receivables = d.receivables;
+    fillList('receivables', d.receivables.map(r => `<tr class="clickable" data-href="${docHref(r.orderId, r.contractNo)}">
+      <td>${esc(r.customerName)}<small>${docLink(r.orderId, r.orderNo, r.contractNo)} · ${fmtDate(r.orderDate)}${r.ownerName ? ' · ' + esc(r.ownerName) : ''}</small></td><td>${pill(DEBT_STATUS, r.status)}</td>
+      <td>${r.aging?.oldestDue ? `<span class="danger-text">Quá ${r.aging.overdueDays} ngày</span><small>hạn ${fmtDate(r.aging.oldestDue)}</small>` : r.nextDueDate ? fmtDate(r.nextDueDate) : r.status === 'paid' ? '—' : '<span class="muted">Chưa có hạn</span>'}</td>
+      <td>${r.invoiceNo?.trim() ? esc(r.invoiceNo) : r.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td>
+      <td>${r.deliveryStatus ? pill(DELIVERY_STATUS, r.deliveryStatus) : '<span class="muted">—</span>'}<small>${esc(r.deliveryCarrier || '')}</small></td>
+      <td class="right num">${money(r.due)}</td><td class="right num">${money(r.paid)}</td><td class="right num">${money(r.balance)}</td>
+      <td class="right num ${r.overdue ? 'danger-text' : ''}">${r.overdue ? money(r.overdue) + `<button type="button" class="btn ghost small remind-btn" data-remind="${esc(r.orderId)}">Nhắc nợ</button>` : '—'}</td></tr>`),
+      status === 'paid' ? 'Chưa có đơn nào đã thu đủ.' : status === 'overdue' ? 'Không có công nợ quá hạn.' : 'Không còn công nợ phải thu. Công nợ xuất hiện khi có đơn hàng / HĐKT đã duyệt.');
+  } catch (e) { listError('receivables', e); }
+}
+for (const k of RECEIVABLE_FILTERS) $('#receivables-' + k).addEventListener('change', loadReceivables);
+/**
+ * ĐỐI CHIẾU SAO KÊ (bank-statement.js): tải file → tự ghép với công nợ → người dùng tick từng dòng → ghi thu (Chuyển khoản).
+ * Dòng ghép theo số đơn / HĐKT được chọn sẵn; dòng chỉ trùng số tiền là gợi ý, phải tự tick. Mã chống lặp theo giao dịch ngân hàng.
+ */
+$('#bank-statement-open').addEventListener('click', () => {
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const dlg = el('dialog', 'acct-quick bank-dialog'), box = el('div', 'bank-body'), head = el('div', 'bank-head');
+  const title = el('h2', '', 'Đối chiếu sao kê ngân hàng'), close = el('button', 'icon-btn', '×'); close.type = 'button'; close.setAttribute('aria-label', 'Đóng'); close.addEventListener('click', () => dlg.close());
+  head.append(title, close);
+  const intro = el('p', 'muted small', 'Xuất sao kê từ ngân hàng (hoặc điền theo file mẫu) rồi chọn file. Dòng có số đơn / HĐKT trong nội dung được chọn sẵn; dòng chỉ trùng số tiền là gợi ý, kiểm tra người chuyển rồi mới tick. Chỉ ghi thu khi bấm nút bên dưới.');
+  const sample = el('button', 'btn secondary', 'Tải file mẫu'); sample.type = 'button';
+  sample.addEventListener('click', () => downloadExcel('mau-sao-ke', [
+    { name: 'Sao kê', header: TEMPLATE_HEADER, rows: TEMPLATE_SAMPLE, widths: [16, 20, 48, 22, 28] },
+    { name: 'Hướng dẫn', header: ['Cột', 'Cách điền'], widths: [26, 90], rows: [
+      ['Ngày giao dịch', 'dd/mm/yyyy (vd. 28/10/2026). Ngày tiền vào tài khoản.'],
+      ['Số tiền ghi có (VND)', 'Chỉ tiền VÀO. Dòng tiền ra để trống cột này (hệ thống bỏ qua).'],
+      ['Nội dung chuyển khoản', 'Chép nguyên nội dung ngân hàng. Có số đơn (DH_...) hoặc số HĐKT thì tự ghép chắc chắn.'],
+      ['Mã giao dịch ngân hàng', 'Số tham chiếu / mã GD (FT...). Dùng để chống ghi trùng khi tải lại cùng file.'],
+      ['Tên người chuyển', 'Không bắt buộc – giúp kiểm tra dòng gợi ý theo số tiền.'],
+      ['Ghi chú', 'Có thể dùng thẳng file Excel ngân hàng xuất nếu có các cột Ngày / Ghi có / Diễn giải (Mô tả) / Số tham chiếu.'],
+    ] }]).catch(e => toast(e.message, 'err')));
+  const file = el('input'); file.type = 'file'; file.accept = '.xlsx,.xls,.csv'; file.setAttribute('aria-label', 'Chọn file sao kê');
+  const tools = el('div', 'bank-tools'); tools.append(sample, file);
+  const status = el('p', 'muted small'), wrap = el('div', 'table-wrap'), foot = el('div', 'acct-quick-foot'), save = el('button', 'btn primary', 'Ghi thu các dòng đã chọn'); save.type = 'button'; save.disabled = true;
+  foot.append(save); box.append(head, intro, tools, status, wrap, foot); dlg.append(box);
+  let items = [];
+  const money0 = n => Number(n).toLocaleString('vi-VN') + ' đ';
+  function render() {
+    const table = el('table', 'data-table bank-table'), thead = el('thead'), hr = el('tr'), body = el('tbody');
+    for (const h of ['', 'Ngày', 'Số tiền', 'Nội dung chuyển khoản', 'Ghép với', 'Ghi chú']) hr.append(el('th', h === 'Số tiền' ? 'right' : '', h));
+    thead.append(hr); table.append(thead, body);
+    for (const it of items) {
+      const tr = el('tr', 'bank-' + (it.result ? (it.result.ok ? 'done' : 'error') : it.kind)), pick = el('td'), cb = el('input');
+      cb.type = 'checkbox'; cb.checked = it.selected; cb.disabled = !it.selectable || !!it.result?.ok; cb.setAttribute('aria-label', 'Chọn dòng ' + it.row.line);
+      cb.addEventListener('change', () => { it.selected = cb.checked; sync(); }); pick.append(cb);
+      const doc = el('td'); if (it.match) { doc.append(el('b', '', it.match.contractNo || it.match.orderNo), el('small', '', ' · ' + it.match.customerName + ' · còn nợ ' + money0(it.match.balance))); } else doc.textContent = '—';
+      const content = el('td', '', it.row.content); if (it.row.payer) content.append(el('small', 'muted', ' · ' + it.row.payer));
+      tr.append(pick, el('td', '', fmtDate(it.row.date)), el('td', 'right num', money0(it.row.amount)), content, doc, el('td', it.result && !it.result.ok ? 'danger-text' : 'muted', it.result ? it.result.text : it.note));
+      for (const [td, label] of [[tr.children[1], 'Ngày'], [tr.children[2], 'Số tiền'], [tr.children[3], 'Nội dung'], [tr.children[4], 'Ghép với'], [tr.children[5], 'Ghi chú']]) td.dataset.label = label;
+      body.append(tr);
+    }
+    wrap.replaceChildren(table); sync();
+  }
+  function sync() {
+    const chosen = items.filter(i => i.selected && i.selectable && !i.result?.ok);
+    save.disabled = !chosen.length; save.textContent = chosen.length ? `Ghi thu ${chosen.length} dòng đã chọn (${money0(chosen.reduce((s, i) => s + i.row.amount, 0))})` : 'Ghi thu các dòng đã chọn';
+  }
+  file.addEventListener('change', async () => {
+    const f = file.files?.[0]; if (!f) return; status.textContent = 'Đang đọc file và công nợ…'; wrap.replaceChildren(); items = [];
+    try {
+      const [rows, d] = await Promise.all([readSheet(f).then(parseStatement), api('/receivables')]);
+      items = matchStatement(rows, d.receivables);
+      const n = k => items.filter(i => i.kind === k && i.selectable).length;
+      status.textContent = `${rows.length} dòng tiền vào · ${n('doc')} ghép theo số chứng từ · ${n('amount')} gợi ý theo số tiền · ${items.filter(i => !i.selectable).length} cần xử lý tay.`;
+      render();
+    } catch (e) { status.textContent = ''; toast(e.message, 'err'); }
+  });
+  save.addEventListener('click', async () => {
+    if (save.dataset.running) return; save.dataset.running = '1'; save.disabled = true;
+    let ok = 0;
+    try {
+      for (const it of items.filter(i => i.selected && i.selectable && !i.result?.ok)) {
+        try {
+          await api('/payments', 'POST', { key: await bankKey(it.row, it.match.orderId), orderId: it.match.orderId, amount: it.row.amount, paidAt: it.row.date, method: 'transfer', reference: bankReference(it.row) });
+          it.result = { ok: true, text: 'Đã ghi thu' }; ok++;
+        } catch (e) { it.result = { ok: false, text: e.message }; }
+        render();
+      }
+    } finally { delete save.dataset.running; sync(); }
+    if (ok) { toast(`Đã ghi ${ok} khoản thu từ sao kê.`); loadReceivables(); }
+  });
+  dlg.addEventListener('close', () => dlg.remove()); document.body.append(dlg); dlg.showModal();
+});
+/** Nội dung nhắc nợ soạn sẵn từ dòng công nợ (người dùng tự gửi – không tự động gửi cho khách). */
+function debtReminderText(r) {
+  const doc = r.contractNo || r.orderNo, late = r.aging?.oldestDue ? `đã quá hạn ${r.aging.overdueDays} ngày (hạn ${fmtDate(r.aging.oldestDue)})` : 'đã đến hạn';
+  return `Kính gửi ${r.customerName},\nKhoản thanh toán của ${r.contractNo ? 'hợp đồng' : 'đơn hàng'} ${doc} ${late}.\n`
+    + `Số tiền quá hạn: ${money(r.overdue)}. Tổng còn phải thanh toán: ${money(r.balance)}.\n`
+    + 'Quý khách vui lòng thanh toán hoặc phản hồi giúp nếu đã chuyển khoản. Xin cảm ơn!';
+}
+$('#receivables-list').addEventListener('click', e => {
+  const b = e.target.closest('[data-remind]'); if (!b) return;
+  const r = state.receivables?.find(x => x.orderId === b.dataset.remind); if (!r) return;
+  const dlg = document.createElement('dialog'); dlg.className = 'acct-quick';
+  const form = document.createElement('form'), title = document.createElement('h2'), text = document.createElement('textarea'), foot = document.createElement('div'), hint = document.createElement('p');
+  form.method = 'dialog'; title.textContent = 'Nhắc nợ · ' + r.customerName; text.value = debtReminderText(r); text.rows = 7; text.setAttribute('aria-label', 'Nội dung nhắc nợ');
+  hint.className = 'muted small'; hint.textContent = 'Sửa nội dung nếu cần rồi chép gửi qua Zalo / email. Hệ thống không tự gửi cho khách.';
+  foot.className = 'acct-quick-foot';
+  const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'btn primary'; copy.textContent = 'Chép nội dung';
+  copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(text.value); toast('Đã chép nội dung nhắc nợ.'); } catch { text.select(); toast('Trình duyệt chặn chép tự động – bấm giữ để chép.', 'err'); } });
+  const close = document.createElement('button'); close.type = 'submit'; close.className = 'btn secondary'; close.textContent = 'Đóng';
+  foot.append(close);
+  const phone = String(r.phone || '').replace(/\D/g, '');
+  if (phone.length >= 9) { const zalo = document.createElement('a'); zalo.className = 'btn secondary'; zalo.href = 'https://zalo.me/' + phone; zalo.target = '_blank'; zalo.rel = 'noopener'; zalo.textContent = 'Mở Zalo ' + phone; foot.append(zalo); }
+  foot.append(copy); form.append(title, hint, text, foot); dlg.append(form);
+  dlg.addEventListener('close', () => dlg.remove()); document.body.append(dlg); dlg.showModal(); text.focus();
+});
+$('#receivables-clear').addEventListener('click', () => { for (const k of RECEIVABLE_FILTERS) $('#receivables-' + k).value = ''; $('#receivables-search').value = ''; loadReceivables(); });
+/** Số trên nút "Chờ xuất hoá đơn" (ẩn khi 0). */
+function invoiceCount(key, n) { const c = $(`#${key}-filters [data-invoice-count]`); if (c) c.textContent = n ? String(n) : ''; }
+for (const [key, reload] of [['orders', () => { ordersPager?.reset(); loadOrders(); }], ['contracts', () => { contractsPager?.reset(); loadContracts(); }]])
+  $(`#${key}-filters`).addEventListener('click', e => {
+    const chip = e.target.closest('.chip'); if (!chip) return;
+    $$(`#${key}-filters .chip`).forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+    reload();
+  });
+$('#orders-search').addEventListener('input', debounce(() => { ordersPager?.reset(); loadOrders(); }));
+// HĐKT: cùng bộ lọc như trang Đơn hàng (trạng thái, nhân viên, khoảng ngày) + pháp nhân; dòng tổng chạy theo bộ lọc.
+$('#contracts-status-tabs').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  $$('#contracts-status-tabs .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+  contractsPager?.reset(); loadContracts();
+});
+const CONTRACT_FILTER_IDS = ['#contracts-entity', '#contracts-owner', '#contracts-date-by', '#contracts-from', '#contracts-to'];
+for (const id of CONTRACT_FILTER_IDS) $(id).addEventListener('change', () => { contractsPager?.reset(); loadContracts(); });
+$('#contracts-clear').addEventListener('click', () => {
+  for (const id of CONTRACT_FILTER_IDS) $(id).value = '';
+  $('#contracts-date-by').value = 'created'; $('#contracts-search').value = '';
+  $$('#contracts-status-tabs .chip').forEach((c, i) => { c.classList.toggle('active', i === 0); c.setAttribute('aria-pressed', String(i === 0)); });
+  $$('#contracts-filters .chip').forEach((c, i) => { c.classList.toggle('active', i === 0); c.setAttribute('aria-pressed', String(i === 0)); });
+  contractsPager?.reset(); loadContracts();
+});
+$('#orders-status-tabs').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  $$('#orders-status-tabs .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+  ordersPager?.reset(); loadOrders();
+});
+for (const id of ['#orders-source', '#orders-owner', '#orders-branch', '#orders-from', '#orders-to']) $(id).addEventListener('change', () => { ordersPager?.reset(); loadOrders(); });
+$('#orders-clear').addEventListener('click', () => {
+  for (const id of ['#orders-source', '#orders-owner', '#orders-branch', '#orders-from', '#orders-to']) $(id).value = '';
+  $('#orders-search').value = '';
+  $$('#orders-status-tabs .chip').forEach((c, i) => { c.classList.toggle('active', i === 0); c.setAttribute('aria-pressed', String(i === 0)); });
+  $$('#orders-filters .chip').forEach((c, i) => { c.classList.toggle('active', i === 0); c.setAttribute('aria-pressed', String(i === 0)); });
+  ordersPager?.reset(); loadOrders();
+});
+$('#orders-export').addEventListener('click', async e => {
+  const b = e.currentTarget, label=b.textContent; b.disabled = true; b.textContent='Đang xuất…';
+  try {
+    const d = await api('/orders?' + ordersQuery(true));
+    if (!d.orders.length) return toast('Không có đơn hàng để xuất.', 'err');
+    if(d.total>d.orders.length)throw Error(`Bộ lọc có ${d.total} đơn, vượt giới hạn xuất ${d.orders.length} đơn/lần. Anh/chị thu hẹp khoảng ngày hoặc bộ lọc để xuất đủ dữ liệu.`);
+    await downloadExcel('danh-sach-don-hang',orderListExportSheets(d.orders,{
+      source:o=>ORDER_SOURCE[o.orderSource]||o.orderSource,
+      status:o=>ORDER_STATUS[o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status]?.[0]||o.status,
+      delivery:o=>DELIVERY_STATUS[o.deliveryStatus]?.[0]||(o.orderSource === 'ghn' ? 'Chờ tạo vận đơn' : ''),
+    }));
+  } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; b.textContent=label; }
+});
+$('#contracts-search').addEventListener('input', debounce(() => { contractsPager?.reset(); loadContracts(); }));
+$('#deliveries-search').addEventListener('input', debounce(loadDeliveries, 350));
+$('#deliveries-retry').addEventListener('click', loadDeliveries);
+for (const key of ['customer','product','receiver','address']) $('#deliveries-'+key).addEventListener('input', debounce(loadDeliveries, 350));
+$('#receivables-search').addEventListener('input', debounce(loadReceivables));
+// ---------------------------------------------------------------- Sổ thu / chi
+const PAY_METHOD = { transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác' };
+const CASHBOOK_STATUS = { posted: 'Đã ghi nhận', pending: 'Chờ duyệt', voided: 'Đã huỷ' };
+const CASHBOOK_SOURCE = { other_income: 'Thu khác', cash_in: 'Rút két', petty_expense: 'Chi vặt', advance: 'Tạm ứng', cash_out: 'Nộp két' };
+async function loadCashbook() {
+  if (!$('#cashbook-from').value) { const t = todayIso(); $('#cashbook-from').value = t.slice(0, 8) + '01'; $('#cashbook-to').value = t; }
+  $('#cashbook-list').innerHTML = skeleton(7);
+  try {
+    const d = await api(`/cashbook?from=${$('#cashbook-from').value}&to=${$('#cashbook-to').value}`);
+    state.cashbook = d;
+    const select = $('#cashbook-creator'), selected = select.value;
+    const creators = new Map(d.entries.map(e => [cashbookCreator(e), e.createdByName || 'Không rõ người tạo']));
+    if (selected && !creators.has(selected)) creators.set(selected, select.selectedOptions[0].textContent);
+    select.innerHTML = '<option value="">Tất cả người tạo</option>' + [...creators].sort((a, b) => a[1].localeCompare(b[1], 'vi'))
+      .map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join('');
+    select.value = selected;
+    renderCashbook();
+  } catch (e) { $('#cashbook-stats').innerHTML = ''; listError('cashbook', e); }
+}
+function cashbookCreator(entry) { return entry.createdBy || entry.createdByName || '__unknown'; }
+function cashbookRows() {
+  const d = state.cashbook, kind = $('#cashbook-kind .chip.active')?.dataset.kind || '', method = $('#cashbook-method').value,
+    status = $('#cashbook-status').value, creator = $('#cashbook-creator').value, q = normalize($('#cashbook-search').value);
+  return (d?.entries || []).filter(e => (!kind || e.kind === kind) && (!method || e.method === method) && (!status || (e.status || (e.voided ? 'voided' : 'posted')) === status)
+    && (!creator || cashbookCreator(e) === creator)
+    && (!q || normalize(`${e.partner} ${e.docNo} ${e.reference} ${e.note} ${CASHBOOK_SOURCE[e.source] || ''}`).includes(q)));
+}
+function renderCashbook() {
+  const d = state.cashbook; if (!d) return;
+  const rows = cashbookRows(), posted = rows.filter(e => (e.status || (e.voided ? 'voided' : 'posted')) === 'posted');
+  const sum = (kind, method) => posted.filter(e => e.kind === kind && (!method || e.method === method)).reduce((total, e) => total + e.amount, 0);
+  const t = { in: sum('in'), out: sum('out'), net: sum('in') - sum('out') };
+  const m = Object.fromEntries(['cash', 'transfer'].map(method => [method, { in: sum('in', method), out: sum('out', method) }]));
+  $('#cashbook-stats').innerHTML = [['Tổng thu', t.in, 'paid-text', `CK ${money(m.transfer.in)} · TM ${money(m.cash.in)}`], ['Tổng chi', t.out, 'danger-text', `CK ${money(m.transfer.out)} · TM ${money(m.cash.out)}`],
+    ['Chênh lệch thu − chi', t.net, t.net < 0 ? 'danger-text' : '', `${fmtDate(d.from)} – ${fmtDate(d.to)}`]]
+    .map(([k, v, c, note]) => `<article class="stat"><small>${k}</small><strong class="${c}">${money(v)}</strong><span class="muted">${note}</span></article>`).join('');
+  fillList('cashbook', rows.map(e => { const status = e.status || (e.voided ? 'voided' : 'posted'); return `<tr class="${status === 'voided' ? 'payment-voided' : ''}">
+    <td>${fmtDate(e.date)}</td><td>${e.link && linkAllowed(e.link) ? `<a href="${esc(e.link)}"><b>${esc(e.docNo)}</b></a>` : `<b>${esc(e.docNo)}</b>`}</td>
+    <td>${e.kind === 'in' ? '<span class="pill ok">Phiếu thu</span>' : '<span class="pill warn">Phiếu chi</span>'}<small>${esc(CASHBOOK_SOURCE[e.source] || '')}</small></td>
+    <td>${esc(e.partner || '—')}<small>${esc(e.note || '')}</small></td>
+    <td>${PAY_METHOD[e.method] || e.method || '—'}${e.reference ? `<small>${esc(e.reference)}</small>` : ''}</td>
+    <td class="right num paid-text">${e.kind === 'in' ? money(e.amount) : '—'}</td><td class="right num danger-text">${e.kind === 'out' ? money(e.amount) : '—'}</td>
+    <td>${status === 'posted' ? '<span class="pill ok">Đã ghi nhận</span>' : status === 'pending' ? '<span class="pill warn">Chờ duyệt</span>' : '<span class="pill danger">Đã huỷ</span>'}${e.voidReason ? `<small>${esc(e.voidReason)}</small>` : ''}</td>
+    <td>${esc(e.createdByName)}</td></tr>`; }),
+    'Không có phiếu thu / chi phù hợp với bộ lọc.');
+}
+for (const id of ['#cashbook-from', '#cashbook-to']) $(id).addEventListener('change', loadCashbook);
+$('#cashbook-search').addEventListener('input', debounce(renderCashbook, 150));
+for (const id of ['#cashbook-method', '#cashbook-status', '#cashbook-creator']) $(id).addEventListener('change', renderCashbook);
+$('#cashbook-kind').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  $$('#cashbook-kind .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+  renderCashbook();
+});
+$('#cashbook-export').addEventListener('click', async e => {
+  const rows = cashbookRows(), b = e.currentTarget; if (!rows.length) return toast('Không có dòng để xuất.', 'err');
+  b.disabled = true;
+  try {
+    await downloadExcel('so-thu-chi', [{ name: 'Sổ thu chi', widths: [12, 8, 32, 20, 14, 18, 14, 14, 18, 26, 26],
+      header: ['Ngày', 'Loại', 'Khách / NCC', 'Chứng từ', 'Hình thức', 'Mã giao dịch', 'Thu', 'Chi', 'Người ghi', 'Ghi chú', 'Đã huỷ (lý do)'],
+      rows: rows.map(r => { const posted = (r.status || (r.voided ? 'voided' : 'posted')) === 'posted'; return [r.date, r.kind === 'in' ? 'Thu' : 'Chi', r.partner, r.docNo, PAY_METHOD[r.method] || r.method, r.reference, r.kind === 'in' && posted ? r.amount : 0, r.kind === 'out' && posted ? r.amount : 0,
+        r.createdByName, r.note, r.voided ? r.voidReason || 'Đã huỷ' : '']; }) }]);
+  } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
+});
+$('#due-repair-open').addEventListener('click', () => openDueRepair({ api, toast, confirmBox, esc, money, onDone: loadReceivables }));
+$('#receivables-export').addEventListener('click', async e => {
+  const rows = state.receivables || [], b = e.currentTarget; if (!rows.length) return toast('Không có dòng công nợ để xuất.', 'err');
+  b.disabled = true;
+  try {
+    await downloadExcel('cong-no', [{ name: 'Công nợ', widths: [34, 18, 16, 14, 14, 16, 12, 14, 14, 14, 14, 14, 12, 14, 14, 14, 18],
+      header: ['Khách hàng', 'Số đơn / HĐKT', 'Phụ trách', 'Ngày đặt', 'Tình trạng', 'Số hoá đơn', 'Giao hàng', 'Phải thu', 'Đã thu', 'Còn lại', 'Quá hạn', 'Hạn thu kế tiếp', 'Số ngày quá hạn', 'Quá hạn 1–30', 'Quá hạn 31–60', 'Quá hạn >60', 'Điện thoại'],
+      rows: rows.map(r => [r.customerName, r.contractNo ? 'HĐKT ' + r.contractNo : r.orderNo, r.ownerName || '', r.orderDate, DEBT_STATUS[r.status]?.[0] || r.status, r.invoiceNo || '', DELIVERY_STATUS[r.deliveryStatus]?.[0] || '',
+        r.due, r.paid, r.balance, r.overdue, r.nextDueDate || '', r.aging?.overdueDays || 0, r.aging?.buckets.d30 || 0, r.aging?.buckets.d60 || 0, r.aging?.buckets.over60 || 0, r.phone || '']) }]);
+  } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
+});
+$('#receivables-filters').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  $$('#receivables-filters .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+  loadReceivables();
+});
+for (const chip of $$('#deliveries-status .chip')) chip.setAttribute('data-mobile-navigation','');
+for (const id of ['#deliveries-from', '#deliveries-to', ...DELIVERY_FILTERS.map(k => '#deliveries-' + k)]) $(id).addEventListener('change', loadDeliveries);
+$('#deliveries-clear').addEventListener('click', () => {
+  for (const k of DELIVERY_FILTERS) $('#deliveries-' + k).value = '';
+  $('#deliveries-search').value = '';
+  $$('#deliveries-status .chip').forEach((c, i) => { c.classList.toggle('active', i === 0); c.setAttribute('aria-pressed', String(i === 0)); });
+  loadDeliveries();
+});
+$('#deliveries-status').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  $$('#deliveries-status .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+  loadDeliveries();
+});
+// Bấm cả dòng để mở đơn (trừ khi bấm nút/liên kết trong dòng).
+document.addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-href]'); if (!tr || e.target.closest('a, button')) return;
+  go(tr.dataset.href);
+});
+// Đổi trạng thái chuyến giao (trang Lịch giao và trang đơn).
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-ship]'); if (!b) return;
+  const to = b.dataset.to, label = DELIVERY_STATUS[to][0];
+  // "Đã giao": chụp ảnh hàng đã giao hoặc biên bản ký nhận (kho bắt buộc 1 ảnh, người khác tuỳ chọn).
+  let photos = [];
+  if (to === 'delivered') {
+    photos = await photoBox({ title: 'Xác nhận đã giao', ok: 'Đã giao', min: isWarehouse() ? 1 : 0,
+      text: 'Chụp ảnh hàng đã giao hoặc biên bản có chữ ký người nhận (1–3 ảnh). Số lượng đã giao sẽ cộng vào đơn và không đổi lại được.' });
+    if (!photos) return;
+  } else if (to === 'cancelled' && !await confirmBox('Huỷ chuyến giao này?', { title: label, ok: label, danger: true })) return;
+  b.disabled = true;
+  try { const r = await api(`/deliveries/${encodeURIComponent(b.dataset.ship)}/status`, 'PUT', { status: to, ...(photos.length ? { photos } : {}) }); toast('Đã cập nhật: ' + label + ghnCancelNote(r), r?.ghnCancel?.errors?.length ? 'err' : undefined); if (!$('#view-order').hidden) openOrder(sales.order.id); else loadDeliveries(); }
+  catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
+});
+
+// ----- chi tiết đơn
+const sales = { order: null, detail: null };
+// ----- Thông báo (Web Push như web cũ) + trang TỰ LÀM MỚI khi khách gửi báo giá / đặt hàng / hỏi tồn
+var dataRefresh = setupDataRefresh({
+  read: path => api(path, 'GET', undefined, { fresh: true }), refresh: () => refreshData(),
+  enabled: () => !!state.user,
+  blocked: () => (location.hash.startsWith('#/shift-reports') && !!document.activeElement?.closest('.srp-filters')) || (location.hash.startsWith('#/pos') && !!posUi?.dirty()) || (!$('#view-editor').hidden && editor.dirty) || saving || !!document.querySelector('dialog[open]'),
+  routeKey: () => location.hash,
+  primaryPaths: () => location.hash.startsWith('#/home') ? [] : location.hash.startsWith('#/cash') ? ['/cash'] : location.hash.startsWith('#/pos') ? ['/pos/options'] : isWarehouse() ? ['/packing?status=sent'] : [can('page.quotes') && '/quotes', can('page.orders') && '/orders', can('page.contracts') && '/contracts'].filter(Boolean),
+  onDeferred: () => toast('Có dữ liệu mới. Trang sẽ cập nhật sau khi anh/chị lưu thay đổi và đóng biểu mẫu.'),
+  // Không tự hỏi định kỳ / khi quay lại tab: `pulse` (GET /pulse mỗi 30 giây) gọi tick() khi máy chủ báo có thay đổi.
+  schedule: () => 0, cancel: () => {}, wakeOnFocus: false,
+});
+var homeNotifications = createNotificationFeed({api,identity:()=>JSON.stringify([token,state.user?.role,state.user?.positionId,state.user?.perms,state.user?.approver])});
+var notifier = setupNotifications({
+  api:homeNotifications.read, root: $('#staff-bell'),
+  onNew(notes) {
+    for (const n of notes.slice(0, 3)) toast(`${n.title}: ${n.body}`);
+    dataRefresh.request(); dataRefresh.tick();
+  },
+  onOpen(n) { const h = (n.url || '').split('#')[1]; if (h) go('#' + h); },
+  isManager: () => isManager(),
+  poll: false,
+});
+var pulse = setupPulse({ api, onData: () => dataRefresh.tick(), onTick: () => sepayUi?.refresh(), onNotify: () => notifier.check(), onChat: n => chatView().badge(n) }); // eslint-disable-line no-var -- showAuth() dừng nhịp trước khi khởi tạo xong
+/** Bảng công việc (trial-ui/tasks.js) – khởi tạo khi cần (sau đăng nhập). */
+var tasksUi = null; // eslint-disable-line no-var -- dùng được trước dòng này (khởi động sau đăng nhập)
+var centerUi = null;
+function customerScreen(query='') {
+  const center=new URLSearchParams(query).get('tab')==='center';
+  $('#customer-center').hidden=!center;$('#customer-directory').hidden=center;
+  for(const a of $$('[data-customer-tab]')){const active=a.dataset.customerTab===(center?'center':'list');a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}
+  if(!center){centerUi?.invalidate();return loadCustomers();}
+  centerUi ||= initCustomerCenter({root:$('#customer-center'),api,canCare:()=>can('page.care'),user:()=>state.user,openCare:(data,after)=>careView().openForm(data,after),toast});
+  return centerUi.load();
+}
+
+/** Chăm sóc khách hàng (trial-ui/care.js). */
+var careUi = null; // eslint-disable-line no-var
+var dashboardUi = null;
+/** Phân tích lợi nhuận: chỉ Manager (máy chủ kiểm tra lại). */
+var profitUi = null;
+function profitView() { return profitUi ||= initProfit({ api, root: $('#view-profit'), toast, esc, money }); }
+function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('#view-dashboard'), isManager, money, user:()=>state.user }); }
+var storeUi = null;
+/** Báo cáo Cửa hàng trưởng: trang #/store-reports + hộp nhắc việc 30 phút (chỉ CHT được gán). */
+/** Báo cáo tuần Sale / Sale Admin: trang #/weekly-reports + nhắc tuần trước chưa nộp. */
+var weeklyUi = null, monthlyUi = null;
+function weeklyView() { return weeklyUi ||= initWeeklyReports({ api, root: $('#view-weekly-reports'), toast, esc, go, money, user: () => state.user }); }
+function monthlyView() { return monthlyUi ||= initWeeklyReports({ api, root: $('#view-monthly-reports'), toast, esc, go, money, user: () => state.user, monthlyOnly: true }); }
+function storeView() { return storeUi ||= initStoreReports({ api, root: $('#view-store-reports'), toast, esc, go, money, confirmBox, userId: () => state.user?.id }); }
+var feedbackUi = null;
+/** Góp ý phần mềm: trang #/feedback + nút trong menu tài khoản (mở ở mọi trang, tự ghi trang đang dùng). */
+function feedbackView() { return feedbackUi ||= initFeedback({ api, root: $('#view-feedback'), toast, esc, go, fmtDate,
+  compressPhoto: f => compressImage(f, [[1600, .75], [1280, .72], [1024, .68], [800, .62]], 600000, 'Ảnh quá lớn, chụp lại giúp.'), appVersion: () => $('#app-version')?.textContent || '' }); }
+var aiChatUi = null;
+function aiChatView() { return aiChatUi ||= initAiChat({ api, root: $('#view-ai-chat'), toast, esc, fmtDate }); }
+var suppliersUi = null;
+function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('#view-suppliers'), toast, confirmBox, canLinkAccounts: isManager, identity:()=>JSON.stringify([token,state.user?.id]) }); }
+var inventoryUi = null;
+var khoHomeUi = null; // hoisted: unauthenticated startup can call showAuth before this section
+let stockLookupUi = null;
+var warehouseAssignmentUi=typeof initWarehouseAssignment==='function'?initWarehouseAssignment({api,toast,identity:()=>JSON.stringify([token,state.user?.id]),isManager:()=>state.user?.role==='manager',onSaved:()=>{if(location.hash==='#/kho')khoHome().load();}}):null;
+function khoHome() { return khoHomeUi ||= initWarehouseWorkspace({api,root:$('#view-kho'),toast,identity:()=>JSON.stringify([token,state.user?.id]),assign:taskId=>warehouseAssignmentUi?.open(taskId),legacy:root=>initKhoHome({api,root,today:todayIso})}); }
+function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
+var stocktakeUi;
+function stocktakeView() { return stocktakeUi ||= initStocktake({ api, root: $('#view-stocktake'), toast, confirmBox, userId: () => state.user?.id, ensureCatalog: loadCatalogSnapshot, findProducts: q => catalog.items ? searchCatalog(catalog.items, {q}) : null }); }
+function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
+var transfersUi = null, stockMovesUi = null, sellerConfigUi = null;
+function transfersView() {
+  return transfersUi ||= initTransfers({ api, root: $('#view-transfers'), toast, go, isManager, confirmBox,
+    printTransfer: t => openSlipPrint({ kind: 'transfer', choices: [{ value: '', label: t.transferNo }], initial: '', build: () => transferPrintData(t, state.user?.name || '') }) });
+}
+function stockMovesView() { return stockMovesUi ||= initStockMoves({ api, root: $('#view-stock-moves'), toast, createPager, linkAllowed }); }
+function sellerConfigView() { if (!sellerConfigUi) { const box = document.createElement('div'); $('#view-permissions').append(box); box.id = 'seller-config-box'; sellerConfigUi = initSellerConfig({ api, root: box, toast }); } return sellerConfigUi; }
+var permissionsUi = null;
+function permissionsView() { return permissionsUi ||= initPermissions({ api, root: $('#view-permissions'), toast, confirmBox }); }
+var purchasesUi = null;
+var earlyRequestUi = null;
+function earlyRequestPage() { return earlyRequestUi ||= initEarlyRequestPage({api,root:$('#view-early-requests'),go,today:todayIso,toast}); }
+function purchasesView() { return purchasesUi ||= initPurchases({ api, root: $('#view-purchases'), toast, confirmBox, money, go, today: todayIso, kho: isWarehouse,
+  compressPhoto: f => compressImage(f, [[1280, .72], [1024, .68], [800, .62], [640, .6]], 450000, 'Ảnh quá lớn, chụp lại giúp.') }); }
+// Sơ đồ quy trình: cấu hình ở flow-config.js; `openers` nối nút nhanh của khối với hộp thoại có sẵn của app.
+var flowUi = null;
+function flowView() {
+  return flowUi ||= initFlowMap({ api, root: $('#view-flow'), go, confirmBox, toast, money, openers: {
+    'new-quote': () => openNewQuote(),
+    'new-customer': () => openCustomer(),
+    'new-care': done => careView().openForm({}, done),
+  } });
+}
+function careView() { return careUi ||= initCare({ api, toast, confirmBox, isManager, userId: () => state.user?.id, userName: () => state.user?.name, root: $('#view-care') }); }
+function tasksView() { return tasksUi ||= initTasks({ approvalFeed: sharedApprovalFeed(), onCreated:()=>homeUi?.refresh(), api, toast, confirmBox, go, isManager, canApprove, userId: () => state.user?.id, positionId: () => state.user?.positionId, sendOnce }); }
+/** Tin nhắn nội bộ (trial-ui/chat.js). */
+var chatUi = null; // eslint-disable-line no-var
+var approvalFeed = null;
+function sharedApprovalFeed() { return approvalFeed ||= createApprovalFeed({api,userId:()=>state.user?.id,canApprove}); }
+function approvalView() { return approvalUi ||= initApprovalLauncher({approvalFeed:sharedApprovalFeed(),api,button:$('#approval-launcher'),badge:$('#approval-launcher-count'),canApprove,userId:()=>state.user?.id,go}); }
+function chatView() { return chatUi ||= initChat({ api, toast, isManager, userId: () => state.user?.id, compress: compressImage }); }
+/** Tải lại dữ liệu đang xem sau khi đã kiểm tra các biểu mẫu chưa lưu. */
+async function refreshData() {
+  if (!state.user) return;
+  if(location.hash.split('?')[0]==='#/home'){await Promise.allSettled([homeUi?.refresh(),approvalView().refresh()]);return;}
+  const jobs = [approvalView().refresh(), loadQuotes(), loadBadges()];
+  const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
+  const [page, id] = path.split('/'), params = new URLSearchParams(query);
+  if (page === 'quotes' && id) { if (!editor.dirty && id !== 'new') jobs.push(openEditor(id)); }
+  else if (page === 'orders') jobs.push(id ? openOrder(id) : loadOrders());
+  else if (page === 'contracts') jobs.push(id ? openOrder(id) : loadContracts());
+  else if (page === 'cash') jobs.push(cashView().load());
+  else if (page === 'shift-reports') jobs.push(shiftReportsView().show(location.hash.split('?')[1]||''));
+  else if (page === 'pos') { if (!posUi?.dirty()) jobs.push(posView().load()); }
+  else if (page === 'kho') jobs.push(khoHome().load());
+  else if (page === 'transfers') jobs.push(transfersView().load(id));
+  else if (page === 'receiving') jobs.push(receivingView().load());
+  else if (page === 'deliveries') jobs.push(loadDeliveries());
+  else if (page === 'order-products') productOrdersView().load();
+  else if (page === 'receivables') jobs.push(loadReceivables());
+  else if (page === 'customers') jobs.push(id ? customerDetail().open(decodeURIComponent(id)) : customerScreen(query));
+  else if (page === 'products') { if(id)jobs.push(productDetail().refresh());else jobs.push(loadProducts(),productAdmin().loadPending(),loadCatalogSnapshot()); }
+  else if (page === 'staff' && isManager()) jobs.push(loadMembers(), loadSapoSync());
+  else if (page === 'tasks') jobs.push(tasksView().load(id));
+  else if (page === 'dashboard') jobs.push(dashboardView().load());
+  else if (page === 'flow') jobs.push(flowView().load());
+  else if (page === 'suppliers' && canEditSuppliers()) jobs.push(suppliersView().load());
+  else if (page === 'purchases') jobs.push(purchasesView().load());
+  else if (page === 'early-requests') jobs.push(earlyRequestPage().refresh());
+  else if (page === 'care') jobs.push(careView().load(id ? decodeURIComponent(id) : ''));
+  else if (page === 'stock-requests') jobs.push(loadStockRequests(id));
+  else if (page === 'packing') jobs.push(openPacking(id ? decodeURIComponent(id) : ''));
+  else if (page === 'members' && id) jobs.push(memberDetail().open(decodeURIComponent(id), params.get('month') || '', params.get('tab') || ''));
+  else if (page === 'payroll') jobs.push(payrollBoard().open(params.get('month') || ''));
+  await Promise.allSettled(jobs);
+}
+
+// ----- Khách hỏi tồn kho: nhân viên phụ trách trả lời (khách nhận thông báo)
+let stockFilter = 'open';
+const stockShortageExports = new Map();
+/**
+ * HUY HIỆU GỘP: một lượt GET /badges thay cho 4–5 lượt (việc, menu, tin nhắn, chăm sóc, khách hỏi tồn) mỗi lần trang làm mới.
+ * Phần nào máy chủ không trả được (mất quyền, lỗi) thì phần đó tự gọi API riêng như trước; cả lượt lỗi thì gọi riêng từng phần.
+ */
+let badgeRequest = 0;
+async function loadBadges({ startChat = false } = {}) {
+  const request = ++badgeRequest, user = state.user;
+  const parts = ['tasks', 'navigation', 'chat', ...(can('page.care') ? ['care'] : []), ...(can('page.stock-requests') ? ['stock'] : [])];
+  let got = {};
+  try { got = (await api('/badges?parts=' + parts.join(','))).parts || {}; } catch { /* gọi riêng từng phần bên dưới */ }
+  if (request !== badgeRequest || user !== state.user) return;
+  const ok = k => got[k] && !got[k].error ? got[k] : undefined;
+  const chat = ok('chat')?.unread;
+  await Promise.all([
+    tasksView().badge(ok('tasks')),
+    loadNavigationBadges(ok('navigation')),
+    startChat ? chatView().startBadge(false, chat) : chatView().badge(chat),
+    parts.includes('care') && careView().badge(ok('care')),
+    parts.includes('stock') && loadStockBadge(ok('stock')),
+  ]);
+}
+async function loadStockBadge(known) {
+  if (!can('page.stock-requests')) return;
+  try { const n = (known || await api('/stock-requests?status=open')).requests.length; $('#nav-stock-count').hidden = !n; $('#nav-stock-count').textContent = n; } catch { /* bỏ qua */ }
+}
+async function loadStockRequests(focusId) {
+  stockShortageExports.clear();
+  const box = $('#stock-req-list'); box.innerHTML = '<p class="muted card">Đang tải…</p>';
+  try {
+    const { requests } = await api('/stock-requests' + (stockFilter ? '?status=' + stockFilter : ''));
+    const skus = [...new Set(requests.flatMap(r => r.items.map(i => i.sku)))];
+    const stock = new Map();
+    await loadHolds(true);
+    for (let i = 0; i < skus.length; i += 200) { const d = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(d); for (const p of d.products) stock.set(p.sku, p); }
+    for (const request of requests) stockShortageExports.set(request.id, shortageRows(request.items, stock, availableStock));
+    $('#stock-req-empty').hidden = requests.length > 0;
+    $('#nav-stock-count').hidden = stockFilter !== 'open' || !requests.length; $('#nav-stock-count').textContent = requests.length;
+    box.innerHTML = requests.map(r => `<article class="card stock-req ${r.id === focusId ? 'focus' : ''}" data-req="${esc(r.id)}">
+      <header><div><b>${esc(r.customerName)}</b> <span class="pill ${r.status === 'open' ? 'warn' : 'ok'}">${r.status === 'open' ? 'Chờ trả lời' : 'Đã trả lời'}</span>
+        <small class="muted">${esc(r.askedBy)} · ${new Date(r.createdAt).toLocaleString('vi-VN')}</small></div></header>
+      <div class="row-gap end"><button type="button" class="btn secondary small" data-purchase-from title="Lập đơn mua NCC cho phần khách cần mà chưa đáp ứng">Đặt hàng NCC</button><button type="button" class="btn secondary small" data-shortage-pdf ${stockShortageExports.get(r.id)?.rows.length ? '' : 'disabled'} title="Xuất mã thiếu so với tồn khả dụng; không kèm thông tin khách hoặc giá">Tải PDF mã thiếu</button></div>
+      ${r.note ? `<p class="small"><b>Khách ghi chú:</b> ${esc(r.note)}</p>` : ''}
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="right">Khách cần</th>${r.items.some(i => heldQty(i.sku) > 0) ? '<th class="right">Tồn kho</th><th class="right">Đang treo</th><th class="right">Khả dụng</th>' : '<th class="right">Tồn khả dụng</th>'}${r.items.some(x => hasSupplierStock(stock.get(x.sku))) ? '<th class="right">Kho NCC</th>' : ''}<th class="right">Hàng chờ về</th><th class="right">Đáp ứng</th></tr></thead><tbody>
+      ${r.items.map(i => { const anyHeld = r.items.some(x => heldQty(x.sku) > 0); const anyLock = r.items.some(x => hasSupplierStock(stock.get(x.sku))); const p = stock.get(i.sku), a = r.answerItems.find(x => x.sku === i.sku), av = p ? availableStock(p) : null;
+        return `<tr><td>${esc(i.name)}<small>${esc(i.sku)} · ${esc(i.unit || '')}</small></td><td class="right">${fmtNum(i.qty)}</td>
+          ${anyHeld ? `<td class="right">${p ? fmtNum(stockTotal(p)) : '—'}</td><td class="right">${heldCell(i.sku)}</td>` : ''}
+          <td class="right ${av !== null && av < i.qty ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</td>
+          ${anyLock ? `<td class="right">${p && hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : ''}</td>` : ''}<td class="right">${p ? incomingCell(p) : '—'}</td>
+          <td class="right">${r.status === 'open' ? `<input class="num-input" inputmode="decimal" data-sku="${esc(i.sku)}" value="${av === null ? '' : Math.max(0, Math.min(i.qty, av))}" aria-label="Đáp ứng ${esc(i.name)}">` : fmtNum(a?.available ?? 0)}</td></tr>`; }).join('')}
+      </tbody></table></div>
+      ${r.status === 'open' ? `<label>Trả lời khách<textarea rows="2" maxlength="2000" data-answer placeholder="Ví dụ: Còn đủ hàng, giao được trong 2 ngày."></textarea></label>
+        <div class="row-gap end"><button type="button" class="btn primary" data-reply>Gửi trả lời cho khách</button></div>`
+        : `<p class="small"><b>Đã trả lời${r.answeredAt ? ' lúc ' + new Date(r.answeredAt).toLocaleString('vi-VN') : ''}:</b> ${esc(r.answer || '—')}</p>`}
+    </article>`).join('');
+    if (focusId) $(`[data-req="${CSS.escape(focusId)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (e) { box.innerHTML = `<p class="error card">${esc(e.message)}</p>`; }
+}
+$('#stock-req-filter').addEventListener('click', e => {
+  const b = e.target.closest('[data-status]'); if (!b) return;
+  stockFilter = b.dataset.status; $$('#stock-req-filter [data-status]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); loadStockRequests();
+});
+$('#stock-req-list').addEventListener('click', async e => {
+  const buy = e.target.closest('[data-purchase-from]');
+  if (buy) { go('#/purchases/new?type=stock_request&id=' + encodeURIComponent(buy.closest('[data-req]').dataset.req)); return; }
+  const pdfButton = e.target.closest('[data-shortage-pdf]');
+  if (pdfButton) {
+    if (pdfButton.disabled) return;
+    const id = pdfButton.closest('[data-req]').dataset.req, data = stockShortageExports.get(id);
+    pdfButton.disabled = true;
+    try { await downloadShortagePdf(data, id); } catch (ex) { toast(ex.message, 'err'); }
+    finally { pdfButton.disabled = !data?.rows.length; }
+    return;
+  }
+  const btn = e.target.closest('[data-reply]'); if (!btn) return;
+  const card = btn.closest('[data-req]');
+  const items = $$('input[data-sku]', card).map(i => ({ sku: i.dataset.sku, available: parseNum(i.value || '0') }));
+  btn.disabled = true;
+  try { await api(`/stock-requests/${encodeURIComponent(card.dataset.req)}/answer`, 'POST', { items, answer: card.querySelector('[data-answer]').value }); toast('Đã gửi trả lời cho khách.'); loadStockRequests(); }
+  catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
+});
+
+// ----- Tài khoản trang khách hàng: nhân viên cấp cho khách mình phụ trách; Manager đặt chiết khấu riêng theo nhãn.
+const DISCOUNT_LABELS = { minhLong: 'Minh Long', lys: 'Minh Long - Lys', lock: 'Lock&Lock' };
+let accCustomer = null;
+async function openAccounts(c) {
+  if (!c) return;
+  accCustomer = c; $('#accounts-title').textContent = c.name; $('#account-form').reset(); $('#account-error').textContent = ''; $('#account-link').hidden = true;
+  $$('.manager-only', $('#accounts-dialog')).forEach(el => el.hidden = !isManager());
+  $('#accounts-dialog').showModal(); await drawAccounts();
+}
+// Đóng hộp tài khoản khi đang ở trang chi tiết khách → tải lại thẻ "Tài khoản" (CK, SĐT, trạng thái có thể đã đổi).
+$('#accounts-dialog').addEventListener('close', () => { if (customerUi && location.hash.startsWith('#/customers/')) customerUi.reload(); });
+async function drawAccounts() {
+  const list = $('#accounts-list'); list.innerHTML = '<li class="muted">Đang tải…</li>';
+  try {
+    const { accounts } = await api('/customers/' + encodeURIComponent(accCustomer.id) + '/accounts');
+    list.innerHTML = accounts.length ? accounts.map(a => `<li data-member="${esc(a.memberId)}">
+      <div><b>${esc(a.name)}</b> <span class="pill ${a.active ? (a.activated ? 'ok' : 'warn') : 'muted'}">${a.active ? (a.activated ? 'Đang dùng' : a.registrationPending ? 'Chờ tự đăng ký' : 'Chưa đặt mật khẩu') : 'Đã khoá'}</span>
+        <small>${[a.email ? esc(a.email) : '', a.phone ? 'ĐT ' + esc(a.phone) : ''].filter(Boolean).join(' · ')}${!a.email && !a.registrationPending ? ' (đăng nhập bằng số di động)' : ''} · Phụ trách: ${esc(a.owner.name || a.owner.id)}</small>
+        <small>CK riêng: ${Object.keys(DISCOUNT_LABELS).map(k => `${DISCOUNT_LABELS[k]} ${fmtNum(a.discounts[k] || 0)}%`).join(' · ')}</small></div>
+      ${a.canManage ? `<div class="row-actions">${isManager() ? '<button type="button" class="btn ghost small" data-acc-discount>Đặt CK</button>' : ''}
+        ${!a.registrationPending ? `<button type="button" class="btn ghost small" data-acc-phone>${a.phone ? 'Đổi SĐT' : 'Thêm SĐT'}</button>` : ''}
+        <button type="button" class="btn ghost small" data-acc-reset>${a.registrationPending ? 'Cấp lại link đăng ký' : 'Đặt lại mật khẩu'}</button>
+        <button type="button" class="btn ghost small" data-acc-active="${a.active ? 0 : 1}">${a.active ? 'Khoá' : 'Mở khoá'}</button></div>` : ''}
+    </li>`).join('') : '<li class="muted">Khách này chưa có tài khoản. Lấy link mời bên dưới để khách tự đăng ký tài khoản.</li>';
+    list._accounts = accounts;
+  } catch (ex) { list.innerHTML = `<li class="error">${esc(ex.message)}</li>`; }
+}
+function showAccountLink(url, registration = false) {
+  $('#account-link-note').textContent = registration ? 'Gửi riêng link này để khách tự đăng ký (24 giờ, dùng một lần). Tài khoản sẽ gắn đúng khách hàng này.' : 'Link đặt lại mật khẩu cho tài khoản hiện có (15 phút).';
+  $('#account-link').hidden = false; $('#account-link-url').value = url;
+  navigator.clipboard?.writeText(url).then(() => toast('Đã chép link vào bộ nhớ. Gửi riêng link cho đúng người nhận.')).catch(() => {});
+}
+const readDiscounts = f => Object.fromEntries(Object.keys(DISCOUNT_LABELS).map(k => [k, f.elements['d_' + k]?.value === '' ? 0 : parseNum(f.elements['d_' + k]?.value || '0')]));
+$('#account-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, err = $('#account-error'); err.textContent = '';
+  const body = {}, customer = accCustomer;
+  if (isManager()) body.discounts = readDiscounts(f);
+  try { const r = await api('/customers/' + encodeURIComponent(customer.id) + '/invitations', 'POST', body); if (accCustomer?.id !== customer.id) return; showAccountLink(r.url, true); f.reset(); await drawAccounts(); }
+  catch (ex) { err.textContent = ex.message; }
+});
+$('#accounts-list').addEventListener('click', async e => {
+  const li = e.target.closest('li[data-member]'); if (!li) return;
+  const id = li.dataset.member, a = $('#accounts-list')._accounts.find(x => x.memberId === id);
+  try {
+    if (e.target.closest('[data-acc-phone]')) {
+      const cur = a?.phone || '';
+      const phone = prompt('Số điện thoại đăng nhập của tài khoản này (để trống = bỏ đăng nhập bằng số):', cur);
+      if (phone === null) return;
+      await api(`/customer-accounts/${encodeURIComponent(id)}`, 'PUT', { phone: phone.trim() }); toast('Đã cập nhật số điện thoại.'); return drawAccounts();
+    }
+    if (e.target.closest('[data-acc-reset]')) { showAccountLink((await api(`/customer-accounts/${encodeURIComponent(id)}/reset`, 'POST', {})).url, a.registrationPending); return drawAccounts(); }
+    const act = e.target.closest('[data-acc-active]');
+    if (act) { await api(`/customer-accounts/${encodeURIComponent(id)}`, 'PUT', { active: act.dataset.accActive === '1' }); toast(act.dataset.accActive === '1' ? 'Đã mở khoá tài khoản.' : 'Đã khoá tài khoản.'); return drawAccounts(); }
+    if (e.target.closest('[data-acc-discount]')) openDiscount(a, drawAccounts);
+  } catch (ex) { toast(ex.message, 'err'); }
+});
+/** Hộp đặt chiết khấu riêng của 1 tài khoản khách (Manager) – mở từ "Quản lý tài khoản" hoặc trang chi tiết khách; lưu xong gọi `after`. */
+let discountAfter = null;
+function openDiscount(a, after) {
+  if (!isManager()) return toast('Chỉ Manager mới đặt được chiết khấu riêng.', 'err');
+  const f = $('#discount-form'); $('#discount-name').textContent = a.name; f.dataset.member = a.memberId; discountAfter = after;
+  for (const k of Object.keys(DISCOUNT_LABELS)) f.elements['d_' + k].value = a.discounts?.[k] || '';
+  $('#discount-error').textContent = ''; $('#discount-dialog').showModal();
+}
+$('#discount-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target;
+  try { await api(`/customer-accounts/${encodeURIComponent(f.dataset.member)}`, 'PUT', { discounts: readDiscounts(f) }); $('#discount-dialog').close(); toast('Đã lưu chiết khấu riêng.'); discountAfter?.(); }
+  catch (ex) { $('#discount-error').textContent = ex.message; }
+});
+$('#account-link-copy').addEventListener('click', () => { $('#account-link-url').select(); navigator.clipboard?.writeText($('#account-link-url').value).then(() => toast('Đã chép link.')).catch(() => document.execCommand('copy')); });
+
+let orderLoadRun = 0;
+const webOrderUi=initWebOrderDocument({root:$('#web-order-content'),api,toast,go,onChanged:d=>openOrder(d.document.id,d),onPrint:(html,no,kind)=>{ $('#print-sheet').innerHTML=html;printSheet({page:{size:'A4 portrait',margin:'20mm 8mm 10mm 8mm'},cls:'web-order-print',title:`${kind}-${no}`.replace(/[^\w.-]+/g,'-')}); }});
+async function openOrder(id, confirmed = null) {
+  id=decodeURIComponent(id);
+  const run = ++orderLoadRun, session = token, route = location.hash;
+  const onContracts = location.hash.startsWith('#/contracts/');
+  $('#order-production-files').hidden=true;$('#order-production-files').replaceChildren();
+  $('#order-holds-card').hidden = true;
+  $('#order-holds-card').replaceChildren();
+  webOrderUi.invalidate();
+  webDocumentMode($('#view-order'),$('#web-order-content'),false);
+  $('#order-title').textContent = onContracts ? 'Đang tải HĐKT…' : 'Đang tải đơn…';
+  let d;
+  try { d = confirmed || await api('/orders/' + encodeURIComponent(id)); } catch (e) { if(run!==orderLoadRun||session!==token||route!==location.hash)return;toast(e.message, 'err'); if (e.status !== 401) go(onContracts ? '#/contracts' : '#/orders'); return; }
+  if(run !== orderLoadRun || session !== token || route !== location.hash)return;
+  if(d.document){
+    sales.order=d.document;sales.detail=d;
+    const isCurrent=()=>run===orderLoadRun&&session===token&&route===location.hash;
+    renderWebOrderDetail({root:$('#view-order'),detail:d,api,toast,isCurrent,renderInvoice,
+      onReload:()=>openOrder(id),onPrint:kind=>webOrderUi.print(d,kind),
+      onEdit:()=>{webDocumentMode($('#view-order'),$('#web-order-content'),true);webOrderUi.edit(d);}});
+    const sapoAction=orderSapoAction({order:d.document,api,chooseSapo:(ref,opts)=>sapoPush().choose(ref,opts),onSaved:()=>openOrder(id),toast});if(sapoAction)$('#order-actions').append(sapoAction);
+    $('#breadcrumb').textContent=d.document.orderNo;document.title=d.document.orderNo+' · Bách Ngân';return;
+  }
+  sales.order = d.order; sales.detail = d;
+  // HĐKT luôn ở #/contracts/<id>, đơn hàng ở #/orders/<id> (link cũ / thông báo cũ tự chuyển đúng trang).
+  const want = docHref(id, d.contract?.contractNo);
+  if (location.hash.split('?')[0] !== want) { history.replaceState(null, '', want); lastRoutedHash = want; currentHash = want; }
+  const o = d.order, r = d.receivable, isK = !!d.contract, what = isK ? 'HĐKT' : 'đơn';
+  if(o.quoteId&&o.quoteType!=='HRC'){const host=$('#order-production-files'),fileRoute=location.hash;host.hidden=false;mountProductionFiles({api,transfer:productionTransfer,host,orderId:id,isCurrent:()=>run===orderLoadRun&&session===token&&fileRoute===location.hash,esc,createForm:productionForm});}
+
+  const ghnEditNotice = $('#order-pos-ghn-edit'); ghnEditNotice.textContent = posGhnEditNotice(d); ghnEditNotice.hidden = !ghnEditNotice.textContent;
+  const ref = orderReference(o, d.contract);
+  $('#order-title').textContent = ref.number; $('#breadcrumb').textContent = ref.number; document.title = ref.number + ' · Bách Ngân';
+  // Đơn hàng và HĐKT là 2 luồng: đơn có HĐKT quay về trang HĐKT.
+  $('#order-back').href = d.contract ? '#/contracts' : '#/orders'; $('#order-back').textContent = d.contract ? '‹ HĐKT' : '‹ Đơn đặt hàng';
+  $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === (d.contract ? 'contracts' : 'orders')));
+  const stKey = (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status);
+  const stockConflict = d.progress?.reconciliationRequired;
+  const returnState=returnStateText(d.returnSummary,d.lines);
+  $('#order-status').outerHTML = `<span class="order-status-pills" id="order-status"><span class="pill ${ORDER_STATUS[stKey]?.[1]||''}">${esc(ORDER_STATUS[stKey]?.[0]||o.status)}</span>${returnState?`<span class="pill info">${esc(returnState)}</span>`:''}${stockConflict?'<span class="pill warn">Cần đối soát xuất kho</span>':''}</span>`;
+  // Liên kết các bước của đơn
+  const step = (done, label, sub, href) => `<${href ? `a href="${href}"` : 'div'} class="flow-step ${done ? 'done' : ''}"><b>${esc(label)}</b><small>${esc(sub)}</small></${href ? 'a' : 'div'}>`;
+  const shipped = d.lines.reduce((s, l) => s + l.deliveredQty, 0), totalQty = d.lines.reduce((s, l) => s + l.qty, 0);
+  $('#order-flow').innerHTML = [
+    step(!!o.quoteId, 'Báo giá', o.quoteNo || 'Không có', o.quoteId ? `#/quotes/${encodeURIComponent(o.quoteId)}` : ''),
+    ...(!d.contract ? [step(true, 'Đơn đặt hàng', o.orderNo)] : []),
+    step(!!d.contract, 'HĐKT', d.contract ? d.contract.contractNo : 'Chưa lập', d.contract ? '#/contracts' : ''),
+    step(o.status === 'delivered', 'Giao hàng', `${fmtNum(shipped)}/${fmtNum(totalQty)} đã giao${returnState?' · '+returnState:''}${stockConflict ? ' · Chưa đủ xác nhận xuất kho' : ''}`, '#/deliveries'),
+    step(r.status === 'paid', 'Công nợ', r.balance > 0 ? 'Còn ' + money(r.balance) : r.balance<0?'Còn hoàn '+money(-r.balance):'Đã thu đủ', '#/receivables'),
+  ].join('<span class="flow-arrow" aria-hidden="true">›</span>');
+  // Phiếu đóng gói / phiếu giao hàng / yêu cầu đóng gói chỉ dùng được khi đơn đã lên lịch giao (có chuyến chưa huỷ).
+  const scheduled = d.deliveries.some(x => x.status !== 'cancelled');
+  // HĐKT không có mẫu "đơn đặt hàng": nút chính là hồ sơ HĐKT (HĐKT + đề nghị tạm ứng + biên bản nghiệm thu).
+  $('#order-actions').innerHTML = (isK ? '<button class="btn secondary" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / tải hồ sơ HĐKT</button>'
+      : '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>')
+    + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
+    + (o.status==='draft'?(canApprove()?`<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}">Duyệt ${what}</button>`:'')
+      + (!o.submittedAt&&o.canEdit!==false&&(o.channel||'crm')==='crm'?`<button class="btn primary" id="order-submit">Gửi yêu cầu phê duyệt</button>`:o.submittedAt&&!canApprove()?'<span class="pill warn">Chờ Manager duyệt</span>':''):'')
+    + ((isManager() || (o.status === 'draft' && o.canEdit !== false)) && o.status !== 'cancelled' && !d.payments.some(p => !p.voidedAt) && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
+    + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
+    + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
+  if (o.channel === 'pos' && o.status === 'cancelled' && can('pos.sell')) {
+    const box = document.createElement('span'); $('#order-actions').append(box);
+    // Chỉ đọc số hàng còn xuất; không tự nhập kho khi mở đơn đã huỷ.
+    api('/pos/orders/' + encodeURIComponent(o.id) + '/cancelled-stock').then(summary => {
+      if (!box.isConnected) return;
+      if (summary.blockedReason) { box.textContent = summary.blockedReason; box.className = 'muted'; return; }
+      if (!summary.lines.length) return;
+      const b = document.createElement('button'); b.className = 'btn primary'; b.textContent = 'Nhận hàng hoàn về kho';
+      const description = summary.lines.map(l => `${l.sku}: ${fmtNum(l.qty)} → ${l.warehouseName}`).join('\n');
+      b.title = description;
+      b.onclick = async () => {
+        if (!await confirmBox(`Chỉ xác nhận khi đã nhận đủ hàng thực tế về đúng kho:\n${description}\nThao tác này ghi hoàn kho, không hoàn tiền. Nếu mới nhận một phần, chưa xác nhận.`, { title: 'Nhận hàng hoàn đơn ' + o.orderNo, ok: 'Đã nhận đủ hàng' })) return;
+        b.disabled = true;
+        try {
+          const result = await api('/pos/orders/' + encodeURIComponent(o.id) + '/receive-cancelled-stock', 'POST', {});
+          toast(result.replayed ? 'Hàng đã được nhập hoàn trước đó.' : 'Đã nhận hàng hoàn và ghi sổ kho.'); await openOrder(o.id);
+        } catch (e) { toast(e.message, 'err'); b.disabled = false; }
+      };
+      box.append(b);
+    }).catch(e => { if (box.isConnected) { box.textContent = e.message; box.className = 'error'; } });
+  }
+  if(o.channel==='crm'&&(d.lines.some(l=>l.deliveredQty>0)||d.returnSummary?.requests?.length)&&o.status!=='cancelled'){
+    const b=document.createElement('button');b.type='button';b.className='btn secondary';b.dataset.mobileInline='';b.dataset.crmReturns='';b.textContent='Trả hàng / Hoàn tiền';
+    b.onclick=()=>openCrmReturns({api,toast,orderId:o.id,onChanged:()=>openOrder(o.id)});$('#order-actions').append(b);
+    if(new URLSearchParams(location.hash.split('?')[1]||'').get('returns')==='1'&&!document.querySelector('.pos-return-modal[open]')){const [path,query='']=location.hash.split('?'),params=new URLSearchParams(query);params.delete('returns');history.replaceState(history.state,'',path+(params.size?'?'+params:''));b.click();}
+  }
+  if(o.channel==='pos' && can('pos.sell')){const b=document.createElement('button');b.className='btn secondary';b.textContent='Trả / Đổi / Hoàn tiền';b.onclick=async()=>{try{const opts=await api('/pos/options');await openPosReturns({api,toast,orderId:o.id,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),onChanged:()=>openOrder(o.id)});}catch(e){toast(e.message,'err');}};$('#order-actions').append(b);}
+  if(o.channel==='pos'&&isManager()&&o.status!=='cancelled'){
+    const b=document.createElement('button');b.type='button';b.className='btn danger-outline';b.textContent='Huỷ phiếu nhanh';
+    b.onclick=async()=>{if(b.disabled)return;b.disabled=true;try{await openPosQuickCancel({api,toast,orderId:o.id,money,ghn:o.fulfillmentMode==='cod',onChanged:()=>openOrder(o.id)});}catch(e){toast(e.message,'err');}finally{b.disabled=false;}};$('#order-actions').append(b);
+  }
+  if(o.channel==='pos'&&can('pos.sell')&&['deposit','prepaid'].includes(JSON.parse(o.posSnapshot||'{}').saleFlow)){const b=document.createElement('button');b.className='btn primary';b.textContent='Cọc / Thu nốt / Trả trước';b.onclick=async()=>{try{const opts=await api('/pos/options');await openPosOrderFlows({api,toast,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),orderId:o.id,onChanged:()=>openOrder(o.id),onReturns:id=>openPosReturns({api,toast,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),orderId:id,onChanged:()=>openOrder(o.id)})});}catch(e){toast(e.message,'err');}};$('#order-actions').append(b);}
+  if (o.channel === 'pos' && o.canEdit && o.status !== 'cancelled' && !isK) $('#order-actions').append(posOrderEditor({ api, detail: d, onSaved: () => openOrder(o.id) }));
+  const sapoAction = orderSapoAction({ order: o, api, chooseSapo: (ref, opts) => sapoPush().choose(ref, opts), onSaved: () => openOrder(o.id), toast });
+  if (sapoAction) $('#order-actions').append(sapoAction);
+  if (o.status !== 'cancelled' && !isWarehouse() && can('page.purchases') && !d.purchases?.length) {
+    const buy = document.createElement('button'); buy.type = 'button'; buy.className = 'btn secondary'; buy.textContent = 'Đặt hàng NCC';
+    buy.title = 'Lập đơn mua NCC từ các mã của ' + what + ' (hiện số còn cần đặt để tránh mua trùng)';
+    buy.addEventListener('click', () => go('#/purchases/new?type=order&id=' + encodeURIComponent(o.id)));
+    $('#order-actions').append(buy);
+  }
+  $('#order-purchases').replaceChildren(); $('#order-purchases').hidden=!d.purchases?.length;
+  if (d.purchases?.length) {
+    const links=$('#order-purchases');links.append(Object.assign(document.createElement('span'),{className:'muted small',textContent:'Đã đặt NCC:'}));
+    for(const p of d.purchases){const a=document.createElement('a');a.className='btn secondary';a.dataset.mobileInline='';a.href='#/purchases/'+encodeURIComponent(p.id);a.textContent=p.number+(p.internalNo?' · NCC: '+p.internalNo:'');a.title=p.supplierName||'Mở đơn mua đã đặt';links.append(a);}
+  }
+  const shipDone = o.status === 'delivered' || o.status === 'cancelled';
+  $('#order-customer').innerHTML = [['Khách hàng', o.customerName], ['Người liên hệ', o.contact], ['Điện thoại', o.phone], ['MST', o.taxCode], ['Địa chỉ', o.address], [isK ? 'Ngày lập' : 'Ngày đặt', fmtDate(o.orderDate)]]
+    .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${k === 'Khách hàng' && o.customerId && canPage('customer') ? `<a href="#/customers/${encodeURIComponent(o.customerId)}">${esc(v)}</a>` : esc(v)}</dd>`).join('')
+    // Giao dự kiến tô màu theo hạn: trễ/hôm nay đỏ, ≤3 ngày cam, ≤7 ngày xanh dương, xa hơn xanh lá.
+    + `<dt>Giao dự kiến</dt><dd>${duePill(o.expectedDeliveryDate, { done: shipDone, fmt: fmtDate })}</dd>`;
+  $('#order-lines-title').textContent = isK ? 'Hàng trong HĐKT' : 'Hàng trong đơn';
+  $('#order-debt').innerHTML = `<dl class="totals"><div><dt>Giá trị ${what} (gồm VAT)</dt><dd>${money(o.total)}</dd></div><div><dt>Đã thu</dt><dd class="${r.paid > 0 ? 'paid-text' : ''}">${money(r.paid)}</dd></div>
+    <div class="grand"><dt>Còn phải thu</dt><dd>${money(r.balance)}</dd></div>${r.overdue ? `<div><dt class="danger-text">Quá hạn</dt><dd class="danger-text">${money(r.overdue)}</dd></div>` : ''}</dl>
+    <ul class="plain-list">${allocatePayments(d.effectiveSchedules || d.schedules, r.paid).map(s => `<li class="${s.left <= 0 ? 'installment-paid' : ''}"><span>${esc(s.note || s.kind)}<small>${installmentStatus(s)}</small></span><b>${money(s.amount)}</b><small>${s.left <= 0 ? 'Đã hoàn tất' : s.dueDate ? 'Hạn ' + fmtDate(s.dueDate) : 'Hạn: sau khi giao xong'}</small></li>`).join('')}</ul>`;
+  renderOrderLineDetails({ head: $('#order-lines-head'), body: $('#order-lines'), details: $('#order-line-details'), order: o, lines: d.lines,returnSummary:d.returnSummary });
+  const k = d.contract;
+  // Đơn hàng và HĐKT là 2 luồng: đơn không có HĐKT (khách có HĐ nguyên tắc) hiện ô "Đơn hàng" thay cho ô HĐKT.
+  $('#order-contract-title').textContent = k ? 'HĐKT' : 'Đơn hàng';
+  // Đơn hàng và HĐKT là 2 luồng độc lập: không lập HĐKT từ một đơn hàng (HĐKT lập thẳng từ báo giá).
+  $('#order-contract-action').innerHTML = '';
+  $('#order-contract').innerHTML = k ? `<dl class="kv"><dt>Số HĐKT</dt><dd><b>${esc(k.contractNo)}</b></dd><dt>Trạng thái</dt><dd class="contract-status-pills">${pill(CONTRACT_STATUS, k.status)} <span class="contract-liquidation-status pill muted">Chưa thanh lý</span></dd>
+    <dt>Pháp nhân</dt><dd>${esc(k.legalEntity)}</dd><dt>Ngày ký</dt><dd>${fmtDate(k.signedDate) || '—'}</dd><dt>Đặt cọc</dt><dd>${fmtNum(k.depositRate)}% · ${money(k.depositAmount)}</dd>
+    <dt>Thanh toán còn lại</dt><dd>${k.paymentDays} ngày sau khi giao xong</dd>${saleWarehouseRow(o)}</dl>
+    <div class="row-gap"><button class="btn primary small" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / sửa / tải hồ sơ HĐKT</button>${isManager() && k.status === 'draft' && o.status !== 'draft' ? `<button class="btn secondary small" data-contract-sign="${esc(k.id)}">Đánh dấu đã ký</button>` : ''}</div><div class="contract-liquidation-actions"></div>`
+    : `<dl class="kv"><dt>Số đơn</dt><dd><b>${esc(o.orderNo)}</b></dd><dt>Trạng thái</dt><dd>${o.external?'<span class="pill info">'+esc(o.statusLabel)+'</span>':pill(ORDER_STATUS, (o.status === 'draft' && o.submittedAt === null ? 'unsubmitted' : o.status))}</dd>
+    <dt>Ngày đặt</dt><dd>${fmtDate(o.orderDate)}</dd>${o.quoteNo ? `<dt>Từ báo giá</dt><dd>${o.quoteId ? `<a href="#/quotes/${encodeURIComponent(o.quoteId)}">${esc(o.quoteNo)}</a>` : esc(o.quoteNo)}</dd>` : ''}
+    <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd>${saleWarehouseRow(o)}<dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
+    <dt>Thanh toán</dt><dd>${o.channel === 'pos' ? esc(posPaymentText(d)) : 'Theo HĐ nguyên tắc với khách'}</dd></dl>
+    <div class="row-gap"><button class="btn primary small" id="order-print-card" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button></div>`;
+  if(d.submissionReview)$('#order-contract').insertAdjacentHTML('beforeend',submissionSummary(d.submissionReview,esc));
+  if(d.purchases?.length) $('#order-contract').insertAdjacentHTML('beforeend', '<p class="small">Đơn mua NCC: ' + d.purchases.map(p => `<a class="data-link" href="#/purchases/${encodeURIComponent(p.id)}">${esc(p.number)}</a>`).join(' · ') + '</p>');
+  if(k)mountContractLiquidation({api,host:$('#order-contract'),contract:k,compressPhoto:f=>compressImage(f,[[1280,.72],[1024,.68],[800,.62],[640,.6]],450000,'Ảnh hồ sơ quá lớn. Chụp lại rồi thử lại.'),confirmBox,toast,isCurrent:()=>sales.order?.id===o.id&&token===session&&location.hash===route});
+  renderInvoice(o); renderProgress(d);
+  // Ngày giao dự kiến chỉ xem ở đây; đổi ngày bằng "＋ Lên lịch giao" (ngày của chuyến giao thành ngày giao dự kiến của đơn).
+  $('#order-deliveries').innerHTML = (shipDone ? '' : `<div class="expected-row"><span class="muted small">Ngày giao dự kiến</span>
+      ${o.expectedDeliveryDate ? duePill(o.expectedDeliveryDate, { fmt: fmtDate }) : '<span class="muted">Chưa có</span>'}<small class="muted">Đổi ngày giao bằng nút "＋ Lên lịch giao".</small></div>`)
+    + (d.deliveries.length ? `<ul class="plain-list">${d.deliveries.map(x => `<li><span><b>${fmtDate(x.plannedDate)}</b> ${esc(x.timeSlot)} · <a href="#/deliveries?deliveryId=${encodeURIComponent(x.id)}">${esc(x.deliveryNo)}</a><small>${[ghnTrackingText(x), x.lines.map(l => { const line = d.lines.find(y => y.id === l.orderLineId); return `${line?.name || ''}: ${fmtNum(l.qty)}`; }).join(' · ')].filter(Boolean).map(esc).join(' · ')}</small>${deliveryConfirmation(x)}</span>${pill(DELIVERY_STATUS, x.status)}${deliveryPhotos(x)}<span class="row-gap">${deliveryButtons(x)}</span></li>`).join('')}</ul>`
+    : '<p class="muted">Chưa có lịch giao.</p>');
+  const unscheduled=d.lines.map(l=>({line:l,qty:Math.max(0,l.qty-(l.deliveredQty||0)-d.deliveries.filter(t=>['planned','in_transit'].includes(t.status)).flatMap(t=>t.lines).filter(x=>x.orderLineId===l.id).reduce((sum,x)=>sum+x.qty,0))})).filter(x=>x.qty>0.0005);
+  if(!shipDone&&unscheduled.length)$('#order-deliveries').insertAdjacentHTML('beforeend',`<p class="warn small" id="order-delivery-unscheduled">Còn hàng chưa lên lịch giao: ${unscheduled.map(x=>`${esc(x.line.name)}: ${fmtNum(x.qty)} ${esc(x.line.unit||'')}`).join(' · ')}. Chọn “＋ Lên lịch giao” khi đã chốt ngày giao khách.</p>`);
+  loadOrderPacking(o.id);
+  // Giữ hàng theo đơn CRM (order-holds.js): ≤ có thể bán, tự giữ khi duyệt có ngày giao, giữ thêm / huỷ / gia hạn.
+  if ((o.channel || 'crm') === 'crm' && (isK || ['confirmed', 'delivering'].includes(o.status))) {
+    const holdBox = isK ? $('#order-holds-card') : document.createElement('div');
+    if (isK) holdBox.hidden = false; else $('#order-deliveries').append(holdBox);
+    showOrderHolds({ api, toast, root: holdBox, orderId: o.id, isManager,
+      title: isK ? 'Giữ hàng HĐKT' : 'Giữ hàng',
+      isCurrent: () => run === orderLoadRun && session === token && sales.order?.id === o.id && location.hash.split('?')[0] === want,
+      onChanged: () => loadHolds(true) });
+  }
+  $('#order-pack').hidden = ['cancelled', 'draft', 'delivered'].includes(o.status);
+  $('#order-pack').disabled = true; $('#order-pack').title = 'Đang kiểm tra phiếu đóng gói…';
+  $('#order-new-delivery').hidden = o.status === 'cancelled' || o.status === 'delivered';
+  const fullyScheduled = !d.lines.some(line => line.qty - line.deliveredQty - d.deliveries.filter(x => ['planned','in_transit'].includes(x.status)).flatMap(x => x.lines).filter(x => x.orderLineId === line.id).reduce((sum,x) => sum + x.qty,0) > 1e-9);
+  $('#order-new-delivery').disabled = fullyScheduled;
+  $('#order-new-delivery').title = fullyScheduled ? 'Mọi sản phẩm đã có đủ lịch giao.' : 'Tạo lịch cho phần hàng còn lại chưa lên lịch.';
+  const heldCash = d.cashHeld || 0, collectableCash = Math.max(0, r.balance-heldCash);
+  $('#order-new-payment').hidden = (o.channel === 'pos' && (o.fulfillmentMode === 'cod' || !can('pos.sell'))) || o.status === 'cancelled' || (o.status === 'draft' && o.channel !== 'crm') || collectableCash <= 0;
+  // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
+  const paySummary = r.balance < 0 ? `<div class="pay-summary warn"><span>Còn phải hoàn / dùng đổi hàng</span><b>${money(-r.balance)}</b></div>` : o.status === 'cancelled' ? '' : r.balance <= 0 && r.due > 0
+    ? `<div class="pay-summary ok"><span class="pill ok">✓ Đã thanh toán đủ</span><b class="paid-text">${money(r.paid)}</b></div>`
+    : `<div class="pay-summary ${r.overdue ? 'danger' : 'warn'}"><span>Còn phải thu${r.overdue ? ` <small class="danger-text">(quá hạn ${money(r.overdue)})</small>` : ''}</span><b>${money(r.balance)}</b>
+       <small>Đã thu ${money(r.paid)} / ${money(r.due)}</small></div>`;
+  // Phiếu đã huỷ: gạch ngang + ai huỷ, lý do (không tính vào đã thu). Manager / quyền "Huỷ phiếu thu" huỷ phiếu ghi nhầm (bắt buộc lý do).
+  if(d.returnAdjustment){const n=document.createElement('p');n.className='pos-note';n.textContent='Hàng/phí đã trả: '+money(d.returnAdjustment.credit)+' · Giá trị sau trả: '+money(r.due)+' · Đã hoàn hoặc dùng đổi hàng: '+money(d.returnAdjustment.settled);$('#order-debt').append(n);}
+  if(heldCash>0){const note=document.createElement('p');note.className='warn-text';note.textContent='Tiền mặt nhân viên còn giữ: '+money(heldCash)+'. Chờ Manager nhận và xác nhận; chưa hoàn tất thanh toán. Còn có thể thu thêm từ khách: '+money(collectableCash)+'.';$('#order-debt').append(note);}
+  const earlyReceiptNote = o.channel === 'crm' && o.status === 'draft' ? '<p class="muted small">Có thể ghi nhận tiền đã thực thu trước khi duyệt. Tiền mặt nhân viên giữ chờ Manager xác nhận; đơn hàng / HĐKT vẫn chờ duyệt.</p>' : '';
+  $('#order-payments').innerHTML = earlyReceiptNote + paySummary + (d.payments.length ? `<ul class="plain-list">${d.payments.map(p => `<li class="${p.voidedAt ? 'payment-voided' : ''}" data-payment="${esc(p.id)}"><span>${fmtDate(p.paidAt)} · ${p.paymentSource === 'pos_exchange_credit' ? 'Tiền đổi hàng' : p.method === 'cash' ? 'Tiền mặt' : p.method === 'transfer' ? 'Chuyển khoản' : 'Khác'}<small>${esc(p.reference || p.note)}</small></span><b>${money(p.amount)}</b>${p.voidedAt ? `<small class="void-note danger-text">Đã huỷ${p.voidedByName ? ' bởi ' + esc(p.voidedByName) : ''} · ${fmtDate(p.voidedAt)}: ${esc(p.voidReason)}</small>` : ''}${!p.voidedAt && d.canVoidPayment && !d.returnAdjustment && p.paymentSource!=='pos_exchange_credit' ? `<button type="button" class="btn ghost small danger-text" data-void-payment="${esc(p.id)}">Huỷ phiếu…</button>` : ''}</li>`).join('')}</ul>`
+    : '<p class="muted">Chưa có phiếu thu.</p>');
+  mountCashCollections({host:$('#order-payments'),rows:d.cashCollections,canConfirm:d.canConfirmCashCollection,api,confirmBox,onChanged:()=>openOrder(o.id)});
+  if (o.channel === 'pos' && o.fulfillmentMode === 'cod' && o.status !== 'cancelled' && r.balance > 0 && can('pos.sell')) {
+    for (const delivery of d.deliveries.filter(x => x.status === 'delivered' && x.codAmount > d.payments.filter(p => !p.voidedAt && p.deliveryId === x.id).reduce((n, p) => n + p.amount, 0)))
+      $('#order-payments').append(posCodReceipt({ api, delivery, onSaved: () => openOrder(o.id) }));
+  }
+  const scheduleParams = new URLSearchParams(route.split('?')[1]||''), scheduleLine = scheduleParams.get('scheduleLine');
+  if(scheduleLine){
+    scheduleParams.delete('scheduleLine');const rest=scheduleParams.toString(),clean=location.hash.split('?')[0]+(rest?'?'+rest:'');
+    history.replaceState(null,'',clean);lastRoutedHash=currentHash=clean;
+    const target=d.lines.find(l=>l.id===scheduleLine),reserved=target?d.deliveries.filter(s=>['planned','in_transit'].includes(s.status)).flatMap(s=>s.lines).filter(l=>l.orderLineId===target.id).reduce((sum,l)=>sum+l.qty,0):0;
+    if(target&&target.qty-target.deliveredQty-reserved>1e-9&&o.status!=='draft'&&!$('#order-new-delivery').hidden&&!$('#order-new-delivery').disabled){$('#order-new-delivery').dataset.scheduleLine=scheduleLine;$('#order-new-delivery').click();}
+    else toast('Dòng hàng không còn số lượng được xếp lịch. Vui lòng kiểm tra lại đơn.','err');
+  }
+}
+/**
+ * Tiến trình sản phẩm (mọi người cùng theo dõi): Duyệt → Xuất kho → In mẫu → Sản xuất → Giao hàng (đơn không in thì bỏ In mẫu / Sản xuất).
+ * Bước tự xong theo chứng từ / công việc; Manager bấm "Xong" ở một bước (xong luôn các bước trước) hoặc "Hoàn thành tất cả".
+ */
+function progressDocuments(d,stage){
+  const order=d.order,refs=[],live=(d.packingMeta?.slips||[]).filter(s=>s.status!=='cancelled');
+  const link=(href,label)=>linkAllowed(href)?`<a href="${esc(href)}">${esc(label)}</a>`:esc(label);
+  if(stage==='approve')refs.push(link((d.contract?'#/contracts/':'#/orders/')+encodeURIComponent(order.id),d.contract?.contractNo||order.orderNo));
+  if(['approve','sample','production'].includes(stage)&&order.quoteId)refs.push(link('#/quotes/'+encodeURIComponent(order.quoteId),order.quoteNo||'Báo giá gốc'));
+  if(stage==='export')for(const slip of live)refs.push(link('#/packing/'+encodeURIComponent(slip.id),slip.slipNo));
+  if(stage==='delivered')for(const ship of d.deliveries.filter(s=>s.status!=='cancelled'))refs.push(link('#/deliveries?deliveryId='+encodeURIComponent(ship.id),ship.deliveryNo));
+  let actions='';
+  if((isManager()||state.user?.positionId==='sale-admin')&&order.status!=='cancelled'){
+    if(stage==='approve'&&order.status==='draft'){
+      const target=document.getElementById('order-confirm')||document.getElementById('order-submit');if(target)actions=`<button type="button" class="btn secondary small" data-progress-action="approve">${esc(target.textContent)}</button>`;
+    }
+    if(stage==='export'&&!['draft','delivered'].includes(order.status)){
+      const next=live.find(s=>s.status==='sent')||live.find(s=>s.status==='draft');
+      if(next)actions=`<a class="btn secondary small" href="#/packing/${encodeURIComponent(next.id)}">${next.status==='sent'?'Xác nhận xuất kho':'Kiểm tra / gửi kho'}</a>`;
+      else if(d.packingMeta?.canRequest)actions='<button type="button" class="btn secondary small" data-progress-action="packing">Lập phiếu xuất</button>';
+    }
+    if(stage==='delivered')actions=d.deliveries.filter(s=>s.status!=='cancelled').map(s=>{const buttons=deliveryButtons(s);return buttons?`<div class="progress-delivery-actions"><small>${esc(s.deliveryNo)}</small>${buttons}</div>`:'';}).join('');
+  }
+  return (refs.length?`<div class="progress-doc-links">${refs.join(' · ')}</div>`:'')+(actions?`<div class="progress-quick-actions">${actions}</div>`:'');
+}
+function renderProgress(d) {
+  const box = $('#order-progress'), p = d.progress;
+  box.hidden = !p; if (!p) return;
+  const cancelled = d.order.status === 'cancelled', canMark = (isManager()||state.user?.positionId==='sale-admin') && !cancelled;
+  const stockPending=p.physicalExportRequired&&p.stages.some(s=>s.key==='export'&&!s.done);
+  const by = s => s.by === 'auto' ? 'Tự động theo chứng từ' : s.by === 'task' ? `Hoàn thành việc${s.byName ? ' · ' + s.byName : ''}` : s.by === 'manual' ? `Đánh dấu${s.byName ? ' · ' + s.byName : ''}` : '';
+  box.innerHTML = `<div class="card-title-row"><h2 class="card-title">Tiến trình sản phẩm</h2>
+      <span class="pill ${cancelled ? 'muted' : p.done ? 'ok' : 'info'}">${esc(p.reconciliationRequired?'Chờ đối soát xuất kho':p.label)}</span>
+      ${canMark && isManager() && !p.done && !stockPending ? '<button type="button" class="btn secondary small" data-progress="all" title="Đánh dấu xong tất cả các bước (chỉ tiến trình – không đổi giao hàng, công nợ)">✓ Hoàn thành tất cả</button>' : ''}</div>
+    <ol class="progress-steps">${p.stages.map((s, i) => `<li data-progress-stage="${esc(s.key)}" class="${s.done ? 'done' : s.key === p.current ? 'current' : ''}">
+      <span class="dot" aria-hidden="true">${s.done ? '✓' : i + 1}</span><b>${esc(s.label)}</b>
+      <small>${s.key==='delivered'&&d.order.status==='delivered'?'Đã ghi nhận giao hàng'+(p.reconciliationRequired?' · Chờ đối soát xuất kho':''):s.done ? esc(by(s)) + (s.at ? ' · ' + fmtDate(s.at.slice(0, 10)) : '') : s.key === p.current ? 'Đang ở bước này' : 'Chưa tới'}</small>
+      ${canMark && (isManager()||['sample','production'].includes(s.key)) && !s.done && !(['approve','export'].includes(s.key) && p.physicalExportRequired) && !stockPending ? `<button type="button" class="link-btn" data-progress="${esc(s.key)}" title="Đánh dấu xong bước này và các bước trước">Xong</button>` : ''}
+      ${canMark && (isManager()||['sample','production'].includes(s.key)) && s.by === 'manual' ? `<button type="button" class="link-btn muted" data-progress-undo="${esc(s.key)}" title="Bỏ đánh dấu tay ở bước này và các bước sau">Bỏ</button>` : ''}
+      ${progressDocuments(d,s.key)}
+    </li>`).join('')}</ol>
+    ${p.reconciliationRequired?'<p class="pill warn" role="alert">Đơn đã ghi nhận giao hàng nhưng chưa đủ chứng từ xuất kho. Cần đối soát phiếu xuất và sổ kho; không đánh dấu hoàn thành thay cho xuất hàng.</p>':''}
+    ${p.physicalExportRequired?'<p class="muted small">Xuất kho chỉ hoàn thành theo phiếu xác nhận xuất đủ hàng đúng kho/nguồn; đánh dấu tiến trình không thay phiếu xuất.</p>':''}
+    ${p.printing ? '' : '<p class="muted small">Đơn không có phí in nên không có bước In mẫu / Sản xuất.</p>'}`;
+}
+$('#order-progress').addEventListener('click', async e => {
+  const quick=e.target.closest('[data-progress-action]');
+  if(quick&&sales.order){
+    if(quick.disabled)return;quick.disabled=true;
+    try{if(quick.dataset.progressAction==='approve')(document.getElementById('order-confirm')||document.getElementById('order-submit'))?.click();
+      else{if($('#order-pack').disabled)await loadOrderPacking(sales.order.id);if(!$('#order-pack').disabled)$('#order-pack').click();else toast('Mọi dòng đã có phiếu hoặc đơn chưa cho phép lập phiếu.','err');}}
+    finally{if(quick.isConnected)quick.disabled=false;}return;
+  }
+  const b = e.target.closest('[data-progress], [data-progress-undo]'); if (!b || !sales.order) return;
+  const undo = b.dataset.progressUndo, stage = undo || b.dataset.progress;
+  if (stage === 'all' && !await confirmBox('Đánh dấu xong tất cả các bước tiến trình? Chỉ là tiến trình theo dõi – không đổi lịch giao, công nợ, hoá đơn.', { title: 'Hoàn thành tất cả', ok: 'Hoàn thành' })) return;
+  b.disabled = true;
+  try {
+    const r = await api(`/orders/${encodeURIComponent(sales.order.id)}/progress`, 'POST', { stage, done: !undo });
+    sales.detail.progress = r.progress; renderProgress(sales.detail); toast(undo ? 'Đã bỏ đánh dấu.' : 'Đã cập nhật tiến trình.');
+  } catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
+});
+/** Ô Hoá đơn của đơn: yêu cầu xuất (tự động khi giao xong / nhân viên bấm) → nhóm Kế toán nhập số hoá đơn. */
+function renderInvoice(o) {
+  const st = o.status === 'cancelled' ? null : o.invoiceStatus || 'none', at = v => v ? new Date(v).toLocaleString('vi-VN') : '';
+  $('#order-invoice-pill').innerHTML = st ? pill(INVOICE_STATUS, st) : '';
+  const form = (label) => o.canIssueInvoice ? `<form class="invoice-form" id="invoice-form"${st === 'issued' ? ' hidden' : ''}>
+      <label>Số hoá đơn<input name="invoiceNo" required maxlength="200" value="${esc(o.invoiceNo || '')}" placeholder="Ví dụ: 0000123" autocomplete="off"></label>
+      <label>Ngày hoá đơn<input type="date" name="invoiceDate" value="${esc(o.invoiceDate || todayIso())}"></label>
+      <button class="btn primary small">${label}</button></form>` : '';
+  const requested = o.invoiceRequestedAt ? `<dt>Yêu cầu</dt><dd>${o.invoiceRequestedBy ? esc(o.invoiceRequestedByName) : 'Tự động khi giao xong'} · ${at(o.invoiceRequestedAt)}${o.invoiceRequestNote ? `<small>${esc(o.invoiceRequestNote)}</small>` : ''}</dd>
+    <dt>Cách xuất</dt><dd>${o.invoiceMode === 'draft' ? '<span class="pill warn">Gửi bản nháp</span>' : '<span class="pill info">Phát hành</span>'}</dd>
+    <dt>Email nhận</dt><dd>${o.invoiceEmail ? esc(o.invoiceEmail) : '<span class="muted">Chưa có</span>'}</dd>` : '';
+  $('#order-invoice').innerHTML = !st ? '<p class="muted">Đơn đã huỷ.</p>'
+    : st === 'issued' ? `<dl class="kv"><dt>Số hoá đơn</dt><dd><b>${esc(o.invoiceNo)}</b></dd><dt>Ngày hoá đơn</dt><dd>${fmtDate(o.invoiceDate) || '—'}</dd>
+        <dt>Người nhập</dt><dd>${esc(o.invoiceIssuedByName || '—')} · ${at(o.invoiceIssuedAt)}</dd>${requested}</dl>
+        ${o.canIssueInvoice ? '<button type="button" class="btn ghost small" id="invoice-edit">Sửa số hoá đơn</button>' : ''}${form('Lưu số hoá đơn')}`
+    : st === 'handled' ? `<p class="muted small">Việc hoá đơn đã được xử lý nhưng đơn chưa có số hoá đơn. Nhập số để lưu hồ sơ.</p>${form('Lưu số hoá đơn')}`
+    : st === 'requested' ? `<dl class="kv">${requested}</dl><p class="muted small">Đã tạo việc "Xuất hoá đơn" cho nhóm Kế toán. Sau khi xuất, Kế toán hoặc nhân viên phụ trách nhập số hoá đơn vào đây.</p>
+       <button type="button" class="btn ghost small" id="invoice-request" title="Đổi email nhận, cách xuất hoặc ghi chú">Sửa yêu cầu</button>${form('Đã xuất – lưu số hoá đơn')}`
+    : `<p class="muted">Chưa yêu cầu xuất hoá đơn. Khi đơn giao xong, hệ thống tự yêu cầu và giao việc cho nhóm Kế toán.</p>
+       ${o.status === 'draft' && !o.external ? '' : '<button type="button" class="btn secondary small" id="invoice-request" title="Tạo việc Xuất hoá đơn cho nhóm Kế toán">🧾 Yêu cầu xuất hoá đơn</button>' + form('Lưu số hoá đơn')}`;
+}
+document.addEventListener('click', async e => {
+  if (e.target.id === 'invoice-edit') { const f = document.getElementById('invoice-form'); f.hidden = false; e.target.hidden = true; f.invoiceNo.focus(); return; }
+  if (e.target.id !== 'invoice-request') return;
+  // Hộp yêu cầu xuất hoá đơn của app: email nhận (mặc định email trên đơn / của khách, sửa được), cách xuất, ghi chú.
+  const o = sales.order, f = $('#invoice-req-form');
+  $('#invoice-req-order').textContent = `${docNo()} · ${o.customerName}`; $('#invoice-req-error').textContent = '';
+  f.email.value = o.invoiceEmail || o.email || o.customerEmail || '';
+  $('#invoice-req-email-hint').textContent = f.email.value ? 'Lấy từ thông tin khách hàng – sửa lại nếu khách muốn nhận ở email khác.' : 'Khách chưa có email – nhập email nhận hoá đơn.';
+  f.note.value = o.invoiceStatus === 'requested' ? o.invoiceRequestNote || '' : '';
+  f.querySelector(`[name=mode][value="${o.invoiceMode === 'draft' && o.invoiceStatus === 'requested' ? 'draft' : 'issue'}"]`).checked = true;
+  $('#invoice-req-save').textContent = o.invoiceStatus === 'requested' ? 'Lưu thay đổi' : 'Gửi yêu cầu cho kế toán';
+  $('#invoice-req-dialog').showModal(); f.email.focus();
+});
+$('#invoice-req-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, btn = $('#invoice-req-save'), email = f.email.value.trim();
+  const bad = email.split(/[,;\s]+/).filter(Boolean).find(x => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x));
+  if (bad) { $('#invoice-req-error').textContent = `Email "${bad}" chưa đúng.`; f.email.focus(); return; }
+  if (!email && !confirm('Chưa có email nhận hoá đơn. Vẫn gửi yêu cầu?')) return;
+  btn.disabled = true;
+  const requestedOrder=sales.order;
+  try {
+    const r = await api(`/orders/${encodeURIComponent(requestedOrder.id)}/invoice-request`, 'POST', { email, note: f.note.value, mode: f.mode.value, ...(requestedOrder.external?{revision:requestedOrder.accountingRevision}:{}) });
+    $('#invoice-req-dialog').close();if(sales.order?.id!==requestedOrder.id)return;toast(r.updated ? 'Đã cập nhật yêu cầu xuất hoá đơn.' : 'Đã yêu cầu xuất hoá đơn – nhóm Kế toán nhận việc.'); openOrder(requestedOrder.id); tasksView().badge();
+  } catch (ex) { $('#invoice-req-error').textContent = ex.message; } finally { btn.disabled = false; }
+});
+document.addEventListener('submit', async e => {
+  if (e.target.id !== 'invoice-form') return;
+  e.preventDefault();
+  const f = e.target, btn = f.querySelector('button[type="submit"],button:not([type])'); btn.disabled = true;
+  try { const order=sales.order;await api(`/orders/${encodeURIComponent(order.id)}/invoice`, 'PUT', { invoiceNo: f.invoiceNo.value, invoiceDate: f.invoiceDate.value, ...(order.external?{revision:order.accountingRevision}:{}) });if(sales.order?.id!==order.id)return;toast('Đã lưu số hoá đơn.'); openOrder(order.id); tasksView().badge(); }
+  catch (ex) { toast(ex.message, 'err'); btn.disabled = false; }
+});
+// ----- Phiếu đóng gói: "📦 Yêu cầu đóng gói" chia số lượng theo nguồn hàng → mỗi nguồn một phiếu → gửi kho → kho xác nhận kèm 1–3 ảnh.
+const PACK_SOURCES = { warehouse: 'Kho', store: 'Điều chuyển từ cửa hàng', supplier: 'Nhập từ NCC', agent: 'Lấy từ đại lý', other: 'Nguồn khác' };
+const PACK_STATUS = { draft: ['Nháp – chưa gửi kho', 'warn'], sent: ['Đã gửi kho', 'info'], packed: ['Kho đã đóng ✓', 'ok'], cancelled: ['Đã huỷ', 'muted'] };
+const kg = v => v === null || v === undefined ? '' : `~${fmtNum(v)} kg`;
+const packing = { lines: [], orderId: '', hasSchedule: false };
+const packingSupplierChoices = initPackingSupplierChoices($('#pack-form'));
+const packingEarlyRequest = initPackingEarlyRequest({ root: $('#pack-form'), api, lines: () => packing.lines, parseNum, toast,
+  canRequest: () => can('page.purchases') && (isManager() || state.user?.positionId === 'sale-admin') });
+function syncOrderPackingButton(data) {
+  const button = $('#order-pack'), full = !data.lines.some(line => line.left > 1e-9);
+  button.disabled = !data.canRequest || full;
+  button.title = full ? 'Mọi sản phẩm đã có đủ phiếu đóng gói. Huỷ phiếu cũ nếu cần lập lại.' : 'Lên lịch giao và lập phiếu trong một lần lưu; đơn một nguồn gửi kho ngay.';
+}
+async function loadOrderPacking(orderId) {
+  const box = $('#order-packing'); box.innerHTML = '';
+  let d; try { d = await api(`/orders/${encodeURIComponent(orderId)}/packing`); } catch { return; }
+  if (sales.order?.id !== orderId) return;
+  packing.lines = d.lines; packing.orderId = orderId;
+  if(sales.detail?.order?.id===orderId){sales.detail.packingMeta=d;renderProgress(sales.detail);}
+  syncOrderPackingButton(d);
+  const live = d.slips.filter(x => x.status !== 'cancelled'), drafts = live.filter(x => x.status === 'draft');
+  if (!live.length) return;
+  box.innerHTML = `<div class="pack-slips"><div class="card-title-row"><b>Phiếu đóng gói</b>${drafts.length > 1 ? `<button type="button" class="btn primary small" data-slip-send-all>Gửi kho ${drafts.length} phiếu nháp</button>` : ''}</div>
+    <ul class="plain-list">${live.map(x => `<li><span><a href="#/packing/${esc(x.id)}"><b>${esc(x.slipNo)}</b></a> · ${esc(x.sourceLabel)}${x.sourceNote ? ': ' + esc(x.sourceNote) : ''}
+      <small>${x.lines.map(l => `${esc(l.name)}: ${fmtNum(l.qty)} ${esc(l.unit)}`).join(' · ')}${x.totalWeight ? ' · ' + kg(x.totalWeight) : ''}${x.photoCount ? ` · ${x.photoCount} ảnh` : ''}</small>
+      <small>${shipText(x)}</small></span>
+      <span class="row-gap">${pill(PACK_STATUS, x.status)}${x.status === 'draft' ? `<button type="button" class="btn secondary small" data-slip-send="${esc(x.id)}">Gửi kho</button>` : ''}${x.status === 'draft' || x.status === 'sent' ? `<button type="button" class="btn ghost small" data-slip-cancel="${esc(x.id)}">Huỷ</button>` : ''}</span></li>`).join('')}</ul></div>`;
+}
+/** Giao tới + gửi xe của phiếu đóng gói (một dòng). */
+const shipText = k => `${k.shipTo === 'workshop' ? '🖨️ Giao về xưởng in: ' + esc(k.shipName) : '🏠 Giao thẳng cho khách'}${k.carrierName ? ` · 🚚 Gửi xe ${esc(k.carrierName)}${k.carrierPhone ? ' (' + esc(k.carrierPhone) + ')' : ''}` : ''}`;
+/** Một dòng nguồn khác kho (cửa hàng / NCC / đại lý…) trong hộp yêu cầu đóng gói. */
+const packSourceRow = (qty = '', incoming = null) => `<div class="pack-src"><select data-src aria-label="Nguồn hàng">${Object.entries(PACK_SOURCES).filter(([k]) => k !== 'warehouse').map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}<option value="incoming">Hàng đang chờ về${Number(incoming) > 0 ? ` (${fmtNum(Number(incoming))})` : ''}</option></select>
+  <input data-src-note maxlength="200" placeholder="Tên cửa hàng / NCC / đại lý" aria-label="Lấy từ đâu"><input class="num-input" inputmode="decimal" data-src-qty value="${qty === '' ? '' : fmtNum(qty)}" placeholder="SL" aria-label="Số lượng">
+  <button type="button" class="icon-btn danger" data-src-del title="Bỏ nguồn này" aria-label="Bỏ nguồn này">×</button></div>`;
+$('#order-pack').addEventListener('click', async () => {
+  const o = sales.order; if (!o) return;
+  const btn = $('#order-pack'); btn.disabled = true;
+  try {
+    const d = await api(`/orders/${encodeURIComponent(o.id)}/packing`); packing.lines = d.lines;
+    syncOrderPackingButton(d);
+    if (!d.canRequest) return toast('Đơn chưa xác nhận, đã huỷ hoặc đã giao xong.', 'err');
+    const todo = d.lines.filter(l => l.left > 1e-9);
+    if (!todo.length) return toast('Mọi dòng hàng đã có phiếu đóng gói. Huỷ phiếu cũ nếu cần lập lại.', 'err');
+    // Tồn khả dụng của kho (như trang Khách hỏi tồn): mặc định lấy từ kho tối đa bằng tồn, phần thiếu bắt buộc nhập nguồn khác.
+    const skus = [...new Set(todo.map(l => l.sku).filter(Boolean))], stock = new Map();
+    try { for (let i = 0; i < skus.length; i += 200) { const r = await api('/products?skus=' + encodeURIComponent(skus.slice(i, i + 200).join(','))); applyCatalogMeta(r); for (const p of r.products) stock.set(p.sku, p); } } catch { /* không có số liệu tồn: để kho = đủ */ }
+    $('#pack-order').textContent = `${docNo()} · ${o.customerName}`; $('#pack-error').textContent = ''; $('#pack-form').note.value = '';
+    // Đơn CRM đã trừ kho bán lúc duyệt: số dư kho bán đã trừ phần của chính đơn → cộng lại phần chưa đóng gói, chỉ tính kho bán.
+    const soldWh = d.soldWarehouseId || '', ownLeft = new Map();
+    for (const l of todo) if (l.sku) ownLeft.set(l.sku, (ownLeft.get(l.sku) || 0) + l.left);
+    const scopedStock=new Map((d.stockAvailability||[]).map(s=>[s.sku,s]));
+    const packAv = p => soldWh ? Math.max(0, (Number(p.stock?.[soldWh]) || 0) + (ownLeft.get(p.sku) || 0))
+      : Math.max(0, availableStock(p)+(state.holds.get(p.sku)||[]).filter(h=>h.orderId===o.id).reduce((sum,h)=>sum+h.qty,0));
+    $('#pack-lines').innerHTML = todo.map(l => {
+      const p = l.sku ? stock.get(l.sku) : null, scoped=scopedStock.get(l.sku),av = scoped?scoped.available:p ? packAv(p) : null, fromStock = av === null ? l.left : Math.min(l.left, av), short = l.left - fromStock, incoming = p ? kindStock(p, 'incoming') : null;
+      return `<div class="pack-line" data-line="${esc(l.id)}" data-av="${av ?? ''}" data-incoming="${incoming ?? ''}">
+        <div class="pack-head"><b>${esc(l.name)}</b><small>${esc(l.sku || 'Chưa có mã')} · ${esc(l.unit || '')} · đơn ${fmtNum(l.qty)}${l.packed ? ` · đã có phiếu ${fmtNum(l.packed)}` : ''}</small></div>
+        <div class="pack-grid"><label>Cần đóng<input class="num-input" inputmode="decimal" data-need value="${fmtNum(l.left)}"></label>
+          <label>${soldWh ? `<span title="Tồn ${esc(o.warehouseName || 'kho bán')} + phần đơn này đã trừ lúc duyệt mà chưa đóng gói">Tồn kho bán</span>` : scoped?`<span title="Tồn ${fmtNum(scoped.onHand)} − giữ cho đơn khác ${fmtNum(scoped.reservedOther)}; không trừ phần giữ của chính đơn này">Khả dụng · ${esc(o.warehouseName || 'kho bán')}</span>`:'Tồn kho'}<span class="pack-av ${av !== null && av < l.left ? 'danger-text' : ''}">${av === null ? '—' : fmtNum(av)}</span></label>
+          <label>Lấy từ kho<input class="num-input" inputmode="decimal" data-wh value="${fmtNum(fromStock)}"></label></div>
+        <p class="pack-warn" ${short > 1e-9 ? '' : 'hidden'}>⚠️ Kho không đủ – nhập phần còn lại lấy từ đâu.</p>
+        ${incoming > 0 ? `<p class="pack-incoming-hint" role="note"><b>Có hàng đang chờ về: ${fmtNum(incoming)} ${esc(p?.unit || l.unit || '')}</b><small>Tổng hàng chưa nhận từ các đơn mua NCC. Chọn “Hàng đang chờ về” rồi bấm “Xin giao trước” để lập phiếu nháp.</small></p>` : ''}
+        <div data-srcs>${short > 1e-9 ? packSourceRow(short, incoming) : ''}</div>
+        <button type="button" class="btn ghost small" data-src-add>＋ Thêm nguồn hàng</button></div>`;
+    }).join('');
+    packingSupplierChoices.setSuppliers(d.supplierChoices || []);
+    fillPackShip(d.delivery); fillPackSchedule(d.schedules || [], o);
+    $('#pack-dialog').showModal();
+  } catch (ex) { toast(ex.message, 'err'); } finally { if (sales.order?.id === o.id) btn.disabled = !packing.lines.some(l => l.left > 1e-9); }
+});
+/** A single save can schedule the selected quantities and create the packing slips. */
+function fillPackSchedule(schedules, order) {
+  const f = $('#pack-form'); packing.hasSchedule = schedules.length > 0;
+  f.createSchedule.checked = !packing.hasSchedule; f.createSchedule.disabled = !packing.hasSchedule;
+  f.plannedDate.value = order.expectedDeliveryDate || todayIso(); f.timeSlot.value = ''; f.receiverName.value = orderRecipient(order).receiverName;
+  $('#pack-existing-schedule').textContent = packing.hasSchedule
+    ? 'Dùng lịch đã có: ' + schedules.map(x => `${x.deliveryNo} · ${fmtDate(x.plannedDate)}`).join('; ') + '. Chọn tạo lịch mới chỉ khi đây là chuyến giao khác.'
+    : 'Chưa có lịch giao. Ngày giao và số lượng sẽ được lưu cùng phiếu đóng gói.';
+  showPackSchedule();
+}
+function showPackSchedule() {
+  const f = $('#pack-form');
+  for (const input of $('#pack-schedule-fields').querySelectorAll('input')) input.disabled = !f.createSchedule.checked;
+}
+/** Phần "Giao hàng" của hộp đóng gói: có phí in → mặc định về xưởng in; chọn xưởng / nhà xe trong danh sách tự điền địa chỉ, SĐT. */
+let packShip = { workshops: [], carriers: [] };
+function fillPackShip(dv = {}) {
+  const f = $('#pack-form'); packShip = { workshops: dv.workshops || [], carriers: dv.carriers || [] };
+  const opts = list => list.map(x => `<option value="${esc(x.name)}">${esc([x.phone, x.address].filter(Boolean).join(' · '))}</option>`).join('');
+  $('#pack-ws-list').innerHTML = opts(packShip.workshops); $('#pack-carrier-list').innerHTML = opts(packShip.carriers);
+  for (const k of ['wsName', 'wsPhone', 'wsAddress', 'carrierName', 'carrierPhone']) f[k].value = '';
+  f.custAddress.value = dv.customer?.address || ''; f.custPhone.value = dv.customer?.phone || '';
+  f.querySelector(`[name=shipTo][value=${dv.hasPrintFee ? 'workshop' : 'customer'}]`).checked = true;
+  $('#pack-ship-hint').textContent = dv.hasPrintFee ? 'Đơn có phí in logo: mặc định giao về xưởng in để in trước khi giao khách.' : 'Đơn không có phí in: giao thẳng cho khách theo địa chỉ giao hàng.';
+  showPackShip();
+}
+function showPackShip() {
+  const to = $('#pack-form').querySelector('[name=shipTo]:checked')?.value || 'customer';
+  $$('[data-ship]', $('#pack-form')).forEach(el => el.hidden = el.dataset.ship !== to);
+}
+function readPackShip() {
+  const f = $('#pack-form'), to = f.querySelector('[name=shipTo]:checked')?.value || 'customer';
+  const ship = to === 'workshop' ? { to, name: f.wsName.value.trim(), address: f.wsAddress.value.trim(), phone: f.wsPhone.value.trim() }
+    : { to, address: f.custAddress.value.trim(), phone: f.custPhone.value.trim() };
+  if (to === 'workshop' && !ship.name) throw new Error('Chọn hoặc gõ tên xưởng in nhận hàng.');
+  return { ...ship, carrierName: f.carrierName.value.trim(), carrierPhone: f.carrierPhone.value.trim() };
+}
+$('#pack-form').addEventListener('change', e => { if (e.target.name === 'shipTo') showPackShip(); if (e.target.name === 'createSchedule') showPackSchedule(); });
+$('#pack-form').addEventListener('input', e => {
+  const f = $('#pack-form'), pick = (list, v) => list.find(x => normalize(x.name) === normalize(v));
+  if (e.target.name === 'wsName') { const w = pick(packShip.workshops, e.target.value); if (w) { f.wsAddress.value = w.address || f.wsAddress.value; f.wsPhone.value = w.phone || f.wsPhone.value; } }
+  if (e.target.name === 'carrierName') { const c = pick(packShip.carriers, e.target.value); if (c) f.carrierPhone.value = c.phone || f.carrierPhone.value; }
+});
+/** Kiểm tra từng dòng: kho + các nguồn khác = số cần đóng; nguồn khác phải ghi rõ. Trả về danh sách phân bổ hoặc ném lỗi. */
+function readPackForm() {
+  if (packingEarlyRequest.isBusy()) throw new Error('Đang lưu phiếu xin lấy trước. Vui lòng chờ.');
+  const out = [];
+  for (const row of $$('.pack-line', $('#pack-lines'))) {
+    const line = packing.lines.find(l => l.id === row.dataset.line), name = line?.name || '';
+    const need = parseNum(row.querySelector('[data-need]').value || '0'), wh = parseNum(row.querySelector('[data-wh]').value || '0');
+    if (need < 0 || wh < 0) throw new Error(`Số lượng của "${name}" không hợp lệ.`);
+    if (need > line.left + 1e-9) throw new Error(`"${name}" chỉ còn ${fmtNum(line.left)} chưa đóng gói.`);
+    if (need <= 0) continue;
+    const av = row.dataset.av === '' ? null : Number(row.dataset.av);
+    if (av !== null && wh > av + 1e-9 && !confirm(`"${name}": lấy từ kho ${fmtNum(wh)} nhưng tồn kho chỉ ${fmtNum(av)}. Vẫn lưu?`)) throw new Error('Sửa lại số lấy từ kho.');
+    const srcs = $$('.pack-src', row).map(r => ({ source: r.querySelector('[data-src]').value, sourceNote: r.querySelector('[data-src-note]').value.trim(), qty: parseNum(r.querySelector('[data-src-qty]').value || '0') })).filter(x => x.qty > 0);
+    if (srcs.some(x => x.source === 'incoming')) throw new Error(`"${name}": bấm "Xin giao trước" để lưu phiếu nháp. Khi hàng đã sẵn sàng, chọn lại nguồn thực tế trước khi gửi kho đóng gói.`);
+    const total = wh + srcs.reduce((t, x) => t + x.qty, 0);
+    if (Math.abs(total - need) > 1e-9) throw new Error(`"${name}": kho ${fmtNum(wh)} + nguồn khác ${fmtNum(total - wh)} = ${fmtNum(total)}, chưa khớp số cần đóng ${fmtNum(need)}.`);
+    const missing = srcs.find(x => !x.sourceNote); if (missing) throw new Error(`"${name}": ghi rõ ${PACK_SOURCES[missing.source].toLowerCase()} nào.`);
+    if (wh > 0) out.push({ orderLineId: line.id, qty: wh, source: 'warehouse' });
+    for (const x of srcs) out.push({ orderLineId: line.id, ...x });
+  }
+  if (!out.length) throw new Error('Chưa có dòng hàng nào để đóng gói.');
+  return out;
+}
+$('#pack-lines').addEventListener('click', e => {
+  const row = e.target.closest('.pack-line'); if (!row) return;
+  if (e.target.closest('[data-src-add]')) { row.querySelector('[data-srcs]').insertAdjacentHTML('beforeend', packSourceRow('', Number(row.dataset.incoming))); row.querySelector('.pack-src:last-child [data-src-note]').focus(); }
+  if (e.target.closest('[data-src-del]')) e.target.closest('.pack-src').remove();
+});
+$('#pack-lines').addEventListener('input', e => {
+  // Đổi số cần đóng / lấy từ kho → cảnh báo khi kho không đủ.
+  const row = e.target.closest('.pack-line'); if (!row || !e.target.matches('[data-need], [data-wh]')) return;
+  const need = parseNum(row.querySelector('[data-need]').value || '0'), wh = parseNum(row.querySelector('[data-wh]').value || '0');
+  row.querySelector('.pack-warn').hidden = !(wh < need - 1e-9);
+  // Kho thiếu mà chưa có dòng nguồn khác → thêm sẵn một dòng với phần còn lại.
+  if (wh < need - 1e-9 && !row.querySelector('.pack-src')) row.querySelector('[data-srcs]').insertAdjacentHTML('beforeend', packSourceRow(need - wh, Number(row.dataset.incoming)));
+});
+$('#pack-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  let allocations, delivery; try { allocations = readPackForm(); delivery = readPackShip(); } catch (ex) { $('#pack-error').textContent = ex.message; return; }
+  const btn = $('#pack-save'); btn.disabled = true;
+  try {
+    const f = $('#pack-form'), order = sales.order;
+    const groups = new Set(allocations.map(x => `${x.source}\u0000${(x.sourceNote || '').trim().toLowerCase()}`));
+    const schedule = f.createSchedule.checked ? { plannedDate: f.plannedDate.value, timeSlot: f.timeSlot.value,
+      receiverName: f.receiverName.value, receiverPhone: delivery.to === 'customer' ? delivery.phone : orderRecipient(order).receiverPhone,
+      address: delivery.to === 'customer' ? delivery.address : order.address,
+      carrier: delivery.to === 'customer' ? delivery.carrierName : '', note: f.note.value } : undefined;
+    const r = await api(`/orders/${encodeURIComponent(order.id)}/packing`, 'POST', { allocations, delivery, schedule, sendToWarehouse: groups.size === 1, note: f.note.value });
+    $('#pack-dialog').close();
+    toast(r.sentToWarehouse ? 'Đã lưu và gửi phiếu cho kho đóng hàng.' : `Đã lưu ${r.slips.length} phiếu nháp. Kiểm tra nguồn hàng rồi bấm "Gửi kho".`);
+    openOrder(order.id);
+  } catch (ex) { $('#pack-error').textContent = ex.message; } finally { btn.disabled = false; }
+});
+async function sendSlip(id) { await api(`/packing/${encodeURIComponent(id)}/send`, 'POST', {}); }
+document.addEventListener('click', async e => {
+  const send = e.target.closest('[data-slip-send]'), all = e.target.closest('[data-slip-send-all]'), cancel = e.target.closest('[data-slip-cancel]');
+  if (!send && !all && !cancel) return;
+  const b = send || all || cancel; b.disabled = true;
+  try {
+    if (cancel) { if (!await confirmBox('Huỷ phiếu đóng gói này? Số lượng trả lại để lập phiếu khác.', { ok: 'Huỷ phiếu', danger: true })) return; await api(`/packing/${encodeURIComponent(cancel.dataset.slipCancel)}/cancel`, 'POST', {}); toast('Đã huỷ phiếu.'); }
+    else if (send) { await sendSlip(send.dataset.slipSend); toast('Đã gửi kho – nhóm Kho nhận việc đóng gói.'); }
+    else { const ids = $$('[data-slip-send]').map(x => x.dataset.slipSend); for (const id of ids) await sendSlip(id); toast(`Đã gửi kho ${ids.length} phiếu.`); }
+    if (location.hash.startsWith('#/packing/')) openPacking(location.hash.slice(10)); else if (sales.order) loadOrderPacking(sales.order.id);
+  } catch (ex) { toast(ex.message, 'err'); } finally { b.disabled = false; }
+});
+const PACKING_FILTER_KEY = 'packingFilter';
+const PACKING_FILTERS = [['sent', 'Chưa đóng'], ['packed', 'Đã đóng'], ['all', 'Tất cả']];
+const packingFilter = () => { try { const v = localStorage.getItem(PACKING_FILTER_KEY); return PACKING_FILTERS.some(([k]) => k === v) ? v : 'sent'; } catch { return 'sent'; } };
+/** Bộ lọc danh sách phiếu đóng gói (giữ trong phiên): tìm số phiếu / đơn / khách, nguồn hàng, khoảng ngày giao dự kiến. */
+const packingQuery = { q: '', source: '', from: '', to: '' };
+$('#packing-body').addEventListener('click', e => {
+  const b = e.target.closest('[data-packing-filter]');
+  if (b) { try { localStorage.setItem(PACKING_FILTER_KEY, b.dataset.packingFilter); } catch { /* bỏ qua */ } openPacking(null); return; }
+  if (e.target.closest('[data-packing-reset]')) { Object.assign(packingQuery, { q: '', source: '', from: '', to: '' }); openPacking(null); return; }
+  if (e.target.closest('[data-packing-refresh]')) { openPacking(null); return; }
+  const row = e.target.closest('[data-packing-open]');
+  if (row && !e.target.closest('a,button')) location.hash = '#/packing/' + encodeURIComponent(row.dataset.packingOpen);
+});
+$('#packing-body').addEventListener('keydown', e => { const row = e.target.closest('[data-packing-open]'); if (row && e.key === 'Enter' && e.target === row) location.hash = '#/packing/' + encodeURIComponent(row.dataset.packingOpen); });
+$('#packing-body').addEventListener('submit', e => {
+  const f = e.target.closest('#packing-filter-form'); if (!f) return; e.preventDefault();
+  const v = Object.fromEntries(new FormData(f));
+  if (v.from && v.to && v.from > v.to) { toast('Từ ngày phải trước hoặc bằng đến ngày.', 'err'); return; }
+  Object.assign(packingQuery, { q: String(v.q || '').trim(), source: v.source || '', from: v.from || '', to: v.to || '' }); openPacking(null);
+});
+/** Trang phiếu đóng gói (#/packing/<id>): kho xem hàng cần đóng, quy cách gợi ý, cân nặng; xác nhận kèm 1–3 ảnh. Không id: danh sách phiếu chờ đóng. */
+const slipPhotos = [];
+let packingView = null; // phiếu đang mở ở #/packing/<id> (cho nút in)
+async function openPacking(id) {
+  const body = $('#packing-body'); body.innerHTML = '<p class="muted card">Đang tải…</p>'; $('#packing-actions').innerHTML = ''; $('#packing-status').innerHTML = '';
+  $('#view-packing .editor-head').hidden = !id;
+  if (!id) {
+    // BỐ CỤC TOÀN TRANG như các trang danh sách khác: đầu trang · chip trạng thái + khung lọc · bảng phiếu bấm được từng dòng.
+    const filter = packingFilter(), q = packingQuery, mine = Symbol();
+    openPacking.run = mine;
+    $('#breadcrumb').textContent = 'Phiếu đóng gói'; document.title = 'Phiếu đóng gói · Bách Ngân';
+    const back = isWarehouse() ? [KHO_HOME, '‹ Trang kho'] : ['#/tasks', '‹ Công việc'];
+    const sources = Object.entries({ warehouse: 'Kho', store: 'Điều chuyển từ cửa hàng', supplier: 'Nhập từ NCC', agent: 'Lấy từ đại lý', other: 'Nguồn khác' });
+    const top = `<div class="page-head"><div><span class="eyebrow">Kho hàng</span><h1>Phiếu đóng gói</h1><p class="muted">Phiếu Sale gửi kho để lấy hàng, đóng gói và xuất kho. Bấm một dòng để mở phiếu, tick hàng và xác nhận đã đóng.</p></div>
+      <div class="head-actions row-gap"><a class="btn ghost small" href="${esc(back[0])}">${esc(back[1])}</a><button type="button" class="btn secondary small" data-packing-refresh>Làm mới</button></div></div>
+      <section class="panel packing-list-panel"><div class="toolbar chips packing-filter" role="tablist">${PACKING_FILTERS.map(([k, t]) =>
+        `<button type="button" class="chip ${k === filter ? 'active' : ''}" role="tab" data-packing-filter="${k}" aria-selected="${k === filter}">${t}</button>`).join('')}</div>
+      <form class="transfer-filter-grid" id="packing-filter-form">
+        <label>Tìm phiếu<input type="search" name="q" maxlength="80" value="${esc(q.q)}" placeholder="Số phiếu, số đơn / HĐKT hoặc khách…" aria-label="Tìm phiếu đóng gói"></label>
+        <label>Nguồn hàng<select name="source" aria-label="Lọc nguồn hàng"><option value="">Tất cả nguồn</option>${sources.map(([k, t]) => `<option value="${k}"${k === q.source ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label>Giao từ ngày<input type="date" name="from" value="${esc(q.from)}" aria-label="Giao từ ngày"></label>
+        <label>Giao đến ngày<input type="date" name="to" value="${esc(q.to)}" aria-label="Giao đến ngày"></label>
+        <button type="submit" class="btn primary small">Lọc</button><button type="button" class="btn secondary small" data-packing-reset>Xoá bộ lọc</button>
+      </form>`;
+    body.innerHTML = top + '<p class="muted transfer-filter-note">Đang tải phiếu…</p></section>';
+    try {
+      const p = new URLSearchParams({ status: filter }); for (const k of ['q', 'source', 'from', 'to']) if (q[k]) p.set(k, q[k]);
+      const { slips } = await api('/packing?' + p);
+      if (openPacking.run !== mine) return;
+      const filtered = q.q || q.source || q.from || q.to;
+      const rows = slips.map(x => `<tr class="clickable" tabindex="0" data-packing-open="${esc(x.id)}" title="${esc(x.sourceNote || '')}">
+        <td class="first"><b>${esc(x.slipNo)}</b><small>${new Date(x.createdAt).toLocaleDateString('vi-VN')}</small></td>
+        <td data-label="Khách hàng">${esc(x.customerName)}<small>${esc(x.contractNo ? 'HĐKT ' + x.contractNo : x.orderNo)}</small></td>
+        <td data-label="Nguồn hàng">${esc(x.sourceLabel)}${x.sourceNote ? `<small>${esc(x.sourceNote)}</small>` : ''}</td>
+        <td data-label="Giao dự kiến">${x.expectedDeliveryDate ? duePill(x.expectedDeliveryDate, { done: x.status === 'packed', fmt: fmtDate }) : '—'}</td>
+        <td data-label="Cân nặng" class="num">${x.totalWeight ? kg(x.totalWeight) : '—'}</td>
+        <td data-label="Trạng thái">${pill(PACK_STATUS, x.status)}${x.packedAt ? `<small>đóng ${new Date(x.packedAt).toLocaleDateString('vi-VN')}</small>` : ''}</td>
+        <td class="actions-cell"><div class="row-actions"><a class="btn ${x.status === 'sent' ? 'primary' : 'secondary'} small" href="#/packing/${esc(x.id)}">${x.status === 'sent' ? 'Đóng gói' : 'Xem phiếu'}</a></div></td></tr>`).join('');
+      body.innerHTML = top + `<p class="muted transfer-filter-note" role="status">${slips.length ? `${fmtNum(slips.length)} phiếu${slips.length >= 200 ? ' · hiện 200 phiếu mới nhất' : ''}` : filtered ? 'Không có phiếu khớp bộ lọc.' : filter === 'packed' ? 'Chưa có phiếu nào đã đóng.' : 'Không có phiếu nào chờ đóng gói.'}</p>`
+        + (slips.length ? `<div class="table-wrap"><table class="data-table packing-table"><thead><tr><th>Số phiếu</th><th>Khách hàng</th><th>Nguồn hàng</th><th>Giao dự kiến</th><th class="num">Cân nặng</th><th>Trạng thái</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '') + '</section>';
+    } catch (e) { if (openPacking.run === mine) body.innerHTML = top + `<p class="error transfer-filter-note">${esc(e.message)}</p></section>`; }
+    return;
+  }
+  openPacking.run = null;
+  let d; try { d = await api('/packing/' + encodeURIComponent(id)); } catch (e) { body.innerHTML = `<p class="error card">${esc(e.message)}</p>`; return; }
+  const k = d.slip, o = d.order, needsWarehouse = d.requiresWarehouseIssue ?? (k.source === 'warehouse' || d.lines.some(l => String(l.sku || '').trim())); slipPhotos.length = 0;
+  $('#packing-title').textContent = k.slipNo; $('#breadcrumb').textContent = k.slipNo; document.title = k.slipNo + ' · Bách Ngân';
+  $('#packing-status').innerHTML = pill(PACK_STATUS, k.status);
+  $('#packing-back').href = d.canOpenOrder ? docHref(o.id, o.contractNo) : isWarehouse() ? '#/packing' : '#/tasks'; $('#packing-back').textContent = d.canOpenOrder ? (o.contractNo ? '‹ HĐKT' : '‹ Đơn hàng') : isWarehouse() ? '‹ Phiếu đóng gói' : '‹ Công việc';
+  packingView = d;
+  $('#packing-actions').innerHTML = (d.canAdjustQuantities ? '<button class="btn primary" data-packed-adjust data-mobile-confirmation-page data-mobile-inline>Điều chỉnh số lượng</button><button class="btn ghost" data-packed-history data-mobile-navigation>Lịch sử điều chỉnh</button>' : '') + '<button class="btn secondary" data-slip-print="packing">In phiếu đóng gói</button><button class="btn secondary" data-slip-print="delivery">In phiếu giao hàng</button>' + (d.canSend ? `<button class="btn primary" data-slip-send="${esc(k.id)}">Gửi kho</button>` : '') + (d.canCancel ? `<button class="btn ghost" data-slip-cancel="${esc(k.id)}">Huỷ phiếu</button>` : '');
+  const at = v => v ? new Date(v).toLocaleString('vi-VN') : '';
+  body.innerHTML = `<div class="editor-grid">
+    <div class="card"><h2 class="card-title">${k.shipTo === 'workshop' ? '🖨️ Giao về xưởng in' : '🏠 Giao thẳng cho khách'}</h2><dl class="kv"><dt>Khách hàng</dt><dd><b>${esc(o.customerName)}</b></dd><dt>${orderReference(o).label}</dt><dd>${esc(orderReference(o).number)}</dd>
+      ${k.shipTo === 'workshop' ? `<dt>Xưởng in</dt><dd><b>${esc(k.shipName)}</b></dd>${k.shipPhone ? `<dt>SĐT xưởng</dt><dd>${esc(k.shipPhone)}</dd>` : ''}${k.shipAddress ? `<dt>Địa chỉ xưởng</dt><dd>${esc(k.shipAddress)}</dd>` : ''}`
+        : `${k.shipPhone || o.contact || o.phone ? `<dt>Người nhận</dt><dd>${esc(k.shipPhone || [o.contact, o.phone].filter(Boolean).join(' · '))}</dd>` : ''}${k.shipAddress || o.address ? `<dt>Địa chỉ</dt><dd>${esc(k.shipAddress || o.address)}</dd>` : ''}`}
+      ${k.carrierName ? `<dt>Gửi xe</dt><dd><b>${esc(k.carrierName)}</b>${k.carrierPhone ? ` · <a href="tel:${esc(k.carrierPhone.replace(/[^\d+]/g, ''))}">${esc(k.carrierPhone)}</a>` : ''}</dd>` : ''}
+      <dt>Giao dự kiến</dt><dd>${o.expectedDeliveryDate ? duePill(o.expectedDeliveryDate, { done: k.status === 'packed', fmt: fmtDate }) : '—'}</dd></dl></div>
+    <div class="card"><h2 class="card-title">Phiếu</h2><dl class="kv"><dt>Nguồn hàng</dt><dd><b>${esc(k.sourceLabel)}</b>${k.sourceNote ? ': ' + esc(k.sourceNote) : ''}</dd>
+      <dt>Lập</dt><dd>${esc(k.createdByName)} · ${at(k.createdAt)}</dd>${k.sentAt ? `<dt>Gửi kho</dt><dd>${esc(k.sentByName)} · ${at(k.sentAt)}</dd>` : ''}
+      ${k.packedAt ? `<dt>Kho đóng</dt><dd>${esc(k.packedByName)} · ${at(k.packedAt)}${k.packedNote ? `<small>${esc(k.packedNote)}</small>` : ''}</dd>` : ''}
+      ${k.note ? `<dt>Ghi chú</dt><dd>${esc(k.note)}</dd>` : ''}</dl></div></div>
+    <div class="card"><h2 class="card-title">${d.canConfirm ? '<span class="step-no">1</span> Lấy hàng – tick từng món đã lấy đủ' : 'Hàng cần đóng'}</h2><div class="table-wrap"><table class="data-table${d.canConfirm ? ' pick-table' : ''}"><thead><tr>${d.canConfirm ? '<th class="pick-col"><span class="sr-only">Đã lấy</span></th>' : ''}<th>Sản phẩm</th><th class="right">SL</th><th>Quy cách gợi ý</th><th class="right">Cân nặng</th></tr></thead><tbody>
+      ${d.lines.map((l, i) => `<tr${d.canConfirm ? ` class="pick-row" data-pick-row="${i}"` : ''}>${d.canConfirm ? `<td class="pick-col"><input type="checkbox" class="pick-tick" data-pick="${i}" aria-label="Đã lấy ${esc(l.name)}"></td>` : ''}<td>${esc(l.name)}<small>${esc(l.sku || '')}</small></td><td class="right"><b class="pick-qty">${fmtNum(l.qty)}</b> ${esc(l.unit)}</td>
+        <td>${l.suggestion ? esc(l.suggestion) : '<span class="muted">Chưa có quy cách thùng</span>'}${l.cartonSize ? `<small>Thùng ${esc(l.cartonSize)}${l.cartonWeight ? ' · ' + fmtNum(l.cartonWeight) + ' kg/thùng' : ''}</small>` : ''}</td>
+        <td class="right">${l.weight ? kg(l.weight) : '—'}</td></tr>`).join('')}
+      <tr>${d.canConfirm ? '<td class="pick-col"></td>' : ''}<td><b>Tổng</b></td><td class="right"><b>${fmtNum(k.totalQty)}</b></td><td></td><td class="right"><b>${k.totalWeight ? kg(k.totalWeight) : '—'}</b></td></tr></tbody></table></div>
+      ${d.canConfirm ? `<p class="pick-progress" id="pick-progress"></p>` : ''}</div>
+    ${d.photos.length ? `<div class="card"><h2 class="card-title">Ảnh hàng đã đóng</h2><div class="pack-photos">${d.photos.map(p => `<img src="${esc(p.dataUrl)}" alt="Ảnh hàng đã đóng" loading="lazy">`).join('')}</div></div>` : ''}
+    ${d.canConfirm ? `<div class="card pack-steps">
+      <h2 class="card-title"><span class="step-no">2</span> Chụp ảnh hàng đã đóng</h2>
+      <p class="muted small">Chụp 1–3 ảnh (ảnh tự nén nhỏ để không đầy bộ nhớ).</p>
+      <label class="btn secondary big-btn pick-photo">📷 Chụp / chọn ảnh<input type="file" id="slip-photo-input" accept="image/*" capture="environment" multiple hidden></label>
+      <div class="pack-photos" id="slip-photo-preview"></div>
+      ${needsWarehouse ? '<h2 class="card-title"><span class="step-no">3</span> Chọn kho xuất hàng</h2><p class="muted small">Hàng từ NCC, đại lý hoặc điều chuyển phải nhập đủ vào kho xuất trước khi giao.</p><label class="sr-only" for="slip-confirm-wh">Xuất từ kho</label><select id="slip-confirm-wh" class="big-select" required><option value="">— Chọn kho xuất —</option></select>' : ''}
+      <label>Ghi chú (tuỳ chọn)<input id="slip-confirm-note" maxlength="1000" placeholder="Ví dụ: 3 thùng, đã dán tem"></label>
+      <h2 class="card-title"><span class="step-no">${needsWarehouse ? 4 : 3}</span> Bấm khi đã đóng xong</h2>
+      <p class="muted small" id="slip-confirm-hint"></p>
+      <button class="btn primary big-btn" id="slip-confirm" disabled>✅ ${needsWarehouse ? 'Đã xuất kho' : 'Đã đóng xong'}</button></div>` : ''}`;
+  slipPicks.clear(); slipPickTotal = d.canConfirm ? d.lines.length : 0;
+  try { for (const i of JSON.parse(localStorage.getItem('bn-pick-' + k.id) || '[]')) if (i < slipPickTotal) slipPicks.add(i); } catch { /* bỏ qua */ }
+  $$('.pick-tick', body).forEach(c => { c.checked = slipPicks.has(Number(c.dataset.pick)); c.closest('tr').classList.toggle('picked', c.checked); });
+  drawSlipGate();
+  // Mọi nguồn hàng vật lý đều chọn kho thực xuất; nguồn NCC/đại lý không thay phiếu nhập/xuất.
+  const whSel = document.getElementById('slip-confirm-wh');
+  if (whSel) stockWarehouses().then(list => {
+    let last = ''; try { last = localStorage.getItem('bn-pack-wh') || ''; } catch { /* bỏ qua */ }
+    for (const w of list) { const o = document.createElement('option'); o.value = w.id; o.textContent = w.name; whSel.append(o); }
+    if (list.length === 1) whSel.value = list[0].id; else if (list.some(w => w.id === last)) whSel.value = last;
+    drawSlipGate();
+  }).catch(() => {});
+}
+document.addEventListener('click',async e=>{
+  if(e.target.closest?.('[data-packed-adjust]')&&packingView?.canAdjustQuantities){
+    try{const module=await import('./packing-adjustment.js');const data=packingView;module.showPackingAdjustment({data,api,toast,esc,onSaved:()=>{if(location.hash==='#/packing/'+data.slip.id)return openPacking(data.slip.id);}});}catch(ex){toast(ex.message,'err');}
+  }
+  if(e.target.closest?.('[data-packed-history]')&&packingView?.canAdjustQuantities)showAudit({api,toast,entityType:'packing_slips',entityId:packingView.slip.id,title:'Lịch sử '+packingView.slip.slipNo});
+});
+let stockWarehouseList = null;
+/** Kho thật đang dùng (GET /stock-warehouses) – dùng chung cho chọn kho xuất / kho nhận. */
+function stockWarehouses() { return stockWarehouseList ||= api('/stock-warehouses').then(r => r.warehouses).catch(e => { stockWarehouseList = null; throw e; }); }
+function drawSlipPhotos() {
+  const box = document.getElementById('slip-photo-preview'); if (!box) return;
+  box.innerHTML = slipPhotos.map((u, i) => `<span class="pack-photo"><img src="${esc(u)}" alt="Ảnh ${i + 1}"><button type="button" class="icon-btn danger" data-photo-del="${i}" aria-label="Bỏ ảnh ${i + 1}">×</button></span>`).join('');
+  drawSlipGate();
+}
+/** Tick từng món khi lấy hàng (nhớ trên máy theo phiếu): đủ mọi món + có ảnh + đã chọn kho xuất mới bấm "Đã đóng xong" được. */
+const slipPicks = new Set();
+let slipPickTotal = 0;
+function drawSlipGate() {
+  const btn = document.getElementById('slip-confirm'); if (!btn) return;
+  const whSel = document.getElementById('slip-confirm-wh'), left = slipPickTotal - slipPicks.size;
+  const prog = document.getElementById('pick-progress');
+  if (prog) { prog.textContent = left ? `Đã lấy ${slipPicks.size}/${slipPickTotal} món – còn ${left} món chưa tick.` : `✔ Đã lấy đủ ${slipPickTotal}/${slipPickTotal} món.`; prog.classList.toggle('done', !left); }
+  const missing = [left ? `tick đủ ${left} món còn lại` : '', slipPhotos.length ? '' : 'chụp ít nhất 1 ảnh', whSel && !whSel.value ? 'chọn kho xuất' : ''].filter(Boolean);
+  btn.disabled = missing.length > 0;
+  document.getElementById('slip-confirm-hint').textContent = missing.length ? 'Cần ' + missing.join(', ') + '.' : 'Sẵn sàng – bấm nút dưới để báo đã đóng xong.';
+}
+document.addEventListener('change', e => {
+  if (e.target.id === 'slip-confirm-wh') { drawSlipGate(); return; }
+  const c = e.target.closest?.('.pick-tick'); if (!c) return;
+  const i = Number(c.dataset.pick);
+  if (c.checked) slipPicks.add(i); else slipPicks.delete(i);
+  c.closest('tr').classList.toggle('picked', c.checked);
+  try { localStorage.setItem('bn-pick-' + location.hash.slice(10), JSON.stringify([...slipPicks])); } catch { /* bỏ qua */ }
+  drawSlipGate();
+});
+// Bấm cả dòng (ngón tay to) cũng tick được.
+document.addEventListener('click', e => {
+  const row = e.target.closest('tr[data-pick-row]'); if (!row || e.target.closest('input, a, button')) return;
+  const c = row.querySelector('.pick-tick'); c.checked = !c.checked; c.dispatchEvent(new Event('change', { bubbles: true }));
+});
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'slip-photo-input') return;
+  const files = [...e.target.files]; e.target.value = '';
+  for (const f of files) {
+    if (slipPhotos.length >= 3) { toast('Tối đa 3 ảnh.', 'err'); break; }
+    try { slipPhotos.push(await compressImage(f, [[1280, .72], [1024, .68], [800, .62], [640, .6]], 450000, 'Ảnh quá lớn, chụp lại giúp.')); } catch (ex) { toast(ex.message, 'err'); }
+  }
+  drawSlipPhotos();
+});
+document.addEventListener('click', async e => {
+  const del = e.target.closest('[data-photo-del]');
+  if (del) { slipPhotos.splice(Number(del.dataset.photoDel), 1); drawSlipPhotos(); return; }
+  if (e.target.id !== 'slip-confirm') return;
+  const id = location.hash.slice(10); e.target.disabled = true;
+  const whSel = document.getElementById('slip-confirm-wh');
+  if (whSel && !whSel.value) { toast('Chọn kho xuất hàng.', 'err'); whSel.focus(); e.target.disabled = false; return; }
+  if (whSel) try { localStorage.setItem('bn-pack-wh', whSel.value); } catch { /* bỏ qua */ }
+  const send = overrideHolds => api(`/packing/${encodeURIComponent(id)}/confirm`, 'POST', { photos: slipPhotos, note: document.getElementById('slip-confirm-note').value, ...(whSel ? { warehouseId: whSel.value } : {}), ...(overrideHolds ? { overrideHolds } : {}) });
+  try {
+    // Hàng đang giữ cho đơn khác: Manager xuất vượt phải ghi lý do (máy chủ ghi nhật ký); người khác chỉ thấy lỗi.
+    try { await send(); } catch (ex) {
+      if (ex.code !== 'HELD_FOR_OTHER_ORDER' || !isManager()) throw ex;
+      const reason = prompt(ex.message + '\n\nVẫn xuất? Nhập lý do lấy hàng đang giữ cho đơn khác (ít nhất 5 ký tự):', '');
+      if (!reason) { e.target.disabled = false; return; }
+      await send({ reason });
+    }
+    toast('Đã xác nhận đóng hàng.'); try { localStorage.removeItem('bn-pick-' + id); } catch { /* bỏ qua */ } tasksView().badge(); openPacking(id); }
+  catch (ex) { toast(ex.message, 'err'); e.target.disabled = false; }
+});
+/** Kho dự kiến xuất của đơn CRM (chỉ trừ khi xác nhận xuất): nháp – người sửa được đơn đổi; đã duyệt – chỉ Manager (docs/SO-KHO.md). */
+function saleWarehouseRow(o) {
+  if ((o.channel || 'crm') !== 'crm') return '';
+  const canChange = o.status !== 'cancelled' && (o.status === 'draft' ? o.canEdit !== false : isManager());
+  return `<dt>Kho bán</dt><dd>${o.warehouseName ? esc(o.warehouseName) : '<span class="muted">Chưa chọn</span>'}${canChange ? ` <button type="button" class="btn ghost small" data-order-warehouse>Đổi kho</button>` : ''}</dd>`;
+}
+document.addEventListener('click', async e => {
+  if (!e.target.closest?.('[data-order-warehouse]') || !sales.detail) return;
+  const o = sales.detail.order;
+  let wh; try { wh = await api(`/orders/${encodeURIComponent(o.id)}/warehouses`); } catch (ex) { toast(ex.message, 'err'); return; }
+  if (!wh.warehouses.length) { toast('Nhân viên phụ trách chưa được gán kho bán nào. Manager gán ở trang Phân quyền › Kho bán theo chức vụ.', 'err'); return; }
+  const v = await verifyBox({ title: 'Kho bán ' + docNo(sales.detail), eyebrow: 'Kho dự kiến xuất hàng',
+    intro: 'Duyệt đơn chỉ giữ hàng. Tồn kho chỉ giảm khi kho xác nhận xuất hàng; đổi kho dự kiến không phải thao tác xuất kho.',
+    rows: wh.warehouses.map(w => [esc(w.name), w.lines.map(l => `${esc(l.sku)}: cần ${fmtNum(l.need)} · tồn ${fmtNum(l.stock)}`).join('<br>') || '—']),
+    fields: `<label class="verify-field"><span>Kho bán</span><select name="warehouseId">${wh.warehouses.map(w => `<option value="${esc(w.id)}" ${w.id === wh.warehouseId ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></label>`,
+    ok: 'Lưu kho bán' });
+  if (!v) return;
+  try { await api(`/orders/${encodeURIComponent(o.id)}/warehouse`, 'PUT', { warehouseId: v.warehouseId }); toast('Đã đổi kho bán.'); openOrder(o.id); }
+  catch (ex) { toast(ex.message, 'err'); }
+});
+/** Xác nhận đơn của khách: bắt buộc kiểm tra các thông tin quan trọng trước khi duyệt. */
+async function verifyAndConfirmOrder() {
+  const d = sales.detail, o = d.order, dash = v => v ? esc(v) : '';
+  let debtWarningAccepted=false,costQuoteRevision=null;
+  try {
+    const review = await api(`/orders/${encodeURIComponent(o.id)}/approval-preflight`);
+    if (review.debt.total > 0) {
+      debtWarningAccepted=await confirmApprovalDebt(review,isContractDoc(d)?'Vẫn duyệt HĐKT':'Vẫn duyệt đơn');
+      if(!debtWarningAccepted)return;
+    }
+    if (!await reviewOrderCosts({review,api,isManager:isManager(),verifyBox,esc,toast,onReviewed:v=>{costQuoteRevision=v.quoteRevision;}})) return;
+  } catch (ex) { toast(ex.message, 'err'); return; }
+  const items = d.lines.map(l => `${esc(l.name)} × ${fmtNum(l.qty)} ${esc(l.unit || '')}`).join('<br>');
+  // Kho bán (đơn CRM): duyệt giữ hàng; phiếu kho xác nhận mới trừ sổ kho. Chỉ kho người phụ trách được bán (Manager: mọi kho) – docs/SO-KHO.md.
+  let wh = null;
+  if ((o.channel || 'crm') === 'crm') { try { wh = await api(`/orders/${encodeURIComponent(o.id)}/warehouses`); } catch (ex) { toast(ex.message, 'err'); return; } }
+  const whPick = wh?.warehouseId || (wh?.warehouses.length === 1 ? wh.warehouses[0].id : '');
+  const whStock = w => w.lines.map(l => `${esc(l.sku)}: cần ${fmtNum(l.need)} · tồn ${fmtNum(l.stock)}${l.stock < l.need ? ' <b class="danger-text">thiếu</b>' : ''}`).join('<br>');
+  const whField = wh && wh.warehouses.length ? `<label class="verify-field"><span>Kho dự kiến xuất hàng</span><select name="warehouseId">${wh.configured && !whPick ? '<option value="">Chọn kho</option>' : ''}${wh.warehouses.map(w => `<option value="${esc(w.id)}" ${w.id === whPick ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></label>` : '';
+  const whRow = wh && wh.warehouses.length ? [['Tồn tại kho bán', wh.warehouses.map(w => `<b>${esc(w.name)}</b><br>${whStock(w) || '<span class="muted">—</span>'}`).join('<br>')]] : [];
+  const contractReview = isContractDoc(d) ? `
+    <section class="verify-page-card"><h3>Thông tin khách hàng</h3><dl class="kv verify-customer">
+      ${[['Khách hàng', o.customerName], ['MST', o.taxCode], ['Người nhận / SĐT', [o.contact, o.phone].filter(Boolean).join(' · ')], ['Địa chỉ giao', o.address]].map(([label, value]) => `<dt>${esc(label)}</dt><dd>${value ? esc(value) : '<span class="danger-text">Chưa có</span>'}</dd>`).join('')}</dl></section>
+    <section class="verify-page-card verify-products"><div class="verify-section-head"><h3>Sản phẩm trong HĐKT</h3><span class="muted small">${fmtNum(d.lines.length)} dòng sản phẩm</span></div>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="num">SL</th><th>ĐVT</th><th class="num">Đơn giá</th><th class="num">VAT</th></tr></thead><tbody>
+        ${d.lines.map(l => `<tr><td>${esc(l.name)}${l.sku ? `<small>${esc(l.sku)}</small>` : ''}</td><td class="num" data-label="SL">${fmtNum(l.qty)}</td><td data-label="ĐVT">${esc(l.unit || '—')}</td><td class="num" data-label="Đơn giá">${money(l.unitPrice)}</td><td class="num" data-label="VAT">${fmtNum(l.taxRate)}%</td></tr>`).join('')}
+      </tbody></table></div><div class="verify-contract-total"><span>Giá trị HĐKT (gồm VAT)</span><strong>${money(o.total)}</strong></div></section>
+    ${whRow.length ? `<section class="verify-page-card"><h3>Tồn tại kho bán</h3><div class="verify-stock-list">${wh.warehouses.map(w => `<section><h4>${esc(w.name)}</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>Mã sản phẩm</th><th class="num">Cần</th><th class="num">Tồn</th><th>Khả năng đáp ứng</th></tr></thead><tbody>${w.lines.map(l => `<tr><td>${esc(l.sku)}</td><td class="num" data-label="Cần">${fmtNum(l.need)}</td><td class="num" data-label="Tồn">${fmtNum(l.stock)}</td><td>${l.stock < l.need ? '<span class="danger-text">Thiếu hàng</span>' : 'Đủ hàng'}</td></tr>`).join('')}</tbody></table></div></section>`).join('')}</div></section>` : ''}
+    <section class="verify-page-card"><h3>Ghi chú</h3><p class="verify-note">${o.note ? esc(o.note) : '<span class="muted">Không có ghi chú</span>'}</p></section>` : '';
+  const v = await verifyBox({
+    title: `Duyệt ${isContractDoc(d) ? 'HĐKT' : 'đơn'} ${docNo(d)}`, eyebrow: 'Kiểm tra trước khi duyệt',
+    ...(isContractDoc(d) ? { title: 'Duyệt HĐKT', subtitle: docNo(d), layout: 'page', review: contractReview } : {}),
+    intro: `Kiểm tra kỹ các thông tin dưới đây với khách hàng. Đánh dấu đủ các mục mới duyệt được ${isContractDoc(d) ? 'HĐKT' : 'đơn'}.`,
+    rows: [['Khách hàng', dash(o.customerName)], ['MST', dash(o.taxCode)], ['Người nhận / SĐT', dash([o.contact, o.phone].filter(Boolean).join(' · '))], ['Địa chỉ giao', dash(o.address)],
+      ['Sản phẩm', items], ...whRow, [`Giá trị ${isContractDoc(d) ? 'HĐKT' : 'đơn'} (gồm VAT)`, `<b>${money(o.total)}</b>`], ['Ghi chú', o.note ? esc(o.note) : '<span class="muted">Không có</span>']],
+    fields: `<label class="verify-field"><span>Ngày giao dự kiến</span><input type="date" name="deliveryDate" value="${esc(o.expectedDeliveryDate || '')}" min="${todayIso()}"></label>${whField}`,
+    checks: ['Thông tin khách hàng (tên công ty, MST, người nhận, số điện thoại, địa chỉ giao) chính xác',
+      'Sản phẩm, số lượng, đơn giá và VAT đúng với yêu cầu của khách', 'Đã kiểm tra tồn kho / khả năng đáp ứng đủ số lượng',
+      'Ngày giao dự kiến khả thi và đã thống nhất với khách', 'Điều kiện thanh toán (đặt cọc / thanh toán khi giao) đã thống nhất với khách'],
+    validate: x => !x.deliveryDate ? 'Chọn ngày giao dự kiến.' : wh?.configured && whField && !x.warehouseId ? 'Chọn kho bán.' : '', ok: isContractDoc(d) ? 'Duyệt HĐKT' : 'Duyệt đơn',
+  });
+  if (!v) return;
+  try {
+    if (v.deliveryDate !== (o.expectedDeliveryDate || '')) await api(`/orders/${encodeURIComponent(o.id)}/delivery-date`, 'PUT', { date: v.deliveryDate });
+    await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true, debtWarningAccepted,...(costQuoteRevision!=null?{costQuoteRevision}:{}), ...(v.warehouseId ? { warehouseId: v.warehouseId } : {}) });
+    toast(isContractDoc(d) ? 'Đã duyệt HĐKT. Báo giá của HĐKT đã được khoá.' : 'Đã duyệt đơn. Báo giá của đơn đã được khoá.'); openOrder(o.id);
+  } catch (ex) {
+    if (ex.code === 'CUSTOMER_DEBT_OVERDUE') {
+      await verifyAndConfirmOrder();
+    } else toast(ex.message, 'err');
+  }
+}
+/** Xem trước đơn đặt hàng (mẫu đơn Minh Long), sửa trực tiếp trên phiếu rồi in / lưu PDF hoặc tải Excel. */
+function openOrderPrint(detail = sales.detail) {
+  const p = orderPrintData(detail, state.user?.name || '');
+  const dlg = document.createElement('dialog'); dlg.className = 'modal xwide order-print-dialog';
+  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">Đơn đặt hàng</span><h2>Xem, chỉnh sửa và tải ${esc(p.orderNo)}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body order-doc-body"><aside class="order-doc-form" data-order-form></aside>
+      <section class="order-doc-preview"><div class="row-gap print-tools"><label class="check"><input type="checkbox" data-prices> Hiện đơn giá, thành tiền</label><span class="muted small">Sửa ở form bên trái hoặc trực tiếp trên phiếu.</span></div>
+        <div class="paper ddh-paper" data-sheet></div></section></div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button><button type="button" class="btn secondary" data-xlsx>Tải Excel</button><button type="button" class="btn primary" data-print>In / Lưu PDF</button></div>`;
+  document.body.append(dlg);
+  const sheet = dlg.querySelector('[data-sheet]'), prices = () => dlg.querySelector('[data-prices]').checked;
+  const render = () => { sheet.innerHTML = orderSheetHtml(p, { prices: prices(), edit: true }); };
+  render();
+  const editForm = initOrderPrintForm({ host: dlg.querySelector('[data-order-form]'), data: p, beforeUpdate: () => readEdits(sheet, p), onUpdate: render });
+  sheet.addEventListener('input', () => { readEdits(sheet, p); editForm.sync(); });
+  dlg.querySelector('[data-prices]').addEventListener('change', () => editForm.apply());
+  const close = () => { dlg.close(); dlg.remove(); };
+  dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
+  dlg.querySelector('[data-print]').addEventListener('click', async () => {
+    editForm.apply();
+    $('#print-sheet').innerHTML = orderSheetHtml(p, { prices: prices() });
+    const head = $('#print-sheet .slip-letterhead');
+    if (head) { try { await head.decode(); } catch { toast('Không tải được ảnh tiêu đề. Anh thử in lại.', 'err'); return; } }
+    printSheet({ page: { size: 'A4 portrait', margin: head ? '20mm 10mm 10mm' : '10mm' }, cls: 'order-sheet', title: `Don-dat-hang-${p.orderNo}`.replace(/[^\w.-]+/g, '-') });
+  });
+  dlg.querySelector('[data-xlsx]').addEventListener('click', async e => {
+    editForm.apply(); e.target.disabled = true;
+    try { await downloadOrderExcel(p, { prices: prices() }); } catch (ex) { toast(ex.message, 'err'); } finally { e.target.disabled = false; }
+  });
+  dlg.showModal();
+}
+/**
+ * Xem trước PHIẾU ĐÓNG GÓI / PHIẾU GIAO HÀNG (cùng kiểu mẫu đơn đặt hàng), sửa trực tiếp trên phiếu rồi in / lưu PDF.
+ * `choices` = [{ value, label }] (chọn phiếu / chuyến giao), `build(value)` → dữ liệu bản in.
+ */
+function openSlipPrint({ kind, choices, initial, build }) {
+  const k = SLIP_KINDS[kind], dlg = document.createElement('dialog'); dlg.className = 'modal xwide order-print-dialog';
+  dlg.innerHTML = `<div class="modal-head"><div><span class="eyebrow">${kind === 'packing' ? 'Phiếu đóng gói' : kind === 'transfer' ? 'Phiếu điều chuyển kho' : 'Phiếu giao hàng'}</span><h2>In ${k.title.toLowerCase()}</h2></div><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
+    <div class="modal-body"><div class="row-gap print-tools">${choices.length > 1 ? `<label class="inline">${kind === 'packing' ? 'Phiếu' : 'Chuyến giao'} <select data-choice>${choices.map(c => `<option value="${esc(c.value)}"${c.value === initial ? ' selected' : ''}>${esc(c.label)}</option>`).join('')}</select></label>` : ''}
+      <label class="inline">Khổ giấy <select data-orient><option value="portrait">A4 dọc</option><option value="landscape">A4 ngang</option></select></label>
+      <span class="muted small">Bấm vào chữ trên phiếu để sửa trước khi in.</span></div>
+      <div class="paper ddh-paper" data-sheet></div></div>
+    <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button><button type="button" class="btn primary" data-print>In / Lưu PDF</button></div>`;
+  document.body.append(dlg);
+  const sheet = dlg.querySelector('[data-sheet]'), orient = dlg.querySelector('[data-orient]'); let p;
+  // Khổ giấy dọc / ngang: nhớ lựa chọn lần trước trên máy này.
+  try { orient.value = localStorage.getItem('slipOrient') === 'landscape' ? 'landscape' : 'portrait'; } catch { /* không có localStorage: mặc định dọc */ }
+  const paper = () => sheet.classList.toggle('landscape', orient.value === 'landscape');
+  orient.addEventListener('change', () => { paper(); try { localStorage.setItem('slipOrient', orient.value); } catch { /* bỏ qua */ } });
+  paper();
+  const render = v => { p = build(v); sheet.innerHTML = slipSheetHtml(p, { edit: true }); };
+  render(initial ?? choices[0]?.value ?? '');
+  dlg.querySelector('[data-choice]')?.addEventListener('change', e => render(e.target.value));
+  const close = () => { dlg.close(); dlg.remove(); };
+  dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('close', () => dlg.remove());
+  dlg.querySelector('[data-print]').addEventListener('click', async e => {
+    const button = e.currentTarget; button.disabled = true;
+    try {
+      readEdits(sheet, p);
+      $('#print-sheet').innerHTML = slipSheetHtml(p);
+      // The print sheet is a fresh DOM tree: wait for the original banner to decode before opening print.
+      await $('#print-sheet .slip-letterhead').decode().catch(() => { throw new Error('Không tải được ảnh tiêu đề. Anh thử in lại.'); });
+      // Phiếu: lề trên 2 cm, trái phải 0,8 cm; khổ A4 dọc / ngang theo lựa chọn.
+      printSheet({ page: { size: orient.value === 'landscape' ? 'A4 landscape' : 'A4 portrait', margin: '20mm 8mm 10mm 8mm' }, cls: 'slip-' + orient.value,
+        title: `${k.file}-${p.docNo}`.replace(/[^\w.-]+/g, '-') });
+    } catch (ex) { toast(ex.message, 'err'); }
+    finally { button.disabled = false; }
+  });
+  dlg.showModal();
+}
+const sellerName = d => sellerOf(d).short;
+/** Phiếu đóng gói của đơn (nhân viên phụ trách / Manager): chọn 1 phiếu đã lập, hoặc cả đơn khi chưa chia phiếu. */
+async function printPackingForOrder(orderId) {
+  const [d, pk] = await Promise.all([api('/orders/' + encodeURIComponent(orderId)), api(`/orders/${encodeURIComponent(orderId)}/packing`)]);
+  if (!pk.scheduled) throw new Error(NO_SCHEDULE);
+  const live = pk.slips.filter(x => x.status !== 'cancelled').sort((a, b) => a.slipNo.localeCompare(b.slipNo));
+  const choices = [...live.map(x => ({ value: x.id, label: `${x.slipNo} · ${x.sourceLabel}${x.sourceNote ? ': ' + x.sourceNote : ''} · ${PACK_STATUS[x.status]?.[0] || x.status}` })), { value: '', label: (d.contract ? 'Cả HĐKT' : 'Cả đơn') + ' (tất cả dòng hàng)' }];
+  openSlipPrint({ kind: 'packing', choices, initial: live[0]?.id || '', build: v => {
     const slip = live.find(x => x.id === v);
     return packingPrintData({ seller: sellerName(d), order: d.order, contract: d.contract, slip, lines: slip ? slip.lines : pk.lines }, state.user?.name || '');
   } });
