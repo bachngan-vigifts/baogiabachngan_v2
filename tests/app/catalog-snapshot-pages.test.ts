@@ -33,3 +33,16 @@ test('browser catalog loader caps concurrency at two and never returns a mixed/p
  const old={...meta,version:'legacy',products:[['x']]};assert.deepEqual(await fetchCatalogSnapshot(async()=>old),old);
  let denied=0;await assert.rejects(fetchCatalogSnapshot(async()=>{denied++;throw Object.assign(Error('denied'),{code:'FORBIDDEN'});}),/denied/);assert.equal(denied,1);
 });
+
+test('catalog retry drains its failed batch before starting a new version attempt',async()=>{
+ let active=0,peak=0;
+ await assert.rejects(fetchCatalogSnapshot(async(path:string)=>{
+  const offset=Number(new URL(path,'https://example.test').searchParams.get('offset')||0);active++;peak=Math.max(peak,active);
+  try{
+   if(offset===500){await new Promise(r=>setTimeout(r,1));throw Object.assign(Error('changed'),{code:'CATALOG_SNAPSHOT_CHANGED'});}
+   if(offset)await new Promise(r=>setTimeout(r,5));
+   return{version:'v',columns:['sku'],policies:[],warehouses:[],pagination:{total:1501,nextOffset:500},products:Array(500).fill(['x'])};
+  }finally{active--;}
+ }),/changed/);
+ assert.equal(peak,2);assert.equal(active,0);
+});

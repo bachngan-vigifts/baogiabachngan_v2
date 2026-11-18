@@ -819,7 +819,7 @@ async function loadSapoSync() {
   $('#sync-state').classList.toggle('warn', !!(s.expired || pullFailed));
   $('#sync-note').textContent = !d.configured ? 'Cần cài mã SAPO_SYNC_TOKEN'
     : !s.connected ? 'Bấm "Kết nối Sapo" để bắt đầu'
-    : queued ? 'Yêu cầu đã được lưu; worker xử lý từng phần, không cần giữ trang mở.'
+    : queued ? 'Yêu cầu đã được lưu; CRM đang đồng bộ từng phần, không cần giữ trang mở.'
     : s.expired || pullFailed ? (p.error || 'Cần kết nối lại Sapo')
     : p.finishedAt && !p.stale ? 'Đồng bộ lúc ' + viTime(p.finishedAt) : 'Kết nối lúc ' + viTime(s.updatedAt);
   $('#sapo-connect').textContent = s.connected ? 'Kết nối lại' : 'Kết nối Sapo';

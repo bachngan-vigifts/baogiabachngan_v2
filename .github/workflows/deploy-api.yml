@@ -67,7 +67,7 @@ jobs:
         if: env.SUPABASE_ACCESS_TOKEN != ''
         shell: bash
         run: |
-          for query_file in scripts/sql/assert-edge-sync-jobs.sql scripts/sql/assert-production-files.sql scripts/sql/assert-customer-center-campaigns.sql scripts/sql/assert-customer-profile-fields.sql scripts/sql/assert-hr-revenue-targets.sql scripts/sql/assert-hr-revenue-target-requests.sql scripts/sql/assert-sales-payroll-team-sources.sql; do
+          for query_file in scripts/sql/assert-edge-sync-jobs.sql scripts/sql/assert-edge-sync-worker.sql scripts/sql/assert-production-files.sql scripts/sql/assert-customer-center-campaigns.sql scripts/sql/assert-customer-profile-fields.sql scripts/sql/assert-hr-revenue-targets.sql scripts/sql/assert-hr-revenue-target-requests.sql scripts/sql/assert-sales-payroll-team-sources.sql; do
             payload=$(jq -n --rawfile query "$query_file" '{query:$query}')
             curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload"
@@ -475,7 +475,9 @@ jobs:
             --data '{}')
           echo "$response"
           test "$(echo "$response" | jq -r 'has("checked") and has("updated") and (.errors | type == "array")')" = 'true'
-          if [ "$(echo "$response" | jq -r '.ok')" != 'true' ]; then
+          if [ "$(echo "$response" | jq -r '.queued // false')" = 'true' ]; then
+            echo 'GHN đã vào hàng đợi; cần kiểm tra worker/job hoàn tất, HTTP 200 chưa chứng minh đã đồng bộ.'
+          elif [ "$(echo "$response" | jq -r '.ok')" != 'true' ]; then
             echo "::warning::Đồng bộ GHN chạy xong nhưng có mã vận đơn cần kiểm tra."
           fi
       - name: Bổ sung địa chỉ GHN cho đơn Web Lock cũ

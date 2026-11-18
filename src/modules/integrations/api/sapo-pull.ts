@@ -190,7 +190,7 @@ export async function runPull(c: Ctx, trigger: string, phase?: string) {
   requireKey(c);
   const db = c.env.db, nowIso = new Date().toISOString();
   const lock = await db.insert(sapoHealthMonitorState).values({ id: LOCK_ID, data: trigger, updatedAt: nowIso })
-    .onConflictDoUpdate({ target: sapoHealthMonitorState.id, set: { data: trigger, updatedAt: nowIso }, setWhere: lt(sapoHealthMonitorState.updatedAt, new Date(Date.now() - (phase ? 90 : LOCK_SECONDS) * 1000).toISOString()) })
+    .onConflictDoUpdate({ target: sapoHealthMonitorState.id, set: { data: trigger, updatedAt: nowIso }, setWhere: lt(sapoHealthMonitorState.updatedAt, new Date(Date.now() - LOCK_SECONDS * 1000).toISOString()) })
     .returning({ id: sapoHealthMonitorState.id });
   if (!lock.length) throw new AppError(409, 'Đang đồng bộ Sapo, vui lòng đợi vài phút.', 'SAPO_PULL_RUNNING');
   const runStart = Date.now(), previous = await readPullState(db);

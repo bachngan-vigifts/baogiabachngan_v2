@@ -7,3 +7,11 @@ CREATE TABLE IF NOT EXISTS edge_sync_jobs (
 );
 ALTER TABLE edge_sync_jobs ENABLE ROW LEVEL SECURITY;
 -- Deliberately no client policies, grants, business-data updates, or speculative indexes.
+REVOKE ALL ON TABLE edge_sync_jobs FROM PUBLIC;
+DO $roles$ DECLARE role_name text; BEGIN
+ FOREACH role_name IN ARRAY ARRAY['anon','authenticated'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=role_name) THEN
+   EXECUTE format('REVOKE ALL ON TABLE public.edge_sync_jobs FROM %I',role_name);
+  END IF;
+ END LOOP;
+END $roles$;

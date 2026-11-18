@@ -26,7 +26,7 @@ export async function externalText(fetcher: typeof fetch, url: string, init: Req
     let retry = false;
     try {
       const response = await fetcher(url, { ...init, signal: controller.signal });
-      retry = attempt + 1 < attempts && [408, 429, 502, 503, 504].includes(response.status);
+      retry = attempt + 1 < attempts && [408, 429, 500, 502, 503, 504].includes(response.status);
       if (!retry) return { response, text: await boundedText(response, options.maxBytes ?? 8*1024*1024) };
       await response.body?.cancel();
     } catch (error) {

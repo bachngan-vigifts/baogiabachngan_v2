@@ -48,6 +48,10 @@ test('Sapo request queues only; bounded pages checkpoint, survive a router resta
  assert.equal((await f.db.select().from(productStock).where(eq(productStock.warehouseId,'sync-wh'))).length,101);
  assert(requests.filter(u=>u.pathname.endsWith('/products.json')).every(u=>u.searchParams.get('limit')==='50'));
  const status=await f.call('/admin/sapo-sync',f.mgr);assert.equal(status.data.pull.job.status,'completed');
+ await f.call('/admin/sapo-pull',f.mgr,'POST',{});await f.db.update(syncJobs).set({state:JSON.stringify({phase:3,phaseSteps:29})}).where(eq(syncJobs.key,'sapo'));
+ await f.db.update(sapoHealthMonitorState).set({data:JSON.stringify({cursors:{stock:{page:1,offset:0}}})}).where(eq(sapoHealthMonitorState.id,'pull'));
+ await tick(f);assert.equal(JSON.parse((await f.db.select().from(syncJobs).where(eq(syncJobs.key,'sapo')))[0]!.state).phase,4,'stock quota yields to the next kind without losing its rotating cursor');
+ assert.equal(JSON.parse((await f.db.select().from(sapoHealthMonitorState).where(eq(sapoHealthMonitorState.id,'pull')))[0]!.data).cursors.stock.offset,50);
 });
 
 test('GHN queue checks one waybill per step, advances unchanged/failed rows and preserves stock idempotency',async()=>{

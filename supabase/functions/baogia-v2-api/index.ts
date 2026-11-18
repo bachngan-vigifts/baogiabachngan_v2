@@ -62,14 +62,14 @@ const waitUntil = (p: Promise<unknown>) => { const rt = (globalThis as any).Edge
 // Đồng bộ Sapo gọi từ máy chủ (webhook Sapo, luồng trung gian): không có Origin, xác thực bằng SAPO_SYNC_TOKEN trong router.
 const SYNC_ORIGIN = 'https://crm.minhlongonline.com';
 Deno.serve(async req => {
-  const started = performance.now();
+  const started = performance.now(), traceId = crypto.randomUUID();
   const incoming = new URL(req.url);
   // Đường dẫn API (bỏ tiền tố /functions/v1/baogia-v2-api). Nhận diện luồng đồng bộ ĐÚNG như router (bắt đầu bằng SYNC_PREFIX),
   // không dùng "có chứa" – tránh đường dẫn lắt léo được coi là đồng bộ (bỏ qua kiểm tra Origin).
   const at = incoming.pathname.indexOf('/api/staff'), path = at < 0 ? '' : incoming.pathname.slice(at), sync = path.startsWith(SYNC_PREFIX);
   const origin = sync ? SYNC_ORIGIN : req.headers.get('origin') || '';
   const ORIGIN = origin; // liên kết kích hoạt/đặt lại mật khẩu trỏ về đúng trang đã gửi yêu cầu
-  const cors = { 'access-control-allow-origin': ORIGIN, 'access-control-allow-headers': 'authorization, content-type, x-region, x-db-pool', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'vary': 'Origin', 'cache-control': 'no-store', 'access-control-expose-headers': 'server-timing', 'timing-allow-origin': ORIGIN };
+  const cors = { 'access-control-allow-origin': ORIGIN, 'access-control-allow-headers': 'authorization, content-type, x-region, x-db-pool', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'vary': 'Origin', 'cache-control': 'no-store', 'access-control-expose-headers': 'server-timing, x-crm-request-id', 'x-crm-request-id': traceId, 'timing-allow-origin': ORIGIN };
   if (!ORIGINS.has(origin)) return new Response(JSON.stringify({error:'Nguồn yêu cầu không hợp lệ.'}), {status:403,headers:{'content-type':'application/json'}});
   if (req.method === 'OPTIONS') return new Response(null, {status:204,headers:cors});
   const url = POOLER_URL || Deno.env.get('SUPABASE_DB_URL');
@@ -123,7 +123,7 @@ const response = await timing.run(stats, () => router.handle(forwarded,{db,durab
     // Chỉ khi đăng nhập / đổi phiên (có Set-Cookie) mới phải sửa JSON để trả sessionToken; còn lại chuyển nguyên văn bản
     // (không phân tích rồi ghi lại JSON – danh mục ~3 MB tốn đáng kể CPU của Edge).
     const prepared = await edgeBody(response, req.headers.get('accept-encoding') || '');
-    const traceId = crypto.randomUUID(), workload = path.endsWith('/catalog-snapshot') ? (incoming.searchParams.has('pageSize')?'catalog-paged':'catalog-legacy') : path.endsWith('/sync-jobs/tick')?'sync-job-step':undefined;
+    const workload = path.endsWith('/catalog-snapshot') ? (incoming.searchParams.has('pageSize')?'catalog-paged':'catalog-legacy') : path.endsWith('/sync-jobs/tick')?'sync-job-step':undefined;
     const total = performance.now() - started, ms = (n: number) => Math.round(n * 10) / 10;
     const serverTiming = `db;dur=${ms(dbReady - started)}, app;dur=${ms(handled - dbReady)};desc="${stats.queries} queries", total;dur=${ms(total)}` + timingTail();
     // Yêu cầu chậm: ghi log (đường dẫn đã bỏ mã / query string) để xem ở Supabase → Edge Functions → Logs.
@@ -133,7 +133,7 @@ const response = await timing.run(stats, () => router.handle(forwarded,{db,durab
     return new Response(prepared.body,{status:response.status,headers:{...jsonHeaders,...(prepared.gzip?{'content-encoding':'gzip','vary':'Origin, Accept-Encoding'}:{})}});
   } catch(e) {
     const code=String((e as {code?:unknown})?.code||(e as {cause?:{code?:unknown}})?.cause?.code||'unknown').slice(0,40);
-    console.error('API database unavailable',JSON.stringify({code,phase:'request',pooled:!!POOLER_URL,dbMode}));
+    console.error('API database unavailable',JSON.stringify({code,traceId,phase:'request',pooled:!!POOLER_URL,dbMode}));
     return new Response(JSON.stringify({error:'Kết nối dữ liệu đang bận. Vui lòng thử lại sau ít giây.',code:'DB_CONNECTION_UNAVAILABLE'}),{status:503,headers:{...cors,'retry-after':'1','content-type':'application/json','server-timing':`total;dur=${Math.round(performance.now()-started)}`+timingTail()}});
   } finally {
     inflight--;

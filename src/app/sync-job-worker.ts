@@ -1,5 +1,5 @@
 import { and, asc, eq, gt, gte, isNull, inArray, like, or } from 'drizzle-orm';
-import { tickSyncJob, type SyncStep } from '../core/jobs/sync-jobs.ts';
+import { tickSyncJob, SyncJobDeferred, type SyncStep } from '../core/jobs/sync-jobs.ts';
 import { syncJobs } from '../core/db/schema.ts';
 import { json, type Router, type RouteContext } from '../core/http/router.ts';
 import { AppError } from '../core/errors.ts';
@@ -20,13 +20,14 @@ import { vietnamDate } from '../modules/sales/domain/sales.ts';
 async function sapoStep(c: RouteContext<StaffEnv>, state: Record<string, unknown>): Promise<SyncStep> {
   const phase = Number(state.phase ?? 0), name = SAPO_PULL_PHASES[phase];
   if (!name) throw new Error('Invalid Sapo cursor');
-  const result = await runPull(c,'durable-job',name);
+  const result = await runPull(c,'durable-job',name).catch(error=>{if(error instanceof AppError&&error.code==='SAPO_PULL_RUNNING')throw new SyncJobDeferred(30_000);throw error;});
   if (!result.ok) throw new Error('Sapo step failed');
   const cursor = (await readPullState(c.env.db)).cursors?.[name];
-  // Every data page is checkpointed; finish the stock sweep before completing this job.
-  const more = name==='stock' ? result.results?.stock?.wrapped===0 : name!=='staff' && result.results?.[name]?.unavailable!==1 && (cursor?.offset ?? ((cursor?.page ?? 1)-1)*250)>0;
-  const next = more ? phase : phase + 1;
-  return {state:{phase:next},result:{...result},done:next>=SAPO_PULL_PHASES.length};
+  // Match legacy per-cycle quotas (3000 incremental / 1500 rotating stock / 1000 docs), but checkpoint each small page.
+  const phaseSteps=Number(state.phaseSteps??0)+1, quota=name==='stock'?30:name==='customers'||name==='products'?60:name==='staff'?1:100;
+  const hasMore = name==='stock' ? result.results?.stock?.wrapped===0 : name!=='staff' && result.results?.[name]?.unavailable!==1 && (cursor?.offset ?? ((cursor?.page ?? 1)-1)*250)>0;
+  const more=hasMore&&phaseSteps<quota, next=more?phase:phase+1;
+  return {state:{phase:next,phaseSteps:more?phaseSteps:0},result:{...result},done:next>=SAPO_PULL_PHASES.length};
 }
 const sources = [
   {filter:eq(packingSlips.status,'sent'),table:packingSlips, rules:['packingSlips'], prefixes:['slip:']},

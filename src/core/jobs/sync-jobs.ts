@@ -1,6 +1,7 @@
 import { and, asc, eq, lte, ne, or } from 'drizzle-orm';
 import type { AnyDb } from '../db/client.ts';
 import { syncJobs as jobs } from '../db/schema.ts';
+export class SyncJobDeferred extends Error { constructor(readonly delayMs: number) { super('Existing work still owns the business lease'); } }
 export type SyncKind = 'sapo' | 'ghn' | 'warehouse';
 export interface SyncStep { state: Record<string, unknown>; result: Record<string, unknown>; done: boolean }
 const epoch = '1970-01-01T00:00:00.000Z', dispatcher = '__dispatcher';
@@ -36,7 +37,11 @@ export async function tickSyncJob(db: AnyDb, step: (kind: SyncKind, state: Recor
       .where(and(eq(jobs.key, job.key), eq(jobs.token, token))).returning({ key: jobs.key });
     console.info('Sync job step',JSON.stringify({jobId:job.key,kind:job.kind,phase:JSON.parse(job.state).phase,ms:Math.round(performance.now()-started),done:result.done,saved:saved.length===1}));
     return { worked: true, jobId: job.key, done: result.done, saved: saved.length === 1 };
-  } catch {
+  } catch (error) {
+    if(error instanceof SyncJobDeferred){
+      await db.update(jobs).set({status:'queued',token:null,leaseUntil:epoch,attempts:job.attempts,errorCode:null,availableAt:new Date(now.getTime()+Math.min(300_000,Math.max(1000,error.delayMs))).toISOString(),updatedAt:stamp}).where(and(eq(jobs.key,job.key),eq(jobs.token,token)));
+      return{worked:true,jobId:job.key,deferred:true};
+    }
     // Never persist/log provider payloads, customer data or transport messages.
     await db.update(jobs).set({ status: job.attempts >= 2 ? 'failed' : 'queued', token: null, leaseUntil: epoch,
       availableAt: new Date(now.getTime() + 30_000 * 2 ** Math.min(job.attempts, 2)).toISOString(), updatedAt: stamp, errorCode: 'SYNC_STEP_FAILED' })

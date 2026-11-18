@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {and,eq} from 'drizzle-orm';
 import {createTestDb} from '../helpers/postgres.ts';
 import {syncJobs as jobs} from '../../src/core/db/schema.ts';
-import {enqueueSyncJob,tickSyncJob} from '../../src/core/jobs/sync-jobs.ts';
+import {enqueueSyncJob,tickSyncJob,SyncJobDeferred} from '../../src/core/jobs/sync-jobs.ts';
 
 test('durable queue coalesces enqueue and serializes separate callers across kinds',async()=>{
  const {db}=await createTestDb();await enqueueSyncJob(db,'sapo',{phase:0});await enqueueSyncJob(db,'sapo',{phase:99});await enqueueSyncJob(db,'ghn');
@@ -30,4 +30,17 @@ test('failing steps back off, retain cursor and stop after three attempts withou
  for(let n=0;n<3;n++)await tickSyncJob(db,async()=>{throw Error('private provider payload');},new Date(start+n*300000));
  const [row]=await db.select().from(jobs).where(eq(jobs.key,'warehouse'));assert.equal(row!.status,'failed');assert.equal(row!.attempts,3);assert.equal(JSON.parse(row!.state).after,'keep');assert.equal(row!.errorCode,'SYNC_STEP_FAILED');assert(!JSON.stringify(row).includes('private provider'));
  assert.deepEqual(await tickSyncJob(db,async()=>{throw Error('must not run');},new Date(start+999999)),{worked:false});
+});
+
+test('an existing business lease defers without exhausting retries and does not block another kind',async()=>{
+ const {db}=await createTestDb();await enqueueSyncJob(db,'sapo');await enqueueSyncJob(db,'ghn');
+ const now=new Date(Date.now()+1000);
+ for(let i=0;i<4;i++){
+  // Keep this assertion focused on Sapo; GHN is temporarily not due.
+  await db.update(jobs).set({availableAt:new Date(now.getTime()+9999999).toISOString()}).where(eq(jobs.key,'ghn'));
+  const r=await tickSyncJob(db,async()=>{throw new SyncJobDeferred(30000);},new Date(now.getTime()+i*60000));assert.equal(r.deferred,true);
+ }
+ const [row]=await db.select().from(jobs).where(eq(jobs.key,'sapo'));assert.equal(row!.attempts,0);assert.equal(row!.status,'queued');
+ await db.update(jobs).set({availableAt:'1970-01-01T00:00:00.000Z'}).where(eq(jobs.key,'ghn'));
+ let kind='';await tickSyncJob(db,async k=>{kind=k;return{state:{},result:{},done:true};},new Date(now.getTime()+181000));assert.equal(kind,'ghn');
 });
