@@ -18,7 +18,8 @@ function ml_sepay_proof($order) { return $order instanceof WC_Order && (string)$
 function ml_sepay_transfer_code($id) { return 'ML' . absint($id); }
 function ml_sepay_is_qr_order($order) { return $order instanceof WC_Order && (string)$order->get_meta('_ml_sepay_version')==='1' && in_array($order->get_payment_method(),array('bacs','ml_sepay_qr'),true); }
 
-// Preserve the existing Minh Long bank-transfer choice and enroll only new orders.
+// Legacy BACS orders created while the QR rollout was active remain verifiable,
+// but new checkouts must use the dedicated SePay gateway below.
 add_action('woocommerce_checkout_create_order',function($order,$data){
     if(ml_sepay_enabled() && $order instanceof WC_Order && ($data['payment_method']??'')==='bacs'){
         $order->update_meta_data('_ml_sepay_version','1');
@@ -32,12 +33,23 @@ add_action('woocommerce_checkout_order_processed',function($order_id,$data,$orde
 },5,3);
 
 add_filter('woocommerce_payment_gateways', function($g){ $g[]='ML_SePay_QR_Gateway'; return $g; });
+add_action('wp_loaded',function(){
+    if(!ml_sepay_enabled())return;
+    $settings=get_option('woocommerce_bacs_settings',array());
+    if(!is_array($settings))$settings=array();
+    if(($settings['enabled']??'no')!=='no'){$settings['enabled']='no';update_option('woocommerce_bacs_settings',$settings);}
+},20);
+add_filter('woocommerce_available_payment_gateways',function($gateways){
+    if(ml_sepay_enabled())unset($gateways['bacs']);
+    return $gateways;
+},999);
+add_filter('woocommerce_default_gateway',function($gateway){return ml_sepay_enabled()?'ml_sepay_qr':$gateway;},999);
 add_action('plugins_loaded', function(){
     if (!class_exists('WC_Payment_Gateway')) return;
     class ML_SePay_QR_Gateway extends WC_Payment_Gateway {
         public function __construct(){
             $this->id='ml_sepay_qr'; $this->method_title='Minh Long - Chuyển khoản QR SePay';
-            $this->title='Chuyển khoản ngân hàng (Quét mã QR)';
+            $this->title='SePay – Chuyển khoản bằng QR';
             $this->description='Quét QR ACB để thanh toán. Đơn chỉ được xác nhận sau khi ngân hàng báo tiền vào.';
             $this->has_fields=false; $this->enabled=ml_sepay_enabled()?'yes':'no';
         }
