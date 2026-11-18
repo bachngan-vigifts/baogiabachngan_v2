@@ -7,7 +7,7 @@ const base=new URL(raw.includes('://')?raw:'https://'+raw);if(base.protocol!=='h
 async function api(mod,fn,p={}){const f=p instanceof FormData,u=new URL('/execute/'+mod+'/'+fn,base);if(!f)for(const[k,v]of Object.entries(p))u.searchParams.set(k,String(v));const r=await fetch(u,{method:f?'POST':'GET',headers:{Authorization:'cpanel '+user+':'+token},body:f?p:undefined,signal:AbortSignal.timeout(40000)});const j=await r.json();if(!r.ok||!j.status)throw Error('Hosting operation failed: '+mod+'/'+fn);return j.data;}
 const domains=await api('DomainInfo','domains_data',{format:'hash'});let root;function visit(x){if(!x||typeof x!=='object')return;if(x.domain==='minhlongonline.com'&&x.documentroot)root=x.documentroot;for(const v of Object.values(x))if(typeof v==='object')visit(v);}visit(domains);
 if(!root||!root.startsWith('/home/'+user+'/')||root.includes('..'))throw Error('Minh Long document root not verified');root=root.replace(/\/+$/,'');
-const dir=root+'/wp-content/mu-plugins',name='ml-sepay-qr.php',home=root.split('/').slice(0,3).join('/'),cfgDir=home,cfgName='.ml-sepay-config.php';
+const dir=root+'/wp-content/mu-plugins',name='ml-sepay-qr.php',cfgDir=root+'/wp-content',cfgName='.ml-sepay-config.php';
 async function read(dir,file){try{return (await api('Fileman','get_file_content',{dir,file,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0})).content}catch{return null}}
 async function put(dir,name,text){const f=new FormData();f.set('dir',dir);f.set('overwrite','1');f.set('file-1',new Blob([text]),name);await api('Fileman','upload_files',f);}
 const previous=await read(dir,name),previousCfg=await read(cfgDir,cfgName);

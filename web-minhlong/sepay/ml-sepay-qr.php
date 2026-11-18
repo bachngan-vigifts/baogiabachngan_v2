@@ -9,7 +9,7 @@ defined('ABSPATH') || exit;
 function ml_sepay_cfg() {
     static $cfg;
     if (isset($cfg)) return $cfg;
-    $path = dirname(ABSPATH) . '/.ml-sepay-config.php';
+    $path = WP_CONTENT_DIR . '/.ml-sepay-config.php';
     $cfg = is_readable($path) ? require $path : array();
     return is_array($cfg) ? $cfg : array();
 }
