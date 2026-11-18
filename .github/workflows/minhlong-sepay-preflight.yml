@@ -1,0 +1,26 @@
+name: Minh Long SePay production preflight
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/minhlong-sepay-qr-20261118]
+    paths:
+      - web-minhlong/sepay/preflight.mjs
+      - .github/workflows/minhlong-sepay-preflight.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify production sites and confirmed SePay account
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          SEPAY_API_TOKEN: ${{ secrets.SEPAY_API_TOKEN }}
+        run: node web-minhlong/sepay/preflight.mjs
