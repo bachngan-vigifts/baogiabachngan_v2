@@ -40,12 +40,21 @@ async function listNames(dir) {
   return rows.map((row) => row.file).filter(Boolean).sort();
 }
 
+async function readFile(dir, file) {
+  const data = await uapi('Fileman', 'get_file_content', {
+    dir, file, from_charset: 'utf-8', to_charset: 'utf-8', update_html_document_encoding: 0,
+  });
+  return String(data.content || '');
+}
+
 const production = {
   minhlongPlugins: await listNames(`${roots.minhlong}/wp-content/plugins`),
   minhlongMuPlugins: await listNames(`${roots.minhlong}/wp-content/mu-plugins`),
   lockPlugins: await listNames(`${roots.lock}/wp-content/plugins`),
   lockMuPlugins: await listNames(`${roots.lock}/wp-content/mu-plugins`),
 };
+const lockPaidNotifications = production.lockMuPlugins.includes('lock-sepay-paid-notifications.php')
+  ? await readFile(`${roots.lock}/wp-content/mu-plugins`, 'lock-sepay-paid-notifications.php') : '';
 
 const token = process.env.SEPAY_API_TOKEN.trim();
 async function sepay(url) {
@@ -92,4 +101,5 @@ console.log(JSON.stringify({
   },
   webhookAccess,
   existingMinhlongWebhookCount: matchingHooks.length,
+  lockPaidNotificationsSource: lockPaidNotifications,
 }, null, 2));
