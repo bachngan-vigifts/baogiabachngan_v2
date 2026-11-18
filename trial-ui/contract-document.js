@@ -381,5 +381,5 @@ globalThis.ContractDocument = (() => {
     link.href = URL.createObjectURL(blob); link.download = `${archive.folder}.zip`; link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
-  return {printingClauseVersion:1, build, buildPack, download, paymentDetails, prepareDocument, contractUnitPrice, templatesFor, archiveName};
+  return {build, buildPack, download, paymentDetails, prepareDocument, contractUnitPrice, templatesFor, archiveName, printingClauseVersion:1};
 })();
