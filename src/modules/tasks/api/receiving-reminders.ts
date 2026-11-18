@@ -11,9 +11,9 @@ export async function receivingReminderTasks(db:StaffEnv['db'],now=new Date(),so
   const today=vietnamDate(now).iso;
   const time=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(now);
   const [calendar,people,previous]=await Promise.all([
-    receivingCalendar(db,new URLSearchParams({to:today}),today,{paginate:false,reminderOnly:true}),
+    receivingCalendar(db,new URLSearchParams({to:today}),today,{paginate:false,reminderOnly:true,sourceId}),
     db.select({id:employees.id}).from(employees).where(and(eq(employees.active,true),isNull(employees.deletedAt),or(eq(employees.role,'manager'),and(eq(employees.role,'employee'),inArray(employees.positionId,['sale-admin','warehouse']))))),
-    db.select({key:tasks.autoKey}).from(tasks).where(like(tasks.autoKey,RECEIVING_REMINDER_PREFIX+'%')),
+    db.select({key:tasks.autoKey}).from(tasks).where(and(like(tasks.autoKey,RECEIVING_REMINDER_PREFIX+'%'),sourceId?eq(tasks.sourceId,sourceId):undefined)),
   ]);
   const keys=new Set(previous.map(t=>t.key)),out:AutoTask[]=[];
   for(const row of calendar.rows) {

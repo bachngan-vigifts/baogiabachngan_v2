@@ -118,7 +118,7 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
   };
 }
 
-export interface PurchaseListFilter { q?: string; supplierId?: string; state?: string; limit?: number; openOnly?: boolean }
+export interface PurchaseListFilter { id?: string; q?: string; supplierId?: string; state?: string; limit?: number; openOnly?: boolean }
 
 /** Flow map needs progress only: never load prices, payment schedules, payments or creator profiles. */
 export async function listPurchaseFlow(db: Db, m: Member, today: string) {
@@ -169,7 +169,7 @@ function purchaseListScope(m: Member, filter: PurchaseListFilter) {
 
 /** Danh sách đơn mua (tính tiến độ / công nợ theo lô, không N+1). */
 export async function listPurchases(db: Db, m: Member, filter: PurchaseListFilter, today: string) {
-  const rows = await db.select().from(incomingShipments).where(and(purchaseListScope(m, filter), filter.state==='sapo'?sql`exists(select 1 from ${supplierReceipts} where ${supplierReceipts.shipmentId}=${incomingShipments.id} and ${supplierReceipts.cancelledAt} is null and ${supplierReceipts.sapoStatus} in ('pending','failed'))`:undefined))
+  const rows = await db.select().from(incomingShipments).where(and(purchaseListScope(m, filter), filter.id ? eq(incomingShipments.id,filter.id) : undefined, filter.state==='sapo'?sql`exists(select 1 from ${supplierReceipts} where ${supplierReceipts.shipmentId}=${incomingShipments.id} and ${supplierReceipts.cancelledAt} is null and ${supplierReceipts.sapoStatus} in ('pending','failed'))`:undefined))
     .orderBy(...rankFirst(searchRank([incomingShipments.ticketNumber, incomingShipments.supplierInternalOrderNumber], incomingShipments.supplierName, filter.q)), desc(incomingShipments.createdAt))
     .limit(Math.min(filter.limit ?? 300, filter.openOnly ? 5000 : 500));
   const ids = rows.map(r => r.id);
@@ -282,7 +282,7 @@ export async function purchaseCounts(db: Db, m: Member, filter: PurchaseListFilt
 /** Đơn mua chưa huỷ, nhìn với quyền Manager – cho việc tự sinh (tasks) và sơ đồ quy trình. */
 export const SYSTEM_VIEWER = { id: 'system', role: 'manager', active: true, positionId: 'manager' } as unknown as Member;
 /** Việc tự động (nhận hàng, trả tiền NCC…): mọi đơn chưa huỷ – giới hạn rộng để đơn cũ còn nợ / chưa nhận đủ không bị bỏ sót. */
-export const openPurchases = (db: Db, today: string) => listPurchases(db, SYSTEM_VIEWER, { openOnly: true, limit: 5000 }, today);
+export const openPurchases = (db: Db, today: string, id?:string) => listPurchases(db, SYSTEM_VIEWER, { openOnly: true, limit: 5000, id }, today);
 
 // ---------------------------------------------------------------- nguồn: báo giá / đơn-HĐKT / khách hỏi tồn
 export type SourceType = 'quote' | 'order' | 'stock_request';

@@ -1,4 +1,4 @@
-import { pgTable, text, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, index, integer } from 'drizzle-orm/pg-core';
 
 /**
  * Nhật ký thao tác dùng chung cho mọi module (duyệt báo giá, đổi giá, sao lưu...). Ghi tự động qua router (`core/audit.ts`):
@@ -31,3 +31,13 @@ export const reportCache = pgTable('report_cache', {
   computedAt: text('computed_at').notNull(),
   computedBy: text('computed_by'),
 }, t => [index('idx_report_cache_scope').on(t.scope, t.computedAt)]).enableRLS();
+
+/** Internal durable sync state. No client policies: only the existing server DB role can access it. */
+export const syncJobs = pgTable('edge_sync_jobs', {
+  key: text('key').primaryKey(), kind: text('kind').notNull(),
+  status: text('status').notNull().default('queued'), state: text('state').notNull().default('{}'),
+  result: text('result').notNull().default('{}'), token: text('token'),
+  leaseUntil: text('lease_until').notNull().default('1970-01-01T00:00:00.000Z'),
+  availableAt: text('available_at').notNull(), updatedAt: text('updated_at').notNull(),
+  attempts: integer('attempts').notNull().default(0), errorCode: text('error_code'),
+}).enableRLS();

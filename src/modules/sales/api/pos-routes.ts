@@ -1,4 +1,5 @@
-import {webSepayPaidAt} from './web-sepay-evidence.ts';
+import {webOrderPayment} from '../domain/web-order-payment.ts';
+import {readWebSepayPaidAt,webSepayPaidAt} from './web-sepay-evidence.ts';
 import {LOCK_WEB_REGISTER_NAME} from '../domain/pos-register.ts';
 import {retrySepayWebOrder} from './sepay-web-retry.ts';
 import {webOrderCreatedAt} from '../domain/sepay-proximity.ts';
@@ -164,7 +165,7 @@ async function minhLongWebAction(c: RouteContext<StaffEnv>, m: ReturnType<typeof
   await syncWebOrderStock(c.env, order.id, m.id);
   await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
   await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,
-    data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: next.status, ghnOrderCode: next.ghnOrderCode, ghnStatus: next.ghnStatus, direct: true, ...(reason ? { reason } : {}) } });
+    data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: next.status, ghnOrderCode: next.ghnOrderCode, ghnStatus: next.ghnStatus, direct: true, ...(reason ? { reason } : {}),...(action==='confirm'?{paymentReviewed:input.paymentReviewed===true}:{}) } });
   return { ok: true, status: next.status, ghnOrderCode: next.ghnOrderCode, ghnStatus: next.ghnStatus, ghnSortCode: next.ghnSortCode, ghnFee: next.ghnFee, updatedAt: next.updatedAt,
     bucket: webBucket(next.status, next.ghnStatus) };
 }
@@ -212,7 +213,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       wardName: posText(meta(`_lnl_ghn_${addressPrefix}_ward_name`, '_lnl_ghn_ward_name') || shipping.address_2, 100),
     };
     const financials = webOrderFinancials(b);
-    // Woo's paid timestamp is explicit evidence. Neither order status nor payment method proves collection.
+    // Retain Woo's source claim; date_paid can be set by a status transition, not just collection.
     const hasPayment = Object.hasOwn(b, 'date_paid_gmt') || Object.hasOwn(b, 'date_paid');
     let snapshot = financials;
     if (hasPayment || financials) {
@@ -400,11 +401,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         ...rows.map(o => {const {cancelSnapshot,...order}=o;let cancelReason='';try{const reason=JSON.parse(cancelSnapshot||'{}').cancelReason;if(typeof reason==='string')cancelReason=reason.slice(0,2000);}catch{/* Legacy snapshots may not contain a reason. */}
           return {...order,cancelReason,cancellationKind:'cancelled',bucket:posOrderBucket(o),source:'crm',external:false,currency:'VND',orderSource:o.fulfillmentMode==='cod'?'cod':'pos',paymentStatus:o.paid>=o.total?'paid':'debt',outstanding:Math.max(0,o.total-o.paid)};}),
         ...webRows.map(o => {
-          const payment = readWebEdit(o.crmEditSnapshot).sourceConflict?undefined:readWebOrderFinancials(o.financialSnapshot)?.payment;
-          const paid = o.bankPaidAt ? o.total : payment ? (payment.paidAt ? o.total : 0) : null;
+          const payment = webOrderPayment(o,o.bankPaidAt);
           const state=o.status.toLowerCase(),carrier=o.ghnStatus.toLowerCase();
           const cancellationKind=state==='refunded'?'refunded':carrier.startsWith('return')||carrier==='waiting_to_return'||['lnl-returning','lnl-returned'].includes(state)?'returned':['lost','damage'].includes(carrier)||state==='failed'?'failed':'cancelled';
-          return ({cancelReason:webReasons.get(o.id)||'',cancellationKind, ownerId: '', orderSource: 'web', paymentStatus: paid === null ? 'unknown' : paid >= o.total ? 'paid' : 'debt', paid, outstanding: paid === null ? null : Math.max(0, o.total-paid), id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
+          return ({cancelReason:webReasons.get(o.id)||'',cancellationKind, ownerId: '', orderSource: 'web', ...payment, id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
           status: o.status, fulfillmentMode: 'delivery', orderDate: o.orderedAt.slice(0, 10), createdAt: o.orderedAt, sapoOrderId: null, sapoOrderCode: null,
           packingStatus: '', warehouseReconciliationRequired:true, stockStatus: o.stockStatus, stockNote: o.stockNote, deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
           ghnAddress: (() => { try { return JSON.parse(o.ghnAddressSnapshot || '{}'); } catch { return {}; } })(),
@@ -525,6 +525,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     // Website mirrors have no verified CRM warehouse issue link. Carrier truth remains
     // authoritative, but a manual completion must never fabricate warehouse completion.
     if(action==='complete')throw new AppError(409,'Đơn website chưa có chứng từ xuất kho đã đối soát trong CRM. Hoàn tất nhập/xuất kho trước khi xác nhận hoàn thành.','WAREHOUSE_EXPORT_REQUIRED');
+    if(action==='confirm'&&!order.ghnOrderCode){
+      const payment=webOrderPayment(order,await readWebSepayPaidAt(c.env.db,order.id));
+      if(payment.paymentReviewRequired&&input.paymentReviewed!==true)throw new AppError(409,'Website báo đã thanh toán nhưng chưa đối soát. Kiểm tra tiền thực nhận và COD trước khi tạo vận đơn.','WEB_PAYMENT_REVIEW_REQUIRED');
+    }
     if (minhLongDirect(c.env, order) || Number(readWebEdit(order.crmEditSnapshot).revision||0)>0) return json(await minhLongWebAction(c, m, order, action, input, reason));
     if(action==='confirm'&&order.ghnOrderCode){
       if(!validWebGhnCode(order.ghnOrderCode))throw new AppError(409,'CRM đang lưu mã GHN cần đối soát. Không tạo lại vận đơn.','ghn_reconcile_failed');
@@ -588,7 +592,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     await syncWebOrderStock(c.env, order.id, m.id);
     await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
     await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,
-      data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: fields.status, ghnOrderCode: fields.ghnOrderCode, ghnStatus: fields.ghnStatus, ...(reason ? { reason } : {}) } });
+      data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: fields.status, ghnOrderCode: fields.ghnOrderCode, ghnStatus: fields.ghnStatus, ...(reason ? { reason } : {}),...(action==='confirm'?{paymentReviewed:input.paymentReviewed===true}:{}) } });
     return json({ ok: true, ...fields, bucket: webBucket(fields.status, fields.ghnStatus) });
   }, 'business');
   router.post('/integrations/woocommerce/lock/backfill-addresses', async c => {

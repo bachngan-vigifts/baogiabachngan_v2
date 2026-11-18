@@ -44,7 +44,7 @@ export function registerSapoSyncRoutes(router: Router<StaffEnv>) {
       db.select({ kind: sapoInventoryDocs.kind, n: count(), last: max(sapoInventoryDocs.syncedAt) }).from(sapoInventoryDocs).groupBy(sapoInventoryDocs.kind),
     ]);
     return json({
-      ...(await pullStatus(db)),
+      ...(await pullStatus(db,c.env.durableSyncJobs)),
       configured: tokenConfigured(c),
       paths: SAPO_SYNC_PATHS,
       customers: { count: Number(cus?.n ?? 0), lastSyncedAt: cus?.last ?? null },
@@ -170,6 +170,7 @@ export async function syncProducts(db: AnyDb, body: Record<string, unknown>, loc
     // Kho "Hàng chờ về" do hệ thống tự tính từ Đơn mua NCC – đồng bộ Sapo không ghi đè.
     const policyId = new Map(policies.map(p => [p.name, p.id])), storeId = new Map(stores.filter(w => w.kind !== 'incoming').map(w => [w.name, w.id])), incomingNames = new Set(stores.filter(w => w.kind === 'incoming').map(w => w.name));
     const existing = new Set((await tx.select({ sku: products.sku }).from(products).where(inArray(products.sku, [...new Set(variants.map(v => v.sku))]))).map(r => r.sku));
+    const priceWrites = new Map<string, typeof productPrices.$inferInsert>(), stockWrites = new Map<string, typeof productStock.$inferInsert>();
     for (const v of variants) {
       if (!v.active) {
         // Ngừng bán trên Sapo: ẩn nếu đã có, không tạo mới.
@@ -193,14 +194,18 @@ export async function syncProducts(db: AnyDb, body: Record<string, unknown>, loc
       if (v.retail !== null && policies[0] && !(policies[0].name in prices)) prices[policies[0].name] = v.retail;
       for (const [name, price] of Object.entries(prices)) {
         const id = policyId.get(name); if (!id) { unknownPolicies.add(name); continue; }
-        await tx.insert(productPrices).values({ sku: v.sku, policyId: id, price }).onConflictDoUpdate({ target: [productPrices.sku, productPrices.policyId], set: { price } });
+        priceWrites.set(JSON.stringify([v.sku,id]),{sku:v.sku,policyId:id,price});
       }
       for (const [name, quantity] of Object.entries(v.stock)) {
         if (incomingNames.has(name)) continue;
         const id = storeId.get(name); if (!id) { unknownWarehouses.add(name); continue; }
-        await tx.insert(productStock).values({ sku: v.sku, warehouseId: id, quantity, updatedAt: now }).onConflictDoUpdate({ target: [productStock.sku, productStock.warehouseId], set: { quantity, updatedAt: now } });
+        stockWrites.set(JSON.stringify([v.sku,id]),{sku:v.sku,warehouseId:id,quantity,updatedAt:now});
       }
     }
+    // Last variant occurrence wins, as in the previous sequential upserts. Keep the same transaction.
+    const pricesToWrite=[...priceWrites.values()],stockToWrite=[...stockWrites.values()];
+    for(let i=0;i<pricesToWrite.length;i+=500)await tx.insert(productPrices).values(pricesToWrite.slice(i,i+500)).onConflictDoUpdate({target:[productPrices.sku,productPrices.policyId],set:{price:sql`excluded.price`}});
+    for(let i=0;i<stockToWrite.length;i+=500)await tx.insert(productStock).values(stockToWrite.slice(i,i+500)).onConflictDoUpdate({target:[productStock.sku,productStock.warehouseId],set:{quantity:sql`excluded.quantity`,updatedAt:now}});
   });
   // Bảng giá/kho chưa có trong app thì bỏ qua (không tự tạo) và báo lại để Manager nhập danh mục đầy đủ trước.
   return { ...result, unknownPolicies: [...unknownPolicies], unknownWarehouses: [...unknownWarehouses] };

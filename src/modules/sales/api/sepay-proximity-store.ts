@@ -1,3 +1,5 @@
+import {webOrderPayment} from '../domain/web-order-payment.ts';
+import {webSepayPaidAt} from './web-sepay-evidence.ts';
 import {
   and,
   asc,
@@ -41,10 +43,9 @@ import {
   sepayPosIntent,
   type SepayManualChoice,
 } from "../domain/sepay-page.ts";
-import { lockQrReferences } from "./sepay-web-store.ts";
+import { webQrReferences } from "./sepay-web-store.ts";
 import { cashAudit, cashLock, type CashDb } from "./cash-store.ts";
 import { netReceivables } from "./pos-return-credit.ts";
-import { readWebOrderFinancials } from "../domain/web-order-financials.ts";
 
 type Event = typeof bank.$inferSelect;
 export type NearTarget = {
@@ -75,7 +76,7 @@ export async function nearbySepayTargets(
   manual = false,
 ) {
   const window = sepayWindow(p.transactionAt),
-    refs = lockQrReferences(p.content),
+    refs = webQrReferences(p.content),
     posIntent = sepayPosIntent(p.content);
   const webId = targetId?.startsWith("web:") ? targetId.slice(4) : undefined;
   const posId = targetId && !webId ? targetId : undefined;
@@ -514,11 +515,10 @@ export async function previewNearbySepay(
     };
   } else {
     const [source] = await db
-      .select({ snapshot: web.financialSnapshot })
+      .select({financialSnapshot:web.financialSnapshot,crmEditSnapshot:web.crmEditSnapshot,total:web.total,bankPaidAt:webSepayPaidAt()})
       .from(web)
       .where(eq(web.id, first.id.slice(4)));
-    const evidence = readWebOrderFinancials(source?.snapshot)?.payment;
-    const paid = evidence ? (evidence.paidAt ? first.total : 0) : null;
+    const paid = source?webOrderPayment(source,source.bankPaidAt).paid:null;
     debt = {
       due: first.total,
       paid,
