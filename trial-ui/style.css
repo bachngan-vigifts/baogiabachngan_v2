@@ -2624,14 +2624,23 @@ dialog.inv-adjust-review tr.inv-stock-changed td { background: #fff7e0; }
 dialog.inv-adjust-review tr.inv-total-row td { font-weight: 700; border-top: 2px solid var(--line); }
 dialog.inv-count-history { width: min(820px, 96vw); }
 
-/* Chọn đơn mua nguồn cạnh loại nguồn, tự xuống hàng trên khung hẹp. */
+/* Incoming sources include a delivery date; size them by their panel, not the viewport. */
+.quote-source-requests { container: quote-source / inline-size; }
 .quote-source-incoming { display: grid; grid-template-columns: minmax(0,1fr) 30px; }
 .quote-source-incoming .quote-source-type, .quote-source-incoming .quote-source-order { grid-column: 1 / -1; width: 100%; font-size: var(--text-small); }
+.quote-source-incoming > input[type="number"] { grid-column: 1; grid-row: 3; }
+.quote-source-incoming > button[aria-label] { grid-column: 2; grid-row: 3; }
+.quote-source-incoming .quote-source-date-label { grid-column: 1 / -1; grid-row: 4; }
 .quote-source-incoming [role="status"] { grid-column: 1 / -1; }
-.order-compose .quote-source-incoming input { width: 80px; min-width: 0; }
-@media (min-width: 1500px) {
-  .order-compose .quote-source-incoming { grid-template-columns: minmax(140px,.85fr) minmax(200px,1.5fr) 80px 30px; }
-  .order-compose .quote-source-incoming .quote-source-type, .order-compose .quote-source-incoming .quote-source-order { grid-column: auto; }
+.quote-source-incoming [role="status"]:empty { display: none; }
+.order-compose .quote-source-incoming > input[type="number"] { width: 80px; min-width: 0; }
+@container quote-source (min-width: 720px) {
+  .order-compose .quote-source-incoming { grid-template-columns: minmax(140px,.85fr) minmax(160px,1.4fr) 80px minmax(190px,1fr) 30px; }
+  .order-compose .quote-source-incoming .quote-source-type,
+  .order-compose .quote-source-incoming .quote-source-order,
+  .order-compose .quote-source-incoming > input[type="number"],
+  .order-compose .quote-source-incoming > button[aria-label],
+  .order-compose .quote-source-incoming .quote-source-date-label { grid-column: auto; grid-row: auto; }
 }
 
 .quote-incoming-batch { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--blue-50); display: grid; gap: 8px; }
