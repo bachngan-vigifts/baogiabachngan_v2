@@ -85,6 +85,7 @@ import { posDeliveryStockLinks, posReturnStockLinks } from '../modules/sales/api
 import { supplierReceiptStockLinks } from '../modules/suppliers/api/stock-ref-links.ts';
 import { syncCashTasks } from '../modules/tasks/api/auto-tasks.ts';
 import { registerChatRoutes } from '../modules/chat/api/routes.ts';
+import { registerAiChatRoutes } from '../modules/ai-chat/api/routes.ts';
 import {purchaseSuppliers} from '../modules/suppliers/api/customer-purchase-suppliers.ts';
 import { registerCustomerHubRoutes } from '../modules/customer-hub/api/routes.ts';
 import { registerCustomerDuplicateRoutes } from '../modules/customer-hub/api/duplicates.ts';
@@ -196,6 +197,7 @@ export function createAppRouter() {
   registerNotificationRoutes(router);
   registerTaskRoutes(router,{assertMutable:assertWarehouseTaskMutable});
   registerChatRoutes(router);
+  registerAiChatRoutes(router);
   registerCustomerHubRoutes(router,catalogueCustomerLinks,purchaseSuppliers);
   registerProductDetailRoutes(router);
   registerCustomerDuplicateRoutes(router);

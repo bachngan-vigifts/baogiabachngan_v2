@@ -78,6 +78,7 @@ import { initOrderCreate } from './order-create.js';
 import { initDashboard } from './dashboard.js';
 import { initProfit } from './profit.js';
 import { initFeedback } from './feedback.js';
+import { initAiChat } from './ai-chat.js';
 import { initStoreReports } from './store-reports.js';
 import { initWeeklyReports } from './weekly-reports.js';
 import { initFlowMap } from './flow-map.js';
@@ -891,7 +892,7 @@ var sepayUi=null,sepayLoading=null;
 async function sepayView(query){const hash=location.hash,userId=state.user?.id;try{const {initSepay}=await(sepayLoading ||= import('./sepay.js'));if(location.hash!==hash||!state.user||state.user.id!==userId||!canPage('sepay')||$('#workspace').hidden)return;sepayUi ||= initSepay({api,root:$('#view-sepay'),go,canOpenOrders:()=>canPage('order')});await sepayUi.show(query);}catch(e){sepayLoading=null;if(location.hash===hash)toast(e.message,'err');}}
 var accountingUi=null,accountingLoading=null;
 async function accountingView(){const hash=location.hash,userId=state.user?.id;try{const {initAccounting}=await(accountingLoading ||= import('./accounting.js'));if(location.hash!==hash||state.user?.id!==userId||!canAccounting()||$('#workspace').hidden)return;accountingUi ||= initAccounting({api,root:$('#view-accounting')});await accountingUi.show();}catch(e){accountingLoading=null;if(location.hash===hash)toast(e.message,'err');}}
-const VIEWS = { accounting:'Không gian kế toán', sepay:'Thanh toán SePay', finance:'Tài chính & KPI', home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving:'Nhận hàng NCC', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Kho của tôi', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+const VIEWS = { accounting:'Không gian kế toán', sepay:'Thanh toán SePay', finance:'Tài chính & KPI', home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'ai-chat':'Chat cùng AI', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving:'Nhận hàng NCC', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Kho của tôi', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
 installChatFab();
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
@@ -999,6 +1000,7 @@ function route() {
   if (view === 'dashboard') dashboardView().load();
   if (view === 'profit') profitView().show();
   if (view === 'feedback') feedbackView().show(id ? decodeURIComponent(id) : '');
+  if (view === 'ai-chat') aiChatView().show();
   if (view === 'store-reports') storeView().show(query);
   if (view === 'weekly-reports') weeklyView().show(query);
   if (view === 'monthly-reports') monthlyView().show(query);
@@ -4200,6 +4202,8 @@ var feedbackUi = null;
 /** Góp ý phần mềm: trang #/feedback + nút trong menu tài khoản (mở ở mọi trang, tự ghi trang đang dùng). */
 function feedbackView() { return feedbackUi ||= initFeedback({ api, root: $('#view-feedback'), toast, esc, go, fmtDate,
   compressPhoto: f => compressImage(f, [[1600, .75], [1280, .72], [1024, .68], [800, .62]], 600000, 'Ảnh quá lớn, chụp lại giúp.'), appVersion: () => $('#app-version')?.textContent || '' }); }
+var aiChatUi = null;
+function aiChatView() { return aiChatUi ||= initAiChat({ api, root: $('#view-ai-chat'), toast, esc, fmtDate }); }
 var suppliersUi = null;
 function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('#view-suppliers'), toast, confirmBox, canLinkAccounts: isManager, identity:()=>JSON.stringify([token,state.user?.id]) }); }
 var inventoryUi = null;

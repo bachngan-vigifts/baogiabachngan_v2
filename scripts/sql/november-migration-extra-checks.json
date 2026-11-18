@@ -187,5 +187,6 @@
       "customer_debt_notes quyền service_role"
     ]
   },
-  {"migration":"20261117130655_order_submission_review.sql","assert":"assert-order-submission-review.sql","checks":["submission_review text nullable without default","sales_orders RLS"]}
+  {"migration":"20261117130655_order_submission_review.sql","assert":"assert-order-submission-review.sql","checks":["submission_review text nullable without default","sales_orders RLS"]},
+  {"migration": "20261118040000_ai_chat_public_questions.sql", "assert": "assert-ai-chat-public.sql", "checks": ["columns and nullability", "primary and foreign keys", "status constraint and indexes", "RLS and direct browser access denied"]}
 ]

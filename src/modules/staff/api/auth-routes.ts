@@ -49,6 +49,8 @@ export interface StaffEnv {
   transferIntegration?: { webhookUrl: string; webhookToken: string; syncToken: string; destinationOrigin: string; fetch?: typeof fetch };
   /** Hàng đợi ảnh xin hàng: CRM giữ khóa tuần tự, Madam Sen trả kết quả bằng callback dùng một lần. */
   warehouseImageIntegration?: { webhookUrl: string; webhookToken: string; callbackOrigin?: string; fetch?: typeof fetch };
+  /** Hỏi đáp CRM công khai: n8n chuyển câu hỏi cho Claw, trả lời qua callback dùng một lần. */
+  aiChatIntegration?: { webhookUrl: string; webhookToken: string; callbackOrigin?: string; fetch?: typeof fetch };
   /** Báo cáo kết ca POS được đẩy bất đồng bộ sang hàng đợi Claw/Zalo. */
   posShiftReportWebhook?: { url: string; token: string; fetch?: typeof fetch };
   /** Cho phép tạo mới đơn cọc / ship trả trước. Production tắt (đã bỏ tính năng); chỉ bộ kiểm thử bật để dựng dữ liệu đơn cũ. */
@@ -160,6 +162,11 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
     const token = /^Bearer ([0-9a-f-]{36})$/i.exec(c.req.headers.get('authorization') || '')?.[1] || '';
     if (!token) throw new AppError(401, 'Callback xử lý ảnh không hợp lệ.');
     return; // Mã chỉ dùng một lần được băm và kiểm tra với đúng job trong handler.
+  }
+  if (area === 'ai-chat-sync') {
+    const token = /^Bearer ([0-9a-f-]{36})$/i.exec(c.req.headers.get('authorization') || '')?.[1] || '';
+    if (!token) throw new AppError(401, 'Callback Chat cùng AI không hợp lệ.');
+    return; // Handler kiểm tra hash của mã một lần với đúng câu hỏi.
   }
   if (area === 'sepay-sync') {
     const auth = c.req.headers.get('authorization') || '';
