@@ -1,3 +1,4 @@
+import { externalText, ExternalResponseTooLarge } from '../../../core/http/external-request.ts';
 import { AppError } from '../../../core/errors.ts';
 import { hasSapoSessionCookie, mergeSetCookies } from '../domain/sapo-session.ts';
 
@@ -5,7 +6,7 @@ import { hasSapoSessionCookie, mergeSetCookies } from '../domain/sapo-session.ts
 export const DEFAULT_SAPO_BASE = 'https://bachngankiengiang.mysapogo.com/admin';
 const PAGE = 250;
 
-export interface SapoClientOptions { cookie: string; base?: string; fetch?: typeof fetch; timeoutMs?: number }
+export interface SapoClientOptions { cookie: string; base?: string; fetch?: typeof fetch; timeoutMs?: number; deadlineMs?: number }
 
 /**
  * Sapo không nhận phiên. `why` (mã HTTP / nơi chuyển hướng, không chứa cookie) hiện kèm thông báo và ghi log
@@ -31,6 +32,7 @@ export function sapoClient(o: SapoClientOptions) {
    * qua Set-Cookie ở lần mở trang admin đầu tiên. Cookie Manager dán chưa có `_admin_session_id` → mở trang admin
    * (theo tối đa 3 lần chuyển hướng cùng tên miền, không vào trang đăng nhập) để lấy, rồi mới gọi API.
    */
+  const signal = o.deadlineMs ? AbortSignal.timeout(o.deadlineMs) : undefined;
   let bootstrapped = false;
   async function ensureSession(force = false) {
     if (!force && (bootstrapped || /(^|;\s*)_admin_session_id=/.test(cookie))) return;
@@ -39,10 +41,9 @@ export function sapoClient(o: SapoClientOptions) {
     for (let hop = 0; hop < 4; hop++) {
       let res: Response;
       try {
-        res = await doFetch(url, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(o.timeoutMs ?? 20_000),
-          headers: { cookie, accept: 'text/html,application/json', referer: base, 'accept-language': 'vi' } });
+        res = (await externalText(doFetch, url, { method: 'GET', redirect: 'manual', signal,
+          headers: { cookie, accept: 'text/html,application/json', referer: base, 'accept-language': 'vi' } }, { timeoutMs: o.timeoutMs ?? 10_000, retrySafe: true })).response;
       } catch { return; }
-      await res.text().catch(() => '');
       const fresh = res.headers.getSetCookie?.() ?? [];
       if (fresh.length) { const next = mergeSetCookies(cookie, fresh); if (hasSapoSessionCookie(next)) cookie = next; }
       const location = res.headers.get('location') || '';
@@ -54,19 +55,19 @@ export function sapoClient(o: SapoClientOptions) {
   }
   async function request(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, extra: Record<string, string> = {}, retried = false): Promise<Record<string, any>> {
     await ensureSession();
-    let res: Response;
+    let res: Response, text: string;
     try {
-      res = await doFetch(base + path, {
-        method, redirect: 'manual', signal: AbortSignal.timeout(o.timeoutMs ?? (method === 'GET' ? 20_000 : 45_000)),
+      const result = await externalText(doFetch, base + path, {
+        method, redirect: 'manual', signal,
         body: body === undefined ? undefined : JSON.stringify(body),
         headers: {
           cookie, accept: 'application/json', 'x-requested-with': 'XMLHttpRequest',
           'x-sapo-client': 'sapo-frontend-v3', 'x-sapo-serviceid': 'sapo-frontend-v3', origin, referer: base, 'accept-language': 'vi',
           ...(body === undefined ? {} : { 'content-type': 'application/json; charset=UTF-8' }), ...extra,
         },
-      });
-    } catch { throw new AppError(504, 'Sapo chưa phản hồi. Vui lòng thử lại sau.', 'SAPO_UNREACHABLE'); }
-    const text = await res.text();
+      }, { timeoutMs: o.timeoutMs ?? (method === 'GET' ? 10_000 : 45_000), retrySafe: method === 'GET' });
+      res = result.response; text = result.text;
+    } catch (e) { if(e instanceof ExternalResponseTooLarge)throw new AppError(502,'Sapo trả dữ liệu quá lớn cho một trang.','SAPO_RESPONSE_TOO_LARGE'); throw new AppError(504, 'Sapo chưa phản hồi. Vui lòng thử lại sau.', 'SAPO_UNREACHABLE'); }
     // Sapo gia hạn/đổi phiên qua Set-Cookie: giữ lại để lưu (chỉ khi phiên vẫn hợp lệ, kiểm tra bên dưới).
     const fresh = res.headers.getSetCookie?.() ?? [];
     const nextCookie = fresh.length ? mergeSetCookies(cookie, fresh) : cookie;
@@ -108,15 +109,17 @@ export function sapoClient(o: SapoClientOptions) {
    * Đọc danh sách theo trang (limit=250&page=N như bản cũ), từ trang `fromPage`, tối đa `maxPages` trang.
    * Trả `nextPage` khi chưa hết (lần sau đọc tiếp), null khi đã hết.
    */
-  async function list(path: string, key: string, fromPage = 1, maxPages = 20) {
+  async function list(path: string, key: string, fromPage = 1, maxPages = 20, pageSize = PAGE) {
+    if (!Number.isInteger(fromPage) || fromPage < 1 || !Number.isInteger(maxPages) || maxPages < 1 || maxPages > 20 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > PAGE) throw new AppError(400, 'Giới hạn trang Sapo không hợp lệ.');
     const items: Record<string, any>[] = [];
     for (let page = fromPage; page < fromPage + maxPages; page++) {
-      const body = await get(`${path}${path.includes('?') ? '&' : '?'}limit=${PAGE}&page=${page}`);
+      const body = await get(`${path}${path.includes('?') ? '&' : '?'}limit=${pageSize}&page=${page}`);
       const batch = body[key];
       if (!Array.isArray(batch)) throw new AppError(502, 'Sapo trả dữ liệu không đúng định dạng.');
+      if(batch.length>pageSize)throw new AppError(502,'Sapo không tuân thủ giới hạn trang.','SAPO_PAGE_OVERFLOW');
       items.push(...batch);
       const total = Number(body.metadata?.total ?? body.total);
-      if (batch.length < PAGE || (Number.isFinite(total) && total > 0 && (page * PAGE) >= total)) return { items, nextPage: null as number | null };
+      if (batch.length < pageSize || (Number.isFinite(total) && total > 0 && (page * pageSize) >= total)) return { items, nextPage: null as number | null };
     }
     return { items, nextPage: fromPage + maxPages };
   }

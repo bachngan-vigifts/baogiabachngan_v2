@@ -1,3 +1,4 @@
+import { boundedMap } from '../../../core/async/bounded-map.ts';
 import { notificationScope } from './recipient-scope.ts';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Router } from '../../../core/http/router.ts';
@@ -49,7 +50,7 @@ export async function notifyMany(env: StaffEnv, ids: (string | null | undefined)
       : m.role === 'manager' || m.role === 'employee' && m.canApprove).map(m => m.id) : ids;
     const candidates = [...new Set(list.filter((x): x is string => !!x && x !== n.actorId && !except.includes(x)))];
     const targets = await scope.recipients(n, candidates);
-    await Promise.all(targets.map(id => deliver(env, { ...n, targetMemberId: id })));
+    await boundedMap(targets,4,id => deliver(env, { ...n, targetMemberId: id }));
     return targets.length;
   } catch (error) {
     console.error('notification recipient authorization failed', n.eventType, error instanceof Error ? error.message : error);
@@ -91,7 +92,7 @@ export async function notify(env: StaffEnv, n: NotifyInput): Promise<{ ok: boole
     const candidates = n.targetMemberId ? [n.targetMemberId] : scope.people
       .filter(m => n.targetRole === 'all' || m.role === (n.targetRole ?? 'manager')).map(m => m.id);
     const targets = await scope.recipients(n, candidates);
-    const results = await Promise.all(targets.map(id => deliver(env, { ...n, targetMemberId: id })));
+    const results = await boundedMap(targets,4,id => deliver(env, { ...n, targetMemberId: id }));
     return { ok: results.every(r => r.ok), sent: results.reduce((sum, r) => sum + r.sent, 0),
       id: results[0]?.id, results: results.flatMap(r => r.results) };
   } catch (error) {
@@ -172,11 +173,11 @@ const mine = (m: { id: string; role: string }) => or(eq(webNotifications.targetM
 async function visibleNotes<T extends { eventType: string; url: string; dataJson: string }>(db: StaffEnv['db'], m: { id: string }, notes: T[]): Promise<T[]> {
   if (!notes.length) return [];
   const scope = await notificationScope(db);
-  const checked = await Promise.all(notes.map(async n => {
+  const checked = await boundedMap(notes,2,async n => {
     let data: Record<string, unknown> = {};
     try { data = JSON.parse(n.dataJson); } catch { /* malformed legacy payload has no grants */ }
     return (await scope.recipients({ ...n, data }, [m.id])).length > 0;
-  }));
+  });
   return notes.filter((_, i) => checked[i]);
 }
 
@@ -265,7 +266,7 @@ export function registerNotificationRoutes(router: Router<StaffEnv>) {
       : ids.length ? (await c.env.db.select().from(webNotifications).where(and(mine(me), inArray(webNotifications.id, ids)))) : [];
     const targets = (await visibleNotes(c.env.db, me, rows)).map(r => r.id);
     const at = nowIso();
-    for (const id of targets) await c.env.db.insert(webNotificationReads).values({ notificationId: id, memberId: me.id, readAt: at }).onConflictDoNothing();
+    if (targets.length) await c.env.db.insert(webNotificationReads).values(targets.map(id=>({notificationId:id,memberId:me.id,readAt:at}))).onConflictDoNothing();
     return json({ ok: true, read: targets.length });
   }, 'self');
 }

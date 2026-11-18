@@ -1,5 +1,7 @@
+import { enqueueSyncJob, type SyncStep } from '../../../core/jobs/sync-jobs.ts';
+import { externalText } from '../../../core/http/external-request.ts';
 import { pendingGhnEdit } from '../domain/pos-ghn-edit.ts';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -10,7 +12,7 @@ import { cashLock } from './cash-store.ts';
 import { assertNoStockRecovery } from './pos-order-flow-guards.ts';
 import { recordDispatch } from './cancellation-guards.ts';
 import { issuePosDelivery } from './pos-delivery-stock.ts';
-import { reconcileWebOrderStock, syncWebOrderStock } from './web-order-stock.ts';
+import { reconcileWebOrderStock, reconcileWebOrderStockPage, syncWebOrderStock } from './web-order-stock.ts';
 import { recordDeliveryMovements, refreshOrderStatus } from './routes.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { vietnamDate } from '../domain/sales.ts';
@@ -29,10 +31,11 @@ const text = (value: unknown, max = 100) => String(value ?? '').trim().slice(0, 
 async function ghnDetail(env: StaffEnv, code: string, registerName: string) {
   const account = await posGhnAccount(env, registerName);
   if (!account) throw new AppError(409, 'Quầy không dùng GHN tự động.');
-  const response = await (env.ghnFetch ?? fetch)(GHN_DETAIL, {
-    method: 'POST', headers: { Token: account.token, ShopId: account.shopId, 'content-type': 'application/json' }, body: JSON.stringify({ order_code: code }),signal:AbortSignal.timeout(10_000),
-  });
-  const raw = await response.text(); let body: Record<string, unknown> = {};
+  // GHN detail is a read-only lookup despite using POST. Create/update/cancel APIs never use this retry policy.
+  const { response, text: raw } = await externalText(env.ghnFetch ?? fetch, GHN_DETAIL, {
+    method: 'POST', headers: { Token: account.token, ShopId: account.shopId, 'content-type': 'application/json' }, body: JSON.stringify({ order_code: code }),
+  }, { timeoutMs: 5000, maxBytes: 1024*1024, retrySafe: true });
+  let body: Record<string, unknown> = {};
   try { body = raw ? JSON.parse(raw) : {}; } catch { /* GHN có thể trả text khi lỗi. */ }
   const data = body.data && typeof body.data === 'object' ? body.data as Record<string, unknown> : {};
   if (!response.ok || !text(data.status)) throw new AppError(502, text(body.message, 300) || `GHN không trả trạng thái cho ${code}.`);
@@ -157,6 +160,37 @@ export async function syncPosLockGhn(env: StaffEnv,options:{recheckWebTerminal?:
   return { ok: errors.length === 0, checked: rows.length + webChecked, updated, errors };
 }
 
+/** Stable keyset cursor: unchanged/failed web orders cannot monopolize the first page. */
+export async function syncPosGhnPage(env: StaffEnv, state: Record<string, unknown>): Promise<SyncStep> {
+  const phase = Number(state.phase ?? 0), after = typeof state.after === 'string' ? state.after : '';
+  const totals = (state.totals ?? { ok: true, checked: 0, updated: 0, errors: [] }) as {ok:boolean; checked:number; updated:number; errors:{code:string;orderNo:string;message:string}[];errorCount?:number};
+  if (phase === 3) {
+    const page = await reconcileWebOrderStockPage(env, after);
+    totals.updated += page.updated;
+    return { state: { ...state, phase, after: page.next ?? after, totals }, result: totals, done: page.next === null };
+  }
+  const rows = phase === 0 ? await env.db.select({ id: deliveries.id, code: deliveries.trackingCode, orderNo: salesOrders.orderNo, registerName: posRegisters.name }).from(deliveries)
+    .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId)).innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId))
+    .where(and(gt(deliveries.id, after), eq(salesOrders.channel, 'pos'), eq(salesOrders.fulfillmentMode, 'cod'),
+      sql`(lower(${posRegisters.name}) like '%lock%' or lower(${posRegisters.name}) like '%minh long%' or lower(${posRegisters.name}) like '%gốm sứ%')`,
+      sql`${deliveries.trackingCode}<>''`, inArray(deliveries.status, ['planned','in_transit','failed'])))
+    .orderBy(asc(deliveries.id)).limit(1) : await env.db.select({id:webStoreOrders.id,code:webStoreOrders.ghnOrderCode,orderNo:webStoreOrders.orderNo,status:webStoreOrders.status,ghnStatus:webStoreOrders.ghnStatus}).from(webStoreOrders)
+    .where(and(gt(webStoreOrders.id,after),eq(webStoreOrders.source,phase===1?'lock':'minhlong'),sql`${webStoreOrders.ghnOrderCode}<>''`,
+      state.recheckWebTerminal===true?undefined:sql`lower(${webStoreOrders.ghnStatus}) not in ('delivered','returned','return_fail','cancel','damage','lost')`)).orderBy(asc(webStoreOrders.id)).limit(1);
+  if (!rows.length) return { state: { ...state, phase: phase + 1, after: '', totals }, result: totals, done: false };
+  const row = rows[0]!; totals.checked++;
+  try {
+    const status = await ghnDetail(env,row.code,'registerName' in row ? row.registerName : phase===1?'CỬA HÀNG LOCKNLOCK CẦN THƠ':'Showroom Gốm Sứ Minh Long');
+    const changed = 'registerName' in row ? await applyGhnStatus(env,row.id,status.status,status.updatedAt) : await applyWebGhnStatus(env,row,status.status,status.updatedAt);
+    if (changed) totals.updated++;
+  } catch (error) {
+    totals.ok = false; totals.errorCount=(totals.errorCount??0)+1;
+    // Keep actionable order references inside the authorized result; never log transport/DB payloads.
+    if (totals.errors.length < 20) totals.errors.push({code:row.code,orderNo:row.orderNo,message:error instanceof AppError?error.message:'Lỗi kết nối GHN. Sẽ kiểm tra lại ở lượt đồng bộ sau.'});
+  }
+  return { state: { ...state, phase, after: row.id, totals }, result: totals, done: false };
+}
+
 /** Lần đồng bộ gần nhất (theo tiến trình): bấm liên tục trong 60 giây trả kết quả cũ, không gọi GHN lại. */
 let lastSync: { at: number; result: Awaited<ReturnType<typeof syncPosLockGhn>> } | null = null;
 const SYNC_GAP_MS = 60_000;
@@ -197,6 +231,7 @@ export function registerPosGhnSyncRoutes(router: Router<StaffEnv>) {
   router.post('/integrations/ghn/pos-lock/pull', async c => {
     const body=c.req.body?await readJson(c.req,2048):{};
     if(body.recheckWebTerminal!==undefined&&typeof body.recheckWebTerminal!=='boolean')throw new AppError(400,'recheckWebTerminal phải là boolean.');
+    if(c.env.durableSyncJobs)return json({ok:true,checked:0,updated:0,errors:[],...await enqueueSyncJob(c.env.db,'ghn',{recheckWebTerminal:body.recheckWebTerminal===true},body.recheckWebTerminal===true?'ghn:terminal':'ghn')});
     return json(await syncPosLockGhn(c.env,{recheckWebTerminal:body.recheckWebTerminal===true}));
   }, 'sapo-sync');
   /**
@@ -207,6 +242,7 @@ export function registerPosGhnSyncRoutes(router: Router<StaffEnv>) {
     posPermission((c.state.session as SessionState).member);
     if (!c.env.ghnToken && !c.env.ghnMlToken) throw new AppError(503, 'CRM chưa có token GHN (GHN_API_TOKEN / GHN_ML_API_TOKEN).', 'GHN_NOT_CONFIGURED');
     const now = Date.now();
+    if (c.env.durableSyncJobs) return json({ok:true,checked:0,updated:0,errors:[],cached:false,syncedAt:new Date(now).toISOString(),...await enqueueSyncJob(c.env.db,'ghn')});
     if (lastSync && now - lastSync.at < SYNC_GAP_MS) return json({ ...lastSync.result, cached: true, syncedAt: new Date(lastSync.at).toISOString() });
     const result = await syncPosLockGhn(c.env);
     lastSync = { at: now, result };

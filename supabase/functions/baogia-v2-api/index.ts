@@ -1,3 +1,4 @@
+import { edgeBody } from '../../../src/core/http/edge-body.ts';
 import {productionDrive} from '../../../src/core/storage/production-drive.ts';
 import { sql } from 'drizzle-orm';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -61,14 +62,14 @@ const waitUntil = (p: Promise<unknown>) => { const rt = (globalThis as any).Edge
 // Đồng bộ Sapo gọi từ máy chủ (webhook Sapo, luồng trung gian): không có Origin, xác thực bằng SAPO_SYNC_TOKEN trong router.
 const SYNC_ORIGIN = 'https://crm.minhlongonline.com';
 Deno.serve(async req => {
-  const started = performance.now();
+  const started = performance.now(), traceId = crypto.randomUUID();
   const incoming = new URL(req.url);
   // Đường dẫn API (bỏ tiền tố /functions/v1/baogia-v2-api). Nhận diện luồng đồng bộ ĐÚNG như router (bắt đầu bằng SYNC_PREFIX),
   // không dùng "có chứa" – tránh đường dẫn lắt léo được coi là đồng bộ (bỏ qua kiểm tra Origin).
   const at = incoming.pathname.indexOf('/api/staff'), path = at < 0 ? '' : incoming.pathname.slice(at), sync = path.startsWith(SYNC_PREFIX);
   const origin = sync ? SYNC_ORIGIN : req.headers.get('origin') || '';
   const ORIGIN = origin; // liên kết kích hoạt/đặt lại mật khẩu trỏ về đúng trang đã gửi yêu cầu
-  const cors = { 'access-control-allow-origin': ORIGIN, 'access-control-allow-headers': 'authorization, content-type, x-region, x-db-pool', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'vary': 'Origin', 'cache-control': 'no-store', 'access-control-expose-headers': 'server-timing', 'timing-allow-origin': ORIGIN };
+  const cors = { 'access-control-allow-origin': ORIGIN, 'access-control-allow-headers': 'authorization, content-type, x-region, x-db-pool', 'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS', 'vary': 'Origin', 'cache-control': 'no-store', 'access-control-expose-headers': 'server-timing, x-crm-request-id', 'x-crm-request-id': traceId, 'timing-allow-origin': ORIGIN };
   if (!ORIGINS.has(origin)) return new Response(JSON.stringify({error:'Nguồn yêu cầu không hợp lệ.'}), {status:403,headers:{'content-type':'application/json'}});
   if (req.method === 'OPTIONS') return new Response(null, {status:204,headers:cors});
   const url = POOLER_URL || Deno.env.get('SUPABASE_DB_URL');
@@ -97,7 +98,8 @@ Deno.serve(async req => {
       if(token) headers.set('cookie', '__Host-bn-session=' + token);
     }
     incoming.searchParams.delete('forceFunctionRegion'); // chỉ để chọn vùng chạy Edge, không phải tham số nghiệp vụ
-    const forwarded = new Request(ORIGIN+path+incoming.search,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:await req.arrayBuffer()});
+    const forwardedInit: RequestInit & {duplex?:'half'} = {method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:req.body,duplex:'half'};
+    const forwarded = new Request(ORIGIN+path+incoming.search,forwardedInit);
 // Dedicated transfer credentials; disabled in the database until n8n is ready.
 const transferIntegration=Deno.env.get('STOCK_TRANSFER_WEBHOOK_URL') ? {
   webhookUrl:Deno.env.get('STOCK_TRANSFER_WEBHOOK_URL')||'',webhookToken:Deno.env.get('STOCK_TRANSFER_WEBHOOK_TOKEN')||'',
@@ -116,27 +118,22 @@ const accountingAi=Deno.env.get('ACCOUNTING_AI_ENABLED')==='true'&&Deno.env.get(
   model:Deno.env.get('ACCOUNTING_AI_MODEL')||'',apiKey:Deno.env.get('ACCOUNTING_AI_API_KEY')||'',
 }:undefined;
 const stats = { queries: 0 };
-const response = await timing.run(stats, () => router.handle(forwarded,{db,accountingAi,transferIntegration,warehouseImageIntegration,aiChatIntegration,adms:{url:Deno.env.get('ADMS_API_URL')||'',companyId:Number(Deno.env.get('ADMS_COMPANY_ID')||0),token:Deno.env.get('ADMS_API_TOKEN')||''},waitUntil:requestWaitUntil,productionDrive:productionFilesDrive,productionFilesRequired:Deno.env.get('PRODUCTION_FILES_REQUIRED')==='true',files,productImages,legacySite,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined,sapoOrderMode:'n8n',sapoOrderWebhookUrl:Deno.env.get('SAPO_ORDER_WEBHOOK_URL')||undefined,sapoHdktOrderWebhookUrl:Deno.env.get('SAPO_HDKT_ORDER_WEBHOOK_URL')||undefined,sapoPosOrderWebhookUrl:Deno.env.get('SAPO_POS_ORDER_WEBHOOK_URL')||undefined,sapoGoodsReceiptWebhookUrl:Deno.env.get('SAPO_GOODS_RECEIPT_WEBHOOK_URL')||'https://n8nthai.moarchvn.com/webhook/sapo-goods-receipt-from-quote-web',posShiftReportWebhook:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_URL')&&Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_TOKEN')?{url:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_URL')||'',token:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_TOKEN')||''}:undefined,ghnToken:Deno.env.get('GHN_API_TOKEN')||undefined,ghnMlToken:Deno.env.get('GHN_ML_API_TOKEN')||undefined,ghnMlShopId:Deno.env.get('GHN_ML_SHOP_ID')||undefined,ghnWebhookToken:Deno.env.get('GHN_WEBHOOK_TOKEN')||undefined,sepayPosApiKeyHash:Deno.env.get('SEPAY_POS_API_KEY_HASH')||undefined,sepayApiToken:Deno.env.get('SEPAY_API_TOKEN')||undefined,sepayReceiptAccounts:(Deno.env.get('SEPAY_RECEIPT_ACCOUNTS')||'').split(',').map(x=>x.replace(/\s+/g,'')).filter(Boolean),turnstile:Deno.env.get('TURNSTILE_SECRET_KEY')?{secret:Deno.env.get('TURNSTILE_SECRET_KEY')||'',siteKey:Deno.env.get('TURNSTILE_SITE_KEY')||''}:undefined,wooLockTokenHash:Deno.env.get('WOO_LOCK_TOKEN_HASH')||undefined,wooMinhLongTokenHash:Deno.env.get('WOO_MINHLONG_TOKEN_HASH')||undefined,webOrderAction:Deno.env.get('WEB_ORDER_ACTION_TOKEN')?{token:Deno.env.get('WEB_ORDER_ACTION_TOKEN')||'',lockUrl:'https://locknlockonline.com/wp-json/vigifts/v1/order-action-v7',minhlongUrl:''}:undefined,mailer:Deno.env.get('RESEND_API_KEY')?{apiKey:Deno.env.get('RESEND_API_KEY')||'',from:Deno.env.get('MAIL_FROM')||'',alwaysCc:(Deno.env.get('MAIL_CC')||'').split(',').map(s=>s.trim()).filter(Boolean)}:undefined}));
+const response = await timing.run(stats, () => router.handle(forwarded,{db,durableSyncJobs:true,accountingAi,transferIntegration,warehouseImageIntegration,aiChatIntegration,adms:{url:Deno.env.get('ADMS_API_URL')||'',companyId:Number(Deno.env.get('ADMS_COMPANY_ID')||0),token:Deno.env.get('ADMS_API_TOKEN')||''},waitUntil:requestWaitUntil,productionDrive:productionFilesDrive,productionFilesRequired:Deno.env.get('PRODUCTION_FILES_REQUIRED')==='true',files,productImages,legacySite,sapoSyncToken:Deno.env.get('SAPO_SYNC_TOKEN') || '',sapoAdminBase:Deno.env.get('SAPO_ADMIN_BASE') || undefined,sapoOrderMode:'n8n',sapoOrderWebhookUrl:Deno.env.get('SAPO_ORDER_WEBHOOK_URL')||undefined,sapoHdktOrderWebhookUrl:Deno.env.get('SAPO_HDKT_ORDER_WEBHOOK_URL')||undefined,sapoPosOrderWebhookUrl:Deno.env.get('SAPO_POS_ORDER_WEBHOOK_URL')||undefined,sapoGoodsReceiptWebhookUrl:Deno.env.get('SAPO_GOODS_RECEIPT_WEBHOOK_URL')||'https://n8nthai.moarchvn.com/webhook/sapo-goods-receipt-from-quote-web',posShiftReportWebhook:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_URL')&&Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_TOKEN')?{url:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_URL')||'',token:Deno.env.get('POS_SHIFT_REPORT_WEBHOOK_TOKEN')||''}:undefined,ghnToken:Deno.env.get('GHN_API_TOKEN')||undefined,ghnMlToken:Deno.env.get('GHN_ML_API_TOKEN')||undefined,ghnMlShopId:Deno.env.get('GHN_ML_SHOP_ID')||undefined,ghnWebhookToken:Deno.env.get('GHN_WEBHOOK_TOKEN')||undefined,sepayPosApiKeyHash:Deno.env.get('SEPAY_POS_API_KEY_HASH')||undefined,sepayApiToken:Deno.env.get('SEPAY_API_TOKEN')||undefined,sepayReceiptAccounts:(Deno.env.get('SEPAY_RECEIPT_ACCOUNTS')||'').split(',').map(x=>x.replace(/\s+/g,'')).filter(Boolean),turnstile:Deno.env.get('TURNSTILE_SECRET_KEY')?{secret:Deno.env.get('TURNSTILE_SECRET_KEY')||'',siteKey:Deno.env.get('TURNSTILE_SITE_KEY')||''}:undefined,wooLockTokenHash:Deno.env.get('WOO_LOCK_TOKEN_HASH')||undefined,wooMinhLongTokenHash:Deno.env.get('WOO_MINHLONG_TOKEN_HASH')||undefined,webOrderAction:Deno.env.get('WEB_ORDER_ACTION_TOKEN')?{token:Deno.env.get('WEB_ORDER_ACTION_TOKEN')||'',lockUrl:'https://locknlockonline.com/wp-json/vigifts/v1/order-action-v7',minhlongUrl:''}:undefined,mailer:Deno.env.get('RESEND_API_KEY')?{apiKey:Deno.env.get('RESEND_API_KEY')||'',from:Deno.env.get('MAIL_FROM')||'',alwaysCc:(Deno.env.get('MAIL_CC')||'').split(',').map(s=>s.trim()).filter(Boolean)}:undefined}));
     const handled = performance.now();
     // Chỉ khi đăng nhập / đổi phiên (có Set-Cookie) mới phải sửa JSON để trả sessionToken; còn lại chuyển nguyên văn bản
     // (không phân tích rồi ghi lại JSON – danh mục ~3 MB tốn đáng kể CPU của Edge).
-    const cookie = response.headers.get('set-cookie');
-    let body = await response.text();
-    if (cookie) { const payload = JSON.parse(body); payload.sessionToken = /__Host-bn-session=([a-f0-9]{64})/.exec(cookie)?.[1] || ''; body = JSON.stringify(payload); }
+    const prepared = await edgeBody(response, req.headers.get('accept-encoding') || '');
+    const workload = path.endsWith('/catalog-snapshot') ? (incoming.searchParams.has('pageSize')?'catalog-paged':'catalog-legacy') : path.endsWith('/sync-jobs/tick')?'sync-job-step':undefined;
     const total = performance.now() - started, ms = (n: number) => Math.round(n * 10) / 10;
     const serverTiming = `db;dur=${ms(dbReady - started)}, app;dur=${ms(handled - dbReady)};desc="${stats.queries} queries", total;dur=${ms(total)}` + timingTail();
     // Yêu cầu chậm: ghi log (đường dẫn đã bỏ mã / query string) để xem ở Supabase → Edge Functions → Logs.
-    if (total > SLOW_MS) console.warn('API slow', JSON.stringify({ method: req.method, route: path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}|[A-Za-z0-9_-]{20,}/g, ':id'), status: response.status, ms: Math.round(total), dbMs: Math.round(dbReady - started), queries: stats.queries, pooled: !!POOLER_URL, dbMode, inflight: concurrent }));
-    const jsonHeaders = {...cors,'content-type':'application/json; charset=utf-8','x-content-type-options':'nosniff','server-timing':serverTiming};
+    if (total > SLOW_MS) console.warn('API slow', JSON.stringify({ method: req.method, route: path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}|[A-Za-z0-9_-]{20,}/g, ':id'), status: response.status, ms: Math.round(total), dbMs: Math.round(dbReady - started), queries: stats.queries, traceId, workload, pooled: !!POOLER_URL, dbMode, inflight: concurrent }));
+    const jsonHeaders = {...cors,'content-type':'application/json; charset=utf-8','x-content-type-options':'nosniff','server-timing':serverTiming,'x-crm-request-id':traceId};
     // Nén gzip khi trình duyệt hỗ trợ (danh sách 20–200 KB còn ~1/5; bản chụp danh mục ~3 MB còn ~0,5 MB) – đỡ chờ trên 4G.
-    if (body.length > 4_000 && /\bgzip\b/.test(req.headers.get('accept-encoding') || '')) {
-      const gz = new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'));
-      return new Response(gz,{status:response.status,headers:{...jsonHeaders,'content-encoding':'gzip','vary':'Origin, Accept-Encoding'}});
-    }
-    return new Response(body,{status:response.status,headers:jsonHeaders});
+    return new Response(prepared.body,{status:response.status,headers:{...jsonHeaders,...(prepared.gzip?{'content-encoding':'gzip','vary':'Origin, Accept-Encoding'}:{})}});
   } catch(e) {
     const code=String((e as {code?:unknown})?.code||(e as {cause?:{code?:unknown}})?.cause?.code||'unknown').slice(0,40);
-    console.error('API database unavailable',JSON.stringify({code,phase:'request',pooled:!!POOLER_URL,dbMode}));
+    console.error('API database unavailable',JSON.stringify({code,traceId,phase:'request',pooled:!!POOLER_URL,dbMode}));
     return new Response(JSON.stringify({error:'Kết nối dữ liệu đang bận. Vui lòng thử lại sau ít giây.',code:'DB_CONNECTION_UNAVAILABLE'}),{status:503,headers:{...cors,'retry-after':'1','content-type':'application/json','server-timing':`total;dur=${Math.round(performance.now()-started)}`+timingTail()}});
   } finally {
     inflight--;

@@ -1,3 +1,4 @@
+import { registerSyncJobWorker } from './sync-job-worker.ts';
 import {syncWorkspaceActions,weeklyReportActions,weeklyEventReminders} from './weekly-report-tasks.ts';
 import {stockPendingOf} from './stock-pending.ts';
 import {productArchiveBlockReason} from './product-archive-guards.ts';
@@ -177,6 +178,7 @@ export function createAppRouter() {
   registerWebOrderAttention(router);
   registerPosPromotions(router);
   registerShiftReportRoutes(router);
+  registerSyncJobWorker(router);
   registerPosGhnSyncRoutes(router);
   registerPosGhnCreateRoutes(router);
   registerPosReturnRoutes(router);

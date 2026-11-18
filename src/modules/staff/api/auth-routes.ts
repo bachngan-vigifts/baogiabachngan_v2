@@ -22,6 +22,8 @@ export interface StaffEnv {
   /** Optional server-only accounting explanation adapter. Disabled until provider approval. */
   accountingAi?: import('../../accounting/api/assistant.ts').AccountingAiConfig;
   db: AnyDb;
+  /** Server-only rollout switch; requires edge_sync_jobs and the durable tick schedule. */
+  durableSyncJobs?: boolean;
   /** Kết nối API chấm công ADMS: cấu hình server, không gửi URL/token ra trình duyệt. */
   adms?: import('../../hr/domain/adms.ts').AdmsConfig;
   /** Giây Unix hiện tại; mặc định đồng hồ hệ thống (test truyền đồng hồ giả). */

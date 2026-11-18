@@ -1,3 +1,4 @@
+import { enqueueSyncJob } from '../../core/jobs/sync-jobs.ts';
 import {isWarehouseSourceWork,sourceWorkKeySql,assignmentCandidates,assignmentRoster,prepareSourceAssignment,warehouseSourceTask,withoutAssignedSource,withoutAnyAssignment,assignFreshWarehouseTasks} from './assignment.ts';
 import {warehouseWorkSourceLinks as sourceLinks,warehouseWorkParts as workParts,warehouseWorkAssignments as sourceAssignments} from './schema.ts';
 import {warehouseSourceHooks} from '../../core/contracts/warehouse-source.ts';
@@ -94,6 +95,7 @@ export function registerWarehouseWorkspace(router:Router<StaffEnv>,deps:{assertP
   return json(result);
  },'business');
  router.post('/integrations/warehouse-work/reconcile',async c=>{
+  if(c.env.durableSyncJobs)return json({checked:0,offered:0,...await enqueueSyncJob(c.env.db,'warehouse')});
   await deps.reconcileSources?.(c.env);
   const now=new Date().toISOString(),pending=await c.env.db.select({id:tasks.id}).from(tasks).where(and(withoutAnyAssignment(),sql`${tasks.autoKey} is not null`,eq(tasks.status,'todo'),or(eq(tasks.assigneePosition,'warehouse'),sql`${tasks.assigneeId} in (select id from staff_members where position_id='warehouse' and role='employee' and active=true and deleted_at is null)`))).orderBy(asc(tasks.createdAt),asc(tasks.id)).limit(100);
   await assignFreshWarehouseTasks(c.env.db,pending.map(t=>t.id),now);
