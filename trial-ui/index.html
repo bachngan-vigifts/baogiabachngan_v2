@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 36189)
+Total output lines: 1392
+
 <!doctype html>
 <html lang="vi" class="app-shell">
 <head>
@@ -21,6 +24,7 @@
 <link rel="stylesheet" href="dashboard.css">
 <link rel="stylesheet" href="profit.css">
 <link rel="stylesheet" href="feedback.css">
+<link rel="stylesheet" href="ai-chat.css">
 <link rel="stylesheet" href="store-reports.css">
 <link rel="stylesheet" href="weekly-reports.css">
 <link rel="stylesheet" href="flow-map.css">
@@ -88,6 +92,7 @@
         <a class="nav" href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24"><path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -6" /><path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -10" /><path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -14" /><path d="M4 20h14" /></svg><span>Tổng quan</span></a>
         <a class="nav" href="#/flow" data-nav="flow"><svg viewBox="0 0 24 24"><path d="M3 19a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M19 7a2 2 0 1 0 0 -4a2 2 0 0 0 0 4" /><path d="M11 19h5.5a3.5 3.5 0 0 0 0 -7h-8a3.5 3.5 0 0 1 0 -7h4.5" /></svg><span>Sơ đồ quy trình</span></a>
         <a class="nav" href="#/feedback" data-nav="feedback"><svg viewBox="0 0 24 24"><path d="M8 9h8" /><path d="M8 13h6" /><path d="M9 18h-3a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-3l-3 3l-3 -3" /></svg><span>Góp ý phần mềm</span></a>
+        <a class="nav" href="#/ai-chat" data-nav="ai-chat"><svg viewBox="0 0 24 24"><path d="M8 9h8M8 13h5M12 3a9 9 0 0 1 0 18H6l-3 2v-6a9 9 0 0 1 9-14z"/><path d="M17 4v4M15 6h4"/></svg><span>Chat cùng AI</span></a>
       </section>
       <section class="nav-group" aria-labelledby="nav-group-1">
         <h2 class="nav-label" id="nav-group-1">Bán hàng</h2>
@@ -187,6 +192,7 @@
     <section class="view" id="view-sepay" hidden></section>
     <section class="view" id="view-profit" hidden></section>
     <section class="view" id="view-feedback" hidden></section>
+    <section class="view" id="view-ai-chat" hidden></section>
     <section class="view" id="view-store-reports" hidden></section>
     <section class="view" id="view-home" hidden></section>
     <section class="view" id="view-weekly-reports" hidden></section>
@@ -576,223 +582,7 @@
       </div>
       <div class="panel">
         <div class="toolbar orders-toolbar">
-          <label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><input id="contracts-search" type="search" placeholder="Tìm số HĐKT, số báo giá, khách hàng…" aria-label="Tìm"></label>
-          <div class="chips" id="contracts-filters" role="group" aria-label="Lọc hoá đơn"><button type="button" class="chip active" data-invoice="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-invoice="requested" aria-pressed="false" title="Đã yêu cầu xuất hoá đơn, chưa nhập số hoá đơn">🧾 Chờ xuất hoá đơn <span class="count" data-invoice-count></span></button></div>
-        </div>
-        <div class="orders-filter-grid" id="contracts-filter-grid">
-          <label>Pháp nhân<select id="contracts-entity"><option value="">Tất cả pháp nhân</option><option value="BN">Bách Ngân (BN)</option><option value="VG">Vigifts (VG)</option><option value="QTV">QTV</option></select></label>
-          <label>Nhân viên<select id="contracts-owner"><option value="">Tất cả nhân viên</option></select></label>
-          <label>Lọc ngày theo<select id="contracts-date-by"><option value="created">Ngày lập HĐKT</option><option value="signed">Ngày ký</option></select></label>
-          <label>Từ ngày<input type="date" id="contracts-from"></label><label>Đến ngày<input type="date" id="contracts-to"></label>
-          <button type="button" class="btn ghost small" id="contracts-clear">Xóa bộ lọc</button>
-        </div>
-        <div class="stats contracts-stats" id="contracts-stats" aria-live="polite"></div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Số HĐKT</th><th>Khách hàng · Báo giá</th><th>Pháp nhân</th><th>Trạng thái</th><th>Ngày ký</th><th class="right">Giá trị</th><th class="right">Cọc</th><th>Thanh toán</th><th>Hoá đơn</th><th>Hồ sơ</th></tr></thead><tbody id="contracts-list"></tbody></table></div>
-        <div id="contracts-empty" class="empty" hidden><p class="muted" id="contracts-empty-text"></p></div>
-        <div class="pager" id="contracts-pager" hidden></div>
-      </div>
-    </section>
-
-    <section class="view" id="view-order-products" hidden></section>
-
-    <!-- ---------- Lịch giao hàng ---------- -->
-    <section class="view" id="view-receiving" hidden></section>
-
-    <section class="view" id="view-deliveries" hidden>
-      <nav class="shipment-tabs" aria-label="Lịch giao hàng"><a class="chip" href="#/deliveries?view=calendar" data-shipment-tab="calendar">Lịch ngày / tuần / tháng</a><a class="chip" href="#/deliveries?view=products" data-shipment-tab="products">Sản phẩm theo chuyến</a><a class="chip" href="#/deliveries?view=list" data-shipment-tab="list">Danh sách chuyến giao</a></nav>
-      <div id="deliveries-real">
-      <div class="page-head">
-        <div><span class="eyebrow">Bán hàng</span><h1>Lịch giao hàng</h1><p class="muted">Lịch và sản phẩm của các chuyến giao thực tế. Bộ lọc áp dụng chung cho lịch và danh sách.</p></div>
-      </div>
-      <div class="row-gap delivery-range">
-        <label>Từ ngày<input type="date" id="deliveries-from"></label>
-        <label>Đến ngày<input type="date" id="deliveries-to"></label>
-        <div class="delivery-status"><span id="deliveries-status-label">Trạng thái</span>
-          <div class="chips" id="deliveries-status" role="group" aria-labelledby="deliveries-status-label">
-            <button type="button" class="chip active" data-status="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-status="planned" aria-pressed="false">Chưa giao</button><button type="button" class="chip" data-status="in_transit" aria-pressed="false">Đang giao</button><button type="button" class="chip" data-status="delivered" aria-pressed="false">Đã giao</button><button type="button" class="chip" data-status="failed" aria-pressed="false">Giao lỗi</button><button type="button" class="chip" data-status="cancelled" aria-pressed="false">Đã huỷ</button>
-          </div>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="toolbar">
-          <label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><input id="deliveries-search" type="search" maxlength="200" placeholder="Tìm khách, số đơn / HĐKT, chuyến, vận đơn, ghi chú…" aria-label="Tìm chuyến giao"></label>
-        </div>
-        <details class="delivery-advanced-filters"><summary>Bộ lọc chi tiết: nhân viên, khách hàng, sản phẩm, vận chuyển…</summary>
-        <div class="orders-filter-grid" id="deliveries-filter-grid">
-          <label>Nhân viên<select id="deliveries-owner"><option value="">Tất cả nhân viên</option></select></label>
-          <label>Loại chứng từ<select id="deliveries-kind"><option value="">Đơn hàng + HĐKT</option><option value="order">Đơn hàng</option><option value="contract">HĐKT</option></select></label>
-          <label>Đơn vị giao<select id="deliveries-carrier"><option value="">Tất cả</option></select></label>
-          <label>Hoá đơn<select id="deliveries-invoice"><option value="">Tất cả</option><option value="none">Chưa yêu cầu xuất</option><option value="requested">Chờ xuất hoá đơn</option><option value="issued">Đã xuất hoá đơn</option></select></label>
-          <label>Người giao<select id="deliveries-assignee"><option value="">Tất cả người giao</option></select></label>
-          <label>Khách hàng<input id="deliveries-customer" type="search" maxlength="200" placeholder="Tên khách / công ty"></label>
-          <label>Sản phẩm<input id="deliveries-product" type="search" maxlength="200" placeholder="Mã SKU hoặc tên sản phẩm"></label>
-          <label>Người nhận / SĐT<input id="deliveries-receiver" type="search" maxlength="200" placeholder="Tên hoặc số điện thoại"></label>
-          <label>Địa chỉ giao<input id="deliveries-address" type="search" maxlength="200" placeholder="Tỉnh, thành, quận hoặc địa chỉ"></label>
-          <label>Thời hạn<select id="deliveries-due"><option value="">Tất cả thời hạn</option><option value="overdue">Quá hạn, chưa giao xong</option><option value="today">Giao hôm nay</option><option value="next7">Chưa giao xong trong 7 ngày tới</option><option value="no-time">Chưa có giờ giao</option></select></label>
-          <label>Mã vận đơn<select id="deliveries-tracking"><option value="">Tất cả</option><option value="yes">Đã có vận đơn</option><option value="no">Chưa có vận đơn</option></select></label>
-          <label>Xác nhận giao<select id="deliveries-confirmation"><option value="">Tất cả</option><option value="yes">Đã ghi nhận xác nhận</option><option value="no">Chưa có xác nhận</option></select></label>
-          <label>Sắp xếp<select id="deliveries-sort"><option value="">Ngày giao mới trước</option><option value="date_asc">Ngày giao cũ trước</option><option value="customer">Tên khách hàng</option><option value="owner">Nhân viên phụ trách</option></select></label>
-          <button type="button" class="btn ghost small" id="deliveries-clear" data-mobile-navigation>Xóa bộ lọc</button>
-        </div>
-        </details>
-        <p id="deliveries-filter-summary" class="muted small" role="status"></p>
-        <button type="button" class="btn secondary" id="deliveries-retry" hidden>Thử tải lại</button>
-        <div id="deliveries-legend"></div>
-        <div id="deliveries-calendar"></div>
-        <div id="deliveries-product-lines" tabindex="0" aria-label="Bảng sản phẩm chuyến giao, cuộn ngang để xem thêm cột" class="table-wrap" hidden></div>
-        <div class="table-wrap" id="deliveries-table" tabindex="0" aria-label="Bảng chuyến giao, cuộn ngang để xem thêm cột" hidden><table class="data-table"><thead><tr><th>Ngày giao</th><th>Chuyến</th><th>Khách hàng · Đơn / HĐKT · Sản phẩm</th><th>Người nhận · Địa chỉ</th><th>Trạng thái</th><th>Hoá đơn</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead><tbody id="deliveries-list"></tbody></table></div>
-        <div id="deliveries-empty" class="empty" hidden><p class="muted" id="deliveries-empty-text"></p></div>
-      </div>
-      </div>
-    </section>
-
-    <!-- ---------- Công nợ ---------- -->
-    <!-- Khách hỏi tồn kho từ trang khách hàng: nhân viên phụ trách trả lời -->
-    <!-- Chăm sóc khách hàng: nhật ký trao đổi + lịch hẹn (trial-ui/care.js dựng nội dung) -->
-    <section class="view" id="view-care" hidden></section>
-    <!-- Công việc: việc tự sinh từ nghiệp vụ + giao việc thủ công (trial-ui/tasks.js) -->
-    <section class="view" id="view-tasks" hidden>
-      <div class="task-layout">
-        <div class="task-pane">
-          <div class="page-head task-top">
-            <div class="task-top-title"><span class="eyebrow">Công việc &amp; tổng quan</span><h1>Công việc</h1><p class="muted">Theo dõi công việc, hạn xử lý và người phụ trách.</p><div class="task-sync-row"><span class="muted task-sync" id="tasks-sync"></span><button type="button" class="icon-btn task-refresh" id="tasks-refresh" title="Làm mới (đồng bộ việc tự sinh)" aria-label="Làm mới">↻</button></div></div>
-            <div class="task-top-actions"><button type="button" class="btn primary" id="tasks-new">+ Giao việc <kbd>N</kbd></button></div>
-          </div>
-          <div class="task-tabs-row" id="tasks-view" role="tablist" aria-label="Chế độ xem"></div>
-          <dialog class="task-quick-dialog" id="tasks-quick-dialog" aria-labelledby="task-quick-title">
-            <form class="task-quick" id="tasks-quick" autocomplete="off" data-no-busy hidden>
-              <div class="task-quick-handle" aria-hidden="true"></div>
-              <header class="task-quick-head"><h2 id="task-quick-title">Giao việc nhanh</h2><button type="button" class="task-quick-close" data-cancel aria-label="Đóng">×</button></header>
-              <div class="task-quick-body">
-              <label>Tên việc<input name="title" placeholder="VD: Gửi mẫu quà Tết cho khách ABC" maxlength="300" required></label>
-              <label>Người nhận<select name="assigneeId" id="tasks-quick-assignee"></select></label>
-              <fieldset><legend>Hạn</legend><input type="hidden" name="dueDate"><div class="task-quick-choices" role="group" aria-label="Hạn"><button type="button" data-due="0">Hôm nay</button><button type="button" data-due="1">Mai</button><button type="button" data-due="7">+7 ngày</button><button type="button" data-due="">Không hạn</button></div><small data-custom-due hidden></small></fieldset>
-              <fieldset><legend>Ưu tiên</legend><input type="hidden" name="priority" value="normal"><div class="task-quick-choices" role="group" aria-label="Ưu tiên"><button type="button" data-priority="low">Thấp</button><button type="button" data-priority="normal">Bình thường</button><button type="button" data-priority="high">Cao</button><button type="button" data-priority="urgent">Khẩn</button></div></fieldset>
-              <p class="error" role="alert" data-quick-error></p>
-              </div><footer class="task-quick-foot">
-              <button type="submit" class="btn primary task-quick-submit">Giao việc</button>
-              <button type="button" class="btn ghost" data-discard data-no-busy hidden>Bỏ lần giao việc này</button>
-              </footer>
-            </form>
-          </dialog>
-          <div class="stats task-due-cards" id="tasks-stats"></div>
-          <div class="panel task-list-panel">
-            <div class="toolbar task-filterbar">
-              <div class="search-box"><span aria-hidden="true">⌕</span><input id="tasks-search" type="search" placeholder="Tìm việc, mã đơn, khách… (phím /)" aria-label="Tìm việc"></div>
-              <div class="task-seg" id="tasks-status" role="group" aria-label="Trạng thái"><button type="button" data-v="open" aria-pressed="true">Đang mở</button><button type="button" data-v="done" aria-pressed="false">Đã xong</button><button type="button" data-v="all" aria-pressed="false">Tất cả</button></div>
-              <select id="tasks-source" aria-label="Lọc nguồn"><option value="">Nguồn · Tất cả</option></select>
-              <select id="tasks-priority" aria-label="Lọc ưu tiên"><option value="">Ưu tiên · Tất cả</option><option value="urgent">Khẩn</option><option value="high">Cao</option><option value="normal">Bình thường</option><option value="low">Thấp</option></select>
-              <select id="tasks-assignee" aria-label="Lọc người nhận"></select>
-              <select id="tasks-due" aria-label="Lọc hạn"><option value="">Hạn · Tất cả</option><option value="overdue">Quá hạn</option><option value="today">Hôm nay</option><option value="week">7 ngày tới</option><option value="upcoming">Mọi ngày sắp tới</option><option value="none">Chưa đặt hạn</option></select>
-            </div>
-            <div class="task-active" id="tasks-active" hidden></div>
-            <div class="approvals-board" id="tasks-approvals" hidden></div>
-            <div class="task-board">
-              <div class="task-list-head" aria-hidden="true"><span></span><span>Công việc / nội dung</span><span>Người nhận</span><span>Hạn xử lý</span><span class="task-prio">Ưu tiên</span><span>Trạng thái</span></div>
-              <div class="task-list" id="tasks-list" role="grid" aria-label="Danh sách công việc"></div>
-              <p class="muted task-empty" id="tasks-empty" hidden><span id="tasks-empty-text"></span></p>
-            </div>
-            <div class="task-foot"><span id="tasks-count"></span><span class="task-keys">Phím: <kbd>N</kbd> giao việc · <kbd>/</kbd> tìm · <kbd>↑</kbd><kbd>↓</kbd> chọn việc · <kbd>Enter</kbd> mở</span>
-              <span class="task-group-by" id="tasks-group" role="group" aria-label="Nhóm theo">Nhóm theo <button type="button" data-group="due" aria-pressed="true">Hạn</button><button type="button" data-group="category" aria-pressed="false">Nhóm việc</button></span></div>
-          </div>
-        </div>
-        <aside class="task-panel" id="tasks-panel" hidden aria-label="Chi tiết việc"></aside>
-      </div>
-    </section>
-    <section class="view" id="view-stock-requests" hidden>
-      <div class="page-head">
-        <div><span class="eyebrow">Khách hàng</span><h1>Khách hỏi tồn</h1><p class="muted">Khách gửi từ trang khách hàng (khách không xem được tồn kho). Nhập số đáp ứng được và lời nhắn – khách nhận thông báo ngay.</p></div>
-        <div class="chips" id="stock-req-filter"><button type="button" class="chip" data-status="open" aria-pressed="true">Chờ trả lời</button><button type="button" class="chip" data-status="" aria-pressed="false">Tất cả</button></div>
-      </div>
-      <div id="stock-req-list"></div>
-      <p class="muted card" id="stock-req-empty" hidden>Không có yêu cầu nào.</p>
-    </section>
-    <section class="view" id="view-cashbook" hidden>
-      <div class="page-head cashbook-head">
-        <div><span class="eyebrow">TÀI CHÍNH</span><h1>Sổ thu / chi</h1><p class="muted">Theo dõi tập trung phiếu thu, phiếu chi cửa hàng, thanh toán khách hàng và nhà cung cấp.</p></div>
-        <button type="button" class="btn secondary" id="cashbook-export" title="Tải sổ thu / chi đang xem ra Excel">⬇ Xuất file</button>
-      </div>
-      <div class="row-gap delivery-range cashbook-range">
-        <label>Từ ngày<input type="date" id="cashbook-from"></label>
-        <label>Đến ngày<input type="date" id="cashbook-to"></label>
-        <label>Phương thức<select id="cashbook-method"><option value="">Tất cả</option><option value="cash">Tiền mặt</option><option value="transfer">Chuyển khoản</option><option value="other">Khác</option></select></label>
-        <label>Trạng thái<select id="cashbook-status"><option value="">Tất cả</option><option value="posted">Đã ghi nhận</option><option value="pending">Chờ duyệt</option><option value="voided">Đã huỷ</option></select></label>
-        <label>Người tạo<select id="cashbook-creator"><option value="">Tất cả người tạo</option></select></label>
-      </div>
-      <div class="stats" id="cashbook-stats"></div>
-      <div class="panel">
-        <div class="cashbook-kind-bar">
-          <div class="chips" id="cashbook-kind" role="group" aria-label="Lọc loại phiếu"><button type="button" class="chip active" data-kind="" aria-pressed="true">Tất cả</button><button type="button" class="chip" data-kind="in" aria-pressed="false">Thu</button><button type="button" class="chip" data-kind="out" aria-pressed="false">Chi</button></div>
-        </div>
-        <div class="toolbar">
-          <label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><input id="cashbook-search" type="search" placeholder="Tìm mã phiếu, khách/NCC, nội dung, mã giao dịch…" aria-label="Tìm"></label>
-        </div>
-        <div class="table-wrap"><table class="data-table cashbook-table"><thead><tr><th>Ngày</th><th>Mã phiếu</th><th>Loại</th><th>Đối tượng / nội dung</th><th>Phương thức</th><th class="right">Thu</th><th class="right">Chi</th><th>Trạng thái</th><th>Người tạo</th></tr></thead><tbody id="cashbook-list"></tbody></table></div>
-        <div id="cashbook-empty" class="empty" hidden><p class="muted" id="cashbook-empty-text"></p></div>
-      </div>
-    </section>
-
-    <section class="view" id="view-receivables" hidden>
-      <div class="page-head">
-        <div><span class="eyebrow">Bán hàng</span><h1>Công nợ</h1><p class="muted">Phải thu theo đơn: tổng các kỳ (cọc, phần còn lại) trừ số đã thu.</p></div>
-        <button type="button" class="btn secondary" id="bank-statement-open" title="Tải sao kê ngân hàng, tự ghép khoản thu với công nợ rồi duyệt ghi thu">Đối chiếu sao kê</button>
-      </div>
-      <div class="stats" id="receivable-stats"></div>
-      <div class="panel">
-        <div class="toolbar">
-          <label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><input id="receivables-search" type="search" placeholder="Tìm khách hàng, số đơn, MST…" aria-label="Tìm"></label>
-          <button type="button" class="btn secondary small" id="receivables-export" title="Tải bảng công nợ đang xem ra Excel">⬇ Excel</button>
-          <button type="button" class="btn secondary small manager-only" id="due-repair-open" hidden title="Tìm kỳ công nợ có hạn sai (đơn tính theo số ngày của báo giá, cọc HĐKT được 3 ngày) rồi sửa có duyệt">Rà hạn công nợ</button>
-          <div class="chips" id="receivables-filters" role="group" aria-label="Lọc công nợ"><button type="button" class="chip active" data-status="" aria-pressed="true">Còn phải thu</button><button type="button" class="chip" data-status="overdue" aria-pressed="false">Quá hạn</button><button type="button" class="chip" data-status="paid" aria-pressed="false">Đã thu đủ</button></div>
-        </div>
-        <div class="orders-filter-grid" id="receivables-filter-grid">
-          <label>Nguồn đơn<select id="receivables-source"><option value="">Tất cả nguồn</option><option value="crm">CRM</option><option value="pos">POS tại quầy</option><option value="ghn">COD / GHN</option></select></label>
-          <label>Loại chứng từ<select id="receivables-kind"><option value="">Đơn hàng + HĐKT</option><option value="order">Đơn hàng</option><option value="contract">HĐKT</option></select></label>
-          <label>Nhân viên<select id="receivables-owner"><option value="">Tất cả nhân viên</option></select></label>
-          <label>Chi nhánh<select id="receivables-branch"><option value="">Tất cả chi nhánh</option></select></label>
-          <label>Hoá đơn<select id="receivables-invoice"><option value="">Tất cả</option><option value="none">Chưa yêu cầu xuất</option><option value="requested">Chờ xuất hoá đơn</option><option value="issued">Đã xuất hoá đơn</option></select></label>
-          <label>Giao hàng<select id="receivables-delivery"><option value="">Tất cả</option><option value="none">Chưa có chuyến giao</option><option value="planned">Chờ giao</option><option value="in_transit">Đang giao</option><option value="delivered">Đã giao</option><option value="failed">Giao lỗi</option></select></label>
-          <label>Từ ngày<input type="date" id="receivables-from"></label><label>Đến ngày<input type="date" id="receivables-to"></label>
-          <button type="button" class="btn ghost small" id="receivables-clear">Xóa bộ lọc</button>
-        </div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Khách hàng · Đơn / HĐKT</th><th>Tình trạng</th><th>Hạn thu</th><th>Hoá đơn</th><th>Giao hàng</th><th class="right">Phải thu</th><th class="right">Đã thu</th><th class="right">Còn lại</th><th class="right">Quá hạn</th></tr></thead><tbody id="receivables-list"></tbody></table></div>
-        <div id="receivables-empty" class="empty" hidden><p class="muted" id="receivables-empty-text"></p></div>
-      </div>
-    </section>
-
-    <!-- ---------- Phiếu đóng gói (kho mở từ việc "Đóng gói") ---------- -->
-    <section class="view" id="view-packing" hidden>
-      <div class="editor-head">
-        <div class="editor-title"><a class="btn ghost small" href="#/tasks" id="packing-back">‹ Công việc</a><h1 id="packing-title">Phiếu đóng gói</h1><span id="packing-status"></span></div>
-        <div class="editor-actions" id="packing-actions"></div>
-      </div>
-      <div id="packing-body"></div>
-    </section>
-
-    <!-- ---------- Chi tiết đơn đặt hàng ---------- -->
-    <section class="view" id="view-order" hidden>
-      <div id="web-order-content" data-mobile-actions="off" hidden></div>
-      <div class="editor-head">
-        <div class="editor-title"><a class="btn ghost small" href="#/orders" id="order-back">‹ Đơn đặt hàng</a><h1 id="order-title">Đơn đặt hàng</h1><span class="pill" id="order-status"></span></div>
-        <div class="editor-actions" id="order-actions"></div>
-      </div>
-      <div class="row-gap" id="order-purchases" data-mobile-actions="off" style="margin-bottom:12px" hidden></div>
-      <div class="flow-steps" id="order-flow"></div>
-      <div class="card progress-card" id="order-progress" hidden></div>
-      <p class="approval-box" id="order-pos-ghn-edit" role="status" hidden></p>
-      <div class="editor-grid">
-        <div class="card" id="order-customer-card"><h2 class="card-title">Khách hàng</h2><dl class="kv" id="order-customer"></dl></div>
-        <div class="card" id="order-summary-card"><div class="card-title-row"><h2 class="card-title" id="order-contract-title">HĐKT</h2><span id="order-contract-action"></span></div><div id="order-contract"></div></div>
-      </div>
-      <div class="card"><div class="card-title-row"><h2 class="card-title" id="order-lines-title">Hàng trong đơn</h2></div>
-        <div class="table-wrap"><table class="data-table"><thead><tr id="order-lines-head"><th>Sản phẩm</th><th class="right">SL</th><th class="right">Đã giao</th><th class="right">Đơn giá</th><th class="right">VAT</th><th class="right">Thành tiền</th></tr></thead><tbody id="order-lines"></tbody></table></div>
-        <div id="order-line-details"></div>
-      </div>
-      <div class="card" id="order-production-files" hidden></div>
-        <div class="card" id="order-holds-card" hidden></div>
-      <div class="editor-grid">
-        <div class="card" id="order-delivery-card"><div class="card-title-row"><h2 class="card-title">Lịch giao hàng</h2><span class="row-gap"><button class="btn secondary small" id="order-pack" title="Lập phiếu đóng gói theo nguồn hàng (kho / cửa hàng / NCC / đại lý), chọn giao cho khách hay về xưởng in, gửi xe nào">📦 Lên lịch & đóng gói</button><button class="btn secondary small" id="order-new-delivery">Chỉ lên lịch giao</button></span></div><div id="order-deliveries"></div><div id="order-packing"></div></div>
-        <div class="card" id="order-debt-card"><h2 class="card-title">Công nợ</h2><div id="order-debt"></div></div>
+          <label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><input id="contracts-search" type="search" placeholder="Tìm số HĐKT, số báo giá, k…6189 tokens truncated…<h2 class="card-title">Công nợ</h2><div id="order-debt"></div></div>
       </div>
       <div class="editor-grid">
         <div class="card"><div class="card-title-row"><h2 class="card-title">Hoá đơn</h2><span id="order-invoice-pill"></span></div><div id="order-invoice"></div></div>
@@ -1387,4 +1177,3 @@
 <script type="module" src="mobile-actions-init.js"></script>
 <script type="module" src="dialog-layout-init.js"></script></body>
 </html>
-
