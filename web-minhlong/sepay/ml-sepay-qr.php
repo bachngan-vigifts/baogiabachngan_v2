@@ -74,9 +74,11 @@ add_action('rest_api_init', function(){
     register_rest_route('ml-sepay/v1','/webhook',array('methods'=>'POST','permission_callback'=>'__return_true','callback'=>'ml_sepay_webhook'));
 });
 function ml_sepay_auth_ok($r){
-    $c=ml_sepay_cfg(); $expected=(string)($c['webhook_key']??''); $auth=trim((string)$r->get_header('authorization'));
-    $provided=preg_match('/^(?:Apikey|Bearer)\s+(.+)$/i',$auth,$m)?trim($m[1]):trim((string)$r->get_header('x-api-key'));
-    return $expected!=='' && $provided!=='' && hash_equals($expected,$provided);
+    $c=ml_sepay_cfg(); $secret=(string)($c['webhook_key']??'');
+    $signature=trim((string)$r->get_header('x-sepay-signature')); $timestamp=trim((string)$r->get_header('x-sepay-timestamp'));
+    if($secret==='' || !ctype_digit($timestamp) || abs(time()-(int)$timestamp)>300 || !preg_match('/^sha256=[a-f0-9]{64}$/i',$signature)) return false;
+    $expected='sha256='.hash_hmac('sha256',$timestamp.'.'.$r->get_body(),$secret);
+    return hash_equals($expected,strtolower($signature));
 }
 function ml_sepay_review($reason,$data,$order=null){
     if($order instanceof WC_Order){$order->add_order_note('SePay cần đối soát: '.$reason);$order->update_meta_data('_ml_sepay_review',$reason);$order->save();}
