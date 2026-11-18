@@ -20,3 +20,40 @@ test('Drive uses fixed OAuth/API hosts, generated IDs, private parents, checksum
 test('public Drive destinations are rejected before any file/folder creation',async()=>{
  let writes=0;const d=productionDrive({clientId:'fixture',clientSecret:'fixture',refreshToken:'fixture',folderId:'fixture_root_12345678',fetch:(async(url:any,init:any)=>{if(String(url).includes('oauth2.googleapis.com'))return Response.json({access_token:'fixture',expires_in:3600});if(init.method==='POST')writes++;return Response.json({permissions:[{type:'anyone'}]});}) as typeof fetch});await assert.rejects(()=>d.ensureFolder('fixture_folder_12345678','Folder','q'),/công khai/);assert.equal(writes,0);
 });
+
+test('limited folder metadata access is accepted only with complete Google proof; public content access remains blocked',async()=>{
+ const root='fixture_limited_root_123',folder='fixture_limited_child_123';
+ const allowed={type:'anyone',role:'reader',view:'metadata',inheritedPermissionsDisabled:true,permissionDetails:[{inherited:true}]};
+ const cases=[
+  {name:'inherited folder metadata only',permissions:[allowed],ok:true},
+  {name:'metadata proof without optional permission details',permissions:[{...allowed,permissionDetails:undefined}],ok:true},
+  {name:'normal public read',permissions:[{type:'anyone',role:'reader'}],ok:false},
+  {name:'normal public write',permissions:[{type:'anyone',role:'writer'}],ok:false},
+  {name:'inheritance still enabled',permissions:[{...allowed,inheritedPermissionsDisabled:false}],ok:false},
+  {name:'missing disabled flag',permissions:[{...allowed,inheritedPermissionsDisabled:undefined}],ok:false},
+  {name:'metadata plus writer',permissions:[{...allowed,role:'writer'}],ok:false},
+  {name:'direct grant contradicts metadata',permissions:[{...allowed,permissionDetails:[{inherited:false}]}],ok:false},
+  {name:'missing inherited detail',permissions:[{...allowed,permissionDetails:[{}]}],ok:false},
+  {name:'published content',permissions:[{...allowed,role:'publishedReader',view:'published'}],ok:false},
+  {name:'missing view',permissions:[{...allowed,view:undefined}],ok:false},
+  {name:'metadata does not mask another public grant',permissions:[allowed,{type:'anyone',role:'reader'}],ok:false},
+ ];
+ for(const c of cases){let writes=0;const d=productionDrive({clientId:'fixture',clientSecret:'fixture',refreshToken:'fixture',folderId:root,fetch:(async(url:any,init:any)=>{
+   if(String(url).includes('oauth2.googleapis.com'))return Response.json({access_token:'fixture',expires_in:3600});
+   const u=new URL(String(url));if(init.method==='POST')writes++;
+   if(u.pathname.endsWith('/permissions')){assert.match(u.searchParams.get('fields')||'',/view/);assert.match(u.searchParams.get('fields')||'',/inheritedPermissionsDisabled/);return Response.json({permissions:u.pathname.includes(root)?c.permissions:[{type:'user',role:'owner'}]});}
+   return Response.json({id:folder,mimeType:'application/vnd.google-apps.folder',parents:[root],appProperties:{crm_quote:'q'}});
+  }) as typeof fetch});
+  if(c.ok)await d.ensureFolder(folder,'Fixture','q');else await assert.rejects(()=>d.ensureFolder(folder,'Fixture','q'),/công khai/,c.name);
+  assert.equal(writes,0,c.name+': read-only permission verification');
+ }
+});
+
+test('a later page of public permissions still blocks writes after metadata-only permissions',async()=>{
+ let pages=0,writes=0;const d=productionDrive({clientId:'fixture',clientSecret:'fixture',refreshToken:'fixture',folderId:'fixture_root_12345678',fetch:(async(url:any,init:any)=>{
+  if(String(url).includes('oauth2.googleapis.com'))return Response.json({access_token:'fixture',expires_in:3600});
+  if(init.method==='POST')writes++;const u=new URL(String(url));assert(u.pathname.endsWith('/permissions'));pages++;
+  return u.searchParams.has('pageToken')?Response.json({permissions:[{type:'anyone',role:'writer'}]}):Response.json({permissions:[{type:'anyone',role:'reader',view:'metadata',inheritedPermissionsDisabled:true}],nextPageToken:'fixture-next'});
+ }) as typeof fetch});
+ await assert.rejects(()=>d.ensureFolder('fixture_folder_12345678','Fixture','q'),/công khai/);assert.equal(pages,2);assert.equal(writes,0);
+});
