@@ -16,7 +16,20 @@ function ml_sepay_cfg() {
 function ml_sepay_enabled() { $c=ml_sepay_cfg(); return !empty($c['enabled']) && !empty($c['webhook_key']); }
 function ml_sepay_proof($order) { return $order instanceof WC_Order && (string)$order->get_meta('_ml_sepay_verified_tx') !== ''; }
 function ml_sepay_transfer_code($id) { return 'ML' . absint($id); }
-function ml_sepay_is_qr_order($order) { return $order instanceof WC_Order && $order->get_payment_method()==='ml_sepay_qr'; }
+function ml_sepay_is_qr_order($order) { return $order instanceof WC_Order && (string)$order->get_meta('_ml_sepay_version')==='1' && in_array($order->get_payment_method(),array('bacs','ml_sepay_qr'),true); }
+
+// Preserve the existing Minh Long bank-transfer choice and enroll only new orders.
+add_action('woocommerce_checkout_create_order',function($order,$data){
+    if(ml_sepay_enabled() && $order instanceof WC_Order && ($data['payment_method']??'')==='bacs'){
+        $order->update_meta_data('_ml_sepay_version','1');
+        $order->update_meta_data('_ml_sepay_code',ml_sepay_transfer_code($order->get_id()));
+    }
+},5,2);
+add_action('woocommerce_checkout_order_processed',function($order_id,$data,$order){
+    if(!ml_sepay_enabled() || !$order instanceof WC_Order || $order->get_payment_method()!=='bacs')return;
+    $order->update_meta_data('_ml_sepay_version','1');$order->update_meta_data('_ml_sepay_code',ml_sepay_transfer_code($order_id));
+    if(!$order->has_status('on-hold'))$order->set_status('on-hold');$order->save();
+},5,3);
 
 add_filter('woocommerce_payment_gateways', function($g){ $g[]='ML_SePay_QR_Gateway'; return $g; });
 add_action('plugins_loaded', function(){
@@ -58,13 +71,15 @@ function ml_sepay_qr_url($order){
     $c=ml_sepay_cfg(); $amount=(int)round((float)$order->get_total()); $code=ml_sepay_transfer_code($order->get_id());
     return add_query_arg(array('accountName'=>$c['account_name']??'','amount'=>$amount,'addInfo'=>$code), 'https://img.vietqr.io/image/ACB-579268-compact2.png');
 }
-add_action('woocommerce_thankyou_ml_sepay_qr', function($order_id){
+function ml_sepay_thankyou($order_id){
     $o=wc_get_order($order_id); if(!$o || !ml_sepay_is_qr_order($o)) return;
     if(ml_sepay_proof($o)){ echo '<div class="woocommerce-message">Thanh toán thành công. Đơn hàng đã được ghi nhận.</div>'; return; }
     echo '<section class="ml-sepay" style="text-align:center;max-width:560px;margin:24px auto"><h2>Chờ thanh toán</h2><p>Quét QR đúng số tiền và giữ nguyên nội dung chuyển khoản.</p><img alt="QR thanh toán ACB" style="width:min(92vw,360px);height:auto" src="'.esc_url(ml_sepay_qr_url($o)).'"><p><strong>ACB 579268</strong><br>'.esc_html(ml_sepay_cfg()['account_name']??'').'<br>Số tiền: <strong>'.wp_kses_post(wc_price($o->get_total())).'</strong><br>Nội dung: <strong>'.esc_html(ml_sepay_transfer_code($o->get_id())).'</strong></p><p id="ml-sepay-state">Đang chờ ngân hàng xác nhận…</p></section>';
     $url=rest_url('ml-sepay/v1/status/'.$o->get_id()); $key=$o->get_order_key();
     echo '<script>(function(){let n=0,t=setInterval(async()=>{if(++n>120)return clearInterval(t);try{let r=await fetch('.wp_json_encode(add_query_arg('key',$key,$url)).',{credentials:"same-origin"}),j=await r.json();if(j.paid){clearInterval(t);document.getElementById("ml-sepay-state").textContent="Thanh toán thành công";location.reload();}}catch(e){}},5000)})();</script>';
-});
+}
+add_action('woocommerce_thankyou_ml_sepay_qr','ml_sepay_thankyou',20);
+add_action('woocommerce_thankyou_bacs','ml_sepay_thankyou',20);
 
 add_action('rest_api_init', function(){
     register_rest_route('ml-sepay/v1','/status/(?P<id>\d+)',array('methods'=>'GET','permission_callback'=>'__return_true','callback'=>function($r){
