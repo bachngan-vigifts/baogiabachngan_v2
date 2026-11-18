@@ -44,7 +44,9 @@ add_action('plugins_loaded', function(){
 add_filter('woocommerce_webhook_should_deliver', function($ok,$hook,$arg){
     if(!$ok || !is_object($hook) || $hook->get_resource()!=='order') return $ok;
     $order=wc_get_order(is_object($arg)&&method_exists($arg,'get_id')?$arg->get_id():absint($arg));
-    return ml_sepay_is_qr_order($order) && !ml_sepay_proof($order) ? false : $ok;
+    if(!ml_sepay_is_qr_order($order)) return $ok;
+    $released=(bool)$order->get_meta('_ml_sepay_crm_released');
+    return ml_sepay_proof($order) && ($released || doing_action('ml_sepay_release_crm')) ? $ok : false;
 }, 999, 3);
 add_filter('woocommerce_email_enabled_new_order', 'ml_sepay_email_gate', 999, 3);
 add_filter('woocommerce_email_enabled_customer_on_hold_order', 'ml_sepay_email_gate', 999, 3);
@@ -90,6 +92,10 @@ function ml_sepay_webhook($r){
     $content=(string)($d['content']??$d['description']??'');
     if(!preg_match('/(?<![A-Z0-9])ML(\d+)(?![A-Z0-9])/i',$content,$m)) return ml_sepay_review('wrong_code',$d);
     $o=wc_get_order(absint($m[1])); if(!$o || !ml_sepay_is_qr_order($o) || (string)$o->get_meta('_ml_sepay_version')!=='1') return ml_sepay_review('ineligible_order',$d,$o);
+    global $wpdb; $lock='ml_sepay_order_'.$o->get_id();
+    if((int)$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 10)',$lock))!==1) return ml_sepay_review('order_lock_timeout',$d,$o);
+    try {
+    $o=wc_get_order($o->get_id());
     if(in_array($o->get_status(),array('cancelled','refunded','failed'),true)) return ml_sepay_review('late_for_closed_order',$d,$o);
     $tx=sanitize_text_field((string)($d['id']??$d['transactionId']??$d['referenceCode']??'')); if($tx==='') return ml_sepay_review('missing_transaction_id',$d,$o);
     if(ml_sepay_proof($o)) return array('success'=>true,'duplicate'=>true);
@@ -100,8 +106,10 @@ function ml_sepay_webhook($r){
     $o->payment_complete($tx); $o->add_order_note('SePay xác nhận tiền vào ACB 579268; giao dịch '.$tx.'.');
     if(function_exists('as_enqueue_async_action')) as_enqueue_async_action('ml_sepay_release_crm',array($o->get_id()),'ml-sepay'); else wp_schedule_single_event(time()+2,'ml_sepay_release_crm',array($o->get_id()));
     return array('success'=>true,'order_id'=>$o->get_id());
+    } finally { $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)',$lock)); }
 }
 add_action('ml_sepay_release_crm',function($id){
     $o=wc_get_order($id); if(!$o||!ml_sepay_proof($o))return;
-    foreach(array(1,2) as $wid){$key='_ml_sepay_crm_webhook_'.$wid;if($o->get_meta($key))continue;$h=new WC_Webhook($wid);if(!$h->get_id()||$h->get_status()!=='active')continue;$res=$h->deliver($id);if(!is_wp_error($res)&&(int)wp_remote_retrieve_response_code($res)>=200&&(int)wp_remote_retrieve_response_code($res)<300){$o->update_meta_data($key,current_time('mysql',true));$o->save();}else{throw new Exception('CRM webhook '.$wid.' failed; Action Scheduler will retry.');}}
+    foreach(array(1,2) as $wid){$key='_ml_sepay_crm_webhook_'.$wid;if($o->get_meta($key))continue;$h=new WC_Webhook($wid);if(!$h->get_id()||$h->get_status()!=='active')throw new Exception('CRM webhook '.$wid.' is not active.');$res=$h->deliver($id);if(!is_wp_error($res)&&(int)wp_remote_retrieve_response_code($res)>=200&&(int)wp_remote_retrieve_response_code($res)<300){$o->update_meta_data($key,current_time('mysql',true));$o->save();}else{throw new Exception('CRM webhook '.$wid.' failed; Action Scheduler will retry.');}}
+    $o->update_meta_data('_ml_sepay_crm_released',current_time('mysql',true));$o->save();
 },10,1);
