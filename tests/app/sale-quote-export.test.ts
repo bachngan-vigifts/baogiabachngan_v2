@@ -9,14 +9,14 @@ import {after,totals,discounted,manualLineDescription} from '../../src/modules/q
 // @ts-ignore browser exports
 import {saleExportRows,buildSalePdf,buildSaleWorkbook,SALE_EXPORT_COLUMNS} from '../../trial-ui/sale-quote-export.js';
 // @ts-ignore browser module
-import {SALE_LAYOUT_COLUMNS,saleDesignProblem} from '../../trial-ui/sale-quote-layout.js';
+import {SALE_LAYOUT_COLUMNS,saleDesignProblem,saleProductDescription} from '../../trial-ui/sale-quote-layout.js';
 const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 const banner={width:1688,height:212,dataUrl:'data:image/png;base64,'+readFileSync(new URL('../../trial-ui/vigifts-letterhead.png',import.meta.url)).toString('base64')};
 const images=Array.from({length:3},()=>({dataUrl:PNG,width:1,height:1}));
 const root=new URL('../../trial-ui/',import.meta.url);
 const c:any={Uint8Array,ArrayBuffer,TextEncoder,TextDecoder,setTimeout,clearTimeout,Buffer};
 for(const file of ['pdf-lib.min.js','fontkit.umd.min.js','exceljs.min.js','hrc-pdf.js','editable-pdf.js'])runInNewContext(readFileSync(new URL(file,root),'utf8'),c);
-Object.assign(c,{after,discounted,SALE_LAYOUT_COLUMNS,saleDesignProblem,QuoteMath:{after,totals,manualLineDescription}});runInNewContext(readFileSync(new URL('sale-quote-export.js',root),'utf8').replace(/^import .*;\n/gm,'').replaceAll('export ','')+';globalThis.buildPdf=buildSalePdf;globalThis.buildWorkbook=buildSaleWorkbook;',c);
+Object.assign(c,{after,discounted,SALE_LAYOUT_COLUMNS,saleDesignProblem,saleProductDescription,QuoteMath:{after,totals,manualLineDescription}});runInNewContext(readFileSync(new URL('sale-quote-export.js',root),'utf8').replace(/^import .*;\n/gm,'').replaceAll('export ','')+';globalThis.buildPdf=buildSalePdf;globalThis.buildWorkbook=buildSaleWorkbook;',c);
 const assets={PDFLib:c.PDFLib,fontkit:c.fontkit,fonts:['TimesNewRoman.ttf','TimesNewRomanBold.ttf'].map(f=>new Uint8Array(readFileSync(new URL('fonts/'+f,root))))};
 const rows=[{name:'Bình gốm tiếng Việt',qty:100,price:280556,discount:45,discountType:'percent',printFee:8000,suggestedAverage:150000,image:'https://example.invalid/image.png',sku:'SECRET_SKU',unit:'SECRET_UNIT',costPrice:321,commission:{value:123}},
  {name:'Túi giấy',qty:2.5,price:20000,discount:1000,discountType:'amount',printFee:500,taxRate:10,manualDescription:'SECRET_DESCRIPTION'},
@@ -89,4 +89,16 @@ test('ordinary HRC, B2B and Vigifts PDF exports retain their original product co
   assert.match(text,/ĐVT/);assert.match(text,/SECRET_SKU/);assert.doesNotMatch(text,/trung bình/);
   assert.ok(text.includes(type==='HRC'?'BẢNG BÁO GIÁ':'BẢNG CHÀO GIÁ'));
  }
+});
+
+test('Sale product notes reach PDF and XLSX without adding columns, leaking private fields or changing totals',async()=>{
+ const row={...rows[0],designImage:true,sku:'LG-143509',brand:'Thương hiệu gốc',materialDescription:'Thủy tinh',brandDescription:'Lucky Thái Lan',volumeDescription:'255ml',printDescription:'In logo 01 màu 01 vị trí trên sp',packagingDescription:'Hộp carton'};
+ const doc={...state(),template:'sale',rows:[row]},before=JSON.stringify(doc),expected=totals(doc as never);
+ const exported=saleExportRows(doc);assert.match(exported[0].name,/Chất liệu: Thủy tinh/);assert.match(exported[0].name,/Chế tác:/);assert.doesNotMatch(JSON.stringify(exported),/SECRET_|costPrice/);
+ const book=c.buildWorkbook(doc,c.ExcelJS,{images:[images[0]]}),bytes=await book.xlsx.writeBuffer(),loaded=new c.ExcelJS.Workbook();await loaded.xlsx.load(bytes);
+ const sheet=loaded.worksheets[0];assert.equal(sheet.columnCount,8);assert.equal(sheet.getCell('C2').value,exported[0].name);assert.equal(sheet.getCell('H2').value,expected.subtotal);assert(sheet.getRow(2).height>=66);
+ const items=await pdfText(await c.buildPdf(doc,assets,{images:[images[0]],banner}));const text=items.map(x=>x.str).join(' ');
+ for(const value of ['Chất liệu:','Thủy tinh','Thương hiệu:','Lucky Thái Lan','Mã sản phẩm:','LG-143509','Thể tích:','255ml','Chế tác:','In logo 01 màu','Đóng gói:','Hộp carton'])assert(text.includes(value),value);
+ assert.doesNotMatch(text,/SECRET_|costPrice/);assert.equal(JSON.stringify(doc),before);
+ const details=items.filter(x=>/Chất liệu:|Thương hiệu:|Mã sản phẩm:|Thể tích:|Chế tác:|Đóng gói:/.test(x.str));assert.equal(new Set(details.map(x=>x.transform[5])).size,6,'PDF retains separate description lines');
 });

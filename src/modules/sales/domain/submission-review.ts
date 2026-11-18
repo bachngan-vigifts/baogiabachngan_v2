@@ -41,5 +41,10 @@ export function readSubmissionRecord(value:unknown):SubmissionRecord|null {
 export function submissionPaymentLabel(review:Pick<SubmissionReview,'paymentMethod'|'paymentOther'>){return review.paymentMethod==='other'?review.paymentOther:SUBMISSION_PAYMENT_METHODS[review.paymentMethod];}
 /** Stable business facts: internal cost edits and regenerated row IDs do not invalidate a staff review. */
 export function submissionQuoteBasis(doc:Record<string,any>){
- return JSON.stringify({type:doc.type,deliveryDate:doc.deliveryDate||doc.delivery_date||'',customer:doc.customer,customerAddress:doc.customerAddress,notes:doc.notes||'',paymentTerms:doc.paymentTerms||null,rows:(doc.rows||[]).map((r:Record<string,any>)=>Object.fromEntries(['sku','name','unit','qty','price','discount','discountType','printFee','printDescription','taxRate','manualLine','manualDescription','designImageKey'].map(k=>[k,r[k]??null])))});
+ const basis={type:doc.type,deliveryDate:doc.deliveryDate||doc.delivery_date||'',customer:doc.customer,customerAddress:doc.customerAddress,notes:doc.notes||'',paymentTerms:doc.paymentTerms||null,rows:(doc.rows||[]).map((r:Record<string,any>)=>Object.fromEntries(['sku','name','unit','qty','price','discount','discountType','printFee','printDescription','taxRate','manualLine','manualDescription','designImageKey'].map(k=>[k,r[k]??null])))};
+ // New Sale specifications are customer-visible facts. Retain legacy fingerprints when those fields are absent.
+ if(doc.template==='sale'&&(doc.rows||[]).some((r:Record<string,any>)=>['materialDescription','brandDescription','volumeDescription'].some(k=>r[k]!==undefined))){
+  return JSON.stringify({...basis,saleSpecifications:(doc.rows||[]).map((r:Record<string,any>)=>[r.materialDescription??null,r.brandDescription??r.brand??null,r.volumeDescription??null,r.packagingDescription??null,r.bundleContents??null])});
+ }
+ return JSON.stringify(basis);
 }
