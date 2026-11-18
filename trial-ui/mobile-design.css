@@ -507,3 +507,60 @@
  body.chat-fab-tucked .chat-launcher { transform:translateY(calc(100% + 120px));opacity:0;pointer-events:none; }
  body:has(.chat-launcher:not([hidden])) .main::after { height:88px; }
 }
+
+/* P2/P3 rollout on the current workflow: labels follow the actual rendered columns. */
+.crm-list-card > td.crm-card-details { display:none!important; }
+@media screen and (max-width:850px){
+ tr[data-mobile-card-details] > td { grid-row:auto!important;order:6; }
+ tr[data-mobile-card-details] > :is(.crm-card-meta,.crm-card-title,.crm-card-note,.crm-card-owner,.crm-card-amount,.crm-card-balance,.crm-card-pending,.crm-card-difference,.crm-card-held,.crm-card-incoming) { grid-column:1/-1; }
+ tr[data-mobile-card-details] > .crm-card-meta { order:1; }
+ tr[data-mobile-card-details] > .crm-card-title { order:2; }
+ tr[data-mobile-card-details] > .crm-card-note { order:3; }
+ tr[data-mobile-card-details] > .crm-card-amount { order:4; }
+ tr[data-mobile-card-details] > :is(.crm-card-status,.crm-card-substatus) { order:5; }
+ tr[data-mobile-card-details] > :is(.crm-card-in,.crm-card-ledger,.crm-card-selection) { grid-column:1; }
+ tr[data-mobile-card-details] > :is(.crm-card-out,.crm-card-sapo,.crm-card-quantity) { grid-column:2; }
+ tr[data-mobile-card-details] > :is(.crm-card-balance,.crm-card-pending,.crm-card-difference) { order:7;border-top:1px solid var(--line);padding-top:8px!important; }
+ tr[data-mobile-card-details] > :is(.crm-card-actions,.crm-card-details) { order:8;grid-column:1/-1; }
+ tr[data-mobile-card-details] > td.crm-card-details { display:block!important; }
+ .crm-card-details button { min-height:44px;max-width:100%;white-space:normal; }
+ tr.crm-card-expanded[data-mobile-card-details] > .crm-card-extra { display:block!important;grid-column:1/-1;order:9;overflow-wrap:anywhere; }
+ tr[data-mobile-card-details] > td[data-label]:not(.crm-card-title,.crm-card-meta,.crm-card-note,.crm-card-actions,.crm-card-selection,.crm-card-details)::before { display:block!important;content:attr(data-label);color:var(--muted);font-size:12px;font-weight:400; }
+ tr[data-mobile-card-details] .crm-card-title small { display:block!important; }
+ .crm-card-quantity input { width:100%;min-width:0; }
+ .crm-card-selection { display:flex;align-items:center;min-height:44px; }
+ .crm-card-pending { white-space:normal;overflow-wrap:anywhere; }
+ .incoming-details:not([hidden]) { display:block;padding:12px;border:1px solid var(--line);border-radius:12px;margin-bottom:12px; }
+ .incoming-details:not([hidden]) > td { display:block;width:auto!important; }
+ .incoming-details > td::before { display:none!important; }
+ .incoming-selection { flex-wrap:wrap; }
+ .incoming-selection > div { flex-basis:100%; }
+ .incoming-selection > .btn.primary { min-height:44px;max-width:100%;white-space:normal; }
+ .incoming-kpis,.cash-stats { display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+ #view-products .prod-cell { min-width:0;width:100%;gap:8px; }
+ #view-products .prod-cell img { width:52px;height:52px;object-fit:contain;flex:none; }
+ #view-products .prod-cell > span { min-width:0; }
+ #view-products .selection-bar { flex-wrap:wrap; }
+ .ledger-total { display:flex!important;flex-wrap:wrap;gap:8px;padding:12px; }
+ .ledger-total td { display:block!important;flex:1;min-width:0; }
+ .ledger-total td:first-child { flex-basis:100%; }
+ .ledger-total td.ledger-empty { display:none!important; }
+ :is(#view-permissions,#view-payroll) .table-wrap,#view-permissions .perm-wrap { overflow:auto!important;max-width:100%;overscroll-behavior-x:contain; }
+ #view-permissions .perm-table { width:max-content;min-width:100%; }
+ #view-payroll .pr-wide .data-table { display:table!important;width:max-content;min-width:100%; }
+ #view-payroll .pr-wide thead { display:table-header-group!important; }
+ #view-payroll .pr-wide tbody { display:table-row-group!important; }
+ #view-payroll .pr-wide :is(tr,th,td) { display:revert!important;white-space:nowrap; }
+ #view-payroll .pr-wide td::before { display:none!important; }
+ .flow-board { max-width:100%;overflow-x:auto;overscroll-behavior-x:contain; }
+ .flow-panel { width:100%;max-width:540px;border-radius:20px 20px 0 0;top:auto;max-height:88dvh; }
+}
+@media screen and (max-width:850px){
+ #view-inventory .table-wrap:not(:has(.crm-list-card)) { overflow:auto; }
+ .crm-filter-fields #deliveries-clear { display:none; }
+}
+@media screen and (max-width:850px){
+ :is(#view-products,#view-staff,#view-inventory,#view-stock-moves,#view-transfers,#view-receivables,#view-cashbook,#view-suppliers) .page-head { flex-wrap:wrap;align-items:flex-start; }
+ :is(#view-products,#view-staff,#view-inventory,#view-stock-moves,#view-transfers,#view-receivables,#view-cashbook,#view-suppliers) .page-head > div:first-child { flex:1 1 100%;min-width:0; }
+ #product-list > tr[data-mobile-card-details] > .crm-card-selection { position:static!important;align-self:center; }
+}
