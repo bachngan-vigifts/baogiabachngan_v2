@@ -73,6 +73,7 @@ function ml_sepay_qr_url($order){
 }
 function ml_sepay_thankyou($order_id){
     $o=wc_get_order($order_id); if(!$o || !ml_sepay_is_qr_order($o)) return;
+    echo '<style>.vigifts-bank-box{display:none!important}</style>';
     if(ml_sepay_proof($o)){ echo '<div class="woocommerce-message">Thanh toán thành công. Đơn hàng đã được ghi nhận.</div>'; return; }
     echo '<section class="ml-sepay" style="text-align:center;max-width:560px;margin:24px auto"><h2>Chờ thanh toán</h2><p>Quét QR đúng số tiền và giữ nguyên nội dung chuyển khoản.</p><img alt="QR thanh toán ACB" style="width:min(92vw,360px);height:auto" src="'.esc_url(ml_sepay_qr_url($o)).'"><p><strong>ACB 579268</strong><br>'.esc_html(ml_sepay_cfg()['account_name']??'').'<br>Số tiền: <strong>'.wp_kses_post(wc_price($o->get_total())).'</strong><br>Nội dung: <strong>'.esc_html(ml_sepay_transfer_code($o->get_id())).'</strong></p><p id="ml-sepay-state">Đang chờ ngân hàng xác nhận…</p></section>';
     $url=rest_url('ml-sepay/v1/status/'.$o->get_id()); $key=$o->get_order_key();
