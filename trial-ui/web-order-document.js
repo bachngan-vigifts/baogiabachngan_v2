@@ -80,7 +80,7 @@ export function initWebOrderDocument({root,api,toast,onPrint,go,onChanged}){
   if(d.editBlocked)root.append(el('p','muted',d.editBlocked));
   const status=el('div','card');status.append(el('p','',stockLabels[o.stockStatus]||'Chưa có thông tin kho'));
   if(o.stockNote)status.append(el('p','danger-text',o.stockNote));
-  status.append(el('p','','Thanh toán: '+(o.paid==null?'Chưa có đủ dữ liệu đối chiếu':o.paid>=o.total?'Đã ghi nhận thanh toán':'Còn phải thu '+money(o.total-o.paid,o.currency))));
+  status.append(el('p','','Thanh toán: '+(o.paymentStatusLabel||(o.paid==null?'Chưa có đủ dữ liệu đối chiếu':o.paid>=o.total?'Đã ghi nhận thanh toán':'Còn phải thu '+money(o.total-o.paid,o.currency)))));
   if(o.ghnOrderCode){const a=el('a','btn secondary','Mở GHN · '+o.ghnOrderCode);a.href='https://khachhang.ghn.vn/order/detail?order_code='+encodeURIComponent(o.ghnOrderCode);a.target='_blank';a.rel='noopener noreferrer';status.append(a);}
   root.append(status,paper(d));
   if(d.originalFinancials){const old=el('details','card');old.append(el('summary','','Chi tiết tiền website trước khi sửa'),webOrderFinancialSummary(d.originalFinancials,o.currency));root.append(old);}

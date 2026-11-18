@@ -36,3 +36,20 @@ for(const direct of [false,true])for(const code of ['ghn_handler_unavailable','a
  assert.deepEqual([province.value,district.value,ward.value],['211','1929','490707']);
  if(direct){assert.equal(calls[0].body.codAmount,90000);assert.equal(calls[0].body.ghnWeight,1000);}
 });
+
+for(const direct of [true,false])test(`Unreconciled website payment ${direct?'direct':'bridge'}: review required; never default unknown COD to zero`,async()=>{
+ const form=new Node('form'),dlg=new Node('dialog'),calls:any[]=[];
+ const context:any={el:(t:string,c='',s='')=>new Node(t,c,s),money:String,
+  button:(text:string,cls:string,click:Function)=>{const b=new Node('button',cls,text);b.events.click=click;return b;},
+  field:(_label:string,type:string,value:string)=>{const input=new Node('input');Object.assign(input,{type,value});const box=new Node('label');box.append(input);return{input,box};},
+  formModal:()=>({form,dlg,show(){},lock(){},close(){throw Error('keep test dialog open');}}),
+  ghnLocationFields:()=>({province:{select:new Node('select'),box:new Node('label')},district:{select:new Node('select'),box:new Node('label')},ward:{select:new Node('select'),box:new Node('label')},retry:new Node('button'),prefill:async()=>{},complete:()=>true,chosen:()=>'',fullAddress:(s:string)=>s}),
+  run:(fn:Function)=>fn(),api:async(path:string,method:string,body:any)=>{calls.push(body);throw Error('test end');}};
+ const src=readFileSync(new URL('../../trial-ui/pos.js',import.meta.url),'utf8');runInNewContext(src.slice(src.indexOf('  function showGhnAddress('),src.indexOf('  let printingTemporary'))+';globalThis.open=showGhnAddress;',context);
+ context.open({id:'website-claim',orderNo:'TEST',customerName:'Test',total:100000,ghnDirect:direct,paymentReviewRequired:true,suggestedCod:null,address:'Test address'});
+ const inputs=all(form).filter(n=>n.tag==='input'),cod=inputs.find(n=>n.type==='number')!,review=inputs.find(n=>n.type==='checkbox')!;
+ const submit=()=>form.events.submit!({preventDefault(){}});
+ if(direct)assert.equal(cod.value,'');await submit();assert.equal(calls.length,0);assert.match(all(form).find(n=>n.className==='error pos-step-error')!.textContent,/Đối chiếu/);
+ Object.assign(review,{checked:true});if(direct){await submit();assert.equal(calls.length,0);cod.value='0';}
+ await submit();assert.equal(calls.length,0,'review screen before external request');await submit();assert.equal(calls.length,1);assert.equal(calls[0].paymentReviewed,true);if(direct)assert.equal(calls[0].codAmount,0);
+});

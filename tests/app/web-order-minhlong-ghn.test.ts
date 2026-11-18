@@ -79,9 +79,11 @@ test('Web Minh Long: xác nhận tạo vận đơn GHN Minh Long (COD, khối l�
 test('Web Minh Long: huỷ đơn huỷ vận đơn GHN trước – GHN từ chối thì giữ đơn; webhook GHN chỉ nhận shop Minh Long', async () => {
   const { f, order, ghn, respond, act } = await minhLong();
   const o = await order(502, { date_paid_gmt: '2026-10-23T08:00:00' });
-  assert.equal((await f.call('/pos/orders?registerId=' + f.registerId, f.mgr)).data.orders.find((x: any) => x.id === o.id).suggestedCod, 0, 'đã thanh toán online: gợi ý COD 0');
+  assert.equal((await f.call('/pos/orders?registerId=' + f.registerId, f.mgr)).data.orders.find((x: any) => x.id === o.id).suggestedCod, null, 'ngày Woo chưa đối soát: không tự suy ra COD');
   respond.next = () => Response.json({ code: 200, data: { order_code: 'GMLX02', total_fee: 30000 } });
-  assert.equal((await act(o.id, { action: 'confirm', ...address })).status, 200);
+  assert.equal((await act(o.id, { action: 'confirm', ...address })).data.code,'WEB_PAYMENT_REVIEW_REQUIRED');
+  assert.equal(ghn.length,0);
+  assert.equal((await act(o.id, { action: 'confirm', ...address,paymentReviewed:true,codAmount:0 })).status, 200);
   assert.equal(ghn.at(-1)!.body.cod_amount, 0);
 
   f.env.ghnWebhookToken = 'w'.repeat(40);
@@ -148,4 +150,18 @@ test('Web Minh Long: tạo vận đơn mất phản hồi / trùng mã đơn →
   respond.next = url => url.endsWith('/create') ? Response.json({ code: 400, code_message_value: 'Địa chỉ không hợp lệ' }, { status: 400 }) : Response.json({ code: 400, message: 'not found' }, { status: 400 });
   const bad = await act(o2.id, { action: 'confirm', ...address, codAmount: 300000 });
   assert.equal(bad.status, 502); assert.match(bad.data.error, /Địa chỉ không hợp lệ/);
+});
+
+test('Website-only paid claim: require review and explicit COD; preserve source money, existing GHN replay stays idempotent',async()=>{
+ const {f,order,ghn,respond,act}=await minhLong();
+ const o=await order(509,{date_paid_gmt:'2026-11-18T04:33:54'});
+ for(const codAmount of [undefined,null,'','  ']){
+  const r=await act(o.id,{action:'confirm',...address,paymentReviewed:true,codAmount});assert.equal(r.data.code,'WEB_PAYMENT_REVIEW_REQUIRED');
+ }
+ assert.equal((await act(o.id,{action:'confirm',...address,codAmount:0,paymentReviewed:false})).data.code,'WEB_PAYMENT_REVIEW_REQUIRED');assert.equal(ghn.length,0);
+ respond.next=()=>Response.json({code:200,data:{order_code:'REVIEW509',total_fee:30000}});
+ const made=await act(o.id,{action:'confirm',...address,codAmount:0,paymentReviewed:true});assert.equal(made.status,200,JSON.stringify(made.data));assert.equal(ghn.length,1);assert.equal(ghn[0]!.body.cod_amount,0);
+ const replay=await act(o.id,{action:'confirm',...address});assert.equal(replay.status,200,JSON.stringify(replay.data));assert.equal(ghn.length,1);
+ const [stored]=await f.db.select().from(webStoreOrders).where(eq(webStoreOrders.id,o.id));assert.equal(stored!.financialSnapshot,o.financialSnapshot);assert.equal(stored!.total,o.total);
+ const b=(await f.call('/pos/orders?registerId='+f.registerId,f.mgr)).data.orders.find((x:any)=>x.id===o.id);assert.equal(b.paymentStatus,'unknown','shipping review is not a financial receipt');
 });

@@ -225,10 +225,12 @@ export function renderWebOrderDetail({
   const debt =
     o.status === 'cancelled'
       ? 'Đơn đã huỷ / hoàn.'
-      : o.paid == null
+      : o.paymentStatusLabel
+        ? o.paymentStatusLabel
+        : o.paid == null
         ? 'Chưa có đủ dữ liệu đối chiếu thanh toán.'
         : o.paid >= o.total
-          ? 'Đã ghi nhận thanh toán đủ theo website.'
+          ? 'Đã đối soát thanh toán đủ.'
           : 'Còn phải thu ' + money(o.total - o.paid, o.currency);
   $('#order-debt').replaceChildren(el('p', debt));
   $('#order-payments').replaceChildren(el('p', debt));
