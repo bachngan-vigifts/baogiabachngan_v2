@@ -8,6 +8,7 @@ $ok=['transferType'=>'in','gateway'=>'ACB','accountNumber'=>'579268','transferAm
 assert_same(valid($ok,100000),true,'valid'); foreach(['accountNumber'=>'159063909','transferAmount'=>99999,'content'=>'DH123','gateway'=>'VCB','transferType'=>'out'] as $k=>$v){$x=$ok;$x[$k]=$v;assert_same(valid($x,100000),false,"reject $k");}
 $plugin=file_get_contents(__DIR__.'/ml-sepay-qr.php');
 assert_same(str_contains($plugin,"unset(\$gateways['bacs'])"),true,'BACS removed from checkout');
+assert_same(str_contains($plugin,"array('ml_sepay_qr'=>\$sepay)+\$gateways"),true,'SePay appears first');
 assert_same(str_contains($plugin,"woocommerce_bacs_settings"),true,'BACS disabled in stored configuration');
 assert_same(str_contains($plugin,"?'ml_sepay_qr':\$gateway"),true,'SePay is default gateway');
 assert_same(str_contains($plugin,'SePay – Chuyển khoản bằng QR'),true,'SePay checkout title');

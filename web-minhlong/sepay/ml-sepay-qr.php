@@ -40,7 +40,13 @@ add_action('wp_loaded',function(){
     if(($settings['enabled']??'no')!=='no'){$settings['enabled']='no';update_option('woocommerce_bacs_settings',$settings);}
 },20);
 add_filter('woocommerce_available_payment_gateways',function($gateways){
-    if(ml_sepay_enabled())unset($gateways['bacs']);
+    if(ml_sepay_enabled()){
+        unset($gateways['bacs']);
+        if(isset($gateways['ml_sepay_qr'])){
+            $sepay=$gateways['ml_sepay_qr'];unset($gateways['ml_sepay_qr']);
+            $gateways=array('ml_sepay_qr'=>$sepay)+$gateways;
+        }
+    }
     return $gateways;
 },999);
 add_filter('woocommerce_default_gateway',function($gateway){return ml_sepay_enabled()?'ml_sepay_qr':$gateway;},999);
