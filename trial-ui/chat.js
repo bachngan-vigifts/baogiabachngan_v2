@@ -302,6 +302,7 @@ export function initChat({ api, toast, userId, isManager, compress }) {
   }
   function hide() { root.hidden = true; launcher.classList.remove('active'); stopThread(); badge(); }
   launcher.addEventListener('click', () => (root.hidden ? show() : hide()));
+  q('#chat-ai-shortcut').addEventListener('click', hide);
   for (const id of ['chat-close', 'chat-close-2']) q('#' + id).addEventListener('click', hide);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !root.hidden && !document.querySelector('dialog[open]')) hide(); });
   q('#chat-form').addEventListener('submit', e => { e.preventDefault(); send(); });
