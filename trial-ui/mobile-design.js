@@ -227,11 +227,11 @@ export function installMobileDesign(profiles){
  }
  function scan(){
   frame=0;
-  if(document.activeElement?.matches('input,select,textarea')){for(const p of profiles){const root=document.querySelector(p.root);if(root&&p.card)annotateCards(root,p);}return;}
+  if(document.activeElement?.matches('input,select,textarea')){for(const p of profiles)for(const root of document.querySelectorAll(p.root))if(p.card)annotateCards(root,p);return;}
   if(location.hash.startsWith('#/pos')){if(!nav.hidden)nav.hidden=true;document.body.classList.remove('crm-form-mode');return;}
   const ready=document.querySelector('#workspace')&&!document.querySelector('#workspace').hidden;
   nav.hidden=!ready;if(!ready){return;}
-  for(const p of profiles){const root=document.querySelector(p.root);if(!root)continue;if(p.filters||p.card)root.classList.add('crm-designed-page');if(p.filters)createFilter(root,p);if(p.card)annotateCards(root,p);
+  for(const p of profiles)for(const root of document.querySelectorAll(p.root)){if(p.filters||p.card)root.classList.add('crm-designed-page');if(p.filters)createFilter(root,p);if(p.card)annotateCards(root,p);
    for(const b of root.querySelectorAll(':scope > .chips .chip.active,#type-filter .chip.active')){if(root.dataset.resultCount===undefined)continue;let count=b.querySelector('.crm-chip-count');if(!count){count=make('span','crm-chip-count');b.append(count);}setText(count,' '+Number(root.dataset.resultCount).toLocaleString('vi-VN'));}
    if(root.dataset.loadState==='error'){let retry=root.querySelector('.crm-list-retry');if(!retry){retry=make('button','btn secondary crm-list-retry','Thử lại');retry.type='button';retry.onclick=()=>window.dispatchEvent(new CustomEvent('crm-reload-current',{detail:{view:root.id.replace('view-','')}}));(root.querySelector('.empty')||root).append(retry);}retry.hidden=false;}else{const retry=root.querySelector('.crm-list-retry');if(retry&&!retry.hidden)retry.hidden=true;}
   }

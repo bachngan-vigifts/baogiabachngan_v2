@@ -63,7 +63,7 @@ async function arrive(page,hash,selector){await page.goto(origin+'/index.html'+h
 try{for(const width of (process.env.MOBILE_DESIGN_WIDTHS||'360,390,430,768,1280').split(',').map(Number)){
  const context=await browser.newContext({viewport:{width,height:900},locale:'vi-VN'});await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
  await context.addInitScript(({token,user})=>{localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));localStorage.setItem('inventoryTab','compare');},{token,user});
- const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const page=await context.newPage(),errors=[];await page.addInitScript(()=>document.addEventListener('DOMContentLoaded',()=>{const panel=document.createElement('section');panel.className='purchase-incoming';panel.hidden=true;document.body.prepend(panel);}));page.on('pageerror',e=>errors.push(e.message));
  await arrive(page,'#/suppliers','#view-suppliers tr.clickable');
  const before=writes.length;
  for(const [hash,selector,name]of [
