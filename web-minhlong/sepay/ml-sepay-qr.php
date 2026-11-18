@@ -73,9 +73,18 @@ function ml_sepay_qr_url($order){
 }
 function ml_sepay_thankyou($order_id){
     $o=wc_get_order($order_id); if(!$o || !ml_sepay_is_qr_order($o)) return;
-    echo '<style>.vigifts-bank-box{display:none!important}</style>';
+    echo '<style>
+    .vigifts-bank-box{display:none!important}
+    .ml-sepay{max-width:640px;margin:24px auto 32px;border:1px solid #dfe8e2;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 8px 28px rgba(20,70,45,.08);text-align:center;color:#151515}
+    .ml-sepay__head{position:relative;padding:18px 58px;background:#e8f7ee;color:#17633c;text-align:left;font-size:24px;font-weight:700;line-height:1.25}
+    .ml-sepay__close{position:absolute;right:14px;top:10px;width:42px;height:42px;border:1px solid #d3ddd7;border-radius:12px;background:#fff;color:#54625a;font-size:25px;line-height:38px;padding:0;cursor:pointer}
+    .ml-sepay__body{padding:24px 26px 22px}.ml-sepay__label{margin:0;color:#7b817e;font-size:17px}.ml-sepay__amount{margin:2px 0 20px;color:#087a49;font-size:31px;font-weight:800;line-height:1.2}
+    .ml-sepay__qr{display:block;width:min(100%,340px);height:auto;margin:0 auto 18px;border:1px solid #e2e6e3;border-radius:15px}
+    .ml-sepay__content{margin:0 0 14px;font-size:20px;font-weight:700;overflow-wrap:anywhere}.ml-sepay__state{display:inline-block;margin:0;padding:8px 16px;border-radius:999px;background:#fff7d9;color:#8b681d;font-weight:600}
+    @media(max-width:549px){.ml-sepay{margin:16px 0 24px;border-radius:12px}.ml-sepay__head{padding:15px 54px 15px 16px;font-size:19px}.ml-sepay__close{right:10px;top:7px;width:38px;height:38px}.ml-sepay__body{padding:20px 14px}.ml-sepay__amount{font-size:27px}.ml-sepay__content{font-size:17px}.ml-sepay__qr{width:min(100%,310px)}}
+    </style>';
     if(ml_sepay_proof($o)){ echo '<div class="woocommerce-message">Thanh toán thành công. Đơn hàng đã được ghi nhận.</div>'; return; }
-    echo '<section class="ml-sepay" style="text-align:center;max-width:560px;margin:24px auto"><h2>Chờ thanh toán</h2><p>Quét QR đúng số tiền và giữ nguyên nội dung chuyển khoản.</p><img alt="QR thanh toán ACB" style="width:min(92vw,360px);height:auto" src="'.esc_url(ml_sepay_qr_url($o)).'"><p><strong>ACB 579268</strong><br>'.esc_html(ml_sepay_cfg()['account_name']??'').'<br>Số tiền: <strong>'.wp_kses_post(wc_price($o->get_total())).'</strong><br>Nội dung: <strong>'.esc_html(ml_sepay_transfer_code($o->get_id())).'</strong></p><p id="ml-sepay-state">Đang chờ ngân hàng xác nhận…</p></section>';
+    echo '<section class="ml-sepay"><div class="ml-sepay__head">VietQR – chờ xác nhận thu<button class="ml-sepay__close" type="button" aria-label="Đóng" onclick="this.closest(\'.ml-sepay\').style.display=\'none\'">×</button></div><div class="ml-sepay__body"><p class="ml-sepay__label">Số tiền chuyển khoản</p><p class="ml-sepay__amount">'.wp_kses_post(wc_price($o->get_total())).'</p><img class="ml-sepay__qr" alt="QR thanh toán ACB 579268" src="'.esc_url(ml_sepay_qr_url($o)).'"><p class="ml-sepay__content">Nội dung: '.esc_html(ml_sepay_transfer_code($o->get_id())).'</p><p class="ml-sepay__state" id="ml-sepay-state">Đang chờ SePay xác nhận tiền vào…</p></div></section>';
     $url=rest_url('ml-sepay/v1/status/'.$o->get_id()); $key=$o->get_order_key();
     echo '<script>(function(){let n=0,t=setInterval(async()=>{if(++n>120)return clearInterval(t);try{let r=await fetch('.wp_json_encode(add_query_arg('key',$key,$url)).',{credentials:"same-origin"}),j=await r.json();if(j.paid){clearInterval(t);document.getElementById("ml-sepay-state").textContent="Thanh toán thành công";location.reload();}}catch(e){}},5000)})();</script>';
 }
