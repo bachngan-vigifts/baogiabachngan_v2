@@ -59,7 +59,7 @@ test('board API: more than 500 orders, receipts/voids, staff, dates, sources and
 
 });
 
-test('web collection uses explicit source timestamp; status/method never imply paid; status-only updates preserve evidence',async()=>{
+test('website paid timestamp stays pending reconciliation; status-only updates preserve the source claim',async()=>{
   const f=await setup();
     const reg=await f.call('/pos/registers',f.mgr,'POST',{name:'Showroom Gốm Sứ Minh Long Cần Thơ',warehouseId:'pos-wh',pricePolicyId:'retail-vat',secondPricePolicyId:'retail',taxRate:8});
     const sync=(body:unknown)=>f.call('/integrations/woocommerce/minhlong/order?token=test-ml-token','','POST',body);
@@ -71,11 +71,12 @@ test('web collection uses explicit source timestamp; status/method never imply p
     assert.equal((await sync({...order,date_paid_gmt:null})).status,200);
     assert.equal((await board('payment=debt')).data.totals[0].outstanding,100);
     assert.equal((await sync({...order,date_paid:'2026-10-21T10:00:00',shipping_total:'10'})).status,200);
-    assert.equal((await board('payment=paid')).data.totals[0].paid,100);
+    assert.equal((await board('payment=unknown')).data.totals[0].paid,0);
+    assert.equal((await board('payment=unknown')).data.orders[0].paymentEvidence,'website');
     assert.equal((await sync({id:901,status:'completed',shipping_total:'10'})).status,200);
-    assert.equal((await board('payment=paid')).data.orders.length,1);
+    assert.equal((await board('payment=unknown')).data.orders.length,1);
     assert.equal((await sync({id:901,status:'completed'})).status,200);
-    assert.equal((await board('payment=paid')).data.orders.length,1);
+    assert.equal((await board('payment=unknown')).data.orders.length,1);
     assert.equal((await board('ownerId=emp')).data.orders.length,0);
 });
 
