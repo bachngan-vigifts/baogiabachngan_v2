@@ -14,12 +14,14 @@ export async function onRequestPost({ request, params, env }) {
   if (!/^Bearer [0-9a-f-]{36}$/i.test(authorization) || !/^application\/json(?:;|$)/i.test(contentType)) {
     return Response.json({ error: 'Invalid callback request.' }, { status: 401 });
   }
+  const body = await request.arrayBuffer();
+  if (body.byteLength > 40_000) return Response.json({ error: 'Callback body is too large.' }, { status: 413 });
 
   const upstreamFetch = env?.AI_CHAT_UPSTREAM_FETCH || fetch;
   const response = await upstreamFetch(`${API}/integrations/ai-chat/${encodeURIComponent(id)}/result`, {
     method: 'POST',
     headers: { authorization, 'content-type': 'application/json' },
-    body: request.body,
+    body,
     redirect: 'manual',
   });
   return new Response(response.body, {
