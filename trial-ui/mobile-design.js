@@ -113,7 +113,7 @@ export function installMobileDesign(profiles){
   const body=make('div','crm-filter-fields'),hint=make('p','muted small','Lọc chi tiết chỉ áp dụng khi bấm Xem. Xóa lọc chưa thay đổi danh sách. Tìm kiếm và trạng thái ngoài bảng lọc áp dụng ngay.'),foot=make('footer','crm-filter-foot'),clear=make('button','btn secondary','Xóa lọc'),apply=make('button','btn primary','Xem kết quả');clear.type=apply.type='button';clear.setAttribute('data-mobile-navigation','');body.append(hint);foot.append(clear,apply);group.append(head,body,foot);
   const trigger=make('button','btn secondary crm-filter-trigger','Lọc');trigger.type='button';trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-label','Lọc '+profile.title);
   const slots=new Map();for(const n of parts){const slot=document.createComment('filter position');n.before(slot);slots.set(n,slot);n.classList.add('crm-filter-collapsed');}
-  (root.querySelector('.page-head')||source).append(trigger);source.append(group);
+  (root.querySelector('.page-head,.cash-head,.dash-head')||source).append(trigger);source.append(group);
   const controls=()=>parts.flatMap(n=>[...(n.matches('input,select,textarea')?[n]:[]),...n.querySelectorAll('input,select,textarea')]);
   const chips=()=>parts.flatMap(n=>[...n.querySelectorAll('.chip,.task-seg button')]);
   const capture=()=>new Map([...controls(),...chips()].map(n=>[n,{value:n.value,checked:n.checked,active:n.classList.contains('active'),pressed:n.getAttribute('aria-pressed'),selected:n.getAttribute('aria-selected')}]));
@@ -128,6 +128,7 @@ export function installMobileDesign(profiles){
  function syncFilters(){
   for(const [source,r]of filters){
    if(!source.isConnected){r.trigger.remove();r.group.remove();filters.delete(source);continue;}
+   const unavailable=!visible(source);if(r.trigger.hidden!==unavailable)r.trigger.hidden=unavailable;
    if(!media.matches){if(r.group.matches(':popover-open'))r.group.hidePopover();for(const n of r.parts){const slot=r.slots.get(n);if(slot?.isConnected&&n.parentElement===r.body)slot.after(n);n.classList.remove('crm-filter-collapsed');}}
    else if(!r.group.matches(':popover-open'))for(const n of r.parts)if(!n.classList.contains('crm-filter-collapsed'))n.classList.add('crm-filter-collapsed');
    const count=r.controls().filter(n=>!['button','submit','hidden'].includes(n.type)&&((n.type==='checkbox'||n.type==='radio')?n.checked!==n.defaultChecked:n.value!==(n.tagName==='SELECT'?(n.options[0]?.value||''):''))).length;
@@ -144,12 +145,20 @@ export function installMobileDesign(profiles){
  function annotateCards(root,p){
   for(const row of root.querySelectorAll(p.rows||'tbody tr')){
    if(cardRows.has(row)||row.querySelector('.skeleton'))continue;
-   const cells=[...row.children].filter(n=>n.tagName==='TD');if(cells.length<2)continue;
+   const cells=[...row.children].filter(n=>n.tagName==='TD');if(cells.length<2||cells.some(n=>n.colSpan>1))continue;
+   const layout=typeof p.card==='function'?p.card(cells):p.card;if(!layout)continue;
    row.classList.add('crm-list-card');
    cells.forEach(n=>n.classList.add('crm-card-extra'));
-   for(const [kind,index]of Object.entries(p.card||{})){const n=cells[index];if(n){n.classList.remove('crm-card-extra');n.classList.add('crm-card-'+kind);}}
+   for(const [kind,index]of Object.entries(layout)){const n=cells[index];if(n){n.classList.remove('crm-card-extra');n.classList.add('crm-card-'+kind);}}
    // Ô đã có vai trò trong thẻ (vd. nút "Xem đơn hàng" ở ô trạng thái báo giá) giữ chỗ của nó, không dồn vào cột thao tác.
    for(const action of cells.filter(n=>n.matches('.row-actions,.actions-cell')||(n.classList.contains('crm-card-extra')&&n.querySelector('button,a.btn')))){action.classList.remove('crm-card-extra');action.classList.add('crm-card-actions');}
+   if(p.details){
+    row.dataset.mobileCardDetails='';
+    const headers=row.closest('table')?.tHead?.rows[0]?.cells||[];
+    cells.forEach((cell,i)=>{if(!cell.dataset.label)cell.dataset.label=headers[i]?.textContent.trim()||'';});
+    const extras=cells.filter(cell=>cell.classList.contains('crm-card-extra'));
+    if(extras.length){const host=make('td','crm-card-details'),button=make('button','btn secondary small','Chi tiết');button.type='button';button.dataset.mobileInline='';button.setAttribute('aria-expanded','false');button.setAttribute('aria-label','Chi tiết '+(cells[layout.title]?.textContent.trim()||''));button.onclick=e=>{e.stopPropagation();const on=row.classList.toggle('crm-card-expanded');button.setAttribute('aria-expanded',String(on));};host.append(button);row.append(host);}
+   }
    cardRows.add(row);
   }
  }
@@ -196,7 +205,7 @@ export function installMobileDesign(profiles){
   // Stocktake owns its exit guard: a target hash can change before the editor is allowed to close.
   if(readOnly)for(const n of document.querySelectorAll('main .view:not([hidden]) button:not([data-mobile-navigation]),dialog[open] button:not([data-mobile-navigation]),.flow-panel:not([hidden]) button:not([data-mobile-navigation])'))if(!n.closest('.ww-page,.ww-dialog,#view-stocktake,.stocktake-ledger,.stocktake-camera')&&!n.matches('#product-pending [data-approve-product],#new-product,[data-update-product],[data-update-product-card],[data-pd-edit]')&&!n.closest('.product-admin-dialog,[data-mobile-confirmation-page]')&&/thêm|tạo|sửa|cập nhật|nhập file|đồng bộ|chốt|điều chỉnh|lưu|xóa|xoá|huỷ|hủy|duyệt/i.test(n.textContent||n.title||n.getAttribute('aria-label')||''))n.classList.add('mobile-desktop-only');
   for(const root of document.querySelectorAll('#view-deliveries,#view-packing,#view-receivables,#view-cashbook,#view-purchases,#view-receiving,#view-suppliers'))for(const row of root.querySelectorAll('tbody>tr')){
-   if(row.closest('form,.pur-lines,.ff-table,.buy-list')||row.querySelector('input,select,textarea')||row.children.length<3)continue;
+   if(row.closest('form,.pur-lines,.ff-table,.buy-list')||row.querySelector('input,select,textarea')||row.children.length<3||row.classList.contains('crm-list-card'))continue;
    row.classList.add('crm-simple-list-row');for(const [i,td]of [...row.children].entries()){if(i<3)td.classList.add('crm-simple-main');else if(!td.classList.contains('crm-simple-more'))td.classList.add('crm-simple-more');}
    if(!row.querySelector('[data-mobile-row-detail]')){const cell=row.lastElementChild,button=make('button','btn secondary small','Chi tiết');button.type='button';button.dataset.mobileRowDetail='';button.dataset.mobileInline='';button.setAttribute('aria-expanded','false');button.onclick=e=>{e.stopPropagation();const open=row.classList.toggle('crm-row-expanded');button.setAttribute('aria-expanded',String(open));};cell.classList.add('crm-simple-actions');cell.append(button);}
   }
@@ -222,7 +231,7 @@ export function installMobileDesign(profiles){
   if(location.hash.startsWith('#/pos')){if(!nav.hidden)nav.hidden=true;document.body.classList.remove('crm-form-mode');return;}
   const ready=document.querySelector('#workspace')&&!document.querySelector('#workspace').hidden;
   nav.hidden=!ready;if(!ready){return;}
-  for(const p of profiles){const root=document.querySelector(p.root);if(!root)continue;root.classList.add('crm-designed-page');if(p.filters)createFilter(root,p);if(p.card)annotateCards(root,p);
+  for(const p of profiles){const root=document.querySelector(p.root);if(!root)continue;if(p.filters||p.card)root.classList.add('crm-designed-page');if(p.filters)createFilter(root,p);if(p.card)annotateCards(root,p);
    for(const b of root.querySelectorAll(':scope > .chips .chip.active,#type-filter .chip.active')){if(root.dataset.resultCount===undefined)continue;let count=b.querySelector('.crm-chip-count');if(!count){count=make('span','crm-chip-count');b.append(count);}setText(count,' '+Number(root.dataset.resultCount).toLocaleString('vi-VN'));}
    if(root.dataset.loadState==='error'){let retry=root.querySelector('.crm-list-retry');if(!retry){retry=make('button','btn secondary crm-list-retry','Thử lại');retry.type='button';retry.onclick=()=>window.dispatchEvent(new CustomEvent('crm-reload-current',{detail:{view:root.id.replace('view-','')}}));(root.querySelector('.empty')||root).append(retry);}retry.hidden=false;}else{const retry=root.querySelector('.crm-list-retry');if(retry&&!retry.hidden)retry.hidden=true;}
   }
