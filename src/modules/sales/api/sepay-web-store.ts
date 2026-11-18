@@ -21,23 +21,37 @@ export function lockQrReferences(content:string){
  }
  return [...refs];
 }
-async function lockAccount(db:CashDb,account:string){
+export function minhLongQrReferences(content:string){
+ const refs=new Set<string>();
+ for(const match of content.matchAll(/(?<![\p{L}\p{N}])ML[0-9]{1,20}(?![\p{L}\p{N}])/giu)){
+  const start=match.index!,end=start+match[0].length,before=content.slice(0,start).trimEnd(),after=content.slice(end);
+  if(/[-_/‐‑‒–—−]$/.test(before)||/^\s*[-_/‐‑‒–—−]/.test(after))continue;
+  refs.add(match[0].toUpperCase());
+ }
+ return [...refs];
+}
+export function webQrReferences(content:string){return [...lockQrReferences(content),...minhLongQrReferences(content)];}
+const refSource=(ref:string)=>ref.startsWith('DH')?'lock' as const:'minhlong' as const;
+async function sourceAccount(db:CashDb,account:string,source:'lock'|'minhlong'){
  const regs=await db.select({name:posRegisters.name}).from(posRegisters).where(and(eq(posRegisters.active,true),eq(sql`regexp_replace(${posRegisters.bankAccount},'[[:space:]]','','g')`,account)));
- return regs.some(r=>r.name.trim().toLowerCase()===LOCK_WEB_REGISTER_NAME.toLowerCase());
+ return regs.some(r=>source==='lock'?r.name.trim().toLowerCase()===LOCK_WEB_REGISTER_NAME.toLowerCase():/minh\s*long/i.test(r.name));
 }
 export async function isLockWebQrPayment(db:CashDb,event:{content:string;accountNumber?:string}){
  const refs=lockQrReferences(event.content);if(!refs.length)return false;
  const [webMatch]=await db.select({id:web.id}).from(web).where(and(eq(web.source,'lock'),inArray(web.externalId,refs.map(s=>s.slice(2))))).limit(1);
- return !!webMatch||!!event.accountNumber&&await lockAccount(db,event.accountNumber);
+ return !!webMatch||!!event.accountNumber&&await sourceAccount(db,event.accountNumber,'lock');
 }
 /** Link bank evidence to the existing paid website order; never create a CRM receipt or mutate Woo totals. */
 export async function decideWebSepay(db:CashDb,p:SepayPayment):Promise<WebSepayDecision|null>{
- const refs=lockQrReferences(p.content);
+ const refs=webQrReferences(p.content);
  if(!refs.length)return null;
  if(sepayPosIntent(p.content))return {status:'review',webOrderId:null,reason:'Nội dung có cả mã QR POS và mã đơn web; cần kiểm tra nguồn.'};
+ const sources=[...new Set(refs.map(refSource))];
+ if(sources.length!==1)return {status:'review',webOrderId:null,reason:'Nội dung có mã của nhiều website; cần đối soát, không tự gắn.'};
+ const source=sources[0]!;
  const ids=refs.map(s=>s.slice(2));
- const targets=await db.select({id:web.id}).from(web).where(and(eq(web.source,'lock'),inArray(web.externalId,ids))).limit(2);
- if(!targets.length)return await lockAccount(db,p.accountNumber)?{status:'review',webOrderId:null,reason:'Có mã QR web Lock nhưng đơn chưa đồng bộ; chờ nguồn web, không gắn sang đơn CRM.'}:null;
+ const targets=await db.select({id:web.id}).from(web).where(and(eq(web.source,source),inArray(web.externalId,ids))).limit(2);
+ if(!targets.length)return await sourceAccount(db,p.accountNumber,source)?{status:'review',webOrderId:null,reason:`Có mã QR web ${source==='lock'?'Lock':'Minh Long'} nhưng đơn chưa đồng bộ; chờ nguồn web, không gắn sang đơn CRM.`}:null;
  // Serialize the small QR-only critical section after provider locks; bulk pulls can visit web orders in different orders.
  await db.execute(sql`select pg_advisory_xact_lock(hashtext('sepay:web-qr'))`);
  const review=(reason:string,webOrderId:string|null=null):WebSepayDecision=>({status:'review',reason,webOrderId});
@@ -56,14 +70,15 @@ export async function decideWebSepay(db:CashDb,p:SepayPayment):Promise<WebSepayD
  let edit:Record<string,unknown>;
  try{edit=JSON.parse(order.crmEditSnapshot||'{}');if(!edit||typeof edit!=='object'||Array.isArray(edit))throw new Error();}catch{return review('Dữ liệu chỉnh sửa đơn web cần kiểm tra trước khi khớp tiền.',id);}
  if(edit.sourceConflict||Number(edit.revision||0)>0)return review('Đơn web có thay đổi cần đối chiếu nguồn trước khi khớp tiền.',id);
- if(!/\bqr\b/i.test(order.paymentMethod))return review('Đơn web không dùng thanh toán QR; cần kiểm tra phương thức thanh toán.',id);
+ const qrMethod=/\bqr\b/i.test(order.paymentMethod)||source==='minhlong'&&/(chuy[eể]n khoản|bank transfer|bacs)/i.test(order.paymentMethod);
+ if(!qrMethod)return review('Đơn web không dùng thanh toán QR; cần kiểm tra phương thức thanh toán.',id);
  const [register]=await db.select({account:posRegisters.bankAccount,active:posRegisters.active}).from(posRegisters).where(eq(posRegisters.id,order.registerId));
- if(!register?.active||!register.account||register.account.replace(/\s+/g,'')!==p.accountNumber)return review('Tài khoản nhận không khớp quầy của đơn web Lock.',id);
+ if(!register?.active||!register.account||register.account.replace(/\s+/g,'')!==p.accountNumber)return review(`Tài khoản nhận không khớp quầy của đơn web ${source==='lock'?'Lock':'Minh Long'}.`,id);
  if(!Number.isSafeInteger(order.total)||order.total<=0||p.amount!==order.total)return review('Số tiền khác tổng đơn web; không tự gắn khoản thiếu/thừa.',id);
  if(!readWebOrderFinancials(order.financialSnapshot)?.payment?.paidAt)return review('Chờ website xác nhận đã thu tiền; giữ chứng từ SePay để tự đối soát khi đơn cập nhật.',id);
  const [other]=await db.select({id:bank.id}).from(bank).where(and(eq(bank.webOrderId,id),eq(bank.status,'matched'),ne(bank.providerId,p.providerId))).limit(1);
  if(other)return review('Đơn web đã gắn một giao dịch khác; cần kiểm tra khoản thu trùng.',id);
- return {status:'matched',webOrderId:id,reason:'Đã đối soát QR với đơn web Lock; website đã ghi nhận khoản thu, không tạo thêm phiếu thu CRM.'};
+ return {status:'matched',webOrderId:id,reason:`Đã đối soát QR với đơn web ${source==='lock'?'Lock':'Minh Long'}; website đã ghi nhận khoản thu, không tạo thêm phiếu thu CRM.`};
 }
 export async function saveWebSepay(db:CashDb,p:SepayPayment,d:WebSepayDecision,old:typeof bank.$inferSelect|undefined,actorId='integration:sepay-web'){
  const row={...d,matchMethod:'reference' as const,matchedOrderAt:null,orderId:null,paymentId:null},id=old?.id||crypto.randomUUID();
