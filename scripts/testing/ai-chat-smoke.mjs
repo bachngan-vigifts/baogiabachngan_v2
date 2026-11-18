@@ -35,8 +35,8 @@ try{for(const [role,cookie] of [['manager',f.mgr],['employee',f.emp]])for(const 
  const payload=sent.find(p=>p.question.text===question);assert.ok(payload);
  const answer='<img src=x onerror="window.aiFixtureXss=true"> Nội dung minh hoạ';
  const reply=await f.router.handle(new Request('https://trial.test/api/staff/integrations/ai-chat/'+payload.question.id+'/result',{method:'POST',headers:{origin:'https://trial.test',authorization:'Bearer '+payload.callback.token,'content-type':'application/json'},body:JSON.stringify({status:'answered',answer})}),f.env);assert.equal(reply.status,200);
- await page.reload();await page.locator('#view-ai-chat .ai-chat-answer').first().waitFor();
  const card=page.locator('.ai-chat-card').filter({has:page.getByRole('heading',{name:question,exact:true})});
+ await card.locator('.ai-chat-answer').waitFor({timeout:10000});
  assert.equal(await card.locator('.ai-chat-answer p').textContent(),answer);assert.equal(await card.locator('.ai-chat-answer img').count(),0);assert.equal(await page.evaluate(()=>!!window.aiFixtureXss),false);
  await card.locator('[data-helpful]').click();await page.waitForFunction(id=>document.querySelector('[data-helpful="'+id+'"]')?.dataset.on==='1',payload.question.id);
  await page.locator('#view-ai-chat [data-search]').fill('khong-tim-thay-fixture');await page.waitForFunction(()=>document.querySelector('#view-ai-chat .full-empty')?.textContent.includes('Chưa có'));
