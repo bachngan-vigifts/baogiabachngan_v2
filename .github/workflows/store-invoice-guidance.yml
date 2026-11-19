@@ -1,0 +1,35 @@
+name: Deploy approved invoice guidance to both stores
+on:
+  push:
+    branches: [codex/invoice-guidance-both-sites-20261119]
+    paths: [.github/workflows/store-invoice-guidance.yml]
+permissions:
+  contents: read
+concurrency:
+  group: store-invoice-guidance
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          php -l web-lock/invoice-guidance/store-company-invoice-guidance.php
+          php -l web-lock/invoice-guidance/cache.php
+          node --check web-lock/invoice-guidance/deploy.mjs
+      - run: npm install --prefix /tmp/ml-choices --no-audit --no-fund playwright@1.56.1
+      - run: timeout 180 /tmp/ml-choices/node_modules/.bin/playwright install chromium --only-shell
+      - name: Deploy and verify approved invoice notice
+        run: node web-lock/invoice-guidance/deploy.mjs
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: invoice-guidance-evidence
+          path: invoice-evidence/
+          retention-days: 7
