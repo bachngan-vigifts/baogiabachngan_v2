@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Minh Long variation choice buttons
  * Description: Accessible size and color buttons backed by WooCommerce variation selects.
- * Version: 1.0.0
+ * Version: 1.0.1
  */
 defined('ABSPATH') || exit;
 function ml_choices_store() {
@@ -55,6 +55,7 @@ function enhance(select){
  group.setAttribute('aria-label',label?label.textContent.trim():'Chọn tùy chọn sản phẩm');
  records.set(select,{group,buttons:new Map()});
  select.after(group);sync(select);
+ if(row)row.classList.add('ml-variation-row');
  select.classList.add('ml-variation-native');
  select.setAttribute('tabindex','-1');select.setAttribute('aria-hidden','true');
  select.addEventListener('focus',function(){
@@ -94,12 +95,20 @@ add_action('wp_head', function () {
     ?>
 <style id="ml-variation-choices-style">
 form.variations_form .variations select.ml-variation-native{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
-form.variations_form .ml-variation-choices{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 8px;max-width:100%}
+/* Scope the layout to enhanced rows; leave native/swatches-only forms alone. */
+form.variations_form table.variations tr.ml-variation-row>th.label,
+form.variations_form table.variations tr.ml-variation-row>td.label{vertical-align:top!important;padding:0 12px 10px 0!important;background:transparent!important;border:0!important;width:82px}
+form.variations_form table.variations tr.ml-variation-row> .label label{display:flex;align-items:center;min-height:42px;margin:0!important;padding:0!important;line-height:1.3}
+form.variations_form table.variations tr.ml-variation-row>td.value{vertical-align:top!important;padding:0 0 10px!important;background:transparent!important;border:0!important}
+form.variations_form .ml-variation-choices{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0!important;max-width:100%;min-width:0}
+form.variations_form tr.ml-variation-row .reset_variations{position:static!important;margin:6px 0 0!important;padding:0!important;line-height:1.4}
+form.variations_form tr.ml-variation-row .reset_variations[style*="visibility: hidden"],
+form.variations_form tr.ml-variation-row .reset_variations[style*="visibility:hidden"]{display:none!important}
 form.variations_form .ml-variation-choices .ml-variation-choice{display:inline-flex;align-items:center;justify-content:center;min-width:60px;min-height:42px;height:auto;margin:0;padding:8px 13px;border:1px solid #cbd7e4;border-radius:7px;background:#fff;color:#173e66;font-family:inherit;font-size:14px;font-weight:600;line-height:1.3;letter-spacing:0;text-transform:none;box-shadow:none;white-space:normal;overflow-wrap:anywhere;max-width:100%;cursor:pointer}
 form.variations_form .ml-variation-choice[aria-pressed="true"]{background:#173e66;color:#fff;border-color:#173e66}
 form.variations_form .ml-variation-choice:focus-visible{outline:2px solid #b78024;outline-offset:3px}
 form.variations_form .ml-variation-choice:disabled{opacity:.45;cursor:not-allowed;text-decoration:line-through}
-@media(max-width:549px){form.variations_form .ml-variation-choices .ml-variation-choice{min-height:44px}}
+@media(max-width:549px){form.variations_form table.variations tr.ml-variation-row>.label label{min-height:44px}form.variations_form .ml-variation-choices .ml-variation-choice{min-height:44px}}
 </style>
 <?php
 });
