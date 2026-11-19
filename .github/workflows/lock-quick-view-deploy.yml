@@ -39,3 +39,5 @@ jobs:
 # Wait for helper opcode reload before its first request.
 
 # Exercise actual visible swatch controls, not their hidden select.
+
+# Verify regular homepage and explicit product readiness.
