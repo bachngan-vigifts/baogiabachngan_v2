@@ -12,7 +12,7 @@ function harness(positionId:string,role='employee',perms=['pos.sell','page.quote
  const context:any={state:{user},location:{hash:'#/orders',pathname:'/index.html'},
   isWarehouse:()=>role==='employee'&&positionId==='warehouse',can:(key:string)=>role==='manager'||perms.includes(key),
   applyWorkspaceUser:()=>true,currentHash:'',route(){},loadAll(){},notifier:{start(){}},
-  dataRefresh:{start(){},tick(){}},pulse:{start(){}},requestPriority:{idle:()=>Promise.resolve()},history:{replaceState(_a:unknown,_b:unknown,url:string){context.location.hash=url.slice(url.indexOf('#'));}}};
+  dataRefresh:{start(){},tick(){}},pulse:{start(){}},qrPhoneView:()=>({start(){}}),requestPriority:{idle:()=>Promise.resolve()},history:{replaceState(_a:unknown,_b:unknown,url:string){context.location.hash=url.slice(url.indexOf('#'));}}};
  runInNewContext(home+'\n'+open+'\nthis.homeHash=homeHash;this.start=(fresh)=>{loginToHome=fresh;openWorkspace(state.user);};',context);
  return context;
 }

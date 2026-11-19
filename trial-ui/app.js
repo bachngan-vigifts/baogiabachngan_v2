@@ -513,7 +513,7 @@ function showAuth(message = '', { keepToken = false } = {}) {
   stocktakeUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
   homeUi?.reset(); homeReminderUi?.reset(); homeNotifications?.clear(); notifier?.reset(); tasksUi?.resetQuick();
-  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; $('#reminder-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop(); qrPhoneUi?.stop();
+  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; $('#reminder-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop(); if (typeof qrPhoneUi !== 'undefined') qrPhoneUi?.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
   // Chỉ tự đặt con trỏ khi vừa mở form; không giành focus người dùng đã chọn.
