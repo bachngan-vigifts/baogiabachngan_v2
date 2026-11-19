@@ -7,7 +7,7 @@ permissions:
   contents: read
 concurrency:
   group: lock-quick-view-deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   deploy:
     runs-on: ubuntu-24.04
@@ -33,3 +33,5 @@ jobs:
           retention-days: 7
 
 # Verify bounded cache propagation before rollback.
+
+# Resolve actual Lock cache zone before live checks.
