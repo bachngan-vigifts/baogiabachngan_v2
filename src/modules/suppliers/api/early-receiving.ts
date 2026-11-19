@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { purchaseEarlyRequests, purchaseEarlyRequestLines, purchaseEarlyRequestAllocations } from '../early-request-schema.ts';
 import { incomingShipments, incomingShipmentLines, supplierReceipts, supplierReceiptLines, supplierOrderEvents } from '../schema.ts';
@@ -9,7 +9,7 @@ export async function earlyReceiptAvailability(db: ReadDb, requestIds: string[],
   if (!requestIds.length) return [];
   const rows = await db.select({requestId:purchaseEarlyRequests.id,requestStatus:purchaseEarlyRequests.status,
     allocationId:purchaseEarlyRequestAllocations.id,status:purchaseEarlyRequestAllocations.status,quantity:purchaseEarlyRequestAllocations.quantity,
-    purchaseLineId:incomingShipmentLines.id,sku:incomingShipmentLines.sku,name:incomingShipmentLines.name,ordered:incomingShipmentLines.quantity,
+    purchaseLineId:incomingShipmentLines.id,sku:incomingShipmentLines.sku,name:incomingShipmentLines.name,ordered:sql<number>`${incomingShipmentLines.quantity}-${incomingShipmentLines.creditedQty}`.mapWith(Number),
     orderId:incomingShipments.id,ticketNumber:incomingShipments.ticketNumber,approvalStatus:incomingShipments.approvalStatus,cancelledAt:incomingShipments.cancelledAt})
     .from(purchaseEarlyRequests).innerJoin(purchaseEarlyRequestLines,eq(purchaseEarlyRequestLines.requestId,purchaseEarlyRequests.id))
     .innerJoin(purchaseEarlyRequestAllocations,eq(purchaseEarlyRequestAllocations.requestLineId,purchaseEarlyRequestLines.id))
@@ -23,7 +23,7 @@ export async function earlyReceiptAvailability(db: ReadDb, requestIds: string[],
     db.select({data:supplierOrderEvents.data}).from(supplierOrderEvents).where(and(inArray(supplierOrderEvents.shipmentId,orders),eq(supplierOrderEvents.action,'receive'))),
   ]);
   const receiptIds=receipts.filter(r=>!r.cancelledAt).map(r=>r.id);
-  const received=receiptIds.length?await db.select({receiptId:supplierReceiptLines.receiptId,lineId:supplierReceiptLines.lineId,goodQty:supplierReceiptLines.goodQty})
+  const received=receiptIds.length?await db.select({receiptId:supplierReceiptLines.receiptId,lineId:supplierReceiptLines.lineId,goodQty:sql<number>`${supplierReceiptLines.goodQty}-${supplierReceiptLines.returnedGoodQty}`.mapWith(Number)})
     .from(supplierReceiptLines).where(inArray(supplierReceiptLines.receiptId,receiptIds)):[];
   const provenance=new Map<string,string>();
   for(const event of events){try{const d=JSON.parse(event.data);if(typeof d.receiptId==='string'&&typeof d.earlyRequestId==='string')provenance.set(d.receiptId,d.earlyRequestId);}catch{/* Older unstructured event. */}}

@@ -54,3 +54,12 @@ test('nhân viên thường xem đơn nhưng bị ẩn giá/tiền, vẫn thấy
   assert.deepEqual([h.subtotal, h.vat, h.total, h.depositAmount, h.depositPaidAmount, h.remainingAmount], [0, 0, 0, 0, 0, 0]);
   assert.deepEqual([h.rows[0]!.quantity, h.rows[0]!.unitPrice, h.rows[0]!.lineTotal, h.depositRate], [4, 0, 0, 50]);
 });
+
+test('supplier credits allocate fractional stock from original line value without re-rounding each return',()=>{
+ const input={quantity:10,creditedQty:0.5,price:100,printFee:5,taxRate:8,purchaseDiscount:25,confirmedPurchaseDiscount:null};
+ const total=computeOrderTotals({rows:[input],depositRate:0,paidAmount:0}).total;
+ assert.ok(Math.abs(total-820.8)<1e-9);
+ const legacy={...input,quantity:10.2,creditedQty:1.02};
+ assert.ok(Math.abs(computeOrderTotals({rows:[legacy],depositRate:0,paidAmount:0}).total-777.6)<1e-9);
+ assert.equal(computeOrderTotals({rows:[{...input,creditedQty:10}],depositRate:0,paidAmount:0}).total,0);
+});

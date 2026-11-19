@@ -1,3 +1,4 @@
+import {openGoodsReturn,openSupplierRefund} from './purchase-returns.js';
 import { requiresSupplierOrderNumber, supplierOrderNumberProblem } from './supplier-order-number.js';
 import { openReceivedEarlyRequests } from './supplier-request-details.js';
 import {createPurchaseSupplierSearch} from './purchase-supplier-search.js';
@@ -321,9 +322,12 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const acts = el('div', 'pur-actions buy-d-actions');
     const confirmLabel = v.confirmedAt ? 'NCC đã xác nhận' : ACTION_LABEL.confirm;
     const byState = { draft: ['approve', 'submit', 'edit'], awaiting_confirmation: v.confirmedAt ? ['receive'] : ['confirm', 'receive'], confirmed: ['receive'], partially_received: ['receive'], received: ['pay'] }[v.state] || [];
-    const mainKey = byState.find(a => has(a)) || '';
-    const label = a => a === 'confirm' ? confirmLabel : ACTION_LABEL[a];
+    const mainKey = v.state==='received'&&v.canRefund&&v.debt?.supplierCredit>0?'refund':byState.find(a => has(a)) || '';
+    const label = a => a==='refund'?'Ghi nhận tiền NCC hoàn':a === 'confirm' ? confirmLabel : ACTION_LABEL[a];
     const moreItems = [];
+    const refreshReturnedOrder=async()=>{try{current=await api(`/purchase-orders/${encodeURIComponent(v.id)}`);renderDetail();load();}catch(e){toast('Chưa tải được số liệu mới. Tải lại đơn trước khi xử lý tiếp.','err');}};
+    if(v.canReturn)moreItems.push(btn('Trả hàng / Huỷ phần chưa nhận','buy-menu-item',()=>openGoodsReturn({api,order:v,onChanged:refreshReturnedOrder})));
+    if(mainKey!=='refund'&&v.canRefund&&v.debt?.supplierCredit>0)moreItems.push(btn('Ghi nhận tiền NCC hoàn','buy-menu-item',()=>openSupplierRefund({api,order:v,onChanged:refreshReturnedOrder})));
     for (const a of ['confirm', 'receive', 'edit', 'pay', 'schedule', 'pdf']) if (has(a) && a !== mainKey) moreItems.push(btn(label(a), 'buy-menu-item' + (a === 'confirm' && v.confirmedAt ? ' status-confirmed' : ''), () => ACTIONS[a]()));
     if (has('pdf')) {
       // Gửi email đơn đặt hàng (đơn đã duyệt) + hỏi tồn NCC (mọi người xem được đơn, không kèm giá).
@@ -339,8 +343,9 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       list.addEventListener('click', e => { if (e.target.closest('button')) more.open = false; });
     }
     if (has('cancel')) acts.append(btn(ACTION_LABEL.cancel, 'btn ghost small buy-danger', () => ACTIONS.cancel()));
-    if (mainKey) { const main = btn(label(mainKey), 'btn primary pur-main-action', () => ACTIONS[mainKey]()); acts.append(main); }
+    if (mainKey) { const main = btn(label(mainKey), 'btn primary pur-main-action', () => mainKey==='refund'?openSupplierRefund({api,order:v,onChanged:refreshReturnedOrder}):ACTIONS[mainKey]()); acts.append(main); }
     if (acts.children.length) d.append(acts);
+    if(v.remainderClosedAt)d.append(el('p','pur-note',`Đã huỷ phần chưa nhận: ${v.remainderCloseReason}. Hàng và thanh toán đã phát sinh được giữ lại để đối soát.`));
     if (v.cancelledAt) d.append(el('p', 'pur-note danger', `Đã huỷ ${dmy(v.cancelledAt)}: ${v.cancelReason || ''}`));
 
     const info = el('dl', 'pur-info');
@@ -370,7 +375,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       if (l.supplierNote) name.append(el('small', 'muted sup-sub', 'NCC: ' + l.supplierNote));
             // Đã nhận đạt lấy từ tiến độ hiện có; phiếu xin hàng chỉ dùng để xem nguồn nhận, không tính lại số lượng.
       const received=el('td','num'),receivedLink=el('button','link-btn',num(l.good));receivedLink.type='button';receivedLink.title='Đã nhận đạt · Bấm xem phiếu xin hàng';receivedLink.dataset.mobileInline='';receivedLink.setAttribute('aria-label','Xem phiếu xin hàng đã nhận của '+l.sku);receivedLink.onclick=()=>openReceivedEarlyRequests({api,order:v,line:l});received.append(receivedLink);
-      tr.append(name, el('td', 'num', num(l.quantity)),received, el('td', '', dmy(l.promisedDate)));
+      tr.append(name, el('td', 'num', num(l.quantity-(l.creditedQty||0))+(l.creditedQty?` (đã giảm ${num(l.creditedQty)})`:'')),received, el('td', '', dmy(l.promisedDate)));
       if (!v.priceHidden) tr.append(el('td', 'num', l.price == null ? '—' : money(l.price)), el('td', 'num', l.purchaseDiscount ? num(l.purchaseDiscount) : '—'), el('td', 'num', money(l.lineTotal)));
       tb.append(tr);
     }
@@ -381,20 +386,23 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     d.append(sec);
 
     // Phiếu nhận + Sapo
-    const rs = section('Phiếu nhận hàng', 'Đã nhận ≠ đã nhập kho: sau khi nhận, kho nhập phiếu trên Sapo rồi ghi mã phiếu Sapo vào đây. CRM không tự cộng tồn.');
+    const rs = section('Phiếu nhận hàng', 'Phiếu nhận ghi sổ kho CRM trong cùng giao dịch. Theo dõi và đối soát Sapo riêng; không gửi lại khi chưa rõ kết quả.');
     if (!v.receipts.length) rs.append(el('p', 'muted small', 'Chưa nhận đợt nào.'));
     for (const r of v.receipts) rs.append(receiptCard(r));
     d.append(rs);
 
+    if(v.goodsReturns?.length){const history=section('Phiếu trả / Huỷ phần chưa nhận','');for(const r of v.goodsReturns)history.append(el('p','',`${dmy(r.date)} · ${r.mode==='replacement'?'Trả giao bù':r.mode==='close'?'Huỷ phần chưa nhận':'Trả giảm công nợ'} · ${r.items.map(l=>`${l.sku}: ${num(l.quantity)}`).join('; ')}${r.creditAmount==null?'':` · Giảm ${money(r.creditAmount)}`} · ${r.reason}${r.sapoReturnCode?' · Sapo '+r.sapoReturnCode:''}`));d.append(history);}
     // Thanh toán NCC
     if (v.debt) {
       const ps = section('Thanh toán NCC', '');
       const k = el('div', 'pur-kpis');
       const kpi = (label, value, cls = '') => { const b = el('div', 'pur-kpi ' + cls); b.append(el('small', 'muted', label), el('b', '', value)); k.append(b); };
+      kpi('Đã nhận NCC hoàn',money(v.debt.refunded)); kpi('NCC còn phải hoàn',v.debt.supplierCredit==null?'Chưa đủ dữ liệu':money(v.debt.supplierCredit),v.debt.supplierCredit>0?'warn':'');
       kpi('Tổng đơn', money(v.debt.total)); kpi('Đã trả', money(v.debt.paid)); kpi('Còn nợ', money(v.debt.balance), v.debt.balance > 0 ? 'warn' : 'ok');
       kpi('Quá hạn', v.debt.overdue > 0 ? money(v.debt.overdue) : '—', v.debt.overdue > 0 ? 'danger' : '');
       kpi('Kỳ tới', v.debt.nextDueDate ? `${money(v.debt.nextDueAmount)} · ${dmy(v.debt.nextDueDate)}` : '—');
       ps.append(k);
+      for(const r of v.refunds||[])ps.append(el('p','muted small',`Nhận hoàn ${money(r.amount)} · ${dmy(r.receivedDate)} · ${r.reference}`));
       if (v.schedules.length) {
         const ul = el('ul', 'pur-list'); const KIND = { deposit: 'Cọc', installment: 'Đợt trả', balance: 'Còn lại' };
         for (const s of v.schedules) ul.append(el('li', '', `${KIND[s.kind] || s.kind}: ${money(s.amount)}${s.dueDate ? ' · hạn ' + dmy(s.dueDate) : ' · chưa đặt hạn'}${s.note ? ' · ' + s.note : ''}`));
@@ -787,17 +795,17 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       const d = await api('/supplier-payables');
       const sum = k => d.suppliers.reduce((t, s) => t + s[k], 0);
       const stats = el('div', 'stats');
-      for (const [label, v, cls] of [['Còn nợ NCC', sum('balance'), ''], ['Quá hạn', sum('overdue'), sum('overdue') > 0 ? 'danger-text' : ''], ['Số NCC', d.suppliers.length, '']]) {
+      for (const [label, v, cls] of [['Còn nợ NCC', sum('balance'), ''], ['NCC còn phải hoàn',sum('supplierCredit'),'warn'], ['Quá hạn', sum('overdue'), sum('overdue') > 0 ? 'danger-text' : ''], ['Số NCC', d.suppliers.length, '']]) {
         const a = el('article', 'stat'); a.append(el('small', '', label), el('strong', cls, label === 'Số NCC' ? String(v) : money(v))); stats.append(a);
       }
       const wrap = el('div', 'table-wrap'), table = el('table', 'data-table'), thead = el('tr'), tb = el('tbody');
-      for (const h of ['Nhà cung cấp', 'Số đơn', 'Còn nợ', 'Quá hạn', 'Kỳ trả sắp tới']) thead.append(el('th', h === 'Nhà cung cấp' || h === 'Kỳ trả sắp tới' ? '' : 'right', h));
+      for (const h of ['Nhà cung cấp', 'Số đơn', 'Còn nợ', 'NCC còn phải hoàn', 'Quá hạn', 'Kỳ trả sắp tới']) thead.append(el('th', h === 'Nhà cung cấp' || h === 'Kỳ trả sắp tới' ? '' : 'right', h));
       table.append(el('thead'), tb); table.tHead.append(thead); wrap.append(table);
       for (const r of d.suppliers) {
         const tr = el('tr', 'clickable'); tr.tabIndex = 0;
         const next = el('td', '', r.nextDueDate ? `${dmy(r.nextDueDate)} · ${money(r.nextDueAmount)}` : '—'); if (r.nextDueDate && r.nextDueDate <= d.today) next.className = 'pur-late';
-        tr.append(el('td', '', r.supplierName || '—'), el('td', 'num', String(r.orders)), el('td', 'num', money(r.balance)), el('td', 'num' + (r.overdue > 0 ? ' pur-late' : ''), r.overdue > 0 ? money(r.overdue) : '—'), next);
-        const pick = () => { dlg.close(); search.value = r.supplierName || ''; filter = 'debt'; chips.querySelectorAll('.chip').forEach(c => { const on = c.dataset.filter === 'debt'; c.classList.toggle('active', on); c.setAttribute('aria-pressed', String(on)); }); load(); };
+        tr.append(el('td', '', r.supplierName || '—'), el('td', 'num', String(r.orders)), el('td', 'num', money(r.balance)),el('td','num',money(r.supplierCredit)), el('td', 'num' + (r.overdue > 0 ? ' pur-late' : ''), r.overdue > 0 ? money(r.overdue) : '—'), next);
+        const pick = () => { dlg.close(); search.value = r.supplierName || ''; filter = r.balance>0?'debt':''; chips.querySelectorAll('.chip').forEach(c => { const on = c.dataset.filter === filter; c.classList.toggle('active', on); c.setAttribute('aria-pressed', String(on)); }); load(); };
         tr.addEventListener('click', pick); tr.addEventListener('keydown', e => { if (e.key === 'Enter') pick(); });
         tb.append(tr);
       }
@@ -807,10 +815,10 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
         exportBtn.disabled = true;
         try {
           await downloadExcel('cong-no-ncc', [
-            { name: 'Theo NCC', widths: [34, 10, 16, 16, 16, 16, 16, 16], header: ['Nhà cung cấp', 'Số đơn', 'Tổng giá trị', 'Đã trả', 'Còn nợ', 'Quá hạn', 'Kỳ trả sắp tới', 'Số tiền kỳ tới'],
-              rows: d.suppliers.map(r => [r.supplierName, r.orders, r.total, r.paid, r.balance, r.overdue, r.nextDueDate || '', r.nextDueAmount]) },
-            { name: 'Theo đơn mua', widths: [18, 16, 34, 16, 16, 16, 16, 16, 16], header: ['Số đơn', 'Số đơn NCC', 'Nhà cung cấp', 'Tổng giá trị', 'Đã trả', 'Còn nợ', 'Quá hạn', 'Kỳ trả sắp tới', 'Số tiền kỳ tới'],
-              rows: d.orders.map(o => [o.ticketNumber, o.internalNo || '', o.supplierName, o.total, o.paid, o.balance, o.overdue, o.nextDueDate || '', o.nextDueAmount]) },
+            { name: 'Theo NCC', widths: [34, 10, 16, 16, 16, 16, 16, 16, 16, 16], header: ['Nhà cung cấp', 'Số đơn', 'Tổng giá trị', 'Đã trả', 'Còn nợ', 'NCC còn phải hoàn', 'Đã nhận hoàn', 'Quá hạn', 'Kỳ trả sắp tới', 'Số tiền kỳ tới'],
+              rows: d.suppliers.map(r => [r.supplierName, r.orders, r.total, r.paid, r.balance, r.supplierCredit, r.refunded, r.overdue, r.nextDueDate || '', r.nextDueAmount]) },
+            { name: 'Theo đơn mua', widths: [18, 16, 34, 16, 16, 16, 16, 16, 16, 16, 16], header: ['Số đơn', 'Số đơn NCC', 'Nhà cung cấp', 'Tổng giá trị', 'Đã trả', 'Còn nợ', 'NCC còn phải hoàn', 'Đã nhận hoàn', 'Quá hạn', 'Kỳ trả sắp tới', 'Số tiền kỳ tới'],
+              rows: d.orders.map(o => [o.ticketNumber, o.internalNo || '', o.supplierName, o.total, o.paid, o.balance, o.supplierCredit, o.refunded, o.overdue, o.nextDueDate || '', o.nextDueAmount]) },
           ]);
         } catch (ex) { toast(ex.message, 'err'); } finally { exportBtn.disabled = false; }
       });

@@ -1,45 +1,52 @@
-# Supplier returns and cancellation: investigation and required decisions
+# Supplier returns, undelivered cancellation and actual refunds
 
-Status: design pending settlement decision. The new return feature is NOT implemented or deployed.
+Implementation branch: `feature/supplier-return-void`. No production business records are changed by development/tests.
 
-## Verified behavior
+## User behavior
 
-- Purchase cancellation currently rejects orders with receipts or recorded payments (`domain/purchasing.ts`).
-- Receipt cancellation reverses CRM ledger movements in one transaction, retains cancelled receipt history, and removes the corresponding product-history movements. Ledger writes reject negative balances.
-- Existing Sapo receipt links block receipt cancellation. Returning real goods is distinct from undoing an erroneous receipt.
-- Dispatch failures (including HTTP 530) do not establish whether the external write took place. Before this patch, a failed job with cleared lease/dispatch tokens could escape the cancellation guard. The patch preserves the existing operator review, lease-expiry and unchanged-snapshot requirements after any dispatch attempt.
-- Production read-only inspection of the selected purchase on 19 November 2026 found an active receipt with `sapo_status=failed`, job `failed`, attempts=1, no active tokens, and no verification. No production records were modified.
-- Supplier payments are positive recorded payments or voided records. Voiding a payment is not receipt of money refunded by the supplier.
-- Current receipt outbox creates/reconciles purchase receipts; this investigation has not established a working external write contract for supplier returns.
+Manager opens **Thao tác khác → Trả hàng / Huỷ phần chưa nhận** on an approved purchase:
 
-## Required settlement decision
+- **Trả giảm công nợ / yêu cầu hoàn tiền**: select the original receipt and good quantities actually returned. Post one outbound movement to that receipt's warehouse and credit those quantities. Preserve gross ordered/received quantities and recorded payments.
+- **Trả để NCC giao bù**: post the stock return, reopen the supplier's delivery obligation and incoming-stock quantity, and keep the purchase value unchanged. Later receipts satisfy the reopened obligation, including after cancelling an earlier undelivered remainder.
+- **Huỷ toàn bộ phần chưa nhận**: credit only the remaining undelivered quantities. No stock movement and no deletion or automatic payment void. Retained goods and financial obligations remain on the original purchase. The ordinary draft/order cancellation action and erroneous-receipt undo remain separate.
 
-Support both explicitly selected modes, or restrict to one:
+The preview shows quantities, original line price/CK/VAT/printing fee, payable before/after, gross payments, actual refunds and the amount the supplier still owes. Manager must type the document number and confirm the agreed settlement before posting. Missing prices/VAT block credits/refunds; legitimate zero prices remain valid.
 
-1. Return for credit/refund: reduce the payable based on the original confirmed line pricing, CK, fees and VAT. Preserve actual payments. Excess paid becomes money owed by the supplier; record a refund only when accounting confirms actual receipt.
-2. Return for replacement: reduce usable stock once; reopen the supplier's delivery obligation. Do not reduce the original payable merely because goods are awaiting replacement.
+**Actual refund** is a separate accounting action: a user with both supplier-payment and price access records the amount, actual receipt date, method and mandatory evidence reference. It is limited to the supplier's outstanding credit. Payments are retained. A refunded payment cannot simply be voided away. Duplicate evidence references within the same purchase/method are rejected; reference allocation across different purchases remains possible.
 
-A cancellation must also explicitly distinguish cancelling an erroneous receipt from closing the purchase order and cancelling the undelivered remainder. Never delete the original documents or silently void actual money transfers.
+## Sapo boundary — explicit manual reconciliation
 
-## Intended implementation after the decision
+This implementation performs **no external Sapo return write**. It does not enable or invent an n8n/OpenClaw return API.
 
-- Place “Trả hàng / Huỷ phiếu” in the purchase drawer's “Thao tác khác” menu.
-- Separate persistent return header/lines from original receipts, with line-level receipt attribution, reason, warehouse, date, settlement mode, immutable pricing snapshots, actor and idempotency key/hash.
-- Authorize staff to prepare and Manager to approve/post. Only permitted accounting users can record actual refunds. Enforce permissions at API level as well as UI.
-- Preview stock delta, received/remaining quantities, payable credit, paid amount and refundable credit before posting.
-- Use a durable outbox for external Sapo writes only after verifying the actual return contract. Unknown outcomes stay in reconciliation; do not issue another external return on timeout.
-- Lock in a consistent order: source budgets, purchase, receipt, outbox, inventory balances. Check revision, returnable quantities, active reservations, consumed stock, duplicate external references, and confirmed prices under the locks.
-- Post stock, return state, credit and audit history atomically. Preserve incoming-stock counts, receipt progress, source allocations, list badges, supplier payables and supplier-portal isolation. Do not modify tax formulas or fiscal invoices implicitly.
-- Replay with the same key and identical payload returns the existing result; a changed payload or cross-document key must conflict.
+- A receipt explicitly created without Sapo (`createSapo=false`, `not_needed`, no job/link) can be returned directly on CRM.
+- A Sapo-linked receipt must already be verified/done with no active job. Manager must inspect the actual Sapo return and enter its positive numeric ID, document code and reconciliation note, then attest the receipt, warehouse and quantities agree. The Sapo return ID may be attached only once. This is labelled **manual reconciliation**, not automatic provider verification.
+- Unknown/pending/failed Sapo outcomes block returns. HTTP 530/timeout is not proof that an external write failed. Erroneous-receipt undo now keeps the existing review, expired-lease and unchanged-snapshot safeguards after any attempted dispatch.
+- A receipt with posted returns cannot be undone again. Original Sapo receipt links remain intact.
 
-## Validation required for the full feature
+If an external return was completed manually and CRM subsequently refuses a stock/revision check, retain the external reference, review the actual warehouse state and reconcile before retrying the same operation. CRM never compensates by issuing another Sapo write or altering production stock silently.
 
-Unreceived/partial/full receipt; partial/full return; multiple SKUs/warehouses/receipt batches; missing price versus legitimate zero; CK/fee/VAT; unpaid/partial/full payments; partial/full refund; replacement and later receipt; return exceeding remaining quantity; insufficient or reserved stock; stale revision; duplicate clicks/lost response; concurrent return/receive/pay/cancel; queued/running/failed/unknown Sapo operations; late callbacks; transaction rollback; unauthorized employees, supplier isolation and sensitive price redaction.
+## Data and concurrency
 
-Use a multi-connection PostgreSQL test for race behavior; PGlite alone serializes transactions and cannot prove concurrency safety. Validate the UI and deployment separately before describing the new feature as ready.
+Migration `20261119020633_supplier_goods_returns.sql` adds private RLS tables `supplier_goods_returns` and `supplier_refunds`, plus zero-default netting counters on original documents. It changes no old balances. No new public policies or client grants are added.
 
-## Work completed in this branch
+Returns preserve immutable line/settlement snapshots. Credits use the original rounded line value prorated by credited physical quantity; without credits, the original price/CK/fee/VAT formulas and legacy rounding are unchanged. Quantity counters use three decimal places. Higher-precision legacy order quantities require reconciliation before monetary credit. Credits release source allocations from latest `(createdAt,id)` first and show the released sources in the preview. Original allocations remain in history with a cancelled-quantity counter.
 
-- Tightened the existing receipt-cancellation guard after any attempted dispatch.
-- Added an HTTP 530 regression test: cancellation returns 409 without changing receipt, stock, purchase or cancellation audit; a late worker result still reconciles successfully without double-posting stock.
-- Four existing test files passed before the patch; the modified outbox test file passed after the patch; TypeScript typecheck passed. These checks do NOT validate a full supplier-return feature, which remains pending.
+Stock, return record, quantity/source counters, incoming stock and audit history commit in one database transaction. Source and stock-hold locks precede purchase → receipt → job → ledger locks. Existing reservations and stock-short checks are reused without an override. Return previews are bound to the actual input/revision, receipt/job state, prices and monetary balance. An intervening payment invalidates the preview.
+
+Identical client-key retries return the posted record; changed payloads or cross-purchase reuse conflict. Refund writes lock the purchase and cap against remaining supplier credit. Payment voids lock the parent first and cannot erase money already refunded.
+
+Requests select at most 200 lines; close-remainder also rejects orders requiring over 200 lines. Previews do not read design-image blobs, payment attachments or outbox payloads. Database counter updates are batched and incoming stock is refreshed only for affected SKUs inside the transaction. Receipt progress uses one aggregation pass.
+
+Internal lists, badge counts, incoming/source budgets, supplier payables/exports and the scoped supplier portal use net quantities/value/refunds. Portal quantity rounding for untouched legacy lines stays unchanged; lines with an explicit return/credit use physical net quantities thereafter. Staff without price access receive redacted return snapshots. The supplier portal exposes only its own order's SKU/quantity, credit and actual refund summaries; no internal source/customer/evidence notes are shared.
+
+The supplier ledger is updated; this feature does not create bank transfers, electronic fiscal invoices, automatic credit notes at Viettel/VNPT, or modify a separate accounting book without its normal approval flow.
+
+## Deploy and rollback
+
+1. Review SQL and preflight table/constraint existence plus production lock/load state. Apply the migration once in a maintenance window with the supplied five-second lock timeout and sixty-second statement timeout. The file is transactional; do not run selected fragments or reapply a completed migration blindly.
+2. Run `scripts/sql/assert-supplier-goods-returns.sql` in a read-only transaction. It verifies the private tables, columns, constraints, index validity and ledger return kinds. The API deployment workflow runs this gate before changing Edge secrets/deploying.
+3. Deploy API, then UI. Test with approved test documents before processing actual purchases; verify Manager/accounting access and supplier isolation.
+4. To stop new return/refund writes, set Edge secret `SUPPLIER_RETURNS_DISABLED=true`. Existing net accounting reads remain active. The actions are hidden and write endpoints return 503. Remove/set false only after resolving the issue.
+5. Do **not** roll back to code that ignores return counters after any returns/refunds have posted. Preserve the migration/tables/history and ship a compatible fix. Before any posted records, the prior application can be restored while leaving additive schema in place; no destructive down-migration is required.
+
+See committed API/DB tests and `/workspace/artifacts/supplier-return` for local browser evidence. Test results and deployment state are reported separately; local checks are not production verification.

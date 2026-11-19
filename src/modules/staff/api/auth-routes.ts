@@ -45,6 +45,7 @@ export interface StaffEnv {
   sapoHdktOrderWebhookUrl?: string;
   sapoPosOrderWebhookUrl?: string;
   /** Phiếu nhận hàng CRM → n8n/OpenClaw → Sapo; callback dùng chung SAPO_SYNC_TOKEN. */
+  supplierReturnsDisabled?: boolean;
   sapoGoodsReceiptWebhookUrl?: string;
   sapoWebhookFetch?: typeof fetch;
   /** Tách credential điều chuyển khỏi Sapo; không nhận từ trình duyệt hay query string. */
