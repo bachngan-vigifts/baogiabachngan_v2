@@ -24,7 +24,7 @@ test('recorded prerequisite replays before newest index and repair changes metad
   assert.equal(rows.rows.length,1);assert.equal(rows.rows[0]!.version,'20261023120000');assert.deepEqual(rows.rows[0]!.statements,[source]);
   const fresh=new PGlite();try{
    await fresh.exec(baseline);await fresh.exec(rows.rows[0]!.statements.join('\n'));await fresh.exec(newest);
-   assert.equal((await fresh.query(`select indisvalid from pg_index where indexrelid='idx_products_newest_active'::regclass`)).rows[0]?.indisvalid,true);
+   assert.equal((await fresh.query<{indisvalid:boolean}>(`select indisvalid from pg_index where indexrelid='idx_products_newest_active'::regclass`)).rows[0]?.indisvalid,true);
   }finally{await fresh.close();}
  }finally{await db.close();}
 });
