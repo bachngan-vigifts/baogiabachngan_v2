@@ -11,5 +11,6 @@ assert_same(str_contains($plugin,"unset(\$gateways['bacs'])"),true,'BACS removed
 assert_same(str_contains($plugin,"array('ml_sepay_qr'=>\$sepay)+\$gateways"),true,'SePay appears first');
 assert_same(str_contains($plugin,"woocommerce_bacs_settings"),true,'BACS disabled in stored configuration');
 assert_same(str_contains($plugin,"?'ml_sepay_qr':\$gateway"),true,'SePay is default gateway');
-assert_same(str_contains($plugin,'SePay – Chuyển khoản bằng QR'),true,'SePay checkout title');
+assert_same(str_contains($plugin,'Chuyển khoản trước vào tài khoản công ty'),true,'SePay checkout title');
+assert_same(str_contains($plugin,"\$this->description='';"),true,'No extra checkout description');
 echo "ML_SEPAY_ISOLATED_RULES_OK\n";

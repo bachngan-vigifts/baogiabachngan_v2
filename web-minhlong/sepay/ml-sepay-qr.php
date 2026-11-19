@@ -55,8 +55,8 @@ add_action('plugins_loaded', function(){
     class ML_SePay_QR_Gateway extends WC_Payment_Gateway {
         public function __construct(){
             $this->id='ml_sepay_qr'; $this->method_title='Minh Long - Chuyển khoản QR SePay';
-            $this->title='SePay – Chuyển khoản bằng QR';
-            $this->description='Quét QR ACB để thanh toán. Đơn chỉ được xác nhận sau khi ngân hàng báo tiền vào.';
+            $this->title='Chuyển khoản trước vào tài khoản công ty';
+            $this->description='';
             $this->has_fields=false; $this->enabled=ml_sepay_enabled()?'yes':'no';
         }
         public function is_available(){ return ml_sepay_enabled() && parent::is_available(); }
