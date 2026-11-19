@@ -41,3 +41,5 @@ jobs:
 # Exercise actual visible swatch controls, not their hidden select.
 
 # Verify regular homepage and explicit product readiness.
+
+# Native Flatsome wraps the hidden select separately from swatches.
