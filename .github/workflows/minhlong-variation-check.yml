@@ -1,0 +1,23 @@
+name: Minh Long variation validation
+on:
+  push:
+    branches: [codex/minhlong-variation-buttons-20261119]
+    paths:
+      - web-minhlong/variations/**
+      - tests/app/pos.test.ts
+      - .github/workflows/minhlong-variation-check.yml
+permissions:
+  contents: read
+jobs:
+  focused:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+          cache: npm
+      - run: php -l web-minhlong/variations/ml-variation-buttons.php
+      - run: npm ci
+      - run: node --import tsx --test --test-name-pattern='WooCommerce webhook' tests/app/pos.test.ts
