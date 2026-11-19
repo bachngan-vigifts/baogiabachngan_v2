@@ -7,7 +7,7 @@ permissions:
   contents: read
 concurrency:
   group: lock-quick-view-deploy
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   deploy:
     runs-on: ubuntu-24.04
@@ -17,7 +17,7 @@ jobs:
       - run: php -l web-lock/quick-view/lnl-native-quick-view.php
       - run: npm install --prefix /tmp/lnl-qv --no-audit --no-fund playwright@1.56.1 jsdom@26.1.0 jquery@3.7.1
       - run: node web-lock/quick-view/test.mjs
-      - run: /tmp/lnl-qv/node_modules/.bin/playwright install --with-deps chromium
+      - run: timeout 180 /tmp/lnl-qv/node_modules/.bin/playwright install chromium --only-shell
       - name: Upload, verify, and roll back on failure
         run: node web-lock/quick-view/deploy.mjs
         env:
