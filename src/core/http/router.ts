@@ -1,4 +1,5 @@
 import { AppError } from '../errors.ts';
+import { invalidateShortMemos } from '../cache/short-memo.ts';
 
 export interface RouteContext<Env = unknown> {
   req: Request; url: URL; params: Record<string, string>; env: Env;
@@ -92,6 +93,9 @@ export class Router<Env = unknown> {
 
   async handle(req: Request, env: Env = undefined as Env): Promise<Response> {
     const url = new URL(req.url);
+    // Lệnh ghi: bỏ bộ nhớ đệm ngắn của isolate trước và sau khi chạy để lần đọc kế tiếp luôn thấy dữ liệu mới.
+    const writes = req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS';
+    if (writes) invalidateShortMemos();
     try {
       await this.options.beforeAll?.(req, url, env);
       const prefix = this.options.prefix ?? '';
@@ -126,6 +130,8 @@ export class Router<Env = unknown> {
       if (e instanceof AppError) return json({ error: e.message, ...(e.code ? { code: e.code } : {}) }, e.status);
       console.error(e); // không lộ chi tiết lỗi nội bộ cho client
       return json({ error: 'Lỗi hệ thống. Vui lòng thử lại.' }, 500);
+    } finally {
+      if (writes) invalidateShortMemos();
     }
   }
 }

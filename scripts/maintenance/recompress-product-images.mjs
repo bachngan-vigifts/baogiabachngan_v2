@@ -52,7 +52,7 @@ async function main(){
   if(!out||!shouldReplace(bytes.length,out.length)){total.after+=bytes.length;total.skipped++;return;}
   if(apply){
    if(backup){const file=join(backup,name);await mkdir(dirname(file),{recursive:true});await writeFile(file,bytes);}
-   const put=await fetch(url(name),{method:'POST',headers:{...auth,'content-type':row.mime,'x-upsert':'true','cache-control':'max-age=3600'},body:out});if(!put.ok)throw new Error('ghi '+put.status);
+   const put=await fetch(url(name),{method:'POST',headers:{...auth,'content-type':row.mime,'x-upsert':'true','cache-control':'max-age=604800'},body:out});if(!put.ok)throw new Error('ghi '+put.status);
    const check=await fetch(url(name),{headers:auth});const saved=check.ok?Buffer.from(await check.arrayBuffer()):null;
    if(!saved||saved.length!==out.length){ // Ghi chưa chắc chắn: trả lại bản gốc.
     await fetch(url(name),{method:'POST',headers:{...auth,'content-type':row.mime,'x-upsert':'true'},body:bytes});throw new Error('kiểm lại sau khi ghi không khớp, đã trả bản gốc');

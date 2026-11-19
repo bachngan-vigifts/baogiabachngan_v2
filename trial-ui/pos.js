@@ -1339,9 +1339,11 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if(stock){const meta=preview||hit?.p||posSearch(sku,policyId)?.find(p=>p.sku===sku);if(meta)return {...meta,...stock,stockStale:stock.stockStale||stockFetchFailed,loading:false};}
     return null;
   };
-  let stockSnapshotAt=0;
-  function acceptStockSnapshot(snapshot){
-    if(!stockCache.adopt(snapshot,stockOwner()))return;stockSnapshotAt=Date.now();stockFetchFailed=false;updateStockStamp();
+  let stockSnapshotAt=0,stockFullAt=0;
+  // Tải đủ bản tồn ít nhất 5 phút/lần (mã vạch, danh mục); giữa các lần chỉ hỏi phần tồn đổi.
+  const STOCK_FULL_MS=5*60_000;
+  function acceptStockSnapshot(snapshot,merged=false){
+    if(!merged){if(!stockCache.adopt(snapshot,stockOwner()))return;stockFullAt=Date.now();}stockSnapshotAt=Date.now();stockFetchFailed=false;updateStockStamp();
     // A slow full preload must not replace a newer per-product read.
     for(const [key,hit]of liveCache)if(!hit.p.stockAsOf||hit.p.stockAsOf<=snapshot.asOf)liveCache.delete(key);
     scanLookup.clear();
@@ -1352,7 +1354,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if(!stockPreloadSupported||!st.register)return;
     const registerId=st.register.id,policyId=st.policy,owner=stockOwner(),scope=registerId+'|'+policyId+'|'+owner;
     if(stockRefreshRequest?.scope===scope)return stockRefreshRequest.promise;
-    const request={scope,promise:null};request.promise=api('/pos/stock-snapshot?registerId='+encodeURIComponent(registerId)+'&pricePolicyId='+encodeURIComponent(policyId)+(!stockCache.scope(registerId,policyId,owner)?.catalogItems?'&metadata=2':'')+(background?'&background=1':'')).then(snapshot=>{
+    const have=stockCache.scope(registerId,policyId,owner),delta=have?.base&&have.asOf&&Date.now()-stockFullAt<STOCK_FULL_MS?'&since='+encodeURIComponent(have.asOf)+'&base='+encodeURIComponent(have.base):'';
+    const request={scope,promise:null};request.promise=api('/pos/stock-snapshot?registerId='+encodeURIComponent(registerId)+'&pricePolicyId='+encodeURIComponent(policyId)+(!have?.catalogItems?'&metadata=2':'')+delta+(background?'&background=1':'')).then(snapshot=>{
+      if(delta&&stockOwner()===owner&&st.register?.id===registerId&&st.policy===policyId){
+        if(snapshot?.delta&&stockCache.merge(snapshot,owner)){acceptStockSnapshot(snapshot,true);return;}
+        // Danh mục / giá đổi hoặc không ghép được: tải lại bản đầy đủ.
+        stockFullAt=0;stockRefreshRequest=null;return refreshStockSnapshot(background);
+      }
       if(stockOwner()===owner&&st.register?.id===registerId&&st.policy===policyId){
         if (snapshot?.version !== 1) { stockPreloadSupported = false; clearTimeout(stockRefreshTimer); return; }
         acceptStockSnapshot(snapshot);

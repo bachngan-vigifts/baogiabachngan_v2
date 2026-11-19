@@ -1,11 +1,13 @@
-import {and,asc,eq,ne,sql} from 'drizzle-orm';
+import {and,asc,eq,gte,ne,sql} from 'drizzle-orm';
 import {alias} from 'drizzle-orm/pg-core';
 import type {AnyDb} from '../../../core/db/client.ts';
 import {AppError} from '../../../core/errors.ts';
+import {shortMemo} from '../../../core/cache/short-memo.ts';
 import {productOrder} from '../../catalog/api/product-query.ts';
 import {foldSql} from '../../../core/text/fold.ts';
 import {products,productPrices,productBarcodes} from '../../catalog/schema.ts';
 import {hiddenStockWarehouses} from '../../catalog/api/stock-source.ts';
+import {snapshotVersion} from '../../catalog/api/routes.ts';
 import {stockBalances} from '../../inventory/schema.ts';
 import {rememberLedgerWarehouses} from './pos-stock.ts';
 import {reservedBySku,type PosDb,type PosMember} from './pos-store.ts';
@@ -64,11 +66,46 @@ async function readPosStockSnapshot(db:PosDb,member:PosMember,register:{id:strin
  // 'compact': mảng theo CATALOG_COLUMNS, khỏi lặp tên trường và mã hàng ở mỗi dòng – nhẹ hơn khi tải và khi trình duyệt đọc JSON.
  const catalog=includeCatalog===true?rows.map(({sku,name,brand,unit,imageUrl,pattern})=>({sku,name,brand,unit,imageUrl,pattern})):undefined;
  const catalogRows=includeCatalog==='compact'?rows.map(p=>CATALOG_COLUMNS.map(c=>p[c as keyof typeof p]??'')):undefined;
- return {version:1,catalog,catalogColumns:catalogRows&&CATALOG_COLUMNS,catalogRows,registerId:register.id,warehouseId:register.warehouseId,pricePolicyId:policy,asOf:startedAt,warehouseReady:opened.includes(register.warehouseId),
+ return {version:1,base:(await snapshotVersion(db as unknown as AnyDb)).base,catalog,catalogColumns:catalogRows&&CATALOG_COLUMNS,catalogRows,registerId:register.id,warehouseId:register.warehouseId,pricePolicyId:policy,asOf:startedAt,warehouseReady:opened.includes(register.warehouseId),
   // sku, price, physical ledger quantity, reserved quantity, unambiguous scan codes
   rows:rows.map(p=>[p.sku,p.price,p.onHand??0,held.get(p.sku)??0,codes(p.sku)] as const)};
 }
 
+const snapshotMemo=shortMemo<Awaited<ReturnType<typeof readPosStockSnapshot>>>();
+/** Nhiều máy POS cùng quầy tải lại trong vài giây dùng chung một lần đọc. Khoá theo quầy, bảng giá, kiểu kèm danh mục và
+ * vai trò/chức vụ (quyết định kho bị ẩn). Lệnh ghi (bán, nhập, chuyển kho…) xoá bộ nhớ đệm ngay. */
 export function posStockSnapshot(db:AnyDb,member:PosMember,register:Parameters<typeof readPosStockSnapshot>[2],policy?:string,includeCatalog:SnapshotCatalog=false){
- return db.transaction(tx=>readPosStockSnapshot(tx,member,register,policy,includeCatalog),{isolationLevel:'repeatable read',accessMode:'read only'});
+ const key=[register.id,policy??register.pricePolicyId,String(includeCatalog),member.role,member.positionId??''].join('|');
+ return snapshotMemo.get(key,()=>db.transaction(tx=>readPosStockSnapshot(tx,member,register,policy,includeCatalog),{isolationLevel:'repeatable read',accessMode:'read only'}));
+}
+
+/** Khoảng chồng lấn khi lấy tồn đổi: giao dịch ghi bắt đầu trước mốc nhưng commit sau vẫn được gửi lại. */
+const DELTA_OVERLAP_MS=60_000, DELTA_MAX_AGE_MS=10*60_000;
+/**
+ * Chỉ phần tồn đổi kể từ `since` (asOf của bản máy POS đang có) – thay cho tải lại toàn bộ ~4.000 dòng mỗi 30 giây.
+ * Trả `{full:true}` (máy POS tải lại bản đầy đủ) khi: danh mục / giá / kho đổi (base khác), `since` quá cũ hoặc không hợp lệ.
+ * Hàng đang giữ (giữ theo báo giá hết hạn theo giờ, giữ theo đơn) luôn gửi đủ vì có thể đổi mà không có lệnh ghi tồn.
+ */
+async function readPosStockDelta(db:PosDb,member:PosMember,register:{id:string;name:string;warehouseId:string;pricePolicyId:string;secondPricePolicyId:string},policy:string,since:string,base:string){
+ if(![register.pricePolicyId,register.secondPricePolicyId].includes(policy))throw new AppError(400,'Bảng giá không hợp lệ.');
+ const startedAt=new Date().toISOString(),sinceMs=Date.parse(since);
+ const [hidden,current]=await Promise.all([hiddenStockWarehouses(db,member),snapshotVersion(db as unknown as AnyDb)]);
+ if(hidden.has(register.warehouseId))throw new AppError(403,'Bạn không được xem tồn kho riêng của quầy này.');
+ if(!Number.isFinite(sinceMs)||Date.now()-sinceMs>DELTA_MAX_AGE_MS||sinceMs>Date.now()+5*60_000||current.base!==base)return {version:1,full:true as const};
+ const cutoff=new Date(sinceMs-DELTA_OVERLAP_MS).toISOString();
+ // Không đọc lại mã vạch: máy POS giữ mã quét của bản đầy đủ (tải lại ít nhất 5 phút/lần).
+ const [opened,rows,held]=await Promise.all([
+  rememberLedgerWarehouses(db),
+  db.select({sku:products.sku,price:productPrices.price,onHand:stockBalances.qty}).from(products)
+   .innerJoin(productPrices,and(eq(productPrices.sku,products.sku),eq(productPrices.policyId,policy)))
+   .innerJoin(stockBalances,and(eq(stockBalances.sku,products.sku),eq(stockBalances.warehouseId,register.warehouseId)))
+   .where(and(eq(products.active,true),eq(products.approvalStatus,'approved'),sql`${productPrices.price} is not null`,gte(stockBalances.updatedAt,cutoff),posBrandScope(register.name,{preload:true}))).limit(20001),
+  reservedBySku(db,undefined,register.warehouseId),
+ ]);
+ if(rows.length>20000)return {version:1,full:true as const};
+ return {version:1,delta:true as const,base:current.base,registerId:register.id,warehouseId:register.warehouseId,pricePolicyId:policy,asOf:startedAt,warehouseReady:opened.includes(register.warehouseId),
+  rows:rows.map(p=>[p.sku,p.price,p.onHand??0,held.get(p.sku)??0,null] as const),held:[...held].filter(([,q])=>q>0)};
+}
+export function posStockDelta(db:AnyDb,member:PosMember,register:Parameters<typeof readPosStockDelta>[2],policy:string|undefined,since:string,base:string){
+ return db.transaction(tx=>readPosStockDelta(tx,member,register,policy??register.pricePolicyId,since,base),{isolationLevel:'repeatable read',accessMode:'read only'});
 }

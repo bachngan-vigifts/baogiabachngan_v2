@@ -46,7 +46,7 @@ export function registerLegacyImageRoutes(router: Router<StaffEnv>) {
           const bytes = await readLimited(await fetchLegacyMedia(c.env, r.imageUrl), IMAGE_FETCH_MAX_BYTES), mime = sniffImage(bytes);
           if (!mime) throw new AppError(415, 'File không phải ảnh.');
           const path = `legacy/${key}.${EXT[mime]}`;
-          await store.put(path, bytes, mime, { upsert: true });
+          await store.put(path, bytes, mime, { upsert: true, cacheSeconds: 7 * 86_400 }); // ảnh web cũ: giữ 7 ngày
           url = store.publicUrl(path); done.set(key, url);
         }
         await c.env.db.update(products).set({ imageUrl: url, updatedAt: new Date().toISOString() }).where(eq(products.sku, r.sku));
