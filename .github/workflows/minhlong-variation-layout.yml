@@ -23,3 +23,5 @@ jobs:
           retention-days: 7
 
 # Verify explicit grid row layout against product-specific CSS.
+
+# Capture remaining reset/link spacing.
