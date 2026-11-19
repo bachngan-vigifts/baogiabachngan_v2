@@ -14,12 +14,12 @@ Evidence includes rendered JSON-LD and public endpoint responses; no orders or c
 - Lock audit selected /san-pham/ shop archive rather than a product detail. A detail-price/schema comparison remains to do.
 - Lock organization logo references logo-fanco.png. Filename alone is insufficient evidence of a wrong image; inspect visually before changes.
 
-## Prepared change, NOT deployed
+## Deployed and verified — 2026-11-19
 bn-organization-identity.php adds only legalName, taxID and address to the existing Rank Math organization node on minhlongonline.com.
 No extra organization or Product graph; no visible UI, checkout or price changes.
 deploy-identity.mjs verifies visible source facts before hosting changes; uses exact readback, cache refresh and post-deploy checks on home/About; restores prior content on failure.
 cache.php is an expiring, secret-protected helper scoped to Minh Long, disabled after deployment.
-Automatic approval rejected creation of the live deployment workflow. It was NOT created or run. User production approval is required before retrying.
+After explicit user production approval, deployed successfully: https://github.com/bachngan-vigifts/baogiabachngan_v2/actions/runs/44547199292 . PHP/JS syntax checks passed. Exact hosting readback passed; local and Cloudflare cache refresh returned success. Home and About pages each expose exactly one organization with the approved legalName, taxID and address. Temporary cache helper was disabled. No rollback or unconfirmed cleanup was reported. Google-Extended settings were not changed.
 
 ## Gemini permission decision
 Google-Extended affects both Gemini training and grounding. User decision pending. Do not silently enable training or disable all AI/firewall protections.
