@@ -16,10 +16,10 @@ test('quyền đơn mua: nháp người tạo / Manager sửa; duyệt chỉ Man
   assert.deepEqual(purchaseActions(emp, draft, none), ['edit', 'cancel']);
   assert.deepEqual(purchaseActions(other, draft, none), [], 'nhân viên khác không sửa nháp của người khác');
   assert.deepEqual(purchaseActions(mgr, draft, none), ['edit', 'approve', 'cancel', 'pdf']);
-  assert.deepEqual(purchaseActions(mgr, approved, none), ['confirm', 'receive', 'pay', 'schedule', 'cancel', 'pdf']);
+  assert.deepEqual(purchaseActions(mgr, approved, none), ['reference', 'confirm', 'receive', 'pay', 'schedule', 'cancel', 'pdf']);
   assert.deepEqual(purchaseActions(kho, approved, none), ['receive']);
-  assert.deepEqual(purchaseActions(kt, approved, none), ['confirm', 'receive', 'pay', 'schedule', 'pdf']);
-  assert.deepEqual(purchaseActions(emp, approved, none), [], 'đơn đã duyệt: nhân viên chỉ xem');
+  assert.deepEqual(purchaseActions(kt, approved, none), ['reference', 'confirm', 'receive', 'pay', 'schedule', 'pdf']);
+  assert.deepEqual(purchaseActions(emp, approved, none), ['reference'], 'người tạo chỉ bổ sung mã NCC sau duyệt');
   assert.deepEqual(purchaseActions(ncc, approved, none), [], 'tài khoản NCC không dùng trang nội bộ');
   assert.equal(checkPurchase('receive', kho, draft, none).ok, false, 'chưa duyệt chưa nhận');
   assert.equal(checkPurchase('cancel', mgr, approved, { ...none, anyReceived: true }).ok, false, 'đã nhận hàng không huỷ');
@@ -92,4 +92,14 @@ test('quyền mua hàng theo công tắc trên trang Phân quyền, không theo 
   assert.equal(canViewEarlyRequests({id:'s',role:'employee',active:true,positionId:'sale'}),true);
   const mgr: Actor={id:'m',role:'manager',active:true,positionId:'manager',perms:[]};
   assert.equal(canSendEarlyRequest(mgr),true); assert.equal(canViewEarlyRequests(mgr),true);
+});
+
+
+test('supplier reference permissions remain available after full receipt but reject unrelated, inactive, supplier and cancelled orders',()=>{
+ const complete={anyReceived:true,fullyReceived:true,paid:100};
+ const confirmer:Actor={...other,perms:['purchases.confirm']};
+ for(const actor of [mgr,emp,confirmer])assert.equal(checkPurchase('reference',actor,approved,complete).ok,true);
+ for(const actor of [other,kho,ncc,{...emp,active:false}])assert.equal(checkPurchase('reference',actor,approved,complete).ok,false);
+ assert.equal(checkPurchase('reference',mgr,draft,none).ok,false);
+ assert.equal(checkPurchase('reference',mgr,{...approved,cancelledAt:'2026-11-19'},complete).ok,false);
 });
