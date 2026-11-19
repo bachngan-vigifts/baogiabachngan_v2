@@ -12,7 +12,7 @@ if(is_wp_error($r))continue;
 $j=json_decode(wp_remote_retrieve_body($r),true);
 foreach(($j['result']??array()) as $zone){
 if(($zone['name']??'')!=='minhlongonline.com'||!preg_match('/^[a-f0-9]{32}$/i',$zone['id']??''))continue;
-do_action('litespeed_purge_post',(int)get_option('page_on_front'));do_action('litespeed_purge_url',home_url('/'));
+do_action('litespeed_purge_all');
 $rr=wp_remote_post('https://api.cloudflare.com/client/v4/zones/'.$zone['id'].'/purge_cache',array('headers'=>$headers,'timeout'=>15,'body'=>wp_json_encode(array('hosts'=>array('minhlongonline.com')))));
 if(is_wp_error($rr))return array('found'=>true,'purged'=>false,'configured_zone_matches'=>$configured===$zone['id']);
 $jj=json_decode(wp_remote_retrieve_body($rr),true);
