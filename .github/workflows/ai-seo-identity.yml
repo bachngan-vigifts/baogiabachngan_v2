@@ -1,0 +1,32 @@
+name: Minh Long SEO identity
+on:
+  push:
+    branches: [codex/ai-seo-audit-20261119]
+    paths: [web-shared/ai-seo/bn-organization-identity.php, web-shared/ai-seo/cache.php, web-shared/ai-seo/deploy-identity.mjs, .github/workflows/ai-seo-identity.yml]
+permissions:
+  contents: read
+concurrency:
+  group: minhlong-seo-identity
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l web-shared/ai-seo/bn-organization-identity.php
+      - run: php -l web-shared/ai-seo/cache.php
+      - run: node --check web-shared/ai-seo/deploy-identity.mjs
+      - run: npm install --prefix /tmp/ai-seo --no-audit --no-fund playwright@1.56.1
+      - run: /tmp/ai-seo/node_modules/.bin/playwright install chromium --only-shell
+      - run: node web-shared/ai-seo/deploy-identity.mjs
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: seo-identity-evidence
+          path: seo-identity-evidence/
+          retention-days: 7
