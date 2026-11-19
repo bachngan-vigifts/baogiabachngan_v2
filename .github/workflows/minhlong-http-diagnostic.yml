@@ -1,0 +1,21 @@
+name: Minh Long HTTP diagnosis
+on:
+  push:
+    branches: [diagnose/minhlong-lag-20261119]
+    paths: [.github/workflows/minhlong-http-diagnostic.yml]
+permissions:
+  contents: read
+jobs:
+  http:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Measure public server response
+        shell: bash
+        run: |
+          for url in 'https://minhlongonline.com/' 'https://minhlongonline.com/wp-content/themes/flatsome/style.css' 'https://minhlongonline.com/san-pham/bo-tra-035l-misc-assortment-sen-vang/' 'https://locknlockonline.com/'; do
+            for attempt in 1 2; do
+              curl -sS -L --max-time 25 -A 'Mozilla/5.0' -D /tmp/ml-headers -o /dev/null -w 'HTTP_METRIC url=%{url_effective} code=%{http_code} dns=%{time_namelookup} tls=%{time_appconnect} ttfb=%{time_starttransfer} total=%{time_total} bytes=%{size_download}\n' "$url" || true
+              sed -n -E '/^(HTTP\/|[Ss]erver:|[Xx]-[Ll]itespeed-[Cc]ache:|[Cc]ache-[Cc]ontrol:|[Cc][Ff]-[Cc]ache-[Ss]tatus:)/p' /tmp/ml-headers
+            done
+          done
