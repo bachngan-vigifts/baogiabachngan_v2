@@ -43,3 +43,5 @@ jobs:
 # Verify regular homepage and explicit product readiness.
 
 # Native Flatsome wraps the hidden select separately from swatches.
+
+# Verify buy availability synchronized with native variation state.
