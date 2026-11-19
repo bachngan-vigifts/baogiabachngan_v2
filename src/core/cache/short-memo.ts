@@ -7,8 +7,9 @@
  * - Lỗi không được giữ lại. ttlMs <= 0 thì tắt hẳn (môi trường test).
  */
 const all = new Set<{ clear(): void }>();
-let defaultTtl = 0;
-/** Edge bật bằng setShortMemoTtl(…) lúc khởi động; test giữ 0 để mỗi lượt đọc đều thấy dữ liệu vừa ghi. */
+// Bật 5 giây khi chạy trên Edge (Deno); Node (test, script) giữ 0 để mỗi lượt đọc đều thấy dữ liệu vừa ghi.
+let defaultTtl = typeof (globalThis as { Deno?: unknown }).Deno !== 'undefined' ? 5000 : 0;
+/** Đổi thời gian giữ mặc định (vd test cần bật). */
 export function setShortMemoTtl(ms: number) { defaultTtl = Math.max(0, Math.floor(ms)); }
 export function invalidateShortMemos() { for (const m of all) m.clear(); }
 

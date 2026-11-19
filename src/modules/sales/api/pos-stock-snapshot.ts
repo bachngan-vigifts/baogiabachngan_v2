@@ -93,8 +93,9 @@ async function readPosStockDelta(db:PosDb,member:PosMember,register:{id:string;n
  if(hidden.has(register.warehouseId))throw new AppError(403,'Bạn không được xem tồn kho riêng của quầy này.');
  if(!Number.isFinite(sinceMs)||Date.now()-sinceMs>DELTA_MAX_AGE_MS||sinceMs>Date.now()+5*60_000||current.base!==base)return {version:1,full:true as const};
  const cutoff=new Date(sinceMs-DELTA_OVERLAP_MS).toISOString();
- const [opened,codes,rows,held]=await Promise.all([
-  rememberLedgerWarehouses(db),allScanCodes(db),
+ // Không đọc lại mã vạch: máy POS giữ mã quét của bản đầy đủ (tải lại ít nhất 5 phút/lần).
+ const [opened,rows,held]=await Promise.all([
+  rememberLedgerWarehouses(db),
   db.select({sku:products.sku,price:productPrices.price,onHand:stockBalances.qty}).from(products)
    .innerJoin(productPrices,and(eq(productPrices.sku,products.sku),eq(productPrices.policyId,policy)))
    .innerJoin(stockBalances,and(eq(stockBalances.sku,products.sku),eq(stockBalances.warehouseId,register.warehouseId)))
@@ -103,7 +104,7 @@ async function readPosStockDelta(db:PosDb,member:PosMember,register:{id:string;n
  ]);
  if(rows.length>20000)return {version:1,full:true as const};
  return {version:1,delta:true as const,base:current.base,registerId:register.id,warehouseId:register.warehouseId,pricePolicyId:policy,asOf:startedAt,warehouseReady:opened.includes(register.warehouseId),
-  rows:rows.map(p=>[p.sku,p.price,p.onHand??0,held.get(p.sku)??0,codes(p.sku)] as const),held:[...held].filter(([,q])=>q>0)};
+  rows:rows.map(p=>[p.sku,p.price,p.onHand??0,held.get(p.sku)??0,null] as const),held:[...held].filter(([,q])=>q>0)};
 }
 export function posStockDelta(db:AnyDb,member:PosMember,register:Parameters<typeof readPosStockDelta>[2],policy:string|undefined,since:string,base:string){
  return db.transaction(tx=>readPosStockDelta(tx,member,register,policy??register.pricePolicyId,since,base),{isolationLevel:'repeatable read',accessMode:'read only'});

@@ -6,9 +6,6 @@ import { createDb, closeDb } from '../../../src/core/db/client.ts';
 import { createDbLifecycle, createDbReadiness } from '../../../src/core/db/request-lifecycle.ts';
 import * as schema from '../../../src/db/schema.ts';
 import { createAppRouter } from '../../../src/app/router.ts';
-import { setShortMemoTtl } from '../../../src/core/cache/short-memo.ts';
-// Bộ nhớ đệm ngắn trong isolate cho danh mục / tồn POS: tối đa 5 giây, lệnh ghi xoá ngay (src/core/cache/short-memo.ts).
-setShortMemoTtl(5000);
 import { SYNC_PREFIX } from '../../../src/modules/staff/api/auth-routes.ts';
 import { supabaseFileStore } from '../../../src/core/storage/file-store.ts';
 // Trang giao diện được phép gọi API. Thêm địa chỉ mới (vd Cloudflare Pages) bằng secret ALLOWED_ORIGINS="https://a,https://b".
