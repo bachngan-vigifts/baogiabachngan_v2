@@ -65,6 +65,7 @@ export async function verify(preview=false){
   }
   await page.waitForFunction(()=>Number(document.querySelector('.product-lightbox [name="variation_id"]')?.value)>0,{timeout:45000});
   await popup.locator('.lnl-qv-buy').waitFor({state:'visible'});
+  await page.waitForFunction(()=>{const b=document.querySelector('.product-lightbox .lnl-qv-buy');return b&&!b.disabled;},null,{timeout:15000});
   assert(await popup.locator('.lnl-qv-buy').isEnabled(),'buy enabled');
   const data=await popup.locator('form.cart').evaluate(f=>({product_id:f.querySelector('[name=product_id]')?.value,variation_id:f.querySelector('[name=variation_id]')?.value}));
   const qty=popup.locator('[name=quantity]').first();await qty.fill('2');
