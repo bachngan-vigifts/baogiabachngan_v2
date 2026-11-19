@@ -9,18 +9,18 @@ import {employees} from '../modules/staff/schema.ts';
 import {seesAllAsSaleAdmin} from '../modules/staff/domain/roles.ts';
 import {customerIdentityLock} from '../modules/customers/api/identity.ts';
 import {customerAccess} from '../modules/customers/api/routes.ts';
-import {canListRetailCustomers} from '../modules/customers/domain/customer-config.ts';
+import {customerDirectoryVisibility} from '../modules/customers/api/visibility.ts';
 import {customers,customerStaff} from '../modules/customers/schema.ts';
 import {catalogueQuotes as quotes} from '../modules/catalog/catalogue-library-schema.ts';
 const linkedId=sql<string>`${quotes.data}::jsonb->'meta'->>'customerId'`;
 const customerScope=(db:CatalogueCustomerDb,actor:CatalogueCustomerActor)=>and(
  actor.role==='manager'||seesAllAsSaleAdmin(actor)?undefined:exists(db.select({id:customerStaff.customerId}).from(customerStaff).where(and(eq(customerStaff.customerId,customers.id),eq(customerStaff.memberId,actor.id)))),
- eq(customers.approvalStatus,'approved'),canListRetailCustomers(actor)?undefined:eq(customers.isRetail,false));
+ eq(customers.approvalStatus,'approved'),customerDirectoryVisibility(actor));
 export const catalogueCustomerLinks:CatalogueCustomerLinks={
  lock:customerIdentityLock,
  async resolve(db,actor,id){
-  const [row]=await db.select({id:customers.id,name:customers.name,approval:customers.approvalStatus,retail:customers.isRetail}).from(customers).where(eq(customers.id,id)).limit(1);
-  if(!row||row.retail&&!canListRetailCustomers(actor))throw new AppError(404,'Không tìm thấy khách hàng có thể sử dụng.');
+  const [row]=await db.select({id:customers.id,name:customers.name,approval:customers.approvalStatus}).from(customers).where(and(eq(customers.id,id),customerDirectoryVisibility(actor))).limit(1);
+  if(!row)throw new AppError(404,'Không tìm thấy khách hàng có thể sử dụng.');
   if(row.approval!=='approved')throw new AppError(400,'Khách hàng chưa được duyệt để lập báo giá.');
   if(!(await customerAccess(db as StaffEnv['db'],id,actor)).canSeeAll)throw new AppError(403,'Chỉ Manager, nhân viên phụ trách hoặc được chia sẻ khách được gắn báo giá Catalogue.');
   return{id:row.id,name:row.name};
@@ -44,7 +44,7 @@ export function registerCatalogueCustomers(router:Router<StaffEnv>){
   if(id)return json({customer:await catalogueCustomerLinks.resolve(c.env.db,actor,id)});
   if(query.trim().length<2)return json({customers:[]});
   const scope=actor.role==='manager'||seesAllAsSaleAdmin(actor)?undefined:exists(c.env.db.select({id:customerStaff.customerId}).from(customerStaff).where(and(eq(customerStaff.customerId,customers.id),eq(customerStaff.memberId,actor.id))));
-  const rows=await c.env.db.select({id:customers.id,name:customers.name,phone:customers.phone,taxCode:customers.taxCode}).from(customers).where(and(scope,eq(customers.approvalStatus,'approved'),canListRetailCustomers(actor)?undefined:eq(customers.isRetail,false),matchAllWords(sql`${customers.search}`,query))).orderBy(customers.name,customers.id).limit(8);
+  const rows=await c.env.db.select({id:customers.id,name:customers.name,phone:customers.phone,taxCode:customers.taxCode}).from(customers).where(and(scope,eq(customers.approvalStatus,'approved'),customerDirectoryVisibility(actor),matchAllWords(sql`${customers.search}`,query))).orderBy(customers.name,customers.id).limit(8);
   return json({customers:rows});
  },'business');
 }

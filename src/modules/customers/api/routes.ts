@@ -1,3 +1,4 @@
+import { customerDirectoryVisibility } from './visibility.ts';
 import {customerStaffOptions,validateNewCustomerShares} from './share-options.ts';
 import {customerProvince,provinceOptions} from '../domain/province.ts';
 import {provinceCodeSql} from './province.ts';
@@ -192,7 +193,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
   router.get('/customers/types', async c => {
     const name=sql<string>`btrim(${customers.customerType})`;
     const rows=await c.env.db.selectDistinct({name}).from(customers)
-      .where(and(ne(customers.approvalStatus,'rejected'),canListRetailCustomers(viewer(c))?undefined:eq(customers.isRetail,false)))
+      .where(and(ne(customers.approvalStatus,'rejected'),customerDirectoryVisibility(viewer(c))))
       .orderBy(asc(name));
     const seen=new Set<string>(),types:string[]=[];
     for(const row of rows){
@@ -220,7 +221,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const approval = status === 'rejected' ? and(eq(customers.approvalStatus, 'rejected'), canApprove(me) ? undefined : eq(customers.createdBy, me.id))
       : status === 'pending' || status === 'approved' ? eq(customers.approvalStatus, status) : usable ? eq(customers.approvalStatus, 'approved') : ne(customers.approvalStatus, 'rejected');
     const retailVisible = canListRetailCustomers(me), kind = c.url.searchParams.get('kind');
-    const segment = !retailVisible ? eq(customers.isRetail, false) : kind === 'retail' ? eq(customers.isRetail, true) : kind === 'business' ? eq(customers.isRetail, false) : undefined;
+    const segment = and(customerDirectoryVisibility(me), kind === 'retail' ? eq(customers.isRetail, true) : kind === 'business' ? eq(customers.isRetail, false) : undefined);
     const owner = c.url.searchParams.get('owner') || '', from = c.url.searchParams.get('from') || '', to = c.url.searchParams.get('to') || '';
     // Ô chọn khách (lập báo giá / đơn): `usable=1&limit≤8&q=…` chỉ cần vài khách khớp nhất. Một truy vấn trên cột `search`
     // (đã bỏ dấu sẵn khi lưu) thay cho bỏ dấu 6 cột từng dòng + đếm tổng + đếm khách chờ duyệt + người phụ trách.
