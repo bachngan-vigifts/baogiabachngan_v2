@@ -38,3 +38,8 @@ for(const file of ['woo-buy-now-direct.php','woo-ajax-add-to-cart.php','woo-card
 }
 const js=await read(dir+'/assets/js','woocommerce.js');
 for(const m of js.matchAll(/quick-view|quick_view|product-lightbox/g)){console.log('JS_QUICK_VIEW_CONTEXT',js.slice(Math.max(0,m.index-900),m.index+1800));}
+
+console.log('QV_DIRECTORY',JSON.stringify((await list(dir+'/inc/extensions/flatsome-wc-quick-view')).map(f=>f.file)));
+for(const sub of ['inc/extensions/flatsome-wc-quick-view/flatsome-quick-view.php','inc/extensions/flatsome-wc-quick-view/flatsome-wc-quick-view.php','woocommerce/content-single-product-lightbox.php']){
+try{const n=sub.lastIndexOf('/');console.log('FINAL_THEME_SOURCE',sub,await read(dir+'/'+sub.slice(0,n),sub.slice(n+1)));}catch{console.log('NOT_READ',sub);}
+}
