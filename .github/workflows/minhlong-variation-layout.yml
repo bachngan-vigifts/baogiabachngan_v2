@@ -29,3 +29,5 @@ jobs:
 # Check product-specific important style overrides.
 
 # Measure after native variation form initializes.
+
+# Native reset state is the observable initialization signal.
