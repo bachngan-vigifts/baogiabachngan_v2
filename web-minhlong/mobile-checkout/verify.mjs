@@ -8,7 +8,11 @@ export async function verify({previewCss=null,after=false}={}){
  try{
  for(const width of [390,1360]){
   const context=await browser.newContext({viewport:{width,height:900},isMobile:width===390,hasTouch:width===390});
-  const page=await context.newPage();page.setDefaultTimeout(20000);const errors=[];page.on('pageerror',e=>errors.push(e.message.slice(0,120)));
+  const page=await context.newPage();page.setDefaultTimeout(20000);
+  await page.addLocatorHandler(page.locator('#mltv-popup.mltv-popup--show'),async overlay=>{
+   const close=overlay.locator('[aria-label*="Đóng"],[aria-label*="đóng"],[aria-label*="Close"],[class*="close"]').first();
+   if(await close.isVisible())await close.click();else await overlay.locator('.mltv-popup__backdrop').click({position:{x:5,y:5}});
+  });const errors=[];page.on('pageerror',e=>errors.push(e.message.slice(0,120)));
   await page.route('**/*',async route=>{
    const req=route.request(),u=new URL(req.url());
    if(u.searchParams.get('wc-ajax')==='checkout'||/order-pay|order-received/.test(u.pathname)||/\/wc\/store\/.*\/checkout/.test(u.pathname))return route.abort();
@@ -19,7 +23,7 @@ export async function verify({previewCss=null,after=false}={}){
   const quick=page.locator('.product-small .box-image a.quick-view').first();
   if(width===390||after){
    await quick.scrollIntoViewIfNeeded();
-   if(width!==390)await quick.hover();
+   if(width!==390)await quick.locator('xpath=ancestor::div[contains(@class,"box-image")][1]').hover();
    await page.waitForTimeout(250);
    const shape=await quick.evaluate(a=>{const r=a.getBoundingClientRect(),b=a.closest('.box-image').getBoundingClientRect(),s=getComputedStyle(a);return {w:r.width,h:r.height,opacity:s.opacity,display:s.display,visibility:s.visibility,dx:Math.abs(r.x+r.width/2-b.x-b.width/2),dy:Math.abs(r.y+r.height/2-b.y-b.height/2)};});
    assert(shape.w>30&&shape.h>=32&&Number(shape.opacity)===1&&shape.visibility==='visible','quick view visible');
