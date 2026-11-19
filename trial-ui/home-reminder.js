@@ -1,4 +1,11 @@
 import {createTaskWriteIntent} from './task-write-intent.js';
+let style;
+function loadStyle(){
+ return style ||= new Promise((resolve,reject)=>{
+  const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./home-reminder.css',import.meta.url).href;
+  link.onload=resolve;link.onerror=()=>{style=null;link.remove();reject(Error('Chưa tải được form nhắc việc. Vui lòng thử lại.'));};document.head.append(link);
+ });
+}
 const today=()=>new Date(Date.now()+7*3600000).toISOString().slice(0,10);
 /** Reuse ordinary self-assigned CRM tasks, including server-side authorization and retry identity. */
 export function homeReminderContent(note,date,owner,minDate=today(),time=''){
@@ -14,8 +21,9 @@ export function homeReminderContent(note,date,owner,minDate=today(),time=''){
 export function initHomeReminder({api,userId,toast,confirmBox,onCreated=()=>{}}){
  let active=null;
  const reset=()=>{const old=active;active=null;if(old){if(old.dialog.open)old.dialog.close();old.dialog.remove();}};
- function open(){
+ async function open(){
   const who=userId();if(!who)return;
+  await loadStyle();if(who!==userId())return;
   if(active?.owner===who){active.dialog.querySelector('textarea').focus();return;}
   reset();
   const intent=createTaskWriteIntent({owner:()=>who,scope:'home-care-reminder'}),dialog=document.createElement('dialog');

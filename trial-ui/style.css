@@ -3016,3 +3016,11 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .submit-bulk-confirm { display:flex; align-items:flex-start; gap:8px; line-height:1.5; }
 .submit-bulk-confirm input[type="checkbox"] { flex:0 0 20px; width:20px; min-width:20px; max-width:20px; height:20px; min-height:20px; margin:3px 0 0; padding:0; }
 .submit-bulk-confirm span { flex:1; min-width:0; overflow-wrap:anywhere; }
+
+/* Global self-reminder launcher: available across staff routes without page-specific permissions. */
+.reminder-launcher{position:fixed;right:90px;bottom:22px;z-index:60;width:56px;height:56px;border:0;border-radius:50%;display:grid;place-items:center;background:#2563eb;color:white;box-shadow:0 8px 24px #123d803d;cursor:pointer}
+.reminder-launcher svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.reminder-launcher:focus-visible{outline:3px solid #93c5fd;outline-offset:3px}
+body:has(.reminder-launcher:not([hidden])) .main::after{content:'';display:block;flex:none;height:72px}
+@media(max-width:860px){.reminder-launcher{right:82px;bottom:calc(var(--nav-h,calc(62px + env(safe-area-inset-bottom))) + 12px)}body:has(#view-editor:not([hidden])) .reminder-launcher{bottom:calc(var(--nav-h,calc(62px + env(safe-area-inset-bottom))) + var(--savebar-h,68px) + 12px)}body:has(#view-pos:not([hidden])) .reminder-launcher{bottom:calc(var(--nav-h,calc(62px + env(safe-area-inset-bottom))) + 66px)}}
+@media(min-width:851px){body:has(#view-pos:not([hidden])) .reminder-launcher{left:88px;right:auto;bottom:18px}body:has(#view-pos:not([hidden]) .pos-show-menu) .reminder-launcher{left:328px}}
