@@ -37,3 +37,5 @@ jobs:
 # Validate the approved wording instead of the former title.
 
 # Capture guest checkout verification diagnostics.
+
+# Use native AJAX to establish the isolated guest cart session.
