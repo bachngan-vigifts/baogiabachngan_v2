@@ -1,3 +1,5 @@
+import {registerPosQrDisplayRoutes,qrView} from './pos-qr-display.ts';
+import {qrBank} from '../domain/pos-qr-display.ts';
 import { directlyAssignedCustomer } from '../../customers/api/visibility.ts';
 import {webOrderPayment} from '../domain/web-order-payment.ts';
 import {readWebSepayPaidAt,webSepayPaidAt} from './web-sepay-evidence.ts';
@@ -171,6 +173,7 @@ async function minhLongWebAction(c: RouteContext<StaffEnv>, m: ReturnType<typeof
     bucket: webBucket(next.status, next.ghnStatus) };
 }
 export function registerPosRoutes(router: Router<StaffEnv>) {
+  registerPosQrDisplayRoutes(router);
   router.post('/integrations/woocommerce/:source/order', async c => {
     const source = c.params.source === 'lock' ? 'lock' : c.params.source === 'minhlong' ? 'minhlong' : '';
     if (!source) throw new AppError(404, 'Nguồn website không hợp lệ.');
@@ -1262,7 +1265,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
               id: crypto.randomUUID(),
               shiftId: s.id,
               requestKey: key,
-              cart: JSON.stringify({ ...calc.canonical, reservedOrderNo }),
+              cart: JSON.stringify({ ...calc.canonical, reservedOrderNo, qrBank:{bankCode:calc.register.bankCode,bankAccount:calc.register.bankAccount,bankAccountName:calc.register.bankAccountName} }),
               fingerprint: calc.fingerprint,
               amount: calc.payable,
               createdAt: now,
@@ -1271,16 +1274,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             .returning();
         return { request: request!, register: calc.register };
       });
-      const { request: r, register: w } = result,
-        content = posQrContent(r);
-      return json({
-        id: r.id,
-        orderNo: reservedPosOrderNo(r.cart),
-        amount: r.amount,
-        expiresAt: r.expiresAt,
-        content,
-        url: `https://img.vietqr.io/image/${encodeURIComponent(w.bankCode)}-${encodeURIComponent(w.bankAccount)}-compact2.png?amount=${r.amount}&addInfo=${encodeURIComponent(content)}&accountName=${encodeURIComponent(w.bankAccountName)}`,
-      });
+      const {request:r,register:w}=result;
+      return json(qrView(r,qrBank(r.cart)??w));
     },
     'business',
   );

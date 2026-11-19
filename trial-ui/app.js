@@ -1,3 +1,4 @@
+import {initQrPhoneReceiver} from './pos-qr-phone.js';
 import { fetchCatalogSnapshot } from './catalog-snapshot-loader.js';
 import {requestOrderApproval,submissionSummary} from './order-submit.js';
 import {createProductionFiles,mountProductionFiles} from './production-files.js';
@@ -512,7 +513,7 @@ function showAuth(message = '', { keepToken = false } = {}) {
   stocktakeUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
   homeUi?.reset(); homeReminderUi?.reset(); homeNotifications?.clear(); notifier?.reset(); tasksUi?.resetQuick();
-  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; $('#reminder-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
+  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; $('#reminder-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop(); qrPhoneUi?.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
   // Chỉ tự đặt con trỏ khi vừa mở form; không giành focus người dùng đã chọn.
@@ -591,7 +592,7 @@ function openWorkspace(user) {
   currentHash = location.hash;
   route();
   loadAll();
-  notifier.start(); dataRefresh.start(); pulse.start();
+  notifier.start(); dataRefresh.start(); pulse.start(); qrPhoneView().start();
   // Không chụp mốc /quotes, /orders, /contracts lúc mở app (3 lượt đọc nặng mỗi lần mở, /orders ~270 KB): dữ liệu của trang đang
   // xem đã có mốc qua observe(); nhịp /pulse báo có thay đổi thì tick() so sánh đúng các đường dẫn đó và tải lại trang.
 }
@@ -861,6 +862,8 @@ $('#sapo-pull').addEventListener('click', async () => {
 
 // ---------------------------------------------------------------- điều hướng
 var posUi = null;
+var qrPhoneUi = null;
+const qrPhoneView = () => qrPhoneUi ||= initQrPhoneReceiver({api,user:()=>state.user,toast});
 var cashUi = null;
 const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:()=>state.user,go,onShiftClosed:async()=>{await loadNavigationBadges();if(location.hash.startsWith('#/pos'))await posUi?.load();},onChanged:()=>{loadNavigationBadges();tasksView().badge();}});
 // Bán hàng nhanh tìm trên danh mục tải sẵn như trang Sản phẩm: chỉ mã có giá ở bảng giá đang chọn (máy chủ vẫn lọc lại).
@@ -5884,7 +5887,7 @@ $('#pdf-quote-sale').addEventListener('click',()=>downloadSaleQuote('pdf'));
 $('#excel-quote-sale').addEventListener('click',()=>downloadSaleQuote('excel'));
 
 // Tin nhắn mới đến qua Web Push: cập nhật huy hiệu ngay (không chờ 20 giây).
-if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) { chatView().refresh(); dataRefresh.request(); dataRefresh.tick(); } });
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) { if(e.data.note?.eventType==='pos_qr_display')return; chatView().refresh(); dataRefresh.request(); dataRefresh.tick(); } });
 
 
 

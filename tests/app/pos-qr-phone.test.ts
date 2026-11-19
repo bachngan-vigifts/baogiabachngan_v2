@@ -1,0 +1,58 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {eq} from 'drizzle-orm';
+import {setup} from '../helpers/pos-fixture.ts';
+import {posPaymentRequests,posRegisters} from '../../src/modules/sales/pos-schema.ts';
+import {employees} from '../../src/modules/staff/schema.ts';
+import {webNotifications,webPushSubscriptions} from '../../src/modules/notifications/schema.ts';
+import {customerPayments,salesOrders} from '../../src/modules/sales/schema.ts';
+import {stockMoves} from '../../src/modules/inventory/schema.ts';
+
+test('QR sharing stays in the store, pushes mobile devices only, freezes the original QR and never records money/stock',async()=>{
+ const f=await setup(),s=await f.open(),body=f.cart(s.id),qr=await f.call('/pos/qr',f.emp,'POST',body);assert.equal(qr.status,200);
+ const made={data:{id:'outside-store'}};
+ await f.db.update(employees).set({positionId:'sales-ml'}).where(eq(employees.id,'cashier2'));
+ const pair=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveBits']),p256dh=Buffer.from(await crypto.subtle.exportKey('raw',pair.publicKey)).toString('base64url'),auth=Buffer.from(new Uint8Array(16).fill(7)).toString('base64url'),at=new Date().toISOString();
+ await f.db.insert(webPushSubscriptions).values([{id:'qr-mobile',memberId:'emp',userAgent:'iPhone Mobile'},{id:'qr-desktop',memberId:'emp',userAgent:'Windows Chrome'},{id:'foreign-mobile',memberId:'cashier2',userAgent:'Android Mobile'}].map(r=>({...r,endpoint:'https://push.example.test/'+r.id,p256dh,auth,createdAt:at,updatedAt:at})));
+ const pushed:string[]=[];f.env.sapoSyncToken='s'.repeat(64);f.env.pushFetch=async u=>{pushed.push(String(u));return new Response('',{status:201});};
+ const options=await f.call(`/pos/qr/${qr.data.id}/share-options`,f.emp);assert.equal(options.status,200,JSON.stringify(options.data));assert.equal(options.data.chooseStore,false);assert.deepEqual(options.data.options.map((x:any)=>x.id),[f.registerId]);
+ const key=crypto.randomUUID(),send={key,targetRegisterId:f.registerId};
+ assert.equal((await f.call(`/pos/qr/${qr.data.id}/share`,f.emp,'POST',{...send,targetRegisterId:made.data.id})).status,403);
+ const before={payments:(await f.db.select().from(customerPayments)).length,orders:(await f.db.select().from(salesOrders)).length,moves:(await f.db.select().from(stockMoves)).length};
+ const sent=await f.call(`/pos/qr/${qr.data.id}/share`,f.emp,'POST',send);assert.equal(sent.status,200,JSON.stringify(sent.data));assert.equal(sent.data.recipientCount,1);
+ assert.deepEqual(pushed,['https://push.example.test/qr-mobile']);
+ await f.call(`/pos/qr/${qr.data.id}/share`,f.emp,'POST',send);assert.equal(pushed.length,1);
+ const notes=await f.db.select().from(webNotifications).where(eq(webNotifications.eventType,'pos_qr_display'));assert.equal(notes.length,1);assert.equal(notes[0]!.targetMemberId,'emp');
+ let display=(await f.call('/pos/qr-display/pending',f.emp)).data.display;assert.equal(display.state,'pending');assert.equal(display.url,qr.data.url);assert.equal(display.amount,qr.data.amount);assert.equal(display.content,qr.data.content);
+ await f.db.update(posRegisters).set({bankAccount:'CHANGED-ACCOUNT'}).where(eq(posRegisters.id,f.registerId));
+ display=(await f.call('/pos/qr-display/'+qr.data.id,f.emp)).data.display;assert.equal(display.url,qr.data.url,'phone cannot rebuild a different bank QR');
+ assert.equal((await f.call('/pos/qr-display/'+qr.data.id,f.other)).status,404);
+ assert.equal((await f.call('/pos/qr-display/pending',f.other)).data.display,null);
+ assert.equal((await f.call('/pos/qr-display/'+qr.data.id,f.mgr)).status,404);
+ assert.equal((await f.call('/pos/qr-display/pending',f.ncc)).status,403);
+ assert.equal((await f.call('/pos/qr-display/pending','')).status,401);
+ await f.db.update(employees).set({positionId:'sales-ml'}).where(eq(employees.id,'emp'));
+ assert.equal((await f.call('/pos/qr-display/'+qr.data.id,f.emp)).status,403);
+ assert.equal((await f.call('/notifications',f.emp)).data.notifications.some((n:any)=>n.eventType==='pos_qr_display'),false);
+ await f.db.update(employees).set({positionId:'sales-lock'}).where(eq(employees.id,'emp'));
+ await f.db.update(posPaymentRequests).set({confirmedAt:new Date().toISOString()}).where(eq(posPaymentRequests.id,qr.data.id));
+ display=(await f.call('/pos/qr-display/pending',f.emp)).data.display;assert.equal(display.state,'paid');assert.equal(display.url,undefined);
+ assert.equal((await f.call(`/pos/qr/${qr.data.id}/share`,f.emp,'POST',{...send,key:crypto.randomUUID()})).status,409);
+ assert.deepEqual({payments:(await f.db.select().from(customerPayments)).length,orders:(await f.db.select().from(salesOrders)).length,moves:(await f.db.select().from(stockMoves)).length},before);
+});
+
+test('Sale Admin/Manager explicitly chooses a store; display-only grant does not widen POS rights; hide and expiry stop the QR',async()=>{
+ const f=await setup(),s=await f.open(f.mgr),qr=await f.call('/pos/qr',f.mgr,'POST',f.cart(s.id));
+ await f.db.update(posRegisters).set({name:'Sale Admin'}).where(eq(posRegisters.id,f.registerId));
+ const reg=await f.call('/pos/registers',f.mgr,'POST',{name:'Cửa hàng Lock',warehouseId:'pos-wh',pricePolicyId:'retail-vat',secondPricePolicyId:'retail',taxRate:8,bankCode:'ACB',bankAccount:'987654',bankAccountName:'FIXTURE'});
+ const options=await f.call(`/pos/qr/${qr.data.id}/share-options`,f.mgr);assert.equal(options.data.chooseStore,true);assert.equal(options.data.options.length,1);
+ assert.equal((await f.call(`/pos/qr/${qr.data.id}/share`,f.mgr,'POST',{key:crypto.randomUUID()})).status,403);
+ assert.equal((await f.call(`/pos/qr/${qr.data.id}/share`,f.mgr,'POST',{key:crypto.randomUUID(),targetRegisterId:reg.data.id})).status,200);
+ const display=await f.call('/pos/qr-display/'+qr.data.id,f.emp);assert.equal(display.status,200,JSON.stringify(display.data));assert.equal(display.data.display.url,qr.data.url);
+ assert.equal((await f.call(`/pos/qr/${qr.data.id}/status`,f.emp)).status,403,'receiving grants display only, not source counter access');
+ assert.equal((await f.call(`/pos/qr/${qr.data.id}/hide-display`,f.mgr,'POST',{})).status,200);
+ assert.equal((await f.call('/pos/qr-display/'+qr.data.id,f.emp)).data.display.state,'expired');
+ const next=await f.call('/pos/qr',f.mgr,'POST',f.cart(s.id));assert.equal(next.status,200);
+ await f.db.update(posPaymentRequests).set({expiresAt:'2000-01-01T00:00:00.000Z'}).where(eq(posPaymentRequests.id,next.data.id));
+ assert.equal((await f.call(`/pos/qr/${next.data.id}/share`,f.mgr,'POST',{key:crypto.randomUUID(),targetRegisterId:reg.data.id})).status,409);
+});

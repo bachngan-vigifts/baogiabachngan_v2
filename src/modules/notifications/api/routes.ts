@@ -37,6 +37,8 @@ export interface NotifyInput {
   persist?: boolean;
   /** Internal event identity; deduplicate persisted events per recipient before sending Web Push. */
   dedupeKey?: string;
+  /** A customer-facing QR display request only wakes mobile subscriptions. */
+  deviceClass?: 'mobile';
   /** true = chờ gửi xong mới trả lời (trang "Gửi thử" cần kết quả từng thiết bị). Mặc định gửi nền. */
   wait?: boolean;
 }
@@ -141,7 +143,8 @@ async function pushTo(env: StaffEnv, n: NotifyInput, note: StoredNote): Promise<
       const subs = await env.db.select({ id: webPushSubscriptions.id, memberId: webPushSubscriptions.memberId, endpoint: webPushSubscriptions.endpoint, p256dh: webPushSubscriptions.p256dh, auth: webPushSubscriptions.auth })
         .from(webPushSubscriptions).innerJoin(employees, and(eq(employees.id, webPushSubscriptions.memberId), eq(employees.active, true), isNull(employees.deletedAt)))
         .where(and(isNull(webPushSubscriptions.disabledAt), note.targetMemberId ? eq(webPushSubscriptions.memberId, note.targetMemberId)
-          : note.targetRole === 'all' ? undefined : eq(employees.role, note.targetRole as 'manager')));
+          : note.targetRole === 'all' ? undefined : eq(employees.role, note.targetRole as 'manager'),
+          n.deviceClass==='mobile'?sql`${webPushSubscriptions.userAgent} ~* '(iphone|ipad|ipod|android|mobile)'`:undefined));
       if (!subs.length) results.push({ subscriptionId: null, memberId: note.targetMemberId, status: null, error: NO_DEVICE });
       const payload = JSON.stringify({ id: note.id, eventType: note.eventType, title: note.title, body: note.body, url: note.url, data: n.data ?? {} });
       const doFetch = env.pushFetch ?? fetch;
