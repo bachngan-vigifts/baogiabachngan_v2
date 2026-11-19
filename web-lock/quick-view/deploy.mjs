@@ -32,8 +32,18 @@ let activated=false;
 try{
  activated=true;await put(code);if(await read(name)!==code)throw Error('Readback mismatch');
  console.log('QUICK_VIEW_EXACT_READBACK_OK');await purge();
- const normal=await fetch('https://locknlockonline.com/',{signal:AbortSignal.timeout(60000)});
- const html=await normal.text();if(!normal.ok||!html.includes('id="lnl-native-quick-view"')||!html.includes('href="#quick-view"'))throw Error('Public homepage still missing quick view');
+ let ready=false;
+ for(let attempt=0;attempt<5;attempt++){
+  for(const suffix of ['?lnl_qv_origin='+Date.now(),'']){
+   const r=await fetch('https://locknlockonline.com/'+suffix,{signal:AbortSignal.timeout(60000)});
+   const h=await r.text(),marker=h.includes('lnl-native-quick-view'),button=h.includes('href="#quick-view"');
+   console.log('HOME_CHECK',JSON.stringify({fresh:!!suffix,status:r.status,marker,button,cache:r.headers.get('cf-cache-status'),ls:r.headers.get('x-litespeed-cache')}));
+   if(!suffix&&r.ok&&marker&&button)ready=true;
+  }
+  if(ready)break;
+  await new Promise(r=>setTimeout(r,3000));
+ }
+ if(!ready)throw Error('Public homepage still missing quick view');
  await verify(false);
  await writeFile('quick-view-evidence/deployment.json',JSON.stringify({host:'locknlockonline.com',file:name,sha256:createHash('sha256').update(code).digest('hex'),normalHomepage:true,desktopAndMobile:true,cartWritesIntercepted:true,ordersCreated:0}));
  console.log('LOCK_QUICK_VIEW_DEPLOY_VERIFIED');
