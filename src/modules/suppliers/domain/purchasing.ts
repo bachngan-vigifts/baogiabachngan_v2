@@ -54,7 +54,7 @@ export function purchaseState(o: OrderFlags, progress: Pick<ReceiptProgress, 'an
   return o.supplierStatus === 'confirmed' ? 'confirmed' : 'awaiting_confirmation';
 }
 
-export type PurchaseAction = 'edit' | 'submit' | 'approve' | 'confirm' | 'receive' | 'pay' | 'schedule' | 'cancel' | 'pdf';
+export type PurchaseAction = 'reference' | 'edit' | 'submit' | 'approve' | 'confirm' | 'receive' | 'pay' | 'schedule' | 'cancel' | 'pdf';
 export type Check = { ok: true } | { ok: false; status: number; message: string };
 const no = (status: number, message: string): Check => ({ ok: false, status, message });
 const OK: Check = { ok: true };
@@ -65,6 +65,9 @@ export function checkPurchase(action: PurchaseAction, a: Actor | null | undefine
   const manager = isManager(a), state = purchaseState(o, p);
   if (state === 'cancelled' && action !== 'pdf') return no(409, 'Đơn mua đã huỷ.');
   switch (action) {
+    case 'reference':
+      if (state === 'draft') return no(409, 'Đơn chưa duyệt; nhập số đơn NCC khi sửa nháp.');
+      return manager || o.createdBy === a.id || canRecordSupplierConfirmation(a) ? OK : no(403, 'Chỉ người tạo đơn, Manager hoặc người được cấp quyền xác nhận NCC được cập nhật số đơn NCC.');
     case 'edit':
       if (state !== 'draft') return no(409, 'Đơn đã duyệt – chỉ sửa được khi còn nháp.');
       return manager || o.createdBy === a.id ? OK : no(403, 'Chỉ người tạo đơn hoặc Manager được sửa đơn nháp.');
@@ -95,7 +98,7 @@ export function checkPurchase(action: PurchaseAction, a: Actor | null | undefine
       return canSeePurchasePrices(a, o) ? OK : no(403, 'Chỉ người được xem giá mua tải được PDF đơn mua.');
   }
 }
-export const PURCHASE_ACTIONS: PurchaseAction[] = ['edit', 'submit', 'approve', 'confirm', 'receive', 'pay', 'schedule', 'cancel', 'pdf'];
+export const PURCHASE_ACTIONS: PurchaseAction[] = ['reference', 'edit', 'submit', 'approve', 'confirm', 'receive', 'pay', 'schedule', 'cancel', 'pdf'];
 export const purchaseActions = (a: Actor | null | undefined, o: OrderFlags, p: { anyReceived: boolean; fullyReceived: boolean; paid: number }) =>
   PURCHASE_ACTIONS.filter(x => checkPurchase(x, a, o, p).ok);
 

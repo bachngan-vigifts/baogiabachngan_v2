@@ -114,7 +114,7 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   assert.equal(v.supplierEmail, 'minhlong@ncc.vn', 'người nhận mặc định từ danh bạ');
   assert.equal(v.debt.status, 'overdue', 'cọc quá hạn');
   const ve = (await call(`/purchase-orders/${id}`, emp)).data;
-  assert.equal(ve.totals, null); assert.equal(ve.debt, null); assert.deepEqual(ve.actions, []);
+  assert.equal(ve.totals, null); assert.equal(ve.debt, null); assert.deepEqual(ve.actions, ['reference'], 'người tạo chỉ bổ sung mã NCC, không được duyệt/nhận hàng/xem giá');
   assert.equal((await call(`/purchase-orders/${id}`, kho)).data.lines[0].price, null, 'kho không thấy giá');
   assert.equal((await call(`/purchase-orders/${id}`, emp, 'PUT', { supplierId: a, warehouse: '12 Đường Giao Hàng', lines: [{ sku: 'LY1', quantity: 1 }] })).status, 409, 'đã duyệt không sửa nháp');
 

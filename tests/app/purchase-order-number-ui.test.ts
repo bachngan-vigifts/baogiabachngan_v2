@@ -72,3 +72,13 @@ test('restock page preserves separate optional numbers and includes them in each
  await runInNewContext(source.slice(source.indexOf('  async function save()'),source.indexOf('  // ----- mở trang:'))+';save();',t.c);
  assert.deepEqual(t.calls[0][2].orders.map((o:any)=>[o.supplierId,o.internalNo]),[['a','001-ML'],['b','']]);
 });
+
+
+test('supplier reference form sends only the reference and captured revision, validates empty input',()=>{
+ const t=h();t.run(section('  function supplierReferenceForm()', '  function confirmForm()')+';supplierReferenceForm();');
+ const form=t.made.find(n=>n.tag==='form')!,number=t.made.find((n:any)=>n.tag==='input'&&n.maxLength===100)!;
+ assert(number.required);number.value='   ';form.events.submit({preventDefault(){}});assert.equal(t.calls.length,0);assert(number.focused);
+ number.value='  000-NCC  ';form.events.submit({preventDefault(){}});
+ assert.deepEqual(JSON.parse(JSON.stringify(t.calls[0])),['/purchase-orders/one/supplier-reference','PUT',{revision:3,internalNo:'000-NCC'}]);
+ assert.match(src,/if \(has\('reference'\)\).*Bổ sung số đơn NCC/);
+});

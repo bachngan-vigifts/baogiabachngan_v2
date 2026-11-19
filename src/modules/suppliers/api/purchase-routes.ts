@@ -380,6 +380,22 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   // ---- Sửa nháp
+  // Update supplier reference only; never reopen approval, confirmation or receiving.
+  router.put('/purchase-orders/:id/supplier-reference', async c => {
+    const body = await readJson(c.req, 2000), id = c.params.id!, m = me(c);
+    if (!Number.isSafeInteger(body.revision) || Number(body.revision) < 0) fail(400, 'Thiếu phiên bản đơn mua hợp lệ. Tải lại đơn rồi thử lại.');
+    const internalNo = internalOrderNumber(body.internalNo);
+    if (!internalNo) fail(400, 'Nhập số đơn phía NCC cần bổ sung.');
+    await c.env.db.transaction(async tx => {
+      const p = await lockAndCheck(c, tx, id, 'reference', body.revision);
+      const before = p.raw.order.supplierInternalOrderNumber || '';
+      if (before === internalNo) return;
+      await bump(tx, id, m.id, { supplierInternalOrderNumber: internalNo });
+      await event(tx, id, m.id, 'supplier-reference', `Cập nhật số đơn phía NCC: ${before || '(trống)'} → ${internalNo}`, { before, after: internalNo });
+    });
+    return json((await loadPurchase(c.env.db, m, id, today())).view);
+  }, 'business');
+
   router.put('/purchase-orders/:id', async c => {
     guard(c);
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 400_000), prices = canSeePrices(asActor(m));
