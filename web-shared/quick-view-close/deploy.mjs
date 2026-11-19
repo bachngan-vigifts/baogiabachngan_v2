@@ -31,14 +31,9 @@ async function verify(host,preview){
    else await page.locator('#bn-qv-close-style').waitFor({state:'attached',timeout:45000});
    const trigger=page.locator('.product-small .quick-view').first();
    async function openQuickView(){
-    if(width===390 && !(await trigger.isVisible())){
-     // Theme hides its desktop opener on mobile; exercise the same native handler.
-     await trigger.evaluate(el=>window.jQuery(el).trigger('click'));
-    }else{
-     await trigger.scrollIntoViewIfNeeded();
-     await trigger.locator('xpath=ancestor::*[contains(@class,"box-image")][1]').hover();
-     await trigger.click();
-    }
+    // Open through the native handler to isolate close-control tests from
+    // theme hover visibility and unrelated delayed marketing overlays.
+    await trigger.evaluate(el=>window.jQuery(el).trigger('click'));
    }
    await openQuickView();
    const panel=page.locator('.mfp-wrap .product-lightbox');
