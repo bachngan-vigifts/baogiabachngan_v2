@@ -21,3 +21,5 @@ jobs:
           name: minhlong-layout-preview
           path: ml-choices-evidence/
           retention-days: 7
+
+# Verify explicit grid row layout against product-specific CSS.
