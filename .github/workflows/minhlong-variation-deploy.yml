@@ -36,3 +36,5 @@ jobs:
 # Popup mobile coverage resizes an opened popup; existing mobile trigger is hidden.
 
 # Refresh product page caches as well as homepage after global UI deployment.
+
+# Deploy merged PR734 and verify exact product row alignment.
