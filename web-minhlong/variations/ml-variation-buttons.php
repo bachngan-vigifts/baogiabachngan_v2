@@ -95,6 +95,12 @@ add_action('wp_head', function () {
     ?>
 <style id="ml-variation-choices-style">
 form.variations_form .variations select.ml-variation-native{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
+form.variations_form table.variations:has(tr.ml-variation-row),
+form.variations_form table.variations:has(tr.ml-variation-row)>tbody{display:block!important;width:100%!important}
+form.variations_form table.variations tr.ml-variation-row{display:grid!important;grid-template-columns:82px minmax(0,1fr)!important;align-items:start!important;gap:0!important;width:100%!important;margin:0!important;padding:0!important}
+form.variations_form table.variations tr.ml-variation-row>.label,
+form.variations_form table.variations tr.ml-variation-row>td.value{display:block!important;float:none!important;position:static!important;transform:none!important;min-height:0!important;height:auto!important;margin:0!important;width:auto!important}
+form.variations_form table.variations tr.ml-variation-row>.label label{position:static!important;transform:none!important;height:auto!important}
 /* Scope the layout to enhanced rows; leave native/swatches-only forms alone. */
 form.variations_form table.variations tr.ml-variation-row>th.label,
 form.variations_form table.variations tr.ml-variation-row>td.label{vertical-align:top!important;padding:0 12px 10px 0!important;background:transparent!important;border:0!important;width:82px}
