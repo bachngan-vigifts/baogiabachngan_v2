@@ -66,7 +66,7 @@ function message(form,text,error){
 }
 function sync(){document.querySelectorAll('.product-lightbox').forEach(prepare);}
 $(document).on('mfpOpen.lnlQv wc_variation_form.lnlQv show_variation.lnlQv hide_variation.lnlQv woocommerce_variation_has_changed.lnlQv',()=>{sync();setTimeout(sync,0);});
-new MutationObserver(ms=>{if(ms.some(m=>Array.from(m.addedNodes).some(n=>n.nodeType===1&&(n.matches('.product-lightbox')||n.querySelector('.product-lightbox')))))sync();}).observe(document.body,{childList:true,subtree:true});
+new MutationObserver(ms=>{if(ms.some(m=>m.type==='attributes'?m.target.matches('.product-lightbox .single_add_to_cart_button'):Array.from(m.addedNodes).some(n=>n.nodeType===1&&(n.matches('.product-lightbox')||n.querySelector('.product-lightbox')))))sync();}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','class']});
 document.addEventListener('submit',async function(e){
  const form=e.target,button=e.submitter;
  if(!form.matches?.('.product-lightbox form.cart')||form.querySelector('.group_table')||!button)return;
