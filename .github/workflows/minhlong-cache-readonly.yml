@@ -1,0 +1,42 @@
+name: Read Minh Long cache configuration
+on:
+  push:
+    branches: [diagnose/minhlong-lag-20261119]
+    paths: [.github/workflows/minhlong-cache-readonly.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read hosting cache flags without changing files
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          const user=process.env.CPANEL_USERNAME?.trim(),token=process.env.CPANEL_API_TOKEN?.trim(),raw=process.env.CPANEL_BASE_URL?.trim();
+          if(!user||!token||!raw)throw Error('Missing hosting credentials');
+          const base=new URL(raw.includes('://')?raw:'https://'+raw);if(base.protocol!=='https:')throw Error('HTTPS required');if(!base.port)base.port='2083';
+          async function api(module,fn,params={}) {
+           const u=new URL('/execute/'+module+'/'+fn,base);for(const[k,v]of Object.entries(params))u.searchParams.set(k,String(v));
+           const r=await fetch(u,{headers:{Authorization:'cpanel '+user+':'+token},signal:AbortSignal.timeout(30000)});const j=await r.json();
+           if(!r.ok||!j.status)throw Error('Read failed '+module+'/'+fn);return j.data;
+          }
+          const domains=await api('DomainInfo','domains_data',{format:'hash'});const roots={};
+          function walk(x){if(!x||typeof x!=='object')return;if(['minhlongonline.com','locknlockonline.com'].includes(x.domain)&&x.documentroot)roots[x.domain]=x.documentroot;for(const v of Object.values(x))if(typeof v==='object')walk(v);}
+          walk(domains);
+          for(const[host,root]of Object.entries(roots)){
+           if(!root.startsWith('/home/'+user+'/')||root.includes('..'))throw Error('Unverified root');
+           const read=async(dir,file)=>(await api('Fileman','get_file_content',{dir,file,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0})).content;
+           const config=await read(root,'wp-config.php');const ht=await read(root,'.htaccess');
+           const flags={};for(const k of ['WP_CACHE','DISABLE_WP_CRON','WP_DEBUG','WP_DEBUG_LOG']){const m=config.match(new RegExp("define\\s*\\(\\s*['\"]"+k+"['\"]\\s*,\\s*(true|false|1|0)\\s*\\)",'i'));flags[k]=m?m[1]:'not literal/unset';}
+           const mu=await api('Fileman','list_files',{dir:root+'/wp-content/mu-plugins'});
+           console.log('CACHE_CONFIG',JSON.stringify({host,flags,htaccess:{litespeedBlock:ht.includes('BEGIN LSCACHE'),cacheLookup:ht.match(/CacheLookup\s+\w+/g)||[],noCacheRuleCount:ht.split('\n').filter(l=>/CacheDisable|CacheEnable|no-cache|Cache-Control|cache-control/.test(l)).length},muPlugins:mu.filter(f=>/\.php$/.test(f.file||'')).map(f=>f.file)}));
+          }
+          NODE
