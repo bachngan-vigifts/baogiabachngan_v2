@@ -1,0 +1,44 @@
+name: Deploy Minh Long mobile quick view and bank default
+on:
+  push:
+    branches: [fix/minhlong-mobile-quickview-transfer-20261119]
+    paths: [.github/workflows/minhlong-mobile-fix.yml, web-minhlong/mobile-checkout/deploy.mjs, web-minhlong/mobile-checkout/verify.mjs, web-minhlong/mobile-checkout/ml-mobile-quick-view.php]
+permissions:
+  contents: read
+concurrency:
+  group: minhlong-store-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate syntax
+        run: |
+          php -l web-minhlong/mobile-checkout/ml-mobile-quick-view.php
+          node --check web-minhlong/mobile-checkout/deploy.mjs
+          node --check web-minhlong/mobile-checkout/verify.mjs
+          google-chrome --version
+      - name: Install isolated browser driver
+        run: |
+          mkdir -p /tmp/ml-mobile
+          cd /tmp/ml-mobile
+          npm init -y >/dev/null
+          npm install --silent playwright@1.63.0
+      - name: Preview, deploy, verify with rollback
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+        run: node web-minhlong/mobile-checkout/deploy.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: minhlong-mobile-fix-evidence
+          path: ml-mobile-evidence/
+          retention-days: 7
+          if-no-files-found: ignore
