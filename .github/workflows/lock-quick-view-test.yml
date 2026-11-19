@@ -1,0 +1,28 @@
+name: Test Lock quick view
+on:
+  push:
+    branches: [codex/lock-quick-view-20261119]
+    paths: [web-lock/quick-view/lnl-native-quick-view.php, web-lock/quick-view/test.mjs, web-lock/quick-view/verify.mjs, .github/workflows/lock-quick-view-test.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP lint and isolated DOM verification
+        run: |
+          php -l web-lock/quick-view/lnl-native-quick-view.php
+          npm install --prefix /tmp/lnl-qv --no-audit --no-fund playwright@1.56.1 jsdom@26.1.0 jquery@3.7.1
+          node web-lock/quick-view/test.mjs
+      - name: Browser dependencies
+        run: /tmp/lnl-qv/node_modules/.bin/playwright install --with-deps chromium
+      - name: Preview candidate against native quick view without deploying
+        run: node web-lock/quick-view/verify.mjs --preview
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lock-quick-view-preview
+          path: quick-view-evidence/
+          retention-days: 7
