@@ -1,4 +1,4 @@
-import { and, asc, gte, inArray, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import type { StaffEnv } from "../../staff/api/auth-routes.ts";
 import { sepayTransactions as bank } from "../../integrations/schema.ts";
 import { parseSepayPayment } from "../../integrations/domain/sepay-payment.ts";
@@ -12,6 +12,7 @@ export async function retryNearbySepay(env: StaffEnv) {
     .from(bank)
     .where(
       and(
+        eq(bank.transferType,'in'),
         inArray(bank.status, ["review", "unmatched"]),
         isNull(bank.paymentId),
         gte(bank.transactionAt, new Date(now - 15 * 60_000).toISOString()),

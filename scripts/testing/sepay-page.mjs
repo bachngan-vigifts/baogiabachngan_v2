@@ -234,7 +234,7 @@ try {
     await p.locator("#nav-group-4 .nav-group-toggle").click();
   await p.locator(".side-nav [data-nav=sepay]").click();
   await p.locator("[data-list] table").waitFor();
-  assert.equal(await p.locator("[data-open]").count(), 10);
+  assert.equal(await p.locator("[data-open]").count(), 9);
   assert.equal(await p.locator("#view-sepay img").count(), 0);
   assert.equal(await p.evaluate(() => window.__sepayXss), undefined);
   await p.screenshot({ path: out + "/manager-desktop.png", fullPage: true });
@@ -478,7 +478,7 @@ try {
   await f.order('FILTER_DRAFT',{status:'draft'});
   const searchRuns=[];
   for(const width of [1440,390]) for(let run=1;run<=3;run++) {
-    const view=await pageFor(f.mgr,width,'#/sepay?q=picker-account-pending');
+    const view=await pageFor(f.mgr,width,'#/sepay?entity=unassigned&q=picker-account-pending');
     await view.p.locator('[data-open]').waitFor();
     const started=performance.now();
     await detail(view.p,pickerEvent.id);
@@ -527,7 +527,7 @@ try {
   }
   await writeFile(out+'/search-timing.json',JSON.stringify(searchRuns,null,2));
   results.push({case:'default document list, typeahead, filters, pagination and manually selectable CRM drafts on PC/mobile',pass:true});
-  const picker=await pageFor(f.mgr,390,'#/sepay?q=picker-account-pending');
+  const picker=await pageFor(f.mgr,390,'#/sepay?entity=unassigned&q=picker-account-pending');
   await picker.p.locator('[data-open]').waitFor();await detail(picker.p,pickerEvent.id);
   await picker.p.locator('[data-order-search]').waitFor();
   await picker.p.locator('[data-order-search] input[name="orderQuery"]').fill('HDKT_PICK_001');
@@ -575,7 +575,7 @@ try {
     const order=await f.order('VG_BANK_'+width,{status:'draft'});
     await f.db.insert(salesContracts).values({id:crypto.randomUUID(),orderId:order.id,contractNo:'11/HĐKT/VG-BANK'+width,legalEntity:'VG',status:'draft',createdBy:'mgr',createdAt:f.stamp,updatedAt:f.stamp});
     const transfer=await f.incoming(order.orderNo,30000,{accountNumber:'159063909'});
-    const view=await pageFor(f.mgr,width,'#/sepay?q='+transfer.providerId);
+    const view=await pageFor(f.mgr,width,'#/sepay?entity=vigifts&q='+transfer.providerId);
     await view.p.locator('[data-open]').waitFor();await detail(view.p,transfer.id);await choose(view.p,order.orderNo);
     assert.ok((await view.p.locator('[data-preview]').textContent()).includes('Tài khoản mặc định159063909'));
     await review(view.p);await view.p.locator('[data-confirm]').click();await view.p.locator('[data-notice] .sp-success').waitFor();

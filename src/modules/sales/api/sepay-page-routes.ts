@@ -1,3 +1,4 @@
+import {sepayEntityMap} from '../domain/sepay-entities.ts';
 import {defaultSepayCrmAccount} from '../domain/sepay-crm-account.ts';
 import {sepayManualAccountApproved} from './sepay-manual-account.ts';
 import {validWebSepay} from './web-sepay-evidence.ts';
@@ -5,7 +6,7 @@ import {previewNearbySepay} from './sepay-proximity-store.ts';
 import { customers } from '../../customers/schema.ts';
 import {WEB_PAYMENT_BLOCKED_STATUSES} from '../domain/web-order-outcome.ts';
 import {isLockWebQrPayment} from './sepay-web-store.ts';
-import {webStoreOrders as web,posRegisters as webRegisters} from '../pos-schema.ts';
+import {webStoreOrders as web,posRegisters as webRegisters,posRegisters} from '../pos-schema.ts';
 import {webDocumentStatus} from './web-order-documents.ts';
 import {
   and,
@@ -44,6 +45,7 @@ import {
 } from "../schema.ts";
 import {
   canViewSepay,
+  canViewSepayDebits,
   sepayPageFilters,
   sepayManualChoice,
   sepayPosIntent,
@@ -60,12 +62,13 @@ function readAccess(c: Ctx): void {
     throw new AppError(403, "Chức vụ của bạn chưa được cấp quyền Thanh toán SePay.");
 }
 const validWeb = validWebSepay();
-const state = sql<string>`case when ${bank.status}='matched' and
+const state = sql<string>`case when ${bank.transferType}='out' then 'debit' when ${bank.status}='matched' and
  (case when ${bank.webOrderId} is not null then not (${validWeb}) else
  ((${bank.matchMethod}='amount_time' and ${orders.createdAt} is distinct from ${bank.matchedOrderAt}) or ${payments.id} is null or ${payments.voidedAt} is not null or ${payments.orderId} is distinct from ${bank.orderId} or ${payments.amount}<>${bank.amount} or ${payments.method}<>'transfer') end)
  then 'receipt_issue' else ${bank.status} end`;
 const columns = {
   id: bank.id,
+  transferType:bank.transferType,
   providerId: bank.providerId,
   amount: bank.amount,
   accountNumber: bank.accountNumber,
@@ -99,6 +102,11 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
     async (c) => {
       readAccess(c);
       const f = sepayPageFilters(c.url.searchParams, vietnamDate().iso);
+      const debitAccess=canViewSepayDebits(member(c));
+      if(f.direction!=='in'&&!debitAccess)throw new AppError(403,'Chỉ Manager và Kế toán được xem tiền ra.');
+      const configured=await c.env.db.selectDistinct({accountNumber:posRegisters.bankAccount,accountName:posRegisters.bankAccountName}).from(posRegisters);
+      const entities=sepayEntityMap(configured),accounts=[...entities].filter(([,e])=>e!=='unassigned').map(([a])=>a);
+      const company=f.entity==='unassigned'?(accounts.length?sql`${bank.accountNumber} not in (${sql.join(accounts.map(a=>sql`${a}`),sql`,`)})`:sql`true`):f.entity?inArray(bank.accountNumber,[...entities].filter(([,e])=>e===f.entity).map(([a])=>a)):undefined;
       const status =
         f.status === "all"
           ? undefined
@@ -106,6 +114,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
             ? inArray(state, ["review", "unmatched"])
             : eq(state, f.status);
       const where = and(
+        inArray(bank.transferType,f.direction==='all'?['in','out']:[f.direction]),company,
         gte(bank.transactionAt, f.start),
         lt(bank.transactionAt, f.end),
         gte(bank.amount, f.min),
@@ -131,7 +140,10 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
           const [summary] = await tx
             .select({
               count: sql<number>`count(*)::int`,
-              amount: sql<number>`coalesce(sum(${bank.amount}),0)::float8`,
+              amount: sql<number>`coalesce(sum(${bank.amount}) filter(where ${bank.transferType}='in'),0)::float8`,
+              incomingCount:sql<number>`count(*) filter(where ${bank.transferType}='in')::int`,
+              outgoingCount:sql<number>`count(*) filter(where ${bank.transferType}='out')::int`,
+              outgoingAmount:sql<number>`coalesce(sum(${bank.amount}) filter(where ${bank.transferType}='out'),0)::float8`,
               postedCount: sql<number>`count(*) filter(where ${state}='matched')::int`,
               postedAmount: sql<number>`coalesce(sum(${bank.amount}) filter(where ${state}='matched'),0)::float8`,
               pendingCount: sql<number>`count(*) filter(where ${state} in ('review','unmatched'))::int`,
@@ -162,12 +174,16 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         },
         { isolationLevel: "repeatable read", accessMode: "read only" },
       );
+      const {outgoingCount,outgoingAmount,...incomingSummary}=result.summary;
       return json({
         ...result,
+        summary:debitAccess?result.summary:incomingSummary,
+        transactions:result.transactions.map(r=>({...r,entity:entities.get(r.accountNumber)||'unassigned'})),
         filters: {
           from: f.from,
           to: f.to,
           status: f.status,
+          entity:f.entity,direction:f.direction,
           account: f.account,
           q: f.q,
           min: f.min,
@@ -179,7 +195,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
           total: result.summary.count,
           hasMore: f.offset + result.transactions.length < result.summary.count,
         },
-        capabilities: { canConfirm: member(c).role === "manager", canPull: !!c.env.sepayApiToken },
+        capabilities: { canConfirm: member(c).role === "manager", canPull: !!c.env.sepayApiToken,canViewDebits:debitAccess,debitImportEnabled:debitAccess&&!!c.env.sepayDebitImportEnabled },
         automationConfigured: !!c.env.sepayReceiptAccounts?.length,
       });
     },
@@ -198,7 +214,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         .leftJoin(orders, eq(orders.id, bank.orderId))
         .leftJoin(contracts, eq(contracts.orderId, orders.id))
         .leftJoin(payments, eq(payments.id, bank.paymentId))
-        .where(eq(bank.id, c.params.id!))
+        .where(and(eq(bank.id,c.params.id!),canViewSepayDebits(member(c))?inArray(bank.transferType,['in','out']):eq(bank.transferType,'in')))
         .limit(1);
       if (!row) throw new AppError(404, "Không tìm thấy giao dịch SePay.");
       const history = await c.env.db
@@ -221,7 +237,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
         .limit(20);
       const webPayment=!!row.webOrderId||await isLockWebQrPayment(c.env.db,row);
-      const accountApproved = await sepayManualAccountApproved(c.env.db,c.env,row.accountNumber,row.contractNo);
+      const accountApproved = row.transferType==='in'&&await sepayManualAccountApproved(c.env.db,c.env,row.accountNumber,row.contractNo);
       return json({
         transaction: row,
         history: history.map((h) => {
@@ -243,10 +259,11 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         }),
         capabilities: {
           canConfirm:
-            member(c).role === "manager" &&
+            member(c).role === "manager" &&row.transferType==='in'&&
             ["review", "unmatched"].includes(row.status),
         },
         blockReason:
+          row.transferType==='out'?'Tiền ra chỉ để theo dõi; không gán đơn hay tạo phiếu thu.':
           webPayment ? row.reason || "Giao dịch thuộc đơn web; xem trạng thái thanh toán trên đúng đơn web." :
           sepayPosIntent(row.content) || row.orderChannel === "pos"
             ? "Giao dịch thuộc luồng QR/POS; không gắn vào đơn CRM khác."
@@ -336,6 +353,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
             .from(bank)
             .where(eq(bank.id, transactionId))
             .limit(1);
+          if(event&&event.transferType!=='in')throw new AppError(409,'Tiền ra không được gán vào khoản thu.');
           if(event && (event.status==='matched'||event.paymentId))throw new AppError(409,'Giao dịch đã được xử lý. Tải lại để kiểm tra.');
           if(event) {
             const [selected]=c.params.id!.startsWith('web:')?[]:await tx.select({channel:orders.channel}).from(orders).where(eq(orders.id,c.params.id!)).limit(1);
@@ -472,6 +490,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         .where(eq(bank.id, c.params.id!))
         .limit(1);
       if (!event) throw new AppError(404, "Không tìm thấy giao dịch SePay.");
+      if(event.transferType!=='in')throw new AppError(409,'Tiền ra không được xác nhận ghi thu.');
       let payment;
       try {
         payment = parseSepayPayment(JSON.parse(event.payload));

@@ -1,10 +1,10 @@
 import { AppError } from '../../../core/errors.ts';
-import { parseSepayPayment, sepayPaidDate, type SepayPayment } from '../domain/sepay-payment.ts';
+import { parseSepayPayment, parseSepayBankTransaction, sepayPaidDate, type SepayPayment, type SepayBankTransaction } from '../domain/sepay-payment.ts';
 
 export const SEPAY_READ_LIMIT = 1000;
 const MAX_BYTES = 3_000_000;
 /** GET only, fixed provider origin; never forward employee credentials or follow redirects. */
-export async function readSepayDay(token: string, day: string, fetcher: typeof fetch = fetch) {
+export async function readSepayDay(token: string, day: string, fetcher: typeof fetch = fetch, includeDebits=false) {
   if (!/^[\x21-\x7e]{16,4096}$/.test(token))
     throw new AppError(503, 'Chưa cấu hình API đọc SePay trên máy chủ.');
   async function request(resource: 'list' | 'count') {
@@ -49,7 +49,7 @@ export async function readSepayDay(token: string, day: string, fetcher: typeof f
   // Refuse a potentially truncated day, rather than silently omit older transactions.
   if (body.transactions.length >= SEPAY_READ_LIMIT)
     throw new AppError(502, 'Hôm nay có từ 1.000 giao dịch trở lên. Cần đồng bộ theo đợt; chưa nhập dữ liệu.');
-  const payments: SepayPayment[] = []; let outgoing = 0;
+  const payments: SepayPayment[] = [],debits: SepayBankTransaction[]=[]; let outgoing = 0;
   for (const raw of body.transactions) {
     try {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('row');
@@ -58,7 +58,7 @@ export async function readSepayDay(token: string, day: string, fetcher: typeof f
         : typeof v === 'string' && /^\d+(?:\.0+)?$/.test(v.trim()) && Number.isSafeInteger(Number(v)) ? Number(v) : NaN;
       const incoming = amount(row.amount_in), out = amount(row.amount_out);
       if (!Number.isFinite(incoming) || !Number.isFinite(out) || incoming > 0 && out > 0 || String(row.transaction_date).slice(0,10) !== day) throw new Error('amount/date');
-      if (!incoming) { outgoing++; continue; }
+      if (!incoming) { outgoing++;if(out>0&&includeDebits)debits.push(parseSepayBankTransaction({id:row.id,transferType:'out',transferAmount:out,accountNumber:row.account_number,content:row.transaction_content,transactionDate:row.transaction_date,source:'sepay_api',sepayApi:row}));continue; }
       const payment = parseSepayPayment({ id: row.id, transferType: 'in', transferAmount: incoming,
         accountNumber: row.account_number, content: row.transaction_content,
         transactionDate: row.transaction_date, source: 'sepay_api', sepayApi: row });
@@ -66,5 +66,5 @@ export async function readSepayDay(token: string, day: string, fetcher: typeof f
       payments.push(payment);
     } catch { throw new AppError(502, 'Có giao dịch SePay sai định dạng hoặc ngoài ngày yêu cầu. Chưa nhập dữ liệu; cần kiểm tra nguồn.'); }
   }
-  return { payments, read: body.transactions.length, outgoing };
+  return { payments, debits, read: body.transactions.length, outgoing };
 }
