@@ -32,3 +32,5 @@ jobs:
           name: minhlong-variation-evidence
           path: ml-choices-evidence/
           retention-days: 7
+
+# Popup mobile coverage resizes an opened popup; existing mobile trigger is hidden.
