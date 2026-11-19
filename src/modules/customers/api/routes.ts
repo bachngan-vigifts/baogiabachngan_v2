@@ -243,7 +243,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const sort = c.url.searchParams.get('sort') || 'newest';
     if (!['newest','oldest','name-asc','name-desc'].includes(sort)) throw new AppError(400, 'Cách sắp xếp khách hàng không hợp lệ.');
     const order = sort === 'oldest' ? [asc(customers.createdAt)] : sort === 'name-asc' ? [asc(foldSql(customers.name)), asc(customers.name)] : sort === 'name-desc' ? [desc(foldSql(customers.name)), desc(customers.name)] : [desc(customers.createdAt)];
-    const where = and(segment, matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine, approval, assigned, created,provinceFilter);
+    const where = and(segment, matchAllWords(sql`${customers}.search_fold`, c.url.searchParams.get('q')), mine, approval, assigned, created,provinceFilter);
     const [[{ total = 0 } = {}], rows, [{ pending = 0 } = {}], owners] = await Promise.all([
       c.env.db.select({ total: count() }).from(customers).where(where),
       c.env.db.select().from(customers).where(where).orderBy(...rankFirst(searchRank([customers.customerCode, customers.phone, customers.taxCode], customers.name, c.url.searchParams.get('q'))), ...order, asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),

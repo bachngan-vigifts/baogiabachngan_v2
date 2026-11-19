@@ -40,6 +40,24 @@ function countLines(raw:unknown):Line[]{
   return {sku,source:'stocktake' as const,expectedQty,countedQty,qty:Math.round((countedQty-expectedQty)*1000)/1000};
  }).sort((a,b)=>a.sku.localeCompare(b.sku));
 }
+/** Keep catalog keys intact. Only resolve a non-exact spelling when its case-insensitive match is unique. */
+async function catalogLines(db:Db,lines:Line[],stocktake:boolean):Promise<Line[]>{
+ const exact=new Set((await db.select({sku:products.sku}).from(products).where(inArray(products.sku,lines.map(l=>l.sku)))).map(p=>p.sku));
+ const missing=lines.filter(l=>!exact.has(l.sku));
+ if(!missing.length)return lines;
+ const candidates=await db.select({sku:products.sku}).from(products).where(inArray(sql`lower(${products.sku})`,[...new Set(missing.map(l=>l.sku.toLowerCase()))]));
+ const byCase=new Map<string,string[]>();
+ for(const {sku} of candidates){const key=sku.toLowerCase();byCase.set(key,[...(byCase.get(key)||[]),sku]);}
+ const resolved=lines.map(l=>{
+  if(exact.has(l.sku))return l;
+  const matches=byCase.get(l.sku.toLowerCase())||[];
+  if(!matches.length)fail(400,'Mã không có trong danh mục.');
+  if(matches.length!==1)fail(400,`Mã ${l.sku} trùng khi bỏ qua chữ hoa/thường. Nhập đúng mã trong danh mục.`);
+  return {...l,sku:matches[0]!};
+ });
+ // Revalidate after resolution: merge adjustment deltas; reject duplicate stocktake snapshots.
+ return stocktake?countLines(resolved):cleanLines(resolved);
+}
 type StockChange={sku:string;expectedQty:number;currentQty:number;countedQty:number;qty:number};
 const fmtQty=(n:number)=>Number(n).toLocaleString('vi-VN',{maximumFractionDigits:3});
 /**
@@ -204,8 +222,7 @@ export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)
   if(reason.length<3)fail(400,'Nhập lý do điều chỉnh.');
   if(!(await c.env.db.select({id:warehouses.id}).from(warehouses).where(and(eq(warehouses.id,warehouseId),eq(warehouses.kind,'stock'),eq(warehouses.active,true))).limit(1)).length)fail(400,'Chọn kho điều chỉnh.');
   if(!(await allowed(c)).some(w=>w.id===warehouseId))fail(403,'Kho không thuộc phạm vi sổ kho của bạn.');
-  const stocktake=body.source==='stocktake',lines=stocktake?countLines(body.lines):cleanLines(body.lines),known=new Set((await c.env.db.select({sku:products.sku}).from(products).where(inArray(products.sku,lines.map(l=>l.sku)))).map(p=>p.sku));
-  if(lines.some(l=>!known.has(l.sku)))fail(400,'Mã không có trong danh mục.');
+  const stocktake=body.source==='stocktake',lines=await catalogLines(c.env.db,stocktake?countLines(body.lines):cleanLines(body.lines),stocktake);
   const hash=sha256Hex(JSON.stringify({warehouseId,reason,lines}));
   // Khoá gửi bắt buộc với mọi người (kể cả Manager): server tự sinh khoá thì bấm lặp / mạng gửi lại thành hai phiếu, ghi tồn hai lần.
   const clientKey=body.clientKey;

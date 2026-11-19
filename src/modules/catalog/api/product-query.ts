@@ -8,7 +8,9 @@ import { compactText, needsCompact, parseQuery } from '../domain/product-rank.ts
  * khớp cả khi bỏ khoảng trắng, dấu câu: "0.5l" ↔ "0.5 L") và xếp theo mức liên quan thay vì bảng chữ cái.
  */
 const likeEsc = (v: string) => v.replace(/[\\%_]/g, m => '\\' + m);
-const productHay = () => foldSql(products.sku, products.name, products.brand, products.pattern);
+/** Chuỗi tìm kiếm đã bỏ dấu, lưu sẵn trong cột sinh tự động `products.search_fold` (= foldSql(sku, name, brand, pattern),
+ * migration 20261119090000_search_fold_columns.sql). Tìm không phải chạy translate() trên mọi dòng; có chỉ mục trigram. */
+const productHay = () => sql`${products}.search_fold`;
 const compactSql = (folded: SQL) => sql`regexp_replace(${folded}, '[^a-z0-9]', '', 'g')`;
 /** Tên đã bỏ dấu, gộp khoảng trắng (như `fold()` ở JS). */
 const foldedName = () => sql`btrim(regexp_replace(${foldSql(products.name)}, '\\s+', ' ', 'g'))`;

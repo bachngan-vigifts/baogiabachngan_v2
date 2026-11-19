@@ -136,13 +136,12 @@ export async function ingestPayment(
       const [bound] = old?.orderId ? await tx.select({channel:salesOrders.channel}).from(salesOrders).where(eq(salesOrders.id,old.orderId)) : [];
       if (bound?.channel==='crm') return {duplicate:!!old,status:old!.status,reason:old!.reason,orderId:old!.orderId,paymentId:old!.paymentId};
       const webDecision=await decideWebSepay(tx,payment);
-      if(webDecision && !webDecision.reason.startsWith('Chờ website xác nhận')) return {duplicate:!!old,...await saveWebSepay(tx,payment,webDecision,old,actorId)};
+      if(webDecision) return {duplicate:!!old,...await saveWebSepay(tx,payment,webDecision,old,actorId)};
       return applyNearbySepay(tx,payment,old,now,actorId,undefined,old?.webOrderId?'web:'+old.webOrderId:old?.orderId||undefined);
     }
     if (!manual && !old?.orderId) {
       const webDecision = await decideWebSepay(tx, payment);
       if (webDecision) {
-        if (mode !== 'web' && webDecision.webOrderId && webDecision.reason.startsWith('Chờ website xác nhận')) return applyNearbySepay(tx,payment,old,now,actorId,undefined,'web:'+webDecision.webOrderId);
         return {duplicate: !!old, ...(await saveWebSepay(tx,payment,webDecision,old,actorId))};
       }
     }

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lock native quick view
  * Description: Enable Flatsome quick view with centered buttons and existing Lock cart/checkout handlers.
- * Version: 1.0.0
+ * Version: 1.0.1
  */
 defined('ABSPATH') || exit;
 function lnl_qv_host() {
@@ -33,6 +33,20 @@ add_action('wp_head', function() {
 .product-lightbox .ml-variation-choice:disabled{opacity:.4;text-decoration:line-through}
 .product-lightbox button:focus-visible,.quick-view:focus-visible{outline:2px solid #e6a325;outline-offset:3px}
 @media(max-width:549px){.product-lightbox .product-lightbox-inner{padding:16px!important}.product-lightbox .product-gallery{max-width:100%}.product-lightbox h1{font-size:19px!important}.product-lightbox .ml-variation-choice{min-height:44px}.product-lightbox .lnl-qv-buy{padding:0 18px!important}}
+
+/* Keep the quantity above a single compact cart/buy action row. */
+body .product-lightbox form.cart .woocommerce-variation-add-to-cart{
+ display:grid!important;grid-template-columns:46px minmax(0,1fr)!important;gap:10px!important;align-items:center!important;width:100%!important
+}
+body .product-lightbox form.cart .woocommerce-variation-add-to-cart>.quantity{
+ grid-column:1/-1!important;justify-self:start;width:max-content!important;margin:0 0 8px!important
+}
+body .product-lightbox form.cart .woocommerce-variation-add-to-cart>.single_add_to_cart_button{
+ grid-column:1!important;width:46px!important;min-width:46px!important;max-width:46px!important;height:44px!important;min-height:44px!important;max-height:44px!important;box-sizing:border-box!important;margin:0!important;float:none!important
+}
+body .product-lightbox form.cart .woocommerce-variation-add-to-cart>.lnl-qv-buy{
+ grid-column:2!important;display:flex!important;align-items:center!important;justify-content:center!important;width:100%!important;min-width:0!important;max-width:100%!important;height:44px!important;min-height:44px!important;padding:0 12px!important;margin:0!important;float:none!important;white-space:nowrap!important;line-height:1.2!important;font-size:13px!important;box-sizing:border-box!important
+}
 
 LNL_QV_CSS;
  echo '</style>';

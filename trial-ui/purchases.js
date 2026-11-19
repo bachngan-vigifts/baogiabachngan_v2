@@ -351,6 +351,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const info = el('dl', 'pur-info');
     const row = (k, val) => { info.append(el('dt', '', k), el('dd', '', val || '—')); };
     row('Hẹn giao', dmy(v.arrivalDate)); row('Địa chỉ giao hàng', v.warehouse); row('Số đơn phía NCC', v.internalNo);
+    if (has('reference')) info.lastElementChild.append(btn(v.internalNo ? 'Sửa số đơn NCC' : 'Bổ sung số đơn NCC', 'btn secondary small', supplierReferenceForm));
     row('Ngày lập', dmy(v.createdAt)); row('Duyệt', v.approvedAt ? dmy(v.approvedAt) : 'Chưa duyệt'); row('NCC xác nhận', v.confirmedAt ? dmy(v.confirmedAt) : 'Chưa');
     if (v.supplierEmail) row('Gửi tới', v.supplierEmail + (v.ccEmail ? ' · CC ' + v.ccEmail : ''));
     if (v.note) row('Ghi chú', v.note);
@@ -980,6 +981,20 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       hint.textContent = `Gợi ý từ giá niêm yết${policy ? ` (${policy.name})` : ''} + CK mua vào theo thương hiệu. Giá mua là đơn giá trước CK, chưa VAT; giá sau CK = Giá mua × (1 − CK/100). Kiểm tra lại rồi bấm Duyệt.`
         + (missing.length ? ` Chưa xác định được: ${missing.join(', ')} – nhập tay.` : '');
     } catch { hint.textContent = 'Không lấy được giá niêm yết – nhập giá mua tay.'; }
+  }
+
+  function supplierReferenceForm() {
+    const v = current, d = frame('Bổ sung / sửa số đơn phía NCC', v.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
+    const internal = input('text', v.internalNo || '', { maxLength: 100, required: true });
+    const ok = el('button', 'btn primary', 'Lưu số đơn NCC'); ok.type = 'submit';
+    f.append(el('p', 'muted', 'Chỉ cập nhật số đơn phía NCC; giữ nguyên phê duyệt, xác nhận, hàng đã nhận và thanh toán. Mã cũ / mới được lưu trong lịch sử.'), field('Số đơn phía NCC *', internal), err, foot(ok));
+    f.addEventListener('submit', e => {
+      e.preventDefault();
+      const value = internal.value.trim(), problem = supplierOrderNumberProblem(v.supplier?.name, value) || (!value ? 'Nhập số đơn phía NCC.' : '');
+      if (problem) { err.textContent = problem; internal.focus(); return; }
+      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/supplier-reference`, 'PUT', { revision: v.revision, internalNo: value }), 'Đã lưu số đơn NCC.');
+    });
+    d.append(f); internal.focus();
   }
 
   function confirmForm() {
