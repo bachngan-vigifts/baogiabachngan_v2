@@ -5,7 +5,7 @@ const out = {};
 async function logs(name, sql, hours = 24) {
   const end = new Date(), start = new Date(end - hours * 3600e3);
   const q = new URLSearchParams({ sql, iso_timestamp_start: start.toISOString(), iso_timestamp_end: end.toISOString() });
-  const r = await api('/analytics/endpoints/logs.all?' + q);
+  const r = await api('/analytics/endpoints/logs?' + q);
   const t = await r.text(); let j; try { j = JSON.parse(t); } catch { j = t.slice(0, 400); }
   out[name] = r.ok ? (j.result ?? j) : { status: r.status, error: j?.error ?? j };
 }
@@ -30,17 +30,17 @@ await db('db_overview', `select json_build_object(
   'db_size_mb', round(pg_database_size(current_database())/1048576.0),
   'cache_hit_pct', (select round(100.0*sum(blks_hit)/nullif(sum(blks_hit)+sum(blks_read),0),2) from pg_stat_database where datname=current_database()),
   'deadlocks', (select deadlocks from pg_stat_database where datname=current_database()),
-  'stats_since', (select stats_reset from pg_stat_statements_info)
+  'stats_since', (select stats_reset from extensions.pg_stat_statements_info)
 ) as r`);
-await db('top_queries_total', `select calls, round(total_exec_time) total_ms, round(mean_exec_time::numeric,1) mean_ms, round(max_exec_time) max_ms, rows, left(regexp_replace(query, '\\s+', ' ', 'g'), 140) query from pg_stat_statements where dbid=(select oid from pg_database where datname=current_database()) and query not ilike '%pg_stat%' order by total_exec_time desc limit 12`);
-await db('top_queries_mean', `select calls, round(mean_exec_time::numeric,1) mean_ms, round(max_exec_time) max_ms, left(regexp_replace(query, '\\s+', ' ', 'g'), 140) query from pg_stat_statements where dbid=(select oid from pg_database where datname=current_database()) and calls >= 20 and query not ilike '%pg_stat%' order by mean_exec_time desc limit 10`);
+await db('top_queries_total', `select calls, round(total_exec_time) total_ms, round(mean_exec_time::numeric,1) mean_ms, round(max_exec_time) max_ms, rows, left(regexp_replace(query, '\\s+', ' ', 'g'), 140) query from extensions.pg_stat_statements where dbid=(select oid from pg_database where datname=current_database()) and query not ilike '%pg_stat%' order by total_exec_time desc limit 12`);
+await db('top_queries_mean', `select calls, round(mean_exec_time::numeric,1) mean_ms, round(max_exec_time) max_ms, left(regexp_replace(query, '\\s+', ' ', 'g'), 140) query from extensions.pg_stat_statements where dbid=(select oid from pg_database where datname=current_database()) and calls >= 20 and query not ilike '%pg_stat%' order by mean_exec_time desc limit 10`);
 await db('tables', `select relname, n_live_tup live, n_dead_tup dead, round(pg_total_relation_size(relid)/1048576.0,1) mb, seq_scan, idx_scan, last_autovacuum, last_autoanalyze from pg_stat_user_tables order by pg_total_relation_size(relid) desc limit 12`);
 await db('seq_heavy', `select relname, seq_scan, seq_tup_read, idx_scan, n_live_tup live from pg_stat_user_tables where seq_scan > 1000 and n_live_tup > 2000 order by seq_tup_read desc limit 8`);
 // Gọi /health trực tiếp (máy đo ở Mỹ: thời gian mạng cao hơn ở VN; xem Server-Timing để tách phần máy chủ)
 const health = [];
 for (const region of ['', 'ap-northeast-2']) for (let i = 0; i < 8; i++) {
   const t0 = performance.now();
-  const r = await fetch(`https://${REF}.supabase.co/functions/v1/baogia-v2-api/api/staff/health${region ? '?forceFunctionRegion=' + region : ''}`).catch(e => ({ ok: false, status: String(e.message) }));
+  const r = await fetch(`https://${REF}.supabase.co/functions/v1/baogia-v2-api/api/staff/health${region ? '?forceFunctionRegion=' + region : ''}`, { headers: { Origin: 'https://crm.minhlongonline.com' } }).catch(e => ({ ok: false, status: String(e.message) }));
   const ms = Math.round(performance.now() - t0); let body = null; try { body = await r.json(); } catch {}
   health.push({ region: region || 'mặc định', i, status: r.status, ms, mode: body?.databaseMode, timing: r.headers?.get?.('server-timing'), edgeRegion: r.headers?.get?.('x-sb-edge-region') });
 }
