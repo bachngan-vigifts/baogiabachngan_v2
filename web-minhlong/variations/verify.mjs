@@ -10,7 +10,7 @@ export async function verify(preview){
  const browser=await chromium.launch();const results=[];
  try{
  for(const width of [1360,390]){
-  const context=await browser.newContext({viewport:{width,height:900},locale:'vi-VN'}),page=await context.newPage();
+  const context=await browser.newContext({viewport:{width:1360,height:900},locale:'vi-VN'}),page=await context.newPage();
   page.setDefaultTimeout(30000);
   // Read-only validation: prohibit cart writes and order submission.
   await page.route('**/*',r=>{const q=r.request(),u=new URL(q.url());if(u.searchParams.has('add-to-cart')||u.searchParams.get('lnl_buy')==='1'||u.searchParams.has('wc-ajax')&&/add_to_cart|checkout/.test(u.searchParams.get('wc-ajax')))return r.abort();return r.continue();});
@@ -26,6 +26,7 @@ export async function verify(preview){
    if(kind==='popup'){
     await card.scrollIntoViewIfNeeded();await card.hover();await card.locator('a.quick-view').click();
     await page.locator('.product-lightbox form.variations_form').waitFor({state:'visible'});
+    await page.setViewportSize({width,height:900});
    }else{
     await page.goto(href,{waitUntil:'commit',timeout:60000});
     await page.locator('.product-main form.variations_form').waitFor({state:'visible'});
@@ -63,7 +64,7 @@ export async function verify(preview){
     await page.waitForFunction(sel=>!document.querySelector(sel+' .ml-variation-choice[aria-pressed="true"]'),kind==='popup'?'.product-lightbox':'.product-main');
     const first=groups.first().locator('button:not(:disabled)').first();await first.focus();await page.keyboard.press('Enter');assert(await selects.first().inputValue(),'keyboard selection');
    }
-   results.push({width,kind,variationId:id,groups:await groups.count(),cartWrites:false});
+   results.push({width,kind,popupOpenedAtDesktop:kind==='popup',variationId:id,groups:await groups.count(),cartWrites:false});
    if(kind==='popup'){await page.keyboard.press('Escape');await scope.waitFor({state:'hidden'});}
   }
   await context.close();
