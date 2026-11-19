@@ -18,10 +18,17 @@ async function purge(){
  const source=readFileSync('web-lock/cache-check/target.php','utf8').replace('__PROBE__',probe);
  try{
   await put(source,helper);
-  const r=await fetch('https://locknlockonline.com/wp-json/lnl-cache-check/v1/refresh',{method:'POST',headers:{'X-LNL-Shipping':probe},signal:AbortSignal.timeout(60000)});
-  const j=await r.json();
-  console.log('LOCK_ZONE_CACHE_REFRESH',JSON.stringify({found:j.found,purged:j.purged,configuredZoneMatches:j.configured_zone_matches}));
-  if(!r.ok||!j.found||!j.purged)throw Error('Verified Lock zone cache refresh failed');
+  if(await read(helper)!==source)throw Error('Cache helper readback mismatch');
+  let refreshed=false;
+  for(let attempt=0;attempt<4;attempt++){
+   await new Promise(r=>setTimeout(r,2500));
+   const r=await fetch('https://locknlockonline.com/wp-json/lnl-cache-check/v1/refresh?verify='+Date.now(),{method:'POST',headers:{'X-LNL-Shipping':probe},signal:AbortSignal.timeout(60000)});
+   const j=await r.json();
+   console.log('LOCK_ZONE_CACHE_REFRESH',JSON.stringify({status:r.status,code:j.code,found:j.found,purged:j.purged,configuredZoneMatches:j.configured_zone_matches}));
+   if(r.ok&&j.found&&j.purged){refreshed=true;break;}
+   if(r.status!==404)break;
+  }
+  if(!refreshed)throw Error('Verified Lock zone cache refresh failed');
  }finally{await put(before,helper);if(await read(helper)!==before)throw Error('Cache helper restoration mismatch');}
 }
 
