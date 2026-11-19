@@ -101,3 +101,11 @@ Hai GIN trigram index (`20261103095218_product_search_trigram.sql`) khớp chín
 Bản sửa API đi kèm giảm dữ liệu đầu vào tính tổng 214 báo giá từ 947.851 xuống 82.019 byte, vẫn dùng `quote-math.ts` để giữ thứ tự phép tính số thực. POS lấy metadata trong cùng truy vấn tồn/giá thay cho truy vấn IN toàn bộ SKU thứ hai. Không lưu đệm tồn dùng khi thanh toán.
 
 `DB_REGION=ap-northeast-2` được khai báo ở workflow triển khai; chỉ giúp báo cáo tốc độ nhận diện vùng CSDL khi API chạy direct mode, không đổi routing. Nâng Pro không tự bật PITR/custom domain. Chưa xác minh được mốc backup gần nhất hoặc compute SKU qua bộ công cụ hiện có; không tuyên bố các mục này đã được cấu hình.
+
+## Đo lại 19/11/2026 – máy CSDL Micro bị nghẽn CPU
+
+- Project không chọn add-on compute nên chạy **Micro** (1 GB RAM, 2 vCPU dùng chung, IO nền 87 MB/s). Phép tính thuần CPU `sum(generate_series(1,2000000))` mất 0,6–0,8 s (máy bình thường ~0,1 s).
+- Vì CPU bị giới hạn, quét bảng nhỏ đã nằm trong RAM vẫn chậm: 12k sản phẩm 2,98 s, 72k giá 2 s, 25k tồn 2 s (EXPLAIN ANALYZE). Kết nối 11/60, cache hit 100%, không có truy vấn treo.
+- Tìm sản phẩm / khách: chỉ mục trigram theo biểu thức không được chọn (bảng nhỏ), mỗi lần tìm chạy translate() bỏ dấu trên mọi dòng (1,2 s / 0,34–0,58 s). Sửa: cột sinh tự động `search_fold` + chỉ mục trigram (`20261119090000_search_fold_columns.sql`).
+- Chuông thông báo: điều kiện "gửi riêng cho tôi" không có chỉ mục phù hợp (1,36 s đọc đĩa). Sửa: `idx_web_notifications_member_created`.
+- Việc nên làm phía Supabase: nâng compute lên **Small** (~$15/tháng, 2 GB RAM, IO nền 174 MB/s) hoặc **Medium** (~$60/tháng, 4 GB). Đổi compute khởi động lại CSDL vài phút: làm ngoài giờ bán.
