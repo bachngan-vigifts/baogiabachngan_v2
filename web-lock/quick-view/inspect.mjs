@@ -28,3 +28,13 @@ for(const [name,url]of [['lock','https://locknlockonline.com/'],['minhlong','htt
  console.log('SCRIPTS',name,[...s.matchAll(/<script[^>]+src=["']([^"']+)/g)].map(m=>m[1]).filter(x=>/flatsome|woocommerce|quick|claw/i.test(x)));
 }
 console.log('READ_ONLY_INSPECTION_COMPLETE');
+
+for(const sub of ['inc/extensions','woocommerce','woocommerce/single-product','inc/woocommerce/structure-wc-product-box.php','inc/woocommerce/class-buy-now.php']){
+try {if(!sub.endsWith('.php'))console.log('MORE_DIRECTORY',sub,JSON.stringify((await list(dir+'/'+sub)).map(f=>f.file)));
+else {const n=sub.lastIndexOf('/'),s=await read(dir+'/'+sub.slice(0,n),sub.slice(n+1));console.log('THEME_SOURCE',sub,s);}}catch{console.log('NOT_READ',sub);}
+}
+for(const file of ['woo-buy-now-direct.php','woo-ajax-add-to-cart.php','woo-card-buttons.php']){
+ const s=await read(root+'/wp-content/mu-plugins',file);console.log('CART_SOURCE',file,s);
+}
+const js=await read(dir+'/assets/js','woocommerce.js');
+for(const m of js.matchAll(/quick-view|quick_view|product-lightbox/g)){console.log('JS_QUICK_VIEW_CONTEXT',js.slice(Math.max(0,m.index-900),m.index+1800));}
