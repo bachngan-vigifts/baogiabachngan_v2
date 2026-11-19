@@ -512,7 +512,7 @@ function showAuth(message = '', { keepToken = false } = {}) {
   stocktakeUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
   homeUi?.reset(); homeReminderUi?.reset(); homeNotifications?.clear(); notifier?.reset(); tasksUi?.resetQuick();
-  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
+  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; $('#reminder-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
   // Chỉ tự đặt con trỏ khi vừa mở form; không giành focus người dùng đã chọn.
@@ -564,7 +564,7 @@ function applyWorkspaceUser(user) {
   if (user.role === 'customer' || user.positionId === 'customer') { location.replace('customer.html'); return; } // tài khoản khách: chỉ trang khách hàng
   state.user = user;
   $('#workspace').dataset.homeHref = homeHash();
-  $('#auth').hidden = true; $('#workspace').hidden = false;
+  $('#auth').hidden = true; $('#workspace').hidden = false; $('#reminder-launcher').hidden = false;
   $('#user-name').textContent = $('#menu-name').textContent = user.name;
   $('#menu-email').textContent = user.email;
   $('#user-role').textContent = user.position || (user.role === 'manager' ? 'Manager' : 'Nhân viên');
@@ -5921,7 +5921,8 @@ function custodyView(){return custodyLoading ||= import('./product-custody.js').
 
 // Trang chủ tải module khi mở; phần còn lại của CRM không phải tải giao diện này.
 var homeUi = null, homeLoading = null, homeReminderUi = null, homeReminderLoading = null;
-function openHomeReminder(){const who=state.user?.id;return (homeReminderLoading ||= import('./home-reminder.js').then(({initHomeReminder})=>homeReminderUi=initHomeReminder({api,userId:()=>state.user?.id,toast,confirmBox,onCreated:()=>homeUi?.refresh()}))).then(ui=>{if(who===state.user?.id)ui.open();}).catch(e=>toast(e.message,'err'));}
+function openHomeReminder(){const who=state.user?.id;if(!who)return;return (homeReminderLoading ||= import('./home-reminder.js').then(({initHomeReminder})=>homeReminderUi=initHomeReminder({api,userId:()=>state.user?.id,toast,confirmBox,onCreated:()=>homeUi?.refresh()}))).then(ui=>{if(who===state.user?.id)return ui.open();}).catch(e=>toast(e.message,'err'));}
+$('#reminder-launcher').addEventListener('click',openHomeReminder);
 function homeNavigation(){return [...document.querySelectorAll('.side-nav [data-nav]')].filter(a=>!a.hidden&&!a.closest('[hidden]')&&linkAllowed(a.getAttribute('href'))).map(a=>{const group=a.closest('.nav-group'),heading=group?.querySelector('h2');return{key:a.dataset.nav,label:a.querySelector('span')?.textContent?.trim()||a.textContent.trim(),href:a.getAttribute('href'),groupId:heading?.id||'',group:(heading?.querySelector('.nav-group-toggle>span:first-child')?.textContent||heading?.textContent)?.trim()||'Chức năng khác'};});}
 function homeActions(){return [
   {key:'new-reminder',label:'Nhắc chăm sóc nhanh',icon:'clock',run:openHomeReminder},

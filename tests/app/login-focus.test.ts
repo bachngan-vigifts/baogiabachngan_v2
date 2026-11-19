@@ -16,7 +16,7 @@ function harness() {
   const pending: Array<(response: unknown) => void> = [];
   const document = { activeElement: null as unknown };
   const elements: Record<string, any> = {};
-  for (const id of ['auth', 'workspace', 'chat-launcher', 'auth-error', 'auth-title', 'email', 'password', 'logout', 'auth-note']) {
+  for (const id of ['auth', 'workspace', 'chat-launcher', 'reminder-launcher', 'auth-error', 'auth-title', 'email', 'password', 'logout', 'auth-note']) {
     elements['#' + id] = { hidden: true, value: '', textContent: '', focus() { document.activeElement = this; } };
   }
   elements['#logout'].addEventListener = (_event: string, fn: Function) => elements['#logout'].click = fn;
@@ -99,7 +99,9 @@ test('returning to login clears private Home and notification state for expired 
     h.ctx.homeNotifications = { clear() { cleared.push('feed'); } };
     h.ctx.notifier = { reset() { cleared.push('bell'); } };
     h.ctx.tasksUi = { resetQuick() { cleared.push('quick-task'); } };
+    h.elements['#reminder-launcher'].hidden=false;
     h.ctx.showAuth('expired', { keepToken });
+    assert.equal(h.elements['#reminder-launcher'].hidden,true);
     assert.deepEqual(cleared, ['home', 'care-reminder', 'feed', 'bell', 'quick-task']);
     assert.equal(h.ctx.state.user, null);
     assert.equal(h.ctx.token, keepToken ? 'old-session' : '');

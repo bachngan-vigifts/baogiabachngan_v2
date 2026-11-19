@@ -10,3 +10,9 @@ test('quick reminder preserves full notes and sets self-assignment with valid ca
  assert.throws(()=>homeReminderContent('x'.repeat(5001),'2026-11-19','emp','2026-11-19'),/ghi chú/);
  const long=homeReminderContent('x'.repeat(400),'2026-11-19','emp','2026-11-19');assert.equal(long.title.length,300);assert.equal(long.description.length,400);
 });
+
+test('reminder time supports minute precision in Vietnam and retains date-only payload compatibility',()=>{
+ for(const dueTime of ['00:00','09:30','23:59'])assert.equal(homeReminderContent('Gọi khách','2026-11-19','emp','2026-11-19',dueTime).dueTime,dueTime);
+ for(const time of ['24:00','09:60','9:30','09:30:15','abc'])assert.throws(()=>homeReminderContent('Gọi khách','2026-11-19','emp','2026-11-19',time),/giờ nhắc/);
+ assert.equal('dueTime' in homeReminderContent('Gọi khách','2026-11-19','emp','2026-11-19',''),false);
+});

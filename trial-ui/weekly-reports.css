@@ -46,8 +46,8 @@
 @container(min-width:1000px){.wrw-layout{grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);align-items:start}.wrw-tabs{display:none}.wrw-pane[data-hidden="true"]{display:flex}.wrw-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media(max-width:900px){.wrw-toolbar{bottom:var(--nav-h,calc(62px + env(safe-area-inset-bottom)))}.wrw{padding-bottom:calc(170px + env(safe-area-inset-bottom))}.wrw-tabs{top:50px}}
 @media(max-width:540px){.wrw h1{font-size:20px}.wrw-card-head,.wrw-card-body{padding:12px}.wrw-auto-card .wrw-card-body{padding:0 12px}.wrw-grid2{gap:0 8px}.wrw-input{font-size:16px!important;padding:8px}.wrw-kpis b{font-size:17px}.wrw-data-row{flex-wrap:wrap;gap:6px 8px}.wrw-row-main{flex-basis:55%}.wrw-data-row>.wrw-link{margin-left:auto}.wrw-toolbar{gap:7px;padding:10px 8px}.wrw-toolbar .wrw-button{padding:8px 10px;font-size:12px}.wrw-progress{font-size:11px}.wrw-pane-title{gap:6px}.wrw-chip{font-size:10px}.wrw-item-head{flex-wrap:wrap}.wrw-choices button{min-height:42px}}
-body:has(#view-weekly-reports:not([hidden]) .wrw) .chat-launcher{bottom:110px}
-@media(max-width:900px){body:has(#view-weekly-reports:not([hidden]) .wrw) .chat-launcher{bottom:calc(var(--nav-h,62px) + 100px)}}
+body:has(#view-weekly-reports:not([hidden]) .wrw) :is(.chat-launcher,.reminder-launcher){bottom:110px}
+@media(max-width:900px){body:has(#view-weekly-reports:not([hidden]) .wrw) :is(.chat-launcher,.reminder-launcher){bottom:calc(var(--nav-h,62px) + 100px)}}
 /* Status messages must not cover report actions. */
 body:has(#view-weekly-reports:not([hidden]) .wrw) .toasts{bottom:110px}
 @media(max-width:900px){body:has(#view-weekly-reports:not([hidden]) .wrw) .toasts{bottom:calc(var(--nav-h,62px) + 110px)}}
