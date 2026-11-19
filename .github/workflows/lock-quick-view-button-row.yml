@@ -1,0 +1,37 @@
+name: Deploy Lock quick-view button row
+on:
+  push:
+    branches: [codex/lock-quick-view-button-row-20261119]
+    paths: [.github/workflows/lock-quick-view-button-row.yml]
+permissions:
+  contents: read
+concurrency:
+  group: lock-quick-view-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          php -l web-lock/quick-view/lnl-native-quick-view.php
+          node --check web-lock/quick-view/deploy-button-row.mjs
+      - run: npm install --prefix /tmp/ml-choices --no-audit --no-fund playwright@1.56.1
+      - run: timeout 180 /tmp/ml-choices/node_modules/.bin/playwright install chromium --only-shell
+      - run: node web-lock/quick-view/deploy-button-row.mjs
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lock-button-row-evidence
+          path: button-row-evidence/
+          retention-days: 7
+
+# Verify normalized cart button dimensions.
+
+# Layout validation preserves existing variation availability.
