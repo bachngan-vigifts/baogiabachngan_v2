@@ -10,7 +10,7 @@ export async function verify(preview=false){
  try{
  for(const width of [1360,390]){
   const context=await browser.newContext({viewport:{width,height:900},locale:'vi-VN'});
-  const page=await context.newPage();const writes=[],buys=[],errors=[];
+  const page=await context.newPage();page.setDefaultTimeout(25000);const writes=[],buys=[],errors=[];page.on('console',m=>{if(m.type()==='error')console.log('BROWSER_ERROR',m.text().slice(0,400));});page.on('response',async r=>{if(r.request().postData()?.includes('flatsome_quickview'))console.log('QV_AJAX',r.status(),(await r.text()).slice(0,200));});
   page.on('pageerror',e=>{if(/lnlQuickView|LNL_QV|lnl-qv/.test(e.message))errors.push(e.message);});
   await page.route('**/*',async route=>{
    const req=route.request(),url=new URL(req.url());
@@ -48,8 +48,8 @@ export async function verify(preview=false){
   await trigger.waitFor({state:'visible',timeout:30000});
   const center=await trigger.evaluate(a=>{const b=a.getBoundingClientRect(),i=a.closest('.box-image').getBoundingClientRect();return {dx:Math.abs(b.x+b.width/2-i.x-i.width/2),dy:Math.abs(b.y+b.height/2-i.y-i.height/2)};});
   assert(center.dx<3&&center.dy<3,'centered trigger '+JSON.stringify(center));
-  await trigger.click();
-  const popup=page.locator('.product-lightbox');await popup.waitFor({state:'visible',timeout:60000});
+  console.log('TRIGGER_STATE',await trigger.evaluate(a=>({html:a.outerHTML,classes:a.className,variation:typeof jQuery.fn.wc_variation_form,behaviors:Object.keys(Flatsome)})));await trigger.click();
+  const popup=page.locator('.product-lightbox');try{await popup.waitFor({state:'visible',timeout:30000});}catch(e){await page.screenshot({path:'quick-view-evidence/open-failure-'+width+'.png'});console.log('OPEN_FAILURE',await page.evaluate(()=>({popups:document.querySelectorAll('.mfp-wrap').length,body:document.body.className,scripts:[...document.scripts].map(s=>s.src).filter(s=>/flatsome|woocommerce|litespeed/.test(s))})));throw e;}
   await popup.locator('form.variations_form').waitFor({timeout:45000});
   await popup.locator('.lnl-qv-buy').waitFor({timeout:15000});
   const selects=popup.locator('.variations select');assert(await selects.count()>0);
