@@ -6,6 +6,7 @@ import { stockInteger, numOrZero } from './quantity.ts';
  * Các số này là DỮ LIỆU SUY RA từ dòng hàng – không lưu cột.
  */
 export interface TotalsRow {
+  creditedQty?: number;
   quantity: number; price: number | null; printFee: number; taxRate: number | null;
   /** % chiết khấu manager nhập lúc duyệt. */
   purchaseDiscount: number | null;
@@ -28,7 +29,10 @@ export const normalizeDepositRate = (value: unknown): number | null => {
 export function computeOrderTotals(input: OrderTotalsInput): OrderTotals {
   let subtotal = 0, vat = 0;
   const rows = input.rows.map(row => {
-    const quantity = stockInteger(numOrZero(row.quantity)), unitPrice = numOrZero(row.price);
+    // Allocate the original rounded line value proportionally when crediting fractional stock.
+    // With no credit, legacy quantity rounding and all price/CK/VAT formulas are unchanged.
+    const original = numOrZero(row.quantity), remaining = Math.max(0, original - numOrZero(row.creditedQty));
+    const quantity = stockInteger(original) * (original > 0 ? remaining / original : 0), unitPrice = numOrZero(row.price);
     const printFee = Math.max(0, numOrZero(row.printFee)), taxRate = numOrZero(row.taxRate);
     const confirmed = row.confirmedPurchaseDiscount === null ? NaN : Number(row.confirmedPurchaseDiscount);
     const purchaseDiscount = Math.max(0, Math.min(100, Number.isFinite(confirmed) ? confirmed : (Number(row.purchaseDiscount) || 0)));

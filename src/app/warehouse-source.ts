@@ -41,7 +41,7 @@ export async function resolveWarehouseSource(db:AnyDb,t:WarehouseSourceTask):Pro
   warehouseId=await warehouse(db,p.warehouse);cancelled=!!p.cancelledAt;
   if(key.startsWith('po-sapo:')){const rows=await db.select({status:supplierReceipts.sapoStatus}).from(supplierReceipts).where(and(eq(supplierReceipts.shipmentId,p.id),isNull(supplierReceipts.cancelledAt)));complete=rows.length>0&&rows.every(r=>['done','not_needed'].includes(r.status));}
   else{const date=key.startsWith('receiving-due:')?key.split(':')[4]:null;
-   const lines=await db.select({qty:incomingShipmentLines.quantity,good:sql<number>`coalesce((select sum(good_qty) from supplier_receipt_lines rl join supplier_receipts rp on rp.id=rl.receipt_id where rl.line_id=${incomingShipmentLines.id} and rp.cancelled_at is null),0)`.mapWith(Number)}).from(incomingShipmentLines).where(and(eq(incomingShipmentLines.shipmentId,p.id),date?sql`coalesce(nullif(${incomingShipmentLines.promisedDate},''),${p.arrivalDate})=${date}`:undefined));
+   const lines=await db.select({qty:sql<number>`${incomingShipmentLines.quantity}-${incomingShipmentLines.creditedQty}`.mapWith(Number),good:sql<number>`coalesce((select sum(good_qty-returned_good_qty) from supplier_receipt_lines rl join supplier_receipts rp on rp.id=rl.receipt_id where rl.line_id=${incomingShipmentLines.id} and rp.cancelled_at is null),0)`.mapWith(Number)}).from(incomingShipmentLines).where(and(eq(incomingShipmentLines.shipmentId,p.id),date?sql`coalesce(nullif(${incomingShipmentLines.promisedDate},''),${p.arrivalDate})=${date}`:undefined));
    complete=lines.length>0&&lines.every(l=>l.good>=l.qty);
   }
   operationKey=key.startsWith('receiving-due:')?key.slice(0,key.lastIndexOf(':')):key;

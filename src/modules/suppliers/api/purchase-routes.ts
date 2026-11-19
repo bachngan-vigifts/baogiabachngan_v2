@@ -1,3 +1,4 @@
+import { registerGoodsReturnRoutes } from './goods-return-routes.ts';
 import { supplierOrderNumberProblem } from '../domain/order-number.ts';
 import { lockReceiptForWrite } from './receipt-outbox.ts';
 import {registerPurchaseSupplierSearch} from './purchase-supplier-search.ts';
@@ -100,7 +101,7 @@ async function viewOf(c: Ctx, id: string) {
   await syncIncomingStock(c.env.db).catch(() => {});
   const v = (await loadPurchase(c.env.db, me(c), id, today())).view;
   const urls = await photoUrls(c.env.db, c.env.files, 'supplier_receipt', v.receipts.map(r => r.id));
-  return { ...v, receipts: v.receipts.map(r => ({ ...r, photos: urls.get(r.id) ?? [] })) };
+  return { ...v, canReturn:v.canReturn&&!c.env.supplierReturnsDisabled,canRefund:v.canRefund&&!c.env.supplierReturnsDisabled, receipts: v.receipts.map(r => ({ ...r, photos: urls.get(r.id) ?? [] })) };
 }
 /** Dấu nội dung yêu cầu nhận hàng (không gồm ảnh: gửi lại có thể nén ảnh khác). */
 function receiptRequestHash(body: Record<string, unknown>, createSapo: boolean) {
@@ -178,6 +179,7 @@ async function activeSupplier(db: Db | Tx, id: unknown) {
 }
 
 export function registerPurchaseRoutes(router: Router<StaffEnv>) {
+  registerGoodsReturnRoutes(router);
   registerReceiptJobRoutes(router);
   // Trang Tra tồn (sổ kho) đọc hàng đang về từ đơn mua NCC.
   incomingLookup.read = (db, skus) => outstandingLines(db, skus);
@@ -640,13 +642,18 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       if (!r) fail(404, 'Không tìm thấy phiếu nhận.');
       shipmentId = r!.shipmentId;
       if (r!.cancelledAt) return;
+      const returned = await tx.select({qty:supplierReceiptLines.returnedGoodQty}).from(supplierReceiptLines).where(eq(supplierReceiptLines.receiptId,r!.id));
+      if(returned.some(l=>l.qty>0))fail(409,'Phiếu đã có trả hàng NCC. Không hoàn tác phiếu gốc để tránh trừ kho lần hai.');
       if (r!.sapoStatus === 'done' || r!.sapoVerifiedAt || r!.sapoReceiptId || r!.sapoPurchaseOrderId || r!.sapoReceiptCode || r!.sapoReceiptUrl)
         fail(409, 'Phiếu đã có liên kết Sapo – hoàn tác trên Sapo và đối soát trước.');
       const [job]=await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId,r!.id)).for('update');
       const expected=body.expected as Record<string,unknown>|undefined;
       if(expected && (expected.sapoUpdatedAt!==(r!.sapoUpdatedAt??null)||expected.jobUpdatedAt!==(job?.updatedAt??null)))
         throw new AppError(409,'Phiếu hoặc tiến trình Sapo vừa thay đổi. Tải lại trước khi hoàn tác.','RECEIPT_CHANGED');
-      if(job&&(job.dispatchToken||job.leaseToken||['processing','callback_pending'].includes(job.status))){
+      // A delivery failure is not proof that the external write failed: n8n/Sapo may
+      // have accepted the request before the response was lost (including HTTP 530).
+      // Preserve the same review/lease/CAS requirements after ANY dispatch attempt.
+      if(job&&(job.attempts>0||job.dispatchToken||job.leaseToken||['processing','callback_pending','needs_review'].includes(job.status))){
         const now=Date.now(),resolved=body.confirmNoSapo===true&&expected&&job.status==='needs_review'&&!job.dispatchToken&&
           (!job.leaseUntil||Date.parse(job.leaseUntil)<=now)&&(!job.dispatchUntil||Date.parse(job.dispatchUntil)<=now);
         if(!resolved)throw new AppError(409,'Phiếu đang/chờ xử lý nhập Sapo. Dừng và xác minh kết quả luồng n8n/OpenClaw trước khi huỷ để tránh lệch kho.','RECEIPT_SYNC_IN_PROGRESS');
@@ -715,10 +722,16 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     if (reason.length < 3) fail(400, 'Nhập lý do huỷ khoản trả.');
     let shipmentId = '';
     await db.transaction(async tx => {
+      const [hint]=await tx.select({shipmentId:supplierPayments.shipmentId}).from(supplierPayments).where(eq(supplierPayments.id,c.params.id!));
+      if(!hint)fail(404,'Không tìm thấy khoản trả.');
+      const [parent]=await tx.select({refundedAmount:incomingShipments.refundedAmount}).from(incomingShipments).where(eq(incomingShipments.id,hint!.shipmentId)).for('update');
       const [pay] = await tx.select().from(supplierPayments).where(eq(supplierPayments.id, c.params.id!)).limit(1).for('update');
       if (!pay) fail(404, 'Không tìm thấy khoản trả.');
+      if(pay!.shipmentId!==hint!.shipmentId)fail(409,'Khoản trả vừa đổi đơn nguồn. Tải lại trước khi xử lý.');
       shipmentId = pay!.shipmentId;
       if (pay!.voidedAt) return;
+      const active=await tx.select({amount:supplierPayments.amount}).from(supplierPayments).where(and(eq(supplierPayments.shipmentId,shipmentId),isNull(supplierPayments.voidedAt)));
+      if(parent && active.reduce((s,p)=>s+p.amount,0)-pay!.amount<parent.refundedAmount)fail(409,'Khoản chi đã liên quan tiền hoàn thực nhận. Không huỷ; cần kế toán đối soát chứng từ điều chỉnh.');
       await tx.update(supplierPayments).set({ voidedAt: nowIso(), voidedBy: m.id, voidReason: reason }).where(eq(supplierPayments.id, pay!.id));
       const left = await tx.select({ amount: supplierPayments.amount }).from(supplierPayments).where(and(eq(supplierPayments.shipmentId, shipmentId), isNull(supplierPayments.voidedAt)));
       await tx.update(incomingShipments).set({ paidAmount: left.reduce((s, r) => s + r.amount, 0) }).where(eq(incomingShipments.id, shipmentId));

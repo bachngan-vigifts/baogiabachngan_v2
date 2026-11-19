@@ -55,13 +55,13 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   const again = (await call('/inventory/opening', mgr, 'POST', { confirm: true })).data;
   assert.equal(again.lines, 0); assert.deepEqual(again.results.map((r: any) => [r.warehouseId, r.status]), [['ct', 'skipped'], ['vg', 'skipped']]);
 
-  // Phiếu nhận NCC: hàng đạt cộng vào đúng kho theo tên; huỷ phiếu → ghi dòng ngược lại.
+  // Phiếu nhận chỉ trên CRM (không gửi Sapo): hàng đạt cộng đúng kho; huỷ phiếu → ghi dòng ngược lại.
   const sup = (await call('/suppliers', mgr, 'POST', { name: 'Minh Long', contacts: [{ kind: 'order', email: 'ml@ncc.vn' }] })).data.supplier.id;
   const po = await call('/purchase-orders', mgr, 'POST', { orders: [{ supplierId: sup, warehouse: '12 Đường Giao Hàng', lines: [{ sku: 'LY1', quantity: 6 }] }] }); assert.equal(po.status, 201, JSON.stringify(po.data)); const id = po.data.ids[0];
   const v = (await call(`/purchase-orders/${id}`, mgr)).data;
   await call(`/purchase-orders/${id}/approve`, mgr, 'POST', { internalNo: 'ML-FIXTURE', lines: [{ lineId: v.lines[0].id, price: 100 }] });
   await call(`/purchase-orders/${id}/confirm`, mgr, 'POST', {});
-  const rc = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-12345678', warehouse: ' kho cần thơ ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }], photos: ['data:image/jpeg;base64,/9j/4AAA'] });
+  const rc = await call(`/purchase-orders/${id}/receipts`, kho, 'POST', { clientKey: 'k-12345678', createSapo:false, warehouse: ' kho cần thơ ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 4, damagedQty: 1 }], photos: ['data:image/jpeg;base64,/9j/4AAA'] });
   assert.equal(rc.status, 201, JSON.stringify(rc.data));
   const resetAfterReceipt = await call('/inventory/opening',mgr,'POST',{confirm:true,warehouseId:'ct'});
   assert.equal(resetAfterReceipt.status,409);assert.match(resetAfterReceipt.data.error,/supplier_receipt.*Dùng phiếu điều chỉnh để sửa lệch/);

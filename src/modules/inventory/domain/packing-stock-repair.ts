@@ -49,7 +49,7 @@ BEGIN
   select 1 from supplier_receipts r join supplier_receipt_lines rl on rl.receipt_id=r.id
    join jsonb_to_recordset(p->'lines') as a(sku text,qty double precision) on a.sku=rl.sku
   where r.id=p->>'receiptId' and r.cancelled_at is null and r.warehouse=w.name and r.created_at<=s.packed_at
-    and rl.good_qty>=a.qty and exists(select 1 from stock_moves m where m.ref_type='supplier_receipt' and m.ref_id=r.id and m.sku=rl.sku and m.warehouse_id=w.id
+    and (rl.good_qty-rl.returned_good_qty)>=a.qty and exists(select 1 from stock_moves m where m.ref_type='supplier_receipt' and m.ref_id=r.id and m.sku=rl.sku and m.warehouse_id=w.id
     group by m.sku having sum(m.qty)>=a.qty)
  ) INTO evidence;
  IF NOT evidence THEN RAISE EXCEPTION 'REPAIR_RECEIPT_EVIDENCE_REQUIRED'; END IF;

@@ -8,7 +8,7 @@ import { AppError } from '../../../core/errors.ts';
  * Không đụng DB / HTTP (kiểm bằng test). API: src/modules/suppliers/api/purchase-routes.ts.
  *
  * Quyết định đã chốt với chủ dự án (14/10/2026):
- *  - Sapo là NGUỒN TỒN CHÍNH. Nhận hàng trên CRM KHÔNG cộng tồn; phiếu nhận có trạng thái nhập Sapo riêng
+ *  - Nhận/trả hàng ghi sổ kho CRM theo chứng từ; phiếu nhận có trạng thái đối soát Sapo riêng
  *    (chờ / đã nhập kèm mã phiếu Sapo / lỗi / không cần). Một phiếu chỉ "đã nhập Sapo" một lần → không cộng hai lần.
  *  - Ghi thanh toán NCC: Manager + Kế toán; chỉ Manager huỷ khoản đã ghi.
  *  - Nhận hàng: Kho + Manager + Sale Admin + Kế toán; chỉ Manager huỷ phiếu nhận (khi chưa nhập Sapo).
@@ -88,7 +88,7 @@ export function checkPurchase(action: PurchaseAction, a: Actor | null | undefine
       return state === 'draft' ? no(409, 'Đơn chưa được duyệt.') : OK;
     case 'cancel':
       if (p.anyReceived) return no(409, 'Đơn đã nhận hàng – không huỷ được. Huỷ các phiếu nhận trước.');
-      if (p.paid > 0) return no(409, 'Đơn đã có thanh toán – huỷ các khoản trả trước khi huỷ đơn.');
+      if (p.paid > 0) return no(409, 'Đơn đã có thanh toán – dùng Trả hàng / Huỷ phần chưa nhận và đối soát tiền hoàn. Không huỷ khoản chi thật để huỷ đơn.');
       if (state === 'draft') return manager || o.createdBy === a.id ? OK : no(403, 'Chỉ người tạo đơn hoặc Manager được huỷ đơn nháp.');
       return manager || isEmployee(a) && can(a, 'purchases.cancel-approved') ? OK : no(403, 'Bạn chưa được cấp quyền huỷ đơn mua đã duyệt.');
     case 'pdf':
@@ -100,17 +100,18 @@ export const purchaseActions = (a: Actor | null | undefined, o: OrderFlags, p: {
   PURCHASE_ACTIONS.filter(x => checkPurchase(x, a, o, p).ok);
 
 // ---------------------------------------------------------------- nhận hàng từng đợt
-export interface OrderedLine { id: string; sku: string; name: string; quantity: number }
-export interface ReceivedLine { lineId: string; goodQty: number; damagedQty: number }
+export interface OrderedLine { id: string; sku: string; name: string; quantity: number; creditedQty?: number }
+export interface ReceivedLine { lineId: string; goodQty: number; damagedQty: number; returnedGoodQty?: number }
 export interface LineProgress { lineId: string; sku: string; name: string; ordered: number; good: number; damaged: number; missing: number }
 export interface ReceiptProgress { lines: LineProgress[]; anyReceived: boolean; fullyReceived: boolean; ordered: number; good: number; damaged: number; missing: number }
 
 /** Tiến độ nhận: đạt cộng dồn các phiếu chưa huỷ; còn thiếu = đặt − đạt (hàng hỏng vẫn tính là thiếu, NCC cần bù). */
 export function receiptProgress(lines: readonly OrderedLine[], received: readonly ReceivedLine[]): ReceiptProgress {
+  const totals=new Map<string,{good:number;damaged:number}>();
+  for(const r of received){const t=totals.get(r.lineId)??{good:0,damaged:0};t.good=t.good+r.goodQty-(r.returnedGoodQty??0);t.damaged+=r.damagedQty;totals.set(r.lineId,t);}
   const out = lines.map(l => {
-    const mine = received.filter(r => r.lineId === l.id);
-    const good = mine.reduce((s, r) => s + r.goodQty, 0), damaged = mine.reduce((s, r) => s + r.damagedQty, 0);
-    return { lineId: l.id, sku: l.sku, name: l.name, ordered: l.quantity, good, damaged, missing: Math.max(0, l.quantity - good) };
+    const {good,damaged}=totals.get(l.id)??{good:0,damaged:0};
+    return { lineId: l.id, sku: l.sku, name: l.name, ordered: l.quantity - (l.creditedQty ?? 0), good, damaged, missing: Math.max(0,Math.round((l.quantity - (l.creditedQty ?? 0) - good)*1000)/1000) };
   });
   const sum = (k: 'ordered' | 'good' | 'damaged' | 'missing') => out.reduce((s, r) => s + r[k], 0);
   return { lines: out, anyReceived: out.some(r => r.good > 0 || r.damaged > 0), fullyReceived: out.length > 0 && out.every(r => r.missing === 0),
@@ -146,13 +147,14 @@ export function validateReceipt(progress: ReceiptProgress, input: { receivedDate
 // ---------------------------------------------------------------- công nợ NCC
 export interface Schedule { id?: string; kind: 'deposit' | 'installment' | 'balance'; amount: number; dueDate: string | null }
 export interface Payment { amount: number; paidDate: string; voidedAt: string | null }
-export interface SupplierDebt { total: number; paid: number; balance: number; overdue: number; nextDueDate: string | null; nextDueAmount: number; status: 'none' | 'open' | 'overdue' | 'paid' }
+export interface SupplierDebt { total: number; paid: number; refunded: number; netPaid: number; supplierCredit: number; balance: number; overdue: number; nextDueDate: string | null; nextDueAmount: number; status: 'none' | 'open' | 'overdue' | 'paid' }
 
 /** Thanh toán áp vào kỳ đến hạn sớm nhất trước. Quá hạn = phần của các kỳ có hạn < hôm nay chưa trả đủ. */
-export function supplierDebt(total: number, schedules: readonly Schedule[], payments: readonly Payment[], today: string): SupplierDebt {
+export function supplierDebt(total: number, schedules: readonly Schedule[], payments: readonly Payment[], today: string, refunded = 0): SupplierDebt {
   const paid = round(payments.filter(p => !p.voidedAt).reduce((s, p) => s + p.amount, 0));
-  const balance = Math.max(0, round(total - paid));
-  let left = paid, overdue = 0, nextDueDate: string | null = null, nextDueAmount = 0;
+  const netPaid = round(paid - refunded), supplierCredit = Math.max(0, round(netPaid - total));
+  const balance = Math.max(0, round(total - netPaid));
+  let left = netPaid, overdue = 0, nextDueDate: string | null = null, nextDueAmount = 0;
   const ordered = [...schedules].sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999'));
   for (const s of ordered) {
     const covered = Math.min(left, s.amount); left -= covered;
@@ -162,7 +164,9 @@ export function supplierDebt(total: number, schedules: readonly Schedule[], paym
     else if (!nextDueDate && s.dueDate) { nextDueDate = s.dueDate; nextDueAmount = open; }
   }
   overdue = Math.min(round(overdue), balance);
-  return { total: round(total), paid, balance, overdue, nextDueDate, nextDueAmount, status: total <= 0 ? 'none' : balance <= 0 ? 'paid' : overdue > 0 ? 'overdue' : 'open' };
+  nextDueAmount=Math.min(nextDueAmount,Math.max(0,balance-overdue));
+  if(!nextDueAmount)nextDueDate=null;
+  return { total: round(total), paid, refunded, netPaid, supplierCredit, balance, overdue, nextDueDate, nextDueAmount, status: total <= 0 ? 'none' : balance <= 0 ? 'paid' : overdue > 0 ? 'overdue' : 'open' };
 }
 const round = (n: number) => Math.round(n);
 

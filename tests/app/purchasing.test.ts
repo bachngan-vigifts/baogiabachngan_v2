@@ -157,7 +157,7 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   assert.equal((await call(`/purchase-orders/${id}/cancel`, mgr, 'POST', { reason: 'Đổi NCC' })).status, 409, 'đã nhận hàng không huỷ đơn');
 
   // Nhận đợt 2 đủ → đã nhận.
-  v = (await call(`/purchase-orders/${id}/receipts`, mgr, 'POST', { clientKey: 'rcv-000004', warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 4 }, { lineId: v.lines[1].id, goodQty: 5 }] })).data;
+  v = (await call(`/purchase-orders/${id}/receipts`, mgr, 'POST', { clientKey: 'rcv-000004', createSapo:false, warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 4 }, { lineId: v.lines[1].id, goodQty: 5 }] })).data;
   assert.equal(v.state, 'received'); assert.equal(v.receipts.length, 2);
   assert.match(v.receipts.map((r: any) => r.receiptNo).join(','), /PNH_\d{8}_/);
   // Huỷ phiếu chưa nhập Sapo (chỉ Manager) → quay lại nhận một phần.

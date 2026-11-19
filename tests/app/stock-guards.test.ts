@@ -93,7 +93,7 @@ test('nhận NCC: kho chưa mở / kho lạ / kho trống không lưu phiếu, k
 });
 
 test('huỷ phiếu nhận: hàng đã đi tiếp bị chặn; đủ tồn huỷ được và không cộng/trừ lại khi replay',async()=>{
-  const f=await fixture(),body=await seedReceipt(f);
+  const f=await fixture(),body={...await seedReceipt(f),createSapo:false};
   const r=await f.call('/purchase-orders/po/receipts',f.mgr,'POST',body);assert.equal(r.status,201,JSON.stringify(r.data));
   await postMoves(f.db,'mgr',[move(-12)]);const before=await f.snapshot();
   const path='/supplier-receipts/'+r.data.receiptId+'/cancel';

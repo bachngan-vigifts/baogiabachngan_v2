@@ -17,6 +17,20 @@ const purchase = (): any => ({ ticketNumber: 'DMH_20261015_TEST', internalNo: ''
     { id: 'l2', sku: 'LHC1487GRY', name: 'Bình giữ nhiệt', unit: 'Cái', quantity: 3, price: 50000, purchaseDiscount: 10, taxRate: 10, printFee: 0, lineTotal: 135000 }],
   totals: { subtotal: 301000, vat: 26780, total: 327780 }, schedules: [{ kind: 'deposit', amount: 100000, dueDate: '2026-10-16' }] });
 const roundtrip = async (workbook: any) => { const bytes = await workbook.xlsx.writeBuffer(); const loaded = new ctx.ExcelJS.Workbook(); await loaded.xlsx.load(bytes); return { loaded, bytes }; };
+test('exports net credited quantities with net totals; fully credited lines cannot be reordered', async () => {
+  const v = purchase();
+  v.lines[0].creditedQty = 0.5; v.lines[0].lineTotal = 124500;
+  v.lines[1].creditedQty = 3; v.lines[1].lineTotal = 0;
+  v.totals = { subtotal: 124500, vat: 9960, total: 134460 };
+  const data = purchaseExportData(v);
+  assert.equal(data.lines.length, 1); assert.equal(data.lines[0].quantity, 1.5);
+  assert.equal(data.lines[0].subtotal, 124500); assert.equal(data.totals.total, 134460);
+  const { loaded } = await roundtrip(await buildSupplierWorkbook(v, 'minh-long', dependencies));
+  assert.equal(loaded.worksheets[0].getCell('G2').value, 1.5);
+  assert.equal(v.lines[0].quantity, 2, 'original order quantity is preserved');
+  v.lines[0].creditedQty = 2;
+  assert.throws(() => purchaseExportData(v), /không còn hàng/);
+});
 test('Minh Long layouts: real XLSX roundtrip, original text SKUs, current quantities, no sample orders/external links', async () => {
   const v = purchase();
   for (const kind of ['minh-long', 'minh-long-logo']) {
