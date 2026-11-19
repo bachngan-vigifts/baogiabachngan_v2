@@ -47,7 +47,7 @@ export const PERMISSIONS: readonly PermissionDef[] = [
   { key: 'page.cash', group: 'Sổ quỹ', label: 'Két chung cửa hàng', defaults: [...SALES, 'accounting'] },
   { key: 'cash.view-all', group: 'Sổ quỹ', label: 'Xem tất cả phiếu và ca két', defaults: ['accounting'] },
   { key: 'page.cashbook', group: 'Kế toán', label: 'Sổ thu / chi', hint: 'Phiếu thu khách + phiếu chi NCC theo ngày, xuất Excel để đối soát ngân hàng.', defaults: ['accounting'] },
-  { key: 'page.sepay', group: 'Kế toán', label: 'Thanh toán SePay – xem và tải giao dịch', hint: 'Xem toàn bộ biến động ngân hàng SePay và tải giao dịch. Chỉ Manager được chọn đơn/HĐKT và xác nhận gán khoản thu; quyền này không cấp quyền ghi thu.', defaults: ['accounting'] },
+  { key: 'page.sepay', group: 'Kế toán', label: 'Thanh toán SePay – xem và tải giao dịch', hint: 'Xem tiền vào và tải giao dịch SePay; tiền ra chỉ dành cho Manager và chức vụ Kế toán. Chỉ Manager được chọn đơn/HĐKT và xác nhận gán khoản thu; quyền này không cấp quyền ghi thu.', defaults: ['accounting'] },
   { key: 'payments.void', group: 'Kế toán', label: 'Huỷ phiếu thu ghi nhầm', hint: 'Bắt buộc ghi lý do; phiếu huỷ vẫn giữ trong lịch sử.', defaults: ['accounting'] },
   { key: 'dashboard.all', group: 'Kế toán', label: 'Doanh số toàn công ty', hint: 'Tổng quan doanh số xem cả công ty (không có: chỉ doanh số của mình).', defaults: ['accounting'] },
   { key: 'store.review', group: 'Quản trị', label: 'Duyệt báo cáo Cửa hàng trưởng', hint: 'Xem báo cáo ngày / tuần / tháng / kiểm kho của mọi cửa hàng, đánh dấu đạt / sai sổ quỹ / đề xuất sai / miễn (ảnh hưởng Tiền Trách nhiệm CHT).', defaults: [] },

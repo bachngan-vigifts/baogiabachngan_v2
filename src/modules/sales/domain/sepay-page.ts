@@ -1,3 +1,4 @@
+import {SEPAY_ENTITIES} from './sepay-entities.ts';
 import { AppError } from "../../../core/errors.ts";
 import { documentDate } from "../../../core/document-number.ts";
 import { can, type PermissionMember } from "../../staff/domain/permissions.ts";
@@ -22,6 +23,7 @@ export const SEPAY_PAGE_STATES = [
 ] as const;
 export type SepayPageState = (typeof SEPAY_PAGE_STATES)[number];
 export const canViewSepay = (member: PermissionMember): boolean => can(member, 'page.sepay');
+export const canViewSepayDebits=(m:PermissionMember)=>canViewSepay(m)&&(m.role==='manager'||m.role==='employee'&&m.positionId==='accounting');
 export function sepayPageFilters(q: URLSearchParams, today: string) {
   const date = (s: string): string => {
     try {
@@ -38,6 +40,10 @@ export function sepayPageFilters(q: URLSearchParams, today: string) {
   const state = q.get("status") || "all";
   if (!SEPAY_PAGE_STATES.includes(state as SepayPageState))
     throw new AppError(400, "Trạng thái SePay không hợp lệ.");
+  const entity=q.get('entity')||'';
+  if(entity&&!SEPAY_ENTITIES.includes(entity as typeof SEPAY_ENTITIES[number]))throw new AppError(400,'Công ty SePay không hợp lệ.');
+  const direction=q.get('direction')||'in';
+  if(!['in','out','all'].includes(direction))throw new AppError(400,'Loại giao dịch không hợp lệ.');
   const account = (q.get("account") || "").replace(/\s+/g, "");
   if (account && !/^[A-Za-z0-9]{1,100}$/.test(account))
     throw new AppError(400, "Tài khoản lọc không hợp lệ.");
@@ -64,6 +70,7 @@ export function sepayPageFilters(q: URLSearchParams, today: string) {
   return {
     from,
     to,
+    entity, direction,
     status: state as SepayPageState,
     account,
     q: search,

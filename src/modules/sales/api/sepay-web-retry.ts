@@ -11,7 +11,7 @@ export async function retrySepayWebOrder(env:StaffEnv,id:string){
  if(!web)return;
  const refs=[...new Set([web.externalId].filter(x=>/^[0-9]{1,20}$/.test(x)).map(x=>(web.source==='lock'?'DH':'ML')+x))];
  if(!refs.length)return;
- const rows=await env.db.select().from(bank).where(and(inArray(bank.status,['review','unmatched']),isNull(bank.paymentId),isNull(bank.orderId),or(eq(bank.webOrderId,id),sql`${bank.content} like ${'%'+web.externalId+'%'}`))).orderBy(asc(bank.receivedAt),asc(bank.id)).limit(100);
+ const rows=await env.db.select().from(bank).where(and(eq(bank.transferType,'in'),inArray(bank.status,['review','unmatched']),isNull(bank.paymentId),isNull(bank.orderId),or(eq(bank.webOrderId,id),sql`${bank.content} like ${'%'+web.externalId+'%'}`))).orderBy(asc(bank.receivedAt),asc(bank.id)).limit(100);
  for(const row of rows){
   if(!(await resolveWebQrReferences(env.db,row)).some(ref=>refs.includes(ref)))continue;
   let payment;try{payment=parseSepayPayment(JSON.parse(row.payload));}catch{continue;}

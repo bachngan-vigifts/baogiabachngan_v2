@@ -41,7 +41,7 @@ test('SePay timestamp bounds include midnight and the final second, excluding ad
  assert.deepEqual(result.payments.map(p=>p.transactionAt),['2026-11-06T17:00:00.000Z','2026-11-07T05:00:00.000Z','2026-11-07T16:59:59.000Z']);
 });
 test('today pull checks permissions, uses VN day and imports pending once without changing receipts/debt',async()=>{
- const f=await setupSepay(),calls:string[]=[];f.env.nowSec=()=>Date.parse(day+'T00:00:00+07:00')/1000;f.env.sepayApiToken=token;
+ const f=await setupSepay(),calls:string[]=[];f.env.sepayDebitImportEnabled=true;f.env.nowSec=()=>Date.parse(day+'T00:00:00+07:00')/1000;f.env.sepayApiToken=token;
  const order=await f.order('CRM_READ_001');const beforeDebt=await netReceivables(f.db,[order.id],day);f.env.sepayApiFetch=provider([row(),row('123456790',{amount_in:'0.00',amount_out:'5000.00'})],calls);
  for(const session of [f.emp,f.ncc,''])assert.ok([401,403].includes((await f.call('/sepay/pull-today',session,'POST',{})).status));
  assert.equal(calls.length,0);
@@ -50,12 +50,12 @@ test('today pull checks permissions, uses VN day and imports pending once withou
  assert.deepEqual(first.data,{day,read:2,outgoing:1,imported:1,duplicate:0,receiptsCreated:0});
  const [stored]=await f.db.select().from(sepayTransactions);assert.equal(stored!.status,'review');assert.equal(stored!.transactionAt,'2026-11-08T17:30:00.000Z');assert.equal(stored!.paymentId,null);
  const repeat=await f.call('/sepay/pull-today',f.other,'POST',{});assert.equal(repeat.status,200,JSON.stringify(repeat.data));assert.equal(repeat.data.imported,0);assert.equal(repeat.data.duplicate,1);
- assert.equal((await f.db.select().from(sepayTransactions)).length,1);assert.equal((await f.db.select().from(customerPayments)).length,0);
+ assert.equal((await f.db.select().from(sepayTransactions)).length,2);assert.equal((await f.db.select().from(customerPayments)).length,0);
  assert.deepEqual(await netReceivables(f.db,[order.id],day),beforeDebt,'a read/import must leave all receivable fields unchanged');
  const list=await f.call('/sepay/transactions?from='+day+'&to='+day,f.other);assert.equal(list.data.summary.pendingAmount,100000);assert.equal(list.data.capabilities.canPull,true);assert.ok(!JSON.stringify(list.data).includes(token));
  // An entire batch rolls back on conflicting ID; an earlier pending import stays unchanged.
  f.env.sepayApiFetch=provider([row('fresh'),row('123456789',{amount_in:'200000'})]);
- assert.equal((await f.call('/sepay/pull-today',f.mgr,'POST',{})).status,409);assert.equal((await f.db.select().from(sepayTransactions)).length,1);
+ assert.equal((await f.call('/sepay/pull-today',f.mgr,'POST',{})).status,409);assert.equal((await f.db.select().from(sepayTransactions)).length,2);
  delete f.env.sepayApiToken;assert.equal((await f.call('/sepay/pull-today',f.mgr,'POST',{})).status,503);
  // Existing Manager confirmation can consume the normalized API proof; import itself did not post it.
  assert.equal((await f.confirm(stored!.id,f.choice(order.id),f.other)).status,403);
@@ -64,7 +64,7 @@ test('today pull checks permissions, uses VN day and imports pending once withou
  f.env.sepayApiToken=token;f.env.sepayApiFetch=provider([row()]);
  assert.equal((await f.call('/sepay/pull-today',f.mgr,'POST',{})).data.duplicate,1);
  assert.equal((await f.db.select().from(customerPayments)).length,1);
- assert.equal((await f.db.select().from(sepayTransactions))[0]!.status,'matched');
+ assert.equal((await f.db.select().from(sepayTransactions).where(eq(sepayTransactions.transferType,'in')))[0]!.status,'matched');
 });
 test('pull preserves matched/voided existing receipts and rejects conflicting payloads',async()=>{
  const f=await setupSepay();f.env.nowSec=()=>Date.parse(day+'T00:00:00Z')/1000;f.env.sepayApiToken=token;
@@ -96,7 +96,7 @@ test('simultaneous pulls and webhook share the same ID without overwriting a rec
 });
 
 test('scheduled pull requires machine authentication and reuses idempotent review-only import',async()=>{
- const f=await setupSepay(),calls:string[]=[];
+ const f=await setupSepay(),calls:string[]=[];f.env.sepayDebitImportEnabled=true;
  f.env.nowSec=()=>Date.parse(day+'T00:00:00+07:00')/1000;
  f.env.sepayApiToken=token;f.env.sapoSyncToken='TEST_SERVER_ONLY_SYNC_TOKEN_32_CHARS';
  f.env.sepayApiFetch=provider([row('scheduled')],calls);

@@ -61,6 +61,8 @@ export interface StaffEnv {
   sepayPosApiKeyHash?: string;
   /** Read-only SePay API token, never returned to browsers; injectable fetch for isolated tests. */
   sepayApiToken?: string;
+  /** Enable outgoing imports only after the guarded API rollout is verified. */
+  sepayDebitImportEnabled?: boolean;
   sepayApiFetch?: typeof fetch;
   /** Server-only approved company accounts for CRM SePay receipts. Missing = reconciliation only. */
   sepayReceiptAccounts?: readonly string[];

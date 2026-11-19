@@ -75,6 +75,7 @@ export async function ingestPayment(
       .limit(1);
     if (old) {
       if (
+        old.transferType !== payment.transferType ||
         old.amount !== payment.amount ||
         old.accountNumber !== payment.accountNumber ||
         old.content !== payment.content ||
