@@ -1,0 +1,26 @@
+name: Inspect Lock quick view
+on:
+  push:
+    branches: [codex/lock-quick-view-20261119]
+    paths: [web-lock/quick-view/inspect.mjs, .github/workflows/lock-quick-view-inspect.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read existing theme and public markup
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: node web-lock/quick-view/inspect.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quick-view-public-evidence
+          path: quick-view-evidence/
+          retention-days: 3
