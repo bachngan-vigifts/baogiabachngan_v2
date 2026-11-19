@@ -1,3 +1,7 @@
+import type {StaffEnv} from '../../src/modules/staff/api/auth-routes.ts';
+import {webNotifications,webPushSubscriptions} from '../../src/modules/notifications/schema.ts';
+import {decryptPushPayload} from '../../src/modules/notifications/domain/web-push.ts';
+import {notifyMany} from '../../src/modules/notifications/api/routes.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -12,12 +16,13 @@ const origin = 'https://trial.test';
 async function setup() {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   const router = createAppRouter(), files = memoryFileStore();
+  const env:StaffEnv={ db, files, passwordIterations: 1000, sapoOrderPush: 'off' as const };
   const call = async (path: string, cookie = '', method = 'GET', body?: object) => {
-    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), { db, files, passwordIterations: 1000, sapoOrderPush: 'off' as const });
+    const res = await router.handle(new Request(origin + '/api/staff' + path, { method, headers: { origin, 'content-type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined }), env);
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
-  return { db, files, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), ncc: await login('ncc@x.vn') };
+  return { db, files, env, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), ncc: await login('ncc@x.vn') };
 }
 
 test('khoá hội thoại 1-1 không phụ thuộc thứ tự', () => assert.equal(directKey('b', 'a'), directKey('a', 'b')));
@@ -34,9 +39,9 @@ test('chat nội bộ: 1-1, nhóm, chưa đọc, đã xem, chỉ thành viên đ
   const m1 = await call(`/chat/${d.data.id}/messages`, emp, 'POST', { body: 'Anh ơi đơn Hoàng Long giao chiều nay nhé' });
   assert.equal(m1.status, 201);
   await call(`/chat/${d.data.id}/messages`, emp, 'POST', { body: 'Kho đã đóng hàng' });
-  // Manager: 2 tin chưa đọc; tin chat không vào chuông thông báo.
+  // Manager: 2 tin chưa đọc; đồng thời có bản xem trước trong chuông thông báo.
   assert.equal((await call('/chat/unread', mgr)).data.unread, 2);
-  assert.equal((await call('/notifications', mgr)).data.notifications.some((n: any) => n.eventType === 'chat_message'), false);
+  assert.equal((await call('/notifications', mgr)).data.notifications.some((n: any) => n.eventType === 'chat_message'), true);
   let list = (await call('/chat/conversations', mgr)).data.conversations;
   assert.deepEqual([list[0].kind, list[0].title, list[0].unread, list[0].last.body], ['direct', 'Tên emp', 2, 'Kho đã đóng hàng']);
   const msgs = (await call(`/chat/${d.data.id}/messages`, mgr)).data;
@@ -126,4 +131,31 @@ test('chat: gửi file (bucket private, link có hạn), liên kết nhanh, thu 
   const hit = (await call('/chat/search?q=tin cu', emp)).data.results[0];
   const around = (await call(`/chat/${conv}/messages?around=${encodeURIComponent(hit.createdAt)}`, emp)).data;
   assert.ok(around.messages.some((x: any) => x.id === hit.id));
+});
+
+
+test('chat bell and encrypted push include message text, file/ref labels; recall and leaving remove content access',async()=>{
+ const f=await setup(),pair=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveBits']);
+ const pub=new Uint8Array(await crypto.subtle.exportKey('raw',pair.publicKey)),auth=new Uint8Array(16).fill(11),at=new Date().toISOString();
+ await f.db.insert(webPushSubscriptions).values({id:'chat-content-device',memberId:'mgr',endpoint:'https://push.example.test/chat-manager',p256dh:Buffer.from(pub).toString('base64url'),auth:Buffer.from(auth).toString('base64url'),createdAt:at,updatedAt:at});
+ const pushed:Uint8Array[]=[];f.env.sapoSyncToken='s'.repeat(64);f.env.pushFetch=async(_input,init)=>{pushed.push(init!.body as Uint8Array);return new Response('',{status:201});};
+ const g=await f.call('/chat/groups',f.emp,'POST',{title:'Nhóm sản xuất',memberIds:['mgr']});assert.equal(g.status,201);const conv=g.data.id;
+ const body='Anh kiểm tra mẫu in giúp em.\n'+'Nội dung chi tiết gửi trong tin nhắn. '.repeat(5);
+ const sent=await f.call(`/chat/${conv}/messages`,f.emp,'POST',{body,ref:{type:'order',id:'order-fixture',label:'Đơn DH-TEST'},files:[{name:'Mẫu in.txt',data:Buffer.from('fixture').toString('base64')}]});
+ assert.equal(sent.status,201,JSON.stringify(sent.data));assert.equal(pushed.length,1);
+ const notes=(await f.call('/notifications',f.mgr)).data.notifications.filter((n:any)=>n.eventType==='chat_message');assert.equal(notes.length,1);
+ const note=notes[0];assert.equal(note.title,'Nhóm sản xuất · Tên emp');assert.ok(note.body.includes(body.trim()));assert.ok(note.body.includes('Đơn DH-TEST'));assert.ok(note.body.includes('Tệp: Mẫu in.txt'));
+ const payload=JSON.parse(await decryptPushPayload(pushed[0]!,pair.privateKey,pub,auth));assert.equal(payload.body,note.body);assert.equal(payload.data.messageId,sent.data.id);assert.equal(payload.url,`/index.html#/chat/${conv}`);
+ assert.equal((await f.call('/notifications',f.emp)).data.notifications.filter((n:any)=>n.eventType==='chat_message').length,0,'sender does not notify self');
+ await notifyMany(f.env,['new','ncc'],{eventType:'chat_message',title:'LEAK',body:'PRIVATE',url:note.url,data:note.data});
+ assert.equal((await f.db.select().from(webNotifications).where(eq(webNotifications.eventType,'chat_message'))).length,1,'outsiders and supplier are rejected');
+ assert.equal((await f.call(`/chat/${conv}/messages/${sent.data.id}/recall`,f.emp,'POST',{})).status,200);
+ assert.equal((await f.call('/notifications',f.mgr)).data.notifications.filter((n:any)=>n.eventType==='chat_message').length,0,'recalled content is hidden');
+ assert.equal((await f.call('/notifications/read',f.mgr,'POST',{ids:[note.id]})).data.read,0);
+ const long=await f.call(`/chat/${conv}/messages`,f.emp,'POST',{body:'A'.repeat(700)});assert.equal(long.status,201);
+ const fresh=(await f.call('/notifications',f.mgr)).data.notifications.filter((n:any)=>n.eventType==='chat_message');assert.equal(fresh.length,1);assert.equal(fresh[0].body.length,500);assert.ok(fresh[0].body.endsWith('…'));
+ assert.equal((await f.call(`/chat/${conv}/messages`,f.mgr)).data.messages.find((m:any)=>m.id===long.data.id).body.length,700,'full text remains in chat');
+ assert.equal((await f.call(`/chat/${conv}/leave`,f.mgr,'POST',{})).status,200);
+ assert.equal((await f.call('/notifications',f.mgr)).data.notifications.filter((n:any)=>n.eventType==='chat_message').length,0,'former members lose access even if Manager');
+ const count=pushed.length;await f.call(`/chat/${conv}/messages`,f.emp,'POST',{body:'Tin sau khi rời nhóm'});assert.equal(pushed.length,count);
 });

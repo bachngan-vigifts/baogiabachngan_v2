@@ -97,6 +97,8 @@ jobs:
           tests/app/sepay-read.test.ts
           tests/app/sepay-page.test.ts
           tests/app/sepay-payment.test.ts
+          tests/app/sepay-notifications.test.ts
+          tests/app/chat.test.ts
           tests/app/sepay-ui.test.ts
           tests/app/pos.test.ts
           tests/app/finance-overview.test.ts

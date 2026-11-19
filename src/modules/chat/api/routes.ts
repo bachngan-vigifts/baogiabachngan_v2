@@ -4,7 +4,7 @@ import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
-import { notify } from '../../notifications/api/routes.ts';
+import { notifyMany } from '../../notifications/api/routes.ts';
 import { chatAttachments, chatConversations, chatMembers, chatMessages } from '../schema.ts';
 import { foldSql, matchAllWords } from '../../../core/text/fold.ts';
 import { CHAT_FILE_TYPES, CHAT_LIMITS, CHAT_REF_TYPES, RECALL_MS, directKey } from '../domain/chat-config.ts';
@@ -206,7 +206,7 @@ export function registerChatRoutes(router: Router<StaffEnv>) {
 
   /**
    * Gửi tin: chữ và/hoặc tối đa 3 file (base64, ≤ 6 MB / file, loại theo đuôi file) và/hoặc một liên kết nhanh.
-   * File lưu ở bucket private; người còn lại trong hội thoại nhận Web Push (không lưu vào chuông – tin nhắn có hộp thư riêng).
+   * File lưu ở bucket private; người còn lại nhận chuông CRM và Web Push kèm nội dung xem trước.
    */
   router.post('/chat/:id/messages', async c => {
     const m = me(c), { conv } = await myConversation(c, c.params.id!);
@@ -233,12 +233,13 @@ export function registerChatRoutes(router: Router<StaffEnv>) {
     } catch (e) { if (stored.length) await c.env.files!.remove(stored.map(f => f.key)).catch(() => {}); throw e; }
     await c.env.db.update(chatConversations).set({ lastMessageAt: now }).where(eq(chatConversations.id, conv.id));
     await c.env.db.update(chatMembers).set({ lastReadAt: now }).where(and(eq(chatMembers.conversationId, conv.id), eq(chatMembers.memberId, m.id)));
-    const text = body || (ref ? '🔗 ' + ref.label : `📎 ${stored.map(f => f.name).join(', ')}`);
+    const text = [body, ref ? '🔗 ' + ref.label : '', ...stored.map(f => `${f.mime.startsWith('image/') ? 'Ảnh' : 'Tệp'}: ${f.name}`)].filter(Boolean).join('\n');
+    const excerpt = text.length > 500 ? text.slice(0,499) + '…' : text;
     // Web Push cho người nhận chạy nền: người gửi thấy "đã gửi" ngay, không phải chờ dịch vụ push.
     const push = (async () => {
       const others = (await c.env.db.select({ id: chatMembers.memberId }).from(chatMembers).where(and(eq(chatMembers.conversationId, conv.id), ne(chatMembers.memberId, m.id)))).map(r => r.id);
-      await Promise.all(others.map(to => notify(c.env, { eventType: 'chat_message', title: conv.kind === 'group' ? `${conv.title} · ${m.name}` : m.name, body: text.slice(0, 160),
-        url: `/index.html#/chat/${conv.id}`, targetMemberId: to, actorId: m.id, data: { conversationId: conv.id }, persist: false })));
+      await notifyMany(c.env, others, { eventType: 'chat_message', title: conv.kind === 'group' ? `${conv.title} · ${m.name}` : m.name, body: excerpt,
+        url: `/index.html#/chat/${conv.id}`, actorId: m.id, data: { conversationId: conv.id, messageId: id }, dedupeKey: 'chat-message:' + id });
     })().catch(() => console.error('chat push failed'));
     if (c.env.waitUntil) c.env.waitUntil(push); else await push;
     return json({ id, createdAt: now }, 201);

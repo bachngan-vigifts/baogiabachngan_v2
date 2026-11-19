@@ -1,0 +1,60 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {and,eq} from 'drizzle-orm';
+import {setupSepay} from '../helpers/sepay-fixture.ts';
+import {webNotifications,webPushAttempts,webPushSubscriptions} from '../../src/modules/notifications/schema.ts';
+import {employees,positionPermissions} from '../../src/modules/staff/schema.ts';
+import {sepayTransactions} from '../../src/modules/integrations/schema.ts';
+import {customerPayments} from '../../src/modules/sales/schema.ts';
+import {notifySepayBankMovements} from '../../src/modules/sales/api/sepay-bank-notifications.ts';
+import {notifyMany} from '../../src/modules/notifications/api/routes.ts';
+
+test('new webhook bank movement alerts only active Manager/accounting, deduplicates notifications/push and hides notes on revocation',async()=>{
+ const f=await setupSepay();
+ const emp=(await f.call('/me',f.emp)).data.user;
+ await f.db.insert(positionPermissions).values({positionId:emp.positionId,permission:'page.sepay'}).onConflictDoNothing();
+ await f.db.update(employees).set({positionId:'accounting'}).where(eq(employees.id,'off'));
+ const pair=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveBits']);
+ const pub=Buffer.from(await crypto.subtle.exportKey('raw',pair.publicKey)).toString('base64url');
+ const auth=Buffer.from(new Uint8Array(16).fill(7)).toString('base64url'),at=new Date().toISOString();
+ await f.db.insert(webPushSubscriptions).values(['mgr','cashier2','emp','off','ncc'].map(id=>({id:'push-'+id,memberId:id,endpoint:'https://push.example.test/'+id,p256dh:pub,auth,createdAt:at,updatedAt:at})));
+ const pushed:string[]=[];f.env.sapoSyncToken='s'.repeat(64);f.env.pushFetch=async input=>{pushed.push(String(input));return new Response('',{status:201});};
+ const event=await f.incoming('BANK MOVEMENT ONLY',100000,{id:'notify-hook',accountNumber:'159063909'});
+ const notes=await f.db.select().from(webNotifications).where(eq(webNotifications.eventType,'sepay_bank_movement'));
+ assert.deepEqual(notes.map(n=>n.targetMemberId).sort(),['cashier2','mgr']);assert.ok(notes.every(n=>n.targetRole===null));
+ assert.ok(notes.every(n=>n.title.includes('Tiền vào +100.000')&&n.body.includes('VIGIFTS')&&n.body.includes('…3909')&&!n.body.includes('159063909')));
+ assert.ok(notes.every(n=>new URL('https://crm.test'+n.url).hash.includes('entity=vigifts')));
+ assert.deepEqual(pushed.sort(),['https://push.example.test/cashier2','https://push.example.test/mgr']);
+ const attempts=(await f.db.select().from(webPushAttempts)).length;
+ await Promise.all([f.incoming('BANK MOVEMENT ONLY',100000,{id:'notify-hook',accountNumber:'159063909'}),notifySepayBankMovements(f.env,['notify-hook','notify-hook']),notifySepayBankMovements(f.env,['notify-hook'])]);
+ assert.equal((await f.db.select().from(webNotifications).where(eq(webNotifications.eventType,'sepay_bank_movement'))).length,2);
+ assert.equal(pushed.length,2);assert.equal((await f.db.select().from(webPushAttempts)).length,attempts);
+ assert.equal((await f.db.select().from(customerPayments)).length,0,'bank movement notification is not a receipt');
+ assert.equal((await f.call('/notifications',f.emp)).data.notifications.filter((n:any)=>n.eventType==='sepay_bank_movement').length,0);
+ await notifyMany(f.env,['emp'],{eventType:'sepay_bank_movement',title:'FORGED',url:'/#/orders/other'});
+ assert.equal(pushed.length,2,'event guard cannot be bypassed with a different URL');
+ assert.equal((await f.call('/notifications',f.accountant)).data.notifications.filter((n:any)=>n.eventType==='sepay_bank_movement').length,1);
+ await f.db.delete(positionPermissions).where(and(eq(positionPermissions.positionId,'accounting'),eq(positionPermissions.permission,'page.sepay')));
+ assert.equal((await f.call('/notifications',f.accountant)).data.notifications.filter((n:any)=>n.eventType==='sepay_bank_movement').length,0,'permission revocation hides old previews');
+ await f.db.insert(positionPermissions).values({positionId:'accounting',permission:'page.sepay'});
+ await f.db.update(employees).set({positionId:'sale-admin'}).where(eq(employees.id,'cashier2'));
+ assert.equal((await f.call('/notifications',f.accountant)).data.notifications.filter((n:any)=>n.eventType==='sepay_bank_movement').length,0,'role changes hide old bank previews');
+ assert.equal((await f.db.select().from(sepayTransactions).where(eq(sepayTransactions.id,event.id)))[0]!.amount,100000);
+});
+
+test('parallel API pulls notify each incoming/outgoing provider once, webhook overlap does not repeat, rejected batch emits nothing',async()=>{
+ const f=await setupSepay();f.env.nowSec=()=>Date.parse('2026-11-08T12:00:00Z')/1000;f.env.sepayApiToken='sepay-notification-fixture';f.env.sepayDebitImportEnabled=true;
+ const rows=[{id:'notice-in',account_number:'123456',transaction_date:'2026-11-08 10:00:00',amount_in:'100000.00',amount_out:'0.00',transaction_content:'NEW INCOMING'},
+ {id:'notice-out',account_number:'159063909',transaction_date:'2026-11-08 11:00:00',amount_in:'0.00',amount_out:'5000.00',transaction_content:'NEW OUTGOING'}];
+ f.env.sepayApiFetch=async input=>Response.json(String(input).includes('/count')?{status:200,count_transactions:rows.length}:{status:200,transactions:rows});
+ const results=await Promise.all([f.call('/sepay/pull-today',f.mgr,'POST',{}),f.call('/sepay/pull-today',f.mgr,'POST',{})]);assert.ok(results.every(r=>r.status===200),JSON.stringify(results));
+ const notes=await f.db.select().from(webNotifications).where(eq(webNotifications.eventType,'sepay_bank_movement'));
+ assert.equal(notes.length,4);assert.equal(notes.filter(n=>n.title.includes('Tiền ra −5.000')).length,2);assert.ok(notes.every(n=>['mgr','cashier2'].includes(n.targetMemberId!)));
+ await f.incoming('NEW INCOMING',100000,{id:'notice-in'});
+ assert.equal((await f.db.select().from(webNotifications).where(eq(webNotifications.eventType,'sepay_bank_movement'))).length,4);
+ rows.push({...rows[0]!,id:'should-rollback'});rows[0]!.amount_in='200000.00';
+ assert.equal((await f.call('/sepay/pull-today',f.mgr,'POST',{})).status,409);
+ assert.equal((await f.db.select().from(sepayTransactions)).length,2);
+ assert.equal((await f.db.select().from(webNotifications).where(eq(webNotifications.eventType,'sepay_bank_movement'))).length,4,'no notification from rolled-back batch');
+ assert.equal((await f.db.select().from(customerPayments)).length,0);
+});
