@@ -30,9 +30,17 @@ async function verify(host,preview){
    if(preview){await page.addStyleTag({content:css});await page.addScriptTag({content:js});}
    else await page.locator('#bn-qv-close-style').waitFor({state:'attached',timeout:45000});
    const trigger=page.locator('.product-small .quick-view').first();
-   await trigger.scrollIntoViewIfNeeded();
-   await trigger.locator('xpath=ancestor::*[contains(@class,"box-image")][1]').hover();
-   await trigger.click();
+   async function openQuickView(){
+    if(width===390 && !(await trigger.isVisible())){
+     // Theme hides its desktop opener on mobile; exercise the same native handler.
+     await trigger.evaluate(el=>window.jQuery(el).trigger('click'));
+    }else{
+     await trigger.scrollIntoViewIfNeeded();
+     await trigger.locator('xpath=ancestor::*[contains(@class,"box-image")][1]').hover();
+     await trigger.click();
+    }
+   }
+   await openQuickView();
    const panel=page.locator('.mfp-wrap .product-lightbox');
    await panel.waitFor({state:'visible',timeout:45000});
    const close=panel.locator('.bn-qv-close');
@@ -51,7 +59,7 @@ async function verify(host,preview){
    await close.focus();
    await page.screenshot({path:'qv-close-evidence/'+host+'-'+(preview?'preview':'live')+'-'+width+'.png'});
    await close.click();await panel.waitFor({state:'hidden'});
-   await trigger.scrollIntoViewIfNeeded();await trigger.locator('xpath=ancestor::*[contains(@class,"box-image")][1]').hover();await trigger.click();
+   await openQuickView();
    await panel.waitFor({state:'visible'});assert.equal(await panel.locator('.bn-qv-close').count(),1);
    await page.keyboard.press('Escape');await panel.waitFor({state:'hidden'});
    console.log('QV_CLOSE_VERIFIED',JSON.stringify({host,width,preview,geometry,clickCloses:true,escapeCloses:true,duplicateButtons:0}));
