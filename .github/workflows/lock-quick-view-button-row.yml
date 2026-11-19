@@ -33,3 +33,5 @@ jobs:
           retention-days: 7
 
 # Verify normalized cart button dimensions.
+
+# Layout validation preserves existing variation availability.
