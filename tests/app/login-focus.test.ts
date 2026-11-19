@@ -29,7 +29,7 @@ function harness() {
     isCacheable: () => false, isPassiveWrite: () => false, pageCache: { clear() {} }, customerSearch: { clear() {} },
     toggleAccountMenu() {}, editor: { dirty: false }, quoteDeviceDraft: { logout() {} },
     token: 'old-session', state: { user: {} }, activation: null, chatUi: null, approvalUi: null, API: '/api',
-    homeUi: null, homeNotifications: null, notifier: null, tasksUi: null, stocktakeUi: null,
+    homeUi: null, homeReminderUi: null, homeNotifications: null, notifier: null, tasksUi: null, stocktakeUi: null,
     location: { hash: '#/quotes' },
     dataRefresh: { stop() {}, observe() {}, saved() {}, tick() {} },
     queueMicrotask: (fn: () => void) => timers.push(fn),
@@ -95,11 +95,12 @@ test('returning to login clears private Home and notification state for expired 
   for (const keepToken of [false, true]) {
     const h = harness(), cleared: string[] = [];
     h.ctx.homeUi = { reset() { cleared.push('home'); } };
+    h.ctx.homeReminderUi = { reset() { cleared.push('care-reminder'); } };
     h.ctx.homeNotifications = { clear() { cleared.push('feed'); } };
     h.ctx.notifier = { reset() { cleared.push('bell'); } };
     h.ctx.tasksUi = { resetQuick() { cleared.push('quick-task'); } };
     h.ctx.showAuth('expired', { keepToken });
-    assert.deepEqual(cleared, ['home', 'feed', 'bell', 'quick-task']);
+    assert.deepEqual(cleared, ['home', 'care-reminder', 'feed', 'bell', 'quick-task']);
     assert.equal(h.ctx.state.user, null);
     assert.equal(h.ctx.token, keepToken ? 'old-session' : '');
     assert.equal(h.elements['#workspace'].hidden, true);
