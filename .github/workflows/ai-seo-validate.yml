@@ -1,0 +1,15 @@
+name: Validate SEO proposal only
+on:
+  push:
+    branches: [codex/ai-seo-audit-20261119]
+    paths: [.github/workflows/ai-seo-validate.yml, web-shared/ai-seo/bn-organization-identity.php, web-shared/ai-seo/deploy-identity.mjs, web-shared/ai-seo/cache.php]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l web-shared/ai-seo/bn-organization-identity.php
+      - run: php -l web-shared/ai-seo/cache.php
+      - run: node --check web-shared/ai-seo/deploy-identity.mjs
