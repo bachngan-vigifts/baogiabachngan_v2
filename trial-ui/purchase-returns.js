@@ -43,6 +43,7 @@ export function openGoodsReturn({api,order,onChanged}){
    result.replaceChildren(el('h3','','Bản đối soát trước khi ghi sổ'));
    for(const l of r.items)result.append(el('p','',`${l.sku} · ${qty(l.quantity)} ${l.unit||''}${r.mode==='replacement'?' · NCC cần giao bù':` · giảm ${money(l.creditAmount)}`}`));
    for(const l of r.items)for(const source of l.releasedSources||[])result.append(el('small','sup-sub',`Giải phóng phần đã đặt: ${source.no||'Nguồn thủ công'} · ${qty(source.quantity)} ${l.sku}`));
+   if(r.warehouse)result.append(el('p','',`Kho xuất trả: ${r.warehouse}`));
    result.append(el('p','',`Xuất trả kho: ${qty(r.stockOut)} · Giảm công nợ: ${money(r.creditAmount)}`),el('p','',`Tổng đơn sau xử lý (gồm VAT): ${money(r.totalAfter)} · Còn phải trả: ${money(r.balanceAfter)}`),el('p','',`Đã trả NCC: ${money(r.paid)} · Đã nhận hoàn: ${money(r.refunded)} · NCC còn phải hoàn: ${money(r.supplierCreditAfter)}`),el('b','',`Xác nhận số phiếu: ${r.confirmation}`));
    result.append(el('p','muted small','Giá, CK, VAT và phí in theo đơn đã duyệt. Tiền hoàn không được ghi nhận tự động; kế toán xác nhận khi thực nhận.'));
    verification.hidden=false;post.disabled=false;

@@ -150,3 +150,11 @@ test('Supplier portal exposes only its own return/refund summary and omits inter
  await f.db.insert(suppliers).values({id:'other-ncc',name:'NCC khác',nameKey:'ncc-khac',createdBy:'mgr',createdAt:stamp,updatedAt:stamp});await f.db.insert(incomingShipments).values({id:'foreign-order',ticketNumber:'OTHER-PRIVATE',source:'supplier-order',supplierId:'other-ncc',supplierName:'NCC khác',approvalStatus:'approved',warehouse:'Kho POS',createdBy:'mgr',createdAt:stamp,updatedAt:stamp});
  assert.equal((await f.call('/supplier-portal/workspace/orders/foreign-order',f.ncc)).status,404);
 });
+
+test('Warehouse rename/name reuse cannot redirect the return away from the original receipt ledger warehouse',async()=>{
+ const f=await fixture(),{warehouses}=await import('../../src/modules/catalog/schema.ts');
+ await f.db.update(warehouses).set({name:'Kho gốc đã đổi tên'}).where(eq(warehouses.id,'pos-wh'));
+ await f.db.insert(warehouses).values({id:'reused-name',name:'Kho POS',kind:'stock'});await postMoves(f.db,'mgr',[{sku:'00123',warehouseId:'reused-name',qty:100,kind:'opening',refType:'opening',refId:'reused-open'}]);
+ const stock=await f.balance(),body=await f.request(),p=await f.preview(body);assert.equal(p.status,200,JSON.stringify(p.data));assert.equal(p.data.warehouseId,'pos-wh');assert.equal(p.data.warehouse,'Kho gốc đã đổi tên');
+ assert.equal((await f.submit(body)).status,201);assert.equal(await f.balance(),stock-2);const [other]=await f.db.select().from(stockBalances).where(and(eq(stockBalances.sku,'00123'),eq(stockBalances.warehouseId,'reused-name')));assert.equal(other!.qty,100);const history=await f.call('/products/00123/history',f.mgr);const returned=history.data.history.find((r:any)=>r.kind==='supplier_return');assert.equal(returned.location,'Kho gốc đã đổi tên');assert.equal(returned.link,'#/purchases/'+f.id);
+});

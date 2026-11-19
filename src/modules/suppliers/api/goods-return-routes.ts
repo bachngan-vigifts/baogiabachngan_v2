@@ -7,6 +7,8 @@ import {sha256Hex} from '../../staff/domain/session.ts';
 import {assertFreeStock} from '../../sales/api/stock-free.ts';
 import {lockLedger,postMoves,stockWarehouseByName} from '../../inventory/api/ledger.ts';
 import {recordMovements} from '../../catalog/api/product-history.ts';
+import {warehouses} from '../../catalog/schema.ts';
+import {stockMoves} from '../../inventory/schema.ts';
 import {computeOrderTotals,purchaseUnitCost} from '../domain/order-totals.ts';
 import {isIsoDate} from '../domain/quantity.ts';
 import {canPay,canSeePurchasePrices,receiptProgress,supplierDebt} from '../domain/purchasing.ts';
@@ -71,7 +73,7 @@ export function registerGoodsReturnRoutes(router:Router<StaffEnv>){
    if(input.mode!=='replacement'&&p.raw.lines.some(l=>Math.abs(l.quantity*1000-Math.round(l.quantity*1000))>1e-6))bad(409,'Số lượng gốc có quá 3 số lẻ. Đối soát số lượng trước khi giảm công nợ.');
    if(input.mode!=='replacement'&&(!pricesComplete||!Number.isFinite(p.raw.totals.total)))bad(409,'Đơn còn thiếu giá/VAT đã xác nhận. Đối soát giá trước khi giảm công nợ.');
    let receipt:typeof supplierReceipts.$inferSelect|undefined,job:Pick<typeof receiptJobs.$inferSelect,'status'|'leaseToken'|'dispatchToken'|'updatedAt'>|undefined;
-   let receiptLines:typeof supplierReceiptLines.$inferSelect[]=[];let warehouseId:string|null=null;
+   let receiptLines:typeof supplierReceiptLines.$inferSelect[]=[];let warehouseId:string|null=null,warehouseName:string|null=null;
    if(input.mode!=='close'){
     [receipt]=await tx.select().from(supplierReceipts).where(and(eq(supplierReceipts.id,input.receiptId!),eq(supplierReceipts.shipmentId,orderId))).for('update');
     if(!receipt||receipt.cancelledAt)bad(409,'Phiếu nhận không thuộc đơn hoặc đã huỷ.');
@@ -87,7 +89,15 @@ export function registerGoodsReturnRoutes(router:Router<StaffEnv>){
      if(input.sapoReturnId||input.sapoReturnCode||input.sapoChecked)bad(400,'Phiếu không nhập Sapo: không gắn chứng từ trả Sapo.');
     }
     receiptLines=await tx.select().from(supplierReceiptLines).where(and(eq(supplierReceiptLines.receiptId,receipt!.id),inArray(supplierReceiptLines.lineId,input.lines.map(l=>l.lineId))));
-    warehouseId=await stockWarehouseByName(tx as unknown as Db,receipt!.warehouse);if(!warehouseId)bad(409,'Kho nhận không còn hợp lệ. Đối soát kho trước.');
+    // The receipt's ledger ID survives warehouse renames; a reused display name
+    // must never redirect a supplier return into a different warehouse.
+    const originalWarehouses=await tx.selectDistinct({id:stockMoves.warehouseId}).from(stockMoves).where(and(eq(stockMoves.refType,'supplier_receipt'),eq(stockMoves.refId,receipt!.id),eq(stockMoves.kind,'receipt'))).limit(2);
+    if(originalWarehouses.length>1)bad(409,'Phiếu có nhiều kho nguồn. Đối soát bút toán nhập trước khi trả.');
+    warehouseId=originalWarehouses[0]?.id??await stockWarehouseByName(tx as unknown as Db,receipt!.warehouse);
+    if(!warehouseId)bad(409,'Kho nhận không còn hợp lệ. Đối soát kho trước.');
+    const [sourceWarehouse]=await tx.select({name:warehouses.name,kind:warehouses.kind,active:warehouses.active}).from(warehouses).where(eq(warehouses.id,warehouseId));
+    if(!sourceWarehouse||sourceWarehouse.kind!=='stock'||!sourceWarehouse.active)bad(409,'Kho nguồn đã ngừng hoạt động hoặc không hợp lệ. Đối soát trước khi trả.');
+    warehouseName=sourceWarehouse.name;
    }else if(input.sapoReturnId||input.sapoReturnCode||input.sapoChecked)bad(400,'Huỷ hàng chưa nhận không tạo phiếu trả Sapo.');
    const wanted=input.mode==='close'?p.raw.progress.lines.filter(l=>l.missing>0).map(l=>({lineId:l.lineId,quantity:l.missing})):input.lines;
    if(wanted.length>200)bad(409,'Mỗi phiếu tối đa 200 mã. Đơn lớn hơn cần đối soát và chia phiếu trước khi xử lý.');
@@ -108,7 +118,7 @@ export function registerGoodsReturnRoutes(router:Router<StaffEnv>){
      unitCost:Number.isFinite(purchaseUnitCost(l!))?purchaseUnitCost(l!):null,creditSubtotal:input.mode==='replacement'?0:before.subtotal-after.subtotal,creditVat:input.mode==='replacement'?0:before.vat-after.vat,creditAmount:input.mode==='replacement'?0:before.total-after.total};
    });
    const creditAmount=items.reduce((sum,l)=>sum+l.creditAmount,0),netTotal=Math.max(0,p.raw.totals.total-creditAmount);
-   const summary={mode:input.mode,items,warehouse:receipt?.warehouse??null,stockOut:input.mode==='close'?0:items.reduce((s,l)=>s+l.quantity,0),creditAmount,totalBefore:pricesComplete?p.raw.totals.total:null,totalAfter:pricesComplete?netTotal:null,
+   const summary={mode:input.mode,items,warehouse:warehouseName,warehouseId,stockOut:input.mode==='close'?0:items.reduce((s,l)=>s+l.quantity,0),creditAmount,totalBefore:pricesComplete?p.raw.totals.total:null,totalAfter:pricesComplete?netTotal:null,
     paid:p.raw.debt.paid,refunded:p.raw.debt.refunded,balanceAfter:pricesComplete?Math.max(0,Math.round(netTotal-p.raw.debt.netPaid)):null,supplierCreditAfter:pricesComplete?Math.max(0,Math.round(p.raw.debt.netPaid-netTotal)):null,
     sapoResolution:receipt?.sapoVerifiedAt?'manual_reconciliation':'not_needed',confirmation:receipt?.receiptNo??o!.ticketNumber};
    const previewToken=sha256Hex(JSON.stringify({hash,revision:o!.revision,summary,receipt:receipt?[receipt.id,receipt.sapoUpdatedAt,receipt.sapoVerifiedAt]:null,job:job?.updatedAt??null}));
@@ -137,7 +147,7 @@ export function registerGoodsReturnRoutes(router:Router<StaffEnv>){
    await tx.update(incomingShipments).set({revision:sql`${incomingShipments.revision}+1`,updatedAt:stamp,updatedBy:m.id,
     ...(input.mode==='replacement'?{receivedAt:null,receivedBy:null}:{}),...(input.mode==='close'?{remainderClosedAt:stamp,remainderCloseReason:input.reason}:{})}).where(eq(incomingShipments.id,orderId));
    // For manually reconciled Sapo returns, the Sapo import owns the product-history record.
-   if(warehouseId&&!input.sapoReturnId)await recordMovements(tx,items.map(l=>({refKey:`supplier-return:${id}:${l.lineId}`,sku:l.sku,kind:'supplier_return',name:l.name,qty:l.quantity,unitPrice:l.unitCost,partner:o!.supplierName,location:receipt!.warehouse,refCode:summary.confirmation,status:'posted',note:input.reason,occurredAt:stamp})));
+   if(warehouseId&&!input.sapoReturnId)await recordMovements(tx,items.map(l=>({refKey:`supplier-return:${id}:${l.lineId}`,sku:l.sku,kind:'supplier_return',name:l.name,qty:l.quantity,unit:l.unit,unitPrice:l.unitCost,partner:o!.supplierName,location:warehouseName!,link:'#/purchases/'+orderId,refCode:summary.confirmation,status:'posted',note:input.reason,occurredAt:stamp})));
    await tx.insert(supplierOrderEvents).values({id:crypto.randomUUID(),shipmentId:orderId,actorId:m.id,at:stamp,action:'goods_return',summary:`${input.mode==='close'?'Huỷ phần chưa nhận':input.mode==='replacement'?'Trả NCC giao bù':'Trả NCC giảm công nợ'} · ${items.length} mã · giảm ${Math.round(creditAmount).toLocaleString('vi-VN')} đ · ${input.reason}`,data:JSON.stringify({returnId:id,manualSapo:!!input.sapoReturnId})});
    await syncIncomingStock(tx as unknown as Db,items.map(l=>l.sku));
    return{returnId:id,duplicate:false};

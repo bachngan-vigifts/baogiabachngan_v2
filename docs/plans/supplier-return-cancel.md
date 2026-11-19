@@ -6,7 +6,7 @@ Implementation branch: `feature/supplier-return-void`. No production business re
 
 Manager opens **Thao tác khác → Trả hàng / Huỷ phần chưa nhận** on an approved purchase:
 
-- **Trả giảm công nợ / yêu cầu hoàn tiền**: select the original receipt and good quantities actually returned. Post one outbound movement to that receipt's warehouse and credit those quantities. Preserve gross ordered/received quantities and recorded payments.
+- **Trả giảm công nợ / yêu cầu hoàn tiền**: select the original receipt and good quantities actually returned. Post one outbound movement to that receipt's warehouse (using the original ledger warehouse ID, even after a rename) and credit those quantities. Preserve gross ordered/received quantities and recorded payments.
 - **Trả để NCC giao bù**: post the stock return, reopen the supplier's delivery obligation and incoming-stock quantity, and keep the purchase value unchanged. Later receipts satisfy the reopened obligation, including after cancelling an earlier undelivered remainder.
 - **Huỷ toàn bộ phần chưa nhận**: credit only the remaining undelivered quantities. No stock movement and no deletion or automatic payment void. Retained goods and financial obligations remain on the original purchase. The ordinary draft/order cancellation action and erroneous-receipt undo remain separate.
 
