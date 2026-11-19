@@ -15,9 +15,12 @@ export function purchaseExportData(v, options = {}) {
   const entity = SELLERS[options.entity] || SELLERS.BN;
   const by = action => v.events?.find(e => e.action === action)?.by || '';
   const lineOptions = options.lines || {};
-  const lines = v.lines.map(l => {
+  // The snapshot's line totals already exclude credited/cancelled goods.
+  const activeLines = v.lines.filter(l => !(number(l.creditedQty) > 0 && number(l.creditedQty) >= number(l.quantity)));
+  if (!activeLines.length) throw Error('Đơn đã trả / huỷ toàn bộ hàng, không còn hàng để xuất đơn gửi NCC.');
+  const lines = activeLines.map(l => {
     if (l.price == null || !Number.isFinite(Number(l.price)) || l.lineTotal == null || !Number.isFinite(Number(l.lineTotal))) throw Error(`Mã ${l.sku} chưa có giá mua hợp lệ.`);
-    const extra = lineOptions[l.id || l.sku] || {}, quantity = number(l.quantity), subtotal = number(l.lineTotal), taxRate = number(l.taxRate);
+    const extra = lineOptions[l.id || l.sku] || {}, quantity = number(l.creditedQty) > 0 ? Math.round((number(l.quantity) - number(l.creditedQty)) * 1000) / 1000 : number(l.quantity), subtotal = number(l.lineTotal), taxRate = number(l.taxRate);
     if (!(quantity > 0)) throw Error(`Mã ${l.sku} chưa có số lượng hợp lệ.`);
     const price = number(l.price), discount = number(l.purchaseDiscount), afterDiscount = price * (1 - discount / 100);
     return { sku: String(l.sku || ''), name: String(l.name || ''), unit: String(l.unit || ''), quantity, price, discount,
