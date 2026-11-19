@@ -21,7 +21,8 @@ export async function verify(preview=false){
    if(url.searchParams.get('lnl_buy')==='1'){buys.push(Object.fromEntries(url.searchParams));return route.abort();}
    return route.continue();
   });
-  await page.goto('https://locknlockonline.com/?lnl_qv_check='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});
+  await page.goto('https://locknlockonline.com/',{waitUntil:'commit',timeout:60000});
+  await page.locator('.product-small.box').first().waitFor({state:'attached',timeout:45000});
   await page.mouse.move(150,150);await page.evaluate(()=>window.dispatchEvent(new Event('scroll')));
   await page.waitForFunction(()=>window.jQuery&&window.Flatsome,{timeout:45000});
   await page.evaluate(()=>document.querySelectorAll('#mltv-popup,.mltv-popup-overlay').forEach(n=>n.remove()));
