@@ -1345,3 +1345,5 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
 .pos-contact-reminder-actions { display:flex;gap:8px;flex-wrap:wrap; }
 .pos-contact-reminder .modal-foot { display:flex;justify-content:flex-end; }
 @media(max-width:850px) { .pos-contact-reminder-actions .btn { flex:1;min-width:100px;min-height:44px; } }
+
+.pos-qr-send{grid-column:1/-1}.pos-qr-share{padding:0 16px}.pos-qr-share select{width:100%;margin-bottom:8px}.pos-modal.pos-qr-phone{box-sizing:border-box;margin:auto;max-width:calc(100vw - 24px);width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;text-align:center;padding:20px;border:0;border-radius:18px}.pos-qr-phone::backdrop{background:rgba(15,30,50,.55)}.pos-qr-phone-amount{display:block;font-size:30px;color:#087944;margin:12px}.pos-qr-phone .pos-qr{max-width:100%;width:300px}.pos-qr-phone p{overflow-wrap:anywhere}

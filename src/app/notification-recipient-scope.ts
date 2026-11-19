@@ -1,3 +1,5 @@
+import {qrPhoneSeller} from '../modules/sales/domain/pos-qr-display.ts';
+import {posPaymentRequests} from '../modules/sales/pos-schema.ts';
 import {chatMembers,chatMessages} from '../modules/chat/schema.ts';
 import {canViewSepayDebits} from '../modules/sales/domain/sepay-page.ts';
 import {warehouseWorkParts} from '../modules/warehouse-workspace/schema.ts';
@@ -66,6 +68,15 @@ export async function createNotificationScope(db: StaffEnv['db']) {
   };
   async function resolve(kind: string, id: string, event: string): Promise<Set<string>> {
     if (kind === 'invalid') return new Set();
+    if(kind==='qr-display'){
+      const [request]=await db.select({id:posPaymentRequests.id}).from(posPaymentRequests).where(eq(posPaymentRequests.id,id)).limit(1);
+      const [register]=await db.select({id:posRegisters.id}).from(posRegisters).where(and(eq(posRegisters.id,event),eq(posRegisters.active,true))).limit(1);
+      if(!request||!register)return new Set();
+      const ids=await Promise.all(people.filter(qrPhoneSeller).map(async m=>{
+        const key=m.role+':'+m.positionId;if(!storeScopes.has(key))storeScopes.set(key,posStoreScopeFor(db,m));
+        return (await storeScopes.get(key))?.scope.registers.includes(register.id)?m.id:null;
+      }));return new Set(ids.filter((id):id is string=>!!id));
+    }
     if (kind === 'chat') {
       const messageId=event.startsWith('chat_message:')?event.slice('chat_message:'.length):'';
       if(!messageId)return new Set();
@@ -193,6 +204,11 @@ export async function createNotificationScope(db: StaffEnv['db']) {
     people,
     async recipients(n: NotificationRef, ids: readonly string[]) {
       if(n.eventType === 'sepay_bank_movement')return ids.filter(id=>{const m=byId.get(id);return !!m && canViewSepayDebits(m);});
+      if(n.eventType==='pos_qr_display'){
+        const id=n.data?.paymentRequestId,target=n.data?.targetRegisterId;
+        if(typeof id!=='string'||typeof target!=='string'||!id||!target)return [];
+        const allowed=await matching('qr-display',id,target);return ids.filter(id=>allowed.has(id));
+      }
       const ref = refOf(n);
       if(n.eventType==='chat_message'){
         const messageId=n.data?.messageId;

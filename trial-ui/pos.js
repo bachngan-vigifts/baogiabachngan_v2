@@ -231,7 +231,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     })),
   });
   function invalidate() {
-    st.qr = null;
+    const previousQr=st.qr;st.qr=null;
+    if(previousQr?.id)api('/pos/qr/'+encodeURIComponent(previousQr.id)+'/hide-display','POST',{}).catch(()=>{});
     st.preview = null;
     for (const line of lineTotals.values()) line.unit.textContent = 'Đang tính…';
     updateMobileDock();
@@ -2049,8 +2050,32 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       } finally { m.lock(false, printQr); }
     }));
     const footer = el('div', 'pos-step-footer pos-qr-footer');
-    footer.append(button('Đóng', 'btn secondary', () => { if (!m.dlg.dataset.busy) m.close(); }), printQr, received);
-    m.body.append(amount, info, footer);
+    const shareArea=el('section','pos-qr-share'),shareStatus=el('p','muted','Điện thoại NVBH cần đang mở CRM để tự hiện mã.');
+    const target=el('select','');target.setAttribute('aria-label','Cửa hàng nhận mã QR');target.hidden=true;
+    let shareOptions=null;
+    const prepareShare=()=>api('/pos/qr/'+encodeURIComponent(d.id)+'/share-options').then(x=>{
+      if(user()?.id!==ownerId||st.qr!==d)return null;
+      shareOptions=x;target.replaceChildren();
+      if(x.chooseStore){target.hidden=false;target.append(Object.assign(el('option','','Chọn cửa hàng nhận…'),{value:''}));}
+      for(const r of x.options)target.append(Object.assign(el('option','',r.name+' · '+r.recipientCount+' NVBH'),{value:r.id}));
+      if(!x.options.length)shareStatus.textContent='Chưa có NVBH được phân quyền nhận QR ở cửa hàng này.';
+      return x;
+    }).catch(e=>{shareStatus.textContent=e.message||'Chưa chuẩn bị được nơi nhận QR.';return null;});
+    const shareOptionsPromise=prepareShare();
+    const sendQr=button('Gửi QR sang điện thoại NVBH','btn secondary pos-qr-send',async()=>{
+      if(sendQr.disabled)return;sendQr.disabled=true;
+      try{
+        const x=shareOptions||await shareOptionsPromise||await prepareShare();
+        if(!x?.options.length||user()?.id!==ownerId||st.qr!==d)return;
+        const targetRegisterId=x.chooseStore?target.value:x.options[0].id;
+        if(!targetRegisterId){shareStatus.textContent='Chọn cửa hàng nhận QR trước khi gửi.';target.focus();return;}
+        const r=await api('/pos/qr/'+encodeURIComponent(d.id)+'/share','POST',{targetRegisterId,key:crypto.randomUUID()});
+        if(user()?.id===ownerId&&st.qr===d)shareStatus.textContent='Đã gửi yêu cầu hiển thị QR tới '+r.recipientCount+' tài khoản NVBH. Điện thoại đang mở CRM sẽ tự hiện mã.';
+      }catch(e){shareStatus.textContent=e.message||'Chưa gửi được mã QR.';}finally{if(sendQr.isConnected)sendQr.disabled=false;}
+    });
+    shareArea.append(target,shareStatus);
+    footer.append(button('Đóng', 'btn secondary', () => { if (!m.dlg.dataset.busy) m.close(); }), printQr, sendQr, received);
+    m.body.append(amount, info, shareArea, footer);
     m.show();
     const timer = setInterval(async () => {
       if (st.qr !== d || completing || user().id !== ownerId || Date.now() > Date.parse(d.expiresAt)) return clearInterval(timer);
