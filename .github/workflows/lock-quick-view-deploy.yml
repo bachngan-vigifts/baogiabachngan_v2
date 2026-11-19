@@ -15,6 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: php -l web-lock/quick-view/lnl-native-quick-view.php
+      - run: node --test web-lock/quick-view/readiness.test.mjs
       - run: npm install --prefix /tmp/lnl-qv --no-audit --no-fund playwright@1.56.1 jsdom@26.1.0 jquery@3.7.1
       - run: node web-lock/quick-view/test.mjs
       - run: timeout 180 /tmp/lnl-qv/node_modules/.bin/playwright install chromium --only-shell
