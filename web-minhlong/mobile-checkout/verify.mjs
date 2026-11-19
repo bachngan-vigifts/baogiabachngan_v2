@@ -6,7 +6,7 @@ export async function verify({previewCss=null,after=false}={}){
  await mkdir('ml-mobile-evidence',{recursive:true});
  const browser=await chromium.launch({channel:'chrome'});
  try{
- for(const width of [390,1360]){
+ for(const width of (after?[390,1360]:[390])){
   const context=await browser.newContext({viewport:{width,height:900},isMobile:width===390,hasTouch:width===390});
   const page=await context.newPage();page.setDefaultTimeout(20000);
   await page.addLocatorHandler(page.locator('#mltv-popup.mltv-popup--show'),async overlay=>{
@@ -67,6 +67,7 @@ export async function verify({previewCss=null,after=false}={}){
    assert(await page.locator('#payment_method_ml_sepay_qr').isChecked(),'customer can return to transfer');
    console.log('CHECKOUT_DEFAULT_OK',JSON.stringify({width,label,defaultTransfer:true,codPreservedAfterAjax:true,ordersSubmitted:0,errors}));
   }
+  await page.unrouteAll({behavior:'wait'});
   await context.close();
  }
  }finally{await browser.close();}
