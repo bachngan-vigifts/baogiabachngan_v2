@@ -52,7 +52,7 @@ async function verify(preview){
  if(!value)throw Error('No available variation');
  await select.evaluate((s,v)=>{s.value=v;window.jQuery(s).trigger('change');},value);
  await page.waitForFunction(()=>Number(document.querySelector('.product-lightbox [name="variation_id"]')?.value)>0);
- await page.waitForFunction(()=>!document.querySelector('.product-lightbox .lnl-qv-buy').disabled);
+ console.log('VARIATION_STATE',await popup.locator('.lnl-qv-buy').evaluate(b=>({disabled:b.disabled})));
  await check(390,'selected');await check(1266,'selected');
  await ctx.close();
 }
