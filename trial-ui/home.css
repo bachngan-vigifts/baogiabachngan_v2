@@ -122,3 +122,5 @@
 .home-reminder-body p{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
 .home-reminder-body [data-error]:empty{display:none}
 @media(max-width:600px){#view-home .home-reminder-launch{flex-basis:100%}.home-reminder-dialog footer .btn{min-height:44px}}
+
+.home-reminder-schedule{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:12px}.home-reminder-schedule label{min-width:0}
