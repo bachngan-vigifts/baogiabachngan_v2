@@ -31,3 +31,5 @@ jobs:
           name: lock-quick-view-deployment
           path: quick-view-evidence/
           retention-days: 7
+
+# Verify bounded cache propagation before rollback.
