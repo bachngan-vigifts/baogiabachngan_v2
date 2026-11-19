@@ -55,7 +55,12 @@ export async function verify(preview=false){
   const selects=popup.locator('.variations select');assert(await selects.count()>0);
   for(let i=0;i<await selects.count();i++){
    const select=selects.nth(i);const option=await select.evaluate(s=>Array.from(s.options).find(o=>o.value&&!o.disabled)?.value);
-   assert(option,'available variation option');await select.selectOption(option);
+   assert(option,'available variation option');
+   const cell=select.locator('..');
+   const choices=cell.locator('.ml-variation-choice:not(:disabled),.ux-swatch:not(.disabled),.variable-item:not(.disabled)').filter({visible:true});
+   if(await choices.count()){await choices.first().click();assert(await select.inputValue(),'visible choice updates native select');}
+   else if(await select.isVisible())await select.selectOption(option);
+   else {console.log('VARIATION_CELL',await cell.innerHTML());throw Error('No visible variation control');}
   }
   await page.waitForFunction(()=>Number(document.querySelector('.product-lightbox [name="variation_id"]')?.value)>0,{timeout:45000});
   await popup.locator('.lnl-qv-buy').waitFor({state:'visible'});
