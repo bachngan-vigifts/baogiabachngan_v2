@@ -1,0 +1,21 @@
+# Đo máy chủ Supabase chỉ đọc: log Edge 24 giờ, thống kê CSDL, gọi /health. Nhánh tạm, không merge.
+name: Đo máy chủ Supabase
+on:
+  push:
+    branches: [perf/supabase-measure]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Đo
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/maintenance/measure-supabase.mjs
