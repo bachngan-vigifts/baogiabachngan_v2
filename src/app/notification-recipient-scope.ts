@@ -1,3 +1,4 @@
+import {canViewSepayDebits} from '../modules/sales/domain/sepay-page.ts';
 import {warehouseWorkParts} from '../modules/warehouse-workspace/schema.ts';
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { StaffEnv } from '../modules/staff/api/auth-routes.ts';
@@ -184,6 +185,7 @@ export async function createNotificationScope(db: StaffEnv['db']) {
   return {
     people,
     async recipients(n: NotificationRef, ids: readonly string[]) {
+      if(n.eventType === 'sepay_bank_movement')return ids.filter(id=>{const m=byId.get(id);return !!m && canViewSepayDebits(m);});
       const ref = refOf(n);
       if (!ref) return ids.filter(id => byId.has(id));
       const allowed = await matching(ref.kind, ref.id, n.eventType);

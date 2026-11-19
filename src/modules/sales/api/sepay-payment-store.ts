@@ -1,3 +1,4 @@
+import {notifySepayBankMovements} from './sepay-bank-notifications.ts';
 import {sepayManualAccountApproved} from './sepay-manual-account.ts';
 import {
   and,
@@ -64,7 +65,8 @@ export async function ingestPayment(
   manual?: SepayManualChoice,
   mode: 'all' | 'web' | 'nearby' = 'all',
 ) {
-  return env.db.transaction(async (tx) => {
+  let firstSeen=false;
+  const result=await env.db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext(${"sepay:" + payment.providerId}))`,
     );
@@ -73,6 +75,7 @@ export async function ingestPayment(
       .from(sepayTransactions)
       .where(eq(sepayTransactions.providerId, payment.providerId))
       .limit(1);
+    firstSeen=!old;
     if (old) {
       if (
         old.transferType !== payment.transferType ||
@@ -409,4 +412,6 @@ export async function ingestPayment(
     // A manual first confirmation consumes an existing inbox row; it is not a receipt retry.
     return { duplicate: manual ? false : !!old, ...row };
   });
+  if(firstSeen)await notifySepayBankMovements(env,[payment.providerId]);
+  return result;
 }

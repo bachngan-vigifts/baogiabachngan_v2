@@ -1,3 +1,4 @@
+import {notifySepayBankMovements} from './sepay-bank-notifications.ts';
 import { inArray, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { json, readJson, type Router } from '../../../core/http/router.ts';
@@ -15,7 +16,7 @@ export async function pullSepayToday(env: StaffEnv, actorId: string) {
   const day = vietnamDate(new Date((env.nowSec?.() ?? Date.now()/1000)*1000)).iso;
   const result = await readSepayDay(env.sepayApiToken || '', day, env.sepayApiFetch,!!env.sepayDebitImportEnabled);
   const debits=env.sepayDebitImportEnabled?result.debits:[];
-  const totals = await env.db.transaction(async tx => {
+  const {notificationProviders,...totals} = await env.db.transaction(async tx => {
     // All writers use the same provider-ID locks. Sort batch locks before any row read.
     const ids = [...new Set([...result.payments,...debits].map(p => p.providerId))].sort();
     if (ids.length) await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sepay:' || id)) from (select jsonb_array_elements_text(${JSON.stringify(ids)}::jsonb) as id order by id) keys`);
@@ -56,8 +57,9 @@ export async function pullSepayToday(env: StaffEnv, actorId: string) {
     if (additions.length) await tx.insert(bank).values(additions);
     await cashAudit(tx, actorId, 'sepay.pull-today', 'sepay_import', day,
       { day, read: result.read, imported: result.payments.length-duplicate, duplicate, outgoing: result.outgoing });
-    return { imported: result.payments.length-duplicate, duplicate };
+    return { imported: result.payments.length-duplicate, duplicate, notificationProviders:ids.filter(id=>!existing.some(p=>p.providerId===id)) };
   });
+  await notifySepayBankMovements(env,notificationProviders);
   const nearby=await retryNearbySepay(env);
   return { day, read: result.read, outgoing: result.outgoing, ...totals, receiptsCreated: 0, ...(nearby.matched?{nearbyMatched:nearby.matched}:{}) };
 }

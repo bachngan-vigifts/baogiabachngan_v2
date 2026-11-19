@@ -1,5 +1,5 @@
 import { boundedMap } from '../../../core/async/bounded-map.ts';
-import { notificationScope } from './recipient-scope.ts';
+import { notificationScope, type NotificationScope } from './recipient-scope.ts';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -35,6 +35,8 @@ export interface NotifyInput {
   actorId?: string | null; data?: Record<string, unknown>;
   /** false = chỉ đẩy Web Push, không lưu vào chuông thông báo (vd. tin nhắn chat – có hộp thư riêng). */
   persist?: boolean;
+  /** Internal event identity; deduplicate persisted events per recipient before sending Web Push. */
+  dedupeKey?: string;
   /** true = chờ gửi xong mới trả lời (trang "Gửi thử" cần kết quả từng thiết bị). Mặc định gửi nền. */
   wait?: boolean;
 }
@@ -43,9 +45,9 @@ export interface NotifyInput {
  * Gửi cùng một thông báo cho nhiều người (mỗi người một bản ghi + Web Push), bỏ trùng và bỏ chính người thao tác (`actorId`).
  * `ids` = 'managers' → mọi Manager đang làm việc · 'approvers' → Manager + nhân viên được Manager bật cờ "Được duyệt" (việc chờ duyệt).
  */
-export async function notifyMany(env: StaffEnv, ids: (string | null | undefined)[] | 'managers' | 'approvers', n: Omit<NotifyInput, 'targetMemberId' | 'targetRole'>, except: readonly (string | null | undefined)[] = []) {
+export async function notifyMany(env: StaffEnv, ids: (string | null | undefined)[] | 'managers' | 'approvers', n: Omit<NotifyInput, 'targetMemberId' | 'targetRole'>, except: readonly (string | null | undefined)[] = [], requestScope?: NotificationScope) {
   try {
-    const scope = await notificationScope(env.db);
+    const scope = requestScope ?? await notificationScope(env.db);
     const list = typeof ids === 'string' ? scope.people.filter(m => ids === 'managers' ? m.role === 'manager'
       : m.role === 'manager' || m.role === 'employee' && m.canApprove).map(m => m.id) : ids;
     const candidates = [...new Set(list.filter((x): x is string => !!x && x !== n.actorId && !except.includes(x)))];
@@ -103,13 +105,19 @@ export async function notify(env: StaffEnv, n: NotifyInput): Promise<{ ok: boole
 
 /** Only called after recipient authorization; persist and push always use the same explicit recipient. */
 async function deliver(env: StaffEnv, n: NotifyInput): Promise<{ ok: boolean; sent: number; id?: string; results: PushResult[] }> {
+  const id = n.dedupeKey ? [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([n.eventType,n.dedupeKey,n.targetMemberId]))))].map(b=>b.toString(16).padStart(2,'0')).join('') : crypto.randomUUID();
   const note = {
-    id: crypto.randomUUID(), eventType: clean(n.eventType, 80), title: clean(n.title, 180), body: clean(n.body, 500), url: clean(n.url || '/', 500),
+    id, eventType: clean(n.eventType, 80), title: clean(n.title, 180), body: clean(n.body, 500), url: clean(n.url || '/', 500),
     targetRole: n.targetMemberId ? null : (n.targetRole ?? 'manager'), targetMemberId: n.targetMemberId ?? null, actorId: n.actorId ?? null,
     dataJson: JSON.stringify(n.data ?? {}), createdAt: nowIso(),
   };
   if (n.persist !== false) {
-    try { await env.db.insert(webNotifications).values(note); }
+    try {
+      if(n.dedupeKey){
+        const inserted=await env.db.insert(webNotifications).values(note).onConflictDoNothing({target:webNotifications.id}).returning({id:webNotifications.id});
+        if(!inserted.length)return {ok:true,sent:0,id:note.id,results:[]};
+      }else await env.db.insert(webNotifications).values(note);
+    }
     catch (e) { console.error('notify insert failed', note.eventType, e instanceof Error ? e.message : e); return { ok: false, sent: 0, results: [] }; }
   }
   // Web Push gọi dịch vụ ngoài (chậm 0,3–1,5 giây / thiết bị): chạy nền sau khi trả lời để nút thao tác không phải chờ.
