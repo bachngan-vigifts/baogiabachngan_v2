@@ -1,0 +1,33 @@
+name: Deploy quick-view close button on both websites
+on:
+  push:
+    branches: [codex/quick-view-close-both-20261119]
+    paths: [web-shared/quick-view-close/**, .github/workflows/quick-view-close-both.yml]
+permissions:
+  contents: read
+concurrency:
+  group: quick-view-close-both
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l web-shared/quick-view-close/bn-quick-view-close.php
+      - run: php -l web-shared/quick-view-close/cache.php
+      - run: node --check web-shared/quick-view-close/deploy.mjs
+      - run: npm install --prefix /tmp/bn-qv-close --no-audit --no-fund playwright@1.56.1
+      - run: timeout 180 /tmp/bn-qv-close/node_modules/.bin/playwright install chromium --only-shell
+      - name: Preview both sites then deploy and verify with rollback
+        run: node web-shared/quick-view-close/deploy.mjs
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quick-view-close-both-evidence
+          path: qv-close-evidence/
+          retention-days: 7
