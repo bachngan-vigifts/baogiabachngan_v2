@@ -1,0 +1,33 @@
+name: Check Minh Long variation layout
+on:
+  push:
+    branches: [codex/minhlong-variation-layout-20261119]
+    paths: [.github/workflows/minhlong-variation-layout.yml]
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l web-minhlong/variations/ml-variation-buttons.php
+      - run: npm install --prefix /tmp/ml-choices --no-audit --no-fund playwright@1.56.1
+      - run: timeout 180 /tmp/ml-choices/node_modules/.bin/playwright install chromium --only-shell
+      - run: node web-minhlong/variations/verify-layout.mjs --preview
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: minhlong-layout-preview
+          path: ml-choices-evidence/
+          retention-days: 7
+
+# Verify explicit grid row layout against product-specific CSS.
+
+# Capture remaining reset/link spacing.
+
+# Check product-specific important style overrides.
+
+# Measure after native variation form initializes.
+
+# Native reset state is the observable initialization signal.
