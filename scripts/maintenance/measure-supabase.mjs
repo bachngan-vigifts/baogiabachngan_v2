@@ -1,60 +1,13 @@
-// Đo máy chủ Supabase (chỉ đọc): log Edge 24h, thống kê CSDL, gọi /health trực tiếp. Không in dữ liệu khách/nhân viên hay khoá.
-const REF = 'taceqfnsorewelsbdckg', TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
-const api = (path, init = {}) => fetch('https://api.supabase.com/v1/projects/' + REF + path, { ...init, headers: { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json', ...(init.headers || {}) } });
-const out = {};
-async function logs(name, sql, hours = 24) {
-  const end = new Date(), start = new Date(end - hours * 3600e3);
-  const q = new URLSearchParams({ sql, iso_timestamp_start: start.toISOString(), iso_timestamp_end: end.toISOString() });
-  const r = await api('/analytics/endpoints/logs?' + q);
-  const t = await r.text(); let j; try { j = JSON.parse(t); } catch { j = t.slice(0, 400); }
-  out[name] = r.ok ? (j.result ?? j) : { status: r.status, error: j?.error ?? j };
-}
-async function db(name, sql) {
-  const r = await api('/database/query', { method: 'POST', body: JSON.stringify({ query: sql, read_only: true }) });
-  const t = await r.text(); let j; try { j = JSON.parse(t); } catch { j = t.slice(0, 400); }
-  out[name] = r.ok ? j : { status: r.status, error: j };
-}
-const PATH = `regexp_replace(regexp_replace(regexp_replace(r.pathname, r'^/functions/v1/baogia-v2-api', ''), r'[0-9a-f]{8}-[0-9a-f-]{27}', ':id'), r'/[A-Za-z0-9_-]{16,}', '/:id')`;
-const BASE = `from function_edge_logs t cross join unnest(t.metadata) m cross join unnest(m.request) r cross join unnest(m.response) s where r.pathname like '/functions/v1/baogia-v2-api%'`;
-await logs('edge_overall', `select count(*) calls, approx_quantiles(m.execution_time_ms,100)[offset(50)] p50, approx_quantiles(m.execution_time_ms,100)[offset(90)] p90, approx_quantiles(m.execution_time_ms,100)[offset(99)] p99, max(m.execution_time_ms) max_ms, countif(s.status_code>=500) err5xx, countif(s.status_code=401 or s.status_code=403) auth4xx ${BASE}`);
-await logs('edge_by_region', `select m.region region, count(*) calls, approx_quantiles(m.execution_time_ms,100)[offset(50)] p50, approx_quantiles(m.execution_time_ms,100)[offset(90)] p90 ${BASE} group by region order by calls desc`);
-await logs('edge_slowest_paths', `select r.method method, ${PATH} path, count(*) calls, approx_quantiles(m.execution_time_ms,100)[offset(50)] p50, approx_quantiles(m.execution_time_ms,100)[offset(90)] p90, max(m.execution_time_ms) max_ms ${BASE} group by method, path having calls >= 5 order by p90 desc limit 15`);
-await logs('edge_busiest_paths', `select r.method method, ${PATH} path, count(*) calls, approx_quantiles(m.execution_time_ms,100)[offset(50)] p50, approx_quantiles(m.execution_time_ms,100)[offset(90)] p90 ${BASE} group by method, path order by calls desc limit 12`);
-await logs('edge_by_hour_vn', `select format_timestamp('%H', t.timestamp, 'Asia/Ho_Chi_Minh') hour_vn, count(*) calls, approx_quantiles(m.execution_time_ms,100)[offset(50)] p50, approx_quantiles(m.execution_time_ms,100)[offset(90)] p90 ${BASE} group by hour_vn order by hour_vn`);
-await logs('slow_log_lines', `select count(*) api_slow from function_logs where event_message like '%API slow%'`);
-await logs('slow_log_sample', `select regexp_replace(event_message, r'[0-9a-f]{8}-[0-9a-f-]{27}', ':id') msg from function_logs where event_message like '%API slow%' order by timestamp desc limit 15`);
-await db('db_overview', `select json_build_object(
-  'version', current_setting('server_version'), 'max_connections', current_setting('max_connections')::int,
-  'connections', (select json_object_agg(coalesce(state,'(none)'), n) from (select state, count(*) n from pg_stat_activity where datname=current_database() group by state) x),
-  'long_running_over_5s', (select count(*) from pg_stat_activity where state='active' and now()-query_start > interval '5 seconds'),
-  'db_size_mb', round(pg_database_size(current_database())/1048576.0),
-  'cache_hit_pct', (select round(100.0*sum(blks_hit)/nullif(sum(blks_hit)+sum(blks_read),0),2) from pg_stat_database where datname=current_database()),
-  'deadlocks', (select deadlocks from pg_stat_database where datname=current_database()),
-  'stats_since', (select stats_reset from extensions.pg_stat_statements_info)
-) as r`);
-await db('top_queries_total', `select calls, round(total_exec_time) total_ms, round(mean_exec_time::numeric,1) mean_ms, round(max_exec_time) max_ms, rows, left(regexp_replace(query, '\\s+', ' ', 'g'), 140) query from extensions.pg_stat_statements where dbid=(select oid from pg_database where datname=current_database()) and query not ilike '%pg_stat%' order by total_exec_time desc limit 12`);
-await db('top_queries_mean', `select calls, round(mean_exec_time::numeric,1) mean_ms, round(max_exec_time) max_ms, left(regexp_replace(query, '\\s+', ' ', 'g'), 140) query from extensions.pg_stat_statements where dbid=(select oid from pg_database where datname=current_database()) and calls >= 20 and query not ilike '%pg_stat%' order by mean_exec_time desc limit 10`);
-await db('tables', `select relname, n_live_tup live, n_dead_tup dead, round(pg_total_relation_size(relid)/1048576.0,1) mb, seq_scan, idx_scan, last_autovacuum, last_autoanalyze from pg_stat_user_tables order by pg_total_relation_size(relid) desc limit 12`);
-await db('seq_heavy', `select relname, seq_scan, seq_tup_read, idx_scan, n_live_tup live from pg_stat_user_tables where seq_scan > 1000 and n_live_tup > 2000 order by seq_tup_read desc limit 8`);
-
-// Kế hoạch thực thi thật (chỉ SELECT, read_only) để biết chậm do quét bảng hay chờ khoá.
-await db('explain_ver_products', "explain (analyze, buffers, format text) select count(*), coalesce(max(updated_at),'') from products where active = true");
-await db('explain_ver_prices', 'explain (analyze, buffers, format text) select count(*), coalesce(sum(price),0)::text from product_prices');
-await db('explain_ver_stock', "explain (analyze, buffers, format text) select count(*), coalesce(max(updated_at),''), coalesce(sum(quantity),0)::text from product_stock");
-await db('explain_ver_balances', "explain (analyze, buffers, format text) select count(*), coalesce(max(updated_at),''), coalesce(sum(qty),0) from stock_balances");
-await db('explain_cust_count', "explain (analyze, buffers, format text) select count(*) from sapo_customers where translate(lower(coalesce(name, '') || ' ' || coalesce(contact, '') || ' ' || coalesce(phone, '') || ' ' || coalesce(email, '') || ' ' || coalesce(tax_code, '') || ' ' || coalesce(customer_code, '')), 'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ̛̣̀́̂̃̆̉', 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd') like '%nguyen%' and translate(lower(coalesce(name, '') || ' ' || coalesce(contact, '') || ' ' || coalesce(phone, '') || ' ' || coalesce(email, '') || ' ' || coalesce(tax_code, '') || ' ' || coalesce(customer_code, '')), 'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ̛̣̀́̂̃̆̉', 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd') like '%lan%'");
-await db('explain_prod_count', "explain (analyze, buffers, format text) select count(*) from products where active = true and translate(lower(coalesce(sku, '') || ' ' || coalesce(name, '') || ' ' || coalesce(brand, '') || ' ' || coalesce(pattern, '')), 'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ̛̣̀́̂̃̆̉', 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd') like '%binh%' and translate(lower(coalesce(sku, '') || ' ' || coalesce(name, '') || ' ' || coalesce(brand, '') || ' ' || coalesce(pattern, '')), 'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ̛̣̀́̂̃̆̉', 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd') like '%giu nhiet%'");
-await db('explain_notif_max', "explain (analyze, buffers, format text) select max(created_at) from staff_web_notifications where target_member_id = 'x' or (target_member_id is null and (target_role = 'all' or target_role = 'sale'))");
-for (const k of Object.keys(out)) if (k.startsWith('explain_') && Array.isArray(out[k])) out[k] = out[k].map(r => r['QUERY PLAN']).filter(l => /Scan|Execution Time|Planning Time|Buffers: shared|rows=/.test(l)).slice(0, 14);
-await db('locks_now', `select mode, relation::regclass::text rel, granted, count(*) n from pg_locks where relation is not null and relation::regclass::text not like 'pg_%' group by 1,2,3 order by n desc limit 12`);
-await db('ext', `select extname from pg_extension order by 1`);
-// Gọi /health trực tiếp (máy đo ở Mỹ: thời gian mạng cao hơn ở VN; xem Server-Timing để tách phần máy chủ)
-const health = [];
-for (const region of []) for (let i = 0; i < 0; i++) {
-  const t0 = performance.now();
-  const r = await fetch(`https://${REF}.supabase.co/functions/v1/baogia-v2-api/api/staff/health${region ? '?forceFunctionRegion=' + region : ''}`, { headers: { Origin: 'https://crm.minhlongonline.com' } }).catch(e => ({ ok: false, status: String(e.message) }));
-  const ms = Math.round(performance.now() - t0); let body = null; try { body = await r.json(); } catch {}
-  health.push({ region: region || 'mặc định', i, status: r.status, ms, mode: body?.databaseMode, timing: r.headers?.get?.('server-timing'), edgeRegion: r.headers?.get?.('x-sb-edge-region') });
-}
-out.health = health;
-console.log(JSON.stringify(out, null, 2));
+// Đọc cấu hình máy CSDL (chỉ đọc): cỡ máy, add-on, vài chỉ số CPU/IO. Không in khoá.
+const REF='taceqfnsorewelsbdckg',T=process.env.SUPABASE_ACCESS_TOKEN;
+const get=async p=>{const r=await fetch('https://api.supabase.com/v1'+p,{headers:{Authorization:'Bearer '+T}});const t=await r.text();try{return {status:r.status,body:JSON.parse(t)}}catch{return {status:r.status,body:t.slice(0,300)}}};
+const pick=(o,ks)=>Object.fromEntries(ks.filter(k=>o&&k in o).map(k=>[k,o[k]]));
+const p=await get('/projects/'+REF);
+console.log('project',JSON.stringify(pick(p.body,['region','status','database','infra_compute_size','instance_size','created_at'])));
+const a=await get('/projects/'+REF+'/billing/addons');
+console.log('addons',a.status,JSON.stringify(a.body).slice(0,1500));
+const q=async sql=>{const r=await fetch('https://api.supabase.com/v1/projects/'+REF+'/database/query',{method:'POST',headers:{Authorization:'Bearer '+T,'Content-Type':'application/json'},body:JSON.stringify({query:sql,read_only:true})});return r.text()};
+console.log('settings',await q("select name, setting, unit from pg_settings where name in ('shared_buffers','work_mem','effective_cache_size','max_worker_processes','max_parallel_workers')"));
+// Đo CPU thuần: phép tính không đọc bảng, 3 lần
+for(let i=0;i<3;i++){const t0=Date.now();const r=await q("explain analyze select sum(g) from generate_series(1,2000000) g");console.log('cpu_probe',Date.now()-t0,'ms', (r.match(/Execution Time: [0-9.]+ ms/)||[''])[0]);}
+for(let i=0;i<3;i++){const r=await q("explain analyze select count(*) from products");console.log('products_count', (r.match(/Execution Time: [0-9.]+ ms/)||[''])[0]);}
