@@ -11,3 +11,10 @@ console.log('settings',await q("select name, setting, unit from pg_settings wher
 // Đo CPU thuần: phép tính không đọc bảng, 3 lần
 for(let i=0;i<3;i++){const t0=Date.now();const r=await q("explain analyze select sum(g) from generate_series(1,2000000) g");console.log('cpu_probe',Date.now()-t0,'ms', (r.match(/Execution Time: [0-9.]+ ms/)||[''])[0]);}
 for(let i=0;i<3;i++){const r=await q("explain analyze select count(*) from products");console.log('products_count', (r.match(/Execution Time: [0-9.]+ ms/)||[''])[0]);}
+// File sản xuất đẩy Google Drive: chỉ đếm theo trạng thái/ngày, không in tên file hay khách.
+const sec=await get('/projects/'+REF+'/secrets');
+console.log('drive_secrets',sec.status,JSON.stringify(Array.isArray(sec.body)?sec.body.map(s=>s.name).filter(n=>/GOOGLE_DRIVE|PRODUCTION_FILES/.test(n)):sec.body));
+console.log('drive_files_status',await q("select status, count(*) n, min(created_at) first_at, max(created_at) last_at from sales_production_files group by status"));
+console.log('drive_files_by_day',await q("select left(created_at,10) d, status, count(*) n from sales_production_files where created_at >= to_char(now() - interval '14 days','YYYY-MM-DD') group by 1,2 order by 1 desc,2"));
+console.log('drive_stuck_uploading',await q("select count(*) n from sales_production_files where status='uploading' and created_at < to_char(now() - interval '15 minutes','YYYY-MM-DD\"T\"HH24:MI:SS')"));
+console.log('drive_links',await q("select count(*) links, count(distinct order_id) orders from sales_production_file_links"));
