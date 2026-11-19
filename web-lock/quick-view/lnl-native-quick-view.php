@@ -42,7 +42,7 @@ body .product-lightbox form.cart .woocommerce-variation-add-to-cart>.quantity{
  grid-column:1/-1!important;justify-self:start;width:max-content!important;margin:0 0 8px!important
 }
 body .product-lightbox form.cart .woocommerce-variation-add-to-cart>.single_add_to_cart_button{
- grid-column:1!important;width:46px!important;min-width:46px!important;max-width:46px!important;height:44px!important;margin:0!important;float:none!important
+ grid-column:1!important;width:46px!important;min-width:46px!important;max-width:46px!important;height:44px!important;min-height:44px!important;max-height:44px!important;box-sizing:border-box!important;margin:0!important;float:none!important
 }
 body .product-lightbox form.cart .woocommerce-variation-add-to-cart>.lnl-qv-buy{
  grid-column:2!important;display:flex!important;align-items:center!important;justify-content:center!important;width:100%!important;min-width:0!important;max-width:100%!important;height:44px!important;min-height:44px!important;padding:0 12px!important;margin:0!important;float:none!important;white-space:nowrap!important;line-height:1.2!important;font-size:13px!important;box-sizing:border-box!important
