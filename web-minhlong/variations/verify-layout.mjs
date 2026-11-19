@@ -45,6 +45,7 @@ export async function verify(preview){
     const label=row.querySelector('label').getBoundingClientRect(),button=row.querySelector('.ml-variation-choice').getBoundingClientRect(),cell=row.querySelector('td.value').getBoundingClientRect(),group=row.querySelector('.ml-variation-choices').getBoundingClientRect();
     return {centerDelta:Math.abs((label.top+label.height/2)-(button.top+button.height/2)),bottomGap:cell.bottom-group.bottom};
    }));
+   console.log('ROW_DEBUG',JSON.stringify(await form.locator('tr.ml-variation-row').evaluateAll(rows=>rows.map(r=>({html:r.outerHTML,styles:[r,...r.querySelectorAll('th,td,label,.ml-variation-choices,.reset_variations')].map(e=>{const s=getComputedStyle(e),b=e.getBoundingClientRect();return {tag:e.tagName,cls:e.className,top:b.top,height:b.height,display:s.display,visibility:s.visibility,padding:s.padding,margin:s.margin,lineHeight:s.lineHeight,align:s.alignItems};})})))));
    assert(geometry.length,'enhanced rows');geometry.forEach(g=>{assert(g.centerDelta<=2,'label and first choice vertically aligned '+JSON.stringify(g));assert(g.bottomGap<=16,'no empty reset space '+JSON.stringify(g));});
    console.log('LAYOUT_GEOMETRY',JSON.stringify({width,kind,geometry}));
    assert.equal(await groups.count(),await selects.count(),'one group per attribute');
