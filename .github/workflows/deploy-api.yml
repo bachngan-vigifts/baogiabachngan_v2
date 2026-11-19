@@ -117,6 +117,7 @@ jobs:
           tests/app/pos-returns.test.ts
           tests/app/pos-returns-ui.test.ts
           tests/app/retail-customers.test.ts
+          tests/app/customer-shared-segments.test.ts
           tests/app/barcode-import.test.ts
           tests/app/sapo-push.test.ts
           tests/app/sapo-push-ui.test.ts

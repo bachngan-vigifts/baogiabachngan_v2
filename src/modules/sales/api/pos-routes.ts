@@ -1,3 +1,4 @@
+import { directlyAssignedCustomer } from '../../customers/api/visibility.ts';
 import {webOrderPayment} from '../domain/web-order-payment.ts';
 import {readWebSepayPaidAt,webSepayPaidAt} from './web-sepay-evidence.ts';
 import {LOCK_WEB_REGISTER_NAME} from '../domain/pos-register.ts';
@@ -947,8 +948,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             eq(customers.approvalStatus, 'approved'),
             focusedId ? eq(customers.id, focusedId) : undefined,
             // Tax-code presence defines POS tabs; retain the existing restricted-customer visibility gate.
-            !canRetail ? and(eq(customers.isRetail, false), hasTaxCode) : undefined,
-            kind === 'retail' ? (canRetail ? sql`not (${hasTaxCode})` : sql`false`) : kind === 'business' ? hasTaxCode : undefined,
+            !canRetail ? or(and(eq(customers.isRetail, false), hasTaxCode), directlyAssignedCustomer(member(c))) : undefined,
+            kind === 'retail' ? sql`not (${hasTaxCode})` : kind === 'business' ? hasTaxCode : undefined,
             // `search` is folded when the customer is written and has a trigram index. Avoid folding
             // five columns for every row on every POS keystroke.
             matchAllWords(sql`${customers.search}`, q),
