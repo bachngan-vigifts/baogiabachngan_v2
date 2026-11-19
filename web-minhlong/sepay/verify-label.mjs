@@ -10,7 +10,7 @@ export async function verify(){
  const id=await item.getAttribute('data-product_id');assert(/^\d+$/.test(id),'simple product ID');
  await page.goto('https://minhlongonline.com/?add-to-cart='+id,{waitUntil:'domcontentloaded',timeout:60000});
  await page.goto('https://minhlongonline.com/thanh-toan/',{waitUntil:'domcontentloaded',timeout:60000});
- const gateway=page.locator('li.payment_method_ml_sepay_qr');await gateway.waitFor({state:'visible',timeout:45000});
+ const gateway=page.locator('li.payment_method_ml_sepay_qr');await gateway.waitFor({state:'visible',timeout:45000}).catch(async e=>{console.log('CHECKOUT_DIAGNOSTIC',JSON.stringify({url:page.url(),title:await page.title(),text:(await page.locator('body').innerText()).slice(-5000)}));await page.screenshot({path:'payment-label-evidence/failure.png',timeout:15000});throw e;});
  const label=gateway.locator('label');assert.equal((await label.innerText()).trim(),'Chuyển khoản trước vào tài khoản công ty');
  assert.equal(await page.locator('li.payment_method_bacs').count(),0);
  assert(await page.locator('li.payment_method_cod').isVisible());
