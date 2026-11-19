@@ -178,3 +178,19 @@ test('legacy references do not guess between websites sharing account and origin
  assert.equal(e.status,'review');assert.equal(e.webOrderId,null);
  assert.equal((await f.db.select().from(customerPayments)).length,0);
 });
+
+
+test('a mixed legacy description and another canonical reference never selects either order',async()=>{
+ const f=await fixture();await f.sync();await f.sync(21662);
+ for(const text of ['Thanh toan don hang web 21661 DH21662','Thanh toan don hang web 21661/ABC']){
+  const e=await f.incoming(text);
+  assert.equal(e.status,'review');assert.equal(e.webOrderId,null);assert.equal(e.paymentId,null);
+ }
+});
+test('Minh Long nearby candidate validation uses ML rather than the Lock prefix',async()=>{
+ const {nearbySepayTargets}=await import('../../src/modules/sales/api/sepay-proximity-store.ts');
+ const f=await fixture(),w=await f.sync();
+ await f.db.update(web).set({source:'minhlong',orderedAt:'2026-11-08T03:00:00.000Z',orderedAtVerified:true}).where(eq(web.id,w.id));
+ const r=await nearbySepayTargets(f.db,{providerId:'ml-candidate',amount:100000,accountNumber:'123456',transactionAt:'2026-11-08T03:00:00.000Z',transferType:'in',content:'ML21661',payload:'{}'},'web:'+w.id);
+ assert.equal(r.targets.length,1);assert.equal(r.targets[0]!.blocked,'');
+});
