@@ -115,6 +115,31 @@ form.variations_form .ml-variation-choice[aria-pressed="true"]{background:#173e6
 form.variations_form .ml-variation-choice:focus-visible{outline:2px solid #b78024;outline-offset:3px}
 form.variations_form .ml-variation-choice:disabled{opacity:.45;cursor:not-allowed;text-decoration:line-through}
 @media(max-width:549px){form.variations_form table.variations tr.ml-variation-row>.label label{min-height:44px}form.variations_form .ml-variation-choices .ml-variation-choice{min-height:44px}}
+
+/* Product-detail styles use !important; match the actual page scope to override them. */
+
+body.single-product #wrapper #main form.variations_form .variations select.ml-variation-native{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
+body.single-product #wrapper #main form.variations_form table.variations:has(tr.ml-variation-row),
+body.single-product #wrapper #main form.variations_form table.variations:has(tr.ml-variation-row)>tbody{display:block!important;width:100%!important}
+body.single-product #wrapper #main form.variations_form table.variations tr.ml-variation-row{display:grid!important;grid-template-columns:82px minmax(0,1fr)!important;align-items:start!important;gap:0!important;width:100%!important;margin:0!important;padding:0!important}
+body.single-product #wrapper #main form.variations_form table.variations tr.ml-variation-row>.label,
+body.single-product #wrapper #main form.variations_form table.variations tr.ml-variation-row>td.value{display:block!important;float:none!important;position:static!important;transform:none!important;min-height:0!important;height:auto!important;margin:0!important;width:auto!important}
+body.single-product #wrapper #main form.variations_form table.variations tr.ml-variation-row>.label label{position:static!important;transform:none!important;height:auto!important}
+/* Scope the layout to enhanced rows; leave native/swatches-only forms alone. */
+body.single-product #wrapper #main form.variations_form table.variations tr.ml-variation-row>th.label,
+body.single-product #wrapper #main form.variations_form table.variations tr.ml-variation-row>td.label{vertical-align:top!important;padding:0 12px 10px 0!important;background:transparent!important;border:0!important;width:82px}
+body.single-product #wrapper #main form.variations_form table.variations tr.ml-variation-row> .label label{display:flex;align-items:center;min-height:42px;margin:0!important;padding:0!important;line-height:1.3}
+body.single-product #wrapper #main form.variations_form table.variations tr.ml-variation-row>td.value{vertical-align:top!important;padding:0 0 10px!important;background:transparent!important;border:0!important}
+body.single-product #wrapper #main form.variations_form .ml-variation-choices{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0!important;max-width:100%;min-width:0}
+body.single-product #wrapper #main form.variations_form tr.ml-variation-row .reset_variations{position:static!important;margin:6px 0 0!important;padding:0!important;line-height:1.4}
+body.single-product #wrapper #main form.variations_form tr.ml-variation-row .reset_variations[style*="visibility: hidden"],
+body.single-product #wrapper #main form.variations_form tr.ml-variation-row .reset_variations[style*="visibility:hidden"]{display:none!important}
+body.single-product #wrapper #main form.variations_form .ml-variation-choices .ml-variation-choice{display:inline-flex;align-items:center;justify-content:center;min-width:60px;min-height:42px;height:auto;margin:0;padding:8px 13px;border:1px solid #cbd7e4;border-radius:7px;background:#fff;color:#173e66;font-family:inherit;font-size:14px;font-weight:600;line-height:1.3;letter-spacing:0;text-transform:none;box-shadow:none;white-space:normal;overflow-wrap:anywhere;max-width:100%;cursor:pointer}
+body.single-product #wrapper #main form.variations_form .ml-variation-choice[aria-pressed="true"]{background:#173e66;color:#fff;border-color:#173e66}
+body.single-product #wrapper #main form.variations_form .ml-variation-choice:focus-visible{outline:2px solid #b78024;outline-offset:3px}
+body.single-product #wrapper #main form.variations_form .ml-variation-choice:disabled{opacity:.45;cursor:not-allowed;text-decoration:line-through}
+@media(max-width:549px){body.single-product #wrapper #main form.variations_form table.variations tr.ml-variation-row>.label label{min-height:44px}body.single-product #wrapper #main form.variations_form .ml-variation-choices .ml-variation-choice{min-height:44px}}
+
 </style>
 <?php
 });
