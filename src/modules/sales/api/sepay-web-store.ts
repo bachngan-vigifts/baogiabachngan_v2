@@ -30,6 +30,9 @@ export function lockQrReferences(content:string){return qrReferences(content,'DH
 export function minhLongQrReferences(content:string){return qrReferences(content,'ML');}
 export function webQrReferences(content:string){return [...lockQrReferences(content),...minhLongQrReferences(content)];}
 /** Anchor the complete legacy statement so extra codes cannot be discarded. */
+function legacyWebIntent(content:string){
+ return /thanh toan don hang web\b/i.test(content.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'d'));
+}
 export function legacyWebOrderIds(content:string){
  const text=content.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'d').trim();
  const m=text.match(/^(?:QR\s*-\s*)?Thanh toan don hang web ([0-9]{1,20})(?: GD [A-Z0-9]{1,32} [0-9]{6}-(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9])?$/i);
@@ -54,12 +57,13 @@ export async function resolveWebQrReferences(db:CashDb,p:{content:string;account
  return candidates.length===1?[(candidates[0]==='lock'?'DH':'ML')+ids[0]]:[];
 }
 export async function isLockWebQrPayment(db:CashDb,event:{content:string;accountNumber?:string}){
- const refs=await resolveWebQrReferences(db,{content:event.content,accountNumber:event.accountNumber||''});if(!refs.length)return legacyWebOrderIds(event.content).length>0;
+ const refs=await resolveWebQrReferences(db,{content:event.content,accountNumber:event.accountNumber||''});if(!refs.length)return legacyWebIntent(event.content);
  const [webMatch]=await db.select({id:web.id}).from(web).where(and(inArray(web.source,refs.map(refSource)),inArray(web.externalId,refs.map(s=>s.slice(2))))).limit(1);
  return !!webMatch||!!event.accountNumber&&(await sourceAccount(db,event.accountNumber,'lock')||await sourceAccount(db,event.accountNumber,'minhlong'));
 }
 /** Link bank evidence to the existing paid website order; never create a CRM receipt or mutate Woo totals. */
 export async function decideWebSepay(db:CashDb,p:SepayPayment):Promise<WebSepayDecision|null>{
+ if(legacyWebIntent(p.content)&&(!legacyWebOrderIds(p.content).length||webQrReferences(p.content).length))return {status:'review',webOrderId:null,reason:'Nội dung đơn web cũ có thêm mã hoặc định dạng không rõ; cần đối soát, không tự chọn đơn.'};
  const refs=await resolveWebQrReferences(db,p);
  if(!refs.length)return legacyWebOrderIds(p.content).length?{status:'review',webOrderId:null,reason:'Nội dung đơn web cũ chưa xác định duy nhất website và tài khoản nhận; cần kiểm tra.'}:null;
  if(sepayPosIntent(p.content))return {status:'review',webOrderId:null,reason:'Nội dung có cả mã QR POS và mã đơn web; cần kiểm tra nguồn.'};
