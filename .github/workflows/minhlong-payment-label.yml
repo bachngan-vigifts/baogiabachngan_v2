@@ -35,3 +35,5 @@ jobs:
           retention-days: 7
 
 # Validate the approved wording instead of the former title.
+
+# Capture guest checkout verification diagnostics.
