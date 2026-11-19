@@ -11,40 +11,61 @@ import {webOrderPaymentBlocked} from '../domain/web-order-outcome.ts';
 import {cashAudit,type CashDb} from './cash-store.ts';
 
 export type WebSepayDecision={webOrderId:string|null;status:'matched'|'review';reason:string};
-/** Bank statements delimit QR references with periods; letters/digits and slash/dash suffixes stay atomic. */
-export function lockQrReferences(content:string){
+/** Accept only the observed bank transaction suffix, never an arbitrary code suffix. */
+function bankSuffix(after:string){
+ return /^-GD-[A-Z0-9]{1,32}-[0-9]{6}-(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:[.;]\s*)?$/i.test(after);
+}
+function qrReferences(content:string,prefix:'DH'|'ML'){
  const refs=new Set<string>();
- for(const match of content.matchAll(/(?<![\p{L}\p{N}])DH[0-9]{1,20}(?![\p{L}\p{N}])/giu)){
-  const start=match.index!,end=start+match[0].length,before=content.slice(0,start).trimEnd(),after=content.slice(end);
-  if(/[-_/‐‑‒–—−]$/.test(before)||/^\s*[-_/‐‑‒–—−]/.test(after))continue;
+ const pattern=new RegExp('(?<![\\p{L}\\p{N}])'+prefix+'[0-9]{1,20}(?![\\p{L}\\p{N}])','giu');
+ for(const match of content.matchAll(pattern)){
+  const before=content.slice(0,match.index!).trimEnd(),after=content.slice(match.index!+match[0].length);
+  if(/[-_/‐‑‒–—−]$/.test(before))continue;
+  if(/^\s*[-_/‐‑‒–—−]/.test(after)&&!bankSuffix(after.trim()))continue;
   refs.add(match[0].toUpperCase());
  }
  return [...refs];
 }
-export function minhLongQrReferences(content:string){
- const refs=new Set<string>();
- for(const match of content.matchAll(/(?<![\p{L}\p{N}])ML[0-9]{1,20}(?![\p{L}\p{N}])/giu)){
-  const start=match.index!,end=start+match[0].length,before=content.slice(0,start).trimEnd(),after=content.slice(end);
-  if(/[-_/‐‑‒–—−]$/.test(before)||/^\s*[-_/‐‑‒–—−]/.test(after))continue;
-  refs.add(match[0].toUpperCase());
- }
- return [...refs];
-}
+export function lockQrReferences(content:string){return qrReferences(content,'DH');}
+export function minhLongQrReferences(content:string){return qrReferences(content,'ML');}
 export function webQrReferences(content:string){return [...lockQrReferences(content),...minhLongQrReferences(content)];}
+/** Anchor the complete legacy statement so extra codes cannot be discarded. */
+function legacyWebIntent(content:string){
+ return /thanh toan don hang web\b/i.test(content.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'d'));
+}
+export function legacyWebOrderIds(content:string){
+ const text=content.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'d').trim();
+ const m=text.match(/^(?:QR\s*-\s*)?Thanh toan don hang web ([0-9]{1,20})(?: GD [A-Z0-9]{1,32} [0-9]{6}-(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9])?$/i);
+ return m?[m[1]!]:[];
+}
 const refSource=(ref:string)=>ref.startsWith('DH')?'lock' as const:'minhlong' as const;
 async function sourceAccount(db:CashDb,account:string,source:'lock'|'minhlong'){
  const regs=await db.select({name:posRegisters.name}).from(posRegisters).where(and(eq(posRegisters.active,true),eq(sql`regexp_replace(${posRegisters.bankAccount},'[[:space:]]','','g')`,account)));
  return regs.some(r=>source==='lock'?r.name.trim().toLowerCase()===LOCK_WEB_REGISTER_NAME.toLowerCase():/minh\s*long/i.test(r.name));
 }
+export async function resolveWebQrReferences(db:CashDb,p:{content:string;accountNumber:string}){
+ const refs=webQrReferences(p.content),ids=legacyWebOrderIds(p.content);
+ if(refs.length||!ids.length)return refs;
+ const rows=await db.select({source:web.source}).from(web).innerJoin(posRegisters,eq(posRegisters.id,web.registerId))
+  .where(and(inArray(web.source,['lock','minhlong']),inArray(web.externalId,ids),eq(posRegisters.active,true),
+   eq(sql`regexp_replace(${posRegisters.bankAccount},'[[:space:]]','','g')`,p.accountNumber)));
+ const sources=[...new Set(rows.map(r=>r.source))];
+ if(sources.length===1)return [(sources[0]==='lock'?'DH':'ML')+ids[0]];
+ if(sources.length>1)return [];
+ const candidates:('lock'|'minhlong')[]=[];
+ for(const source of ['lock','minhlong'] as const)if(await sourceAccount(db,p.accountNumber,source))candidates.push(source);
+ return candidates.length===1?[(candidates[0]==='lock'?'DH':'ML')+ids[0]]:[];
+}
 export async function isLockWebQrPayment(db:CashDb,event:{content:string;accountNumber?:string}){
- const refs=lockQrReferences(event.content);if(!refs.length)return false;
- const [webMatch]=await db.select({id:web.id}).from(web).where(and(eq(web.source,'lock'),inArray(web.externalId,refs.map(s=>s.slice(2))))).limit(1);
- return !!webMatch||!!event.accountNumber&&await sourceAccount(db,event.accountNumber,'lock');
+ const refs=await resolveWebQrReferences(db,{content:event.content,accountNumber:event.accountNumber||''});if(!refs.length)return legacyWebIntent(event.content);
+ const [webMatch]=await db.select({id:web.id}).from(web).where(and(inArray(web.source,refs.map(refSource)),inArray(web.externalId,refs.map(s=>s.slice(2))))).limit(1);
+ return !!webMatch||!!event.accountNumber&&(await sourceAccount(db,event.accountNumber,'lock')||await sourceAccount(db,event.accountNumber,'minhlong'));
 }
 /** Link bank evidence to the existing paid website order; never create a CRM receipt or mutate Woo totals. */
 export async function decideWebSepay(db:CashDb,p:SepayPayment):Promise<WebSepayDecision|null>{
- const refs=webQrReferences(p.content);
- if(!refs.length)return null;
+ if(legacyWebIntent(p.content)&&(!legacyWebOrderIds(p.content).length||webQrReferences(p.content).length))return {status:'review',webOrderId:null,reason:'Nội dung đơn web cũ có thêm mã hoặc định dạng không rõ; cần đối soát, không tự chọn đơn.'};
+ const refs=await resolveWebQrReferences(db,p);
+ if(!refs.length)return legacyWebOrderIds(p.content).length?{status:'review',webOrderId:null,reason:'Nội dung đơn web cũ chưa xác định duy nhất website và tài khoản nhận; cần kiểm tra.'}:null;
  if(sepayPosIntent(p.content))return {status:'review',webOrderId:null,reason:'Nội dung có cả mã QR POS và mã đơn web; cần kiểm tra nguồn.'};
  const sources=[...new Set(refs.map(refSource))];
  if(sources.length!==1)return {status:'review',webOrderId:null,reason:'Nội dung có mã của nhiều website; cần đối soát, không tự gắn.'};
@@ -75,9 +96,10 @@ export async function decideWebSepay(db:CashDb,p:SepayPayment):Promise<WebSepayD
  const [register]=await db.select({account:posRegisters.bankAccount,active:posRegisters.active}).from(posRegisters).where(eq(posRegisters.id,order.registerId));
  if(!register?.active||!register.account||register.account.replace(/\s+/g,'')!==p.accountNumber)return review(`Tài khoản nhận không khớp quầy của đơn web ${source==='lock'?'Lock':'Minh Long'}.`,id);
  if(!Number.isSafeInteger(order.total)||order.total<=0||p.amount!==order.total)return review('Số tiền khác tổng đơn web; không tự gắn khoản thiếu/thừa.',id);
- if(!readWebOrderFinancials(order.financialSnapshot)?.payment?.paidAt)return review('Chờ website xác nhận đã thu tiền; giữ chứng từ SePay để tự đối soát khi đơn cập nhật.',id);
+ 
  const [other]=await db.select({id:bank.id}).from(bank).where(and(eq(bank.webOrderId,id),eq(bank.status,'matched'),ne(bank.providerId,p.providerId))).limit(1);
  if(other)return review('Đơn web đã gắn một giao dịch khác; cần kiểm tra khoản thu trùng.',id);
+ if(!readWebOrderFinancials(order.financialSnapshot)?.payment?.paidAt)return review('Đã nhận tiền – chờ web xác nhận. Đúng mã, tài khoản và số tiền; chưa xác nhận đơn hoặc tạo phiếu thu.',id);
  return {status:'matched',webOrderId:id,reason:`Đã đối soát QR với đơn web ${source==='lock'?'Lock':'Minh Long'}; website đã ghi nhận khoản thu, không tạo thêm phiếu thu CRM.`};
 }
 export async function saveWebSepay(db:CashDb,p:SepayPayment,d:WebSepayDecision,old:typeof bank.$inferSelect|undefined,actorId='integration:sepay-web'){

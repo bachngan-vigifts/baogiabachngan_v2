@@ -6,7 +6,7 @@ import {sepayTransactions as bank} from '../../src/modules/integrations/schema.t
 import {customerPayments,salesOrders} from '../../src/modules/sales/schema.ts';
 import {posRegisters,webStoreOrders as web} from '../../src/modules/sales/pos-schema.ts';
 import {stockMoves} from '../../src/modules/inventory/schema.ts';
-import {lockQrReferences,minhLongQrReferences} from '../../src/modules/sales/api/sepay-web-store.ts';
+import {lockQrReferences,minhLongQrReferences,legacyWebOrderIds} from '../../src/modules/sales/api/sepay-web-store.ts';
 
 async function fixture(){
  const f=await setupSepay();
@@ -129,4 +129,68 @@ test('bank-first reserved Lock QR cannot attach to a coincident CRM number befor
  const e=await f.incoming('DH21661',100000,{id:'reserved-before-web'});assert.equal(e.status,'review');assert.equal(e.orderId,null);
  const detail=await f.call('/sepay/transactions/'+e.id,f.mgr);assert.equal(detail.data.capabilities.canConfirm,true);assert.match(detail.data.blockReason,/chờ nguồn web/);
  assert.equal((await f.confirm(e.id,f.choice(crm.id))).status,409);assert.equal((await f.db.select().from(customerPayments)).length,0);
+});
+
+test('observed bank suffix is accepted while arbitrary suffixes and embedded codes stay rejected',()=>{
+ assert.deepEqual(lockQrReferences('ACB;159063909;DH21832-GD-858609-181126-11:09:58'),['DH21832']);
+ assert.deepEqual(minhLongQrReferences('ACB;579268;ML33590-GD-858609-181126-11:09:58'),['ML33590']);
+ for(const s of ['DH21832-GD-ABC','DH21832-GD-858609-181126-25:00:00','DH21832-GD-858609-181126-11:09:58 EXTRA','DH21832-ABC','DH21832 / ABC','PREFIX-DH21832'])
+  assert.deepEqual(lockQrReferences(s),[],s);
+ assert.deepEqual(legacyWebOrderIds('QR - Thanh toan don hang web 33588 GD 6322ICBVC24EAUU9 181126-13:28:33'),['33588']);
+ assert.deepEqual(legacyWebOrderIds('Thanh toán đơn hàng web 33590'),['33590']);
+ for(const s of ['Thanh toan don hang web 33590 ML33591','Thanh toan don hang web 33590/ABC','Thanh toan don hang web 33590 1'])
+  assert.deepEqual(legacyWebOrderIds(s),[],s);
+});
+test('bank suffix matches late full payment by reference, with duplicate and amount protections',async()=>{
+ const f=await fixture(),w=await f.sync();
+ const text='ACB;123456;DH21661-GD-858609-081126-11:09:58';
+ const e=await f.incoming(text,100000,{id:'suffix-late',transactionDate:'2026-11-08 11:09:58'});
+ assert.equal(e.status,'matched');assert.equal(e.webOrderId,w.id);
+ assert.equal((await f.incoming(text,100000,{id:'suffix-late',transactionDate:'2026-11-08 11:09:58'})).id,e.id);
+ assert.equal((await f.incoming(text,99999,{id:'suffix-short'})).status,'review');
+ assert.equal((await f.incoming(text,100000,{id:'suffix-second'})).status,'review');
+ assert.equal((await f.db.select().from(customerPayments)).length,0);
+});
+test('legacy bank-first reference waits for the correct source and then reconciles once paid',async()=>{
+ const f=await fixture();
+ const text='Thanh toan don hang web 21661';
+ const e=await f.incoming(text,100000,{id:'legacy-before'});
+ assert.equal(e.status,'review');
+ const w=await f.sync(21661,{date_paid_gmt:null});
+ let [row]=await f.db.select().from(bank).where(eq(bank.id,e.id));
+ assert.equal(row!.webOrderId,w.id);assert.equal(row!.status,'review');
+ assert.match(row!.reason,/Đã nhận tiền.*chờ web xác nhận/);
+ await f.sync();[row]=await f.db.select().from(bank).where(eq(bank.id,e.id));
+ assert.equal(row!.status,'matched');
+ assert.equal((await f.db.select().from(customerPayments)).length,0);
+});
+test('unpaid canonical web payment stays pending even after the five-minute window',async()=>{
+ const f=await fixture(),w=await f.sync(21661,{date_paid_gmt:null,date_created_gmt:'2026-11-08T03:00:00'});
+ f.env.nowSec=()=>Date.parse('2026-11-08T04:00:00Z')/1000;
+ const e=await f.incoming('DH21661',100000,{id:'pending-paid'});
+ assert.equal(e.webOrderId,w.id);assert.equal(e.status,'review');assert.match(e.reason,/Đã nhận tiền.*chờ web xác nhận/);
+ assert.equal(JSON.parse((await f.db.select().from(web))[0]!.financialSnapshot).payment.paidAt,null);
+});
+test('legacy references do not guess between websites sharing account and original order ID',async()=>{
+ const f=await fixture(),w=await f.sync();
+ await f.db.insert(web).values({...w,id:crypto.randomUUID(),source:'minhlong',crmOrderNo:'ML duplicate'});
+ const e=await f.incoming('Thanh toan don hang web 21661',100000,{id:'legacy-ambiguous'});
+ assert.equal(e.status,'review');assert.equal(e.webOrderId,null);
+ assert.equal((await f.db.select().from(customerPayments)).length,0);
+});
+
+
+test('a mixed legacy description and another canonical reference never selects either order',async()=>{
+ const f=await fixture();await f.sync();await f.sync(21662);
+ for(const text of ['Thanh toan don hang web 21661 DH21662','Thanh toan don hang web 21661/ABC']){
+  const e=await f.incoming(text);
+  assert.equal(e.status,'review');assert.equal(e.webOrderId,null);assert.equal(e.paymentId,null);
+ }
+});
+test('Minh Long nearby candidate validation uses ML rather than the Lock prefix',async()=>{
+ const {nearbySepayTargets}=await import('../../src/modules/sales/api/sepay-proximity-store.ts');
+ const f=await fixture(),w=await f.sync();
+ await f.db.update(web).set({source:'minhlong',orderedAt:'2026-11-08T03:00:00.000Z',orderedAtVerified:true}).where(eq(web.id,w.id));
+ const r=await nearbySepayTargets(f.db,{providerId:'ml-candidate',amount:100000,accountNumber:'123456',transactionAt:'2026-11-08T03:00:00.000Z',transferType:'in',content:'ML21661',payload:'{}'},'web:'+w.id);
+ assert.equal(r.targets.length,1);assert.equal(r.targets[0]!.blocked,'');
 });

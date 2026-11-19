@@ -251,7 +251,7 @@ export async function nearbySepayTargets(
         : "";
     if (
       posIntent ||
-      (!manual && refs.length && !refs.includes("DH" + o.externalId))
+      (!manual && refs.length && !refs.includes((o.source === "minhlong" ? "ML" : "DH") + o.externalId))
     )
       blocked = "Mã QR trong giao dịch không thuộc đơn web này.";
     if (!manual && o.ghnOrderCode)
