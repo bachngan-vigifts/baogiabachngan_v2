@@ -43,3 +43,5 @@ console.log('QV_DIRECTORY',JSON.stringify((await list(dir+'/inc/extensions/flats
 for(const sub of ['inc/extensions/flatsome-wc-quick-view/flatsome-quick-view.php','inc/extensions/flatsome-wc-quick-view/flatsome-wc-quick-view.php','woocommerce/content-single-product-lightbox.php']){
 try{const n=sub.lastIndexOf('/');console.log('FINAL_THEME_SOURCE',sub,await read(dir+'/'+sub.slice(0,n),sub.slice(n+1)));}catch{console.log('NOT_READ',sub);}
 }
+
+console.log('EXTENSIONS_SOURCE',await read(dir+'/inc/extensions','extensions.php'));
