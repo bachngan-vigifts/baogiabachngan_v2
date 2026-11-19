@@ -19,14 +19,14 @@ await f.db.update(catalogProducts).set({imageUrl:source}).where(eq(catalogProduc
 try{
  for(const width of [1440,390]){
   const c=await contextFor(f.emp,width),p=await c.newPage(),errors=[],requests=[];p.on('pageerror',e=>errors.push(e.message));
-  await c.route('**/storage/v1/**',r=>{const u=new URL(r.request().url());requests.push(u.pathname+u.search);return u.pathname.includes('/render/image/')?r.fulfill({status:400,contentType:'application/json',body:'{"error":"test transformation unavailable"}'}):r.fulfill({status:200,contentType:'image/png',headers:{'cache-control':'max-age=3600'},body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=','base64')});});
+  await c.route('**/storage/v1/**',r=>{const u=new URL(r.request().url());requests.push(u.pathname+u.search);return u.pathname.includes('/product-images/thumbs/')?r.fulfill({status:400,contentType:'application/json',body:'{"error":"Object not found"}'}):r.fulfill({status:200,contentType:'image/png',headers:{'cache-control':'max-age=3600'},body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=','base64')});});
   await p.goto(origin+'/#/products');await p.waitForFunction(source=>{const im=document.querySelector('#product-list img');return im?.src===source&&im.complete&&im.naturalWidth>0;},source);
   const thumb=p.locator('#product-list img');assert.equal(await thumb.getAttribute('decoding'),'async');assert.equal(await thumb.getAttribute('width'),'64');assert.equal(await thumb.getAttribute('height'),'64');
   await p.locator('[data-product-card="00123"]').click();await p.locator('.pd-image').waitFor();assert.equal(await p.locator('.pd-image').getAttribute('src'),source,'detail keeps original high-resolution source');
   await p.goto(origin+'/#/pos');await p.waitForFunction(source=>{const im=document.querySelector('.pos-product img');return im?.src===source&&im.complete&&im.naturalWidth>0;},source);
   assert.equal(await p.locator('.pos-product img').getAttribute('decoding'),'async');await p.evaluate(()=>window.__image=document.querySelector('.pos-product img'));
   await p.locator('.pos-filter-toggle').click();await p.locator('.pos-product-filters [data-filter=all]').click();assert.equal(await p.evaluate(()=>window.__image===document.querySelector('.pos-product img')),true);
-  assert.equal(requests.filter(x=>x.includes('/render/image/')&&x.includes('width=128')).length,1);assert.equal(requests.filter(x=>x.includes('/render/image/')&&x.includes('width=320')).length,1);assert.deepEqual(errors,[]);
+  assert.equal(requests.filter(x=>x.includes('/product-images/thumbs/128/regression.png.webp')).length,1);assert.equal(requests.filter(x=>x.includes('/product-images/thumbs/320/regression.png.webp')).length,1);assert.equal(requests.some(x=>x.includes('/render/image/')),false,'không gọi dịch vụ thu nhỏ ảnh tính phí');assert.deepEqual(errors,[]);
   results.push({width,fallbackOnce:true,originalDetail:true,retainsImage:true,errors});await c.close();
  }
  assert.equal(writes.length,0);await writeFile(out+'/results.json',JSON.stringify(results,null,2));console.log(JSON.stringify(results));

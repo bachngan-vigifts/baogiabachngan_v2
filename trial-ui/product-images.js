@@ -1,14 +1,17 @@
-// Fixed variants keep browser/CDN cache keys stable. Only existing public product
-// images are transformed; signed/private URLs must keep their original token/options.
+// Ảnh nhỏ làm sẵn (scripts/maintenance/product-thumbnails.mjs) nằm cạnh ảnh gốc:
+// product-images/thumbs/<cỡ>/<đường dẫn gốc>.webp. Không dùng dịch vụ thu nhỏ ảnh của Supabase (tính phí theo ảnh).
+// Chỉ ảnh public trong bucket product-images; link ký/riêng tư giữ nguyên token/tham số.
 const storageOrigin = 'https://taceqfnsorewelsbdckg.supabase.co';
 const sizes = { list: 128, grid: 320 };
+const PUBLIC = '/storage/v1/object/public/product-images/', THUMBS = PUBLIC + 'thumbs/';
 const failedThumbnails = new Map();
 export function noteThumbnailFailure(source) {
   try {
     const url = new URL(source);
-    if (url.origin !== storageOrigin || !url.pathname.startsWith('/storage/v1/render/image/public/product-images/') || url.searchParams.has('token')) return;
-    failedThumbnails.set(url.href, Date.now() + 60000);
-    if (failedThumbnails.size > 128) failedThumbnails.delete(failedThumbnails.keys().next().value);
+    if (url.origin !== storageOrigin || !url.pathname.startsWith(THUMBS) || url.searchParams.has('token')) return;
+    // Ảnh mới tải lên chưa có ảnh nhỏ cho tới lượt tạo kế tiếp: dùng ảnh gốc, 10 phút sau mới thử lại.
+    failedThumbnails.set(url.href, Date.now() + 600000);
+    if (failedThumbnails.size > 512) failedThumbnails.delete(failedThumbnails.keys().next().value);
   } catch { /* Not a public product thumbnail. */ }
 }
 const pending = new WeakMap();
@@ -30,11 +33,10 @@ export function productThumbnailUrl(source, variant = 'list') {
   try {
     const url = new URL(original), size = sizes[variant];
     if (!size || url.origin !== storageOrigin || url.username || url.password
-      || !url.pathname.startsWith('/storage/v1/object/public/product-images/')
+      || !url.pathname.startsWith(PUBLIC) || url.pathname.startsWith(THUMBS)
       || !/\.(png|jpe?g|webp)$/i.test(url.pathname)
       || url.searchParams.has('token') || url.searchParams.has('download')) return original;
-    url.pathname = url.pathname.replace('/object/public/', '/render/image/public/');
-    for (const [key, value] of Object.entries({ width: size, height: size, resize: 'contain', quality: 75 })) url.searchParams.set(key, String(value));
+    url.pathname = THUMBS + size + '/' + url.pathname.slice(PUBLIC.length) + '.webp';
     const until = failedThumbnails.get(url.href);
     if (until > Date.now()) return original;
     if (until) failedThumbnails.delete(url.href);
