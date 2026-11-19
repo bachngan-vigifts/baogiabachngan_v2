@@ -39,6 +39,7 @@ export async function verify(preview){
     await page.addStyleTag({content:css});
     await page.addScriptTag({content:js});
    }else await page.waitForFunction(()=>window.mlVariationButtonsLoaded===true);
+   await page.waitForFunction(sel=>!!window.jQuery?.(document.querySelector(sel+' form.variations_form')).data('wc_variation_form'),kind==='popup'?'.product-lightbox':'.product-main');
    const groups=form.locator('.ml-variation-choices');await groups.first().waitFor({state:'visible'});
    const selects=form.locator('.variations select');
    const geometry=await form.locator('tr.ml-variation-row').evaluateAll(rows=>rows.map(row=>{
