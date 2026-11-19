@@ -33,3 +33,5 @@ jobs:
           name: minhlong-payment-label-evidence
           path: payment-label-evidence/
           retention-days: 7
+
+# Validate the approved wording instead of the former title.
