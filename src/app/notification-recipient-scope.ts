@@ -1,3 +1,4 @@
+import {chatMembers,chatMessages} from '../modules/chat/schema.ts';
 import {canViewSepayDebits} from '../modules/sales/domain/sepay-page.ts';
 import {warehouseWorkParts} from '../modules/warehouse-workspace/schema.ts';
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
@@ -19,7 +20,7 @@ import type { NotificationRef } from '../modules/notifications/api/recipient-sco
 type Person = typeof employees.$inferSelect & { positionName: string | null; departmentId: string | null; dataScope: string | null; perms: string[]; approver: boolean };
 type Ref = { kind: string; id: string };
 const refOf = (n: NotificationRef): Ref | null => {
-  const match = /#\/(orders|contracts|quotes|packing|deliveries|transfers|purchases|tasks)\/([^/?#]+)/.exec(n.url ?? '');
+  const match = /#\/(orders|contracts|quotes|packing|deliveries|transfers|purchases|tasks|chat)\/([^/?#]+)/.exec(n.url ?? '');
   if (match) {
     try { return { kind: match[1]!, id: decodeURIComponent(match[2]!) }; }
     catch { return { kind: 'invalid', id: '' }; }
@@ -65,6 +66,12 @@ export async function createNotificationScope(db: StaffEnv['db']) {
   };
   async function resolve(kind: string, id: string, event: string): Promise<Set<string>> {
     if (kind === 'invalid') return new Set();
+    if (kind === 'chat') {
+      const messageId=event.startsWith('chat_message:')?event.slice('chat_message:'.length):'';
+      if(!messageId)return new Set();
+      const members=await db.select({id:chatMembers.memberId}).from(chatMembers).innerJoin(chatMessages,and(eq(chatMessages.conversationId,chatMembers.conversationId),eq(chatMessages.id,messageId),isNull(chatMessages.recalledAt))).where(eq(chatMembers.conversationId,id));
+      return new Set(members.filter(r=>{const m=byId.get(r.id);return !!m && ['manager','employee'].includes(m.role);}).map(r=>r.id));
+    }
     if (kind === 'tasks') {
       const [t] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
       if (!t) return new Set();
@@ -187,6 +194,12 @@ export async function createNotificationScope(db: StaffEnv['db']) {
     async recipients(n: NotificationRef, ids: readonly string[]) {
       if(n.eventType === 'sepay_bank_movement')return ids.filter(id=>{const m=byId.get(id);return !!m && canViewSepayDebits(m);});
       const ref = refOf(n);
+      if(n.eventType==='chat_message'){
+        const messageId=n.data?.messageId;
+        if(ref?.kind!=='chat'||typeof messageId!=='string'||!messageId||messageId.length>200||n.data?.conversationId!==ref.id)return [];
+        const allowed=await matching('chat',ref.id,'chat_message:'+messageId);
+        return ids.filter(id=>byId.has(id)&&allowed.has(id));
+      }
       if (!ref) return ids.filter(id => byId.has(id));
       const allowed = await matching(ref.kind, ref.id, n.eventType);
       return ids.filter(id => byId.has(id) && allowed.has(id));
