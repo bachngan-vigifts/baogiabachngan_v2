@@ -35,3 +35,5 @@ jobs:
 # Verify bounded cache propagation before rollback.
 
 # Resolve actual Lock cache zone before live checks.
+
+# Wait for helper opcode reload before its first request.
