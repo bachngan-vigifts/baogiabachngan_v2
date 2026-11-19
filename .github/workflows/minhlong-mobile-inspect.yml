@@ -1,0 +1,22 @@
+name: Inspect Minh Long mobile checkout controls
+on:
+  push:
+    branches: [fix/minhlong-mobile-quickview-transfer-20261119]
+    paths: [.github/workflows/minhlong-mobile-inspect.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read current plugins
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+        run: node web-minhlong/mobile-checkout/inspect.mjs
