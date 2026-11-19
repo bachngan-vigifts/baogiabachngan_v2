@@ -7,7 +7,7 @@ permissions:
   contents: read
 concurrency:
   group: minhlong-sepay-deploy
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   deploy:
     runs-on: ubuntu-24.04
@@ -43,3 +43,5 @@ jobs:
 # Mobile wizard hides payment until address completion; check returned markup without submitting customer data.
 
 # Bounded browser waits and mobile response verification.
+
+# Supersede the stalled UI-only verification; deployment accepts exact candidate for safe resume.
