@@ -16,6 +16,7 @@ import { registerProductLinkRoutes } from './product-link.ts';
 import { registerProductActionRoutes } from './product-actions.ts';
 import { PRODUCT_HISTORY_LIMIT } from '../domain/product-history.ts';
 import { can, type PermissionMember } from '../../staff/domain/permissions.ts';
+import { shortMemo } from '../../../core/cache/short-memo.ts';
 
 const amount = z.number().finite().min(0).max(1e12).nullable();
 const size = z.number().finite().min(0).max(1e6).nullable().optional();
@@ -116,7 +117,10 @@ export const SNAPSHOT_COLUMNS = ['sku', 'name', 'brand', 'pattern', 'unit', 'ima
   'perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight', 'stockUpdatedAt'] as const;
 
 /** Phiên bản danh mục: đổi khi sản phẩm, giá hoặc tồn thay đổi (đồng bộ Sapo / nhập file). Tính bằng vài phép gộp, rất nhẹ. */
-export async function snapshotVersion(db: StaffEnv['db']) {
+const versionMemo = shortMemo<Awaited<ReturnType<typeof readSnapshotVersion>>>();
+/** Có bộ nhớ đệm ngắn trong isolate (src/core/cache/short-memo.ts): nhiều máy kiểm tra cùng lúc chỉ đọc CSDL một lần; lệnh ghi xoá ngay. */
+export function snapshotVersion(db: StaffEnv['db']) { return versionMemo.get('catalog', () => readSnapshotVersion(db)); }
+async function readSnapshotVersion(db: StaffEnv['db']) {
   const [[p], [pr], [st], [ver], whs] = await Promise.all([
     db.select({ n: count(), at: sql<string>`coalesce(max(${products.updatedAt}), '')` }).from(products).where(eq(products.active, true)),
     db.select({ n: count(), sum: sql<string>`coalesce(sum(${productPrices.price}), 0)::text` }).from(productPrices),

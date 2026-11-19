@@ -10,7 +10,8 @@ export const MAX_FILE_BYTES = 6 * 1024 * 1024;
 
 export interface FileStore {
   /** `upsert`: ghi đè nếu khoá đã có (mặc định báo lỗi). */
-  put(key: string, bytes: Uint8Array, mime: string, opts?: { upsert?: boolean }): Promise<void>;
+  /** cacheSeconds: thời gian trình duyệt / CDN giữ file (Cache-Control max-age). Không đặt thì theo mặc định Supabase (1 giờ). */
+  put(key: string, bytes: Uint8Array, mime: string, opts?: { upsert?: boolean; cacheSeconds?: number }): Promise<void>;
   /** Link công khai không hết hạn – chỉ có ở bucket public (ảnh sản phẩm). */
   publicUrl?(key: string): string;
   /** Link tải có hạn cho từng khoá (khoá không ký được thì bỏ qua). */
@@ -30,7 +31,7 @@ export function supabaseFileStore(o: { url: string; serviceKey: string; bucket?:
   return {
     async put(key, bytes, mime, opts) {
       assertFileMatchesMime(bytes, mime); // nội dung phải đúng loại khai báo (chặn file độc đổi đuôi)
-      const res = await doFetch(`${base}/object/${bucket}/${safeKey(key)}`, { method: 'POST', headers: headers({ 'content-type': mime, 'x-upsert': opts?.upsert ? 'true' : 'false' }), body: bytes as BodyInit });
+      const res = await doFetch(`${base}/object/${bucket}/${safeKey(key)}`, { method: 'POST', headers: headers({ 'content-type': mime, 'x-upsert': opts?.upsert ? 'true' : 'false', ...(opts?.cacheSeconds ? { 'cache-control': 'max-age=' + Math.floor(opts.cacheSeconds) } : {}) }), body: bytes as BodyInit });
       if (!res.ok) await fail('Tải file lên', res);
     },
     ...(o.publicBucket ? { publicUrl: (key: string) => `${base}/object/public/${bucket}/${safeKey(key)}` } : {}),

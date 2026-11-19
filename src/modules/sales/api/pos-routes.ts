@@ -7,7 +7,7 @@ import {webOrderCreatedAt} from '../domain/sepay-proximity.ts';
 import {webEditFlags} from './web-order-edit-state.ts';
 import {beginWebConfirmation} from './web-order-edit.ts';
 import {readWebEdit} from '../domain/web-order-edit.ts';
-import {posStockSnapshot,posScanCodes,posBrandScope} from './pos-stock-snapshot.ts';
+import {posStockSnapshot,posStockDelta,posScanCodes,posBrandScope} from './pos-stock-snapshot.ts';
 import {ledgerWarehouses} from './pos-stock.ts';
 import {webOrderBucket} from '../domain/web-order-outcome.ts';
 import { applyWebsiteCancel, websiteCancelled } from './web-order-customer-cancel.ts';
@@ -835,6 +835,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
   );
   router.get('/pos/stock-snapshot',async c=>{
     posPermission(member(c));const id=posText(c.url.searchParams.get('registerId'));
+    // Máy POS đã có bản tồn: chỉ gửi phần đổi (since = asOf của bản đó, base = phiên bản danh mục/giá lúc đó).
+    const since=posText(c.url.searchParams.get('since')),base=posText(c.url.searchParams.get('base'));
+    if(since&&base)return json(await posStockDelta(c.env.db,member(c),await sellRegister(c,id),posText(c.url.searchParams.get('pricePolicyId'))||undefined,since,base));
     return json(await posStockSnapshot(c.env.db,member(c),await sellRegister(c,id),posText(c.url.searchParams.get('pricePolicyId'))||undefined,(m=>m==='2'?'compact' as const:m==='1')(c.url.searchParams.get('metadata')))||{unavailable:true});
   },'business');
   router.get(
