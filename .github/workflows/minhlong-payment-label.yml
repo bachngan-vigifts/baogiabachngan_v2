@@ -41,3 +41,5 @@ jobs:
 # Use native AJAX to establish the isolated guest cart session.
 
 # Mobile wizard hides payment until address completion; check returned markup without submitting customer data.
+
+# Bounded browser waits and mobile response verification.
