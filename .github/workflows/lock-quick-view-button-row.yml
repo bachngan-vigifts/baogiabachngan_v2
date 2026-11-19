@@ -31,3 +31,5 @@ jobs:
           name: lock-button-row-evidence
           path: button-row-evidence/
           retention-days: 7
+
+# Verify normalized cart button dimensions.
