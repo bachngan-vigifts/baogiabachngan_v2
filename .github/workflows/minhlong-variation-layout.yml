@@ -27,3 +27,5 @@ jobs:
 # Capture remaining reset/link spacing.
 
 # Check product-specific important style overrides.
+
+# Measure after native variation form initializes.
