@@ -1,0 +1,27 @@
+name: Diagnose Minh Long public latency
+on:
+  push:
+    branches: [diagnose/minhlong-lag-20261119]
+    paths: [.github/workflows/minhlong-lag-diagnostic.yml, scripts/maintenance/minhlong-lag-diagnostic.mjs]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated browser
+        run: |
+          mkdir -p /tmp/ml-perf
+          cd /tmp/ml-perf
+          npm init -y >/dev/null
+          npm install --silent playwright@1.63.0
+          npx playwright install --with-deps chromium >/dev/null
+          cp "$GITHUB_WORKSPACE/scripts/maintenance/minhlong-lag-diagnostic.mjs" .
+      - name: Measure public pages without placing orders
+        working-directory: /tmp/ml-perf
+        run: node minhlong-lag-diagnostic.mjs
