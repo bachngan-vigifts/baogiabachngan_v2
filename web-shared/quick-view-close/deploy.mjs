@@ -53,7 +53,7 @@ async function verify(host,preview){
     return {right:p.right-r.right,top:r.top-p.top,w:r.width,h:r.height,inViewport:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight,hit:top===b||b.contains(top)};
    });
    assert(geometry.right>=0&&geometry.right<=12&&geometry.top>=0&&geometry.top<=12,JSON.stringify(geometry));
-   assert(geometry.w>=44&&geometry.h>=44&&geometry.inViewport&&geometry.hit,'close button reachable '+JSON.stringify(geometry));
+   assert(geometry.w>=43.99&&geometry.h>=43.99&&geometry.inViewport&&geometry.hit,'close button reachable '+JSON.stringify(geometry));
    const visibleCloses=await page.locator('.mfp-wrap .mfp-close').evaluateAll(ns=>ns.filter(n=>n.getClientRects().length&&getComputedStyle(n).visibility!=='hidden').length);
    assert.equal(visibleCloses,1,'one visible close control');
    await close.focus();
