@@ -1,0 +1,33 @@
+name: Deploy Lock quick view
+on:
+  push:
+    branches: [codex/lock-quick-view-20261119]
+    paths: [.github/workflows/lock-quick-view-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: lock-quick-view-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l web-lock/quick-view/lnl-native-quick-view.php
+      - run: npm install --prefix /tmp/lnl-qv --no-audit --no-fund playwright@1.56.1 jsdom@26.1.0 jquery@3.7.1
+      - run: node web-lock/quick-view/test.mjs
+      - run: /tmp/lnl-qv/node_modules/.bin/playwright install --with-deps chromium
+      - name: Upload, verify, and roll back on failure
+        run: node web-lock/quick-view/deploy.mjs
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lock-quick-view-deployment
+          path: quick-view-evidence/
+          retention-days: 7
