@@ -8,17 +8,23 @@ const base=new URL(raw.includes('://')?raw:'https://'+raw);if(base.protocol!=='h
 const dir=root+'/wp-content/mu-plugins',name='lnl-native-quick-view.php',code=readFileSync('web-lock/quick-view/'+name,'utf8');
 async function api(fn,p){const form=p instanceof FormData,url=new URL('/execute/Fileman/'+fn,base);if(!form)Object.entries(p).forEach(([k,v])=>url.searchParams.set(k,String(v)));const r=await fetch(url,{method:form?'POST':'GET',headers:{Authorization:'cpanel '+user+':'+token},body:form?p:undefined,signal:AbortSignal.timeout(40000)});const j=await r.json();if(!r.ok||!j.status)throw Error('Hosting operation failed '+fn);return j.data;}
 async function read(file){return (await api('get_file_content',{dir,file,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0})).content;}
-async function put(content){const f=new FormData();f.set('dir',dir);f.set('overwrite','1');f.set('file-1',new Blob([content]),name);await api('upload_files',f);}
+async function put(content,fileName=name){const f=new FormData();f.set('dir',dir);f.set('overwrite','1');f.set('file-1',new Blob([content]),fileName);await api('upload_files',f);}
 const probe=createHash('sha256').update(token+':lnl-shipping-v1').digest('hex');
 async function purge(){
- // Reuse authenticated maintenance routes previously deployed on this same Lock host.
- const headers={'X-LNL-Shipping':probe};
- const ls=await fetch('https://locknlockonline.com/wp-json/lnl-shipping/v1/inspect',{headers,signal:AbortSignal.timeout(90000)});
- if(!ls.ok)throw Error('Existing LiteSpeed purge route unavailable');
- const cf=await fetch('https://locknlockonline.com/wp-json/lnl-shipping/v1/purge',{method:'POST',headers,signal:AbortSignal.timeout(40000)});
- const body=await cf.json();if(!cf.ok||(body.configured&&!body.purged))throw Error('Existing edge cache purge failed');
- console.log('CACHE_REFRESH_OK');
+ // Existing scoped helper resolves the real Lock Cloudflare zone rather than trusting a stale zone setting.
+ const helper='lnl-cache-target-check.php',disabled="<?php\ndefined('ABSPATH') || exit;\n// Cache verification completed.\n";
+ const before=await read(helper);
+ if(before!==disabled)throw Error('Cache helper is in use; no overwrite');
+ const source=readFileSync('web-lock/cache-check/target.php','utf8').replace('__PROBE__',probe);
+ try{
+  await put(source,helper);
+  const r=await fetch('https://locknlockonline.com/wp-json/lnl-cache-check/v1/refresh',{method:'POST',headers:{'X-LNL-Shipping':probe},signal:AbortSignal.timeout(60000)});
+  const j=await r.json();
+  console.log('LOCK_ZONE_CACHE_REFRESH',JSON.stringify({found:j.found,purged:j.purged,configuredZoneMatches:j.configured_zone_matches}));
+  if(!r.ok||!j.found||!j.purged)throw Error('Verified Lock zone cache refresh failed');
+ }finally{await put(before,helper);if(await read(helper)!==before)throw Error('Cache helper restoration mismatch');}
 }
+
 await mkdir('quick-view-evidence',{recursive:true});
 const files=await api('list_files',{dir});
 for(const dependency of ['woo-buy-now-direct.php','woo-ajax-add-to-cart.php'])if(!files.some(f=>f.file===dependency))throw Error('Missing existing cart dependency');
