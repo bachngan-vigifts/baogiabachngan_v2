@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium} from '/tmp/ml-mobile/node_modules/playwright/index.mjs';
 const site='https://minhlongonline.com';
+let desktopBaseline=null;
 export async function verify({previewCss=null,after=false}={}){
  await mkdir('ml-mobile-evidence',{recursive:true});
  const browser=await chromium.launch({channel:'chrome'});
  try{
- for(const width of (after?[390,1360]:[390])){
+ for(const width of [390,1360]){
   const context=await browser.newContext({viewport:{width,height:900},isMobile:width===390,hasTouch:width===390});
   const page=await context.newPage();page.setDefaultTimeout(20000);
   await page.addLocatorHandler(page.locator('#mltv-popup.mltv-popup--show'),async overlay=>{
@@ -21,7 +22,7 @@ export async function verify({previewCss=null,after=false}={}){
   });
   await page.goto(site+'/',{waitUntil:'domcontentloaded',timeout:60000});await page.waitForTimeout(1800);
   const quick=page.locator('.product-small .box-image a.quick-view').first();
-  if(width===390||after){
+  if(width===390){
    await quick.scrollIntoViewIfNeeded();
    if(width!==390)await quick.locator('xpath=ancestor::div[contains(@class,"box-image")][1]').hover();
    await page.waitForTimeout(250);
@@ -34,6 +35,16 @@ export async function verify({previewCss=null,after=false}={}){
    await page.screenshot({path:'ml-mobile-evidence/'+(after?'live':'preview')+'-'+width+'-popup.png'});
    console.log('QUICK_VIEW_OK',JSON.stringify({width,after,shape,popupOpened:true}));
    await page.keyboard.press('Escape');await page.waitForTimeout(300);
+  }
+  if(width===1360){
+   await quick.scrollIntoViewIfNeeded();
+   await quick.locator('xpath=ancestor::div[contains(@class,"box-image")][1]').hover();
+   await page.waitForTimeout(300);
+   const state=await quick.evaluate(a=>({opacity:getComputedStyle(a).opacity,display:getComputedStyle(a).display,mobileRuleActive:matchMedia('(max-width:849px)').matches,exists:!!a}));
+   assert.equal(state.mobileRuleActive,false,'new style cannot apply on desktop');
+   if(!after)desktopBaseline=state;
+   else {assert(desktopBaseline?.exists&&state.exists,'existing desktop quick-view retained');assert.equal(state.display,desktopBaseline.display,'desktop display unchanged');}
+   console.log('DESKTOP_QUICK_VIEW_BASELINE',JSON.stringify({after,state,baseline:desktopBaseline}));
   }
   if(after){
    const item=page.locator('a.product_type_simple[data-product_id]').first();const id=await item.getAttribute('data-product_id');assert(/^\d+$/.test(id||''),'simple product');
