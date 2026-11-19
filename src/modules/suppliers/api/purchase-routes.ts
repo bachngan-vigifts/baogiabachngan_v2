@@ -646,7 +646,10 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       const expected=body.expected as Record<string,unknown>|undefined;
       if(expected && (expected.sapoUpdatedAt!==(r!.sapoUpdatedAt??null)||expected.jobUpdatedAt!==(job?.updatedAt??null)))
         throw new AppError(409,'Phiếu hoặc tiến trình Sapo vừa thay đổi. Tải lại trước khi hoàn tác.','RECEIPT_CHANGED');
-      if(job&&(job.dispatchToken||job.leaseToken||['processing','callback_pending'].includes(job.status))){
+      // A delivery failure is not proof that the external write failed: n8n/Sapo may
+      // have accepted the request before the response was lost (including HTTP 530).
+      // Preserve the same review/lease/CAS requirements after ANY dispatch attempt.
+      if(job&&(job.attempts>0||job.dispatchToken||job.leaseToken||['processing','callback_pending','needs_review'].includes(job.status))){
         const now=Date.now(),resolved=body.confirmNoSapo===true&&expected&&job.status==='needs_review'&&!job.dispatchToken&&
           (!job.leaseUntil||Date.parse(job.leaseUntil)<=now)&&(!job.dispatchUntil||Date.parse(job.dispatchUntil)<=now);
         if(!resolved)throw new AppError(409,'Phiếu đang/chờ xử lý nhập Sapo. Dừng và xác minh kết quả luồng n8n/OpenClaw trước khi huỷ để tránh lệch kho.','RECEIPT_SYNC_IN_PROGRESS');
