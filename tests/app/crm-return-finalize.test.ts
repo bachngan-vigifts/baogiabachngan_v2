@@ -50,3 +50,15 @@ test('một bước: nhân viên không có quyền duyệt bị chặn; ngườ
  assert.equal((await f.call(fin('perm',r.id),f.emp,'POST',{confirmed:true})).status,403);
  assert.equal((await f.call(fin('perm',r.id),f.mgr,'POST',{})).status,400);
 });
+test('đề nghị hoàn tiền nhân viên nhập lúc lập phiếu được lưu, hiện cho người duyệt; chưa chi tiền cho tới khi duyệt',async()=>{
+ const f=await setupCrmReturns();await f.seed('ask');
+ const {data:r}=await f.create('ask',[{orderLineId:'ask-b',qty:2,disposition:'restock'}],{refundRequest:{amount:585241,method:'transfer',reference:'VCB 0123 Nguyễn A',note:'Khách cần hoàn trong ngày'}});
+ let d=f.ok(await f.call('/orders/ask/returns',f.emp));const req=d.returns[0].refundRequest;
+ assert.equal(req.amount,585241);assert.equal(req.method,'transfer');assert.equal(req.reference,'VCB 0123 Nguyễn A');assert.equal(req.by,'emp');
+ assert.equal((await f.db.select().from(posRefunds).where(eq(posRefunds.returnId,r.id))).length,0,'đề nghị không phải là chi tiền');
+ f.ok(await f.call(fin('ask',r.id),f.mgr,'POST',{confirmed:true,refund:{key:crypto.randomUUID(),amount:req.amount,method:req.method,reference:req.reference,drawerId:'store'}}));
+ d=f.ok(await f.call('/orders/ask/returns',f.mgr));assert.equal(d.returns[0].status,'completed');assert.equal(d.returns[0].refunds[0].reference,'VCB 0123 Nguyễn A');
+ // Phiếu "nhận để giao lại" không lưu đề nghị hoàn tiền.
+ const {data:g}=await f.create('ask',[{orderLineId:'ask-a',qty:1,disposition:'restock'}],{purpose:'redelivery',refundRequest:{amount:1000,method:'cash'}});
+ d=f.ok(await f.call('/orders/ask/returns',f.mgr));assert.equal(d.returns.find((x:any)=>x.id===g.id).refundRequest,null);
+});

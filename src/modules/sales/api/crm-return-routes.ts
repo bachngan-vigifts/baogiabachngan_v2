@@ -107,7 +107,7 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     const scope = await posStoreScopeFor(db, who(c));
     const people = await db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, [...new Set(account.returns.flatMap(r => [r.createdBy, r.approvedBy, r.receivedBy].filter((x): x is string => !!x)) .concat(account.refunds.map(r => r.confirmedBy)))]));
     const names = new Map(people.map(x => [x.id, x.name]));
-    const returns = await Promise.all(account.returns.map(async r => ({ ...r, purpose:returnPurpose(r.sourceSnapshot), createdByName: names.get(r.createdBy), approvedByName: names.get(r.approvedBy || ''), receivedByName: names.get(r.receivedBy || ''),
+    const returns = await Promise.all(account.returns.map(async r => ({ ...r, purpose:returnPurpose(r.sourceSnapshot), refundRequest:(JSON.parse(r.sourceSnapshot) as {refundRequest?:unknown}).refundRequest??null, createdByName: names.get(r.createdBy), approvedByName: names.get(r.approvedBy || ''), receivedByName: names.get(r.receivedBy || ''),
       // Phần nhập lại vượt lượng đã thực xuất (đơn cũ) + căn cứ Manager đã chọn – giao diện hỏi căn cứ trước khi duyệt / nhận.
       stockCheck: active(r.status) && !r.receivedAt ? { unproven: await unprovenRestock(db, o.id, r.id), basis: (JSON.parse(r.sourceSnapshot) as { stockBasis?: StockBasis }).stockBasis ?? null } : null,
       lines: await db.select().from(posReturnLines).where(eq(posReturnLines.returnId, r.id)), refunds: account.refunds.filter(x => x.returnId === r.id).map(x => ({ ...x, confirmedByName: names.get(x.confirmedBy) })) })));
@@ -123,6 +123,8 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
   router.post(base, async c => {
     const b = await readJson(c.req, 32000), key = posKey(b.key), reason = posText(b.reason, 2000), warehouseId = posText(b.warehouseId), purpose=requestedReturnPurpose(b.purpose);
     if (!reason || !warehouseId) throw new AppError(400, 'Chọn kho nhận và nhập lý do trả hàng.');
+    // Đề nghị hoàn tiền nhân viên ghi lúc lập phiếu: chỉ là đề nghị, người duyệt xác nhận ở bước Duyệt & hoàn tất (không chi tiền ở đây).
+    const ask: any = b.refundRequest, refundRequest = purpose === 'credit' && ask && Number(ask.amount) > 0 ? { amount: posMoney(ask.amount), method: ['cash', 'transfer'].includes(ask.method) ? ask.method as string : 'transfer', reference: posText(ask.reference, 200), note: posText(ask.note, 1000), by: who(c).id } : null;
     let created = false;
     const result = await c.env.db.transaction(async tx => {
       await cashLock(tx); const o = await source(c, tx, true);
@@ -150,7 +152,7 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
       });
       const [r] = await tx.insert(posReturns).values({ id, source: 'crm', returnNo: 'TH-CRM-' + id.slice(0, 8).toUpperCase(), orderId: o.id, warehouseId, registerId: null, createdShiftId: null, kind: 'return', requestContext: 'after_delivery', status: 'pending', reason,
         subtotal: lines.reduce((n: number, l: any) => n + l.subtotal, 0), tax: lines.reduce((n: number, l: any) => n + l.tax, 0), total: lines.reduce((n: number, l: any) => n + l.total, 0),
-        sourceSnapshot: JSON.stringify({ returnPurpose:purpose, lines: lineSnapshot(old), total: o.total, subtotal: o.subtotal, tax: o.tax, request: JSON.stringify(b) }), requestKey: key, createdBy: who(c).id, createdAt: at, updatedAt: at }).returning();
+        sourceSnapshot: JSON.stringify({ returnPurpose:purpose, ...(refundRequest ? { refundRequest: { ...refundRequest, at } } : {}), lines: lineSnapshot(old), total: o.total, subtotal: o.subtotal, tax: o.tax, request: JSON.stringify(b) }), requestKey: key, createdBy: who(c).id, createdAt: at, updatedAt: at }).returning();
       await tx.insert(posReturnLines).values(lines); await cashAudit(tx, who(c).id, 'crm-request-return', 'pos-returns', id, { orderId: o.id, warehouseId, lines, reason }); created = true; return r!;
     });
     if (created) { const managers = await c.env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'manager'), eq(employees.active, true), isNull(employees.deletedAt)));
