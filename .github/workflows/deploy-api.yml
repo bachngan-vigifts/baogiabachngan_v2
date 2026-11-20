@@ -94,6 +94,7 @@ jobs:
           npm run typecheck &&
           node --import tsx --test
           tests/app/catalogue-edge-dependencies.test.ts
+          tests/app/catalogue-quote-policy.test.ts
           tests/app/sepay-read.test.ts
           tests/app/sepay-page.test.ts
           tests/app/sepay-payment.test.ts
