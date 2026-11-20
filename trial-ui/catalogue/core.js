@@ -1,3 +1,4 @@
+import {cleanQuotePolicy,policyUnitPrice} from './quote-pricing.js';
 export const BRAND='VIGIFTS - BÁCH NGÂN';
 export const C={green:'#00543B',muted:'#69746F',ink:'#183B2E',red:'#C43329',frame:'#F7F9FA',line:'#E4E9E7'};
 export const limits=[350000,800000,1400000,2500000];
@@ -25,7 +26,7 @@ export function validateProduct(p){
 export function libraryPricing(p,settings){return {...p,discount:p.discount??(p.brand==='LocknLock'?settings.lockDiscount:p.brand==='Minh Long'?settings.minhDiscount:0),fee:p.fee??settings.fee,override:p.override??null};}
 export function price(p){if(p.priceOnRequest)return 0;return p.override!==null&&p.override!==undefined&&p.override!==''?Math.round(Number(p.override)):Math.round(Number(p.regular)*(1-Number(p.discount)/100)+Number(p.fee))}
 export function isBundle(p,state){return !!state.settings.bundle10&&Array.isArray(state.settings.bundle10Ids)&&state.settings.bundle10Ids.includes(p.id)}
-export function quotePrice(p,state){return price(p)*(isBundle(p,state)?10:1)}
+export function quotePrice(p,state){return policyUnitPrice(p,state.settings.quotePolicy,price(p))*(isBundle(p,state)?10:1)}
 export function quoteBudget(p,state){return budget({...p,override:quotePrice(p,state)})}
 export function budget(p){if(p.priceOnRequest)return 5;if(validPriceBand(p.priceBand))return p.priceBand;const n=price(p);const b=limits.findIndex(l=>n<=l);return b<0?4:b}
 export function selectedProducts(state){const byId=new Map(state.products.map(p=>[p.id,p]));return [...new Set(state.selected)].map(id=>byId.get(id)).filter(Boolean)}
@@ -106,6 +107,7 @@ export function restoreState(raw){
  settings.selectionSort=SELECTION_SORTS.some(([key])=>key===raw.settings?.selectionSort)?raw.settings.selectionSort:(settings.sortPrice?'price':'manual');if(settings.selectionSort==='price'&&!settings.sortPrice)settings.selectionSort='manual';settings.sortPrice=settings.selectionSort==='price';
  settings.bundle10Ids=Array.isArray(raw.settings?.bundle10Ids)?[...new Set(raw.settings.bundle10Ids)].filter(id=>products.some(p=>p.id===id)):[];
  for(const k of ['lockDiscount','minhDiscount','fee']){const n=Number(raw.settings?.[k]??settings[k]);if(!Number.isFinite(n)||n<0||n>(k==='fee'?1e8:100))throw Error('Thiết lập giá không hợp lệ.');settings[k]=n;}
+ if(raw.settings?.quotePolicy!==undefined)settings.quotePolicy=cleanQuotePolicy(raw.settings.quotePolicy);
  settings.mergedQuote=raw.settings?.mergedQuote===true;
  settings.pageSort=['source','brand','category','name','price','price-desc','manual'].includes(raw.settings?.pageSort)?raw.settings.pageSort:'brand';
  settings.pageOrder=Array.isArray(raw.settings?.pageOrder)?[...new Set(raw.settings.pageOrder.filter(k=>typeof k==='string'&&k.length<=800))].slice(0,1000):[];
