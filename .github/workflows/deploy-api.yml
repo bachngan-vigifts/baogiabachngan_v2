@@ -97,6 +97,8 @@ jobs:
           tests/app/catalogue-quote-policy.test.ts
           tests/app/sepay-read.test.ts
           tests/app/sepay-page.test.ts
+          tests/app/sepay-debit-access.test.ts
+          tests/app/sepay-reconcile-permission.test.ts
           tests/app/sepay-payment.test.ts
           tests/app/sepay-notifications.test.ts
           tests/app/chat.test.ts

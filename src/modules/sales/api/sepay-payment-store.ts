@@ -1,3 +1,5 @@
+import {assertSepayReconcileTarget,type SepayReconcileMember} from './sepay-reconcile-access.ts';
+import {orderScopeFor} from './routes.ts';
 import {notifySepayBankMovements} from './sepay-bank-notifications.ts';
 import {sepayManualAccountApproved} from './sepay-manual-account.ts';
 import {
@@ -64,12 +66,14 @@ export async function ingestPayment(
   actorId?: string,
   manual?: SepayManualChoice,
   mode: 'all' | 'web' | 'nearby' = 'all',
+  manualViewer?:SepayReconcileMember,
 ) {
   let firstSeen=false;
   const result=await env.db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext(${"sepay:" + payment.providerId}))`,
     );
+    if(manual&&manualViewer)await assertSepayReconcileTarget(tx,manualViewer,manual.orderId);
     const [old] = await tx
       .select()
       .from(sepayTransactions)
@@ -132,7 +136,7 @@ export async function ingestPayment(
       const [originalSource]=old?.orderId?await tx.select({channel:salesOrders.channel}).from(salesOrders).where(eq(salesOrders.id,old.orderId)).limit(1):[];
       if(originalSource?.channel==='pos'&&manual.orderId.startsWith('web:') || old?.webOrderId&&!manual.orderId.startsWith('web:'))throw new AppError(409,'Giao dịch đã xác định nguồn POS/web; không gắn sang luồng khác.');
       const [selected] = manual.orderId.startsWith('web:') ? [] : await tx.select({channel:salesOrders.channel}).from(salesOrders).where(eq(salesOrders.id,manual.orderId)).limit(1);
-      if (manual.orderId.startsWith('web:') || selected?.channel === 'pos') return applyNearbySepay(tx,payment,old,now,actorId,manual);
+      if (manual.orderId.startsWith('web:') || selected?.channel === 'pos') return applyNearbySepay(tx,payment,old,now,actorId,manual,undefined,manualViewer);
       await assertSepayCrmSource(tx, old!);
     }
     if(mode==='nearby') {
@@ -191,8 +195,9 @@ export async function ingestPayment(
       [target] = await tx
         .select()
         .from(salesOrders)
-        .where(eq(salesOrders.id, candidates[0]!.id))
+        .where(and(eq(salesOrders.id, candidates[0]!.id),manualViewer?orderScopeFor(manualViewer):undefined))
         .for("update");
+      if(manualViewer&&!target)throw new AppError(404,'Không tìm thấy đơn trong phạm vi được phân quyền.');
       const [contract] = await tx
         .select({ status: salesContracts.status, contractNo: salesContracts.contractNo })
         .from(salesContracts)
