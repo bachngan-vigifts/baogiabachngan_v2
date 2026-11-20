@@ -1,3 +1,6 @@
+import {assertSepayReconcileAccess,assertSepayReconcileTarget} from './sepay-reconcile-access.ts';
+import {orderScopeFor} from './routes.ts';
+import {posWebOrderStoreScope} from './pos-access.ts';
 import {sepayEntityMap} from '../domain/sepay-entities.ts';
 import {defaultSepayCrmAccount} from '../domain/sepay-crm-account.ts';
 import {sepayManualAccountApproved} from './sepay-manual-account.ts';
@@ -45,6 +48,7 @@ import {
 } from "../schema.ts";
 import {
   canViewSepay,
+  canReconcileSepay,
   canViewSepayDebits,
   sepayPageFilters,
   sepayManualChoice,
@@ -195,7 +199,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
           total: result.summary.count,
           hasMore: f.offset + result.transactions.length < result.summary.count,
         },
-        capabilities: { canConfirm: member(c).role === "manager", canPull: !!c.env.sepayApiToken,canViewDebits:debitAccess,debitImportEnabled:debitAccess&&!!c.env.sepayDebitImportEnabled },
+        capabilities: { canConfirm: canReconcileSepay(member(c)), canPull: !!c.env.sepayApiToken,canViewDebits:debitAccess,debitImportEnabled:debitAccess&&!!c.env.sepayDebitImportEnabled },
         automationConfigured: !!c.env.sepayReceiptAccounts?.length,
       });
     },
@@ -259,7 +263,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         }),
         capabilities: {
           canConfirm:
-            member(c).role === "manager" &&row.transferType==='in'&&
+            canReconcileSepay(member(c)) &&row.transferType==='in'&&
             ["review", "unmatched"].includes(row.status),
         },
         blockReason:
@@ -277,6 +281,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
   router.get(
     "/sepay/orders",
     async (c) => {
+      assertSepayReconcileAccess(member(c));
       const p = c.url.searchParams, q = (p.get('q') || '').trim();
       const kind = p.get('kind'), source = p.get('source') || (kind === 'order' ? 'crm' : kind === 'contract' ? 'contract' : kind === 'all' ? 'crm-all' : 'all');
       const eligibility = p.get('eligibility') || 'active';
@@ -314,6 +319,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
       }).from(orders).leftJoin(contracts,eq(contracts.orderId,orders.id))
         .leftJoin(customers,eq(customers.id,sql`coalesce(${contracts.customerId},${orders.customerId})`))
         .where(and(
+          orderScopeFor(member(c)),
           source === 'web' ? sql`false` : source === 'pos' ? eq(orders.channel,'pos') :
           source === 'crm' ? and(eq(orders.channel,'crm'),isNull(contracts.id)) :
           source === 'contract' ? and(eq(orders.channel,'crm'),sql`${contracts.id} is not null`) :
@@ -331,6 +337,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
           orderDate:web.orderedAt,selectable:sql<boolean>`coalesce(${webEligible},false)`,
           searchRank:(searchRank([web.orderNo,web.crmOrderNo],web.customerName,q) || sql`0`).as('search_rank'),
         }).from(web).where(and(
+          posWebOrderStoreScope(member(c)),
           ['all','web'].includes(source) ? inArray(web.source,['lock','minhlong']) : sql`false`,
           statusFilter(webStatus,webEligible),gte(web.total,min),lte(web.total,max),
           from ? gte(web.orderedAt,from) : undefined,to ? lt(web.orderedAt,to) : undefined,
@@ -339,19 +346,21 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         .orderBy(asc(sql`search_rank`),desc(sql`created_at`),desc(sql`id`)).limit(limit+1).offset(offset);
       return json({orders:rows.slice(0,limit).map(({searchRank: _rank,...row}) => row),hasMore:rows.length>limit,offset,limit});
     },
-    "admin",
+    "business",
   );
 
   router.get(
     "/sepay/orders/:id",
     async (c) => {
+      assertSepayReconcileAccess(member(c));
       const transactionId = c.url.searchParams.get("transactionId") || "";
       const result = await c.env.db.transaction(
         async (tx) => {
+          await assertSepayReconcileTarget(tx,member(c),c.params.id!);
           const [event] = await tx
             .select()
             .from(bank)
-            .where(eq(bank.id, transactionId))
+            .where(and(eq(bank.id, transactionId),canViewSepayDebits(member(c))?undefined:eq(bank.transferType,'in')))
             .limit(1);
           if(event&&event.transferType!=='in')throw new AppError(409,'Tiền ra không được gán vào khoản thu.');
           if(event && (event.status==='matched'||event.paymentId))throw new AppError(409,'Giao dịch đã được xử lý. Tải lại để kiểm tra.');
@@ -477,17 +486,18 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
       );
       return json(result);
     },
-    "admin",
+    "business",
   );
 
   router.post(
     "/sepay/transactions/:id/confirm",
     async (c) => {
+      assertSepayReconcileAccess(member(c));
       const choice = sepayManualChoice(await readJson(c.req, 4000));
       const [event] = await c.env.db
         .select()
         .from(bank)
-        .where(eq(bank.id, c.params.id!))
+        .where(and(eq(bank.id, c.params.id!),canViewSepayDebits(member(c))?undefined:eq(bank.transferType,'in')))
         .limit(1);
       if (!event) throw new AppError(404, "Không tìm thấy giao dịch SePay.");
       if(event.transferType!=='in')throw new AppError(409,'Tiền ra không được xác nhận ghi thu.');
@@ -503,9 +513,9 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
       }
       return json({
         success: true,
-        ...(await ingestPayment(c.env, payment, member(c).id, choice)),
+        ...(await ingestPayment(c.env, payment, member(c).id, choice,'all',member(c))),
       });
     },
-    "admin",
+    "business",
   );
 }

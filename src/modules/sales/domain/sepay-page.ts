@@ -23,6 +23,7 @@ export const SEPAY_PAGE_STATES = [
 ] as const;
 export type SepayPageState = (typeof SEPAY_PAGE_STATES)[number];
 export const canViewSepay = (member: PermissionMember): boolean => can(member, 'page.sepay');
+export const canReconcileSepay=(m:PermissionMember)=>canViewSepay(m)&&can(m,'sepay.reconcile-incoming');
 export const canViewSepayDebits=(m:PermissionMember)=>canViewSepay(m)&&(m.role==='manager'||m.role==='employee'&&m.positionId==='accounting');
 export function sepayPageFilters(q: URLSearchParams, today: string) {
   const date = (s: string): string => {

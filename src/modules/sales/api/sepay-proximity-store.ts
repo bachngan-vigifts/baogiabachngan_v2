@@ -1,3 +1,4 @@
+import {assertSepayReconcileTarget,type SepayReconcileMember} from './sepay-reconcile-access.ts';
 import {webOrderPayment} from '../domain/web-order-payment.ts';
 import {webSepayPaidAt} from './web-sepay-evidence.ts';
 import {
@@ -318,6 +319,7 @@ export async function applyNearbySepay(
   actorId = "integration:sepay-nearby",
   manual?: SepayManualChoice,
   targetHint?: string,
+  manualViewer?:SepayReconcileMember,
 ) {
   const waiting =
     !manual && Date.parse(now) < Date.parse(sepayWindow(p.transactionAt).to);
@@ -388,6 +390,7 @@ export async function applyNearbySepay(
         .from(orders)
         .where(eq(orders.id, target.id))
         .for("update");
+    if(manualViewer)await assertSepayReconcileTarget(db,manualViewer,target.id);
     const fresh = (
       await nearbySepayTargets(db, p, target.id, !!manual)
     ).targets.find(
