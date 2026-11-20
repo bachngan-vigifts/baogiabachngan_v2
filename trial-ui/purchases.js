@@ -839,23 +839,46 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const updateInternal = () => { internalField.hidden = !requiresSupplierOrderNumber(o.suppliers.find(s => s.id === sup.value)?.name); };
     sup.addEventListener('change', () => { internal.value = ''; updateInternal(); }); updateInternal();
     const grid = el('div', 'form-grid two'); grid.append(internalField, field('Nhà cung cấp', sup), field('Hẹn giao (dự kiến)', arrival), field('Địa chỉ giao hàng *', wh), field('Ghi chú', note, 'span-2'));
-    const t = el('table', 'data-table pur-lines'), tb = el('tbody');
-    t.append(el('thead'), tb); const th = el('tr'); for (const h of ['Mã / tên', 'Từ chứng từ', 'SL đặt', '']) th.append(el('th', '', h)); t.tHead.append(th);
-    const lines = current.lines.map(l => ({ ...l }));
-    for (const l of lines) {
-      const tr = el('tr'), qty = qtyInput(l.quantity); qty.addEventListener('input', () => { l.quantity = Number(qty.value); });
-      const nm = el('td'); nm.append(el('b', '', l.sku), el('small', 'sup-sub', l.name));
-      tr.append(nm, el('td', 'small', l.sources.map(s => `${s.no}: ${num(s.quantity)}`).join(', ') || '—'), el('td', '', ''), el('td', '', ''));
-      tr.children[2].append(qty);
-      tr.children[3].append(btn('×', 'icon-btn', () => { l.removed = true; tr.remove(); }));
-      tb.append(tr);
+    const t = el('table', 'data-table pur-lines pur-draft-lines'), tb = el('tbody');
+    t.append(el('thead'), tb); const th = el('tr'); for (const h of ['Mã / tên', 'Từ chứng từ', 'SL đặt', 'Thao tác']) th.append(el('th', '', h)); t.tHead.append(th);
+    const lines = current.lines.map(l => ({ ...l })), empty = el('p', 'muted small', 'Chưa có sản phẩm. Thêm ít nhất một sản phẩm trước khi lưu.');
+    function renderLines() {
+      tb.replaceChildren(); empty.hidden = lines.some(l => !l.removed);
+      for (const l of lines.filter(l => !l.removed)) {
+        const tr = el('tr'), qty = qtyInput(l.quantity); qty.min = '1'; qty.max = '10000000'; qty.required = true; qty.setAttribute('aria-label', 'Số lượng ' + l.sku);
+        qty.addEventListener('input', () => { l.quantity = Number(qty.value); });
+        const nm = el('td'); nm.append(el('b', '', l.sku), el('small', 'sup-sub', l.name));
+        const sources = el('td', 'small', l.sources.map(s => `${s.no}: ${num(s.quantity)}`).join(', ') || 'Thêm trực tiếp'), quantity = el('td'), actions = el('td');
+        sources.setAttribute('data-label', 'Từ chứng từ'); quantity.setAttribute('data-label', 'SL đặt'); quantity.append(qty);
+        const remove = btn('Bỏ sản phẩm', 'btn secondary small', () => { l.removed = true; err.textContent = ''; renderLines(); }); remove.setAttribute('aria-label', 'Bỏ sản phẩm ' + l.sku); actions.append(remove);
+        tr.append(nm, sources, quantity, actions); tb.append(tr);
+      }
     }
-    const tw = el('div', 'table-wrap'); tw.append(t);
+    renderLines();
+    const tw = el('div', 'table-wrap'); tw.append(t, empty);
+    const manual = el('section', 'sup-section'); manual.append(el('h3', '', 'Thêm sản phẩm vào đơn nháp'));
+    const fields = el('div', 'pur-manual pur-draft-add');
+    const sku = input('text', '', {maxLength:200,placeholder:'Mã hàng (SKU)'}), name = input('text', '', {maxLength:300,placeholder:'Tìm tên hàng'}), unit = input('text', '', {maxLength:40,placeholder:'ĐVT'}), quantity = qtyInput(1); quantity.min='1'; quantity.max='10000000'; quantity.setAttribute('aria-label','Số lượng thêm');
+    const add = btn('Thêm sản phẩm', 'btn secondary', () => {
+      const code=sku.value.trim(), count=Number(quantity.value);
+      if(!code||!name.value.trim()){err.textContent='Nhập mã và tên sản phẩm cần thêm.';(!code?sku:name).focus();return;}
+      if(!Number.isInteger(count)||count<1||count>1e7){err.textContent='Số lượng thêm phải là số nguyên từ 1 đến 10.000.000.';quantity.focus();return;}
+      if(lines.some(l=>!l.removed&&l.sku.toLowerCase()===code.toLowerCase())){err.textContent='Mã '+code+' đã có trong đơn. Sửa số lượng ở dòng hiện có.';sku.focus();return;}
+      if(lines.filter(l=>!l.removed).length>=300){err.textContent='Đơn mua tối đa 300 mã hàng.';return;}
+      lines.push({sku:code,name:name.value.trim(),unit:unit.value.trim(),quantity:count,sources:[]});
+      lookup.reset();sku.value=name.value=unit.value='';quantity.value='1';err.textContent='';renderLines();sku.focus();
+    });
+    fields.append(sku,name,unit,quantity,add);manual.append(fields,el('p','muted small','Tìm mã hoặc tên trong danh mục, hoặc nhập sản phẩm thủ công. Sản phẩm thêm mới không tự liên kết vào chứng từ nguồn.'));
+    const lookup=bindManualProductLookup({api,sku,name,unit,host:fields,add,active:()=>f.isConnected&&!drawer.hidden});
+    disposeLookup=()=>lookup.dispose();
     const ok = el('button', 'btn primary', 'Lưu nháp'); ok.type = 'submit';
-    f.append(grid, el('p', 'muted small', 'Giảm số lượng dưới phần lấy từ chứng từ sẽ bớt phần liên kết (từ chứng từ cuối) để không giữ chỗ thừa.'), tw, err, foot(ok));
+    f.append(grid, el('p', 'muted small', 'Giảm số lượng dưới phần lấy từ chứng từ sẽ bớt phần liên kết (từ chứng từ cuối) để không giữ chỗ thừa.'), tw, manual, err, foot(ok));
     f.addEventListener('submit', e => {
       e.preventDefault();
       if (!wh.value.trim()) { err.textContent = 'Vui lòng nhập địa chỉ giao hàng.'; wh.focus(); return; }
+      const kept=lines.filter(l=>!l.removed);
+      if(!kept.length){err.textContent='Thêm ít nhất một sản phẩm trước khi lưu.';return;}
+      if(kept.some(l=>!Number.isInteger(l.quantity)||l.quantity<1||l.quantity>1e7)){err.textContent='Kiểm tra số lượng: số nguyên từ 1 đến 10.000.000 cho mỗi sản phẩm.';return;}
       const body = { revision: current.revision, supplierId: sup.value, internalNo: internal.value.trim(), arrivalDate: arrival.value, warehouse: wh.value.trim(), note: note.value,
         lines: lines.filter(l => !l.removed).map(l => {
           let left = Math.max(0, Math.floor(l.quantity) || 0);

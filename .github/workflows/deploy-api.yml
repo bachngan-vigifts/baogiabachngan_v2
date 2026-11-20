@@ -126,6 +126,8 @@ jobs:
           tests/app/retail-customers.test.ts
           tests/app/customer-shared-segments.test.ts
           tests/app/purchase-order-number.test.ts
+          tests/app/purchase-draft-lines.test.ts
+          tests/app/purchase-draft-lines-ui.test.ts
           tests/app/purchase-order-number-ui.test.ts
           tests/app/barcode-import.test.ts
           tests/app/sapo-push.test.ts
