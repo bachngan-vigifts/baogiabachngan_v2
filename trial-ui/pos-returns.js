@@ -108,6 +108,7 @@ export async function openPosReturns({
   cartTotal = 0,
   onExchange = () => {},
   onChanged = () => {},
+  onClose = () => {},
 }) {
   const dlg = el('dialog', 'pos-modal pos-return-modal'),
     body = el('div', 'pos-modal-content'),
@@ -120,7 +121,7 @@ export async function openPosReturns({
   body.append(head, content);
   dlg.append(body);
   document.body.append(dlg);
-  dlg.addEventListener('close', () => dlg.remove(), { once: true });
+  dlg.addEventListener('close', () => { dlg.remove(); onClose(); }, { once: true });
   dlg.addEventListener('cancel', (e) => { if (dlg.dataset.busy) e.preventDefault(); });
   dlg.showModal();
   const safe = (fn) => async () => {
