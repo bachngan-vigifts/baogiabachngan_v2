@@ -113,7 +113,7 @@ function receiptRequestHash(body: Record<string, unknown>, createSapo: boolean) 
 const lockSources = (tx: Tx) => tx.execute(sql`select pg_advisory_xact_lock(hashtext('supplier_order_sources'))`);
 
 // ---------------------------------------------------------------- dòng hàng + nguồn
-interface LineIn { sku: string; name: string; unit: string; quantity: number; price: number | null; taxRate: number | null; sources: { type: string; id: string; quantity: number }[] }
+interface LineIn { sku: string; name: string; unit: string; quantity: number; price: number | null; taxRate: number | null; purchaseDiscount?: number; sources: { type: string; id: string; quantity: number }[] }
 function cleanLines(raw: unknown, prices: boolean): LineIn[] {
   if (!Array.isArray(raw) || !raw.length || raw.length > 300) fail(400, 'Đơn mua cần từ 1 đến 300 mã hàng.');
   const seen = new Set<string>();
@@ -163,7 +163,7 @@ async function insertLines(tx: Tx, shipmentId: string, lines: LineIn[], needs: M
     // Tên: luôn theo danh mục (dòng báo giá có thể gõ gọn, vd "Bộ trà 0.5"); mã ngoài danh mục giữ tên gửi lên / của chứng từ nguồn.
     // ĐVT trống: lấy theo danh mục, không có thì theo chứng từ nguồn.
     const lineId = crypto.randomUUID(), p = names.get(l.sku), src = l.sources.map(s => needs.get(s.type + ':' + s.id)!.lines.find(x => x.sku.toLowerCase() === l.sku.toLowerCase())).find(Boolean);
-    await tx.insert(incomingShipmentLines).values({ id: lineId, shipmentId, lineNo: i + 1, sku: l.sku, name: p?.name || l.name || src?.name || '', unit: l.unit || p?.unit || src?.unit || '', quantity: l.quantity, price: l.price, taxRate: l.taxRate });
+    await tx.insert(incomingShipmentLines).values({ id: lineId, shipmentId, lineNo: i + 1, sku: l.sku, name: p?.name || l.name || src?.name || '', unit: l.unit || p?.unit || src?.unit || '', quantity: l.quantity, price: l.price, taxRate: l.taxRate, purchaseDiscount:l.purchaseDiscount??0 });
     for (const s of l.sources) {
       const n = needs.get(s.type + ':' + s.id)!;
       await tx.insert(supplierOrderSources).values({ id: crypto.randomUUID(), shipmentId, lineId, sourceType: s.type as 'quote', sourceId: s.id, sourceNo: n.no, customerName: n.customerName, sku: l.sku, quantity: s.quantity, createdAt: now });
@@ -408,8 +408,14 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       const internalNo = internalOrderNumber(body.internalNo === undefined ? (p.raw.order.supplierId === supplier.id ? p.raw.order.supplierInternalOrderNumber : '') : body.internalNo);
       const warehouse = deliveryAddress(body.warehouse);
       const needs = await checkSources(tx as unknown as Db, m, [lines], id);
-      // Nhân viên sửa nháp: giữ giá Manager đã nhập (không thấy, không xoá được).
-      if (!prices) for (const l of lines) { const old = p.raw.lines.find(x => x.sku.toLowerCase() === l.sku.toLowerCase()); l.price = old?.price ?? null; l.taxRate = old?.taxRate ?? null; }
+      // Editing quantities/products must not erase saved costs, including prices hidden from the employee.
+      const rawLines=body.lines as Record<string,unknown>[];
+      for (const [index,l] of lines.entries()) {
+        const old=p.raw.lines.find(x=>x.sku.toLowerCase()===l.sku.toLowerCase()),raw=rawLines[index]!;
+        if(!prices||!Object.hasOwn(raw,'price'))l.price=old?.price??null;
+        if(!prices||!Object.hasOwn(raw,'taxRate'))l.taxRate=old?.taxRate??null;
+        l.purchaseDiscount=old?.purchaseDiscount??0;
+      }
       await tx.delete(supplierOrderSources).where(eq(supplierOrderSources.shipmentId, id));
       await tx.delete(incomingShipmentLines).where(eq(incomingShipmentLines.shipmentId, id));
       await insertLines(tx, id, lines, needs);
