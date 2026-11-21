@@ -321,18 +321,22 @@ export function initTransfers({ api, root, toast, go, confirmBox, isManager = ()
     const picker = el('div', 'transfer-picker'); picker.append(searchBox, status, results);
     if (source?.lines?.length) for (const line of source.lines) lineRow(line.sku, line.qty, line.name, line.unit); else lineRow();
     const clientKey=crypto.randomUUID();
-    const send = btn(editing?'Lưu thay đổi':'Gửi duyệt', 'btn primary', async () => {
+    // Manager lập phiếu: "Tạo & xuất kho" (duyệt + trừ kho đi ngay) hoặc "Tạo & duyệt"; nhân viên giữ "Gửi duyệt".
+    const fast=!editing&&isManager(),done={request:' – chờ duyệt.',approve:' – đã duyệt, chờ kho xuất.',ship:' – đã xuất kho, chờ kho đến nhận.'};
+    const submit=(label,cls,mode,busy)=>{const b=btn(label,cls,async()=>{
       if(posting)return;posting=true;
-      const body = { ...(editing?{revision:source.revision}:{clientKey}),fromWarehouseId: from.value, toWarehouseId: to.value, reason: reason.value,
+      const body = { ...(editing?{revision:source.revision}:{clientKey,mode}),fromWarehouseId: from.value, toWarehouseId: to.value, reason: reason.value,
         lines: [...lines.children].map(r => ({ sku: r.dataset.sku, qty: Number(r.querySelector('input[type=number]').value) })).filter(l => l.sku) };
-      const release=setUpdating(send,editing?'Đang cập nhật…':'Đang gửi duyệt…');if(!release){posting=false;return;}let target='';
-      try { const t = await api(editing?'/stock-transfers/'+encodeURIComponent(source.id):'/stock-transfers', editing?'PUT':'POST', body); toast((editing?'Đã cập nhật phiếu ':'Đã gửi phiếu ') + t.transferNo + ' – chờ duyệt.'); formOpen=false;filter = 'open';statusFilter.value='open';syncChips();target=t.id; }
+      const release=setUpdating(b,editing?'Đang cập nhật…':busy);if(!release){posting=false;return;}let target='';
+      try { const t = await api(editing?'/stock-transfers/'+encodeURIComponent(source.id):'/stock-transfers', editing?'PUT':'POST', body); toast((editing?'Đã cập nhật phiếu ':'Đã tạo phiếu ') + t.transferNo + (editing?' – chờ duyệt.':done[mode])); formOpen=false;filter = 'open';statusFilter.value='open';syncChips();target=t.id; }
       catch (e) { toast(e.message, 'err'); } finally { posting=false;release(); }
       if(target)go('#/transfers/' + target);
-    });
+    });return b;};
+    const send = fast?submit('Tạo & xuất kho','btn primary','ship','Đang tạo và xuất kho…'):submit(editing?'Lưu thay đổi':'Gửi duyệt', 'btn primary','request','Đang gửi duyệt…');
+    const approveOnly = fast?submit('Tạo & duyệt (kho xuất sau)','btn secondary','approve','Đang tạo và duyệt…'):null;
     const form = el('div', 'form-grid');
     form.append(field('Kho đi (lấy hàng)', from), field('Kho đến (cần hàng)', to), field('Lý do', reason, 'wide'), field('Tìm sản phẩm', picker, 'wide'));
-    const foot = el('div', 'sup-drawer-foot-sticky'); foot.append(btn('Huỷ', 'btn secondary', close), send);
+    const foot = el('div', 'sup-drawer-foot-sticky'); foot.append(btn('Huỷ', 'btn secondary', close), ...(approveOnly?[approveOnly]:[]), send);
     if (source) drawer.append(h, el('p', 'muted small', editing?'Chỉ sửa phiếu chờ duyệt. Lưu thay đổi không ghi sổ kho; phiếu vẫn cần duyệt.':'Phiếu gốc giữ trạng thái đã huỷ. Kiểm tra kho, mã và số lượng rồi bấm Gửi duyệt để tạo phiếu mới; chưa có phát sinh sổ kho.')); else drawer.append(h);
     drawer.append(form, el('h3', '', 'Sản phẩm cần chuyển'), lines, btn('＋ Thêm dòng', 'btn ghost small', () => { lineRow(); find.focus(); }), foot);
     drawer.hidden = false; shade.hidden = false;openedAt=Date.now();
