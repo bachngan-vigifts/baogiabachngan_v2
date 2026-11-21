@@ -1,3 +1,4 @@
+import {registerSaleAdminHandoff,supportOrderScope,handlesQuote} from '../../src/modules/sales/api/sale-admin-handoff.ts';
 import {registerSubmissionReview} from '../../src/modules/sales/api/submission-review.ts';
 import {registerProductionFiles,bindProductionFiles} from '../../src/modules/sales/api/production-files.ts';
 import {registerQuoteDesignImages,checkDesignKeys,withDesignImages} from '../../src/modules/quotes/api/design-images.ts';
@@ -81,7 +82,7 @@ function handler(body: any, role = 'manager', orderStatus = 'confirmed', path = 
   const table = new Proxy({}, { get: (_, key) => String(key) });
   const ctx: any = {
     // This VM isolates contract handlers; return and order-product APIs have real-router integration tests.
-    registerSubmissionReview, registerProductionFiles, bindProductionFiles, registerCrmReturnRoutes: () => {}, registerContractTemplateRoutes: () => {}, registerContractLiquidationRoutes: () => {}, registerCashCollectionRoutes: () => {}, registerWebOrderEdits: () => {}, registerOrderProductsRoutes: () => {}, pendingGhnEdit, assertNoPendingGhnEdit,
+    registerSubmissionReview, registerProductionFiles, bindProductionFiles, registerCrmReturnRoutes: () => {}, registerContractTemplateRoutes: () => {}, registerContractLiquidationRoutes: () => {}, registerCashCollectionRoutes: () => {}, registerWebOrderEdits: () => {}, registerOrderProductsRoutes: () => {}, registerSaleAdminHandoff,supportOrderScope,handlesQuote,pendingGhnEdit, assertNoPendingGhnEdit,
     departmentOwner, quotationPredicate, seesAllAsSaleAdmin, canApprove, can, posOrderStoreScope, isNotNull: () => null, isNull: () => null, quoteSaveHooks: { beforeSave: [], afterSave: [] },
     customerStaff: table, salesOrders: table, salesContracts: table, paymentSchedules: table, customerPayments: table, deliveries: table,
     or: () => null, eq: () => null, and: () => null, desc: () => null, sql: () => null,
