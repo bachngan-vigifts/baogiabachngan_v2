@@ -21,3 +21,5 @@ Deploy lại phiên bản API/UI trước thay đổi, giữ nguyên hai cột a
 - API trên PostgreSQL: giao/bỏ giao, HĐKT, báo giá duyệt lại, người bán bất biến, retry, phiên bản cũ, hai thao tác đồng thời, người nhận sai role và caller không có quyền, thu hồi theo chức vụ, không mở quyền duyệt/huỷ.
 - `scripts/testing/sale-admin-handoff.mjs`: Chromium 390px/1280px; chọn người nhận, Không giao, mất phản hồi và retry cùng body, đổi tài khoản, nút trong viewport.
 - Hồi quy quote-edit-requests, sale-admin-scope, quotation access, November migration gates; TypeScript và build UI.
+
+- `scripts/testing/sale-admin-handoff-flow.mjs` (Node `--import tsx`): router + database thật cục bộ và toàn bộ giao diện CRM; mặc định sinh Đơn hàng, `HANDOFF_FLOW=contract` sinh HĐKT. Cả hai kiểm tra bảng giao sau thành công và mở lại trên điện thoại. Đặt `TEST_PG_URL` tới DB test, `PLAYWRIGHT_MODULE`/`CHROMIUM_PATH` nếu cần.
