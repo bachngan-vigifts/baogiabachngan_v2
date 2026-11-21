@@ -9,7 +9,12 @@ async function api(path, body) {
   let r;
   try { r = await fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); }
   catch { throw new Error('Chưa kết nối được máy chủ. Kiểm tra mạng rồi thử lại.'); }
-  const d = await r.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
+  // Phản hồi không đọc được (HTML của cổng trung gian, JSON cụt, rỗng): không coi là đăng ký xong, giữ form để kiểm tra / thử lại.
+  let d = null;
+  try { d = await r.json(); } catch { /* không phải JSON */ }
+  if (!d || typeof d !== 'object') throw Object.assign(new Error(path === '/register-partner'
+    ? 'Mạng chập chờn: chưa rõ máy chủ đã nhận đăng ký hay chưa. Thử đăng nhập bằng email vừa nhập trước khi gửi lại.'
+    : 'Phản hồi máy chủ không hợp lệ. Vui lòng tải lại trang.'), { status: 0, code: 'OUTCOME_UNKNOWN' });
   if (!r.ok) throw new Error(d.error || 'Không thực hiện được thao tác.');
   return d;
 }

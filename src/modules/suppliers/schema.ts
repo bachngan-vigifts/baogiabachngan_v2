@@ -487,3 +487,20 @@ export const supplierRefunds = pgTable('supplier_refunds', {
   enumCheck('chk_supplier_refunds_method',t.method,['transfer','cash','other']),
   check('chk_supplier_refunds_amount',sql`${t.amount}>0 AND ${t.amount} <= 1e13`),
 ]).enableRLS();
+
+/**
+ * Mã thao tác lập đơn mua NCC (POST /purchase-orders) – chống tạo trùng khi gửi lại sau mất phản hồi.
+ * Khoá theo (người lập, mã): gửi lại cùng mã + cùng nội dung → trả bộ ID cũ; khác nội dung → 409.
+ * Migration 20261121150000_purchase_order_intents.sql.
+ */
+export const purchaseOrderIntents = pgTable('purchase_order_intents', {
+  createdBy: text('created_by').notNull().references(() => employees.id),
+  clientKey: text('client_key').notNull(),
+  requestHash: text('request_hash').notNull(),
+  /** JSON: mảng ID đơn mua đã tạo theo đúng thứ tự trong yêu cầu. */
+  shipmentIds: text('shipment_ids').notNull(),
+  createdAt: text('created_at').notNull(),
+}, t => [
+  primaryKey({ name: 'pk_purchase_order_intents', columns: [t.createdBy, t.clientKey] }),
+  index('idx_purchase_order_intents_created').on(t.createdAt),
+]).enableRLS();
