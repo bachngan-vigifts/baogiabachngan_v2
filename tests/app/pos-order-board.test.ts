@@ -65,7 +65,8 @@ test('website paid timestamp stays pending reconciliation; status-only updates p
     const sync=(body:unknown)=>f.call('/integrations/woocommerce/minhlong/order?token=test-ml-token','','POST',body);
     const order={id:901,number:'WEB901',status:'completed',total:'100',currency:'VND',date_created:'2026-10-21T09:00:00',payment_method:'cod'};
     assert.equal((await sync(order)).status,200);
-    const board=(filter:string)=>f.call(`/pos/orders?registerId=${reg.data.id}&source=web&${filter}`,f.mgr);
+    // Pin the payment fixture's date: completed orders leave the default 30-day window as the calendar advances.
+    const board=(filter:string)=>f.call(`/pos/orders?registerId=${reg.data.id}&source=web&from=2026-10-21&to=2026-10-21&${filter}`,f.mgr);
     assert.equal((await board('payment=unknown')).data.orders.length,1);
     assert.equal((await board('payment=paid')).data.orders.length,0);
     assert.equal((await sync({...order,date_paid_gmt:null})).status,200);
