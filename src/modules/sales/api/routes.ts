@@ -1,3 +1,4 @@
+import {registerSaleAdminHandoff,supportOrderScope,handlesQuote} from './sale-admin-handoff.ts';
 import {registerSubmissionReview,submissionQuoteFingerprint,submissionDeliveryFingerprint} from './submission-review.ts';
 import {readSubmissionRecord} from '../domain/submission-review.ts';
 import {registerContractTemplateRoutes,contractTemplateSnapshot} from './contract-templates.ts';
@@ -121,6 +122,7 @@ export const orderScopeFor = (m: {
     m.role === 'manager' || isAccountant(m) || seesAllAsSaleAdmin(m)
       ? undefined
       : or(
+          supportOrderScope(m),
           eq(salesOrders.ownerId, m.id),
           eq(salesOrders.createdBy, m.id),
           departmentOwner(salesOrders.ownerId, m),
@@ -157,8 +159,9 @@ const canEditOrderFor = (m: { id: string; role: string }, o: typeof salesOrders.
   o.status !== 'cancelled' && (m.role === 'manager' || (m.role === 'employee' && o.status === 'draft' && (o.ownerId === m.id || o.createdBy === m.id)));
 const linkedSapo = (c: Ctx, o: typeof salesOrders.$inferSelect) => ({ status: 'existing', id: o.sapoOrderId, code: o.sapoOrderCode,
   url: `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(o.sapoOrderId!)}`, warnings: [] });
-async function canEditOrderInDepartment(c: Ctx, o: typeof salesOrders.$inferSelect, db: StaffEnv['db'] | Tx = c.env.db) {
+async function canEditOrderInDepartment(c: Ctx, o: typeof salesOrders.$inferSelect, db: StaffEnv['db'] | Tx = c.env.db, includeSupport=true) {
   if (canEditOrderFor(viewer(c), o)) return true;
+  if (includeSupport&&o.status==='draft'&&await handlesQuote(db,viewer(c),o.quoteId))return true;
   if (o.status !== 'draft') return false;
   const [peer] = await db.select({ id: employees.id }).from(employees).where(and(inArray(employees.id, [o.ownerId, o.createdBy]), departmentOwner(employees.id, viewer(c)) ?? sql`false`)).limit(1);
   return !!peer;
@@ -167,8 +170,8 @@ async function canEditOrderInDepartment(c: Ctx, o: typeof salesOrders.$inferSele
  * Sửa / huỷ / gửi duyệt chứng từ: Manager; nhân viên chỉ khi còn nháp và là người phụ trách / người tạo / cùng phòng (phạm vi "Cả phòng ban").
  * Người chỉ được XEM (Kế toán, Sale Admin "Toàn công ty (chỉ xem)", người được duyệt mở đơn chờ duyệt) không sửa chứng từ của người khác.
  */
-async function assertCanEditOrder(c: Ctx, o: typeof salesOrders.$inferSelect, what = 'đơn hàng / HĐKT', db: StaffEnv['db'] | Tx = c.env.db) {
-  if (!await canEditOrderInDepartment(c, o, db)) throw new AppError(403, `Chỉ người phụ trách / người tạo được sửa ${what} nháp; ${what} đã duyệt chỉ Manager được sửa hoặc huỷ.`, 'ORDER_EDIT_FORBIDDEN');
+async function assertCanEditOrder(c: Ctx, o: typeof salesOrders.$inferSelect, what = 'đơn hàng / HĐKT', db: StaffEnv['db'] | Tx = c.env.db, includeSupport=true) {
+  if (!await canEditOrderInDepartment(c, o, db,includeSupport)) throw new AppError(403, `Chỉ người phụ trách / người tạo được sửa ${what} nháp; ${what} đã duyệt chỉ Manager được sửa hoặc huỷ.`, 'ORDER_EDIT_FORBIDDEN');
 }
 async function assertCanCreateSapo(c: Ctx, o: typeof salesOrders.$inferSelect) {
   if (o.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không tạo đơn Sapo.', 'ORDER_CANCELLED');
@@ -459,6 +462,7 @@ quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchaseLinks?: (db: StaffEnv['db'], member: SessionState['member'], order: { id: string; quoteId: string | null }) => Promise<{ id: string; number: string; internalNo?: string; supplierName?: string }[]> } = {}) {
   registerWebOrderEdits(router);
   registerOrderProductsRoutes(router, orderScopeFor);
+  registerSaleAdminHandoff(router,orderScopeFor);
   registerProductionFiles(router,loadOrder,assertCanEditOrder);
   registerCrmReturnRoutes(router, loadOrder);
   registerCashCollectionRoutes(router,loadOrder,async(db,id)=>(await receivableOf(db,[id])).get(id)?.balance||0);
@@ -595,7 +599,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
   }, 'business');
 
   async function orderDetail(c: Ctx, id: string) {
-    const db = c.env.db, order = await loadOrder(c, id);
+    const db = c.env.db, order = await loadOrder(c, id), editable=await canEditOrderInDepartment(c,order),cancellable=editable&&await canEditOrderInDepartment(c,order,db,false);
     const [lines, contract, ships, schedules, payments] = await Promise.all([
       db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id)).orderBy(asc(salesOrderLines.lineNo)),
       db.select({ contract: salesContracts, quoteData: quotations.data, quoteRevision: quotations.revision }).from(salesContracts)
@@ -634,10 +638,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       order: { ...order, warehouseName: order.warehouseId ? (await db.select({ name: warehouses.name }).from(warehouses).where(eq(warehouses.id, order.warehouseId)).limit(1))[0]?.name ?? '' : '', posFees: order.channel === 'pos' ? snapshotPosFees(JSON.parse(order.posSnapshot || '{}')) : null, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
         createdByName: person(order.createdBy)?.name ?? '', createdByCustomer: person(order.createdBy)?.role === 'customer',
         invoiceRequestedByName: order.invoiceRequestedBy ? person(order.invoiceRequestedBy)?.name ?? '' : '', invoiceIssuedByName: order.invoiceIssuedBy ? person(order.invoiceIssuedBy)?.name ?? '' : '',
-        canIssueInvoice: canIssueInvoice(viewer(c)), canCreateSapo: !order.sapoOrderId && (canSalesCreateSapo(viewer(c), order) || await canEditOrderInDepartment(c, order)), canEdit: await canEditOrderInDepartment(c, order),
+        canIssueInvoice: canIssueInvoice(viewer(c)), canCreateSapo: !order.sapoOrderId && (canSalesCreateSapo(viewer(c), order) || editable), canEdit: editable, canCancel:cancellable,
         // Đơn Sapo đã đẩy (mã đang giữ chỗ "pending:…" khi đang đẩy thì chưa tính).
         sapoOrderCode: order.sapoOrderId ? order.sapoOrderCode : null,
-        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines:displayedLines, contract: contract[0] ? { ...contract[0], canManageTemplates: viewer(c).role === 'manager', canEditFinancial: viewer(c).role === 'manager', canEdit: await canEditOrderInDepartment(c, order), data: JSON.parse(contract[0].data) } : null,
+        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines:displayedLines, contract: contract[0] ? { ...contract[0], canManageTemplates: viewer(c).role === 'manager', canEditFinancial: viewer(c).role === 'manager', canEdit: editable, canCancel:cancellable, data: JSON.parse(contract[0].data) } : null,
       deliveries: ships.map(s => ({ ...s,...confirmations.get(s.id),canConfirm:canConfirmDelivery(viewer(c),order),canCancel:!isWarehouseMember(viewer(c))&&canConfirmDelivery(viewer(c),order),lines: shipLines.filter(l => l.deliveryId === s.id), photos: shipPhotos.get(s.id) ?? [] })),
       // Phiếu đã huỷ vẫn trả về (hiện gạch ngang + lý do) nhưng không tính vào đã thu.
       schedules, payments: payments.map(p => ({ ...p, voidedByName: p.voidedBy ? person(p.voidedBy)?.name ?? '' : '' })),
@@ -789,7 +793,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const order = await loadOrder(c, c.params.id!);
     if (order.status !== 'draft' && viewer(c).role !== 'manager') throw new AppError(403, 'Đơn đã duyệt. Chỉ Manager được chỉnh sửa hoặc huỷ.', 'ORDER_APPROVED');
     if (status === 'cancelled' && saleFlowOf(order.posSnapshot)) throw new AppError(409,'Đơn cọc/trả trước: dùng Huỷ/hoàn tại POS để xử lý tiền và hàng.');
-    if (status === 'cancelled') await assertCanEditOrder(c, order);
+    if (status === 'cancelled') await assertCanEditOrder(c, order,'đơn hàng / HĐKT',c.env.db,false);
     if (status === 'cancelled') {
       const [paid] = await c.env.db.select({ n: sql<number>`count(*)` }).from(customerPayments).where(and(eq(customerPayments.orderId, order.id), isNull(customerPayments.voidedAt)));
       const lines = await c.env.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
@@ -1205,6 +1209,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       if (contract.status === 'cancelled' && body.status !== undefined && body.status !== 'cancelled') throw new AppError(409,'HĐKT đã huỷ, không mở lại riêng trạng thái hợp đồng.');
       // Nhận tiền trước duyệt vẫn là thực thu: không huỷ HĐKT để bỏ qua khoản đã nhận.
       if (body.status === 'cancelled') {
+        await assertCanEditOrder(c, found.order,'HĐKT',tx,false);
         const [paid] = await tx.select({ id: customerPayments.id }).from(customerPayments)
           .where(and(eq(customerPayments.orderId, found.order.id), isNull(customerPayments.voidedAt))).limit(1);
         if (paid) throw new AppError(409, 'HĐKT đã thu tiền, không huỷ được. Cần xử lý khoản đã thu trước.', 'ORDER_HAS_PAYMENTS');

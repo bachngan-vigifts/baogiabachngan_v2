@@ -79,16 +79,16 @@ test('đổi ngày và địa chỉ giao cập nhật ghi chú, giữ thanh toá
 });
 
 test('form chỉ trên web → callback app → POST gửi boolean false, kể cả Sapo chưa kết nối', async () => {
-  const s = setup(), requests: any[] = [];
+  const s = setup(), requests: any[] = [],handoffs:any[]=[];
   const app = readFileSync(new URL('../../trial-ui/app.js', import.meta.url), 'utf8');
   const source = app.slice(app.indexOf('async function createOrderForQuote('), app.indexOf('// Kiểm tồn cả báo giá'));
-  const context: any = { orderCreate: () => s.ui, api: async (path: string, method: string, body: any) => { requests.push({ path, method, body }); return { id: 'draft' }; }, toast() {}, sapoToast() {} };
+  const context: any = { handoffCreatedDocument:async(id:string,no:string)=>{handoffs.push({id,no});},orderCreate: () => s.ui, api: async (path: string, method: string, body: any) => { requests.push({ path, method, body }); return { id: 'draft' }; }, toast() {}, sapoToast() {} };
   runInNewContext(source + '\nglobalThis.create = createOrderForQuote;', context);
   const pending = context.create('q1', 'BG_001');
   await new Promise(resolve => setImmediate(resolve));
   s.fields.pushSapo!.value = 'no'; await s.submit(); assert.equal(await pending, 'draft');
   assert.equal(requests.length, 1); assert.equal(requests[0].body.pushSapo, false);
-  assert.equal(requests[0].path, '/orders'); assert.ok(!s.calls.includes('sapo'));
+  assert.equal(requests[0].path, '/orders'); assert.ok(!s.calls.includes('sapo'));assert.deepEqual(handoffs,[{id:'draft',no:'BG_001'}]);
 });
 
 

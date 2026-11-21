@@ -1,3 +1,4 @@
+import {isSupportAssignee} from '../domain/access.ts';
 import {and,desc,eq,inArray,sql} from 'drizzle-orm';
 import {alias} from 'drizzle-orm/pg-core';
 import {auditLogs} from '../../../core/db/schema.ts';
@@ -18,7 +19,7 @@ const entityType='quotation';
 /** Append-only approval events use the existing indexed, private audit journal.
  * Permission is bound to quote revision + requester; a successful save retires it by advancing revision.
  * No timestamp ordering is used to decide whether a grant exists. */
-export async function quoteEditState(db:Db,quote:Pick<Quote,'id'|'revision'|'approvalStatus'>,member:Pick<Member,'id'|'role'>){
+export async function quoteEditState(db:Db,quote:Pick<Quote,'id'|'revision'|'approvalStatus'|'supportAssigneeId'>,member:Pick<Member,'id'|'role'|'positionId'>){
  const events=quote.approvalStatus==='approved'?await db.select().from(auditLogs).where(and(eq(auditLogs.entityType,entityType),eq(auditLogs.entityId,quote.id),eq(auditLogs.module,moduleName),sql`${auditLogs.data}::jsonb->>'revision'=${String(quote.revision)}`)).orderBy(desc(auditLogs.createdAt),desc(auditLogs.id)):[];
  const decisions=new Map(events.filter(e=>['approved','rejected'].includes(e.action)).map(e=>[JSON.parse(e.data).requestId,e]));
  const requests=events.filter(e=>e.action==='requested').map(e=>{
@@ -29,7 +30,7 @@ export async function quoteEditState(db:Db,quote:Pick<Quote,'id'|'revision'|'app
  const mine=own.find(r=>r.status==='approved')??own.find(r=>r.status==='pending')??own[0]??null;
  const pending=member.role==='manager'?requests.filter(r=>r.status==='pending'):[];
  const names=pending.length?await db.select({id:employees.id,name:employees.name}).from(employees).where(inArray(employees.id,[...new Set(pending.map(r=>r.requesterId))])):[];
- return{mine,pending:pending.map(r=>({...r,requesterName:names.find(m=>m.id===r.requesterId)?.name||'Nhân viên'})),canEditApproved:member.role==='employee'&&mine?.status==='approved'};
+ return{mine,pending:pending.map(r=>({...r,requesterName:names.find(m=>m.id===r.requesterId)?.name||'Nhân viên'})),canEditApproved:member.role==='employee'&&(mine?.status==='approved'||isSupportAssignee(member,quote))};
 }
 
 /** Manager-only edit requests appear under the existing Báo giá approval group. Stale revisions disappear. */

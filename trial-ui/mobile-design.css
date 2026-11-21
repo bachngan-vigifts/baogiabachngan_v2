@@ -361,7 +361,7 @@
  #view-products #product-actions { display:none!important; }
  #view-order.crm-mobile-contract #order-actions { display:grid;grid-template-columns:repeat(3,minmax(0,1fr)); }
  #view-order.crm-mobile-contract #order-actions>[data-contract-docs] { grid-column:1/-1;min-width:0;width:100%;max-width:100%;box-sizing:border-box; }
- #view-order.crm-mobile-contract #order-actions>:not([data-contract-docs]):not([data-pack-print-for]):not([data-ship-print-for]):not(#order-history) { display:none!important; }
+ #view-order.crm-mobile-contract #order-actions>:not([data-contract-docs]):not([data-pack-print-for]):not([data-ship-print-for]):not(#order-history):not([data-sale-admin-handoff]) { display:none!important; }
  #view-order.crm-mobile-contract #order-actions>:is([data-pack-print-for],[data-ship-print-for],#order-history) { display:flex!important;min-width:0;white-space:normal;padding:8px 3px;font-size:11px;justify-content:center;text-align:center; }
  body:has(#view-order.crm-mobile-contract:not([hidden])) .chat-launcher { display:none!important; }
 }
@@ -564,6 +564,8 @@
  :is(#view-products,#view-staff,#view-inventory,#view-stock-moves,#view-transfers,#view-receivables,#view-cashbook,#view-suppliers) .page-head > div:first-child { flex:1 1 100%;min-width:0; }
  #product-list > tr[data-mobile-card-details] > .crm-card-selection { position:static!important;align-self:center; }
 }
+
+@media(max-width:850px){#view-order.crm-mobile-contract #order-actions>[data-sale-admin-handoff]{grid-column:1/-1;display:flex;justify-content:center;min-height:40px;}}
 /* Lịch giao hàng / Sản phẩm theo đơn: bảng desktop đặt min-width 1350px + cột đầu 110px (fulfilment-display.css).
    Trên điện thoại hàng đã thành thẻ → bảng phải thành khối toàn chiều ngang, nếu không thẻ bị bóp vào cột đầu (~110px). */
 @media screen and (max-width:850px){

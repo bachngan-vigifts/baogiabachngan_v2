@@ -3024,3 +3024,9 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 body:has(.reminder-launcher:not([hidden])) .main::after{content:'';display:block;flex:none;height:72px}
 @media(max-width:860px){.reminder-launcher{right:82px;bottom:calc(var(--nav-h,calc(62px + env(safe-area-inset-bottom))) + 12px)}body:has(#view-editor:not([hidden])) .reminder-launcher{bottom:calc(var(--nav-h,calc(62px + env(safe-area-inset-bottom))) + var(--savebar-h,68px) + 12px)}body:has(#view-pos:not([hidden])) .reminder-launcher{bottom:calc(var(--nav-h,calc(62px + env(safe-area-inset-bottom))) + 66px)}}
 @media(min-width:851px){body:has(#view-pos:not([hidden])) .reminder-launcher{left:88px;right:auto;bottom:18px}body:has(#view-pos:not([hidden]) .pos-show-menu) .reminder-launcher{left:328px}}
+
+/* Post-creation assignment keeps the created document separate from the handoff write. */
+.sale-admin-handoff { width:min(520px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto; }
+.sale-admin-handoff .modal-head { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.sale-admin-handoff .modal-foot { display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end; }
+.sale-admin-handoff select { width:100%;min-height:44px; }

@@ -249,7 +249,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
     if (!Number.isSafeInteger(body.revision)) throw new AppError(400, 'Thiếu phiên bản báo giá.');
     try {
       await c.env.db.transaction(async tx => {
-        const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), isManager(viewer) ? undefined : quotationPredicate(viewer, true));
+        const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)), isManager(viewer) ? undefined : quotationPredicate(viewer, true,false));
         const [row] = await tx.select({ id: quotations.id, approvalStatus: quotations.approvalStatus }).from(quotations).where(condition).limit(1);
         if (!row) throw new AppError(409, 'Không thể xoá: báo giá đã thay đổi. Vui lòng tải lại.');
         if (!isManager(viewer) && row.approvalStatus === 'approved') throw new AppError(403, 'Báo giá đã duyệt. Chỉ Manager được xoá.', 'QUOTE_APPROVED');
