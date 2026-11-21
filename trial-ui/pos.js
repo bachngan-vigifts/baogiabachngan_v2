@@ -1,3 +1,4 @@
+import { createPurchaseOrders } from './purchase-order-create.js';
 import {promotionPanel,configurePromotion} from './pos-promotions.js';
 import { createLatestRead } from './latest-read.js';
 import {setProductThumbnail,suspendProductThumbnail} from './product-images.js';
@@ -1659,7 +1660,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       submitting = true; send.disabled = true;
       try {
         if (isNcc) {
-          const result = await api('/purchase-orders', 'POST', { orders: [{ supplierId: supplier.value, warehouse: address.input.value.trim(), arrivalDate: arrival.input.value, note: reason.input.value.trim(), lines: [{ sku: p.sku, name: p.name, unit: p.unit, quantity, sources: [] }] }] });
+          const result = await createPurchaseOrders(api, [{ supplierId: supplier.value, warehouse: address.input.value.trim(), arrivalDate: arrival.input.value, note: reason.input.value.trim(), lines: [{ sku: p.sku, name: p.name, unit: p.unit, quantity, sources: [] }] }]);
           m.close(); toast('Đã lưu đơn mua nháp. Kiểm tra trước khi gửi duyệt.', 'ok'); go('#/purchases/' + encodeURIComponent(result.ids[0]));
         } else {
           const result = await api('/stock-transfers', 'POST', { fromWarehouseId: source.value, toWarehouseId: d.destination.id, reason: reason.input.value.trim(), lines: [{ sku: p.sku, qty: quantity }] });

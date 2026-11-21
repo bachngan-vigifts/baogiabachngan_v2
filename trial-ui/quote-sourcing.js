@@ -27,6 +27,11 @@ export function chooseSourcePurchase({count,skuCount,quoteNo,canPurchase}) {
 /** Source allocations become packing drafts; request buttons explicitly save related purchasing/transfer requests. */
 export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurchase=chooseSourcePurchase,isCurrent=()=>true}) {
   host.replaceChildren(el('p','muted','Đang lấy kho và nguồn hàng…'));
+  // Lập đơn mua NCC có mã thao tác (như purchase-order-create.js): cùng nội dung → cùng mã cho tới khi máy chủ xác nhận,
+  // gửi lại sau mất phản hồi thì máy chủ trả đúng bộ đơn đã tạo thay vì tạo thêm.
+  const purchaseKeys=new Map();
+  const createPurchaseOrders=async orders=>{const k=JSON.stringify(orders);if(!purchaseKeys.has(k))purchaseKeys.set(k,globalThis.crypto?.randomUUID?.()||'po-'+Date.now().toString(36)+Math.random().toString(36).slice(2,10));
+    const response=await api('/purchase-orders','POST',{clientKey:purchaseKeys.get(k),orders});purchaseKeys.delete(k);return response;};
   const data=await api('/quotes/'+encodeURIComponent(quoteId)+'/stock-plan');
   if(!isCurrent())return null;
   // Chỉ hàng Minh Long / Lock&Lock cần rà nguồn (máy chủ lọc sẵn); mã khác bỏ qua bước này và sinh đơn/HĐKT như bình thường.
@@ -93,7 +98,7 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
         if(!await confirmBox(`Lưu ${action.textContent.toLowerCase()} cho ${data.quoteNo}: ${card.line.sku} · ${num(quantity)} ${card.line.unit}?`,{title:action.textContent,ok:'Lưu yêu cầu'}))return;
         markBusy(true);let response,href,text;
         if(type.value==='transfer') {response=await api('/stock-transfers','POST',{fromWarehouseId:location.value,toWarehouseId:destination.id,reason:`Báo giá ${data.quoteNo} · ${data.customerName}`.slice(0,500),lines:[{sku:card.line.sku,qty:quantity}]});href='#/transfers/'+encodeURIComponent(response.id);text='Phiếu xin hàng · Chờ duyệt';}
-        else if(type.value==='purchase') {response=await api('/purchase-orders','POST',{orders:[{supplierId:supplier.value,warehouse:destination.name,note:'Nguồn hàng cho báo giá '+data.quoteNo,lines:[{sku:card.line.sku,name:card.line.name,unit:card.line.unit,quantity,sources:[{type:'quote',id:quoteId,quantity}]}]}]});href='#/purchases/'+encodeURIComponent(response.ids[0]);text='Đơn mua NCC · Nháp';}
+        else if(type.value==='purchase') {response=await createPurchaseOrders([{supplierId:supplier.value,warehouse:destination.name,note:'Nguồn hàng cho báo giá '+data.quoteNo,lines:[{sku:card.line.sku,name:card.line.name,unit:card.line.unit,quantity,sources:[{type:'quote',id:quoteId,quantity}]}]}]);href='#/purchases/'+encodeURIComponent(response.ids[0]);text='Đơn mua NCC · Nháp';}
         entry.saved={quantity,type:type.value,from:type.value==='transfer'?location.selectedOptions[0]?.textContent:type.value==='purchase'?supplier.selectedOptions[0]?.textContent:order.selectedOptions[0]?.textContent,href,text};
         for(const input of[type,location,supplier,order,amount,remove])input.disabled=true;warehouse.disabled=true;
         const link=el('a','',text);link.href=href;link.target='_blank';link.rel='noopener';result.replaceChildren(link);
@@ -219,7 +224,7 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
     });
     markBusy(true);
     try{
-      const response=await api('/purchase-orders','POST',{orders});
+      const response=await createPurchaseOrders(orders);
       if(!Array.isArray(response.ids)||response.ids.length!==batches.length||response.ids.some(id=>typeof id!=='string'||!id))throw Error('Máy chủ chưa trả đủ mã đơn mua.');
       batches.forEach((items,i)=>{const href='#/purchases/'+encodeURIComponent(response.ids[i]);for(const {entry,quantity} of items){entry.saved={quantity,type:'purchase',from:entry.supplier.selectedOptions[0]?.textContent,href,text:'Đơn mua NCC · Nháp'};const link=el('a','',entry.saved.text);link.href=href;link.target='_blank';link.rel='noopener';entry.result.replaceChildren(link);}});
     }catch(e){if(!e.status||e.status>=500){for(const {entry} of pending)entry.uncertain=true;error.textContent='Chưa xác định đơn mua đã lưu hay chưa. Kiểm tra danh sách theo báo giá trước khi tạo thêm.';throw Error(error.textContent);}throw e;}

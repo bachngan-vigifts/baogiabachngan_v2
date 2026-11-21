@@ -1,3 +1,4 @@
+import { createPurchaseOrders } from './purchase-order-create.js';
 import {openGoodsReturn,openSupplierRefund} from './purchase-returns.js';
 import { requiresSupplierOrderNumber, supplierOrderNumberProblem } from './supplier-order-number.js';
 import { openReceivedEarlyRequests } from './supplier-request-details.js';
@@ -1355,7 +1356,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       const orders = sups.map((x, i) => ({ supplierId: x.id, internalNo: (x.internalNo || '').trim(), lines: [...lines[i].values()], arrivalDate: arrival.value || undefined, warehouse: wh.value.trim(), note: note.value })).filter(x => x.lines.length);
       if (!orders.length) { err.textContent = 'Chưa có số lượng nào để đặt.'; return; }
       run(ok, err, async () => {
-        const r = await api('/purchase-orders', 'POST', { orders });
+        const r = await createPurchaseOrders(api, orders);
         toast(o.isManager ? `Đã tạo ${r.ids.length} đơn mua – chờ duyệt giá.` : `Đã lưu ${r.ids.length} đơn mua nháp – kiểm tra rồi bấm "Gửi duyệt".`);
         go('#/purchases/' + encodeURIComponent(r.ids[0]));
       });

@@ -25,7 +25,7 @@ import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import {
   incomingShipmentLines, incomingShipments, supplierContacts, receiptJobs, supplierOrderEvents, supplierOrderSources, supplierPaymentSchedules, supplierPayments,
-  supplierReceiptLines, supplierReceipts, suppliers,
+  supplierReceiptLines, supplierReceipts, suppliers, purchaseOrderIntents,
 } from '../schema.ts';
 import { computeOrderTotals, purchaseUnitCost } from '../domain/order-totals.ts';
 import { isIsoDate } from '../domain/quantity.ts';
@@ -235,6 +235,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   router.post('/purchase-orders', async c => {
     guard(c);
     const db = c.env.db, m = me(c), body = await readJson(c.req, 400_000), prices = canSeePrices(asActor(m));
+    // Mã thao tác (giao diện tạo một lần cho mỗi lần lập đơn, giữ nguyên khi gửi lại). Chưa có mã = giao diện cũ, chạy như trước.
+    const clientKey = body.clientKey === undefined || body.clientKey === null ? null
+      : typeof body.clientKey === 'string' && body.clientKey.length >= 8 && body.clientKey.length <= 200 ? body.clientKey : fail(400, 'Mã thao tác lập đơn không hợp lệ. Tải lại trang rồi thử lại.');
     const list = Array.isArray(body.orders) ? body.orders as Record<string, unknown>[] : [];
     if (!list.length || list.length > 20) fail(400, 'Cần từ 1 đến 20 đơn mua (mỗi nhà cung cấp một đơn).');
     const prepared = await Promise.all(list.map(async o => {
@@ -242,9 +245,27 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       return { supplier: await activeSupplier(db, o.supplierId), lines: cleanLines(o.lines, prices), internalNo: internalOrderNumber(o.internalNo), arrivalDate, note: str(o.note, 2000), warehouse: deliveryAddress(o.warehouse) };
     }));
     if (new Set(prepared.map(p => p.supplier.id)).size !== prepared.length) fail(400, 'Mỗi nhà cung cấp chỉ một đơn trong một lần lập – gộp các mã cùng NCC.');
+    // Băm nội dung đã chuẩn hoá (NCC, dòng hàng, nguồn, số lượng, giá, kho, ngày, ghi chú) để nhận ra "gửi lại đúng như cũ".
+    const requestHash = clientKey ? sha256Hex(JSON.stringify(prepared.map(p => [p.supplier.id, p.internalNo, p.arrivalDate, p.note, p.warehouse, p.lines]))) : '';
+    const earlier = async (q: Db): Promise<string[] | null> => {
+      if (!clientKey) return null;
+      const [row] = await q.select().from(purchaseOrderIntents).where(and(eq(purchaseOrderIntents.createdBy, m.id), eq(purchaseOrderIntents.clientKey, clientKey))).limit(1);
+      if (!row) return null;
+      if (row.requestHash !== requestHash) throw new AppError(409, 'Mã thao tác này đã dùng để lập đơn với nội dung khác. Tải lại trang danh sách đơn mua để kiểm tra trước khi lập tiếp.', 'INTENT_MISMATCH');
+      return JSON.parse(row.shipmentIds) as string[];
+    };
+    // Gửi lại sau khi đã lưu: trả bộ đơn cũ TRƯỚC khi kiểm nguồn (nguồn đã được chính lần lưu đó đặt hết, kiểm lại sẽ báo vượt).
+    const saved = await earlier(db);
+    if (saved) return json({ ids: saved, replayed: true });
     const needs = await checkSources(db, m, prepared.map(p => p.lines));
-    const ids: string[] = [];
+    let ids: string[] = [], replayed = false;
     await db.transaction(async tx => {
+      if (clientKey) {
+        // Hai lần gửi cùng mã chạy song song: lần sau chờ lần trước xong rồi thấy kết quả đã lưu.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'purchase-order-intent:' + m.id + ':' + clientKey}))`);
+        const again = await earlier(tx as unknown as Db);
+        if (again) { ids = again; replayed = true; return; }
+      }
       // Khoá theo bảng nguồn để hai người lập đơn cùng lúc không cùng vượt phần còn cần đặt.
       await lockSources(tx);
       await checkSources(tx as unknown as Db, m, prepared.map(p => p.lines));
@@ -257,8 +278,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
         await event(tx, id, m.id, 'create', `Tạo đơn mua ${m.role === 'manager' ? '' : 'nháp '}${ticket} (${p.lines.length} mã)`, { sources: [...new Set(p.lines.flatMap(l => l.sources.map(s => needs.get(s.type + ':' + s.id)!.no)))] });
         ids.push(id);
       }
+      if (clientKey) await tx.insert(purchaseOrderIntents).values({ createdBy: m.id, clientKey, requestHash, shipmentIds: JSON.stringify(ids), createdAt: nowIso() });
     });
-    return json({ ids }, 201);
+    return replayed ? json({ ids, replayed: true }) : json({ ids }, 201);
   }, 'business');
 
   // ---- Nhập đơn mua từ file Excel tổng đơn của NCC (Manager): đơn đã đặt thật với NCC → tạo thẳng "đã duyệt + NCC đã xác nhận".
