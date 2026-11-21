@@ -1,4 +1,6 @@
 import {test} from 'node:test';
+import {readFileSync} from 'node:fs';
+import {createTestDb} from '../helpers/postgres.ts';
 import assert from 'node:assert/strict';
 import {eq} from 'drizzle-orm';
 import {setupWarehouseOps} from '../helpers/warehouse-approval-fixture.ts';
@@ -56,4 +58,11 @@ test('HĐKT kế thừa người xử lý từ báo giá; sửa nháp được, 
 test('hai thao tác giao khác nhau cùng phiên bản: chỉ một thắng, không ghi đè lựa chọn mới',async()=>{
  const f=await fixture();const results=await Promise.all([f.call(f.path,f.emp,'POST',{assigneeId:'ops-admin',revision:0}),f.call(f.path,f.emp,'POST',{assigneeId:null,revision:0})]);
  assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);assert.equal((await f.call(f.path,f.emp)).data.revision,1);
+});
+
+test('schema guard chạy chỉ đọc và chặn thiếu FK mà không tự sửa schema',async()=>{
+ const {client}=await createTestDb(),gate=readFileSync(new URL('../../scripts/sql/assert-sale-admin-handoff.sql',import.meta.url),'utf8');
+ await client.exec('BEGIN READ ONLY;'+gate+'ROLLBACK;');
+ await client.exec('ALTER TABLE staff_quotations DROP CONSTRAINT staff_quotations_support_assignee_id_fkey');
+ await assert.rejects(client.exec(gate),/Missing Sale Admin handoff foreign key/);
 });
