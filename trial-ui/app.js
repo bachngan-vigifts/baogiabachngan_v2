@@ -122,7 +122,10 @@ import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
 import {openSelfRevenueTargets} from './revenue-target-requests.js';
+import { initMoneyInputs } from './money-input.js';
 import { quoteStockSku, manualLineDescription, manualLineNote, totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, costModeOf, parsePurchaseCost, applyPurchaseCost, syncPurchaseCost, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS, brandDiscountKey } from './quote-math.js';
+// Ô số tiền tự có dấu chấm ngăn cách khi gõ (money-input.js); code vẫn đọc số chưa định dạng từ ô gốc.
+initMoneyInputs();
 installBusyButtons(); // nút gửi API ghi tự khoá + vòng xoay đang xử lý (busy-buttons.js)
 
 const API = document.querySelector('meta[name="bn-api"]')?.content

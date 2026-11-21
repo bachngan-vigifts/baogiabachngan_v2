@@ -196,7 +196,6 @@ export function installMobileDesign(profiles){
  }
  function taskModes(){
   for(const label of document.querySelectorAll('[data-mobile-task-modes]'))label.closest('label')?.remove();
-  for(const b of document.querySelectorAll('#tasks-view [data-v]'))b.classList.toggle('crm-task-extra-tab',!['mine','created','approvals'].includes(b.dataset.v));
  }
  function workflowPages(){
   if(!media.matches){document.body.classList.remove('crm-mobile-stock-readonly');return;}
@@ -204,7 +203,7 @@ export function installMobileDesign(profiles){
   document.body.classList.toggle('crm-mobile-stock-readonly',readOnly);
   // Nút lọc/tab ("Chờ duyệt", "Đã duyệt"…) chỉ đổi danh sách đang xem, không ghi kho: không ẩn dù chữ có "duyệt".
   // Stocktake owns its exit guard: a target hash can change before the editor is allowed to close.
-  if(readOnly)for(const n of document.querySelectorAll('main .view:not([hidden]) button:not([data-mobile-navigation]),dialog[open] button:not([data-mobile-navigation]),.flow-panel:not([hidden]) button:not([data-mobile-navigation])'))if(!n.closest('.ww-page,.ww-dialog,#view-stocktake,.stocktake-ledger,.stocktake-camera,#view-inventory .inv-adjust-form')&&!n.matches('#view-inventory .btn-add')&&!n.matches('#product-pending [data-approve-product],#new-product,[data-update-product],[data-update-product-card],[data-pd-edit]')&&!n.matches('.chip,[role=tab],[aria-pressed],.chips button,.seg button')&&!n.closest('.product-admin-dialog,[data-mobile-confirmation-page]')&&/thêm|tạo|sửa|cập nhật|nhập file|đồng bộ|chốt|điều chỉnh|lưu|xóa|xoá|huỷ|hủy|duyệt/i.test(n.textContent||n.title||n.getAttribute('aria-label')||''))n.classList.add('mobile-desktop-only');
+  // Trước đây trang kho trên điện thoại chỉ để xem (ẩn nút ghi kho). Nay điện thoại có đủ nút như PC – quyền vẫn kiểm ở máy chủ.
   for(const root of document.querySelectorAll('#view-deliveries,#view-packing,#view-receivables,#view-cashbook,#view-purchases,#view-receiving,#view-suppliers'))for(const row of root.querySelectorAll('tbody>tr')){
    if(row.closest('form,.pur-lines,.ff-table,.buy-list')||row.querySelector('input,select,textarea')||row.children.length<3||row.classList.contains('crm-list-card'))continue;
    row.classList.add('crm-simple-list-row');for(const [i,td]of [...row.children].entries()){if(i<3)td.classList.add('crm-simple-main');else if(!td.classList.contains('crm-simple-more'))td.classList.add('crm-simple-more');}

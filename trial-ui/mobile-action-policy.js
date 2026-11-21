@@ -10,7 +10,9 @@ export function actionKind(node){
  // Phân trang luôn nằm tại chỗ: gom vào ⋮ thì mỗi lần sang trang phải bấm hai lần.
  if(/^(‹\s*)?(trang )?(trước|tiếp|sau)(\s*›)?$/i.test(text)||/^[‹›«»]$/.test(text))return 'inline';
  if(node.closest('dialog')&&/^(huỷ|hủy|đóng|quay lại)$/i.test(text))return 'inline';
- if(mobileRisk(text))return node.closest('dialog,#view-order,.sup-drawer,[data-mobile-confirmation-page]')?'inline':'desktop';
+ // Giao diện điện thoại có đủ nút như PC: nút rủi ro (huỷ/xoá/điều chỉnh…) không ẩn nữa, chỉ gom vào menu ⋮ "Thao tác" (thao tác vẫn hỏi xác nhận như PC).
+ if(/^(xo[áa]|xóa|bỏ) (bộ )?lọc$/i.test(text.normalize('NFC')))return 'inline';
+ if(mobileRisk(text))return node.closest('dialog,#view-order,.sup-drawer,[data-mobile-confirmation-page]')?'inline':'secondary';
  if(mobileCommit(text)||node.matches('[data-mobile-primary],[data-mobile-inline],.btn-add,.btn.primary'))return 'inline';
  if(/gọi|báo giá|hồ sơ|đóng|quay lại|xuất (excel|file)|tải file mẫu|thêm sản phẩm/i.test(text))return 'inline';
  return 'secondary';

@@ -68,7 +68,7 @@ export function initProductAdmin(deps) {
         </fieldset>
         ${editing?`<fieldset class="product-editor-carton form-grid"><legend>Quy cách thùng đóng gói (cm, kg)</legend>${[['perCarton','Số sản phẩm / thùng'],['cartonLength','Dài thùng (cm)'],['cartonWidth','Rộng thùng (cm)'],['cartonHeight','Cao thùng (cm)'],['cartonWeight','Cân nặng thùng (kg)']].map(([key,label])=>`<label>${label}<input name="${key}" type="number" min="0.001" max="1000000" step="${key==='perCarton'?'1':'any'}" inputmode="decimal" placeholder="Chưa có"></label>`).join('')}</fieldset>`:''}
         <fieldset class="product-editor-prices form-grid"><legend>Bảng giá</legend>
-        ${policies.map(p => `<label>Giá: ${esc(p.name)}${requiredPrices.includes(p) ? ' *' : ''}<input name="price:${esc(p.id)}" inputmode="numeric" ${requiredPrices.includes(p) ? 'required aria-required="true" placeholder="Bắt buộc nhập"' : 'placeholder="0"'}></label>`).join('')}
+        ${policies.map(p => `<label>Giá: ${esc(p.name)}${requiredPrices.includes(p) ? ' *' : ''}<input name="price:${esc(p.id)}" data-money="1" inputmode="numeric" ${requiredPrices.includes(p) ? 'required aria-required="true" placeholder="Bắt buộc nhập"' : 'placeholder="0"'}></label>`).join('')}
         </fieldset>
         ${editing ? '' : '<p class="muted small span-2">* Bắt buộc nhập Giá bán lẻ và Giá lẻ +VAT lớn hơn 0.</p>'}
         <p class="muted small span-2">${editing ? 'Cập nhật danh mục CRM. Nếu sản phẩm được đồng bộ từ Sapo, lần đồng bộ sau có thể ghi đè thông tin. Mã SKU được giữ nguyên.' : isManager() ? 'Bạn là Manager: sản phẩm có hiệu lực ngay sau khi lưu.' : 'Sản phẩm mới cần Manager duyệt mới dùng được khi lập báo giá.'}</p>
