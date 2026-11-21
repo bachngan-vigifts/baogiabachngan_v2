@@ -1,0 +1,23 @@
+/** Local synthetic browser cases; does not write production documents. */
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {readFile} from 'node:fs/promises';
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
+const root=new URL('../../trial-ui/',import.meta.url);
+const server=createServer(async(req,res)=>{try{if(req.url==='/'){res.setHeader('content-type','text/html');return res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><button id="launch">Tạo chứng từ</button><script type="module">import {openSaleAdminHandoff} from "/sale-admin-handoff.js";window.openHandoff=openSaleAdminHandoff;</script>');}const file=req.url.slice(1);if(!['style.css','sale-admin-handoff.js'].includes(file)){res.writeHead(404).end();return;}res.setHeader('content-type',file.endsWith('.js')?'text/javascript':'text/css');res.end(await readFile(new URL(file,root)));}catch(e){res.writeHead(500).end(e.message);}});
+await new Promise(r=>server.listen(0,'127.0.0.1',r));
+const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});
+try{
+ for(const width of [390,1280]){
+  const page=await browser.newPage({viewport:{width,height:900}});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.openHandoff);
+  const start=async(fail=false)=>page.evaluate(fail=>{window.calls=[];window.current=true;window.failed=false;window.finished=false;const api=async(path,method='GET',body)=>{window.calls.push({path,method,body});if(method==='GET')return {revision:0,assigneeId:null,canAssign:true,candidates:[{id:'sa',name:'Sale Admin thử',eligible:true}]};if(fail&&!window.failed){window.failed=true;throw Object.assign(new Error('Mất phản hồi'),{status:503});}return {assigneeId:body.assigneeId,revision:1,replayed:fail};};window.openHandoff({api,orderId:'synthetic',documentNo:'TEST',created:true,isCurrent:()=>window.current}).then(r=>{window.result=r;window.finished=true;});},fail);
+  await start();await page.getByRole('combobox').selectOption('sa');
+  for(const label of ['Xác nhận giao hồ sơ','Để sau']){const b=await page.getByRole('button',{name:label,exact:true}).boundingBox();assert(b&&b.x>=0&&b.x+b.width<=width&&b.y+b.height<=900);}
+  await page.getByRole('button',{name:'Xác nhận giao hồ sơ',exact:true}).click();await page.waitForFunction(()=>window.finished);assert.equal(await page.evaluate(()=>window.result.assigneeId),'sa');
+  await start();await page.getByRole('button',{name:'Xác nhận giao hồ sơ',exact:true}).click();await page.waitForFunction(()=>window.finished);assert.equal(await page.evaluate(()=>window.result.assigneeId),null);
+  await start(true);await page.getByRole('combobox').selectOption('sa');await page.getByRole('button',{name:'Xác nhận giao hồ sơ',exact:true}).click();await page.getByRole('button',{name:'Kiểm tra lại việc giao'}).waitFor();assert.equal(await page.getByRole('combobox').isDisabled(),true);await page.getByRole('button',{name:'Kiểm tra lại việc giao'}).click();await page.waitForFunction(()=>window.finished);
+  const calls=await page.evaluate(()=>window.calls);assert.deepEqual(calls[1].body,calls[2].body);assert(calls.every(c=>c.path.endsWith('/sale-admin-assignment')),'retry never recreates order/contract');
+  await start();await page.evaluate(()=>window.current=false);await page.getByRole('button',{name:'Xác nhận giao hồ sơ',exact:true}).click();assert.equal(await page.evaluate(()=>window.calls.length),1,'logout stops assignment');await page.getByRole('button',{name:'Để sau'}).click();
+  await page.close();console.log('PASS handoff browser '+width+'px: selected, none, lost ACK retry, logout, visible actions');
+ }
+}finally{await browser.close();await new Promise(r=>server.close(r));}

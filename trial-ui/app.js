@@ -1,3 +1,4 @@
+import {openSaleAdminHandoff} from './sale-admin-handoff.js';
 import {initQrPhoneReceiver} from './pos-qr-phone.js';
 import { fetchCatalogSnapshot } from './catalog-snapshot-loader.js';
 import {requestOrderApproval,submissionSummary} from './order-submit.js';
@@ -4504,7 +4505,7 @@ async function openOrder(id, confirmed = null) {
     + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
     + (o.status==='draft'?(canApprove()?`<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}">Duyệt ${what}</button>`:'')
       + (!o.submittedAt&&o.canEdit!==false&&(o.channel||'crm')==='crm'?`<button class="btn primary" id="order-submit">Gửi yêu cầu phê duyệt</button>`:o.submittedAt&&!canApprove()?'<span class="pill warn">Chờ Manager duyệt</span>':''):'')
-    + ((isManager() || (o.status === 'draft' && o.canEdit !== false)) && o.status !== 'cancelled' && !d.payments.some(p => !p.voidedAt) && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
+    + ((isManager() || (o.status === 'draft' && o.canEdit !== false && o.canCancel !== false)) && o.status !== 'cancelled' && !d.payments.some(p => !p.voidedAt) && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
     + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
   if (o.channel === 'pos' && o.status === 'cancelled' && can('pos.sell')) {
@@ -4533,6 +4534,7 @@ async function openOrder(id, confirmed = null) {
     b.onclick=()=>openCrmReturns({api,toast,orderId:o.id,onChanged:()=>openOrder(o.id)});$('#order-actions').append(b);
     if(new URLSearchParams(location.hash.split('?')[1]||'').get('returns')==='1'&&!document.querySelector('.pos-return-modal[open]')){const [path,query='']=location.hash.split('?'),params=new URLSearchParams(query);params.delete('returns');history.replaceState(history.state,'',path+(params.size?'?'+params:''));b.click();}
   }
+  if(o.channel==='crm'&&o.quoteId){const b=document.createElement('button');b.className='btn secondary';b.dataset.mobileInline='';b.textContent='Sale Admin xử lý';b.onclick=async()=>{const session=token;await openSaleAdminHandoff({api,orderId:o.id,documentNo:o.orderNo,isCurrent:()=>token===session});if(token===session)openOrder(o.id);};$('#order-actions').append(b);}
   if(o.channel==='pos' && can('pos.sell')){const b=document.createElement('button');b.className='btn secondary';b.textContent='Trả / Đổi / Hoàn tiền';b.onclick=async()=>{try{const opts=await api('/pos/options');await openPosReturns({api,toast,orderId:o.id,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),onChanged:()=>openOrder(o.id)});}catch(e){toast(e.message,'err');}};$('#order-actions').append(b);}
   if(o.channel==='pos'&&isManager()&&o.status!=='cancelled'){
     const b=document.createElement('button');b.type='button';b.className='btn danger-outline';b.textContent='Huỷ phiếu nhanh';
@@ -5406,7 +5408,7 @@ $('#contract-form').addEventListener('submit', async e => {
       run: (loc, push) => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}), pushSapo: push === true }) });
     if (!r) return;
     $('#contract-dialog').close(); contractTarget = null; toast('Đã lập HĐKT ' + r.contractNo); sapoToast(r.sapo); loadHolds(true); // HĐKT giữ hàng thay báo giá
-    target.done?.(); go('#/contracts/' + encodeURIComponent(r.orderId));
+    await handoffCreatedDocument(r.orderId,r.contractNo);target.done?.(); go('#/contracts/' + encodeURIComponent(r.orderId));
   } catch (ex) { err.textContent = ex.message; }finally{target.busy=false;f.querySelector('.modal-foot .btn.primary').disabled=false;}
 });
 $('#contract-dialog').addEventListener('close',()=>{contractTarget=null;});
@@ -5556,6 +5558,7 @@ async function productionTransfer(path,file){
 const productionForm=opts=>{const session=token;return createProductionFiles({api,transfer:productionTransfer,esc,...opts,isCurrent:()=>session===token&&opts.isCurrent()});};
 var orderCreateUi = null;
 const orderCreate = () => orderCreateUi ||= initOrderCreate({ api, $, todayIso, confirmBox, createProductionFiles:productionForm, createSourcing:opts=>initQuoteSourcing({api,confirmBox,...opts}), chooseSapo: (ref, opts) => sapoPush().choose(ref, opts) });
+async function handoffCreatedDocument(orderId,documentNo){const session=token;try{await openSaleAdminHandoff({api,orderId,documentNo,created:true,isCurrent:()=>token===session});}catch(ex){if(token===session)toast('Chứng từ đã tạo. Mở Sale Admin xử lý trên hồ sơ để giao sau.','err');}}
 async function createOrderForQuote(quoteId, quoteNo, debtWarningAccepted = false) {
   let existed = null;
   const post = async (fields, loc, push) => {
@@ -5570,7 +5573,7 @@ async function createOrderForQuote(quoteId, quoteNo, debtWarningAccepted = false
   const r = await orderCreate().choose({ quoteId, quoteNo }, post);
   if (!r) return null;
   if (existed) toast('Báo giá này đã có đơn hàng – mở đơn đó.');
-  else { toast('Đã sinh đơn đặt hàng.'); sapoToast(r.sapo); }
+  else { toast('Đã sinh đơn đặt hàng.'); sapoToast(r.sapo); await handoffCreatedDocument(r.id,r.orderNo||quoteNo); }
   if (typeof refreshQuoteHold === 'function' && typeof editor !== 'undefined' && editor.id) { refreshQuoteHold(editor.id); loadHolds(true); } // lập đơn từ báo giá → tự bỏ treo
   return r.id;
 }
