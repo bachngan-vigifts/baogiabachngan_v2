@@ -940,13 +940,16 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       totalEl.textContent = `Tổng (ước tính) ${money(t)} · cọc ${money(deposit)} · các đợt ${money(parts)} · còn lại ${money(Math.max(0, t - deposit - parts))}`;
     }
     f.append(totalEl, pay);
-    let to, cc;
+    let to, cc, sendNow = null;
     if (approve) {
       const r = el('section', 'sup-section'); r.append(el('h3', '', 'Gửi đơn tới NCC'), el('p', 'muted small', 'Để trống: dùng email "Nhận đơn" / "CC" trong danh bạ NCC.'));
       to = input('email', '', { placeholder: 'email nhận đơn', maxLength: 254 }); cc = input('text', '', { placeholder: 'CC, cách nhau dấu phẩy', maxLength: 2000 });
-      const gg = el('div', 'form-grid two'); gg.append(field('Gửi tới', to), field('CC', cc)); r.append(gg); f.append(r);
+      const gg = el('div', 'form-grid two'); gg.append(field('Gửi tới', to), field('CC', cc)); r.append(gg);
+      // Gộp bước: duyệt xong gửi luôn email đơn (kèm PDF) cho NCC – bỏ bước mở lại đơn bấm "Gửi email NCC".
+      sendNow = el('input'); sendNow.type = 'checkbox'; sendNow.checked = true; sendNow.setAttribute('aria-label', 'Gửi email đơn cho NCC ngay sau khi duyệt');
+      const sl = el('label', 'pur-send-now'); sl.append(sendNow, el('span', '', ' Gửi email đơn (kèm PDF) cho NCC ngay sau khi duyệt')); r.append(sl); f.append(r);
     }
-    const ok = el('button', 'btn primary', approve ? 'Duyệt đơn' : 'Lưu lịch trả'); ok.type = 'submit';
+    const ok = el('button', 'btn primary', approve ? 'Duyệt & gửi NCC' : 'Lưu lịch trả'); ok.type = 'submit';
     const priceLines = () => [...price.values()].map(({ l, p, dc, tx }) => ({ lineId: l.id, price: p.value === '' ? null : Number(p.value), purchaseDiscount: Number(dc.value || 0), taxRate: Number(tx.value || 0) }));
     // "Lưu giá nhập": lưu giá / CK / VAT đang nhập mà chưa duyệt (đơn vẫn là nháp), ở lại form để duyệt sau.
     let revision = v.revision;
@@ -958,6 +961,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       } catch (e2) { err.textContent = e2.message || 'Không lưu được giá nhập.'; }
       finally { savePrices.disabled = false; }
     }) : null;
+    if (sendNow) sendNow.addEventListener('change', () => { ok.textContent = sendNow.checked ? 'Duyệt & gửi NCC' : 'Duyệt đơn'; });
     f.append(err, savePrices ? foot(ok, savePrices) : foot(ok)); toggle();
     f.addEventListener('submit', e => {
       e.preventDefault();
@@ -968,8 +972,22 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       const problem = supplierOrderNumberProblem(v.supplier?.name, internal.value, true);
       if (problem) { err.textContent = problem; internal.focus(); return; }
       const lines = priceLines();
-      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/approve`, 'POST', { revision, lines, payment, internalNo: internal.value.trim(),
-        ...(to.value.trim() ? { supplierEmail: to.value.trim() } : {}), ...(cc.value.trim() ? { cc: cc.value.split(',').map(s => s.trim()).filter(Boolean) } : {}) }), 'Đã duyệt đơn mua.');
+      const mail = !!sendNow?.checked;
+      run(ok, err, async () => {
+        const approved = await api(`/purchase-orders/${encodeURIComponent(v.id)}/approve`, 'POST', { revision, lines, payment, internalNo: internal.value.trim(),
+          ...(to.value.trim() ? { supplierEmail: to.value.trim() } : {}), ...(cc.value.trim() ? { cc: cc.value.split(',').map(s => s.trim()).filter(Boolean) } : {}) });
+        if (!mail) { toast('Đã duyệt đơn mua.'); return approved; }
+        // Đơn đã duyệt; gửi email lỗi thì báo rõ, Manager bấm "Gửi email NCC" lại sau – không huỷ duyệt.
+        try {
+          const { purchasePdfBase64 } = await import('./purchase-pdf.js');
+          const r = await api(`/purchase-orders/${encodeURIComponent(v.id)}/send-email`, 'POST', { pdf: await purchasePdfBase64(approved) });
+          toast(`Đã duyệt và gửi email đơn tới ${r.to}${r.cc.length ? ' (CC ' + r.cc.join(', ') + ')' : ''}.`);
+          return await api(`/purchase-orders/${encodeURIComponent(v.id)}`);
+        } catch (e2) {
+          toast('Đã duyệt đơn, nhưng chưa gửi được email NCC: ' + (e2.code === 'mail_not_configured' ? 'máy chủ chưa bật gửi email.' : (e2.message || 'lỗi gửi.')) + ' Bấm "Gửi email NCC" trong đơn để gửi lại.', 'err');
+          return approved;
+        }
+      });
     });
     d.append(f);
   }
