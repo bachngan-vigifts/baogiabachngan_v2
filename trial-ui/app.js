@@ -33,7 +33,7 @@ import { createPageBack } from './page-back.js';
 import { installChatFab } from './mobile-chat-fab.js';
 import { bindForgotPassword } from './forgot-password.js';
 import { mountTurnstile } from './turnstile.js';
-import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
+import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME, readApiJson, invalidResponseError } from './api-transport.js';
 import { createRequestPriority, isBackgroundRequest } from './request-priority.js';
 import { recordApi, openSpeedDialog } from './speed-log.js';
 import { createApiRegion, createRegionCanary, requestWithRegion } from './api-region.js';
@@ -419,13 +419,19 @@ async function apiRequest(path, method = 'GET', body) {
     throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME);
   }
   const headersAt = performance.now();
-  const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
+  // Thân không đọc được (HTML, JSON cụt, rỗng) → null; xử lý bên dưới, không bao giờ trả như dữ liệu thành công.
+  const data = await readApiJson(res);
   recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing'), readMs: performance.now() - headersAt, attempts, wallMs: Date.now() - sentWall }); // menu → Đo tốc độ
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
   const sameSession = requestToken === token;
   // Phản hồi thuộc phiên trước (vừa đổi tài khoản): không trả dữ liệu cho phiên mới. Mã 409 (không phải 0) để màn hình không coi là
   // "chưa rõ đã lưu" rồi gửi lại lệnh của người trước bằng tài khoản mới.
   if (!sameSession) throw new ApiError('Phiên đăng nhập đã thay đổi; kết quả thuộc phiên trước.', 409, 'STALE_SESSION');
+  if (!data) {
+    if (res.status === 401 && requestToken && !['/login', '/activate', '/password', '/logout'].includes(path)) showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    // Lệnh ghi: có thể máy chủ đã lưu hoặc lệnh chưa tới máy chủ → "chưa rõ" như mất mạng (giữ form, giữ mã chống lặp).
+    throw invalidResponseError(method, res.status, body, (message, code, status) => new ApiError(message, status, code));
+  }
   if (sameSession && data.sessionToken !== undefined) saveToken(data.sessionToken);
   if (!res.ok) {
     if (res.status === 401 && requestToken && sameSession && !['/login', '/activate', '/password', '/logout'].includes(path)) { showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }
