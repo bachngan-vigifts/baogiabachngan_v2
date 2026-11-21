@@ -564,3 +564,11 @@
  :is(#view-products,#view-staff,#view-inventory,#view-stock-moves,#view-transfers,#view-receivables,#view-cashbook,#view-suppliers) .page-head > div:first-child { flex:1 1 100%;min-width:0; }
  #product-list > tr[data-mobile-card-details] > .crm-card-selection { position:static!important;align-self:center; }
 }
+/* Lịch giao hàng / Sản phẩm theo đơn: bảng desktop đặt min-width 1350px + cột đầu 110px (fulfilment-display.css).
+   Trên điện thoại hàng đã thành thẻ → bảng phải thành khối toàn chiều ngang, nếu không thẻ bị bóp vào cột đầu (~110px). */
+@media screen and (max-width:850px){
+ :is(#view-deliveries,#view-order-products) .ff-table:has(.crm-list-card){display:block!important;min-width:0!important;width:100%!important;table-layout:auto!important;}
+ :is(#view-deliveries,#view-order-products) .ff-table:has(.crm-list-card)>tbody{display:block;}
+ :is(#view-deliveries,#view-order-products) .ff-table:has(.crm-list-card)>thead{display:none;}
+ :is(#view-deliveries,#view-order-products) .ff-table .crm-list-card{width:auto!important;}
+}
