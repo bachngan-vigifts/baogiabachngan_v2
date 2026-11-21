@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 // @ts-ignore browser transport
-import { createApiTransport } from '../../trial-ui/api-transport.js';
+import { createApiTransport, readApiJson, invalidResponseError } from '../../trial-ui/api-transport.js';
 const {requestWithRegion}=await import(new URL('../../trial-ui/api-region.js',import.meta.url).href);
 
 const source = readFileSync(new URL('../../trial-ui/app.js', import.meta.url), 'utf8');
@@ -37,6 +37,7 @@ function harness() {
     setTimeout: (fn: () => void) => timers.push(fn),
     fetch: () => new Promise(resolve => pending.push(resolve)),
   };
+  ctx.readApiJson = readApiJson; ctx.invalidResponseError = invalidResponseError;
   ctx.apiFetch = createApiTransport({ fetcher: (...args: unknown[]) => ctx.fetch(...args) });
   ctx.saveToken = (value: string) => { ctx.token = value || ''; };
   runInNewContext(apiSource + '\n' + authSource + '\n' + logoutSource + '\nthis.api = api; this.showAuth = showAuth;', ctx);
