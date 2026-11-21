@@ -151,3 +151,26 @@ test('receipt belongs to destination staff or Manager, not the requester or glob
   assert.equal(fallback.length,1);assert.equal(fallback[0]!.assigneeId,null);assert.equal(fallback[0]!.assigneePosition,null,'chưa phân kho: giao Manager, không giao nhóm Kho chung');
   assert.equal((await s.call(`/stock-transfers/${next.id}/receive`,s.mgr,'POST',{revision:next.revision,lines:[{sku:'LY1',qty:2}]})).status,200,'Manager nhận thay không cần được phân kho');
 });
+
+test('Manager "Tạo & xuất": một lần bấm tạo + duyệt + trừ kho đi; lỗi xuất thì không tạo phiếu; bấm lại không trừ trùng', async () => {
+  const s = await setup(), body = { fromWarehouseId: 'vig', toWarehouseId: 'ml', reason: 'Bổ sung cửa hàng', lines: [{ sku: 'LY1', qty: 5 }] };
+  const key = crypto.randomUUID(), r = await s.call('/stock-transfers', s.mgr, 'POST', { ...body, clientKey: key, mode: 'ship' });
+  assert.equal(r.status, 201, JSON.stringify(r.data)); assert.equal(r.data.status, 'shipped'); assert.ok(r.data.approvedByName); assert.ok(r.data.shippedByName);
+  assert.equal(await s.bal('LY1', 'vig'), 45); assert.equal(await s.bal('LY1', 'ml'), 20, 'chưa cộng kho đến tới khi nhận');
+  const again = await s.call('/stock-transfers', s.mgr, 'POST', { ...body, clientKey: key, mode: 'ship' });
+  assert.equal(again.data.replayed, true); assert.equal(await s.bal('LY1', 'vig'), 45, 'bấm lại không trừ trùng');
+  assert.equal((await s.db.select().from(stockMoves).where(eq(stockMoves.refId, r.data.id))).length, 1);
+  const got = await s.call(`/stock-transfers/${r.data.id}/receive`, s.ml, 'POST', { revision: r.data.revision, lines: [{ sku: 'LY1', qty: 5 }] });
+  assert.equal(got.status, 200, JSON.stringify(got.data)); assert.equal(await s.bal('LY1', 'ml'), 25);
+});
+test('Manager "Tạo & duyệt" chỉ duyệt, chưa trừ kho; nhân viên không dùng được chế độ nhanh; thiếu tồn thì không tạo phiếu', async () => {
+  const s = await setup(), body = { fromWarehouseId: 'vig', toWarehouseId: 'ml', reason: 'Bổ sung', lines: [{ sku: 'LY1', qty: 5 }] };
+  const a = await s.call('/stock-transfers', s.mgr, 'POST', { ...body, mode: 'approve' });
+  assert.equal(a.status, 201); assert.equal(a.data.status, 'approved'); assert.equal(await s.bal('LY1', 'vig'), 50);
+  assert.equal((await s.call('/stock-transfers', s.ml, 'POST', { ...body, mode: 'ship' })).status, 403);
+  const before = (await s.db.select().from(stockTransfers)).length;
+  const short = await s.call('/stock-transfers', s.mgr, 'POST', { ...body, lines: [{ sku: 'LY1', qty: 999 }], mode: 'ship' });
+  assert.equal(short.status, 409); assert.equal(short.data.code, 'TRANSFER_SHORT');
+  assert.equal((await s.db.select().from(stockTransfers)).length, before, 'xuất lỗi thì không còn phiếu dở'); assert.equal(await s.bal('LY1', 'vig'), 50);
+  const plain = await s.call('/stock-transfers', s.ml, 'POST', body); assert.equal(plain.status, 201); assert.equal(plain.data.status, 'pending', 'mặc định vẫn chờ duyệt');
+});

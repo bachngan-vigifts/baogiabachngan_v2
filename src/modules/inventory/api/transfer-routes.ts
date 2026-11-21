@@ -201,9 +201,46 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
 
   router.get('/stock-transfers/:id', async c => json(await viewOf(c, c.params.id!)), 'business');
 
+  type Tx = Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
+  type View = Awaited<ReturnType<typeof viewOf>>;
+  async function approveIn(tx: Tx, m: Member, id: string, revision: unknown) {
+    const t = await lock(tx, id, ['pending'], revision), now = nowIso();
+    if (!await canDecide(tx, m, t)) fail(403, 'Sale Admin xin: chỉ NVBH Lock/Minh Long hoặc Manager duyệt; NVBH xin: chỉ Sale Admin hoặc Manager duyệt. Không tự duyệt phiếu mình xin.', 'APPROVER_ONLY');
+    await tx.update(stockTransfers).set({ status: 'approved', approvedBy: m.id, approvedAt: now, updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
+    return t;
+  }
+  async function shipIn(tx: Tx, m: Member, id: string, body: Record<string, unknown>) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
+    const t = await lock(tx, id, ['approved'], body.revision), now = nowIso();
+    if (!await canShip(tx, m, t)) fail(403, 'Chỉ nhóm Kho (quyền "Điều chuyển kho") hoặc nhân viên kho được xin bấm "Đã chuyển".');
+    const lines = await tx.select().from(stockTransferLines).where(eq(stockTransferLines.transferId, id));
+    await lockLedger(tx);
+    await assertWarehousesOpened(tx, [t.fromWarehouseId, t.toWarehouseId]);
+    const [opened] = await tx.select({ id: stockMoves.id }).from(stockMoves).where(and(eq(stockMoves.warehouseId, t.fromWarehouseId), eq(stockMoves.refType, 'opening'))).limit(1);
+    if (opened) {
+      const bal = await tx.select({ sku: stockBalances.sku, qty: stockBalances.qty }).from(stockBalances)
+        .where(and(eq(stockBalances.warehouseId, t.fromWarehouseId), inArray(stockBalances.sku, lines.map(l => l.sku)))).orderBy(asc(stockBalances.sku), asc(stockBalances.warehouseId)).for('update');
+      const short = lines.filter(l => (bal.find(b => b.sku === l.sku)?.qty ?? 0) < l.qty);
+      if (short.length) fail(409, 'Tồn kho đi không đủ: ' + short.slice(0, 5).map(l => `${l.sku} (còn ${num(bal.find(b => b.sku === l.sku)?.qty ?? 0)}, cần ${l.qty})`).join('; '), 'TRANSFER_SHORT');
+    }
+    // Không chuyển đi phần đang giữ cho đơn / báo giá ở kho đi (kiểm do module bán hàng gắn vào – inventory không import sales).
+    await stockHoldHooks.assertFree?.(tx, t.fromWarehouseId, lines, { override: body.overrideHolds, actor: m,
+      context: { module: 'inventory', entityType: 'stock_transfers', entityId: id, refNo: t.transferNo } });
+    const note = `${t.transferNo}: ${t.reason}`.slice(0, 500);
+    await postMoves(tx, m.id, lines.map(l => ({ sku: l.sku, warehouseId: t.fromWarehouseId, qty: -l.qty, kind: 'transfer_out' as const, refType: 'stock_transfer' as const, refId: id, refNo: t.transferNo, note })), now);
+    await tx.update(stockTransferLines).set({shippedQty:sql`${stockTransferLines.qty}`}).where(eq(stockTransferLines.transferId,id));
+    await tx.update(stockTransfers).set({ status: 'shipped', shippedBy: m.id, shippedAt: now, shippedNote: str(body.note, 500), updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
+    return t;
+  }
+  const notifyMove = (env: StaffEnv, v: View, t: { requestedBy: string; fromWarehouseId: string }, actorId: string) => Promise.all([moveTeam(env.db), warehouseStaff(env.db, t.fromWarehouseId)]).then(([team, staff]) => notifyMany(env, [...team, ...staff], { eventType: 'transfer_move', title: 'Kho: chuyển hàng giữa các kho', body: `${v.transferNo} · ${v.fromName} → ${v.toName} · ${v.lines.length} mã`,
+    url: `/index.html#/transfers/${v.id}`, actorId }, [t.requestedBy]));
+  const notifyShipped = (env: StaffEnv, v: View, t: { requestedBy: string; toWarehouseId: string }, actorId: string) => loadReceivers(env.db, t).then(ids => notifyMany(env, ids, { eventType: 'transfer_shipped', title: 'Hàng điều chuyển đang tới – nhận hàng',
+    body: `${v.transferNo} · ${v.fromName} → ${v.toName}. Kiểm hàng và nhập số lượng thực nhận trên phiếu.`, url: `/index.html#/transfers/${v.id}`, actorId }));
   router.post('/stock-transfers', async c => {
     const db = c.env.db, m = me(c), body = await readJson(c.req, 100_000);
     const {from,to,reason,whs,want,found}=await transferInput(c,body);
+    const mode = body.mode === 'approve' || body.mode === 'ship' ? body.mode : 'request';
+    if (mode !== 'request' && m.role !== 'manager') fail(403, 'Chỉ Manager được tạo phiếu đã duyệt / xuất kho ngay.');
     const clientKey=body.clientKey;
     if(clientKey!==undefined&&(typeof clientKey!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientKey)))fail(400,'Khóa tạo phiếu không hợp lệ.');
     const id = typeof clientKey==='string'?clientKey:crypto.randomUUID(), now = nowIso(), day = now.slice(0, 10).replaceAll('-', '');
@@ -221,9 +258,16 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       transferNo = `PCK${day}-${String((n?.n ?? 0) + 1).padStart(3, '0')}`;
       await tx.insert(stockTransfers).values({ id, transferNo, fromWarehouseId: from, toWarehouseId: to, status: 'pending', reason, requestedBy: m.id, createdAt: now, updatedAt: now });
       await tx.insert(stockTransferLines).values(found.map(p => ({ id: crypto.randomUUID(), transferId: id, sku: p.sku, name: p.name, unit: p.unit, qty: want.get(p.sku)! })));
+      // Manager lập phiếu: duyệt luôn, hoặc duyệt + xuất kho đi trong cùng giao dịch (lỗi xuất thì không tạo phiếu).
+      if (mode !== 'request') { await approveIn(tx, m, id, undefined); if (mode === 'ship') await shipIn(tx, m, id, { overrideHolds: body.overrideHolds, note: body.note }); }
     });
     await transferTasksChanged(c.env, id, m.id);
     if(replayed)return json({...await viewOf(c,id),replayed:true});
+    if (mode !== 'request') {
+      const v = await viewOf(c, id), t = { requestedBy: m.id, fromWarehouseId: from, toWarehouseId: to };
+      await background(c.env, mode === 'ship' ? notifyShipped(c.env, v, t, m.id) : notifyMove(c.env, v, t, m.id));
+      return json(v, 201);
+    }
     const wName = (x: string) => whs.find(w => w.id === x)?.name ?? '';
     const pending = { eventType: 'transfer_pending', title: 'Phiếu xin hàng chờ duyệt', body: `${m.name}: ${transferNo} · ${wName(from)} → ${wName(to)} – ${reason}`,
       url: `/index.html#/transfers/${id}`, actorId: m.id, data: { transferId: id } };
@@ -250,17 +294,11 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
   router.post('/stock-transfers/:id/approve', async c => {
     const m = me(c), id = c.params.id!, body = await readJson(c.req, 2_000);
     await viewOf(c, id);
-    const t = await c.env.db.transaction(async tx => {
-      const t = await lock(tx, id, ['pending'], body.revision), now = nowIso();
-      if (!await canDecide(tx, m, t)) fail(403, 'Sale Admin xin: chỉ NVBH Lock/Minh Long hoặc Manager duyệt; NVBH xin: chỉ Sale Admin hoặc Manager duyệt. Không tự duyệt phiếu mình xin.', 'APPROVER_ONLY');
-      await tx.update(stockTransfers).set({ status: 'approved', approvedBy: m.id, approvedAt: now, updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
-      return t;
-    });
+    const t = await c.env.db.transaction(tx => approveIn(tx, m, id, body.revision));
     await transferTasksChanged(c.env, id, m.id);
     const v = await viewOf(c, id);
     await background(c.env, notify(c.env, { eventType: 'transfer_approved', title: 'Điều chuyển kho đã được duyệt', body: `${v.transferNo} · ${v.fromName} → ${v.toName}`, url: `/index.html#/transfers/${id}`, targetMemberId: t.requestedBy, actorId: m.id }));
-    await background(c.env, Promise.all([moveTeam(c.env.db), warehouseStaff(c.env.db, t.fromWarehouseId)]).then(([team, staff]) => notifyMany(c.env, [...team, ...staff], { eventType: 'transfer_move', title: 'Kho: chuyển hàng giữa các kho', body: `${v.transferNo} · ${v.fromName} → ${v.toName} · ${v.lines.length} mã`,
-      url: `/index.html#/transfers/${id}`, actorId: m.id }, [t.requestedBy])));
+    await background(c.env, notifyMove(c.env, v, t, m.id));
     return json(v);
   }, 'business');
 
@@ -299,33 +337,10 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
   router.post('/stock-transfers/:id/ship', async c => {
     const m = me(c), id = c.params.id!, body = await readJson(c.req, 4_000);
     await viewOf(c, id);
-    const t = await c.env.db.transaction(async tx => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
-      const t = await lock(tx, id, ['approved'], body.revision), now = nowIso();
-      if (!await canShip(tx, m, t)) fail(403, 'Chỉ nhóm Kho (quyền "Điều chuyển kho") hoặc nhân viên kho được xin bấm "Đã chuyển".');
-      const lines = await tx.select().from(stockTransferLines).where(eq(stockTransferLines.transferId, id));
-      await lockLedger(tx);
-      await assertWarehousesOpened(tx, [t.fromWarehouseId, t.toWarehouseId]);
-      const [opened] = await tx.select({ id: stockMoves.id }).from(stockMoves).where(and(eq(stockMoves.warehouseId, t.fromWarehouseId), eq(stockMoves.refType, 'opening'))).limit(1);
-      if (opened) {
-        const bal = await tx.select({ sku: stockBalances.sku, qty: stockBalances.qty }).from(stockBalances)
-          .where(and(eq(stockBalances.warehouseId, t.fromWarehouseId), inArray(stockBalances.sku, lines.map(l => l.sku)))).orderBy(asc(stockBalances.sku), asc(stockBalances.warehouseId)).for('update');
-        const short = lines.filter(l => (bal.find(b => b.sku === l.sku)?.qty ?? 0) < l.qty);
-        if (short.length) fail(409, 'Tồn kho đi không đủ: ' + short.slice(0, 5).map(l => `${l.sku} (còn ${num(bal.find(b => b.sku === l.sku)?.qty ?? 0)}, cần ${l.qty})`).join('; '), 'TRANSFER_SHORT');
-      }
-      // Không chuyển đi phần đang giữ cho đơn / báo giá ở kho đi (kiểm do module bán hàng gắn vào – inventory không import sales).
-      await stockHoldHooks.assertFree?.(tx, t.fromWarehouseId, lines, { override: body.overrideHolds, actor: m,
-        context: { module: 'inventory', entityType: 'stock_transfers', entityId: id, refNo: t.transferNo } });
-      const note = `${t.transferNo}: ${t.reason}`.slice(0, 500);
-      await postMoves(tx, m.id, lines.map(l => ({ sku: l.sku, warehouseId: t.fromWarehouseId, qty: -l.qty, kind: 'transfer_out' as const, refType: 'stock_transfer' as const, refId: id, refNo: t.transferNo, note })), now);
-      await tx.update(stockTransferLines).set({shippedQty:sql`${stockTransferLines.qty}`}).where(eq(stockTransferLines.transferId,id));
-      await tx.update(stockTransfers).set({ status: 'shipped', shippedBy: m.id, shippedAt: now, shippedNote: str(body.note, 500), updatedAt: now, ...bump }).where(eq(stockTransfers.id, id));
-      return t;
-    });
+    const t = await c.env.db.transaction(tx => shipIn(tx, m, id, body));
     await transferTasksChanged(c.env, id, m.id);
     const v = await viewOf(c, id);
-    await background(c.env, loadReceivers(c.env.db, t).then(ids => notifyMany(c.env, ids, { eventType: 'transfer_shipped', title: 'Hàng điều chuyển đang tới – nhận hàng',
-      body: `${v.transferNo} · ${v.fromName} → ${v.toName}. Kiểm hàng và nhập số lượng thực nhận trên phiếu.`, url: `/index.html#/transfers/${id}`, actorId: m.id })));
+    await background(c.env, notifyShipped(c.env, v, t, m.id));
     return json(v);
   }, 'business');
 

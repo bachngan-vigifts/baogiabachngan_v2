@@ -566,3 +566,11 @@
 }
 
 @media(max-width:850px){#view-order.crm-mobile-contract #order-actions>[data-sale-admin-handoff]{grid-column:1/-1;display:flex;justify-content:center;min-height:40px;}}
+/* Lịch giao hàng / Sản phẩm theo đơn: bảng desktop đặt min-width 1350px + cột đầu 110px (fulfilment-display.css).
+   Trên điện thoại hàng đã thành thẻ → bảng phải thành khối toàn chiều ngang, nếu không thẻ bị bóp vào cột đầu (~110px). */
+@media screen and (max-width:850px){
+ :is(#view-deliveries,#view-order-products) .ff-table:has(.crm-list-card){display:block!important;min-width:0!important;width:100%!important;table-layout:auto!important;}
+ :is(#view-deliveries,#view-order-products) .ff-table:has(.crm-list-card)>tbody{display:block;}
+ :is(#view-deliveries,#view-order-products) .ff-table:has(.crm-list-card)>thead{display:none;}
+ :is(#view-deliveries,#view-order-products) .ff-table .crm-list-card{width:auto!important;}
+}

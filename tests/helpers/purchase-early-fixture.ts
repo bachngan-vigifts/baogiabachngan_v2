@@ -17,11 +17,12 @@ export async function setupEarly({files}:{files?:FileStore}={}) {
     await s.db.insert(incomingShipmentLines).values({id:'line-'+id,shipmentId:id,lineNo:1,sku,name:'Hàng '+sku,unit:'Cái',quantity:qty,promisedDate:due});
   }
   await s.db.insert(supplierOrderEvents).values({id:'import',shipmentId:'excel',actorId:'mgr',at:now,action:'import',summary:'Nhập Excel'});
-  const router=createAppRouter(),env={db:s.db,files,passwordIterations:1000,sapoOrderPush:'off' as const};
+  const router=createAppRouter(),env:{db:typeof s.db;files:typeof files;passwordIterations:number;sapoOrderPush:'off';mailer?:{apiKey:string;from:string;fetch?:typeof fetch}}={db:s.db,files,passwordIterations:1000,sapoOrderPush:'off'};
   const call=async(path:string,cookie='',method='GET',body?:unknown)=>{
     const r=await router.handle(new Request('https://trial.test/api/staff'+path,{method,headers:{origin:'https://trial.test',cookie,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)}),env);
     return {status:r.status,data:await r.json() as any,cookie:r.headers.get('set-cookie')?.split(';')[0]||''};
   };
   const cookies:Record<string,string>={};for(const id of ['mgr','sa','emp','kho','kt','ncc','ncc2','unmapped']) cookies[id]=(await call('/login','','POST',{email:id+'@x.vn',password:PASSWORD})).cookie;
-  return {...s,call,cookies};
+  /** env: test có thể gắn mailer giả (gửi email đơn NCC) mà không gọi dịch vụ thật. */
+  return {...s,call,cookies,env};
 }
