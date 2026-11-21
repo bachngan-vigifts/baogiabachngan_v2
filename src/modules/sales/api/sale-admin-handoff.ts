@@ -1,4 +1,4 @@
-import {and,asc,eq,sql,type SQL} from 'drizzle-orm';
+import {and,asc,eq,isNull,sql,type SQL} from 'drizzle-orm';
 import {AppError} from '../../../core/errors.ts';
 import {auditLogs} from '../../../core/db/schema.ts';
 import {json,readJson,type Router,type RouteContext} from '../../../core/http/router.ts';
@@ -23,7 +23,7 @@ export async function handlesQuote(db:Db,m:{id:string;role:string;positionId?:st
 const mayAssign=(m:Member,o:typeof salesOrders.$inferSelect,q:typeof quotations.$inferSelect)=>o.status!=='cancelled'&&(m.role==='manager'||m.role==='employee'&&[o.ownerId,o.createdBy,q.creatorId].includes(m.id));
 async function candidates(db:Db){
  const [people,grants]=await Promise.all([
-  db.select({id:employees.id,name:employees.name}).from(employees).where(and(eq(employees.role,'employee'),eq(employees.positionId,'sale-admin'),eq(employees.active,true))).orderBy(asc(employees.name)).limit(200),
+  db.select({id:employees.id,name:employees.name}).from(employees).where(and(eq(employees.role,'employee'),eq(employees.positionId,'sale-admin'),eq(employees.active,true),isNull(employees.deletedAt))).orderBy(asc(employees.name)).limit(200),
   db.select({permission:positionPermissions.permission}).from(positionPermissions).where(eq(positionPermissions.positionId,'sale-admin')),
  ]);
  const perms=grants.map(g=>g.permission),eligible=['page.quotes','page.orders','page.contracts'].every(key=>can({role:'employee',positionId:'sale-admin',perms},key));

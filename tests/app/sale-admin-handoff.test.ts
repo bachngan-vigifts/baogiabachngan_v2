@@ -33,6 +33,9 @@ test('chặn người nhận sai vai trò, người gọi không có quyền; gi
  const f=await fixture();
  for(const assigneeId of ['mgr','emp','ncc','missing'])assert.equal((await f.call(f.path,f.emp,'POST',{assigneeId,revision:0})).status,400);
  assert.equal((await f.call(f.path,f.sa,'POST',{assigneeId:'ops-admin',revision:0})).status,403);
+ await f.db.update(employees).set({active:false}).where(eq(employees.id,'ops-admin'));assert.equal((await f.call(f.path,f.emp,'POST',{assigneeId:'ops-admin',revision:0})).status,400);
+ await f.db.update(employees).set({active:true,deletedAt:new Date().toISOString()}).where(eq(employees.id,'ops-admin'));assert.equal((await f.call(f.path,f.emp,'POST',{assigneeId:'ops-admin',revision:0})).status,400);
+ await f.db.update(employees).set({deletedAt:null}).where(eq(employees.id,'ops-admin'));
  assert.equal((await f.call(f.path,f.emp,'POST',{assigneeId:'ops-admin',revision:0})).status,200);
  assert.equal((await f.call('/orders/'+f.oid+'/status',f.sa,'PUT',{status:'cancelled'})).status,403);
  assert.equal((await f.call('/quotes/'+f.qid+'/approve',f.sa,'POST',{revision:1})).status,403);
