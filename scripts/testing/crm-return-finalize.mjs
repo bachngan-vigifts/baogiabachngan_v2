@@ -27,7 +27,7 @@ try{
   await page.goto(origin+'/#/orders/'+id+'?returns=1');await page.locator(dlg).waitFor();await page.locator(dlg).getByRole('button',{name:'Duyệt & hoàn tất'}).waitFor();
   assert.equal(await page.locator(dlg).getByRole('button',{name:'Duyệt phiếu trả'}).count(),0,'không còn nút duyệt rời');
   await page.locator(dlg).getByRole('button',{name:'Duyệt & hoàn tất'}).click();
-  if(id==='demo'){assert.match(await page.locator(dlg).textContent(),/Nhân viên đề nghị hoàn 585\.241/);assert.equal(await page.locator(dlg).getByLabel(/Số tiền hoàn/).inputValue(),'585241');assert.equal(await page.locator(dlg).getByLabel('Mã giao dịch chuyển khoản').inputValue(),'VCB 0123456789 · Nguyễn Văn A');}
+  if(id==='demo'){assert.match(await page.locator(dlg).textContent(),/Nhân viên đề nghị hoàn 585\.241/);assert.equal(await page.locator(dlg).getByLabel(/Số tiền hoàn/).inputValue(),'585.241');assert.equal(await page.locator(dlg).getByLabel('Mã giao dịch chuyển khoản').inputValue(),'VCB 0123456789 · Nguyễn Văn A');}
   else assert.equal(await page.locator(dlg).getByLabel('Xử lý phần vượt').inputValue(),'damaged');
   await page.screenshot({path:`${out}/${width}-form.png`});
     await page.locator(dlg).locator('input[type=checkbox]').last().check();await page.locator(dlg).getByRole('button',{name:'Duyệt & hoàn tất'}).click();

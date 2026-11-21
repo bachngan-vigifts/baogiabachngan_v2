@@ -38,7 +38,7 @@ async function scan(page,mobile){return page.evaluate(({mobile})=>{
  // Nằm trong dải cuộn ngang (chip, tab, bảng cuộn) thì vuốt là thấy – không tính tràn.
  const scrollable=n=>{for(let p=n.parentElement;p&&p!==document.body;p=p.parentElement){const o=getComputedStyle(p).overflowX;if((o==='auto'||o==='scroll')&&p.scrollWidth>p.clientWidth)return true;}return false;};
  const items=nodes.filter(n=>!n.hidden&&!n.closest('[hidden]')).map(n=>{const r=n.getBoundingClientRect(),vis=shown(n);return {text:label(n),visible:vis,reachable:reachable(n),desktopOnly:n.classList.contains('mobile-desktop-only'),
-   overflow:vis&&(r.right>W+1||r.left<-1)&&!scrollable(n),clipped:vis&&n.scrollWidth>n.clientWidth+2&&getComputedStyle(n).overflow!=='visible'};});
+   overflow:vis&&(r.right>W+1||r.left<-1)&&!scrollable(n),clipped:vis&&n.scrollWidth>n.clientWidth+2&&getComputedStyle(n).overflow!=='visible'&&!/rgba\(0, 0, 0, 0\)|transparent/.test(getComputedStyle(n).color)};});
  const why=n=>{for(let p=n;p&&p!==document.body;p=p.parentElement){if(getComputedStyle(p).display==='none')return (p.tagName.toLowerCase()+(p.id?'#'+p.id:'')+'.'+[...p.classList].join('.')).slice(0,90);}return n.hidden?'[hidden]':'';};
  for(const [i,it] of items.entries())it.why=it.visible?'':why(nodes.filter(n=>!n.hidden&&!n.closest('[hidden]'))[i]);
  return {items,pageOverflow:document.documentElement.scrollWidth-innerWidth};},{mobile});}

@@ -562,5 +562,3 @@
  :is(#view-products,#view-staff,#view-inventory,#view-stock-moves,#view-transfers,#view-receivables,#view-cashbook,#view-suppliers) .page-head > div:first-child { flex:1 1 100%;min-width:0; }
  #product-list > tr[data-mobile-card-details] > .crm-card-selection { position:static!important;align-self:center; }
 }
-/* Tạo/sửa báo giá trên điện thoại: nút "‹ Báo giá" (quay lại danh sách) không bị bóp mất chữ. */
-@media screen and (max-width:850px){ #view-editor .editor-head .back{flex:none;min-width:max-content;white-space:nowrap;} }

@@ -1,0 +1,19 @@
+/*
+ * Chiều cao chung cho ô nhập, ô chọn và nút đứng cạnh nhau (thanh lọc, thanh công cụ, biểu mẫu, hộp thoại),
+ * để cùng một hàng không còn ô 46px, ô chọn 42px, nút 34px. PC 42px, điện thoại 44px (đủ cho ngón tay).
+ * Không áp cho ô trong bảng, nút nhỏ (.small), ô số lượng trong dòng (.num-input), ô to cố ý (quét mã, nhận hàng).
+ * Nạp sau cùng nên thắng quy tắc chiều cao riêng của từng trang.
+ */
+:root { --ctl-h: 42px; }
+@media (max-width: 850px) { :root { --ctl-h: 44px; } }
+
+:is(main, dialog, [popover]) :is(input:not([type=checkbox], [type=radio], [type=file], [type=range], [type=color], [type=hidden], .num-input), select:not([multiple], [size])):not(table *, .recv-field *, .lookup-bar *, .big-select, .pos-search *, .scan-field *) {
+  box-sizing: border-box; height: var(--ctl-h); min-height: var(--ctl-h); padding-block: 0;
+}
+:is(main, dialog, [popover]) :is(.btn:not(.small, .chip, .block-tall), .buy-filter-toggle):not(table *, .task-row *, .mobile-savebar *, .quote-actions *, .quote-mobile-steps *) {
+  box-sizing: border-box; min-height: var(--ctl-h);
+}
+/* Nút biểu tượng ‹ › cạnh ô tháng, nút ＋ tròn: vuông theo cùng chiều cao. */
+:is(main, dialog) :is(.md-month, .page-head, .head-actions, .toolbar) > :is(.icon-btn, .btn-add) { box-sizing: border-box; width: var(--ctl-h); height: var(--ctl-h); min-width: var(--ctl-h); }
+/* Nút nhỏ (Lọc, Xóa bộ lọc, Excel, Lưu số hoá đơn) đứng cùng hàng với ô nhập/ô chọn: cao bằng ô. */
+:is(main, dialog, [popover]) :has(> :is(input:not([type=checkbox], [type=radio], [type=hidden]), select, label)) > .btn.small:not(table *) { box-sizing: border-box; min-height: var(--ctl-h); }

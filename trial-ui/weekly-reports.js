@@ -136,7 +136,7 @@ export function initWeeklyReports({ api, root, toast, esc, go, money, user, mont
           <p class="small">Thu được trong tháng <b>${vnd(f.collected)}</b> · còn phải thu <b>${vnd(f.receivableTotals.balance)}</b>${f.receivableTotals.overdue ? ` · <span class="warn-text">quá hạn ${vnd(f.receivableTotals.overdue)}</span>` : ''}</p></div></div>
         ${H(6, 'Đánh giá & kế hoạch tháng sau', tag('input', 'tự nhập'))}
         <div class="form-grid cols-2">${mi}
-          <label>Chỉ tiêu đăng ký tháng sau (ghi chú) *<input name="nextTarget" inputmode="numeric" ${ro ? 'readonly' : ''} placeholder="VD 450.000.000" value="${esc(v.nextTarget ? Number(v.nextTarget).toLocaleString('vi-VN') : '')}"></label>
+          <label>Chỉ tiêu đăng ký tháng sau (ghi chú) *<input name="nextTarget" data-money="1" inputmode="numeric" ${ro ? 'readonly' : ''} placeholder="VD 450.000.000" value="${esc(v.nextTarget ? Number(v.nextTarget).toLocaleString('vi-VN') : '')}"></label>
           <label>Khách trọng điểm tháng sau (3–5 khách) *<input name="keyCustomers" maxlength="2000" ${ro ? 'readonly' : ''} value="${esc(v.keyCustomers || '')}"></label>
           ${ta('plan', 'Kế hoạch / chương trình tháng sau', 'Chương trình, khối khách hàng tập trung…', true)}${ta('support', 'Đề xuất / cần hỗ trợ (không bắt buộc)', '', false)}</div>
         <p class="muted small">Chỉ tiêu ở đây chỉ để ghi chú – đăng ký chỉ tiêu chính thức vẫn ở trang Chỉ tiêu.</p>`;

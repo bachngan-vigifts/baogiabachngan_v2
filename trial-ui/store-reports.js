@@ -254,7 +254,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
   }
   function inputsHtml(kind, v = {}, ro = false, facts = null) {
     const t = (name, lab, hint = '') => `<label class="span-2">${esc(lab)}<textarea name="${name}" rows="3" ${ro ? 'readonly' : ''} placeholder="${esc(hint)}">${esc(v[name] || '')}</textarea></label>`;
-    if (kind === 'daily') return `<label>Tiền mặt đã nộp ngân hàng<input name="bankDeposit" inputmode="numeric" ${ro ? 'readonly' : ''} value="${v.bankDeposit ?? ''}" placeholder="0"></label>
+    if (kind === 'daily') return `<label>Tiền mặt đã nộp ngân hàng<input name="bankDeposit" data-money="1" inputmode="numeric" ${ro ? 'readonly' : ''} value="${v.bankDeposit ?? ''}" placeholder="0"></label>
       <label>Mã giao dịch / ghi chú nộp tiền<input name="bankRef" maxlength="200" ${ro ? 'readonly' : ''} value="${esc(v.bankRef || '')}"></label>${t('cashExplanation', 'Giải trình chênh lệch tiền nộp (bắt buộc khi có chênh lệch)', 'Ví dụ: ngân hàng đóng cửa, nộp sáng mai; đã nộp nhưng chưa lập phiếu Nộp két…')}${t('incidents', 'Sự cố phát sinh', 'Khách khiếu nại, bể vỡ, thiết bị hỏng… (ghi "Không có" nếu không có)')}${t('note', 'Ghi chú')}`;
     if (kind === 'weekly') return t('orderProposal', 'Đề xuất đặt hàng (Sale-in) *', 'Mã / tên hàng, số lượng đề xuất đặt về')
       + `<label class="span-2">Số đơn mua / phiếu điều chuyển liên quan (nếu đã có)<input name="orderRefs" maxlength="500" ${ro ? 'readonly' : ''} value="${esc(v.orderRefs || '')}" placeholder="VD: DM-0123, DC-0045"></label>`
@@ -287,7 +287,7 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
       ${f.top?.length ? `<h4>Bán chạy hôm nay</h4>${factTable(['Mã', 'Sản phẩm', '>SL'], f.top.map(x => `<tr><td>${esc(x.sku)}</td><td>${esc(x.name)}</td><td class="right num">${x.qty}</td></tr>`))}` : ''}`;
     const s2 = `${dailyHtml(f).split('<h3>Các ca</h3>')[0].replace(/^[\s\S]*?(<h3>Tiền phải nộp)/, '$1').replace('<h3>Tiền phải nộp (theo Sổ quỹ)</h3>', src(true, 'Tiền phải nộp – theo Sổ quỹ'))}
       ${src(false, 'CHT nhập')}
-      <div class="form-grid cols-2"><label>Tiền mặt đã nộp ngân hàng<input name="bankDeposit" inputmode="numeric" ${ro ? 'readonly' : ''} value="${v.bankDeposit ?? ''}" placeholder="0"></label>
+      <div class="form-grid cols-2"><label>Tiền mặt đã nộp ngân hàng<input name="bankDeposit" data-money="1" inputmode="numeric" ${ro ? 'readonly' : ''} value="${v.bankDeposit ?? ''}" placeholder="0"></label>
       <label>Mã giao dịch / ghi chú nộp tiền<input name="bankRef" maxlength="200" ${ro ? 'readonly' : ''} value="${esc(v.bankRef || '')}"></label>
       ${ta('cashExplanation', 'Giải trình chênh lệch tiền nộp', 'VD: giữ lại đổi tiền lẻ, nộp sáng mai; đã nộp nhưng chưa lập phiếu Nộp két…', c.needsExplanation ? ' <b class="danger-text">*</b>' : '')}</div>
       <section class="store-files" data-files><h4>Chứng từ nộp tiền / tệp đính kèm</h4><p class="muted small">Đang tải…</p></section>`;
@@ -435,9 +435,9 @@ export function initStoreReports({ api, root, toast, esc, go, money, confirmBox,
     const s = d.settings, dlg = document.createElement('dialog'); dlg.className = 'modal';
     dlg.innerHTML = `<form novalidate><div class="modal-head"><h2>Cấu hình báo cáo · ${esc(data.store.name)}</h2><button type="button" class="icon-btn" data-x aria-label="Đóng">×</button></div>
       <div class="modal-body form-grid">
-        <label>Quỹ tiền mặt được giữ lại tại cửa hàng<input name="cashFloat" inputmode="numeric" value="${s.cashFloat ?? ''}" placeholder="Chưa cấu hình"></label>
+        <label>Quỹ tiền mặt được giữ lại tại cửa hàng<input name="cashFloat" data-money="1" inputmode="numeric" value="${s.cashFloat ?? ''}" placeholder="Chưa cấu hình"></label>
         <label>Lịch nộp tiền<select name="depositSchedule"><option value="">– Chưa cấu hình –</option>${Object.entries(d.scheduleLabels).map(([k, v]) => `<option value="${k}" ${s.depositSchedule === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
-        <label>Ngưỡng giải trình theo mã khi kiểm tồn (đồng)<input name="stocktakeExplainThreshold" inputmode="numeric" value="${s.stocktakeExplainThreshold ?? ''}" placeholder="Chưa cấu hình"></label>
+        <label>Ngưỡng giải trình theo mã khi kiểm tồn (đồng)<input name="stocktakeExplainThreshold" data-money="1" inputmode="numeric" value="${s.stocktakeExplainThreshold ?? ''}" placeholder="Chưa cấu hình"></label>
         <label class="span-2">Ngưỡng tồn tối thiểu (hàng cần bổ sung) – mỗi dòng: mã, số lượng<textarea name="rules" rows="6" placeholder="00123, 20&#10;00456, 10">${esc(rules.map(r => `${r.sku}, ${r.minQty}`).join('\n'))}</textarea></label>
         <p class="muted small span-2">Để trống = chưa cấu hình: báo cáo hiện "thiếu căn cứ", không tự coi là 0. Áp dụng cho báo cáo tính sau khi lưu; báo cáo đã nộp giữ bản chụp lúc nộp.</p>
         <p class="error span-2" data-err role="alert"></p></div>
