@@ -50,15 +50,19 @@ export function enhanceMoneyInput(input) {
   const previous = Object.fromEntries(['value','hidden','focus','select'].map(k=>[k,Object.getOwnPropertyDescriptor(input,k)]));
   const attributes = Object.fromEntries(['tabindex','aria-hidden'].map(k=>[k,input.getAttribute(k)]));
   let observer;
+  const labelListeners=[];
   const view = document.createElement('input');
   view.type = 'text'; view.inputMode = 'numeric'; view.autocomplete = 'off'; view.dataset.moneyProxy = '1';
   view.className = input.className + ' money-input'; view.style.cssText = input.style.cssText;
   for (const a of ['placeholder', 'aria-label', 'title', 'id']) if (a !== 'id' && input.hasAttribute(a)) view.setAttribute(a, input.getAttribute(a));
   const detach = () => {
-    const hidden=view.hidden;observer?.disconnect();view.remove();proxies.delete(input);
+    const hidden=view.hidden,focused=document.activeElement===view;observer?.disconnect();
+    for(const [label,listener]of labelListeners)label.removeEventListener('click',listener);
+    view.remove();proxies.delete(input);
     for(const [key,descriptor]of Object.entries(previous)){if(descriptor)Object.defineProperty(input,key,descriptor);else delete input[key];}
     HID.set.call(input,hidden);
     for(const [key,value]of Object.entries(attributes)){if(value===null)input.removeAttribute(key);else input.setAttribute(key,value);}
+    if(focused)input.focus();
   };
   const sync = () => { if(needsNative(input)){detach();return;}const raw = PROTO.get.call(input); if (document.activeElement !== view || clean(view.value) !== raw) view.value = fmt(raw); view.disabled = input.disabled; view.readOnly = input.readOnly; view.required = input.required; };
   // Code gán ô gốc → ô hiển thị cập nhật.
@@ -83,7 +87,7 @@ export function enhanceMoneyInput(input) {
   view.hidden = input.hidden;
   input.before(view); HID.set.call(input, true); input.tabIndex = -1; input.setAttribute('aria-hidden', 'true');
   Object.defineProperty(input, 'hidden', { configurable: true, get() { return view.hidden; }, set(v) { view.hidden = !!v; } });
-  for (const label of input.labels || []) if (!label.contains(view)) label.addEventListener('click', e => { if (e.target === label) { e.preventDefault(); view.focus(); } });
+  for (const label of input.labels || []) if (!label.contains(view)) {const listener=e=>{if(e.target===label){e.preventDefault();view.focus();}};label.addEventListener('click',listener);labelListeners.push([label,listener]);}
   proxies.set(input, view); sync();
   return view;
 }

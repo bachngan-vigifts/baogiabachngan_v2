@@ -54,6 +54,12 @@ try{
  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
  assert.equal(await page.getByLabel('Giá lẻ ban đầu').inputValue(),'123456.5');
  assert.equal(await page.evaluate(()=>new FormData(document.querySelector('#f')).get('initialFraction')),'123456.5');
+ await page.evaluate(()=>{const label=document.createElement('label');label.htmlFor='external';label.id='external-label';label.textContent='Giá nhãn rời';const input=document.createElement('input');input.id='external';input.type='number';input.dataset.money='1';document.querySelector('#f').append(label,input);});
+ await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+ await page.locator('#external-label').click();
+ await page.evaluate(()=>{document.querySelector('#external').value=123.5;});
+ assert.equal(await page.evaluate(()=>document.activeElement.id),'external','giữ focus khi code gán phần thập phân vào ô đang sửa');
+ await page.locator('#external-label').click();assert.equal(await page.evaluate(()=>document.activeElement.id),'external','nhãn rời phải focus ô gốc sau khi bỏ proxy');
  console.log('ok money-input '+width);await page.close();
  }
 }finally{await browser.close();server.close();}
