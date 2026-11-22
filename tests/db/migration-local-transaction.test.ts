@@ -5,7 +5,13 @@ import {createHash} from 'node:crypto';
 const dir=new URL('../../migrations/postgres/',import.meta.url);
 // Strip quoted bodies/strings before reading top-level statements: a DO $$ BEGIN ... END $$ is not a transaction.
 function unwrappedLocal(sql:string){
- const plain=sql.replace(/\$(\w*)\$[\s\S]*?\$\1\$|'(?:''|[^'])*'|"(?:""|[^"])*"|--[^\n]*|\/\*[\s\S]*?\*\//g, ' ');
+ const literals=/'(?:''|[^'])*'|"(?:""|[^"])*"|--[^\n]*|\/\*[\s\S]*?\*\//g;
+ const plain=sql.replace(/\$(\w*)\$[\s\S]*?\$\1\$|'(?:''|[^'])*'|"(?:""|[^"])*"|--[^\n]*|\/\*[\s\S]*?\*\//g,(token,tag:string|undefined)=>{
+  if(tag===undefined)return ' ';
+  // A DO block must not masquerade as BEGIN, but its SET LOCAL still requires an outer transaction.
+  const body=token.slice(tag.length+2,-tag.length-2).replace(literals,' ');
+  return /\bSET\s+LOCAL\b/i.test(body)?' SET LOCAL ':' ';
+ });
  let transaction=false,local=false;
  for(const raw of plain.split(';')){const s=raw.trim();if(/^(BEGIN|START\s+TRANSACTION)\b/i.test(s))transaction=true;
   else if(/^COMMIT\b/i.test(s))transaction=false;
@@ -23,6 +29,6 @@ test('mọi migration mới dùng SET LOCAL phải có transaction BEGIN/COMMIT 
  for(const f of legacy){assert.ok(violations.includes(f),'xem lại ngoại lệ không còn cần: '+f);assert.equal(createHash('sha256').update(readFileSync(new URL(f,dir))).digest('hex'),legacyHashes[f],'Không sửa migration cũ: '+f);}
 });
 test('guard phân biệt DO block, comment với transaction và bắt SET LOCAL đặt sai thứ tự',()=>{
- for(const sql of ["SET LOCAL lock_timeout='5s';", "-- BEGIN;\nSET LOCAL lock_timeout='5s'; COMMIT;", "DO $$ BEGIN END $$; SET LOCAL lock_timeout='5s';", "BEGIN; COMMIT; SET LOCAL lock_timeout='5s';", "BEGIN; SET LOCAL lock_timeout='5s';", "BEGIN; SET LOCAL lock_timeout='5s'; ROLLBACK;"])assert.equal(unwrappedLocal(sql),true,sql);
- for(const sql of ["BEGIN; SET LOCAL lock_timeout='5s'; COMMIT;", "-- SET LOCAL\nselect 1;", "DO $$ BEGIN RAISE NOTICE 'SET LOCAL'; END $$;"])assert.equal(unwrappedLocal(sql),false,sql);
+ for(const sql of ["SET LOCAL lock_timeout='5s';", "-- BEGIN;\nSET LOCAL lock_timeout='5s'; COMMIT;", "DO $$ BEGIN END $$; SET LOCAL lock_timeout='5s';", "BEGIN; COMMIT; SET LOCAL lock_timeout='5s';", "BEGIN; SET LOCAL lock_timeout='5s';", "BEGIN; SET LOCAL lock_timeout='5s'; ROLLBACK;", "DO $$ BEGIN SET LOCAL lock_timeout='5s'; END $$;"])assert.equal(unwrappedLocal(sql),true,sql);
+ for(const sql of ["BEGIN; SET LOCAL lock_timeout='5s'; COMMIT;", "-- SET LOCAL\nselect 1;", "DO $$ BEGIN RAISE NOTICE 'SET LOCAL'; END $$;", "BEGIN; DO $body$ BEGIN SET LOCAL lock_timeout='5s'; END $body$; COMMIT;"])assert.equal(unwrappedLocal(sql),false,sql);
 });
