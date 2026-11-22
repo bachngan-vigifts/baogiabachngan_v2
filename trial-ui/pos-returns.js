@@ -259,8 +259,7 @@ export async function openPosReturns({
         el(
           'p',
           'pos-note',
-          'Phí được duyệt hoàn: ' +
-            money(r.approvedServiceFee + r.approvedShippingFee),
+          r.status==='pending'?'Phí được hoàn: đang chờ quyết định của Manager.':'Phí được duyệt hoàn: '+money(r.approvedServiceFee+r.approvedShippingFee),
         ),
       );
       const controls = el('div', 'pos-return-actions');
@@ -280,14 +279,13 @@ export async function openPosReturns({
           el(
             'p',
             'pos-note',
-            'Yêu cầu hoàn phí dịch vụ ' +
+            'Phí đề nghị: dịch vụ ' +
               money(r.requestedServiceFee) +
               ', ship ' +
               money(r.requestedShippingFee) +
-              '. Chỉ Manager quyết định hoàn thêm phí.',
+              '. Phí được hoàn: chỉ Manager quyết định.',
           ),
-          service.box,
-          shipping.box,
+          ...(d.manager?[service.box,shipping.box]:[]),
           note.box,
           button(
             'Duyệt yêu cầu',
