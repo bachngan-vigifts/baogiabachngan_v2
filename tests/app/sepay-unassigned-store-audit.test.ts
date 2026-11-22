@@ -5,6 +5,7 @@ import {eq} from 'drizzle-orm';
 import {setupSepay} from '../helpers/sepay-fixture.ts';
 import {employees,positionPermissions} from '../../src/modules/staff/schema.ts';
 import {posRegisters,webStoreOrders} from '../../src/modules/sales/pos-schema.ts';
+import {sepayTransactions} from '../../src/modules/integrations/schema.ts';
 import {warehouses} from '../../src/modules/catalog/schema.ts';
 import {PERMISSIONS} from '../../src/modules/staff/domain/permissions.ts';
 import {canReconcileSepay} from '../../src/modules/sales/domain/sepay-page.ts';
@@ -25,6 +26,7 @@ test('audit E1: employee without store assignment and with explicit reconcile gr
   const incoming=await f.incoming('AUDIT_BANK_'+id);
   assert.equal((await f.call('/sepay/orders/web:'+id+'?transactionId='+incoming.id,f.emp)).status,200);
   const confirm=await f.confirm(incoming.id,f.choice('web:'+id),f.emp);assert.equal(confirm.status,200,JSON.stringify(confirm.data));
+  const [saved]=await f.db.select().from(sepayTransactions).where(eq(sepayTransactions.id,incoming.id));assert.equal(saved!.status,'matched');assert.equal(saved!.webOrderId,id,'thực sự gán giao dịch đúng đơn ngoài phạm vi cửa hàng');
  }
  assert.deepEqual(PERMISSIONS.find(p=>p.key==='sepay.reconcile-incoming')!.defaults,[],'no default employee cohort');
  assert.equal(canReconcileSepay({role:'manager'}),true);
