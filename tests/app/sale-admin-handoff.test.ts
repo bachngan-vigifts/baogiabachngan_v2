@@ -69,3 +69,15 @@ test('schema guard chạy chỉ đọc và chặn thiếu FK mà không tự s�
  await client.exec('ALTER TABLE staff_quotations DROP CONSTRAINT staff_quotations_support_assignee_id_fkey');
  await assert.rejects(client.exec(gate),/Missing Sale Admin handoff foreign key/);
 });
+
+test('người nhận hợp lệ ngoài 200 ứng viên đầu vẫn được giao; đủ quyền kiểm trực tiếp',async()=>{
+ const f=await fixture(),at=new Date().toISOString();
+ await f.db.insert(employees).values(Array.from({length:205},(_,i)=>({id:'candidate-'+i,email:`candidate-${i}@x.vn`,name:'AAA '+String(i).padStart(3,'0'),role:'employee' as const,positionId:'sale-admin',active:true,createdAt:at})));
+ await f.db.update(employees).set({name:'ZZZ Sale Admin'}).where(eq(employees.id,'ops-admin'));
+ const list=(await f.call(f.path,f.emp)).data.candidates;assert.equal(list.length,200);assert.equal(list.some((p:any)=>p.id==='ops-admin'),false);
+ const assigned=await f.call(f.path,f.emp,'POST',{assigneeId:'ops-admin',revision:0});assert.equal(assigned.status,200,JSON.stringify(assigned.data));
+ const {positionPermissions}=await import('../../src/modules/staff/schema.ts');const {and}=await import('drizzle-orm');
+ await f.db.delete(positionPermissions).where(and(eq(positionPermissions.positionId,'sale-admin'),eq(positionPermissions.permission,'page.contracts')));
+ // A different target at the same revision must be revalidated, not accepted through the display list.
+ assert.equal((await f.call(f.path,f.emp,'POST',{assigneeId:'candidate-204',revision:1})).status,400);
+});
