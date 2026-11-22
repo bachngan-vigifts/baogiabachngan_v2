@@ -2822,17 +2822,17 @@ function renderProducts() {
     // Giữ báo giá hiện chưa gắn theo kho: không trừ toàn bộ số treo vào từng kho riêng.
     const held = state.holdsLoaded ? heldQty(p.sku) : null;
     const stockHint = warehouse ? `${warehouse.name}: ${fmtNum(stock)}` : stockDetail(p);
-    return `<tr>
-      <td class="check-cell"><input type="checkbox" data-select="${esc(p.sku)}" ${sel ? 'checked' : ''} aria-label="Chọn ${esc(p.name)}"></td>
-      <td class="first"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${markWords(p.name, state.productQuery)}</span><small>${markWords(p.sku, state.productQuery)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
-      <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
-      <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
-      <td class="right num" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
-      <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockHint)}">${fmtNum(stock)}</td>
-      <td class="right num" data-label="Đang tạm giữ" title="Tổng số đang giữ trên tất cả kho; báo giá có thể chưa phân kho">${stockText(held)}</td>
-      <td class="right num" data-label="Hàng đang về">${incomingCell(p)}</td>
-      <td class="right num" data-label="Tồn NCC">${hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : '<span class="muted">—</span>'}</td>
-      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-mobile-inline data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${isManager() ? `<button type="button" class="btn ghost small danger-text" data-mobile-inline data-mobile-confirmation-page aria-label="Xoá khỏi danh mục ${esc(p.sku)}" data-remove-product="${esc(p.sku)}">Xoá</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
+    return `<tr class="product-compact-row">
+      <td class="check-cell product-select-cell"><input type="checkbox" data-select="${esc(p.sku)}" ${sel ? 'checked' : ''} aria-label="Chọn ${esc(p.name)}"></td>
+      <td class="first product-identity-cell"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${markWords(p.name, state.productQuery)}</span><small>${markWords(p.sku, state.productQuery)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
+      <td class="product-brand-cell" data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
+      <td class="product-unit-cell" data-label="ĐVT">${esc(p.unit) || '—'}</td>
+      <td class="right num product-price-cell" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
+      <td class="right num product-stock-cell ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockHint)}">${fmtNum(stock)}</td>
+      <td class="right num product-held-cell" data-label="Đang tạm giữ" title="Tổng số đang giữ trên tất cả kho; báo giá có thể chưa phân kho">${stockText(held)}</td>
+      <td class="right num product-incoming-cell" data-label="Hàng đang về">${incomingCell(p)}</td>
+      <td class="right num product-supplier-cell" data-label="Tồn NCC">${hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : '<span class="muted">—</span>'}</td>
+      <td class="actions-cell product-actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-mobile-inline data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${isManager() ? `<button type="button" class="btn ghost small danger-text" data-mobile-inline data-mobile-confirmation-page aria-label="Xoá khỏi danh mục ${esc(p.sku)}" data-remove-product="${esc(p.sku)}">Xoá</button>` : ''}${can('page.quotes') ? `<button type="button" class="btn primary small product-quote-action" data-mobile-inline data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
   $('#product-empty').hidden = list.length > 0;
