@@ -250,7 +250,7 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       const [old]=await tx.select().from(stockTransfers).where(eq(stockTransfers.id,id));
       if(old){
         const previous=await tx.select().from(stockTransferLines).where(eq(stockTransferLines.transferId,id));
-        if(old.createMode!==mode||old.requestedBy!==m.id||old.fromWarehouseId!==from||old.toWarehouseId!==to||old.reason!==reason||previous.length!==want.size||previous.some(l=>want.get(l.sku)!==l.qty))fail(409,'Khóa tạo phiếu đã dùng cho nội dung khác. Mở phiếu mới để gửi lại.','IDEMPOTENCY_CONFLICT');
+        if(old.createMode!==mode||old.requestedBy!==m.id||old.fromWarehouseId!==from||old.toWarehouseId!==to||old.reason!==reason||previous.length!==want.size||previous.some(l=>want.get(l.sku)!==l.qty))fail(409,'Khóa tạo phiếu đã dùng cho nội dung/chế độ khác hoặc phiếu cũ chưa có chế độ. Kiểm tra phiếu đã tạo trước khi gửi lại; không tạo phiếu mới nếu chưa rõ kết quả.','IDEMPOTENCY_CONFLICT');
         replayed=true;transferNo=old.transferNo;return;
       }
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_transfer_no'))`);
