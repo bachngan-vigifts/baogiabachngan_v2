@@ -244,8 +244,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const list = Array.isArray(body.orders) ? body.orders as Record<string, unknown>[] : [];
     if (!list.length || list.length > 20) fail(400, 'Cần từ 1 đến 20 đơn mua (mỗi nhà cung cấp một đơn).');
     const normalized = list.map(o => {
+      const supplierId=typeof o.supplierId==='string'&&o.supplierId.trim()?o.supplierId:fail(400,'Chọn nhà cung cấp.');
       const arrivalDate = o.arrivalDate ? (isIsoDate(o.arrivalDate) ? o.arrivalDate : fail(400, 'Ngày hàng về dự kiến không hợp lệ.')) : null;
-      return { supplierId:typeof o.supplierId==='string'?o.supplierId:'', lines: cleanLines(o.lines, prices), internalNo: internalOrderNumber(o.internalNo), arrivalDate, note: str(o.note, 2000), warehouse: deliveryAddress(o.warehouse) };
+      return { supplierId, lines: cleanLines(o.lines, prices), internalNo: internalOrderNumber(o.internalNo), arrivalDate, note: str(o.note, 2000), warehouse: deliveryAddress(o.warehouse) };
     });
     if (new Set(normalized.map(p => p.supplierId)).size !== normalized.length) fail(400, 'Mỗi nhà cung cấp chỉ một đơn trong một lần lập – gộp các mã cùng NCC.');
     // Băm nội dung đã chuẩn hoá (NCC, dòng hàng, nguồn, số lượng, giá, kho, ngày, ghi chú) để nhận ra "gửi lại đúng như cũ".
