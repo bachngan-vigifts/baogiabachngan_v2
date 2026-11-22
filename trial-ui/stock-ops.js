@@ -322,13 +322,20 @@ export function initTransfers({ api, root, toast, go, confirmBox, isManager = ()
     if (source?.lines?.length) for (const line of source.lines) lineRow(line.sku, line.qty, line.name, line.unit); else lineRow();
     const clientKey=crypto.randomUUID();
     // Manager lập phiếu: "Tạo & xuất kho" (duyệt + trừ kho đi ngay) hoặc "Tạo & duyệt"; nhân viên giữ "Gửi duyệt".
-    const fast=!editing&&isManager(),done={request:' – chờ duyệt.',approve:' – đã duyệt, chờ kho xuất.',ship:' – đã xuất kho, chờ kho đến nhận.'};
+    const fast=!editing&&isManager(),done={pending:' – chờ duyệt.',approved:' – đã duyệt, chờ kho xuất.',shipped:' – đã xuất kho, chờ kho đến nhận.',done:' – đã nhận hàng.',cancelled:' – đã huỷ.',rejected:' – đã từ chối.'};
     const submit=(label,cls,mode,busy)=>{const b=btn(label,cls,async()=>{
       if(posting)return;posting=true;
       const body = { ...(editing?{revision:source.revision}:{clientKey,mode}),fromWarehouseId: from.value, toWarehouseId: to.value, reason: reason.value,
         lines: [...lines.children].map(r => ({ sku: r.dataset.sku, qty: Number(r.querySelector('input[type=number]').value) })).filter(l => l.sku) };
       const release=setUpdating(b,editing?'Đang cập nhật…':busy);if(!release){posting=false;return;}let target='';
-      try { const t = await api(editing?'/stock-transfers/'+encodeURIComponent(source.id):'/stock-transfers', editing?'PUT':'POST', body); toast((editing?'Đã cập nhật phiếu ':'Đã tạo phiếu ') + t.transferNo + (editing?' – chờ duyệt.':done[mode])); formOpen=false;filter = 'open';statusFilter.value='open';syncChips();target=t.id; }
+      try { let t;
+        const send=()=>api(editing?'/stock-transfers/'+encodeURIComponent(source.id):'/stock-transfers',editing?'PUT':'POST',body);
+        try{t=await send();}catch(error){
+          if(editing||mode!=='ship'||error.code!=='HELD_FOR_OTHER_ORDER'||!isManager())throw error;
+          const reason=await ask('Lấy hàng đang giữ cho đơn khác',error.message+' – nhập lý do (ít nhất 5 ký tự)');
+          if(!reason)return;
+          body.overrideHolds={reason};t=await send();
+        } toast((editing?'Đã cập nhật phiếu ':'Đã tạo phiếu ') + t.transferNo + (done[t.status]||' – trạng thái: '+t.status)); formOpen=false;filter = 'open';statusFilter.value='open';syncChips();target=t.id; }
       catch (e) { toast(e.message, 'err'); } finally { posting=false;release(); }
       if(target)go('#/transfers/' + target);
     });return b;};

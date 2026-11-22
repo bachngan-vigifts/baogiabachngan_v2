@@ -250,13 +250,13 @@ export function registerTransferRoutes(router: Router<StaffEnv>) {
       const [old]=await tx.select().from(stockTransfers).where(eq(stockTransfers.id,id));
       if(old){
         const previous=await tx.select().from(stockTransferLines).where(eq(stockTransferLines.transferId,id));
-        if(old.requestedBy!==m.id||old.fromWarehouseId!==from||old.toWarehouseId!==to||old.reason!==reason||previous.length!==want.size||previous.some(l=>want.get(l.sku)!==l.qty))fail(409,'Khóa tạo phiếu đã dùng cho nội dung khác. Mở phiếu mới để gửi lại.','IDEMPOTENCY_CONFLICT');
+        if(old.createMode!==mode||old.requestedBy!==m.id||old.fromWarehouseId!==from||old.toWarehouseId!==to||old.reason!==reason||previous.length!==want.size||previous.some(l=>want.get(l.sku)!==l.qty))fail(409,'Khóa tạo phiếu đã dùng cho nội dung khác. Mở phiếu mới để gửi lại.','IDEMPOTENCY_CONFLICT');
         replayed=true;transferNo=old.transferNo;return;
       }
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_transfer_no'))`);
       const [n] = await tx.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(stockTransfers).where(like(stockTransfers.transferNo, `PCK${day}-%`));
       transferNo = `PCK${day}-${String((n?.n ?? 0) + 1).padStart(3, '0')}`;
-      await tx.insert(stockTransfers).values({ id, transferNo, fromWarehouseId: from, toWarehouseId: to, status: 'pending', reason, requestedBy: m.id, createdAt: now, updatedAt: now });
+      await tx.insert(stockTransfers).values({ id, transferNo, createMode:mode, fromWarehouseId: from, toWarehouseId: to, status: 'pending', reason, requestedBy: m.id, createdAt: now, updatedAt: now });
       await tx.insert(stockTransferLines).values(found.map(p => ({ id: crypto.randomUUID(), transferId: id, sku: p.sku, name: p.name, unit: p.unit, qty: want.get(p.sku)! })));
       // Manager lập phiếu: duyệt luôn, hoặc duyệt + xuất kho đi trong cùng giao dịch (lỗi xuất thì không tạo phiếu).
       if (mode !== 'request') { await approveIn(tx, m, id, undefined); if (mode === 'ship') await shipIn(tx, m, id, { overrideHolds: body.overrideHolds, note: body.note }); }
