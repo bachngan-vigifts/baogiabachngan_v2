@@ -30,7 +30,7 @@ export async function openCrmReturns({api,toast,orderId,onChanged=()=>{}}){
    const logistics=r.purpose==='redelivery',form=el('section','pos-return-card'),refunded=r.refunds.reduce((n,x)=>n+x.amount,0);
    const unproven=r.stockCheck?.unproven||[],covered=!!r.stockCheck?.basis&&unproven.every(l=>(r.stockCheck.basis.covered[l.lineId]||0)>=l.qty),needBasis=!r.receivedAt&&unproven.length&&!covered;
    // Tiền dư sau khi trừ công nợ: chưa nhận hàng thì giá trị phiếu sẽ giảm công nợ ở bước nhận.
-   const after=r.receivedAt?d.account.available:Math.max(0,r.total-d.account.balance),refundable=logistics?0:Math.max(0,Math.min(after,r.total-refunded));
+   const refundable=logistics?0:Math.max(0,Number(r.refundableAfterReceive)||0);
    form.append(el('h3','','Duyệt & hoàn tất '+r.returnNo),el('p','pos-note',[!r.approvedBy&&'Duyệt',!r.receivedAt&&'nhận hàng về kho',refundable>0&&'hoàn tiền','hoàn tất'].filter(Boolean).join(' → ')+' trong một lần bấm. Lỗi ở bước nào thì không bước nào được ghi.'));
    for(const l of r.lines)form.append(el('p','',`${l.name} (${l.sku}) · ${l.requestedQty} ${l.unit} · ${l.disposition==='restock'?'Nhập lại tồn bán':'Hàng hỏng, không cộng tồn'}`));
    let basisChoice=null,kind,refNo,bnote;
@@ -66,7 +66,7 @@ export async function openCrmReturns({api,toast,orderId,onChanged=()=>{}}){
   for(const r of d.returns){
    const logistics=r.purpose==='redelivery';const card=el('section','pos-return-card'),actions=el('div','pos-return-actions');card.append(el('h3','',r.returnNo+' · '+(states[r.status]||r.status)),el('p','pos-note',logistics?'Nhận để giao lại — không giảm công nợ, không hoàn tiền':'Trả hàng giảm công nợ — chi tiền hoàn là bước riêng'),el('p','',`Giá trị hàng ${money(r.total)} · Kho: ${d.warehouses.find(w=>w.id===r.warehouseId)?.name||r.warehouseId}`),el('p','pos-note',r.reason));
    if(r.refundRequest)card.append(el('p','pos-note',`Đề nghị hoàn: ${money(r.refundRequest.amount)} · ${r.refundRequest.method==='cash'?'Tiền mặt':'Chuyển khoản'}${r.refundRequest.reference?' · '+r.refundRequest.reference:''}${r.refundRequest.note?' · '+r.refundRequest.note:''}`));
-   for(const l of r.lines)card.append(el('p','',`${l.name} (${l.sku}) · ${l.requestedQty} ${l.unit} · ${money(l.total)} · ${l.disposition==='restock'?'Nhập lại tồn bán':'Hàng hỏng, không cộng tồn bán'}`));
+   for(const l of r.lines)card.append(el('p','',`${l.name} (${l.sku}) · ${l.requestedQty} ${l.unit} · ${money(l.total)} · ${l.plannedRestockQty!=null?`Nhập tồn ${l.plannedRestockQty}; hàng hỏng ${l.requestedQty-l.plannedRestockQty}`:l.disposition==='restock'?'Nhập lại tồn bán':'Hàng hỏng, không cộng tồn bán'}`));
    for(const [label,name,at]of [['Người lập',r.createdByName,r.createdAt],['Người duyệt',r.approvedByName,r.approvedAt],['Người nhận',r.receivedByName,r.receivedAt]])if(at)card.append(el('p','pos-note',label+': '+(name||'—')+' · '+dates(at)));
    const unproven=r.stockCheck?.unproven||[],covered=!!r.stockCheck?.basis&&unproven.every(l=>(r.stockCheck.basis.covered[l.lineId]||0)>=l.qty);
    if(unproven.length)card.append(el('p',covered?'pos-note':'error',(covered?'Căn cứ nhập lại: '+(r.stockCheck.basis.kind==='adjustment'?'phiếu '+r.stockCheck.basis.refNo:'giao trước ngày chốt tồn')+' · '+r.stockCheck.basis.note:'Nhập lại vượt lượng đã xuất có chứng từ – cần Manager chọn căn cứ: ')+(covered?'':unproven.map(l=>`${l.sku} ${l.qty}`).join('; '))));

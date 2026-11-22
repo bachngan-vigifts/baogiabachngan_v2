@@ -1,3 +1,5 @@
+import type {CrmReturnRestockSnapshot} from '../../../core/contracts/crm-return.ts';
+import {restockPortion} from '../domain/crm-return-restock.ts';
 import { and, asc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { inventoryAdjustments, stockMoves } from '../../inventory/schema.ts';
@@ -26,6 +28,8 @@ const vnDate = (iso: string) => /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : new Date
 export async function unprovenRestock(db: CashDb, orderId: string, returnId: string): Promise<UnprovenLine[]> {
   const lines = (await db.select().from(posReturnLines).where(eq(posReturnLines.returnId, returnId))).filter(l => l.disposition === 'restock' && l.requestedQty > 0);
   if (!lines.length) return [];
+  const [ret]=await db.select({snapshot:posReturns.sourceSnapshot}).from(posReturns).where(eq(posReturns.id,returnId));
+  const damaged=(JSON.parse(ret!.snapshot) as CrmReturnRestockSnapshot).unprovenDamagedByLine??{};
   const state = (await crmStockFulfilment(db, [orderId], {gross:true})).get(orderId);
   const priorRows = await db.select({ lineId: posReturnLines.orderLineId, qty: posReturnLines.restockQty, snapshot: posReturns.sourceSnapshot })
     .from(posReturnLines).innerJoin(posReturns, eq(posReturns.id, posReturnLines.returnId))
@@ -33,7 +37,7 @@ export async function unprovenRestock(db: CashDb, orderId: string, returnId: str
   const prior = new Map<string,number>();
   for(const row of priorRows){const covered=Number(JSON.parse(row.snapshot)?.stockBasis?.covered?.[row.lineId]??0);prior.set(row.lineId,(prior.get(row.lineId)??0)+Math.max(0,row.qty-(Number.isFinite(covered)?covered:0)));}
   const want = new Map<string, { sku: string; qty: number }>();
-  for (const l of lines) want.set(l.orderLineId, { sku: l.sku, qty: (want.get(l.orderLineId)?.qty ?? 0) + l.requestedQty });
+  for (const l of lines) want.set(l.orderLineId, { sku: l.sku, qty: (want.get(l.orderLineId)?.qty ?? 0) + restockPortion(l,damaged[l.orderLineId]) });
   return [...want].flatMap(([lineId, w]) => {
     const issued = state?.lines.find(x => x.lineId === lineId)?.issued ?? 0, restocked = prior.get(lineId) ?? 0;
     const qty = round(Math.min(w.qty, Math.max(0, restocked + w.qty - issued)));
