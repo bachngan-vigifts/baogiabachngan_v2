@@ -8,7 +8,8 @@ function unwrappedLocal(sql:string){
  const plain=sql.replace(/\$(\w*)\$[\s\S]*?\$\1\$|'(?:''|[^'])*'|"(?:""|[^"])*"|--[^\n]*|\/\*[\s\S]*?\*\//g, ' ');
  let transaction=false,local=false;
  for(const raw of plain.split(';')){const s=raw.trim();if(/^(BEGIN|START\s+TRANSACTION)\b/i.test(s))transaction=true;
-  else if(/^(COMMIT|ROLLBACK|END)\b/i.test(s))transaction=false;
+  else if(/^COMMIT\b/i.test(s))transaction=false;
+  else if(/^(ROLLBACK|END)\b/i.test(s)){if(local)return true;transaction=false;}
   else if(/\bSET\s+LOCAL\b/i.test(s)){if(!transaction)return true;local=true;}}
  return local&&transaction; // A transaction containing SET LOCAL must also be closed.
 }
@@ -22,6 +23,6 @@ test('mọi migration mới dùng SET LOCAL phải có transaction BEGIN/COMMIT 
  for(const f of legacy){assert.ok(violations.includes(f),'xem lại ngoại lệ không còn cần: '+f);assert.equal(createHash('sha256').update(readFileSync(new URL(f,dir))).digest('hex'),legacyHashes[f],'Không sửa migration cũ: '+f);}
 });
 test('guard phân biệt DO block, comment với transaction và bắt SET LOCAL đặt sai thứ tự',()=>{
- for(const sql of ["SET LOCAL lock_timeout='5s';", "-- BEGIN;\nSET LOCAL lock_timeout='5s'; COMMIT;", "DO $$ BEGIN END $$; SET LOCAL lock_timeout='5s';", "BEGIN; COMMIT; SET LOCAL lock_timeout='5s';", "BEGIN; SET LOCAL lock_timeout='5s';"])assert.equal(unwrappedLocal(sql),true,sql);
+ for(const sql of ["SET LOCAL lock_timeout='5s';", "-- BEGIN;\nSET LOCAL lock_timeout='5s'; COMMIT;", "DO $$ BEGIN END $$; SET LOCAL lock_timeout='5s';", "BEGIN; COMMIT; SET LOCAL lock_timeout='5s';", "BEGIN; SET LOCAL lock_timeout='5s';", "BEGIN; SET LOCAL lock_timeout='5s'; ROLLBACK;"])assert.equal(unwrappedLocal(sql),true,sql);
  for(const sql of ["BEGIN; SET LOCAL lock_timeout='5s'; COMMIT;", "-- SET LOCAL\nselect 1;", "DO $$ BEGIN RAISE NOTICE 'SET LOCAL'; END $$;"])assert.equal(unwrappedLocal(sql),false,sql);
 });
