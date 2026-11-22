@@ -118,10 +118,22 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     const people = await db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, [...new Set(account.returns.flatMap(r => [r.createdBy, r.approvedBy, r.receivedBy].filter((x): x is string => !!x)) .concat(account.refunds.map(r => r.confirmedBy)))]));
     const names = new Map(people.map(x => [x.id, x.name]));
     const reserved=await activeReservations(db,account.allocations);
-    const returns = await Promise.all(account.returns.map(async r => ({ ...r, ...({refundableAfterReceive:refundCap(o,r,account,reserved,true)} satisfies CrmReturnRefundPreview), purpose:returnPurpose(r.sourceSnapshot), refundRequest:(JSON.parse(r.sourceSnapshot) as {refundRequest?:unknown}).refundRequest??null, createdByName: names.get(r.createdBy), approvedByName: names.get(r.approvedBy || ''), receivedByName: names.get(r.receivedBy || ''),
-      // Phần nhập lại vượt lượng đã thực xuất (đơn cũ) + căn cứ Manager đã chọn – giao diện hỏi căn cứ trước khi duyệt / nhận.
-      stockCheck: active(r.status) && !r.receivedAt ? { unproven: await unprovenRestock(db, o.id, r.id), basis: (JSON.parse(r.sourceSnapshot) as { stockBasis?: StockBasis }).stockBasis ?? null } : null,
-      lines: (await db.select().from(posReturnLines).where(eq(posReturnLines.returnId, r.id))).map(l=>({...l,plannedRestockQty:restockPortion(l,(JSON.parse(r.sourceSnapshot) as CrmReturnRestockSnapshot).unprovenDamagedByLine?.[l.orderLineId])})), refunds: account.refunds.filter(x => x.returnId === r.id).map(x => ({ ...x, confirmedByName: names.get(x.confirmedBy) })) })));
+    const returns = await Promise.all(account.returns.map(async r => {
+      const snapshot=JSON.parse(r.sourceSnapshot) as CrmReturnRestockSnapshot & {stockBasis?:StockBasis;refundRequest?:unknown};
+      const lines=(await db.select().from(posReturnLines).where(eq(posReturnLines.returnId,r.id))).map(l=>{
+        try{return {...l,plannedRestockQty:restockPortion(l,snapshot.unprovenDamagedByLine?.[l.orderLineId]),restockWarning:null};}
+        catch(error){
+          // A broken split must not hide the list (or the cancel action). Write paths still validate strictly.
+          if(!(error instanceof AppError)||error.code!=='RETURN_STOCK_SPLIT_INVALID')throw error;
+          return {...l,plannedRestockQty:null,restockWarning:error.message};
+        }
+      });
+      const warning=lines.find(l=>l.restockWarning)?.restockWarning??null;
+      return {...r,...({refundableAfterReceive:refundCap(o,r,account,reserved,true)} satisfies CrmReturnRefundPreview),purpose:returnPurpose(r.sourceSnapshot),refundRequest:snapshot.refundRequest??null,
+        createdByName:names.get(r.createdBy),approvedByName:names.get(r.approvedBy||''),receivedByName:names.get(r.receivedBy||''),
+        stockCheck:active(r.status)&&!r.receivedAt?{unproven:warning?[]:await unprovenRestock(db,o.id,r.id),basis:snapshot.stockBasis??null,warning}:null,
+        lines,refunds:account.refunds.filter(x=>x.returnId===r.id).map(x=>({...x,confirmedByName:names.get(x.confirmedBy)}))};
+    }));
     let canRefund = true; try { refundAccess(c); } catch { canRefund = false; }
     const whs = (await db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses).where(eq(warehouses.kind, 'stock'))).filter(w => !scope || scope.rows.some(x => scope.scope.registers.includes(x.r.id) && x.r.warehouseId === w.id));
     const drawers = canRefund ? (await db.select({ id: cashDrawers.id, name: cashDrawers.name }).from(cashDrawers)).filter(d => !scope || scope.scope.drawers.includes(d.id)) : [];
@@ -231,8 +243,9 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
   /** Hoàn tất khi không còn tiền dư phải hoàn; trả về false nếu còn tiền phải xử lý. */
   async function completeIn(c: Ctx, tx: CashDb, o: Order, r: Ret, strict = true) {
     if (r.status !== 'processing' || !r.receivedAt) { if (strict) throw new AppError(409, 'Chưa nhận hàng trả.'); return false; }
-    const a = await returnAccount(tx, o.id), refunded = a.refunds.filter(x => x.returnId === r.id).reduce((n, x) => n + x.amount, 0);
-    if (a.available > 0 && refunded < r.total) { if (strict) throw new AppError(409, 'Còn tiền dư phải đối soát/hoàn trước khi hoàn tất.'); return false; }
+    const a = await returnAccount(tx, o.id);
+    // Applied exchange credit settles this return too. An active reservation alone is not settlement.
+    if (refundCap(o,r,a,0)>0) { if (strict) throw new AppError(409, 'Còn tiền dư phải đối soát/hoàn trước khi hoàn tất.'); return false; }
     await tx.update(posReturns).set({ status: 'completed', updatedAt: now() }).where(eq(posReturns.id, r.id)); await cashAudit(tx, who(c).id, 'crm-complete-return', 'pos-returns', r.id, { orderId: o.id }); return true;
   }
   router.post(base + '/:returnId/approve', async c => {
@@ -265,9 +278,8 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
             const lines=await tx.select().from(posReturnLines).where(eq(posReturnLines.returnId,r.id));
             for(const x of unproven){
               const line=lines.find(l=>l.orderLineId===x.lineId)!;
-              damaged[x.lineId]=(damaged[x.lineId]??0)+x.qty;
-              restockPortion(line,damaged[x.lineId]);
-              if(damaged[x.lineId]===line.requestedQty)await tx.update(posReturnLines).set({disposition:'damaged'}).where(eq(posReturnLines.id,line.id));
+              damaged[x.lineId]=Math.round(((damaged[x.lineId]??0)+Math.max(0,x.qty-(basis?.covered[x.lineId]??0)))*1000)/1000;
+              if(restockPortion(line,damaged[x.lineId])===0)await tx.update(posReturnLines).set({disposition:'damaged'}).where(eq(posReturnLines.id,line.id));
             }
             await tx.update(posReturns).set({sourceSnapshot:JSON.stringify({...snapshot,unprovenDamagedByLine:damaged}),updatedAt:now()}).where(eq(posReturns.id,r.id));
             r=await reload(tx,r.id);
