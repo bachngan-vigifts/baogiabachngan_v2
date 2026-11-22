@@ -3273,7 +3273,7 @@ $('#picker-list').addEventListener('input', e => {
 $('#picker-list').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); e.target.closest('li').querySelector('[data-add]').click(); } });
 
 // ---------------------------------------------------------------- khách hàng
-let customerId = null;
+let customerId = null, customerSaving = null;
 // Phiên bản hồ sơ đang mở + bản gốc các ô lúc mở: lưu kèm phiên bản; máy chủ báo 409 nếu người khác / Sapo đã đổi hồ sơ.
 let customerRevision = null, customerOpened = null, customerContactsOpened = null;
 const hideCustomerConflict = () => { const box = $('#customer-conflict'); box.hidden = true; box.replaceChildren(); };
@@ -3286,8 +3286,9 @@ const customerSnapshot = c => Object.fromEntries(CUSTOMER_PROFILE_FIELDS.map(([k
  * Xung đột khi lưu hồ sơ: GIỮ nội dung đang nhập, tải bản mới và gộp – ô người khác đổi mà mình không sửa thì lấy bản mới,
  * ô cả hai cùng sửa khác nhau thì liệt kê để đối chiếu (nút "Dùng bản mới" từng ô). Không tự lưu: người dùng xem rồi bấm Lưu.
  */
-async function showCustomerConflict(form) {
+async function showCustomerConflict(form, isCurrent) {
   const latestFull = await api('/customers/' + encodeURIComponent(customerId) + '?refresh=1', 'GET', undefined, { fresh: true }), latest = latestFull.customer;
+  if (!isCurrent()) return;
   const box = $('#customer-conflict');
   const base = customerOpened || {}, taken = [], clash = [];
   for (const [k, label] of CUSTOMER_PROFILE_FIELDS) {
@@ -3440,15 +3441,16 @@ function customerDetail() {
     onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, onCare: (c, a, after) => careView().openForm(a ? { activity: a } : { customer: { id: c.id, name: c.name, contact: c.contact } }, after), isManager, userId: () => state.user?.id, onReview: reviewCustomer });
 }
 let customerOpenSeq=0;
+$('#customer-dialog').addEventListener('close',()=>{customerOpenSeq++;});
 async function openCustomer(id, known) {
-  const request=++customerOpenSeq;
+  const request=++customerOpenSeq, session=token;
   try{
     // Always load the current directory before editing; a stale cached form must not replace newer contacts.
     const profile=id?await api('/customers/'+encodeURIComponent(id)+'?refresh=1'):null;
-    if(request!==customerOpenSeq)return;
+    if(request!==customerOpenSeq||session!==token)return;
     customerId=id||null;customerDuplicateCheck.reset();
     $('#customer-tax-lookup').hidden=!!id;$('#customer-tax-input').value='';$('#customer-tax-status').textContent=CUSTOMER_TAX_HINT;$('#customer-tax-status').classList.remove('warn');
-    const form=$('#customer-form');form.reset();$('#customer-error').textContent='';
+    const form=$('#customer-form');customerSaving=null;form.reset();$('#customer-error').textContent='';$('#save-customer').disabled=false;
     customerFields.setRequiredProfile(!id);
     const c=profile?.customer;
     customerRevision=c?.profileRevision??null;customerOpened=c?customerSnapshot(c):null;hideCustomerConflict();
@@ -3459,7 +3461,7 @@ async function openCustomer(id, known) {
     $('#customer-dialog-title').textContent=c?'Sửa khách hàng':'Thêm khách hàng';
     customerSteps.reset(!id);
     $('#customer-dialog').showModal();customerDuplicateCheck.refresh();
-  }catch(ex){toast(ex.message,'err');}
+  }catch(ex){if(request===customerOpenSeq&&session===token)toast(ex.message,'err');}
 }
 const customerFields = customerFormFields({requireProfile:true,paymentDays:true,contactDirectory:true,companyLabels:true,requireCode:true});
 const customerTypeOptions = bindCustomerTypeOptions({input:customerFields.controls.customerType,api});
@@ -3531,10 +3533,15 @@ $('#customer-form').addEventListener('submit', async e => {
     for(const [key,label] of [['customerCode','mã'],['taxCode','mã số thuế'],['address','địa chỉ']])if(!data[key]){err.textContent='Vui lòng nhập '+label+' khách hàng.';customerFields.controls[key].focus();return;}
   }
   if(e.target.reportValidity&&!e.target.reportValidity())return;
-  const btn = $('#save-customer'); btn.disabled = true;
+  if(customerSaving)return;
+  const saveRun={};customerSaving=saveRun;
+  const btn = $('#save-customer'), editId=customerId, editSeq=customerOpenSeq, session=token;
+  const isCurrent=()=>editId===customerId&&editSeq===customerOpenSeq&&session===token&&$('#customer-dialog').open;
+  btn.disabled = true;
   try {
     if (customerId && customerRevision !== null) data.profileRevision = customerRevision;
-    const saved = await api(customerId ? '/customers/' + encodeURIComponent(customerId) : '/customers', customerId ? 'PUT' : 'POST', data);
+    const saved = await api(editId ? '/customers/' + encodeURIComponent(editId) : '/customers', editId ? 'PUT' : 'POST', data);
+    if (!isCurrent()) return;
     hideCustomerConflict();
     $('#customer-dialog').close(); toast(customerId ? 'Đã cập nhật khách hàng.' : saved.approvalStatus === 'pending' ? `Đã thêm ${data.name} – chờ Manager duyệt.` : 'Đã thêm ' + data.name + '.');
     // Khách mới: mở luôn trang chi tiết để thêm người liên hệ / phân công; đang ở trang chi tiết thì tải lại.
@@ -3542,13 +3549,15 @@ $('#customer-form').addEventListener('submit', async e => {
     else if (location.hash.startsWith('#/customers/')) customerDetail().reload();
     await loadCustomers();
   } catch (ex) {
+    if (!isCurrent()) return;
     // Hồ sơ hoặc danh bạ người liên hệ vừa đổi: giữ nội dung đang nhập, nạp bản mới và gộp. Danh bạ cũ mà người dùng ĐÃ sửa danh bạ
     // thì giữ thông báo cũ (đóng/mở lại form) để không thay mất phần danh bạ họ vừa sửa.
     const contactEdited = ex.code === 'CUSTOMER_CONTACT_CONFLICT' && contactsSnapshot() !== customerContactsOpened;
-    if ((ex.code === 'CUSTOMER_PROFILE_CONFLICT' || ex.code === 'CUSTOMER_CONTACT_CONFLICT') && !contactEdited) { try { await showCustomerConflict(e.target); } catch (load) { err.textContent = ex.message + ' ' + (load.message || ''); } }
+    if ((ex.code === 'CUSTOMER_PROFILE_CONFLICT' || ex.code === 'CUSTOMER_CONTACT_CONFLICT') && !contactEdited) { try { await showCustomerConflict(e.target,isCurrent); } catch (load) { if(isCurrent())err.textContent = ex.message + ' ' + (load.message || ''); } }
     else err.textContent = ex.message;
   }
-  finally { btn.disabled = false; }
+  // busy-buttons may restore the disabled flag captured by an older POST. Reapply the current form's own save state.
+  finally { if(customerSaving===saveRun)customerSaving=null;btn.disabled=!!customerSaving; }
 });
 
 // ---------------------------------------------------------------- nhân viên (Manager)
