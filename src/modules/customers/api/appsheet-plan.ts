@@ -111,7 +111,7 @@ export function planAppsheet(input: AppsheetInput, state: AppsheetState, now: st
       const id = externalId('customer', input.appId, input.customersTable, row.rowId);
       if (customerMap.has(id)) throw new AppError(409, 'ID CRM nguồn đã tồn tại nhưng thiếu ánh xạ.');
       current = { id, name: '', contact: '', phone: '', email: '', address: '', taxCode: '', customerCode: '', establishedDate: null,
-        customerType: null, dataSource: 'appsheet', search: '', isRetail: false, sourceVersion: 0, syncedAt: now, createdAt: now,
+        customerType: null, dataSource: 'appsheet', search: '', isRetail: false, sourceVersion: 0, profileRevision: 0, syncedAt: now, createdAt: now,
         approvalStatus: 'pending', createdBy: actorId, approvedBy: null, approvedAt: null, depositRate: null, paymentTerm: null, creditLimit: null,
         paymentDays: null, representativeContactId: null, rejectReason: null, rejectedBy: null, rejectedAt: null };
     }

@@ -22,6 +22,8 @@ export const customers = pgTable('sapo_customers', {
   address: text('address').notNull(),
   search: text('search').notNull(),
   sourceVersion: bigint('source_version', { mode: 'number' }).notNull(),
+  /** Phiên bản hồ sơ (ô trong form Sửa khách hàng): trigger CSDL tự tăng mỗi khi ô hồ sơ đổi; PUT kèm bản cũ → 409. Khác sourceVersion (Sapo). */
+  profileRevision: bigint('profile_revision', { mode: 'number' }).notNull().default(0),
   syncedAt: text('synced_at').notNull(),
   /** Duyệt: khách nhân viên tạo chờ Manager duyệt mới dùng được (`APPROVAL_STATUSES`). Khách Sapo / dữ liệu cũ = approved. */
   approvalStatus: text('approval_status', { enum: APPROVAL_STATUSES }).notNull().default('approved'),
@@ -43,6 +45,7 @@ export const customers = pgTable('sapo_customers', {
 }, t => [index('idx_sapo_customers_name').on(t.name), index('idx_sapo_customers_approval').on(t.approvalStatus),
   index('idx_sapo_customers_representative').on(t.representativeContactId).where(sql`${t.representativeContactId} is not null`),
   enumCheck('chk_sapo_customers_approval', t.approvalStatus, APPROVAL_STATUSES),
+  check('chk_customer_profile_revision', sql`${t.profileRevision} >= 0`),
   check('chk_customer_payment_days', sql`${t.paymentDays} is null or (${t.paymentDays} >= 0 and ${t.paymentDays} <= 3650)`),
   check('chk_customer_reject_reason', sql`${t.approvalStatus} <> 'rejected' or (${t.rejectReason} is not null and length(btrim(${t.rejectReason})) > 0 and length(${t.rejectReason}) <= 1000 and ${t.rejectedBy} is not null and ${t.rejectedAt} is not null)`),
   check('chk_customer_data_source', sql`${t.dataSource} is null or ${t.dataSource} in ('appsheet', 'sapo', 'web', 'pos')`),

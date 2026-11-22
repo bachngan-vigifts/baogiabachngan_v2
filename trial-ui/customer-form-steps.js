@@ -104,5 +104,7 @@ export function initCustomerFormSteps({ dialog, form, fields, profileRoot, taxLo
       show(1);
     },
     step: () => step,
+    /** Vẽ lại tóm tắt bước 3 sau khi ô được điền lại từ bản mới (xung đột khi lưu hồ sơ). */
+    repaint() { if (step === 3) paintSummary(); },
   };
 }

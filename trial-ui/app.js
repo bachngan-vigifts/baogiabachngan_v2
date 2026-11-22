@@ -3273,7 +3273,63 @@ $('#picker-list').addEventListener('input', e => {
 $('#picker-list').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); e.target.closest('li').querySelector('[data-add]').click(); } });
 
 // ---------------------------------------------------------------- khách hàng
-let customerId = null;
+let customerId = null, customerSaving = null;
+// Phiên bản hồ sơ đang mở + bản gốc các ô lúc mở: lưu kèm phiên bản; máy chủ báo 409 nếu người khác / Sapo đã đổi hồ sơ.
+let customerRevision = null, customerOpened = null, customerContactsOpened = null;
+const hideCustomerConflict = () => { const box = $('#customer-conflict'); box.hidden = true; box.replaceChildren(); };
+const contactsSnapshot = () => { try { return JSON.stringify(customerNewProfile.read().contacts); } catch { return null; } };
+const CUSTOMER_PROFILE_FIELDS = [['name','Tên khách hàng'],['contact','Người liên hệ'],['phone','Điện thoại'],['email','Email'],['taxCode','Mã số thuế'],['customerCode','Mã khách hàng'],
+  ['customerType','Loại khách'],['address','Địa chỉ'],['depositRate','Tỷ lệ đặt cọc'],['paymentTerm','Hạn thanh toán'],['paymentDays','Số ngày công nợ'],['creditLimit','Giới hạn công nợ'],['establishedDate','Ngày thành lập']];
+const profileValue = v => v === null || v === undefined ? '' : String(v).trim();
+const customerSnapshot = c => Object.fromEntries(CUSTOMER_PROFILE_FIELDS.map(([k]) => [k, profileValue(c?.[k])]));
+/**
+ * Xung đột khi lưu hồ sơ: GIỮ nội dung đang nhập, tải bản mới và gộp – ô người khác đổi mà mình không sửa thì lấy bản mới,
+ * ô cả hai cùng sửa khác nhau thì liệt kê để đối chiếu (nút "Dùng bản mới" từng ô). Không tự lưu: người dùng xem rồi bấm Lưu.
+ */
+async function showCustomerConflict(form, isCurrent) {
+  const latestFull = await api('/customers/' + encodeURIComponent(customerId) + '?refresh=1', 'GET', undefined, { fresh: true }), latest = latestFull.customer;
+  if (!isCurrent()) return;
+  const box = $('#customer-conflict');
+  const base = customerOpened || {}, taken = [], clash = [];
+  for (const [k, label] of CUSTOMER_PROFILE_FIELDS) {
+    const input = form.elements.namedItem(k); if (!input) continue;
+    const mine = profileValue(input.value), theirs = profileValue(latest[k]);
+    if (theirs === profileValue(base[k]) || mine === theirs) continue;
+    if (mine === profileValue(base[k])) { input.value = theirs; input.dispatchEvent(new Event('input', { bubbles: true })); taken.push(label); }
+    else clash.push({ k, label, mine, theirs, input });
+  }
+  // Danh bạ người liên hệ có phiên bản riêng: người dùng chưa sửa danh bạ → nạp bản mới (giữ ô người liên hệ chính đang nhập);
+  // đã sửa danh bạ → giữ nguyên và báo mở lại form để sửa danh bạ trên bản mới.
+  const latestProfile = latestFull;
+  let contactsNote = '';
+  if (latestProfile.contactDirectoryVersion !== undefined && contactsSnapshot() !== null) {
+    if (contactsSnapshot() === customerContactsOpened) {
+      const main = customerFields.controls.contact.value;
+      customerNewProfile.reset(state.user, false, latestProfile.contactDirectory ?? [], latestProfile.contactDirectoryVersion);
+      customerFields.controls.contact.value = main; customerContactsOpened = contactsSnapshot();
+    } else contactsNote = 'Danh bạ người liên hệ bạn đang sửa cũng có thể đã đổi: nếu khi lưu báo "Người liên hệ đã được cập nhật", hãy ghi lại phần danh bạ, đóng và mở lại form.';
+  }
+  customerRevision = latest.profileRevision ?? null; customerOpened = customerSnapshot(latest);
+  customerSteps.repaint();
+  box.replaceChildren();
+  const p = document.createElement('p'); p.innerHTML = '<b>Hồ sơ vừa được người khác (hoặc đồng bộ Sapo) cập nhật.</b> Nội dung bạn nhập vẫn giữ nguyên.';
+  box.append(p);
+  if (taken.length) { const t = document.createElement('p'); t.textContent = 'Đã lấy bản mới cho các ô bạn không sửa: ' + taken.join(', ') + '.'; box.append(t); }
+  if (clash.length) {
+    const list = document.createElement('ul');
+    for (const x of clash) {
+      const li = document.createElement('li'), use = document.createElement('button');
+      li.append(Object.assign(document.createElement('b'), { textContent: x.label + ': ' }), `bản mới «${x.theirs || '(trống)'}» – bạn nhập «${x.mine || '(trống)'}» `);
+      use.type = 'button'; use.className = 'btn ghost small'; use.textContent = 'Dùng bản mới';
+      use.addEventListener('click', () => { x.input.value = x.theirs; x.input.dispatchEvent(new Event('input', { bubbles: true })); li.remove(); customerSteps.repaint(); });
+      li.append(use); list.append(li);
+    }
+    box.append(list);
+  }
+  if (contactsNote) box.append(Object.assign(document.createElement('p'), { textContent: contactsNote }));
+  const end = document.createElement('p'); end.textContent = clash.length ? 'Chọn giữ phần bạn nhập hoặc "Dùng bản mới" cho từng ô, rồi bấm Lưu lại.' : 'Kiểm tra lại rồi bấm Lưu.';
+  box.append(end); box.hidden = false; box.scrollIntoView?.({ block: 'nearest' });
+}
 /** Số báo giá của các khách trên trang đang xem (máy chủ đếm trong phạm vi người xem, so tên không dấu). */
 async function loadCustomerQuoteCounts(req) {
   const names = [...new Set((state.customers || []).map(c => c.name).filter(Boolean))];
@@ -3385,24 +3441,27 @@ function customerDetail() {
     onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, onCare: (c, a, after) => careView().openForm(a ? { activity: a } : { customer: { id: c.id, name: c.name, contact: c.contact } }, after), isManager, userId: () => state.user?.id, onReview: reviewCustomer });
 }
 let customerOpenSeq=0;
+$('#customer-dialog').addEventListener('close',()=>{customerOpenSeq++;});
 async function openCustomer(id, known) {
-  const request=++customerOpenSeq;
+  const request=++customerOpenSeq, session=token;
   try{
     // Always load the current directory before editing; a stale cached form must not replace newer contacts.
     const profile=id?await api('/customers/'+encodeURIComponent(id)+'?refresh=1'):null;
-    if(request!==customerOpenSeq)return;
+    if(request!==customerOpenSeq||session!==token)return;
     customerId=id||null;customerDuplicateCheck.reset();
     $('#customer-tax-lookup').hidden=!!id;$('#customer-tax-input').value='';$('#customer-tax-status').textContent=CUSTOMER_TAX_HINT;$('#customer-tax-status').classList.remove('warn');
-    const form=$('#customer-form');form.reset();$('#customer-error').textContent='';
+    const form=$('#customer-form');customerSaving=null;form.reset();$('#customer-error').textContent='';$('#save-customer').disabled=false;
     customerFields.setRequiredProfile(!id);
     const c=profile?.customer;
+    customerRevision=c?.profileRevision??null;customerOpened=c?customerSnapshot(c):null;hideCustomerConflict();
     if(c)for(const k of ['name','contact','phone','email','taxCode','customerCode','customerType','address','depositRate','paymentTerm','paymentDays','creditLimit','establishedDate'])form.elements.namedItem(k).value=c[k]??'';
     customerNewProfile.reset(state.user,!id,profile?.contactDirectory??[],profile?.contactDirectoryVersion);
+    customerContactsOpened=id?contactsSnapshot():null;
     customerFields.refreshAnniversary();customerTypeOptions.refresh();
     $('#customer-dialog-title').textContent=c?'Sửa khách hàng':'Thêm khách hàng';
     customerSteps.reset(!id);
     $('#customer-dialog').showModal();customerDuplicateCheck.refresh();
-  }catch(ex){toast(ex.message,'err');}
+  }catch(ex){if(request===customerOpenSeq&&session===token)toast(ex.message,'err');}
 }
 const customerFields = customerFormFields({requireProfile:true,paymentDays:true,contactDirectory:true,companyLabels:true,requireCode:true});
 const customerTypeOptions = bindCustomerTypeOptions({input:customerFields.controls.customerType,api});
@@ -3474,16 +3533,31 @@ $('#customer-form').addEventListener('submit', async e => {
     for(const [key,label] of [['customerCode','mã'],['taxCode','mã số thuế'],['address','địa chỉ']])if(!data[key]){err.textContent='Vui lòng nhập '+label+' khách hàng.';customerFields.controls[key].focus();return;}
   }
   if(e.target.reportValidity&&!e.target.reportValidity())return;
-  const btn = $('#save-customer'); btn.disabled = true;
+  if(customerSaving)return;
+  const saveRun={};customerSaving=saveRun;
+  const btn = $('#save-customer'), editId=customerId, editSeq=customerOpenSeq, session=token;
+  const isCurrent=()=>editId===customerId&&editSeq===customerOpenSeq&&session===token&&$('#customer-dialog').open;
+  btn.disabled = true;
   try {
-    const saved = await api(customerId ? '/customers/' + encodeURIComponent(customerId) : '/customers', customerId ? 'PUT' : 'POST', data);
+    if (customerId && customerRevision !== null) data.profileRevision = customerRevision;
+    const saved = await api(editId ? '/customers/' + encodeURIComponent(editId) : '/customers', editId ? 'PUT' : 'POST', data);
+    if (!isCurrent()) return;
+    hideCustomerConflict();
     $('#customer-dialog').close(); toast(customerId ? 'Đã cập nhật khách hàng.' : saved.approvalStatus === 'pending' ? `Đã thêm ${data.name} – chờ Manager duyệt.` : 'Đã thêm ' + data.name + '.');
     // Khách mới: mở luôn trang chi tiết để thêm người liên hệ / phân công; đang ở trang chi tiết thì tải lại.
     if (!customerId) go('#/customers/' + encodeURIComponent(saved.id));
     else if (location.hash.startsWith('#/customers/')) customerDetail().reload();
     await loadCustomers();
-  } catch (ex) { err.textContent = ex.message; }
-  finally { btn.disabled = false; }
+  } catch (ex) {
+    if (!isCurrent()) return;
+    // Hồ sơ hoặc danh bạ người liên hệ vừa đổi: giữ nội dung đang nhập, nạp bản mới và gộp. Danh bạ cũ mà người dùng ĐÃ sửa danh bạ
+    // thì giữ thông báo cũ (đóng/mở lại form) để không thay mất phần danh bạ họ vừa sửa.
+    const contactEdited = ex.code === 'CUSTOMER_CONTACT_CONFLICT' && contactsSnapshot() !== customerContactsOpened;
+    if ((ex.code === 'CUSTOMER_PROFILE_CONFLICT' || ex.code === 'CUSTOMER_CONTACT_CONFLICT') && !contactEdited) { try { await showCustomerConflict(e.target,isCurrent); } catch (load) { if(isCurrent())err.textContent = ex.message + ' ' + (load.message || ''); } }
+    else err.textContent = ex.message;
+  }
+  // busy-buttons may restore the disabled flag captured by an older POST. Reapply the current form's own save state.
+  finally { if(customerSaving===saveRun)customerSaving=null;btn.disabled=!!customerSaving; }
 });
 
 // ---------------------------------------------------------------- nhân viên (Manager)

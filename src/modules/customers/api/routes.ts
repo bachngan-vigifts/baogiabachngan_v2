@@ -288,6 +288,12 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       fields.contact = primary.name;
     }
     if (update) await requireProfileEdit(c.env.db, id, me);
+    // Phiên bản hồ sơ người dùng đang mở (GET /customers/:id → customer.profileRevision). Có → so trong transaction, khác → 409.
+    // Chưa gửi (giao diện cũ trong lúc triển khai) → lưu như trước.
+    const openedRevision = !update || body.profileRevision === undefined ? undefined
+      : Number.isSafeInteger(body.profileRevision) && (body.profileRevision as number) >= 0 ? body.profileRevision as number
+      : (() => { throw new AppError(400, 'Phiên bản hồ sơ khách không hợp lệ. Tải lại trang rồi thử lại.'); })();
+    let savedRevision: number | undefined;
     // Người đại diện: khi tạo mới dùng `isRepresentative` trong `contacts`; khi sửa dùng PUT /customers/:id/representative
     // (không đi qua đây vì PUT này ghi đè mọi ô thông tin bằng giá trị gửi lên).
     const row = { ...fields, ...terms, search: fold(Object.values(fields).join(' ')), sourceVersion: 0, syncedAt: now };
@@ -314,7 +320,11 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
           const directory=await saveContactDirectory(tx as any,previous!,body.contacts,body.contactDirectoryVersion,me.id,now);
           Object.assign(row,directory,{search:fold(Object.values({...fields,contact:directory.contact}).join(' '))});
         }
-        await tx.update(customers).set(row).where(eq(customers.id, id));
+        // So phiên bản hồ sơ sau bước danh bạ (danh bạ cũ báo lỗi riêng CUSTOMER_CONTACT_CONFLICT); lỗi ở đây huỷ cả transaction.
+        if (openedRevision !== undefined && previous!.profileRevision !== openedRevision)
+          throw new AppError(409, 'Hồ sơ khách vừa được người khác (hoặc đồng bộ Sapo) cập nhật sau khi bạn mở. Nội dung bạn nhập vẫn giữ trên form – đối chiếu bản mới rồi lưu lại.', 'CUSTOMER_PROFILE_CONFLICT');
+        const [saved] = await tx.update(customers).set(row).where(eq(customers.id, id)).returning({ profileRevision: customers.profileRevision });
+        savedRevision = saved?.profileRevision;
         return;
       }
       await validateNewCustomerShares(tx,sharedIds);
@@ -334,7 +344,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       console.error('customer_save_transaction_failed');
       throw new AppError(500, 'Không lưu được hồ sơ khách hàng. Các thay đổi trong lần lưu này đã được hủy.', 'CUSTOMER_SAVE_FAILED');
     });
-    return update ? json({ id }) : json({ id, approvalStatus: mgr ? 'approved' : 'pending' }, 201);
+    return update ? json({ id, profileRevision: savedRevision }) : json({ id, approvalStatus: mgr ? 'approved' : 'pending' }, 201);
   };
   router.post('/customers', c => save(c, false), 'business');
   router.put('/customers/:id', c => save(c, true), 'business');
