@@ -1,4 +1,5 @@
 import { printPos } from './pos-print.js';
+import { verifyBox } from './verify.js';
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -102,6 +103,12 @@ export function returnsEverything(rows) {
 export async function openPosReturns({
   api,
   toast,
+  confirmBox = async (message, options) => !!(await verifyBox({
+    title: options.title,
+    intro: message,
+    ok: options.ok,
+    onMount: dlg => { dlg.querySelector('.btn.secondary[data-x]').textContent = 'Huỷ'; },
+  })),
   shift,
   register,
   orderId = '',
@@ -255,13 +262,18 @@ export async function openPosReturns({
               (l.disposition === 'damaged' ? 'Hàng hỏng' : 'Nhập lại bán được'),
           ),
         );
+      const hasRequestedFees = Number(r.requestedServiceFee) > 0 || Number(r.requestedShippingFee) > 0;
       card.append(
         el(
           'p',
           'pos-note',
-          r.status==='pending'?'Phí được hoàn: đang chờ quyết định của Manager.':'Phí được duyệt hoàn: '+money(r.approvedServiceFee+r.approvedShippingFee),
+          hasRequestedFees
+            ? 'Phí đề nghị: dịch vụ ' + money(r.requestedServiceFee) + ', ship ' + money(r.requestedShippingFee)
+            : 'Không đề nghị hoàn phí',
         ),
       );
+      if (r.status !== 'pending') card.append(el('p', 'pos-note', 'Phí được duyệt hoàn: ' + money(r.approvedServiceFee + r.approvedShippingFee)));
+      if (r.status === 'pending' && hasRequestedFees && !d.manager) card.append(el('p', 'pos-note', 'Chỉ Manager được hoàn phí dịch vụ/ship'));
       const controls = el('div', 'pos-return-actions');
       if (
         r.status === 'pending' &&
@@ -276,23 +288,20 @@ export async function openPosReturns({
         shipping.input.max = r.requestedShippingFee;
         service.input.disabled = shipping.input.disabled = !d.manager;
         controls.append(
-          el(
-            'p',
-            'pos-note',
-            'Phí đề nghị: dịch vụ ' +
-              money(r.requestedServiceFee) +
-              ', ship ' +
-              money(r.requestedShippingFee) +
-              '. Phí được hoàn: chỉ Manager quyết định.',
-          ),
           ...(d.manager?[service.box,shipping.box]:[]),
           note.box,
           button(
             'Duyệt yêu cầu',
             async () => {
+              if (!d.manager && hasRequestedFees && !await confirmBox(
+                'Bạn không có quyền hoàn phí. Duyệt bây giờ sẽ chốt phí hoàn = 0 đ (phí DV ' +
+                money(r.requestedServiceFee) + ', phí ship ' + money(r.requestedShippingFee) +
+                ' khách đề nghị sẽ không được hoàn) và không duyệt lại được. Nếu cần hoàn phí, hãy để Manager duyệt yêu cầu này.',
+                { title: 'Duyệt không hoàn phí', ok: 'Duyệt, không hoàn phí', danger: true },
+              )) return;
               await api('/pos/returns/' + r.id + '/approve', 'POST', {
-                serviceFee: service.input.value,
-                shippingFee: shipping.input.value,
+                serviceFee: d.manager ? service.input.value : 0,
+                shippingFee: d.manager ? shipping.input.value : 0,
                 note: note.input.value,
               });
               await show(id);
