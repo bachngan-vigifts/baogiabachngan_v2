@@ -5,8 +5,8 @@ import {setupEarly} from './purchase-early-fixture.ts';
 import {createAppRouter} from '../../src/app/router.ts';
 import type {StaffEnv} from '../../src/modules/staff/api/auth-routes.ts';
 import {products,warehouses} from '../../src/modules/catalog/schema.ts';
-import {incomingShipmentLines} from '../../src/modules/suppliers/schema.ts';
-import {stockBalances} from '../../src/modules/inventory/schema.ts';
+import {incomingShipmentLines,incomingShipments} from '../../src/modules/suppliers/schema.ts';
+import {stockBalances,warehouseSellers} from '../../src/modules/inventory/schema.ts';
 import {salesOrderLines} from '../../src/modules/sales/schema.ts';
 import {postMoves} from '../../src/modules/inventory/api/ledger.ts';
 /** Đơn CRM 2+3 bộ trà ở KHO VIGIFTS (chưa có hàng), kho khác có 10; đơn mua NCC a1 chờ nhận 5 (tests/app/warehouse-lifecycle.test.ts). */
@@ -17,6 +17,7 @@ export async function fixture(){
  const f=await setupEarly(),now=new Date().toISOString(),router=createAppRouter(),outbound:any[]=[];
  await f.db.insert(products).values({sku,name:'Bộ trà kiểm thử',unit:'Bộ',updatedAt:now});
  await f.db.insert(warehouses).values([{id:'vig',name:'KHO VIGIFTS',kind:'stock'},{id:'other',name:'Kho khác',kind:'stock'}]);
+ await f.db.insert(warehouseSellers).values([{warehouseId:'vig',positionId:'warehouse'},{warehouseId:'vig',positionId:'sale'}]);await f.db.update(incomingShipments).set({warehouse:'KHO VIGIFTS'});
  await postMoves(f.db,'mgr',[{sku:'BOOT',warehouseId:'vig',qty:1,kind:'opening',refType:'opening',refId:'opening'},{sku,warehouseId:'other',qty:10,kind:'opening',refType:'opening',refId:'opening'}]);
  await f.db.update(incomingShipmentLines).set({quantity:5,price:1000,purchaseDiscount:0,confirmedPurchaseDiscount:0,taxRate:8}).where(eq(incomingShipmentLines.id,'line-a1'));
  const env:StaffEnv={db:f.db,passwordIterations:1000,sapoOrderPush:'off',sapoSyncToken:'integration-test-only-sync-token-32-chars',sapoGoodsReceiptWebhookUrl:'https://n8nthai.moarchvn.com/webhook/test-only',

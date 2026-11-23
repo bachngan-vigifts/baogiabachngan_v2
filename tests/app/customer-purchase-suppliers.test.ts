@@ -15,7 +15,7 @@ test('overview suppliers follow explicit order/quote + SKU links and purchasing 
   const get=async(cookie:string)=>{const r=await f.call(`/customers/${f.id}/overview`,cookie);assert.equal(r.status,200,JSON.stringify(r.data));return r.data;};
   const own=await get(f.emp),row=own.purchases.find((p:any)=>p.sku==='TUIGIAY');
   assert.ok(own.contracts.some((k:any)=>k.orderId==='h-two'&&k.status==='signed'),'history includes signed contract order');
-  assert.deepEqual(row.supplierNames,['NCC B <Kiểm thử>','NCC Bao bì A'].sort((a,b)=>a.localeCompare(b,'vi')));
+  assert.deepEqual(row.supplierNames,[],'Sale giữ số liệu bán nhưng không thấy NCC mua hàng');
   assert.equal(row.orders,2);assert.equal(row.qty,1600);assert.equal(row.amount,16000000);
   assert.deepEqual(own.purchases.find((p:any)=>p.sku==='KHAC').supplierNames,[]);
   const manager=await get(f.mgr),all=manager.purchases.find((p:any)=>p.sku==='TUIGIAY').supplierNames;

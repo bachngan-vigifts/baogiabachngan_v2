@@ -40,7 +40,7 @@ test('flow progress projection preserves purchase visibility, receipt states, pr
     queries.length = 0;
     const actual = await listPurchaseFlow(db, me, '2026-01-15');
     assert.deepEqual(actual, expected);
-    assert.equal(queries.length, 4, 'fixed-size batch, independent of number of purchases');
+    assert.equal(queries.length,id==='emp'?1:4,'vai trò bị chặn chỉ chạy truy vấn scope rỗng, Manager giữ batch cố định');
     assert.doesNotMatch(queries.join('\n'), /supplier_payments|supplier_payment_schedules|staff_members|design_image/);
   }
 });

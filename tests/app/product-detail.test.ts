@@ -25,7 +25,7 @@ test('product histories preserve quote/order scope, purchase price masking, priv
  const f=await productDetailFixture(),d=ok(await f.call('/products/'+f.sku+'/overview',f.cookies.emp));
  assert.equal(d.profit,null);assert.equal(d.access.profit,false);assert.equal(d.stats.sales.count,1);assert.equal(Number(d.stats.sales.qty),2);assert.equal(d.documents.find((r:any)=>r.kind==='quotes').total,27);assert.ok(!d.stock.some((w:any)=>w.id==='private'));
  const orders=ok(await f.call('/products/'+f.sku+'/documents?kind=orders',f.cookies.emp));assert.ok(!orders.rows.some((r:any)=>r.id==='secret'));assert.ok(!JSON.stringify(d).includes('costPrice'));
- const purchases=ok(await f.call('/products/'+f.sku+'/documents?kind=purchases',f.cookies.emp));assert.ok(purchases.rows.length>0);assert.ok(purchases.rows.every((r:any)=>r.amount===null&&!('purchaseRows'in r)));
+ const purchases=ok(await f.call('/products/'+f.sku+'/documents?kind=purchases',f.cookies.emp));assert.deepEqual(purchases.rows,[],'Sale không vượt trần mua hàng');assert.ok(purchases.rows.every((r:any)=>r.amount===null&&!('purchaseRows'in r)));
  const kho=ok(await f.call('/products/'+f.sku+'/overview',f.cookies.kho));assert.deepEqual(kho.prices,[]);assert.equal(kho.stats.sales,null);assert.equal(kho.profit,null);assert.ok(!kho.documents.some((r:any)=>r.kind==='quotes'));assert.equal((await f.call('/products/'+f.sku+'/documents?kind=quotes',f.cookies.kho)).status,403);
  assert.equal((await f.call('/products/'+f.sku+'/overview',f.cookies.ncc)).status,403);assert.equal((await f.call('/products/'+f.sku+'/overview')).status,401);
  await f.db.execute(sql`delete from staff_position_permissions where position_id='sale' and permission='page.purchases'`);
@@ -45,6 +45,6 @@ test('purchase/receipt histories show purchase number and permission-filtered or
  ]);
  const receipts=ok(await f.call('/products/'+f.sku+'/documents?kind=receipts',f.cookies.mgr)),receipt=receipts.rows.find((r:any)=>r.id==='receipt');
  assert.ok(receipt.purchaseNumber);assert.equal(receipt.purchaseId,'a1');assert.ok(receipt.sources.some((s:any)=>s.href==='#/quotes/quote-0'));assert.ok(receipt.sources.some((s:any)=>s.href==='#/contracts/contract'));
- const employee=ok(await f.call('/products/'+f.sku+'/documents?kind=purchases',f.cookies.emp));assert.ok(employee.rows.find((r:any)=>r.id==='a1').sources.some((s:any)=>s.href==='#/quotes/quote-0'));assert.ok(!JSON.stringify(employee).includes('DH-secret'));assert.ok(!JSON.stringify(employee).includes('HĐKT-fixture'));
+ const employee=ok(await f.call('/products/'+f.sku+'/documents?kind=purchases',f.cookies.emp));assert.deepEqual(employee.rows,[],'không cấp nguồn mua qua product hub');
  const kho=ok(await f.call('/products/'+f.sku+'/documents?kind=receipts',f.cookies.kho));assert.ok(kho.rows.every((r:any)=>!r.sources.length),'warehouse role receives no sales/quote source links without page permission');
 });

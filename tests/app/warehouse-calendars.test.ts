@@ -30,21 +30,22 @@ test('warehouse calendars: remaining supplier receipts, date overrides, paginati
   assert.deepEqual(filtered.counts,{all:53,late:1,today:0,scheduled:51,undated:1},'status counts ignore the selected status so the quick-filter cards stay stable');
   assert.deepEqual((await receivingCalendar(db,new URLSearchParams({state:'undated'}),'2026-10-23')).counts,{all:53,late:1,today:51,scheduled:51,undated:1});
   assert.equal((await receivingCalendar(db,new URLSearchParams({state:'scheduled',q:'SKU-partial'}),'2026-10-22')).counts.late,1,'counts follow the other filters'); assert.equal(filtered.rows[0]!.lines[0]!.left,6,'damaged goods and voided receipts do not reduce remaining');
-  const first = await call('/purchase-receiving-calendar',kho);
+  assert.equal((await call('/purchase-receiving-calendar',kho)).status,403);
+  const first = await call('/purchase-receiving-calendar',mgr);
   assert.equal(first.status,200); assert.equal(first.data.total,53); assert.equal(first.data.rows.length,50);
   assert.equal(first.data.orderCount,53); assert.equal(first.data.undated,1);
-  assert.equal((await call('/purchase-receiving-calendar?offset=50',kho)).data.rows.length,3);
-  assert.equal((await call('/purchase-receiving-calendar?q=SKU-partial',kho)).data.rows[0].lines[0].left,6);
-  assert.equal((await call('/purchase-receiving-calendar?from=2026-10-23&to=2026-10-23',kho)).data.total,52,'undated lines remain visible');
-  assert.equal((await call('/purchase-receiving-calendar?from=2026-10-24&to=2026-10-23',kho)).status,400);
-  assert.equal((await call('/purchase-receiving-calendar?state=unknown',kho)).status,400);
+  assert.equal((await call('/purchase-receiving-calendar?offset=50',mgr)).data.rows.length,3);
+  assert.equal((await call('/purchase-receiving-calendar?q=SKU-partial',mgr)).data.rows[0].lines[0].left,6);
+  assert.equal((await call('/purchase-receiving-calendar?from=2026-10-23&to=2026-10-23',mgr)).data.total,52,'undated lines remain visible');
+  assert.equal((await call('/purchase-receiving-calendar?from=2026-10-24&to=2026-10-23',mgr)).status,400);
+  assert.equal((await call('/purchase-receiving-calendar?state=unknown',mgr)).status,400);
   assert.equal(JSON.stringify(first.data).includes('price'),false,'calendar never sends purchase prices');
   await db.insert(salesOrders).values(['crm','pos'].map(channel=>({id:channel,orderNo:channel+'-1',channel,quoteType:'HRC' as const,customerName:'Khách',ownerId:'emp',createdBy:'emp',orderDate:'2026-10-22',createdAt:now,updatedAt:now})));
   await db.insert(deliveries).values(['crm','pos'].map(id=>({id,deliveryNo:'GH-'+id,orderId:id,plannedDate:'2026-10-22',createdBy:'emp',createdAt:now,updatedAt:now})));
   for (const cookie of [kho,mgr]) {
     const list = await call('/deliveries',cookie); assert.equal(list.status,200); assert.deepEqual(list.data.deliveries.map((r:any)=>r.orderId),['crm']);
     assert.deepEqual((await call('/deliveries?id=pos',cookie)).data.deliveries,[],'focus links cannot reintroduce POS');
-    const counts = (await call('/navigation-counts',cookie)).data; assert.equal(counts.deliveries,1); assert.equal(counts.receiving,53);
+    const counts = (await call('/navigation-counts',cookie)).data; assert.equal(counts.deliveries,1); assert.equal(counts.receiving,cookie===mgr?53:0,'Kho chưa được phân công tại kho nhận không thấy danh sách thương mại');
   }
   assert.equal((await call('/orders/pos',mgr)).data.deliveries.length,1,'POS order details still retain their own delivery');
   assert.equal((await call('/permissions/positions/warehouse',mgr,'PUT',{perms:['page.deliveries']})).status,200);
