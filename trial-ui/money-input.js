@@ -10,6 +10,9 @@
  * ô nào cần bật/tắt rõ ràng thì đặt data-money="1" / data-money="0".
  */
 const PROTO = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+const HID = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'hidden');
+// Native number values with decimal/exponent notation must never pass through the integer digit stripper.
+const needsNative = input => input.type === 'number' && input.value !== '' && !/^-?\d+$/.test(input.value);
 const MONEY = /tiền|giá|phí|cước|cọc|đ\/|thu |thực thu|đã thu|chi |hoàn|lương|thưởng|công nợ|khách đưa|thanh toán|doanh (số|thu)|ngân sách|vnđ|vnd|₫|giá trị|\(đ\)|\bđ\b|số dư|tồn quỹ|két|đợt trả|amount|price/i;
 const NOT_MONEY = /%|phần trăm|tỷ lệ|số lượng|\bsl\b|qty|ngày|giờ|tháng|năm|số lần|điểm|số mã|số dòng|kg|cm|mm|gram|thuế suất/i;
 const fmt = raw => {
@@ -27,7 +30,7 @@ function labelOf(input) {
   return [own, text, prev, input.name, input.dataset.label || ''].join(' ').replace(/\s+/g, ' ').trim();
 }
 export function isMoneyInput(input) {
-  if (!(input instanceof HTMLInputElement) || input.dataset.moneyProxy) return false;
+  if (!(input instanceof HTMLInputElement) || input.dataset.moneyProxy || needsNative(input)) return false;
   // Ô chữ chỉ bật khi đánh dấu rõ (data-money="1"); ô số nhận diện theo nhãn.
   if (input.dataset.money === '1') return input.type === 'number' || input.type === 'text';
   if (input.type !== 'number') return false;
@@ -44,11 +47,24 @@ export function isMoneyInput(input) {
 const proxies = new WeakMap();
 export function enhanceMoneyInput(input) {
   if (proxies.has(input) || !isMoneyInput(input)) return null;
+  const previous = Object.fromEntries(['value','hidden','focus','select'].map(k=>[k,Object.getOwnPropertyDescriptor(input,k)]));
+  const attributes = Object.fromEntries(['tabindex','aria-hidden'].map(k=>[k,input.getAttribute(k)]));
+  let observer;
+  const labelListeners=[];
   const view = document.createElement('input');
   view.type = 'text'; view.inputMode = 'numeric'; view.autocomplete = 'off'; view.dataset.moneyProxy = '1';
   view.className = input.className + ' money-input'; view.style.cssText = input.style.cssText;
   for (const a of ['placeholder', 'aria-label', 'title', 'id']) if (a !== 'id' && input.hasAttribute(a)) view.setAttribute(a, input.getAttribute(a));
-  const sync = () => { const raw = PROTO.get.call(input); if (document.activeElement !== view || clean(view.value) !== raw) view.value = fmt(raw); view.disabled = input.disabled; view.readOnly = input.readOnly; view.required = input.required; };
+  const detach = () => {
+    const hidden=view.hidden,focused=document.activeElement===view;observer?.disconnect();
+    for(const [label,listener]of labelListeners)label.removeEventListener('click',listener);
+    view.remove();proxies.delete(input);
+    for(const [key,descriptor]of Object.entries(previous)){if(descriptor)Object.defineProperty(input,key,descriptor);else delete input[key];}
+    HID.set.call(input,hidden);
+    for(const [key,value]of Object.entries(attributes)){if(value===null)input.removeAttribute(key);else input.setAttribute(key,value);}
+    if(focused)input.focus();
+  };
+  const sync = () => { if(needsNative(input)){detach();return;}const raw = PROTO.get.call(input); if (document.activeElement !== view || clean(view.value) !== raw) view.value = fmt(raw); view.disabled = input.disabled; view.readOnly = input.readOnly; view.required = input.required; };
   // Code gán ô gốc → ô hiển thị cập nhật.
   Object.defineProperty(input, 'value', { configurable: true, get() { return PROTO.get.call(this); }, set(v) { PROTO.set.call(this, v == null ? '' : String(v)); sync(); } });
   input.focus = opts => view.focus(opts); input.select = () => view.select();
@@ -66,13 +82,12 @@ export function enhanceMoneyInput(input) {
   });
   view.addEventListener('change', () => input.dispatchEvent(new Event('change', { bubbles: true })));
   for (const t of ['blur', 'focus', 'keydown']) view.addEventListener(t, e => { if (t === 'keydown' && e.key === 'Enter') input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); if (t === 'blur') input.dispatchEvent(new FocusEvent('blur')); });
-  new MutationObserver(sync).observe(input, { attributes: true, attributeFilter: ['disabled', 'readonly', 'required'] });
+  observer=new MutationObserver(sync);observer.observe(input, { attributes: true, attributeFilter: ['disabled', 'readonly', 'required'] });
   // Code ẩn/hiện ô gốc (input.hidden = …) thì ẩn/hiện ô hiển thị; ô gốc luôn ẩn.
-  const HID = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'hidden');
   view.hidden = input.hidden;
   input.before(view); HID.set.call(input, true); input.tabIndex = -1; input.setAttribute('aria-hidden', 'true');
   Object.defineProperty(input, 'hidden', { configurable: true, get() { return view.hidden; }, set(v) { view.hidden = !!v; } });
-  for (const label of input.labels || []) if (!label.contains(view)) label.addEventListener('click', e => { if (e.target === label) { e.preventDefault(); view.focus(); } });
+  for (const label of input.labels || []) if (!label.contains(view)) {const listener=e=>{if(e.target===label){e.preventDefault();view.focus();}};label.addEventListener('click',listener);labelListeners.push([label,listener]);}
   proxies.set(input, view); sync();
   return view;
 }
