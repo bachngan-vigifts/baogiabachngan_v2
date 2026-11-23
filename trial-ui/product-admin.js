@@ -3,6 +3,20 @@
 //  - Manager thêm → có hiệu lực ngay. Nhân viên thêm → "Chờ duyệt", chưa hiện khi lập báo giá.
 //  - Khung "Sản phẩm chờ duyệt" ở đầu trang: Manager bấm Duyệt / Từ chối; người tạo xoá được sản phẩm mình gửi.
 
+const priceFormat = new Intl.NumberFormat('vi-VN', {maximumFractionDigits: 0});
+/** Integer VND only; separators are accepted only in complete thousands groups. */
+export function parseProductPrice(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const grouped = /^[1-9]\d{0,2}([., \u00a0\u202f])\d{3}(?:\1\d{3})*$/.test(raw);
+  const digits = typeof value === 'number' ? value : /^\d+$/.test(raw) ? raw : grouped ? raw.replace(/[., \u00a0\u202f]/g, '') : null;
+  const amount = Number(digits);
+  if (digits === null || !Number.isSafeInteger(amount) || amount < 0 || amount > 1e12) {
+    throw Error('Giá phải là số nguyên VNĐ từ 0 đến 1.000.000.000.000; không nhập phần lẻ.');
+  }
+  return amount;
+}
+
 /** @param deps { api, toast, esc, money, confirmBox, isManager, userId, policies(), onChanged() } */
 export function initProductAdmin(deps) {
   const { api, toast, esc, money, confirmBox, isManager } = deps, canApprove = deps.canApprove || isManager, canUpdate = deps.canUpdate || isManager;
@@ -68,7 +82,8 @@ export function initProductAdmin(deps) {
         </fieldset>
         ${editing?`<fieldset class="product-editor-carton form-grid"><legend>Quy cách thùng đóng gói (cm, kg)</legend>${[['perCarton','Số sản phẩm / thùng'],['cartonLength','Dài thùng (cm)'],['cartonWidth','Rộng thùng (cm)'],['cartonHeight','Cao thùng (cm)'],['cartonWeight','Cân nặng thùng (kg)']].map(([key,label])=>`<label>${label}<input name="${key}" type="number" min="0.001" max="1000000" step="${key==='perCarton'?'1':'any'}" inputmode="decimal" placeholder="Chưa có"></label>`).join('')}</fieldset>`:''}
         <fieldset class="product-editor-prices form-grid"><legend>Bảng giá</legend>
-        ${policies.map(p => `<label>Giá: ${esc(p.name)}${requiredPrices.includes(p) ? ' *' : ''}<input name="price:${esc(p.id)}" data-money="1" inputmode="numeric" ${requiredPrices.includes(p) ? 'required aria-required="true" placeholder="Bắt buộc nhập"' : 'placeholder="0"'}></label>`).join('')}
+        ${policies.map(p => `<label>Giá: ${esc(p.name)}${requiredPrices.includes(p) ? ' *' : ''}<input name="price:${esc(p.id)}" data-money="0" inputmode="numeric" ${requiredPrices.includes(p) ? 'required aria-required="true" placeholder="Bắt buộc nhập"' : 'placeholder="0"'}></label>`).join('')}
+        <small class="muted">Nhập giá nguyên VNĐ. Dấu chấm hoặc dấu phẩy chỉ dùng tách nhóm nghìn, ví dụ 450.000.</small>
         </fieldset>
         ${editing ? '' : '<p class="muted small span-2">* Bắt buộc nhập Giá bán lẻ và Giá lẻ +VAT lớn hơn 0.</p>'}
         <p class="muted small span-2">${editing ? 'Cập nhật danh mục CRM. Nếu sản phẩm được đồng bộ từ Sapo, lần đồng bộ sau có thể ghi đè thông tin. Mã SKU được giữ nguyên.' : isManager() ? 'Bạn là Manager: sản phẩm có hiệu lực ngay sau khi lưu.' : 'Sản phẩm mới cần Manager duyệt mới dùng được khi lập báo giá.'}</p>
@@ -76,11 +91,22 @@ export function initProductAdmin(deps) {
       </div>
       <div class="modal-foot"><button type="button" class="btn secondary" data-x>Huỷ</button><button type="submit" class="btn primary">${editing ? 'Lưu cập nhật' : 'Lưu sản phẩm'}</button></div></form>
       <datalist id="pa-brands">${[...document.querySelectorAll('#product-brand option')].map(o => o.value).filter(Boolean).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
+    // Preserve input until validation: the generic money proxy strips punctuation.
+    // Numeric provenance distinguishes a loaded fraction from human grouping.
+    const priceSources = new WeakMap();
+    const setPriceValue = (input, value) => {
+      const amount = value == null || value === '' ? null : Number(value);
+      input.value = amount === null ? '' : Number.isSafeInteger(amount) ? priceFormat.format(amount) : String(value);
+      if (amount !== null) priceSources.set(input, {text: input.value, amount});
+    };
+    for (const input of dlg.querySelectorAll('input[name^="price:"]')) input.addEventListener('input', () => {
+      priceSources.delete(input); input.removeAttribute('aria-invalid'); input.parentElement.querySelector('[data-price-error]')?.remove();
+    });
     if (editing) {
       for (const key of ['sku','unit','name','brand','pattern','imageUrl']) dlg.querySelector('form').elements.namedItem(key).value = product[key] || '';
       for(const key of ['perCarton','cartonLength','cartonWidth','cartonHeight','cartonWeight'])dlg.querySelector('form').elements.namedItem(key).value=product[key]??'';
       dlg.querySelector('[name="sku"]').readOnly = true;
-      for (const policy of policies) { const price = product.prices.find(p => p.policyId === policy.id)?.price; dlg.querySelector('form').elements.namedItem('price:' + policy.id).value = price == null ? '' : String(price); }
+      for (const policy of policies) { const price = product.prices.find(p => p.policyId === policy.id)?.price; setPriceValue(dlg.querySelector('form').elements.namedItem('price:' + policy.id), price); }
     }
     dlg.querySelector('[name="taxRate"]').value = initialTax;
     const imageInput = dlg.querySelector('[name="imageUrl"]'), preview = dlg.querySelector('[data-image-preview]'), imageStatus = dlg.querySelector('[data-image-status]'), clearImage = dlg.querySelector('[data-image-clear]');
@@ -121,8 +147,8 @@ export function initProductAdmin(deps) {
         const [retail, retailVat] = requiredPrices;
         if (p.price && retail && retailVat) {
           const rate = Number(f.namedItem('taxRate').value) || 8;
-          f.namedItem('price:' + retailVat.id).value = String(p.price);
-          f.namedItem('price:' + retail.id).value = String(Math.round(p.price / (1 + rate / 100)));
+          setPriceValue(f.namedItem('price:' + retailVat.id), p.price);
+          setPriceValue(f.namedItem('price:' + retail.id), Math.round(p.price / (1 + rate / 100)));
           notes.unshift(`Giá web ${money(p.price)} điền vào ${retailVat.name}; ${retail.name} = giá web ÷ (1 + VAT ${rate}%). Kiểm tra lại giá bán của công ty.`);
         }
         if (r.existing) notes.unshift(`⚠ Mã ${r.existing.sku} đã có trong danh mục (${r.existing.name}${r.existing.approvalStatus === 'pending' ? ', đang chờ duyệt' : ''}) – đổi mã nếu là sản phẩm khác.`);
@@ -158,7 +184,18 @@ export function initProductAdmin(deps) {
       const f = e.target.elements, err = dlg.querySelector('[data-err]'), v = k => f.namedItem(k).value.trim();
       const prices = {};
       if (requiredPrices.some(p => !p)) { err.textContent = 'Chưa có đủ bảng Giá bán lẻ và Giá lẻ +VAT. Vui lòng tải lại hoặc cấu hình bảng giá.'; return; }
-      for (const p of policies) { const raw = v('price:' + p.id).replace(/[\s.,]/g, ''); if (raw && !/^\d+$/.test(raw)) { err.textContent = 'Giá phải là số nguyên VNĐ từ 0 trở lên.'; return; } if (raw) prices[p.id] = Number(raw); else if (editing) prices[p.id] = null; }
+      for (const p of policies) {
+        const input = f.namedItem('price:' + p.id), raw = v('price:' + p.id), source = priceSources.get(input);
+        try {
+          const amount = parseProductPrice(source?.text === raw ? source.amount : raw);
+          if (amount !== null) prices[p.id] = amount; else if (editing) prices[p.id] = null;
+        } catch (ex) {
+          err.textContent = `${p.name}: ${ex.message}`; input.setAttribute('aria-invalid', 'true');
+          let hint = input.parentElement.querySelector('[data-price-error]');
+          if (!hint) { hint = document.createElement('small'); hint.className = 'error'; hint.dataset.priceError = ''; input.after(hint); }
+          hint.textContent = ex.message; input.focus(); hint.scrollIntoView({block: 'nearest'}); return;
+        }
+      }
       for (const p of requiredPrices) {
         if (!Number.isSafeInteger(prices[p.id]) || prices[p.id] <= 0 || prices[p.id] > 1e12) {
           err.textContent = `Bắt buộc nhập ${p.name} lớn hơn 0 (tối đa 1.000.000.000.000đ).`;
