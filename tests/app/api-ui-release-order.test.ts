@@ -21,9 +21,9 @@ git('checkout','-q',newer);git('branch','-f','main',newer);git('remote','add','o
 after(()=>rmSync(cwd,{recursive:true,force:true}));
 const run=(id:number,head_sha=sha,status='completed',conclusion:string|null='success',extra={})=>({id,head_sha,status,conclusion,head_branch:'main',event:'push',head_repository:{full_name:'owner/repo'},run_attempt:1,run_started_at:new Date(id*1000).toISOString(),...extra});
 function fixture(frames:any[][],{deployed=true,mainRef=newer}={}){
- let time=0,calls=0,jobsRead=0;
+ let time=0,calls=0,jobsRead=0,frame:any[]=[];
  const github={rest:{actions:{
-  listWorkflowRuns:async(p:any)=>{assert.equal(p.workflow_id,'deploy-api.yml');const runs=frames[Math.min(calls++,frames.length-1)]!;return {data:{workflow_runs:p.head_sha?runs.filter(r=>r.head_sha===p.head_sha):runs}};},
+  listWorkflowRuns:async(p:any)=>{assert.equal(p.workflow_id,'deploy-api.yml');const page=p.page||1;if(page===1)frame=frames[Math.min(calls++,frames.length-1)]!;const rows=p.head_sha?frame.filter(r=>r.head_sha===p.head_sha):frame;return {data:{total_count:rows.length,workflow_runs:rows.slice((page-1)*100,page*100)}};},
   listJobsForWorkflowRun:async()=>{jobsRead++;return {data:{jobs:[{steps:[{name:'Triển khai Edge Function',status:'completed',conclusion:deployed?'success':'skipped'}]}]}};},
  }}};
  return {options:{github,owner:'owner',repo:'repo',sha,cwd,mainRef,timeoutMs:100,pollMs:20,now:()=>time,sleep:async(ms:number)=>{time+=ms;}},calls:()=>calls,jobsRead:()=>jobsRead};
@@ -36,8 +36,10 @@ test('8a783 failure + newer d186 success with identical API tree allows UI',asyn
  const f=fixture([[run(12,newer),run(11,sha,'completed','failure')]]);
  assert.equal(await waitForApiDeployment(f.options),12);assert.equal(f.jobsRead(),1);
 });
-test('every API path difference blocks the newer green run',async()=>{
- for(const head of changed){const f=fixture([[run(12,head),run(11)]],{mainRef:head});await assert.rejects(()=>waitForApiDeployment(f.options),/API_SOURCE_MISMATCH/);assert.equal(f.jobsRead(),0);}
+test('X UI followed by newer Z API may proceed after Z succeeds even when API files changed',async()=>{
+ for(const head of changed){const f=fixture([[run(12,head),run(11)]],{mainRef:head});assert.equal(await waitForApiDeployment(f.options),12);}
+ const f=fixture([[run(12,changed[0],'in_progress',null),run(11)],[run(12,changed[0]),run(11)]],{mainRef:changed[0]});
+ assert.equal(await waitForApiDeployment(f.options),12);assert.equal(f.calls(),2);
 });
 test('the newest main commit failure/cancellation never falls back to older green',async()=>{
  for(const conclusion of ['failure','cancelled']){
@@ -61,12 +63,14 @@ test('PR/fork/feature branch green runs are never evidence of a main deployment'
   const f=fixture([[run(12,newer,'completed','success',extra)]]);await assert.rejects(()=>waitForApiDeployment(f.options),/API_DEPLOYMENT_TIMEOUT/);
  }
 });
-test('main ancestry wins over API list ordering, with no stale rerun overwriting proof',async()=>{
+test('start time wins over API response/commit ordering, and reruns older than S are superseded',async()=>{
  const f=fixture([[run(11),run(12,newer)]]);assert.equal(await waitForApiDeployment(f.options),12);
  const stale=fixture([[run(11,sha,'completed','failure',{run_attempt:2,run_started_at:new Date(15000).toISOString()}),run(12,newer)]]);
- await assert.rejects(()=>waitForApiDeployment(stale.options),/API_DEPLOYMENT_SUPERSEDED/);
+ await assert.rejects(()=>waitForApiDeployment(stale.options),/API_DEPLOYMENT_FAILURE/);
  const rollback=fixture([[run(10,older,'completed','success',{run_started_at:new Date(15000).toISOString()}),run(12,newer)]]);
  await assert.rejects(()=>waitForApiDeployment(rollback.options),/API_DEPLOYMENT_SUPERSEDED/);
+ const exact=fixture([[run(11,sha,'completed','success',{run_attempt:2,run_started_at:new Date(15000).toISOString()}),run(12,newer)]]);
+ assert.equal(await waitForApiDeployment(exact.options),11);
 });
 test('non-main or missing history fails closed rather than using older green',async()=>{
  const f=fixture([[run(13,changed[0]),run(12)]]);
@@ -87,8 +91,17 @@ test('failed/missing runs block without dispatch/cancel/deploy APIs',async()=>{
  const f=fixture([[run(12,sha,'completed','failure')]]);await assert.rejects(()=>waitForApiDeployment(f.options),/API_DEPLOYMENT_FAILURE/);
  const missing=fixture([[]]);await assert.rejects(()=>waitForApiDeployment(missing.options),/API_DEPLOYMENT_TIMEOUT/);
 });
-test('source paths stay aligned with the API workflow and UI has full Git history',()=>{
- const api=readFileSync(new URL('../../.github/workflows/deploy-api.yml',import.meta.url),'utf8');
- for(const p of ['src/**','supabase/**','migrations/postgres/**','package-lock.json','.github/workflows/deploy-api.yml'])assert.ok(api.includes("'"+p+"'"));
- assert.match(readFileSync(new URL('../../.github/workflows/deploy-ui.yml',import.meta.url),'utf8'),/fetch-depth: 0/);
+test('UI keeps full Git history and read-only permissions',()=>{
+ const workflow=readFileSync(new URL('../../.github/workflows/deploy-ui.yml',import.meta.url),'utf8');
+ assert.match(workflow,/fetch-depth: 0/);assert.match(workflow,/contents: read/);assert.match(workflow,/actions: read/);
+});
+test('a later-started rerun beyond page one is considered, not an old green snapshot',async()=>{
+ const rows=Array.from({length:100},(_,i)=>run(100+i,newer));rows.push(run(10,older,'completed','success',{run_attempt:2,run_started_at:new Date(250000).toISOString()}));
+ const f=fixture([rows]);await assert.rejects(()=>waitForApiDeployment(f.options),/API_DEPLOYMENT_SUPERSEDED/);
+});
+test('incomplete history or missing start time cannot prove the production API',async()=>{
+ const time=fixture([[run(12,newer,'completed','success',{run_started_at:'invalid'})]]);
+ await assert.rejects(()=>waitForApiDeployment(time.options),/API_DEPLOYMENT_TIME_UNVERIFIED/);
+ const truncated=fixture([Array.from({length:1001},(_,i)=>run(i+1,newer))]);
+ await assert.rejects(()=>waitForApiDeployment(truncated.options),/API_DEPLOYMENT_HISTORY_INCOMPLETE/);
 });
