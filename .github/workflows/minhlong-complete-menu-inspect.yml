@@ -1,0 +1,22 @@
+name: Inspect complete Minh Long categories
+on:
+  push:
+    branches: [fix/minhlong-complete-menu-20261123]
+    paths: [.github/workflows/minhlong-complete-menu-inspect.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          node --input-type=module <<'NODE'
+          for(const path of ['/wp-json/wc/store/v1/products/categories?per_page=100&page=1','/wp-json/wp/v2/product_cat?per_page=100']){
+           const r=await fetch('https://minhlongonline.com'+path);const body=await r.text();
+           console.log('CATEGORIES',r.status,body.slice(0,65000));
+          }
+          NODE
