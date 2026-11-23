@@ -1,0 +1,29 @@
+name: Deploy Lock quick-view invoice and information layout
+on:
+  push:
+    branches: [fix/lock-qv-invoice-copy]
+    paths: [web-lock/qv-invoice-copy/**, .github/workflows/lock-qv-invoice-copy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: lock-qv-invoice-copy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l web-lock/quick-view-info/store-qv-info.php && node --check web-lock/qv-invoice-copy/deploy.mjs
+      - run: npm install --prefix /tmp/qv-info --no-audit --no-fund playwright@1.56.1
+      - run: /tmp/qv-info/node_modules/.bin/playwright install chromium --only-shell
+      - run: node web-lock/qv-invoice-copy/deploy.mjs
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lock-invoice-copy-evidence
+          path: lock-invoice-copy-evidence/
