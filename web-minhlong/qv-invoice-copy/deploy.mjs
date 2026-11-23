@@ -13,16 +13,16 @@ async function verify(host,preview){
  try{for(const width of [1214,390]){
  const page=await browser.newPage({viewport:{width,height:1003},isMobile:width===390,hasTouch:width===390});
  await page.addLocatorHandler(page.locator('#mltv-popup.mltv-popup--show'),async d=>{await d.locator('[aria-label*="Đóng"],[aria-label*="Close" i],[class*="close" i],[data-close]').first().click({timeout:5000});});
- await page.route('**/*',route=>{
+ await page.route('**/*',async route=>{
  const r=route.request(),u=new URL(r.url());
  if(u.searchParams.has('add-to-cart')||u.searchParams.has('lnl_buy'))return route.abort();
  if(!['GET','HEAD'].includes(r.method())&&!(r.postData()||'').includes('flatsome_quickview'))return route.abort();
+ if(preview&&r.resourceType()==='document'&&u.hostname===host){const response=await route.fetch();const html=await response.text();const re=/<script\b[^>]*id=["']bn-qv-info-script["'][^>]*>[\s\S]*?<\/script>/;assert(re.test(html),'existing info script found');return route.fulfill({response,body:html.replace(re,()=>'<script id="bn-qv-info-script">'+js+'</script>')});}
  return route.continue();
  });
  await page.goto('https://'+host+'/',{waitUntil:'domcontentloaded',timeout:90000});
  await page.waitForFunction(()=>window.jQuery&&document.querySelector('a.quick-view'),null,{timeout:45000});
- if(preview){await page.evaluate(()=>{window.bnQuickViewInfoReady=false;document.querySelectorAll('.product-lightbox .bn-qv-invoice').forEach(n=>n.remove());});await page.addStyleTag({content:css});await page.addScriptTag({content:js});}
- else await page.locator('#bn-qv-info-script').waitFor({state:'attached'});
+ await page.locator('#bn-qv-info-script').waitFor({state:'attached'});
  const triggers=page.locator('a.quick-view');assert(await triggers.count()>1);
  for(const index of [0,1,0]){
  const trigger=triggers.nth(index);await trigger.scrollIntoViewIfNeeded();
