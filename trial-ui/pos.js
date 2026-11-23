@@ -2271,7 +2271,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       method: st.method,
       tendered: Number(nodes.tender.value || 0),
       confirmed: st.method === 'transfer',
-      ...(st.method === 'transfer' && (qrId || st.qr?.paid) ? { paymentRequestId: qrId || st.qr.id } : {}),
+      // QR đang hiện (chưa hết hạn) luôn đi kèm, kể cả khi thu ngân tự xác nhận trước SePay: đơn giữ đúng số trên nội dung chuyển khoản.
+      ...(st.method === 'transfer' && (qrId || st.qr?.paid || (st.qr?.id && Date.now() < Date.parse(st.qr.expiresAt))) ? { paymentRequestId: qrId || st.qr.id } : {}),
     });
   }
   /**
