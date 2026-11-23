@@ -1,7 +1,7 @@
 /** Local synthetic browser cases; does not write production documents. */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile,mkdir} from 'node:fs/promises';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
 const root=new URL('../../trial-ui/',import.meta.url);
 const server=createServer(async(req,res)=>{try{if(req.url==='/'){res.setHeader('content-type','text/html');return res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><button id="launch">Tạo chứng từ</button><script type="module">import {openSaleAdminHandoff} from "/sale-admin-handoff.js";window.openHandoff=openSaleAdminHandoff;</script>');}const file=req.url.slice(1);if(!['style.css','sale-admin-handoff.js'].includes(file)){res.writeHead(404).end();return;}res.setHeader('content-type',file.endsWith('.js')?'text/javascript':'text/css');res.end(await readFile(new URL(file,root)));}catch(e){res.writeHead(500).end(e.message);}});
@@ -17,7 +17,24 @@ try{
   await start();await page.getByRole('button',{name:'Xác nhận giao hồ sơ',exact:true}).click();await page.waitForFunction(()=>window.finished);assert.equal(await page.evaluate(()=>window.result.assigneeId),null);
   await start(true);await page.getByRole('combobox').selectOption('sa');await page.getByRole('button',{name:'Xác nhận giao hồ sơ',exact:true}).click();await page.getByRole('button',{name:'Kiểm tra lại việc giao'}).waitFor();assert.equal(await page.getByRole('combobox').isDisabled(),true);await page.getByRole('button',{name:'Kiểm tra lại việc giao'}).click();await page.waitForFunction(()=>window.finished);
   const calls=await page.evaluate(()=>window.calls);assert.deepEqual(calls[1].body,calls[2].body);assert(calls.every(c=>c.path.endsWith('/sale-admin-assignment')),'retry never recreates order/contract');
-  await start();await page.evaluate(()=>window.current=false);await page.getByRole('button',{name:'Xác nhận giao hồ sơ',exact:true}).click();assert.equal(await page.evaluate(()=>window.calls.length),1,'logout stops assignment');await page.getByRole('button',{name:'Để sau'}).click();
+  await start();await page.evaluate(()=>window.current=false);await page.getByRole('button',{name:'Xác nhận giao hồ sơ',exact:true}).click();assert.equal(await page.evaluate(()=>window.calls.length),1,'logout stops assignment');await page.getByRole('button',{name:'Để sau'}).click();await page.waitForFunction(()=>window.finished);
+  // More than one page; searching keeps a selected person and retry never recreates the document.
+  await page.evaluate(()=>{window.calls=[];window.finished=false;window.openHandoff({orderId:'paged',api:async(path,method='GET',body)=>{
+   calls.push({path,method,body});if(method==='POST')return {assigneeId:body.assigneeId,revision:1};
+   const q=new URL(path,location.origin).searchParams,search=q.get('candidateSearch'),offset=Number(q.get('candidateOffset')||0);
+   const all=Array.from({length:206},(_,i)=>({id:'sa-'+i,name:i===205?'ZZZ Người cuối':'AAA '+i,eligible:true}));const found=search?all.filter(p=>p.name.includes(search)):all;
+   return {revision:0,assigneeId:null,canAssign:true,candidates:found.slice(offset,offset+200),candidatePage:{nextOffset:offset+200<found.length?offset+200:null}};
+  }}).then(r=>{window.result=r;window.finished=true;});});
+  const more=page.getByRole('button',{name:'Tải thêm Sale Admin',exact:true});await more.waitFor();await more.click();
+  await page.getByRole('combobox').selectOption('sa-205');assert.equal(await page.getByRole('combobox').locator('option').count(),207);
+  const search=page.getByRole('searchbox',{name:'Tìm Sale Admin theo tên'});await search.fill('ZZZ');await search.press('Enter');
+  await page.waitForFunction(()=>calls.some(c=>c.path.includes('candidateSearch=ZZZ')));await page.getByRole('combobox').locator('option[value="sa-205"]').waitFor({state:'attached'});
+  assert.equal(await page.getByRole('combobox').inputValue(),'sa-205');
+  const box=await page.getByRole('button',{name:'Xác nhận giao hồ sơ',exact:true}).boundingBox();assert(box&&box.x>=0&&box.x+box.width<=width&&box.y+box.height<=900);
+  await mkdir('/tmp/codex3-handoff-screens',{recursive:true});await page.screenshot({path:'/tmp/codex3-handoff-screens/search-'+width+'.png'});
+  await page.getByRole('button',{name:'Xác nhận giao hồ sơ',exact:true}).click();await page.waitForFunction(()=>window.finished);assert.equal(await page.evaluate(()=>window.result.assigneeId),'sa-205');
+  assert.equal(await page.evaluate(()=>calls.filter(c=>c.method==='POST').length),1);
+  assert.equal(await page.evaluate(()=>calls.filter(c=>c.method==='GET').length),3);
   await page.close();console.log('PASS handoff browser '+width+'px: selected, none, lost ACK retry, logout, visible actions');
  }
 }finally{await browser.close();await new Promise(r=>server.close(r));}

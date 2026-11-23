@@ -81,3 +81,18 @@ test('người nhận hợp lệ ngoài 200 ứng viên đầu vẫn được gi
  // A different target at the same revision must be revalidated, not accepted through the display list.
  assert.equal((await f.call(f.path,f.emp,'POST',{assigneeId:'candidate-204',revision:1})).status,400);
 });
+
+test('tìm và phân trang ứng viên vượt 200, giới hạn trang và giữ phạm vi hồ sơ',async()=>{
+ const f=await fixture(),at=new Date().toISOString();
+ await f.db.insert(employees).values(Array.from({length:205},(_,i)=>({id:'page-'+i,email:`page-${i}@x.vn`,name:'AAA '+String(i).padStart(3,'0'),role:'employee' as const,positionId:'sale-admin',active:true,createdAt:at})));
+ await f.db.update(employees).set({name:'ZZZ Người cuối'}).where(eq(employees.id,'ops-admin'));
+ const first=await f.call(f.path,f.emp);assert.equal(first.status,200);assert.equal(first.data.candidates.length,200);assert.equal(first.data.candidatePage.hasMore,true);assert.equal(first.data.candidatePage.nextOffset,200);
+ const second=await f.call(f.path+'?candidateOffset=200',f.emp);assert.equal(second.status,200);assert.equal(second.data.candidatePage.hasMore,false);assert.ok(second.data.candidates.some((p:any)=>p.id==='ops-admin'));
+ assert.equal(new Set([...first.data.candidates,...second.data.candidates].map((p:any)=>p.id)).size,206);
+ const found=await f.call(f.path+'?candidateSearch='+encodeURIComponent('zzz người'),f.emp);assert.deepEqual(found.data.candidates.map((p:any)=>p.id),['ops-admin']);
+ const wildcard=await f.call(f.path+'?candidateSearch=%25',f.emp);assert.deepEqual(wildcard.data.candidates,[],'tìm % là ký tự literal');
+ for(const query of ['candidateOffset=-1','candidateOffset=1.2','candidateOffset=100001','candidateSearch='+('x'.repeat(101))])assert.equal((await f.call(f.path+'?'+query,f.emp)).status,400);
+ assert.equal((await f.call(f.path+'?candidateSearch=AAA',f.ncc)).status,403);
+ assert.equal((await f.call(f.path+'?candidateOffset=200','')).status,401);
+ assert.equal((await f.call(f.path,f.emp,'POST',{assigneeId:'ops-admin',revision:0})).status,200);
+});
