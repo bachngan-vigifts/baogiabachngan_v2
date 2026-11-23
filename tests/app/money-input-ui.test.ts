@@ -14,7 +14,7 @@ test('ô tiền tự có dấu chấm được bật cho toàn app, ô gốc v�
 });
 
 test('ô tiền kiểu chữ được đánh dấu rõ data-money="1"', () => {
-  assert.match(read('product-admin.js'), /name="price:\$\{esc\(p\.id\)\}" data-money="1"/);
+  assert.match(read('product-admin.js'), /name="price:\$\{esc\(p\.id\)\}" data-money="0"/, 'giá sản phẩm giữ dấu để kiểm phần lẻ trước khi lưu');
   assert.equal((read('store-reports.js').match(/data-money="1"/g) || []).length, 4);
   assert.match(read('weekly-reports.js'), /name="nextTarget" data-money="1"/);
 });
