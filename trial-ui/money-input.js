@@ -11,8 +11,15 @@
  */
 const PROTO = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
 const HID = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'hidden');
+const NUMBER = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'valueAsNumber');
 // Native number values with decimal/exponent notation must never pass through the integer digit stripper.
-const needsNative = input => input.type === 'number' && input.value !== '' && !/^-?\d+$/.test(input.value);
+const needsNative = input => {
+  const raw = PROTO.get.call(input);
+  if (raw === '') return input.type === 'number' && input.validity.badInput;
+  // Existing text controls may contain grouped integers (450.000.000). A single dot stays ambiguous: preserve it.
+  if (input.type === 'text' && /^-?\d{1,3}(?:\.\d{3}){2,}$/.test(raw)) return false;
+  return !/^-?\d+$/.test(raw);
+};
 const MONEY = /tiền|giá|phí|cước|cọc|đ\/|thu |thực thu|đã thu|chi |hoàn|lương|thưởng|công nợ|khách đưa|thanh toán|doanh (số|thu)|ngân sách|vnđ|vnd|₫|giá trị|\(đ\)|\bđ\b|số dư|tồn quỹ|két|đợt trả|amount|price/i;
 const NOT_MONEY = /%|phần trăm|tỷ lệ|số lượng|\bsl\b|qty|ngày|giờ|tháng|năm|số lần|điểm|số mã|số dòng|kg|cm|mm|gram|thuế suất/i;
 const fmt = raw => {
@@ -29,8 +36,8 @@ function labelOf(input) {
   const prev = input.previousElementSibling?.matches('span,small,b,strong,label') ? input.previousElementSibling.textContent : '';
   return [own, text, prev, input.name, input.dataset.label || ''].join(' ').replace(/\s+/g, ' ').trim();
 }
-export function isMoneyInput(input) {
-  if (!(input instanceof HTMLInputElement) || input.dataset.moneyProxy || needsNative(input)) return false;
+function moneyCandidate(input) {
+  if (!(input instanceof HTMLInputElement) || input.dataset.moneyProxy) return false;
   // Ô chữ chỉ bật khi đánh dấu rõ (data-money="1"); ô số nhận diện theo nhãn.
   if (input.dataset.money === '1') return input.type === 'number' || input.type === 'text';
   if (input.type !== 'number') return false;
@@ -44,52 +51,93 @@ export function isMoneyInput(input) {
   return MONEY.test(text) && (!NOT_MONEY.test(text) || /\(đ|đ\/|vnđ/i.test(text));
 }
 
+export function isMoneyInput(input) { return moneyCandidate(input) && !needsNative(input); }
+
 const proxies = new WeakMap();
+const resetForms = new WeakSet();
+function watchReset(form) {
+  if (!form || resetForms.has(form)) return;
+  resetForms.add(form);
+  // One listener per form; do not retain detached line inputs in a long-lived quote form.
+  form.addEventListener('reset', () => queueMicrotask(() => {
+    for (const input of form.querySelectorAll('input')) proxies.get(input)?.sync();
+  }));
+}
 export function enhanceMoneyInput(input) {
-  if (proxies.has(input) || !isMoneyInput(input)) return null;
-  const previous = Object.fromEntries(['value','hidden','focus','select'].map(k=>[k,Object.getOwnPropertyDescriptor(input,k)]));
-  const attributes = Object.fromEntries(['tabindex','aria-hidden'].map(k=>[k,input.getAttribute(k)]));
-  let observer;
-  const labelListeners=[];
+  watchReset(input?.form);
+  const known = proxies.get(input);
+  if (known) { known.sync(); return known.view.isConnected ? known.view : null; }
+  // Track initially fractional controls too, so a later integer can regain formatting.
+  if (!moneyCandidate(input)) return null;
+  const attributes = Object.fromEntries(['tabindex', 'aria-hidden'].map(k => [k, input.getAttribute(k)]));
+  const nativeFocus = input.focus, nativeSelect = input.select;
+  const nativeStepUp = input.stepUp, nativeStepDown = input.stepDown;
+  let hidden = HID.get.call(input), enhanced = false, switching = false, managedStep = false;
   const view = document.createElement('input');
   view.type = 'text'; view.inputMode = 'numeric'; view.autocomplete = 'off'; view.dataset.moneyProxy = '1';
   view.className = input.className + ' money-input'; view.style.cssText = input.style.cssText;
-  for (const a of ['placeholder', 'aria-label', 'title', 'id']) if (a !== 'id' && input.hasAttribute(a)) view.setAttribute(a, input.getAttribute(a));
-  const detach = () => {
-    const hidden=view.hidden,focused=document.activeElement===view;observer?.disconnect();
-    for(const [label,listener]of labelListeners)label.removeEventListener('click',listener);
-    view.remove();proxies.delete(input);
-    for(const [key,descriptor]of Object.entries(previous)){if(descriptor)Object.defineProperty(input,key,descriptor);else delete input[key];}
-    HID.set.call(input,hidden);
-    for(const [key,value]of Object.entries(attributes)){if(value===null)input.removeAttribute(key);else input.setAttribute(key,value);}
-    if(focused)input.focus();
+  for (const a of ['placeholder', 'aria-label', 'title']) if (input.hasAttribute(a)) view.setAttribute(a, input.getAttribute(a));
+  const restoreAttributes = () => {
+    for (const [key, value] of Object.entries(attributes)) {
+      if (value === null) input.removeAttribute(key); else input.setAttribute(key, value);
+    }
   };
-  const sync = () => { if(needsNative(input)){detach();return;}const raw = PROTO.get.call(input); if (document.activeElement !== view || clean(view.value) !== raw) view.value = fmt(raw); view.disabled = input.disabled; view.readOnly = input.readOnly; view.required = input.required; };
-  // Code gán ô gốc → ô hiển thị cập nhật.
+  function sync(promote = true) {
+    const native = needsNative(input) || (promote === false && !enhanced), focused = document.activeElement === (enhanced ? view : input);
+    switching = true;
+    try {
+      if (native) {
+        // Disable forwarding BEFORE removing a focused proxy: some browsers emit blur synchronously here.
+        if (enhanced) { enhanced = false; view.remove(); restoreAttributes(); }
+        HID.set.call(input, hidden);
+        if (input.type === 'number' && !input.hasAttribute('step')) { managedStep = true; input.setAttribute('step', 'any'); }
+        if (focused && !hidden) nativeFocus.call(input);
+        return;
+      }
+      if (managedStep) { if (input.getAttribute('step') === 'any') input.removeAttribute('step'); managedStep = false; }
+      const attaching = !enhanced;
+      if (view.parentNode !== input.parentNode || view.nextSibling !== input) input.before(view);
+      enhanced = true;
+      HID.set.call(input, true); input.tabIndex = -1; input.setAttribute('aria-hidden', 'true'); view.hidden = hidden;
+      const raw = PROTO.get.call(input);
+      if (document.activeElement !== view || clean(view.value) !== raw) view.value = fmt(raw);
+      view.disabled = input.disabled; view.readOnly = input.readOnly; view.required = input.required;
+      if (attaching && focused && !hidden) view.focus();
+    } finally { switching = false; }
+  }
+  // Keep these wrappers in native mode; setters and browser mutation methods must never leave a stale display.
   Object.defineProperty(input, 'value', { configurable: true, get() { return PROTO.get.call(this); }, set(v) { PROTO.set.call(this, v == null ? '' : String(v)); sync(); } });
-  input.focus = opts => view.focus(opts); input.select = () => view.select();
+  Object.defineProperty(input, 'valueAsNumber', { configurable: true, get() { return NUMBER.get.call(this); }, set(v) { NUMBER.set.call(this, v); sync(); } });
+  input.stepUp = function (...args) { const result = nativeStepUp.apply(this, args); sync(); return result; };
+  input.stepDown = function (...args) { const result = nativeStepDown.apply(this, args); sync(); return result; };
+  input.focus = opts => enhanced ? view.focus(opts) : nativeFocus.call(input, opts);
+  input.select = () => enhanced ? view.select() : nativeSelect.call(input);
+  Object.defineProperty(input, 'hidden', { configurable: true, get() { return hidden; }, set(v) { hidden = !!v; if (enhanced) view.hidden = hidden; else HID.set.call(input, hidden); } });
+  // A trailing decimal separator can temporarily read as an integer; keep native editing until blur.
+  input.addEventListener('input', () => { if (!switching) sync(enhanced || document.activeElement !== input); });
+  input.addEventListener('blur', () => { if (!switching) sync(); });
   view.addEventListener('input', () => {
+    if (switching || !enhanced) return;
     const before = view.value, caret = view.selectionStart ?? before.length, digitsLeft = before.slice(0, caret).replace(/\D/g, '').length;
-    const raw = clean(before), shown = fmt(raw);
-    view.value = shown;
-    // Giữ con trỏ sau đúng chữ số vừa gõ (bỏ qua dấu chấm thêm vào).
+    const raw = clean(before), shown = fmt(raw); view.value = shown;
     let pos = 0, seen = 0; while (pos < shown.length && seen < digitsLeft) { if (/\d/.test(shown[pos])) seen++; pos++; }
-    try { view.setSelectionRange(pos, pos); } catch { /* một số bàn phím không cho đặt con trỏ */ }
+    try { view.setSelectionRange(pos, pos); } catch { /* keyboard may not support selection */ }
     PROTO.set.call(input, raw === '-' ? '' : raw);
     const max = input.max === '' ? NaN : Number(input.max), min = input.min === '' ? NaN : Number(input.min), n = Number(raw);
     view.setCustomValidity(raw && raw !== '-' && (n > max || n < min) ? `Số tiền phải trong khoảng ${fmt(String(min || 0))} – ${fmt(String(max))}` : '');
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  view.addEventListener('change', () => input.dispatchEvent(new Event('change', { bubbles: true })));
-  for (const t of ['blur', 'focus', 'keydown']) view.addEventListener(t, e => { if (t === 'keydown' && e.key === 'Enter') input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); if (t === 'blur') input.dispatchEvent(new FocusEvent('blur')); });
-  observer=new MutationObserver(sync);observer.observe(input, { attributes: true, attributeFilter: ['disabled', 'readonly', 'required'] });
-  // Code ẩn/hiện ô gốc (input.hidden = …) thì ẩn/hiện ô hiển thị; ô gốc luôn ẩn.
-  view.hidden = input.hidden;
-  input.before(view); HID.set.call(input, true); input.tabIndex = -1; input.setAttribute('aria-hidden', 'true');
-  Object.defineProperty(input, 'hidden', { configurable: true, get() { return view.hidden; }, set(v) { view.hidden = !!v; } });
-  for (const label of input.labels || []) if (!label.contains(view)) {const listener=e=>{if(e.target===label){e.preventDefault();view.focus();}};label.addEventListener('click',listener);labelListeners.push([label,listener]);}
-  proxies.set(input, view); sync();
-  return view;
+  view.addEventListener('change', () => { if (!switching && enhanced) input.dispatchEvent(new Event('change', { bubbles: true })); });
+  for (const t of ['blur', 'keydown']) view.addEventListener(t, e => {
+    if (switching || !enhanced) return;
+    if (t === 'keydown' && e.key === 'Enter') input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    if (t === 'blur') input.dispatchEvent(new FocusEvent('blur'));
+  });
+  new MutationObserver(() => sync(enhanced || document.activeElement !== input)).observe(input, { attributes: true, attributeFilter: ['disabled', 'readonly', 'required', 'value'] });
+  // External labels target whichever control is visible, never a detached proxy.
+  for (const label of input.labels || []) if (!label.contains(view)) label.addEventListener('click', e => { if (e.target === label) { e.preventDefault(); input.focus(); } });
+  proxies.set(input, {view, sync}); sync();
+  return enhanced ? view : null;
 }
 
 /** Bật cho toàn trang: ô tiền hiện có và ô tạo sau (bảng, hộp thoại). */
