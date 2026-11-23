@@ -122,6 +122,54 @@ globalThis.ContractDocument = (() => {
   };
   const itemValues = (item, index) => ({'Start: [Related Chi tiết đơn hàngs]': '', End: '', '[STT]': index + 1, '[Sản phẩm].[Tên sản phẩm]': item.name || '', '[Mô tả sản phẩm]': productDescription(item), '[Số lượng]': money(item.quantity), '[đơn giá bán]': unitMoney(contractUnitPrice(item)), '[Đơn giá bán]': unitMoney(contractUnitPrice(item)), '[Thành tiền (-VAT)]': money(item.line_total), '[Thành tiền (+VAT)]': money(Number(item.line_total) * (1 + (Number(item.tax_percent) || 0) / 100)), '[Đóng gói]': packing(item)});
   const expandItems = (source, items) => source.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, row => row.includes('Related Chi tiết đơn hàngs') ? items.map((item, index) => replaceTokens(row, itemValues(item, index))).join('') : row);
+  // Presentation only, AFTER saved paragraph hashes/edits have been validated.
+  // Keep the shipped DOCX bytes/manifest and canonical paragraphs unchanged so
+  // old shared-template snapshots and saved document edits remain usable.
+  async function formatProductTable(bytes, items = []) {
+    const path='word/document.xml';
+    // JSZip retains compressed entries until read. Reuse embedded fonts/media
+    // rather than inflating/deflating several MB just to change document.xml.
+    const archive=globalThis.JSZip?await globalThis.JSZip.loadAsync(bytes):null;
+    const files=archive?null:unzipSync(new Uint8Array(bytes));
+    if(!(archive?archive.file(path):files[path]))throw Error('Mẫu HĐKT không hợp lệ.');
+    const source=archive?await archive.file(path).async('string'):strFromU8(files[path]);
+    const text=part=>[...part.matchAll(/<w:t\b[^>]*>([^<]*)<\/w:t>/g)].map(m=>m[1]).join('').trim();
+    const setText=(cell,value)=>{let first=true;return cell.replace(/(<w:t\b[^>]*>)[^<]*(<\/w:t>)/g,(_,open,close)=>{const next=first?xml(value):'';first=false;return open+next+close;});};
+    const result=source.replace(/<w:tbl\b[^>]*>(?:(?!<w:tbl\b)[\s\S])*?<\/w:tbl>/g,table=>{
+      const header=table.match(/<w:tr\b[\s\S]*?<\/w:tr>/)?.[0];
+      if(!header||!/^STT/.test(text(header))||!/Thành\s*[Tt]iền/.test(text(header)))return table;
+      const cells=header.match(/<w:tc\b[\s\S]*?<\/w:tc>/g)||[];
+      const quantityColumn=cells.findIndex(cell=>/Số\s*lượng/i.test(text(cell)));
+      if(quantityColumn<0)return table;
+      const white='<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF"/>';
+      let column=0;
+      const heading=header.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g,cell=>{
+        const quantity=column++===quantityColumn;
+        cell=cell.replace(/<w:shd\b[^>]*\/>/g,white);
+        if(/<w:tcPr\s*\/>/.test(cell))cell=cell.replace(/<w:tcPr\s*\/>/,'<w:tcPr>'+white+'</w:tcPr>');
+        else if(/<w:tcPr>/.test(cell))cell=cell.replace(/<w:tcPr>[\s\S]*?<\/w:tcPr>/,p=>p.includes('<w:shd')?p:p.replace('</w:tcPr>',white+'</w:tcPr>'));
+        else cell=cell.replace(/(<w:tc\b[^>]*>)/,'$1<w:tcPr>'+white+'</w:tcPr>');
+        return quantity?setText(cell,'Số lượng / ĐVT'):cell;
+      });
+      let itemIndex=0;
+      return table.replace(header,heading).replace(/<w:tr\b[\s\S]*?<\/w:tr>/g,row=>{
+        const rowCells=row.match(/<w:tc\b[\s\S]*?<\/w:tc>/g)||[];
+        if(rowCells.length!==cells.length)return row;
+        const cell=rowCells[quantityColumn],value=text(cell);
+        // Retain the displayed quantity (including valid saved edits); replace
+        // only its old unit suffix. Repeated preview/copy/export is idempotent.
+        const number=value.match(/^([+-]?\d[\d.,]*(?:[ \u00a0]\d{3})*)(?:\s+.*)?$/)?.[1];
+        if(!number)return row;
+        // Product order is authoritative; the visible STT is editable text.
+        const unit=String(items[itemIndex++]?.unit??'').trim();
+        if(!unit)return row; // Legacy missing units stay blank; never guess Bộ/Cái.
+        return row.replace(cell,setText(cell,number+' '+unit));
+      });
+    });
+    if(result===source)return bytes;
+    if(archive){archive.file(path,result,{createFolders:false,date:archive.file(path).date});return archive.generateAsync({type:'uint8array',compression:'DEFLATE',compressionOptions:{level:6}});}
+    files[path]=strToU8(result);return zipSync(files,{level:6});
+  }
   // Nhãn dòng thuế: cùng một thuế suất → "VAT (8%)"; nhiều thuế suất → "VAT".
   const vatLabel = items => { const rates = [...new Set(items.map(i => Number(i.tax_percent) || 0))]; return rates.length === 1 ? ` (${money(rates[0])}%)` : ''; };
   // Khối chữ ký cuối văn bản: bảng 2 cột bằng nhau, rộng hết khổ chữ và không trôi (mẫu cũ lệch trái), để 2 cụm "Đại diện" cân đối với trang.
@@ -356,7 +404,8 @@ globalThis.ContractDocument = (() => {
   }
   async function build(options){
     const {base,edits}=await prepareDocument(options);
-    return edits.length?globalThis.ContractWordEdit.apply(base,edits):base;
+    const filled=edits.length?await globalThis.ContractWordEdit.apply(base,edits):base;
+    return formatProductTable(filled,options.quote.items);
   }
   async function buildPack({quote, contractNumber, details, templateFiles}) {
     const folder = archiveName(quote, contractNumber), files = {};
@@ -381,5 +430,5 @@ globalThis.ContractDocument = (() => {
     link.href = URL.createObjectURL(blob); link.download = `${archive.folder}.zip`; link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
-  return {build, buildPack, download, paymentDetails, prepareDocument, contractUnitPrice, templatesFor, archiveName, printingClauseVersion:1};
+  return {build, buildPack, download, paymentDetails, prepareDocument, contractUnitPrice, templatesFor, archiveName, formatProductTable, printingClauseVersion:1};
 })();
