@@ -21,7 +21,7 @@ jobs:
       - run: php -l web-minhlong/category-browsing/cache.php
       - run: python3 web-minhlong/category-browsing/test.py
       - run: npm install --prefix /tmp/ml-sort --silent playwright@1.63.0
-      - name: Preview, back up, deploy and verify full category
+      - name: Preview, resolve live categories, deploy and verify pagination
         env:
           CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
           CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
