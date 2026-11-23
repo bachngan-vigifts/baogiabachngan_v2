@@ -86,3 +86,37 @@ test('Khách trả ship: xoá chi phí công ty cũ; xác nhận giá từ ngu�
  assert.equal(await reviewOrderCosts({...base,review:{...base.review,quoteRevision:6}}),false);
  assert.equal(opened,false);assert.equal(saved,null);
 });
+
+test('Bảng giá vốn dùng CK mua vào, giá lẻ trực tiếp và giữ nguyên dòng vốn khoá',async()=>{
+ const locked={name:'Khoá',qty:1,price:100000,costMode:'discount',purchaseDiscount:25,costPrice:75000};
+ const doc={type:'HRC',shipping:{payer:'receiver'},rows:[
+  {name:'CK',qty:2,price:100000,discount:60,costMode:'discount',purchaseDiscount:25,costPrice:75000},
+  {name:'Nhập thẳng',qty:3,price:200000,costMode:'manual',costPrice:123456.5},locked]};
+ let saved:any;
+ const result=await reviewOrderCosts({review:{quoteId:'q',quoteRevision:7,costs:{},purchaseCosts:[{index:2,source:'manual',unitCost:80000}]},isManager:true,esc,toast(){},
+ api:async(_p:string,m:string,b:any)=>{if(m==='PUT'){saved=structuredClone(b);return {revision:8};}return {revision:7,data:structuredClone(doc)};},
+ verifyBox:async(o:any)=>{
+  for(const heading of ['Giá niêm yết','CK mua vào','Đơn giá nhập','Thành tiền'])assert.ok(o.fields.includes(heading),heading);
+  const v={'purchase-mode-0':'discount','purchase-discount-0':'100','purchase-0':'0','purchase-mode-1':'manual','purchase-1':'123456.5','purchase-2':'80000','shipping-payer':'receiver'};
+  assert.equal(o.validate(v),'');
+  assert.ok(o.validate({...v,'purchase-discount-0':'101'}));
+  assert.equal(o.validate({...v,'purchase-discount-0':'0'}),'');
+  return v;
+ }});
+ assert.equal(result,true);
+ assert.equal(saved.data.rows[0].costMode,'discount');assert.equal(saved.data.rows[0].purchaseDiscount,100);assert.equal(saved.data.rows[0].costPrice,0);assert.equal(saved.data.rows[0].discount,60);
+ assert.equal(saved.data.rows[1].costPrice,123456.5);assert.deepEqual(saved.data.rows[2],locked,'giá vốn điều chỉnh không ghi ngược vào báo giá');
+});
+
+test('Lỗi revision được trả trong form đang mở, không tự thử lại ghi đè revision mới',async()=>{
+ let attempts=0;
+ const messages:string[]=[];
+ const result=await reviewOrderCosts({review:{quoteId:'q',quoteRevision:7,costs:{}},isManager:true,esc,toast:(v:string)=>messages.push(v),
+ api:async(_p:string,m:string)=>{if(m==='PUT'){attempts++;throw Object.assign(new Error('Báo giá đã thay đổi'),{status:409});}return {revision:7,data:{rows:[{name:'Ly',qty:1,price:100,costPrice:70}],shipping:{payer:'receiver'}}};},
+ verifyBox:async(o:any)=>{
+  assert.equal(typeof o.beforeConfirm,'function','phải lưu trong dialog để lỗi giữ nguyên các ô');
+  const v={'purchase-mode-0':'manual','purchase-0':'70.5','shipping-payer':'receiver'};
+  const err=await o.beforeConfirm(v);assert.match(err,/thay đổi|409/);assert.equal(v['purchase-0'],'70.5');return null;
+ }});
+ assert.equal(result,false);assert.equal(attempts,1);assert.deepEqual(messages,[]);
+});

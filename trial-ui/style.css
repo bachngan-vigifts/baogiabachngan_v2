@@ -3029,3 +3029,24 @@ body:has(.reminder-launcher:not([hidden])) .main::after{content:'';display:block
 .sale-admin-handoff .modal-head { display:flex;align-items:center;justify-content:space-between;gap:12px; }
 .sale-admin-handoff .modal-foot { display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end; }
 .sale-admin-handoff select { width:100%;min-height:44px; }
+
+/* Purchase-cost review only: other verification dialogs retain their dimensions. */
+.approval-cost-dialog.modal { width:1200px; }
+.approval-purchase-table .data-table { width:100%;table-layout:fixed; }
+.approval-purchase-table th { white-space:normal;overflow-wrap:anywhere; }
+.approval-purchase-table th:first-child { width:22%; }
+.approval-purchase-table th:nth-child(2) { width:12%; }
+.approval-purchase-table th:nth-child(3) { width:16%; }
+.approval-purchase-table th:nth-child(4) { width:10%; }
+.approval-purchase-table th:nth-child(5) { width:16%; }
+.approval-purchase-table th:nth-child(6) { width:6%; }
+.approval-purchase-table th:nth-child(7) { width:18%; }
+.approval-purchase-table input,.approval-purchase-table select { padding:8px;font-size:14px; }
+.approval-purchase-table td { overflow-wrap:anywhere;vertical-align:top; }
+.approval-purchase-table td small { display:block; }
+.approval-purchase-table .verify-field > span { position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0); }
+@media(max-width:640px){
+ .approval-purchase-table input,.approval-purchase-table select { font-size:16px; }
+ .approval-purchase-table .data-table td { flex-basis:100%; }
+ .approval-purchase-table .data-table td[data-label]::before { display:block;margin-bottom:4px; }
+}
