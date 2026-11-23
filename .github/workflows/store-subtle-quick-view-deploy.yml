@@ -32,3 +32,5 @@ jobs:
           name: subtle-quick-view-evidence
           path: subtle-qv-evidence
           retention-days: 7
+
+# Verify each storefront promotional popup close control.

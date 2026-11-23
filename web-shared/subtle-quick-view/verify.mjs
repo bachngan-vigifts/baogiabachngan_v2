@@ -10,7 +10,11 @@ export async function verify(preview){
  for(const host of ['minhlongonline.com','locknlockonline.com']){
  for(const width of [1440,390]){
   const page=await browser.newPage({viewport:{width,height:950},isMobile:width===390,hasTouch:width===390});
-  await page.addLocatorHandler(page.locator('#mltv-popup.mltv-popup--show'),async d=>d.locator('button[aria-label="Đóng popup"]').click());
+  await page.addLocatorHandler(page.locator('#mltv-popup.mltv-popup--show'),async d=>{
+   const close=d.locator('[aria-label*="Đóng"],[aria-label*="Close" i],[class*="close" i],[data-close]').first();
+   console.log('PROMO_CLOSE',host,await d.evaluate(e=>Array.from(e.querySelectorAll('button,[role="button"]')).map(b=>({tag:b.tagName,class:b.className,label:b.getAttribute('aria-label'),text:b.textContent.slice(0,60)}))));
+   await close.click({timeout:5000});
+  });
   await page.goto('https://'+host+'/',{waitUntil:'domcontentloaded',timeout:60000});
   if(preview)await page.addStyleTag({content:css});
   else await page.locator('#store-subtle-quick-view').waitFor({state:'attached'});
