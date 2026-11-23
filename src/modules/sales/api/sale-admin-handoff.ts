@@ -1,4 +1,4 @@
-import {and,asc,eq,isNull,sql,type SQL} from 'drizzle-orm';
+import {and,asc,eq,ilike,isNull,sql,type SQL} from 'drizzle-orm';
 import {AppError} from '../../../core/errors.ts';
 import {auditLogs} from '../../../core/db/schema.ts';
 import {json,readJson,type Router,type RouteContext} from '../../../core/http/router.ts';
@@ -21,9 +21,9 @@ export async function handlesQuote(db:Db,m:{id:string;role:string;positionId?:st
  return !!q&&isSupportAssignee(m,q);
 }
 const mayAssign=(m:Member,o:typeof salesOrders.$inferSelect,q:typeof quotations.$inferSelect)=>o.status!=='cancelled'&&(m.role==='manager'||m.role==='employee'&&[o.ownerId,o.createdBy,q.creatorId].includes(m.id));
-async function candidates(db:Db,id?:string){
+async function candidates(db:Db,id?:string,page={search:'',offset:0}){
  const [people,grants]=await Promise.all([
-  db.select({id:employees.id,name:employees.name}).from(employees).where(and(id?eq(employees.id,id):undefined,eq(employees.role,'employee'),eq(employees.positionId,'sale-admin'),eq(employees.active,true),isNull(employees.deletedAt))).orderBy(asc(employees.name)).limit(200),
+  db.select({id:employees.id,name:employees.name}).from(employees).where(and(id?eq(employees.id,id):undefined,!id&&page.search?ilike(employees.name,'%'+page.search.replace(/[\\%_]/g,'\\$&')+'%'):undefined,eq(employees.role,'employee'),eq(employees.positionId,'sale-admin'),eq(employees.active,true),isNull(employees.deletedAt))).orderBy(asc(employees.name),asc(employees.id)).limit(id?1:201).offset(id?0:page.offset),
   db.select({permission:positionPermissions.permission}).from(positionPermissions).where(eq(positionPermissions.positionId,'sale-admin')),
  ]);
  const perms=grants.map(g=>g.permission),eligible=['page.quotes','page.orders','page.contracts'].every(key=>can({role:'employee',positionId:'sale-admin',perms},key));
@@ -47,7 +47,10 @@ export function registerSaleAdminHandoff(router:Router<StaffEnv>,scope:(m:Member
   const o=await load(c,c.env.db),[q]=await c.env.db.select().from(quotations).where(eq(quotations.id,o.quoteId!)).limit(1);
   if(!q)throw new AppError(404,'Không tìm thấy báo giá nguồn.');
   const [assigned]=q.supportAssigneeId?await c.env.db.select({name:employees.name}).from(employees).where(eq(employees.id,q.supportAssigneeId)).limit(1):[];
-  return json({orderId:o.id,quoteId:q.id,quoteNo:q.quoteNo,assigneeId:q.supportAssigneeId,assigneeName:assigned?.name||'',revision:q.supportAssignmentRevision,canAssign:mayAssign(me(c),o,q),candidates:await candidates(c.env.db)});
+  const params=new URL(c.req.url).searchParams,search=(params.get('candidateSearch')||'').trim(),rawOffset=params.get('candidateOffset')||'0';
+  if(search.length>100||!/^\d{1,6}$/.test(rawOffset)||Number(rawOffset)>100000)throw new AppError(400,'Từ khoá hoặc trang Sale Admin không hợp lệ.');
+  const offset=Number(rawOffset),people=await candidates(c.env.db,undefined,{search,offset}),hasMore=people.length>200;
+  return json({orderId:o.id,quoteId:q.id,quoteNo:q.quoteNo,assigneeId:q.supportAssigneeId,assigneeName:assigned?.name||'',revision:q.supportAssignmentRevision,canAssign:mayAssign(me(c),o,q),candidates:people.slice(0,200),candidatePage:{offset,limit:200,hasMore,nextOffset:hasMore?offset+200:null}});
  },'business');
  router.post('/orders/:id/sale-admin-assignment',async c=>{
   const body=await readJson(c.req,2000),id=body.assigneeId,revision=body.revision;
