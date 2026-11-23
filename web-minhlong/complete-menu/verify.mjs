@@ -33,7 +33,7 @@ export async function verify(preview){
    }else{
     await page.keyboard.press('Escape');
     const close=page.locator('.mfp-close:visible').first();if(await close.count())await close.click();
-    await page.locator('a[href="#main-menu"]:visible').first().click();
+    await page.locator('a[href="#main-menu"]:visible,[data-open="#main-menu"]:visible').first().click();
     menu=page.locator('.mfp-content .lnl-needs-menu:visible').first();
    }
    await menu.waitFor({state:'visible',timeout:15000});
