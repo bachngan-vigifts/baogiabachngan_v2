@@ -32,6 +32,7 @@ export const minhLongDirect = (env: StaffEnv, order: Pick<WebOrder, 'source'>) =
 
 /** Only verified bank evidence suggests zero. A website-only paid claim requires an explicit COD choice. */
 export function suggestedWebCod(order: Pick<WebOrder, 'total' | 'financialSnapshot'>, bankPaidAt:WebBankEvidence|null=null) {
+  if(typeof bankPaidAt==='object'&&bankPaidAt?.reviewRequired)return null;
   return bankPaidAt ? Math.max(0,Math.round(order.total-(typeof bankPaidAt==='object'?bankPaidAt.amount:order.total))) : readWebOrderFinancials(order.financialSnapshot)?.payment?.paidAt ? null : Math.max(0, Math.round(order.total));
 }
 

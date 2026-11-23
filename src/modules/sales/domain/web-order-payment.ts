@@ -5,7 +5,7 @@ import type {WebBankEvidence} from '../../../core/contracts/web-bank-evidence.ts
 /** Woo may stamp date_paid on a status transition. Preserve the claim, but do not turn it into a receipt. */
 export function webOrderPayment(order:{total:number;financialSnapshot:string;crmEditSnapshot:string},bankPaidAt:WebBankEvidence|null=null){
  const payment=readWebOrderFinancials(order.financialSnapshot)?.payment;
- const conflict=!!readWebEdit(order.crmEditSnapshot).sourceConflict;
+ const conflict=!!readWebEdit(order.crmEditSnapshot).sourceConflict||!!(typeof bankPaidAt==='object'&&bankPaidAt?.reviewRequired);
  const evidence=conflict?'conflict':bankPaidAt?'bank':payment?.paidAt?'website':payment?'unpaid':'unknown';
  const paid=evidence==='bank'?(typeof bankPaidAt==='object'&&bankPaidAt?bankPaidAt.amount:order.total):evidence==='unpaid'?0:null;
  return {paid,outstanding:paid===null?null:Math.max(0,order.total-paid),

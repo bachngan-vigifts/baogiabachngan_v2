@@ -1,6 +1,6 @@
 import {assertSepayReconcileAccess,assertSepayReconcileTarget,sepayWebOrderScope,sepayWebOrderScopeInfo} from './sepay-reconcile-access.ts';
 import {orderScopeFor} from './routes.ts';
-import {detailedSepay,allocationAmount,hasDetailedSepay} from './sepay-allocation-store.ts';
+import {detailedSepay,allocationAmount,hasDetailedSepay,allocationNeedsReview} from './sepay-allocation-store.ts';
 import {sepayPaymentAllocations as allocationLines,sepayAllocationBatches as allocationBatches} from '../sepay-allocation-schema.ts';
 import {sepayEntityMap} from '../domain/sepay-entities.ts';
 import {defaultSepayCrmAccount} from '../domain/sepay-crm-account.ts';
@@ -75,7 +75,7 @@ function bankStoreScope(m:SessionState['member']){
  return and(scope?or(isNull(bank.webOrderId),sql`exists(select 1 from ${web} where ${web.id}=${bank.webOrderId} and ${scope})`):undefined,allocationScope);
 }
 const validWeb = validWebSepay();
-const state = sql<string>`case when ${bank.transferType}='out' then 'debit' when ${detailedSepay(bank.id)} then case when ${allocationAmount(bank.id)}=${bank.amount} then 'matched' else 'review' end when ${bank.status}='matched' and
+const state = sql<string>`case when ${bank.transferType}='out' then 'debit' when ${detailedSepay(bank.id)} then case when ${allocationNeedsReview(bank.id)} then 'receipt_issue' when ${allocationAmount(bank.id)}=${bank.amount} then 'matched' else 'review' end when ${bank.status}='matched' and
  (case when ${bank.webOrderId} is not null then not (${validWeb}) else
  ((${bank.matchMethod}='amount_time' and ${orders.createdAt} is distinct from ${bank.matchedOrderAt}) or ${payments.id} is null or ${payments.voidedAt} is not null or ${payments.orderId} is distinct from ${bank.orderId} or ${payments.amount}<>${bank.amount} or ${payments.method}<>'transfer') end)
  then 'receipt_issue' else ${bank.status} end`;

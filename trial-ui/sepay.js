@@ -1,3 +1,4 @@
+import {initSepayAllocations} from './sepay-allocations.js';
 const esc = (s) =>
   String(s ?? "").replace(
     /[&<>"']/g,
@@ -42,6 +43,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
   root.dataset.mobileActions = "off";
   // This page owns all button locks, including refresh/recovery after a failed read.
   root.setAttribute("data-no-busy", "");
+  let allocationUi=null;
   let active = false,
     epoch = 0,
     detailEpoch = 0,
@@ -74,6 +76,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       : esc(o.webOrderNo || o.contractNo || o.orderNo || "Đơn CRM");
   };
   function close() {
+    allocationUi?.close();allocationUi=null;
     active = false;
     epoch++;
     detailEpoch++;
@@ -260,6 +263,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
         `${back}<div class="sp-heading"><h2>Đối soát giao dịch</h2>${badge(r.status, !!r.webOrderId)}</div><strong class="sp-bank-amount ${r.transferType==='out'?'sp-outgoing':''}">${r.transferType==='out'?'− ':''}${esc(money(r.amount))}</strong><dl class="sp-info"><dt>Mã SePay</dt><dd>${esc(r.providerId)}</dd><dt>Thời gian</dt><dd>${esc(stamp(r.transactionAt))}</dd><dt>Tài khoản ngân hàng</dt><dd>${esc(r.accountNumber)}</dd><dt>Nội dung gốc</dt><dd class="sp-original">${esc(r.content)}</dd></dl>
       ${r.reason && !(r.webOrderId && r.status === "matched") ? `<p class="sp-warning">${esc(r.reason)}</p>` : ""}${receiptView(r)}
       <div data-notice aria-live="polite"></div>
+      ${data?.capabilities.canConfirm&&r.transferType==='in'&&(r.detailed||['review','unmatched'].includes(r.status))?`<a class="btn navy" href="#/sepay?allocation=${encodeURIComponent(r.id)}">Đối soát chi tiết · nhiều đơn</a>`:''}
       ${!data?.capabilities.canConfirm ? '<p class="sp-readonly">Tài khoản được cấp quyền SePay được xem và tải giao dịch. Cần quyền Đối soát khoản thu SePay để chọn đơn và xác nhận ghi thu.</p>' : !res.capabilities.canConfirm ? `<p class="sp-readonly">${esc(res.blockReason || "Giao dịch đã được xử lý; không tạo thêm phiếu thu.")}</p>` : `${!res.accountApproved ? '<p class="sp-warning">Tài khoản nhận chưa được duyệt ghi thu. Vẫn có thể tìm, chọn đơn/HĐKT và xem công nợ; cần duyệt tài khoản trước khi xác nhận thanh toán.</p>' : ""}<section class="sp-match"><h3>Chọn đơn / HĐKT</h3><p class="muted small">Chọn đúng đơn POS/web/CRM hoặc HĐKT. POS gắn phiếu chuyển khoản đã có; đơn web dùng chứng từ ngân hàng, không tạo phiếu thu CRM trùng.</p><form class="sp-order-filters" data-order-search><label class="sp-order-query">Tìm số đơn / HĐKT hoặc khách hàng<input name="orderQuery" maxlength="120" placeholder="Số đơn, khách hàng, điện thoại…"></label><label>Loại đơn<select name="source"><option value="all">Tất cả</option><option value="pos">Đơn POS</option><option value="web">Đơn website</option><option value="crm">Đơn CRM</option><option value="contract">HĐKT</option></select></label><label>Ngày đơn từ<input type="date" name="from"></label><label>Đến ngày<input type="date" name="to"></label><label>Trạng thái<select name="eligibility"><option value="active">Chưa hủy (gồm bản nháp)</option><option value="eligible">Có thể chọn đối soát</option><option value="draft">Bản nháp chưa duyệt/ký</option><option value="cancelled">Đã hủy</option><option value="all">Tất cả</option></select></label><label>Giá trị đơn từ (₫)<input type="number" name="min" min="0" max="1000000000000" step="1"></label><label>Đến (₫)<input type="number" name="max" min="0" max="1000000000000" step="1"></label><button class="btn secondary" type="submit">Lọc / tìm đơn</button><button class="btn secondary" type="button" data-clear-orders>Bỏ bộ lọc</button></form><div data-order-results aria-live="polite"></div><div data-preview tabindex="-1" role="region" aria-label="Gán khoản thu" aria-live="polite"></div></section>`}
       ${res.history.length ? `<details class="sp-history"><summary>Nhật ký xử lý (${res.history.length})</summary>${res.history.map((h) => `<article><b>${esc(h.actorName || "Hệ thống")}</b> · ${esc(stamp(h.createdAt))}<p>${esc(h.reason || "Kiểm tra lại giao dịch")}</p></article>`).join("")}</details>` : ""}`;
       if ($("[data-order-search]"))
@@ -499,6 +503,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     }
   });
   async function show(query = "") {
+    allocationUi?.close();allocationUi=null;
     active = true;
     const id = ++epoch;
     detailEpoch++;
@@ -509,6 +514,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     preview = null;
     draft = null;
     params = new URLSearchParams(query);
+    if(params.has('allocation')){allocationUi=initSepayAllocations({api,root,go,canOpenOrders});await allocationUi.show(params.get('allocation'));return;}
     const defaults = sepayDefaults();
     for (const k of ["from", "to"])
       if (!params.has(k)) params.set(k, defaults[k]);
@@ -522,6 +528,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
   function refresh() {
     if (
       !active ||
+      allocationUi ||
       document.visibilityState === "hidden" ||
       mutating ||
       listLoading ||
