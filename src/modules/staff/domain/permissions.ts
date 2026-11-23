@@ -46,6 +46,7 @@ export const PERMISSIONS: readonly PermissionDef[] = [
   { key: 'suppliers.edit', group: 'Tài chính NCC', label: 'Danh bạ NCC – xem, sửa', defaults: KE_TOAN },
   { key: 'page.cash', group: 'Sổ quỹ', label: 'Két chung cửa hàng', defaults: [...SALES, 'accounting'] },
   { key: 'sepay.reconcile-incoming', group: 'Kế toán', label: 'Đối soát khoản thu SePay', hint: 'Chọn đơn và xác nhận khoản thu trong phạm vi đơn/cửa hàng được phân quyền. Không cấp quyền xem tiền ra hoặc huỷ phiếu thu.', defaults: [] },
+  { key: 'sepay.reconcile-all-stores', group: 'Kế toán', label: 'Đối soát thu toàn công ty (mọi cửa hàng)', hint: 'Cho phép xem và đối soát đơn web của mọi cửa hàng. Vẫn cần quyền Thanh toán SePay và Đối soát khoản thu SePay; không cấp quyền xem tiền ra hay huỷ phiếu thu.', defaults: [] },
   { key: 'cash.view-all', group: 'Sổ quỹ', label: 'Xem tất cả phiếu và ca két', defaults: ['accounting'] },
   { key: 'page.cashbook', group: 'Kế toán', label: 'Sổ thu / chi', hint: 'Phiếu thu khách + phiếu chi NCC theo ngày, xuất Excel để đối soát ngân hàng.', defaults: ['accounting'] },
   { key: 'page.sepay', group: 'Kế toán', label: 'Thanh toán SePay – xem và tải giao dịch', hint: 'Xem tiền vào và tải giao dịch SePay; tiền ra chỉ dành cho Manager và chức vụ Kế toán. Đối soát gán khoản thu cần thêm quyền riêng; quyền xem không cấp quyền ghi thu.', defaults: ['accounting'] },
