@@ -25,7 +25,7 @@ Rollback: quay API/UI về bản đã xác minh; giữ nguyên cột nullable v�
 
 ## Giới hạn / chờ phối hợp
 
-Đường đọc title/description/link nhiệm vụ ở `src/modules/warehouse-workspace/routes.ts` đã báo `[Codex-3][CẦN PHỐI HỢP]` trên #801, đang chờ duyệt phạm vi file trước khi sửa. Không gọi B1 hoàn tất khi điểm này chưa đóng. B2 còn xử lý projections ngoài module (history/lookup/catalog/POS/quote/order/customer/stock moves); B1 không thay frontend POS hoặc SePay.
+Projection title/description/link nhiệm vụ ở `src/modules/warehouse-workspace/routes.ts` đã được duyệt và kiểm chứng Kho/Manager (chi tiết cuối báo cáo). Điểm mapping kho nhận bên dưới vẫn chờ điều phối. B2 còn xử lý projections ngoài module (history/lookup/catalog/POS/quote/order/customer/stock moves); B1 không thay frontend POS hoặc SePay.
 
 PGlite kiểm logic/SQL, không chứng minh tranh chấp nhiều kết nối PostgreSQL thật. Chưa thử Safari/điện thoại thật, chưa migration/deploy/kiểm tra CRM production. Không gửi email, push hay gọi Sapo/GHN/SePay/Drive thật.
 
@@ -33,8 +33,10 @@ PGlite kiểm logic/SQL, không chứng minh tranh chấp nhiều kết nối Po
 
 CI đầu tiên chưa xanh. Đã sửa fixture của accounting/crm-audit/customer supplier/flow/inventory/warehouse calendar/sales và lifecycle theo actor/hãng/kho được phân công; các lượt test con sau sửa được ghi trong issue. Chưa coi toàn bộ các test purchasing cũ đạt: `purchasing.test.ts` vẫn dựa vào Sale tạo PO/Kho mở DTO thương mại và địa chỉ giao tự do. Cần chốt riêng nguồn kho nhận có cấu trúc trước khi hoàn thiện queue cho đơn cũ; không sửa fixture để che việc mất đường nhận hàng.
 
-`incomingShipments.warehouse` hiện là `deliveryAddress()` (địa chỉ chữ tự do), không phải kho stock chuẩn. B1 fail-closed khi không ánh xạ được và đã xin điều phối chọn `receivingWarehouseId` mới hoặc metadata source-assignment đã có. Chưa thêm migration hoặc tự đoán ánh xạ. Đường đọc warehouse-workspace cũng còn chờ duyệt.
+`incomingShipments.warehouse` hiện là `deliveryAddress()` (địa chỉ chữ tự do), không phải kho stock chuẩn. B1 fail-closed khi không ánh xạ được và đã xin điều phối chọn `receivingWarehouseId` mới hoặc metadata source-assignment đã có. Chưa thêm migration hoặc tự đoán ánh xạ.
 
 Test POS số đơn lỗi ranh giới UTC/VN đã tái hiện trên origin/main c37c9683; báo ngoài làn, chưa sửa. Không đổi công thức/đếm số nghiệp vụ để né test.
 
 Projection GET `/warehouse-workspace` đã được duyệt ở comment7114065030 và bổ sung vào B1; test Kho ẩn title/description/link thương mại, Manager cùng task giữ đầy đủ đạt, cùng warehouse-workspace/architecture đạt. Không đổi phân công/cách chạy việc/tính hiệu suất. Điểm mapping kho nhận và các fixture/CI cũ vẫn chưa đóng nên chưa bỏ draft.
+
+CI SHA1993: shard1 đạt; shard2 lỗi contract-stock-holds do fixture nay có phân công sale→vig (đã xin phối hợp chỉnh đoạn kiểm người ngoài kho private); shard3 lỗi baseline POS ngày VN; shard4 còn purchasing/warehouse-work theo quyền/kho cũ. Đã cập nhật actor tạo PO trong pos-stock-sources sang Manager (giữ không cộng nháp vào hàng về), và sale-admin-scope dùng hãng được cấu hình + thêm từ chối NCC chưa phân hãng. Hai file cùng architecture rerun3/3 đạt. Không thay code tiền/tồn hoặc mở rộng quyền.
