@@ -143,7 +143,7 @@ try {
         exact: true,
       });
       await costs.waitFor();
-      for (const input of await costs.locator('input[name^="purchase-"]').all())
+      for (const input of await costs.locator('input[name^="purchase-"]:not([name^="purchase-discount-"]):not([readonly])').all())
         if (!(await input.inputValue())) await input.fill('50000');
       for (const check of await costs.locator('[data-check]').all())
         await check.check();
