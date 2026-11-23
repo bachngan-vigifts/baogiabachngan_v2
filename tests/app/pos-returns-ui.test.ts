@@ -230,3 +230,39 @@ test('UI trả hàng: mở từ trang đơn (ca của quầy khác) vẫn lập 
     (globalThis as any).document = old;
   }
 });
+
+async function approvalFeeFixture(manager: boolean, fees: boolean) {
+  doc.body = new El('body');
+  const calls: any[] = [], confirmations: any[] = [], errors: string[] = [];
+  let accept = false;
+  const r: any = {id:'fee-review',returnNo:'TH-FEE',status:'pending',createdBy:'emp',reason:'Trả hàng',requestContext:'after_delivery',lines:[],refunds:[],allocations:[],requestedServiceFee:fees?10800:0,requestedShippingFee:fees?20000:0,approvedServiceFee:0,approvedShippingFee:0,total:108000};
+  const d: any = {order:{id:'fee-order',orderNo:'POS-FEE',customerName:'Khách kiểm thử',total:138800,posSnapshot:'{}'},registerId:'r',lines:[],returns:[r],account:{credit:0,refunded:0,exchanged:0,balance:0,available:0},viewerId:manager?'mgr':'delegated',canApprove:true,manager};
+  await openPosReturns({api:async(path:string,method='GET',body?:any)=>{if(method==='POST'){calls.push({path,body});r.status='approved';r.approvedServiceFee=Number(body.serviceFee);r.approvedShippingFee=Number(body.shippingFee);}return d;},toast:(s:string)=>errors.push(s),orderId:'fee-order',shift:{id:'s',registerId:'r'},register:{id:'r'},confirmBox:async(message:string,options:any)=>{confirmations.push({message,options});return accept;}});
+  return {dialog:doc.body.children[0]!,calls,confirmations,errors,accept:()=>{accept=true;}};
+}
+
+test('delegated fee approval warns once, cancellation sends nothing and confirmation explicitly approves zero fees',async()=>{
+ const old=(globalThis as any).document;(globalThis as any).document=doc;
+ try{
+  const f=await approvalFeeFixture(false,true),text=f.dialog.textContent;
+  assert.equal((text.match(/Chỉ Manager được hoàn phí dịch vụ\/ship/g)||[]).length,1);
+  assert.doesNotMatch(text,/đang chờ quyết định của Manager/);
+  await button(f.dialog,'Duyệt yêu cầu').onclick();
+  assert.equal(f.confirmations.length,1);assert.equal(f.calls.length,0,'cancellation must not send an approval');
+  assert.match(f.confirmations[0].message,/phí hoàn = 0 đ/);assert.match(f.confirmations[0].message,/không duyệt lại được/);
+  assert.match(f.confirmations[0].message,/10.800 đ/);assert.match(f.confirmations[0].message,/20.000 đ/);
+  assert.equal(f.confirmations[0].options.ok,'Duyệt, không hoàn phí');
+  f.accept();await button(f.dialog,'Duyệt yêu cầu').onclick();
+  assert.equal(f.calls.length,1);assert.equal(Number(f.calls[0].body.serviceFee),0);assert.equal(Number(f.calls[0].body.shippingFee),0);assert.deepEqual(f.errors,[]);
+ }finally{(globalThis as any).document=old;}
+});
+
+test('no-fee delegated approval has no Manager fee note or extra confirmation',async()=>{
+ const old=(globalThis as any).document;(globalThis as any).document=doc;
+ try{const f=await approvalFeeFixture(false,false);assert.doesNotMatch(f.dialog.textContent,/Chỉ Manager được hoàn phí|chờ quyết định của Manager/);assert.match(f.dialog.textContent,/Không đề nghị hoàn phí/);await button(f.dialog,'Duyệt yêu cầu').onclick();assert.equal(f.confirmations.length,0);assert.equal(f.calls.length,1);assert.deepEqual(f.errors,[]);}finally{(globalThis as any).document=old;}
+});
+
+test('Manager keeps proposal defaults and max limits without the delegated fee warning',async()=>{
+ const old=(globalThis as any).document;(globalThis as any).document=doc;
+ try{const f=await approvalFeeFixture(true,true);assert.doesNotMatch(f.dialog.textContent,/Chỉ Manager được hoàn phí dịch vụ\/ship|đang chờ quyết định của Manager/);assert.equal(input(f.dialog,'Phí dịch vụ được hoàn').value,10800);assert.equal(input(f.dialog,'Phí ship được hoàn').value,20000);await button(f.dialog,'Duyệt yêu cầu').onclick();assert.equal(f.confirmations.length,0);assert.equal(f.calls[0].body.shippingFee,20000);assert.deepEqual(f.errors,[]);}finally{(globalThis as any).document=old;}
+});
