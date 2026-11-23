@@ -16,7 +16,7 @@ jobs:
       - run: |
           node --input-type=module <<'NODE'
           for(const path of ['/wp-json/wc/store/v1/products/categories?per_page=100&page=1','/wp-json/wp/v2/product_cat?per_page=100']){
-           const r=await fetch('https://minhlongonline.com'+path);const body=await r.text();
-           console.log('CATEGORIES',r.status,body.slice(0,65000));
+           const r=await fetch('https://minhlongonline.com'+path);const body=await r.json();
+           console.log('CATEGORIES',r.status,JSON.stringify({pages:r.headers.get('x-wp-totalpages'),data:Array.isArray(body)?body.map(x=>({id:x.id,name:x.name,slug:x.slug,parent:x.parent,count:x.count,url:x.permalink||x.link})):body}));
           }
           NODE
