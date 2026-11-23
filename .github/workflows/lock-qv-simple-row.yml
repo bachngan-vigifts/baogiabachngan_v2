@@ -1,0 +1,32 @@
+name: Lock quick-view simple row
+on:
+  push:
+    branches: [codex/lock-buy-width-20261123]
+    paths: [web-lock/quick-view-simple-row/**, .github/workflows/lock-qv-simple-row.yml]
+permissions:
+  contents: read
+concurrency:
+  group: lock-qv-simple-row
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l web-lock/quick-view-simple-row/lnl-qv-simple-row.php
+      - run: php -l web-lock/quick-view-simple-row/cache.php
+      - run: node --check web-lock/quick-view-simple-row/deploy.mjs
+      - run: npm install --prefix /tmp/qv-row --no-audit --no-fund playwright@1.56.1
+      - run: /tmp/qv-row/node_modules/.bin/playwright install chromium --only-shell
+      - run: node web-lock/quick-view-simple-row/deploy.mjs
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simple-row-evidence
+          path: simple-row-evidence/
+          retention-days: 7
