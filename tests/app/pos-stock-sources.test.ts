@@ -33,7 +33,8 @@ test('POS catalog batches all stock sources, uses approved incoming lines and pr
  const result=await f.call(path,f.emp);assert.equal(result.status,200,JSON.stringify(result.data));
  const p=result.data.products[0],d=p.stockSources;
  assert.equal(p.available,10);assert.equal(d.vigifts.qty,40);assert.equal(d.supplier.qty,70);assert.equal(d.incoming.qty,20);
- assert.deepEqual(d.incoming.orders.map((o:any)=>o.orderNo).sort(),['DMH_A','DMH_B']);
+ assert.ok(d.incoming.orders.every((o:any)=>!o.orderId&&!o.orderNo&&!o.supplierName));assert.equal(d.incoming.orders[0].arrivalDate,'2026-10-25');
+ const manager=await f.call(path,f.mgr);assert.equal(manager.status,200);assert.deepEqual(manager.data.products[0].stockSources.incoming.orders.map((o:any)=>o.orderNo).sort(),['DMH_A','DMH_B']);
  assert.ok(!JSON.stringify(d).includes('private'));assert.ok(!JSON.stringify(d).includes('9999'));
  assert.deepEqual(d.requestWarehouses.map((w:any)=>w.id),['vig']);
  const mgr=await f.call(path,f.mgr);assert.equal(mgr.data.products[0].stockSources.vigifts.qty,10039);
@@ -44,10 +45,10 @@ test('POS catalog batches all stock sources, uses approved incoming lines and pr
  assert.equal((await f.db.select().from(stockTransfers)).length,1);
  const denied=await f.call('/stock-transfers',f.emp,'POST',{fromWarehouseId:'private',toWarehouseId:'pos-wh',reason:'Không được thấy kho',lines:[{sku:'00123',qty:2}]});
  assert.equal(denied.status,400);
- const draft=await f.call('/purchase-orders',f.emp,'POST',{orders:[{supplierId:'supplier',warehouse:'Kho cửa hàng',note:'Xin hàng từ POS',lines:[{sku:'00123',name:'Ly sứ',unit:'cái',quantity:2,sources:[]}]}]});
+ const draft=await f.call('/purchase-orders',f.mgr,'POST',{orders:[{supplierId:'supplier',warehouse:'Kho cửa hàng',note:'Xin hàng từ POS',lines:[{sku:'00123',name:'Ly sứ',unit:'cái',quantity:2,sources:[]}]}]});
  assert.equal(draft.status,201,JSON.stringify(draft.data));
  const [saved]=await f.db.select().from(incomingShipments).where(eq(incomingShipments.id,draft.data.ids[0]));
- assert.equal(saved!.approvalStatus,'pending');assert.equal(saved!.submittedAt,null);
+ assert.equal(saved!.approvalStatus,'pending');assert.ok(saved!.submittedAt,'Manager tạo đơn chờ duyệt, chưa được tính vào incoming');
  assert.equal((await f.call(path,f.emp)).data.products[0].stockSources.incoming.qty,20,'new draft is not incoming stock');
 });
 

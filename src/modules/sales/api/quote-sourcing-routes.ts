@@ -34,13 +34,13 @@ export function registerQuoteSourcingRoutes(router: Router<StaffEnv>) {
     const selling=await sellableWarehouses(db,!configured||member.role==='manager'?{role:'manager'}:owner??{role:''});
     const visible=(await db.select({id:warehouses.id,name:warehouses.name,kind:warehouses.kind}).from(warehouses).where(eq(warehouses.active,true)).orderBy(asc(warehouses.sortOrder),asc(warehouses.name))).filter(w=>!hidden.has(w.id));
     const opened=new Set((await db.selectDistinct({id:stockMoves.warehouseId}).from(stockMoves).where(eq(stockMoves.refType,'opening'))).map(w=>w.id));
-    const stock=needs.size?await readCatalogStock(db,[...needs.keys()]):[];
-    const incoming=needs.size&&incomingLookup.read?await incomingLookup.read(db,[...needs.keys()]):[];
+    const stock=needs.size?await readCatalogStock(db,[...needs.keys()],member):[];
+    const incoming=needs.size&&incomingLookup.read?await incomingLookup.read(db,[...needs.keys()],member):[];
     return json({quoteId:quote.id,quoteNo:quote.quoteNo,customerName:quote.customer,scopeLabel:SOURCING_SCOPE_LABEL,skipped,
       warehouses:visible.filter(w=>w.kind==='stock').map(w=>({id:w.id,name:w.name,opened:opened.has(w.id),canSell:selling.some(s=>s.id===w.id)})),
-      canPurchase:can(member,'page.purchases'),canRequestEarly:can(member,'page.purchases')&&can(member,'purchases.early-request'),
+      canPurchase:incomingLookup.canPurchase?.(member)??false,canRequestEarly:(incomingLookup.canPurchase?.(member)??false)&&can(member,'purchases.early-request'),
       lines:[...needs.values()].map(line=>({...line,stock:Object.fromEntries(visible.filter(w=>w.kind==='stock').map(w=>[w.id,stock.find(s=>s.sku===line.sku&&s.warehouseId===w.id)?.quantity??0])),
-        incoming:incoming.filter(s=>s.sku===line.sku).reduce((n,s)=>n+s.left,0)}))});
+        incoming:incoming.filter(s=>s.sku===line.sku).reduce((n,s)=>n+s.left,0),incomingDue:incoming.filter(s=>s.sku===line.sku&&s.arrivalDate).map(s=>s.arrivalDate!).sort()[0]??null}))});
   },'business');
 }
 
