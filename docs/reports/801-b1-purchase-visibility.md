@@ -36,3 +36,5 @@ CI đầu tiên chưa xanh. Đã sửa fixture của accounting/crm-audit/custom
 `incomingShipments.warehouse` hiện là `deliveryAddress()` (địa chỉ chữ tự do), không phải kho stock chuẩn. B1 fail-closed khi không ánh xạ được và đã xin điều phối chọn `receivingWarehouseId` mới hoặc metadata source-assignment đã có. Chưa thêm migration hoặc tự đoán ánh xạ. Đường đọc warehouse-workspace cũng còn chờ duyệt.
 
 Test POS số đơn lỗi ranh giới UTC/VN đã tái hiện trên origin/main c37c9683; báo ngoài làn, chưa sửa. Không đổi công thức/đếm số nghiệp vụ để né test.
+
+Projection GET `/warehouse-workspace` đã được duyệt ở comment7114065030 và bổ sung vào B1; test Kho ẩn title/description/link thương mại, Manager cùng task giữ đầy đủ đạt, cùng warehouse-workspace/architecture đạt. Không đổi phân công/cách chạy việc/tính hiệu suất. Điểm mapping kho nhận và các fixture/CI cũ vẫn chưa đóng nên chưa bỏ draft.
