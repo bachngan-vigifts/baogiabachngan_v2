@@ -4,7 +4,7 @@ export function reservedPosOrderNo(cart: string): string | null {
   try {
     const value: unknown = JSON.parse(cart).reservedOrderNo;
     if (typeof value !== 'string') return null;
-    const old = /^POS_(\d{4})(\d{2})(\d{2})_\d{3,}$/.exec(value), current = /^POS_\d{3,}_(\d{2})(\d{2})(\d{4})$/.exec(value);
+    const old = /^POS_(\d{4})(\d{2})(\d{2})_\d{3,}$/.exec(value), current = /^POS_(?:(?:LOCK|ML)_)?\d{3,}_(\d{2})(\d{2})(\d{4})$/.exec(value);
     if (!old && !current) return null;
     documentDate(old ? `${old[1]}-${old[2]}-${old[3]}` : `${current![3]}-${current![2]}-${current![1]}`);
     return value;
@@ -28,8 +28,10 @@ export function matchesPosQrReference(request: { id: string; cart: string }, nor
   return false;
 }
 
-export const posQrOrderNumbers = (normalized: string): string[] => [...new Set((normalized.match(/POS[0-9]{11,}/g) || []).flatMap(token => {
-  const digits = token.slice(3);
+// Ngân hàng bỏ dấu "_": POSML00123112026 → POS_ML_001_23112026 (có mã cửa hàng), POS00123112026 → POS_001_23112026.
+export const posQrOrderNumbers = (normalized: string): string[] => [...new Set((normalized.match(/POS(?:LOCK|ML)?[0-9]{11,}/g) || []).flatMap(token => {
+  const store = /^POS(LOCK|ML)/.exec(token)?.[1], digits = token.slice(store ? 3 + store.length : 3);
+  if (store) return [`POS_${store}_${digits.slice(0, -8)}_${digits.slice(-8)}`];
   return [`POS_${digits.slice(0, 8)}_${digits.slice(8)}`, `POS_${digits.slice(0, -8)}_${digits.slice(-8)}`]
     .filter(no => reservedPosOrderNo(JSON.stringify({ reservedOrderNo: no })) != null);
 }))];

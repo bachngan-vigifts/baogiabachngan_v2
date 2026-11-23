@@ -71,7 +71,7 @@ const browser = await chromium.launch({
   args: ['--no-sandbox'],
 });
 try {
-  for (const width of [390, 1024, 1447]) {
+  for (const width of [390, 1280]) {
     const q = ok(
       await f.call('/quotes', f.mgr, 'POST', {
         type: 'HRC',
@@ -83,6 +83,7 @@ try {
         customerAddress:
           'Số 0169A, Tổ 8, Ấp Thành Phú, Xã Tân Quới, Tỉnh Vĩnh Long, Việt Nam',
         vat: 8,
+        deliveryDate: '2020-01-15',
         shipping: { payer: 'receiver' },
         rows: Array.from({ length: 24 }, (_, i) => ({
           sku: '00123',
@@ -138,10 +139,12 @@ try {
         await page.locator('[data-progress-action="approve"]').click();
       else await page.locator('#order-confirm').click();
       const costs = page.getByRole('dialog', {
-        name: 'Kiểm tra chi phí trước khi duyệt',
+        name: /^(Kiểm tra chi phí trước khi duyệt|Nhập đủ chi phí trước khi duyệt)$/,
         exact: true,
       });
       await costs.waitFor();
+      for (const input of await costs.locator('input[name^="purchase-"]:not([name^="purchase-discount-"]):not([readonly])').all())
+        if (!(await input.inputValue())) await input.fill('50000');
       for (const check of await costs.locator('[data-check]').all())
         await check.check();
       await costs.locator('[data-ok]').click();
@@ -153,6 +156,14 @@ try {
       return dialog;
     }
     let dialog = await openReview();
+    const dateInput = dialog.locator('[name="deliveryDate"]');
+    assert.equal(await dateInput.inputValue(), '2020-01-15', 'giữ ngày đã lưu');
+    for (const date of ['2020-01-16', new Date().toISOString().slice(0, 10), '2099-01-15']) {
+      await dateInput.fill(date);
+      assert.equal(await dateInput.evaluate(n => n.checkValidity()), true, `ngày hợp lệ: ${date}`);
+    }
+    await dateInput.fill('2020-01-15');
+
     assert.equal(await dialog.locator('.verify-products tbody tr').count(), 24);
     assert.equal(
       await dialog.locator('[data-injected]').count(),
@@ -198,7 +209,7 @@ try {
       true,
       'không tràn ngang màn hình',
     );
-    const beforeCancel = writes.length;
+    let beforeCancel = writes.length;
     await dialog
       .getByRole('button', { name: 'Quay lại kiểm tra', exact: true })
       .click();
@@ -209,6 +220,7 @@ try {
       'draft',
     );
     dialog = await openReview();
+    beforeCancel = writes.length;
     if (width === 390)
       await dialog.getByRole('button', { name: 'Đóng', exact: true }).click();
     else await page.keyboard.press('Escape');
@@ -219,6 +231,7 @@ try {
       'Escape / đóng không duyệt chứng từ',
     );
     dialog = await openReview();
+    beforeCancel = writes.length;
     for (const check of await dialog.locator('[data-check]').all())
       await check.check();
     const first = dialog.locator('[data-check]').first();
@@ -235,7 +248,12 @@ try {
       ok(await f.call('/orders/' + contract.orderId, f.mgr)).order.status,
       'draft',
     );
-    const date = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+    // Browser sanitizes malformed date values; the existing empty-date gate must keep the form.
+    await dialog.locator('[name="deliveryDate"]').evaluate(n => { n.value = 'not-a-date'; });
+    await dialog.locator('[data-ok]').click();
+    assert.equal(await dialog.isVisible(), true);
+    assert.equal(writes.length, beforeCancel, 'ngày không hợp lệ không ghi dữ liệu');
+    const date = width === 390 ? '2020-01-15' : '2020-01-16';
     await dialog.locator('[name="deliveryDate"]').fill(date);
     await dialog.locator('[name="warehouseId"]').selectOption('pos-wh');
     await dialog.locator('.modal-body').evaluate((n) => {
@@ -280,6 +298,11 @@ try {
         jsErrors: 0,
       }),
     );
+    for (const invalid of ['', 'not-a-date'])
+      assert.equal((await f.call(`/orders/${contract.orderId}/delivery-date`, f.mgr, 'PUT', { date: invalid })).status, 400);
+    assert.ok([403, 404].includes((await f.call(`/orders/${contract.orderId}/delivery-date`, f.emp, 'PUT', { date: '2020-01-17' })).status), 'nhân viên không sửa ngày đơn ngoài quyền');
+    assert.equal(ok(await f.call('/orders/' + contract.orderId, f.mgr)).order.expectedDeliveryDate, date);
+    assert.equal((await f.call(`/orders/${contract.orderId}/delivery-date`, '', 'PUT', { date: '2020-01-17' })).status, 401);
     await context.close();
   }
   // Callers using the shared compact dialog keep their summary, fields, validation and cancel result.

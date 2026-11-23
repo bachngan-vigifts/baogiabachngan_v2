@@ -13,7 +13,7 @@ import {posStockSnapshot,posStockDelta,posScanCodes,posBrandScope} from './pos-s
 import {ledgerWarehouses} from './pos-stock.ts';
 import {webOrderBucket} from '../domain/web-order-outcome.ts';
 import { applyWebsiteCancel, websiteCancelled } from './web-order-customer-cancel.ts';
-import { nextPosOrderNo } from './pos-number.ts';
+import { nextPosOrderNo, posOrderPrefixFor } from './pos-number.ts';
 import { posQrContent, reservedPosOrderNo, normalizePosReference, matchesPosQrReference, posQrOrderNumbers } from '../domain/pos-qr-reference.ts';
 import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { filterPosOrderBoard } from '../domain/pos-order-board.ts';
@@ -1257,7 +1257,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           if (existing.expiresAt < posNow() || existing.confirmedAt) throw new AppError(409, 'QR hết hạn hoặc đã thu.');
           return { request: existing, register: calc.register };
         }
-        const reservedOrderNo = await nextPosOrderNo(tx, vietnamDate().iso);
+        const reservedOrderNo = await nextPosOrderNo(tx, vietnamDate().iso, await posOrderPrefixFor(tx, calc.register));
         const now = posNow(),
           [request] = await tx
             .insert(posPaymentRequests)

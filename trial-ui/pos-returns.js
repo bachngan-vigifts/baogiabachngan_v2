@@ -154,7 +154,7 @@ export async function openPosReturns({
   async function home() {
     content.replaceChildren();
     const search = field('Tìm bill gốc theo số đơn, khách hoặc điện thoại');
-    search.input.placeholder = 'Ví dụ: POS_20261019_002';
+    search.input.placeholder = 'Ví dụ: POS_ML_002_19102026';
     const results = el('div', 'pos-return-search-results');
     content.append(search.box, results, el('h3', '', 'Yêu cầu gần đây'));
     let seq = 0;
