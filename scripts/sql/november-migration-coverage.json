@@ -278,5 +278,6 @@
   {"migration":"20261119090000_search_fold_columns.sql","asserts":["assert-search-fold-columns.sql"]},
   {"migration":"20261121102152_sale_admin_handoff.sql","asserts":["assert-sale-admin-handoff.sql"]},
   {"migration":"20261121150000_purchase_order_intents.sql","asserts":["assert-purchase-order-intents.sql"]},
-  {"migration":"20261121160000_customer_profile_revision.sql","asserts":["assert-customer-profile-revision.sql"]}
+  {"migration":"20261121160000_customer_profile_revision.sql","asserts":["assert-customer-profile-revision.sql"]},
+  {"migration":"20261122090000_transfer_create_mode.sql","asserts":["assert-transfer-create-mode.sql"]}
 ]

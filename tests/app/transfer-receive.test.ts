@@ -174,3 +174,12 @@ test('Manager "Tạo & duyệt" chỉ duyệt, chưa trừ kho; nhân viên khô
   assert.equal((await s.db.select().from(stockTransfers)).length, before, 'xuất lỗi thì không còn phiếu dở'); assert.equal(await s.bal('LY1', 'vig'), 50);
   const plain = await s.call('/stock-transfers', s.ml, 'POST', body); assert.equal(plain.status, 201); assert.equal(plain.data.status, 'pending', 'mặc định vẫn chờ duyệt');
 });
+
+test('clientKey giữ chế độ tạo ban đầu, không đổi approve sang ship dù phiếu đã đi tiếp',async()=>{
+ const s=await setup(),clientKey=crypto.randomUUID(),body={clientKey,fromWarehouseId:'vig',toWarehouseId:'ml',reason:'Tái gửi sau mất mạng',lines:[{sku:'LY1',qty:3}],mode:'approve'};
+ const first=await s.call('/stock-transfers',s.mgr,'POST',body);assert.equal(first.status,201);
+ const conflict=await s.call('/stock-transfers',s.mgr,'POST',{...body,mode:'ship'});assert.equal(conflict.status,409);assert.equal(conflict.data.code,'IDEMPOTENCY_CONFLICT');
+ assert.equal((await s.call(`/stock-transfers/${first.data.id}/ship`,s.mgr,'POST',{})).status,200);
+ const replay=await s.call('/stock-transfers',s.mgr,'POST',body);assert.equal(replay.status,200);assert.equal(replay.data.status,'shipped');
+ assert.equal((await s.call('/stock-transfers',s.mgr,'POST',{...body,mode:'ship'})).status,409,'chế độ gốc không được suy từ trạng thái hiện tại');
+});
