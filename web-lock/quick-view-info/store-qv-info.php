@@ -21,7 +21,8 @@ function fill(p){
  var price=p.querySelector('.product-info .price-wrapper'),meta=p.querySelector('.product-info .product_meta');
  if(price&&!p.querySelector('.bn-qv-invoice')){
   var note=el('aside','bn-qv-invoice');note.setAttribute('aria-label','Hướng dẫn xuất hóa đơn công ty');
-  note.append(el('strong','','Có hỗ trợ xuất hóa đơn công ty'),el('p','','Chọn Mua ngay hoặc vào Giỏ hàng, rồi chọn “Tôi muốn xuất hóa đơn Công ty” để nhập thông tin.'));
+  var ml=location.hostname==='minhlongonline.com';
+  note.append(el('strong','',ml?'Xuất hóa đơn GTGT cho doanh nghiệp':'Có hỗ trợ xuất hóa đơn công ty'),el('p','',ml?'Chọn Mua ngay hoặc vào Giỏ hàng, tích chọn “Xuất hóa đơn công ty” và nhập đầy đủ tên công ty, mã số thuế, địa chỉ.':'Chọn Mua ngay hoặc vào Giỏ hàng, rồi chọn “Tôi muốn xuất hóa đơn Công ty” để nhập thông tin.'));
   price.after(note);
  }
  if(!meta||p.querySelector('.bn-qv-info'))return;
