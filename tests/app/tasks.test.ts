@@ -192,9 +192,9 @@ test('nhận hàng NCC: không hoàn thành/huỷ thủ công, vẫn nhận vi�
   const reminders=await receivingReminderTasks(db,atEight);
   await reconcileTaskSet(db,new Map(reminders.map(t=>[t.autoKey,t])),atEight,like(tasks.autoKey,'receiving-due:%'));
   const list = (await call('/tasks?refresh=1', kho)).data.tasks;
-  const managed=(await call('/tasks?refresh=1',mgr)).data.tasks.find((t:any)=>t.sourceId===id&&t.completionFromSource&&t.assigneeId==='kho');
+  const managed=(await call('/tasks?refresh=1&view=all',mgr)).data.tasks.find((t:any)=>t.sourceId===id&&t.completionFromSource&&t.assigneeId==='kho');
   const task = list.find((t: any) => t.id===managed?.id && t.completionFromSource);
-  assert.equal(task?.sourceId,null,'Kho không nhận ID PO thương mại');assert.equal(task?.link,'#/receiving');
+  assert.ok(task,JSON.stringify(list));assert.equal(task.sourceId,null,'Kho không nhận ID PO thương mại');assert.equal(task?.link,'#/receiving');
   assert.ok(task, JSON.stringify(list));
   assert.equal((await call(`/tasks/${task.id}`, kho)).data.task.completionFromSource, true);
   for (const actor of [mgr, kho]) for (const status of ['done', 'cancelled']) {
