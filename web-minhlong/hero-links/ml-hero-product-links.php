@@ -23,8 +23,11 @@ a.ml-hero-product-link:focus-visible{outline:3px solid #ffce54!important;outline
   const src=img.currentSrc||img.src;
   if(!/\/banner-san-pham-moi-2026-(pc|mobile)\.webp(?:\?|$)/.test(src)||img.dataset.mlHeroLinks)return;
   const mobile=src.includes('-mobile.webp');
-  const host=mobile?img.closest('.img-inner'):img.closest('.banner-inner');
-  if(!host||host.closest('a'))return;
+  let host=mobile?img.closest('.img-inner'):img.closest('.banner-inner');
+  if(!host)return;
+  // Mobile image has an existing full-image link: use sibling hotspots, never nested anchors.
+  if(host.closest('a'))host=host.closest('a').parentElement;
+  if(!host)return;
   img.dataset.mlHeroLinks='1';host.classList.add('ml-hero-link-host');
   const links=items.map(item=>{
    const a=document.createElement('a');a.className='ml-hero-product-link';a.href=item.slug;
