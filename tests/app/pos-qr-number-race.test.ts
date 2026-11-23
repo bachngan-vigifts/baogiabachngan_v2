@@ -12,6 +12,7 @@ import { posPaymentRequests } from '../../src/modules/sales/pos-schema.ts';
 import { warehouses } from '../../src/modules/catalog/schema.ts';
 import { posStoreCode } from '../../src/modules/sales/domain/pos-store-code.ts';
 import { nextPosOrderNo, posOrderPrefixFor } from '../../src/modules/sales/api/pos-number.ts';
+import { vietnamDate } from '../../src/modules/sales/domain/sales.ts';
 import { posQrOrderNumbers, normalizePosReference, matchesPosQrReference, reservedPosOrderNo } from '../../src/modules/sales/domain/pos-qr-reference.ts';
 
 const orderNo = async (f: Awaited<ReturnType<typeof setup>>, id: string) => (await f.db.select().from(salesOrders).where(eq(salesOrders.id, id)))[0]!.orderNo;
@@ -56,7 +57,7 @@ test('số đơn POS có mã cửa hàng; ngân hàng bỏ dấu "_" vẫn khớ
   assert.match(await orderNo(f, lock.data.id), /^POS_LOCK_001_\d{8}$/);
   // Quầy Minh Long đánh số riêng theo cửa hàng (nhân viên Lock không bán được ở quầy ML nên kiểm trực tiếp bộ cấp số).
   await f.db.insert(warehouses).values({ id: 'ml-wh', name: 'Kho Minh Long', kind: 'stock' });
-  const date = new Date().toISOString().slice(0, 10), prefix = await posOrderPrefixFor(f.db, { name: 'Quầy 1', warehouseId: 'ml-wh' });
+  const date = vietnamDate().iso, prefix = await posOrderPrefixFor(f.db, { name: 'Quầy 1', warehouseId: 'ml-wh' });
   assert.equal(prefix, 'POS_ML');
   const mlNo = await nextPosOrderNo(f.db, date, prefix);
   assert.match(mlNo, /^POS_ML_001_\d{8}$/);
