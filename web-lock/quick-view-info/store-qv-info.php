@@ -10,6 +10,7 @@ add_action('wp_footer', function () {
  echo '<style id="bn-qv-info-style">';
  echo <<<'BN_INFO_CSS'
 .product-lightbox .bn-qv-invoice{margin:10px 0 16px;padding:10px 12px;background:#f3f8ff;border:1px solid #d9e7f7;border-radius:8px;color:#334155;font-size:13px;line-height:1.5}.product-lightbox .bn-qv-invoice strong{display:block;color:#245b88;font-size:14px;margin-bottom:3px}.product-lightbox .bn-qv-invoice p{margin:0}.product-lightbox .bn-qv-info{margin-top:12px;border:1px solid #dce5ed;border-radius:8px;color:#334155;font-size:13px;line-height:1.5;overflow-wrap:anywhere}.product-lightbox .bn-qv-info details+details{border-top:1px solid #dce5ed}.product-lightbox .bn-qv-info summary{cursor:pointer;padding:11px 12px;font-weight:600;color:#245b88}.product-lightbox .bn-qv-info summary:focus-visible{outline:2px solid #245b88;outline-offset:-3px}.product-lightbox .bn-qv-info .bn-qv-body{padding:0 12px 12px}.product-lightbox .bn-qv-info p{margin:0 0 6px}.product-lightbox .bn-qv-coupon{padding:8px 0;border-bottom:1px dashed #dce5ed}.product-lightbox .bn-qv-coupon strong{color:#b64027}.product-lightbox .bn-qv-coupon code{display:inline-block;margin-left:8px;background:#edf5fb;color:#245b88;padding:2px 6px}.product-lightbox .bn-qv-coupon ul{margin:4px 0 0 16px;font-size:12px}.product-lightbox .bn-qv-info small{display:block;margin-top:8px;line-height:1.5}
+.product-lightbox .product-gallery > .bn-qv-info{margin:16px 16px 20px;text-align:left}
 BN_INFO_CSS;
  echo '</style><script id="bn-qv-info-script">';
  echo <<<'BN_INFO_JS'
@@ -21,7 +22,7 @@ function fill(p){
  var price=p.querySelector('.product-info .price-wrapper'),meta=p.querySelector('.product-info .product_meta');
  if(price&&!p.querySelector('.bn-qv-invoice')){
   var note=el('aside','bn-qv-invoice');note.setAttribute('aria-label','Hướng dẫn xuất hóa đơn công ty');
-  var ml=location.hostname==='minhlongonline.com';
+  var ml=location.hostname==='minhlongonline.com'||location.hostname==='locknlockonline.com';
   note.append(el('strong','',ml?'Xuất hóa đơn GTGT cho doanh nghiệp':'Có hỗ trợ xuất hóa đơn công ty'),el('p','',ml?'Chọn Mua ngay hoặc vào Giỏ hàng, tích chọn “Xuất hóa đơn công ty” và nhập đầy đủ tên công ty, mã số thuế, địa chỉ.':'Chọn Mua ngay hoặc vào Giỏ hàng, rồi chọn “Tôi muốn xuất hóa đơn Công ty” để nhập thông tin.'));
   price.after(note);
  }
@@ -39,7 +40,8 @@ function fill(p){
  item.querySelectorAll('li').forEach(function(li){ul.append(el('li','',li.textContent));});row.append(head,ul);vouchers.append(row);});
  var foot=source&&source.querySelector('.lnl-image-vouchers-note');
  vouchers.append(el('small','',foot?foot.textContent:'Xem mã ưu đãi và điều kiện áp dụng tại Giỏ hàng hoặc Thanh toán.'));
- meta.after(info);
+ var gallery=p.querySelector('.product-gallery');
+ if(location.hostname==='locknlockonline.com'&&gallery)gallery.appendChild(info);else meta.after(info);
 }
 function scan(){document.querySelectorAll('.product-lightbox').forEach(fill);}
 function init(){scan();if(window.jQuery)window.jQuery(document).on('mfpOpen.bnQvInfo mfpAjaxContentAdded.bnQvInfo',scan);
