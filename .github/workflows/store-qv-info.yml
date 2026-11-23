@@ -1,0 +1,29 @@
+name: Deploy quick-view information on both stores
+on:
+  push:
+    branches: [codex/lock-qv-info-20261123]
+    paths: [web-lock/quick-view-info/store-qv-info.php, web-lock/quick-view-info/cache.php, web-lock/quick-view-info/deploy.mjs, .github/workflows/store-qv-info.yml]
+permissions:
+  contents: read
+concurrency:
+  group: store-qv-info-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l web-lock/quick-view-info/store-qv-info.php && node --check web-lock/quick-view-info/deploy.mjs
+      - run: npm install --prefix /tmp/qv-info --no-audit --no-fund playwright@1.56.1
+      - run: /tmp/qv-info/node_modules/.bin/playwright install chromium --only-shell
+      - run: node web-lock/quick-view-info/deploy.mjs
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qv-info-evidence
+          path: qv-info-evidence/
