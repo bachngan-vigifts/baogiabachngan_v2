@@ -6,7 +6,7 @@ add_action('rest_api_init',function(){
   'permission_callback'=>function($r){return time()<__EXPIRES__ && hash_equals('__TOKEN__',(string)$r->get_header('X-ML-POS'));},
   'callback'=>function(){
    $host=strtolower((string)wp_parse_url(home_url('/'),PHP_URL_HOST));
-   if(!in_array($host,array('minhlongonline.com'),true))return new WP_Error('wrong_host','Host mismatch',array('status'=>403));
+   if(!in_array($host,array('minhlongonline.com','locknlockonline.com'),true))return new WP_Error('wrong_host','Host mismatch',array('status'=>403));
    do_action('litespeed_purge_all');
    $key=(string)get_option('litespeed.conf.cdn-cloudflare_key','');
    $email=(string)get_option('litespeed.conf.cdn-cloudflare_email','');
