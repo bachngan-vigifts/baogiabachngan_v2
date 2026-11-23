@@ -97,6 +97,24 @@ add_action('wp_footer', static function () {
 .mlcb-sidebar summary:focus-visible,.mlcb-sidebar a:focus-visible{outline:2px solid #468ac2;outline-offset:-2px}
 </style>
  <script id="mlcb-sidebar-js" data-no-optimize="1" data-no-defer="1">(()=>{
+ 'use strict';
+ const normalize=s=>s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d');
+ const path=u=>new URL(u,location.origin).pathname.replace(/\/$/,'');
+ function filter(menu){
+  const field=menu.querySelector('input[type=search]'),q=normalize(field.value.trim());
+  const all=menu.querySelector('.mlcb-needs-all'),empty=menu.querySelector('.mlcb-needs-empty');
+  let found=0;
+  menu.querySelectorAll('.mlcb-need').forEach(d=>{
+   const titleMatch=normalize(d.querySelector('summary').textContent).includes(q);
+   const links=[...d.querySelectorAll('.mlcb-need-links a')];
+   links.forEach(a=>a.hidden=!!q&&!titleMatch&&!normalize(a.textContent).includes(q));
+   d.hidden=!links.some(a=>!a.hidden);
+   d.open=q?!d.hidden:!!d.querySelector('a[aria-current=page]');
+   if(!d.hidden)found++;
+  });
+  if(all){all.hidden=!!q;all.open=false;}
+  if(empty)empty.hidden=!q||found>0;
+ }
  function init(){
   const source=document.querySelector('.header-vertical-menu__fly-out .lnl-needs-menu');
   if(!source||!source.querySelector('.lnl-need'))return;
@@ -104,43 +122,29 @@ add_action('wp_footer', static function () {
    const original=widget.querySelector('ul.product-categories');
    if(!original||widget.querySelector('.mlcb-menu'))return;
    const menu=source.cloneNode(true);
-   // Isolate the cloned UI from legacy global menu search enhancers.
    [menu,...menu.querySelectorAll('*')].forEach(e=>[...e.classList].forEach(name=>{if(name.startsWith('lnl-')){e.classList.remove(name);e.classList.add('mlcb-'+name.slice(4));}}));
-   menu.classList.add('mlcb-menu');
-   menu.querySelector('h2')?.remove();
+   menu.classList.add('mlcb-menu');menu.querySelector('h2')?.remove();
    menu.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));
-   const field=menu.querySelector('input[type=search]');
-   const all=menu.querySelector('.mlcb-needs-all'),empty=menu.querySelector('.mlcb-needs-empty');
-   const groups=[...menu.querySelectorAll('.mlcb-need')];
-   const normalize=s=>s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d');
-   const path=u=>new URL(u,location.origin).pathname.replace(/\/$/,'');
-   function markCurrent(){
-    menu.querySelectorAll('a[href]').forEach(a=>{if(path(a.href)===path(location.href))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
-   }
-   function reset(){
-    field.value='';menu.querySelectorAll('[hidden]').forEach(e=>e.hidden=false);
-    if(empty)empty.hidden=true;
-    menu.querySelectorAll('details').forEach(d=>d.open=false);
-    groups.forEach(d=>{d.open=!!d.querySelector('a[aria-current=page]');});
-   }
-   function filter(){
-    const q=normalize(field.value.trim());if(!q){reset();return;}
-    let found=0;
-    groups.forEach(d=>{
-     const title=normalize(d.querySelector('summary').textContent),titleMatch=title.includes(q);
-     const links=[...d.querySelectorAll('.mlcb-need-links a')];
-     links.forEach(a=>a.hidden=!titleMatch&&!normalize(a.textContent).includes(q));
-     d.hidden=!links.some(a=>!a.hidden);d.open=!d.hidden;if(!d.hidden)found++;
-    });
-    if(all)all.hidden=true;if(empty)empty.hidden=found>0;
-   }
-   markCurrent();reset();
-   field.addEventListener('input',filter);field.addEventListener('search',filter);
-   menu.querySelector('.mlcb-needs-reset')?.addEventListener('click',()=>{reset();field.focus();});
-   groups.forEach(d=>d.addEventListener('toggle',()=>{if(d.open&&!field.value.trim())groups.forEach(other=>{if(other!==d)other.open=false;});}));
+   menu.querySelectorAll('a[href]').forEach(a=>{if(path(a.href)===path(location.href))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+   menu.querySelector('input[type=search]').value='';filter(menu);
    widget.classList.add('mlcb-sidebar');original.hidden=true;original.before(menu);
   });
  }
+ // Delegation survives the theme cloning sidebar markup into its mobile filter drawer.
+ ['input','change','search'].forEach(type=>document.addEventListener(type,event=>{
+  if(!event.target.matches('.mlcb-menu input[type=search]'))return;
+  filter(event.target.closest('.mlcb-menu'));
+ },true));
+ document.addEventListener('click',event=>{
+  const button=event.target.closest('.mlcb-menu .mlcb-needs-reset');if(!button)return;
+  const menu=button.closest('.mlcb-menu'),field=menu.querySelector('input[type=search]');
+  field.value='';filter(menu);field.focus();
+ },true);
+ document.addEventListener('toggle',event=>{
+  const d=event.target;if(!d.matches('.mlcb-menu .mlcb-need')||!d.open)return;
+  const menu=d.closest('.mlcb-menu');if(menu.querySelector('input[type=search]').value.trim())return;
+  menu.querySelectorAll('.mlcb-need').forEach(other=>{if(other!==d)other.open=false;});
+ },true);
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();</script>
  <?php
