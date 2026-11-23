@@ -238,25 +238,29 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     // Mã thao tác (giao diện tạo một lần cho mỗi lần lập đơn, giữ nguyên khi gửi lại). Chưa có mã = giao diện cũ, chạy như trước.
     const clientKey = body.clientKey === undefined || body.clientKey === null ? null
       : typeof body.clientKey === 'string' && body.clientKey.length >= 8 && body.clientKey.length <= 200 ? body.clientKey : fail(400, 'Mã thao tác lập đơn không hợp lệ. Tải lại trang rồi thử lại.');
+    const findIntent=async(q:Db)=>clientKey?(await q.select().from(purchaseOrderIntents).where(and(eq(purchaseOrderIntents.createdBy,m.id),eq(purchaseOrderIntents.clientKey,clientKey))).limit(1))[0]:undefined;
+    // Look up the caller's persisted result before current supplier/source validation. Hashing below is pure normalization.
+    const savedIntent=await findIntent(db);
     const list = Array.isArray(body.orders) ? body.orders as Record<string, unknown>[] : [];
     if (!list.length || list.length > 20) fail(400, 'Cần từ 1 đến 20 đơn mua (mỗi nhà cung cấp một đơn).');
-    const prepared = await Promise.all(list.map(async o => {
+    const normalized = list.map(o => {
+      const supplierId=typeof o.supplierId==='string'&&o.supplierId.trim()?o.supplierId:fail(400,'Chọn nhà cung cấp.');
       const arrivalDate = o.arrivalDate ? (isIsoDate(o.arrivalDate) ? o.arrivalDate : fail(400, 'Ngày hàng về dự kiến không hợp lệ.')) : null;
-      return { supplier: await activeSupplier(db, o.supplierId), lines: cleanLines(o.lines, prices), internalNo: internalOrderNumber(o.internalNo), arrivalDate, note: str(o.note, 2000), warehouse: deliveryAddress(o.warehouse) };
-    }));
-    if (new Set(prepared.map(p => p.supplier.id)).size !== prepared.length) fail(400, 'Mỗi nhà cung cấp chỉ một đơn trong một lần lập – gộp các mã cùng NCC.');
+      return { supplierId, lines: cleanLines(o.lines, prices), internalNo: internalOrderNumber(o.internalNo), arrivalDate, note: str(o.note, 2000), warehouse: deliveryAddress(o.warehouse) };
+    });
+    if (new Set(normalized.map(p => p.supplierId)).size !== normalized.length) fail(400, 'Mỗi nhà cung cấp chỉ một đơn trong một lần lập – gộp các mã cùng NCC.');
     // Băm nội dung đã chuẩn hoá (NCC, dòng hàng, nguồn, số lượng, giá, kho, ngày, ghi chú) để nhận ra "gửi lại đúng như cũ".
-    const requestHash = clientKey ? sha256Hex(JSON.stringify(prepared.map(p => [p.supplier.id, p.internalNo, p.arrivalDate, p.note, p.warehouse, p.lines]))) : '';
-    const earlier = async (q: Db): Promise<string[] | null> => {
-      if (!clientKey) return null;
-      const [row] = await q.select().from(purchaseOrderIntents).where(and(eq(purchaseOrderIntents.createdBy, m.id), eq(purchaseOrderIntents.clientKey, clientKey))).limit(1);
-      if (!row) return null;
-      if (row.requestHash !== requestHash) throw new AppError(409, 'Mã thao tác này đã dùng để lập đơn với nội dung khác. Tải lại trang danh sách đơn mua để kiểm tra trước khi lập tiếp.', 'INTENT_MISMATCH');
+    const requestHash = clientKey ? sha256Hex(JSON.stringify(normalized.map(p => [p.supplierId, p.internalNo, p.arrivalDate, p.note, p.warehouse, p.lines]))) : '';
+    const decodeIntent=(row:typeof savedIntent):string[]|null=>{
+      if(!row)return null;
+      if(row.requestHash!==requestHash)throw new AppError(409,'Mã thao tác này đã dùng để lập đơn với nội dung khác. Tải lại trang danh sách đơn mua để kiểm tra trước khi lập tiếp.','INTENT_MISMATCH');
       return JSON.parse(row.shipmentIds) as string[];
     };
+    const earlier=async(q:Db)=>decodeIntent(await findIntent(q));
     // Gửi lại sau khi đã lưu: trả bộ đơn cũ TRƯỚC khi kiểm nguồn (nguồn đã được chính lần lưu đó đặt hết, kiểm lại sẽ báo vượt).
-    const saved = await earlier(db);
+    const saved = decodeIntent(savedIntent);
     if (saved) return json({ ids: saved, replayed: true });
+    const prepared=await Promise.all(normalized.map(async p=>({...p,supplier:await activeSupplier(db,p.supplierId)})));
     const needs = await checkSources(db, m, prepared.map(p => p.lines));
     let ids: string[] = [], replayed = false;
     await db.transaction(async tx => {

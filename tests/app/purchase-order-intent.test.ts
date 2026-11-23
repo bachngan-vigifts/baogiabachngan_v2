@@ -101,3 +101,22 @@ test('giao diện: mọi nơi lập đơn mua NCC đều gửi mã thao tác',as
  }
  assert.match(readFileSync(new URL('quote-sourcing.js',dir),'utf8'),/api\('\/purchase-orders','POST',\{clientKey:purchaseKeys\.get\(k\),orders\}\)/);
 });
+
+test('replay trước khi kiểm NCC: ngừng NCC sau tạo không làm mất kết quả; nội dung khác vẫn 409',async()=>{
+ const f=await setupEarly(),clientKey=crypto.randomUUID(),body={clientKey,orders:[order()]};
+ const first=await f.call('/purchase-orders',f.cookies.emp,'POST',body);assert.equal(first.status,201);
+ const {suppliers}=await import('../../src/modules/suppliers/schema.ts');await f.db.update(suppliers).set({active:false}).where(eq(suppliers.id,'a'));
+ const replay=await f.call('/purchase-orders',f.cookies.emp,'POST',body);assert.equal(replay.status,200,JSON.stringify(replay.data));assert.deepEqual(replay.data.ids,first.data.ids);
+ assert.equal((await f.call('/purchase-orders',f.cookies.emp,'POST',{...body,orders:[order(6)]})).status,409);
+ assert.equal((await f.call('/purchase-orders',f.cookies.emp,'POST',{...body,clientKey:crypto.randomUUID()})).status,409,'lập mới vẫn kiểm NCC');
+});
+
+test('thiếu supplierId báo Chọn nhà cung cấp trước lỗi trùng NCC; không tạo đơn',async()=>{
+ const f=await setupEarly(),before=await created(f);
+ for(const ids of [[null,null],[undefined,undefined],['',''],[' ',' '],[42,null],[{id:'a'},null],['a',null]]){
+  const r=await f.call('/purchase-orders',f.cookies.emp,'POST',{clientKey:crypto.randomUUID(),orders:ids.map(supplierId=>({...order(),supplierId}))});
+  assert.equal(r.status,400,JSON.stringify(r.data));assert.equal(r.data.error,'Chọn nhà cung cấp.',JSON.stringify(ids));assert.equal(await created(f),before);
+ }
+ const duplicate=await f.call('/purchase-orders',f.cookies.emp,'POST',{clientKey:crypto.randomUUID(),orders:[order(),order(3)]});
+ assert.equal(duplicate.status,400);assert.match(duplicate.data.error,/Mỗi nhà cung cấp chỉ một đơn/);assert.equal(await created(f),before);
+});

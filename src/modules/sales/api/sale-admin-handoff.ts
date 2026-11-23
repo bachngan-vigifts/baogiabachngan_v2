@@ -21,9 +21,9 @@ export async function handlesQuote(db:Db,m:{id:string;role:string;positionId?:st
  return !!q&&isSupportAssignee(m,q);
 }
 const mayAssign=(m:Member,o:typeof salesOrders.$inferSelect,q:typeof quotations.$inferSelect)=>o.status!=='cancelled'&&(m.role==='manager'||m.role==='employee'&&[o.ownerId,o.createdBy,q.creatorId].includes(m.id));
-async function candidates(db:Db){
+async function candidates(db:Db,id?:string){
  const [people,grants]=await Promise.all([
-  db.select({id:employees.id,name:employees.name}).from(employees).where(and(eq(employees.role,'employee'),eq(employees.positionId,'sale-admin'),eq(employees.active,true),isNull(employees.deletedAt))).orderBy(asc(employees.name)).limit(200),
+  db.select({id:employees.id,name:employees.name}).from(employees).where(and(id?eq(employees.id,id):undefined,eq(employees.role,'employee'),eq(employees.positionId,'sale-admin'),eq(employees.active,true),isNull(employees.deletedAt))).orderBy(asc(employees.name)).limit(200),
   db.select({permission:positionPermissions.permission}).from(positionPermissions).where(eq(positionPermissions.positionId,'sale-admin')),
  ]);
  const perms=grants.map(g=>g.permission),eligible=['page.quotes','page.orders','page.contracts'].every(key=>can({role:'employee',positionId:'sale-admin',perms},key));
@@ -52,7 +52,7 @@ export function registerSaleAdminHandoff(router:Router<StaffEnv>,scope:(m:Member
     throw new AppError(409,'Hồ sơ vừa được giao lại. Tải lại để kiểm tra người nhận.');
    }
    if(id){
-    const eligible=(await candidates(tx)).some(p=>p.id===id&&p.eligible);
+    const eligible=(await candidates(tx,id)).some(p=>p.id===id&&p.eligible);
     if(!eligible)throw new AppError(400,'Người nhận phải là Sale Admin đang hoạt động và đủ quyền truy cập hồ sơ.');
    }
    const at=new Date().toISOString(),next=q.supportAssignmentRevision+1;
