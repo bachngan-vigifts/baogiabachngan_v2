@@ -29,6 +29,14 @@ async function candidates(db:Db,id?:string){
  const perms=grants.map(g=>g.permission),eligible=['page.quotes','page.orders','page.contracts'].every(key=>can({role:'employee',positionId:'sale-admin',perms},key));
  return people.map(p=>({...p,eligible,reason:eligible?'':'Chức vụ chưa đủ quyền trang Báo giá, Đơn hàng và HĐKT.'}));
 }
+/** Only called inside the assignment transaction, after locking the source quotation. */
+async function eligibleRecipient(db:Db,id:string){
+ const [person]=await db.select({id:employees.id}).from(employees).where(and(eq(employees.id,id),eq(employees.role,'employee'),eq(employees.positionId,'sale-admin'),eq(employees.active,true),isNull(employees.deletedAt))).limit(1).for('share');
+ if(!person)return false;
+ const grants=await db.select({permission:positionPermissions.permission}).from(positionPermissions).where(eq(positionPermissions.positionId,'sale-admin')).orderBy(asc(positionPermissions.permission)).for('share');
+ const perms=grants.map(g=>g.permission);
+ return ['page.quotes','page.orders','page.contracts'].every(key=>can({role:'employee',positionId:'sale-admin',perms},key));
+}
 export function registerSaleAdminHandoff(router:Router<StaffEnv>,scope:(m:Member)=>SQL|undefined){
  const load=async(c:Ctx,db:Db)=>{
   const [o]=await db.select().from(salesOrders).where(and(eq(salesOrders.id,c.params.id!),scope(me(c)))).limit(1);
@@ -52,7 +60,7 @@ export function registerSaleAdminHandoff(router:Router<StaffEnv>,scope:(m:Member
     throw new AppError(409,'Hồ sơ vừa được giao lại. Tải lại để kiểm tra người nhận.');
    }
    if(id){
-    const eligible=(await candidates(tx,id)).some(p=>p.id===id&&p.eligible);
+    const eligible=await eligibleRecipient(tx,id);
     if(!eligible)throw new AppError(400,'Người nhận phải là Sale Admin đang hoạt động và đủ quyền truy cập hồ sơ.');
    }
    const at=new Date().toISOString(),next=q.supportAssignmentRevision+1;
