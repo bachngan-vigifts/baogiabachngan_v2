@@ -1,5 +1,6 @@
 import {webOrderPayment} from '../domain/web-order-payment.ts';
-import {webSepayPaidAt} from './web-sepay-evidence.ts';
+import {webSepayPaidAt,webSepayPaidAmount} from './web-sepay-evidence.ts';
+import type {WebBankEvidence} from '../../../core/contracts/web-bank-evidence.ts';
 import {webSapoReference} from '../domain/web-sapo.ts';
 import {webSapoStatuses,webSapoFields} from './web-sapo-status.ts';
 import {invoiceTaskHooks} from './invoice-task-hooks.ts';
@@ -41,7 +42,7 @@ async function scope(c:Ctx){
  return and(inArray(web.source,['lock','minhlong']),store?inArray(web.registerId,store.scope.registers):undefined);
 }
 const invoiceState = () => invoiceTaskHooks.webStatus?.() ?? sql<string>`'unknown'`;
-function asDocument(o:typeof web.$inferSelect,branchName:string,invoiceStatus='unknown',bankPaidAt:string|null=null){
+function asDocument(o:typeof web.$inferSelect,branchName:string,invoiceStatus='unknown',bankPaidAt:WebBankEvidence|null=null){
  const accounting=readWebAccounting(o.crmEditSnapshot),invoice=accounting.invoice;
  const bucket=webOrderBucket(o.status,o.ghnStatus),status=bucket==='completed'?'delivered':bucket==='cancelled'?'cancelled':bucket==='waiting_delivery'?'delivering':bucket==='packing'?'confirmed':'draft';
  const financials=readWebOrderFinancials(o.financialSnapshot),payment=webOrderPayment(o,bankPaidAt),paid=payment.paid;
@@ -75,8 +76,8 @@ export async function webDocumentPage(c:Ctx,crmWhere:SQL|undefined,limit:number,
   c.env.db.selectDistinct({id:posRegisters.id,name:posRegisters.name}).from(web).innerJoin(posRegisters,eq(posRegisters.id,web.registerId)).where(base).orderBy(asc(posRegisters.name)),
   c.env.db.select({count:count(),revenue:sql<number>`coalesce(sum(${web.total}),0)::float8`,
    // Missing financial payment metadata is unknown, never silently treated as unpaid.
-   paid:sql<number>`coalesce(sum(case when ${webSepayPaidAt()} is not null and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) then ${web.total} else 0 end),0)::float8`,
-   remaining:sql<number>`coalesce(sum(case when ${web.financialSnapshot}::jsonb ? 'payment' and ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is null and ${webSepayPaidAt()} is null and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) then ${web.total} else 0 end),0)::float8`,
+   paid:sql<number>`coalesce(sum(case when not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) then ${webSepayPaidAmount()} else 0 end),0)::float8`,
+   remaining:sql<number>`coalesce(sum(case when (${webSepayPaidAt()} is not null or (${web.financialSnapshot}::jsonb ? 'payment' and ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is null)) and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) then greatest(0,${web.total}-${webSepayPaidAmount()}) else 0 end),0)::float8`,
    unknown:sql<number>`count(*) filter(where ((not (${web.financialSnapshot}::jsonb ? 'payment') or ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is not null) and ${webSepayPaidAt()} is null) or coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false))::int`,
   }).from(web).where(and(where,ne(webDocumentStatus(),'cancelled'))),
   c.env.db.select({n:count()}).from(web).where(and(base,eq(invoiceState(),'requested'))),

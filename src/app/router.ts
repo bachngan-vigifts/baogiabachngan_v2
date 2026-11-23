@@ -65,6 +65,7 @@ import { registerSapoSyncRoutes } from '../modules/integrations/api/sapo-sync-ro
 import { registerSepayPaymentRoutes } from '../modules/sales/api/sepay-payment-routes.ts';
 import { registerSepayReadRoutes } from '../modules/sales/api/sepay-read-routes.ts';
 import { registerSepayPageRoutes } from '../modules/sales/api/sepay-page-routes.ts';
+import {registerSepayAllocationRoutes} from '../modules/sales/api/sepay-allocation-routes.ts';
 import { registerQuoteSourcingRoutes } from '../modules/sales/api/quote-sourcing-routes.ts';
 import { registerSalesRoutes } from '../modules/sales/api/routes.ts';
 import { registerPaymentDueRepairRoutes } from '../modules/sales/api/payment-terms.ts';
@@ -169,6 +170,7 @@ export function createAppRouter() {
   registerSapoSyncRoutes(router);
   registerSepayPaymentRoutes(router);
   registerSepayPageRoutes(router);
+  registerSepayAllocationRoutes(router);
   registerSepayReadRoutes(router);
   registerLegacyImageRoutes(router);
   registerSalesRoutes(router, { purchaseLinks: purchaseLinksForOrder });

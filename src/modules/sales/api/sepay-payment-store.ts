@@ -1,5 +1,6 @@
 import {assertSepayReconcileTarget,type SepayReconcileMember} from './sepay-reconcile-access.ts';
 import {orderScopeFor} from './routes.ts';
+import {hasDetailedSepay} from './sepay-allocation-store.ts';
 import {notifySepayBankMovements} from './sepay-bank-notifications.ts';
 import {sepayManualAccountApproved} from './sepay-manual-account.ts';
 import {
@@ -92,6 +93,10 @@ export async function ingestPayment(
           409,
           "Mã giao dịch SePay đã tồn tại với nội dung khác.",
         );
+    if(old&&await hasDetailedSepay(tx,old.id)){
+      if(manual)throw new AppError(409,'Giao dịch đang đối soát chi tiết; không dùng đối soát nhanh.');
+      return {duplicate:true,status:'review' as const,orderId:null,paymentId:null,webOrderId:null,reason:'Giao dịch đã vào đối soát chi tiết.'};
+    }
       if (old.paymentId || old.status === "matched") {
         if (manual && old.webOrderId && manual.orderId==='web:'+old.webOrderId) return { duplicate:true,status:old.status,orderId:null,paymentId:null,webOrderId:old.webOrderId,reason:old.reason };
         if (manual) {

@@ -1,6 +1,7 @@
 import {assertSepayReconcileTarget,type SepayReconcileMember} from './sepay-reconcile-access.ts';
 import {webOrderPayment} from '../domain/web-order-payment.ts';
 import {webSepayPaidAt} from './web-sepay-evidence.ts';
+import {sepayPaymentAllocations} from '../sepay-allocation-schema.ts';
 import {
   and,
   asc,
@@ -245,6 +246,7 @@ export async function nearbySepayTargets(
       });
   }
   for (const row of webRows.slice(0, SEPAY_MATCH_LIMIT)) {
+    if((await db.select({id:sepayPaymentAllocations.id}).from(sepayPaymentAllocations).where(and(eq(sepayPaymentAllocations.webOrderId,row.order.id),isNull(sepayPaymentAllocations.voidedAt))).limit(1)).length)continue;
     const o = row.order;
     let blocked =
       !manual && !o.orderedAtVerified

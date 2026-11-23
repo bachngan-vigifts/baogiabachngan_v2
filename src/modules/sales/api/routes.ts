@@ -48,6 +48,7 @@ import { posReturns, posRefunds, posExchangeAllocations } from '../return-schema
 import { snapshotPosFees } from '../domain/pos-fees.ts';
 import { editPosOrder } from './pos-order-edit.ts';
 import { cashLock, drawerOf, cashAudit, voidClosedCashEffect } from './cash-store.ts';
+import {assertNotAllocationReceipt} from './sepay-allocation-store.ts';
 import { issuePosDelivery } from './pos-delivery-stock.ts';
 import { posRegisters, posShifts } from '../pos-schema.ts';
 import { createScheduledDelivery } from './delivery-store.ts';
@@ -1585,6 +1586,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (p.voidedAt) throw new AppError(409, 'Phiếu thu đã huỷ.');
     await c.env.db.transaction(async tx=>{
     await cashLock(tx);
+    await assertNotAllocationReceipt(tx,p.id);
     await assertNoReturnActivity(tx,p.orderId);
     const done = await tx.update(customerPayments).set({ voidedAt: nowIso(), voidedBy: me.id, voidReason: reason })
       .where(and(eq(customerPayments.id, p.id), isNull(customerPayments.voidedAt))).returning({ id: customerPayments.id });

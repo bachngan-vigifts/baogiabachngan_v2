@@ -1,5 +1,7 @@
 import {assertSepayReconcileAccess,assertSepayReconcileTarget,sepayWebOrderScope,sepayWebOrderScopeInfo} from './sepay-reconcile-access.ts';
 import {orderScopeFor} from './routes.ts';
+import {detailedSepay,allocationAmount,hasDetailedSepay} from './sepay-allocation-store.ts';
+import {sepayPaymentAllocations as allocationLines,sepayAllocationBatches as allocationBatches} from '../sepay-allocation-schema.ts';
 import {sepayEntityMap} from '../domain/sepay-entities.ts';
 import {defaultSepayCrmAccount} from '../domain/sepay-crm-account.ts';
 import {sepayManualAccountApproved} from './sepay-manual-account.ts';
@@ -66,15 +68,21 @@ function readAccess(c: Ctx): void {
 }
 function bankStoreScope(m:SessionState['member']){
  const scope=sepayWebOrderScope(m);
- return scope?or(isNull(bank.webOrderId),sql`exists(select 1 from ${web} where ${web.id}=${bank.webOrderId} and ${scope})`):undefined;
+ const crmScope=orderScopeFor(m);
+ const allocationScope=scope||crmScope?sql`not exists(select 1 from ${allocationLines} a join ${allocationBatches} b on b.id=a.batch_id where b.transaction_id=${bank.id} and
+ ((a.web_order_id is not null and not exists(select 1 from ${web} where ${web.id}=a.web_order_id and ${scope??sql`true`})) or
+ (a.order_id is not null and not exists(select 1 from ${orders} where ${orders.id}=a.order_id and ${crmScope??sql`true`}))))`:undefined;
+ return and(scope?or(isNull(bank.webOrderId),sql`exists(select 1 from ${web} where ${web.id}=${bank.webOrderId} and ${scope})`):undefined,allocationScope);
 }
 const validWeb = validWebSepay();
-const state = sql<string>`case when ${bank.transferType}='out' then 'debit' when ${bank.status}='matched' and
+const state = sql<string>`case when ${bank.transferType}='out' then 'debit' when ${detailedSepay(bank.id)} then case when ${allocationAmount(bank.id)}=${bank.amount} then 'matched' else 'review' end when ${bank.status}='matched' and
  (case when ${bank.webOrderId} is not null then not (${validWeb}) else
  ((${bank.matchMethod}='amount_time' and ${orders.createdAt} is distinct from ${bank.matchedOrderAt}) or ${payments.id} is null or ${payments.voidedAt} is not null or ${payments.orderId} is distinct from ${bank.orderId} or ${payments.amount}<>${bank.amount} or ${payments.method}<>'transfer') end)
  then 'receipt_issue' else ${bank.status} end`;
 const columns = {
   id: bank.id,
+  detailed:detailedSepay(bank.id),
+  allocated:allocationAmount(bank.id),
   transferType:bank.transferType,
   providerId: bank.providerId,
   amount: bank.amount,
@@ -268,7 +276,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         }),
         capabilities: {
           canConfirm:
-            canReconcileSepay(member(c)) &&row.transferType==='in'&&
+            canReconcileSepay(member(c)) &&row.transferType==='in'&&!row.detailed&&
             ["review", "unmatched"].includes(row.status),
         },
         blockReason:
@@ -368,6 +376,7 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
             .where(and(eq(bank.id, transactionId),canViewSepayDebits(member(c))?undefined:eq(bank.transferType,'in')))
             .limit(1);
           if(event&&event.transferType!=='in')throw new AppError(409,'Tiền ra không được gán vào khoản thu.');
+          if(event&&await hasDetailedSepay(tx,event.id))throw new AppError(409,'Giao dịch đang đối soát chi tiết; không dùng đối soát nhanh.');
           if(event && (event.status==='matched'||event.paymentId))throw new AppError(409,'Giao dịch đã được xử lý. Tải lại để kiểm tra.');
           if(event) {
             const [selected]=c.params.id!.startsWith('web:')?[]:await tx.select({channel:orders.channel}).from(orders).where(eq(orders.id,c.params.id!)).limit(1);
