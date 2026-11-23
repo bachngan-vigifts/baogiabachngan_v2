@@ -1,0 +1,29 @@
+name: Deploy responsive quick-view info on both stores
+on:
+  push:
+    branches: [fix/qv-mobile-info-bottom]
+    paths: [web-minhlong/qv-info-position/**, .github/workflows/qv-mobile-info-bottom.yml]
+permissions:
+  contents: read
+concurrency:
+  group: ml-qv-info-position
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l web-minhlong/qv-info-position/ml-qv-info-position.php && node --check web-minhlong/qv-info-position/deploy.mjs
+      - run: npm install --prefix /tmp/qv-info --no-audit --no-fund playwright@1.56.1
+      - run: /tmp/qv-info/node_modules/.bin/playwright install chromium --only-shell
+      - run: node web-minhlong/qv-info-position/deploy.mjs
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ml-info-position-evidence
+          path: ml-info-position-evidence/
