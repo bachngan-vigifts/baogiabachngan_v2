@@ -49,15 +49,15 @@ export async function menu(preview){
   await trigger.click();
  }
  await root.waitFor({state:'visible',timeout:10000});
- const grouped=await root.locator('.lnl-need').evaluateAll(es=>es.map(e=>({title:e.querySelector('strong').textContent,links:[...e.querySelectorAll('.lnl-need-links a')].map(a=>({text:a.textContent,href:a.href}))})));
- const header=await page.locator('.header-vertical-menu__fly-out .lnl-need').evaluateAll(es=>es.map(e=>({title:e.querySelector('strong').textContent,links:[...e.querySelectorAll('.lnl-need-links a')].map(a=>({text:a.textContent,href:a.href}))})));
+ const grouped=await root.locator('.mlcb-need').evaluateAll(es=>es.map(e=>({title:e.querySelector('strong').textContent,links:[...e.querySelectorAll('a')].map(a=>({text:a.textContent,href:a.href}))})));
+ const header=await page.locator('.header-vertical-menu__fly-out .lnl-need').evaluateAll(es=>es.map(e=>({title:e.querySelector('strong').textContent,links:[...e.querySelectorAll('a')].map(a=>({text:a.textContent,href:a.href}))})));
  assert.equal(grouped.length,6);assert.deepEqual(grouped,header);
  assert(await root.locator('a[aria-current="page"]').count()>0);
  await root.locator('input[type=search]').fill('tuong');
- console.log('SEARCH_STATE',JSON.stringify(await root.evaluate(e=>({value:e.querySelector('input[type=search]').value,groups:[...e.querySelectorAll('.lnl-need')].map(d=>({title:d.querySelector('strong').textContent,hidden:d.hidden,open:d.open,links:[...d.querySelectorAll('a')].map(a=>({text:a.textContent,hidden:a.hidden}))}))}))));
- assert.equal(await root.locator('.lnl-need:not([hidden])').count(),1);
- assert.match(await root.locator('.lnl-need:not([hidden])').innerText(),/Tượng Linh Vật/);
- await root.locator('.lnl-needs-reset').click();assert.equal(await root.locator('.lnl-need:not([hidden])').count(),6);
+ console.log('SEARCH_STATE',JSON.stringify(await root.evaluate(e=>({value:e.querySelector('input[type=search]').value,groups:[...e.querySelectorAll('.mlcb-need')].map(d=>({title:d.querySelector('strong').textContent,hidden:d.hidden,open:d.open,links:[...d.querySelectorAll('a')].map(a=>({text:a.textContent,hidden:a.hidden}))}))}))));
+ assert.equal(await root.locator('.mlcb-need:not([hidden])').count(),1);
+ assert.match(await root.locator('.mlcb-need:not([hidden])').innerText(),/Tượng Linh Vật/);
+ await root.locator('.mlcb-needs-reset').click();assert.equal(await root.locator('.mlcb-need:not([hidden])').count(),6);
  const shot=await root.screenshot({path:'category-evidence/'+(preview?'preview':'live')+'-menu-'+width+'.jpg',type:'jpeg',quality:70});
  console.log('MENU_IMAGE_'+width+' '+shot.toString('base64'));
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),'no horizontal overflow');
