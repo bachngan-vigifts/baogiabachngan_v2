@@ -20,11 +20,13 @@ export async function waitForApiDeployment({github,owner,repo,sha,timeoutMs=35*6
   if(!history.includes(sha))throw Error('API_SOURCE_NOT_ON_MAIN: UI release blocked');
   const deadline=now()+timeoutMs;
   while(now()<deadline){
-    // GitHub orders by creation, not rerun start. Read all available pages so
-    // an old commit rerun after a green release cannot hide beyond page one.
-    const all=[];
+    // GitHub orders by creation, not rerun start. Read all pages so an old commit
+    // rerun after a green release cannot hide beyond page one. GitHub only allows
+    // re-running runs created in the last 30 days, so a 31-day window is complete
+    // and keeps the scan bounded as the total run history grows.
+    const all=[],since=new Date(now()-31*864e5).toISOString().slice(0,10);
     for(let page=1;page<=10;page++){
-      const response=await github.rest.actions.listWorkflowRuns({owner,repo,workflow_id:'deploy-api.yml',branch:'main',per_page:100,page});
+      const response=await github.rest.actions.listWorkflowRuns({owner,repo,workflow_id:'deploy-api.yml',branch:'main',created:'>='+since,per_page:100,page});
       const {workflow_runs:rows,total_count:count}=response.data;
       if(count>1000)throw Error('API_DEPLOYMENT_HISTORY_INCOMPLETE: Actions search limit reached; UI release blocked');
       all.push(...rows);

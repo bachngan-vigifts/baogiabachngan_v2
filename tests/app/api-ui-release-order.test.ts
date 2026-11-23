@@ -23,7 +23,7 @@ const run=(id:number,head_sha=sha,status='completed',conclusion:string|null='suc
 function fixture(frames:any[][],{deployed=true,mainRef=newer}={}){
  let time=0,calls=0,jobsRead=0,frame:any[]=[];
  const github={rest:{actions:{
-  listWorkflowRuns:async(p:any)=>{assert.equal(p.workflow_id,'deploy-api.yml');const page=p.page||1;if(page===1)frame=frames[Math.min(calls++,frames.length-1)]!;const rows=p.head_sha?frame.filter(r=>r.head_sha===p.head_sha):frame;return {data:{total_count:rows.length,workflow_runs:rows.slice((page-1)*100,page*100)}};},
+  listWorkflowRuns:async(p:any)=>{assert.equal(p.workflow_id,'deploy-api.yml');assert.match(p.created,/^>=\d{4}-\d{2}-\d{2}$/,'chỉ quét 31 ngày GitHub còn cho chạy lại');const page=p.page||1;if(page===1)frame=frames[Math.min(calls++,frames.length-1)]!;const rows=p.head_sha?frame.filter(r=>r.head_sha===p.head_sha):frame;return {data:{total_count:rows.length,workflow_runs:rows.slice((page-1)*100,page*100)}};},
   listJobsForWorkflowRun:async()=>{jobsRead++;return {data:{jobs:[{steps:[{name:'Triển khai Edge Function',status:'completed',conclusion:deployed?'success':'skipped'}]}]}};},
  }}};
  return {options:{github,owner:'owner',repo:'repo',sha,cwd,mainRef,timeoutMs:100,pollMs:20,now:()=>time,sleep:async(ms:number)=>{time+=ms;}},calls:()=>calls,jobsRead:()=>jobsRead};
