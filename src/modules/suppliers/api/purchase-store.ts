@@ -1,3 +1,5 @@
+import {purchaseReadLevel} from '../domain/purchase-access.ts';
+import {purchaseEarlyRequests,purchaseEarlyRequestLines,purchaseEarlyRequestAllocations} from '../early-request-schema.ts';
 import { and, asc, desc, eq, ilike, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { foldSql, matchAllWords, rankFirst, searchRank } from '../../../core/text/fold.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -33,12 +35,24 @@ export type Member = SessionState['member'];
 export const asActor = (m: Member): Actor => ({ id: m.id, role: m.role, active: m.active, positionId: m.positionId, perms: m.perms, dataScope: m.dataScope, approver: m.approver });
 const PURCHASE = eq(incomingShipments.source, 'supplier-order');
 
-export function purchaseScope(m: Member) {
-  const a = asActor(m);
-  // Xem mọi đơn mua (kể cả nháp): Manager, người được duyệt, người ghi trả / xem giá NCC (trang Phân quyền – Kế toán, Sale Admin).
-  if (a.role === 'manager' || canSeePrices(a) || canPay(a) || canApprovePurchase(a)) return PURCHASE;
-  if (isWarehouseStaff(a)) return and(PURCHASE, eq(incomingShipments.approvalStatus, 'approved'));
-  return and(PURCHASE, or(eq(incomingShipments.approvalStatus, 'approved'), eq(incomingShipments.createdBy, m.id)));
+export function supplierScope(m:Member,column:typeof suppliers.id|typeof incomingShipments.supplierId=suppliers.id){
+ const level=purchaseReadLevel(m);
+ return level==='all'?sql`true`:level==='brand'?sql`${column} in (select id from suppliers where sale_admin_brand is not null)`:sql`false`;
+}
+export function purchaseScope(m:Member){return and(PURCHASE,supplierScope(m,incomingShipments.supplierId));}
+export async function assertPurchaseScope(db:Db,m:Member,id:string){const [r]=await db.select({id:incomingShipments.id}).from(incomingShipments).where(and(eq(incomingShipments.id,id),purchaseScope(m))).limit(1);if(!r)throw new AppError(404,'Không tìm thấy đơn mua hàng.');}
+export async function assertSupplierScope(db:Db,m:Member,id:string){
+ const [row]=await db.select({id:suppliers.id}).from(suppliers).where(and(eq(suppliers.id,id),supplierScope(m))).limit(1);
+ if(!row)throw new AppError(404,'Không tìm thấy nhà cung cấp.');
+}
+export function earlyPurchaseScope(m:Member){
+ const level=purchaseReadLevel(m);if(level==='all')return sql`true`;if(level==='none')return sql`false`;
+ return sql`((exists(select 1 from purchase_early_request_lines el join purchase_early_request_allocations ea on ea.request_line_id=el.id where el.request_id=${purchaseEarlyRequests.id}) or (${purchaseEarlyRequests.createdBy}=${m.id} and (coalesce(${purchaseEarlyRequests.scope}::jsonb->>'supplierId','')='' or ${purchaseEarlyRequests.scope}::jsonb->>'supplierId' in (select id from suppliers where sale_admin_brand is not null))))
+ and not exists(select 1 from purchase_early_request_lines el join purchase_early_request_allocations ea on ea.request_line_id=el.id left join incoming_shipment_lines pl on pl.id=ea.purchase_line_id left join incoming_shipments po on po.id=pl.shipment_id left join suppliers s on s.id=po.supplier_id where el.request_id=${purchaseEarlyRequests.id} and (s.sale_admin_brand is null or ea.supplier_id<>po.supplier_id)))`;
+}
+export async function assertEarlyScope(db:Db,m:Member,id:string){
+ const [r]=await db.select({id:purchaseEarlyRequests.id}).from(purchaseEarlyRequests).where(and(eq(purchaseEarlyRequests.id,id),earlyPurchaseScope(m))).limit(1);
+ if(!r)throw new AppError(404,'Không tìm thấy yêu cầu lấy trước.');
 }
 
 /** Related drafts/orders are still filtered by purchasing visibility, even when reached through a sales order. */
@@ -54,8 +68,8 @@ const MONEY_EVENT_LABEL: Record<string, string> = { approve: 'Manager duyệt đ
   goods_return: 'Trả hàng NCC / Huỷ phần chưa nhận', supplier_refund: 'Nhận tiền hoàn NCC', pay: 'Ghi trả NCC', void_payment: 'Huỷ khoản trả NCC' }; // 'update' (sửa nháp) chỉ có số lượng / NCC – không ẩn
 const MONEY_EVENTS = new Set(Object.keys(MONEY_EVENT_LABEL));
 /** Toàn bộ dữ liệu một đơn mua (đúng phạm vi xem), đã tính tiến độ nhận / công nợ / nút được bấm. */
-export async function loadPurchase(db: Db, m: Member, id: string, today: string) {
-  const [o] = await db.select().from(incomingShipments).where(and(eq(incomingShipments.id, id), purchaseScope(m))).limit(1);
+export async function loadPurchase(db: Db, m: Member, id: string, today: string, readScope=purchaseScope(m)) {
+  const [o] = await db.select().from(incomingShipments).where(and(eq(incomingShipments.id, id), readScope)).limit(1);
   if (!o) throw new AppError(404, 'Không tìm thấy đơn mua hàng.');
   const [storedLines, sources, receipts, receiptLines, schedules, payments, events, [supplier]] = await Promise.all([
     db.select().from(incomingShipmentLines).where(eq(incomingShipmentLines.shipmentId, id)).orderBy(asc(incomingShipmentLines.lineNo)),

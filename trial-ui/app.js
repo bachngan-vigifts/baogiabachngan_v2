@@ -483,7 +483,8 @@ const PAGE_PERM = {
 /** Giá bán: người làm báo giá / đơn / HĐKT (khớp máy chủ – Kho không nhận giá). */
 const seesPrices = () => isManager() || can('page.quotes') || can('page.orders') || can('page.contracts');
 const canAccounting = () => isManager() || state.user?.role === 'employee' && state.user?.positionId === 'accounting';
-const canPage = view => view === 'accounting' ? canAccounting() : view === 'finance' ? isManager() : view === 'order' ? can('page.orders') || can('page.contracts') || can('page.receivables') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
+const canPurchasePage=()=>isManager()||['accounting','sale-admin'].includes(state.user?.positionId)&&can('page.purchases');
+const canPage = view => view==='receiving'?(isWarehouse()?can('purchases.receive'):canPurchasePage()):['purchases','early-requests'].includes(view)?canPurchasePage()&&(!PAGE_PERM[view]||can(PAGE_PERM[view])):view === 'accounting' ? canAccounting() : view === 'finance' ? isManager() : view === 'order' ? can('page.orders') || can('page.contracts') || can('page.receivables') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
 /** Link "#/<trang>/<id>" mở được với quyền hiện tại (cùng cách `route()` đổi trang chi tiết) – không thì hiện chữ, không đưa người dùng về trang chủ. */
 const linkAllowed = hash => {
   const [view, id] = String(hash).replace(/^#\//, '').split(/[/?]/);
@@ -588,7 +589,7 @@ function applyWorkspaceUser(user) {
   $$('.kho-nav, .kho-only').forEach(el => el.hidden = !isWarehouse());
   // Menu theo quyền của chức vụ (trang Phân quyền): mục nào chức vụ chưa được cấp thì ẩn.
   $('[data-nav=accounting]').hidden = !canAccounting();
-  $$('[data-nav]').forEach(el => { const k = PAGE_PERM[el.dataset.nav]; if (k && !(el.classList.contains('kho-only') && !isWarehouse())) el.hidden = !can(k); });
+  $$('[data-nav]').forEach(el => { const k = PAGE_PERM[el.dataset.nav]; if (k && !(el.classList.contains('kho-only') && !isWarehouse())) el.hidden = !canPage(el.dataset.nav); });
   $$('.ww-nav').forEach(el=>el.hidden=!(isManager()||isWarehouse()));
   $$('.perm-admin-only').forEach(el => el.hidden = !can('perm.manage'));
   $$('[data-nav=tasks]').forEach(el => { if (isWarehouse()) el.hidden = true; });
@@ -894,8 +895,15 @@ posLocalSearch.ready = () => !!catalog.items;
 const posView = () => posUi ||= initPos({ api, root: $('#view-pos'), toast, user: () => state.user, confirmBox, go, onCloseShift:()=>cashView().closeCurrent(), localSearch: posLocalSearch, matchRanges });
 var shiftReportsUi = null;
 const shiftReportsView = () => shiftReportsUi ||= initShiftReports({api,root:$('#view-shift-reports'),go});
-let receivingUi;
-const receivingView = () => receivingUi ||= initReceivingCalendar({ api, root: $('#view-receiving'), confirmBox });
+let receivingUi,receivingIdentity;
+const receivingView = () => {
+  const identity=state.user?.id+':'+isWarehouse();
+  if(!receivingUi||identity!==receivingIdentity){
+    const host=document.createElement('div');$('#view-receiving').replaceChildren(host);
+    receivingUi=initReceivingCalendar({api,root:host,confirmBox,warehouse:isWarehouse});receivingIdentity=identity;
+  }
+  return receivingUi;
+};
 var financeUi = null, financeLoading = null;
 async function financeView(query) {
  const hash=location.hash, who=state.user?.id;

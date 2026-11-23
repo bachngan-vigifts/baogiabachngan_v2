@@ -83,6 +83,13 @@ export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = 
       const inp = el(key === 'note' ? 'textarea' : 'input'); inp.name = key; inp.maxLength = max; inp.value = s[key] || ''; if (key === 'note') inp.rows = 2;
       l.append(inp); grid.append(l);
     }
+    const brandLabel=el('label','span-2','Hãng được Sale Admin xem đơn');
+    if(canLinkAccounts()){
+      const brand=el('select');brand.name='saleAdminBrand';
+      for(const [value,text]of [['','Không cấp quyền theo hãng'],['minhlong','Minh Long'],['locknlock','LocknLock']]){const o=el('option','',text);o.value=value;brand.append(o);}
+      brand.value=s.saleAdminBrand||'';brandLabel.append(brand);
+    }else brandLabel.append(el('span','muted',s.saleAdminBrand==='minhlong'?'Minh Long':s.saleAdminBrand==='locknlock'?'LocknLock':'Chưa phân hãng · chỉ Manager được thay đổi'));
+    grid.append(brandLabel);
     // Email nhận đơn (To) / CC
     const contacts = el('section', 'sup-section'), list = el('div', 'sup-contacts');
     contacts.append(el('h3', '', 'Email nhận đơn đặt hàng'), el('p', 'muted small', '"Nhận đơn" là người nhận chính khi gửi đơn mua; "CC" là đồng gửi (tối đa 20).'), list);
@@ -161,6 +168,7 @@ export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = 
       try {
         const v = k => form.elements[k].value;
         const body = Object.fromEntries(FIELDS.map(([k]) => [k, v(k)]));
+        if(canLinkAccounts())body.saleAdminBrand=v('saleAdminBrand')||null;
         body.contacts = [...list.children].map(r => ({ kind: r.querySelector('[name=kind]').value, name: r.querySelector('[name=cname]').value, email: r.querySelector('[name=cemail]').value, phone: r.querySelector('[name=cphone]').value }))
           .filter(c => c.email.trim() || c.name.trim() || c.phone.trim());
         if (!body.name.trim()) throw new Error('Cần nhập tên nhà cung cấp.');

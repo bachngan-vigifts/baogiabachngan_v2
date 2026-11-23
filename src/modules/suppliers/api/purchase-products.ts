@@ -4,7 +4,7 @@ import { products, warehouses } from '../../catalog/schema.ts';
 import { matchProductWords, productOrder } from '../../catalog/api/product-query.ts';
 import { hiddenStockWarehouses, readCatalogStock } from '../../catalog/api/stock-source.ts';
 import { outstandingLines } from './incoming-stock.ts';
-import type { Db, Member } from './purchase-store.ts';
+import {purchaseScope,type Db,type Member} from './purchase-store.ts';
 
 /**
  * SẢN PHẨM + TỒN CHO LẬP ĐƠN MUA BỔ SUNG (`GET /purchase-products`): tìm nhanh (cùng thuật toán trang Sản phẩm) hoặc theo danh sách mã
@@ -36,7 +36,7 @@ export async function purchaseProducts(db: Db, m: Member, o: { q?: string; skus?
   const [stock, hidden, stores, incoming] = await Promise.all([
     readCatalogStock(db, codes), hiddenStockWarehouses(db, m),
     db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses).where(and(eq(warehouses.active, true), eq(warehouses.kind, 'stock'))).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)),
-    codes.length ? outstandingLines(db, codes) : [],
+    codes.length ? outstandingLines(db, codes,false,{predicate:purchaseScope(m)}) : [],
   ]);
   const visible = stores.filter(w => !hidden.has(w.id)), qty = new Map<string, number>();
   for (const s of stock) qty.set(s.sku + '\u0000' + s.warehouseId, s.quantity);

@@ -17,6 +17,7 @@ export const suppliers = pgTable('suppliers', {
   name: text('name').notNull(),
   /** Tên đã chuẩn hoá (bỏ dấu, hạ chữ, gộp khoảng trắng) do ứng dụng tính bằng JS – tránh lower() ASCII của SQLite. */
   nameKey: text('name_key').notNull(),
+  saleAdminBrand: text('sale_admin_brand', {enum:['minhlong','locknlock']}),
   taxCode: text('tax_code').notNull().default(''),
   address: text('address').notNull().default(''),
   phone: text('phone').notNull().default(''),

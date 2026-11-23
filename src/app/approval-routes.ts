@@ -1,3 +1,4 @@
+import {purchaseScope} from '../modules/suppliers/api/purchase-store.ts';
 import {pendingQuoteEdits} from '../modules/quotes/api/edit-requests.ts';
 import {pendingLiquidations} from '../modules/sales/api/contract-liquidation.ts';
 import { transferApprovalScope } from '../modules/inventory/api/transfer-approvers.ts';
@@ -60,7 +61,7 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
         db.select({order:sql<number>`count(*) filter(where not ${hasContract})`.mapWith(Number),contract:sql<number>`count(*) filter(where ${hasContract})`.mapWith(Number)}).from(salesOrders).where(pendingOrders),
         db.select({n}).from(customers).where(eq(customers.approvalStatus,'pending')),
         db.select({n}).from(products).where(eq(products.approvalStatus,'pending')),
-        db.select({n}).from(incomingShipments).where(and(eq(incomingShipments.source,'supplier-order'),ne(incomingShipments.approvalStatus,'approved'),isNull(incomingShipments.cancelledAt),isNotNull(incomingShipments.submittedAt))),
+        db.select({n}).from(incomingShipments).where(and(purchaseScope(member),eq(incomingShipments.source,'supplier-order'),ne(incomingShipments.approvalStatus,'approved'),isNull(incomingShipments.cancelledAt),isNotNull(incomingShipments.submittedAt))),
         db.select({n}).from(stockTransfers).where(pendingTransfers),
         cashOk ? db.select({n}).from(cashEntries).where(and(eq(cashEntries.status,'pending'),notMine(cashEntries.createdBy),inStore(cashEntries.drawerId,store?.scope.drawers))) : [],
         db.select({n}).from(posReturns).innerJoin(salesOrders,eq(salesOrders.id,posReturns.orderId)).where(and(eq(posReturns.status,'pending'),notMine(posReturns.createdBy),returnScope)),
@@ -82,7 +83,7 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
         .from(products).leftJoin(employees, eq(employees.id, products.createdBy)).where(eq(products.approvalStatus, 'pending')).orderBy(desc(products.updatedAt)).limit(LIMIT),
       db.select({ id: incomingShipments.id, ticketNumber: incomingShipments.ticketNumber, supplierName: incomingShipments.supplierName, submittedAt: incomingShipments.submittedAt, by: employees.name })
         .from(incomingShipments).leftJoin(employees, eq(employees.id, incomingShipments.createdBy))
-        .where(and(eq(incomingShipments.source, 'supplier-order'), ne(incomingShipments.approvalStatus, 'approved'), isNull(incomingShipments.cancelledAt), isNotNull(incomingShipments.submittedAt)))
+        .where(and(purchaseScope(member),eq(incomingShipments.source, 'supplier-order'), ne(incomingShipments.approvalStatus, 'approved'), isNull(incomingShipments.cancelledAt), isNotNull(incomingShipments.submittedAt)))
         .orderBy(desc(incomingShipments.submittedAt)).limit(LIMIT),
       db.select({ id: stockTransfers.id, no: stockTransfers.transferNo, reason: stockTransfers.reason, createdAt: stockTransfers.createdAt, by: employees.name,
         from: sql<string>`(SELECT ${warehouses.name} FROM ${warehouses} WHERE ${warehouses.id} = ${stockTransfers.fromWarehouseId})`,

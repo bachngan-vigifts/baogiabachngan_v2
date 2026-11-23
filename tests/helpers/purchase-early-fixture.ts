@@ -10,7 +10,7 @@ export async function setupEarly({files}:{files?:FileStore}={}) {
     await s.d1.sqlite.prepare("insert into staff_members(id,email,name,phone,role,position_id,active,created_at) values (?,?,?,'',?,?,1,?)").run(id,id+'@x.vn',id,role,pos,now);
     await s.d1.sqlite.prepare('insert into staff_credentials(member_id,password_hash,version) values(?,?,0)').run(id,pw);
   }
-  await s.db.insert(suppliers).values(['a','b'].map(id=>({id,name:'NCC '+id,nameKey:id,createdAt:now,createdBy:'mgr',updatedAt:now})));
+  await s.db.insert(suppliers).values(['a','b'].map(id=>({id,name:'NCC '+id,nameKey:id,saleAdminBrand:id==='a'?'minhlong' as const:'locknlock' as const,createdAt:now,createdBy:'mgr',updatedAt:now})));
   await s.db.insert(supplierAccounts).values([{memberId:'ncc',supplierId:'a',createdAt:now,createdBy:'mgr'},{memberId:'ncc2',supplierId:'b',createdAt:now,createdBy:'mgr'}]);
   for(const [id,qty,supplierId,due,sku] of [['a1',8000,'a','2026-10-20','031106000'],['a2',7000,'a','2026-10-22','031106000'],['b1',5000,'b','2026-10-24','031106000'],['excel',10,'b','2026-10-29','01654020803']] as const) {
     await s.db.insert(incomingShipments).values({id,ticketNumber:'PO-'+id,source:'supplier-order',warehouse:'Kho',supplierId,supplierName:'NCC '+supplierId,approvalStatus:'approved',arrivalDate:due,createdAt:now,createdBy:'mgr',updatedAt:now});

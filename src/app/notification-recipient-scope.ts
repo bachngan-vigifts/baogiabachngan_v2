@@ -1,3 +1,5 @@
+import {purchaseReadLevel} from '../modules/suppliers/domain/purchase-access.ts';
+import {suppliers} from '../modules/suppliers/schema.ts';
 import {qrPhoneSeller} from '../modules/sales/domain/pos-qr-display.ts';
 import {posPaymentRequests} from '../modules/sales/pos-schema.ts';
 import {chatMembers,chatMessages} from '../modules/chat/schema.ts';
@@ -175,11 +177,12 @@ export async function createNotificationScope(db: StaffEnv['db']) {
     if (kind === 'purchases') {
       const [p] = await db.select().from(incomingShipments).where(eq(incomingShipments.id, id)).limit(1);
       if (!p) return new Set();
+      const [supplier]=p.supplierId?await db.select({brand:suppliers.saleAdminBrand}).from(suppliers).where(eq(suppliers.id,p.supplierId)).limit(1):[];
       if (event === 'warehouse_task') {
         const [w] = await db.select({ id: warehouses.id }).from(warehouses).where(or(eq(warehouses.id, p.warehouse), eq(warehouses.name, p.warehouse))).limit(1);
         return new Set(people.filter(m => page(m, 'purchases.receive') && warehouseMember(m, [w?.id ?? null])).map(m => m.id));
       }
-      return new Set(people.filter(m => page(m, 'page.purchases') && (event !== 'purchase_pending' || canApprove(m)) && related(m, [p.createdBy])).map(m => m.id));
+      return new Set(people.filter(m => (purchaseReadLevel(m)==='all'||purchaseReadLevel(m)==='brand'&&!!supplier?.brand) && page(m, 'page.purchases') && (event !== 'purchase_pending' || canApprove(m)) && related(m, [p.createdBy])).map(m => m.id));
     }
     if (kind === 'transfers') {
       const [t] = await db.select().from(stockTransfers).where(eq(stockTransfers.id, id)).limit(1);
@@ -202,6 +205,12 @@ export async function createNotificationScope(db: StaffEnv['db']) {
   }
   return {
     people,
+    async project(n:NotificationRef,memberId:string){
+      const m=byId.get(memberId);if(!m||purchaseReadLevel(m)!=='none')return;
+      const ref=refOf(n);let purchase=ref?.kind==='purchases';
+      if(ref?.kind==='tasks'){const [t]=await db.select({source:tasks.source}).from(tasks).where(eq(tasks.id,ref.id)).limit(1);purchase=!!t&&['purchase','early'].includes(t.source);}
+      if(purchase)return {title:'Nhận hàng được giao',body:'Mở Nhận hàng để kiểm tra công việc và ghi nhận số lượng.',url:'#/receiving',data:{}};
+    },
     async recipients(n: NotificationRef, ids: readonly string[]) {
       if(n.eventType === 'sepay_bank_movement')return ids.filter(id=>{const m=byId.get(id);return !!m && canViewSepayDebits(m);});
       if(n.eventType==='pos_qr_display'){

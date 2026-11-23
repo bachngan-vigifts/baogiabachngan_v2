@@ -2,6 +2,7 @@ import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 
 export type NotificationRef = { eventType: string; url?: string; data?: Record<string, unknown>; actorId?: string | null };
 export interface NotificationScope {
+  project?(n:NotificationRef,memberId:string):Promise<{title:string;body:string;url:string;data:Record<string,unknown>}|undefined>;
   people: { id: string; role: string; canApprove: boolean }[];
   recipients(n: NotificationRef, ids: readonly string[]): Promise<string[]>;
 }

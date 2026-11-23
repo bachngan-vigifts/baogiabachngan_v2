@@ -1,3 +1,4 @@
+import {purchaseTaskTitle} from './purchase-scope.ts';
 import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json } from '../../../core/http/router.ts';
@@ -24,7 +25,7 @@ export function registerHomeTasks(router: Router<StaffEnv>, deps: { scope: (c: C
     const count = sql<number>`count(*)`.mapWith(Number);
     const [[counts], rows] = await Promise.all([
       c.env.db.select({open:count,overdue:sql<number>`count(*) filter(where ${overdue})`.mapWith(Number),today:sql<number>`count(*) filter(where ${dueToday})`.mapWith(Number)}).from(tasks).where(where),
-      c.env.db.select({id:tasks.id,title:tasks.title,source:tasks.source,priority:tasks.priority,status:tasks.status,dueDate:tasks.dueDate,dueTime:tasks.dueTime,assigneeName:employees.name,team:tasks.assigneePosition})
+      c.env.db.select({id:tasks.id,title:purchaseTaskTitle(member),source:tasks.source,priority:tasks.priority,status:tasks.status,dueDate:tasks.dueDate,dueTime:tasks.dueTime,assigneeName:employees.name,team:tasks.assigneePosition})
         .from(tasks).leftJoin(employees,eq(employees.id,tasks.assigneeId))
         .where(and(where,filter==='overdue'?overdue:filter==='today'?dueToday:undefined))
         .orderBy(sql`case when ${overdue} then 0 when ${dueToday} then 1 else 2 end`,

@@ -1,7 +1,9 @@
+import {purchaseScope,type Member} from './purchase-store.ts';
+import {auditLogs} from '../../../core/db/schema.ts';
 import { issuePartnerInvite } from '../../portal/api/registration.ts';
 import { foldSql, matchAllWords, rankFirst, searchRank } from '../../../core/text/fold.ts';
 import { isRegistrationInvite } from '../../portal/domain/registration.ts';
-import { and, asc, count, desc, eq, inArray, isNull, ne, notInArray, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull,sql, ne, notInArray, or } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -31,6 +33,12 @@ type Ctx = RouteContext<StaffEnv>;
 const member = (c: Ctx) => (c.state.session as SessionState).member;
 const requireManager = (c: Ctx) => { if (!canManageSuppliers(member(c))) throw new AppError(403, 'Chỉ Manager được gắn tài khoản NCC.'); };
 const requireEditor = (c: Ctx) => { if (!canEditSuppliers(member(c))) throw new AppError(403, 'Chỉ Manager hoặc Kế toán được quản lý nhà cung cấp.'); };
+function brandChange(c:Ctx,body:Record<string,unknown>){
+ if(!Object.hasOwn(body,'saleAdminBrand'))return {};
+ if(member(c).role!=='manager')throw new AppError(403,'Chỉ Manager được phân hãng cho quyền Sale Admin.');
+ if(body.saleAdminBrand!==null&&body.saleAdminBrand!=='minhlong'&&body.saleAdminBrand!=='locknlock')throw new AppError(400,'Hãng NCC không hợp lệ.');
+ return {saleAdminBrand:body.saleAdminBrand as 'minhlong'|'locknlock'|null};
+}
 const nowIso = () => new Date().toISOString();
 
 async function loadSupplier(db: StaffEnv['db'], id: string) {
@@ -43,14 +51,14 @@ async function nameTaken(db: StaffEnv['db'], nameKey: string, exceptId?: string)
   return Boolean(row);
 }
 
-export async function supplierDetail(db: StaffEnv['db'], id: string) {
+export async function supplierDetail(db: StaffEnv['db'], id: string,viewer?:Member) {
   const supplier = await loadSupplier(db, id);
   const [contacts, accounts, [{ orders = 0 } = {}]] = await Promise.all([
     db.select({ id: supplierContacts.id, kind: supplierContacts.kind, name: supplierContacts.name, email: supplierContacts.email, phone: supplierContacts.phone })
       .from(supplierContacts).where(eq(supplierContacts.supplierId, id)).orderBy(asc(supplierContacts.kind), asc(supplierContacts.createdAt)),
     db.select({ id: employees.id, name: employees.name, email: employees.email, active: employees.active })
       .from(supplierAccounts).innerJoin(employees, eq(employees.id, supplierAccounts.memberId)).where(eq(supplierAccounts.supplierId, id)).orderBy(asc(employees.name)),
-    db.select({ orders: count() }).from(incomingShipments).where(eq(incomingShipments.supplierId, id)),
+    db.select({ orders: count() }).from(incomingShipments).where(and(eq(incomingShipments.supplierId, id),viewer?purchaseScope(viewer):sql`false`)),
   ]);
   return { supplier, contacts, accounts: accounts.map(a => ({ ...a, registrationPending: isRegistrationInvite(a.email), email: isRegistrationInvite(a.email) ? '' : a.email })), orders: Number(orders) };
 }
@@ -67,7 +75,7 @@ export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
     const [contacts, accounts, orders] = ids.length ? await Promise.all([
       c.env.db.select({ id: supplierContacts.supplierId, n: count() }).from(supplierContacts).where(inArray(supplierContacts.supplierId, ids)).groupBy(supplierContacts.supplierId),
       c.env.db.select({ id: supplierAccounts.supplierId, n: count() }).from(supplierAccounts).where(inArray(supplierAccounts.supplierId, ids)).groupBy(supplierAccounts.supplierId),
-      c.env.db.select({ id: incomingShipments.supplierId, n: count() }).from(incomingShipments).where(inArray(incomingShipments.supplierId, ids)).groupBy(incomingShipments.supplierId),
+      c.env.db.select({ id: incomingShipments.supplierId, n: count() }).from(incomingShipments).where(and(inArray(incomingShipments.supplierId, ids),purchaseScope(member(c)))).groupBy(incomingShipments.supplierId),
     ]) : [[], [], []];
     const by = (list: { id: string | null; n: number }[]) => new Map(list.map(r => [r.id, Number(r.n)]));
     const [cm, am, om] = [by(contacts), by(accounts), by(orders)];
@@ -79,38 +87,40 @@ export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
   router.post('/suppliers', async c => {
     requireEditor(c);
     const body = await readJson(c.req, 32_768), clean = cleanSupplierInput(body), contacts = cleanContacts(body.contacts ?? []);
-    const db = c.env.db, now = nowIso(), id = crypto.randomUUID(), me = member(c);
+    const db = c.env.db, now = nowIso(), id = crypto.randomUUID(), me = member(c),brand=brandChange(c,body);
     if (await nameTaken(db, clean.nameKey)) throw new AppError(409, 'Đã có nhà cung cấp trùng tên.');
     await db.transaction(async tx => {
-      const ok = await tx.insert(suppliers).values({ id, ...clean, active: true, createdAt: now, createdBy: me.id, updatedAt: now, updatedBy: me.id })
+      const ok = await tx.insert(suppliers).values({ id, ...clean,...brand, active: true, createdAt: now, createdBy: me.id, updatedAt: now, updatedBy: me.id })
         .onConflictDoNothing({ target: suppliers.nameKey }).returning({ id: suppliers.id });
       if (!ok.length) throw new AppError(409, 'Đã có nhà cung cấp trùng tên.');
+      if(Object.hasOwn(brand,'saleAdminBrand'))await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:me.id,module:'suppliers',action:'sale-admin-brand',entityType:'supplier',entityId:id,data:JSON.stringify({before:null,after:brand.saleAdminBrand}),createdAt:now});
       if (contacts.length) await tx.insert(supplierContacts).values(contacts.map(ct => ({ id: crypto.randomUUID(), supplierId: id, ...ct, createdAt: now })));
     });
-    return json(await supplierDetail(db, id), 201);
+    return json(await supplierDetail(db, id,member(c)), 201);
   }, 'business');
 
-  router.get('/suppliers/:id', async c => { requireEditor(c); return json({...await supplierDetail(c.env.db, c.params.id!),canViewEarlyRequests:can((c.state.session as SessionState).member,'page.purchases')&&can((c.state.session as SessionState).member,'purchases.early-view')}); }, 'business');
+  router.get('/suppliers/:id', async c => { requireEditor(c); return json({...await supplierDetail(c.env.db, c.params.id!,member(c)),canViewEarlyRequests:can((c.state.session as SessionState).member,'page.purchases')&&can((c.state.session as SessionState).member,'purchases.early-view')}); }, 'business');
 
   router.put('/suppliers/:id', async c => {
     requireEditor(c);
     const db = c.env.db, id = c.params.id!, body = await readJson(c.req, 32_768), me = member(c), current = await loadSupplier(db, id);
     if (typeof body.updatedAt === 'string' && body.updatedAt !== current.updatedAt) throw new AppError(409, 'Nhà cung cấp vừa được người khác sửa. Tải lại rồi thử lại.');
-    const clean = cleanSupplierInput(body), contacts = body.contacts === undefined ? null : cleanContacts(body.contacts);
+    const brand=brandChange(c,body),clean = cleanSupplierInput(body), contacts = body.contacts === undefined ? null : cleanContacts(body.contacts);
     if (body.active !== undefined && typeof body.active !== 'boolean') throw new AppError(400, 'Trạng thái không hợp lệ.');
     if (await nameTaken(db, clean.nameKey, id)) throw new AppError(409, 'Đã có nhà cung cấp trùng tên.');
     const now = nowIso();
     await db.transaction(async tx => {
       // Khoá lạc quan: chỉ ghi khi `updated_at` chưa đổi kể từ lúc đọc.
-      const ok = await tx.update(suppliers).set({ ...clean, ...(typeof body.active === 'boolean' ? { active: body.active as boolean } : {}), updatedAt: now, updatedBy: me.id })
+      const ok = await tx.update(suppliers).set({ ...clean,...brand, ...(typeof body.active === 'boolean' ? { active: body.active as boolean } : {}), updatedAt: now, updatedBy: me.id })
         .where(and(eq(suppliers.id, id), eq(suppliers.updatedAt, current.updatedAt))).returning({ id: suppliers.id });
       if (!ok.length) throw new AppError(409, 'Nhà cung cấp vừa được người khác sửa. Tải lại rồi thử lại.');
+      if(Object.hasOwn(brand,'saleAdminBrand')&&current.saleAdminBrand!==brand.saleAdminBrand)await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:me.id,module:'suppliers',action:'sale-admin-brand',entityType:'supplier',entityId:id,data:JSON.stringify({before:current.saleAdminBrand,after:brand.saleAdminBrand}),createdAt:now});
       if (contacts) {
         await tx.delete(supplierContacts).where(eq(supplierContacts.supplierId, id));
         if (contacts.length) await tx.insert(supplierContacts).values(contacts.map(ct => ({ id: crypto.randomUUID(), supplierId: id, ...ct, createdAt: now })));
       }
     });
-    return json(await supplierDetail(db, id));
+    return json(await supplierDetail(db, id,member(c)));
   }, 'business');
 
   router.post('/suppliers/:id/invitations', async c => {
@@ -145,7 +155,7 @@ export function registerSupplierDirectoryRoutes(router: Router<StaffEnv>) {
       for (const p of plans) await tx.insert(supplierAccounts).values({ ...p, createdAt: now, createdBy: me.id })
         .onConflictDoUpdate({ target: supplierAccounts.memberId, set: { supplierId: p.supplierId, createdAt: now, createdBy: me.id } });
     });
-    return json(await supplierDetail(db, id));
+    return json(await supplierDetail(db, id,member(c)));
   }, 'ncc-admin');
 
   router.get('/supplier-account-candidates', async c => {

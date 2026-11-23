@@ -5,10 +5,10 @@ import { isIsoDate } from '../domain/quantity.ts';
 import { purchaseEarlyRequests, purchaseEarlyRequestLines, purchaseEarlyRequestAllocations } from '../early-request-schema.ts';
 import { suppliers as supplierTable } from '../schema.ts';
 import { outstandingLines } from './incoming-stock.ts';
-import type { Db } from './purchase-store.ts';
+import {purchaseScope,earlyPurchaseScope,type Db,type Member} from './purchase-store.ts';
 
 /** Purchase receipts and early-pickup requests are distinct rows; quantities are never added together. */
-export async function receivingCalendar(db: Db, params: URLSearchParams, today: string, options: {paginate?:boolean; reminderOnly?:boolean; sourceId?:string} = {}) {
+export async function receivingCalendar(db: Db, params: URLSearchParams, today: string, options: {paginate?:boolean; reminderOnly?:boolean; sourceId?:string;member?:Member} = {}) {
   const from = params.get('from') || '', to = params.get('to') || '';
   if ((from && !isIsoDate(from)) || (to && !isIsoDate(to)) || (from && to && from > to))
     throw new AppError(400, 'Khoảng ngày nhận hàng không hợp lệ.');
@@ -20,8 +20,8 @@ export async function receivingCalendar(db: Db, params: URLSearchParams, today: 
   const early = type === 'purchase' ? [] : await db.select({request:purchaseEarlyRequests,line:purchaseEarlyRequestLines,allocation:purchaseEarlyRequestAllocations,supplierName:supplierTable.name})
     .from(purchaseEarlyRequests).innerJoin(purchaseEarlyRequestLines,eq(purchaseEarlyRequestLines.requestId,purchaseEarlyRequests.id))
     .innerJoin(purchaseEarlyRequestAllocations,eq(purchaseEarlyRequestAllocations.requestLineId,purchaseEarlyRequestLines.id))
-    .innerJoin(supplierTable,eq(supplierTable.id,purchaseEarlyRequestAllocations.supplierId)).where(and(isNull(purchaseEarlyRequests.deletedAt), options.sourceId ? eq(purchaseEarlyRequests.id, options.sourceId) : undefined));
-  const all = await outstandingLines(db, undefined, false, options.sourceId ? (early.length ? { lineIds: [...new Set(early.map(e => e.allocation.purchaseLineId))] } : { orderId: options.sourceId }) : undefined);
+    .innerJoin(supplierTable,eq(supplierTable.id,purchaseEarlyRequestAllocations.supplierId)).where(and(options.member?earlyPurchaseScope(options.member):undefined,isNull(purchaseEarlyRequests.deletedAt), options.sourceId ? eq(purchaseEarlyRequests.id, options.sourceId) : undefined));
+  const all = await outstandingLines(db, undefined, false, {...(options.member?{predicate:purchaseScope(options.member)}:{}),...(options.sourceId?(early.length?{lineIds:[...new Set(early.map(e=>e.allocation.purchaseLineId))]}:{orderId:options.sourceId}):{})});
   const suppliers = [...new Map([...all.map(l => ({id:l.supplierId,name:l.supplierName})),...early.map(l=>({id:l.allocation.supplierId,name:l.supplierName}))].map(s=>[s.id,s])).values()]
     .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
   type Line = {lineId:string;sku:string;name:string;unit:string;left:number;requestedQty?:number;status?:string;canConfirm?:boolean;receiptOptions?:{orderId:string;ticketNumber:string;remaining:number}[]};

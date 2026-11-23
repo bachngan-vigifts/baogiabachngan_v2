@@ -22,14 +22,14 @@ test('NCC bị ngừng giữa preflight và transaction: không tạo đơn/inte
  const f=await setupEarly(),request=body();
  const before=(await f.db.select().from(incomingShipments)).length;
  beforeTransaction(f.env,f.db,()=>f.db.update(suppliers).set({active:false}).where(eq(suppliers.id,'a')));
- const r=await f.call('/purchase-orders',f.cookies.emp,'POST',request);assert.equal(r.status,409,JSON.stringify(r.data));
+ const r=await f.call('/purchase-orders',f.cookies.mgr,'POST',request);assert.equal(r.status,409,JSON.stringify(r.data));
  assert.equal((await f.db.select().from(incomingShipments)).length,before);assert.equal((await f.db.select().from(purchaseOrderIntents)).length,0);
 });
 
 test('NCC đổi tên trước BEGIN: lưu snapshot mới bằng SELECT FOR SHARE trong transaction',async()=>{
  const f=await setupEarly(),sql=transactionSql(f.client);
  beforeTransaction(f.env,f.db,()=>f.db.update(suppliers).set({name:'Tên mới trong transaction'}).where(eq(suppliers.id,'a')));
- const r=await f.call('/purchase-orders',f.cookies.emp,'POST',body());assert.equal(r.status,201,JSON.stringify(r.data));
+ const r=await f.call('/purchase-orders',f.cookies.mgr,'POST',body());assert.equal(r.status,201,JSON.stringify(r.data));
  const [created]=await f.db.select().from(incomingShipments).where(eq(incomingShipments.id,r.data.ids[0]));assert.equal(created!.supplierName,'Tên mới trong transaction');
  assert.ok(sql.some(q=>q.includes('"suppliers"')&&/for share\b/i.test(q)),JSON.stringify(sql.filter(q=>/for share\b/i.test(q))));
 });

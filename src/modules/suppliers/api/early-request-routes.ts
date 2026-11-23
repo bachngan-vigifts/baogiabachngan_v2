@@ -1,3 +1,5 @@
+import {receivingContext} from './purchase-receiving.ts';
+import {isWarehouseStaff} from '../domain/purchasing.ts';
 import {employees} from '../../staff/schema.ts';
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { earlyListFilter } from './early-list-filter.ts';
@@ -17,13 +19,25 @@ import { isIsoDate } from '../domain/quantity.ts';
 import {resolveEarlyOrderSources,EarlySourceError} from '../domain/early-order-sources.ts';
 import {deleteEarlyRequest,splitEarlyRequest,splitResult,cancelEarlySlip} from './early-request-lifecycle.ts';
 import {products} from '../../catalog/schema.ts';
-import type { Db, Member } from './purchase-store.ts';
+import {earlyPurchaseScope,assertEarlyScope,assertSupplierScope,purchaseScope,type Db,type Member} from './purchase-store.ts';
 type Ctx = RouteContext<StaffEnv>;
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 const me = (c: Ctx) => (c.state.session as SessionState).member;
 function fail(status:number, message:string, code?:string):never { throw new AppError(status,message,code); }
 export { canSendEarlyRequest } from '../domain/purchasing.ts';
-const guard = (c:Ctx) => { if(!canUsePurchasing(me(c))) fail(403,'Bạn không có quyền xem yêu cầu lấy trước.'); };
+const guard = async(c:Ctx) => {
+ const m=me(c);if(!canUsePurchasing(m))fail(403,'Bạn không có quyền xem yêu cầu lấy trước.');
+ let id=c.params.id;
+ if(id&&c.url.pathname.includes('/purchase-early-request-lines/')){const [l]=await c.env.db.select({id:lines.requestId}).from(lines).where(eq(lines.id,id)).limit(1);id=l?.id;if(!id)fail(404,'Không tìm thấy phiếu.');}
+ if(id)await assertEarlyScope(c.env.db,m,id);
+ if((c.url.searchParams.get('supplierId')||'').length>200)fail(400,'Mã NCC không hợp lệ.');
+ if(c.req.method==='GET'&&c.url.searchParams.get('supplierId'))await assertSupplierScope(c.env.db,m,c.url.searchParams.get('supplierId')!);
+ if(['POST','PUT'].includes(c.req.method)){
+  const body=await readJson(c.req.clone(),300000);
+  const scope=body.scope as Record<string,unknown>|undefined;if(scope?.supplierId)await assertSupplierScope(c.env.db,m,String(scope.supplierId));
+  if(typeof body.clientKey==='string'){const [old]=await c.env.db.select({id:requests.id}).from(requests).where(eq(requests.clientKey,body.clientKey)).limit(1);if(old)await assertEarlyScope(c.env.db,m,old.id);}
+ }
+};
 const asDb = (tx:Tx) => tx as unknown as Db;
 async function supplierFor(c:Ctx) {
   const m=me(c);
@@ -83,21 +97,21 @@ function cleanInput(body:Record<string,unknown>,preserved:Record<string,OrderSou
 const stateOf = (statuses:readonly string[]) => statuses.every(s=>s==='accepted')?'accepted':statuses.every(s=>s==='rejected')?'rejected':statuses.some(s=>s==='pending')?'pending':'mixed';
 
 /** Số phiếu theo từng trạng thái với cùng bộ lọc (trừ trạng thái), cho các ô đếm ở đầu trang Lấy hàng trước. */
-export async function earlyStatusCounts(db:Db, params:URLSearchParams, supplierId:string|null) {
+export async function earlyStatusCounts(db:Db, params:URLSearchParams, supplierId:string|null,readScope?:SQL) {
   const scope=supplierId?sql`exists(select 1 from ${lines} join ${allocations} on ${allocations.requestLineId}=${lines.id} where ${lines.requestId}=${requests.id} and ${allocations.supplierId}=${supplierId})`:undefined;
   const out:Record<string,number>={};
   for(const [key,status] of [['all',''],['draft','draft'],['pending','pending'],['accepted','accepted'],['rejected','rejected'],['mixed','mixed']] as const){
     const p=new URLSearchParams(params);p.set('status',status);p.delete('offset');p.delete('limit');
-    const [row]=await db.select({n:sql<number>`count(*)::int`}).from(requests).where(and(isNull(requests.deletedAt),scope,earlyListFilter(p,supplierId).where));
+    const [row]=await db.select({n:sql<number>`count(*)::int`}).from(requests).where(and(readScope,isNull(requests.deletedAt),scope,earlyListFilter(p,supplierId).where));
     out[key]=Number(row?.n||0);
   }
   return out;
 }
 
 /** Header pagination precedes line loading, so a multi-line request is never truncated. NCC filtering happens in SQL. */
-export async function earlyRequestList(db:Db, supplierId:string|null, id:string|readonly string[]='', submittedOnly=false, page?:{where?:SQL;limit:number;offset:number}) {
+export async function earlyRequestList(db:Db, supplierId:string|null, id:string|readonly string[]='', submittedOnly=false, page?:{where?:SQL;limit:number;offset:number},member?:Member) {
   const scope=supplierId?sql`exists(select 1 from ${lines} join ${allocations} on ${allocations.requestLineId}=${lines.id} where ${lines.requestId}=${requests.id} and ${allocations.supplierId}=${supplierId})`:undefined;
-  const headers=await db.select().from(requests).where(and(isNull(requests.deletedAt),id?(typeof id==='string'?eq(requests.id,id):inArray(requests.id,[...id])):undefined,scope,submittedOnly?eq(requests.status,'submitted'):undefined,page?.where)).orderBy(desc(requests.createdAt),desc(requests.id)).limit(typeof id!=='string'?id.length:page?.limit??50).offset(page?.offset??0);
+  const headers=await db.select().from(requests).where(and(member?earlyPurchaseScope(member):undefined,isNull(requests.deletedAt),id?(typeof id==='string'?eq(requests.id,id):inArray(requests.id,[...id])):undefined,scope,submittedOnly?eq(requests.status,'submitted'):undefined,page?.where)).orderBy(desc(requests.createdAt),desc(requests.id)).limit(typeof id!=='string'?id.length:page?.limit??50).offset(page?.offset??0);
   if(id && !headers.length) fail(404,'Không tìm thấy yêu cầu lấy trước.');
   if(!headers.length) return [];
   const [creatorRows,details]=await Promise.all([
@@ -123,14 +137,14 @@ export async function earlyRequestList(db:Db, supplierId:string|null, id:string|
   });
 }
 
-async function replaceDraftLines(tx:Tx,id:string,input:ReturnType<typeof cleanInput>,used?:Map<string,number>,allowUnresolved=false) {
+async function replaceDraftLines(tx:Tx,id:string,input:ReturnType<typeof cleanInput>,used?:Map<string,number>,allowUnresolved=false,member?:Member) {
   for(const l of input.selected) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'early-sku:'+l.sku}))`);
   const q=new URLSearchParams(input.scope);q.set('selected','1');for(const l of input.selected) q.append('sku',l.sku);
-  const initial=await incomingBySku(asDb(tx),q,vietnamDate().iso,false);
+  const initial=await incomingBySku(asDb(tx),q,vietnamDate().iso,false,member);
   const orderIds=[...new Set(initial.rows.flatMap(r=>r.orders.map(o=>o.id)))].sort();
   if(!orderIds.length&&!allowUnresolved) fail(409,'Các mã đã chọn không còn hàng đang về.');
   if(orderIds.length)await tx.select({id:incomingShipments.id}).from(incomingShipments).where(inArray(incomingShipments.id,orderIds)).orderBy(asc(incomingShipments.id)).for('update');
-  const current=await incomingBySku(asDb(tx),q,vietnamDate().iso,false);
+  const current=await incomingBySku(asDb(tx),q,vietnamDate().iso,false,member);
   const oldLines=await tx.select({id:lines.id}).from(lines).where(eq(lines.requestId,id));
   if(oldLines.length) await tx.delete(allocations).where(inArray(allocations.requestLineId,oldLines.map(l=>l.id)));
   await tx.delete(lines).where(eq(lines.requestId,id));
@@ -191,7 +205,7 @@ async function withReceiptAvailability(db:Db, rows:Awaited<ReturnType<typeof ear
 
 export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
   router.get('/purchase-early-requests/order-options',async c=>{
-    guard(c);if(!canSendEarlyRequest(me(c)))fail(403,'Bạn chưa được cấp quyền chọn đơn mua.');
+    await guard(c);if(!canSendEarlyRequest(me(c)))fail(403,'Bạn chưa được cấp quyền chọn đơn mua.');
     const sku=(c.url.searchParams.get('sku')||'').trim(),supplierOrderNo=(c.url.searchParams.get('supplierOrderNo')||'').trim().toLocaleLowerCase('vi'),supplierId=(c.url.searchParams.get('supplierId')||'').trim();
     if(!sku||sku.length>200||supplierOrderNo.length>200||supplierId.length>200)fail(400,'Mã hàng không hợp lệ.');
     const rows=await c.env.db.select({orderId:incomingShipments.id,lineId:incomingShipmentLines.id,ticketNumber:incomingShipments.ticketNumber,
@@ -199,27 +213,33 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       approvalStatus:incomingShipments.approvalStatus,submittedAt:incomingShipments.submittedAt,quantity:incomingShipmentLines.quantity,
       name:incomingShipmentLines.name,unit:incomingShipmentLines.unit,warehouse:incomingShipments.warehouse,createdAt:incomingShipments.createdAt})
       .from(incomingShipmentLines).innerJoin(incomingShipments,eq(incomingShipments.id,incomingShipmentLines.shipmentId)).innerJoin(suppliers,eq(suppliers.id,incomingShipments.supplierId))
-      .where(and(eq(incomingShipmentLines.sku,sku),eq(incomingShipments.source,'supplier-order'),isNull(incomingShipments.cancelledAt),supplierId?eq(incomingShipments.supplierId,supplierId):undefined)).orderBy(desc(incomingShipments.createdAt));
+      .where(and(purchaseScope(me(c)),eq(incomingShipmentLines.sku,sku),eq(incomingShipments.source,'supplier-order'),isNull(incomingShipments.cancelledAt),supplierId?eq(incomingShipments.supplierId,supplierId):undefined)).orderBy(desc(incomingShipments.createdAt));
     const options=rows.map(r=>({...r,exactSupplierOrderNo:!!supplierOrderNo&&r.supplierOrderNo.trim().toLocaleLowerCase('vi')===supplierOrderNo}));
     options.sort((a,b)=>Number(b.exactSupplierOrderNo)-Number(a.exactSupplierOrderNo)||b.createdAt.localeCompare(a.createdAt));
     return json({sku,options});
   },'business');
   router.get('/purchase-early-requests',async c=>{
-    guard(c);if(!canViewEarlyRequests(me(c)))fail(403,'Bạn chưa được cấp quyền xem phiếu xin hàng trước.');const supplierId=c.url.searchParams.get('supplierId')||null,page=earlyListFilter(c.url.searchParams,supplierId);
+    await guard(c);if(!canViewEarlyRequests(me(c)))fail(403,'Bạn chưa được cấp quyền xem phiếu xin hàng trước.');const supplierId=c.url.searchParams.get('supplierId')||null,page=earlyListFilter(c.url.searchParams,supplierId);page.where=and(page.where,earlyPurchaseScope(me(c)));
     const id=c.url.searchParams.get('id')||'';
     const replacements=id?await splitResult(c.env.db,id):null;
     const requests=await earlyRequestList(c.env.db,supplierId,replacements||id,false,{...page,limit:page.limit+1});
     const nextOffset=!id&&requests.length>page.limit?page.offset+page.limit:null;if(nextOffset!==null)requests.pop();
-    const counts=!id&&c.url.searchParams.get('counts')==='1'?await earlyStatusCounts(c.env.db,c.url.searchParams,supplierId):undefined;
+    const counts=!id&&c.url.searchParams.get('counts')==='1'?await earlyStatusCounts(c.env.db,c.url.searchParams,supplierId,earlyPurchaseScope(me(c))):undefined;
     return json({requests:await withReceiptAvailability(c.env.db,requests),nextOffset,counts,canSend:canSendEarlyRequest(me(c)),canViewPortal:me(c).role==='manager',canReceive:canReceive(me(c))});
   },'business');
   router.get('/purchase-early-requests/:id/receiving',async c=>{
-    guard(c);if(!canReceive(me(c)))fail(403,'Bạn không có quyền nhận hàng NCC.');
-    return json(await earlyReceiptContext(c.env.db,c.params.id!,c.url.searchParams.get('orderId')||''));
+    const m=me(c),orderId=c.url.searchParams.get('orderId')||'';
+    if(isWarehouseStaff(m)){
+      await receivingContext(c.env.db,m,orderId,vietnamDate().iso);
+      const context=await earlyReceiptContext(c.env.db,c.params.id!,orderId);
+      return json({requestId:context.requestId,orderId:context.orderId,lines:context.lines});
+    }
+    await guard(c);if(!canReceive(m))fail(403,'Bạn không có quyền nhận hàng NCC.');
+    return json(await earlyReceiptContext(c.env.db,c.params.id!,orderId));
   },'business');
   // One workbook is one transaction and one retry key; grouping never submits or receives stock.
   router.post('/purchase-early-requests/file',async c=>{
-    guard(c);const m=me(c);if(!canSendEarlyRequest(m))fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
+    await guard(c);const m=me(c);if(!canSendEarlyRequest(m))fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
     const body=await readJson(c.req,300000);
     if(!Array.isArray(body.groups)||!body.groups.length||body.groups.length>300)fail(400,'File cần từ 1 đến 300 nhóm PXK.');
     const seen=new Set<string>();
@@ -240,23 +260,23 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       const skus=[...new Set(inputs.flatMap(input=>input.selected.map(l=>l.sku)))].sort();
       for(const sku of skus)await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'early-sku:'+sku}))`);
       const q=new URLSearchParams(inputs[0]!.scope);q.set('selected','1');for(const sku of skus)q.append('sku',sku);
-      const available=await incomingBySku(asDb(tx),q,vietnamDate().iso,false),orderIds=[...new Set(available.rows.flatMap(r=>r.orders.map(o=>o.id)))].sort();
+      const available=await incomingBySku(asDb(tx),q,vietnamDate().iso,false,m),orderIds=[...new Set(available.rows.flatMap(r=>r.orders.map(o=>o.id)))].sort();
       if(orderIds.length)await tx.select({id:incomingShipments.id}).from(incomingShipments).where(inArray(incomingShipments.id,orderIds)).orderBy(asc(incomingShipments.id)).for('update');
       const requestIds:string[]=[],used=new Map<string,number>(),now=new Date().toISOString();
       for(const [i,input] of inputs.entries()){
         const id=crypto.randomUUID();
         await tx.insert(requests).values({id,clientKey:'file_'+sha256Hex(batchId+':'+i),payloadHash,createdBy:m.id,createdAt:now,status:'draft',pickupDate:input.pickupDate,scope:JSON.stringify(input.scope),updatedAt:now});
-        await replaceDraftLines(tx,id,input,used);requestIds.push(id);
+        await replaceDraftLines(tx,id,input,used,false,m);requestIds.push(id);
         await audit(tx,m,id,'early-request-draft-create',{lines:input.selected,scope:input.scope,pickupDate:input.pickupDate});
       }
       await tx.insert(auditLogs).values({id:batchId,actorId:m.id,module:'suppliers',action:'early-request-file-create',entityType:'purchase-early-requests',entityId:requestIds[0]!,data:JSON.stringify({payloadHash,requestIds}),createdAt:now});
       return {requestIds,replayed:false};
     });
-    const saved=await earlyRequestList(c.env.db,null,result.requestIds);
+    const saved=await earlyRequestList(c.env.db,null,result.requestIds,false,undefined,me(c));
     return json({...result,id:result.requestIds[0],requests:saved,request:saved[0]},result.replayed?200:201);
   },'business');
   router.post('/purchase-early-requests',async c=>{
-    guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
+    await guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
     const body=await readJson(c.req,300000),input=cleanInput(body),groupBySupplierOrder=body.groupBySupplierOrder===true,allowUnresolved=allowUnresolvedDraft(body);
     if(body.groupBySupplierOrder!==undefined&&typeof body.groupBySupplierOrder!=='boolean')fail(400,'Tuỳ chọn gom phiếu không hợp lệ.');
     const payloadHash=sha256Hex(JSON.stringify({lines:input.selected,scope:input.scope,pickupDate:input.pickupDate,...(groupBySupplierOrder?{groupBySupplierOrder:true}:{}),...(allowUnresolved?{allowUnresolvedSources:true}:{})}));
@@ -266,7 +286,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       if(old) { if(old.payloadHash!==payloadHash) fail(409,'Khóa gửi đã được dùng cho nội dung khác.','IDEMPOTENCY_CONFLICT');if(old.deletedAt&&!await splitResult(tx,old.id))fail(409,'Phiếu đã xoá, không tạo lại bằng lần gửi cũ.');return {id:old.id,replayed:true,requestIds:await splitResult(tx,old.id)||[old.id]}; }
       const now=new Date().toISOString(),id=crypto.randomUUID();
       await tx.insert(requests).values({id,clientKey:input.clientKey,payloadHash,createdBy:m.id,createdAt:now,status:'draft',pickupDate:input.pickupDate,scope:JSON.stringify(input.scope),updatedAt:now});
-      await replaceDraftLines(tx,id,input,undefined,allowUnresolved);
+      await replaceDraftLines(tx,id,input,undefined,allowUnresolved,m);
       if(groupBySupplierOrder&&input.scope.unresolvedOrders)fail(409,'Chốt nguồn đơn mua trước khi tách phiếu theo NCC.','EARLY_UNRESOLVED');
       await audit(tx,m,id,'early-request-draft-create',{lines:input.selected,scope:input.scope,pickupDate:input.pickupDate});
       return {id,replayed:false,requestIds:groupBySupplierOrder?await splitEarlyRequest(tx,id,m.id):[id]};
@@ -276,7 +296,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
     return json({...result,requests:saved,request:saved[0]},result.replayed?200:201);
   },'business');
   router.put('/purchase-early-requests/:id',async c=>{
-    guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
+    await guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
     const body=await readJson(c.req,300000),id=c.params.id!,allowUnresolved=allowUnresolvedDraft(body);
     await c.env.db.transaction(async tx=>{
       const [draft]=await tx.select().from(requests).where(eq(requests.id,id)).for('update');
@@ -285,13 +305,13 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       if(draft.status!=='draft') fail(409,'Phiếu đã gửi NCC, không sửa như phiếu nháp.');
       if(body.revision!==draft.revision) fail(409,'Phiếu đã được sửa bởi người khác. Vui lòng tải lại.');
       const input=cleanInput({...body,clientKey:draft.clientKey,scope:JSON.parse(draft.scope)},JSON.parse(JSON.parse(draft.scope).orderSources||'{}'));
-      await replaceDraftLines(tx,id,input,undefined,allowUnresolved);
+      await replaceDraftLines(tx,id,input,undefined,allowUnresolved,m);
       await tx.update(requests).set({pickupDate:input.pickupDate,scope:JSON.stringify(input.scope),updatedAt:new Date().toISOString(),revision:draft.revision+1}).where(eq(requests.id,id));
       await audit(tx,m,id,'early-request-draft-update',{lines:input.selected,pickupDate:input.pickupDate,revision:draft.revision+1});
-    });return json({request:(await earlyRequestList(c.env.db,null,id))[0]});
+    });return json({request:(await earlyRequestList(c.env.db,null,id,false,undefined,me(c)))[0]});
   },'business');
   router.post('/purchase-early-requests/:id/submit',async c=>{
-    guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
+    await guard(c);const m=me(c);if(!canSendEarlyRequest(m)) fail(403,'Bạn chưa được cấp quyền xin hàng trước.');
     const body=await readJson(c.req,8000),id=c.params.id!;
     const result=await c.env.db.transaction(async tx=>{
       const [draft]=await tx.select().from(requests).where(eq(requests.id,id)).for('update');
@@ -302,36 +322,36 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       if(!isIsoDate(draft.pickupDate)) fail(400,'Vui lòng nhập ngày lấy hợp lệ và lưu nháp trước khi gửi.');
       const saved=await tx.select().from(lines).where(eq(lines.requestId,id));
       const input=cleanInput({clientKey:draft.clientKey,scope:JSON.parse(draft.scope),pickupDate:draft.pickupDate,lines:saved.map(l=>({sku:l.sku,quantity:l.quantity}))},JSON.parse(JSON.parse(draft.scope).orderSources||'{}'));
-      await replaceDraftLines(tx,id,input);
+      await replaceDraftLines(tx,id,input,undefined,false,m);
       await tx.update(requests).set({status:'submitted',updatedAt:new Date().toISOString(),revision:draft.revision+1}).where(eq(requests.id,id));
       await audit(tx,m,id,'early-request-send',{lines:input.selected,scope:input.scope,pickupDate:input.pickupDate});
       return {replayed:false};
-    });return json({...result,request:(await earlyRequestList(c.env.db,null,id))[0]});
+    });return json({...result,request:(await earlyRequestList(c.env.db,null,id,false,undefined,me(c)))[0]});
   },'business');
   router.delete('/purchase-early-requests/:id',async c=>{
-    guard(c);if(me(c).role!=='manager')fail(403,'Chỉ Manager được xoá phiếu xin hàng.');
+    await guard(c);if(me(c).role!=='manager')fail(403,'Chỉ Manager được xoá phiếu xin hàng.');
     return json({ok:true,...await c.env.db.transaction(tx=>deleteEarlyRequest(tx,c.params.id!,me(c).id))});
   },'business');
   router.post('/purchase-early-requests/:id/cancel-slip',async c=>{
-    guard(c);if(me(c).role!=='manager')fail(403,'Chỉ Manager được huỷ phiếu NCC.');
+    await guard(c);if(me(c).role!=='manager')fail(403,'Chỉ Manager được huỷ phiếu NCC.');
     const body=await readJson(c.req,40000),ids=body.allocationIds;
     if(!Array.isArray(ids)||!ids.length||ids.length>300||ids.some(id=>typeof id!=='string'||!id||id.length>200)||new Set(ids).size!==ids.length)fail(400,'Danh sách mã nguồn của phiếu không hợp lệ.');
     return json({ok:true,...await c.env.db.transaction(tx=>cancelEarlySlip(tx,c.params.id!,ids as string[],me(c).id))});
   },'business');
   router.post('/purchase-early-requests/:id/split',async c=>{
-    guard(c);if(me(c).role!=='manager')fail(403,'Chỉ Manager được tách phiếu đã lưu.');
+    await guard(c);if(me(c).role!=='manager')fail(403,'Chỉ Manager được tách phiếu đã lưu.');
     const ids=await c.env.db.transaction(tx=>splitEarlyRequest(tx,c.params.id!,me(c).id));
     return json({ok:true,requests:await earlyRequestList(c.env.db,null,ids)});
   },'business');
   router.post('/purchase-early-request-lines/:id/manager-confirm',async c=>{
-    guard(c);if(me(c).role!=='manager') fail(403,'Chỉ Manager được xác nhận thay NCC.');
+    await guard(c);if(me(c).role!=='manager') fail(403,'Chỉ Manager được xác nhận thay NCC.');
     const body=await readJson(c.req,8000),supplierId=typeof body.supplierId==='string'?body.supplierId.trim():'';
     if(!supplierId) fail(400,'Chọn đúng NCC cần xác nhận.');
     return json({ok:true,...await respondEarlyLine(c.env.db,me(c).id,c.params.id!,supplierId,'accepted','Manager xác nhận thay NCC','early-request-manager-confirm')});
   },'business');
   // Exact allocation IDs keep a supplier slip from confirming other sources of the same SKU.
   router.post('/purchase-early-requests/manager-confirm-batch',async c=>{
-    guard(c);const m=me(c);if(m.role!=='manager')fail(403,'Chỉ Manager được xác nhận thay NCC.');
+    await guard(c);const m=me(c);if(m.role!=='manager')fail(403,'Chỉ Manager được xác nhận thay NCC.');
     const body=await readJson(c.req,50000),raw=body.allocationIds;
     if(!Array.isArray(raw)||!raw.length||raw.length>300||raw.some(id=>typeof id!=='string'||!id||id.length>100))fail(400,'Chọn từ 1 đến 300 dòng phân bổ.');
     const ids=[...new Set(raw as string[])].sort();
@@ -353,7 +373,7 @@ export function registerEarlyRequestRoutes(router:Router<StaffEnv>) {
       return {confirmed:pending.length,replayed:pending.length===0,requestIds:[...new Set(rows.map(r=>r.requestId))]};
     });
     let confirmedRequests:Awaited<ReturnType<typeof withReceiptAvailability>>|undefined;
-    if(body.returnRequests===true){try{confirmedRequests=await withReceiptAvailability(c.env.db,await earlyRequestList(c.env.db,null,result.requestIds));}catch{/* The confirmed write must not become a read failure. */}}
+    if(body.returnRequests===true){try{confirmedRequests=await withReceiptAvailability(c.env.db,await earlyRequestList(c.env.db,null,result.requestIds,false,undefined,me(c)));}catch{/* The confirmed write must not become a read failure. */}}
     const {requestIds:_ids,...confirmed}=result;return json({ok:true,...confirmed,...(confirmedRequests?{requests:confirmedRequests}:{})});
   },'business');
   router.get('/supplier-portal/early-requests',async c=>{

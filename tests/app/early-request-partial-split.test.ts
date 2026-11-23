@@ -1,3 +1,4 @@
+import {warehouseSellers} from '../../src/modules/inventory/schema.ts';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {eq} from 'drizzle-orm';
@@ -11,6 +12,7 @@ async function fixture(){
  for(const id of ['a1','a2'])await f.db.update(incomingShipments).set({supplierInternalOrderNumber:'NCC-A'}).where(eq(incomingShipments.id,id));
  for(const id of ['b1','excel'])await f.db.update(incomingShipments).set({supplierInternalOrderNumber:'NCC-B'}).where(eq(incomingShipments.id,id));
  await f.db.insert(products).values({sku:'031106000',name:'Ly',unit:'Cái',updatedAt:new Date().toISOString()});await f.db.insert(warehouses).values({id:'receive',name:'KHO NHẬN',kind:'stock'});
+ await f.db.insert(warehouseSellers).values({warehouseId:'receive',positionId:'warehouse'});await f.db.update(incomingShipments).set({warehouse:'KHO NHẬN'});
  await postMoves(f.db,'mgr',[{sku:'031106000',warehouseId:'receive',qty:1,kind:'opening',refType:'opening',refId:'opening'}]);
  const made=ok(await f.call('/purchase-early-requests',c.mgr,'POST',{clientKey:crypto.randomUUID(),pickupDate:'2026-10-27',lines:[{sku:'031106000',quantity:16000},{sku:'01654020803',quantity:2}]}),201),id=made.id;
  const submitted=ok(await f.call('/purchase-early-requests/'+id+'/submit',c.mgr,'POST',{revision:made.request.revision}));

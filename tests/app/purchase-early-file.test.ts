@@ -34,7 +34,7 @@ test('file → existing draft API: correct permissions, supplier scope, no early
  const {setupEarly}=await import('../helpers/purchase-early-fixture.ts');
  const {call,cookies:c,client}=await setupEarly();
  for(const role of ['mgr','sa','emp','kho','kt']){
-  const options=await call('/purchase-options',c[role]);assert.equal(options.status,200);
+  const options=await call('/purchase-options',c[role]);if(['emp','kho'].includes(role)){assert.equal(options.status,403);continue;}assert.equal(options.status,200);
   assert.equal(options.data.canRequestEarly,['mgr','sa'].includes(role),role);
  }
  const parsed=parseEarlyRequestSheet([LEGACY_HEADER,['031106000','Wrong reference name',5,'PO-b1',''],['01654020803','',2,'PO-excel','']]);

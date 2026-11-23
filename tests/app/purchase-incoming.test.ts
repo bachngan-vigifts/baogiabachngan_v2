@@ -12,7 +12,7 @@ import { hashPassword } from '../../src/core/auth/password.ts';
 test('hàng đang về: đối chiếu gốc, 20.000/3 đơn, Excel ngoài catalog, loại hủy/đủ, tổng trước phân trang, quyền và API chỉ đọc', async () => {
   const { db, d1, client } = await createTestDb(); await seedStaff(d1);
   const now = '2026-10-21T00:00:00Z';
-  await db.insert(suppliers).values(['a','b'].map(id => ({ id, name: 'NCC '+id, nameKey: id, createdAt: now, createdBy: 'mgr', updatedAt: now })));
+  await db.insert(suppliers).values(['a','b'].map(id => ({ id, name: 'NCC '+id, nameKey: id,saleAdminBrand:'minhlong' as const, createdAt: now, createdBy: 'mgr', updatedAt: now })));
   await db.insert(products).values({ sku: '031106000', name: 'Chén', updatedAt: now });
   for (const [id,qty,supplierId] of [['a1',8000,'a'],['a2',7000,'a'],['b1',5000,'b'],['excel',10,'a'],['full',4,'a'],['cancel',9,'a'],['draft',8,'a'],['partial',20,'b']] as const) {
     await db.insert(incomingShipments).values({ id, ticketNumber: 'PO-'+id, source:'supplier-order', warehouse:'Kho thử', supplierId, supplierName:'NCC '+supplierId,
@@ -69,8 +69,8 @@ test('hàng đang về: đối chiếu gốc, 20.000/3 đơn, Excel ngoài catal
   for(const id of ['mgr','sa','emp','kho','kt','ncc']) {
     const login=await call('/login','','POST',{email:id+'@x.vn',password:PASSWORD});
     const response=await call('/purchase-incoming?limit=1',login.cookie);
-    assert.equal(response.status,id==='ncc'?403:200,id);
-    if(id!=='ncc') {assert.equal(response.data.canRequest,['mgr','sa'].includes(id),id);assert.equal(response.data.canSend,['mgr','sa'].includes(id));assert.equal(response.data.rows.length,1);assert.ok(response.data.kpis.quantity>=20025);assert.doesNotMatch(JSON.stringify(response.data),/customerName|customer_name|sourceNo|price|totalMoney/);}
+    assert.equal(response.status,['ncc','emp','kho'].includes(id)?403:200,id);
+    if(!['ncc','emp','kho'].includes(id)) {assert.equal(response.data.canRequest,['mgr','sa'].includes(id),id);assert.equal(response.data.canSend,['mgr','sa'].includes(id));assert.equal(response.data.rows.length,1);assert.ok(response.data.kpis.quantity>=20025);assert.doesNotMatch(JSON.stringify(response.data),/customerName|customer_name|sourceNo|price|totalMoney/);}
   }
   assert.equal((await call('/purchase-incoming')).status,401);
   assert.equal((await client.query<{n:number}>("select count(*)::int as n from supplier_stock_requests")).rows[0]!.n,0,'GET không tạo yêu cầu');

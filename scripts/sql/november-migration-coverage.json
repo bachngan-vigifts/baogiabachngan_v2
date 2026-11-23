@@ -280,5 +280,6 @@
   {"migration":"20261121150000_purchase_order_intents.sql","asserts":["assert-purchase-order-intents.sql"]},
   {"migration":"20261121160000_customer_profile_revision.sql","asserts":["assert-customer-profile-revision.sql"]},
   {"migration":"20261122090000_transfer_create_mode.sql","asserts":["assert-transfer-create-mode.sql"]},
-  {"migration":"20261123095718_sepay_allocations.sql","asserts":["assert-sepay-allocations.sql"]}
+  {"migration":"20261123095718_sepay_allocations.sql","asserts":["assert-sepay-allocations.sql"]},
+  {"migration": "20261123201607_purchase_supplier_sale_admin_brand.sql", "asserts": ["assert-purchase-sale-admin-brand.sql"]}
 ]

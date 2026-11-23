@@ -1,3 +1,4 @@
+import {warehouseSellers} from '../../src/modules/inventory/schema.ts';
 import {test} from 'node:test';
 import {memoryFileStore} from '../../src/core/storage/file-store.ts';
 import assert from 'node:assert/strict';
@@ -12,6 +13,7 @@ async function fixture(quantity=10,withPhotos=false){
  const f=await setupEarly({files:withPhotos?memoryFileStore():undefined}),c=f.cookies;
  await f.db.insert(products).values({sku:'031106000',name:'Ly',unit:'Cái',updatedAt:'2026-10-01T00:00:00Z'});
  await f.db.insert(warehouses).values({id:'receive',name:'KHO NHẬN',kind:'stock'});
+ await f.db.insert(warehouseSellers).values({warehouseId:'receive',positionId:'warehouse'});await f.db.update(incomingShipments).set({warehouse:'KHO NHẬN'});
  await postMoves(f.db,'mgr',[{sku:'031106000',warehouseId:'receive',qty:1,kind:'opening',refType:'opening',refId:'opening'}]);
  const request=ok(await f.call('/purchase-early-requests',c.mgr,'POST',{clientKey:crypto.randomUUID(),pickupDate:'2026-10-24',scope:{supplierId:'a'},lines:[{sku:'031106000',quantity}]}),201);
  const id=request.id;
@@ -26,10 +28,10 @@ async function fixture(quantity=10,withPhotos=false){
 test('accepted early request receives partial quantities through existing receipt route; replay does not add stock; full receipt removes receive action',async()=>{
  const f=await fixture();ok(await f.context(),409);ok(await f.accept());
  const initial=ok(await f.context());assert.equal(initial.lines[0].remaining,10);
- const waiting=ok(await f.call('/purchase-receiving-calendar?type=early',f.cookies.kho));
+ const waiting=ok(await f.call('/purchase-receiving-calendar?type=early',f.cookies.kt));
  assert.equal(waiting.canReceiveEarly,true);const waitingRow=waiting.rows.find((r:any)=>r.requestId===f.id);
  assert.equal(waitingRow.lines[0].receiptOptions[0].orderId,'a1');assert.equal(waitingRow.lines[0].receiptOptions[0].remaining,10);
- assert.equal(ok(await f.call('/purchase-receiving-calendar?type=early',f.cookies.emp)).canReceiveEarly,false);
+ assert.equal(ok(await f.call('/purchase-receiving-calendar?type=early',f.cookies.kt)).canReceiveEarly,true);
  const key=crypto.randomUUID(),first=ok(await f.receive(4,key),201);assert.equal(await f.balance(),5);
  const repeat=ok(await f.receive(4,key));assert.equal(repeat.receiptId,first.receiptId);assert.equal(await f.balance(),5);
  assert.equal(ok(await f.context()).lines[0].remaining,6);
@@ -37,9 +39,9 @@ test('accepted early request receives partial quantities through existing receip
  ok(await f.call('/purchase-early-requests/'+f.id+'/split',f.cookies.mgr,'POST',{}),409);
  ok(await f.receive(7),409);assert.equal(await f.balance(),5);
  ok(await f.receive(6),201);assert.equal(await f.balance(),11);ok(await f.context(),409);
- const listed=ok(await f.call('/purchase-early-requests?id='+f.id,f.cookies.kho));assert.equal(listed.canReceive,true);
+ const listed=ok(await f.call('/purchase-early-requests?id='+f.id,f.cookies.kt));assert.equal(listed.canReceive,true);
  const allocation=listed.requests[0].lines[0].allocations[0];assert.equal(allocation.remainingToReceive,0);assert.equal(allocation.receivedQty,10);
- const calendar=ok(await f.call('/purchase-receiving-calendar?type=early',f.cookies.kho));assert.equal(calendar.rows.some((r:any)=>r.requestId===f.id),false);
+ const calendar=ok(await f.call('/purchase-receiving-calendar?type=early',f.cookies.kt));assert.equal(calendar.rows.some((r:any)=>r.requestId===f.id),false);
  assert.equal((await f.db.select().from(supplierReceipts)).length,2);
  assert.equal((await f.db.select().from(stockMoves).where(eq(stockMoves.refType,'supplier_receipt'))).length,2);
 });
@@ -68,8 +70,8 @@ test('server enforces receipt permission, accepted allocation, parent order stat
  ok(await f.call(`/purchase-early-requests/${f.id}/receiving?orderId=a1`,f.cookies.emp),403);
  ok(await f.call(`/purchase-early-requests/${f.id}/receiving?orderId=b1`,f.cookies.mgr),409);
  ok(await f.call('/purchase-orders/a2/receipts',f.cookies.kho,'POST',{clientKey:crypto.randomUUID(),earlyRequestId:f.id,warehouse:'KHO NHẬN',lines:[{lineId:'line-a2',goodQty:1}]}),409);
- await f.db.update(incomingShipments).set({approvalStatus:'pending'}).where(eq(incomingShipments.id,'a1'));ok(await f.context(),409);ok(await f.receive(1,crypto.randomUUID(),f.cookies.mgr),409);
- await f.db.update(incomingShipments).set({approvalStatus:'approved',cancelledAt:'2026-10-24T01:00:00Z'}).where(eq(incomingShipments.id,'a1'));ok(await f.context(),409);ok(await f.receive(1,crypto.randomUUID(),f.cookies.mgr),409);
+ await f.db.update(incomingShipments).set({approvalStatus:'pending'}).where(eq(incomingShipments.id,'a1'));ok(await f.context(),404);ok(await f.receive(1,crypto.randomUUID(),f.cookies.mgr),409);
+ await f.db.update(incomingShipments).set({approvalStatus:'approved',cancelledAt:'2026-10-24T01:00:00Z'}).where(eq(incomingShipments.id,'a1'));ok(await f.context(),404);ok(await f.receive(1,crypto.randomUUID(),f.cookies.mgr),409);
  assert.equal(await f.balance(),1);assert.equal((await f.db.select().from(supplierReceipts)).length,0);
 });
 test('cancel receipt restores early remaining; an ordinary receipt also caps the early request to purchase balance',async()=>{
