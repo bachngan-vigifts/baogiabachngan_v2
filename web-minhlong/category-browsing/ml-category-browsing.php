@@ -90,8 +90,8 @@ add_action('wp_footer', static function () {
 .mlcb-sidebar .mlcb-need-links a:hover,.mlcb-sidebar .mlcb-need-links a[aria-current=page]{background:#e7f1ff;font-weight:700}
 .mlcb-sidebar .mlcb-needs-all{border:1px solid #bed9ee;border-radius:8px;background:#fff}
 .mlcb-sidebar .mlcb-needs-all>summary{list-style:none;padding:11px 6px;text-align:center;cursor:pointer;font-size:13px;font-weight:700}
-.mlcb-sidebar .mlcb-needs-all>summary:after{content:' ＋'}
-.mlcb-sidebar .mlcb-needs-all[open]>summary:after{content:' −'}
+.mlcb-sidebar .mlcb-needs-all>summary:after{content:' +'}
+.mlcb-sidebar .mlcb-needs-all[open]>summary:after{content:' -'}
 .mlcb-sidebar .mlcb-needs-empty{font-size:12px;line-height:1.5}
 .mlcb-sidebar [hidden]{display:none!important}
 .mlcb-sidebar summary:focus-visible,.mlcb-sidebar a:focus-visible{outline:2px solid #468ac2;outline-offset:-2px}
