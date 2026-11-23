@@ -1,0 +1,30 @@
+name: Inspect Minh Long figurine sorting
+on:
+  push:
+    branches: [fix/minhlong-figurine-order-20261123]
+    paths: [.github/workflows/minhlong-figurine-inspect.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --prefix /tmp/ml-sort --silent playwright@1.63.0
+      - name: Read public sorting controls
+        run: |
+          cat > /tmp/ml-sort/inspect.mjs <<'NODE'
+          import {chromium} from '/tmp/ml-sort/node_modules/playwright/index.mjs';
+          const browser=await chromium.launch({channel:'chrome'});
+          const page=await browser.newPage({viewport:{width:1440,height:1000}});
+          await page.goto('https://minhlongonline.com/danh-muc/minh-long/tuong-linh-vat-minh-long/',{waitUntil:'domcontentloaded',timeout:60000});
+          console.log('SORT_CONTROLS',JSON.stringify(await page.locator('input[type=radio],select[name*=order],a[href*=orderby]').evaluateAll(es=>es.map(e=>({html:e.outerHTML,parent:e.parentElement.outerHTML.slice(0,1800)})))));
+          console.log('CARDS',JSON.stringify(await page.locator('.products .product').evaluateAll(es=>es.slice(0,5).map(e=>({class:e.className,html:e.innerHTML.slice(-2200)})))));
+          console.log('SORT_SCRIPTS',JSON.stringify(await page.locator('script').evaluateAll(es=>es.filter(e=>/orderby|sort_order|sortby|sort-by/.test(e.textContent)).map(e=>e.textContent.slice(0,14000)))));
+          console.log('PAGES',JSON.stringify(await page.locator('.page-numbers').allTextContents()));
+          await browser.close();
+          NODE
+          node /tmp/ml-sort/inspect.mjs
