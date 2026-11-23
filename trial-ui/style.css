@@ -2433,6 +2433,19 @@ dialog.verify-page { width: 100vw; max-width: 100vw; height: 100dvh; max-height:
 .verify-page .verify-customer { margin: 0; grid-template-columns: 145px minmax(0, 1fr); }
 .verify-page-card :is(dd, td, h4, p, label span) { overflow-wrap: anywhere; }
 .verify-page .table-wrap { margin: 0; }
+/* Only the shared order/contract approval product table. */
+.approval-product-table th { white-space:normal; }
+.approval-product-table td { overflow-wrap:anywhere; }
+.verify-products .approval-product-table td:first-child { min-width:84px; }
+.approval-product-table td:nth-child(2) { min-width:160px; }
+.approval-product-table :is(th,td):nth-child(n+7) { min-width:110px; }
+.approval-product-table td strong { white-space:nowrap; }
+@media(min-width:641px){.approval-product-table :is(th,td) { padding:10px; }}
+.approval-product-table td small { display:block;white-space:normal; }
+@media(max-width:640px){
+ .approval-product-table td:nth-child(2) { min-width:0;flex-basis:100%;font-weight:600; }
+}
+
 .verify-products td:first-child { min-width: 200px; }
 .verify-page .data-table .num { white-space: nowrap; }
 .verify-contract-total { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 12px; border-top: 1px solid var(--line); margin-top: 16px; padding-top: 16px; }
@@ -3029,16 +3042,3 @@ body:has(.reminder-launcher:not([hidden])) .main::after{content:'';display:block
 .sale-admin-handoff .modal-head { display:flex;align-items:center;justify-content:space-between;gap:12px; }
 .sale-admin-handoff .modal-foot { display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end; }
 .sale-admin-handoff select { width:100%;min-height:44px; }
-
-/* Only the shared order/contract approval product table. */
-.approval-product-table th { white-space:normal; }
-.approval-product-table td { overflow-wrap:anywhere; }
-.verify-products .approval-product-table td:first-child { min-width:84px; }
-.approval-product-table td:nth-child(2) { min-width:160px; }
-.approval-product-table :is(th,td):nth-child(n+7) { min-width:110px; }
-.approval-product-table td strong { white-space:nowrap; }
-@media(min-width:641px){.approval-product-table :is(th,td) { padding:10px; }}
-.approval-product-table td small { display:block;white-space:normal; }
-@media(max-width:640px){
- .approval-product-table td:nth-child(2) { min-width:0;flex-basis:100%;font-weight:600; }
-}
