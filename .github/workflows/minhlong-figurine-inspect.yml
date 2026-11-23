@@ -28,3 +28,23 @@ jobs:
           await browser.close();
           NODE
           node /tmp/ml-sort/inspect.mjs
+      - name: Read relevant installed product plugins
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+        run: |
+          cat > /tmp/ml-sort/read.mjs <<'NODE'
+          const user=process.env.CPANEL_USERNAME?.trim(),token=process.env.CPANEL_API_TOKEN?.trim(),raw=process.env.CPANEL_BASE_URL?.trim();
+          const base=new URL(raw.includes('://')?raw:'https://'+raw);if(base.protocol!=='https:')throw Error('HTTPS required');if(!base.port)base.port='2083';
+          async function api(mod,fn,p={}){const u=new URL('/execute/'+mod+'/'+fn,base);for(const[k,v]of Object.entries(p))u.searchParams.set(k,String(v));const r=await fetch(u,{headers:{Authorization:'cpanel '+user+':'+token}});const j=await r.json();if(!r.ok||!j.status)throw Error('Read failed');return j.data;}
+          let root;function visit(x){if(!x||typeof x!=='object')return;if(x.domain==='minhlongonline.com')root=x.documentroot;Object.values(x).forEach(v=>{if(typeof v==='object')visit(v)});}visit(await api('DomainInfo','domains_data',{format:'hash'}));
+          if(!root?.startsWith('/home/'+user+'/')||root.includes('..'))throw Error('Wrong root');
+          const dir=root+'/wp-content/mu-plugins';const files=await api('Fileman','list_files',{dir});console.log('MU_NAMES',files.map(f=>f.file).filter(n=>n.endsWith('.php')));
+          for(const f of files.filter(f=>/pre.?order|catalog|sort|stock/i.test(f.file)&&f.file.endsWith('.php'))){
+           const s=(await api('Fileman','get_file_content',{dir,file:f.file,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0})).content;
+           console.log('RELEVANT_SOURCE',f.file,s.slice(0,26000));
+          }
+          
+          NODE
+          node /tmp/ml-sort/read.mjs
