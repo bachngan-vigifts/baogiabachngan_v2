@@ -1,4 +1,4 @@
-import {and,asc,desc,eq,ilike,inArray,isNull,or,sql} from 'drizzle-orm';
+import {and,asc,desc,eq,ilike,inArray,isNull,isNotNull,or,sql} from 'drizzle-orm';
 import {AppError} from '../../../core/errors.ts';
 import {json,readJson,type Router,type RouteContext} from '../../../core/http/router.ts';
 import type {StaffEnv,SessionState} from '../../staff/api/auth-routes.ts';
@@ -14,7 +14,7 @@ import {cashLock,cashAudit,type CashDb} from './cash-store.ts';
 import {assertSepayReconcileAccess,assertSepayReconcileTarget,sepayWebOrderScope} from './sepay-reconcile-access.ts';
 import {orderScopeFor,canVoidPayment} from './routes.ts';
 import {assertNoReturnActivity,netReceivables} from './pos-return-credit.ts';
-import {allocationRows} from './sepay-allocation-store.ts';
+import {allocationRows,allocationNeedsReview} from './sepay-allocation-store.ts';
 import {sepayManualAccountApproved} from './sepay-manual-account.ts';
 import {readWebSepayPaidAt,webSepayPaidAt} from './web-sepay-evidence.ts';
 import {webOrderPayment} from '../domain/web-order-payment.ts';
@@ -39,21 +39,28 @@ async function readEvent(c:Ctx,db:CashDb,lock=false){
 }
 async function summary(c:Ctx,db:CashDb){
  const event=await readEvent(c,db),[s]=await db.select().from(states).where(eq(states.transactionId,event.id)),rows=await allocationRows(db,event.id);
+ const [review]=await db.select({needed:allocationNeedsReview(event.id)}).from(bank).where(eq(bank.id,event.id));
+ const labels=new Map<string,string>();
+ const oids=rows.flatMap(a=>a.orderId?[a.orderId]:[]),wids=rows.flatMap(a=>a.webOrderId?[a.webOrderId]:[]);
+ if(oids.length)for(const o of await db.select({id:orders.id,no:orders.orderNo}).from(orders).where(inArray(orders.id,oids)))labels.set(o.id,o.no);
+ if(wids.length)for(const w of await db.select({id:web.id,no:web.orderNo}).from(web).where(inArray(web.id,wids)))labels.set('web:'+w.id,w.no);
  const allocated=rows.filter(a=>!a.voidedAt).reduce((n,a)=>n+a.amount,0);
- return {transactionId:event.id,amount:event.amount,revision:s?.revision??0,detailed:!!s,allocated,remaining:event.amount-allocated,allocations:rows};
+ return {transactionId:event.id,amount:event.amount,revision:s?.revision??0,detailed:!!s,needsReview:!!review?.needed,canVoid:canVoidPayment(who(c)),allocated,remaining:event.amount-allocated,allocations:rows.map(a=>({...a,targetNo:labels.get(a.webOrderId?'web:'+a.webOrderId:a.orderId!)||a.targetKey}))};
 }
 export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
  const path='/sepay/transactions/:id/allocations';
  router.get(path,async c=>json(await summary(c,c.env.db)),'business');
  router.get('/sepay/transactions/:id/allocation-candidates',async c=>{
   const event=await readEvent(c,c.env.db);const q=(c.url.searchParams.get('q')||'').trim(),raw=c.url.searchParams.get('offset')||'0';
-  if(q.length>120||!/^\d{1,6}$/.test(raw))fail('Bộ lọc không hợp lệ.',400);const offset=Number(raw),pattern='%'+q+'%';
-  const crm=await c.env.db.select({o:orders,contractNo:contracts.contractNo}).from(orders).leftJoin(contracts,eq(contracts.orderId,orders.id)).where(and(orderScopeFor(who(c)),sql`${orders.status}<>'cancelled'`,q?or(ilike(orders.orderNo,pattern),ilike(orders.invoiceNo,pattern),ilike(contracts.contractNo,pattern),ilike(orders.customerName,pattern)):undefined)).orderBy(desc(orders.createdAt),asc(orders.id)).limit(51).offset(offset);
-  const ws=await c.env.db.select({o:web,evidence:webSepayPaidAt()}).from(web).where(and(sepayWebOrderScope(who(c)),inArray(web.source,['lock','minhlong']),q?or(ilike(web.orderNo,pattern),ilike(web.crmOrderNo,pattern),ilike(web.customerName,pattern),ilike(web.ghnOrderCode,pattern)):undefined)).orderBy(desc(web.orderedAt),asc(web.id)).limit(51).offset(offset);
+  const source=c.url.searchParams.get('source')||'all',from=c.url.searchParams.get('from')||'',to=c.url.searchParams.get('to')||'';
+  if(!['all','crm','pos','web','contract'].includes(source)||[from,to].some(d=>d&&!/^\d{4}-\d{2}-\d{2}$/.test(d))||from&&to&&from>to)fail('Bộ lọc không hợp lệ.',400);
+  if(q.length>120||!/^\d{1,6}$/.test(raw))fail('Bộ lọc không hợp lệ.',400);const offset=Number(raw),pattern='%'+q.replace(/[\\%_]/g,'\\$&')+'%';
+  const crm=await c.env.db.select({o:orders,contractNo:contracts.contractNo}).from(orders).leftJoin(contracts,eq(contracts.orderId,orders.id)).where(and(orderScopeFor(who(c)),source==='web'?sql`false`:source==='pos'?eq(orders.channel,'pos'):source==='crm'?eq(orders.channel,'crm'):source==='contract'?isNotNull(contracts.id):undefined,from?sql`${orders.orderDate}>=${from}`:undefined,to?sql`${orders.orderDate}<=${to}`:undefined,sql`${orders.status}<>'cancelled'`,q?or(ilike(orders.orderNo,pattern),ilike(orders.invoiceNo,pattern),ilike(contracts.contractNo,pattern),ilike(orders.customerName,pattern)):undefined)).orderBy(desc(orders.createdAt),asc(orders.id)).limit(51).offset(offset);
+  const ws=await c.env.db.select({o:web,evidence:webSepayPaidAt()}).from(web).where(and(sepayWebOrderScope(who(c)),!['all','web'].includes(source)?sql`false`:undefined,from?sql`left(${web.orderedAt},10)>=${from}`:undefined,to?sql`left(${web.orderedAt},10)<=${to}`:undefined,inArray(web.source,['lock','minhlong']),q?or(ilike(web.orderNo,pattern),ilike(web.crmOrderNo,pattern),ilike(web.customerName,pattern),ilike(web.ghnOrderCode,pattern)):undefined)).orderBy(desc(web.orderedAt),asc(web.id)).limit(51).offset(offset);
   const debts=await netReceivables(c.env.db,crm.map(r=>r.o.id),vietnamDate().iso);
   // POS transfer receipts already reduce debt; keep them selectable for linking without another receipt.
   const receipts=crm.length?await c.env.db.select({id:payments.id,orderId:payments.orderId,amount:payments.amount,paidAt:payments.paidAt,reference:payments.reference}).from(payments).where(and(inArray(payments.orderId,crm.map(r=>r.o.id)),isNull(payments.voidedAt),eq(payments.method,'transfer'),eq(payments.paidAt,sepayPaidDate(event.transactionAt)),inArray(payments.paymentSource,['manual','sepay_auto','pos_transfer']),sql`not exists(select 1 from ${bank} where ${bank.paymentId}=${payments.id})`,sql`not exists(select 1 from ${allocations} where ${allocations.paymentId}=${payments.id} and ${allocations.voidedAt} is null)`)):[];
-  return json({offset,limit:50,hasMore:crm.length>50||ws.length>50,candidates:[...crm.slice(0,50).flatMap(({o,contractNo})=>{const d=debts.get(o.id),existingPayments=receipts.filter(p=>p.orderId===o.id);return d&&(d.balance>0||existingPayments.length)?[{targetId:o.id,orderNo:o.orderNo,contractNo,invoiceNo:o.invoiceNo,customerName:o.customerName,total:o.total,paid:d.paid,outstanding:d.balance,existingPayments}]:[];}),...ws.slice(0,50).flatMap(({o,evidence})=>{const p=webOrderPayment(o,evidence);return !webOrderPaymentBlocked(o.status,o.ghnStatus)&&(p.outstanding===null||p.outstanding>0)?[{targetId:'web:'+o.id,orderNo:o.crmOrderNo||o.orderNo,customerName:o.customerName,total:o.total,paid:p.paid,outstanding:p.outstanding,paymentReviewRequired:p.paid===null}]:[];})]});
+  return json({offset,limit:50,hasMore:crm.length>50||ws.length>50,candidates:[...crm.slice(0,50).flatMap(({o,contractNo})=>{const d=debts.get(o.id),existingPayments=receipts.filter(p=>p.orderId===o.id);return d&&(d.balance>0||existingPayments.length)?[{targetId:o.id,orderNo:o.orderNo,contractNo,invoiceNo:o.invoiceNo,customerName:o.customerName,total:o.total,paid:d.paid,outstanding:d.balance,existingPayments}]:[];}),...ws.slice(0,50).flatMap(({o,evidence})=>{const p=webOrderPayment(o,evidence);return !webOrderPaymentBlocked(o.status,o.ghnStatus)&&(p.outstanding===null||p.outstanding>0)?[{targetId:'web:'+o.id,orderNo:o.crmOrderNo||o.orderNo,customerName:o.customerName,total:o.total,paid:p.paid,outstanding:p.outstanding,paymentReviewRequired:p.paid===null,blockedReason:p.paymentEvidence==='conflict'?'Cần đối soát lại thay đổi đơn web.':''}]:[];})]});
  },'business');
  router.post(path,async c=>{
   assertSepayReconcileAccess(who(c));
@@ -67,6 +74,7 @@ export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
    for(const r of rows)await assertSepayReconcileTarget(tx,who(c),r.targetId);
    const [prior]=await tx.select().from(batches).where(and(eq(batches.createdBy,who(c).id),eq(batches.clientKey,key)));
    if(prior){if(prior.requestHash!==hash)fail('Mã thao tác đã dùng cho nội dung khác.');return {...JSON.parse(prior.result),replayed:true};}
+   if((await tx.select({needed:allocationNeedsReview(e.id)}).from(bank).where(eq(bank.id,e.id)))[0]?.needed)fail('Tổng đơn web đã thay đổi; cần đối soát lại trước khi phân bổ thêm.');
    const [state]=await tx.select().from(states).where(eq(states.transactionId,e.id));
    if(!state&&(e.status==='matched'||e.paymentId))fail('Giao dịch đã khớp nhanh; không phân bổ lại.');
    if((state?.revision??0)!==b.expectedRevision)fail('Giao dịch vừa thay đổi; tải lại số tiền trước khi phân bổ.');
