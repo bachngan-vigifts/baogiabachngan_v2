@@ -19,7 +19,7 @@ const script = (src, refresh = false) => {
 };
 const builderReady = () => globalThis.ContractDocument?.printingClauseVersion===1 && globalThis.ContractWordEdit?.formatVersion===1 && typeof globalThis.fflate?.unzipSync === 'function'
   && ['prepare', 'apply'].every(k => typeof globalThis.ContractWordEdit?.[k] === 'function')
-  && ['prepareDocument', 'build', 'buildPack', 'templatesFor'].every(k => typeof globalThis.ContractDocument?.[k] === 'function');
+  && ['prepareDocument', 'build', 'buildPack', 'templatesFor', 'formatProductTable'].every(k => typeof globalThis.ContractDocument?.[k] === 'function');
 let builderTask;
 const loadBuilder = () => builderTask ||= (async () => {
   await script('fflate.min.js'); await script('contract-word-edit.js'); await script('contract-document.js');
@@ -177,7 +177,8 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   }
   async function buildDoc(type){
     const {base,edits:normalized}=await prepareDoc(type);
-    return globalThis.ContractWordEdit.apply(base,normalized);
+    const bytes=await globalThis.ContractWordEdit.apply(base,normalized);
+    return globalThis.ContractDocument.formatProductTable(bytes,templateMode?[]:quote().items);
   }
   function lockUi(on,button,label){
     busy=on;dlg.setAttribute('aria-busy',String(on));$d('.cd-body').inert=on;
@@ -207,7 +208,9 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
       if(templateMode)master.edits=normalized;else edits[type]=normalized;
       const frame = $d('.cd-frame'), doc = frame.contentDocument;
       doc.open(); doc.write('<!doctype html><html lang="vi"><head><meta charset="utf-8"><style>body{margin:0;background:#edf0f5}.docx-wrapper{padding:16px!important}[data-word-index]{outline:1px dashed transparent;outline-offset:3px;cursor:text}[data-word-index]:hover{outline-color:#9db8e0}[data-word-index]:focus{outline-color:#2459a9;background:#f3f7fd}[data-word-index].edited{background:#fff8e6}body{counter-reset:bn-editor}[data-list="none"]::before{content:none!important}.cd-list-bullet::before{content:"• "!important;white-space:pre}.cd-list-decimal{counter-increment:bn-editor}.cd-list-decimal::before{content:counter(bn-editor) ". "!important;white-space:pre}@media print{[data-word-index].edited,[data-word-index]:focus{background:transparent!important;outline:none!important}@page{size:A4;margin:0}body{background:#fff}.docx-wrapper{padding:0!important;background:#fff!important;zoom:1!important}section.docx{box-shadow:none!important;margin:0!important;break-after:page}section.docx:last-child{break-after:auto}}</style></head><body><main></main></body></html>'); doc.close();
-      await globalThis.docx.renderAsync(prepared.preview, doc.querySelector('main'), undefined, { inWrapper: true, hideWrapperOnPrint: true, breakPages: true, ignoreLastRenderedPageBreak: false, renderAltChunks: false, useBase64URL: true });
+      const preview=await globalThis.ContractDocument.formatProductTable(prepared.preview,templateMode?[]:quote().items);
+      if(seq!==renderSeq)return;
+      await globalThis.docx.renderAsync(preview, doc.querySelector('main'), undefined, { inWrapper: true, hideWrapperOnPrint: true, breakPages: true, ignoreLastRenderedPageBreak: false, renderAltChunks: false, useBase64URL: true });
       if (seq !== renderSeq) return;
       const wrapper = doc.querySelector('.docx-wrapper'); if (wrapper) wrapper.style.zoom = String(Math.min(1, Math.max(0.35, (frame.clientWidth - 32) / 794)));
       for (const info of prepared.paragraphs) {
