@@ -22,10 +22,10 @@ export async function handlesQuote(db:Db,m:{id:string;role:string;positionId?:st
 }
 const mayAssign=(m:Member,o:typeof salesOrders.$inferSelect,q:typeof quotations.$inferSelect)=>o.status!=='cancelled'&&(m.role==='manager'||m.role==='employee'&&[o.ownerId,o.createdBy,q.creatorId].includes(m.id));
 async function candidates(db:Db,id?:string){
- const [people,grants]=await Promise.all([
-  db.select({id:employees.id,name:employees.name}).from(employees).where(and(id?eq(employees.id,id):undefined,eq(employees.role,'employee'),eq(employees.positionId,'sale-admin'),eq(employees.active,true),isNull(employees.deletedAt))).orderBy(asc(employees.name)).limit(200),
-  db.select({permission:positionPermissions.permission}).from(positionPermissions).where(eq(positionPermissions.positionId,'sale-admin')),
- ]);
+ const peopleQuery=db.select({id:employees.id,name:employees.name}).from(employees).where(and(id?eq(employees.id,id):undefined,eq(employees.role,'employee'),eq(employees.positionId,'sale-admin'),eq(employees.active,true),isNull(employees.deletedAt))).orderBy(asc(employees.name)).limit(200);
+ const grantsQuery=db.select({permission:positionPermissions.permission}).from(positionPermissions).where(eq(positionPermissions.positionId,'sale-admin')).orderBy(asc(positionPermissions.permission));
+ // ID lookup is used only by the write transaction; ordinary candidate lists take no row locks.
+ const [people,grants]=await Promise.all([id?peopleQuery.for('share'):peopleQuery,id?grantsQuery.for('share'):grantsQuery]);
  const perms=grants.map(g=>g.permission),eligible=['page.quotes','page.orders','page.contracts'].every(key=>can({role:'employee',positionId:'sale-admin',perms},key));
  return people.map(p=>({...p,eligible,reason:eligible?'':'Chức vụ chưa đủ quyền trang Báo giá, Đơn hàng và HĐKT.'}));
 }

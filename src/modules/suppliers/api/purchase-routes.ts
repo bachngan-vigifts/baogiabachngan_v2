@@ -171,8 +171,12 @@ async function insertLines(tx: Tx, shipmentId: string, lines: LineIn[], needs: M
   }
 }
 
-async function activeSupplier(db: Db | Tx, id: unknown) {
-  const [s] = typeof id === 'string' && id ? await db.select().from(suppliers).where(eq(suppliers.id, id)).limit(1) : [];
+async function activeSupplier(db: Db | Tx, id: unknown, lock = false) {
+  let s: typeof suppliers.$inferSelect | undefined;
+  if (typeof id === 'string' && id) {
+    const query = db.select().from(suppliers).where(eq(suppliers.id, id)).limit(1);
+    [s] = await (lock ? query.for('share') : query);
+  }
   if (!s) fail(400, 'Chọn nhà cung cấp.');
   if (!s!.active) fail(409, `${s!.name} đã ngừng hoạt động.`);
   return s!;
@@ -269,6 +273,10 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'purchase-order-intent:' + m.id + ':' + clientKey}))`);
         const again = await earlier(tx as unknown as Db);
         if (again) { ids = again; replayed = true; return; }
+      }
+      // Revalidate after BEGIN and hold active/name stable until commit. Stable ordering avoids reversed supplier locks.
+      for (const p of [...prepared].sort((a,b)=>a.supplierId.localeCompare(b.supplierId))) {
+        p.supplier = await activeSupplier(tx, p.supplierId, true);
       }
       // Khoá theo bảng nguồn để hai người lập đơn cùng lúc không cùng vượt phần còn cần đặt.
       await lockSources(tx);
