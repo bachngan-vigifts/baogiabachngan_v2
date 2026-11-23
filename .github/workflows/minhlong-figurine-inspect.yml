@@ -41,9 +41,9 @@ jobs:
           let root;function visit(x){if(!x||typeof x!=='object')return;if(x.domain==='minhlongonline.com')root=x.documentroot;Object.values(x).forEach(v=>{if(typeof v==='object')visit(v)});}visit(await api('DomainInfo','domains_data',{format:'hash'}));
           if(!root?.startsWith('/home/'+user+'/')||root.includes('..'))throw Error('Wrong root');
           const dir=root+'/wp-content/mu-plugins';const files=await api('Fileman','list_files',{dir});console.log('MU_NAMES',files.map(f=>f.file).filter(n=>n.endsWith('.php')));
-          for(const f of files.filter(f=>/pre.?order|catalog|sort|stock/i.test(f.file)&&f.file.endsWith('.php'))){
+          for(const f of files.filter(f=>/desktop-category-groups/i.test(f.file)&&f.file.endsWith('.php'))){
            const s=(await api('Fileman','get_file_content',{dir,file:f.file,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0})).content;
-           console.log('RELEVANT_SOURCE',f.file,s.slice(0,26000));
+           console.log('RELEVANT_SOURCE',f.file,s.slice(0,65000));
           }
           
           NODE
