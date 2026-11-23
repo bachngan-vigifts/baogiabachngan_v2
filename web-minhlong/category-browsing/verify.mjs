@@ -53,16 +53,7 @@ export async function menu(preview){
  const header=await page.locator('.header-vertical-menu__fly-out .lnl-need').evaluateAll(es=>es.map(e=>({title:e.querySelector('strong').textContent,links:[...e.querySelectorAll('a')].map(a=>({text:a.textContent,href:a.href}))})));
  assert.equal(grouped.length,6);assert.deepEqual(grouped,header);
  assert(await root.locator('a[aria-current="page"]').count()>0);
- await page.evaluate(()=>{
- window.__mlcbEvents=[];
- for(const type of ['input','change','keyup'])window.addEventListener(type,e=>window.__mlcbEvents.push({type,target:e.target.outerHTML?.slice(0,350),match:e.target.matches?.('.mlcb-menu input[type=search]')}),true);
- });
  await root.locator('input[type=search]').fill('tuong');
- console.log('EVENT_TRACE',JSON.stringify(await page.evaluate(()=>({url:location.href,events:window.__mlcbEvents}))));
- await root.locator('input[type=search]').dispatchEvent('input');
- await page.waitForTimeout(300);
-
- console.log('SEARCH_STATE',JSON.stringify(await root.evaluate(e=>({value:e.querySelector('input[type=search]').value,groups:[...e.querySelectorAll('.mlcb-need')].map(d=>({title:d.querySelector('strong').textContent,hidden:d.hidden,open:d.open,links:[...d.querySelectorAll('a')].map(a=>({text:a.textContent,hidden:a.hidden}))}))}))));
  assert.equal(await root.locator('.mlcb-need:not([hidden])').count(),1);
  assert.match(await root.locator('.mlcb-need:not([hidden])').innerText(),/Tượng Linh Vật/);
  await root.locator('.mlcb-needs-reset').click();assert.equal(await root.locator('.mlcb-need:not([hidden])').count(),6);
