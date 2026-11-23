@@ -1,4 +1,5 @@
 import {LOCK_WEB_REGISTER_NAME} from '../domain/pos-register.ts';
+import {sepayPaymentAllocations} from '../sepay-allocation-schema.ts';
 import {sepayPosIntent} from '../domain/sepay-page.ts';
 import {and,eq,inArray,ne,or,sql,type SQLWrapper} from 'drizzle-orm';
 import {foldSql} from '../../../core/text/fold.ts';
@@ -87,6 +88,7 @@ export async function decideWebSepay(db:CashDb,p:SepayPayment):Promise<WebSepayD
  const [order]=await db.select().from(web).where(eq(web.id,targets[0]!.id)).for('update');
  if(!order)return review('Chưa tìm thấy đơn web để đối soát.');
  const id=order.id;
+ if((await db.select({id:sepayPaymentAllocations.id}).from(sepayPaymentAllocations).where(and(eq(sepayPaymentAllocations.webOrderId,id),sql`${sepayPaymentAllocations.voidedAt} is null`)).limit(1)).length)return review('Đơn đã có phân bổ SePay; đối soát phần còn lại tại trang chi tiết.',id);
  if(order.currency!=='VND'||webOrderPaymentBlocked(order.status,order.ghnStatus))return review('Đơn web đã huỷ/hoàn hoặc không dùng VND; cần kiểm tra.',id);
  let edit:Record<string,unknown>;
  try{edit=JSON.parse(order.crmEditSnapshot||'{}');if(!edit||typeof edit!=='object'||Array.isArray(edit))throw new Error();}catch{return review('Dữ liệu chỉnh sửa đơn web cần kiểm tra trước khi khớp tiền.',id);}
