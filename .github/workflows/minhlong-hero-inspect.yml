@@ -1,0 +1,40 @@
+name: Inspect Minh Long hero links
+on:
+  push:
+    branches: [fix/minhlong-hero-product-links-20261123]
+    paths: [.github/workflows/minhlong-hero-inspect.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inspect public banner and product destinations
+        run: |
+          mkdir -p /tmp/ml-hero
+          cd /tmp/ml-hero
+          npm init -y >/dev/null
+          npm install --silent playwright@1.63.0
+          cat > inspect.mjs <<'NODE'
+          import {chromium} from '/tmp/ml-hero/node_modules/playwright/index.mjs';
+          const browser=await chromium.launch({channel:'chrome'});
+          for(const width of [1440,390]){
+           const page=await browser.newPage({viewport:{width,height:1000},isMobile:width===390,hasTouch:width===390});
+           await page.goto('https://minhlongonline.com/',{waitUntil:'domcontentloaded',timeout:60000});await page.waitForTimeout(1200);
+           console.log('LINKS',JSON.stringify(await page.locator('a[href]').evaluateAll(as=>as.map(a=>({href:a.href,text:a.textContent.trim()})).filter(a=>/kim sa|mã đáo|ceres/i.test(a.text)).slice(0,45))));
+           const banners=await page.locator('.banner').evaluateAll(bs=>bs.map(b=>({id:b.id,rect:{w:b.getBoundingClientRect().width,h:b.getBoundingClientRect().height},backgrounds:[...b.querySelectorAll('*')].map(e=>({class:e.className,bg:getComputedStyle(e).backgroundImage})).filter(x=>/banner-san-pham/.test(x.bg)),links:[...b.querySelectorAll('a')].map(a=>({href:a.href,class:a.className,text:a.textContent.trim()}))})).filter(x=>x.backgrounds.length));
+           console.log('BANNERS',JSON.stringify({width,banners}));
+           for(const b of banners.filter(b=>b.rect.w>0&&b.rect.h>0)){
+            const shot=await page.locator('#'+b.id).screenshot({type:'jpeg',quality:55});
+            console.log('BANNER_IMAGE_'+width+' '+shot.toString('base64'));
+           }
+           await page.close();
+          }
+          await browser.close();
+          
+          NODE
+          node inspect.mjs
