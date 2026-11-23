@@ -46,9 +46,13 @@ try{
  await view.focus();await page.keyboard.press('End');await page.keyboard.press('Backspace');await page.keyboard.type('6');
  assert.equal(await page.evaluate(()=>new FormData(document.querySelector('#f')).get('amount')),'123456.6','sửa một chữ số không nhân giá lên 10 lần');
  assert.equal(await page.locator('#amount').getAttribute('aria-hidden'),null);assert.equal(await page.locator('#amount').getAttribute('tabindex'),null);
- for(const value of ['-12.5','123456.0','1e3']){
-  await page.evaluate(value=>{document.querySelector('#amount').value=value;},value);
-  assert.equal(await view.inputValue(),value);assert.equal(await page.evaluate(()=>new FormData(document.querySelector('#f')).get('amount')),value);
+ for(const [index,value] of ['-12.5','123456.0','1e3'].entries()){
+  await page.evaluate(index=>{const label=document.createElement('label');label.id='native-case-'+index;label.textContent='Giá kiểm tra '+index;const input=document.createElement('input');input.id='native-'+index;input.name='native'+index;input.type='number';input.dataset.money='1';input.value='1200';label.append(input);document.querySelector('#f').append(label);},index);
+  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  assert.equal(await page.getByLabel('Giá kiểm tra '+index,{exact:true}).inputValue(),'1.200','mỗi ký hiệu phải bắt đầu từ một ô đang định dạng');
+  await page.evaluate(({index,value})=>{document.getElementById('native-'+index).value=value;},{index,value});
+  assert.equal(await page.getByLabel('Giá kiểm tra '+index,{exact:true}).inputValue(),value);assert.equal(await page.evaluate(index=>new FormData(document.querySelector('#f')).get('native'+index),index),value);
+  await page.locator('#native-case-'+index).evaluate(n=>n.remove());
  }
  await page.evaluate(()=>{const l=document.createElement('label');l.textContent='Giá lẻ ban đầu';l.innerHTML+='<input id="initial-fraction" name="initialFraction" type="number" data-money="1" value="123456.5">';document.querySelector('#f').append(l);});
  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
