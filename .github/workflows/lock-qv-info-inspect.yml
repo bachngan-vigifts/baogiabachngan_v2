@@ -1,0 +1,16 @@
+name: Inspect quick-view information sources
+on:
+  push:
+    branches: [codex/lock-qv-info-20261123]
+    paths: [web-lock/quick-view-info/inspect.mjs, .github/workflows/lock-qv-info-inspect.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install --prefix /tmp/qv-info --no-audit --no-fund playwright@1.56.1
+      - run: /tmp/qv-info/node_modules/.bin/playwright install chromium --only-shell
+      - run: node web-lock/quick-view-info/inspect.mjs
