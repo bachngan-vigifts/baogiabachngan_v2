@@ -23,6 +23,8 @@ export async function snapshot(){
  try{
  const page=await makePage(browser);const result={ids:[],other:[]};
  await open(page,origin+path);
+ result.otherUrl=await page.locator('.header-vertical-menu__fly-out a[href]').evaluateAll(as=>as.find(a=>a.textContent.trim()==='Bình hoa')?.href);
+ assert(result.otherUrl&&new URL(result.otherUrl).origin===origin,'resolved control category');
  result.pages=await page.locator('a[href]').evaluateAll(as=>Math.max(1,...as.map(a=>Number(a.href.match(/tuong-linh-vat-minh-long\/page\/(\d+)/)?.[1]||0))));
  assert(result.pages<=30&&result.pages>=1);
  for(let n=1;n<=result.pages;n++){
@@ -30,7 +32,7 @@ export async function snapshot(){
   result.ids.push(...await ids(page));
  }
  assert.equal(new Set(result.ids).size,result.ids.length,'unique products across pages');
- await open(page,origin+'/danh-muc/minh-long/binh-hoa/');result.other=await ids(page);
+ await open(page,result.otherUrl);result.other=await ids(page);
  await writeFile('category-evidence/baseline.json',JSON.stringify(result,null,2));
  console.log('CATEGORY_BASELINE',JSON.stringify({pages:result.pages,total:result.ids.length,first:result.ids.slice(0,4)}));
  return result;
@@ -95,7 +97,7 @@ export async function live(baseline,products){
   }
   assert(await page.locator('.quick-sort-block input[data-orderby="'+order+'"]').isChecked());
  }
- await open(page,origin+'/danh-muc/minh-long/binh-hoa/');assert.deepEqual(await ids(page),baseline.other,'other category order unchanged');
+ await open(page,baseline.otherUrl);assert.deepEqual(await ids(page),baseline.other,'other category order unchanged');
  console.log('CATEGORY_SORT_LIVE_OK',JSON.stringify({pages:baseline.pages,total:actual.length,outOfStock:actual.filter(id=>map.get(id).stock==='outofstock').length,preorder:actual.filter(id=>map.get(id).preorder).length,first:actual.slice(0,5).map(id=>map.get(id)),last:actual.slice(-3).map(id=>map.get(id))}));
  }finally{await browser.close();}
  await menu(false);
