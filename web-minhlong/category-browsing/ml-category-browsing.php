@@ -131,16 +131,16 @@ add_action('wp_footer', static function () {
   });
  }
  // Delegation survives the theme cloning sidebar markup into its mobile filter drawer.
- ['input','change','search'].forEach(type=>document.addEventListener(type,event=>{
+ ['input','change','search'].forEach(type=>window.addEventListener(type,event=>{
   if(!event.target.matches('.mlcb-menu input[type=search]'))return;
   filter(event.target.closest('.mlcb-menu'));
  },true));
- document.addEventListener('click',event=>{
+ window.addEventListener('click',event=>{
   const button=event.target.closest('.mlcb-menu .mlcb-needs-reset');if(!button)return;
   const menu=button.closest('.mlcb-menu'),field=menu.querySelector('input[type=search]');
   field.value='';filter(menu);field.focus();
  },true);
- document.addEventListener('toggle',event=>{
+ window.addEventListener('toggle',event=>{
   const d=event.target;if(!d.matches('.mlcb-menu .mlcb-need')||!d.open)return;
   const menu=d.closest('.mlcb-menu');if(menu.querySelector('input[type=search]').value.trim())return;
   menu.querySelectorAll('.mlcb-need').forEach(other=>{if(other!==d)other.open=false;});
