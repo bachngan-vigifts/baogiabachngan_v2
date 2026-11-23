@@ -11,7 +11,8 @@ await mkdir('qv-info-evidence',{recursive:true});
 async function verify(host,preview){
  const browser=await chromium.launch({headless:true});
  try{for(const width of [1214,390]){
- const page=await browser.newPage({viewport:{width,height:1003}});
+ const page=await browser.newPage({viewport:{width,height:1003},isMobile:width===390,hasTouch:width===390});
+ await page.addLocatorHandler(page.locator('#mltv-popup.mltv-popup--show'),async d=>{await d.locator('[aria-label*="Đóng"],[aria-label*="Close" i],[class*="close" i],[data-close]').first().click({timeout:5000});});
  await page.route('**/*',route=>{
  const r=route.request(),u=new URL(r.url());
  if(u.searchParams.has('add-to-cart')||u.searchParams.has('lnl_buy'))return route.abort();
@@ -24,7 +25,9 @@ async function verify(host,preview){
  else await page.locator('#bn-qv-info-script').waitFor({state:'attached'});
  const triggers=page.locator('a.quick-view');assert(await triggers.count()>1);
  for(const index of [0,1,0]){
- await triggers.nth(index).evaluate(el=>window.jQuery(el).trigger('click'));
+ const trigger=triggers.nth(index);await trigger.scrollIntoViewIfNeeded();
+ if(width>549)await trigger.locator('xpath=ancestor::div[contains(@class,"box-image")]').hover();
+ await trigger.click({timeout:20000});
  const popup=page.locator('.product-lightbox');await popup.waitFor({state:'visible',timeout:45000});
  await popup.locator('.bn-qv-info').waitFor();
  assert.equal(await popup.locator('.bn-qv-invoice').count(),1);
