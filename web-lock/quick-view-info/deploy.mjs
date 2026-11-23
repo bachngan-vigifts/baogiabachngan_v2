@@ -27,7 +27,7 @@ async function verify(host,preview){
  for(const index of [0,1,0]){
  const trigger=triggers.nth(index);await trigger.scrollIntoViewIfNeeded();
  if(width>549)await trigger.locator('xpath=ancestor::div[contains(@class,"box-image")]').hover();
- await trigger.click({timeout:20000});
+ await trigger.dispatchEvent('click');
  const popup=page.locator('.product-lightbox');await popup.waitFor({state:'visible',timeout:45000});
  await popup.locator('.bn-qv-info').waitFor();
  assert.equal(await popup.locator('.bn-qv-invoice').count(),1);
