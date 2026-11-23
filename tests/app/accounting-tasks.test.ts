@@ -34,7 +34,7 @@ async function setup() {
     return id;
   };
   const purchase = async () => {
-    await db.insert(suppliers).values({ id: 'SUP', name: 'Nhà cung cấp thử', nameKey: 'nha cung cap thu', createdBy: 'mgr', createdAt: now(), updatedAt: now() });
+    await db.insert(suppliers).values({ id: 'SUP',saleAdminBrand:'minhlong', name: 'Nhà cung cấp thử', nameKey: 'nha cung cap thu', createdBy: 'mgr', createdAt: now(), updatedAt: now() });
     await db.insert(incomingShipments).values({ id: 'BUY', ticketNumber: 'BUY', source: 'supplier-order', supplierId: 'SUP', supplierName: 'NCC thử', warehouse: 'Kho thử', createdAt: now(), createdBy: 'mgr', updatedAt: now() });
     await db.insert(incomingShipmentLines).values({ id: 'BUY-LINE', shipmentId: 'BUY', lineNo: 1, sku: 'SKU', quantity: 10, price: 100, taxRate: 0, printFee: 0 });
     await db.insert(supplierPaymentSchedules).values([{ id: 'BUY-S1', shipmentId: 'BUY', kind: 'installment', amount: 600, dueDate: yesterday, createdAt: now() }, { id: 'BUY-S2', shipmentId: 'BUY', kind: 'installment', amount: 150, dueDate: addDaysIso(today, 2), createdAt: now() }, { id: 'BUY-S3', shipmentId: 'BUY', kind: 'balance', amount: 250, dueDate: addDaysIso(today, 2), createdAt: now() }]);
