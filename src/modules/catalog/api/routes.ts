@@ -16,6 +16,7 @@ import { registerProductLinkRoutes } from './product-link.ts';
 import { registerProductActionRoutes } from './product-actions.ts';
 import { PRODUCT_HISTORY_LIMIT } from '../domain/product-history.ts';
 import { can, type PermissionMember } from '../../staff/domain/permissions.ts';
+import { shortMemo } from '../../../core/cache/short-memo.ts';
 
 const amount = z.number().finite().min(0).max(1e12).nullable();
 const size = z.number().finite().min(0).max(1e6).nullable().optional();
@@ -116,7 +117,10 @@ export const SNAPSHOT_COLUMNS = ['sku', 'name', 'brand', 'pattern', 'unit', 'ima
   'perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight', 'stockUpdatedAt'] as const;
 
 /** Phiên bản danh mục: đổi khi sản phẩm, giá hoặc tồn thay đổi (đồng bộ Sapo / nhập file). Tính bằng vài phép gộp, rất nhẹ. */
-export async function snapshotVersion(db: StaffEnv['db']) {
+const versionMemo = shortMemo<Awaited<ReturnType<typeof readSnapshotVersion>>>();
+/** Có bộ nhớ đệm ngắn trong isolate (src/core/cache/short-memo.ts): nhiều máy kiểm tra cùng lúc chỉ đọc CSDL một lần; lệnh ghi xoá ngay. */
+export function snapshotVersion(db: StaffEnv['db']) { return versionMemo.get('catalog', () => readSnapshotVersion(db)); }
+async function readSnapshotVersion(db: StaffEnv['db']) {
   const [[p], [pr], [st], [ver], whs] = await Promise.all([
     db.select({ n: count(), at: sql<string>`coalesce(max(${products.updatedAt}), '')` }).from(products).where(eq(products.active, true)),
     db.select({ n: count(), sum: sql<string>`coalesce(sum(${productPrices.price}), 0)::text` }).from(productPrices),
@@ -130,7 +134,7 @@ export async function snapshotVersion(db: StaffEnv['db']) {
   // 'new1': dòng bản chụp xếp mới tạo lên đầu (đổi cách xếp thì đổi nhãn để trình duyệt bỏ bản đã lưu).
   const base = await digest(['new1', p?.n, p?.at, pr?.n, pr?.sum, ver?.observedAt ?? '', whs.map(w => w.id).join(',')].join('|'));
   const stock = (await digest([st?.n, st?.at, st?.sum, extra].join('|'))).slice(0, 12);
-  return { version: base + '.' + stock, base, stock, observedAt: ver?.observedAt ?? null };
+  return { version: base + '.' + stock, base, stock, totalProducts: Number(p?.n ?? 0), observedAt: ver?.observedAt ?? null };
 }
 
 /** Giá bán chỉ cho người làm báo giá / đơn / HĐKT (Manager, Sale, Kế toán…). Kho xem sản phẩm, tồn – không thấy giá. */
@@ -147,17 +151,23 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
    * `?v=<phiên bản đang có>`: nếu chưa đổi thì chỉ trả `{ version, unchanged: true }`.
    */
   router.get('/catalog-snapshot', async c => {
+    const sizeText=c.url.searchParams.get('pageSize'), pageSize=sizeText===null?null:Number(sizeText), offset=Number(c.url.searchParams.get('offset')||0);
+    if(pageSize!==null&&(!Number.isInteger(pageSize)||pageSize<1||pageSize>500)||!Number.isInteger(offset)||offset<0||offset>1_000_000)throw new AppError(400,'Phân trang danh mục không hợp lệ.');
+    if(offset&&pageSize===null)throw new AppError(400,'Thiếu kích thước trang danh mục.');
+    if(offset&&!c.url.searchParams.get('expectedVersion'))throw new AppError(400,'Thiếu phiên bản danh mục cho trang tiếp theo.');
     const db = c.env.db, priced = seesSalePrices(viewerOf(c)), snap = await snapshotVersion(db);
     // Bản không giá có phiên bản riêng: trình duyệt không dùng lại bản có giá đã lưu của người khác chức vụ.
     const hidden = await hiddenStockWarehouses(db, viewerOf(c));
     // Thiếu kho riêng (kho Hoá đơn) cũng là bản riêng: không dùng lại bản đã lưu của chức vụ khác.
     const variant = (priced ? '' : ':np') + (hidden.size ? ':h' + [...hidden].sort().join('.') : '');
     const version = snap.base + variant + '~' + snap.stock, observedAt = snap.observedAt, have = c.url.searchParams.get('v') || '';
+    const expected=c.url.searchParams.get('expectedVersion');
+    if(expected&&expected!==version)throw new AppError(409,'Danh mục đã đổi; tải lại bản đầy đủ.','CATALOG_SNAPSHOT_CHANGED');
     if (have === version) return json({ version, unchanged: true });
     // Chỉ tồn kho đổi (bán / nhập / chuyển kho): trả riêng tồn theo mã (~vài trăm KB) thay vì cả danh mục (~3 MB).
     if (have.split('~')[0] === snap.base + variant) {
       const stores = (await db.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name))).filter(x => !hidden.has(x.id));
-      const raw = await db.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, quantity: productStock.quantity, updatedAt: productStock.updatedAt }).from(productStock);
+      const raw = stores.length ? await db.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, quantity: productStock.quantity, updatedAt: productStock.updatedAt }).from(productStock).where(inArray(productStock.warehouseId,stores.map(w=>w.id))) : [];
       const at = new Map(stores.map((w, i) => [w.id, i])), bySku = new Map<string, [(number | null)[], string]>();
       for (const s of (await effectiveCatalogStock(db, raw)).filter(r => !hidden.has(r.warehouseId))) {
         const j = at.get(s.warehouseId); if (j === undefined) continue;
@@ -166,15 +176,17 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       }
       return json({ version, observedAt, stockOnly: true, stock: [...bySku].map(([sku, [qty, updatedAt]]) => [sku, qty, updatedAt || null]) });
     }
-    const [rows, policies, stores, prices, rawStock] = await Promise.all([
-      // Dòng xếp sẵn mới tạo lên đầu: trình duyệt giữ thứ tự này khi không gõ tìm / cùng hạng liên quan.
-      db.select().from(products).where(eq(products.active, true)).orderBy(...newestProducts()),
+    // Opt-in pages keep the legacy endpoint/response available to already-open clients.
+    const query = db.select({ sku: products.sku, name: products.name, brand: products.brand, pattern: products.pattern, unit: products.unit, imageUrl: products.imageUrl, taxBasis: products.taxBasis, taxIn: products.taxIn, taxOut: products.taxOut, taxable: products.taxable, perCarton: products.perCarton, cartonWeight: products.cartonWeight, cartonLength: products.cartonLength, cartonWidth: products.cartonWidth, cartonHeight: products.cartonHeight }).from(products).where(eq(products.active, true)).orderBy(...newestProducts());
+    const fetched = pageSize===null ? await query : await query.limit(pageSize+1).offset(offset);
+    const rows = pageSize===null ? fetched : fetched.slice(0,pageSize), skus=rows.map(r=>r.sku);
+    const [policies, stores, prices, rawStock] = await Promise.all([
       db.select().from(pricePolicies).orderBy(asc(pricePolicies.sortOrder), asc(pricePolicies.name)),
       db.select().from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)).then(ws => ws.filter(x => !hidden.has(x.id))),
-      db.select({ sku: productPrices.sku, policyId: productPrices.policyId, price: productPrices.price }).from(productPrices),
-      db.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, quantity: productStock.quantity, updatedAt: productStock.updatedAt }).from(productStock),
+      priced ? db.select({ sku: productPrices.sku, policyId: productPrices.policyId, price: productPrices.price }).from(productPrices).innerJoin(products,eq(products.sku,productPrices.sku)).where(and(eq(products.active,true),pageSize===null?undefined:inArray(productPrices.sku,skus))) : Promise.resolve([]),
+      db.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, quantity: productStock.quantity, updatedAt: productStock.updatedAt }).from(productStock).innerJoin(warehouses,eq(warehouses.id,productStock.warehouseId)).where(and(eq(warehouses.active,true),hidden.size?notInArray(productStock.warehouseId,[...hidden]):undefined,pageSize===null?undefined:inArray(productStock.sku,skus))),
     ]);
-    const stock = (await effectiveCatalogStock(db, rawStock)).filter(r => !hidden.has(r.warehouseId));
+    const stock = (await effectiveCatalogStock(db, rawStock, pageSize===null?undefined:skus)).filter(r => !hidden.has(r.warehouseId));
     const index = new Map(rows.map((r, i) => [r.sku, i]));
     const policyAt = new Map(policies.map((p, i) => [p.id, i])), storeAt = new Map(stores.map((w, i) => [w.id, i]));
     const priceRows = rows.map(() => policies.map(() => null as number | null));
@@ -186,6 +198,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     }
     return json({
       version, observedAt, columns: SNAPSHOT_COLUMNS,
+      ...(pageSize===null?{}:{pagination:{offset,nextOffset:fetched.length>pageSize?offset+pageSize:null,total:snap.totalProducts}}),
       policies: policies.map(p => ({ id: p.id, name: p.name })),
       warehouses: stores.map(w => ({ id: w.id, name: w.name, kind: w.kind })),
       products: rows.map((r, i) => [r.sku, r.name, r.brand, r.pattern, r.unit, r.imageUrl, r.taxBasis, r.taxIn, r.taxOut, r.taxable,

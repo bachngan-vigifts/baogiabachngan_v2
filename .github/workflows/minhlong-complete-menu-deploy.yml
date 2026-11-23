@@ -1,0 +1,34 @@
+name: Deploy complete Minh Long menus
+on:
+  push:
+    branches: [fix/minhlong-complete-menu-20261123]
+    paths: [.github/workflows/minhlong-complete-menu-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: minhlong-complete-menu-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: php -l web-minhlong/complete-menu/ml-complete-category-menu.php
+      - run: php -l web-minhlong/complete-menu/cache.php
+      - run: npm install --prefix /tmp/ml-complete --silent playwright@1.63.0
+      - name: Preview, deploy and verify all menu surfaces
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+        run: node web-minhlong/complete-menu/deploy.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: complete-menu-deploy-evidence
+          path: complete-menu-evidence
+          retention-days: 7

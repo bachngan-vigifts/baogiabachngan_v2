@@ -17,6 +17,7 @@ const stamp = (s) =>
 export const sepayStateLabel = (s) =>
   ({
     matched: "Đã ghi thu",
+    debit:"Tiền ra – chỉ theo dõi",
     unmatched: "Chưa khớp đơn",
     review: "Cần đối soát",
     receipt_issue: "Phiếu thu cần kiểm tra",
@@ -90,7 +91,9 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
   }
   function frame() {
     root.classList.add("sp-page");
-    root.innerHTML = `<div class="page-head"><div><p class="eyebrow">TIỀN &amp; CÔNG NỢ</p><h1>Thanh toán SePay</h1><p class="muted">Tiền vào ngân hàng, phiếu thu và các khoản cần đối soát.</p></div><div class="sp-head-actions"><button class="btn navy" data-pull disabled>Lấy giao dịch hôm nay</button><button class="btn secondary" data-refresh>Làm mới</button></div></div><p class="sp-scope muted" data-pull-notice role="status">${esc(pullNotice)}</p>
+    root.innerHTML = `<div class="page-head"><div><p class="eyebrow">TIỀN &amp; CÔNG NỢ</p><h1>Thanh toán SePay</h1><p class="muted">Giao dịch ngân hàng theo công ty, phiếu thu và các khoản cần đối soát.</p></div><div class="sp-head-actions"><button class="btn navy" data-pull disabled>Lấy giao dịch hôm nay</button><button class="btn secondary" data-refresh>Làm mới</button></div></div><p class="sp-scope muted" data-pull-notice role="status">${esc(pullNotice)}</p>
+    <p class="sp-warning" data-web-scope role="status" hidden></p>
+    <div class="sp-companies" role="tablist" aria-label="Công ty">${[['vigifts','Vigifts'],['bach-ngan','Bách Ngân']].map(([key,label])=>`<button type="button" role="tab" aria-selected="${params.get('entity')===key}" data-entity="${key}">${label}</button>`).join('')}</div><div class="sp-entity-note"><span class="muted">Phân theo tài khoản ngân hàng đã cấu hình.</span><button type="button" class="btn ghost small" aria-pressed="${params.get('entity')==='unassigned'}" data-entity="unassigned">Tài khoản chưa phân loại</button></div>
     <form class="card sp-filters" data-filters><label>Từ ngày<input type="date" name="from" required value="${esc(params.get("from"))}"></label><label>Đến ngày<input type="date" name="to" required value="${esc(params.get("to"))}"></label>
     <label>Trạng thái<select name="status">${[
       ["all", "Tất cả"],
@@ -105,9 +108,10 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
           `<option value="${v}" ${params.get("status") === v ? "selected" : ""}>${t}</option>`,
       )
       .join("")}</select></label>
-    <label>Tài khoản nhận<input name="account" placeholder="Đúng số tài khoản" maxlength="100" value="${esc(params.get("account"))}"></label>
+    <label>Tài khoản ngân hàng<input name="account" placeholder="Đúng số tài khoản" maxlength="100" value="${esc(params.get("account"))}"></label>
     <label class="sp-search">Tìm giao dịch / đơn / khách<input name="q" maxlength="120" placeholder="Mã SePay, nội dung, số đơn, khách hàng…" value="${esc(params.get("q"))}"></label>
     <label>Số tiền từ (₫)<input type="number" name="min" min="0" max="1000000000000" step="1" value="${esc(params.get("min"))}"></label><label>Đến (₫)<input type="number" name="max" min="0" max="1000000000000" step="1" value="${esc(params.get("max"))}"></label>
+    <label data-direction-field hidden>Loại giao dịch<select name="direction">${[['in','Tiền vào'],['out','Tiền ra'],['all','Tiền vào và tiền ra']].map(([v,t])=>`<option value="${v}" ${params.get('direction')===v?'selected':''}>${t}</option>`).join('')}</select></label>
     <div class="sp-filter-actions"><button class="btn navy" type="submit">Lọc giao dịch</button><button class="btn ghost" type="button" data-clear>Bỏ lọc</button></div></form>
     <div class="sp-stats" data-stats aria-live="polite">${["Tổng tiền SePay", "Đã ghi thu / đối soát", "Chờ đối soát", "Khoản thu cần kiểm tra"].map((t) => `<section class="card"><span>${t}</span><strong>—</strong><small>Đang tải…</small></section>`).join("")}</div>
     <p class="muted sp-scope">Tổng hợp theo toàn bộ bộ lọc, không chỉ các dòng đang hiển thị. Ngày/giờ Việt Nam.</p><div data-setup></div>
@@ -119,6 +123,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     $("[data-filters]")
       .querySelectorAll("input,select,button")
       .forEach((x) => (x.disabled = b || mutating));
+    root.querySelectorAll("[data-entity]").forEach(x=>x.disabled=b||mutating);
     $("[data-refresh]").disabled = b || mutating;
     $("[data-pull]").disabled = b || mutating || !data?.capabilities?.canPull;
     root.setAttribute("aria-busy", String(b));
@@ -129,12 +134,16 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       const next = await api("/sepay/transactions?" + params.toString());
       if (!valid(id)) return;
       data = next;
+      $('[data-web-scope]').textContent=next.webOrderScopeMessage||'';
+      $('[data-web-scope]').hidden=!next.webOrderScopeMessage;
       const s = next.summary;
+      $("[data-direction-field]").hidden=!next.capabilities?.canViewDebits;
       $("[data-stats]").innerHTML = [
-        ["Tổng tiền SePay", s.amount, s.count, ""],
+        ["Tổng tiền vào", s.amount, s.incomingCount??s.count, ""],
         ["Đã ghi thu / đối soát", s.postedAmount, s.postedCount, "posted"],
         ["Chờ đối soát", s.pendingAmount, s.pendingCount, "pending"],
         ["Khoản thu cần kiểm tra", s.issueAmount, s.issueCount, "issue"],
+        ...(next.capabilities?.canViewDebits?[["Tiền ra",s.outgoingAmount,s.outgoingCount,"outgoing"]]:[]),
       ]
         .map(
           ([t, a, c, tone]) =>
@@ -149,17 +158,21 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
           "beforeend",
           '<p class="sp-warning">Chưa cấu hình API đọc SePay trên máy chủ. Vẫn có thể nhận giao dịch qua webhook.</p>',
         );
+      if(next.capabilities?.canViewDebits&&!next.capabilities?.debitImportEnabled)$('[data-setup]').insertAdjacentHTML('beforeend','<p class="sp-warning">Đồng bộ tiền ra chưa bật; hiện chỉ hiển thị các khoản tiền ra đã có trong CRM.</p>');
       const rows = next.transactions;
       $("[data-count]").textContent = next.pagination.total + " giao dịch";
       $("[data-list]").innerHTML = rows.length
-        ? `<table class="sp-table"><thead><tr><th>Ngày / mã SePay</th><th>Số tiền</th><th>Nội dung / tài khoản</th><th>Trạng thái / đơn</th><th></th></tr></thead><tbody>${rows.map((r) => `<tr data-row="${esc(r.id)}"><td>${esc(stamp(r.transactionAt))}<small>${esc(r.providerId)}</small></td><td class="sp-money">${esc(money(r.amount))}</td><td class="sp-content">${esc(r.content)}<small>TK ${esc(r.accountNumber)}</small></td><td>${badge(r.status, !!r.webOrderId)}${r.orderId || r.webOrderId ? `<small>${link(r)}</small>` : ""}${r.status === "receipt_issue" ? `<small>${r.webOrderId ? "Đơn web hoặc xác nhận thanh toán đã thay đổi; cần kiểm tra." : "Kiểm tra phiếu thu đã huỷ, thiếu hoặc không khớp."}</small>` : ""}</td><td><button class="btn secondary small" data-open="${esc(r.id)}">Xem / đối soát</button></td></tr>`).join("")}</tbody></table>`
+        ? `<table class="sp-table"><thead><tr><th>Ngày / mã SePay</th><th>Số tiền</th><th>Nội dung / tài khoản</th><th>Trạng thái / đơn</th><th></th></tr></thead><tbody>${rows.map((r) => `<tr data-row="${esc(r.id)}"><td>${esc(stamp(r.transactionAt))}<small>${esc(r.providerId)}</small></td><td class="sp-money ${r.transferType==='out'?'sp-outgoing':''}">${r.transferType==='out'?'− ':''}${esc(money(r.amount))}</td><td class="sp-content">${esc(r.content)}<small>TK ${esc(r.accountNumber)}</small></td><td>${badge(r.status, !!r.webOrderId)}${r.orderId || r.webOrderId ? `<small>${link(r)}</small>` : ""}${r.status === "receipt_issue" ? `<small>${r.webOrderId ? "Đơn web hoặc xác nhận thanh toán đã thay đổi; cần kiểm tra." : "Kiểm tra phiếu thu đã huỷ, thiếu hoặc không khớp."}</small>` : ""}</td><td><button class="btn secondary small" data-open="${esc(r.id)}">${r.transferType==='out'?'Xem tiền ra':'Xem / đối soát'}</button></td></tr>`).join("")}</tbody></table>`
         : '<p class="sp-empty">Không có giao dịch trong bộ lọc này.</p>';
       const p = next.pagination;
       $("[data-pager]").innerHTML =
         `<button class="btn secondary small" data-prev ${p.offset === 0 ? "disabled" : ""}>← Trước</button><span>${p.total ? p.offset + 1 : 0}–${p.offset + rows.length} / ${p.total}</span><button class="btn secondary small" data-next ${!p.hasMore ? "disabled" : ""}>Sau →</button>`;
     } catch (e) {
       if (!valid(id)) return;
-      data = null;
+      data = null;event=null;preview=null;draft=null;selectedId=null;detailEpoch++;
+      $('[data-direction-field]').hidden=true;
+      $('[data-stats] .sp-stat-outgoing')?.remove();
+      $('[data-detail]').innerHTML='<h2>Đối soát giao dịch</h2><p class="muted">Chưa tải được dữ liệu; hãy làm mới để kiểm tra quyền truy cập.</p>';
       $("[data-stats]")
         .querySelectorAll("strong")
         .forEach((x) => (x.textContent = "—"));
@@ -191,13 +204,13 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     try {
       const r = await api("/sepay/pull-today", "POST", {});
       if (!valid(own)) return;
-      pullNotice = `Ngày ${r.day}: thêm ${r.imported} giao dịch tiền vào; ${r.duplicate} đã có; bỏ qua ${r.outgoing} giao dịch không có tiền vào. ${r.nearbyMatched ? `Đã tự đối soát ${r.nearbyMatched} khoản POS/web. ` : ""}Không tạo phiếu thu mới.`;
+      pullNotice = `Ngày ${r.day}: thêm ${r.imported} giao dịch tiền vào; ${r.duplicate} đã có; ${r.outgoing===undefined?'':`${data?.capabilities?.debitImportEnabled?'Đã đồng bộ':'Đã đọc, chưa bật lưu'} ${r.outgoing} giao dịch tiền ra / không có tiền vào. `}${r.nearbyMatched ? `Đã tự đối soát ${r.nearbyMatched} khoản POS/web. ` : ""}Không tạo phiếu thu mới.`;
       $("[data-pull-notice]").textContent = pullNotice;
       mutating = false;
       const next = new URLSearchParams({
         from: r.day,
         to: r.day,
-        status: "all",
+        status: "all",entity:params.get("entity")||"bach-ngan",direction:params.get("direction")||"in",
       });
       if (params.toString() === next.toString()) await load(own);
       else navigate(next);
@@ -244,10 +257,10 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       event = res.transaction;
       const r = event;
       $("[data-detail]").innerHTML =
-        `${back}<div class="sp-heading"><h2>Đối soát giao dịch</h2>${badge(r.status, !!r.webOrderId)}</div><strong class="sp-bank-amount">${esc(money(r.amount))}</strong><dl class="sp-info"><dt>Mã SePay</dt><dd>${esc(r.providerId)}</dd><dt>Thời gian</dt><dd>${esc(stamp(r.transactionAt))}</dd><dt>Tài khoản nhận</dt><dd>${esc(r.accountNumber)}</dd><dt>Nội dung gốc</dt><dd class="sp-original">${esc(r.content)}</dd></dl>
+        `${back}<div class="sp-heading"><h2>Đối soát giao dịch</h2>${badge(r.status, !!r.webOrderId)}</div><strong class="sp-bank-amount ${r.transferType==='out'?'sp-outgoing':''}">${r.transferType==='out'?'− ':''}${esc(money(r.amount))}</strong><dl class="sp-info"><dt>Mã SePay</dt><dd>${esc(r.providerId)}</dd><dt>Thời gian</dt><dd>${esc(stamp(r.transactionAt))}</dd><dt>Tài khoản ngân hàng</dt><dd>${esc(r.accountNumber)}</dd><dt>Nội dung gốc</dt><dd class="sp-original">${esc(r.content)}</dd></dl>
       ${r.reason && !(r.webOrderId && r.status === "matched") ? `<p class="sp-warning">${esc(r.reason)}</p>` : ""}${receiptView(r)}
       <div data-notice aria-live="polite"></div>
-      ${!data?.capabilities.canConfirm ? '<p class="sp-readonly">Tài khoản được cấp quyền SePay được xem và tải giao dịch. Chỉ Manager được xác nhận ghi thu.</p>' : !res.capabilities.canConfirm ? `<p class="sp-readonly">${esc(res.blockReason || "Giao dịch đã được xử lý; không tạo thêm phiếu thu.")}</p>` : `${!res.accountApproved ? '<p class="sp-warning">Tài khoản nhận chưa được duyệt ghi thu. Vẫn có thể tìm, chọn đơn/HĐKT và xem công nợ; cần duyệt tài khoản trước khi xác nhận thanh toán.</p>' : ""}<section class="sp-match"><h3>Chọn đơn / HĐKT</h3><p class="muted small">Chọn đúng đơn POS/web/CRM hoặc HĐKT. POS gắn phiếu chuyển khoản đã có; đơn web dùng chứng từ ngân hàng, không tạo phiếu thu CRM trùng.</p><form class="sp-order-filters" data-order-search><label class="sp-order-query">Tìm số đơn / HĐKT hoặc khách hàng<input name="orderQuery" maxlength="120" placeholder="Số đơn, khách hàng, điện thoại…"></label><label>Loại đơn<select name="source"><option value="all">Tất cả</option><option value="pos">Đơn POS</option><option value="web">Đơn website</option><option value="crm">Đơn CRM</option><option value="contract">HĐKT</option></select></label><label>Ngày đơn từ<input type="date" name="from"></label><label>Đến ngày<input type="date" name="to"></label><label>Trạng thái<select name="eligibility"><option value="active">Chưa hủy (gồm bản nháp)</option><option value="eligible">Có thể chọn đối soát</option><option value="draft">Bản nháp chưa duyệt/ký</option><option value="cancelled">Đã hủy</option><option value="all">Tất cả</option></select></label><label>Giá trị đơn từ (₫)<input type="number" name="min" min="0" max="1000000000000" step="1"></label><label>Đến (₫)<input type="number" name="max" min="0" max="1000000000000" step="1"></label><button class="btn secondary" type="submit">Lọc / tìm đơn</button><button class="btn secondary" type="button" data-clear-orders>Bỏ bộ lọc</button></form><div data-order-results aria-live="polite"></div><div data-preview tabindex="-1" role="region" aria-label="Gán khoản thu" aria-live="polite"></div></section>`}
+      ${!data?.capabilities.canConfirm ? '<p class="sp-readonly">Tài khoản được cấp quyền SePay được xem và tải giao dịch. Cần quyền Đối soát khoản thu SePay để chọn đơn và xác nhận ghi thu.</p>' : !res.capabilities.canConfirm ? `<p class="sp-readonly">${esc(res.blockReason || "Giao dịch đã được xử lý; không tạo thêm phiếu thu.")}</p>` : `${!res.accountApproved ? '<p class="sp-warning">Tài khoản nhận chưa được duyệt ghi thu. Vẫn có thể tìm, chọn đơn/HĐKT và xem công nợ; cần duyệt tài khoản trước khi xác nhận thanh toán.</p>' : ""}<section class="sp-match"><h3>Chọn đơn / HĐKT</h3><p class="muted small">Chọn đúng đơn POS/web/CRM hoặc HĐKT. POS gắn phiếu chuyển khoản đã có; đơn web dùng chứng từ ngân hàng, không tạo phiếu thu CRM trùng.</p><form class="sp-order-filters" data-order-search><label class="sp-order-query">Tìm số đơn / HĐKT hoặc khách hàng<input name="orderQuery" maxlength="120" placeholder="Số đơn, khách hàng, điện thoại…"></label><label>Loại đơn<select name="source"><option value="all">Tất cả</option><option value="pos">Đơn POS</option><option value="web">Đơn website</option><option value="crm">Đơn CRM</option><option value="contract">HĐKT</option></select></label><label>Ngày đơn từ<input type="date" name="from"></label><label>Đến ngày<input type="date" name="to"></label><label>Trạng thái<select name="eligibility"><option value="active">Chưa hủy (gồm bản nháp)</option><option value="eligible">Có thể chọn đối soát</option><option value="draft">Bản nháp chưa duyệt/ký</option><option value="cancelled">Đã hủy</option><option value="all">Tất cả</option></select></label><label>Giá trị đơn từ (₫)<input type="number" name="min" min="0" max="1000000000000" step="1"></label><label>Đến (₫)<input type="number" name="max" min="0" max="1000000000000" step="1"></label><button class="btn secondary" type="submit">Lọc / tìm đơn</button><button class="btn secondary" type="button" data-clear-orders>Bỏ bộ lọc</button></form><div data-order-results aria-live="polite"></div><div data-preview tabindex="-1" role="region" aria-label="Gán khoản thu" aria-live="polite"></div></section>`}
       ${res.history.length ? `<details class="sp-history"><summary>Nhật ký xử lý (${res.history.length})</summary>${res.history.map((h) => `<article><b>${esc(h.actorName || "Hệ thống")}</b> · ${esc(stamp(h.createdAt))}<p>${esc(h.reason || "Kiểm tra lại giao dịch")}</p></article>`).join("")}</details>` : ""}`;
       if ($("[data-order-search]"))
         await searchOrders($("[data-order-search]"));
@@ -287,7 +300,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       const r = await api("/sepay/orders?" + filters);
       if (!valid(own, d) || s !== searchEpoch) return;
       const labels = {draft:"Bản nháp",confirmed:"Đã duyệt",delivering:"Đang giao",delivered:"Đã giao",cancelled:"Đã hủy",signed:"Đã ký",completed:"Hoàn tất"};
-      $("[data-order-results]").innerHTML = (r.orders.length
+      $("[data-order-results]").innerHTML = (r.webOrderScopeMessage?`<p class="sp-warning">${esc(r.webOrderScopeMessage)}</p>`:'')+(r.orders.length
         ? `<ul class="sp-order-results">${r.orders.map((o) => `<li><button type="button" ${o.selectable ? `data-choose="${esc(o.id)}"` : 'disabled'}><b>${esc(o.contractNo || o.orderNo)}</b><span>${esc(o.customerName)} · ${esc(money(o.total))}</span><span>${esc({pos:"POS",web:"Website",crm:"Đơn CRM",contract:"HĐKT"}[o.kind] || "Đơn CRM")} · ${esc(o.orderNo)} · ${esc(o.orderDate.slice(0,10))} · ${esc(labels[o.contractStatus || o.status] || o.status)}</span>${o.selectable ? '<span class="sp-choose-action">Chọn đơn này để gán khoản thu →</span>' : `<span class="sp-choose-action">${o.status === "cancelled" ? "Không thể gán: đơn đã hủy." : "Chưa thể gán: cần duyệt đơn hoặc ký HĐKT."}</span>`}</button></li>`).join("")}</ul>`
         : '<p class="sp-empty">Không có đơn/HĐKT phù hợp. Thử bỏ bộ lọc hoặc tìm theo mã hợp đồng, tên khách không dấu.</p>') +
         `<div class="sp-order-pages"><button type="button" class="btn secondary" data-order-offset="${Math.max(0,r.offset-r.limit)}" ${r.offset===0 ? "disabled" : ""}>← Trước</button><span>Trang ${Math.floor(r.offset/r.limit)+1}</span><button type="button" class="btn secondary" data-order-offset="${r.offset+r.limit}" ${!r.hasMore ? "disabled" : ""}>Sau →</button></div>`;
@@ -412,7 +425,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     if (!active) return;
     e.preventDefault();
     if (e.target.matches("[data-filters]")) {
-      const next = new URLSearchParams();
+      const next = new URLSearchParams({entity:params.get("entity")||"bach-ngan"});
       for (const [k, v] of new FormData(e.target))
         if (String(v).trim()) next.set(k, String(v).trim());
       navigate(next);
@@ -445,6 +458,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
   root.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b || !active || mutating) return;
+    if(b.hasAttribute('data-entity')){if(listLoading)return;const next=new URLSearchParams(params);next.set('entity',b.dataset.entity);next.delete('offset');next.delete('account');navigate(next);return;}
     if (b.hasAttribute("data-pull")) pullToday();
     if (b.hasAttribute("data-refresh")) load(epoch);
     if (b.hasAttribute("data-back-list")) {
@@ -458,7 +472,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       target.scrollIntoView({ block: "center", behavior: "instant" });
     }
     if (b.hasAttribute("data-clear"))
-      navigate(new URLSearchParams(sepayDefaults()));
+      navigate(new URLSearchParams({...sepayDefaults(),entity:params.get("entity")||"bach-ngan"}));
     if (b.hasAttribute("data-clear-orders")) { const form = $("[data-order-search]"); form.reset(); searchOrders(form); }
     if (b.hasAttribute("data-order-offset")) searchOrders($("[data-order-search]"),Number(b.dataset.orderOffset));
     if (b.dataset.open) openDetail(b.dataset.open);
@@ -499,6 +513,8 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
     for (const k of ["from", "to"])
       if (!params.has(k)) params.set(k, defaults[k]);
     if (!params.has("status")) params.set("status", "all");
+    if(!params.has("entity"))params.set("entity","bach-ngan");
+    if(!params.has("direction"))params.set("direction","in");
     frame();
     await load(id);
   }

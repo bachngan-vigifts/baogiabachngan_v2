@@ -1,3 +1,5 @@
+import type {CrmReturnRestockSnapshot,CrmReturnRefundPreview} from '../../../core/contracts/crm-return.ts';
+import {restockPortion} from '../domain/crm-return-restock.ts';
 import {returnPurpose, requestedReturnPurpose} from '../domain/crm-return-purpose.ts';
 import {redeliveryByLine} from './crm-redelivery.ts';
 import {crmStockFulfilment} from './crm-stock-lifecycle.ts';
@@ -20,9 +22,9 @@ import { cashDrawers, cashEntries } from '../cash-schema.ts';
 import { cashAccess, cashAudit, cashLock, type CashDb } from './cash-store.ts';
 import { posStoreScopeFor } from './pos-access.ts';
 import { posKey, posText } from './pos-store.ts';
-import { returnAccount } from './pos-return-credit.ts';
+import { returnAccount, activeReservations } from './pos-return-credit.ts';
 import { basisCovers, basisSkus, describeUnproven, unprovenRestock, verifyStockBasis, type StockBasis } from './crm-return-stock.ts';
-import { returnPortion } from '../domain/pos-return-money.ts';
+import { returnPortion, returnBalance } from '../domain/pos-return-money.ts';
 import { posMoney } from '../domain/pos-money.ts';
 import { crmReturnAmounts } from '../domain/crm-return-money.ts';
 
@@ -101,16 +103,37 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     await db.update(salesOrders).set({status:fresh.some(l=>l.deliveredQty>0)?'delivering':'confirmed',revision:sql`${salesOrders.revision}+1`,updatedAt:at}).where(eq(salesOrders.id,o.id));
     return JSON.stringify({...JSON.parse(r.sourceSnapshot),returnPurpose:'redelivery',redeliveryIssuedByLine:issuedByLine,redeliveryPackedByLine:packedByLine});
   }
+  // The GET preview and locked refund use the same account/per-return limits, including exchange reservations.
+  function refundCap(o:Order,r:typeof posReturns.$inferSelect,a:Awaited<ReturnType<typeof returnAccount>>,reserved:number,afterReceive=false){
+    if(returnPurpose(r.sourceSnapshot)==='redelivery'||!active(r.status))return 0;
+    const extra=afterReceive&&!r.creditEffectiveAt?r.total:0;
+    const available=returnBalance(o.total,a.paid,a.credit+extra,a.refunded,a.exchanged).available-reserved;
+    const used=a.refunds.filter(x=>x.returnId===r.id).reduce((n,x)=>n+x.amount,0)+a.allocations.filter(x=>x.returnId===r.id&&x.status==='applied').reduce((n,x)=>n+x.amount,0);
+    return Math.max(0,Math.min(available,r.total-used));
+  }
   const base = '/orders/:id/returns';
   router.get(base, async c => {
     const db = c.env.db, o = await source(c, db), account = await returnAccount(db, o.id), lines = await linesOf(db, o.id);
     const scope = await posStoreScopeFor(db, who(c));
     const people = await db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, [...new Set(account.returns.flatMap(r => [r.createdBy, r.approvedBy, r.receivedBy].filter((x): x is string => !!x)) .concat(account.refunds.map(r => r.confirmedBy)))]));
     const names = new Map(people.map(x => [x.id, x.name]));
-    const returns = await Promise.all(account.returns.map(async r => ({ ...r, purpose:returnPurpose(r.sourceSnapshot), createdByName: names.get(r.createdBy), approvedByName: names.get(r.approvedBy || ''), receivedByName: names.get(r.receivedBy || ''),
-      // Phần nhập lại vượt lượng đã thực xuất (đơn cũ) + căn cứ Manager đã chọn – giao diện hỏi căn cứ trước khi duyệt / nhận.
-      stockCheck: active(r.status) && !r.receivedAt ? { unproven: await unprovenRestock(db, o.id, r.id), basis: (JSON.parse(r.sourceSnapshot) as { stockBasis?: StockBasis }).stockBasis ?? null } : null,
-      lines: await db.select().from(posReturnLines).where(eq(posReturnLines.returnId, r.id)), refunds: account.refunds.filter(x => x.returnId === r.id).map(x => ({ ...x, confirmedByName: names.get(x.confirmedBy) })) })));
+    const reserved=await activeReservations(db,account.allocations);
+    const returns = await Promise.all(account.returns.map(async r => {
+      const snapshot=JSON.parse(r.sourceSnapshot) as CrmReturnRestockSnapshot & {stockBasis?:StockBasis;refundRequest?:unknown};
+      const lines=(await db.select().from(posReturnLines).where(eq(posReturnLines.returnId,r.id))).map(l=>{
+        try{return {...l,plannedRestockQty:restockPortion(l,snapshot.unprovenDamagedByLine?.[l.orderLineId]),restockWarning:null};}
+        catch(error){
+          // A broken split must not hide the list (or the cancel action). Write paths still validate strictly.
+          if(!(error instanceof AppError)||error.code!=='RETURN_STOCK_SPLIT_INVALID')throw error;
+          return {...l,plannedRestockQty:null,restockWarning:error.message};
+        }
+      });
+      const warning=lines.find(l=>l.restockWarning)?.restockWarning??null;
+      return {...r,...({refundableAfterReceive:refundCap(o,r,account,reserved,true)} satisfies CrmReturnRefundPreview),purpose:returnPurpose(r.sourceSnapshot),refundRequest:snapshot.refundRequest??null,
+        createdByName:names.get(r.createdBy),approvedByName:names.get(r.approvedBy||''),receivedByName:names.get(r.receivedBy||''),
+        stockCheck:active(r.status)&&!r.receivedAt?{unproven:warning?[]:await unprovenRestock(db,o.id,r.id),basis:snapshot.stockBasis??null,warning}:null,
+        lines,refunds:account.refunds.filter(x=>x.returnId===r.id).map(x=>({...x,confirmedByName:names.get(x.confirmedBy)}))};
+    }));
     let canRefund = true; try { refundAccess(c); } catch { canRefund = false; }
     const whs = (await db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses).where(eq(warehouses.kind, 'stock'))).filter(w => !scope || scope.rows.some(x => scope.scope.registers.includes(x.r.id) && x.r.warehouseId === w.id));
     const drawers = canRefund ? (await db.select({ id: cashDrawers.id, name: cashDrawers.name }).from(cashDrawers)).filter(d => !scope || scope.scope.drawers.includes(d.id)) : [];
@@ -123,6 +146,8 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
   router.post(base, async c => {
     const b = await readJson(c.req, 32000), key = posKey(b.key), reason = posText(b.reason, 2000), warehouseId = posText(b.warehouseId), purpose=requestedReturnPurpose(b.purpose);
     if (!reason || !warehouseId) throw new AppError(400, 'Chọn kho nhận và nhập lý do trả hàng.');
+    // Đề nghị hoàn tiền nhân viên ghi lúc lập phiếu: chỉ là đề nghị, người duyệt xác nhận ở bước Duyệt & hoàn tất (không chi tiền ở đây).
+    const ask: any = b.refundRequest, refundRequest = purpose === 'credit' && ask && Number(ask.amount) > 0 ? { amount: posMoney(ask.amount), method: ['cash', 'transfer'].includes(ask.method) ? ask.method as string : 'transfer', reference: posText(ask.reference, 200), note: posText(ask.note, 1000), by: who(c).id } : null;
     let created = false;
     const result = await c.env.db.transaction(async tx => {
       await cashLock(tx); const o = await source(c, tx, true);
@@ -150,7 +175,7 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
       });
       const [r] = await tx.insert(posReturns).values({ id, source: 'crm', returnNo: 'TH-CRM-' + id.slice(0, 8).toUpperCase(), orderId: o.id, warehouseId, registerId: null, createdShiftId: null, kind: 'return', requestContext: 'after_delivery', status: 'pending', reason,
         subtotal: lines.reduce((n: number, l: any) => n + l.subtotal, 0), tax: lines.reduce((n: number, l: any) => n + l.tax, 0), total: lines.reduce((n: number, l: any) => n + l.total, 0),
-        sourceSnapshot: JSON.stringify({ returnPurpose:purpose, lines: lineSnapshot(old), total: o.total, subtotal: o.subtotal, tax: o.tax, request: JSON.stringify(b) }), requestKey: key, createdBy: who(c).id, createdAt: at, updatedAt: at }).returning();
+        sourceSnapshot: JSON.stringify({ returnPurpose:purpose, ...(refundRequest ? { refundRequest: { ...refundRequest, at } } : {}), lines: lineSnapshot(old), total: o.total, subtotal: o.subtotal, tax: o.tax, request: JSON.stringify(b) }), requestKey: key, createdBy: who(c).id, createdAt: at, updatedAt: at }).returning();
       await tx.insert(posReturnLines).values(lines); await cashAudit(tx, who(c).id, 'crm-request-return', 'pos-returns', id, { orderId: o.id, warehouseId, lines, reason }); created = true; return r!;
     });
     if (created) { const managers = await c.env.db.select({ id: employees.id }).from(employees).where(and(eq(employees.role, 'manager'), eq(employees.active, true), isNull(employees.deletedAt)));
@@ -158,16 +183,120 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     return json(result, 201);
   }, 'business');
 
+  type Ret = typeof posReturns.$inferSelect;
+  const reload = async (db: CashDb, id: string) => (await db.select().from(posReturns).where(eq(posReturns.id, id)).for('update'))[0]!;
+  async function approveIn(c: Ctx, tx: CashDb, o: Order, r: Ret, stockBasis: unknown, note: string) {
+    if (r.createdBy === who(c).id && who(c).role !== 'manager') throw new AppError(403, 'Người được chỉ định không tự duyệt phiếu của mình.');
+    await checkUnchanged(tx, o, r); const at = now();
+    const snapshot = await withStockBasis(tx, o, r, stockBasis, who(c).id);
+    await tx.update(posReturns).set({ status: 'approved', approvedBy: who(c).id, approvedAt: at, approvalNote: note, updatedAt: at, sourceSnapshot: snapshot }).where(eq(posReturns.id, r.id));
+    await cashAudit(tx, who(c).id, 'crm-approve-return', 'pos-returns', r.id, { orderId: o.id, note });
+  }
+  async function receiveIn(c: Ctx, tx: CashDb, o: Order, r: Ret, note: string) {
+    if (r.status !== 'approved') throw new AppError(409, 'Phiếu chưa được duyệt.');
+    await checkUnchanged(tx, o, r); await checkWarehouse(c, tx, r.warehouseId);
+    // Kiểm lại lúc nhập kho: phiếu xuất / phiếu trả khác có thể đổi sau khi duyệt.
+    const unproven = await unprovenRestock(tx, o.id, r.id);
+    if (unproven.length && !basisCovers((JSON.parse(r.sourceSnapshot) as { stockBasis?: StockBasis }).stockBasis, unproven))
+      throw new AppError(409, 'Nhập lại vượt lượng đã xuất có chứng từ (' + describeUnproven(unproven) + '). Manager cần chọn căn cứ trên phiếu trước khi nhận hàng.', 'RETURN_STOCK_UNPROVEN');
+    const lines = await tx.select().from(posReturnLines).where(eq(posReturnLines.returnId, r.id)), at = now();
+    const damaged=(JSON.parse(r.sourceSnapshot) as CrmReturnRestockSnapshot).unprovenDamagedByLine??{};
+    const quantities=lines.map(l=>({line:l,restock:restockPortion(l,damaged[l.orderLineId])}));
+    await postMoves(tx,who(c).id,quantities.filter(x=>x.restock>0).map(({line:l,restock})=>({sku:l.sku,warehouseId:r.warehouseId,qty:restock,kind:'customer_return' as const,refType:'pos_return' as const,refId:r.id,refNo:r.returnNo,note:r.reason})),at);
+    await recordMovements(tx,quantities.flatMap(({line:l,restock})=>[
+      {qty:restock,status:'Đã nhập lại kho',suffix:'restock'},
+      {qty:l.requestedQty-restock,status:'Hàng hỏng, không nhập tồn bán',suffix:'damaged'},
+    ].filter(x=>x.qty>0).map(x=>({refKey:`return:${r.id}:${l.id}:${x.suffix}`,sku:l.sku,name:l.name,qty:x.qty,unit:l.unit,unitPrice:l.subtotal/l.requestedQty,kind:'customer_return',partner:o.customerName,refCode:r.returnNo,link:'#/orders/'+o.id,status:x.status,occurredAt:at}))));
+    for(const {line:l,restock} of quantities)await tx.update(posReturnLines).set({receivedQty:l.requestedQty,restockQty:restock}).where(eq(posReturnLines.id,l.id));
+    const logistics=returnPurpose(r.sourceSnapshot)==='redelivery',snapshot=logistics?await reopenForRedelivery(tx,o,r,lines):r.sourceSnapshot;
+    await tx.update(posReturns).set({ status: logistics?'completed':'processing', receivedBy: who(c).id, receivedAt: at, creditEffectiveAt: logistics?null:at, sourceSnapshot:snapshot, updatedAt: at }).where(eq(posReturns.id, r.id));
+    await tx.update(salesOrders).set({ revision: sql`${salesOrders.revision}+1`, updatedAt: at }).where(eq(salesOrders.id, o.id));
+    await cashAudit(tx, who(c).id, 'crm-receive-return', 'pos-returns', r.id, { orderId: o.id, warehouseId: r.warehouseId, lines, note });
+  }
+  type RefundInput = { key: string; amount: number; method: string; reference: string; drawerId: string; note: string };
+  function refundInput(b: any): RefundInput {
+    const x = { key: posKey(b.key), amount: posMoney(b.amount), method: posText(b.method), reference: posText(b.reference, 200), drawerId: posText(b.drawerId), note: posText(b.note, 2000) };
+    if (b.confirmed !== true || x.amount <= 0 || !['cash', 'transfer'].includes(x.method) || x.method === 'transfer' && !x.reference || !x.drawerId) throw new AppError(400, 'Xác nhận số tiền thực hoàn, két và tham chiếu chuyển khoản.');
+    return x;
+  }
+  async function refundIn(c: Ctx, tx: CashDb, o: Order, r: Ret, x: RefundInput) {
+    const { key, amount, method, reference, drawerId } = x;
+    const [prior] = await tx.select().from(posRefunds).where(eq(posRefunds.requestKey, key));
+    if (prior) { if (prior.returnId !== r.id || prior.confirmedBy !== who(c).id || prior.amount !== amount || prior.method !== method || prior.reference !== reference || prior.drawerId !== drawerId) throw new AppError(409, 'Mã hoàn tiền đã dùng cho giao dịch khác.'); return { ...prior, replayed: true }; }
+    const scope = await posStoreScopeFor(tx, who(c));
+    if (scope && !scope.scope.drawers.includes(drawerId)) throw new AppError(403, 'Két không thuộc cửa hàng của bạn.');
+    const [drawer] = await tx.select().from(cashDrawers).where(eq(cashDrawers.id, drawerId)); if (!drawer) throw new AppError(400, 'Chọn két hợp lệ.');
+    if (!r.receivedAt || !r.approvedBy || !r.creditEffectiveAt || r.status !== 'processing') throw new AppError(409, 'Cần duyệt và thực nhận hàng trước khi hoàn tiền.');
+    await checkUnchanged(tx, o, r);
+    const a = await returnAccount(tx, o.id), reserved=await activeReservations(tx,a.allocations);
+    if (amount > refundCap(o,r,a,reserved)) throw new AppError(409, 'Số hoàn vượt phần thực thu dư sau đối trừ công nợ.');
+    const id = crypto.randomUUID(), at = now(), refundNo = 'HT-CRM-' + id.slice(0, 8).toUpperCase(); let shiftId: string | null = null, cashEntryId: string | null = null;
+    if (method === 'cash') {
+      const [s] = await tx.select().from(posShifts).where(and(eq(posShifts.memberId, who(c).id), eq(posShifts.cashDrawerId, drawerId), isNull(posShifts.closedAt))).for('update');
+      if (!s) throw new AppError(409, 'Hoàn tiền mặt cần ca két của bạn đang mở ở két đã chọn. Mở ca trong POS, hoặc chọn hoàn chuyển khoản.', 'REFUND_SHIFT_REQUIRED');
+      shiftId = s.id; cashEntryId = crypto.randomUUID();
+        await tx.insert(cashEntries).values({ id: cashEntryId, entryNo: refundNo, drawerId, shiftId, kind: 'customer_refund', direction: 'out', amount, reason: `Hoàn ${r.returnNo}: ${r.reason}`, status: 'posted', approvalThresholdSnapshot: drawer.approvalThreshold, createdBy: who(c).id, createdAt: at, approvedBy: r.approvedBy, approvedAt: r.approvedAt, requestKey: key, updatedAt: at });
+    }
+    const [refund] = await tx.insert(posRefunds).values({ id, refundNo, returnId: r.id, shiftId, drawerId, method, amount, cashEntryId, reference, confirmationNote: x.note, confirmedBy: who(c).id, confirmedAt: at, requestKey: key, createdAt: at }).returning();
+    await cashAudit(tx, who(c).id, 'crm-refund', 'pos-returns', r.id, { orderId: o.id, refundId: id, amount, method, reference, drawerId, shiftId }); return refund!;
+  }
+  /** Hoàn tất khi không còn tiền dư phải hoàn; trả về false nếu còn tiền phải xử lý. */
+  async function completeIn(c: Ctx, tx: CashDb, o: Order, r: Ret, strict = true) {
+    if (r.status !== 'processing' || !r.receivedAt) { if (strict) throw new AppError(409, 'Chưa nhận hàng trả.'); return false; }
+    const a = await returnAccount(tx, o.id);
+    // Applied exchange credit settles this return too. An active reservation alone is not settlement.
+    if (refundCap(o,r,a,0)>0) { if (strict) throw new AppError(409, 'Còn tiền dư phải đối soát/hoàn trước khi hoàn tất.'); return false; }
+    await tx.update(posReturns).set({ status: 'completed', updatedAt: now() }).where(eq(posReturns.id, r.id)); await cashAudit(tx, who(c).id, 'crm-complete-return', 'pos-returns', r.id, { orderId: o.id }); return true;
+  }
   router.post(base + '/:returnId/approve', async c => {
     approver(c); const b = await readJson(c.req, 4000), note = posText(b.note, 2000);
     return json(await c.env.db.transaction(async tx => {
       await cashLock(tx); const { o, r } = await request(c, tx);
-      if (r.createdBy === who(c).id && who(c).role !== 'manager') throw new AppError(403, 'Người được chỉ định không tự duyệt phiếu của mình.');
       if (r.status !== 'pending') { if (r.approvedBy === who(c).id && r.approvalNote === note && active(r.status)) return { id: r.id, replayed: true }; throw new AppError(409, 'Phiếu không còn chờ duyệt.'); }
-      await checkUnchanged(tx, o, r); const at = now();
-      const snapshot = await withStockBasis(tx, o, r, b.stockBasis, who(c).id);
-      await tx.update(posReturns).set({ status: 'approved', approvedBy: who(c).id, approvedAt: at, approvalNote: note, updatedAt: at, sourceSnapshot: snapshot }).where(eq(posReturns.id, r.id));
-      await cashAudit(tx, who(c).id, 'crm-approve-return', 'pos-returns', r.id, { orderId: o.id, note }); return { id: r.id };
+      await approveIn(c, tx, o, r, b.stockBasis, note); return { id: r.id };
+    }));
+  }, 'business');
+  /**
+   * Một bước duy nhất cho người duyệt: duyệt → nhận hàng về kho → hoàn tiền (nếu có) → hoàn tất, trong cùng một giao dịch.
+   * Làm tiếp từ bước phiếu đang dừng; lỗi ở bất kỳ bước nào thì không bước nào được ghi. Bấm lại an toàn (mã hoàn tiền chống lặp).
+   * Phần nhập lại vượt lượng đã xuất có chứng từ: Manager chọn căn cứ, hoặc chọn "không cộng tồn" cho các dòng đó (ghi hàng hỏng).
+   */
+  router.post(base + '/:returnId/finalize', async c => {
+    approver(c); const b: any = await readJson(c.req, 8000), note = posText(b.note, 2000);
+    if (b.confirmed !== true) throw new AppError(400, 'Xác nhận đã nhận đủ hàng thực tế trên phiếu trước khi xử lý.');
+    const refund = b.refund && Number(b.refund.amount) > 0 ? (refundAccess(c), refundInput({ ...b.refund, confirmed: true })) : null;
+    return json(await c.env.db.transaction(async tx => {
+      await cashLock(tx); await lockHolds(tx); const req = await request(c, tx), o = req.o; let r = req.r;
+      if (r.status === 'completed') return { id: r.id, status: r.status, steps: [], replayed: true };
+      if (!active(r.status)) throw new AppError(409, 'Phiếu đã huỷ/từ chối.');
+      const steps: string[] = [];
+      if (!r.receivedAt) {
+        const unproven = await unprovenRestock(tx, o.id, r.id), basis = (JSON.parse(r.sourceSnapshot) as { stockBasis?: StockBasis }).stockBasis;
+        if (unproven.length && !basisCovers(basis, unproven)) {
+          if (b.unprovenAsDamaged === true) {
+            const snapshot=JSON.parse(r.sourceSnapshot),damaged:Record<string,number>={...snapshot.unprovenDamagedByLine};
+            const lines=await tx.select().from(posReturnLines).where(eq(posReturnLines.returnId,r.id));
+            for(const x of unproven){
+              const line=lines.find(l=>l.orderLineId===x.lineId)!;
+              damaged[x.lineId]=Math.round(((damaged[x.lineId]??0)+Math.max(0,x.qty-(basis?.covered[x.lineId]??0)))*1000)/1000;
+              if(restockPortion(line,damaged[x.lineId])===0)await tx.update(posReturnLines).set({disposition:'damaged'}).where(eq(posReturnLines.id,line.id));
+            }
+            await tx.update(posReturns).set({sourceSnapshot:JSON.stringify({...snapshot,unprovenDamagedByLine:damaged}),updatedAt:now()}).where(eq(posReturns.id,r.id));
+            r=await reload(tx,r.id);
+            await cashAudit(tx, who(c).id, 'crm-return-unproven-damaged', 'pos-returns', r.id, { orderId: o.id, unproven }); steps.push('no-restock');
+          } else if (b.stockBasis != null) {
+            if (r.status === 'approved') { const snapshot = await withStockBasis(tx, o, r, b.stockBasis, who(c).id, true); await tx.update(posReturns).set({ sourceSnapshot: snapshot, updatedAt: now() }).where(eq(posReturns.id, r.id)); r = await reload(tx, r.id); }
+          } else throw new AppError(409, 'Nhập lại vượt lượng đã xuất có chứng từ (' + describeUnproven(unproven) + '). Chọn căn cứ nhập kho, hoặc chọn không cộng tồn cho các dòng này.', 'RETURN_STOCK_UNPROVEN');
+        }
+        if (r.status === 'pending') { await approveIn(c, tx, o, r, b.unprovenAsDamaged === true ? undefined : b.stockBasis, note); steps.push('approved'); r = await reload(tx, r.id); }
+        await receiveIn(c, tx, o, r, note); steps.push('received'); r = await reload(tx, r.id);
+      }
+      if (r.status === 'processing') {
+        if (refund) { await refundIn(c, tx, o, r, refund); steps.push('refunded'); }
+        if (await completeIn(c, tx, o, r, false)) steps.push('completed');
+      }
+      r = await reload(tx, r.id); const a = await returnAccount(tx, o.id);
+      return { id: r.id, status: r.status, steps, available: a.available };
     }));
   }, 'business');
   /** Manager bổ sung / đổi căn cứ nhập lại kho cho phiếu đã duyệt, chưa nhận hàng. */
@@ -199,20 +328,7 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     return json(await c.env.db.transaction(async tx => {
       await cashLock(tx); await lockHolds(tx); const { o, r } = await request(c, tx);
       if (r.receivedAt) return { id: r.id, replayed: true };
-      if (r.status !== 'approved') throw new AppError(409, 'Phiếu chưa được duyệt.');
-      await checkUnchanged(tx, o, r); await checkWarehouse(c, tx, r.warehouseId);
-      // Kiểm lại lúc nhập kho: phiếu xuất / phiếu trả khác có thể đổi sau khi duyệt.
-      const unproven = await unprovenRestock(tx, o.id, r.id);
-      if (unproven.length && !basisCovers((JSON.parse(r.sourceSnapshot) as { stockBasis?: StockBasis }).stockBasis, unproven))
-        throw new AppError(409, 'Nhập lại vượt lượng đã xuất có chứng từ (' + describeUnproven(unproven) + '). Manager cần chọn căn cứ trên phiếu trước khi nhận hàng.', 'RETURN_STOCK_UNPROVEN');
-      const lines = await tx.select().from(posReturnLines).where(eq(posReturnLines.returnId, r.id)), at = now();
-      await postMoves(tx, who(c).id, lines.filter(l => l.disposition === 'restock').map(l => ({ sku: l.sku, warehouseId: r.warehouseId, qty: l.requestedQty, kind: 'customer_return' as const, refType: 'pos_return' as const, refId: r.id, refNo: r.returnNo, note: r.reason })), at);
-      await recordMovements(tx, lines.map(l => ({ refKey: `return:${r.id}:${l.id}`, sku: l.sku, name: l.name, qty: l.requestedQty, unit: l.unit, unitPrice: l.subtotal / l.requestedQty, kind: 'customer_return', partner: o.customerName, refCode: r.returnNo, link: '#/orders/' + o.id, status: l.disposition === 'restock' ? 'Đã nhập lại kho' : 'Hàng hỏng, không nhập tồn bán', occurredAt: at })));
-      for (const l of lines) await tx.update(posReturnLines).set({ receivedQty: l.requestedQty, restockQty: l.disposition === 'restock' ? l.requestedQty : 0 }).where(eq(posReturnLines.id, l.id));
-      const logistics=returnPurpose(r.sourceSnapshot)==='redelivery',snapshot=logistics?await reopenForRedelivery(tx,o,r,lines):r.sourceSnapshot;
-      await tx.update(posReturns).set({ status: logistics?'completed':'processing', receivedBy: who(c).id, receivedAt: at, creditEffectiveAt: logistics?null:at, sourceSnapshot:snapshot, updatedAt: at }).where(eq(posReturns.id, r.id));
-      await tx.update(salesOrders).set({ revision: sql`${salesOrders.revision}+1`, updatedAt: at }).where(eq(salesOrders.id, o.id));
-      await cashAudit(tx, who(c).id, 'crm-receive-return', 'pos-returns', r.id, { orderId: o.id, warehouseId: r.warehouseId, lines, note: posText(b.note, 2000) }); return { id: r.id };
+      await receiveIn(c, tx, o, r, posText(b.note, 2000)); return { id: r.id };
     }));
   }, 'business');
   router.post(base+'/:returnId/redelivery',async c=>{
@@ -237,28 +353,10 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     }));
   },'business');
   router.post(base + '/:returnId/refund', async c => {
-    refundAccess(c); const b = await readJson(c.req, 6000), key = posKey(b.key), amount = posMoney(b.amount), method = posText(b.method), reference = posText(b.reference, 200), drawerId = posText(b.drawerId);
-    if (b.confirmed !== true || amount <= 0 || !['cash', 'transfer'].includes(method) || method === 'transfer' && !reference || !drawerId) throw new AppError(400, 'Xác nhận số tiền thực hoàn, két và tham chiếu chuyển khoản.');
+    refundAccess(c); const x = refundInput(await readJson(c.req, 6000));
     return json(await c.env.db.transaction(async tx => {
       await cashLock(tx); const { o, r } = await request(c, tx);
-      const [prior] = await tx.select().from(posRefunds).where(eq(posRefunds.requestKey, key));
-      if (prior) { if (prior.returnId !== r.id || prior.confirmedBy !== who(c).id || prior.amount !== amount || prior.method !== method || prior.reference !== reference || prior.drawerId !== drawerId) throw new AppError(409, 'Mã hoàn tiền đã dùng cho giao dịch khác.'); return { ...prior, replayed: true }; }
-      const scope = await posStoreScopeFor(tx, who(c));
-      if (scope && !scope.scope.drawers.includes(drawerId)) throw new AppError(403, 'Két không thuộc cửa hàng của bạn.');
-      const [drawer] = await tx.select().from(cashDrawers).where(eq(cashDrawers.id, drawerId)); if (!drawer) throw new AppError(400, 'Chọn két hợp lệ.');
-      if (!r.receivedAt || !r.approvedBy || !r.creditEffectiveAt || r.status !== 'processing') throw new AppError(409, 'Cần duyệt và thực nhận hàng trước khi hoàn tiền.');
-      await checkUnchanged(tx, o, r);
-      const a = await returnAccount(tx, o.id), used = a.refunds.filter(x => x.returnId === r.id).reduce((n, x) => n + x.amount, 0);
-      if (amount > a.available || amount > r.total - used) throw new AppError(409, 'Số hoàn vượt phần thực thu dư sau đối trừ công nợ.');
-      const id = crypto.randomUUID(), at = now(), refundNo = 'HT-CRM-' + id.slice(0, 8).toUpperCase(); let shiftId: string | null = null, cashEntryId: string | null = null;
-      if (method === 'cash') {
-        const [s] = await tx.select().from(posShifts).where(and(eq(posShifts.memberId, who(c).id), eq(posShifts.cashDrawerId, drawerId), isNull(posShifts.closedAt))).for('update');
-        if (!s) throw new AppError(409, 'Cần ca két của bạn đang mở để ghi thực chi tiền mặt.');
-        shiftId = s.id; cashEntryId = crypto.randomUUID();
-        await tx.insert(cashEntries).values({ id: cashEntryId, entryNo: refundNo, drawerId, shiftId, kind: 'customer_refund', direction: 'out', amount, reason: `Hoàn ${r.returnNo}: ${r.reason}`, status: 'posted', approvalThresholdSnapshot: drawer.approvalThreshold, createdBy: who(c).id, createdAt: at, approvedBy: r.approvedBy, approvedAt: r.approvedAt, requestKey: key, updatedAt: at });
-      }
-      const [refund] = await tx.insert(posRefunds).values({ id, refundNo, returnId: r.id, shiftId, drawerId, method, amount, cashEntryId, reference, confirmationNote: posText(b.note, 2000), confirmedBy: who(c).id, confirmedAt: at, requestKey: key, createdAt: at }).returning();
-      await cashAudit(tx, who(c).id, 'crm-refund', 'pos-returns', r.id, { orderId: o.id, refundId: id, amount, method, reference, drawerId, shiftId }); return refund;
+      return refundIn(c, tx, o, r, x);
     }), 201);
   }, 'business');
   router.post(base + '/:returnId/complete', async c => {
@@ -266,10 +364,7 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     return json(await c.env.db.transaction(async tx => {
       await cashLock(tx); const { o, r } = await request(c, tx);
       if (r.status === 'completed') return { id: r.id, replayed: true };
-      if (r.status !== 'processing' || !r.receivedAt) throw new AppError(409, 'Chưa nhận hàng trả.');
-      const a = await returnAccount(tx, o.id), refunded = a.refunds.filter(x => x.returnId === r.id).reduce((n, x) => n + x.amount, 0);
-      if (a.available > 0 && refunded < r.total) throw new AppError(409, 'Còn tiền dư phải đối soát/hoàn trước khi hoàn tất.');
-      await tx.update(posReturns).set({ status: 'completed', updatedAt: now() }).where(eq(posReturns.id, r.id)); await cashAudit(tx, who(c).id, 'crm-complete-return', 'pos-returns', r.id, { orderId: o.id }); return { id: r.id };
+      await completeIn(c, tx, o, r); return { id: r.id };
     }));
   }, 'business');
 }

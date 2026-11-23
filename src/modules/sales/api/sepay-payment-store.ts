@@ -1,3 +1,7 @@
+import {assertSepayReconcileTarget,type SepayReconcileMember} from './sepay-reconcile-access.ts';
+import {orderScopeFor} from './routes.ts';
+import {hasDetailedSepay} from './sepay-allocation-store.ts';
+import {notifySepayBankMovements} from './sepay-bank-notifications.ts';
 import {sepayManualAccountApproved} from './sepay-manual-account.ts';
 import {
   and,
@@ -63,18 +67,23 @@ export async function ingestPayment(
   actorId?: string,
   manual?: SepayManualChoice,
   mode: 'all' | 'web' | 'nearby' = 'all',
+  manualViewer?:SepayReconcileMember,
 ) {
-  return env.db.transaction(async (tx) => {
+  let firstSeen=false;
+  const result=await env.db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext(${"sepay:" + payment.providerId}))`,
     );
+    if(manual&&manualViewer)await assertSepayReconcileTarget(tx,manualViewer,manual.orderId);
     const [old] = await tx
       .select()
       .from(sepayTransactions)
       .where(eq(sepayTransactions.providerId, payment.providerId))
       .limit(1);
+    firstSeen=!old;
     if (old) {
       if (
+        old.transferType !== payment.transferType ||
         old.amount !== payment.amount ||
         old.accountNumber !== payment.accountNumber ||
         old.content !== payment.content ||
@@ -84,6 +93,10 @@ export async function ingestPayment(
           409,
           "Mã giao dịch SePay đã tồn tại với nội dung khác.",
         );
+    if(old&&await hasDetailedSepay(tx,old.id)){
+      if(manual)throw new AppError(409,'Giao dịch đang đối soát chi tiết; không dùng đối soát nhanh.');
+      return {duplicate:true,status:'review' as const,orderId:null,paymentId:null,webOrderId:null,reason:'Giao dịch đã vào đối soát chi tiết.'};
+    }
       if (old.paymentId || old.status === "matched") {
         if (manual && old.webOrderId && manual.orderId==='web:'+old.webOrderId) return { duplicate:true,status:old.status,orderId:null,paymentId:null,webOrderId:old.webOrderId,reason:old.reason };
         if (manual) {
@@ -128,20 +141,19 @@ export async function ingestPayment(
       const [originalSource]=old?.orderId?await tx.select({channel:salesOrders.channel}).from(salesOrders).where(eq(salesOrders.id,old.orderId)).limit(1):[];
       if(originalSource?.channel==='pos'&&manual.orderId.startsWith('web:') || old?.webOrderId&&!manual.orderId.startsWith('web:'))throw new AppError(409,'Giao dịch đã xác định nguồn POS/web; không gắn sang luồng khác.');
       const [selected] = manual.orderId.startsWith('web:') ? [] : await tx.select({channel:salesOrders.channel}).from(salesOrders).where(eq(salesOrders.id,manual.orderId)).limit(1);
-      if (manual.orderId.startsWith('web:') || selected?.channel === 'pos') return applyNearbySepay(tx,payment,old,now,actorId,manual);
+      if (manual.orderId.startsWith('web:') || selected?.channel === 'pos') return applyNearbySepay(tx,payment,old,now,actorId,manual,undefined,manualViewer);
       await assertSepayCrmSource(tx, old!);
     }
     if(mode==='nearby') {
       const [bound] = old?.orderId ? await tx.select({channel:salesOrders.channel}).from(salesOrders).where(eq(salesOrders.id,old.orderId)) : [];
       if (bound?.channel==='crm') return {duplicate:!!old,status:old!.status,reason:old!.reason,orderId:old!.orderId,paymentId:old!.paymentId};
       const webDecision=await decideWebSepay(tx,payment);
-      if(webDecision && !webDecision.reason.startsWith('Chờ website xác nhận')) return {duplicate:!!old,...await saveWebSepay(tx,payment,webDecision,old,actorId)};
+      if(webDecision) return {duplicate:!!old,...await saveWebSepay(tx,payment,webDecision,old,actorId)};
       return applyNearbySepay(tx,payment,old,now,actorId,undefined,old?.webOrderId?'web:'+old.webOrderId:old?.orderId||undefined);
     }
     if (!manual && !old?.orderId) {
       const webDecision = await decideWebSepay(tx, payment);
       if (webDecision) {
-        if (mode !== 'web' && webDecision.webOrderId && webDecision.reason.startsWith('Chờ website xác nhận')) return applyNearbySepay(tx,payment,old,now,actorId,undefined,'web:'+webDecision.webOrderId);
         return {duplicate: !!old, ...(await saveWebSepay(tx,payment,webDecision,old,actorId))};
       }
     }
@@ -188,8 +200,9 @@ export async function ingestPayment(
       [target] = await tx
         .select()
         .from(salesOrders)
-        .where(eq(salesOrders.id, candidates[0]!.id))
+        .where(and(eq(salesOrders.id, candidates[0]!.id),manualViewer?orderScopeFor(manualViewer):undefined))
         .for("update");
+      if(manualViewer&&!target)throw new AppError(404,'Không tìm thấy đơn trong phạm vi được phân quyền.');
       const [contract] = await tx
         .select({ status: salesContracts.status, contractNo: salesContracts.contractNo })
         .from(salesContracts)
@@ -409,4 +422,6 @@ export async function ingestPayment(
     // A manual first confirmation consumes an existing inbox row; it is not a receipt retry.
     return { duplicate: manual ? false : !!old, ...row };
   });
+  if(firstSeen)await notifySepayBankMovements(env,[payment.providerId]);
+  return result;
 }

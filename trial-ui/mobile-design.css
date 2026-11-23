@@ -196,13 +196,12 @@
 }
 .crm-field-error { display:block;font-size:12px;color:var(--red);font-weight:400; }
 @media screen and (max-width:850px){
- .crm-task-extra-tab { display:none!important; }
  .task-row { display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:6px 10px; }
  .task-row .task-check { grid-column:1;grid-row:1/3; }
  .task-row .task-main { grid-column:2;grid-row:1;min-width:0; }
  .task-row .task-due { grid-column:3;grid-row:1/3;text-align:right;font-size:12px; }
  .task-row .task-people { grid-column:2;grid-row:2;font-size:12px;color:var(--muted); }
- .task-row .task-prio,.task-row .task-st,.task-row .task-meta .tag.dashed,.task-row .task-meta .task-desc { display:none; }
+ .task-row .task-prio,.task-row .task-meta .tag.dashed,.task-row .task-meta .task-desc { display:none; }
  .task-row .task-title { font-size:14px;line-height:1.4;font-weight:600; }
  .task-row .task-check input { min-width:24px;min-height:24px; }
  .task-row .task-check { min-width:28px;min-height:44px;display:flex;align-items:center; }
@@ -228,6 +227,13 @@
  #customer-detail:not([data-detail-tab=overview]) > :is(.cd-stats,.cd-grid) { display:none!important; }
  #customer-detail [data-tab=overview][aria-selected=true] ~ .cd-tab-body { display:none; }
  #customer-detail .editor-title h1 { font-size:18px; }
+ /* Nhóm nút đầu trang (＋ Báo giá Catalogue, Sửa thông tin, ＋ Báo giá, ⋮) xuống dòng thay vì tràn ra ngoài và bị cắt mép. */
+ #customer-detail > .editor-head { flex-wrap:wrap; }
+ #customer-detail .editor-actions { flex-wrap:wrap;width:100%;min-width:0;gap:8px; }
+ #customer-detail .editor-actions > :not(.mobile-action-trigger) { flex:1 1 auto;justify-content:center;min-width:0; }
+ /* Đủ tab như PC (Báo giá, HĐKT, Phiếu thu, Giao hàng, Hỏi tồn, Tài khoản…): dải tab vuốt ngang. */
+ #customer-detail .cd-tabs { flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none; }
+ #customer-detail .cd-tabs .chip { flex:none;white-space:nowrap; }
 }
 
 @media screen and (max-width:850px){
@@ -255,7 +261,7 @@
  #view-tasks .task-row { grid-template-columns:28px minmax(0,1fr) auto;grid-template-areas:'c m d' 'c p d';box-shadow:none; }
  #view-tasks .task-people { display:block;grid-area:p;font-size:12px; }
  #view-tasks .task-people small { display:inline; }
- #view-tasks .task-row .task-st { display:none; }
+ #view-tasks .task-row .task-st { display:flex;flex-wrap:wrap;gap:6px;margin-top:6px; }
  #view-tasks .task-row .task-meta .tag.dashed { display:none; }
  #view-tasks .task-tab[aria-selected=true] { color:#fff;border-color:var(--brand-navy);background:var(--brand-navy); }
 }
@@ -290,15 +296,14 @@
  .crm-more-grid .crm-home-link { display:grid!important; }
  .crm-filter-collapsed { display:none!important; }
  .crm-filter-sheet .crm-filter-default { display:none!important; }
- #view-tasks .crm-task-extra-tab { display:none!important; }
- #view-tasks #tasks-view { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible; }
+ #view-tasks #view-tasks #tasks-view { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible; }
  #view-tasks #tasks-view button { min-width:0;white-space:normal;padding:8px 2px; }
  #view-tasks .task-due-cards { display:flex;flex-wrap:nowrap;overflow:auto; }
  #view-tasks .task-due-card { flex:0 0 auto; }
  .crm-task-complete { display:flex;align-items:center;gap:8px;min-height:44px; }
  [data-set-status=done] { display:none!important; }
  #view-editor .quote-mobile-steps,#quote-step-back,#quote-step-next,#m-step-label { display:none!important; }
- #view-editor .quote-actions #save-quote,#view-editor .quote-actions #submit-quote { display:none!important; }
+ /* Điện thoại có đủ nút như PC: "Lưu báo giá" (lưu nháp) và "Gửi duyệt" vẫn hiện cạnh nút lưu dưới đáy. */
  #view-editor .mobile-savebar { display:grid;grid-template-columns:minmax(0,1fr) auto; }
  #view-editor #save-quote-m { min-width:150px; }
  #view-editor #quote-form [data-quote-panel]:not([hidden]) { display:block!important; }
@@ -344,7 +349,6 @@
  #quote-list .mobile-quote-owner { display:inline;font-size:12px;color:var(--muted); }
  [data-mobile-row-detail],.crm-task-no-approval { display:inline-flex; }
  #customer-list [data-quote-for] { display:inline-flex!important; }
- #customer-detail .cd-tabs [data-tab]:not([data-tab=overview]):not([data-tab=orders]):not([data-tab=debts]):not([data-tab=care]):not([data-tab=catalogue]):not([data-tab=purchases]) { display:none; }
  #view-care .form-grid,.care-form .form-grid,.care-dialog .care-form { grid-template-columns:1fr!important; }
  :is(#view-members,#view-member,#view-payroll,#view-permissions,#view-flow,#view-inventory,#view-stock-moves,#view-transfers) .table-wrap { overflow:auto!important;max-width:100%;overscroll-behavior:contain; }
  :is(#view-members,#view-member,#view-payroll,#view-permissions) table { display:table!important;min-width:720px; }
@@ -361,7 +365,7 @@
  #view-products #product-actions { display:none!important; }
  #view-order.crm-mobile-contract #order-actions { display:grid;grid-template-columns:repeat(3,minmax(0,1fr)); }
  #view-order.crm-mobile-contract #order-actions>[data-contract-docs] { grid-column:1/-1;min-width:0;width:100%;max-width:100%;box-sizing:border-box; }
- #view-order.crm-mobile-contract #order-actions>:not([data-contract-docs]):not([data-pack-print-for]):not([data-ship-print-for]):not(#order-history) { display:none!important; }
+ #view-order.crm-mobile-contract #order-actions>:not([data-contract-docs]):not([data-pack-print-for]):not([data-ship-print-for]):not(#order-history):not([data-sale-admin-handoff]) { display:none!important; }
  #view-order.crm-mobile-contract #order-actions>:is([data-pack-print-for],[data-ship-print-for],#order-history) { display:flex!important;min-width:0;white-space:normal;padding:8px 3px;font-size:11px;justify-content:center;text-align:center; }
  body:has(#view-order.crm-mobile-contract:not([hidden])) .chat-launcher { display:none!important; }
 }
@@ -506,4 +510,71 @@
  .chat-launcher { transition:transform .2s ease, opacity .2s ease; }
  body.chat-fab-tucked .chat-launcher { transform:translateY(calc(100% + 120px));opacity:0;pointer-events:none; }
  body:has(.chat-launcher:not([hidden])) .main::after { height:88px; }
+}
+
+/* P2/P3 rollout on the current workflow: labels follow the actual rendered columns. */
+.crm-list-card > td.crm-card-details { display:none!important; }
+@media screen and (max-width:850px){
+ tr[data-mobile-card-details] > td { grid-row:auto!important;order:6; }
+ tr[data-mobile-card-details] > :is(.crm-card-meta,.crm-card-title,.crm-card-note,.crm-card-owner,.crm-card-amount,.crm-card-balance,.crm-card-pending,.crm-card-difference,.crm-card-held,.crm-card-incoming) { grid-column:1/-1; }
+ tr[data-mobile-card-details] > .crm-card-meta { order:1; }
+ tr[data-mobile-card-details] > .crm-card-title { order:2; }
+ tr[data-mobile-card-details] > .crm-card-note { order:3; }
+ tr[data-mobile-card-details] > .crm-card-amount { order:4; }
+ tr[data-mobile-card-details] > :is(.crm-card-status,.crm-card-substatus) { order:5; }
+ tr[data-mobile-card-details] > :is(.crm-card-in,.crm-card-ledger,.crm-card-selection) { grid-column:1; }
+ tr[data-mobile-card-details] > :is(.crm-card-out,.crm-card-sapo,.crm-card-quantity) { grid-column:2; }
+ tr[data-mobile-card-details] > :is(.crm-card-balance,.crm-card-pending,.crm-card-difference) { order:7;border-top:1px solid var(--line);padding-top:8px!important; }
+ tr[data-mobile-card-details] > :is(.crm-card-actions,.crm-card-details) { order:8;grid-column:1/-1; }
+ tr[data-mobile-card-details] > td.crm-card-details { display:block!important; }
+ .crm-card-details button { min-height:44px;max-width:100%;white-space:normal; }
+ tr.crm-card-expanded[data-mobile-card-details] > .crm-card-extra { display:block!important;grid-column:1/-1;order:9;overflow-wrap:anywhere; }
+ tr[data-mobile-card-details] > td[data-label]:not(.crm-card-title,.crm-card-meta,.crm-card-note,.crm-card-actions,.crm-card-selection,.crm-card-details)::before { display:block!important;content:attr(data-label);color:var(--muted);font-size:12px;font-weight:400; }
+ tr[data-mobile-card-details] .crm-card-title small { display:block!important; }
+ .crm-card-quantity input { width:100%;min-width:0; }
+ .crm-card-selection { display:flex;align-items:center;min-height:44px; }
+ .crm-card-pending { white-space:normal;overflow-wrap:anywhere; }
+ .incoming-details:not([hidden]) { display:block;padding:12px;border:1px solid var(--line);border-radius:12px;margin-bottom:12px; }
+ .incoming-details:not([hidden]) > td { display:block;width:auto!important; }
+ .incoming-details > td::before { display:none!important; }
+ .incoming-selection { flex-wrap:wrap; }
+ .incoming-selection > div { flex-basis:100%; }
+ .incoming-selection > .btn.primary { min-height:44px;max-width:100%;white-space:normal; }
+ .incoming-kpis,.cash-stats { display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+ #view-products .prod-cell { min-width:0;width:100%;gap:8px; }
+ #view-products .prod-cell img { width:52px;height:52px;object-fit:contain;flex:none; }
+ #view-products .prod-cell > span { min-width:0; }
+ #view-products .selection-bar { flex-wrap:wrap; }
+ .ledger-total { display:flex!important;flex-wrap:wrap;gap:8px;padding:12px; }
+ .ledger-total td { display:block!important;flex:1;min-width:0; }
+ .ledger-total td:first-child { flex-basis:100%; }
+ .ledger-total td.ledger-empty { display:none!important; }
+ :is(#view-permissions,#view-payroll) .table-wrap,#view-permissions .perm-wrap { overflow:auto!important;max-width:100%;overscroll-behavior-x:contain; }
+ #view-permissions .perm-table { width:max-content;min-width:100%; }
+ #view-payroll .pr-wide .data-table { display:table!important;width:max-content;min-width:100%; }
+ #view-payroll .pr-wide thead { display:table-header-group!important; }
+ #view-payroll .pr-wide tbody { display:table-row-group!important; }
+ #view-payroll .pr-wide :is(tr,th,td) { display:revert!important;white-space:nowrap; }
+ #view-payroll .pr-wide td::before { display:none!important; }
+ .flow-board { max-width:100%;overflow-x:auto;overscroll-behavior-x:contain; }
+ .flow-panel { width:100%;max-width:540px;border-radius:20px 20px 0 0;top:auto;max-height:88dvh; }
+}
+@media screen and (max-width:850px){
+ #view-inventory .table-wrap:not(:has(.crm-list-card)) { overflow:auto; }
+ .crm-filter-fields #deliveries-clear { display:none; }
+}
+@media screen and (max-width:850px){
+ :is(#view-products,#view-staff,#view-inventory,#view-stock-moves,#view-transfers,#view-receivables,#view-cashbook,#view-suppliers) .page-head { flex-wrap:wrap;align-items:flex-start; }
+ :is(#view-products,#view-staff,#view-inventory,#view-stock-moves,#view-transfers,#view-receivables,#view-cashbook,#view-suppliers) .page-head > div:first-child { flex:1 1 100%;min-width:0; }
+ #product-list > tr[data-mobile-card-details] > .crm-card-selection { position:static!important;align-self:center; }
+}
+
+@media(max-width:850px){#view-order.crm-mobile-contract #order-actions>[data-sale-admin-handoff]{grid-column:1/-1;display:flex;justify-content:center;min-height:40px;}}
+/* Lịch giao hàng / Sản phẩm theo đơn: bảng desktop đặt min-width 1350px + cột đầu 110px (fulfilment-display.css).
+   Trên điện thoại hàng đã thành thẻ → bảng phải thành khối toàn chiều ngang, nếu không thẻ bị bóp vào cột đầu (~110px). */
+@media screen and (max-width:850px){
+ :is(#view-deliveries,#view-order-products) .ff-table:has(.crm-list-card){display:block!important;min-width:0!important;width:100%!important;table-layout:auto!important;}
+ :is(#view-deliveries,#view-order-products) .ff-table:has(.crm-list-card)>tbody{display:block;}
+ :is(#view-deliveries,#view-order-products) .ff-table:has(.crm-list-card)>thead{display:none;}
+ :is(#view-deliveries,#view-order-products) .ff-table .crm-list-card{width:auto!important;}
 }

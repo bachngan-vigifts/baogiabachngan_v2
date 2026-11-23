@@ -1,3 +1,7 @@
+import {assertSepayReconcileTarget,type SepayReconcileMember} from './sepay-reconcile-access.ts';
+import {webOrderPayment} from '../domain/web-order-payment.ts';
+import {webSepayPaidAt} from './web-sepay-evidence.ts';
+import {sepayPaymentAllocations} from '../sepay-allocation-schema.ts';
 import {
   and,
   asc,
@@ -41,10 +45,9 @@ import {
   sepayPosIntent,
   type SepayManualChoice,
 } from "../domain/sepay-page.ts";
-import { lockQrReferences } from "./sepay-web-store.ts";
+import { webQrReferences } from "./sepay-web-store.ts";
 import { cashAudit, cashLock, type CashDb } from "./cash-store.ts";
 import { netReceivables } from "./pos-return-credit.ts";
-import { readWebOrderFinancials } from "../domain/web-order-financials.ts";
 
 type Event = typeof bank.$inferSelect;
 export type NearTarget = {
@@ -75,7 +78,7 @@ export async function nearbySepayTargets(
   manual = false,
 ) {
   const window = sepayWindow(p.transactionAt),
-    refs = lockQrReferences(p.content),
+    refs = webQrReferences(p.content),
     posIntent = sepayPosIntent(p.content);
   const webId = targetId?.startsWith("web:") ? targetId.slice(4) : undefined;
   const posId = targetId && !webId ? targetId : undefined;
@@ -243,6 +246,7 @@ export async function nearbySepayTargets(
       });
   }
   for (const row of webRows.slice(0, SEPAY_MATCH_LIMIT)) {
+    if((await db.select({id:sepayPaymentAllocations.id}).from(sepayPaymentAllocations).where(and(eq(sepayPaymentAllocations.webOrderId,row.order.id),isNull(sepayPaymentAllocations.voidedAt))).limit(1)).length)continue;
     const o = row.order;
     let blocked =
       !manual && !o.orderedAtVerified
@@ -250,7 +254,7 @@ export async function nearbySepayTargets(
         : "";
     if (
       posIntent ||
-      (!manual && refs.length && !refs.includes("DH" + o.externalId))
+      (!manual && refs.length && !refs.includes((o.source === "minhlong" ? "ML" : "DH") + o.externalId))
     )
       blocked = "Mã QR trong giao dịch không thuộc đơn web này.";
     if (!manual && o.ghnOrderCode)
@@ -317,6 +321,7 @@ export async function applyNearbySepay(
   actorId = "integration:sepay-nearby",
   manual?: SepayManualChoice,
   targetHint?: string,
+  manualViewer?:SepayReconcileMember,
 ) {
   const waiting =
     !manual && Date.parse(now) < Date.parse(sepayWindow(p.transactionAt).to);
@@ -387,6 +392,7 @@ export async function applyNearbySepay(
         .from(orders)
         .where(eq(orders.id, target.id))
         .for("update");
+    if(manualViewer)await assertSepayReconcileTarget(db,manualViewer,target.id);
     const fresh = (
       await nearbySepayTargets(db, p, target.id, !!manual)
     ).targets.find(
@@ -514,11 +520,10 @@ export async function previewNearbySepay(
     };
   } else {
     const [source] = await db
-      .select({ snapshot: web.financialSnapshot })
+      .select({financialSnapshot:web.financialSnapshot,crmEditSnapshot:web.crmEditSnapshot,total:web.total,bankPaidAt:webSepayPaidAt()})
       .from(web)
       .where(eq(web.id, first.id.slice(4)));
-    const evidence = readWebOrderFinancials(source?.snapshot)?.payment;
-    const paid = evidence ? (evidence.paidAt ? first.total : 0) : null;
+    const paid = source?webOrderPayment(source,source.bankPaidAt).paid:null;
     debt = {
       due: first.total,
       paid,

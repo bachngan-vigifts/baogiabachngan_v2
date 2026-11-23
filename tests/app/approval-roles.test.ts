@@ -1,3 +1,4 @@
+import {submitFixtureOrder} from '../helpers/submission-review-fixture.ts';
 import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -41,16 +42,20 @@ async function setup() {
   let n = 0;
   /** Báo giá của `who`, đã gửi duyệt (pending). */
   const pendingQuote = async (who = s.emp) => {
-    const q = await call('/quotes', who, 'POST', { type: 'HRC', quoteNo: 'HRC_A' + (++n), customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows });
+    const q = await call('/quotes', who, 'POST', { type: 'HRC', quoteNo: 'HRC_A' + (++n), customer: 'Công ty An Phú', customerId: 'K1', vat: 8, shipping:{payer:'receiver'}, rows });
     assert.equal(q.status, 201, JSON.stringify(q.data));
     assert.equal((await call(`/quotes/${q.data.id}/submit`, who, 'POST', { revision: 1 })).status, 200);
     return q.data.id as string;
   };
   /** Đơn hàng nháp của nhân viên, đã gửi duyệt. */
   const pendingOrder = async () => {
-    const qid = await pendingQuote(); await call(`/quotes/${qid}/approve`, s.mgr, 'POST', { revision: 1 });
+    const qid = await pendingQuote();
+    const q=(await call(`/quotes/${qid}`,s.mgr)).data;
+    q.data.rows=q.data.rows.map((row:any)=>({...row,costPrice:50000,costMode:'manual'}));
+    assert.equal((await call(`/quotes/${qid}`,s.mgr,'PUT',{revision:q.revision,data:q.data})).status,200);
+    await call(`/quotes/${qid}/approve`, s.mgr, 'POST', { revision: 2 });
     const o = await call('/orders', s.emp, 'POST', { quoteId: qid }); assert.equal(o.status, 201, JSON.stringify(o.data));
-    assert.equal((await call(`/orders/${o.data.id}/submit`, s.emp, 'POST', {})).status, 200);
+    assert.equal((await submitFixtureOrder(call,o.data.id,s.emp)).status, 200);
     return o.data.id as string;
   };
   const pendingCustomer = async (name: string) => { const r = await call('/customers', s.emp, 'POST', customerCreateFixture({ name })); assert.equal(r.status, 201); return r.data.id as string; };

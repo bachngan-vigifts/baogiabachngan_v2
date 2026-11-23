@@ -1,3 +1,4 @@
+import { createPurchaseOrders } from './purchase-order-create.js';
 import { requiresSupplierOrderNumber } from './supplier-order-number.js';
 import { setProductThumbnail } from './product-images.js';
 /**
@@ -301,7 +302,7 @@ export function initRestockPage({ api, host, toast, go, options, loadXlsx, onBac
     if (!orders.length) { err.textContent = 'Chưa có số lượng nào để đặt.'; return; }
     busy = true; summarize(); const label = submit.textContent; submit.textContent = 'Đang tạo…';
     try {
-      const r = await api('/purchase-orders', 'POST', { orders });
+      const r = await createPurchaseOrders(api, orders);
       store.clear();
       toast(o.isManager ? `Đã tạo ${r.ids.length} đơn mua – chờ duyệt giá.` : `Đã lưu ${r.ids.length} đơn mua nháp – kiểm tra rồi bấm "Gửi duyệt".`, 'ok');
       go('#/purchases/' + encodeURIComponent(r.ids[0]));

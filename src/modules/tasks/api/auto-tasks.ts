@@ -3,7 +3,7 @@ import { receivingReminderTasks } from './receiving-reminders.ts';
 import { supplierPaymentTasks } from './accounting-sources.ts';
 import { netReceivables } from '../../sales/api/pos-return-credit.ts';
 import { invoiceTasks } from './invoice-tasks.ts';
-import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, isNull, like, lte, ne, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { quotations } from '../../quotes/schema.ts';
@@ -49,7 +49,7 @@ export interface AutoTask {
   assigneePosition?: string | null;
 }
 type Db = StaffEnv['db'];
-type Rule = (db: Db, today: string, now?: Date) => Promise<AutoTask[]>;
+type Rule = (db: Db, today: string, now?: Date, sourceId?: string) => Promise<AutoTask[]>;
 const day = (iso: string | null | undefined) => (iso ? String(iso).slice(0, 10) : null);
 const fmt = (iso: string | null) => iso ? iso.split('-').reverse().join('/') : '';
 const vnd = (n: number) => new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' đ';
@@ -90,8 +90,15 @@ export async function transferTasks(db: Db, today: string, transferId?: string):
   }).flat();
 }
 
+/** These manually completed follow-ups remain wanted; a generic source reconciliation must not close them. */
+export async function weeklyReportTaskSources(db:Db):Promise<AutoTask[]>{
+ const rows=await db.select().from(tasks).where(and(eq(tasks.source,'manual'),like(tasks.autoKey,'weekly-report:%'),inArray(tasks.status,['todo','in_progress'])));
+ return rows.map(t=>({autoKey:t.autoKey!,source:'manual',sourceId:t.sourceId!,title:t.title,description:t.description,link:t.link,assigneeId:t.assigneeId,priority:t.priority,dueDate:t.dueDate,dueTime:t.dueTime}));
+}
+
 export const RULES: Record<string, Rule> = {
-  receivingReminders: (db, _today, now = new Date()) => receivingReminderTasks(db, now),
+  weeklyReportFollowUps:db=>weeklyReportTaskSources(db),
+  receivingReminders: (db, _today, now = new Date(), sourceId) => receivingReminderTasks(db, now, sourceId),
   /**
    * Hẹn chăm sóc khách (nhật ký chăm sóc) tới mốc "nhắc tôi trước" (1 ngày / 1 tuần / 1 tháng trước ngày hẹn) → việc cho nhân viên phụ trách. Khoá gồm ngày hẹn: dời hẹn = việc mới;
    * bấm "Đã chăm sóc" ở trang Chăm sóc KH → việc tự hoàn thành.
@@ -100,7 +107,7 @@ export const RULES: Record<string, Rule> = {
     const rows = await dueFollowUps(db, today);
     return rows.map(r => ({ autoKey: `care:${r.id}:${r.nextAt}`, source: 'care' as const, sourceId: r.id,
       title: `Chăm sóc lại ${r.customerName}${r.contactName ? ' – ' + r.contactName : ''}`.slice(0, 200),
-      description: `Lần trước (${CARE_TYPE_LABEL[r.type].toLowerCase()}): ${(r.nextAction || r.content || r.subject).slice(0, 300)}`,
+      description: `${r.completion==='not_completed'?'Việc cần làm':'Lần trước'} (${CARE_TYPE_LABEL[r.type].toLowerCase()}): ${(r.nextAction || r.content || r.subject).slice(0, 300)}`,
       link: `#/care/${r.id}`, assigneeId: r.ownerId, priority: r.nextAt! < today ? 'high' as const : 'normal' as const, dueDate: r.nextAt }));
   },
   /** Báo giá chờ duyệt (khách gửi hoặc nhân viên lập): việc chưa giao người – Manager / người được duyệt duyệt (người phụ trách có thông báo riêng). */
@@ -193,8 +200,8 @@ export const RULES: Record<string, Rule> = {
     });
   },
   /** Đơn nhập hàng Sapo (60 ngày gần đây) chưa hoàn tất → theo dõi nhận hàng (chưa giao người). */
-  async purchaseReceive(db, today) {
-    const rows = await db.select().from(sapoInventoryDocs).where(and(eq(sapoInventoryDocs.kind, 'purchase_order'), gte(sapoInventoryDocs.createdOn, addDaysIso(today, -60)))).limit(500);
+  async purchaseReceive(db, today, _now, sourceId) {
+    const rows = await db.select().from(sapoInventoryDocs).where(and(sourceId ? eq(sapoInventoryDocs.id,sourceId) : undefined, eq(sapoInventoryDocs.kind, 'purchase_order'), gte(sapoInventoryDocs.createdOn, addDaysIso(today, -60)))).limit(500);
     return rows.filter(d => !/(complet|finish|cancel|received|closed|hoàn|huỷ|hủy)/i.test(d.status)).map(d => ({ autoKey: `purchase:${d.id}`, source: 'purchase' as const, sourceId: d.id,
       title: `Nhận hàng nhập ${d.code}${d.partnerName ? ' – ' + d.partnerName : ''}`, description: `${new Intl.NumberFormat('vi-VN').format(d.totalQty)} sản phẩm${d.locationName ? ' · ' + d.locationName : ''}${d.status ? ' · Sapo: ' + d.status : ''}`,
       link: '', assigneeId: null, assigneePosition: 'warehouse', priority: 'normal' as const, dueDate: d.createdOn ? addDaysIso(day(d.createdOn)!, 7) : null }));
@@ -204,11 +211,11 @@ export const RULES: Record<string, Rule> = {
    * → Kế toán trả NCC khi tới kỳ (≤ 3 ngày). Quá hẹn giao mà chưa nhận đủ → người lập đơn theo dõi NCC. Mỗi bước xong thì việc tự hoàn thành.
    */
   /** Phiếu điều chuyển kho: chờ duyệt → từng nhân viên kho được xin (không có thì Manager); đã duyệt → nhóm Kho chuyển hàng. Xong / huỷ thì việc tự đóng. */
-  stockTransfers: (db, today) => transferTasks(db, today),
+  stockTransfers: (db, today, _now, sourceId) => transferTasks(db, today, sourceId),
 
-  async supplierPurchases(db, today) {
+  async supplierPurchases(db, today, _now, sourceId) {
     const out: AutoTask[] = [];
-    for (const p of await openPurchases(db, today)) {
+    for (const p of await openPurchases(db, today, sourceId)) {
       const base = { source: 'purchase' as const, sourceId: p.id, link: `#/purchases/${p.id}` }, who = `${p.ticketNumber} – ${p.supplierName ?? ''}`;
       // Nháp chưa gửi duyệt không giao việc cho Manager.
       if (p.state === 'draft' && p.submitted) out.push({ ...base, autoKey: `po-approve:${p.id}`, title: `Duyệt đơn mua ${who}`, description: `${p.lineCount} mã · ${new Intl.NumberFormat('vi-VN').format(p.ordered)} sản phẩm. Nhập giá mua / chiết khấu / lịch trả rồi duyệt.`,
@@ -222,7 +229,7 @@ export const RULES: Record<string, Rule> = {
         assigneeId: null, assigneePosition: 'warehouse', priority: 'high', dueDate: today });
 
     }
-    out.push(...await supplierPaymentTasks(db, today));
+    if (!sourceId) out.push(...await supplierPaymentTasks(db, today));
     return out;
   },
   /** Đơn đến hạn giao (hôm nay / ngày mai / đã trễ) mà chưa giao xong → nhân viên phụ trách. */
@@ -241,7 +248,7 @@ export const RULES: Record<string, Rule> = {
    * Phiếu đóng gói đã gửi kho → việc "Đóng gói" cho nhóm Kho (mở trang phiếu #/packing/<id>, kho không cần quyền xem đơn).
    * Kho xác nhận đã đóng (kèm ảnh) hoặc phiếu bị huỷ thì việc tự hoàn thành.
    */
-  packingSlips:(db,today)=>packingTasksFor(db,today),
+  packingSlips:(db,today,_now,sourceId)=>packingTasksFor(db,today,sourceId?[sourceId]:undefined),
   /**
    * Tiến trình sản phẩm (đơn / HĐKT có phí in): kho đã xuất (đóng gói xong) → việc "In mẫu" cho người phụ trách;
    * hoàn thành "In mẫu" → việc "Sản xuất". Hoàn thành việc = bước trên thanh tiến trình xong (xem tasks/api/routes.ts);
@@ -467,11 +474,13 @@ export async function packingTasksFor(db:Db,today:string,ids?:string[]){
       .where(and(eq(packingSlips.status,'sent'),ids?inArray(packingSlips.id,ids):undefined)).limit(500);
     if (!rows.length) return [];
     const lines = await db.select().from(packingSlipLines).where(inArray(packingSlipLines.slipId, rows.map(r => r.s.id)));
-    const n = (v: number) => new Intl.NumberFormat('vi-VN').format(v);
+    const formatter = new Intl.NumberFormat('vi-VN'), n = (v: number) => formatter.format(v);
+    const bySlip = new Map<string, typeof lines>();
+    for (const line of lines) { const group = bySlip.get(line.slipId) ?? []; group.push(line); bySlip.set(line.slipId, group); }
     return rows.map(({ s, orderNo, contractNo, customerName, due }) => ({ autoKey: `slip:${s.id}`, source: 'packing' as const, sourceId: s.id,
       title: `Đóng gói ${s.slipNo} – ${customerName}`,
       description: [`${docRef(s.orderId, orderNo, contractNo).Label} · ${PACKING_SOURCE_LABEL[s.source]}${s.sourceNote ? ': ' + s.sourceNote : ''}${s.totalWeight ? ` · ~${n(s.totalWeight)} kg` : ''}`,
-        ...lines.filter(l => l.slipId === s.id).map(l => `- ${l.name}: ${n(l.qty)} ${l.unit}`), s.note ? `Ghi chú: ${s.note}` : '', 'Đóng xong: mở phiếu, chụp 1–3 ảnh và xác nhận.'].filter(Boolean).join('\n'),
+        ...(bySlip.get(s.id) ?? []).map(l => `- ${l.name}: ${n(l.qty)} ${l.unit}`), s.note ? `Ghi chú: ${s.note}` : '', 'Đóng xong: mở phiếu, chụp 1–3 ảnh và xác nhận.'].filter(Boolean).join('\n'),
       link: `#/packing/${s.id}`, assigneeId: null, assigneePosition: 'warehouse', priority: due && due <= addDaysIso(today, 1) ? 'urgent' as const : 'high' as const,
       dueDate: due ? addDaysIso(due, -1) : null }));
   }

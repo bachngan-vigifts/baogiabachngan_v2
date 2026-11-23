@@ -106,6 +106,9 @@ export const incomingShipments = pgTable('incoming_shipments', {
   depositRequestedBy: text('deposit_requested_by'),
   /** Số tiền đã thanh toán. Bản cũ lưu trùng hai tên `paidAmount` và `depositPaidAmount`; gộp thành một cột. */
   paidAmount: doublePrecision('paid_amount').notNull().default(0),
+  refundedAmount: doublePrecision('refunded_amount').notNull().default(0),
+  remainderClosedAt: text('remainder_closed_at'),
+  remainderCloseReason: text('remainder_close_reason').notNull().default(''),
   depositPaidAt: text('deposit_paid_at'),
   depositPaidBy: text('deposit_paid_by'),
 
@@ -175,6 +178,7 @@ export const incomingShipmentLines = pgTable('incoming_shipment_lines', {
   name: text('name').notNull().default(''),
   unit: text('unit').notNull().default(''),
   quantity: doublePrecision('quantity').notNull(),
+  creditedQty: doublePrecision('credited_qty').notNull().default(0),
 
   /** Đơn giá niêm yết / VAT / phí in – chỉ bắt buộc với đơn NCC. */
   price: doublePrecision('price'),
@@ -211,6 +215,7 @@ export const incomingShipmentLines = pgTable('incoming_shipment_lines', {
   // Bản cũ từ chối SKU lặp trong một phiếu (không phân biệt hoa thường).
   uniqueIndex('idx_incoming_shipment_lines_sku').on(t.shipmentId, sql`lower(${t.sku})`),
   index('idx_incoming_shipment_lines_by_sku').on(t.sku),
+  check('chk_incoming_lines_credited', sql`${t.creditedQty} >= 0 AND ${t.creditedQty} <= ${t.quantity}`),
   check('chk_incoming_lines_qty', sql`${t.quantity} >= 0`),
   check('chk_incoming_lines_price', sql`${t.price} IS NULL OR ${t.price} >= 0`),
   check('chk_incoming_lines_tax', sql`${t.taxRate} IS NULL OR (${t.taxRate} >= 0 AND ${t.taxRate} <= 100)`),
@@ -302,8 +307,10 @@ export const supplierOrderSources = pgTable('supplier_order_sources', {
   customerName: text('customer_name').notNull().default(''),
   sku: text('sku').notNull(),
   quantity: doublePrecision('quantity').notNull(),
+  cancelledQuantity:doublePrecision('cancelled_quantity').notNull().default(0),
   createdAt: text('created_at').notNull(),
 }, t => [
+  check('chk_supplier_order_source_cancelled',sql`${t.cancelledQuantity}>=0 AND ${t.cancelledQuantity}<=${t.quantity}`),
   index('idx_supplier_order_sources_source').on(t.sourceType, t.sourceId, t.sku),
   index('idx_supplier_order_sources_shipment').on(t.shipmentId),
   enumCheck('chk_supplier_order_sources_type', t.sourceType, [...SOURCE_TYPES]),
@@ -353,11 +360,13 @@ export const supplierReceiptLines = pgTable('supplier_receipt_lines', {
   lineId: text('line_id').notNull().references(() => incomingShipmentLines.id),
   sku: text('sku').notNull(),
   /** Số lượng nhận đạt (dùng được). */
+  returnedGoodQty: doublePrecision('returned_good_qty').notNull().default(0),
   goodQty: doublePrecision('good_qty').notNull().default(0),
   /** Số lượng hỏng / lỗi (không tính đã nhận, NCC cần bù). */
   damagedQty: doublePrecision('damaged_qty').notNull().default(0),
   note: text('note').notNull().default(''),
 }, t => [
+  check('chk_receipt_lines_returned', sql`${t.returnedGoodQty} >= 0 AND ${t.returnedGoodQty} <= ${t.goodQty}`),
   primaryKey({ columns: [t.receiptId, t.lineId] }),
   index('idx_supplier_receipt_lines_line').on(t.lineId),
   check('chk_supplier_receipt_lines_qty', sql`${t.goodQty} >= 0 AND ${t.damagedQty} >= 0 AND ${t.goodQty} + ${t.damagedQty} > 0`),
@@ -438,4 +447,60 @@ export const receiptJobs = pgTable('supplier_receipt_jobs', {
   enumCheck('chk_receipt_job_action',t.action,['create_purchase_receipt','reconcile_existing']),
   enumCheck('chk_receipt_job_status',t.status,['queued','processing','callback_pending','done','failed','needs_review']),
   check('chk_receipt_job_attempts',sql`${t.attempts} >= 0`),
+]).enableRLS();
+
+/** Posted supplier returns / cancellation of the unreceived remainder. Original documents stay immutable. */
+export const supplierGoodsReturns = pgTable('supplier_goods_returns', {
+  id: text('id').primaryKey(),
+  shipmentId: text('shipment_id').notNull().references(() => incomingShipments.id),
+  receiptId: text('receipt_id').references(() => supplierReceipts.id),
+  mode: text('mode', {enum:['credit','replacement','close']}).notNull(),
+  returnedDate: text('returned_date').notNull(),
+  reason: text('reason').notNull(),
+  warehouseId: text('warehouse_id'),
+  /** Immutable line/price/CK/VAT snapshots, bounded and validated by the API. */
+  items: text('items').notNull(),
+  creditAmount: doublePrecision('credit_amount').notNull().default(0),
+  /** Manual Sapo reconciliation, never presented as an automated Sapo write. */
+  sapoReturnId: text('sapo_return_id'),
+  sapoReturnCode: text('sapo_return_code').notNull().default(''),
+  evidenceNote: text('evidence_note').notNull().default(''),
+  clientKey: text('client_key').notNull(),
+  requestHash: text('request_hash').notNull(),
+  createdBy: text('created_by').notNull().references(() => employees.id),
+  createdAt: text('created_at').notNull(),
+}, t=>[
+  uniqueIndex('uq_supplier_goods_returns_key').on(t.clientKey),
+  uniqueIndex('uq_supplier_goods_returns_sapo').on(t.sapoReturnId),
+  index('idx_supplier_goods_returns_order').on(t.shipmentId),
+  enumCheck('chk_supplier_goods_returns_mode',t.mode,['credit','replacement','close']),
+  check('chk_supplier_goods_returns_amount',sql`${t.creditAmount} >= 0 AND ${t.creditAmount} < 'Infinity'::double precision`),
+  check('chk_supplier_goods_returns_lines',sql`jsonb_typeof(${t.items}::jsonb)='array' AND jsonb_array_length(${t.items}::jsonb) BETWEEN 1 AND 200`),
+]).enableRLS();
+export const supplierRefunds = pgTable('supplier_refunds', {
+  id:text('id').primaryKey(), shipmentId:text('shipment_id').notNull().references(()=>incomingShipments.id),
+  amount:doublePrecision('amount').notNull(), receivedDate:text('received_date').notNull(),
+  method:text('method',{enum:['transfer','cash','other']}).notNull(), reference:text('reference').notNull(),
+  note:text('note').notNull().default(''), clientKey:text('client_key').notNull(), requestHash:text('request_hash').notNull(),
+  createdBy:text('created_by').notNull().references(()=>employees.id),createdAt:text('created_at').notNull(),
+},t=>[uniqueIndex('uq_supplier_refunds_reference').on(t.shipmentId,t.method,sql`lower(trim(${t.reference}))`),uniqueIndex('uq_supplier_refunds_key').on(t.clientKey),index('idx_supplier_refunds_order').on(t.shipmentId),
+  enumCheck('chk_supplier_refunds_method',t.method,['transfer','cash','other']),
+  check('chk_supplier_refunds_amount',sql`${t.amount}>0 AND ${t.amount} <= 1e13`),
+]).enableRLS();
+
+/**
+ * Mã thao tác lập đơn mua NCC (POST /purchase-orders) – chống tạo trùng khi gửi lại sau mất phản hồi.
+ * Khoá theo (người lập, mã): gửi lại cùng mã + cùng nội dung → trả bộ ID cũ; khác nội dung → 409.
+ * Migration 20261121150000_purchase_order_intents.sql.
+ */
+export const purchaseOrderIntents = pgTable('purchase_order_intents', {
+  createdBy: text('created_by').notNull().references(() => employees.id),
+  clientKey: text('client_key').notNull(),
+  requestHash: text('request_hash').notNull(),
+  /** JSON: mảng ID đơn mua đã tạo theo đúng thứ tự trong yêu cầu. */
+  shipmentIds: text('shipment_ids').notNull(),
+  createdAt: text('created_at').notNull(),
+}, t => [
+  primaryKey({ name: 'pk_purchase_order_intents', columns: [t.createdBy, t.clientKey] }),
+  index('idx_purchase_order_intents_created').on(t.createdAt),
 ]).enableRLS();

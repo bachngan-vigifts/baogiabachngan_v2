@@ -11,7 +11,7 @@ import {salesOrders,salesOrderLines,salesContracts} from '../../src/modules/sale
 import {posReturns,posReturnLines} from '../../src/modules/sales/return-schema.ts';
 import {autoQuoteHead,quoteHeadFor,nextQuoteNoAfter} from '../../src/modules/quotes/domain/quote-number.ts';
 // @ts-ignore browser module
-import {createSalePriceSuggestions,saleDesignProblem,SALE_LAYOUT_COLUMNS,saleSuggestionBatches} from '../../trial-ui/sale-quote-layout.js';
+import {createSalePriceSuggestions,saleDesignProblem,SALE_LAYOUT_COLUMNS,saleSuggestionBatches,saleLineCell} from '../../trial-ui/sale-quote-layout.js';
 const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 async function setup(){
  const f=await createTestDb();await seedStaff(f.d1);const router=createAppRouter(),files=memoryFileStore(),env={db:f.db,files,passwordIterations:1000,sapoOrderPush:'off' as const};
@@ -112,4 +112,24 @@ test('employee quote summary exposes only saved rebate total; costs, print costs
 test('300-SKU lookups use bounded batches, retaining every SKU without oversized URLs',()=>{
  const skus=Array.from({length:300},(_,i)=>String(i)+'A'.repeat(60)),batches=saleSuggestionBatches(skus);
  assert.deepEqual(batches.flat(),skus);assert.ok(batches.length<10);for(const batch of batches)assert.ok(batch.map((s:string)=>'sku='+encodeURIComponent(s)).join('&').length<6000);
+});
+
+test('Sale rows expose the three escaped, editable description fields inside the existing product column',()=>{
+ const row={name:'Ly',sku:'LG-143509',brand:'Lucky Thái Lan',materialDescription:'Thủy tinh <script>',brandDescription:'Lucky Thái Lan',volumeDescription:'255ml',printDescription:'Logo "A"',packagingDescription:'Hộp riêng'};
+ const esc=(v:unknown)=>String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+ const html=saleLineCell(row,0,{esc,fmtNum:String,image:()=>'',average:()=>''});
+ assert.equal((html.match(/<td /g)||[]).length,8);
+ for(const key of ['materialDescription','brandDescription','volumeDescription','printDescription','packagingDescription'])assert(html.includes('data-k="'+key+'"'));
+ assert(html.includes('Thủy tinh &lt;script&gt;'));assert(html.includes('Logo &quot;A&quot;'));assert(!html.includes('<script>'));
+ const old=saleLineCell({name:'Báo giá cũ'},0,{esc,fmtNum:String,image:()=>'',average:()=>''});assert.match(old,/data-k="packagingDescription"[^>]*>theo tiêu chuẩn nhà sản xuất<\/textarea>/);
+});
+
+test('Sale description values survive create/read/update without changing pricing or approval rules',async()=>{
+ const f=await setup(),data=doc('SALE-DESCRIPTIONS');Object.assign(data.rows[0]!,{brand:'Thương hiệu gốc',materialDescription:'Thủy tinh',brandDescription:'Lucky Thái Lan',volumeDescription:'255ml',printDescription:'Logo xanh',packagingDescription:'Hộp carton'});
+ const q=ok(await f.call('/quotes',f.emp,'POST',data),201);const loaded=ok(await f.call('/quotes/'+q.id,f.emp));
+ for(const key of ['materialDescription','brandDescription','volumeDescription','printDescription','packagingDescription'])assert.equal(loaded.data.rows[0][key],(data.rows[0] as any)[key]);
+ const edited={...loaded.data,rows:loaded.data.rows.map((r:any)=>({...r,volumeDescription:'300ml',packagingDescription:''}))};
+ ok(await f.call('/quotes/'+q.id,f.emp,'PUT',{revision:1,data:edited}));const saved=ok(await f.call('/quotes/'+q.id,f.emp));
+ assert.equal(saved.data.rows[0].volumeDescription,'300ml');assert.equal(saved.data.rows[0].brand,'Thương hiệu gốc');assert.equal(saved.data.rows[0].packagingDescription,'');assert.equal(saved.data.rows[0].price,q.data.rows[0].price);assert.equal(saved.data.rows[0].qty,q.data.rows[0].qty);assert.equal(saved.data.rows[0].printFee,q.data.rows[0].printFee);assert.equal(saved.approvalStatus,'draft');
+ for(const field of ['materialDescription','brandDescription','volumeDescription'])assert.equal((await f.call('/quotes',f.emp,'POST',{...data,quoteNo:'SALE-LIMIT-'+field,rows:[{...data.rows[0],[field]:'x'.repeat(2001)}]})).status,400);
 });

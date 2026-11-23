@@ -1,4 +1,6 @@
-import {webSepayPaidAt} from './web-sepay-evidence.ts';
+import {webOrderPayment} from '../domain/web-order-payment.ts';
+import {webSepayPaidAt,webSepayPaidAmount} from './web-sepay-evidence.ts';
+import type {WebBankEvidence} from '../../../core/contracts/web-bank-evidence.ts';
 import {webSapoReference} from '../domain/web-sapo.ts';
 import {webSapoStatuses,webSapoFields} from './web-sapo-status.ts';
 import {invoiceTaskHooks} from './invoice-task-hooks.ts';
@@ -40,14 +42,13 @@ async function scope(c:Ctx){
  return and(inArray(web.source,['lock','minhlong']),store?inArray(web.registerId,store.scope.registers):undefined);
 }
 const invoiceState = () => invoiceTaskHooks.webStatus?.() ?? sql<string>`'unknown'`;
-function asDocument(o:typeof web.$inferSelect,branchName:string,invoiceStatus='unknown',bankPaidAt:string|null=null){
+function asDocument(o:typeof web.$inferSelect,branchName:string,invoiceStatus='unknown',bankPaidAt:WebBankEvidence|null=null){
  const accounting=readWebAccounting(o.crmEditSnapshot),invoice=accounting.invoice;
  const bucket=webOrderBucket(o.status,o.ghnStatus),status=bucket==='completed'?'delivered':bucket==='cancelled'?'cancelled':bucket==='waiting_delivery'?'delivering':bucket==='packing'?'confirmed':'draft';
- const financials=readWebOrderFinancials(o.financialSnapshot),payment=readWebEdit(o.crmEditSnapshot).sourceConflict?undefined:bankPaidAt?{paidAt:bankPaidAt}:financials?.payment;
- const paid=payment?(payment.paidAt?o.total:0):null;
+ const financials=readWebOrderFinancials(o.financialSnapshot),payment=webOrderPayment(o,bankPaidAt),paid=payment.paid;
  return {id:'web:'+o.id,webOrderId:o.id,external:true,orderSource:'web',source:o.source,orderNo:o.crmOrderNo||`Web_${o.orderNo}_${o.customerName}`,sourceOrderNo:o.orderNo,customerName:o.customerName,phone:o.phone,address:o.address,
   ownerId:null,ownerName:o.source==='lock'?'Web LocknLock':'Web Minh Long',branchName,registerId:o.registerId,orderDate:o.orderedAt.slice(0,10),createdAt:o.orderedAt,updatedAt:o.updatedAt,
-  status,statusLabel:bucket==='completed'?'Đã giao':bucket==='cancelled'?'Đã huỷ / hoàn':bucket==='waiting_delivery'?'Đang giao':bucket==='packing'?'Đang chuẩn bị hàng':'Chờ xác nhận GHN',sourceStatus:o.status,total:o.total,currency:o.currency,paid,paymentStatus:paid===null?'unknown':paid>=o.total?'paid':'debt',
+  status,statusLabel:bucket==='completed'?'Đã giao':bucket==='cancelled'?'Đã huỷ / hoàn':bucket==='waiting_delivery'?'Đang giao':bucket==='packing'?'Đang chuẩn bị hàng':'Chờ xác nhận GHN',sourceStatus:o.status,total:o.total,currency:o.currency,...payment,
   receivable:paid===null?null:{status:paid>=o.total?'paid':paid>0?'partial':'unpaid',payState:paid>=o.total?'paid':paid>0?'partial':'unpaid',paid,balance:Math.max(0,o.total-paid)},debtCounts:status!=='cancelled',
   invoiceStatus:invoice?.status==='issued'?'issued':invoiceStatus,invoiceNo:invoice?.invoiceNo||'',invoiceDate:invoice?.invoiceDate||'',invoiceIssuedBy:invoice?.issuedBy||null,invoiceIssuedByName:invoice?.issuedByName||'',invoiceIssuedAt:invoice?.issuedAt||null,
   invoiceRequestedAt:invoice?.requestedAt||(invoiceStatus==='requested'?o.updatedAt:null),invoiceRequestedBy:invoice?.requestedBy||null,invoiceRequestedByName:invoice?.requestedByName||'',invoiceEmail:invoice?.email||accounting.billing?.email||o.email,invoiceMode:invoice?.mode||'issue',invoiceRequestNote:invoice?.note||'',accountingRevision:accounting.revision,billing:accounting.billing||{name:o.customerName,taxCode:'',address:o.address,email:o.email},
@@ -75,9 +76,9 @@ export async function webDocumentPage(c:Ctx,crmWhere:SQL|undefined,limit:number,
   c.env.db.selectDistinct({id:posRegisters.id,name:posRegisters.name}).from(web).innerJoin(posRegisters,eq(posRegisters.id,web.registerId)).where(base).orderBy(asc(posRegisters.name)),
   c.env.db.select({count:count(),revenue:sql<number>`coalesce(sum(${web.total}),0)::float8`,
    // Missing financial payment metadata is unknown, never silently treated as unpaid.
-   paid:sql<number>`coalesce(sum(case when (${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is not null or ${webSepayPaidAt()} is not null) and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) then ${web.total} else 0 end),0)::float8`,
-   remaining:sql<number>`coalesce(sum(case when ${web.financialSnapshot}::jsonb ? 'payment' and ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is null and ${webSepayPaidAt()} is null and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) then ${web.total} else 0 end),0)::float8`,
-   unknown:sql<number>`count(*) filter(where (not (${web.financialSnapshot}::jsonb ? 'payment') and ${webSepayPaidAt()} is null) or coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false))::int`,
+   paid:sql<number>`coalesce(sum(case when not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) then ${webSepayPaidAmount()} else 0 end),0)::float8`,
+   remaining:sql<number>`coalesce(sum(case when (${webSepayPaidAt()} is not null or (${web.financialSnapshot}::jsonb ? 'payment' and ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is null)) and not coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false) then greatest(0,${web.total}-${webSepayPaidAmount()}) else 0 end),0)::float8`,
+   unknown:sql<number>`count(*) filter(where ((not (${web.financialSnapshot}::jsonb ? 'payment') or ${web.financialSnapshot}::jsonb->'payment'->>'paidAt' is not null) and ${webSepayPaidAt()} is null) or coalesce((${web.crmEditSnapshot}::jsonb->>'sourceConflict')::boolean,false))::int`,
   }).from(web).where(and(where,ne(webDocumentStatus(),'cancelled'))),
   c.env.db.select({n:count()}).from(web).where(and(base,eq(invoiceState(),'requested'))),
  ]);

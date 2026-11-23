@@ -15,7 +15,7 @@ import { isCustomer, isSupplier, type Role } from '../../staff/domain/roles.ts';
  *  - Quyền đồng nghiệp cùng nhóm được kiểm ở quotes/api/department-access.ts theo dữ liệu nhân viên đang hoạt động; lớp cơ sở này không đọc DB.
  */
 export interface Viewer { id: string; role: Role; active: boolean; positionId?: string | null }
-export interface QuoteOwnership { id: string; creatorId: string; assigneeId?: string | null }
+export interface QuoteOwnership { id: string; creatorId: string; assigneeId?: string | null; supportAssigneeId?:string|null }
 export interface QuoteShareTarget { targetType: 'member' | 'position'; targetId: string; permission: 'view' | 'edit' }
 
 /** Người dùng không được chạm vào báo giá nào. */
@@ -30,18 +30,20 @@ const isManager = (v: Viewer) => v.role === 'manager';
 const isOwner = (v: Viewer, q: QuoteOwnership) => v.id === q.creatorId;
 const isAssignee = (v: Viewer, q: QuoteOwnership) => q.assigneeId != null && v.id === q.assigneeId;
 
+export const isSupportAssignee=(viewer:{id:string;role:string;positionId?:string|null;active?:boolean},quote:{supportAssigneeId?:string|null})=>viewer.active!==false&&viewer.role==='employee'&&viewer.positionId==='sale-admin'&&quote.supportAssigneeId===viewer.id;
+
 /** Người phụ trách hiệu lực: chưa chỉ định thì là chủ. */
 export const effectiveAssigneeId = (q: Pick<QuoteOwnership, 'creatorId' | 'assigneeId'>): string => q.assigneeId ?? q.creatorId;
 
 /** `shares` = các dòng quote_shares CỦA CHÍNH báo giá này. */
 export function canViewQuotation(viewer: Viewer | null | undefined, quote: QuoteOwnership | null | undefined, shares: readonly QuoteShareTarget[] = []): boolean {
   if (barred(viewer) || !quote) return false;
-  return isManager(viewer) || isOwner(viewer, quote) || isAssignee(viewer, quote) || shares.some(s => matches(viewer, s));
+  return isManager(viewer) || isOwner(viewer, quote) || isAssignee(viewer, quote) || isSupportAssignee(viewer,quote) || shares.some(s => matches(viewer, s));
 }
 
 export function canEditQuotation(viewer: Viewer | null | undefined, quote: QuoteOwnership | null | undefined, shares: readonly QuoteShareTarget[] = []): boolean {
   if (barred(viewer) || !quote) return false;
-  return isManager(viewer) || isOwner(viewer, quote) || isAssignee(viewer, quote) || shares.some(s => s.permission === 'edit' && matches(viewer, s));
+  return isManager(viewer) || isOwner(viewer, quote) || isAssignee(viewer, quote) || isSupportAssignee(viewer,quote) || shares.some(s => s.permission === 'edit' && matches(viewer, s));
 }
 
 /** Chia sẻ / đổi quyền / thu hồi chia sẻ: chỉ chủ báo giá và manager. */
@@ -66,13 +68,13 @@ export interface SqlScope { sql: string; bindings: (string | number | null)[] }
 const shareClause = (permission: 'any' | 'edit') =>
   `EXISTS (SELECT 1 FROM quote_shares s WHERE s.quote_id = q.id${permission === 'edit' ? " AND s.permission = 'edit'" : ''} AND ((s.target_type = 'member' AND s.target_id = ?) OR (s.target_type = 'position' AND s.target_id = ?)))`;
 
-function scope(viewer: Viewer | null | undefined, permission: 'any' | 'edit'): SqlScope {
+function scope(viewer: Viewer | null | undefined, permission: 'any' | 'edit', includeSupport=true): SqlScope {
   if (barred(viewer)) return { sql: '0 = 1', bindings: [] };
   if (isManager(viewer)) return { sql: '1 = 1', bindings: [] };
   return {
-    sql: `(q.creator_id = ? OR q.assignee_id = ? OR ${shareClause(permission)})`,
+    sql: `(q.creator_id = ? OR q.assignee_id = ? OR ${shareClause(permission)}${includeSupport&&viewer.role==='employee'&&viewer.positionId==='sale-admin'?' OR q.support_assignee_id = ?':''})`,
     // positionId null → so sánh với NULL luôn sai, nên người chưa có chức vụ không bao giờ khớp chia sẻ theo chức vụ.
-    bindings: [viewer.id, viewer.id, viewer.id, viewer.positionId ?? null],
+    bindings: [viewer.id, viewer.id, viewer.id, viewer.positionId ?? null,...(includeSupport&&viewer.role==='employee'&&viewer.positionId==='sale-admin'?[viewer.id]:[])],
   };
 }
 
@@ -83,5 +85,5 @@ function scope(viewer: Viewer | null | undefined, permission: 'any' | 'edit'): S
 export const quotationScope = (viewer: Viewer | null | undefined): SqlScope => scope(viewer, 'any');
 
 /** Điều kiện SQL báo giá được SỬA. Câu UPDATE phải kèm điều kiện này để chặn sửa vượt quyền ngay ở tầng DB. */
-export const quotationEditScope = (viewer: Viewer | null | undefined): SqlScope => scope(viewer, 'edit');
+export const quotationEditScope = (viewer: Viewer | null | undefined, includeSupport=true): SqlScope => scope(viewer, 'edit',includeSupport);
 

@@ -89,7 +89,7 @@ test('re-sent quote across month boundaries counts once, and reassigning an acti
  // Backdated copies cannot steal a quote already recorded first, even if months are queried separately.
  const second=await f.care({type:'quote',quoteId:'same-quote',quoteRevision:1,occurredAt:'2026-09-30'});assert.equal(second.data.activity.kpi.counted,false);
  const september=(await f.call('/care?from=2026-09-01&to=2026-09-30',f.emp)).data;assert.equal(september.kpiSummary.counted,0);
- const updated=await f.call('/care/'+original.data.activity.id,f.mgr,'PUT',{customerId:'sales-customer',ownerId:'mgr',type:'quote',quoteId:'same-quote',quoteRevision:1,completion:'completed',purpose:'sales',contactName:'Khách kiểm thử',content:'Đã trao đổi nhu cầu và thống nhất bước tiếp theo',occurredAt:'2026-10-30',nextAt:'2026-11-15',remindBefore:'1d',result:'consulting',revision:1});assert.equal(updated.status,200);
+ const updated=await f.call('/care/'+original.data.activity.id,f.mgr,'PUT',{customerId:'sales-customer',ownerId:'mgr',type:'quote',quoteId:'same-quote',quoteRevision:1,completion:'completed',purpose:'sales',contactName:'Khách kiểm thử',content:'Đã trao đổi nhu cầu và thống nhất bước tiếp theo',occurredAt:'2026-10-30',nextAt:f.nextAt,remindBefore:'1d',result:'consulting',revision:1});assert.equal(updated.status,200);
  const replay=await f.care({clientKey:key,type:'quote',quoteId:'same-quote',quoteRevision:1});assert.equal(replay.status,200);assert.equal(replay.data.replayed,true);
  const count=await f.client.query<any>('select count(*)::int n from customer_activities');assert.equal(count.rows[0].n,2);
 });

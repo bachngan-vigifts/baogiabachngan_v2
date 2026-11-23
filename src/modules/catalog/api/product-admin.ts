@@ -95,7 +95,8 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
     if (sniffImage(bytes) !== match[1]) throw new AppError(415, 'Nội dung file không đúng định dạng ảnh.');
     const ext = { 'image/jpeg':'jpg', 'image/png':'png', 'image/webp':'webp' }[match[1]!]!;
     const key = `uploads/${crypto.randomUUID()}.${ext}`;
-    await store.put(key, bytes, match[1]!);
+    // Tên file ngẫu nhiên, không bao giờ ghi đè → trình duyệt / CDN giữ ảnh 1 năm, mở lại không phải tải lại.
+    await store.put(key, bytes, match[1]!, { cacheSeconds: 31_536_000 });
     return json({ imageUrl: store.publicUrl(key) }, 201);
   }, 'business');
 

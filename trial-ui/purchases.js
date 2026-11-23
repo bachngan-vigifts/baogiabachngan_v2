@@ -1,3 +1,5 @@
+import { createPurchaseOrders } from './purchase-order-create.js';
+import {openGoodsReturn,openSupplierRefund} from './purchase-returns.js';
 import { requiresSupplierOrderNumber, supplierOrderNumberProblem } from './supplier-order-number.js';
 import { openReceivedEarlyRequests } from './supplier-request-details.js';
 import {createPurchaseSupplierSearch} from './purchase-supplier-search.js';
@@ -321,9 +323,12 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const acts = el('div', 'pur-actions buy-d-actions');
     const confirmLabel = v.confirmedAt ? 'NCC đã xác nhận' : ACTION_LABEL.confirm;
     const byState = { draft: ['approve', 'submit', 'edit'], awaiting_confirmation: v.confirmedAt ? ['receive'] : ['confirm', 'receive'], confirmed: ['receive'], partially_received: ['receive'], received: ['pay'] }[v.state] || [];
-    const mainKey = byState.find(a => has(a)) || '';
-    const label = a => a === 'confirm' ? confirmLabel : ACTION_LABEL[a];
+    const mainKey = v.state==='received'&&v.canRefund&&v.debt?.supplierCredit>0?'refund':byState.find(a => has(a)) || '';
+    const label = a => a==='refund'?'Ghi nhận tiền NCC hoàn':a === 'confirm' ? confirmLabel : ACTION_LABEL[a];
     const moreItems = [];
+    const refreshReturnedOrder=async()=>{try{current=await api(`/purchase-orders/${encodeURIComponent(v.id)}`);renderDetail();load();}catch(e){toast('Chưa tải được số liệu mới. Tải lại đơn trước khi xử lý tiếp.','err');}};
+    if(v.canReturn)moreItems.push(btn('Trả hàng / Huỷ phần chưa nhận','buy-menu-item',()=>openGoodsReturn({api,order:v,onChanged:refreshReturnedOrder})));
+    if(mainKey!=='refund'&&v.canRefund&&v.debt?.supplierCredit>0)moreItems.push(btn('Ghi nhận tiền NCC hoàn','buy-menu-item',()=>openSupplierRefund({api,order:v,onChanged:refreshReturnedOrder})));
     for (const a of ['confirm', 'receive', 'edit', 'pay', 'schedule', 'pdf']) if (has(a) && a !== mainKey) moreItems.push(btn(label(a), 'buy-menu-item' + (a === 'confirm' && v.confirmedAt ? ' status-confirmed' : ''), () => ACTIONS[a]()));
     if (has('pdf')) {
       // Gửi email đơn đặt hàng (đơn đã duyệt) + hỏi tồn NCC (mọi người xem được đơn, không kèm giá).
@@ -339,13 +344,15 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       list.addEventListener('click', e => { if (e.target.closest('button')) more.open = false; });
     }
     if (has('cancel')) acts.append(btn(ACTION_LABEL.cancel, 'btn ghost small buy-danger', () => ACTIONS.cancel()));
-    if (mainKey) { const main = btn(label(mainKey), 'btn primary pur-main-action', () => ACTIONS[mainKey]()); acts.append(main); }
+    if (mainKey) { const main = btn(label(mainKey), 'btn primary pur-main-action', () => mainKey==='refund'?openSupplierRefund({api,order:v,onChanged:refreshReturnedOrder}):ACTIONS[mainKey]()); acts.append(main); }
     if (acts.children.length) d.append(acts);
+    if(v.remainderClosedAt)d.append(el('p','pur-note',`Đã huỷ phần chưa nhận: ${v.remainderCloseReason}. Hàng và thanh toán đã phát sinh được giữ lại để đối soát.`));
     if (v.cancelledAt) d.append(el('p', 'pur-note danger', `Đã huỷ ${dmy(v.cancelledAt)}: ${v.cancelReason || ''}`));
 
     const info = el('dl', 'pur-info');
     const row = (k, val) => { info.append(el('dt', '', k), el('dd', '', val || '—')); };
     row('Hẹn giao', dmy(v.arrivalDate)); row('Địa chỉ giao hàng', v.warehouse); row('Số đơn phía NCC', v.internalNo);
+    if (has('reference')) info.lastElementChild.append(btn(v.internalNo ? 'Sửa số đơn NCC' : 'Bổ sung số đơn NCC', 'btn secondary small', supplierReferenceForm));
     row('Ngày lập', dmy(v.createdAt)); row('Duyệt', v.approvedAt ? dmy(v.approvedAt) : 'Chưa duyệt'); row('NCC xác nhận', v.confirmedAt ? dmy(v.confirmedAt) : 'Chưa');
     if (v.supplierEmail) row('Gửi tới', v.supplierEmail + (v.ccEmail ? ' · CC ' + v.ccEmail : ''));
     if (v.note) row('Ghi chú', v.note);
@@ -370,7 +377,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       if (l.supplierNote) name.append(el('small', 'muted sup-sub', 'NCC: ' + l.supplierNote));
             // Đã nhận đạt lấy từ tiến độ hiện có; phiếu xin hàng chỉ dùng để xem nguồn nhận, không tính lại số lượng.
       const received=el('td','num'),receivedLink=el('button','link-btn',num(l.good));receivedLink.type='button';receivedLink.title='Đã nhận đạt · Bấm xem phiếu xin hàng';receivedLink.dataset.mobileInline='';receivedLink.setAttribute('aria-label','Xem phiếu xin hàng đã nhận của '+l.sku);receivedLink.onclick=()=>openReceivedEarlyRequests({api,order:v,line:l});received.append(receivedLink);
-      tr.append(name, el('td', 'num', num(l.quantity)),received, el('td', '', dmy(l.promisedDate)));
+      tr.append(name, el('td', 'num', num(l.quantity-(l.creditedQty||0))+(l.creditedQty?` (đã giảm ${num(l.creditedQty)})`:'')),received, el('td', '', dmy(l.promisedDate)));
       if (!v.priceHidden) tr.append(el('td', 'num', l.price == null ? '—' : money(l.price)), el('td', 'num', l.purchaseDiscount ? num(l.purchaseDiscount) : '—'), el('td', 'num', money(l.lineTotal)));
       tb.append(tr);
     }
@@ -381,20 +388,23 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     d.append(sec);
 
     // Phiếu nhận + Sapo
-    const rs = section('Phiếu nhận hàng', 'Đã nhận ≠ đã nhập kho: sau khi nhận, kho nhập phiếu trên Sapo rồi ghi mã phiếu Sapo vào đây. CRM không tự cộng tồn.');
+    const rs = section('Phiếu nhận hàng', 'Phiếu nhận ghi sổ kho CRM trong cùng giao dịch. Theo dõi và đối soát Sapo riêng; không gửi lại khi chưa rõ kết quả.');
     if (!v.receipts.length) rs.append(el('p', 'muted small', 'Chưa nhận đợt nào.'));
     for (const r of v.receipts) rs.append(receiptCard(r));
     d.append(rs);
 
+    if(v.goodsReturns?.length){const history=section('Phiếu trả / Huỷ phần chưa nhận','');for(const r of v.goodsReturns)history.append(el('p','',`${dmy(r.date)} · ${r.mode==='replacement'?'Trả giao bù':r.mode==='close'?'Huỷ phần chưa nhận':'Trả giảm công nợ'} · ${r.items.map(l=>`${l.sku}: ${num(l.quantity)}`).join('; ')}${r.creditAmount==null?'':` · Giảm ${money(r.creditAmount)}`} · ${r.reason}${r.sapoReturnCode?' · Sapo '+r.sapoReturnCode:''}`));d.append(history);}
     // Thanh toán NCC
     if (v.debt) {
       const ps = section('Thanh toán NCC', '');
       const k = el('div', 'pur-kpis');
       const kpi = (label, value, cls = '') => { const b = el('div', 'pur-kpi ' + cls); b.append(el('small', 'muted', label), el('b', '', value)); k.append(b); };
+      kpi('Đã nhận NCC hoàn',money(v.debt.refunded)); kpi('NCC còn phải hoàn',v.debt.supplierCredit==null?'Chưa đủ dữ liệu':money(v.debt.supplierCredit),v.debt.supplierCredit>0?'warn':'');
       kpi('Tổng đơn', money(v.debt.total)); kpi('Đã trả', money(v.debt.paid)); kpi('Còn nợ', money(v.debt.balance), v.debt.balance > 0 ? 'warn' : 'ok');
       kpi('Quá hạn', v.debt.overdue > 0 ? money(v.debt.overdue) : '—', v.debt.overdue > 0 ? 'danger' : '');
       kpi('Kỳ tới', v.debt.nextDueDate ? `${money(v.debt.nextDueAmount)} · ${dmy(v.debt.nextDueDate)}` : '—');
       ps.append(k);
+      for(const r of v.refunds||[])ps.append(el('p','muted small',`Nhận hoàn ${money(r.amount)} · ${dmy(r.receivedDate)} · ${r.reference}`));
       if (v.schedules.length) {
         const ul = el('ul', 'pur-list'); const KIND = { deposit: 'Cọc', installment: 'Đợt trả', balance: 'Còn lại' };
         for (const s of v.schedules) ul.append(el('li', '', `${KIND[s.kind] || s.kind}: ${money(s.amount)}${s.dueDate ? ' · hạn ' + dmy(s.dueDate) : ' · chưa đặt hạn'}${s.note ? ' · ' + s.note : ''}`));
@@ -787,17 +797,17 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       const d = await api('/supplier-payables');
       const sum = k => d.suppliers.reduce((t, s) => t + s[k], 0);
       const stats = el('div', 'stats');
-      for (const [label, v, cls] of [['Còn nợ NCC', sum('balance'), ''], ['Quá hạn', sum('overdue'), sum('overdue') > 0 ? 'danger-text' : ''], ['Số NCC', d.suppliers.length, '']]) {
+      for (const [label, v, cls] of [['Còn nợ NCC', sum('balance'), ''], ['NCC còn phải hoàn',sum('supplierCredit'),'warn'], ['Quá hạn', sum('overdue'), sum('overdue') > 0 ? 'danger-text' : ''], ['Số NCC', d.suppliers.length, '']]) {
         const a = el('article', 'stat'); a.append(el('small', '', label), el('strong', cls, label === 'Số NCC' ? String(v) : money(v))); stats.append(a);
       }
       const wrap = el('div', 'table-wrap'), table = el('table', 'data-table'), thead = el('tr'), tb = el('tbody');
-      for (const h of ['Nhà cung cấp', 'Số đơn', 'Còn nợ', 'Quá hạn', 'Kỳ trả sắp tới']) thead.append(el('th', h === 'Nhà cung cấp' || h === 'Kỳ trả sắp tới' ? '' : 'right', h));
+      for (const h of ['Nhà cung cấp', 'Số đơn', 'Còn nợ', 'NCC còn phải hoàn', 'Quá hạn', 'Kỳ trả sắp tới']) thead.append(el('th', h === 'Nhà cung cấp' || h === 'Kỳ trả sắp tới' ? '' : 'right', h));
       table.append(el('thead'), tb); table.tHead.append(thead); wrap.append(table);
       for (const r of d.suppliers) {
         const tr = el('tr', 'clickable'); tr.tabIndex = 0;
         const next = el('td', '', r.nextDueDate ? `${dmy(r.nextDueDate)} · ${money(r.nextDueAmount)}` : '—'); if (r.nextDueDate && r.nextDueDate <= d.today) next.className = 'pur-late';
-        tr.append(el('td', '', r.supplierName || '—'), el('td', 'num', String(r.orders)), el('td', 'num', money(r.balance)), el('td', 'num' + (r.overdue > 0 ? ' pur-late' : ''), r.overdue > 0 ? money(r.overdue) : '—'), next);
-        const pick = () => { dlg.close(); search.value = r.supplierName || ''; filter = 'debt'; chips.querySelectorAll('.chip').forEach(c => { const on = c.dataset.filter === 'debt'; c.classList.toggle('active', on); c.setAttribute('aria-pressed', String(on)); }); load(); };
+        tr.append(el('td', '', r.supplierName || '—'), el('td', 'num', String(r.orders)), el('td', 'num', money(r.balance)),el('td','num',money(r.supplierCredit)), el('td', 'num' + (r.overdue > 0 ? ' pur-late' : ''), r.overdue > 0 ? money(r.overdue) : '—'), next);
+        const pick = () => { dlg.close(); search.value = r.supplierName || ''; filter = r.balance>0?'debt':''; chips.querySelectorAll('.chip').forEach(c => { const on = c.dataset.filter === filter; c.classList.toggle('active', on); c.setAttribute('aria-pressed', String(on)); }); load(); };
         tr.addEventListener('click', pick); tr.addEventListener('keydown', e => { if (e.key === 'Enter') pick(); });
         tb.append(tr);
       }
@@ -807,10 +817,10 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
         exportBtn.disabled = true;
         try {
           await downloadExcel('cong-no-ncc', [
-            { name: 'Theo NCC', widths: [34, 10, 16, 16, 16, 16, 16, 16], header: ['Nhà cung cấp', 'Số đơn', 'Tổng giá trị', 'Đã trả', 'Còn nợ', 'Quá hạn', 'Kỳ trả sắp tới', 'Số tiền kỳ tới'],
-              rows: d.suppliers.map(r => [r.supplierName, r.orders, r.total, r.paid, r.balance, r.overdue, r.nextDueDate || '', r.nextDueAmount]) },
-            { name: 'Theo đơn mua', widths: [18, 16, 34, 16, 16, 16, 16, 16, 16], header: ['Số đơn', 'Số đơn NCC', 'Nhà cung cấp', 'Tổng giá trị', 'Đã trả', 'Còn nợ', 'Quá hạn', 'Kỳ trả sắp tới', 'Số tiền kỳ tới'],
-              rows: d.orders.map(o => [o.ticketNumber, o.internalNo || '', o.supplierName, o.total, o.paid, o.balance, o.overdue, o.nextDueDate || '', o.nextDueAmount]) },
+            { name: 'Theo NCC', widths: [34, 10, 16, 16, 16, 16, 16, 16, 16, 16], header: ['Nhà cung cấp', 'Số đơn', 'Tổng giá trị', 'Đã trả', 'Còn nợ', 'NCC còn phải hoàn', 'Đã nhận hoàn', 'Quá hạn', 'Kỳ trả sắp tới', 'Số tiền kỳ tới'],
+              rows: d.suppliers.map(r => [r.supplierName, r.orders, r.total, r.paid, r.balance, r.supplierCredit, r.refunded, r.overdue, r.nextDueDate || '', r.nextDueAmount]) },
+            { name: 'Theo đơn mua', widths: [18, 16, 34, 16, 16, 16, 16, 16, 16, 16, 16], header: ['Số đơn', 'Số đơn NCC', 'Nhà cung cấp', 'Tổng giá trị', 'Đã trả', 'Còn nợ', 'NCC còn phải hoàn', 'Đã nhận hoàn', 'Quá hạn', 'Kỳ trả sắp tới', 'Số tiền kỳ tới'],
+              rows: d.orders.map(o => [o.ticketNumber, o.internalNo || '', o.supplierName, o.total, o.paid, o.balance, o.supplierCredit, o.refunded, o.overdue, o.nextDueDate || '', o.nextDueAmount]) },
           ]);
         } catch (ex) { toast(ex.message, 'err'); } finally { exportBtn.disabled = false; }
       });
@@ -830,23 +840,46 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     const updateInternal = () => { internalField.hidden = !requiresSupplierOrderNumber(o.suppliers.find(s => s.id === sup.value)?.name); };
     sup.addEventListener('change', () => { internal.value = ''; updateInternal(); }); updateInternal();
     const grid = el('div', 'form-grid two'); grid.append(internalField, field('Nhà cung cấp', sup), field('Hẹn giao (dự kiến)', arrival), field('Địa chỉ giao hàng *', wh), field('Ghi chú', note, 'span-2'));
-    const t = el('table', 'data-table pur-lines'), tb = el('tbody');
-    t.append(el('thead'), tb); const th = el('tr'); for (const h of ['Mã / tên', 'Từ chứng từ', 'SL đặt', '']) th.append(el('th', '', h)); t.tHead.append(th);
-    const lines = current.lines.map(l => ({ ...l }));
-    for (const l of lines) {
-      const tr = el('tr'), qty = qtyInput(l.quantity); qty.addEventListener('input', () => { l.quantity = Number(qty.value); });
-      const nm = el('td'); nm.append(el('b', '', l.sku), el('small', 'sup-sub', l.name));
-      tr.append(nm, el('td', 'small', l.sources.map(s => `${s.no}: ${num(s.quantity)}`).join(', ') || '—'), el('td', '', ''), el('td', '', ''));
-      tr.children[2].append(qty);
-      tr.children[3].append(btn('×', 'icon-btn', () => { l.removed = true; tr.remove(); }));
-      tb.append(tr);
+    const t = el('table', 'data-table pur-lines pur-draft-lines'), tb = el('tbody');
+    t.append(el('thead'), tb); const th = el('tr'); for (const h of ['Mã / tên', 'Từ chứng từ', 'SL đặt', 'Thao tác']) th.append(el('th', '', h)); t.tHead.append(th);
+    const lines = current.lines.map(l => ({ ...l })), empty = el('p', 'muted small', 'Chưa có sản phẩm. Thêm ít nhất một sản phẩm trước khi lưu.');
+    function renderLines() {
+      tb.replaceChildren(); empty.hidden = lines.some(l => !l.removed);
+      for (const l of lines.filter(l => !l.removed)) {
+        const tr = el('tr'), qty = qtyInput(l.quantity); qty.min = '1'; qty.max = '10000000'; qty.required = true; qty.setAttribute('aria-label', 'Số lượng ' + l.sku);
+        qty.addEventListener('input', () => { l.quantity = Number(qty.value); });
+        const nm = el('td'); nm.append(el('b', '', l.sku), el('small', 'sup-sub', l.name));
+        const sources = el('td', 'small', l.sources.map(s => `${s.no}: ${num(s.quantity)}`).join(', ') || 'Thêm trực tiếp'), quantity = el('td'), actions = el('td');
+        sources.setAttribute('data-label', 'Từ chứng từ'); quantity.setAttribute('data-label', 'SL đặt'); quantity.append(qty);
+        const remove = btn('Bỏ sản phẩm', 'btn secondary small', () => { l.removed = true; err.textContent = ''; renderLines(); }); remove.setAttribute('aria-label', 'Bỏ sản phẩm ' + l.sku); actions.append(remove);
+        tr.append(nm, sources, quantity, actions); tb.append(tr);
+      }
     }
-    const tw = el('div', 'table-wrap'); tw.append(t);
+    renderLines();
+    const tw = el('div', 'table-wrap'); tw.append(t, empty);
+    const manual = el('section', 'sup-section'); manual.append(el('h3', '', 'Thêm sản phẩm vào đơn nháp'));
+    const fields = el('div', 'pur-manual pur-draft-add');
+    const sku = input('text', '', {maxLength:200,placeholder:'Mã hàng (SKU)'}), name = input('text', '', {maxLength:300,placeholder:'Tìm tên hàng'}), unit = input('text', '', {maxLength:40,placeholder:'ĐVT'}), quantity = qtyInput(1); quantity.min='1'; quantity.max='10000000'; quantity.setAttribute('aria-label','Số lượng thêm');
+    const add = btn('Thêm sản phẩm', 'btn secondary', () => {
+      const code=sku.value.trim(), count=Number(quantity.value);
+      if(!code||!name.value.trim()){err.textContent='Nhập mã và tên sản phẩm cần thêm.';(!code?sku:name).focus();return;}
+      if(!Number.isInteger(count)||count<1||count>1e7){err.textContent='Số lượng thêm phải là số nguyên từ 1 đến 10.000.000.';quantity.focus();return;}
+      if(lines.some(l=>!l.removed&&l.sku.toLowerCase()===code.toLowerCase())){err.textContent='Mã '+code+' đã có trong đơn. Sửa số lượng ở dòng hiện có.';sku.focus();return;}
+      if(lines.filter(l=>!l.removed).length>=300){err.textContent='Đơn mua tối đa 300 mã hàng.';return;}
+      lines.push({sku:code,name:name.value.trim(),unit:unit.value.trim(),quantity:count,sources:[]});
+      lookup.reset();sku.value=name.value=unit.value='';quantity.value='1';err.textContent='';renderLines();sku.focus();
+    });
+    fields.append(sku,name,unit,quantity,add);manual.append(fields,el('p','muted small','Tìm mã hoặc tên trong danh mục, hoặc nhập sản phẩm thủ công. Sản phẩm thêm mới không tự liên kết vào chứng từ nguồn.'));
+    const lookup=bindManualProductLookup({api,sku,name,unit,host:fields,add,active:()=>f.isConnected&&!drawer.hidden});
+    disposeLookup=()=>lookup.dispose();
     const ok = el('button', 'btn primary', 'Lưu nháp'); ok.type = 'submit';
-    f.append(grid, el('p', 'muted small', 'Giảm số lượng dưới phần lấy từ chứng từ sẽ bớt phần liên kết (từ chứng từ cuối) để không giữ chỗ thừa.'), tw, err, foot(ok));
+    f.append(grid, el('p', 'muted small', 'Giảm số lượng dưới phần lấy từ chứng từ sẽ bớt phần liên kết (từ chứng từ cuối) để không giữ chỗ thừa.'), tw, manual, err, foot(ok));
     f.addEventListener('submit', e => {
       e.preventDefault();
       if (!wh.value.trim()) { err.textContent = 'Vui lòng nhập địa chỉ giao hàng.'; wh.focus(); return; }
+      const kept=lines.filter(l=>!l.removed);
+      if(!kept.length){err.textContent='Thêm ít nhất một sản phẩm trước khi lưu.';return;}
+      if(kept.some(l=>!Number.isInteger(l.quantity)||l.quantity<1||l.quantity>1e7)){err.textContent='Kiểm tra số lượng: số nguyên từ 1 đến 10.000.000 cho mỗi sản phẩm.';return;}
       const body = { revision: current.revision, supplierId: sup.value, internalNo: internal.value.trim(), arrivalDate: arrival.value, warehouse: wh.value.trim(), note: note.value,
         lines: lines.filter(l => !l.removed).map(l => {
           let left = Math.max(0, Math.floor(l.quantity) || 0);
@@ -908,13 +941,16 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       totalEl.textContent = `Tổng (ước tính) ${money(t)} · cọc ${money(deposit)} · các đợt ${money(parts)} · còn lại ${money(Math.max(0, t - deposit - parts))}`;
     }
     f.append(totalEl, pay);
-    let to, cc;
+    let to, cc, sendNow = null;
     if (approve) {
       const r = el('section', 'sup-section'); r.append(el('h3', '', 'Gửi đơn tới NCC'), el('p', 'muted small', 'Để trống: dùng email "Nhận đơn" / "CC" trong danh bạ NCC.'));
       to = input('email', '', { placeholder: 'email nhận đơn', maxLength: 254 }); cc = input('text', '', { placeholder: 'CC, cách nhau dấu phẩy', maxLength: 2000 });
-      const gg = el('div', 'form-grid two'); gg.append(field('Gửi tới', to), field('CC', cc)); r.append(gg); f.append(r);
+      const gg = el('div', 'form-grid two'); gg.append(field('Gửi tới', to), field('CC', cc)); r.append(gg);
+      // Gộp bước: duyệt xong gửi luôn email đơn (kèm PDF) cho NCC – bỏ bước mở lại đơn bấm "Gửi email NCC".
+      sendNow = el('input'); sendNow.type = 'checkbox'; sendNow.checked = true; sendNow.setAttribute('aria-label', 'Gửi email đơn cho NCC ngay sau khi duyệt');
+      const sl = el('label', 'pur-send-now'); sl.append(sendNow, el('span', '', ' Gửi email đơn (kèm PDF) cho NCC ngay sau khi duyệt')); r.append(sl); f.append(r);
     }
-    const ok = el('button', 'btn primary', approve ? 'Duyệt đơn' : 'Lưu lịch trả'); ok.type = 'submit';
+    const ok = el('button', 'btn primary', approve ? 'Duyệt & gửi NCC' : 'Lưu lịch trả'); ok.type = 'submit';
     const priceLines = () => [...price.values()].map(({ l, p, dc, tx }) => ({ lineId: l.id, price: p.value === '' ? null : Number(p.value), purchaseDiscount: Number(dc.value || 0), taxRate: Number(tx.value || 0) }));
     // "Lưu giá nhập": lưu giá / CK / VAT đang nhập mà chưa duyệt (đơn vẫn là nháp), ở lại form để duyệt sau.
     let revision = v.revision;
@@ -926,6 +962,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       } catch (e2) { err.textContent = e2.message || 'Không lưu được giá nhập.'; }
       finally { savePrices.disabled = false; }
     }) : null;
+    if (sendNow) sendNow.addEventListener('change', () => { ok.textContent = sendNow.checked ? 'Duyệt & gửi NCC' : 'Duyệt đơn'; });
     f.append(err, savePrices ? foot(ok, savePrices) : foot(ok)); toggle();
     f.addEventListener('submit', e => {
       e.preventDefault();
@@ -936,8 +973,22 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       const problem = supplierOrderNumberProblem(v.supplier?.name, internal.value, true);
       if (problem) { err.textContent = problem; internal.focus(); return; }
       const lines = priceLines();
-      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/approve`, 'POST', { revision, lines, payment, internalNo: internal.value.trim(),
-        ...(to.value.trim() ? { supplierEmail: to.value.trim() } : {}), ...(cc.value.trim() ? { cc: cc.value.split(',').map(s => s.trim()).filter(Boolean) } : {}) }), 'Đã duyệt đơn mua.');
+      const mail = !!sendNow?.checked;
+      run(ok, err, async () => {
+        const approved = await api(`/purchase-orders/${encodeURIComponent(v.id)}/approve`, 'POST', { revision, lines, payment, internalNo: internal.value.trim(),
+          ...(to.value.trim() ? { supplierEmail: to.value.trim() } : {}), ...(cc.value.trim() ? { cc: cc.value.split(',').map(s => s.trim()).filter(Boolean) } : {}) });
+        if (!mail) { toast('Đã duyệt đơn mua.'); return approved; }
+        // Đơn đã duyệt; gửi email lỗi thì báo rõ, Manager bấm "Gửi email NCC" lại sau – không huỷ duyệt.
+        try {
+          const { purchasePdfBase64 } = await import('./purchase-pdf.js');
+          const r = await api(`/purchase-orders/${encodeURIComponent(v.id)}/send-email`, 'POST', { pdf: await purchasePdfBase64(approved) });
+          toast(`Đã duyệt và gửi email đơn tới ${r.to}${r.cc.length ? ' (CC ' + r.cc.join(', ') + ')' : ''}.`);
+          return await api(`/purchase-orders/${encodeURIComponent(v.id)}`);
+        } catch (e2) {
+          toast('Đã duyệt đơn, nhưng chưa gửi được email NCC: ' + (e2.code === 'mail_not_configured' ? 'máy chủ chưa bật gửi email.' : (e2.message || 'lỗi gửi.')) + ' Bấm "Gửi email NCC" trong đơn để gửi lại.', 'err');
+          return approved;
+        }
+      });
     });
     d.append(f);
   }
@@ -961,16 +1012,31 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       for (const { l, p, dc, tx } of empty) {
         const prod = bySku.get(String(l.sku));
         const raw = prod?.prices?.find(x => x.policyId === policy?.id)?.price, disc = defaultCostDiscount(prod || l);
-        if (!prod || !Number.isFinite(raw) || disc === null) { missing.push(l.sku); continue; }
+        const reason = !prod ? 'không tìm thấy sản phẩm' : !Number.isFinite(raw) ? 'chưa có giá ở bảng giá đang chọn' : disc === null ? 'chưa có quy tắc CK mua vào' : '';
+        if (reason) { missing.push(`${l.sku} (${reason})`); continue; }
         const tax = prod.taxable ? (Number.isFinite(prod.taxIn) ? prod.taxIn : Number.isFinite(prod.taxOut) ? prod.taxOut : 8) : 0;
         const included = /VAT/i.test(policy?.name || '') || prod.taxBasis === 'Giá đã bao gồm thuế';
         if (p.value === '') p.value = String(Math.round(netPrice(raw, prod.taxable ? (prod.taxOut ?? 0) : 0, included)));
         if (!Number(dc.value)) dc.value = String(disc);
         if (l.taxRate == null) tx.value = String(tax);
       }
-      hint.textContent = `Đã điền sẵn giá niêm yết${policy ? ` (${policy.name})` : ''} + CK mua vào theo thương hiệu, kiểm tra lại rồi bấm Duyệt.`
+      hint.textContent = `Gợi ý từ giá niêm yết${policy ? ` (${policy.name})` : ''} + CK mua vào theo thương hiệu. Giá mua là đơn giá trước CK, chưa VAT; giá sau CK = Giá mua × (1 − CK/100). Kiểm tra lại rồi bấm Duyệt.`
         + (missing.length ? ` Chưa xác định được: ${missing.join(', ')} – nhập tay.` : '');
     } catch { hint.textContent = 'Không lấy được giá niêm yết – nhập giá mua tay.'; }
+  }
+
+  function supplierReferenceForm() {
+    const v = current, d = frame('Bổ sung / sửa số đơn phía NCC', v.ticketNumber, back), f = el('form', 'sup-form'), err = errorBox();
+    const internal = input('text', v.internalNo || '', { maxLength: 100, required: true });
+    const ok = el('button', 'btn primary', 'Lưu số đơn NCC'); ok.type = 'submit';
+    f.append(el('p', 'muted', 'Chỉ cập nhật số đơn phía NCC; giữ nguyên phê duyệt, xác nhận, hàng đã nhận và thanh toán. Mã cũ / mới được lưu trong lịch sử.'), field('Số đơn phía NCC *', internal), err, foot(ok));
+    f.addEventListener('submit', e => {
+      e.preventDefault();
+      const value = internal.value.trim(), problem = supplierOrderNumberProblem(v.supplier?.name, value) || (!value ? 'Nhập số đơn phía NCC.' : '');
+      if (problem) { err.textContent = problem; internal.focus(); return; }
+      run(ok, err, () => api(`/purchase-orders/${encodeURIComponent(v.id)}/supplier-reference`, 'PUT', { revision: v.revision, internalNo: value }), 'Đã lưu số đơn NCC.');
+    });
+    d.append(f); internal.focus();
   }
 
   function confirmForm() {
@@ -1290,7 +1356,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
       const orders = sups.map((x, i) => ({ supplierId: x.id, internalNo: (x.internalNo || '').trim(), lines: [...lines[i].values()], arrivalDate: arrival.value || undefined, warehouse: wh.value.trim(), note: note.value })).filter(x => x.lines.length);
       if (!orders.length) { err.textContent = 'Chưa có số lượng nào để đặt.'; return; }
       run(ok, err, async () => {
-        const r = await api('/purchase-orders', 'POST', { orders });
+        const r = await createPurchaseOrders(api, orders);
         toast(o.isManager ? `Đã tạo ${r.ids.length} đơn mua – chờ duyệt giá.` : `Đã lưu ${r.ids.length} đơn mua nháp – kiểm tra rồi bấm "Gửi duyệt".`);
         go('#/purchases/' + encodeURIComponent(r.ids[0]));
       });

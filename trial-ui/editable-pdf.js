@@ -75,10 +75,12 @@ globalThis.EditableQuotePdf=(()=>{
    const size=7.2,lh=9.2,format=n=>n==null?'—':Number(n).toLocaleString('vi-VN',{maximumFractionDigits:6});
    const values=[row.index,'',row.name,row.quantity,row.average,row.unitPrice,row.printFee,row.amount];
    const content=values.map((v,i)=>{
-    const source=i>=3?format(v):String(v),lines=[];let current='';
-    for(const char of source.replace(/\s+/g,' ').trim()){
+    const source=i>=3?format(v):String(v),lines=[];
+    for(const paragraph of source.split(/\r?\n/)){let current='';
+    for(const char of paragraph.replace(/\s+/g,' ').trim()){
      if(regular.widthOfTextAtSize(current+char,size)>widths[i]-8&&current){const at=current.lastIndexOf(' ');if(at>current.length/2){lines.push(current.slice(0,at));current=current.slice(at+1);}else{lines.push(current);current='';}}current+=char;
-    }lines.push(current);return lines;
+    }lines.push(current);}
+    return lines;
    });
    const count=Math.max(...content.map(lines=>lines.length));let offset=0;
    while(offset<count){

@@ -5,7 +5,7 @@ name: Triển khai giao diện
 on:
   push:
     branches: [main]
-    paths: ['trial-ui/**', 'functions/catalogue/**', 'catalogue-server/**', 'scripts/configure-catalogue-ai.mjs', 'scripts/stamp-catalogue-version.mjs', 'scripts/stamp-ui-version.ts', 'scripts/wait-for-api-deployment.mjs', '.github/workflows/deploy-ui.yml', '.github/workflows/deploy-api.yml']
+    paths: ['trial-ui/**', 'functions/**', 'catalogue-server/**', 'scripts/configure-catalogue-ai.mjs', 'scripts/stamp-catalogue-version.mjs', 'scripts/stamp-ui-version.ts', 'scripts/wait-for-api-deployment.mjs', '.github/workflows/deploy-ui.yml', '.github/workflows/deploy-api.yml']
   workflow_dispatch:
 concurrency: deploy-ui
 permissions:
@@ -46,7 +46,7 @@ jobs:
           script: |
             const {pathToFileURL} = await import('node:url');
             const {waitForApiDeployment} = await import(pathToFileURL(process.env.GITHUB_WORKSPACE + '/scripts/wait-for-api-deployment.mjs').href);
-            await waitForApiDeployment({github,owner:context.repo.owner,repo:context.repo.repo,sha:process.env.API_SOURCE_SHA,log:message=>core.info(message)});
+            await waitForApiDeployment({github,owner:context.repo.owner,repo:context.repo.repo,sha:process.env.API_SOURCE_SHA,cwd:process.env.GITHUB_WORKSPACE,log:message=>core.info(message)});
       - name: Thiếu secret Cloudflare
         if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
         run: echo "::warning::Chưa có CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID – bỏ qua triển khai giao diện."

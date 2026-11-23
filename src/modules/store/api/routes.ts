@@ -195,7 +195,7 @@ async function stocktakeFacts(db: AnyDb, warehouseId: string, month: string, thr
     db.select({ sku: stockBalances.sku }).from(stockBalances).where(and(eq(stockBalances.warehouseId, warehouseId), sql`${stockBalances.qty} > 0`)),
     db.select({ sku: posReturnLines.sku, name: posReturnLines.name, qty: sql<number>`sum(${posReturnLines.receivedQty} - ${posReturnLines.restockQty})`.mapWith(Number) })
       .from(posReturnLines).innerJoin(posReturns, eq(posReturns.id, posReturnLines.returnId))
-      .where(and(eq(posReturns.warehouseId, warehouseId), eq(posReturnLines.disposition, 'damaged'), sql`${posReturns.receivedAt} is not null`, gte(posReturns.receivedAt, vnStart(month + '-01')), lt(posReturns.receivedAt, vnStart(nextMonth(month) + '-01'))))
+      .where(and(eq(posReturns.warehouseId, warehouseId), sql`${posReturnLines.receivedQty} - ${posReturnLines.restockQty} > 0`, sql`${posReturns.receivedAt} is not null`, gte(posReturns.receivedAt, vnStart(month + '-01')), lt(posReturns.receivedAt, vnStart(nextMonth(month) + '-01'))))
       .groupBy(posReturnLines.sku, posReturnLines.name),
     latest.size ? db.select({ sku: products.sku, name: products.name }).from(products).where(inArray(products.sku, [...latest.keys()])) : Promise.resolve([]),
   ]);

@@ -160,7 +160,7 @@ test('Manager xem tình trạng đồng bộ; nhân viên bị chặn; không l�
 test('mọi route đồng bộ dưới /integrations/ thuộc khu vực xác thực Sapo, SyncTime hoặc SePay riêng (bỏ Origin chỉ khi có mã bí mật)', () => {
   for (const r of createAppRouter().list()) {
     const isSync = r.pattern.startsWith('^\\/integrations\\/');
-    assert.equal(isSync, r.meta === 'sapo-sync' || r.meta === 'transfer-sync' || r.meta === 'synctime-sync' || r.meta === 'sepay-sync' || r.meta === 'web-order-sync' || r.meta === 'ghn-webhook', r.pattern);
+    assert.equal(isSync, r.meta === 'sapo-sync' || r.meta === 'transfer-sync' || r.meta === 'warehouse-image-sync' || r.meta === 'ai-chat-sync' || r.meta === 'synctime-sync' || r.meta === 'sepay-sync' || r.meta === 'web-order-sync' || r.meta === 'ghn-webhook', r.pattern);
     if (r.meta === 'ghn-webhook') assert.equal(r.pattern, new RegExp('^/integrations/ghn/pos-lock/webhook/?$').source);
     if (r.meta === 'synctime-sync') assert.equal(r.pattern, new RegExp('^/integrations/synctime/webhook/?$').source);
     if (r.meta === 'sepay-sync') assert.ok([

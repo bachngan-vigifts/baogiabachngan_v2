@@ -8,6 +8,7 @@ export type QuoteType = 'HRC' | 'B2B' | 'VIGIFTS';
 
 export interface QuoteRow {
   manualLine?: boolean; manualDescription?: string;
+  materialDescription?: string; brandDescription?: string; volumeDescription?: string;
   bundleContents?: string; printDescription?: string; packagingDescription?: string;
   sku?: string; name?: string; brand?: string; pattern?: string;
   price?: number; qty?: number;
@@ -45,7 +46,7 @@ export interface QuoteDoc {
   type: QuoteType;
   vat?: number;
   rows: QuoteRow[];
-  shipping?: { payer?: string };
+  shipping?: { payer?: string;cost?:number };
   printing?: { totalCost?: number; workshop?: string; workshopExplicit?: boolean };
 }
 
@@ -81,9 +82,13 @@ export function totals(s: QuoteDoc): Totals {
   return { subtotal, tax, total: subtotal + tax, label: rates.size > 1 ? 'Thuế VAT theo sản phẩm' : `Thuế VAT ${rates.size ? [...rates][0] : s.vat || 0}%` };
 }
 
+export function requiresPrinting(row:QuoteRow):boolean {
+ const description=normalize(row.printDescription||'').trim();
+ return Number(row.printFee)>0||!!description&&!/^(khong( in| co)?|khong in logo|none|no)$/.test(description);
+}
 export function printingInfo(s: Pick<QuoteDoc, 'type' | 'rows'>): { enabled: boolean; defaultWorkshop: string } {
-  const rows = (s.rows || []).filter(row => Number(row.printFee) > 0 && Number(row.qty) > 0);
-  const enabled = ['B2B', 'VIGIFTS'].includes(s.type) && rows.length > 0;
+  const rows = (s.rows || []).filter(row => requiresPrinting(row) && Number(row.qty) > 0);
+  const enabled = rows.length>0&&(['B2B','VIGIFTS'].includes(s.type)||rows.some(r=>!!normalize(r.printDescription||'').trim()&&requiresPrinting(r)));
   const minhLong = rows.length > 0 && rows.every(row => /minh long|healthy cook|su duong sinh/.test(normalize(`${row.brand || ''} ${row.name || ''}`)));
   return { enabled, defaultWorkshop: minhLong ? printingWorkshops[0] : printingWorkshops[1] };
 }
@@ -99,7 +104,8 @@ export interface Profit { revenue: number; cost: number; commission: number; shi
 export function profit(s: QuoteDoc, shippingFee: number | null = null): Profit {
   const revenue = totals(s).subtotal;
   const cost = s.rows.reduce((sum, row) => sum + (Number(row.costPrice) || 0) * Number(row.qty || 0), 0);
-  const shippingCost = s.shipping?.payer === 'sender' && Number.isFinite(shippingFee) ? Math.max(0, shippingFee as number) : 0;
+  const declared=s.shipping?.cost;
+  const shippingCost = s.shipping?.payer === 'sender' ? typeof declared==='number'&&Number.isFinite(declared)?Math.max(0,declared):Number.isFinite(shippingFee)?Math.max(0,shippingFee as number):0 : 0;
   const hasLineCosts = s.rows.some(row => row.printing && Number.isFinite(row.printing.unitPrice));
   const printingCost = printingInfo(s).enabled
     ? (hasLineCosts
@@ -118,7 +124,8 @@ export const netPrice = (raw: number, tax: number, included: boolean): number =>
 export function defaultCostDiscount(product?: Pick<QuoteRow, 'brand' | 'name' | 'sku' | 'pattern'> | null): number | null {
   const text = normalize([product?.brand, product?.name, product?.sku, product?.pattern].filter(Boolean).join(' '));
   if (!text) return null;
-  if (text.includes('healthy cook')) return 15;
+  // Website/catalogues use both Healthy Cook and Healthycook for the same brand.
+  if (/\bhealthy\s*cook\b/.test(text)) return 15;
   if (/\blys\b/.test(text) || text.includes('minh long - lys')) return 19;
   if (/\blocknlock\b/.test(text) || /\block n lock\b/.test(text) || text.includes('lock&lock') || text.includes('lock & lock') || /\block\b/.test(text)) return 58;
   if (/(?:^|[^a-z0-9đ])(?:hoang cung|[dđ]ai cac)(?=$|[^a-z0-9đ])/.test(text)) return 27;

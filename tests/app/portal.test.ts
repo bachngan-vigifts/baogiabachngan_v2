@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -45,7 +46,7 @@ async function customerLogin(s: Awaited<ReturnType<typeof setup>>, by: string, b
 }
 
 test('tài khoản khách: nhân viên cấp (không đặt được CK), Manager đặt CK theo nhãn; khách chỉ vào được trang khách, nhân viên không vào trang khách', async () => {
-  const s = await setup(), { call, emp, mgr } = s;
+  const s = await setup(), { db, call, emp, mgr } = s;
   assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: '1001', name: 'Lan', email: 'x@hl.vn', discounts: { minhLong: 5 } })).status, 403, 'nhân viên không đặt CK');
   assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: '9999', name: 'Lan', email: 'x@hl.vn' })).status, 404);
   assert.equal((await call('/customer-accounts', emp, 'POST', { customerId: '1001', name: 'Lan', email: 'emp@x.vn' })).status, 409, 'trùng email');
@@ -91,7 +92,7 @@ test('tài khoản khách: nhân viên cấp (không đặt được CK), Manage
 });
 
 test('khách tạo báo giá → nhân viên phụ trách duyệt → khách xác nhận đặt hàng → nhân viên xác nhận đơn; đặt hàng thẳng; khách khác không thấy', async () => {
-  const s = await setup(), { call, emp, mgr } = s;
+  const s = await setup(), { db, call, emp, mgr } = s;
   const k = await customerLogin(s, mgr, { customerId: '1001', name: 'Chị Lan', email: 'lan@hl.vn', ownerId: 'emp', discounts: { minhLong: 10 } });
   const other = await customerLogin(s, mgr, { customerId: '1002', name: 'Anh B', email: 'b@khac.vn' });
 
@@ -129,9 +130,9 @@ test('khách tạo báo giá → nhân viên phụ trách duyệt → khách xá
   assert.deepEqual([orders[0].receivable, orders[0].schedules], [null, []]);
   assert.equal((await call('/receivables', emp)).data.receivables.length, 0);
   assert.equal((await call('/orders/' + o.data.orderId, emp)).data.order.status, 'draft');
-  assert.equal((await call('/orders/' + o.data.orderId + '/status', emp, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 403, 'chỉ Manager duyệt đơn');
-  assert.equal((await call('/orders/' + o.data.orderId + '/status', mgr, 'PUT', { status: 'confirmed' })).data.code, 'VERIFY_REQUIRED', 'phải xác thực trước khi duyệt');
-  assert.equal((await call('/orders/' + o.data.orderId + '/status', mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
+  assert.equal((await approveFixtureOrder({db,call},'/orders/' + o.data.orderId + '/status',emp,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 403, 'chỉ Manager duyệt đơn');
+  assert.equal((await approveFixtureOrder({db,call},'/orders/' + o.data.orderId + '/status',mgr,'PUT',{ status: 'confirmed' })).data.code, 'VERIFY_REQUIRED', 'phải xác thực trước khi duyệt');
+  assert.equal((await approveFixtureOrder({db,call},'/orders/' + o.data.orderId + '/status',mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
   // Chỉ Manager đổi ngày giao dự kiến của đơn đã duyệt; nhân viên lên lịch chuyến giao không ghi đè ngày trên đơn.
   assert.equal((await call('/orders/' + o.data.orderId + '/delivery-date', emp, 'PUT', { date: 'x' })).status, 400);
   assert.equal((await call('/orders/' + o.data.orderId + '/delivery-date', emp, 'PUT', { date: '2026-10-25' })).status, 403, 'đơn đã duyệt chỉ Manager được đổi ngày giao');
@@ -149,14 +150,14 @@ test('khách tạo báo giá → nhân viên phụ trách duyệt → khách xá
   assert.equal((await call('/payments', emp, 'POST', { orderId: o.data.orderId, amount: 1_000_000, paidAt: '2026-10-06', method: 'transfer' })).status, 201);
   const paid = (await call('/portal/orders', k.cookie)).data.orders.find((x: any) => x.id === o.data.orderId);
   assert.deepEqual([paid.receivable.paid, paid.receivable.balance, paid.payments[0].amount, paid.payments[0].method], [1_000_000, 1_604_000, 1_000_000, 'transfer']);
-  assert.equal((await call('/orders/' + o.data.orderId + '/status', mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 409);
+  assert.equal((await approveFixtureOrder({db,call},'/orders/' + o.data.orderId + '/status',mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 409);
 
   // Đặt hàng thẳng từ danh mục: báo giá chờ + đơn chờ xác nhận; nhân viên xác nhận đơn = duyệt luôn báo giá.
   const direct = await call('/portal/quotes', k.cookie, 'POST', { items: [{ sku: 'LL-01', qty: 1 }], order: true, confirmed: true });
   assert.equal(direct.status, 201); assert.ok(direct.data.orderId); assert.match(direct.data.quoteNo, /^B2B_BG_002_\d{8}$/);
   orders = (await call('/portal/orders', k.cookie)).data.orders;
   assert.equal(orders.find((x: any) => x.id === direct.data.orderId).status, 'draft');
-  assert.equal((await call('/orders/' + direct.data.orderId + '/status', mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
+  assert.equal((await approveFixtureOrder({db,call},'/orders/' + direct.data.orderId + '/status',mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
   assert.equal((await call('/quotes/' + direct.data.id, emp)).data.approvalStatus, 'approved');
   // Khách huỷ đơn chưa xác nhận.
   const third = await call('/portal/quotes', k.cookie, 'POST', { items: [{ sku: 'ML-01', qty: 1 }], order: true, confirmed: true });

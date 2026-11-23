@@ -1,3 +1,4 @@
+import type {WorkspaceInputs} from './workspace.ts';
 /**
  * BÁO CÁO TUẦN của Sale / Sale Admin – hàm thuần (không DB). Căn cứ Tiền trách nhiệm từ tháng 11/2026:
  *   Tiền trách nhiệm = Mức trách nhiệm × (ngày công ÷ công chuẩn) × (điểm báo cáo ÷ 5) từ 11/2026.
@@ -132,7 +133,8 @@ export function industryOf(customerType: string | null | undefined, name: string
 }
 
 /** Phần nhân viên tự nhập: kế hoạch tuần tới (bắt buộc), tình trạng từng báo giá trong tuần chưa chốt (bắt buộc), kết quả nổi bật / khó khăn (tuỳ chọn). */
-export interface WeeklyInputs { highlights: string; nextWeekPlan: string; support: string; quoteNotes: Record<string, string> }
+export interface LegacyWeeklyInputs { highlights: string; nextWeekPlan: string; support: string; quoteNotes: Record<string, string> }
+export type WeeklyInputs = LegacyWeeklyInputs | WorkspaceInputs;
 export function weeklyProblems(v: WeeklyInputs, openQuotes: readonly { id: string; quoteNo: string }[]) {
   const out: string[] = [];
   if (v.nextWeekPlan.length < 3) out.push('Nhập kế hoạch tuần tới.');

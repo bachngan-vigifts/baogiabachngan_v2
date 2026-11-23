@@ -1,3 +1,4 @@
+import {pendingQuoteEdits} from '../modules/quotes/api/edit-requests.ts';
 import {pendingLiquidations} from '../modules/sales/api/contract-liquidation.ts';
 import { transferApprovalScope } from '../modules/inventory/api/transfer-approvers.ts';
 import { orderScopeFor } from '../modules/sales/api/routes.ts';
@@ -54,7 +55,7 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
     // Exact counts without transferring document details or inheriting the list's 200-row cap.
     const readCounts = async () => {
       const n = sql<number>`count(*)`.mapWith(Number);
-      const [quote,orders,customer,product,purchase,transfer,cash,returned,liquidations] = await Promise.all([
+      const [quote,orders,customer,product,purchase,transfer,cash,returned,liquidations,editRequests] = await Promise.all([
         db.select({n}).from(quotations).where(eq(quotations.approvalStatus,'pending')),
         db.select({order:sql<number>`count(*) filter(where not ${hasContract})`.mapWith(Number),contract:sql<number>`count(*) filter(where ${hasContract})`.mapWith(Number)}).from(salesOrders).where(pendingOrders),
         db.select({n}).from(customers).where(eq(customers.approvalStatus,'pending')),
@@ -64,12 +65,13 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
         cashOk ? db.select({n}).from(cashEntries).where(and(eq(cashEntries.status,'pending'),notMine(cashEntries.createdBy),inStore(cashEntries.drawerId,store?.scope.drawers))) : [],
         db.select({n}).from(posReturns).innerJoin(salesOrders,eq(salesOrders.id,posReturns.orderId)).where(and(eq(posReturns.status,'pending'),notMine(posReturns.createdBy),returnScope)),
         member.role==='manager'?pendingLiquidations(db,true):Promise.resolve({count:0,items:[]}),
+        member.role==='manager'?pendingQuoteEdits(db,true):Promise.resolve({count:0,items:[]}),
       ]);
-      const counts = {quote:quote[0]?.n??0,order:orders[0]?.order??0,contract:(orders[0]?.contract??0)+liquidations.count,customer:customer[0]?.n??0,product:product[0]?.n??0,purchase:purchase[0]?.n??0,transfer:transfer[0]?.n??0,cash:cash[0]?.n??0,return:returned[0]?.n??0};
+      const counts = {quote:(quote[0]?.n??0)+editRequests.count,order:orders[0]?.order??0,contract:(orders[0]?.contract??0)+liquidations.count,customer:customer[0]?.n??0,product:product[0]?.n??0,purchase:purchase[0]?.n??0,transfer:transfer[0]?.n??0,cash:cash[0]?.n??0,return:returned[0]?.n??0};
       return {...counts,total:Object.values(counts).reduce((sum,n)=>sum+n,0)};
     };
     if(c.url.searchParams.get('summary')==='1') return json({counts:await readCounts()});
-    const [qs, os, cs, ps, pos, trs, ces, rets, liquidations] = await Promise.all([
+    const [qs, os, cs, ps, pos, trs, ces, rets, liquidations, editRequests] = await Promise.all([
       db.select({ id: quotations.id, quoteNo: quotations.quoteNo, customer: quotations.customer, createdAt: quotations.createdAt, updatedAt: quotations.updatedAt, by: employees.name, role: employees.role })
         .from(quotations).leftJoin(employees, eq(employees.id, quotations.creatorId)).where(eq(quotations.approvalStatus, 'pending')).orderBy(desc(quotations.updatedAt)).limit(LIMIT),
       db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName, total: salesOrders.total, createdAt: salesOrders.createdAt, by: employees.name })
@@ -92,11 +94,13 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
         .innerJoin(salesOrders, eq(salesOrders.id, posReturns.orderId)).leftJoin(employees, eq(employees.id, posReturns.createdBy))
         .where(and(eq(posReturns.status, 'pending'), notMine(posReturns.createdBy), returnScope)).orderBy(desc(posReturns.createdAt)).limit(LIMIT),
       member.role==='manager'?pendingLiquidations(db):Promise.resolve({count:0,items:[]}),
+      member.role==='manager'?pendingQuoteEdits(db):Promise.resolve({count:0,items:[]}),
     ]);
     const contracts = os.length ? await db.select({ orderId: salesContracts.orderId, contractNo: salesContracts.contractNo }).from(salesContracts)
       .where(and(inArray(salesContracts.orderId, os.map(o => o.id)))) : [];
     const contractOf = new Map(contracts.map(k => [k.orderId, k.contractNo]));
     const items: ApprovalItem[] = [
+      ...editRequests.items,
       ...liquidations.items.map(r=>({kind:'contract' as const,id:r.id,title:'Duyệt thanh lý '+r.no,sub:r.customer,by:r.by||'',at:r.at,amount:null,link:'#/contracts/'+encodeURIComponent(r.orderId)})),
       ...qs.map(q => ({ kind: 'quote' as const, id: q.id, title: `Báo giá ${q.quoteNo}`, sub: (q.role === 'customer' ? 'Khách gửi · ' : '') + (q.customer || 'Chưa nhập khách'),
         by: q.by ?? '', at: q.updatedAt || q.createdAt, amount: null, link: `#/quotes/${q.id}` })),
@@ -119,7 +123,7 @@ export function registerApprovalRoutes(router: Router<StaffEnv>) {
     // Mới sinh lên trên cùng (cùng quy tắc danh sách công việc); nhiều quá giới hạn thì giữ các chứng từ mới nhất.
     ].sort((a, b) => (b.at || '').localeCompare(a.at || ''));
     const counts = Object.fromEntries(APPROVAL_KINDS.map(k => [k, items.filter(i => i.kind === k).length])) as Record<ApprovalKind, number>;
-    const capped = [qs,os,cs,ps,pos,trs,ces,rets,liquidations.items].some(rows=>rows.length===LIMIT);
+    const capped = [qs,os,cs,ps,pos,trs,ces,rets,liquidations.items,editRequests.items].some(rows=>rows.length===LIMIT);
     const totals = capped ? await readCounts() : { ...counts, total: items.length };
     return json({ counts: totals, items, ...(totals.total>items.length?{truncated:true}:{} ) });
   }, 'business');

@@ -73,7 +73,9 @@ test('server enforces receipt permission, accepted allocation, parent order stat
  assert.equal(await f.balance(),1);assert.equal((await f.db.select().from(supplierReceipts)).length,0);
 });
 test('cancel receipt restores early remaining; an ordinary receipt also caps the early request to purchase balance',async()=>{
- const f=await fixture();ok(await f.accept());const first=ok(await f.receive(3),201);
+ const f=await fixture();ok(await f.accept());
+ // This case exercises local stock/early-budget undo, without an external Sapo write.
+ const first=ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',{clientKey:crypto.randomUUID(),earlyRequestId:f.id,createSapo:false,receivedDate:'2026-10-24',warehouse:'KHO NHẬN',lines:[{lineId:'line-a1',goodQty:3,damagedQty:0}]}),201);
  ok(await f.call('/supplier-receipts/'+first.receiptId+'/cancel',f.cookies.mgr,'POST',{reason:'Nhập nhầm, nhận lại đúng phiếu'}));
  assert.equal(ok(await f.context()).lines[0].remaining,10);assert.equal(await f.balance(),1);
  ok(await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',{clientKey:crypto.randomUUID(),warehouse:'KHO NHẬN',lines:[{lineId:'line-a1',goodQty:7995}]}),201);

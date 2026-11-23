@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 import {createTestDb} from '../helpers/postgres.ts';
 import {seedStaff,PASSWORD} from '../helpers/staff-fixture.ts';
 import {createAppRouter} from '../../src/app/router.ts';
-import {suppliers,incomingShipments} from '../../src/modules/suppliers/schema.ts';
+import {suppliers,incomingShipments,supplierReceipts,supplierReceiptLines,supplierOrderEvents} from '../../src/modules/suppliers/schema.ts';
 import {requiresSupplierOrderNumber,supplierOrderNumberProblem} from '../../src/modules/suppliers/domain/order-number.ts';
 import {bundleSupplierOrderNumber,SUPPLIER_ORDER_NUMBER_OUT} from '../../scripts/build-trial-ui.ts';
 test('Minh Long matching is supplier-only and browser policy matches backend',()=>{
@@ -78,4 +78,33 @@ test('split drafts keep per-supplier numbers; switching supplier clears an omitt
    assert.equal((await f.db.select().from(incomingShipments)).length,before,'bad batch creates no partial orders');
   }
 
+});
+
+
+test('supplier reference can be supplemented after approval, confirmation, partial/full receipt without changing commercial or receipt state',async()=>{
+ const f=await fixture();let v=await f.create(),now=new Date().toISOString();
+ const update=(cookie:string,revision:unknown,internalNo:unknown,extra={})=>f.call('/purchase-orders/'+v.id+'/supplier-reference',cookie,'PUT',{revision,internalNo,...extra});
+ assert.equal((await update(f.mgr,v.revision,'DRAFT')).status,409);
+ await f.db.update(incomingShipments).set({approvalStatus:'approved',approvedAt:now,approvedBy:'mgr'}).where(eq(incomingShipments.id,v.id));
+ for(const [i,state] of ['awaiting_confirmation','confirmed','partially_received','received'].entries()){
+  if(i===1)await f.db.update(incomingShipments).set({supplierStatus:'confirmed',supplierConfirmedAt:now,supplierConfirmedBy:'mgr'}).where(eq(incomingShipments.id,v.id));
+  if(i===2){await f.db.insert(supplierReceipts).values({id:'reference-receipt',receiptNo:'PNH-REF',shipmentId:v.id,receivedDate:'2026-11-19',receivedBy:'mgr',warehouse:'Kho kiểm thử',clientKey:'reference-only',createdAt:now});await f.db.insert(supplierReceiptLines).values({receiptId:'reference-receipt',lineId:v.lines[0].id,sku:v.lines[0].sku,goodQty:1});}
+  if(i===3)await f.db.update(supplierReceiptLines).set({goodQty:2}).where(eq(supplierReceiptLines.receiptId,'reference-receipt'));
+  v=await f.get(v.id);assert.equal(v.state,state);
+  const before=v,result=await update(i%2?f.emp:f.mgr,v.revision,'  000-NCC-'+i+'  ',{lines:[],approvalStatus:'pending',supplierStatus:'pending'});
+  assert.equal(result.status,200,JSON.stringify(result.data));v=await f.get(v.id);assert.equal(v.internalNo,'000-NCC-'+i);assert.equal(v.revision,before.revision+1);
+  for(const key of ['state','approvedAt','confirmedAt','supplier','lines','receipts','progress','totals','schedules','payments'])assert.deepEqual(v[key],before[key],key);
+  assert.equal((await update(f.mgr,before.revision,'STALE')).status,409);
+  const repeat=await update(f.mgr,v.revision,v.internalNo);assert.equal(repeat.status,200);assert.equal(repeat.data.revision,v.revision);
+ }
+ for(const value of ['', '  ', null, 123, 'X'.repeat(101)])assert.equal((await update(f.mgr,v.revision,value)).status,400);
+ assert.equal((await update(f.mgr,undefined,'NO-REVISION')).status,400);
+ assert.equal((await update('',v.revision,'NO-SESSION')).status,401);
+ await f.db.update(incomingShipments).set({createdBy:'mgr'}).where(eq(incomingShipments.id,v.id));
+ assert.equal((await update(f.emp,v.revision,'UNRELATED')).status,403);
+ const events=await f.db.select().from(supplierOrderEvents).where(eq(supplierOrderEvents.shipmentId,v.id));
+ assert.equal(events.filter(e=>e.action==='supplier-reference').length,4);
+ assert.deepEqual(JSON.parse(events.filter(e=>e.action==='supplier-reference')[0]!.data),{before:'',after:'000-NCC-0'});
+ await f.db.update(incomingShipments).set({cancelledAt:now}).where(eq(incomingShipments.id,v.id));
+ assert.equal((await update(f.mgr,v.revision,'CANCELLED')).status,409);
 });

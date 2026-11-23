@@ -69,3 +69,33 @@ Cần Playwright/Chromium; có thể đặt `PLAYWRIGHT_MODULE`. Script chặn m
 ![Mục file SX trên mobile](files-390.png)
 
 ![Form lập HĐKT trên mobile](contract-390.png)
+
+## Thư mục con giới hạn quyền, giữ nguyên vị trí (18/11/2026)
+
+Google Drive hỗ trợ Limited access cho thư mục con bằng
+`inheritedPermissionsDisabled=true`. Quyền kế thừa từ thư mục mẹ có thể vẫn xuất
+hiện trong API dưới dạng `type=anyone`, `role=reader`, `view=metadata`: quyền này
+chỉ nhìn thấy tên/metadata thư mục, không mở thư mục hoặc đọc file bên trong.
+
+Adapter yêu cầu thêm `role`, `view`, `inheritedPermissionsDisabled` và thông tin
+kế thừa trong phản hồi kiểm quyền. Chỉ chấp nhận quyền metadata khi Google trả
+đủ `role=reader`, `view=metadata`, `inheritedPermissionsDisabled=true` và không
+có chi tiết quyền trực tiếp mâu thuẫn. Quyền công khai đọc/sửa nội dung, quyền
+published hoặc thiếu bằng chứng vẫn bị chặn, kể cả ở trang permission tiếp theo.
+Không thêm API ghi permission vào backend, không đổi OAuth, checksum, cơ chế
+retry hay đích lưu; không cần migration.
+
+Đã bật giới hạn truy cập riêng trên “05 - File sản xuất”, giữ nguyên parent và
+16 quyền trực tiếp của nhân viên. Bộ kết nối Drive hiện tại trong chat không trả
+các trường limited-access trong kết quả chuẩn hóa; đối chiếu hộp chia sẻ đã lưu,
+parent ID, số quyền và việc quyền kế thừa chuyển từ writer sang reader. Cấu hình
+OAuth trên máy chủ và upload thực tế qua CRM vẫn phải xác minh riêng; kết nối
+Google trong chat không thay thế OAuth của Edge Function.
+
+Tài liệu Google:
+- https://developers.google.com/workspace/drive/api/guides/limited-expansive-access
+- https://developers.google.com/workspace/drive/api/reference/rest/v3/permissions
+
+Kiểm thử adapter bao gồm quyền metadata hợp lệ, thiếu bằng chứng, quyền đọc/sửa
+công khai, mâu thuẫn quyền trực tiếp, published và quyền công khai ở trang sau.
+Kiểm thử routes/file/RLS được chạy cùng để giữ phạm vi dữ liệu và rollback.

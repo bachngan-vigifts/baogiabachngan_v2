@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import {confirmLocalIssue} from '../helpers/confirmed-local-issue.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +16,7 @@ async function contract(){
  const q=ok(await f.call('/quotes',f.mgr,'POST',{type:'B2B',quoteNo:'AUDIT-CANCEL',customer:'Khách kiểm thử',customerTaxCode:'1800000000',vat:8,rows:[{sku:'00123',name:'Sản phẩm',unit:'cái',qty:2,price:1000}]}),201);
  ok(await f.call('/quotes/'+q.id+'/approve',f.mgr,'POST',{revision:1}));
  const k=ok(await f.call('/contracts',f.mgr,'POST',{quoteId:q.id,legalEntity:'BN',warehouseId:'pos-wh'}),201);
- ok(await f.call('/orders/'+k.orderId+'/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
+ ok(await approveFixtureOrder(f,'/orders/'+k.orderId+'/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
  return {...f,k};
 }
 test('huỷ HĐKT chưa xuất qua API hợp đồng không cộng tồn chưa từng trừ',async()=>{

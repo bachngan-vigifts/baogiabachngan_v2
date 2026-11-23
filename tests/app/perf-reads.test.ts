@@ -36,7 +36,9 @@ test('snapshot POS: hàng giữ không gắn kho chia đúng theo tồn trống 
   // Giữ = đơn ở kho quầy 3 + phần báo giá kho quầy gánh: 2 − tồn trống kho khác (1 − 0 đơn ở kho khác) = 1 → 4.
   assert.equal(row[2], 10); assert.equal(row[3], 4);
   // 21: mã quét đọc riêng một lượt gộp cho cả danh mục (thay 3 lượt tra chỉ mục cho từng sản phẩm).
-  assert.ok(queries <= 21, `snapshot dùng ${queries} truy vấn`);
+  // +7: bản đầy đủ kèm `base` (phiên bản danh mục/giá, snapshotVersion) để các lần sau chỉ tải phần tồn đổi.
+  // Bản đầy đủ nay chỉ tải ít nhất 5 phút/lần thay vì 30 giây/lần; trên Edge snapshotVersion có bộ nhớ đệm 5 giây dùng chung.
+  assert.ok(queries <= 28, `snapshot dùng ${queries} truy vấn`);
 });
 
 test('snapshot POS: mã quét đọc một lượt cho cả danh mục, cùng kết quả với cách tính từng sản phẩm (kể cả mã trùng)', async () => {

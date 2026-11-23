@@ -16,7 +16,7 @@ export function renderOrderReturns({host,order,summary}){
   const date=r.receivedAt?new Date(r.receivedAt).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'';
   if(r.basisKind==='pre_opening')item.append(el('p','Phiếu hoàn đã được duyệt theo căn cứ hàng giao trước chốt tồn.','small muted'));
   item.append(el('p',r.receivedAt?'Đã nhận về '+r.warehouseName+' · '+date:'Chưa ghi nhận thực nhận; chưa trừ số khách đang giữ.','small'));
-  for(const l of r.lines){const suffix=r.receivedAt?`nhận hoàn ${num(l.receivedQty)} ${l.unit} · nhập lại kho ${num(l.restockQty)} ${l.unit}${l.disposition==='damaged'?' · hàng hỏng, không nhập tồn bán':''}`:`đề nghị ${num(l.requestedQty)} ${l.unit}`;item.append(el('p',`${l.sku}: ${suffix}`,'small'));}
+  for(const l of r.lines){const damaged=Math.round((l.receivedQty-l.restockQty)*1000)/1000;const suffix=r.receivedAt?`nhận hoàn ${num(l.receivedQty)} ${l.unit} · nhập lại kho ${num(l.restockQty)} ${l.unit}${damaged>0?' · hàng hỏng '+num(damaged)+' '+l.unit+', không nhập tồn bán':''}`:`đề nghị ${num(l.requestedQty)} ${l.unit}`;item.append(el('p',`${l.sku}: ${suffix}`,'small'));}
   box.append(item);
  }
  host.append(box);

@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
@@ -62,7 +63,7 @@ test('đơn / HĐKT: duyệt chỉ giữ hàng; xác nhận xuất đúng kho m�
   assert.equal(opts.warehouses[0].lines[0].stock, 50, 'tồn theo sổ kho, không theo Sapo');
   assert.equal(await bal(s, 'vig'), 50, 'nháp chưa trừ');
   assert.equal((await s.call(`/orders/${orderId}/packing`, s.emp)).data.soldWarehouseId, null, 'nháp chưa trừ kho → hộp đóng gói tính tồn như thường');
-  assert.equal((await s.call(`/orders/${orderId}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
+  assert.equal((await approveFixtureOrder(s,`/orders/${orderId}/status`,s.mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
   assert.equal(await bal(s, 'vig'), 50, 'duyệt không trừ tồn thực');
   assert.equal((await s.call(`/orders/${orderId}/packing`, s.emp)).data.soldWarehouseId, null, 'đơn mới không có dòng trừ lúc duyệt');
   // Chỉ xác nhận phiếu đúng kho bán mới được ghi xuất.
@@ -87,13 +88,13 @@ test('Manager đổi kho bán đơn đã duyệt; duyệt đơn chưa có kho m�
   const s = await setup(), q = await quote(s, 'BG_K2', 4);
   const o = await s.call('/orders', s.mgr, 'POST', { quoteId: q, warehouseId: 'vig' });
   assert.equal(o.status, 201);
-  assert.equal((await s.call(`/orders/${o.data.id}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
+  assert.equal((await approveFixtureOrder(s,`/orders/${o.data.id}/status`,s.mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
   assert.equal(await bal(s, 'vig'), 50);
   assert.equal((await s.call(`/orders/${o.data.id}/warehouse`, s.mgr, 'PUT', { warehouseId: 'ml' })).status, 200);
   assert.deepEqual([await bal(s, 'vig'), await bal(s, 'ml')], [50, 20], 'đổi kho dự kiến không chuyển tồn thực');
   // Bỏ kho của đơn nháp: Sale chỉ có một kho nên tự chọn khi duyệt.
   const q3 = await quote(s, 'BG_K3', 1), o3 = await s.call('/orders', s.emp, 'POST', { quoteId: q3 });
-  assert.equal((await s.call(`/orders/${o3.data.id}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true, warehouseId: 'hd' })).status, 200, 'Manager chọn mọi kho');
+  assert.equal((await approveFixtureOrder(s,`/orders/${o3.data.id}/status`,s.mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true, warehouseId: 'hd' })).status, 200, 'Manager chọn mọi kho');
   assert.equal(await bal(s, 'hd'), 7, 'duyệt HĐKT/đơn chưa xuất không trừ kho Hoá đơn');
 });
 
@@ -262,9 +263,9 @@ test('kế hoạch báo giá: duyệt trước, xuất từng phần; thiếu ng
   assert.equal(slips.length,2);assert.equal(slips.reduce((n,x)=>n+x.totalQty,0),70);
   assert.equal(await bal(s,'vig'),50);
   assert.equal((await s.call(`/packing/${slips[0]!.id}/send`,s.emp,'POST',{})).status,409,'không gửi kho khi chưa duyệt');
-  const wrongWarehouse=await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',warehouseId:'ml',verified:true,costWarningsReviewed:true});
+  const wrongWarehouse=await approveFixtureOrder(s,`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',warehouseId:'ml',verified:true,costWarningsReviewed:true});
   assert.equal(wrongWarehouse.data.code,'STOCK_PLAN_IN_USE');
-  const approved=await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
+  const approved=await approveFixtureOrder(s,`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
   assert.equal(approved.status,200,JSON.stringify(approved.data));assert.equal(await bal(s,'vig'),50,'duyệt kế hoạch chưa ghi xuất');
   const change=await s.call(`/orders/${id}/warehouse`,s.mgr,'PUT',{warehouseId:'ml'});
   assert.equal(change.data.code,'STOCK_PLAN_IN_USE');
@@ -312,7 +313,7 @@ test('kế hoạch báo giá: sai tổng rollback cả đơn; HĐKT lưu phiếu
   const k=await s.call('/contracts',s.emp,'POST',{quoteId:q,contractNo:'TEST-PLAN',legalEntity:'BN',warehouseId:'vig',stockPlan:[{sku:'LY1',qty:50,type:'stock'},{sku:'LY1',qty:20,type:'incoming',note:'Phiếu xin lấy trước'}]});
   assert.equal(k.status,201,JSON.stringify(k.data));
   assert.equal((await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,k.data.orderId))).length,2);
-  const approved=await s.call(`/orders/${k.data.orderId}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
+  const approved=await approveFixtureOrder(s,`/orders/${k.data.orderId}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
   assert.equal(approved.status,200,JSON.stringify(approved.data));assert.equal(await bal(s,'vig'),50);
 });
 
@@ -320,7 +321,7 @@ test('kế hoạch báo giá: sai tổng rollback cả đơn; HĐKT lưu phiếu
 test('kế hoạch đã đóng nhưng chưa bàn giao: huỷ hoàn đúng các phần đã xuất tại kho, không cộng hai lần',async()=>{
  const s=await setup(),q=await quote(s,'BG_PLAN_CANCEL',10);
  const o=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',stockPlan:[{sku:'LY1',qty:5,type:'stock'},{sku:'LY1',qty:5,type:'purchase',note:'NCC đã bổ sung'}]});assert.equal(o.status,201);
- const id=o.data.id;assert.equal((await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+ const id=o.data.id;assert.equal((await approveFixtureOrder(s,`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
  // #266: duyệt đơn có kế hoạch đóng gói tự tạo chuyến giao đầu cho cả 10 (không lập tay thêm được).
  const {deliveries}=await import('../../src/modules/sales/schema.ts');
  assert.equal((await s.db.select().from(deliveries).where(eq(deliveries.orderId,id))).length,1);
@@ -375,7 +376,7 @@ test('kế hoạch nguồn hàng: duyệt tự có lịch; gửi phiếu cũ b�
   const made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',deliveryDate:'2026-10-28',stockPlan:[{sku:'LY1',qty:30,type:'stock'},{sku:'LY1',qty:20,type:'transfer',note:'SR'}]});
   assert.equal(made.status,201,JSON.stringify(made.data));const id=made.data.id;
   assert.equal((await s.db.select().from(deliveries).where(eq(deliveries.orderId,id))).length,0,'chưa duyệt không lên lịch');
-  assert.equal((await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+  assert.equal((await approveFixtureOrder(s,`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
   const trips=await s.db.select().from(deliveries).where(eq(deliveries.orderId,id));assert.equal(trips.length,1);assert.equal(trips[0]!.plannedDate,'2026-10-28');
   assert.equal((await s.db.select().from(deliveryLines).where(eq(deliveryLines.deliveryId,trips[0]!.id))).reduce((n,l)=>n+l.qty,0),30,'phần xin hàng chưa chốt ngày không gộp vào chuyến có sẵn');
   const slips=await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,id));assert.equal(slips.length,2);
@@ -394,7 +395,7 @@ test('lịch mặc định đóng gói: không tự phục hồi chuyến đã h
   const s=await setup(),q=await quote(s,'BG_CANCEL_TRIP',10);
   const made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',stockPlan:[{sku:'LY1',qty:10,type:'stock'}]});
   assert.equal(made.status,201);
-  assert.equal((await s.call(`/orders/${made.data.id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+  assert.equal((await approveFixtureOrder(s,`/orders/${made.data.id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
   const [slip]=await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,made.data.id));
   const [trip]=await s.db.select().from(deliveries).where(eq(deliveries.orderId,made.data.id));
   assert.equal((await s.call(`/deliveries/${trip!.id}/status`,s.emp,'PUT',{status:'cancelled'})).status,200);
@@ -451,7 +452,7 @@ test('tồn đầu 0 + nhập 5: duyệt đơn không trừ; xuất 2 rồi 3 v�
   await postMoves(s.db, 'mgr', [{sku:'LY1',warehouseId:'vig',qty:5,kind:'receipt',refType:'supplier_receipt',refId:'receipt-five'}]);
   // Có ngày giao: duyệt là tự giữ (≤ có thể bán = 5), hạn ngày giao + 3 ngày.
   const q = await quote(s,'BG_ZERO_FIVE',5), made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',deliveryDate:'2026-11-05'}), id=made.data.id;
-  const approved=await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
+  const approved=await approveFixtureOrder(s,`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
   assert.equal(approved.status,200,JSON.stringify(approved.data)); assert.equal(await bal(s,'vig'),5);
   assert.equal((await s.db.select().from(stockMoves).where(eq(stockMoves.refType,'sales_order'))).length,0);
   const held=async()=>((await s.call('/stock-holds?warehouseId=vig',s.mgr)).data.holds as any[]).filter(h=>h.orderId===id).reduce((sum,h)=>sum+h.qty,0);
@@ -471,7 +472,7 @@ test('tồn đầu 0 + nhập 5: duyệt đơn không trừ; xuất 2 rồi 3 v�
 
 test('legacy debit không trừ lần hai khi xác nhận xuất; đổi kho bị chặn; huỷ hoàn đúng một lần', async()=>{
   const s=await setup(),q=await quote(s,'BG_LEGACY',5),made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig'}),id=made.data.id;
-  await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
+  await approveFixtureOrder(s,`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});
   await postMoves(s.db,'mgr',[{sku:'LY1',warehouseId:'vig',qty:-5,kind:'sale',refType:'sales_order',refId:id}]);
   assert.equal((await s.call(`/orders/${id}/warehouse`,s.mgr,'PUT',{warehouseId:'ml'})).data.code,'ORDER_ALREADY_ISSUED');
   const [line]=await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,id));
@@ -490,7 +491,7 @@ test('HĐKT không kế hoạch đóng gói: duyệt không trừ; đánh dấu 
   await s.db.update(quotations).set({data:JSON.stringify(data)}).where(eq(quotations.id,q));
   const k=await s.call('/contracts',s.emp,'POST',{quoteId:q,contractNo:'CONTRACT-NO-PLAN',legalEntity:'BN',warehouseId:'vig'});
   assert.equal(k.status,201,JSON.stringify(k.data));const id=k.data.orderId;
-  assert.equal((await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+  assert.equal((await approveFixtureOrder(s,`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
   assert.equal(await bal(s,'vig'),50);assert.equal((await s.db.select().from(stockMoves).where(eq(stockMoves.refType,'sales_order'))).length,0);
   const [line]=await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,id));
   await s.db.insert(packingSlips).values({id:'not-issued',slipNo:'NOT_ISSUED',orderId:id,status:'sent',source:'warehouse',createdBy:'emp',createdAt:now,updatedAt:now});
@@ -505,7 +506,7 @@ test('HĐKT không kế hoạch đóng gói: duyệt không trừ; đánh dấu 
 
 test('thiếu tồn không cản duyệt nhưng chặn xác nhận xuất và rollback phiếu/ảnh/số dư',async()=>{
   const s=await setup(),q=await quote(s,'BG_SHORT_ISSUE',51),made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig'}),id=made.data.id;
-  const approve=await s.call(`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});assert.equal(approve.status,200,JSON.stringify(approve.data));
+  const approve=await approveFixtureOrder(s,`/orders/${id}/status`,s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});assert.equal(approve.status,200,JSON.stringify(approve.data));
   const [line]=await s.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,id));
   await s.db.insert(packingSlips).values({id:'short-issue',slipNo:'SHORT_ISSUE',orderId:id,status:'sent',source:'warehouse',createdBy:'emp',createdAt:now,updatedAt:now});
   await s.db.insert(packingSlipLines).values({id:'short-issue-line',slipId:'short-issue',orderLineId:line!.id,sku:'LY1',name:'Ly',unit:'cái',qty:51});
@@ -581,13 +582,13 @@ test('split source dates create 170/16-Nov and 80/19-Nov trips; same-SKU print a
  const s=await setup(),q=await quote(s,'BG_SPLIT_170_80',250),before=await bal(s,'vig');
  const made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',deliveryDate:'2026-11-16',stockPlan:[{sku:'LY1',qty:170,type:'stock',plannedDate:'2026-11-16'},{sku:'LY1',qty:80,type:'incoming',note:'Đơn NCC kiểm thử, ngày NCC không tự dùng làm ngày giao khách',plannedDate:'2026-11-19'}]});
  assert.equal(made.status,201,JSON.stringify(made.data));const id=made.data.id;
- assert.equal((await s.call('/orders/'+id+'/status',s.kho,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,403);
- assert.equal((await s.call('/orders/'+id+'/status',s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+ assert.equal((await approveFixtureOrder(s,'/orders/'+id+'/status',s.kho,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,403);
+ assert.equal((await approveFixtureOrder(s,'/orders/'+id+'/status',s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
  const detail=await s.call('/orders/'+id,s.emp);assert.equal(detail.status,200,JSON.stringify(detail.data));
  assert.deepEqual(detail.data.deliveries.map((d:any)=>[d.plannedDate,d.lines.reduce((n:number,l:any)=>n+l.qty,0)]),[['2026-11-16',170],['2026-11-19',80]]);
  assert.equal(detail.data.lines[0].qty,250);assert.equal(detail.data.lines[0].deliveredQty,0);assert.equal(await bal(s,'vig'),before);
  const slips=await s.db.select().from(packingSlips).where(eq(packingSlips.orderId,id));assert.deepEqual(slips.map(p=>p.plannedDeliveryDate).sort(),['2026-11-16','2026-11-19']);
- const again=await s.call('/orders/'+id+'/status',s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});assert.equal(again.status,409);
+ const again=await approveFixtureOrder(s,'/orders/'+id+'/status',s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});assert.equal(again.status,409);
  assert.equal((await s.db.select().from(deliveries).where(eq(deliveries.orderId,id))).length,2);
 });
 
@@ -597,10 +598,10 @@ test('source planning rejects invalid dates atomically, groups only explicitly e
   const bad=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',stockPlan:[{sku:'LY1',qty:50,type:'incoming',note:'NCC hẹn 19/11/2026',plannedDate}]});assert.equal(bad.status,400,JSON.stringify(bad.data));
  }
  const made=await s.call('/orders',s.emp,'POST',{quoteId:q,warehouseId:'vig',deliveryDate:'2026-11-16',stockPlan:[{sku:'LY1',qty:30,type:'stock'},{sku:'LY1',qty:20,type:'incoming',note:'NCC hẹn 19/11/2026'}]});assert.equal(made.status,201,JSON.stringify(made.data));
- assert.equal((await s.call('/orders/'+made.data.id+'/status',s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+ assert.equal((await approveFixtureOrder(s,'/orders/'+made.data.id+'/status',s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
  const trips=await s.db.select().from(deliveries).where(eq(deliveries.orderId,made.data.id));assert.equal(trips.length,1);assert.equal(trips[0]!.plannedDate,'2026-11-16');
  assert.equal((await s.db.select().from(deliveryLines).where(eq(deliveryLines.deliveryId,trips[0]!.id)))[0]!.qty,30);
  const q2=await quote(s,'BG_EXPLICIT_SAME_DATE',10),same=await s.call('/orders',s.emp,'POST',{quoteId:q2,warehouseId:'vig',stockPlan:[{sku:'LY1',qty:5,type:'stock',plannedDate:'2026-11-19'},{sku:'LY1',qty:5,type:'purchase',note:'Đặt NCC',plannedDate:'2026-11-19'}]});assert.equal(same.status,201);
- assert.equal((await s.call('/orders/'+same.data.id+'/status',s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
+ assert.equal((await approveFixtureOrder(s,'/orders/'+same.data.id+'/status',s.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true})).status,200);
  const sameTrips=await s.db.select().from(deliveries).where(eq(deliveries.orderId,same.data.id));assert.equal(sameTrips.length,1);assert.equal((await s.db.select().from(deliveryLines).where(eq(deliveryLines.deliveryId,sameTrips[0]!.id)))[0]!.qty,10);
 });

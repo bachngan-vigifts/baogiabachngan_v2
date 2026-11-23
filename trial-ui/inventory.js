@@ -210,6 +210,8 @@ export function initInventory({ api, root, toast, confirmBox }) {
     const back = btn('‹ Danh sách phiếu', 'btn ghost small', () => { if (busy) return; editing = false; editor.replaceChildren(); updatePage(); });
     const top = el('div', 'card-title-row'); top.append(el('h2', 'card-title', 'Lập phiếu cân bằng kho'), back);
     const f = el('form', 'sup-form inv-adjust-form'), err = el('p', 'error');
+    // This full editor already owns submit/retry and cancel handlers; keep them usable on mobile.
+    f.dataset.mobileConfirmationPage = '';
     const w = el('select'); w.required = true;w.setAttribute('aria-label','Kho cân bằng');
     w.append(Object.assign(el('option','','Chọn kho…'),{value:''}));
     for (const x of status.warehouses.filter(x=>!prefill.warehouseIds||prefill.warehouseIds.includes(x.id))) w.append(Object.assign(el('option', '', x.name), { value: x.id }));

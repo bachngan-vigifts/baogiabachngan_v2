@@ -114,7 +114,7 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   assert.equal(v.supplierEmail, 'minhlong@ncc.vn', 'người nhận mặc định từ danh bạ');
   assert.equal(v.debt.status, 'overdue', 'cọc quá hạn');
   const ve = (await call(`/purchase-orders/${id}`, emp)).data;
-  assert.equal(ve.totals, null); assert.equal(ve.debt, null); assert.deepEqual(ve.actions, []);
+  assert.equal(ve.totals, null); assert.equal(ve.debt, null); assert.deepEqual(ve.actions, ['reference'], 'người tạo chỉ bổ sung mã NCC, không được duyệt/nhận hàng/xem giá');
   assert.equal((await call(`/purchase-orders/${id}`, kho)).data.lines[0].price, null, 'kho không thấy giá');
   assert.equal((await call(`/purchase-orders/${id}`, emp, 'PUT', { supplierId: a, warehouse: '12 Đường Giao Hàng', lines: [{ sku: 'LY1', quantity: 1 }] })).status, 409, 'đã duyệt không sửa nháp');
 
@@ -157,7 +157,7 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   assert.equal((await call(`/purchase-orders/${id}/cancel`, mgr, 'POST', { reason: 'Đổi NCC' })).status, 409, 'đã nhận hàng không huỷ đơn');
 
   // Nhận đợt 2 đủ → đã nhận.
-  v = (await call(`/purchase-orders/${id}/receipts`, mgr, 'POST', { clientKey: 'rcv-000004', warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 4 }, { lineId: v.lines[1].id, goodQty: 5 }] })).data;
+  v = (await call(`/purchase-orders/${id}/receipts`, mgr, 'POST', { clientKey: 'rcv-000004', createSapo:false, warehouse: 'Kho nhận kiểm thử', lines: [{ lineId: v.lines[0].id, goodQty: 4 }, { lineId: v.lines[1].id, goodQty: 5 }] })).data;
   assert.equal(v.state, 'received'); assert.equal(v.receipts.length, 2);
   assert.match(v.receipts.map((r: any) => r.receiptNo).join(','), /PNH_\d{8}_/);
   // Huỷ phiếu chưa nhập Sapo (chỉ Manager) → quay lại nhận một phần.

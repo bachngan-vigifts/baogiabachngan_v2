@@ -268,5 +268,17 @@
   {"migration":"20261113062905_accounting_resumable_imports.sql","asserts":["assert-accounting-imports.sql"]},
   {"migration":"20261113074715_split_packing_delivery_dates.sql","asserts":["assert-split-packing-delivery-dates.sql"]},
   {"migration":"20261113104533_product_archive_controls.sql","asserts":["assert-product-archive.sql"]},
-  {"migration":"20261114110000_contract_templates.sql","asserts":["assert-contract-templates.sql"]}
+  {"migration":"20261114110000_contract_templates.sql","asserts":["assert-contract-templates.sql"]},
+  {"migration":"20261115233000_warehouse_image_job_queue.sql","asserts":["assert-warehouse-image-jobs.sql"]},
+  {"migration":"20261117130655_order_submission_review.sql","asserts":["assert-order-submission-review.sql"]},
+  {"migration": "20261118040000_ai_chat_public_questions.sql", "asserts": ["assert-ai-chat-public.sql"]},
+  {"migration":"20261118050000_edge_sync_jobs.sql","asserts":["assert-edge-sync-jobs.sql"]},
+  {"migration":"20261118120000_products_newest_index.sql","asserts":["assert-products-newest-index.sql"]},
+  {"migration":"20261119020633_supplier_goods_returns.sql","asserts":["assert-supplier-goods-returns.sql"]},
+  {"migration":"20261119090000_search_fold_columns.sql","asserts":["assert-search-fold-columns.sql"]},
+  {"migration":"20261121102152_sale_admin_handoff.sql","asserts":["assert-sale-admin-handoff.sql"]},
+  {"migration":"20261121150000_purchase_order_intents.sql","asserts":["assert-purchase-order-intents.sql"]},
+  {"migration":"20261121160000_customer_profile_revision.sql","asserts":["assert-customer-profile-revision.sql"]},
+  {"migration":"20261122090000_transfer_create_mode.sql","asserts":["assert-transfer-create-mode.sql"]},
+  {"migration":"20261123095718_sepay_allocations.sql","asserts":["assert-sepay-allocations.sql"]}
 ]

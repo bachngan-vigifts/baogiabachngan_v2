@@ -13,11 +13,11 @@ import { products, warehouses } from '../../catalog/schema.ts';
 import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import {
   incomingShipmentLines, incomingShipments, supplierOrderEvents, supplierOrderSources, supplierPaymentSchedules, supplierPayments,
-  supplierReceiptLines, supplierReceipts, suppliers, receiptJobs,
+  supplierReceiptLines, supplierReceipts, supplierGoodsReturns, supplierRefunds, suppliers, receiptJobs,
 } from '../schema.ts';
 import { computeOrderTotals, hidePrices } from '../domain/order-totals.ts';
 import {
-  canSeePrices, canSeePurchasePrices, canPay, canApprovePurchase, isWarehouseStaff, purchaseActions, purchaseState, purchaseStateLabel, receiptProgress, remainingToOrder, supplierDebt,
+  canPay, canSeePrices, canSeePurchasePrices, canApprovePurchase, isWarehouseStaff, purchaseActions, purchaseState, purchaseStateLabel, receiptProgress, remainingToOrder, supplierDebt,
   type Actor, type NeedLine,
 } from '../domain/purchasing.ts';
 
@@ -51,7 +51,7 @@ export async function purchaseLinksForOrder(db: Db, m: Member, order: { id: stri
 }
 
 const MONEY_EVENT_LABEL: Record<string, string> = { approve: 'Manager duyệt đơn', import: 'Nhập từ file đơn NCC', prices: 'Lưu giá nhập', schedule: 'Sửa lịch trả NCC',
-  pay: 'Ghi trả NCC', void_payment: 'Huỷ khoản trả NCC' }; // 'update' (sửa nháp) chỉ có số lượng / NCC – không ẩn
+  goods_return: 'Trả hàng NCC / Huỷ phần chưa nhận', supplier_refund: 'Nhận tiền hoàn NCC', pay: 'Ghi trả NCC', void_payment: 'Huỷ khoản trả NCC' }; // 'update' (sửa nháp) chỉ có số lượng / NCC – không ẩn
 const MONEY_EVENTS = new Set(Object.keys(MONEY_EVENT_LABEL));
 /** Toàn bộ dữ liệu một đơn mua (đúng phạm vi xem), đã tính tiến độ nhận / công nợ / nút được bấm. */
 export async function loadPurchase(db: Db, m: Member, id: string, today: string) {
@@ -76,11 +76,13 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
   const fullNames = await catalogNames(db, storedLines.map(l => l.sku));
   const lines = storedLines.map(l => ({ ...l, name: fullNames.get(l.sku.toLowerCase()) ?? l.name }));
   const live = new Set(receipts.filter(x => !x.r.cancelledAt).map(x => x.r.id));
-  const progress = receiptProgress(lines.map(l => ({ id: l.id, sku: l.sku, name: l.name, quantity: l.quantity })),
-    receiptLines.filter(x => live.has(x.l.receiptId)).map(x => ({ lineId: x.l.lineId, goodQty: x.l.goodQty, damagedQty: x.l.damagedQty })));
+  const progress = receiptProgress(lines.map(l => ({ id: l.id, sku: l.sku, name: l.name, quantity: l.quantity, creditedQty: l.creditedQty })),
+    receiptLines.filter(x => live.has(x.l.receiptId)).map(x => ({ lineId: x.l.lineId, goodQty: x.l.goodQty, returnedGoodQty: x.l.returnedGoodQty, damagedQty: x.l.damagedQty })));
+  const [goodsReturns, refunds] = await Promise.all([db.select().from(supplierGoodsReturns).where(eq(supplierGoodsReturns.shipmentId,id)).orderBy(desc(supplierGoodsReturns.createdAt)),db.select().from(supplierRefunds).where(eq(supplierRefunds.shipmentId,id)).orderBy(desc(supplierRefunds.createdAt))]);
   const jobs = receipts.length ? await db.select({receiptId:receiptJobs.receiptId,status:receiptJobs.status,action:receiptJobs.action,lastError:receiptJobs.lastError,attempts:receiptJobs.attempts,updatedAt:receiptJobs.updatedAt}).from(receiptJobs).where(inArray(receiptJobs.receiptId,receipts.map(x=>x.r.id))) : [];
   const totals = computeOrderTotals({ rows: lines, depositRate: o.depositRate, paidAmount: 0 });
-  const debt = supplierDebt(totals.total, schedules, payments.map(x => x.p), today);
+  const debt = supplierDebt(totals.total, schedules, payments.map(x => x.p), today, o.refundedAmount);
+  const creditKnown=lines.every(l=>l.price!==null&&l.taxRate!==null)&&Number.isFinite(totals.total);
   const a = asActor(m), prices = canSeePurchasePrices(a, o);
   const flags = { approvalStatus: o.approvalStatus, supplierStatus: o.supplierStatus, cancelledAt: o.cancelledAt, createdBy: o.createdBy, submittedAt: o.submittedAt };
   const state = purchaseState(flags, progress);
@@ -88,14 +90,14 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
   return {
     raw: { order: o, lines, totals, progress, debt },
     view: {
-      id: o.id, ticketNumber: o.ticketNumber, state, stateLabel: purchaseStateLabel(state, flags), submittedAt: o.submittedAt, supplier: supplier ?? { id: o.supplierId, name: o.supplierName },
+      id: o.id, ticketNumber: o.ticketNumber, state, stateLabel: !o.cancelledAt&&progress.ordered===0&&lines.some(l=>l.creditedQty>0)?'Đã trả / huỷ toàn bộ hàng':purchaseStateLabel(state, flags), submittedAt: o.submittedAt, supplier: supplier ?? { id: o.supplierId, name: o.supplierName },
       supplierEmail: prices ? o.supplierEmail : '', ccEmail: prices ? o.ccEmail : '', internalNo: o.supplierInternalOrderNumber,
       arrivalDate: o.arrivalDate, warehouse: o.warehouse, note: o.note, revision: o.revision, createdAt: o.createdAt, createdBy: o.createdBy,
       approvedAt: o.approvedAt, confirmedAt: o.supplierConfirmedAt, confirmedOnBehalf: o.confirmedOnBehalf,
-      cancelledAt: o.cancelledAt, cancelReason: o.cancelReason, priceHidden: !prices,
+      remainderClosedAt: o.remainderClosedAt, remainderCloseReason: o.remainderCloseReason, cancelledAt: o.cancelledAt, cancelReason: o.cancelReason, priceHidden: !prices,
       lines: lines.map((l, i) => {
         const p = progress.lines.find(x => x.lineId === l.id)!, t = shownTotals.rows[i]!;
-        return { id: l.id, lineNo: l.lineNo, sku: l.sku, name: l.name, unit: l.unit, quantity: l.quantity, promisedDate: l.promisedDate, supplierNote: l.supplierNote,
+        return { id: l.id, lineNo: l.lineNo, sku: l.sku, name: l.name, unit: l.unit, quantity: l.quantity, creditedQty: l.creditedQty, promisedDate: l.promisedDate, supplierNote: l.supplierNote,
           printDescription: l.printDescription, printFee: prices ? l.printFee : null,
           price: prices ? l.price : null, taxRate: prices ? l.taxRate : null, purchaseDiscount: prices ? (l.confirmedPurchaseDiscount ?? l.purchaseDiscount) : null,
           lineTotal: prices ? t.lineTotal : null, good: p.good, damaged: p.damaged, missing: p.missing,
@@ -103,14 +105,18 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
       }),
       totals: prices ? { subtotal: totals.subtotal, vat: totals.vat, total: totals.total } : null,
       progress: { ordered: progress.ordered, good: progress.good, damaged: progress.damaged, missing: progress.missing, fullyReceived: progress.fullyReceived },
-      debt: prices ? debt : null,
+      debt: prices ? {...debt,supplierCredit:creditKnown?debt.supplierCredit:null} : null,
       schedules: prices ? schedules.map(s => ({ id: s.id, kind: s.kind, amount: s.amount, dueDate: s.dueDate, note: s.note })) : [],
       payments: prices ? payments.map(({ p, by }) => ({ id: p.id, amount: p.amount, paidDate: p.paidDate, method: p.method, reference: p.reference, note: p.note,
         hasAttachment: Boolean(p.attachmentKey), attachmentName: p.attachmentName, by, createdAt: p.createdAt, voidedAt: p.voidedAt, voidReason: p.voidReason })) : [],
       receipts: receipts.map(({ r, by }) => ({ id: r.id, shipmentId:r.shipmentId, receiptNo: r.receiptNo, receivedDate: r.receivedDate, by, warehouse: r.warehouse, note: r.note,
         historicalImport:r.clientKey.startsWith('import:'), sapoPurchaseOrderId:r.sapoPurchaseOrderId, sapoReceiptId:r.sapoReceiptId, sapoReceiptUrl:r.sapoReceiptUrl, sapoVerifiedAt:r.sapoVerifiedAt, sapoUpdatedAt:r.sapoUpdatedAt, job:jobs.find(j=>j.receiptId===r.id) ?? null,
         createSapo:r.createSapo,sapoStatus: r.sapoStatus, sapoReceiptCode: r.sapoReceiptCode, sapoNote: r.sapoNote, cancelledAt: r.cancelledAt, cancelReason: r.cancelReason,
-        lines: receiptLines.filter(x => x.l.receiptId === r.id).map(x => ({ lineId: x.l.lineId, sku: x.l.sku, goodQty: x.l.goodQty, damagedQty: x.l.damagedQty, note: x.l.note })) })),
+        lines: receiptLines.filter(x => x.l.receiptId === r.id).map(x => ({ lineId: x.l.lineId, sku: x.l.sku, goodQty: x.l.goodQty, returnedGoodQty: x.l.returnedGoodQty, damagedQty: x.l.damagedQty, note: x.l.note })) })),
+      goodsReturns: goodsReturns.map(r=>({id:r.id,receiptId:r.receiptId,mode:r.mode,date:r.returnedDate,reason:r.reason,createdAt:r.createdAt,sapoReturnCode:r.sapoReturnCode,creditAmount:prices?r.creditAmount:null,items:(JSON.parse(r.items) as {lineId:string;sku:string;quantity:number}[]).map(l=>prices?l:{lineId:l.lineId,sku:l.sku,quantity:l.quantity})})),
+      refunds: prices?refunds.map(({requestHash:_hash,clientKey:_key,...r})=>r):[],
+      canReturn: a.role==='manager' && a.active && o.approvalStatus==='approved' && !o.cancelledAt && (progress.good>0||progress.missing>0),
+      canRefund: canPay(a) && prices && creditKnown && !o.cancelledAt,
       // Nội dung lịch sử có số tiền (duyệt, nhập file, giá nhập, lịch trả, trả / huỷ trả, sửa nháp): người không xem được giá chỉ thấy tên thao tác.
       events: events.map(({ e, by }) => ({ at: e.at, by, action: e.action, summary: prices || !MONEY_EVENTS.has(e.action) ? e.summary : MONEY_EVENT_LABEL[e.action] ?? 'Cập nhật đơn mua' })),
       actions: purchaseActions(a, flags, { anyReceived: progress.anyReceived, fullyReceived: progress.fullyReceived, paid: debt.paid }),
@@ -118,7 +124,7 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string)
   };
 }
 
-export interface PurchaseListFilter { q?: string; supplierId?: string; state?: string; limit?: number; openOnly?: boolean }
+export interface PurchaseListFilter { id?: string; q?: string; supplierId?: string; state?: string; limit?: number; openOnly?: boolean }
 
 /** Flow map needs progress only: never load prices, payment schedules, payments or creator profiles. */
 export async function listPurchaseFlow(db: Db, m: Member, today: string) {
@@ -132,10 +138,10 @@ export async function listPurchaseFlow(db: Db, m: Member, today: string) {
   if (!ids.length) return [];
   const [lines, received, pending] = await Promise.all([
     db.select({ id: incomingShipmentLines.id, shipmentId: incomingShipmentLines.shipmentId,
-      quantity: incomingShipmentLines.quantity, promisedDate: incomingShipmentLines.promisedDate,
+      quantity: incomingShipmentLines.quantity, creditedQty:incomingShipmentLines.creditedQty, promisedDate: incomingShipmentLines.promisedDate,
     }).from(incomingShipmentLines).where(inArray(incomingShipmentLines.shipmentId, ids)),
     db.select({ shipmentId: supplierReceipts.shipmentId, lineId: supplierReceiptLines.lineId,
-      goodQty: supplierReceiptLines.goodQty, damagedQty: supplierReceiptLines.damagedQty,
+      goodQty: supplierReceiptLines.goodQty, returnedGoodQty:supplierReceiptLines.returnedGoodQty, damagedQty: supplierReceiptLines.damagedQty,
     }).from(supplierReceiptLines).innerJoin(supplierReceipts, eq(supplierReceipts.id, supplierReceiptLines.receiptId))
       .where(and(inArray(supplierReceipts.shipmentId, ids), isNull(supplierReceipts.cancelledAt))),
     db.select({ shipmentId: supplierReceipts.shipmentId, n: sql<number>`count(*)`.mapWith(Number) }).from(supplierReceipts)
@@ -169,7 +175,7 @@ function purchaseListScope(m: Member, filter: PurchaseListFilter) {
 
 /** Danh sách đơn mua (tính tiến độ / công nợ theo lô, không N+1). */
 export async function listPurchases(db: Db, m: Member, filter: PurchaseListFilter, today: string) {
-  const rows = await db.select().from(incomingShipments).where(and(purchaseListScope(m, filter), filter.state==='sapo'?sql`exists(select 1 from ${supplierReceipts} where ${supplierReceipts.shipmentId}=${incomingShipments.id} and ${supplierReceipts.cancelledAt} is null and ${supplierReceipts.sapoStatus} in ('pending','failed'))`:undefined))
+  const rows = await db.select().from(incomingShipments).where(and(purchaseListScope(m, filter), filter.id ? eq(incomingShipments.id,filter.id) : undefined, filter.state==='sapo'?sql`exists(select 1 from ${supplierReceipts} where ${supplierReceipts.shipmentId}=${incomingShipments.id} and ${supplierReceipts.cancelledAt} is null and ${supplierReceipts.sapoStatus} in ('pending','failed'))`:undefined))
     .orderBy(...rankFirst(searchRank([incomingShipments.ticketNumber, incomingShipments.supplierInternalOrderNumber], incomingShipments.supplierName, filter.q)), desc(incomingShipments.createdAt))
     .limit(Math.min(filter.limit ?? 300, filter.openOnly ? 5000 : 500));
   const ids = rows.map(r => r.id);
@@ -188,16 +194,16 @@ export async function listPurchases(db: Db, m: Member, filter: PurchaseListFilte
     .where(and(inArray(supplierReceipts.shipmentId, ids), isNull(supplierReceipts.cancelledAt), inArray(supplierReceipts.sapoStatus, ['pending', 'failed']))).groupBy(supplierReceipts.shipmentId);
   const out = rows.map(o => {
     const ls = lines.filter(l => l.shipmentId === o.id).sort((a, b) => a.lineNo - b.lineNo);
-    const progress = receiptProgress(ls.map(l => ({ id: l.id, sku: l.sku, name: l.name, quantity: l.quantity })), rl.filter(x => x.shipmentId === o.id).map(x => x.l));
+    const progress = receiptProgress(ls.map(l => ({ id: l.id, sku: l.sku, name: l.name, quantity: l.quantity, creditedQty: l.creditedQty })), rl.filter(x => x.shipmentId === o.id).map(x => x.l));
     const total = computeOrderTotals({ rows: ls, depositRate: o.depositRate, paidAmount: 0 }).total;
-    const debt = supplierDebt(total, schedules.filter(s => s.shipmentId === o.id), payments.filter(p => p.shipmentId === o.id), today);
+    const debt = supplierDebt(total, schedules.filter(s => s.shipmentId === o.id), payments.filter(p => p.shipmentId === o.id), today, o.refundedAmount);
     const state = purchaseState({ approvalStatus: o.approvalStatus, supplierStatus: o.supplierStatus, cancelledAt: o.cancelledAt, createdBy: o.createdBy }, progress), submitted = o.submittedAt !== null;
     const promised = ls.map(l => l.promisedDate).filter(Boolean).sort()[0] || o.arrivalDate || '';
-    return { id: o.id, ticketNumber: o.ticketNumber, internalNo: o.supplierInternalOrderNumber, supplierId: o.supplierId, supplierName: o.supplierName, state, stateLabel: purchaseStateLabel(state, o), submitted,
+    return { id: o.id, ticketNumber: o.ticketNumber, internalNo: o.supplierInternalOrderNumber, supplierId: o.supplierId, supplierName: o.supplierName, state, stateLabel: !o.cancelledAt&&progress.ordered===0&&ls.some(l=>l.creditedQty>0)?'Đã trả / huỷ toàn bộ hàng':purchaseStateLabel(state, o), submitted,
       createdAt: o.createdAt, createdBy: o.createdBy, createdByName: (o.createdBy && creators.get(o.createdBy)) || '', arrivalDate: promised, lineCount: ls.length, ordered: progress.ordered, good: progress.good, missing: progress.missing, damaged: progress.damaged,
       late: Boolean(promised && promised < today && !progress.fullyReceived && !o.cancelledAt && o.approvalStatus === 'approved'),
       sapoPending: pendingSapo.find(x => x.shipmentId === o.id)?.n ?? 0,
-      total: prices ? total : null, balance: prices ? debt.balance : null, overdue: prices ? debt.overdue : null, debtStatus: prices ? debt.status : null,
+      supplierCredit:prices&&ls.every(l=>l.price!==null&&l.taxRate!==null)&&Number.isFinite(total)?debt.supplierCredit:null, refunded:prices?debt.refunded:null, total: prices ? total : null, balance: prices ? debt.balance : null, overdue: prices ? debt.overdue : null, debtStatus: prices ? debt.status : null,
       nextDueDate: prices ? debt.nextDueDate : null, nextDueAmount: prices ? debt.nextDueAmount : null, approvedAt: o.approvedAt };
   });
   return filter.state ? out.filter(r => r.state === filter.state || (filter.state === 'late' && r.late) || (filter.state === 'sapo' && r.sapoPending > 0) || (filter.state === 'debt' && (r.balance ?? 0) > 0 && r.state !== 'cancelled' && r.state !== 'draft')) : out;
@@ -219,15 +225,16 @@ export async function supplierPayables(db: Db, m: Member, today: string) {
     db.select().from(supplierPayments).where(inArray(supplierPayments.shipmentId, ids)),
   ]);
   const orders = rows.map(o => {
-    const total = computeOrderTotals({ rows: lines.filter(l => l.shipmentId === o.id), depositRate: o.depositRate, paidAmount: 0 }).total;
-    const debt = supplierDebt(total, schedules.filter(x => x.shipmentId === o.id), payments.filter(x => x.shipmentId === o.id), today);
-    return { id: o.id, ticketNumber: o.ticketNumber, internalNo: o.supplierInternalOrderNumber, supplierId: o.supplierId, supplierName: o.supplierName, approvedAt: o.approvedAt, ...debt };
-  }).filter(o => o.balance > 0).sort((a, b) => (a.nextDueDate ?? '9999').localeCompare(b.nextDueDate ?? '9999'));
-  const bySupplier = new Map<string, { supplierId: string | null; supplierName: string; orders: number; total: number; paid: number; balance: number; overdue: number; nextDueDate: string | null; nextDueAmount: number }>();
+    const orderLines=lines.filter(l=>l.shipmentId===o.id);
+    const total = computeOrderTotals({ rows: orderLines, depositRate: o.depositRate, paidAmount: 0 }).total;
+    const debt = supplierDebt(total, schedules.filter(x => x.shipmentId === o.id), payments.filter(x => x.shipmentId === o.id), today, o.refundedAmount);
+    return { id: o.id, ticketNumber: o.ticketNumber, internalNo: o.supplierInternalOrderNumber, supplierId: o.supplierId, supplierName: o.supplierName, approvedAt: o.approvedAt, ...debt, supplierCredit:orderLines.every(l=>l.price!==null&&l.taxRate!==null)&&Number.isFinite(total)?debt.supplierCredit:null };
+  }).filter(o => o.balance > 0 || (o.supplierCredit??0) > 0).sort((a, b) => (a.nextDueDate ?? '9999').localeCompare(b.nextDueDate ?? '9999'));
+  const bySupplier = new Map<string, { supplierId: string | null; supplierName: string; orders: number; total: number; paid: number; balance: number; overdue: number; nextDueDate: string | null; nextDueAmount: number; supplierCredit:number; refunded:number }>();
   for (const o of orders) {
     const key = o.supplierId ?? 'name:' + o.supplierName;
-    const x = bySupplier.get(key) ?? { supplierId: o.supplierId, supplierName: o.supplierName, orders: 0, total: 0, paid: 0, balance: 0, overdue: 0, nextDueDate: null, nextDueAmount: 0 };
-    x.orders++; x.total += o.total; x.paid += o.paid; x.balance += o.balance; x.overdue += o.overdue;
+    const x = bySupplier.get(key) ?? { supplierId: o.supplierId, supplierName: o.supplierName, orders: 0, total: 0, paid: 0, balance: 0, overdue: 0, nextDueDate: null, nextDueAmount: 0, supplierCredit:0, refunded:0 };
+    x.supplierCredit+=o.supplierCredit??0; x.refunded+=o.refunded; x.orders++; x.total += o.total; x.paid += o.paid; x.balance += o.balance; x.overdue += o.overdue;
     if (o.nextDueDate && (!x.nextDueDate || o.nextDueDate < x.nextDueDate)) { x.nextDueDate = o.nextDueDate; x.nextDueAmount = o.nextDueAmount; }
     else if (o.nextDueDate && o.nextDueDate === x.nextDueDate) x.nextDueAmount += o.nextDueAmount;
     bySupplier.set(key, x);
@@ -238,15 +245,15 @@ export async function supplierPayables(db: Db, m: Member, today: string) {
 /** Badge counts cover the entire scoped search, independently of selected state and list limits. */
 export async function purchaseCounts(db: Db, m: Member, filter: PurchaseListFilter, today: string) {
   const l = incomingShipmentLines, r = supplierReceipts, rl = supplierReceiptLines;
-  const received = sql`coalesce((select sum(${rl.goodQty}) from ${rl} inner join ${r} on ${r.id} = ${rl.receiptId}
+  const received = sql`coalesce((select sum(${rl.goodQty}-${rl.returnedGoodQty}) from ${rl} inner join ${r} on ${r.id} = ${rl.receiptId}
     where ${rl.lineId} = ${l.id} and ${r.cancelledAt} is null), 0)`;
   const hasLines = sql`exists (select 1 from ${l} where ${l.shipmentId} = ${incomingShipments.id})`;
   const fullyReceived = sql<boolean>`${hasLines} and not exists (select 1 from ${l}
-    where ${l.shipmentId} = ${incomingShipments.id} and ${l.quantity} > ${received})`;
+    where ${l.shipmentId} = ${incomingShipments.id} and (${l.quantity}-${l.creditedQty}) > ${received})`;
   const anyReceived = sql<boolean>`exists (select 1 from ${r} inner join ${rl} on ${rl.receiptId} = ${r.id}
     where ${r.shipmentId} = ${incomingShipments.id} and ${r.cancelledAt} is null and (${rl.goodQty} > 0 or ${rl.damagedQty} > 0))`;
   const amount = sql`(coalesce(${l.price}, 0) * (100 - greatest(0, least(100,
-    coalesce(${l.confirmedPurchaseDiscount}, ${l.purchaseDiscount}, 0)))) / 100 + greatest(0, ${l.printFee})) * floor(${l.quantity} + 0.5)`;
+    coalesce(${l.confirmedPurchaseDiscount}, ${l.purchaseDiscount}, 0)))) / 100 + greatest(0, ${l.printFee})) * (floor(${l.quantity} + 0.5) * case when ${l.quantity}>0 then (${l.quantity}-${l.creditedQty})/${l.quantity} else 0 end)`;
   const total = sql`coalesce((select sum(${amount}) + sum(${amount} * coalesce(${l.taxRate}, 0) / 100)
     from ${l} where ${l.shipmentId} = ${incomingShipments.id}), 0)`;
   const paid = sql`floor(coalesce((select sum(${supplierPayments.amount}) from ${supplierPayments}
@@ -266,7 +273,7 @@ export async function purchaseCounts(db: Db, m: Member, filter: PurchaseListFilt
     sapo: sql<boolean>`${sapoPending}`.as('sapo'),
     // Còn nợ NCC: chỉ đơn đã duyệt, chưa huỷ (đơn nháp / đã huỷ không phát sinh công nợ).
     debt: (canSeePrices(asActor(m)) ? sql<boolean>`${incomingShipments.approvalStatus} = 'approved' and ${incomingShipments.cancelledAt} is null
-      and floor((${total} - ${paid}) + 0.5) > 0` : sql<boolean>`false`).as('debt'),
+      and floor((${total} - ${paid} + ${incomingShipments.refundedAmount}) + 0.5) > 0` : sql<boolean>`false`).as('debt'),
   }).from(incomingShipments).where(purchaseListScope(m, filter)));
   const count = (condition: ReturnType<typeof sql>) => sql<number>`count(*) filter (where ${condition})`.mapWith(Number);
   const query = db.with(data).select({
@@ -282,7 +289,7 @@ export async function purchaseCounts(db: Db, m: Member, filter: PurchaseListFilt
 /** Đơn mua chưa huỷ, nhìn với quyền Manager – cho việc tự sinh (tasks) và sơ đồ quy trình. */
 export const SYSTEM_VIEWER = { id: 'system', role: 'manager', active: true, positionId: 'manager' } as unknown as Member;
 /** Việc tự động (nhận hàng, trả tiền NCC…): mọi đơn chưa huỷ – giới hạn rộng để đơn cũ còn nợ / chưa nhận đủ không bị bỏ sót. */
-export const openPurchases = (db: Db, today: string) => listPurchases(db, SYSTEM_VIEWER, { openOnly: true, limit: 5000 }, today);
+export const openPurchases = (db: Db, today: string, id?:string) => listPurchases(db, SYSTEM_VIEWER, { openOnly: true, limit: 5000, id }, today);
 
 // ---------------------------------------------------------------- nguồn: báo giá / đơn-HĐKT / khách hỏi tồn
 export type SourceType = 'quote' | 'order' | 'stock_request';
@@ -356,7 +363,7 @@ export async function orderedBySource(db: Db, keys: { type: string; id: string }
   const families=knownFamilies??await sourceFamilies(db,keys), aliasToFamily=new Map<string,string>();
   for(const [family,members]of families.aliases)for(const k of members)aliasToFamily.set(k.type+':'+k.id,family);
   const aliases=[...families.aliases.values()].flat();
-  const rows = await db.select({ type: supplierOrderSources.sourceType, id: supplierOrderSources.sourceId, sku: supplierOrderSources.sku, qty: supplierOrderSources.quantity })
+  const rows = await db.select({ type: supplierOrderSources.sourceType, id: supplierOrderSources.sourceId, sku: supplierOrderSources.sku, qty:sql<number>`${supplierOrderSources.quantity}-${supplierOrderSources.cancelledQuantity}`.mapWith(Number) })
     .from(supplierOrderSources).innerJoin(incomingShipments, eq(incomingShipments.id, supplierOrderSources.shipmentId))
     .where(and(isNull(incomingShipments.cancelledAt), or(...aliases.map(k => and(eq(supplierOrderSources.sourceType, k.type as SourceType), eq(supplierOrderSources.sourceId, k.id)))),
       exceptShipmentId ? sql`${incomingShipments.id} <> ${exceptShipmentId}` : undefined));

@@ -1334,3 +1334,16 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
  .pos-bill-lines td.num { text-align:left; } .pos-bill-lines td.num::before { content:attr(data-label);display:block;font-size:12px;color:var(--muted,#64748b); } }
 .pos-scan-actions { display:flex;flex-wrap:wrap;gap:10px;margin-top:12px; }
 .pos-scan-actions .btn { flex:1 1 140px;min-height:44px; }
+
+.pos-contact-warning { display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px;border:1px solid #edb354;background:#fff7e5;color:#754700;border-radius:10px; }
+.pos-contact-warning[hidden] { display:none; }
+.pos-order-row.pos-order-overdue { border-color:#dc930e;background:#fffbef; }
+.pos-order-contact-note { color:#875400;font-weight:600; }
+.pos-contact-reminder { width:min(1000px,calc(100vw - 28px));max-height:calc(100dvh - 40px); }
+.pos-contact-reminder .modal-body { max-height:calc(80dvh - 150px);overflow:auto; }
+.pos-contact-reminder-row { padding:12px 0;border-bottom:1px solid var(--line,#dce4ee);overflow-wrap:anywhere; }
+.pos-contact-reminder-actions { display:flex;gap:8px;flex-wrap:wrap; }
+.pos-contact-reminder .modal-foot { display:flex;justify-content:flex-end; }
+@media(max-width:850px) { .pos-contact-reminder-actions .btn { flex:1;min-width:100px;min-height:44px; } }
+
+.pos-qr-send{grid-column:1/-1}.pos-qr-share{padding:0 16px}.pos-qr-share select{width:100%;margin-bottom:8px}.pos-modal.pos-qr-phone{box-sizing:border-box;margin:auto;max-width:calc(100vw - 24px);width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;text-align:center;padding:20px;border:0;border-radius:18px}.pos-qr-phone::backdrop{background:rgba(15,30,50,.55)}.pos-qr-phone-amount{display:block;font-size:30px;color:#087944;margin:12px}.pos-qr-phone .pos-qr{max-width:100%;width:300px}.pos-qr-phone p{overflow-wrap:anywhere}

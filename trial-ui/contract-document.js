@@ -122,6 +122,54 @@ globalThis.ContractDocument = (() => {
   };
   const itemValues = (item, index) => ({'Start: [Related Chi tiết đơn hàngs]': '', End: '', '[STT]': index + 1, '[Sản phẩm].[Tên sản phẩm]': item.name || '', '[Mô tả sản phẩm]': productDescription(item), '[Số lượng]': money(item.quantity), '[đơn giá bán]': unitMoney(contractUnitPrice(item)), '[Đơn giá bán]': unitMoney(contractUnitPrice(item)), '[Thành tiền (-VAT)]': money(item.line_total), '[Thành tiền (+VAT)]': money(Number(item.line_total) * (1 + (Number(item.tax_percent) || 0) / 100)), '[Đóng gói]': packing(item)});
   const expandItems = (source, items) => source.replace(/<w:tr\b[\s\S]*?<\/w:tr>/g, row => row.includes('Related Chi tiết đơn hàngs') ? items.map((item, index) => replaceTokens(row, itemValues(item, index))).join('') : row);
+  // Presentation only, AFTER saved paragraph hashes/edits have been validated.
+  // Keep the shipped DOCX bytes/manifest and canonical paragraphs unchanged so
+  // old shared-template snapshots and saved document edits remain usable.
+  async function formatProductTable(bytes, items = []) {
+    const path='word/document.xml';
+    // JSZip retains compressed entries until read. Reuse embedded fonts/media
+    // rather than inflating/deflating several MB just to change document.xml.
+    const archive=globalThis.JSZip?await globalThis.JSZip.loadAsync(bytes):null;
+    const files=archive?null:unzipSync(new Uint8Array(bytes));
+    if(!(archive?archive.file(path):files[path]))throw Error('Mẫu HĐKT không hợp lệ.');
+    const source=archive?await archive.file(path).async('string'):strFromU8(files[path]);
+    const text=part=>[...part.matchAll(/<w:t\b[^>]*>([^<]*)<\/w:t>/g)].map(m=>m[1]).join('').trim();
+    const setText=(cell,value)=>{let first=true;return cell.replace(/(<w:t\b[^>]*>)[^<]*(<\/w:t>)/g,(_,open,close)=>{const next=first?xml(value):'';first=false;return open+next+close;});};
+    const result=source.replace(/<w:tbl\b[^>]*>(?:(?!<w:tbl\b)[\s\S])*?<\/w:tbl>/g,table=>{
+      const header=table.match(/<w:tr\b[\s\S]*?<\/w:tr>/)?.[0];
+      if(!header||!/^STT/.test(text(header))||!/Thành\s*[Tt]iền/.test(text(header)))return table;
+      const cells=header.match(/<w:tc\b[\s\S]*?<\/w:tc>/g)||[];
+      const quantityColumn=cells.findIndex(cell=>/Số\s*lượng/i.test(text(cell)));
+      if(quantityColumn<0)return table;
+      const white='<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF"/>';
+      let column=0;
+      const heading=header.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g,cell=>{
+        const quantity=column++===quantityColumn;
+        cell=cell.replace(/<w:shd\b[^>]*\/>/g,white);
+        if(/<w:tcPr\s*\/>/.test(cell))cell=cell.replace(/<w:tcPr\s*\/>/,'<w:tcPr>'+white+'</w:tcPr>');
+        else if(/<w:tcPr>/.test(cell))cell=cell.replace(/<w:tcPr>[\s\S]*?<\/w:tcPr>/,p=>p.includes('<w:shd')?p:p.replace('</w:tcPr>',white+'</w:tcPr>'));
+        else cell=cell.replace(/(<w:tc\b[^>]*>)/,'$1<w:tcPr>'+white+'</w:tcPr>');
+        return quantity?setText(cell,'Số lượng / ĐVT'):cell;
+      });
+      let itemIndex=0;
+      return table.replace(header,heading).replace(/<w:tr\b[\s\S]*?<\/w:tr>/g,row=>{
+        const rowCells=row.match(/<w:tc\b[\s\S]*?<\/w:tc>/g)||[];
+        if(rowCells.length!==cells.length)return row;
+        const cell=rowCells[quantityColumn],value=text(cell);
+        // Retain the displayed quantity (including valid saved edits); replace
+        // only its old unit suffix. Repeated preview/copy/export is idempotent.
+        const number=value.match(/^([+-]?\d[\d.,]*(?:[ \u00a0]\d{3})*)(?:\s+.*)?$/)?.[1];
+        if(!number)return row;
+        // Product order is authoritative; the visible STT is editable text.
+        const unit=String(items[itemIndex++]?.unit??'').trim();
+        if(!unit)return row; // Legacy missing units stay blank; never guess Bộ/Cái.
+        return row.replace(cell,setText(cell,number+' '+unit));
+      });
+    });
+    if(result===source)return bytes;
+    if(archive){archive.file(path,result,{createFolders:false,date:archive.file(path).date});return archive.generateAsync({type:'uint8array',compression:'DEFLATE',compressionOptions:{level:6}});}
+    files[path]=strToU8(result);return zipSync(files,{level:6});
+  }
   // Nhãn dòng thuế: cùng một thuế suất → "VAT (8%)"; nhiều thuế suất → "VAT".
   const vatLabel = items => { const rates = [...new Set(items.map(i => Number(i.tax_percent) || 0))]; return rates.length === 1 ? ` (${money(rates[0])}%)` : ''; };
   // Khối chữ ký cuối văn bản: bảng 2 cột bằng nhau, rộng hết khổ chữ và không trôi (mẫu cũ lệch trái), để 2 cụm "Đại diện" cân đối với trang.
@@ -289,6 +337,29 @@ globalThis.ContractDocument = (() => {
       files[path] = strToU8(source);
     }
   }
+  const qualityLines = printing => printing ? [
+    '2.1 Kiểu dáng và chất lượng sản phẩm:',
+    '- Kiểu dáng sản phẩm, nội dung in, kích thước và vị trí in ấn trên sản phẩm theo mẫu thiết kế đã được bên A đồng ý và kí duyệt. Về màu sắc sau khi in ấn trên sản phẩm đạt từ 80% trở lên, vị trí logo có thể chênh lệch 2-3mm so với mẫu bên A đã kí duyệt',
+    '- Trường hợp sau khi ra mẫu thật, Bên A thay đổi nội dung hoặc kích thước hoặc vị trí in thì bên A phải chịu chi trả khoản chi phí phát sinh do việc thay đổi này',
+    '- Chất lượng hàng hóa theo tiêu chuẩn NSX',
+  ] : ['2.1 Quy cách sản phẩm:', '- Chất lượng hàng hóa theo tiêu chuẩn NSX'];
+  const qualityRange = source => {
+    const paragraphs=[...source.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)],text=p=>[...p.matchAll(/<w:t\b[^>]*>([^<]*)<\/w:t>/g)].map(m=>m[1]).join('');
+    const chapter=paragraphs.findIndex(p=>/ĐIỀU II\s*:/i.test(text(p[0]))),from=paragraphs.findIndex((p,i)=>i>chapter&&/^\s*2\.1\s/.test(text(p[0]))),to=paragraphs.findIndex((p,i)=>i>from&&/^\s*2\.2\s/.test(text(p[0])));
+    if(chapter<0||from<0||to<0)throw Error('Mẫu HĐKT thiếu mục 2.1 hoặc 2.2; cần Manager kiểm tra mẫu trước khi dựng điều khoản hàng hóa.');
+    return {paragraphs,from,to};
+  };
+  function qualityClause(source,printing){
+    const {paragraphs,from,to}=qualityRange(source),heading=paragraphs[from][0],body=paragraphs[Math.min(from+1,to-1)][0];
+    const paragraph=(text,style)=>'<w:p>'+ (style.match(/<w:pPr\b[\s\S]*?<\/w:pPr>/)?.[0]||'')+'<w:r>'+(style.match(/<w:rPr\b[\s\S]*?<\/w:rPr>/)?.[0]||'')+'<w:t xml:space="preserve">'+xml(text)+'</w:t></w:r></w:p>';
+    const replacement=qualityLines(printing).map((line,i)=>paragraph(line,i?body:heading)).join('');
+    return source.slice(0,paragraphs[from].index)+replacement+source.slice(paragraphs[to].index);
+  }
+  function rebaseQualityEdits(oldXml,newXml,edits){
+    const old=qualityRange(oldXml),next=qualityRange(newXml),shift=next.to-old.to;
+    // Only the generated 2.1 clause is replaced. Other edits keep their text/runs/hash.
+    return edits.filter(e=>e.index<old.from||e.index>=old.to).map(e=>({...e,index:e.index>=old.to?e.index+shift:e.index}));
+  }
   async function prepareDocument({quote, contractNumber, templateBytes, details, documentType = 'HDKT', contractBytes}) {
     if (!unzipSync) throw new Error('Chưa tải được bộ tạo file HĐKT. Vui lòng tải lại trang.');
     if (!['HRC', 'B2B', 'VIGIFTS'].includes(quote.quote_type)) throw new Error('Loại báo giá không hỗ trợ tải HĐKT.');
@@ -306,7 +377,18 @@ globalThis.ContractDocument = (() => {
     normalizeFonts(files);
     let base=zipSync(files, {level: 6});
     let edits=(documentType==='HDKT'?quote.contract_word_edits:quote.contract_document_edits?.[documentType])||[],locked=[];
-    if(edits.length && globalThis.ContractWordEdit?.rebaseTypography) edits=await globalThis.ContractWordEdit.rebaseTypography(oldTypography,base,edits);
+    let rawEditBasis=oldTypography,editBasis=base;
+    const generatedQuality=documentType==='HDKT'&&typeof quote.printing_enabled==='boolean';
+    if(generatedQuality){
+      const previous=quote.contract_print_clause;
+      if(previous?.version===1&&typeof previous.printing==='boolean'){
+        const raw=unzipSync(oldTypography);raw[path]=strToU8(qualityClause(strFromU8(raw[path]),previous.printing));rawEditBasis=zipSync(raw,{level:6});
+        const old=unzipSync(base);old[path]=strToU8(qualityClause(strFromU8(old[path]),previous.printing));editBasis=zipSync(old,{level:6});
+      }
+      files[path]=strToU8(qualityClause(strFromU8(files[path]),quote.printing_enabled));base=zipSync(files,{level:6});
+    }
+    if(edits.length && globalThis.ContractWordEdit?.rebaseTypography) edits=await globalThis.ContractWordEdit.rebaseTypography(rawEditBasis,editBasis,edits);
+    if(generatedQuality)edits=rebaseQualityEdits(strFromU8(unzipSync(editBasis)[path]),strFromU8(files[path]),edits);
     if(documentType==='BBNT'&&contractBytes){
       if(!globalThis.ContractWordEdit)throw new Error('Chưa tải công cụ chỉnh Word.');
       ({base,edits,locked}=await globalThis.ContractWordEdit.copyContractTable(base,contractBytes,edits));
@@ -317,11 +399,13 @@ globalThis.ContractDocument = (() => {
       if(documentType==='HDKT')edits=await globalThis.ContractWordEdit.rebaseFields(base,edits);
     }
     if(documentType==='HDKT'&&globalThis.ContractWordEdit?.formFieldParagraphs)locked=globalThis.ContractWordEdit.formFieldParagraphs(base);
+    if(generatedQuality){const range=qualityRange(strFromU8(files[path]));locked=[...locked,...Array.from({length:range.to-range.from},(_,i)=>range.from+i)];}
     return {base,edits,locked};
   }
   async function build(options){
     const {base,edits}=await prepareDocument(options);
-    return edits.length?globalThis.ContractWordEdit.apply(base,edits):base;
+    const filled=edits.length?await globalThis.ContractWordEdit.apply(base,edits):base;
+    return formatProductTable(filled,options.quote.items);
   }
   async function buildPack({quote, contractNumber, details, templateFiles}) {
     const folder = archiveName(quote, contractNumber), files = {};
@@ -346,5 +430,5 @@ globalThis.ContractDocument = (() => {
     link.href = URL.createObjectURL(blob); link.download = `${archive.folder}.zip`; link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
-  return {build, buildPack, download, paymentDetails, prepareDocument, contractUnitPrice, templatesFor, archiveName};
+  return {build, buildPack, download, paymentDetails, prepareDocument, contractUnitPrice, templatesFor, archiveName, formatProductTable, printingClauseVersion:1};
 })();

@@ -1,0 +1,25 @@
+name: Preview complete Minh Long menus
+on:
+  push:
+    branches: [fix/minhlong-complete-menu-20261123]
+    paths: [.github/workflows/minhlong-complete-menu-preview.yml, web-minhlong/complete-menu/verify.mjs, web-minhlong/complete-menu/ml-complete-category-menu.php]
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: php -l web-minhlong/complete-menu/ml-complete-category-menu.php
+      - run: npm install --prefix /tmp/ml-complete --silent playwright@1.63.0
+      - run: node web-minhlong/complete-menu/verify.mjs --preview
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: complete-menu-preview
+          path: complete-menu-evidence
+          retention-days: 7

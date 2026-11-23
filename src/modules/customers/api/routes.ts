@@ -1,3 +1,4 @@
+import { customerDirectoryVisibility } from './visibility.ts';
 import {customerStaffOptions,validateNewCustomerShares} from './share-options.ts';
 import {customerProvince,provinceOptions} from '../domain/province.ts';
 import {provinceCodeSql} from './province.ts';
@@ -192,7 +193,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
   router.get('/customers/types', async c => {
     const name=sql<string>`btrim(${customers.customerType})`;
     const rows=await c.env.db.selectDistinct({name}).from(customers)
-      .where(and(ne(customers.approvalStatus,'rejected'),canListRetailCustomers(viewer(c))?undefined:eq(customers.isRetail,false)))
+      .where(and(ne(customers.approvalStatus,'rejected'),customerDirectoryVisibility(viewer(c))))
       .orderBy(asc(name));
     const seen=new Set<string>(),types:string[]=[];
     for(const row of rows){
@@ -220,7 +221,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const approval = status === 'rejected' ? and(eq(customers.approvalStatus, 'rejected'), canApprove(me) ? undefined : eq(customers.createdBy, me.id))
       : status === 'pending' || status === 'approved' ? eq(customers.approvalStatus, status) : usable ? eq(customers.approvalStatus, 'approved') : ne(customers.approvalStatus, 'rejected');
     const retailVisible = canListRetailCustomers(me), kind = c.url.searchParams.get('kind');
-    const segment = !retailVisible ? eq(customers.isRetail, false) : kind === 'retail' ? eq(customers.isRetail, true) : kind === 'business' ? eq(customers.isRetail, false) : undefined;
+    const segment = and(customerDirectoryVisibility(me), kind === 'retail' ? eq(customers.isRetail, true) : kind === 'business' ? eq(customers.isRetail, false) : undefined);
     const owner = c.url.searchParams.get('owner') || '', from = c.url.searchParams.get('from') || '', to = c.url.searchParams.get('to') || '';
     // Ô chọn khách (lập báo giá / đơn): `usable=1&limit≤8&q=…` chỉ cần vài khách khớp nhất. Một truy vấn trên cột `search`
     // (đã bỏ dấu sẵn khi lưu) thay cho bỏ dấu 6 cột từng dòng + đếm tổng + đếm khách chờ duyệt + người phụ trách.
@@ -242,7 +243,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
     const sort = c.url.searchParams.get('sort') || 'newest';
     if (!['newest','oldest','name-asc','name-desc'].includes(sort)) throw new AppError(400, 'Cách sắp xếp khách hàng không hợp lệ.');
     const order = sort === 'oldest' ? [asc(customers.createdAt)] : sort === 'name-asc' ? [asc(foldSql(customers.name)), asc(customers.name)] : sort === 'name-desc' ? [desc(foldSql(customers.name)), desc(customers.name)] : [desc(customers.createdAt)];
-    const where = and(segment, matchAllWords(foldSql(customers.name, customers.contact, customers.phone, customers.email, customers.taxCode, customers.customerCode), c.url.searchParams.get('q')), mine, approval, assigned, created,provinceFilter);
+    const where = and(segment, matchAllWords(sql`${customers}.search_fold`, c.url.searchParams.get('q')), mine, approval, assigned, created,provinceFilter);
     const [[{ total = 0 } = {}], rows, [{ pending = 0 } = {}], owners] = await Promise.all([
       c.env.db.select({ total: count() }).from(customers).where(where),
       c.env.db.select().from(customers).where(where).orderBy(...rankFirst(searchRank([customers.customerCode, customers.phone, customers.taxCode], customers.name, c.url.searchParams.get('q'))), ...order, asc(foldSql(customers.name)), asc(customers.name), asc(customers.id)).limit(limit).offset(offset),
@@ -287,6 +288,12 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       fields.contact = primary.name;
     }
     if (update) await requireProfileEdit(c.env.db, id, me);
+    // Phiên bản hồ sơ người dùng đang mở (GET /customers/:id → customer.profileRevision). Có → so trong transaction, khác → 409.
+    // Chưa gửi (giao diện cũ trong lúc triển khai) → lưu như trước.
+    const openedRevision = !update || body.profileRevision === undefined ? undefined
+      : Number.isSafeInteger(body.profileRevision) && (body.profileRevision as number) >= 0 ? body.profileRevision as number
+      : (() => { throw new AppError(400, 'Phiên bản hồ sơ khách không hợp lệ. Tải lại trang rồi thử lại.'); })();
+    let savedRevision: number | undefined;
     // Người đại diện: khi tạo mới dùng `isRepresentative` trong `contacts`; khi sửa dùng PUT /customers/:id/representative
     // (không đi qua đây vì PUT này ghi đè mọi ô thông tin bằng giá trị gửi lên).
     const row = { ...fields, ...terms, search: fold(Object.values(fields).join(' ')), sourceVersion: 0, syncedAt: now };
@@ -313,7 +320,11 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
           const directory=await saveContactDirectory(tx as any,previous!,body.contacts,body.contactDirectoryVersion,me.id,now);
           Object.assign(row,directory,{search:fold(Object.values({...fields,contact:directory.contact}).join(' '))});
         }
-        await tx.update(customers).set(row).where(eq(customers.id, id));
+        // So phiên bản hồ sơ sau bước danh bạ (danh bạ cũ báo lỗi riêng CUSTOMER_CONTACT_CONFLICT); lỗi ở đây huỷ cả transaction.
+        if (openedRevision !== undefined && previous!.profileRevision !== openedRevision)
+          throw new AppError(409, 'Hồ sơ khách vừa được người khác (hoặc đồng bộ Sapo) cập nhật sau khi bạn mở. Nội dung bạn nhập vẫn giữ trên form – đối chiếu bản mới rồi lưu lại.', 'CUSTOMER_PROFILE_CONFLICT');
+        const [saved] = await tx.update(customers).set(row).where(eq(customers.id, id)).returning({ profileRevision: customers.profileRevision });
+        savedRevision = saved?.profileRevision;
         return;
       }
       await validateNewCustomerShares(tx,sharedIds);
@@ -333,7 +344,7 @@ export function registerCustomerRoutes(router: Router<StaffEnv>) {
       console.error('customer_save_transaction_failed');
       throw new AppError(500, 'Không lưu được hồ sơ khách hàng. Các thay đổi trong lần lưu này đã được hủy.', 'CUSTOMER_SAVE_FAILED');
     });
-    return update ? json({ id }) : json({ id, approvalStatus: mgr ? 'approved' : 'pending' }, 201);
+    return update ? json({ id, profileRevision: savedRevision }) : json({ id, approvalStatus: mgr ? 'approved' : 'pending' }, 201);
   };
   router.post('/customers', c => save(c, false), 'business');
   router.put('/customers/:id', c => save(c, true), 'business');

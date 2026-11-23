@@ -79,6 +79,8 @@ export const warehouseSellers = pgTable('warehouse_sellers', {
 
 /** Phiếu điều chuyển kho (docs/SO-KHO.md "Điều chuyển kho"). Sổ kho chỉ ghi khi Kho bấm "Đã chuyển". */
 export const stockTransfers = pgTable('stock_transfers', {
+  /** Original create command; NULL for legacy records, never inferred from current status. */
+  createMode:text('create_mode').$type<'request'|'approve'|'ship'>(),
   id: text('id').primaryKey(),
   transferNo: text('transfer_no').notNull(),
   fromWarehouseId: text('from_warehouse_id').notNull().references(() => warehouses.id),

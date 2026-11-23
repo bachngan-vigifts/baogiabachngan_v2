@@ -1,3 +1,4 @@
+import { registerGoodsReturnRoutes } from './goods-return-routes.ts';
 import { supplierOrderNumberProblem } from '../domain/order-number.ts';
 import { lockReceiptForWrite } from './receipt-outbox.ts';
 import {registerPurchaseSupplierSearch} from './purchase-supplier-search.ts';
@@ -24,7 +25,7 @@ import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
 import {
   incomingShipmentLines, incomingShipments, supplierContacts, receiptJobs, supplierOrderEvents, supplierOrderSources, supplierPaymentSchedules, supplierPayments,
-  supplierReceiptLines, supplierReceipts, suppliers,
+  supplierReceiptLines, supplierReceipts, suppliers, purchaseOrderIntents,
 } from '../schema.ts';
 import { computeOrderTotals, purchaseUnitCost } from '../domain/order-totals.ts';
 import { isIsoDate } from '../domain/quantity.ts';
@@ -100,7 +101,7 @@ async function viewOf(c: Ctx, id: string) {
   await syncIncomingStock(c.env.db).catch(() => {});
   const v = (await loadPurchase(c.env.db, me(c), id, today())).view;
   const urls = await photoUrls(c.env.db, c.env.files, 'supplier_receipt', v.receipts.map(r => r.id));
-  return { ...v, receipts: v.receipts.map(r => ({ ...r, photos: urls.get(r.id) ?? [] })) };
+  return { ...v, canReturn:v.canReturn&&!c.env.supplierReturnsDisabled,canRefund:v.canRefund&&!c.env.supplierReturnsDisabled, receipts: v.receipts.map(r => ({ ...r, photos: urls.get(r.id) ?? [] })) };
 }
 /** Dấu nội dung yêu cầu nhận hàng (không gồm ảnh: gửi lại có thể nén ảnh khác). */
 function receiptRequestHash(body: Record<string, unknown>, createSapo: boolean) {
@@ -112,7 +113,7 @@ function receiptRequestHash(body: Record<string, unknown>, createSapo: boolean) 
 const lockSources = (tx: Tx) => tx.execute(sql`select pg_advisory_xact_lock(hashtext('supplier_order_sources'))`);
 
 // ---------------------------------------------------------------- dòng hàng + nguồn
-interface LineIn { sku: string; name: string; unit: string; quantity: number; price: number | null; taxRate: number | null; sources: { type: string; id: string; quantity: number }[] }
+interface LineIn { sku: string; name: string; unit: string; quantity: number; price: number | null; taxRate: number | null; purchaseDiscount?: number; sources: { type: string; id: string; quantity: number }[] }
 function cleanLines(raw: unknown, prices: boolean): LineIn[] {
   if (!Array.isArray(raw) || !raw.length || raw.length > 300) fail(400, 'Đơn mua cần từ 1 đến 300 mã hàng.');
   const seen = new Set<string>();
@@ -162,7 +163,7 @@ async function insertLines(tx: Tx, shipmentId: string, lines: LineIn[], needs: M
     // Tên: luôn theo danh mục (dòng báo giá có thể gõ gọn, vd "Bộ trà 0.5"); mã ngoài danh mục giữ tên gửi lên / của chứng từ nguồn.
     // ĐVT trống: lấy theo danh mục, không có thì theo chứng từ nguồn.
     const lineId = crypto.randomUUID(), p = names.get(l.sku), src = l.sources.map(s => needs.get(s.type + ':' + s.id)!.lines.find(x => x.sku.toLowerCase() === l.sku.toLowerCase())).find(Boolean);
-    await tx.insert(incomingShipmentLines).values({ id: lineId, shipmentId, lineNo: i + 1, sku: l.sku, name: p?.name || l.name || src?.name || '', unit: l.unit || p?.unit || src?.unit || '', quantity: l.quantity, price: l.price, taxRate: l.taxRate });
+    await tx.insert(incomingShipmentLines).values({ id: lineId, shipmentId, lineNo: i + 1, sku: l.sku, name: p?.name || l.name || src?.name || '', unit: l.unit || p?.unit || src?.unit || '', quantity: l.quantity, price: l.price, taxRate: l.taxRate, purchaseDiscount:l.purchaseDiscount??0 });
     for (const s of l.sources) {
       const n = needs.get(s.type + ':' + s.id)!;
       await tx.insert(supplierOrderSources).values({ id: crypto.randomUUID(), shipmentId, lineId, sourceType: s.type as 'quote', sourceId: s.id, sourceNo: n.no, customerName: n.customerName, sku: l.sku, quantity: s.quantity, createdAt: now });
@@ -170,14 +171,19 @@ async function insertLines(tx: Tx, shipmentId: string, lines: LineIn[], needs: M
   }
 }
 
-async function activeSupplier(db: Db | Tx, id: unknown) {
-  const [s] = typeof id === 'string' && id ? await db.select().from(suppliers).where(eq(suppliers.id, id)).limit(1) : [];
+async function activeSupplier(db: Db | Tx, id: unknown, lock = false) {
+  let s: typeof suppliers.$inferSelect | undefined;
+  if (typeof id === 'string' && id) {
+    const query = db.select().from(suppliers).where(eq(suppliers.id, id)).limit(1);
+    [s] = await (lock ? query.for('share') : query);
+  }
   if (!s) fail(400, 'Chọn nhà cung cấp.');
   if (!s!.active) fail(409, `${s!.name} đã ngừng hoạt động.`);
   return s!;
 }
 
 export function registerPurchaseRoutes(router: Router<StaffEnv>) {
+  registerGoodsReturnRoutes(router);
   registerReceiptJobRoutes(router);
   // Trang Tra tồn (sổ kho) đọc hàng đang về từ đơn mua NCC.
   incomingLookup.read = (db, skus) => outstandingLines(db, skus);
@@ -233,16 +239,45 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   router.post('/purchase-orders', async c => {
     guard(c);
     const db = c.env.db, m = me(c), body = await readJson(c.req, 400_000), prices = canSeePrices(asActor(m));
+    // Mã thao tác (giao diện tạo một lần cho mỗi lần lập đơn, giữ nguyên khi gửi lại). Chưa có mã = giao diện cũ, chạy như trước.
+    const clientKey = body.clientKey === undefined || body.clientKey === null ? null
+      : typeof body.clientKey === 'string' && body.clientKey.length >= 8 && body.clientKey.length <= 200 ? body.clientKey : fail(400, 'Mã thao tác lập đơn không hợp lệ. Tải lại trang rồi thử lại.');
+    const findIntent=async(q:Db)=>clientKey?(await q.select().from(purchaseOrderIntents).where(and(eq(purchaseOrderIntents.createdBy,m.id),eq(purchaseOrderIntents.clientKey,clientKey))).limit(1))[0]:undefined;
+    // Look up the caller's persisted result before current supplier/source validation. Hashing below is pure normalization.
+    const savedIntent=await findIntent(db);
     const list = Array.isArray(body.orders) ? body.orders as Record<string, unknown>[] : [];
     if (!list.length || list.length > 20) fail(400, 'Cần từ 1 đến 20 đơn mua (mỗi nhà cung cấp một đơn).');
-    const prepared = await Promise.all(list.map(async o => {
+    const normalized = list.map(o => {
+      const supplierId=typeof o.supplierId==='string'&&o.supplierId.trim()?o.supplierId:fail(400,'Chọn nhà cung cấp.');
       const arrivalDate = o.arrivalDate ? (isIsoDate(o.arrivalDate) ? o.arrivalDate : fail(400, 'Ngày hàng về dự kiến không hợp lệ.')) : null;
-      return { supplier: await activeSupplier(db, o.supplierId), lines: cleanLines(o.lines, prices), internalNo: internalOrderNumber(o.internalNo), arrivalDate, note: str(o.note, 2000), warehouse: deliveryAddress(o.warehouse) };
-    }));
-    if (new Set(prepared.map(p => p.supplier.id)).size !== prepared.length) fail(400, 'Mỗi nhà cung cấp chỉ một đơn trong một lần lập – gộp các mã cùng NCC.');
+      return { supplierId, lines: cleanLines(o.lines, prices), internalNo: internalOrderNumber(o.internalNo), arrivalDate, note: str(o.note, 2000), warehouse: deliveryAddress(o.warehouse) };
+    });
+    if (new Set(normalized.map(p => p.supplierId)).size !== normalized.length) fail(400, 'Mỗi nhà cung cấp chỉ một đơn trong một lần lập – gộp các mã cùng NCC.');
+    // Băm nội dung đã chuẩn hoá (NCC, dòng hàng, nguồn, số lượng, giá, kho, ngày, ghi chú) để nhận ra "gửi lại đúng như cũ".
+    const requestHash = clientKey ? sha256Hex(JSON.stringify(normalized.map(p => [p.supplierId, p.internalNo, p.arrivalDate, p.note, p.warehouse, p.lines]))) : '';
+    const decodeIntent=(row:typeof savedIntent):string[]|null=>{
+      if(!row)return null;
+      if(row.requestHash!==requestHash)throw new AppError(409,'Mã thao tác này đã dùng để lập đơn với nội dung khác. Tải lại trang danh sách đơn mua để kiểm tra trước khi lập tiếp.','INTENT_MISMATCH');
+      return JSON.parse(row.shipmentIds) as string[];
+    };
+    const earlier=async(q:Db)=>decodeIntent(await findIntent(q));
+    // Gửi lại sau khi đã lưu: trả bộ đơn cũ TRƯỚC khi kiểm nguồn (nguồn đã được chính lần lưu đó đặt hết, kiểm lại sẽ báo vượt).
+    const saved = decodeIntent(savedIntent);
+    if (saved) return json({ ids: saved, replayed: true });
+    const prepared=await Promise.all(normalized.map(async p=>({...p,supplier:await activeSupplier(db,p.supplierId)})));
     const needs = await checkSources(db, m, prepared.map(p => p.lines));
-    const ids: string[] = [];
+    let ids: string[] = [], replayed = false;
     await db.transaction(async tx => {
+      if (clientKey) {
+        // Hai lần gửi cùng mã chạy song song: lần sau chờ lần trước xong rồi thấy kết quả đã lưu.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'purchase-order-intent:' + m.id + ':' + clientKey}))`);
+        const again = await earlier(tx as unknown as Db);
+        if (again) { ids = again; replayed = true; return; }
+      }
+      // Revalidate after BEGIN and hold active/name stable until commit. Stable ordering avoids reversed supplier locks.
+      for (const p of [...prepared].sort((a,b)=>a.supplierId.localeCompare(b.supplierId))) {
+        p.supplier = await activeSupplier(tx, p.supplierId, true);
+      }
       // Khoá theo bảng nguồn để hai người lập đơn cùng lúc không cùng vượt phần còn cần đặt.
       await lockSources(tx);
       await checkSources(tx as unknown as Db, m, prepared.map(p => p.lines));
@@ -255,8 +290,9 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
         await event(tx, id, m.id, 'create', `Tạo đơn mua ${m.role === 'manager' ? '' : 'nháp '}${ticket} (${p.lines.length} mã)`, { sources: [...new Set(p.lines.flatMap(l => l.sources.map(s => needs.get(s.type + ':' + s.id)!.no)))] });
         ids.push(id);
       }
+      if (clientKey) await tx.insert(purchaseOrderIntents).values({ createdBy: m.id, clientKey, requestHash, shipmentIds: JSON.stringify(ids), createdAt: nowIso() });
     });
-    return json({ ids }, 201);
+    return replayed ? json({ ids, replayed: true }) : json({ ids }, 201);
   }, 'business');
 
   // ---- Nhập đơn mua từ file Excel tổng đơn của NCC (Manager): đơn đã đặt thật với NCC → tạo thẳng "đã duyệt + NCC đã xác nhận".
@@ -378,6 +414,22 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   // ---- Sửa nháp
+  // Update supplier reference only; never reopen approval, confirmation or receiving.
+  router.put('/purchase-orders/:id/supplier-reference', async c => {
+    const body = await readJson(c.req, 2000), id = c.params.id!, m = me(c);
+    if (!Number.isSafeInteger(body.revision) || Number(body.revision) < 0) fail(400, 'Thiếu phiên bản đơn mua hợp lệ. Tải lại đơn rồi thử lại.');
+    const internalNo = internalOrderNumber(body.internalNo);
+    if (!internalNo) fail(400, 'Nhập số đơn phía NCC cần bổ sung.');
+    await c.env.db.transaction(async tx => {
+      const p = await lockAndCheck(c, tx, id, 'reference', body.revision);
+      const before = p.raw.order.supplierInternalOrderNumber || '';
+      if (before === internalNo) return;
+      await bump(tx, id, m.id, { supplierInternalOrderNumber: internalNo });
+      await event(tx, id, m.id, 'supplier-reference', `Cập nhật số đơn phía NCC: ${before || '(trống)'} → ${internalNo}`, { before, after: internalNo });
+    });
+    return json((await loadPurchase(c.env.db, m, id, today())).view);
+  }, 'business');
+
   router.put('/purchase-orders/:id', async c => {
     guard(c);
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 400_000), prices = canSeePrices(asActor(m));
@@ -390,8 +442,14 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       const internalNo = internalOrderNumber(body.internalNo === undefined ? (p.raw.order.supplierId === supplier.id ? p.raw.order.supplierInternalOrderNumber : '') : body.internalNo);
       const warehouse = deliveryAddress(body.warehouse);
       const needs = await checkSources(tx as unknown as Db, m, [lines], id);
-      // Nhân viên sửa nháp: giữ giá Manager đã nhập (không thấy, không xoá được).
-      if (!prices) for (const l of lines) { const old = p.raw.lines.find(x => x.sku.toLowerCase() === l.sku.toLowerCase()); l.price = old?.price ?? null; l.taxRate = old?.taxRate ?? null; }
+      // Editing quantities/products must not erase saved costs, including prices hidden from the employee.
+      const rawLines=body.lines as Record<string,unknown>[];
+      for (const [index,l] of lines.entries()) {
+        const old=p.raw.lines.find(x=>x.sku.toLowerCase()===l.sku.toLowerCase()),raw=rawLines[index]!;
+        if(!prices||!Object.hasOwn(raw,'price'))l.price=old?.price??null;
+        if(!prices||!Object.hasOwn(raw,'taxRate'))l.taxRate=old?.taxRate??null;
+        l.purchaseDiscount=old?.purchaseDiscount??0;
+      }
       await tx.delete(supplierOrderSources).where(eq(supplierOrderSources.shipmentId, id));
       await tx.delete(incomingShipmentLines).where(eq(incomingShipmentLines.shipmentId, id));
       await insertLines(tx, id, lines, needs);
@@ -640,13 +698,18 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       if (!r) fail(404, 'Không tìm thấy phiếu nhận.');
       shipmentId = r!.shipmentId;
       if (r!.cancelledAt) return;
+      const returned = await tx.select({qty:supplierReceiptLines.returnedGoodQty}).from(supplierReceiptLines).where(eq(supplierReceiptLines.receiptId,r!.id));
+      if(returned.some(l=>l.qty>0))fail(409,'Phiếu đã có trả hàng NCC. Không hoàn tác phiếu gốc để tránh trừ kho lần hai.');
       if (r!.sapoStatus === 'done' || r!.sapoVerifiedAt || r!.sapoReceiptId || r!.sapoPurchaseOrderId || r!.sapoReceiptCode || r!.sapoReceiptUrl)
         fail(409, 'Phiếu đã có liên kết Sapo – hoàn tác trên Sapo và đối soát trước.');
       const [job]=await tx.select().from(receiptJobs).where(eq(receiptJobs.receiptId,r!.id)).for('update');
       const expected=body.expected as Record<string,unknown>|undefined;
       if(expected && (expected.sapoUpdatedAt!==(r!.sapoUpdatedAt??null)||expected.jobUpdatedAt!==(job?.updatedAt??null)))
         throw new AppError(409,'Phiếu hoặc tiến trình Sapo vừa thay đổi. Tải lại trước khi hoàn tác.','RECEIPT_CHANGED');
-      if(job&&(job.dispatchToken||job.leaseToken||['processing','callback_pending'].includes(job.status))){
+      // A delivery failure is not proof that the external write failed: n8n/Sapo may
+      // have accepted the request before the response was lost (including HTTP 530).
+      // Preserve the same review/lease/CAS requirements after ANY dispatch attempt.
+      if(job&&(job.attempts>0||job.dispatchToken||job.leaseToken||['processing','callback_pending','needs_review'].includes(job.status))){
         const now=Date.now(),resolved=body.confirmNoSapo===true&&expected&&job.status==='needs_review'&&!job.dispatchToken&&
           (!job.leaseUntil||Date.parse(job.leaseUntil)<=now)&&(!job.dispatchUntil||Date.parse(job.dispatchUntil)<=now);
         if(!resolved)throw new AppError(409,'Phiếu đang/chờ xử lý nhập Sapo. Dừng và xác minh kết quả luồng n8n/OpenClaw trước khi huỷ để tránh lệch kho.','RECEIPT_SYNC_IN_PROGRESS');
@@ -715,10 +778,16 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     if (reason.length < 3) fail(400, 'Nhập lý do huỷ khoản trả.');
     let shipmentId = '';
     await db.transaction(async tx => {
+      const [hint]=await tx.select({shipmentId:supplierPayments.shipmentId}).from(supplierPayments).where(eq(supplierPayments.id,c.params.id!));
+      if(!hint)fail(404,'Không tìm thấy khoản trả.');
+      const [parent]=await tx.select({refundedAmount:incomingShipments.refundedAmount}).from(incomingShipments).where(eq(incomingShipments.id,hint!.shipmentId)).for('update');
       const [pay] = await tx.select().from(supplierPayments).where(eq(supplierPayments.id, c.params.id!)).limit(1).for('update');
       if (!pay) fail(404, 'Không tìm thấy khoản trả.');
+      if(pay!.shipmentId!==hint!.shipmentId)fail(409,'Khoản trả vừa đổi đơn nguồn. Tải lại trước khi xử lý.');
       shipmentId = pay!.shipmentId;
       if (pay!.voidedAt) return;
+      const active=await tx.select({amount:supplierPayments.amount}).from(supplierPayments).where(and(eq(supplierPayments.shipmentId,shipmentId),isNull(supplierPayments.voidedAt)));
+      if(parent && active.reduce((s,p)=>s+p.amount,0)-pay!.amount<parent.refundedAmount)fail(409,'Khoản chi đã liên quan tiền hoàn thực nhận. Không huỷ; cần kế toán đối soát chứng từ điều chỉnh.');
       await tx.update(supplierPayments).set({ voidedAt: nowIso(), voidedBy: m.id, voidReason: reason }).where(eq(supplierPayments.id, pay!.id));
       const left = await tx.select({ amount: supplierPayments.amount }).from(supplierPayments).where(and(eq(supplierPayments.shipmentId, shipmentId), isNull(supplierPayments.voidedAt)));
       await tx.update(incomingShipments).set({ paidAmount: left.reduce((s, r) => s + r.amount, 0) }).where(eq(incomingShipments.id, shipmentId));

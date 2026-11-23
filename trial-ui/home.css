@@ -107,3 +107,7 @@
 #view-home .home-head-actions .home-collections{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:44px;text-align:center}
 #view-home .home-collections span{font-size:11px;font-weight:400;opacity:.85}
 @media(max-width:760px){#view-home .home-head{flex-wrap:wrap}#view-home .home-head>.home-head-actions{flex-basis:100%;width:100%}#view-home .home-head .home-head-actions>a{flex:1;min-width:0;max-width:none;padding:9px 12px;font-size:12px}}
+
+#view-home .home-head-actions{flex-wrap:wrap}
+#view-home .home-reminder-launch{min-height:44px;white-space:normal}
+@media(max-width:600px){#view-home .home-reminder-launch{flex-basis:100%}}

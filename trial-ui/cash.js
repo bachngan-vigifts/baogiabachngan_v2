@@ -167,7 +167,11 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
     // Thông báo "Yêu cầu đổi / trả hàng chờ duyệt" mở thẳng yêu cầu của bill đó.
     const linkedReturnOrder = link.get('returnOrderId');
     if (linkedReturnOrder && hash !== openedEntryLink && summary.canApprove) {
-      openedEntryLink = hash; openPosReturns({ api, toast, orderId: linkedReturnOrder });
+      openedEntryLink = hash;
+      await openPosReturns({ api, toast, orderId: linkedReturnOrder, onClose: () => {
+        // A consumed link must become usable again after closing or a failed load.
+        if (openedEntryLink === hash) openedEntryLink = '';
+      } });
     }
   }
   function render() {

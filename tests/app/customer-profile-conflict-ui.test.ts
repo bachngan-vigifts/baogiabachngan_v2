@@ -1,0 +1,23 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {runInNewContext} from 'node:vm';
+const app=readFileSync(new URL('../../trial-ui/app.js',import.meta.url),'utf8');
+const section=app.slice(app.indexOf('let customerId = null'),app.indexOf('/** Số báo giá của các khách'));
+test('phản hồi đối chiếu của form đã đóng không thay dữ liệu hoặc phiên bản của form mới',async()=>{
+ let release!:(v:unknown)=>void,paints=0;
+ const pending=new Promise(resolve=>{release=resolve;});
+ const node=()=>({hidden:true,children:[] as unknown[],replaceChildren(){this.children=[];},append(...v:unknown[]){this.children.push(...v);},scrollIntoView(){},addEventListener(){}});
+ const box=node(),fields=Object.fromEntries(['name','phone','address'].map(k=>[k,{value:'',dispatchEvent(){}}]));
+ const form={elements:{namedItem:(k:string)=>fields[k]||null}};
+ const ctx:any={api:async()=>pending,$:()=>box,document:{createElement:node},Event:class{},customerSteps:{repaint(){paints++;}}};
+ runInNewContext(section+`;globalThis.opened=(id,revision,c)=>{customerId=id;customerRevision=revision;customerOpened=customerSnapshot(c);};globalThis.show=showCustomerConflict;globalThis.revision=()=>customerRevision;`,ctx);
+ ctx.opened('A',0,{name:'Khách A',phone:'0900000001',address:'Địa chỉ A'});
+ const work=ctx.show(form,()=>false);
+ const next={name:'Khách B đang sửa',phone:'0900000002',address:'Địa chỉ B đang sửa'};
+ for(const k of Object.keys(fields))fields[k]!.value=next[k as keyof typeof next];
+ ctx.opened('B',7,next);
+ release({customer:{name:'Khách A cũ',phone:'0900000003',address:'Địa chỉ A cũ',profileRevision:1}});await work;
+ assert.deepEqual(Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,v.value])),next,'không gộp dữ liệu cũ vào form hiện tại');
+ assert.equal(ctx.revision(),7,'không thay phiên bản của form mới');assert.equal(box.hidden,true);assert.equal(paints,0);
+});

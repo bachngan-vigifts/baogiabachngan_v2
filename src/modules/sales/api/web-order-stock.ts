@@ -1,5 +1,5 @@
 import {readWebEdit} from '../domain/web-order-edit.ts';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, gt, eq, inArray, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { products } from '../../catalog/schema.ts';
@@ -89,4 +89,13 @@ export async function reconcileWebOrderStock(env: StaffEnv) {
   let done = 0;
   for (const r of rows) if (webStockAction(r.ghn, r.stock) !== 'none' && await syncWebOrderStock(env, r.id)) done++;
   return done;
+}
+
+/** Durable repair cursor: one candidate, including already-issued rows, per tick. */
+export async function reconcileWebOrderStockPage(env: StaffEnv, after: string) {
+  const [row] = await env.db.select({id:webStoreOrders.id,ghn:webStoreOrders.ghnStatus,stock:webStoreOrders.stockStatus}).from(webStoreOrders)
+    .where(and(gt(webStoreOrders.id,after),inArray(webStoreOrders.stockStatus,['none','blocked','issued']),sql`${webStoreOrders.ghnStatus}<>''`)).orderBy(asc(webStoreOrders.id)).limit(1);
+  if (!row) return { next: null, updated: 0 };
+  const updated = webStockAction(row.ghn,row.stock)!=='none' && await syncWebOrderStock(env,row.id) ? 1 : 0;
+  return { next: row.id, updated };
 }

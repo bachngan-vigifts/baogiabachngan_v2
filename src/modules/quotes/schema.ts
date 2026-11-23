@@ -8,6 +8,9 @@ export const quotations = pgTable('staff_quotations', {
   creatorId: text('creator_id').notNull().references(() => employees.id),
   /** Người phụ trách báo giá. null = chưa giao, mặc định là chủ (`creator_id`). `creator_id` không bao giờ đổi (trigger ở migration 0001). */
   assigneeId: text('assignee_id').references(() => employees.id),
+  /** Sale Admin handling this quote and its linked CRM order/contract; never changes sales ownership. */
+  supportAssigneeId: text('support_assignee_id').references(() => employees.id, { onDelete: 'set null' }),
+  supportAssignmentRevision: bigint('support_assignment_revision', { mode: 'number' }).notNull().default(0),
   quoteNo: text('quote_no').notNull(),
   quoteType: text('quote_type', { enum: ['HRC', 'B2B', 'VIGIFTS'] }).notNull(),
   customer: text('customer').notNull(),

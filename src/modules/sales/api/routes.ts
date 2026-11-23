@@ -1,3 +1,6 @@
+import {registerSaleAdminHandoff,supportOrderScope,handlesQuote} from './sale-admin-handoff.ts';
+import {registerSubmissionReview,submissionQuoteFingerprint,submissionDeliveryFingerprint} from './submission-review.ts';
+import {readSubmissionRecord} from '../domain/submission-review.ts';
 import {registerContractTemplateRoutes,contractTemplateSnapshot} from './contract-templates.ts';
 import {cleanWordEdits} from '../../quotes/domain/quotation-schema.ts';
 import {registerProductionFiles,bindProductionFiles} from './production-files.ts';
@@ -33,7 +36,7 @@ import { ensurePackingSchedule } from './delivery-store.ts';
 import { saveQuoteStockPlan, assertPlannedDispatch } from './quote-sourcing-routes.ts';
 import { documentNumberPatterns } from '../../../core/document-number.ts';
 import { cancelGhnShipments } from './pos-ghn-cancel.ts';
-import { approvalDebt, assertApprovalDebt, approvalCosts } from './approval-preflight.ts';
+import { approvalDebt, assertApprovalDebt, approvalCosts,assertOrderCostSource,orderCostReview } from './approval-preflight.ts';
 import { invoiceTasksChanged } from './invoice-task-hooks.ts';
 import { posOrderStoreScope } from './pos-access.ts';
 import { stockMoves } from '../../inventory/schema.ts';
@@ -45,6 +48,7 @@ import { posReturns, posRefunds, posExchangeAllocations } from '../return-schema
 import { snapshotPosFees } from '../domain/pos-fees.ts';
 import { editPosOrder } from './pos-order-edit.ts';
 import { cashLock, drawerOf, cashAudit, voidClosedCashEffect } from './cash-store.ts';
+import {assertNotAllocationReceipt} from './sepay-allocation-store.ts';
 import { issuePosDelivery } from './pos-delivery-stock.ts';
 import { posRegisters, posShifts } from '../pos-schema.ts';
 import { createScheduledDelivery } from './delivery-store.ts';
@@ -119,6 +123,7 @@ export const orderScopeFor = (m: {
     m.role === 'manager' || isAccountant(m) || seesAllAsSaleAdmin(m)
       ? undefined
       : or(
+          supportOrderScope(m),
           eq(salesOrders.ownerId, m.id),
           eq(salesOrders.createdBy, m.id),
           departmentOwner(salesOrders.ownerId, m),
@@ -155,8 +160,9 @@ const canEditOrderFor = (m: { id: string; role: string }, o: typeof salesOrders.
   o.status !== 'cancelled' && (m.role === 'manager' || (m.role === 'employee' && o.status === 'draft' && (o.ownerId === m.id || o.createdBy === m.id)));
 const linkedSapo = (c: Ctx, o: typeof salesOrders.$inferSelect) => ({ status: 'existing', id: o.sapoOrderId, code: o.sapoOrderCode,
   url: `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(o.sapoOrderId!)}`, warnings: [] });
-async function canEditOrderInDepartment(c: Ctx, o: typeof salesOrders.$inferSelect, db: StaffEnv['db'] | Tx = c.env.db) {
+async function canEditOrderInDepartment(c: Ctx, o: typeof salesOrders.$inferSelect, db: StaffEnv['db'] | Tx = c.env.db, includeSupport=true) {
   if (canEditOrderFor(viewer(c), o)) return true;
+  if (includeSupport&&o.status==='draft'&&await handlesQuote(db,viewer(c),o.quoteId))return true;
   if (o.status !== 'draft') return false;
   const [peer] = await db.select({ id: employees.id }).from(employees).where(and(inArray(employees.id, [o.ownerId, o.createdBy]), departmentOwner(employees.id, viewer(c)) ?? sql`false`)).limit(1);
   return !!peer;
@@ -165,8 +171,8 @@ async function canEditOrderInDepartment(c: Ctx, o: typeof salesOrders.$inferSele
  * Sửa / huỷ / gửi duyệt chứng từ: Manager; nhân viên chỉ khi còn nháp và là người phụ trách / người tạo / cùng phòng (phạm vi "Cả phòng ban").
  * Người chỉ được XEM (Kế toán, Sale Admin "Toàn công ty (chỉ xem)", người được duyệt mở đơn chờ duyệt) không sửa chứng từ của người khác.
  */
-async function assertCanEditOrder(c: Ctx, o: typeof salesOrders.$inferSelect, what = 'đơn hàng / HĐKT', db: StaffEnv['db'] | Tx = c.env.db) {
-  if (!await canEditOrderInDepartment(c, o, db)) throw new AppError(403, `Chỉ người phụ trách / người tạo được sửa ${what} nháp; ${what} đã duyệt chỉ Manager được sửa hoặc huỷ.`, 'ORDER_EDIT_FORBIDDEN');
+async function assertCanEditOrder(c: Ctx, o: typeof salesOrders.$inferSelect, what = 'đơn hàng / HĐKT', db: StaffEnv['db'] | Tx = c.env.db, includeSupport=true) {
+  if (!await canEditOrderInDepartment(c, o, db,includeSupport)) throw new AppError(403, `Chỉ người phụ trách / người tạo được sửa ${what} nháp; ${what} đã duyệt chỉ Manager được sửa hoặc huỷ.`, 'ORDER_EDIT_FORBIDDEN');
 }
 async function assertCanCreateSapo(c: Ctx, o: typeof salesOrders.$inferSelect) {
   if (o.status === 'cancelled') throw new AppError(409, 'Đơn hàng / HĐKT đã huỷ, không tạo đơn Sapo.', 'ORDER_CANCELLED');
@@ -363,6 +369,10 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
   const order = await linkedOrder(tx, quote.id);
   if (!order || (order.status !== 'draft' && member.role !== 'manager')) return;
   const data = JSON.parse(quote.data), lines = orderLinesFromQuote(data);
+  const submittedReview=readSubmissionRecord(order.submissionReview);
+  const [reviewSourceHash,deliverySourceHash]=submittedReview?await Promise.all([submissionQuoteFingerprint(data),submissionDeliveryFingerprint(data)]):[null,null];
+  const invalidateSubmission=order.status==='draft'&&submittedReview&&submittedReview.quoteFingerprint!==reviewSourceHash;
+  const keepReviewedDelivery=submittedReview&&submittedReview.deliveryFingerprint===deliverySourceHash;
   if (!lines.length) throw new AppError(400, `Báo giá đã sinh ${docRef(order.id, order.orderNo, (await contractNosOf(tx, [order.id])).get(order.id)).label}: phải còn ít nhất một dòng có số lượng.`);
   const t = orderTotals(lines), now = nowIso();
   const oldLines = await tx.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
@@ -398,10 +408,10 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
     else await tx.insert(salesOrderLines).values({ id: crypto.randomUUID(), orderId: order.id, ...values });
   }
   await ensureLineCosts(tx, order.id, 'amend', member.id);
-  await tx.update(salesOrders).set({ ...t, quoteNo: quote.quoteNo, quoteType: quote.quoteType,
+  await tx.update(salesOrders).set({ ...(invalidateSubmission?{submittedAt:null,submissionReview:null}:{}),...t, quoteNo: quote.quoteNo, quoteType: quote.quoteType,
     customerName: text(data.customer) || quote.customer, contact: text(data.contact), phone: text(data.phone, 100), email: text(data.email, 254),
-    taxCode: text(data.customerTaxCode, 100), address: text(data.customerAddress, 2000),
-    ...(isDate(data.deliveryDate) ? { expectedDeliveryDate: data.deliveryDate } : {}), updatedAt: now, revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
+    taxCode: text(data.customerTaxCode, 100), address: keepReviewedDelivery?submittedReview.deliveryAddress:text(orderDeliveryAddress(data),2000),
+    ...(keepReviewedDelivery?{expectedDeliveryDate:submittedReview.deliveryDate}:isDate(data.deliveryDate) ? { expectedDeliveryDate: data.deliveryDate } : {}), updatedAt: now, revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
   const [k] = await tx.select().from(salesContracts).where(and(eq(salesContracts.orderId, order.id), ne(salesContracts.status, 'cancelled'))).limit(1).for('update');
   const linkedTerms = contractTermsFromQuote(data);
   const financialTerms = { ...(linkedTerms.depositRate !== undefined ? { depositRate: linkedTerms.depositRate } : {}), ...(linkedTerms.paymentDays !== undefined ? { paymentDays: linkedTerms.paymentDays } : {}) };
@@ -413,7 +423,7 @@ export async function syncDraftOrderFromQuote(tx: Tx, quote: QuoteRow, member: {
       delete doc.edits;
     }
     doc.details = { ...(doc.details || {}), ...Object.fromEntries(Object.entries(linkedTerms).filter(([, v]) => v !== undefined)) };
-    await tx.update(salesContracts).set({ ...financialTerms, ...(linkedTerms.deliveryAddress !== undefined ? { deliveryAddress: linkedTerms.deliveryAddress } : {}), value: t.total, depositAmount: Math.round(t.total * (linkedTerms.depositRate ?? k.depositRate) / 100), data: JSON.stringify(doc), updatedAt: now, revision: sql`${salesContracts.revision} + 1` }).where(eq(salesContracts.id, k.id));
+    await tx.update(salesContracts).set({ ...financialTerms, ...(keepReviewedDelivery?{deliveryAddress:submittedReview.deliveryAddress}:linkedTerms.deliveryAddress!==undefined?{deliveryAddress:linkedTerms.deliveryAddress}:{}), value: t.total, depositAmount: Math.round(t.total * (linkedTerms.depositRate ?? k.depositRate) / 100), data: JSON.stringify(doc), updatedAt: now, revision: sql`${salesContracts.revision} + 1` }).where(eq(salesContracts.id, k.id));
   }
   await syncPaymentSchedules(tx, { ...order, ...t, status: orderStatusFromLines(order.status, plan.updates) }, k ? { ...k, ...financialTerms } : undefined);
   if (order.status !== 'draft') {
@@ -453,6 +463,7 @@ quoteSaveHooks.afterSave.push(syncDraftOrderFromQuote);
 export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchaseLinks?: (db: StaffEnv['db'], member: SessionState['member'], order: { id: string; quoteId: string | null }) => Promise<{ id: string; number: string; internalNo?: string; supplierName?: string }[]> } = {}) {
   registerWebOrderEdits(router);
   registerOrderProductsRoutes(router, orderScopeFor);
+  registerSaleAdminHandoff(router,orderScopeFor);
   registerProductionFiles(router,loadOrder,assertCanEditOrder);
   registerCrmReturnRoutes(router, loadOrder);
   registerCashCollectionRoutes(router,loadOrder,async(db,id)=>(await receivableOf(db,[id])).get(id)?.balance||0);
@@ -589,7 +600,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
   }, 'business');
 
   async function orderDetail(c: Ctx, id: string) {
-    const db = c.env.db, order = await loadOrder(c, id);
+    const db = c.env.db, order = await loadOrder(c, id), editable=await canEditOrderInDepartment(c,order),cancellable=editable&&await canEditOrderInDepartment(c,order,db,false);
     const [lines, contract, ships, schedules, payments] = await Promise.all([
       db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id)).orderBy(asc(salesOrderLines.lineNo)),
       db.select({ contract: salesContracts, quoteData: quotations.data, quoteRevision: quotations.revision }).from(salesContracts)
@@ -619,7 +630,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const net=netReturnInputs(schedules,payments.filter(p=>!p.voidedAt),adjustment);
     const cashCollectionRows=order.channel==='crm'?await cashCollectionsForOrder(db,order.id):[];
     return {
-      purchases,
+      purchases,submissionReview:readSubmissionRecord(order.submissionReview),
       cashCollections: cashCollectionRows, cashHeld: cashCollectionRows.filter(r=>r.status==='held').reduce((sum,r)=>sum+r.amount,0), canConfirmCashCollection: viewer(c).role==='manager',
       canCollectCashWithoutDrawer: order.channel === 'crm' && canCollectCrmCashWithoutDrawer(viewer(c)),
       returnAdjustment: adjustment || null,
@@ -628,10 +639,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       order: { ...order, warehouseName: order.warehouseId ? (await db.select({ name: warehouses.name }).from(warehouses).where(eq(warehouses.id, order.warehouseId)).limit(1))[0]?.name ?? '' : '', posFees: order.channel === 'pos' ? snapshotPosFees(JSON.parse(order.posSnapshot || '{}')) : null, customerCode: cust?.code ?? '', customerEmail: cust?.email ?? '', ownerName: person(order.ownerId)?.name ?? '', ownerPhone: person(order.ownerId)?.phone ?? '',
         createdByName: person(order.createdBy)?.name ?? '', createdByCustomer: person(order.createdBy)?.role === 'customer',
         invoiceRequestedByName: order.invoiceRequestedBy ? person(order.invoiceRequestedBy)?.name ?? '' : '', invoiceIssuedByName: order.invoiceIssuedBy ? person(order.invoiceIssuedBy)?.name ?? '' : '',
-        canIssueInvoice: canIssueInvoice(viewer(c)), canCreateSapo: !order.sapoOrderId && (canSalesCreateSapo(viewer(c), order) || await canEditOrderInDepartment(c, order)), canEdit: await canEditOrderInDepartment(c, order),
+        canIssueInvoice: canIssueInvoice(viewer(c)), canCreateSapo: !order.sapoOrderId && (canSalesCreateSapo(viewer(c), order) || editable), canEdit: editable, canCancel:cancellable,
         // Đơn Sapo đã đẩy (mã đang giữ chỗ "pending:…" khi đang đẩy thì chưa tính).
         sapoOrderCode: order.sapoOrderId ? order.sapoOrderCode : null,
-        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines:displayedLines, contract: contract[0] ? { ...contract[0], canManageTemplates: viewer(c).role === 'manager', canEditFinancial: viewer(c).role === 'manager', canEdit: await canEditOrderInDepartment(c, order), data: JSON.parse(contract[0].data) } : null,
+        sapoOrderUrl: order.sapoOrderId ? `${(c.env.sapoAdminBase || DEFAULT_SAPO_BASE).replace(/\/+$/, '')}/orders/${encodeURIComponent(order.sapoOrderId)}` : '' }, lines:displayedLines, contract: contract[0] ? { ...contract[0], canManageTemplates: viewer(c).role === 'manager', canEditFinancial: viewer(c).role === 'manager', canEdit: editable, canCancel:cancellable, data: JSON.parse(contract[0].data) } : null,
       deliveries: ships.map(s => ({ ...s,...confirmations.get(s.id),canConfirm:canConfirmDelivery(viewer(c),order),canCancel:!isWarehouseMember(viewer(c))&&canConfirmDelivery(viewer(c),order),lines: shipLines.filter(l => l.deliveryId === s.id), photos: shipPhotos.get(s.id) ?? [] })),
       // Phiếu đã huỷ vẫn trả về (hiện gạch ngang + lý do) nhưng không tính vào đã thu.
       schedules, payments: payments.map(p => ({ ...p, voidedByName: p.voidedBy ? person(p.voidedBy)?.name ?? '' : '' })),
@@ -692,23 +703,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     return json({ id, orderNo: o!.orderNo, sapo }, 201);
   }, 'business');
 
-  /** Nhân viên xem kỹ đơn / HĐKT nháp rồi bấm "Gửi duyệt" → Manager nhận thông báo + việc "Duyệt". */
-  router.post('/orders/:id/submit', async c => {
-    const me = viewer(c), order = await loadOrder(c, c.params.id!);
-    if (order.status !== 'draft') throw new AppError(409, 'Chỉ gửi duyệt được đơn / HĐKT còn nháp.');
-    await assertCanEditOrder(c, order);
-    if (order.submittedAt) return json({ ok: true, submittedAt: order.submittedAt });
-    const now = nowIso();
-    const rows = await c.env.db.update(salesOrders).set({ submittedAt: now, updatedAt: now, revision: sql`${salesOrders.revision} + 1` })
-      .where(and(eq(salesOrders.id, order.id), eq(salesOrders.status, 'draft'), isNull(salesOrders.submittedAt))).returning({ id: salesOrders.id });
-    if (rows.length) {
-      const [k] = await c.env.db.select({ no: salesContracts.contractNo }).from(salesContracts).where(eq(salesContracts.orderId, order.id)).limit(1);
-      await notifyMany(c.env, 'approvers', k
-        ? { eventType: 'contract_pending', title: 'HĐKT mới chờ duyệt', body: `${me.name}: ${k.no} – ${order.customerName}`, url: `/index.html#/contracts/${order.id}`, actorId: me.id, data: { orderId: order.id } }
-        : { eventType: 'order_pending', title: 'Đơn hàng mới chờ duyệt', body: `${me.name}: ${order.orderNo} – ${order.customerName} · ${new Intl.NumberFormat('vi-VN').format(order.total)} đ`, url: `/index.html#/orders/${order.id}`, actorId: me.id, data: { orderId: order.id } });
-    }
-    return json({ ok: true, submittedAt: now });
-  }, 'business');
+  registerSubmissionReview(router,loadOrder,assertCanEditOrder);
 
   /**
    * Đổi kho bán của đơn / HĐKT. Nháp: người phụ trách / người tạo (kho người phụ trách được bán). Đã duyệt: chỉ Manager – sổ kho
@@ -776,7 +771,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     const data = JSON.parse(quote.data);
     return json({ customerName: quote.customer, asOf: vietnamDate().iso,
-      ...(canApprove(viewer(c)) ? { purchaseCostsReady: data.rows.filter((r: { qty?: number }) => Number(r.qty) > 0).every((r: { costPrice?: number }) => Number.isFinite(r.costPrice)) } : {}),
+      ...(canApprove(viewer(c)) ? { purchaseCostsReady: !approvalCosts(data).missingPurchase } : {}),
       debt: await approvalDebt(c.env.db, data.customerId || null, String(data.customerTaxCode || '')) });
   }, 'business');
 
@@ -784,10 +779,13 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (!canApprove(viewer(c))) throw new AppError(403, 'Chỉ người được duyệt xem kiểm tra phê duyệt.', 'APPROVER_ONLY');
     const order = await loadOrder(c, c.params.id!);
     const [quote] = order.quoteId ? await c.env.db.select().from(quotations).where(eq(quotations.id, order.quoteId)) : [];
+    const requestedPayer=readSubmissionRecord(order.submissionReview)?.shippingPayer;
+    const costReview=quote?await orderCostReview(c.env.db,order.id,JSON.parse(quote.data)):null;
     return json({ customerName: order.customerName, asOf: vietnamDate().iso,
+      ...(viewer(c).role==='manager'&&costReview?{purchaseCosts:costReview.purchaseCosts}:{}),
       debt: await approvalDebt(c.env.db, order.customerId, order.taxCode, order.id),
-      costs: quote ? approvalCosts(JSON.parse(quote.data)) : null,
-      quoteId: can(viewer(c), 'page.quotes') ? order.quoteId : null });
+      costs: costReview?{...costReview.costs,missingShipping:costReview.costs.missingShipping||!!requestedPayer&&JSON.parse(quote!.data).shipping?.payer!==requestedPayer}:{missingSource:true},
+      shippingPayer:readSubmissionRecord(order.submissionReview)?.shippingPayer??null,quoteRevision:quote?.revision??null,quoteId: can(viewer(c), 'page.quotes') ? order.quoteId : null });
   }, 'business');
 
   router.put('/orders/:id/status', async c => {
@@ -796,7 +794,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const order = await loadOrder(c, c.params.id!);
     if (order.status !== 'draft' && viewer(c).role !== 'manager') throw new AppError(403, 'Đơn đã duyệt. Chỉ Manager được chỉnh sửa hoặc huỷ.', 'ORDER_APPROVED');
     if (status === 'cancelled' && saleFlowOf(order.posSnapshot)) throw new AppError(409,'Đơn cọc/trả trước: dùng Huỷ/hoàn tại POS để xử lý tiền và hàng.');
-    if (status === 'cancelled') await assertCanEditOrder(c, order);
+    if (status === 'cancelled') await assertCanEditOrder(c, order,'đơn hàng / HĐKT',c.env.db,false);
     if (status === 'cancelled') {
       const [paid] = await c.env.db.select({ n: sql<number>`count(*)` }).from(customerPayments).where(and(eq(customerPayments.orderId, order.id), isNull(customerPayments.voidedAt)));
       const lines = await c.env.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
@@ -821,22 +819,22 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       // Duyệt có thể giữ hàng tự động: khoá giữ hàng trước khoá đơn (cùng thứ tự với xác nhận xuất kho / POS).
       if (status === 'confirmed' && order.channel === 'crm') await lockHolds(tx);
       // Khoá đơn rồi kiểm lại trong giao dịch: phiếu thu / chuyến giao vừa ghi cùng lúc không lọt qua khi huỷ.
-      const [locked] = await tx.select({ status: salesOrders.status, warehouseId:salesOrders.warehouseId }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
+      const [locked] = await tx.select({ status: salesOrders.status, warehouseId:salesOrders.warehouseId,submissionReview:salesOrders.submissionReview }).from(salesOrders).where(eq(salesOrders.id, order.id)).for('update');
       if (locked?.status !== order.status) throw new AppError(409, 'Đơn hàng / HĐKT vừa thay đổi. Tải lại trang.', 'ORDER_CHANGED');
       if (status === 'cancelled') await assertCanCancelDocument(tx,order.id);
       if (status === 'confirmed') {
         if (warehouseId !== locked.warehouseId && (await tx.select({id:packingSlips.id}).from(packingSlips).where(and(eq(packingSlips.orderId,order.id),ne(packingSlips.status,'cancelled'))).limit(1)).length) throw new AppError(409,'Huỷ các phiếu kế hoạch nguồn hàng rồi lập lại trước khi đổi kho bán.','STOCK_PLAN_IN_USE');
         assertApprovalDebt(await approvalDebt(tx, order.customerId, order.taxCode, order.id), body.debtWarningAccepted === true);
         const [quote] = order.quoteId ? await tx.select().from(quotations).where(eq(quotations.id, order.quoteId)) : [];
-        if (quote) {
-          const costs = approvalCosts(JSON.parse(quote.data));
-          if (costs.missingPrinting) throw new AppError(409, 'Vui lòng nhập chi phí in/khắc trước khi duyệt.', 'PRINTING_COST_REQUIRED');
-          if ((costs.missingCommission || costs.missingShipping) && body.costWarningsReviewed !== true)
-            throw new AppError(409, 'Vui lòng kiểm tra CK khách và phí vận chuyển trước khi duyệt.', 'COST_REVIEW_REQUIRED');
-        }
+        if(body.costQuoteRevision!==undefined&&(!quote||!Number.isSafeInteger(body.costQuoteRevision)||body.costQuoteRevision!==quote.revision))throw new AppError(409,'Chi phí báo giá vừa thay đổi. Mở lại phần kiểm tra chi phí trước khi duyệt.','COSTS_CHANGED');
+        await ensureLineCosts(tx,order.id,'confirm',viewer(c).id);
+        const submittedReview=readSubmissionRecord(locked.submissionReview);
+        if(submittedReview&&quote&&JSON.parse(quote.data).shipping?.payer!==submittedReview.shippingPayer)throw new AppError(409,'Bên chịu phí vận chuyển chưa khớp nội dung nhân viên đã xác nhận. Manager kiểm tra lại chi phí trước khi duyệt.','SHIPPING_PAYER_CHANGED');
+        if(order.channel==='crm')await assertOrderCostSource(tx,order.id,quote?JSON.parse(quote.data):null);
+        if(quote&&approvalCosts(JSON.parse(quote.data)).missingCommission&&body.costWarningsReviewed!==true)
+          throw new AppError(409,'Vui lòng kiểm tra CK khách trước khi duyệt.','COST_REVIEW_REQUIRED');
       }
-      // Duyệt: chốt giá vốn lúc bán (đơn nháp còn cập nhật theo báo giá / giá nhập; sau duyệt khoá) – chạy trước khi đổi trạng thái.
-      if (status === 'confirmed') await ensureLineCosts(tx, order.id, 'confirm', viewer(c).id);
+      // Giá vốn đã được chốt và kiểm tra trong giao dịch trước khi đổi trạng thái.
       await tx.update(salesOrders).set({ status, warehouseId, updatedAt: nowIso(), revision: sql`${salesOrders.revision} + 1` }).where(eq(salesOrders.id, order.id));
       // Duyệt không ghi sổ kho; khi huỷ chỉ hoàn các dòng trừ kiểu cũ. Phiếu xuất được đảo ở cancelDocumentChildren.
       await syncOrderStock(tx, viewer(c).id, order.id, status === 'confirmed' ? `Duyệt bán – ${order.customerName}` : `Huỷ ${order.orderNo} – hàng về lại kho bán`);
@@ -971,6 +969,8 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       await tx.delete(deliveries).where(eq(deliveries.orderId, order.id));
       await tx.delete(paymentSchedules).where(eq(paymentSchedules.orderId, order.id));
       await tx.delete(salesContracts).where(eq(salesContracts.orderId, order.id));
+      // Delete lines first so their cost snapshots cascade before the separate snapshot → order FK is checked. Cost history remains.
+      await tx.delete(salesOrderLines).where(eq(salesOrderLines.orderId, order.id));
       await tx.delete(salesOrders).where(eq(salesOrders.id, order.id));
     });
     await removeMovements(c.env.db, `sale:${order.id}:`);
@@ -1210,6 +1210,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       if (contract.status === 'cancelled' && body.status !== undefined && body.status !== 'cancelled') throw new AppError(409,'HĐKT đã huỷ, không mở lại riêng trạng thái hợp đồng.');
       // Nhận tiền trước duyệt vẫn là thực thu: không huỷ HĐKT để bỏ qua khoản đã nhận.
       if (body.status === 'cancelled') {
+        await assertCanEditOrder(c, found.order,'HĐKT',tx,false);
         const [paid] = await tx.select({ id: customerPayments.id }).from(customerPayments)
           .where(and(eq(customerPayments.orderId, found.order.id), isNull(customerPayments.voidedAt))).limit(1);
         if (paid) throw new AppError(409, 'HĐKT đã thu tiền, không huỷ được. Cần xử lý khoản đã thu trước.', 'ORDER_HAS_PAYMENTS');
@@ -1585,6 +1586,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (p.voidedAt) throw new AppError(409, 'Phiếu thu đã huỷ.');
     await c.env.db.transaction(async tx=>{
     await cashLock(tx);
+    await assertNotAllocationReceipt(tx,p.id);
     await assertNoReturnActivity(tx,p.orderId);
     const done = await tx.update(customerPayments).set({ voidedAt: nowIso(), voidedBy: me.id, voidReason: reason })
       .where(and(eq(customerPayments.id, p.id), isNull(customerPayments.voidedAt))).returning({ id: customerPayments.id });

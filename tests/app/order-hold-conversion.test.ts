@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import {test,beforeEach,afterEach,mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {eq,inArray} from 'drizzle-orm';
@@ -16,7 +17,7 @@ async function setup(){
   const q=ok(await f.call('/quotes',c.emp,'POST',{type:'B2B',quoteNo:'CV-'+crypto.randomUUID(),customer:'Khách cũ',vat:8,rows:[{sku,name:'Bộ trà',unit:'Bộ',qty,price:2000}]}),201);
   ok(await f.call('/quotes/'+q.id+'/approve',c.mgr,'POST',{revision:1}));
   const o=ok(await f.call('/orders',c.emp,'POST',{quoteId:q.id,warehouseId:'vig',...(date?{deliveryDate:date}:{})}),201);
-  if(approve)ok(await f.call(`/orders/${o.id}/status`,c.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
+  if(approve)ok(await approveFixtureOrder(f,`/orders/${o.id}/status`,c.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
   return o.id as string;
  };
  // Bốn đơn có trước khi bật (giữ kiểu cũ): A, B có ngày giao; C không ngày giao; D nháp. Đơn mẫu của fixture cũng là đơn cũ, không ngày giao.

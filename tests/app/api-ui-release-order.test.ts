@@ -1,33 +1,107 @@
-import {test} from 'node:test';
+import {test,after} from 'node:test';
 import assert from 'node:assert/strict';
-// @ts-ignore Plain-JS Actions helper.
-import {waitForApiDeployment} from '../../scripts/wait-for-api-deployment.mjs';
-const sha='a'.repeat(40),other='b'.repeat(40);
-function fixture(runs:any[],deployed=true){
- let time=0,calls=0,jobsRead=0;
+import {execFileSync} from 'node:child_process';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,dirname} from 'node:path';
+const {waitForApiDeployment}=await import(process.env.API_GATE_SOURCE||new URL('../../scripts/wait-for-api-deployment.mjs',import.meta.url).href);
+
+// Actual Git history/diffs, synthetic files. No production or GitHub requests.
+const cwd=mkdtempSync(join(tmpdir(),'api-ui-gate-'));
+const git=(...args:string[])=>execFileSync('git',args,{cwd,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+git('init','-q','-b','main');git('config','user.name','Local test');git('config','user.email','local@example.invalid');
+const write=(path:string,text:string)=>{mkdirSync(dirname(join(cwd,path)),{recursive:true});writeFileSync(join(cwd,path),text);};
+const commit=()=>{git('add','.');git('commit','-qm','fixture');return git('rev-parse','HEAD');};
+write('README.md','before API');const older=commit();
+const paths=['src/api.ts','supabase/config.toml','migrations/postgres/test.sql','package-lock.json','.github/workflows/deploy-api.yml'];
+for(const p of paths)write(p,'api-v1');const sha=commit();
+write('trial-ui/index.html','new UI');const newer=commit();
+const changed=paths.map(p=>{git('checkout','-q',newer);write(p,'api-v2');return commit();});
+git('checkout','-q',newer);git('branch','-f','main',newer);git('remote','add','origin',cwd);
+after(()=>rmSync(cwd,{recursive:true,force:true}));
+const run=(id:number,head_sha=sha,status='completed',conclusion:string|null='success',extra={})=>({id,head_sha,status,conclusion,head_branch:'main',event:'push',head_repository:{full_name:'owner/repo'},run_attempt:1,run_started_at:new Date(id*1000).toISOString(),...extra});
+function fixture(frames:any[][],{deployed=true,mainRef=newer}={}){
+ let time=0,calls=0,jobsRead=0,frame:any[]=[];
  const github={rest:{actions:{
-  listWorkflowRuns:async(p:any)=>{assert.equal(p.head_sha,sha);assert.equal(p.workflow_id,'deploy-api.yml');return {data:{workflow_runs:runs[Math.min(calls++,runs.length-1)]}};},
-  listJobsForWorkflowRun:async(p:any)=>{jobsRead++;assert.equal(p.run_id,12);return {data:{jobs:[{steps:[{name:'Triển khai Edge Function',status:'completed',conclusion:deployed?'success':'skipped'}]}]}};},
+  listWorkflowRuns:async(p:any)=>{assert.equal(p.workflow_id,'deploy-api.yml');assert.match(p.created,/^>=\d{4}-\d{2}-\d{2}$/,'chỉ quét 31 ngày GitHub còn cho chạy lại');const page=p.page||1;if(page===1)frame=frames[Math.min(calls++,frames.length-1)]!;const rows=p.head_sha?frame.filter(r=>r.head_sha===p.head_sha):frame;return {data:{total_count:rows.length,workflow_runs:rows.slice((page-1)*100,page*100)}};},
+  listJobsForWorkflowRun:async()=>{jobsRead++;return {data:{jobs:[{steps:[{name:'Triển khai Edge Function',status:'completed',conclusion:deployed?'success':'skipped'}]}]}};},
  }}};
- return {options:{github,owner:'owner',repo:'repo',sha,timeoutMs:100,pollMs:20,now:()=>time,sleep:async(ms:number)=>{time+=ms;}},calls:()=>calls,jobsRead:()=>jobsRead};
+ return {options:{github,owner:'owner',repo:'repo',sha,cwd,mainRef,timeoutMs:100,pollMs:20,now:()=>time,sleep:async(ms:number)=>{time+=ms;}},calls:()=>calls,jobsRead:()=>jobsRead};
 }
-test('UI waits for the matching API commit, including a queued job behind an older deployment',async()=>{
- const f=fixture([
-  [{id:11,head_sha:other,status:'completed',conclusion:'success'}],
-  [{id:12,head_sha:sha,status:'pending'}],
-  [{id:12,head_sha:sha,status:'in_progress'}],
-  [{id:12,head_sha:sha,status:'completed',conclusion:'success'}],
- ]);
+test('UI waits for a matching API main run while queued/running',async()=>{
+ const f=fixture([[],[run(12,sha,'queued',null)],[run(12,sha,'in_progress',null)],[run(12)]]);
  assert.equal(await waitForApiDeployment(f.options),12);assert.equal(f.calls(),4);assert.equal(f.jobsRead(),1);
 });
-test('A successful workflow with a skipped deployment cannot publish the new UI',async()=>{
- const f=fixture([[{id:12,head_sha:sha,status:'completed',conclusion:'success'}]],false);
- await assert.rejects(()=>waitForApiDeployment(f.options),/API_DEPLOYMENT_SKIPPED/);
+test('8a783 failure + newer d186 success with identical API tree allows UI',async()=>{
+ const f=fixture([[run(12,newer),run(11,sha,'completed','failure')]]);
+ assert.equal(await waitForApiDeployment(f.options),12);assert.equal(f.jobsRead(),1);
 });
-test('Failed or cancelled API validation and missing runs block UI without triggering deployment',async()=>{
+test('X UI followed by newer Z API may proceed after Z succeeds even when API files changed',async()=>{
+ for(const head of changed){const f=fixture([[run(12,head),run(11)]],{mainRef:head});assert.equal(await waitForApiDeployment(f.options),12);}
+ const f=fixture([[run(12,changed[0],'in_progress',null),run(11)],[run(12,changed[0]),run(11)]],{mainRef:changed[0]});
+ assert.equal(await waitForApiDeployment(f.options),12);assert.equal(f.calls(),2);
+});
+test('the newest main commit failure/cancellation never falls back to older green',async()=>{
  for(const conclusion of ['failure','cancelled']){
-  const f=fixture([[{id:12,head_sha:sha,status:'completed',conclusion}]]);
+  const f=fixture([[run(13,newer,'completed',conclusion),run(12)]]);
   await assert.rejects(()=>waitForApiDeployment(f.options),new RegExp('API_DEPLOYMENT_'+conclusion.toUpperCase()));assert.equal(f.jobsRead(),0);
  }
- const f=fixture([[]]);await assert.rejects(()=>waitForApiDeployment(f.options),/API_DEPLOYMENT_TIMEOUT/);
+});
+test('the latest run of the same newer commit wins over its earlier green run',async()=>{
+ const f=fixture([[run(13,newer,'completed','failure'),run(12,newer),run(11)]]);
+ await assert.rejects(()=>waitForApiDeployment(f.options),/API_DEPLOYMENT_FAILURE/);
+ const pending=fixture([[run(13,newer,'in_progress',null),run(12,newer),run(11)]]);
+ await assert.rejects(()=>waitForApiDeployment(pending.options),/API_DEPLOYMENT_TIMEOUT/);assert.equal(pending.jobsRead(),0);
+ const rerun=fixture([[run(12,newer,'completed','failure',{run_attempt:2,run_started_at:new Date(15000).toISOString()}),run(13,newer)]]);
+ await assert.rejects(()=>waitForApiDeployment(rerun.options),/API_DEPLOYMENT_FAILURE/);
+});
+test('successful workflow still requires the actual Edge deployment step',async()=>{
+ const f=fixture([[run(12,newer)]],{deployed:false});await assert.rejects(()=>waitForApiDeployment(f.options),/API_DEPLOYMENT_SKIPPED/);
+});
+test('PR/fork/feature branch green runs are never evidence of a main deployment',async()=>{
+ for(const extra of [{event:'pull_request'},{head_branch:'feature'},{head_repository:{full_name:'fork/repo'}}]){
+  const f=fixture([[run(12,newer,'completed','success',extra)]]);await assert.rejects(()=>waitForApiDeployment(f.options),/API_DEPLOYMENT_TIMEOUT/);
+ }
+});
+test('start time wins over API response/commit ordering, and reruns older than S are superseded',async()=>{
+ const f=fixture([[run(11),run(12,newer)]]);assert.equal(await waitForApiDeployment(f.options),12);
+ const stale=fixture([[run(11,sha,'completed','failure',{run_attempt:2,run_started_at:new Date(15000).toISOString()}),run(12,newer)]]);
+ await assert.rejects(()=>waitForApiDeployment(stale.options),/API_DEPLOYMENT_FAILURE/);
+ const rollback=fixture([[run(10,older,'completed','success',{run_started_at:new Date(15000).toISOString()}),run(12,newer)]]);
+ await assert.rejects(()=>waitForApiDeployment(rollback.options),/API_DEPLOYMENT_SUPERSEDED/);
+ const exact=fixture([[run(11,sha,'completed','success',{run_attempt:2,run_started_at:new Date(15000).toISOString()}),run(12,newer)]]);
+ assert.equal(await waitForApiDeployment(exact.options),11);
+});
+test('non-main or missing history fails closed rather than using older green',async()=>{
+ const f=fixture([[run(13,changed[0]),run(12)]]);
+ await assert.rejects(()=>waitForApiDeployment(f.options),/API_DEPLOYMENT_NOT_ON_MAIN/);
+ await assert.rejects(()=>waitForApiDeployment({...f.options,sha:'f'.repeat(40)}),/API_SOURCE_NOT_ON_MAIN/);
+});
+test('a main run created after checkout can refresh and verify its actual Git history',async()=>{
+ const mainRef='refs/remotes/origin/main';git('update-ref',mainRef,sha);
+ const f=fixture([[run(12,newer)]],{mainRef});assert.equal(await waitForApiDeployment(f.options),12);
+ assert.equal(git('rev-parse',mainRef),newer);
+});
+test('invalid source or unreadable repository never bypasses the gate',async()=>{
+ const f=fixture([[run(12,newer)]]);
+ await assert.rejects(()=>waitForApiDeployment({...f.options,sha:'--help'}),/API_SOURCE_SHA_INVALID/);
+ await assert.rejects(()=>waitForApiDeployment({...f.options,cwd:join(cwd,'missing')}),/API_SOURCE_UNVERIFIED/);
+});
+test('failed/missing runs block without dispatch/cancel/deploy APIs',async()=>{
+ const f=fixture([[run(12,sha,'completed','failure')]]);await assert.rejects(()=>waitForApiDeployment(f.options),/API_DEPLOYMENT_FAILURE/);
+ const missing=fixture([[]]);await assert.rejects(()=>waitForApiDeployment(missing.options),/API_DEPLOYMENT_TIMEOUT/);
+});
+test('UI keeps full Git history and read-only permissions',()=>{
+ const workflow=readFileSync(new URL('../../.github/workflows/deploy-ui.yml',import.meta.url),'utf8');
+ assert.match(workflow,/fetch-depth: 0/);assert.match(workflow,/contents: read/);assert.match(workflow,/actions: read/);
+});
+test('a later-started rerun beyond page one is considered, not an old green snapshot',async()=>{
+ const rows=Array.from({length:100},(_,i)=>run(100+i,newer));rows.push(run(10,older,'completed','success',{run_attempt:2,run_started_at:new Date(250000).toISOString()}));
+ const f=fixture([rows]);await assert.rejects(()=>waitForApiDeployment(f.options),/API_DEPLOYMENT_SUPERSEDED/);
+});
+test('incomplete history or missing start time cannot prove the production API',async()=>{
+ const time=fixture([[run(12,newer,'completed','success',{run_started_at:'invalid'})]]);
+ await assert.rejects(()=>waitForApiDeployment(time.options),/API_DEPLOYMENT_TIME_UNVERIFIED/);
+ const truncated=fixture([Array.from({length:1001},(_,i)=>run(i+1,newer))]);
+ await assert.rejects(()=>waitForApiDeployment(truncated.options),/API_DEPLOYMENT_HISTORY_INCOMPLETE/);
 });

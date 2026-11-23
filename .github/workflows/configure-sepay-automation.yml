@@ -1,0 +1,72 @@
+name: Cấu hình tự ghi thu và đồng bộ tiền ra SePay
+on:
+  workflow_dispatch:
+    inputs:
+      expected_api_version:
+        description: Phiên bản API production đã kiểm tra chốt quyền tiền ra
+        required: true
+        type: string
+      crm_auto_receipts:
+        description: Tự ghi thu CRM cho hai tài khoản công ty đã xác minh
+        required: true
+        type: boolean
+        default: false
+      debit_import:
+        description: Đồng bộ bằng chứng tiền ra, chỉ Manager và Kế toán xem
+        required: true
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: configure-sepay-automation
+  cancel-in-progress: false
+jobs:
+  configure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      EXPECTED_API_VERSION: ${{ inputs.expected_api_version }}
+      CRM_AUTO_RECEIPTS: ${{ inputs.crm_auto_receipts }}
+      DEBIT_IMPORT: ${{ inputs.debit_import }}
+    steps:
+      - name: Cấu hình hai cờ và xác minh digest, không ghi chứng từ
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, json, hashlib, urllib.request, urllib.error
+          token = os.environ.get('SUPABASE_ACCESS_TOKEN', '')
+          expected = os.environ['EXPECTED_API_VERSION']
+          if not token or not expected.isdigit():
+              raise SystemExit('Thiếu credential hoặc phiên bản API không hợp lệ; chưa thay cấu hình.')
+          flags = [os.environ['CRM_AUTO_RECEIPTS'], os.environ['DEBIT_IMPORT']]
+          if any(flag not in ('true','false') for flag in flags):
+              raise SystemExit('Cờ cấu hình không hợp lệ; chưa thay cấu hình.')
+          base = 'https://api.supabase.com/v1/projects/taceqfnsorewelsbdckg'
+          def request(path, body=None):
+              req = urllib.request.Request(base+path, data=None if body is None else json.dumps(body).encode(),
+                  headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+                  method='GET' if body is None else 'POST')
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      data = response.read()
+                      return json.loads(data) if data else None
+              except urllib.error.HTTPError as error:
+                  raise SystemExit('Supabase Management API HTTP '+str(error.code)+'; cần kiểm tra trạng thái trước khi thử lại.')
+          functions = request('/functions')
+          live = next((f for f in functions if f.get('slug')=='baogia-v2-api'),None)
+          if not live or str(live.get('version'))!=expected or live.get('status')!='ACTIVE':
+              raise SystemExit('API production đã đổi hoặc chưa ACTIVE. Kiểm tra lại mã triển khai và quyền trước khi bật.')
+          settings = {
+              'SEPAY_RECEIPT_ACCOUNTS': '159063909,579268' if flags[0]=='true' else '',
+              'SEPAY_DEBIT_IMPORT_ENABLED': flags[1],
+          }
+          request('/secrets',[{'name':name,'value':value} for name,value in settings.items()])
+          actual = {s['name']:s.get('digest',s.get('value','')) for s in request('/secrets')}
+          if any(actual.get(name)!=hashlib.sha256(value.encode()).hexdigest() for name,value in settings.items()):
+              raise SystemExit('Đã gửi cấu hình nhưng digest chưa xác minh được; không kết luận đã bật thành công.')
+          print(json.dumps({'configurationVerified':True,'verifiedApiVersion':int(expected),
+              'crmAutoReceipts':flags[0]=='true','debitImport':flags[1]=='true',
+              'financialRecordsWrittenByThisWorkflow':0,'historicalBackfill':False}))
+          PY

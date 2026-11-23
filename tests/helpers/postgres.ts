@@ -66,7 +66,14 @@ class RealPgClient {
     const rows = await this.sql.unsafe(text, params as never[]);
     return { rows: [...rows] as T[], affectedRows: rows.count };
   }
-  async exec(text: string) { await this.sql.unsafe(text).simple(); return []; }
+  async exec(text: string) {
+    // Migration/assertion scripts may contain BEGIN/COMMIT. Pin the whole script
+    // to one connection; application transactions still use the 20-connection pool.
+    const connection=await this.sql.reserve();
+    try { await connection.unsafe(text).simple(); return []; }
+    catch(error){ await connection.unsafe('ROLLBACK').simple(); throw error; }
+    finally { connection.release(); }
+  }
   async close() { await this.sql.end({ timeout: 5 }); await this.drop(); }
 }
 async function createRealDb(url: string) {

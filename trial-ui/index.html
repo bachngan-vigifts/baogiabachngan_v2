@@ -21,6 +21,7 @@
 <link rel="stylesheet" href="dashboard.css">
 <link rel="stylesheet" href="profit.css">
 <link rel="stylesheet" href="feedback.css">
+<link rel="stylesheet" href="ai-chat.css">
 <link rel="stylesheet" href="store-reports.css">
 <link rel="stylesheet" href="weekly-reports.css">
 <link rel="stylesheet" href="flow-map.css">
@@ -43,6 +44,8 @@
 <link rel="stylesheet" href="sale-quote-layout.css">
 <link rel="stylesheet" href="breathing-launcher.css">
 <link rel="stylesheet" href="break-reminder.css">
+<link rel="stylesheet" href="product-list-compact.css">
+<link rel="stylesheet" href="control-sizes.css">
 </head>
 <body>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
@@ -88,6 +91,7 @@
         <a class="nav" href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24"><path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -6" /><path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -10" /><path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -14" /><path d="M4 20h14" /></svg><span>Tổng quan</span></a>
         <a class="nav" href="#/flow" data-nav="flow"><svg viewBox="0 0 24 24"><path d="M3 19a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M19 7a2 2 0 1 0 0 -4a2 2 0 0 0 0 4" /><path d="M11 19h5.5a3.5 3.5 0 0 0 0 -7h-8a3.5 3.5 0 0 1 0 -7h4.5" /></svg><span>Sơ đồ quy trình</span></a>
         <a class="nav" href="#/feedback" data-nav="feedback"><svg viewBox="0 0 24 24"><path d="M8 9h8" /><path d="M8 13h6" /><path d="M9 18h-3a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-3l-3 3l-3 -3" /></svg><span>Góp ý phần mềm</span></a>
+        <a class="nav" href="#/ai-chat" data-nav="ai-chat"><svg viewBox="0 0 24 24"><path d="M8 9h8M8 13h5M12 3a9 9 0 0 1 0 18H6l-3 2v-6a9 9 0 0 1 9-14z"/><path d="M17 4v4M15 6h4"/></svg><span>Chat cùng AI</span></a>
       </section>
       <section class="nav-group" aria-labelledby="nav-group-1">
         <h2 class="nav-label" id="nav-group-1">Bán hàng</h2>
@@ -187,6 +191,7 @@
     <section class="view" id="view-sepay" hidden></section>
     <section class="view" id="view-profit" hidden></section>
     <section class="view" id="view-feedback" hidden></section>
+    <section class="view" id="view-ai-chat" hidden></section>
     <section class="view" id="view-store-reports" hidden></section>
     <section class="view" id="view-home" hidden></section>
     <section class="view" id="view-weekly-reports" hidden></section>
@@ -276,6 +281,7 @@
             </span>
             <button type="button" class="btn secondary" id="duplicate-quote" hidden title="Tạo bản sao với số báo giá mới">Nhân bản</button>
             <button class="btn primary" id="save-quote" title="Ctrl + S">Lưu báo giá</button>
+            <button type="button" class="btn secondary" id="request-quote-edit" hidden>Sửa báo giá</button>
             <button type="button" class="btn ok" id="approve-quote" hidden>Duyệt</button>
             <button type="button" class="btn danger-outline" id="reject-quote" hidden title="Trả báo giá về nháp kèm lý do để người lập sửa">Trả lại…</button>
             <button type="button" class="btn ghost" id="quote-history" hidden title="Ai tạo / sửa / duyệt báo giá, lúc nào">Lịch sử</button>
@@ -881,6 +887,7 @@
       <p class="muted small" id="customer-required-note">Ô có dấu * là bắt buộc. Các ô khác có thể bỏ trống.</p>
       <div id="customer-new-profile"></div>
       <p class="error span-2" id="customer-error" role="alert"></p>
+      <div class="approval-box warn span-2" id="customer-conflict" role="alert" hidden></div>
     </div>
     <div class="modal-foot"><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="save-customer">Lưu khách hàng</button></div>
   </form>
@@ -1343,11 +1350,17 @@
 <!-- Nút chat nổi góc dưới bên phải: mở khung Tin nhắn nội bộ (trial-ui/chat.js) -->
 <button type="button" class="approval-launcher" id="approval-launcher" aria-label="Cần duyệt" title="Cần duyệt" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M12 2V1"/></svg><b id="approval-launcher-count" class="badge danger">0</b></button>
 <button type="button" class="chat-launcher" id="chat-launcher" aria-label="Tin nhắn" title="Tin nhắn nội bộ" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z M8 9h8 M8 12h5"/></svg><b id="nav-chat-count" class="badge danger" hidden>0</b></button>
+<button type="button" class="reminder-launcher" id="reminder-launcher" aria-label="Nhắc chăm sóc nhanh" title="Nhắc chăm sóc nhanh" aria-haspopup="dialog" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2 M18 15v6 M15 18h6"/></svg></button>
     <!-- Tin nhắn nội bộ giữa nhân viên (trial-ui/chat.js) -->
     <div class="chat-panel chat-view" id="view-chat" role="dialog" aria-label="Tin nhắn" hidden>
       <div class="chat-shell card">
         <aside class="chat-side">
           <div class="chat-side-head"><h1>Tin nhắn</h1><div class="row-gap"><button type="button" class="btn primary small" id="chat-new" title="Nhắn tin cho một đồng nghiệp">＋ Chat</button><button type="button" class="btn secondary small" id="chat-new-group">＋ Nhóm</button><button type="button" class="icon-btn" id="chat-find" title="Tìm tin nhắn cũ (theo chữ, theo ngày)" aria-label="Tìm tin nhắn cũ">🔍</button><button type="button" class="icon-btn chat-close" id="chat-close" aria-label="Đóng tin nhắn">×</button></div></div>
+          <a class="chat-ai-shortcut" id="chat-ai-shortcut" href="#/ai-chat" aria-label="Mở Chat cùng AI">
+            <span class="chat-ai-shortcut-icon" aria-hidden="true">✦</span>
+            <span><b>Chat cùng AI</b><small>Hỏi Claw về CRM và quy trình công việc</small></span>
+            <span class="chat-ai-shortcut-arrow" aria-hidden="true">›</span>
+          </a>
           <div class="search-box chat-search"><span aria-hidden="true">⌕</span><input id="chat-search" type="search" placeholder="Tìm cuộc trò chuyện…" aria-label="Tìm cuộc trò chuyện"></div>
           <form class="chat-find" id="chat-find-form" hidden>
             <input name="q" type="search" placeholder="Tìm trong tin nhắn…" aria-label="Chữ cần tìm" autocomplete="off">
@@ -1386,4 +1399,3 @@
 <script type="module" src="mobile-actions-init.js"></script>
 <script type="module" src="dialog-layout-init.js"></script></body>
 </html>
-

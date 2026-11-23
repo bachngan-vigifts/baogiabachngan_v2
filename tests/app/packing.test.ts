@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
 import { suppliers } from '../../src/modules/suppliers/schema.ts';
 import { test } from 'node:test';
@@ -35,7 +36,7 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
   const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_P1', customer: 'Khách P', vat: 8, rows: [{ name: 'Dĩa 31 cm', sku: 'DIA31', unit: 'cái', qty: 100, price: 100000 }, { name: 'Hộp quà', unit: 'hộp', qty: 10, price: 5000 }] });
   await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id;
-  await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
+  await approveFixtureOrder({db,call},`/orders/${orderId}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
   await db.insert(suppliers).values([
     {id:'choice-ncc',name:'NCC từ danh bạ',nameKey:'ncc tu danh ba',createdAt:'2026-10-21',updatedAt:'2026-10-21',createdBy:'mgr',email:'private@example.test',note:'Nội bộ'},
     {id:'choice-agent',name:'Đại lý từ danh bạ',nameKey:'dai ly tu danh ba',createdAt:'2026-10-21',updatedAt:'2026-10-21',createdBy:'mgr'},
@@ -129,14 +130,14 @@ test('yêu cầu đóng gói: chia nguồn hàng → mỗi nguồn một phiếu
 });
 
 test('yêu cầu đóng gói - giao hàng: đơn có phí in → giao về xưởng in; nhà xe / xưởng mới gõ trong ô tự vào danh sách', async () => {
-  const { call, emp, mgr } = await setup();
+  const { db, call, emp, mgr } = await setup();
   const q = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_P2', customer: 'Khách In', customerAddress: '12 Lê Lợi, Cần Thơ', vat: 8,
     rows: [{ name: 'Ly sứ in logo', sku: 'LY1', unit: 'cái', qty: 50, price: 50000, printFee: 5000 }] });
   const source = (await call('/quotes/' + q.data.id, mgr)).data;
   await call('/quotes/' + q.data.id, mgr, 'PUT', {revision:source.revision,data:{...source.data,printing:{totalCost:10000}}});
   await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 2 });
   const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id;
-  await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await approveFixtureOrder({db,call},`/orders/${orderId}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   assert.equal((await call('/deliveries', emp, 'POST', { orderId, plannedDate: '2030-01-15' })).status, 201);
   const p = (await call(`/orders/${orderId}/packing`, emp)).data;
   assert.equal(p.delivery.hasPrintFee, true, 'có phí in logo');
@@ -157,12 +158,12 @@ test('yêu cầu đóng gói - giao hàng: đơn có phí in → giao về xư�
 });
 
 test('đơn đã giao xong → phiếu đóng gói còn treo tự hoàn tất (đã gửi kho → đã đóng, nháp → huỷ); lọc Đã đóng / Chưa đóng', async () => {
-  const { call, emp, mgr, kho } = await setup();
+  const { db, call, emp, mgr, kho } = await setup();
   const make = async (quoteNo: string) => {
     const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo, customer: 'Khách G', contact: 'Chị Lan', phone: '0901234567', customerTaxCode: '0312345678', customerAddress: '1 Lê Lợi, Q1', vat: 8, rows: [{ name: 'Ly', unit: 'cái', qty: 10, price: 1000 }, { name: 'Đĩa', unit: 'cái', qty: 5, price: 1000 }] });
     await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
     const orderId = (await call('/orders', emp, 'POST', { quoteId: q.data.id })).data.id as string;
-    await call(`/orders/${orderId}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+    await approveFixtureOrder({db,call},`/orders/${orderId}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
     const lines = (await call(`/orders/${orderId}/packing`, emp)).data.lines;
     const dv = await call('/deliveries', emp, 'POST', { orderId, plannedDate: '2030-01-15', lines: [{ orderLineId: lines[0].id, qty: 10 }, { orderLineId: lines[1].id, qty: 5 }] });
     assert.equal(dv.status, 201, JSON.stringify(dv.data));
@@ -211,7 +212,7 @@ async function combinedFixture() {
   const id = made.data.id;
   const packing = (await s.call(`/orders/${id}/packing`, s.emp)).data;
   const lineId = packing.lines[0].id as string;
-  return { ...s, id, lineId, approve: () => s.call(`/orders/${id}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }) };
+  return { ...s, id, lineId, approve: () => approveFixtureOrder(s,`/orders/${id}/status`,s.mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true }) };
 }
 
 test('gộp lịch giao + phiếu: một lần lưu, một nguồn gửi kho ngay, đúng quyền và không tạo lại khi bấm lặp', async () => {
@@ -264,14 +265,14 @@ test('lịch giao dùng chung: cộng mã lặp để chặn vượt số lượ
 });
 
 test('người nhận đơn khác người mua: API lịch giao và đóng gói dùng đúng cặp, không ghép SĐT người mua', async () => {
-  const { call, emp, mgr, kho } = await setup();
+  const { db, call, emp, mgr, kho } = await setup();
   const q = await call('/quotes', emp, 'POST', { type: 'HRC', quoteNo: 'HRC_RECIPIENT', customer: 'Công ty mua', contact: 'Người mua', phone: '0901000001',
     vat: 8, rows: [{ name: 'Hàng kiểm thử', qty: 5, price: 100000 }] });
   assert.equal(q.status, 201);
   await call('/quotes/' + q.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const made = await call('/orders', emp, 'POST', { quoteId: q.data.id, pushSapo: false, receiverName: 'Chị Nhận', receiverPhone: '0902000002' });
   assert.equal(made.status, 201, JSON.stringify(made.data)); const id = made.data.id;
-  await call('/orders/' + id + '/status', mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await approveFixtureOrder({db,call},'/orders/' + id + '/status',mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   const detail = (await call('/orders/' + id, emp)).data;
   assert.equal(detail.order.contact, 'Người mua'); assert.equal(detail.order.phone, '0901000001');
   assert.equal(detail.order.receiverName, 'Chị Nhận'); assert.equal(detail.order.receiverPhone, '0902000002');

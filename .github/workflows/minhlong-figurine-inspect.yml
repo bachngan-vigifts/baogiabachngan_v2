@@ -1,0 +1,50 @@
+name: Inspect Minh Long figurine sorting
+on:
+  push:
+    branches: [fix/minhlong-figurine-order-20261123]
+    paths: [.github/workflows/minhlong-figurine-inspect.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --prefix /tmp/ml-sort --silent playwright@1.63.0
+      - name: Read public sorting controls
+        run: |
+          cat > /tmp/ml-sort/inspect.mjs <<'NODE'
+          import {chromium} from '/tmp/ml-sort/node_modules/playwright/index.mjs';
+          const browser=await chromium.launch({channel:'chrome'});
+          const page=await browser.newPage({viewport:{width:1440,height:1000}});
+          await page.goto('https://minhlongonline.com/danh-muc/minh-long/tuong-linh-vat-minh-long/',{waitUntil:'domcontentloaded',timeout:60000});
+          console.log('SORT_CONTROLS',JSON.stringify(await page.locator('input[type=radio],select[name*=order],a[href*=orderby]').evaluateAll(es=>es.map(e=>({html:e.outerHTML,parent:e.parentElement.outerHTML.slice(0,1800)})))));
+          console.log('CARDS',JSON.stringify(await page.locator('.products .product').evaluateAll(es=>es.slice(0,5).map(e=>({class:e.className,html:e.innerHTML.slice(-2200)})))));
+          console.log('SORT_SCRIPTS',JSON.stringify(await page.locator('script').evaluateAll(es=>es.filter(e=>/orderby|sort_order|sortby|sort-by/.test(e.textContent)).map(e=>e.textContent.slice(0,14000)))));
+          console.log('PAGES',JSON.stringify(await page.locator('.page-numbers').allTextContents()));
+          await browser.close();
+          NODE
+          node /tmp/ml-sort/inspect.mjs
+      - name: Read relevant installed product plugins
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+        run: |
+          cat > /tmp/ml-sort/read.mjs <<'NODE'
+          const user=process.env.CPANEL_USERNAME?.trim(),token=process.env.CPANEL_API_TOKEN?.trim(),raw=process.env.CPANEL_BASE_URL?.trim();
+          const base=new URL(raw.includes('://')?raw:'https://'+raw);if(base.protocol!=='https:')throw Error('HTTPS required');if(!base.port)base.port='2083';
+          async function api(mod,fn,p={}){const u=new URL('/execute/'+mod+'/'+fn,base);for(const[k,v]of Object.entries(p))u.searchParams.set(k,String(v));const r=await fetch(u,{headers:{Authorization:'cpanel '+user+':'+token}});const j=await r.json();if(!r.ok||!j.status)throw Error('Read failed');return j.data;}
+          let root;function visit(x){if(!x||typeof x!=='object')return;if(x.domain==='minhlongonline.com')root=x.documentroot;Object.values(x).forEach(v=>{if(typeof v==='object')visit(v)});}visit(await api('DomainInfo','domains_data',{format:'hash'}));
+          if(!root?.startsWith('/home/'+user+'/')||root.includes('..'))throw Error('Wrong root');
+          const dir=root+'/wp-content/mu-plugins';const files=await api('Fileman','list_files',{dir});console.log('MU_NAMES',files.map(f=>f.file).filter(n=>n.endsWith('.php')));
+          for(const f of files.filter(f=>/desktop-category-groups/i.test(f.file)&&f.file.endsWith('.php'))){
+           const s=(await api('Fileman','get_file_content',{dir,file:f.file,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0})).content;
+           console.log('RELEVANT_SOURCE',f.file,s.slice(0,65000));
+          }
+          
+          NODE
+          node /tmp/ml-sort/read.mjs

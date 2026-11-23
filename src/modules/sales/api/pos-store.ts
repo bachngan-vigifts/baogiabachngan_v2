@@ -1,6 +1,6 @@
 import { ensureLineCosts } from './line-costs.ts';
 import {cartPromotion} from './pos-promotions.ts';
-import { orderNoForCheckout } from './pos-number.ts';
+import { orderNoForCheckout, posOrderPrefixFor } from './pos-number.ts';
 import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { posOrderReservations, posPaymentIntents } from '../pos-order-flow-schema.ts';
 import { flowInitialAmount, flowHoldUntil, saleFlowOf } from '../domain/pos-order-flow.ts';
@@ -10,7 +10,7 @@ import { posOrderNote } from '../domain/pos-order-note.ts';
 import { posFeeInput, calculatePosFees } from '../domain/pos-fees.ts';
 import { cashLock, cashShiftTotals, cashAudit, openingCashComparison } from './cash-store.ts';
 import { cashEntries } from '../cash-schema.ts';
-import { and, asc, count, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { can } from '../../staff/domain/permissions.ts';
@@ -424,6 +424,16 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
         paymentRequestId = paidQr.id;
       }
     }
+    // Thu ngân tự xác nhận "đã nhận chuyển khoản" trước khi SePay báo về: vẫn gắn đúng QR đang hiện cho giỏ này,
+    // để đơn lấy đúng số đã in trên nội dung chuyển khoản (không cấp số mới, không bỏ rơi khoản QR).
+    if (!paymentRequestId && !flow && method === 'transfer' && mode !== 'cod') {
+      const [openQr] = await tx.select({ id: posPaymentRequests.id }).from(posPaymentRequests).where(and(
+        eq(posPaymentRequests.shiftId, s.id), eq(posPaymentRequests.fingerprint, c.fingerprint), eq(posPaymentRequests.amount, c.payable),
+        sql`${posPaymentRequests.confirmedAt} is null`, sql`${posPaymentRequests.expiresAt} >= ${posNow()}`,
+        sql`not exists(select 1 from ${salesOrders} where ${salesOrders.posPaymentRequestId}=${posPaymentRequests.id})`,
+      )).orderBy(desc(posPaymentRequests.createdAt)).limit(1);
+      if (openQr) paymentRequestId = openQr.id;
+    }
 
     if (c.exchange.amount && mode === 'cod') throw new AppError(400, 'Đổi hàng thanh toán tại quầy, không chuyển COD.');
     if (depositAmount > c.total) throw new AppError(400, 'Tiền thu trước không được vượt tổng đơn.');
@@ -472,7 +482,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     const now = posNow(),
       date = vietnamDate().iso;
     const id = crypto.randomUUID(),
-      orderNo = await orderNoForCheckout(tx, date, qr);
+      orderNo = await orderNoForCheckout(tx, date, qr, await posOrderPrefixFor(tx, c.register));
     const snapshot = {
       register: c.register,
       customer: c.customer?.name ?? 'Khách lẻ',

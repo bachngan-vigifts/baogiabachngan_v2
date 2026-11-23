@@ -1,3 +1,5 @@
+import { readJson } from '../../src/core/http/router.ts';
+import { edgeBody } from '../../src/core/http/edge-body.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -17,8 +19,8 @@ async function harness({ canaryUrl = '', pooled = false, legacyPooler = false, b
   const connections: {url:string;max?:number}[] = [];
   const hooks: { onQuery?: () => void } = {};
   runInNewContext(code, {
-    Deno: { env: { get: (key: string) => env[key] }, serve: (fn: typeof serve) => { serve = fn; } },
-    createDbLifecycle, createDbReadiness, sql: () => 'select 1', schema: { positions: { id: 'id' } },
+    crypto, Deno: { env: { get: (key: string) => env[key] }, serve: (fn: typeof serve) => { serve = fn; } },
+    edgeBody, createDbLifecycle, createDbReadiness, sql: () => 'select 1', schema: { positions: { id: 'id' } },
     createDb: (_url: string, _schema: unknown, opts: { onQuery?: () => void; max?: number }) => {
       connections.push({url:_url,max:opts.max});
       stats.created++; hooks.onQuery = opts.onQuery;
@@ -36,7 +38,7 @@ async function harness({ canaryUrl = '', pooled = false, legacyPooler = false, b
   const request = (method = 'GET', path = '/api/staff/tasks', extra: Record<string, string> = {}) => serve(new Request('https://edge.test' + path, {
     method, headers: { origin: 'https://crm.minhlongonline.com', ...extra }, ...(method === 'POST' ? { body: '{}' } : {}),
   }));
-  return { stats, request, background, connections, query: () => hooks.onQuery?.() };
+  return { stats, request, serve, background, connections, query: () => hooks.onQuery?.() };
 }
 test('Edge requests release direct clients after success/error; preflight failure never dispatches a write', async () => {
   const h = await harness();
@@ -73,7 +75,8 @@ test('Edge trả Server-Timing (chờ CSDL, xử lý + số truy vấn của đ�
   const res = await h.request();
   const timing = res.headers.get('server-timing') || '';
   assert.match(timing, /^db;dur=[\d.]+, app;dur=[\d.]+;desc="3 queries", total;dur=[\d.]+, region;desc="ap-southeast-1", dbmode;desc="direct", inflight;desc="1"$/);
-  assert.equal(res.headers.get('access-control-expose-headers'), 'server-timing');
+  assert.equal(res.headers.get('access-control-expose-headers'), 'server-timing, x-crm-request-id');
+  assert.match(res.headers.get('x-crm-request-id')||'',/^[0-9a-f-]{36}$/);
   assert.deepEqual(await res.json(), { list: [1, 2], text: 'Đơn' });
   // Đăng nhập: Set-Cookie → sessionToken trong JSON (như trước).
   const token = 'a'.repeat(64);
@@ -189,4 +192,13 @@ test('real public auth-config route reads only deployment config, never database
  const db=new Proxy({},{get(){throw Error('Public config must not touch the database');}});
  const res=await createAppRouter().handle(new Request('https://trial.test/api/staff/auth-config',{headers:{origin:'https://trial.test'}}),{db:db as any});
  assert.equal(res.status,200);assert.deepEqual(await res.json(),{turnstileSiteKey:''});
+});
+
+test('Edge forwards the request stream so the route can reject oversized bodies before full allocation',async()=>{
+ let chunks=0,cancelled=false;
+ const body=new ReadableStream<Uint8Array>({pull(controller){chunks++;controller.enqueue(new Uint8Array(1024).fill(65));},cancel(){cancelled=true;}});
+ const h=await harness({handler:async(req)=>{try{await readJson(req,8);return Response.json({ok:true});}catch(error){return Response.json({error:'too large'},{status:(error as {status:number}).status});}}});
+ const init:RequestInit&{duplex:'half'}={method:'POST',headers:{origin:'https://crm.minhlongonline.com','content-type':'application/json'},body,duplex:'half'};
+ const request=new Request('https://edge.test/api/staff/tasks',init);request.arrayBuffer=async()=>{throw Error('full body allocation forbidden');};
+ assert.equal((await h.serve(request)).status,413);assert(cancelled);assert(chunks<=3,'only a small stream prefix is pulled');
 });

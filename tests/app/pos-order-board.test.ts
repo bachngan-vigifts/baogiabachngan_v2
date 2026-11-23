@@ -59,23 +59,26 @@ test('board API: more than 500 orders, receipts/voids, staff, dates, sources and
 
 });
 
-test('web collection uses explicit source timestamp; status/method never imply paid; status-only updates preserve evidence',async()=>{
+test('website paid timestamp stays pending reconciliation; status-only updates preserve the source claim',async()=>{
   const f=await setup();
     const reg=await f.call('/pos/registers',f.mgr,'POST',{name:'Showroom Gốm Sứ Minh Long Cần Thơ',warehouseId:'pos-wh',pricePolicyId:'retail-vat',secondPricePolicyId:'retail',taxRate:8});
     const sync=(body:unknown)=>f.call('/integrations/woocommerce/minhlong/order?token=test-ml-token','','POST',body);
-    const order={id:901,number:'WEB901',status:'completed',total:'100',currency:'VND',date_created:'2026-10-21T09:00:00',payment_method:'cod'};
+    // Ngày đơn tính theo hôm nay: bảng đơn POS mặc định chỉ xem khoảng gần đây, ngày cố định sẽ rơi khỏi khoảng khi lịch chạy qua.
+    const day=new Date(Date.now()-2*864e5).toISOString().slice(0,10);
+    const order={id:901,number:'WEB901',status:'completed',total:'100',currency:'VND',date_created:day+'T09:00:00',payment_method:'cod'};
     assert.equal((await sync(order)).status,200);
     const board=(filter:string)=>f.call(`/pos/orders?registerId=${reg.data.id}&source=web&${filter}`,f.mgr);
     assert.equal((await board('payment=unknown')).data.orders.length,1);
     assert.equal((await board('payment=paid')).data.orders.length,0);
     assert.equal((await sync({...order,date_paid_gmt:null})).status,200);
     assert.equal((await board('payment=debt')).data.totals[0].outstanding,100);
-    assert.equal((await sync({...order,date_paid:'2026-10-21T10:00:00',shipping_total:'10'})).status,200);
-    assert.equal((await board('payment=paid')).data.totals[0].paid,100);
+    assert.equal((await sync({...order,date_paid:day+'T10:00:00',shipping_total:'10'})).status,200);
+    assert.equal((await board('payment=unknown')).data.totals[0].paid,0);
+    assert.equal((await board('payment=unknown')).data.orders[0].paymentEvidence,'website');
     assert.equal((await sync({id:901,status:'completed',shipping_total:'10'})).status,200);
-    assert.equal((await board('payment=paid')).data.orders.length,1);
+    assert.equal((await board('payment=unknown')).data.orders.length,1);
     assert.equal((await sync({id:901,status:'completed'})).status,200);
-    assert.equal((await board('payment=paid')).data.orders.length,1);
+    assert.equal((await board('payment=unknown')).data.orders.length,1);
     assert.equal((await board('ownerId=emp')).data.orders.length,0);
 });
 

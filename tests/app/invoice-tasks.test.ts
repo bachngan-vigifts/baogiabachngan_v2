@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import {confirmWarehouseSupply} from '../helpers/confirmed-warehouse-supply.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,7 +26,7 @@ async function order(f: Fixture, no: string, contract = false) {
   ok(await f.call(`/quotes/${q.id}/approve`, f.mgr, 'POST', { revision: 1 }));
   const o = contract ? ok(await f.call('/contracts', f.emp, 'POST', { quoteId: q.id, legalEntity: 'BN', depositRate: 30 }), 201) : ok(await f.call('/orders', f.emp, 'POST', { quoteId: q.id }), 201);
   const id = contract ? o.orderId : o.id;
-  ok(await f.call(`/orders/${id}/status`, f.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true }));
+  ok(await approveFixtureOrder(f,`/orders/${id}/status`,f.mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true }));
   return id as string;
 }
 async function invoiceRows(f: Fixture, id?: string) {

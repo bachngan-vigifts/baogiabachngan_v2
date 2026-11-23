@@ -1,0 +1,29 @@
+name: Validate Minh Long shipping draft
+on:
+  push:
+    branches: [codex/minhlong-approved-shipping-20261117]
+    paths: [web-minhlong/shipping/**, .github/workflows/minhlong-shipping-validate.yml]
+permissions:
+  contents: read
+jobs:
+  syntax:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: |
+          php -l web-minhlong/shipping/ml-home-category-icons.php
+          php -l web-minhlong/shipping/ml-shipping-information.php
+      - name: JavaScript syntax
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          for(const name of ['ml-home-category-icons.php','ml-shipping-information.php']){
+            const source=readFileSync('web-minhlong/shipping/'+name,'utf8');
+            for(const m of source.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)){
+              const js=m[1].replace(/<\?php[\s\S]*?\?>/g,'{}');
+              new Function(js);
+            }
+          }
+          console.log('JavaScript syntax OK');
+          NODE

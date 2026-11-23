@@ -1,0 +1,42 @@
+name: Lock shipping information
+on:
+  push:
+    branches: [codex/lock-shipping-20261117]
+    paths: [web-lock/shipping/**, .github/workflows/lock-shipping.yml]
+permissions:
+  contents: read
+concurrency:
+  group: lock-store-ai-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate syntax
+        run: |
+          php -l web-lock/shipping/lnl-shipping-information.php
+          node --check web-lock/shipping/deploy.mjs
+      - name: Install browser for visual checks
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Test shipping interaction and address completion
+        run: node web-lock/shipping/tests.mjs
+      - name: Verify GHN, install shipping UI and test isolated checkout
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: node web-lock/shipping/deploy.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shipping-screenshots
+          path: shipping-*.png
+          retention-days: 3

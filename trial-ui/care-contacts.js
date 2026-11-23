@@ -12,7 +12,7 @@ export function customerContactChoices(data) {
   }
   return [...byIdentity.values()];
 }
-export function bindCareContactPicker({select,input,status,retry,api,getCustomerId,isConnected=()=>true,doc=document}) {
+export function bindCareContactPicker({select,input,status,retry,api,getCustomerId,isConnected=()=>true,doc=document,matchUniqueName=false}) {
   let generation=0,loading=false,choices=[];
   const manual='__manual__';
   function options(rows){select.replaceChildren(...rows.map(([value,label])=>{const o=doc.createElement('option');o.value=value;o.textContent=label;return o;}));}
@@ -30,7 +30,8 @@ export function bindCareContactPicker({select,input,status,retry,api,getCustomer
       const data=await api('/customers/'+encodeURIComponent(id)+'/overview');if(!current())return;
       choices=customerContactChoices(data);options([...choices.map((c,i)=>[String(i),c.label]),[manual,'Nhập người liên hệ khác…']]);
       select.disabled=false;loading=false;
-      const previous=choices.findIndex(c=>c.value===preserve);
+      let previous=choices.findIndex(c=>c.value===preserve);
+      if(previous<0&&matchUniqueName&&preserve){const names=choices.map((c,i)=>({c,i})).filter(({c})=>c.name.normalize('NFC').toLocaleLowerCase('vi')===preserve.trim().normalize('NFC').toLocaleLowerCase('vi'));if(names.length===1)previous=names[0].i;}
       select.value=preserve?(previous>=0?String(previous):manual):choices.length?'0':manual;
       sync();
       status.textContent=choices.length?`Có ${choices.length} người liên hệ. Chọn người cần ghi giao dịch.`:'Khách chưa có người liên hệ. Anh/chị có thể nhập tên và số điện thoại.';

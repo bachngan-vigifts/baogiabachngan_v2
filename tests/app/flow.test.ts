@@ -1,3 +1,5 @@
+import {submitFixtureOrder} from '../helpers/submission-review-fixture.ts';
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -19,11 +21,11 @@ async function setup() {
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
-  return { call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kho: await login('kho@x.vn') };
+  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn'), kho: await login('kho@x.vn') };
 }
 
 test('sơ đồ quy trình: số liệu + việc theo vai trò, thao tác nhanh đúng quyền', async () => {
-  const { call, emp, mgr, kho } = await setup();
+  const { db, call, emp, mgr, kho } = await setup();
   assert.equal((await call('/flow')).status, 401);
   const q = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_FLOW1', customer: 'Khách Flow', customerTaxCode: '0312345678', vat: 8, rows: [{ name: 'Ly', sku: 'LY1', unit: 'cái', qty: 10, price: 100000 }] });
   await call('/quotes/' + q.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
@@ -41,9 +43,9 @@ test('sơ đồ quy trình: số liệu + việc theo vai trò, thao tác nhanh 
   assert.equal((await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 1 })).status, 200);
   assert.deepEqual((await call('/flow', emp)).data.nodes.quotes.items[0].actions, ['make-order']);
   const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201, JSON.stringify(o.data));
-  await call(`/orders/${o.data.id}/submit`, emp, 'POST', {}); // nhân viên gửi duyệt đơn nháp
+  await submitFixtureOrder(call,o.data.id,emp); // nhân viên gửi duyệt đơn nháp
   assert.equal((await call('/flow', mgr)).data.nodes.orders.metrics[0].value, 1, 'đơn nháp chờ duyệt');
-  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await approveFixtureOrder({db,call},`/orders/${o.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   const line = (await call(`/orders/${o.data.id}`, mgr)).data.lines[0];
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
   assert.equal((await call('/deliveries', emp, 'POST', { orderId: o.data.id, plannedDate: today, lines: [{ orderLineId: line.id, qty: 5 }] })).status, 201);

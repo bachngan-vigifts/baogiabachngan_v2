@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {eq} from 'drizzle-orm';
@@ -16,7 +17,7 @@ async function setup(){
  const q=ok(await f.call('/quotes',c.emp,'POST',{type:'B2B',quoteNo:'RK-'+crypto.randomUUID(),customer:'Khách lịch giao',vat:8,rows:[{sku,name:'Bộ trà',unit:'Bộ',qty:5,price:2000}]}),201);
  ok(await f.call('/quotes/'+q.id+'/approve',c.mgr,'POST',{revision:1}));
  const o=ok(await f.call('/orders',c.emp,'POST',{quoteId:q.id,warehouseId:'vig'}),201);
- ok(await f.call(`/orders/${o.id}/status`,c.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
+ ok(await approveFixtureOrder(f,`/orders/${o.id}/status`,c.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true}));
  const [line]=await f.db.select().from(salesOrderLines).where(eq(salesOrderLines.orderId,o.id));
  const trips=async()=>(await f.db.select().from(deliveries).where(eq(deliveries.orderId,o.id))).length;
  const schedule=(body:Record<string,unknown>)=>f.call('/deliveries',c.emp,'POST',{orderId:o.id,plannedDate:'2026-11-05',lines:[{orderLineId:line!.id,qty:2}],...body});

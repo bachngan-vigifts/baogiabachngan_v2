@@ -62,7 +62,8 @@ export function sepayPaidDate(transactionAt: string): string {
     .slice(0, 10);
 }
 
-export function parseSepayPayment(body: Record<string, unknown>): SepayPayment {
+export type SepayBankTransaction = Omit<SepayPayment,'transferType'> & {transferType:'in'|'out'};
+export function parseSepayBankTransaction(body: Record<string, unknown>): SepayBankTransaction {
   const transferType = str(
     body.transferType ?? body.transfer_type,
     20,
@@ -111,13 +112,13 @@ export function parseSepayPayment(body: Record<string, unknown>): SepayPayment {
       (/(?:Z|[+-]\d{2}:\d{2})$/.test(rawAt) ? "" : "+07:00"),
   );
   if (
-    transferType !== "in" ||
+    !["in","out"].includes(transferType) ||
     !providerId ||
     !/^[A-Za-z0-9]+$/.test(accountNumber) ||
     !Number.isSafeInteger(amount) ||
     amount <= 0 ||
     amount > 1_000_000_000_000 ||
-    !content ||
+    (transferType==="in"&&!content) ||
     Number.isNaN(parsedAt.valueOf()) ||
     parsedAt.valueOf() > Date.now() + 5 * 60_000
   )
@@ -130,7 +131,7 @@ export function parseSepayPayment(body: Record<string, unknown>): SepayPayment {
     amount,
     accountNumber,
     transactionAt: parsedAt.toISOString(),
-    transferType: "in",
+    transferType: transferType as "in"|"out",
     content,
     payload,
   };
@@ -165,4 +166,11 @@ export function decideSepayMatch(
       orderId: order.id,
     };
   return { status: "matched" as const, reason: "", orderId: order.id };
+}
+
+/** Receipt/matching entrypoints must remain incoming-only. */
+export function parseSepayPayment(body:Record<string,unknown>):SepayPayment{
+ const row=parseSepayBankTransaction(body);
+ if(row.transferType!=='in')throw new AppError(400,'Giao dịch SePay không hợp lệ.');
+ return {...row,transferType:'in'};
 }

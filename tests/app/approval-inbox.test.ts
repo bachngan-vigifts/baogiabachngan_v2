@@ -1,3 +1,5 @@
+import {submitFixtureOrder} from '../helpers/submission-review-fixture.ts';
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { customerCreateFixture } from '../helpers/customer-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,11 +24,11 @@ async function setup() {
     return { status: res.status, data: await res.json() as any, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' };
   };
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
-  return { call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn') };
+  return { db, call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn') };
 }
 
 test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ duyệt; chỉ Manager; duyệt xong thì biến mất', async () => {
-  const { call, emp, mgr } = await setup();
+  const { db, call, emp, mgr } = await setup();
   const inbox = async () => (await call('/approvals', mgr)).data;
   assert.deepEqual((await inbox()).counts, { quote: 0, order: 0, contract: 0, purchase: 0, transfer: 0, cash: 0, return: 0, customer: 0, product: 0, total: 0 });
   assert.equal((await call('/approvals', emp)).status, 403, 'nhân viên không xem');
@@ -47,7 +49,7 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
   // Đơn / HĐKT nhân viên sinh là nháp: chỉ vào hộp "Cần duyệt" sau khi bấm Gửi duyệt.
   assert.equal((await call(`/orders/${o2.data.id}`, emp)).data.order.submittedAt, null, 'mới sinh: nháp, chưa gửi duyệt');
   assert.deepEqual([(await inbox()).counts.order, (await inbox()).counts.contract], [0, 0]);
-  for (const oid of [o2.data.id, k3.data.orderId]) assert.equal((await call(`/orders/${oid}/submit`, emp, 'POST', {})).status, 200);
+  for (const oid of [o2.data.id, k3.data.orderId]) assert.equal((await submitFixtureOrder(call,oid,emp)).status, 200);
   assert.equal((await call(`/orders/${o2.data.id}/submit`, emp, 'POST', {})).status, 200, 'bấm lặp không lỗi');
   const o3 = { data: { id: k3.data.orderId as string } };
   // Khách hàng và sản phẩm nhân viên tạo.
@@ -66,8 +68,8 @@ test('Cần duyệt: gom báo giá / đơn / HĐKT / khách / sản phẩm chờ
 
   // Duyệt ở màn hình gốc → biến khỏi hộp.
   await call(`/quotes/${q1.data.id}/approve`, mgr, 'POST', { revision: 1 });
-  await call(`/orders/${o2.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
-  await call(`/orders/${o3.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await approveFixtureOrder({db,call},`/orders/${o2.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await approveFixtureOrder({db,call},`/orders/${o3.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   await call(`/customers/${byKind.customer.id}/approve`, mgr, 'POST', {});
   await call('/products/NEW-01/approve', mgr, 'POST', {});
   d = await inbox();

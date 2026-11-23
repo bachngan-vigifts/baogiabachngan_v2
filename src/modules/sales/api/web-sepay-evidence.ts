@@ -3,6 +3,8 @@ import { sepayTransactions as bank } from "../../integrations/schema.ts";
 import { posRegisters, webStoreOrders as web } from "../pos-schema.ts";
 import { WEB_PAYMENT_BLOCKED_STATUSES } from "../domain/web-order-outcome.ts";
 import { GHN_FAILED } from "../domain/ghn-status.ts";
+import type {WebBankEvidence} from '../../../core/contracts/web-bank-evidence.ts';
+import {sepayPaymentAllocations,sepayAllocationBatches} from '../sepay-allocation-schema.ts';
 const values = (items: Iterable<string>) =>
   sql.join(
     [...items].map((value) => sql`${value}`),
@@ -31,10 +33,16 @@ export const validWebSepay = (
  and exists(select 1 from ${posRegisters} sr where sr.id=${webCol(web.registerId)} and sr.active
   and regexp_replace(sr.bank_account,'[[:space:]]','','g')=${account}),false)`;
 
-export const webSepayPaidAt = () => sql<
+const legacyWebPaidAt = () => sql<
   string | null
 >`(select sb.transaction_at from ${bank} sb
  where sb.web_order_id=${webCol(web.id)} and sb.status='matched' and ${validWebSepay(sql`sb.amount`, sql`sb.account_number`, sql`sb.match_method`, sql`sb.matched_order_at`)} limit 1)`;
+
+/** One monetary evidence projection for detail, lists, POS, COD and allocation caps. Woo claims are never added to it. */
+export const webSepayPaidAt=()=>sql<WebBankEvidence|null>`case when ${legacyWebPaidAt()} is not null then jsonb_build_object('paidAt',${legacyWebPaidAt()},'amount',${webCol(web.total)}) else
+ (select jsonb_build_object('paidAt',min(a.created_at),'amount',sum(a.amount)) from ${sepayPaymentAllocations} a join ${sepayAllocationBatches} b on b.id=a.batch_id join ${bank} sb on sb.id=b.transaction_id
+ where a.web_order_id=${webCol(web.id)} and a.voided_at is null and a.target_total=${webCol(web.total)} and sb.transfer_type='in' having count(*)>0) end`;
+export const webSepayPaidAmount=()=>sql<number>`coalesce((${webSepayPaidAt()}->>'amount')::float8,0)`;
 
 /** Read the independent proof under the caller's existing source-row lock. */
 export async function readWebSepayPaidAt(

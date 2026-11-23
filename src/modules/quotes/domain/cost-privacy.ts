@@ -14,6 +14,7 @@ export const COST_DOC_KEYS = ['printing'] as const;
 export function withoutCosts<T extends Obj>(data: T): T {
   const out: Obj = { ...data };
   for (const k of COST_DOC_KEYS) delete out[k];
+  if(data.shipping){out.shipping={...data.shipping};delete out.shipping.cost;}
   out.rows = (Array.isArray(data.rows) ? data.rows : []).map((r: Obj) => { const x = { ...r }; for (const k of COST_ROW_KEYS) delete x[k]; return x; });
   return out as T;
 }
@@ -27,6 +28,7 @@ export function keepCosts(incoming: Obj, old: Obj | null): Obj {
   const byId = new Map<string, Obj>((Array.isArray(old?.rows) ? old!.rows : []).filter((r: Obj) => r && r.id).map((r: Obj) => [String(r.id), r]));
   const out: Obj = { ...incoming };
   for (const k of COST_DOC_KEYS) { if (old && old[k] !== undefined) out[k] = old[k]; else delete out[k]; }
+  if(old?.shipping?.cost!==undefined)out.shipping={...(out.shipping||old.shipping),cost:old.shipping.cost};else if(out.shipping){out.shipping={...out.shipping};delete out.shipping.cost;}
   if (Array.isArray(incoming.rows)) out.rows = incoming.rows.map((r: Obj) => {
     if (!r || typeof r !== 'object') return r;
     const was = r.id ? byId.get(String(r.id)) : undefined, x: Obj = { ...r };

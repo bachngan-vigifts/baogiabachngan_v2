@@ -14,6 +14,8 @@ export const CUSTOMER_ANNIVERSARY_OUT = join(root, 'trial-ui', 'customer-anniver
 export const bundleCustomerAnniversary = () => bundle('src/modules/customers/domain/anniversary.ts');
 export const DOCUMENT_NUMBER_OUT = join(root, 'trial-ui', 'document-number.js');
 export const bundleDocumentNumber = () => bundle('src/core/document-number.ts');
+export const SUBMISSION_REVIEW_OUT=join(root,'trial-ui','submission-review-domain.js');
+export const bundleSubmissionReview=()=>bundle('src/modules/sales/domain/submission-review.ts');
 export const QUOTE_MATH_OUT = join(root, 'trial-ui', 'quote-math.js');
 /** Bộ lọc "Tìm nhanh sản phẩm" chạy trên trình duyệt – cùng quy tắc với máy chủ. */
 export const ORDER_NOTES_OUT = join(root, 'trial-ui', 'order-notes.js');
@@ -40,7 +42,7 @@ export const bundleQuoteMath = () => bundle('src/modules/quotes/domain/quote-mat
 export const bundleProductSearch = () => bundle('src/modules/catalog/domain/product-search.ts');
 
 if (process.argv[1] && import.meta.filename === process.argv[1]) {
-  for (const [out, code] of [[SUPPLIER_ORDER_NUMBER_OUT,bundleSupplierOrderNumber()], [CUSTODY_CONTRACT_OUT,bundleProductCustody()], [CUSTOMER_ANNIVERSARY_OUT,bundleCustomerAnniversary()], [POS_CATALOG_BRAND_OUT,bundlePosCatalogBrand()], [DOCUMENT_NUMBER_OUT, bundleDocumentNumber()], [QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()], [POS_CUSTOMER_OUT, bundlePosCustomer()], [EARLY_ORDER_SOURCES_OUT,bundleEarlyOrderSources()]] as const) {
+  for (const [out, code] of [[SUBMISSION_REVIEW_OUT,bundleSubmissionReview()],[SUPPLIER_ORDER_NUMBER_OUT,bundleSupplierOrderNumber()], [CUSTODY_CONTRACT_OUT,bundleProductCustody()], [CUSTOMER_ANNIVERSARY_OUT,bundleCustomerAnniversary()], [POS_CATALOG_BRAND_OUT,bundlePosCatalogBrand()], [DOCUMENT_NUMBER_OUT, bundleDocumentNumber()], [QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()], [POS_CUSTOMER_OUT, bundlePosCustomer()], [EARLY_ORDER_SOURCES_OUT,bundleEarlyOrderSources()]] as const) {
     if (readFileSync(out, { encoding: 'utf8', flag: 'a+' }) !== code) writeFileSync(out, code);
     console.log('Đã ghi', out);
   }

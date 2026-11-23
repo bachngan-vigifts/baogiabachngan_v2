@@ -18,9 +18,10 @@ export function duePill(date, { done = false, fmt = v => v } = {}) {
 /**
  * Hộp xác thực. `rows`: [nhãn, giá trị HTML] hiện dạng bảng; `checks`: các câu phải đánh dấu; `fields`: HTML ô nhập thêm (có name).
  * `layout: 'page'` mở không gian toàn màn hình; `review` là HTML đã escape của phần đối chiếu bên trái.
+ * `beforeConfirm(values)` (tuỳ chọn): chờ lưu trước khi đóng; trả thông báo lỗi để giữ form.
  * Trả về object { tên ô: giá trị } khi đồng ý, null khi huỷ.
  */
-export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '', rows = [], checks = [], fields = '', ok = 'Xác nhận', validate, layout = 'dialog', subtitle = '', review = '' } = {}) {
+export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '', rows = [], checks = [], fields = '', ok = 'Xác nhận', validate,onMount,beforeConfirm,requireValidFields=false, layout = 'dialog', subtitle = '', review = '' } = {}) {
   const dlg = document.createElement('dialog');
   const page = layout === 'page';
   dlg.className = 'modal verify-dialog' + (page ? ' verify-page' : '');
@@ -40,19 +41,33 @@ export function verifyBox({ title, eyebrow = 'Xác thực thông tin', intro = '
   </form>`;
   document.body.append(dlg);
   const boxes = [...dlg.querySelectorAll('[data-check]')], okBtn = dlg.querySelector('[data-ok]');
-  const sync = () => { const left = boxes.filter(b => !b.checked).length; okBtn.disabled = left > 0; dlg.querySelector('[data-left]').textContent = left ? `Còn ${left} mục cần đánh dấu` : 'Đã kiểm tra đủ'; };
+  const values=()=>Object.fromEntries([...dlg.querySelectorAll('[name]')].map(i=>[i.name,requireValidFields&&i.type==='checkbox'?String(i.checked):i.value]));
+  const sync = () => { const left = boxes.filter(b => !b.checked).length; const invalid=requireValidFields&&(validate?.(values())||!dlg.querySelector('form').checkValidity());okBtn.disabled=left>0||!!invalid; dlg.querySelector('[data-left]').textContent = left ? `Còn ${left} mục cần đánh dấu` : invalid?'Điền đủ thông tin để gửi duyệt':'Đã kiểm tra đủ'; };
   boxes.forEach(b => b.addEventListener('change', sync)); sync();
   return new Promise(resolve => {
+    let submitting = false;
     const done = v => { dlg.close(); dlg.remove(); resolve(v); };
-    dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', () => done(null)));
-    dlg.addEventListener('cancel', e => { e.preventDefault(); done(null); });
-    dlg.querySelector('form').addEventListener('submit', e => {
-      e.preventDefault(); if (boxes.some(b => !b.checked)) return;
-      const values = Object.fromEntries([...dlg.querySelectorAll('[name]')].map(i => [i.name, i.value]));
-      const err = validate?.(values); if (err) { dlg.querySelector('[data-err]').textContent = err; return; }
-      done(values);
+    dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', () => { if (!submitting) done(null); }));
+    dlg.addEventListener('cancel', e => { e.preventDefault(); if (!submitting) done(null); });
+    dlg.querySelector('form').addEventListener('submit', async e => {
+      e.preventDefault(); if (submitting || boxes.some(b => !b.checked)) return;
+      const result=values();
+      const err = validate?.(result); if (err) { dlg.querySelector('[data-err]').textContent = err; return; }
+      if (beforeConfirm) {
+        submitting = true;
+        okBtn.disabled = true;
+        const controls = [...dlg.querySelectorAll('input, select, textarea, [data-x]')];
+        const disabled = controls.map(n => n.disabled);
+        controls.forEach(n => { n.disabled = true; });
+        let error;
+        try { error = await beforeConfirm(result); }
+        catch (ex) { error = ex.message || 'Không lưu được. Giữ nguyên thông tin để kiểm tra lại.'; }
+        finally { submitting = false; controls.forEach((n, i) => { n.disabled = disabled[i]; }); }
+        if (error) { dlg.querySelector('[data-err]').textContent = error; sync(); return; }
+      }
+      done(result);
     });
-    dlg.showModal();
+    onMount?.(dlg);if(requireValidFields){dlg.addEventListener('input',sync);dlg.addEventListener('change',sync);}sync();dlg.showModal();
   });
 }
 

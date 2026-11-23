@@ -1,3 +1,7 @@
+import {openSaleAdminHandoff} from './sale-admin-handoff.js';
+import {initQrPhoneReceiver} from './pos-qr-phone.js';
+import { fetchCatalogSnapshot } from './catalog-snapshot-loader.js';
+import {requestOrderApproval,submissionSummary} from './order-submit.js';
 import {createProductionFiles,mountProductionFiles} from './production-files.js';
 import {initProductBrandFilter} from './product-brand-filter.js';
 import {initWarehouseAssignment} from './warehouse-assignment.js';
@@ -7,6 +11,7 @@ import {deliveryTone,deliveryIsOverdue,fulfilmentLegend,fulfilmentBadge,compactF
 import {initWarehouseWorkspace} from './warehouse-workspace.js';
 import { createNotificationFeed } from './notification-feed.js';
 import {productThumbnailUrl,noteThumbnailFailure} from './product-images.js';
+import {bindQuoteEditRequests} from './quote-edit-requests.js';
 import {initOrderProducts} from './order-products.js';
 import { createDeliveryCalendar, renderDeliveryProducts } from './delivery-calendar.js';
 import {initCustomerCenter} from './customer-center.js';
@@ -28,7 +33,7 @@ import { createPageBack } from './page-back.js';
 import { installChatFab } from './mobile-chat-fab.js';
 import { bindForgotPassword } from './forgot-password.js';
 import { mountTurnstile } from './turnstile.js';
-import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME } from './api-transport.js';
+import { apiFetch, writeFailureMessage, UNKNOWN_OUTCOME, readApiJson, invalidResponseError } from './api-transport.js';
 import { createRequestPriority, isBackgroundRequest } from './request-priority.js';
 import { recordApi, openSpeedDialog } from './speed-log.js';
 import { createApiRegion, createRegionCanary, requestWithRegion } from './api-region.js';
@@ -55,6 +60,7 @@ import { initPackingSupplierChoices } from './packing-supplier-choices.js';
 import { initPackingEarlyRequest } from './packing-early-request.js';
 import { reviewPurchaseCosts, missingPurchaseCost } from './purchase-cost-review.js';
 import { confirmApprovalDebt, reviewOrderCosts } from './approval-preflight.js';
+import { approvalProductTable } from './approval-product-table.js';
 import { openPosOrderFlows } from './pos-order-flow.js';
 import { openPosReturns } from './pos-returns.js';
 import { openCrmReturns } from './crm-returns.js';
@@ -76,6 +82,7 @@ import { initOrderCreate } from './order-create.js';
 import { initDashboard } from './dashboard.js';
 import { initProfit } from './profit.js';
 import { initFeedback } from './feedback.js';
+import { initAiChat } from './ai-chat.js';
 import { initStoreReports } from './store-reports.js';
 import { initWeeklyReports } from './weekly-reports.js';
 import { initFlowMap } from './flow-map.js';
@@ -98,6 +105,7 @@ import { orderReference, orderPrintData, orderSheetHtml, readEdits, downloadOrde
 import { openContractDocs } from './contract-ui.js';
 import { initTasks } from './tasks.js';
 import { initCare } from './care.js';
+import {initQuoteCarePrompt} from './quote-care-prompt.js';
 import { initChat } from './chat.js';
 import { setupPulse } from './pulse.js';
 import { initInventory } from './inventory.js';
@@ -115,7 +123,10 @@ import { initAvatars, avAttr, pickAvatar, primeAvatar } from './avatars.js';
 import { initMemberDetail } from './member-detail.js';
 import { initPayroll } from './payroll.js';
 import {openSelfRevenueTargets} from './revenue-target-requests.js';
+import { initMoneyInputs } from './money-input.js';
 import { quoteStockSku, manualLineDescription, manualLineNote, totals, after, profit, commissionOf, discounted, normalize, netPrice, defaultCostDiscount, purchasePrice, costModeOf, parsePurchaseCost, applyPurchaseCost, syncPurchaseCost, printingInfo, customerDiscount, printingWorkshops as DEFAULT_WORKSHOPS, brandDiscountKey } from './quote-math.js';
+// Ô số tiền tự có dấu chấm ngăn cách khi gõ (money-input.js); code vẫn đọc số chưa định dạng từ ô gốc.
+initMoneyInputs();
 installBusyButtons(); // nút gửi API ghi tự khoá + vòng xoay đang xử lý (busy-buttons.js)
 
 const API = document.querySelector('meta[name="bn-api"]')?.content
@@ -409,13 +420,19 @@ async function apiRequest(path, method = 'GET', body) {
     throw method === 'GET' ? new ApiError('Chưa kết nối được máy chủ. Vui lòng kiểm tra mạng rồi thử lại.', 0) : new ApiError(writeFailureMessage(body), 0, UNKNOWN_OUTCOME);
   }
   const headersAt = performance.now();
-  const data = await res.json().catch(() => ({ error: 'Máy chủ chưa sẵn sàng. Vui lòng thử lại.' }));
+  // Thân không đọc được (HTML, JSON cụt, rỗng) → null; xử lý bên dưới, không bao giờ trả như dữ liệu thành công.
+  const data = await readApiJson(res);
   recordApi({ path, method, ms: performance.now() - sentAt, status: res.status, serverTiming: res.headers?.get('server-timing'), readMs: performance.now() - headersAt, attempts, wallMs: Date.now() - sentWall }); // menu → Đo tốc độ
   // Phản hồi của phiên cũ không được xoá / thay thế phiên vừa đăng nhập.
   const sameSession = requestToken === token;
   // Phản hồi thuộc phiên trước (vừa đổi tài khoản): không trả dữ liệu cho phiên mới. Mã 409 (không phải 0) để màn hình không coi là
   // "chưa rõ đã lưu" rồi gửi lại lệnh của người trước bằng tài khoản mới.
   if (!sameSession) throw new ApiError('Phiên đăng nhập đã thay đổi; kết quả thuộc phiên trước.', 409, 'STALE_SESSION');
+  if (!data) {
+    if (res.status === 401 && requestToken && !['/login', '/activate', '/password', '/logout'].includes(path)) showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    // Lệnh ghi: có thể máy chủ đã lưu hoặc lệnh chưa tới máy chủ → "chưa rõ" như mất mạng (giữ form, giữ mã chống lặp).
+    throw invalidResponseError(method, res.status, body, (message, code, status) => new ApiError(message, status, code));
+  }
   if (sameSession && data.sessionToken !== undefined) saveToken(data.sessionToken);
   if (!res.ok) {
     if (res.status === 401 && requestToken && sameSession && !['/login', '/activate', '/password', '/logout'].includes(path)) { showAuth('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }
@@ -506,8 +523,8 @@ function showAuth(message = '', { keepToken = false } = {}) {
   if(typeof warehouseAssignmentUi!=='undefined')warehouseAssignmentUi?.close();
   stocktakeUi?.close();
   state.user = null; dataRefresh?.stop(); if (!keepToken) saveToken('');
-  homeUi?.reset(); homeNotifications?.clear(); notifier?.reset(); tasksUi?.resetQuick();
-  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop();
+  homeUi?.reset(); homeReminderUi?.reset(); homeNotifications?.clear(); notifier?.reset(); tasksUi?.resetQuick();
+  $('#workspace').hidden = true; $('#auth').hidden = false; $('#chat-launcher').hidden = true; $('#reminder-launcher').hidden = true; approvalUi?.stop(); if (typeof storeUi !== 'undefined') storeUi?.stop(); if (chatUi) chatUi.hide(); if (typeof pulse !== 'undefined') pulse.stop(); if (typeof qrPhoneUi !== 'undefined') qrPhoneUi?.stop();
   $('#auth-error').textContent = message;
   if (!activation) { $('#auth-title').textContent = 'Đăng nhập nhân viên'; }
   // Chỉ tự đặt con trỏ khi vừa mở form; không giành focus người dùng đã chọn.
@@ -559,7 +576,7 @@ function applyWorkspaceUser(user) {
   if (user.role === 'customer' || user.positionId === 'customer') { location.replace('customer.html'); return; } // tài khoản khách: chỉ trang khách hàng
   state.user = user;
   $('#workspace').dataset.homeHref = homeHash();
-  $('#auth').hidden = true; $('#workspace').hidden = false;
+  $('#auth').hidden = true; $('#workspace').hidden = false; $('#reminder-launcher').hidden = false;
   $('#user-name').textContent = $('#menu-name').textContent = user.name;
   $('#menu-email').textContent = user.email;
   $('#user-role').textContent = user.position || (user.role === 'manager' ? 'Manager' : 'Nhân viên');
@@ -586,7 +603,7 @@ function openWorkspace(user) {
   currentHash = location.hash;
   route();
   loadAll();
-  notifier.start(); dataRefresh.start(); pulse.start();
+  notifier.start(); dataRefresh.start(); pulse.start(); qrPhoneView().start();
   // Không chụp mốc /quotes, /orders, /contracts lúc mở app (3 lượt đọc nặng mỗi lần mở, /orders ~270 KB): dữ liệu của trang đang
   // xem đã có mốc qua observe(); nhịp /pulse báo có thay đổi thì tick() so sánh đúng các đường dẫn đó và tải lại trang.
 }
@@ -808,12 +825,13 @@ const viTime = iso => new Date(iso).toLocaleString('vi-VN');
 async function loadSapoSync() {
   let d; try { d = await api('/admin/sapo-sync'); } catch { $('#sapo-sync').hidden = true; return; }
   const n = v => Number(v || 0).toLocaleString('vi-VN'), at = iso => iso ? 'Lần cuối ' + viTime(iso) : 'Chưa nhận dữ liệu';
-  const s = d.session || {}, p = d.pull || {}, pullFailed = p.ok === false && !p.stale;
+  const s = d.session || {}, p = d.pull || {}, queued = ['queued','running'].includes(p.job?.status), pullFailed = p.job?.status === 'failed' || p.ok === false && !p.stale;
   $('#sapo-sync').hidden = false;
-  $('#sync-state').textContent = !d.configured ? 'Chưa bật' : !s.connected ? 'Chưa kết nối' : s.expired ? 'Phiên hết hạn' : pullFailed ? 'Lỗi' : 'Đang chạy';
+  $('#sync-state').textContent = !d.configured ? 'Chưa bật' : !s.connected ? 'Chưa kết nối' : s.expired ? 'Phiên hết hạn' : queued ? 'Đang chờ / xử lý' : pullFailed ? 'Lỗi' : 'Đang chạy';
   $('#sync-state').classList.toggle('warn', !!(s.expired || pullFailed));
   $('#sync-note').textContent = !d.configured ? 'Cần cài mã SAPO_SYNC_TOKEN'
     : !s.connected ? 'Bấm "Kết nối Sapo" để bắt đầu'
+    : queued ? 'Yêu cầu đã được lưu; CRM đang đồng bộ từng phần, không cần giữ trang mở.'
     : s.expired || pullFailed ? (p.error || 'Cần kết nối lại Sapo')
     : p.finishedAt && !p.stale ? 'Đồng bộ lúc ' + viTime(p.finishedAt) : 'Kết nối lúc ' + viTime(s.updatedAt);
   $('#sapo-connect').textContent = s.connected ? 'Kết nối lại' : 'Kết nối Sapo';
@@ -844,6 +862,7 @@ $('#sapo-pull').addEventListener('click', async () => {
   const btn = $('#sapo-pull'); btn.disabled = true; btn.textContent = 'Đang đồng bộ…';
   try {
     const r = await api('/admin/sapo-pull', 'POST', {}), x = r.results || {};
+    if (r.queued) { toast('Đã đưa yêu cầu đồng bộ vào hàng đợi. CRM sẽ xử lý từng phần; xem trạng thái đồng bộ để theo dõi.'); return; }
     const docs = ['purchase_order', 'stock_transfer', 'stock_adjustment'].reduce((t, k) => t + (x[k]?.created || 0) + (x[k]?.updated || 0), 0);
     toast(`Đã đồng bộ: ${(x.products?.created || 0) + (x.products?.updated || 0)} sản phẩm, tồn kho ${(x.stock?.created || 0) + (x.stock?.updated || 0)} mã, ${x.customers?.applied || 0} khách hàng, ${(x.staff?.created || 0) + (x.staff?.linked || 0)} nhân viên mới, ${docs} chứng từ kho (nhập hàng, điều chuyển, kiểm hàng).`
       + (r.warnings?.length ? ' Chưa đọc được: ' + r.warnings.join('; ') : ''));
@@ -854,6 +873,8 @@ $('#sapo-pull').addEventListener('click', async () => {
 
 // ---------------------------------------------------------------- điều hướng
 var posUi = null;
+var qrPhoneUi = null;
+const qrPhoneView = () => qrPhoneUi ||= initQrPhoneReceiver({api,user:()=>state.user,toast});
 var cashUi = null;
 const cashView = () => cashUi ||= initCash({api,root:$('#view-cash'),toast,user:()=>state.user,go,onShiftClosed:async()=>{await loadNavigationBadges();if(location.hash.startsWith('#/pos'))await posUi?.load();},onChanged:()=>{loadNavigationBadges();tasksView().badge();}});
 // Bán hàng nhanh tìm trên danh mục tải sẵn như trang Sản phẩm: chỉ mã có giá ở bảng giá đang chọn (máy chủ vẫn lọc lại).
@@ -888,7 +909,7 @@ var sepayUi=null,sepayLoading=null;
 async function sepayView(query){const hash=location.hash,userId=state.user?.id;try{const {initSepay}=await(sepayLoading ||= import('./sepay.js'));if(location.hash!==hash||!state.user||state.user.id!==userId||!canPage('sepay')||$('#workspace').hidden)return;sepayUi ||= initSepay({api,root:$('#view-sepay'),go,canOpenOrders:()=>canPage('order')});await sepayUi.show(query);}catch(e){sepayLoading=null;if(location.hash===hash)toast(e.message,'err');}}
 var accountingUi=null,accountingLoading=null;
 async function accountingView(){const hash=location.hash,userId=state.user?.id;try{const {initAccounting}=await(accountingLoading ||= import('./accounting.js'));if(location.hash!==hash||state.user?.id!==userId||!canAccounting()||$('#workspace').hidden)return;accountingUi ||= initAccounting({api,root:$('#view-accounting')});await accountingUi.show();}catch(e){accountingLoading=null;if(location.hash===hash)toast(e.message,'err');}}
-const VIEWS = { accounting:'Không gian kế toán', sepay:'Thanh toán SePay', finance:'Tài chính & KPI', home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving:'Nhận hàng NCC', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Kho của tôi', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
+const VIEWS = { accounting:'Không gian kế toán', sepay:'Thanh toán SePay', finance:'Tài chính & KPI', home: 'Trang chủ', 'product-custody':'Hàng bảo hành & mượn mẫu', 'shift-reports':'Báo cáo ca', 'order-products':'Sản phẩm theo đơn', feedback: 'Góp ý phần mềm', 'ai-chat':'Chat cùng AI', 'store-reports': 'Báo cáo CHT', 'weekly-reports': 'Báo cáo tuần', 'monthly-reports': 'Báo cáo tháng', receiving:'Nhận hàng NCC', transfers: 'Điều chuyển kho', 'stock-moves': 'Sổ kho', cash: 'Sổ quỹ', pos: 'Bán hàng nhanh', permissions: 'Phân quyền', kho: 'Kho của tôi', 'stock-lookup': 'Tra tồn', inventory: 'Cân bằng kho', stocktake: 'Kiểm kê hàng', flow: 'Sơ đồ quy trình', suppliers: 'Nhà cung cấp', purchases: 'Đơn mua NCC', dashboard: 'Tổng quan', profit: 'Phân tích lợi nhuận', tasks: 'Công việc', quotes: 'Báo giá', orders: 'Đơn đặt hàng', contracts: 'HĐKT', deliveries: 'Lịch giao hàng', receivables: 'Công nợ', cashbook: 'Sổ thu / chi', 'stock-requests': 'Khách hỏi tồn', products: 'Sản phẩm', customers: 'Khách hàng', staff: 'Nhân viên', editor: 'Báo giá', order: 'Đơn đặt hàng', customer: 'Khách hàng', product: 'Sản phẩm', member: 'Nhân viên', payroll: 'Bảng lương', packing: 'Phiếu đóng gói', care: 'Giao dịch & chăm sóc' };
 installChatFab();
 const pageBack=createPageBack({button:$('#page-back'),history:window.history,hash:()=>location.hash,user:()=>state.user?.id,home:homeHash,
  canVisit:hash=>{const [path]=hash.slice(2).split('?'),[page,id]=path.split('/');return canPage(id&&page==='quotes'?'editor':id&&['orders','contracts'].includes(page)?'order':id&&page==='customers'?'customer':id&&page==='members'?'member':id&&page==='packing'?'packing-slip':page);},
@@ -996,6 +1017,7 @@ function route() {
   if (view === 'dashboard') dashboardView().load();
   if (view === 'profit') profitView().show();
   if (view === 'feedback') feedbackView().show(id ? decodeURIComponent(id) : '');
+  if (view === 'ai-chat') aiChatView().show();
   if (view === 'store-reports') storeView().show(query);
   if (view === 'weekly-reports') weeklyView().show(query);
   if (view === 'monthly-reports') monthlyView().show(query);
@@ -1306,7 +1328,7 @@ async function openEditor(id) {
 function fillEditor(id, revision, data, meta = {}) {
   // Lưu xong (cùng báo giá) thì giữ nguyên mục lợi nhuận / cột giá nhập đang mở; mở báo giá khác thì đóng lại.
   const keepProfit = !!id && (editor.id === id || (!editor.id && saving));
-  editor.approval = id ? { status: meta.approvalStatus || 'pending', at: meta.approvedAt || '', by: meta.approvedByName || '', canApprove: meta.canApprove ?? (keepProfit ? editor.approval?.canApprove : undefined), fromCustomer: meta.fromCustomer ?? (keepProfit ? editor.approval?.fromCustomer : false), canEdit: meta.canEdit ?? (keepProfit ? editor.approval?.canEdit : undefined) } : null;
+  editor.approval = id ? { status: meta.approvalStatus || 'pending', at: meta.approvedAt || '', by: meta.approvedByName || '', canApprove: meta.canApprove ?? (keepProfit ? editor.approval?.canApprove : undefined), fromCustomer: meta.fromCustomer ?? (keepProfit ? editor.approval?.fromCustomer : false), canEdit: meta.canEdit ?? (keepProfit ? editor.approval?.canEdit : undefined), editRequest: meta.editRequest ?? (keepProfit && editor.revision === revision ? editor.approval?.editRequest : null) } : null;
   editor.id = id; editor.revision = revision; editor.base = structuredClone(data);
   editor.type = ['B2B', 'HRC', 'VIGIFTS'].includes(data.type) ? data.type : 'B2B';
   editor.customerId = data.customerId || ''; editor.customerName = data.customerId ? data.customer : ''; loadBrandDiscounts();
@@ -1444,7 +1466,7 @@ function lineCell(r, i) {
     <td class="line-actions"><button type="button" class="icon-btn danger" data-del title="Xoá dòng" aria-label="Xoá dòng ${i + 1}">×</button></td>
   </tr>`;
 }
-// Ẩn / hiện 3 dòng Bộ gồm · Mô tả in ấn · Đóng gói của mọi dòng (chỉ ẩn trên màn hình; dữ liệu, PDF, Excel giữ nguyên).
+// Ẩn / hiện phần mô tả chi tiết của mỗi dòng (chỉ ẩn trên màn hình; dữ liệu, PDF, Excel giữ nguyên).
 // Nhớ lựa chọn trên máy này (localStorage; không đọc được thì mặc định hiện).
 const SUBS_KEY = 'bn-quote-hide-subs';
 function applySubs(hide) {
@@ -1470,7 +1492,7 @@ function renderLines(focus) {
   $('#m-line-count').textContent = `${editor.rows.length} sản phẩm`;
   if ($('#shipping-card').open) renderShippingRows();
   qf.classList.toggle('type-hrc', editor.type === 'HRC');
-  $('#toggle-subs').hidden = editor.type === 'HRC' || isSaleEditor();
+  $('#toggle-subs').hidden = editor.type === 'HRC';
   $('#bulk-discount').hidden = isSaleEditor();
   if (isSaleEditor()) salePriceSuggestions.request(state.user?.id || '', editor.rows); // HRC không có 3 dòng mô tả
   calculate();
@@ -1830,7 +1852,7 @@ function renderProfit(doc = currentDoc()) {
   $('#sum-commission').textContent = Number.isFinite(commission) ? money(commission) + (!manager && editor.dirty ? ' (bản đã lưu)' : '') : editor.id ? 'Chưa xác minh' : '0 ₫';
   $('#open-commission').disabled = !manager; $('#open-commission').textContent = manager ? 'CK khách (tiền cà phê) ›' : 'CK khách (tiền cà phê)';
   $('#sum-cost').textContent = p ? money(p.cost) : '';
-  $('#sum-shipping').textContent = ship.fee === null ? 'Chưa có cước dự toán' : money(ship.fee);
+  $('#sum-shipping').textContent = manager&&Number.isFinite(doc.shipping?.cost)?money(p.shippingCost)+' (chi phí đã khai báo)':ship.fee===null?'Chưa có cước dự toán':money(ship.fee);
   $$('input[name="profitShippingPayer"]').forEach(i => { i.checked = i.value === payer; });
   $('#profit-shipping-hint').hidden = !manager || payer !== 'sender' || ship.fee !== null;
   $('#sum-gross').textContent = p ? money(p.gross) : ''; $('#sum-gross').className = p && p.gross < 0 ? 'neg' : '';
@@ -2223,7 +2245,7 @@ $('#save-to-contacts').addEventListener('click', async () => {
   finally { btn.disabled = false; }
 });
 
-const quoteDiscountLocked=()=>isSaleEditor()||editor.loading||qf.inert||(!!editor.id&&(editor.approval?.canEdit===false||editor.approval?.status==='approved'&&!isManager()));
+const quoteDiscountLocked=()=>isSaleEditor()||editor.loading||qf.inert||(!!editor.id&&(editor.approval?.canEdit===false||editor.approval?.status==='approved'&&!isManager()&&!editor.approval?.editRequest?.canEditApproved));
 initBulkQuoteDiscount({button:$('#bulk-discount'),dialog:$('#bulk-discount-dialog'),getRows:()=>editor.rows,isLocked:quoteDiscountLocked,context:()=>editorLoadSequence+':'+(editor.id||'new'),apply:result=>{editor.rows=result.rows;editor.discountMode='percent';markDirty();renderLines();toast('Đã cập nhật CK cho '+result.count+' dòng. Bấm Lưu báo giá để ghi nhận.');}});
 // ----- dán từ Excel: SKU + số lượng, thông tin và chính sách lấy từ dữ liệu CRM.
 const parsePaste = text => parseSkuQuantities(text, parseNum);
@@ -2300,10 +2322,12 @@ function validateQuote(data) {
   if (incomplete >= 0) return `Dòng ${incomplete + 1}: nhập tay số lượng, đơn giá và chiết khấu còn trống (nhập 0 nếu không chiết khấu).`;
   return '';
 }
+let quoteCarePrompt;
+const quoteCareAfterSave=()=>quoteCarePrompt ||=initQuoteCarePrompt({api,toast,onChanged:()=>{if(state.user)void loadBadges().catch(()=>{});}});
 let saving = false;
-async function saveQuote() {
+async function saveQuote({promptCare=false}={}) {
   if (saving) return;
-  if (editor.id && !isManager() && editor.approval?.status === 'approved') return toast('Báo giá đã duyệt. Chỉ Manager được chỉnh sửa.', 'err');
+  if (editor.id && !isManager() && editor.approval?.status === 'approved' && !editor.approval?.editRequest?.canEditApproved) return toast('Báo giá đã duyệt. Gửi yêu cầu và chờ Manager cho phép sửa.', 'err');
   const err = $('#quote-error'); err.textContent = '';
   const data = collectQuote(), problem = validateQuote(data);
   if (problem) {
@@ -2330,6 +2354,7 @@ async function saveQuote() {
     else if (saved.approvalStatus === 'draft') toast((wasNew ? 'Đã lưu nháp ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision) + ' · bấm "Gửi duyệt" khi xong.');
     else toast(wasNew ? 'Đã tạo báo giá ' + saved.data.quoteNo : 'Đã lưu phiên bản ' + saved.revision);
     loadQuotes(); if (saved.customerMemory && saved.customerMemory.status !== 'skipped') loadCustomers();
+    if(promptCare&&can('page.care')){try{await quoteCareAfterSave().offer({id:saved.id,revision:saved.revision},{isCurrent:()=>editor.id===saved.id&&editor.revision===saved.revision&&!$('#view-editor').hidden&&location.hash==='#/quotes/'+encodeURIComponent(saved.id)});}catch(ex){toast('Báo giá đã lưu. Chưa mở được lịch chăm sóc: '+ex.message,'err');}}
     return true;
   } catch (e) {
     if (saveSequence !== editorLoadSequence || location.hash !== saveHash) { toast(e.message, 'err'); return; }
@@ -2339,14 +2364,14 @@ async function saveQuote() {
     } else { err.textContent = e.message; toast(e.message, 'err'); }
   } finally { saving = false; updateQuoteActions(); }
 }
-qf.addEventListener('submit', e => { e.preventDefault(); saveQuote(); });
-$('#save-quote-m').addEventListener('click', async e => { e.preventDefault(); const saved=await saveQuote(); if(saved===true&&!editor.dirty&&editor.id&&editor.approval?.status==='draft'&&!saleDesignProblem(collectQuote()))await submitQuoteForApproval(); });
+qf.addEventListener('submit', e => { e.preventDefault(); saveQuote({promptCare:true}); });
+$('#save-quote-m').addEventListener('click', async e => { e.preventDefault(); const usedEditPermission=editor.approval?.status==='approved'&&!!editor.approval?.editRequest?.canEditApproved; const saved=await saveQuote({promptCare:true}); if(saved===true&&!$('#view-editor').hidden&&location.hash==='#/quotes/'+encodeURIComponent(editor.id)&&!usedEditPermission&&!editor.dirty&&editor.id&&editor.approval?.status==='draft'&&!saleDesignProblem(collectQuote()))await submitQuoteForApproval(); });
 $('#reload-quote').addEventListener('click', async () => {
   if (!await confirmBox('Tải bản mới nhất sẽ bỏ các thay đổi chưa lưu của anh/chị.', { ok: 'Tải lại', danger: true })) return;
   editor.dirty = false; openEditor(editor.id);
 });
 document.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !$('#view-editor').hidden) { e.preventDefault(); saveQuote(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !$('#view-editor').hidden) { e.preventDefault(); saveQuote({promptCare:true}); }
   if (e.key === '/' && !e.target.closest('input, textarea, select') && !document.querySelector('dialog[open]')) {
     const s = $('#view-quotes').hidden ? ($('#view-customers').hidden ? $('#member-search') : $('#customer-search')) : $('#quote-search');
     if (s && !s.closest('[hidden]')) { e.preventDefault(); s.focus(); }
@@ -2798,17 +2823,17 @@ function renderProducts() {
     // Giữ báo giá hiện chưa gắn theo kho: không trừ toàn bộ số treo vào từng kho riêng.
     const held = state.holdsLoaded ? heldQty(p.sku) : null;
     const stockHint = warehouse ? `${warehouse.name}: ${fmtNum(stock)}` : stockDetail(p);
-    return `<tr>
-      <td class="check-cell"><input type="checkbox" data-select="${esc(p.sku)}" ${sel ? 'checked' : ''} aria-label="Chọn ${esc(p.name)}"></td>
-      <td class="first"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${markWords(p.name, state.productQuery)}</span><small>${markWords(p.sku, state.productQuery)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
-      <td data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
-      <td data-label="ĐVT">${esc(p.unit) || '—'}</td>
-      <td class="right num" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
-      <td class="right num ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockHint)}">${fmtNum(stock)}</td>
-      <td class="right num" data-label="Đang tạm giữ" title="Tổng số đang giữ trên tất cả kho; báo giá có thể chưa phân kho">${stockText(held)}</td>
-      <td class="right num" data-label="Hàng đang về">${incomingCell(p)}</td>
-      <td class="right num" data-label="Tồn NCC">${hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : '<span class="muted">—</span>'}</td>
-      <td class="actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-mobile-inline data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${isManager() ? `<button type="button" class="btn ghost small danger-text" data-mobile-inline data-mobile-confirmation-page aria-label="Xoá khỏi danh mục ${esc(p.sku)}" data-remove-product="${esc(p.sku)}">Xoá</button>` : ''}${can('page.quotes') ? `<button class="btn ghost small" data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
+    return `<tr class="product-compact-row">
+      <td class="check-cell product-select-cell"><input type="checkbox" data-select="${esc(p.sku)}" ${sel ? 'checked' : ''} aria-label="Chọn ${esc(p.name)}"></td>
+      <td class="first product-identity-cell"><button type="button" class="prod-cell prod-open" data-product-card="${esc(p.sku)}" data-name="${esc(p.name)}" title="Xem tồn kho và lịch sử sản phẩm">${thumb(p)}<span><span class="strong">${markWords(p.name, state.productQuery)}</span><small>${markWords(p.sku, state.productQuery)}${p.pattern ? ' · ' + esc(p.pattern) : ''}</small></span></button></td>
+      <td class="product-brand-cell" data-label="Thương hiệu">${esc(p.brand) || '—'}</td>
+      <td class="product-unit-cell" data-label="ĐVT">${esc(p.unit) || '—'}</td>
+      <td class="right num product-price-cell" data-label="Giá">${!seesPrices() ? '<span class="muted">—</span>' : price === null ? '<span class="muted">Chưa có giá</span>' : money(price)}</td>
+      <td class="right num product-stock-cell ${stock <= 0 ? 'stock-out' : stock < 10 ? 'stock-low' : ''}" data-label="Tồn" title="${esc(stockHint)}">${fmtNum(stock)}</td>
+      <td class="right num product-held-cell" data-label="Đang tạm giữ" title="Tổng số đang giữ trên tất cả kho; báo giá có thể chưa phân kho">${stockText(held)}</td>
+      <td class="right num product-incoming-cell" data-label="Hàng đang về">${incomingCell(p)}</td>
+      <td class="right num product-supplier-cell" data-label="Tồn NCC">${hasSupplierStock(p) ? stockText(kindStock(p, 'supplier')) : '<span class="muted">—</span>'}</td>
+      <td class="actions-cell product-actions-cell"><div class="row-actions">${canUpdateProducts() ? `<button type="button" class="btn secondary small" data-mobile-inline data-update-product="${esc(p.sku)}">Cập nhật</button>` : ''}${isManager() ? `<button type="button" class="btn ghost small danger-text" data-mobile-inline data-mobile-confirmation-page aria-label="Xoá khỏi danh mục ${esc(p.sku)}" data-remove-product="${esc(p.sku)}">Xoá</button>` : ''}${can('page.quotes') ? `<button type="button" class="btn primary small product-quote-action" data-mobile-inline data-quote-product="${esc(p.sku)}" title="Tạo báo giá với sản phẩm này">＋ Báo giá</button>` : ''}</div></td>
     </tr>`;
   }).join('');
   $('#product-empty').hidden = list.length > 0;
@@ -3052,9 +3077,9 @@ function loadCatalogSnapshot({ maxAgeMs = 120000 } = {}) {
   catalog.loading = (async () => {
     if (!catalog.items) { try { const saved = await idb('readonly', st => st.get(IDB.key)); if (saved?.version) useSnapshot(saved); } catch { /* trình duyệt chặn IndexedDB */ } }
     try {
-      let d = await api('/catalog-snapshot' + (catalog.version ? '?v=' + encodeURIComponent(catalog.version) : ''));
+      let d = await fetchCatalogSnapshot(api,catalog.version);
       // Chỉ tồn kho đổi: ghép tồn mới vào bản đang có (không tải lại ~3 MB danh mục). Thiếu bản gốc thì tải đủ.
-      if (d.stockOnly) d = catalog.raw ? mergeSnapshotStock(catalog.raw, d) : await api('/catalog-snapshot');
+      if (d.stockOnly) d = catalog.raw ? mergeSnapshotStock(catalog.raw, d) : await fetchCatalogSnapshot(api);
       catalog.checkedAt = Date.now();
       if (!d.unchanged) {
         useSnapshot(d);
@@ -3249,7 +3274,63 @@ $('#picker-list').addEventListener('input', e => {
 $('#picker-list').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); e.target.closest('li').querySelector('[data-add]').click(); } });
 
 // ---------------------------------------------------------------- khách hàng
-let customerId = null;
+let customerId = null, customerSaving = null;
+// Phiên bản hồ sơ đang mở + bản gốc các ô lúc mở: lưu kèm phiên bản; máy chủ báo 409 nếu người khác / Sapo đã đổi hồ sơ.
+let customerRevision = null, customerOpened = null, customerContactsOpened = null;
+const hideCustomerConflict = () => { const box = $('#customer-conflict'); box.hidden = true; box.replaceChildren(); };
+const contactsSnapshot = () => { try { return JSON.stringify(customerNewProfile.read().contacts); } catch { return null; } };
+const CUSTOMER_PROFILE_FIELDS = [['name','Tên khách hàng'],['contact','Người liên hệ'],['phone','Điện thoại'],['email','Email'],['taxCode','Mã số thuế'],['customerCode','Mã khách hàng'],
+  ['customerType','Loại khách'],['address','Địa chỉ'],['depositRate','Tỷ lệ đặt cọc'],['paymentTerm','Hạn thanh toán'],['paymentDays','Số ngày công nợ'],['creditLimit','Giới hạn công nợ'],['establishedDate','Ngày thành lập']];
+const profileValue = v => v === null || v === undefined ? '' : String(v).trim();
+const customerSnapshot = c => Object.fromEntries(CUSTOMER_PROFILE_FIELDS.map(([k]) => [k, profileValue(c?.[k])]));
+/**
+ * Xung đột khi lưu hồ sơ: GIỮ nội dung đang nhập, tải bản mới và gộp – ô người khác đổi mà mình không sửa thì lấy bản mới,
+ * ô cả hai cùng sửa khác nhau thì liệt kê để đối chiếu (nút "Dùng bản mới" từng ô). Không tự lưu: người dùng xem rồi bấm Lưu.
+ */
+async function showCustomerConflict(form, isCurrent) {
+  const latestFull = await api('/customers/' + encodeURIComponent(customerId) + '?refresh=1', 'GET', undefined, { fresh: true }), latest = latestFull.customer;
+  if (!isCurrent()) return;
+  const box = $('#customer-conflict');
+  const base = customerOpened || {}, taken = [], clash = [];
+  for (const [k, label] of CUSTOMER_PROFILE_FIELDS) {
+    const input = form.elements.namedItem(k); if (!input) continue;
+    const mine = profileValue(input.value), theirs = profileValue(latest[k]);
+    if (theirs === profileValue(base[k]) || mine === theirs) continue;
+    if (mine === profileValue(base[k])) { input.value = theirs; input.dispatchEvent(new Event('input', { bubbles: true })); taken.push(label); }
+    else clash.push({ k, label, mine, theirs, input });
+  }
+  // Danh bạ người liên hệ có phiên bản riêng: người dùng chưa sửa danh bạ → nạp bản mới (giữ ô người liên hệ chính đang nhập);
+  // đã sửa danh bạ → giữ nguyên và báo mở lại form để sửa danh bạ trên bản mới.
+  const latestProfile = latestFull;
+  let contactsNote = '';
+  if (latestProfile.contactDirectoryVersion !== undefined && contactsSnapshot() !== null) {
+    if (contactsSnapshot() === customerContactsOpened) {
+      const main = customerFields.controls.contact.value;
+      customerNewProfile.reset(state.user, false, latestProfile.contactDirectory ?? [], latestProfile.contactDirectoryVersion);
+      customerFields.controls.contact.value = main; customerContactsOpened = contactsSnapshot();
+    } else contactsNote = 'Danh bạ người liên hệ bạn đang sửa cũng có thể đã đổi: nếu khi lưu báo "Người liên hệ đã được cập nhật", hãy ghi lại phần danh bạ, đóng và mở lại form.';
+  }
+  customerRevision = latest.profileRevision ?? null; customerOpened = customerSnapshot(latest);
+  customerSteps.repaint();
+  box.replaceChildren();
+  const p = document.createElement('p'); p.innerHTML = '<b>Hồ sơ vừa được người khác (hoặc đồng bộ Sapo) cập nhật.</b> Nội dung bạn nhập vẫn giữ nguyên.';
+  box.append(p);
+  if (taken.length) { const t = document.createElement('p'); t.textContent = 'Đã lấy bản mới cho các ô bạn không sửa: ' + taken.join(', ') + '.'; box.append(t); }
+  if (clash.length) {
+    const list = document.createElement('ul');
+    for (const x of clash) {
+      const li = document.createElement('li'), use = document.createElement('button');
+      li.append(Object.assign(document.createElement('b'), { textContent: x.label + ': ' }), `bản mới «${x.theirs || '(trống)'}» – bạn nhập «${x.mine || '(trống)'}» `);
+      use.type = 'button'; use.className = 'btn ghost small'; use.textContent = 'Dùng bản mới';
+      use.addEventListener('click', () => { x.input.value = x.theirs; x.input.dispatchEvent(new Event('input', { bubbles: true })); li.remove(); customerSteps.repaint(); });
+      li.append(use); list.append(li);
+    }
+    box.append(list);
+  }
+  if (contactsNote) box.append(Object.assign(document.createElement('p'), { textContent: contactsNote }));
+  const end = document.createElement('p'); end.textContent = clash.length ? 'Chọn giữ phần bạn nhập hoặc "Dùng bản mới" cho từng ô, rồi bấm Lưu lại.' : 'Kiểm tra lại rồi bấm Lưu.';
+  box.append(end); box.hidden = false; box.scrollIntoView?.({ block: 'nearest' });
+}
 /** Số báo giá của các khách trên trang đang xem (máy chủ đếm trong phạm vi người xem, so tên không dấu). */
 async function loadCustomerQuoteCounts(req) {
   const names = [...new Set((state.customers || []).map(c => c.name).filter(Boolean))];
@@ -3361,24 +3442,27 @@ function customerDetail() {
     onEdit: c => openCustomer(c.id, c), onQuote: quoteForCustomer, onAccounts: openAccounts, onDiscount: openDiscount, onCare: (c, a, after) => careView().openForm(a ? { activity: a } : { customer: { id: c.id, name: c.name, contact: c.contact } }, after), isManager, userId: () => state.user?.id, onReview: reviewCustomer });
 }
 let customerOpenSeq=0;
+$('#customer-dialog').addEventListener('close',()=>{customerOpenSeq++;});
 async function openCustomer(id, known) {
-  const request=++customerOpenSeq;
+  const request=++customerOpenSeq, session=token;
   try{
     // Always load the current directory before editing; a stale cached form must not replace newer contacts.
     const profile=id?await api('/customers/'+encodeURIComponent(id)+'?refresh=1'):null;
-    if(request!==customerOpenSeq)return;
+    if(request!==customerOpenSeq||session!==token)return;
     customerId=id||null;customerDuplicateCheck.reset();
     $('#customer-tax-lookup').hidden=!!id;$('#customer-tax-input').value='';$('#customer-tax-status').textContent=CUSTOMER_TAX_HINT;$('#customer-tax-status').classList.remove('warn');
-    const form=$('#customer-form');form.reset();$('#customer-error').textContent='';
+    const form=$('#customer-form');customerSaving=null;form.reset();$('#customer-error').textContent='';$('#save-customer').disabled=false;
     customerFields.setRequiredProfile(!id);
     const c=profile?.customer;
+    customerRevision=c?.profileRevision??null;customerOpened=c?customerSnapshot(c):null;hideCustomerConflict();
     if(c)for(const k of ['name','contact','phone','email','taxCode','customerCode','customerType','address','depositRate','paymentTerm','paymentDays','creditLimit','establishedDate'])form.elements.namedItem(k).value=c[k]??'';
     customerNewProfile.reset(state.user,!id,profile?.contactDirectory??[],profile?.contactDirectoryVersion);
+    customerContactsOpened=id?contactsSnapshot():null;
     customerFields.refreshAnniversary();customerTypeOptions.refresh();
     $('#customer-dialog-title').textContent=c?'Sửa khách hàng':'Thêm khách hàng';
     customerSteps.reset(!id);
     $('#customer-dialog').showModal();customerDuplicateCheck.refresh();
-  }catch(ex){toast(ex.message,'err');}
+  }catch(ex){if(request===customerOpenSeq&&session===token)toast(ex.message,'err');}
 }
 const customerFields = customerFormFields({requireProfile:true,paymentDays:true,contactDirectory:true,companyLabels:true,requireCode:true});
 const customerTypeOptions = bindCustomerTypeOptions({input:customerFields.controls.customerType,api});
@@ -3450,16 +3534,31 @@ $('#customer-form').addEventListener('submit', async e => {
     for(const [key,label] of [['customerCode','mã'],['taxCode','mã số thuế'],['address','địa chỉ']])if(!data[key]){err.textContent='Vui lòng nhập '+label+' khách hàng.';customerFields.controls[key].focus();return;}
   }
   if(e.target.reportValidity&&!e.target.reportValidity())return;
-  const btn = $('#save-customer'); btn.disabled = true;
+  if(customerSaving)return;
+  const saveRun={};customerSaving=saveRun;
+  const btn = $('#save-customer'), editId=customerId, editSeq=customerOpenSeq, session=token;
+  const isCurrent=()=>editId===customerId&&editSeq===customerOpenSeq&&session===token&&$('#customer-dialog').open;
+  btn.disabled = true;
   try {
-    const saved = await api(customerId ? '/customers/' + encodeURIComponent(customerId) : '/customers', customerId ? 'PUT' : 'POST', data);
+    if (customerId && customerRevision !== null) data.profileRevision = customerRevision;
+    const saved = await api(editId ? '/customers/' + encodeURIComponent(editId) : '/customers', editId ? 'PUT' : 'POST', data);
+    if (!isCurrent()) return;
+    hideCustomerConflict();
     $('#customer-dialog').close(); toast(customerId ? 'Đã cập nhật khách hàng.' : saved.approvalStatus === 'pending' ? `Đã thêm ${data.name} – chờ Manager duyệt.` : 'Đã thêm ' + data.name + '.');
     // Khách mới: mở luôn trang chi tiết để thêm người liên hệ / phân công; đang ở trang chi tiết thì tải lại.
     if (!customerId) go('#/customers/' + encodeURIComponent(saved.id));
     else if (location.hash.startsWith('#/customers/')) customerDetail().reload();
     await loadCustomers();
-  } catch (ex) { err.textContent = ex.message; }
-  finally { btn.disabled = false; }
+  } catch (ex) {
+    if (!isCurrent()) return;
+    // Hồ sơ hoặc danh bạ người liên hệ vừa đổi: giữ nội dung đang nhập, nạp bản mới và gộp. Danh bạ cũ mà người dùng ĐÃ sửa danh bạ
+    // thì giữ thông báo cũ (đóng/mở lại form) để không thay mất phần danh bạ họ vừa sửa.
+    const contactEdited = ex.code === 'CUSTOMER_CONTACT_CONFLICT' && contactsSnapshot() !== customerContactsOpened;
+    if ((ex.code === 'CUSTOMER_PROFILE_CONFLICT' || ex.code === 'CUSTOMER_CONTACT_CONFLICT') && !contactEdited) { try { await showCustomerConflict(e.target,isCurrent); } catch (load) { if(isCurrent())err.textContent = ex.message + ' ' + (load.message || ''); } }
+    else err.textContent = ex.message;
+  }
+  // busy-buttons may restore the disabled flag captured by an older POST. Reapply the current form's own save state.
+  finally { if(customerSaving===saveRun)customerSaving=null;btn.disabled=!!customerSaving; }
 });
 
 // ---------------------------------------------------------------- nhân viên (Manager)
@@ -4194,6 +4293,8 @@ var feedbackUi = null;
 /** Góp ý phần mềm: trang #/feedback + nút trong menu tài khoản (mở ở mọi trang, tự ghi trang đang dùng). */
 function feedbackView() { return feedbackUi ||= initFeedback({ api, root: $('#view-feedback'), toast, esc, go, fmtDate,
   compressPhoto: f => compressImage(f, [[1600, .75], [1280, .72], [1024, .68], [800, .62]], 600000, 'Ảnh quá lớn, chụp lại giúp.'), appVersion: () => $('#app-version')?.textContent || '' }); }
+var aiChatUi = null;
+function aiChatView() { return aiChatUi ||= initAiChat({ api, root: $('#view-ai-chat'), toast, esc, fmtDate }); }
 var suppliersUi = null;
 function suppliersView() { return suppliersUi ||= initSuppliers({ api, root: $('#view-suppliers'), toast, confirmBox, canLinkAccounts: isManager, identity:()=>JSON.stringify([token,state.user?.id]) }); }
 var inventoryUi = null;
@@ -4486,10 +4587,9 @@ async function openOrder(id, confirmed = null) {
   $('#order-actions').innerHTML = (isK ? '<button class="btn secondary" data-contract-docs title="Xem, sửa rồi tải HĐKT + đề nghị tạm ứng + biên bản nghiệm thu (file Word theo mẫu)">Xem / tải hồ sơ HĐKT</button>'
       : '<button class="btn secondary" id="order-print" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button>')
     + (o.status !== 'draft' && o.status !== 'cancelled' ? `<button class="btn secondary" data-pack-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu đóng gói</button><button class="btn secondary" data-ship-print-for="${esc(o.id)}"${scheduled ? '' : ` disabled title="${NO_SCHEDULE}"`}>In phiếu giao hàng</button>` : '')
-    + (o.status === 'draft' ? (canApprove() ? `<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}. Đã duyệt thì chỉ Manager được sửa báo giá / chứng từ.">Duyệt ${what}</button>`
-      : o.submittedAt === null ? (o.canEdit !== false ? `<button class="btn primary" id="order-submit" title="Xem kỹ ${what} rồi gửi Manager duyệt">Gửi duyệt</button>` : `<span class="pill" title="Người phụ trách chưa gửi duyệt">Nháp</span>`)
-      : `<span class="pill warn" title="Còn nháp: sửa báo giá thì ${what} tự cập nhật theo">Chờ Manager duyệt</span>`) : '')
-    + ((isManager() || (o.status === 'draft' && o.canEdit !== false)) && o.status !== 'cancelled' && !d.payments.some(p => !p.voidedAt) && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
+    + (o.status==='draft'?(canApprove()?`<button class="btn ok" id="order-confirm" title="Kiểm tra rồi duyệt ${what}">Duyệt ${what}</button>`:'')
+      + (!o.submittedAt&&o.canEdit!==false&&(o.channel||'crm')==='crm'?`<button class="btn primary" id="order-submit">Gửi yêu cầu phê duyệt</button>`:o.submittedAt&&!canApprove()?'<span class="pill warn">Chờ Manager duyệt</span>':''):'')
+    + ((isManager() || (o.status === 'draft' && o.canEdit !== false && o.canCancel !== false)) && o.status !== 'cancelled' && !d.payments.some(p => !p.voidedAt) && shipped === 0 ? `<button class="btn ghost" id="order-cancel">Huỷ ${what}</button>` : '')
     + (isManager() && o.status === 'cancelled' && !d.payments.length && shipped === 0 ? `<button class="btn ghost danger-text" id="order-delete" title="Xoá hẳn ${what} đã huỷ khỏi danh sách">Xoá ${what}</button>` : '')
     + (isManager() ? '<button class="btn ghost" id="order-history" title="Ai tạo / duyệt / giao / thu tiền, lúc nào">Lịch sử</button>' : '');
   if (o.channel === 'pos' && o.status === 'cancelled' && can('pos.sell')) {
@@ -4518,6 +4618,7 @@ async function openOrder(id, confirmed = null) {
     b.onclick=()=>openCrmReturns({api,toast,orderId:o.id,onChanged:()=>openOrder(o.id)});$('#order-actions').append(b);
     if(new URLSearchParams(location.hash.split('?')[1]||'').get('returns')==='1'&&!document.querySelector('.pos-return-modal[open]')){const [path,query='']=location.hash.split('?'),params=new URLSearchParams(query);params.delete('returns');history.replaceState(history.state,'',path+(params.size?'?'+params:''));b.click();}
   }
+  if(o.channel==='crm'&&o.quoteId){const b=document.createElement('button');b.className='btn secondary';b.dataset.mobileInline='';b.dataset.saleAdminHandoff='';b.textContent='Sale Admin xử lý';b.onclick=async()=>{const session=token;await openSaleAdminHandoff({api,orderId:o.id,documentNo:o.orderNo,isCurrent:()=>token===session});if(token===session)openOrder(o.id);};$('#order-actions').append(b);}
   if(o.channel==='pos' && can('pos.sell')){const b=document.createElement('button');b.className='btn secondary';b.textContent='Trả / Đổi / Hoàn tiền';b.onclick=async()=>{try{const opts=await api('/pos/options');await openPosReturns({api,toast,orderId:o.id,shift:opts.current,register:opts.registers.find(r=>r.id===opts.current?.registerId),onChanged:()=>openOrder(o.id)});}catch(e){toast(e.message,'err');}};$('#order-actions').append(b);}
   if(o.channel==='pos'&&isManager()&&o.status!=='cancelled'){
     const b=document.createElement('button');b.type='button';b.className='btn danger-outline';b.textContent='Huỷ phiếu nhanh';
@@ -4562,6 +4663,7 @@ async function openOrder(id, confirmed = null) {
     <dt>Phụ trách</dt><dd>${esc(o.ownerName || '—')}</dd>${saleWarehouseRow(o)}<dt>Giá trị (gồm VAT)</dt><dd><b>${money(o.total)}</b></dd>
     <dt>Thanh toán</dt><dd>${o.channel === 'pos' ? esc(posPaymentText(d)) : 'Theo HĐ nguyên tắc với khách'}</dd></dl>
     <div class="row-gap"><button class="btn primary small" id="order-print-card" title="Xem, sửa rồi in / lưu PDF hoặc tải Excel đơn đặt hàng">In / Tải đơn hàng</button></div>`;
+  if(d.submissionReview)$('#order-contract').insertAdjacentHTML('beforeend',submissionSummary(d.submissionReview,esc));
   if(d.purchases?.length) $('#order-contract').insertAdjacentHTML('beforeend', '<p class="small">Đơn mua NCC: ' + d.purchases.map(p => `<a class="data-link" href="#/purchases/${encodeURIComponent(p.id)}">${esc(p.number)}</a>`).join(' · ') + '</p>');
   if(k)mountContractLiquidation({api,host:$('#order-contract'),contract:k,compressPhoto:f=>compressImage(f,[[1280,.72],[1024,.68],[800,.62],[640,.6]],450000,'Ảnh hồ sơ quá lớn. Chụp lại rồi thử lại.'),confirmBox,toast,isCurrent:()=>sales.order?.id===o.id&&token===session&&location.hash===route});
   renderInvoice(o); renderProgress(d);
@@ -5112,40 +5214,33 @@ document.addEventListener('click', async e => {
 });
 /** Xác nhận đơn của khách: bắt buộc kiểm tra các thông tin quan trọng trước khi duyệt. */
 async function verifyAndConfirmOrder() {
-  const d = sales.detail, o = d.order, dash = v => v ? esc(v) : '';
-  let debtWarningAccepted=false;
+  const d = sales.detail, o = d.order;
+  let debtWarningAccepted=false,costQuoteRevision=null;
   try {
     const review = await api(`/orders/${encodeURIComponent(o.id)}/approval-preflight`);
     if (review.debt.total > 0) {
       debtWarningAccepted=await confirmApprovalDebt(review,isContractDoc(d)?'Vẫn duyệt HĐKT':'Vẫn duyệt đơn');
       if(!debtWarningAccepted)return;
     }
-    if (!await reviewOrderCosts({review,api,isManager:isManager(),verifyBox,esc,toast})) return;
+    if (!await reviewOrderCosts({review,api,isManager:isManager(),verifyBox,esc,toast,onReviewed:v=>{costQuoteRevision=v.quoteRevision;}})) return;
   } catch (ex) { toast(ex.message, 'err'); return; }
-  const items = d.lines.map(l => `${esc(l.name)} × ${fmtNum(l.qty)} ${esc(l.unit || '')}`).join('<br>');
   // Kho bán (đơn CRM): duyệt giữ hàng; phiếu kho xác nhận mới trừ sổ kho. Chỉ kho người phụ trách được bán (Manager: mọi kho) – docs/SO-KHO.md.
   let wh = null;
   if ((o.channel || 'crm') === 'crm') { try { wh = await api(`/orders/${encodeURIComponent(o.id)}/warehouses`); } catch (ex) { toast(ex.message, 'err'); return; } }
   const whPick = wh?.warehouseId || (wh?.warehouses.length === 1 ? wh.warehouses[0].id : '');
-  const whStock = w => w.lines.map(l => `${esc(l.sku)}: cần ${fmtNum(l.need)} · tồn ${fmtNum(l.stock)}${l.stock < l.need ? ' <b class="danger-text">thiếu</b>' : ''}`).join('<br>');
   const whField = wh && wh.warehouses.length ? `<label class="verify-field"><span>Kho dự kiến xuất hàng</span><select name="warehouseId">${wh.configured && !whPick ? '<option value="">Chọn kho</option>' : ''}${wh.warehouses.map(w => `<option value="${esc(w.id)}" ${w.id === whPick ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></label>` : '';
-  const whRow = wh && wh.warehouses.length ? [['Tồn tại kho bán', wh.warehouses.map(w => `<b>${esc(w.name)}</b><br>${whStock(w) || '<span class="muted">—</span>'}`).join('<br>')]] : [];
-  const contractReview = isContractDoc(d) ? `
+  const label=isContractDoc(d)?'HĐKT':'đơn';
+  const productReview=approvalProductTable({lines:d.lines,warehouses:wh?.warehouses||[],label,total:o.total},{esc,fmtNum,money});
+  const orderReview = `
     <section class="verify-page-card"><h3>Thông tin khách hàng</h3><dl class="kv verify-customer">
       ${[['Khách hàng', o.customerName], ['MST', o.taxCode], ['Người nhận / SĐT', [o.contact, o.phone].filter(Boolean).join(' · ')], ['Địa chỉ giao', o.address]].map(([label, value]) => `<dt>${esc(label)}</dt><dd>${value ? esc(value) : '<span class="danger-text">Chưa có</span>'}</dd>`).join('')}</dl></section>
-    <section class="verify-page-card verify-products"><div class="verify-section-head"><h3>Sản phẩm trong HĐKT</h3><span class="muted small">${fmtNum(d.lines.length)} dòng sản phẩm</span></div>
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>Sản phẩm</th><th class="num">SL</th><th>ĐVT</th><th class="num">Đơn giá</th><th class="num">VAT</th></tr></thead><tbody>
-        ${d.lines.map(l => `<tr><td>${esc(l.name)}${l.sku ? `<small>${esc(l.sku)}</small>` : ''}</td><td class="num" data-label="SL">${fmtNum(l.qty)}</td><td data-label="ĐVT">${esc(l.unit || '—')}</td><td class="num" data-label="Đơn giá">${money(l.unitPrice)}</td><td class="num" data-label="VAT">${fmtNum(l.taxRate)}%</td></tr>`).join('')}
-      </tbody></table></div><div class="verify-contract-total"><span>Giá trị HĐKT (gồm VAT)</span><strong>${money(o.total)}</strong></div></section>
-    ${whRow.length ? `<section class="verify-page-card"><h3>Tồn tại kho bán</h3><div class="verify-stock-list">${wh.warehouses.map(w => `<section><h4>${esc(w.name)}</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>Mã sản phẩm</th><th class="num">Cần</th><th class="num">Tồn</th><th>Khả năng đáp ứng</th></tr></thead><tbody>${w.lines.map(l => `<tr><td>${esc(l.sku)}</td><td class="num" data-label="Cần">${fmtNum(l.need)}</td><td class="num" data-label="Tồn">${fmtNum(l.stock)}</td><td>${l.stock < l.need ? '<span class="danger-text">Thiếu hàng</span>' : 'Đủ hàng'}</td></tr>`).join('')}</tbody></table></div></section>`).join('')}</div></section>` : ''}
-    <section class="verify-page-card"><h3>Ghi chú</h3><p class="verify-note">${o.note ? esc(o.note) : '<span class="muted">Không có ghi chú</span>'}</p></section>` : '';
+    ${productReview}
+    <section class="verify-page-card"><h3>Ghi chú</h3><p class="verify-note">${o.note ? esc(o.note) : '<span class="muted">Không có ghi chú</span>'}</p></section>`;
   const v = await verifyBox({
-    title: `Duyệt ${isContractDoc(d) ? 'HĐKT' : 'đơn'} ${docNo(d)}`, eyebrow: 'Kiểm tra trước khi duyệt',
-    ...(isContractDoc(d) ? { title: 'Duyệt HĐKT', subtitle: docNo(d), layout: 'page', review: contractReview } : {}),
-    intro: `Kiểm tra kỹ các thông tin dưới đây với khách hàng. Đánh dấu đủ các mục mới duyệt được ${isContractDoc(d) ? 'HĐKT' : 'đơn'}.`,
-    rows: [['Khách hàng', dash(o.customerName)], ['MST', dash(o.taxCode)], ['Người nhận / SĐT', dash([o.contact, o.phone].filter(Boolean).join(' · '))], ['Địa chỉ giao', dash(o.address)],
-      ['Sản phẩm', items], ...whRow, [`Giá trị ${isContractDoc(d) ? 'HĐKT' : 'đơn'} (gồm VAT)`, `<b>${money(o.total)}</b>`], ['Ghi chú', o.note ? esc(o.note) : '<span class="muted">Không có</span>']],
-    fields: `<label class="verify-field"><span>Ngày giao dự kiến</span><input type="date" name="deliveryDate" value="${esc(o.expectedDeliveryDate || '')}" min="${todayIso()}"></label>${whField}`,
+    title: isContractDoc(d)?'Duyệt HĐKT':'Duyệt đơn', eyebrow: 'Kiểm tra trước khi duyệt',
+    subtitle:docNo(d),layout:'page',review:orderReview,
+    intro: `Kiểm tra kỹ các thông tin dưới đây với khách hàng. Đánh dấu đủ các mục mới duyệt được ${label}.`,
+    fields: `<label class="verify-field"><span>Ngày giao dự kiến</span><input type="date" name="deliveryDate" value="${esc(o.expectedDeliveryDate || '')}"></label>${whField}`,
     checks: ['Thông tin khách hàng (tên công ty, MST, người nhận, số điện thoại, địa chỉ giao) chính xác',
       'Sản phẩm, số lượng, đơn giá và VAT đúng với yêu cầu của khách', 'Đã kiểm tra tồn kho / khả năng đáp ứng đủ số lượng',
       'Ngày giao dự kiến khả thi và đã thống nhất với khách', 'Điều kiện thanh toán (đặt cọc / thanh toán khi giao) đã thống nhất với khách'],
@@ -5154,7 +5249,7 @@ async function verifyAndConfirmOrder() {
   if (!v) return;
   try {
     if (v.deliveryDate !== (o.expectedDeliveryDate || '')) await api(`/orders/${encodeURIComponent(o.id)}/delivery-date`, 'PUT', { date: v.deliveryDate });
-    await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true, debtWarningAccepted, ...(v.warehouseId ? { warehouseId: v.warehouseId } : {}) });
+    await api(`/orders/${encodeURIComponent(o.id)}/status`, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true, debtWarningAccepted,...(costQuoteRevision!=null?{costQuoteRevision}:{}), ...(v.warehouseId ? { warehouseId: v.warehouseId } : {}) });
     toast(isContractDoc(d) ? 'Đã duyệt HĐKT. Báo giá của HĐKT đã được khoá.' : 'Đã duyệt đơn. Báo giá của đơn đã được khoá.'); openOrder(o.id);
   } catch (ex) {
     if (ex.code === 'CUSTOMER_DEBT_OVERDUE') {
@@ -5310,7 +5405,7 @@ document.addEventListener('click', async e => {
   if (sub && sales.detail?.order) {
     const o = sales.detail.order, what = sales.detail.contract ? 'HĐKT' : 'đơn hàng';
     sub.disabled = true;
-    try { await api('/orders/' + encodeURIComponent(o.id) + '/submit', 'POST', {}); toast(`Đã gửi Manager duyệt ${what}.`); openOrder(o.id); }
+    try { if(await requestOrderApproval({id:o.id,api,verifyBox,esc})){toast(`Đã gửi Manager duyệt ${what}.`);openOrder(o.id);}else sub.disabled=false; }
     catch (ex) { toast(ex.message, 'err'); sub.disabled = false; }
   }
   if (e.target.closest('#order-history')) showAudit({ api, toast, entityType: 'orders', entityId: sales.order.id, title: (isContractDoc() ? 'HĐKT ' : 'Đơn ') + docNo() });
@@ -5390,7 +5485,7 @@ $('#contract-form').addEventListener('submit', async e => {
       run: (loc, push) => api('/contracts', 'POST', { ...body, ...(loc ? { sapoLocationId: loc } : {}), pushSapo: push === true }) });
     if (!r) return;
     $('#contract-dialog').close(); contractTarget = null; toast('Đã lập HĐKT ' + r.contractNo); sapoToast(r.sapo); loadHolds(true); // HĐKT giữ hàng thay báo giá
-    target.done?.(); go('#/contracts/' + encodeURIComponent(r.orderId));
+    await handoffCreatedDocument(r.orderId,r.contractNo);target.done?.(); go('#/contracts/' + encodeURIComponent(r.orderId));
   } catch (ex) { err.textContent = ex.message; }finally{target.busy=false;f.querySelector('.modal-foot .btn.primary').disabled=false;}
 });
 $('#contract-dialog').addEventListener('close',()=>{contractTarget=null;});
@@ -5464,10 +5559,15 @@ function approvalBlock() {
   if (editor.approval?.status !== 'approved') return 'Báo giá đang đợi Manager duyệt.';
   return null;
 }
+const quoteEditUi=bindQuoteEditRequests({button:$('#request-quote-edit'),api,
+ getContext:()=>({id:editor.id,revision:editor.revision,approved:editor.approval?.status==='approved',manager:isManager(),canRequest:state.user?.role==='employee'&&editor.approval?.canEdit!==false,editRequest:editor.approval?.editRequest}),
+ reload:async id=>{if(location.hash.split('?')[0]==='#/quotes/'+id)await openEditor(id);},
+});
 function updateQuoteActions() {
   const saved = !!editor.id, approved = editor.approval?.status === 'approved', mgr = isManager(), block = approvalBlock();
   const readOnly = saved && editor.approval?.canEdit === false; // xem được, không sửa được (máy chủ cũng chặn)
-  const locked = (saved && approved && !mgr) || readOnly;
+  const locked = (saved && approved && !mgr && !editor.approval?.editRequest?.canEditApproved) || readOnly;
+  quoteEditUi.render();
   for (const el of qf.querySelectorAll('.editor-grid input, .editor-grid select, .editor-grid textarea, .editor-grid button, .card input, .card select, .card textarea, .card button')) {
     if (locked && !el.disabled) { el.dataset.approvalLock = '1'; el.disabled = true; }
     else if (!locked && el.dataset.approvalLock) { delete el.dataset.approvalLock; el.disabled = false; }
@@ -5535,6 +5635,7 @@ async function productionTransfer(path,file){
 const productionForm=opts=>{const session=token;return createProductionFiles({api,transfer:productionTransfer,esc,...opts,isCurrent:()=>session===token&&opts.isCurrent()});};
 var orderCreateUi = null;
 const orderCreate = () => orderCreateUi ||= initOrderCreate({ api, $, todayIso, confirmBox, createProductionFiles:productionForm, createSourcing:opts=>initQuoteSourcing({api,confirmBox,...opts}), chooseSapo: (ref, opts) => sapoPush().choose(ref, opts) });
+async function handoffCreatedDocument(orderId,documentNo){const session=token;try{await openSaleAdminHandoff({api,orderId,documentNo,created:true,isCurrent:()=>token===session});}catch(ex){if(token===session)toast('Chứng từ đã tạo. Mở Sale Admin xử lý trên hồ sơ để giao sau.','err');}}
 async function createOrderForQuote(quoteId, quoteNo, debtWarningAccepted = false) {
   let existed = null;
   const post = async (fields, loc, push) => {
@@ -5549,7 +5650,7 @@ async function createOrderForQuote(quoteId, quoteNo, debtWarningAccepted = false
   const r = await orderCreate().choose({ quoteId, quoteNo }, post);
   if (!r) return null;
   if (existed) toast('Báo giá này đã có đơn hàng – mở đơn đó.');
-  else { toast('Đã sinh đơn đặt hàng.'); sapoToast(r.sapo); }
+  else { toast('Đã sinh đơn đặt hàng.'); sapoToast(r.sapo); await handoffCreatedDocument(r.id,r.orderNo||quoteNo); }
   if (typeof refreshQuoteHold === 'function' && typeof editor !== 'undefined' && editor.id) { refreshQuoteHold(editor.id); loadHolds(true); } // lập đơn từ báo giá → tự bỏ treo
   return r.id;
 }
@@ -5866,7 +5967,7 @@ $('#pdf-quote-sale').addEventListener('click',()=>downloadSaleQuote('pdf'));
 $('#excel-quote-sale').addEventListener('click',()=>downloadSaleQuote('excel'));
 
 // Tin nhắn mới đến qua Web Push: cập nhật huy hiệu ngay (không chờ 20 giây).
-if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) { chatView().refresh(); dataRefresh.request(); dataRefresh.tick(); } });
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'bn-notification' && state.user) { if(e.data.note?.eventType==='pos_qr_display')return; chatView().refresh(); dataRefresh.request(); dataRefresh.tick(); } });
 
 
 
@@ -5902,9 +6003,12 @@ var custodyUi=null,custodyLoading=null;
 function custodyView(){return custodyLoading ||= import('./product-custody.js').then(({initProductCustody})=>custodyUi=initProductCustody({api,root:$('#view-product-custody'),toast,compress:compressImage,identity:()=>token,userId:()=>state.user?.id}));}
 
 // Trang chủ tải module khi mở; phần còn lại của CRM không phải tải giao diện này.
-var homeUi = null, homeLoading = null;
+var homeUi = null, homeLoading = null, homeReminderUi = null, homeReminderLoading = null;
+function openHomeReminder(){const who=state.user?.id;if(!who)return;return (homeReminderLoading ||= import('./home-reminder.js').then(({initHomeReminder})=>homeReminderUi=initHomeReminder({api,userId:()=>state.user?.id,toast,confirmBox,onCreated:()=>homeUi?.refresh()}))).then(ui=>{if(who===state.user?.id)return ui.open();}).catch(e=>toast(e.message,'err'));}
+$('#reminder-launcher').addEventListener('click',openHomeReminder);
 function homeNavigation(){return [...document.querySelectorAll('.side-nav [data-nav]')].filter(a=>!a.hidden&&!a.closest('[hidden]')&&linkAllowed(a.getAttribute('href'))).map(a=>{const group=a.closest('.nav-group'),heading=group?.querySelector('h2');return{key:a.dataset.nav,label:a.querySelector('span')?.textContent?.trim()||a.textContent.trim(),href:a.getAttribute('href'),groupId:heading?.id||'',group:(heading?.querySelector('.nav-group-toggle>span:first-child')?.textContent||heading?.textContent)?.trim()||'Chức năng khác'};});}
 function homeActions(){return [
+  {key:'new-reminder',label:'Nhắc chăm sóc nhanh',icon:'clock',run:openHomeReminder},
   {key:'new-task',label:'Tạo công việc',icon:'work',run:()=>tasksView().openNew().catch(e=>toast(e.message,'err'))},
   ...(can('pos.sell')&&isCounterSales()?[{key:'pos',label:'Bán hàng nhanh',icon:'sell',run:()=>go('#/pos')}]:[]),
   ...(can('page.quotes')?[{key:'new-quote',label:'Lập báo giá',icon:'sell',run:()=>openNewQuote()}]:[]),

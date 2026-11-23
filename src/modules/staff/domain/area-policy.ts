@@ -15,7 +15,7 @@ import { isCustomer, isSupplier, type MemberLike } from './roles.ts';
  * Quy tắc chốt 05/10/2026: tài khoản NCC CHỈ được vào 'self' và 'supplier-portal' – trang NCC, không gì khác.
  * Mọi route mới BẮT BUỘC khai báo khu vực; không khai báo thì không được đăng ký (sẽ có test chặn khi có API).
  */
-export type Area = 'public' | 'self' | 'supplier-portal' | 'ncc-admin' | 'admin' | 'business' | 'sapo-sync' | 'transfer-sync' | 'sepay-sync' | 'web-order-sync' | 'ghn-webhook' | 'synctime-sync' | 'customer-portal';
+export type Area = 'public' | 'self' | 'supplier-portal' | 'ncc-admin' | 'admin' | 'business' | 'sapo-sync' | 'transfer-sync' | 'warehouse-image-sync' | 'ai-chat-sync' | 'sepay-sync' | 'web-order-sync' | 'ghn-webhook' | 'synctime-sync' | 'customer-portal';
 
 /** Thông báo 403 theo khu vực (giữ như bản cũ). NCC đi sai khu vực luôn nhận thông báo riêng của NCC. */
 export const FORBIDDEN_MESSAGE: Record<Area, string> = {
@@ -23,6 +23,8 @@ export const FORBIDDEN_MESSAGE: Record<Area, string> = {
   'ncc-admin': 'Chỉ Manager được xem chức năng NCC.', admin: 'Chỉ Manager được quản lý nhân viên.', 'sapo-sync': 'Không được phép đồng bộ.', 'sepay-sync': 'Webhook SePay không hợp lệ.', 'web-order-sync': 'Webhook đơn web không hợp lệ.', 'ghn-webhook': 'Webhook GHN không hợp lệ.', 'synctime-sync': 'Mã webhook không hợp lệ.',
   'customer-portal': 'Trang này dành cho tài khoản khách hàng.',
   'transfer-sync': 'Không được phép tích hợp điều chuyển.',
+  'warehouse-image-sync': 'Callback xử lý ảnh không hợp lệ.',
+  'ai-chat-sync': 'Callback Chat cùng AI không hợp lệ.',
 };
 export const SUPPLIER_FORBIDDEN_MESSAGE = 'Tài khoản NCC chỉ được xem đơn hàng NCC đã duyệt.';
 export const CUSTOMER_FORBIDDEN_MESSAGE = 'Tài khoản khách hàng chỉ dùng được trang khách hàng.';
@@ -30,7 +32,7 @@ export type PolicyMember = MemberLike & { active: boolean };
 
 export function canAccessArea(member: PolicyMember | null | undefined, area: Area): boolean {
   if (area === 'public') return true;
-  if (area === 'sapo-sync' || area === 'transfer-sync' || area === 'sepay-sync' || area === 'web-order-sync' || area === 'ghn-webhook' || area === 'synctime-sync' || !member?.active) return false; // webhook không dùng phiên tài khoản người dùng
+  if (area === 'sapo-sync' || area === 'transfer-sync' || area === 'warehouse-image-sync' || area === 'ai-chat-sync' || area === 'sepay-sync' || area === 'web-order-sync' || area === 'ghn-webhook' || area === 'synctime-sync' || !member?.active) return false; // webhook không dùng phiên tài khoản người dùng
   if (isSupplier(member)) return area === 'self' || area === 'supplier-portal';
   // Khách hàng chỉ vào trang khách hàng; ngược lại trang khách hàng chỉ dành cho khách (nhân viên/Manager không gọi được).
   if (isCustomer(member)) return area === 'self' || area === 'customer-portal';

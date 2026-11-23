@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -44,7 +45,7 @@ test('nhật ký thay đổi: ghi tự động thao tác thành công, Manager x
 
   // Đơn hàng: tạo, duyệt, lên lịch giao, thu tiền → xem lịch sử đơn kèm thao tác liên quan (giao hàng, phiếu thu có orderId).
   const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201);
-  await call(`/orders/${o.data.id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await approveFixtureOrder({db,call},`/orders/${o.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   assert.equal((await call('/deliveries', emp, 'POST', { orderId: o.data.id, plannedDate: '2030-01-15' })).status, 201);
   assert.equal((await call('/payments', emp, 'POST', { orderId: o.data.id, amount: 500000, paidAt: '2026-10-09', method: 'transfer' })).status, 201);
   const only = (await call(`/audit?entityType=orders&entityId=${o.data.id}`, mgr)).data.entries.map((e: any) => e.action);

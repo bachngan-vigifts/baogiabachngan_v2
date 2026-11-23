@@ -1,0 +1,22 @@
+name: Public AI SEO audit
+on:
+  push:
+    branches: [codex/ai-seo-audit-20261119]
+    paths: [web-shared/ai-seo/audit.mjs, .github/workflows/ai-seo-public-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install --prefix /tmp/ai-seo --no-audit --no-fund playwright@1.56.1
+      - run: /tmp/ai-seo/node_modules/.bin/playwright install chromium --only-shell
+      - run: node web-shared/ai-seo/audit.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-seo-public-evidence
+          path: seo-evidence/
+          retention-days: 7

@@ -1,8 +1,8 @@
 /** Delegated Pointer Events work with mouse/touch/pen and survive list renders. */
-export function initProductReorder({root,canStart=()=>true,onMove,announce=()=>{}}){
+export function initProductReorder({root,canStart=()=>true,onMove,announce=()=>{},rowSelector='.product-row[data-product-id]',handleSelector='[data-reorder-handle]',listSelector='.selection',idAttribute='data-product-id'}){
  let active=null,frame=0;
- const rows=list=>[...list.querySelectorAll('.product-row[data-product-id]')];
- const focus=id=>rows(root).find(n=>n.dataset.productId===id)?.querySelector('[data-reorder-handle]')?.focus();
+ const rows=list=>[...list.querySelectorAll(rowSelector)];
+ const focus=id=>rows(root).find(n=>n.getAttribute(idAttribute)===id)?.querySelector(handleSelector)?.focus();
  function clearTarget(){if(active?.target)delete active.target.dataset.drop;}
  function finish(commit=false){
   const drag=active;if(!drag)return;
@@ -10,7 +10,7 @@ export function initProductReorder({root,canStart=()=>true,onMove,announce=()=>{
   drag.row.classList.remove('is-reordering');drag.ghost?.remove();
   if(drag.handle.hasPointerCapture?.(drag.pointer))drag.handle.releasePointerCapture(drag.pointer);
   if(commit&&drag.dragging&&drag.target&&drag.row.isConnected&&canStart()){
-   if(onMove(drag.id,drag.target.dataset.productId,drag.after))focus(drag.id);
+   if(onMove(drag.id,drag.target.getAttribute(idAttribute),drag.after))focus(drag.id);
   }
  }
  function targetAt(){
@@ -34,15 +34,15 @@ export function initProductReorder({root,canStart=()=>true,onMove,announce=()=>{
   frame=requestAnimationFrame(tick);
  }
  root.addEventListener('pointerdown',event=>{
-  let handle=event.target.closest('[data-reorder-handle]');
+  let handle=event.target.closest(handleSelector);
   if(!handle||!root.contains(handle)||!event.isPrimary||event.button!==0||!canStart())return;
-  let row=handle.closest('.product-row[data-product-id]'),list=row?.closest('.selection');if(!list)return;
-  const id=row.dataset.productId;
+  let row=handle.closest(rowSelector),list=row?.closest(listSelector);if(!list)return;
+  const id=row.getAttribute(idAttribute);
   finish();event.preventDefault();handle.focus({preventScroll:true});
   // Focusing commits a quantity edit, which can replace the entire row synchronously.
-  if(!row.isConnected){row=rows(root).find(n=>n.dataset.productId===id);handle=row?.querySelector('[data-reorder-handle]');list=row?.closest('.selection');if(!handle||!list)return;handle.focus({preventScroll:true});}
+  if(!row.isConnected){row=rows(root).find(n=>n.getAttribute(idAttribute)===id);handle=row?.querySelector(handleSelector);list=row?.closest(listSelector);if(!handle||!list)return;handle.focus({preventScroll:true});}
   const bounds=row.getBoundingClientRect();
-  active={id:row.dataset.productId,row,list,handle,pointer:event.pointerId,startX:event.clientX,startY:event.clientY,x:event.clientX,y:event.clientY,offset:event.clientY-bounds.top,bounds,scroller:scrollParent(list),dragging:false,target:null};
+  active={id:row.getAttribute(idAttribute),row,list,handle,pointer:event.pointerId,startX:event.clientX,startY:event.clientY,x:event.clientX,y:event.clientY,offset:event.clientY-bounds.top,bounds,scroller:scrollParent(list),dragging:false,target:null};
   handle.setPointerCapture?.(event.pointerId);
  });
  window.addEventListener('pointermove',event=>{
@@ -61,11 +61,11 @@ export function initProductReorder({root,canStart=()=>true,onMove,announce=()=>{
  root.addEventListener('lostpointercapture',()=>finish());
  root.addEventListener('keydown',event=>{
   if(event.key==='Escape'&&active){event.preventDefault();event.stopPropagation();finish();announce('Đã huỷ kéo thả.');return;}
-  const handle=event.target.closest('[data-reorder-handle]');if(!handle||!canStart()||!['ArrowUp','ArrowDown','Home','End'].includes(event.key))return;
-  event.preventDefault();const row=handle.closest('[data-product-id]'),nodes=rows(row.closest('.selection')),i=nodes.indexOf(row);
+  const handle=event.target.closest(handleSelector);if(!handle||!canStart()||!['ArrowUp','ArrowDown','Home','End'].includes(event.key))return;
+  event.preventDefault();const row=handle.closest(rowSelector),nodes=rows(row.closest(listSelector)),i=nodes.indexOf(row);
   const index=event.key==='Home'?0:event.key==='End'?nodes.length-1:event.key==='ArrowUp'?i-1:i+1;
   if(index<0||index>=nodes.length||index===i)return;
-  if(onMove(row.dataset.productId,nodes[index].dataset.productId,index>i))focus(row.dataset.productId);
+  if(onMove(row.getAttribute(idAttribute),nodes[index].getAttribute(idAttribute),index>i))focus(row.getAttribute(idAttribute));
  });
  return {cancel:()=>finish()};
 }

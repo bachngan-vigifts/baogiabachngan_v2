@@ -1,0 +1,497 @@
+[
+  {
+    "id": 424,
+    "name": "Bình hoa",
+    "slug": "binh-hoa-minh-long",
+    "parent": 402,
+    "count": 89,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/binh-hoa-minh-long/",
+    "group": 3
+  },
+  {
+    "id": 446,
+    "name": "Bình trà/cà phê",
+    "slug": "binh-tra-ca-phe-ly-s",
+    "parent": 401,
+    "count": 10,
+    "url": "https://minhlongonline.com/danh-muc/lys/binh-tra-ca-phe-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1498,
+    "name": "Bình trà/cà phê",
+    "slug": "binh-tra-ca-phe",
+    "parent": 402,
+    "count": 75,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/binh-tra-ca-phe/",
+    "group": 1
+  },
+  {
+    "id": 421,
+    "name": "Bộ đồ ăn",
+    "slug": "bo-do-an-minh-long",
+    "parent": 402,
+    "count": 124,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/bo-do-an-minh-long/",
+    "group": 0
+  },
+  {
+    "id": 422,
+    "name": "Bộ khay rượu",
+    "slug": "bo-khay-ruou-minh-long",
+    "parent": 402,
+    "count": 5,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/bo-khay-ruou-minh-long/",
+    "group": 1
+  },
+  {
+    "id": 419,
+    "name": "Bộ trà/cà phê",
+    "slug": "bo-tra-ca-phe-minh-long",
+    "parent": 402,
+    "count": 171,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/bo-tra-ca-phe-minh-long/",
+    "group": 1
+  },
+  {
+    "id": 1535,
+    "name": "Ca sứ",
+    "slug": "ca-su",
+    "parent": 402,
+    "count": 44,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/ca-su/",
+    "group": 1
+  },
+  {
+    "id": 1550,
+    "name": "CERES",
+    "slug": "ceres",
+    "parent": 466,
+    "count": 4,
+    "url": "https://minhlongonline.com/danh-muc/healthycook/ceres/",
+    "group": 2
+  },
+  {
+    "id": 1536,
+    "name": "Chai - Hộp (Sứ dưỡng sinh)",
+    "slug": "chai-hop-su-duong-sinh-minh-long",
+    "parent": 402,
+    "count": 24,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/chai-hop-su-duong-sinh-minh-long/",
+    "group": 2
+  },
+  {
+    "id": 435,
+    "name": "Chén chấm",
+    "slug": "chen-cham-ly-s",
+    "parent": 401,
+    "count": 7,
+    "url": "https://minhlongonline.com/danh-muc/lys/chen-cham-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1515,
+    "name": "Chén chấm",
+    "slug": "chen-cham",
+    "parent": 402,
+    "count": 58,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/chen-cham/",
+    "group": 0
+  },
+  {
+    "id": 443,
+    "name": "Chén Cơm",
+    "slug": "chen-minh-long",
+    "parent": 402,
+    "count": 75,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/chen-minh-long/",
+    "group": 0
+  },
+  {
+    "id": 461,
+    "name": "Chén Cơm",
+    "slug": "chen-ly-s",
+    "parent": 401,
+    "count": 13,
+    "url": "https://minhlongonline.com/danh-muc/lys/chen-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1522,
+    "name": "Chén sốt",
+    "slug": "chen-sot",
+    "parent": 402,
+    "count": 7,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/chen-sot/",
+    "group": 0
+  },
+  {
+    "id": 1523,
+    "name": "chén sốt",
+    "slug": "chen-sot-ly-s",
+    "parent": 401,
+    "count": 0,
+    "url": "https://minhlongonline.com/danh-muc/lys/chen-sot-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1527,
+    "name": "Chén Súp",
+    "slug": "chen-sup-lys",
+    "parent": 401,
+    "count": 1,
+    "url": "https://minhlongonline.com/danh-muc/lys/chen-sup-lys/",
+    "group": 4
+  },
+  {
+    "id": 1521,
+    "name": "Chén súp",
+    "slug": "chen-sup",
+    "parent": 402,
+    "count": 6,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/chen-sup/",
+    "group": 0
+  },
+  {
+    "id": 399,
+    "name": "Dĩa",
+    "slug": "dia-tron-minh-long",
+    "parent": 402,
+    "count": 291,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/dia-tron-minh-long/",
+    "group": 0
+  },
+  {
+    "id": 438,
+    "name": "Dĩa",
+    "slug": "dia-ly-s",
+    "parent": 401,
+    "count": 49,
+    "url": "https://minhlongonline.com/danh-muc/lys/dia-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1531,
+    "name": "Dĩa Elip",
+    "slug": "dia-elip",
+    "parent": 402,
+    "count": 9,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/dia-elip/",
+    "group": 0
+  },
+  {
+    "id": 1516,
+    "name": "Dĩa lót chén",
+    "slug": "dia-lot-chen",
+    "parent": 402,
+    "count": 36,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/dia-lot-chen/",
+    "group": 0
+  },
+  {
+    "id": 462,
+    "name": "Dĩa lót chén",
+    "slug": "dia-lot-chen-ly-s",
+    "parent": 401,
+    "count": 7,
+    "url": "https://minhlongonline.com/danh-muc/lys/dia-lot-chen-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1517,
+    "name": "Dĩa lót tách",
+    "slug": "dia-lot-tach",
+    "parent": 402,
+    "count": 53,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/dia-lot-tach/",
+    "group": 1
+  },
+  {
+    "id": 464,
+    "name": "Dĩa lót tách",
+    "slug": "dia-lot-tach-ly-s",
+    "parent": 401,
+    "count": 8,
+    "url": "https://minhlongonline.com/danh-muc/lys/dia-lot-tach-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1518,
+    "name": "Dĩa lót thố",
+    "slug": "dia-lot-tho-ly-s",
+    "parent": 401,
+    "count": 2,
+    "url": "https://minhlongonline.com/danh-muc/lys/dia-lot-tho-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 436,
+    "name": "Dĩa Oval",
+    "slug": "dia-oval-ly-s",
+    "parent": 401,
+    "count": 18,
+    "url": "https://minhlongonline.com/danh-muc/lys/dia-oval-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1529,
+    "name": "Dĩa Oval",
+    "slug": "dia-oval",
+    "parent": 402,
+    "count": 61,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/dia-oval/",
+    "group": 0
+  },
+  {
+    "id": 439,
+    "name": "Dĩa vuông/chữ nhật",
+    "slug": "dia-vuong-chu-nhat-ly-s",
+    "parent": 401,
+    "count": 38,
+    "url": "https://minhlongonline.com/danh-muc/lys/dia-vuong-chu-nhat-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1528,
+    "name": "Dĩa Vuông/Chữ Nhật",
+    "slug": "dia-vuong",
+    "parent": 402,
+    "count": 10,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/dia-vuong/",
+    "group": 0
+  },
+  {
+    "id": 1543,
+    "name": "Gác đũa",
+    "slug": "gac-dua",
+    "parent": 402,
+    "count": 5,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/gac-dua/",
+    "group": 0
+  },
+  {
+    "id": 466,
+    "name": "HEALTHYCOOK",
+    "slug": "healthycook",
+    "parent": 0,
+    "count": 31,
+    "url": "https://minhlongonline.com/danh-muc/healthycook/",
+    "group": 2
+  },
+  {
+    "id": 1530,
+    "name": "Khay",
+    "slug": "khay-ly-s",
+    "parent": 401,
+    "count": 5,
+    "url": "https://minhlongonline.com/danh-muc/lys/khay-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1532,
+    "name": "Khay mứt",
+    "slug": "khay-mut-minh-long",
+    "parent": 402,
+    "count": 10,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/khay-mut-minh-long/",
+    "group": 0
+  },
+  {
+    "id": 452,
+    "name": "LUNA",
+    "slug": "luna-healthycook",
+    "parent": 466,
+    "count": 13,
+    "url": "https://minhlongonline.com/danh-muc/healthycook/luna-healthycook/",
+    "group": 2
+  },
+  {
+    "id": 431,
+    "name": "Ly sứ dưỡng sinh",
+    "slug": "ly-su-duong-sinh-minh-long",
+    "parent": 402,
+    "count": 56,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/ly-su-duong-sinh-minh-long/",
+    "group": 1
+  },
+  {
+    "id": 401,
+    "name": "LY'S",
+    "slug": "lys",
+    "parent": 0,
+    "count": 252,
+    "url": "https://minhlongonline.com/danh-muc/lys/",
+    "group": 4
+  },
+  {
+    "id": 402,
+    "name": "MINH LONG",
+    "slug": "minh-long",
+    "parent": 0,
+    "count": 1682,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/",
+    "group": 0
+  },
+  {
+    "id": 432,
+    "name": "Muỗng - Đũa sứ",
+    "slug": "muong-dua-su-minh-long",
+    "parent": 402,
+    "count": 39,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/muong-dua-su-minh-long/",
+    "group": 0
+  },
+  {
+    "id": 457,
+    "name": "Muỗng - Đũa sứ",
+    "slug": "muong-dua-su-ly-s",
+    "parent": 401,
+    "count": 7,
+    "url": "https://minhlongonline.com/danh-muc/lys/muong-dua-su-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1548,
+    "name": "Nến thơm",
+    "slug": "nen-thom",
+    "parent": 402,
+    "count": 2,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/nen-thom/",
+    "group": 3
+  },
+  {
+    "id": 1545,
+    "name": "Phụ kiện bàn ăn",
+    "slug": "phu-kien-ban-an-minh-long",
+    "parent": 402,
+    "count": 14,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/phu-kien-ban-an-minh-long/",
+    "group": 0
+  },
+  {
+    "id": 1506,
+    "name": "Phụ kiện bàn ăn",
+    "slug": "phu-kien-ban-an-ly-s",
+    "parent": 401,
+    "count": 13,
+    "url": "https://minhlongonline.com/danh-muc/lys/phu-kien-ban-an-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1525,
+    "name": "Phụ kiện trà, cà phê",
+    "slug": "phu-kien-tra-ca-phe",
+    "parent": 402,
+    "count": 20,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/phu-kien-tra-ca-phe/",
+    "group": 1
+  },
+  {
+    "id": 1526,
+    "name": "Phụ kiện trà, cà phê",
+    "slug": "phu-kien-tra-ca-phe-ly-s",
+    "parent": 401,
+    "count": 3,
+    "url": "https://minhlongonline.com/danh-muc/lys/phu-kien-tra-ca-phe-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1499,
+    "name": "Tách / Ly / Cốc",
+    "slug": "tach-ly-coc-ly-s",
+    "parent": 401,
+    "count": 6,
+    "url": "https://minhlongonline.com/danh-muc/lys/tach-ly-coc-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 1497,
+    "name": "Tách trà/cà phê",
+    "slug": "tach-tra-ca-phe",
+    "parent": 402,
+    "count": 53,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/tach-tra-ca-phe/",
+    "group": 1
+  },
+  {
+    "id": 465,
+    "name": "Tách trà/cà phê",
+    "slug": "tach-tra-ca-phe-ly-s",
+    "parent": 401,
+    "count": 16,
+    "url": "https://minhlongonline.com/danh-muc/lys/tach-tra-ca-phe-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 458,
+    "name": "Thố",
+    "slug": "tho-ly-s",
+    "parent": 401,
+    "count": 13,
+    "url": "https://minhlongonline.com/danh-muc/lys/tho-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 440,
+    "name": "Tô",
+    "slug": "to-ly-s",
+    "parent": 401,
+    "count": 36,
+    "url": "https://minhlongonline.com/danh-muc/lys/to-ly-s/",
+    "group": 4
+  },
+  {
+    "id": 400,
+    "name": "Tô/dĩa trái cây",
+    "slug": "to-dia-trai-cay-minh-long",
+    "parent": 402,
+    "count": 12,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/to-dia-trai-cay-minh-long/",
+    "group": 0
+  },
+  {
+    "id": 433,
+    "name": "Tô/Thố/Khay",
+    "slug": "to-tho-khay-minh-long",
+    "parent": 402,
+    "count": 183,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/to-tho-khay-minh-long/",
+    "group": 0
+  },
+  {
+    "id": 1547,
+    "name": "Trang sức",
+    "slug": "trang-suc",
+    "parent": 402,
+    "count": 1,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/trang-suc/",
+    "group": 3
+  },
+  {
+    "id": 1549,
+    "name": "Tượng",
+    "slug": "tuong",
+    "parent": 402,
+    "count": 2,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/tuong/",
+    "group": 3
+  },
+  {
+    "id": 396,
+    "name": "Tượng Linh Vật",
+    "slug": "tuong-linh-vat-minh-long",
+    "parent": 402,
+    "count": 147,
+    "url": "https://minhlongonline.com/danh-muc/minh-long/tuong-linh-vat-minh-long/",
+    "group": 3
+  },
+  {
+    "id": 453,
+    "name": "VESTA",
+    "slug": "vesta-healthycook",
+    "parent": 466,
+    "count": 14,
+    "url": "https://minhlongonline.com/danh-muc/healthycook/vesta-healthycook/",
+    "group": 2
+  }
+]

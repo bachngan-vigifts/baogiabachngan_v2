@@ -12,9 +12,9 @@ test('mobile saves, submits, confirmations and field-bearing controls never ente
  for(const text of ['Lưu báo giá','Gửi duyệt','Xác nhận nhận hàng','Thanh toán','Nhận theo phiếu','Đã giao','Thu tiền','Đóng phiếu','Gọi','Báo giá','Xuất Excel','Xem / Tải hồ sơ'])assert.equal(actionKind(control(text)),'inline',text);
  assert.equal(actionKind(control('Chọn nguồn',{field:true})),'inline');
 });
-test('destructive controls require desktop or their existing full confirmation dialog',()=>{
+test('điện thoại có đủ nút như PC: thao tác rủi ro vào menu ⋮ (không ẩn), trong hộp xác nhận thì hiện tại chỗ',()=>{
  for(const text of ['Huỷ phiếu','Xóa đơn','Chốt tồn','Chốt kỳ','Điều chỉnh','Hoàn tiền','Đồng bộ Sapo']){
-  assert.equal(actionKind(control(text)),'desktop',text);
+  assert.equal(actionKind(control(text)),'secondary',text);
   assert.equal(actionKind(control(text,{dialog:true})),'inline',text);
  }
  assert.equal(actionKind(control('Hủy',{dialog:true})),'inline');
@@ -27,13 +27,14 @@ test('pagination and adding a product stay inline; only four or more secondary a
  assert.equal(GROUP_MIN,4);
 });
 
-test('read-only navigation containing workflow status stays visible; real destructive controls retain their policy',()=>{
+test('read-only navigation containing workflow status stays visible; destructive controls go to the ⋮ menu; clearing filters stays inline',()=>{
  assert.equal(actionKind(control('Khách hàng · Khách mới chờ duyệt: 3',{navigation:true})),'inline');
  assert.equal(actionKind(control('Xem đơn đã huỷ: 4',{navigation:true})),'inline');
  assert.equal(actionKind(control('Xóa lọc',{navigation:true})),'inline');
- assert.equal(actionKind(control('Huỷ phiếu')),'desktop');
+ assert.equal(actionKind(control('Huỷ phiếu')),'secondary');
+ for(const text of ['Xoá bộ lọc','Xóa bộ lọc','Xóa lọc','Bỏ lọc'])assert.equal(actionKind(control(text)),'inline',text);
 });
 
-test('product removal opens an explicit confirmation context without changing default destructive policy',()=>{
- assert.equal(actionKind(control('Xoá khỏi danh mục TEST-SKU',{confirmationPage:true})),'inline');assert.equal(actionKind(control('Xoá khỏi danh mục TEST-SKU')),'desktop');
+test('product removal opens an explicit confirmation context; outside it the action stays reachable in the ⋮ menu',()=>{
+ assert.equal(actionKind(control('Xoá khỏi danh mục TEST-SKU',{confirmationPage:true})),'inline');assert.equal(actionKind(control('Xoá khỏi danh mục TEST-SKU')),'secondary');
 });

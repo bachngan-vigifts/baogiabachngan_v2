@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {requiresSupplierOrderNumber,supplierOrderNumberProblem} from '../../src/modules/suppliers/domain/order-number.ts';
+// @ts-ignore – module giao diện thuần JS
+import {createPurchaseOrders} from '../../trial-ui/purchase-order-create.js';
 const src=readFileSync(new URL('../../trial-ui/purchases.js',import.meta.url),'utf8');
 const section=(a:string,b:string)=>src.slice(src.indexOf(a),src.indexOf(b,src.indexOf(a)));
 class Element{
@@ -69,6 +71,19 @@ test('restock page preserves separate optional numbers and includes them in each
  number.value='001-ML';number.events.input();assert.equal(persisted,1);
  runInNewContext('fillSuppliers();',t.c);assert.equal(numberFields.children[0].children[1].value,'001-ML');
  t.c.api=async(...args:any[])=>{t.calls.push(args);return{ids:['created']};};
+ // save() lập đơn qua createPurchaseOrders (mã thao tác chống tạo trùng) – nạp đúng hàm thật vào khung chạy.
+ const store=new Map<string,string>();t.c.createPurchaseOrders=(api:any,orders:any)=>createPurchaseOrders(api,orders,()=>({getItem:(k:string)=>store.get(k)??null,setItem:(k:string,v:string)=>void store.set(k,v)}));
  await runInNewContext(source.slice(source.indexOf('  async function save()'),source.indexOf('  // ----- mở trang:'))+';save();',t.c);
  assert.deepEqual(t.calls[0][2].orders.map((o:any)=>[o.supplierId,o.internalNo]),[['a','001-ML'],['b','']]);
+ assert.match(t.calls[0][2].clientKey,/^[0-9a-f-]{36}$/,'gửi kèm mã thao tác');
+});
+
+
+test('supplier reference form sends only the reference and captured revision, validates empty input',()=>{
+ const t=h();t.run(section('  function supplierReferenceForm()', '  function confirmForm()')+';supplierReferenceForm();');
+ const form=t.made.find(n=>n.tag==='form')!,number=t.made.find((n:any)=>n.tag==='input'&&n.maxLength===100)!;
+ assert(number.required);number.value='   ';form.events.submit({preventDefault(){}});assert.equal(t.calls.length,0);assert(number.focused);
+ number.value='  000-NCC  ';form.events.submit({preventDefault(){}});
+ assert.deepEqual(JSON.parse(JSON.stringify(t.calls[0])),['/purchase-orders/one/supplier-reference','PUT',{revision:3,internalNo:'000-NCC'}]);
+ assert.match(src,/if \(has\('reference'\)\).*Bổ sung số đơn NCC/);
 });

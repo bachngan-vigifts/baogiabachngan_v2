@@ -1,3 +1,4 @@
+import { createPurchaseOrders } from './purchase-order-create.js';
 import {openEarlyQuickReceipt} from './early-receipt-quick.js';
 const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=String(text);return n;};
 const btn=(text,fn,cls='btn secondary small')=>{const b=el('button',cls,text);b.type='button';b.addEventListener('click',fn);return b;};
@@ -187,7 +188,7 @@ export function initEarlyRequests({api,host,canWrite=()=>false,portal=false,supp
           const picked=Number(prompt('Chọn NCC bằng số:\n'+names));if(!Number.isInteger(picked)||!options.suppliers[picked-1])return;
           const warehouse=prompt('Nhập kho/địa chỉ giao hàng của đơn mua bù:','Kho SR');if(!warehouse?.trim())return;
           createBackfill.disabled=true;
-          const created=await api('/purchase-orders','POST',{orders:[{supplierId:options.suppliers[picked-1].id,warehouse:warehouse.trim(),note:'Đơn mua bù cho phiếu '+(initial.pxkNo||initial.scope?.pxkNo||''),lines:[{sku:line.sku,name:line.name||'',unit:line.unit||'',quantity:Number(qty.value),price:null,taxRate:null,sources:[]}]}]});
+          const created=await createPurchaseOrders(api,[{supplierId:options.suppliers[picked-1].id,warehouse:warehouse.trim(),note:'Đơn mua bù cho phiếu '+(initial.pxkNo||initial.scope?.pxkNo||''),lines:[{sku:line.sku,name:line.name||'',unit:line.unit||'',quantity:Number(qty.value),price:null,taxRate:null,sources:[]}]}]);
           await loadOrders(created.ids?.[0]||'');
         }catch(e){fail(e.message||'Không tạo được đơn mua bù.');}finally{creatingBackfill=false;createBackfill.disabled=false;}
       });

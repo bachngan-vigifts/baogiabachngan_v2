@@ -1,13 +1,14 @@
 /** Loại dòng phát sinh sổ kho và loại chứng từ gốc. */
-export const STOCK_MOVE_KINDS = ['opening', 'receipt', 'issue', 'adjust', 'reverse', 'customer_return', 'sale', 'transfer_out', 'transfer_in'] as const;
+export const STOCK_MOVE_KINDS = ['supplier_return', 'opening', 'receipt', 'issue', 'adjust', 'reverse', 'customer_return', 'sale', 'transfer_out', 'transfer_in'] as const;
 export type StockMoveKind = typeof STOCK_MOVE_KINDS[number];
-export const STOCK_REF_TYPES = ['opening', 'supplier_receipt', 'packing_slip', 'adjustment', 'pos_order', 'pos_delivery', 'pos_return', 'sales_order', 'stock_transfer', 'web_order'] as const;
+export const STOCK_REF_TYPES = ['supplier_return', 'opening', 'supplier_receipt', 'packing_slip', 'adjustment', 'pos_order', 'pos_delivery', 'pos_return', 'sales_order', 'stock_transfer', 'web_order'] as const;
 export type StockRefType = typeof STOCK_REF_TYPES[number];
-export const STOCK_KIND_LABEL: Record<StockMoveKind, string> = { opening: 'Tồn đầu kỳ', receipt: 'Nhập NCC', issue: 'Xuất đóng gói', adjust: 'Điều chỉnh', reverse: 'Huỷ chứng từ', customer_return: 'Khách trả hàng',
+export const STOCK_KIND_LABEL: Record<StockMoveKind, string> = { supplier_return: 'Trả hàng NCC', opening: 'Tồn đầu kỳ', receipt: 'Nhập NCC', issue: 'Xuất đóng gói', adjust: 'Điều chỉnh', reverse: 'Huỷ chứng từ', customer_return: 'Khách trả hàng',
   sale: 'Bán hàng (đơn / HĐKT)', transfer_out: 'Chuyển kho đi', transfer_in: 'Chuyển kho đến' };
 /** Diễn giải dòng sổ kho (cột "Giao dịch" của trang Sổ kho, như Sapo): theo loại phát sinh + loại chứng từ gốc. */
 export function stockMoveDescription(kind: StockMoveKind, refType: StockRefType): string {
   switch (kind) {
+    case 'supplier_return': return 'Trả hàng nhà cung cấp';
     case 'opening': return 'Chốt tồn đầu kỳ';
     case 'receipt': return 'Nhập hàng vào kho';
     case 'issue': return refType === 'pos_delivery' ? 'Xuất kho giao hàng cho khách/shipper' : refType === 'web_order' ? 'Xuất kho đơn website (GHN đã lấy hàng)' : refType === 'stock_transfer' ? 'Điều chuyển: hoàn phần thiếu về kho đi' : 'Xuất kho đóng gói giao hàng';

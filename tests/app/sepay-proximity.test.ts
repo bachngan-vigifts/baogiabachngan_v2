@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { eq, sql } from "drizzle-orm";
 import { setupSepay } from "../helpers/sepay-fixture.ts";
+import {positionPermissions} from '../../src/modules/staff/schema.ts';
 import { sepayTransactions as bank } from "../../src/modules/integrations/schema.ts";
 import {
   customerPayments as receipts,
@@ -130,6 +131,8 @@ test("bank first, order two minutes later: worker waits for future window, then 
 test("web transfer evidence marks CRM document paid without changing Woo date_paid, stock, or adding a CRM receipt", async () => {
   const f = await fixture(),
     order = await f.website("2026-11-08T02:58:00.000Z");
+  // E1: this test exercises company-wide accounting; the grant must be explicit.
+  await f.db.insert(positionPermissions).values({positionId:'accounting',permission:'sepay.reconcile-all-stores'});
   const e = await f.incoming("Chuyen tien mua hang");
   assert.equal(e.status, "matched");
   assert.equal(e.webOrderId, order.id);

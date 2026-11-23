@@ -1,0 +1,47 @@
+name: Deploy Minh Long payment wording
+on:
+  push:
+    branches: [codex/minhlong-payment-label-20261119]
+    paths: [.github/workflows/minhlong-payment-label.yml]
+permissions:
+  contents: read
+concurrency:
+  group: minhlong-sepay-deploy
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          php -l web-minhlong/sepay/ml-sepay-qr.php
+          php web-minhlong/sepay/test.php
+          node --check web-minhlong/sepay/deploy-label.mjs
+          node --check web-minhlong/sepay/verify-label.mjs
+      - run: npm install --prefix /tmp/ml-choices --no-audit --no-fund playwright@1.56.1
+      - run: timeout 180 /tmp/ml-choices/node_modules/.bin/playwright install chromium --only-shell
+      - name: Deploy wording only and verify
+        run: node web-minhlong/sepay/deploy-label.mjs
+        env:
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: minhlong-payment-label-evidence
+          path: payment-label-evidence/
+          retention-days: 7
+
+# Validate the approved wording instead of the former title.
+
+# Capture guest checkout verification diagnostics.
+
+# Use native AJAX to establish the isolated guest cart session.
+
+# Mobile wizard hides payment until address completion; check returned markup without submitting customer data.
+
+# Bounded browser waits and mobile response verification.
+
+# Supersede the stalled UI-only verification; deployment accepts exact candidate for safe resume.

@@ -1,3 +1,4 @@
+import {approveFixtureOrder} from './approval-cost-fixture.ts';
 import assert from 'node:assert/strict';
 import {eq} from 'drizzle-orm';
 import {setup} from './pos-fixture.ts';
@@ -21,6 +22,6 @@ export async function makeCrm(f:Awaited<ReturnType<typeof setupWarehouseOps>>,ke
   const edited=await f.call('/quotes/'+q.data.id,f.mgr,'PUT',{revision:saved.revision,data:{...saved.data,printing:{totalCost:qty*50},rows:saved.data.rows.map((r:Record<string,unknown>)=>({...r,printing:{unitPrice:50}}))}});assert.equal(edited.status,200,JSON.stringify(edited.data));revision=edited.data.revision;}
  assert.equal((await f.call('/quotes/'+q.data.id+'/approve',f.mgr,'POST',{revision})).status,200);
  const order=await f.call('/orders',f.emp,'POST',{quoteId:q.data.id,warehouseId,pushSapo:false});assert.equal(order.status,201,JSON.stringify(order.data));
- const confirmed=await f.call('/orders/'+order.data.id+'/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});assert.equal(confirmed.status,200,JSON.stringify(confirmed.data));
+ const confirmed=await approveFixtureOrder(f,'/orders/'+order.data.id+'/status',f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true});assert.equal(confirmed.status,200,JSON.stringify(confirmed.data));
  return (await f.call('/orders/'+order.data.id,f.mgr)).data;
 }

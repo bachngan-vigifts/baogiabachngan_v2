@@ -26,7 +26,8 @@ test('repair refuses missing baseline or conflicting history, and web-order migr
  await assert.rejects(client.exec(repair),/already contains different SQL/);await client.exec('ROLLBACK');
  assert.equal((await client.query('SELECT * FROM supabase_migrations.schema_migrations')).rows.length,1);
  await client.exec('DELETE FROM supabase_migrations.schema_migrations');
- await client.exec('DROP TABLE public.web_store_orders');
+ // Later tables (e.g. sepay_payment_allocations) reference web orders; CASCADE drops only those FK constraints.
+ await client.exec('DROP TABLE public.web_store_orders CASCADE');
  await assert.rejects(client.exec(repair),/repairs history only/);await client.exec('ROLLBACK');
  assert.equal((await client.query('SELECT * FROM supabase_migrations.schema_migrations')).rows.length,0);
  const financial=read('migrations/postgres/20261021035601_web_order_financial_snapshot.sql');

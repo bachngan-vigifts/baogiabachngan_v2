@@ -81,13 +81,14 @@ export function registerCareRoutes(router: Router<StaffEnv>,deps:{quotes?:Activi
    const months=[...new Set(rows.map(r=>activityDay(r.a.occurredAt).slice(0,7)))],map=new Map();
    for(const m of months){const end=new Date(m+'-01T00:00:00Z');end.setUTCMonth(end.getUTCMonth()+1);const f=await activityFacts(c.env.db,m+'-01',end.toISOString().slice(0,10));for(const [id,value]of f.marks)map.set(id,value);}return map;
   }
-  async function metadata(c:Ctx,b:Record<string,unknown>,customerId:string){
+  async function metadata(c:Ctx,b:Record<string,unknown>,customerId:string,old?:typeof customerActivities.$inferSelect){
    const completion=b.completion??null,purpose=b.purpose??null;
    if(completion!==null&&!['completed','not_completed'].includes(String(completion)))throw new AppError(400,'Chọn kết quả thực hiện.');
    if(purpose!==null&&!['sales','after_sales'].includes(String(purpose)))throw new AppError(400,'Mục đích giao dịch không hợp lệ.');
    let quoteId:string|null=null,quoteRevision:number|null=null;
-   if(b.type==='quote'&&completion==='completed'){
+   if(b.type==='quote'&&completion==='completed'||b.quoteId!=null||b.quoteRevision!=null){
     if(!deps.quotes)throw new AppError(503,'Chưa có nguồn báo giá. Liên hệ Manager.');
+    if(old?.quoteId&&old.customerId===customerId&&b.quoteId===old.quoteId&&Number(b.quoteRevision)===old.quoteRevision&&!(b.type==='quote'&&completion==='completed'&&(old.type!=='quote'||old.completion!=='completed'))){quoteId=old.quoteId;quoteRevision=old.quoteRevision;}else
     ({quoteId,quoteRevision}=await deps.quotes.read(c.env.db,viewer(c),{id:String(b.quoteId||''),revision:Number(b.quoteRevision)||0,customerId}));
    }
    return{completion:completion as string|null,purpose:purpose as string|null,quoteId,quoteRevision};
@@ -142,25 +143,61 @@ export function registerCareRoutes(router: Router<StaffEnv>,deps:{quotes?:Activi
    if(!deps.quotes)throw new AppError(503,'Chưa có nguồn báo giá. Liên hệ Manager.');
    return json({quotes:await deps.quotes.list(c.env.db,viewer(c),customerId)});
   },'business');
+  async function replayCommand(c:Ctx,key:string,hash:string){
+   const me=viewer(c),[prior]=await c.env.db.select().from(customerActivities).where(and(eq(customerActivities.intentOwnerId,me.id),eq(customerActivities.clientKey,key))).limit(1);
+   if(!prior)return null;
+   if(prior.payloadHash!==hash)throw new AppError(409,'Cùng mã gửi khác nội dung.','COMMAND_CONFLICT');
+   let row:Row;try{row=await loadOne(c,prior.id);}catch(e){if(e instanceof AppError&&e.status===404)return json({replayed:true,activity:null,recorded:true});throw e;}
+   const kpi=await marks(c,[row]);return json({replayed:true,activity:{...present(row,me,vnToday()),kpi:kpi.get(prior.id)}});
+  }
+  async function quoteContext(c:Ctx,id:string,revision:number){
+   if(!deps.quotes?.context)throw new AppError(503,'Chưa có nguồn báo giá. Liên hệ Manager.');
+   const source=await deps.quotes.context(c.env.db,viewer(c),{id,revision});
+   if(source.customerId)await ensureCustomer(c,source.customerId);
+   return source;
+  }
+  router.get('/care/quote-follow-up',async c=>{
+   const source=await quoteContext(c,c.url.searchParams.get('quoteId')||'',Number(c.url.searchParams.get('revision'))),me=viewer(c);
+   const canSchedule=!!source.customerId&&(isManager(me)||source.ownerId===me.id);
+   const pending=source.customerId&&source.ownerId?await baseQuery(c).where(and(careScope(me),eq(customerActivities.quoteId,source.quoteId),eq(customerActivities.customerId,source.customerId),eq(customerActivities.ownerId,source.ownerId),isNotNull(customerActivities.nextAt),isNull(customerActivities.nextDoneAt))).orderBy(asc(customerActivities.nextAt)).limit(1):[];
+   return json({...source,canSchedule,canAssign:isManager(me),today:vnToday(),pending:pending[0]?present(pending[0],me,vnToday()):null,reason:!source.customerId?'Báo giá chưa liên kết hồ sơ khách hàng CRM. Chọn đúng khách rồi lưu lại để đặt lịch.':!canSchedule?'Chỉ người phụ trách báo giá hoặc Manager được đặt lịch từ báo giá này.':''});
+  },'business');
+  router.post('/care/quote-follow-up',async c=>{
+   const body=await readJson(c.req,12000),me=viewer(c);
+   if(typeof body.clientKey!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(body.clientKey))throw new AppError(400,'Thiếu mã chống gửi lặp.');
+   const commandFields=['quoteId','quoteRevision','ownerId','occurredAt','contactName','type','nextAt','nextAction','remindBefore'];
+   const commandHash=sha256Hex(JSON.stringify({source:'quote_save_follow_up',...Object.fromEntries(commandFields.filter(k=>body[k]!==undefined).map(k=>[k,body[k]]))}));
+   const replay=await replayCommand(c,body.clientKey,commandHash);if(replay)return replay;
+   const source=await quoteContext(c,String(body.quoteId||''),body.quoteRevision as number);
+   if(!source.customerId)throw new AppError(409,'Liên kết hồ sơ khách hàng CRM với báo giá trước khi đặt lịch.','CARE_CUSTOMER_REQUIRED');
+   if(!isManager(me)&&source.ownerId!==me.id)throw new AppError(403,'Chỉ người phụ trách báo giá hoặc Manager được đặt lịch.');
+   if(typeof body.nextAt!=='string'||!body.nextAt)throw new AppError(400,'Chọn ngày chăm sóc.');
+   if(typeof body.nextAction!=='string'||!body.nextAction.trim())throw new AppError(400,'Nhập việc cần chăm sóc.');
+   if(body.ownerId!==undefined&&typeof body.ownerId!=='string')throw new AppError(400,'Nhân viên phụ trách không hợp lệ.');
+   if(!body.ownerId&&!source.ownerId)throw new AppError(400,'Chọn nhân viên phụ trách lịch chăm sóc.');
+   return createActivity(c,{customerId:source.customerId,ownerId:body.ownerId||source.ownerId||me.id,quoteId:source.quoteId,quoteRevision:source.quoteRevision,clientKey:body.clientKey,type:body.type,result:'consulting',completion:'not_completed',purpose:'sales',occurredAt:body.occurredAt||vnToday(),contactName:body.contactName,subject:('Lịch chăm sóc báo giá '+source.quoteNo).slice(0,200),content:body.nextAction,nextAction:body.nextAction,nextAt:body.nextAt,remindBefore:body.remindBefore,expectedRevenue:0},true,commandHash);
+  },'business');
   router.get('/care/:id', async c => {const row=await loadOne(c,c.params.id!),kpi=await marks(c,[row]);return json({activity:{...present(row,viewer(c),vnToday()),kpi:kpi.get(row.a.id)}});}, 'business');
 
-  router.post('/care', async c => {
-    const me=viewer(c),today=vnToday(),body=await readJson(c.req,20000);
+  async function createActivity(c:Ctx,body:Record<string,any>,quoteFollowUp=false,commandHash?:string){
+    const me=viewer(c),today=vnToday();
     const key=typeof body.clientKey==='string'?body.clientKey:null;if(key&&!/^[a-zA-Z0-9_-]{8,100}$/.test(key))throw new AppError(400,'Mã gửi không hợp lệ.');
     const fields=['customerId','ownerId','occurredAt','contactName','subject','content','type','result','expectedRevenue','nextAt','nextAction','remindBefore','completion','purpose','quoteId','quoteRevision'];
-    const hash=sha256Hex(JSON.stringify(Object.fromEntries(fields.filter(k=>body[k]!==undefined).map(k=>[k,body[k]]))));
-    if(key){const [prior]=await c.env.db.select().from(customerActivities).where(and(eq(customerActivities.intentOwnerId,me.id),eq(customerActivities.clientKey,key))).limit(1);if(prior){if(prior.payloadHash!==hash)throw new AppError(409,'Cùng mã gửi khác nội dung.','COMMAND_CONFLICT');let row:Row;try{row=await loadOne(c,prior.id);}catch(e){if(e instanceof AppError&&e.status===404)return json({replayed:true,activity:null,recorded:true});throw e;}const kpi=await marks(c,[row]);return json({replayed:true,activity:{...present(row,me,today),kpi:kpi.get(prior.id)}});}}
+    const hash=commandHash??sha256Hex(JSON.stringify(Object.fromEntries(fields.filter(k=>body[k]!==undefined).map(k=>[k,body[k]]))));
+    if(key){const replay=await replayCommand(c,key,hash);if(replay)return replay;}
     const v=cleanCare(body,today);
     await ensureCustomer(c, v.customerId);
     const now=new Date().toISOString(),ownerId=await ownerFor(c,body.ownerId,me.id),meta=await metadata(c,body,v.customerId);
     const saved=await c.env.db.transaction(async tx=>{
      await payrollLock(tx as any);
      if(key){const [old]=await tx.select().from(customerActivities).where(and(eq(customerActivities.intentOwnerId,me.id),eq(customerActivities.clientKey,key)));if(old){if(old.payloadHash!==hash)throw new AppError(409,'Cùng mã gửi khác nội dung.','COMMAND_CONFLICT');return{id:old.id,replayed:true};}}
+     if(quoteFollowUp){const [pending]=await tx.select({id:customerActivities.id}).from(customerActivities).where(and(eq(customerActivities.quoteId,meta.quoteId!),eq(customerActivities.customerId,v.customerId),eq(customerActivities.ownerId,ownerId),isNotNull(customerActivities.nextAt),isNull(customerActivities.nextDoneAt))).orderBy(asc(customerActivities.nextAt)).limit(1);if(pending)return{id:pending.id,replayed:false,alreadyScheduled:true};}
      await openSource(tx as any,ownerId,v.occurredAt);
-     const id=crypto.randomUUID();await tx.insert(customerActivities).values({id,...v,...meta,ownerId,intentOwnerId:me.id,clientKey:key,payloadHash:hash,nextDoneAt:null,createdAt:now,updatedAt:now});return{id,replayed:false};
+     const id=crypto.randomUUID();await tx.insert(customerActivities).values({id,...v,...meta,ownerId,intentOwnerId:me.id,clientKey:key,payloadHash:hash,nextDoneAt:null,createdAt:now,updatedAt:now});return{id,replayed:false,alreadyScheduled:false};
     });
-    let row:Row;try{row=await loadOne(c,saved.id);}catch(e){if(saved.replayed&&e instanceof AppError&&e.status===404)return json({replayed:true,activity:null,recorded:true});throw e;}const kpi=await marks(c,[row]);return json({activity:{...present(row,me,today),kpi:kpi.get(saved.id)},replayed:saved.replayed},saved.replayed?200:201);
-  }, 'business');
+    let row:Row;try{row=await loadOne(c,saved.id);}catch(e){if(saved.replayed&&e instanceof AppError&&e.status===404)return json({replayed:true,activity:null,recorded:true});throw e;}const kpi=await marks(c,[row]);return json({activity:{...present(row,me,today),kpi:kpi.get(saved.id)},replayed:saved.replayed,alreadyScheduled:'alreadyScheduled' in saved&&saved.alreadyScheduled},saved.replayed||'alreadyScheduled' in saved&&saved.alreadyScheduled?200:201);
+  }
+  router.post('/care',async c=>createActivity(c,await readJson(c.req,20000)),'business');
 
   router.put('/care/:id', async c => {
     const me = viewer(c), today = vnToday(), body = await readJson(c.req, 20_000), { a: old } = await loadOne(c, c.params.id!, true);
@@ -171,7 +208,7 @@ export function registerCareRoutes(router: Router<StaffEnv>,deps:{quotes?:Activi
     if (v.customerId !== old.customerId) await ensureCustomer(c, v.customerId);
     const now = new Date().toISOString();
     const nextDoneAt = v.nextAt && v.nextAt === old.nextAt ? old.nextDoneAt : null, ownerId = await ownerFor(c, body.ownerId, old.ownerId);
-    const meta=await metadata(c,body,v.customerId);
+    const meta=await metadata(c,body,v.customerId,old);
     await c.env.db.transaction(async tx=>{await payrollLock(tx as any);await openSource(tx as any,old.ownerId,old.occurredAt);await openSource(tx as any,ownerId,v.occurredAt);
      const changed=await tx.update(customerActivities).set({...v,...meta,ownerId,nextDoneAt,kpiExtraApproved:false,kpiReviewedBy:null,kpiReviewedAt:null,kpiReviewReason:'',revision:old.revision+1,updatedAt:now}).where(and(eq(customerActivities.id,old.id),eq(customerActivities.revision,old.revision))).returning({id:customerActivities.id});
      if(!changed.length)throw new AppError(409,'Giao dịch vừa được sửa. Tải lại.');
@@ -221,7 +258,7 @@ export async function completeFollowUp(db: StaffEnv['db'], activityId: string, n
 export async function dueFollowUps(db: StaffEnv['db'], today: string) {
   const horizon = new Date(Date.parse(today + 'T00:00:00Z') + 31 * 86_400_000).toISOString().slice(0, 10);
   const rows = await db.select({ id: customerActivities.id, customerId: customerActivities.customerId, ownerId: customerActivities.ownerId, nextAt: customerActivities.nextAt,
-    nextAction: customerActivities.nextAction, subject: customerActivities.subject, content: customerActivities.content, type: customerActivities.type,
+    completion:customerActivities.completion,nextAction: customerActivities.nextAction, subject: customerActivities.subject, content: customerActivities.content, type: customerActivities.type,
     remindBefore: customerActivities.remindBefore, contactName: customerActivities.contactName, customerName: customers.name })
     .from(customerActivities).innerJoin(customers, eq(customers.id, customerActivities.customerId))
     .where(and(isNotNull(customerActivities.nextAt), isNull(customerActivities.nextDoneAt), lte(customerActivities.nextAt, horizon))).limit(2000);

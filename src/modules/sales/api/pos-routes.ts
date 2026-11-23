@@ -1,15 +1,19 @@
-import {webSepayPaidAt} from './web-sepay-evidence.ts';
+import {registerPosQrDisplayRoutes,qrView} from './pos-qr-display.ts';
+import {qrBank} from '../domain/pos-qr-display.ts';
+import { directlyAssignedCustomer } from '../../customers/api/visibility.ts';
+import {webOrderPayment} from '../domain/web-order-payment.ts';
+import {readWebSepayPaidAt,webSepayPaidAt} from './web-sepay-evidence.ts';
 import {LOCK_WEB_REGISTER_NAME} from '../domain/pos-register.ts';
 import {retrySepayWebOrder} from './sepay-web-retry.ts';
 import {webOrderCreatedAt} from '../domain/sepay-proximity.ts';
 import {webEditFlags} from './web-order-edit-state.ts';
 import {beginWebConfirmation} from './web-order-edit.ts';
 import {readWebEdit} from '../domain/web-order-edit.ts';
-import {posStockSnapshot,posScanCodes,posBrandScope} from './pos-stock-snapshot.ts';
+import {posStockSnapshot,posStockDelta,posScanCodes,posBrandScope} from './pos-stock-snapshot.ts';
 import {ledgerWarehouses} from './pos-stock.ts';
 import {webOrderBucket} from '../domain/web-order-outcome.ts';
 import { applyWebsiteCancel, websiteCancelled } from './web-order-customer-cancel.ts';
-import { nextPosOrderNo } from './pos-number.ts';
+import { nextPosOrderNo, posOrderPrefixFor } from './pos-number.ts';
 import { posQrContent, reservedPosOrderNo, normalizePosReference, matchesPosQrReference, posQrOrderNumbers } from '../domain/pos-qr-reference.ts';
 import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { filterPosOrderBoard } from '../domain/pos-order-board.ts';
@@ -164,11 +168,12 @@ async function minhLongWebAction(c: RouteContext<StaffEnv>, m: ReturnType<typeof
   await syncWebOrderStock(c.env, order.id, m.id);
   await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
   await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,
-    data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: next.status, ghnOrderCode: next.ghnOrderCode, ghnStatus: next.ghnStatus, direct: true, ...(reason ? { reason } : {}) } });
+    data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: next.status, ghnOrderCode: next.ghnOrderCode, ghnStatus: next.ghnStatus, direct: true, ...(reason ? { reason } : {}),...(action==='confirm'?{paymentReviewed:input.paymentReviewed===true}:{}) } });
   return { ok: true, status: next.status, ghnOrderCode: next.ghnOrderCode, ghnStatus: next.ghnStatus, ghnSortCode: next.ghnSortCode, ghnFee: next.ghnFee, updatedAt: next.updatedAt,
     bucket: webBucket(next.status, next.ghnStatus) };
 }
 export function registerPosRoutes(router: Router<StaffEnv>) {
+  registerPosQrDisplayRoutes(router);
   router.post('/integrations/woocommerce/:source/order', async c => {
     const source = c.params.source === 'lock' ? 'lock' : c.params.source === 'minhlong' ? 'minhlong' : '';
     if (!source) throw new AppError(404, 'Nguồn website không hợp lệ.');
@@ -212,7 +217,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       wardName: posText(meta(`_lnl_ghn_${addressPrefix}_ward_name`, '_lnl_ghn_ward_name') || shipping.address_2, 100),
     };
     const financials = webOrderFinancials(b);
-    // Woo's paid timestamp is explicit evidence. Neither order status nor payment method proves collection.
+    // Retain Woo's source claim; date_paid can be set by a status transition, not just collection.
     const hasPayment = Object.hasOwn(b, 'date_paid_gmt') || Object.hasOwn(b, 'date_paid');
     let snapshot = financials;
     if (hasPayment || financials) {
@@ -400,11 +405,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         ...rows.map(o => {const {cancelSnapshot,...order}=o;let cancelReason='';try{const reason=JSON.parse(cancelSnapshot||'{}').cancelReason;if(typeof reason==='string')cancelReason=reason.slice(0,2000);}catch{/* Legacy snapshots may not contain a reason. */}
           return {...order,cancelReason,cancellationKind:'cancelled',bucket:posOrderBucket(o),source:'crm',external:false,currency:'VND',orderSource:o.fulfillmentMode==='cod'?'cod':'pos',paymentStatus:o.paid>=o.total?'paid':'debt',outstanding:Math.max(0,o.total-o.paid)};}),
         ...webRows.map(o => {
-          const payment = readWebEdit(o.crmEditSnapshot).sourceConflict?undefined:readWebOrderFinancials(o.financialSnapshot)?.payment;
-          const paid = o.bankPaidAt ? o.total : payment ? (payment.paidAt ? o.total : 0) : null;
+          const payment = webOrderPayment(o,o.bankPaidAt);
           const state=o.status.toLowerCase(),carrier=o.ghnStatus.toLowerCase();
           const cancellationKind=state==='refunded'?'refunded':carrier.startsWith('return')||carrier==='waiting_to_return'||['lnl-returning','lnl-returned'].includes(state)?'returned':['lost','damage'].includes(carrier)||state==='failed'?'failed':'cancelled';
-          return ({cancelReason:webReasons.get(o.id)||'',cancellationKind, ownerId: '', orderSource: 'web', paymentStatus: paid === null ? 'unknown' : paid >= o.total ? 'paid' : 'debt', paid, outstanding: paid === null ? null : Math.max(0, o.total-paid), id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
+          return ({cancelReason:webReasons.get(o.id)||'',cancellationKind, ownerId: '', orderSource: 'web', ...payment, id: o.id, orderNo: o.orderNo, customerName: o.customerName, phone: o.phone, ownerName: o.source === 'lock' ? 'Web LocknLock' : 'Web Minh Long', total: o.total,
           status: o.status, fulfillmentMode: 'delivery', orderDate: o.orderedAt.slice(0, 10), createdAt: o.orderedAt, sapoOrderId: null, sapoOrderCode: null,
           packingStatus: '', warehouseReconciliationRequired:true, stockStatus: o.stockStatus, stockNote: o.stockNote, deliveryStatus: o.ghnStatus, bucket: webBucket(o.status, o.ghnStatus), source: o.source, external: true, lines: o.lines, address: o.address,
           ghnAddress: (() => { try { return JSON.parse(o.ghnAddressSnapshot || '{}'); } catch { return {}; } })(),
@@ -525,6 +529,10 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     // Website mirrors have no verified CRM warehouse issue link. Carrier truth remains
     // authoritative, but a manual completion must never fabricate warehouse completion.
     if(action==='complete')throw new AppError(409,'Đơn website chưa có chứng từ xuất kho đã đối soát trong CRM. Hoàn tất nhập/xuất kho trước khi xác nhận hoàn thành.','WAREHOUSE_EXPORT_REQUIRED');
+    if(action==='confirm'&&!order.ghnOrderCode){
+      const payment=webOrderPayment(order,await readWebSepayPaidAt(c.env.db,order.id));
+      if(payment.paymentReviewRequired&&input.paymentReviewed!==true)throw new AppError(409,'Website báo đã thanh toán nhưng chưa đối soát. Kiểm tra tiền thực nhận và COD trước khi tạo vận đơn.','WEB_PAYMENT_REVIEW_REQUIRED');
+    }
     if (minhLongDirect(c.env, order) || Number(readWebEdit(order.crmEditSnapshot).revision||0)>0) return json(await minhLongWebAction(c, m, order, action, input, reason));
     if(action==='confirm'&&order.ghnOrderCode){
       if(!validWebGhnCode(order.ghnOrderCode))throw new AppError(409,'CRM đang lưu mã GHN cần đối soát. Không tạo lại vận đơn.','ghn_reconcile_failed');
@@ -588,7 +596,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     await syncWebOrderStock(c.env, order.id, m.id);
     await invoiceTasksChanged(c.env, { webOrderId: order.id }, m.id);
     await writeAudit(c.env.db, { actorId: m.id, module: 'sales', action: `web-order-${action}`, entityType: 'web-store-order', entityId: order.id,
-      data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: fields.status, ghnOrderCode: fields.ghnOrderCode, ghnStatus: fields.ghnStatus, ...(reason ? { reason } : {}) } });
+      data: { source: order.source, externalId: order.externalId, orderNo: order.orderNo, status: fields.status, ghnOrderCode: fields.ghnOrderCode, ghnStatus: fields.ghnStatus, ...(reason ? { reason } : {}),...(action==='confirm'?{paymentReviewed:input.paymentReviewed===true}:{}) } });
     return json({ ok: true, ...fields, bucket: webBucket(fields.status, fields.ghnStatus) });
   }, 'business');
   router.post('/integrations/woocommerce/lock/backfill-addresses', async c => {
@@ -830,6 +838,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
   );
   router.get('/pos/stock-snapshot',async c=>{
     posPermission(member(c));const id=posText(c.url.searchParams.get('registerId'));
+    // Máy POS đã có bản tồn: chỉ gửi phần đổi (since = asOf của bản đó, base = phiên bản danh mục/giá lúc đó).
+    const since=posText(c.url.searchParams.get('since')),base=posText(c.url.searchParams.get('base'));
+    if(since&&base)return json(await posStockDelta(c.env.db,member(c),await sellRegister(c,id),posText(c.url.searchParams.get('pricePolicyId'))||undefined,since,base));
     return json(await posStockSnapshot(c.env.db,member(c),await sellRegister(c,id),posText(c.url.searchParams.get('pricePolicyId'))||undefined,(m=>m==='2'?'compact' as const:m==='1')(c.url.searchParams.get('metadata')))||{unavailable:true});
   },'business');
   router.get(
@@ -943,8 +954,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             eq(customers.approvalStatus, 'approved'),
             focusedId ? eq(customers.id, focusedId) : undefined,
             // Tax-code presence defines POS tabs; retain the existing restricted-customer visibility gate.
-            !canRetail ? and(eq(customers.isRetail, false), hasTaxCode) : undefined,
-            kind === 'retail' ? (canRetail ? sql`not (${hasTaxCode})` : sql`false`) : kind === 'business' ? hasTaxCode : undefined,
+            !canRetail ? or(and(eq(customers.isRetail, false), hasTaxCode), directlyAssignedCustomer(member(c))) : undefined,
+            kind === 'retail' ? sql`not (${hasTaxCode})` : kind === 'business' ? hasTaxCode : undefined,
             // `search` is folded when the customer is written and has a trigram index. Avoid folding
             // five columns for every row on every POS keystroke.
             matchAllWords(sql`${customers.search}`, q),
@@ -1246,7 +1257,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
           if (existing.expiresAt < posNow() || existing.confirmedAt) throw new AppError(409, 'QR hết hạn hoặc đã thu.');
           return { request: existing, register: calc.register };
         }
-        const reservedOrderNo = await nextPosOrderNo(tx, vietnamDate().iso);
+        const reservedOrderNo = await nextPosOrderNo(tx, vietnamDate().iso, await posOrderPrefixFor(tx, calc.register));
         const now = posNow(),
           [request] = await tx
             .insert(posPaymentRequests)
@@ -1254,7 +1265,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
               id: crypto.randomUUID(),
               shiftId: s.id,
               requestKey: key,
-              cart: JSON.stringify({ ...calc.canonical, reservedOrderNo }),
+              cart: JSON.stringify({ ...calc.canonical, reservedOrderNo, qrBank:{bankCode:calc.register.bankCode,bankAccount:calc.register.bankAccount,bankAccountName:calc.register.bankAccountName} }),
               fingerprint: calc.fingerprint,
               amount: calc.payable,
               createdAt: now,
@@ -1263,16 +1274,8 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
             .returning();
         return { request: request!, register: calc.register };
       });
-      const { request: r, register: w } = result,
-        content = posQrContent(r);
-      return json({
-        id: r.id,
-        orderNo: reservedPosOrderNo(r.cart),
-        amount: r.amount,
-        expiresAt: r.expiresAt,
-        content,
-        url: `https://img.vietqr.io/image/${encodeURIComponent(w.bankCode)}-${encodeURIComponent(w.bankAccount)}-compact2.png?amount=${r.amount}&addInfo=${encodeURIComponent(content)}&accountName=${encodeURIComponent(w.bankAccountName)}`,
-      });
+      const {request:r,register:w}=result;
+      return json(qrView(r,qrBank(r.cart)??w));
     },
     'business',
   );

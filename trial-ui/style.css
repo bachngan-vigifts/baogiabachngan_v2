@@ -490,7 +490,6 @@ table { width: 100%; border-collapse: collapse; }
   #view-editor [data-quote-panel='products'] > .card-title-row { align-items: flex-start; }
   #view-editor [data-quote-panel='products'] > .card-title-row .row-gap { width: 100%; display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
   #view-editor [data-quote-panel='products'] > .card-title-row .btn { min-height: 44px; white-space: normal; }
-  #view-editor [data-quote-panel='products'] > .card-title-row #paste-lines { display: none; }
   #view-editor [data-quote-panel='products'] > .card-title-row #toggle-subs { grid-column: 1 / -1; }
   #view-editor [data-quote-panel='products'] > .card-title-row #pick-products { grid-column: 1; grid-row: 2; }
   #view-editor [data-quote-panel='products'] > .card-title-row #add-line { grid-column: 2; grid-row: 2; }
@@ -1236,6 +1235,12 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-rad
 .chat-side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--surface-2); }
 .chat-side-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 14px 14px 8px; }
 .chat-side-head h1 { margin: 0; font-size: var(--text-heading); }
+.chat-ai-shortcut { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 10px; margin: 2px 12px 10px; padding: 10px 12px; border: 1px solid #bfd4ff; border-radius: 12px; color: var(--brand-navy); background: linear-gradient(135deg, #edf4ff, #f7f2ff); text-decoration: none; }
+.chat-ai-shortcut:hover { border-color: var(--blue); box-shadow: 0 5px 16px #2459a91f; transform: translateY(-1px); }
+.chat-ai-shortcut-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; color: #fff; background: linear-gradient(135deg, var(--blue), #7447d6); font-size: 22px; }
+.chat-ai-shortcut b, .chat-ai-shortcut small { display: block; }
+.chat-ai-shortcut small { margin-top: 2px; color: var(--muted); font-size: var(--text-caption); line-height: 1.3; }
+.chat-ai-shortcut-arrow { font-size: 27px; color: var(--blue); }
 .chat-search { margin: 0 14px 8px; }
 .chat-loading { text-align: center; padding: 24px 0; }
 .chat-error { display: grid; gap: 6px; justify-items: start; margin: 8px 4px; padding: 12px; border-radius: 10px; background: #fdecec; color: #8a1c22; } .chat-error small { color: #8a1c22; word-break: break-word; }
@@ -1567,6 +1572,13 @@ label.check { display: flex; align-items: center; gap: 8px; }
 .care-next { display: block; margin-top: 4px; color: var(--muted); }
 .care-type { white-space: nowrap; font-weight: 600; }
 tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+.quote-care-dialog .modal-body { max-height:65vh; overflow:auto; }
+.quote-care-dialog fieldset { border:1px solid var(--line); border-radius:10px; margin:14px 0 0; padding:14px; min-width:0; display:grid; gap:10px; }
+.quote-care-dialog fieldset label { display:grid; gap:5px; min-width:0; }
+.quote-care-dialog .quote-care-existing { margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); overflow-wrap:anywhere; }
+.quote-care-dialog .kv dd { overflow-wrap:anywhere; }
+@media(max-width:600px){.quote-care-dialog .modal-foot .btn{white-space:normal;min-height:44px;}}
+
 .care-dialog { width: min(680px, calc(100vw - 24px)); }
 .care-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
 .care-form label { display: grid; gap: 4px; font-size: var(--text-small); font-weight: 600; } .care-form .span2 { grid-column: 1 / -1; }
@@ -2421,6 +2433,19 @@ dialog.verify-page { width: 100vw; max-width: 100vw; height: 100dvh; max-height:
 .verify-page .verify-customer { margin: 0; grid-template-columns: 145px minmax(0, 1fr); }
 .verify-page-card :is(dd, td, h4, p, label span) { overflow-wrap: anywhere; }
 .verify-page .table-wrap { margin: 0; }
+/* Only the shared order/contract approval product table. */
+.approval-product-table th { white-space:normal; }
+.approval-product-table td { overflow-wrap:anywhere; }
+.verify-products .approval-product-table td:first-child { min-width:84px; }
+.approval-product-table td:nth-child(2) { min-width:160px; }
+.approval-product-table :is(th,td):nth-child(n+7) { min-width:110px; }
+.approval-product-table td strong { white-space:nowrap; }
+@media(min-width:641px){.approval-product-table :is(th,td) { padding:10px; }}
+.approval-product-table td small { display:block;white-space:normal; }
+@media(max-width:640px){
+ .approval-product-table td:nth-child(2) { min-width:0;flex-basis:100%;font-weight:600; }
+}
+
 .verify-products td:first-child { min-width: 200px; }
 .verify-page .data-table .num { white-space: nowrap; }
 .verify-contract-total { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 12px; border-top: 1px solid var(--line); margin-top: 16px; padding-top: 16px; }
@@ -2617,14 +2642,23 @@ dialog.inv-adjust-review tr.inv-stock-changed td { background: #fff7e0; }
 dialog.inv-adjust-review tr.inv-total-row td { font-weight: 700; border-top: 2px solid var(--line); }
 dialog.inv-count-history { width: min(820px, 96vw); }
 
-/* Chọn đơn mua nguồn cạnh loại nguồn, tự xuống hàng trên khung hẹp. */
+/* Incoming sources include a delivery date; size them by their panel, not the viewport. */
+.quote-source-requests { container: quote-source / inline-size; }
 .quote-source-incoming { display: grid; grid-template-columns: minmax(0,1fr) 30px; }
 .quote-source-incoming .quote-source-type, .quote-source-incoming .quote-source-order { grid-column: 1 / -1; width: 100%; font-size: var(--text-small); }
+.quote-source-incoming > input[type="number"] { grid-column: 1; grid-row: 3; }
+.quote-source-incoming > button[aria-label] { grid-column: 2; grid-row: 3; }
+.quote-source-incoming .quote-source-date-label { grid-column: 1 / -1; grid-row: 4; }
 .quote-source-incoming [role="status"] { grid-column: 1 / -1; }
-.order-compose .quote-source-incoming input { width: 80px; min-width: 0; }
-@media (min-width: 1500px) {
-  .order-compose .quote-source-incoming { grid-template-columns: minmax(140px,.85fr) minmax(200px,1.5fr) 80px 30px; }
-  .order-compose .quote-source-incoming .quote-source-type, .order-compose .quote-source-incoming .quote-source-order { grid-column: auto; }
+.quote-source-incoming [role="status"]:empty { display: none; }
+.order-compose .quote-source-incoming > input[type="number"] { width: 80px; min-width: 0; }
+@container quote-source (min-width: 720px) {
+  .order-compose .quote-source-incoming { grid-template-columns: minmax(140px,.85fr) minmax(160px,1.4fr) 80px minmax(190px,1fr) 30px; }
+  .order-compose .quote-source-incoming .quote-source-type,
+  .order-compose .quote-source-incoming .quote-source-order,
+  .order-compose .quote-source-incoming > input[type="number"],
+  .order-compose .quote-source-incoming > button[aria-label],
+  .order-compose .quote-source-incoming .quote-source-date-label { grid-column: auto; grid-row: auto; }
 }
 
 .quote-incoming-batch { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--blue-50); display: grid; gap: 8px; }
@@ -2972,3 +3006,60 @@ body:has(#view-home:not([hidden])) .topbar { padding-left:24px; }
 .pur-more-list { position: absolute; left: 0; top: calc(100% + 6px); z-index: 40; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-lg); min-width: 240px; padding: 6px; display: grid; }
 .pur-more-list .buy-menu-item:disabled { opacity: .5; cursor: not-allowed; }
 .pur-orders td.buy-next { white-space: nowrap; }
+
+/* Quote edit permission: short landscape form, scrollable body and reachable actions. */
+.quote-edit-request-dialog { width:min(880px,calc(100vw - 32px));max-height:calc(100dvh - 40px); }
+.quote-edit-request-form { display:flex;flex-direction:column;aspect-ratio:16/9;max-height:calc(100dvh - 40px); }
+.quote-edit-request-form .modal-body { flex:1;min-height:0;overflow:auto;display:grid;align-content:start;gap:12px; }
+.quote-edit-request-form textarea,.quote-edit-request-form select { width:100%;min-width:0;max-width:100%; }
+.quote-edit-request-form textarea { resize:vertical;min-height:110px; }
+.quote-edit-request-form .modal-foot { display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;flex-shrink:0; }
+@media(max-width:850px) { .quote-edit-request-form { aspect-ratio:auto; } }
+.quote-edit-request-reason { overflow-wrap:anywhere;white-space:pre-wrap; }
+
+.approval-cost-section { display:grid;gap:10px;margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:8px; }
+.approval-cost-section h3 { margin:0;font-size:var(--text-body); }
+.approval-cost-section input,.approval-cost-section select { width:100%;min-width:0; }
+.verify-dialog .approval-cost-section .verify-field { margin:0; }
+@media(max-width:640px){.approval-cost-section{padding:10px}.approval-cost-section input,.approval-cost-section select{min-height:44px}}
+/* Staff submission review: readable operational facts, separate from Manager-only costs. */
+.submission-summary { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+.submission-summary h4 { margin:0 0 10px; color:var(--brand-navy); }
+.submit-bulk-confirm { display:flex; align-items:flex-start; gap:8px; line-height:1.5; }
+.submit-bulk-confirm input[type="checkbox"] { flex:0 0 20px; width:20px; min-width:20px; max-width:20px; height:20px; min-height:20px; margin:3px 0 0; padding:0; }
+.submit-bulk-confirm span { flex:1; min-width:0; overflow-wrap:anywhere; }
+
+/* Global self-reminder launcher: available across staff routes without page-specific permissions. */
+.reminder-launcher{position:fixed;right:90px;bottom:22px;z-index:60;width:56px;height:56px;border:0;border-radius:50%;display:grid;place-items:center;background:#2563eb;color:white;box-shadow:0 8px 24px #123d803d;cursor:pointer}
+.reminder-launcher svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.reminder-launcher:focus-visible{outline:3px solid #93c5fd;outline-offset:3px}
+body:has(.reminder-launcher:not([hidden])) .main::after{content:'';display:block;flex:none;height:72px}
+@media(max-width:860px){.reminder-launcher{right:82px;bottom:calc(var(--nav-h,calc(62px + env(safe-area-inset-bottom))) + 12px)}body:has(#view-editor:not([hidden])) .reminder-launcher{bottom:calc(var(--nav-h,calc(62px + env(safe-area-inset-bottom))) + var(--savebar-h,68px) + 12px)}body:has(#view-pos:not([hidden])) .reminder-launcher{bottom:calc(var(--nav-h,calc(62px + env(safe-area-inset-bottom))) + 66px)}}
+@media(min-width:851px){body:has(#view-pos:not([hidden])) .reminder-launcher{left:88px;right:auto;bottom:18px}body:has(#view-pos:not([hidden]) .pos-show-menu) .reminder-launcher{left:328px}}
+
+/* Post-creation assignment keeps the created document separate from the handoff write. */
+.sale-admin-handoff { width:min(520px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto; }
+.sale-admin-handoff .modal-head { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.sale-admin-handoff .modal-foot { display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end; }
+.sale-admin-handoff select { width:100%;min-height:44px; }
+
+/* Purchase-cost review only: other verification dialogs retain their dimensions. */
+.approval-cost-dialog.modal { width:1200px; }
+.approval-purchase-table .data-table { width:100%;table-layout:fixed; }
+.approval-purchase-table th { white-space:normal;overflow-wrap:anywhere; }
+.approval-purchase-table th:first-child { width:22%; }
+.approval-purchase-table th:nth-child(2) { width:12%; }
+.approval-purchase-table th:nth-child(3) { width:16%; }
+.approval-purchase-table th:nth-child(4) { width:10%; }
+.approval-purchase-table th:nth-child(5) { width:16%; }
+.approval-purchase-table th:nth-child(6) { width:6%; }
+.approval-purchase-table th:nth-child(7) { width:18%; }
+.approval-purchase-table input,.approval-purchase-table select { padding:8px;font-size:14px; }
+.approval-purchase-table td { overflow-wrap:anywhere;vertical-align:top; }
+.approval-purchase-table td small { display:block; }
+.approval-purchase-table .verify-field > span { position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0); }
+@media(max-width:640px){
+ .approval-purchase-table input,.approval-purchase-table select { font-size:16px; }
+ .approval-purchase-table .data-table td { flex-basis:100%; }
+ .approval-purchase-table .data-table td[data-label]::before { display:block;margin-bottom:4px; }
+}

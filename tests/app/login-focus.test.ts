@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 // @ts-ignore browser transport
-import { createApiTransport } from '../../trial-ui/api-transport.js';
+import { createApiTransport, readApiJson, invalidResponseError } from '../../trial-ui/api-transport.js';
 const {requestWithRegion}=await import(new URL('../../trial-ui/api-region.js',import.meta.url).href);
 
 const source = readFileSync(new URL('../../trial-ui/app.js', import.meta.url), 'utf8');
@@ -16,7 +16,7 @@ function harness() {
   const pending: Array<(response: unknown) => void> = [];
   const document = { activeElement: null as unknown };
   const elements: Record<string, any> = {};
-  for (const id of ['auth', 'workspace', 'chat-launcher', 'auth-error', 'auth-title', 'email', 'password', 'logout', 'auth-note']) {
+  for (const id of ['auth', 'workspace', 'chat-launcher', 'reminder-launcher', 'auth-error', 'auth-title', 'email', 'password', 'logout', 'auth-note']) {
     elements['#' + id] = { hidden: true, value: '', textContent: '', focus() { document.activeElement = this; } };
   }
   elements['#logout'].addEventListener = (_event: string, fn: Function) => elements['#logout'].click = fn;
@@ -29,7 +29,7 @@ function harness() {
     isCacheable: () => false, isPassiveWrite: () => false, pageCache: { clear() {} }, customerSearch: { clear() {} },
     toggleAccountMenu() {}, editor: { dirty: false }, quoteDeviceDraft: { logout() {} },
     token: 'old-session', state: { user: {} }, activation: null, chatUi: null, approvalUi: null, API: '/api',
-    homeUi: null, homeNotifications: null, notifier: null, tasksUi: null, stocktakeUi: null,
+    homeUi: null, homeReminderUi: null, homeNotifications: null, notifier: null, tasksUi: null, stocktakeUi: null,
     location: { hash: '#/quotes' },
     dataRefresh: { stop() {}, observe() {}, saved() {}, tick() {} },
     queueMicrotask: (fn: () => void) => timers.push(fn),
@@ -37,6 +37,7 @@ function harness() {
     setTimeout: (fn: () => void) => timers.push(fn),
     fetch: () => new Promise(resolve => pending.push(resolve)),
   };
+  ctx.readApiJson = readApiJson; ctx.invalidResponseError = invalidResponseError;
   ctx.apiFetch = createApiTransport({ fetcher: (...args: unknown[]) => ctx.fetch(...args) });
   ctx.saveToken = (value: string) => { ctx.token = value || ''; };
   runInNewContext(apiSource + '\n' + authSource + '\n' + logoutSource + '\nthis.api = api; this.showAuth = showAuth;', ctx);
@@ -95,11 +96,14 @@ test('returning to login clears private Home and notification state for expired 
   for (const keepToken of [false, true]) {
     const h = harness(), cleared: string[] = [];
     h.ctx.homeUi = { reset() { cleared.push('home'); } };
+    h.ctx.homeReminderUi = { reset() { cleared.push('care-reminder'); } };
     h.ctx.homeNotifications = { clear() { cleared.push('feed'); } };
     h.ctx.notifier = { reset() { cleared.push('bell'); } };
     h.ctx.tasksUi = { resetQuick() { cleared.push('quick-task'); } };
+    h.elements['#reminder-launcher'].hidden=false;
     h.ctx.showAuth('expired', { keepToken });
-    assert.deepEqual(cleared, ['home', 'feed', 'bell', 'quick-task']);
+    assert.equal(h.elements['#reminder-launcher'].hidden,true);
+    assert.deepEqual(cleared, ['home', 'care-reminder', 'feed', 'bell', 'quick-task']);
     assert.equal(h.ctx.state.user, null);
     assert.equal(h.ctx.token, keepToken ? 'old-session' : '');
     assert.equal(h.elements['#workspace'].hidden, true);

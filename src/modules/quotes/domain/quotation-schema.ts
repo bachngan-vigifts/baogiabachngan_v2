@@ -124,15 +124,16 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
   }
   if (inp.printing !== undefined) {
     if (!isObj(inp.printing)) throw bad('Chi phí in gia công không hợp lệ.');
-    result.printing = { workshop: text(inp.printing.workshop ?? '', 180), totalCost: number(inp.printing.totalCost ?? 0, 1e12), workshopExplicit: inp.printing.workshopExplicit === true };
+    result.printing = { workshop: text(inp.printing.workshop ?? '', 180), ...(inp.printing.totalCost!=null?{totalCost:number(inp.printing.totalCost,1e12)}:{}), workshopExplicit: inp.printing.workshopExplicit === true };
   }
   result.vat = number(inp.vat, 100);
   if (inp.shipping !== undefined) {
     result.shipping = {};
     for (const k of ['divisor', 'rate', 'extra']) result.shipping[k] = number(inp.shipping?.[k] ?? (k === 'divisor' ? 5000 : 0), 1e12);
-    const payer = inp.shipping?.payer ?? 'receiver';
-    if (!['sender', 'receiver'].includes(payer)) throw bad('Bên thanh toán cước không hợp lệ.');
-    result.shipping.payer = payer;
+    const payer = inp.shipping?.payer;
+    if (payer!=null&&!['sender', 'receiver'].includes(payer)) throw bad('Bên thanh toán cước không hợp lệ.');
+    if(payer!=null)result.shipping.payer=payer;
+    if(inp.shipping?.cost!==undefined)result.shipping.cost=number(inp.shipping.cost,1e12);
     if (result.shipping.divisor < 1) throw bad('Hệ số quy đổi phải từ 1 trở lên.');
   }
   result.rows = inp.rows.map((row: Obj) => {
@@ -160,7 +161,7 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
     }
     if (row.printing !== undefined) {
       if (!row.printing || typeof row.printing !== 'object' || Array.isArray(row.printing)) throw bad('Phí in gia công không hợp lệ.');
-      clean.printing = { workshop: text(row.printing.workshop ?? '', 180), unitPrice: number(row.printing.unitPrice ?? 0, 1e12), workshopExplicit: row.printing.workshopExplicit === true };
+      clean.printing = { workshop: text(row.printing.workshop ?? '', 180), ...(row.printing.unitPrice!=null?{unitPrice:number(row.printing.unitPrice,1e12)}:{}), workshopExplicit: row.printing.workshopExplicit === true };
     }
     if (row.commission !== undefined && row.commission !== null) {
       const c = row.commission;
@@ -171,6 +172,7 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
     if (row.discountType !== undefined && !['percent', 'amount'].includes(row.discountType)) throw bad('Loại chiết khấu không hợp lệ.');
     clean.discountType = row.discountType || 'percent';
     if (row.taxRate !== undefined && row.taxRate !== null) clean.taxRate = number(row.taxRate, 100);
+    for (const key of ['materialDescription','brandDescription','volumeDescription']) if (row[key] !== undefined) clean[key] = text(row[key], 2000);
     if (row.bundleContents !== undefined) clean.bundleContents = text(row.bundleContents, 2000);
     if (row.packagingDescription !== undefined) clean.packagingDescription = text(row.packagingDescription, 2000);
     if (row.printDescription !== undefined) clean.printDescription = text(row.printDescription, 2000);

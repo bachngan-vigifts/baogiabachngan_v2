@@ -53,9 +53,9 @@ test('dòng trống mobile giữ số lượng, đơn giá và thành tiền; n�
   assert.doesNotMatch(css, /tr\.manual-line \.line-total[^}]*display: none/);
 });
 
-test('mobile ẩn dán Excel và đặt hai nút thêm trên cùng một hàng', () => {
+test('mobile có nút Dán từ Excel như PC và đặt hai nút thêm trên cùng một hàng', () => {
   const mobile = css.slice(css.indexOf('/* Soạn báo giá trên điện thoại'));
-  assert.match(mobile, /#paste-lines \{ display: none; \}/);
+  assert.doesNotMatch(mobile, /#paste-lines \{ display: none; \}/);
   assert.match(mobile, /#pick-products \{ grid-column: 1; grid-row: 2; \}/);
   assert.match(mobile, /#add-line \{ grid-column: 2; grid-row: 2; \}/);
   assert.match(mobile, /\.row-gap \{ width: 100%; display: grid; grid-template-columns: repeat\(2, 1fr\); gap: 7px; \}/);

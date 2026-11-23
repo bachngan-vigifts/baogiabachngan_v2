@@ -1,5 +1,4 @@
 import {contractTest as test,assert} from '../TEST_TEMPLATE.ts';
-import {createClient} from '@supabase/supabase-js';
 import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -24,11 +23,10 @@ test('catalogue markup reserves space, escapes user content and does not start a
  assert.match(catalogueThumbnailTag({name:'Mini',image:source},'mini-photo',esc,'list'),/width="64" height="64"/);
 });
 
-test('catalogue grid/list use the same transform API as installed Supabase SDK; original export stays unchanged',()=>{
- const sdk=createClient(origin,'test-placeholder',{auth:{persistSession:false,autoRefreshToken:false}});
+test('catalogue grid/list dùng ảnh nhỏ làm sẵn (không gọi dịch vụ thu nhỏ tính phí); export vẫn dùng ảnh gốc',()=>{
  for(const [variant,size]of [['grid',320],['list',128]] as const){
   const {image,root}=fixture(source,variant);hydrateCatalogueThumbnails(root);
-  const expected=sdk.storage.from('product-images').getPublicUrl('folder/test.png',{transform:{width:size,height:size,resize:'contain',quality:75}}).data.publicUrl;
+  const expected=`${origin}/storage/v1/object/public/product-images/thumbs/${size}/folder/test.png.webp`;
   assert.equal(image.src,expected);assert.equal(image.decoding,'async');assert.equal(image.loading,'lazy');
  }
  const exportSource=imageSource(source);assert.match(exportSource,/api\/external-image\?url=/);
@@ -42,14 +40,14 @@ test('catalogue preserves signed/private/external/data source and expiry behavio
  }
 });
 
-test('catalogue transform failure falls back once and detached grids release lazy observers',()=>{
+test('catalogue thumbnail failure falls back once and detached grids release lazy observers',()=>{
  const original=(globalThis as any).IntersectionObserver,observed=new Set();let callback:any;
  (globalThis as any).IntersectionObserver=class{constructor(fn:any){callback=fn;}observe(im:any){observed.add(im);}unobserve(im:any){observed.delete(im);}};
  try{
   const {image,root,listeners}=fixture(source.replace('test.png','failure.png'));hydrateCatalogueThumbnails(root);
   assert.equal(image.src,undefined);assert.equal(observed.has(image),true);
   releaseCatalogueThumbnails(root);assert.equal(observed.size,0);hydrateCatalogueThumbnails(root);assert.equal(observed.size,1);
-  callback([{target:image,isIntersecting:true}]);assert.match(image.src,/render\/image\/public/);
+  callback([{target:image,isIntersecting:true}]);assert.match(image.src,/product-images\/thumbs\/320\//);
   for(const fn of [...listeners])fn();assert.equal(image.src,image.dataset.catalogueImage);
   for(const fn of [...listeners])fn();assert.equal(listeners.size,0);
  }finally{if(original)(globalThis as any).IntersectionObserver=original;else delete (globalThis as any).IntersectionObserver;}

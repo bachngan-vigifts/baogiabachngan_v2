@@ -233,7 +233,8 @@ test('WooCommerce webhook: nhập/cập nhật một lần và hiện đúng qu�
   assert.equal(first.status, 200, JSON.stringify(first.data));
   assert.equal((await f.call('/integrations/woocommerce/minhlong/order?token=test-ml-token', '', 'POST', { ...order, status: 'completed',
     meta_data: order.meta_data.map(x => x.key === '_lnl_ghn_last_status' ? { ...x, value: 'delivered' } : x) })).status, 200);
-  const board = await f.call(`/pos/orders?registerId=${reg.data.id}`, f.mgr);
+  // This fixed historical fixture tests webhook mapping, not the rolling 30-day default.
+  const board = await f.call(`/pos/orders?registerId=${reg.data.id}&from=2026-10-01&to=2026-10-31`, f.mgr);
   assert.equal(board.data.counts.all, 1);
   assert.equal(board.data.counts.completed, 1);
   assert.equal(board.data.orders[0].orderNo, '456');

@@ -22,6 +22,8 @@ export interface StaffEnv {
   /** Optional server-only accounting explanation adapter. Disabled until provider approval. */
   accountingAi?: import('../../accounting/api/assistant.ts').AccountingAiConfig;
   db: AnyDb;
+  /** Server-only rollout switch; requires edge_sync_jobs and the durable tick schedule. */
+  durableSyncJobs?: boolean;
   /** Kết nối API chấm công ADMS: cấu hình server, không gửi URL/token ra trình duyệt. */
   adms?: import('../../hr/domain/adms.ts').AdmsConfig;
   /** Giây Unix hiện tại; mặc định đồng hồ hệ thống (test truyền đồng hồ giả). */
@@ -43,10 +45,15 @@ export interface StaffEnv {
   sapoHdktOrderWebhookUrl?: string;
   sapoPosOrderWebhookUrl?: string;
   /** Phiếu nhận hàng CRM → n8n/OpenClaw → Sapo; callback dùng chung SAPO_SYNC_TOKEN. */
+  supplierReturnsDisabled?: boolean;
   sapoGoodsReceiptWebhookUrl?: string;
   sapoWebhookFetch?: typeof fetch;
   /** Tách credential điều chuyển khỏi Sapo; không nhận từ trình duyệt hay query string. */
   transferIntegration?: { webhookUrl: string; webhookToken: string; syncToken: string; destinationOrigin: string; fetch?: typeof fetch };
+  /** Hàng đợi ảnh xin hàng: CRM giữ khóa tuần tự, Madam Sen trả kết quả bằng callback dùng một lần. */
+  warehouseImageIntegration?: { webhookUrl: string; webhookToken: string; callbackOrigin?: string; fetch?: typeof fetch };
+  /** Hỏi đáp CRM công khai: n8n chuyển câu hỏi cho Claw, trả lời qua callback dùng một lần. */
+  aiChatIntegration?: { webhookUrl: string; webhookToken: string; callbackOrigin?: string; fetch?: typeof fetch };
   /** Báo cáo kết ca POS được đẩy bất đồng bộ sang hàng đợi Claw/Zalo. */
   posShiftReportWebhook?: { url: string; token: string; fetch?: typeof fetch };
   /** Cho phép tạo mới đơn cọc / ship trả trước. Production tắt (đã bỏ tính năng); chỉ bộ kiểm thử bật để dựng dữ liệu đơn cũ. */
@@ -54,6 +61,8 @@ export interface StaffEnv {
   sepayPosApiKeyHash?: string;
   /** Read-only SePay API token, never returned to browsers; injectable fetch for isolated tests. */
   sepayApiToken?: string;
+  /** Enable outgoing imports only after the guarded API rollout is verified. */
+  sepayDebitImportEnabled?: boolean;
   sepayApiFetch?: typeof fetch;
   /** Server-only approved company accounts for CRM SePay receipts. Missing = reconciliation only. */
   sepayReceiptAccounts?: readonly string[];
@@ -153,6 +162,16 @@ export async function authorizeRoute(c: Ctx, options: StaffRouterOptions = {}): 
     let diff = 0; for (let i=0;i<want.length;i++) diff |= want.charCodeAt(i)^got.charCodeAt(i);
     if (diff) throw new AppError(401, 'Không được phép tích hợp điều chuyển.');
     return;
+  }
+  if (area === 'warehouse-image-sync') {
+    const token = /^Bearer ([0-9a-f-]{36})$/i.exec(c.req.headers.get('authorization') || '')?.[1] || '';
+    if (!token) throw new AppError(401, 'Callback xử lý ảnh không hợp lệ.');
+    return; // Mã chỉ dùng một lần được băm và kiểm tra với đúng job trong handler.
+  }
+  if (area === 'ai-chat-sync') {
+    const token = /^Bearer ([0-9a-f-]{36})$/i.exec(c.req.headers.get('authorization') || '')?.[1] || '';
+    if (!token) throw new AppError(401, 'Callback Chat cùng AI không hợp lệ.');
+    return; // Handler kiểm tra hash của mã một lần với đúng câu hỏi.
   }
   if (area === 'sepay-sync') {
     const auth = c.req.headers.get('authorization') || '';

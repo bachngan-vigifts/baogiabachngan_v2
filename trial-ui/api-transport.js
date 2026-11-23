@@ -38,6 +38,18 @@ export function createApiTransport({fetcher=(...args)=>fetch(...args),delay=ms=>
 export const apiFetch=createApiTransport();
 /** Lỗi mạng / quá giờ khi GHI: máy chủ có thể đã lưu. Lệnh có mã chống lặp thì gửi lại an toàn; không có thì phải kiểm tra trước. */
 export const UNKNOWN_OUTCOME='OUTCOME_UNKNOWN';
+/**
+ * Đọc thân JSON của API. Không đọc được hoặc không phải object (trang HTML của cổng trung gian / wifi công cộng,
+ * JSON bị cắt khi mất mạng giữa chừng, thân rỗng, `null`) → trả null để nơi gọi KHÔNG coi là thành công.
+ */
+export async function readApiJson(res){try{const d=await res.json();return d!==null&&typeof d==='object'?d:null;}catch{return null;}}
+/** Lỗi cho phản hồi không đọc được: lệnh ghi = chưa rõ đã lưu (giữ form + mã chống lặp, không tự gửi lại); lệnh đọc = báo lỗi. */
+// Lệnh ghi mang status 0 như mất mạng: các form đang coi `!e.status || e.status >= 500` là "chưa rõ" (giữ mã chống lặp, báo kiểm tra trước khi gửi lại).
+export function invalidResponseError(method,status,body,make=(message,code,shownStatus)=>Object.assign(new Error(message),{status:shownStatus,code})){
+ const read=['GET','HEAD'].includes(String(method||'GET').toUpperCase());
+ return read?make(status>=500||status===0?'Máy chủ chưa sẵn sàng. Vui lòng thử lại.':'Phản hồi máy chủ không hợp lệ. Vui lòng tải lại trang.',undefined,status)
+  :make(writeFailureMessage(body),UNKNOWN_OUTCOME,0);
+}
 export function writeFailureMessage(body){
  const keyed=!!body&&typeof body==='object'&&['key','clientKey','requestKey'].some(k=>typeof body[k]==='string'&&body[k].length>=8);
  return keyed?'Mạng chập chờn: chưa rõ máy chủ đã lưu hay chưa. Bấm gửi lại – an toàn, hệ thống không ghi trùng.'

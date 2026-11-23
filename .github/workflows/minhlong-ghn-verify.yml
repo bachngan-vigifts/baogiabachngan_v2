@@ -1,0 +1,21 @@
+name: Verify Minh Long GHN using existing GitHub secrets
+on:
+  push:
+    branches: [codex/minhlong-approved-shipping-20261117]
+    paths: [web-minhlong/shipping/verify-ghn.mjs, .github/workflows/minhlong-ghn-verify.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Read GHN shop and estimates; inspect isolated checkout without placing order
+        env:
+          GHN_ML_API_TOKEN: ${{ secrets.GHN_ML_API_TOKEN }}
+          GHN_ML_SHOP_ID: ${{ secrets.GHN_ML_SHOP_ID }}
+        run: node web-minhlong/shipping/verify-ghn.mjs

@@ -1,3 +1,5 @@
+import {submitFixtureOrder} from '../helpers/submission-review-fixture.ts';
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { and, eq } from 'drizzle-orm';
@@ -46,7 +48,7 @@ test('đơn nháp: Kế toán xem được nhưng không huỷ / gửi duyệt �
   assert.equal((await s.call(`/orders/${orderId}/submit`, s.kt, 'POST', {})).status, 403);
   assert.equal((await s.call(`/orders/${orderId}/status`, s.kt, 'PUT', { status: 'cancelled' })).status, 403);
   assert.equal((await s.call(`/orders/${orderId}`, s.emp)).data.order.canEdit, true);
-  assert.equal((await s.call(`/orders/${orderId}/submit`, s.emp, 'POST', {})).status, 200);
+  assert.equal((await submitFixtureOrder(s.call,orderId,s.emp)).status, 200);
 });
 
 test('huỷ đơn: phiếu đóng gói / chuyến giao còn mở huỷ theo, hàng đã đóng ghi đảo về kho; đơn huỷ không giao, không ghi thu được', async () => {
@@ -71,7 +73,7 @@ test('huỷ đơn: phiếu đóng gói / chuyến giao còn mở huỷ theo, hà
 test('Kế toán: thu tiền không ghi ngày tương lai, không thu vượt; hoá đơn chỉ nhập cho đơn đã duyệt; công nợ lọc còn nợ / đã thu đủ', async () => {
   const s = await setup(), { orderId } = await orderFor(s, 'BG_THU');
   assert.equal((await s.call(`/orders/${orderId}/invoice`, s.kt, 'PUT', { invoiceNo: 'HD1' })).status, 409, 'đơn nháp chưa nhập hoá đơn');
-  assert.equal((await s.call(`/orders/${orderId}/status`, s.mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
+  assert.equal((await approveFixtureOrder(s,`/orders/${orderId}/status`,s.mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
   const due = (await s.db.select({ amount: paymentSchedules.amount }).from(paymentSchedules).where(eq(paymentSchedules.orderId, orderId))).reduce((t, x) => t + x.amount, 0);
   assert.ok(due > 0);
   assert.equal((await s.call('/payments', s.kt, 'POST', { orderId, amount: 1, paidAt: '2099-01-01' })).status, 400, 'ngày thu tương lai');

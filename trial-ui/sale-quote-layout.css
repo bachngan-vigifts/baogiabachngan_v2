@@ -6,6 +6,9 @@
 #quote-form.type-sale .sale-design-missing { border:1px dashed #b45309;border-radius:8px; }
 #quote-form.type-sale .col-idx .icon-btn { display:block;margin:4px auto; }
 #quote-form.type-sale .col-product .name-input { width:100%;min-width:0; }
+#quote-form.type-sale .sub-field { grid-template-columns:100px minmax(0,1fr); }
+#quote-form.type-sale .sub-field :is(input,textarea) { min-width:0;width:100%;padding:4px 8px;font-size:var(--text-small); }
+#quote-form.type-sale .sub-field textarea { resize:vertical; }
 @media(min-width:851px){
  #quote-form.type-sale #line-table { min-width:1100px; }
  #quote-form.type-sale #line-table .col-product { min-width:260px; }
@@ -26,4 +29,5 @@
  #view-editor #quote-form.type-sale #line-list tr[data-i]>.col-print { grid-column:3/5;grid-row:4; }
  #view-editor #quote-form.type-sale #line-list tr[data-i]>.col-total { grid-column:1/-1;grid-row:5; }
  #view-editor #quote-form.type-sale #line-list .img-btn { max-width:100%; }
+ #view-editor #quote-form.type-sale .lines-wrap:not(.hide-subs) #line-list .sub-field { display:grid!important;grid-template-columns:1fr; }
 }

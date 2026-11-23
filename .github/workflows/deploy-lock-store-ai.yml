@@ -1,0 +1,33 @@
+name: Deploy Lock store AI bridge
+on:
+  push:
+    branches: [codex/lock-gemini-direct-20261116]
+    paths: [web-lock/chatbot/**, .github/workflows/deploy-lock-store-ai.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lock-store-ai-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check syntax and product constraints
+        run: |
+          php -l web-lock/chatbot/lnl-store-ai-bridge.php
+          php web-lock/chatbot/tests.php
+          node --check web-lock/chatbot/deploy.mjs
+      - name: Stage, test, switch and verify with rollback
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CPANEL_BASE_URL: ${{ secrets.CPANEL_BASE_URL }}
+          CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+          LOCKNLOCK_DOCROOT: ${{ secrets.LOCKNLOCK_DOCROOT }}
+        run: node web-lock/chatbot/deploy.mjs

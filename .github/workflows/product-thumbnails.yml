@@ -1,0 +1,46 @@
+name: Tạo ảnh nhỏ sản phẩm
+
+# Tạo sẵn ảnh nhỏ 128px / 320px cho ảnh sản phẩm (thay dịch vụ thu nhỏ ảnh tính phí của Supabase).
+# Chỉ thêm file trong product-images/thumbs/, không sửa/xoá ảnh gốc.
+# - Chạy tay: mặc định chỉ đếm (dry-run); chọn apply mới ghi.
+# - Hằng đêm (00:43 giờ VN): ghi ảnh nhỏ cho ảnh mới tải lên trong ngày. Không có ảnh mới thì không ghi gì.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run = chỉ đếm; apply = ghi ảnh nhỏ'
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+      limit:
+        description: 'Chỉ xử lý N ảnh gốc mới nhất (0 = tất cả)'
+        type: string
+        default: '0'
+  schedule:
+    - cron: '43 17 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-thumbnails
+  cancel-in-progress: false
+
+jobs:
+  thumbnails:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PROJECT_REF: taceqfnsorewelsbdckg
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      MODE: ${{ github.event_name == 'schedule' && 'apply' || inputs.mode }}
+      LIMIT: ${{ github.event_name == 'schedule' && '0' || inputs.limit }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+      - name: Cài thư viện xử lý ảnh (chỉ cho lượt chạy này)
+        run: npm install --no-save --no-package-lock --no-audit --no-fund sharp@0.33.5
+      - name: Tạo ảnh nhỏ
+        run: node scripts/maintenance/product-thumbnails.mjs

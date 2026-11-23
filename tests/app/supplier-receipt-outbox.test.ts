@@ -51,6 +51,21 @@ test('Outbox: nhận từng phần, payload giá/CK/VAT chính xác, callback l�
  const id2=await f.receive(3);await assert.rejects(()=>f.complete(id2),(e:any)=>e.status===409);await f.complete(id2,{sapo_receipt_id:'58865409',sapo_receipt_code:'PCN10827'});
  assert.equal((await f.row(id)).sapoReceiptCode,'PCN10826');assert.equal((await f.row(id2)).sapoReceiptCode,'PCN10827');
 });
+test('Cancellation refuses an ambiguous HTTP 530 / timeout without changing stock, receipt or money',async()=>{
+ const f=await fixture();
+ f.env.sapoWebhookFetch=(async()=>new Response('upstream unavailable',{status:530})) as typeof fetch;
+ const id=await f.receive(),before=await f.db.select().from(stockMoves),parentBefore=(await f.db.select().from(incomingShipments).where(eq(incomingShipments.id,order)))[0];
+ assert.equal((await f.job(id)).status,'failed');assert.equal((await f.job(id)).attempts,1);
+ const body={reason:'Huỷ phiếu sau lỗi HTTP 530',confirmNoSapo:true,expected:{sapoUpdatedAt:(await f.row(id)).sapoUpdatedAt??null,jobUpdatedAt:(await f.job(id)).updatedAt}};
+ const cancel=await f.call(`/supplier-receipts/${id}/cancel`,f.mgr,'POST',body);
+ assert.equal(cancel.status,409,JSON.stringify(cancel.data));
+ assert.equal((await f.row(id)).cancelledAt,null);assert.deepEqual(await f.db.select().from(stockMoves),before);
+ assert.deepEqual((await f.db.select().from(incomingShipments).where(eq(incomingShipments.id,order)))[0],parentBefore);
+ assert.equal((await f.db.select().from(supplierOrderEvents).where(eq(supplierOrderEvents.action,'cancel_receipt'))).length,0);
+ // A late, authenticated worker result must still be able to reconcile this receipt.
+ await f.complete(id);assert.equal((await f.row(id)).sapoStatus,'done');assert.deepEqual(await f.db.select().from(stockMoves),before);
+});
+
 test('Outbox: timeout giữ một phiếu/job; lỗi callback rồi thành công; claim nguyên tử, fencing và lease hết hạn',async()=>{
  const f=await fixture();f.env.sapoWebhookFetch=(async()=>{throw Error('timeout');}) as typeof fetch;
  const id=await f.receive();assert.equal((await f.job(id)).status,'failed');assert.equal((await f.db.select().from(supplierReceipts)).length,1);

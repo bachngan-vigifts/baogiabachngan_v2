@@ -1,3 +1,5 @@
+import { registerSyncJobWorker } from './sync-job-worker.ts';
+import {syncWorkspaceActions,weeklyReportActions,weeklyEventReminders} from './weekly-report-tasks.ts';
 import {stockPendingOf} from './stock-pending.ts';
 import {productArchiveBlockReason} from './product-archive-guards.ts';
 import { registerTaxLookupRoutes } from '../modules/customers/api/tax-lookup.ts';
@@ -53,6 +55,7 @@ import { registerPosGhnSyncRoutes } from '../modules/sales/api/pos-ghn-sync.ts';
 import { registerPosGhnCreateRoutes } from '../modules/sales/api/pos-ghn-create.ts';
 import { createStaffRouter } from '../modules/staff/api/auth-routes.ts';
 import { registerQuoteRoutes } from '../modules/quotes/api/routes.ts';
+import {registerWebOrderAttention} from '../modules/sales/api/web-order-attention.ts';
 import { registerImageFetchRoutes } from '../modules/quotes/api/image-fetch.ts';
 import { registerCustomerRoutes } from '../modules/customers/api/routes.ts';
 import { registerAppsheetCustomerRoutes } from '../modules/customers/api/appsheet-routes.ts';
@@ -62,6 +65,7 @@ import { registerSapoSyncRoutes } from '../modules/integrations/api/sapo-sync-ro
 import { registerSepayPaymentRoutes } from '../modules/sales/api/sepay-payment-routes.ts';
 import { registerSepayReadRoutes } from '../modules/sales/api/sepay-read-routes.ts';
 import { registerSepayPageRoutes } from '../modules/sales/api/sepay-page-routes.ts';
+import {registerSepayAllocationRoutes} from '../modules/sales/api/sepay-allocation-routes.ts';
 import { registerQuoteSourcingRoutes } from '../modules/sales/api/quote-sourcing-routes.ts';
 import { registerSalesRoutes } from '../modules/sales/api/routes.ts';
 import { registerPaymentDueRepairRoutes } from '../modules/sales/api/payment-terms.ts';
@@ -74,6 +78,7 @@ import { registerSupplierDirectoryRoutes, packingSupplierChoices } from '../modu
 import { registerSupplierWorkspaceRoutes } from '../modules/suppliers/api/workspace-routes.ts';
 import { registerPurchaseRoutes } from '../modules/suppliers/api/purchase-routes.ts';
 import { registerEarlyRequestRoutes } from '../modules/suppliers/api/early-request-routes.ts';
+import { registerWarehouseImageJobRoutes } from '../modules/suppliers/api/warehouse-image-jobs.ts';
 import { registerPortalRoutes } from '../modules/portal/api/routes.ts';
 import { notifyMany, registerNotificationRoutes } from '../modules/notifications/api/routes.ts';
 import { registerTaskRoutes, syncInvoiceTasks, syncTransferTasks } from '../modules/tasks/api/routes.ts';
@@ -82,6 +87,7 @@ import { posDeliveryStockLinks, posReturnStockLinks } from '../modules/sales/api
 import { supplierReceiptStockLinks } from '../modules/suppliers/api/stock-ref-links.ts';
 import { syncCashTasks } from '../modules/tasks/api/auto-tasks.ts';
 import { registerChatRoutes } from '../modules/chat/api/routes.ts';
+import { registerAiChatRoutes } from '../modules/ai-chat/api/routes.ts';
 import {purchaseSuppliers} from '../modules/suppliers/api/customer-purchase-suppliers.ts';
 import { registerCustomerHubRoutes } from '../modules/customer-hub/api/routes.ts';
 import { registerCustomerDuplicateRoutes } from '../modules/customer-hub/api/duplicates.ts';
@@ -164,14 +170,17 @@ export function createAppRouter() {
   registerSapoSyncRoutes(router);
   registerSepayPaymentRoutes(router);
   registerSepayPageRoutes(router);
+  registerSepayAllocationRoutes(router);
   registerSepayReadRoutes(router);
   registerLegacyImageRoutes(router);
   registerSalesRoutes(router, { purchaseLinks: purchaseLinksForOrder });
   registerPaymentDueRepairRoutes(router);
   registerQuoteSourcingRoutes(router);
   registerPosRoutes(router);
+  registerWebOrderAttention(router);
   registerPosPromotions(router);
   registerShiftReportRoutes(router);
+  registerSyncJobWorker(router);
   registerPosGhnSyncRoutes(router);
   registerPosGhnCreateRoutes(router);
   registerPosReturnRoutes(router);
@@ -186,11 +195,13 @@ export function createAppRouter() {
   registerSupplierDirectoryRoutes(router);
   registerPurchaseRoutes(router);
   registerEarlyRequestRoutes(router);
+  registerWarehouseImageJobRoutes(router);
   registerSupplierWorkspaceRoutes(router);
   registerPortalRoutes(router);
   registerNotificationRoutes(router);
   registerTaskRoutes(router,{assertMutable:assertWarehouseTaskMutable});
   registerChatRoutes(router);
+  registerAiChatRoutes(router);
   registerCustomerHubRoutes(router,catalogueCustomerLinks,purchaseSuppliers);
   registerProductDetailRoutes(router);
   registerCustomerDuplicateRoutes(router);
@@ -204,7 +215,7 @@ export function createAppRouter() {
   registerFeedbackRoutes(router); // góp ý phát triển phần mềm (mọi nhân viên)
   registerProfitRoutes(router, { staffCostOf, lineCostFallbackOf }); // phân tích lợi nhuận (chỉ Manager); chi phí nhân sự từ bảng lương; giá vốn bổ sung từ đơn NCC / công thức thương hiệu
   setLineCostFallback(lineCostFallbackOf); // giá vốn lúc bán: cùng nguyên tắc (sales không đọc dữ liệu NCC trực tiếp)
-  registerStaffReportRoutes(router, { targetOf: saleTargetOf, payrollPreviewOf: salePayrollPreviewOf }); // báo cáo tuần Sale / Sale Admin (căn cứ Tiền trách nhiệm)
+  registerStaffReportRoutes(router, { workspaceTasks: {sync:syncWorkspaceActions,actions:weeklyReportActions,reminders:weeklyEventReminders}, targetOf: saleTargetOf, payrollPreviewOf: salePayrollPreviewOf }); // báo cáo tuần Sale / Sale Admin (căn cứ Tiền trách nhiệm)
   registerStoreRoutes(router, { targetOf: storeTargetOf, attendanceOf: storeAttendanceOf }); // báo cáo Cửa hàng trưởng (CHT): nộp, duyệt, Tiền Trách nhiệm, nhắc nhở
   registerDashboardRoutes(router, { kpiOf: dashboardKpiOf, storeOf: dashboardStoreOf,reportScoresOf:dashboardReportScoresOf }); // KPI Sale lấy đúng cách tính của bảng lương (HR), dashboard không import HR
   registerAuditRoutes(router);

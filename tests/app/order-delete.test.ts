@@ -1,3 +1,6 @@
+import {eq} from 'drizzle-orm';
+import {salesLineCosts,salesLineCostHistory} from '../../src/modules/sales/line-cost-schema.ts';
+import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/postgres.ts';
@@ -20,21 +23,25 @@ async function setup() {
     await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: 1 });
     return q.data.id as string;
   };
-  return { call, emp, mgr, quote };
+  return { db, call, emp, mgr, quote };
 }
 
 test('xoá đơn hàng đã huỷ: chỉ Manager, phải huỷ trước, báo giá lập đơn lại được', async () => {
-  const { call, emp, mgr, quote } = await setup();
+  const { db, call, emp, mgr, quote } = await setup();
   const qid = await quote('B2B_DEL1');
   const id = (await call('/orders', emp, 'POST', { quoteId: qid })).data.id as string;
   assert.equal((await call(`/orders/${id}`, mgr, 'DELETE')).status, 409, 'chưa huỷ thì không xoá');
   // Đã duyệt + có chuyến giao (chưa giao) → huỷ → xoá được, chuyến giao xoá theo.
-  await call(`/orders/${id}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await approveFixtureOrder({db,call},`/orders/${id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   const line = (await call(`/orders/${id}`, mgr)).data.lines[0];
   assert.equal((await call('/deliveries', mgr, 'POST', { orderId: id, plannedDate: '2030-01-15', lines: [{ orderLineId: line.id, qty: 5 }] })).status, 201);
   assert.equal((await call(`/orders/${id}/status`, mgr, 'PUT', { status: 'cancelled' })).status, 200);
   assert.equal((await call(`/orders/${id}`, emp, 'DELETE')).status, 403, 'nhân viên không xoá được');
+  const history=await db.select().from(salesLineCostHistory).where(eq(salesLineCostHistory.orderId,id));
+  assert.ok(history.length>0,'approved costs have history');
   assert.equal((await call(`/orders/${id}`, mgr, 'DELETE')).status, 200);
+  assert.equal((await db.select().from(salesLineCosts).where(eq(salesLineCosts.orderId,id))).length,0);
+  assert.deepEqual(await db.select().from(salesLineCostHistory).where(eq(salesLineCostHistory.orderId,id)),history,'cost history survives guarded deletion');
   assert.equal((await call(`/orders/${id}`, mgr)).status, 404);
   assert.ok(!(await call('/orders', mgr)).data.orders.some((o: any) => o.id === id), 'không còn trong danh sách');
   assert.ok(!(await call('/deliveries', mgr)).data.deliveries?.some((d: any) => d.orderId === id), 'chuyến giao xoá theo');
@@ -42,7 +49,7 @@ test('xoá đơn hàng đã huỷ: chỉ Manager, phải huỷ trước, báo gi
 });
 
 test('xoá HĐKT đã huỷ (kèm lịch thanh toán); đơn đã thu tiền thì không huỷ / xoá được', async () => {
-  const { call, emp, mgr, quote } = await setup();
+  const { db, call, emp, mgr, quote } = await setup();
   const k = await call('/contracts', emp, 'POST', { quoteId: await quote('B2B_DEL2'), legalEntity: 'BN', depositRate: 30, paymentDays: 15 });
   assert.equal(k.status, 201, JSON.stringify(k.data));
   const id = k.data.orderId as string;
@@ -52,7 +59,7 @@ test('xoá HĐKT đã huỷ (kèm lịch thanh toán); đơn đã thu tiền th�
 
   // Đơn đã thu tiền: không huỷ được → không xoá được.
   const id2 = (await call('/orders', emp, 'POST', { quoteId: await quote('B2B_DEL3') })).data.id as string;
-  await call(`/orders/${id2}/status`, mgr, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true });
+  await approveFixtureOrder({db,call},`/orders/${id2}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true });
   const pay = await call('/payments', mgr, 'POST', { orderId: id2, amount: 100000, paidAt: '2026-10-09', method: 'transfer' });
   assert.equal(pay.status, 201, JSON.stringify(pay.data));
   assert.equal((await call(`/orders/${id2}/status`, mgr, 'PUT', { status: 'cancelled' })).status, 409);

@@ -1,4 +1,5 @@
-import { notificationScope } from './recipient-scope.ts';
+import { boundedMap } from '../../../core/async/bounded-map.ts';
+import { notificationScope, type NotificationScope } from './recipient-scope.ts';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Router } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
@@ -34,6 +35,10 @@ export interface NotifyInput {
   actorId?: string | null; data?: Record<string, unknown>;
   /** false = chỉ đẩy Web Push, không lưu vào chuông thông báo (vd. tin nhắn chat – có hộp thư riêng). */
   persist?: boolean;
+  /** Internal event identity; deduplicate persisted events per recipient before sending Web Push. */
+  dedupeKey?: string;
+  /** A customer-facing QR display request only wakes mobile subscriptions. */
+  deviceClass?: 'mobile';
   /** true = chờ gửi xong mới trả lời (trang "Gửi thử" cần kết quả từng thiết bị). Mặc định gửi nền. */
   wait?: boolean;
 }
@@ -42,14 +47,14 @@ export interface NotifyInput {
  * Gửi cùng một thông báo cho nhiều người (mỗi người một bản ghi + Web Push), bỏ trùng và bỏ chính người thao tác (`actorId`).
  * `ids` = 'managers' → mọi Manager đang làm việc · 'approvers' → Manager + nhân viên được Manager bật cờ "Được duyệt" (việc chờ duyệt).
  */
-export async function notifyMany(env: StaffEnv, ids: (string | null | undefined)[] | 'managers' | 'approvers', n: Omit<NotifyInput, 'targetMemberId' | 'targetRole'>, except: readonly (string | null | undefined)[] = []) {
+export async function notifyMany(env: StaffEnv, ids: (string | null | undefined)[] | 'managers' | 'approvers', n: Omit<NotifyInput, 'targetMemberId' | 'targetRole'>, except: readonly (string | null | undefined)[] = [], requestScope?: NotificationScope) {
   try {
-    const scope = await notificationScope(env.db);
+    const scope = requestScope ?? await notificationScope(env.db);
     const list = typeof ids === 'string' ? scope.people.filter(m => ids === 'managers' ? m.role === 'manager'
       : m.role === 'manager' || m.role === 'employee' && m.canApprove).map(m => m.id) : ids;
     const candidates = [...new Set(list.filter((x): x is string => !!x && x !== n.actorId && !except.includes(x)))];
     const targets = await scope.recipients(n, candidates);
-    await Promise.all(targets.map(id => deliver(env, { ...n, targetMemberId: id })));
+    await boundedMap(targets,4,id => deliver(env, { ...n, targetMemberId: id }));
     return targets.length;
   } catch (error) {
     console.error('notification recipient authorization failed', n.eventType, error instanceof Error ? error.message : error);
@@ -91,7 +96,7 @@ export async function notify(env: StaffEnv, n: NotifyInput): Promise<{ ok: boole
     const candidates = n.targetMemberId ? [n.targetMemberId] : scope.people
       .filter(m => n.targetRole === 'all' || m.role === (n.targetRole ?? 'manager')).map(m => m.id);
     const targets = await scope.recipients(n, candidates);
-    const results = await Promise.all(targets.map(id => deliver(env, { ...n, targetMemberId: id })));
+    const results = await boundedMap(targets,4,id => deliver(env, { ...n, targetMemberId: id }));
     return { ok: results.every(r => r.ok), sent: results.reduce((sum, r) => sum + r.sent, 0),
       id: results[0]?.id, results: results.flatMap(r => r.results) };
   } catch (error) {
@@ -102,13 +107,19 @@ export async function notify(env: StaffEnv, n: NotifyInput): Promise<{ ok: boole
 
 /** Only called after recipient authorization; persist and push always use the same explicit recipient. */
 async function deliver(env: StaffEnv, n: NotifyInput): Promise<{ ok: boolean; sent: number; id?: string; results: PushResult[] }> {
+  const id = n.dedupeKey ? [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([n.eventType,n.dedupeKey,n.targetMemberId]))))].map(b=>b.toString(16).padStart(2,'0')).join('') : crypto.randomUUID();
   const note = {
-    id: crypto.randomUUID(), eventType: clean(n.eventType, 80), title: clean(n.title, 180), body: clean(n.body, 500), url: clean(n.url || '/', 500),
+    id, eventType: clean(n.eventType, 80), title: clean(n.title, 180), body: clean(n.body, 500), url: clean(n.url || '/', 500),
     targetRole: n.targetMemberId ? null : (n.targetRole ?? 'manager'), targetMemberId: n.targetMemberId ?? null, actorId: n.actorId ?? null,
     dataJson: JSON.stringify(n.data ?? {}), createdAt: nowIso(),
   };
   if (n.persist !== false) {
-    try { await env.db.insert(webNotifications).values(note); }
+    try {
+      if(n.dedupeKey){
+        const inserted=await env.db.insert(webNotifications).values(note).onConflictDoNothing({target:webNotifications.id}).returning({id:webNotifications.id});
+        if(!inserted.length)return {ok:true,sent:0,id:note.id,results:[]};
+      }else await env.db.insert(webNotifications).values(note);
+    }
     catch (e) { console.error('notify insert failed', note.eventType, e instanceof Error ? e.message : e); return { ok: false, sent: 0, results: [] }; }
   }
   // Web Push gọi dịch vụ ngoài (chậm 0,3–1,5 giây / thiết bị): chạy nền sau khi trả lời để nút thao tác không phải chờ.
@@ -132,7 +143,8 @@ async function pushTo(env: StaffEnv, n: NotifyInput, note: StoredNote): Promise<
       const subs = await env.db.select({ id: webPushSubscriptions.id, memberId: webPushSubscriptions.memberId, endpoint: webPushSubscriptions.endpoint, p256dh: webPushSubscriptions.p256dh, auth: webPushSubscriptions.auth })
         .from(webPushSubscriptions).innerJoin(employees, and(eq(employees.id, webPushSubscriptions.memberId), eq(employees.active, true), isNull(employees.deletedAt)))
         .where(and(isNull(webPushSubscriptions.disabledAt), note.targetMemberId ? eq(webPushSubscriptions.memberId, note.targetMemberId)
-          : note.targetRole === 'all' ? undefined : eq(employees.role, note.targetRole as 'manager')));
+          : note.targetRole === 'all' ? undefined : eq(employees.role, note.targetRole as 'manager'),
+          n.deviceClass==='mobile'?sql`${webPushSubscriptions.userAgent} ~* '(iphone|ipad|ipod|android|mobile)'`:undefined));
       if (!subs.length) results.push({ subscriptionId: null, memberId: note.targetMemberId, status: null, error: NO_DEVICE });
       const payload = JSON.stringify({ id: note.id, eventType: note.eventType, title: note.title, body: note.body, url: note.url, data: n.data ?? {} });
       const doFetch = env.pushFetch ?? fetch;
@@ -172,11 +184,11 @@ const mine = (m: { id: string; role: string }) => or(eq(webNotifications.targetM
 async function visibleNotes<T extends { eventType: string; url: string; dataJson: string }>(db: StaffEnv['db'], m: { id: string }, notes: T[]): Promise<T[]> {
   if (!notes.length) return [];
   const scope = await notificationScope(db);
-  const checked = await Promise.all(notes.map(async n => {
+  const checked = await boundedMap(notes,2,async n => {
     let data: Record<string, unknown> = {};
     try { data = JSON.parse(n.dataJson); } catch { /* malformed legacy payload has no grants */ }
     return (await scope.recipients({ ...n, data }, [m.id])).length > 0;
-  }));
+  });
   return notes.filter((_, i) => checked[i]);
 }
 
@@ -265,7 +277,7 @@ export function registerNotificationRoutes(router: Router<StaffEnv>) {
       : ids.length ? (await c.env.db.select().from(webNotifications).where(and(mine(me), inArray(webNotifications.id, ids)))) : [];
     const targets = (await visibleNotes(c.env.db, me, rows)).map(r => r.id);
     const at = nowIso();
-    for (const id of targets) await c.env.db.insert(webNotificationReads).values({ notificationId: id, memberId: me.id, readAt: at }).onConflictDoNothing();
+    if (targets.length) await c.env.db.insert(webNotificationReads).values(targets.map(id=>({notificationId:id,memberId:me.id,readAt:at}))).onConflictDoNothing();
     return json({ ok: true, read: targets.length });
   }, 'self');
 }
