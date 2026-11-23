@@ -15,6 +15,7 @@ async function ids(page){return page.locator('.category-page-row .products .prod
 async function makePage(browser,width=1440){
  const page=await browser.newPage({viewport:{width,height:1100},isMobile:width===390,hasTouch:width===390});
  await page.addLocatorHandler(page.locator('#mltv-popup.mltv-popup--show'),async d=>{await d.locator('button[aria-label="Đóng popup"]').click();});
+ page.on('pageerror',error=>console.log('PAGE_ERROR',error.message));
  return page;
 }
 export async function snapshot(){
@@ -53,6 +54,7 @@ export async function menu(preview){
  assert.equal(grouped.length,6);assert.deepEqual(grouped,header);
  assert(await root.locator('a[aria-current="page"]').count()>0);
  await root.locator('input[type=search]').fill('tuong');
+ console.log('SEARCH_STATE',JSON.stringify(await root.evaluate(e=>({value:e.querySelector('input[type=search]').value,groups:[...e.querySelectorAll('.lnl-need')].map(d=>({title:d.querySelector('strong').textContent,hidden:d.hidden,open:d.open,links:[...d.querySelectorAll('a')].map(a=>({text:a.textContent,hidden:a.hidden}))}))}))));
  assert.equal(await root.locator('.lnl-need:not([hidden])').count(),1);
  assert.match(await root.locator('.lnl-need:not([hidden])').innerText(),/Tượng Linh Vật/);
  await root.locator('.lnl-needs-reset').click();assert.equal(await root.locator('.lnl-need:not([hidden])').count(),6);
