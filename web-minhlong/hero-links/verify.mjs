@@ -21,7 +21,10 @@ export async function verify(preview){
    if(preview){await page.addStyleTag({content:css});await page.addScriptTag({content:js});}
    else assert.equal(await page.locator('#ml-hero-product-links-js').count(),1,'live homepage marker');
    const a=page.locator('a.ml-hero-product-link:visible').nth(i);
-   await a.waitFor({state:'visible',timeout:15000});
+   try{await a.waitFor({state:'visible',timeout:15000});}catch(e){
+    console.log('HERO_DIAGNOSTIC',JSON.stringify(await page.evaluate(()=>({links:[...document.querySelectorAll('.ml-hero-product-link')].map(a=>({html:a.outerHTML,rect:a.getBoundingClientRect().toJSON()})),images:[...document.images].filter(i=>/banner-san-pham-moi/.test(i.src)).map(i=>({src:i.src,current:i.currentSrc,loaded:i.complete,nw:i.naturalWidth,ancestor:i.parentElement.parentElement.outerHTML.slice(0,2600)}))}))));
+    throw e;
+   }
    const href=await a.getAttribute('href');assert.equal(href,paths[i]);
    const box=await a.boundingBox();assert(box.width>30&&box.height>=30);
    if(i===0){
