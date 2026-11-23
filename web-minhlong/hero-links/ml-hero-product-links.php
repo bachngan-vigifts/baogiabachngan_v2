@@ -8,7 +8,7 @@ defined('ABSPATH') || exit;
 add_action('wp_footer', static function () {
  if (!is_front_page() || strtolower((string)wp_parse_url(home_url('/'), PHP_URL_HOST)) !== 'minhlongonline.com') return;
  ?>
- <style id="ml-hero-product-links-css">.ml-hero-link-host{position:relative}
+ <style id="ml-hero-product-links-css">.ml-hero-link-host:not(.banner-inner){position:relative}
 a.ml-hero-product-link{position:absolute!important;display:block!important;z-index:25!important;margin:0!important;padding:0!important;border:0!important;background:transparent!important;cursor:pointer;box-sizing:border-box}
 a.ml-hero-product-link:focus-visible{outline:3px solid #ffce54!important;outline-offset:3px;border-radius:8px}
 </style>
