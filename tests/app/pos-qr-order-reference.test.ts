@@ -29,7 +29,7 @@ test('QR reserves a unique real POS number; cashier concurrency, SePay, replay, 
   const bodyA = f.cart(shift.id), bodyB = f.cart(shift.id);
   const [qa, qb] = await Promise.all([f.call('/pos/qr', f.emp, 'POST', { ...bodyA, reservedOrderNo: 'forged' }), f.call('/pos/qr', f.emp, 'POST', bodyB)]);
   assert.equal(qa.status, 200, JSON.stringify(qa.data)); assert.equal(qb.status, 200, JSON.stringify(qb.data));
-  assert.match(qa.data.orderNo, /^POS_\d{3,}_\d{8}$/); assert.notEqual(qa.data.orderNo, qb.data.orderNo);
+  assert.match(qa.data.orderNo, /^POS_(?:(?:LOCK|ML)_)?\d{3,}_\d{8}$/); assert.notEqual(qa.data.orderNo, qb.data.orderNo);
   assert.equal(qa.data.content, 'Thanh toán đơn ' + qa.data.orderNo);
   assert.equal(new URL(qa.data.url).searchParams.get('addInfo'), qa.data.content);
   assert.equal((await f.db.select().from(salesOrders)).length, 0);
@@ -58,7 +58,7 @@ test('QR reserves a unique real POS number; cashier concurrency, SePay, replay, 
   await f.db.update(posPaymentRequests).set({ expiresAt: '2000-01-01T00:00:00Z' }).where(eq(posPaymentRequests.id, abandoned.data.id));
   const laterCash = await f.call('/pos/checkout', f.emp, 'POST', f.cart(shift.id, { rows: [{ sku: '00123', qty: 1 }] })); assert.equal(laterCash.status, 201);
   const [later] = await f.db.select().from(salesOrders).where(eq(salesOrders.id, laterCash.data.id));
-  assert.ok(Number(later!.orderNo.split('_')[1]) > Number(abandoned.data.orderNo.split('_')[1]), 'expired QR number is never recycled');
+  assert.ok(Number(later!.orderNo.split('_').at(-2)) > Number(abandoned.data.orderNo.split('_').at(-2)), 'expired QR number is never recycled');
   const legacyId = 'abcdefab-1234-4321-0000-111111111111';
   await f.db.insert(posPaymentRequests).values({ id: legacyId, shiftId: shift.id, requestKey: crypto.randomUUID(), cart: '{}', fingerprint: 'legacy', amount: qa.data.amount, createdAt: now, expiresAt: '2099-01-01T00:00:00Z' });
   const legacy = await hook({ content: 'POS abcdefab1234' }); assert.equal(legacy.status, 200, JSON.stringify(legacy.data)); assert.equal(legacy.data.paymentRequestId, legacyId);
