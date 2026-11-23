@@ -4,7 +4,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {randomBytes,createHash} from 'node:crypto';
 import {chromium} from '/tmp/qv-info/node_modules/playwright/index.mjs';
 const folder='web-minhlong/qv-info-position/',name='ml-qv-info-position.php';
-const code=readFileSync(folder+name,'utf8'),hosts=['minhlongonline.com'];
+const code=readFileSync(folder+name,'utf8'),hosts=['minhlongonline.com','locknlockonline.com'];
 const css=code.match(/<<<'BN_INFO_CSS'\n([\s\S]*?)BN_INFO_CSS;/)[1];
 const js=code.match(/<<<'BN_INFO_JS'\n([\s\S]*?)BN_INFO_JS;/)[1];
 await mkdir('ml-info-position-evidence',{recursive:true});
@@ -13,16 +13,22 @@ async function verify(host,preview){
  try{for(const width of [1214,390]){
  const page=await browser.newPage({viewport:{width,height:1003},isMobile:width===390,hasTouch:width===390});
  await page.addLocatorHandler(page.locator('#mltv-popup.mltv-popup--show'),async d=>{await d.locator('[aria-label*="Đóng"],[aria-label*="Close" i],[class*="close" i],[data-close]').first().click({timeout:5000});});
- await page.route('**/*',route=>{
+ await page.route('**/*',async route=>{
  const r=route.request(),u=new URL(r.url());
  if(u.searchParams.has('add-to-cart')||u.searchParams.has('lnl_buy'))return route.abort();
  if(!['GET','HEAD'].includes(r.method())&&!(r.postData()||'').includes('flatsome_quickview'))return route.abort();
+ if(preview&&r.resourceType()==='document'&&u.hostname===host){
+ const response=await route.fetch();let html=await response.text();
+ const re=/<script\b[^>]*id=["']ml-qv-info-position-script["'][^>]*>[\s\S]*?<\/script>/;
+ const tag='<style>'+css+'</style><script id="ml-qv-info-position-script">'+js+'</script>';
+ html=re.test(html)?html.replace(re,()=>tag):html.replace('</body>',()=>tag+'</body>');
+ return route.fulfill({response,body:html});
+ }
  return route.continue();
  });
  await page.goto('https://'+host+'/',{waitUntil:'domcontentloaded',timeout:90000});
  await page.waitForFunction(()=>window.jQuery&&document.querySelector('a.quick-view'),null,{timeout:45000});
- if(preview){await page.addStyleTag({content:css});await page.addScriptTag({content:js});}
- else await page.locator('#ml-qv-info-position-script').waitFor({state:'attached'});
+ await page.locator('#ml-qv-info-position-script').waitFor({state:'attached'});
  const triggers=page.locator('a.quick-view');assert(await triggers.count()>1);
  for(const index of [0,1,0]){
  const trigger=triggers.nth(index);await trigger.scrollIntoViewIfNeeded();
@@ -36,17 +42,24 @@ async function verify(host,preview){
  const invoice=p.querySelector('.bn-qv-invoice'),info=p.querySelector('.bn-qv-info');
  const codes=Array.from(info.querySelectorAll('code'),n=>n.textContent);
  const expected=Array.from(document.getElementById('lnl-image-vouchers-template').content.querySelectorAll('code'),n=>n.textContent);
- return {invoiceAfterPrice:invoice.previousElementSibling.classList.contains('price-wrapper'),infoUnderImage:info.parentElement.classList.contains('product-gallery'),imageBottom:Math.max(...Array.from(p.querySelectorAll('.product-gallery img'),i=>i.getBoundingClientRect()).filter(r=>r.width>0&&r.height>0).map(r=>r.bottom)),infoTop:info.getBoundingClientRect().top,codes,expected,text:invoice.textContent};
+ return {invoiceAfterPrice:invoice.previousElementSibling.classList.contains('price-wrapper'),infoUnderImage:info.parentElement.classList.contains('product-gallery'),infoAtBottom:info.parentElement.matches('.product-info .product-lightbox-inner')&&info.parentElement.lastElementChild===info,imageBottom:Math.max(...Array.from(p.querySelectorAll('.product-gallery img'),i=>i.getBoundingClientRect()).filter(r=>r.width>0&&r.height>0).map(r=>r.bottom)),infoTop:info.getBoundingClientRect().top,codes,expected,text:invoice.textContent};
  });
- assert(result.invoiceAfterPrice&&result.infoUnderImage,JSON.stringify(result));assert(result.infoTop>=result.imageBottom-2,JSON.stringify(result));assert.deepEqual(result.codes,result.expected);assert(result.codes.length>0);
+ assert(result.invoiceAfterPrice,JSON.stringify(result));assert(width<=849?result.infoAtBottom:result.infoUnderImage,JSON.stringify(result));if(width>849)assert(result.infoTop>=result.imageBottom-2,JSON.stringify(result));assert.deepEqual(result.codes,result.expected);assert(result.codes.length>0);
  assert(result.codes.every(c=>c.startsWith(host.startsWith('lock')?'LNL':'ML')));
- assert(result.text.includes('Có hỗ trợ xuất hóa đơn công ty')&&result.text.includes('Tôi muốn xuất hóa đơn Công ty'));
+ assert(result.text.includes('Xuất hóa đơn GTGT cho doanh nghiệp'));
  await popup.locator('.bn-qv-info details').evaluateAll(ds=>ds.forEach(d=>d.open=true));
  await popup.locator('.bn-qv-info').scrollIntoViewIfNeeded();
  const bounds=await popup.locator('.bn-qv-info').evaluate(e=>({left:e.getBoundingClientRect().left,right:e.getBoundingClientRect().right,scroll:e.scrollWidth,width:e.clientWidth}));
  assert(bounds.left>=-1&&bounds.right<=width+1&&bounds.scroll<=bounds.width+1,JSON.stringify(bounds));
  await page.screenshot({path:'ml-info-position-evidence/'+(preview?'preview':'live')+'-'+host+'-'+width+'-'+index+'.png'});
  console.log('INFO_CHECK',JSON.stringify({host,preview,width,index,...result}));
+ if(index===1){
+ await page.setViewportSize({width:width===390?1214:390,height:1003});
+ await page.waitForFunction(()=>{const p=document.querySelector('.product-lightbox'),i=p.querySelector('.bn-qv-info');return innerWidth<=849?i.parentElement.matches('.product-info .product-lightbox-inner')&&i.parentElement.lastElementChild===i:i.parentElement.classList.contains('product-gallery');});
+ assert.equal(await popup.locator('.bn-qv-info').count(),1);
+ await page.setViewportSize({width,height:1003});
+ await page.waitForFunction(()=>{const i=document.querySelector('.product-lightbox .bn-qv-info');return innerWidth<=849?i.parentElement.matches('.product-info .product-lightbox-inner'):i.parentElement.classList.contains('product-gallery');});
+ }
  await page.keyboard.press('Escape');await popup.waitFor({state:'hidden'});
  }
  await page.close();
@@ -78,7 +91,7 @@ async function put(h,n,s){const f=new FormData();f.set('dir',dir(h));f.set('over
 for(const h of hosts){
  const files=await api('Fileman','list_files',{dir:dir(h)});
  previous[h]=files.some(f=>f.file===name)?await read(h,name):null;
- if(previous[h]!==null&&previous[h]!==code&&previous[h]!==disabled)throw Error('Existing custom change: '+h);
+ if(previous[h]!==null&&previous[h]!==code&&previous[h]!==readFileSync(folder+'baseline.php','utf8')&&previous[h]!==disabled)throw Error('Existing custom change: '+h);
  if(files.some(f=>f.file===helper)&&(await read(h,helper))!==disabled)throw Error('Cache helper occupied: '+h);
 }
 await writeFile('ml-info-position-evidence/rollback.json',JSON.stringify(previous,null,2));
@@ -93,7 +106,7 @@ try{
  for(const h of hosts){helpers.push(h);await put(h,helper,helperCode);written.push(h);await put(h,name,code);await refresh(h);}
  for(const h of hosts)await verify(h,false);
  await writeFile('ml-info-position-evidence/result.json',JSON.stringify({hosts,widths:[1214,390],sha256:createHash('sha256').update(code).digest('hex'),verified:true,ordersCreated:0,cartWrites:0},null,2));
- console.log('MINHLONG_INFO_POSITION_LIVE_VERIFIED');
+ console.log('BOTH_STORES_RESPONSIVE_INFO_VERIFIED');
 }catch(e){
  for(const h of written.reverse()){
   try{if(await read(h,name)!==code)throw Error('Concurrent change; manual rollback required');await put(h,name,previous[h]??disabled);await refresh(h);console.log('ROLLED_BACK',h);}
