@@ -92,6 +92,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
   function frame() {
     root.classList.add("sp-page");
     root.innerHTML = `<div class="page-head"><div><p class="eyebrow">TIỀN &amp; CÔNG NỢ</p><h1>Thanh toán SePay</h1><p class="muted">Giao dịch ngân hàng theo công ty, phiếu thu và các khoản cần đối soát.</p></div><div class="sp-head-actions"><button class="btn navy" data-pull disabled>Lấy giao dịch hôm nay</button><button class="btn secondary" data-refresh>Làm mới</button></div></div><p class="sp-scope muted" data-pull-notice role="status">${esc(pullNotice)}</p>
+    <p class="sp-warning" data-web-scope role="status" hidden></p>
     <div class="sp-companies" role="tablist" aria-label="Công ty">${[['vigifts','Vigifts'],['bach-ngan','Bách Ngân']].map(([key,label])=>`<button type="button" role="tab" aria-selected="${params.get('entity')===key}" data-entity="${key}">${label}</button>`).join('')}</div><div class="sp-entity-note"><span class="muted">Phân theo tài khoản ngân hàng đã cấu hình.</span><button type="button" class="btn ghost small" aria-pressed="${params.get('entity')==='unassigned'}" data-entity="unassigned">Tài khoản chưa phân loại</button></div>
     <form class="card sp-filters" data-filters><label>Từ ngày<input type="date" name="from" required value="${esc(params.get("from"))}"></label><label>Đến ngày<input type="date" name="to" required value="${esc(params.get("to"))}"></label>
     <label>Trạng thái<select name="status">${[
@@ -133,6 +134,8 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       const next = await api("/sepay/transactions?" + params.toString());
       if (!valid(id)) return;
       data = next;
+      $('[data-web-scope]').textContent=next.webOrderScopeMessage||'';
+      $('[data-web-scope]').hidden=!next.webOrderScopeMessage;
       const s = next.summary;
       $("[data-direction-field]").hidden=!next.capabilities?.canViewDebits;
       $("[data-stats]").innerHTML = [
@@ -297,7 +300,7 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       const r = await api("/sepay/orders?" + filters);
       if (!valid(own, d) || s !== searchEpoch) return;
       const labels = {draft:"Bản nháp",confirmed:"Đã duyệt",delivering:"Đang giao",delivered:"Đã giao",cancelled:"Đã hủy",signed:"Đã ký",completed:"Hoàn tất"};
-      $("[data-order-results]").innerHTML = (r.orders.length
+      $("[data-order-results]").innerHTML = (r.webOrderScopeMessage?`<p class="sp-warning">${esc(r.webOrderScopeMessage)}</p>`:'')+(r.orders.length
         ? `<ul class="sp-order-results">${r.orders.map((o) => `<li><button type="button" ${o.selectable ? `data-choose="${esc(o.id)}"` : 'disabled'}><b>${esc(o.contractNo || o.orderNo)}</b><span>${esc(o.customerName)} · ${esc(money(o.total))}</span><span>${esc({pos:"POS",web:"Website",crm:"Đơn CRM",contract:"HĐKT"}[o.kind] || "Đơn CRM")} · ${esc(o.orderNo)} · ${esc(o.orderDate.slice(0,10))} · ${esc(labels[o.contractStatus || o.status] || o.status)}</span>${o.selectable ? '<span class="sp-choose-action">Chọn đơn này để gán khoản thu →</span>' : `<span class="sp-choose-action">${o.status === "cancelled" ? "Không thể gán: đơn đã hủy." : "Chưa thể gán: cần duyệt đơn hoặc ký HĐKT."}</span>`}</button></li>`).join("")}</ul>`
         : '<p class="sp-empty">Không có đơn/HĐKT phù hợp. Thử bỏ bộ lọc hoặc tìm theo mã hợp đồng, tên khách không dấu.</p>') +
         `<div class="sp-order-pages"><button type="button" class="btn secondary" data-order-offset="${Math.max(0,r.offset-r.limit)}" ${r.offset===0 ? "disabled" : ""}>← Trước</button><span>Trang ${Math.floor(r.offset/r.limit)+1}</span><button type="button" class="btn secondary" data-order-offset="${r.offset+r.limit}" ${!r.hasMore ? "disabled" : ""}>Sau →</button></div>`;
