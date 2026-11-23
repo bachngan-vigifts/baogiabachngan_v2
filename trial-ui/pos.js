@@ -940,7 +940,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if (b) { b.disabled = true; b.textContent = 'Đang in…'; }
     try {
       const d = await api('/pos/preview', 'POST', payload());
-      try { printPos(d); }
+      // QR đang mở của đúng giỏ (còn hạn, chưa thu) in kèm bill tạm; buildPosPrint còn kiểm lại số tiền.
+      const qr = st.qr && !st.qr.paid && Date.now() < Date.parse(st.qr.expiresAt) ? { url: st.qr.url, content: st.qr.content, amount: st.qr.amount } : null;
+      try { printPos(qr ? { ...d, qr } : d); }
       catch { toast('Chưa in được bill tạm. Kiểm tra máy in rồi thử lại.', 'err'); }
     } finally {
       printingTemporary = false;

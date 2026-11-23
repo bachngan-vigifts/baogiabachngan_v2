@@ -1,5 +1,11 @@
 import { shiftSummaryRows, shiftCodRows } from './pos-report.js';
 const money = (n) => Number(n || 0).toLocaleString('vi-VN') + ' đ';
+const num = (n) => Number(n || 0).toLocaleString('vi-VN');
+/** Chỉ nhận ảnh VietQR do máy chủ tạo cho đúng số tiền còn phải trả. */
+const billQr = (data) => {
+  const q = data.qr, due = data.payable ?? data.total;
+  return q && /^https:\/\/img\.vietqr\.io\//.test(q.url || '') && q.content && Number.isSafeInteger(q.amount) && q.amount > 0 && q.amount === due ? q : null;
+};
 const node = (doc, tag, text, cls) => {
   const n = doc.createElement(tag);
   if (text != null) n.textContent = String(text);
@@ -18,6 +24,7 @@ export function buildPosPrint(doc, data, kind = 'bill') {
     node(doc, 'h2', data.register?.name || 'Bách Ngân'),
     node(doc, 'p', data.register?.address || '', 'center'),
   );
+  if (data.register?.phone) sheet.append(node(doc, 'p', 'ĐT ' + data.register.phone, 'center'));
   if (kind === 'return') {
     const r=data.return;
     sheet.append(node(doc,'h3','PHIẾU ĐỔI / TRẢ HÀNG'),node(doc,'p',r.returnNo),node(doc,'p','Bill gốc: '+data.order.orderNo),node(doc,'p',data.order.customerName),node(doc,'p','Lý do: '+r.reason));
@@ -65,26 +72,31 @@ export function buildPosPrint(doc, data, kind = 'bill') {
         temporary ? 'BILL TẠM TÍNH - CHƯA THANH TOÁN' : flow==='deposit'?'PHIẾU ĐẶT CỌC - NHẬN HÀNG SAU':flow==='prepaid'?'ĐƠN SHIP TRẢ TRƯỚC 100%': cod ? (data.depositAmount ? (data.codAmount === 0 ? 'ĐƠN GIAO HÀNG - ĐÃ THU ĐỦ' : 'ĐƠN SHIP COD - ĐÃ THU MỘT PHẦN') : 'ĐƠN SHIP COD - CHƯA THU') : 'BILL BÁN HÀNG',
       ),
     );
-    if (!temporary) line('Số đơn', data.orderNo || '');
-    sheet.append(
-      node(doc, 'p', new Date(data.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })),
-      node(doc, 'p', 'NV: ' + (data.memberName || '')),
-    );
+    // Mẫu gọn kiểu siêu thị: mỗi dòng hàng 2 dòng in (mã · tên / giá × SL, giảm, thành tiền).
+    const when = new Date(data.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const meta = (left, right) => { const p = node(doc, 'div', null, 'meta'); p.append(node(doc, 'span', left), node(doc, 'span', right)); sheet.append(p); };
+    meta(temporary ? 'Chưa có số đơn' : data.orderNo || '', when);
     const customer = typeof data.customer === 'string' ? data.customer : data.customer?.name;
-    sheet.append(node(doc, 'p', 'Khách: ' + (customer || 'Khách lẻ')));
+    meta('Khách: ' + (customer || 'Khách lẻ'), 'NV: ' + (data.memberName || ''));
+    sheet.append(node(doc, 'div', '', 'rule'));
+    let listTotal = 0, quantity = 0;
     for (const item of data.lines) {
-      sheet.append(node(doc, 'p', item.name, 'item-name'));
-      line(`${item.qty} ${item.unit || ''} × ${money(item.listUnitPrice)}`, money(item.listAmount));
-      // discountAmount gồm cả phần voucher chia vào dòng (voucherAmount) – in tách hai dòng.
+      listTotal += Number(item.listAmount) || 0; quantity += Number(item.qty) || 0;
+      sheet.append(node(doc, 'p', (item.sku ? item.sku + ' · ' : '') + item.name, 'item-name'));
+      // discountAmount gồm cả phần voucher chia vào dòng (voucherAmount); mã giảm giá in riêng ở phần tổng.
       const lineDiscount = (item.discountAmount || 0) - (item.voucherAmount || 0);
-      if (lineDiscount)
-        line(
-          'Giảm ' + (item.discountType === 'percent' ? item.discountValue + '%' : 'theo dòng'),
-          '−' + money(lineDiscount),
-        );
-      if (item.voucherAmount) line('Mã giảm giá (chia theo dòng)', '−' + money(item.voucherAmount));
-      line('Thành tiền', money(item.total));
+      const row = node(doc, 'div', null, 'item-row');
+      row.append(
+        node(doc, 'span', `${num(item.listUnitPrice)}×${item.qty}${item.unit ? ' ' + item.unit : ''}`),
+        node(doc, 'span', lineDiscount ? '-' + (item.discountType === 'percent' ? item.discountValue + '%' : num(lineDiscount)) : ''),
+        node(doc, 'span', num(item.total), 'amount'),
+      );
+      sheet.append(row);
     }
+    sheet.append(node(doc, 'div', '', 'rule'));
+    line(`Tổng tiền hàng (${num(quantity)} SP)`, money(listTotal));
+    const discountTotal = data.lines.reduce((s, item) => s + ((item.discountAmount || 0) - (item.voucherAmount || 0)), 0);
+    if (discountTotal) line('Chiết khấu', '−' + money(discountTotal));
     for (const fee of data.fees?.services ?? (data.fees?.service ? [data.fees.service] : [])) {
       if (!fee.amount) continue;
       line(fee.name + ' (trước thuế)', money(fee.subtotal));
@@ -98,6 +110,15 @@ export function buildPosPrint(doc, data, kind = 'bill') {
     line('TỔNG THANH TOÁN', money(data.total), true);
     if(data.exchangeCredit){line('Thanh toán bằng tiền đổi hàng',money(data.exchangeCredit));line('Khách trả thêm',money(data.payable));}
     if (data.note) sheet.append(node(doc, 'p', 'Ghi chú: ' + data.note, 'order-note'));
+    const qr = billQr(data);
+    if (qr && (temporary || (!flow && !cod && data.paid === false))) {
+      // Chỉ in QR khi CHƯA thu tiền; nội dung CK = số đơn giữ chỗ để SePay tự khớp.
+      const box = node(doc, 'div', null, 'qr-pay'), img = node(doc, 'img'), info = node(doc, 'div');
+      img.src = qr.url; img.alt = 'VietQR thanh toán'; img.width = 96; img.height = 96;
+      info.append(node(doc, 'b', 'Quét QR để chuyển khoản'), node(doc, 'p', money(qr.amount), 'amount'), node(doc, 'p', 'ND: ' + qr.content), node(doc, 'p', 'SePay tự xác nhận khi tiền về', 'small'));
+      box.append(img, info);
+      sheet.append(box);
+    }
     if (temporary) sheet.append(node(doc, 'p', 'Chưa ghi thu, chưa trừ kho. Không phải hóa đơn VAT.', 'center'));
     else if(flow){
       line('Đã thực nhận',money(data.receivedAmount));line('Chuyển khoản đang chờ',money(data.pendingAmount??(data.pendingTransfer?data.initialAmount:0)));line('Còn phải thu',money(data.remaining??(data.total-(data.receivedAmount||0))),true);
@@ -116,12 +137,14 @@ export function buildPosPrint(doc, data, kind = 'bill') {
         line('Khách đưa', money(data.tendered));
         line('Tiền thối', money(data.change));
       }
-      sheet.append(node(doc, 'p', 'ĐÃ THU TIỀN', 'center'));
+      sheet.append(node(doc, 'p', 'ĐÃ THU TIỀN', 'center paid-stamp'));
     }
-    sheet.append(node(doc, 'p', 'Bill không thay hóa đơn VAT. Cảm ơn quý khách!', 'center'));
+    sheet.append(node(doc, 'p', 'Bill không thay hóa đơn VAT. Cảm ơn quý khách!', 'center small'));
   }
   return sheet;
 }
+/** Mẫu K80 gọn kiểu siêu thị: số tiền in đậm, mỗi dòng hàng 2 dòng in. */
+export const POS_PRINT_CSS = '@page{size:80mm auto;margin:0}body{margin:0;font:11.5px/1.3 Arial,sans-serif;color:#000;background:#fff}.pos-paper{width:72mm;padding:3mm 3.5mm 4mm;overflow-wrap:anywhere}h2,h3,.center{text-align:center}h2{font-size:15px;margin:0 0 2px}h3{font-size:12.5px;border-top:1px dashed;padding-top:5px;margin:5px 0 3px}p{margin:3px 0}.small{font-size:10px}.meta{display:flex;justify-content:space-between;gap:6px;margin:2px 0}.meta span:first-child{font-weight:bold}.rule{border-top:1px dashed;margin:5px 0}.item-name{font-weight:bold;margin:4px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.item-row{display:grid;grid-template-columns:1fr 13mm 19mm;gap:2mm;font-variant-numeric:tabular-nums}.item-row span:nth-child(2),.item-row span:nth-child(3){text-align:right}.amount{font-weight:bold}.pair{display:flex;justify-content:space-between;gap:8px;margin:2px 0}.pair span:last-child{text-align:right;white-space:nowrap;font-weight:bold}.bill-total-separator{border-top:1px dashed;margin-top:5px;padding-top:2px}.strong,.strong span{font-weight:800;font-size:14px}.order-note{white-space:pre-wrap;overflow-wrap:anywhere}.qr-pay{display:grid;grid-template-columns:25mm 1fr;gap:3mm;align-items:center;border-top:1px dashed;border-bottom:1px dashed;padding:2mm 0;margin:4px 0}.qr-pay img{width:25mm;height:25mm;display:block}.qr-pay .amount{font-size:14px}.paid-stamp{font-weight:bold;font-size:13px;border:1.5px solid #000;padding:2px 0;margin:5px 8mm}';
 export function printPos(data, kind = 'bill') {
   const frame = document.createElement('iframe');
   frame.title = 'In bill K80';
@@ -132,21 +155,20 @@ export function printPos(data, kind = 'bill') {
     frame.remove();
     throw new Error('Không mở được trang in.');
   }
-  const style = node(
-    doc,
-    'style',
-    '@page{size:80mm auto;margin:0}body{margin:0;font:12px Arial;color:#000;background:#fff}.pos-paper{width:72mm;padding:4mm;overflow-wrap:anywhere}h2,h3,.center{text-align:center}h2{font-size:16px}h3{font-size:13px;border-top:1px dashed;padding-top:8px}p{margin:5px 0}.pair{display:flex;justify-content:space-between;gap:8px;margin:4px 0}.pair span:last-child{text-align:right;white-space:nowrap}.bill-total-separator{border-top:1px dashed;margin-top:6px;padding-top:2px}.strong{font-weight:bold;font-size:15px}.order-note{white-space:pre-wrap;overflow-wrap:anywhere}.item-name{font-weight:bold;border-top:1px dotted;padding-top:6px}',
-  );
-  doc.head.append(style);
-  doc.body.append(buildPosPrint(doc, data, kind));
+  doc.head.append(node(doc, 'style', POS_PRINT_CSS));
+  const sheet = buildPosPrint(doc, data, kind);
+  doc.body.append(sheet);
   const win = frame.contentWindow;
   win.addEventListener('afterprint', () => frame.remove(), { once: true });
-  setTimeout(() => {
+  const qrImage = sheet.querySelector('.qr-pay img');
+  // Chờ ảnh QR tối đa 8 giây; không tải được thì bỏ khung QR và vẫn in bill (khách quét mã trên màn hình).
+  const ready = qrImage ? Promise.race([qrImage.decode(), new Promise((_, reject) => setTimeout(() => reject(Error('timeout')), 8000))]).then(() => { if (!qrImage.naturalWidth) throw Error('empty'); }).catch(() => { const box = qrImage.closest('.qr-pay'); box.replaceWith(node(doc, 'p', 'Không tải được mã QR – quét mã trên màn hình quầy.', 'center small')); }) : Promise.resolve();
+  ready.then(() => setTimeout(() => {
     try {
       win.focus();
       win.print();
     } catch {
       frame.remove();
     }
-  }, 100);
+  }, 100));
 }

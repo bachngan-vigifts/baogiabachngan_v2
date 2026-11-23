@@ -297,7 +297,16 @@ test('K80: bill tạm không có số chính thức, nhãn rõ ràng và dữ li
   assert.equal(p.children.filter((x: Element) => x.className.includes('strong') && /TỔNG THÀNH TIỀN|VAT|TỔNG THANH TOÁN/.test(x.textContent)).length, 3);
   const paid = buildPosPrint(doc, sample);
   assert.match(paid.textContent, /POS_1/);
-  assert.match(paid.textContent, /Giảm 10%/);
+  assert.match(paid.textContent, /108\.000×2 cái-10%194\.400/, 'mẫu gọn: giá × SL, giảm %, thành tiền trên một dòng');
+  assert.match(paid.textContent, /Tổng tiền hàng \(2 SP\)216\.000 đChiết khấu−21\.600 đ/);
+  assert.equal(paid.querySelectorAll('img').length, 0, 'bill đã thu tiền không in QR thanh toán');
+  const qr = { url: 'https://img.vietqr.io/image/mb-0000000000-compact2.png?amount=194400', content: 'Thanh toán đơn POS_LOCK_001_18102026', amount: sample.total };
+  const unpaid = buildPosPrint(doc, { ...sample, temporary: true, payable: sample.total, qr });
+  assert.equal(unpaid.querySelectorAll('img').length, 1, 'bill tạm in QR đúng số tiền');assert.match(unpaid.textContent, /Quét QR để chuyển khoản194\.400 đ/);
+  assert.match(unpaid.textContent, /ND: Thanh toán đơn POS_LOCK_001_18102026/);
+  for (const bad of [{ ...qr, amount: sample.total + 1 }, { ...qr, url: 'https://evil.example/qr.png' }, { ...qr, content: '' }])
+    assert.equal(buildPosPrint(doc, { ...sample, temporary: true, payable: sample.total, qr: bad }).querySelectorAll('img').length, 0, 'QR sai số tiền / nguồn ảnh lạ / thiếu nội dung thì không in');
+  assert.equal(buildPosPrint(doc, { ...sample, qr }).querySelectorAll('img').length, 0, 'bill đã thu tiền bỏ qua QR dù được truyền vào');
   assert.match(paid.textContent, /ĐÃ THU TIỀN/);
   assert.match(paid.textContent, /5.600/);
   const text = readFileSync('trial-ui/pos-print.js', 'utf8');
@@ -1023,7 +1032,7 @@ test('Giảm giá trên đơn (không còn ô mã, #264): gõ số tiền thì g
     await new Promise(r => setTimeout(r, 230));
     assert.equal(calls.filter(c => c.path === '/pos/preview').at(-1).body.voucher, undefined);
     const bill = buildPosPrint(doc, withVoucher).textContent;
-    assert.ok(bill.includes('Mã giảm giá (chia theo dòng)') && bill.includes('Mã giảm giá VC-1') && bill.includes('21.600'), bill);
+    assert.ok(bill.includes('Chiết khấu−21.600') && bill.includes('Mã giảm giá VC-1−20.000') && !bill.includes('Mã giảm giá (chia theo dòng)'), 'mẫu gọn: CK dòng gộp ở Chiết khấu, mã giảm giá in một lần ở phần tổng: ' + bill);
   } finally { Object.assign(globalThis, { document: prevDoc, window: prevWin }); }
 });
 
