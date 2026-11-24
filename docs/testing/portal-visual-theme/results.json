@@ -1,0 +1,90 @@
+[
+  {
+    "file": "register.html",
+    "width": 390,
+    "controls": 6,
+    "valuesPreserved": true,
+    "heightsPreserved": true,
+    "sharedBlue": true,
+    "printUnchanged": true,
+    "noOverflow": true,
+    "noJsErrors": true
+  },
+  {
+    "file": "reset-password.html",
+    "width": 390,
+    "controls": 3,
+    "valuesPreserved": true,
+    "heightsPreserved": true,
+    "sharedBlue": true,
+    "printUnchanged": true,
+    "noOverflow": true,
+    "noJsErrors": true
+  },
+  {
+    "file": "customer.html",
+    "width": 390,
+    "controls": 4,
+    "valuesPreserved": true,
+    "heightsPreserved": true,
+    "sharedBlue": true,
+    "printUnchanged": true,
+    "noOverflow": true,
+    "noJsErrors": true
+  },
+  {
+    "file": "supplier.html",
+    "width": 390,
+    "controls": 4,
+    "valuesPreserved": true,
+    "heightsPreserved": true,
+    "sharedBlue": true,
+    "printUnchanged": true,
+    "noOverflow": true,
+    "noJsErrors": true
+  },
+  {
+    "file": "register.html",
+    "width": 1280,
+    "controls": 6,
+    "valuesPreserved": true,
+    "heightsPreserved": true,
+    "sharedBlue": true,
+    "printUnchanged": true,
+    "noOverflow": true,
+    "noJsErrors": true
+  },
+  {
+    "file": "reset-password.html",
+    "width": 1280,
+    "controls": 3,
+    "valuesPreserved": true,
+    "heightsPreserved": true,
+    "sharedBlue": true,
+    "printUnchanged": true,
+    "noOverflow": true,
+    "noJsErrors": true
+  },
+  {
+    "file": "customer.html",
+    "width": 1280,
+    "controls": 4,
+    "valuesPreserved": true,
+    "heightsPreserved": true,
+    "sharedBlue": true,
+    "printUnchanged": true,
+    "noOverflow": true,
+    "noJsErrors": true
+  },
+  {
+    "file": "supplier.html",
+    "width": 1280,
+    "controls": 4,
+    "valuesPreserved": true,
+    "heightsPreserved": true,
+    "sharedBlue": true,
+    "printUnchanged": true,
+    "noOverflow": true,
+    "noJsErrors": true
+  }
+]

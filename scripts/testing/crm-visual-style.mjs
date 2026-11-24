@@ -49,7 +49,10 @@ for(const width of [1440,1366,390]){
  await page.evaluate(()=>document.fonts.ready);
  assert.deepEqual(await snapshot(),before,'same controls, values, sidebar width and table/card mode');
  await page.waitForFunction(()=>getComputedStyle(document.querySelector('#new-product')).backgroundColor==='rgb(0, 100, 204)');
- assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.sidebar')).backgroundColor),'rgb(255, 255, 255)');
+ // Main restored this navy/white palette at the user's request after the original theme test.
+ assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.sidebar')).backgroundColor),'rgb(20, 32, 54)');
+ assert.equal(await page.locator('.nav.active').first().evaluate(n=>getComputedStyle(n).color),'rgb(255, 255, 255)');
+ assert.ok(Number(await page.locator('.nav.active').first().evaluate(n=>getComputedStyle(n).fontWeight))>=700);
  assert.equal(await page.locator('#product-search').inputValue(),'Gourmet');
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no page horizontal overflow');
  if(width===390)assert.ok(await page.locator('#product-search').evaluate(n=>parseFloat(getComputedStyle(n).fontSize))>=16,'iOS input font remains at least 16px');
