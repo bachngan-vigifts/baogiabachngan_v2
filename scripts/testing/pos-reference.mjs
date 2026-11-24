@@ -85,7 +85,23 @@ try {
       }
       await input.fill('00123');await input.press('Enter');
       await page.waitForFunction(()=>document.querySelector('.pos-qty input'));
-      const qty=page.locator('.pos-qty input').first();await qty.fill('4');await qty.dispatchEvent('change');
+      const qty=page.locator('.pos-qty input').first();
+      for(const expected of ['2','3']){
+        await input.fill('00123');
+        await page.locator('.pos-product[data-sku="00123"]').waitFor();
+        await page.locator('.pos-product[data-sku="00123"]').click();
+        await page.waitForFunction(expected=>document.querySelector('.pos-qty input')?.value===expected,expected);
+        assert.equal(await input.inputValue(),'','clicking a result clears the scan field');
+        assert.equal(await input.evaluate(n=>document.activeElement===n),true,'ready for the next scan');
+        assert.equal(await page.locator('.pos-line:not(.pos-gift-line)').count(),1,'repeated clicks increment one line');
+      }
+      await page.waitForTimeout(400);
+      assert.equal(await input.inputValue(),'','old debounced searches cannot restore a consumed query');
+      if(desktop){
+        const below=await page.locator('.pos-line').first().evaluate(n=>{const [code,quantity,unit]=['.pos-line-code','.pos-qty','.pos-ref-unit'].map(s=>n.querySelector(s).getBoundingClientRect());return quantity.top>=code.bottom&&unit.top>=code.bottom&&Math.abs(quantity.left-code.left)<2&&unit.left>=quantity.right&&Math.abs(unit.top+unit.height/2-quantity.top-quantity.height/2)<2;});
+        assert.equal(below,true,'quantity and unit sit together below the SKU');
+      }
+      await qty.fill('4');await qty.dispatchEvent('change');
       await page.waitForFunction(()=>document.querySelector('.pos-line-top>strong')?.textContent.includes('80.000'));
       await page.screenshot({path:shot+`/${width}-quick.png`});
       const snapshot=await page.evaluate(()=>({qty:document.querySelector('.pos-qty input').value,amount:document.querySelector('.pos-line-top>strong').textContent}));
