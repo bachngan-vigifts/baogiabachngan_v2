@@ -56,10 +56,11 @@ export function initRestockPage({ api, host, toast, go, options, loadXlsx, onBac
   supField.append(el('span', '', 'Nhà cung cấp *'), supSel, chips);
   const numberFields = el('div', 'form-grid two pur-rs-note');
   const arrival = el('input'); arrival.type = 'date';
+  const receiving=el('select');receiving.setAttribute('aria-label','Kho nhận hàng');receiving.append(Object.assign(el('option','','Chưa chọn kho nhận'),{value:''}));
   const address = el('input'); address.maxLength = 120; address.placeholder = 'Nhập địa chỉ giao hàng';
   const note = el('textarea'); note.rows = 1; note.maxLength = 2000; note.placeholder = 'Ghi chú cho NCC (không bắt buộc)';
   const f = (label, input, cls = '') => { const l = el('label', 'pur-rs-field ' + cls); l.append(el('span', '', label), input); return l; };
-  info.append(supField, f('Hẹn giao dự kiến', arrival), f('Địa chỉ giao hàng *', address), f('Ghi chú', note, 'pur-rs-note'), numberFields);
+  info.append(supField, f('Hẹn giao dự kiến', arrival), f('Địa chỉ giao hàng *', address), f('Kho nhận hàng',receiving), f('Ghi chú', note, 'pur-rs-note'), numberFields);
   // ----- danh sách mua
   const listBox = el('section', 'panel pur-rs-list'), bar = el('div', 'pur-rs-bar');
   const searchWrap = el('div', 'pur-rs-search'), q = el('input');
@@ -80,8 +81,8 @@ export function initRestockPage({ api, host, toast, go, options, loadXlsx, onBac
   host.replaceChildren(page);
 
   // ----- lưu nháp
-  const persist = () => store.set({ rows: rows.map(({ sku, name, unit, want, split }) => ({ sku, name, unit, want, split })), sups, arrival: arrival.value, address: address.value, note: note.value });
-  for (const x of [arrival, address, note]) x.addEventListener('input', persist);
+  const persist = () => store.set({ rows: rows.map(({ sku, name, unit, want, split }) => ({ sku, name, unit, want, split })), sups, arrival: arrival.value, address: address.value, receivingWarehouseId:receiving.value||null, note: note.value });
+  for (const x of [arrival, address, note,receiving]) x.addEventListener('input', persist);
 
   // ----- nhà cung cấp
   function fillSuppliers() {
@@ -297,7 +298,7 @@ export function initRestockPage({ api, host, toast, go, options, loadXlsx, onBac
     if (bad) { err.textContent = `${bad.sku}: SL đặt phải là số nguyên lớn hơn 0.`; focusRow(bad.sku); return; }
     const over = rows.find(r => perSupplier(r).slice(1).reduce((a, v) => a + v, 0) > Number(r.want));
     if (over) { err.textContent = `${over.sku}: số chia cho các NCC khác vượt "SL đặt (tổng)".`; return; }
-    const orders = sups.map((x, i) => ({ supplierId: x.id, internalNo: (x.internalNo || '').trim(), arrivalDate: arrival.value || undefined, warehouse: address.value.trim(), note: note.value,
+    const orders = sups.map((x, i) => ({ supplierId: x.id, internalNo: (x.internalNo || '').trim(), arrivalDate: arrival.value || undefined, warehouse: address.value.trim(), receivingWarehouseId:receiving.value||null, note: note.value,
       lines: rows.map(r => ({ sku: r.sku, name: r.name, unit: r.unit, quantity: perSupplier(r)[i], sources: [] })).filter(l => l.quantity > 0) })).filter(x => x.lines.length);
     if (!orders.length) { err.textContent = 'Chưa có số lượng nào để đặt.'; return; }
     busy = true; summarize(); const label = submit.textContent; submit.textContent = 'Đang tạo…';
@@ -314,10 +315,11 @@ export function initRestockPage({ api, host, toast, go, options, loadXlsx, onBac
   async function open() {
     render(); fillSuppliers();
     try { o = await options(); } catch (e) { err.textContent = e.message || 'Không tải được danh sách nhà cung cấp.'; return; }
+    receiving.replaceChildren(Object.assign(el('option','','Chưa chọn kho nhận'),{value:''}),...(o.receivingWarehouses||[]).map(w=>Object.assign(el('option','',w.name),{value:w.id})));
     const draft = store.get();
     if (draft?.rows?.length || draft?.sups?.length) {
       sups = (draft.sups || []).filter(s => o.suppliers.some(x => x.id === s.id));
-      arrival.value = draft.arrival || ''; address.value = draft.address || ''; note.value = draft.note || '';
+      receiving.value=(o.receivingWarehouses||[]).some(w=>w.id===draft.receivingWarehouseId)?draft.receivingWarehouseId:'';arrival.value = draft.arrival || ''; address.value = draft.address || ''; note.value = draft.note || '';
       rows = (draft.rows || []).map(r => ({ ...r, sr: null, vigifts: null, incoming: null, warehouses: [], split: r.split || {} }));
       if (rows.length) toast(`Đã mở lại danh sách đang lập (${rows.length} mã).`);
     }
