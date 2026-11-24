@@ -3063,3 +3063,14 @@ body:has(.reminder-launcher:not([hidden])) .main::after{content:'';display:block
  .approval-purchase-table .data-table td { flex-basis:100%; }
  .approval-purchase-table .data-table td[data-label]::before { display:block;margin-bottom:4px; }
 }
+
+/* Handoff: one recipient selector, with the same padded body as other dialogs. */
+.sale-admin-handoff .modal-head { align-items:flex-start; }
+.sale-admin-handoff .modal-head h2 { overflow-wrap:anywhere; }
+.sale-admin-handoff .modal-head .icon-btn { flex-shrink:0; }
+.sale-admin-handoff .modal-body { gap:14px; }
+.sale-admin-handoff .modal-body > p { margin:0; }
+.sale-admin-handoff .modal-body > p + * { margin-top:0; }
+.sale-admin-handoff .modal-body label { min-width:0; }
+.sale-admin-handoff select { width:100%; }
+.sale-admin-handoff .error:empty { display:none; }
