@@ -43,7 +43,7 @@ test('snapshot POS: hàng giữ không gắn kho chia đúng theo tồn trống 
 
 test('snapshot POS: mã quét đọc một lượt cho cả danh mục, cùng kết quả với cách tính từng sản phẩm (kể cả mã trùng)', async () => {
   const f = await setup(), now = new Date().toISOString();
-  await f.db.insert(products).values(['A', 'B', 'C', 'OFF'].map(sku => ({ sku, name: 'SP ' + sku, unit: 'cái', updatedAt: now, ...(sku === 'OFF' ? { active: false } : {}) })));
+  await f.db.insert(products).values(['A', 'B', 'C', 'OFF'].map(sku => ({ sku, name: 'SP ' + sku, brand: 'LocknLock', unit: 'cái', updatedAt: now, ...(sku === 'OFF' ? { active: false } : {}) })));
   await f.db.insert(productPrices).values(['A', 'B', 'C'].map(sku => ({ sku, policyId: 'retail-vat', price: 1000 })));
   await f.db.insert(productBarcodes).values([
     { barcode: 'BC-A1', sku: 'A' }, { barcode: 'BC-A2', sku: 'A' },

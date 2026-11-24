@@ -310,13 +310,14 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     const db = c.env.db, sku = c.params.sku!;
     const [row] = await db.select().from(products).where(eq(products.sku, sku)).limit(1);
     if (!row) throw new AppError(404, 'Không tìm thấy sản phẩm.');
-    const [prices, rawStock] = await Promise.all([
+    const [prices, rawStock, barcodes] = await Promise.all([
       db.select().from(productPrices).where(eq(productPrices.sku, sku)),
       db.select().from(productStock).where(eq(productStock.sku, sku)),
+      db.select({barcode:productBarcodes.barcode}).from(productBarcodes).where(eq(productBarcodes.sku,sku)).orderBy(asc(productBarcodes.barcode)),
     ]);
     const hidden = await hiddenStockWarehouses(db, viewerOf(c));
     const stock = (await effectiveCatalogStock(db, rawStock, [sku],viewerOf(c))).filter(r => !hidden.has(r.warehouseId));
-    return json({ product: { ...row, prices: seesSalePrices(viewerOf(c)) ? prices.map(p => ({ policyId: p.policyId, price: p.price })) : [], stock: Object.fromEntries(stock.map(s => [s.warehouseId, s.quantity])) } });
+    return json({ product: { ...row, barcodes:barcodes.map(b=>b.barcode),prices: seesSalePrices(viewerOf(c)) ? prices.map(p => ({ policyId: p.policyId, price: p.price })) : [], stock: Object.fromEntries(stock.map(s => [s.warehouseId, s.quantity])) } });
   }, 'business');
 
   /**

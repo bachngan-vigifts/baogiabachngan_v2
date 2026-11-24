@@ -282,5 +282,7 @@
   {"migration":"20261122090000_transfer_create_mode.sql","asserts":["assert-transfer-create-mode.sql"]},
   {"migration":"20261123095718_sepay_allocations.sql","asserts":["assert-sepay-allocations.sql"]},
   {"migration": "20261123201607_purchase_supplier_sale_admin_brand.sql", "asserts": ["assert-purchase-sale-admin-brand.sql"]},
+  {"migration":"20261124025900_product_classification_fields.sql","asserts":["assert-product-classification-fields.sql"]},
+  {"migration":"20261124045004_contract_template_sources.sql","asserts":["assert-contract-template-sources.sql"]},
   {"migration": "20261124043000_stocktake_workspace.sql", "asserts": ["assert-stocktake-workspace.sql"]}
 ]

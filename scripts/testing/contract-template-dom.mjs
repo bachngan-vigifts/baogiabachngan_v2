@@ -7,6 +7,7 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 const {JSDOM}=await import(process.env.JSDOM_MODULE||'jsdom');
 const root=fileURLToPath(new URL('../../trial-ui/',import.meta.url));
+const sourceManifest=JSON.parse(await readFile(new URL('../../src/modules/sales/domain/contract-source-manifest.json',import.meta.url),'utf8'));
 const manifest=JSON.parse(await readFile(new URL('../../src/modules/sales/domain/contract-template-manifest.json',import.meta.url),'utf8'));
 const origin='https://contract-local.test';
 const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:origin,runScripts:'dangerously',pretendToBeVisual:true});
@@ -38,6 +39,7 @@ try{
   let contractSaves=0,fail=false;const notices=[];
   const detail={order:{id:'o',quoteType:brand==='VG'?'VIGIFTS':'B2B',quoteNo:'TEST',customerName:'Khách thử',contact:'Trần Văn An',address:'Kho thử',subtotal:300000,tax:24000,total:324000},contract:{id:'k',contractNo:'TEST/2026',legalEntity:brand,canEdit:true,canEditFinancial:true,canManageTemplates:true,revision:1,signedDate:'2026-11-14',depositRate:30,paymentDays:15,data:{}},lines:[{sku:'SP1',name:'Sản phẩm thử',unit:'Bộ',qty:2,unitPrice:150000,amount:300000,taxRate:8}]};
   const api=async(path,method,body)=>{
+   if(path.startsWith('/contract-template-sources/')){const type=path.split('/').pop(),base=sourceManifest[brand][type];return {brand,documentType:type,revision:0,sourceHash:base.sourceHash,requiredFields:base.fields,source:null};}
    if(path.startsWith('/contract-templates/')){if(method==='PUT'){if(fail)throw Error('Manager khác đã sửa mẫu');master={...master,...structuredClone(body),edits:body.edits.map(e=>({...structuredClone(e),hash:'0'.repeat(64)})),revision:master.revision+1};}return structuredClone(master);}
    if(method==='PUT'){contractSaves++;return {ok:true};}return {};
   };

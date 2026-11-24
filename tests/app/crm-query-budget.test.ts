@@ -1,6 +1,6 @@
 import{test}from'node:test';import assert from'node:assert/strict';import{drizzle}from'drizzle-orm/pglite';import{setup}from'../helpers/pos-fixture.ts';import * as schema from'../../src/db/schema.ts';import{products,productPrices}from'../../src/modules/catalog/schema.ts';
 test('product lists and full POS stock preload keep a fixed query budget as result size grows',async()=>{
- const f=await setup(),items=Array.from({length:50},(_,i)=>({sku:'QUERY-'+i,name:'Sản phẩm chung '+i,brand:'Gốm Việt',updatedAt:new Date().toISOString()}));
+ const f=await setup(),items=Array.from({length:50},(_,i)=>({sku:'QUERY-'+i,name:'Sản phẩm chung '+i,brand:'LocknLock',updatedAt:new Date().toISOString()}));
  await f.db.insert(products).values(items);await f.db.insert(productPrices).values(items.map(x=>({sku:x.sku,policyId:'retail-vat',price:1000})));
  let queries=0;f.env.db=drizzle(f.client as any,{schema,logger:{logQuery(){queries++;}}}) as unknown as typeof f.db;
  await f.call('/me',f.emp);

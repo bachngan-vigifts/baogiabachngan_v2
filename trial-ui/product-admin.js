@@ -66,10 +66,13 @@ export function initProductAdmin(deps) {
         </fieldset>`}
         <fieldset class="product-editor-info form-grid cols-2"><legend>Thông tin sản phẩm</legend>
         <label>Mã sản phẩm (SKU)<input name="sku" required maxlength="64" placeholder="VD: ML-BT-001" autocapitalize="characters"></label>
-        <label>Đơn vị tính<input name="unit" maxlength="50" placeholder="cái, bộ, hộp…"></label>
+        <label>Mã vạch<input name="barcode" type="text" data-money="0" maxlength="100" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Quét hoặc nhập mã vạch" ${isManager()?'':'readonly'}><small class="muted" data-barcode-note></small></label>
         <label class="span-2">Tên sản phẩm<input name="name" required maxlength="500"></label>
+        <label>Đơn vị tính<input name="unit" maxlength="50" placeholder="cái, bộ, hộp…"></label>
         <label>Thương hiệu<input name="brand" maxlength="200" list="pa-brands"></label>
-        <label>Mẫu / hoạ tiết<input name="pattern" maxlength="200"></label>
+        <label>Danh mục<input name="category" maxlength="200" placeholder="VD: Ly, bộ trà, bình giữ nhiệt…"></label>
+        <label>Bộ sưu tập<input name="collection" maxlength="200"></label>
+        <label>Hoa văn<input name="pattern" maxlength="200"></label>
         <label class="span-2">Thuế sản phẩm (VAT)<select name="taxRate">${editing && !initialTax ? `<option value="" selected disabled>${esc(legacyTaxLabel)}</option>` : ''}<option value="8">8%</option><option value="10">10%</option></select></label>
         </fieldset><fieldset class="product-editor-image form-grid"><legend>Ảnh sản phẩm</legend>
         <label>Link ảnh (https://…)<input name="imageUrl" type="url" maxlength="2000" placeholder="Không bắt buộc"></label>
@@ -103,11 +106,13 @@ export function initProductAdmin(deps) {
       priceSources.delete(input); input.removeAttribute('aria-invalid'); input.parentElement.querySelector('[data-price-error]')?.remove();
     });
     if (editing) {
-      for (const key of ['sku','unit','name','brand','pattern','imageUrl']) dlg.querySelector('form').elements.namedItem(key).value = product[key] || '';
+      for (const key of ['sku','unit','name','brand','category','collection','pattern','imageUrl']) dlg.querySelector('form').elements.namedItem(key).value = product[key] || '';
       for(const key of ['perCarton','cartonLength','cartonWidth','cartonHeight','cartonWeight'])dlg.querySelector('form').elements.namedItem(key).value=product[key]??'';
       dlg.querySelector('[name="sku"]').readOnly = true;
       for (const policy of policies) { const price = product.prices.find(p => p.policyId === policy.id)?.price; setPriceValue(dlg.querySelector('form').elements.namedItem('price:' + policy.id), price); }
     }
+    const savedBarcodes=product?.barcodes||[];dlg.querySelector('[name="barcode"]').value=savedBarcodes[0]||'';
+    dlg.querySelector('[data-barcode-note]').textContent=isManager()?(savedBarcodes.length?'Đã lưu: '+savedBarcodes.join(' · ')+'. Nhập mã mới để thêm; các mã cũ vẫn được giữ.':'Không bắt buộc. Giữ nguyên số 0 đầu mã.'):'Chỉ Manager được gắn mã vạch.';
     dlg.querySelector('[name="taxRate"]').value = initialTax;
     const imageInput = dlg.querySelector('[name="imageUrl"]'), preview = dlg.querySelector('[data-image-preview]'), imageStatus = dlg.querySelector('[data-image-status]'), clearImage = dlg.querySelector('[data-image-clear]');
     let pendingImage = '', imageBusy = false, imageSequence = 0;
@@ -202,7 +207,8 @@ export function initProductAdmin(deps) {
           f.namedItem('price:' + p.id).focus(); return;
         }
       }
-      const body = { sku: v('sku'), name: v('name'), brand: v('brand'), unit: v('unit'), pattern: v('pattern'), imageUrl: v('imageUrl'), prices };
+      const body = { sku: v('sku'), name: v('name'), brand: v('brand'), unit: v('unit'), category:v('category'),collection:v('collection'),pattern: v('pattern'), imageUrl: v('imageUrl'), prices };
+      if(isManager()){body.barcode=v('barcode');if(body.barcode.length>100||body.barcode&&!/^[\x21-\x7e]+$/.test(body.barcode)){err.textContent='Mã vạch tối đa 100 ký tự, không có khoảng trắng hoặc ký tự có dấu.';f.namedItem('barcode').focus();return;}}
       if (!editing || v('taxRate') !== initialTax) {
         const rate = Number(v('taxRate'));
         if (rate !== 8 && rate !== 10) { err.textContent = 'Chọn thuế sản phẩm 8% hoặc 10%.'; return; }

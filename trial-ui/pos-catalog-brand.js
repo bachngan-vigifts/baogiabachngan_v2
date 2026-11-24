@@ -7,14 +7,18 @@ function posCatalogFamily(registerName) {
   const text = normalize(registerName), lock = new RegExp(LOCK_CATALOG_PATTERN).test(text), ml = /minh[ _-]*long/.test(text);
   return lock === ml ? null : lock ? "lock" : "minh-long";
 }
-function posCatalogProductVisible(registerName, product) {
+function posCatalogBrandPattern(registerName) {
   const family = posCatalogFamily(registerName);
-  if (!family) return true;
-  return !new RegExp(family === "lock" ? MINH_LONG_CATALOG_PATTERN : LOCK_CATALOG_PATTERN).test(normalize(`${product.brand ?? ""} ${product.name ?? ""}`));
+  const ml = "(^|[^a-z0-9])(minh[ _-]*long|healthy[ _-]*cook|lys|horeca)([^a-z0-9]|$)";
+  return family === "lock" ? LOCK_CATALOG_PATTERN : family === "minh-long" ? ml : `(${LOCK_CATALOG_PATTERN})|(${ml})`;
+}
+function posCatalogProductVisible(registerName, product) {
+  return new RegExp(posCatalogBrandPattern(registerName)).test(normalize(product.brand));
 }
 export {
   LOCK_CATALOG_PATTERN,
   MINH_LONG_CATALOG_PATTERN,
+  posCatalogBrandPattern,
   posCatalogFamily,
   posCatalogProductVisible
 };

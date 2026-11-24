@@ -1,3 +1,5 @@
+import {customerProvince} from './customer-province.js';
+import {MAX_TEMPLATE_BYTES} from './contract-source-policy.js';
 import {printingInfo} from './quote-math.js';
 import {initContractFormatting,paragraphRuns} from './contract-format.js';
 // HĐKT theo mẫu Word của web báo giá cũ: xem trước + chỉnh sửa rồi tải.
@@ -88,17 +90,28 @@ async function templateEdits(bytes,edits){
   });
 }
 const templateBytes = new Map();
-async function templatesFor(quote, snapshot) {
+async function templatesFor(quote, snapshot, sources = {}) {
   return Promise.all(globalThis.ContractDocument.templatesFor(quote).map(async t => {
     if (!templateBytes.has(t.path)) {
       const res = await fetch(t.path,{signal:AbortSignal.timeout(30000)}); if (!res.ok) throw Error('Không tải được mẫu biểu HĐKT.');
       templateBytes.set(t.path, await res.arrayBuffer());
     }
     let bytes=templateBytes.get(t.path);
-    if(t.file==='HDKT'&&snapshot){
+    const source=sources[t.file];
+    if(source){
+      if(source.bytes)bytes=source.bytes;else{
+      const response=await fetch(source.url,{signal:AbortSignal.timeout(30000)});
+      if(!response.ok)throw Error('Không tải được đúng file mẫu đã gắn với hồ sơ. Mở lại bảng và thử lại.');
+      bytes=await response.arrayBuffer();
+      source.bytes=bytes;}
+      if(bytes.byteLength>MAX_TEMPLATE_BYTES)throw Error('File mẫu vượt giới hạn.');
+      const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');
+      if(digest!==source.sourceHash)throw Error('File mẫu không khớp phiên bản của hồ sơ. Liên hệ Manager.');
+    }
+    if(t.file==='HDKT'&&snapshot&&!source){
       const brand=quote.quote_type==='VIGIFTS'?'VG':'BN';
       const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');
-      if(snapshot.brand!==brand||snapshot.sourceHash!==hash)throw Error('File mẫu không khớp phiên bản của hồ sơ. Liên hệ Manager.');
+      if(snapshot.brand!==brand||(snapshot.baseSourceHash||snapshot.sourceHash)!==hash)throw Error('File mẫu không khớp phiên bản của hồ sơ. Liên hệ Manager.');
       bytes=await globalThis.ContractWordEdit.apply(bytes,await templateEdits(bytes,snapshot.edits));
     }
     return { ...t, templateBytes: bytes };
@@ -131,7 +144,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
         <button type="button" class="btn secondary small" data-refresh>Cập nhật bản xem</button></aside>
       <section class="cd-preview"><div class="cd-tabs chips" role="tablist">${DOCS.map(([t, label], i) => `<button type="button" class="chip" role="tab" data-doc="${t}" aria-selected="${i === 0}">${label}</button>`).join('')}</div>
         <p class="muted small" data-printing hidden></p><p class="muted small" data-status role="status" aria-live="polite">Đang dựng bản xem…</p>
-        <div class="cd-tools" role="group" aria-label="Thao tác với hồ sơ đang xem"><span class="small cd-current" data-current></span><div class="row-gap"><button type="button" class="btn secondary" data-template hidden>Mẫu HĐKT gốc</button><button type="button" class="btn secondary" data-format-toggle aria-expanded="false" aria-controls="contract-format-panel">Định dạng văn bản</button><button type="button" class="btn secondary" data-print>In / Lưu PDF</button><button type="button" class="btn primary" data-one>Tải Word (.docx)</button><button type="button" class="btn ghost small" data-rebuild title="Bỏ các chỗ sửa trực tiếp của hồ sơ này, dựng lại từ thông tin điền mẫu">Đặt lại theo mẫu</button></div></div><div class="cd-format" id="contract-format-panel" data-format hidden></div>
+        <div class="cd-tools" role="group" aria-label="Thao tác với hồ sơ đang xem"><span class="small cd-current" data-current></span><div class="row-gap"><button type="button" class="btn secondary" data-template hidden>Mẫu HĐKT gốc</button><button type="button" class="btn secondary" data-source-download hidden>Tải file mẫu gốc</button><button type="button" class="btn secondary" data-source-upload hidden>Upload file mẫu (.docx)</button><input type="file" data-source-file accept=".docx" hidden><button type="button" class="btn secondary" data-format-toggle aria-expanded="false" aria-controls="contract-format-panel">Định dạng văn bản</button><button type="button" class="btn secondary" data-print>In / Lưu PDF</button><button type="button" class="btn primary" data-one>Tải Word (.docx)</button><button type="button" class="btn ghost small" data-rebuild title="Bỏ các chỗ sửa trực tiếp của hồ sơ này, dựng lại từ thông tin điền mẫu">Đặt lại theo mẫu</button></div></div><div class="cd-format" id="contract-format-panel" data-format hidden></div>
         <iframe class="cd-frame" title="Bản xem HĐKT"></iframe></section>
     </div>
     <div class="modal-foot"><span class="muted small" data-dirty></span><button type="button" class="btn secondary" data-x>Đóng</button><button type="button" class="btn secondary" data-save>Lưu chỉnh sửa</button><button type="button" class="btn primary" data-zip>Tải 3 file Word (.zip)</button></div>`;
@@ -139,9 +152,16 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   const $d = s => dlg.querySelector(s), status = t => { $d('[data-status]').textContent = t; $d('[data-status]').hidden = !t; };
   const details = contractDetails(detail), edits = { HDKT: [], TAM_UNG: [], BBNT: [], ...(k.data?.edits || {}) };
   let busy=false,previewReady=false,disposeFormat=null,formatExpanded=false;
-  let master=null,templateMode=false,templateDirty=false,clauseState=k.data?.printingClause||null;
+  let master=null,pendingSource=null,sourceUncertain=false,templateMode=false,templateDirty=false,clauseState=k.data?.printingClause||null;
   const canManageTemplates=k.canManageTemplates===true;
   $d('[data-template]').hidden=!canManageTemplates;
+  $d('[data-source-download]').hidden=!canManageTemplates;
+  const masters=new Map();let contractSourcesPromise;
+  const contractSources=()=>contractSourcesPromise||=(k.data?.templateSnapshot?.sources?api('/contracts/'+encodeURIComponent(k.id)+'/template-sources').then(r=>r.sources):Promise.resolve({}));
+  const inlineMaster=()=>canManageTemplates&&current==='HDKT'&&!master?.source&&!pendingSource;
+  const docLabel=()=>DOCS.find(([type])=>type===current)[1];
+  const sourceBrand=k.legalEntity==='VG'?'VG':'BN';
+  async function loadMaster(){const meta=await api('/contract-template-sources/'+sourceBrand+'/'+current);const legacy=current==='HDKT'&&!meta.source?await api('/contract-templates/'+sourceBrand):{edits:[],locked:[]};return {...meta,edits:legacy.edits,locked:legacy.locked,legacy};}
   let current = 'HDKT', dirty = false, quoteRows = null, quoteRowsPromise = null, renderSeq = 0;
   const ensureQuoteRows = () => quoteRowsPromise ||= (detail.order.quoteId ? api('/quotes/' + encodeURIComponent(detail.order.quoteId)).catch(e=>{quoteRowsPromise=null;throw Error('Chưa tải được báo giá nguồn để xác định điều khoản có in/không in. '+e.message);}) : Promise.resolve(null)).then(result => { quoteRows = result?.data?.rows || []; });
   for (const el of dlg.querySelectorAll('[data-d]')) {
@@ -156,18 +176,18 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   const close = () => { if(busy)return; if ((dirty||templateDirty) && !confirm('Đóng mà không lưu các chỉnh sửa?')) return; disposeFormat?.(); dlg.close(); dlg.remove(); };
   dlg.querySelectorAll('[data-x]').forEach(b => b.addEventListener('click', close)); dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
 
-  const currentDetails = () => canEdit ? readContractForm(dlg, details) : cleanDetails(details);
+  const currentDetails = () => {const d=canEdit?readContractForm(dlg,details):cleanDetails(details);return {...d,deliveryProvince:customerProvince(d.deliveryAddress)?.name||''};};
   const quote = () => legacyQuote(detail, quoteRows, edits, clauseState);
   async function prepareDoc(type){
     if(templateMode){
-      const templates=await templatesFor(quote());
-      const base=templates.find(t=>t.file==='HDKT').templateBytes;
+      const templates=await templatesFor(quote(),null,master.source?{[current]:master.source}:{});
+      const base=pendingSource?.bytes||templates.find(t=>t.file===current).templateBytes;
       const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',base))].map(n=>n.toString(16).padStart(2,'0')).join('');
-      if(hash!==master.sourceHash)throw Error('Mẫu gốc đã thay đổi. Tải lại trang trước khi chỉnh sửa.');
-      return {base,edits:await templateEdits(base,master.edits),locked:master.locked};
+      if(hash!==(pendingSource?.sourceHash||master.sourceHash))throw Error('Mẫu gốc đã thay đổi. Tải lại trang trước khi chỉnh sửa.');
+      return {base,edits:inlineMaster()?await templateEdits(base,master.edits):[],locked:master.locked};
     }
     await ensureQuoteRows();
-    const selectedDetails=currentDetails(),q=quote(),templates=await templatesFor(q,k.data?.templateSnapshot);
+    const selectedDetails=currentDetails(),q=quote(),templates=await templatesFor(q,k.data?.templateSnapshot,await contractSources());
     const hdkt=templates.find(t=>t.file==='HDKT'),t=templates.find(t=>t.file===type);
     const contractBytes=type==='BBNT'?await globalThis.ContractDocument.build({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateBytes:hdkt.templateBytes}):undefined;
     const prepared=await globalThis.ContractDocument.prepareDocument({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateBytes:t.templateBytes,documentType:type,contractBytes});
@@ -190,7 +210,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
     if(busy)return;lockUi(true,button,label);try{await run();}catch(e){toast(e.message,'err');}finally{lockUi(false,button);}
   }
   function recordParagraph(p){
-    const index=Number(p.dataset.wordIndex),info=p._wordInfo;if(!(templateMode?canManageTemplates:canEdit)||!info)return;
+    const index=Number(p.dataset.wordIndex),info=p._wordInfo;if(!(templateMode?inlineMaster():canEdit)||!info)return;
     const runs=paragraphRuns(p),text=runs.map(r=>r.text).join('');
     const format={};for(const key of ['align','list','lineSpacing','indent'])if(p.dataset[key]!==undefined)format[key]=['lineSpacing','indent'].includes(key)?Number(p.dataset[key]):p.dataset[key];
     const changed=[...(templateMode?master.edits:edits[current]).filter(e=>e.index!==index),{index,hash:info.hash,text,runs,...format}].sort((a,b)=>a.index-b.index);
@@ -198,7 +218,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
     p.classList.add('edited');markDirty();
   }
   async function render() {
-    if(busy)return;const seq = ++renderSeq;previewReady=false;disposeFormat?.();disposeFormat=null;lockUi(true);status('Đang dựng bản xem từ file Word…');$d('[data-current]').textContent=templateMode?'Mẫu chung '+(k.legalEntity==='VG'?'Vigifts':'Bách Ngân')+' · Áp dụng cho HĐKT tạo mới':'Đang xem: '+DOCS.find(([type])=>type===current)[1];
+    if(busy)return;const seq = ++renderSeq;previewReady=false;disposeFormat?.();disposeFormat=null;lockUi(true);status('Đang dựng bản xem từ file Word…');$d('[data-template]').textContent=templateMode?'Quay lại hồ sơ':'Mẫu '+docLabel()+' gốc';$d('[data-current]').textContent=templateMode?'Mẫu '+docLabel()+' · '+(k.legalEntity==='VG'?'Vigifts':'Bách Ngân')+' · Áp dụng cho HĐKT tạo mới':'Đang xem: '+DOCS.find(([type])=>type===current)[1];
     const empty=$d('.cd-frame').contentDocument;empty.open();empty.write('<!doctype html><html><body></body></html>');empty.close();
     try {
       await Promise.all([loadBuilder(), loadPreview()]);
@@ -216,7 +236,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
       for (const info of prepared.paragraphs) {
         const p = doc.getElementById('bnword_' + info.index)?.closest('p'); if (!p) continue;
         if(templateMode&&locked.includes(info.index))p.title='Phần tự điền từ dữ liệu HĐKT; chỉnh tại thông tin hồ sơ.';
-        if (!(templateMode?canManageTemplates:canEdit) || locked.includes(info.index)) continue;
+        if (!(templateMode?inlineMaster():canEdit) || locked.includes(info.index)) continue;
         p.contentEditable = 'true'; p.dataset.wordIndex = String(info.index);p._wordInfo=info;
         const saved=(templateMode?master.edits:edits[type]).find(e=>e.index===info.index);for(const key of ['align','list','lineSpacing','indent'])if(saved?.[key]!==undefined)p.dataset[key]=String(saved[key]);
         p.classList.toggle('cd-list-bullet',saved?.list==='bullet');p.classList.toggle('cd-list-decimal',saved?.list==='decimal');
@@ -234,7 +254,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
         if (!p.innerText.trim() && p.classList.contains('edited') && !p.closest('td')) p.style.display = 'none';
       }
       previewReady=true;
-      if(templateMode?canManageTemplates:canEdit){$d('[data-format]').hidden=!formatExpanded;disposeFormat=initContractFormatting({host:$d('[data-format]'),doc,record:recordParagraph,onError:m=>toast(m,'err')});}
+      if(templateMode?inlineMaster():canEdit){$d('[data-format]').hidden=!formatExpanded;disposeFormat=initContractFormatting({host:$d('[data-format]'),doc,record:recordParagraph,onError:m=>toast(m,'err')});}
       status('');
     } catch (e) { if (seq === renderSeq) status(e.message); }finally{if(seq===renderSeq)lockUi(false);}
   }
@@ -242,40 +262,60 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
     if(busy)return;current = b.dataset.doc; dlg.querySelectorAll('[data-doc]').forEach(x => x.setAttribute('aria-selected', String(x === b))); render();
   }));
   $d('[data-format-toggle]').addEventListener('click', () => {
-    if (!(templateMode?canManageTemplates:canEdit) || busy) return;
+    if (!(templateMode?inlineMaster():canEdit) || busy) return;
     formatExpanded = !formatExpanded;
     $d('[data-format]').hidden = !formatExpanded;
     $d('[data-format-toggle]').setAttribute('aria-expanded', String(formatExpanded));
   });
+  function masterControls(){
+    $d('[data-source-upload]').hidden=!templateMode||!canManageTemplates;
+    $d('[data-save]').hidden=templateMode?!(inlineMaster()||pendingSource):!canEdit;
+    $d('[data-format-toggle]').hidden=templateMode?!inlineMaster():!canEdit;
+    $d('[data-rebuild]').hidden=templateMode?!(inlineMaster()||pendingSource):!canEdit;
+    $d('[data-rebuild]').textContent=pendingSource?'Bỏ file vừa chọn':'Đặt lại theo mẫu';
+  }
   $d('[data-template]').addEventListener('click',async()=>{
     if(busy||!canManageTemplates)return;
-    if(!templateMode&&!master){
-      let loaded=false;
-      await action($d('[data-template]'),'Đang mở mẫu…',async()=>{
-        master=await api('/contract-templates/'+(k.legalEntity==='VG'?'VG':'BN'));loaded=true;
-      });
-      if(!loaded)return;
-    }
+    if(templateMode&&templateDirty){if(!confirm('Bỏ thay đổi mẫu chưa lưu?'))return;masters.delete(current);master=null;pendingSource=null;templateDirty=false;sourceUncertain=false;}
+    if(!templateMode){let opened=false;await action($d('[data-template]'),'Đang mở mẫu…',async()=>{master=masters.get(current)||await loadMaster();masters.set(current,master);opened=true;});if(!opened)return;}
     templateMode=!templateMode;
-    $d('[data-template]').textContent=templateMode?'Quay lại hồ sơ':'Mẫu HĐKT gốc';
+    $d('[data-template]').textContent=templateMode?'Quay lại hồ sơ':'Mẫu '+docLabel()+' gốc';
     for(const selector of ['.cd-form','.cd-tabs','[data-zip]'])$d(selector).hidden=templateMode;
-    $d('.cd-body').classList.toggle('cd-template-mode',templateMode);
-    for(const selector of ['[data-save]','[data-format-toggle]','[data-rebuild]'])$d(selector).hidden=!(templateMode?canManageTemplates:canEdit);
+    $d('.cd-body').classList.toggle('cd-template-mode',templateMode);masterControls();
     $d('[data-save]').textContent=templateMode?'Lưu mẫu chung':'Lưu chỉnh sửa';
     $d('[data-dirty]').textContent=(templateMode?templateDirty:dirty)?'Có thay đổi chưa lưu':'';
-    formatExpanded=false;$d('[data-format-toggle]').setAttribute('aria-expanded','false');
-    await render();
+    formatExpanded=false;$d('[data-format-toggle]').setAttribute('aria-expanded','false');await render();
+  });
+  $d('[data-source-download]').addEventListener('click',e=>action(e.currentTarget,'Đang tải mẫu…',async()=>{
+    const m=templateMode?master:await loadMaster(),templates=await templatesFor(quote(),null,m.source?{[current]:m.source}:{});
+    saveBlob(pendingSource?.bytes||templates.find(t=>t.file===current).templateBytes,'Mau_'+current+'_'+sourceBrand+'.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  }));
+  $d('[data-source-upload]').addEventListener('click',()=>{if(busy)return;if(sourceUncertain){toast('Chưa rõ kết quả lưu. Bấm Lưu mẫu chung để kiểm tra lại cùng file trước.','err');return;}$d('[data-source-file]').click();});
+  $d('[data-source-file]').addEventListener('change',async e=>{
+    const file=e.target.files?.[0];e.target.value='';if(!file||busy||!templateMode||!canManageTemplates||sourceUncertain)return;
+    await action($d('[data-source-upload]'),'Đang kiểm tra file…',async()=>{
+      if(!/\.docx$/i.test(file.name)||file.name.length>160||file.size>MAX_TEMPLATE_BYTES)throw Error('Chọn file .docx tối đa 3 MB, tên tối đa 160 ký tự.');
+      const bytes=new Uint8Array(await file.arrayBuffer());const {validateTemplateSource}=await import('./contract-source-file.js');validateTemplateSource(bytes,master.requiredFields,master.requiresGoodsTable);
+      const sourceHash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');
+      pendingSource={bytes,fileName:file.name,sourceHash,clientKey:crypto.randomUUID(),beforeDirty:pendingSource?.beforeDirty??templateDirty};templateDirty=true;$d('[data-dirty]').textContent='Đang xem file '+file.name+' · Bấm Lưu mẫu chung để áp dụng cho hồ sơ tạo mới.';masterControls();
+    });await render();
   });
   $d('[data-refresh]').addEventListener('click', render);
-  $d('[data-rebuild]').addEventListener('click', () => { if (templateMode) { if(confirm('Đặt lại mẫu chung về file gốc? Thay đổi chỉ có hiệu lực sau khi lưu mẫu.')){master.edits=[];markDirty();render();}return; } if (!edits[current].length || confirm('Đặt lại hồ sơ đang xem theo mẫu? Các thay đổi chữ và định dạng trong tab này sẽ bị bỏ. Hai hồ sơ còn lại được giữ nguyên.')) { edits[current] = []; markDirty(); render(); } });
+  $d('[data-rebuild]').addEventListener('click', () => { if (templateMode) { if(pendingSource){if(confirm('Bỏ file vừa chọn? Mẫu đã lưu vẫn giữ nguyên.')){templateDirty=pendingSource.beforeDirty;pendingSource=null;masterControls();$d('[data-dirty]').textContent=templateDirty?'Có thay đổi chưa lưu':'';render();}return;}if(confirm('Đặt lại mẫu chung về file gốc? Thay đổi chỉ có hiệu lực sau khi lưu mẫu.')){master.edits=[];markDirty();render();}return; } if (!edits[current].length || confirm('Đặt lại hồ sơ đang xem theo mẫu? Các thay đổi chữ và định dạng trong tab này sẽ bị bỏ. Hai hồ sơ còn lại được giữ nguyên.')) { edits[current] = []; markDirty(); render(); } });
   $d('[data-print]').addEventListener('click', () => $d('.cd-frame').contentWindow.print());
   $d('[data-save]').addEventListener('click', e => {
     if(templateMode){
       if(!canManageTemplates)return;
       return action(e.currentTarget,'Đang lưu mẫu…',async()=>{
-        await buildDoc('HDKT');
-        const saved=await api('/contract-templates/'+master.brand,'PUT',{revision:master.revision,sourceHash:master.sourceHash,edits:master.edits});
-        master={...master,...saved};templateDirty=false;$d('[data-dirty]').textContent='Đã lưu mẫu chung';toast('Đã lưu mẫu cho HĐKT tạo mới.');
+        if(pendingSource){
+          let binary='';for(let i=0;i<pendingSource.bytes.length;i+=8192)binary+=String.fromCharCode(...pendingSource.bytes.subarray(i,i+8192));
+          try{await api('/contract-template-sources/'+sourceBrand+'/'+current,'POST',{revision:master.revision,clientKey:pendingSource.clientKey,fileName:pendingSource.fileName,base64:btoa(binary)});}catch(error){sourceUncertain=!error.status||error.status>=500;throw error;}
+          sourceUncertain=true;master=await loadMaster();sourceUncertain=false;masters.set(current,master);pendingSource=null;
+        }else{
+          await buildDoc(current);
+          const saved=await api('/contract-templates/'+master.brand,'PUT',{revision:master.legacy.revision,sourceHash:master.legacy.sourceHash,edits:master.edits});master.legacy={...master.legacy,...saved};
+        }
+        templateDirty=false;$d('[data-dirty]').textContent='Đã lưu mẫu '+docLabel()+' cho hồ sơ tạo mới';toast('Đã lưu mẫu chung. Hồ sơ đã tạo vẫn giữ mẫu cũ.');masterControls();
       });
     }
     if (!canEdit) return;
@@ -299,11 +339,11 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
   });
   const wordName = type => `${type}_${String(k.contractNo).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').replace(/[^a-zA-Z0-9]+/g, '-')}.docx`;
   $d('[data-one]').addEventListener('click', e => action(e.currentTarget,'Đang tạo Word (.docx)…',async()=>{
-    await loadBuilder();saveBlob(await buildDoc(current),templateMode?'Mau_HDKT_'+master.brand+'.docx':wordName(current),'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    await loadBuilder();saveBlob(await buildDoc(current),templateMode?'Mau_'+current+'_'+master.brand+'.docx':wordName(current),'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
   }));
   $d('[data-zip]').addEventListener('click', e => action(e.currentTarget,'Đang tạo bộ 3 file Word…',async()=>{
     const selectedDetails=currentDetails();await Promise.all([loadBuilder(),ensureQuoteRows()]);const q=quote();
-    const pack=await globalThis.ContractDocument.buildPack({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateFiles:await templatesFor(q,k.data?.templateSnapshot)});
+    const pack=await globalThis.ContractDocument.buildPack({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateFiles:await templatesFor(q,k.data?.templateSnapshot,await contractSources())});
     saveBlob(pack.bytes,`${pack.folder}.zip`,'application/zip');
   }));
   render();

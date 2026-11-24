@@ -23,8 +23,8 @@ test('domain: bổ sung theo ngưỡng (tồn trống + đang về), so tháng t
   assert.equal(stocktakeGaps([{ sku: 'A', qty: 0, value: 0 }], 1).noGap, true);
 });
 
-async function store() {
-  const f = await setup();
+async function store(opts: {productBrand?: string} = {}) {
+  const f = await setup(opts);
   ok(await f.call('/store/managers', f.mgr, 'PUT', { registerId: f.registerId, memberId: 'emp' }));
   const day = vnClock(new Date().toISOString()).day, month = day.slice(0, 7);
   const shift = await f.open();
@@ -68,7 +68,7 @@ test('báo cáo tuần: chỉ tiêu lấy đúng nguồn đã cấu hình, tách
 });
 
 test('báo cáo tháng: so tháng trước thiếu dữ liệu, nhóm theo thương hiệu có "Chưa phân loại", lệch thừa / thiếu riêng, công HR để đối chiếu', async () => {
-  const f = await store();
+  const f = await store({productBrand:''}); // Explicitly exercise the unclassified-brand branch.
   let d = await f.draft('monthly', f.month);
   assert.equal(d.facts.previous.revenue, null, 'tháng trước không có ca: thiếu dữ liệu, không phải 0');
   assert.equal(d.facts.previous.posCompare.missing, true);
