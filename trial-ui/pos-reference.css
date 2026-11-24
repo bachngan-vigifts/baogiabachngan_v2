@@ -295,3 +295,24 @@
     .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line-discount {grid-column:4 / 7;grid-row:3;width:165px;max-width:100%;justify-self:end;}
   }
 }
+
+/* Quick sale: quantity and unit share the second line directly below the SKU. */
+@media(min-width:851px) {
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line {grid-template-columns:20px 24px 150px minmax(140px,1fr) 100px 142px 106px 24px;gap:8px;min-height:90px;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-code {grid-column:3;grid-row:1;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-name {grid-column:4;grid-row:1;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-qty {grid-column:3;grid-row:2;width:100px;max-width:100%;justify-self:start;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-ref-unit {grid-column:3;grid-row:2;justify-self:end;width:40px;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-price {grid-column:5;grid-row:1;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-discount {grid-column:6;grid-row:1;width:100%;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-top>strong,.pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-gift-line .pos-gift-total {grid-column:7;grid-row:1;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-ref-line-more {grid-column:8;grid-row:1;}
+}
+@media(min-width:851px) and (max-width:1550px) {
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line {grid-template-columns:18px 22px 150px minmax(80px,1fr) 100px 24px;gap:5px;padding:10px;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-name {grid-column:4 / 6;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-price {grid-column:4;grid-row:2;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-discount {grid-column:4 / 7;grid-row:3;width:165px;max-width:100%;justify-self:end;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-top>strong,.pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-gift-line .pos-gift-total {grid-column:5 / 7;grid-row:2;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-ref-line-more {grid-column:6;}
+}

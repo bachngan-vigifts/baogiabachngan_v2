@@ -1,6 +1,6 @@
 # POS: danh mục 24 sản phẩm mỗi trang
 
-Thay đổi trực tiếp theo yêu cầu của chủ CRM, tiếp nối PR #824. Không thuộc phần công việc đang chờ duyệt trên issue #780. PR này đặt base ở nhánh của #824 để phần duyệt chỉ gồm danh mục và hai icon nổi; merge #824 trước.
+Thay đổi trực tiếp theo yêu cầu của chủ CRM, tiếp nối PR #824 đã có trên main. PR #826 hiện nhắm main. Hai yêu cầu bổ sung về dòng hàng và thao tác chọn sản phẩm được ghi tại [báo cáo kiểm thử](../pos-under-sku/README.md).
 
 ## Tái hiện và kết quả
 

@@ -1216,7 +1216,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       b.classList.toggle('pos-product-in-cart', selected);
       b.setAttribute('aria-pressed', String(selected));
       const badge = [...b.children].find(x => x.className === 'pos-product-selection');
-      if (badge) { badge.textContent = selected ? '✓ Bỏ chọn' : ''; badge.hidden = !selected; }
+      if (badge) { badge.textContent = selected ? '✓ Đã có trong giỏ' : ''; badge.hidden = !selected; }
     }
   }
   function add(p, refocusSearch = false, quantity=1) {
@@ -1233,6 +1233,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       nodes.search.focus();
       nodes.search.select();
     }
+    return true;
   }
   function drawCart() {
     cartResizeObserver?.disconnect();
@@ -1576,6 +1577,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     renderProducts(); nodes.previous.hidden = true; nodes.more.hidden = st.offset == null;
     nodes.more.textContent = mobileCatalog() ? 'Trang tiếp ›' : 'Xem thêm sản phẩm';
     updateCatalogPager();
+    return !!ready;
+  }
+  function addCatalogProduct(p) {
+    if(!active()||st.pending||st.busy||p.loading||p.stockStatus==='unopened'||!Number.isFinite(p.available)||p.available<=0)return;
+    if(!add(p,false,1))return;
+    const hadQuery=!!nodes.search.value||!!st.query;
+    clearTimeout(searchTimer);++searchInputVersion;++searchSeq;
+    st.catalogLoading=false;nodes.more.disabled=false;nodes.previous.disabled=false;
+    nodes.search.value='';if(nodes.catalogSearch)nodes.catalogSearch.value='';
+    if(hadQuery){if(!restoreReadyCatalog(st.register.id,st.policy))run(()=>search(false,false,true));}
+    else updateCatalogPager();
+    nodes.search.focus();
   }
   async function search(addScanned = false, more = false, typed = false, previous = false) {
     if (!st.register) return;
@@ -1775,12 +1788,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const displayed=pagedDesktopCatalog()?matching.slice(st.catalogDisplayPage*24,(st.catalogDisplayPage+1)*24):matching;
     for (const p of displayed) {
       const tile = el('article', 'pos-product-tile');
-      const b = button('', 'pos-product', () => {
-        if (st.pending || st.busy) return;
-        if (st.cart.some(x => x.sku === p.sku)) {
-          st.cart = st.cart.filter(x => x.sku !== p.sku); drawCart(); invalidate();
-        } else add(p);
-      });
+      const b = button('', 'pos-product', () => addCatalogProduct(p));
       b.dataset.sku = p.sku;
       b.setAttribute('aria-pressed', String(st.cart.some(x => x.sku === p.sku)));
       if (p.imageUrl && /^https:\/\//.test(p.imageUrl)) {
@@ -1798,7 +1806,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       const displayName=desktopPos()&&workspace.mode==='scan'&&!String(p.name).toLowerCase().includes(String(p.sku).toLowerCase())?p.sku+' · '+p.name:p.name;
       b.append(marked('b', 'pos-product-name', displayName), marked('small', 'pos-product-sku', p.sku), priceStock, el('span', 'pos-product-selection'));
       b.title = p.name + ' · ' + p.sku;
-      b.disabled = !active() || p.loading || !Number.isFinite(p.available) || p.stockStatus==='unopened' || p.available <= 0 && !st.cart.some(x => x.sku === p.sku) || !!st.pending;
+      b.disabled = !active() || p.loading || !Number.isFinite(p.available) || p.stockStatus==='unopened' || p.available <= 0 || !!st.pending;
       tile.append(b);
       if (p.stockSources) {
         const details = el('details', 'pos-product-stock-details');
