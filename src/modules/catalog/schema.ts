@@ -51,6 +51,8 @@ export const products = pgTable('products', {
   name: text('name').notNull(),
   brand: text('brand').notNull().default(''),
   pattern: text('pattern').notNull().default(''),
+  category: text('category'),
+  collection: text('collection'),
   unit: text('unit').notNull().default(''),
   imageUrl: text('image_url').notNull().default(''),
   taxBasis: text('tax_basis').notNull().default(''),
