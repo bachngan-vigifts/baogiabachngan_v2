@@ -33,7 +33,8 @@ test('POS catalog batches all stock sources, uses approved incoming lines and pr
  const result=await f.call(path,f.emp);assert.equal(result.status,200,JSON.stringify(result.data));
  const p=result.data.products[0],d=p.stockSources;
  assert.equal(p.available,10);assert.equal(d.vigifts.qty,40);assert.equal(d.supplier.qty,70);assert.equal(d.incoming.qty,20);
- assert.deepEqual(d.incoming.orders.map((o:any)=>o.orderNo).sort(),['DMH_A','DMH_B']);
+ assert.ok(d.incoming.orders.every((o:any)=>!o.orderId&&!o.orderNo&&!o.supplierName));assert.equal(d.incoming.orders[0].arrivalDate,'2026-10-25');
+ const manager=await f.call(path,f.mgr);assert.equal(manager.status,200);assert.deepEqual(manager.data.products[0].stockSources.incoming.orders.map((o:any)=>o.orderNo).sort(),['DMH_A','DMH_B']);
  assert.ok(!JSON.stringify(d).includes('private'));assert.ok(!JSON.stringify(d).includes('9999'));
  assert.deepEqual(d.requestWarehouses.map((w:any)=>w.id),['vig']);
  const mgr=await f.call(path,f.mgr);assert.equal(mgr.data.products[0].stockSources.vigifts.qty,10039);

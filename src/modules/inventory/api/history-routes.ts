@@ -1,5 +1,5 @@
 import type {StockPendingOf} from '../../../core/contracts/stock-pending.ts';
-import { and, asc, desc, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, or, sql,type SQL,type SQLWrapper } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
@@ -35,7 +35,8 @@ const SIZES = [20, 50, 100, 200] as const, EXPORT_MAX = 5000;
  * Chứng từ của module khác (phiếu giao POS, phiếu trả, phiếu nhận NCC) → link mở chứng từ gốc.
  * Gắn ở src/app/router.ts (inventory không import sales / suppliers). Mỗi hàm nhận các refId, trả refId → "#/…".
  */
-export type StockRefLinkResolver = (db: StaffEnv['db'], refIds: readonly string[]) => Promise<Map<string, string>>;
+export type StockRefLinkResolver = (db: StaffEnv['db'], refIds: readonly string[],viewer?:SessionState['member']) => Promise<Map<string, string>>;
+export const stockPurchaseReadHooks:{scope?:(m:SessionState['member'],refType:SQLWrapper,refId:SQLWrapper)=>SQL;fullAccess?:(m:SessionState['member'])=>boolean}={};
 export const stockRefLinkHooks: Partial<Record<StockRefType, StockRefLinkResolver>> = {};
 
 /** Link mở chứng từ gốc có sẵn từ refId (không cần tra thêm). */
@@ -80,7 +81,7 @@ export function registerStockHistoryRoutes(router: Router<StaffEnv>, deps:{pendi
       group === 'sale' ? inArray(stockMoves.refType, [...SALE_REFS]) : kinds ? inArray(stockMoves.kind, [...kinds]) : undefined,
       fromStart ? gte(stockMoves.createdAt, fromStart) : undefined, toEnd ? lte(stockMoves.createdAt, toEnd) : undefined,
       brand ? eq(products.brand, brand) : undefined, status === 'active' ? eq(products.active, true) : status === 'inactive' ? eq(products.active, false) : undefined,
-      q ? or(sql`${stockMoves.sku} ILIKE ${'%' + q + '%'}`, sql`${stockMoves.refNo} ILIKE ${'%' + q + '%'}`, sql`${products.name} ILIKE ${'%' + q + '%'}`, sql`${stockMoves.note} ILIKE ${'%' + q + '%'}`) : undefined);
+      q ? or(sql`${stockMoves.sku} ILIKE ${'%' + q + '%'}`, and(stockPurchaseReadHooks.scope?.(me(c),stockMoves.refType,stockMoves.refId)??sql`${stockMoves.refType} not in ('supplier_receipt','supplier_return')`,sql`${stockMoves.refNo} ILIKE ${'%' + q + '%'}`), sql`${products.name} ILIKE ${'%' + q + '%'}`, and(stockPurchaseReadHooks.scope?.(me(c),stockMoves.refType,stockMoves.refId)??sql`${stockMoves.refType} not in ('supplier_receipt','supplier_return')`,sql`${stockMoves.note} ILIKE ${'%' + q + '%'}`)) : undefined);
     // Tồn sau giao dịch: cộng dồn toàn bộ sổ kho của (mã, kho) tới dòng đó – tính trước khi lọc (lọc theo loại / ngày không làm sai số tồn).
     const ledger = db.select({ id: stockMoves.id,
       balanceAfter: sql<number>`sum(${stockMoves.qty}) over (partition by ${stockMoves.sku}, ${stockMoves.warehouseId} order by ${stockMoves.createdAt}, ${stockMoves.id} rows between unbounded preceding and current row)`.mapWith(Number).as('balance_after') })
@@ -100,17 +101,17 @@ export function registerStockHistoryRoutes(router: Router<StaffEnv>, deps:{pendi
     const resolved = new Map<string, string>();
     for (const [refType, resolve] of Object.entries(stockRefLinkHooks) as [StockRefType, StockRefLinkResolver][]) {
       const refIds = [...new Set(rows.filter(r => r.m.refType === refType).map(r => baseRef(r.m.refId)))];
-      if (refIds.length) for (const [id, link] of await resolve(db, refIds)) resolved.set(refType + '\u0000' + id, link);
+      if (refIds.length) for (const [id, link] of await resolve(db, refIds,me(c))) resolved.set(refType + '\u0000' + id, link);
     }
     const viewer = me(c), linkOf = (refType: string, ref: string) => { const l = directLink(refType, ref) || resolved.get(refType + '\u0000' + ref) || ''; return l && linkVisible(viewer, l) ? l : ''; };
     const wName = new Map(whs.map(w => [w.id, w.name])), round = (v: number) => Math.round(v * 1000) / 1000;
     return json({ ...empty,pendingAvailable, total: sum?.n ?? 0, totals: { inQty: round(sum?.inQty ?? 0), outQty: round(sum?.outQty ?? 0) },
       moves: rows.map(({ m, balanceAfter, by, name, unit, brand, active }) => {
-        const ref = baseRef(m.refId),pending=pendingByKey.get(JSON.stringify([m.sku,m.warehouseId]))??{packed:0,returning:0,held:0,unassignedHeld:pendingByKey.get(JSON.stringify([m.sku,'']))?.unassignedHeld??0,uncertain:false};
+        const ref = baseRef(m.refId),privatePurchase=['supplier_receipt','supplier_return'].includes(m.refType)&&!linkOf(m.refType,ref)&&!stockPurchaseReadHooks.fullAccess?.(me(c)),pending=pendingByKey.get(JSON.stringify([m.sku,m.warehouseId]))??{packed:0,returning:0,held:0,unassignedHeld:pendingByKey.get(JSON.stringify([m.sku,'']))?.unassignedHeld??0,uncertain:false};
         return { pending,pendingQty:pendingAvailable?round(pending.packed+pending.returning+pending.held):null,id: m.id, at: m.createdAt, sku: m.sku, name: name ?? '', unit: unit ?? '', brand: brand ?? '', active: active ?? true,
           warehouseId: m.warehouseId, warehouse: wName.get(m.warehouseId) ?? '', qty: m.qty, inQty: m.qty > 0 ? m.qty : 0, outQty: m.qty < 0 ? -m.qty : 0, balanceBefore: round(balanceAfter - m.qty), balanceAfter: round(balanceAfter),
           kind: m.kind, kindLabel: STOCK_KIND_LABEL[m.kind as StockMoveKind] ?? m.kind, description: stockMoveDescription(m.kind as StockMoveKind, m.refType as StockRefType),
-          refType: m.refType, refNo: m.refNo, note: m.note, by: by ?? '', link: linkOf(m.refType, ref) };
+          refType: m.refType, refNo: privatePurchase?'':m.refNo, note: privatePurchase?'':m.note, by: by ?? '', link: linkOf(m.refType, ref) };
       }) });
   }, 'business');
 

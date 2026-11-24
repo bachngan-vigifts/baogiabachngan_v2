@@ -12,7 +12,7 @@ export async function posStockSources(db: AnyDb, member: Member, registerWarehou
     db.select({ id: warehouses.id, name: warehouses.name, kind: warehouses.kind }).from(warehouses)
       .where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name)),
     readCatalogStock(db, skus), hiddenStockWarehouses(db, member),
-    skus.length && incomingLookup.read ? incomingLookup.read(db, skus) : [],
+    skus.length && incomingLookup.read ? incomingLookup.read(db, skus,member) : [],
   ]);
   if (hidden.has(registerWarehouseId)) throw new AppError(403, 'Bạn không được xem tồn kho riêng của quầy này.');
   const visible = all.filter(w => !hidden.has(w.id));

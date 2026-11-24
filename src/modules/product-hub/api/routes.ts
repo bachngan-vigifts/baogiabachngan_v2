@@ -16,7 +16,8 @@ import {orderScopeFor} from '../../sales/api/routes.ts';
 import {posReturns as r,posReturnLines as rl} from '../../sales/return-schema.ts';
 import {incomingShipments as p,incomingShipmentLines as pl,supplierReceipts as rec,supplierReceiptLines as recl,supplierOrderSources as ps} from '../../suppliers/schema.ts';
 import {purchaseEarlyRequests as er,purchaseEarlyRequestLines as el,purchaseEarlyRequestAllocations as ea} from '../../suppliers/early-request-schema.ts';
-import {purchaseScope} from '../../suppliers/api/purchase-store.ts';
+import {canUsePurchasing} from '../../suppliers/domain/purchasing.ts';
+import {purchaseScope,earlyPurchaseScope} from '../../suppliers/api/purchase-store.ts';
 import {canSeePurchasePrices} from '../../suppliers/domain/purchasing.ts';
 import {computeOrderTotals,type TotalsRow} from '../../suppliers/domain/order-totals.ts';
 type Db=StaffEnv['db'];type Member=SessionState['member'];
@@ -24,7 +25,7 @@ export const PRODUCT_DOCUMENT_KINDS=['quotes','orders','contracts','purchases','
 export type ProductDocumentKind=typeof PRODUCT_DOCUMENT_KINDS[number];
 const saleAccess=(m:Member)=>['page.orders','page.contracts','page.receivables'].some(x=>can(m,x));
 const salePrices=(m:Member)=>m.role==='manager'||['page.quotes','page.orders','page.contracts'].some(x=>can(m,x));
-const allowed=(m:Member,kind:ProductDocumentKind)=>kind==='quotes'?can(m,'page.quotes'):['orders','contracts','returns'].includes(kind)?saleAccess(m):can(m,'page.purchases');
+const allowed=(m:Member,kind:ProductDocumentKind)=>kind==='quotes'?can(m,'page.quotes'):['orders','contracts','returns'].includes(kind)?saleAccess(m):canUsePurchasing(m);
 const rowsOf=<T>(result:unknown):T[]=>Array.isArray(result)?result as T[]:(result as {rows:T[]}).rows;
 const read=async<T>(db:Db,query:SQL)=>rowsOf<T>(await db.execute(query));
 const salesFrom=sql`${ol} join ${o} on ${o.id}=${ol.orderId} left join ${k} on ${k.orderId}=${o.id}`;
@@ -60,7 +61,7 @@ function source(sku:string,m:Member,kind:ProductDocumentKind):SQL{
   string_agg(distinct ${p.supplierName},' · ') partner,sum(${ea.quantity}) quantity,string_agg(distinct ${el.unit},' / ') unit,${er.pickupDate} "pickupDate"
   from ${el} join ${er} on ${er.id}=${el.requestId} join ${ea} on ${ea.requestLineId}=${el.id}
   join ${pl} on ${pl.id}=${ea.purchaseLineId} join ${p} on ${p.id}=${pl.shipmentId}
-  where ${and(eq(el.sku,sku),eq(pl.sku,sku),sql`${er.deletedAt} is null`,scope)} group by ${er.id}`;
+  where ${and(eq(el.sku,sku),eq(pl.sku,sku),sql`${er.deletedAt} is null`,earlyPurchaseScope(m),scope)} group by ${er.id}`;
 }
 /** Batch source links for these visible purchase rows; source-document permissions still apply. */
 async function purchaseSourceLinks(db:Db,m:Member,ids:string[],sku:string){
@@ -102,12 +103,12 @@ export function registerProductDetailRoutes(router:Router<StaffEnv>){
   const [product]=await db.select().from(products).where(eq(products.sku,sku));if(!product)throw new AppError(404,'Không tìm thấy sản phẩm.');
   const hidden=await hiddenStockWarehouses(db,m),available=PRODUCT_DOCUMENT_KINDS.filter(kind=>allowed(m,kind));
   const [stock,wh,barcodes,prices,counts,sales,receipts,returned,profitDocs,staff]=await Promise.all([
-   readCatalogStock(db,[sku]),db.select({id:warehouses.id,name:warehouses.name,kind:warehouses.kind,active:warehouses.active}).from(warehouses).orderBy(asc(warehouses.sortOrder),asc(warehouses.name)),
+   readCatalogStock(db,[sku],m),db.select({id:warehouses.id,name:warehouses.name,kind:warehouses.kind,active:warehouses.active}).from(warehouses).orderBy(asc(warehouses.sortOrder),asc(warehouses.name)),
    db.select({barcode:productBarcodes.barcode}).from(productBarcodes).where(eq(productBarcodes.sku,sku)),
    salePrices(m)?db.select({policyId:pricePolicies.id,name:pricePolicies.name,price:productPrices.price}).from(pricePolicies).leftJoin(productPrices,and(eq(pricePolicies.id,productPrices.policyId),eq(productPrices.sku,sku))).orderBy(asc(pricePolicies.sortOrder)):[],
    Promise.all(available.map(async kind=>({kind,total:(await read<{n:number}>(db,sql`select count(*)::int n from (${source(sku,m,kind)}) docs`))[0]?.n||0}))),
    saleAccess(m)?read<{count:number;qty:number;delivered:number;revenue:number}>(db,sql`select count(distinct ${o.id})::int count,coalesce(sum(${ol.qty}),0) qty,coalesce(sum(${ol.deliveredQty}),0) delivered,${salePrices(m)?sql`coalesce(sum(${ol.amount}),0)`:sql`null::float8`} revenue from ${salesFrom} where ${and(eq(ol.sku,sku),orderScopeFor(m),active)}`):[],
-   can(m,'page.purchases')?read<{count:number;qty:number;damaged:number}>(db,sql`select count(distinct ${rec.id})::int count,coalesce(sum(${recl.goodQty}),0) qty,coalesce(sum(${recl.damagedQty}),0) damaged from ${recl} join ${rec} on ${rec.id}=${recl.receiptId} join ${p} on ${p.id}=${rec.shipmentId} join ${pl} on ${pl.id}=${recl.lineId} where ${and(eq(recl.sku,sku),eq(pl.sku,sku),purchaseScope(m),sql`${rec.cancelledAt} is null`)}`):[],
+   canUsePurchasing(m)?read<{count:number;qty:number;damaged:number}>(db,sql`select count(distinct ${rec.id})::int count,coalesce(sum(${recl.goodQty}),0) qty,coalesce(sum(${recl.damagedQty}),0) damaged from ${recl} join ${rec} on ${rec.id}=${recl.receiptId} join ${p} on ${p.id}=${rec.shipmentId} join ${pl} on ${pl.id}=${recl.lineId} where ${and(eq(recl.sku,sku),eq(pl.sku,sku),purchaseScope(m),sql`${rec.cancelledAt} is null`)}`):[],
    saleAccess(m)?read<{qty:number;amount:number}>(db,sql`select coalesce(sum(${rl.requestedQty}),0) qty,${salePrices(m)?sql`coalesce(sum(${rl.subtotal}),0)`:sql`null::float8`} amount from ${rl} join ${ol} on ${ol.id}=${rl.orderLineId} join ${r} on ${r.id}=${rl.returnId} join ${o} on ${o.id}=${r.orderId} left join ${k} on ${k.orderId}=${o.id} where ${and(eq(rl.sku,sku),eq(ol.sku,sku),orderScopeFor(m),active,sql`${r.creditEffectiveAt} is not null`)}`):[],
    m.role==='manager'?read<{doc:QuoteDoc}>(db,sql`select jsonb_build_object('type',${q.quoteType},'vat',${q.data}::jsonb->'vat',
     'rows',(select jsonb_agg(jsonb_build_object('sku',x->>'sku','qty',x->'qty','price',x->'price','discount',x->'discount','discountType',x->'discountType','printFee',x->'printFee','costPrice',x->'costPrice','printing',x->'printing','commission',x->'commission'))

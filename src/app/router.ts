@@ -1,3 +1,4 @@
+import {incomingForViewer,projectIncomingStock,purchaseCatalogVariant,visiblePurchaseHistoryLinks} from '../modules/suppliers/api/purchase-projection.ts';
 import { registerSyncJobWorker } from './sync-job-worker.ts';
 import {syncWorkspaceActions,weeklyReportActions,weeklyEventReminders} from './weekly-report-tasks.ts';
 import {stockPendingOf} from './stock-pending.ts';
@@ -84,7 +85,8 @@ import { notifyMany, registerNotificationRoutes } from '../modules/notifications
 import { registerTaskRoutes, syncInvoiceTasks, syncTransferTasks } from '../modules/tasks/api/routes.ts';
 import { cashTaskHooks, invoiceTaskHooks } from '../modules/sales/api/invoice-task-hooks.ts';
 import { posDeliveryStockLinks, posReturnStockLinks } from '../modules/sales/api/stock-ref-links.ts';
-import { supplierReceiptStockLinks } from '../modules/suppliers/api/stock-ref-links.ts';
+import {purchaseReadLevel} from '../modules/suppliers/domain/purchase-access.ts';
+import { supplierReceiptStockLinks,supplierReturnStockLinks,supplierStockRefScope } from '../modules/suppliers/api/stock-ref-links.ts';
 import { syncCashTasks } from '../modules/tasks/api/auto-tasks.ts';
 import { registerChatRoutes } from '../modules/chat/api/routes.ts';
 import { registerAiChatRoutes } from '../modules/ai-chat/api/routes.ts';
@@ -107,7 +109,7 @@ import { registerInventoryRoutes } from '../modules/inventory/api/routes.ts';
 import { registerTransferRoutes, stockHoldHooks } from '../modules/inventory/api/transfer-routes.ts';
 import { registerTransferIntegrationRoutes } from '../modules/inventory/api/transfer-outbox.ts';
 import { assertFreeStock } from '../modules/sales/api/stock-free.ts';
-import { registerStockHistoryRoutes, stockRefLinkHooks } from '../modules/inventory/api/history-routes.ts';
+import { registerStockHistoryRoutes, stockRefLinkHooks,stockPurchaseReadHooks } from '../modules/inventory/api/history-routes.ts';
 import { registerFlowRoutes } from './flow-routes.ts';
 import { registerCashbookRoutes } from './cashbook-routes.ts';
 import {registerAccountingSupplierRoutes} from '../modules/accounting/api/supplier-routes.ts';
@@ -137,6 +139,9 @@ export function createAppRouter() {
   stockRefLinkHooks.pos_delivery = posDeliveryStockLinks;
   stockRefLinkHooks.pos_return = posReturnStockLinks;
   stockRefLinkHooks.supplier_receipt = supplierReceiptStockLinks;
+  stockRefLinkHooks.supplier_return=supplierReturnStockLinks;
+  stockPurchaseReadHooks.scope=supplierStockRefScope;
+  stockPurchaseReadHooks.fullAccess=m=>purchaseReadLevel(m)==='all';
   catalogStockHooks.archiveBlockReason=productArchiveBlockReason;
   catalogStockHooks.overlay = overlayPosStock;
   catalogStockHooks.held = catalogHeldQuantities;
@@ -162,7 +167,10 @@ export function createAppRouter() {
   registerCustodyRoutes(router);
   customerMergeHooks.reassign=async(tx,keep,drop)=>{await reassignCustodyCustomer(tx,keep,drop);await reassignCatalogueCustomer(tx,keep,drop);};
   catalogueLibraryHooks.heldAt=(db,skus,warehouseId)=>reservedBySku(db,skus,warehouseId);
-  catalogueLibraryHooks.incoming=(db,skus)=>outstandingLines(db,skus);
+  catalogueLibraryHooks.incoming=(db,skus,m)=>incomingForViewer(db,m??{role:'anonymous'},skus);
+  catalogStockHooks.project=projectIncomingStock;
+  catalogStockHooks.viewerVariant=purchaseCatalogVariant;
+  catalogStockHooks.purchaseHistoryLinks=visiblePurchaseHistoryLinks;
   registerCatalogueLibrary(router);
   registerCatalogueLibraryBulk(router);
   registerCatalogueQuotes(router,catalogueCustomerLinks);

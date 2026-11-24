@@ -97,7 +97,7 @@ async function withStockThreshold(db: StaffEnv['db'], params: URLSearchParams, w
     const candidates = (await db.select({sku: products.sku}).from(products).where(where)).map(p => p.sku);
     const raw = candidates.length ? await db.select().from(productStock).where(inArray(productStock.sku, candidates)) : [];
     const [effective, held] = await Promise.all([
-      candidates.length ? effectiveCatalogStock(db, raw, candidates) : Promise.resolve([]),
+      candidates.length ? effectiveCatalogStock(db, raw, candidates,viewer) : Promise.resolve([]),
       !warehouseId && catalogStockHooks.held ? catalogStockHooks.held(db, viewer, candidates) : Promise.resolve(new Map<string, number>()),
     ]);
     thresholdQuantities = new Map(candidates.map(sku => [sku, -(held.get(sku) || 0)]));
@@ -159,7 +159,8 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     // Bản không giá có phiên bản riêng: trình duyệt không dùng lại bản có giá đã lưu của người khác chức vụ.
     const hidden = await hiddenStockWarehouses(db, viewerOf(c));
     // Thiếu kho riêng (kho Hoá đơn) cũng là bản riêng: không dùng lại bản đã lưu của chức vụ khác.
-    const variant = (priced ? '' : ':np') + (hidden.size ? ':h' + [...hidden].sort().join('.') : '');
+    const purchaseVariant=await catalogStockHooks.viewerVariant?.(db,viewerOf(c))||'';
+    const variant = purchaseVariant+(priced ? '' : ':np') + (hidden.size ? ':h' + [...hidden].sort().join('.') : '');
     const version = snap.base + variant + '~' + snap.stock, observedAt = snap.observedAt, have = c.url.searchParams.get('v') || '';
     const expected=c.url.searchParams.get('expectedVersion');
     if(expected&&expected!==version)throw new AppError(409,'Danh mục đã đổi; tải lại bản đầy đủ.','CATALOG_SNAPSHOT_CHANGED');
@@ -169,7 +170,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       const stores = (await db.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.active, true)).orderBy(asc(warehouses.sortOrder), asc(warehouses.name))).filter(x => !hidden.has(x.id));
       const raw = stores.length ? await db.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, quantity: productStock.quantity, updatedAt: productStock.updatedAt }).from(productStock).where(inArray(productStock.warehouseId,stores.map(w=>w.id))) : [];
       const at = new Map(stores.map((w, i) => [w.id, i])), bySku = new Map<string, [(number | null)[], string]>();
-      for (const s of (await effectiveCatalogStock(db, raw)).filter(r => !hidden.has(r.warehouseId))) {
+      for (const s of (await effectiveCatalogStock(db, raw,undefined,viewerOf(c))).filter(r => !hidden.has(r.warehouseId))) {
         const j = at.get(s.warehouseId); if (j === undefined) continue;
         const row = bySku.get(s.sku) ?? [stores.map(() => null), ''];
         row[0][j] = s.quantity; if (s.updatedAt > row[1]) row[1] = s.updatedAt; bySku.set(s.sku, row);
@@ -186,7 +187,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       priced ? db.select({ sku: productPrices.sku, policyId: productPrices.policyId, price: productPrices.price }).from(productPrices).innerJoin(products,eq(products.sku,productPrices.sku)).where(and(eq(products.active,true),pageSize===null?undefined:inArray(productPrices.sku,skus))) : Promise.resolve([]),
       db.select({ sku: productStock.sku, warehouseId: productStock.warehouseId, quantity: productStock.quantity, updatedAt: productStock.updatedAt }).from(productStock).innerJoin(warehouses,eq(warehouses.id,productStock.warehouseId)).where(and(eq(warehouses.active,true),hidden.size?notInArray(productStock.warehouseId,[...hidden]):undefined,pageSize===null?undefined:inArray(productStock.sku,skus))),
     ]);
-    const stock = (await effectiveCatalogStock(db, rawStock, pageSize===null?undefined:skus)).filter(r => !hidden.has(r.warehouseId));
+    const stock = (await effectiveCatalogStock(db, rawStock, pageSize===null?undefined:skus,viewerOf(c))).filter(r => !hidden.has(r.warehouseId));
     const index = new Map(rows.map((r, i) => [r.sku, i]));
     const policyAt = new Map(policies.map((p, i) => [p.id, i])), storeAt = new Map(stores.map((w, i) => [w.id, i]));
     const priceRows = rows.map(() => policies.map(() => null as number | null));
@@ -226,7 +227,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       db.select().from(productPrices).where(inArray(productPrices.sku, skus)),
       db.select().from(productStock).where(inArray(productStock.sku, skus)),
     ]) : [[], []];
-    const stock = (await effectiveCatalogStock(db, rawStock, skus)).filter(r => !hidden.has(r.warehouseId));
+    const stock = (await effectiveCatalogStock(db, rawStock, skus,viewerOf(c))).filter(r => !hidden.has(r.warehouseId));
     const priceMap = new Map<string, Record<string, number | null>>(), stockMap = new Map<string, Record<string, number>>();
     for (const p of prices) (priceMap.get(p.sku) ?? priceMap.set(p.sku, {}).get(p.sku)!)[p.policyId] = p.price;
     const stockAt = new Map<string, string>();
@@ -267,7 +268,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       db.select().from(productStock).where(inArray(productStock.sku, skus)),
       db.select().from(productBarcodes).where(inArray(productBarcodes.sku, skus)),
     ]) : [[], [], []];
-    const stock = (await effectiveCatalogStock(db, rawStock, skus)).filter(r => !hidden.has(r.warehouseId));
+    const stock = (await effectiveCatalogStock(db, rawStock, skus,viewerOf(c))).filter(r => !hidden.has(r.warehouseId));
     const bySku = <T extends { sku: string }>(xs: T[]) => {
       const m = new Map<string, T[]>(); for (const x of xs) (m.get(x.sku) ?? m.set(x.sku, []).get(x.sku)!).push(x); return m;
     };
@@ -298,8 +299,10 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
     // Giá nhập (giá vốn) và tên nhà cung cấp chỉ Manager xem: nhân viên chỉ thấy giá ở dòng bán / giao / khách trả.
     const mgr = (c.state.session as SessionState).member.role === 'manager';
     const COST_KINDS = new Set(['purchase', 'supplier_return', 'transfer', 'adjustment']), SUPPLIER_KINDS = new Set(['purchase', 'supplier_return']);
+    const visibleLinks=await catalogStockHooks.purchaseHistoryLinks?.(c.env.db,viewerOf(c),rows.filter(r=>SUPPLIER_KINDS.has(r.kind)).map(r=>r.link))??new Set<string>();
+    const protectedRows=rows.map(r=>SUPPLIER_KINDS.has(r.kind)&&!visibleLinks.has(r.link)?{...r,refCode:'',link:'',partner:'',note:''}:r);
     const shown = (r: typeof rows[number]) => mgr ? r : { ...r, unitPrice: !priced || COST_KINDS.has(r.kind) ? null : r.unitPrice, partner: SUPPLIER_KINDS.has(r.kind) ? '' : r.partner };
-    return json({ sku, limit: PRODUCT_HISTORY_LIMIT, nextCursor, history: rows.map(shown).map(({ id, refKey, recordedAt, ...r }) => r),
+    return json({ sku, limit: PRODUCT_HISTORY_LIMIT, nextCursor, history: protectedRows.map(shown).map(({ id, refKey, recordedAt, ...r }) => r),
       sales: prices.length ? { count: prices.length, last: prices[0], min: Math.min(...prices), max: Math.max(...prices), avg: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) } : null });
   }, 'business');
 
@@ -313,7 +316,7 @@ export function registerCatalogRoutes(router: Router<StaffEnv>) {
       db.select({barcode:productBarcodes.barcode}).from(productBarcodes).where(eq(productBarcodes.sku,sku)).orderBy(asc(productBarcodes.barcode)),
     ]);
     const hidden = await hiddenStockWarehouses(db, viewerOf(c));
-    const stock = (await effectiveCatalogStock(db, rawStock, [sku])).filter(r => !hidden.has(r.warehouseId));
+    const stock = (await effectiveCatalogStock(db, rawStock, [sku],viewerOf(c))).filter(r => !hidden.has(r.warehouseId));
     return json({ product: { ...row, barcodes:barcodes.map(b=>b.barcode),prices: seesSalePrices(viewerOf(c)) ? prices.map(p => ({ policyId: p.policyId, price: p.price })) : [], stock: Object.fromEntries(stock.map(s => [s.warehouseId, s.quantity])) } });
   }, 'business');
 

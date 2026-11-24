@@ -1,3 +1,4 @@
+import {incomingForViewer,canPurchaseProjection} from './purchase-projection.ts';
 import {warehouseReceivingScope,warehouseOpenReceivingScope,receivingContext,validateReceivingWarehouse,receivingDestination} from './purchase-receiving.ts';
 import { registerGoodsReturnRoutes } from './goods-return-routes.ts';
 import { supplierOrderNumberProblem } from '../domain/order-number.ts';
@@ -190,7 +191,8 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   registerGoodsReturnRoutes(router);
   registerReceiptJobRoutes(router);
   // Trang Tra tồn (sổ kho) đọc hàng đang về từ đơn mua NCC.
-  incomingLookup.read = (db, skus) => outstandingLines(db, skus);
+  incomingLookup.canPurchase=canPurchaseProjection;
+  incomingLookup.read = (db, skus,m) => incomingForViewer(db,m??{role:'anonymous'},skus);
   const guard = async(c:Ctx)=>{
     if(!canUsePurchasing(asActor(me(c))))fail(403,'Bạn không có quyền với đơn mua hàng.');
     const id=c.params.id;if(!id)return;

@@ -1,3 +1,4 @@
+import type {PurchaseProjectionViewer} from '../../../core/contracts/purchase-projection.ts';
 import type { PermissionMember } from '../../staff/domain/permissions.ts';
 import { inArray } from 'drizzle-orm';
 import type { AnyDb } from '../../../core/db/client.ts';
@@ -11,6 +12,9 @@ export interface CatalogStockRow {
 }
 /** App assembly injects an authoritative local warehouse reader without catalog depending on sales/inventory. */
 export const catalogStockHooks: {
+  viewerVariant?:(db:StockReadDb,m:PurchaseProjectionViewer)=>Promise<string>;
+  purchaseHistoryLinks?:(db:StockReadDb,m:PurchaseProjectionViewer,links:readonly string[])=>Promise<Set<string>>;
+  project?:(db:StockReadDb,rows:CatalogStockRow[],skus:readonly string[]|undefined,m:PurchaseProjectionViewer)=>Promise<CatalogStockRow[]>;
   archiveBlockReason?: (db:StockReadDb,sku:string)=>Promise<string|null>;
   held?: (db: StockReadDb, member: PermissionMember, skus: string[]) => Promise<Map<string, number>>;
   overlay?: (db: StockReadDb, rows: CatalogStockRow[], skus?: readonly string[]) => Promise<CatalogStockRow[]>;
@@ -22,14 +26,15 @@ export const catalogStockHooks: {
 } = {};
 export const hiddenStockWarehouses = (db: StockReadDb, m: { role: string; positionId?: string | null }) =>
   catalogStockHooks.hidden ? catalogStockHooks.hidden(db, m) : Promise.resolve(new Set<string>());
-export async function effectiveCatalogStock(db: StockReadDb, rows: CatalogStockRow[], skus?: readonly string[]) {
-  return catalogStockHooks.overlay ? catalogStockHooks.overlay(db, rows, skus) : rows;
+export async function effectiveCatalogStock(db: StockReadDb, rows: CatalogStockRow[], skus?: readonly string[],viewer?:PurchaseProjectionViewer) {
+  const effective=catalogStockHooks.overlay?await catalogStockHooks.overlay(db,rows,skus):rows;
+  return viewer&&catalogStockHooks.project?catalogStockHooks.project(db,effective,skus,viewer):effective;
 }
-export async function readCatalogStock(db: StockReadDb, skus: readonly string[]) {
+export async function readCatalogStock(db: StockReadDb, skus: readonly string[],viewer?:PurchaseProjectionViewer) {
   if (!skus.length) return [];
   const rows = await db
     .select()
     .from(productStock)
     .where(inArray(productStock.sku, [...skus]));
-  return effectiveCatalogStock(db, rows, skus);
+  return effectiveCatalogStock(db, rows, skus,viewer);
 }

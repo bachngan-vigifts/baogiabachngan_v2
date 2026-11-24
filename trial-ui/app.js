@@ -3041,7 +3041,7 @@ async function showIncoming(sku) {
     body.innerHTML = !orders.length ? '<p class="muted">Không còn đơn mua NCC nào đang về cho mã này.</p>'
       : `<p class="small muted">${esc(p.name)} · tổng đang về <b>${fmtNum(p.incoming.qty)}</b></p>
         <div class="table-wrap"><table class="data-table"><thead><tr><th>Đơn mua</th><th>NCC</th><th>Ngày hẹn về</th><th class="right">Còn về</th></tr></thead><tbody>
-        ${orders.map(o => `<tr><td>${can('page.purchases') ? `<a href="#/purchases/${esc(encodeURIComponent(o.orderId))}">${esc(o.ticketNumber)}</a>` : esc(o.ticketNumber)}${o.internalNo ? `<small>Số NCC ${esc(o.internalNo)}</small>` : ''}</td>
+        ${orders.map(o => `<tr><td>${o.orderId&&can('page.purchases') ? `<a href="#/purchases/${esc(encodeURIComponent(o.orderId))}">${esc(o.ticketNumber)}</a>` : esc(o.ticketNumber||'Hàng đang về')}${o.internalNo ? `<small>Số NCC ${esc(o.internalNo)}</small>` : ''}</td>
           <td>${esc(o.supplierName || '—')}</td><td>${o.arrivalDate ? esc(dmy(o.arrivalDate)) : '<span class="muted">Chưa hẹn</span>'}</td><td class="right">${fmtNum(o.qty)}</td></tr>`).join('')}
         </tbody></table></div>`;
   } catch (ex) { body.innerHTML = `<p class="error">${esc(ex.message)}</p>`; }

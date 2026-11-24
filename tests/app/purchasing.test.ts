@@ -111,7 +111,7 @@ test('duyệt → xác nhận thay NCC → nhận từng đợt → Sapo → tha
   await db.insert(products).values({ sku: v.lines[0].sku, name: 'Ly sứ', unit: 'cái', updatedAt: now }).onConflictDoNothing();
   const look = (await call('/inventory/lookup?q=' + v.lines[0].sku, kho)).data.products[0];
   assert.equal(look.incoming.qty, v.lines[0].quantity);
-  assert.deepEqual(look.incoming.orders.map((o: any) => [o.ticketNumber, o.qty]), [[v.ticketNumber, v.lines[0].quantity]]);
+  assert.deepEqual(look.incoming.orders.map((o: any) => [o.ticketNumber, o.qty]), [['', v.lines[0].quantity]],'Kho chỉ nhận tổng ẩn danh, không số PO');
   assert.equal(JSON.stringify(look.incoming).includes('price'), false);
   assert.deepEqual(v.schedules.map((s: any) => [s.kind, s.amount]), [['deposit', 570], ['balance', 1330]]);
   assert.equal(v.supplierEmail, 'minhlong@ncc.vn', 'người nhận mặc định từ danh bạ');

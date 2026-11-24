@@ -1,3 +1,4 @@
+import type {PurchaseProjectionViewer} from '../../../core/contracts/purchase-projection.ts';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { can } from '../../staff/domain/permissions.ts';
 import { MAX_STOCKTAKE_LINES } from '../../../core/contracts/stocktake.ts';
@@ -61,7 +62,7 @@ export interface IncomingLine { sku: string; orderId: string; ticketNumber: stri
  * Hàng đang về cho trang Tra tồn: module đơn mua NCC (suppliers) gắn hàm đọc khi đăng ký route – sổ kho không phụ thuộc ngược lại.
  * Chưa gắn (test riêng sổ kho) thì Tra tồn không có dòng "Hàng đang về".
  */
-export const incomingLookup: { read?: (db: StaffEnv['db'], skus: readonly string[]) => Promise<IncomingLine[]> } = {};
+export const incomingLookup: {canPurchase?:(m:PurchaseProjectionViewer)=>boolean; read?: (db: StaffEnv['db'], skus: readonly string[],viewer?:PurchaseProjectionViewer) => Promise<IncomingLine[]> } = {};
 
 export function registerInventoryRoutes(router: Router<StaffEnv>, deps: {
   heldQuantitiesOf?: (db: StaffEnv['db'], skus: string[], warehouseIds: string[]) => Promise<{ sku: string; warehouseId: string | null; qty: number }[]>;
@@ -91,7 +92,7 @@ export function registerInventoryRoutes(router: Router<StaffEnv>, deps: {
     const [opened, rows, incoming, held] = await Promise.all([
       openedWarehouses(db, whs.map(w => w.id)),
       readCatalogStock(db, skus),
-      skus.length && incomingLookup.read ? incomingLookup.read(db, skus).catch(() => [] as IncomingLine[]) : [] as IncomingLine[],
+      skus.length && incomingLookup.read ? incomingLookup.read(db, skus,me(c)).catch(() => [] as IncomingLine[]) : [] as IncomingLine[],
       deps.heldQuantitiesOf ? deps.heldQuantitiesOf(db, skus, whs.map(w => w.id)) : [],
     ]);
     const at = (sku: string, wh: string) => num(rows.find(r => r.sku === sku && r.warehouseId === wh)?.quantity ?? 0);
