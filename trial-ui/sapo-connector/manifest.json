@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Bách Ngân – Kết nối Sapo",
+  "version": "1.0.0",
+  "description": "Chuyển phiên Sapo về CRM khi Manager bấm Kết nối. Không đọc mật khẩu.",
+  "permissions": ["cookies"],
+  "host_permissions": ["https://bachngankiengiang.mysapogo.com/*"],
+  "background": {"service_worker": "worker.js", "type": "module"},
+  "content_scripts": [{"matches": ["https://crm.minhlongonline.com/*"], "js": ["content.js"], "all_frames": false, "run_at": "document_idle"}]
+}

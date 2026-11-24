@@ -14,6 +14,7 @@ import { STOCK_KIND_LABEL } from '../domain/kinds.ts';
 import { postMoves, guardInventoryOpening, type LedgerDb } from './ledger.ts';
 import { hiddenWarehouseIds } from './warehouse-access.ts';
 import { hiddenStockWarehouses, readCatalogStock } from '../../catalog/api/stock-source.ts';
+import {registerStocktakeRoutes} from './stocktake-routes.ts';
 import { registerAdjustmentRoutes } from './adjustment-routes.ts';
 
 /**
@@ -66,6 +67,7 @@ export const incomingLookup: {canPurchase?:(m:PurchaseProjectionViewer)=>boolean
 export function registerInventoryRoutes(router: Router<StaffEnv>, deps: {
   heldQuantitiesOf?: (db: StaffEnv['db'], skus: string[], warehouseIds: string[]) => Promise<{ sku: string; warehouseId: string | null; qty: number }[]>;
 } = {}) {
+  registerStocktakeRoutes(router,ledgerWarehouses);
   registerAdjustmentRoutes(router,ledgerWarehouses);
   router.get('/stock-warehouses', async c => {
     const hidden = await hiddenWarehouseIds(c.env.db, me(c));

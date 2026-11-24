@@ -193,9 +193,10 @@ test('lịch sử sản phẩm: bán, xuất kho giao hàng, chứng từ kho Sa
   assert.deepEqual([...kinds].sort(), ['adjustment', 'delivery', 'purchase', 'sale', 'transfer']);
   const by = (k: string) => h.history.find((x: any) => x.kind === k);
   // Giá nhập (giá vốn) và tên nhà cung cấp: nhân viên KHÔNG thấy, chỉ Manager thấy.
-  assert.deepEqual([by('purchase').qty, by('purchase').partner, by('purchase').refCode, by('purchase').unitPrice], [50, '', 'PON0009', null]);
+  // Nhân viên ngoài trần đọc đơn mua (#801): ẩn cả số chứng từ nhập; vẫn thấy số lượng.
+  assert.deepEqual([by('purchase').qty, by('purchase').partner, by('purchase').refCode, by('purchase').unitPrice], [50, '', '', null]);
   const mh = (await call('/products/ML-TRA/history', mgr)).data.history.find((x: any) => x.kind === 'purchase');
-  assert.deepEqual([mh.partner, mh.unitPrice], ['Minh Long I', 80000]);
+  assert.deepEqual([mh.partner, mh.refCode, mh.unitPrice], ['Minh Long I', 'PON0009', 80000]);
   assert.deepEqual([by('adjustment').qty, by('adjustment').location], [-2, 'Kho Cần Thơ']);
   assert.equal(by('transfer').location, 'Kho Cần Thơ → Kho Vigifts');
   assert.deepEqual([by('delivery').qty, by('delivery').partner, by('delivery').link], [1, 'Công ty Hoàng Long', '#/orders/' + first]);

@@ -5,7 +5,7 @@ Có hai cách, dùng song song được, cùng một quy tắc ghi (mục *Quy t
 2. **Sapo / luồng trung gian đẩy sang**: webhook như web cũ (mục *Nhận dữ liệu đẩy*).
 
 ## 1. App tự lấy bằng phiên Sapo của Manager
-- Manager vào trang **Nhân viên**, ô **Đồng bộ Sapo**, bấm **Kết nối Sapo**, rồi dán cookie phiên Sapo theo 3 bước ghi trong hộp thoại.
+- Manager vào **Nhân viên → Đồng bộ Sapo → Kết nối Sapo**. Trên Chrome/Edge máy tính, có thể cài [tiện ích Kết nối Sapo](SAPO-CHROME-CONNECTOR.md) một lần, mở Sapo đăng nhập rồi bấm **Kết nối phiên vào CRM**. Cách dán cookie thủ công vẫn ở mục thu gọn trong hộp thoại.
   - App gọi thử Sapo trước, phiên dùng được mới lưu.
   - Cookie được **mã hoá AES-GCM** (khoá dẫn xuất từ secret `SAPO_SYNC_TOKEN`, không nằm trong DB) và không bao giờ trả về trình duyệt.
 - Đồng bộ **chỉ đọc** Sapo (GET). CRM không ghi gì vào Sapo; tạo đơn Sapo do n8n → OpenClaw làm (mục 3).
@@ -25,8 +25,7 @@ Có hai cách, dùng song song được, cùng một quy tắc ghi (mục *Quy t
   - Khoá 5 phút chống hai lượt chạy chồng nhau.
 - **Giữ phiên tự động:** mỗi lần app gọi Sapo (đồng bộ, hoặc `POST …/integrations/sapo/keepalive`), cookie mới Sapo cấp qua `Set-Cookie` được gộp và lưu lại (mã hoá). Bản đã lưu chỉ bị ghi đè khi Manager chưa kết nối lại trong lúc đó. Phiên hỏng thì giữ nguyên bản đã lưu.
 - **Phiên hết hạn:** ô trạng thái báo *Phiên hết hạn*, Manager bấm **Kết nối lại**. Lịch tự động chỉ cảnh báo, không đánh đỏ liên tục.
-- **Đăng nhập bằng email/SĐT + mật khẩu Sapo ngay trên app:** chưa làm. Cần biết chính xác yêu cầu đăng nhập của Sapo: địa chỉ, tên trường, có mã chống bot ẩn hay không.
-  Việc cho Codex: mở trang đăng nhập Sapo, F12 → Network, đăng nhập, rồi gửi Claude **địa chỉ, phương thức và tên các trường** của yêu cầu đăng nhập, kèm tên cookie trả về. **Không gửi mật khẩu.**
+- **Mật khẩu/OTP/Turnstile:** nhập trên trang Sapo thật. Trang SSO Sapo cấm nhúng iframe; CRM không giả form mật khẩu và không bỏ qua xác minh. Tiện ích chỉ chuyển phiên sau khi đăng nhập, không bảo đảm phiên không bao giờ hết hạn.
 
 ## 2. Nhận dữ liệu đẩy
 
