@@ -110,7 +110,7 @@ import {initQuoteCarePrompt} from './quote-care-prompt.js';
 import { initChat } from './chat.js';
 import { setupPulse } from './pulse.js';
 import { initInventory } from './inventory.js';
-import { initStocktake } from './stocktake.js';
+import { initStocktake } from './stocktake-workspace.js';
 import { initTransfers, initStockMoves, initSellerConfig } from './stock-ops.js';
 import { showOrderHolds } from './order-holds.js';
 import { initPermissions } from './permissions.js';
@@ -4320,7 +4320,7 @@ var warehouseAssignmentUi=typeof initWarehouseAssignment==='function'?initWareho
 function khoHome() { return khoHomeUi ||= initWarehouseWorkspace({api,root:$('#view-kho'),toast,identity:()=>JSON.stringify([token,state.user?.id]),assign:taskId=>warehouseAssignmentUi?.open(taskId),legacy:root=>initKhoHome({api,root,today:todayIso})}); }
 function stockLookup() { return stockLookupUi ||= initStockLookup({ api, root: $('#view-stock-lookup') }); }
 var stocktakeUi;
-function stocktakeView() { return stocktakeUi ||= initStocktake({ api, root: $('#view-stocktake'), toast, confirmBox, userId: () => state.user?.id, ensureCatalog: loadCatalogSnapshot, findProducts: q => catalog.items ? searchCatalog(catalog.items, {q}) : null }); }
+function stocktakeView() { return stocktakeUi ||= initStocktake({ api, root: $('#view-stocktake'), toast, confirmBox, userId: () => state.user?.id, createProduct: () => productAdmin().openCreate(), ensureCatalog: loadCatalogSnapshot, findProducts: q => catalog.items ? searchCatalog(catalog.items, {q}) : null }); }
 function inventoryView() { return inventoryUi ||= initInventory({ api, root: $('#view-inventory'), toast, confirmBox }); }
 var transfersUi = null, stockMovesUi = null, sellerConfigUi = null;
 function transfersView() {
