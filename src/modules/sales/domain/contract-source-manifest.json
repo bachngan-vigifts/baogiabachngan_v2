@@ -1,0 +1,144 @@
+{
+  "BN": {
+    "HDKT": {
+      "goodsTable": true,
+      "path": "mau-hop-dong-bach-ngan-hdkt.docx",
+      "sourceHash": "25e8cf496ecdcf38d9520f65ff1ec79d9e4c274e402aed6f075c9a85bc9fbb97",
+      "fields": [
+        "<<End>>",
+        "<<Start: [Related Chi tiết đơn hàngs]>>",
+        "<<[Bên A ký tên]>>",
+        "<<[Bên A]>>",
+        "<<[Chức vụ]>>",
+        "<<[KH_NDP].[Ma So Thue]>>",
+        "<<[KH_NDP].[TênKH]>>",
+        "<<[KH_NDP].[dia chi]>>",
+        "<<[Mô tả sản phẩm]>>",
+        "<<[Nhãn VAT]>>",
+        "<<[Phương thức thanh toán]>>",
+        "<<[STT]>>",
+        "<<[Sản phẩm].[Tên sản phẩm]>>",
+        "<<[Số HĐ]>>",
+        "<<[Số lượng]>>",
+        "<<[Số tiền bằng chữ]>>",
+        "<<[Thành Tiền (-Thuế)]>>",
+        "<<[Thành tiền (+thuế)]>>",
+        "<<[Thành tiền (-VAT)]>>",
+        "<<[Thời gian giao hàng]>>",
+        "<<[Thời hạn thanh toán]>>",
+        "<<[Tiền thuế]>>",
+        "<<[Địa điểm giao hàng]>>",
+        "<<[đơn giá bán]>>"
+      ]
+    },
+    "TAM_UNG": {
+      "goodsTable": false,
+      "path": "mau-hop-dong-bach-ngan-tam-ung.docx",
+      "sourceHash": "6c015206c073e8a8281198cf2bbb1d64f576873ee292ef9e4d9aba43386b34d6",
+      "fields": [
+        "<<[KH_NDP].[TênKH]>>",
+        "<<[Số HĐ]>>",
+        "<<[Tỉ lệ cọc]>>",
+        "<<[bằng chữ tạm ứng]>>",
+        "<<[dấu thời gian]>>",
+        "<<[số tiền tạm ứng]>>"
+      ]
+    },
+    "BBNT": {
+      "goodsTable": true,
+      "path": "mau-bien-ban-ban-giao-nghiem-thu.docx",
+      "sourceHash": "31bdf848d8a5cde7f062d1cace9603a2dd763b8277089cc454d79465fb094bf3",
+      "fields": [
+        "<<End>>",
+        "<<Start: [Related Chi tiết đơn hàngs]>>",
+        "<<[Bên A]>>",
+        "<<[Bên giao MST]>>",
+        "<<[Bên giao tên]>>",
+        "<<[Bên giao đại diện]>>",
+        "<<[Bên giao địa chỉ]>>",
+        "<<[Chức vụ]>>",
+        "<<[KH_NDP].[Dia Chi]>>",
+        "<<[KH_NDP].[Ma So Thue]>>",
+        "<<[KH_NDP].[TênKH]>>",
+        "<<[Mô tả sản phẩm]>>",
+        "<<[Ngày ký]>>",
+        "<<[STT]>>",
+        "<<[Sản phẩm].[Tên sản phẩm]>>",
+        "<<[Số HĐ]>>",
+        "<<[Số lượng]>>",
+        "<<[Thành tiền (+VAT)]>>",
+        "<<[Đơn giá bán]>>",
+        "<<[Địa điểm giao hàng]>>"
+      ]
+    }
+  },
+  "VG": {
+    "HDKT": {
+      "goodsTable": true,
+      "path": "mau-hop-dong-vigifts-hdkt.docx",
+      "sourceHash": "7f8a068b54efb7bfc1ae62b38b90d5c430b53532146cf6a40e86ddfded5e4707",
+      "fields": [
+        "<<End>>",
+        "<<Start: [Related Chi tiết đơn hàngs]>>",
+        "<<[Bên A]>>",
+        "<<[Chức vụ]>>",
+        "<<[KH_NDP].[Ma So Thue]>>",
+        "<<[KH_NDP].[TênKH]>>",
+        "<<[KH_NDP].[dia chi]>>",
+        "<<[Mô tả sản phẩm]>>",
+        "<<[Nhãn VAT]>>",
+        "<<[STT]>>",
+        "<<[Sản phẩm].[Tên sản phẩm]>>",
+        "<<[Số HĐ]>>",
+        "<<[Số lượng]>>",
+        "<<[Số tiền bằng chữ]>>",
+        "<<[Thành Tiền (-Thuế)]>>",
+        "<<[Thành tiền (+thuế)]>>",
+        "<<[Thành tiền (-VAT)]>>",
+        "<<[Thời gian giao hàng]>>",
+        "<<[Tiền thuế]>>",
+        "<<[hình thức thanh toán]>>",
+        "<<[đơn giá bán]>>"
+      ]
+    },
+    "TAM_UNG": {
+      "goodsTable": false,
+      "path": "mau-hop-dong-vigifts-tam-ung.docx",
+      "sourceHash": "90266db713e3b8929c9a1bec9ff279ffd8e75e31b2d4d0faa9d4354dab28336e",
+      "fields": [
+        "<<[KH_NDP].[TênKH]>>",
+        "<<[Số HĐ]>>",
+        "<<[Tỉ lệ cọc]>>",
+        "<<[bằng chữ tạm ứng]>>",
+        "<<[số tiền tạm ứng]>>"
+      ]
+    },
+    "BBNT": {
+      "goodsTable": true,
+      "path": "mau-bien-ban-ban-giao-nghiem-thu.docx",
+      "sourceHash": "31bdf848d8a5cde7f062d1cace9603a2dd763b8277089cc454d79465fb094bf3",
+      "fields": [
+        "<<End>>",
+        "<<Start: [Related Chi tiết đơn hàngs]>>",
+        "<<[Bên A]>>",
+        "<<[Bên giao MST]>>",
+        "<<[Bên giao tên]>>",
+        "<<[Bên giao đại diện]>>",
+        "<<[Bên giao địa chỉ]>>",
+        "<<[Chức vụ]>>",
+        "<<[KH_NDP].[Dia Chi]>>",
+        "<<[KH_NDP].[Ma So Thue]>>",
+        "<<[KH_NDP].[TênKH]>>",
+        "<<[Mô tả sản phẩm]>>",
+        "<<[Ngày ký]>>",
+        "<<[STT]>>",
+        "<<[Sản phẩm].[Tên sản phẩm]>>",
+        "<<[Số HĐ]>>",
+        "<<[Số lượng]>>",
+        "<<[Thành tiền (+VAT)]>>",
+        "<<[Đơn giá bán]>>",
+        "<<[Địa điểm giao hàng]>>"
+      ]
+    }
+  }
+}

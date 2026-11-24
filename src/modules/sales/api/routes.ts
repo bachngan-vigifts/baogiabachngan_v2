@@ -1,3 +1,4 @@
+import {registerContractSourceRoutes} from './contract-template-sources.ts';
 import {registerSaleAdminHandoff,supportOrderScope,handlesQuote} from './sale-admin-handoff.ts';
 import {registerSubmissionReview,submissionQuoteFingerprint,submissionDeliveryFingerprint} from './submission-review.ts';
 import {readSubmissionRecord} from '../domain/submission-review.ts';
@@ -469,6 +470,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
   registerCashCollectionRoutes(router,loadOrder,async(db,id)=>(await receivableOf(db,[id])).get(id)?.balance||0);
   registerContractLiquidationRoutes(router,loadOrder);
   registerContractTemplateRoutes(router);
+  registerContractSourceRoutes(router,loadOrder);
   /** Claw báo kết quả sau khi n8n tạo đơn Sapo; dùng cùng Bearer SAPO_SYNC_TOKEN, không dùng phiên trình duyệt. */
   router.post('/integrations/sapo/order-status', async c => {
     const body = await readJson(c.req, 128_000), status = text(body.status, 40), code = text(body.quote_number ?? body.sapo_order_code, 160);

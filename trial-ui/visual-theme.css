@@ -1,0 +1,84 @@
+/* CRM visual refresh, inspired by KiotViet. Screen only: no layout or workflow rules.
+   Keep dimensions, spacing, breakpoints, DOM and print documents in their existing files. */
+@media screen {
+  html:is(.app-shell, .visual-surface) {
+    --font: Arial, "Helvetica Neue", "Segoe UI", sans-serif;
+    --ink: #24344b;
+    --muted: #627085;
+    --bg: #f3f5f7;
+    --surface: #fff;
+    --surface-2: #f7f9fc;
+    --card: #fff;
+    --line: #e1e6ed;
+    --line-strong: #c9d2df;
+    --blue: #0064cc;
+    --blue-50: #edf5ff;
+    --brand-navy: #0064cc;
+    --brand-navy-700: #0052a8;
+    --green: #087c47;
+    --green-50: #edf8f1;
+    --amber: #946000;
+    --amber-50: #fff7e5;
+    --red: #c52737;
+    --red-700: #a51c2b;
+    --red-50: #fff0f2;
+    --radius: 8px;
+    --radius-sm: 6px;
+    --shadow: 0 1px 3px #2038520a;
+    --shadow-lg: 0 12px 36px #20385226;
+  }
+
+  /* Navigation keeps its existing width, grouping and mobile behavior. */
+  :is(.app-shell, .visual-surface) .sidebar { background: var(--surface); color: var(--ink); box-shadow: inset -1px 0 var(--line); }
+  :is(.app-shell, .visual-surface) .sidebar .brand.light { color: var(--ink); }
+  :is(.app-shell, .visual-surface) .sidebar .brand small { color: var(--muted); opacity: 1; }
+  :is(.app-shell, .visual-surface) .sidebar .nav-label { color: var(--muted); }
+  :is(.app-shell, .visual-surface) .sidebar .nav { color: #44556c; }
+  :is(.app-shell, .visual-surface) .sidebar .nav:hover,
+  :is(.app-shell, .visual-surface) .sidebar .nav-group-toggle:hover,
+  :is(.app-shell, .visual-surface) .sidebar .nav-group-toggle:focus-visible { background: var(--surface-2); color: var(--blue); }
+  :is(.app-shell, .visual-surface) .sidebar .nav.active { background: var(--blue-50); color: var(--blue); box-shadow: inset 3px 0 var(--blue); }
+  :is(.app-shell, .visual-surface) .sidebar .nav-group:has(.nav.active) .nav-group-toggle { color: var(--blue); }
+  :is(.app-shell, .visual-surface) .sidebar .nav .badge:not(.danger) { background: #e5edf7; color: #35577b; }
+  :is(.app-shell, .visual-surface) .sidebar .nav .badge.danger { background: var(--red); color: #fff; }
+  :is(.app-shell, .visual-surface) .sidebar .account { color: var(--ink); }
+  :is(.app-shell, .visual-surface) .sidebar .account:hover { background: var(--blue-50); }
+  :is(.app-shell, .visual-surface) .sidebar .account-text small { color: var(--muted); }
+  :is(.app-shell, .visual-surface) .topbar { background: var(--surface); border-color: var(--line); }
+  :is(.app-shell, .visual-surface) :is(.nav, .icon-btn, .btn, .bottom-nav) svg { stroke-width: 1.75; }
+  :is(.app-shell, .visual-surface) .sidebar .nav svg { color: var(--blue); }
+  :is(.app-shell, .visual-surface) .bottom-nav a.active { color: var(--blue); }
+
+  /* Controls retain their original size, labels and enabled/disabled states. */
+  :is(.app-shell, .visual-surface) .btn.primary:not(.danger-bg) { background: var(--blue); border-color: var(--blue); color: #fff; box-shadow: none; }
+  :is(.app-shell, .visual-surface) .btn.primary:not(.danger-bg):hover:not(:disabled) { background: var(--brand-navy-700); border-color: var(--brand-navy-700); box-shadow: none; }
+  :is(.app-shell, .visual-surface) .btn.secondary { background: var(--surface); border-color: var(--line-strong); color: #334b67; }
+  :is(.app-shell, .visual-surface) .btn.secondary:hover:not(:disabled) { background: var(--blue-50); border-color: #9cbfe7; color: var(--blue); }
+  :is(.app-shell, .visual-surface) .btn.ghost:hover:not(:disabled),
+  :is(.app-shell, .visual-surface) .icon-btn:not(.danger):hover:not(:disabled) { background: var(--blue-50); color: var(--blue); }
+  :is(.app-shell, .visual-surface) .chip.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+  :is(.app-shell, .visual-surface) :is(input, select, textarea):focus { border-color: var(--blue); box-shadow: 0 0 0 3px #0064cc1a; }
+  :is(.app-shell, .visual-surface) :is(input.invalid, textarea.invalid) { border-color: var(--red); box-shadow: 0 0 0 3px #c527371a; }
+  :is(.app-shell, .visual-surface) :focus-visible { outline-color: var(--blue); }
+  :is(.app-shell, .visual-surface) :is(input[type=checkbox], input[type=radio]) { accent-color: var(--blue); }
+  :is(.app-shell, .visual-surface) .search:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px #0064cc1a; }
+  :is(.app-shell, .visual-surface) .data-table th { background: #edf2f8; color: #40536c; border-color: var(--line); }
+  :is(.app-shell, .visual-surface) .data-table tbody tr.clickable:hover td { background: #f1f7ff; }
+  :is(.app-shell, .visual-surface) :is(.modal, .pos-modal)::backdrop { background: #172b465c; }
+
+  /* POS: match the shared palette without moving search, cart or checkout. */
+  :is(.app-shell, .visual-surface) .pos-head { background: #eaf3ff; border-color: #c8dcf5; color: #174d85; }
+  :is(.app-shell, .visual-surface) .pos-head :is(h1, .pos-note) { color: #174d85; }
+  :is(.app-shell, .visual-surface) .pos-head .btn.secondary { background: #fff; color: #174d85; border-color: #b9cfe9; }
+  :is(.app-shell, .visual-surface) .pos-workspace-modes button[aria-pressed=true] { background: var(--blue); border-color: var(--blue); color: #fff; }
+  :is(.app-shell, .visual-surface) .pos-search input { background: #fff; border-color: var(--line-strong); border-radius: var(--radius); }
+  :is(.app-shell, .visual-surface) .pos-card { background: #fff; border-color: var(--line); border-radius: var(--radius); }
+  :is(.app-shell, .visual-surface) .pos-product { border-color: var(--line); border-radius: var(--radius-sm); }
+  :is(.app-shell, .visual-surface) .pos-product:not(:disabled):hover { background: #f6faff; border-color: #8db6e5; }
+  :is(.app-shell, .visual-surface) .pos-workspace .pos-line[aria-selected=true] { background: #f0f6ff; box-shadow: inset 3px 0 var(--blue); }
+  :is(.app-shell, .visual-surface) :is(.pos-cart-table-head, .pos-keyboard-bar) { background: #edf2f8; color: #40536c; }
+  :is(.app-shell, .visual-surface) .pos-pc-due { background: var(--blue-50); }
+  :is(.app-shell, .visual-surface) .pos-pc-due strong { color: #0059b8; }
+  :is(.app-shell, .visual-surface) .pos-payment-modal h2 { background: #eaf3ff; color: #174d85; }
+  :is(.app-shell, .visual-surface) .pos-payment-method[aria-pressed=true] { background: var(--blue-50); border-color: var(--blue); color: #0059b8; }
+}
