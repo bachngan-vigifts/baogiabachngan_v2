@@ -80,7 +80,7 @@ test('compact stock refresh preserves searchable metadata; removed products disa
 
 test('danh mục gọn (metadata=2): cùng nội dung với dạng đối tượng, nhẹ hơn; giao diện tìm được như cũ',async()=>{
  const f=await setup(),now=new Date().toISOString();
- await f.db.insert(products).values(Array.from({length:30},(_,i)=>({sku:'G'+String(i).padStart(3,'0'),name:'Chén sứ hoa '+i,brand:'Gốm Việt',unit:'cái',pattern:i%2?'Hoa sen':'',imageUrl:i%3?'':'https://img.example/'+i+'.jpg',updatedAt:now})));
+ await f.db.insert(products).values(Array.from({length:30},(_,i)=>({sku:'G'+String(i).padStart(3,'0'),name:'Chén sứ hoa '+i,brand:'LocknLock',unit:'cái',pattern:i%2?'Hoa sen':'',imageUrl:i%3?'':'https://img.example/'+i+'.jpg',updatedAt:now})));
  await f.db.insert(productPrices).values(Array.from({length:30},(_,i)=>({sku:'G'+String(i).padStart(3,'0'),policyId:'retail-vat',price:1000+i})));
  const path='/pos/stock-snapshot?registerId='+f.registerId+'&pricePolicyId=retail-vat&metadata=';
  const full=(await f.call(path+'1',f.emp)).data,compact=(await f.call(path+'2',f.emp)).data;

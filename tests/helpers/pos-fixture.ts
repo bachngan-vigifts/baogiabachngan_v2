@@ -44,7 +44,8 @@ export async function setup(opts: { viaClaw?: boolean } = {}) {
     { id: 'retail-vat', name: 'Giá bán lẻ (+ VAT)' },
     { id: 'retail', name: 'Giá bán lẻ' },
   ]);
-  await db.insert(products).values({ sku: '00123', name: 'Ly sứ', unit: 'cái', updatedAt: new Date().toISOString() });
+  // Product belongs to the Lock counter's explicit POS brand allowlist.
+  await db.insert(products).values({ sku: '00123', name: 'Ly sứ', brand: 'LocknLock', unit: 'cái', updatedAt: new Date().toISOString() });
   await db.insert(productPrices).values([
     { sku: '00123', policyId: 'retail-vat', price: 108000 },
     { sku: '00123', policyId: 'retail', price: 100000 },
