@@ -45,7 +45,7 @@ test('warehouse calendars: remaining supplier receipts, date overrides, paginati
   for (const cookie of [kho,mgr]) {
     const list = await call('/deliveries',cookie); assert.equal(list.status,200); assert.deepEqual(list.data.deliveries.map((r:any)=>r.orderId),['crm']);
     assert.deepEqual((await call('/deliveries?id=pos',cookie)).data.deliveries,[],'focus links cannot reintroduce POS');
-    const counts = (await call('/navigation-counts',cookie)).data; assert.equal(counts.deliveries,1); assert.equal(counts.receiving,cookie===mgr?53:0,'Kho chưa được phân công tại kho nhận không thấy danh sách thương mại');
+    const counts = (await call('/navigation-counts',cookie)).data; assert.equal(counts.deliveries,1); assert.equal(counts.receiving,53,'Đơn NULL vẫn vào queue vận hành Kho, không mở calendar thương mại');
   }
   assert.equal((await call('/orders/pos',mgr)).data.deliveries.length,1,'POS order details still retain their own delivery');
   assert.equal((await call('/permissions/positions/warehouse',mgr,'PUT',{perms:['page.deliveries']})).status,200);

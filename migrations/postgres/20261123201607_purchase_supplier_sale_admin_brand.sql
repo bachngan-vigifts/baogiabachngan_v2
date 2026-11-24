@@ -7,4 +7,5 @@ DO $$ BEGIN
   ALTER TABLE suppliers ADD CONSTRAINT chk_suppliers_sale_admin_brand CHECK (sale_admin_brand IN ('minhlong','locknlock'));
  END IF;
 END $$;
+ALTER TABLE incoming_shipments ADD COLUMN IF NOT EXISTS receiving_warehouse_id text NULL REFERENCES warehouses(id);
 COMMIT;

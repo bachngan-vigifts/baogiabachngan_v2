@@ -1,7 +1,4 @@
 import {incomingForViewer,projectIncomingStock,purchaseCatalogVariant,visiblePurchaseHistoryLinks} from '../modules/suppliers/api/purchase-projection.ts';
-import {sql} from 'drizzle-orm';
-import {purchaseReceivingHooks} from '../core/contracts/purchase-receiving.ts';
-import {tasks as purchaseTasks} from '../modules/tasks/schema.ts';
 import { registerSyncJobWorker } from './sync-job-worker.ts';
 import {syncWorkspaceActions,weeklyReportActions,weeklyEventReminders} from './weekly-report-tasks.ts';
 import {stockPendingOf} from './stock-pending.ts';
@@ -132,7 +129,6 @@ export function createAppRouter() {
   warehouseSourceHooks.resolve=resolveWarehouseSource;
   warehouseAssignmentHooks.afterReconcile=assignFreshWarehouseTasks;
   warehouseAssignmentHooks.assignees=warehouseAssignees;
-  purchaseReceivingHooks.assigned=(orderId,memberId)=>sql`exists(select 1 from ${purchaseTasks} t where t.source='purchase' and (t.source_id=${orderId} or exists(select 1 from purchase_early_request_lines el join purchase_early_request_allocations ea on ea.request_line_id=el.id join incoming_shipment_lines pl on pl.id=ea.purchase_line_id where el.request_id=t.source_id and pl.shipment_id=${orderId})) and t.assignee_id=${memberId} and t.status<>'cancelled' and (t.auto_key like 'receiving-due:%' or t.auto_key like 'po-sapo:%'))`;
   notificationRecipientHooks.createScope = createNotificationScope;
   transferTaskHooks.afterCommit = syncTransferTasks;
   invoiceTaskHooks.afterCommit = syncInvoiceTasks;
