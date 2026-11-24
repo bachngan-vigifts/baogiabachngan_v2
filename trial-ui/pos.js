@@ -1,4 +1,5 @@
 import {mountPosReference,decorateReferenceLine,inlineCodSurface} from './pos-reference.js';
+import {mountMobileQuick,decorateMobileQuickLine} from './pos-mobile.js';
 import {createPosInvoiceBook,renderPosInvoiceTabs} from './pos-invoices.js';
 import {incomingStockText,renderIncomingOrders,createPosDraftStore,posShortcut} from './pos-workspace.js';
 import { createPurchaseOrders } from './purchase-order-create.js';
@@ -438,6 +439,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   let cartResizeObserver;
   function draw() {
     cartResizeObserver?.disconnect();
+    for(const image of nodes.lines?.querySelectorAll('.pos-mobile-line-photo img')||[])suspendProductThumbnail(image);
+    nodes.reference=null;nodes.mobileReference=null;
     root.replaceChildren();
     const page = el('div', 'pos-page' + (desktopPos()?' pos-workspace pos-mode-'+workspace.mode:'') + (st.showMenu ? ' pos-show-menu' : '')),
       head = el('div', 'pos-head'),
@@ -625,12 +628,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     nodes.mobileCartCount = el('strong', '', 'Đơn hiện tại · 0 món');
     nodes.mobileCartCustomer = el('small', '', 'Chưa chọn khách hàng');
     nodes.mobileCartTotal = el('b', '', '0 đ');
-    nodes.mobileCartOpen = button('Xem đơn ›', 'btn primary pos-mobile-cart-open', () => right.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    nodes.mobileCartOpen = button('Xem đơn ›', 'btn primary pos-mobile-cart-open', () => nodes.mobileReference?nodes.mobileReference.openOrderDetails():right.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     mobileInfo.append(nodes.mobileCartCount, nodes.mobileCartCustomer);
     mobileDock.append(mobileInfo, nodes.mobileCartTotal, nodes.mobileCartOpen);
     page.append(layout, mobileDock, orderBoard);
     root.append(page);
     if(desktopPos())mountWorkspace(page,left,right,head,orderBoard,searchBox);
+    else if(mobileCatalog()&&workspace.mode==='scan'&&typeof requestAnimationFrame==='function')nodes.mobileReference=mountMobileQuick({page,head,left,right,searchBox,nodes,mobileDock});
     drawCart();
     refreshPay();
   }
@@ -1099,6 +1103,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       due = el('section', 'pos-payment-due');
     m.body.querySelectorAll?.('h2')?.[0]?.append?.(headerMeta);
     due.append(el('span', '', 'Cần thu'), el('strong', '', money(st.preview.payable ?? st.preview.total)));
+    if(nodes.mobileReference)m.body.append(due);
     renderPayment(m.body,m);m.show();
   }
   function renderPayment(host,owner=null){
@@ -1237,6 +1242,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   }
   function drawCart() {
     cartResizeObserver?.disconnect();
+    for(const image of nodes.lines?.querySelectorAll('.pos-mobile-line-photo img')||[])suspendProductThumbnail(image);
     nodes.lines.replaceChildren();
     markProductsInCart();
     if (nodes.cartCount) nodes.cartCount.textContent = `${st.cart.reduce((n,x)=>n+Number(x.qty||0),0)} món`;
@@ -1334,6 +1340,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       if(desktopPos()){const dc=el('div','pos-line-discount');dc.append(disc,mode);edit.append(qtyBox,dc,afterPrice);}else edit.append(qtyBox, disc, mode, afterPrice);
       row.append(edit);
       if(desktopPos())decorateReferenceLine(row,{unit:x.unit});
+      else if(nodes.mobileReference)decorateMobileQuickLine(row,x);
       nodes.lines.append(row);
     }
     if(desktopPos()&&nodes.cartHead)nodes.cartHead.hidden=!st.cart.length;
@@ -1577,6 +1584,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     renderProducts(); nodes.previous.hidden = true; nodes.more.hidden = st.offset == null;
     nodes.more.textContent = mobileCatalog() ? 'Trang tiếp ›' : 'Xem thêm sản phẩm';
     updateCatalogPager();
+    nodes.mobileReference?.closeCatalog();
     return !!ready;
   }
   function addCatalogProduct(p) {
@@ -1589,6 +1597,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if(hadQuery){if(!restoreReadyCatalog(st.register.id,st.policy))run(()=>search(false,false,true));}
     else updateCatalogPager();
     nodes.search.focus();
+    nodes.mobileReference?.closeCatalog();
   }
   async function search(addScanned = false, more = false, typed = false, previous = false) {
     if (!st.register) return;
@@ -1830,6 +1839,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if(nodes.catalogSearch)nodes.catalogSearch.value=nodes.search.value;
     for(const b of nodes.productFilters?.querySelectorAll('[data-filter]')||[])b.classList.toggle('active',b.dataset.filter===st.productFilter);
     updateCatalogPager();
+    nodes.mobileReference?.syncSearch();
     markProductsInCart();
     if(desktopPos())nodes.grid.hidden=workspace.mode!=='grid'&&!nodes.search?.value.trim();
   }
