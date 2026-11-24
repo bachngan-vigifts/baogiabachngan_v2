@@ -40,3 +40,15 @@ Test POS số đơn lỗi ranh giới UTC/VN đã tái hiện trên origin/main 
 Projection GET `/warehouse-workspace` đã được duyệt ở comment7114065030 và bổ sung vào B1; test Kho ẩn title/description/link thương mại, Manager cùng task giữ đầy đủ đạt, cùng warehouse-workspace/architecture đạt. Không đổi phân công/cách chạy việc/tính hiệu suất. Điểm mapping kho nhận và các fixture/CI cũ vẫn chưa đóng nên chưa bỏ draft.
 
 CI SHA1993: shard1 đạt; shard2 lỗi contract-stock-holds do fixture nay có phân công sale→vig (đã xin phối hợp chỉnh đoạn kiểm người ngoài kho private); shard3 lỗi baseline POS ngày VN; shard4 còn purchasing/warehouse-work theo quyền/kho cũ. Đã cập nhật actor tạo PO trong pos-stock-sources sang Manager (giữ không cộng nháp vào hàng về), và sale-admin-scope dùng hãng được cấu hình + thêm từ chối NCC chưa phân hãng. Hai file cùng architecture rerun3/3 đạt. Không thay code tiền/tồn hoặc mở rộng quyền.
+
+## Chốt kho nhận theo điều phối 7116601696 / 7117746286
+
+Đã merge main (gồm #815 sửa ngày POS theo VN) lần lượt vào B1 → B2 → Việc2 bằng merge commit. Bổ sung `incoming_shipments.receiving_warehouse_id` nullable FK warehouses vào chính migration B1 chưa chạy, cùng assert chỉ đọc kiểm nullable/FK. Không backfill hoặc suy từ địa chỉ.
+
+Form tạo/sửa nháp có dropdown kho stock đang hoạt động. Đơn cũ có mục “Kho nhận hàng…” cho Manager/người lập đủ quyền mua; endpoint kiểm lại role ceiling, người lập, revision, kho active/stock và ghi audit trước/sau. Đơn đã có phiếu nhận giữ kho để đối soát, không chuyển lịch sử bằng endpoint này. Gán kho không thay giá, số lượng hay trạng thái xác nhận NCC.
+
+Kho có `purchases.receive`: đơn có kho chỉ đúng phân công warehouse_sellers được mở/nhận; task được giao không vượt giới hạn kho. Đơn NULL hiện DTO “Chưa chọn kho nhận”, không giá/số PO/NCC; người nhận phải chọn một kho stock được phân công. Kiểm lại đích nhận trong transaction, kể cả trước replay. Không cho trùng tên kho mơ hồ. Kho không mở danh sách/chi tiết thương mại hoặc calendar early cũ. Các test luồng thương mại chuyển sang Manager/Sale Admin thuộc hãng, giữ Sale thật làm actor âm.
+
+Test mới đỏ trước sửa (view thiếu receivingWarehouseId), xanh sau: đích đúng phân công, sai phân công404, NULL queue và nhận/retry vào kho được phân công; audit đổi kho; kho supplier bị400. Hồi quy nhập đơn nhận hàng bằng Kho phát hiện nhánh DTO bỏ sót syncIncomingStock; đã khôi phục bước cập nhật toàn cục như viewOf cũ, không thay phép tính. contract-stock-holds gỡ sale→vig riêng trước kiểm người ngoài không thấy, vẫn kiểm người được phân công thấy16.
+
+Các ghi chú “chờ mapping/chờ duyệt file” bên trên là diễn tiến cũ, đã được giải quyết theo comment mới. Trạng thái CI chính xác báo ở PR/issue theo head mới nhất; chỉ bỏ draft khi CI #812 xanh. Chưa chạy migration/deploy/production; chưa PostgreSQL nhiều kết nối, Safari hoặc thiết bị thật.

@@ -1,13 +1,14 @@
 import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { eq } from 'drizzle-orm';
+import { and,eq } from 'drizzle-orm';
 import { fixture, ok, sku } from '../helpers/warehouse-lifecycle-fixture.ts';
 import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
 import {
   orderStockHolds,
   salesOrders,
 } from '../../src/modules/sales/schema.ts';
+import {warehouseSellers} from '../../src/modules/inventory/schema.ts';
 import { warehouses } from '../../src/modules/catalog/schema.ts';
 
 async function setup(holdQuote = false) {
@@ -258,6 +259,8 @@ test('Tra tồn tách giữ theo kho / chưa gắn kho, không lộ giữ của 
     .update(warehouses)
     .set({ stockPrivate: true })
     .where(eq(warehouses.id, 'vig'));
+  assert.equal((await product(c.emp)).total,16,'người được phân công vẫn thấy kho private');
+  await f.db.delete(warehouseSellers).where(and(eq(warehouseSellers.warehouseId,'vig'),eq(warehouseSellers.positionId,'sale')));
   const hidden = await product(c.emp);
   assert.equal(hidden.total, 10);
   assert.equal(

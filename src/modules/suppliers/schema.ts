@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
+import { warehouses } from '../catalog/schema.ts';
 import { employees } from '../staff/schema.ts';
 import { enumCheck } from '../../core/db/enum-check.ts';
 
@@ -83,6 +84,7 @@ export const incomingShipments = pgTable('incoming_shipments', {
   /** Đơn mua NCC: lúc người lập bấm "Gửi duyệt" (null = nháp, chưa vào hàng chờ duyệt của Manager). Manager lập thì có ngay. */
   submittedAt: text('submitted_at'),
   warehouse: text('warehouse').notNull(),
+  receivingWarehouseId: text('receiving_warehouse_id').references(() => warehouses.id),
   /** YYYY-MM-DD */
   arrivalDate: text('arrival_date'),
   filename: text('filename').notNull().default(''),
