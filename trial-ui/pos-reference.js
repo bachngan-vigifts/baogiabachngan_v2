@@ -91,9 +91,9 @@ export function decorateReferenceLine(row, {unit}) {
   const tag = doc.createElement('span'); tag.className='pos-ref-unit';tag.textContent=unit || '';row.append(tag);
   const remove = row.querySelector('.pos-line-top>button'); if (remove) remove.replaceChildren(referenceIcon(doc,'trash'));
   const more = doc.createElement('details'); more.className='pos-ref-line-more';
-  const summary = doc.createElement('summary');summary.textContent='⋮';summary.setAttribute('aria-label','Chiết khấu và chi tiết '+name.textContent);more.append(summary);
+  const summary = doc.createElement('summary');summary.textContent='⋮';summary.setAttribute('aria-label','Thao tác dòng '+name.textContent);more.append(summary);
   const detail = doc.createElement('div');detail.className='pos-ref-line-popover';
-  const caption=doc.createElement('span');caption.textContent='Chiết khấu dòng';detail.append(caption,row.querySelector('.pos-line-discount'));
+  const discount=row.querySelector('.pos-line-discount'),caption=doc.createElement('span');caption.className='pos-ref-discount-label';caption.textContent='CK';discount.prepend(caption);row.append(discount);
   const drop=doc.createElement('button');drop.type='button';drop.className='btn ghost';drop.textContent='Xóa dòng sản phẩm';drop.addEventListener('click',()=>remove?.click());detail.append(drop);
   more.append(detail);row.append(more);
 }
