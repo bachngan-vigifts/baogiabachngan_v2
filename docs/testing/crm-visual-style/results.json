@@ -1,0 +1,26 @@
+[
+  {
+    "width": 1440,
+    "sameControls": true,
+    "sameLayoutMode": true,
+    "printUnchanged": true,
+    "inputRetained": true,
+    "noHorizontalOverflow": true
+  },
+  {
+    "width": 1366,
+    "sameControls": true,
+    "sameLayoutMode": true,
+    "printUnchanged": true,
+    "inputRetained": true,
+    "noHorizontalOverflow": true
+  },
+  {
+    "width": 390,
+    "sameControls": true,
+    "sameLayoutMode": true,
+    "printUnchanged": true,
+    "inputRetained": true,
+    "noHorizontalOverflow": true
+  }
+]
