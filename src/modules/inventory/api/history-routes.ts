@@ -36,7 +36,7 @@ const SIZES = [20, 50, 100, 200] as const, EXPORT_MAX = 5000;
  * Gắn ở src/app/router.ts (inventory không import sales / suppliers). Mỗi hàm nhận các refId, trả refId → "#/…".
  */
 export type StockRefLinkResolver = (db: StaffEnv['db'], refIds: readonly string[],viewer?:SessionState['member']) => Promise<Map<string, string>>;
-export const stockPurchaseReadHooks:{scope?:(m:SessionState['member'],refType:SQLWrapper,refId:SQLWrapper)=>SQL}={};
+export const stockPurchaseReadHooks:{scope?:(m:SessionState['member'],refType:SQLWrapper,refId:SQLWrapper)=>SQL;fullAccess?:(m:SessionState['member'])=>boolean}={};
 export const stockRefLinkHooks: Partial<Record<StockRefType, StockRefLinkResolver>> = {};
 
 /** Link mở chứng từ gốc có sẵn từ refId (không cần tra thêm). */
@@ -107,7 +107,7 @@ export function registerStockHistoryRoutes(router: Router<StaffEnv>, deps:{pendi
     const wName = new Map(whs.map(w => [w.id, w.name])), round = (v: number) => Math.round(v * 1000) / 1000;
     return json({ ...empty,pendingAvailable, total: sum?.n ?? 0, totals: { inQty: round(sum?.inQty ?? 0), outQty: round(sum?.outQty ?? 0) },
       moves: rows.map(({ m, balanceAfter, by, name, unit, brand, active }) => {
-        const ref = baseRef(m.refId),privatePurchase=['supplier_receipt','supplier_return'].includes(m.refType)&&!linkOf(m.refType,ref),pending=pendingByKey.get(JSON.stringify([m.sku,m.warehouseId]))??{packed:0,returning:0,held:0,unassignedHeld:pendingByKey.get(JSON.stringify([m.sku,'']))?.unassignedHeld??0,uncertain:false};
+        const ref = baseRef(m.refId),privatePurchase=['supplier_receipt','supplier_return'].includes(m.refType)&&!linkOf(m.refType,ref)&&!stockPurchaseReadHooks.fullAccess?.(me(c)),pending=pendingByKey.get(JSON.stringify([m.sku,m.warehouseId]))??{packed:0,returning:0,held:0,unassignedHeld:pendingByKey.get(JSON.stringify([m.sku,'']))?.unassignedHeld??0,uncertain:false};
         return { pending,pendingQty:pendingAvailable?round(pending.packed+pending.returning+pending.held):null,id: m.id, at: m.createdAt, sku: m.sku, name: name ?? '', unit: unit ?? '', brand: brand ?? '', active: active ?? true,
           warehouseId: m.warehouseId, warehouse: wName.get(m.warehouseId) ?? '', qty: m.qty, inQty: m.qty > 0 ? m.qty : 0, outQty: m.qty < 0 ? -m.qty : 0, balanceBefore: round(balanceAfter - m.qty), balanceAfter: round(balanceAfter),
           kind: m.kind, kindLabel: STOCK_KIND_LABEL[m.kind as StockMoveKind] ?? m.kind, description: stockMoveDescription(m.kind as StockMoveKind, m.refType as StockRefType),

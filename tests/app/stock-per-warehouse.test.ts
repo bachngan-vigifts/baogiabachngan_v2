@@ -124,7 +124,9 @@ test('Sổ kho: link phiếu giao COD, phiếu trả, phiếu nhận NCC mở đ
   const seen = await p.call('/stock-moves?sku=00123', kho);
   assert.equal(seen.status, 200, JSON.stringify(seen.data));
   assert.deepEqual(linkOf(seen.data.moves), { pos_delivery: '', pos_return: '', supplier_receipt: '' });
-  // Được cấp lại Đơn mua NCC → chỉ link phiếu nhận NCC hiện.
+  // Chức vụ Kho không thuộc trần đọc đơn mua (#801): kể cả được tick page.purchases vẫn không nhận link/số phiếu NCC.
   await p.call('/permissions/positions/warehouse', p.mgr, 'PUT', { perms: ['page.packing', 'page.purchases'] });
-  assert.deepEqual(linkOf((await p.call('/stock-moves?sku=00123', kho)).data.moves), { pos_delivery: '', pos_return: '', supplier_receipt: '#/purchases/po-link' });
+  const again = (await p.call('/stock-moves?sku=00123', kho)).data.moves;
+  assert.deepEqual(linkOf(again), { pos_delivery: '', pos_return: '', supplier_receipt: '' });
+  assert.equal(again.find((m: any) => m.refType === 'supplier_receipt').refNo, '');
 });

@@ -457,6 +457,7 @@ test('POS Enter: chữ thường chỉ hiện danh sách, không tự thêm vào
     await new Promise(r=>setTimeout(r,330));assert.equal(input.value,'ly','phản hồi quét cũ không xoá nội dung đang gõ');
     assert.equal(calls.filter(c=>c.path==='/pos/preview').at(-1).body.rows[0].qty,4);
     input.value='OUT';await input.fire('keydown',{key:'Enter'});await new Promise(r=>setTimeout(r,30));assert.equal(input.value,'OUT');assert.match(toasts.at(-1)!,/hết hàng/);
+    const outCard=root.querySelectorAll('button').find(x=>x.className==='pos-product')!;assert.equal(outCard.disabled,true,'a previously selected item still cannot be added when stock is zero');await outCard.fire('click');assert.equal(input.value,'OUT','blocked additions do not clear the current search');
     input.value='ERR';await input.fire('keydown',{key:'Enter'});await new Promise(r=>setTimeout(r,30));assert.equal(input.value,'ERR');assert.equal(toasts.at(-1),'Mất kết nối');
   } finally {
     Object.assign(globalThis, { document: prevDoc, window: prevWin });
@@ -954,12 +955,13 @@ test('POS order board sends source/staff/date/payment filters, renders server to
   } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
 });
 
-test('POS stock: selected product says bỏ chọn; stock actions never add to cart; request selects warehouse and sends once',async()=>{
+test('POS stock: product clicks add one; stock actions never add to cart; request selects warehouse and sends once',async()=>{
  const prevDoc=globalThis.document,prevWin=globalThis.window;
  Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
  try {
   const root=new Element('section'),writes:any[]=[],purchases:any[]=[],links:string[]=[];
   const source={vigifts:{qty:40,warehouses:[{id:'vig',name:'KHO VIGIFTS',qty:40}]},supplier:{qty:70,warehouses:[{id:'ncc',name:'NCC',qty:70}]},incoming:{qty:5,orders:[{orderId:'po',orderNo:'DMH_A',supplierName:'NCC A',qty:5,arrivalDate:'2026-10-25'}]},requestWarehouses:[{id:'vig',name:'KHO VIGIFTS',qty:40},{id:'other',name:'Kho khác',qty:10}],destination:{id:'wh',name:'Kho cửa hàng'}};
+  (source.incoming.orders as any[]).push({qty:7,arrivalDate:'2026-11-25'});
   const product={sku:'LY1',name:'Ly sứ',unit:'cái',price:100000,available:10,onHand:12,reserved:2,stockSources:source};
   const api=async(path:string,method?:string,body?:any)=>{
    if(path.startsWith('/pos/options'))return {registers:[{id:'r',name:'Quầy',pricePolicyId:'vat'}],current:{id:'s',memberId:'emp',registerId:'r'},shifts:[],templates:[],policies:[]};
@@ -976,12 +978,15 @@ test('POS stock: selected product says bỏ chọn; stock actions never add to c
   assert.ok(stockDetails);assert.equal(stockDetails.open,false,'stock sources start collapsed');
   assert.equal(stockDetails.querySelectorAll('summary')[0]!.attributes['aria-label'],'Xem tồn các kho của LY1');
   const card=root.querySelectorAll('button').find(x=>x.className==='pos-product')!;
-  await card.fire('click');assert.match(card.textContent,/Bỏ chọn/);assert.equal(card.attributes['aria-pressed'],'true');
-  await card.fire('click');assert.equal(card.attributes['aria-pressed'],'false');assert.ok(!card.textContent.includes('Bỏ chọn'));
+  await card.fire('click');assert.match(card.textContent,/Đã có trong giỏ/);assert.equal(card.attributes['aria-pressed'],'true');
+  await card.fire('click');assert.equal(card.attributes['aria-pressed'],'true');assert.ok(!card.textContent.includes('Bỏ chọn'));
+  assert.equal(root.querySelectorAll('input').find(x=>x.type==='number'&&x.value===2)?.value,2,'second click adds one instead of removing the line');
   const stock=root.querySelectorAll('button').find(x=>x.textContent==='VIGIFTS: 40')!;
   assert.ok((stock as any).title.includes('KHO VIGIFTS'));
-  await stock.fire('click');assert.equal(card.attributes['aria-pressed'],'false');
+  await stock.fire('click');assert.equal(card.attributes['aria-pressed'],'true');
   let dialog=doc.body.children.at(-1)!;assert.match(dialog.textContent,/DMH_A/);
+  assert.match(dialog.textContent,/Đang về: 7 · dự kiến 25\/11/);assert.doesNotMatch(dialog.textContent,/undefined/);
+  const poButtons=dialog.querySelectorAll('button').filter(x=>x.textContent.startsWith('Xem đơn đang về'));assert.equal(poButtons.length,1);await poButtons[0]!.fire('click');assert.equal(links.at(-1),'#/purchases/po');await stock.fire('click');dialog=doc.body.children.at(-1)!;
   await dialog.querySelectorAll('button').find(x=>x.textContent==='Xin hàng')!.fire('click');
   dialog=doc.body.children.at(-1)!;
   const from=dialog.querySelectorAll('select').find(x=>x.attributes['aria-label']==='Kho xin hàng')!;assert.ok(from.options.some(x=>x.value==='other'));from.value='other';await from.fire('change');
@@ -996,7 +1001,7 @@ test('POS stock: selected product says bỏ chọn; stock actions never add to c
   dialog.querySelectorAll('select').find(x=>x.attributes['aria-label']==='Nhà cung cấp')!.value='supplier';
   dialog.querySelectorAll('label').find(x=>x.textContent==='Địa chỉ nhận hàng')!.querySelectorAll('input')[0]!.value='Kho cửa hàng';
   await nccForm.fire('submit');assert.equal(purchases.length,1);assert.equal(purchases[0].orders[0].supplierId,'supplier');assert.equal(purchases[0].orders[0].lines[0].sku,'LY1');
-  assert.deepEqual(links,['#/purchases/new-po']);
+  assert.deepEqual(links,['#/purchases/po','#/purchases/new-po']);
   await new Promise(r=>setTimeout(r,240));
  } finally {Object.assign(globalThis,{document:prevDoc,window:prevWin});}
 });

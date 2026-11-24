@@ -85,6 +85,7 @@ import { notifyMany, registerNotificationRoutes } from '../modules/notifications
 import { registerTaskRoutes, syncInvoiceTasks, syncTransferTasks } from '../modules/tasks/api/routes.ts';
 import { cashTaskHooks, invoiceTaskHooks } from '../modules/sales/api/invoice-task-hooks.ts';
 import { posDeliveryStockLinks, posReturnStockLinks } from '../modules/sales/api/stock-ref-links.ts';
+import {purchaseReadLevel} from '../modules/suppliers/domain/purchase-access.ts';
 import { supplierReceiptStockLinks,supplierReturnStockLinks,supplierStockRefScope } from '../modules/suppliers/api/stock-ref-links.ts';
 import { syncCashTasks } from '../modules/tasks/api/auto-tasks.ts';
 import { registerChatRoutes } from '../modules/chat/api/routes.ts';
@@ -140,6 +141,7 @@ export function createAppRouter() {
   stockRefLinkHooks.supplier_receipt = supplierReceiptStockLinks;
   stockRefLinkHooks.supplier_return=supplierReturnStockLinks;
   stockPurchaseReadHooks.scope=supplierStockRefScope;
+  stockPurchaseReadHooks.fullAccess=m=>purchaseReadLevel(m)==='all';
   catalogStockHooks.archiveBlockReason=productArchiveBlockReason;
   catalogStockHooks.overlay = overlayPosStock;
   catalogStockHooks.held = catalogHeldQuantities;
