@@ -3063,15 +3063,26 @@ body:has(.reminder-launcher:not([hidden])) .main::after{content:'';display:block
  .approval-purchase-table .data-table td { flex-basis:100%; }
  .approval-purchase-table .data-table td[data-label]::before { display:block;margin-bottom:4px; }
 }
-/* Sidebar palette requested 24/11/2026. Scope and specificity keep this palette
+
+/* Handoff: one recipient selector, with the same padded body as other dialogs. */
+.sale-admin-handoff .modal-head { align-items:flex-start; }
+.sale-admin-handoff .modal-head h2 { overflow-wrap:anywhere; }
+.sale-admin-handoff .modal-head .icon-btn { flex-shrink:0; }
+.sale-admin-handoff .modal-body { gap:14px; }
+.sale-admin-handoff .modal-body > p { margin:0; }
+.sale-admin-handoff .modal-body > p + * { margin-top:0; }
+.sale-admin-handoff .modal-body label { min-width:0; }
+.sale-admin-handoff select { width:100%; }
+.sale-admin-handoff .error:empty { display:none; }
+/* Sidebar navy palette restored at user request 24/11/2026. Scope and specificity keep this palette
    consistent when an optional visual theme is loaded later; no layout changes. */
 @media screen {
- html.app-shell #workspace > .sidebar { background:#0070f4;color:#fff;box-shadow:inset -1px 0 #0064da; }
+ html.app-shell #workspace > .sidebar { background:#142036;color:#fff;box-shadow:inset -1px 0 #1d2c46; }
  html.app-shell #workspace > .sidebar :is(.brand.light,.brand small,.nav-label,.nav-group-toggle,.nav,.account,.account-text small,.account .chev) { color:#fff;opacity:1; }
  html.app-shell #workspace > .sidebar :is(.nav,.nav-label,.nav-group-toggle,.account-text strong) { font-weight:700; }
  html.app-shell #workspace > .sidebar .side-nav .nav svg { color:#fff; }
- html.app-shell #workspace > .sidebar :is(.nav:hover,.nav-group-toggle:hover,.nav-group-toggle:focus-visible,.account:hover) { background:#005dce;color:#fff; }
- html.app-shell #workspace > .sidebar .nav.active { background:#0054bb;color:#fff;box-shadow:inset 3px 0 #fff; }
+ html.app-shell #workspace > .sidebar :is(.nav:hover,.nav-group-toggle:hover,.nav-group-toggle:focus-visible,.account:hover) { background:#1d2c46;color:#fff; }
+ html.app-shell #workspace > .sidebar .nav.active { background:#283a58;color:#fff;box-shadow:inset 3px 0 #fff; }
  html.app-shell #workspace > .sidebar .nav-group:has(.nav.active) .nav-group-toggle { color:#fff; }
- html.app-shell #workspace > .sidebar .side-nav { scrollbar-color:#b9d9ff transparent; }
+ html.app-shell #workspace > .sidebar .side-nav { scrollbar-color:#8297b8 transparent; }
 }

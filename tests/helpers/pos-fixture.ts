@@ -23,7 +23,7 @@ import { memoryFileStore } from '../../src/core/storage/file-store.ts';
 import { readdirSync } from 'node:fs';
 import type { StaffEnv } from '../../src/modules/staff/api/auth-routes.ts';
 const origin = 'https://trial.test';
-export async function setup(opts: { viaClaw?: boolean } = {}) {
+export async function setup(opts: { viaClaw?: boolean; productBrand?: string } = {}) {
   const { db, d1, client } = await createTestDb();
   await seedStaff(d1);
   // Quầy chỉ giao cho NVBH / CHT cửa hàng (21/10/2026): nhân viên bán POS mẫu là NVBH Lock.
@@ -44,7 +44,8 @@ export async function setup(opts: { viaClaw?: boolean } = {}) {
     { id: 'retail-vat', name: 'Giá bán lẻ (+ VAT)' },
     { id: 'retail', name: 'Giá bán lẻ' },
   ]);
-  await db.insert(products).values({ sku: '00123', name: 'Ly sứ', unit: 'cái', updatedAt: new Date().toISOString() });
+  // Product belongs to the Lock counter's explicit POS brand allowlist.
+  await db.insert(products).values({ sku: '00123', name: 'Ly sứ', brand: opts.productBrand ?? 'LocknLock', unit: 'cái', updatedAt: new Date().toISOString() });
   await db.insert(productPrices).values([
     { sku: '00123', policyId: 'retail-vat', price: 108000 },
     { sku: '00123', policyId: 'retail', price: 100000 },

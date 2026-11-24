@@ -11,7 +11,7 @@ const root = join(import.meta.dirname, '..');
 export const CONTRACT_SOURCE_POLICY_OUT=join(root,'trial-ui','contract-source-policy.js');
 export const bundleContractSourcePolicy=()=>bundle('src/core/contracts/contract-template-source.ts');
 export const CONTRACT_SOURCE_FILE_OUT=join(root,'trial-ui','contract-source-file.js');
-export const bundleContractSourceFile=()=>bundle('src/modules/sales/domain/contract-source-file.ts');
+export const bundleContractSourceFile=()=>bundle('src/modules/sales/domain/contract-source-file.ts', true);
 export const CUSTOMER_PROVINCE_OUT=join(root,'trial-ui','customer-province.js');
 export const bundleCustomerProvince=()=>bundle('src/modules/customers/domain/province.ts');
 export const CUSTODY_CONTRACT_OUT=join(root,'trial-ui','product-custody-contract.js');
@@ -37,10 +37,10 @@ export const bundleEarlyOrderSources = () => bundle('src/modules/suppliers/domai
 export const SUPPLIER_ORDER_NUMBER_OUT = join(root, 'trial-ui', 'supplier-order-number.js');
 export const bundleSupplierOrderNumber = () => bundle('src/modules/suppliers/domain/order-number.ts');
 
-function bundle(entry: string): string {
+function bundle(entry: string, minify = false): string {
   const result = buildSync({
     entryPoints: [join(root, entry)],
-    bundle: true, format: 'esm', target: 'es2020', write: false, legalComments: 'none',
+    bundle: true, format: 'esm', target: 'es2020', write: false, legalComments: 'none', minify,
   });
   return `// TỰ SINH bởi \`npm run ui:build\` từ ${entry} – không sửa tay.\n` + result.outputFiles[0]!.text;
 }

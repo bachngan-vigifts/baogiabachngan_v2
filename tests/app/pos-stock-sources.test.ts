@@ -104,8 +104,8 @@ test('POS: giữ hàng theo báo giá (không gắn kho) chỉ trừ vào kho qu
 test('POS tìm sản phẩm cùng thuật toán trang Sản phẩm; skus= trả đúng thứ tự trình duyệt đã xếp hạng',async()=>{
  const f=await setup(),now=new Date().toISOString();
  const {products,productPrices}=await import('../../src/modules/catalog/schema.ts');
- await f.db.insert(products).values([{sku:'LHC-4282',name:'Bình giữ nhiệt Lock 1.2L',unit:'cái',updatedAt:now},{sku:'NOPRICE',name:'Ly sứ không giá',unit:'cái',updatedAt:now},
-  {sku:'BT-NFD',name:'Bộ trà 0,7 L - Chim Lạc'.normalize('NFD'),unit:'bộ',updatedAt:now}]);
+ await f.db.insert(products).values([{sku:'LHC-4282',brand:'LocknLock',name:'Bình giữ nhiệt Lock 1.2L',unit:'cái',updatedAt:now},{sku:'NOPRICE',brand:'LocknLock',name:'Ly sứ không giá',unit:'cái',updatedAt:now},
+  {sku:'BT-NFD',brand:'LocknLock',name:'Bộ trà 0,7 L - Chim Lạc'.normalize('NFD'),unit:'bộ',updatedAt:now}]);
  await f.db.insert(productPrices).values([{sku:'LHC-4282',policyId:'retail-vat',price:250000},{sku:'BT-NFD',policyId:'retail-vat',price:900000}]);
  const skus=async(q:string)=>(await f.call(`/pos/catalog?registerId=${f.registerId}&q=${encodeURIComponent(q)}`,f.emp)).data.products.map((p:any)=>p.sku);
  assert.deepEqual(await skus('su ly'),['00123'],'nhiều từ không đúng thứ tự (trước: phải gõ đúng cụm "ly su")');
