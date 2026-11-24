@@ -1,3 +1,4 @@
+import {warehouseReceivingScope,warehouseOpenReceivingScope,receivingContext,validateReceivingWarehouse,receivingDestination} from './purchase-receiving.ts';
 import { registerGoodsReturnRoutes } from './goods-return-routes.ts';
 import { supplierOrderNumberProblem } from '../domain/order-number.ts';
 import { lockReceiptForWrite } from './receipt-outbox.ts';
@@ -19,7 +20,8 @@ import { purchaseProducts } from './purchase-products.ts';
 import { can } from '../../staff/domain/permissions.ts';
 import { incomingLookup } from '../../inventory/api/routes.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
-import { products } from '../../catalog/schema.ts';
+import { auditLogs } from '../../../core/db/schema.ts';
+import { products,warehouses } from '../../catalog/schema.ts';
 import { recordMovements, removeMovements } from '../../catalog/api/product-history.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
 import { notify, notifyMany } from '../../notifications/api/routes.ts';
@@ -30,8 +32,8 @@ import {
 import { computeOrderTotals, purchaseUnitCost } from '../domain/order-totals.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import { canEditSuppliers, defaultRecipients } from '../domain/directory.ts';
-import { canSendEarlyRequest, buildSchedules, canPay, canReceive, canSeePrices, canSeePurchasePrices, canUsePurchasing, checkPurchase, validateReceipt, type PurchaseAction } from '../domain/purchasing.ts';
-import { asActor, listPurchases, purchaseCounts, supplierPayables, loadPurchase, responsibleEmails, loadSourceNeed, nextNumber, orderedBySource, sourceFamilies, ensureReceiptSourceBudget, sourceCandidates, sourceWithRemaining, type Db, type Member } from './purchase-store.ts';
+import { isWarehouseStaff,canSendEarlyRequest, buildSchedules, canPay, canReceive, canSeePrices, canSeePurchasePrices, canUsePurchasing, checkPurchase, validateReceipt, type PurchaseAction } from '../domain/purchasing.ts';
+import {assertPurchaseScope,supplierScope,assertSupplierScope, asActor, listPurchases, purchaseCounts, supplierPayables, loadPurchase, responsibleEmails, loadSourceNeed, nextNumber, orderedBySource, sourceFamilies, ensureReceiptSourceBudget, sourceCandidates, sourceWithRemaining, type Db, type Member } from './purchase-store.ts';
 
 /**
  * ĐƠN MUA HÀNG NCC (đợt 2) – khu vực 'business', quyền chi tiết kiểm trong domain/purchasing.ts.
@@ -84,7 +86,7 @@ async function event(tx: Tx | Db, shipmentId: string, actorId: string, action: s
 async function lockAndCheck(c: Ctx, tx: Tx, id: string, action: PurchaseAction, revision?: unknown) {
   const [locked] = await tx.select({ id: incomingShipments.id, revision: incomingShipments.revision }).from(incomingShipments).where(eq(incomingShipments.id, id)).limit(1).for('update');
   if (!locked) fail(404, 'Không tìm thấy đơn mua hàng.');
-  const p = await loadPurchase(tx as unknown as Db, me(c), id, today());
+  const p = await loadPurchase(tx as unknown as Db, me(c), id, today(),action==='receive'&&isWarehouseStaff(me(c))?warehouseReceivingScope(me(c)):undefined);
   const flags = { approvalStatus: p.raw.order.approvalStatus, supplierStatus: p.raw.order.supplierStatus, cancelledAt: p.raw.order.cancelledAt, createdBy: p.raw.order.createdBy, submittedAt: p.raw.order.submittedAt };
   const ck = checkPurchase(action, asActor(me(c)), flags, { anyReceived: p.raw.progress.anyReceived, fullyReceived: p.raw.progress.fullyReceived, paid: p.raw.debt.paid });
   if (!ck.ok) fail(ck.status, ck.message);
@@ -97,12 +99,14 @@ const bump = (tx: Tx, id: string, by: string, set: Partial<typeof incomingShipme
 const poLabel = (v: { ticketNumber: string; supplier: { name: string } }) => `${v.ticketNumber} · ${v.supplier.name}`;
 
 async function viewOf(c: Ctx, id: string) {
+  await loadPurchase(c.env.db,me(c),id,today());
   // Mọi thao tác ghi trả về qua đây: cập nhật tồn "Hàng chờ về" theo số còn thiếu của các đơn mua (chỉ ghi phần đổi).
   await syncIncomingStock(c.env.db).catch(() => {});
   const v = (await loadPurchase(c.env.db, me(c), id, today())).view;
   const urls = await photoUrls(c.env.db, c.env.files, 'supplier_receipt', v.receipts.map(r => r.id));
   return { ...v, canReturn:v.canReturn&&!c.env.supplierReturnsDisabled,canRefund:v.canRefund&&!c.env.supplierReturnsDisabled, receipts: v.receipts.map(r => ({ ...r, photos: urls.get(r.id) ?? [] })) };
 }
+const receiptViewOf=async(c:Ctx,id:string)=>{if(!isWarehouseStaff(me(c)))return viewOf(c,id);await receivingContext(c.env.db,me(c),id,today());await syncIncomingStock(c.env.db).catch(()=>{});return receivingContext(c.env.db,me(c),id,today());};
 /** Dấu nội dung yêu cầu nhận hàng (không gồm ảnh: gửi lại có thể nén ảnh khác). */
 function receiptRequestHash(body: Record<string, unknown>, createSapo: boolean) {
   const lines = Array.isArray(body.lines) ? (body.lines as Record<string, unknown>[]).map(l => [String(l?.lineId ?? ''), Number(l?.goodQty ?? 0), Number(l?.damagedQty ?? 0), String(l?.note ?? '').trim()] as const)
@@ -187,40 +191,54 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   registerReceiptJobRoutes(router);
   // Trang Tra tồn (sổ kho) đọc hàng đang về từ đơn mua NCC.
   incomingLookup.read = (db, skus) => outstandingLines(db, skus);
-  const guard = (c: Ctx) => { if (!canUsePurchasing(asActor(me(c)))) fail(403, 'Bạn không có quyền với đơn mua hàng.'); };
+  const guard = async(c:Ctx)=>{
+    if(!canUsePurchasing(asActor(me(c))))fail(403,'Bạn không có quyền với đơn mua hàng.');
+    const id=c.params.id;if(!id)return;
+    if(c.url.pathname.includes('/purchase-orders/'))await assertPurchaseScope(c.env.db,me(c),id);
+    else if(c.url.pathname.includes('/supplier-receipts/')){const [r]=await c.env.db.select({id:supplierReceipts.shipmentId}).from(supplierReceipts).where(eq(supplierReceipts.id,id)).limit(1);if(!r)fail(404,'Không tìm thấy phiếu nhận.');await assertPurchaseScope(c.env.db,me(c),r!.id);}
+    else if(c.url.pathname.includes('/supplier-payments/')){const [r]=await c.env.db.select({id:supplierPayments.shipmentId}).from(supplierPayments).where(eq(supplierPayments.id,id)).limit(1);if(!r)fail(404,'Không tìm thấy khoản trả.');await assertPurchaseScope(c.env.db,me(c),r!.id);}
+  };
   registerPurchaseSupplierSearch(router,guard);
 
+  router.get('/warehouse-receiving',async c=>{
+    const m=me(c);if(!isWarehouseStaff(m)||!canReceive(m))fail(403,'Bạn không có quyền nhận hàng được giao.');
+    const offset=Number(c.url.searchParams.get('offset')||0);if(!Number.isSafeInteger(offset)||offset<0||offset>100000)fail(400,'Trang không hợp lệ.');
+    const rows=await c.env.db.select({id:incomingShipments.id}).from(incomingShipments).where(warehouseOpenReceivingScope(m)).orderBy(incomingShipments.createdAt,incomingShipments.id).limit(21).offset(offset);
+    const items=[];for(const r of rows.slice(0,20))items.push(await receivingContext(c.env.db,m,r.id,today()));return json({items,nextOffset:rows.length>20?offset+20:null});
+  },'business');
+  router.get('/warehouse-receiving/:id',async c=>json(await receivingContext(c.env.db,me(c),c.params.id!,today())),'business');
   router.get('/purchase-incoming', async c => {
-    guard(c);
-    return json({ ...await incomingBySkuView(c.env.db, c.url.searchParams, today()),
+    await guard(c);if(c.url.searchParams.get('supplierId'))await assertSupplierScope(c.env.db,me(c),c.url.searchParams.get('supplierId')!);
+    return json({ ...await incomingBySkuView(c.env.db, c.url.searchParams, today(),me(c)),
       canRequest: canSendEarlyRequest(asActor(me(c))), canSend: canSendEarlyRequest(asActor(me(c))),
       canViewSuppliers:canEditSuppliers(me(c)),canViewStock:can(me(c),'page.stock-lookup') });
   }, 'business');
 
   router.get('/purchase-receiving-calendar', async c => {
-    guard(c);
-    return json({...await receivingCalendar(c.env.db, c.url.searchParams, today(),{reminderOnly:c.url.searchParams.get('workOnly')==='1'}),canConfirmEarly:me(c).role==='manager',canReceiveEarly:canReceive(asActor(me(c)))});
+    await guard(c);if(c.url.searchParams.get('supplierId'))await assertSupplierScope(c.env.db,me(c),c.url.searchParams.get('supplierId')!);
+    return json({...await receivingCalendar(c.env.db, c.url.searchParams, today(),{reminderOnly:c.url.searchParams.get('workOnly')==='1',member:me(c)}),canConfirmEarly:me(c).role==='manager',canReceiveEarly:canReceive(asActor(me(c)))});
   }, 'business');
 
   let lastIncomingSync = 0;
   router.get('/purchase-orders', async c => {
-    guard(c); const p = c.url.searchParams;
+    await guard(c); const p = c.url.searchParams;if(p.get('supplierId'))await assertSupplierScope(c.env.db,me(c),p.get('supplierId')!);
     // Tồn "Hàng chờ về" đồng bộ tối đa mỗi phút một lần: bấm lọc / gõ tìm liên tục không chạy lại phép tính nặng mỗi lượt.
     if (Date.now() - lastIncomingSync > 60_000) { lastIncomingSync = Date.now(); await syncIncomingStock(c.env.db).catch(() => { lastIncomingSync = 0; }); }
     const filter = { q: p.get('q') ?? '', supplierId: p.get('supplierId') ?? '', state: p.get('state') ?? '' }, day = today();
     const [orders, counts] = await Promise.all([listPurchases(c.env.db, me(c), filter, day), purchaseCounts(c.env.db, me(c), filter, day)]);
     return json({ orders, counts, canSeePrices: canSeePrices(asActor(me(c))), today: day });
   }, 'business');
-  router.get('/supplier-payables', async c => { guard(c); return json({ ...(await supplierPayables(c.env.db, me(c), today())), today: today() }); }, 'business');
-  router.get('/purchase-orders/:id', async c => { guard(c); return json(await viewOf(c, c.params.id!)); }, 'business');
+  router.get('/supplier-payables', async c => { await guard(c); return json({ ...(await supplierPayables(c.env.db, me(c), today())), today: today() }); }, 'business');
+  router.get('/purchase-orders/:id', async c => { await guard(c); return json(await viewOf(c, c.params.id!)); }, 'business');
   router.get('/purchase-options', async c => {
-    guard(c);
-    const rows = await c.env.db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(eq(suppliers.active, true)).orderBy(suppliers.name);
+    await guard(c);
+    const rows = await c.env.db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(and(eq(suppliers.active, true),supplierScope(me(c)))).orderBy(suppliers.name);
     const a = asActor(me(c));
-    return json({ suppliers: rows, canSeePrices: canSeePrices(a), canReceive: canReceive(a), canPay: canPay(a), isManager: a.role === 'manager', canEditSuppliers: canEditSuppliers(me(c)), canRequestEarly: canSendEarlyRequest(me(c)) });
+    const receivingWarehouses=await c.env.db.select({id:warehouses.id,name:warehouses.name}).from(warehouses).where(and(eq(warehouses.active,true),eq(warehouses.kind,'stock'))).orderBy(warehouses.name);
+    return json({ receivingWarehouses, suppliers: rows, canSeePrices: canSeePrices(a), canReceive: canReceive(a), canPay: canPay(a), isManager: a.role === 'manager', canEditSuppliers: canEditSuppliers(me(c)), canRequestEarly: canSendEarlyRequest(me(c)) });
   }, 'business');
   router.get('/purchase-sources', async c => {
-    guard(c);
+    await guard(c);
     const offset = Number(c.url.searchParams.get('offset') ?? 0);
     if (!Number.isSafeInteger(offset) || offset < 0) fail(400, 'Trang chứng từ không hợp lệ.');
     const sources = await sourceCandidates(c.env.db, me(c), c.url.searchParams.get('q') ?? '', offset);
@@ -229,15 +247,15 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   }, 'business');
   // Lập đơn mua bổ sung: tìm sản phẩm (?q=&offset=) hoặc theo mã (?skus=a,b – nhập Excel), kèm tồn Kho SR / Kho VIGIFTS / Hàng đang về.
   router.get('/purchase-products', async c => {
-    guard(c);
+    await guard(c);
     const p = c.url.searchParams, skus = p.has('skus') ? (p.get('skus') || '').split(',').map(s => s.trim()).filter(Boolean) : undefined;
     return json(await purchaseProducts(c.env.db, me(c), { q: (p.get('q') || '').slice(0, 100), skus, offset: Number(p.get('offset')) || 0, limit: Number(p.get('limit')) || 20 }));
   }, 'business');
-  router.get('/purchase-sources/:type/:id', async c => { guard(c); return json(await sourceWithRemaining(c.env.db, me(c), c.params.type!, c.params.id!)); }, 'business');
+  router.get('/purchase-sources/:type/:id', async c => { await guard(c); return json(await sourceWithRemaining(c.env.db, me(c), c.params.type!, c.params.id!)); }, 'business');
 
   // ---- Tạo 1..n đơn nháp (mỗi NCC một đơn)
   router.post('/purchase-orders', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), body = await readJson(c.req, 400_000), prices = canSeePrices(asActor(m));
     // Mã thao tác (giao diện tạo một lần cho mỗi lần lập đơn, giữ nguyên khi gửi lại). Chưa có mã = giao diện cũ, chạy như trước.
     const clientKey = body.clientKey === undefined || body.clientKey === null ? null
@@ -250,11 +268,11 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const normalized = list.map(o => {
       const supplierId=typeof o.supplierId==='string'&&o.supplierId.trim()?o.supplierId:fail(400,'Chọn nhà cung cấp.');
       const arrivalDate = o.arrivalDate ? (isIsoDate(o.arrivalDate) ? o.arrivalDate : fail(400, 'Ngày hàng về dự kiến không hợp lệ.')) : null;
-      return { supplierId, lines: cleanLines(o.lines, prices), internalNo: internalOrderNumber(o.internalNo), arrivalDate, note: str(o.note, 2000), warehouse: deliveryAddress(o.warehouse) };
+      return { supplierId, lines: cleanLines(o.lines, prices), internalNo: internalOrderNumber(o.internalNo), arrivalDate, note: str(o.note, 2000), receivingWarehouseId:o.receivingWarehouseId??null, warehouse: deliveryAddress(o.warehouse) };
     });
     if (new Set(normalized.map(p => p.supplierId)).size !== normalized.length) fail(400, 'Mỗi nhà cung cấp chỉ một đơn trong một lần lập – gộp các mã cùng NCC.');
     // Băm nội dung đã chuẩn hoá (NCC, dòng hàng, nguồn, số lượng, giá, kho, ngày, ghi chú) để nhận ra "gửi lại đúng như cũ".
-    const requestHash = clientKey ? sha256Hex(JSON.stringify(normalized.map(p => [p.supplierId, p.internalNo, p.arrivalDate, p.note, p.warehouse, p.lines]))) : '';
+    const requestHash = clientKey ? sha256Hex(JSON.stringify(normalized.map(p => [p.supplierId, p.internalNo, p.arrivalDate, p.note, p.warehouse, p.lines,...(p.receivingWarehouseId?[p.receivingWarehouseId]:[])]))) : '';
     const decodeIntent=(row:typeof savedIntent):string[]|null=>{
       if(!row)return null;
       if(row.requestHash!==requestHash)throw new AppError(409,'Mã thao tác này đã dùng để lập đơn với nội dung khác. Tải lại trang danh sách đơn mua để kiểm tra trước khi lập tiếp.','INTENT_MISMATCH');
@@ -263,7 +281,8 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     const earlier=async(q:Db)=>decodeIntent(await findIntent(q));
     // Gửi lại sau khi đã lưu: trả bộ đơn cũ TRƯỚC khi kiểm nguồn (nguồn đã được chính lần lưu đó đặt hết, kiểm lại sẽ báo vượt).
     const saved = decodeIntent(savedIntent);
-    if (saved) return json({ ids: saved, replayed: true });
+    if(saved){for(const id of saved)await loadPurchase(db,m,id,today());return json({ids:saved,replayed:true});}
+    for(const p of normalized)await assertSupplierScope(db,m,p.supplierId);
     const prepared=await Promise.all(normalized.map(async p=>({...p,supplier:await activeSupplier(db,p.supplierId)})));
     const needs = await checkSources(db, m, prepared.map(p => p.lines));
     let ids: string[] = [], replayed = false;
@@ -272,7 +291,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
         // Hai lần gửi cùng mã chạy song song: lần sau chờ lần trước xong rồi thấy kết quả đã lưu.
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'purchase-order-intent:' + m.id + ':' + clientKey}))`);
         const again = await earlier(tx as unknown as Db);
-        if (again) { ids = again; replayed = true; return; }
+        if (again) { for(const id of again)await loadPurchase(tx as unknown as Db,m,id,today());ids = again; replayed = true; return; }
       }
       // Revalidate after BEGIN and hold active/name stable until commit. Stable ordering avoids reversed supplier locks.
       for (const p of [...prepared].sort((a,b)=>a.supplierId.localeCompare(b.supplierId))) {
@@ -282,12 +301,13 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await lockSources(tx);
       await checkSources(tx as unknown as Db, m, prepared.map(p => p.lines));
       for (const p of prepared) {
+        const receivingWarehouseId=await validateReceivingWarehouse(tx as unknown as Db,p.receivingWarehouseId);
         const id = crypto.randomUUID(), now = nowIso(), ticket = await nextNumber(tx as unknown as Db, 'DMH', today());
         // Nhân viên lập = nháp (chưa vào hàng chờ duyệt, bấm "Gửi duyệt" khi xong); Manager lập thì coi như đã gửi.
-        await tx.insert(incomingShipments).values({ id, ticketNumber: ticket, source: 'supplier-order', approvalStatus: 'pending', submittedAt: m.role === 'manager' ? now : null, warehouse: p.warehouse, arrivalDate: p.arrivalDate,
+        await tx.insert(incomingShipments).values({ id, ticketNumber: ticket, source: 'supplier-order', approvalStatus: 'pending', submittedAt: m.role === 'manager' ? now : null, warehouse: p.warehouse, receivingWarehouseId, arrivalDate: p.arrivalDate,
           supplierId: p.supplier.id, supplierName: p.supplier.name, supplierInternalOrderNumber: p.internalNo, note: p.note, createdAt: now, createdBy: m.id, updatedAt: now, updatedBy: m.id });
         await insertLines(tx, id, p.lines, needs);
-        await event(tx, id, m.id, 'create', `Tạo đơn mua ${m.role === 'manager' ? '' : 'nháp '}${ticket} (${p.lines.length} mã)`, { sources: [...new Set(p.lines.flatMap(l => l.sources.map(s => needs.get(s.type + ':' + s.id)!.no)))] });
+        await event(tx, id, m.id, 'create', `Tạo đơn mua ${m.role === 'manager' ? '' : 'nháp '}${ticket} (${p.lines.length} mã)`, { receivingWarehouseId, sources: [...new Set(p.lines.flatMap(l => l.sources.map(s => needs.get(s.type + ':' + s.id)!.no)))] });
         ids.push(id);
       }
       if (clientKey) await tx.insert(purchaseOrderIntents).values({ createdBy: m.id, clientKey, requestHash, shipmentIds: JSON.stringify(ids), createdAt: nowIso() });
@@ -299,9 +319,10 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   //  Mỗi đơn = một số đơn phía NCC; số đơn đã có (cùng NCC, chưa huỷ) thì bỏ qua – nhập lại file không tạo trùng.
   //  Số đã giao trong file → phiếu nhận "không cần nhập Sapo" (hàng đã nhập Sapo từ trước), không ghi sổ kho.
   router.post('/purchase-orders/import', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), body = await readJson(c.req, 1_000_000);
     if (m.role !== 'manager') fail(403, 'Chỉ Manager nhập đơn mua từ file.');
+    await assertSupplierScope(db,me(c),String(body.supplierId||''));
     const supplier = await activeSupplier(db, body.supplierId), warehouse = deliveryAddress(body.warehouse);
     const taxRate = Number(body.taxRate ?? 0);
     if (!(taxRate >= 0 && taxRate <= 100)) fail(400, 'Thuế VAT không hợp lệ.');
@@ -381,7 +402,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   }
 
   router.post('/purchase-orders/:id/mail', async c => {
-    guard(c);
+    await guard(c);
     const body = await readJson(c.req, 4_000), kind = body.kind === 'order' ? 'order' : 'stock';
     const { db, m, id, p, to, cc } = await mailTarget(c, kind);
     await event(db, id, m.id, 'mail', (kind === 'order' ? 'Gửi email đơn đặt hàng tới ' : 'Gửi email hỏi tồn tới ') + to + (cc.length ? ` (CC ${cc.join(', ')})` : ''), { kind, to, cc });
@@ -391,7 +412,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   // ---- Gửi email đơn đặt hàng từ máy chủ, đính kèm PDF do trình duyệt tạo (cùng file với nút "PDF gửi NCC").
   //  Người nhận / tiêu đề / nội dung do máy chủ quyết theo đơn (không nhận từ trình duyệt); trả lời email về người bấm gửi.
   router.post('/purchase-orders/:id/send-email', async c => {
-    guard(c);
+    await guard(c);
     const body = await readJson(c.req, 6_000_000);
     const pdf = typeof body.pdf === 'string' ? body.pdf : '';
     if (!pdf || pdf.length > 5_500_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(pdf) || !pdf.startsWith('JVBERi0')) fail(400, 'File PDF đơn đặt hàng không hợp lệ.'); // "%PDF-"
@@ -430,9 +451,30 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
     return json((await loadPurchase(c.env.db, m, id, today())).view);
   }, 'business');
 
+  // Operational destination only; does not rewrite supplier commercial facts.
+  router.put('/purchase-orders/:id/receiving-warehouse',async c=>{
+    await guard(c);const m=me(c),id=c.params.id!,body=await readJson(c.req,2000);
+    await c.env.db.transaction(async tx=>{
+      const [row]=await tx.select().from(incomingShipments).where(eq(incomingShipments.id,id)).for('update');
+      if(!row||row.source!=='supplier-order')fail(404,'Không tìm thấy đơn mua.');
+      await loadPurchase(tx as unknown as Db,m,id,today());
+      if(m.role!=='manager'&&row!.createdBy!==m.id)fail(403,'Chỉ Manager hoặc người lập đơn được chọn kho nhận.');
+      if(row!.cancelledAt)fail(409,'Đơn đã huỷ.');
+      if(!Number.isSafeInteger(body.revision)||body.revision!==row!.revision)fail(409,'Đơn đã thay đổi, tải lại trước khi chọn kho.');
+      const receivingWarehouseId=await validateReceivingWarehouse(tx as unknown as Db,body.receivingWarehouseId);
+      if(receivingWarehouseId===row!.receivingWarehouseId)return;
+      const [receipt]=await tx.select({id:supplierReceipts.id}).from(supplierReceipts).where(eq(supplierReceipts.shipmentId,id)).limit(1);
+      if(receipt)fail(409,'Đã có phiếu nhận; giữ kho đã ghi để đối soát, không đổi kho của đơn.');
+      await bump(tx,id,m.id,{receivingWarehouseId});
+      await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:m.id,module:'suppliers',action:'receiving-warehouse',entityType:'purchase-order',entityId:id,data:JSON.stringify({before:row!.receivingWarehouseId,after:receivingWarehouseId}),createdAt:nowIso()});
+      await event(tx,id,m.id,'receiving-warehouse','Cập nhật kho nhận hàng',{before:row!.receivingWarehouseId,after:receivingWarehouseId});
+    });return json(await viewOf(c,id));
+  },'business');
+
   router.put('/purchase-orders/:id', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 400_000), prices = canSeePrices(asActor(m));
+    await assertSupplierScope(db,m,String(body.supplierId||''));
     const lines = cleanLines(body.lines, prices), supplier = await activeSupplier(db, body.supplierId);
     const arrivalDate = body.arrivalDate ? (isIsoDate(body.arrivalDate) ? body.arrivalDate : fail(400, 'Ngày hàng về dự kiến không hợp lệ.')) : null;
     await db.transaction(async tx => {
@@ -441,6 +483,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       // A number belongs to its supplier; omitted values survive same-supplier edits only.
       const internalNo = internalOrderNumber(body.internalNo === undefined ? (p.raw.order.supplierId === supplier.id ? p.raw.order.supplierInternalOrderNumber : '') : body.internalNo);
       const warehouse = deliveryAddress(body.warehouse);
+      const receivingWarehouseId=body.receivingWarehouseId===undefined?p.raw.order.receivingWarehouseId:await validateReceivingWarehouse(tx as unknown as Db,body.receivingWarehouseId);
       const needs = await checkSources(tx as unknown as Db, m, [lines], id);
       // Editing quantities/products must not erase saved costs, including prices hidden from the employee.
       const rawLines=body.lines as Record<string,unknown>[];
@@ -453,17 +496,18 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       await tx.delete(supplierOrderSources).where(eq(supplierOrderSources.shipmentId, id));
       await tx.delete(incomingShipmentLines).where(eq(incomingShipmentLines.shipmentId, id));
       await insertLines(tx, id, lines, needs);
-      await bump(tx, id, m.id, { supplierId: supplier.id, supplierName: supplier.name, supplierInternalOrderNumber: internalNo, arrivalDate, note: str(body.note, 2000), warehouse });
+      await bump(tx, id, m.id, { supplierId: supplier.id, supplierName: supplier.name, supplierInternalOrderNumber: internalNo, arrivalDate, note: str(body.note, 2000), warehouse, receivingWarehouseId });
       const before = new Map(p.raw.lines.map(l => [l.sku, l.quantity])), after = new Map(lines.map(l => [l.sku, l.quantity]));
       const diff = [...new Set([...before.keys(), ...after.keys()])].filter(k => before.get(k) !== after.get(k)).map(k => `${k}: ${before.get(k) ?? 0} → ${after.get(k) ?? 0}`);
       await event(tx, id, m.id, 'update', 'Sửa đơn nháp' + (diff.length ? ' – ' + diff.slice(0, 8).join('; ') : '') + (p.raw.order.supplierId !== supplier.id ? ` · đổi NCC sang ${supplier.name}` : ''), { diff });
+      if(receivingWarehouseId!==p.raw.order.receivingWarehouseId)await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId:m.id,module:'suppliers',action:'receiving-warehouse',entityType:'purchase-order',entityId:id,data:JSON.stringify({before:p.raw.order.receivingWarehouseId,after:receivingWarehouseId}),createdAt:nowIso()});
     });
     return json(await viewOf(c, id));
   }, 'business');
 
   // ---- Manager duyệt giá / chiết khấu / lịch trả
   router.post('/purchase-orders/:id/approve', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 100_000);
     await db.transaction(async tx => {
       const p = await lockAndCheck(c, tx, id, 'approve', body.revision);
@@ -494,7 +538,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
 
   // ---- Gửi duyệt: nháp của nhân viên → vào hàng chờ duyệt của Manager
   router.post('/purchase-orders/:id/submit', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 4_000);
     await db.transaction(async tx => {
       await lockAndCheck(c, tx, id, 'submit', body.revision);
@@ -508,7 +552,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
 
   // ---- Lưu giá nhập khi chưa duyệt (Manager): giá / CK / VAT từng dòng, đơn vẫn là nháp. Ô giá để trống = chưa có giá.
   router.post('/purchase-orders/:id/prices', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 100_000);
     await db.transaction(async tx => {
       const p = await lockAndCheck(c, tx, id, 'approve', body.revision);
@@ -530,7 +574,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
 
   // ---- Manager ghi nhận xác nhận / ngày hẹn thay NCC
   router.post('/purchase-orders/:id/confirm', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 100_000);
     await db.transaction(async tx => {
       const p = await lockAndCheck(c, tx, id, 'confirm', body.revision);
@@ -553,7 +597,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.post('/purchase-orders/:id/cancel', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 8_000), reason = str(body.reason, 500);
     if (reason.length < 3) fail(400, 'Nhập lý do huỷ đơn mua.');
     await db.transaction(async tx => {
@@ -568,8 +612,10 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
 
   // ---- Nhận hàng từng đợt (kho / Manager)
   router.post('/purchase-orders/:id/receipts', async c => {
-    guard(c);
+    if(isWarehouseStaff(me(c))){await receivingContext(c.env.db,me(c),c.params.id!,today());}else await guard(c);
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 100_000 + WH_PHOTO_MAX * WH_PHOTO_MAX_CHARS), clientKey = str(body.clientKey, 80);
+    const warehouseContext=isWarehouseStaff(m)?await receivingContext(db,m,id,today()):null;
+    if(warehouseContext)await receivingDestination(db,m,id,String(body.warehouse??''),today());
     const createSapo=body.createSapo!==false;
     if(body.createSapo!==undefined&&typeof body.createSapo!=='boolean')fail(400,'Lựa chọn tạo đơn Sapo không hợp lệ.');
     if (clientKey.length < 8) fail(400, 'Thiếu mã chống bấm lặp – tải lại trang rồi thử lại.');
@@ -581,7 +627,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       if (r.requestHash && r.requestHash !== requestHash) throw new AppError(409, 'Mã chống bấm lặp đã dùng cho phiếu nhận khác (số lượng / kho / ngày / phiếu xin hàng). Tải lại trang rồi nhập lại.', 'IDEMPOTENCY_CONFLICT');
     };
     const [dup] = await db.select({ id: supplierReceipts.id, shipmentId: supplierReceipts.shipmentId,createSapo:supplierReceipts.createSapo, requestHash: supplierReceipts.requestHash }).from(supplierReceipts).where(eq(supplierReceipts.clientKey, clientKey)).limit(1);
-    if (dup) { sameRequest(dup); return json({ ...await viewOf(c, id), receiptId: dup.id, duplicate: true }); }
+    if (dup) { sameRequest(dup); return json({ ...await receiptViewOf(c, id), receiptId: dup.id, duplicate: true }); }
     const photos = parsePhotos(body.photos);
     let receiptId = '', duplicate = false;
     // Ảnh tải lên kho file trước giao dịch: không giữ khoá nguồn hàng toàn hệ thống / sổ kho trong lúc tải.
@@ -608,6 +654,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       if (!photos.length && v.lines.some(l => l.damagedQty > 0)) fail(400, 'Có hàng hỏng: chụp 1–3 ảnh hàng hỏng trước khi lưu.');
       receiptId = plannedId;
       const no = await nextNumber(tx as unknown as Db, 'PNH', today());
+      if(isWarehouseStaff(m))await receivingDestination(tx as unknown as Db,m,id,String(body.warehouse??''),today());
       const whName = str(body.warehouse, 120);
       const whId = await stockWarehouseByName(tx as unknown as Db, whName);
       if (!whId) throw new AppError(400, 'Chọn kho nhận hàng là kho thật đang hoạt động trong danh sách kho.');
@@ -655,15 +702,15 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
       if(createSapo&&payload.items.length)await queueReceiptJob(tx,receiptId,payload,missing.length?'Thiếu dữ liệu: '+missing.join(', '):'');
       else await tx.update(supplierReceipts).set({sapoStatus:'not_needed',sapoNote:createSapo?'Không có hàng đạt để nhập Sapo.':'Người nhận chọn chỉ nhập CRM, không tạo đơn Sapo.',sapoUpdatedAt:nowIso(),sapoUpdatedBy:m.id}).where(eq(supplierReceipts.id,receiptId));
     }); } catch (e) { await discardPhotos(c.env.files, uploaded); throw e; }
-    if(duplicate){await discardPhotos(c.env.files, uploaded);return json({...await viewOf(c,id),receiptId,duplicate:true});}
+    if(duplicate){await discardPhotos(c.env.files, uploaded);return json({...await receiptViewOf(c,id),receiptId,duplicate:true});}
     if(createSapo){const delivery = dispatchReceiptJob(c.env,receiptId).catch(() => ({sent:false,skipped:false}));
     if(c.env.waitUntil)c.env.waitUntil(delivery);else await delivery;}
-    return json({ ...await viewOf(c, id), receiptId }, 201);
+    return json({ ...await receiptViewOf(c, id), receiptId }, 201);
   }, 'business');
 
   // ---- Trạng thái nhập kho Sapo của một phiếu nhận (Sapo là nguồn tồn chính, CRM không tự cộng tồn)
   router.put('/supplier-receipts/:id/sapo', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), a = asActor(m), body = await readJson(c.req, 8_000);
     if (!canReceive(a)) fail(403, 'Chỉ người được nhận hàng cập nhật trạng thái nhập kho Sapo.');
     const status = String(body.status), code = str(body.code, 100), note = str(body.note, 500);
@@ -688,7 +735,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.post('/supplier-receipts/:id/cancel', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), body = await readJson(c.req, 8_000), reason = str(body.reason, 500);
     if (m.role !== 'manager') fail(403, 'Chỉ Manager được huỷ phiếu nhận.');
     if (reason.length < 3) fail(400, 'Nhập lý do huỷ phiếu nhận.');
@@ -727,7 +774,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
 
   // ---- Thanh toán NCC (Manager / Kế toán)
   router.put('/purchase-orders/:id/schedules', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 40_000);
     await db.transaction(async tx => {
       const p = await lockAndCheck(c, tx, id, 'schedule');
@@ -740,7 +787,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.post('/purchase-orders/:id/payments', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), id = c.params.id!, body = await readJson(c.req, 9_000_000), clientKey = str(body.clientKey, 80);
     if (clientKey.length < 8) fail(400, 'Thiếu mã chống bấm lặp – tải lại trang rồi thử lại.');
     const [dup] = await db.select({ id: supplierPayments.id, shipmentId: supplierPayments.shipmentId }).from(supplierPayments).where(eq(supplierPayments.clientKey, clientKey)).limit(1);
@@ -772,7 +819,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.post('/supplier-payments/:id/void', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c), body = await readJson(c.req, 8_000), reason = str(body.reason, 500);
     if (m.role !== 'manager') fail(403, 'Chỉ Manager được huỷ khoản trả NCC.');
     if (reason.length < 3) fail(400, 'Nhập lý do huỷ khoản trả.');
@@ -797,7 +844,7 @@ export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   }, 'business');
 
   router.get('/supplier-payments/:id/attachment', async c => {
-    guard(c);
+    await guard(c);
     const db = c.env.db, m = me(c);
     const [pay] = await db.select().from(supplierPayments).where(eq(supplierPayments.id, c.params.id!)).limit(1);
     if (!pay?.attachmentKey) fail(404, 'Khoản trả không có chứng từ.');

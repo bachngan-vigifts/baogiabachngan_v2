@@ -1,3 +1,4 @@
+import {sql} from 'drizzle-orm';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {eq} from 'drizzle-orm';
@@ -20,7 +21,7 @@ test('Minh Long matching is supplier-only and browser policy matches backend',()
  assert.equal(readFileSync(SUPPLIER_ORDER_NUMBER_OUT,'utf8'),bundleSupplierOrderNumber());
 });
 async function fixture(){
- const f=await createTestDb();await seedStaff(f.d1);const router=createAppRouter();
+ const f=await createTestDb();await seedStaff(f.d1);await f.db.execute(sql`update staff_members set position_id='sale-admin' where id='emp'`);const router=createAppRouter();
  const env={db:f.db,passwordIterations:1000,sapoOrderPush:'off' as const};
  const call=async(path:string,cookie='',method='GET',body?:unknown)=>{
   const r=await router.handle(new Request('https://trial.test/api/staff'+path,{method,headers:{origin:'https://trial.test',cookie,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)}),env);
@@ -28,7 +29,7 @@ async function fixture(){
  };
  const mgr=(await call('/login','','POST',{email:'mgr@x.vn',password:PASSWORD})).cookie,emp=(await call('/login','','POST',{email:'emp@x.vn',password:PASSWORD})).cookie;
  const now=new Date().toISOString();
- await f.db.insert(suppliers).values([{id:'ml',name:'CÔNG TY TNHH MINH LONG I',nameKey:'minh long',createdAt:now,updatedAt:now,createdBy:'mgr'},{id:'other',name:'Lys Ceramics',nameKey:'lys ceramics',createdAt:now,updatedAt:now,createdBy:'mgr'}]);
+ await f.db.insert(suppliers).values([{id:'ml',name:'CÔNG TY TNHH MINH LONG I',nameKey:'minh long',saleAdminBrand:'minhlong',createdAt:now,updatedAt:now,createdBy:'mgr'},{id:'other',name:'Lys Ceramics',nameKey:'lys ceramics',saleAdminBrand:'locknlock',createdAt:now,updatedAt:now,createdBy:'mgr'}]);
  const order=(supplierId='ml',internalNo?:unknown)=>({supplierId,warehouse:'Kho kiểm thử',internalNo,lines:[{sku:'001',name:'Ly Minh Long',quantity:2}]});
  const get=async(id:string)=>(await call('/purchase-orders/'+id,mgr)).data;
  const create=async(supplierId='ml',internalNo?:unknown)=>{
@@ -101,6 +102,7 @@ test('supplier reference can be supplemented after approval, confirmation, parti
  assert.equal((await update(f.mgr,undefined,'NO-REVISION')).status,400);
  assert.equal((await update('',v.revision,'NO-SESSION')).status,401);
  await f.db.update(incomingShipments).set({createdBy:'mgr'}).where(eq(incomingShipments.id,v.id));
+ await f.db.execute(sql`delete from staff_position_permissions where position_id='sale-admin' and permission='purchases.confirm'`);
  assert.equal((await update(f.emp,v.revision,'UNRELATED')).status,403);
  const events=await f.db.select().from(supplierOrderEvents).where(eq(supplierOrderEvents.shipmentId,v.id));
  assert.equal(events.filter(e=>e.action==='supplier-reference').length,4);

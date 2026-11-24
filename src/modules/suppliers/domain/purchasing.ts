@@ -1,3 +1,4 @@
+import {purchaseReadLevel} from './purchase-access.ts';
 import { isSupplier, SALE_ADMIN_POSITION_ID, type Role } from '../../staff/domain/roles.ts';
 import { can, canApprove } from '../../staff/domain/permissions.ts';
 import { isIsoDate } from './quantity.ts';
@@ -26,9 +27,9 @@ export const isAccountantStaff = (a: Actor | null | undefined) => isEmployee(a) 
 export const canSeePrices = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && (can(a, 'purchases.prices') || canApprove(a));
 /** Sale Admin được xử lý và xem đầy đủ chứng từ đã duyệt, không mở giá của đơn nháp khi chưa được cấp quyền. */
 export const canSeePurchasePrices = (a: Actor | null | undefined, o: Pick<OrderFlags, 'approvalStatus'>) => canSeePrices(a) || isSaleAdminStaff(a) && o.approvalStatus === 'approved';
-export const canSendEarlyRequest = (a: Actor) => isManager(a) || isEmployee(a) && can(a, 'purchases.early-request');
-export const canViewEarlyRequests = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.early-view');
-export const canUsePurchasing = (a: Actor | null | undefined) => isManager(a) || isEmployee(a);
+export const canSendEarlyRequest = (a: Actor) => isManager(a) || canUsePurchasing(a) && isEmployee(a) && can(a, 'purchases.early-request');
+export const canViewEarlyRequests = (a: Actor | null | undefined) => isManager(a) || canUsePurchasing(a) && isEmployee(a) && can(a, 'purchases.early-view');
+export const canUsePurchasing = (a: Actor | null | undefined) => purchaseReadLevel(a)!=='none';
 export const canReceive = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.receive');
 /** Staff record an actual supplier confirmation; this does not approve purchase prices or early requests. */
 export const canRecordSupplierConfirmation = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.confirm');
@@ -61,7 +62,7 @@ const OK: Check = { ok: true };
 
 /** Một nguồn quyết định cho cả nút trên giao diện (`purchaseActions`) và kiểm tra ở máy chủ. */
 export function checkPurchase(action: PurchaseAction, a: Actor | null | undefined, o: OrderFlags, p: { anyReceived: boolean; fullyReceived: boolean; paid: number }): Check {
-  if (!a?.active || !canUsePurchasing(a)) return no(403, 'Bạn không có quyền với đơn mua hàng.');
+  if (!a?.active || (!canUsePurchasing(a)&&!(action==='receive'&&isWarehouseStaff(a)&&canReceive(a)))) return no(403, 'Bạn không có quyền với đơn mua hàng.');
   const manager = isManager(a), state = purchaseState(o, p);
   if (state === 'cancelled' && action !== 'pdf') return no(409, 'Đơn mua đã huỷ.');
   switch (action) {

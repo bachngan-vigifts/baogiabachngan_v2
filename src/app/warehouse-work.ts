@@ -33,8 +33,8 @@ export function registerWarehouseWork(router: Router<StaffEnv>) {
         db.select({ due: sql<number>`count(*) filter(where ${deliveries.plannedDate}<=${today})`.mapWith(Number), tomorrow: sql<number>`count(*) filter(where ${deliveries.plannedDate}=${tomorrow})`.mapWith(Number), failed: sql<number>`count(*) filter(where ${deliveries.status}='failed')`.mapWith(Number) }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(shipWhere),
         db.select({ id: deliveries.id, deliveryNo: deliveries.deliveryNo, customerName: salesOrders.customerName, plannedDate: deliveries.plannedDate, status: deliveries.status, address: deliveries.address }).from(deliveries).innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(shipWhere).orderBy(asc(deliveries.plannedDate), asc(deliveries.id)).limit(6),
       ]).then(([[totals], rows]) => ({ due: totals?.due || 0, tomorrow: totals?.tomorrow || 0, failed: totals?.failed || 0, rows })) : null,
-      purchase ? receivingCalendar(db, new URLSearchParams({ type: 'purchase' }), today) : null,
-      purchase ? receivingCalendar(db, new URLSearchParams({ type: 'early' }), today, { reminderOnly: true }) : null,
+      purchase ? receivingCalendar(db, new URLSearchParams({ type: 'purchase' }), today,{member}) : null,
+      purchase ? receivingCalendar(db, new URLSearchParams({ type: 'early' }), today, { reminderOnly: true,member }) : null,
       transferWork(db, member),
       purchase ? Promise.all([
         db.select({count:sql<number>`count(distinct ${incomingShipments.id})`.mapWith(Number)}).from(incomingShipments).innerJoin(supplierReceipts,eq(supplierReceipts.shipmentId,incomingShipments.id)).where(sapoWhere),

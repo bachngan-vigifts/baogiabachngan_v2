@@ -48,7 +48,8 @@ test('kiểm quyền và validate server; nháp giữ dòng thiếu nguồn như
   const noLongerAvailable=await call('/purchase-early-requests',c.mgr,'POST',{...valid,lines:[{sku:'01654020803',quantity:2}]});
   assert.equal(noLongerAvailable.status,201);assert.equal(noLongerAvailable.data.request.lines[0].status,'unresolved');
   const filtered=await call('/purchase-early-requests',c.mgr,'POST',{...valid,clientKey:'validate-filter-001',scope:{supplierId:'b'},lines:[{sku:'031106000',quantity:5001}]});assert.equal(filtered.status,201);
-  for(const id of ['mgr','sa','emp','kho','kt']) assert.equal((await call('/purchase-early-requests',c[id])).status,200);
+  for(const id of ['mgr','sa','kt']) assert.equal((await call('/purchase-early-requests',c[id])).status,200);
+  for(const id of ['emp','kho'])assert.equal((await call('/purchase-early-requests',c[id])).status,403);
   assert.equal((await call('/purchase-early-requests',c.ncc)).status,403);
   await db.execute((await import('drizzle-orm')).sql`delete from staff_position_permissions where position_id='sale' and permission='page.purchases'`);
   assert.equal((await call('/purchase-incoming',c.emp)).status,403,'thu hồi quyền trang áp dụng cả API tổng hợp mới');
@@ -124,7 +125,7 @@ test('lịch nhận: phiếu xin mới trên cùng, lọc loại/SKU/NCC trướ
   assert.equal(early.data.rows.find((r:any)=>r.supplierId==='a'&&r.requestId===newer.data.id).lines[0].requestedQty,15000);
   const one=await call('/purchase-receiving-calendar?type=early&sku=031106000&supplierId=b',c.mgr);
   assert.equal(one.data.total,1);assert.equal(one.data.rows[0].lines[0].requestedQty,2000);
-  const purchases=await call('/purchase-receiving-calendar?type=purchase&sku=031106000',c.kho);
+  const purchases=await call('/purchase-receiving-calendar?type=purchase&sku=031106000',c.kt);
   assert.equal(purchases.data.rows.every((r:any)=>r.type==='purchase'),true);assert.equal(purchases.data.canConfirmEarly,false);
   assert.equal((await call('/purchase-receiving-calendar?type=wrong',c.mgr)).status,400);
   assert.equal((await call('/purchase-receiving-calendar?type=early&sku=not-found',c.mgr)).data.total,0);

@@ -4,6 +4,7 @@ import { confirmWarehouseSupply } from '../helpers/confirmed-warehouse-supply.ts
 import { receivingReminderTasks } from '../../src/modules/tasks/api/receiving-reminders.ts';
 import { reconcileTaskSet } from '../../src/modules/tasks/api/auto-tasks.ts';
 import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
+import {warehouseSellers} from '../../src/modules/inventory/schema.ts';
 import { warehouses } from '../../src/modules/catalog/schema.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -176,11 +177,12 @@ test('việc tự sinh của nhân viên đã khoá / đã xoá chuyển về "c
 test('nhận hàng NCC: không hoàn thành/huỷ thủ công, vẫn nhận việc và tự xong khi đã nhận đủ', async () => {
   const { db, call, mgr, kho } = await setup();
   await db.insert(warehouses).values({id:'task-wh',name:'Kho việc nhận',kind:'stock'});
+  await db.insert(warehouseSellers).values({warehouseId:'task-wh',positionId:'warehouse'});
   await postMoves(db,'mgr',[{sku:'RECEIVE-TEST',warehouseId:'task-wh',qty:1,kind:'opening',refType:'opening',refId:'task-fixture'}]);
   const { vietnamDate } = await import('../../src/modules/sales/domain/sales.ts');
   const supplier = await call('/suppliers', mgr, 'POST', { name: 'NCC kiểm tra tự hoàn thành' });
   const created = await call('/purchase-orders', mgr, 'POST', { orders: [{ supplierId: supplier.data.supplier.id,
-    warehouse: '12 Đường Giao Hàng', arrivalDate: addDaysIso(vietnamDate().iso,-1), lines: [{ sku: 'RECEIVE-TEST', name: 'Ly', quantity: 10 }] }] });
+    warehouse: 'Địa chỉ giao tự do', receivingWarehouseId:'task-wh', arrivalDate: addDaysIso(vietnamDate().iso,-1), lines: [{ sku: 'RECEIVE-TEST', name: 'Ly', quantity: 10 }] }] });
   assert.equal(created.status, 201, JSON.stringify(created.data));
   const id = created.data.ids[0];
   let order = (await call(`/purchase-orders/${id}`, mgr)).data;
@@ -192,7 +194,9 @@ test('nhận hàng NCC: không hoàn thành/huỷ thủ công, vẫn nhận vi�
   const reminders=await receivingReminderTasks(db,atEight);
   await reconcileTaskSet(db,new Map(reminders.map(t=>[t.autoKey,t])),atEight,like(tasks.autoKey,'receiving-due:%'));
   const list = (await call('/tasks?refresh=1', kho)).data.tasks;
-  const task = list.find((t: any) => t.sourceId === id && t.completionFromSource);
+  const managed=(await call('/tasks?refresh=1&view=all',mgr)).data.tasks.find((t:any)=>t.sourceId===id&&t.completionFromSource&&t.assigneeId==='kho');
+  const task = list.find((t: any) => t.id===managed?.id && t.completionFromSource);
+  assert.ok(task,JSON.stringify(list));assert.equal(task.sourceId,null,'Kho không nhận ID PO thương mại');assert.equal(task?.link,'#/receiving');
   assert.ok(task, JSON.stringify(list));
   assert.equal((await call(`/tasks/${task.id}`, kho)).data.task.completionFromSource, true);
   for (const actor of [mgr, kho]) for (const status of ['done', 'cancelled']) {

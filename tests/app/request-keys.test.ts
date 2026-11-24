@@ -30,7 +30,7 @@ test('lịch giao: gửi lại cùng nội dung trả chuyến cũ; cùng mã kh
  const first=await f.schedule({clientKey:key});assert.equal(first.status,201,JSON.stringify(first.data));
  const again=await f.schedule({clientKey:key});assert.equal(again.status,200);assert.deepEqual([again.data.id,again.data.replayed],[first.data.id,true]);
  for(const other of [{lines:[{orderLineId:f.line.id,qty:3}]},{plannedDate:'2026-11-06'},{address:'Địa chỉ khác'}]){
-  const r=await f.schedule({clientKey:key,...other});assert.equal(r.status,409,JSON.stringify(other));assert.equal(r.data.code,'IDEMPOTENCY_CONFLICT');
+  const r=await f.schedule({clientKey:key,...other});assert.equal(r.status,'warehouse' in other?404:409,JSON.stringify(other));if(!('warehouse' in other))assert.equal(r.data.code,'IDEMPOTENCY_CONFLICT');
  }
  assert.equal((await f.schedule({clientKey:'bad'})).status,400);
  assert.equal(await f.trips(),1);
@@ -50,7 +50,7 @@ test('phiếu nhận NCC: cùng mã khác số lượng / kho / ngày / phiếu 
  const first=await f.receive({clientKey:key});assert.equal(first.status,201,JSON.stringify(first.data));assert.equal(await f.balance(),2);
  const again=await f.receive({clientKey:key});assert.equal(again.status,200);assert.equal(again.data.duplicate,true);
  for(const other of [{lines:[{lineId:'line-a1',goodQty:3,damagedQty:0}]},{warehouse:'Kho khác'},{receivedDate:'2026-10-27'},{earlyRequestId:'phieu-xin-khac'}]){
-  const r=await f.receive({clientKey:key,...other});assert.equal(r.status,409,JSON.stringify(other));assert.equal(r.data.code,'IDEMPOTENCY_CONFLICT');
+  const r=await f.receive({clientKey:key,...other});assert.equal(r.status,'warehouse' in other?404:409,JSON.stringify(other));if(!('warehouse' in other))assert.equal(r.data.code,'IDEMPOTENCY_CONFLICT');
  }
  assert.equal((await f.db.select().from(supplierReceipts)).length,1);assert.equal(await f.balance(),2,'không cộng kho lần hai');
 });

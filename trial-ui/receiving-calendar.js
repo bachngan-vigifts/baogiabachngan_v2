@@ -1,3 +1,4 @@
+import {initWarehouseReceiving} from './warehouse-receiving.js';
 import { el, buyHead, buyKpis, buyTools, buyBadge, buyDate, buyDueText, buyNum } from './buy-layout.js';
 
 const EARLY_STATUS = { draft: ['Nháp, chưa gửi NCC', 'grey'], pending: ['Chờ NCC xác nhận', 'amber'], accepted: ['NCC đồng ý', 'blue'], rejected: ['NCC từ chối', 'red'], mixed: ['NCC phản hồi một phần', 'amber'] };
@@ -9,7 +10,8 @@ const STATES = [
 ];
 
 /** Trang Nhận hàng: hàng NCC còn chờ nhận (đơn mua + phiếu lấy hàng trước), mới tạo nằm trên. */
-export function initReceivingCalendar({ api, root, confirmBox = async () => false }) {
+export function initReceivingCalendar({ api, root, confirmBox = async () => false,warehouse=()=>false }) {
+  if(warehouse())return initWarehouseReceiving({api,root});
   const page = el('div', 'sup-page buy-page');
   const head = buyHead({ eyebrow: 'Kho & giao hàng', title: 'Nhận hàng NCC',
     desc: 'Hàng NCC còn chờ nhận: đơn mua và phiếu lấy hàng trước. Bấm Nhận hàng để ghi phiếu nhận.',

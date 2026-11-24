@@ -2,11 +2,11 @@ import { AppError } from '../../../core/errors.ts';
 import { fold } from '../../../core/text/fold.ts';
 import { isIsoDate } from '../domain/quantity.ts';
 import { outstandingLines } from './incoming-stock.ts';
-import type { Db } from './purchase-store.ts';
+import {purchaseScope,type Db,type Member} from './purchase-store.ts';
 
 const plusDays = (day: string, count: number) => new Date(Date.parse(day + 'T00:00:00Z') + count * 86400000).toISOString().slice(0, 10);
 /** Read only. Aggregate every eligible purchase line BEFORE pagination; never select customer/source names or prices. */
-export async function incomingBySku(db: Db, query: URLSearchParams, today: string, paginate = true) {
+export async function incomingBySku(db: Db, query: URLSearchParams, today: string, paginate = true, member?:Member) {
   const from = query.get('from') || '', to = query.get('to') || '', status = query.get('status') || 'all';
   if ((from && !isIsoDate(from)) || (to && !isIsoDate(to)) || (from && to && from > to)) throw new AppError(400, 'Khoảng ngày hẹn không hợp lệ.');
   if (!['all', 'late', 'week'].includes(status)) throw new AppError(400, 'Bộ lọc hàng đang về không hợp lệ.');
@@ -18,7 +18,7 @@ export async function incomingBySku(db: Db, query: URLSearchParams, today: strin
   const limit = int('limit', 50, 100), offset = int('offset', 0, 1000000);
   if (!limit) throw new AppError(400, 'Số dòng mỗi trang phải lớn hơn 0.');
   const q = fold((query.get('q') || '').trim().slice(0, 200)), supplierId = query.get('supplierId') || '';
-  const all = await outstandingLines(db);
+  const all = await outstandingLines(db,undefined,false,member?{predicate:purchaseScope(member)}:undefined);
   const selected = query.getAll('sku');
   if (selected.length > 300 || selected.some(s => !s || s.length > 200)) throw new AppError(400, 'Danh sách mã đã chọn không hợp lệ.');
   const suppliers = [...new Map(all.filter(l => l.supplierId).map(l => [l.supplierId!, { id: l.supplierId!, name: l.supplierName }])).values()].sort((a,b) => a.name.localeCompare(b.name, 'vi'));

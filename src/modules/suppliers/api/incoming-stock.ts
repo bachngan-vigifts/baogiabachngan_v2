@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { products, productStock, warehouses } from '../../catalog/schema.ts';
 import { incomingShipmentLines, incomingShipments, supplierOrderEvents, supplierOrderSources, supplierReceiptLines, supplierReceipts } from '../schema.ts';
 import type { Db } from './purchase-store.ts';
@@ -7,7 +7,7 @@ import type { Db } from './purchase-store.ts';
  * Các dòng đơn mua NCC còn chờ về: đơn đã duyệt, chưa huỷ; còn thiếu = đặt − đã nhận đạt (phiếu nhận chưa huỷ).
  * `skus` = chỉ các mã này (bỏ trống = mọi mã). Kèm số đơn, NCC, ngày hẹn để trang Tra tồn hiện chi tiết.
  */
-export async function outstandingLines(db: Db, skus?: readonly string[], catalogOnly = false, scope?: { orderId?: string; lineIds?: string[] }) {
+export async function outstandingLines(db: Db, skus?: readonly string[], catalogOnly = false, scope?: { orderId?: string; lineIds?: string[]; predicate?:SQL }) {
   if (skus && !skus.length) return [];
   const ordered = await db.select({ sku: incomingShipmentLines.sku, name: incomingShipmentLines.name, unit: incomingShipmentLines.unit,
     lineId: incomingShipmentLines.id, qty: sql<number>`${incomingShipmentLines.quantity}-${incomingShipmentLines.creditedQty}`.mapWith(Number), supplierId: incomingShipments.supplierId,
@@ -19,7 +19,7 @@ export async function outstandingLines(db: Db, skus?: readonly string[], catalog
     .from(incomingShipmentLines).innerJoin(incomingShipments, eq(incomingShipments.id, incomingShipmentLines.shipmentId))
     .leftJoin(products, eq(products.sku, incomingShipmentLines.sku))
     .where(and(eq(incomingShipments.source, 'supplier-order'), eq(incomingShipments.approvalStatus, 'approved'), isNull(incomingShipments.cancelledAt),
-      scope?.orderId ? eq(incomingShipments.id, scope.orderId) : undefined, scope?.lineIds ? inArray(incomingShipmentLines.id, scope.lineIds) : undefined,
+      scope?.predicate, scope?.orderId ? eq(incomingShipments.id, scope.orderId) : undefined, scope?.lineIds ? inArray(incomingShipmentLines.id, scope.lineIds) : undefined,
       skus ? inArray(incomingShipmentLines.sku, [...skus]) : undefined, catalogOnly ? sql`${products.sku} is not null` : undefined));
   const lineIds = ordered.map(o => o.lineId);
   const got = lineIds.length ? await db.select({ lineId: supplierReceiptLines.lineId, good: sql<number>`sum(${supplierReceiptLines.goodQty}-${supplierReceiptLines.returnedGoodQty})`.mapWith(Number) })

@@ -84,7 +84,7 @@ test('Manager duyệt được mọi loại; nhân viên thường và Sale Admi
     assert.equal((await s.call(`/orders/${oid}/status`, who, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 403, 'đơn hàng / HĐKT');
     const p = await s.pendingPurchase();
     // Sale thường không thấy đơn mua nháp của Manager (404); Sale Admin thấy (quyền Kế toán) nhưng không duyệt được (403).
-    assert.equal((await s.call(`/purchase-orders/${p.id}/approve`, who, 'POST', p.body)).status, who === s.sadmin ? 403 : 404, 'đơn mua NCC');
+    assert.equal((await s.call(`/purchase-orders/${p.id}/approve`, who, 'POST', p.body)).status, who === s.sadmin ? 404 : 403, 'đơn mua NCC');
     assert.equal((await s.call('/approvals', who)).status, 403, 'hộp Cần duyệt');
     assert.equal((await s.call('/me', who)).data.user.approver, false);
   }
@@ -119,8 +119,8 @@ test('cờ "Được duyệt": chỉ Manager bật / tắt; người được ch
   assert.equal((await s.call(`/orders/${oid}`, s.duyet)).status, 200, 'mở được đơn chờ duyệt để kiểm tra');
   assert.equal((await s.call(`/orders/${oid}/status`, s.duyet, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 200);
   const p = await s.pendingPurchase();
-  assert.equal((await s.call(`/purchase-orders/${p.id}`, s.duyet)).data.priceHidden, false, 'người duyệt đơn mua thấy giá');
-  assert.equal((await s.call(`/purchase-orders/${p.id}/approve`, s.duyet, 'POST', p.body)).status, 200);
+  assert.equal((await s.call(`/purchase-orders/${p.id}`, s.duyet)).status,403, 'cờ duyệt không vượt trần chức vụ mua');
+  assert.equal((await s.call(`/purchase-orders/${p.id}/approve`, s.duyet, 'POST', p.body)).status, 403);
   assert.equal((await s.call('/approvals', s.duyet)).status, 200);
   // Sale Admin được Manager bật cờ thì cũng duyệt được.
   await s.call('/admin/members/sadmin/approver', s.mgr, 'PUT', { approver: true });

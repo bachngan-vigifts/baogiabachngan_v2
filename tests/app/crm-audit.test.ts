@@ -1,7 +1,7 @@
 import {approveFixtureOrder} from '../helpers/approval-cost-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { eq } from 'drizzle-orm';
+import { eq,sql } from 'drizzle-orm';
 import { createTestDb } from '../helpers/postgres.ts';
 import { seedStaff, PASSWORD } from '../helpers/staff-fixture.ts';
 import { hashPassword } from '../../src/core/auth/password.ts';
@@ -78,8 +78,8 @@ test('Kho: danh sách / chi tiết sản phẩm không có giá bán; nhân viê
 });
 
 test('đơn mua NCC: gửi duyệt vào hộp Cần duyệt + báo người duyệt; duyệt / huỷ báo người lập', async () => {
-  const s = await setup(), qid = await quote(s, 'BG_MUA');
-  const sup = (await s.call('/suppliers', s.mgr, 'POST', { name: 'Minh Long', contacts: [{ kind: 'order', email: 'ml@ncc.vn' }] })).data.supplier.id as string;
+  const s = await setup();await s.db.execute(sql`update staff_members set position_id='sale-admin' where id='emp'`);const qid=await quote(s,'BG_MUA');
+  const sup = (await s.call('/suppliers', s.mgr, 'POST', { name: 'Minh Long',saleAdminBrand:'minhlong', contacts: [{ kind: 'order', email: 'ml@ncc.vn' }] })).data.supplier.id as string;
   const po = async () => {
     const r = await s.call('/purchase-orders', s.emp, 'POST', { orders: [{ supplierId: sup, warehouse: 'Kho 1', lines: [{ sku: 'LY1', quantity: 2, sources: [{ type: 'quote', id: qid, quantity: 2 }] }] }] });
     assert.equal(r.status, 201, JSON.stringify(r.data)); return r.data.ids[0] as string;

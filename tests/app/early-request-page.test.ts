@@ -30,6 +30,6 @@ test('early request index filters all headers before stable pagination, retains 
   assert.equal((await f.call('/purchase-early-requests?dateBy=created&from=2026-10-25&to=2026-10-25',f.cookies.mgr)).data.requests.length,0,'created dates use Vietnam timezone');
   assert.equal((await f.call('/purchase-early-requests?dateBy=created&from=2026-10-26&to=2026-10-26',f.cookies.mgr)).data.requests.length,50);
   for(const q of ['status=nope','limit=51','offset=-1','offset=1.5','dateBy=unknown','from=bad','from=2026-10-27&to=2026-10-26','q='+ 'a'.repeat(201)])assert.equal((await f.call('/purchase-early-requests?'+q,f.cookies.mgr)).status,400,q);
-  assert.equal((await f.call('/purchase-early-requests',f.cookies.kho)).status,200);assert.equal((await f.call('/purchase-early-requests',f.cookies.ncc)).status,403);
+  assert.equal((await f.call('/purchase-early-requests',f.cookies.kho)).status,403);assert.equal((await f.call('/purchase-early-requests',f.cookies.ncc)).status,403);
   await f.db.execute(sql`delete from staff_position_permissions where position_id='sale' and permission='page.purchases'`);assert.equal((await f.call('/purchase-early-requests',f.cookies.emp)).status,403);
 });

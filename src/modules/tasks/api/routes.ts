@@ -1,3 +1,5 @@
+import {canUsePurchasing} from '../../suppliers/domain/purchasing.ts';
+import {purchaseTaskScope,purchaseTaskProjection,purchaseTaskTitle} from './purchase-scope.ts';
 import {warehouseAssignmentHooks} from '../../../core/contracts/warehouse-source.ts';
 import { registerHomeTasks } from './home.ts';
 import { stockTransfers } from '../../inventory/schema.ts';
@@ -146,7 +148,7 @@ const PRIVATE_DESC_SOURCES = new Set<string>(['care', 'receivable', 'invoice']);
 /** Việc tự hoàn thành theo chứng từ (nhận hàng NCC, các việc duyệt): không đánh dấu xong / huỷ tay – làm trên chứng từ thì việc tự đóng. */
 const completionFromSource = (t: Task) => sourceManaged(t.autoKey);
 const canComment = (c: Ctx, t: Task) => accountingKind(t.autoKey) ? me(c).role === 'manager' || t.assigneeId === me(c).id : involved(c, t);
-const forViewer = (c: Ctx, t: Task) => ({ ...t, canComment: canComment(c, t), completionFromSource: completionFromSource(t), completionHelp: sourceCompletionHelp(t.autoKey),
+const forViewer = (c: Ctx, t: Task) => ({ ...purchaseTaskProjection(me(c),t), canComment: canComment(c, t), completionFromSource: completionFromSource(t), completionHelp: sourceCompletionHelp(t.autoKey),
   ...(!involved(c, t) && (PRIVATE_DESC_SOURCES.has(t.source)||t.autoKey?.startsWith('weekly-report:')) ? { description: '' } : {}) });
 /** Điều kiện SQL "việc tôi trực tiếp liên quan" (để tìm kiếm trong mô tả chỉ trên các việc này). */
 const involvedSql = (c: Ctx): SQL | undefined => {
@@ -156,7 +158,7 @@ const involvedSql = (c: Ctx): SQL | undefined => {
 const visible = (c: Ctx): SQL | undefined => {
   const m = me(c), pos = peerPos(c);
   if (m.role === 'manager') return undefined;
-  return or(eq(tasks.assigneeId, m.id), eq(tasks.createdBy, m.id), teamOpenSql(myTeams(c)), pos ? peerCond(pos) : undefined);
+  return and(purchaseTaskScope(m),or(eq(tasks.assigneeId, m.id), eq(tasks.createdBy, m.id), teamOpenSql(myTeams(c)), pos ? peerCond(pos) : undefined));
 };
 const inMyTeam = (c: Ctx, t: Task) => teamOpen(t) && (myTeams(c) as string[]).includes(t.assigneePosition!);
 const canSee = (c: Ctx, t: Task) => involved(c, t);
@@ -203,7 +205,7 @@ async function notifyTeam(env: StaffEnv, team: string, n: Omit<Parameters<typeof
 
 /** Xem được việc: liên quan trực tiếp, hoặc việc của đồng nghiệp cùng chức vụ (chỉ xem). */
 async function loadTask(c: Ctx, id: string) {
-  const [t] = await c.env.db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+  const [t] = await c.env.db.select().from(tasks).where(and(eq(tasks.id, id),purchaseTaskScope(me(c)))).limit(1);
   if (!t) throw new AppError(404, 'Không tìm thấy công việc.');
   if (canSee(c, t)) return t;
   const pos = peerPos(c);
@@ -318,7 +320,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>, deps: { assertMutab
     if (source && (TASK_SOURCES as readonly string[]).includes(source)) where.push(eq(tasks.source, source as Task['source']));
     if (q) { // tìm theo tiêu đề; mô tả chỉ tìm trong việc mình liên quan (không dò được mô tả đã ẩn của đồng nghiệp)
       const pat = '%' + q.replace(/[%_\\]/g, '') + '%', inv = involvedSql(c);
-      where.push(or(sql`lower(${tasks.title}) like ${pat}`, and(sql`lower(${tasks.description}) like ${pat}`, inv)));
+      where.push(or(sql`lower(${purchaseTaskTitle(me(c))}) like ${pat}`, and(sql`lower(${tasks.description}) like ${pat}`, inv,canUsePurchasing(me(c))?undefined:sql`coalesce(${tasks.source},'') not in ('purchase','early')`)));
     }
     // Số việc theo mốc hạn với mọi bộ lọc khác (thẻ hạn trên trang) – đếm trước khi lọc hạn và trước giới hạn 500 dòng.
     const n = (cond: SQL | undefined) => sql<number>`count(*) filter (where ${cond})`.mapWith(Number);
@@ -352,7 +354,7 @@ export function registerTaskRoutes(router: Router<StaffEnv>, deps: { assertMutab
     const inserted = await c.env.db.insert(tasks).values({ id, title: f.title, description: f.description ?? '', priority: f.priority ?? 'normal', status: 'todo', source: 'manual', link: f.link ?? '',
       assigneeId, assigneePosition, createdBy: m.id, dueDate: f.dueDate ?? null, dueTime: f.dueTime ?? null, createdAt: now, updatedAt: now }).onConflictDoNothing().returning({ id: tasks.id });
     if (!inserted.length) {
-      const [prior] = await c.env.db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+      const [prior] = await c.env.db.select().from(tasks).where(and(eq(tasks.id, id),purchaseTaskScope(me(c)))).limit(1);
       // Mã sinh ngẫu nhiên theo từng lần giao việc của chính người này: việc đã được sửa sau khi tạo (người nhận đổi hạn, nhận việc…)
       // vẫn là đúng lần giao đó → báo đã tạo, không bắt người giao kẹt ở lỗi 409. Việc chưa sửa thì so đủ nội dung như trước.
       if (prior && prior.createdBy === m.id && prior.updatedAt !== prior.createdAt) return json({ id, replayed: true, changedSince: true });

@@ -54,7 +54,7 @@ export async function notifyMany(env: StaffEnv, ids: (string | null | undefined)
       : m.role === 'manager' || m.role === 'employee' && m.canApprove).map(m => m.id) : ids;
     const candidates = [...new Set(list.filter((x): x is string => !!x && x !== n.actorId && !except.includes(x)))];
     const targets = await scope.recipients(n, candidates);
-    await boundedMap(targets,4,id => deliver(env, { ...n, targetMemberId: id }));
+    await boundedMap(targets,4,async id => deliver(env, { ...n, ...await scope.project?.(n,id), targetMemberId: id }));
     return targets.length;
   } catch (error) {
     console.error('notification recipient authorization failed', n.eventType, error instanceof Error ? error.message : error);
@@ -96,7 +96,7 @@ export async function notify(env: StaffEnv, n: NotifyInput): Promise<{ ok: boole
     const candidates = n.targetMemberId ? [n.targetMemberId] : scope.people
       .filter(m => n.targetRole === 'all' || m.role === (n.targetRole ?? 'manager')).map(m => m.id);
     const targets = await scope.recipients(n, candidates);
-    const results = await boundedMap(targets,4,id => deliver(env, { ...n, targetMemberId: id }));
+    const results = await boundedMap(targets,4,async id => deliver(env, { ...n, ...await scope.project?.(n,id), targetMemberId: id }));
     return { ok: results.every(r => r.ok), sent: results.reduce((sum, r) => sum + r.sent, 0),
       id: results[0]?.id, results: results.flatMap(r => r.results) };
   } catch (error) {
@@ -187,9 +187,11 @@ async function visibleNotes<T extends { eventType: string; url: string; dataJson
   const checked = await boundedMap(notes,2,async n => {
     let data: Record<string, unknown> = {};
     try { data = JSON.parse(n.dataJson); } catch { /* malformed legacy payload has no grants */ }
-    return (await scope.recipients({ ...n, data }, [m.id])).length > 0;
+    if(!(await scope.recipients({ ...n, data }, [m.id])).length)return null;
+    const projected=await scope.project?.({...n,data},m.id);
+    return projected?{...n,...projected,dataJson:JSON.stringify(projected.data)}:n;
   });
-  return notes.filter((_, i) => checked[i]);
+  return checked.filter((n):n is T=>n!==null);
 }
 
 /** Thông báo mới nhất của người xem (cho GET /pulse – trình duyệt chỉ tải lại chuông khi giá trị này đổi). */
@@ -263,8 +265,8 @@ export function registerNotificationRoutes(router: Router<StaffEnv>) {
       .leftJoin(webNotificationReads, and(eq(webNotificationReads.notificationId, webNotifications.id), eq(webNotificationReads.memberId, me.id)))
       .leftJoin(employees, eq(employees.id, webNotifications.actorId))
       .where(and(mine(me), since ? gt(webNotifications.createdAt, since) : undefined)).orderBy(desc(webNotifications.createdAt)).limit(30);
-    const visible = new Set((await visibleNotes(c.env.db, me, rows.map(r => r.n))).map(n => n.id));
-    const notifications = rows.filter(r => visible.has(r.n.id)).map(r => ({ id: r.n.id, eventType: r.n.eventType, title: r.n.title, body: r.n.body, url: r.n.url, createdAt: r.n.createdAt,
+    const visible = new Map((await visibleNotes(c.env.db, me, rows.map(r => r.n))).map(n => [n.id,n]));
+    const notifications = rows.filter(r => visible.has(r.n.id)).map(r=>({...r,n:visible.get(r.n.id)!})).map(r => ({ id: r.n.id, eventType: r.n.eventType, title: r.n.title, body: r.n.body, url: r.n.url, createdAt: r.n.createdAt,
       actorName: r.actorName ?? '', readAt: r.readAt ?? null, data: (() => { try { return JSON.parse(r.n.dataJson); } catch { return {}; } })() }));
     return json({ notifications, unreadCount: notifications.filter(x => !x.readAt).length });
   }, 'self');

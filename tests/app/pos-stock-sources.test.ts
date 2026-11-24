@@ -44,10 +44,10 @@ test('POS catalog batches all stock sources, uses approved incoming lines and pr
  assert.equal((await f.db.select().from(stockTransfers)).length,1);
  const denied=await f.call('/stock-transfers',f.emp,'POST',{fromWarehouseId:'private',toWarehouseId:'pos-wh',reason:'Không được thấy kho',lines:[{sku:'00123',qty:2}]});
  assert.equal(denied.status,400);
- const draft=await f.call('/purchase-orders',f.emp,'POST',{orders:[{supplierId:'supplier',warehouse:'Kho cửa hàng',note:'Xin hàng từ POS',lines:[{sku:'00123',name:'Ly sứ',unit:'cái',quantity:2,sources:[]}]}]});
+ const draft=await f.call('/purchase-orders',f.mgr,'POST',{orders:[{supplierId:'supplier',warehouse:'Kho cửa hàng',note:'Xin hàng từ POS',lines:[{sku:'00123',name:'Ly sứ',unit:'cái',quantity:2,sources:[]}]}]});
  assert.equal(draft.status,201,JSON.stringify(draft.data));
  const [saved]=await f.db.select().from(incomingShipments).where(eq(incomingShipments.id,draft.data.ids[0]));
- assert.equal(saved!.approvalStatus,'pending');assert.equal(saved!.submittedAt,null);
+ assert.equal(saved!.approvalStatus,'pending');assert.ok(saved!.submittedAt,'Manager tạo đơn vào hàng chờ duyệt như luồng hiện có');
  assert.equal((await f.call(path,f.emp)).data.products[0].stockSources.incoming.qty,20,'new draft is not incoming stock');
 });
 

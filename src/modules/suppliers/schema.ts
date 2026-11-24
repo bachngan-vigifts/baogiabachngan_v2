@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { pgTable, text, bigint, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core';
+import { warehouses } from '../catalog/schema.ts';
 import { employees } from '../staff/schema.ts';
 import { enumCheck } from '../../core/db/enum-check.ts';
 
@@ -17,6 +18,7 @@ export const suppliers = pgTable('suppliers', {
   name: text('name').notNull(),
   /** Tên đã chuẩn hoá (bỏ dấu, hạ chữ, gộp khoảng trắng) do ứng dụng tính bằng JS – tránh lower() ASCII của SQLite. */
   nameKey: text('name_key').notNull(),
+  saleAdminBrand: text('sale_admin_brand', {enum:['minhlong','locknlock']}),
   taxCode: text('tax_code').notNull().default(''),
   address: text('address').notNull().default(''),
   phone: text('phone').notNull().default(''),
@@ -82,6 +84,7 @@ export const incomingShipments = pgTable('incoming_shipments', {
   /** Đơn mua NCC: lúc người lập bấm "Gửi duyệt" (null = nháp, chưa vào hàng chờ duyệt của Manager). Manager lập thì có ngay. */
   submittedAt: text('submitted_at'),
   warehouse: text('warehouse').notNull(),
+  receivingWarehouseId: text('receiving_warehouse_id').references(() => warehouses.id),
   /** YYYY-MM-DD */
   arrivalDate: text('arrival_date'),
   filename: text('filename').notNull().default(''),
