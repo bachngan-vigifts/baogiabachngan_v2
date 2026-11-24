@@ -99,10 +99,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     productFilter: 'all',
     catalogLoading: false,
     catalogPages: [0],
+    catalogDisplayPage: 0,
     offset: 0,
     request: 0,
     showMenu: false,
   };
+  let catalogPageBusy=false,catalogFillPending=false;
   let paymentModal = null;
   let customerPaymentRun = 0;
   let searchTimer,
@@ -131,6 +133,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   const catalogMedia = window.matchMedia?.('(max-width: 850px)');
   const mobileCatalog = () => catalogMedia?.matches === true;
   const desktopPos = () => catalogMedia?.matches === false&&typeof requestAnimationFrame==='function';
+  const pagedDesktopCatalog = () => desktopPos() && workspace.mode === 'grid';
   const workspace = { mode:'scan', quantity:false, selectedSku:'', recent:[], tendered:'', quickOpen:true, recovery:false, recoveryError:'', draftScope:'', qrTimer:null };
   const scope = () => ({userId:user()?.id,registerId:st.register?.id,shiftId:st.shift?.id});
   let draftStore;try{if(typeof sessionStorage!=='undefined')draftStore=createPosDraftStore(sessionStorage);}catch{}
@@ -518,6 +521,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     nodes.search = input;
     input.addEventListener('input', () => {
       ++searchInputVersion;
+      if(nodes.catalogSearch)nodes.catalogSearch.value=input.value;
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => run(() => search(false, false, true)), !posSearchReady() ? 220 : 40);
     });
@@ -556,9 +560,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       st.productFilter = 'all';
       run(() => search(false));
     }));
+    nodes.catalogSearch = el('input', 'pos-catalog-quick-search');
+    nodes.catalogSearch.type = 'search'; nodes.catalogSearch.autocomplete = 'off';
+    nodes.catalogSearch.placeholder = 'Tìm nhanh tên, mã sản phẩm';
+    nodes.catalogSearch.setAttribute('aria-label', 'Tìm nhanh sản phẩm trong danh mục');
+    nodes.catalogSearch.value = input.value;
+    nodes.catalogSearch.addEventListener('input', () => { input.value=nodes.catalogSearch.value; input.dispatchEvent(new Event('input')); });
+    nodes.catalogSearch.addEventListener('keydown', e => { if(e.key==='Enter')e.preventDefault(); });
+    catalogTools.append(nodes.catalogSearch);
     const filters = el('div', 'pos-product-filters');
+    nodes.productFilters=filters;
     for (const [id, label] of [['all','Tất cả'],['available','Còn hàng'],['low','Còn ít hàng'],['out','Hết hàng']]) {
-      const b = button(label, 'btn pos-filter' + (st.productFilter === id ? ' active' : ''), () => { st.productFilter = id; renderProducts(); fillFiltered(true); });
+      const b = button(label, 'btn pos-filter' + (st.productFilter === id ? ' active' : ''), () => { st.productFilter = id; st.catalogDisplayPage=0; renderProducts(); if(pagedDesktopCatalog())run(()=>fillCatalogPage());else fillFiltered(true); });
       b.dataset.filter = id; filters.append(b);
     }
     filters.hidden = true;
@@ -575,16 +588,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const grid = el('div', 'pos-grid');
     nodes.grid = grid;
     grid.addEventListener('scroll', () => {
-      if (!mobileCatalog() && st.offset != null && !st.catalogLoading && grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 120)
+      if (!mobileCatalog() && !pagedDesktopCatalog() && st.offset != null && !st.catalogLoading && grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 120)
         run(() => search(false, true));
     });
     left.append(grid);
     const pages = el('nav', 'pos-catalog-pages');
     pages.setAttribute('aria-label', 'Trang sản phẩm');
-    nodes.previous = button('‹ Trang trước', 'btn secondary', () => run(() => search(false, true, false, true)));
+    nodes.previous = button('‹ Trang trước', 'btn secondary', () => run(() => pagedDesktopCatalog() ? turnCatalogPage(-1) : search(false, true, false, true)));
     nodes.previous.hidden = true;
-    nodes.more = button('Xem thêm sản phẩm', 'btn secondary', () => run(() => search(false, true)));
-    pages.append(nodes.previous, nodes.more);
+    nodes.more = button('Xem thêm sản phẩm', 'btn secondary', () => run(() => pagedDesktopCatalog() ? turnCatalogPage(1) : search(false, true)));
+    nodes.catalogPageLabel=el('span','pos-catalog-page-label');
+    nodes.catalogPageLabel.setAttribute('aria-live','polite');
+    pages.append(nodes.previous, nodes.catalogPageLabel, nodes.more);
     left.append(pages);
     const bh = el('div', 'pos-basket-head'), basketTitle = el('div');
     nodes.cartCount = el('span', 'pos-cart-count', `${st.cart.length} món`);
@@ -1160,7 +1175,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     nodes.deliveryEditor=null;
     nodes.reference=mountPosReference({page,head,left,right,board:orderBoard,searchRow:row,nodes,user:user(),register:st.register,workspace,
       action:{cancel:()=>run(cancelCurrentOrder),orders:()=>web.click(),returns:openReturns,print:()=>run(printTemporary),web:()=>{orderBoard.hidden=false;st.orderStatus='web';run(loadOrderBoard);}},
-      onMode:id=>{if(st.busy||st.pending||nodes.deliveryEditor?.busy())return false;if(id==='delivery'&&st.qr){toast('Hoàn tất hoặc đối soát QR hiện tại trước khi chuyển sang giao hàng.','err');return false;}workspace.mode=id;renderProducts();return true;},
+      onMode:id=>{if(st.busy||st.pending||nodes.deliveryEditor?.busy())return false;if(id==='delivery'&&st.qr){toast('Hoàn tất hoặc đối soát QR hiện tại trước khi chuyển sang giao hàng.','err');return false;}workspace.mode=id;st.catalogDisplayPage=0;renderProducts();if(id==='grid')run(()=>fillCatalogPage());return true;},
       onDelivery:hosts=>{if(!nodes.deliveryEditor)nodes.deliveryEditor=codForm(hosts);},
       onCheckout:openPayment,
     });
@@ -1201,7 +1216,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       b.classList.toggle('pos-product-in-cart', selected);
       b.setAttribute('aria-pressed', String(selected));
       const badge = [...b.children].find(x => x.className === 'pos-product-selection');
-      if (badge) { badge.textContent = selected ? '✓ Bỏ chọn' : ''; badge.hidden = !selected; }
+      if (badge) { badge.textContent = selected ? '✓ Đã có trong giỏ' : ''; badge.hidden = !selected; }
     }
   }
   function add(p, refocusSearch = false, quantity=1) {
@@ -1218,6 +1233,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       nodes.search.focus();
       nodes.search.select();
     }
+    return true;
   }
   function drawCart() {
     cartResizeObserver?.disconnect();
@@ -1553,13 +1569,26 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     }
   };
   function restoreReadyCatalog(registerId, policyId) {
-    st.query = ''; st.catalogPages = [0];
+    st.query = ''; st.catalogPages = [0]; st.catalogDisplayPage=0;
     const ready = readyCatalog?.registerId === registerId && readyCatalog.policyId === policyId ? readyCatalog : null;
     st.localSkus = ready?.localSkus || null; // trang tiếp theo đi tiếp đúng danh sách đã hiện (danh mục tại chỗ hoặc máy chủ)
     if (ready) st.products = ready.products.map(p => cachedLive(p.sku, registerId, policyId,p) || {...p,loading:true});
     st.offset = ready?.nextOffset ?? null;
     renderProducts(); nodes.previous.hidden = true; nodes.more.hidden = st.offset == null;
     nodes.more.textContent = mobileCatalog() ? 'Trang tiếp ›' : 'Xem thêm sản phẩm';
+    updateCatalogPager();
+    return !!ready;
+  }
+  function addCatalogProduct(p) {
+    if(!active()||st.pending||st.busy||p.loading||p.stockStatus==='unopened'||!Number.isFinite(p.available)||p.available<=0)return;
+    if(!add(p,false,1))return;
+    const hadQuery=!!nodes.search.value||!!st.query;
+    clearTimeout(searchTimer);++searchInputVersion;++searchSeq;
+    st.catalogLoading=false;nodes.more.disabled=false;nodes.previous.disabled=false;
+    nodes.search.value='';if(nodes.catalogSearch)nodes.catalogSearch.value='';
+    if(hadQuery){if(!restoreReadyCatalog(st.register.id,st.policy))run(()=>search(false,false,true));}
+    else updateCatalogPager();
+    nodes.search.focus();
   }
   async function search(addScanned = false, more = false, typed = false, previous = false) {
     if (!st.register) return;
@@ -1567,6 +1596,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if (more && st.catalogLoading) return;
     if (more && (nodes.search?.value.trim() || '') !== st.query) return;
     if (previous && st.catalogPages.length < 2) return;
+    if(!more)st.catalogDisplayPage=0;
     const registerId=st.register.id,registerName=st.register.name,policyId=st.policy;
     const initialPage = firstCatalogRead && !more && !typed && !addScanned;
     if (initialPage) firstCatalogRead = false;
@@ -1594,7 +1624,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       mobile = mobileCatalog(), append = more && !mobile,
       limit = mobile ? 20 : 60;
     const scanned = addScanned && !more && !!q, inputVersion = scanned ? ++searchInputVersion : searchInputVersion,
-      scanCart = st.cart, scanShift = st.shift?.id;
+      scanCart = st.cart, scanShift = st.shift?.id, catalogBefore = st.products;
     const restoreScan = () => {
       if (scanned && inputVersion === searchInputVersion && !nodes.search.value) { nodes.search.value = q; nodes.search.focus(); nodes.search.select(); }
     };
@@ -1614,7 +1644,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         const page = previews.slice(offset, offset + limit), nextOffset = offset + limit < previews.length ? offset + limit : null;
         const show = () => page.map(x => cachedLive(x.sku,registerId,policyId,x) || { ...x, onHand: 0, reserved: 0, available: 0, loading: true });
         const missing = page.filter(x => !cachedLive(x.sku,registerId,policyId,x)).map(x => x.sku);
-        if (missing.length && seq === searchSeq && (!mobile || !more)) { st.products = append ? [...st.products, ...show()] : show(); renderProducts(); }
+        if (missing.length && seq === searchSeq && (!mobile || !more)) { st.products = append ? [...catalogBefore, ...show()] : show(); renderProducts(); }
         if (missing.length) {
           const fresh = await api(`${base}&skus=${encodeURIComponent(missing.join(','))}`), got = new Set(), asked = new Set(missing);
           // Máy chủ chưa hiểu `skus=` (đang triển khai dở / bản cũ) thì trả danh sách khác: không xoá các ô, chuyển sang tìm theo từ khoá.
@@ -1652,7 +1682,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       if (scanned) restoreScan();
       if (seq !== searchSeq) return;
       st.offset = d.nextOffset;
-      st.products = append ? [...st.products, ...d.products] : d.products;
+      st.products = append ? [...catalogBefore, ...d.products] : d.products;
       if (!q && !more && !addScanned) readyCatalog = { registerId, policyId, products: d.products, nextOffset: d.nextOffset, localSkus: st.localSkus };
       if (!more) st.catalogPages = [0];
       else if (previous) st.catalogPages.pop();
@@ -1668,6 +1698,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       nodes.previous.hidden = !mobile || st.catalogPages.length < 2;
       nodes.more.textContent = mobile ? 'Trang tiếp ›' : 'Xem thêm sản phẩm';
       nodes.more.hidden = d.nextOffset == null;
+      updateCatalogPager();
       if (addScanned && !more) {
         if (exact && exact.available > 0) await commitScan(exact);
         else toast(exact ? 'Mã ' + exact.sku + ' đã hết hàng ở quầy.' : d.products.length ? 'Chọn đúng sản phẩm trong danh sách.' : 'Không tìm thấy sản phẩm.');
@@ -1680,20 +1711,71 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         st.catalogLoading = false;
         nodes.more.disabled = false;
         nodes.previous.disabled = false;
+        updateCatalogPager();
       }
     }
-    if (seq === searchSeq) fillFiltered(!more);
+    if (seq === searchSeq) {
+      fillFiltered(!more);
+      if(!more&&pagedDesktopCatalog()&&st.productFilter!=='all')run(()=>fillCatalogPage());
+    }
   }
   /** Lọc Còn hàng / Còn ít / Hết hàng chỉ lọc trên các mã đã tải: ít quá (không đủ cuộn) thì tự tải thêm, tối đa 5 trang mỗi lượt lọc. */
   let autoMore = 0;
   function fillFiltered(reset = false) {
     if (reset) autoMore = 0;
-    if (mobileCatalog()) return; // Mobile pages stay bounded, even when filtering sparse stock.
+    if (mobileCatalog() || pagedDesktopCatalog()) return; // Both paged layouts stay bounded.
     if (st.productFilter === 'all' || st.offset == null || st.catalogLoading || autoMore >= 5) return;
     const shown = nodes.grid?.querySelectorAll?.('.pos-product-tile')?.length ?? 0;
     if (shown >= 12) return;
     autoMore++;
     run(() => search(false, true));
+  }
+  function filteredCatalogProducts() {
+    return st.products.filter(p => st.productFilter === 'all' || !p.loading && Number.isFinite(p.available) && p.stockStatus!=='unopened' && (st.productFilter === 'available' && p.available > 0 || st.productFilter === 'low' && p.available > 0 && p.available < 5 || st.productFilter === 'out' && p.available <= 0));
+  }
+  function updateCatalogPager() {
+    if(!nodes.catalogPageLabel)return;
+    const paged=pagedDesktopCatalog();
+    nodes.catalogPageLabel.hidden=!paged;
+    if(!paged){
+      nodes.previous.setAttribute('aria-label','Trang trước');nodes.more.setAttribute('aria-label',mobileCatalog()?'Trang tiếp':'Xem thêm sản phẩm');
+      nodes.previous.textContent='‹ Trang trước';nodes.more.textContent=mobileCatalog()?'Trang tiếp ›':'Xem thêm sản phẩm';
+      nodes.previous.hidden=!mobileCatalog()||st.catalogPages.length<2;nodes.more.hidden=st.offset==null;
+      return;
+    }
+    nodes.previous.hidden=false;nodes.more.hidden=false;
+    nodes.previous.textContent='‹';nodes.more.textContent='›';
+    nodes.previous.setAttribute('aria-label','Trang sản phẩm trước');nodes.more.setAttribute('aria-label','Trang sản phẩm tiếp');
+    nodes.catalogPageLabel.textContent='Trang '+(st.catalogDisplayPage+1);
+    nodes.previous.disabled=st.catalogLoading||catalogPageBusy||st.catalogDisplayPage===0;
+    nodes.more.disabled=st.catalogLoading||catalogPageBusy||(st.offset==null&&filteredCatalogProducts().length<=(st.catalogDisplayPage+1)*24);
+  }
+  // Reuse fetched catalog/stock pages, but mount only 24 cards. Paging never mutates the cart.
+  async function fillCatalogPage(target=st.catalogDisplayPage) {
+    if(!pagedDesktopCatalog())return;
+    if(catalogPageBusy){catalogFillPending=true;return;}
+    if(st.catalogLoading)return;
+    catalogPageBusy=true;updateCatalogPager();
+    const query=nodes.search.value,filter=st.productFilter,registerId=st.register?.id,policy=st.policy,version=searchInputVersion,cart=st.cart,shiftId=st.shift?.id,ownerId=user()?.id;
+    const current=()=>st.cart===cart&&st.shift?.id===shiftId&&user()?.id===ownerId&&pagedDesktopCatalog()&&nodes.search.value===query&&st.productFilter===filter&&st.register?.id===registerId&&st.policy===policy&&searchInputVersion===version;
+    try {
+      // Sparse stock filters may need another server page; each request retains the existing scope and price policy.
+      while(current()&&st.offset!=null&&filteredCatalogProducts().length<(target+1)*24){
+        const offset=st.offset;await search(false,true);
+        if(st.offset===offset)break;
+      }
+      if(current()&&(target===0||filteredCatalogProducts().length>target*24))st.catalogDisplayPage=target;
+    } finally {
+      catalogPageBusy=false;renderProducts();
+      if(catalogFillPending){catalogFillPending=false;queueMicrotask(()=>run(()=>fillCatalogPage()));}
+    }
+  }
+  async function turnCatalogPage(direction) {
+    if(st.catalogLoading||catalogPageBusy)return;
+    const target=Math.max(0,st.catalogDisplayPage+direction);
+    if(direction<0){st.catalogDisplayPage=target;renderProducts();}
+    else await fillCatalogPage(target);
+    nodes.grid.scrollTop=0;
   }
   function renderProducts() {
     if (!nodes.grid) return;
@@ -1701,14 +1783,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const images = new Map([...nodes.grid.querySelectorAll('.pos-product img')].map(img => [img.closest('[data-sku]').dataset.sku, img]));
     for (const image of images.values()) suspendProductThumbnail(image);
     nodes.grid.replaceChildren();
-    for (const p of st.products.filter(p => st.productFilter === 'all' || !p.loading && Number.isFinite(p.available) && p.stockStatus!=='unopened' && (st.productFilter === 'available' && p.available > 0 || st.productFilter === 'low' && p.available > 0 && p.available < 5 || st.productFilter === 'out' && p.available <= 0))) {
+    const matching=filteredCatalogProducts();
+    if(pagedDesktopCatalog())st.catalogDisplayPage=Math.min(st.catalogDisplayPage,Math.max(0,Math.ceil(matching.length/24)-1));
+    const displayed=pagedDesktopCatalog()?matching.slice(st.catalogDisplayPage*24,(st.catalogDisplayPage+1)*24):matching;
+    for (const p of displayed) {
       const tile = el('article', 'pos-product-tile');
-      const b = button('', 'pos-product', () => {
-        if (st.pending || st.busy) return;
-        if (st.cart.some(x => x.sku === p.sku)) {
-          st.cart = st.cart.filter(x => x.sku !== p.sku); drawCart(); invalidate();
-        } else add(p);
-      });
+      const b = button('', 'pos-product', () => addCatalogProduct(p));
       b.dataset.sku = p.sku;
       b.setAttribute('aria-pressed', String(st.cart.some(x => x.sku === p.sku)));
       if (p.imageUrl && /^https:\/\//.test(p.imageUrl)) {
@@ -1726,7 +1806,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       const displayName=desktopPos()&&workspace.mode==='scan'&&!String(p.name).toLowerCase().includes(String(p.sku).toLowerCase())?p.sku+' · '+p.name:p.name;
       b.append(marked('b', 'pos-product-name', displayName), marked('small', 'pos-product-sku', p.sku), priceStock, el('span', 'pos-product-selection'));
       b.title = p.name + ' · ' + p.sku;
-      b.disabled = !active() || p.loading || !Number.isFinite(p.available) || p.stockStatus==='unopened' || p.available <= 0 && !st.cart.some(x => x.sku === p.sku) || !!st.pending;
+      b.disabled = !active() || p.loading || !Number.isFinite(p.available) || p.stockStatus==='unopened' || p.available <= 0 || !!st.pending;
       tile.append(b);
       if (p.stockSources) {
         const details = el('details', 'pos-product-stock-details');
@@ -1747,6 +1827,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     }
     if (!nodes.grid.children.length) nodes.grid.append(el('p', 'pos-note', mobileCatalog() && st.productFilter !== 'all'
       ? 'Không có sản phẩm phù hợp trên trang này. Đổi trang hoặc tìm theo tên/mã.' : 'Không có sản phẩm phù hợp.'));
+    if(nodes.catalogSearch)nodes.catalogSearch.value=nodes.search.value;
+    for(const b of nodes.productFilters?.querySelectorAll('[data-filter]')||[])b.classList.toggle('active',b.dataset.filter===st.productFilter);
+    updateCatalogPager();
     markProductsInCart();
     if(desktopPos())nodes.grid.hidden=workspace.mode!=='grid'&&!nodes.search?.value.trim();
   }
