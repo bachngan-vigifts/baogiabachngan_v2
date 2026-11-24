@@ -8,20 +8,20 @@ import { eq } from "drizzle-orm";
 import { products, productPrices, productStock } from "../../src/modules/catalog/schema.ts";
 import { posRegisters, webStoreOrders } from "../../src/modules/sales/pos-schema.ts";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
-const f = await setup();
+const f = await setup({productBrand:'MINH LONG I'});
 await f.db.update(posRegisters).set({name:'CỬA HÀNG MINH LONG'}).where(eq(posRegisters.id,f.registerId));
 await f.open(f.mgr);
 await f.db.update(products).set({name:'Chén cơm 11.2cm jas lys',unit:'Cái'}).where(eq(products.sku,'00123'));
 await f.db.update(productPrices).set({price:20000}).where(eq(productPrices.sku,'00123'));
 await f.db.transaction((tx) => postMoves(tx, "mgr", [{ sku: "00123", warehouseId: "pos-wh", qty: 200, kind: "opening", refType: "opening", refId: "workspace-stock" }]));
 const user = (await f.call("/me", f.mgr)).data.user;
-await f.db.insert(products).values([{ sku: "00456", name: "Ly thứ hai", unit: "cái", updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, { sku: "00789", name: "Ly hết hàng", unit: "cái", updatedAt: (/* @__PURE__ */ new Date()).toISOString() }]);
+await f.db.insert(products).values([{ sku: "00456", brand:"MINH LONG I", name: "Ly thứ hai", unit: "cái", updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, { sku: "00789", brand:"MINH LONG I", name: "Ly hết hàng", unit: "cái", updatedAt: (/* @__PURE__ */ new Date()).toISOString() }]);
 await f.db.insert(productPrices).values([{ sku: "00456", policyId: "retail-vat", price: 54e3 }, { sku: "00789", policyId: "retail-vat", price: 54e3 }]);
 await f.db.insert(productStock).values({ sku: "00456", warehouseId: "pos-wh", quantity: 50, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
 await f.db.transaction((tx) => postMoves(tx, "mgr", [{ sku: "00456", warehouseId: "pos-wh", qty: 50, kind: "opening", refType: "opening", refId: "scan-fixture" }]));
 for (let i = 0; i < 65; i++) {
   const sku = "P" + i;
-  await f.db.insert(products).values({ sku, imageUrl:"https://pos-fixture.invalid/product.svg", name: "Bộ sản phẩm tên rất dài để kiểm tra bố cục bảng " + i, unit: "cái", updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+  await f.db.insert(products).values({ sku, brand:"MINH LONG I", imageUrl:`https://pos-fixture.invalid/product-${i%3}.svg`, name: "Bộ sản phẩm tên rất dài để kiểm tra bố cục bảng " + i, unit: "cái", updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
   await f.db.insert(productPrices).values({ sku, policyId: "retail-vat", price: 108e3 });
   await f.db.insert(productStock).values({ sku, warehouseId: "pos-wh", quantity: 100, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
   await f.db.transaction((tx) => postMoves(tx, "mgr", [{ sku, warehouseId: "pos-wh", qty: 100, kind: "opening", refType: "opening", refId: "workspace-" + sku }]));
@@ -69,8 +69,8 @@ const shot = process.env.POS_SCREENSHOT_DIR || "/workspace/artifacts/pos-catalog
 await mkdir(shot, { recursive: true });
 const results=[];
 try {
- for(const width of [1812,2214,1280,1024]) {
-  const context=await browser.newContext({viewport:{width,height:1000},locale:'vi-VN',extraHTTPHeaders:width<=1280?{'x-test-no-snapshot':'1'}:{}});
+ for(const [width,height] of [[2126,1526],[1812,1000],[2214,1000],[1280,1000],[1024,1000]]) {
+  const context=await browser.newContext({viewport:{width,height},locale:'vi-VN',extraHTTPHeaders:width<=1280?{'x-test-no-snapshot':'1'}:{}});
   await context.route('**/*',r=>r.request().url().startsWith('https://pos-fixture.invalid/')?r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="100" height="80"><rect x="20" y="12" width="60" height="50" rx="12" fill="#d8ebfa"/><path d="M30 30h40" stroke="#0070f4" stroke-width="3"/></svg>'}):r.request().url().startsWith(origin+'/')?r.continue():r.abort());
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   try {
@@ -82,6 +82,12 @@ try {
    assert.equal(new Set(positions.map(p=>p.x)).size,8,'8 columns');assert.equal(new Set(positions.map(p=>p.y)).size,3,'3 rows');
    assert.ok(positions.every(p=>p.height>=156),'cards must never collapse');
    if(width>=1812){const geom=await page.locator('.pos-grid').evaluate(n=>({height:n.clientHeight,scroll:n.scrollHeight,rows:getComputedStyle(n).gridTemplateRows,tiles:[...n.children].map(x=>x.getBoundingClientRect().height)}));assert.ok(geom.scroll<=geom.height+1,'all three rows fit without vertical scrolling');}
+   if(height===1526){
+    await page.waitForFunction(()=>[...document.querySelectorAll('.pos-product img')].every(n=>n.naturalWidth>0));
+    const photos=await page.locator('.pos-product img').evaluateAll(ns=>ns.map(n=>{const r=n.getBoundingClientRect(),tile=n.closest('.pos-product-tile').getBoundingClientRect();return {height:r.height,width:r.width,card:tile.height,fit:getComputedStyle(n).objectFit,source:n.dataset.productImageSource};}));
+    assert.ok(photos.every(n=>n.height>=100&&n.height>=n.width*.7),'product photos must use the card image area, not a fixed 48px strip');
+    assert.ok(photos.every(n=>n.fit==='contain'&&n.source.startsWith('https://pos-fixture.invalid/product-')),'original images remain uncropped');
+   }
    await page.screenshot({path:shot+`/${width}-catalog.png`});
    const skus=()=>page.locator('.pos-product').evaluateAll(ns=>ns.map(n=>n.dataset.sku));
    const first=await skus(),next=page.getByRole('button',{name:'Trang sản phẩm tiếp',exact:true}),prev=page.getByRole('button',{name:'Trang sản phẩm trước',exact:true});
@@ -123,7 +129,7 @@ try {
    assert.equal(await page.locator('#chat-launcher').isVisible(),false);assert.equal(await page.locator('#reminder-launcher').isVisible(),false);
    await page.locator('#view-pos').evaluate(n=>n.hidden=true);assert.equal(await page.locator('#chat-launcher').isVisible(),true);assert.equal(await page.locator('#reminder-launcher').isVisible(),true);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.deepEqual(errors,[]);
-   results.push({width,pageSizes:[first.length,second.length,third.length],columns:8,rows:3,search:true,filters:true,cartPreserved:true});
+   results.push({width,height,pageSizes:[first.length,second.length,third.length],columns:8,rows:3,search:true,filters:true,cartPreserved:true});
   } catch(e) {await page.screenshot({path:shot+`/${width}-failure.png`});console.log({errors,notices:await page.evaluate(()=>window.notices)});throw e;} finally {await context.close();}
  }
  assert.equal(calls.filter(c=>c.method!=='GET'&&c.path!=='/pos/preview').length,0,'catalog actions cannot write orders, payments or shipping');
