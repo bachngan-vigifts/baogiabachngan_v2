@@ -26,7 +26,7 @@ test('Sale Admin: incoming/tồn ảnh chụp chỉ tính hãng được gán; t
  const before=await f.db.select().from(productStock),lookup=await f.call('/inventory/lookup?q='+sku,f.cookies.sa);assert.equal(lookup.data.products[0].incoming.qty,15000);assert.ok(lookup.data.products[0].incoming.orders.every((o:any)=>o.orderId==='a1'||o.orderId==='a2'));
  for(const [m,expected] of [[sale,20000],[sa,15000]] as const){const pos=(await posStockSources(f.db,m,'public',[sku])).get(sku)!;assert.equal(pos.incoming.qty,expected);const catalog=(await catalogueStockFacts(f.db,m,[sku]))[0]!;assert.equal(catalog.incoming?.qty,expected);if(m===sale){assert.ok(pos.incoming.orders.every(o=>!o.orderId&&!o.orderNo&&!o.supplierName));assert.equal(pos.incoming.orders[0]!.arrivalDate,'2026-10-20');}}
  const snapshot=await f.call('/catalog-snapshot?pageSize=50',f.cookies.sa);assert.equal(snapshot.status,200,JSON.stringify(snapshot.data));const version=snapshot.data.version;
- await f.db.insert(productBarcodes).values({barcode:'000123456789',sku,createdAt:now,createdBy:'mgr'});
+ await f.db.insert(productBarcodes).values({barcode:'000123456789',sku});
  const detail=await f.call('/products/'+sku,f.cookies.sa);assert.deepEqual(detail.data.product.barcodes,['000123456789']);assert.equal(Object.values(detail.data.product.stock).reduce((n:any,q:any)=>n+q,0),15000);
  await f.db.update(suppliers).set({saleAdminBrand:null}).where(eq(suppliers.id,'a'));
  const revoked=await f.call('/catalog-snapshot?pageSize=50&v='+encodeURIComponent(version),f.cookies.sa);assert.equal(revoked.status,200);assert.notEqual(revoked.data.version,version);assert.notEqual(revoked.data.unchanged,true);assert.equal((await f.call('/inventory/lookup?q='+sku,f.cookies.sa)).data.products[0].incoming.qty,0);
