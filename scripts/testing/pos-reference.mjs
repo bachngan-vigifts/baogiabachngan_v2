@@ -154,7 +154,7 @@ try {
           await page.locator('.pos-customer-picker .pos-customer-option').filter({hasText:'Nguyễn Khách kiểm thử'}).click();
           await page.waitForFunction(()=>document.querySelector('.pos-line-top>strong')?.textContent.includes('80.000'));
           await page.getByRole('button',{name:'Bán thường',exact:true}).click();
-          await page.locator('.pos-ref-normal-footer button').click();
+          await page.locator('.pos-ref-normal-footer').getByRole('button',{name:'THANH TOÁN',exact:true}).click();
           assert.equal(await page.locator('.pos-reference-checkout').count(),1,'normal mode opens existing payment controls');
           await page.getByRole('button',{name:'Bán giao hàng',exact:true}).click();
           const editor=page.locator('.pos-ref-delivery-form'),review=editor.locator('.pos-step-review');
