@@ -69,7 +69,7 @@ const shot = process.env.POS_SCREENSHOT_DIR || "/workspace/artifacts/pos-referen
 await mkdir(shot, { recursive: true });
 const results=[];
 try {
-  for(const [width,height] of [[2214,1497],[1812,1000],[1440,900],[1280,800],[1024,768],[969,954],[390,844]]){
+  for(const [width,height] of [[2214,1497],[1812,1000],[1440,900],[1280,800],[1024,768],[969,954],[1033,1017],[390,844]]){
     const context=await browser.newContext({viewport:{width,height},locale:'vi-VN'});
     await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
     const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -133,6 +133,18 @@ try {
         assert.equal(await page.getByText('Cổng GHN',{exact:true}).isVisible(),true);
         assert.equal(await qty.inputValue(),'4');
         const delivery=page.locator('.pos-ref-delivery-form');
+        const deposit=delivery.getByLabel('Đã thu trước / tạm ứng (VNĐ)',{exact:true});
+        const deposited=page.locator('.pos-ref-delivery-totals .pos-ref-deposited'),balance=page.locator('.pos-ref-delivery-totals .pos-ref-balance');
+        assert.equal(await deposited.textContent(),'0 đ');assert.equal(await balance.textContent(),'80.000 đ');
+        await deposit.fill('20000');assert.equal(await deposited.textContent(),'20.000 đ');assert.equal(await balance.textContent(),'60.000 đ');
+        await page.getByRole('button',{name:'Bán nhanh',exact:true}).click();
+        await page.getByRole('button',{name:'Bán giao hàng',exact:true}).click();
+        assert.equal(await balance.textContent(),'60.000 đ','switching mode keeps deposit summary');
+        await deposit.fill('80000');assert.equal(await balance.textContent(),'0 đ');
+        await deposit.fill('80001');assert.equal(await balance.textContent(),'—','invalid deposit must not show a negative balance');
+        await deposit.fill('20000');
+        await page.screenshot({path:shot+`/${width}-deposit.png`});
+        await deposit.fill('0');
         await delivery.getByText('Số nhà, tên đường',{exact:true}).locator('..').locator('input').fill('123 Đường kiểm thử');
         const selects=delivery.locator('.pos-step-section').nth(1).locator('select');
         await selects.nth(0).selectOption('1');await selects.nth(1).selectOption('2');await selects.nth(2).selectOption('3');

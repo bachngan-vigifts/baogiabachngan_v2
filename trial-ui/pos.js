@@ -2496,6 +2496,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       const n = Number(deposit.input.value), valid = deposit.input.value !== '' && Number.isSafeInteger(n) && n >= 0 && n <= total;
       remaining.textContent = money(valid ? total - n : total);
       paidBefore.textContent = money(valid ? n : 0);
+      embedded?.onDeposit?.({paid:valid?money(n):'—',remaining:valid?money(total-n):'—'});
       summary.setAttribute('aria-label', 'Còn lại thu COD: ' + remaining.textContent);
       validation.textContent = valid ? '' : 'Nhập số tiền thu trước từ 0 đến tổng đơn, không có số lẻ.';
       methodBox.hidden = !valid || n === 0;
@@ -2580,7 +2581,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       busy:()=>!!m.dlg.dataset.busy,
       submit(){if(!save.disabled)m.form.requestSubmit(save);},
       draft:()=>({address:address.input.value,phone:phone.input.value,receiver:receiver.input.value,date:date.input.value,ghnOrderCode:ghnOrderCode.input.value,weight:weight.input.value,shipNote:shipNote.input.value,deposit:deposit.input.value,method:method.value,requiredNote:requiredNote.value,provinceId:restoringDelivery?recovered?.provinceId:province.select.value,districtId:restoringDelivery?recovered?.districtId:district.select.value,wardCode:restoringDelivery?recovered?.wardCode:ward.select.value}),
-      invalidate(){if(!m.dlg.dataset.busy){save.disabled=true;if(reviewing)edit();save.disabled=true;}},
+      invalidate(){embedded.onDeposit?.({paid:'—',remaining:'—'});if(!m.dlg.dataset.busy){save.disabled=true;if(reviewing)edit();save.disabled=true;}},
       refresh(){
         if(m.dlg.dataset.busy)return;
         total=st.preview.total;totalAmount.textContent=money(total);
