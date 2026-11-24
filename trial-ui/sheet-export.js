@@ -34,3 +34,12 @@ export async function readSheet(file) {
   const ws = wb.Sheets[wb.SheetNames[0]]; if (!ws) throw new Error('File không có trang tính nào.');
   return X.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
 }
+
+/** Inventory import keeps formatted leading zeros in numeric SKU cells. */
+export async function readStocktakeSheet(file) {
+ const X=await excel(),wb=X.read(await file.arrayBuffer(),{type:'array',codepage:65001,raw:true}),ws=wb.Sheets[wb.SheetNames[0]];
+ if(!ws)throw Error('File không có trang tính.');const rows=X.utils.sheet_to_json(ws,{header:1,raw:true,defval:''}),norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').toLowerCase().trim();
+ const column=rows[0]?.findIndex(v=>['ma hang','ma san pham','ma sku','sku'].includes(norm(v)))??-1;
+ if(column>=0)for(let r=1;r<rows.length;r++){const cell=ws[X.utils.encode_cell({r,c:column})];if(typeof cell?.v==='number'){if(!Number.isSafeInteger(cell.v))throw Error('Mã hàng dạng số quá dài. Đổi cột mã sang văn bản trong Excel.');rows[r][column]=/^\d+$/.test(cell.w||'')?cell.w:String(cell.v);}}
+ return rows;
+}

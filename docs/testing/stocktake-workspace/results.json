@@ -1,0 +1,47 @@
+[
+  {
+    "width": 1214,
+    "listInline": true,
+    "editor": true,
+    "zeroPreserved": true,
+    "serverDraft": true,
+    "lostResponseSameKey": true,
+    "excelLeadingZero": true,
+    "completion": true,
+    "cancelReverse": true,
+    "noHorizontalOverflow": true,
+    "noJsErrors": true,
+    "toolbarActions": "core flow",
+    "completeUncovered": true
+  },
+  {
+    "width": 1280,
+    "listInline": true,
+    "editor": true,
+    "zeroPreserved": true,
+    "serverDraft": true,
+    "lostResponseSameKey": true,
+    "excelLeadingZero": true,
+    "completion": true,
+    "cancelReverse": true,
+    "noHorizontalOverflow": true,
+    "noJsErrors": true,
+    "toolbarActions": "columns/date/favorites/export/print/clone/merge/group",
+    "completeUncovered": true
+  },
+  {
+    "width": 390,
+    "listInline": true,
+    "editor": true,
+    "zeroPreserved": true,
+    "serverDraft": true,
+    "lostResponseSameKey": true,
+    "excelLeadingZero": true,
+    "completion": true,
+    "cancelReverse": true,
+    "noHorizontalOverflow": true,
+    "noJsErrors": true,
+    "toolbarActions": "core flow",
+    "completeUncovered": true
+  }
+]

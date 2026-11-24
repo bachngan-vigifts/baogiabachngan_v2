@@ -10,6 +10,7 @@ import type {StaffEnv,SessionState} from '../../staff/api/auth-routes.ts';
 import {employees} from '../../staff/schema.ts';
 import {productMovements,products,productStock,warehouses} from '../../catalog/schema.ts';
 import {inventoryAdjustments as adjustments,stockBalances,stockMoves} from '../schema.ts';
+import {stocktakeStates} from '../stocktake-schema.ts';
 import {assertWarehousesOpened,postMoves} from './ledger.ts';
 import {notifyMany} from '../../notifications/api/routes.ts';
 type Ctx=RouteContext<StaffEnv>;
@@ -41,7 +42,7 @@ function countLines(raw:unknown):Line[]{
  }).sort((a,b)=>a.sku.localeCompare(b.sku));
 }
 /** Keep catalog keys intact. Only resolve a non-exact spelling when its case-insensitive match is unique. */
-async function catalogLines(db:Db,lines:Line[],stocktake:boolean):Promise<Line[]>{
+export async function catalogLines(db:Db,lines:Line[],stocktake:boolean):Promise<Line[]>{
  const exact=new Set((await db.select({sku:products.sku}).from(products).where(inArray(products.sku,lines.map(l=>l.sku)))).map(p=>p.sku));
  const missing=lines.filter(l=>!exact.has(l.sku));
  if(!missing.length)return lines;
@@ -64,7 +65,7 @@ const fmtQty=(n:number)=>Number(n).toLocaleString('vi-VN',{maximumFractionDigits
  * Đối chiếu tồn lúc đếm với tồn hiện tại. Tồn đã đổi (bán / nhập sau lúc đếm): mặc định chặn (409 STOCKTAKE_STOCK_CHANGED);
  * `applyDelta` = duyệt theo chênh lệch — ghi đúng phần (thực đếm − tồn lúc đếm) vào tồn hiện tại, phát sinh sau lúc đếm được giữ nguyên.
  */
-async function countSnapshot(tx:Tx,warehouseId:string,lines:Line[],applyDelta:boolean):Promise<StockChange[]>{
+export async function countSnapshot(tx:Tx,warehouseId:string,lines:Line[],applyDelta:boolean):Promise<StockChange[]>{
  if(!lines.some(l=>l.source==='stocktake'))return [];
  // Exclusive ledger lock keeps snapshot comparison and posting atomic, including missing balances.
  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_ledger_opening'))`);
@@ -77,7 +78,7 @@ async function countSnapshot(tx:Tx,warehouseId:string,lines:Line[],applyDelta:bo
  return changed;
 }
 /** Giá nhập gần nhất theo mã (lịch sử sản phẩm, dòng "Nhập hàng") – giá vốn để tính giá trị chênh lệch; chỉ Manager được xem. */
-async function latestCosts(db:Db,skus:string[]):Promise<Map<string,number>>{
+export async function latestCosts(db:Db,skus:string[]):Promise<Map<string,number>>{
  if(!skus.length)return new Map();
  const rows=await db.selectDistinctOn([productMovements.sku],{sku:productMovements.sku,price:productMovements.unitPrice}).from(productMovements)
   .where(and(inArray(productMovements.sku,[...new Set(skus)]),eq(productMovements.kind,'purchase'),isNotNull(productMovements.unitPrice)))
@@ -91,12 +92,12 @@ function lineValue(lines:Line[],costs:Map<string,number>){
  return {value:Math.round(value),missing};
 }
 /** Tên + ĐVT sản phẩm cho màn xem phiếu / file Excel (phiếu chỉ lưu mã). */
-async function productNames(db:Db,skus:string[],withCost=false){
+export async function productNames(db:Db,skus:string[],withCost=false){
  if(!skus.length)return {};
  const [rows,costs]=await Promise.all([db.select({sku:products.sku,name:products.name,unit:products.unit}).from(products).where(inArray(products.sku,skus)),withCost?latestCosts(db,skus):new Map<string,number>()]);
  return Object.fromEntries(rows.map(r=>[r.sku,{name:r.name,unit:r.unit||'',...(costs.has(r.sku)?{cost:costs.get(r.sku)}:{})}]));
 }
-async function audit(tx:Tx,actorId:string,id:string,action:string,data:unknown){await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId,module:'inventory',action,entityType:'inventory_adjustments',entityId:id,data:JSON.stringify(data),createdAt:new Date().toISOString()});}
+export async function audit(tx:Tx,actorId:string,id:string,action:string,data:unknown){await tx.insert(auditLogs).values({id:crypto.randomUUID(),actorId,module:'inventory',action,entityType:'inventory_adjustments',entityId:id,data:JSON.stringify(data),createdAt:new Date().toISOString()});}
 export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)=>Promise<{id:string;name:string}[]>){
  const guard=(c:Ctx)=>{if(!can(me(c),'inventory.view'))fail(403,'Bạn chưa được cấp quyền xem sổ kho.');};
  const scope=async(c:Ctx,stocktakesOnly=false)=>{const ids=(await allowed(c)).map(w=>w.id);return and(ids.length?inArray(adjustments.warehouseId,ids):sql`false`,approve(c)||stocktakesOnly?undefined:eq(adjustments.createdBy,me(c).id));};
@@ -165,13 +166,6 @@ export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)
   const pendingBySku=items.length?await pendingCounts(db,warehouseId,items.map(i=>i.sku)):{};
   return json({warehouseId,observedAt:new Date().toISOString(),items,truncated,pendingBySku});
  },'business');
- router.get('/inventory/stocktakes/:id',async c=>{
-  guard(c);const [row]=await c.env.db.select().from(adjustments).where(and(eq(adjustments.id,c.params.id!),await scope(c,true),countKind)).limit(1);
-  if(!row)fail(404,'Không tìm thấy phiếu kiểm kê.');
-  const skus=(JSON.parse(row.lines) as Line[]).map(l=>l.sku);
-  const [balances,names]=await Promise.all([c.env.db.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,row.warehouseId),inArray(stockBalances.sku,skus))),productNames(c.env.db,skus,approve(c))]);
-  return json({adjustment:(await present(c,[row]))[0],balances:Object.fromEntries(balances.map(b=>[b.sku,b.qty])),names,canApprove:approve(c)});
- },'business');
  router.post('/inventory/count-stock',async c=>{
   guard(c);const body=await readJson(c.req,250000),warehouseId=String(body.warehouseId||''),skus=body.skus;
   const whs=await allowed(c);
@@ -198,7 +192,7 @@ export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)
   if(!['','pending','approved','rejected'].includes(state)||!Number.isSafeInteger(offset)||offset<0||offset>1e6||(from&&!day.test(from))||(to&&!day.test(to))||(from&&to&&from>to))fail(400,'Bộ lọc phiếu điều chỉnh không hợp lệ.');
   const vnStart=(d:string)=>new Date(d+'T00:00:00+07:00').toISOString(),vnEnd=(d:string)=>new Date(new Date(d+'T00:00:00+07:00').getTime()+864e5).toISOString();
   const like='%'+q.replace(/[\\%_]/g,m=>'\\'+m)+'%';
-  const base=and(await scope(c,p.get('kind')==='stocktake'),p.get('kind')==='stocktake'?countKind:undefined);
+  const base=and(await scope(c,p.get('kind')==='stocktake'),p.get('kind')==='stocktake'?countKind:undefined,sql`NOT EXISTS (SELECT 1 FROM inventory_stocktake_states s WHERE s.adjustment_id=${adjustments.id})`);
   const where=and(base,state?eq(adjustments.status,state as 'pending'):undefined,wh?eq(adjustments.warehouseId,wh):undefined,creator?eq(adjustments.createdBy,creator):undefined,
    from?sql`${adjustments.createdAt}>=${vnStart(from)}`:undefined,to?sql`${adjustments.createdAt}<${vnEnd(to)}`:undefined,
    q?sql`(${adjustments.refNo} ILIKE ${like} OR ${adjustments.reason} ILIKE ${like} OR EXISTS (SELECT 1 FROM jsonb_array_elements(${adjustments.lines}::jsonb) line WHERE line->>'sku' ILIKE ${like}))`:undefined);
@@ -264,6 +258,7 @@ export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)
   const result=await c.env.db.transaction(async tx=>{
    const [row]=await tx.select().from(adjustments).where(eq(adjustments.id,c.params.id!)).for('update');
    if(!row)fail(404,'Không tìm thấy phiếu.');
+   if((await tx.select({id:stocktakeStates.adjustmentId}).from(stocktakeStates).where(eq(stocktakeStates.adjustmentId,row.id)).limit(1)).length)fail(409,'Phiếu đang dùng phiên bản kiểm kê mới. Mở trang Kiểm kê hàng để xử lý đúng phiên bản.');
    if(row.status===decision)return {...row,replayed:true};
    if(row.status!=='pending')fail(409,'Phiếu đã được xử lý, không đổi quyết định.');
    const lines=JSON.parse(row.lines) as Line[];
