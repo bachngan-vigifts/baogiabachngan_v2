@@ -65,7 +65,7 @@ test('restock page preserves separate optional numbers and includes them in each
  let persisted=0;
  Object.assign(t.c,{sups,supSel,chips,numberFields,o:{suppliers:sups},persist:()=>persisted++,render(){},
   f:(label:string,control:any)=>{const e=new Element('label');e.append(label,control);return e;},
-  err:new Element(),address,rows:[{sku:'001',want:2,name:'Ly',unit:'cái'}],perSupplier:()=>[1,1],arrival:new Element(),note:new Element(),summarize(){},submit:new Element(),store:{clear(){}},go(){},focusRow(){},busy:false});
+  err:new Element(),address,receiving:Object.assign(new Element(),{value:'stock-receiving'}),rows:[{sku:'001',want:2,name:'Ly',unit:'cái'}],perSupplier:()=>[1,1],arrival:new Element(),note:new Element(),summarize(){},submit:new Element(),store:{clear(){}},go(){},focusRow(){},busy:false});
  runInNewContext(source.slice(source.indexOf('  function fillSuppliers()'),source.indexOf("  supSel.addEventListener('change'"))+';fillSuppliers();',t.c);
  assert.equal(numberFields.children.length,1);const number=numberFields.children[0].children[1];assert(!number.required);
  number.value='001-ML';number.events.input();assert.equal(persisted,1);
@@ -75,6 +75,7 @@ test('restock page preserves separate optional numbers and includes them in each
  const store=new Map<string,string>();t.c.createPurchaseOrders=(api:any,orders:any)=>createPurchaseOrders(api,orders,()=>({getItem:(k:string)=>store.get(k)??null,setItem:(k:string,v:string)=>void store.set(k,v)}));
  await runInNewContext(source.slice(source.indexOf('  async function save()'),source.indexOf('  // ----- mở trang:'))+';save();',t.c);
  assert.deepEqual(t.calls[0][2].orders.map((o:any)=>[o.supplierId,o.internalNo]),[['a','001-ML'],['b','']]);
+ assert.deepEqual(t.calls[0][2].orders.map((o:any)=>o.receivingWarehouseId),['stock-receiving','stock-receiving'],'giữ kho nhận có cấu trúc trên từng đơn, độc lập địa chỉ và số NCC');
  assert.match(t.calls[0][2].clientKey,/^[0-9a-f-]{36}$/,'gửi kèm mã thao tác');
 });
 
