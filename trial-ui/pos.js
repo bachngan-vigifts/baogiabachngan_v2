@@ -1685,7 +1685,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         p.loading||!Number.isFinite(p.available) ? el('small', 'pos-stock pos-stock-unknown', 'Chưa xác nhận tồn')
           : el('small', p.available <= 0 ? 'pos-stock pos-stock-out' : p.available < 5 ? 'pos-stock pos-stock-low' : 'pos-stock', (p.stockStatus==='unopened'?'Chưa chốt tồn':p.available<=0?(p.onHand>0&&p.reserved>0?'Đã giữ hết':'Hết tại kho bán'):'Còn '+number(p.available))+(p.stockStale?' · đang cập nhật':'')),
       );
-      b.append(marked('b', 'pos-product-name', p.name), marked('small', 'pos-product-sku', p.sku), priceStock, el('span', 'pos-product-selection'));
+      const displayName=desktopPos()&&workspace.mode==='scan'&&!String(p.name).toLowerCase().includes(String(p.sku).toLowerCase())?p.sku+' · '+p.name:p.name;
+      b.append(marked('b', 'pos-product-name', displayName), marked('small', 'pos-product-sku', p.sku), priceStock, el('span', 'pos-product-selection'));
       b.title = p.name + ' · ' + p.sku;
       b.disabled = !active() || p.loading || !Number.isFinite(p.available) || p.stockStatus==='unopened' || p.available <= 0 && !st.cart.some(x => x.sku === p.sku) || !!st.pending;
       tile.append(b);
