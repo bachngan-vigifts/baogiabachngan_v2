@@ -4,19 +4,21 @@
 
 ## Thay đổi
 
-- Bỏ chiều cao ảnh cố định 48px. Vùng ảnh dùng khoảng trống của thẻ, tối đa 160px, căn giữa và giữ trọn ảnh bằng `object-fit: contain`.
+- Bỏ chiều cao ảnh cố định 48px. Vùng ảnh dùng khoảng trống của thẻ, căn giữa và giữ trọn ảnh bằng `object-fit: contain`.
+- Theo ảnh mẫu bổ sung: giá xanh trên nền trắng nằm ở góc dưới trái ảnh; tên chữ thường ở dưới ảnh; bỏ viền bao quanh thẻ. Mã hàng, tồn kho, xem tồn các kho và trạng thái đã chọn vẫn giữ nguyên.
 - Giới hạn chiều cao ba hàng theo chiều rộng danh mục để thẻ không kéo dài hết màn hình cao, giảm khoảng trắng giữa ảnh và thông tin.
 - Giữ 8 cột × 3 hàng, mũi tên phân trang, giá/tồn kho, tìm kiếm, bộ lọc và thao tác thêm vào giỏ. Kiểu danh sách vẫn dùng quy tắc riêng hiện có.
 - CSS ứng dụng chỉ áp dụng cho Bán thường trên desktop (từ 851px). Không thay URL ảnh gốc, pipeline thumbnail, API, giá tiền, quyền hay dữ liệu production.
 
 ## Kiểm chứng
 
-Trước sửa, harness có assertion mới thất bại tại 2126×1526: `product photos must use the card image area, not a fixed 48px strip`.
+Trước sửa, harness có assertion mới thất bại tại 2126×1526: `product photos must use the card image area, not a fixed 48px strip`. Sau khi người dùng bổ sung ảnh mẫu giá đè trên ảnh, tái hiện thêm assertion thất bại trên bản đầu của PR: `price badge overlays photo, name sits below and tile has no outer border`.
 
 Sau sửa, `scripts/testing/pos-catalog-pages.mjs` hoàn thành thành công tại 2126×1526, 1812×1000, 2214×1000, 1280×1000 và 1024×1000:
 
 - Mỗi trang 24/24/20 sản phẩm, đúng 8 cột và 3 hàng; không mất hoặc trùng mã giữa các trang.
 - Tại viewport người dùng, mọi vùng ảnh cao ít nhất 100px và ít nhất 70% chiều rộng; vẫn `contain` và giữ nguồn ảnh gốc của fixture.
+- Cả năm viewport đều đạt: nhãn giá nằm trong vùng ảnh, tên nằm dưới ảnh và không có viền bao thẻ.
 - Ba hàng không cần cuộn dọc trên các viewport rộng; không tràn ngang toàn trang hoặc lỗi JavaScript.
 - Tìm kiếm, bộ lọc, cache/fetch dự phòng và giữ giỏ hàng hoạt động; thao tác danh mục không ghi đơn, thanh toán hoặc giao vận.
 
@@ -39,4 +41,4 @@ Trước sửa:
 
 Sau sửa:
 
-![Vùng ảnh lớn, ba hàng thẻ gọn hơn](after.png)
+![Ảnh lớn với giá đè góc dưới, tên bên dưới, không viền thẻ](after.png)

@@ -88,6 +88,8 @@ try {
     assert.ok(photos.every(n=>n.height>=100&&n.height>=n.width*.7),'product photos must use the card image area, not a fixed 48px strip');
     assert.ok(photos.every(n=>n.fit==='contain'&&n.source.startsWith('https://pos-fixture.invalid/product-')),'original images remain uncropped');
    }
+   const badges=await page.locator('.pos-product').evaluateAll(ns=>ns.map(n=>{const image=n.querySelector('img,.pos-image-empty').getBoundingClientRect(),price=n.querySelector('.pos-product-price').getBoundingClientRect(),name=n.querySelector('.pos-product-name').getBoundingClientRect();return {inside:price.top>=image.top&&price.bottom<=image.bottom+1&&price.left>=image.left&&price.right<=image.right+1,nameBelow:name.top>=image.bottom,border:getComputedStyle(n.closest('.pos-product-tile')).borderTopWidth};}));
+   assert.ok(badges.every(n=>n.inside&&n.nameBelow&&n.border==='0px'),'price badge overlays photo, name sits below and tile has no outer border');
    await page.screenshot({path:shot+`/${width}-catalog.png`});
    const skus=()=>page.locator('.pos-product').evaluateAll(ns=>ns.map(n=>n.dataset.sku));
    const first=await skus(),next=page.getByRole('button',{name:'Trang sản phẩm tiếp',exact:true}),prev=page.getByRole('button',{name:'Trang sản phẩm trước',exact:true});
