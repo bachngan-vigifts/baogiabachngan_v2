@@ -5,6 +5,9 @@
 body:has(#view-pos:not([hidden])) .sidebar {
   display: none;
 }
+body:has(#view-pos:not([hidden])) #approval-launcher {
+  display: none;
+}
 body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   display: flex;
 }

@@ -13,7 +13,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright")
 const f = await setup();
 await f.db.update(posRegisters).set({name:'CỬA HÀNG MINH LONG'}).where(eq(posRegisters.id,f.registerId));
 await f.open(f.mgr);
-await f.db.update(products).set({name:'Chén cơm 11.2cm jas lys',unit:'Cái'}).where(eq(products.sku,'00123'));
+await f.db.update(products).set({name:'Chén cơm 11.2cm Jas Lys — bộ sưu tập gốm sứ hoa văn dành cho khách hàng doanh nghiệp, màu trắng ngà',unit:'Cái'}).where(eq(products.sku,'00123'));
 await f.db.update(productPrices).set({price:20000}).where(eq(productPrices.sku,'00123'));
 await f.db.transaction((tx) => postMoves(tx, "mgr", [{ sku: "00123", warehouseId: "pos-wh", qty: 200, kind: "opening", refType: "opening", refId: "workspace-stock" }]));
 const user = (await f.call("/me", f.mgr)).data.user;
@@ -30,7 +30,7 @@ for (let i = 0; i < 20; i++) {
 }
 await f.db.insert(webStoreOrders).values({id:'ref-web-1',source:'minhlong',externalId:'REF-WEB-001',orderNo:'WEB_REF_001',registerId:f.registerId,status:'processing',customerName:'Khách web kiểm thử',total:80000,lines:'[]',orderedAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
 const root = process.env.POS_UI_ROOT || fileURLToPath(new URL("../../trial-ui/", import.meta.url)), calls = [], qrResults = [];
-const html = `<!doctype html><html class="app-shell"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/pos.css"><link rel="stylesheet" href="/typography.css"><link rel="stylesheet" href="/mobile-actions.css"><script type="module" src="/mobile-actions-init.js"><\/script><div class="workspace"><main class="main"><section id="view-pos"></section></main></div><script type="module">
+const html = `<!doctype html><html class="app-shell"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/pos.css"><link rel="stylesheet" href="/typography.css"><link rel="stylesheet" href="/mobile-actions.css"><script type="module" src="/mobile-actions-init.js"><\/script><button id="approval-launcher" class="approval-launcher" aria-label="Cần duyệt: 42 việc">42</button><div class="workspace"><main class="main"><section id="view-pos"></section></main></div><script type="module">
 import {initPos} from '/pos.js';location.hash='#/pos';window.notices=[];window.confirmCount=0;window.printCount=0;new MutationObserver(list=>{for(const m of list)for(const n of m.addedNodes)if(n.tagName==='IFRAME')n.contentWindow.print=()=>{window.printCount++;n.contentWindow.dispatchEvent(new n.contentWindow.Event('afterprint'));};}).observe(document.body,{childList:true});
 const api=async(path,method='GET',body)=>{const r=await fetch('/api'+path,{method,headers:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)}),data=await r.json();if(!r.ok)throw Object.assign(Error(data.error),{status:r.status});return data;};
 window.pos=initPos({api,root:document.querySelector('#view-pos'),user:()=>(${JSON.stringify(user)}),toast:(message)=>window.notices.push(message),confirmBox:async()=>{window.confirmCount++;return window.confirmAnswer!==false;},go:hash=>location.hash=hash});await pos.load();window.ready=true;
@@ -68,12 +68,15 @@ const shot = process.env.POS_SCREENSHOT_DIR || "/workspace/artifacts/pos-referen
 await mkdir(shot, { recursive: true });
 const results=[];
 try {
-  for(const [width,height] of [[2048,1145],[1440,900],[1280,800],[1024,768],[390,844]]){
+  for(const [width,height] of [[2214,1497],[1812,1000],[1440,900],[1280,800],[1024,768],[390,844]]){
     const context=await browser.newContext({viewport:{width,height},locale:'vi-VN'});
     await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
     const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
     try {
       await page.goto(origin);await page.waitForFunction(()=>window.ready);
+      assert.equal(await page.locator('#approval-launcher').isVisible(),false,'approval bell cannot cover POS search');
+      await page.evaluate(()=>{document.querySelector('#view-pos').hidden=true;});assert.equal(await page.locator('#approval-launcher').isVisible(),true,'launcher stays available outside POS');
+      await page.evaluate(()=>{document.querySelector('#view-pos').hidden=false;document.querySelector('#approval-launcher').hidden=false;});assert.equal(await page.locator('#approval-launcher').isVisible(),false,'background refresh cannot reveal bell on POS');
       const desktop=width>850,input=page.getByRole('searchbox',{name:'Tìm hoặc quét sản phẩm'});
       await page.screenshot({path:shot+`/${width}-empty.png`});
       if(desktop) {
@@ -87,8 +90,16 @@ try {
       await page.screenshot({path:shot+`/${width}-quick.png`});
       const snapshot=await page.evaluate(()=>({qty:document.querySelector('.pos-qty input').value,amount:document.querySelector('.pos-line-top>strong').textContent}));
       if(desktop){
+        const quantity=page.locator('.pos-qty').first(),placement=await quantity.evaluate(n=>{const [minus,input,plus]=[n.children[0],n.children[1],n.children[2]].map(x=>x.getBoundingClientRect());return minus.right<=input.left+1&&input.right<=plus.left+1&&Math.abs(minus.y-plus.y)<2;});assert.equal(placement,true,'minus and plus stay next to quantity');
+        await quantity.locator('button').last().click();await page.waitForFunction(()=>document.querySelector('.pos-line-top>strong')?.textContent==='100.000 đ');await quantity.locator('button').first().click();await page.waitForFunction(()=>document.querySelector('.pos-line-top>strong')?.textContent==='80.000 đ');
+        const discount=page.locator('.pos-line-discount').first();assert.equal(await discount.isVisible(),true,'CK is directly visible without opening the row menu');
+        const within=await discount.evaluate(n=>{const a=n.getBoundingClientRect(),b=n.closest('.pos-line').getBoundingClientRect();return a.left>=b.left&&a.right<=b.right;});assert.equal(within,true,'discount column fits its product row');
+        await discount.locator('input').fill('10');await page.waitForFunction(()=>document.querySelector('.pos-line-top>strong')?.textContent==='72.000 đ');
+        await discount.locator('select').selectOption('amount');await discount.locator('input').fill('5000');await page.waitForFunction(()=>document.querySelector('.pos-line-top>strong')?.textContent==='75.000 đ');
+        await discount.locator('select').selectOption('percent');await page.waitForFunction(()=>document.querySelector('.pos-line-top>strong')?.textContent==='80.000 đ');
         const before=calls.filter(c=>c.method!=='GET'&&!['/pos/preview','/pos/ghn/locations'].includes(c.path)).length;
         await page.getByRole('button',{name:'Bán thường',exact:true}).click();
+        assert.equal(await discount.isVisible(),true,'CK stays visible in normal mode');
         assert.equal(await page.locator('.pos-ref-products').isVisible(),true);
         await page.getByRole('button',{name:'Bộ lọc sản phẩm',exact:true}).click();
         assert.equal(await page.locator('.pos-product-filters').isVisible(),true);
@@ -99,6 +110,7 @@ try {
         assert.equal(await page.locator('.pos-checkout .pos-payment-footer').isVisible(),false);
         await page.screenshot({path:shot+`/${width}-normal.png`});
         await page.getByRole('button',{name:'Bán giao hàng',exact:true}).click();
+        assert.equal(await discount.isVisible(),true,'CK stays visible in delivery mode');
         await page.locator('.pos-ref-carrier').waitFor();
         assert.equal(await page.getByText('Cổng GHN',{exact:true}).isVisible(),true);
         assert.equal(await qty.inputValue(),'4');
