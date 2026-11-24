@@ -1,4 +1,5 @@
 import {mountPosReference,decorateReferenceLine,inlineCodSurface} from './pos-reference.js';
+import {createPosInvoiceBook,renderPosInvoiceTabs} from './pos-invoices.js';
 import {incomingStockText,renderIncomingOrders,createPosDraftStore,posShortcut} from './pos-workspace.js';
 import { createPurchaseOrders } from './purchase-order-create.js';
 import {promotionPanel,configurePromotion} from './pos-promotions.js';
@@ -133,23 +134,55 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   const workspace = { mode:'scan', quantity:false, selectedSku:'', recent:[], tendered:'', quickOpen:true, recovery:false, recoveryError:'', draftScope:'', qrTimer:null };
   const scope = () => ({userId:user()?.id,registerId:st.register?.id,shiftId:st.shift?.id});
   let draftStore;try{if(typeof sessionStorage!=='undefined')draftStore=createPosDraftStore(sessionStorage);}catch{}
-  function saveDraft(){
-    if(!draftStore||!st.shift||st.pending||workspace.recovery||workspace.recoveryError)return;
-    try{if(!st.cart.length){draftStore.clear(scope());return;}draftStore.save(scope(),{cart:st.cart.map(({sku,qty,discountType,discountValue})=>({sku,qty,discountType,discountValue})),customerId:st.customer?.id||'',policy:st.policy,voucher:st.voucher,serviceFees:st.serviceFees,shippingFee:st.shippingFee,note:st.note,promotionOptOutReason:st.promotionOptOutReason,exchangeAllocationId:st.exchangeAllocationId,method:st.method,tendered:workspace.tendered,quantity:workspace.quantity,qr:st.qr?{...st.qr,paid:false}:null});}catch{if(nodes.draftWarning)nodes.draftWarning.textContent='Chưa lưu được nháp trên máy này. Giữ trang mở khi chưa hoàn tất.';}
+  const invoiceDraft=()=>({cart:st.cart.map(({sku,qty,discountType,discountValue})=>({sku,qty,discountType,discountValue})),customerId:st.customer?.id||'',policy:st.policy,voucher:st.voucher,serviceFees:st.serviceFees,shippingFee:st.shippingFee,note:st.note,promotionOptOutReason:st.promotionOptOutReason,exchangeAllocationId:st.exchangeAllocationId,method:st.method,tendered:workspace.tendered,quantity:workspace.quantity,deliveryDraft:nodes.deliveryEditor?.draft()||workspace.deliveryDraft||null,qr:st.qr?{...st.qr,paid:false}:null});
+  function ensureInvoiceBook(){
+    const identity=JSON.stringify(scope());if(workspace.bookScope===identity)return true;
+    try{let storage;try{storage=sessionStorage;}catch{}if(workspace.bookScope){const error=workspace.recoveryError;resetInvoice();workspace.recoveryError=error;}workspace.invoiceBook=createPosInvoiceBook(storage,scope(),draftStore?.read(scope())||null);workspace.bookScope=identity;return true;}
+    catch(e){workspace.recoveryError='Không đọc được danh sách hóa đơn: '+e.message;return false;}
   }
-  function clearDraft(){try{draftStore?.clear(scope());}catch{}}
+  const invoiceLocked=()=>st.busy||st.pending||st.qr||st.exchangeAllocationId||workspace.invoiceSwitching||workspace.recovery||workspace.recoveryError||nodes.deliveryEditor?.busy();
+  function resetInvoice(){
+    clearTimeout(previewTimer);++previewSeq;++customerPaymentRun;st.resumePaymentAt=0;
+    nodes.deliveryEditor=null;workspace.deliveryDraft=null;
+    st.cart=[];st.customer=null;st.serviceFees=[];st.shippingFee='';st.note='';st.promotionOptOutReason='';st.voucher=emptyVoucher();st.exchangeAllocationId='';st.preview=null;st.qr=null;st.method='cash';st.policy=st.register.pricePolicyId;workspace.tendered='';workspace.draftScope='';workspace.recoveryError='';
+  }
+  async function selectInvoice(id,create=false){
+    if(invoiceLocked())return toast('Hoàn tất giao dịch, QR hoặc tiền đổi hàng hiện tại trước khi chuyển hóa đơn.','err');
+    if(!create&&id===workspace.invoiceBook?.current().id)return;
+    if(saveDraft()===false)return toast('Chưa lưu được nháp hiện tại. Giữ hóa đơn mở và thử lại.','err');
+    workspace.invoiceSwitching=true;root.inert=true;
+    try{if(create)id=workspace.invoiceBook.add();workspace.invoiceBook.select(id);resetInvoice();await recoverDraft();draw();await Promise.all([search(false),st.cart.length?preview():Promise.resolve()]);}
+    catch(e){workspace.recoveryError='Chưa chuyển được hóa đơn: '+e.message;toast(workspace.recoveryError,'err');}
+    finally{workspace.invoiceSwitching=false;root.inert=false;saveDraft();refreshPay();}
+  }
+  async function closeInvoice(id){
+    if(invoiceLocked())return toast('Hoàn tất giao dịch hiện tại trước khi đóng hóa đơn.','err');
+    if(saveDraft()===false)return toast('Chưa lưu được nháp hiện tại. Giữ hóa đơn mở và thử lại.','err');
+    const entry=workspace.invoiceBook.entries().find(e=>e.id===id);if(!entry)return;
+    if(entry.dirty&&!await confirmBox('Đóng Hóa đơn '+entry.number+' và bỏ nháp chưa lưu?',{ok:'Đóng hóa đơn'}))return;
+    if(id!==workspace.invoiceBook.current().id){workspace.invoiceBook.close(id);draw();return;}
+    workspace.invoiceSwitching=true;root.inert=true;
+    try{workspace.invoiceBook.close(id);resetInvoice();await recoverDraft();draw();await Promise.all([search(false),st.cart.length?preview():Promise.resolve()]);}
+    finally{workspace.invoiceSwitching=false;root.inert=false;saveDraft();refreshPay();}
+  }
+  function saveDraft(){
+    if(!st.shift||st.pending||workspace.recovery||workspace.recoveryError||workspace.invoiceSwitching)return;
+    try{const draft=invoiceDraft();workspace.deliveryDraft=draft.deliveryDraft;workspace.invoiceBook?.save(draft);if(!st.cart.length){draftStore?.clear(scope());return true;}draftStore?.save(scope(),draft);return true;}catch{if(nodes.draftWarning)nodes.draftWarning.textContent='Chưa lưu được nháp trên máy này. Giữ trang mở khi chưa hoàn tất.';return false;}
+  }
+  function clearDraft(){workspace.deliveryDraft=null;nodes.deliveryEditor=null;try{draftStore?.clear(scope());workspace.invoiceBook?.save(null);}catch{}}
   async function recoverDraft(){
     const identity=JSON.stringify(scope());if(workspace.draftScope===identity||st.pending||st.cart.length||!st.shift||!active())return;
-    workspace.draftScope=identity;let d;try{d=draftStore?.read(scope());}catch{workspace.recoveryError='Không đọc được nháp. Kiểm tra giao dịch trước khi tạo đơn mới.';return;}
-    if(!d?.cart?.length)return;workspace.recovery=true;workspace.recoveryError='';
+    workspace.draftScope=identity;let d;try{d=workspace.invoiceBook?workspace.invoiceBook.current().draft:draftStore?.read(scope());}catch{workspace.recoveryError='Không đọc được nháp. Kiểm tra giao dịch trước khi tạo đơn mới.';return;}
+    if(!d?.cart)return;workspace.recovery=true;workspace.recoveryError='';
     try{
-      const skus=d.cart.map(r=>r.sku);const catalog=await api('/pos/catalog?registerId='+encodeURIComponent(st.register.id)+'&pricePolicyId='+encodeURIComponent(d.policy||st.policy)+'&skus='+encodeURIComponent(skus.join(',')));
+      const skus=d.cart.map(r=>r.sku);const catalog=d.cart.length?await api('/pos/catalog?registerId='+encodeURIComponent(st.register.id)+'&pricePolicyId='+encodeURIComponent(d.policy||st.policy)+'&skus='+encodeURIComponent(skus.join(','))):{products:[]};
       if(identity!==JSON.stringify(scope()))return;
       if(![st.register.pricePolicyId,st.register.secondPricePolicyId].includes(d.policy))throw Error('Bảng giá của nháp không còn được phép.');
       st.policy=d.policy;st.cart=d.cart.map(row=>{const item=catalog.products.find(p=>p.sku===row.sku);if(!item)throw Error('Không lấy được mã hàng '+row.sku+' của nháp.');return {...item,qty:row.qty,discountType:row.discountType,discountValue:row.discountValue};});
       if(d.customerId){const found=await api('/pos/customers?id='+encodeURIComponent(d.customerId));if(identity!==JSON.stringify(scope()))return;st.customer=found.customers.find(c=>c.id===d.customerId)||null;if(!st.customer)throw Error('Khách của nháp không còn được phép chọn.');}
       for(const k of ['voucher','serviceFees','shippingFee','note','promotionOptOutReason','exchangeAllocationId','method'])if(d[k]!==undefined)st[k]=d[k];
       workspace.tendered=d.tendered||'';workspace.quantity=!!d.quantity;
+      workspace.deliveryDraft=d.deliveryDraft||null;
       if(d.qr?.id){const q=await api('/pos/qr/'+encodeURIComponent(d.qr.id)+'/status');if(identity!==JSON.stringify(scope()))return;if(q.requiresReconciliation)throw Error('QR của nháp cần đối soát với Manager.');if(q.consumed){st.cart=[];st.customer=null;clearDraft();toast('Đơn đã được ghi nhận: '+q.order.orderNo);return;}if(Date.parse(d.qr.expiresAt)>Date.now()||q.paid){st.qr={...d.qr,paid:!!q.paid};if(st.qr.paid)st.method='transfer';}else toast('QR của nháp đã hết hạn. Kiểm tra giao dịch trước khi tạo mã mới.','err');}
       toast('Đã khôi phục nháp. Giá và tồn sẽ được máy chủ kiểm tra lại.');
     }catch(e){workspace.recoveryError='Nháp cần kiểm tra: '+e.message;toast(workspace.recoveryError,'err');}
@@ -210,6 +243,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if (pendingUser === user().id) return;
     pendingUser = user().id;
     st.qr = null;
+    workspace.invoiceBook=null;workspace.bookScope='';workspace.invoiceSwitching=false;
+    workspace.deliveryDraft=null;nodes.deliveryEditor=null;
     workspace.recent=[];workspace.mode='scan';workspace.tendered='';workspace.draftScope='';workspace.recoveryError='';
     st.register = null;
     st.policy = '';
@@ -355,7 +390,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   }
   const active = () => !!st.shift && !st.shift.closedAt;
   function dirty() {
-    return !!st.pending || st.cart.length > 0 || !!st.exchangeAllocationId;
+    return !!st.pending || st.cart.length > 0 || !!st.exchangeAllocationId || !!workspace.invoiceSwitching || !!workspace.invoiceBook?.hasOtherDrafts();
   }
   async function load() {
     restorePending();saveDraft();
@@ -381,6 +416,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if (embeddedStock) acceptStockSnapshot(d.stockSnapshot);
     if (firstCatalogRead) { st.products = []; st.offset = null; st.localSkus = null; }
     justBootstrappedStock=stockPreloadSupported;
+    if(st.shift&&!ensureInvoiceBook()){draw();return;}
     await recoverDraft();
     draw();
     if (st.register) {
@@ -414,6 +450,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     menu.setAttribute('aria-expanded', String(st.showMenu));
     title.append(menu);
     page.append(head);
+    nodes.invoiceTabs=workspace.invoiceBook?renderPosInvoiceTabs(document,workspace.invoiceBook,{select:id=>run(()=>selectInvoice(id)),close:id=>run(()=>closeInvoice(id)),add:()=>run(()=>selectInvoice(null,true))}):null;
+    if(nodes.invoiceTabs&&!desktopPos()&&workspace.invoiceBook.entries().length>1)page.append(nodes.invoiceTabs);
     const template = st.options.templates?.find(t => t.id === st.shift?.templateId),
       shiftLabel = active()
         ? `${template?.name || 'Ca bán hàng'}${template ? ` · ${template.startsAt}–${template.endsAt}` : ''} · Đang mở`
@@ -1145,10 +1183,10 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const left=Math.max(0,Math.ceil((Date.parse(d.expiresAt)-Date.now())/1000));nodes.pcQr.append(el('p','',d.content),el('p','pos-note',d.paid?'SePay đã xác nhận nhận đủ tiền.':left?'Chờ SePay · còn '+Math.floor(left/60)+':'+String(left%60).padStart(2,'0'):'QR đã hết hạn. Kiểm tra tiền trước khi tạo mã mới.'));
   }
   document.addEventListener('keydown',event=>{
+    if(workspace.invoiceSwitching)return;
     const dialog=document.querySelector?.('dialog[open]');
     if(dialog){if(event.key==='F9'&&dialog.classList.contains('pos-cod-modal')&&!dialog.dataset.busy){const submit=dialog.querySelector('button[type=submit]');if(submit&&!submit.disabled){event.preventDefault();dialog.querySelector('form').requestSubmit();}}return;}
     const action=posShortcut(event,{active:desktopPos()&&!root.hidden&&location.hash.startsWith('#/pos'),typing:!!event.target.closest?.('input,textarea,select,[contenteditable=true]')});if(!action)return;
-    if(event.altKey&&['scan','grid','delivery'].includes(action)){event.preventDefault();nodes.reference?.setMode(action);return;}
     if(action==='complete'&&workspace.mode==='delivery'){event.preventDefault();nodes.deliveryEditor?.submit();return;}
     if(action==='complete'&&workspace.mode==='grid'&&!root.querySelector('.pos-reference-checkout')){event.preventDefault();openPayment();return;}
     let target;
@@ -1410,7 +1448,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   }
   function refreshPay() {
     if (!nodes.pay) return;
-    const invalid = workspace.recovery||!!workspace.recoveryError||!active() || !st.preview || !st.cart.length || !!st.pending || st.busy;
+    const invalid = workspace.recovery||workspace.invoiceSwitching||!!workspace.recoveryError||!active() || !st.preview || !st.cart.length || !!st.pending || st.busy;
     nodes.pay.disabled = invalid;
     nodes.reference?.update({quantity:st.cart.reduce((n,x)=>n+Number(x.qty||0),0),total:st.preview?money(st.preview.total):st.cart.length?'Đang tính…':'0 đ',valid:!invalid});
     if(st.preview)nodes.deliveryEditor?.refresh();
@@ -2358,6 +2396,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     };
     m.form.append(steps, serverError, editView, review, footer);
     if(embedded){embedded.carrierBody.append(summary);save.setAttribute('form',m.form.id);embedded.carrierFooter.append(footer);}
+    const recovered=embedded?workspace.deliveryDraft:null;let restoringDelivery=!!recovered;
+    if(recovered){for(const [f,k]of [[address,'address'],[phone,'phone'],[receiver,'receiver'],[date,'date'],[ghnOrderCode,'ghnOrderCode'],[weight,'weight'],[shipNote,'shipNote'],[deposit,'deposit']])if(recovered[k]!=null)f.input.value=recovered[k];if(recovered.method)method.value=recovered.method;if(recovered.requiredNote)requiredNote.value=recovered.requiredNote;}
     updateDeposit();
     m.form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -2399,10 +2439,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       if (result === 'rejected') { edit(); serverError.textContent = 'Máy chủ chưa tạo đơn. Kiểm tra lại thông tin rồi gửi lại.'; }
     });
     m.show();
-    run(ghn.loadProvinces);
+    run(async()=>{try{if(recovered)await ghn.prefill(recovered);else await ghn.loadProvinces();}finally{restoringDelivery=false;if(embedded)saveDraft();}});
+    if(embedded){m.form.addEventListener('input',saveDraft);m.form.addEventListener('change',saveDraft);}
     if(embedded)return {
       busy:()=>!!m.dlg.dataset.busy,
       submit(){if(!save.disabled)m.form.requestSubmit(save);},
+      draft:()=>({address:address.input.value,phone:phone.input.value,receiver:receiver.input.value,date:date.input.value,ghnOrderCode:ghnOrderCode.input.value,weight:weight.input.value,shipNote:shipNote.input.value,deposit:deposit.input.value,method:method.value,requiredNote:requiredNote.value,provinceId:restoringDelivery?recovered?.provinceId:province.select.value,districtId:restoringDelivery?recovered?.districtId:district.select.value,wardCode:restoringDelivery?recovered?.wardCode:ward.select.value}),
       invalidate(){if(!m.dlg.dataset.busy){save.disabled=true;if(reviewing)edit();save.disabled=true;}},
       refresh(){
         if(m.dlg.dataset.busy)return;

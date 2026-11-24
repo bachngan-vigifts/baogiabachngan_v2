@@ -32,12 +32,14 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
   const originalTools = head.querySelector('.pos-head-tools'), originalTitle = head.firstElementChild;
   const menu = el('details', 'pos-ref-menu'), summary = el('summary'); summary.setAttribute('aria-label', 'Menu bán hàng'); summary.append(referenceIcon(doc, 'menu'));
   const menuBody = el('div', 'pos-ref-menu-body'); menuBody.append(originalTitle, originalTools); menu.append(summary, menuBody);
+  const recent=left.querySelector('.pos-workspace-quick');if(recent)menuBody.append(recent);
+  const shortcuts=page.querySelector('.pos-keyboard-bar');if(shortcuts)menuBody.append(shortcuts);
   const quantity = searchRow.querySelector('.pos-scan-quantity'); if (quantity) menuBody.append(quantity);
-  const tabs = el('div', 'pos-ref-invoice'); tabs.append(el('span', 'pos-ref-swap', '⇄'), el('strong', '', 'Hóa đơn hiện tại'), btn('Hủy đơn hiện tại', 'back', action.cancel));
+  const tabs = nodes.invoiceTabs || el('div', 'pos-ref-invoice','Hóa đơn hiện tại');
   const tools = el('div', 'pos-ref-header-actions');
   tools.append(btn('Đơn hàng cửa hàng', 'bag', action.orders), btn('Trả / Đổi / Hoàn', 'back', action.returns), btn('In bill tạm', 'print', action.print), el('span', 'pos-ref-store', register?.name || ''), menu);
   searchRow.prepend(referenceIcon(doc, 'search')); nodes.search.placeholder = 'Tìm hàng hóa · tên, mã, barcode (F2)';
-  head.replaceChildren(searchRow, tabs, btn('Đơn mới (F12)', 'plus', action.cancel), tools);
+  head.replaceChildren(searchRow, tabs, tools);
   const cashier = el('div', 'pos-ref-cashier'), date = el('time', '', new Intl.DateTimeFormat('vi-VN', {timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date()));
   cashier.append(el('span', '', user?.name || 'Nhân viên'), date); right.querySelector('.pos-checkout-scroll').prepend(cashier);
   const basket = right.querySelector('.pos-basket-head'); nodes.customer.title = 'Tìm khách hàng';

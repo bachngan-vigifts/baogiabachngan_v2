@@ -2,6 +2,7 @@
 
 Ngày 24/11/2026. Nhánh `codex1/pos-reference-layout`, nền main `4233e6bd`.
 Yêu cầu trực tiếp của chủ repo; làm riêng với việc điều tra tiền bill ở #780.
+Đã gộp main `80980325` (#817), giữ thẻ kết quả tìm nhanh ngang với hai hàng đầy đủ.
 
 Đã đọc DOM/CSS của cả ba tệp đính kèm (tệp giao hàng có đuôi .html nhưng nội dung
 thực tế là MHTML). Không nhúng ứng dụng, script, tài khoản hay quảng cáo trong
@@ -21,6 +22,12 @@ snapshot vào CRM.
   giao hàng gửi đúng form COD, không gửi nhầm checkout tại quầy.
 - Chuyển ba chế độ giữ giỏ, ghi chú và dữ liệu người nhận; chặn chuyển khi đang gửi
   hoặc chưa rõ kết quả. QR hiện tại phải được xử lý trước khi sang giao hàng.
+- Chủ shop đã duyệt thêm nhiều hóa đơn song song, giữ các phương thức thanh toán
+  CRM hiện có; không bổ sung Thẻ/Ví. Mỗi tab giữ giỏ, khách, ghi chú và địa chỉ
+  riêng theo người dùng/quầy/ca. Đổi tab lấy lại giá/tồn và tính preview mới.
+  Đóng nháp có dữ liệu phải xác nhận; khóa đổi/thêm/đóng khi có QR, giao dịch chưa
+  rõ kết quả, đang gửi hoặc đang giữ tiền đổi hàng. Thanh toán một tab không xóa
+  các tab khác. Tab cũng dùng được khi đổi sang màn hình điện thoại.
 - Giao diện mới chỉ áp dụng desktop từ 851px; điện thoại giữ luồng có sẵn.
 
 Ảnh từ bản chạy với dữ liệu mồi, không phải dữ liệu production:
@@ -36,6 +43,10 @@ snapshot vào CRM.
 ### Bán giao hàng
 
 ![Bán giao hàng](delivery.png)
+
+### Nhiều hóa đơn song song — đã được chủ shop duyệt
+
+![Các tab hóa đơn riêng](invoices.png)
 
 ## Kiểm chứng
 
@@ -57,6 +68,12 @@ Node 22.22.0, Chromium, PGlite và router ứng dụng thật trên máy kiểm 
 - Kiểm tra asset/version và architecture đạt: CSS được preload trong index và
   được gắn mã nội dung khi phát hành; module POS độc lập cũng dùng URL có phiên bản.
   Không dùng CSS import không phiên bản dưới chính sách cache immutable một năm.
+- Bổ sung 5 test quản lý hóa đơn (tách scope, khôi phục, đóng/giữ tab khác, dữ liệu
+  lỗi và rollback khi storage lỗi). Tổng nhóm test liên quan + asset: 70/70 đạt.
+- `scripts/testing/pos-invoices.mjs`: hai hóa đơn khác hàng/khách/ghi chú/địa chỉ,
+  reload và đổi desktop/mobile giữ đúng dữ liệu; thu 80.000đ ở hóa đơn 1 chỉ tạo
+  một đơn/phiếu thu, hóa đơn 2 vẫn 162.000đ; hủy đóng nháp giữ nguyên tab; QR khóa
+  thêm/chuyển tab, không tạo thêm đơn. Dữ liệu đều là fixture.
 
 Lệnh trình duyệt:
 
