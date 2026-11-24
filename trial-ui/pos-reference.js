@@ -1,6 +1,7 @@
 /** Presentation for the three reference layouts. Actions remain owned by POS. */
 const paths = {
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>',
+  photo: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m4 18 5-6 4 4 3-5 5 7"/>',
   filter: '<path d="M3 4h18l-7 8v8l-4-2v-6z"/>',
   scan: '<path d="M4 7V4h5m6 0h5v3M4 17v3h5m6 0h5v-3M7 8v8m3-8v8m4-8v8m3-8v8"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -50,11 +51,15 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
   const note=left.querySelector('.pos-order-note textarea');if(note)note.placeholder='Ghi chú đơn hàng';
   const products = el('section', 'pos-ref-products'); products.setAttribute('aria-label','Danh mục bán hàng');
   const controls = left.querySelector('.pos-catalog-controls');
-  products.append(controls, nodes.grid, left.querySelector('.pos-catalog-pages'));
+  const catalogPages = left.querySelector('.pos-catalog-pages');
+  products.append(controls, nodes.grid, catalogPages);
   const catalogActions = el('div', 'pos-ref-catalog-actions');
-  const view = btn('Đổi dạng hiển thị sản phẩm', 'menu', () => products.classList.toggle('pos-ref-list'));
-  const filter = btn('Bộ lọc sản phẩm', 'filter', () => { const b = controls.querySelector('.pos-filter-toggle'); b?.click(); });
-  catalogActions.append(view, filter); basket.append(catalogActions);
+  const view = btn('Danh sách sản phẩm', 'menu', () => { products.classList.add('pos-ref-list'); view.setAttribute('aria-pressed','true'); photos.setAttribute('aria-pressed','false'); });
+  const photos = btn('Hiển thị ảnh sản phẩm', 'photo', () => { products.classList.remove('pos-ref-list'); view.setAttribute('aria-pressed','false'); photos.setAttribute('aria-pressed','true'); });
+  view.setAttribute('aria-pressed','false'); photos.setAttribute('aria-pressed','true');
+  const filter = btn('Bộ lọc sản phẩm', 'filter', () => { const b = controls.querySelector('.pos-filter-toggle'); b?.click(); const open=!controls.querySelector('.pos-product-filters').hidden; products.classList.toggle('pos-ref-filters-open',open); filter.setAttribute('aria-expanded',String(open)); });
+  filter.setAttribute('aria-expanded','false');
+  catalogActions.append(view, filter, photos); basket.append(catalogActions);
   const bottom = el('footer', 'pos-ref-bottom'), modes = el('nav', 'pos-ref-modes'); modes.setAttribute('aria-label', 'Chế độ bán hàng');
   const modeButtons = [];
   for (const [id, label, icon] of [['scan','Bán nhanh','bolt'],['grid','Bán thường','clock'],['delivery','Bán giao hàng','truck']]) {
@@ -76,7 +81,7 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
     if (workspace.mode !== id && !onMode(id)) return;
     workspace.mode = id; page.classList.remove('pos-mode-scan','pos-mode-grid','pos-mode-delivery','pos-reference-checkout'); page.classList.add('pos-mode-'+id);
     for (const b of modeButtons) b.setAttribute('aria-pressed',String(b.dataset.posMode===id));
-    if (id==='grid') right.querySelector('.pos-checkout-scroll').append(products); else left.append(products);
+    if (id==='grid') { right.querySelector('.pos-checkout-scroll').append(products); normalFooter.prepend(catalogPages); } else { products.append(catalogPages); left.append(products); }
     if(id==='delivery')cartSummary.append(nodes.totals,due);else restoreTotals();
     if (id==='delivery') onDelivery({formHost, carrierBody, carrierFooter});
     nodes.grid.hidden = id !== 'grid' && !nodes.search.value.trim();

@@ -78,18 +78,9 @@ try {
    await page.getByRole('button',{name:'Bán thường',exact:true}).click();
    await page.waitForFunction(()=>document.querySelectorAll('.pos-product-tile').length>=24);
    assert.equal(await page.locator('.pos-product-tile').count(),24,'normal catalog must render only 24 products');
-   const positions=await page.locator('.pos-product-tile').evaluateAll(ns=>ns.map(n=>{const r=n.getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),height:r.height};}));
-   assert.equal(new Set(positions.map(p=>p.x)).size,8,'8 columns');assert.equal(new Set(positions.map(p=>p.y)).size,3,'3 rows');
-   assert.ok(positions.every(p=>p.height>=156),'cards must never collapse');
-   if(width>=1812){const geom=await page.locator('.pos-grid').evaluate(n=>({height:n.clientHeight,scroll:n.scrollHeight,rows:getComputedStyle(n).gridTemplateRows,tiles:[...n.children].map(x=>x.getBoundingClientRect().height)}));assert.ok(geom.scroll<=geom.height+1,'all three rows fit without vertical scrolling');}
-   if(height===1526){
-    await page.waitForFunction(()=>[...document.querySelectorAll('.pos-product img')].every(n=>n.naturalWidth>0));
-    const photos=await page.locator('.pos-product img').evaluateAll(ns=>ns.map(n=>{const r=n.getBoundingClientRect(),tile=n.closest('.pos-product-tile').getBoundingClientRect();return {height:r.height,width:r.width,card:tile.height,fit:getComputedStyle(n).objectFit,source:n.dataset.productImageSource};}));
-    assert.ok(photos.every(n=>n.height>=100&&n.height>=n.width*.7),'product photos must use the card image area, not a fixed 48px strip');
-    assert.ok(photos.every(n=>n.fit==='contain'&&n.source.startsWith('https://pos-fixture.invalid/product-')),'original images remain uncropped');
-   }
-   const badges=await page.locator('.pos-product').evaluateAll(ns=>ns.map(n=>{const image=n.querySelector('img,.pos-image-empty').getBoundingClientRect(),price=n.querySelector('.pos-product-price').getBoundingClientRect(),name=n.querySelector('.pos-product-name').getBoundingClientRect();return {inside:price.top>=image.top&&price.bottom<=image.bottom+1&&price.left>=image.left&&price.right<=image.right+1,nameBelow:name.top>=image.bottom,border:getComputedStyle(n.closest('.pos-product-tile')).borderTopWidth};}));
-   assert.ok(badges.every(n=>n.inside&&n.nameBelow&&n.border==='0px'),'price badge overlays photo, name sits below and tile has no outer border');
+   const geometry=await page.locator('.pos-product').evaluateAll(ns=>ns.map(n=>{const image=n.querySelector('img,.pos-image-empty').getBoundingClientRect(),price=n.querySelector('.pos-product-price').getBoundingClientRect(),name=n.querySelector('.pos-product-name').getBoundingClientRect();return {imageLeft:image.right<=name.left,priceBelow:price.top>=name.bottom-1};}));
+   assert.ok(geometry.every(n=>n.imageLeft&&n.priceBelow),'horizontal image with name and price beside it');
+   assert.equal(await page.locator('.pos-grid').evaluate(n=>n.scrollWidth<=n.clientWidth+1),true,'no horizontal catalog scrolling');
    await page.screenshot({path:shot+`/${width}-catalog.png`});
    const skus=()=>page.locator('.pos-product').evaluateAll(ns=>ns.map(n=>n.dataset.sku));
    const first=await skus(),next=page.getByRole('button',{name:'Trang sản phẩm tiếp',exact:true}),prev=page.getByRole('button',{name:'Trang sản phẩm trước',exact:true});
@@ -100,6 +91,7 @@ try {
    const third=await skus();assert.ok(third.length>0&&third.length<=24);assert.ok(third.every(s=>!first.includes(s)&&!second.includes(s)));assert.equal(await next.isDisabled(),true);
    await prev.click();await page.waitForFunction(()=>document.querySelector('.pos-catalog-page-label')?.textContent==='Trang 2');assert.deepEqual(await skus(),second);
    const search=page.getByRole('searchbox',{name:'Tìm nhanh sản phẩm trong danh mục'});
+   await page.getByRole('button',{name:'Bộ lọc sản phẩm',exact:true}).click();
    await search.fill('00123');
    if(width===1024){
     await page.waitForRequest(r=>r.url().includes('/api/pos/catalog?')&&r.url().includes('q=00123'));
@@ -117,7 +109,7 @@ try {
    await next.click();await page.waitForFunction(()=>document.querySelector('.pos-catalog-page-label')?.textContent==='Trang 2');
    await next.click();await page.waitForFunction(()=>document.querySelector('.pos-catalog-page-label')?.textContent==='Trang 3');
    assert.equal(new Set(await skus()).size,(await skus()).length,'cached search pages must not append preview duplicates');
-   await page.locator('.pos-ref-products .pos-filter-toggle').click();await page.locator('[data-filter=out]').click();
+   await page.locator('[data-filter=out]').click();
    await page.waitForFunction(()=>[...document.querySelectorAll('.pos-product')].some(n=>n.dataset.sku==='00789'));
    assert.equal(await page.locator('.pos-qty input').inputValue(),qty,'filtering preserves cart');
    await page.locator('[data-filter=all]').click();await page.waitForFunction(()=>document.querySelectorAll('.pos-product-tile').length===24);
@@ -131,7 +123,7 @@ try {
    assert.equal(await page.locator('#chat-launcher').isVisible(),false);assert.equal(await page.locator('#reminder-launcher').isVisible(),false);
    await page.locator('#view-pos').evaluate(n=>n.hidden=true);assert.equal(await page.locator('#chat-launcher').isVisible(),true);assert.equal(await page.locator('#reminder-launcher').isVisible(),true);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.deepEqual(errors,[]);
-   results.push({width,height,pageSizes:[first.length,second.length,third.length],columns:8,rows:3,search:true,filters:true,cartPreserved:true});
+   results.push({width,height,pageSizes:[first.length,second.length,third.length],responsiveColumns:true,search:true,filters:true,cartPreserved:true});
   } catch(e) {await page.screenshot({path:shot+`/${width}-failure.png`});console.log({errors,notices:await page.evaluate(()=>window.notices)});throw e;} finally {await context.close();}
  }
  assert.equal(calls.filter(c=>c.method!=='GET'&&c.path!=='/pos/preview').length,0,'catalog actions cannot write orders, payments or shipping');
