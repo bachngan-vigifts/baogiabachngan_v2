@@ -39,7 +39,7 @@ test('Mã vạch trùng SKU/mã khác hoặc dữ liệu sai bị chặn, không
  for(const [sku,code] of [['NEW-A','00123'],['NEW-B','TAKEN'],['TAKEN','FREE-CODE']]){
   const r=await f.call('/products',f.mgr,'POST',fresh(sku!,code));assert.equal(r.status,409,JSON.stringify(r.data));assert.equal((await f.db.select().from(products).where(eq(products.sku,sku!))).length,0);assert.equal((await f.db.select().from(productPrices).where(eq(productPrices.sku,sku!))).length,0);
  }
- for(const extra of [{barcode:'two words'},{barcode:'é'},{barcode:'x'.repeat(101)},{barcode:123},{category:'x'.repeat(201)},{collection:null}])assert.equal((await f.call('/products',f.mgr,'POST',{...fresh('BAD'),...extra})).status,400,JSON.stringify(extra));
+ for(const extra of [{barcode:'two words'},{barcode:'é'},{barcode:'x'.repeat(101)},{barcode:123},{category:'x'.repeat(201)},{collection:123}])assert.equal((await f.call('/products',f.mgr,'POST',{...fresh('BAD'),...extra})).status,400,JSON.stringify(extra));
  const original=(await f.call('/products/00123',f.mgr)).data.product;
  assert.equal((await f.call('/products/00123',f.mgr,'PUT',{...fresh('00123','TAKEN'),name:'Đã sửa',expectedUpdatedAt:original.updatedAt})).status,200,'mã đang gắn chính SKU đó được giữ');
  await f.db.insert(products).values({sku:'OTHER',name:'Khác',updatedAt:new Date().toISOString()});await f.db.insert(productBarcodes).values({sku:'OTHER',barcode:'OTHER-CODE'});

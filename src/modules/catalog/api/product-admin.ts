@@ -47,6 +47,8 @@ function cleanProduct(body: Record<string, unknown>, existingSku?: string) {
   const classification: Partial<Pick<typeof products.$inferInsert, 'category' | 'collection'>> = {};
   for (const key of ['category', 'collection'] as const) {
     if (!Object.hasOwn(body, key)) continue;
+    // Client đọc GET rồi gửi lại nguyên bản: null = chưa có giá trị (xoá), không phải lỗi.
+    if (body[key] === null) { classification[key] = null; continue; }
     if (typeof body[key] !== 'string') throw new AppError(400, 'Danh mục và bộ sưu tập phải là văn bản.');
     classification[key] = t(key, 200);
   }
