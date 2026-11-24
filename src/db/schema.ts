@@ -60,3 +60,4 @@ export * from '../modules/accounting/supplier-schema.ts';
 export * from '../modules/accounting/import-schema.ts';
 
 export * from '../modules/sales/contract-template-schema.ts';
+export * from '../modules/sales/contract-source-schema.ts';

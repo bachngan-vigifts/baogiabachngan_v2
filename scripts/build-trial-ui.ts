@@ -8,6 +8,12 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
+export const CONTRACT_SOURCE_POLICY_OUT=join(root,'trial-ui','contract-source-policy.js');
+export const bundleContractSourcePolicy=()=>bundle('src/core/contracts/contract-template-source.ts');
+export const CONTRACT_SOURCE_FILE_OUT=join(root,'trial-ui','contract-source-file.js');
+export const bundleContractSourceFile=()=>bundle('src/modules/sales/domain/contract-source-file.ts');
+export const CUSTOMER_PROVINCE_OUT=join(root,'trial-ui','customer-province.js');
+export const bundleCustomerProvince=()=>bundle('src/modules/customers/domain/province.ts');
 export const CUSTODY_CONTRACT_OUT=join(root,'trial-ui','product-custody-contract.js');
 export const bundleProductCustody=()=>bundle('src/modules/product-custody/domain/custody.ts');
 export const CUSTOMER_ANNIVERSARY_OUT = join(root, 'trial-ui', 'customer-anniversary.js');
@@ -42,7 +48,7 @@ export const bundleQuoteMath = () => bundle('src/modules/quotes/domain/quote-mat
 export const bundleProductSearch = () => bundle('src/modules/catalog/domain/product-search.ts');
 
 if (process.argv[1] && import.meta.filename === process.argv[1]) {
-  for (const [out, code] of [[SUBMISSION_REVIEW_OUT,bundleSubmissionReview()],[SUPPLIER_ORDER_NUMBER_OUT,bundleSupplierOrderNumber()], [CUSTODY_CONTRACT_OUT,bundleProductCustody()], [CUSTOMER_ANNIVERSARY_OUT,bundleCustomerAnniversary()], [POS_CATALOG_BRAND_OUT,bundlePosCatalogBrand()], [DOCUMENT_NUMBER_OUT, bundleDocumentNumber()], [QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()], [POS_CUSTOMER_OUT, bundlePosCustomer()], [EARLY_ORDER_SOURCES_OUT,bundleEarlyOrderSources()]] as const) {
+  for (const [out, code] of [[CONTRACT_SOURCE_POLICY_OUT,bundleContractSourcePolicy()],[CONTRACT_SOURCE_FILE_OUT,bundleContractSourceFile()],[CUSTOMER_PROVINCE_OUT,bundleCustomerProvince()],[SUBMISSION_REVIEW_OUT,bundleSubmissionReview()],[SUPPLIER_ORDER_NUMBER_OUT,bundleSupplierOrderNumber()], [CUSTODY_CONTRACT_OUT,bundleProductCustody()], [CUSTOMER_ANNIVERSARY_OUT,bundleCustomerAnniversary()], [POS_CATALOG_BRAND_OUT,bundlePosCatalogBrand()], [DOCUMENT_NUMBER_OUT, bundleDocumentNumber()], [QUOTE_MATH_OUT, bundleQuoteMath()], [PRODUCT_SEARCH_OUT, bundleProductSearch()], [ORDER_NOTES_OUT, bundleOrderNotes()], [POS_CUSTOMER_OUT, bundlePosCustomer()], [EARLY_ORDER_SOURCES_OUT,bundleEarlyOrderSources()]] as const) {
     if (readFileSync(out, { encoding: 'utf8', flag: 'a+' }) !== code) writeFileSync(out, code);
     console.log('Đã ghi', out);
   }
