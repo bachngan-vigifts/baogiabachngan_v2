@@ -1,3 +1,4 @@
+import { initSapoBrowserConnect } from './sapo-browser-connect.js';
 import {openSaleAdminHandoff} from './sale-admin-handoff.js';
 import {initQrPhoneReceiver} from './pos-qr-phone.js';
 import { fetchCatalogSnapshot } from './catalog-snapshot-loader.js';
@@ -844,18 +845,25 @@ async function loadSapoSync() {
   $('#sync-docs').textContent = n(['purchase_order', 'stock_transfer', 'stock_adjustment'].reduce((t, k) => t + Number(docs[k]?.count || 0), 0));
   $('#sync-docs-note').textContent = `Nhập hàng ${dc('purchase_order')} · Điều chuyển ${dc('stock_transfer')} · Kiểm hàng ${dc('stock_adjustment')}` + (p.warnings?.length && !p.stale ? ' · Chưa đọc được: ' + p.warnings.map(w => w.split(':')[0]).join(', ') : '');
 }
-$('#sapo-connect').addEventListener('click', () => { $('#sapo-form').reset(); $('#sapo-error').textContent = ''; $('#sapo-dialog').showModal(); });
+const sapoBrowserConnect = initSapoBrowserConnect({
+  dialog: $('#sapo-dialog'), api, isManager, sessionKey: () => token,
+  connected: async () => { $('#sapo-dialog').close(); toast('Đã kết nối Sapo.'); await loadSapoSync(); },
+  busyChanged: busy => { $('#save-sapo').disabled = busy; $('#sapo-disconnect').disabled = busy; },
+});
+$('#sapo-connect').addEventListener('click', () => { sapoBrowserConnect.reset(); $('#sapo-form').reset(); $('#sapo-error').textContent = ''; $('#sapo-dialog').showModal(); });
 $('#sapo-form').addEventListener('submit', async e => {
   e.preventDefault();
+  if (sapoBrowserConnect.busy()) return;
   const btn = $('#save-sapo'), err = $('#sapo-error'), cookie = String(new FormData(e.target).get('cookie') || '').trim();
   err.textContent = '';
   if (!/(^|;\s*)(_admin_session_id|sapo-admin)=/.test(cookie)) { err.textContent = 'Chuỗi cookie cần có sapo-admin (hoặc _admin_session_id). Kiểm tra lại bước 3.'; return; }
-  btn.disabled = true;
+  btn.disabled = true; $('#sapo-browser-connect').disabled = true;
   try { await api('/admin/sapo-session', 'POST', { cookie }); $('#sapo-dialog').close(); toast('Đã kết nối Sapo.'); await loadSapoSync(); }
   catch (ex) { err.textContent = ex.message; }
-  finally { btn.disabled = false; }
+  finally { btn.disabled = false; $('#sapo-browser-connect').disabled = sapoBrowserConnect.busy(); }
 });
 $('#sapo-disconnect').addEventListener('click', async () => {
+  if (sapoBrowserConnect.busy()) return;
   if (!await confirmBox('App sẽ ngừng tự lấy dữ liệu từ Sapo cho tới khi kết nối lại.', { title: 'Ngắt kết nối Sapo?', ok: 'Ngắt kết nối', danger: true })) return;
   try { await api('/admin/sapo-session', 'DELETE', {}); $('#sapo-dialog').close(); toast('Đã ngắt kết nối Sapo.'); await loadSapoSync(); } catch (ex) { toast(ex.message, 'error'); }
 });
