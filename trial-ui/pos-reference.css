@@ -345,3 +345,18 @@
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products:not(.pos-ref-list) .pos-product-in-cart img,
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products:not(.pos-ref-list) .pos-product:not(:disabled):hover img {outline:2px solid #0070f4;outline-offset:-2px;}
 }
+
+/* Per-product note stays below the name, alongside quantity. */
+.pos-line input.pos-line-note {min-width:0;width:100%;max-width:100%;box-sizing:border-box;text-align:left;}
+.pos-line-note[hidden] {display:none!important;}
+@media(min-width:851px) {
+ .pos-workspace.pos-reference.pos-pc-scan .pos-line-note {grid-column:4 / -2;grid-row:2;font-size:13px!important;}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line-note,
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-note {grid-column:2 / -1;grid-row:4;}
+}
+@media(min-width:851px) and (max-width:1550px) {
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-has-note .pos-line-price,
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-has-note .pos-line-top>strong {grid-row:3;}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-has-note .pos-line-discount {grid-row:4;}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-note {grid-column:4 / 7;}
+}

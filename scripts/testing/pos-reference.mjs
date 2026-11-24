@@ -69,7 +69,7 @@ const shot = process.env.POS_SCREENSHOT_DIR || "/workspace/artifacts/pos-referen
 await mkdir(shot, { recursive: true });
 const results=[];
 try {
-  for(const [width,height] of [[2214,1497],[1812,1000],[1440,900],[1280,800],[1024,768],[390,844]]){
+  for(const [width,height] of [[2214,1497],[1812,1000],[1440,900],[1280,800],[1024,768],[969,954],[390,844]]){
     const context=await browser.newContext({viewport:{width,height},locale:'vi-VN'});
     await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
     const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));

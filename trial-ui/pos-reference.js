@@ -125,6 +125,8 @@ export function decorateReferenceLine(row, {unit,onDetails}) {
     b.append(referenceIcon(doc,icon),doc.createTextNode(label));b.addEventListener('click',async()=>{close();b.disabled=true;try{await action();}finally{b.disabled=false;}});detail.append(b);return b;
   };
   if(onDetails)item('Xem chi tiết / tồn kho','info',onDetails);
+  item('Ghi chú','menu',()=>{const input=row.querySelector('.pos-line-note');input.hidden=false;row.classList.add('pos-line-has-note');input.focus();});
+  if(row.querySelector('.pos-line-note')?.value)row.classList.add('pos-line-has-note');
   item('Chiết khấu','discount',()=>{const input=discount.querySelector('input');input?.focus();input?.select();});
   item('Xóa dòng sản phẩm','trash',()=>remove?.click(),true);
   detail.addEventListener('keydown',event=>{

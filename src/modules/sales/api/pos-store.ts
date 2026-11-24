@@ -135,6 +135,7 @@ export async function calculateCart(db: PosDb, b: Record<string, unknown>) {
       sku: f.p.sku,
       name: f.p.name,
       unit: f.p.unit,
+      ...(posOrderNote(x.note)?{note:posOrderNote(x.note)}:{}),
       ...posLine({
         price: f.price,
         qty: x.qty,
