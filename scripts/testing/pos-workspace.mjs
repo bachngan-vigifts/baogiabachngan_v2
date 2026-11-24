@@ -78,7 +78,7 @@ try {
       await page.waitForTimeout(250);
     };
     if (width > 850) {
-      await page.getByRole("button", { name: "Quét nhanh", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Bán nhanh", exact: true }).waitFor();
       await page.keyboard.press("F2");
       assert.equal(await input.evaluate((n) => n === document.activeElement), true);
     }
