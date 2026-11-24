@@ -113,7 +113,8 @@ test('Kho nhận có cấu trúc: đúng phân công được nhận, sai phân 
  const made=await f.call('/purchase-orders',f.cookies.mgr,'POST',{orders:[{supplierId:'a',warehouse:'Địa chỉ giao tự do',receivingWarehouseId:'outside-wh',lines:[{sku:'031106000',quantity:2}]}]});assert.equal(made.status,201);const id=made.data.ids[0];
  let view=(await f.call('/purchase-orders/'+id,f.cookies.mgr)).data;assert.equal(view.receivingWarehouseId,'outside-wh');
  await f.db.update(incomingShipments).set({approvalStatus:'approved'}).where(eq(incomingShipments.id,id));
- assert.equal((await f.call('/warehouse-receiving/'+id,f.cookies.kho)).status,404);
+ await f.db.insert(tasks).values({id:'not-warehouse-authority',source:'purchase',sourceId:id,autoKey:'receiving-due:purchase:unassigned',title:'Giao việc không vượt quyền kho',assigneeId:'kho',createdAt:now,updatedAt:now});
+ assert.equal((await f.call('/warehouse-receiving/'+id,f.cookies.kho)).status,404,'có task được giao không vượt phân công kho');
  let selected=await f.call('/purchase-orders/'+id+'/receiving-warehouse',f.cookies.mgr,'PUT',{revision:view.revision,receivingWarehouseId:'structured-wh'});assert.equal(selected.status,200,JSON.stringify(selected.data));
  assert.equal((await f.call('/warehouse-receiving/'+id,f.cookies.kho)).status,200);
  assert.equal((await f.call('/purchase-orders/'+id+'/receiving-warehouse',f.cookies.kho,'PUT',{revision:selected.data.revision,receivingWarehouseId:'outside-wh'})).status,403);
