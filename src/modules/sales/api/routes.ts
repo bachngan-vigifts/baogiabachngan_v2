@@ -82,7 +82,7 @@ import { readCatalogStock } from '../../catalog/api/stock-source.ts';
 import { warehouses } from '../../catalog/schema.ts';
 import { parsePhotos, photoUrls, savePhotos, WH_PHOTO_MAX, WH_PHOTO_MAX_CHARS } from '../../inventory/api/photos.ts';
 import { DEFAULT_SAPO_BASE } from '../../integrations/api/sapo-client.ts';
-import { assertSapoClawReady, sapoPreview, sapoPushRequired, sendOrderToClaw, wantsSapoPush, type SapoPushOutcome } from './sapo-push.ts';
+import { assertSapoClawReady, sapoPreview, sapoPushRequired, sendOrderToClaw, sendSapoCancellationToClaw, wantsSapoPush, type SapoPushOutcome } from './sapo-push.ts';
 import { amendmentLines, amendmentSchedules } from '../domain/amendments.ts';
 import { CONTRACT_STATUSES, DELIVERY_STATUSES, LEGAL_ENTITIES, ORDER_STATUSES, PAYMENT_METHODS } from '../domain/statuses.ts';
 import {
@@ -867,6 +867,11 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     });
     // Huỷ đơn Ship COD quầy Lock đã có vận đơn: huỷ luôn vận đơn trên GHN (lỗi thì trả lý do, đơn CRM vẫn đã huỷ).
     const ghnCancel = status === 'cancelled' ? await cancelGhnShipments(c.env, ghnDeliveryIds) : null;
+    let sapoCancel: Awaited<ReturnType<typeof sendSapoCancellationToClaw>> | { status: 'failed'; message: string } = null;
+    if (status === 'cancelled' && order.channel === 'crm' && (order.sapoOrderId || order.sapoOrderCode)) {
+      try { sapoCancel = await sendSapoCancellationToClaw(c, order.id, viewer(c).name); }
+      catch (error) { sapoCancel = { status: 'failed', message: error instanceof Error ? error.message : 'Chưa giao được yêu cầu huỷ đơn Sapo.' }; }
+    }
     // Lịch sử sản phẩm: thêm "Bán" khi xác nhận, bỏ khi huỷ.
     if (status === 'confirmed') await recordSaleMovements(c.env.db, order.id);
     else await removeMovements(c.env.db, `sale:${order.id}:`);
@@ -879,7 +884,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
       url: `/index.html${ref.link}`, actorId: viewer(c).id, data: { orderId: order.id } });
     if (by?.role === 'customer') await notify(c.env, { eventType: status === 'confirmed' ? 'order_confirmed' : 'order_cancelled', targetMemberId: order.createdBy, actorId: viewer(c).id,
       title: status === 'confirmed' ? `${what} đã được xác nhận` : `${what} đã bị huỷ`, body: `${ref.no} · ${order.customerName}`, url: '/customer.html#orders', data: { orderId: order.id } });
-    return json({ ok: true, ...(ghnCancel ? { ghnCancel } : {}), ...(held.lines ? { hold: held.lines } : {}) });
+    return json({ ok: true, ...(ghnCancel ? { ghnCancel } : {}), ...(sapoCancel ? { sapoCancel } : {}), ...(held.lines ? { hold: held.lines } : {}) });
   }, 'business');
 
   /**

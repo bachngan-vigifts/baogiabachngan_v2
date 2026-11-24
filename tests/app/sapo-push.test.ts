@@ -62,12 +62,19 @@ test('production: Sinh đơn và Sinh HĐKT giao đúng hai hook n8n/Claw, khôn
   assert.equal(callback.status, 200, await callback.text());
   assert.equal((await s.call(`/orders/${order.data.id}`, s.emp)).data.order.sapoOrderId, '4321');
 
+  const cancelled = await s.call(`/orders/${order.data.id}/status`, s.emp, 'PUT', { status: 'cancelled' });
+  assert.equal(cancelled.status, 200, JSON.stringify(cancelled.data));
+  assert.deepEqual([cancelled.data.sapoCancel.status, cancelled.data.sapoCancel.sapoOrderId], ['updating', '4321']);
+  assert.match(s.hooks[1]!.url, /crm-order-from-web-to-claw$/);
+  assert.deepEqual([s.hooks[1]!.body.event, s.hooks[1]!.body.action, s.hooks[1]!.body.sapo_order_id], ['crm_cancel_sapo_order', 'cancel', '4321']);
+  assert.equal(s.hooks[1]!.body.idempotency_key, `cancel:order:${order.data.sapo.code}:4321`);
+
   const contract = await s.call('/contracts', s.emp, 'POST', { quoteId: await s.makeQuote('B2B_N8N_002'), legalEntity: 'BN', depositRate: 30, paymentDays: 15 });
   assert.equal(contract.status, 201, JSON.stringify(contract.data));
   assert.deepEqual([contract.data.sapo.status, contract.data.sapo.code], ['updating', contract.data.contractNo]);
-  assert.match(s.hooks[1]!.url, /crm-hdkt-sapo-order-from-web-to-claw$/);
-  assert.deepEqual([s.hooks[1]!.body.event, s.hooks[1]!.body.trigger_source], ['crm_hdkt_create_sapo_order', 'hdkt']);
-  assert.equal(s.hooks[1]!.body.idempotency_key, `hdkt:${contract.data.contractNo}`);
+  assert.match(s.hooks[2]!.url, /crm-hdkt-sapo-order-from-web-to-claw$/);
+  assert.deepEqual([s.hooks[2]!.body.event, s.hooks[2]!.body.trigger_source], ['crm_hdkt_create_sapo_order', 'hdkt']);
+  assert.equal(s.hooks[2]!.body.idempotency_key, `hdkt:${contract.data.contractNo}`);
   assert.deepEqual(s.sapoCalls, [], 'không gọi thẳng Sapo admin');
 });
 

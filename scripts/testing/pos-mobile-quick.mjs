@@ -10,20 +10,20 @@ import { salesOrders, customerPayments } from "../../src/modules/sales/schema.ts
 import { products, productPrices, productStock } from "../../src/modules/catalog/schema.ts";
 import { posRegisters, webStoreOrders } from "../../src/modules/sales/pos-schema.ts";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
-const f = await setup();
+const f = await setup({productBrand:'MINH LONG I'});
 await f.db.update(posRegisters).set({name:'CỬA HÀNG MINH LONG'}).where(eq(posRegisters.id,f.registerId));
 await f.open(f.mgr);
 await f.db.update(products).set({name:'Chén cơm 11.2cm Jas Lys — bộ sưu tập gốm sứ hoa văn dành cho khách hàng doanh nghiệp, màu trắng ngà',unit:'Cái',imageUrl:'https://pos-fixture.invalid/cup.svg'}).where(eq(products.sku,'00123'));
 await f.db.update(productPrices).set({price:20000}).where(eq(productPrices.sku,'00123'));
 await f.db.transaction((tx) => postMoves(tx, "mgr", [{ sku: "00123", warehouseId: "pos-wh", qty: 200, kind: "opening", refType: "opening", refId: "workspace-stock" }]));
 const user = (await f.call("/me", f.mgr)).data.user;
-await f.db.insert(products).values([{ sku: "00456", name: "Ly thứ hai", unit: "cái", updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, { sku: "00789", name: "Ly hết hàng", unit: "cái", updatedAt: (/* @__PURE__ */ new Date()).toISOString() }]);
+await f.db.insert(products).values([{ sku: "00456", brand: "MINH LONG I", name: "Ly thứ hai", unit: "cái", updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, { sku: "00789", brand: "MINH LONG I", name: "Ly hết hàng", unit: "cái", updatedAt: (/* @__PURE__ */ new Date()).toISOString() }]);
 await f.db.insert(productPrices).values([{ sku: "00456", policyId: "retail-vat", price: 54e3 }, { sku: "00789", policyId: "retail-vat", price: 54e3 }]);
 await f.db.insert(productStock).values({ sku: "00456", warehouseId: "pos-wh", quantity: 50, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
 await f.db.transaction((tx) => postMoves(tx, "mgr", [{ sku: "00456", warehouseId: "pos-wh", qty: 50, kind: "opening", refType: "opening", refId: "scan-fixture" }]));
 for (let i = 0; i < 20; i++) {
   const sku = "P" + i;
-  await f.db.insert(products).values({ sku, name: "Bộ sản phẩm tên rất dài để kiểm tra bố cục bảng " + i, unit: "cái", updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+  await f.db.insert(products).values({ sku, brand: "MINH LONG I", name: "Bộ sản phẩm tên rất dài để kiểm tra bố cục bảng " + i, unit: "cái", updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
   await f.db.insert(productPrices).values({ sku, policyId: "retail-vat", price: 108e3 });
   await f.db.insert(productStock).values({ sku, warehouseId: "pos-wh", quantity: 100, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
   await f.db.transaction((tx) => postMoves(tx, "mgr", [{ sku, warehouseId: "pos-wh", qty: 100, kind: "opening", refType: "opening", refId: "workspace-" + sku }]));
