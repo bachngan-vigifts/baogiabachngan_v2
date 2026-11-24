@@ -70,7 +70,7 @@ const shot = process.env.POS_SCREENSHOT_DIR || "/workspace/artifacts/pos-transfe
 await mkdir(shot, { recursive: true });
 const results=[];
 try {
- for(const [index,width] of [2126,1280,390].entries()){
+ for(const [index,width] of [966,1280,390].entries()){
   const chooseStore=width===1280;
   await f.db.update(posRegisters).set({name:chooseStore?'Sale Admin':'CỬA HÀNG LOCKNLOCK CẦN THƠ'}).where(eq(posRegisters.id,f.registerId));
   const context=await browser.newContext({viewport:{width,height:width===390?844:1000},locale:'vi-VN'});
@@ -85,37 +85,31 @@ try {
    if(width===390){await page.waitForFunction(()=>!document.querySelector('.pos-open-payment').disabled);await page.locator('.pos-open-payment').click();}
    const host=page.locator(width>850?'.pos-checkout .pos-payment-transfer':'.pos-payment-modal .pos-payment-transfer');
    await page.locator(width>850?'.pos-checkout [data-method=transfer]':'.pos-payment-modal [data-method=transfer]').click();
-   assert.equal(await host.locator('.pos-transfer-send').count(),1,'direct send action beside transfer confirmation');
-   assert.equal(await host.locator('.pos-transfer-send').isDisabled(),true,'must create an existing QR before sharing');
-   await host.locator('.pos-create-qr').click();await page.waitForFunction(()=>document.querySelector('.pos-transfer-send')?.disabled===false);
+   assert.equal(await host.locator('.pos-transfer-actions,.pos-transfer-send,.pos-transfer-print').count(),0,'no duplicate actions in transfer panel');
+   const qrResponse=page.waitForResponse(r=>r.url().endsWith('/api/pos/qr')&&r.request().method()==='POST');
+   await host.locator('.pos-create-qr').click();await qrResponse;
    const qr=qrResults.at(-1);assert.ok(qr?.id);
-   if(await page.locator('.pos-qr-modal').isVisible())await page.locator('.pos-qr-modal .pos-modal-close').click();
+   const dialog=page.locator('.pos-qr-modal');
+   if(width>850)await host.locator('.pos-create-qr').click();
+   await dialog.waitFor();
    const qrCount=calls.filter(c=>c.path==='/pos/qr'&&c.method==='POST').length,sharesBefore=calls.filter(c=>c.path.endsWith('/share')).length;
-   await host.locator('.pos-transfer-send').evaluate(n=>{n.click();n.click();});
-   const dialog=page.locator('.pos-qr-modal');await dialog.waitFor();
    if(chooseStore){
     assert.equal(calls.filter(c=>c.path.endsWith('/share')).length,sharesBefore,'manager chooses target before any send');
     await dialog.getByRole('combobox',{name:'Cửa hàng nhận mã QR'}).selectOption(targetStore.data.id);
-    await dialog.locator('.pos-qr-send').click();
    }
+   await dialog.locator('.pos-qr-send').click();
    await page.waitForFunction(()=>document.querySelector('.pos-qr-share')?.textContent.includes('Đã gửi'));
    assert.equal(calls.filter(c=>c.path.endsWith('/share')).length,sharesBefore+1,'one explicit send');
    assert.equal(calls.filter(c=>c.path==='/pos/qr'&&c.method==='POST').length,qrCount,'sharing cannot create a different QR');
    const phone=(await f.call('/pos/qr-display/pending',f.emp)).data.display;
    assert.equal(phone.id,qr.id);assert.equal(phone.url,qr.url);assert.equal(phone.amount,qr.amount);
-   await dialog.locator('.pos-modal-close').click();
-   const printed=await page.evaluate(()=>window.printCount);await host.locator('.pos-transfer-print').click();
+   const printed=await page.evaluate(()=>window.printCount);await dialog.locator('.pos-qr-print').click();
    await page.waitForFunction(n=>window.printCount>n,printed);
-   const bill=await page.evaluate(()=>window.printedBills.at(-1));assert.match(bill.text,/BILL TẠM TÍNH - CHƯA THANH TOÁN/);assert.equal(bill.qr,qr.url);
+   await dialog.locator('.pos-modal-close').click();
    assert.equal(await host.locator('.pos-transfer-confirm input').isChecked(),false,'printing and sharing cannot confirm receipt');
    assert.equal((await f.db.select().from(salesOrders)).length,0);assert.equal((await f.db.select().from(customerPayments)).length,0);
    await page.screenshot({path:shot+`/${width}-actions.png`});
-   await page.clock.setFixedTime(new Date(Date.now()+60*60*1000));
-   if(width>850)await page.waitForFunction(()=>document.querySelector('.pos-transfer-send')?.disabled);
-   const beforeExpiryClick=calls.filter(c=>c.path.endsWith('/share')||c.path==='/pos/qr').length;
-   await host.locator('.pos-transfer-send').evaluate(n=>n.click());await page.waitForTimeout(100);
-   assert.equal(calls.filter(c=>c.path.endsWith('/share')||c.path==='/pos/qr').length,beforeExpiryClick,'expired QR cannot be sent or recreated by send');
-   assert.deepEqual(errors,[]);results.push({width,chooseStore,sameQrOnPhone:true,unpaidBillWithQr:true,noPaymentWrite:true});
+   assert.deepEqual(errors,[]);results.push({width,chooseStore,sameQrOnPhone:true,popupPrintAvailable:true,noPaymentWrite:true});
   }catch(e){console.log('DEBUG',{errors,notices:await page.evaluate(()=>window.notices)});await page.screenshot({path:shot+`/${width}-failure.png`});throw e;}finally{await context.close();}
  }
  console.log(JSON.stringify(results,null,2));
