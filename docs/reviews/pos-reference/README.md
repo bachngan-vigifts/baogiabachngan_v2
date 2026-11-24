@@ -54,6 +54,9 @@ Node 22.22.0, Chromium, PGlite và router ứng dụng thật trên máy kiểm 
   nút kiểm tra từ “Quét nhanh” thành “Bán nhanh” cho đúng nhãn mẫu.
 - 56/56 test liên quan đạt: pos-cod-deposit, pos-customer-required, pos-workspace,
   pos-ui, pos-money và architecture. Không skip/todo. Typecheck và UI build exit 0.
+- Kiểm tra asset/version và architecture đạt: CSS được preload trong index và
+  được gắn mã nội dung khi phát hành; module POS độc lập cũng dùng URL có phiên bản.
+  Không dùng CSS import không phiên bản dưới chính sách cache immutable một năm.
 
 Lệnh trình duyệt:
 

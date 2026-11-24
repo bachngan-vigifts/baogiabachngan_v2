@@ -1,6 +1,7 @@
 /** Presentation for the three reference layouts. Actions remain owned by POS. */
 const paths = {
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>',
+  filter: '<path d="M3 4h18l-7 8v8l-4-2v-6z"/>',
   scan: '<path d="M4 7V4h5m6 0h5v3M4 17v3h5m6 0h5v-3M7 8v8m3-8v8m4-8v8m3-8v8"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   bag: '<rect x="5" y="7" width="14" height="14" rx="2"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
@@ -20,6 +21,11 @@ export function referenceIcon(doc, name) {
 }
 export function mountPosReference({page, head, left, right, board, searchRow, nodes, user, register, workspace, action, onMode, onDelivery, onCheckout}) {
   const doc = page.ownerDocument;
+  // index.html preloads this. Standalone POS hosts use the same versioned asset;
+  // the release stamper tracks this URL so immutable CSS cannot remain stale.
+  if(!doc.querySelector('link[data-pos-reference]')){
+    const style=doc.createElement('link');style.rel='stylesheet';style.dataset.posReference='';style.href=new URL('./pos-reference.css',import.meta.url).href;doc.head.append(style);
+  }
   const el = (tag, cls, text) => { const n = doc.createElement(tag); n.className = cls || ''; if (text != null) n.textContent = text; return n; };
   const btn = (label, icon, fn, cls = '') => { const n = el('button', 'pos-ref-button '+cls); n.type = 'button'; n.title = label; n.setAttribute('aria-label', label); n.append(referenceIcon(doc, icon)); n.addEventListener('click', fn); return n; };
   page.classList.add('pos-reference');
@@ -42,7 +48,7 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
   products.append(controls, nodes.grid, left.querySelector('.pos-catalog-pages'));
   const catalogActions = el('div', 'pos-ref-catalog-actions');
   const view = btn('Đổi dạng hiển thị sản phẩm', 'menu', () => products.classList.toggle('pos-ref-list'));
-  const filter = btn('Bộ lọc sản phẩm', 'search', () => { const b = controls.querySelector('.pos-filter-toggle'); b?.click(); });
+  const filter = btn('Bộ lọc sản phẩm', 'filter', () => { const b = controls.querySelector('.pos-filter-toggle'); b?.click(); });
   catalogActions.append(view, filter); basket.append(catalogActions);
   const bottom = el('footer', 'pos-ref-bottom'), modes = el('nav', 'pos-ref-modes'); modes.setAttribute('aria-label', 'Chế độ bán hàng');
   const modeButtons = [];

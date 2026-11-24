@@ -133,6 +133,7 @@
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-grid { flex:1;max-height:none;overflow:auto;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));align-content:start; }
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-grid img { display:block;width:100%;height:75px;object-fit:contain; }
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-catalog-tools { display:flex; }
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-product-filters:not([hidden]) { display:flex;flex-wrap:wrap;gap:5px; }
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-filter-toggle { display:none; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-ref-list .pos-grid { grid-template-columns:1fr!important; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-ref-list .pos-product { flex-direction:row;min-height:50px; }

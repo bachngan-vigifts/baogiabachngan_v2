@@ -90,6 +90,11 @@ try {
         const before=calls.filter(c=>c.method!=='GET'&&!['/pos/preview','/pos/ghn/locations'].includes(c.path)).length;
         await page.getByRole('button',{name:'Bán thường',exact:true}).click();
         assert.equal(await page.locator('.pos-ref-products').isVisible(),true);
+        await page.getByRole('button',{name:'Bộ lọc sản phẩm',exact:true}).click();
+        assert.equal(await page.locator('.pos-product-filters').isVisible(),true);
+        await page.locator('.pos-product-filters').getByRole('button',{name:'Còn hàng',exact:true}).click();
+        await page.locator('.pos-product-filters').getByRole('button',{name:'Tất cả',exact:true}).click();
+        await page.getByRole('button',{name:'Bộ lọc sản phẩm',exact:true}).click();
         assert.equal(await qty.inputValue(),'4');
         assert.equal(await page.locator('.pos-checkout .pos-payment-footer').isVisible(),false);
         await page.screenshot({path:shot+`/${width}-normal.png`});
