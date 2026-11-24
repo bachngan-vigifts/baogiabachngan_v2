@@ -1421,7 +1421,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   /** VOUCHER nhập tay cho cả đơn (pos-money.ts › parsePosVoucher): mã / ghi chú + số tiền VNĐ hoặc %; máy chủ chia vào các dòng, trừ thẳng vào giá đã gồm VAT rồi tách lại VAT. */
   function drawVoucher() {
     const box = el('section', 'pos-voucher'), row = el('div', 'pos-voucher-row');
-    const value = field('Giảm', 'number', st.voucher.value);
+    const value = field('Voucher giảm giá', 'number', st.voucher.value);
     value.input.min = '0'; value.input.step = '1'; value.input.inputMode = 'numeric'; value.input.placeholder = '0';
     const mode = el('select'); mode.setAttribute('aria-label', 'Giảm theo');
     for (const [v, t] of [['amount', 'VNĐ'], ['percent', '%']]) { const o = el('option', '', t); o.value = v; mode.append(o); }
