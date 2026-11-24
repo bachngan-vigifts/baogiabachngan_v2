@@ -12,6 +12,9 @@ const paths = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
   truck: '<path d="M3 5h11v12H3zM14 9h4l3 4v4h-7"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>',
   trash: '<path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/>',
+  more: '<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/>',
+  discount: '<path d="m6 18 12-12"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/>',
 };
 export function referenceIcon(doc, name) {
   const icon = doc.createElement('span'); icon.className = 'pos-ref-icon'; icon.setAttribute('aria-hidden', 'true');
@@ -86,15 +89,50 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
   };
 }
 
-export function decorateReferenceLine(row, {unit}) {
+export function decorateReferenceLine(row, {unit,onDetails}) {
   const doc = row.ownerDocument, name = row.querySelector('.pos-line-name');
   const tag = doc.createElement('span'); tag.className='pos-ref-unit';tag.textContent=unit || '';row.append(tag);
   const remove = row.querySelector('.pos-line-top>button'); if (remove) remove.replaceChildren(referenceIcon(doc,'trash'));
-  const more = doc.createElement('details'); more.className='pos-ref-line-more';
-  const summary = doc.createElement('summary');summary.textContent='⋮';summary.setAttribute('aria-label','Thao tác dòng '+name.textContent);more.append(summary);
+  const more = doc.createElement('div'); more.className='pos-ref-line-more';
+  const summary = doc.createElement('button');summary.type='button';summary.className='pos-ref-line-trigger';summary.append(referenceIcon(doc,'more'));summary.title='Thao tác dòng';summary.setAttribute('aria-label','Thao tác dòng '+name.textContent);summary.setAttribute('aria-expanded','false');more.append(summary);
   const detail = doc.createElement('div');detail.className='pos-ref-line-popover';
+  // Native auto popovers use the top layer, so the cart's overflow cannot clip
+  // the menu. The browser owns outside-click/Escape and one-open-at-a-time.
+  detail.popover='auto';detail.id='pos-line-actions-'+crypto.randomUUID();
+  summary.popoverTargetElement=detail;summary.setAttribute('aria-controls',detail.id);
+  const close=()=>{if(detail.matches(':popover-open'))detail.hidePopover();};
+  let listening,removal;
+  detail.addEventListener('beforetoggle',event=>{
+    listening?.abort();removal?.disconnect();summary.setAttribute('aria-expanded',String(event.newState==='open'));
+    if(event.newState!=='open')return;
+    listening=new AbortController();
+    const options={capture:true,signal:listening.signal};
+    doc.addEventListener('scroll',close,options);doc.defaultView.addEventListener('resize',close,options);
+    // Removal can hide a native popover without a closing event. Release the
+    // short-lived document listeners if POS is rebuilt or navigation removes it.
+    removal=new MutationObserver(()=>{if(!row.isConnected){listening.abort();removal.disconnect();}});
+    removal.observe(doc.body,{childList:true,subtree:true});
+  });
+  detail.addEventListener('toggle',()=>{
+      if(!detail.matches(':popover-open'))return;
+      const anchor=summary.getBoundingClientRect(),box=detail.getBoundingClientRect(),view=doc.documentElement;
+      detail.style.left=Math.max(8,Math.min(anchor.right-box.width,view.clientWidth-box.width-8))+'px';
+      detail.style.top=Math.max(8,Math.min(anchor.bottom+6+box.height<=view.clientHeight-8?anchor.bottom+6:anchor.top-box.height-6,view.clientHeight-box.height-8))+'px';
+  });
   const discount=row.querySelector('.pos-line-discount'),caption=doc.createElement('span');caption.className='pos-ref-discount-label';caption.textContent='CK';discount.prepend(caption);row.append(discount);
-  const drop=doc.createElement('button');drop.type='button';drop.className='btn ghost';drop.textContent='Xóa dòng sản phẩm';drop.addEventListener('click',()=>remove?.click());detail.append(drop);
+  const item=(label,icon,action,danger=false)=>{
+    const b=doc.createElement('button');b.type='button';b.className='pos-ref-line-action'+(danger?' pos-ref-line-action-danger':'');
+    b.append(referenceIcon(doc,icon),doc.createTextNode(label));b.addEventListener('click',async()=>{close();b.disabled=true;try{await action();}finally{b.disabled=false;}});detail.append(b);return b;
+  };
+  if(onDetails)item('Xem chi tiết / tồn kho','info',onDetails);
+  item('Chiết khấu','discount',()=>{const input=discount.querySelector('input');input?.focus();input?.select();});
+  item('Xóa dòng sản phẩm','trash',()=>remove?.click(),true);
+  detail.addEventListener('keydown',event=>{
+    if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
+    event.preventDefault();const items=[...detail.querySelectorAll('button')],index=items.indexOf(doc.activeElement);
+    items[event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:items.length-1)+items.length)%items.length]?.focus();
+  });
+  summary.addEventListener('keydown',event=>{if(event.key==='ArrowDown'){event.preventDefault();if(!detail.matches(':popover-open'))detail.showPopover();detail.querySelector('button')?.focus();}});
   more.append(detail);row.append(more);
 }
 

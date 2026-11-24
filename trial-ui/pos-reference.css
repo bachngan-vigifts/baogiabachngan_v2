@@ -51,7 +51,7 @@
   .pos-workspace.pos-reference.pos-pc-scan .pos-cart-table-head { display:none!important; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-lines { overflow:auto;scrollbar-width:thin;overscroll-behavior:contain;max-height:none!important;padding:0 2px 10px!important; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-lines>.pos-note { color:#8b969f;text-align:center;margin-top:48px; }
-  .pos-workspace.pos-reference.pos-pc-scan .pos-line { grid-template-columns:20px 24px 106px minmax(120px,1fr) 36px 100px 100px 142px 106px 24px;gap:9px;padding:12px 14px;border:1px solid #ced3da;border-radius:12px;min-height:56px;box-shadow:0 2px 6px #26394d25;margin:0 0 9px;align-content:center; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-line { grid-template-columns:20px 24px 106px minmax(120px,1fr) 36px 100px 100px 142px 106px 32px;gap:9px;padding:12px 14px;border:1px solid #ced3da;border-radius:12px;min-height:56px;box-shadow:0 2px 6px #26394d25;margin:0 0 9px;align-content:center; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-line[aria-selected=true] { background:white;box-shadow:0 2px 6px #26394d25;border-color:#c9cfd7; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-line-index { grid-column:1; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-line-top>button { grid-column:2;grid-row:1;width:24px;min-height:28px;color:#35424d; }
@@ -73,9 +73,14 @@
   .pos-workspace.pos-reference.pos-pc-scan .pos-line-discount select {flex:0 0 54px;width:54px;height:30px;padding:3px;font-size:12px!important;}
   .pos-workspace.pos-reference.pos-pc-scan .pos-line-top>strong { grid-column:9;grid-row:1;font-size:14px;white-space:nowrap; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-more { grid-column:10;grid-row:1;position:relative; }
-  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-more summary { cursor:pointer;font-size:24px;line-height:1;list-style:none;text-align:center; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-trigger { display:grid;place-items:center;cursor:pointer;width:32px;min-width:32px;height:32px;min-height:32px;padding:6px;border:0;border-radius:6px;background:transparent;color:#64748b; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-trigger:hover,.pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-trigger[aria-expanded=true] { background:#e8f2ff;color:var(--pos-blue); }
   .pos-workspace.pos-reference.pos-pc-scan summary::-webkit-details-marker { display:none; }
-  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-popover { position:absolute;top:32px;right:0;width:225px;padding:15px;background:white;border:1px solid #d9dee5;border-radius:8px;box-shadow:0 8px 25px #20334d30;z-index:12; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-popover { position:fixed;inset:auto;margin:0;width:224px;max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow:auto;padding:6px;background:white;color:#263445;border:1px solid #e1e6ec;border-radius:8px;box-shadow:0 6px 20px #20334d29; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-action { display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:8px 10px;border:0;border-radius:4px;background:transparent;color:inherit;text-align:left;font-size:14px;cursor:pointer; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-action .pos-ref-icon { width:18px;height:18px; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-action:hover,.pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-action:focus-visible { background:#edf5ff;color:var(--pos-blue); }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-action-danger { color:#dc2626;border-top:1px solid #edf0f3;border-radius:0;margin-top:4px; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-ref-line-popover .pos-line-discount { display:flex;margin-top:10px; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-line-discount input { flex:1;min-width:0;width:100px; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-line-discount select { width:70px; }
@@ -134,7 +139,7 @@
   .pos-workspace.pos-reference.pos-pc-scan .pos-ref-catalog-actions { display:none; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-ref-normal-footer,.pos-workspace.pos-reference.pos-pc-scan .pos-ref-close-payment,.pos-workspace.pos-reference.pos-pc-scan .pos-ref-carrier,.pos-workspace.pos-reference.pos-pc-scan .pos-ref-delivery-form,.pos-workspace.pos-reference.pos-pc-scan .pos-ref-delivery-sources,.pos-workspace.pos-reference.pos-pc-scan .pos-ref-cart-total { display:none; }
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-layout { grid-template-columns:minmax(0,1.55fr) minmax(350px,1fr); }
-  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line { grid-template-columns:20px 24px 106px minmax(80px,1fr) 142px 100px 34px 24px;gap:6px;min-height:94px; }
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line { grid-template-columns:20px 24px 106px minmax(80px,1fr) 142px 100px 34px 32px;gap:6px;min-height:94px; }
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line-name {grid-column:4 / 7;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-unit { grid-column:7; }
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-qty {grid-column:3;grid-row:2;}
@@ -161,7 +166,7 @@
   .pos-workspace.pos-reference.pos-pc-scan.pos-reference-checkout .pos-ref-products { display:none; }
   .pos-workspace.pos-reference.pos-pc-scan.pos-reference-checkout .pos-ref-close-payment { display:block;text-align:left;background:none;border:0;padding:0 0 12px;color:#0070f4;cursor:pointer; }
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-layout { grid-template-columns:minmax(0,1.65fr) minmax(315px,1fr) minmax(300px,1fr); }
-  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line { grid-template-columns:106px minmax(80px,1fr) 100px 24px;min-height:94px; }
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line { grid-template-columns:106px minmax(80px,1fr) 100px 32px;min-height:94px; }
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-index,.pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-top>button { display:none; }
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-code { grid-column:1; }
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-name { grid-column:2; }
@@ -221,20 +226,20 @@
   @media (max-width:1200px) {
     .pos-workspace.pos-reference.pos-pc-scan .pos-ref-store,.pos-workspace.pos-reference.pos-pc-scan .pos-ref-shortcuts { display:none; }
     .pos-workspace.pos-reference.pos-pc-scan .pos-ref-header-actions { gap:6px; }
-    .pos-workspace.pos-reference.pos-pc-scan .pos-line { grid-template-columns:18px 22px 75px minmax(95px,1fr) 30px 45px 75px 84px 22px 20px;gap:5px;padding:10px 8px; }
+    .pos-workspace.pos-reference.pos-pc-scan .pos-line { grid-template-columns:18px 22px 75px minmax(95px,1fr) 30px 45px 75px 84px 22px 32px;gap:5px;padding:10px 8px; }
     .pos-workspace.pos-reference.pos-pc-scan .pos-line-code,.pos-workspace.pos-reference.pos-pc-scan .pos-line-price,.pos-workspace.pos-reference.pos-pc-scan .pos-line-name,.pos-workspace.pos-reference.pos-pc-scan .pos-line-top>strong { font-size:12px; }
     .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-layout { grid-template-columns:minmax(0,1.1fr) minmax(280px,1fr) minmax(245px,.9fr);gap:8px; }
-    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line { grid-template-columns:88px minmax(50px,1fr) 80px 20px; }
+    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line { grid-template-columns:88px minmax(50px,1fr) 80px 32px; }
   }
   @media (max-width:1550px) {
-    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line {grid-template-columns:18px 20px 80px minmax(80px,1fr) 32px 100px 85px 22px;gap:6px;padding:10px;min-height:82px;}
+    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line {grid-template-columns:18px 20px 80px minmax(80px,1fr) 32px 100px 85px 32px;gap:6px;padding:10px;min-height:82px;}
     .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-discount {grid-column:4 / 7;grid-row:2;width:165px;max-width:100%;justify-self:end;}
     .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-top>strong {grid-column:7 / 9;grid-row:2;}
     .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-ref-line-more {grid-column:8;}
     .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-gift-line .pos-gift-total {grid-column:7 / 9;grid-row:2;}
   }
   @media (max-width:1100px) {
-    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line {grid-template-columns:18px 22px 100px minmax(65px,1fr) 30px 20px;gap:5px;padding:10px;}
+    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line {grid-template-columns:18px 22px 100px minmax(65px,1fr) 30px 32px;gap:5px;padding:10px;}
     .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line-name {grid-column:4;}
     .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-unit {grid-column:5;}
     .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-line-more {grid-column:6;}
@@ -288,7 +293,7 @@
 @media(min-width:851px) {
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-workspace-cart {container-type:inline-size;container-name:pos-normal-cart;}
   @container pos-normal-cart (max-width:700px) {
-    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line {grid-template-columns:18px 22px 100px minmax(85px,1fr) 55px 24px;gap:5px;padding:10px;}
+    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line {grid-template-columns:18px 22px 100px minmax(85px,1fr) 55px 32px;gap:5px;padding:10px;}
     .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line-name {grid-column:4 / 6;grid-row:1;}
     .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-line-more {grid-column:6;grid-row:1;}
     .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-qty {grid-column:3;grid-row:2;}
@@ -301,7 +306,7 @@
 
 /* Quick sale: quantity and unit share the second line directly below the SKU. */
 @media(min-width:851px) {
-  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line {grid-template-columns:20px 24px 150px minmax(140px,1fr) 100px 142px 106px 24px;gap:8px;min-height:90px;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line {grid-template-columns:20px 24px 150px minmax(140px,1fr) 100px 142px 106px 32px;gap:8px;min-height:90px;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-code {grid-column:3;grid-row:1;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-name {grid-column:4;grid-row:1;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-qty {grid-column:3;grid-row:2;width:100px;max-width:100%;justify-self:start;}
@@ -312,7 +317,7 @@
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-ref-line-more {grid-column:8;grid-row:1;}
 }
 @media(min-width:851px) and (max-width:1550px) {
-  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line {grid-template-columns:18px 22px 150px minmax(80px,1fr) 100px 24px;gap:5px;padding:10px;}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line {grid-template-columns:18px 22px 150px minmax(80px,1fr) 100px 32px;gap:5px;padding:10px;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-name {grid-column:4 / 6;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-price {grid-column:4;grid-row:2;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-scan .pos-line-discount {grid-column:4 / 7;grid-row:3;width:165px;max-width:100%;justify-self:end;}
