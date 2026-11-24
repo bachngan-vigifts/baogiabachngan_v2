@@ -261,7 +261,6 @@
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-stock-stamp {width:100%;margin:0;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-scan-status:empty {display:none;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-find-all {display:inline-flex;}
-  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-filter-toggle {display:inline-flex;margin:0;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-product-filters {flex:none;margin:0 0 8px;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-grid {flex:1;min-height:0;max-height:none;grid-template-columns:repeat(8,minmax(110px,1fr));grid-template-rows:repeat(3,minmax(156px,1fr));grid-auto-rows:minmax(156px,1fr);gap:8px;align-content:stretch;align-items:stretch;overflow:auto;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-product-tile {min-height:156px;border-radius:8px;}
