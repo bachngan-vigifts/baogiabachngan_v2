@@ -1459,3 +1459,7 @@ body:has(#view-pos:not([hidden]) .pos-show-menu) .sidebar {
   padding:2px 6px;line-height:14px;font-size:10px;
  }
 }
+
+/* Keep floating tools clear of the POS mode bar. Other CRM pages retain their launchers. */
+body:has(#view-pos:not([hidden])) #chat-launcher,
+body:has(#view-pos:not([hidden])) #reminder-launcher { display:none; }
