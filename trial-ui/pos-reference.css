@@ -253,7 +253,7 @@
 /* Normal-sale catalog is a bounded page, not an ever-growing flex grid. */
 .pos-catalog-quick-search,.pos-catalog-page-label {display:none;}
 @media(min-width:851px) {
-  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-layout {grid-template-columns:minmax(350px,.65fr) minmax(0,1fr);}
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-layout {grid-template-columns:minmax(450px,.65fr) minmax(0,1fr);}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-catalog-controls {display:flex;flex:none;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-catalog-tools {display:flex;flex-wrap:wrap;gap:8px;align-items:center;width:100%;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-catalog-quick-search {display:block;flex:1;min-width:160px;width:100%;padding:8px 10px;font-size:14px;}
@@ -280,4 +280,18 @@
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-list .pos-grid {grid-template-rows:none;grid-auto-rows:minmax(70px,auto);}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-list .pos-product-tile {min-height:70px;}
   .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-list .pos-product-name {flex:1;min-width:0;}
+}
+
+@media(min-width:851px) {
+  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-workspace-cart {container-type:inline-size;container-name:pos-normal-cart;}
+  @container pos-normal-cart (max-width:700px) {
+    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line {grid-template-columns:18px 22px 100px minmax(85px,1fr) 55px 24px;gap:5px;padding:10px;}
+    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line-name {grid-column:4 / 6;grid-row:1;}
+    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-line-more {grid-column:6;grid-row:1;}
+    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-qty {grid-column:3;grid-row:2;}
+    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line-price {grid-column:4;grid-row:2;width:100%;max-width:100px;font-size:12px;}
+    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line-top>strong {grid-column:5 / 7;grid-row:2;font-size:12px;}
+    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-unit {grid-column:3;grid-row:3;justify-self:start;}
+    .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-line-discount {grid-column:4 / 7;grid-row:3;width:165px;max-width:100%;justify-self:end;}
+  }
 }

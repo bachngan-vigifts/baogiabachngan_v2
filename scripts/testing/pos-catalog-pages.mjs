@@ -103,6 +103,7 @@ try {
    assert.deepEqual(await skus(),['00123']);assert.equal(await page.locator('.pos-catalog-page-label').textContent(),'Trang 1');
    await page.locator('.pos-product').click();await page.waitForFunction(()=>document.querySelector('.pos-qty input'));
    const qty=await page.locator('.pos-qty input').inputValue();
+   assert.equal(await page.locator('.pos-lines').evaluate(n=>{const p=n.closest('.pos-catalog').getBoundingClientRect();return [...n.querySelectorAll('input,select')].filter(x=>x.getClientRects().length).every(x=>{const r=x.getBoundingClientRect();return r.left>=p.left&&r.right<=p.right;});}),true,'quantity and inline discount fit beside the wider catalog');
    await search.fill('');await page.waitForFunction(()=>document.querySelectorAll('.pos-product-tile').length===24);
    await next.click();await page.waitForFunction(()=>document.querySelector('.pos-catalog-page-label')?.textContent==='Trang 2');
    await next.click();await page.waitForFunction(()=>document.querySelector('.pos-catalog-page-label')?.textContent==='Trang 3');
