@@ -1,0 +1,26 @@
+[
+  {
+    "width": 1440,
+    "blueSidebar": true,
+    "whiteBoldText": true,
+    "whiteIcons": true,
+    "inputRetained": true,
+    "noHorizontalOverflow": true
+  },
+  {
+    "width": 1366,
+    "blueSidebar": true,
+    "whiteBoldText": true,
+    "whiteIcons": true,
+    "inputRetained": true,
+    "noHorizontalOverflow": true
+  },
+  {
+    "width": 390,
+    "blueSidebar": true,
+    "whiteBoldText": true,
+    "whiteIcons": true,
+    "inputRetained": true,
+    "noHorizontalOverflow": true
+  }
+]
