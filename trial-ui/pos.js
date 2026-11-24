@@ -1,3 +1,4 @@
+import {mountPosReference,decorateReferenceLine,inlineCodSurface} from './pos-reference.js';
 import {incomingStockText,renderIncomingOrders,createPosDraftStore,posShortcut} from './pos-workspace.js';
 import { createPurchaseOrders } from './purchase-order-create.js';
 import {promotionPanel,configurePromotion} from './pos-promotions.js';
@@ -260,6 +261,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     })),
   });
   function invalidate() {
+    nodes.deliveryEditor?.invalidate();
     const previousQr=st.qr;st.qr=null;
     saveDraft();
     if(previousQr?.id)api('/pos/qr/'+encodeURIComponent(previousQr.id)+'/hide-display','POST',{}).catch(()=>{});
@@ -1037,7 +1039,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if(paymentModal?.dlg.open)return;
     if (!active() || !st.preview || !st.cart.length || st.pending || st.busy) return;
     if (!requireCustomer()) return;
-    if(desktopPos()){nodes.modalPay?.focus();return;}
+    if(desktopPos()){nodes.reference?.openCheckout();nodes.modalPay?.focus();return;}
     const m = modal('Thanh toán'); m.dlg.classList.add('pos-payment-modal');
     paymentModal = m; m.dlg.addEventListener('close', () => { if (paymentModal === m) paymentModal = null; });
     const headerMeta = el('span', 'pos-payment-meta', `Đơn hiện tại · ${st.customer?.name || 'Chưa chọn khách hàng'}`),
@@ -1117,6 +1119,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const footer=right.querySelector('.pos-payment-footer'),scroll=el('div','pos-checkout-scroll');for(const child of [...right.children])if(child!==footer)scroll.append(child);right.append(scroll,footer);
     const shortcuts=el('div','pos-keyboard-bar');shortcuts.append(el('span','','F2 Tìm · F3 Khách · F4 CK · F6 Tiền mặt · F7 Chuyển khoản · F8 COD · F9 Hoàn tất · F10 Bill tạm · F11 SL · F12 Đơn mới'));page.append(shortcuts);
     updateQrPanel();
+    nodes.deliveryEditor=null;
+    nodes.reference=mountPosReference({page,head,left,right,board:orderBoard,searchRow:row,nodes,user:user(),register:st.register,workspace,
+      action:{cancel:()=>run(cancelCurrentOrder),orders:()=>web.click(),returns:openReturns,print:()=>run(printTemporary),web:()=>{orderBoard.hidden=false;st.orderStatus='web';run(loadOrderBoard);}},
+      onMode:id=>{if(st.busy||st.pending||nodes.deliveryEditor?.busy())return false;if(id==='delivery'&&st.qr){toast('Hoàn tất hoặc đối soát QR hiện tại trước khi chuyển sang giao hàng.','err');return false;}workspace.mode=id;renderProducts();return true;},
+      onDelivery:hosts=>{if(!nodes.deliveryEditor)nodes.deliveryEditor=codForm(hosts);},
+      onCheckout:openPayment,
+    });
   }
   async function commitScan(p){
     const context=JSON.stringify([user()?.id,st.register?.id,st.shift?.id,st.policy]),cart=st.cart;
@@ -1139,6 +1148,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const dialog=document.querySelector?.('dialog[open]');
     if(dialog){if(event.key==='F9'&&dialog.classList.contains('pos-cod-modal')&&!dialog.dataset.busy){const submit=dialog.querySelector('button[type=submit]');if(submit&&!submit.disabled){event.preventDefault();dialog.querySelector('form').requestSubmit();}}return;}
     const action=posShortcut(event,{active:desktopPos()&&!root.hidden&&location.hash.startsWith('#/pos'),typing:!!event.target.closest?.('input,textarea,select,[contenteditable=true]')});if(!action)return;
+    if(event.altKey&&['scan','grid','delivery'].includes(action)){event.preventDefault();nodes.reference?.setMode(action);return;}
+    if(action==='complete'&&workspace.mode==='delivery'){event.preventDefault();nodes.deliveryEditor?.submit();return;}
+    if(action==='complete'&&workspace.mode==='grid'&&!root.querySelector('.pos-reference-checkout')){event.preventDefault();openPayment();return;}
     let target;
     if(action==='search'||action==='scan')target=nodes.search;else if(action==='customer')target=nodes.customer;else if(action==='discount'){nodes.pcExtras.open=true;target=nodes.voucherValue;}else if(action==='temporary')target=nodes.temp;else if(action==='complete')target=nodes.modalPay;else if(action==='scan-quantity')target=nodes.quantityMode;else if(['cash','transfer','cod'].includes(action))target=[...nodes.methods.querySelectorAll('button')].find(b=>b.dataset.method===action);else if(action==='new'){if(st.pending||st.busy)return;event.preventDefault();run(async()=>{await cancelCurrentOrder();if(!st.cart.length&&!st.pending)nodes.search?.focus();});return;}else return;
     if(!target||target.disabled)return;event.preventDefault();if(['search','discount','scan'].includes(action)){target.focus();target.select?.();}else target.click();
@@ -1267,6 +1279,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       afterPrice.append(el('span','pos-note','Sau CK / SP'),unit);
       if(desktopPos()){const dc=el('div','pos-line-discount');dc.append(disc,mode);edit.append(qtyBox,dc,afterPrice);}else edit.append(qtyBox, disc, mode, afterPrice);
       row.append(edit);
+      if(desktopPos())decorateReferenceLine(row,{unit:x.unit});
       nodes.lines.append(row);
     }
     if(desktopPos()&&nodes.cartHead)nodes.cartHead.hidden=!st.cart.length;
@@ -1399,6 +1412,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if (!nodes.pay) return;
     const invalid = workspace.recovery||!!workspace.recoveryError||!active() || !st.preview || !st.cart.length || !!st.pending || st.busy;
     nodes.pay.disabled = invalid;
+    nodes.reference?.update({quantity:st.cart.reduce((n,x)=>n+Number(x.qty||0),0),total:st.preview?money(st.preview.total):st.cart.length?'Đang tính…':'0 đ',valid:!invalid});
+    if(st.preview)nodes.deliveryEditor?.refresh();
     if (nodes.temp) nodes.temp.disabled = invalid;
     if (nodes.qr) nodes.qr.disabled = invalid || (st.preview?.payable ?? st.preview?.total ?? 0)<=0 || !!st.qr?.paid;
     if(nodes.qr&&desktopPos())nodes.qr.textContent=st.qr?'In / gửi mã QR':'Tạo mã QR';
@@ -1407,7 +1422,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       (st.method === 'transfer' && !nodes.confirm.checked) ||
       (st.method === 'cash' && Number(nodes.tender?.value || 0) < (st.preview?.payable ?? st.preview?.total ?? 0));
     if (nodes.modalPay) {
-      nodes.modalPay.textContent = payLabel();
+      nodes.modalPay.textContent = desktopPos()&&!st.busy&&st.method!=='cod'?'THANH TOÁN':payLabel();
+      nodes.modalPay.setAttribute('aria-label',payLabel());
       nodes.modalPay.classList.toggle('is-busy', st.busy);
       nodes.modalPay.setAttribute('aria-busy', String(st.busy));
     }
@@ -1693,7 +1709,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if (!nodes.grid.children.length) nodes.grid.append(el('p', 'pos-note', mobileCatalog() && st.productFilter !== 'all'
       ? 'Không có sản phẩm phù hợp trên trang này. Đổi trang hoặc tìm theo tên/mã.' : 'Không có sản phẩm phù hợp.'));
     markProductsInCart();
-    if(desktopPos())nodes.grid.hidden=!nodes.search?.value.trim();
+    if(desktopPos())nodes.grid.hidden=workspace.mode!=='grid'&&!nodes.search?.value.trim();
   }
   /** Chữ có tô đậm từ khoá đang tìm (cùng cách trang Sản phẩm). */
   function marked(tag, cls, text) {
@@ -2229,9 +2245,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     }, 2000);workspace.statusTimer=timer;
   }
   /** Ship COD: nhập người nhận + địa chỉ chuẩn GHN → kiểm tra lại → tạo đơn. Form giữ nguyên tới khi máy chủ trả lời. */
-  function codForm() {
-    const total = st.preview.total;
-    const m = formModal('Giao Hàng Nhanh · nhập địa chỉ');
+  function codForm(embedded=null) {
+    let total = st.preview?.total || 0;
+    const m = embedded ? inlineCodSurface(document,embedded.formHost,embedded.carrierBody,embedded.carrierFooter) : formModal('Giao Hàng Nhanh · nhập địa chỉ');
     m.dlg.classList.add('pos-step-modal', 'pos-cod-modal');
     m.body.querySelectorAll?.('h2')?.[0]?.append?.(el('span', 'pos-payment-meta', st.customer?.name || ''));
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
@@ -2252,8 +2268,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     for (const [v, t] of Object.entries(requiredLabels)) { const o = el('option', '', t); o.value = v; requiredNote.append(o); }
     requiredNote.value = 'CHOXEMHANGKHONGTHU';
     requiredBox.append(el('span', '', 'Khi giao'), requiredNote);
-    const shipFee = Number(st.preview?.fees?.shippingFee || 0);
-    const shipInfo = el('p', 'pos-note', shipFee ? `Phí ship thu khách ${money(shipFee)} (đã cộng vào tiền COD). GHN tính phí vận chuyển cho shop.` : 'Free ship: không thu phí ship của khách (nhập ở ô "Phí ship" trong giỏ nếu cần thu). GHN tính phí vận chuyển cho shop.');
+    let shipFee = Number(st.preview?.fees?.shippingFee || 0);
+    const shippingInfoText=()=>shipFee ? `Phí ship thu khách ${money(shipFee)} (đã cộng vào tiền COD). GHN tính phí vận chuyển cho shop.` : 'Free ship: không thu phí ship của khách (nhập ở ô "Phí ship" trong giỏ nếu cần thu). GHN tính phí vận chuyển cho shop.';
+    const shipInfo = el('p', 'pos-note', shippingInfoText());
     const steps = el('ol', 'pos-steps');
     const stepItems = ['Thông tin giao', 'Kiểm tra lại', 'Tạo đơn COD'].map((t, i) => { const li = el('li', i ? '' : 'is-current'); li.append(el('b', '', String(i + 1)), el('span', '', t)); steps.append(li); return li; });
     const setStep = (n) => stepItems.forEach((li, i) => { li.className = i < n ? 'is-done' : i === n ? 'is-current' : ''; });
@@ -2276,7 +2293,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const remaining = el('strong', 'pos-cod-remaining'), paidBefore = el('b', '', money(0)), validation = el('p', 'error'), serverError = el('p', 'error pos-step-error'); validation.setAttribute('role', 'alert'); serverError.setAttribute('role', 'alert');
     const summary = el('div', 'pos-step-summary');
     const row = (label, value, cls = '') => { const r = el('div', cls); r.append(el('span', '', label), value); return r; };
-    summary.append(row('Tổng đơn', el('b', '', money(total))), row('Đã thu trước', paidBefore), row('Còn thu khi giao', remaining, 'is-main'));
+    const totalAmount=el('b','',money(total));
+    summary.append(row('Tổng đơn', totalAmount), row('Đã thu trước', paidBefore), row('Còn thu khi giao', remaining, 'is-main'));
     const section = (title, ...children) => { const box = el('section', 'pos-step-section'); box.append(el('h3', '', title), ...children); return box; };
     const grid = (...children) => { const g = el('div', 'pos-step-grid'); g.append(...children); return g; };
     const editView = el('div', 'pos-step-body');
@@ -2295,6 +2313,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const back = button('← Quay lại thanh toán', 'btn secondary', () => {
       if (m.dlg.dataset.busy) return;
       if (reviewing) return edit();
+      if(embedded){nodes.reference.setMode('scan');return;}
       m.close(); openPayment();
     });
     const footer = el('div', 'pos-step-footer'); footer.append(back, save);
@@ -2337,10 +2356,12 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       back.textContent = '← Sửa thông tin'; save.textContent = autoGhn && !ghnOrderCode.input.value.trim() ? 'Xác nhận, tạo đơn COD & vận đơn GHN' : 'Xác nhận & tạo đơn COD'; save.disabled = false;
     };
     m.form.append(steps, serverError, editView, review, footer);
+    if(embedded){embedded.carrierBody.append(summary);save.setAttribute('form',m.form.id);embedded.carrierFooter.append(footer);}
     updateDeposit();
     m.form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (m.dlg.dataset.busy) return;
+      if(embedded){if(!requireCustomer())return;if(st.busy||st.pending||workspace.recovery||workspace.recoveryError||!active()||!st.preview||!st.cart.length)return;}
       if (!reviewing) {
         updateDeposit(); if (save.disabled) return;
         if (!receiver.input.value.trim() || !phone.input.value.trim() || !address.input.value.trim()) { validation.textContent = 'Nhập đủ người nhận, điện thoại và số nhà, tên đường.'; return; }
@@ -2378,6 +2399,19 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     });
     m.show();
     run(ghn.loadProvinces);
+    if(embedded)return {
+      busy:()=>!!m.dlg.dataset.busy,
+      submit(){if(!save.disabled)m.form.requestSubmit(save);},
+      invalidate(){if(!m.dlg.dataset.busy){save.disabled=true;if(reviewing)edit();save.disabled=true;}},
+      refresh(){
+        if(m.dlg.dataset.busy)return;
+        total=st.preview.total;totalAmount.textContent=money(total);
+        shipFee=Number(st.preview.fees?.shippingFee||0);shipInfo.textContent=shippingInfoText();deposit.input.max=String(total);
+        if(!receiver.input.value)receiver.input.value=st.customer?.name||'';
+        if(!phone.input.value)phone.input.value=st.customer?.phone||'';
+        updateDeposit();
+      },
+    };
   }
   async function pay(cod = false, qrId) {
     if (!requireCustomer()) return;
