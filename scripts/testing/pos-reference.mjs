@@ -69,7 +69,7 @@ const shot = process.env.POS_SCREENSHOT_DIR || "/workspace/artifacts/pos-referen
 await mkdir(shot, { recursive: true });
 const results=[];
 try {
-  for(const [width,height] of [[2214,1497],[1812,1000],[1440,900],[1280,800],[1024,768],[969,954],[1033,1017],[390,844]]){
+  for(const [width,height] of [[2214,1497],[1812,1000],[1440,900],[1417,1017],[1280,800],[1024,768],[969,954],[1033,1017],[390,844]]){
     const context=await browser.newContext({viewport:{width,height},locale:'vi-VN'});
     await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
     const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -129,6 +129,8 @@ try {
         await page.screenshot({path:shot+`/${width}-normal.png`});
         await page.getByRole('button',{name:'Bán giao hàng',exact:true}).click();
         assert.equal(await discount.isVisible(),true,'CK stays visible in delivery mode');
+        const inlineDiscount=await discount.evaluate(n=>{const d=n.getBoundingClientRect(),p=n.closest('.pos-line').querySelector('.pos-line-price').getBoundingClientRect(),r=n.closest('.pos-line').getBoundingClientRect();return Math.abs((d.top+d.bottom)/2-(p.top+p.bottom)/2)<2&&d.left>=p.right&&d.right<=r.right;});
+        assert.equal(inlineDiscount,true,'delivery discount shares the price row without overlap');
         await page.locator('.pos-ref-carrier').waitFor();
         assert.equal(await page.getByText('Cổng GHN',{exact:true}).isVisible(),true);
         assert.equal(await qty.inputValue(),'4');
@@ -168,7 +170,7 @@ try {
           await page.locator('.pos-customer-picker .pos-customer-option').filter({hasText:'Nguyễn Khách kiểm thử'}).click();
           await page.waitForFunction(()=>document.querySelector('.pos-line-top>strong')?.textContent.includes('80.000'));
           await page.getByRole('button',{name:'Bán thường',exact:true}).click();
-          await page.locator('.pos-ref-normal-footer button').click();
+          await page.locator('.pos-ref-normal-footer').getByRole('button',{name:'THANH TOÁN',exact:true}).click();
           assert.equal(await page.locator('.pos-reference-checkout').count(),1,'normal mode opens existing payment controls');
           await page.getByRole('button',{name:'Bán giao hàng',exact:true}).click();
           const editor=page.locator('.pos-ref-delivery-form'),review=editor.locator('.pos-step-review');
