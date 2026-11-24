@@ -262,10 +262,10 @@ globalThis.ContractDocument = (() => {
       if(value===null)return paragraph;
       let first=true;return paragraph.replace(/(<w:t\b[^>]*>)[^<]*(<\/w:t>)/g,(_,a,b)=>{const v=first?xml(value):'';first=false;return a+v+b;});
     });
-    return tidyDocumentTerms(removeLeftoverTokens(result), documentType);
+    return tidyDocumentTerms(removeLeftoverTokens(result), documentType, quote.contractDetails?.deliveryProvince || '');
   };
   // Work across Word runs without dropping paragraph/run formatting.
-  const tidyDocumentTerms = (source, documentType) => source.replace(/<w:p\b[\s\S]*?<\/w:p>/g, paragraph => {
+  const tidyDocumentTerms = (source, documentType, deliveryProvince = '') => source.replace(/<w:p\b[\s\S]*?<\/w:p>/g, paragraph => {
     const nodes = [...paragraph.matchAll(/<w:t\b[^>]*>([^<]*)<\/w:t>/g)];
     const text = nodes.map(n => n[1]).join('');
     if (documentType === 'HDKT' && /Hợp đồng này được làm thành/i.test(text)) {
@@ -289,6 +289,9 @@ globalThis.ContractDocument = (() => {
       }
     }
     if (documentType === 'BBNT' && /^\s*[^,]*,?\s*ngày\s*\.{2,}\s*tháng\s*\.{2,}\s*năm\s*\.{2,}\s*$/i.test(text)) {
+      let remaining=text.toLowerCase().indexOf('ngày');
+      const parts=nodes.map(n=>{const cut=Math.min(remaining,n[1].length);remaining-=cut;return n[1].slice(cut);});
+      if(parts.length&&deliveryProvince){parts[0]=xml(deliveryProvince+', ')+parts[0];let i=0;paragraph=paragraph.replace(/(<w:t\b[^>]*>)[^<]*(<\/w:t>)/g,(_,open,close)=>open+parts[i++]+close);}
       paragraph = paragraph.replace(/<w:tab\s*\/>/g, '').replace(/(<w:t\b[^>]*>)\s+/, '$1');
       const align = '<w:jc w:val="right"/>';
       if (/<w:pPr\b[^>]*\/>/.test(paragraph)) paragraph = paragraph.replace(/<w:pPr\b[^>]*\/>/, '<w:pPr>' + align + '</w:pPr>');
