@@ -43,7 +43,7 @@ test('Kho nhận qua DTO không tiền, không mở PO; sai kho bị chặn và 
  const f=await setupEarly(),now=new Date().toISOString();
  await f.db.insert(warehouses).values([{id:'w-receive',name:'Kho nhận',kind:'stock'},{id:'w-other',name:'Kho khác',kind:'stock'}]);await f.db.insert(warehouseSellers).values({warehouseId:'w-receive',positionId:'warehouse'});
  await f.db.insert(products).values({sku:'0001',name:'Ly',unit:'Cái',updatedAt:now});await f.db.transaction(tx=>postMoves(tx,'mgr',[{sku:'0001',warehouseId:'w-receive',qty:1,kind:'opening',refType:'opening',refId:'open-test'}]));
- const made=await f.call('/purchase-orders',f.cookies.mgr,'POST',{orders:[{supplierId:'a',warehouse:'Kho nhận',lines:[{sku:'0001',quantity:3}]}]});assert.equal(made.status,201,JSON.stringify(made.data));const id=made.data.ids[0];
+ const made=await f.call('/purchase-orders',f.cookies.mgr,'POST',{orders:[{supplierId:'a',warehouse:'Kho nhận',receivingWarehouseId:'w-receive',lines:[{sku:'0001',quantity:3}]}]});assert.equal(made.status,201,JSON.stringify(made.data));const id=made.data.ids[0];
  await f.db.update(incomingShipments).set({approvalStatus:'approved'}).where(eq(incomingShipments.id,id));
  const context=await f.call('/warehouse-receiving/'+id,f.cookies.kho);assert.equal(context.status,200,JSON.stringify(context.data));assert.equal(context.data.lines[0].missing,3);
  for(const key of ['supplier','ticketNumber','totals','payments','debt','schedules','note'])assert.equal(Object.hasOwn(context.data,key),false,key);
@@ -53,7 +53,7 @@ test('Kho nhận qua DTO không tiền, không mở PO; sai kho bị chặn và 
  assert.equal((await f.call('/purchase-orders/'+id+'/receipts',f.cookies.kho,'POST',{...body,warehouse:'Kho khác'})).status,404);
  const received=await f.call('/purchase-orders/'+id+'/receipts',f.cookies.kho,'POST',body);assert.equal(received.status,201,JSON.stringify(received.data));assert.equal(received.data.progress.good,2);assert.equal(received.data.totals,undefined);
  const retry=await f.call('/purchase-orders/'+id+'/receipts',f.cookies.kho,'POST',body);assert.equal(retry.status,200);assert.equal(retry.data.receiptId,received.data.receiptId);assert.equal((await f.db.select().from(supplierReceipts).where(eq(supplierReceipts.shipmentId,id))).length,1);
- assert.equal((await f.call('/warehouse-receiving/b1',f.cookies.kho)).status,404);assert.equal((await f.call('/warehouse-receiving',f.cookies.emp)).status,403);
+ assert.equal((await f.call('/warehouse-receiving/b1',f.cookies.kho)).status,200,'đơn legacy chưa chọn kho vẫn có queue');assert.equal((await f.call('/warehouse-receiving',f.cookies.emp)).status,403);
 });
 
 test('Phiếu trộn NCC ngoài phạm vi bị 404 cả phiếu; counts và replay không trả ID bị thu hồi',async()=>{
@@ -87,12 +87,12 @@ import {tasks} from '../../src/modules/tasks/schema.ts';
 test('Nhiệm vụ nhận hàng đích danh giữ quyền retry sau khi hoàn tất; tiêu đề công việc không lộ PO/NCC',async()=>{
  const f=await setupEarly(),now=new Date().toISOString();
  await f.db.insert(warehouses).values({id:'w-assigned',name:'Kho được giao',kind:'stock'});
- await f.db.update(incomingShipments).set({warehouse:'w-assigned'}).where(eq(incomingShipments.id,'a1'));
+ await f.db.insert(warehouseSellers).values({warehouseId:'w-assigned',positionId:'warehouse'});await f.db.update(incomingShipments).set({warehouse:'Địa chỉ tự do',receivingWarehouseId:'w-assigned'}).where(eq(incomingShipments.id,'a1'));
  await f.db.insert(products).values({sku:'031106000',name:'Ly',unit:'Cái',updatedAt:now});
  await postMoves(f.db,'mgr',[{sku:'031106000',warehouseId:'w-assigned',qty:1,kind:'opening',refType:'opening',refId:'assigned-open'}]);
  await f.db.insert(tasks).values({id:'assigned-receive',source:'purchase',sourceId:'a1',autoKey:'receiving-due:purchase:a1:a:2026-11-23:kho',title:'PO-a1 – NCC a',description:'NCC a giá bí mật',link:'#/purchases/a1',assigneeId:'kho',createdAt:now,updatedAt:now});
  const context=await f.call('/warehouse-receiving/a1',f.cookies.kho);assert.equal(context.status,200,JSON.stringify(context.data));
- const nav=await f.call('/navigation-counts',f.cookies.kho);assert.equal(nav.data.receiving,1);
+ const nav=await f.call('/navigation-counts',f.cookies.kho);assert.equal(nav.data.receiving,4);
  const task=await f.call('/tasks/assigned-receive',f.cookies.kho);assert.equal(task.status,200,JSON.stringify(task.data));assert.equal(task.data.task.title,'Nhận hàng được giao');assert.equal(task.data.task.link,'#/receiving');assert.equal(task.data.task.sourceId,null);assert.ok(!JSON.stringify(task.data.task).includes('NCC a'));
  const workspace=await f.call('/warehouse-workspace',f.cookies.kho);assert.equal(workspace.status,200,JSON.stringify(workspace.data));const visible=workspace.data.rows.find((r:any)=>r.id==='assigned-receive');assert.equal(visible.title,'Nhận hàng được giao');assert.equal(visible.link,'#/receiving');assert.ok(!visible.description.includes('NCC a'));
  const managerWork=await f.call('/warehouse-workspace?member=kho',f.cookies.mgr);assert.equal(managerWork.status,200);assert.equal(managerWork.data.rows.find((r:any)=>r.id==='assigned-receive').title,'PO-a1 – NCC a');
@@ -101,6 +101,27 @@ test('Nhiệm vụ nhận hàng đích danh giữ quyền retry sau khi hoàn t�
  const received=await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',body);assert.equal(received.status,201,JSON.stringify(received.data));
  await f.db.update(tasks).set({status:'done'}).where(eq(tasks.id,'assigned-receive'));
  const replay=await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',body);assert.equal(replay.status,200,JSON.stringify(replay.data));assert.equal(replay.data.receiptId,received.data.receiptId);
- assert.equal((await f.call('/navigation-counts',f.cookies.kho)).data.receiving,0);
- assert.equal((await f.call('/warehouse-receiving',f.cookies.kho)).data.items.length,0);
+ assert.equal((await f.call('/navigation-counts',f.cookies.kho)).data.receiving,3);
+ assert.equal((await f.call('/warehouse-receiving',f.cookies.kho)).data.items.length,3);
+});
+
+test('Kho nhận có cấu trúc: đúng phân công được nhận, sai phân công404; NULL vẫn vào queue và chọn kho được giao',async()=>{
+ const f=await setupEarly(),now=new Date().toISOString();
+ await f.db.insert(warehouses).values([{id:'structured-wh',name:'Kho có phân công',kind:'stock'},{id:'outside-wh',name:'Kho ngoài phân công',kind:'stock'},{id:'supplier-wh',name:'Kho NCC',kind:'supplier'}]);
+ await f.db.insert(warehouseSellers).values({warehouseId:'structured-wh',positionId:'warehouse'});
+ await f.db.insert(products).values({sku:'031106000',name:'Ly',updatedAt:now});await postMoves(f.db,'mgr',[{sku:'031106000',warehouseId:'structured-wh',qty:1,kind:'opening',refType:'opening',refId:'structured-open'}]);
+ const made=await f.call('/purchase-orders',f.cookies.mgr,'POST',{orders:[{supplierId:'a',warehouse:'Địa chỉ giao tự do',receivingWarehouseId:'outside-wh',lines:[{sku:'031106000',quantity:2}]}]});assert.equal(made.status,201);const id=made.data.ids[0];
+ let view=(await f.call('/purchase-orders/'+id,f.cookies.mgr)).data;assert.equal(view.receivingWarehouseId,'outside-wh');
+ await f.db.update(incomingShipments).set({approvalStatus:'approved'}).where(eq(incomingShipments.id,id));
+ assert.equal((await f.call('/warehouse-receiving/'+id,f.cookies.kho)).status,404);
+ let selected=await f.call('/purchase-orders/'+id+'/receiving-warehouse',f.cookies.mgr,'PUT',{revision:view.revision,receivingWarehouseId:'structured-wh'});assert.equal(selected.status,200,JSON.stringify(selected.data));
+ assert.equal((await f.call('/warehouse-receiving/'+id,f.cookies.kho)).status,200);
+ assert.equal((await f.call('/purchase-orders/'+id+'/receiving-warehouse',f.cookies.kho,'PUT',{revision:selected.data.revision,receivingWarehouseId:'outside-wh'})).status,403);
+ assert.equal((await f.call('/purchase-orders/'+id+'/receiving-warehouse',f.cookies.mgr,'PUT',{revision:selected.data.revision,receivingWarehouseId:'supplier-wh'})).status,400);
+ const audits=await f.db.select().from(auditLogs).where(eq(auditLogs.action,'receiving-warehouse'));assert.equal(audits.length,1);assert.deepEqual(JSON.parse(audits[0]!.data),{before:'outside-wh',after:'structured-wh'});
+ const legacy=await f.call('/warehouse-receiving/a1',f.cookies.kho);assert.equal(legacy.status,200,JSON.stringify(legacy.data));assert.equal(legacy.data.warehouseId,null);assert.equal(legacy.data.warehouse,'Chưa chọn kho nhận');assert.deepEqual(legacy.data.warehouseOptions.map((w:any)=>w.id),['structured-wh']);
+ const body={clientKey:crypto.randomUUID(),receivedDate:'2026-11-24',warehouse:'Kho ngoài phân công',createSapo:false,lines:[{lineId:'line-a1',goodQty:1}]};
+ assert.equal((await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',body)).status,404);
+ const received=await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',{...body,warehouse:'Kho có phân công'});assert.equal(received.status,201,JSON.stringify(received.data));
+ assert.equal((await f.call('/purchase-orders/a1/receipts',f.cookies.kho,'POST',{...body,warehouse:'Kho có phân công'})).data.duplicate,true);
 });

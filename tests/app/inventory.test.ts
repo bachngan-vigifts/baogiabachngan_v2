@@ -79,7 +79,7 @@ test('sổ kho: chốt đầu kỳ, nhận NCC tự cộng / huỷ tự trừ, �
   assert.equal(card.balance, 10); assert.equal(card.lines[0].kind, 'reverse');
   assert.equal((await call('/stock-moves?group=reverse&warehouseId=ct', mgr)).data.moves[0].description, 'Huỷ phiếu nhập hàng');
   // Kho nhận không hợp lệ phải từ chối toàn phiếu; địa chỉ giao trên đơn không phải kho nhận.
-  assert.equal((await call(`/warehouse-receiving/${id}`,kho)).status,404,'Kho không được phân công kho Cần Thơ');
+  const legacyContext=await call(`/warehouse-receiving/${id}`,kho);assert.equal(legacyContext.status,200,'Đơn chưa chọn kho vẫn hiện queue');assert.equal(legacyContext.data.warehouseId,null);assert.ok(!legacyContext.data.warehouseOptions.some((w:any)=>w.id==='ct'),'không chọn kho Cần Thơ chưa được phân công');assert.equal((await call(`/purchase-orders/${id}/receipts`,kho,'POST',{clientKey:'wrong-destination',warehouse:'Kho Cần Thơ',lines:[{lineId:v.lines[0].id,goodQty:1}]})).status,404);
   const rc2 = await call(`/purchase-orders/${id}/receipts`, mgr, 'POST', { clientKey: 'k-87654321', warehouse: 'Kho lạ', receivedDate: '2026-10-01', lines: [{ lineId: v.lines[0].id, goodQty: 1 }] });
   assert.equal(rc2.status, 400); assert.match(rc2.data.error, /kho nhận hàng/);
   assert.equal((await call('/inventory/card?sku=LY1&warehouseId=ct', mgr)).data.balance, 10);

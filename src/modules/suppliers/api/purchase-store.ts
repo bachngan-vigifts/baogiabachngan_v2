@@ -106,7 +106,7 @@ export async function loadPurchase(db: Db, m: Member, id: string, today: string,
     view: {
       id: o.id, ticketNumber: o.ticketNumber, state, stateLabel: !o.cancelledAt&&progress.ordered===0&&lines.some(l=>l.creditedQty>0)?'Đã trả / huỷ toàn bộ hàng':purchaseStateLabel(state, flags), submittedAt: o.submittedAt, supplier: supplier ?? { id: o.supplierId, name: o.supplierName },
       supplierEmail: prices ? o.supplierEmail : '', ccEmail: prices ? o.ccEmail : '', internalNo: o.supplierInternalOrderNumber,
-      arrivalDate: o.arrivalDate, warehouse: o.warehouse, note: o.note, revision: o.revision, createdAt: o.createdAt, createdBy: o.createdBy,
+      arrivalDate: o.arrivalDate, warehouse: o.warehouse, receivingWarehouseId:o.receivingWarehouseId,canSetReceivingWarehouse:!o.cancelledAt&&(m.role==='manager'||o.createdBy===m.id), note: o.note, revision: o.revision, createdAt: o.createdAt, createdBy: o.createdBy,
       approvedAt: o.approvedAt, confirmedAt: o.supplierConfirmedAt, confirmedOnBehalf: o.confirmedOnBehalf,
       remainderClosedAt: o.remainderClosedAt, remainderCloseReason: o.remainderCloseReason, cancelledAt: o.cancelledAt, cancelReason: o.cancelReason, priceHidden: !prices,
       lines: lines.map((l, i) => {
