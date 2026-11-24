@@ -1242,6 +1242,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   }
   function drawCart() {
     cartResizeObserver?.disconnect();
+    for(const menu of nodes.lines?.querySelectorAll('.pos-ref-line-popover:popover-open')||[])menu.hidePopover();
     for(const image of nodes.lines?.querySelectorAll('.pos-mobile-line-photo img')||[])suspendProductThumbnail(image);
     nodes.lines.replaceChildren();
     markProductsInCart();
@@ -1339,7 +1340,16 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       afterPrice.append(el('span','pos-note','Sau CK / SP'),unit);
       if(desktopPos()){const dc=el('div','pos-line-discount');dc.append(disc,mode);edit.append(qtyBox,dc,afterPrice);}else edit.append(qtyBox, disc, mode, afterPrice);
       row.append(edit);
-      if(desktopPos())decorateReferenceLine(row,{unit:x.unit});
+      if(desktopPos())decorateReferenceLine(row,{unit:x.unit,onDetails:()=>run(async()=>{
+        // Scans deliberately omit other warehouses. Read only this SKU on demand
+        // through the existing permission-scoped endpoint; never amend the cart.
+        const registerId=st.register.id,policy=st.policy,cart=st.cart;
+        const data=await api(`/pos/catalog?registerId=${encodeURIComponent(registerId)}&pricePolicyId=${encodeURIComponent(policy)}&skus=${encodeURIComponent(x.sku)}`);
+        if(st.register?.id!==registerId||st.policy!==policy||st.cart!==cart||!row.isConnected)return;
+        const product=data.products?.find(p=>p.sku===x.sku);
+        if(!product?.stockSources)throw Error('Chưa có dữ liệu tồn chi tiết. Vui lòng thử lại.');
+        showProductStock(product,'store');
+      })});
       else if(nodes.mobileReference)decorateMobileQuickLine(row,x);
       nodes.lines.append(row);
     }
