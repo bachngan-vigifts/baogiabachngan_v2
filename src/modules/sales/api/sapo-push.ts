@@ -117,6 +117,42 @@ export async function sendOrderToClaw(c: Ctx, orderId: string, source: 'order' |
   return { status: 'updating' as const, code: input.code, runId: result.runId ?? null, warnings: [], message: source === 'hdkt' ? 'Đã giao Claw tạo đơn Sapo sau khi sinh HĐKT.' : 'Đã giao Claw tạo đơn Sapo sau khi sinh đơn.' };
 }
 
+/**
+ * Giao n8n/Claw huỷ đơn Sapo đã liên kết sau khi CRM huỷ chứng từ thành công.
+ * Dùng lại đúng webhook tạo đơn (đơn thường / HĐKT); `event` và idempotency key
+ * giúp workflow rẽ nhánh mà không tạo thêm một điểm tích hợp hoặc huỷ lặp.
+ */
+export async function sendSapoCancellationToClaw(c: Ctx, orderId: string, cancelledBy: string) {
+  const { order, input } = await inputFromOrder(c.env.db, orderId);
+  if (order.channel !== 'crm' || (!order.sapoOrderId && !order.sapoOrderCode)) return null;
+  const source: 'order' | 'hdkt' = input.contractNo ? 'hdkt' : 'order';
+  const target = clawTarget(c, source);
+  if (!target) throw new AppError(503, 'Chưa cấu hình webhook n8n huỷ đơn Sapo.', 'SAPO_CANCEL_WEBHOOK_MISSING');
+  const payload = {
+    event: 'crm_cancel_sapo_order', action: 'cancel', trigger_source: source,
+    idempotency_key: `cancel:${source}:${input.code}:${order.sapoOrderId || order.sapoOrderCode}`,
+    crm_order_id: order.id, quote_number: input.code, quote_no: input.quoteNo, order_no: input.orderNo, contract_no: input.contractNo,
+    sapo_order_id: order.sapoOrderId, sapo_order_code: order.sapoOrderCode,
+    cancellation_reason: 'Đơn hàng / HĐKT đã huỷ trên CRM', cancelled_by: cancelledBy, cancelled_at: new Date().toISOString(),
+  };
+  let response: Response;
+  try {
+    response = await (c.env.sapoWebhookFetch ?? fetch)(target, {
+      method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(payload),
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(45_000) : undefined,
+    });
+  } catch {
+    throw new AppError(504, 'Đơn CRM đã huỷ nhưng chưa kết nối được n8n để huỷ đơn Sapo.', 'SAPO_CANCEL_WEBHOOK_TIMEOUT');
+  }
+  const raw = await response.text(); let result: Raw = {};
+  try { result = raw ? JSON.parse(raw) : {}; } catch { /* n8n có thể trả text rỗng */ }
+  if (!response.ok || result.success === false || result.ok === false || result.error) {
+    throw new AppError(502, result.message || result.error || `n8n báo lỗi nhận yêu cầu huỷ (${response.status}).`, 'SAPO_CANCEL_WEBHOOK_FAILED');
+  }
+  return { status: 'updating' as const, code: input.code, sapoOrderId: order.sapoOrderId, runId: result.runId ?? null,
+    message: 'Đã giao Claw huỷ đơn Sapo tương ứng.' };
+}
+
 export type SapoPushOutcome = Awaited<ReturnType<typeof sendOrderToClaw>> | null;
 
 /**
