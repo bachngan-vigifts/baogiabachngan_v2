@@ -1028,7 +1028,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   async function printTemporary() {
     if (!st.cart.length || !active()) return toast('Mở ca và chọn hàng trước.', 'err');
     if (printingTemporary) return;
-    printingTemporary = true;updateTransferActions();
+    printingTemporary = true;
     const b = nodes.temp, label = b?.textContent;
     if (b) { b.disabled = true; b.textContent = 'Đang in…'; }
     try {
@@ -1127,11 +1127,6 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const confirm = el('label', 'pos-transfer-confirm'); confirm.append(check, nodes.transferLabel);
     nodes.qr = button('Tạo mã QR', 'btn secondary pos-create-qr', () => run(qr)); transfer.append(nodes.qr, confirm); nodes.transfer = transfer;
     if(desktopPos()){nodes.pcQr=el('div','pos-pc-qr');transfer.append(nodes.pcQr);updateQrPanel();}
-    const transferActions=el('div','pos-transfer-actions');
-    nodes.transferSend=button('Gửi sang điện thoại','btn secondary pos-transfer-send',()=>run(sendQrFromPanel));
-    nodes.transferPrint=button('In bill tạm','btn secondary pos-transfer-print',()=>run(printTemporary));
-    nodes.transferPrint.title='In bill chưa thanh toán, kèm QR còn hiệu lực của giỏ hiện tại';
-    transferActions.append(nodes.transferSend,nodes.transferPrint);transfer.append(transferActions);
     const cod = el('section', 'pos-payment-cod', 'Bước tiếp theo: nhập người nhận và chọn địa chỉ chuẩn Giao Hàng Nhanh, kiểm tra lại rồi tạo đơn COD.'); nodes.cod = cod;
     const footer = el('div', 'pos-payment-footer'); nodes.temp = button('In bill tạm', 'btn secondary', () => run(printTemporary));
     nodes.modalPay = button('Thu tiền & in bill', 'btn primary', async () => {
@@ -1200,7 +1195,6 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     add(p,false,qty);return true;
   }
   function updateQrPanel(){
-    updateTransferActions();
     if(!nodes.pcQr)return;nodes.pcQr.replaceChildren();const d=st.qr;
     if(!d){nodes.pcQr.append(el('p','pos-note','Tạo QR để giữ số đơn trước khi chuyển khoản.'));return;}
     if(/^https:\/\/img\.vietqr\.io\//.test(d.url||'')){const im=el('img','pos-pc-qr-image');im.src=d.url;im.alt='VietQR thanh toán';nodes.pcQr.append(im);}
@@ -1492,7 +1486,6 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     nodes.reference?.update({quantity:st.cart.reduce((n,x)=>n+Number(x.qty||0),0),total:st.preview?money(st.preview.total):st.cart.length?'Đang tính…':'0 đ',valid:!invalid});
     if(st.preview)nodes.deliveryEditor?.refresh();
     if (nodes.temp) nodes.temp.disabled = invalid;
-    updateTransferActions();
     if (nodes.qr) nodes.qr.disabled = invalid || (st.preview?.payable ?? st.preview?.total ?? 0)<=0 || !!st.qr?.paid;
     if(nodes.qr&&desktopPos())nodes.qr.textContent=st.qr?'In / gửi mã QR':'Tạo mã QR';
     if (nodes.modalPay) nodes.modalPay.disabled =
@@ -2285,28 +2278,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       await load();
     } else go('#/cash');
   }
-  let qrBusy = false,phoneShareBusy=false;
+  let qrBusy = false;
   function currentShareQr(d=st.qr,ownerId=user()?.id) {
     return !!ownerId&&!!d&&st.qr===d&&user()?.id===ownerId&&!d.paid&&Date.now()<Date.parse(d.expiresAt)&&active()&&!!st.cart.length&&!!st.preview&&d.amount===(st.preview.payable??st.preview.total)&&!st.pending&&!st.busy&&!workspace.recovery&&!workspace.recoveryError&&!workspace.invoiceSwitching;
   }
-  function updateTransferActions() {
-    if(nodes.transferSend){nodes.transferSend.disabled=phoneShareBusy||qrBusy||!currentShareQr();nodes.transferSend.title=currentShareQr()?'Hiển thị QR hiện tại trên điện thoại NVBH đang mở CRM':'Tạo QR còn hiệu lực của giỏ hiện tại trước khi gửi';}
-    if(nodes.transferPrint)nodes.transferPrint.disabled=printingTemporary||workspace.recovery||workspace.invoiceSwitching||!!workspace.recoveryError||!active()||!st.preview||!st.cart.length||!!st.pending||st.busy;
-  }
-  async function sendQrFromPanel() {
-    if(phoneShareBusy||!currentShareQr()){updateTransferActions();return;}
-    phoneShareBusy=true;updateTransferActions();
-    try{await qr('share');}finally{phoneShareBusy=false;refreshPay();}
-  }
-  async function qr(intent='show') {
-    if(intent==='share'&&!currentShareQr())return;
+  async function qr() {
     if (!requireCustomer() || qrBusy || st.busy) return;
     qrBusy = true;
     const reuse=!!st.qr&&(st.qr.paid||Date.parse(st.qr.expiresAt)>Date.now());
     const qrButton = nodes.qr, qrLabel = qrButton?.textContent;
     if (qrButton) { qrButton.disabled = true; qrButton.textContent = 'Đang tạo mã QR…'; qrButton.classList.add('is-busy'); }
     let d;
-    try { d = (intent==='share'||reuse)?st.qr:await api('/pos/qr', 'POST', { ...payload(), key: key() }); }
+    try { d = reuse?st.qr:await api('/pos/qr', 'POST', { ...payload(), key: key() }); }
     finally {
       qrBusy = false;
       if (qrButton) { qrButton.textContent = qrLabel; qrButton.classList.remove('is-busy'); }
@@ -2373,18 +2356,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     m.body.append(amount, info, shareArea, footer);
     m.show();
     watchQr(d,ownerId,status,m);
-    if(intent==='share'){
-      const options=await shareOptionsPromise;
-      if(!m.dlg.open||!currentShareQr(d,ownerId))return;
-      if(options?.chooseStore){shareStatus.textContent='Chọn cửa hàng nhận QR trước khi gửi.';target.focus();}
-      else if(options?.options.length)await sendToPhone();
-    }else if(desktopPos()&&!reuse)m.close();
+    if(desktopPos()&&!reuse)m.close();
     // Continue watching this QR after closing the popup; cart changes invalidate it.
   }
   function watchQr(d,ownerId,status=null,m=null){
     if(workspace.watching===d)return;clearInterval(workspace.statusTimer);workspace.watching=d;let completing=false;
     const timer = setInterval(async () => {
-      if (st.qr !== d || completing || user().id !== ownerId || Date.now() > Date.parse(d.expiresAt)) {updateTransferActions();return clearInterval(timer);}
+      if (st.qr !== d || completing || user().id !== ownerId || Date.now() > Date.parse(d.expiresAt)) {return clearInterval(timer);}
       try {
         const state = await api('/pos/qr/' + encodeURIComponent(d.id) + '/status');
         if (st.qr !== d || user().id !== ownerId || !state.paid) return;

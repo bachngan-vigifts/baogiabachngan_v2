@@ -1465,5 +1465,3 @@ body:has(#view-pos:not([hidden])) #chat-launcher,
 body:has(#view-pos:not([hidden])) #reminder-launcher { display:none; }
 
 /* Direct transfer actions use the existing QR-sharing and unpaid-bill flows. */
-.pos-transfer-actions { grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:8px; }
-.pos-transfer-actions>.btn { flex:1;min-width:0;min-height:40px;white-space:normal; }
