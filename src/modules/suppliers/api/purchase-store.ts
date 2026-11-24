@@ -64,7 +64,7 @@ export async function purchaseLinksForOrder(db: Db, m: Member, order: { id: stri
       order.quoteId ? and(eq(supplierOrderSources.sourceType, 'quote'), eq(supplierOrderSources.sourceId, order.quoteId)) : undefined)));
 }
 
-const MONEY_EVENT_LABEL: Record<string, string> = { approve: 'Manager duyệt đơn', import: 'Nhập từ file đơn NCC', prices: 'Lưu giá nhập', schedule: 'Sửa lịch trả NCC',
+const MONEY_EVENT_LABEL: Record<string, string> = {amend:'Manager điều chỉnh đơn mua', approve: 'Manager duyệt đơn', import: 'Nhập từ file đơn NCC', prices: 'Lưu giá nhập', schedule: 'Sửa lịch trả NCC',
   goods_return: 'Trả hàng NCC / Huỷ phần chưa nhận', supplier_refund: 'Nhận tiền hoàn NCC', pay: 'Ghi trả NCC', void_payment: 'Huỷ khoản trả NCC' }; // 'update' (sửa nháp) chỉ có số lượng / NCC – không ẩn
 const MONEY_EVENTS = new Set(Object.keys(MONEY_EVENT_LABEL));
 /** Toàn bộ dữ liệu một đơn mua (đúng phạm vi xem), đã tính tiến độ nhận / công nợ / nút được bấm. */

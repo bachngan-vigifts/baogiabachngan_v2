@@ -1,3 +1,5 @@
+import {registerPurchaseAmendRoutes} from './purchase-amend.ts';
+import type {PurchaseLineInput} from '../../../core/contracts/purchase-amend.ts';
 import {incomingForViewer,canPurchaseProjection} from './purchase-projection.ts';
 import {warehouseReceivingScope,warehouseOpenReceivingScope,receivingContext,validateReceivingWarehouse,receivingDestination} from './purchase-receiving.ts';
 import { registerGoodsReturnRoutes } from './goods-return-routes.ts';
@@ -118,7 +120,7 @@ function receiptRequestHash(body: Record<string, unknown>, createSapo: boolean) 
 const lockSources = (tx: Tx) => tx.execute(sql`select pg_advisory_xact_lock(hashtext('supplier_order_sources'))`);
 
 // ---------------------------------------------------------------- dòng hàng + nguồn
-interface LineIn { sku: string; name: string; unit: string; quantity: number; price: number | null; taxRate: number | null; purchaseDiscount?: number; sources: { type: string; id: string; quantity: number }[] }
+type LineIn=PurchaseLineInput;
 function cleanLines(raw: unknown, prices: boolean): LineIn[] {
   if (!Array.isArray(raw) || !raw.length || raw.length > 300) fail(400, 'Đơn mua cần từ 1 đến 300 mã hàng.');
   const seen = new Set<string>();
@@ -160,7 +162,7 @@ async function checkSources(db: Db, m: Member, orders: LineIn[][], exceptShipmen
   return needs;
 }
 
-async function insertLines(tx: Tx, shipmentId: string, lines: LineIn[], needs: Map<string, { no: string; customerName: string; lines: { sku: string; name: string; unit: string }[] }>) {
+async function insertLines(tx: Tx, shipmentId: string, lines: LineIn[], needs: Map<string, { no: string; customerName: string; lines: { sku: string; name: string; unit: string }[] }>,lineOffset=0) {
   const names = new Map((lines.length ? await tx.select({ sku: products.sku, name: products.name, unit: products.unit }).from(products)
     .where(inArray(products.sku, lines.map(l => l.sku))) : []).map(p => [p.sku, p]));
   const now = nowIso();
@@ -168,7 +170,7 @@ async function insertLines(tx: Tx, shipmentId: string, lines: LineIn[], needs: M
     // Tên: luôn theo danh mục (dòng báo giá có thể gõ gọn, vd "Bộ trà 0.5"); mã ngoài danh mục giữ tên gửi lên / của chứng từ nguồn.
     // ĐVT trống: lấy theo danh mục, không có thì theo chứng từ nguồn.
     const lineId = crypto.randomUUID(), p = names.get(l.sku), src = l.sources.map(s => needs.get(s.type + ':' + s.id)!.lines.find(x => x.sku.toLowerCase() === l.sku.toLowerCase())).find(Boolean);
-    await tx.insert(incomingShipmentLines).values({ id: lineId, shipmentId, lineNo: i + 1, sku: l.sku, name: p?.name || l.name || src?.name || '', unit: l.unit || p?.unit || src?.unit || '', quantity: l.quantity, price: l.price, taxRate: l.taxRate, purchaseDiscount:l.purchaseDiscount??0 });
+    await tx.insert(incomingShipmentLines).values({ id: lineId, shipmentId, lineNo: i + 1 + lineOffset, sku: l.sku, name: p?.name || l.name || src?.name || '', unit: l.unit || p?.unit || src?.unit || '', quantity: l.quantity, price: l.price, taxRate: l.taxRate, purchaseDiscount:l.purchaseDiscount??0 });
     for (const s of l.sources) {
       const n = needs.get(s.type + ':' + s.id)!;
       await tx.insert(supplierOrderSources).values({ id: crypto.randomUUID(), shipmentId, lineId, sourceType: s.type as 'quote', sourceId: s.id, sourceNo: n.no, customerName: n.customerName, sku: l.sku, quantity: s.quantity, createdAt: now });
@@ -189,6 +191,7 @@ async function activeSupplier(db: Db | Tx, id: unknown, lock = false) {
 
 export function registerPurchaseRoutes(router: Router<StaffEnv>) {
   registerGoodsReturnRoutes(router);
+  registerPurchaseAmendRoutes(router,{cleanLines,checkSources,insertLines,view:viewOf});
   registerReceiptJobRoutes(router);
   // Trang Tra tồn (sổ kho) đọc hàng đang về từ đơn mua NCC.
   incomingLookup.canPurchase=canPurchaseProjection;

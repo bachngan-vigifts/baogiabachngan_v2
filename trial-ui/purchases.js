@@ -1,3 +1,4 @@
+import {openPurchaseAmend} from './purchase-amend.js';
 import { createPurchaseOrders } from './purchase-order-create.js';
 import {openGoodsReturn,openSupplierRefund} from './purchase-returns.js';
 import { requiresSupplierOrderNumber, supplierOrderNumberProblem } from './supplier-order-number.js';
@@ -331,6 +332,7 @@ export function initPurchases({ api, root, toast, confirmBox, money, go, today, 
     if(v.canSetReceivingWarehouse)moreItems.push(btn('Kho nhận hàng…','buy-menu-item',receivingWarehouseForm));
     if(mainKey!=='refund'&&v.canRefund&&v.debt?.supplierCredit>0)moreItems.push(btn('Ghi nhận tiền NCC hoàn','buy-menu-item',()=>openSupplierRefund({api,order:v,onChanged:refreshReturnedOrder})));
     for (const a of ['confirm', 'receive', 'edit', 'pay', 'schedule', 'pdf']) if (has(a) && a !== mainKey) moreItems.push(btn(label(a), 'buy-menu-item' + (a === 'confirm' && v.confirmedAt ? ' status-confirmed' : ''), () => ACTIONS[a]()));
+    if(opts?.isManager&&!['draft','cancelled'].includes(v.state))moreItems.push(btn('Điều chỉnh đơn đã duyệt…','buy-menu-item',()=>openPurchaseAmend({api,id:v.id,onSaved:saved=>{current=saved;renderDetail();load();toast('Đã lưu điều chỉnh đơn.');}}).catch(e=>toast(e.message,'err'))));
     if (has('pdf')) {
       // Gửi email đơn đặt hàng (đơn đã duyệt) + hỏi tồn NCC (mọi người xem được đơn, không kèm giá).
       const mail = btn('✉ Gửi email NCC', 'buy-menu-item', () => sendOrderEmail(mail));
