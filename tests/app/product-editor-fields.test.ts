@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {setup} from '../helpers/pos-fixture.ts';
 
 test('Form sản phẩm lưu mã vạch giữ số0, danh mục/bộ sưu tập/hoa văn độc lập và tra được qua POS',async()=>{
- const f=await setup(),body={sku:'EDITOR-NEW',name:'Ly thử',barcode:'0008930000001',category:'Ly',collection:'Quà tặng 2026',pattern:'Hoa sen',unit:'Cái',prices:{retail:100000,'retail-vat':108000}};
+ const f=await setup(),body={sku:'EDITOR-NEW',name:'Ly thử',brand:'Lock&Lock',barcode:'0008930000001',category:'Ly',collection:'Quà tặng 2026',pattern:'Hoa sen',unit:'Cái',prices:{retail:100000,'retail-vat':108000}};
  const saved=await f.call('/products',f.mgr,'POST',body);assert.equal(saved.status,201,JSON.stringify(saved.data));
  const detail=(await f.call('/products/EDITOR-NEW',f.mgr)).data.product;
  assert.deepEqual([detail.category,detail.collection,detail.pattern],['Ly','Quà tặng 2026','Hoa sen']);assert.deepEqual(detail.barcodes,['0008930000001']);
