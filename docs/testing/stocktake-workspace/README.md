@@ -21,6 +21,8 @@ Base cập nhật: `1cc56429` (đã có sidebar xanh #825). Không dùng dữ li
   Khi chưa rõ kết quả thì khóa input, khôi phục cùng request, không tạo khóa mới.
 - Hoàn thành chỉ Manager; zero khác chưa kiểm. Snapshot drift chặn mặc định, chỉ áp delta sau xác nhận.
  Hủy đã cân bằng chỉ Manager, đảo đúng bút toán gốc, giữ phát sinh về sau; không xóa ledger.
+ Nếu đã có phiếu kiểm kho khác làm thay đổi mã trong lúc đếm thì chặn cả applyDelta;
+ phải kiểm đếm/nhập lại actual theo baseline hiện tại để không ghi chênh lệch đếm hai lần.
  Người/ngày cân bằng gốc vẫn còn sau hủy. Sửa phiếu đã cân bằng chỉ ghi chú.
 - Gộp cùng kho và phiên bản: cộng actual cùng SKU, phiếu nguồn ghi hủy do gộp và liên kết phiếu đích.
   SKU trùng có phần chưa kiểm bị chặn. Sao chép giữ danh sách, lấy tồn hiện hành và để actual chưa kiểm.

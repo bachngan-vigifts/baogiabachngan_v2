@@ -65,7 +65,7 @@ const fmtQty=(n:number)=>Number(n).toLocaleString('vi-VN',{maximumFractionDigits
  * Đối chiếu tồn lúc đếm với tồn hiện tại. Tồn đã đổi (bán / nhập sau lúc đếm): mặc định chặn (409 STOCKTAKE_STOCK_CHANGED);
  * `applyDelta` = duyệt theo chênh lệch — ghi đúng phần (thực đếm − tồn lúc đếm) vào tồn hiện tại, phát sinh sau lúc đếm được giữ nguyên.
  */
-export async function countSnapshot(tx:Tx,warehouseId:string,lines:Line[],applyDelta:boolean):Promise<StockChange[]>{
+export async function countSnapshot(tx:Tx,warehouseId:string,lines:Line[],applyDelta:boolean,context?:{id:string;createdAt:string}):Promise<StockChange[]>{
  if(!lines.some(l=>l.source==='stocktake'))return [];
  // Exclusive ledger lock keeps snapshot comparison and posting atomic, including missing balances.
  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_ledger_opening'))`);
@@ -74,6 +74,10 @@ export async function countSnapshot(tx:Tx,warehouseId:string,lines:Line[],applyD
  const balances=new Map(rows.map(r=>[r.sku,r.qty]));
  const changed=lines.filter(l=>Math.abs((balances.get(l.sku)||0)-Number(l.expectedQty))>0.000001)
   .map(l=>({sku:l.sku,expectedQty:Number(l.expectedQty),currentQty:balances.get(l.sku)||0,countedQty:Number(l.countedQty),qty:l.qty}));
+ if(changed.length&&context){
+  const overlapping=await tx.select({id:stockMoves.id}).from(stockMoves).innerJoin(adjustments,eq(adjustments.id,stockMoves.refId)).where(and(eq(stockMoves.warehouseId,warehouseId),eq(stockMoves.refType,'adjustment'),inArray(stockMoves.kind,['adjust','reverse']),inArray(stockMoves.sku,changed.map(l=>l.sku)),sql`${stockMoves.createdAt}>=${context.createdAt}`,sql`${stockMoves.refId}<>${context.id}`,sql`${adjustments.lines}::jsonb @> '[{"source":"stocktake"}]'::jsonb`)).limit(1);
+  if(overlapping.length)throw new AppError(409,'Có phiếu kiểm kho khác đã cân bằng mã này trong lúc kiểm. Mở lại/nhập lại số Thực tế sau khi kiểm đếm lại; không áp chênh lệch kiểm kho lần nữa.','STOCKTAKE_COUNT_CONFLICT');
+ }
  if(changed.length&&!applyDelta)throw new AppError(409,`Tồn đã thay đổi sau lúc đếm ở ${changed.length} mã (${changed.slice(0,3).map(x=>`${x.sku}: ${fmtQty(x.expectedQty)} → ${fmtQty(x.currentQty)}`).join('; ')}${changed.length>3?'; …':''}). Có thể duyệt theo chênh lệch: tồn mới = tồn hiện tại + (thực đếm − tồn lúc đếm).`,'STOCKTAKE_STOCK_CHANGED');
  return changed;
 }
@@ -262,7 +266,7 @@ export function registerAdjustmentRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)
    if(row.status===decision)return {...row,replayed:true};
    if(row.status!=='pending')fail(409,'Phiếu đã được xử lý, không đổi quyết định.');
    const lines=JSON.parse(row.lines) as Line[];
-   const stockChanged=decision==='approved'?await countSnapshot(tx,row.warehouseId,lines,body.applyDelta===true):[];
+   const stockChanged=decision==='approved'?await countSnapshot(tx,row.warehouseId,lines,body.applyDelta===true,{id:row.id,createdAt:row.createdAt}):[];
    if(decision==='approved'){await postMoves(tx,me(c).id,lines.filter(l=>l.qty!==0).map(l=>({...l,warehouseId:row.warehouseId,kind:'adjust',refType:'adjustment',refId:row.id,refNo:row.refNo,note:row.reason})));}
    const now=new Date().toISOString();await tx.update(adjustments).set({status:decision,reviewedBy:me(c).id,reviewedAt:now,reviewNote:note}).where(eq(adjustments.id,row.id));
    await audit(tx,me(c).id,row.id,decision==='approved'?'adjustment-approved':'adjustment-rejected',{refNo:row.refNo,warehouseId:row.warehouseId,lines,note,...(stockChanged.length?{appliedDelta:true,stockChanged}:{})});

@@ -76,3 +76,20 @@ test('legacy submitted stocktakes remain visible and can be completed with revis
  assert.equal((await f.call('/inventory/stocktakes/'+r.data.id+'/complete',f.mgr,'POST',{key:'workspace-legacy-complete',revision:0})).status,200);assert.equal(await balance(f),8);
  const retry=await f.call('/inventory/adjustments',f.emp,'POST',body);assert.equal(retry.status,200);assert.equal(retry.data.id,r.data.id);assert.equal(await balance(f),8);
 });
+
+
+test('overlapping drafts cannot apply another count delta twice; explicit recount uses the current baseline',async()=>{
+ const f=await setupWarehouseOps(),a=await f.call('/inventory/stocktakes',f.emp,'POST',draft('workspace-overlap-a',12)),b=await f.call('/inventory/stocktakes',f.emp,'POST',draft('workspace-overlap-b',12));
+ assert.equal((await f.call('/inventory/stocktakes/'+a.data.id+'/complete',f.mgr,'POST',{key:'workspace-overlap-first',revision:1})).status,200);assert.equal(await balance(f),12);
+ const blocked=await f.call('/inventory/stocktakes/'+b.data.id+'/complete',f.mgr,'POST',{key:'workspace-overlap-second',revision:1,applyDelta:true});assert.equal(blocked.status,409);assert.equal(blocked.data.code,'STOCKTAKE_COUNT_CONFLICT');assert.equal(await balance(f),12);
+ assert.equal((await f.call('/inventory/stocktakes/'+b.data.id,f.emp,'PUT',{key:'workspace-overlap-recount',revision:1,lines:[{sku:'00123',expectedQty:12,countedQty:12}],note:'Đã kiểm đếm lại'})).status,200);
+ assert.equal((await f.call('/inventory/stocktakes/'+b.data.id+'/complete',f.mgr,'POST',{key:'workspace-overlap-done',revision:2})).status,200);assert.equal(await balance(f),12);
+});
+
+
+test('legacy approval API also blocks reapplying a count after the new workspace has balanced it',async()=>{
+ const f=await setupWarehouseOps(),legacy=await f.call('/inventory/adjustments',f.emp,'POST',{source:'stocktake',clientKey:'workspace-legacy-overlap',warehouseId:'pos-wh',reason:'Đếm giao diện cũ',lines:[{sku:'00123',expectedQty:10,countedQty:12}]}),current=await f.call('/inventory/stocktakes',f.emp,'POST',draft('workspace-new-overlap',12));
+ assert.equal(legacy.status,201);assert.equal(current.status,201);
+ assert.equal((await f.call('/inventory/stocktakes/'+current.data.id+'/complete',f.mgr,'POST',{key:'workspace-new-completed',revision:1})).status,200);
+ const blocked=await f.call('/inventory/adjustments/'+legacy.data.id+'/review',f.mgr,'POST',{decision:'approved',applyDelta:true});assert.equal(blocked.status,409);assert.equal(blocked.data.code,'STOCKTAKE_COUNT_CONFLICT');assert.equal(await balance(f),12);
+});
