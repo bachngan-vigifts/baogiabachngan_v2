@@ -11,7 +11,7 @@ import {snapshotVersion} from '../../catalog/api/routes.ts';
 import {stockBalances} from '../../inventory/schema.ts';
 import {rememberLedgerWarehouses} from './pos-stock.ts';
 import {reservedBySku,type PosDb,type PosMember} from './pos-store.ts';
-import {posCatalogFamily,MINH_LONG_CATALOG_PATTERN,LOCK_CATALOG_PATTERN} from '../domain/pos-catalog-brand.ts';
+import {posCatalogBrandPattern} from '../domain/pos-catalog-brand.ts';
 
 /** Shared with scan/catalog: preload only codes that identify exactly one product. */
 export const posScanCodes=sql<string[]>`ARRAY(
@@ -33,15 +33,10 @@ async function allScanCodes(db:PosDb){
  for(const r of rows){if(r.clash||r.code===r.sku)continue;const list=bySku.get(r.sku);if(list)list.push(r.code);else bySku.set(r.sku,[r.code]);}
  return (sku:string)=>[...(clashing.has(sku)?[]:[sku]),...(bySku.get(sku)??[])];
 }
-export function posBrandScope(registerName:string,{preload=false}:{preload?:boolean}={}){
- const family=posCatalogFamily(registerName);
- if(!family)return undefined;
- const pattern=family==='lock'?MINH_LONG_CATALOG_PATTERN:LOCK_CATALOG_PATTERN;
- const full=sql`${foldSql(products.brand,products.name)} !~ ${pattern}`;
- // Bulk preload scans the complete catalog. Reject an opposite brand before folding its longer name.
- // Keep the full combined check otherwise: a family can span the brand/name boundary.
- // Paged catalog keeps its original predicate and early LIMIT plan.
- return preload?sql`case when ${foldSql(products.brand)} ~ ${pattern} then false else ${full} end`:full;
+export function posBrandScope(registerName:string,_options:{preload?:boolean}={}){
+ // Same positive allowlist for paged search, exact scans, SKU hydration and preload/delta.
+ // Match only the declared brand; a foreign/blank brand cannot enter via its product name.
+ return sql`${foldSql(products.brand)} ~ ${posCatalogBrandPattern(registerName)}`;
 }
 /** Compact session-only stock preload. No supplier/incoming stock, no stock writes. */
 /** false: không kèm danh mục; true: danh mục dạng đối tượng (giao diện cũ); 'compact': cột cố định CATALOG_COLUMNS, cùng thứ tự với rows. */

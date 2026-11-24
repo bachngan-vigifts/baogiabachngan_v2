@@ -6,7 +6,12 @@ export function posCatalogFamily(registerName:unknown):'lock'|'minh-long'|null {
  const text=normalize(registerName),lock=new RegExp(LOCK_CATALOG_PATTERN).test(text),ml=/minh[ _-]*long/.test(text);
  return lock===ml?null:lock?'lock':'minh-long';
 }
+/** Positive brand allowlist for the POS picker. Product names never grant visibility. */
+export function posCatalogBrandPattern(registerName:unknown):string {
+ const family=posCatalogFamily(registerName);
+ const ml='(^|[^a-z0-9])(minh[ _-]*long|healthy[ _-]*cook|lys|horeca)([^a-z0-9]|$)';
+ return family==='lock'?LOCK_CATALOG_PATTERN:family==='minh-long'?ml:`(${LOCK_CATALOG_PATTERN})|(${ml})`;
+}
 export function posCatalogProductVisible(registerName:unknown,product:{brand?:unknown;name?:unknown}):boolean {
- const family=posCatalogFamily(registerName);if(!family)return true;
- return !new RegExp(family==='lock'?MINH_LONG_CATALOG_PATTERN:LOCK_CATALOG_PATTERN).test(normalize(`${product.brand??''} ${product.name??''}`));
+ return new RegExp(posCatalogBrandPattern(registerName)).test(normalize(product.brand));
 }

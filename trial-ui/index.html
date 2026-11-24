@@ -16,6 +16,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="pos.css">
+<link rel="stylesheet" href="pos-reference.css" data-pos-reference>
+<link rel="stylesheet" href="pos-mobile.css" data-pos-mobile>
 <link rel="stylesheet" href="shift-reports.css">
 <link rel="stylesheet" href="cash.css">
 <link rel="stylesheet" href="dashboard.css">
@@ -45,7 +47,9 @@
 <link rel="stylesheet" href="breathing-launcher.css">
 <link rel="stylesheet" href="break-reminder.css">
 <link rel="stylesheet" href="product-list-compact.css">
+<link rel="stylesheet" href="stocktake-workspace.css">
 <link rel="stylesheet" href="control-sizes.css">
+<link rel="stylesheet" href="visual-theme.css" media="screen">
 </head>
 <body>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
@@ -962,15 +966,29 @@
     <div class="modal-head"><h2>Kết nối Sapo</h2><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
     <div class="modal-body form-grid">
       <p class="muted small">App dùng phiên đăng nhập Sapo của Manager để <b>chỉ đọc</b> nhân viên, khách hàng, sản phẩm mới (30 phút/lần và khi bấm "Đồng bộ ngay"). Phiên được mã hoá, không ai xem lại được.</p>
+      <p><a class="btn secondary" href="https://bachngankiengiang.mysapogo.com/admin" target="_blank" rel="noopener noreferrer">1. Mở Sapo để đăng nhập ↗</a></p>
+      <button type="button" class="btn primary" id="sapo-browser-connect">2. Kết nối phiên vào CRM</button>
+      <p id="sapo-browser-status" class="muted small" role="status" aria-live="polite"></p>
+      <p class="muted small">Đăng nhập và xác minh trên trang Sapo thật; quay lại đây để kết nối. CRM không nhận hay lưu mật khẩu Sapo.</p>
+      <details><summary>Cài tiện ích Chrome trên máy tính (một lần)</summary>
+        <ol class="muted small steps">
+          <li><a href="sapo-connector.zip" download>Tải tiện ích Kết nối Sapo</a>, giải nén vào một thư mục và giữ thư mục đó.</li>
+          <li>Mở <b>chrome://extensions</b>, bật <b>Chế độ dành cho nhà phát triển</b> → <b>Tải tiện ích đã giải nén</b> và chọn thư mục vừa giải nén (có manifest.json).</li>
+          <li>Tải lại CRM. Tiện ích chỉ đọc phiên ở cửa hàng Sapo này khi anh/chị bấm kết nối trong hộp thoại này; không tự đồng bộ hoặc đọc mật khẩu. Dành cho Chrome/Edge trên máy tính.</li>
+        </ol>
+      </details>
+      <details><summary>Kết nối thủ công / điện thoại</summary>
       <ol class="muted small steps">
         <li>Đăng nhập <b>bachngankiengiang.mysapogo.com/admin</b> bằng Chrome.</li>
         <li>Nhấn <b>F12</b> → thẻ <b>Network</b> → nhấn <b>F5</b> → gõ <b>.json</b> vào ô lọc → bấm một dòng ở <b>dưới cùng</b> danh sách.</li>
         <li>Ở mục <b>Request Headers</b> (không phải Response Headers), chuột phải dòng <b>cookie</b> → <b>Copy value</b>, dán vào ô dưới. Chỉ dán vào đây – không gửi cookie qua chat / tin nhắn.</li>
       </ol>
-      <label>Cookie phiên Sapo<textarea name="cookie" rows="4" required maxlength="30000" autocomplete="off" spellcheck="false" placeholder="…; sapo-admin=…; …"></textarea></label>
+      <label>Cookie phiên Sapo<textarea name="cookie" rows="4" maxlength="30000" autocomplete="off" spellcheck="false" placeholder="…; sapo-admin=…; …"></textarea></label>
+      <p><button class="btn primary" id="save-sapo">Lưu phiên thủ công</button></p>
+      </details>
       <p class="error" id="sapo-error" role="alert"></p>
     </div>
-    <div class="modal-foot"><button type="button" class="btn secondary" id="sapo-disconnect" hidden>Ngắt kết nối</button><button type="button" class="btn secondary" data-close>Huỷ</button><button class="btn primary" id="save-sapo">Lưu và kiểm tra</button></div>
+    <div class="modal-foot"><button type="button" class="btn secondary" id="sapo-disconnect" hidden>Ngắt kết nối</button><button type="button" class="btn secondary" data-close>Huỷ</button></div>
   </form>
 </dialog>
 
