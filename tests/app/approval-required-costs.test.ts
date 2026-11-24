@@ -27,7 +27,8 @@ test('Draft preserves missing costs/payer; explicit zero differs from blank; fre
 });
 
 test('API cannot bypass missing costs, stale review or mismatched lines; delegated approver sees no costs; declared shipping enters profit',async()=>{
- const f=await setup();
+ // An unclassified product deliberately has no brand-derived purchase cost.
+ const f=await setup({productBrand:''});
  const q=ok(await f.call('/quotes',f.mgr,'POST',{type:'B2B',quoteNo:'COST-GATE',customer:'Fixture costs',vat:8,rows:[{sku:'00123',name:'Ly',qty:2,price:100000,printDescription:'In logo miễn phí',printFee:0}]}),201);
  const o=ok(await f.call('/orders',f.mgr,'POST',{quoteId:q.id}),201),path='/orders/'+o.id+'/status';
  const approve=(extra={})=>f.call(path,f.mgr,'PUT',{status:'confirmed',verified:true,costWarningsReviewed:true,...extra});
