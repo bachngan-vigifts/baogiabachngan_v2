@@ -1,5 +1,5 @@
 import {registerProductArchiveRoutes} from './product-archive.ts';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../../../core/http/router.ts';
 import { json, readJson } from '../../../core/http/router.ts';
 import { sniffImage } from '../../../core/http/image-bytes.ts';
@@ -8,7 +8,7 @@ import { AppError } from '../../../core/errors.ts';
 import type { SessionState, StaffEnv } from '../../staff/api/auth-routes.ts';
 import { employees } from '../../staff/schema.ts';
 import { can, canApprove } from '../../staff/domain/permissions.ts';
-import { pricePolicies, productPrices, products } from '../schema.ts';
+import { pricePolicies, productPrices, productBarcodes, products } from '../schema.ts';
 import { requireNewProductPrices } from '../domain/product-approval.ts';
 
 type Ctx = RouteContext<StaffEnv>;
@@ -44,7 +44,41 @@ function cleanProduct(body: Record<string, unknown>, existingSku?: string) {
     if (rate !== 8 && rate !== 10) throw new AppError(400, 'Thuế sản phẩm phải là 8% hoặc 10%.');
     tax.taxOut = rate; tax.taxable = true;
   }
-  return { sku, name, packaging, tax, brand: t('brand', 200), unit: t('unit', 50), pattern: t('pattern', 200), imageUrl, prices };
+  const classification: Partial<Pick<typeof products.$inferInsert, 'category' | 'collection'>> = {};
+  for (const key of ['category', 'collection'] as const) {
+    if (!Object.hasOwn(body, key)) continue;
+    // Client đọc GET rồi gửi lại nguyên bản: null = chưa có giá trị (xoá), không phải lỗi.
+    if (body[key] === null) { classification[key] = null; continue; }
+    if (typeof body[key] !== 'string') throw new AppError(400, 'Danh mục và bộ sưu tập phải là văn bản.');
+    classification[key] = t(key, 200);
+  }
+  return { sku, name, packaging, tax, classification, brand: t('brand', 200), unit: t('unit', 50), pattern: t('pattern', 200), imageUrl, prices };
+}
+
+type Tx = Parameters<Parameters<StaffEnv['db']['transaction']>[0]>[0];
+function barcodeInput(body: Record<string, unknown>, manager: boolean) {
+  if (!Object.hasOwn(body, 'barcode')) return null;
+  if (!manager) throw new AppError(403, 'Chỉ Manager được gắn mã vạch.');
+  if (typeof body.barcode !== 'string' || body.barcode.length > 100) throw new AppError(400, 'Mã vạch tối đa 100 ký tự.');
+  const code = body.barcode.trim();
+  if (code && !/^[\x21-\x7e]+$/.test(code)) throw new AppError(400, 'Mã vạch không có khoảng trắng hoặc ký tự có dấu.');
+  return code || null;
+}
+
+/** Add an alias atomically with the product save. Existing scan codes stay valid. */
+async function attachBarcode(tx: Tx, sku: string, barcode: string | null, actorId: string, now: string) {
+  if (!barcode) return;
+  const [collision] = barcode !== sku ? await tx.select({ sku: products.sku }).from(products).where(eq(products.sku, barcode)).limit(1) : [];
+  if (collision) throw new AppError(409, 'Mã vạch trùng SKU của sản phẩm khác.');
+  const [used] = await tx.select().from(productBarcodes).where(eq(productBarcodes.barcode, barcode));
+  if (used) {
+    if (used.sku !== sku) throw new AppError(409, 'Mã vạch đã gắn sản phẩm khác.');
+    return;
+  }
+  await tx.insert(productBarcodes).values({ barcode, sku }).onConflictDoNothing();
+  const [saved] = await tx.select().from(productBarcodes).where(eq(productBarcodes.barcode, barcode));
+  if (saved?.sku !== sku) throw new AppError(409, 'Mã vạch vừa được gắn sản phẩm khác. Tải lại và kiểm tra.');
+  await tx.insert(auditLogs).values({ id: crypto.randomUUID(), actorId, module: 'catalog', action: 'barcode-add', entityType: 'products', entityId: sku, data: JSON.stringify({ barcode, sku }), createdAt: now });
 }
 
 /**
@@ -67,16 +101,20 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
 
   router.post('/products', async c => {
     const body = await readJson(c.req, 16_000);
-    const me = viewer(c), db = c.env.db, f = cleanProduct(body), now = new Date().toISOString(), mgr = me.role === 'manager';
+    const me = viewer(c), db = c.env.db, f = cleanProduct(body), now = new Date().toISOString(), mgr = me.role === 'manager', barcode=barcodeInput(body,mgr);
     if ((await db.select({ sku: products.sku }).from(products).where(eq(products.sku, f.sku)).limit(1)).length) throw new AppError(409, `Mã ${f.sku} đã có trong danh mục.`);
     const configuredPolicies = await db.select({ id: pricePolicies.id, name: pricePolicies.name }).from(pricePolicies).orderBy(asc(pricePolicies.sortOrder));
     requireNewProductPrices(configuredPolicies, (body.prices || {}) as Record<string, unknown>);
     const policies = new Set(configuredPolicies.map(p => p.id));
     const priceRows = Object.entries(f.prices).filter(([id]) => policies.has(id)).map(([policyId, price]) => ({ sku: f.sku, policyId, price }));
     await db.transaction(async tx => {
-      await tx.insert(products).values({ sku: f.sku, ...f.packaging, ...f.tax, name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl,
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('product-barcode-import'))`);
+      const [reserved]=await tx.select({sku:productBarcodes.sku}).from(productBarcodes).where(eq(productBarcodes.barcode,f.sku)).limit(1);
+      if(reserved&&reserved.sku!==f.sku)throw new AppError(409,'SKU đã là mã vạch của sản phẩm khác.');
+      await tx.insert(products).values({ sku: f.sku, ...f.packaging, ...f.tax, ...f.classification, name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl,
         active: mgr, approvalStatus: mgr ? 'approved' : 'pending', createdBy: me.id, approvedBy: mgr ? me.id : null, approvedAt: mgr ? now : null, updatedAt: now });
       if (priceRows.length) await tx.insert(productPrices).values(priceRows);
+      await attachBarcode(tx,f.sku,barcode,me.id,now);
     });
     return json({ sku: f.sku, approvalStatus: mgr ? 'approved' : 'pending' }, 201);
   }, 'business');
@@ -105,12 +143,13 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
     if (!['manager', 'employee'].includes(me.role)) throw new AppError(403, 'Chỉ nhân viên được cập nhật sản phẩm.');
     const body = await readJson(c.req, 16_000), sku = c.params.sku!;
     if (body.sku !== undefined && body.sku !== sku) throw new AppError(400, 'Không đổi mã SKU của sản phẩm đã có.');
-    const f = cleanProduct(body, sku), expected = body.expectedUpdatedAt;
+    const f = cleanProduct(body, sku), expected = body.expectedUpdatedAt, barcode=barcodeInput(body,me.role==='manager');
     if (typeof expected !== 'string' || !expected) throw new AppError(400, 'Tải lại thông tin sản phẩm trước khi cập nhật.');
     const rawPrices = body.prices && typeof body.prices === 'object' ? body.prices as Record<string, unknown> : {};
     const seesPrices = me.role === 'manager' || ['page.quotes', 'page.orders', 'page.contracts'].some(k => can(me, k));
     if (Object.keys(rawPrices).length && !seesPrices) throw new AppError(403, 'Chưa có quyền cập nhật giá sản phẩm.');
     await c.env.db.transaction(async tx => {
+      if(barcode)await tx.execute(sql`select pg_advisory_xact_lock(hashtext('product-barcode-import'))`);
       const [before] = await tx.select().from(products).where(eq(products.sku, sku)).limit(1).for('update');
       if (!before) throw new AppError(404, 'Không tìm thấy sản phẩm.');
       if (before.updatedAt !== expected) throw new AppError(409, 'Sản phẩm vừa được thay đổi. Đóng và mở lại để lấy thông tin mới.', 'PRODUCT_CHANGED');
@@ -120,11 +159,12 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
       const oldPrices = await tx.select().from(productPrices).where(eq(productPrices.sku, sku));
       const changedPrices = Object.entries(rawPrices).map(([policyId, value]) => ({ sku, policyId, price: value == null || value === '' ? null : f.prices[policyId]! }));
       const now = new Date(Math.max(Date.now(), Date.parse(before.updatedAt) + 1)).toISOString();
-      const fields = { name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl, ...f.packaging, ...f.tax };
+      const fields = { name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl, ...f.packaging, ...f.tax, ...f.classification };
+      await attachBarcode(tx,sku,barcode,me.id,now);
       await tx.update(products).set({ ...fields, updatedAt: now }).where(eq(products.sku, sku));
       for (const row of changedPrices) await tx.insert(productPrices).values(row).onConflictDoUpdate({ target: [productPrices.sku, productPrices.policyId], set: { price: row.price } });
       await tx.insert(auditLogs).values({ id: crypto.randomUUID(), actorId: me.id, module: 'catalog', action: 'update', entityType: 'products', entityId: sku,
-        data: JSON.stringify({ before: { name: before.name, brand: before.brand, unit: before.unit, pattern: before.pattern, imageUrl: before.imageUrl, taxOut: before.taxOut, taxable: before.taxable, perCarton:before.perCarton,cartonWeight:before.cartonWeight,cartonLength:before.cartonLength,cartonWidth:before.cartonWidth,cartonHeight:before.cartonHeight, prices: oldPrices }, after: { ...fields, taxOut: f.tax.taxOut ?? before.taxOut, taxable: f.tax.taxable ?? before.taxable, prices: changedPrices } }), createdAt: now });
+        data: JSON.stringify({ before: { category:before.category,collection:before.collection,name: before.name, brand: before.brand, unit: before.unit, pattern: before.pattern, imageUrl: before.imageUrl, taxOut: before.taxOut, taxable: before.taxable, perCarton:before.perCarton,cartonWeight:before.cartonWeight,cartonLength:before.cartonLength,cartonWidth:before.cartonWidth,cartonHeight:before.cartonHeight, prices: oldPrices }, after: { ...fields, category:f.classification.category??before.category,collection:f.classification.collection??before.collection,taxOut: f.tax.taxOut ?? before.taxOut, taxable: f.tax.taxable ?? before.taxable, prices: changedPrices } }), createdAt: now });
     });
     return json({ ok: true, sku });
   }, 'business');

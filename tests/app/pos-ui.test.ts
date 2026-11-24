@@ -1294,10 +1294,11 @@ for (const mobile of [true, false]) test(`POS ${mobile ? 'mobile phân trang' : 
   } finally { Object.assign(globalThis,{document:prevDoc,window:prevWin}); }
 });
 
-test('POS typing previews hide the other store brand before live hydration completes',async()=>{
+test('POS desktop/mobile typing previews only show allowed brands before live hydration completes',async()=>{
  const prevDoc=globalThis.document,prevWin=globalThis.window;Object.assign(globalThis,{document:doc,window:{addEventListener(){}}});
- try{for(const [registerName,expected]of [['Quầy Lock','LOCK'],['Quầy Minh Long','ML']]){
-  const root=new Element('section'),calls:string[]=[],products=[{sku:'LOCK',name:'Bình Lock&Lock',brand:'Lock&Lock',price:100},{sku:'ML',name:'Bộ trà',brand:'LYS',price:100}];let release:(v:any)=>void=()=>{};
+ try{for(const mobile of [false,true])for(const [registerName,expected]of [['Quầy Lock','LOCK'],['Quầy Minh Long','ML']]){
+  Object.assign(globalThis,{window:{addEventListener(){},matchMedia:()=>({matches:mobile,addEventListener(){}})}});
+  const root=new Element('section'),calls:string[]=[],products=[{sku:'LOCK',name:'Bình Lock&Lock',brand:'Lock&Lock',price:100},{sku:'ML',name:'Bộ trà',brand:'LYS',price:100},{sku:'OTHER',name:'Bình Lock Minh Long',brand:'Sunhouse',price:100},{sku:'BLANK',name:'Bình Lock',brand:'',price:100}];let release:(v:any)=>void=()=>{};
   const gate=new Promise(resolve=>release=resolve);
   const api=async(path:string)=>{calls.push(path);if(path.startsWith('/pos/options'))return{registers:[{id:'r',name:registerName,pricePolicyId:'vat'}],current:{id:'s',registerId:'r',memberId:'emp'},shifts:[],templates:[],policies:[]};if(path.startsWith('/pos/catalog'))return path.includes('&skus=')?gate:{products:[],nextOffset:null};throw Error(path);};
   const ui=initPos({api,root,user:()=>({id:'emp',role:'manager'}),toast(){},go(){},confirmBox:async()=>true,localSearch:(q:string)=>q?products:[]});await ui.load();

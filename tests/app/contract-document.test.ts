@@ -7,7 +7,7 @@ import { runInThisContext } from 'node:vm';
 // Bộ dựng HĐKT của giao diện (trial-ui/contract-document.js) chạy thẳng trên mẫu .docx thật.
 const ui = join(import.meta.dirname, '../../trial-ui');
 runInThisContext(readFileSync(join(ui, 'fflate.min.js'), 'utf8'));
-runInThisContext(readFileSync(join(ui, 'contract-document.js'), 'utf8'));
+runInThisContext(readFileSync(process.env.CONTRACT_DOCUMENT_SOURCE||join(ui, 'contract-document.js'), 'utf8'));
 const g = globalThis as unknown as { fflate: { unzipSync(b: Uint8Array): Record<string, Uint8Array>; strFromU8(b: Uint8Array): string }; ContractDocument: { build(o: unknown): Promise<Uint8Array> } };
 
 async function signature(set: 'bach-ngan' | 'vigifts', file: 'hdkt' | 'bien-ban', documentType: string) {
@@ -98,4 +98,18 @@ test('contract printing uses confirmed order facts first and quote printing rule
  assert.equal(contractPrinting(detail,paid),true);assert.equal(contractPrinting(detail,none),false);
  assert.equal(contractPrinting({order:{quoteType:'HRC'}},[{qty:1,printFee:0,printDescription:'In logo theo mẫu'}]),true);
  assert.equal(contractPrinting(detail,[{qty:0,printFee:100}]),false);
+});
+
+
+import {customerProvince} from '../../src/modules/customers/domain/province.ts';
+test('địa danh biên bản lấy tỉnh giao hàng: Đồng Tháp, tên cũ, tên đường và địa chỉ không rõ',async()=>{
+ for(const [address,expected] of [['Ấp Đông Hòa, Xã Kim Sơn, Đồng Tháp','Đồng Tháp'],['Phường 1, tỉnh Tiền Giang','Đồng Tháp'],['12 đường Đồng Tháp, Phường 1',''],['Theo thỏa thuận.',''],['Hà Nội, Cần Thơ','']] as const){
+  const province=customerProvince(address)?.name||'';assert.equal(province,expected);
+  for(const quote_type of ['B2B','VIGIFTS']){
+   const out=await g.ContractDocument.build({quote:{quote_type,quote_date:'2026-11-24',customer:{name:'Khách'},items:[]},contractNumber:'TEST',documentType:'BBNT',templateBytes:readFileSync(join(ui,'mau-bien-ban-ban-giao-nghiem-thu.docx')),details:{deliveryAddress:address,deliveryProvince:province,depositRate:30,paymentDays:5}});
+   const source=g.fflate.strFromU8(g.fflate.unzipSync(out)['word/document.xml']!);
+   const p=[...source.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)].map(p=>[...p[0].matchAll(/<w:t\b[^>]*>([^<]*)<\/w:t>/g)].map(t=>t[1]).join('')).find(p=>/ngày\s*\.{2,}\s*tháng/.test(p));assert.ok(p);
+   if(expected)assert.ok(p!.startsWith(expected+', ngày'),p);else assert.ok(!p!.includes('Đồng Tháp'),p);
+  }
+ }
 });
