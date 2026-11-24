@@ -40,7 +40,7 @@ export const bundleSupplierOrderNumber = () => bundle('src/modules/suppliers/dom
 function bundle(entry: string, minify = false): string {
   const result = buildSync({
     entryPoints: [join(root, entry)],
-    bundle: true, format: 'esm', target: 'es2020', write: false, legalComments: 'none', minify,
+    bundle: true, format: 'esm', target: 'es2020', write: false, legalComments: 'none', minify, supported: minify ? { 'template-literal': false } : undefined,
   });
   return `// TỰ SINH bởi \`npm run ui:build\` từ ${entry} – không sửa tay.\n` + result.outputFiles[0]!.text;
 }
