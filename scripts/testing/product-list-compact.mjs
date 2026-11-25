@@ -25,7 +25,7 @@ const server=createServer(async(req,res)=>{try{
 }catch(e){res.writeHead(500).end(e.message);}}).listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
 const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});const results=[];
 try{
- for(const width of (process.env.WIDTHS||'320,390,430,768,1440').split(',').map(Number))for(const role of (process.env.ROLES||'manager,employee').split(',')){
+ for(const width of (process.env.WIDTHS||'320,390,430,768,1024,1440,1813').split(',').map(Number))for(const role of (process.env.ROLES||'manager,employee').split(',')){
   const cookie=role==='manager'?f.mgr:f.emp,user=(await f.call('/me',cookie)).data.user;
   const context=await browser.newContext({viewport:{width,height:1000},locale:'vi-VN',isMobile:width<=850,hasTouch:width<=850});
   await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
@@ -35,10 +35,10 @@ try{
    const css=getComputedStyle(row),r=row.getBoundingClientRect(),cells=[...row.children].filter(c=>!!c.getClientRects().length),actions=row.querySelector('.row-actions');
    return {sku:row.querySelector('[data-select]')?.dataset.select,height:Math.round(r.height),right:r.right,display:css.display,gridRows:css.gridTemplateRows.split(' ').length,overflow:row.scrollWidth>row.clientWidth+1,
     price:row.querySelector('[data-label="Giá"]')?.textContent.trim(),stock:row.querySelector('[data-label="Tồn"]')?.textContent.trim(),held:row.querySelector('[data-label="Đang tạm giữ"]')?.textContent.trim(),incoming:row.querySelector('[data-label="Hàng đang về"]')?.textContent.trim(),
-    visibleCells:cells.length,actions:[...actions.querySelectorAll('button')].map(b=>({text:b.textContent.trim(),hidden:!b.getClientRects().length,left:b.getBoundingClientRect().left,width:b.getBoundingClientRect().width})),thumbWidth:Math.round(row.querySelector('.thumb').getBoundingClientRect().width),inventoryLabels:[...row.querySelectorAll('.product-stock-cell,.product-held-cell,.product-incoming-cell')].map(n=>getComputedStyle(n,'::before').display),detailsButtons:row.querySelectorAll('[data-mobile-card-details] button,.crm-card-details').length};
+    visibleCells:cells.length,actions:[...actions.querySelectorAll('button')].map(b=>({text:b.textContent.trim(),hidden:!b.getClientRects().length,top:b.getBoundingClientRect().top,left:b.getBoundingClientRect().left,width:b.getBoundingClientRect().width})),thumbWidth:Math.round(row.querySelector('.thumb').getBoundingClientRect().width),inventoryLabels:[...row.querySelectorAll('.product-stock-cell,.product-held-cell,.product-incoming-cell')].map(n=>getComputedStyle(n,'::before').display),detailsButtons:row.querySelectorAll('[data-mobile-card-details] button,.crm-card-details').length};
   }));
   if(!before&&width<=850){for(const row of facts){assert.equal(row.gridRows,3,JSON.stringify(row));assert.ok(row.height<=150,JSON.stringify(row));assert.ok(!row.overflow&&row.right<=width+1,JSON.stringify(row));assert.ok(row.actions.every(a=>!a.hidden));assert.equal(row.detailsButtons,0);assert.ok(row.thumbWidth<=32);assert.ok(row.inventoryLabels.every(v=>v==='inline')); assert.ok(row.actions.find(a=>a.text.includes('Báo giá')).left<=Math.min(...row.actions.map(a=>a.left)));}}
-  if(width>850){assert.equal(await page.locator('#product-table').evaluate(n=>getComputedStyle(n).display),'table');assert.ok(facts.every(r=>r.visibleCells===10));}
+  if(width>850){assert.equal(await page.locator('#product-table').evaluate(n=>getComputedStyle(n).display),'table');assert.ok(facts.every(r=>r.visibleCells===10));for(const row of facts)assert.ok(Math.max(...row.actions.map(a=>a.top))-Math.min(...row.actions.map(a=>a.top))<2,'desktop actions on one line: '+JSON.stringify(row));}
   assert.equal(await page.locator('[data-remove-product]').count(),role==='manager'?3:0);
   const check=page.locator('[data-select="00123"]');await check.check();assert.match(await page.locator('#product-selection-text').textContent(),/1 sản phẩm/);await check.uncheck();
   await page.screenshot({path:out+'/'+role+'-'+width+'.png'});
