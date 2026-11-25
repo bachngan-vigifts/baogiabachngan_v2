@@ -111,3 +111,7 @@
   body:has(#view-pos:not([hidden]) .pos-mobile-quick) .pos-payment-method[aria-pressed=true],
   body:has(#view-pos:not([hidden]) .pos-mobile-quick) .pos-payment-footer .primary {background:#0070f4;border-color:#0070f4;color:#fff;}
 }
+
+@media(max-width:850px){
+  #view-pos .pos-mobile-quick .pos-mobile-menu {z-index:5;}
+}

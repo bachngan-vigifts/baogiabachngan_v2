@@ -120,7 +120,7 @@
   .pos-ref-shortcuts { align-self:center;font-size:11px;color:#98a1aa; }
   .pos-ref-menu { position:relative; }
   .pos-ref-menu>summary { list-style:none;cursor:pointer;display:flex;align-items:center;min-height:36px; }
-  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-menu-body { position:absolute;right:0;top:44px;background:white;color:#233345;border:1px solid #d8e0ea;box-shadow:0 10px 32px #0c315036;width:315px;border-radius:10px;padding:15px;display:flex;flex-direction:column;gap:12px;max-height:75vh;overflow:auto; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-menu-body { position:absolute;right:0;top:44px;background:white;color:#233345;border:1px solid #d8e0ea;box-shadow:0 10px 32px #0c315036;width:min(340px,calc(100vw - 24px));border-radius:10px;padding:15px;display:flex;flex-direction:column;gap:12px;max-height:min(75dvh,calc(100dvh - 90px));overflow:auto; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-ref-menu-body .pos-head-tools { display:flex;justify-content:flex-start;flex-wrap:wrap; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-ref-menu-body h1,.pos-workspace.pos-reference.pos-pc-scan .pos-ref-menu-body .pos-workspace-modes,.pos-workspace.pos-reference.pos-pc-scan .pos-ref-menu-body .pos-current-order,.pos-workspace.pos-reference.pos-pc-scan .pos-ref-menu-body .pos-cashier { display:none; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-ref-menu-body .btn { color:#244d76;background:#edf5ff;border-color:#d5e5f8; }
@@ -413,3 +413,5 @@
  .pos-ref-web-count {display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 5px;border-radius:12px;background:#fff;color:#9a3412;font-weight:700;font-variant-numeric:tabular-nums;}
  .pos-ref-web-orders:focus-visible {outline:3px solid #fdba74;outline-offset:2px;}
 }
+
+.pos-ref-crm {white-space:nowrap;flex-shrink:0;}
