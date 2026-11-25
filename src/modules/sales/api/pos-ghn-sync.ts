@@ -1,3 +1,4 @@
+import {manualPosDelivery} from '../domain/pos-delivery-method.ts';
 import { enqueueSyncJob, type SyncStep } from '../../../core/jobs/sync-jobs.ts';
 import { externalText } from '../../../core/http/external-request.ts';
 import { pendingGhnEdit } from '../domain/pos-ghn-edit.ts';
@@ -48,6 +49,7 @@ export async function applyGhnStatus(env: StaffEnv, deliveryId: string, status: 
     const [row] = await tx.select({ delivery: deliveries, order: salesOrders }).from(deliveries)
       .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(eq(deliveries.id, deliveryId)).limit(1).for('update');
     if (!row || row.order.channel !== 'pos' || row.order.fulfillmentMode !== 'cod') return { changed: false, delivered: false, orderId: '' };
+    if(manualPosDelivery(row.order.posSnapshot))return {changed:false,delivered:false,orderId:row.order.id};
     if (pendingGhnEdit(row.order.posSnapshot)) return { changed: false, delivered: false, orderId: row.order.id, pendingAmendment: true };
     // Callback GHN có thể retry/đến lệch thứ tự: trạng thái sau khi giao thành công không được lùi lại.
     if (row.delivery.status === 'delivered' && status !== 'delivered') return { changed: false, delivered: false, orderId: row.order.id };
@@ -129,7 +131,7 @@ export async function syncPosLockGhn(env: StaffEnv,options:{recheckWebTerminal?:
     .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId))
     .innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId))
     .where(and(eq(salesOrders.channel, 'pos'), eq(salesOrders.fulfillmentMode, 'cod'), sql`(lower(${posRegisters.name}) like '%lock%' or lower(${posRegisters.name}) like '%minh long%' or lower(${posRegisters.name}) like '%gốm sứ%')`,
-      sql`${deliveries.trackingCode}<>''`, inArray(deliveries.status, ['planned', 'in_transit', 'failed'])))
+      sql`coalesce(nullif(${salesOrders.posSnapshot},'')::jsonb->'deliveryMethod'->>'method','ghn')='ghn'`, sql`${deliveries.trackingCode}<>''`, inArray(deliveries.status, ['planned', 'in_transit', 'failed'])))
     .orderBy(sql`${deliveries.trackingUpdatedAt} asc nulls first`).limit(100);
   let updated = 0; const errors: { code: string; orderNo: string; message: string }[] = [];
   for (const row of rows) try {
@@ -173,7 +175,7 @@ export async function syncPosGhnPage(env: StaffEnv, state: Record<string, unknow
     .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).innerJoin(posShifts, eq(posShifts.id, salesOrders.shiftId)).innerJoin(posRegisters, eq(posRegisters.id, posShifts.registerId))
     .where(and(gt(deliveries.id, after), eq(salesOrders.channel, 'pos'), eq(salesOrders.fulfillmentMode, 'cod'),
       sql`(lower(${posRegisters.name}) like '%lock%' or lower(${posRegisters.name}) like '%minh long%' or lower(${posRegisters.name}) like '%gốm sứ%')`,
-      sql`${deliveries.trackingCode}<>''`, inArray(deliveries.status, ['planned','in_transit','failed'])))
+      sql`coalesce(nullif(${salesOrders.posSnapshot},'')::jsonb->'deliveryMethod'->>'method','ghn')='ghn'`, sql`${deliveries.trackingCode}<>''`, inArray(deliveries.status, ['planned','in_transit','failed'])))
     .orderBy(asc(deliveries.id)).limit(1) : await env.db.select({id:webStoreOrders.id,code:webStoreOrders.ghnOrderCode,orderNo:webStoreOrders.orderNo,status:webStoreOrders.status,ghnStatus:webStoreOrders.ghnStatus}).from(webStoreOrders)
     .where(and(gt(webStoreOrders.id,after),eq(webStoreOrders.source,phase===1?'lock':'minhlong'),sql`${webStoreOrders.ghnOrderCode}<>''`,
       state.recheckWebTerminal===true?undefined:sql`lower(${webStoreOrders.ghnStatus}) not in ('delivered','returned','return_fail','cancel','damage','lost')`)).orderBy(asc(webStoreOrders.id)).limit(1);
@@ -205,7 +207,7 @@ export function registerPosGhnSyncRoutes(router: Router<StaffEnv>) {
     const observedAt = text(body.Time ?? body.updated_date ?? body.updated_at, 60) || new Date().toISOString();
     if (!orderCode || !status) throw new AppError(400, 'Webhook GHN thiếu mã vận đơn hoặc trạng thái.');
     const ships = await c.env.db.select({ id: deliveries.id, snapshot: salesOrders.posSnapshot }).from(deliveries)
-      .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(eq(deliveries.trackingCode, orderCode)).limit(2);
+      .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(and(eq(deliveries.trackingCode, orderCode),sql`coalesce(nullif(${salesOrders.posSnapshot},'')::jsonb->'deliveryMethod'->>'method','ghn')='ghn'`)).limit(2);
     if (shopId && ships.length) {
       for (const ship of ships) {
         const snapshot = JSON.parse(ship.snapshot || '{}'), kind = posGhnKind(snapshot.register?.name);

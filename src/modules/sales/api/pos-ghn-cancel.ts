@@ -1,3 +1,4 @@
+import {manualPosDelivery} from '../domain/pos-delivery-method.ts';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { StaffEnv } from '../../staff/api/auth-routes.ts';
 import { deliveries, salesOrders } from '../schema.ts';
@@ -18,7 +19,7 @@ export async function cancelGhnShipments(env: StaffEnv, deliveryIds: readonly st
     .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
     .where(and(inArray(deliveries.id, [...deliveryIds]), eq(salesOrders.channel, 'pos'), sql`${deliveries.trackingCode}<>''`));
   const eligible = rows.map(r => ({ ...r, registerName: String(JSON.parse(r.snapshot || '{}').register?.name ?? '') }))
-    .filter(r => posGhnKind(r.registerName));
+    .filter(r => !manualPosDelivery(r.snapshot)&&posGhnKind(r.registerName));
   if (!eligible.length) return null;
   const result: GhnCancelResult = { cancelled: [], errors: [] };
   for (const kind of ['lock', 'minh-long'] as const) {

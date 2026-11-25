@@ -1,3 +1,4 @@
+import {posDeliveryMethod} from '../domain/pos-delivery-method.ts';
 import { ensureLineCosts } from './line-costs.ts';
 import {cartPromotion} from './pos-promotions.ts';
 import { orderNoForCheckout, posOrderPrefixFor } from './pos-number.ts';
@@ -388,7 +389,8 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
   if (depositAmount > 0 && !method) throw new AppError(400, 'Chọn hình thức thu trước COD.');
   if (depositAmount > 0 && method === 'transfer' && b.confirmed !== true)
     throw new AppError(400, 'Xác nhận cửa hàng đã thực nhận tiền chuyển khoản thu trước.');
-  const requestHash = sha256Hex(JSON.stringify({ ...emptyCart(b), fulfillmentMode: mode, method, ...(depositAmount ? { depositAmount } : {}), ...(flow ? { saleFlow: flow, initialAmount: b.initialAmount ?? null, confirmed: b.confirmed === true, delivery: b.delivery ?? null } : {}) }));
+  const selectedDelivery = mode==='cod'?posDeliveryMethod(b.delivery&&typeof b.delivery==='object'?b.delivery as Record<string,unknown>:{}):null;
+  const requestHash = sha256Hex(JSON.stringify({ ...emptyCart(b), fulfillmentMode: mode, method, ...(selectedDelivery&&((b.delivery as Record<string,unknown>)?.deliveryMethod)?{delivery:b.delivery}:{}), ...(depositAmount ? { depositAmount } : {}), ...(flow ? { saleFlow: flow, initialAmount: b.initialAmount ?? null, confirmed: b.confirmed === true, delivery: b.delivery ?? null } : {}) }));
   if (!method && mode !== 'cod') throw new AppError(400, 'Chọn tiền mặt hoặc chuyển khoản.');
   if (method === 'transfer' && b.confirmed !== true && mode !== 'cod' && !flow)
     throw new AppError(400, 'Nhân viên cần xác nhận đã thực nhận chuyển khoản.');
@@ -479,7 +481,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     if (!flow && mode === 'counter' && tendered < c.payable) throw new AppError(400, 'Tiền khách đưa chưa đủ.');
     // Ship COD: địa chỉ chuẩn GHN + khối lượng / cách xem hàng → posSnapshot.ghn (tạo vận đơn GHN ngay sau khi lưu, pos-ghn-create.ts).
     const shipInput = b.delivery && typeof b.delivery === 'object' ? (b.delivery as Record<string, unknown>) : {};
-    const ghnShip = mode === 'cod' ? parseGhnShip(shipInput) : null;
+    const ghnShip = mode === 'cod' && selectedDelivery?.method==='ghn' ? parseGhnShip(shipInput) : null;
     const now = posNow(),
       date = vietnamDate().iso;
     const id = crypto.randomUUID(),
@@ -503,6 +505,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       change: !flow && mode === 'counter' ? tendered - c.payable : 0,
       ...(c.exchange.amount ? { exchangeCredit: c.exchange.amount, payable: c.payable } : {}),
       ...(ghnShip ? { ghn: ghnShip } : {}),
+      ...(selectedDelivery?{deliveryMethod:selectedDelivery}:{}),
       createdAt: now,
       memberName: m.name,
       pricePolicyId: c.canonical.pricePolicyId,
@@ -611,7 +614,7 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
       const ship = b.delivery && typeof b.delivery === 'object' ? (b.delivery as Record<string, unknown>) : {};
       if (!posText(ship.address)) throw new AppError(400, 'Nhập địa chỉ giao COD.');
       const d = await createScheduledDelivery(tx, id, { ...ship, plannedDate: ship.plannedDate || date }, m.id);
-      await tx.update(deliveries).set({ codAmount: c.total - depositAmount }).where(eq(deliveries.id, d.id));
+      await tx.update(deliveries).set({ codAmount: c.total - depositAmount, ...(selectedDelivery&&selectedDelivery.method!=='ghn'?{carrier:selectedDelivery.name,trackingCode:selectedDelivery.trackingCode,note:[posText(ship.note),selectedDelivery.phone?'Điện thoại đơn vị giao: '+selectedDelivery.phone:''].filter(Boolean).join(' · ')}:{}) }).where(eq(deliveries.id, d.id));
       if (depositAmount > 0) {
         snapshot.codDeliveryId = d.id;
         await tx.update(salesOrders).set({ posSnapshot: JSON.stringify(snapshot) }).where(eq(salesOrders.id, id));

@@ -135,10 +135,17 @@ try {
         assert.equal(await page.getByText('Cổng GHN',{exact:true}).isVisible(),true);
         assert.equal(await qty.inputValue(),'4');
         const delivery=page.locator('.pos-ref-delivery-form');
-        const deposit=delivery.getByLabel('Đã thu trước / tạm ứng (VNĐ)',{exact:true});
+        const carrier=delivery.getByLabel('Hình thức giao',{exact:true});
+        for(const [id,name] of [['anh_chinh','Xe anh Chinh'],['chanh_xe','Chành xe'],['nhat_tin','Nhất Tín']]){
+          await carrier.selectOption(id);assert.equal(await page.locator('.pos-ref-carrier-title').textContent(),'Cổng '+name);
+          assert.equal(await page.getByLabel('Tên nhà xe / người giao',{exact:true}).isVisible(),true);
+        }
+        await carrier.selectOption('ghn');
+
+        const deposit=page.getByLabel('Đã cọc (VNĐ)',{exact:true});
         const deposited=page.locator('.pos-ref-delivery-totals .pos-ref-deposited'),balance=page.locator('.pos-ref-delivery-totals .pos-ref-balance');
-        assert.equal(await deposited.textContent(),'0 đ');assert.equal(await balance.textContent(),'80.000 đ');
-        await deposit.fill('20000');assert.equal(await deposited.textContent(),'20.000 đ');assert.equal(await balance.textContent(),'60.000 đ');
+        assert.equal(await deposit.inputValue(),'0');assert.equal(await balance.textContent(),'80.000 đ');
+        await deposit.fill('20000');assert.equal(await deposit.inputValue(),'20000');assert.equal(await balance.textContent(),'60.000 đ');
         await page.getByRole('button',{name:'Bán nhanh',exact:true}).click();
         await page.getByRole('button',{name:'Bán giao hàng',exact:true}).click();
         assert.equal(await balance.textContent(),'60.000 đ','switching mode keeps deposit summary');
@@ -181,8 +188,12 @@ try {
           assert.equal(await review.isVisible(),false,'editing the cart invalidates a previously reviewed COD amount');
           await page.waitForFunction(()=>document.querySelector('.pos-line-top>strong')?.textContent.includes('100.000'));
           assert.match(await page.locator('.pos-ref-carrier-body').textContent(),/100.000/);
+          await carrier.selectOption('nhat_tin');
+          await page.getByLabel('Mã vận đơn / phiếu gửi',{exact:true}).fill('NT-FIXTURE-001');
+          await deposit.fill('20000');
           await page.keyboard.press('F9');
-          await review.waitFor();assert.match(await review.textContent(),/100.000/);
+          await review.waitFor();assert.match(await review.textContent(),/100.000/);assert.match(await review.textContent(),/Nhất Tín/);
+
           assert.equal(calls.filter(c=>c.path==='/pos/checkout').length,submitted,'review cannot create an order');
           await page.locator('.pos-ref-carrier-footer button[type=submit]').click();
           await page.waitForFunction(()=>window.printCount>0);
@@ -190,7 +201,7 @@ try {
           const body=calls.filter(c=>c.path==='/pos/checkout').at(-1).body;
           assert.equal(body.fulfillmentMode,'cod');assert.equal(body.rows[0].qty,5);assert.equal(body.delivery.receiverPhone,'0901234567');
           const [order]=await f.db.select().from(salesOrders);assert.equal(order.total,100000);assert.equal(order.fulfillmentMode,'cod');
-          assert.equal((await f.db.select().from(customerPayments)).length,0,'uncollected COD never becomes a payment');
+          const receipts=await f.db.select().from(customerPayments);assert.equal(receipts.length,1);assert.equal(receipts[0].amount,20000);assert.equal(body.delivery.deliveryMethod,'nhat_tin');assert.equal(body.delivery.ghnDistrictId,undefined);
         }
       }
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'no document horizontal overflow');

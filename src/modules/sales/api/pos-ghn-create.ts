@@ -1,3 +1,4 @@
+import {manualPosDelivery} from '../domain/pos-delivery-method.ts';
 import { and, asc, eq } from 'drizzle-orm';
 import type { Router } from '../../../core/http/router.ts';
 import { json } from '../../../core/http/router.ts';
@@ -26,6 +27,7 @@ export async function createGhnShipment(env: StaffEnv, deliveryId: string): Prom
     const [row] = await tx.select({ delivery: deliveries, order: salesOrders }).from(deliveries)
       .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId)).where(eq(deliveries.id, deliveryId)).limit(1).for('update');
     if (!row || row.order.channel !== 'pos' || row.order.fulfillmentMode !== 'cod') throw new AppError(404, 'Không tìm thấy chuyến giao Ship COD.');
+    if(manualPosDelivery(row.order.posSnapshot))throw new AppError(409,'Đơn này chọn đơn vị giao thủ công, không tạo vận đơn GHN.');
     const snapshot = JSON.parse(row.order.posSnapshot || '{}');
     if (row.delivery.trackingCode) return { orderCode: row.delivery.trackingCode, fee: snapshot.ghn?.fee ?? null, expectedDelivery: snapshot.ghn?.expectedDelivery ?? '', existing: true };
     if (row.order.status === 'cancelled' || row.delivery.status !== 'planned') throw new AppError(409, 'Chỉ tạo vận đơn GHN cho chuyến giao đang chờ giao của đơn chưa huỷ.');
@@ -77,7 +79,7 @@ export async function autoCreateGhnForOrder(env: StaffEnv, orderId: string) {
   const [row] = await env.db.select({ id: deliveries.id, code: deliveries.trackingCode, snapshot: salesOrders.posSnapshot }).from(deliveries)
     .innerJoin(salesOrders, eq(salesOrders.id, deliveries.orderId))
     .where(and(eq(deliveries.orderId, orderId), eq(deliveries.status, 'planned'))).orderBy(asc(deliveries.createdAt)).limit(1);
-  if (!row || row.code) return null;
+  if (!row || row.code || manualPosDelivery(row.snapshot)) return null;
   const snapshot = JSON.parse(row.snapshot || '{}');
   const kind = posGhnKind(snapshot.register?.name);
   if (!kind || (kind === 'lock' ? !env.ghnToken : !env.ghnMlToken)) return null;

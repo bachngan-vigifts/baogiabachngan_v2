@@ -2399,7 +2399,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   /** Ship COD: nhập người nhận + địa chỉ chuẩn GHN → kiểm tra lại → tạo đơn. Form giữ nguyên tới khi máy chủ trả lời. */
   function codForm(embedded=null) {
     let total = st.preview?.total || 0;
-    const m = embedded ? inlineCodSurface(document,embedded.formHost,embedded.carrierBody,embedded.carrierFooter) : formModal('Giao Hàng Nhanh · nhập địa chỉ');
+    const m = embedded ? inlineCodSurface(document,embedded.formHost,embedded.carrierBody,embedded.carrierFooter,embedded.depositHost) : formModal('Giao Hàng Nhanh · nhập địa chỉ');
     m.dlg.classList.add('pos-step-modal', 'pos-cod-modal');
     m.body.querySelectorAll?.('h2')?.[0]?.append?.(el('span', 'pos-payment-meta', st.customer?.name || ''));
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
@@ -2410,7 +2410,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       ghnOrderCode = field('Mã vận đơn GHN (nếu đã có)', 'text', '');
     ghnOrderCode.input.placeholder = 'Ví dụ: GYMNNELK';
     // Quầy Lock và showroom Minh Long: bấm xác nhận là CRM tự tạo vận đơn GHN bằng đúng tài khoản của quầy.
-    const autoGhn = isAutoGhnRegister(st.register?.name || '');
+    const deliveryLabels={ghn:'GHN',anh_chinh:'Xe anh Chinh',chanh_xe:'Chành xe',nhat_tin:'Nhất Tín',other:'Đơn vị khác'};
+    const deliveryMethod=select(Object.entries(deliveryLabels),workspace.deliveryDraft?.deliveryMethod||'ghn');deliveryMethod.setAttribute('aria-label','Hình thức giao');
+    const deliveryMethodBox=el('label','pos-field');deliveryMethodBox.append(el('span','','Hình thức giao'),deliveryMethod);
+    const manual=()=>deliveryMethod.value!=='ghn';
+    const autoGhn=()=>!manual()&&isAutoGhnRegister(st.register?.name||'');
+    const carrierName=field('Tên nhà xe / người giao'),carrierPhone=field('Điện thoại đơn vị giao','tel'),trackingCode=field('Mã vận đơn / phiếu gửi');
+    carrierName.input.maxLength=200;carrierPhone.input.maxLength=100;trackingCode.input.maxLength=100;
+
     const weight = field('Khối lượng (gram)', 'number', '500'), shipNote = field('Ghi chú cho shipper', 'text', '');
     weight.input.min = '1'; weight.input.max = '50000'; weight.input.step = '1'; weight.input.inputMode = 'numeric';
     shipNote.input.maxLength = 500; shipNote.input.placeholder = 'Ví dụ: Gọi trước khi giao, hàng dễ vỡ…';
@@ -2450,11 +2457,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const section = (title, ...children) => { const box = el('section', 'pos-step-section'); box.append(el('h3', '', title), ...children); return box; };
     const grid = (...children) => { const g = el('div', 'pos-step-grid'); g.append(...children); return g; };
     const editView = el('div', 'pos-step-body');
+    const addressSection=section('Địa chỉ giao (chuẩn GHN)', address.box, grid(province.box, district.box, ward.box), ghn.retry, grid(date.box, ghnOrderCode.box));
+    const ghnSection=section('Vận đơn GHN (tự tạo khi xác nhận)',grid(weight.box,requiredBox),shipNote.box,shipInfo);
+    const manualSection=section('Thông tin đơn vị giao',carrierName.box,carrierPhone.box,trackingCode.box);
     editView.append(
-      ghnIntro,
+      deliveryMethodBox,ghnIntro,
       section('Người nhận', grid(receiver.box, phone.box)),
-      section('Địa chỉ giao (chuẩn GHN)', address.box, grid(province.box, district.box, ward.box), ghn.retry, grid(date.box, ghnOrderCode.box)),
-      ...(autoGhn ? [section('Vận đơn GHN (tự tạo khi xác nhận)', grid(weight.box, requiredBox), shipNote.box, shipInfo)] : []),
+      addressSection,ghnSection,
+      ...(!embedded?[manualSection]:[]),
       section('Thu trước', grid(deposit.box, methodBox), confirmation, summary),
       el('p', 'pos-note', 'Chỉ nhập khoản cửa hàng đã thực nhận. Tiền mặt thu trước vào két ca hiện tại; phần còn lại ghi thu khi nhận COD.'),
       validation,
@@ -2469,7 +2479,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       m.close(); openPayment();
     });
     const footer = el('div', 'pos-step-footer'); footer.append(back, save);
-    const fullAddress = () => ghn.fullAddress(address.input.value);
+    const fullAddress = () => manual()?address.input.value.trim():ghn.fullAddress(address.input.value);
     const updateDeposit = () => {
       const n = Number(deposit.input.value), valid = deposit.input.value !== '' && Number.isSafeInteger(n) && n >= 0 && n <= total;
       remaining.textContent = money(valid ? total - n : total);
@@ -2493,26 +2503,38 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       reviewing = true; setStep(1);
       const n = Number(deposit.input.value);
       const lines = [
+        ['Hình thức giao',deliveryLabels[deliveryMethod.value]],
+        ...(manual()?[['Đơn vị giao',carrierName.input.value.trim()||deliveryLabels[deliveryMethod.value]],['Điện thoại đơn vị giao',carrierPhone.input.value.trim()],['Mã vận đơn',trackingCode.input.value.trim()]]:[]),
         ['Người nhận', `${receiver.input.value.trim()} · ${phone.input.value.trim()}`],
         ['Địa chỉ', fullAddress()],
         ['Ngày giao', date.input.value.split('-').reverse().join('/')],
         ['Tổng đơn', money(total)],
         ...(n > 0 ? [['Đã thu trước', money(n) + (method.value === 'transfer' ? ' · chuyển khoản' : ' · tiền mặt')]] : []),
-        ...(autoGhn && !ghnOrderCode.input.value.trim() ? [['Vận đơn GHN', `Tự tạo · ${Number(weight.input.value).toLocaleString('vi-VN')} g · ${requiredLabels[requiredNote.value] || ''}` + (shipNote.input.value.trim() ? ' · ' + shipNote.input.value.trim() : '')],
-          ['Phí ship thu khách', shipFee ? money(shipFee) : 'Free ship']] : ghnOrderCode.input.value.trim() ? [['Mã vận đơn GHN', ghnOrderCode.input.value.trim()]] : []),
+        ...(autoGhn() && !ghnOrderCode.input.value.trim() ? [['Vận đơn GHN', `Tự tạo · ${Number(weight.input.value).toLocaleString('vi-VN')} g · ${requiredLabels[requiredNote.value] || ''}` + (shipNote.input.value.trim() ? ' · ' + shipNote.input.value.trim() : '')],
+          ['Phí ship thu khách', shipFee ? money(shipFee) : 'Free ship']] : !manual()&&ghnOrderCode.input.value.trim() ? [['Mã vận đơn GHN', ghnOrderCode.input.value.trim()]] : []),
       ];
       const list = el('dl', 'pos-review-list');
       for (const [k, v] of lines) list.append(el('dt', '', k), el('dd', '', v));
       const due = el('section', 'pos-step-due'); due.append(el('span', '', 'Còn lại thu khi giao (COD)'), el('strong', '', money(total - n)));
       review.replaceChildren(el('p', 'pos-note pos-step-intro', 'Kiểm tra lần cuối thông tin người nhận, địa chỉ và tiền thu COD. Bấm xác nhận để tạo đơn.'), due, list);
       editView.hidden = true; review.hidden = false;
-      back.textContent = '← Sửa thông tin'; save.textContent = autoGhn && !ghnOrderCode.input.value.trim() ? 'Xác nhận, tạo đơn COD & vận đơn GHN' : 'Xác nhận & tạo đơn COD'; save.disabled = false;
+      back.textContent = '← Sửa thông tin'; save.textContent = autoGhn() && !ghnOrderCode.input.value.trim() ? 'Xác nhận, tạo đơn COD & vận đơn GHN' : 'Xác nhận & tạo đơn COD'; save.disabled = false;
     };
     m.form.append(steps, serverError, editView, review, footer);
-    if(embedded){embedded.carrierBody.append(summary);save.setAttribute('form',m.form.id);embedded.carrierFooter.append(footer);}
+    if(embedded){embedded.carrierBody.append(manualSection,summary);for(const n of manualSection.querySelectorAll('input')){n.setAttribute('form',m.form.id);n.addEventListener('input',()=>{if(reviewing)edit();saveDraft();});}deposit.input.setAttribute('form',m.form.id);deposit.input.setAttribute('aria-label','Đã cọc (VNĐ)');embedded.depositHost.replaceChildren(deposit.input);deposit.box.hidden=true;deposit.input.addEventListener('input',()=>{if(reviewing)edit();saveDraft();});save.setAttribute('form',m.form.id);embedded.carrierFooter.append(footer);}
     const recovered=embedded?workspace.deliveryDraft:null;let restoringDelivery=!!recovered;
-    if(recovered){for(const [f,k]of [[address,'address'],[phone,'phone'],[receiver,'receiver'],[date,'date'],[ghnOrderCode,'ghnOrderCode'],[weight,'weight'],[shipNote,'shipNote'],[deposit,'deposit']])if(recovered[k]!=null)f.input.value=recovered[k];if(recovered.method)method.value=recovered.method;if(recovered.requiredNote)requiredNote.value=recovered.requiredNote;}
-    updateDeposit();
+    if(recovered){for(const [f,k]of [[address,'address'],[phone,'phone'],[receiver,'receiver'],[date,'date'],[ghnOrderCode,'ghnOrderCode'],[weight,'weight'],[shipNote,'shipNote'],[deposit,'deposit'],[carrierName,'carrierName'],[carrierPhone,'carrierPhone'],[trackingCode,'trackingCode']])if(recovered[k]!=null)f.input.value=recovered[k];if(recovered.method)method.value=recovered.method;if(recovered.requiredNote)requiredNote.value=recovered.requiredNote;}
+    const updateCarrier=()=>{
+      const hand=manual();embedded?.onCarrier?.(deliveryLabels[deliveryMethod.value]);
+      manualSection.hidden=!hand;ghnSection.hidden=!autoGhn();ghnIntro.hidden=hand;
+      addressSection.querySelector('h3').textContent=hand?'Địa chỉ giao đầy đủ':'Địa chỉ giao (chuẩn GHN)';
+      for(const f of [province,district,ward])f.box.hidden=hand;
+      ghnOrderCode.box.hidden=hand;ghn.retry.hidden=hand||!province.select.disabled;
+      carrierName.input.required=hand&&['chanh_xe','other'].includes(deliveryMethod.value);
+      for(const n of manualSection.querySelectorAll('input'))n.disabled=!hand;
+    };
+    deliveryMethod.addEventListener('change',()=>{if(reviewing)edit();updateCarrier();saveDraft();});
+    updateCarrier();updateDeposit();
     m.form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (m.dlg.dataset.busy) return;
@@ -2520,8 +2542,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       if (!reviewing) {
         updateDeposit(); if (save.disabled) return;
         if (!receiver.input.value.trim() || !phone.input.value.trim() || !address.input.value.trim()) { validation.textContent = 'Nhập đủ người nhận, điện thoại và số nhà, tên đường.'; return; }
-        if (!ghn.complete()) { validation.textContent = 'Chọn đủ Tỉnh/Thành, Quận/Huyện và Phường/Xã theo GHN.'; return toast(validation.textContent, 'err'); }
-        if (autoGhn && !ghnOrderCode.input.value.trim()) {
+        if(manual()&&['chanh_xe','other'].includes(deliveryMethod.value)&&!carrierName.input.value.trim()){validation.textContent='Nhập tên nhà xe / đơn vị giao.';return;}
+        if (!manual()&&!ghn.complete()) { validation.textContent = 'Chọn đủ Tỉnh/Thành, Quận/Huyện và Phường/Xã theo GHN.'; return toast(validation.textContent, 'err'); }
+        if (autoGhn() && !ghnOrderCode.input.value.trim()) {
           const w = Number(weight.input.value);
           if (!Number.isInteger(w) || w < 1 || w > 50000) { validation.textContent = 'Nhập khối lượng từ 1 đến 50.000 gram (số nguyên).'; return; }
           if (!/^0\d{9}$/.test(phone.input.value.replace(/[^\d+]/g, '').replace(/^\+?84/, '0'))) { validation.textContent = 'Số điện thoại người nhận cần 10 số, bắt đầu bằng 0 (GHN yêu cầu).'; return; }
@@ -2535,13 +2558,15 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         fulfillmentMode: 'cod',
         ...(n > 0 ? { depositAmount: n, method: method.value, confirmed: method.value === 'transfer' && confirmed.checked } : {}),
         delivery: {
+          deliveryMethod:deliveryMethod.value,
+          ...(manual()?{carrierName:carrierName.input.value.trim()||deliveryLabels[deliveryMethod.value],carrierPhone:carrierPhone.input.value.trim(),trackingCode:trackingCode.input.value.trim()}:{}),
           address: fullAddress(),
           receiverName: receiver.input.value,
           receiverPhone: phone.input.value,
           plannedDate: date.input.value,
-          ...(ghnOrderCode.input.value.trim() ? { ghnOrderCode: ghnOrderCode.input.value.trim() } : {}),
-          ghnProvinceId: province.select.value, ghnDistrictId: district.select.value, ghnWardCode: ward.select.value,
-          ...(autoGhn ? { ghnWeight: Number(weight.input.value), ghnRequiredNote: requiredNote.value, ghnNote: shipNote.input.value.trim() } : {}),
+          ...(!manual()&&ghnOrderCode.input.value.trim() ? { ghnOrderCode: ghnOrderCode.input.value.trim() } : {}),
+          ...(!manual()?{ghnProvinceId:province.select.value,ghnDistrictId:district.select.value,ghnWardCode:ward.select.value}:{}),
+          ...(autoGhn() ? { ghnWeight: Number(weight.input.value), ghnRequiredNote: requiredNote.value, ghnNote: shipNote.input.value.trim() } : {}),
         },
       };
       setStep(2); serverError.textContent = '';
@@ -2553,12 +2578,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       if (result === 'rejected') { edit(); serverError.textContent = 'Máy chủ chưa tạo đơn. Kiểm tra lại thông tin rồi gửi lại.'; }
     });
     m.show();
-    run(async()=>{try{if(recovered)await ghn.prefill(recovered);else await ghn.loadProvinces();}finally{restoringDelivery=false;if(embedded)saveDraft();}});
+    run(async()=>{try{if(recovered&&!manual())await ghn.prefill(recovered);else if(!manual())await ghn.loadProvinces();}finally{restoringDelivery=false;updateCarrier();if(embedded)saveDraft();}});
+    deliveryMethod.addEventListener('change',()=>{if(!manual()&&!province.select.value)run(ghn.loadProvinces);});
     if(embedded){m.form.addEventListener('input',saveDraft);m.form.addEventListener('change',saveDraft);}
     if(embedded)return {
       busy:()=>!!m.dlg.dataset.busy,
       submit(){if(!save.disabled)m.form.requestSubmit(save);},
-      draft:()=>({address:address.input.value,phone:phone.input.value,receiver:receiver.input.value,date:date.input.value,ghnOrderCode:ghnOrderCode.input.value,weight:weight.input.value,shipNote:shipNote.input.value,deposit:deposit.input.value,method:method.value,requiredNote:requiredNote.value,provinceId:restoringDelivery?recovered?.provinceId:province.select.value,districtId:restoringDelivery?recovered?.districtId:district.select.value,wardCode:restoringDelivery?recovered?.wardCode:ward.select.value}),
+      draft:()=>({deliveryMethod:deliveryMethod.value,carrierName:carrierName.input.value,carrierPhone:carrierPhone.input.value,trackingCode:trackingCode.input.value,address:address.input.value,phone:phone.input.value,receiver:receiver.input.value,date:date.input.value,ghnOrderCode:ghnOrderCode.input.value,weight:weight.input.value,shipNote:shipNote.input.value,deposit:deposit.input.value,method:method.value,requiredNote:requiredNote.value,provinceId:restoringDelivery?recovered?.provinceId:province.select.value,districtId:restoringDelivery?recovered?.districtId:district.select.value,wardCode:restoringDelivery?recovered?.wardCode:ward.select.value}),
       invalidate(){embedded.onDeposit?.({paid:'—',remaining:'—'});if(!m.dlg.dataset.busy){save.disabled=true;if(reviewing)edit();save.disabled=true;}},
       refresh(){
         if(m.dlg.dataset.busy)return;

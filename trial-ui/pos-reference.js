@@ -79,7 +79,8 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
   const depositSummary=el('div','pos-ref-deposit-summary');
   const deposited=el('strong','pos-ref-deposited','—'),balance=el('strong','pos-ref-balance','—');
   for(const [label,value] of [['Đã cọc',deposited],['Còn lại',balance]]){const row=el('div','pos-total-row');row.append(el('span','',label),value);depositSummary.append(row);}
-  const onDeposit=({paid,remaining})=>{deposited.textContent=paid;balance.textContent=remaining;};
+  const onDeposit=({paid,remaining})=>{if(!deposited.querySelector('input'))deposited.textContent=paid;balance.textContent=remaining;};
+  const onCarrier=label=>{carrierTitle.replaceChildren(referenceIcon(doc,'truck'),el('span','','Cổng '+label));carrierNote.textContent=label==='GHN'?'Chọn địa chỉ chuẩn GHN, kiểm tra người nhận và tiền COD trước khi xác nhận tạo vận đơn.':'Lưu đơn giao thủ công. Liên hệ đơn vị giao và nhập mã vận đơn nếu có; CRM không tự gửi đơn sang hãng.';};
   const restoreTotals=()=>{const scroll=right.querySelector('.pos-checkout-scroll');scroll.insertBefore(nodes.totals,nodes.methods);scroll.insertBefore(due,nodes.methods);};
   function setMode(id) {
     if (workspace.mode !== id && !onMode(id)) return;
@@ -87,7 +88,7 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
     for (const b of modeButtons) b.setAttribute('aria-pressed',String(b.dataset.posMode===id));
     if (id==='grid') { right.querySelector('.pos-checkout-scroll').append(products); normalFooter.prepend(catalogPages); } else { products.append(catalogPages); left.append(products); }
     if(id==='delivery')cartSummary.append(nodes.totals,due,depositSummary);else restoreTotals();
-    if (id==='delivery') onDelivery({formHost, carrierBody, carrierFooter,onDeposit});
+    if (id==='delivery') onDelivery({formHost, carrierBody, carrierFooter,onDeposit,onCarrier,depositHost:deposited});
     nodes.grid.hidden = id !== 'grid' && !nodes.search.value.trim();
   }
   setMode(workspace.mode);
@@ -148,11 +149,11 @@ export function decorateReferenceLine(row, {unit,onDetails}) {
 }
 
 /** Same two-step COD form, mounted in the delivery columns rather than a dialog. */
-export function inlineCodSurface(doc, formHost, carrierBody, footerHost) {
+export function inlineCodSurface(doc, formHost, carrierBody, footerHost, extraHost=null) {
   formHost.replaceChildren(); carrierBody.replaceChildren(); footerHost.replaceChildren();
   const form=doc.createElement('form');form.id='pos-inline-cod-'+crypto.randomUUID();form.className='pos-inline-cod';
   const body=doc.createElement('div');form.append(body);formHost.append(form);formHost.classList.add('pos-inline-cod');footerHost.classList.add('pos-inline-cod');
-  const all=()=>[...formHost.querySelectorAll('button,input,select,textarea'),...footerHost.querySelectorAll('button,input,select,textarea')];
+  const all=()=>[...formHost.querySelectorAll('button,input,select,textarea'),...footerHost.querySelectorAll('button,input,select,textarea'),...carrierBody.querySelectorAll('button,input,select,textarea'),...(extraHost?.querySelectorAll('button,input,select,textarea')||[])];
   const close=()=>{formHost.replaceChildren();carrierBody.replaceChildren();footerHost.replaceChildren();};
   return {dlg:formHost,body,form,show(){},close,lock(on,primary,label){
     on?formHost.dataset.busy='1':delete formHost.dataset.busy;
