@@ -72,7 +72,7 @@ const photo=process.env.POS_PHOTO_PATH?await readFile(process.env.POS_PHOTO_PATH
 const photoType=process.env.POS_PHOTO_PATH?'image/jpeg':'image/svg+xml';
 const results=[];
 try {
- for(const [width,height] of [[969,954],[1811,1514],[2126,1526],[390,844]]) {
+ for(const [width,height] of [[969,954],[1622,1014],[1811,1514],[2126,1526],[390,844]]) {
   const context=await browser.newContext({viewport:{width,height},locale:'vi-VN'});
   await context.route('**/*',r=>r.request().url().startsWith('https://pos-fixture.invalid/')?r.fulfill({contentType:photoType,body:photo}):r.request().url().startsWith(origin+'/')?r.continue():r.abort());
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -83,6 +83,7 @@ try {
   await tile.scrollIntoViewIfNeeded();
   await page.waitForFunction(()=>{const i=document.querySelector('[data-sku="LHD1141"] img');return i?.complete&&i.naturalWidth>0;});
   if(width>850){
+   await page.evaluate(()=>document.fonts.load('8.736px Roboto'));
    assert.equal(await page.locator('.pos-catalog-controls').isVisible(),false);
    assert.equal(await page.locator('.pos-ref-products').evaluate(n=>[...n.childNodes].some(x=>x.nodeType===3&&x.textContent.includes('null'))),false);
    assert.equal(await page.locator('.pos-basket-head').evaluate(n=>{const a=n.querySelector('.pos-customer-trigger').getBoundingClientRect(),b=n.querySelector('.pos-ref-catalog-actions').getBoundingClientRect();return a.right<=b.left+1;}),true);

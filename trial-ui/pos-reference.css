@@ -1,3 +1,4 @@
+@font-face {font-family:Roboto;font-style:normal;font-weight:100 900;font-display:swap;src:url('fonts/roboto/Roboto.ttf') format('truetype');}
 /* Desktop layouts from the owner's supplied references; no global CRM theme changes. */
 .pos-ref-invoices {display:flex;gap:5px;min-width:0;overflow-x:auto;scrollbar-width:thin;align-items:stretch;}
 .pos-ref-invoice-select,.pos-ref-invoice-close,.pos-ref-invoice-add {border:0;background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap;min-height:36px;}
@@ -360,7 +361,7 @@
   display:grid;grid-column:1;grid-row:1 / 4;width:72px;height:72px;min-height:72px;max-height:72px;object-fit:contain;border-radius:6px;background:#f0f1f2;
  }
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-product-name {
-  grid-column:2;grid-row:1;height:auto;min-height:0;max-height:40px;line-height:20px;font-size:16px;font-weight:400;color:#18202a;
+  grid-column:2;grid-row:1;height:auto;min-height:0;max-height:22.714px;line-height:1.3;font-family:Roboto,Helvetica,Arial,sans-serif;font-size:8.736px;font-weight:400;color:#111111;
  }
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-product-sku {display:none;}
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-product-price-stock {display:contents;}
