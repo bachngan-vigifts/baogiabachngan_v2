@@ -1,6 +1,6 @@
 import {and,asc,eq,inArray,sql} from 'drizzle-orm';
 import type {PurchaseProjectionViewer} from '../../../core/contracts/purchase-projection.ts';
-import {purchaseReadLevel} from '../domain/purchase-access.ts';
+import {isCounterPurchaser,purchaseReadLevel} from '../domain/purchase-access.ts';
 import {purchaseScope,type Db as PurchaseDb,type Member} from './purchase-store.ts';
 import {outstandingLines} from './incoming-stock.ts';
 import {suppliers,incomingShipments} from '../schema.ts';
@@ -27,7 +27,7 @@ export async function projectIncomingStock(db:Db,rows:CatalogStockRow[],skus:rea
 export async function purchaseCatalogVariant(db:Db,m:PurchaseProjectionViewer){
  const level=purchaseReadLevel(actor(m));if(level!=='brand')return ':po-'+level;
  const rows=await db.select({id:suppliers.id,brand:suppliers.saleAdminBrand}).from(suppliers).where(sql`${suppliers.saleAdminBrand} is not null`).orderBy(asc(suppliers.id));
- return ':po-brand-'+sha256Hex(JSON.stringify(rows)).slice(0,24);
+ return (isCounterPurchaser(actor(m))?':po-counter-brand-':':po-brand-')+sha256Hex(JSON.stringify(rows)).slice(0,24);
 }
 /** Unknown external/Sapo parent links do not prove brand ownership. */
 export async function visiblePurchaseHistoryLinks(db:Db,m:PurchaseProjectionViewer,links:readonly string[]){

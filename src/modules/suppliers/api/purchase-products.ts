@@ -1,3 +1,4 @@
+import {purchaseProductScope} from './purchase-product-scope.ts';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { products, warehouses } from '../../catalog/schema.ts';
@@ -26,7 +27,7 @@ export async function purchaseProducts(db: Db, m: Member, o: { q?: string; skus?
   const skus = o.skus?.map(s => s.trim()).filter(Boolean);
   if (skus && skus.length > 500) throw new AppError(400, 'Tối đa 500 mã mỗi lần.');
   const limit = Math.max(1, Math.min(50, o.limit ?? 20)), offset = Math.max(0, Math.min(100_000, o.offset ?? 0));
-  const where = and(eq(products.active, true), eq(products.approvalStatus, 'approved'),
+  const where = and(purchaseProductScope(m),eq(products.active, true), eq(products.approvalStatus, 'approved'),
     // Theo mã (file Excel): không phân biệt hoa thường – "ly01" vẫn ra "LY01".
     skus ? inArray(sql`lower(${products.sku})`, skus.length ? skus.map(s => s.toLowerCase()) : ['']) : matchProductWords(o.q ?? ''));
   const rows = await db.select({ sku: products.sku, name: products.name, unit: products.unit, brand: products.brand, imageUrl: products.imageUrl }).from(products).where(where)

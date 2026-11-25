@@ -1,4 +1,4 @@
-import {purchaseReadLevel} from './purchase-access.ts';
+import {isCounterPurchaser,purchaseReadLevel} from './purchase-access.ts';
 import { isSupplier, SALE_ADMIN_POSITION_ID, type Role } from '../../staff/domain/roles.ts';
 import { can, canApprove } from '../../staff/domain/permissions.ts';
 import { isIsoDate } from './quantity.ts';
@@ -24,18 +24,18 @@ export const isAccountantStaff = (a: Actor | null | undefined) => isEmployee(a) 
 
 /** Ai thấy giá / tiền của đơn mua: Manager và Kế toán. Nhân viên khác và kho thấy đơn nhưng ẩn giá (giá vốn). */
 // Người được duyệt đơn mua phải thấy / nhập giá mua khi duyệt.
-export const canSeePrices = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && (can(a, 'purchases.prices') || canApprove(a));
+export const canSeePrices = (a: Actor | null | undefined) => isManager(a) || !isCounterPurchaser(a) && isEmployee(a) && (can(a, 'purchases.prices') || canApprove(a));
 /** Sale Admin được xử lý và xem đầy đủ chứng từ đã duyệt, không mở giá của đơn nháp khi chưa được cấp quyền. */
 export const canSeePurchasePrices = (a: Actor | null | undefined, o: Pick<OrderFlags, 'approvalStatus'>) => canSeePrices(a) || isSaleAdminStaff(a) && o.approvalStatus === 'approved';
-export const canSendEarlyRequest = (a: Actor) => isManager(a) || canUsePurchasing(a) && isEmployee(a) && can(a, 'purchases.early-request');
+export const canSendEarlyRequest = (a: Actor) => isManager(a) || canUsePurchasing(a) && !isCounterPurchaser(a) && isEmployee(a) && can(a, 'purchases.early-request');
 export const canViewEarlyRequests = (a: Actor | null | undefined) => isManager(a) || canUsePurchasing(a) && isEmployee(a) && can(a, 'purchases.early-view');
 export const canUsePurchasing = (a: Actor | null | undefined) => purchaseReadLevel(a)!=='none';
-export const canReceive = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.receive');
+export const canReceive = (a: Actor | null | undefined) => isManager(a) || !isCounterPurchaser(a) && isEmployee(a) && can(a, 'purchases.receive');
 /** Staff record an actual supplier confirmation; this does not approve purchase prices or early requests. */
-export const canRecordSupplierConfirmation = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.confirm');
-export const canPay = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && can(a, 'purchases.pay');
+export const canRecordSupplierConfirmation = (a: Actor | null | undefined) => isManager(a) || !isCounterPurchaser(a) && isEmployee(a) && can(a, 'purchases.confirm');
+export const canPay = (a: Actor | null | undefined) => isManager(a) || !isCounterPurchaser(a) && isEmployee(a) && can(a, 'purchases.pay');
 /** Duyệt giá đơn mua: Manager hoặc nhân viên được Manager bật cờ "Được duyệt" (docs/PHAN-QUYEN.md). */
-export const canApprovePurchase = (a: Actor | null | undefined) => isManager(a) || isEmployee(a) && canApprove(a);
+export const canApprovePurchase = (a: Actor | null | undefined) => isManager(a) || !isCounterPurchaser(a) && isEmployee(a) && canApprove(a);
 
 export type PurchaseState = 'draft' | 'awaiting_confirmation' | 'confirmed' | 'partially_received' | 'received' | 'cancelled';
 export const PURCHASE_STATE_LABEL: Record<PurchaseState, string> = {
@@ -94,7 +94,7 @@ export function checkPurchase(action: PurchaseAction, a: Actor | null | undefine
       if (p.anyReceived) return no(409, 'Đơn đã nhận hàng – không huỷ được. Huỷ các phiếu nhận trước.');
       if (p.paid > 0) return no(409, 'Đơn đã có thanh toán – dùng Trả hàng / Huỷ phần chưa nhận và đối soát tiền hoàn. Không huỷ khoản chi thật để huỷ đơn.');
       if (state === 'draft') return manager || o.createdBy === a.id ? OK : no(403, 'Chỉ người tạo đơn hoặc Manager được huỷ đơn nháp.');
-      return manager || isEmployee(a) && can(a, 'purchases.cancel-approved') ? OK : no(403, 'Bạn chưa được cấp quyền huỷ đơn mua đã duyệt.');
+      return manager || !isCounterPurchaser(a) && isEmployee(a) && can(a, 'purchases.cancel-approved') ? OK : no(403, 'Bạn chưa được cấp quyền huỷ đơn mua đã duyệt.');
     case 'pdf':
       return canSeePurchasePrices(a, o) ? OK : no(403, 'Chỉ người được xem giá mua tải được PDF đơn mua.');
   }

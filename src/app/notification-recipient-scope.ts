@@ -1,5 +1,5 @@
 import {purchaseReadLevel} from '../modules/suppliers/domain/purchase-access.ts';
-import {suppliers} from '../modules/suppliers/schema.ts';
+import {purchaseScope} from '../modules/suppliers/api/purchase-store.ts';
 import {qrPhoneSeller} from '../modules/sales/domain/pos-qr-display.ts';
 import {posPaymentRequests} from '../modules/sales/pos-schema.ts';
 import {chatMembers,chatMessages} from '../modules/chat/schema.ts';
@@ -177,12 +177,15 @@ export async function createNotificationScope(db: StaffEnv['db']) {
     if (kind === 'purchases') {
       const [p] = await db.select().from(incomingShipments).where(eq(incomingShipments.id, id)).limit(1);
       if (!p) return new Set();
-      const [supplier]=p.supplierId?await db.select({brand:suppliers.saleAdminBrand}).from(suppliers).where(eq(suppliers.id,p.supplierId)).limit(1):[];
       if (event === 'warehouse_task') {
         const [w] = await db.select({ id: warehouses.id }).from(warehouses).where(or(eq(warehouses.id, p.warehouse), eq(warehouses.name, p.warehouse))).limit(1);
         return new Set(people.filter(m => page(m, 'purchases.receive') && warehouseMember(m, [w?.id ?? null])).map(m => m.id));
       }
-      return new Set(people.filter(m => (purchaseReadLevel(m)==='all'||purchaseReadLevel(m)==='brand'&&!!supplier?.brand) && page(m, 'page.purchases') && (event !== 'purchase_pending' || canApprove(m)) && related(m, [p.createdBy])).map(m => m.id));
+      const members=people.filter(m=>purchaseReadLevel(m)!=='none'&&page(m,'page.purchases')&&(event!=='purchase_pending'||canApprove(m))&&related(m,[p.createdBy]));
+      if(!members.length)return new Set();
+      const allowed=await db.select({id:employees.id}).from(employees).innerJoin(incomingShipments,eq(incomingShipments.id,p.id))
+        .where(or(...members.map(m=>and(eq(employees.id,m.id),purchaseScope(m)))));
+      return new Set(allowed.map(m=>m.id));
     }
     if (kind === 'transfers') {
       const [t] = await db.select().from(stockTransfers).where(eq(stockTransfers.id, id)).limit(1);
