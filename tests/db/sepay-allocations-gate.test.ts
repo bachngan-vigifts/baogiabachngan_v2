@@ -12,3 +12,9 @@ test('SePay allocation gate passes read-only and rejects missing schema, uniquen
   await client.exec('BEGIN');await client.exec(mutation);await client.exec('SAVEPOINT gate');await assert.rejects(client.exec(gate));await client.exec('ROLLBACK TO SAVEPOINT gate');await client.exec('ROLLBACK');
  }
 });
+test('overpayment migration is repeatable and its read-only gate rejects the old cap',async()=>{
+ const {client}=await createTestDb(),migration=readFileSync(new URL('../../migrations/postgres/20261125113000_sepay_allocation_overpayment.sql',import.meta.url),'utf8'),gate=readFileSync(new URL('../../scripts/sql/assert-sepay-overpayment.sql',import.meta.url),'utf8');
+ await client.exec(migration);await client.exec('BEGIN READ ONLY');await client.exec(gate);await client.exec('ROLLBACK');
+ await client.exec('BEGIN; ALTER TABLE sepay_payment_allocations DROP CONSTRAINT chk_sepay_allocation_amount; ALTER TABLE sepay_payment_allocations ADD CONSTRAINT chk_sepay_allocation_amount CHECK (amount>0 AND target_total>=amount); SAVEPOINT old_cap;');
+ await assert.rejects(client.exec(gate));await client.exec('ROLLBACK TO SAVEPOINT old_cap; ROLLBACK;');
+});

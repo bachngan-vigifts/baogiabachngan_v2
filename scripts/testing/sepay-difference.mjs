@@ -43,18 +43,23 @@ try {
   await page.locator(`[data-open="${e.id}"]`).click();await page.locator(`a[href="#/sepay?allocation=${e.id}"]`).click();
   await page.locator('[data-search] [name=q]').fill(o.orderNo);await page.locator('[data-search] button').click();
   await page.locator(`[data-add="${o.id}"]`).click();if(existing)await page.locator('[data-receipt]').selectOption('browser-difference-receipt');await page.locator('[data-full]').click();
-  if(delta<0){assert.equal(await page.locator('[data-review]').isEnabled(),false);await page.locator('[data-bank-remaining]').click();assert.match(await page.locator('[data-line-difference]').textContent(),/200/);}
+  if(delta<0)assert.equal(await page.locator('[data-review]').isEnabled(),false);
+  await page.locator('[data-bank-remaining]').click();await page.locator('[data-bank-remaining]').click();assert.match(await page.locator('[data-line-difference]').textContent(),/200/);
   await page.locator('[data-review]').click();await page.locator('[data-verified]').check();
   await page.screenshot({path:out+`/review-${width}-${delta}.png`,fullPage:true});
   await page.locator('[data-confirm]').click();await page.locator('.sa-history').waitFor();
   await page.reload();await page.locator('.sa-history').waitFor();
   if(delta<0)assert.match(await page.locator('.sa-history').textContent(),/Chênh thiếu 200/);
-  else assert.match(await page.locator('[data-total-remaining]').textContent(),/200/);
+  else assert.match(await page.locator('.sa-history').textContent(),/Chênh dư 200/);
   const d=(await f.call(`/sepay/transactions/${e.id}/allocations`,f.mgr)).data;
-  assert.equal(d.allocated,100000+Math.min(0,delta));assert.equal(d.remaining,Math.max(0,delta));
+  assert.equal(d.allocated,100000+delta);assert.equal(d.remaining,0);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(errors,[]);
-  if(existing){const receipts=await f.db.select().from(customerPayments);assert.equal(receipts.find(p=>p.id==='browser-difference-receipt').amount,100000);assert.equal(receipts.filter(p=>p.orderId===o.id).length,1);}
-  results.push({width,delta,existingReceipt:existing,allocated:d.allocated,remaining:d.remaining,reloaded:true});await context.close();
+  if(existing){const receipts=await f.db.select().from(customerPayments);assert.equal(receipts.find(p=>p.id==='browser-difference-receipt').amount,100000);assert.equal(receipts.filter(p=>p.orderId===o.id).length,2);assert.ok(receipts.find(p=>p.id==='browser-difference-receipt').voidedAt);assert.equal(receipts.find(p=>p.orderId===o.id&&!p.voidedAt).amount,100000+delta);}
+  const order=(await f.call('/orders/'+o.id,f.mgr)).data;assert.equal(order.receivable.balance,-delta);
+  await page.locator(`.sa-history a[href="#/orders/${o.id}"]`).click();await page.locator('.pay-summary').first().waitFor();assert.match(await page.locator('.pay-summary').first().textContent(),delta>0?/Khách trả dư.*200/:/Còn phải thu.*200/);
+  await page.locator('.pay-summary').first().scrollIntoViewIfNeeded();
+  await page.screenshot({path:out+`/debt-${width}-${delta}.png`,fullPage:true});
+  results.push({width,delta,balance:order.receivable.balance,existingReceipt:existing,allocated:d.allocated,remaining:d.remaining,reloaded:true});await context.close();
  }
  await writeFile(out+'/results.json',JSON.stringify(results,null,2));console.log('PASS',JSON.stringify(results));
 }finally{await browser.close();await new Promise(r=>server.close(r));await f.client.close();}

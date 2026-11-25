@@ -57,12 +57,13 @@ HĐKT VG có mã `/HĐKT/VG-…` có mặc định riêng cho gán thủ công: 
 
 ### Đối soát chi tiết khi dư / thiếu tiền
 
-Trong **Thanh toán SePay → mở giao dịch → Đối soát chi tiết · nhiều đơn**, chọn chứng từ, nhập số nhận hoặc chọn **Đủ 100%**. Nếu chuyển thiếu, bấm **Dùng tiền còn lại** trên dòng chịu phần thiếu; các dòng khác giữ nguyên. Màn kiểm tra hiển thị số đối chiếu, số thực nhận và chênh thiếu để người dùng xác nhận. Lịch sử giữ chênh lệch sau khi tải lại.
+Trong **Thanh toán SePay → mở giao dịch → Đối soát chi tiết · nhiều đơn**, chọn chứng từ, nhập số thực nhận hoặc chọn **Dùng tiền còn lại** trên dòng nhận phần chênh. Màn kiểm tra hiển thị chênh dư/thiếu và công nợ sau phân bổ để xác nhận; lịch sử giữ số đối chiếu sau khi tải lại. Không áp ngưỡng 500đ hay tự làm tròn.
 
-- Tổng phân bổ luôn không vượt số tiền ngân hàng. Chuyển dư: chỉ ghi đến số còn nợ, phần dư giữ ở **Còn chưa phân bổ**, giao dịch vẫn cần xử lý khoản dư.
-- Phiếu thu mới chỉ ghi số thực nhận; phần thiếu còn công nợ, không tự miễn nợ. Đơn web cũng chỉ tăng bằng chứng thanh toán bằng số thực phân bổ.
-- Phiếu thu đã có có thể gắn số ngân hàng thấp hơn sau khi xác nhận chênh; giữ nguyên phiếu thu gốc, không tạo thêm thu và không tự sửa công nợ đã có. Gỡ phân bổ không huỷ phiếu nguồn.
-- Không tự gộp hoặc chia chênh cho nhiều dòng. Nếu không còn tiền, phải giảm dòng khác trước; không tạo phân bổ 0 đồng.
-- Số đối chiếu được lưu trong kết quả lô và nhật ký kiểm toán; không cần migration. Các lô cũ và khoá thử lại cũ vẫn đọc/nhận được.
+- Tổng phân bổ không vượt số tiền ngân hàng. Đơn 100.000đ nhận 100.200đ: ghi thu 100.200đ, công nợ -200đ, hiển thị **Khách trả dư 200đ**. Đơn nhận 99.800đ: ghi thu 99.800đ, còn nợ 200đ. Dòng nào nhận phần chênh do người dùng chọn; không tự chia giữa các đơn.
+- Đơn web giữ số thực phân bổ làm bằng chứng thanh toán; công nợ có thể âm để ghi nhận trả dư, nhưng số COD gợi ý không âm.
+- Phiếu thu có sẵn khớp tiền: chỉ liên kết. Phiếu lệch tiền: màn xác nhận nói rõ **huỷ phiếu cũ và tạo phiếu đúng thực nhận**, đòi quyền `payments.void`, chặn khi có trả/đổi hàng. Giữ nguyên nội dung phiếu cũ trong lịch sử huỷ, tạo phiếu mới trong cùng transaction với phân bổ và audit. Không sửa tiền ngân hàng. Gỡ phân bổ này sẽ huỷ phiếu mới; không khôi phục phiếu cũ đã ghi sai.
+- Số đối chiếu được lưu trong kết quả lô/nhật ký. Giữ tương thích đọc lô cũ và khoá thử lại. Không tự xoá nợ hoặc hoàn tiền.
 
-Kiểm thử: `tests/app/sepay-allocation-difference.test.ts`, bộ `sepay-allocations`/`sepay-detail-review`, và `scripts/testing/sepay-difference.mjs` chạy Chromium với API/PGlite qua đúng trang SePay, ở 390/1280px. Dữ liệu thử tách biệt; chưa kiểm chứng với giao dịch ngân hàng/CRM thật.
+Triển khai cần chạy `migrations/postgres/20261125113000_sepay_allocation_overpayment.sql` rồi kiểm gate chỉ đọc `scripts/sql/assert-sepay-overpayment.sql` trước khi phát hành API/UI. Migration chỉ nới ràng buộc `target_total >= amount` thành `target_total >= 0`; các kiểm tra số tiền dương/nguyên/giới hạn, RLS và khoá giao dịch giữ nguyên. Không sửa dữ liệu tiền cũ.
+
+Kiểm thử: `tests/app/sepay-allocation-difference.test.ts`, bộ `sepay-allocations`/`sepay-detail-review`, và `scripts/testing/sepay-difference.mjs` chạy Chromium với API/PGlite qua đúng trang SePay rồi mở công nợ đơn, ở 390/1280px. Dữ liệu thử tách biệt; chưa kiểm chứng giao dịch ngân hàng/CRM thật hoặc nhiều kết nối PostgreSQL thật.
