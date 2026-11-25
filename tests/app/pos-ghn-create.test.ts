@@ -183,3 +183,17 @@ test('Ship COD: GHN đã tạo nhưng CRM mất phản hồi → bấm tạo l�
   assert.deepEqual([again.data.orderCode, again.data.existing], ['GABDUP1', true]);
   assert.equal(f.calls.filter(c => c.url.endsWith('/create')).length, 1, 'không gọi tạo lần hai');
 });
+
+
+test('manual carrier saves its code and deposit without creating, syncing, retrying or cancelling GHN', async()=>{
+ const f=await withGhn();
+ const body=f.cart(f.shift.id,{fulfillmentMode:'cod',depositAmount:50000,method:'cash',delivery:{address:'123 Đường giao thủ công',receiverName:'Khách',receiverPhone:'0901234567',plannedDate:'2026-10-22',deliveryMethod:'nhat_tin',carrierName:'Nhất Tín',carrierPhone:'0900000000',trackingCode:'NT-001'}});
+ const made=await f.call('/pos/checkout',f.emp,'POST',body);assert.equal(made.status,201,JSON.stringify(made.data));assert.equal(made.data.ghnShipment,undefined);assert.equal(f.calls.length,0);
+ const [ship]=await f.db.select().from(deliveries);assert.equal(ship!.carrier,'Nhất Tín');assert.equal(ship!.trackingCode,'NT-001');assert.equal(ship!.codAmount,144400);assert.match(ship!.note,/0900000000/);
+ assert.equal((await f.call('/pos/cod/'+ship!.id+'/ghn',f.emp,'POST',{})).status,409);
+ await syncPosLockGhn(f.env);assert.equal(f.calls.length,0);
+ const {applyGhnStatus}=await import('../../src/modules/sales/api/pos-ghn-sync.ts');assert.equal(await applyGhnStatus(f.env,ship!.id,'delivered',new Date().toISOString()),false);
+ const {cancelGhnShipments}=await import('../../src/modules/sales/api/pos-ghn-cancel.ts');assert.equal(await cancelGhnShipments(f.env,[ship!.id]),null);assert.equal(f.calls.length,0);
+ assert.equal((await f.call('/pos/checkout',f.emp,'POST',body)).status,201);
+ assert.equal((await f.call('/pos/checkout',f.emp,'POST',{...body,delivery:{...(body as Record<string,any>).delivery,deliveryMethod:'anh_chinh'}})).status,409);
+});

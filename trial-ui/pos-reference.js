@@ -70,7 +70,8 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
   const closePayment = el('button','pos-ref-close-payment','← Danh mục sản phẩm'); closePayment.type = 'button'; closePayment.addEventListener('click',()=>page.classList.remove('pos-reference-checkout')); right.querySelector('.pos-checkout-scroll').prepend(closePayment);
   const carrier = el('section','pos-card pos-ref-carrier'), carrierTitle = el('h2','pos-ref-carrier-title'); carrierTitle.append(referenceIcon(doc,'truck'),el('span','','Cổng GHN'));
   const carrierNote = el('p','pos-ref-carrier-note','Chọn địa chỉ chuẩn GHN, kiểm tra người nhận và tiền COD trước khi xác nhận tạo vận đơn.');
-  const sources = el('div','pos-ref-delivery-sources'), web = btn('Đơn website cần giao', 'bag', action.web); web.append(el('span','','Đơn website'));
+  const sources = el('div','pos-ref-delivery-sources'), web = btn('Đơn website cần giao', 'bag', action.web); web.classList.add('pos-ref-web-orders');
+  const webCount=el('span','pos-ref-web-count','…');webCount.id='pos-ref-web-pending-count';web.setAttribute('aria-describedby',webCount.id);web.append(el('span','','Đơn website'),webCount);
   sources.append(el('strong','','Đơn giao tại quầy'), web); const formHost = el('div','pos-ref-delivery-form');
   right.querySelector('.pos-checkout-scroll').append(sources, formHost);
   const carrierBody = el('div','pos-ref-carrier-body'), carrierFooter = el('div','pos-ref-carrier-footer'); carrier.append(carrierTitle,carrierNote,carrierBody,carrierFooter); page.querySelector('.pos-layout').append(carrier);
@@ -79,7 +80,8 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
   const depositSummary=el('div','pos-ref-deposit-summary');
   const deposited=el('strong','pos-ref-deposited','—'),balance=el('strong','pos-ref-balance','—');
   for(const [label,value] of [['Đã cọc',deposited],['Còn lại',balance]]){const row=el('div','pos-total-row');row.append(el('span','',label),value);depositSummary.append(row);}
-  const onDeposit=({paid,remaining})=>{deposited.textContent=paid;balance.textContent=remaining;};
+  const onDeposit=({paid,remaining})=>{if(!deposited.querySelector('input'))deposited.textContent=paid;balance.textContent=remaining;};
+  const onCarrier=label=>{carrierTitle.replaceChildren(referenceIcon(doc,'truck'),el('span','','Cổng '+label));carrierNote.textContent=label==='GHN'?'Chọn địa chỉ chuẩn GHN, kiểm tra người nhận và tiền COD trước khi xác nhận tạo vận đơn.':'Lưu đơn giao thủ công. Liên hệ đơn vị giao và nhập mã vận đơn nếu có; CRM không tự gửi đơn sang hãng.';};
   const restoreTotals=()=>{const scroll=right.querySelector('.pos-checkout-scroll');scroll.insertBefore(nodes.totals,nodes.methods);scroll.insertBefore(due,nodes.methods);};
   function setMode(id) {
     if (workspace.mode !== id && !onMode(id)) return;
@@ -87,12 +89,19 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
     for (const b of modeButtons) b.setAttribute('aria-pressed',String(b.dataset.posMode===id));
     if (id==='grid') { right.querySelector('.pos-checkout-scroll').append(products); normalFooter.prepend(catalogPages); } else { products.append(catalogPages); left.append(products); }
     if(id==='delivery')cartSummary.append(nodes.totals,due,depositSummary);else restoreTotals();
-    if (id==='delivery') onDelivery({formHost, carrierBody, carrierFooter,onDeposit});
+    if (id==='delivery') onDelivery({formHost, carrierBody, carrierFooter,onDeposit,onCarrier,depositHost:deposited});
     nodes.grid.hidden = id !== 'grid' && !nodes.search.value.trim();
   }
   setMode(workspace.mode);
   return {
     setMode, products, formHost, carrierBody, carrierFooter,
+    updateWebCount(count) {
+      const known=Number.isSafeInteger(count)&&count>=0;
+      webCount.textContent=known?String(count):'…';
+      webCount.setAttribute('aria-label',known?`${count} đơn website chưa xử lý`:'Chưa tải được số đơn website');
+      web.title=known?`${count} đơn website chưa hoàn thành hoặc chưa hủy, theo bộ lọc danh sách`:'Chưa tải được số đơn website';
+      web.classList.toggle('has-pending',known&&count>0);
+    },
     openCheckout(){page.classList.add('pos-reference-checkout');nodes.modalPay?.focus();},
     update({quantity,total,valid}) { compact.textContent = 'Tổng tiền hàng   '+quantity+'   '+total; normalPay.disabled=!valid; },
   };
@@ -148,11 +157,11 @@ export function decorateReferenceLine(row, {unit,onDetails}) {
 }
 
 /** Same two-step COD form, mounted in the delivery columns rather than a dialog. */
-export function inlineCodSurface(doc, formHost, carrierBody, footerHost) {
+export function inlineCodSurface(doc, formHost, carrierBody, footerHost, extraHost=null) {
   formHost.replaceChildren(); carrierBody.replaceChildren(); footerHost.replaceChildren();
   const form=doc.createElement('form');form.id='pos-inline-cod-'+crypto.randomUUID();form.className='pos-inline-cod';
   const body=doc.createElement('div');form.append(body);formHost.append(form);formHost.classList.add('pos-inline-cod');footerHost.classList.add('pos-inline-cod');
-  const all=()=>[...formHost.querySelectorAll('button,input,select,textarea'),...footerHost.querySelectorAll('button,input,select,textarea')];
+  const all=()=>[...formHost.querySelectorAll('button,input,select,textarea'),...footerHost.querySelectorAll('button,input,select,textarea'),...carrierBody.querySelectorAll('button,input,select,textarea'),...(extraHost?.querySelectorAll('button,input,select,textarea')||[])];
   const close=()=>{formHost.replaceChildren();carrierBody.replaceChildren();footerHost.replaceChildren();};
   return {dlg:formHost,body,form,show(){},close,lock(on,primary,label){
     on?formHost.dataset.busy='1':delete formHost.dataset.busy;

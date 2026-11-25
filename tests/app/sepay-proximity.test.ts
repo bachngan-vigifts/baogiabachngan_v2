@@ -575,3 +575,13 @@ test("bank-paid web order suggests zero COD, rejects extra collection and cart e
     "GYEEXIST001",
   );
 });
+
+
+test('partial COD transfer deposit reconciles to its existing receipt without collecting the balance twice',async()=>{
+ const f=await fixture(),order=await f.pos(at,194400);
+ await f.db.update(receipts).set({amount:50000,paymentSource:'pos_cod_deposit'}).where(eq(receipts.id,order.receiptId));
+ const e=await f.incoming('Khach coc hang',50000,{id:'cod-deposit-near'});
+ assert.equal(e.status,'matched');assert.equal(e.paymentId,order.receiptId);assert.equal(e.orderId,order.id);
+ await f.incoming('Khach coc hang',50000,{id:'cod-deposit-near'});
+ const rows=await f.db.select().from(receipts);assert.equal(rows.length,1);assert.equal(rows[0]!.amount,50000);assert.equal(rows[0]!.paymentSource,'pos_cod_deposit');
+});
