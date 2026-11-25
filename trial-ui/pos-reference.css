@@ -413,3 +413,5 @@
  .pos-ref-web-count {display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 5px;border-radius:12px;background:#fff;color:#9a3412;font-weight:700;font-variant-numeric:tabular-nums;}
  .pos-ref-web-orders:focus-visible {outline:3px solid #fdba74;outline-offset:2px;}
 }
+
+.pos-ref-crm {white-space:nowrap;flex-shrink:0;}

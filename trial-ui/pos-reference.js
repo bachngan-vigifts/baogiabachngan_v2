@@ -41,6 +41,8 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
   const quantity = searchRow.querySelector('.pos-scan-quantity'); if (quantity) menuBody.append(quantity);
   const tabs = nodes.invoiceTabs || el('div', 'pos-ref-invoice','Hóa đơn hiện tại');
   const tools = el('div', 'pos-ref-header-actions');
+  const crm=originalTitle.querySelector('button');
+  if(crm){crm.className='pos-ref-button pos-ref-crm';crm.title='Về CRM';tools.append(crm);}
   tools.append(btn('Đơn hàng cửa hàng', 'bag', action.orders), btn('Trả / Đổi / Hoàn', 'back', action.returns), btn('In bill tạm', 'print', action.print), el('span', 'pos-ref-store', register?.name || ''), menu);
   searchRow.prepend(referenceIcon(doc, 'search')); nodes.search.placeholder = 'Tìm hàng hóa · tên, mã, barcode (F2)';
   head.replaceChildren(searchRow, tabs, tools);
