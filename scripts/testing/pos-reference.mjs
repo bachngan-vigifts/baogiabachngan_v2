@@ -197,6 +197,15 @@ try {
           await deposited.getByRole('button',{name:'Tạo / gửi mã thanh toán',exact:true}).click();
           await page.getByRole('dialog').filter({hasText:'QR thanh toán tiền cọc'}).waitFor();
           const qr=qrResults.at(-1);assert.equal(qr.amount,30000);assert.ok(qr.url.includes('amount=30000'));
+          await f.db.update(posPaymentRequests).set({expiresAt:'2000-01-01T00:00:00Z'}).where(eq(posPaymentRequests.id,qr.id));
+          await page.waitForFunction(()=>!Array.from(document.querySelectorAll('dialog[open]')).some(d=>d.textContent.includes('QR thanh toán tiền cọc')));
+          await deposited.getByRole('button',{name:'Kiểm tra trạng thái QR',exact:true}).click();
+          const renewal=page.getByRole('dialog').filter({hasText:'Kiểm tra tiền cọc trước khi dùng lại QR'});
+          const renew=renewal.getByRole('button',{name:'Dùng lại mã sau khi kiểm tra',exact:true});assert.equal(await renew.isDisabled(),true);
+          await renewal.getByLabel('Tôi đã kiểm tra tài khoản nhận và xác nhận chưa nhận khoản cọc này').check();await renew.click();
+          await page.getByRole('dialog').filter({hasText:'QR thanh toán tiền cọc'}).waitFor();
+          assert.equal(qrResults.at(-1).id,qr.id,'renewal never creates a second QR reference');
+
           const hook=await f.router.handle(new Request('https://trial.test/api/staff/integrations/sepay/pos-payment',{method:'POST',headers:{authorization:'Apikey test-sepay-key','content-type':'application/json'},body:JSON.stringify({transferType:'in',transferAmount:30000,accountNumber:'123456',content:qr.content})}),f.env);assert.equal(hook.status,200);
           await page.waitForFunction(()=>document.querySelector('.pos-ref-deposited .pos-cod-confirm input')?.checked);
           assert.equal(await page.getByRole('dialog').filter({hasText:'QR thanh toán tiền cọc'}).isVisible(),false,'paid QR closes automatically');
