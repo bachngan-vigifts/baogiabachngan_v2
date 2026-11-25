@@ -387,8 +387,6 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
   const depositAmount = flow ? 0 : posMoney(b.depositAmount ?? 0, 'Tiền thu trước COD');
   if (depositAmount > 0 && mode !== 'cod') throw new AppError(400, 'Thu trước chỉ áp dụng cho đơn giao COD.');
   if (depositAmount > 0 && !method) throw new AppError(400, 'Chọn hình thức thu trước COD.');
-  if (depositAmount > 0 && method === 'transfer' && b.confirmed !== true)
-    throw new AppError(400, 'Xác nhận cửa hàng đã thực nhận tiền chuyển khoản thu trước.');
   const selectedDelivery = mode==='cod'?posDeliveryMethod(b.delivery&&typeof b.delivery==='object'?b.delivery as Record<string,unknown>:{}):null;
   const requestHash = sha256Hex(JSON.stringify({ ...emptyCart(b), fulfillmentMode: mode, method, ...(selectedDelivery&&((b.delivery as Record<string,unknown>)?.deliveryMethod)?{delivery:b.delivery}:{}), ...(depositAmount ? { depositAmount } : {}), ...(flow ? { saleFlow: flow, initialAmount: b.initialAmount ?? null, confirmed: b.confirmed === true, delivery: b.delivery ?? null } : {}) }));
   if (!method && mode !== 'cod') throw new AppError(400, 'Chọn tiền mặt hoặc chuyển khoản.');
@@ -419,19 +417,20 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
     // Thanh toán "Chuyển khoản" không kèm mã QR (vd. tải lại trang mất mã) thì tự gắn khoản QR đó.
     let paymentRequestId = posText(b.paymentRequestId);
     if (!paymentRequestId) {
-      const [paidQr]=await tx.select({id:posPaymentRequests.id,amount:posPaymentRequests.amount}).from(posPaymentRequests).where(and(eq(posPaymentRequests.shiftId,s.id),eq(posPaymentRequests.fingerprint,c.fingerprint),sql`${posPaymentRequests.confirmedAt} is not null`,sql`not exists(select 1 from ${salesOrders} where ${salesOrders.posPaymentRequestId}=${posPaymentRequests.id})`)).limit(1);
+      const [paidQr]=await tx.select({id:posPaymentRequests.id,amount:posPaymentRequests.amount,cart:posPaymentRequests.cart}).from(posPaymentRequests).where(and(eq(posPaymentRequests.shiftId,s.id),eq(posPaymentRequests.fingerprint,c.fingerprint),sql`${posPaymentRequests.confirmedAt} is not null`,sql`not exists(select 1 from ${salesOrders} where ${salesOrders.posPaymentRequestId}=${posPaymentRequests.id})`)).limit(1);
       if (paidQr) {
         if (flow) throw new AppError(409,'Giỏ đã nhận chuyển khoản qua QR. Hoàn tất giao dịch QR trước, không chuyển thành đơn cọc/trả trước.', 'POS_QR_ALREADY_PAID');
-        if (method !== 'transfer' || mode === 'cod' || paidQr.amount !== c.payable)
+        if (method !== 'transfer' || (mode==='cod'?(JSON.parse(paidQr.cart).codDepositAmount!==depositAmount||paidQr.amount!==depositAmount):(JSON.parse(paidQr.cart).codDepositAmount!==undefined||paidQr.amount!==c.payable)))
           throw new AppError(409,'Giỏ này đã nhận chuyển khoản qua QR. Chọn "Chuyển khoản" để hoàn tất đúng khoản đã nhận, không thu lại.', 'POS_QR_ALREADY_PAID');
         paymentRequestId = paidQr.id;
       }
     }
     // Thu ngân tự xác nhận "đã nhận chuyển khoản" trước khi SePay báo về: vẫn gắn đúng QR đang hiện cho giỏ này,
     // để đơn lấy đúng số đã in trên nội dung chuyển khoản (không cấp số mới, không bỏ rơi khoản QR).
-    if (!paymentRequestId && !flow && method === 'transfer' && mode !== 'cod') {
+    if (!paymentRequestId && !flow && method === 'transfer' && (mode !== 'cod'||depositAmount>0)) {
       const [openQr] = await tx.select({ id: posPaymentRequests.id }).from(posPaymentRequests).where(and(
-        eq(posPaymentRequests.shiftId, s.id), eq(posPaymentRequests.fingerprint, c.fingerprint), eq(posPaymentRequests.amount, c.payable),
+        eq(posPaymentRequests.shiftId, s.id), eq(posPaymentRequests.fingerprint, c.fingerprint), eq(posPaymentRequests.amount, mode==='cod'?depositAmount:c.payable),
+        mode==='cod'?sql`${posPaymentRequests.cart}::jsonb->>'codDepositAmount'=${String(depositAmount)}`:sql`${posPaymentRequests.cart}::jsonb->>'codDepositAmount' is null`,
         sql`${posPaymentRequests.confirmedAt} is null`, sql`${posPaymentRequests.expiresAt} >= ${posNow()}`,
         sql`not exists(select 1 from ${salesOrders} where ${salesOrders.posPaymentRequestId}=${posPaymentRequests.id})`,
       )).orderBy(desc(posPaymentRequests.createdAt)).limit(1);
@@ -453,12 +452,21 @@ export async function checkout(env: StaffEnv, m: PosMember, b: Record<string, un
         !qr ||
         (qr.expiresAt < posNow() && !qr.confirmedAt) ||
         qr.fingerprint !== c.fingerprint ||
-        qr.amount !== c.payable ||
-        method !== 'transfer' ||
-        mode === 'cod'
+        qr.amount !== (mode==='cod'?depositAmount:c.payable) ||
+        (mode==='cod'?JSON.parse(qr.cart).codDepositAmount!==depositAmount:JSON.parse(qr.cart).codDepositAmount!==undefined) ||
+        method !== 'transfer'
       )
         throw new AppError(409, 'Yêu cầu QR hết hạn hoặc giỏ/giá đã đổi. Tạo QR mới.');
     }
+    if(qr){
+      const [used]=await tx.select({id:salesOrders.id}).from(salesOrders).where(eq(salesOrders.posPaymentRequestId,qr.id)).limit(1);
+      if(used)throw new AppError(409,'QR đã được ghi nhận vào đơn khác. Không thu lại.');
+      if(mode==='cod'){
+        const [otherPaid]=await tx.select({id:posPaymentRequests.id}).from(posPaymentRequests).where(and(eq(posPaymentRequests.shiftId,s.id),eq(posPaymentRequests.fingerprint,c.fingerprint),sql`${posPaymentRequests.id}<>${qr.id}`,sql`${posPaymentRequests.confirmedAt} is not null`,sql`not exists(select 1 from ${salesOrders} where ${salesOrders.posPaymentRequestId}=${posPaymentRequests.id})`)).limit(1);
+        if(otherPaid)throw new AppError(409,'Giỏ có thêm khoản QR đã nhận. Cần đối soát trước khi hoàn tất.');
+      }
+    }
+    if(depositAmount>0&&method==='transfer'&&b.confirmed!==true&&!qr?.confirmedAt)throw new AppError(400,'Xác nhận cửa hàng đã thực nhận tiền chuyển khoản thu trước.');
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('stock_holds'))`);
     await lockLedger(tx);
     await assertWarehousesOpened(tx, [c.register.warehouseId]);

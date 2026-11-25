@@ -1250,12 +1250,19 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         if (!calc.register.bankCode || !calc.register.bankAccount)
           throw new AppError(409, 'Manager cần cấu hình ngân hàng cho quầy.');
         if (calc.payable <= 0) throw new AppError(400, 'Số tiền QR phải lớn hơn 0.');
+        const codDepositAmount=b.depositAmount===undefined?null:posMoney(b.depositAmount,'Tiền cọc');
+        if(codDepositAmount!==null&&(codDepositAmount<=0||codDepositAmount>calc.total||calc.exchange.amount))throw new AppError(400,'Tiền cọc phải lớn hơn 0, không vượt tổng đơn và không dùng tiền đổi hàng.');
+        const qrAmount=codDepositAmount??calc.payable;
         const [existing] = await tx.select().from(posPaymentRequests).where(eq(posPaymentRequests.requestKey, key));
         if (existing) {
-          if (existing.shiftId !== s.id || existing.fingerprint !== calc.fingerprint)
+          if (existing.shiftId !== s.id || existing.fingerprint !== calc.fingerprint || existing.amount!==qrAmount || (JSON.parse(existing.cart).codDepositAmount??null)!==codDepositAmount)
             throw new AppError(409, 'Yêu cầu đã gắn giỏ hàng khác.');
           if (existing.expiresAt < posNow() || existing.confirmedAt) throw new AppError(409, 'QR hết hạn hoặc đã thu.');
           return { request: existing, register: calc.register };
+        }
+        if(codDepositAmount!==null){
+          const [paid]=await tx.select({id:posPaymentRequests.id}).from(posPaymentRequests).where(and(eq(posPaymentRequests.shiftId,s.id),eq(posPaymentRequests.fingerprint,calc.fingerprint),sql`${posPaymentRequests.confirmedAt} is not null`,sql`not exists(select 1 from ${salesOrders} where ${salesOrders.posPaymentRequestId}=${posPaymentRequests.id})`)).limit(1);
+          if(paid)throw new AppError(409,'Giỏ đã có QR nhận tiền. Hoàn tất hoặc đối soát khoản đó trước khi tạo mã mới.');
         }
         const reservedOrderNo = await nextPosOrderNo(tx, vietnamDate().iso, await posOrderPrefixFor(tx, calc.register));
         const now = posNow(),
@@ -1265,9 +1272,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
               id: crypto.randomUUID(),
               shiftId: s.id,
               requestKey: key,
-              cart: JSON.stringify({ ...calc.canonical, reservedOrderNo, qrBank:{bankCode:calc.register.bankCode,bankAccount:calc.register.bankAccount,bankAccountName:calc.register.bankAccountName} }),
+              cart: JSON.stringify({ ...calc.canonical, ...(codDepositAmount!==null?{codDepositAmount}:{}), reservedOrderNo, qrBank:{bankCode:calc.register.bankCode,bankAccount:calc.register.bankAccount,bankAccountName:calc.register.bankAccountName} }),
               fingerprint: calc.fingerprint,
-              amount: calc.payable,
+              amount: qrAmount,
               createdAt: now,
               expiresAt: new Date(Date.now() + 15 * 60000).toISOString(),
             })

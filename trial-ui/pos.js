@@ -1,3 +1,4 @@
+import {depositQrControls} from './pos-deposit-qr.js';
 import {mountPosReference,decorateReferenceLine,inlineCodSurface} from './pos-reference.js';
 import {mountMobileQuick,decorateMobileQuickLine} from './pos-mobile.js';
 import {createPosInvoiceBook,renderPosInvoiceTabs} from './pos-invoices.js';
@@ -2449,12 +2450,13 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     }
     methodBox.append(el('span', '', 'Hình thức thu trước'), method);
     const confirmed = el('input'), confirmation = el('label', 'pos-note pos-cod-confirm'); confirmed.type = 'checkbox';
-    confirmation.append(confirmed, document.createTextNode(' Tôi xác nhận cửa hàng đã thực nhận chuyển khoản thu trước'));
+    confirmation.append(confirmed, document.createTextNode(' Tôi xác nhận cửa hàng đã thực nhận tiền cọc'));
     const remaining = el('strong', 'pos-cod-remaining'), paidBefore = el('b', '', money(0)), validation = el('p', 'error'), serverError = el('p', 'error pos-step-error'); validation.setAttribute('role', 'alert'); serverError.setAttribute('role', 'alert');
     const summary = el('div', 'pos-step-summary');
     const row = (label, value, cls = '') => { const r = el('div', cls); r.append(el('span', '', label), value); return r; };
     const totalAmount=el('b','',money(total));
-    summary.append(row('Tổng đơn', totalAmount), row('Đã thu trước', paidBefore), row('Còn thu khi giao', remaining, 'is-main'));
+    const depositSummaryRow=row('Đã thu trước',paidBefore);
+    summary.append(row('Tổng đơn', totalAmount), depositSummaryRow, row('Còn thu khi giao', remaining, 'is-main'));
     const section = (title, ...children) => { const box = el('section', 'pos-step-section'); box.append(el('h3', '', title), ...children); return box; };
     const grid = (...children) => { const g = el('div', 'pos-step-grid'); g.append(...children); return g; };
     const editView = el('div', 'pos-step-body');
@@ -2467,7 +2469,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       addressSection,ghnSection,
       ...(!embedded?[manualSection]:[]),
       section('Thu trước', grid(deposit.box, methodBox), confirmation, summary),
-      el('p', 'pos-note', 'Chỉ nhập khoản cửa hàng đã thực nhận. Tiền mặt thu trước vào két ca hiện tại; phần còn lại ghi thu khi nhận COD.'),
+      el('p', 'pos-note', 'Chọn tiền cọc cần thu. SePay tự xác nhận chuyển khoản; chỉ đánh dấu nhận tiền thủ công khi cửa hàng đã thực nhận. Phần còn lại thu khi giao.'),
       validation,
     );
     const review = el('div', 'pos-step-body pos-step-review'); review.hidden = true;
@@ -2481,16 +2483,19 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     });
     const footer = el('div', 'pos-step-footer'); footer.append(back, save);
     const fullAddress = () => manual()?address.input.value.trim():ghn.fullAddress(address.input.value);
+    let depositQr=null;
     const updateDeposit = () => {
+      depositQr?.refresh();
       const n = Number(deposit.input.value), valid = deposit.input.value !== '' && Number.isSafeInteger(n) && n >= 0 && n <= total;
       remaining.textContent = money(valid ? total - n : total);
       paidBefore.textContent = money(valid ? n : 0);
+      depositSummaryRow.firstChild.textContent=n>0&&!confirmed.checked?'Tiền cọc chờ thu':'Đã thu trước';
       embedded?.onDeposit?.({paid:valid?money(n):'—',remaining:valid?money(total-n):'—'});
       summary.setAttribute('aria-label', 'Còn lại thu COD: ' + remaining.textContent);
       validation.textContent = valid ? '' : 'Nhập số tiền thu trước từ 0 đến tổng đơn, không có số lẻ.';
       methodBox.hidden = !valid || n === 0;
-      confirmation.hidden = !valid || n === 0 || method.value !== 'transfer';
-      save.disabled = !valid || (n > 0 && method.value === 'transfer' && !confirmed.checked);
+      confirmation.hidden = !valid || n === 0;
+      save.disabled = !valid || (n > 0 && !confirmed.checked);
     };
     deposit.input.addEventListener('input', () => { confirmed.checked = false; updateDeposit(); });
     method.addEventListener('change', () => { confirmed.checked = false; updateDeposit(); });
@@ -2535,6 +2540,9 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       for(const n of manualSection.querySelectorAll('input'))n.disabled=!hand;
     };
     deliveryMethod.addEventListener('change',()=>{if(reviewing)edit();updateCarrier();saveDraft();});
+    depositQr=depositQrControls({el,button,modal,api,money,input:deposit.input,method,confirmed,total:()=>total,payload,owner:()=>user()?.id,restore:recovered?.depositQr,changed:()=>{updateDeposit();if(reviewing)edit();saveDraft();}});
+    const closeDepositForm=m.close;m.close=()=>{depositQr.dispose();closeDepositForm();};
+    if(embedded)embedded.depositHost.append(depositQr.box,methodBox,confirmation);else deposit.box.append(depositQr.box);
     updateCarrier();updateDeposit();
     m.form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -2557,7 +2565,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         ...payload(),
         key: key(),
         fulfillmentMode: 'cod',
-        ...(n > 0 ? { depositAmount: n, method: method.value, confirmed: method.value === 'transfer' && confirmed.checked } : {}),
+        ...(n > 0 ? { depositAmount: n, method: method.value, confirmed: method.value === 'transfer' && confirmed.checked, ...(method.value==='transfer'&&depositQr.requestId()?{paymentRequestId:depositQr.requestId()}: {}) } : {}),
         delivery: {
           deliveryMethod:deliveryMethod.value,
           ...(manual()?{carrierName:carrierName.input.value.trim()||deliveryLabels[deliveryMethod.value],carrierPhone:carrierPhone.input.value.trim(),trackingCode:trackingCode.input.value.trim()}:{}),
@@ -2585,8 +2593,8 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     if(embedded)return {
       busy:()=>!!m.dlg.dataset.busy,
       submit(){if(!save.disabled)m.form.requestSubmit(save);},
-      draft:()=>({deliveryMethod:deliveryMethod.value,carrierName:carrierName.input.value,carrierPhone:carrierPhone.input.value,trackingCode:trackingCode.input.value,address:address.input.value,phone:phone.input.value,receiver:receiver.input.value,date:date.input.value,ghnOrderCode:ghnOrderCode.input.value,weight:weight.input.value,shipNote:shipNote.input.value,deposit:deposit.input.value,method:method.value,requiredNote:requiredNote.value,provinceId:restoringDelivery?recovered?.provinceId:province.select.value,districtId:restoringDelivery?recovered?.districtId:district.select.value,wardCode:restoringDelivery?recovered?.wardCode:ward.select.value}),
-      invalidate(){embedded.onDeposit?.({paid:'—',remaining:'—'});if(!m.dlg.dataset.busy){save.disabled=true;if(reviewing)edit();save.disabled=true;}},
+      draft:()=>({depositQr:depositQr.snapshot(),deliveryMethod:deliveryMethod.value,carrierName:carrierName.input.value,carrierPhone:carrierPhone.input.value,trackingCode:trackingCode.input.value,address:address.input.value,phone:phone.input.value,receiver:receiver.input.value,date:date.input.value,ghnOrderCode:ghnOrderCode.input.value,weight:weight.input.value,shipNote:shipNote.input.value,deposit:deposit.input.value,method:method.value,requiredNote:requiredNote.value,provinceId:restoringDelivery?recovered?.provinceId:province.select.value,districtId:restoringDelivery?recovered?.districtId:district.select.value,wardCode:restoringDelivery?recovered?.wardCode:ward.select.value}),
+      invalidate(){depositQr.refresh();embedded.onDeposit?.({paid:'—',remaining:'—'});if(!m.dlg.dataset.busy){save.disabled=true;if(reviewing)edit();save.disabled=true;}},
       refresh(){
         if(m.dlg.dataset.busy)return;
         total=st.preview.total;totalAmount.textContent=money(total);
