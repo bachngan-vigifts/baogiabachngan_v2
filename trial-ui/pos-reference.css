@@ -339,6 +339,7 @@
 
 /* Normal-sale catalog follows the supplied horizontal photo/name/price reference. */
 @media(min-width:851px) {
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid:not(.pos-reference-checkout) .pos-layout {grid-template-columns:minmax(0,1fr) clamp(350px,28vw,400px);}
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-basket-head {align-items:center;flex-direction:row;flex-wrap:nowrap;gap:8px;}
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-customer-trigger {flex:1;min-width:0;width:auto;background:#f0f1f3;color:#697887;}
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-catalog-actions {flex:none;width:auto;gap:4px;justify-content:flex-end;}
@@ -346,7 +347,7 @@
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products:not(.pos-ref-filters-open) .pos-catalog-controls {display:none;}
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-grid,
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products:not(.pos-ref-list) .pos-grid {
-  grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));grid-template-rows:none;grid-auto-rows:max-content;
+  grid-template-columns:minmax(0,1fr);grid-template-rows:none;grid-auto-rows:max-content;
   align-content:start;align-items:start;gap:18px 16px;max-height:none;overflow-x:hidden;padding:20px 2px;
  }
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-products .pos-product-tile {min-height:0;border:0;border-radius:6px;background:transparent;}
