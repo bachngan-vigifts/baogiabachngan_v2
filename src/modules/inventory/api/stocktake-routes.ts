@@ -126,7 +126,18 @@ export function registerStocktakeRoutes(router:Router<StaffEnv>,allowed:(c:Ctx)=
   const ids=await access(c,true),b=await readJson(c.req,10000),sources=b.sources;if(!Array.isArray(sources)||sources.length<2||sources.length>20||new Set(sources.map(s=>s?.id)).size!==sources.length)fail(400,'Chọn từ2đến20phiếu tạm khác nhau.');
   const refs=sources.map(s=>({id:String(s.id||''),revision:revision(s)})).sort((a,b)=>a.id.localeCompare(b.id));
   const result=await command(c,ids,b,async tx=>{const rows:Doc[]=[];for(const ref of refs){const {row,state}=await get(tx,c,ref.id,ids,true);editable(c,row);if(row.status!=='pending'||(state?.revision??0)!==ref.revision)fail(409,'Chỉ gộp phiếu tạm đúng phiên bản. Tải lại danh sách.');rows.push(row);}const wh=rows[0]!.warehouseId;if(rows.some(r=>r.warehouseId!==wh))fail(400,'Các phiếu cần gộp phải cùng kho.');
-   const skus=[...new Set(rows.flatMap(r=>parse(r).map(l=>l.sku)))],balances=skus.length?await tx.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,wh),inArray(stockBalances.sku,skus))):[];
+   // Same exclusive ledger gate as completion/opening: movements cannot race validation
+   // or target creation. Never replace an old count's baseline with fresh stock silently.
+   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('stock_ledger_opening'))`);
+   const groups=rows.map(parse),earliest=new Map<string,string>();
+   for(const [i,lines]of groups.entries())for(const l of lines){const at=rows[i]!.createdAt,old=earliest.get(l.sku);if(!old||at<old)earliest.set(l.sku,at);}
+   const skus=[...earliest.keys()],balances=skus.length?await tx.select().from(stockBalances).where(and(eq(stockBalances.warehouseId,wh),inArray(stockBalances.sku,skus))):[];
+   const current=Object.fromEntries(balances.map(b=>[b.sku,b.qty]));
+   const mismatched=groups.flat().find(l=>Math.abs(l.expectedQty-(current[l.sku]??0))>0.0005);
+   // Net-zero movements still invalidate a count. Scope the time window per SKU so
+   // an earlier source for another product does not cause a false conflict.
+   const changed=skus.length?await tx.select({sku:stockMoves.sku}).from(stockMoves).where(and(eq(stockMoves.warehouseId,wh),sql`(${sql.join([...earliest].map(([sku,at])=>sql`(${stockMoves.sku}=${sku} AND ${stockMoves.createdAt}>=${at})`),sql` OR `)})`)).limit(1):[];
+   if(mismatched||changed.length)fail(409,`Không thể gộp: mã ${mismatched?.sku||changed[0]!.sku} có mốc tồn khác hoặc phát sinh kho sau khi tạo phiếu nguồn. Giữ nguyên các phiếu nguồn; đối chiếu và lập phiếu kiểm đếm mới trước khi gộp.`,'STOCKTAKE_MERGE_CONFLICT');
    let lines:DraftLine[];try{lines=mergeCountedLines(rows.map(parse),Object.fromEntries(balances.map(b=>[b.sku,b.qty])));}catch(e){return fail(400,(e as Error).message);}
    const target=await create(tx,c,wh,rows.map(r=>r.reason).filter(Boolean).join('; ').slice(0,500),lines,String(b.key)),now=new Date().toISOString();
    for(const [i,row]of rows.entries()){await tx.update(docs).set({status:'rejected',reviewNote:'Gộp vào '+target.refNo,reviewedBy:me(c).id,reviewedAt:now}).where(eq(docs.id,row.id));await bump(tx,row.id,refs[i]!.revision,{cancelledAt:now,cancelledBy:me(c).id,mergedInto:target.id});await audit(tx,me(c).id,row.id,'stocktake-merged',{targetId:target.id});}return target;});return json(result,result.replayed?200:201);
