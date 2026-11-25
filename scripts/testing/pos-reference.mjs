@@ -164,6 +164,8 @@ try {
         await page.screenshot({path:shot+`/${width}-delivery.png`});
         // Merely changing view/entering addresses cannot charge or create a carrier order.
         assert.equal(calls.filter(c=>c.method!=='GET'&&!['/pos/preview','/pos/ghn/locations'].includes(c.path)).length,before);
+        assert.equal(await page.locator('.pos-ref-web-count').textContent(),'1','website shortcut shows the pending count from the order board');
+        assert.equal(await page.locator('.pos-payment-method[data-method=cod]').isVisible(),false,'desktop delivery uses the bottom tab');
         await page.getByRole('button',{name:'Đơn website cần giao',exact:true}).click();
         await page.locator('.pos-order-board').waitFor();
         assert.equal(await page.locator('.pos-order-board').isVisible(),true);await page.getByText('WEB_REF_001',{exact:true}).waitFor();

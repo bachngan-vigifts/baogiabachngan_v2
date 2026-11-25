@@ -70,7 +70,8 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
   const closePayment = el('button','pos-ref-close-payment','← Danh mục sản phẩm'); closePayment.type = 'button'; closePayment.addEventListener('click',()=>page.classList.remove('pos-reference-checkout')); right.querySelector('.pos-checkout-scroll').prepend(closePayment);
   const carrier = el('section','pos-card pos-ref-carrier'), carrierTitle = el('h2','pos-ref-carrier-title'); carrierTitle.append(referenceIcon(doc,'truck'),el('span','','Cổng GHN'));
   const carrierNote = el('p','pos-ref-carrier-note','Chọn địa chỉ chuẩn GHN, kiểm tra người nhận và tiền COD trước khi xác nhận tạo vận đơn.');
-  const sources = el('div','pos-ref-delivery-sources'), web = btn('Đơn website cần giao', 'bag', action.web); web.append(el('span','','Đơn website'));
+  const sources = el('div','pos-ref-delivery-sources'), web = btn('Đơn website cần giao', 'bag', action.web); web.classList.add('pos-ref-web-orders');
+  const webCount=el('span','pos-ref-web-count','…');webCount.id='pos-ref-web-pending-count';web.setAttribute('aria-describedby',webCount.id);web.append(el('span','','Đơn website'),webCount);
   sources.append(el('strong','','Đơn giao tại quầy'), web); const formHost = el('div','pos-ref-delivery-form');
   right.querySelector('.pos-checkout-scroll').append(sources, formHost);
   const carrierBody = el('div','pos-ref-carrier-body'), carrierFooter = el('div','pos-ref-carrier-footer'); carrier.append(carrierTitle,carrierNote,carrierBody,carrierFooter); page.querySelector('.pos-layout').append(carrier);
@@ -94,6 +95,13 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
   setMode(workspace.mode);
   return {
     setMode, products, formHost, carrierBody, carrierFooter,
+    updateWebCount(count) {
+      const known=Number.isSafeInteger(count)&&count>=0;
+      webCount.textContent=known?String(count):'…';
+      webCount.setAttribute('aria-label',known?`${count} đơn website chưa xử lý`:'Chưa tải được số đơn website');
+      web.title=known?`${count} đơn website chưa hoàn thành hoặc chưa hủy, theo bộ lọc danh sách`:'Chưa tải được số đơn website';
+      web.classList.toggle('has-pending',known&&count>0);
+    },
     openCheckout(){page.classList.add('pos-reference-checkout');nodes.modalPay?.focus();},
     update({quantity,total,valid}) { compact.textContent = 'Tổng tiền hàng   '+quantity+'   '+total; normalPay.disabled=!valid; },
   };
