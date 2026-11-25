@@ -197,9 +197,10 @@ try {
           await deposited.getByRole('button',{name:'Tạo / gửi mã thanh toán',exact:true}).click();
           await page.getByRole('dialog').filter({hasText:'QR thanh toán tiền cọc'}).waitFor();
           const qr=qrResults.at(-1);assert.equal(qr.amount,30000);assert.ok(qr.url.includes('amount=30000'));
-          await page.getByRole('dialog').filter({hasText:'QR thanh toán tiền cọc'}).getByRole('button',{name:'Đóng',exact:true}).last().click();
           const hook=await f.router.handle(new Request('https://trial.test/api/staff/integrations/sepay/pos-payment',{method:'POST',headers:{authorization:'Apikey test-sepay-key','content-type':'application/json'},body:JSON.stringify({transferType:'in',transferAmount:30000,accountNumber:'123456',content:qr.content})}),f.env);assert.equal(hook.status,200);
           await page.waitForFunction(()=>document.querySelector('.pos-ref-deposited .pos-cod-confirm input')?.checked);
+          assert.equal(await page.getByRole('dialog').filter({hasText:'QR thanh toán tiền cọc'}).isVisible(),false,'paid QR closes automatically');
+          assert.equal(await deposited.getByRole('button',{name:'Đã nhận tiền cọc',exact:true}).isDisabled(),true);
           await page.screenshot({path:shot+'/1280-deposit-paid.png'});
           await qty.fill('6');await qty.dispatchEvent('change');await page.waitForFunction(()=>document.querySelector('.pos-line-top>strong')?.textContent.includes('120.000'));
           assert.equal(await deposited.locator('.pos-cod-confirm input').isChecked(),false,'changed cart clears received confirmation');
