@@ -54,3 +54,15 @@ Kiểm tra cục bộ: PGlite đạt 26/27 (ca đồng thời chỉ chạy trên
 Điều kiện tài khoản cho webhook tự động ở trên giữ nguyên. Khi Manager chọn chứng từ và xác nhận trên trang SePay, tài khoản nhận có thể đến từ danh sách CRM hoặc tài khoản ngân hàng đã cấu hình ở quầy đang hoạt động. API chi tiết, xem trước và ghi thu dùng chung phép kiểm tra; ghi thu kiểm tra lại cấu hình hiện tại. Không tự thêm tài khoản vào secret, không bật tự ghi thu cho CRM vì một tài khoản quầy tồn tại. Tài khoản ngoài cấu hình hoặc quầy ngừng hoạt động vẫn bị chặn; POS/web vẫn xác minh đúng nguồn riêng. Xem `docs/SEPAY-PAGE.md`.
 
 HĐKT VG có mã `/HĐKT/VG-…` có mặc định riêng cho gán thủ công: tài khoản 159063909. Dùng mã HĐKT lưu trong CRM để xác định; không ghi đè tài khoản ngân hàng thực nhận và không tự bật webhook/import. Xem `src/modules/sales/domain/sepay-crm-account.ts` và hướng dẫn tại `docs/SEPAY-PAGE.md`.
+
+### Đối soát chi tiết khi dư / thiếu tiền
+
+Trong **Thanh toán SePay → mở giao dịch → Đối soát chi tiết · nhiều đơn**, chọn chứng từ, nhập số nhận hoặc chọn **Đủ 100%**. Nếu chuyển thiếu, bấm **Dùng tiền còn lại** trên dòng chịu phần thiếu; các dòng khác giữ nguyên. Màn kiểm tra hiển thị số đối chiếu, số thực nhận và chênh thiếu để người dùng xác nhận. Lịch sử giữ chênh lệch sau khi tải lại.
+
+- Tổng phân bổ luôn không vượt số tiền ngân hàng. Chuyển dư: chỉ ghi đến số còn nợ, phần dư giữ ở **Còn chưa phân bổ**, giao dịch vẫn cần xử lý khoản dư.
+- Phiếu thu mới chỉ ghi số thực nhận; phần thiếu còn công nợ, không tự miễn nợ. Đơn web cũng chỉ tăng bằng chứng thanh toán bằng số thực phân bổ.
+- Phiếu thu đã có có thể gắn số ngân hàng thấp hơn sau khi xác nhận chênh; giữ nguyên phiếu thu gốc, không tạo thêm thu và không tự sửa công nợ đã có. Gỡ phân bổ không huỷ phiếu nguồn.
+- Không tự gộp hoặc chia chênh cho nhiều dòng. Nếu không còn tiền, phải giảm dòng khác trước; không tạo phân bổ 0 đồng.
+- Số đối chiếu được lưu trong kết quả lô và nhật ký kiểm toán; không cần migration. Các lô cũ và khoá thử lại cũ vẫn đọc/nhận được.
+
+Kiểm thử: `tests/app/sepay-allocation-difference.test.ts`, bộ `sepay-allocations`/`sepay-detail-review`, và `scripts/testing/sepay-difference.mjs` chạy Chromium với API/PGlite qua đúng trang SePay, ở 390/1280px. Dữ liệu thử tách biệt; chưa kiểm chứng với giao dịch ngân hàng/CRM thật.

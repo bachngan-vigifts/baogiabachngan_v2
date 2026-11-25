@@ -54,7 +54,7 @@
 }
 .sa-entry {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(80px, .5fr) auto auto;
+  grid-template-columns: minmax(140px, 1fr) minmax(80px, .5fr) auto auto auto;
   gap: 10px;
   align-items: end;
 }
