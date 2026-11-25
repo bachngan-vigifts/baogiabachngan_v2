@@ -42,7 +42,7 @@ test('Sale Admin thấy toàn bộ đơn / HĐKT, đơn mua chỉ hãng cấu h�
   assert.deepEqual((await call('/stock-requests', s2)).data.requests, []);
   assert.equal((await call('/purchase-orders/p1', sa)).status, 200, 'Sale Admin xem cả đơn mua nháp của người khác');
   assert.equal((await call('/purchase-orders/p1', sa)).data.priceHidden, false, 'Sale Admin có quyền Kế toán: thấy giá mua');
-  assert.equal((await call('/purchase-orders/p1', s2)).status, 403);
+  assert.equal((await call('/purchase-orders/p1', s2)).status, 404, 'NVBH cannot read an order without eligible product lines');
   await db.insert(suppliers).values({id:'n2',name:'NCC chưa phân hãng',nameKey:'ncc 2',createdAt:now,createdBy:'mgr',updatedAt:now,updatedBy:'mgr'});
   await db.insert(incomingShipments).values({id:'p2',supplierId:'n2',supplierName:'NCC chưa phân hãng',warehouse:'',ticketNumber:'DMH_2',source:'supplier-order',approvalStatus:'pending',createdAt:now,createdBy:'emp',updatedAt:now,updatedBy:'emp'});
   assert.equal((await call('/purchase-orders/p2',sa)).status,404,'có quyền giá không vượt hãng NCC chưa được phân');
