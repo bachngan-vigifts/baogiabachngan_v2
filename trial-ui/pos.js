@@ -138,7 +138,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   const workspace = { mode:'scan', quantity:false, selectedSku:'', recent:[], tendered:'', quickOpen:true, recovery:false, recoveryError:'', draftScope:'', qrTimer:null };
   const scope = () => ({userId:user()?.id,registerId:st.register?.id,shiftId:st.shift?.id});
   let draftStore;try{if(typeof sessionStorage!=='undefined')draftStore=createPosDraftStore(sessionStorage);}catch{}
-  const invoiceDraft=()=>({cart:st.cart.map(({sku,qty,discountType,discountValue})=>({sku,qty,discountType,discountValue})),customerId:st.customer?.id||'',policy:st.policy,voucher:st.voucher,serviceFees:st.serviceFees,shippingFee:st.shippingFee,note:st.note,promotionOptOutReason:st.promotionOptOutReason,exchangeAllocationId:st.exchangeAllocationId,method:st.method,tendered:workspace.tendered,quantity:workspace.quantity,deliveryDraft:nodes.deliveryEditor?.draft()||workspace.deliveryDraft||null,qr:st.qr?{...st.qr,paid:false}:null});
+  const invoiceDraft=()=>({cart:st.cart.map(({sku,qty,discountType,discountValue,note})=>({sku,qty,discountType,discountValue,note})),customerId:st.customer?.id||'',policy:st.policy,voucher:st.voucher,serviceFees:st.serviceFees,shippingFee:st.shippingFee,note:st.note,promotionOptOutReason:st.promotionOptOutReason,exchangeAllocationId:st.exchangeAllocationId,method:st.method,tendered:workspace.tendered,quantity:workspace.quantity,deliveryDraft:nodes.deliveryEditor?.draft()||workspace.deliveryDraft||null,qr:st.qr?{...st.qr,paid:false}:null});
   function ensureInvoiceBook(){
     const identity=JSON.stringify(scope());if(workspace.bookScope===identity)return true;
     try{let storage;try{storage=sessionStorage;}catch{}if(workspace.bookScope){const error=workspace.recoveryError;resetInvoice();workspace.recoveryError=error;}workspace.invoiceBook=createPosInvoiceBook(storage,scope(),draftStore?.read(scope())||null);workspace.bookScope=identity;return true;}
@@ -182,7 +182,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       const skus=d.cart.map(r=>r.sku);const catalog=d.cart.length?await api('/pos/catalog?registerId='+encodeURIComponent(st.register.id)+'&pricePolicyId='+encodeURIComponent(d.policy||st.policy)+'&skus='+encodeURIComponent(skus.join(','))):{products:[]};
       if(identity!==JSON.stringify(scope()))return;
       if(![st.register.pricePolicyId,st.register.secondPricePolicyId].includes(d.policy))throw Error('Bảng giá của nháp không còn được phép.');
-      st.policy=d.policy;st.cart=d.cart.map(row=>{const item=catalog.products.find(p=>p.sku===row.sku);if(!item)throw Error('Không lấy được mã hàng '+row.sku+' của nháp.');return {...item,qty:row.qty,discountType:row.discountType,discountValue:row.discountValue};});
+      st.policy=d.policy;st.cart=d.cart.map(row=>{const item=catalog.products.find(p=>p.sku===row.sku);if(!item)throw Error('Không lấy được mã hàng '+row.sku+' của nháp.');return {...item,qty:row.qty,discountType:row.discountType,discountValue:row.discountValue,note:row.note||''};});
       if(d.customerId){const found=await api('/pos/customers?id='+encodeURIComponent(d.customerId));if(identity!==JSON.stringify(scope()))return;st.customer=found.customers.find(c=>c.id===d.customerId)||null;if(!st.customer)throw Error('Khách của nháp không còn được phép chọn.');}
       for(const k of ['voucher','serviceFees','shippingFee','note','promotionOptOutReason','exchangeAllocationId','method'])if(d[k]!==undefined)st[k]=d[k];
       workspace.tendered=d.tendered||'';workspace.quantity=!!d.quantity;
@@ -297,6 +297,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       qty: x.qty,
       discountType: x.discountType,
       discountValue: x.discountValue,
+      ...(x.note?.trim()?{note:x.note}:{}),
     })),
   });
   function invalidate() {
@@ -1313,7 +1314,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       disc.type = 'number';
       disc.min = '0';
       disc.step = '1';
-      disc.value = x.discountValue;
+      disc.value = Number(x.discountValue) === 0 ? '' : x.discountValue;
       edit.dataset.discountType = x.discountType;
       disc.placeholder = 'CK'; disc.title = 'Chiết khấu';
       disc.setAttribute('aria-label', 'Chiết khấu ' + x.name);
@@ -1333,13 +1334,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
         x.discountType = mode.value;
         edit.dataset.discountType = mode.value;
         x.discountValue = 0;
-        disc.value = '0';
+        disc.value = '';
         invalidate();
       });
       const afterPrice=el('div','pos-line-unit-after');
       afterPrice.append(el('span','pos-note','Sau CK / SP'),unit);
       if(desktopPos()){const dc=el('div','pos-line-discount');dc.append(disc,mode);edit.append(qtyBox,dc,afterPrice);}else edit.append(qtyBox, disc, mode, afterPrice);
       row.append(edit);
+      const lineNote=el('input','pos-line-note');lineNote.type='text';lineNote.maxLength=2000;
+      lineNote.placeholder='Ghi chú sản phẩm';lineNote.setAttribute('aria-label','Ghi chú '+x.name);
+      lineNote.value=x.note||'';lineNote.hidden=!x.note;lineNote.disabled=!!st.pending;
+      lineNote.addEventListener('input',()=>{if(st.pending)return;x.note=lineNote.value;invalidate();});
+      row.append(lineNote);
       if(desktopPos())decorateReferenceLine(row,{unit:x.unit,onDetails:()=>run(async()=>{
         // Scans deliberately omit other warehouses. Read only this SKU on demand
         // through the existing permission-scoped endpoint; never amend the cart.
@@ -2468,6 +2474,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       const n = Number(deposit.input.value), valid = deposit.input.value !== '' && Number.isSafeInteger(n) && n >= 0 && n <= total;
       remaining.textContent = money(valid ? total - n : total);
       paidBefore.textContent = money(valid ? n : 0);
+      embedded?.onDeposit?.({paid:valid?money(n):'—',remaining:valid?money(total-n):'—'});
       summary.setAttribute('aria-label', 'Còn lại thu COD: ' + remaining.textContent);
       validation.textContent = valid ? '' : 'Nhập số tiền thu trước từ 0 đến tổng đơn, không có số lẻ.';
       methodBox.hidden = !valid || n === 0;
@@ -2552,7 +2559,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       busy:()=>!!m.dlg.dataset.busy,
       submit(){if(!save.disabled)m.form.requestSubmit(save);},
       draft:()=>({address:address.input.value,phone:phone.input.value,receiver:receiver.input.value,date:date.input.value,ghnOrderCode:ghnOrderCode.input.value,weight:weight.input.value,shipNote:shipNote.input.value,deposit:deposit.input.value,method:method.value,requiredNote:requiredNote.value,provinceId:restoringDelivery?recovered?.provinceId:province.select.value,districtId:restoringDelivery?recovered?.districtId:district.select.value,wardCode:restoringDelivery?recovered?.wardCode:ward.select.value}),
-      invalidate(){if(!m.dlg.dataset.busy){save.disabled=true;if(reviewing)edit();save.disabled=true;}},
+      invalidate(){embedded.onDeposit?.({paid:'—',remaining:'—'});if(!m.dlg.dataset.busy){save.disabled=true;if(reviewing)edit();save.disabled=true;}},
       refresh(){
         if(m.dlg.dataset.busy)return;
         total=st.preview.total;totalAmount.textContent=money(total);

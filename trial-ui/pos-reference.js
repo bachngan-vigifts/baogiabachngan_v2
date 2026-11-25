@@ -76,14 +76,18 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
   const carrierBody = el('div','pos-ref-carrier-body'), carrierFooter = el('div','pos-ref-carrier-footer'); carrier.append(carrierTitle,carrierNote,carrierBody,carrierFooter); page.querySelector('.pos-layout').append(carrier);
   const compact = el('div','pos-ref-cart-total'); left.append(compact);
   const cartSummary=el('div','pos-ref-delivery-totals'),due=right.querySelector('.pos-pc-due');left.append(cartSummary);
+  const depositSummary=el('div','pos-ref-deposit-summary');
+  const deposited=el('strong','pos-ref-deposited','—'),balance=el('strong','pos-ref-balance','—');
+  for(const [label,value] of [['Đã cọc',deposited],['Còn lại',balance]]){const row=el('div','pos-total-row');row.append(el('span','',label),value);depositSummary.append(row);}
+  const onDeposit=({paid,remaining})=>{deposited.textContent=paid;balance.textContent=remaining;};
   const restoreTotals=()=>{const scroll=right.querySelector('.pos-checkout-scroll');scroll.insertBefore(nodes.totals,nodes.methods);scroll.insertBefore(due,nodes.methods);};
   function setMode(id) {
     if (workspace.mode !== id && !onMode(id)) return;
     workspace.mode = id; page.classList.remove('pos-mode-scan','pos-mode-grid','pos-mode-delivery','pos-reference-checkout'); page.classList.add('pos-mode-'+id);
     for (const b of modeButtons) b.setAttribute('aria-pressed',String(b.dataset.posMode===id));
     if (id==='grid') { right.querySelector('.pos-checkout-scroll').append(products); normalFooter.prepend(catalogPages); } else { products.append(catalogPages); left.append(products); }
-    if(id==='delivery')cartSummary.append(nodes.totals,due);else restoreTotals();
-    if (id==='delivery') onDelivery({formHost, carrierBody, carrierFooter});
+    if(id==='delivery')cartSummary.append(nodes.totals,due,depositSummary);else restoreTotals();
+    if (id==='delivery') onDelivery({formHost, carrierBody, carrierFooter,onDeposit});
     nodes.grid.hidden = id !== 'grid' && !nodes.search.value.trim();
   }
   setMode(workspace.mode);
@@ -130,6 +134,8 @@ export function decorateReferenceLine(row, {unit,onDetails}) {
     b.append(referenceIcon(doc,icon),doc.createTextNode(label));b.addEventListener('click',async()=>{close();b.disabled=true;try{await action();}finally{b.disabled=false;}});detail.append(b);return b;
   };
   if(onDetails)item('Xem chi tiết / tồn kho','info',onDetails);
+  item('Ghi chú','menu',()=>{const input=row.querySelector('.pos-line-note');input.hidden=false;row.classList.add('pos-line-has-note');input.focus();});
+  if(row.querySelector('.pos-line-note')?.value)row.classList.add('pos-line-has-note');
   item('Chiết khấu','discount',()=>{const input=discount.querySelector('input');input?.focus();input?.select();});
   item('Xóa dòng sản phẩm','trash',()=>remove?.click(),true);
   detail.addEventListener('keydown',event=>{
