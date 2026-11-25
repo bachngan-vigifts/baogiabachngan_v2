@@ -6024,7 +6024,6 @@ function openHomeReminder(){const who=state.user?.id;if(!who)return;return (home
 $('#reminder-launcher').addEventListener('click',openHomeReminder);
 function homeNavigation(){return [...document.querySelectorAll('.side-nav [data-nav]')].filter(a=>!a.hidden&&!a.closest('[hidden]')&&linkAllowed(a.getAttribute('href'))).map(a=>{const group=a.closest('.nav-group'),heading=group?.querySelector('h2');return{key:a.dataset.nav,label:a.querySelector('span')?.textContent?.trim()||a.textContent.trim(),href:a.getAttribute('href'),groupId:heading?.id||'',group:(heading?.querySelector('.nav-group-toggle>span:first-child')?.textContent||heading?.textContent)?.trim()||'Chức năng khác'};});}
 function homeActions(){return [
-  {key:'new-reminder',label:'Nhắc chăm sóc nhanh',icon:'clock',run:openHomeReminder},
   {key:'new-task',label:'Tạo công việc',icon:'work',run:()=>tasksView().openNew().catch(e=>toast(e.message,'err'))},
   ...(can('pos.sell')&&isCounterSales()?[{key:'pos',label:'Bán hàng nhanh',icon:'sell',run:()=>go('#/pos')}]:[]),
   ...(can('page.quotes')?[{key:'new-quote',label:'Lập báo giá',icon:'sell',run:()=>openNewQuote()}]:[]),
