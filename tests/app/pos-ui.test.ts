@@ -55,6 +55,9 @@ class Element {
     if (selector === '*') return all;
     return all.filter((x) => selector.split(',').includes(x.tag));
   }
+  querySelector(selector: string): Element | null {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
   get lastChild() {
     return this.children.at(-1)!;
   }
@@ -762,7 +765,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     assert.match(modal.textContent, /Thông tin đơn hàng và người nhận đã được lấy sẵn/);
     const deposit = modal.querySelectorAll('label').find(l => l.textContent === 'Đã thu trước / tạm ứng (VNĐ)')!.querySelectorAll('input')[0]!;
     await new Promise(r => setTimeout(r, 0));
-    const selects = modal.querySelectorAll('select'), province = selects[0]!, district = selects[1]!, ward = selects[2]!, method = selects.find(x => x.attributes['aria-label'] === 'Hình thức thu trước')!;
+    const selects = modal.querySelectorAll('select').filter(x => x.attributes['aria-label'] !== 'Hình thức giao'), province = selects[0]!, district = selects[1]!, ward = selects[2]!, method = selects.find(x => x.attributes['aria-label'] === 'Hình thức thu trước')!;
     province.value = 'p1'; await province.fire('change'); await new Promise(r => setTimeout(r, 0));
     district.value = 'd1'; await district.fire('change'); await new Promise(r => setTimeout(r, 0)); ward.value = 'w1';
     const confirmed = modal.querySelectorAll('input').find(i => i.type === 'checkbox')!;
