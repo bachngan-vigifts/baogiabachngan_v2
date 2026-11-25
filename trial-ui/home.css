@@ -109,5 +109,3 @@
 @media(max-width:760px){#view-home .home-head{flex-wrap:wrap}#view-home .home-head>.home-head-actions{flex-basis:100%;width:100%}#view-home .home-head .home-head-actions>a{flex:1;min-width:0;max-width:none;padding:9px 12px;font-size:12px}}
 
 #view-home .home-head-actions{flex-wrap:wrap}
-#view-home .home-reminder-launch{min-height:44px;white-space:normal}
-@media(max-width:600px){#view-home .home-reminder-launch{flex-basis:100%}}
