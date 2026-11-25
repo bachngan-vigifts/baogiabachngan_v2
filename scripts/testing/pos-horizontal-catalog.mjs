@@ -72,7 +72,7 @@ const photo=process.env.POS_PHOTO_PATH?await readFile(process.env.POS_PHOTO_PATH
 const photoType=process.env.POS_PHOTO_PATH?'image/jpeg':'image/svg+xml';
 const results=[];
 try {
- for(const [width,height] of [[969,954],[2126,1526],[390,844]]) {
+ for(const [width,height] of [[969,954],[1811,1514],[2126,1526],[390,844]]) {
   const context=await browser.newContext({viewport:{width,height},locale:'vi-VN'});
   await context.route('**/*',r=>r.request().url().startsWith('https://pos-fixture.invalid/')?r.fulfill({contentType:photoType,body:photo}):r.request().url().startsWith(origin+'/')?r.continue():r.abort());
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
