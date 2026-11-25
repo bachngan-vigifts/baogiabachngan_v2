@@ -67,3 +67,10 @@ Trong **Thanh toán SePay → mở giao dịch → Đối soát chi tiết · nh
 Triển khai cần chạy `migrations/postgres/20261125113000_sepay_allocation_overpayment.sql` rồi kiểm gate chỉ đọc `scripts/sql/assert-sepay-overpayment.sql` trước khi phát hành API/UI. Migration chỉ nới ràng buộc `target_total >= amount` thành `target_total >= 0`; các kiểm tra số tiền dương/nguyên/giới hạn, RLS và khoá giao dịch giữ nguyên. Không sửa dữ liệu tiền cũ.
 
 Kiểm thử: `tests/app/sepay-allocation-difference.test.ts`, bộ `sepay-allocations`/`sepay-detail-review`, và `scripts/testing/sepay-difference.mjs` chạy Chromium với API/PGlite qua đúng trang SePay rồi mở công nợ đơn, ở 390/1280px. Dữ liệu thử tách biệt; chưa kiểm chứng giao dịch ngân hàng/CRM thật hoặc nhiều kết nối PostgreSQL thật.
+
+
+### Rollback mã sau khi đã ghi nhận khách trả dư
+
+Nếu cần rollback API/UI, giữ migration `20261125113000_sepay_allocation_overpayment.sql` và toàn bộ phiếu thu, phân bổ, kết quả lô, nhật ký. **Không khôi phục CHECK `target_total >= amount`**, không giảm số tiền hoặc xoá khoản trả dư để ép schema về bản cũ. Mã cũ có thể chặn thao tác phân bổ dư mới hoặc không hiển thị đầy đủ nhãn trả dư; tạm ngừng luồng ghi bị ảnh hưởng và ưu tiên sửa tiến để khôi phục giao diện công nợ có dấu. Không dùng việc thiếu nhãn ở mã cũ làm căn cứ điều chỉnh số tiền lịch sử.
+
+Migration đã được đăng ký trong `scripts/sql/november-migration-coverage.json`; workflow `deploy-api.yml` chạy gate `assert-sepay-overpayment.sql` ngay sau gate SePay allocations, trước thay đổi secret/API. Gate chỉ đọc, schema cũ phải thất bại; không tự chạy migration để sửa production.

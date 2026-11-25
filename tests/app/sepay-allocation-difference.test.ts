@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {eq} from 'drizzle-orm';
 import {setupSepay} from '../helpers/sepay-fixture.ts';
 import {customerPayments} from '../../src/modules/sales/schema.ts';
@@ -13,6 +14,18 @@ for(const delta of [-200,200,1500])test('manual reconciliation preserves bank an
  for(let i=0;i<2;i++){const r=await f.call(path,f.mgr,'POST',payload);assert.equal(r.status,200,JSON.stringify(r.data));}
  const detail=(await f.call(path,f.mgr)).data;assert.equal(detail.remaining,0);assert.equal(detail.allocations.reduce((n:number,a:any)=>n+a.difference,0),delta);
  const receipts=await f.db.select().from(customerPayments);assert.equal(receipts.length,2);assert.equal(receipts.reduce((n,p)=>n+p.amount,0),200000+delta);assert.equal((await f.db.select().from(sepayTransactions).where(eq(sepayTransactions.id,e.id)))[0]!.amount,200000+delta);
+ if(delta===200){
+  const before=(await f.call(path,f.mgr)).data,receiptsBefore=await f.db.select().from(customerPayments);
+  await f.client.exec(readFileSync(new URL('../../migrations/postgres/20261125113000_sepay_allocation_overpayment.sql',import.meta.url),'utf8'));
+  await f.client.exec('BEGIN READ ONLY');await f.client.exec(readFileSync(new URL('../../scripts/sql/assert-sepay-overpayment.sql',import.meta.url),'utf8'));await f.client.exec('ROLLBACK');
+  assert.deepEqual((await f.call(path,f.mgr)).data,before,'rerunning migration preserves overpayment history');
+  // Fixture only: demonstrate why code rollback must retain the expanded constraint.
+  await f.client.exec('BEGIN; ALTER TABLE sepay_payment_allocations DROP CONSTRAINT chk_sepay_allocation_amount;');
+  await assert.rejects(f.client.exec('ALTER TABLE sepay_payment_allocations ADD CONSTRAINT chk_sepay_allocation_amount CHECK (amount>0 AND target_total>=amount);'));
+  await f.client.exec('ROLLBACK');
+  assert.deepEqual((await f.call(path,f.mgr)).data,before);
+  assert.deepEqual(await f.db.select().from(customerPayments),receiptsBefore);
+ }
  const debt=(await netReceivables(f.db,[b.id],'2026-11-08')).get(b.id)!;assert.equal(debt.balance,-delta);
 });
 test('existing receipt correction preserves original history, records actual debt and replays once',async()=>{
