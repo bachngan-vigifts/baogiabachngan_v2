@@ -1,3 +1,4 @@
+import {assertPurchaseProducts} from './purchase-product-scope.ts';
 import {registerPurchaseAmendRoutes} from './purchase-amend.ts';
 import type {PurchaseLineInput} from '../../../core/contracts/purchase-amend.ts';
 import {incomingForViewer,canPurchaseProjection} from './purchase-projection.ts';
@@ -141,6 +142,7 @@ function cleanLines(raw: unknown, prices: boolean): LineIn[] {
 
 /** Chống mua trùng: số lấy từ mỗi chứng từ nguồn không vượt phần còn cần đặt (tính cả các đơn trong cùng lần lập). */
 async function checkSources(db: Db, m: Member, orders: LineIn[][], exceptShipmentId?: string) {
+  await assertPurchaseProducts(db,m,orders.flatMap(lines=>lines.map(l=>l.sku)));
   const keys = new Map<string, { type: string; id: string }>();
   for (const lines of orders) for (const l of lines) for (const s of l.sources) keys.set(s.type + ':' + s.id, { type: s.type, id: s.id });
   const needs = new Map<string, Awaited<ReturnType<typeof loadSourceNeed>>>();

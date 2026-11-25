@@ -30,7 +30,7 @@ export const PERMISSIONS: readonly PermissionDef[] = [
   { key: 'page.stock-requests', group: 'Trang được vào', label: 'Khách hỏi tồn', defaults: SALES_KT },
   { key: 'page.dashboard', group: 'Trang được vào', label: 'Tổng quan doanh số', defaults: OFFICE },
   { key: 'page.flow', group: 'Trang được vào', label: 'Sơ đồ quy trình', defaults: OFFICE },
-  { key: 'page.purchases', group: 'Trang được vào', label: 'Đơn mua NCC', defaults: ALL },
+  { key: 'page.purchases', group: 'Trang được vào', label: 'Đơn mua NCC', hint: 'NVBH ML/LOCK: xem và lập đơn nháp sản phẩm Minh Long, Lys, Healthy Cook, Lock&Lock; không mở duyệt, giá mua, thanh toán hoặc nhận kho.', defaults: ALL },
   { key: 'page.packing', group: 'Kho', label: 'Phiếu đóng gói – xem tất cả, xác nhận đóng xong', hint: 'Không có quyền này: chỉ xem phiếu của đơn mình phụ trách.', defaults: KHO_KT },
   { key: 'page.stock-lookup', group: 'Kho', label: 'Tra tồn (không giá)', defaults: KHO_KT },
   { key: 'inventory.view', group: 'Kho', label: 'Sổ kho – xem', defaults: ['accounting'] },

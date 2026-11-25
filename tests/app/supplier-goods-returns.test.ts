@@ -92,7 +92,12 @@ test('Supplier workspace totals and SKU drill-down use net goods/credit, while s
  const f=await fixture(10,true);assert.equal((await f.submit(await f.request('credit',2))).status,201);
  const products=await workspaceProductOrders(f.db,'return-ncc','00123',new URLSearchParams(),today());assert.equal(products.orderedQuantity,8);assert.equal(products.receivedQuantity,8);assert.equal(products.remainingQuantity,0);
  const list=await workspaceList(f.db,'return-ncc','orders',new URLSearchParams(),today());close(Number(list.items[0]!.total),691.2);
- const staff=await f.call(`/purchase-orders/${f.id}`,f.emp);assert.equal(staff.status,403);assert.equal(staff.data.goodsReturns,undefined);assert.equal(staff.data.refunds,undefined);
+ const staff=await f.call(`/purchase-orders/${f.id}`,f.emp);assert.equal(staff.status,200);assert.equal(staff.data.priceHidden,true);
+ assert.equal(staff.data.totals,null);assert.equal(staff.data.debt,null);assert.deepEqual(staff.data.payments,[]);assert.deepEqual(staff.data.refunds,[]);
+ assert.equal(staff.data.canReturn,false);assert.equal(staff.data.canRefund,false);
+ assert.equal(staff.data.goodsReturns.length,1);assert.equal(staff.data.goodsReturns[0].creditAmount,null);
+ assert.deepEqual(staff.data.goodsReturns[0].items,[{lineId:f.line,sku:'00123',quantity:2}]);
+ assert.ok(staff.data.lines.every((l:any)=>l.price===null&&l.taxRate===null&&l.purchaseDiscount===null&&l.lineTotal===null));
 });
 test('Concurrent duplicate return posts one stock movement; stale competing returns/refunds never over-post',async()=>{
  const f=await fixture(10,true),body=await f.request(),p=await f.preview(body),submitBody={...body,previewToken:p.data.previewToken,confirm:true,confirmation:p.data.confirmation};

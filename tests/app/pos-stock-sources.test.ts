@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import { setup } from '../helpers/pos-fixture.ts';
-import { productStock, warehouses } from '../../src/modules/catalog/schema.ts';
+import { products, productStock, warehouses } from '../../src/modules/catalog/schema.ts';
 import { warehouseSellers, stockBalances, stockTransfers } from '../../src/modules/inventory/schema.ts';
 import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
 import { incomingShipments, incomingShipmentLines, suppliers } from '../../src/modules/suppliers/schema.ts';
@@ -33,7 +33,14 @@ test('POS catalog batches all stock sources, uses approved incoming lines and pr
  const result=await f.call(path,f.emp);assert.equal(result.status,200,JSON.stringify(result.data));
  const p=result.data.products[0],d=p.stockSources;
  assert.equal(p.available,10);assert.equal(d.vigifts.qty,40);assert.equal(d.supplier.qty,70);assert.equal(d.incoming.qty,20);
- assert.ok(d.incoming.orders.every((o:any)=>!o.orderId&&!o.orderNo&&!o.supplierName));assert.equal(d.incoming.orders[0].arrivalDate,'2026-10-25');
+ assert.deepEqual(d.incoming.orders.map((o:any)=>o.orderNo).sort(),['DMH_A','DMH_B'],'NVBH may identify incoming orders for eligible brands');
+ await f.db.insert(products).values({sku:'OUTSIDE',name:'Other brand',brand:'Other',unit:'cái',updatedAt:'2026-10-21'});
+ await f.db.insert(incomingShipmentLines).values({id:'outside-line',shipmentId:'in-a',sku:'OUTSIDE',name:'Other brand',unit:'cái',quantity:1,lineNo:2});
+ const hidden=(await f.call(path,f.emp)).data.products[0].stockSources.incoming;
+ assert.equal(hidden.qty,10,'mixed-brand orders are excluded from the scoped incoming quantity');assert.deepEqual(hidden.orders.map((o:any)=>o.orderNo),['DMH_B']);
+ assert.ok(!hidden.orders.some((o:any)=>o.orderId==='in-a'||o.orderNo==='DMH_A'));
+ await f.db.delete(incomingShipmentLines).where(eq(incomingShipmentLines.id,'outside-line'));
+ assert.equal(d.incoming.orders[0].arrivalDate,'2026-10-25');
  const manager=await f.call(path,f.mgr);assert.equal(manager.status,200);assert.deepEqual(manager.data.products[0].stockSources.incoming.orders.map((o:any)=>o.orderNo).sort(),['DMH_A','DMH_B']);
  assert.ok(!JSON.stringify(d).includes('private'));assert.ok(!JSON.stringify(d).includes('9999'));
  assert.deepEqual(d.requestWarehouses.map((w:any)=>w.id),['vig']);

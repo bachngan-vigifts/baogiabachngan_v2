@@ -484,7 +484,7 @@ const PAGE_PERM = {
 /** Giá bán: người làm báo giá / đơn / HĐKT (khớp máy chủ – Kho không nhận giá). */
 const seesPrices = () => isManager() || can('page.quotes') || can('page.orders') || can('page.contracts');
 const canAccounting = () => isManager() || state.user?.role === 'employee' && state.user?.positionId === 'accounting';
-const canPurchasePage=()=>isManager()||['accounting','sale-admin'].includes(state.user?.positionId)&&can('page.purchases');
+const canPurchasePage=()=>isManager()||['accounting','sale-admin','sales-ml','sales-lock'].includes(state.user?.positionId)&&can('page.purchases');
 const canPage = view => view==='receiving'?(isWarehouse()?can('purchases.receive'):canPurchasePage()):['purchases','early-requests'].includes(view)?canPurchasePage()&&(!PAGE_PERM[view]||can(PAGE_PERM[view])):view === 'accounting' ? canAccounting() : view === 'finance' ? isManager() : view === 'order' ? can('page.orders') || can('page.contracts') || can('page.receivables') : !PAGE_PERM[view] || can(PAGE_PERM[view]);
 /** Link "#/<trang>/<id>" mở được với quyền hiện tại (cùng cách `route()` đổi trang chi tiết) – không thì hiện chữ, không đưa người dùng về trang chủ. */
 const linkAllowed = hash => {

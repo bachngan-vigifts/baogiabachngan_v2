@@ -3079,7 +3079,8 @@ body:has(.reminder-launcher:not([hidden])) .main::after{content:'';display:block
 @media screen {
  html.app-shell #workspace > .sidebar { background:#142036;color:#fff;box-shadow:inset -1px 0 #1d2c46; }
  html.app-shell #workspace > .sidebar :is(.brand.light,.brand small,.nav-label,.nav-group-toggle,.nav,.account,.account-text small,.account .chev) { color:#fff;opacity:1; }
- html.app-shell #workspace > .sidebar :is(.nav,.nav-label,.nav-group-toggle,.account-text strong) { font-weight:700; }
+ html.app-shell #workspace > .sidebar .account-text strong { font-weight:700; }
+ html.app-shell #workspace > .sidebar .side-nav :is(.nav,.nav-label,.nav-group-toggle,.badge) { font-weight:400; }
  html.app-shell #workspace > .sidebar .side-nav .nav svg { color:#fff; }
  html.app-shell #workspace > .sidebar :is(.nav:hover,.nav-group-toggle:hover,.nav-group-toggle:focus-visible,.account:hover) { background:#1d2c46;color:#fff; }
  html.app-shell #workspace > .sidebar .nav.active { background:#283a58;color:#fff;box-shadow:inset 3px 0 #fff; }

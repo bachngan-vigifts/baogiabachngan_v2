@@ -1,4 +1,5 @@
-import {purchaseReadLevel} from '../domain/purchase-access.ts';
+import {counterPurchaseBrand,scopedPurchaseSkus} from './purchase-product-scope.ts';
+import {isCounterPurchaser,purchaseReadLevel} from '../domain/purchase-access.ts';
 import {purchaseEarlyRequests,purchaseEarlyRequestLines,purchaseEarlyRequestAllocations} from '../early-request-schema.ts';
 import { and, asc, desc, eq, ilike, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { foldSql, matchAllWords, rankFirst, searchRank } from '../../../core/text/fold.ts';
@@ -37,9 +38,11 @@ const PURCHASE = eq(incomingShipments.source, 'supplier-order');
 
 export function supplierScope(m:Member,column:typeof suppliers.id|typeof incomingShipments.supplierId=suppliers.id){
  const level=purchaseReadLevel(m);
+ // NVBH is scoped by catalogue products, independent of the Sale Admin supplier mapping.
+ if(level!=='none'&&isCounterPurchaser(m))return sql`true`;
  return level==='all'?sql`true`:level==='brand'?sql`${column} in (select id from suppliers where sale_admin_brand is not null)`:sql`false`;
 }
-export function purchaseScope(m:Member){return and(PURCHASE,supplierScope(m,incomingShipments.supplierId));}
+export function purchaseScope(m:Member){return and(PURCHASE,supplierScope(m,incomingShipments.supplierId),isCounterPurchaser(m)?sql`exists(select 1 from incoming_shipment_lines l where l.shipment_id=${incomingShipments.id}) and not exists(select 1 from incoming_shipment_lines l left join products p on lower(p.sku)=lower(l.sku) where l.shipment_id=${incomingShipments.id} and (p.sku is null or not (${counterPurchaseBrand(sql`p.brand`)})))`:undefined);}
 export async function assertPurchaseScope(db:Db,m:Member,id:string){const [r]=await db.select({id:incomingShipments.id}).from(incomingShipments).where(and(eq(incomingShipments.id,id),purchaseScope(m))).limit(1);if(!r)throw new AppError(404,'Không tìm thấy đơn mua hàng.');}
 export async function assertSupplierScope(db:Db,m:Member,id:string){
  const [row]=await db.select({id:suppliers.id}).from(suppliers).where(and(eq(suppliers.id,id),supplierScope(m))).limit(1);
@@ -47,6 +50,7 @@ export async function assertSupplierScope(db:Db,m:Member,id:string){
 }
 export function earlyPurchaseScope(m:Member){
  const level=purchaseReadLevel(m);if(level==='all')return sql`true`;if(level==='none')return sql`false`;
+ if(isCounterPurchaser(m))return sql`exists(select 1 from purchase_early_request_lines el where el.request_id=${purchaseEarlyRequests.id}) and not exists(select 1 from purchase_early_request_lines el left join products p on lower(p.sku)=lower(el.sku) where el.request_id=${purchaseEarlyRequests.id} and (p.sku is null or not (${counterPurchaseBrand(sql`p.brand`)}))) and not exists(select 1 from purchase_early_request_lines el join purchase_early_request_allocations ea on ea.request_line_id=el.id left join incoming_shipment_lines pl on pl.id=ea.purchase_line_id where el.request_id=${purchaseEarlyRequests.id} and not exists(select 1 from ${incomingShipments} where ${incomingShipments.id}=pl.shipment_id and ${incomingShipments.supplierId}=ea.supplier_id and ${purchaseScope(m)}))`;
  return sql`((exists(select 1 from purchase_early_request_lines el join purchase_early_request_allocations ea on ea.request_line_id=el.id where el.request_id=${purchaseEarlyRequests.id}) or (${purchaseEarlyRequests.createdBy}=${m.id} and (coalesce(${purchaseEarlyRequests.scope}::jsonb->>'supplierId','')='' or ${purchaseEarlyRequests.scope}::jsonb->>'supplierId' in (select id from suppliers where sale_admin_brand is not null))))
  and not exists(select 1 from purchase_early_request_lines el join purchase_early_request_allocations ea on ea.request_line_id=el.id left join incoming_shipment_lines pl on pl.id=ea.purchase_line_id left join incoming_shipments po on po.id=pl.shipment_id left join suppliers s on s.id=po.supplier_id where el.request_id=${purchaseEarlyRequests.id} and (s.sale_admin_brand is null or ea.supplier_id<>po.supplier_id)))`;
 }
@@ -410,7 +414,8 @@ export async function ensureReceiptSourceBudget(db: Db, shipmentId: string, skus
 export async function sourceWithRemaining(db: Db, m: Member, type: string, id: string) {
   const need = await loadSourceNeed(db, m, type, id);
   const ordered = (await orderedBySource(db, [{ type, id }])).get(type + ':' + id) ?? new Map();
-  const lines = remainingToOrder(need.lines, ordered), stock = await stockOf(db, lines.map(l => l.sku));
+  const allowed=await scopedPurchaseSkus(db,m,need.lines.map(l=>l.sku));
+  const lines = remainingToOrder(need.lines.filter(l=>allowed.has(l.sku.toLowerCase())), ordered), stock = await stockOf(db, lines.map(l => l.sku));
   return { source: { type: need.type, id: need.id, no: need.no, customerName: need.customerName }, lines: lines.map(l => ({ ...l, stock: stock.get(l.sku.toLowerCase()) ?? null })) };
 }
 
