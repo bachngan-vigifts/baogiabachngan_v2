@@ -751,7 +751,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const head = el('div', 'pos-order-head'), title = el('div');
     title.append(el('h2', '', 'Đơn hàng cửa hàng'), el('p', 'pos-note', 'Theo dõi đơn Lock và Minh Long theo đúng quầy phát sinh.'));
     head.append(title);
-    const d = st.orderBoard;if(nodes.pcWeb)nodes.pcWeb.textContent='Đơn web · '+(d?.counts?.web??'…');
+    const d = st.orderBoard;nodes.reference?.updateWebCount(st.orderBoardError?null:d?.counts?.web);if(nodes.pcWeb)nodes.pcWeb.textContent='Đơn web · '+(d?.counts?.web??'…');
     if (d?.registers?.length > 1) {
       const reg = select(d.registers.map(r => [r.id, r.name]), st.orderRegisterId || d.registerId);
       reg.setAttribute('aria-label', 'Lọc đơn theo cửa hàng');
@@ -1185,6 +1185,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       onDelivery:hosts=>{if(!nodes.deliveryEditor)nodes.deliveryEditor=codForm(hosts);},
       onCheckout:openPayment,
     });
+    nodes.reference.updateWebCount(st.orderBoardError?null:st.orderBoard?.counts?.web);
   }
   async function commitScan(p){
     const context=JSON.stringify([user()?.id,st.register?.id,st.shift?.id,st.policy]),cart=st.cart;
