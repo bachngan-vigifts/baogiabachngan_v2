@@ -1884,11 +1884,11 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 @media (max-width: 850px) {
   #view-editor { font-size: var(--text-caption); }
   #view-editor .editor-head { min-height: 56px; padding-block: 6px; }
-  #view-editor .editor-head .back { width: 38px; min-width: 38px; min-height: 38px; }
+  #view-editor .editor-head .back { width: 38px; min-width: 38px; min-height: 44px; }
   #view-editor .editor-title h1 { font-size: var(--text-body); }
   #view-editor .editor-title .pill { padding: 2px 7px; font-size: var(--text-caption); }
   #view-editor .quote-mobile-more { width: 40px; min-width: 40px; height: 38px; border-radius: 10px; font-size: var(--text-heading); }
-  #view-editor .quote-actions .btn, #view-editor .editor .quote-actions .btn.primary { min-height: 38px; padding: 7px 10px; font-size: var(--text-caption); }
+  #view-editor .quote-actions .btn, #view-editor .editor .quote-actions .btn.primary { min-height: 44px; padding: 7px 10px; font-size: var(--text-caption); }
   #view-editor .quote-mobile-steps { top: 56px; gap: 5px; margin-bottom: 8px; padding-block: 6px; }
   #view-editor .quote-mobile-steps button { min-height: 38px; gap: 4px; padding: 4px 6px; border-radius: 10px; font-size: var(--text-caption); }
   #view-editor .quote-mobile-steps button span { width: 18px; height: 18px; font-size: var(--text-caption); }
@@ -1897,16 +1897,16 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
   #view-editor .muted, #view-editor small, #view-editor label { font-size: var(--text-caption); }
   #view-editor .form-grid.cols-2 { gap: 8px; }
   #view-editor .form-grid input, #view-editor .form-grid select, #view-editor .form-grid textarea,
-  #view-editor #line-list input, #view-editor #line-list select { min-height: 38px; padding: 6px 8px; font-size: var(--text-small) !important; }
+  #view-editor #line-list input, #view-editor #line-list select { min-height: 44px; padding: 6px 8px; font-size: 16px !important; } /* 16px: Safari iOS không tự phóng to khi chạm ô */
   #view-editor .type-pick button { min-height: 44px; padding: 6px; font-size: var(--text-caption); }
   #view-editor .quote-mobile-panel button, #view-editor .quote-mobile-panel .btn,
-  #view-editor [data-quote-panel='products'] > .card-title-row .btn { min-height: 38px; padding: 7px 9px; font-size: var(--text-caption); }
-  #view-editor #line-list .name-input { min-height: 34px; font-size: var(--text-small) !important; }
-  #view-editor #line-list .line-actions .icon-btn { width: 34px; height: 34px; min-height: 34px; }
+  #view-editor [data-quote-panel='products'] > .card-title-row .btn { min-height: 44px; padding: 7px 9px; font-size: var(--text-caption); }
+  #view-editor #line-list .name-input { min-height: 44px; font-size: 16px !important; }
+  #view-editor #line-list .line-actions .icon-btn { width: 44px; height: 44px; min-height: 44px; }
   #view-editor #line-list .line-total { font-size: var(--text-small); }
   #view-editor .totals-card .grand dd { font-size: var(--text-heading); }
   #view-editor .mobile-savebar { gap: 6px; padding: 7px 10px; }
-  #view-editor .mobile-savebar .btn { min-width: 72px; min-height: 40px; padding: 6px 9px; font-size: var(--text-caption); }
+  #view-editor .mobile-savebar .btn { min-width: 72px; min-height: 44px; padding: 6px 9px; font-size: var(--text-caption); }
   #view-editor .mobile-quote-summary small, #view-editor .mobile-quote-summary span { font-size: var(--text-caption); }
   #view-editor .mobile-quote-summary strong { font-size: var(--text-small); }
 }
@@ -2628,7 +2628,33 @@ body:has(.approval-launcher:not([hidden])) .pos-head { padding-left: 76px; }
   #quote-form #line-table .col-total { width: 128px; }
   #quote-form .disc-head { display: flex; gap: 6px; white-space: nowrap; }
   #quote-form .disc-head select { flex: 0 0 auto; min-width: 56px; max-width: 76px; }
+  /* Laptop 1366/1440 (có menu trái): bảng vừa khung, thấy đủ cột Thành tiền không cần cuộn ngang.
+     Cột số đủ rộng cho số dài nhất (1.234.567.890 · 14.832.000.000 ₫); tên sản phẩm xuống dòng thay vì bị cắt.
+     Bảng có cột giá vốn (Manager bật) hoặc báo giá Sale vẫn giữ bề rộng cũ và cuộn ngang như trước. */
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) { width: 100%; min-width: 1020px; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) :is(th, td) { padding-inline: 4px; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) .col-idx { width: 28px; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) .col-img { width: 58px; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) .col-unit { width: 94px; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) .col-qty { width: 72px; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) .col-price { width: 124px; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) .col-disc { width: 96px; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) .col-print { width: 100px; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) .col-after { width: 112px; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) .col-total { width: 128px; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) .col-act { width: 36px; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) .disc-head { flex-wrap: wrap; white-space: normal; }
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) #line-head th { white-space: normal; line-height: 1.3; overflow-wrap: break-word; }
+  #quote-form:not(.type-sale) #line-list :is(.num-input, input.plain[data-k="unit"]) { font-size: var(--text-label) !important; padding-inline: 5px; }
+  #quote-form:not(.type-sale) #line-list :is(.col-after, .line-total) { font-size: var(--text-label); }
+  #quote-form:not(.type-sale) #line-list .unit-field { gap: 3px; }
 }
+@media screen and (min-width: 851px) and (max-width: 1599px) {
+  /* Cột tên hẹp hơn: nhãn "Bộ gồm / Mô tả in ấn / Đóng gói" nằm trên ô để ô nhập đủ rộng. */
+  #quote-form:not(.type-sale) #line-list .sub-field { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+/* Tên sản phẩm của dòng báo giá: ô nhiều dòng, cao theo nội dung để thấy đủ tên dài (Enter vẫn xuống dòng dưới). */
+.line-table textarea.name-input { display: block; width: 100%; min-height: 0; height: auto; resize: none; overflow: hidden; field-sizing: content; line-height: 1.35; overflow-wrap: anywhere; }
 #quote-form .sku-line { display: flex; align-items: center; flex-wrap: wrap; column-gap: 8px; }
 #quote-form .sku-line .sku-input { min-width: 0; max-width: 100%; }
 #quote-form .quote-stock-warning { display: inline-flex; flex: 0 0 20px; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #fff0d6; color: #b45309; border: 1px solid #ed9b30; font-size: 14px; font-weight: 800; cursor: help; }
