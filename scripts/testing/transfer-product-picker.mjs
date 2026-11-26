@@ -21,9 +21,9 @@ try {for(const width of [390,1280]) {
  });
  await page.goto('https://crm.test/');await page.getByRole('button',{name:'＋ Xin điều chuyển',exact:true}).click();
  await page.locator('.sup-drawer select').nth(0).selectOption('a');await page.locator('.sup-drawer select').nth(1).selectOption('b');
- const search=page.locator('input[type=search]');await search.fill('Bình');await page.getByRole('button',{name:'Tìm',exact:true}).click();
+ const search=page.getByRole('searchbox',{name:'Tìm sản phẩm điều chuyển',exact:true});await search.fill('Bình');await page.getByRole('button',{name:'Tìm',exact:true}).click();
  await page.locator('.transfer-search-result').click();assert.equal(await search.inputValue(),'');
- assert.match(await page.getByRole('textbox',{name:'Tên sản phẩm',exact:true}).inputValue(),/Bình giữ nhiệt/);
+ assert.match(await page.locator('.transfer-product-name').textContent(),/Bình giữ nhiệt/);
  await search.fill('LHC3249BEG');await search.press('Enter');await page.locator('.transfer-search-result').click();
  assert.equal(await page.getByRole('spinbutton',{name:'Số lượng chuyển',exact:true}).count(),1);
  await page.getByRole('spinbutton',{name:'Số lượng chuyển',exact:true}).fill('3');
