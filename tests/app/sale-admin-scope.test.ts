@@ -11,10 +11,10 @@ import { incomingShipments, suppliers } from '../../src/modules/suppliers/schema
 
 /**
  * Sale Admin (tạm thời, yêu cầu 17/10/2026): xem toàn công ty CHỈ ở báo giá, khách hàng, đơn hàng / HĐKT; khách hỏi tồn theo phạm vi thường.
- * #801: đơn mua NCC chỉ xem hãng được Manager cấu hình, kể cả khi đã có quyền giá; Sale thường bị chặn.
+ * Sale Admin xem toàn bộ NCC; Sale thường vẫn bị chặn.
  */
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
-test('Sale Admin thấy toàn bộ đơn / HĐKT, đơn mua chỉ hãng cấu hình, không thấy khách hỏi tồn của người khác', async () => {
+test('Sale Admin thấy toàn bộ đơn / HĐKT, đơn mua mọi NCC, không thấy khách hỏi tồn của người khác', async () => {
   const { db, d1 } = await createTestDb(); await seedStaff(d1);
   for (const [id, pos] of [['sa', 'sale-admin'], ['s2', 'sales-ml']] as const) {
     await d1.sqlite.prepare(`INSERT INTO staff_members (id,email,name,phone,role,position_id,active,created_at) VALUES (?,?,?,'','employee',?,1,'2026-01-01T00:00:00.000Z')`).run(id, id + '@x.vn', 'Tên ' + id, pos);
@@ -45,6 +45,6 @@ test('Sale Admin thấy toàn bộ đơn / HĐKT, đơn mua chỉ hãng cấu h�
   assert.equal((await call('/purchase-orders/p1', s2)).status, 404, 'NVBH cannot read an order without eligible product lines');
   await db.insert(suppliers).values({id:'n2',name:'NCC chưa phân hãng',nameKey:'ncc 2',createdAt:now,createdBy:'mgr',updatedAt:now,updatedBy:'mgr'});
   await db.insert(incomingShipments).values({id:'p2',supplierId:'n2',supplierName:'NCC chưa phân hãng',warehouse:'',ticketNumber:'DMH_2',source:'supplier-order',approvalStatus:'pending',createdAt:now,createdBy:'emp',updatedAt:now,updatedBy:'emp'});
-  assert.equal((await call('/purchase-orders/p2',sa)).status,404,'có quyền giá không vượt hãng NCC chưa được phân');
+  assert.equal((await call('/purchase-orders/p2',sa)).status,200,'Sale Admin xem NCC chưa phân hãng');
   assert.equal((await call('/customers/K1/overview', sa)).data.orders.length, 1, 'chi tiết khách: thấy đơn của mọi người');
 });

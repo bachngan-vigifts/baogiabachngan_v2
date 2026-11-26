@@ -18,16 +18,12 @@ import {postMoves} from '../../src/modules/inventory/api/ledger.ts';
 import {auditLogs} from '../../src/core/db/schema.ts';
 import {employees} from '../../src/modules/staff/schema.ts';
 
-test('Manager/accounting thấy mọi đơn; Sale Admin chỉ ID có hãng; đổi tên không cấp quyền và gỡ hãng thu hồi ngay',async()=>{
- const f=await setupEarly();await f.db.update(suppliers).set({saleAdminBrand:'minhlong'}).where(eq(suppliers.id,'a'));await f.db.update(suppliers).set({name:'Minh Long giả',saleAdminBrand:null}).where(eq(suppliers.id,'b'));
- for(const cookie of [f.cookies.mgr,f.cookies.kt])assert.equal((await f.call('/purchase-orders/b1',cookie)).status,200);
- assert.equal((await f.call('/purchase-orders/a1',f.cookies.sa)).status,200);assert.equal((await f.call('/purchase-orders/b1',f.cookies.sa)).status,404);
- const list=await f.call('/purchase-orders',f.cookies.sa);assert.equal(list.status,200);assert.ok(list.data.orders.every((p:any)=>p.supplierId==='a'));
- assert.equal((await f.call('/purchase-orders?supplierId=b',f.cookies.sa)).status,404);
- assert.ok((await f.call('/purchase-options',f.cookies.sa)).data.suppliers.every((s:any)=>s.id==='a'));
- assert.equal((await f.call('/purchase-orders',f.cookies.kho)).status,403);
- await f.db.update(employees).set({canApprove:true}).where(eq(employees.id,'emp'));assert.equal((await f.call('/purchase-orders',f.cookies.emp)).status,403,'cờ duyệt không mở phạm vi mua');
- await f.db.update(suppliers).set({saleAdminBrand:null}).where(eq(suppliers.id,'a'));assert.equal((await f.call('/purchase-orders/a1',f.cookies.sa)).status,404);
+test('Sale Admin sees all suppliers regardless of brand; other roles remain restricted',async()=>{
+ const f=await setupEarly();await f.db.update(suppliers).set({saleAdminBrand:null});
+ for(const cookie of [f.cookies.mgr,f.cookies.kt,f.cookies.sa])for(const id of ['a1','b1'])assert.equal((await f.call('/purchase-orders/'+id,cookie)).status,200);
+ const options=await f.call('/purchase-options',f.cookies.sa);assert.equal(options.status,200);assert.deepEqual(options.data.suppliers.map((s:any)=>s.id).sort(),['a','b']);
+ assert.equal((await f.call('/purchase-orders?supplierId=b',f.cookies.sa)).status,200);
+ for(const cookie of [f.cookies.emp,f.cookies.kho])assert.equal((await f.call('/purchase-orders',cookie)).status,403);
 });
 
 test('Hãng NCC chỉ Manager đổi, có audit; Kế toán không giả mạo payload để cấp quyền',async()=>{
@@ -56,22 +52,17 @@ test('Kho nhận qua DTO không tiền, không mở PO; sai kho bị chặn và 
  assert.equal((await f.call('/warehouse-receiving/b1',f.cookies.kho)).status,200,'đơn legacy chưa chọn kho vẫn có queue');assert.equal((await f.call('/warehouse-receiving',f.cookies.emp)).status,403);
 });
 
-test('Phiếu trộn NCC ngoài phạm vi bị 404 cả phiếu; counts và replay không trả ID bị thu hồi',async()=>{
- const f=await setupEarly();await f.db.update(suppliers).set({saleAdminBrand:null}).where(eq(suppliers.id,'b'));
- const mixed=await f.call('/purchase-early-requests',f.cookies.mgr,'POST',{clientKey:'scope-mixed-request',pickupDate:'2026-11-24',lines:[{sku:'031106000',quantity:16000}]});assert.equal(mixed.status,201,JSON.stringify(mixed.data));
- const id=mixed.data.id;
- for(const path of ['/purchase-early-requests?id='+id,'/purchase-early-requests/'+id+'/receiving?orderId=a1'])assert.equal((await f.call(path,f.cookies.sa)).status,404,path);
- assert.equal((await f.call('/purchase-early-requests/'+id+'/submit',f.cookies.sa,'POST',{revision:1})).status,404);
- const visible=await f.call('/purchase-early-requests?counts=1',f.cookies.sa);assert.equal(visible.status,200);assert.ok(!visible.data.requests.some((r:any)=>r.id===id));assert.equal(visible.data.counts.all,0);
- const p=await f.call('/purchase-orders',f.cookies.sa);assert.equal(p.data.counts.all,p.data.orders.length);assert.ok(!JSON.stringify(p.data).includes('PO-b1'));
- await f.db.update(suppliers).set({saleAdminBrand:'locknlock'}).where(eq(suppliers.id,'b'));
+test('Sale Admin can create and retry an order with an unassigned supplier; page permission still required',async()=>{
+ const f=await setupEarly();await f.db.update(suppliers).set({saleAdminBrand:null});
  const body={clientKey:crypto.randomUUID(),orders:[{supplierId:'b',warehouse:'Kho nhận',lines:[{sku:'0001',quantity:1}]}]};
  const first=await f.call('/purchase-orders',f.cookies.sa,'POST',body);assert.equal(first.status,201,JSON.stringify(first.data));
- await f.db.update(suppliers).set({saleAdminBrand:null}).where(eq(suppliers.id,'b'));
- const again=await f.call('/purchase-orders',f.cookies.sa,'POST',body);assert.equal(again.status,404);assert.equal(again.data.ids,undefined);
- for(const action of ['payments','receipts','confirm','mail'])assert.equal((await f.call('/purchase-orders/b1/'+action,f.cookies.sa,'POST',{})).status,404,action);
+ const again=await f.call('/purchase-orders',f.cookies.sa,'POST',body);assert.equal(again.status,200);assert.deepEqual(again.data.ids,first.data.ids);
+ await f.db.delete(positionPermissions).where(and(eq(positionPermissions.positionId,'sale-admin'),eq(positionPermissions.permission,'page.purchases')));
+ for(const path of ['/purchase-options','/purchase-options/suppliers','/purchase-orders/'+first.data.ids[0]])assert.equal((await f.call(path,f.cookies.sa)).status,403,path);
 });
 
+import {positionPermissions} from '../../src/modules/staff/schema.ts';
+import {and} from 'drizzle-orm';
 import {readFileSync} from 'node:fs';
 
 test('Migration chỉ thêm: cột nullable, CHECK đúng hãng, assert chỉ đọc và không tự sửa schema',async()=>{
