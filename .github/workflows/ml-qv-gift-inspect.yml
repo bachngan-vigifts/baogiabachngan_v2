@@ -14,3 +14,5 @@ jobs:
       - run: npm install --prefix /tmp/qv-info --silent playwright@1.56.1
       - run: /tmp/qv-info/node_modules/.bin/playwright install chromium --only-shell
       - run: node web-minhlong/qv-gift/inspect.mjs
+
+# Inspect current response and gift markup.
