@@ -108,3 +108,30 @@
     #view-dashboard .dash-quotes { grid-area: auto; justify-self: start; }
   }
 }
+
+@media screen and (max-width: 850px) {
+  #view-editor #quote-form .editor-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    margin-inline: 0;
+  }
+  #view-editor #quote-form .editor-title {
+    display: flex;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  #view-editor .editor-title h1 {
+    flex-basis: 100%;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  #view-editor #quote-form .editor-head .back { font-size: 0; padding: 0; }
+  #view-editor .editor-head > .quote-actions {
+    grid-column: 1 / -1;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+}
