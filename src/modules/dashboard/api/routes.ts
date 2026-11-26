@@ -13,7 +13,7 @@ import { quotations as quotes } from '../../quotes/schema.ts';
 import { sapoHealthMonitorState } from '../../integrations/schema.ts';
 import { vietnamDate } from '../../sales/domain/sales.ts';
 import { dashboardFilters } from '../domain/filters.ts';
-import type { DashboardKpiOf } from '../../../core/contracts/dashboard-kpi.ts';
+import type { DashboardKpiOf, DashboardKpiDetailOf, DashboardKpiPart } from '../../../core/contracts/dashboard-kpi.ts';
 import type { DashboardStoreOf } from '../../../core/contracts/dashboard-store.ts';
 
 const amount = (column: typeof orders.total | typeof care.expectedRevenue) => sql<number>`coalesce(sum(${column}), 0)`.mapWith(Number);
@@ -30,7 +30,7 @@ const cacheOf = (c: { url: URL }, scope: string, me: { id: string; role: string 
 const blank = () => ({ actual: 0, orders: 0, expected: 0, pipeline: 0, consulting: 0, quote_sent: 0, negotiating: 0, lost: 0, quotes: 0, converted: 0 });
 
 /** Only GET. All totals are DB aggregates; no limit on source orders/activities. */
-export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?: DashboardKpiOf; storeOf?: DashboardStoreOf; reportScoresOf?:DashboardReportScoresOf } = {}) {
+export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?: DashboardKpiOf; kpiDetailOf?:DashboardKpiDetailOf; storeOf?: DashboardStoreOf; reportScoresOf?:DashboardReportScoresOf } = {}) {
   /**
    * Điểm KPI Sale một tháng (mặc định tháng cuối kỳ) – tách khỏi /dashboard/revenue để trang doanh số không chờ phần tính lương.
    * Cùng bộ lọc / quyền với doanh số; KPI người khác chỉ Manager xem (như phiếu lương). Quyền "Doanh số toàn công ty" không mở KPI người khác.
@@ -48,6 +48,20 @@ export function registerDashboardRoutes(router: Router<StaffEnv>, deps: { kpiOf?
       const members=deps.reportScoresOf?await deps.reportScoresOf(c.env.db,month,ids):[];
       return {month,available:!!deps.reportScoresOf,scope:manager&&!f.owner?'company':'self',members};
     }));
+  },'business');
+
+  router.get('/dashboard/kpi/detail',async c=>{
+    const me=(c.state.session as SessionState|undefined)?.member;if(!me)throw new AppError(401,'Vui lòng đăng nhập.');
+    const f=dashboardFilters(c.url.searchParams,me,vietnamDate().iso),month=c.url.searchParams.get('month')||f.months.at(-1)!;
+    const id=c.url.searchParams.get('member')||me.id,metric=c.url.searchParams.get('metric')||'',page=Number(c.url.searchParams.get('page')||1);
+    if(!f.months.includes(month)||!['newCustomers','transactions','contracts','revenue'].includes(metric)||!Number.isSafeInteger(page)||page<1)throw new AppError(400,'Kỳ hoặc chỉ số không hợp lệ.');
+    if(me.role!=='manager'&&id!==me.id)throw new AppError(403,'Chỉ Manager xem được KPI của nhân viên khác.');
+    const [person]=await c.env.db.select({id:employees.id}).from(employees).where(and(eq(employees.id,id),eq(employees.active,true),isNull(employees.deletedAt),inArray(employees.role,['manager','employee']),inArray(employees.positionId,['sale','sale-admin','manager']),f.owner?eq(employees.id,f.owner):undefined,me.role==='manager'&&f.group?eq(employees.positionId,f.group):undefined));
+    if(!person)throw new AppError(404,'Nhân viên không thuộc phạm vi đang xem.');
+    if(!deps.kpiDetailOf)throw new AppError(503,'Chưa có nguồn chi tiết KPI.');
+    const detail=await deps.kpiDetailOf(c.env.db,month,id,metric as DashboardKpiPart['key'],page);
+    if(!detail)throw new AppError(404,'Chưa có KPI trong kỳ này.');
+    return json({...detail,month});
   },'business');
 
   router.get('/dashboard/kpi', async c => {

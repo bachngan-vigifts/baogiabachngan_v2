@@ -35,6 +35,11 @@ export interface DashboardKpiMember {
   crmPreview: number | null;
   parts: DashboardKpiPart[];
   merchDays: number; tripDays: number;
+  revenueBasis?: 'net-revenue' | 'invoice-total'; approvedOnly?:boolean;
 }
 /** App lắp từ HR: cùng cách tính với phiếu lương; dashboard không import HR / lương. */
 export type DashboardKpiOf = (db: AnyDb, month: string, memberIds: readonly string[]) => Promise<DashboardKpiMember[]>;
+
+export interface DashboardKpiDetailRow {id:string;date:string;label:string;customer:string;amount:number|null;href:string;note:string}
+export interface DashboardKpiDetail {member:DashboardKpiMember;metric:DashboardKpiPart['key'];rows:DashboardKpiDetailRow[];total:number;sourceCount:number;page:number;pages:number;issues:number}
+export type DashboardKpiDetailOf=(db:AnyDb,month:string,memberId:string,metric:DashboardKpiPart['key'],page:number)=>Promise<DashboardKpiDetail|null>;

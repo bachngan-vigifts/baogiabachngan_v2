@@ -1,3 +1,4 @@
+import {openKpiDetail} from './dashboard-kpi-detail.js';
 import {createReportScoreCard,reportScoreOverview,reportScoreText} from './report-scores.js';
 import { cacheLineNode } from './report-cache.js';
 /** Dashboard doanh số (read-only): biểu đồ SVG dựng bằng DOM API (không chuỗi HTML), dùng API đã xác thực của app. */
@@ -240,7 +241,11 @@ export function initDashboard({ api, root, isManager, money, user=()=>null }) {
       // Hai dòng mỗi ô: số chính + chỉ tiêu / điểm tối đa (vừa màn hình điện thoại, không cuộn ngang).
       const two = (main, sub) => { const td = node('td'); td.append(node('strong', main), node('small', sub)); return td; };
       const actual = p.key === 'revenue' ? money(p.actual ?? 0) : count(p.actual) + (p.extra ? ` + ${p.extra.toLocaleString('vi-VN')} quy đổi` : '');
-      tr.append(name, two(actual, (p.own ? 'chỉ tiêu riêng ' : 'chỉ tiêu ') + (p.key === 'revenue' ? money(p.target) : p.target.toLocaleString('vi-VN'))),
+      const actualCell=two(actual, (p.own ? 'chỉ tiêu riêng ' : 'chỉ tiêu ') + (p.key === 'revenue' ? money(p.target) : p.target.toLocaleString('vi-VN')));
+      const detailButton=node('button',null,'dash-kpi-drilldown');detailButton.type='button';detailButton.setAttribute('aria-label','Xem chi tiết '+p.label+' của '+m.name);
+      detailButton.append(...actualCell.childNodes);actualCell.append(detailButton);
+      detailButton.onclick=()=>openKpiDetail({api,member:m,part:p,query:{from:filters.from,to:filters.to,owner:filters.owner,group:filters.group,month:kpiMonth},money});
+      tr.append(name, actualCell,
         two(kpiPercent(p.points), p.max == null ? 'không giới hạn' : 'tối đa ' + kpiPercent(p.max)));
       body.append(tr);
     }
