@@ -14,3 +14,5 @@ jobs:
       - run: npm install --prefix /tmp/qv-info --silent playwright@1.56.1
       - run: /tmp/qv-info/node_modules/.bin/playwright install chromium --only-shell
       - run: node web-lock/qv-gift/inspect.mjs
+
+# Locate storewide gift sources.
