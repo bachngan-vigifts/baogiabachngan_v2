@@ -1494,3 +1494,6 @@ body:has(#view-pos:not([hidden])) #reminder-launcher { display:none; }
 #view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) .pos-head-tools {min-width:0;gap:8px;}
 #view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) .pos-shift-status {max-width:100%;white-space:normal;}
 #view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) {overscroll-behavior:contain;}
+
+.pos-deposit-controls.is-cash{grid-template-columns:repeat(3,minmax(0,1fr))}
+.pos-deposit-controls > .btn[hidden]{display:none}

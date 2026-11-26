@@ -420,3 +420,11 @@
 .pos-ref-deposit-summary > .pos-total-row:has(.pos-deposit-controls)>span{position:absolute;top:10px;left:0}
 .pos-ref-deposited:has(.pos-deposit-controls)>input{display:block;margin-left:auto}
 .pos-ref-crm {white-space:nowrap;flex-shrink:0;}
+
+/* Keep payment method and amount on the deposit heading row. */
+.pos-ref-deposited:has(.pos-deposit-controls){display:grid;grid-template-columns:minmax(45px,1fr) minmax(110px,180px) minmax(90px,150px);gap:6px;align-items:center}
+.pos-ref-deposited:has(.pos-deposit-controls)>.pos-deposit-method{grid-column:2;grid-row:1;margin:0;min-width:0}
+.pos-ref-deposited>.pos-deposit-method>span{display:none}
+.pos-ref-deposited>.pos-deposit-method select{width:100%;min-width:0;min-height:38px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff}
+.pos-ref-deposited:has(.pos-deposit-controls)>input{grid-column:3;grid-row:1;width:100%;box-sizing:border-box;margin:0;min-width:0;min-height:38px}
+.pos-ref-deposited>.pos-deposit-controls,.pos-ref-deposited>.pos-cod-confirm{grid-column:1/-1}

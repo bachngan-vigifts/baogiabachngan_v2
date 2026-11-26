@@ -2448,6 +2448,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     for (const [value, name] of [['cash', 'Tiền mặt'], ['transfer', 'Chuyển khoản']]) {
       const option = el('option', '', name); option.value = value; method.append(option);
     }
+    method.value = 'transfer';
     methodBox.append(el('span', '', 'Hình thức thu trước'), method);
     const confirmed = el('input'), confirmation = el('label', 'pos-note pos-cod-confirm'); confirmed.type = 'checkbox';
     confirmation.append(confirmed, document.createTextNode(' Tôi xác nhận cửa hàng đã thực nhận tiền cọc'));
@@ -2493,7 +2494,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       embedded?.onDeposit?.({paid:valid?money(n):'—',remaining:valid?money(total-n):'—'});
       summary.setAttribute('aria-label', 'Còn lại thu COD: ' + remaining.textContent);
       validation.textContent = valid ? '' : 'Nhập số tiền thu trước từ 0 đến tổng đơn, không có số lẻ.';
-      methodBox.hidden = !valid || n === 0;
+      methodBox.hidden = false;
       confirmation.hidden = !valid || n === 0;
       save.disabled = !valid || (n > 0 && !confirmed.checked);
     };
@@ -2542,7 +2543,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     deliveryMethod.addEventListener('change',()=>{if(reviewing)edit();updateCarrier();saveDraft();});
     depositQr=depositQrControls({el,button,modal,api,money,input:deposit.input,method,confirmed,total:()=>total,payload,owner:()=>user()?.id,restore:recovered?.depositQr,changed:()=>{updateDeposit();if(reviewing)edit();saveDraft();}});
     const closeDepositForm=m.close;m.close=()=>{depositQr.dispose();closeDepositForm();};
-    if(embedded)embedded.depositHost.append(depositQr.box,methodBox,confirmation);else deposit.box.append(depositQr.box);
+    if(embedded){methodBox.classList.add('pos-deposit-method');method.addEventListener('change',()=>{if(reviewing)edit();saveDraft();});embedded.depositHost.prepend(methodBox);embedded.depositHost.append(depositQr.box,confirmation);}else deposit.box.append(depositQr.box);
     updateCarrier();updateDeposit();
     m.form.addEventListener('submit', async (e) => {
       e.preventDefault();

@@ -146,6 +146,11 @@ try {
 
         const deposit=page.getByLabel('Đã cọc (VNĐ)',{exact:true});
         const deposited=page.locator('.pos-ref-delivery-totals .pos-ref-deposited'),balance=page.locator('.pos-ref-delivery-totals .pos-ref-balance');
+        const depositMethod=deposited.getByLabel('Hình thức thu trước',{exact:true}),qrAction=deposited.getByRole('button',{name:'Tạo / gửi mã thanh toán',exact:true});
+        assert.equal(await depositMethod.inputValue(),'transfer');
+        const sameRow=await depositMethod.evaluate(n=>{const a=n.getBoundingClientRect(),b=n.closest('.pos-ref-deposited').querySelector('input').getBoundingClientRect();return Math.abs(a.top-b.top)<2&&a.right<=b.left;});assert.equal(sameRow,true);
+        await depositMethod.selectOption('cash');assert.equal(await qrAction.isVisible(),false);
+        await depositMethod.selectOption('transfer');assert.equal(await qrAction.isVisible(),true);
         assert.equal(await deposit.inputValue(),'0');assert.equal(await balance.textContent(),'80.000 đ');
         for(const [percent,amount] of [[30,'24000'],[50,'40000'],[100,'80000']]){await deposited.getByRole('button',{name:percent+'%',exact:true}).click();assert.equal(await deposit.inputValue(),amount);}
         await deposit.fill('20000');assert.equal(await deposit.inputValue(),'20000');assert.equal(await balance.textContent(),'60.000 đ');
@@ -237,6 +242,9 @@ try {
         await page.locator('.pos-payment-method[data-method=cod]').click();
         await page.getByRole('button',{name:'TIẾP TỤC TẠO ĐƠN COD',exact:true}).click();
         const form=page.getByRole('dialog').filter({hasText:'Giao Hàng Nhanh · nhập địa chỉ'});
+        assert.equal(await form.getByLabel('Hình thức thu trước',{exact:true}).inputValue(),'transfer');
+        await form.getByLabel('Hình thức thu trước',{exact:true}).selectOption('cash');
+        assert.equal(await form.getByRole('button',{name:'Tạo / gửi mã thanh toán',exact:true}).isVisible(),false);
         await form.locator('.pos-deposit-presets').getByRole('button',{name:'50%',exact:true}).click();
         const amount=form.getByText('Đã thu trước / tạm ứng (VNĐ)',{exact:true}).locator('..').locator('input');
         assert.ok(Number(await amount.inputValue())>0);await amount.fill('10000');

@@ -22,7 +22,7 @@ export function depositQrControls({el,button,modal,api,money,input,method,confir
     }catch{if(request===d){state='unknown';if(qrModal?.dlg.open)qrModal.close();refresh();}return 'unknown';}
   }
   async function showQr(d){
-    if(!matches()||state!=='waiting'||Date.parse(d.expiresAt)<=Date.now())return;
+    if(method.value!=='transfer'||!matches()||state!=='waiting'||Date.parse(d.expiresAt)<=Date.now())return;
     const m=modal('QR thanh toán tiền cọc'),image=el('img','pos-qr');image.src=d.url;image.alt='QR chuyển khoản tiền cọc';
     const message=el('p','pos-note','SePay sẽ tự xác nhận khi tiền vào đúng tài khoản, nội dung và số tiền.'),target=el('select');target.setAttribute('aria-label','Cửa hàng nhận QR tiền cọc');
     m.body.append(el('h3','',money(d.amount)),image,el('p','',d.content),message,target);
@@ -52,7 +52,7 @@ export function depositQrControls({el,button,modal,api,money,input,method,confir
     m.body.append(note,label,renew,button('Đóng','btn secondary',()=>m.close()));m.show();
   }
   const create=button('Tạo / gửi mã thanh toán','btn secondary',async()=>{
-    if(creating||!valid()||!sameOwner()||(matches()&&request.paid)||state==='blocked')return;
+    if(method.value!=='transfer'||creating||!valid()||!sameOwner()||(matches()&&request.paid)||state==='blocked')return;
     creating=true;refresh();
     try{
       if(!request){
@@ -70,6 +70,9 @@ export function depositQrControls({el,button,modal,api,money,input,method,confir
     finally{creating=false;refresh();}
   });
   function refresh(){
+    create.hidden=method.value!=='transfer';
+    box.className='pos-deposit-controls'+(create.hidden?' is-cash':'');
+    if(create.hidden&&qrModal?.dlg.open)qrModal.close();
     const current=identity();if(current!==lastIdentity){confirmed.checked=!!(matches()&&request.paid&&method.value==='transfer');lastIdentity=current;}
     create.disabled=creating||!valid()||!sameOwner()||!!(matches()&&request.paid)||state==='blocked';
     create.textContent=matches()&&request.paid?'Đã nhận tiền cọc':request&&(state!=='waiting'||Date.parse(request.expiresAt)<=Date.now())?'Kiểm tra trạng thái QR':attempt&&!request?'Kiểm tra kết quả tạo QR':'Tạo / gửi mã thanh toán';
@@ -80,7 +83,7 @@ export function depositQrControls({el,button,modal,api,money,input,method,confir
     else if(request&&(state==='expired'||Date.parse(request.expiresAt)<=Date.now()))status.textContent='QR hết hạn. Kiểm tra trạng thái và tài khoản nhận trước khi dùng lại mã; không yêu cầu khách trả lần nữa nếu đã chuyển.';
     else if(request&&state==='waiting')status.textContent='Chờ chuyển khoản tiền cọc '+money(request.amount)+'.';
     else if(request||attempt)status.textContent='Chưa xác minh được trạng thái QR. Kiểm tra lại; không yêu cầu khách chuyển thêm.';
-    else status.textContent='Chọn mức cọc hoặc nhập tiền, rồi tạo QR hoặc xác nhận đã nhận tiền.';
+    else status.textContent=method.value==='transfer'?'Chọn mức cọc hoặc nhập tiền, rồi tạo QR hoặc xác nhận đã nhận tiền.':'Chọn mức cọc hoặc nhập tiền, rồi xác nhận khi đã nhận tiền mặt.';
   }
   const timer=setInterval(async()=>{
     if(disposed||!input.isConnected){clearInterval(timer);return;}
