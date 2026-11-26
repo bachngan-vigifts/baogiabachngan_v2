@@ -30,6 +30,7 @@ class Element {
     this.text = String(v);
     this.children = [];
   }
+  get firstChild(): Element | null { return this.children[0] ?? null; }
   get textContent(): string {
     return this.text + this.children.map((x) => x.textContent).join('');
   }
@@ -763,7 +764,7 @@ test('form COD hiển thị thu trước và còn lại, chuyển khoản cần 
     const modal = doc.body.children.at(-1)!;
     assert.match(modal.textContent, /Giao Hàng Nhanh · nhập địa chỉ/);
     assert.match(modal.textContent, /Thông tin đơn hàng và người nhận đã được lấy sẵn/);
-    const deposit = modal.querySelectorAll('label').find(l => l.textContent === 'Đã thu trước / tạm ứng (VNĐ)')!.querySelectorAll('input')[0]!;
+    const deposit = modal.querySelectorAll('label').find(l => l.querySelectorAll('span').some(s => s.textContent === 'Đã thu trước / tạm ứng (VNĐ)'))!.querySelectorAll('input')[0]!;
     await new Promise(r => setTimeout(r, 0));
     const selects = modal.querySelectorAll('select').filter(x => x.attributes['aria-label'] !== 'Hình thức giao'), province = selects[0]!, district = selects[1]!, ward = selects[2]!, method = selects.find(x => x.attributes['aria-label'] === 'Hình thức thu trước')!;
     province.value = 'p1'; await province.fire('change'); await new Promise(r => setTimeout(r, 0));

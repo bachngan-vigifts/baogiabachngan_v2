@@ -414,4 +414,9 @@
  .pos-ref-web-orders:focus-visible {outline:3px solid #fdba74;outline-offset:2px;}
 }
 
+.pos-ref-deposited:has(.pos-deposit-controls){display:block;width:100%;font-weight:400}
+
+.pos-ref-deposit-summary > .pos-total-row:has(.pos-deposit-controls){display:block;position:relative}
+.pos-ref-deposit-summary > .pos-total-row:has(.pos-deposit-controls)>span{position:absolute;top:10px;left:0}
+.pos-ref-deposited:has(.pos-deposit-controls)>input{display:block;margin-left:auto}
 .pos-ref-crm {white-space:nowrap;flex-shrink:0;}

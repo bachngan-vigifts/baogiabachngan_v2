@@ -70,7 +70,7 @@ const shot = process.env.POS_SCREENSHOT_DIR || "/workspace/artifacts/pos-referen
 await mkdir(shot, { recursive: true });
 const results=[];
 try {
-  for(const [width,height] of (process.env.POS_MENU_MOBILE_ONLY?[[390,844],[320,640]]:[[1853,1268],[2214,1497],[1812,1000],[1440,900],[1417,1017],[1280,800],[1024,768],[969,954],[1033,1017],[390,844]])){
+  for(const [width,height] of (process.env.POS_VIEWPORTS?JSON.parse(process.env.POS_VIEWPORTS):process.env.POS_MENU_MOBILE_ONLY?[[390,844],[320,640]]:[[1853,1268],[2214,1497],[1812,1000],[1440,900],[1417,1017],[1280,800],[1024,768],[969,954],[1033,1017],[390,844]])){
     const context=await browser.newContext({viewport:{width,height},locale:'vi-VN'});
     await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
     const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -147,6 +147,7 @@ try {
         const deposit=page.getByLabel('Đã cọc (VNĐ)',{exact:true});
         const deposited=page.locator('.pos-ref-delivery-totals .pos-ref-deposited'),balance=page.locator('.pos-ref-delivery-totals .pos-ref-balance');
         assert.equal(await deposit.inputValue(),'0');assert.equal(await balance.textContent(),'80.000 đ');
+        for(const [percent,amount] of [[30,'24000'],[50,'40000'],[100,'80000']]){await deposited.getByRole('button',{name:percent+'%',exact:true}).click();assert.equal(await deposit.inputValue(),amount);}
         await deposit.fill('20000');assert.equal(await deposit.inputValue(),'20000');assert.equal(await balance.textContent(),'60.000 đ');
         await page.getByRole('button',{name:'Bán nhanh',exact:true}).click();
         await page.getByRole('button',{name:'Bán giao hàng',exact:true}).click();
@@ -194,7 +195,29 @@ try {
           assert.match(await page.locator('.pos-ref-carrier-body').textContent(),/100.000/);
           await carrier.selectOption('nhat_tin');
           await page.getByLabel('Mã vận đơn / phiếu gửi',{exact:true}).fill('NT-FIXTURE-001');
-          await deposit.fill('20000');
+          await deposited.getByRole('button',{name:'30%',exact:true}).click();assert.equal(await deposit.inputValue(),'30000');
+          await deposited.getByRole('button',{name:'Tạo / gửi mã thanh toán',exact:true}).click();
+          await page.getByRole('dialog').filter({hasText:'QR thanh toán tiền cọc'}).waitFor();
+          const qr=qrResults.at(-1);assert.equal(qr.amount,30000);assert.ok(qr.url.includes('amount=30000'));
+          await f.db.update(posPaymentRequests).set({expiresAt:'2000-01-01T00:00:00Z'}).where(eq(posPaymentRequests.id,qr.id));
+          await page.waitForFunction(()=>!Array.from(document.querySelectorAll('dialog[open]')).some(d=>d.textContent.includes('QR thanh toán tiền cọc')));
+          await deposited.getByRole('button',{name:'Kiểm tra trạng thái QR',exact:true}).click();
+          const renewal=page.getByRole('dialog').filter({hasText:'Kiểm tra tiền cọc trước khi dùng lại QR'});
+          const renew=renewal.getByRole('button',{name:'Dùng lại mã sau khi kiểm tra',exact:true});assert.equal(await renew.isDisabled(),true);
+          await renewal.getByLabel('Tôi đã kiểm tra tài khoản nhận và xác nhận chưa nhận khoản cọc này').check();await renew.click();
+          await page.getByRole('dialog').filter({hasText:'QR thanh toán tiền cọc'}).waitFor();
+          assert.equal(qrResults.at(-1).id,qr.id,'renewal never creates a second QR reference');
+
+          const hook=await f.router.handle(new Request('https://trial.test/api/staff/integrations/sepay/pos-payment',{method:'POST',headers:{authorization:'Apikey test-sepay-key','content-type':'application/json'},body:JSON.stringify({transferType:'in',transferAmount:30000,accountNumber:'123456',content:qr.content})}),f.env);assert.equal(hook.status,200);
+          await page.waitForFunction(()=>document.querySelector('.pos-ref-deposited .pos-cod-confirm input')?.checked);
+          assert.equal(await page.getByRole('dialog').filter({hasText:'QR thanh toán tiền cọc'}).isVisible(),false,'paid QR closes automatically');
+          assert.equal(await deposited.getByRole('button',{name:'Đã nhận tiền cọc',exact:true}).isDisabled(),true);
+          await page.screenshot({path:shot+'/1280-deposit-paid.png'});
+          await qty.fill('6');await qty.dispatchEvent('change');await page.waitForFunction(()=>document.querySelector('.pos-line-top>strong')?.textContent.includes('120.000'));
+          assert.equal(await deposited.locator('.pos-cod-confirm input').isChecked(),false,'changed cart clears received confirmation');
+          await qty.fill('5');await qty.dispatchEvent('change');await page.waitForFunction(()=>document.querySelector('.pos-line-top>strong')?.textContent.includes('100.000'));
+          await page.waitForFunction(()=>document.querySelector('.pos-ref-deposited .pos-cod-confirm input')?.checked);
+
           await page.keyboard.press('F9');
           await review.waitFor();assert.match(await review.textContent(),/100.000/);assert.match(await review.textContent(),/Nhất Tín/);
 
@@ -205,8 +228,21 @@ try {
           const body=calls.filter(c=>c.path==='/pos/checkout').at(-1).body;
           assert.equal(body.fulfillmentMode,'cod');assert.equal(body.rows[0].qty,5);assert.equal(body.delivery.receiverPhone,'0901234567');
           const [order]=await f.db.select().from(salesOrders);assert.equal(order.total,100000);assert.equal(order.fulfillmentMode,'cod');
-          const receipts=await f.db.select().from(customerPayments);assert.equal(receipts.length,1);assert.equal(receipts[0].amount,20000);assert.equal(body.delivery.deliveryMethod,'nhat_tin');assert.equal(body.delivery.ghnDistrictId,undefined);
+          const receipts=await f.db.select().from(customerPayments);assert.equal(receipts.length,1);assert.equal(receipts[0].amount,30000);assert.equal(receipts[0].method,'transfer');assert.equal(body.delivery.deliveryMethod,'nhat_tin');assert.equal(body.delivery.ghnDistrictId,undefined);
         }
+      }
+      if(!desktop){
+        await page.locator('.pos-open-payment').click();
+        if(await page.locator('.pos-customer-picker').isVisible())await page.locator('.pos-customer-picker .pos-customer-option').filter({hasText:'Nguyễn Khách kiểm thử'}).click();
+        await page.locator('.pos-payment-method[data-method=cod]').click();
+        await page.getByRole('button',{name:'TIẾP TỤC TẠO ĐƠN COD',exact:true}).click();
+        const form=page.getByRole('dialog').filter({hasText:'Giao Hàng Nhanh · nhập địa chỉ'});
+        await form.locator('.pos-deposit-presets').getByRole('button',{name:'50%',exact:true}).click();
+        const amount=form.getByText('Đã thu trước / tạm ứng (VNĐ)',{exact:true}).locator('..').locator('input');
+        assert.ok(Number(await amount.inputValue())>0);await amount.fill('10000');
+        await form.getByLabel('Tôi xác nhận cửa hàng đã thực nhận tiền cọc').check();
+        await page.screenshot({path:shot+'/390-deposit-manual.png'});
+        await page.keyboard.press('Escape');
       }
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'no document horizontal overflow');
       assert.deepEqual(errors,[]);

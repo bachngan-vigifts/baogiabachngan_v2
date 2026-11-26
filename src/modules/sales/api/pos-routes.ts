@@ -794,7 +794,7 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
       const [order] = await c.env.db.select({ id: salesOrders.id, orderNo: salesOrders.orderNo }).from(salesOrders).where(eq(salesOrders.posPaymentRequestId, r.id));
       const allocationId=JSON.parse(r.cart).exchangeAllocationId;
       const [allocation]=allocationId?await c.env.db.select().from(posExchangeAllocations).where(eq(posExchangeAllocations.id,allocationId)):[];
-      return json({ paid: !!r.confirmedAt, confirmedAt: r.confirmedAt, consumed: !!order, order: order ?? null, ...(r.confirmedAt && allocationId && (!allocation||allocation.status==='cancelled')?{requiresReconciliation:true}:{} ) });
+      return json({ paid: !!r.confirmedAt, confirmedAt: r.confirmedAt, expiresAt:r.expiresAt, consumed: !!order, order: order ?? null, ...(r.confirmedAt && allocationId && (!allocation||allocation.status==='cancelled')?{requiresReconciliation:true}:{} ) });
     },
     'business',
   );
@@ -1250,12 +1250,19 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
         if (!calc.register.bankCode || !calc.register.bankAccount)
           throw new AppError(409, 'Manager cần cấu hình ngân hàng cho quầy.');
         if (calc.payable <= 0) throw new AppError(400, 'Số tiền QR phải lớn hơn 0.');
+        const codDepositAmount=b.depositAmount===undefined?null:posMoney(b.depositAmount,'Tiền cọc');
+        if(codDepositAmount!==null&&(codDepositAmount<=0||codDepositAmount>calc.total||calc.exchange.amount))throw new AppError(400,'Tiền cọc phải lớn hơn 0, không vượt tổng đơn và không dùng tiền đổi hàng.');
+        const qrAmount=codDepositAmount??calc.payable;
         const [existing] = await tx.select().from(posPaymentRequests).where(eq(posPaymentRequests.requestKey, key));
         if (existing) {
-          if (existing.shiftId !== s.id || existing.fingerprint !== calc.fingerprint)
+          if (existing.shiftId !== s.id || existing.fingerprint !== calc.fingerprint || existing.amount!==qrAmount || (JSON.parse(existing.cart).codDepositAmount??null)!==codDepositAmount)
             throw new AppError(409, 'Yêu cầu đã gắn giỏ hàng khác.');
-          if (existing.expiresAt < posNow() || existing.confirmedAt) throw new AppError(409, 'QR hết hạn hoặc đã thu.');
+          if (codDepositAmount===null&&(existing.expiresAt < posNow() || existing.confirmedAt)) throw new AppError(409, 'QR hết hạn hoặc đã thu.');
           return { request: existing, register: calc.register };
+        }
+        if(codDepositAmount!==null){
+          const [paid]=await tx.select({id:posPaymentRequests.id}).from(posPaymentRequests).where(and(eq(posPaymentRequests.shiftId,s.id),eq(posPaymentRequests.fingerprint,calc.fingerprint),sql`${posPaymentRequests.confirmedAt} is not null`,sql`not exists(select 1 from ${salesOrders} where ${salesOrders.posPaymentRequestId}=${posPaymentRequests.id})`)).limit(1);
+          if(paid)throw new AppError(409,'Giỏ đã có QR nhận tiền. Hoàn tất hoặc đối soát khoản đó trước khi tạo mã mới.');
         }
         const reservedOrderNo = await nextPosOrderNo(tx, vietnamDate().iso, await posOrderPrefixFor(tx, calc.register));
         const now = posNow(),
@@ -1265,9 +1272,9 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
               id: crypto.randomUUID(),
               shiftId: s.id,
               requestKey: key,
-              cart: JSON.stringify({ ...calc.canonical, reservedOrderNo, qrBank:{bankCode:calc.register.bankCode,bankAccount:calc.register.bankAccount,bankAccountName:calc.register.bankAccountName} }),
+              cart: JSON.stringify({ ...calc.canonical, ...(codDepositAmount!==null?{codDepositAmount}:{}), reservedOrderNo, qrBank:{bankCode:calc.register.bankCode,bankAccount:calc.register.bankAccount,bankAccountName:calc.register.bankAccountName} }),
               fingerprint: calc.fingerprint,
-              amount: calc.payable,
+              amount: qrAmount,
               createdAt: now,
               expiresAt: new Date(Date.now() + 15 * 60000).toISOString(),
             })
@@ -1279,6 +1286,29 @@ export function registerPosRoutes(router: Router<StaffEnv>) {
     },
     'business',
   );
+  // Renew the same deposit reference; never replace it with a second payment request.
+  router.post('/pos/qr/:id/renew',async c=>{
+    const m=member(c);posPermission(m);const b=await readJson(c.req,64000);
+    if(b.confirmedUnpaid!==true)throw new AppError(400,'Kiểm tra tài khoản nhận và xác nhận chưa nhận tiền trước khi dùng lại mã.');
+    const r=await c.env.db.transaction(async tx=>{
+      await cashLock(tx);
+      const [request]=await tx.select().from(posPaymentRequests).where(eq(posPaymentRequests.id,c.params.id!)).for('update');
+      if(!request)throw new AppError(404,'Không tìm thấy QR.');
+      const shift=await saleShiftOf(tx,m,request.shiftId,true);assertOpen(shift,m);
+      if(shift.id!==posText(b.shiftId)||shift.registerId!==posText(b.registerId))throw new AppError(409,'QR không thuộc ca/quầy này.');
+      const cart=JSON.parse(request.cart),calc=await calculateCart(tx,b);
+      if(!cart.codDepositAmount||cart.codDepositAmount!==posMoney(b.depositAmount,'Tiền cọc')||request.amount!==cart.codDepositAmount||request.fingerprint!==calc.fingerprint||cart.qrDisplayRevokedAt)throw new AppError(409,'Giỏ hoặc QR đã đổi; cần kiểm tra khoản cũ.');
+      const [used]=await tx.select({id:salesOrders.id}).from(salesOrders).where(eq(salesOrders.posPaymentRequestId,request.id)).limit(1);
+      if(request.confirmedAt||used)throw new AppError(409,'QR đã nhận tiền hoặc đã dùng; không yêu cầu khách trả lại.');
+      if(request.expiresAt>posNow())return request;
+      const now=posNow();
+      const [renewed]=await tx.update(posPaymentRequests).set({expiresAt:new Date(Date.now()+15*60000).toISOString()}).where(eq(posPaymentRequests.id,request.id)).returning();
+      await cashAudit(tx,m.id,'renew-deposit-qr','pos-qr',request.id,{confirmedUnpaid:true,previousExpiresAt:request.expiresAt,at:now});
+      return renewed!;
+    });
+    const bank=qrBank(r.cart);if(!bank)throw new AppError(409,'QR thiếu thông tin ngân hàng.');
+    return json(qrView(r,bank));
+  },'business');
   router.get(
     '/pos/cod',
     async (c) => {
