@@ -129,6 +129,15 @@ try {
         assert.equal(await qty.inputValue(),'4');
         assert.equal(await page.locator('.pos-checkout .pos-payment-footer').isVisible(),false);
         await page.screenshot({path:shot+`/${width}-normal.png`});
+        const catalogBounds=await page.locator('.pos-checkout').boundingBox();
+        await page.locator('.pos-ref-normal-footer').getByRole('button',{name:'THANH TOÁN',exact:true}).click();
+        if(await page.locator('.pos-customer-picker').isVisible())await page.locator('.pos-customer-picker .pos-customer-option').filter({hasText:'Nguyễn Khách kiểm thử'}).click();
+        await page.locator('.pos-reference-checkout').waitFor();
+        const paymentBounds=await page.locator('.pos-checkout').boundingBox();
+        assert.ok(Math.abs(catalogBounds.width-paymentBounds.width)<2&&Math.abs(catalogBounds.x-paymentBounds.x)<2,'payment stays the same width and position as the product panel');
+        await page.screenshot({path:shot+`/${width}-normal-payment.png`});
+        await page.getByRole('button',{name:'← Danh mục sản phẩm',exact:true}).click();
+
         await page.getByRole('button',{name:'Bán giao hàng',exact:true}).click();
         assert.equal(await discount.isVisible(),true,'CK stays visible in delivery mode');
         const inlineDiscount=await discount.evaluate(n=>{const d=n.getBoundingClientRect(),p=n.closest('.pos-line').querySelector('.pos-line-price').getBoundingClientRect(),r=n.closest('.pos-line').getBoundingClientRect();return Math.abs((d.top+d.bottom)/2-(p.top+p.bottom)/2)<2&&d.left>=p.right&&d.right<=r.right;});
