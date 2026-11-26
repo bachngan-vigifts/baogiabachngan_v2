@@ -14,7 +14,7 @@ import { customerStockRequests } from '../../src/modules/portal/schema.ts';
 /**
  * PHÊ DUYỆT CHỈ DO MANAGER HOẶC NGƯỜI ĐƯỢC MANAGER CHỈ ĐỊNH (cờ "Được duyệt", docs/PHAN-QUYEN.md) –
  * báo giá, khách hàng mới, sản phẩm mới, đơn hàng / HĐKT, đơn mua NCC, hộp "Cần duyệt".
- * Sale Admin: không duyệt (trừ khi được bật cờ); xem toàn công ty CHỈ ở báo giá, khách hàng, đơn hàng, HĐKT.
+ * Sale Admin: không duyệt (trừ khi được bật cờ); xem toàn công ty ở báo giá, khách hàng, đơn hàng, HĐKT và toàn bộ NCC.
  */
 const origin = 'https://trial.test', now = '2026-10-01T00:00:00.000Z';
 async function setup() {
@@ -83,8 +83,14 @@ test('Manager duyệt được mọi loại; nhân viên thường và Sale Admi
     const oid = await s.pendingOrder();
     assert.equal((await s.call(`/orders/${oid}/status`, who, 'PUT', { status: 'confirmed', verified: true, costWarningsReviewed: true })).status, 403, 'đơn hàng / HĐKT');
     const p = await s.pendingPurchase();
-    // Sale thường không thấy đơn mua nháp của Manager (404); Sale Admin thấy (quyền Kế toán) nhưng không duyệt được (403).
-    assert.equal((await s.call(`/purchase-orders/${p.id}/approve`, who, 'POST', p.body)).status, who === s.sadmin ? 404 : 403, 'đơn mua NCC');
+    // Sale Admin sees the supplier order, but approval remains a separate permission.
+    const view = await s.call(`/purchase-orders/${p.id}`, who);
+    assert.equal(view.status, who === s.sadmin ? 200 : 403, 'quyền xem mua hàng theo chức vụ');
+    if (who === s.sadmin) assert.ok(!view.data.actions.includes('approve'), 'xem đơn không cấp quyền duyệt');
+    assert.equal((await s.call(`/purchase-orders/${p.id}/approve`, who, 'POST', p.body)).status, 403, 'đơn mua NCC');
+    const unchanged = await s.call(`/purchase-orders/${p.id}`, s.mgr);
+    assert.equal(unchanged.data.revision, p.body.revision, 'từ chối duyệt không sửa đơn');
+    assert.ok(unchanged.data.actions.includes('approve'), 'đơn vẫn chờ Manager duyệt');
     assert.equal((await s.call('/approvals', who)).status, 403, 'hộp Cần duyệt');
     assert.equal((await s.call('/me', who)).data.user.approver, false);
   }

@@ -44,6 +44,13 @@ try {
  await page.waitForURL(/#\/purchases\/[^n]/);
  const id=decodeURIComponent(page.url().split('#/purchases/')[1].split('?')[0]);
  const saved=await f.call('/purchase-orders/'+id,f.cookies.sa);assert.equal(saved.status,200,JSON.stringify(saved.data));assert.equal(saved.data.supplier.id,'b');
+ assert.ok(!saved.data.actions.includes('approve'));
+ await page.getByRole('button',{name:'Gửi duyệt',exact:true}).waitFor();
+ const submitted=page.waitForResponse(r=>r.url().endsWith('/purchase-orders/'+id+'/submit')&&r.request().method()==='POST');
+ await page.getByRole('button',{name:'Gửi duyệt',exact:true}).click();assert.equal((await submitted).status(),200);
+ const pending=await f.call('/purchase-orders/'+id,f.cookies.sa);assert.equal(pending.status,200);assert.ok(!pending.data.actions.includes('approve'));
+ assert.equal(await page.getByRole('button',{name:/^Duyệt( đơn| & gửi NCC)?$/}).count(),0);
+ assert.equal((await f.call('/purchase-orders/'+id+'/approve',f.cookies.sa,'POST',{revision:pending.data.revision,lines:[]})).status,403);
  assert.deepEqual(errors,[]);await page.screenshot({path:out+'/'+width+'.png'});results.push({width,supplier:'b',created:true});await context.close();
  }
  console.log(results);
