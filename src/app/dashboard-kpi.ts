@@ -51,6 +51,7 @@ export const dashboardKpiOf: DashboardKpiOf = async (db, month, memberIds) => {
     out.push({
       id: row.member.id, name: row.member.name, status: view.status, source: trackingOnly || auto ? 'crm' : 'manual',
       total: kpi.total, used: kpi.used, adjustedBy, trackingOnly, bonusRate: trackingOnly ? 0 : net ? netKpiBonusRate(p, kpi.used) : kpiBonusRate(p, kpi.used),
+      revenueIssues:trackingOnly&&trackingNet?fact?.netRevenueIssues??0:undefined,
       revenueBasis:(trackingOnly?trackingNet:kpi.policy==='appsheet')?'net-revenue':'invoice-total',approvedOnly:kpi.policy==='appsheet',
       crmPreview: crm && !crm.kpiApply && crm.previewKpi ? crm.previewKpi.used : null, parts, merchDays, tripDays,
     });

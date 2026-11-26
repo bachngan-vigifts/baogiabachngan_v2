@@ -240,7 +240,7 @@ export function initDashboard({ api, root, isManager, money, user=()=>null }) {
       const tr = node('tr'), name = node('td'), sw = node('i', null, 'dash-kpi-key'); sw.style.background = KPI_PARTS[p.key]; name.append(sw, document.createTextNode(p.label));
       // Hai dòng mỗi ô: số chính + chỉ tiêu / điểm tối đa (vừa màn hình điện thoại, không cuộn ngang).
       const two = (main, sub) => { const td = node('td'); td.append(node('strong', main), node('small', sub)); return td; };
-      const actual = p.key === 'revenue' ? money(p.actual ?? 0) : count(p.actual) + (p.extra ? ` + ${p.extra.toLocaleString('vi-VN')} quy đổi` : '');
+      const actual = p.key === 'revenue' ? (m.revenueIssues && !p.actual ? 'Chưa đủ dữ liệu' : money(p.actual ?? 0)) : count(p.actual) + (p.extra ? ` + ${p.extra.toLocaleString('vi-VN')} quy đổi` : '');
       const actualCell=two(actual, (p.own ? 'chỉ tiêu riêng ' : 'chỉ tiêu ') + (p.key === 'revenue' ? money(p.target) : p.target.toLocaleString('vi-VN')));
       const detailButton=node('button',null,'dash-kpi-drilldown');detailButton.type='button';detailButton.setAttribute('aria-label','Xem chi tiết '+p.label+' của '+m.name);
       detailButton.append(...actualCell.childNodes);actualCell.append(detailButton);
@@ -258,6 +258,7 @@ export function initDashboard({ api, root, isManager, money, user=()=>null }) {
     note((m.adjustedBy ? 'Theo KPI áp dụng trên bảng lương: ' : '') + kpiBonusText(m) + '.');
     note(m.trackingOnly ? 'Điểm theo dữ liệu CRM hiện tại; không đưa vào tính thưởng hoặc thay đổi phiếu lương đã chốt.' : m.status === 'estimate' ? 'Tạm tính theo số liệu hiện tại; chốt lương sẽ giữ cố định.' : 'Theo phiếu lương đã chốt (số lúc chốt).');
     note(m.source === 'crm' ? 'KH mới: hồ sơ đã duyệt trong kỳ, tính cho người tạo, không cần đơn hàng. Giao dịch lấy tự động từ CRM. Đơn hàng / HĐKT: mỗi đơn đã duyệt tính một lần theo ngày đơn, kể cả HĐKT chưa ký.' : 'KH mới, giao dịch, số đơn hàng / HĐKT theo số nhập trên bảng lương.');
+    if(m.revenueIssues)note(`Có ${m.revenueIssues} đơn chưa đủ căn cứ hoa hồng để tính doanh số net. Số đã xác minh chưa bao gồm các đơn này; không phải doanh số thực tế bằng 0.`);
     if (m.crmPreview != null) note(`KPI tính từ CRM (đối chiếu, chưa áp dụng): ${kpiPercent(m.crmPreview)}.`);
     if (m.merchDays || m.tripDays) note(`Đã cộng quy đổi ${m.merchDays} ngày làm hàng, ${m.tripDays} ngày công tác.`);
     box.append(scroll, notes); return box;

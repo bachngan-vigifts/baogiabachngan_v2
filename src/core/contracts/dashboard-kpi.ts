@@ -35,6 +35,7 @@ export interface DashboardKpiMember {
   crmPreview: number | null;
   parts: DashboardKpiPart[];
   merchDays: number; tripDays: number;
+  revenueIssues?:number;
   revenueBasis?: 'net-revenue' | 'invoice-total'; approvedOnly?:boolean;
 }
 /** App lắp từ HR: cùng cách tính với phiếu lương; dashboard không import HR / lương. */

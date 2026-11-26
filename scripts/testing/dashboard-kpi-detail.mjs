@@ -4,6 +4,7 @@ import {eq} from 'drizzle-orm';import {setupSalesPayroll} from '../../tests/help
 import {kpiPercent,kpiAttainmentClass} from '../../trial-ui/dashboard.js';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright'),f=await setupSalesPayroll(),month='2026-10';
 await f.setPolicy(1);await f.salary();await f.care();
+if(process.env.KPI_PENDING_ADMIN){await f.db.update(employees).set({positionId:'sale-admin'}).where(eq(employees.id,'emp'));await f.setPolicy(1,month,{saleKpiNetFrom:202610});}
 const data=(await f.call('/dashboard/kpi?from='+month+'&to='+month,f.mgr)).data,member=data.members.find(m=>m.id==='emp');
 const root=fileURLToPath(new URL('../../trial-ui/',import.meta.url)),out='/workspace/artifacts/kpi-detail';await mkdir(out,{recursive:true});
 const server=createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost');if(u.pathname.startsWith('/api/staff/')){
@@ -18,6 +19,7 @@ try{for(const width of [1440,390]){
  await context.addInitScript(({user,token})=>{localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));},{user,token:f.mgr.split('=')[1]});
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.clock.setFixedTime(new Date('2026-10-31T12:00:00+07:00'));await page.goto(origin+'/#/dashboard');
  await page.locator('.dash-kpi-drilldown').first().waitFor();
+ if(process.env.KPI_PENDING_ADMIN)assert.match(await page.locator('.dash-kpi-table').textContent(),/Chưa đủ dữ liệu/);
  for(const part of member.parts){
   await page.getByRole('button',{name:'Xem chi tiết '+part.label+' của '+member.name,exact:true}).click();
   const dialog=page.locator('.dash-kpi-popup');await dialog.locator('tbody tr').first().waitFor();
