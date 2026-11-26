@@ -37,7 +37,7 @@
   .pos-workspace.pos-reference.pos-pc-scan .pos-ref-header-actions { display:flex;align-items:center;gap:12px;margin-left:auto;min-width:0; }
   .pos-ref-store { max-width:185px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-layout { padding:10px;gap:10px;grid-template-columns:minmax(0,1fr) clamp(350px,28vw,600px);overflow:hidden; }
-  .pos-workspace.pos-reference.pos-pc-scan .pos-catalog { border:0;border-radius:0;background:transparent;padding:0;gap:0;position:relative;overflow:visible; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-catalog { border:0;border-radius:0;background:transparent;padding:0;gap:0;position:relative;overflow:auto; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-checkout { border:0;border-radius:12px;background:white;padding:14px 16px 12px;gap:0;overflow:hidden; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-checkout-scroll { gap:0!important;scrollbar-width:thin; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-ref-cashier { display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 12px;min-height:23px; }
@@ -48,9 +48,10 @@
   .pos-workspace.pos-reference.pos-pc-scan .pos-customer-trigger { width:100%;justify-content:flex-start;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:38px;background:#f0f1f3;color:#697887;border:0;border-radius:6px;font-size:14px;padding:8px 34px;position:relative;font-weight:400;box-shadow:none; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-customer-trigger::before { content:'⌕';position:absolute;left:9px;font:22px Arial;top:3px; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-customer-trigger::after { content:'+';position:absolute;right:10px;font:24px Arial;top:3px; }
-  .pos-workspace.pos-reference.pos-pc-scan .pos-workspace-cart { border:0;border-radius:0;min-height:60px;overflow:visible; }
+  /* Keep one full row usable on short screens; the catalog can scroll to totals below. */
+  .pos-workspace.pos-reference.pos-pc-scan .pos-workspace-cart { border:0;border-radius:0;flex:1 1 0px;min-height:min(240px,40dvh);overflow:hidden; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-cart-table-head { display:none!important; }
-  .pos-workspace.pos-reference.pos-pc-scan .pos-lines { overflow:auto;scrollbar-width:thin;overscroll-behavior:contain;max-height:none!important;padding:0 2px 10px!important; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-lines { flex:1 1 0px;height:0;min-height:0;overflow-x:hidden;overflow-y:scroll;scrollbar-width:auto;scrollbar-gutter:stable;overscroll-behavior:contain;max-height:none!important;padding:0 2px 10px!important; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-lines>.pos-note { color:#8b969f;text-align:center;margin-top:48px; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-line { grid-template-columns:20px 24px 106px minmax(120px,1fr) 36px 100px 100px 142px 106px 32px;gap:9px;padding:12px 14px;border:1px solid #ced3da;border-radius:12px;min-height:56px;box-shadow:0 2px 6px #26394d25;margin:0 0 9px;align-content:center; }
   .pos-workspace.pos-reference.pos-pc-scan .pos-line[aria-selected=true] { background:white;box-shadow:0 2px 6px #26394d25;border-color:#c9cfd7; }

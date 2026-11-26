@@ -1371,6 +1371,14 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   }
   function sizeCartLines() {
     const host = nodes.lines, rows = [...host.children];
+    // Desktop cart height is constrained by the workspace, even with fewer than ten rows.
+    if (desktopPos()) {
+      host.style.maxHeight = 'none';
+      host.style.overflowY = 'auto';
+      host.style.overflowX = 'hidden';
+      host.style.scrollbarGutter = 'stable';
+      return;
+    }
     const scroll = st.cart.length > 10;
     host.style.maxHeight = 'none';
     host.style.overflowY = scroll ? 'auto' : 'visible';
