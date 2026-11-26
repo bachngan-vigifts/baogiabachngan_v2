@@ -21,8 +21,8 @@ test('KPI detail matches all four current sources, validates scope and never lea
   assert.equal((await f.call(base.replace('month=2026-10','month=2026-09')+'&metric=revenue',f.mgr)).status,400);
   assert.equal((await f.call(base+'&metric=revenue&owner=mgr',f.mgr)).status,404);
 
-  const [original]=await f.db.select().from(customers);
-  await f.db.insert(customers).values(Array.from({length:51},(_,i)=>({...original,id:'detail-customer-'+i,createdBy:'emp',dataSource:'web',isRetail:false,approvalStatus:'approved',approvedAt:'2026-10-30T00:00:00Z',createdAt:'2026-10-30T00:00:00Z'})));
+  const [original]=await f.db.select().from(customers);assert.ok(original);
+  await f.db.insert(customers).values(Array.from({length:51},(_,i)=>({...original,id:'detail-customer-'+i,createdBy:'emp',dataSource:'web',isRetail:false,approvalStatus:'approved' as const,approvedAt:'2026-10-30T00:00:00Z',createdAt:'2026-10-30T00:00:00Z'})));
   const second=await f.call(base+'&metric=newCustomers&page=2',f.mgr);assert.equal(second.data.sourceCount,52);assert.equal(second.data.rows.length,2);assert.equal(second.data.total,52);
   await f.setPolicy(1,'2026-10',{appsheetKpiFrom:202610});
   const net=await f.call(base+'&metric=revenue',f.mgr);assert.equal(net.status,200);assert.equal(net.data.member.revenueBasis,'net-revenue');assert.equal(net.data.total,net.data.member.parts.find((p:any)=>p.key==='revenue').actual);
