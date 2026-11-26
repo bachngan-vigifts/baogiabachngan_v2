@@ -1471,3 +1471,20 @@ body:has(#view-pos:not([hidden])) #reminder-launcher { display:none; }
 .pos-deposit-presets{display:flex;gap:6px}
 .pos-deposit-presets .btn{flex:1}
 .pos-deposit-controls .pos-note{font-size:12px;margin:0;white-space:normal}
+/* Nested POS actions belong to the header menu's scroll flow, not a clipped flyout. */
+#view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) .pos-more-menu {
+  flex:1 0 100%;width:100%;min-width:0;grid-column:auto;justify-self:stretch;
+}
+#view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) .pos-more-menu>summary {
+  display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;padding:8px 12px;box-sizing:border-box;font-size:16px;
+}
+#view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) .pos-more-menu>summary::after {content:'Thao tác khác';font-size:14px;}
+#view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) .pos-more-panel {
+  position:static;min-width:0;width:100%;box-sizing:border-box;margin-top:8px;box-shadow:none;gap:4px;
+}
+#view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) .pos-more-panel .btn {
+  width:100%;min-width:0;min-height:44px;white-space:normal;overflow-wrap:anywhere;text-align:left;
+}
+#view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) .pos-head-tools {min-width:0;gap:8px;}
+#view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) .pos-shift-status {max-width:100%;white-space:normal;}
+#view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) {overscroll-behavior:contain;}

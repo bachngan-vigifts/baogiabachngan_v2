@@ -1,3 +1,4 @@
+import {checkHeaderMenu} from './helpers/pos-header-menu-checks.mjs';
 import assert from "node:assert/strict";
 import {checkLineMenu} from './helpers/pos-line-menu-checks.mjs';
 import { createServer } from "node:http";
@@ -69,7 +70,7 @@ const shot = process.env.POS_SCREENSHOT_DIR || "/workspace/artifacts/pos-referen
 await mkdir(shot, { recursive: true });
 const results=[];
 try {
-  for(const [width,height] of (process.env.POS_VIEWPORTS?JSON.parse(process.env.POS_VIEWPORTS):[[2214,1497],[1812,1000],[1440,900],[1417,1017],[1280,800],[1024,768],[969,954],[1033,1017],[390,844]])){
+  for(const [width,height] of (process.env.POS_VIEWPORTS?JSON.parse(process.env.POS_VIEWPORTS):process.env.POS_MENU_MOBILE_ONLY?[[390,844],[320,640]]:[[1853,1268],[2214,1497],[1812,1000],[1440,900],[1417,1017],[1280,800],[1024,768],[969,954],[1033,1017],[390,844]])){
     const context=await browser.newContext({viewport:{width,height},locale:'vi-VN'});
     await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
     const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -78,6 +79,7 @@ try {
       assert.equal(await page.locator('#approval-launcher').isVisible(),false,'approval bell cannot cover POS search');
       await page.evaluate(()=>{document.querySelector('#view-pos').hidden=true;});assert.equal(await page.locator('#approval-launcher').isVisible(),true,'launcher stays available outside POS');
       await page.evaluate(()=>{document.querySelector('#view-pos').hidden=false;document.querySelector('#approval-launcher').hidden=false;});assert.equal(await page.locator('#approval-launcher').isVisible(),false,'background refresh cannot reveal bell on POS');
+      await checkHeaderMenu(page,shot+`/${width}-header-menu.png`);
       const desktop=width>850,input=page.getByRole('searchbox',{name:'Tìm hoặc quét sản phẩm'});
       await page.screenshot({path:shot+`/${width}-empty.png`});
       if(desktop) {
