@@ -2649,6 +2649,10 @@ body:has(.approval-launcher:not([hidden])) .pos-head { padding-left: 76px; }
   #quote-form:not(.type-sale) #line-list :is(.col-after, .line-total) { font-size: var(--text-label); }
   #quote-form:not(.type-sale) #line-list .unit-field { gap: 3px; }
 }
+@media screen and (min-width: 1366px) {
+  /* Leave room for a non-overlay scrollbar on laptop screens. */
+  #quote-form:not(.type-sale) #line-table:not(:has(.col-pd)) { min-width: min(100%, 1020px); }
+}
 @media screen and (min-width: 851px) and (max-width: 1599px) {
   /* Cột tên hẹp hơn: nhãn "Bộ gồm / Mô tả in ấn / Đóng gói" nằm trên ô để ô nhập đủ rộng. */
   #quote-form:not(.type-sale) #line-list .sub-field { grid-template-columns: minmax(0, 1fr); gap: 2px; }
