@@ -70,7 +70,7 @@ const shot = process.env.POS_SCREENSHOT_DIR || "/workspace/artifacts/pos-transfe
 await mkdir(shot, { recursive: true });
 const results=[];
 try {
- for(const [index,width] of [966,1280,390].entries()){
+ for(const [index,width] of [1583,966,1280,390].entries()){
   const chooseStore=width===1280;
   await f.db.update(posRegisters).set({name:chooseStore?'Sale Admin':'CỬA HÀNG LOCKNLOCK CẦN THƠ'}).where(eq(posRegisters.id,f.registerId));
   const context=await browser.newContext({viewport:{width,height:width===390?844:1000},locale:'vi-VN'});
@@ -90,8 +90,8 @@ try {
    await host.locator('.pos-create-qr').click();await qrResponse;
    const qr=qrResults.at(-1);assert.ok(qr?.id);
    const dialog=page.locator('.pos-qr-modal');
-   if(width>850)await host.locator('.pos-create-qr').click();
-   await dialog.waitFor();
+   await dialog.waitFor({state:'visible',timeout:5000});
+   assert.equal(await dialog.locator('.pos-qr').getAttribute('src'),qr.url,'first click opens the QR just created');
    const qrCount=calls.filter(c=>c.path==='/pos/qr'&&c.method==='POST').length,sharesBefore=calls.filter(c=>c.path.endsWith('/share')).length;
    if(chooseStore){
     assert.equal(calls.filter(c=>c.path.endsWith('/share')).length,sharesBefore,'manager chooses target before any send');
@@ -106,6 +106,10 @@ try {
    const printed=await page.evaluate(()=>window.printCount);await dialog.locator('.pos-qr-print').click();
    await page.waitForFunction(n=>window.printCount>n,printed);
    await dialog.locator('.pos-modal-close').click();
+   await host.locator('.pos-create-qr').click();
+   await page.locator('.pos-qr-modal:visible').waitFor();
+   assert.equal(calls.filter(c=>c.path==='/pos/qr'&&c.method==='POST').length,qrCount,'reopening reuses the same unexpired QR');
+   await page.locator('.pos-qr-modal:visible .pos-modal-close').click();
    assert.equal(await host.locator('.pos-transfer-confirm input').isChecked(),false,'printing and sharing cannot confirm receipt');
    assert.equal((await f.db.select().from(salesOrders)).length,0);assert.equal((await f.db.select().from(customerPayments)).length,0);
    await page.screenshot({path:shot+`/${width}-actions.png`});

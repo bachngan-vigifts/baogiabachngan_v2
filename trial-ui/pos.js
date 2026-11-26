@@ -2364,7 +2364,6 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     m.body.append(amount, info, shareArea, footer);
     m.show();
     watchQr(d,ownerId,status,m);
-    if(desktopPos()&&!reuse)m.close();
     // Continue watching this QR after closing the popup; cart changes invalidate it.
   }
   function watchQr(d,ownerId,status=null,m=null){
