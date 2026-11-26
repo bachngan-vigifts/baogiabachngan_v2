@@ -86,6 +86,7 @@
 
 <!-- ============ KHÔNG GIAN LÀM VIỆC ============ -->
 <div id="workspace" class="workspace" hidden>
+  <a class="crm-skip" href="#crm-main">Đến nội dung chính</a>
   <aside class="sidebar"><!-- Biểu tượng menu: Tabler Icons (MIT, licenses/tabler-icons.txt); thanh dưới điện thoại dùng cùng bộ (mobile-design.js). -->
     <div class="brand light"><b class="brandmark">BN</b><div>BÁCH NGÂN<small>BÁO GIÁ &amp; CRM</small></div></div>
     <nav class="side-nav" aria-label="Điều hướng chính">
@@ -176,7 +177,7 @@
     <small class="menu-version">Phiên bản <span id="app-version">__BUILD__</span></small>
   </div>
 
-  <main class="main">
+  <main class="main" id="crm-main" tabindex="-1">
     <header class="topbar">
       <div class="crumbs"><button type="button" class="page-back" id="page-back" aria-label="Trở lại">‹ Trở lại</button><span class="muted">Bách Ngân</span><span class="slash">/</span><b id="breadcrumb">Báo giá</b></div>
       <div class="topbar-right">
@@ -237,6 +238,10 @@
             <option value="created">Mới tạo</option><option value="updated">Mới cập nhật</option><option value="date">Ngày báo giá</option><option value="value">Giá trị cao nhất</option><option value="no">Số báo giá</option>
           </select>
         </div>
+        <div class="quote-list-feedback">
+          <span id="quote-list-status" role="status"></span>
+          <button type="button" id="quote-list-retry" class="btn secondary" hidden>Thử tải lại</button>
+        </div>
         <div class="table-wrap">
           <table class="data-table" id="quote-table">
             <thead><tr><th>Số báo giá</th><th>Khách hàng</th><th>Đơn / HĐKT</th><th>Ngày</th><th class="right">Giá trị</th><th>Cập nhật</th><th class="actions-col"><span class="sr-only">Thao tác</span></th></tr></thead>
@@ -258,7 +263,7 @@
         <div class="editor-head">
           <a href="#/quotes" class="btn ghost back" data-mobile-inline><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Báo giá</a>
           <div class="editor-title">
-            <h1 id="editor-title">Tạo báo giá</h1>
+            <h1 id="editor-title" tabindex="-1">Tạo báo giá</h1>
             <span class="pill" id="editor-revision" hidden></span>
             <span class="pill warn" id="editor-dirty" hidden>Chưa lưu</span>
             <span class="pill" id="editor-approval" hidden></span>
