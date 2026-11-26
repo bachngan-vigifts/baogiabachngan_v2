@@ -22,10 +22,10 @@ import { notify, notifyMany } from '../../notifications/api/routes.ts';
 
 
 const isManager = (m: { role: string }) => m.role === 'manager';
-/** Giá vốn (giá nhập, CK mua vào, chi phí in gia công, CK khách) chỉ Manager thấy. */
+/** Giá vốn (giá nhập, CK mua vào, chi phí in gia công) chỉ Manager thấy; CK khách cho nhân viên khai báo. */
 const forViewer = <T extends Record<string, unknown>>(viewer: { role: string }, data: T): T => isManager(viewer) ? data : {
-  ...withoutCosts(data),
-  // Staff may see the saved customer rebate total, never purchase/printing costs or margin inputs.
+  ...withoutCosts(data, true),
+  // Staff may declare customer rebates, never purchase/printing costs or margin inputs.
   staffSummary: { customerCommission: (Array.isArray(data.rows) ? data.rows as PriceRow[] : []).reduce((sum, row) => sum + commissionOf(row), 0) },
 };
 /** Re-project final transaction data, reusing only images resolved before writes. */
@@ -233,6 +233,8 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
       const [quote] = await tx.select({ data: quotations.data }).from(quotations).where(condition).limit(1).for('update');
       if (!quote) return [];
       const data = JSON.parse(quote.data); assertSaleTemplate(data);
+      const missing=(data.rows||[]).filter((r:PriceRow)=>String(r.name||'').trim()&&Number(r.qty)>0).some((r:PriceRow)=>!r.commission||!Number.isFinite(r.commission.value));
+      if(missing)throw new AppError(400,'Nhập CK khách cho từng mã hàng trước khi gửi duyệt; không có CK thì nhập 0.','COMMISSION_REQUIRED');
       if (data.template === 'sale') await withDesignImages(c.env, data, true);
       return tx.update(quotations).set({ approvalStatus: 'pending', updatedAt: new Date().toISOString() }).where(condition).returning({ quoteNo: quotations.quoteNo, customer: quotations.customer });
     });
@@ -269,7 +271,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
   router.post('/quotes', async c => {
     const viewer = (c.state.session as SessionState).member;
     // Nhân viên không đặt giá vốn (Manager bổ sung sau).
-    const raw = await readJson(c.req), data = cleanQuotation(isManager(viewer) ? raw : keepCosts(raw, null));
+    const raw = await readJson(c.req), data = cleanQuotation(isManager(viewer) ? raw : keepCosts(raw, null, true));
     checkDesignKeys(viewer, data);
     const viewData = await withDesignImages(c.env, forViewer(viewer, data), true);
     const id = crypto.randomUUID(), now = new Date().toISOString(), approval = missingSaleDesign(data)
@@ -300,7 +302,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
         throw new AppError(403, 'Báo giá đã duyệt. Gửi yêu cầu và chờ Manager cho phép sửa.', 'QUOTE_APPROVED');
       checkDesignKeys(viewer, data, JSON.parse(old.data));
       // Nhân viên không thấy giá vốn → giữ nguyên giá vốn cũ của từng dòng (theo id dòng).
-      if (!isManager(viewer)) data = cleanQuotation(keepCosts(body.data as Record<string, unknown>, JSON.parse(old.data)));
+      if (!isManager(viewer)) data = cleanQuotation(keepCosts(body.data as Record<string, unknown>, JSON.parse(old.data), true));
       // Resolve attachments before any write: storage failures cannot report failure after committing the quote.
       viewData = await withDesignImages(c.env, forViewer(viewer, data), true);
       for (const h of quoteSaveHooks.beforeSave) await h(tx, old, viewer);

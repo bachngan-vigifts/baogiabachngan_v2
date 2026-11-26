@@ -166,6 +166,7 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
     if (row.commission !== undefined && row.commission !== null) {
       const c = row.commission;
       if (typeof c !== 'object' || Array.isArray(c) || (c.mode !== undefined && !['percent', 'amount'].includes(c.mode))) throw bad('CK cho khách không hợp lệ.');
+      if(c.value == null || c.value === '' || typeof c.value !== 'number' || !Number.isFinite(c.value)) throw bad('Nhập CK cho khách; không có CK thì nhập 0.');
       const mode = c.mode === 'amount' ? 'amount' : 'percent';
       clean.commission = { mode, value: number(c.value ?? 0, mode === 'percent' ? 100 : 1e12), excluded: c.excluded === true };
     }

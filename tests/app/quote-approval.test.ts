@@ -15,7 +15,7 @@ async function setup() {
   const login = async (email: string) => (await call('/login', '', 'POST', { email, password: PASSWORD })).cookie;
   return { call, emp: await login('emp@x.vn'), mgr: await login('mgr@x.vn') };
 }
-const doc = (price = 100000) => ({ type: 'B2B', quoteNo: 'B2B_BG20261006_001', customer: 'Công ty A', vat: 8, rows: [{ name: 'Ly', qty: 10, price }] });
+const doc = (price = 100000) => ({ type: 'B2B', quoteNo: 'B2B_BG20261006_001', customer: 'Công ty A', vat: 8, rows: [{ name: 'Ly', qty: 10, price, commission:{mode:'percent',value:0} }] });
 
 test('duyệt báo giá: nhân viên lưu → nháp; bấm Gửi duyệt → chờ duyệt; Manager duyệt; đã duyệt thì chỉ Manager được sửa; Manager tạo → tự duyệt', async () => {
   const { call, emp, mgr } = await setup();
@@ -69,4 +69,17 @@ test('xoá báo giá: nhân viên xoá báo giá chưa duyệt của mình; Mana
   assert.equal((await call('/orders', mgr, 'POST', { quoteId: b.data.id })).status, 201);
   const del = await call('/quotes/' + b.data.id, mgr, 'DELETE', { revision: 1 });
   assert.equal(del.status, 409); assert.match(del.data.error, /đơn đặt hàng/);
+});
+
+test('staff must explicitly enter commission including zero before submitting; cancel/missing leaves draft',async()=>{
+ const {call,emp,mgr}=await setup();const raw=doc();delete (raw.rows[0] as any).commission;
+ const q=await call('/quotes',emp,'POST',raw),path='/quotes/'+q.data.id;
+ assert.equal((await call(path+'/submit',emp,'POST',{revision:1})).data.code,'COMMISSION_REQUIRED');
+ assert.equal((await call(path,emp)).data.approvalStatus,'draft');
+ const d=(await call(path,emp)).data;d.data.rows[0].commission={mode:'amount',value:2500};d.data.rows[0].costPrice=123;
+ const saved=await call(path,emp,'PUT',{revision:1,data:d.data});assert.equal(saved.status,200);assert.equal(saved.data.data.rows[0].commission.value,2500);assert.equal(saved.data.data.rows[0].costPrice,undefined);
+ assert.equal((await call(path,mgr)).data.data.rows[0].commission.value,2500);
+ assert.equal((await call(path+'/submit',emp,'POST',{revision:1})).status,409);
+ assert.equal((await call(path+'/submit',emp,'POST',{revision:2})).status,200);
+ for(const value of [null,'',-1,101]){const bad=doc();(bad.rows[0] as any).commission={mode:'percent',value};assert.equal((await call('/quotes',emp,'POST',bad)).status,400);}
 });

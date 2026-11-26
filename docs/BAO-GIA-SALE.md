@@ -22,9 +22,9 @@ Thiếu lịch sử hiện **Chưa đủ lịch sử**, không dùng 0 thay cho 
 
 ## Bảng tổng hợp cho nhân viên
 
-Nhân viên được mở **Xem tổng hợp báo giá** trên báo giá có quyền xem. Bảng hiện doanh thu trước VAT, tổng CK khách của bản đã lưu (chỉ xem), cước dự toán và bên thanh toán cước. Khi đang sửa, CK khách có nhãn **bản đã lưu**; lưu thành công sẽ nhận tổng mới từ máy chủ.
+Nhân viên được mở **Xem tổng hợp báo giá** trên báo giá có quyền xem. Bảng hiện doanh thu trước VAT, CK khách đang nhập, cước dự toán và bên thanh toán cước. Nhân viên có quyền sửa báo giá được mở **CK khách (tiền cà phê)** và nhập theo từng mã (% hoặc đ/SP). Bấm **Gửi duyệt** mở form xác nhận CK; từng mã phải có số cụ thể, không có CK thì nhập **0**. Đóng form hoặc để trống không gửi duyệt. API kiểm tra lại CK trên đúng phiên bản báo giá trong giao dịch gửi duyệt.
 
-Giá nhập, CK mua vào, chi phí in gia công, lợi nhuận gộp, tỷ lệ lợi nhuận và các điều khiển sửa những dữ liệu này vẫn chỉ Manager. API nhân viên tiếp tục bỏ các trường chi phí/hoa hồng từng dòng; chỉ bổ sung tổng CK khách cần cho bảng này. Nhân viên gửi dữ liệu giá vốn hay sửa tổng CK khách không làm thay đổi dữ liệu Manager đã lưu.
+Giá nhập, CK mua vào, chi phí in gia công, lợi nhuận gộp, tỷ lệ lợi nhuận và các điều khiển sửa những dữ liệu này vẫn chỉ Manager. API nhân viên cho phép đọc/ghi CK khách trên báo giá có quyền sửa, nhưng tiếp tục bỏ và giữ nguyên các chi phí nội bộ. Tổng CK được máy chủ tính lại; không tin tổng gửi từ trình duyệt. Báo giá đã duyệt vẫn cần quyền mở sửa. Trang khách và bản báo giá công khai vẫn không hiện CK nội bộ. Không cập nhật hàng loạt báo giá cũ.
 
 ## Kiểm chứng
 

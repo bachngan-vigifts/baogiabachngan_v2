@@ -89,7 +89,7 @@ test('giá vốn: nhân viên không thấy, lưu lại không mất; Manager th
   assert.equal(eq.data.shipping.cost,undefined,'không trả chi phí vận chuyển nội bộ cho nhân viên');
   eq.data.shipping.cost=1; // cố ghi đè chi phí Manager
   const row = eq.data.rows[0];
-  for (const k of ['costPrice', 'purchaseDiscount', 'printing', 'commission']) assert.equal(row[k], undefined, k);
+  for (const k of ['costPrice', 'purchaseDiscount', 'printing']) assert.equal(row[k], undefined, k);
   // Nhân viên sửa số lượng + thêm dòng, cố gửi giá vốn → giá vốn dòng cũ giữ nguyên, dòng mới không có.
   eq.data.rows[0] = { ...row, qty: 20, costPrice: 1 };
   eq.data.rows.push({ id: 'moi', name: 'Hộp', sku: 'HOP', unit: 'cái', qty: 1, price: 5000, costPrice: 4000 });
