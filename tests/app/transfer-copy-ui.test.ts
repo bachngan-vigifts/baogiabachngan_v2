@@ -5,7 +5,7 @@ import {runInNewContext} from 'node:vm';
 class Node {
   children:Node[]=[];parent:Node|null=null;attrs:Record<string,string>={};events:Record<string,Function>={};style={};dataset:Record<string,string>={};
   type='';value:any='';className='';own='';hidden=false;disabled=false;tag:string;
-  classList={toggle:()=>{}};
+  classList={toggle:()=>{},add:()=>{},remove:()=>{}};
   constructor(tag='div'){this.tag=tag;}
   get tagName(){return this.tag.toUpperCase();}
   set textContent(v:string){this.own=String(v);this.children=[];}get textContent():string{return this.own+this.children.map(c=>c.textContent).join('');}
@@ -13,7 +13,7 @@ class Node {
   replaceChildren(...nodes:Node[]){this.children=[];this.own='';this.append(...nodes);}
   setAttribute(k:string,v:string){this.attrs[k]=v;}removeAttribute(k:string){delete this.attrs[k];}
   addEventListener(k:string,fn:Function){this.events[k]=fn;}
-  querySelectorAll(selector:string):Node[]{return this.children.flatMap(c=>[...(selector==='button'?c.tag==='button':selector==='.chip'?c.className.includes('chip'):selector==='input[type=text]'?c.tag==='input'&&c.type==='text':selector==='input[type=number]'?c.tag==='input'&&c.type==='number':false)?[c]:[],...c.querySelectorAll(selector)]);}
+  querySelectorAll(selector:string):Node[]{return this.children.flatMap(c=>[...(selector==='button'?c.tag==='button':selector==='.chip'?c.className.includes('chip'):selector==='.transfer-product-name'?c.className==='transfer-product-name':selector==='input[type=text]'?c.tag==='input'&&c.type==='text':selector==='input[type=number]'?c.tag==='input'&&c.type==='number':false)?[c]:[],...c.querySelectorAll(selector)]);}
   querySelector(selector:string){return this.querySelectorAll(selector)[0]!;}
   remove(){if(this.parent)this.parent.children=this.parent.children.filter(c=>c!==this);}
   focus(){}
@@ -24,7 +24,7 @@ async function setup(status='cancelled',missing=false,lookup?: (path:string)=>Pr
  const root=new Node(),posts:any[]=[],nav:string[]=[],messages:string[]=[],reads:string[]=[];
  const source={id:'old',transferNo:'PCK-OLD',status,statusLabel:'Đã huỷ',fromWarehouseId:'a',toWarehouseId:'b',reason:'Bổ sung kho',lines:[{sku:'X',name:'Ly',qty:12,unit:'cái',fromStock:20,toStock:0},{sku:'Y',name:'Bát',qty:3,unit:'cái',fromStock:30,toStock:0}],revision:1,actions:status==='pending'?{edit:true,approve:true,reject:true,cancel:true}:status==='approved'?{ship:true,cancel:true}:status==='shipped'?{receive:true}:{}};
  const context:any={URLSearchParams,setTimeout,clearTimeout,crypto:{randomUUID:()=> '5a828b25-34cf-4145-bbab-43a53a5c465b'},document:{createElement:(tag:string)=>new Node(tag),createTextNode:(s:string)=>{const n=new Node('text');n.textContent=s;return n;}},location:{hash:'#/transfers/old'},history:{replaceState(){}}};
- const code=readFileSync(new URL('../../trial-ui/stock-ops.js',import.meta.url),'utf8').replace(/^import .*;\n/m,'').replace('export function initTransfers','globalThis.initTransfers = function').split('const GROUPS =')[0]!;
+ const code=readFileSync(new URL('../../trial-ui/stock-ops.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('export function initTransfers','globalThis.initTransfers = function').split('const GROUPS =')[0]!;
  runInNewContext(code,context);
  const ui=context.initTransfers({root,printTransfer:hooks.print,confirmBox:(text:string,options:any)=>hooks.confirm?.(text,options)??Promise.resolve(false),toast:(s:string)=>messages.push(s),go:(s:string)=>nav.push(s),api:async(path:string,method?:string,body?:any)=>{
    if(path.startsWith('/inventory/lookup'))return lookup?.(path) ?? {products:[]};
@@ -74,7 +74,7 @@ test('tìm sản phẩm: bấm kết quả thêm tên và gửi SKU; chọn lạ
  await s.button('Tìm')!.click();
  const result=all(s.root).find(n=>n.className==='transfer-search-result')!;
  assert.match(result.textContent,/Bình giữ nhiệt.*Z123/);await result.click();
- assert.equal(find.value,'');assert.equal(all(s.root).find(n=>n.type==='text'&&n.value==='Bình giữ nhiệt')!==undefined,true);
+ assert.equal(find.value,'');assert.equal(all(s.root).find(n=>n.className==='transfer-product-name'&&n.textContent==='Bình giữ nhiệt')!==undefined,true);
  find.value='Z123';await s.button('Tìm')!.click();await all(s.root).find(n=>n.className==='transfer-search-result')!.click();
  assert.equal(all(s.root).filter(n=>n.type==='number').length,3);
  await s.button('Gửi duyệt')!.click();assert.deepEqual(JSON.parse(JSON.stringify(s.posts[0].body.lines)),[{sku:'X',qty:12},{sku:'Y',qty:3},{sku:'Z123',qty:1}]);

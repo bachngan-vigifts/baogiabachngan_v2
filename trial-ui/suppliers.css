@@ -358,3 +358,24 @@ dialog.supplier-return-dialog[open]{display:flex;flex-direction:column}
 @media(max-width:600px){.pgr-grid{grid-template-columns:1fr}.pgr-line{grid-template-columns:minmax(0,1fr) 112px}.supplier-return-dialog h2{font-size:17px}.supplier-return-dialog .pgr-head,.supplier-return-dialog .pgr-body,.supplier-return-dialog .pgr-foot{padding:12px}.supplier-return-dialog .pgr-foot button{flex:1}}
 
 .pur-draft-lines button{min-height:44px;white-space:normal}.pur-draft-add input{min-height:44px}.pur-draft-add{margin:8px 0}@media(max-width:680px){.pur-draft-lines,.pur-draft-lines tbody{display:block;width:100%;min-width:0}.pur-draft-lines thead{display:none}.pur-draft-lines tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:12px 0;border-bottom:1px solid var(--line)}.pur-draft-lines td{display:block;min-width:0;padding:0;border:0;overflow-wrap:anywhere}.pur-draft-lines td:first-child,.pur-draft-lines td:nth-child(2){grid-column:1/-1}.pur-draft-lines td[data-label]::before{content:attr(data-label);display:block;font-size:12px;color:var(--muted)}.pur-draft-add{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.pur-draft-add>input:nth-child(1),.pur-draft-add>input:nth-child(2),.pur-draft-add>button{grid-column:1/-1}}
+
+/* Large transfer requests: separate search from the scrollable selected rows. */
+.sup-drawer.transfer-compose{width:min(1120px,calc(100vw - 24px));gap:12px}
+.transfer-compose .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.transfer-compose .transfer-search-section{padding:14px;border:1px solid #bad0ec;border-radius:10px;background:#f1f6fd}
+.transfer-compose .transfer-lines{max-height:42dvh;min-height:90px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;counter-reset:transfer-line}
+.transfer-compose .transfer-lines>.row-gap{grid-template-columns:minmax(0,1fr) 110px 40px;padding:6px;border-bottom:1px solid var(--line)}
+.transfer-compose .transfer-product-name{width:100%;resize:none;background:transparent;border:0;padding:2px;line-height:1.4;min-height:44px}
+.transfer-compose .transfer-line-product small{font-weight:600;color:var(--blue)}
+.transfer-table-head{font-weight:700;padding:8px;background:#e9eef5;border-radius:6px;white-space:pre-wrap}
+.transfer-file-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.transfer-file-notice{white-space:pre-wrap;color:#214f7b;margin:0}.transfer-file-notice:empty{display:none}
+.transfer-compose .sup-drawer-foot-sticky{z-index:2;flex-wrap:wrap}
+@media(max-width:600px){.transfer-compose .form-grid{grid-template-columns:1fr}.transfer-compose .transfer-lines>.row-gap{grid-template-columns:minmax(0,1fr) 70px 32px;gap:4px}.transfer-compose .transfer-lines{max-height:38dvh}.transfer-compose .transfer-search-section{padding:8px}}
+
+.transfer-table-head{display:grid;grid-template-columns:minmax(0,1fr) 110px 40px;gap:8px}@media(max-width:600px){.transfer-table-head{grid-template-columns:minmax(0,1fr) 70px 32px;gap:4px}}
+.transfer-compose .transfer-product-name{min-height:0;padding:0;font-size:14px;overflow-wrap:anywhere}
+.transfer-compose .transfer-line-product{display:grid;gap:4px}
+.transfer-compose .transfer-lines>.row-gap{padding:8px 6px}
+.transfer-compose .transfer-lines:empty::before{content:'Chưa có hàng. Tìm sản phẩm ở trên hoặc chọn Xin bằng file.';padding:18px;color:var(--muted)}
+body:has(.transfer-compose:not([hidden])) #reminder-launcher,body:has(.transfer-compose:not([hidden])) #chat-launcher{display:none}

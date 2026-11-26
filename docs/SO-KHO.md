@@ -294,3 +294,13 @@ Giữ báo giá/đơn **chưa gắn kho** được ghi riêng trong chi tiết, 
 Nếu dữ liệu cũ thiếu chứng từ giao hoặc không đủ bằng chứng phân bổ phần đã giao giữa nhiều kho, hiện `số đã xác định + ?`, không đoán số còn lại. Nếu nguồn đọc lỗi, hiện `—` và thông báo chưa tải được; Sổ kho vẫn hiển thị tồn, không thay số lỗi thành 0.
 
 Excel có tổng hàng treo đã xác định, từng phần, giữ chưa gắn kho, dấu thiếu dữ liệu và thời điểm đọc. Khi nguồn lỗi, các ô số hàng treo để trống kèm trạng thái chưa tải được. Phần bổ sung chỉ đọc và dùng dữ liệu hiện có, không cần migration, không ghi phiếu hay thay đổi tồn kho.
+
+### Nhập điều chuyển bằng file
+
+Trong **Điều chuyển kho → Xin điều chuyển**, form rộng tách vùng tìm hàng khỏi bảng hàng đã chọn; bảng cuộn riêng, hiển thị tên/mã đầy đủ và chỉnh số lượng trực tiếp. **Tải file mẫu** xuất Excel đúng bốn cột: **Kho đi, Kho đến, Mã hàng, Số lượng**. Cột mã định dạng Text để giữ số 0 đầu.
+
+**Xin bằng file** nhận `.xlsx`, `.xls`, `.csv` tối đa 2 MB / 200 mã (giới hạn hiện có của API), một cặp kho mỗi file. Điền tên kho chính xác hoặc ID kho được phép thấy ở tất cả các dòng. Không nhận mã lặp, kho trùng/không rõ, công thức hoặc số lượng không hợp lệ; số lượng tối đa 10.000.000 và tối đa 3 số lẻ, dùng dấu chấm thập phân, không có dấu phân cách hàng nghìn. Mã nhập dạng số bị chặn để tránh làm mất số 0 đầu.
+
+File được đối chiếu đúng mã qua API rồi mới đưa toàn bộ vào bảng; lỗi giữ nguyên bản đang nhập. Nếu đã chọn hàng, phải xác nhận trước khi thay bảng. Nhập file chưa tạo phiếu, chưa xuất kho; sau khi rà soát, nhập lý do và chọn hành động hiện có theo quyền (Gửi duyệt / Tạo & duyệt / Tạo & xuất kho). API vẫn kiểm quyền, kho, số lượng và tồn khi ghi.
+
+Kiểm thử: `transfer-file.test.ts`, `transfer-copy-ui.test.ts`, `scripts/testing/transfer-file.mjs` (file mẫu thực, file sai và 30 mã qua router/PGlite trên PC/mobile), cùng kiểm tra tìm sản phẩm và tạo nhanh hiện có. Không dùng dữ liệu production.

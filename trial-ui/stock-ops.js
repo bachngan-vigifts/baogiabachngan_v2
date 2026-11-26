@@ -5,6 +5,7 @@
  *  - Kho bán theo chức vụ (gắn dưới trang Phân quyền): kho ↔ chức vụ được bán + kho riêng (chỉ người bán kho đó thấy tồn).
  * API: src/modules/inventory/api/{transfer-routes,history-routes}.ts. DOM dựng bằng createElement / textContent.
  */
+import {readTransferFile,transferExcel,transferTemplate} from './transfer-file.js';
 import { downloadExcel } from './sheet-export.js';
 
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; };
@@ -127,7 +128,7 @@ export function initTransfers({ api, root, toast, go, confirmBox, isManager = ()
     if(drawnId!==id)receiveDirty=false;
     drawnId=id;
     const key=JSON.stringify(t);if(rendered===key&&!drawer.hidden)return;rendered=key;
-    drawer.replaceChildren();
+    drawer.replaceChildren();drawer.classList.remove("transfer-compose");
     const h = el('div', 'sup-drawer-head transfer-detail-head'),title=el('div');
     title.append(el('span','eyebrow','Điều chuyển kho'),el('h2','','Phiếu '+t.transferNo),el('span','pill '+(PILL[t.status]||''),t.statusLabel));
     h.append(title,btn('✕','icon-btn',close));
@@ -252,39 +253,43 @@ export function initTransfers({ api, root, toast, go, confirmBox, isManager = ()
     if(posting||updating)return;detailRun++;inFlight=null;rendered='';formOpen=true;
     if (!data) await load();
     const whs = data?.warehouses || [];
-    drawer.replaceChildren();
+    drawer.replaceChildren();drawer.classList.remove("transfer-compose");
     const h = el('div', 'sup-drawer-head'); h.append(el('h2', '', source ? (editing?'Chỉnh sửa phiếu ':'Sao chép phiếu ') + source.transferNo : 'Xin điều chuyển kho'), btn('✕', 'icon-btn', close));
+    drawer.classList.add('transfer-compose');
     const opts = [['', 'Chọn kho'], ...whs.map(w => [w.id, w.name])];
     const from = select(opts, whs.some(w => w.id === source?.fromWarehouseId) ? source.fromWarehouseId : '', 'Kho đi'), to = select(opts, whs.some(w => w.id === source?.toWarehouseId) ? source.toWarehouseId : '', 'Kho đến');
     const reason = input('text', source ? (editing?source.reason:('Sao chép từ ' + source.transferNo + ' · ' + source.reason).slice(0, 500)) : '', { placeholder: 'VD: đơn của khách Kim Trần Gia cần hàng ở kho VIGIFTS', maxLength: 500 });
-    const lines = el('div', 'transfer-lines');
+    const lines = el('div', 'transfer-lines'),listTitle=el('h3');
+    const recount=()=>listTitle.textContent='2. Hàng đã chọn ('+[...lines.children].filter(r=>r.dataset.sku).length+' mã) — kiểm tra số lượng';
+    const tableHead=el('div','transfer-table-head');tableHead.append(el('span','','Mã hàng / Tên sản phẩm'),el('span','','Số lượng'),el('span'));recount();
     const find = input('search', '', { placeholder: 'Tìm mã / tên sản phẩm…' });
     find.setAttribute('aria-label', 'Tìm sản phẩm điều chuyển');
     const results = el('div', 'transfer-search-results');
     const status = el('p', 'muted small'); status.setAttribute('role', 'status');
-    let timer = 0, searchRun = 0;
-    const active = () => formOpen && !posting && !updating && drawer.children[0] === h;
+    let timer = 0, searchRun = 0, importing=false;
+    const active = () => formOpen && !importing && !posting && !updating && drawer.children[0] === h;
     const setProduct = (row, product) => {
-      row.dataset.sku = product.sku;
-      row.querySelector('input[type=text]').value = product.name || product.sku;
-      row.querySelector('input[type=text]').title = product.name || product.sku;
+      row.dataset.sku = product.sku;recount();
+      row.querySelector('.transfer-product-name').textContent = product.name || product.sku;
+      row.querySelector('.transfer-product-name').title = product.name || product.sku;
       row.children[0].children[1].textContent = product.sku + (product.unit ? ' · ' + product.unit : '');
     };
     const lineRow = (sku = '', qty = '', name = '', unit = '') => {
       const row = el('div', 'row-gap'), product = el('div', 'transfer-line-product');
-      const nameInput = input('text', '', { placeholder: 'Chọn tên sản phẩm ở ô tìm phía trên', readOnly: true });
+      const nameInput = el('div','transfer-product-name');
       nameInput.setAttribute('aria-label', 'Tên sản phẩm');
       nameInput.addEventListener('click', () => find.focus());
       product.append(nameInput, el('small', 'muted'));
       const quantity = input('number', qty, { placeholder: 'SL', min: '0', step: 'any' });
       quantity.setAttribute('aria-label', 'Số lượng chuyển');
-      row.append(product, quantity, btn('✕', 'icon-btn', () => row.remove())); lines.append(row);
+      row.append(product, quantity, btn('✕', 'icon-btn', () => {if(!importing){row.remove();recount();}})); lines.append(row);
       setProduct(row, { sku, name, unit }); return row;
     };
     const choose = product => {
       if (!active() || posting) return;
       let row = [...lines.children].find(r => r.dataset.sku === product.sku);
       if (!row) {
+        if([...lines.children].filter(r=>r.dataset.sku).length>=200){toast('Mỗi phiếu tối đa 200 mã.','err');return;}
         row = [...lines.children].find(r => !r.dataset.sku) || lineRow();
         setProduct(row, product);
         const quantity = row.querySelector('input[type=number]'); if (!quantity.value) quantity.value = '1';
@@ -320,12 +325,31 @@ export function initTransfers({ api, root, toast, go, confirmBox, isManager = ()
     find.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); search(); } });
     const searchBox = el('div', 'transfer-search-box'); searchBox.append(find, btn('Tìm', 'btn secondary', search));
     const picker = el('div', 'transfer-picker'); picker.append(searchBox, status, results);
-    if (source?.lines?.length) for (const line of source.lines) lineRow(line.sku, line.qty, line.name, line.unit); else lineRow();
+    if (source?.lines?.length) for (const line of source.lines) lineRow(line.sku, line.qty, line.name, line.unit);
+    const fileNotice=el('p','transfer-file-notice');fileNotice.setAttribute('role','status');
+    const upload=input('file');upload.accept='.xlsx,.xls,.csv';upload.hidden=true;
+    const fileBar=el('div','transfer-file-bar');
+    fileBar.append(btn('Tải file mẫu','btn secondary',async()=>{try{const X=await transferExcel();X.writeFile(transferTemplate(X),'mau-dieu-chuyen.xlsx');}catch(e){fileNotice.textContent=e.message;}}),btn('Xin bằng file','btn secondary',()=>upload.click()),upload,el('small','muted','Một file / một cặp kho · tối đa 200 mã · Excel/CSV · Mã hàng dạng Text giữ số 0 đầu.'));
+    upload.onchange=async()=>{
+      const file=upload.files[0];if(!file||!active())return;
+      importing=true;searchRun++;clearTimeout(timer);results.replaceChildren();fileNotice.textContent='Đang kiểm tra file…';
+      const controls=[...drawer.querySelectorAll('input,select,textarea')],states=controls.map(n=>n.disabled);controls.forEach(n=>n.disabled=true);
+      try{
+       const parsed=await readTransferFile(file,whs);if(parsed.errors.length)throw Error(parsed.errors.join('\n'));
+       const resolved=[];
+       for(let i=0;i<parsed.lines.length;i+=5){if(!formOpen||drawer.children[0]!==h)return;const batch=await Promise.all(parsed.lines.slice(i,i+5).map(async line=>{const d=await api('/inventory/lookup?q='+encodeURIComponent(line.sku));const p=(d.products||[]).find(p=>p.sku===line.sku);if(!p)throw Error('Dòng '+line.row+': không tìm thấy chính xác mã '+line.sku);return {...p,qty:line.qty};}));resolved.push(...batch);}
+       if(!formOpen||drawer.children[0]!==h)return;
+       if([...lines.children].some(r=>r.dataset.sku)&&!await confirmBox('Thay danh sách hiện tại bằng '+resolved.length+' mã trong file?',{title:'Nhập file điều chuyển',ok:'Thay danh sách'})){fileNotice.textContent='Giữ nguyên danh sách hiện tại.';return;}
+       from.value=parsed.fromId;to.value=parsed.toId;lines.replaceChildren();resolved.forEach(p=>lineRow(p.sku,p.qty,p.name,p.unit));
+       fileNotice.textContent='Đã kiểm tra '+resolved.length+' mã. Rà soát bảng bên dưới rồi chọn hành động tạo phiếu. Chưa tạo phiếu hoặc ghi sổ kho.';
+      }catch(e){fileNotice.textContent='Chưa nhập file: '+e.message;}
+      finally{importing=false;controls.forEach((n,i)=>n.disabled=states[i]);upload.value='';}
+    };
     const clientKey=crypto.randomUUID();
     // Manager lập phiếu: "Tạo & xuất kho" (duyệt + trừ kho đi ngay) hoặc "Tạo & duyệt"; nhân viên giữ "Gửi duyệt".
     const fast=!editing&&isManager(),done={pending:' – chờ duyệt.',approved:' – đã duyệt, chờ kho xuất.',shipped:' – đã xuất kho, chờ kho đến nhận.',done:' – đã nhận hàng.',cancelled:' – đã huỷ.',rejected:' – đã từ chối.'};
     const submit=(label,cls,mode,busy)=>{const b=btn(label,cls,async()=>{
-      if(posting)return;posting=true;
+      if(posting||importing)return;posting=true;
       const body = { ...(editing?{revision:source.revision}:{clientKey,mode}),fromWarehouseId: from.value, toWarehouseId: to.value, reason: reason.value,
         lines: [...lines.children].map(r => ({ sku: r.dataset.sku, qty: Number(r.querySelector('input[type=number]').value) })).filter(l => l.sku) };
       const release=setUpdating(b,editing?'Đang cập nhật…':busy);if(!release){posting=false;return;}let target='';
@@ -343,10 +367,10 @@ export function initTransfers({ api, root, toast, go, confirmBox, isManager = ()
     const send = fast?submit('Tạo & xuất kho','btn primary','ship','Đang tạo và xuất kho…'):submit(editing?'Lưu thay đổi':'Gửi duyệt', 'btn primary','request','Đang gửi duyệt…');
     const approveOnly = fast?submit('Tạo & duyệt (kho xuất sau)','btn secondary','approve','Đang tạo và duyệt…'):null;
     const form = el('div', 'form-grid');
-    form.append(field('Kho đi (lấy hàng)', from), field('Kho đến (cần hàng)', to), field('Lý do', reason, 'wide'), field('Tìm sản phẩm', picker, 'wide'));
+    form.append(field('Kho đi (lấy hàng)', from), field('Kho đến (cần hàng)', to), field('Lý do', reason, 'wide'), field('1. Tìm hàng để thêm vào phiếu', picker, 'wide transfer-search-section'));
     const foot = el('div', 'sup-drawer-foot-sticky'); foot.append(btn('Huỷ', 'btn secondary', close), ...(approveOnly?[approveOnly]:[]), send);
     if (source) drawer.append(h, el('p', 'muted small', editing?'Chỉ sửa phiếu chờ duyệt. Lưu thay đổi không ghi sổ kho; phiếu vẫn cần duyệt.':'Phiếu gốc giữ trạng thái đã huỷ. Kiểm tra kho, mã và số lượng rồi bấm Gửi duyệt để tạo phiếu mới; chưa có phát sinh sổ kho.')); else drawer.append(h);
-    drawer.append(form, el('h3', '', 'Sản phẩm cần chuyển'), lines, btn('＋ Thêm dòng', 'btn ghost small', () => { lineRow(); find.focus(); }), foot);
+    drawer.append(form, fileBar, fileNotice, listTitle, tableHead, lines, foot);
     drawer.hidden = false; shade.hidden = false;openedAt=Date.now();
   }
 
