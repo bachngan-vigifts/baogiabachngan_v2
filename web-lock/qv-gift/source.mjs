@@ -14,10 +14,8 @@ visit(domains);
 for(const h of hosts)if(!roots[h]||!roots[h].startsWith('/home/'+user+'/')||roots[h].includes('..'))throw Error('Unverified docroot '+h);
 
 
-const dir=roots['locknlockonline.com']+'/wp-content/mu-plugins';
-const files=await api('Fileman','list_files',{dir});
-console.log('PROMO_FILES',JSON.stringify(files.map(x=>x.file)));
-for(const f of files.filter(x=>/gift|promo|black|friday|bf-|offer/i.test(x.file)&&x.file.endsWith('.php'))){
- const c=(await api('Fileman','get_file_content',{dir,file:f.file,from_charset:'utf-8',to_charset:'utf-8',update_html_document_encoding:0})).content;
- console.log('PROMO_CODE',f.file,c.split('\n').filter(l=>/function |add_action|add_filter|Gourmet|1000000|2026-11|gift|promo/i.test(l)&&!/secret|token|password|api.key/i.test(l)).join('\n').slice(0,18000));
+
+for(const sub of ['plugins','themes']){
+ const dir=roots['locknlockonline.com']+'/wp-content/'+sub;
+ console.log('DIRECTORIES',sub,JSON.stringify((await api('Fileman','list_files',{dir})).map(x=>x.file)));
 }

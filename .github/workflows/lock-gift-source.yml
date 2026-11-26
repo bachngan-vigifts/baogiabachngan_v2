@@ -16,3 +16,5 @@ jobs:
           CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
           CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
         run: node web-lock/qv-gift/source.mjs
+
+# Identify gift engine.
