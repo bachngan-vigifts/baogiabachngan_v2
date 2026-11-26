@@ -106,3 +106,15 @@ test('cached KPI uses current staff names and excludes an accounting transfer wi
  assert.equal((await f.call(url,f.mgr)).data.members.some((p:any)=>p.id==='emp'),false);
  assert.deepEqual((await f.overview()).data.payroll.payslip,salary,'historical salary remains available unchanged');
 });
+
+
+test('Sale Admin exposes incomplete net revenue instead of silently treating missing commissions as no sales',async()=>{
+ const f=await sale();await f.db.update(employees).set({positionId:'sale-admin'}).where(eq(employees.id,'emp'));
+ await f.setPolicy(1,'2026-10',{saleKpiNetFrom:202610});
+ const before=(await f.overview()).data.payroll.payslip;
+ const member=(await kpi(f,f.emp)).data.members[0];
+ assert.equal(member.trackingOnly,true);assert.equal(member.revenueIssues,1);
+ assert.equal(member.parts.find((p:any)=>p.key==='revenue').actual,0);
+ assert.equal(member.bonusRate,0);
+ assert.deepEqual((await f.overview()).data.payroll.payslip,before);
+});

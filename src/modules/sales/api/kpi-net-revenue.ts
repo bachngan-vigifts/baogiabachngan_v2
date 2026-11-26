@@ -5,7 +5,7 @@ import {quotations} from '../../quotes/schema.ts';
 import {commissionOf,quoteStockSku,type QuoteRow} from '../../quotes/domain/quote-math.ts';
 import {debtCounts} from '../domain/sales.ts';
 /** Monetary basis only; HR owns KPI tiers. Never substitute VAT-inclusive totals or assume missing CRM commission is zero. */
-export async function kpiNetRevenue(db:AnyDb,from:string,next:string,approvedOnly=false,channels?:readonly string[]){
+export async function kpiNetRevenue(db:AnyDb,from:string,next:string,approvedOnly=false,channels?:readonly string[], details?:{id:string;ownerId:string;amount:number|null}[]){
  const orders=await db.select({o:{id:salesOrders.id,ownerId:salesOrders.ownerId,subtotal:salesOrders.subtotal,status:salesOrders.status,channel:salesOrders.channel,quoteType:salesOrders.quoteType},quote:quotations.data}).from(salesOrders).leftJoin(quotations,eq(quotations.id,salesOrders.quoteId)).where(and(channels?inArray(salesOrders.channel,[...channels]):undefined,gte(salesOrders.orderDate,from),lt(salesOrders.orderDate,next),approvedOnly?inArray(salesOrders.status,['confirmed','delivering','delivered']):undefined));
  const ids=orders.map(r=>r.o.id),out=new Map<string,{netRevenue:number;netRevenueIssues:number}>();
  if(!ids.length)return out;
@@ -25,6 +25,7 @@ export async function kpiNetRevenue(db:AnyDb,from:string,next:string,approvedOnl
     commission+=commissionOf({...r,price:Math.max(0,l.unitPrice-(o.quoteType==='HRC'?0:Number(r.printFee||0))),discount:0,qty:l.qty});
    }
   }else if(o.channel!=='pos')valid=false;
+  details?.push({id:o.id,ownerId:o.ownerId,amount:valid?o.subtotal-commission:null});
   if(valid)m.netRevenue+=o.subtotal-commission;else m.netRevenueIssues++;
   out.set(o.ownerId,m);
  }
