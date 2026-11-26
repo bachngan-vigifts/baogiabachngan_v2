@@ -428,3 +428,18 @@
 .pos-ref-deposited>.pos-deposit-method select{width:100%;min-width:0;min-height:38px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff}
 .pos-ref-deposited:has(.pos-deposit-controls)>input{grid-column:3;grid-row:1;width:100%;box-sizing:border-box;margin:0;min-width:0;min-height:38px}
 .pos-ref-deposited>.pos-deposit-controls,.pos-ref-deposited>.pos-cod-confirm{grid-column:1/-1}
+
+/* Cash tender: one amount row, compact suggestions, then change owed. */
+.pos-payment-cash .pos-tender{display:block!important;margin:0}
+.pos-payment-cash .pos-tender .pos-field{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;border:0;border-radius:0;background:transparent;padding:0!important;margin:0}
+.pos-payment-cash .pos-tender .pos-field>span{color:#172336;font-size:14px;white-space:nowrap}
+.pos-payment-cash .pos-tender input{width:48%;min-width:0;min-height:40px;border:0;border-bottom:1px solid #cbd5e1;border-radius:0;background:transparent;text-align:right;box-shadow:none}
+.pos-payment-cash .pos-cash-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px;background:#f0f2f5;border-radius:10px;margin:10px 0 14px}
+.pos-workspace.pos-reference.pos-pc-scan .pos-payment-cash .pos-cash-quick .btn,.pos-payment-modal .pos-payment-cash .pos-cash-quick .btn{min-height:40px;min-width:0;padding:6px 3px;border-radius:24px;background:#fff;border:1px solid #c5cdd8;color:#172336;font-size:14px}
+.pos-workspace.pos-reference.pos-pc-scan .pos-payment-cash .pos-cash-quick .btn[aria-pressed=true],.pos-payment-modal .pos-payment-cash .pos-cash-quick .btn[aria-pressed=true]{background:#006fee;color:#fff;border-color:#006fee}
+.pos-workspace.pos-reference.pos-pc-scan .pos-payment-cash .pos-change-card,.pos-payment-modal .pos-payment-cash .pos-change-card{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:36px;padding:0;background:transparent;border:0;border-radius:0;color:#172336}
+.pos-payment-cash .pos-change-card .pos-note{font-size:14px;color:inherit;margin:0}
+.pos-payment-cash .pos-change{font-size:18px;color:#172336}
+.pos-payment-cash .pos-tender .pos-field{flex-direction:row;text-align:left}
+.pos-payment-cash .pos-cash-quick .btn[aria-pressed=true]{background:#006fee!important;color:#fff!important;border-color:#006fee!important}
+.pos-payment-cash .pos-cash-quick .btn{white-space:normal;overflow-wrap:anywhere}

@@ -135,6 +135,14 @@ try {
         await page.locator('.pos-reference-checkout').waitFor();
         const paymentBounds=await page.locator('.pos-checkout').boundingBox();
         assert.ok(Math.abs(catalogBounds.width-paymentBounds.width)<2&&Math.abs(catalogBounds.x-paymentBounds.x)<2,'payment stays the same width and position as the product panel');
+        const cashPanel=page.locator('.pos-payment-cash');
+        await cashPanel.locator('input').fill('1000000');
+        assert.equal(await cashPanel.locator('.pos-change').textContent(),'920.000 đ');
+        assert.equal(await cashPanel.locator('.pos-cash-quick button').count(),4);
+        await cashPanel.getByRole('button',{name:'Đủ tiền',exact:true}).click();
+        assert.equal(await cashPanel.locator('input').inputValue(),'80000');
+        assert.equal(await cashPanel.locator('.pos-change').textContent(),'0 đ');
+        await page.waitForTimeout(250); // Let the selected amount's color transition finish for the screenshot.
         await page.screenshot({path:shot+`/${width}-normal-payment.png`});
         await page.getByRole('button',{name:'← Danh mục sản phẩm',exact:true}).click();
 

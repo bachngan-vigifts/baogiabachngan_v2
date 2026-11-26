@@ -400,7 +400,7 @@ test('POS: tìm/quét và giỏ hàng dùng server preview, mặc định giá V
     await selectTestCustomer(root);
     await root.querySelectorAll('button').find((x) => x.textContent === 'THANH TOÁN')!.fire('click');
     const payment = doc.body.children.at(-1)!;
-    const cash = payment.querySelectorAll('button').find((x) => x.textContent === 'Đủ tiền')!;
+    const cash = payment.querySelectorAll('button').find((x) => x.attributes['aria-label'] === 'Đủ tiền')!;
     await cash.fire('click');
     const pay = payment.querySelectorAll('button').find((x) => x.textContent === 'Thu tiền & in bill')!;
     assert.equal(pay.disabled, false);
