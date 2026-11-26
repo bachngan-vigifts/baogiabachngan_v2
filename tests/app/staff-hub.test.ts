@@ -26,11 +26,11 @@ test('chi tiết nhân viên: KPI tháng, khách / báo giá / đơn / HĐKT / g
 
   // Doanh số: nhân viên lập 2 báo giá, 1 báo giá lên đơn 2.160.000, khách trả 1.000.000.
   const kh = await call('/customers', mgr, 'POST', customerCreateFixture({ name: 'Công ty Hoàng Long' }));
-  const doc = { type: 'B2B', customer: 'Công ty Hoàng Long', customerId: kh.data.id, vat: 8, rows: [{ name: 'Bình giữ nhiệt', sku: 'LHC', unit: 'cái', qty: 10, price: 200000, taxRate: 8, commission:{excluded:true} }] };
+  const doc = { type: 'B2B', customer: 'Công ty Hoàng Long', customerId: kh.data.id, vat: 8, rows: [{ name: 'Bình giữ nhiệt', sku: 'LHC', unit: 'cái', qty: 10, price: 200000, taxRate: 8, commission:{excluded:true,value:0} }] };
   const q = await call('/quotes', emp, 'POST', { ...doc, quoteNo: 'B2B_1' });
   await call('/quotes', emp, 'POST', { ...doc, quoteNo: 'B2B_2' });
   const source=(await call('/quotes/'+q.data.id,mgr)).data;
-  const reviewed=await call('/quotes/'+q.data.id,mgr,'PUT',{revision:source.revision,data:{...source.data,rows:source.data.rows.map((r:any)=>({...r,commission:{excluded:true}}))}});
+  const reviewed=await call('/quotes/'+q.data.id,mgr,'PUT',{revision:source.revision,data:{...source.data,rows:source.data.rows.map((r:any)=>({...r,commission:{excluded:true,value:0}}))}});
   assert.equal(reviewed.status,200);
   await call(`/quotes/${q.data.id}/approve`, mgr, 'POST', { revision: reviewed.data.revision });
   const o = await call('/orders', emp, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201);

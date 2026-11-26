@@ -1074,9 +1074,9 @@
 <!-- Kiểm tồn cả báo giá (giống trang Khách hỏi tồn) -->
 <dialog id="commission-dialog" class="modal wide">
   <form method="dialog" id="commission-form">
-    <div class="modal-head"><div><span class="eyebrow">Lợi nhuận tạm tính · chỉ Manager</span><h2>CK cho khách (tiền cà phê)</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
+    <div class="modal-head"><div><span class="eyebrow">Khai báo CK khách</span><h2>CK cho khách (tiền cà phê)</h2></div><button type="button" class="icon-btn" data-close aria-label="Đóng">×</button></div>
     <div class="modal-body">
-      <p class="muted small">Đơn giá = giá sau chiết khấu, <b>không</b> gồm phí in. CK nhập theo % hoặc số tiền mỗi sản phẩm (đ/SP). Bấm × để bỏ dòng không tính CK (vd. bao bì).</p>
+      <p class="muted small">Đơn giá = giá sau chiết khấu, <b>không</b> gồm phí in. CK nhập theo % hoặc số tiền mỗi sản phẩm (đ/SP). Không có CK phải nhập 0. Số tiền đ/SP được nhân với số lượng sản phẩm.</p>
       <div class="commission-all"><label>Áp cùng mức cho mọi dòng <input class="num-input" type="number" inputmode="decimal" min="0" step="any" id="commission-all-value" placeholder="0"></label>
         <select id="commission-all-mode" aria-label="Kiểu CK"><option value="percent">%</option><option value="amount">đ/SP</option></select><button type="button" class="btn secondary small" id="commission-all-apply">Áp dụng</button></div>
       <div class="table-wrap"><table class="data-table commission-table"><thead><tr><th>Mã hàng</th><th class="right">Đơn giá sau CK</th><th class="right">SL</th><th>CK cho khách</th><th class="right">Tiền CK</th><th><span class="sr-only">Bỏ dòng</span></th></tr></thead>

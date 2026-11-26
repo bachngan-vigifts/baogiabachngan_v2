@@ -38,7 +38,7 @@ async function setup() {
     return res.headers.get('set-cookie')?.split(';')[0] ?? '';
   };
   const s = { db, call, mgr: await login('mgr@x.vn'), emp: await login('emp@x.vn'), sadmin: await login('sadmin@x.vn'), duyet: await login('duyet@x.vn'), emp2: await login('emp2@x.vn') };
-  const rows = [{ name: 'Bộ trà', sku: 'LY1', qty: 10, price: 100000 }];
+  const rows = [{ commission: {mode:'percent',value:0}, name: 'Bộ trà', sku: 'LY1', qty: 10, price: 100000 }];
   let n = 0;
   /** Báo giá của `who`, đã gửi duyệt (pending). */
   const pendingQuote = async (who = s.emp) => {
@@ -155,7 +155,7 @@ test('Sale Admin: có quyền của Sale + Kế toán + Kho; xem toàn công ty 
     assert.ok(perms.includes(k), 'Sale Admin có ' + k);
   assert.ok(!perms.includes('perm.manage'), 'không quản lý phân quyền');
   // Dữ liệu của emp2 (Sale khác) – Sale Admin xem được.
-  const q = await s.call('/quotes', s.emp2, 'POST', { type: 'HRC', quoteNo: 'HRC_X1', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows: [{ name: 'Ly', qty: 1, price: 1 }] });
+  const q = await s.call('/quotes', s.emp2, 'POST', { type: 'HRC', quoteNo: 'HRC_X1', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows: [{ commission: {mode:'percent',value:0}, name: 'Ly', qty: 1, price: 1 }] });
   assert.equal((await s.call('/quotes?limit=50', s.sadmin)).data.quotes.some((x: any) => x.id === q.data.id), true, 'báo giá toàn công ty');
   assert.equal((await s.call(`/quotes/${q.data.id}`, s.sadmin)).status, 200);
   assert.equal((await s.call('/quotes?limit=50', s.emp)).data.quotes.some((x: any) => x.id === q.data.id), true, 'Sale cùng chức vụ cũng thấy (phạm vi Cùng chức vụ)');
@@ -166,7 +166,7 @@ test('Sale Admin: có quyền của Sale + Kế toán + Kho; xem toàn công ty 
   const o = await s.call('/orders', s.emp2, 'POST', { quoteId: q.data.id }); assert.equal(o.status, 201, JSON.stringify(o.data));
   assert.equal((await s.call(`/orders/${o.data.id}`, s.sadmin)).status, 200, 'đơn hàng');
   assert.equal((await s.call('/orders?flow=order&limit=50', s.sadmin)).data.orders.some((x: any) => x.id === o.data.id), true);
-  const q2 = await s.call('/quotes', s.emp2, 'POST', { type: 'HRC', quoteNo: 'HRC_X2', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows: [{ name: 'Ly', qty: 1, price: 1 }] });
+  const q2 = await s.call('/quotes', s.emp2, 'POST', { type: 'HRC', quoteNo: 'HRC_X2', customer: 'Công ty An Phú', customerId: 'K1', vat: 8, rows: [{ commission: {mode:'percent',value:0}, name: 'Ly', qty: 1, price: 1 }] });
   await s.call(`/quotes/${q2.data.id}/submit`, s.emp2, 'POST', { revision: 1 }); await s.call(`/quotes/${q2.data.id}/approve`, s.mgr, 'POST', { revision: 1 });
   const k = await s.call('/contracts', s.emp2, 'POST', { quoteId: q2.data.id, legalEntity: 'BN', depositRate: 30, paymentDays: 15 }); assert.equal(k.status, 201, JSON.stringify(k.data));
   assert.equal((await s.call(`/orders/${k.data.orderId}`, s.sadmin)).status, 200, 'HĐKT');

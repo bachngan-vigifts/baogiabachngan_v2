@@ -9,7 +9,7 @@ import {quoteShares,quotations} from '../../src/modules/quotes/schema.ts';
 import {salesOrders} from '../../src/modules/sales/schema.ts';
 import {webNotifications} from '../../src/modules/notifications/schema.ts';
 
-const doc=(price=100000)=>({type:'B2B',quoteNo:'B2B_EDIT_001',customer:'Khách kiểm thử',vat:8,rows:[{id:'line1',name:'Ly kiểm thử',qty:2,price,costMode:'manual',costPrice:30000}]});
+const doc=(price=100000)=>({type:'B2B',quoteNo:'B2B_EDIT_001',customer:'Khách kiểm thử',vat:8,rows:[{id:'line1',name:'Ly kiểm thử',qty:2,price,commission:{mode:'percent',value:0},costMode:'manual',costPrice:30000}]});
 async function setup(){
  const f=await createTestDb();await seedStaff(f.d1);await f.db.update(employees).set({active:true,canApprove:true}).where(eq(employees.id,'off'));
  await f.db.update(positions).set({dataScope:'own'}).where(eq(positions.id,'sale'));

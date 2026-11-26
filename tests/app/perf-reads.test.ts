@@ -123,7 +123,7 @@ test('đồng bộ việc tự sinh: gọi trùng chờ chung một lượt; g�
 test('lưu báo giá chỉ đồng bộ việc "Duyệt báo giá": tạo việc ngay, không đụng việc tự sinh khác', async () => {
   const f = await setup(), now = new Date().toISOString();
   await f.db.insert(tasks).values({ id: 'other-auto', title: 'Việc tự sinh khác', status: 'todo', priority: 'normal', source: 'stock_request', autoKey: 'stock:khong-con', createdAt: now, updatedAt: now } as any);
-  const q = await f.call('/quotes', f.emp, 'POST', { type: 'B2B', quoteNo: 'BG-TASK', customer: 'Khách', vat: 8, rows: [{ sku: '00123', name: 'Ly', unit: 'cái', qty: 1, price: 1 }] });
+  const q = await f.call('/quotes', f.emp, 'POST', { type: 'B2B', quoteNo: 'BG-TASK', customer: 'Khách', vat: 8, rows: [{ commission: {mode:'percent',value:0}, sku: '00123', name: 'Ly', unit: 'cái', qty: 1, price: 1 }] });
   assert.equal(q.status, 201, JSON.stringify(q.data));
   assert.equal((await f.call('/quotes/' + q.data.id + '/submit', f.emp, 'POST', { revision: 1 })).status, 200);
   const rows = await f.db.select().from(tasks);

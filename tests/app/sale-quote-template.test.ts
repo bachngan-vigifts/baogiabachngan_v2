@@ -19,7 +19,7 @@ async function setup(){
  const mgr=(await call('/login','','POST',{email:'mgr@x.vn',password:PASSWORD})).cookie,emp=(await call('/login','','POST',{email:'emp@x.vn',password:PASSWORD})).cookie,ncc=(await call('/login','','POST',{email:'ncc@x.vn',password:PASSWORD})).cookie;
  return{...f,files,env,call,mgr,emp,ncc};
 }
-const doc=(no='SALE_BG_001_11112026')=>({type:'B2B',template:'sale',quoteNo:no,customer:'Khách giả lập',date:'2026-11-11',vat:8,rows:[{name:'Bình gốm',sku:'SKU',qty:10,price:100000,printFee:5000,discount:0,image:'https://example.test/design-one.png',designImage:true,costPrice:123}]});
+const doc=(no='SALE_BG_001_11112026')=>({type:'B2B',template:'sale',quoteNo:no,customer:'Khách giả lập',date:'2026-11-11',vat:8,rows:[{name:'Bình gốm',sku:'SKU',qty:10,price:100000,commission:{mode:'percent',value:0},printFee:5000,discount:0,image:'https://example.test/design-one.png',designImage:true,costPrice:123}]});
 const ok=(r:any,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
 test('Sale requires explicit design on create/update/submit/approval, keeps eight columns and preserves old quote behavior',async()=>{
  const f=await setup();try{
@@ -96,12 +96,12 @@ test('UI batches price lookups, deduplicates repeated renders, contains failures
  for(let i=0;i<20;i++)loader.request('second',[{sku:'C'}]);await new Promise(r=>setTimeout(r,190));assert.equal(calls,2);
 });
 
-test('employee quote summary exposes only saved rebate total; costs, print costs, margin and other quotes remain private',async()=>{
+test('employee quote exposes editable customer rebate; costs, print costs, margin and other quotes remain private',async()=>{
  const f=await setup();const made=ok(await f.call('/quotes',f.emp,'POST',{...doc('STAFF-SUMMARY'),template:undefined}),201);
  const stored=ok(await f.call('/quotes/'+made.id,f.mgr));stored.data.rows[0]={...stored.data.rows[0],costPrice:40000,purchaseDiscount:60,commission:{mode:'amount',value:2000},printing:{unitPrice:500}};
  ok(await f.call('/quotes/'+made.id,f.mgr,'PUT',{revision:1,data:stored.data}));
  const visible=ok(await f.call('/quotes/'+made.id,f.emp));assert.deepEqual(visible.data.staffSummary,{customerCommission:20000});
- for(const key of ['costPrice','purchaseDiscount','printing','commission'])assert.equal(visible.data.rows[0][key],undefined);
+ for(const key of ['costPrice','purchaseDiscount','printing'])assert.equal(visible.data.rows[0][key],undefined);
  assert.equal(visible.data.printing,undefined);for(const key of ['gross','margin','cost'])assert.equal(visible.data.staffSummary[key],undefined);
  visible.data.staffSummary.customerCommission=999999;visible.data.rows[0].costPrice=1;
  const saved=ok(await f.call('/quotes/'+made.id,f.emp,'PUT',{revision:2,data:visible.data}));assert.equal(saved.data.staffSummary.customerCommission,20000);
