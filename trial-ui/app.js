@@ -1464,7 +1464,7 @@ function lineCell(r, i) {
     <td class="col-idx">${i + 1}</td>
     <td class="col-img"><button type="button" class="img-btn" data-image title="${r.image ? 'Đổi hình' : 'Chèn hình'}">${r.image ? imgTag(r.image) : `<span class="thumb add">${PLACEHOLDER}<small>Chèn hình</small></span>`}</button></td>
     <td class="col-product" data-label="Sản phẩm">
-      <input class="name-input" data-k="name" value="${esc(r.name)}" placeholder="${manual ? 'Tên phụ phí / nội dung thêm…' : 'Gõ tên hoặc mã để tìm sản phẩm…'}" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">
+      <textarea class="name-input" data-k="name" rows="1" placeholder="${manual ? 'Tên phụ phí / nội dung thêm…' : 'Gõ tên hoặc mã để tìm sản phẩm…'}" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">${esc(r.name)}</textarea>
       ${custom ? '' : `<div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}"><span class="quote-stock-warning" data-stock-warning hidden role="img" aria-label="">!</span>${r.sku ? '<button type="button" class="link-btn" data-stock title="Tồn các kho + lịch sử 20 giao dịch gần nhất">Tồn kho · Lịch sử</button>' : ''}</div>`}
       ${!custom && meta ? `<div class="product-meta">${esc(meta)}</div>` : ''}
       ${!custom && hrc && packingSpec(r) ? `<div class="product-meta">Đóng gói: ${esc(packingSpec(r))}</div>` : ''}
@@ -1498,6 +1498,11 @@ const salePriceSuggestions = createSalePriceSuggestions({api, changed: () => {
   if (!isSaleEditor() || $('#view-editor').hidden) return;
   $$('#line-list tr[data-i]').forEach(tr => { const row = editor.rows[Number(tr.dataset.i)], cell = tr.querySelector('.col-average'); if (cell && row) cell.innerHTML = salePriceSuggestions.view(row.sku, {esc, money}); });
 }});
+// Ô tên sản phẩm tự cao theo nội dung: trình duyệt có `field-sizing: content` thì CSS lo; trình duyệt cũ thì đặt chiều cao ở đây.
+function fitNameInputs(list = $$('#line-list textarea.name-input')) {
+  if (typeof CSS !== 'undefined' && CSS.supports?.('field-sizing', 'content')) return;
+  for (const t of list) { if (t.tagName !== 'TEXTAREA') continue; t.style.height = 'auto'; t.style.height = t.scrollHeight + t.offsetHeight - t.clientHeight + 'px'; }
+}
 function renderLines(focus) {
   $('#line-head').innerHTML = lineHead();
   // Báo giá chưa có sản phẩm: thay dòng trống số 1 bằng lời mời "+ Thêm sản phẩm".
@@ -1512,6 +1517,7 @@ function renderLines(focus) {
   $('#bulk-discount').hidden = isSaleEditor();
   if (isSaleEditor()) salePriceSuggestions.request(state.user?.id || '', editor.rows); // HRC không có 3 dòng mô tả
   calculate();
+  fitNameInputs();
   if (focus !== undefined) $(`#line-list tr[data-i="${focus}"] [data-k="name"]`)?.focus();
 }
 function validateRowInput(input, r) {
@@ -1563,7 +1569,12 @@ $('#line-list').addEventListener('input', e => {
     r[k] = input.value.trim() === '' && ['price','qty','discount'].includes(k) ? '' : v ?? 0;
     if (k === 'price') { const d = input.closest('tr').querySelector('[data-k="discount"]'); if (d) validateRowInput(d, r); }
     syncCost(r);
-  } else r[k] = input.value;
+  } else {
+    // Tên sản phẩm là ô nhiều dòng (để hiện đủ tên dài) nhưng giá trị vẫn là một dòng như ô nhập cũ.
+    if (k === 'name' && /[\r\n]/.test(input.value)) input.value = input.value.replace(/\s*[\r\n]+\s*/g, ' ');
+    r[k] = input.value;
+    if (k === 'name') fitNameInputs([input]);
+  }
   markDirty(); calculate();
 });
 $('#line-list').addEventListener('focusout', e => {
@@ -1583,7 +1594,7 @@ $('#line-list').addEventListener('focusin', e => {
 });
 $('#line-list').addEventListener('keydown', e => {
   // Enter → xuống ô cùng cột ở dòng dưới; ở dòng cuối thì thêm dòng trống.
-  if (e.key !== 'Enter' || !e.target.matches('input')) return;
+  if (e.key !== 'Enter' || !e.target.matches('input, textarea.name-input')) return;
   e.preventDefault();
   const tr = e.target.closest('tr'), i = Number(tr.dataset.i);
   if (i === editor.rows.length - 1) addLine(); else $(`#line-list tr[data-i="${i + 1}"] [data-k="${e.target.dataset.k}"]`)?.focus();
