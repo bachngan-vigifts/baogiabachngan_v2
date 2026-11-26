@@ -1,0 +1,16 @@
+name: Inspect Lock gift promotion
+on:
+  push:
+    branches: [fix/lock-qv-gifts-20261126]
+    paths: [.github/workflows/lock-qv-gift-inspect.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install --prefix /tmp/qv-info --silent playwright@1.56.1
+      - run: /tmp/qv-info/node_modules/.bin/playwright install chromium --only-shell
+      - run: node web-lock/qv-gift/inspect.mjs
