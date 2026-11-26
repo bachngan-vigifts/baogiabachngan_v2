@@ -745,16 +745,35 @@ let quoteReq = 0;
 async function loadQuotes() {
   if (!can('page.quotes')) return;
   const req = ++quoteReq, f = state.quoteFilter;
+  const status = $('#quote-list-status'), retry = $('#quote-list-retry');
+  status.textContent = 'Đang tải báo giá…';
+  retry.hidden = true;
+  $('#quote-empty').hidden = true;
+  $('#quote-table').setAttribute('aria-busy', 'true');
   try {
     const d = await api(`/quotes?limit=${quotePager.limit}&offset=${quotePager.offset}&q=${encodeURIComponent(f.q)}&type=${encodeURIComponent(f.type)}&owner=${encodeURIComponent(f.owner)}&sort=${encodeURIComponent(f.sort)}&month=${todayIso().slice(0, 7)}`);
     if (req !== quoteReq) return;
-    state.quotes = d.quotes; state.quoteMeta = d;
     // Báo giá đã sinh đơn hàng / HĐKT → nút xem chứng từ (thay chỗ nhãn loại báo giá).
     const ids = d.quotes.map(q => q.id);
-    state.quoteDocs = ids.length ? (await api('/quote-docs?ids=' + encodeURIComponent(ids.join(','))).catch(() => ({ docs: {} }))).docs : {};
+    const docs = ids.length ? (await api('/quote-docs?ids=' + encodeURIComponent(ids.join(','))).catch(() => ({ docs: {} }))).docs : {};
     if (req !== quoteReq) return;
+    state.quotes = d.quotes;
+    state.quoteMeta = d;
+    state.quoteDocs = docs;
     clearGlobalError('quotes');
-  } catch (e) { if (req !== quoteReq) return; state.quotes = state.quotes || []; if (e.status !== 401) showGlobalError(e.message, 'quotes'); }
+    status.textContent = (d.total ?? d.quotes.length).toLocaleString('vi-VN') + ' báo giá';
+  } catch (e) {
+    if (req !== quoteReq) return;
+    status.textContent = 'Chưa tải được danh sách báo giá.';
+    if (e.status !== 401) {
+      retry.hidden = false;
+      showGlobalError(e.message, 'quotes');
+    }
+    if (!state.quotes?.length) $('#quote-table').hidden = true;
+    return;
+  } finally {
+    if (req === quoteReq) $('#quote-table').removeAttribute('aria-busy');
+  }
   renderQuotes();
 }
 // Danh bạ có thể hàng nghìn khách: tìm và phân trang trên máy chủ.
@@ -948,7 +967,14 @@ window.addEventListener('hashchange', async () => {
     if (!await confirmBox('Báo giá có thay đổi chưa lưu. Rời trang sẽ mất các thay đổi này.', { title: 'Rời khỏi báo giá?', ok: 'Rời trang', danger: true })) return;
     editor.dirty = false; location.hash = target; return;
   }
+  const previous = currentHash;
   currentHash = target; route();
+  if (target === '#/quotes' && previous.startsWith('#/quotes/') && !$('#view-quotes').hidden) {
+    const link = $('#quote-list').querySelector('[href="' + CSS.escape(previous) + '"]');
+    (link || $('#quote-search')).focus();
+  } else if (previous === '#/quotes' && !$('#view-editor').hidden) {
+    $('#editor-title').focus();
+  }
 });
 window.addEventListener('beforeunload', e => { if (editor.dirty || stocktakeUi?.hasDraft()) { e.preventDefault(); e.returnValue = ''; } });
 
@@ -966,6 +992,10 @@ function thuChiTabs(view) {
   }
   $('#view-' + view).before(nav);
 }
+$('.crm-skip').addEventListener('click', event => {
+  event.preventDefault();
+  $('#crm-main').focus();
+});
 function route() {
   if (globalErrorPage() !== globalErrorOwner) clearGlobalError();
   // #/chat/<id> (bấm thông báo tin nhắn): mở khung chat nổi, giữ nguyên trang đang xem.
@@ -991,7 +1021,12 @@ function route() {
   if (view === 'products' && id) view = 'product';
   for (const v of Object.keys(VIEWS)) $('#view-' + v).hidden = v !== view;
   const navKey = view === 'packing' ? (id ? 'tasks' : 'packing') : view === 'editor' ? 'quotes' : view === 'order' ? (page === 'contracts' ? 'contracts' : 'orders') : view === 'customer' ? 'customers' : view === 'product' ? 'products' : view === 'member' ? 'staff' : view;
-  $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === navKey));
+  $$('[data-nav]').forEach(a => {
+    const active = a.dataset.nav === navKey;
+    a.classList.toggle('active', active);
+    if (active) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  });
   $$('[data-home-link]').forEach(a => a.classList.toggle('active', view === 'home'));
   const viewTitle = view === 'customers' && new URLSearchParams(query).get('tab') === 'center' ? 'Trung tâm khách hàng' : VIEWS[view];
   $('#breadcrumb').textContent = view === 'editor' ? (id === 'new' ? 'Tạo báo giá' : 'Sửa báo giá') : view === 'order' && page === 'contracts' ? 'HĐKT' : viewTitle;
@@ -1095,6 +1130,7 @@ function hydrateMobileQuoteOwners(){
 }
 function renderQuotes() {
   const tbody = $('#quote-list');
+  const focusedQuote = document.activeElement.closest('[data-quote-link]')?.getAttribute('href');
   if (!state.quotes) { tbody.innerHTML = skeleton(7); return; }
   $('#quote-owner').hidden = !state.quoteMeta?.hasOthers;
   const list = state.quotes;
@@ -1102,7 +1138,7 @@ function renderQuotes() {
   $('#view-quotes').dataset.resultCount=String(state.quoteMeta?.total??list.length);
   tbody.innerHTML = list.map(q => `
     <tr class="clickable" data-open="${esc(q.id)}">
-      <td class="first"><span class="strong">${esc(q.quoteNo)}</span><small>${q.lineCount ?? ''} sản phẩm · phiên bản ${esc(q.revision)} · ${q.approvalStatus === 'approved' ? '<span class="pill ok">Đã duyệt</span>' : q.approvalStatus === 'draft' ? '<span class="pill">Nháp</span>' : '<span class="pill warn">Chờ duyệt</span>'}${q.fromCustomer ? ' · <span class="pill blue">Khách gửi</span>' : q.mine ? '' : ' · <span class="pill blue">Được chia sẻ</span>'}</small></td>
+      <td class="first"><a class="strong" data-quote-link href="#/quotes/${esc(encodeURIComponent(q.id))}">${esc(q.quoteNo)}</a><small>${q.lineCount ?? ''} sản phẩm · phiên bản ${esc(q.revision)} · ${q.approvalStatus === 'approved' ? '<span class="pill ok">Đã duyệt</span>' : q.approvalStatus === 'draft' ? '<span class="pill">Nháp</span>' : '<span class="pill warn">Chờ duyệt</span>'}${q.fromCustomer ? ' · <span class="pill blue">Khách gửi</span>' : q.mine ? '' : ' · <span class="pill blue">Được chia sẻ</span>'}</small></td>
       <td data-label="Khách">${esc(q.customer) || '<span class="muted">—</span>'}${q.contact || q.phone ? `<small>${esc([q.contact, q.phone].filter(Boolean).join(' · '))}</small>` : ''}</td>
       <td data-label="Đơn / HĐKT">${quoteDocCell(q)}</td>
       <td data-label="Ngày"><span class="quote-desktop-date">${fmtDate(q.quoteDate) || '—'}</span><span class="mobile-quote-owner" data-mobile-quote-id="${esc(q.id)}" data-mobile-quote-updated="${esc(q.updatedAt)}">Phụ trách: đang tải…</span></td>
@@ -1120,6 +1156,7 @@ function renderQuotes() {
   $('#quote-empty-text').textContent = none ? 'Tạo báo giá đầu tiên để bắt đầu làm việc.' : 'Thử từ khoá khác hoặc bỏ bớt bộ lọc.';
   $('#quote-empty-action').hidden = !none;
   $('#quote-table').hidden = list.length === 0;
+  if (focusedQuote) tbody.querySelector('[href="' + CSS.escape(focusedQuote) + '"]')?.focus();
   hydrateMobileQuoteOwners();
 }
 $('#quote-list').addEventListener('click', e => {
@@ -1127,9 +1164,13 @@ $('#quote-list').addEventListener('click', e => {
   if (dup) { e.stopPropagation(); duplicateFromList(dup.dataset.dup); return; }
   const buy = e.target.closest('[data-buy]');
   if (buy) { e.stopPropagation(); go('#/purchases/new?type=quote&id=' + encodeURIComponent(buy.dataset.buy)); return; }
-  if (e.target.closest('[data-doc-link]')) return; // nút xem đơn / HĐKT: theo link, không mở báo giá
+  if (e.target.closest('[data-doc-link], [data-quote-link]')) return; // nút xem đơn / HĐKT: theo link, không mở báo giá
   const open = e.target.closest('[data-open]');
   if (open) go('#/quotes/' + encodeURIComponent(open.dataset.open));
+});
+$('#quote-list-retry').addEventListener('click', () => {
+  $('#quote-search').focus();
+  loadQuotes();
 });
 let quoteTimer;
 const reloadQuotes = () => { quotePager.reset(); loadQuotes(); };
@@ -4312,7 +4353,7 @@ var dashboardUi = null;
 /** Phân tích lợi nhuận: chỉ Manager (máy chủ kiểm tra lại). */
 var profitUi = null;
 function profitView() { return profitUi ||= initProfit({ api, root: $('#view-profit'), toast, esc, money }); }
-function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('#view-dashboard'), isManager, money, user:()=>state.user }); }
+function dashboardView() { return dashboardUi ||= initDashboard({ api, root: $('#view-dashboard'), isManager, canOpenQuotes: () => can('page.quotes'), money, user:()=>state.user }); }
 var storeUi = null;
 /** Báo cáo Cửa hàng trưởng: trang #/store-reports + hộp nhắc việc 30 phút (chỉ CHT được gán). */
 /** Báo cáo tuần Sale / Sale Admin: trang #/weekly-reports + nhắc tuần trước chưa nộp. */

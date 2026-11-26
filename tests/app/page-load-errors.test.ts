@@ -8,9 +8,22 @@ const errors = source.slice(source.indexOf('const globalErrorPage ='), source.in
 const quotes = source.slice(source.indexOf('let quoteReq ='), source.indexOf('// Danh bạ có thể'));
 const members = source.slice(source.indexOf('async function loadMembers()'), source.indexOf('// Tình trạng đồng bộ Sapo'));
 function harness() {
-  const banner = { hidden: true, textContent: '' };
+  function element(hidden = false) {
+    const attributes = new Map<string, string>();
+    return {
+      hidden, textContent: '',
+      setAttribute: (key: string, value: string) => attributes.set(key, value),
+      removeAttribute: (key: string) => attributes.delete(key),
+      getAttribute: (key: string) => attributes.get(key) ?? null,
+    };
+  }
+  const banner = element(true), table = element(), retry = element(true), status = element();
+  const elements = new Map([
+    ['#global-error', banner], ['#quote-table', table], ['#quote-list-retry', retry],
+    ['#quote-list-status', status], ['#quote-empty', element(true)],
+  ]);
   const ctx: any = {
-    location: { hash: '#/quotes' }, $: () => banner,
+    location: { hash: '#/quotes' }, $: (selector: string) => elements.get(selector) ?? null,
     state: { user: {}, quoteFilter: {}, quotes: [], members: [] },
     quotePager: { limit: 50, offset: 0 }, can: () => true,
     todayIso: () => '2026-10-30', encodeURIComponent,
@@ -18,7 +31,7 @@ function harness() {
     api: async () => { throw Object.assign(new Error('Network unavailable'), { status: 0 }); },
   };
   runInNewContext(errors + quotes + members + '\nthis.show = showGlobalError; this.clear = clearGlobalError; this.loadQuotes = loadQuotes; this.loadMembers = loadMembers;', ctx);
-  return { ctx, banner };
+  return { ctx, banner, table, retry, status };
 }
 
 test('background staff failure cannot mark a loaded quotes page as disconnected', async () => {
@@ -31,8 +44,12 @@ test('background staff failure cannot mark a loaded quotes page as disconnected'
 });
 
 test('quotes failure stays visible through unrelated success, then clears on successful retry', async () => {
-  const { ctx, banner } = harness();
-  await ctx.loadQuotes();
+  const { ctx, banner, table, retry, status } = harness();
+  const loading = ctx.loadQuotes();
+  assert.equal(table.getAttribute('aria-busy'), 'true');
+  await loading;
+  assert.equal(table.getAttribute('aria-busy'), null);
+  assert.equal(retry.hidden, false);
   assert.equal(banner.hidden, false);
   ctx.api = async () => ({ members: [], positions: [] });
   await ctx.loadMembers();
@@ -41,6 +58,8 @@ test('quotes failure stays visible through unrelated success, then clears on suc
   await ctx.loadQuotes();
   assert.equal(banner.hidden, true);
   assert.equal(banner.textContent, '');
+  assert.equal(retry.hidden, true);
+  assert.equal(status.textContent, '0 báo giá');
 });
 
 test('late failures from superseded quote requests cannot overwrite a successful load', async () => {

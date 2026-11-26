@@ -51,7 +51,7 @@ const monthLabel = (ym, i) => `T${Number(ym.slice(5))}${i === 0 || ym.endsWith('
 const barUp = (x, y, w, h) => { const r = Math.min(4, w / 2, h); return `M${x},${y + h}V${y + r}A${r},${r} 0 0 1 ${x + r},${y}H${x + w - r}A${r},${r} 0 0 1 ${x + w},${y + r}V${y + h}Z`; };
 const barRight = (x, y, w, h) => { const r = Math.min(4, h / 2, w); return `M${x},${y}H${x + w - r}A${r},${r} 0 0 1 ${x + w},${y + r}V${y + h - r}A${r},${r} 0 0 1 ${x + w - r},${y + h}H${x}Z`; };
 
-export function initDashboard({ api, root, isManager, money, user=()=>null }) {
+export function initDashboard({ api, root, isManager, canOpenQuotes = () => false, money, user=()=>null }) {
   const node = (tag, text, cls) => { const n = document.createElement(tag); if (text != null) n.textContent = String(text); if (cls) n.className = cls; return n; };
   const svgRoot = (W, H, label) => { const s = svg('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': label }); s.style.width = W + 'px'; s.style.height = H + 'px'; return s; };
   const svg = (tag, attrs = {}, text) => { const n = document.createElementNS(SVG_NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v)); if (text != null) n.textContent = String(text); return n; };
@@ -66,7 +66,9 @@ export function initDashboard({ api, root, isManager, money, user=()=>null }) {
   const head = node('div', null, 'dash-head'), meta = node('p', null, 'dash-meta');
   // Bản tính sẵn 30 phút (máy chủ) – "Cập nhật" tính lại mọi khối của trang.
   const cacheSlot = node('div', null, 'dash-cache');
-  head.append(node('h1', 'Tổng quan'), meta, cacheSlot);
+  const quoteLink = node('a', 'Danh sách báo giá', 'btn secondary dash-quotes');
+  quoteLink.href = '#/quotes';
+  head.append(node('h1', 'Tổng quan'), meta, cacheSlot, quoteLink);
   const fresh = refresh => refresh === true ? { refresh: '1' } : {};
   const form = node('form', null, 'dash-filters'), content = node('div', null, 'dash-content');
   const tip = node('div', null, 'dash-tip'); tip.hidden = true; tip.setAttribute('role', 'tooltip');
@@ -504,6 +506,7 @@ export function initDashboard({ api, root, isManager, money, user=()=>null }) {
   }
 
   async function load(refresh) {
+    quoteLink.hidden = !canOpenQuotes();
     const nextViewer=viewerKey();
     if(nextViewer!==viewer){
       viewer=nextViewer;data=null;kpiPick='';kpiMonth='';preset=1;reportDetailsOpen.clear();

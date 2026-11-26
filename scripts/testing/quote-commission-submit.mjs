@@ -22,14 +22,48 @@ const server=createServer(async(req,res)=>{try{
  res.setHeader('content-type',path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':path.endsWith('.ttf')?'font/ttf':'text/html');res.end(data);
 }catch(e){res.writeHead(500).end(e.message);}}).listen(0,'127.0.0.1');
 await new Promise(r=>server.once('listening',r));const origin='http://127.0.0.1:'+server.address().port;
-const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});
+const browser=await chromium.launch({executablePath:'/usr/bin/chromium',chromiumSandbox:true});
 const dir=process.env.QUOTE_EDIT_SCREENSHOT_DIR||'/tmp/quote-commission';await mkdir(dir,{recursive:true});
 const action=async(page,selector)=>{const b=page.locator(selector);await b.waitFor({state:'attached'});if(!await b.isVisible())await b.evaluate(n=>n.closest('[popover]')?.showPopover());await b.click();};
-try{for(const width of [1440,390]){
- const q=await f.call('/quotes',f.cookies.emp,'POST',{type:'B2B',quoteNo:'B2B_CK_BROWSER_'+width,date:'2026-11-26',customer:'Khách kiểm thử',vat:8,rows:[{name:'Ly kiểm thử',qty:2,price:100000},{name:'Hộp kiểm thử',qty:2,price:10000}]});assert.equal(q.status,201);
+try{for(const width of [1280,390,360,320]){
+ const quoteNo='B2B_CK_BROWSER_CHI_NHANH_MIEN_TRUNG_2026_'+width;
+ const q=await f.call('/quotes',f.cookies.emp,'POST',{type:'B2B',quoteNo,date:'2026-11-26',customer:'Khách kiểm thử',vat:8,rows:[{name:'Ly kiểm thử',qty:2,price:100000},{name:'Hộp kiểm thử',qty:2,price:10000}]});assert.equal(q.status,201);
  const context=await browser.newContext({viewport:{width,height:1000}});await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
  await context.addInitScript(({token,user})=>{localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));},{token:f.cookies.emp.split('=')[1],user:users.emp});
- const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/#/quotes/'+q.data.id);
+ const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/#/dashboard');
+ const byNumber=page.getByRole('link',{name:quoteNo,exact:true});
+ await page.getByRole('link',{name:'Danh sách báo giá'}).click();
+ const search=page.getByRole('searchbox',{name:'Tìm báo giá'});
+ await search.fill('absent-fixture');
+ await page.getByText('Không có báo giá phù hợp',{exact:true}).waitFor();
+ let release;
+ const pending=new Promise(resolve=>{release=resolve;});
+ await page.route(url=>url.pathname.endsWith('/quotes') && url.searchParams.get('q')==='fault-fixture',
+   async route=>{await pending;await route.fulfill({status:400,json:{message:'Lỗi fixture'}});});
+ await search.fill('fault-fixture');
+ try {
+   await page.getByText('Đang tải báo giá…',{exact:true}).waitFor();
+   assert.equal(await page.locator('#quote-empty').isVisible(),false);
+ } finally { release(); }
+ await page.getByRole('button',{name:'Thử tải lại'}).waitFor();
+ assert.equal(await page.locator('#quote-empty').isVisible(),false);
+ await search.fill(quoteNo);
+ await byNumber.press('Enter');
+ await page.getByRole('heading',{name:quoteNo,exact:true}).waitFor();
+ const activeNav=page.locator('.sidebar a[aria-current="page"]');
+ assert.equal(await activeNav.count(),1);
+ assert.equal(await activeNav.getAttribute('href'),'#/quotes');
+ if(width<=390){
+   await page.locator('.quote-actions .mobile-action-trigger').waitFor();
+   const title=await page.locator('.editor-title').boundingBox();
+   const download=await page.locator('#quote-download').boundingBox();
+   assert.ok(title && download && title.y+title.height<=download.y,'quote metadata overlaps download');
+   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth));
+ }
+ await page.locator('#view-editor a.back').click();
+ await byNumber.waitFor();
+ assert.equal(await byNumber.evaluate(link=>link===document.activeElement),true);
+ await byNumber.press('Enter');
  await page.locator('#toggle-profit').click();await page.locator('#open-commission').click();await page.locator('#commission-dialog [data-close]').click();
  await action(page,'#submit-quote');const dialog=page.locator('#commission-dialog');await dialog.waitFor({state:'visible'});
  await dialog.locator('button.btn.primary').click();assert.equal(await dialog.isVisible(),true);assert.equal((await f.call('/quotes/'+q.data.id,f.cookies.emp)).data.approvalStatus,'draft');

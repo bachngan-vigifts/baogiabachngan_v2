@@ -82,3 +82,56 @@
   :is(.app-shell, .visual-surface) .pos-payment-modal h2 { background: #eaf3ff; color: #174d85; }
   :is(.app-shell, .visual-surface) .pos-payment-method[aria-pressed=true] { background: var(--blue-50); border-color: var(--blue); color: #0059b8; }
 }
+
+@media screen {
+  .crm-skip { position: fixed; top: 4px; left: 8px; z-index: 9999; padding: 8px 16px; background: var(--surface); transform: translateY(-150%); }
+  .crm-skip:focus { transform: none; }
+  #view-dashboard .dash-head { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  #view-dashboard .dash-head > :not(.dash-quotes) { grid-column: 1; }
+  #view-dashboard .dash-quotes { grid-column: 2; grid-row: 1 / span 2; }
+  #view-dashboard .dash-filters, #view-quotes .stats { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  #view-dashboard .dash-tile.is-hero { background: var(--surface); border-inline-start: 3px solid var(--blue); }
+  #view-dashboard .dash-tile strong, #view-quotes .stat strong { white-space: normal; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  #view-quotes .stats { gap: 0; padding: 0; overflow: hidden; }
+  #view-quotes .stat { border: 0; border-radius: 0; box-shadow: none; border-inline-start: 1px solid var(--line); }
+  #view-quotes .stat:first-child { border-inline-start: 0; }
+  #view-quotes .quote-list-feedback { display: flex; align-items: center; gap: 8px; padding-inline: 14px; font-size: var(--text-caption); color: var(--muted); }
+  #quote-list-status:not(:empty) { padding-block: 8px; }
+  #quote-table [data-quote-link] { color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
+  #quote-table td[data-label="Khách"], #view-editor .editor-title { overflow-wrap: anywhere; }
+  #view-editor .totals-card .grand { border-block-start: 1px solid var(--line-strong); font-variant-numeric: tabular-nums; }
+  #view-editor .editor-head { border-block-end: 1px solid var(--line); padding-block-end: 10px; }
+  :is(#view-editor, #view-quotes, #view-dashboard, .sidebar) :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  @media (max-width: 850px) {
+    #view-editor .mobile-quote-summary strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+    #view-dashboard .dash-head { grid-template-columns: minmax(0, 1fr); }
+    #view-dashboard .dash-quotes { grid-area: auto; justify-self: start; }
+  }
+}
+
+@media screen and (max-width: 850px) {
+  #view-editor #quote-form .editor-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    margin-inline: 0;
+  }
+  #view-editor #quote-form .editor-title {
+    display: flex;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  #view-editor .editor-title h1 {
+    flex-basis: 100%;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  #view-editor #quote-form .editor-head .back { font-size: 0; padding: 0; }
+  #view-editor .editor-head > .quote-actions {
+    grid-column: 1 / -1;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+}
