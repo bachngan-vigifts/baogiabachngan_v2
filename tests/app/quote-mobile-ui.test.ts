@@ -36,7 +36,7 @@ test('CSS chỉ chuyển bố cục báo giá ở màn hình tối đa 850px và
   assert.match(mobile, /#view-editor #line-head \.col-product, #view-editor #line-list \.col-product \{ width: 250px; min-width: 250px; \}/);
   assert.doesNotMatch(mobile, /#view-editor #line-head \.col-product, #view-editor #line-list \.col-product \{ position: sticky/);
   assert.match(css, /Bản gọn cho trình soạn báo giá trên điện thoại/);
-  assert.match(css, /#view-editor \.mobile-savebar \.btn \{ min-width: 72px; min-height: 40px/);
+  assert.match(css, /#view-editor \.mobile-savebar \.btn \{ min-width: 72px; min-height: 44px/); // vùng bấm ≥44px trên điện thoại
   assert.match(css, /font-size: var\(--text-small\) !important/);
   assert.doesNotMatch(css.slice(0, css.indexOf('/* Soạn báo giá trên điện thoại')), /quote-mobile-panel:not/);
 });
