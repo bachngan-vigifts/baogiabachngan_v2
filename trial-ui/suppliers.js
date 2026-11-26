@@ -83,10 +83,10 @@ export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = 
       const inp = el(key === 'note' ? 'textarea' : 'input'); inp.name = key; inp.maxLength = max; inp.value = s[key] || ''; if (key === 'note') inp.rows = 2;
       l.append(inp); grid.append(l);
     }
-    const brandLabel=el('label','span-2','Hãng được Sale Admin xem đơn');
+    const brandLabel=el('label','span-2','Phân loại hãng NCC');
     if(canLinkAccounts()){
       const brand=el('select');brand.name='saleAdminBrand';
-      for(const [value,text]of [['','Không cấp quyền theo hãng'],['minhlong','Minh Long'],['locknlock','LocknLock']]){const o=el('option','',text);o.value=value;brand.append(o);}
+      for(const [value,text]of [['','Chưa phân hãng'],['minhlong','Minh Long'],['locknlock','LocknLock']]){const o=el('option','',text);o.value=value;brand.append(o);}
       brand.value=s.saleAdminBrand||'';brandLabel.append(brand);
     }else brandLabel.append(el('span','muted',s.saleAdminBrand==='minhlong'?'Minh Long':s.saleAdminBrand==='locknlock'?'LocknLock':'Chưa phân hãng · chỉ Manager được thay đổi'));
     grid.append(brandLabel);

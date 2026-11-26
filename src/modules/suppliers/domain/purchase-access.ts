@@ -4,5 +4,7 @@ export function purchaseReadLevel(m:(PermissionMember & {active:boolean})|null|u
  if(!m?.active||m.positionId==='supplier'||m.positionId==='customer')return 'none';
  if(m.role==='manager')return 'all';
  if(m.role!=='employee'||!can(m,'page.purchases'))return 'none';
- return m.positionId==='accounting'?'all':(m.positionId==='sale-admin'||isCounterPurchaser(m))?'brand':'none';
+ // Sale Admin can purchase from every supplier, including suppliers without a brand mapping.
+ if(m.positionId==='accounting'||m.positionId==='sale-admin')return 'all';
+ return isCounterPurchaser(m)?'brand':'none';
 }
