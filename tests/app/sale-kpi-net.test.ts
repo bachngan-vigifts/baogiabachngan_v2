@@ -34,7 +34,7 @@ test('Sale rewards use subtotal less customer commission, never VAT totals or st
 });
 test('unverified commission blocks individual and whole-board settlement; explicit commission exemption is accepted',async()=>{
  const f=await sale();await f.call('/hr/members/emp/inputs/2026-10',f.mgr,'PUT',{kpiOverride:1.3});
- await f.db.update(quotations).set({data:JSON.stringify({rows:[{...f.row,commission:undefined}]})}).where(eq(quotations.id,'net-quote'));
+ await f.db.update(quotations).set({data:JSON.stringify({rows:[{...f.row,commission:{mode:'percent'}}]})}).where(eq(quotations.id,'net-quote'));
  const p=(await f.overview()).data.payroll.payslip;assert.equal(p.kpiNetBasis.issues,1);assert.equal((await f.confirm()).data.code,'KPI_NET_UNVERIFIED');
  const batch=await f.call('/hr/payroll/2026-10/confirm',f.mgr,'POST',{});assert.equal(batch.status,409);assert.equal(batch.data.code,'KPI_NET_UNVERIFIED');
  await f.db.update(quotations).set({data:JSON.stringify({rows:[{...f.row,commission:{excluded:true}}]})}).where(eq(quotations.id,'net-quote'));
@@ -62,9 +62,9 @@ test('net commission matches canonical order rows: ignores blank placeholders an
  const p=(await f.overview()).data.payroll.payslip;assert.equal(p.kpiNetBasis.issues,0);assert.equal(p.kpiNetBasis.netRevenue,100000000);assert.equal(amount(p,'kpiBonus'),1200000);assert.equal((await f.confirm()).status,201);
 });
 
-test('below 60% has no KPI reward: missing commission does not block the unrelated base salary',async()=>{
+test('below 60% has no KPI reward: incomplete commission does not block the unrelated base salary',async()=>{
  const f=await sale();await f.salary({mealAllowance:false,contractBonusEnabled:false});
  await f.call('/hr/members/emp/inputs/2026-10',f.mgr,'PUT',{workDays:26,kpiOverride:0.5});
- await f.db.update(quotations).set({data:JSON.stringify({rows:[{...f.row,commission:undefined}]})}).where(eq(quotations.id,'net-quote'));
+ await f.db.update(quotations).set({data:JSON.stringify({rows:[{...f.row,commission:{mode:'percent'}}]})}).where(eq(quotations.id,'net-quote'));
  const p=(await f.overview()).data.payroll.payslip;assert.equal(p.kpiNetBasis.issues,1);assert.equal(p.kpiNetBasis.rate,0);assert.equal(amount(p,'kpiBonus'),0);assert.equal(amount(p,'salaryByDays'),1000000);assert.equal((await f.confirm()).status,201);
 });
