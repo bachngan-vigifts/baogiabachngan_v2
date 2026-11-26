@@ -129,8 +129,29 @@ try {
         assert.equal(await qty.inputValue(),'4');
         assert.equal(await page.locator('.pos-checkout .pos-payment-footer').isVisible(),false);
         await page.screenshot({path:shot+`/${width}-normal.png`});
+        const catalogBounds=await page.locator('.pos-checkout').boundingBox();
+        await page.locator('.pos-ref-normal-footer').getByRole('button',{name:'THANH TOÁN',exact:true}).click();
+        if(await page.locator('.pos-customer-picker').isVisible())await page.locator('.pos-customer-picker .pos-customer-option').filter({hasText:'Nguyễn Khách kiểm thử'}).click();
+        await page.locator('.pos-reference-checkout').waitFor();
+        const paymentBounds=await page.locator('.pos-checkout').boundingBox();
+        assert.ok(Math.abs(catalogBounds.width-paymentBounds.width)<2&&Math.abs(catalogBounds.x-paymentBounds.x)<2,'payment stays the same width and position as the product panel');
+        const cashPanel=page.locator('.pos-payment-cash');
+        await cashPanel.locator('input').fill('1000000');
+        assert.equal(await cashPanel.locator('.pos-change').textContent(),'920.000 đ');
+        assert.equal(await cashPanel.locator('.pos-cash-quick button').count(),4);
+        await cashPanel.getByRole('button',{name:'Đủ tiền',exact:true}).click();
+        assert.equal(await cashPanel.locator('input').inputValue(),'80000');
+        assert.equal(await cashPanel.locator('.pos-change').textContent(),'0 đ');
+        await page.waitForTimeout(250); // Let the selected amount's color transition finish for the screenshot.
+        await page.screenshot({path:shot+`/${width}-normal-payment.png`});
+        await page.getByRole('button',{name:'← Danh mục sản phẩm',exact:true}).click();
+
         await page.getByRole('button',{name:'Bán giao hàng',exact:true}).click();
         assert.equal(await discount.isVisible(),true,'CK stays visible in delivery mode');
+        const deliveryLine=page.locator('.pos-line').first();
+        assert.equal(await deliveryLine.locator('.pos-line-top>button').isVisible(),true,'delivery has a direct trash action');
+        assert.equal(await deliveryLine.evaluate(n=>{const q=n.querySelector('.pos-qty').getBoundingClientRect(),u=n.querySelector('.pos-ref-unit').getBoundingClientRect(),d=n.querySelector('.pos-line-top>button').getBoundingClientRect(),c=n.querySelector('.pos-line-code').getBoundingClientRect();return u.left>=q.right&&Math.abs((q.top+q.bottom-u.top-u.bottom)/2)<2&&c.left>=d.right;}),true,'unit follows quantity; SKU follows trash');
+
         const inlineDiscount=await discount.evaluate(n=>{const d=n.getBoundingClientRect(),p=n.closest('.pos-line').querySelector('.pos-line-price').getBoundingClientRect(),r=n.closest('.pos-line').getBoundingClientRect();return Math.abs((d.top+d.bottom)/2-(p.top+p.bottom)/2)<2&&d.left>=p.right&&d.right<=r.right;});
         assert.equal(inlineDiscount,true,'delivery discount shares the price row without overlap');
         await page.locator('.pos-ref-carrier').waitFor();
@@ -146,6 +167,11 @@ try {
 
         const deposit=page.getByLabel('Đã cọc (VNĐ)',{exact:true});
         const deposited=page.locator('.pos-ref-delivery-totals .pos-ref-deposited'),balance=page.locator('.pos-ref-delivery-totals .pos-ref-balance');
+        const depositMethod=deposited.getByLabel('Hình thức thu trước',{exact:true}),qrAction=deposited.getByRole('button',{name:'Tạo / gửi mã thanh toán',exact:true});
+        assert.equal(await depositMethod.inputValue(),'transfer');
+        const sameRow=await depositMethod.evaluate(n=>{const a=n.getBoundingClientRect(),b=n.closest('.pos-ref-deposited').querySelector('input').getBoundingClientRect();return Math.abs(a.top-b.top)<2&&a.right<=b.left;});assert.equal(sameRow,true);
+        await depositMethod.selectOption('cash');assert.equal(await qrAction.isVisible(),false);
+        await depositMethod.selectOption('transfer');assert.equal(await qrAction.isVisible(),true);
         assert.equal(await deposit.inputValue(),'0');assert.equal(await balance.textContent(),'80.000 đ');
         for(const [percent,amount] of [[30,'24000'],[50,'40000'],[100,'80000']]){await deposited.getByRole('button',{name:percent+'%',exact:true}).click();assert.equal(await deposit.inputValue(),amount);}
         await deposit.fill('20000');assert.equal(await deposit.inputValue(),'20000');assert.equal(await balance.textContent(),'60.000 đ');
@@ -237,6 +263,9 @@ try {
         await page.locator('.pos-payment-method[data-method=cod]').click();
         await page.getByRole('button',{name:'TIẾP TỤC TẠO ĐƠN COD',exact:true}).click();
         const form=page.getByRole('dialog').filter({hasText:'Giao Hàng Nhanh · nhập địa chỉ'});
+        assert.equal(await form.getByLabel('Hình thức thu trước',{exact:true}).inputValue(),'transfer');
+        await form.getByLabel('Hình thức thu trước',{exact:true}).selectOption('cash');
+        assert.equal(await form.getByRole('button',{name:'Tạo / gửi mã thanh toán',exact:true}).isVisible(),false);
         await form.locator('.pos-deposit-presets').getByRole('button',{name:'50%',exact:true}).click();
         const amount=form.getByText('Đã thu trước / tạm ứng (VNĐ)',{exact:true}).locator('..').locator('input');
         assert.ok(Number(await amount.inputValue())>0);await amount.fill('10000');

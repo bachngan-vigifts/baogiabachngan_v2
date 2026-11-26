@@ -340,7 +340,7 @@
 
 /* Normal-sale catalog follows the supplied horizontal photo/name/price reference. */
 @media(min-width:851px) {
- .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid:not(.pos-reference-checkout) .pos-layout {grid-template-columns:minmax(0,1fr) clamp(350px,50vw,760px);}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-layout {grid-template-columns:minmax(0,1fr) clamp(350px,50vw,760px);}
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-basket-head {align-items:center;flex-direction:row;flex-wrap:nowrap;gap:8px;}
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-customer-trigger {flex:1;min-width:0;width:auto;background:#f0f1f3;color:#697887;}
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-grid .pos-ref-catalog-actions {flex:none;width:auto;gap:4px;justify-content:flex-end;}
@@ -420,3 +420,47 @@
 .pos-ref-deposit-summary > .pos-total-row:has(.pos-deposit-controls)>span{position:absolute;top:10px;left:0}
 .pos-ref-deposited:has(.pos-deposit-controls)>input{display:block;margin-left:auto}
 .pos-ref-crm {white-space:nowrap;flex-shrink:0;}
+
+/* Keep payment method and amount on the deposit heading row. */
+.pos-ref-deposited:has(.pos-deposit-controls){display:grid;grid-template-columns:minmax(45px,1fr) minmax(110px,180px) minmax(90px,150px);gap:6px;align-items:center}
+.pos-ref-deposited:has(.pos-deposit-controls)>.pos-deposit-method{grid-column:2;grid-row:1;margin:0;min-width:0}
+.pos-ref-deposited>.pos-deposit-method>span{display:none}
+.pos-ref-deposited>.pos-deposit-method select{width:100%;min-width:0;min-height:38px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff}
+.pos-ref-deposited:has(.pos-deposit-controls)>input{grid-column:3;grid-row:1;width:100%;box-sizing:border-box;margin:0;min-width:0;min-height:38px}
+.pos-ref-deposited>.pos-deposit-controls,.pos-ref-deposited>.pos-cod-confirm{grid-column:1/-1}
+
+/* Cash tender: one amount row, compact suggestions, then change owed. */
+.pos-payment-cash .pos-tender{display:block!important;margin:0}
+.pos-payment-cash .pos-tender .pos-field{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;border:0;border-radius:0;background:transparent;padding:0!important;margin:0}
+.pos-payment-cash .pos-tender .pos-field>span{color:#172336;font-size:14px;white-space:nowrap}
+.pos-payment-cash .pos-tender input{width:48%;min-width:0;min-height:40px;border:0;border-bottom:1px solid #cbd5e1;border-radius:0;background:transparent;text-align:right;box-shadow:none}
+.pos-payment-cash .pos-cash-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px;background:#f0f2f5;border-radius:10px;margin:10px 0 14px}
+.pos-workspace.pos-reference.pos-pc-scan .pos-payment-cash .pos-cash-quick .btn,.pos-payment-modal .pos-payment-cash .pos-cash-quick .btn{min-height:40px;min-width:0;padding:6px 3px;border-radius:24px;background:#fff;border:1px solid #c5cdd8;color:#172336;font-size:14px}
+.pos-workspace.pos-reference.pos-pc-scan .pos-payment-cash .pos-cash-quick .btn[aria-pressed=true],.pos-payment-modal .pos-payment-cash .pos-cash-quick .btn[aria-pressed=true]{background:#006fee;color:#fff;border-color:#006fee}
+.pos-workspace.pos-reference.pos-pc-scan .pos-payment-cash .pos-change-card,.pos-payment-modal .pos-payment-cash .pos-change-card{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:36px;padding:0;background:transparent;border:0;border-radius:0;color:#172336}
+.pos-payment-cash .pos-change-card .pos-note{font-size:14px;color:inherit;margin:0}
+.pos-payment-cash .pos-change{font-size:18px;color:#172336}
+.pos-payment-cash .pos-tender .pos-field{flex-direction:row;text-align:left}
+.pos-payment-cash .pos-cash-quick .btn[aria-pressed=true]{background:#006fee!important;color:#fff!important;border-color:#006fee!important}
+.pos-payment-cash .pos-cash-quick .btn{white-space:normal;overflow-wrap:anywhere}
+/* Delivery lines retain a direct remove action and keep unit after quantity. */
+@media(min-width:851px){
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line{grid-template-columns:32px 100px 44px minmax(70px,1fr) 140px 100px 32px;gap:6px}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-top>button{display:flex;grid-column:1;grid-row:1;align-items:center;justify-content:center;width:32px;min-height:36px;padding:4px}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-code{grid-column:2;grid-row:1;overflow-wrap:anywhere}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-name{grid-column:3 / 7;grid-row:1}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-ref-line-more{grid-column:7;grid-row:1}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-qty{grid-column:2;grid-row:2}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-ref-unit{grid-column:3;grid-row:2;justify-self:start;align-self:center}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-price{grid-column:4;grid-row:2;width:100%;min-width:0}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-discount{grid-column:5;grid-row:2}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-top>strong{grid-column:6 / 8;grid-row:2}
+}
+@media(min-width:851px) and (max-width:1550px){
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line{grid-template-columns:32px 90px minmax(40px,1fr) 100px 32px}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-name{grid-column:3 / 5}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-ref-line-more{grid-column:5}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-top>strong{grid-column:4 / 6;grid-row:2}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-price{grid-column:2;grid-row:3}
+ .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-discount{grid-column:3 / 6;grid-row:3;width:140px;justify-self:start}
+}

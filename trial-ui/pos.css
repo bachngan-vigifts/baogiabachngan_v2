@@ -1467,10 +1467,16 @@ body:has(#view-pos:not([hidden])) #reminder-launcher { display:none; }
 /* Direct transfer actions use the existing QR-sharing and unpaid-bill flows. */
 
 /* Deposit controls are shared by desktop delivery and the mobile form. */
-.pos-deposit-controls{display:grid;gap:6px;min-width:0;margin-top:6px}
-.pos-deposit-presets{display:flex;gap:6px}
-.pos-deposit-presets .btn{flex:1}
-.pos-deposit-controls .pos-note{font-size:12px;margin:0;white-space:normal}
+.pos-deposit-controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;min-width:0;margin-top:6px}
+.pos-deposit-presets{display:contents}
+.pos-deposit-controls .btn{min-width:0;min-height:44px;padding:8px 4px;white-space:normal;overflow-wrap:anywhere;line-height:1.3;border-radius:8px}
+.pos-deposit-presets .btn{color:#0057b8;background:#eff6ff;border-color:#bfdbfe}
+.pos-deposit-presets .btn:hover:not(:disabled){background:#dbeafe;border-color:#60a5fa}
+.pos-deposit-controls > .btn{color:#fff;background:#006fee;border-color:#006fee}
+.pos-deposit-controls > .btn:hover:not(:disabled){background:#005ac2;border-color:#005ac2}
+.pos-deposit-controls .btn:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
+.pos-deposit-controls > .btn:disabled{background:#dbeafe;color:#526b86;border-color:#bfdbfe;opacity:1}
+.pos-deposit-controls .pos-note{grid-column:1/-1;font-size:12px;margin:0;white-space:normal}
 /* Nested POS actions belong to the header menu's scroll flow, not a clipped flyout. */
 #view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) .pos-more-menu {
   flex:1 0 100%;width:100%;min-width:0;grid-column:auto;justify-self:stretch;
@@ -1488,3 +1494,6 @@ body:has(#view-pos:not([hidden])) #reminder-launcher { display:none; }
 #view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) .pos-head-tools {min-width:0;gap:8px;}
 #view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) .pos-shift-status {max-width:100%;white-space:normal;}
 #view-pos :is(.pos-ref-menu-body,.pos-mobile-menu-body) {overscroll-behavior:contain;}
+
+.pos-deposit-controls.is-cash{grid-template-columns:repeat(3,minmax(0,1fr))}
+.pos-deposit-controls > .btn[hidden]{display:none}

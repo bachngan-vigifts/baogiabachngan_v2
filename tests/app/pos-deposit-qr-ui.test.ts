@@ -7,6 +7,7 @@ function setupUi(t,{restore=null,lost=false,expired=false}={}){
  let tick; t.mock.method(globalThis,'setInterval',f=>{tick=f;return 1});t.mock.method(globalThis,'clearInterval',()=>{});
  const old=globalThis.document;globalThis.document={createTextNode:s=>s};t.after(()=>globalThis.document=old);
  const input=new E();input.value='300';const method=new E(),confirmed=new E(),dialogs=[],calls=[];
+ method.value='transfer';
  let result={paid:false,consumed:false},fail=false,first=true;
  let d={id:'same-qr',amount:300,url:'test:qr',content:'SAME REF',expiresAt:expired?'2000-01-01':new Date(Date.now()+60000).toISOString()};
  const el=(tag,cls='',text='')=>Object.assign(new E(),{tag,className:cls,textContent:text});

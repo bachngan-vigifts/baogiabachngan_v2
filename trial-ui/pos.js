@@ -1118,12 +1118,16 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       b.dataset.method = id; b.append(el('b', '', name), hint ? el('span', '', hint) : el('span', '', 'Thanh toán tại quầy')); methods.append(b);
     }
     nodes.methods = methods;
-    const tender = el('div', 'pos-payment-cash'), moneyFields = el('div', 'pos-tender'), f = field('Khách đưa', 'number');
+    const tender = el('div', 'pos-payment-cash'), moneyFields = el('div', 'pos-tender'), f = field('Khách thanh toán', 'number');
     f.input.min = '0'; f.input.step = '1'; f.input.inputMode = 'numeric'; f.input.placeholder = '0'; f.input.value=workspace.tendered;f.input.addEventListener('input',()=>{workspace.tendered=f.input.value;saveDraft();refreshPay();}); nodes.tender = f.input;
-    nodes.change = el('b', 'pos-change', '0 đ'); const cb = el('div', 'pos-change-card'); cb.append(el('span', 'pos-note', 'Tiền thối lại'), nodes.change); moneyFields.append(f.box, cb);
+    nodes.change = el('b', 'pos-change', '0 đ'); const cb = el('div', 'pos-change-card'); cb.append(el('span', 'pos-note', 'Tiền thừa trả khách'), nodes.change); moneyFields.append(f.box);
     const quick = el('div', 'pos-cash-quick');
-    for (const [label, value] of [['Đủ tiền','due'],['100.000',100000],['200.000',200000],['500.000',500000],['1.000.000',1000000],['Xóa',0]]) quick.append(button(label, 'btn secondary', () => { nodes.tender.value = value === 'due' ? (st.preview.payable ?? st.preview.total) : value; workspace.tendered=nodes.tender.value;saveDraft();refreshPay(); }));
-    tender.append(moneyFields, quick); nodes.tenderBox = tender;
+    nodes.cashSuggestions=[];
+    for(let i=0;i<4;i++){
+      const b=button('', 'btn secondary',()=>{nodes.tender.value=b.dataset.amount;workspace.tendered=nodes.tender.value;saveDraft();refreshPay();});
+      nodes.cashSuggestions.push(b);quick.append(b);
+    }
+    tender.append(moneyFields, quick, cb); nodes.tenderBox = tender;
     const transfer = el('section', 'pos-payment-transfer'), check = el('input'); check.type = 'checkbox'; check.checked = !!st.qr?.paid; check.disabled = !!st.qr?.paid; check.addEventListener('change', refreshPay); nodes.confirm = check;
     nodes.transferLabel = el('span', '', st.qr?.paid ? 'SePay đã xác nhận cửa hàng nhận đủ ' + money(st.qr.amount) : 'Tôi xác nhận cửa hàng đã thực nhận chuyển khoản');
     const confirm = el('label', 'pos-transfer-confirm'); confirm.append(check, nodes.transferLabel);
@@ -1508,6 +1512,18 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     }
     for (const b of nodes.methods?.querySelectorAll('button') || []) b.disabled = st.busy||!!st.pending||!!st.qr?.paid&&b.dataset.method!=='transfer';
     if(desktopPos()){if(nodes.pcDue)nodes.pcDue.textContent=st.preview?money(st.preview.payable??st.preview.total):st.cart.length?'Đang tính…':'0 đ';if(nodes.pcDueLabel)nodes.pcDueLabel.textContent=st.method==='cod'?'SHIPPER THU HỘ':'KHÁCH CẦN TRẢ';}
+    const cashDue=Math.max(0,Number(st.preview?.payable??st.preview?.total??0));
+    const suggestions=[cashDue];
+    for(const step of [10000,50000,100000,200000,500000,1000000]){
+      const value=Math.ceil(cashDue/step)*step;if(value>0&&!suggestions.includes(value))suggestions.push(value);
+      if(suggestions.length===4)break;
+    }
+    while(suggestions.length<4)suggestions.push(suggestions[suggestions.length-1]+100000);
+    for(const [i,b] of (nodes.cashSuggestions||[]).entries()){
+      b.dataset.amount=String(suggestions[i]);b.textContent=money(suggestions[i]).replace(/\s*đ$/, '');
+      b.setAttribute('aria-label',i===0?'Đủ tiền':b.textContent);
+      b.setAttribute('aria-pressed',String(Number(nodes.tender?.value||0)===suggestions[i]));
+    }
     if (nodes.change) nodes.change.textContent = money(Math.max(0, Number(nodes.tender?.value || 0) - (st.preview?.payable ?? st.preview?.total ?? 0)));
     nodes.lines?.classList.toggle('pos-busy', !!st.pending || st.busy);
     for (const i of nodes.lines?.querySelectorAll('input,select,button') || []) i.disabled = !!st.pending || st.busy;
@@ -2447,6 +2463,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     for (const [value, name] of [['cash', 'Tiền mặt'], ['transfer', 'Chuyển khoản']]) {
       const option = el('option', '', name); option.value = value; method.append(option);
     }
+    method.value = 'transfer';
     methodBox.append(el('span', '', 'Hình thức thu trước'), method);
     const confirmed = el('input'), confirmation = el('label', 'pos-note pos-cod-confirm'); confirmed.type = 'checkbox';
     confirmation.append(confirmed, document.createTextNode(' Tôi xác nhận cửa hàng đã thực nhận tiền cọc'));
@@ -2492,7 +2509,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       embedded?.onDeposit?.({paid:valid?money(n):'—',remaining:valid?money(total-n):'—'});
       summary.setAttribute('aria-label', 'Còn lại thu COD: ' + remaining.textContent);
       validation.textContent = valid ? '' : 'Nhập số tiền thu trước từ 0 đến tổng đơn, không có số lẻ.';
-      methodBox.hidden = !valid || n === 0;
+      methodBox.hidden = false;
       confirmation.hidden = !valid || n === 0;
       save.disabled = !valid || (n > 0 && !confirmed.checked);
     };
@@ -2541,7 +2558,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     deliveryMethod.addEventListener('change',()=>{if(reviewing)edit();updateCarrier();saveDraft();});
     depositQr=depositQrControls({el,button,modal,api,money,input:deposit.input,method,confirmed,total:()=>total,payload,owner:()=>user()?.id,restore:recovered?.depositQr,changed:()=>{updateDeposit();if(reviewing)edit();saveDraft();}});
     const closeDepositForm=m.close;m.close=()=>{depositQr.dispose();closeDepositForm();};
-    if(embedded)embedded.depositHost.append(depositQr.box,methodBox,confirmation);else deposit.box.append(depositQr.box);
+    if(embedded){methodBox.classList.add('pos-deposit-method');method.addEventListener('change',()=>{if(reviewing)edit();saveDraft();});embedded.depositHost.prepend(methodBox);embedded.depositHost.append(depositQr.box,confirmation);}else deposit.box.append(depositQr.box);
     updateCarrier();updateDeposit();
     m.form.addEventListener('submit', async (e) => {
       e.preventDefault();
