@@ -28,7 +28,9 @@ function cleanProduct(body: Record<string, unknown>, existingSku?: string) {
     if (v === null || v === '' || v === undefined) continue;
     const n = Number(v);
     if (!Number.isFinite(n) || n < 0 || n > 1e12) throw new AppError(400, 'Giá sản phẩm không hợp lệ.');
-    prices[String(policyId).slice(0, 80)] = Math.round(n);
+    // #780: giá VND là số nguyên. Làm tròn ngầm từng biến 101000.52 thành 101001 và lệch bill.
+    if (!Number.isInteger(n)) throw new AppError(400, 'Giá sản phẩm phải là số nguyên đồng, không có phần lẻ.');
+    prices[String(policyId).slice(0, 80)] = n;
   }
   const packaging:Partial<Pick<typeof products.$inferInsert,'perCarton'|'cartonWeight'|'cartonLength'|'cartonWidth'|'cartonHeight'>>={};
   for(const key of ['perCarton','cartonWeight','cartonLength','cartonWidth','cartonHeight'] as const){
