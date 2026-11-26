@@ -104,7 +104,6 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
   router.post('/products', async c => {
     const body = await readJson(c.req, 16_000);
     const me = viewer(c), db = c.env.db, f = cleanProduct(body), now = new Date().toISOString(), mgr = me.role === 'manager', barcode=barcodeInput(body,mgr);
-    if ((await db.select({ sku: products.sku }).from(products).where(eq(products.sku, f.sku)).limit(1)).length) throw new AppError(409, `Mã ${f.sku} đã có trong danh mục.`);
     const configuredPolicies = await db.select({ id: pricePolicies.id, name: pricePolicies.name }).from(pricePolicies).orderBy(asc(pricePolicies.sortOrder));
     requireNewProductPrices(configuredPolicies, (body.prices || {}) as Record<string, unknown>);
     const policies = new Set(configuredPolicies.map(p => p.id));
@@ -113,8 +112,11 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('product-barcode-import'))`);
       const [reserved]=await tx.select({sku:productBarcodes.sku}).from(productBarcodes).where(eq(productBarcodes.barcode,f.sku)).limit(1);
       if(reserved&&reserved.sku!==f.sku)throw new AppError(409,'SKU đã là mã vạch của sản phẩm khác.');
-      await tx.insert(products).values({ sku: f.sku, ...f.packaging, ...f.tax, ...f.classification, name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl,
-        active: mgr, approvalStatus: mgr ? 'approved' : 'pending', createdBy: me.id, approvedBy: mgr ? me.id : null, approvedAt: mgr ? now : null, updatedAt: now });
+      // Ràng buộc khoá chính quyết định SKU trùng trong cùng transaction, không kiểm trước (tránh race).
+      const [created] = await tx.insert(products).values({ sku: f.sku, ...f.packaging, ...f.tax, ...f.classification, name: f.name, brand: f.brand, unit: f.unit, pattern: f.pattern, imageUrl: f.imageUrl,
+        active: mgr, approvalStatus: mgr ? 'approved' : 'pending', createdBy: me.id, approvedBy: mgr ? me.id : null, approvedAt: mgr ? now : null, updatedAt: now })
+        .onConflictDoNothing({ target: products.sku }).returning({ sku: products.sku });
+      if (!created) throw new AppError(409, `Mã ${f.sku} đã có trong danh mục.`);
       if (priceRows.length) await tx.insert(productPrices).values(priceRows);
       await attachBarcode(tx,f.sku,barcode,me.id,now);
     });
@@ -166,7 +168,7 @@ export function registerProductAdminRoutes(router: Router<StaffEnv>) {
       await tx.update(products).set({ ...fields, updatedAt: now }).where(eq(products.sku, sku));
       for (const row of changedPrices) await tx.insert(productPrices).values(row).onConflictDoUpdate({ target: [productPrices.sku, productPrices.policyId], set: { price: row.price } });
       await tx.insert(auditLogs).values({ id: crypto.randomUUID(), actorId: me.id, module: 'catalog', action: 'update', entityType: 'products', entityId: sku,
-        data: JSON.stringify({ before: { category:before.category,collection:before.collection,name: before.name, brand: before.brand, unit: before.unit, pattern: before.pattern, imageUrl: before.imageUrl, taxOut: before.taxOut, taxable: before.taxable, perCarton:before.perCarton,cartonWeight:before.cartonWeight,cartonLength:before.cartonLength,cartonWidth:before.cartonWidth,cartonHeight:before.cartonHeight, prices: oldPrices }, after: { ...fields, category:f.classification.category??before.category,collection:f.classification.collection??before.collection,taxOut: f.tax.taxOut ?? before.taxOut, taxable: f.tax.taxable ?? before.taxable, prices: changedPrices } }), createdAt: now });
+        data: JSON.stringify({ before: { category:before.category,collection:before.collection,name: before.name, brand: before.brand, unit: before.unit, pattern: before.pattern, imageUrl: before.imageUrl, taxOut: before.taxOut, taxable: before.taxable, perCarton:before.perCarton,cartonWeight:before.cartonWeight,cartonLength:before.cartonLength,cartonWidth:before.cartonWidth,cartonHeight:before.cartonHeight, prices: oldPrices }, after: { ...fields, category:Object.hasOwn(f.classification,'category')?f.classification.category:before.category,collection:Object.hasOwn(f.classification,'collection')?f.classification.collection:before.collection,taxOut: f.tax.taxOut ?? before.taxOut, taxable: f.tax.taxable ?? before.taxable, prices: changedPrices } }), createdAt: now });
     });
     return json({ ok: true, sku });
   }, 'business');
