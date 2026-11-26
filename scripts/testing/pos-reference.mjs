@@ -148,6 +148,10 @@ try {
 
         await page.getByRole('button',{name:'Bán giao hàng',exact:true}).click();
         assert.equal(await discount.isVisible(),true,'CK stays visible in delivery mode');
+        const deliveryLine=page.locator('.pos-line').first();
+        assert.equal(await deliveryLine.locator('.pos-line-top>button').isVisible(),true,'delivery has a direct trash action');
+        assert.equal(await deliveryLine.evaluate(n=>{const q=n.querySelector('.pos-qty').getBoundingClientRect(),u=n.querySelector('.pos-ref-unit').getBoundingClientRect(),d=n.querySelector('.pos-line-top>button').getBoundingClientRect(),c=n.querySelector('.pos-line-code').getBoundingClientRect();return u.left>=q.right&&Math.abs((q.top+q.bottom-u.top-u.bottom)/2)<2&&c.left>=d.right;}),true,'unit follows quantity; SKU follows trash');
+
         const inlineDiscount=await discount.evaluate(n=>{const d=n.getBoundingClientRect(),p=n.closest('.pos-line').querySelector('.pos-line-price').getBoundingClientRect(),r=n.closest('.pos-line').getBoundingClientRect();return Math.abs((d.top+d.bottom)/2-(p.top+p.bottom)/2)<2&&d.left>=p.right&&d.right<=r.right;});
         assert.equal(inlineDiscount,true,'delivery discount shares the price row without overlap');
         await page.locator('.pos-ref-carrier').waitFor();
