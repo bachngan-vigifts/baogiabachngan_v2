@@ -30,7 +30,7 @@ export const canSeePurchasePrices = (a: Actor | null | undefined, o: Pick<OrderF
 export const canSendEarlyRequest = (a: Actor) => isManager(a) || canUsePurchasing(a) && !isCounterPurchaser(a) && isEmployee(a) && can(a, 'purchases.early-request');
 export const canViewEarlyRequests = (a: Actor | null | undefined) => isManager(a) || canUsePurchasing(a) && isEmployee(a) && can(a, 'purchases.early-view');
 export const canUsePurchasing = (a: Actor | null | undefined) => purchaseReadLevel(a)!=='none';
-export const canReceive = (a: Actor | null | undefined) => isManager(a) || !isCounterPurchaser(a) && isEmployee(a) && can(a, 'purchases.receive');
+export const canReceive = (a: Actor | null | undefined) => isManager(a) || (!isCounterPurchaser(a) || a?.positionId === 'sales-ml') && isEmployee(a) && can(a, 'purchases.receive');
 /** Staff record an actual supplier confirmation; this does not approve purchase prices or early requests. */
 export const canRecordSupplierConfirmation = (a: Actor | null | undefined) => isManager(a) || !isCounterPurchaser(a) && isEmployee(a) && can(a, 'purchases.confirm');
 export const canPay = (a: Actor | null | undefined) => isManager(a) || !isCounterPurchaser(a) && isEmployee(a) && can(a, 'purchases.pay');
