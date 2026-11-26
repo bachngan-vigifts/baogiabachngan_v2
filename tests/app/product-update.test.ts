@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {eq} from 'drizzle-orm';
 import {setup} from '../helpers/pos-fixture.ts';
-import {products,productPrices,productStock} from '../../src/modules/catalog/schema.ts';
+import {products,productPrices,productStock,productBarcodes} from '../../src/modules/catalog/schema.ts';
 import {employees} from '../../src/modules/staff/schema.ts';
 import {auditLogs} from '../../src/core/db/schema.ts';
 
@@ -90,4 +90,31 @@ test('carton dimensions/weight are editable and audited; omitted fields survive 
  const audit=await f.db.select().from(auditLogs).where(eq(auditLogs.entityId,'00123'));assert.ok(audit.some(a=>a.action==='update'&&JSON.parse(a.data).after.cartonWeight===5.25));
  assert.equal((await f.call('/products/00123',f.emp,'PUT',{...next,prices:{},expectedUpdatedAt:next.updatedAt,cartonWeight:null})).status,200);
  assert.equal((await f.call('/products/00123',f.emp)).data.product.cartonWeight,null);
+});
+
+test('POST /products: SKU trùng trả 409 trong transaction, không ghi thêm giá hay mã vạch',async()=>{
+ const f=await setup(),sku='DUP-SKU',prices={retail:100000,'retail-vat':108000};
+ const first=await f.call('/products',f.mgr,'POST',{sku,name:'Bản đầu',prices,barcode:'DUP-BC-1'});
+ assert.equal(first.status,201,JSON.stringify(first.data));
+ const second=await f.call('/products',f.mgr,'POST',{sku,name:'Bản sau',prices:{retail:200000,'retail-vat':216000},barcode:'DUP-BC-2'});
+ assert.equal(second.status,409,JSON.stringify(second.data));
+ assert.equal(second.data.error??second.data.message,`Mã ${sku} đã có trong danh mục.`);
+ const [p]=await f.db.select().from(products).where(eq(products.sku,sku));assert.equal(p!.name,'Bản đầu');
+ const saved=await f.db.select().from(productPrices).where(eq(productPrices.sku,sku));
+ assert.deepEqual(Object.fromEntries(saved.map(x=>[x.policyId,x.price])),prices);
+ assert.deepEqual((await f.db.select().from(productBarcodes).where(eq(productBarcodes.sku,sku))).map(b=>b.barcode),['DUP-BC-1']);
+ assert.equal((await f.db.select().from(productBarcodes).where(eq(productBarcodes.barcode,'DUP-BC-2'))).length,0);
+});
+
+test('PUT /products/:sku: audit after ghi null khi xoá category/collection, giữ giá trị cũ khi không gửi',async()=>{
+ const f=await setup(),sku='00123';
+ const audit=async()=>{const rows=(await f.db.select().from(auditLogs).where(eq(auditLogs.entityId,sku))).filter(r=>r.action==='update'&&r.module==='catalog');return JSON.parse(rows.sort((a,b)=>a.createdAt.localeCompare(b.createdAt)).at(-1)!.data!)};
+ const put=async(extra:Record<string,unknown>)=>{const cur=(await f.call('/products/'+sku,f.mgr)).data.product;const r=await f.call('/products/'+sku,f.mgr,'PUT',{name:cur.name,brand:cur.brand,unit:cur.unit,pattern:cur.pattern,imageUrl:cur.imageUrl,expectedUpdatedAt:cur.updatedAt,...extra});assert.equal(r.status,200,JSON.stringify(r.data));};
+ await f.db.update(products).set({category:'Ly tách',collection:'Jasmine'}).where(eq(products.sku,sku));
+ await put({});
+ let a=await audit();assert.equal(a.after.category,'Ly tách');assert.equal(a.after.collection,'Jasmine');
+ await put({category:null,collection:null});
+ a=await audit();assert.equal(a.before.category,'Ly tách');assert.equal(a.before.collection,'Jasmine');
+ assert.equal(a.after.category,null);assert.equal(a.after.collection,null);
+ const [p]=await f.db.select().from(products).where(eq(products.sku,sku));assert.equal(p!.category,null);assert.equal(p!.collection,null);
 });
