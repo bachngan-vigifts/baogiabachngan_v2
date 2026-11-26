@@ -3981,7 +3981,7 @@ async function loadReceivables() {
       <td>${r.aging?.oldestDue ? `<span class="danger-text">Quá ${r.aging.overdueDays} ngày</span><small>hạn ${fmtDate(r.aging.oldestDue)}</small>` : r.nextDueDate ? fmtDate(r.nextDueDate) : r.status === 'paid' ? '—' : '<span class="muted">Chưa có hạn</span>'}</td>
       <td>${r.invoiceNo?.trim() ? esc(r.invoiceNo) : r.invoiceStatus === 'requested' ? '<span class="pill warn">Chờ xuất</span>' : '<span class="muted">Chưa xuất</span>'}</td>
       <td>${r.deliveryStatus ? pill(DELIVERY_STATUS, r.deliveryStatus) : '<span class="muted">—</span>'}<small>${esc(r.deliveryCarrier || '')}</small></td>
-      <td class="right num">${money(r.due)}</td><td class="right num">${money(r.paid)}</td><td class="right num">${money(r.balance)}</td>
+      <td class="right num">${money(r.due)}</td><td class="right num">${money(r.paid)}</td><td class="right num">${r.balance<0?`Khách trả dư ${money(-r.balance)}`:money(r.balance)}</td>
       <td class="right num ${r.overdue ? 'danger-text' : ''}">${r.overdue ? money(r.overdue) + `<button type="button" class="btn ghost small remind-btn" data-remind="${esc(r.orderId)}">Nhắc nợ</button>` : '—'}</td></tr>`),
       status === 'paid' ? 'Chưa có đơn nào đã thu đủ.' : status === 'overdue' ? 'Không có công nợ quá hạn.' : 'Không còn công nợ phải thu. Công nợ xuất hiện khi có đơn hàng / HĐKT đã duyệt.');
   } catch (e) { listError('receivables', e); }
@@ -4662,7 +4662,7 @@ async function openOrder(id, confirmed = null) {
     + `<dt>Giao dự kiến</dt><dd>${duePill(o.expectedDeliveryDate, { done: shipDone, fmt: fmtDate })}</dd>`;
   $('#order-lines-title').textContent = isK ? 'Hàng trong HĐKT' : 'Hàng trong đơn';
   $('#order-debt').innerHTML = `<dl class="totals"><div><dt>Giá trị ${what} (gồm VAT)</dt><dd>${money(o.total)}</dd></div><div><dt>Đã thu</dt><dd class="${r.paid > 0 ? 'paid-text' : ''}">${money(r.paid)}</dd></div>
-    <div class="grand"><dt>Còn phải thu</dt><dd>${money(r.balance)}</dd></div>${r.overdue ? `<div><dt class="danger-text">Quá hạn</dt><dd class="danger-text">${money(r.overdue)}</dd></div>` : ''}</dl>
+    <div class="grand"><dt>${r.balance<0?"Khách trả dư":"Còn phải thu"}</dt><dd>${money(Math.abs(r.balance))}</dd></div>${r.overdue ? `<div><dt class="danger-text">Quá hạn</dt><dd class="danger-text">${money(r.overdue)}</dd></div>` : ''}</dl>
     <ul class="plain-list">${allocatePayments(d.effectiveSchedules || d.schedules, r.paid).map(s => `<li class="${s.left <= 0 ? 'installment-paid' : ''}"><span>${esc(s.note || s.kind)}<small>${installmentStatus(s)}</small></span><b>${money(s.amount)}</b><small>${s.left <= 0 ? 'Đã hoàn tất' : s.dueDate ? 'Hạn ' + fmtDate(s.dueDate) : 'Hạn: sau khi giao xong'}</small></li>`).join('')}</ul>`;
   renderOrderLineDetails({ head: $('#order-lines-head'), body: $('#order-lines'), details: $('#order-line-details'), order: o, lines: d.lines,returnSummary:d.returnSummary });
   const k = d.contract;
@@ -4709,7 +4709,7 @@ async function openOrder(id, confirmed = null) {
   const heldCash = d.cashHeld || 0, collectableCash = Math.max(0, r.balance-heldCash);
   $('#order-new-payment').hidden = (o.channel === 'pos' && (o.fulfillmentMode === 'cod' || !can('pos.sell'))) || o.status === 'cancelled' || (o.status === 'draft' && o.channel !== 'crm') || collectableCash <= 0;
   // Tóm tắt ở đầu ô Thanh toán (khớp ô Công nợ): đã thu đủ → xanh; còn nợ → ghi rõ số còn phải thu.
-  const paySummary = r.balance < 0 ? `<div class="pay-summary warn"><span>Còn phải hoàn / dùng đổi hàng</span><b>${money(-r.balance)}</b></div>` : o.status === 'cancelled' ? '' : r.balance <= 0 && r.due > 0
+  const paySummary = r.balance < 0 ? `<div class="pay-summary warn"><span>Khách trả dư / còn phải hoàn</span><b>${money(-r.balance)}</b></div>` : o.status === 'cancelled' ? '' : r.balance <= 0 && r.due > 0
     ? `<div class="pay-summary ok"><span class="pill ok">✓ Đã thanh toán đủ</span><b class="paid-text">${money(r.paid)}</b></div>`
     : `<div class="pay-summary ${r.overdue ? 'danger' : 'warn'}"><span>Còn phải thu${r.overdue ? ` <small class="danger-text">(quá hạn ${money(r.overdue)})</small>` : ''}</span><b>${money(r.balance)}</b>
        <small>Đã thu ${money(r.paid)} / ${money(r.due)}</small></div>`;

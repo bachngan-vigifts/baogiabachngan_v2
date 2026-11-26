@@ -44,8 +44,10 @@ async function summary(c:Ctx,db:CashDb){
  const oids=rows.flatMap(a=>a.orderId?[a.orderId]:[]),wids=rows.flatMap(a=>a.webOrderId?[a.webOrderId]:[]);
  if(oids.length)for(const o of await db.select({id:orders.id,no:orders.orderNo}).from(orders).where(inArray(orders.id,oids)))labels.set(o.id,o.no);
  if(wids.length)for(const w of await db.select({id:web.id,no:web.orderNo}).from(web).where(inArray(web.id,wids)))labels.set('web:'+w.id,w.no);
+ const history=await db.select({result:batches.result}).from(batches).where(eq(batches.transactionId,event.id));
+ const comparisons=new Map<string,number>();for(const h of history){const result=JSON.parse(h.result);for(const d of result.comparisons??[])comparisons.set(d.allocationId,d.expectedAmount);}
  const allocated=rows.filter(a=>!a.voidedAt).reduce((n,a)=>n+a.amount,0);
- return {transactionId:event.id,amount:event.amount,revision:s?.revision??0,detailed:!!s,needsReview:!!review?.needed,canVoid:canVoidPayment(who(c)),allocated,remaining:event.amount-allocated,allocations:rows.map(a=>({...a,targetNo:labels.get(a.webOrderId?'web:'+a.webOrderId:a.orderId!)||a.targetKey}))};
+ return {transactionId:event.id,amount:event.amount,revision:s?.revision??0,detailed:!!s,needsReview:!!review?.needed,canVoid:canVoidPayment(who(c)),allocated,remaining:event.amount-allocated,allocations:rows.map(a=>({...a,expectedAmount:comparisons.get(a.id)??a.amount,difference:a.amount-(comparisons.get(a.id)??a.amount),targetNo:labels.get(a.webOrderId?'web:'+a.webOrderId:a.orderId!)||a.targetKey}))};
 }
 export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
  const path='/sepay/transactions/:id/allocations';
@@ -66,9 +68,9 @@ export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
   assertSepayReconcileAccess(who(c));
   const b=await readJson(c.req,64000),key=String(b.clientKey||'');
   if(key.length<8||key.length>200||!Number.isSafeInteger(b.expectedRevision)||Number(b.expectedRevision)<0||!Array.isArray(b.lines)||!b.lines.length||b.lines.length>100)fail('Lô phân bổ không hợp lệ.',400);
-  const rows=await Promise.all(b.lines.map(async(x:any)=>{if(typeof x.targetId!=='string'||x.targetId.length>200||!Number.isSafeInteger(x.amount)||x.amount<=0||x.amount>1e12)fail('Dòng phân bổ không hợp lệ.',400);return {targetId:await canonical(c.env.db,x.targetId),amount:Number(x.amount),existingPaymentId:String(x.existingPaymentId||''),paymentReviewed:x.paymentReviewed===true};}));
+  const rows=await Promise.all(b.lines.map(async(x:any)=>{if(typeof x.targetId!=='string'||x.targetId.length>200||!Number.isSafeInteger(x.amount)||x.amount<=0||x.amount>1e12)fail('Dòng phân bổ không hợp lệ.',400);if(x.expectedAmount!==undefined&&(!Number.isSafeInteger(x.expectedAmount)||x.expectedAmount<=0||x.expectedAmount>1e12))fail('Số tiền đối chiếu không hợp lệ.',400);if(x.expectedAmount!==undefined&&x.expectedAmount!==x.amount&&x.differenceConfirmed!==true)fail('Cần xác nhận chênh lệch trước khi đối soát.',400);return {expectedAmount:Number(x.expectedAmount??x.amount),differenceConfirmed:x.differenceConfirmed===true,targetId:await canonical(c.env.db,x.targetId),amount:Number(x.amount),existingPaymentId:String(x.existingPaymentId||''),paymentReviewed:x.paymentReviewed===true};}));
   rows.sort((a,b)=>a.targetId.localeCompare(b.targetId));if(new Set(rows.map(r=>r.targetId)).size!==rows.length)fail('Trùng đơn/HĐKT/hóa đơn trong lô.',400);
-  const hash=await sha256Hex(JSON.stringify({id:c.params.id,revision:b.expectedRevision,rows}));
+  const hash=await sha256Hex(JSON.stringify({id:c.params.id,revision:b.expectedRevision,rows:rows.map(r=>({targetId:r.targetId,amount:r.amount,existingPaymentId:r.existingPaymentId,paymentReviewed:r.paymentReviewed,...(r.expectedAmount!==r.amount?{expectedAmount:r.expectedAmount,differenceConfirmed:r.differenceConfirmed}:{})}))}));
   return json(await c.env.db.transaction(async tx=>{
    const e=await readEvent(c,tx,true);await cashLock(tx);
    for(const r of rows)await assertSepayReconcileTarget(tx,who(c),r.targetId);
@@ -80,17 +82,17 @@ export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
    if((state?.revision??0)!==b.expectedRevision)fail('Giao dịch vừa thay đổi; tải lại số tiền trước khi phân bổ.');
    const previous=await allocationRows(tx,e.id),used=previous.filter(a=>!a.voidedAt).reduce((n,a)=>n+a.amount,0),amount=rows.reduce((n,r)=>n+r.amount,0);
    if(amount>e.amount-used)fail('Tổng phân bổ vượt tiền thực nhận còn lại.');
-   const id=crypto.randomUUID(),at=new Date().toISOString();
+   const id=crypto.randomUUID(),at=new Date().toISOString(),comparisons:{allocationId:string;expectedAmount:number;amount:number;replacedPaymentId:string|null}[]=[];
    if(!state)await tx.insert(states).values({transactionId:e.id});
    await tx.insert(batches).values({id,transactionId:e.id,createdBy:who(c).id,clientKey:key,requestHash:hash,expectedRevision:Number(b.expectedRevision),createdAt:at,result:'{}'});
    for(const r of rows){
-    const aid=crypto.randomUUID();let orderId:string|null=null,webOrderId:string|null=null,paymentId:string|null=null,createdReceipt=false,total=0;
+    const aid=crypto.randomUUID();let replacedPaymentId:string|null=null,orderId:string|null=null,webOrderId:string|null=null,paymentId:string|null=null,createdReceipt=false,total=0;
     if(r.targetId.startsWith('web:')){
      webOrderId=r.targetId.slice(4);const [w]=await tx.select().from(web).where(eq(web.id,webOrderId)).for('update');
      if(!w||w.currency!=='VND'||!['lock','minhlong'].includes(w.source)||webOrderPaymentBlocked(w.status,w.ghnStatus))fail('Đơn web không đủ điều kiện nhận tiền.');
      const [reg]=await tx.select().from(registers).where(eq(registers.id,w!.registerId));if(!reg?.active||reg.bankAccount.replace(/\s+/g,'')!==e.accountNumber)fail('Tài khoản nhận không thuộc cửa hàng.');
      const p=webOrderPayment(w!,await readWebSepayPaidAt(tx,webOrderId));if(p.paymentEvidence==='conflict'||p.paid===null&&!r.paymentReviewed)fail('Cần đối chiếu thanh toán website trước khi phân bổ.');
-     if(r.amount>(p.outstanding??w!.total))fail('Số nhận vượt còn nợ đơn web.');total=w!.total;
+     if(r.expectedAmount>(p.outstanding??w!.total))fail('Số nhận vượt còn nợ đơn web.');total=w!.total;
     }else{
      orderId=r.targetId;const [o]=await tx.select().from(orders).where(eq(orders.id,orderId)).for('update');if(!o||o.status==='cancelled')fail('Đơn không còn hiệu lực.');total=o!.total;
      if(o.channel==='crm')await assertSepayCrmSource(tx,e);
@@ -99,21 +101,31 @@ export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
      if(!await sepayManualAccountApproved(tx,c.env,e.accountNumber,contract?.no))fail('Tài khoản ngân hàng chưa được duyệt ghi thu.');
      if(r.existingPaymentId){
       const [p]=await tx.select().from(payments).where(eq(payments.id,r.existingPaymentId)).for('update');
-      if(!p||p.orderId!==orderId||p.voidedAt||p.method!=='transfer'||p.amount!==r.amount||p.paidAt!==sepayPaidDate(e.transactionAt)||!['manual','sepay_auto','pos_transfer'].includes(p.paymentSource))fail('Phiếu thu nguồn không khớp.');
+      if(!p||p.orderId!==orderId||p.voidedAt||p.method!=='transfer'||p.amount!==r.expectedAmount||p.paidAt!==sepayPaidDate(e.transactionAt)||!['manual','sepay_auto','pos_transfer'].includes(p.paymentSource))fail('Phiếu thu nguồn không khớp.');
       const linked=await tx.select({id:bank.id}).from(bank).where(eq(bank.paymentId,p!.id));if(linked.length)fail('Phiếu thu đã khớp giao dịch khác.');paymentId=p!.id;
       if((await tx.select({id:allocations.id}).from(allocations).where(and(eq(allocations.paymentId,p!.id),isNull(allocations.voidedAt))).limit(1)).length)fail('Phiếu thu đã nằm trong phân bổ khác.');
+      if(r.amount!==p!.amount){
+       if(!canVoidPayment(who(c)))fail('Cần quyền huỷ phiếu thu để sửa khoản thu lệch.',403);
+       await assertNoReturnActivity(tx,orderId);
+       replacedPaymentId=p!.id;paymentId=crypto.randomUUID();createdReceipt=true;
+       const reason='Đối soát SePay '+e.providerId+': thay phiếu '+p!.amount+' bằng số thực nhận '+r.amount;
+       await tx.update(payments).set({voidedAt:at,voidedBy:who(c).id,voidReason:reason}).where(eq(payments.id,p!.id));
+       await tx.insert(payments).values({id:paymentId,orderId,customerId:p!.customerId,shiftId:p!.shiftId,scheduleId:p!.scheduleId,amount:r.amount,paidAt:p!.paidAt,method:'transfer',paymentSource:'sepay_allocation',requestKey:'sepay-allocation:'+aid,reference:'SePay '+e.providerId,note:reason,createdBy:who(c).id,createdAt:at});
+       await cashAudit(tx,who(c).id,'sepay.replace-receipt','payments',p!.id,{replacementId:paymentId,before:p!.amount,after:r.amount,transactionId:e.id});
+      }
      }else{
       if(o!.channel!=='crm')fail('Đơn POS chỉ gắn phiếu thu đã có; không tạo thu trùng.');
-      const d=(await netReceivables(tx,[orderId],vietnamDate().iso)).get(orderId);if(!d||r.amount>d.balance)fail('Số nhận vượt còn nợ của đơn.');
+      const d=(await netReceivables(tx,[orderId],vietnamDate().iso)).get(orderId);if(!d||r.expectedAmount>d.balance)fail('Số nhận vượt còn nợ của đơn.');
       paymentId=crypto.randomUUID();createdReceipt=true;
       await tx.insert(payments).values({id:paymentId,orderId,customerId:o!.customerId,amount:r.amount,paidAt:sepayPaidDate(e.transactionAt),method:'transfer',paymentSource:'sepay_allocation',requestKey:'sepay-allocation:'+aid,reference:'SePay '+e.providerId,note:'Phân bổ giao dịch '+e.id,createdBy:who(c).id,createdAt:at});
      }
     }
+    comparisons.push({allocationId:aid,expectedAmount:r.expectedAmount,amount:r.amount,replacedPaymentId});
     await tx.insert(allocations).values({id:aid,batchId:id,targetKey:webOrderId?'web:'+webOrderId:'order:'+orderId,orderId,webOrderId,amount:r.amount,targetTotal:total,paymentId,createdReceipt,createdAt:at});
    }
-   const result={batchId:id,revision:Number(b.expectedRevision)+1,allocated:used+amount,remaining:e.amount-used-amount};
+   const result={batchId:id,comparisons,revision:Number(b.expectedRevision)+1,allocated:used+amount,remaining:e.amount-used-amount};
    await tx.update(states).set({revision:result.revision}).where(eq(states.transactionId,e.id));await tx.update(batches).set({result:JSON.stringify(result)}).where(eq(batches.id,id));
-   await tx.update(bank).set({orderId:null,webOrderId:null,paymentId:null,status:result.remaining===0?'matched':'review',reason:'Đối soát chi tiết; còn chưa phân bổ '+result.remaining}).where(eq(bank.id,e.id));await cashAudit(tx,who(c).id,'sepay.allocate','sepay_transaction',e.id,{batchId:id,amount});return result;
+   await tx.update(bank).set({orderId:null,webOrderId:null,paymentId:null,status:result.remaining===0?'matched':'review',reason:'Đối soát chi tiết; còn chưa phân bổ '+result.remaining}).where(eq(bank.id,e.id));await cashAudit(tx,who(c).id,'sepay.allocate','sepay_transaction',e.id,{batchId:id,amount,comparisons,remaining:result.remaining});return result;
   }));
  },'business');
  router.post(path+'/:allocationId/void',async c=>{

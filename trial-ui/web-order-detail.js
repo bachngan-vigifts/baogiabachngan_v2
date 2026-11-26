@@ -222,16 +222,11 @@ export function renderWebOrderDetail({
     $('#order-deliveries').append(link);
   } else
     $('#order-deliveries').append(el('p', 'Chưa tạo vận đơn GHN.', 'muted'));
-  const debt =
-    o.status === 'cancelled'
-      ? 'Đơn đã huỷ / hoàn.'
-      : o.paymentStatusLabel
-        ? o.paymentStatusLabel
-        : o.paid == null
-        ? 'Chưa có đủ dữ liệu đối chiếu thanh toán.'
-        : o.paid >= o.total
-          ? 'Đã đối soát thanh toán đủ.'
-          : 'Còn phải thu ' + money(o.total - o.paid, o.currency);
+  const debt = o.status==='cancelled' ? 'Đơn đã huỷ / hoàn.'
+    : o.paid==null ? (o.paymentStatusLabel||'Chưa có đủ dữ liệu đối chiếu thanh toán.')
+    : o.paid>o.total ? 'Khách trả dư '+money(o.paid-o.total,o.currency)
+    : o.paid===o.total ? 'Đã đối soát thanh toán đủ.'
+    : 'Còn phải thu '+money(o.total-o.paid,o.currency);
   $('#order-debt').replaceChildren(el('p', debt));
   $('#order-payments').replaceChildren(el('p', debt));
   renderInvoice({

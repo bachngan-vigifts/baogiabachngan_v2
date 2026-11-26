@@ -54,3 +54,23 @@ Kiểm tra cục bộ: PGlite đạt 26/27 (ca đồng thời chỉ chạy trên
 Điều kiện tài khoản cho webhook tự động ở trên giữ nguyên. Khi Manager chọn chứng từ và xác nhận trên trang SePay, tài khoản nhận có thể đến từ danh sách CRM hoặc tài khoản ngân hàng đã cấu hình ở quầy đang hoạt động. API chi tiết, xem trước và ghi thu dùng chung phép kiểm tra; ghi thu kiểm tra lại cấu hình hiện tại. Không tự thêm tài khoản vào secret, không bật tự ghi thu cho CRM vì một tài khoản quầy tồn tại. Tài khoản ngoài cấu hình hoặc quầy ngừng hoạt động vẫn bị chặn; POS/web vẫn xác minh đúng nguồn riêng. Xem `docs/SEPAY-PAGE.md`.
 
 HĐKT VG có mã `/HĐKT/VG-…` có mặc định riêng cho gán thủ công: tài khoản 159063909. Dùng mã HĐKT lưu trong CRM để xác định; không ghi đè tài khoản ngân hàng thực nhận và không tự bật webhook/import. Xem `src/modules/sales/domain/sepay-crm-account.ts` và hướng dẫn tại `docs/SEPAY-PAGE.md`.
+
+### Đối soát chi tiết khi dư / thiếu tiền
+
+Trong **Thanh toán SePay → mở giao dịch → Đối soát chi tiết · nhiều đơn**, chọn chứng từ, nhập số thực nhận hoặc chọn **Dùng tiền còn lại** trên dòng nhận phần chênh. Màn kiểm tra hiển thị chênh dư/thiếu và công nợ sau phân bổ để xác nhận; lịch sử giữ số đối chiếu sau khi tải lại. Không áp ngưỡng 500đ hay tự làm tròn.
+
+- Tổng phân bổ không vượt số tiền ngân hàng. Đơn 100.000đ nhận 100.200đ: ghi thu 100.200đ, công nợ -200đ, hiển thị **Khách trả dư 200đ**. Đơn nhận 99.800đ: ghi thu 99.800đ, còn nợ 200đ. Dòng nào nhận phần chênh do người dùng chọn; không tự chia giữa các đơn.
+- Đơn web giữ số thực phân bổ làm bằng chứng thanh toán; công nợ có thể âm để ghi nhận trả dư, nhưng số COD gợi ý không âm.
+- Phiếu thu có sẵn khớp tiền: chỉ liên kết. Phiếu lệch tiền: màn xác nhận nói rõ **huỷ phiếu cũ và tạo phiếu đúng thực nhận**, đòi quyền `payments.void`, chặn khi có trả/đổi hàng. Giữ nguyên nội dung phiếu cũ trong lịch sử huỷ, tạo phiếu mới trong cùng transaction với phân bổ và audit. Không sửa tiền ngân hàng. Gỡ phân bổ này sẽ huỷ phiếu mới; không khôi phục phiếu cũ đã ghi sai.
+- Số đối chiếu được lưu trong kết quả lô/nhật ký. Giữ tương thích đọc lô cũ và khoá thử lại. Không tự xoá nợ hoặc hoàn tiền.
+
+Triển khai cần chạy `migrations/postgres/20261125113000_sepay_allocation_overpayment.sql` rồi kiểm gate chỉ đọc `scripts/sql/assert-sepay-overpayment.sql` trước khi phát hành API/UI. Migration chỉ nới ràng buộc `target_total >= amount` thành `target_total >= 0`; các kiểm tra số tiền dương/nguyên/giới hạn, RLS và khoá giao dịch giữ nguyên. Không sửa dữ liệu tiền cũ.
+
+Kiểm thử: `tests/app/sepay-allocation-difference.test.ts`, bộ `sepay-allocations`/`sepay-detail-review`, và `scripts/testing/sepay-difference.mjs` chạy Chromium với API/PGlite qua đúng trang SePay rồi mở công nợ đơn, ở 390/1280px. Dữ liệu thử tách biệt; chưa kiểm chứng giao dịch ngân hàng/CRM thật hoặc nhiều kết nối PostgreSQL thật.
+
+
+### Rollback mã sau khi đã ghi nhận khách trả dư
+
+Nếu cần rollback API/UI, giữ migration `20261125113000_sepay_allocation_overpayment.sql` và toàn bộ phiếu thu, phân bổ, kết quả lô, nhật ký. **Không khôi phục CHECK `target_total >= amount`**, không giảm số tiền hoặc xoá khoản trả dư để ép schema về bản cũ. Mã cũ có thể chặn thao tác phân bổ dư mới hoặc không hiển thị đầy đủ nhãn trả dư; tạm ngừng luồng ghi bị ảnh hưởng và ưu tiên sửa tiến để khôi phục giao diện công nợ có dấu. Không dùng việc thiếu nhãn ở mã cũ làm căn cứ điều chỉnh số tiền lịch sử.
+
+Migration đã được đăng ký trong `scripts/sql/november-migration-coverage.json`; workflow `deploy-api.yml` chạy gate `assert-sepay-overpayment.sql` ngay sau gate SePay allocations, trước thay đổi secret/API. Gate chỉ đọc, schema cũ phải thất bại; không tự chạy migration để sửa production.

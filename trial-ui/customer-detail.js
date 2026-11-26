@@ -49,12 +49,12 @@ export function initCustomerDetail(deps) {
     { key: 'payments', label: 'Phiếu thu', count: d => d.payments.length, html: d => table(['Ngày thu', 'Hình thức', 'Đơn / HĐKT', 'Ghi chú', '>Số tiền'], d.payments.map(p => `<tr>
         <td>${fmtDate(p.paidAt)}</td><td>${esc(METHOD[p.method] || p.method)}</td><td>${docLink(p.orderId, p.orderNo, p.contractNo)}</td>
         <td>${esc(p.reference || p.note) || '<span class="muted">—</span>'}</td><td class="right num paid-text">${money(p.amount)}</td></tr>`), 'Chưa có phiếu thu nào.') },
-    { key: 'debts', label: 'Công nợ', count: d => d.orders.filter(o => o.receivable && o.receivable.balance > 0).length, html: d => {
-        const rows = d.orders.filter(o => o.receivable && o.receivable.balance > 0);
+    { key: 'debts', label: 'Công nợ', count: d => d.orders.filter(o => o.receivable && o.receivable.balance !== 0).length, html: d => {
+        const rows = d.orders.filter(o => o.receivable && o.receivable.balance !== 0);
         return table(['Đơn / HĐKT', 'Hạn gần nhất', '>Phải thu', '>Đã thu', '>Còn lại', '>Quá hạn'], rows.map(o => `<tr class="clickable" data-href="${docHref(o.id, o.contract?.contractNo)}">
           <td>${docLink(o.id, o.orderNo, o.contract?.contractNo)}<small>${fmtDate(o.orderDate)}</small></td><td>${fmtDate(o.receivable.nextDueDate) || '—'}</td>
           <td class="right num">${money(o.receivable.due)}</td><td class="right num paid-text">${money(o.receivable.paid)}</td>
-          <td class="right num strong">${money(o.receivable.balance)}</td><td class="right num ${o.receivable.overdue ? 'danger-text' : 'muted'}">${o.receivable.overdue ? money(o.receivable.overdue) : '—'}</td></tr>`), 'Khách không còn công nợ.');
+          <td class="right num strong">${o.receivable.balance<0?`Khách trả dư ${money(-o.receivable.balance)}`:money(o.receivable.balance)}</td><td class="right num ${o.receivable.overdue ? 'danger-text' : 'muted'}">${o.receivable.overdue ? money(o.receivable.overdue) : '—'}</td></tr>`), 'Khách không còn công nợ.');
       } },
     { key: 'purchases', label: 'Lịch sử mua', count: d => d.purchases.length, html: d => table(['Sản phẩm', 'Nhà cung cấp', '>Số lượng', '>Số đơn', 'Mua gần nhất', '>Đơn giá gần nhất', '>Tổng tiền'], d.purchases.map(p => `<tr>
         <td><span class="strong">${esc(p.name)}</span>${p.sku ? `<small>${esc(p.sku)}</small>` : ''}</td><td>${p.supplierNames?.length?p.supplierNames.map(name=>`<span class="cd-purchase-supplier">${esc(name)}</span>`).join('<br>'):'<span class="muted">Chưa có thông tin NCC</span>'}</td><td class="right num">${p.qty.toLocaleString('vi-VN')} ${esc(p.unit)}</td>
@@ -109,7 +109,7 @@ export function initCustomerDetail(deps) {
       <div class="stats cd-stats">
         <article class="stat"><small>Doanh số</small><strong>${money(s.revenue)}</strong><span class="muted">${s.orders} đơn hàng / HĐKT đã xác nhận</span></article>
         <article class="stat"><small>Đã thu</small><strong class="paid-text">${money(s.paid)}</strong><span class="muted">Phải thu ${money(s.due)}</span></article>
-        <article class="stat"><small>Còn nợ</small><strong class="${s.balance > 0 ? 'danger-text' : ''}">${money(s.balance)}</strong><span class="${s.overdue ? 'danger-text' : 'muted'}">${s.overdue ? 'Quá hạn ' + money(s.overdue) : 'Không quá hạn'}</span></article>
+        <article class="stat"><small>${s.balance<0?"Khách trả dư":"Còn nợ"}</small><strong class="${s.balance > 0 ? 'danger-text' : ''}">${money(Math.abs(s.balance))}</strong><span class="${s.overdue ? 'danger-text' : 'muted'}">${s.overdue ? 'Quá hạn ' + money(s.overdue) : 'Không quá hạn'}</span></article>
         <article class="stat"><small>Mua gần nhất</small><strong>${s.lastOrderDate ? fmtDate(s.lastOrderDate) : '—'}</strong><span class="muted">${s.quotes} báo giá · ${s.contracts} HĐKT</span></article>
       </div>
       <div class="cd-grid">
