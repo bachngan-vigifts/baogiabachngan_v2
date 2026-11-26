@@ -50,7 +50,7 @@ test('sản phẩm mới: Manager thêm có hiệu lực ngay; nhân viên thêm
   await db.insert(pricePolicies).values([{ id: 'le', name: 'Giá bán lẻ', sortOrder: 0 }, { id: 'vat', name: 'Giá lẻ +VAT', sortOrder: 1 }]);
   assert.equal((await call('/products', emp, 'POST', { sku: 'bad sku!', name: 'X' })).status, 400);
   assert.equal((await call('/products', mgr, 'POST', { sku: 'ML-01', name: 'Bộ trà', brand: 'Minh Long', unit: 'bộ', prices: { le: 1_200_000, vat: 1_296_000 } })).data.approvalStatus, 'approved');
-  assert.equal((await call('/products', emp, 'POST', { sku: 'ML-01', name: 'Trùng' })).status, 409);
+  assert.equal((await call('/products', emp, 'POST', { sku: 'ML-01', name: 'Trùng', prices: { le: 1_000_000, vat: 1_080_000 } })).status, 409);
   assert.equal((await call('/products', emp, 'POST', { sku: 'LL-02', name: 'Bình giữ nhiệt', prices: { le: 300000, vat: 324000 } })).data.approvalStatus, 'pending');
   const skus = async () => (await call('/catalog-snapshot', emp)).data.products.map((p: any[]) => p[0]).sort();
   assert.deepEqual(await skus(), ['ML-01'], 'sản phẩm chờ duyệt không có trong danh mục báo giá');
