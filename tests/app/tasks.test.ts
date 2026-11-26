@@ -42,8 +42,8 @@ test('hạn công việc', () => {
 test('bảng công việc: việc tự sinh từ báo giá / đơn / HĐKT tự hoàn thành; giao việc thủ công, quyền, trao đổi, thông báo', async () => {
   const { db, call, emp, mgr, ncc } = await setup();
   await db.insert(customers).values({ id: '1001', name: 'Công ty Hoàng Long', contact: 'Chị Lan', phone: '0901', email: '', address: '1 Lê Lợi', search: '', taxCode: '0101234567', customerCode: 'HL01', sourceVersion: 0, syncedAt: '' });
-  const quote = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_1', customer: 'Công ty Hoàng Long', customerId: '1001', vat: 8, rows: [{ name: 'Ly', sku: 'L', unit: 'cái', qty: 10, price: 100000, taxRate: 8 }] });
-  await call('/quotes/' + quote.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
+  const quote = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_1', customer: 'Công ty Hoàng Long', customerId: '1001', vat: 8, rows: [{ commission: {mode:'percent',value:0}, name: 'Ly', sku: 'L', unit: 'cái', qty: 10, price: 100000, taxRate: 8 }] });
+  assert.equal((await call('/quotes/' + quote.data.id + '/submit', emp, 'POST', { revision: 1 })).status, 200); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
   assert.equal(quote.status, 201);
 
   // Báo giá nhân viên lập chờ duyệt → việc "chưa giao" cho Manager; nhân viên không thấy việc này.
@@ -111,8 +111,8 @@ test('đơn đến hạn giao → việc cho NV phụ trách; bấm "Yêu cầu 
   const { db, call, emp, mgr, kho } = await setup();
   await db.insert(customers).values({ id: '1001', name: 'Công ty Hoàng Long', contact: 'Chị Lan', phone: '0901', email: '', address: '1 Lê Lợi', search: '', taxCode: '0101234567', customerCode: 'HL01', sourceVersion: 0, syncedAt: '' });
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
-  const quote = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_2', customer: 'Công ty Hoàng Long', customerId: '1001', vat: 8, deliveryDate: today, rows: [{ name: 'Ly sứ', sku: 'L', unit: 'cái', qty: 10, price: 100000, taxRate: 8 }] });
-  await call('/quotes/' + quote.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
+  const quote = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_2', customer: 'Công ty Hoàng Long', customerId: '1001', vat: 8, deliveryDate: today, rows: [{ commission: {mode:'percent',value:0}, name: 'Ly sứ', sku: 'L', unit: 'cái', qty: 10, price: 100000, taxRate: 8 }] });
+  assert.equal((await call('/quotes/' + quote.data.id + '/submit', emp, 'POST', { revision: 1 })).status, 200); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
   await call('/quotes/' + quote.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const o = await call('/orders', emp, 'POST', { quoteId: quote.data.id });
   await approveFixtureOrder({db,call},`/orders/${o.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)
@@ -157,8 +157,8 @@ test('đơn đến hạn giao → việc cho NV phụ trách; bấm "Yêu cầu 
 
 test('việc tự sinh của nhân viên đã khoá / đã xoá chuyển về "chưa giao" để Manager thấy và giao lại', async () => {
   const { db, call, emp, mgr } = await setup();
-  const quote = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_9', customer: 'Công ty A', vat: 8, rows: [{ name: 'Ly', sku: 'L', unit: 'cái', qty: 1, price: 100000 }] });
-  await call('/quotes/' + quote.data.id + '/submit', emp, 'POST', { revision: 1 }); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
+  const quote = await call('/quotes', emp, 'POST', { type: 'B2B', quoteNo: 'B2B_9', customer: 'Công ty A', vat: 8, rows: [{ commission: {mode:'percent',value:0}, name: 'Ly', sku: 'L', unit: 'cái', qty: 1, price: 100000 }] });
+  assert.equal((await call('/quotes/' + quote.data.id + '/submit', emp, 'POST', { revision: 1 })).status, 200); // nhân viên gửi duyệt (báo giá mới lưu là nháp)
   await call('/quotes/' + quote.data.id + '/approve', mgr, 'POST', { revision: 1 });
   const o = await call('/orders', emp, 'POST', { quoteId: quote.data.id });
   await approveFixtureOrder({db,call},`/orders/${o.data.id}/status`,mgr,'PUT',{ status: 'confirmed', verified: true, costWarningsReviewed: true }); // Manager duyệt đơn (đơn tạo ra luôn là nháp)

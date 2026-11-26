@@ -30,7 +30,7 @@ async function setup() {
 type S = Awaited<ReturnType<typeof setup>>;
 const notes = async (s: S, cookie: string) => (await s.call('/notifications', cookie)).data.notifications as { eventType: string; body: string }[];
 async function quote(s: S, no: string) {
-  const q = await s.call('/quotes', s.emp, 'POST', { type: 'B2B', quoteNo: no, customer: 'Khách ' + no, vat: 8, rows: [{ name: 'Ly sứ', sku: 'LY1', unit: 'cái', qty: 10, price: 1000 }] });
+  const q = await s.call('/quotes', s.emp, 'POST', { type: 'B2B', quoteNo: no, customer: 'Khách ' + no, vat: 8, rows: [{ commission: {mode:'percent',value:0}, name: 'Ly sứ', sku: 'LY1', unit: 'cái', qty: 10, price: 1000 }] });
   assert.equal(q.status, 201, JSON.stringify(q.data));
   return q.data.id as string;
 }
