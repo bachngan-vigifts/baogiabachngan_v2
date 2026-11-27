@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {and,eq} from 'drizzle-orm';
 import {setupSepay} from '../helpers/sepay-fixture.ts';
-import {customerPayments,salesContracts} from '../../src/modules/sales/schema.ts';
+import {customerPayments,deliveries,salesContracts} from '../../src/modules/sales/schema.ts';
 import {webStoreOrders as web,posRegisters} from '../../src/modules/sales/pos-schema.ts';
 import {employees,positionPermissions} from '../../src/modules/staff/schema.ts';
 import {suggestedWebCod} from '../../src/modules/sales/api/web-order-ghn.ts';
@@ -99,4 +99,18 @@ test('partial allocation locks legacy matching; new keys with stale revision and
  assert.equal((await f.call(endpoint(e.id),f.mgr)).data.remaining,100000);
  assert.ok((await f.db.select().from(customerPayments).where(eq(customerPayments.id,receipt.id)))[0]!.voidedAt);
  assert.equal((await f.confirm(e.id,f.choice(b.id))).status,409,'marker vẫn chặn sau khi gỡ');
+});
+
+test('GHN allocation filter finds shipped orders across channels without duplicating split deliveries',async()=>{
+ const f=await setupSepay(),event=await f.incoming('GHN_FILTER');
+ const crm=await f.order('CRM_GHN'),pos=await f.order('POS_GHN',{channel:'pos'}),other=await f.order('OTHER');
+ for(const [i,order] of [crm,crm,pos,other].entries()){
+  await f.db.insert(deliveries).values({id:'ship'+i,deliveryNo:'ship'+i,orderId:order.id,plannedDate:'2026-11-08',carrier:order===other?'Khác':'GHN',createdBy:'emp',createdAt:f.stamp,updatedAt:f.stamp});
+ }
+ for(const id of ['with-code','without-code']){
+  await f.db.insert(web).values({id,source:'lock',externalId:id,orderNo:id,registerId:f.registerId,status:'on-hold',total:100000,currency:'VND',ghnOrderCode:id==='with-code'?'GHN123':'',orderedAt:f.stamp,updatedAt:f.stamp});
+ }
+ const r=await f.call('/sepay/transactions/'+event.id+'/allocation-candidates?source=ghn',f.mgr);
+ assert.equal(r.status,200,JSON.stringify(r.data));
+ assert.deepEqual(r.data.candidates.map((row:{targetId:string})=>row.targetId).sort(),[crm.id,pos.id,'web:with-code'].sort());
 });
