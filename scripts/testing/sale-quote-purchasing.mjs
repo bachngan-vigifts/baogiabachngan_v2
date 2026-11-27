@@ -21,12 +21,23 @@ const server=createServer(async(req,res)=>{try{const u=new URL(req.url,'http://l
 const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']}),results=[];
 
 try {
- const q=await f.call('/quotes',f.mgr,'POST',{type:'B2B',template:'sale',quoteNo:'SALE-COST-TEST',date:'2026-11-27',customer:'Khách thử',vat:8,rows:[{sku:'00123',name:'Chén',qty:1,price:100000,discount:0,costPrice:50000,costMode:'manual',designImage:true,image:'https://example.test/design.png'}]});assert.equal(q.status,201);assert.equal(q.data.approvalStatus,'draft');
+ const q=await f.call('/quotes',f.emp,'POST',{type:'B2B',template:'sale',quoteNo:'SALE-COST-TEST',date:'2026-11-27',customer:'Khách thử',vat:8,rows:[{sku:'00123',name:'Chén',qty:1,price:100000,discount:0,commission:{mode:'percent',value:0},costPrice:50000,costMode:'manual',designImage:true,image:'https://example.test/design.png'}]});assert.equal(q.status,201);assert.equal(q.data.approvalStatus,'draft');
+ const staffContext=await browser.newContext({viewport:{width:1366,height:900}});
+ await staffContext.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
+ const staffUser=(await f.call('/me',f.emp)).data.user,staffToken=f.emp.split('=')[1];
+ await staffContext.addInitScript(({user,token})=>{localStorage.setItem('bn-api-region-manual-off','1');localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));},{user:staffUser,token:staffToken});
+ const staffPage=await staffContext.newPage();staffPage.setDefaultTimeout(15000);await staffPage.goto(origin+'/#/quotes/'+q.data.id);
+ await staffPage.locator('#submit-quote').click();
+ const submitted=staffPage.waitForResponse(r=>r.url().endsWith('/quotes/'+q.data.id+'/submit')&&r.request().method()==='POST');
+ await staffPage.getByRole('button',{name:'Xác nhận CK & gửi duyệt',exact:true}).click();assert.equal((await submitted).status(),200);
+ assert.equal((await f.call('/quotes/'+q.data.id,f.mgr)).data.approvalStatus,'pending');await staffContext.close();
  const user=(await f.call('/me',f.mgr)).data.user,token=f.mgr.split('=')[1],context=await browser.newContext({viewport:{width:1366,height:900}});
  await context.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
  await context.addInitScript(({user,token})=>{localStorage.setItem('bn-api-region-manual-off','1');localStorage.setItem('bn-v2-session',token);localStorage.setItem('bn-v2-session-profile',JSON.stringify({session:token,user}));},{user,token});
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(15000);
  await page.goto(origin+'/#/quotes/'+q.data.id);await page.locator('#approve-quote').click();
+ await page.getByRole('combobox',{name:'Chế độ giá mua dòng 1'}).selectOption('manual');
+ await page.getByRole('textbox',{name:'CK hoặc giá nhập dòng 1',exact:true}).fill('50000');
  const supplier=page.getByRole('textbox',{name:'Thông tin NCC dòng 1'});await supplier.waitFor();
  await page.getByRole('button',{name:'Lưu giá mua & duyệt',exact:true}).click();assert.equal(await supplier.evaluate(n=>n.validity.valid),false);
  await supplier.fill('NCC Kiểm thử · Anh A · 0901234567');
@@ -40,5 +51,19 @@ try {
  await page.screenshot({path:out+'/'+flow+'.png'});
  await page.locator(flow==='order'?'#order-create-dialog [data-close]':'#contract-dialog [data-close]').first().click();
  }
- assert.deepEqual(errors,[]);console.log('PASS approval requires supplier, saved cost kept, order and contract source chooser skipped');await context.close();
+ // Historical approved Sale quotes can retain costs but lack supplier information.
+ const {quotations}=await import('../../src/modules/quotes/schema.ts'),{eq}=await import('drizzle-orm');
+ const oldData=saved.data.data;delete oldData.rows[0].supplierInfo;
+ await f.db.update(quotations).set({data:JSON.stringify(oldData)}).where(eq(quotations.id,q.data.id));
+ await page.reload();await page.locator('#quote-make').click();await page.locator('[data-flow="order"]').click();
+ await page.getByText('Báo giá Sale: bổ sung giá nhập và thông tin NCC cho từng sản phẩm trước khi duyệt hoặc sinh đơn/HĐKT.',{exact:true}).waitFor();
+ await page.locator('#order-create-dialog [data-close]').first().click();
+ if(!await page.locator('#refresh-profit-costs').isVisible())await page.locator('#toggle-profit').click();
+ await page.locator('#refresh-profit-costs').click();
+ assert.equal(await page.getByRole('textbox',{name:'CK hoặc giá nhập dòng 1',exact:true}).inputValue(),'50000');
+ await page.getByRole('textbox',{name:'Thông tin NCC dòng 1',exact:true}).fill('NCC cũ được bổ sung');
+ const repaired=page.waitForResponse(r=>r.url().endsWith('/quotes/'+q.data.id)&&r.request().method()==='PUT');
+ await page.getByRole('button',{name:'Áp dụng & lưu báo giá',exact:true}).click();assert.equal((await repaired).status(),200);
+ assert.equal((await f.call('/quotes/'+q.data.id+'/stock-plan',f.mgr)).data.approvedSaleSourcing,true);
+ assert.deepEqual(errors,[]);console.log('PASS employee submission → Manager cost/supplier approval; order/contract skip sourcing; legacy approved quote missing supplier shows error and can be repaired without changing cost');await context.close();
 }finally{await browser.close();await new Promise(r=>server.close(r));await f.client.close();}

@@ -145,7 +145,10 @@ test('Sale approval requires supplier and cost; other templates keep their appro
  const plan=ok(await f.call('/quotes/'+q.id+'/stock-plan',f.mgr));assert.equal(plan.approvedSaleSourcing,true);assert.deepEqual(plan.lines,[]);
  const order=ok(await f.call('/orders',f.mgr,'POST',{quoteId:q.id}),201);assert.ok(order.id);
  const cq=ok(await f.call('/quotes',f.mgr,'POST',{...doc('SALE-CONTRACT-READY'),customerTaxCode:'0312345678'}),201);const contract=ok(await f.call('/contracts',f.mgr,'POST',{quoteId:cq.id,legalEntity:'BN'}),201);assert.ok(contract.orderId);
- const {withoutCosts}=await import('../../src/modules/quotes/domain/cost-privacy.ts');assert.equal(withoutCosts(doc()).rows[0].supplierInfo,undefined);
+ const {withoutCosts}=await import('../../src/modules/quotes/domain/cost-privacy.ts');
+ const privateRow=doc().rows[0];assert.ok(privateRow);assert.ok(privateRow.supplierInfo);
+ const redactedRow=withoutCosts(doc()).rows[0];assert.ok(redactedRow);
+ assert.equal(Object.hasOwn(redactedRow,'supplierInfo'),false,'NCC phải được lược bỏ khỏi dữ liệu nhân viên');
  const old=ok(await f.call('/quotes',f.mgr,'POST',{...body,template:undefined,quoteNo:'B2B-UNCHANGED'}),201);assert.equal(old.approvalStatus,'approved');
  }finally{/* createTestDb registers automatic cleanup. */}
 });
