@@ -91,7 +91,19 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
     const viewer = (c.state.session as SessionState).member, p = c.url.searchParams, db = c.env.db;
     const { limit, offset } = paging(c.url, 100, 500);
     const scope = quotationPredicate(viewer), type = p.get('type') || '', owner = p.get('owner') || '', sort = p.get('sort') || 'created';
+    const status = p.get('status') || '', employee = p.get('employee') || '';
+    const from = p.get('from') || '', to = p.get('to') || '';
+    const validDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v;
+    if ((status && !['draft', 'pending', 'approved'].includes(status)) || (from && !validDate(from)) || (to && !validDate(to)) || (from && to && from > to)) throw new AppError(400, 'Trạng thái hoặc khoảng ngày báo giá không hợp lệ.');
+    const responsible = sql<string>`coalesce(${quotations.assigneeId}, ${quotations.creatorId})`;
+    const quoteDay = sql<string>`coalesce(nullif(${quotations.quoteDate}, ''), left(${quotations.createdAt}, 10))`;
+    const filterEmployees = await db.selectDistinct({id: employees.id, name: employees.name}).from(quotations)
+      .innerJoin(employees, eq(employees.id, responsible)).where(scope).orderBy(asc(employees.name), asc(employees.id));
     const where = and(scope,
+      status ? eq(quotations.approvalStatus, status as 'draft' | 'pending' | 'approved') : undefined,
+      employee ? eq(responsible, employee) : undefined,
+      from ? sql`${quoteDay} >= ${from}` : undefined,
+      to ? sql`${quoteDay} <= ${to}` : undefined,
       type === 'SALE' ? sql`${quotations.data}::jsonb->>'template' = 'sale'`
         : type === 'HRC' || type === 'B2B' || type === 'VIGIFTS' ? and(eq(quotations.quoteType, type), sql`coalesce(${quotations.data}::jsonb->>'template', '') <> 'sale'`) : undefined,
       owner === 'mine' ? eq(quotations.creatorId, viewer.id) : owner === 'others' ? ne(quotations.creatorId, viewer.id) : undefined,
@@ -130,7 +142,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
         quoteDate: r.quoteDate, createdAt: r.createdAt, contact: data.contact || '', phone: data.phone || '', lineCount: data.rows.length, mine: r.creatorId === viewer.id,
         approvalStatus: r.approvalStatus, fromCustomer: customerCreators.has(r.creatorId), ...(data.template === 'sale' ? { template: 'sale' } : {}),
       };
-    }), total: n, all: Number(all), limit, offset, hasOthers: Number(others) > 0,
+    }), filterEmployees, total: n, all: Number(all), limit, offset, hasOthers: Number(others) > 0,
     value: valued && n <= VALUE_CAP ? valued.reduce((s, r) => s + r.total, 0) : null,
     month: month ? { month, count: monthRows.length, value: sum(monthRows) } : null });
   }, 'business');
