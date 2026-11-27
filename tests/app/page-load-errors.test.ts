@@ -18,20 +18,22 @@ function harness() {
     };
   }
   const banner = element(true), table = element(), retry = element(true), status = element();
+  const employee = { ...element(), innerHTML: '', value: '' };
   const elements = new Map([
     ['#global-error', banner], ['#quote-table', table], ['#quote-list-retry', retry],
     ['#quote-list-status', status], ['#quote-empty', element(true)],
+    ['#quote-employee', employee],
   ]);
   const ctx: any = {
     location: { hash: '#/quotes' }, $: (selector: string) => elements.get(selector) ?? null,
     state: { user: {}, quoteFilter: {}, quotes: [], members: [] },
     quotePager: { limit: 50, offset: 0 }, can: () => true,
-    todayIso: () => '2026-10-30', encodeURIComponent,
+    todayIso: () => '2026-10-30', encodeURIComponent, esc: String,
     renderQuotes() {}, renderMembers() {},
     api: async () => { throw Object.assign(new Error('Network unavailable'), { status: 0 }); },
   };
   runInNewContext(errors + quotes + members + '\nthis.show = showGlobalError; this.clear = clearGlobalError; this.loadQuotes = loadQuotes; this.loadMembers = loadMembers;', ctx);
-  return { ctx, banner, table, retry, status };
+  return { ctx, banner, table, retry, status, employee };
 }
 
 test('background staff failure cannot mark a loaded quotes page as disconnected', async () => {
@@ -44,7 +46,7 @@ test('background staff failure cannot mark a loaded quotes page as disconnected'
 });
 
 test('quotes failure stays visible through unrelated success, then clears on successful retry', async () => {
-  const { ctx, banner, table, retry, status } = harness();
+  const { ctx, banner, table, retry, status, employee } = harness();
   const loading = ctx.loadQuotes();
   assert.equal(table.getAttribute('aria-busy'), 'true');
   await loading;
@@ -54,12 +56,15 @@ test('quotes failure stays visible through unrelated success, then clears on suc
   ctx.api = async () => ({ members: [], positions: [] });
   await ctx.loadMembers();
   assert.equal(banner.hidden, false, 'background success must not hide a real quotes error');
-  ctx.api = async () => ({ quotes: [] });
+  ctx.state.quoteFilter.employee = 'emp';
+  ctx.api = async () => ({ quotes: [], filterEmployees: [{ id: 'emp', name: 'Nhân viên thử' }] });
   await ctx.loadQuotes();
   assert.equal(banner.hidden, true);
   assert.equal(banner.textContent, '');
   assert.equal(retry.hidden, true);
   assert.equal(status.textContent, '0 báo giá');
+  assert.match(employee.innerHTML, /Nhân viên thử/);
+  assert.equal(employee.value, 'emp');
 });
 
 test('late failures from superseded quote requests cannot overwrite a successful load', async () => {
