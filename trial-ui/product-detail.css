@@ -32,3 +32,4 @@
  .pd-head { flex-wrap:wrap; }.pd-head .eyebrow { display:none; }.pd-head .btn { min-height:44px; }
  .pd-info>div { grid-template-columns:minmax(90px,.7fr) minmax(0,1fr); }.pd-source-note { font-size:12px; }
 }
+.pd-quote-suppliers { margin: 0; padding-inline-start: 1.2em; white-space: pre-line; overflow-wrap: anywhere; }

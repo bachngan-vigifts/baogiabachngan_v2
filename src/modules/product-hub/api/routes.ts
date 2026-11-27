@@ -40,6 +40,11 @@ function source(sku:string,m:Member,kind:ProductDocumentKind):SQL{
   from ${salesFrom} where ${and(eq(ol.sku,sku),orderScopeFor(m),scope,kind==='contracts'?sql`${k.id} is not null`:sql`${k.id} is null`)} group by ${o.id},${k.id}`;
  if(kind==='quotes')return sql`select ${q.id} id,${q.quoteNo} number,coalesce(nullif(${q.quoteDate},''),${q.createdAt}) date,
   ${q.approvalStatus} status,${q.customer} partner,sum(${ql.qty}) quantity,string_agg(distinct ${ql.unit},' / ') unit,${q.quoteType} "quoteType",
+  ${m.role==='manager'?sql`array(
+    select distinct trim(line->>'supplierInfo') as supplier
+    from jsonb_array_elements(case when jsonb_typeof(${q.data}::jsonb->'rows')='array' then ${q.data}::jsonb->'rows' else '[]'::jsonb end) line
+    where line->>'sku'=${sku} and trim(line->>'supplierInfo')<>'' order by supplier
+  ) suppliers,`:sql``}
   jsonb_agg(jsonb_build_object('qty',${ql.qty},'price',${ql.price},'discount',${ql.discount},'discountType',${ql.discountType},'printFee',${ql.printFee})) "quoteRows"
   from ${ql} join ${q} on ${q.id}=${ql.quoteId} where ${and(eq(ql.sku,sku),quotationPredicate(m),scope)} group by ${q.id}`;
  if(kind==='purchases')return sql`select ${p.id} id,${p.ticketNumber} number,${p.createdAt} date,
