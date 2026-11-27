@@ -179,7 +179,7 @@ export function initProfit({ api, root, toast, esc, money }) {
     const options = bc.classOptions || [];
     return `<div class="card"><h3 class="pf-h">Phân loại phiếu chi sổ quỹ</h3>
       ${table(['Loại phiếu', '>Số phiếu', '>Số tiền', 'Tính vào chi phí?'], bc.cash.map(x => [esc(x.label), num(x.count), num(x.amount), x.counted ? pill('ok', 'Có') : `<span class="pill muted">${esc(x.why)}</span>`]))}
-      ${bc.review.length ? `<details class="small" ${bc.review.some(r => !r.manual) ? 'open' : ''}><summary>Phiếu cần xem lại (${bc.review.filter(r => !r.manual).length} chưa xác nhận · ${bc.review.filter(r => r.manual).length} Manager đã chọn)</summary>
+      ${bc.review.length ? `<details class="small"><summary>Phiếu cần xem lại (${bc.review.filter(r => !r.manual).length} chưa xác nhận · ${bc.review.filter(r => r.manual).length} Manager đã chọn)</summary>
         ${table(['Ngày', 'Phiếu', 'Chi nhánh', '>Số tiền', 'Nội dung', 'Loại'], bc.review.map(r => [esc(r.day.split('-').reverse().join('/')), esc(r.entryNo), esc(r.branch), num(r.amount), esc(r.reason),
           `<select data-cash-entry="${esc(r.id)}" aria-label="Loại phiếu ${esc(r.entryNo)}">${options.map(o => `<option value="${esc(o.cls)}" ${o.cls === r.cls ? 'selected' : ''}>${esc(o.label)}${o.counted ? ' – tính' : ''}</option>`).join('')}
             ${r.manual ? '<option value="">↺ Về tự phân loại</option>' : ''}</select> ${r.manual ? pill('ok', 'Manager') : pill('muted', 'Tự động')}`]))}</details>` : ''}
