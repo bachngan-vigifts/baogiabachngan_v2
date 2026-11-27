@@ -465,3 +465,11 @@
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-price{grid-column:2;grid-row:3}
  .pos-workspace.pos-reference.pos-pc-scan.pos-mode-delivery .pos-line-discount{grid-column:3 / 6;grid-row:3;width:140px;justify-self:start}
 }
+
+@media (min-width: 851px) {
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-fees { flex:none; min-height:36px; max-height:220px; overflow:auto; margin:6px 10px 0; padding:8px 12px; background:white; border-radius:8px; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-fees summary { cursor:pointer; color:#005fce; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-fees[open] summary { margin-bottom:8px; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-fees .pos-service-fee { grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; }
+  .pos-workspace.pos-reference.pos-pc-scan .pos-ref-fees .pos-service-fee > :first-child { grid-column:1 / -1; }
+}

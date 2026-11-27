@@ -51,6 +51,10 @@ export function mountPosReference({page, head, left, right, board, searchRow, no
   const basket = right.querySelector('.pos-basket-head'); nodes.customer.title = 'Tìm khách hàng';
   if(nodes.customer.textContent.includes('Chọn khách hàng'))nodes.customer.textContent='Tìm khách hàng (F3)';
   const note=left.querySelector('.pos-order-note textarea');if(note)note.placeholder='Ghi chú đơn hàng';
+  const fees=el('details','pos-ref-fees'),feeSummary=el('summary','','Khoản phí · Khắc, gói quà, túi…');
+  fees.append(feeSummary,nodes.feeControls);nodes.feePanel=fees;
+  left.insertBefore(fees,left.querySelector('.pos-order-note'));
+  nodes.pcExtras.querySelector('summary').textContent='CK đơn / mã giảm / khuyến mãi';
   const products = el('section', 'pos-ref-products'); products.setAttribute('aria-label','Danh mục bán hàng');
   const controls = left.querySelector('.pos-catalog-controls');
   const catalogPages = left.querySelector('.pos-catalog-pages');
