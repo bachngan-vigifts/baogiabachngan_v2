@@ -11,7 +11,7 @@ import {sepayPaidDate} from '../../integrations/domain/sepay-payment.ts';
 import {webOrderPaymentBlocked} from '../domain/web-order-outcome.ts';
 import {sepayReconciliationStates as states,sepayAllocationBatches as batches,sepayPaymentAllocations as allocations} from '../sepay-allocation-schema.ts';
 import {cashLock,cashAudit,type CashDb} from './cash-store.ts';
-import {assertSepayReconcileAccess,assertSepayReconcileTarget,sepayWebOrderScope} from './sepay-reconcile-access.ts';
+import {assertSepayReconcileAccess,assertSepayReconcileTarget,sepayWebOrderScope,canReplaceSepayReceipt} from './sepay-reconcile-access.ts';
 import {orderScopeFor,canVoidPayment} from './routes.ts';
 import {assertNoReturnActivity,netReceivables} from './pos-return-credit.ts';
 import {allocationRows,allocationNeedsReview} from './sepay-allocation-store.ts';
@@ -47,7 +47,7 @@ async function summary(c:Ctx,db:CashDb){
  const history=await db.select({result:batches.result}).from(batches).where(eq(batches.transactionId,event.id));
  const comparisons=new Map<string,number>();for(const h of history){const result=JSON.parse(h.result);for(const d of result.comparisons??[])comparisons.set(d.allocationId,d.expectedAmount);}
  const allocated=rows.filter(a=>!a.voidedAt).reduce((n,a)=>n+a.amount,0);
- return {transactionId:event.id,amount:event.amount,revision:s?.revision??0,detailed:!!s,needsReview:!!review?.needed,canVoid:canVoidPayment(who(c)),allocated,remaining:event.amount-allocated,allocations:rows.map(a=>({...a,expectedAmount:comparisons.get(a.id)??a.amount,difference:a.amount-(comparisons.get(a.id)??a.amount),targetNo:labels.get(a.webOrderId?'web:'+a.webOrderId:a.orderId!)||a.targetKey}))};
+ return {transactionId:event.id,amount:event.amount,revision:s?.revision??0,detailed:!!s,needsReview:!!review?.needed,canVoid:canVoidPayment(who(c)),canReplaceReceipt:canReplaceSepayReceipt(who(c)),allocated,remaining:event.amount-allocated,allocations:rows.map(a=>({...a,expectedAmount:comparisons.get(a.id)??a.amount,difference:a.amount-(comparisons.get(a.id)??a.amount),targetNo:labels.get(a.webOrderId?'web:'+a.webOrderId:a.orderId!)||a.targetKey}))};
 }
 export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
  const path='/sepay/transactions/:id/allocations';
@@ -105,7 +105,7 @@ export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
       const linked=await tx.select({id:bank.id}).from(bank).where(eq(bank.paymentId,p!.id));if(linked.length)fail('Phiếu thu đã khớp giao dịch khác.');paymentId=p!.id;
       if((await tx.select({id:allocations.id}).from(allocations).where(and(eq(allocations.paymentId,p!.id),isNull(allocations.voidedAt))).limit(1)).length)fail('Phiếu thu đã nằm trong phân bổ khác.');
       if(r.amount!==p!.amount){
-       if(!canVoidPayment(who(c)))fail('Cần quyền huỷ phiếu thu để sửa khoản thu lệch.',403);
+       if(!canReplaceSepayReceipt(who(c)))fail('Cần quyền Huỷ phiếu thu hoặc quyền Sửa phiếu thu lệch khi đối soát SePay.',403);
        await assertNoReturnActivity(tx,orderId);
        replacedPaymentId=p!.id;paymentId=crypto.randomUUID();createdReceipt=true;
        const reason='Đối soát SePay '+e.providerId+': thay phiếu '+p!.amount+' bằng số thực nhận '+r.amount;
