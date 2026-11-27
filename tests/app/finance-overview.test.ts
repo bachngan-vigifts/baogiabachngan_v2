@@ -160,7 +160,7 @@ test("current receivables use canonical return rules; redelivery receipt does no
     branch: "",
   });
   assert.equal(flow.in, 1137);
-  assert.equal(queries, 4, "cashflow remains four source queries");
+  assert.equal(queries, 5, "four cashflow sources plus one bulk GHN evidence query");
   f.client.query = originalQuery;
   console.log(
     "finance synthetic 2003-order bulk read ms",

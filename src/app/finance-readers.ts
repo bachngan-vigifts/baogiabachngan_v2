@@ -33,6 +33,7 @@ import {
   netReturnInputs,
   returnAdjustments,
 } from "../modules/sales/api/pos-return-credit.ts";
+import {financeGhnSettlements} from './finance-ghn.ts';
 type Db = AnyDb | Parameters<Parameters<AnyDb["transaction"]>[0]>[0];
 export interface FinanceRange {
   from: string;
@@ -145,6 +146,7 @@ export async function financeCashflow(db: Db, f: FinanceRange) {
     classificationReview: 0,
     unlinkedOut: 0,
     carrierCollected: 0,
+    ghnSettled: await financeGhnSettlements(db,f),
     otherReceipts: 0,
     otherSupplier: 0,
     byMethod: [] as { method: string; in: number; out: number }[],

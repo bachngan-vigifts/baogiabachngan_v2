@@ -73,7 +73,7 @@ test('GHN payout links a POS COD order to its "GHN collected" receipt without a 
  const e=await f.incoming('GHN POS PAYOUT',96000);
  const c=(await f.call(`/sepay/transactions/${e.id}/allocation-candidates?source=ghn`,f.mgr)).data.candidates.find((x:any)=>x.targetId===o.id);
  assert.deepEqual(c.existingPayments.map((p:any)=>[p.id,p.source]),[['ghn-cod-receipt','ghn_cod']]);
- assert.equal((await post(f,e.id,[{targetId:o.id,amount:96000,ghnFee:3000,expectedAmount:100000,differenceConfirmed:true,existingPaymentId:'ghn-cod-receipt'}])).status,409,'net + fee must equal the COD');
+ assert.equal((await post(f,e.id,[{targetId:o.id,amount:96000,ghnFee:3000,expectedAmount:100000,differenceConfirmed:false,existingPaymentId:'ghn-cod-receipt'}])).status,400,'GHN difference needs explicit confirmation');
  assert.equal((await post(f,e.id,[{targetId:o.id,amount:96000,existingPaymentId:'ghn-cod-receipt',expectedAmount:96000}])).status,409,'cannot shrink a GHN receipt');
  const r=await post(f,e.id,[{targetId:o.id,amount:96000,ghnFee:4000,expectedAmount:100000,existingPaymentId:'ghn-cod-receipt'}]);
  assert.equal(r.status,200,JSON.stringify(r.data));
@@ -103,5 +103,5 @@ test('allocation form counts net bank money against the transaction and net + GH
  const ghn={...line,existingPaymentId:'r',existingPayments:[{id:'r',amount:100000,source:'ghn_cod'}]};
  assert.equal(allocationTotals(summary,[ghn]).valid,true,'GHN collected receipt: net + fee equals the COD');
  assert.equal(allocationTotals(summary,[{...ghn,ghnFee:4000}]).valid,false);
- assert.equal(allocationTotals({...summary,canReplaceReceipt:true},[{...ghn,ghnFee:0}]).valid,false,'a GHN receipt is never replaced');
+ assert.equal(allocationTotals({...summary,canReplaceReceipt:true},[{...ghn,ghnFee:0}]).valid,true,'authorized GHN shortfall is reviewed without replacing the receipt');
 });

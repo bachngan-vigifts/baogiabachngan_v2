@@ -1,0 +1,43 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {eq} from 'drizzle-orm';
+import {setupSepay} from '../helpers/sepay-fixture.ts';
+import {customerPayments,deliveries} from '../../src/modules/sales/schema.ts';
+import {posRegisters,posShifts} from '../../src/modules/sales/pos-schema.ts';
+import {sepayTransactions} from '../../src/modules/integrations/schema.ts';
+
+test('finance GHN evidence: net payout per allocation, batched bank event once, branches, permissions, unmatched, undo and account guard',async()=>{
+ const f=await setupSepay(),shift=await f.open();
+ const [reg]=await f.db.select().from(posRegisters).where(eq(posRegisters.id,f.registerId));
+ await f.db.insert(posRegisters).values({...reg!,id:'branch-b',name:'Branch B'});
+ const [oldShift]=await f.db.select().from(posShifts).where(eq(posShifts.id,shift.id));
+ await f.db.insert(posShifts).values({...oldShift!,id:'shift-b',registerId:'branch-b',openKey:'shift-b',closedAt:f.stamp,reportSnapshot:'{}',countedCash:0,cashDifference:0});
+ const make=async(id:string,sid=shift.id)=>{
+  const o=await f.order(id,{channel:'pos',fulfillmentMode:'cod',shiftId:sid});
+  await f.db.insert(deliveries).values({id:'d'+id,deliveryNo:id,orderId:o.id,carrier:'GHN',trackingCode:id,status:'delivered',plannedDate:'2026-11-08',createdBy:'mgr',createdAt:f.stamp,updatedAt:f.stamp});
+  await f.db.insert(customerPayments).values({id:'p'+id,orderId:o.id,deliveryId:'d'+id,amount:100000,method:'other',paymentSource:'ghn_cod',reference:id,paidAt:'2026-11-08',createdBy:'mgr',createdAt:f.stamp});return {id:o.id,payment:'p'+id};
+ };
+ const a=await make('GHNA'),b=await make('GHNB','shift-b'),c=await make('GHNC');await make('UNMATCHED');
+ const url='/finance/cashflow?from=2026-11-08&to=2026-11-08&refresh=1';
+ const read=async(branch='')=>{const r=await f.call(url+'&branch='+branch,f.mgr);assert.equal(r.status,200,JSON.stringify(r.data));return r.data.flow;};
+ assert.equal((await read()).ghnSettled.bankNet,0);
+ assert.equal((await f.call(url,f.emp)).status,403);assert.equal((await f.call(url,f.accountant)).status,403);
+ assert.equal((await f.call(url+'&branch=unknown',f.mgr)).status,400);
+ const e=await f.incoming('batch',190000),single=await f.incoming('single',95000);
+ const post=async(event:any,lines:any[])=>{const body={clientKey:crypto.randomUUID(),expectedRevision:0,lines};for(let n=0;n<2;n++)assert.equal((await f.call(`/sepay/transactions/${event.id}/allocations`,f.mgr,'POST',body)).status,200);};
+ const line=(o:any,amount:number)=>({targetId:o.id,existingPaymentId:o.payment,expectedAmount:100000,amount,ghnFee:5000,differenceConfirmed:true});
+ await post(e,[line(a,94900),line(b,95100)]);await post(single,[line(c,95000)]);
+ const all=await read();assert.deepEqual(all.ghnSettled,{bankNet:285000,confirmedFee:15000,cod:300000,difference:0,shortfall:100,surplus:100,allocations:3,transactions:2,needsReview:0});assert.equal(all.in,0,'separate evidence never changes company cashflow');assert.equal(all.carrierCollected,400000);
+ assert.equal((await read(f.registerId)).ghnSettled.bankNet,189900);assert.equal((await read('branch-b')).ghnSettled.bankNet,95100);assert.equal((await read('crm')).ghnSettled.bankNet,0);
+ const otherPeriod=await f.call('/finance/cashflow?from=2026-11-09&to=2026-11-09&refresh=1',f.mgr);assert.equal(otherPeriod.data.flow.ghnSettled.bankNet,0,'bank date, not receipt/approval date');
+ await f.db.update(sepayTransactions).set({accountNumber:'wrong'}).where(eq(sepayTransactions.id,single.id));assert.equal((await read()).ghnSettled.bankNet,190000);assert.equal((await read()).ghnSettled.needsReview,1);
+ await f.db.update(sepayTransactions).set({accountNumber:'123456'}).where(eq(sepayTransactions.id,single.id));
+ await f.db.update(customerPayments).set({reference:'wrong-reference'}).where(eq(customerPayments.id,c.payment));assert.equal((await read()).ghnSettled.needsReview,1);assert.equal((await read()).ghnSettled.bankNet,190000);
+ await f.db.update(customerPayments).set({reference:'GHNC'}).where(eq(customerPayments.id,c.payment));
+ const path=`/sepay/transactions/${e.id}/allocations`,s=(await f.call(path,f.mgr)).data;
+ const allocation=s.allocations.find((x:any)=>x.orderId===a.id);
+ assert.equal((await f.call(path+'/'+allocation.id+'/void',f.mgr,'POST',{expectedRevision:s.revision,reason:'QA undo'})).status,200);
+ const cachedAfterUndo=await f.call(url.replace('&refresh=1',''),f.mgr);assert.equal(cachedAfterUndo.data.flow.ghnSettled.bankNet,190100,'GHN evidence refreshed even when cashflow totals are cached');
+ const undone=await read();assert.equal(undone.ghnSettled.bankNet,190100);assert.equal(undone.ghnSettled.transactions,2);assert.equal(undone.ghnSettled.difference,100);assert.equal(undone.ghnSettled.shortfall,0);assert.equal(undone.carrierCollected,400000);assert.equal(undone.in,0);
+ assert.ok((await f.call(path,f.mgr)).data.allocations.find((x:any)=>x.id===allocation.id).voidedAt);
+});
