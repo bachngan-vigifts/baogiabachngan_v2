@@ -52,3 +52,13 @@ test('purchase/receipt histories show purchase number and permission-filtered or
  const limited=ok(await f.call('/products/'+f.sku+'/documents?kind=purchases',f.cookies.kt));assert.deepEqual(limited.rows.find((r:any)=>r.id==='a1').sources,[],'quyền mua không tự mở các nguồn báo giá/đơn bị tắt quyền trang');assert.ok(!JSON.stringify(limited).includes('DH-secret'));assert.ok(!JSON.stringify(limited).includes('HĐKT-fixture'));
  assert.equal((await f.call('/products/'+f.sku+'/documents?kind=receipts',f.cookies.kho)).status,403,'Kho nhận qua DTO riêng, không đọc nguồn báo giá/đơn từ product hub');
 });
+
+test('quote history lists distinct internal suppliers for the requested SKU without a purchase order',async()=>{
+ const f=await productDetailFixture(),path='/products/'+f.sku+'/documents?kind=quotes';
+ const rows=[{sku:f.sku,supplierInfo:' NCC A '},{sku:f.sku,supplierInfo:'NCC A'},{sku:f.sku,supplierInfo:'NCC B'},{sku:'other',supplierInfo:'Khác'}];
+ await f.db.execute(sql`update staff_quotations set quote_date='2027-01-01', data=${JSON.stringify({template:'sale',rows})} where id='quote-0'`);
+ const manager=ok(await f.call(path,f.cookies.mgr)).rows.find((r:any)=>r.id==='quote-0');
+ assert.deepEqual(manager.suppliers,['NCC A','NCC B']);
+ const employee=ok(await f.call(path,f.cookies.emp)).rows.find((r:any)=>r.id==='quote-0');
+ assert.ok(employee);assert.equal(Object.hasOwn(employee,'suppliers'),false);
+});

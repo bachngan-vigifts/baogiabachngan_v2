@@ -7,7 +7,7 @@ import {createProductionFiles,mountProductionFiles} from './production-files.js'
 import {initProductBrandFilter} from './product-brand-filter.js';
 import {initWarehouseAssignment} from './warehouse-assignment.js';
 import {initBulkQuoteDiscount,discountProduct} from './quote-bulk-discount.js';
-import {saleLineHead,saleLineCell,saleDesignProblem,createSalePriceSuggestions,fetchSaleSuggestions} from './sale-quote-layout.js';
+import {saleLineHead,quoteProductLink,saleLineCell,saleDesignProblem,createSalePriceSuggestions,fetchSaleSuggestions} from './sale-quote-layout.js';
 import {deliveryTone,deliveryIsOverdue,fulfilmentLegend,fulfilmentBadge,compactFulfilmentTable} from './fulfilment-display.js';
 import {initWarehouseWorkspace} from './warehouse-workspace.js';
 import { createNotificationFeed } from './notification-feed.js';
@@ -1525,6 +1525,7 @@ function lineCell(r, i) {
     <td class="col-product" data-label="Sản phẩm">
       <textarea class="name-input" data-k="name" rows="1" placeholder="${manual ? 'Tên phụ phí / nội dung thêm…' : 'Gõ tên hoặc mã để tìm sản phẩm…'}" maxlength="4000" aria-label="Tên sản phẩm dòng ${i + 1}">${esc(r.name)}</textarea>
       ${custom ? '' : `<div class="sku-line"><input class="plain sku-input" data-k="sku" value="${esc(r.sku)}" placeholder="Mã hàng" maxlength="4000" aria-label="Mã hàng dòng ${i + 1}"><span class="quote-stock-warning" data-stock-warning hidden role="img" aria-label="">!</span>${r.sku ? '<button type="button" class="link-btn" data-stock title="Tồn các kho + lịch sử 20 giao dịch gần nhất">Tồn kho · Lịch sử</button>' : ''}</div>`}
+      <span data-product-link>${quoteProductLink(r.sku, esc)}</span>
       ${!custom && meta ? `<div class="product-meta">${esc(meta)}</div>` : ''}
       ${!custom && hrc && packingSpec(r) ? `<div class="product-meta">Đóng gói: ${esc(packingSpec(r))}</div>` : ''}
       ${custom ? '<small class="muted">Phụ phí · Không kiểm tồn / xuất kho</small>' : ''}
@@ -1632,6 +1633,7 @@ $('#line-list').addEventListener('input', e => {
     // Tên sản phẩm là ô nhiều dòng (để hiện đủ tên dài) nhưng giá trị vẫn là một dòng như ô nhập cũ.
     if (k === 'name' && /[\r\n]/.test(input.value)) input.value = input.value.replace(/\s*[\r\n]+\s*/g, ' ');
     r[k] = input.value;
+    if (k === 'sku') input.closest('tr').querySelector('[data-product-link]').innerHTML = quoteProductLink(r.sku, esc);
     if (k === 'name') fitNameInputs([input]);
   }
   markDirty(); calculate();
