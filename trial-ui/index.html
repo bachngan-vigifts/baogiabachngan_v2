@@ -227,6 +227,9 @@
         <article class="stat"><small>Tháng này</small><strong id="stat-month">–</strong><span id="stat-month-value" class="muted"></span></article>
         <article class="stat"><small>Khách hàng</small><strong id="stat-customers">–</strong><span class="muted">Trong danh bạ</span></article>
       </div>
+      <div class="chips quote-status-filter" id="quote-status-filter" role="group" aria-label="Trạng thái báo giá">
+        <button class="chip active" data-status="" aria-pressed="true">Tất cả</button><button class="chip" data-status="draft" aria-pressed="false">Nháp</button><button class="chip" data-status="pending" aria-pressed="false">Chờ duyệt</button><button class="chip" data-status="approved" aria-pressed="false">Đã duyệt</button>
+      </div>
       <div class="panel">
         <div class="toolbar">
           <label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><input id="quote-search" type="search" placeholder="Tìm số báo giá, khách hàng, số điện thoại…" aria-label="Tìm báo giá"></label>
@@ -237,6 +240,12 @@
           <select id="quote-sort" aria-label="Sắp xếp">
             <option value="created">Mới tạo</option><option value="updated">Mới cập nhật</option><option value="date">Ngày báo giá</option><option value="value">Giá trị cao nhất</option><option value="no">Số báo giá</option>
           </select>
+        </div>
+        <div class="quote-filter-grid">
+          <label>Nhân viên phụ trách<select id="quote-employee"><option value="">Tất cả nhân viên</option></select></label>
+          <label>Từ ngày báo giá<input id="quote-from" type="date"></label>
+          <label>Đến ngày báo giá<input id="quote-to" type="date"></label>
+          <button type="button" class="btn ghost" id="quote-clear-filters">Xóa bộ lọc</button>
         </div>
         <div class="quote-list-feedback">
           <span id="quote-list-status" role="status"></span>

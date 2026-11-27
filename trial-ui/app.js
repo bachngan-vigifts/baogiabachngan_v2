@@ -456,7 +456,7 @@ initAvatars(api); // ô nào có data-av tự hiện ảnh đại diện
 let approvalUi = null;
 const state = {
   user: null, quotes: null, customers: null, members: null, positions: [],
-  quoteFilter: { q: '', type: '', owner: '', sort: 'created' },
+  quoteFilter: { q: '', type: '', owner: '', status: '', employee: '', from: '', to: '', sort: 'created' },
   customerQuery: '', customerTotal: 0, memberQuery: '', memberStatus: '',
   products: null, productTotal: 0, productQuery: '', productBrand: '', productBrands: [], productWarehouse: '', productMinStock: '', policies: [], warehouses: [], selected: new Map(),
 };
@@ -751,7 +751,7 @@ async function loadQuotes() {
   $('#quote-empty').hidden = true;
   $('#quote-table').setAttribute('aria-busy', 'true');
   try {
-    const d = await api(`/quotes?limit=${quotePager.limit}&offset=${quotePager.offset}&q=${encodeURIComponent(f.q)}&type=${encodeURIComponent(f.type)}&owner=${encodeURIComponent(f.owner)}&sort=${encodeURIComponent(f.sort)}&month=${todayIso().slice(0, 7)}`);
+    const d = await api(`/quotes?limit=${quotePager.limit}&offset=${quotePager.offset}&q=${encodeURIComponent(f.q)}&type=${encodeURIComponent(f.type)}&owner=${encodeURIComponent(f.owner)}&sort=${encodeURIComponent(f.sort)}&status=${encodeURIComponent(f.status)}&employee=${encodeURIComponent(f.employee)}&from=${encodeURIComponent(f.from)}&to=${encodeURIComponent(f.to)}&month=${todayIso().slice(0, 7)}`);
     if (req !== quoteReq) return;
     // Báo giá đã sinh đơn hàng / HĐKT → nút xem chứng từ (thay chỗ nhãn loại báo giá).
     const ids = d.quotes.map(q => q.id);
@@ -759,6 +759,8 @@ async function loadQuotes() {
     if (req !== quoteReq) return;
     state.quotes = d.quotes;
     state.quoteMeta = d;
+    $('#quote-employee').innerHTML = '<option value="">Tất cả nhân viên</option>' + (d.filterEmployees || []).map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('');
+    $('#quote-employee').value = f.employee;
     state.quoteDocs = docs;
     clearGlobalError('quotes');
     status.textContent = (d.total ?? d.quotes.length).toLocaleString('vi-VN') + ' báo giá';
@@ -1177,6 +1179,22 @@ const reloadQuotes = () => { quotePager.reset(); loadQuotes(); };
 $('#quote-search').addEventListener('input', e => { state.quoteFilter.q = e.target.value; clearTimeout(quoteTimer); quoteTimer = setTimeout(reloadQuotes, 250); });
 $('#quote-sort').addEventListener('change', e => { state.quoteFilter.sort = e.target.value; reloadQuotes(); });
 $('#quote-owner').addEventListener('change', e => { state.quoteFilter.owner = e.target.value; reloadQuotes(); });
+for (const field of ['employee', 'from', 'to']) $('#quote-' + field).addEventListener('change', e => { state.quoteFilter[field] = e.target.value; reloadQuotes(); });
+$('#quote-status-filter').addEventListener('click', e => {
+  const chip = e.target.closest('[data-status]'); if (!chip) return;
+  state.quoteFilter.status = chip.dataset.status;
+  $$('#quote-status-filter .chip').forEach(c => { c.classList.toggle('active', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+  reloadQuotes();
+});
+$('#quote-clear-filters').addEventListener('click', () => {
+  clearTimeout(quoteTimer);
+  Object.assign(state.quoteFilter, {q: '', type: '', owner: '', status: '', employee: '', from: '', to: '', sort: 'created'});
+  for (const field of ['search', 'owner', 'employee', 'from', 'to']) $('#quote-' + field).value = '';
+  $('#quote-sort').value = 'created';
+  $$('#type-filter .chip').forEach(c => c.classList.toggle('active', c.dataset.type === ''));
+  $$('#quote-status-filter .chip').forEach(c => { const active = c.dataset.status === ''; c.classList.toggle('active', active); c.setAttribute('aria-pressed', String(active)); });
+  reloadQuotes();
+});
 $('#type-filter').addEventListener('click', e => {
   const chip = e.target.closest('.chip'); if (!chip) return;
   $$('#type-filter .chip').forEach(c => c.classList.toggle('active', c === chip));

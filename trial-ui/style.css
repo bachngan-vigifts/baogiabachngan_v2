@@ -3119,3 +3119,11 @@ body:has(.reminder-launcher:not([hidden])) .main::after{content:'';display:block
  html.app-shell #workspace > .sidebar .nav-group:has(.nav.active) .nav-group-toggle { color:#fff; }
  html.app-shell #workspace > .sidebar .side-nav { scrollbar-color:#8297b8 transparent; }
 }
+
+/* Quote list filters share the order-list layout, using quote approval states. */
+.quote-status-filter { margin-bottom: 16px; flex-wrap: wrap; }
+.quote-filter-grid { display: grid; grid-template-columns: minmax(180px, 2fr) repeat(2, minmax(150px, 1fr)) auto; align-items: end; gap: 12px; padding: 16px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.quote-filter-grid label { display: grid; gap: 6px; min-width: 0; font-weight: 400; color: var(--muted); }
+.quote-filter-grid input, .quote-filter-grid select { min-width: 0; width: 100%; }
+@media (max-width: 850px) { .quote-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .quote-filter-grid { grid-template-columns: minmax(0, 1fr); } }
