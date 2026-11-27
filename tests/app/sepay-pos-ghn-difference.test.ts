@@ -21,11 +21,15 @@ test('POS COD: actual bank +/-100 stays a GHN difference, never changes customer
   const e=await f.incoming('GHN fixture',amount),path=`/sepay/transactions/${e.id}/allocations`;
   const candidate=async()=>(await f.call(`/sepay/transactions/${e.id}/allocation-candidates`,f.mgr)).data.candidates.find((c:any)=>c.targetId===oid);
   assert.equal((await candidate()).ghnFeeHint,5000);
+  await f.db.update(deliveries).set({shippingFee:7000}).where(eq(deliveries.id,d!.id));assert.equal((await candidate()).ghnFeeHint,7000,'keep the positive fee recorded on the delivery');
+  await f.db.update(deliveries).set({shippingFee:0}).where(eq(deliveries.id,d!.id));
   const body={clientKey:crypto.randomUUID(),expectedRevision:0,lines:[{targetId:oid,existingPaymentId:p!.id,amount,ghnFee:fee,expectedAmount:100000,differenceConfirmed:true}]};
   if(amount!==95000&&amount!==100000)assert.equal((await f.call(path,f.mgr,'POST',{...body,lines:[{...body.lines[0],differenceConfirmed:false}]})).status,400);
   await f.db.update(deliveries).set({trackingCode:'NEW'}).where(eq(deliveries.id,d!.id));assert.equal((await candidate()).ghnFeeHint,0);assert.equal((await f.call(path,f.mgr,'POST',body)).status,409);
   await f.db.update(deliveries).set({trackingCode:code,carrier:'Nhất Tín'}).where(eq(deliveries.id,d!.id));assert.equal((await candidate()).ghnFeeHint,0);assert.equal((await f.call(path,f.mgr,'POST',body)).status,409);
-  await f.db.update(deliveries).set({carrier:'GHN'}).where(eq(deliveries.id,d!.id));
+  await f.db.update(deliveries).set({carrier:'GHN',status:'cancelled'}).where(eq(deliveries.id,d!.id));assert.equal((await f.call(path,f.mgr,'POST',body)).status,409,'cancelled shipment cannot reconcile COD');
+  await f.db.update(deliveries).set({status:'delivered'}).where(eq(deliveries.id,d!.id));
+  if(amount===95000)await f.db.update(customerPayments).set({deliveryId:null}).where(eq(customerPayments.id,p!.id)); // Legacy receipt with matching reference remains valid.
   if(amount===94900){
    await f.db.delete(positionPermissions).where(eq(positionPermissions.positionId,'accounting'));
    await f.db.insert(positionPermissions).values(['page.sepay','sepay.reconcile-incoming'].map(permission=>({positionId:'accounting',permission})));
@@ -55,4 +59,7 @@ test('POS fee hint is advisory and requires the same GHN code, including zero an
  assert.equal(posGhnFeeHint(snapshot({orderCode:'OLD',fee:5000}),'NEW'),0);
  assert.equal(posGhnFeeHint(snapshot({orderCode:'ABC',fee:5000},{method:'nhat_tin'}),'ABC'),0);
  assert.equal(posGhnFeeHint('{bad','ABC'),0);
+ assert.equal(posGhnFeeHint(null,'ABC',7000),7000);
+ assert.equal(posGhnFeeHint(snapshot({orderCode:'ABC',fee:5000}),'ABC',7000),7000);
+ assert.equal(posGhnFeeHint(JSON.stringify({fees:{shippingFee:9000}}),'ABC'),0,'customer shipping is never a carrier fee hint');
 });
