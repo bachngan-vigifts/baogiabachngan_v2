@@ -20,6 +20,7 @@ import {readWebSepayPaidAt,webSepayPaidAt} from './web-sepay-evidence.ts';
 import {webOrderPayment} from '../domain/web-order-payment.ts';
 import {vietnamDate} from '../domain/sales.ts';
 import {WEB_PAYMENT_BLOCKED_STATUSES} from '../domain/web-order-outcome.ts';
+import {posGhnFeeHint} from '../domain/pos-ghn-fee-hint.ts';
 type Ctx=RouteContext<StaffEnv>;
 /** Latest GHN tracking code of a CRM/POS order: the only evidence that lets a SePay line offset a carrier fee. */
 const ghnCodeOf=(id:unknown)=>sql<string|null>`(select d.tracking_code from ${deliveries} d where d.order_id=${id} and upper(trim(d.carrier))='GHN' and trim(d.tracking_code)<>'' and d.status<>'cancelled' order by d.planned_date desc nulls last,d.id desc limit 1)`;
@@ -48,9 +49,10 @@ async function summary(c:Ctx,db:CashDb){
  if(oids.length)for(const o of await db.select({id:orders.id,no:orders.orderNo}).from(orders).where(inArray(orders.id,oids)))labels.set(o.id,o.no);
  if(wids.length)for(const w of await db.select({id:web.id,no:web.orderNo}).from(web).where(inArray(web.id,wids)))labels.set('web:'+w.id,w.no);
  const history=await db.select({result:batches.result}).from(batches).where(eq(batches.transactionId,event.id));
- const comparisons=new Map<string,number>();for(const h of history){const result=JSON.parse(h.result);for(const d of result.comparisons??[])comparisons.set(d.allocationId,d.expectedAmount);}
+ const carrierComparisons=new Map<string,string>();
+ const comparisons=new Map<string,number>();for(const h of history){const result=JSON.parse(h.result);for(const d of result.comparisons??[]){comparisons.set(d.allocationId,d.expectedAmount);if(d.settlementKind==='ghn_cod')carrierComparisons.set(d.allocationId,d.ghnCode);}}
  const allocated=rows.filter(a=>!a.voidedAt).reduce((n,a)=>n+a.amount,0);
- return {transactionId:event.id,amount:event.amount,revision:s?.revision??0,detailed:!!s,needsReview:!!review?.needed,canVoid:canVoidPayment(who(c)),canReplaceReceipt:canReplaceSepayReceipt(who(c)),allocated,remaining:event.amount-allocated,allocations:rows.map(a=>({...a,expectedAmount:comparisons.get(a.id)??a.amount+a.ghnFee,difference:a.amount+a.ghnFee-(comparisons.get(a.id)??a.amount+a.ghnFee),targetNo:labels.get(a.webOrderId?'web:'+a.webOrderId:a.orderId!)||a.targetKey}))};
+ return {transactionId:event.id,amount:event.amount,revision:s?.revision??0,detailed:!!s,needsReview:!!review?.needed,canVoid:canVoidPayment(who(c)),canReplaceReceipt:canReplaceSepayReceipt(who(c)),allocated,remaining:event.amount-allocated,allocations:rows.map(a=>({...a,settlementKind:carrierComparisons.has(a.id)?'ghn_cod':null,ghnCode:carrierComparisons.get(a.id)||null,expectedAmount:comparisons.get(a.id)??a.amount+a.ghnFee,difference:a.amount+a.ghnFee-(comparisons.get(a.id)??a.amount+a.ghnFee),targetNo:labels.get(a.webOrderId?'web:'+a.webOrderId:a.orderId!)||a.targetKey}))};
 }
 export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
  const path='/sepay/transactions/:id/allocations';
@@ -65,13 +67,13 @@ export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
   const debts=await netReceivables(c.env.db,crm.map(r=>r.o.id),vietnamDate().iso);
   // POS transfer receipts already reduce debt; keep them selectable for linking without another receipt.
   const receipts=crm.length?await c.env.db.select({id:payments.id,orderId:payments.orderId,amount:payments.amount,paidAt:payments.paidAt,reference:payments.reference,source:payments.paymentSource}).from(payments).where(and(inArray(payments.orderId,crm.map(r=>r.o.id)),isNull(payments.voidedAt),or(and(eq(payments.method,'transfer'),eq(payments.paidAt,sepayPaidDate(event.transactionAt)),inArray(payments.paymentSource,['manual','sepay_auto','pos_transfer'])),eq(payments.paymentSource,'ghn_cod')),sql`not exists(select 1 from ${bank} where ${bank.paymentId}=${payments.id})`,sql`not exists(select 1 from ${allocations} where ${allocations.paymentId}=${payments.id} and ${allocations.voidedAt} is null)`)):[];
-  return json({offset,limit:50,hasMore:crm.length>50||ws.length>50,candidates:[...crm.slice(0,50).flatMap(({o,contractNo,ghnCode,ghnFeeHint})=>{const d=debts.get(o.id),existingPayments=receipts.filter(p=>p.orderId===o.id);return d&&(d.balance>0||existingPayments.length)?[{targetId:o.id,orderNo:o.orderNo,contractNo,invoiceNo:o.invoiceNo,customerName:o.customerName,total:o.total,paid:d.paid,outstanding:d.balance,existingPayments,ghnCode:ghnCode||'',ghnFeeHint:Number(ghnFeeHint)||0}]:[];}),...ws.slice(0,50).flatMap(({o,evidence})=>{const p=webOrderPayment(o,evidence);return !webOrderPaymentBlocked(o.status,o.ghnStatus)&&(p.outstanding===null||p.outstanding>0)?[{targetId:'web:'+o.id,orderNo:o.crmOrderNo||o.orderNo,customerName:o.customerName,total:o.total,paid:p.paid,outstanding:p.outstanding,paymentReviewRequired:p.paid===null,ghnCode:o.ghnOrderCode||'',ghnFeeHint:Number(o.ghnFee)||0,blockedReason:p.paymentEvidence==='conflict'?'Cần đối soát lại thay đổi đơn web.':''}]:[];})]});
+  return json({offset,limit:50,hasMore:crm.length>50||ws.length>50,candidates:[...crm.slice(0,50).flatMap(({o,contractNo,ghnCode,ghnFeeHint})=>{const d=debts.get(o.id),existingPayments=receipts.filter(p=>p.orderId===o.id);return d&&(d.balance>0||existingPayments.length)?[{targetId:o.id,orderNo:o.orderNo,contractNo,invoiceNo:o.invoiceNo,customerName:o.customerName,total:o.total,paid:d.paid,outstanding:d.balance,existingPayments,ghnCode:ghnCode||'',ghnFeeHint:o.channel==='pos'?posGhnFeeHint(o.posSnapshot,ghnCode):Number(ghnFeeHint)||0}]:[];}),...ws.slice(0,50).flatMap(({o,evidence})=>{const p=webOrderPayment(o,evidence);return !webOrderPaymentBlocked(o.status,o.ghnStatus)&&(p.outstanding===null||p.outstanding>0)?[{targetId:'web:'+o.id,orderNo:o.crmOrderNo||o.orderNo,customerName:o.customerName,total:o.total,paid:p.paid,outstanding:p.outstanding,paymentReviewRequired:p.paid===null,ghnCode:o.ghnOrderCode||'',ghnFeeHint:Number(o.ghnFee)||0,blockedReason:p.paymentEvidence==='conflict'?'Cần đối soát lại thay đổi đơn web.':''}]:[];})]});
  },'business');
  router.post(path,async c=>{
   assertSepayReconcileAccess(who(c));
   const b=await readJson(c.req,64000),key=String(b.clientKey||'');
   if(key.length<8||key.length>200||!Number.isSafeInteger(b.expectedRevision)||Number(b.expectedRevision)<0||!Array.isArray(b.lines)||!b.lines.length||b.lines.length>100)fail('Lô phân bổ không hợp lệ.',400);
-  const rows=await Promise.all(b.lines.map(async(x:any)=>{if(typeof x.targetId!=='string'||x.targetId.length>200||!Number.isSafeInteger(x.amount)||x.amount<=0||x.amount>1e12)fail('Dòng phân bổ không hợp lệ.',400);if(x.expectedAmount!==undefined&&(!Number.isSafeInteger(x.expectedAmount)||x.expectedAmount<=0||x.expectedAmount>1e12))fail('Số tiền đối chiếu không hợp lệ.',400);if(x.ghnFee!==undefined&&(!Number.isSafeInteger(x.ghnFee)||x.ghnFee<0||x.ghnFee>1e12))fail('Phí GHN không hợp lệ.',400);const ghnFee=Number(x.ghnFee??0),settled=Number(x.amount)+ghnFee;if(ghnFee&&x.expectedAmount!==undefined&&settled>x.expectedAmount)fail('Tiền ngân hàng nhận + phí GHN vượt số COD của đơn; kiểm tra lại phí GHN.',400);if(x.expectedAmount!==undefined&&x.expectedAmount!==settled&&x.differenceConfirmed!==true)fail('Cần xác nhận chênh lệch trước khi đối soát.',400);return {ghnFee,expectedAmount:Number(x.expectedAmount??settled),differenceConfirmed:x.differenceConfirmed===true,targetId:await canonical(c.env.db,x.targetId),amount:Number(x.amount),existingPaymentId:String(x.existingPaymentId||''),paymentReviewed:x.paymentReviewed===true};}));
+  const rows=await Promise.all(b.lines.map(async(x:any)=>{if(typeof x.targetId!=='string'||x.targetId.length>200||!Number.isSafeInteger(x.amount)||x.amount<=0||x.amount>1e12)fail('Dòng phân bổ không hợp lệ.',400);if(x.expectedAmount!==undefined&&(!Number.isSafeInteger(x.expectedAmount)||x.expectedAmount<=0||x.expectedAmount>1e12))fail('Số tiền đối chiếu không hợp lệ.',400);if(x.ghnFee!==undefined&&(!Number.isSafeInteger(x.ghnFee)||x.ghnFee<0||x.ghnFee>1e12))fail('Phí GHN không hợp lệ.',400);const ghnFee=Number(x.ghnFee??0),settled=Number(x.amount)+ghnFee;if(x.expectedAmount!==undefined&&x.expectedAmount!==settled&&x.differenceConfirmed!==true)fail('Cần xác nhận chênh lệch trước khi đối soát.',400);return {ghnFee,expectedAmount:Number(x.expectedAmount??settled),differenceConfirmed:x.differenceConfirmed===true,targetId:await canonical(c.env.db,x.targetId),amount:Number(x.amount),existingPaymentId:String(x.existingPaymentId||''),paymentReviewed:x.paymentReviewed===true};}));
   rows.sort((a,b)=>a.targetId.localeCompare(b.targetId));if(new Set(rows.map(r=>r.targetId)).size!==rows.length)fail('Trùng đơn/HĐKT/hóa đơn trong lô.',400);
   const hash=await sha256Hex(JSON.stringify({id:c.params.id,revision:b.expectedRevision,rows:rows.map(r=>({targetId:r.targetId,amount:r.amount,existingPaymentId:r.existingPaymentId,paymentReviewed:r.paymentReviewed,...(r.ghnFee?{ghnFee:r.ghnFee}:{}),...(r.expectedAmount!==r.amount+r.ghnFee?{expectedAmount:r.expectedAmount,differenceConfirmed:r.differenceConfirmed}:{})}))}));
   return json(await c.env.db.transaction(async tx=>{
@@ -85,11 +87,11 @@ export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
    if((state?.revision??0)!==b.expectedRevision)fail('Giao dịch vừa thay đổi; tải lại số tiền trước khi phân bổ.');
    const previous=await allocationRows(tx,e.id),used=previous.filter(a=>!a.voidedAt).reduce((n,a)=>n+a.amount,0),amount=rows.reduce((n,r)=>n+r.amount,0);
    if(amount>e.amount-used)fail('Tổng phân bổ vượt tiền thực nhận còn lại.');
-   const id=crypto.randomUUID(),at=new Date().toISOString(),comparisons:{allocationId:string;expectedAmount:number;amount:number;ghnFee:number;replacedPaymentId:string|null}[]=[];
+   const id=crypto.randomUUID(),at=new Date().toISOString(),comparisons:{allocationId:string;expectedAmount:number;amount:number;ghnFee:number;replacedPaymentId:string|null;settlementKind?:'ghn_cod';ghnCode?:string}[]=[];
    if(!state)await tx.insert(states).values({transactionId:e.id});
    await tx.insert(batches).values({id,transactionId:e.id,createdBy:who(c).id,clientKey:key,requestHash:hash,expectedRevision:Number(b.expectedRevision),createdAt:at,result:'{}'});
    for(const r of rows){
-    const aid=crypto.randomUUID();let replacedPaymentId:string|null=null,orderId:string|null=null,webOrderId:string|null=null,paymentId:string|null=null,feePaymentId:string|null=null,createdReceipt=false,total=0;
+    const aid=crypto.randomUUID();let carrierCode:string|undefined;let replacedPaymentId:string|null=null,orderId:string|null=null,webOrderId:string|null=null,paymentId:string|null=null,feePaymentId:string|null=null,createdReceipt=false,total=0;
     if(r.targetId.startsWith('web:')){
      webOrderId=r.targetId.slice(4);const [w]=await tx.select().from(web).where(eq(web.id,webOrderId)).for('update');
      if(!w||w.currency!=='VND'||!['lock','minhlong'].includes(w.source)||webOrderPaymentBlocked(w.status,w.ghnStatus))fail('Đơn web không đủ điều kiện nhận tiền.');
@@ -107,7 +109,11 @@ export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
       const [p]=await tx.select().from(payments).where(eq(payments.id,r.existingPaymentId)).for('update');
       if(p?.paymentSource==='ghn_cod'){
        // GHN already collected the full COD from the customer; the bank only shows COD minus carrier fees.
-       if(p.orderId!==orderId||p.voidedAt||r.expectedAmount!==p.amount||r.amount+r.ghnFee!==p.amount||r.ghnFee>=p.amount)fail('Phiếu "GHN đã thu COD" không khớp: tiền ngân hàng nhận + phí GHN phải bằng đúng số COD.');
+       if(p.orderId!==orderId||p.voidedAt||r.expectedAmount!==p.amount||r.ghnFee>=p.amount)fail('Phiếu "GHN đã thu COD" không khớp số COD đối chiếu.');
+       const [shipment]=await tx.select().from(deliveries).where(and(eq(deliveries.orderId,orderId),p.deliveryId?eq(deliveries.id,p.deliveryId):undefined,sql`upper(trim(${deliveries.carrier}))='GHN'`,sql`upper(trim(${deliveries.trackingCode}))=${p.reference.trim().toUpperCase()}`,sql`trim(${deliveries.trackingCode})<>''`,sql`${deliveries.status}<>'cancelled'`)).limit(1);
+       if(!shipment)fail('Vận đơn GHN của phiếu thu không còn khớp; cần kiểm tra lại.');
+       carrierCode=shipment.trackingCode;
+       if(r.amount+r.ghnFee!==p.amount&&!canReplaceSepayReceipt(who(c)))fail('Cần quyền duyệt chênh lệch phiếu thu khi đối soát SePay.',403);
        if((await tx.select({id:bank.id}).from(bank).where(eq(bank.paymentId,p.id))).length)fail('Phiếu thu đã khớp giao dịch khác.');
        if((await tx.select({id:allocations.id}).from(allocations).where(and(eq(allocations.paymentId,p.id),isNull(allocations.voidedAt))).limit(1)).length)fail('Phiếu thu đã nằm trong phân bổ khác.');
        paymentId=p.id;
@@ -139,7 +145,8 @@ export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
       }
      }
     }
-    comparisons.push({allocationId:aid,expectedAmount:r.expectedAmount,amount:r.amount,ghnFee:r.ghnFee,replacedPaymentId});
+    if(!carrierCode&&r.ghnFee&&r.amount+r.ghnFee>r.expectedAmount)fail('Tiền ngân hàng nhận + phí GHN vượt số COD của đơn; kiểm tra lại phí GHN.',400);
+    comparisons.push({...(carrierCode?{settlementKind:'ghn_cod' as const,ghnCode:carrierCode}:{}),allocationId:aid,expectedAmount:r.expectedAmount,amount:r.amount,ghnFee:r.ghnFee,replacedPaymentId});
     await tx.insert(allocations).values({id:aid,batchId:id,targetKey:webOrderId?'web:'+webOrderId:'order:'+orderId,orderId,webOrderId,amount:r.amount,targetTotal:total,paymentId,createdReceipt,ghnFee:r.ghnFee,feePaymentId,createdAt:at});
    }
    const result={batchId:id,comparisons,revision:Number(b.expectedRevision)+1,allocated:used+amount,remaining:e.amount-used-amount};

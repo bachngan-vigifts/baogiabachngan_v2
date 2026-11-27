@@ -38,7 +38,7 @@ try {
   assert.equal(await page.locator('[data-ghn-fee]').inputValue(), '5000');
   assert.equal(await page.locator('[data-review]').isEnabled(), true);
   await page.locator('[data-review]').click();
-  assert.match(await page.locator('.sa-review').innerText(), /Gắn phiếu đã có/);
+  assert.match(await page.locator('.sa-review').innerText(), /Giữ nguyên phiếu khách đã trả COD/);
   await page.locator('[data-verified]').check();
   await page.locator('[data-confirm]').click();
   const payload = await page.evaluate(() => window.sent[0].lines[0]);
