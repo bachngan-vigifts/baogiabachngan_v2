@@ -66,7 +66,7 @@ export async function financeCashflow(db: Db, f: FinanceRange) {
           gte(customerPayments.paidAt, f.from),
           lte(customerPayments.paidAt, f.to),
           isNull(customerPayments.voidedAt),
-          ne(customerPayments.paymentSource, "pos_exchange_credit"),
+          ne(customerPayments.paymentSource, "pos_exchange_credit"), ne(customerPayments.paymentSource, 'ghn_fee_offset'),
         ),
       )
       .groupBy(

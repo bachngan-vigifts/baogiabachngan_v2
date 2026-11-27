@@ -2,7 +2,7 @@ import { notifyCashApproval, notifyCashApprovers } from '../modules/sales/api/ca
 import { cashTasksChanged } from '../modules/sales/api/invoice-task-hooks.ts';
 import { allowedRegister, allowedDrawer, posScope } from '../modules/sales/api/pos-access.ts';
 import { auditLogs } from '../core/db/schema.ts';
-import { and, asc, count, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import type { Router, RouteContext } from '../core/http/router.ts';
 import { json, readJson } from '../core/http/router.ts';
 import { AppError } from '../core/errors.ts';
@@ -224,7 +224,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
       const creator = c.url.searchParams.get('createdBy') ?? '', method = c.url.searchParams.get('method') ?? 'cash', direction = c.url.searchParams.get('direction') ?? '';
       if (!['cash', 'transfer', 'other', 'all'].includes(method) || !['', 'in', 'out'].includes(direction) || creator.length > 120) throw new AppError(400, 'Bộ lọc Sổ quỹ không hợp lệ.');
       const manualBase = and(entryScope(c), eq(cashEntries.drawerId, drawerId), gte(cashEntries.createdAt, start), lt(cashEntries.createdAt, end));
-      const receiptBase = and(scope, eq(posShifts.cashDrawerId, drawerId), gte(customerPayments.createdAt, start), lt(customerPayments.createdAt, end));
+      const receiptBase = and(ne(customerPayments.paymentSource, 'ghn_fee_offset'), scope, eq(posShifts.cashDrawerId, drawerId), gte(customerPayments.createdAt, start), lt(customerPayments.createdAt, end));
       const manualWhere = and(
           manualBase, creator ? eq(cashEntries.createdBy, creator) : undefined, direction ? eq(cashEntries.direction, direction) : undefined, !['cash', 'all'].includes(method) ? sql`false` : undefined,
         ),
