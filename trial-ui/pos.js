@@ -1155,7 +1155,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
   const payLabel = () => st.busy ? 'Đang lưu đơn & in bill…' : st.method === 'cod' ? desktopPos()?(isAutoGhnRegister(st.register?.name)?'Tạo vận đơn GHN & in':'Tạo đơn COD & in'):'TIẾP TỤC TẠO ĐƠN COD' : desktopPos()&&st.method==='transfer'?'Xác nhận đã thu & in':'Thu tiền & in bill';
   function renderQuick(){
     if(!nodes.quick)return;nodes.quick.replaceChildren();
-    nodes.quick.append(button('Phí dịch vụ','btn secondary small',()=>{nodes.pcExtras.open=true;nodes.feeControls?.querySelector('button')?.click();}));
+    nodes.quick.append(button('Phí dịch vụ','btn secondary small',()=>{(nodes.feePanel||nodes.pcExtras).open=true;nodes.addFee?.click();}));
     for(const sku of workspace.recent){const p=st.cart.find(x=>x.sku===sku)||st.products.find(x=>x.sku===sku);if(p){const b=button('','btn secondary small',()=>add(p));b.append(el('span','pos-quick-label',sku+' · '+p.name));b.title=sku+' · '+p.name;b.disabled=!!st.pending||st.busy;nodes.quick.append(b);}}
   }
   function mountWorkspace(page,left,right,head,orderBoard,searchBox){
@@ -1402,7 +1402,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const shipping = field('Phí ship', 'number', st.shippingFee);
     shipping.input.min = '0'; shipping.input.step = '1'; shipping.input.inputMode = 'numeric'; shipping.input.placeholder = '0 đ';
     shipping.input.addEventListener('input', () => { st.shippingFee = shipping.input.value; invalidate(); });
-    const add = button('+ Thêm dòng', 'btn secondary small', () => {
+    const add = button('+ Thêm khoản phí', 'btn secondary small', () => {
       if (st.serviceFees.length >= 50) return;
       st.serviceFees.push({ name: '', quantity: '1', unitPrice: '' }); renderServices()?.focus(); invalidate();
     });
@@ -1410,7 +1410,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
       list.replaceChildren(); let lastName;
       for (const fee of st.serviceFees) {
         const service = el('div', 'pos-service-fee'), name = field('Khoản phí'), quantity = field('Số lượng', 'number', fee.quantity), amount = field('Đơn giá', 'number', fee.unitPrice), total = field('Thành tiền', 'text', '');
-        name.input.value = fee.name; name.input.placeholder = 'Ví dụ: Phí in, phí gói quà…'; name.input.maxLength = 200;
+        name.input.value = fee.name; name.input.placeholder = 'Ví dụ: Phí khắc, gói quà, túi…'; name.input.maxLength = 200;
         total.input.readOnly = true; total.input.tabIndex = -1;
         const update = () => { total.input.value = money((Number(fee.quantity) || 0) * (Number(fee.unitPrice) || 0)); }; update();
         for (const [f, property] of [[name, 'name'], [quantity, 'quantity'], [amount, 'unitPrice']]) {
@@ -1440,6 +1440,7 @@ export function initPos({ api, root, toast, user, confirmBox, go, onCloseShift, 
     const host=nodes.promotion,registerId=st.register.id;
     api('/pos/promotions?registerId='+encodeURIComponent(registerId)).then(d=>{if(nodes.promotion!==host||st.register?.id!==registerId)return;st.promotionProgram=d.program||null;updateTotals();}).catch(()=>{});
     nodes.feeControls = box;
+    nodes.addFee = add;
     nodes.shippingField = shipping.box;
   }
   /** VOUCHER nhập tay cho cả đơn (pos-money.ts › parsePosVoucher): mã / ghi chú + số tiền VNĐ hoặc %; máy chủ chia vào các dòng, trừ thẳng vào giá đã gồm VAT rồi tách lại VAT. */

@@ -595,7 +595,7 @@ test('POS: bảng đơn nằm cuối, thêm/xoá nhiều dòng phí và phí shi
     await ui.load();
     assert.equal(root.children[0]!.children.at(-1)!.className, 'pos-card pos-order-board');
     await root.querySelectorAll('button').find(b => b.className === 'pos-product')!.fire('click');
-    await root.querySelectorAll('button').find(b => b.textContent === '+ Thêm dòng')!.fire('click');
+    await root.querySelectorAll('button').find(b => b.textContent === '+ Thêm khoản phí')!.fire('click');
     const fee = root.querySelectorAll('div').find(e => e.className === 'pos-service-fee')!;
     assert.equal(fee.hidden, false);
     const [name, quantity, amount, feeTotal] = fee.querySelectorAll('input');
@@ -608,7 +608,7 @@ test('POS: bảng đơn nằm cuối, thêm/xoá nhiều dòng phí và phí shi
     await new Promise(r => setTimeout(r, 230));
     const request = calls.filter(c => c.path === '/pos/preview').at(-1)!;
     assert.deepEqual(request.body.serviceFees, [{ name: 'Phí in', quantity: '2', unitPrice: '10800' }]); assert.equal(request.body.shippingFee, '20000');
-    await root.querySelectorAll('button').find(b => b.textContent === '+ Thêm dòng')!.fire('click');
+    await root.querySelectorAll('button').find(b => b.textContent === '+ Thêm khoản phí')!.fire('click');
     const second = root.querySelectorAll('div').filter(e => e.className === 'pos-service-fee')[1]!;
     const [n2,q2,p2,t2] = second.querySelectorAll('input');
     n2!.value = 'Phí gói quà'; await n2!.fire('input'); q2!.value = '3'; await q2!.fire('input'); p2!.value = '65000'; await p2!.fire('input');
@@ -718,7 +718,7 @@ test('Ô ghi chú dưới phần phí, không huỷ xác nhận chuyển khoản
     const check = payment.querySelectorAll('input').find(i => i.type === 'checkbox')!;
     check.checked = true; await check.fire('change');
     const area = root.querySelectorAll('section').find(e => e.className === 'pos-extra-fees')!;
-    assert.equal(area.children.at(-2)!.textContent, '+ Thêm dòng', 'không còn dòng diễn giải dưới phần phí');
+    assert.equal(area.children.at(-2)!.textContent, '+ Thêm khoản phí', 'không còn dòng diễn giải dưới phần phí');
     const note = area.querySelectorAll('textarea')[0]!;
     const text = '<img src=x onerror=alert(1)>\nGiao chiều';
     note.value = text; await note.fire('input');
