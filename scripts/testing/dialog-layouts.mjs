@@ -10,9 +10,32 @@ const server=createServer(async(req,res)=>{try{const path=new URL(req.url,'http:
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']}),results=[];
 const audit=async(page,selector,name,width)=>results.push(await auditDialog(page,selector,name,width,out));
-try{for(const width of[1440,1024,390]){
+try{for(const width of[1440,1024,390,320]){
  const c=await browser.newContext({viewport:{width,height:900}});await c.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());const page=await c.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/');
  await page.evaluate(async()=>{const {installDialogLayouts}=await import('/dialog-layout.js');installDialogLayouts();const{customerFormFields}=await import('/customer-form-fields.js');document.querySelector('#customer-fields').append(customerFormFields({paymentDays:true}).root);const quick=document.querySelector('#tasks-quick');quick.hidden=false;quick.elements.assigneeId.innerHTML='<option value="emp">Tôi</option>';document.body.append(quick.closest('dialog'));});
+ // A reused dialog can replace its heading while it is already open.
+ const labelProbe = await page.evaluate(async () => {
+   const dialog = document.createElement('dialog');
+   dialog.innerHTML = '<header class="modal-head"><h2>Ban đầu</h2></header>';
+   document.body.append(dialog);
+   dialog.showModal();
+   const settle = () => new Promise(resolve => requestAnimationFrame(resolve));
+   await settle();
+   dialog.firstElementChild.innerHTML = '<h2>Đã cập nhật</h2>';
+   await settle();
+   const current = document.getElementById(dialog.getAttribute('aria-labelledby'))?.textContent;
+   dialog.firstElementChild.replaceChildren();
+   await settle();
+   const cleared = !dialog.hasAttribute('aria-labelledby');
+   dialog.setAttribute('aria-labelledby', 'explicit-title');
+   dialog.innerHTML = '<header class="modal-head"><h2>Khác</h2></header><span id="explicit-title">Nhãn riêng</span>';
+   await settle();
+   const explicit = dialog.getAttribute('aria-labelledby');
+   dialog.close();
+   dialog.remove();
+   return { current, cleared, explicit };
+ });
+ assert.deepEqual(labelProbe, {current:'Đã cập nhật', cleared:true, explicit:'explicit-title'});
  // Every existing static form with >=6 fields and a complete modal frame.
  const ids=await page.evaluate(()=>[...document.querySelectorAll('dialog')].filter(d=>!d.matches('.order-compose,.verify-page,.task-quick-dialog')&&d.querySelector('form .modal-body')&&d.querySelector('.modal-head')&&d.querySelector('.modal-foot')&&d.querySelectorAll('input:not([type=hidden]):not([type=file]):not([type=checkbox]):not([type=radio]),select,textarea').length>=6).map(d=>d.id));
  ids.push('tasks-quick-dialog');
