@@ -2,9 +2,34 @@
 // cameras and short confirmations keep their purpose-built layout.
 const excluded = '.compact-stock-dialog,.order-compose,.verify-page,.scan-dialog,.stocktake-camera,.stocktake-camera-dialog,.quote-capture-dialog,.order-print-dialog,.contract-docs,#image-dialog,#print-preview,.photo-box,.break-dialog,.breathing-dialog';
 
+let nextDialogTitle = 0;
+
+const automaticLabels = new WeakMap();
+
+function labelDialog(dialog) {
+  if (!(dialog instanceof HTMLDialogElement)) return;
+  const previous = automaticLabels.get(dialog);
+  const reference = dialog.getAttribute('aria-labelledby');
+  if (reference !== null && reference !== previous) return;
+  const title = dialog.querySelector('.modal-head h2');
+  if (!title || dialog.hasAttribute('aria-label')) {
+    if (previous && reference === previous) dialog.removeAttribute('aria-labelledby');
+    automaticLabels.delete(dialog);
+    return;
+  }
+  if (!title.id) {
+    let id;
+    do { id = 'crm-popup-title-' + ++nextDialogTitle; } while (document.getElementById(id));
+    title.id = id;
+  }
+  if (reference !== title.id) dialog.setAttribute('aria-labelledby', title.id);
+  automaticLabels.set(dialog, title.id);
+}
+
 export function fitDialog(dialog) {
   const drawer = dialog.matches('.sup-drawer');
   if (dialog.matches(excluded) || (drawer ? dialog.hidden : !dialog.open)) return false;
+  labelDialog(dialog);
   const form = dialog.querySelector('form');
   // A purchase drawer is reused for detail -> approve -> detail. Drop the old
   // fixed form frame when returning to plain details so the whole drawer scrolls.
