@@ -22,7 +22,7 @@ const vnDayRange = (date: string) => [addDaysIso(date, -1) + 'T17:00:00.000Z', d
 export async function dailySummary(db: Db, date: string, today = date) {
   const [from, to] = vnDayRange(date);
   const pay = await db.select({ method: customerPayments.method, amount: sql<number>`coalesce(sum(${customerPayments.amount}),0)::float8`, n: sql<number>`count(*)::int` })
-    .from(customerPayments).where(and(eq(customerPayments.paidAt, date), isNull(customerPayments.voidedAt))).groupBy(customerPayments.method);
+    .from(customerPayments).where(and(ne(customerPayments.paymentSource, 'ghn_fee_offset'), eq(customerPayments.paidAt, date), isNull(customerPayments.voidedAt))).groupBy(customerPayments.method);
   const [sup] = await db.select({ amount: sql<number>`coalesce(sum(${supplierPayments.amount}),0)::float8`, n: sql<number>`count(*)::int` })
     .from(supplierPayments).where(and(eq(supplierPayments.paidDate, date), isNull(supplierPayments.voidedAt)));
   const cash = await db.select({ direction: cashEntries.direction, amount: sql<number>`coalesce(sum(${cashEntries.amount}),0)::float8`, n: sql<number>`count(*)::int` })

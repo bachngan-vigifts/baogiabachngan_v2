@@ -22,8 +22,8 @@ import {vietnamDate} from '../domain/sales.ts';
 import {WEB_PAYMENT_BLOCKED_STATUSES} from '../domain/web-order-outcome.ts';
 type Ctx=RouteContext<StaffEnv>;
 /** Latest GHN tracking code of a CRM/POS order: the only evidence that lets a SePay line offset a carrier fee. */
-const ghnCodeOf=(id:unknown)=>sql<string|null>`(select d.tracking_code from ${deliveries} d where d.order_id=${id} and trim(d.tracking_code)<>'' and d.status<>'cancelled' order by d.planned_date desc nulls last,d.id desc limit 1)`;
-const ghnFeeHintOf=(id:unknown)=>sql<number|null>`(select d.shipping_fee from ${deliveries} d where d.order_id=${id} and trim(d.tracking_code)<>'' and d.status<>'cancelled' order by d.planned_date desc nulls last,d.id desc limit 1)`;
+const ghnCodeOf=(id:unknown)=>sql<string|null>`(select d.tracking_code from ${deliveries} d where d.order_id=${id} and upper(trim(d.carrier))='GHN' and trim(d.tracking_code)<>'' and d.status<>'cancelled' order by d.planned_date desc nulls last,d.id desc limit 1)`;
+const ghnFeeHintOf=(id:unknown)=>sql<number|null>`(select d.shipping_fee from ${deliveries} d where d.order_id=${id} and upper(trim(d.carrier))='GHN' and trim(d.tracking_code)<>'' and d.status<>'cancelled' order by d.planned_date desc nulls last,d.id desc limit 1)`;
 const who=(c:Ctx)=>(c.state.session as SessionState).member;
 function fail(message:string,status=409):never{throw new AppError(status,message);}
 async function canonical(db:CashDb,id:string){
@@ -102,6 +102,7 @@ export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
      else{const [reg]=await tx.select({account:registers.bankAccount}).from(posShifts).innerJoin(registers,eq(registers.id,posShifts.registerId)).where(eq(posShifts.id,o.shiftId||''));if(reg?.account.replace(/\s+/g,'')!==e.accountNumber)fail('Tài khoản nhận không khớp quầy POS.');}
      const [contract]=await tx.select({no:contracts.contractNo}).from(contracts).where(eq(contracts.orderId,orderId));
      if(!await sepayManualAccountApproved(tx,c.env,e.accountNumber,contract?.no))fail('Tài khoản ngân hàng chưa được duyệt ghi thu.');
+     if(r.ghnFee){const [g]=await tx.select({code:ghnCodeOf(orderId)}).from(orders).where(eq(orders.id,orderId));if(!g?.code)fail('Đơn chưa có vận đơn GHN; không cấn trừ phí GHN.');}
      if(r.existingPaymentId){
       const [p]=await tx.select().from(payments).where(eq(payments.id,r.existingPaymentId)).for('update');
       if(p?.paymentSource==='ghn_cod'){

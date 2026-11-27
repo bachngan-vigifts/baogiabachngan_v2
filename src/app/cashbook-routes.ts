@@ -32,7 +32,7 @@ export function registerCashbookRoutes(router: Router<StaffEnv>) {
     const [ins, outs, refunds, manual] = await Promise.all([
       db.select({ p: customerPayments, orderNo: salesOrders.orderNo, customerName: salesOrders.customerName }).from(customerPayments)
         .innerJoin(salesOrders, eq(salesOrders.id, customerPayments.orderId))
-        .where(and(ne(customerPayments.paymentSource,'pos_exchange_credit'), gte(customerPayments.paidAt, from), lte(customerPayments.paidAt, to))).orderBy(asc(customerPayments.paidAt), asc(customerPayments.createdAt)),
+        .where(and(ne(customerPayments.paymentSource,'pos_exchange_credit'), ne(customerPayments.paymentSource, 'ghn_fee_offset'), gte(customerPayments.paidAt, from), lte(customerPayments.paidAt, to))).orderBy(asc(customerPayments.paidAt), asc(customerPayments.createdAt)),
       db.select({ p: supplierPayments, ticketNumber: incomingShipments.ticketNumber, supplierName: incomingShipments.supplierName }).from(supplierPayments)
         .innerJoin(incomingShipments, eq(incomingShipments.id, supplierPayments.shipmentId))
         .where(and(gte(supplierPayments.paidDate, from), lte(supplierPayments.paidDate, to))).orderBy(asc(supplierPayments.paidDate), asc(supplierPayments.createdAt)),
