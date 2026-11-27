@@ -1,3 +1,4 @@
+import {financeGhnSettlements} from './finance-ghn.ts';
 import { sql } from "drizzle-orm";
 import { AppError } from "../core/errors.ts";
 import { json, type Router } from "../core/http/router.ts";
@@ -33,8 +34,7 @@ export function registerFinanceRoutes(router: Router<StaffEnv>): void {
       manager(c.state);
       const f = financeFilters(c.url.searchParams);
       await assertFinanceBranch(c.env.db, f.branch);
-      return json(
-        await cachedReport(
+      const report = await cachedReport(
           c.env.db,
           {
             scope: "finance-cashflow",
@@ -57,8 +57,10 @@ export function registerFinanceRoutes(router: Router<StaffEnv>): void {
                 closingBalance: null,
               };
             }),
-        ),
-      );
+        );
+      // Reconciliation / undo must not leave the separate GHN evidence stale for the cashflow cache TTL.
+      if(report.cache.hit)report.flow.ghnSettled=await financeGhnSettlements(c.env.db,f);
+      return json(report);
     },
     "business",
   );
