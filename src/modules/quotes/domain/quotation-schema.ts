@@ -151,6 +151,7 @@ export function cleanQuotation(input: unknown, opts: CleanOptions = {}): Obj {
     }
     for (const key of ['qty', 'price', 'discount', 'printFee', 'perCarton', 'cartonWeight', 'cartonLength', 'cartonWidth', 'cartonHeight']) clean[key] = number(row[key] ?? 0, key === 'discount' ? (row.discountType === 'amount' ? Number(row.price || 0) : 100) : 1e12);
     if (row.purchaseDiscount !== undefined && row.purchaseDiscount !== null) clean.purchaseDiscount = number(row.purchaseDiscount, 100);
+    if (row.supplierInfo !== undefined) clean.supplierInfo = text(row.supplierInfo, 2000);
     if (row.costPrice !== undefined) clean.costPrice = number(row.costPrice, 1e12);
     if (row.costMode !== undefined) {
       if (row.costMode !== 'manual' && row.costMode !== 'discount') throw bad('Cách nhập giá vốn không hợp lệ.');

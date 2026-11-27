@@ -10,7 +10,7 @@ const complete=(extra:any={})=>({deliveryDate:'2026-12-20',deliveryAddress:'Đ�
 async function fixture(printing=false,contract=false,choice:'B2B'|'VIGIFTS'|'SALE'='B2B'){
  const f=await setup();
  const q=ok(await f.call('/quotes',f.emp,'POST',{type:choice==='SALE'?'B2B':choice,...(choice==='SALE'?{template:'sale'}:{}),quoteNo:'SUBMIT-'+crypto.randomUUID(),customer:'Khách kiểm thử',customerTaxCode:'0312345678',customerCode:'SUBMIT-FIXTURE',customerAddress:'Địa chỉ khách trên báo giá',vat:8,shipping:{payer:'receiver'},rows:[{name:printing?'Ly sứ in logo':'Ly sứ',sku:'00123',unit:'cái',qty:2,price:100000,printFee:0,...(choice==='SALE'?{image:'https://example.test/sale-design.png',designImage:true}:{}),...(printing?{printDescription:'In logo miễn phí'}:{})}]}),201);
- ok(await f.call('/quotes/'+q.id+'/approve',f.mgr,'POST',{revision:1}));
+ if(choice==='SALE'){const stored=ok(await f.call('/quotes/'+q.id,f.mgr));stored.data.rows.forEach((r:any)=>Object.assign(r,{costPrice:50000,supplierInfo:'NCC kiểm thử'}));const saved=ok(await f.call('/quotes/'+q.id,f.mgr,'PUT',{revision:1,data:stored.data}));ok(await f.call('/quotes/'+q.id+'/approve',f.mgr,'POST',{revision:saved.revision}));}else ok(await f.call('/quotes/'+q.id+'/approve',f.mgr,'POST',{revision:1}));
  const made=ok(await f.call(contract?'/contracts':'/orders',f.emp,'POST',{quoteId:q.id,...(contract?{legalEntity:'BN'}:{})}),201);
  const id=made.orderId||made.id,path='/orders/'+id;
  const pre=()=>f.call(path+'/submission-review',f.emp);

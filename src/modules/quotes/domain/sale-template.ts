@@ -14,3 +14,11 @@ export function assertSaleTemplate(doc: { template?: unknown; type?: unknown; ro
       throw new AppError(400, `Báo giá Sale: nhập giá bán thực tế tại dòng ${i + 1}, không dùng chiết khấu ẩn.`);
   }
 }
+
+/** Internal sourcing is agreed at Sale quote approval, not during document conversion. */
+export function missingSalePurchasing(doc: {template?:unknown;rows?:Record<string,any>[]}): boolean {
+ return doc.template==='sale'&&(doc.rows||[]).some(r=>Number(r.qty)>0&&!!(r.name||r.sku)&&(!Number.isFinite(r.costPrice)||r.costPrice<0||!String(r.supplierInfo||'').trim()));
+}
+export function assertSalePurchasing(doc: {template?:unknown;rows?:Record<string,any>[]}): void {
+ if(missingSalePurchasing(doc))throw new AppError(400,'Báo giá Sale: bổ sung giá nhập và thông tin NCC cho từng sản phẩm trước khi duyệt hoặc sinh đơn/HĐKT.','SALE_PURCHASING_REQUIRED');
+}

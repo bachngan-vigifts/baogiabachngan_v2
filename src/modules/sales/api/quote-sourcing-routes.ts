@@ -1,3 +1,4 @@
+import {assertSalePurchasing} from '../../quotes/domain/sale-template.ts';
 import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import { AppError } from '../../../core/errors.ts';
 import { json, type Router } from '../../../core/http/router.ts';
@@ -24,6 +25,7 @@ export function registerQuoteSourcingRoutes(router: Router<StaffEnv>) {
     const [quote]=await db.select().from(quotations).where(and(eq(quotations.id,c.params.id!),quotationPredicate(member))).limit(1);
     if(!quote) throw new AppError(404,'Không tìm thấy báo giá.');
     const data=JSON.parse(quote.data), needs=new Map<string,{sku:string;name:string;unit:string;qty:number}>();
+    if(data.template==='sale'){assertSalePurchasing(data);return json({quoteId:quote.id,approvedSaleSourcing:true,lines:[],skipped:[]});}
     for(const row of data.rows||[]) {const sku=quoteStockSku(row),qty=Number(row.qty);if(!sku||!(qty>0))continue;
       const prior=needs.get(sku);needs.set(sku,{sku,name:String(row.name||sku),unit:String(row.unit||''),qty:(prior?.qty||0)+qty});}
     // Chỉ hàng Minh Long / Lock&Lock cần rà nguồn; mã khác bỏ qua bước này (trả riêng để giao diện ghi chú).

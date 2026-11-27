@@ -19,7 +19,7 @@ async function setup(){
  const mgr=(await call('/login','','POST',{email:'mgr@x.vn',password:PASSWORD})).cookie,emp=(await call('/login','','POST',{email:'emp@x.vn',password:PASSWORD})).cookie,ncc=(await call('/login','','POST',{email:'ncc@x.vn',password:PASSWORD})).cookie;
  return{...f,files,env,call,mgr,emp,ncc};
 }
-const doc=(no='SALE_BG_001_11112026')=>({type:'B2B',template:'sale',quoteNo:no,customer:'Khách giả lập',date:'2026-11-11',vat:8,rows:[{name:'Bình gốm',sku:'SKU',qty:10,price:100000,commission:{mode:'percent',value:0},printFee:5000,discount:0,image:'https://example.test/design-one.png',designImage:true,costPrice:123}]});
+const doc=(no='SALE_BG_001_11112026')=>({type:'B2B',template:'sale',quoteNo:no,customer:'Khách giả lập',date:'2026-11-11',vat:8,rows:[{name:'Bình gốm',sku:'SKU',qty:10,price:100000,commission:{mode:'percent',value:0},printFee:5000,discount:0,image:'https://example.test/design-one.png',designImage:true,costPrice:123,supplierInfo:'NCC thử · 0901234567'}]});
 const ok=(r:any,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
 test('Sale requires explicit design on create/update/submit/approval, keeps eight columns and preserves old quote behavior',async()=>{
  const f=await setup();try{
@@ -35,7 +35,7 @@ test('Sale requires explicit design on create/update/submit/approval, keeps eigh
   const broken={...q.data,rows:[{...q.data.rows[0],image:'',designImage:false}]};await f.db.update(quotations).set({data:JSON.stringify(broken)}).where(eq(quotations.id,q.id));
   assert.equal((await f.call('/quotes/'+q.id+'/submit',f.emp,'POST',{revision:1})).status,400);
   assert.equal((await f.call('/quotes/'+q.id+'/approve',f.mgr,'POST',{revision:1})).status,400);
-  await f.db.update(quotations).set({data:JSON.stringify(q.data)}).where(eq(quotations.id,q.id));
+  await f.db.update(quotations).set({data:JSON.stringify({...q.data,rows:q.data.rows.map((r:any)=>({...r,costPrice:123,supplierInfo:'NCC thử'}))})}).where(eq(quotations.id,q.id));
   ok(await f.call('/quotes/'+q.id+'/submit',f.emp,'POST',{revision:1}));ok(await f.call('/quotes/'+q.id+'/approve',f.mgr,'POST',{revision:1}));
   assert.equal((await f.call('/quotes/'+q.id+'/approve',f.mgr,'POST',{revision:9})).status,409);
   const old={...doc('B2B-BASIC'),template:undefined,rows:[{name:'Không cần ảnh',qty:1,price:1}]};assert.equal(ok(await f.call('/quotes',f.mgr,'POST',old),201).approvalStatus,'approved');
@@ -132,4 +132,20 @@ test('Sale description values survive create/read/update without changing pricin
  ok(await f.call('/quotes/'+q.id,f.emp,'PUT',{revision:1,data:edited}));const saved=ok(await f.call('/quotes/'+q.id,f.emp));
  assert.equal(saved.data.rows[0].volumeDescription,'300ml');assert.equal(saved.data.rows[0].brand,'Thương hiệu gốc');assert.equal(saved.data.rows[0].packagingDescription,'');assert.equal(saved.data.rows[0].price,q.data.rows[0].price);assert.equal(saved.data.rows[0].qty,q.data.rows[0].qty);assert.equal(saved.data.rows[0].printFee,q.data.rows[0].printFee);assert.equal(saved.approvalStatus,'draft');
  for(const field of ['materialDescription','brandDescription','volumeDescription'])assert.equal((await f.call('/quotes',f.emp,'POST',{...data,quoteNo:'SALE-LIMIT-'+field,rows:[{...data.rows[0],[field]:'x'.repeat(2001)}]})).status,400);
+});
+
+test('Sale approval requires supplier and cost; other templates keep their approval behavior',async()=>{
+ const f=await setup();try{
+ const body=doc('SALE-PURCHASE-REQUIRED');delete (body.rows[0] as any).supplierInfo;
+ const q=ok(await f.call('/quotes',f.mgr,'POST',body),201);assert.equal(q.approvalStatus,'draft');
+ assert.equal((await f.call('/quotes/'+q.id+'/approve',f.mgr,'POST',{revision:1})).data.code,'SALE_PURCHASING_REQUIRED');
+ assert.equal((await f.call('/quotes/'+q.id+'/stock-plan',f.mgr)).status,400);
+ const saved=ok(await f.call('/quotes/'+q.id,f.mgr,'PUT',{revision:1,data:doc('SALE-PURCHASE-REQUIRED')}));
+ ok(await f.call('/quotes/'+q.id+'/approve',f.mgr,'POST',{revision:saved.revision}));
+ const plan=ok(await f.call('/quotes/'+q.id+'/stock-plan',f.mgr));assert.equal(plan.approvedSaleSourcing,true);assert.deepEqual(plan.lines,[]);
+ const order=ok(await f.call('/orders',f.mgr,'POST',{quoteId:q.id}),201);assert.ok(order.id);
+ const cq=ok(await f.call('/quotes',f.mgr,'POST',{...doc('SALE-CONTRACT-READY'),customerTaxCode:'0312345678'}),201);const contract=ok(await f.call('/contracts',f.mgr,'POST',{quoteId:cq.id,legalEntity:'BN'}),201);assert.ok(contract.orderId);
+ const {withoutCosts}=await import('../../src/modules/quotes/domain/cost-privacy.ts');assert.equal(withoutCosts(doc()).rows[0].supplierInfo,undefined);
+ const old=ok(await f.call('/quotes',f.mgr,'POST',{...body,template:undefined,quoteNo:'B2B-UNCHANGED'}),201);assert.equal(old.approvalStatus,'approved');
+ }finally{/* createTestDb registers automatic cleanup. */}
 });

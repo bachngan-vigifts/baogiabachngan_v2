@@ -10,7 +10,7 @@ import { json, readJson } from '../../../core/http/router.ts';
 import { AppError } from '../../../core/errors.ts';
 import type { StaffEnv, SessionState } from '../../staff/api/auth-routes.ts';
 import { cleanQuotation } from '../domain/quotation-schema.ts';
-import { assertSaleTemplate, missingSaleDesign } from '../domain/sale-template.ts';
+import { assertSalePurchasing, missingSalePurchasing, assertSaleTemplate, missingSaleDesign } from '../domain/sale-template.ts';
 import { keepCosts, withoutCosts } from '../domain/cost-privacy.ts';
 import { autoQuoteHead, nextQuoteNoAfter, quoteHeadFor, quoteNumberPatterns } from '../domain/quote-number.ts';
 import { quoteHeaderIndex, quoteLineRows } from '../domain/quote-index.ts';
@@ -187,7 +187,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
       const condition = and(eq(quotations.id, c.params.id!), eq(quotations.revision, Number(body.revision)));
       const [quote] = await tx.select({ data: quotations.data }).from(quotations).where(condition).limit(1).for('update');
       if (!quote) return [];
-      const data = JSON.parse(quote.data); assertSaleTemplate(data);
+      const data = JSON.parse(quote.data); assertSaleTemplate(data); assertSalePurchasing(data);
       if (data.template === 'sale') await withDesignImages(c.env, data, true);
       return tx.update(quotations).set({ approvalStatus: 'approved', approvedAt: now, approvedBy: viewer.id }).where(condition).returning({ id: quotations.id });
     });
@@ -274,7 +274,7 @@ export function registerQuoteRoutes(router: Router<StaffEnv>, options: { remembe
     const raw = await readJson(c.req), data = cleanQuotation(isManager(viewer) ? raw : keepCosts(raw, null, true));
     checkDesignKeys(viewer, data);
     const viewData = await withDesignImages(c.env, forViewer(viewer, data), true);
-    const id = crypto.randomUUID(), now = new Date().toISOString(), approval = missingSaleDesign(data)
+    const id = crypto.randomUUID(), now = new Date().toISOString(), approval = missingSaleDesign(data) || missingSalePurchasing(data)
       ? {approvalStatus: 'draft' as const, approvedAt: null, approvedBy: null} : approvalOnCreate(viewer, now);
     let customerMemory: Awaited<ReturnType<QuoteCustomerMemory>> | undefined;
     await c.env.db.transaction(async tx => {
