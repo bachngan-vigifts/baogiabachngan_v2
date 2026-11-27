@@ -4,7 +4,7 @@ import {json,readJson,type Router,type RouteContext} from '../../../core/http/ro
 import type {StaffEnv,SessionState} from '../../staff/api/auth-routes.ts';
 import {sha256Hex} from '../../staff/domain/session.ts';
 import {sepayTransactions as bank} from '../../integrations/schema.ts';
-import {salesOrders as orders,salesContracts as contracts,customerPayments as payments} from '../schema.ts';
+import {salesOrders as orders,deliveries,salesContracts as contracts,customerPayments as payments} from '../schema.ts';
 import {webStoreOrders as web,posRegisters as registers,posShifts} from '../pos-schema.ts';
 import {assertSepayCrmSource} from './sepay-payment-store.ts';
 import {sepayPaidDate} from '../../integrations/domain/sepay-payment.ts';
@@ -55,10 +55,14 @@ export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
  router.get('/sepay/transactions/:id/allocation-candidates',async c=>{
   const event=await readEvent(c,c.env.db);const q=(c.url.searchParams.get('q')||'').trim(),raw=c.url.searchParams.get('offset')||'0';
   const source=c.url.searchParams.get('source')||'all',from=c.url.searchParams.get('from')||'',to=c.url.searchParams.get('to')||'';
-  if(!['all','crm','pos','web','contract'].includes(source)||[from,to].some(d=>d&&!/^\d{4}-\d{2}-\d{2}$/.test(d))||from&&to&&from>to)fail('Bộ lọc không hợp lệ.',400);
+  if(!['all','crm','pos','web','contract','ghn'].includes(source)||[from,to].some(d=>d&&!/^\d{4}-\d{2}-\d{2}$/.test(d))||from&&to&&from>to)fail('Bộ lọc không hợp lệ.',400);
   if(q.length>120||!/^\d{1,6}$/.test(raw))fail('Bộ lọc không hợp lệ.',400);const offset=Number(raw),pattern='%'+q.replace(/[\\%_]/g,'\\$&')+'%';
-  const crm=await c.env.db.select({o:orders,contractNo:contracts.contractNo}).from(orders).leftJoin(contracts,eq(contracts.orderId,orders.id)).where(and(orderScopeFor(who(c)),source==='web'?sql`false`:source==='pos'?eq(orders.channel,'pos'):source==='crm'?eq(orders.channel,'crm'):source==='contract'?isNotNull(contracts.id):undefined,from?sql`${orders.orderDate}>=${from}`:undefined,to?sql`${orders.orderDate}<=${to}`:undefined,sql`${orders.status}<>'cancelled'`,q?or(ilike(orders.orderNo,pattern),ilike(orders.invoiceNo,pattern),ilike(contracts.contractNo,pattern),ilike(orders.customerName,pattern)):undefined)).orderBy(desc(orders.createdAt),asc(orders.id)).limit(51).offset(offset);
-  const ws=await c.env.db.select({o:web,evidence:webSepayPaidAt()}).from(web).where(and(sepayWebOrderScope(who(c)),!['all','web'].includes(source)?sql`false`:undefined,from?sql`left(${web.orderedAt},10)>=${from}`:undefined,to?sql`left(${web.orderedAt},10)<=${to}`:undefined,inArray(web.source,['lock','minhlong']),q?or(ilike(web.orderNo,pattern),ilike(web.crmOrderNo,pattern),ilike(web.customerName,pattern),ilike(web.ghnOrderCode,pattern)):undefined)).orderBy(desc(web.orderedAt),asc(web.id)).limit(51).offset(offset);
+  const ghnDelivery=source==='ghn' ? sql`exists (
+    select 1 from ${deliveries} where ${deliveries.orderId}=${orders.id}
+    and upper(trim(${deliveries.carrier}))='GHN' and ${deliveries.status}<>'cancelled'
+  )` : undefined;
+  const crm=await c.env.db.select({o:orders,contractNo:contracts.contractNo}).from(orders).leftJoin(contracts,eq(contracts.orderId,orders.id)).where(and(orderScopeFor(who(c)),ghnDelivery,source==='web'?sql`false`:source==='pos'?eq(orders.channel,'pos'):source==='crm'?eq(orders.channel,'crm'):source==='contract'?isNotNull(contracts.id):undefined,from?sql`${orders.orderDate}>=${from}`:undefined,to?sql`${orders.orderDate}<=${to}`:undefined,sql`${orders.status}<>'cancelled'`,q?or(ilike(orders.orderNo,pattern),ilike(orders.invoiceNo,pattern),ilike(contracts.contractNo,pattern),ilike(orders.customerName,pattern)):undefined)).orderBy(desc(orders.createdAt),asc(orders.id)).limit(51).offset(offset);
+  const ws=await c.env.db.select({o:web,evidence:webSepayPaidAt()}).from(web).where(and(sepayWebOrderScope(who(c)),source==='ghn'?sql`trim(${web.ghnOrderCode})<>''`:!['all','web'].includes(source)?sql`false`:undefined,from?sql`left(${web.orderedAt},10)>=${from}`:undefined,to?sql`left(${web.orderedAt},10)<=${to}`:undefined,inArray(web.source,['lock','minhlong']),q?or(ilike(web.orderNo,pattern),ilike(web.crmOrderNo,pattern),ilike(web.customerName,pattern),ilike(web.ghnOrderCode,pattern)):undefined)).orderBy(desc(web.orderedAt),asc(web.id)).limit(51).offset(offset);
   const debts=await netReceivables(c.env.db,crm.map(r=>r.o.id),vietnamDate().iso);
   // POS transfer receipts already reduce debt; keep them selectable for linking without another receipt.
   const receipts=crm.length?await c.env.db.select({id:payments.id,orderId:payments.orderId,amount:payments.amount,paidAt:payments.paidAt,reference:payments.reference}).from(payments).where(and(inArray(payments.orderId,crm.map(r=>r.o.id)),isNull(payments.voidedAt),eq(payments.method,'transfer'),eq(payments.paidAt,sepayPaidDate(event.transactionAt)),inArray(payments.paymentSource,['manual','sepay_auto','pos_transfer']),sql`not exists(select 1 from ${bank} where ${bank.paymentId}=${payments.id})`,sql`not exists(select 1 from ${allocations} where ${allocations.paymentId}=${payments.id} and ${allocations.voidedAt} is null)`)):[];
