@@ -6,13 +6,13 @@ import {runInNewContext} from 'node:vm';
 import {missingPurchaseCost} from '../../trial-ui/purchase-cost-review.js';
 const source=readFileSync(new URL('../../trial-ui/app.js',import.meta.url),'utf8');
 const approval=source.slice(source.indexOf("$('#approve-quote').addEventListener"),source.indexOf("$('#reject-quote').addEventListener"));
-function fixture({manager=true,ready=true,rows=[{name:'Known',sku:'A',qty:1,costPrice:100}],reviewed=true,saveWorks=true}:any={}){
+function fixture({manager=true,ready=true,sale=false,rows=[{name:'Known',sku:'A',qty:1,costPrice:100}],reviewed=true,saveWorks=true}:any={}){
  let click:any;const calls:any[]=[],confirmations:any[]=[],reviews:any[]=[],messages:string[]=[];
  const editor:any={id:'q',revision:4,rows,dirty:false,approval:{canApprove:true,status:'pending'}};
- const context:any={editor,missingPurchaseCost,isManager:()=>manager,$:()=>({disabled:false,addEventListener:(_:string,fn:any)=>{click=fn;}}),
+ const context:any={editor,missingPurchaseCost,isSaleEditor:()=>sale,isManager:()=>manager,$:()=>({disabled:false,addEventListener:(_:string,fn:any)=>{click=fn;}}),
  api:async(path:string,method='GET',body?:any)=>{calls.push({path,method,body});return path.endsWith('approval-preflight')?{purchaseCostsReady:ready}:{approvedAt:'today',approvedByName:'Manager'};},
  confirmBox:async(...args:any[])=>{confirmations.push(args);return true;},
- refreshPurchaseCosts:async(opts:any)=>{reviews.push(opts);if(reviewed){for(const r of editor.rows)if(missingPurchaseCost(r))r.costPrice=123;editor.revision++;}return reviewed;},
+ refreshPurchaseCosts:async(opts:any)=>{reviews.push(opts);if(reviewed){for(const r of editor.rows){if(missingPurchaseCost(r))r.costPrice=123;if(sale&&!String(r.supplierInfo||'').trim())r.supplierInfo='NCC thử';}editor.revision++;}return reviewed;},
  saveQuote:async()=>{if(saveWorks){editor.dirty=false;editor.revision++;}},toast:(message:string)=>messages.push(message),updateQuoteActions(){},loadQuotes(){},refreshQuoteHold(){}};
  runInNewContext(approval,context);return {context,editor,calls,confirmations,reviews,messages,click:()=>click()};
 }
@@ -34,4 +34,10 @@ test('delegated approver never opens private costs; missing costs still require 
 });
 test('navigating to another quote while confirmation is open never approves the new quote',async()=>{
  const f=fixture();f.context.confirmBox=async()=>{f.editor.id='other';return true;};await f.click();assert.ok(!f.calls.some(c=>c.method==='POST'));
+});
+
+test('Sale with complete costs but missing supplier requires Manager review before approval',async()=>{
+ const f=fixture({sale:true,ready:false,rows:[{name:'Sale',qty:1,costPrice:400}]});await f.click();
+ assert.equal(f.confirmations.length,0);assert.equal(f.reviews.length,1);assert.equal(f.editor.rows[0].costPrice,400);assert.equal(f.editor.rows[0].supplierInfo,'NCC thử');assert.equal(f.calls.filter(c=>c.method==='POST').length,1);assert.equal(f.calls.at(-1).body.revision,5);
+ const delegated=fixture({sale:true,manager:false,ready:false});await delegated.click();assert.equal(delegated.reviews.length,0);assert.ok(!delegated.calls.some(c=>c.method==='POST'));assert.match(delegated.messages.at(-1)!,/Manager bổ sung giá nhập và thông tin NCC/);
 });
