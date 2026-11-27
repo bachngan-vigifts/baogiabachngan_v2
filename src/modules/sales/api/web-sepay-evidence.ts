@@ -40,7 +40,7 @@ const legacyWebPaidAt = () => sql<
 
 /** One monetary evidence projection for detail, lists, POS, COD and allocation caps. Woo claims are never added to it. */
 export const webSepayPaidAt=()=>sql<WebBankEvidence|null>`case when ${legacyWebPaidAt()} is not null then jsonb_build_object('paidAt',${legacyWebPaidAt()},'amount',${webCol(web.total)}) else
- (select jsonb_build_object('paidAt',min(sb.transaction_at),'amount',sum(a.amount),'reviewRequired',bool_or(a.target_total<>${webCol(web.total)})) from ${sepayPaymentAllocations} a join ${sepayAllocationBatches} b on b.id=a.batch_id join ${bank} sb on sb.id=b.transaction_id
+ (select jsonb_build_object('paidAt',min(sb.transaction_at),'amount',sum(a.amount+a.ghn_fee),'reviewRequired',bool_or(a.target_total<>${webCol(web.total)})) from ${sepayPaymentAllocations} a join ${sepayAllocationBatches} b on b.id=a.batch_id join ${bank} sb on sb.id=b.transaction_id
  where a.web_order_id=${webCol(web.id)} and a.voided_at is null and sb.transfer_type='in' having count(*)>0) end`;
 export const webSepayNeedsReview=()=>sql<boolean>`coalesce((${webSepayPaidAt()}->>'reviewRequired')::boolean,false)`;
 export const webSepayPaidAmount=()=>sql<number>`case when ${webSepayNeedsReview()} then 0 else coalesce((${webSepayPaidAt()}->>'amount')::float8,0) end`;

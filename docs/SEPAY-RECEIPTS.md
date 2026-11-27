@@ -74,3 +74,19 @@ Kiểm thử: `tests/app/sepay-allocation-difference.test.ts`, bộ `sepay-alloc
 Nếu cần rollback API/UI, giữ migration `20261125113000_sepay_allocation_overpayment.sql` và toàn bộ phiếu thu, phân bổ, kết quả lô, nhật ký. **Không khôi phục CHECK `target_total >= amount`**, không giảm số tiền hoặc xoá khoản trả dư để ép schema về bản cũ. Mã cũ có thể chặn thao tác phân bổ dư mới hoặc không hiển thị đầy đủ nhãn trả dư; tạm ngừng luồng ghi bị ảnh hưởng và ưu tiên sửa tiến để khôi phục giao diện công nợ có dấu. Không dùng việc thiếu nhãn ở mã cũ làm căn cứ điều chỉnh số tiền lịch sử.
 
 Migration đã được đăng ký trong `scripts/sql/november-migration-coverage.json`; workflow `deploy-api.yml` chạy gate `assert-sepay-overpayment.sql` ngay sau gate SePay allocations, trước thay đổi secret/API. Gate chỉ đọc, schema cũ phải thất bại; không tự chạy migration để sửa production.
+
+## Tiền GHN trả COD đã trừ phí (cấn trừ phí GHN)
+
+GHN chuyển về **tổng COD của nhiều đơn trừ phí GHN**. Ở màn "Đối soát chi tiết · nhiều đơn", lọc "Có vận đơn GHN" hoặc tìm theo mã vận đơn, thêm từng đơn và nhập:
+
+- **Nhận lần này**: số tiền ngân hàng thực nhận cho đơn (tổng các dòng = số tiền giao dịch).
+- **Phí GHN đã trừ**: gợi ý từ phí trên vận đơn, sửa theo bảng đối soát GHN.
+
+Tiền nhận + phí GHN = số được tính là khách đã trả. Quy tắc:
+
+- Chỉ dòng có vận đơn GHN mới nhập được phí; phí là số nguyên, nhỏ hơn số COD, và tiền nhận + phí không được vượt số COD/công nợ (phí không bao giờ tạo tiền khách trả dư). Phần thiếu không giải thích được vẫn để đơn còn nợ.
+- **Đơn CRM/HĐKT**: tạo phiếu chuyển khoản đúng số ngân hàng nhận + phiếu `ghn_fee_offset` (hình thức Khác, tham chiếu mã GHN) bằng số phí. Phiếu phí không tính vào tiền ngân hàng/sổ quỹ.
+- **Đơn website**: ghi phí ngay trên dòng phân bổ (`ghn_fee`); số đã thanh toán của đơn = tiền nhận + phí.
+- **Đơn POS giao COD**: gắn vào phiếu "GHN đã thu COD" có sẵn; tiền nhận + phí phải bằng đúng số COD. Không tạo phiếu thứ hai, không thay phiếu GHN. Mỗi phiếu GHN chỉ gắn một lần.
+- Gỡ phân bổ đơn CRM huỷ cả phiếu chuyển khoản lẫn phiếu cấn trừ phí. Tài khoản nhận vẫn phải là tài khoản đã duyệt của CRM/cửa hàng như các dòng khác.
+- Migration `20261127090000_sepay_allocation_ghn_fee.sql` (chỉ thêm cột/ràng buộc) phải chạy trước khi deploy; cổng chỉ đọc `assert-sepay-ghn-fee.sql`.

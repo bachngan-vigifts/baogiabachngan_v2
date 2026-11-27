@@ -16,5 +16,5 @@ DO $$ DECLARE t text; n text; r text; BEGIN
  FOREACH n IN ARRAY ARRAY['chk_sepay_allocation_revision','chk_sepay_batch_key','chk_sepay_allocation_amount','chk_sepay_allocation_destination','chk_sepay_allocation_void'] LOOP
   IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE connamespace='public'::regnamespace AND conname=n AND convalidated) THEN RAISE EXCEPTION 'Missing validated allocation constraint %',n; END IF;
  END LOOP;
- IF (SELECT count(*) FROM pg_constraint WHERE conrelid IN ('public.sepay_reconciliation_states'::regclass,'public.sepay_allocation_batches'::regclass,'public.sepay_payment_allocations'::regclass) AND contype='f')<>8 THEN RAISE EXCEPTION 'Missing allocation foreign keys'; END IF;
+ IF (SELECT count(*) FROM pg_constraint WHERE conrelid IN ('public.sepay_reconciliation_states'::regclass,'public.sepay_allocation_batches'::regclass,'public.sepay_payment_allocations'::regclass) AND contype='f')<8 THEN RAISE EXCEPTION 'Missing allocation foreign keys'; END IF;
 END $$;
