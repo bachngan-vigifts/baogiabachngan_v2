@@ -6,9 +6,11 @@ import {canReconcileSepay} from '../domain/sepay-page.ts';
 import {salesOrders} from '../schema.ts';
 import {webStoreOrders} from '../pos-schema.ts';
 import type {CashDb} from './cash-store.ts';
-import {orderScopeFor} from './routes.ts';
+import {orderScopeFor,canVoidPayment} from './routes.ts';
 import {posWebOrderStoreScope} from './pos-access.ts';
 export type SepayReconcileMember=SessionState['member'];
+/** Replacing a mis-keyed transfer receipt during SePay reconciliation: full void right, or the narrow SePay-only grant. */
+export const canReplaceSepayReceipt=(m:SepayReconcileMember)=>canVoidPayment(m)||canReconcileSepay(m)&&can(m,'sepay.replace-mismatch-receipt');
 export function assertSepayReconcileAccess(m:SepayReconcileMember){
  if(!canReconcileSepay(m))throw new AppError(403,'Bạn chưa được cấp quyền đối soát khoản thu SePay.');
 }
