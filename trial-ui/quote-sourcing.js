@@ -34,6 +34,7 @@ export async function initQuoteSourcing({api,host,quoteId,confirmBox,choosePurch
     const response=await api('/purchase-orders','POST',{clientKey:purchaseKeys.get(k),orders});purchaseKeys.delete(k);return response;};
   const data=await api('/quotes/'+encodeURIComponent(quoteId)+'/stock-plan');
   if(!isCurrent())return null;
+  if(data.approvedSaleSourcing){host.replaceChildren();return {read:()=>({}),prepare:async()=>({}),skipped:true};}
   // Chỉ hàng Minh Long / Lock&Lock cần rà nguồn (máy chủ lọc sẵn); mã khác bỏ qua bước này và sinh đơn/HĐKT như bình thường.
   const skipped=Array.isArray(data.skipped)?data.skipped:[],scopeLabel=data.scopeLabel||'Minh Long / Lock&Lock';
   const skippedNote=()=>{const p=el('p','muted small quote-source-skipped',`${skipped.length} mã ngoài ${scopeLabel} không cần rà nguồn: `+skipped.slice(0,8).map(l=>l.sku).join(', ')+(skipped.length>8?` và ${skipped.length-8} mã khác`:'')+'.');return p;};

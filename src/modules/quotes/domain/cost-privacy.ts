@@ -1,13 +1,13 @@
 /**
  * GIÁ VỐN CHỈ MANAGER THẤY. Với nhân viên, máy chủ bỏ khỏi báo giá:
- *  - mỗi dòng: giá nhập (`costPrice`), % CK mua vào (`purchaseDiscount`), chi phí in gia công (`printing`), CK cho khách (`commission`);
+ *  - mỗi dòng: thông tin NCC nội bộ (`supplierInfo`), giá nhập (`costPrice`), % CK mua vào (`purchaseDiscount`), chi phí in gia công (`printing`), CK cho khách (`commission`);
  *  - cả báo giá: chi phí in gia công tổng (`printing`).
  * Nhân viên lưu báo giá (không có các trường này) → giữ nguyên giá trị cũ của dòng tương ứng (theo `id` dòng), dòng mới thì không có.
  * Luồng nội bộ cho phép CK khách bằng allowCommission; mặc định vẫn ẩn/giữ CK để tương thích các nơi gọi khác. Hàm thuần.
  */
 type Obj = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-export const COST_ROW_KEYS = ['costPrice', 'costMode', 'purchaseDiscount', 'printing', 'commission'] as const;
+export const COST_ROW_KEYS = ['supplierInfo', 'costPrice', 'costMode', 'purchaseDiscount', 'printing', 'commission'] as const;
 export const COST_DOC_KEYS = ['printing'] as const;
 
 /** Bản báo giá không có giá vốn (gửi cho nhân viên). */

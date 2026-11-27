@@ -1,3 +1,4 @@
+import {assertSalePurchasing,missingSalePurchasing} from '../../quotes/domain/sale-template.ts';
 import {registerContractSourceRoutes} from './contract-template-sources.ts';
 import {registerSaleAdminHandoff,supportOrderScope,handlesQuote} from './sale-admin-handoff.ts';
 import {registerSubmissionReview,submissionQuoteFingerprint,submissionDeliveryFingerprint} from './submission-review.ts';
@@ -684,6 +685,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotationPredicate(me))).limit(1);
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới tạo được đơn hàng.', 'QUOTE_NOT_APPROVED');
+    assertSalePurchasing(JSON.parse(quote.data));
     const input = cleanOrderInput(body);
     const customOrderNo = text(body.orderNo, 120).replace(/\s+/g, ' ');
     if (customOrderNo && /[\u0000-\u001f<>]/.test(customOrderNo)) throw new AppError(400, 'Số đơn hàng không hợp lệ.');
@@ -773,7 +775,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     const data = JSON.parse(quote.data);
     return json({ customerName: quote.customer, asOf: vietnamDate().iso,
-      ...(canApprove(viewer(c)) ? { purchaseCostsReady: !approvalCosts(data).missingPurchase } : {}),
+      ...(canApprove(viewer(c)) ? { purchaseCostsReady: !approvalCosts(data).missingPurchase && !missingSalePurchasing(data) } : {}),
       debt: await approvalDebt(c.env.db, data.customerId || null, String(data.customerTaxCode || '')) });
   }, 'business');
 
@@ -1135,6 +1137,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const [quote] = await c.env.db.select().from(quotations).where(and(eq(quotations.id, quoteId), quotationPredicate(me))).limit(1);
     if (!quote) throw new AppError(404, 'Không tìm thấy báo giá.');
     if (quote.approvalStatus !== 'approved') throw new AppError(409, 'Báo giá chưa được duyệt. Chỉ báo giá đã duyệt mới lập được HĐKT.', 'QUOTE_NOT_APPROVED');
+    assertSalePurchasing(JSON.parse(quote.data));
     const entity = legalCode(body.legalEntity);
     if (!entity) throw new AppError(400, 'Chọn pháp nhân bên bán: Bách Ngân (BN), Vigifts (VG) hoặc QTV.');
     const sourceTerms = contractTermsFromQuote(JSON.parse(quote.data));

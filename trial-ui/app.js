@@ -2053,17 +2053,17 @@ async function refreshPurchaseCosts({ onlyMissing = false, approval = false } = 
   const targetId=editor.id, targetRevision=editor.revision, sourceRows=editor.rows;
   btn.disabled = true; btn.textContent = 'Đang tải CK…';
   try {
-    const selectedRows=onlyMissing?sourceRows.filter(missingPurchaseCost):sourceRows;
+    const selectedRows=onlyMissing?sourceRows.filter(r=>missingPurchaseCost(r)||(isSaleEditor()&&!String(r.supplierInfo||'').trim())):sourceRows;
     if(!selectedRows.length)return true;
     const skus=[...new Set(selectedRows.map(r=>(r.sku||'').trim()).filter(Boolean))],found=[];
     try { for(let i=0;i<skus.length;i+=200)found.push(...(await api('/products?skus='+encodeURIComponent(skus.slice(i,i+200).join(',')))).products); }
     catch { /* Review can use the product information already saved on each row. */ }
     if(editor.id!==targetId || editor.revision!==targetRevision || editor.rows!==sourceRows)return false;
     btn.textContent='Đang kiểm tra CK…';
-    const edits=await reviewPurchaseCosts(sourceRows,found,{onlyMissing,approval});
+    const edits=await reviewPurchaseCosts(sourceRows,found,{onlyMissing,approval,sale:isSaleEditor()});
     if(!edits)return false;
     if(editor.id!==targetId || editor.revision!==targetRevision || editor.rows!==sourceRows)throw new Error('Báo giá đang xem đã thay đổi. Vui lòng kiểm tra CK lại.');
-    for(const entry of edits)applyPurchaseCost(sourceRows[entry.index],entry);
+    for(const entry of edits){applyPurchaseCost(sourceRows[entry.index],entry);if(entry.supplierInfo!==undefined)sourceRows[entry.index].supplierInfo=entry.supplierInfo;}
     editor.showCostFields=true;refreshCostToggle();markDirty();renderLines();
     await saveQuote();
     if(editor.dirty)throw new Error('Chưa lưu được CK mua vào lên hệ thống.');
@@ -5904,8 +5904,8 @@ $('#approve-quote').addEventListener('click', async () => {
   try {
     const preflight = await api('/quotes/' + encodeURIComponent(targetId) + '/approval-preflight');
     if(editor.id!==targetId)return;
-    if (!isManager() && !preflight.purchaseCostsReady) { toast('Vui lòng nhờ Manager cập nhật giá mua trước khi duyệt báo giá.', 'err'); return; }
-    if (isManager() && editor.rows.some(missingPurchaseCost)) {
+    if (!isManager() && !preflight.purchaseCostsReady) { toast(isSaleEditor()?'Vui lòng nhờ Manager bổ sung giá nhập và thông tin NCC trước khi duyệt báo giá Sale.':'Vui lòng nhờ Manager cập nhật giá mua trước khi duyệt báo giá.', 'err'); return; }
+    if (isManager() && editor.rows.some(r=>missingPurchaseCost(r)||(isSaleEditor()&&!String(r.supplierInfo||'').trim()))) {
       if (!await refreshPurchaseCosts({onlyMissing:true,approval:true})) return;
     } else if (!await confirmBox('Duyệt báo giá này?', {title:'Duyệt báo giá',ok:'Duyệt báo giá'})) return;
     if(editor.id!==targetId)return;
