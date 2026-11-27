@@ -99,3 +99,27 @@ body dialog[open]:not(.order-compose,.verify-page) {
 @media (max-width:420px){ .product-link-row,.tax-lookup-row { flex-wrap:wrap; } .product-link-row .btn,.tax-lookup-row .btn { width:100%; } }
 .tax-lookup { margin:0 0 12px; padding:12px; border:1px dashed var(--line,#dce3ed); border-radius:10px; }
 .tax-lookup .warn { color:var(--danger,#b42318); }
+
+/* CRM dialogs with the standard header/body/footer, including short confirmations. */
+@media screen {
+  dialog.modal .modal-head { gap:12px; }
+  dialog.modal .modal-head > :first-child { min-width:0; overflow-wrap:anywhere; }
+  dialog.modal .modal-head > .icon-btn { flex:none; }
+}
+@media screen and (max-width: 899px) {
+  dialog.modal[open]:not(#print-preview,#image-dialog,.order-compose,.verify-page):has(> .modal-head + .modal-body + .modal-foot, > form > .modal-head + .modal-body + .modal-foot) {
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  dialog.modal[open] > form:has(> .modal-head + .modal-body + .modal-foot) {
+    display:flex; flex-direction:column; min-height:0;
+  }
+  dialog.modal[open]:not(#print-preview,#image-dialog,.order-compose,.verify-page) .modal-head:has(+ .modal-body + .modal-foot),
+  dialog.modal[open]:not(#print-preview,#image-dialog,.order-compose,.verify-page) .modal-body + .modal-foot {
+    flex:none; position:static;
+  }
+  dialog.modal[open]:not(#print-preview,#image-dialog,.order-compose,.verify-page) .modal-head + .modal-body:has(+ .modal-foot) {
+    min-height:0; overflow:auto; overscroll-behavior:contain; scroll-padding-block:12px;
+  }
+  dialog.modal .modal-head > .icon-btn { min-width:44px; min-height:44px; }
+  dialog.modal .modal-foot .btn { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+}

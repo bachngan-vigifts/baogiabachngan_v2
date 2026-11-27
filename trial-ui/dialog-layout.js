@@ -2,9 +2,23 @@
 // cameras and short confirmations keep their purpose-built layout.
 const excluded = '.compact-stock-dialog,.order-compose,.verify-page,.scan-dialog,.stocktake-camera,.stocktake-camera-dialog,.quote-capture-dialog,.order-print-dialog,.contract-docs,#image-dialog,#print-preview,.photo-box,.break-dialog,.breathing-dialog';
 
+let nextDialogTitle = 0;
+
+function labelDialog(dialog) {
+  if (!(dialog instanceof HTMLDialogElement) || dialog.hasAttribute('aria-labelledby') || dialog.hasAttribute('aria-label')) return;
+  const title = dialog.querySelector('.modal-head h2');
+  if (!title) return;
+  if (!title.id) {
+    do { title.id = 'crm-popup-title-' + ++nextDialogTitle; }
+    while (document.getElementById(title.id) !== title);
+  }
+  dialog.setAttribute('aria-labelledby', title.id);
+}
+
 export function fitDialog(dialog) {
   const drawer = dialog.matches('.sup-drawer');
   if (dialog.matches(excluded) || (drawer ? dialog.hidden : !dialog.open)) return false;
+  labelDialog(dialog);
   const form = dialog.querySelector('form');
   // A purchase drawer is reused for detail -> approve -> detail. Drop the old
   // fixed form frame when returning to plain details so the whole drawer scrolls.
