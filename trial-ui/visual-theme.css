@@ -102,6 +102,8 @@
   #view-editor .totals-card .grand { border-block-start: 1px solid var(--line-strong); font-variant-numeric: tabular-nums; }
   #view-editor .editor-head { border-block-end: 1px solid var(--line); padding-block-end: 10px; }
   :is(#view-editor, #view-quotes, #view-dashboard, .sidebar) :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  /* The search wrapper already displays focus around both icon and input. */
+  #view-quotes .search input:focus-visible { outline: none; }
   @media (max-width: 850px) {
     #view-editor .mobile-quote-summary strong { color: var(--ink); font-variant-numeric: tabular-nums; }
     #view-dashboard .dash-head { grid-template-columns: minmax(0, 1fr); }
