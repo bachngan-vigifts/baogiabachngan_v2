@@ -492,8 +492,9 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
       // Mã theo nội dung (request-keys.js): mạng rớt sau khi đã lưu, mở lại nhập y hệt → không ghi phiếu két lần hai.
       const entryKind = adjustment ? 'adjustment' : cashEntryKind(kind.value, direction, remittance);
       const content = { drawerId, adjustment, kind: kind.value.trim(), direction: dir.value, amount: Number(amount.input.value), reason: reason.input.value, recId: recId || null, photo: img ? img.length + ':' + img.slice(-32) : null };
-      await sendOnce('cash-entry', content, key => api('/cash/entries', 'POST', {
+      const post = (key, extra = {}) => api('/cash/entries', 'POST', {
         key,
+        ...extra,
         kind: entryKind,
         ...(!adjustment && !allowed.some(k => kinds[k] === kind.value.trim()) ? { entryName: kind.value.trim() } : {}),
         direction: dir.value,
@@ -501,7 +502,15 @@ export function initCash({ root, api: request, user, toast, go, onShiftClosed = 
         reason: reason.input.value,
         photo: img,
         reconciliationId: recId,
-      }));
+      });
+      await sendOnce('cash-entry', content, async key => {
+        try { return await post(key); }
+        catch (e) {
+          // Cùng số tiền với phiếu hoàn tiền mặt vừa ghi: chỉ gửi lại khi người lập xác nhận là khoản khác (máy chủ ghi nhật ký).
+          if (e.code !== 'CASH_ENTRY_SIMILAR_REFUND' || !window.confirm(e.message + '\n\nBấm OK nếu chắc chắn đây là khoản chi khác.')) throw e;
+          return post(key, { notDuplicateRefund: true });
+        }
+      });
       m.close();
       await load(); onChanged();
     });
