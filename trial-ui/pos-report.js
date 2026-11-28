@@ -45,9 +45,12 @@ export function shiftReportSections(d) {
     ...(d.returns ? [{ key: 'returns', title: 'Trả / đổi hàng', open: 'returns', rows: [
       ['Giá trị trả hàng đã thực nhận', money(d.returns.credit)],
       ['Giá trị bán trừ hàng trả trong ca', money(d.bills.revenue - d.returns.credit)],
+      ['Hoàn tiền mặt (trừ két)', money(d.returns.refundedCash), z(d.returns.refundedCash)],
       ['Hoàn chuyển khoản thực tế', money(d.returns.refundedTransfer), z(d.returns.refundedTransfer)],
-      ['Thanh toán bằng tiền đổi hàng', money(d.returns.exchanged), z(d.returns.exchanged)],
-    ], hidden: z(d.returns.credit) && z(d.returns.refundedTransfer) && z(d.returns.exchanged) }] : []),
+      ['Bù sang đơn đổi', money(d.returns.exchanged), z(d.returns.exchanged)],
+      ['Phiếu trả còn tiền chưa hoàn', d.returns.pendingRefunds ? `${d.returns.pendingRefunds.count} phiếu · ${money(d.returns.pendingRefunds.amount)}` : '', !d.returns.pendingRefunds?.count],
+      ...(d.returns.checks || []).map(c => [(c.level === 'block' ? '⛔ ' : '⚠ ') + c.message, c.refs.join(', ')]),
+    ], hidden: z(d.returns.credit) && z(d.returns.refundedCash) && z(d.returns.refundedTransfer) && z(d.returns.exchanged) && !d.returns.pendingRefunds?.count && !(d.returns.checks || []).length }] : []),
     { key: 'money', title: 'Tiền đã thu', open: 'cash', rows: [
       ['Tiền mặt thực thu', money(d.cash)],
       ['Chuyển khoản đã xác nhận', money(d.transfer)],
