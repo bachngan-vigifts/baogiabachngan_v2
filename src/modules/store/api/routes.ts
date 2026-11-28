@@ -113,7 +113,7 @@ async function dailyFacts(db: AnyDb, registerId: string, day: string, settings: 
     db.select({ id: posRefunds.id, refundNo: posRefunds.refundNo, returnId: posRefunds.returnId, returnNo: posReturns.returnNo, method: posRefunds.method, amount: posRefunds.amount,
       cashEntryId: posRefunds.cashEntryId, shiftId: posRefunds.shiftId, confirmedAt: posRefunds.confirmedAt })
       .from(posRefunds).innerJoin(posReturns, eq(posReturns.id, posRefunds.returnId))
-      .where(and(eq(posReturns.registerId, registerId), or(inArray(posRefunds.shiftId, ids), inArray(posRefunds.returnId, retIds)))).orderBy(asc(posRefunds.confirmedAt)),
+      .where(and(eq(posReturns.registerId, registerId), isNull(posRefunds.voidedAt), or(inArray(posRefunds.shiftId, ids), inArray(posRefunds.returnId, retIds)))).orderBy(asc(posRefunds.confirmedAt)),
     db.select({ returnId: posExchangeAllocations.returnId, amount: posExchangeAllocations.amount, status: posExchangeAllocations.status, orderId: posExchangeAllocations.replacementOrderId, orderNo: salesOrders.orderNo })
       .from(posExchangeAllocations).leftJoin(salesOrders, eq(salesOrders.id, posExchangeAllocations.replacementOrderId))
       .where(and(inArray(posExchangeAllocations.returnId, retIds), ne(posExchangeAllocations.status, 'cancelled'))),

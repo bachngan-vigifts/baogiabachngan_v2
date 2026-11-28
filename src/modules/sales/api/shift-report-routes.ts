@@ -87,7 +87,7 @@ export function registerShiftReportRoutes(router: Router<StaffEnv>): void {
     discounts as (select o.shift_id,sum(l.discount_amount) amount from orders o join sales_order_lines l on l.order_id=o.id group by o.shift_id),
     returns as (select received_shift_id shift_id,sum(total) amount from pos_returns where received_shift_id in(select id from live) and credit_effective_at<=${asOf} group by received_shift_id),
     refunds as (select shift_id,sum(amount) filter(where method='cash') cash,sum(amount) filter(where method='transfer') transfer from pos_refunds
-      where shift_id in(select id from live) and confirmed_at<=${asOf} group by shift_id),
+      where shift_id in(select id from live) and confirmed_at<=${asOf} and (voided_at is null or voided_at>${asOf}) group by shift_id),
     manual as (select ce.shift_id,
       coalesce(sum(ce.amount) filter(where ce.kind<>'adjustment' and ce.direction='in'),0) income,
       coalesce(sum(ce.amount) filter(where ce.kind<>'adjustment' and ce.direction='out'),0) expense,
