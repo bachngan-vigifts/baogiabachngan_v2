@@ -1,5 +1,6 @@
 import { printPos } from './pos-print.js';
 import { verifyBox } from './verify.js';
+import { refundMethodControls } from './crm-returns.js';
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -377,17 +378,22 @@ export async function openPosReturns({
               'Tôi xác nhận đã thực trả số tiền này cho khách',
               'checkbox',
             );
-          const refundKey = crypto.randomUUID();
+          const refundKey = crypto.randomUUID(),
+            methodUi = refundMethodControls(d.refundMethods, d.manager, amount.input, method);
           method.setAttribute('aria-label', 'Phương thức hoàn tiền');
+          const syncReference = () => { reference.box.hidden = method.value !== 'transfer'; };
+          method.addEventListener('change', syncReference); syncReference();
           controls.append(
             amount.box,
             method,
+            methodUi.box,
             reference.box,
             note.box,
             confirmed.box,
             button(
               'Xác nhận đã hoàn tiền',
               async () => {
+                methodUi.check();
                 await api('/pos/returns/' + r.id + '/refund', 'POST', {
                   key: refundKey,
                   shiftId: shift?.id,
@@ -396,6 +402,7 @@ export async function openPosReturns({
                   reference: reference.input.value,
                   note: note.input.value,
                   confirmed: confirmed.input.checked,
+                  ...methodUi.values(),
                 });
                 await show(id);
                 await onChanged();
@@ -462,7 +469,8 @@ export async function openPosReturns({
               ' · ' +
               (refund.method === 'cash' ? 'Tiền mặt' : 'Chuyển khoản') +
               ' · ' +
-              refund.reference,
+              refund.reference +
+              (refund.overrideBy ? ' · Khác phương thức thu: ' + refund.overrideReason + ' (' + refund.overrideEvidence + ')' : ''),
           ),
         );
       controls.append(

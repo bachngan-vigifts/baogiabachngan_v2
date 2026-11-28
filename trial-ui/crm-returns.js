@@ -6,6 +6,22 @@ const dates=v=>v?new Date(v).toLocaleString('vi-VN'):'';
 const states={pending:'Chờ duyệt',approved:'Đã duyệt · Chờ nhận hàng',processing:'Đã nhận · Đang đối trừ/hoàn tiền',completed:'Hoàn tất',cancelled:'Đã huỷ',rejected:'Đã từ chối'};
 function field(label,type='text'){const box=el('label','pos-field'),input=el(type==='textarea'?'textarea':'input');if(type!=='textarea')input.type=type;box.append(el('span','',label),input);return{box,input};}
 function select(label,rows){const box=el('label','pos-field'),input=el('select');for(const [value,text]of rows){const option=el('option','',text);option.value=value;input.append(option);}box.append(el('span','',label),input);return{box,input};}
+const CHANNELS={cash:'Tiền mặt',transfer:'Chuyển khoản',carrier:'GHN đang giữ',credit:'Tín dụng đổi hàng',other:'Khác'};
+/** Default refund channel = how the customer paid; a different channel is a Manager override with reason + evidence (server enforces). */
+export function refundMethodControls(info,manager,amountInput,methodInput){
+ const box=el('div','pos-refund-method'),reason=field('Lý do hoàn khác phương thức thu (Manager, ít nhất 10 ký tự)','textarea'),evidence=field('Bằng chứng (mã giao dịch, ảnh, xác nhận của khách)'),warn=el('p','error'),impact=el('p','pos-note');
+ const paid=info?Object.entries(info.paid).filter(([,n])=>n>0).map(([k,n])=>CHANNELS[k]+' '+money(n)).join(' · '):'';
+ box.append(el('p','pos-note','Khách đã trả: '+(paid||'chưa có khoản thu')+(info?` · Còn hoàn cùng phương thức: tiền mặt ${money(info.remaining.cash)}, chuyển khoản ${money(info.remaining.transfer)}`:'')));
+ for(const p of info?.payments||[])box.append(el('p','pos-note',`· ${dates(p.paidAt)} ${CHANNELS[p.channel]||p.channel} ${money(p.amount)}${p.reference?' · '+p.reference:''}`));
+ box.append(impact,warn,reason.box,evidence.box);
+ const crossed=()=>!!info&&Number(amountInput.value||0)>0&&Number(amountInput.value||0)>(info.remaining[methodInput.value]||0);
+ const update=()=>{const c=crossed(),v=Number(amountInput.value||0);reason.box.hidden=evidence.box.hidden=!c||!manager;
+  warn.textContent=c?(manager?'Khác phương thức khách đã trả: bắt buộc ghi lý do và bằng chứng.':'Khác phương thức khách đã trả: cần Manager xác nhận.'):'';
+  impact.textContent=v>0?(methodInput.value==='cash'?'Ảnh hưởng két: két giảm '+money(v)+' ở ca đang mở của bạn.':'Ảnh hưởng két: không đổi tiền mặt; ghi Sổ thu/chi hình thức chuyển khoản.'):'';};
+ if(info?.defaultMethod)methodInput.value=info.defaultMethod;
+ amountInput.addEventListener('input',update);methodInput.addEventListener('change',update);update();
+ return{box,update,values:()=>crossed()?{overrideReason:reason.input.value.trim(),overrideEvidence:evidence.input.value.trim()}:{},check(){if(crossed()&&manager&&(reason.input.value.trim().length<10||!evidence.input.value.trim()))throw Error('Hoàn khác phương thức thu: nhập lý do (ít nhất 10 ký tự) và bằng chứng.');}};
+}
 /** The order's existing scope and server-computed quantities/money authorize every transition. */
 export async function openCrmReturns({api,toast,orderId,onChanged=()=>{}}){
  const dlg=el('dialog','pos-modal pos-return-modal'),body=el('div','pos-modal-content'),head=el('div','pos-return-head'),content=el('div');dlg.dataset.mobileActions='off';
@@ -48,8 +64,8 @@ export async function openCrmReturns({api,toast,orderId,onChanged=()=>{}}){
     amount=field('Số tiền hoàn cho khách (tối đa '+money(refundable)+'; 0 = không hoàn)','number');amount.input.min='0';amount.input.max=String(refundable);amount.input.step='1';const ask=r.refundRequest;amount.input.value=String(ask&&!refunded?Math.min(ask.amount,refundable):refundable);
     method=select('Hình thức hoàn',[['transfer','Chuyển khoản'],['cash','Tiền mặt (cần ca két của bạn đang mở)']]);
     drawer=select('Két ghi nhận',d.drawers.map(x=>[x.id,x.name]));reference=field('Mã giao dịch chuyển khoản');
-    method.input.onchange=()=>{reference.box.hidden=method.input.value!=='transfer';};if(ask&&!refunded){method.input.value=ask.method;reference.input.value=ask.reference||'';method.input.onchange();form.append(el('p','pos-note',`Nhân viên đề nghị hoàn ${money(ask.amount)} · ${ask.method==='cash'?'Tiền mặt':'Chuyển khoản'}${ask.reference?' · '+ask.reference:''}${ask.note?' · '+ask.note:''}${ask.amount>refundable?' (vượt tiền dư '+money(refundable)+', đã điền mức tối đa)':''}`));}
-    form.append(el('p','',`Tiền dư có thể hoàn: ${money(refundable)}`),amount.box,method.box,drawer.box,reference.box);
+    method.input.onchange=()=>{reference.box.hidden=method.input.value!=='transfer';};var methodUi=refundMethodControls(d.refundMethods,d.manager,amount.input,method.input);method.input.onchange();if(ask&&!refunded){method.input.value=ask.method;reference.input.value=ask.reference||'';method.input.onchange();methodUi.update();form.append(el('p','pos-note',`Nhân viên đề nghị hoàn ${money(ask.amount)} · ${ask.method==='cash'?'Tiền mặt':'Chuyển khoản'}${ask.reference?' · '+ask.reference:''}${ask.note?' · '+ask.note:''}${ask.amount>refundable?' (vượt tiền dư '+money(refundable)+', đã điền mức tối đa)':''}`));}
+    form.append(el('p','',`Tiền dư có thể hoàn: ${money(refundable)}`),amount.box,method.box,methodUi.box,drawer.box,reference.box);
    }else if(refundable>0)form.append(el('p','pos-note',`Còn ${money(refundable)} tiền dư: cần người có quyền thu chi hoàn tiền, phiếu sẽ dừng ở bước đối soát.`));
    const check=el('label','pos-transfer-confirm'),box=el('input');box.type='checkbox';check.append(box,el('span','',r.receivedAt?'Tôi xác nhận thông tin hoàn tiền là đúng.':'Tôi xác nhận kho đã nhận đủ đúng số hàng trên phiếu.'));form.append(check);
    const key=crypto.randomUUID();
@@ -58,7 +74,7 @@ export async function openCrmReturns({api,toast,orderId,onChanged=()=>{}}){
     const body={confirmed:true};
     if(needBasis){if(basisChoice.input.value==='damaged')body.unprovenAsDamaged=true;else body.stockBasis={kind:kind.input.value,note:bnote.input.value,...(kind.input.value==='adjustment'?{adjustmentRefNo:refNo.input.value}:{})};}
     if(amount){const value=Number(amount.input.value);if(!Number.isSafeInteger(value)||value<0||value>refundable)throw Error('Số tiền hoàn từ 0 đến '+money(refundable)+'.');
-     if(value>0){if(!drawer.input.value)throw Error('Chọn két ghi nhận.');if(method.input.value==='transfer'&&!reference.input.value.trim())throw Error('Nhập mã giao dịch chuyển khoản đã hoàn cho khách.');body.refund={key,amount:value,method:method.input.value,drawerId:drawer.input.value,reference:reference.input.value};}}
+     if(value>0){if(!drawer.input.value)throw Error('Chọn két ghi nhận.');if(method.input.value==='transfer'&&!reference.input.value.trim())throw Error('Nhập mã giao dịch chuyển khoản đã hoàn cho khách.');methodUi.check();body.refund={key,amount:value,method:method.input.value,drawerId:drawer.input.value,reference:reference.input.value,...methodUi.values()};}}
     const res=await api(base+'/'+r.id+'/finalize','POST',body);
     toast(res.status==='completed'?'Đã xử lý xong '+r.returnNo+'.':'Đã duyệt và nhận hàng '+r.returnNo+'; còn '+money(res.available)+' tiền dư chờ hoàn.','ok');
     await show();await onChanged();
@@ -87,15 +103,15 @@ export async function openCrmReturns({api,toast,orderId,onChanged=()=>{}}){
    if(r.status==='processing'&&!logistics&&!canFinalize){
     const refunded=r.refunds.reduce((n,x)=>n+x.amount,0),available=Math.min(d.account.available,Math.max(0,r.total-refunded));
     if(d.canRefund&&available>0)actions.append(button('Hoàn tiền',async()=>{
-     const form=el('section','pos-return-card'),amount=field('Số tiền thực hoàn (tối đa '+money(available)+')','number'),method=select('Hình thức',[['transfer','Chuyển khoản'],['cash','Tiền mặt']]),drawer=select('Két ghi nhận',[['','Chọn két'],...d.drawers.map(x=>[x.id,x.name])]),reference=field('Mã giao dịch chuyển khoản'),note=field('Ghi chú xác nhận','textarea');amount.input.min='1';amount.input.max=String(available);amount.input.step='1';amount.input.value=String(available);const key=crypto.randomUUID();
-     form.append(el('h3','','Hoàn tiền '+r.returnNo),amount.box,method.box,drawer.box,reference.box,note.box,button('Quay lại',show),button('Kiểm tra hoàn tiền',async()=>{
-      const value=Number(amount.input.value),payload={key,amount:value,method:method.input.value,drawerId:drawer.input.value,reference:reference.input.value,note:note.input.value,confirmed:true};if(!Number.isSafeInteger(value)||value<=0||value>available||!payload.drawerId||payload.method==='transfer'&&!payload.reference.trim())throw Error('Kiểm tra số tiền, két và mã giao dịch chuyển khoản.');
+     const form=el('section','pos-return-card'),amount=field('Số tiền thực hoàn (tối đa '+money(available)+')','number'),method=select('Hình thức',[['transfer','Chuyển khoản'],['cash','Tiền mặt']]),drawer=select('Két ghi nhận',[['','Chọn két'],...d.drawers.map(x=>[x.id,x.name])]),reference=field('Mã giao dịch chuyển khoản'),note=field('Ghi chú xác nhận','textarea');amount.input.min='1';amount.input.max=String(available);amount.input.step='1';amount.input.value=String(available);const key=crypto.randomUUID(),methodUi=refundMethodControls(d.refundMethods,d.manager,amount.input,method.input);reference.box.hidden=method.input.value!=='transfer';method.input.addEventListener('change',()=>{reference.box.hidden=method.input.value!=='transfer';});
+     form.append(el('h3','','Hoàn tiền '+r.returnNo),amount.box,method.box,methodUi.box,drawer.box,reference.box,note.box,button('Quay lại',show),button('Kiểm tra hoàn tiền',async()=>{
+      methodUi.check();const value=Number(amount.input.value),payload={key,amount:value,method:method.input.value,drawerId:drawer.input.value,reference:reference.input.value,note:note.input.value,confirmed:true,...methodUi.values()};if(!Number.isSafeInteger(value)||value<=0||value>available||!payload.drawerId||payload.method==='transfer'&&!payload.reference.trim())throw Error('Kiểm tra số tiền, két và mã giao dịch chuyển khoản.');
       await confirm('Xác nhận đã hoàn tiền thực tế',`${money(value)} · ${method.input.selectedOptions[0].textContent} · ${drawer.input.selectedOptions[0].textContent}${payload.reference?' · '+payload.reference:''}. Chỉ xác nhận khi khách đã nhận tiền.`, 'Đã hoàn tiền',()=>api(base+'/'+r.id+'/refund','POST',payload));
      },true));content.replaceChildren(form);
     }));
     if(d.account.available<=0||refunded>=r.total)actions.append(button('Hoàn tất phiếu trả',()=>confirm('Hoàn tất '+r.returnNo,'Hàng trả đã được nhận và phần công nợ/hoàn tiền đã xử lý. Không phát sinh chi tiền ở bước này.','Hoàn tất',()=>api(base+'/'+r.id+'/complete','POST',{})),true));
    }
-   for(const f of r.refunds)card.append(el('p','pos-note',`${f.refundNo} · ${money(f.amount)} · ${f.method==='cash'?'Tiền mặt':'Chuyển khoản'} · ${f.reference||''} · ${f.confirmedByName||f.confirmedBy} · ${dates(f.confirmedAt)}`));
+   for(const f of r.refunds)card.append(el('p','pos-note',`${f.refundNo} · ${money(f.amount)} · ${f.method==='cash'?'Tiền mặt':'Chuyển khoản'} · ${f.reference||''} · ${f.confirmedByName||f.confirmedBy} · ${dates(f.confirmedAt)}${f.overrideBy?' · Khác phương thức thu: '+f.overrideReason+' ('+f.overrideEvidence+')':''}`));
    card.append(actions);content.append(card);
   }
   if(!['draft','cancelled'].includes(d.order.status)&&d.lines.some(l=>l.returnableQty>0&&l.sku)){

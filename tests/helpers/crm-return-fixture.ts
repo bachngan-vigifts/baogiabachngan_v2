@@ -7,7 +7,7 @@ import { postMoves } from '../../src/modules/inventory/api/ledger.ts';
 export async function setupCrmReturns(){
  const f=await setup();await f.db.update(employees).set({positionId:'sale'}).where(eq(employees.id,'emp'));
  /** `issued`: đơn đã xuất kho có bút toán (mặc định). false = đơn cũ giao khi chưa ghi xuất – trả hàng cần căn cứ nhập lại. */
- const seed=async(id:string,paid=2186125,ownerId='emp',issued=true)=>{
+ const seed=async(id:string,paid=2186125,ownerId='emp',issued=true,method:'transfer'|'cash'='transfer')=>{
   const at=new Date().toISOString();await f.db.insert(salesOrders).values({id,orderNo:'DH-'+id,channel:'crm',quoteType:'B2B',status:'delivered',customerName:'Khách trả hàng',ownerId,createdBy:ownerId,orderDate:'2026-10-14',subtotal:4048380,tax:323870,total:4372250,createdAt:at,updatedAt:at,invoiceNo:'0002026',invoiceStatus:'issued'});
   await f.db.insert(salesOrderLines).values([{id:id+'-a',orderId:id,lineNo:1,sku:'09566',name:'Bộ đồ ăn 09 sản phẩm Jasmine Thạch Vân',unit:'Bộ',qty:2,deliveredQty:2,unitPrice:741150,amount:1482300,taxRate:8},{id:id+'-b',orderId:id,lineNo:2,sku:'22566',name:'Bộ đồ ăn 22 sản phẩm Jasmine Thạch Vân',unit:'Bộ',qty:2,deliveredQty:2,unitPrice:1283040,amount:2566080,taxRate:8}]);
   if(issued)for(const [line,sku] of [[id+'-a','09566'],[id+'-b','22566']] as const){
@@ -15,7 +15,7 @@ export async function setupCrmReturns(){
    await postMoves(f.db,'mgr',[{sku,warehouseId:'pos-wh',qty:-2,kind:'sale',refType:'sales_order',refId:id}]);
   }
   await f.db.insert(paymentSchedules).values({id:'schedule-'+id,orderId:id,kind:'balance',amount:4372250,dueDate:'2026-10-15',createdAt:at});
-  if(paid)await f.db.insert(customerPayments).values({id:'paid-'+id,orderId:id,amount:paid,paidAt:'2026-10-14',method:'transfer',createdBy:'mgr',createdAt:at});
+  if(paid)await f.db.insert(customerPayments).values({id:'paid-'+id,orderId:id,amount:paid,paidAt:'2026-10-14',method,createdBy:'mgr',createdAt:at});
  };
  const ok=(r:any,status=200)=>{assert.equal(r.status,status,JSON.stringify(r.data));return r.data;};
  const create=async(id:string,lines:any[],extra:any={})=>{const body={purpose:'credit',key:crypto.randomUUID(),warehouseId:'pos-wh',reason:'Khách trả hàng',lines,...extra};return{body,data:ok(await f.call('/orders/'+id+'/returns',f.emp,'POST',body),201)};};

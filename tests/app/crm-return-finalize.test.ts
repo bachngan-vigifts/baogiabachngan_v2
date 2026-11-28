@@ -27,14 +27,15 @@ test('một bước: đơn còn nợ thì không có tiền hoàn, tự hoàn t�
  const out=f.ok(await f.call(fin('debt',r.id),f.mgr,'POST',{confirmed:true}));assert.deepEqual(out.steps,['approved','received','completed']);
 });
 test('một bước: lỗi ở bước hoàn tiền thì không bước nào được ghi (vẫn chờ duyệt, chưa nhập kho)',async()=>{
- const f=await setupCrmReturns();await f.seed('cashfail');
+ const f=await setupCrmReturns();await f.seed('cashfail',2186125,'emp',true,'cash');
  const {data:r}=await f.create('cashfail',[{orderLineId:'cashfail-b',qty:2,disposition:'restock'}]);
  const res=await f.call(fin('cashfail',r.id),f.mgr,'POST',{confirmed:true,refund:{key:crypto.randomUUID(),amount:585241,method:'cash',drawerId:'store'}});
  assert.equal(res.status,409);assert.equal(res.data.code,'REFUND_SHIFT_REQUIRED');assert.match(res.data.error,/chuyển khoản/);
  const [row]=await f.db.select().from(posReturns).where(eq(posReturns.id,r.id));assert.equal(row!.status,'pending');assert.equal(row!.receivedAt,null);
  assert.equal((await f.db.select().from(stockMoves).where(eq(stockMoves.refId,r.id))).length,0);
- // Đổi sang chuyển khoản là xong ngay, không phải lập lại phiếu.
- f.ok(await f.call(fin('cashfail',r.id),f.mgr,'POST',{confirmed:true,refund:{key:crypto.randomUUID(),amount:585241,method:'transfer',reference:'CK-9',drawerId:'store'}}));
+ // Khách trả tiền mặt: đổi sang chuyển khoản là khác phương thức gốc, Manager phải ghi lý do + bằng chứng; không phải lập lại phiếu.
+ assert.equal((await f.call(fin('cashfail',r.id),f.mgr,'POST',{confirmed:true,refund:{key:crypto.randomUUID(),amount:585241,method:'transfer',reference:'CK-9',drawerId:'store'}})).status,400);
+ f.ok(await f.call(fin('cashfail',r.id),f.mgr,'POST',{confirmed:true,refund:{key:crypto.randomUUID(),amount:585241,method:'transfer',reference:'CK-9',drawerId:'store',overrideReason:'Két chưa mở ca, khách đồng ý nhận chuyển khoản',overrideEvidence:'UNC CK-9'}}));
 });
 test('một bước: hàng trả vượt lượng đã xuất có chứng từ → chọn không cộng tồn thì xong luôn, không cộng kho',async()=>{
  const f=await setupCrmReturns();await f.seed('old',2186125,'emp',false);

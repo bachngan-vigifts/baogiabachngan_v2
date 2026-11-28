@@ -1,3 +1,4 @@
+import type { RefundMethod } from '../domain/pos-return-money.ts';
 import { flowIssued } from './pos-order-flow-guards.ts';
 import {assertPromotionReturn} from './pos-promotions.ts';
 import {
@@ -24,6 +25,8 @@ import {
 import {
   returnAccount,
   activeReservations,
+  refundMethodInfo,
+  decideRefundMethod,
   allocationProtected,
 } from './pos-return-credit.ts';
 import { posMoney } from '../domain/pos-money.ts';
@@ -134,6 +137,7 @@ async function detail(c: Ctx, db: CashDb, orderId: string) {
     returns,
     account: {
       ...summary,
+      refundMethods: await refundMethodInfo(db, account),
       reserved,
       available: Math.max(0, summary.available - reserved),
     },
@@ -812,7 +816,9 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
         amount = posMoney(b.amount),
         method = b.method,
         reference = posText(b.reference, 200),
-        confirmationNote = posText(b.note, 2000);
+        confirmationNote = posText(b.note, 2000),
+        overrideReason = posText(b.overrideReason, 1000),
+        overrideEvidence = posText(b.overrideEvidence, 1000);
       if (
         b.confirmed !== true ||
         amount <= 0 ||
@@ -863,6 +869,7 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
               409,
               'Số hoàn vượt tiền đã thu còn được hoàn hoặc đang giữ để đổi hàng.',
             );
+          const source = await decideRefundMethod(tx, a, who(c), { method: method as RefundMethod, amount, overrideReason, overrideEvidence });
           const id = crypto.randomUUID(),
             at = now(),
             refundNo = 'HT-' + id.slice(0, 8).toUpperCase();
@@ -909,6 +916,7 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
               confirmedAt: at,
               requestKey: key,
               createdAt: at,
+              ...source,
             })
             .returning();
           await cashAudit(tx, who(c).id, 'refund', 'pos-returns', r.id, {
@@ -917,6 +925,7 @@ export function registerPosReturnRoutes(router: Router<StaffEnv>) {
             method,
             reference,
             shiftId: s.id,
+            ...source,
           });
           return refund;
         }),

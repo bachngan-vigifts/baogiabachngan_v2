@@ -49,7 +49,7 @@ test('CRM returns respect order scope, delivered caps, active claims, cancellati
  assert.equal((await f.call(`/pos/returns/${b.data.id}/approve`,f.mgr,'POST',{})).status,404);
 });
 test('CRM damaged returns reduce debt without saleable stock; cash refunds require a real open drawer shift and are audited in existing cash ledger',async()=>{
- const f=await setupCrmReturns();await f.seed('cash',4372250);const a=await f.create('cash',[{orderLineId:'cash-a',qty:1,disposition:'damaged'},{orderLineId:'cash-b',qty:1,disposition:'restock'}]);assert.equal(a.data.total,2186125);
+ const f=await setupCrmReturns();await f.seed('cash',4372250,'emp',true,'cash');const a=await f.create('cash',[{orderLineId:'cash-a',qty:1,disposition:'damaged'},{orderLineId:'cash-b',qty:1,disposition:'restock'}]);assert.equal(a.data.total,2186125);
  const approval=f.ok(await f.call('/approvals',f.mgr));assert.ok(JSON.stringify(approval).includes('#/orders/cash?returns=1'));
  await f.receive('cash',a.data.id);const moves=await f.db.select().from(stockMoves).where(eq(stockMoves.refId,a.data.id));assert.equal(moves.length,1);assert.equal(moves[0]!.sku,'22566');assert.equal(moves[0]!.qty,1);
  const refund={key:crypto.randomUUID(),amount:2186125,method:'cash',drawerId:'store',confirmed:true};assert.equal((await f.call(`/orders/cash/returns/${a.data.id}/refund`,f.mgr,'POST',refund)).status,409);

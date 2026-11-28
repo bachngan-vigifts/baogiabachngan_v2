@@ -9,7 +9,8 @@ import {
 import { salesOrders, customerPayments, paymentSchedules } from '../schema.ts';
 import { receivable } from '../domain/sales.ts';
 import { posPaymentRequests, posShifts } from '../pos-schema.ts';
-import { returnBalance } from '../domain/pos-return-money.ts';
+import { returnBalance, paymentChannel, refundMethodBalance, type RefundMethod } from '../domain/pos-return-money.ts';
+import { sepayPaymentAllocations } from '../sepay-allocation-schema.ts';
 export async function returnAccount(
   db: CashDb,
   orderId: string,
@@ -64,7 +65,46 @@ export async function returnAccount(
     returns: rs,
     refunds,
     allocations,
+    payments: ps,
   };
+}
+type ReturnAccount = Awaited<ReturnType<typeof returnAccount>>;
+/** Receipts by channel (drawer cash, bank, at GHN, credit, non-cash offset) and what may still go back the same way. */
+export async function refundMethodInfo(db: CashDb, account: ReturnAccount) {
+  const ghn = account.payments.filter((p) => p.paymentSource === 'ghn_cod').map((p) => p.id);
+  // A GHN COD receipt reconciled against a SePay bank credit is bank money; otherwise it is still at the carrier.
+  const settled = new Set(
+    ghn.length
+      ? (await db.select({ id: sepayPaymentAllocations.paymentId }).from(sepayPaymentAllocations)
+          .where(and(inArray(sepayPaymentAllocations.paymentId, ghn), isNull(sepayPaymentAllocations.voidedAt)))).map((r) => r.id!)
+      : [],
+  );
+  const payments = account.payments
+    .map((p) => ({ id: p.id, amount: p.amount, method: p.method, source: p.paymentSource, paidAt: p.paidAt, reference: p.reference, channel: paymentChannel(p, settled.has(p.id)) }))
+    .sort((a, b) => (a.paidAt < b.paidAt ? -1 : a.paidAt > b.paidAt ? 1 : a.id.localeCompare(b.id)));
+  return { payments, ...refundMethodBalance(payments, account.refunds) };
+}
+const CHANNEL_LABEL = { cash: 'tiền mặt', transfer: 'chuyển khoản', carrier: 'GHN đang giữ', credit: 'tín dụng đổi hàng', other: 'khác' } as const;
+/**
+ * Refund goes back the way the money came in. A different channel (or money still at GHN) needs a Manager,
+ * a reason and evidence; it is recorded on the refund, never silently.
+ */
+export async function decideRefundMethod(
+  db: CashDb,
+  account: ReturnAccount,
+  m: { id: string; role: string },
+  x: { method: RefundMethod; amount: number; overrideReason: string; overrideEvidence: string },
+) {
+  const info = await refundMethodInfo(db, account);
+  if (x.amount <= info.remaining[x.method])
+    return { sourcePaymentId: [...info.payments].reverse().find((p) => p.channel === x.method)?.id ?? null, overrideReason: '', overrideEvidence: '', overrideBy: null as string | null };
+  const paid = (Object.keys(CHANNEL_LABEL) as (keyof typeof CHANNEL_LABEL)[]).filter((k) => info.paid[k] > 0)
+    .map((k) => `${CHANNEL_LABEL[k]} ${info.paid[k].toLocaleString('vi-VN')} đ`).join(', ') || 'chưa có khoản thu';
+  if (m.role !== 'manager')
+    throw new AppError(403, `Khách đã trả: ${paid}. Hoàn ${CHANNEL_LABEL[x.method]} vượt phần còn hoàn cùng phương thức (${info.remaining[x.method].toLocaleString('vi-VN')} đ). Hoàn khác phương thức thu ban đầu cần Manager xác nhận lý do và bằng chứng.`, 'REFUND_METHOD_OVERRIDE');
+  if (x.overrideReason.trim().length < 10 || !x.overrideEvidence.trim())
+    throw new AppError(400, 'Hoàn khác phương thức thu ban đầu: nhập lý do (ít nhất 10 ký tự) và bằng chứng (mã giao dịch, ảnh, xác nhận của khách).', 'REFUND_METHOD_OVERRIDE');
+  return { sourcePaymentId: null, overrideReason: x.overrideReason.trim(), overrideEvidence: x.overrideEvidence.trim(), overrideBy: m.id as string | null };
 }
 /**
  * Số còn phải thu của nhiều bill cùng lúc (theo mốc `cutoff`): bill có phiếu trả đi qua `returnAccount` đầy đủ,
