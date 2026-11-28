@@ -42,7 +42,7 @@ try {
   await page.locator(`[data-choose="${a.id}"]`).waitFor();
   assert.match(await page.locator('[data-order-results]').innerText(),/Hóa đơn 000123/);
   const input=page.locator('[name=orderQuery]');await input.fill('000123');
-  await page.locator('[data-order-search] button[type=submit]').click();
+  await input.press('Enter');
   await page.locator(`[data-choose="${a.id}"]`).click();
   await page.locator('[data-preview]').getByText(/100[.]000/).first().waitFor();
   await page.screenshot({path:out+'/'+width+'.png',fullPage:true});
