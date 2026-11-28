@@ -1,6 +1,6 @@
 import { printPos } from './pos-print.js';
 import { verifyBox } from './verify.js';
-import { refundMethodControls } from './crm-returns.js';
+import { refundMethodControls, refundCorrectionForm } from './crm-returns.js';
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -458,7 +458,13 @@ export async function openPosReturns({
             ),
           );
       }
-      for (const refund of r.refunds)
+      for (const refund of r.refunds) {
+        if (d.manager)
+          controls.append(
+            button('Sửa ' + refund.refundNo, () => {
+              content.replaceChildren(refundCorrectionForm(refund, { api, onDone: async () => { await show(id); await onChanged(); }, onBack: () => show(id) }));
+            }),
+          );
         card.append(
           el(
             'p',
@@ -473,6 +479,7 @@ export async function openPosReturns({
               (refund.overrideBy ? ' · Khác phương thức thu: ' + refund.overrideReason + ' (' + refund.overrideEvidence + ')' : ''),
           ),
         );
+      }
       controls.append(
         button('In chứng từ K80', () =>
           printPos({ return: r, order: d.order }, 'return'),

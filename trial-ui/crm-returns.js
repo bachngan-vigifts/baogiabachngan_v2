@@ -22,6 +22,21 @@ export function refundMethodControls(info,manager,amountInput,methodInput){
  amountInput.addEventListener('input',update);methodInput.addEventListener('change',update);update();
  return{box,update,values:()=>crossed()?{overrideReason:reason.input.value.trim(),overrideEvidence:evidence.input.value.trim()}:{},check(){if(crossed()&&manager&&(reason.input.value.trim().length<10||!evidence.input.value.trim()))throw Error('Hoàn khác phương thức thu: nhập lý do (ít nhất 10 ký tự) và bằng chứng.');}};
 }
+/** Manager-only correction form for one refund: void, or replace with the right method. Server re-checks everything. */
+export function refundCorrectionForm(refund,{api,onDone,onBack}){
+ const form=el('section','pos-return-card'),action=select('Cách sửa',[['change_method','Đổi phương thức hoàn (tiền mặt ↔ chuyển khoản)'],['void','Huỷ phiếu hoàn (khách chưa nhận tiền)']]),
+  method=select('Phương thức đúng',[['transfer','Chuyển khoản'],['cash','Tiền mặt (trừ két ca đang mở)']]),reference=field('Mã giao dịch chuyển khoản'),evidence=field('Bằng chứng (nếu khác phương thức khách đã trả)'),reason=field('Lý do sửa (ít nhất 10 ký tự)','textarea'),key=crypto.randomUUID();
+ method.input.value=refund.method==='cash'?'transfer':'cash';
+ const sync=()=>{const change=action.input.value==='change_method';method.box.hidden=evidence.box.hidden=!change;reference.box.hidden=!change||method.input.value!=='transfer';};action.input.onchange=method.input.onchange=sync;sync();
+ const back=el('button','btn secondary','Quay lại');back.type='button';back.onclick=onBack;
+ const save=el('button','btn primary','Xác nhận sửa phiếu');save.type='button';
+ const err=el('p','error');err.setAttribute('role','alert');
+ save.onclick=async()=>{err.textContent='';if(reason.input.value.trim().length<10){err.textContent='Nhập lý do (ít nhất 10 ký tự).';return;}save.disabled=true;
+  try{await api('/refunds/'+encodeURIComponent(refund.id)+'/correct','POST',{key,action:action.input.value,method:method.input.value,reference:reference.input.value,evidence:evidence.input.value,reason:reason.input.value});await onDone();}catch(e){err.textContent=e.message||'Chưa sửa được phiếu.';}finally{save.disabled=false;}};
+ form.append(el('h3','','Sửa '+refund.refundNo+' · '+money(refund.amount)+' · '+(refund.method==='cash'?'Tiền mặt':'Chuyển khoản')),
+  el('p','pos-note','Phiếu sai được huỷ cùng phiếu chi két (nếu có); két và báo cáo ca cập nhật ngay, ca đã kết sẽ mở tra soát. Không lập phiếu thu/chi bù.'),action.box,method.box,reference.box,evidence.box,reason.box,err,back,save);
+ return form;
+}
 /** The order's existing scope and server-computed quantities/money authorize every transition. */
 export async function openCrmReturns({api,toast,orderId,onChanged=()=>{}}){
  const dlg=el('dialog','pos-modal pos-return-modal'),body=el('div','pos-modal-content'),head=el('div','pos-return-head'),content=el('div');dlg.dataset.mobileActions='off';
@@ -111,7 +126,7 @@ export async function openCrmReturns({api,toast,orderId,onChanged=()=>{}}){
     }));
     if(d.account.available<=0||refunded>=r.total)actions.append(button('Hoàn tất phiếu trả',()=>confirm('Hoàn tất '+r.returnNo,'Hàng trả đã được nhận và phần công nợ/hoàn tiền đã xử lý. Không phát sinh chi tiền ở bước này.','Hoàn tất',()=>api(base+'/'+r.id+'/complete','POST',{})),true));
    }
-   for(const f of r.refunds)card.append(el('p','pos-note',`${f.refundNo} · ${money(f.amount)} · ${f.method==='cash'?'Tiền mặt':'Chuyển khoản'} · ${f.reference||''} · ${f.confirmedByName||f.confirmedBy} · ${dates(f.confirmedAt)}${f.overrideBy?' · Khác phương thức thu: '+f.overrideReason+' ('+f.overrideEvidence+')':''}`));
+   for(const f of r.refunds){if(d.manager)actions.append(button('Sửa '+f.refundNo,()=>{content.replaceChildren(refundCorrectionForm(f,{api,onDone:async()=>{toast('Đã sửa '+f.refundNo+'.','ok');await show();await onChanged();},onBack:show}));}));card.append(el('p','pos-note',`${f.refundNo} · ${money(f.amount)} · ${f.method==='cash'?'Tiền mặt':'Chuyển khoản'} · ${f.reference||''} · ${f.confirmedByName||f.confirmedBy} · ${dates(f.confirmedAt)}${f.overrideBy?' · Khác phương thức thu: '+f.overrideReason+' ('+f.overrideEvidence+')':''}`));}
    card.append(actions);content.append(card);
   }
   if(!['draft','cancelled'].includes(d.order.status)&&d.lines.some(l=>l.returnableQty>0&&l.sku)){

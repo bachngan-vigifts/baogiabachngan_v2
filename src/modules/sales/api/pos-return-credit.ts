@@ -39,7 +39,7 @@ export async function returnAccount(
           .where(
             and(
               inArray(posRefunds.returnId, ids),
-              sql`${posRefunds.confirmedAt}<=${cutoff}`,
+              sql`${posRefunds.confirmedAt}<=${cutoff} and (${posRefunds.voidedAt} is null or ${posRefunds.voidedAt}>${cutoff})`,
             ),
           ),
         db
@@ -275,7 +275,7 @@ export async function returnAdjustments(db: CashDb, orderIds: string[]) {
   const ids = rows.map((r) => r.id);
   if (!ids.length) return out;
   const [refunds, allocs] = await Promise.all([
-    db.select().from(posRefunds).where(inArray(posRefunds.returnId, ids)),
+    db.select().from(posRefunds).where(and(inArray(posRefunds.returnId, ids), isNull(posRefunds.voidedAt))),
     db
       .select()
       .from(posExchangeAllocations)

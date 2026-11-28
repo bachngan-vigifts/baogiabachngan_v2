@@ -100,6 +100,7 @@ export async function financeCashflow(db: Db, f: FinanceRange) {
         and(
           gte(posRefunds.confirmedAt, start),
           lt(posRefunds.confirmedAt, end),
+          isNull(posRefunds.voidedAt),
         ),
       )
       .groupBy(branchOf, posRefunds.method),
