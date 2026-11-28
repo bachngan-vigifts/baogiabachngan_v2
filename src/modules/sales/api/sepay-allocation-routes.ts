@@ -20,6 +20,7 @@ import {readWebSepayPaidAt,webSepayPaidAt} from './web-sepay-evidence.ts';
 import {webOrderPayment} from '../domain/web-order-payment.ts';
 import {vietnamDate} from '../domain/sales.ts';
 import {WEB_PAYMENT_BLOCKED_STATUSES} from '../domain/web-order-outcome.ts';
+import {assertSepayGhnLookup,readSepayGhnWaybill} from './sepay-ghn-lookup.ts';
 import {posGhnFeeHint} from '../domain/pos-ghn-fee-hint.ts';
 type Ctx=RouteContext<StaffEnv>;
 /** Latest GHN tracking code of a CRM/POS order: the only evidence that lets a SePay line offset a carrier fee. */
@@ -52,11 +53,17 @@ async function summary(c:Ctx,db:CashDb){
  const carrierComparisons=new Map<string,string>();
  const comparisons=new Map<string,number>();for(const h of history){const result=JSON.parse(h.result);for(const d of result.comparisons??[]){comparisons.set(d.allocationId,d.expectedAmount);if(d.settlementKind==='ghn_cod')carrierComparisons.set(d.allocationId,d.ghnCode);}}
  const allocated=rows.filter(a=>!a.voidedAt).reduce((n,a)=>n+a.amount,0);
- return {transactionId:event.id,amount:event.amount,revision:s?.revision??0,detailed:!!s,needsReview:!!review?.needed,canVoid:canVoidPayment(who(c)),canReplaceReceipt:canReplaceSepayReceipt(who(c)),allocated,remaining:event.amount-allocated,allocations:rows.map(a=>({...a,settlementKind:carrierComparisons.has(a.id)?'ghn_cod':null,ghnCode:carrierComparisons.get(a.id)||null,expectedAmount:comparisons.get(a.id)??a.amount+a.ghnFee,difference:a.amount+a.ghnFee-(comparisons.get(a.id)??a.amount+a.ghnFee),targetNo:labels.get(a.webOrderId?'web:'+a.webOrderId:a.orderId!)||a.targetKey}))};
+ return {transactionId:event.id,amount:event.amount,revision:s?.revision??0,detailed:!!s,needsReview:!!review?.needed,canVoid:canVoidPayment(who(c)),canReplaceReceipt:canReplaceSepayReceipt(who(c)),allocated,remaining:event.amount-allocated,canLookupGhn:who(c).role==='manager',allocations:rows.map(a=>({...a,settlementKind:carrierComparisons.has(a.id)?'ghn_cod':null,ghnCode:carrierComparisons.get(a.id)||null,expectedAmount:comparisons.get(a.id)??a.amount+a.ghnFee,difference:a.amount+a.ghnFee-(comparisons.get(a.id)??a.amount+a.ghnFee),targetNo:labels.get(a.webOrderId?'web:'+a.webOrderId:a.orderId!)||a.targetKey}))};
 }
 export function registerSepayAllocationRoutes(router:Router<StaffEnv>){
  const path='/sepay/transactions/:id/allocations';
  router.get(path,async c=>json(await summary(c,c.env.db)),'business');
+ router.get('/sepay/transactions/:id/ghn-waybill',async c=>{
+  assertSepayGhnLookup(who(c).role);
+  await readEvent(c,c.env.db);
+  return json(await readSepayGhnWaybill(c.env,c.url.searchParams.get('shop')||'',c.url.searchParams.get('code')||'',c.req.signal));
+ },'business');
+
  router.get('/sepay/transactions/:id/allocation-candidates',async c=>{
   const event=await readEvent(c,c.env.db);const q=(c.url.searchParams.get('q')||'').trim(),raw=c.url.searchParams.get('offset')||'0';
   const source=c.url.searchParams.get('source')||'all',from=c.url.searchParams.get('from')||'',to=c.url.searchParams.get('to')||'';
