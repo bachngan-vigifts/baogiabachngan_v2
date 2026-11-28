@@ -1581,7 +1581,7 @@ tr.care-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 
 .care-dialog { width: min(680px, calc(100vw - 24px)); }
 .care-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
-.care-form label { display: grid; gap: 4px; font-size: var(--text-small); font-weight: 600; } .care-form .span2 { grid-column: 1 / -1; }
+.care-form label { display: grid; gap: 4px; font-size: var(--text-label); font-weight: 600; } .care-form .span2 { grid-column: 1 / -1; }
 .care-types { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; } .care-types legend { font-size: var(--text-small); font-weight: 600; margin-bottom: 6px; }
 .care-pick { position: relative; display: block; font-weight: 400; } .care-pick b { font-size: var(--text-body); }
 .care-suggest { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg); max-height: 260px; overflow: auto; display: grid; padding: 4px; }

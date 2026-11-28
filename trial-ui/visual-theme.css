@@ -50,8 +50,8 @@
   :is(.app-shell, .visual-surface) .bottom-nav a.active { color: var(--blue); }
 
   /* Controls retain their original size, labels and enabled/disabled states. */
-  :is(.app-shell, .visual-surface) .btn.primary:not(.danger-bg) { background: var(--blue); border-color: var(--blue); color: #fff; box-shadow: none; }
-  :is(.app-shell, .visual-surface) .btn.primary:not(.danger-bg):hover:not(:disabled) { background: var(--brand-navy-700); border-color: var(--brand-navy-700); box-shadow: none; }
+  :is(.app-shell, .visual-surface) .btn:is(.primary, .navy):not(.danger-bg) { background: var(--blue); border-color: var(--blue); color: #fff; box-shadow: none; }
+  :is(.app-shell, .visual-surface) .btn:is(.primary, .navy):not(.danger-bg):hover:not(:disabled) { background: var(--brand-navy-700); border-color: var(--brand-navy-700); box-shadow: none; }
   :is(.app-shell, .visual-surface) .btn.secondary { background: var(--surface); border-color: var(--line-strong); color: #334b67; }
   :is(.app-shell, .visual-surface) .btn.secondary:hover:not(:disabled) { background: var(--blue-50); border-color: #9cbfe7; color: var(--blue); }
   :is(.app-shell, .visual-surface) .btn.ghost:hover:not(:disabled),

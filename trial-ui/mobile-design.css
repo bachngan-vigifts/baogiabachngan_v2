@@ -45,7 +45,7 @@
  .page-head > div:first-child:not(:has(> .mobile-action-list)) { flex:1;min-width:0; }
  .btn { border-radius:12px;min-height:44px;font-size:14px; }
  input:not([type=checkbox]):not([type=radio]),select,textarea { border-radius:10px;font-size:16px!important;min-height:44px; }
- label,.field-label { font-size:12px;font-weight:600; }
+ label,.field-label,.sup-form label,.care-form label { font-size:14px;font-weight:600; }
  .crm-required { display:inline; }
  .panel,.card { border-radius:12px; }
  .stats,.contracts-stats,.cd-stats { display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
@@ -501,8 +501,8 @@
 /* Sửa giao diện điện thoại 14/11/2026 (scripts/testing/mobile-chrome-fixes.mjs). */
 @media (max-width: 600px) {
  /* Nút quay lại chỉ còn mũi tên; tên trang đích nằm ở aria-label/title. Nhường chỗ cho tiêu đề trang. */
- .topbar .page-back { flex:none;width:34px;max-width:34px;min-width:34px;padding:0;font-size:0;text-align:center;border-radius:8px; }
- .topbar .page-back::before { content:'‹';font-size:26px;line-height:34px;font-weight:600; }
+ .topbar .page-back { flex:none;width:44px;max-width:44px;min-width:44px;min-height:44px;padding:0;font-size:0;text-align:center;border-radius:8px; }
+ .topbar .page-back::before { content:'‹';font-size:26px;line-height:44px;font-weight:600; }
  .topbar .crumbs { gap:4px; }
  .topbar #breadcrumb { font-size:13px;line-height:1.2;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere; }
  /* Phân tích lợi nhuận: mỗi ô chọn một hàng để đọc hết chữ. */
