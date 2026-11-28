@@ -592,3 +592,9 @@
  #view-tasks #tasks-refresh { min-width:44px;min-height:44px; }
  #view-tasks .task-group-btn { min-height:44px; }
 }
+
+.crm-inline-filter-toggle { display:none!important; }
+@media screen and (max-width:850px) {
+ .crm-inline-bar:not(.crm-inline-expanded) .crm-inline-field { display:none!important; }
+ .crm-inline-bar > .crm-inline-filter-toggle { display:inline-flex!important; justify-content:center; min-height:44px; }
+}
