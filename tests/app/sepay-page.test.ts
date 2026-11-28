@@ -579,3 +579,10 @@ test("VG contract defaults to confirmed account for manual receipts without secr
   const bnEvent=await f.incoming('Thanh toán BN',30000,{accountNumber:'159063909'});
   assert.equal((await f.call('/sepay/orders/'+bn.id+'?transactionId='+bnEvent.id,f.mgr)).data.canCreate,false);
 });
+
+test('SePay searches invoice numbers and suggests references from payment narrative without amount filtering',async()=>{
+ const f=await setupSepay();const a=await f.order('DH-REF-A',{invoiceNo:'000123'});await f.order('DH-REF-B',{invoiceNo:'000123'});await f.order('DH-OTHER');
+ const search=await f.call('/sepay/orders?q=000123',f.mgr);assert.equal(search.status,200);assert.equal(search.data.orders.length,2);assert.ok(search.data.orders.some((x:any)=>x.id===a.id&&x.invoiceNo==='000123'));
+ const suggestions=await f.call('/sepay/orders?reference='+encodeURIComponent('thanh toán hóa đơn số 000123'),f.mgr);assert.equal(suggestions.status,200);assert.equal(suggestions.data.orders.length,2);
+ const order=await f.call('/sepay/orders?reference='+encodeURIComponent('thanh toan don DH-REF-A'),f.mgr);assert.equal(order.data.orders.length,1);assert.equal(order.data.orders[0].id,a.id);
+});

@@ -118,13 +118,18 @@ test("SePay rejects unauthorized, outbound, fractional/oversized money and malfo
   assert.equal((await f.db.select().from(sepayTransactions)).length, 0);
 });
 
-test("partial payments, exact replays and changed replays are safe; same-day finance includes the VN-date receipt", async () => {
+test("partial payments require confirmation; exact replays and changed replays are safe; same-day finance includes the VN-date receipt", async () => {
   const f = await fixture(),
     o = await f.order("PAYMENTS102");
   const p = f.payload("Thanh toán " + o.orderNo, 30000, {
     transactionDate: "2026-11-08 00:10:00",
   });
-  assert.equal((await f.hook(p)).data.status, "matched");
+  assert.equal((await f.hook(p)).data.status, "review");
+  assert.equal((await f.receipts(o.id)).length,0);
+  const [event]=await f.db.select().from(sepayTransactions).where(eq(sepayTransactions.providerId,p.id));assert.ok(event);
+  const confirmed=await f.call('/sepay/transactions/'+event.id+'/confirm',f.mgr,'POST',{orderId:o.id,reason:'Đã kiểm tra khoản thanh toán một phần với khách hàng',confirmed:true});
+  assert.equal(confirmed.status,200);
+  assert.equal(confirmed.data.status,'matched');
   assert.equal((await f.hook(p)).data.duplicate, true);
   for (const extra of [
     { transferAmount: 40000 },
@@ -416,7 +421,7 @@ test("manual transfers matching bank evidence are reviewed; distinct transfers a
   assert.equal((await f.hook(p)).data.status, "review");
   assert.equal((await f.receipts(o.id)).length, 1);
   assert.equal(
-    (await f.hook(f.payload(o.orderNo, 40000))).data.status,
+    (await f.hook(f.payload(o.orderNo, 70000))).data.status,
     "matched",
   );
   await f.db
@@ -429,7 +434,7 @@ test("manual transfers matching bank evidence are reviewed; distinct transfers a
     .where(eq(customerPayments.id, id));
   assert.equal((await f.hook(p)).data.status, "matched");
   assert.equal((await f.hook(p)).data.duplicate, true);
-  const differentDay = await f.order("MANUALOTHERDAY123");
+  const differentDay = await f.order("MANUALOTHERDAY123",{total:60000,subtotal:60000});
   await f.db
     .insert(customerPayments)
     .values({
@@ -601,3 +606,16 @@ test(
     );
   },
 );
+
+test('invoice-labelled reference reconciles exact outstanding only, and duplicate invoices need review',async()=>{
+ const f=await fixture();
+ const a=await f.order('DH-INVOICE-A',{invoiceNo:'000123'});
+ const short=await f.hook(f.payload('Thanh toán hóa đơn số 000123',40000));assert.equal(short.data.status,'review');assert.equal(short.data.orderId,a.id);assert.equal((await f.receipts(a.id)).length,0);
+ const exact=await f.hook(f.payload('Thanh toán hóa đơn số 000123'));assert.equal(exact.data.status,'matched');assert.equal((await f.receipts(a.id)).length,1);
+ const b=await f.order('DH-INVOICE-B',{invoiceNo:'000456'});await f.order('DH-INVOICE-C',{invoiceNo:'000456'});
+ const ambiguous=await f.hook(f.payload('Thanh toán hóa đơn số 000456'));assert.equal(ambiguous.data.status,'review');assert.equal((await f.receipts(b.id)).length,0);
+ const multi=await f.order('DH-INVOICE-M1',{invoiceNo:'000789'});await f.order('DH-INVOICE-M2',{invoiceNo:'000790'});
+ assert.equal((await f.hook(f.payload('Thanh toán hóa đơn số 000789, 000790'))).data.status,'review');assert.equal((await f.receipts(multi.id)).length,0);
+ const c=await f.order('DH-INVOICE-D',{invoiceNo:'100000'});
+ await f.hook(f.payload('Khach chuyen 100000 dong'));assert.equal((await f.receipts(c.id)).length,0);
+});
