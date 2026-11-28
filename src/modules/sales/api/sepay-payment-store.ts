@@ -21,6 +21,7 @@ import {
   decideSepayMatch,
   sepayPaidDate,
   sepayReferenceCandidates,
+  sepayInvoiceCandidates,
   type SepayPayment,
 } from "../../integrations/domain/sepay-payment.ts";
 import { customerPayments, salesContracts, salesOrders } from "../schema.ts";
@@ -159,6 +160,7 @@ export async function ingestPayment(
     }
     if (mode==='web') return {duplicate: !!old,status:old?.status||'review',reason:old?.reason||'Chờ đối soát đơn web.',orderId:old?.orderId||null,paymentId:old?.paymentId||null,webOrderId:old?.webOrderId||null};
     const references = sepayReferenceCandidates(payment.content);
+    const invoiceReferences=sepayInvoiceCandidates(payment.content);
     // Constant bounded set, bound JSON parameter, identical Vietnamese folding on stored references.
     const values = sql`(select jsonb_array_elements_text(${JSON.stringify(references)}::jsonb))`;
     const referenceMatches = (field: SQLWrapper) =>
@@ -180,6 +182,7 @@ export async function ingestPayment(
             )
             .where(
               or(
+                inArray(sql`upper(regexp_replace(${foldSql(salesOrders.invoiceNo)}, '[^a-z0-9]', '', 'g'))`,sql`(select jsonb_array_elements_text(${JSON.stringify(invoiceReferences)}::jsonb))`),
                 referenceMatches(salesOrders.orderNo),
                 referenceMatches(salesOrders.quoteNo),
                 referenceMatches(salesOrders.sapoOrderCode),
@@ -295,7 +298,7 @@ export async function ingestPayment(
             reason: blockedReason,
             orderId: matches[0]!.id,
           }
-        : decideSepayMatch(matches, payment.amount);
+        : decideSepayMatch(matches, payment.amount, !manual);
     if (!manual && (target?.channel === 'pos' && candidates.length===1 || !candidates.length)) return applyNearbySepay(tx,payment,old,now,actorId,undefined,target?.channel==='pos'?target.id:undefined);
     const receivedAt = new Date().toISOString();
     let paymentId: string | null = null;
