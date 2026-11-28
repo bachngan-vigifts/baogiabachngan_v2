@@ -54,13 +54,13 @@ test('NVBH ML và LOCK: xem/lập nháp bốn hãng; chặn mã lạ, đơn tr�
  assert.notEqual(await purchaseCatalogVariant(f.db,viewer),await purchaseCatalogVariant(f.db,{...viewer,positionId:'sale-admin'}));
 });
 
-test('Quyền NVBH không mở duyệt, giá, thanh toán; ML nhận hàng khi được cấp quyền riêng',()=>{
+test('Quyền NVBH không mở duyệt, giá, thanh toán; ML và LOCK nhận hàng khi được cấp quyền riêng',()=>{
  for(const positionId of ['sales-ml','sales-lock']){
   const a={id:'x',role:'employee' as const,positionId,active:true};
   assert.equal(purchaseReadLevel(a),'brand');
   for(const check of [canPay,canSeePrices,canApprovePurchase]){assert.equal(check(a),false);assert.equal(check({...a,perms:['purchases.receive','purchases.pay','purchases.prices'],approver:true}),false);}
   assert.equal(canReceive(a),false);
-  assert.equal(canReceive({...a,perms:['purchases.receive']}),positionId==='sales-ml');
+  assert.equal(canReceive({...a,perms:['purchases.receive']}),true);
   assert.equal(canReceive({...a,active:false,perms:['purchases.receive']}),false);
   assert.equal(purchaseReadLevel({...a,perms:[]}),'none');assert.equal(purchaseReadLevel({...a,active:false}),'none');
  }
@@ -69,21 +69,21 @@ test('Quyền NVBH không mở duyệt, giá, thanh toán; ML nhận hàng khi �
 import {positionPermissions} from '../../src/modules/staff/schema.ts';
 import {warehouses} from '../../src/modules/catalog/schema.ts';
 import {and} from 'drizzle-orm';
-test('NVBH Minh Long receives only with the granted permission and within purchase scope',async()=>{
+for(const positionId of ['sales-ml','sales-lock'])test(positionId+' receives only with the granted permission and within purchase scope',async()=>{
  const f=await setupEarly();
- await f.db.update(employees).set({positionId:'sales-ml'}).where(eq(employees.id,'emp'));
+ await f.db.update(employees).set({positionId}).where(eq(employees.id,'emp'));
  await f.db.insert(products).values({sku:'031106000',name:'Chén',brand:'Minh Long',updatedAt:new Date().toISOString()});
  await f.db.insert(warehouses).values({id:'ml-receive',name:'Kho thử ML',kind:'stock'});
  await postMoves(f.db,'mgr',[{sku:'031106000',warehouseId:'ml-receive',qty:1,kind:'opening',refType:'opening',refId:'ml-opening'}]);
  const url='/purchase-orders/a1',body={clientKey:crypto.randomUUID(),receivedDate:'2026-11-26',warehouse:'Kho thử ML',createSapo:false,lines:[{lineId:'line-a1',goodQty:1,damagedQty:0}]};
  assert.ok(!(await f.call(url,f.cookies.emp)).data.actions.includes('receive'));
  assert.equal((await f.call(url+'/receipts',f.cookies.emp,'POST',body)).status,403);
- await f.db.insert(positionPermissions).values({positionId:'sales-ml',permission:'purchases.receive'});
+ await f.db.insert(positionPermissions).values({positionId,permission:'purchases.receive'});
  const view=await f.call(url,f.cookies.emp);assert.equal(view.status,200);assert.ok(view.data.actions.includes('receive'));assert.equal(view.data.priceHidden,true);
  for(const action of ['approve','pay','confirm'])assert.ok(!view.data.actions.includes(action));
  assert.equal((await f.call('/purchase-orders/excel/receipts',f.cookies.emp,'POST',body)).status,404);
  const saved=await f.call(url+'/receipts',f.cookies.emp,'POST',body);assert.equal(saved.status,201,JSON.stringify(saved.data));
  const retry=await f.call(url+'/receipts',f.cookies.emp,'POST',body);assert.equal(retry.status,200);assert.equal(retry.data.receiptId,saved.data.receiptId);
- await f.db.delete(positionPermissions).where(and(eq(positionPermissions.positionId,'sales-ml'),eq(positionPermissions.permission,'purchases.receive')));
+ await f.db.delete(positionPermissions).where(and(eq(positionPermissions.positionId,positionId),eq(positionPermissions.permission,'purchases.receive')));
  assert.equal((await f.call(url+'/receipts',f.cookies.emp,'POST',{...body,clientKey:crypto.randomUUID()})).status,403);
 });
