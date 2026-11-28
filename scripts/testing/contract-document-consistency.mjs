@@ -89,6 +89,10 @@ try{
   await page.locator('[data-d="deliveryAddress"]').fill('Kho nhận mới – mục 5.2');
   await page.locator('[data-refresh]').click();await frame.locator('p').filter({hasText:'Hôm nay, ngày 27 tháng 10 năm 2026'}).waitFor();
   assert.ok(await frame.locator('p').filter({hasText:'5.2   Địa điểm giao hàng: Kho nhận mới – mục 5.2'}).count());
+  const payment=frame.locator('p[contenteditable]').filter({hasText:'Thời hạn thanh toán'}).first();
+  await payment.fill('- Thời hạn thanh toán: Theo lịch đã thống nhất.');
+  await page.locator('[data-refresh]').click();
+  await frame.getByText('Theo lịch đã thống nhất.',{exact:false}).first().waitFor();
   const description=frame.locator('[contenteditable]').filter({hasText:'Logo hai vị trí'}).first();
   await description.fill('Bộ gồm: 01 ấm + 06 tách · Mô tả đã chỉnh trực tiếp trong HĐKT · Đóng gói túi vải');
   await page.locator('[data-doc="BBNT"]').click();

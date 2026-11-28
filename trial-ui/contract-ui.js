@@ -54,12 +54,13 @@ function representativeDetails(details) {
 export function contractDetails(detail) {
   const o = detail.order, k = detail.contract, saved = k?.data?.details || {};
   return representativeDetails({
-    representativeName: o.contact || '', representativeTitle: '', signedDate: k?.signedDate || todayIso(), depositRate: k?.depositRate ?? 0, paymentDays: k?.paymentDays ?? 0,
+    representativeName: o.contact || '', representativeTitle: '', depositRate: k?.depositRate ?? 0, paymentDays: k?.paymentDays ?? 0,
     deliveryTime: o.expectedDeliveryDate ? 'Giao hàng ngày ' + dmy(o.expectedDeliveryDate) : 'Theo thỏa thuận của hai bên.', deliveryAddress: k?.deliveryAddress || o.address || '',
     paymentMethod: k?.paymentMethod || 'Chuyển khoản.', ...saved,
     // Báo giá nguồn ưu tiên; HĐKT là giá trị dự phòng cho hồ sơ cũ không có điều khoản nguồn.
     depositRate: k?.depositRate ?? 0, paymentDays: k?.paymentDays ?? 0,
     ...Object.fromEntries(Object.entries(k?.sourceTerms || {}).filter(([, value]) => value !== undefined)),
+    signedDate: k?.signedDate || saved.signedDate || k?.sourceTerms?.signedDate || todayIso(),
   });
 }
 
@@ -190,7 +191,7 @@ export async function openContractDocs({ detail, api, toast, onSaved }) {
     const selectedDetails=currentDetails(),q=quote(),templates=await templatesFor(q,k.data?.templateSnapshot,await contractSources());
     const hdkt=templates.find(t=>t.file==='HDKT'),t=templates.find(t=>t.file===type);
     const contractBytes=type==='BBNT'?await globalThis.ContractDocument.build({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateBytes:hdkt.templateBytes}):undefined;
-    const prepared=await globalThis.ContractDocument.prepareDocument({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateBytes:t.templateBytes,documentType:type,contractBytes});
+    const prepared=await globalThis.ContractDocument.prepareDocument({quote:q,contractNumber:k.contractNo,details:selectedDetails,templateBytes:t.templateBytes,documentType:type,contractBytes,allowPaymentEdit:canEditFinancial});
     if(type==='HDKT'){edits.HDKT=prepared.edits;clauseState={version:1,printing:q.printing_enabled};$d('[data-printing]').textContent='Điều 2.1 tự điền theo đơn '+(q.printing_enabled?'có in.':'không in.');}
     $d('[data-printing]').hidden=type!=='HDKT'||templateMode;
     return prepared;

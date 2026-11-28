@@ -1124,7 +1124,7 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const customerCode = await contractCustomerCode(c.env.db, quote);
     // Điều khoản theo báo giá để điền sẵn hộp lập HĐKT (cọc, số ngày thanh toán phần còn lại).
     const source = contractTermsFromQuote(JSON.parse(quote.data));
-    const terms = { depositRate: source.depositRate ?? null, paymentDays: await balancePaymentDays(c.env.db, quoteTermsSource(quote)) };
+    const terms = { ...source, depositRate: source.depositRate ?? null, paymentDays: source.paymentDays ?? await balancePaymentDays(c.env.db, quoteTermsSource(quote)) };
     if (!customerCode) return json({ contractNo: '', terms, error: 'Báo giá chưa có mã khách hàng hoặc MST để cấp số HĐKT.' });
     const { year, month } = vietnamDate();
     const [row] = await c.env.db.select({ seq: contractCounters.lastSequence }).from(contractCounters).where(eq(contractCounters.id, `HDKT:${year}:${month}:${entity}`)).limit(1);
@@ -1143,10 +1143,10 @@ export function registerSalesRoutes(router: Router<StaffEnv>, options: { purchas
     const sourceTerms = contractTermsFromQuote(JSON.parse(quote.data));
     // Không gửi = theo báo giá (đơn không HĐKT cũng tính cùng quy tắc: báo giá → điều khoản khách → 0).
     const depositRate = Number(body.depositRate ?? sourceTerms.depositRate ?? 0);
-    const paymentDays = Number(body.paymentDays ?? await balancePaymentDays(c.env.db, quoteTermsSource(quote)));
+    const paymentDays = Number(body.paymentDays ?? sourceTerms.paymentDays ?? await balancePaymentDays(c.env.db, quoteTermsSource(quote)));
     if (!(depositRate >= 0 && depositRate <= 100)) throw new AppError(400, 'Tỷ lệ đặt cọc phải từ 0 đến 100%.');
     if (!Number.isInteger(paymentDays) || paymentDays < 0 || paymentDays > 3650) throw new AppError(400, 'Số ngày thanh toán không hợp lệ.');
-    const signedDate = body.signedDate ? String(body.signedDate) : vietnamDate().iso;
+    const signedDate = body.signedDate ? String(body.signedDate) : sourceTerms.signedDate || vietnamDate().iso;
     if (!isDate(signedDate)) throw new AppError(400, 'Ngày ký không hợp lệ.');
     const data = JSON.parse(quote.data);
     const customerCode = await contractCustomerCode(c.env.db, quote);
