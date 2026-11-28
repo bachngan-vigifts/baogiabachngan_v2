@@ -435,7 +435,7 @@ table { width: 100%; border-collapse: collapse; }
   .bottom-nav svg { width: 21px; height: 21px; }
   /* Trang có nút ＋ tròn thì ẩn nút chính ở đầu trang; trang không có (Đơn mua, Điều chuyển kho…) vẫn giữ nút tạo mới. */
   .page-head:has(.btn-add) .btn.primary { display: none; }
-  /* Nút ＋ tròn (xanh lá, 44px) đứng góc trên phải đầu trang – thay cho nút ＋ ở thanh menu dưới */
+  /* Nút "Thêm/Tạo" (chữ xanh dương, 44px) đứng góc trên phải đầu trang – thay cho nút ＋ ở thanh menu dưới */
   .page-head .btn-add, .page-head .head-actions { align-self: flex-start; }
   .page-head .head-actions { flex-wrap: nowrap; flex: none; }
   .editor .editor-actions .btn.primary { display: none; }
@@ -1309,9 +1309,10 @@ kbd { border: 1px solid var(--line-strong); border-bottom-width: 2px; border-rad
 .push-hint span { flex: 1; } .push-hint button { border: 0; background: transparent; color: #fff; font-size: var(--text-heading); line-height: 1; cursor: pointer; }
 
 /* ---------- Khách hàng: nút thêm (dấu cộng xanh như Sapo), trang chi tiết (customer-detail.js) ---------- */
-.btn-add { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--green); color: #fff; display: grid; place-items: center; cursor: pointer; box-shadow: 0 6px 16px #12805c4d; flex: none; transition: transform .15s, background .15s; }
-.btn-add:hover { background: #0e6b4c; transform: scale(1.06); } .btn-add:focus-visible { outline: 3px solid #12805c55; outline-offset: 2px; }
-.btn-add svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; }
+/* Nút "Thêm/Tạo" đầu trang danh sách: nút chữ xanh dương như "+ Giao việc", "+ Tạo đơn mua" (rà đồng bộ đợt 4, V7). */
+.btn-add { display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box; min-height: var(--ctl-h, 42px); padding: 0 16px; border: 1px solid var(--blue); border-radius: var(--radius-sm); background: var(--blue); color: #fff; font: inherit; font-size: var(--text-label); line-height: 1.2; white-space: nowrap; text-decoration: none; cursor: pointer; flex: none; transition: background .15s, border-color .15s; }
+.btn-add:hover { background: var(--brand-navy-700); border-color: var(--brand-navy-700); } .btn-add:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.btn-add svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
 .chip-check { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); border-radius: 20px; padding: 5px 12px; font-size: var(--text-small); font-weight: 600; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .chip-check:has(input:checked) { background: var(--navy); border-color: var(--navy); color: #fff; }
 #customer-list tr.clickable { cursor: pointer; } #customer-list td.first a.strong { color: var(--ink); text-decoration: none; } #customer-list td.first a.strong:hover { text-decoration: underline; }

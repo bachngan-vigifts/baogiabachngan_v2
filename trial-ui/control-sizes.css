@@ -13,10 +13,19 @@
 :is(main, dialog, [popover]) :is(.btn:not(.small, .chip, .block-tall), .buy-filter-toggle):not(table *, .task-row *, .mobile-savebar *, .quote-actions *, .quote-mobile-steps *) {
   box-sizing: border-box; min-height: var(--ctl-h);
 }
-/* Nút biểu tượng ‹ › cạnh ô tháng, nút ＋ tròn: vuông theo cùng chiều cao. */
-:is(main, dialog) :is(.md-month, .page-head, .head-actions, .toolbar) > :is(.icon-btn, .btn-add) { box-sizing: border-box; width: var(--ctl-h); height: var(--ctl-h); min-width: var(--ctl-h); }
+/* Nút biểu tượng ‹ › cạnh ô tháng: vuông theo cùng chiều cao. */
+:is(main, dialog) :is(.md-month, .page-head, .head-actions, .toolbar) > .icon-btn { box-sizing: border-box; width: var(--ctl-h); height: var(--ctl-h); min-width: var(--ctl-h); }
+/* Nút "Thêm/Tạo" chữ xanh dương đầu trang: cao bằng ô, rộng theo chữ (đợt 4, V7). */
+:is(main, dialog) :is(.page-head, .head-actions, .toolbar) > .btn-add { min-height: var(--ctl-h); }
 /* Nút nhỏ (Lọc, Xóa bộ lọc, Excel, Lưu số hoá đơn) đứng cùng hàng với ô nhập/ô chọn: cao bằng ô. */
 :is(main, dialog, [popover]) :has(> :is(input:not([type=checkbox], [type=radio], [type=hidden]), select, label)) > .btn.small:not(table *) { box-sizing: border-box; min-height: var(--ctl-h); }
+/* Nút chính dạng nhỏ (vd "In / Tải đơn hàng" trong thẻ Đơn) ngoài bảng: cao bằng nút thường cạnh nó (rà đồng bộ đợt 4, V5). */
+:is(main, dialog, [popover]) .btn.small.primary:not(table *, .task-row *, li *, .mobile-savebar *, .quote-actions *) { box-sizing: border-box; min-height: var(--ctl-h); }
+/* Trên điện thoại nút nhỏ ngoài bảng/dòng danh sách là hành động chính (Duyệt đơn, Chỉ lên lịch giao, ‹ Đơn đặt hàng): vùng bấm 44px.
+   Nút nhỏ 34px chỉ còn trong bảng, dòng danh sách, thẻ dạng dòng. Kiểm kho (#view-stocktake) để đợt riêng. */
+@media (max-width: 850px) {
+  :is(main, dialog, [popover]) .btn.small:not(.chip, table *, li *, [role=row] *, [role=tablist] *, .task-row *, .mobile-savebar *, .quote-actions *, .quote-mobile-steps *, #view-stocktake *) { box-sizing: border-box; min-height: var(--ctl-h); }
+}
 /* Nút × đóng popup trên điện thoại: vùng bấm 44×44 và không bị co trong hàng tiêu đề dài (rà đồng bộ đợt 2, C4). */
 @media (max-width: 850px) {
   dialog :is(.modal-head, .pur-mode-head) > .icon-btn, dialog .icon-btn:is([data-close], [data-x]) { box-sizing: border-box; flex: none; width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
