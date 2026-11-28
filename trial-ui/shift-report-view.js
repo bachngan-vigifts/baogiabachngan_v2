@@ -128,11 +128,13 @@ export function renderShiftReport(container, d, { onOpen } = {}) {
 
   // Trả hàng (chỉ khi có).
   const r = d.returns;
-  if (r && (r.credit || r.refundedCash || r.refundedTransfer || r.exchanged)) {
+  if (r && (r.credit || r.refundedCash || r.refundedTransfer || r.exchanged || r.pendingRefunds?.count || r.checks?.length)) {
     const box = card('Trả / đổi hàng', link('Mở Trả / Đổi'), open('returns'));
     pairs(box, [['Giá trị trả hàng đã nhận', money(r.credit)], ['Giá trị bán trừ hàng trả', money((d.bills?.revenue || 0) - r.credit)],
       ...(r.refundedCash ? [['Hoàn tiền mặt', money(r.refundedCash)]] : []), ...(r.refundedTransfer ? [['Hoàn chuyển khoản', money(r.refundedTransfer)]] : []),
-      ...(r.exchanged ? [['Thanh toán bằng tiền đổi hàng', money(r.exchanged)]] : [])]);
+      ...(r.exchanged ? [['Bù sang đơn đổi', money(r.exchanged)]] : []),
+      ...(r.pendingRefunds?.count ? [['Phiếu trả còn tiền chưa hoàn', `${r.pendingRefunds.count} phiếu · ${money(r.pendingRefunds.amount)}`]] : [])]);
+    for (const c of r.checks || []) box.append(el('p', c.level === 'block' ? 'sr-diff' : 'sr-note', (c.level === 'block' ? 'Chặn kết ca: ' : 'Cần kiểm tra: ') + c.message + ' · ' + c.refs.join(', ')));
     wrap.append(box);
   }
 
