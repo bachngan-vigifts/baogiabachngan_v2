@@ -47,7 +47,7 @@ export function initCare(deps) {
     if (isManager() && !people) { try { people = (await api('/tasks/people')).people; } catch { people = []; } }
     root.innerHTML = `<div class="page-head">
         <div><span class="eyebrow">Kinh doanh</span><h1>Giao dịch & chăm sóc</h1><p class="muted">Ghi kết quả mỗi lần liên hệ khách. Hoạt động hợp lệ tính 1 giao dịch KPI; không đếm từng tin nhắn hoặc cuộc gọi chưa kết nối.</p></div>
-        <button type="button" class="btn-add" data-care-new title="Ghi giao dịch" aria-label="Ghi giao dịch"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+        <button type="button" class="btn-add" data-care-new title="Ghi giao dịch" aria-label="Ghi giao dịch"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Ghi giao dịch</span></button>
       </div>
       <div class="stats care-stats" data-stats></div>
       <div class="panel">

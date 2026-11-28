@@ -39,8 +39,10 @@
  .page-head h1,.auth-card h1 { font-size:22px;font-weight:700;line-height:1.35; }
  .page-head .eyebrow,.page-head p { display:none; }
  h2,.card-title,.sup-drawer-head h2,.modal-head h2,.editor-head h1 { font-size:18px;line-height:1.35; }
- .page-head .btn-add:not([hidden]),.page-head [data-mobile-primary]:not([hidden]) { display:flex!important;position:static;width:44px!important;height:44px;min-width:44px;padding:10px;border-radius:50%;background:var(--green);color:#fff;border:0;justify-content:center;flex:none; }
+ .page-head .btn-add:not([hidden]),.page-head [data-mobile-primary]:not([hidden]) { display:flex!important;position:static;width:44px!important;height:44px;min-width:44px;padding:10px;border-radius:50%;background:var(--blue);color:#fff;border:0;justify-content:center;flex:none; }
  .page-head [data-mobile-primary]:not(.btn-add) { width:auto!important;min-width:44px;max-width:130px;border-radius:12px;font-size:13px; }
+ /* Nút "Thêm/Tạo" đầu trang: chữ xanh dương như máy tính, cao 44px (rà đồng bộ đợt 4, V7). */
+ .page-head .btn-add:not([hidden]) { width:auto!important;align-items:center;gap:6px;padding:0 14px;border-radius:12px;background:var(--blue);font-size:14px;white-space:nowrap; }
  .page-head .head-actions,.page-head .row-gap { width:auto!important;display:flex!important;flex:none;gap:6px; }
  .page-head > div:first-child:not(:has(> .mobile-action-list)) { flex:1;min-width:0; }
  .btn { border-radius:12px;min-height:44px;font-size:14px; }
@@ -239,9 +241,9 @@
 }
 
 @media screen and (max-width:850px){
- .page-head [data-mobile-create]:not([hidden]) { width:44px!important;max-width:44px;min-width:44px;font-size:0;padding:8px;border-radius:50%;background:var(--green); }
- .page-head [data-mobile-create]::before { content:"+";font:400 28px/1 system-ui; }
- .page-head [data-mobile-create] > * { display:none; }
+ /* Nút tạo mới đầu trang (Tạo đơn hàng, Giao việc, Lập HĐKT…): giữ chữ, nền xanh dương, cao 44px (đợt 4, V7). */
+ .page-head [data-mobile-create]:not([hidden]) { width:auto!important;max-width:none;min-width:44px;padding:0 14px;border-radius:12px;background:var(--blue);font-size:14px; }
+ .page-head [data-mobile-create] kbd { display:none; }
  .crm-chip-count { font-size:11px; }
 }
 @media screen and (max-width:850px){
