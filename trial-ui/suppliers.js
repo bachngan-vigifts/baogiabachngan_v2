@@ -151,14 +151,15 @@ export function initSuppliers({ api, root, toast, confirmBox, canLinkAccounts = 
     const err = el('p', 'error'); err.setAttribute('role', 'alert');
     const foot = el('div', 'sup-drawer-foot');
     const save = el('button', 'btn primary', isNew ? 'Thêm nhà cung cấp' : 'Lưu thay đổi'); save.type = 'submit';
-    foot.append(save);
+    const cancel = el('button', 'btn secondary', 'Huỷ'); cancel.type = 'button'; cancel.addEventListener('click', closeEditor);
+    foot.append(cancel, save);
     if (!isNew) {
       const toggle = el('button', 'btn secondary', s.active ? 'Ngừng hoạt động' : 'Mở lại'); toggle.type = 'button';
       toggle.addEventListener('click', async () => {
         if (s.active && !await confirmBox(`Ngừng hoạt động ${s.name}? Không tạo được đơn mua mới cho NCC này; đơn cũ giữ nguyên.`, { title: 'Ngừng hoạt động', ok: 'Ngừng hoạt động', danger: true })) return;
         await submit(!s.active);
       });
-      foot.append(toggle);
+      toggle.dataset.left = ''; foot.prepend(toggle);
     }
     form.append(grid, contacts, ...(canLinkAccounts() ? [accounts] : []), err, foot);
     if(!isNew&&current.canViewEarlyRequests){const history=el('section','sup-section early-request-history');form.append(history);initEarlyRequests({api,host:history,supplierId:s.id}).load();}

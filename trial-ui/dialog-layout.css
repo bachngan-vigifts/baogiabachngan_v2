@@ -14,7 +14,12 @@ body dialog[open]:not(.order-compose,.verify-page) {
 .product-editor-layout > p { margin:0; }
 .product-editor-carton,.product-editor-prices { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .product-editor-image small { display:block; margin-top:8px; }
-.task-quick-head,.task-quick-body,.task-quick-foot { display:contents; }
+/* Giao việc nhanh: đầu / thân / chân như khuôn .modal-head / .modal-body / .modal-foot (rà đồng bộ đợt 3, C2). */
+.task-quick-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 22px; }
+.task-quick-head > .icon-btn { flex:none; }
+.task-quick-body { display:flex; flex-direction:column; gap:20px; padding:18px 22px; min-width:0; }
+.task-quick-foot { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; padding:14px 22px 18px; border-top:1px solid var(--line); background:var(--surface-2); }
+.task-quick-foot [data-discard] { order:-1; margin-right:auto; }
 
 @media (min-width: 900px) {
   dialog.landscape-dialog,.sup-drawer.landscape-drawer {
@@ -67,14 +72,8 @@ body dialog[open]:not(.order-compose,.verify-page) {
   .landscape-dialog .care-form > p,
   .landscape-dialog .care-form > label:has(textarea),
   .landscape-dialog .care-form > .care-field:has(.care-seg) { grid-column:1 / -1; }
-  .task-quick-dialog.landscape-dialog .task-quick { padding:0; gap:0; }
-  .task-quick-dialog.landscape-dialog .task-quick-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 22px; }
-  .task-quick-dialog.landscape-dialog .task-quick-head h2 { margin:0; }
-  .task-quick-dialog.landscape-dialog .task-quick-close { position:static; flex-shrink:0; }
   .task-quick-dialog.landscape-dialog .task-quick-body { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-content:start; gap:20px; padding:18px 22px; }
   .task-quick-dialog.landscape-dialog .task-quick-body > .error { grid-column:1 / -1; }
-  .task-quick-dialog.landscape-dialog .task-quick-foot { display:flex; padding:14px 22px 18px; border-top:1px solid var(--line,#dce3ed); }
-  .task-quick-dialog.landscape-dialog .task-quick-submit { width:auto; min-width:200px; margin:0; }
   .landscape-dialog label { min-width:0; }
   .landscape-dialog .product-editor-layout { grid-template-columns:minmax(0,2fr) minmax(0,1fr); align-content:start; }
   .landscape-dialog .product-editor-info.form-grid.cols-2 { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -122,4 +121,35 @@ body dialog[open]:not(.order-compose,.verify-page) {
   }
   dialog.modal .modal-head > .icon-btn { min-width:44px; min-height:44px; }
   dialog.modal .modal-foot .btn { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+}
+
+/* Popup tự dựng dùng chung khuôn .modal (rà đồng bộ đợt 3, C2/C3): Giao việc nhanh, Két (.cash-dialog),
+   Đối chiếu sao kê / hộp kế toán (.acct-quick), ngăn kéo NCC (.sup-drawer). Chỉ đổi hình thức, giữ DOM và sự kiện. */
+@media screen {
+  :is(.task-quick-head, .cash-dialog-form > header, .bank-head, .sup-drawer-head) h2, .acct-quick form > h2 { color:var(--blue); font-size:var(--text-heading); }
+  :is(.cash-dialog-form > header, .bank-head, .sup-drawer-head) > .icon-btn { flex:none; width:32px; height:32px; }
+  .cash-dialog { border:0; box-shadow:var(--shadow-lg); }
+  .cash-dialog-form > header { border-bottom-color:var(--line); }
+  .cash-dialog-foot { gap:8px; border-top-color:var(--line); background:var(--surface-2); }
+  .cash-field :is(input, select, textarea) { border-color:var(--line-strong); border-radius:var(--radius-sm); }
+  .acct-quick { box-shadow:var(--shadow-lg); }
+  .acct-quick-foot { flex-wrap:wrap; position:sticky; bottom:0; z-index:2; margin:4px -20px -20px; padding:14px 22px 18px; border-top:1px solid var(--line); background:var(--surface-2); }
+  .sup-drawer-foot { justify-content:flex-end; }
+  .sup-drawer-foot > [data-left] { margin-right:auto; }
+}
+/* Điện thoại: rộng hết màn hình, bo 12px hai góc trên như .modal; × 44×44; chân dính đáy; thanh dưới ẩn khi ngăn kéo NCC mở. */
+@media screen and (max-width: 850px) {
+  :is(.task-quick-dialog, .cash-dialog, .acct-quick, .sup-drawer) { width:100vw !important; max-width:100vw !important; border-radius:12px 12px 0 0; }
+  :is(.task-quick-head, .cash-dialog-form > header, .bank-head, .sup-drawer-head) h2, .acct-quick form > h2 { font-size:18px; }
+  :is(.task-quick-head, .cash-dialog-form > header, .bank-head, .sup-drawer-head) > .icon-btn { width:44px; height:44px; min-width:44px; min-height:44px; }
+  .task-quick-head { padding:12px 16px 0; }
+  .task-quick-body { gap:16px; padding:16px; }
+  .task-quick-foot, .cash-dialog-foot { position:sticky; bottom:0; z-index:3; }
+  .task-quick-foot { padding:10px 16px calc(10px + env(safe-area-inset-bottom)); background:var(--surface); }
+  .cash-dialog-foot, .acct-quick-foot { background:var(--surface); padding-bottom:calc(12px + env(safe-area-inset-bottom)); }
+  :is(.task-quick-foot, .acct-quick-foot) .btn { flex:1 1 auto; }
+  .sup-form > .sup-drawer-foot { bottom:-18px; margin-inline:-20px; padding:12px 20px calc(12px + env(safe-area-inset-bottom)); }
+  .sup-drawer > .sup-form:last-child > .sup-drawer-foot:last-child { margin-bottom:-18px; }
+  .cash-field :is(input, select, textarea) { border-radius:10px; }
+  body:has(.sup-drawer:not([hidden])) :is(.crm-mobile-nav, #reminder-launcher, #chat-launcher, #approval-launcher) { display:none !important; }
 }
