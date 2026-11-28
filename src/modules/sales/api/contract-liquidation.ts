@@ -170,7 +170,7 @@ export async function liquidationAwards(db:ReadDb,ids:readonly string[]){
  const withReturns=new Set(returns.map(r=>r.orderId));
  for(const r of rows){
   const ps=payments.filter(p=>p.orderId===r.order.id),paid=ps.filter(p=>p.createdAt<=cutoff&&(!p.voidedAt||p.voidedAt>cutoff)).reduce((n,p)=>n+p.amount,0);
-  const account=withReturns.has(r.order.id)?await returnAccount(db,r.order.id,cutoff):{...returnBalance(r.order.total,paid,0,0,0),credit:0,refunded:0,exchanged:0,paid,returns:[],refunds:[],allocations:[]};
+  const account=withReturns.has(r.order.id)?await returnAccount(db,r.order.id,cutoff):{...returnBalance(r.order.total,paid,0,0,0),credit:0,refunded:0,exchanged:0,paid,returns:[],refunds:[],allocations:[],payments:[]};
   const proof=await obligations(db,r.order,r.contract,[lines.filter(l=>l.orderId===r.order.id),ships.filter(s=>s.orderId===r.order.id),account,stock,ps.filter(p=>!p.voidedAt).map(p=>({id:p.id,amount:p.amount}))]);
   result.set(r.contract.id,{at:r.request.reviewedAt!,valid:proof.ready&&proof.hash===r.request.snapshotHash});
  }

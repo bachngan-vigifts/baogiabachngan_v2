@@ -22,7 +22,8 @@ import { cashDrawers, cashEntries } from '../cash-schema.ts';
 import { cashAccess, cashAudit, cashLock, type CashDb } from './cash-store.ts';
 import { posStoreScopeFor } from './pos-access.ts';
 import { posKey, posText } from './pos-store.ts';
-import { returnAccount, activeReservations } from './pos-return-credit.ts';
+import { returnAccount, activeReservations, refundMethodInfo, decideRefundMethod } from './pos-return-credit.ts';
+import type { RefundMethod } from '../domain/pos-return-money.ts';
 import { basisCovers, basisSkus, describeUnproven, unprovenRestock, verifyStockBasis, type StockBasis } from './crm-return-stock.ts';
 import { returnPortion, returnBalance } from '../domain/pos-return-money.ts';
 import { posMoney } from '../domain/pos-money.ts';
@@ -139,7 +140,7 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     const drawers = canRefund ? (await db.select({ id: cashDrawers.id, name: cashDrawers.name }).from(cashDrawers)).filter(d => !scope || scope.scope.drawers.includes(d.id)) : [];
     return json({ order: { id: o.id, orderNo: o.orderNo, status: o.status, customerName: o.customerName, total: o.total, invoiceIssued: !!o.invoiceNo || o.invoiceStatus === 'issued' },
       lines: lines.map(l => ({ ...l, returnableQty: Math.max(0, l.deliveredQty - returns.filter(r => active(r.status) && !(r.receivedAt && r.purpose==='redelivery')).flatMap(r => r.lines).filter(x => x.orderLineId === l.id).reduce((n, x) => n + x.requestedQty, 0)) })),
-      returns, account: { paid: account.paid, credit: account.credit, refunded: account.refunded, balance: account.balance, available: account.available }, warehouses: whs, drawers,
+      returns, account: { paid: account.paid, credit: account.credit, refunded: account.refunded, balance: account.balance, available: account.available, exchanged: account.exchanged, total: o.total }, refundMethods: await refundMethodInfo(db, account), warehouses: whs, drawers,
       canApprove: canApprove(who(c)), canRefund, viewerId: who(c).id, manager: who(c).role === 'manager' });
   }, 'business');
 
@@ -213,9 +214,9 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     await tx.update(salesOrders).set({ revision: sql`${salesOrders.revision}+1`, updatedAt: at }).where(eq(salesOrders.id, o.id));
     await cashAudit(tx, who(c).id, 'crm-receive-return', 'pos-returns', r.id, { orderId: o.id, warehouseId: r.warehouseId, lines, note });
   }
-  type RefundInput = { key: string; amount: number; method: string; reference: string; drawerId: string; note: string };
+  type RefundInput = { key: string; amount: number; method: string; reference: string; drawerId: string; note: string; overrideReason: string; overrideEvidence: string };
   function refundInput(b: any): RefundInput {
-    const x = { key: posKey(b.key), amount: posMoney(b.amount), method: posText(b.method), reference: posText(b.reference, 200), drawerId: posText(b.drawerId), note: posText(b.note, 2000) };
+    const x = { key: posKey(b.key), amount: posMoney(b.amount), method: posText(b.method), reference: posText(b.reference, 200), drawerId: posText(b.drawerId), overrideReason: posText(b.overrideReason, 1000), overrideEvidence: posText(b.overrideEvidence, 1000), note: posText(b.note, 2000) };
     if (b.confirmed !== true || x.amount <= 0 || !['cash', 'transfer'].includes(x.method) || x.method === 'transfer' && !x.reference || !x.drawerId) throw new AppError(400, 'Xác nhận số tiền thực hoàn, két và tham chiếu chuyển khoản.');
     return x;
   }
@@ -230,6 +231,7 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
     await checkUnchanged(tx, o, r);
     const a = await returnAccount(tx, o.id), reserved=await activeReservations(tx,a.allocations);
     if (amount > refundCap(o,r,a,reserved)) throw new AppError(409, 'Số hoàn vượt phần thực thu dư sau đối trừ công nợ.');
+    const sourceMethod = await decideRefundMethod(tx, a, who(c), { method: method as RefundMethod, amount, overrideReason: x.overrideReason, overrideEvidence: x.overrideEvidence });
     const id = crypto.randomUUID(), at = now(), refundNo = 'HT-CRM-' + id.slice(0, 8).toUpperCase(); let shiftId: string | null = null, cashEntryId: string | null = null;
     if (method === 'cash') {
       const [s] = await tx.select().from(posShifts).where(and(eq(posShifts.memberId, who(c).id), eq(posShifts.cashDrawerId, drawerId), isNull(posShifts.closedAt))).for('update');
@@ -237,8 +239,8 @@ export function registerCrmReturnRoutes(router: Router<StaffEnv>, loadOrder: Loa
       shiftId = s.id; cashEntryId = crypto.randomUUID();
         await tx.insert(cashEntries).values({ id: cashEntryId, entryNo: refundNo, drawerId, shiftId, kind: 'customer_refund', direction: 'out', amount, reason: `Hoàn ${r.returnNo}: ${r.reason}`, status: 'posted', approvalThresholdSnapshot: drawer.approvalThreshold, createdBy: who(c).id, createdAt: at, approvedBy: r.approvedBy, approvedAt: r.approvedAt, requestKey: key, updatedAt: at });
     }
-    const [refund] = await tx.insert(posRefunds).values({ id, refundNo, returnId: r.id, shiftId, drawerId, method, amount, cashEntryId, reference, confirmationNote: x.note, confirmedBy: who(c).id, confirmedAt: at, requestKey: key, createdAt: at }).returning();
-    await cashAudit(tx, who(c).id, 'crm-refund', 'pos-returns', r.id, { orderId: o.id, refundId: id, amount, method, reference, drawerId, shiftId }); return refund!;
+    const [refund] = await tx.insert(posRefunds).values({ id, refundNo, returnId: r.id, shiftId, drawerId, method, amount, cashEntryId, reference, confirmationNote: x.note, confirmedBy: who(c).id, confirmedAt: at, requestKey: key, createdAt: at , ...sourceMethod }).returning();
+    await cashAudit(tx, who(c).id, 'crm-refund', 'pos-returns', r.id, { orderId: o.id, refundId: id, amount, method, reference, drawerId, shiftId, ...sourceMethod }); return refund!;
   }
   /** Hoàn tất khi không còn tiền dư phải hoàn; trả về false nếu còn tiền phải xử lý. */
   async function completeIn(c: Ctx, tx: CashDb, o: Order, r: Ret, strict = true) {

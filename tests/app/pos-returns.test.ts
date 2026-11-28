@@ -324,13 +324,22 @@ test('Người chỉ định duyệt thay, không tự duyệt và không duyệ
       .status,
     400,
   );
-  ok(
-    await f.call('/pos/returns/' + r.id + '/refund', f.emp, 'POST', {
+  // Bill thu tiền mặt: hoàn chuyển khoản là khác phương thức gốc, nhân viên bị chặn.
+  const crossed = await f.call('/pos/returns/' + r.id + '/refund', f.emp, 'POST', { ...transfer, reference: 'FT123' });
+  assert.equal(crossed.status, 403, JSON.stringify(crossed.data));
+  assert.equal(crossed.data.code, 'REFUND_METHOD_OVERRIDE');
+  assert.equal((await f.call('/pos/returns/' + r.id + '/refund', f.mgr, 'POST', { ...transfer, reference: 'FT123' })).status, 400, 'Manager cần lý do và bằng chứng');
+  const overridden = ok(
+    await f.call('/pos/returns/' + r.id + '/refund', f.mgr, 'POST', {
       ...transfer,
       reference: 'FT123',
+      overrideReason: 'Khách không nhận tiền mặt, yêu cầu chuyển khoản',
+      overrideEvidence: 'Ảnh tin nhắn khách xác nhận STK',
     }),
     201,
   );
+  assert.equal(overridden.overrideBy, 'mgr');
+  assert.equal(overridden.sourcePaymentId, null);
   assert.equal((await f.db.select().from(cashEntries)).length, 0);
   assert.equal(
     ok(await f.call('/pos/shifts/' + shift.id, f.emp)).expectedCash,
