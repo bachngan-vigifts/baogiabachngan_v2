@@ -26,9 +26,9 @@ test('manual drawer entries cannot record an existing refund again; same-amount 
 
   const confirmed = f.ok(await post({ reason: 'Hoàn tiền cọc khách khác (phiếu giấy 12)', notDuplicateRefund: true }), 201);
   const audit = (await f.db.select().from(auditLogs).where(eq(auditLogs.entityId, confirmed.id))).find((a) => a.action === 'create')!;
-  assert.match(audit.detail ?? JSON.stringify(audit), new RegExp(refund.refundNo), 'override recorded with the refund it was compared to');
+  assert.match(audit.data, new RegExp(refund.refundNo), 'override recorded with the refund it was compared to');
 
   f.ok(await post({ amount: 120000, reason: 'Hoàn tiền xăng xe giao hàng' }), 201);
   f.ok(await post({ reason: 'Mua văn phòng phẩm' }), 201);
-  f.ok(await post({ kind: 'other_income', reason: `Thu khác ghi chú ${refund.refundNo}`.replace(refund.refundNo, 'HT-NOTEXIST') }), 201, 'unknown codes are not duplicates');
+  f.ok(await post({ kind: 'other_income', reason: `Thu khác ghi chú ${refund.refundNo}`.replace(refund.refundNo, 'HT-NOTEXIST') }), 201); // unknown codes are not duplicates
 });
