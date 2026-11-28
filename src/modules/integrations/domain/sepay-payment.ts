@@ -56,6 +56,15 @@ export function sepayReferenceCandidates(content: string): string[] {
   return [...candidates];
 }
 
+/** Invoice numbers may be numeric: require an invoice label, never match a transfer amount. */
+export function sepayInvoiceCandidates(content:string):string[] {
+ const text=content.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'D').toUpperCase()
+   .replace(/([A-Z0-9])(?:\s*[-_/.‐‑‒–—−])+\s*(?=[A-Z0-9])/g,'$1');
+ return [...new Set([...text.matchAll(/\b(?:HOA\s*DON|INVOICE|HD)(?:\s+SO)?(?:\s*[:#]\s*|\s+)([A-Z0-9]+(?:\s*(?:[,;&]|\bVA\b)\s*[A-Z0-9]+)*)/g)]
+   .filter(m=>!/^[A-Z0-9]|^\s+\d/.test(text.slice(m.index!+m[0].length)))
+   .flatMap(m=>m[1]!.split(/\s*(?:[,;&]|\bVA\b)\s*/).map(normalizeSepayReference)))];
+}
+
 export function sepayPaidDate(transactionAt: string): string {
   return new Date(Date.parse(transactionAt) + 7 * 60 * 60_000)
     .toISOString()
@@ -140,12 +149,13 @@ export function parseSepayBankTransaction(body: Record<string, unknown>): SepayB
 export function decideSepayMatch(
   matches: { id: string; outstanding: number }[],
   amount: number,
+  exactAmount = false,
 ) {
   if (!matches.length)
     return {
       status: "unmatched" as const,
       reason:
-        "Không tìm thấy mã đơn, báo giá hoặc hợp đồng trong nội dung chuyển khoản.",
+        "Không tìm thấy mã đơn, báo giá, hợp đồng hoặc hóa đơn trong nội dung chuyển khoản.",
     };
   if (matches.length > 1)
     return {
@@ -165,6 +175,7 @@ export function decideSepayMatch(
       reason: "Số tiền chuyển vượt công nợ còn lại.",
       orderId: order.id,
     };
+  if(exactAmount && amount !== order.outstanding)return {status:"review" as const,reason:"Số tiền chuyển chưa khớp công nợ còn lại; cần đối soát.",orderId:order.id};
   return { status: "matched" as const, reason: "", orderId: order.id };
 }
 

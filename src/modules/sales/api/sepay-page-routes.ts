@@ -1,3 +1,4 @@
+import {sepayReferenceCandidates,sepayInvoiceCandidates} from '../../integrations/domain/sepay-payment.ts';
 import {assertSepayReconcileAccess,assertSepayReconcileTarget,sepayWebOrderScope,sepayWebOrderScopeInfo} from './sepay-reconcile-access.ts';
 import {orderScopeFor} from './routes.ts';
 import {detailedSepay,allocationAmount,hasDetailedSepay,allocationNeedsReview} from './sepay-allocation-store.ts';
@@ -13,6 +14,7 @@ import {isLockWebQrPayment} from './sepay-web-store.ts';
 import {webStoreOrders as web,posRegisters as webRegisters,posRegisters} from '../pos-schema.ts';
 import {webDocumentStatus} from './web-order-documents.ts';
 import {
+  type SQLWrapper,
   and,
   asc,
   desc,
@@ -296,6 +298,10 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
     async (c) => {
       assertSepayReconcileAccess(member(c));
       const p = c.url.searchParams, q = (p.get('q') || '').trim();
+      const narrative=(p.get('reference')||'').trim();
+      if(narrative.length>2000)throw new AppError(400,'Nội dung chuyển khoản quá dài.');
+      const refs=sepayReferenceCandidates(narrative),invoices=sepayInvoiceCandidates(narrative);
+      const refMatch=(field:SQLWrapper,values=refs)=>inArray(sql`upper(regexp_replace(${foldSql(field)}, '[^a-z0-9]', '', 'g'))`,sql`(select jsonb_array_elements_text(${JSON.stringify(values)}::jsonb))`);
       const kind = p.get('kind'), source = p.get('source') || (kind === 'order' ? 'crm' : kind === 'contract' ? 'contract' : kind === 'all' ? 'crm-all' : 'all');
       const eligibility = p.get('eligibility') || 'active';
       if (q.length > 120 || (p.has('source') && !['all','crm','contract','pos','web'].includes(source)) ||
@@ -324,15 +330,16 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
         eligibility === 'draft' ? eq(sql`${status}`,'draft') :
         eligibility === 'cancelled' ? eq(sql`${status}`,'cancelled') : undefined;
       const rows = await c.env.db.select({
-        id:orders.id, orderNo:orders.orderNo, contractNo:contracts.contractNo, customerName:name, total:orders.total,
+        id:orders.id, orderNo:orders.orderNo, contractNo:contracts.contractNo, invoiceNo:orders.invoiceNo, customerName:name, total:orders.total,
         status:sql<string>`${orders.status}`.as('status'), createdAt:orders.createdAt,
         kind:sql<string>`case when ${orders.channel}='pos' then 'pos' when ${contracts.id} is not null then 'contract' else 'crm' end`.as('kind'),
         contractStatus:contracts.status, orderDate:orders.orderDate, selectable:sql<boolean>`coalesce(${eligible},false)`,
-        searchRank:(searchRank([orders.orderNo,contracts.contractNo],name,q) || sql`0`).as('search_rank'),
+        searchRank:(searchRank([orders.orderNo,contracts.contractNo,orders.invoiceNo],name,q) || sql`0`).as('search_rank'),
       }).from(orders).leftJoin(contracts,eq(contracts.orderId,orders.id))
         .leftJoin(customers,eq(customers.id,sql`coalesce(${contracts.customerId},${orders.customerId})`))
         .where(and(
           orderScopeFor(member(c)),
+          narrative&&!q?or(refMatch(orders.orderNo),refMatch(contracts.contractNo),refMatch(orders.quoteNo),refMatch(orders.sapoOrderCode),refMatch(orders.invoiceNo,invoices)):undefined,
           source === 'web' ? sql`false` : source === 'pos' ? eq(orders.channel,'pos') :
           source === 'crm' ? and(eq(orders.channel,'crm'),isNull(contracts.id)) :
           source === 'contract' ? and(eq(orders.channel,'crm'),sql`${contracts.id} is not null`) :
@@ -340,17 +347,18 @@ export function registerSepayPageRoutes(router: Router<StaffEnv>): void {
           statusFilter(orders.status,eligible),gte(orders.total,min),lte(orders.total,max),
           fromDay ? or(and(eq(orders.channel,'crm'),gte(orders.orderDate,fromDay)),and(eq(orders.channel,'pos'),gte(orders.createdAt,from!))) : undefined,
           crmEnd ? or(and(eq(orders.channel,'crm'),lt(orders.orderDate,crmEnd)),and(eq(orders.channel,'pos'),lt(orders.createdAt,to!))) : undefined,
-          q ? matchAllWords(foldSql(orders.orderNo,contracts.contractNo,orders.quoteNo,orders.customerName,orders.phone,
+          q ? matchAllWords(foldSql(orders.orderNo,contracts.contractNo,orders.invoiceNo,orders.quoteNo,orders.customerName,orders.phone,
             customers.name,customers.contact,customers.phone,customers.customerCode),q) : undefined,
         ))
         .unionAll(c.env.db.select({
           id:sql<string>`'web:'||${web.id}`.as('id'),orderNo:sql<string>`coalesce(nullif(${web.crmOrderNo},''),${web.orderNo})`.as('order_no'),
-          contractNo:sql<string|null>`null`.as('contract_no'),customerName:web.customerName,total:web.total,status:webStatus.as('status'),
+          contractNo:sql<string|null>`null`.as('contract_no'),invoiceNo:sql<string>`''`.as('invoice_no'),customerName:web.customerName,total:web.total,status:webStatus.as('status'),
           createdAt:web.orderedAt,kind:sql<string>`'web'`.as('kind'),contractStatus:sql<null>`null`.as('contract_status'),
           orderDate:web.orderedAt,selectable:sql<boolean>`coalesce(${webEligible},false)`,
           searchRank:(searchRank([web.orderNo,web.crmOrderNo],web.customerName,q) || sql`0`).as('search_rank'),
         }).from(web).where(and(
           sepayWebOrderScope(member(c)),
+          narrative&&!q?or(refMatch(web.orderNo),refMatch(web.crmOrderNo)):undefined,
           ['all','web'].includes(source) ? inArray(web.source,['lock','minhlong']) : sql`false`,
           statusFilter(webStatus,webEligible),gte(web.total,min),lte(web.total,max),
           from ? gte(web.orderedAt,from) : undefined,to ? lt(web.orderedAt,to) : undefined,
