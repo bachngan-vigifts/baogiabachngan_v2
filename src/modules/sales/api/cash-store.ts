@@ -253,8 +253,11 @@ export async function closeCashShift(
   if (totals.pending.length)
     throw new AppError(409, 'Còn phiếu chờ duyệt, xử lý trước khi kết ca.', 'CASH_PENDING_APPROVAL');
   const countedCash = posMoney(b.countedCash, 'Tiền thực đếm'),
-    report = await reportOf(db, s),
-    cashDifference = countedCash - report.expectedCash,
+    report = await reportOf(db, s);
+  const blocking = (report.returns?.checks ?? []).filter((x: { level: string }) => x.level === 'block');
+  if (blocking.length)
+    throw new AppError(409, 'Chưa kết ca được: ' + blocking.map((x: { message: string; refs: string[] }) => `${x.message} (${x.refs.join(', ')})`).join(' '), 'SHIFT_REFUND_CHECK');
+  const cashDifference = countedCash - report.expectedCash,
     { reasonCode, reasonNote, differenceReason } = cashCloseReason(cashDifference, b.reasonCode, b.reasonNote),
     now = cashNow();
   const closed = {

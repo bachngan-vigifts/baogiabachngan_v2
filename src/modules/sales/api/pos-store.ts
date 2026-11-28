@@ -6,6 +6,7 @@ import { posCustomerIssue } from '../domain/pos-customer.ts';
 import { posOrderReservations, posPaymentIntents } from '../pos-order-flow-schema.ts';
 import { flowInitialAmount, flowHoldUntil, saleFlowOf } from '../domain/pos-order-flow.ts';
 import { exchangeForCart, returnBalances } from './pos-return-credit.ts';
+import { shiftRefundChecks } from './shift-refund-checks.ts';
 import { posExchangeAllocations, posReturns, posRefunds } from '../return-schema.ts';
 import { posOrderNote } from '../domain/pos-order-note.ts';
 import { posFeeInput, calculatePosFees } from '../domain/pos-fees.ts';
@@ -334,6 +335,7 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
   const r = await registerOf(db, s.registerId);
   const [person] = await db.select({ name: employees.name }).from(employees).where(eq(employees.id, s.memberId));
   const [counted] = await db.select({ count: count() }).from(posStockCounts).where(eq(posStockCounts.shiftId, s.id));
+  const refundReview = await shiftRefundChecks(db, s, cutoff);
   return {
     shift: s,
     memberName: person?.name ?? s.memberId,
@@ -345,6 +347,8 @@ export async function shiftReport(db: PosDb, s: typeof posShifts.$inferSelect, c
       refundedCash: Number((await db.select({n:sql<number>`coalesce(sum(${posRefunds.amount}),0)`}).from(posRefunds).where(and(eq(posRefunds.shiftId,s.id),eq(posRefunds.method,'cash'),sql`${posRefunds.confirmedAt}<=${cutoff} and (${posRefunds.voidedAt} is null or ${posRefunds.voidedAt}>${cutoff})`)))[0]?.n||0),
       refundedTransfer: Number((await db.select({n:sql<number>`coalesce(sum(${posRefunds.amount}),0)`}).from(posRefunds).where(and(eq(posRefunds.shiftId,s.id),eq(posRefunds.method,'transfer'),sql`${posRefunds.confirmedAt}<=${cutoff} and (${posRefunds.voidedAt} is null or ${posRefunds.voidedAt}>${cutoff})`)))[0]?.n||0),
       exchanged: payments.filter(p=>p.source==='pos_exchange_credit').reduce((n,p)=>n+p.total,0),
+      pendingRefunds: refundReview.pendingRefunds,
+      checks: refundReview.checks,
     },
     openingCount: counted?.count ? { scope: 'partial', count: counted.count } : null,
     bills: bills[0] ?? { count: 0, revenue: 0, discount: 0 },
