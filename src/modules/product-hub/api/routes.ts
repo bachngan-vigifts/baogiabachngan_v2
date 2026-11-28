@@ -40,11 +40,12 @@ function source(sku:string,m:Member,kind:ProductDocumentKind):SQL{
   from ${salesFrom} where ${and(eq(ol.sku,sku),orderScopeFor(m),scope,kind==='contracts'?sql`${k.id} is not null`:sql`${k.id} is null`)} group by ${o.id},${k.id}`;
  if(kind==='quotes')return sql`select ${q.id} id,${q.quoteNo} number,coalesce(nullif(${q.quoteDate},''),${q.createdAt}) date,
   ${q.approvalStatus} status,${q.customer} partner,sum(${ql.qty}) quantity,string_agg(distinct ${ql.unit},' / ') unit,${q.quoteType} "quoteType",
-  ${m.role==='manager'?sql`array(
-    select distinct trim(line->>'supplierInfo') as supplier
-    from jsonb_array_elements(case when jsonb_typeof(${q.data}::jsonb->'rows')='array' then ${q.data}::jsonb->'rows' else '[]'::jsonb end) line
-    where line->>'sku'=${sku} and trim(line->>'supplierInfo')<>'' order by supplier
-  ) suppliers,`:sql``}
+  ${m.role==='manager'?sql`(select coalesce(jsonb_agg(jsonb_build_object(
+    'supplier',trim(line->>'supplierInfo'),'unitCost',line->'costPrice','quantity',line->'qty','unit',line->>'unit'
+  ) order by ordinal),'[]'::jsonb)
+    from jsonb_array_elements(case when jsonb_typeof(${q.data}::jsonb->'rows')='array' then ${q.data}::jsonb->'rows' else '[]'::jsonb end) with ordinality as items(line,ordinal)
+    where line->>'sku'=${sku} and (trim(line->>'supplierInfo')<>'' or jsonb_typeof(line->'costPrice')='number')
+  ) "quoteCosts",`:sql``}
   jsonb_agg(jsonb_build_object('qty',${ql.qty},'price',${ql.price},'discount',${ql.discount},'discountType',${ql.discountType},'printFee',${ql.printFee})) "quoteRows"
   from ${ql} join ${q} on ${q.id}=${ql.quoteId} where ${and(eq(ql.sku,sku),quotationPredicate(m),scope)} group by ${q.id}`;
  if(kind==='purchases')return sql`select ${p.id} id,${p.ticketNumber} number,${p.createdAt} date,
@@ -87,7 +88,7 @@ async function purchaseSourceLinks(db:Db,m:Member,ids:string[],sku:string){
  }
  return out;
 }
-interface DocumentRow{ id:string;number:string;date:string;status:string;partner:string;quantity:number;unit?:string;amount?:number|null;orderId?:string;contractId?:string;purchaseId?:string;purchaseNumber?:string;quoteType?:QuoteDoc['type'];quoteRows?:QuoteDoc['rows'];purchaseRows?:TotalsRow[];approvalStatus?:string }
+interface DocumentRow{ quoteCosts?:{supplier:string|null;unitCost:number|null;quantity:number|null;unit:string|null}[]; id:string;number:string;date:string;status:string;partner:string;quantity:number;unit?:string;amount?:number|null;orderId?:string;contractId?:string;purchaseId?:string;purchaseNumber?:string;quoteType?:QuoteDoc['type'];quoteRows?:QuoteDoc['rows'];purchaseRows?:TotalsRow[];approvalStatus?:string }
 export async function productDocuments(db:Db,sku:string,m:Member,kind:ProductDocumentKind,offset:number){
  if(!allowed(m,kind))throw new AppError(403,'Bạn chưa được cấp quyền xem nhóm chứng từ này.');
  const base=source(sku,m,kind),limit=25;
@@ -98,7 +99,7 @@ export async function productDocuments(db:Db,sku:string,m:Member,kind:ProductDoc
   if(quoteRows)shown.amount=totals({type:quoteType!,rows:quoteRows}).subtotal;
   if(purchaseRows)shown.amount=canSeePurchasePrices(m,{approvalStatus:approvalStatus!})&&purchaseRows.every(r=>r.price!==null)?computeOrderTotals({rows:purchaseRows,depositRate:0,paidAmount:0}).subtotal:null;
   const route=kind==='quotes'?'quotes':kind==='early'?'early-requests':kind==='purchases'||kind==='receipts'?'purchases':kind==='contracts'||row.contractId?'contracts':'orders';
-  return{...shown,...(['purchases','receipts'].includes(kind)?{sources:links.get(row.purchaseId||row.id)||[]}:{}),quantity:Number(row.quantity),href:'#/'+route+'/'+encodeURIComponent(row.purchaseId||row.orderId||row.id)};
+  return{...shown,...(shown.quoteCosts?{suppliers:[...new Set(shown.quoteCosts.map(line=>line.supplier).filter(Boolean))].sort()}:{}),...(['purchases','receipts'].includes(kind)?{sources:links.get(row.purchaseId||row.id)||[]}:{}),quantity:Number(row.quantity),href:'#/'+route+'/'+encodeURIComponent(row.purchaseId||row.orderId||row.id)};
  })};
 }
 export function registerProductDetailRoutes(router:Router<StaffEnv>){
