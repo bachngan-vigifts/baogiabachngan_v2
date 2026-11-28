@@ -1,3 +1,4 @@
+import { assertNotRefundDuplicate } from '../modules/sales/api/refund-duplicate-guard.ts';
 import { notifyCashApproval, notifyCashApprovers } from '../modules/sales/api/cash-approval-notification.ts';
 import { cashTasksChanged } from '../modules/sales/api/invoice-task-hooks.ts';
 import { allowedRegister, allowedDrawer, posScope } from '../modules/sales/api/pos-access.ts';
@@ -381,6 +382,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
               .where(and(eq(posShifts.cashDrawerId, d.id), isNull(posShifts.closedAt)));
           if (!s || (input.kind !== 'adjustment' && s.memberId !== who(c).id))
             throw new AppError(409, 'Bạn cần có ca đang mở để tạo phiếu.');
+          const similarRefund = await assertNotRefundDuplicate(tx, d.id, input, b.notDuplicateRefund === true);
           const reconciliationId = posText(b.reconciliationId) || null;
           if (reconciliationId) {
             const [r] = await tx
@@ -418,6 +420,7 @@ export function registerCashRoutes(router: Router<StaffEnv>) {
             })
             .returning();
           await cashAudit(tx, who(c).id, 'create', 'cash-entries', id, {
+            ...(similarRefund ? { confirmedNotDuplicateOf: similarRefund } : {}),
             ...input,
             shiftId: s.id,
             status: e!.status,

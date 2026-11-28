@@ -1,5 +1,5 @@
 import { posReturns, posRefunds } from '../modules/sales/return-schema.ts';
-import { and, asc, eq, gte, inArray, lte, ne } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lte, ne } from 'drizzle-orm';
 import type { Router } from '../core/http/router.ts';
 import { json } from '../core/http/router.ts';
 import { AppError } from '../core/errors.ts';
@@ -36,7 +36,7 @@ export function registerCashbookRoutes(router: Router<StaffEnv>) {
       db.select({ p: supplierPayments, ticketNumber: incomingShipments.ticketNumber, supplierName: incomingShipments.supplierName }).from(supplierPayments)
         .innerJoin(incomingShipments, eq(incomingShipments.id, supplierPayments.shipmentId))
         .where(and(gte(supplierPayments.paidDate, from), lte(supplierPayments.paidDate, to))).orderBy(asc(supplierPayments.paidDate), asc(supplierPayments.createdAt)),
-      db.select({p:posRefunds,orderId:salesOrders.id,orderNo:salesOrders.orderNo,customerName:salesOrders.customerName}).from(posRefunds).innerJoin(posReturns,eq(posReturns.id,posRefunds.returnId)).innerJoin(salesOrders,eq(salesOrders.id,posReturns.orderId)).where(and(gte(posRefunds.confirmedAt,new Date(from+'T00:00:00+07:00').toISOString()),lte(posRefunds.confirmedAt,new Date(to+'T23:59:59.999+07:00').toISOString()))),
+      db.select({p:posRefunds,orderId:salesOrders.id,orderNo:salesOrders.orderNo,customerName:salesOrders.customerName}).from(posRefunds).innerJoin(posReturns,eq(posReturns.id,posRefunds.returnId)).innerJoin(salesOrders,eq(salesOrders.id,posReturns.orderId)).where(and(isNull(posRefunds.voidedAt),gte(posRefunds.confirmedAt,new Date(from+'T00:00:00+07:00').toISOString()),lte(posRefunds.confirmedAt,new Date(to+'T23:59:59.999+07:00').toISOString()))),
       db.select({ p: cashEntries, drawerName: cashDrawers.name, createdByName: employees.name })
         .from(cashEntries)
         .innerJoin(cashDrawers, eq(cashDrawers.id, cashEntries.drawerId))

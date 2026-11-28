@@ -6,6 +6,7 @@ import {
   uniqueIndex,
   index,
   check,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { employees } from '../staff/schema.ts';
 import { warehouses } from '../catalog/schema.ts';
@@ -152,8 +153,13 @@ export const posRefunds = pgTable(
     overrideReason: text('override_reason').notNull().default(''),
     overrideEvidence: text('override_evidence').notNull().default(''),
     overrideBy: text('override_by').references(() => employees.id),
+    voidedAt: text('voided_at'),
+    voidedBy: text('voided_by').references(() => employees.id),
+    voidReason: text('void_reason').notNull().default(''),
+    replacedByRefundId: text('replaced_by_refund_id').references((): AnyPgColumn => posRefunds.id),
   },
   (t) => [
+    check('chk_pos_refund_void', sql`(${t.voidedAt} is null and ${t.voidedBy} is null and ${t.voidReason}='' and ${t.replacedByRefundId} is null) or (${t.voidedAt} is not null and ${t.voidedBy} is not null and length(trim(${t.voidReason}))>=10)`),
     check('chk_pos_refund_override', sql`(${t.overrideBy} is null and ${t.overrideReason}='' and ${t.overrideEvidence}='') or (${t.overrideBy} is not null and length(trim(${t.overrideReason}))>=10 and length(trim(${t.overrideEvidence}))>0 and ${t.sourcePaymentId} is null)`),
     index('idx_pos_refunds_source_payment').on(t.sourcePaymentId).where(sql`${t.sourcePaymentId} is not null`),
     uniqueIndex('uq_pos_refund_no').on(t.refundNo),
@@ -213,5 +219,31 @@ export const posExchangeAllocations = pgTable(
       t.status,
       t.expiresAt,
     ),
+  ],
+).enableRLS();
+
+/** Manager corrections of a refund: one per refund, idempotent by request key, with before/after snapshots. */
+export const posRefundCorrections = pgTable(
+  'pos_refund_corrections',
+  {
+    id: text('id').primaryKey(),
+    refundId: text('refund_id').notNull().references(() => posRefunds.id),
+    action: text('action').notNull(),
+    replacementRefundId: text('replacement_refund_id').references(() => posRefunds.id),
+    reason: text('reason').notNull(),
+    beforeSnapshot: text('before_snapshot').notNull(),
+    afterSnapshot: text('after_snapshot').notNull(),
+    createdBy: text('created_by').notNull().references(() => employees.id),
+    createdAt: text('created_at').notNull(),
+    requestKey: text('request_key').notNull(),
+    requestHash: text('request_hash').notNull(),
+  },
+  (t) => [
+    uniqueIndex('uq_refund_correction_key').on(t.requestKey),
+    uniqueIndex('uq_refund_correction_refund').on(t.refundId),
+    check('chk_refund_correction_action', sql`${t.action} in ('void','change_method')`),
+    check('chk_refund_correction_shape', sql`(${t.action}='void' and ${t.replacementRefundId} is null) or (${t.action}='change_method' and ${t.replacementRefundId} is not null)`),
+    check('chk_refund_correction_reason', sql`length(trim(${t.reason}))>=10`),
+    check('chk_refund_correction_key', sql`length(${t.requestKey}) between 8 and 200 and ${t.requestHash} ~ '^[0-9a-f]{64}$'`),
   ],
 ).enableRLS();
