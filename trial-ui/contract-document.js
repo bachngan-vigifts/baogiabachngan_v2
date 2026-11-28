@@ -363,7 +363,7 @@ globalThis.ContractDocument = (() => {
     // Only the generated 2.1 clause is replaced. Other edits keep their text/runs/hash.
     return edits.filter(e=>e.index<old.from||e.index>=old.to).map(e=>({...e,index:e.index>=old.to?e.index+shift:e.index}));
   }
-  async function prepareDocument({quote, contractNumber, templateBytes, details, documentType = 'HDKT', contractBytes}) {
+  async function prepareDocument({quote, contractNumber, templateBytes, details, documentType = 'HDKT', contractBytes, allowPaymentEdit = false}) {
     if (!unzipSync) throw new Error('Chưa tải được bộ tạo file HĐKT. Vui lòng tải lại trang.');
     if (!['HRC', 'B2B', 'VIGIFTS'].includes(quote.quote_type)) throw new Error('Loại báo giá không hỗ trợ tải HĐKT.');
     if (!contractNumber) throw new Error('Thiếu số HĐKT.');
@@ -401,7 +401,7 @@ globalThis.ContractDocument = (() => {
       edits=await globalThis.ContractWordEdit.rebaseRepresentative(base,edits,details||{});
       if(documentType==='HDKT')edits=await globalThis.ContractWordEdit.rebaseFields(base,edits);
     }
-    if(documentType==='HDKT'&&globalThis.ContractWordEdit?.formFieldParagraphs)locked=globalThis.ContractWordEdit.formFieldParagraphs(base);
+    if(documentType==='HDKT'&&globalThis.ContractWordEdit?.formFieldParagraphs)locked=globalThis.ContractWordEdit.formFieldParagraphs(base,allowPaymentEdit);
     if(generatedQuality){const range=qualityRange(strFromU8(files[path]));locked=[...locked,...Array.from({length:range.to-range.from},(_,i)=>range.from+i)];}
     return {base,edits,locked};
   }

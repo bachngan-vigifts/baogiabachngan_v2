@@ -112,6 +112,7 @@ globalThis.ContractWordEdit=(()=>{
   const {paragraphs}=open(bytes);
   return Promise.all(edits.map(async edit=>{
    const p=paragraphs[edit.index],kind=p&&fieldKind(textOf(p));
+   if(kind==='payment' && await digest(serialize(p))===edit.hash)return edit;
    if(!kind||kind!==fieldKind(String(edit.text??'')))return edit;const result={...edit,hash:await digest(serialize(p)),text:textOf(p)};if(result.text!==edit.text)delete result.runs;return result;
   }));
  }
@@ -181,6 +182,8 @@ globalThis.ContractWordEdit=(()=>{
   }
   return {base:pack(target.files,target.xml),edits:normalized,locked};
  }
- const formFieldParagraphs=bytes=>open(bytes).paragraphs.flatMap((p,index)=>fieldKind(textOf(p))?[index]:[]);
+ const formFieldParagraphs=(bytes,allowPaymentEdit=false)=>open(bytes).paragraphs.flatMap((p,index)=>{
+  const kind=fieldKind(textOf(p));return kind && !(kind==='payment' && allowPaymentEdit)?[index]:[];
+ });
  return {formatVersion:1,apply,prepare,rebaseTypography,rebaseRepresentative,representativeText,rebaseFields,copyContractTable,formFieldParagraphs};
 })();

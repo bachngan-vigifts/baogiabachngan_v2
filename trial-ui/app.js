@@ -5549,6 +5549,8 @@ async function previewContractNo() {
     if (untouched || !input.value.trim()) input.value = r.contractNo || '';
     input.dataset.auto = r.contractNo || '';
     // Cọc / số ngày theo báo giá (ô còn trống thì máy chủ cũng tự lấy theo báo giá khi lập).
+    if (r.terms?.signedDate && f.signedDate.value === todayIso()) f.signedDate.value = r.terms.signedDate;
+    if (r.terms?.deliveryAddress && f.deliveryAddress.value === (t.address || '')) f.deliveryAddress.value = r.terms.deliveryAddress;
     if (r.terms?.depositRate != null && !f.depositRate.value.trim()) f.depositRate.value = String(r.terms.depositRate);
     if (r.terms?.paymentDays != null && !f.paymentDays.value.trim()) f.paymentDays.value = String(r.terms.paymentDays);
   } catch (ex) { input.placeholder = 'Nhập số HĐKT'; }

@@ -13,6 +13,10 @@ test('resolve source terms, including zero; keep a textual deadline distinct fro
   assert.equal(contractTermsFromQuote({ paymentTerms: { depositRate: 0, balanceTerm: '0' } }).paymentDays, 0);
   assert.equal(contractTermsFromQuote({ paymentTerms: { depositRate: 0, balanceTerm: 'Thanh toán trước khi giao hàng' } }).paymentDays, undefined);
 });
+test('explicit quotation document fields take precedence, including zero', () => {
+  const details = { signedDate: '2026-11-01', depositRate: 0, paymentDays: 0, deliveryTime: 'Sau duyệt mẫu', deliveryAddress: 'Kho B' };
+  assert.deepEqual(contractTermsFromQuote({ ...quote(), contractDocument: { details } }), details);
+});
 test('historical quote reads explicit deposit and days from payment notes without guessing a vague agreement', () => {
   const legacy = contractTermsFromQuote({ notes: '- Thanh toán: Bên A thanh toán 30% giá trị hợp đồng ngay sau khi ký hợp đồng. Thanh toán 70% giá trị còn lại trong vòng 15 ngày kể từ ngày giao hàng.' });
   assert.equal(legacy.depositRate, 30); assert.equal(legacy.paymentDays, 15);

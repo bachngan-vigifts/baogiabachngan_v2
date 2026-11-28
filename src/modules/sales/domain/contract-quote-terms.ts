@@ -2,7 +2,7 @@ import { AppError } from '../../../core/errors.ts';
 import { validDeliveryDate } from '../../quotes/domain/quotation-schema.ts';
 import { quoteNoteTerms } from './order-notes.ts';
 
-export interface ContractQuoteTerms { depositRate?: number; paymentDays?: number; deliveryTime?: string; deliveryAddress?: string }
+export interface ContractQuoteTerms { signedDate?: string; depositRate?: number; paymentDays?: number; deliveryTime?: string; deliveryAddress?: string }
 type Data = Record<string, any>;
 const nonempty = (v: unknown) => typeof v === 'string' && v.trim() ? v.trim() : undefined;
 /** Prefer current quotation terms; historical quotes can still use their document fields / notes. */
@@ -15,15 +15,17 @@ export function contractTermsFromQuote(data: Data): ContractQuoteTerms {
     : /thanh toán\s+100%[^.]{0,250}trước khi giao hàng/i.test(payment) ? 100
     : /thanh toán\s+100%[^.]{0,250}(?:sau|ngay sau|trong vòng)\s/i.test(payment) ? 0 : undefined;
   const noteDays = /(?:trong(?: vòng)?|sau)\s+(\d+)\s*ngày\s+kể từ ngày giao hàng/i.exec(payment)?.[1];
-  const rate = data.paymentTerms?.depositRate ?? noteRate ?? saved.depositRate;
-  const term = data.paymentTerms?.balanceTerm ?? noteDays ?? saved.paymentDays;
+  const rate = saved.depositRate ?? data.paymentTerms?.depositRate ?? noteRate;
+  const term = saved.paymentDays ?? data.paymentTerms?.balanceTerm ?? noteDays;
   const days = paymentDaysOfTerm(term);
-  const date = validDeliveryDate(data.deliveryDate || data.delivery_date);
+  const date = validDeliveryDate(saved.deliveryDate) || validDeliveryDate(data.deliveryDate || data.delivery_date);
+  const signedDate = validDeliveryDate(saved.signedDate);
   return {
+    ...(signedDate ? { signedDate } : {}),
     ...(typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 && rate <= 100 ? { depositRate: rate } : {}),
     ...(days !== undefined && days <= 3650 ? { paymentDays: days } : {}),
-    deliveryTime: date ? 'Giao hàng ngày ' + date.split('-').reverse().join('/') : nonempty(notes.time) || nonempty(saved.deliveryTime),
-    deliveryAddress: nonempty(notes.address) || nonempty(saved.deliveryAddress) || nonempty(data.customerAddress),
+    deliveryTime: nonempty(saved.deliveryTime) || (date ? 'Giao hàng ngày ' + date.split('-').reverse().join('/') : nonempty(notes.time)),
+    deliveryAddress: nonempty(saved.deliveryAddress) || nonempty(notes.address) || nonempty(data.customerAddress),
   };
 }
 /**
