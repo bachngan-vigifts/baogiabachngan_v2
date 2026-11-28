@@ -614,6 +614,8 @@ test('invoice-labelled reference reconciles exact outstanding only, and duplicat
  const exact=await f.hook(f.payload('Thanh toán hóa đơn số 000123'));assert.equal(exact.data.status,'matched');assert.equal((await f.receipts(a.id)).length,1);
  const b=await f.order('DH-INVOICE-B',{invoiceNo:'000456'});await f.order('DH-INVOICE-C',{invoiceNo:'000456'});
  const ambiguous=await f.hook(f.payload('Thanh toán hóa đơn số 000456'));assert.equal(ambiguous.data.status,'review');assert.equal((await f.receipts(b.id)).length,0);
+ const multi=await f.order('DH-INVOICE-M1',{invoiceNo:'000789'});await f.order('DH-INVOICE-M2',{invoiceNo:'000790'});
+ assert.equal((await f.hook(f.payload('Thanh toán hóa đơn số 000789, 000790'))).data.status,'review');assert.equal((await f.receipts(multi.id)).length,0);
  const c=await f.order('DH-INVOICE-D',{invoiceNo:'100000'});
  await f.hook(f.payload('Khach chuyen 100000 dong'));assert.equal((await f.receipts(c.id)).length,0);
 });

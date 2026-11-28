@@ -191,6 +191,7 @@ test('invoice reference labels preserve complete identifiers and never infer bar
  assert.deepEqual(sepayInvoiceCandidates('hóa đơn số:000123'),['000123']);
  assert.deepEqual(sepayInvoiceCandidates('TT HD 000123 / ABC'),['000123ABC']);
  assert.deepEqual(sepayInvoiceCandidates('TT INVOICE 000123-ABC'),['000123ABC']);
+ assert.deepEqual(sepayInvoiceCandidates('hóa đơn số 000123, 000456'),['000123','000456']);
  assert.deepEqual(sepayInvoiceCandidates('chuyen 000123 dong'),[]);
  assert.deepEqual(sepayInvoiceCandidates('hoa don so 000123 456'),[]);
  assert.equal(decideSepayMatch([{id:'a',outstanding:100}],40,true).status,'review');
