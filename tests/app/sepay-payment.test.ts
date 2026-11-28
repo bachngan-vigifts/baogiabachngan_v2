@@ -421,7 +421,7 @@ test("manual transfers matching bank evidence are reviewed; distinct transfers a
   assert.equal((await f.hook(p)).data.status, "review");
   assert.equal((await f.receipts(o.id)).length, 1);
   assert.equal(
-    (await f.hook(f.payload(o.orderNo, 40000))).data.status,
+    (await f.hook(f.payload(o.orderNo, 70000))).data.status,
     "matched",
   );
   await f.db
@@ -434,7 +434,7 @@ test("manual transfers matching bank evidence are reviewed; distinct transfers a
     .where(eq(customerPayments.id, id));
   assert.equal((await f.hook(p)).data.status, "matched");
   assert.equal((await f.hook(p)).data.duplicate, true);
-  const differentDay = await f.order("MANUALOTHERDAY123");
+  const differentDay = await f.order("MANUALOTHERDAY123",{total:60000,subtotal:60000});
   await f.db
     .insert(customerPayments)
     .values({
