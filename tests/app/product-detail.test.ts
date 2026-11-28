@@ -55,10 +55,11 @@ test('purchase/receipt histories show purchase number and permission-filtered or
 
 test('quote history lists distinct internal suppliers for the requested SKU without a purchase order',async()=>{
  const f=await productDetailFixture(),path='/products/'+f.sku+'/documents?kind=quotes';
- const rows=[{sku:f.sku,supplierInfo:' NCC A '},{sku:f.sku,supplierInfo:'NCC A'},{sku:f.sku,supplierInfo:'NCC B'},{sku:'other',supplierInfo:'Khác'}];
+ const rows=[{sku:f.sku,supplierInfo:' NCC A ',costPrice:11500,qty:500,unit:'Cây'},{sku:f.sku,supplierInfo:'NCC A',costPrice:0},{sku:f.sku,supplierInfo:'NCC B'},{sku:'other',supplierInfo:'Khác'}];
  await f.db.execute(sql`update staff_quotations set quote_date='2027-01-01', data=${JSON.stringify({template:'sale',rows})} where id='quote-0'`);
  const manager=ok(await f.call(path,f.cookies.mgr)).rows.find((r:any)=>r.id==='quote-0');
+ assert.deepEqual(manager.quoteCosts.map((l:any)=>[l.supplier,l.unitCost]),[['NCC A',11500],['NCC A',0],['NCC B',null]]);
  assert.deepEqual(manager.suppliers,['NCC A','NCC B']);
  const employee=ok(await f.call(path,f.cookies.emp)).rows.find((r:any)=>r.id==='quote-0');
- assert.ok(employee);assert.equal(Object.hasOwn(employee,'suppliers'),false);
+ assert.ok(employee);assert.equal(Object.hasOwn(employee,'quoteCosts'),false);assert.equal(Object.hasOwn(employee,'suppliers'),false);
 });
