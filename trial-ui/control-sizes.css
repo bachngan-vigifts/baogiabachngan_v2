@@ -17,3 +17,7 @@
 :is(main, dialog) :is(.md-month, .page-head, .head-actions, .toolbar) > :is(.icon-btn, .btn-add) { box-sizing: border-box; width: var(--ctl-h); height: var(--ctl-h); min-width: var(--ctl-h); }
 /* Nút nhỏ (Lọc, Xóa bộ lọc, Excel, Lưu số hoá đơn) đứng cùng hàng với ô nhập/ô chọn: cao bằng ô. */
 :is(main, dialog, [popover]) :has(> :is(input:not([type=checkbox], [type=radio], [type=hidden]), select, label)) > .btn.small:not(table *) { box-sizing: border-box; min-height: var(--ctl-h); }
+/* Nút × đóng popup trên điện thoại: vùng bấm 44×44 và không bị co trong hàng tiêu đề dài (rà đồng bộ đợt 2, C4). */
+@media (max-width: 850px) {
+  dialog :is(.modal-head, .pur-mode-head) > .icon-btn, dialog .icon-btn:is([data-close], [data-x]) { box-sizing: border-box; flex: none; width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+}

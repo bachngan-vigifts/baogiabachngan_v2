@@ -6,7 +6,9 @@ export function choosePurchaseMode(onChoose) {
   const body = node('div', 'pur-mode-body');
   const close = () => { dialog.close(); dialog.remove(); };
   const choose = mode => { close(); onChoose(mode); };
-  body.append(node('h2', '', 'Lập đơn mua'), node('p', 'muted', 'Anh/chị muốn mua hàng theo nhu cầu nào?'));
+  const head = node('div', 'pur-mode-head'), x = button('×', close, 'icon-btn'); x.setAttribute('data-close', ''); x.setAttribute('aria-label', 'Đóng');
+  head.append(node('h2', '', 'Lập đơn mua'), x);
+  body.append(head, node('p', 'muted', 'Anh/chị muốn mua hàng theo nhu cầu nào?'));
   const choices = node('div', 'pur-mode-choices');
   for (const [mode, title, detail] of [
     ['source', 'Mua theo đơn / báo giá', 'Chọn đơn hàng, báo giá hoặc yêu cầu hỏi tồn; xem số còn cần đặt.'],

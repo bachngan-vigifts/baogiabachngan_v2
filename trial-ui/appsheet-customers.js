@@ -35,7 +35,7 @@ export function openAppsheetCustomers({ api, esc, onSaved, document: doc = docum
     <p class="muted small">Mỗi lô tối đa 200 khách và 200 liên hệ. Ngày thành lập dùng YYYY-MM-DD; ngày giờ nguồn phải có múi giờ. Khách nghi trùng cần chọn bản CRM tương ứng. Các trường nhân viên đã sửa được giữ lại.</p>
     <p class="error" role="alert" data-error></p><p role="status" data-summary></p><div data-report></div>
     <details><summary>Lịch sử nhập gần nhất</summary><div data-runs></div></details></div>
-    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Đóng</button><button type="button" class="btn secondary" data-preview disabled>Xem trước</button><button type="button" class="btn navy" data-apply disabled>Nhập theo bản xem trước</button></div>`;
+    <div class="modal-foot"><button type="button" class="btn secondary" data-close>Đóng</button><button type="button" class="btn secondary" data-preview disabled>Xem trước</button><button type="button" class="btn primary" data-apply disabled>Nhập theo bản xem trước</button></div>`;
   doc.body.append(dlg);
   const $=s=>dlg.querySelector(s),file=$('[data-file]'),preview=$('[data-preview]'),apply=$('[data-apply]');
   const review=createAppsheetReview(api);

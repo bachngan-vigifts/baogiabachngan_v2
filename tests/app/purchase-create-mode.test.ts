@@ -4,10 +4,10 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 const source = readFileSync(new URL('../../trial-ui/purchase-create-mode.js', import.meta.url), 'utf8');
 class Element {
-  children: Element[] = []; events: Record<string, Function> = {}; textContent = ''; value = ''; checked = false; disabled = false; removed = false; open = false;
+  children: Element[] = []; attrs: Record<string, string> = {}; events: Record<string, Function> = {}; textContent = ''; value = ''; checked = false; disabled = false; removed = false; open = false;
   append(...nodes: Element[]) { this.children.push(...nodes); }
   replaceChildren(...nodes: Element[]) { this.children = nodes; }
-  setAttribute() {} addEventListener(type: string, fn: Function) { this.events[type] = fn; }
+  setAttribute(k: string, v: string) { this.attrs[k] = v; } addEventListener(type: string, fn: Function) { this.events[type] = fn; }
   showModal() { this.open = true; } close() { this.open = false; } remove() { this.removed = true; }
 }
 function setup() {
@@ -25,6 +25,10 @@ test('mode dialog makes an explicit choice and closes; cancel does not choose', 
   assert.deepEqual(chosen, ['restock']); assert.equal(dialog.removed, true);
   s.ctx.choose((mode: string) => chosen.push(mode)); s.body.children[1]!.events.cancel!({ preventDefault() {} });
   assert.deepEqual(chosen, ['restock']);
+  // Nút × ở tiêu đề (aria-label "Đóng") đóng popup như Esc, không chọn cách tạo đơn.
+  s.ctx.choose((mode: string) => chosen.push(mode)); const third = s.body.children[2]!, x = third.children[0]!.children[0]!.children[1]!;
+  assert.equal(x.textContent, '×'); assert.equal(x.attrs['aria-label'], 'Đóng'); assert.equal(x.attrs['data-close'], ''); x.events.click!();
+  assert.deepEqual(chosen, ['restock']); assert.equal(third.removed, true);
 });
 test('catalog pages and search preserve selection and leading-zero SKU; names are text', async () => {
   const s = setup(), root = s.picker.root, list = root.children[3]!, pager = root.children[4]!;

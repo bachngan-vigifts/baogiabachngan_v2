@@ -111,6 +111,9 @@
 .pur-mode-dialog::backdrop { background: #10213c77; }
 .pur-mode-body { padding: 24px; }
 .pur-mode-body h2 { margin-top: 0; }
+.pur-mode-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.pur-mode-head h2 { margin: 0; min-width: 0; }
+.pur-mode-head .icon-btn { flex: none; }
 .pur-mode-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 20px 0; }
 .pur-mode-choice { display: flex; flex-direction: column; gap: 10px; text-align: left; padding: 20px; border: 1px solid #c8d8e5; border-radius: 12px; background: #f6fafc; color: inherit; font: inherit; cursor: pointer; }
 .pur-mode-choice:hover, .pur-mode-choice:focus-visible { border-color: #16825a; background: #edf9f3; }

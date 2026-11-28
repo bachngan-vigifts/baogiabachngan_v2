@@ -72,7 +72,7 @@ export function initAccounting({ api, root }) {
       d = document.createElement("dialog");
     dialog = d;
     d.className = "ac-dialog";
-    d.innerHTML = `<form><header><h2>${esc(title)}</h2><button type="button" data-close aria-label="Đóng">×</button></header><div class="ac-modal-body">${body}<p role="alert" class="ac-error"></p></div><footer><button type="button" data-close>Hủy</button><button type="submit" class="primary">${esc(label)}</button></footer></form>`;
+    d.innerHTML = `<form><header><h2>${esc(title)}</h2><button type="button" data-close aria-label="Đóng">×</button></header><div class="ac-modal-body">${body}<p role="alert" class="ac-error"></p></div><footer><button type="button" data-close>Huỷ</button><button type="submit" class="primary">${esc(label)}</button></footer></form>`;
     root.append(d);
     d.querySelectorAll("[data-close]").forEach(
       (b) =>

@@ -1713,7 +1713,7 @@ async function showProductCard(sku, name) {
     <div class="modal-body"><h3 class="pc-title">Tồn kho hiện tại</h3><div data-stock-box><p class="muted">Đang tải tồn kho…</p></div>
       <div class="pc-head"><h3 class="pc-title">Lịch sử nhập / xuất kho <small class="muted">· số lượng +/− và tồn trước → sau</small></h3><select class="pc-wh" data-ledger-wh aria-label="Lọc theo kho"><option value="">Tất cả kho</option></select></div><div data-ledger><p class="muted">Đang tải sổ kho…</p></div>
       <div class="pc-head"><h3 class="pc-title">Lịch sử bán &amp; chứng từ <small class="muted">· 20 giao dịch gần nhất</small></h3><div class="chips pc-filter" data-filter></div></div><div data-history><p class="muted">Đang tải lịch sử…</p></div></div>
-    <div class="modal-foot"><a class="btn primary" href="#/products/${encodeURIComponent(sku)}">Xem trang chi tiết</a>${canUpdateProducts() ? '<button type="button" class="btn secondary" data-update-product-card>Cập nhật sản phẩm</button>' : ''}<button type="button" class="btn navy" data-x>Đóng</button></div>`;
+    <div class="modal-foot"><button type="button" class="btn secondary" data-x>Đóng</button>${canUpdateProducts() ? '<button type="button" class="btn secondary" data-update-product-card>Cập nhật sản phẩm</button>' : ''}<a class="btn primary" href="#/products/${encodeURIComponent(sku)}">Xem trang chi tiết</a></div>`;
   document.body.append(dlg); dlg.showModal();
   const close = () => { dlg.close(); };
   dlg.querySelector('[data-update-product-card]')?.addEventListener('click', () => { close(); productAdmin().openEdit(sku); });

@@ -168,7 +168,8 @@ export function initCustomerDetail(deps) {
       edit.addEventListener('click', () => {
         const customerId = st.d.customer.id, seq = st.seq;
         const dlg = make('dialog', 'modal'), form = make('form'), head = make('div', 'modal-head');
-        head.append(make('h2', '', 'Ghi chú chung về khách hàng'));
+        const x = make('button', 'icon-btn', '×'); x.type = 'button'; x.setAttribute('data-close', ''); x.setAttribute('aria-label', 'Đóng'); x.addEventListener('click', () => dlg.close());
+        head.append(make('h2', '', 'Ghi chú chung về khách hàng'), x);
         const body = make('div', 'modal-body'), label = make('label', '', 'Nội dung ghi chú (tối đa 5.000 ký tự)');
         const text = make('textarea'); text.rows = 7; text.maxLength = 5000; text.value = note.text; label.append(text);
         const error = make('p', 'error'); error.setAttribute('role', 'alert');
