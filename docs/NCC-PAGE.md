@@ -183,3 +183,7 @@ Sale Admin được xem giá và dùng PDF/gửi email ngay trên đơn mua đã
 ### Xin hàng trước bằng file
 
 Manager/Sale Admin dùng nút **Xin hàng trước bằng file** tại đầu trang Đơn mua NCC: tải mẫu Excel → chọn NCC/ngày lấy → chọn file → xem trước → lưu phiếu nháp → mở phiếu để Gửi NCC. Mẫu gồm **Mã hàng · Tên sản phẩm · Số lượng xin trước · Số đơn mua CRM (DMH) · Số đơn của NCC**. Hai cột số đơn có thể trống; chỉ nhập số NCC thì tự tìm đơn CRM, khớp nhiều đơn sẽ yêu cầu chọn rõ. Trống cả hai tự phân bổ theo mã/NCC; xem trước hiện nguồn thực lấy và lưu ghim nguồn để sửa/gửi không đổi đơn. Dùng luồng xin lấy trước hiện có, không tự tạo phiếu nhận/cộng kho. Xem [hướng dẫn và kiểm thử](PURCHASE-EARLY-FILE.md).
+
+### NVBH LOCK nhận hàng theo quyền được cấp
+
+NVBH LOCK và NVBH Minh Long đều được nhận hàng khi có `purchases.receive`, còn quyền xem đơn và phạm vi mã hàng vẫn kiểm tra tại máy chủ. Không tự cấp quyền mới, không mở giá mua, duyệt giá hoặc thanh toán NCC. Nút Nhận hàng trong chi tiết dùng `actions` từ API. Kiểm thử: `tests/app/nvbh-purchase-scope.test.ts`; luồng trình duyệt với dữ liệu PGlite thử ở PC/mobile: `scripts/testing/lock-receive-permission.mjs`.
