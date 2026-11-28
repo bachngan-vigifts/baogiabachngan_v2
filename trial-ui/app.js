@@ -4087,7 +4087,8 @@ $('#bank-statement-open').addEventListener('click', () => {
   const file = el('input'); file.type = 'file'; file.accept = '.xlsx,.xls,.csv'; file.setAttribute('aria-label', 'Chọn file sao kê');
   const tools = el('div', 'bank-tools'); tools.append(sample, file);
   const status = el('p', 'muted small'), wrap = el('div', 'table-wrap'), foot = el('div', 'acct-quick-foot'), save = el('button', 'btn primary', 'Ghi thu các dòng đã chọn'); save.type = 'button'; save.disabled = true;
-  foot.append(save); box.append(head, intro, tools, status, wrap, foot); dlg.append(box);
+  const shut = el('button', 'btn secondary', 'Đóng'); shut.type = 'button'; shut.addEventListener('click', () => dlg.close());
+  foot.append(shut, save); box.append(head, intro, tools, status, wrap, foot); dlg.append(box);
   let items = [];
   const money0 = n => Number(n).toLocaleString('vi-VN') + ' đ';
   function render() {
