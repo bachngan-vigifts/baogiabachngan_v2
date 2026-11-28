@@ -1,0 +1,38 @@
+name: Báo cáo độ trễ SePay (chỉ đọc)
+# Chạy tay. Một câu SELECT trên CSDL production qua Supabase Management API với read_only=true.
+# Không ghi CSDL, không gọi SePay, không đổi webhook/lịch. Chỉ in thời gian trễ và số lượng:
+# không in nội dung chuyển khoản, số tài khoản, số tiền hay tên khách.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Số ngày gần nhất cần đo (1–14)'
+        default: '3'
+permissions:
+  contents: read
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: taceqfnsorewelsbdckg
+      DAYS: ${{ inputs.days }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Kiểm tra đầu vào và câu truy vấn chỉ đọc
+        shell: bash
+        run: |
+          [[ "$DAYS" =~ ^([1-9]|1[0-4])$ ]] || { echo 'Số ngày phải từ 1 đến 14.'; exit 1; }
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] || { echo 'Thiếu secret SUPABASE_ACCESS_TOKEN.'; exit 1; }
+          if sed 's/--.*$//' scripts/sql/report-sepay-latency.sql | grep -Eiq '\b(insert|update|delete|drop|alter|truncate|create|grant)\b'; then
+            echo 'Câu truy vấn có lệnh ghi; dừng.'; exit 1
+          fi
+      - name: Đo độ trễ
+        shell: bash
+        run: |
+          query=$(sed "s/__DAYS__/$DAYS/g" scripts/sql/report-sepay-latency.sql)
+          payload=$(jq -n --arg query "$query" '{query:$query, read_only:true}')
+          curl --fail-with-body --silent --show-error -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload" \
+            | jq '.[0].report'
