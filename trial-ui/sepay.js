@@ -1,4 +1,4 @@
-import {initSepayAllocations} from './sepay-allocations.js';
+import {initSepayAllocations, isGhnSettlementMemo} from './sepay-allocations.js';
 const esc = (s) =>
   String(s ?? "").replace(
     /[&<>"']/g,
@@ -259,6 +259,11 @@ export function initSepay({ api, root, go, canOpenOrders = () => true }) {
       if (!valid(own, d)) return;
       event = res.transaction;
       const r = event;
+      if (data?.capabilities.canConfirm && r.transferType === "in" &&
+          ["review", "unmatched"].includes(r.status) && isGhnSettlementMemo(r.content)) {
+        go("#/sepay?allocation=" + encodeURIComponent(r.id));
+        return;
+      }
       $("[data-detail]").innerHTML =
         `${back}<div class="sp-heading"><h2>Đối soát giao dịch</h2>${badge(r.status, !!r.webOrderId)}</div><strong class="sp-bank-amount ${r.transferType==='out'?'sp-outgoing':''}">${r.transferType==='out'?'− ':''}${esc(money(r.amount))}</strong><dl class="sp-info"><dt>Mã SePay</dt><dd>${esc(r.providerId)}</dd><dt>Thời gian</dt><dd>${esc(stamp(r.transactionAt))}</dd><dt>Tài khoản ngân hàng</dt><dd>${esc(r.accountNumber)}</dd><dt>Nội dung gốc</dt><dd class="sp-original">${esc(r.content)}</dd></dl>
       ${r.reason && !(r.webOrderId && r.status === "matched") ? `<p class="sp-warning">${esc(r.reason)}</p>` : ""}${receiptView(r)}
