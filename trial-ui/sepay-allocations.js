@@ -24,6 +24,52 @@ function allocationTotals(summary, lines) {
 }
 const carrierDifference = (expected, amount) => !expected || expected === amount ? 'GHN chuyển đủ' : `GHN chuyển ${amount > expected ? 'dư' : 'thiếu'} ${money(Math.abs(amount - expected))}`;
 const lineDifference = l => ghnReceipt(l) ? carrierDifference(l.expectedAmount, settled(l)) : differenceText(l.expectedAmount, settled(l));
+// Memo only chooses a view. It is not evidence of a payout ID, shipment, or amount.
+function isGhnSettlementMemo(value) {
+  const folded = String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  return /^\s*CTCP[\s.]+DICH\s+VU\s+GIAO\s+HANG\s+NHANH(?=\s|[-–—:]|$)/.test(folded);
+}
+function parseGhnSettlementRows(raw, remaining) {
+  const rows = raw.trim().split(/\r?\n/).filter(l => l.trim());
+  if (raw.length > 12000 || !raw.trim() || rows.length > 100) throw Error("Dán từ 1 đến 100 dòng chi tiết GHN.");
+  const seen = new Set();
+  const parsed = rows.map((line, i) => {
+    const cols = line.split(/\t/).map(s => s.trim());
+    const code = cols[0]?.toUpperCase();
+    if (cols.length !== 4 || !/^[A-Z0-9]{4,30}$/.test(code)) throw Error(`Dòng ${i+1}: cần 4 cột theo thứ tự mã vận đơn, COD, phí đã trừ, thực nhận.`);
+    if (seen.has(code)) throw Error(`Mã vận đơn bị trùng: ${code}.`);
+    seen.add(code);
+    const values = cols.slice(1).map(col => {
+      if (!/^(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{1,3}(?:,[0-9]{3})+)$/.test(col)) throw Error(`Dòng ${i+1}: dùng số tiền nguyên VND; nhập 0 nếu phí bằng 0.`);
+      const n = Number(col.replace(/[.,]/g, ""));
+      if (!Number.isSafeInteger(n) || n > 1e12) throw Error(`Dòng ${i+1}: số tiền không hợp lệ.`);
+      return n;
+    });
+    const [cod, fee, net] = values;
+    if (net <= 0 || cod !== fee + net) throw Error(`Dòng ${i+1}: COD phải bằng phí đã trừ cộng thực nhận. Phiên có điều chỉnh cần kiểm tra thủ công.`);
+    return {code, cod, fee, net};
+  });
+  if (parsed.reduce((sum, row) => sum + row.net, 0) !== remaining) throw Error("Tổng thực nhận trong file không bằng khoản GHN chuyển. Chưa tạo nháp.");
+  return parsed;
+}
+function ghnSettlementDraft(rows, results) {
+  const targets = new Set();
+  return rows.map((r, i) => {
+    // Existing COD receipt is authoritative only when it belongs to the exact waybill and amount.
+    const exact = results[i].filter(c =>
+      String(c.ghnCode || "").trim().toUpperCase() === r.code ||
+      c.existingPayments?.some(p => p.source === "ghn_cod" && String(p.reference || "").trim().toUpperCase() === r.code)
+    );
+    if (exact.length !== 1 || exact[0].blockedReason || exact[0].paymentReviewRequired) throw Error(`Vận đơn ${r.code}: không tìm thấy đúng một chứng từ đủ điều kiện.`);
+    const c = exact[0];
+    const receipts = (c.existingPayments || []).filter(p =>
+      p.source === "ghn_cod" && String(p.reference || "").trim().toUpperCase() === r.code
+    );
+    if (receipts.length !== 1 || receipts[0].amount !== r.cod || targets.has(c.targetId)) throw Error(`Vận đơn ${r.code}: phiếu COD không khớp hoặc trùng đơn. Cần kiểm tra thủ công.`);
+    targets.add(c.targetId);
+    return {...c, ghnCode:r.code, cap:r.cod, expectedAmount:r.cod, amount:r.net, ghnFee:r.fee, existingPaymentId:receipts[0].id, paymentReviewed:false};
+  });
+}
 function initSepayAllocations({ api, root, go, canOpenOrders = () => true }) {
   if (!document.getElementById("sepay-allocation-style")) {
     const l = document.createElement("link");
@@ -33,6 +79,7 @@ function initSepayAllocations({ api, root, go, canOpenOrders = () => true }) {
     document.head.append(l);
   }
   let alive = true, sequence = 0, id = "", path = "", storageKey = "", summary = null, event = null, lines = [], candidates = [], filters = { q: "", source: "all", from: "", to: "", offset: 0 }, hasMore = false, pending = null, voidPending = null, busy = false, review = false, stale = false, notice = "", storageWarning = "";
+  let initialSourceSet = false, importNotice = "";
   const $ = (s) => root.querySelector(s), save = () => {
     try {
       if (storageKey) sessionStorage.setItem(storageKey, JSON.stringify({ lines, pending, voidPending }));
@@ -77,12 +124,52 @@ function initSepayAllocations({ api, root, go, canOpenOrders = () => true }) {
   function row(l) {
     return `<article class="sa-line" data-line="${esc(l.targetId)}"><div><b>${esc(l.orderNo)}</b><small>${esc(l.customerName)}</small><small>T\u1ED5ng ${money(l.total)} \xB7 \u0110\xE3 thu ${money(l.paid)} \xB7 C\xF2n n\u1EE3 ${money(l.outstanding)}</small></div><div class="sa-entry"><label>Nh\u1EADn l\u1EA7n n\xE0y (\u20AB)<input data-amount data-money="1" type="number" inputmode="numeric" min="1" max="1000000000000" step="1" value="${l.amount || ""}" ${pending || busy ? "disabled" : ""} ></label><label>% c\xF2n n\u1EE3<input data-percent data-money="0" type="number" min="0" max="100" step="1" placeholder="30" ${pending || l.existingPaymentId || busy ? "disabled" : ""}></label><button class="btn secondary" data-full ${pending || busy ? "disabled" : ""}>\u0110\u1EE7 100%</button><button class="btn secondary" data-bank-remaining ${pending || busy ? "disabled" : ""}>Dùng tiền còn lại</button><button class="btn ghost" data-remove ${pending || busy ? "disabled" : ""}>B\u1ECF</button></div>${l.existingPayments?.length ? `<label>Ch\u1EE9ng t\u1EEB thu<select data-receipt ${pending || busy ? "disabled" : ""}><option value="">T\u1EA1o phi\u1EBFu m\u1EDBi theo c\xF4ng n\u1EE3</option>${l.existingPayments.map((p) => `<option value="${esc(p.id)}" ${p.id === l.existingPaymentId ? "selected" : ""}>${p.source === "ghn_cod" ? "GHN đã thu COD " : "G\u1EAFn phi\u1EBFu "}${esc(p.reference || p.id)} \xB7 ${money(p.amount)}</option>`).join("")}</select></label>` : ""}${l.paymentReviewRequired ? `<label class="sp-check"><input type="checkbox" data-payment-reviewed ${l.paymentReviewed ? "checked" : ""} ${pending || busy ? "disabled" : ""}>\u0110\xE3 \u0111\u1ED1i chi\u1EBFu thanh to\xE1n website, x\xE1c nh\u1EADn s\u1ED1 ti\u1EC1n th\u1EF1c c\xF2n n\u1EE3.</label>` : ""}${l.ghnCode ? `<label>Phí GHN đã trừ (₫)<input data-ghn-fee type="number" inputmode="numeric" min="0" max="1000000000000" step="1" value="${fee(l) || ""}" ${pending || busy ? "disabled" : ""}></label><small>Vận đơn GHN ${esc(l.ghnCode)}${l.ghnFeeHint ? ` · Phí tham khảo ${money(l.ghnFeeHint)}` : ""} · Đối chiếu phí thực tế theo sao kê trước khi xác nhận. Phí tham khảo không tự ghi thu.</small>` : ""}<small data-line-difference>${lineDifference(l)}${l.existingPaymentId && !ghnReceipt(l) && settled(l)!==l.cap ? ` · Huỷ phiếu cũ và tạo phiếu đúng số thực nhận; giữ lịch sử.${!summary.canReplaceReceipt?" Cần quyền Huỷ phiếu thu hoặc Sửa phiếu thu lệch khi đối soát SePay.":""}` : ""}</small><small>${ghnReceipt(l) ? "Công nợ khách (không đổi):" : "Công nợ sau lần này:"} <b data-after>${balanceLabel(balanceAfter(l))}</b>${l.existingPaymentId && settled(l)===l.cap ? " · Chỉ gắn phiếu đã có, không thu thêm." : ""}</small></article>`;
   }
+  function ghnImport() {
+    if (!isGhnSettlementMemo(event?.content) || event?.transferType !== "in") return "";
+    if (summary.remaining !== summary.amount || summary.allocations?.length || summary.needsReview || !["unmatched", "review"].includes(event.status)) return "";
+    return `<section class="card"><h2>Chi tiết phiên COD GHN</h2><p>Đối chiếu đúng phiên và tài khoản nhận trên GHN. Dán 4 cột từ Excel, không dán tiêu đề: mã vận đơn, COD, phí đã trừ, thực nhận. Nhập 0 nếu không có phí.</p><p class="muted">Chỉ tạo nháp cho phiên khớp đủ tiền và có đúng phiếu “GHN đã thu COD”. Phiên có điều chỉnh riêng cần xử lý thủ công. Chưa ghi thu khi tạo nháp.</p><form data-ghn-import><label>Chi tiết phiên (phân cách bằng tab)<textarea name="rows" rows="4" maxlength="12000" required></textarea></label><label class="sp-check"><input type="checkbox" required>Tôi xác nhận file là của đúng khoản GHN chuyển đang mở.</label><button class="btn secondary" ${lines.length || stale || pending || voidPending || busy ? "disabled" : ""}>Ghép vận đơn vào nháp</button></form>${importNotice ? `<p role="status">${esc(importNotice)}</p>` : ""}</section>`;
+  }
+  async function importGhn(form) {
+    if (busy || lines.length || stale || pending || voidPending || !summary || event?.transferType !== "in" ||
+      !isGhnSettlementMemo(event.content) || summary.remaining !== summary.amount || summary.allocations?.length ||
+      summary.needsReview || !["unmatched", "review"].includes(event.status)) return;
+    busy = true;
+    const submit = form.querySelector("button");
+    submit.disabled = true;
+    try {
+      const rows = parseGhnSettlementRows(String(new FormData(form).get("rows") || ""), summary.remaining);
+      const results = [];
+      for (let i = 0; i < rows.length; i += 4) {
+        results.push(...await Promise.all(rows.slice(i, i+4).map(async ({code}) => {
+          const params = new URLSearchParams({source:"ghn", q:code});
+          const r = await api("/sepay/transactions/" + encodeURIComponent(id) + "/allocation-candidates?" + params);
+          if (r.hasMore) throw Error(`Vận đơn ${code}: kết quả không đủ rõ, cần kiểm tra thủ công.`);
+          return r.candidates;
+        })));
+        if (!alive) return;
+      }
+      lines = ghnSettlementDraft(rows, results);
+      importNotice = `Đã ghép ${lines.length} vận đơn vào nháp. Kiểm tra phí và số tiền trước khi xác nhận.`;
+      notice = "";
+      save();
+      busy = false;
+      render();
+    } catch (e) {
+      if (!alive) return;
+      notice = e.message || "Không tải được chi tiết GHN.";
+      $("[data-notice]").textContent = notice;
+      $("[data-notice]").scrollIntoView({block:"nearest"});
+    } finally {
+      busy = false;
+      if (submit.isConnected) submit.disabled = false;
+    }
+  }
   function render() {
     if (!alive) return;
     root.classList.add("sp-page");
     root.setAttribute("data-no-busy", "");
     root.dataset.mobileActions = "off";
-    root.innerHTML = `<section class="sa-page"><div class="page-head"><div><p class="eyebrow">THANH TO\xC1N SEPAY</p><h1>\u0110\u1ED1i so\xE1t chi ti\u1EBFt</h1></div><div class="sp-head-actions"><button class="btn secondary" data-back>\u2190 Giao d\u1ECBch</button><button class="btn secondary" data-reload ${busy ? "disabled" : ""}>T\u1EA3i l\u1EA1i c\xF4ng n\u1EE3</button></div></div><p class="sp-error" data-notice role="alert">${esc(notice || storageWarning)}</p>${summary ? `<section class="card"><strong class="sp-bank-amount">${money(summary.amount)}</strong><p>${esc(event?.content)}</p><small>M\xE3 SePay ${esc(event?.providerId)} \xB7 TK ${esc(event?.accountNumber)}</small>${summary.needsReview ? '<p class="sp-warning">T\u1ED5ng \u0111\u01A1n web \u0111\xE3 thay \u0111\u1ED5i sau ph\xE2n b\u1ED5: c\u1EA7n \u0111\u1ED1i so\xE1t l\u1EA1i. Ch\u01B0a th\u1EC3 ghi th\xEAm.</p>' : ""}<p class="muted">Phân bổ tiền ngân hàng thực nhận; phí GHN đã xác nhận được cấn trừ công nợ, không ghi thêm tiền thu. Chọn “Dùng tiền còn lại” để phân bổ phần dư/thiếu và kiểm tra chênh lệch trước khi xác nhận.</p></section>${pending ? '<div class="sp-warning">Ch\u01B0a x\xE1c nh\u1EADn \u0111\u01B0\u1EE3c k\u1EBFt qu\u1EA3. Gi\u1EEF nguy\xEAn l\xF4 v\xE0 m\xE3 thao t\xE1c; b\u1EA5m ki\u1EC3m tra l\u1EA1i k\u1EBFt qu\u1EA3 \u0111\u1EC3 tr\xE1nh ghi tr\xF9ng. <button class="btn navy" data-retry>Ki\u1EC3m tra l\u1EA1i k\u1EBFt qu\u1EA3</button></div>' : ""}${voidPending ? '<div class="sp-warning">Ch\u01B0a r\xF5 k\u1EBFt qu\u1EA3 g\u1EE1 ph\xE2n b\u1ED5. <button class="btn secondary" data-retry-void>Ki\u1EC3m tra l\u1EA1i l\u1EC7nh g\u1EE1</button></div>' : ""}${stale ? '<p class="sp-warning">D\u1EEF li\u1EC7u v\u1EEBa thay \u0111\u1ED5i. Nh\xE1p \u0111\u01B0\u1EE3c gi\u1EEF l\u1EA1i. T\u1EA3i l\u1EA1i c\xF4ng n\u1EE3 v\xE0 ki\u1EC3m tra t\u1EEBng d\xF2ng tr\u01B0\u1EDBc khi g\u1EEDi l\u1EA1i.</p>' : ""}<form class="card sa-search" data-search><label>T\xECm \u0111\u01A1n / H\u0110KT / h\xF3a \u0111\u01A1n / kh\xE1ch<input name="q" maxlength="120" value="${esc(filters.q)}"></label><label>Lo\u1EA1i \u0111\u01A1n<select name="source">${[["all", "T\u1EA5t c\u1EA3"], ["crm", "\u0110\u01A1n CRM"], ["contract", "H\u0110KT"], ["pos", "POS"], ["web", "Website"], ["ghn", "Có vận đơn GHN"]].map(([v, t]) => `<option value="${v}" ${filters.source === v ? "selected" : ""}>${t}</option>`).join("")}</select></label><label>T\u1EEB ng\xE0y<input type="date" name="from" value="${esc(filters.from)}"></label><label>\u0110\u1EBFn ng\xE0y<input type="date" name="to" value="${esc(filters.to)}"></label><button class="btn navy" ${busy ? "disabled" : ""}>T\xECm ch\u1EE9ng t\u1EEB</button></form><section class="card"><h2>Ch\u1EE9ng t\u1EEB c\xF2n n\u1EE3 / phi\u1EBFu thu c\xF3 th\u1EC3 g\u1EAFn</h2><div class="sa-candidates">${candidates.map((c) => `<article><div><b>${esc(c.contractNo || c.orderNo)}</b><small>${esc(c.customerName)}</small><small>T\u1ED5ng ${money(c.total)} \xB7 \u0110\xE3 thu ${money(c.paid)} \xB7 C\xF2n n\u1EE3 ${money(c.outstanding)}</small>${c.blockedReason ? `<small>${esc(c.blockedReason)}</small>` : ""}</div><button class="btn secondary" data-add="${esc(c.targetId)}" ${busy || pending || voidPending || c.blockedReason || lines.some((l) => l.targetId === c.targetId) ? "disabled" : ""}>Th\xEAm</button></article>`).join("") || "<p>Kh\xF4ng c\xF3 ch\u1EE9ng t\u1EEB ph\xF9 h\u1EE3p trong trang n\xE0y.</p>"}</div><div class="sp-pager"><button class="btn secondary" data-page="${Math.max(0, filters.offset - 50)}" ${!filters.offset || busy ? "disabled" : ""}>\u2190 Tr\u01B0\u1EDBc</button><span>Trang ${filters.offset / 50 + 1}</span><button class="btn secondary" data-page="${filters.offset + 50}" ${!hasMore || busy ? "disabled" : ""}>Sau \u2192</button></div></section><section class="card"><h2>\u0110ang ph\xE2n b\u1ED5 (${lines.length})</h2><div data-lines>${lines.map(row).join("") || "<p>Ch\u1ECDn c\xE1c \u0111\u01A1n \u0111\u1EC3 nh\u1EADp s\u1ED1 ti\u1EC1n nh\u1EADn t\u1EEBng \u0111\u01A1n.</p>"}</div></section><div data-check>${review ? `<section class="card sa-review"><h2>Ki\u1EC3m tra tr\u01B0\u1EDBc khi ghi thu</h2>${lines.map((l) => `<p>${esc(l.orderNo)}: <b>${money(l.amount)}</b>${fee(l) ? ` + phí GHN cấn trừ ${money(fee(l))}` : ""}${l.expectedAmount!==settled(l) && l.expectedAmount ? ` · ${lineDifference(l)} so với ${money(l.expectedAmount)}` : ""}${ghnReceipt(l) ? " · Giữ nguyên phiếu khách đã trả COD; chênh lệch thuộc GHN" : l.existingPaymentId ? settled(l)===l.cap?" · Gắn phiếu đã có":" · Huỷ phiếu cũ và tạo phiếu đúng số thực nhận, giữ lịch sử" : ""}</p>`).join("")}<p>T\u1ED5ng ghi nh\u1EADn ${money(totals().amount)} \xB7 Còn chưa phân bổ (+ dư / − thiếu) ${money(totals().remaining)}</p><label class="sp-check"><input type="checkbox" data-verified>Tôi đã đối chiếu đúng đơn, tài khoản nhận, số tiền, phí GHN thực tế (nếu có) và chấp nhận phần chênh lệch hiển thị.</label><button class="btn navy" data-confirm disabled>X\xE1c nh\u1EADn ph\xE2n b\u1ED5</button><button class="btn secondary" data-cancel>Quay l\u1EA1i s\u1EEDa</button></section>` : ""}</div><section class="card"><h2>L\u1ECBch s\u1EED ph\xE2n b\u1ED5</h2>${summary.allocations.map((a) => `<article class="sa-history"><b>${esc(a.targetNo || a.targetKey)}</b>${a.settlementKind === "ghn_cod" ? ` · GHN ${esc(a.ghnCode)} · Khách đã trả COD, giữ nguyên công nợ` : ""} \xB7 ${money(a.amount)}${a.ghnFee ? ` + phí GHN ${money(a.ghnFee)}` : ""}${a.difference ? `<small>${a.settlementKind === "ghn_cod" ? carrierDifference(a.expectedAmount,settled(a)) : differenceText(a.expectedAmount,settled(a))} · Số đối chiếu ${money(a.expectedAmount)}</small>` : ""}<small>L\xF4 ${esc(a.batchId)} \xB7 ${esc(a.createdAt)}</small>${a.voidedAt ? `<small>\u0110\xE3 g\u1EE1: ${esc(a.voidReason)}</small>` : `${canOpenOrders() ? `<a href="#/orders/${encodeURIComponent(a.webOrderId ? "web:" + a.webOrderId : a.orderId)}">M\u1EDF \u0111\u01A1n</a>` : ""}${summary.canVoid ? `<button class="btn ghost" data-void="${esc(a.id)}" ${busy || pending || voidPending ? "disabled" : ""}>G\u1EE1 ph\xE2n b\u1ED5</button>` : ""}`}</article>`).join("") || "<p>Ch\u01B0a c\xF3 ph\xE2n b\u1ED5.</p>"}<div data-void-form></div></section><footer class="card sa-footer" data-footer>${footer()}</footer>` : "<p>Ch\u01B0a t\u1EA3i \u0111\u01B0\u1EE3c \u0111\u1ED1i so\xE1t. B\u1EA5m t\u1EA3i l\u1EA1i \u0111\u1EC3 th\u1EED l\u1EA1i.</p>"}</section>`;
+    root.innerHTML = `<section class="sa-page"><div class="page-head"><div><p class="eyebrow">THANH TO\xC1N SEPAY</p><h1>\u0110\u1ED1i so\xE1t chi ti\u1EBFt</h1></div><div class="sp-head-actions"><button class="btn secondary" data-back>\u2190 Giao d\u1ECBch</button><button class="btn secondary" data-reload ${busy ? "disabled" : ""}>T\u1EA3i l\u1EA1i c\xF4ng n\u1EE3</button></div></div><p class="sp-error" data-notice role="alert">${esc(notice || storageWarning)}</p>${summary ? `<section class="card"><strong class="sp-bank-amount">${money(summary.amount)}</strong><p>${esc(event?.content)}</p><small>M\xE3 SePay ${esc(event?.providerId)} \xB7 TK ${esc(event?.accountNumber)}</small>${summary.needsReview ? '<p class="sp-warning">T\u1ED5ng \u0111\u01A1n web \u0111\xE3 thay \u0111\u1ED5i sau ph\xE2n b\u1ED5: c\u1EA7n \u0111\u1ED1i so\xE1t l\u1EA1i. Ch\u01B0a th\u1EC3 ghi th\xEAm.</p>' : ""}<p class="muted">Phân bổ tiền ngân hàng thực nhận; phí GHN đã xác nhận được cấn trừ công nợ, không ghi thêm tiền thu. Chọn “Dùng tiền còn lại” để phân bổ phần dư/thiếu và kiểm tra chênh lệch trước khi xác nhận.</p></section>${ghnImport()}${pending ? '<div class="sp-warning">Ch\u01B0a x\xE1c nh\u1EADn \u0111\u01B0\u1EE3c k\u1EBFt qu\u1EA3. Gi\u1EEF nguy\xEAn l\xF4 v\xE0 m\xE3 thao t\xE1c; b\u1EA5m ki\u1EC3m tra l\u1EA1i k\u1EBFt qu\u1EA3 \u0111\u1EC3 tr\xE1nh ghi tr\xF9ng. <button class="btn navy" data-retry>Ki\u1EC3m tra l\u1EA1i k\u1EBFt qu\u1EA3</button></div>' : ""}${voidPending ? '<div class="sp-warning">Ch\u01B0a r\xF5 k\u1EBFt qu\u1EA3 g\u1EE1 ph\xE2n b\u1ED5. <button class="btn secondary" data-retry-void>Ki\u1EC3m tra l\u1EA1i l\u1EC7nh g\u1EE1</button></div>' : ""}${stale ? '<p class="sp-warning">D\u1EEF li\u1EC7u v\u1EEBa thay \u0111\u1ED5i. Nh\xE1p \u0111\u01B0\u1EE3c gi\u1EEF l\u1EA1i. T\u1EA3i l\u1EA1i c\xF4ng n\u1EE3 v\xE0 ki\u1EC3m tra t\u1EEBng d\xF2ng tr\u01B0\u1EDBc khi g\u1EEDi l\u1EA1i.</p>' : ""}<form class="card sa-search" data-search><label>T\xECm \u0111\u01A1n / H\u0110KT / h\xF3a \u0111\u01A1n / kh\xE1ch<input name="q" maxlength="120" value="${esc(filters.q)}"></label><label>Lo\u1EA1i \u0111\u01A1n<select name="source">${[["all", "T\u1EA5t c\u1EA3"], ["crm", "\u0110\u01A1n CRM"], ["contract", "H\u0110KT"], ["pos", "POS"], ["web", "Website"], ["ghn", "Có vận đơn GHN"]].map(([v, t]) => `<option value="${v}" ${filters.source === v ? "selected" : ""}>${t}</option>`).join("")}</select></label><label>T\u1EEB ng\xE0y<input type="date" name="from" value="${esc(filters.from)}"></label><label>\u0110\u1EBFn ng\xE0y<input type="date" name="to" value="${esc(filters.to)}"></label><button class="btn navy" ${busy ? "disabled" : ""}>T\xECm ch\u1EE9ng t\u1EEB</button></form><section class="card"><h2>Ch\u1EE9ng t\u1EEB c\xF2n n\u1EE3 / phi\u1EBFu thu c\xF3 th\u1EC3 g\u1EAFn</h2><div class="sa-candidates">${candidates.map((c) => `<article><div><b>${esc(c.contractNo || c.orderNo)}</b><small>${esc(c.customerName)}</small><small>T\u1ED5ng ${money(c.total)} \xB7 \u0110\xE3 thu ${money(c.paid)} \xB7 C\xF2n n\u1EE3 ${money(c.outstanding)}</small>${c.blockedReason ? `<small>${esc(c.blockedReason)}</small>` : ""}</div><button class="btn secondary" data-add="${esc(c.targetId)}" ${busy || pending || voidPending || c.blockedReason || lines.some((l) => l.targetId === c.targetId) ? "disabled" : ""}>Th\xEAm</button></article>`).join("") || "<p>Kh\xF4ng c\xF3 ch\u1EE9ng t\u1EEB ph\xF9 h\u1EE3p trong trang n\xE0y.</p>"}</div><div class="sp-pager"><button class="btn secondary" data-page="${Math.max(0, filters.offset - 50)}" ${!filters.offset || busy ? "disabled" : ""}>\u2190 Tr\u01B0\u1EDBc</button><span>Trang ${filters.offset / 50 + 1}</span><button class="btn secondary" data-page="${filters.offset + 50}" ${!hasMore || busy ? "disabled" : ""}>Sau \u2192</button></div></section><section class="card"><h2>\u0110ang ph\xE2n b\u1ED5 (${lines.length})</h2><div data-lines>${lines.map(row).join("") || "<p>Ch\u1ECDn c\xE1c \u0111\u01A1n \u0111\u1EC3 nh\u1EADp s\u1ED1 ti\u1EC1n nh\u1EADn t\u1EEBng \u0111\u01A1n.</p>"}</div></section><div data-check>${review ? `<section class="card sa-review"><h2>Ki\u1EC3m tra tr\u01B0\u1EDBc khi ghi thu</h2>${lines.map((l) => `<p>${esc(l.orderNo)}: <b>${money(l.amount)}</b>${fee(l) ? ` + phí GHN cấn trừ ${money(fee(l))}` : ""}${l.expectedAmount!==settled(l) && l.expectedAmount ? ` · ${lineDifference(l)} so với ${money(l.expectedAmount)}` : ""}${ghnReceipt(l) ? " · Giữ nguyên phiếu khách đã trả COD; chênh lệch thuộc GHN" : l.existingPaymentId ? settled(l)===l.cap?" · Gắn phiếu đã có":" · Huỷ phiếu cũ và tạo phiếu đúng số thực nhận, giữ lịch sử" : ""}</p>`).join("")}<p>T\u1ED5ng ghi nh\u1EADn ${money(totals().amount)} \xB7 Còn chưa phân bổ (+ dư / − thiếu) ${money(totals().remaining)}</p><label class="sp-check"><input type="checkbox" data-verified>Tôi đã đối chiếu đúng đơn, tài khoản nhận, số tiền, phí GHN thực tế (nếu có) và chấp nhận phần chênh lệch hiển thị.</label><button class="btn navy" data-confirm disabled>X\xE1c nh\u1EADn ph\xE2n b\u1ED5</button><button class="btn secondary" data-cancel>Quay l\u1EA1i s\u1EEDa</button></section>` : ""}</div><section class="card"><h2>L\u1ECBch s\u1EED ph\xE2n b\u1ED5</h2>${summary.allocations.map((a) => `<article class="sa-history"><b>${esc(a.targetNo || a.targetKey)}</b>${a.settlementKind === "ghn_cod" ? ` · GHN ${esc(a.ghnCode)} · Khách đã trả COD, giữ nguyên công nợ` : ""} \xB7 ${money(a.amount)}${a.ghnFee ? ` + phí GHN ${money(a.ghnFee)}` : ""}${a.difference ? `<small>${a.settlementKind === "ghn_cod" ? carrierDifference(a.expectedAmount,settled(a)) : differenceText(a.expectedAmount,settled(a))} · Số đối chiếu ${money(a.expectedAmount)}</small>` : ""}<small>L\xF4 ${esc(a.batchId)} \xB7 ${esc(a.createdAt)}</small>${a.voidedAt ? `<small>\u0110\xE3 g\u1EE1: ${esc(a.voidReason)}</small>` : `${canOpenOrders() ? `<a href="#/orders/${encodeURIComponent(a.webOrderId ? "web:" + a.webOrderId : a.orderId)}">M\u1EDF \u0111\u01A1n</a>` : ""}${summary.canVoid ? `<button class="btn ghost" data-void="${esc(a.id)}" ${busy || pending || voidPending ? "disabled" : ""}>G\u1EE1 ph\xE2n b\u1ED5</button>` : ""}`}</article>`).join("") || "<p>Ch\u01B0a c\xF3 ph\xE2n b\u1ED5.</p>"}<div data-void-form></div></section><footer class="card sa-footer" data-footer>${footer()}</footer>` : "<p>Ch\u01B0a t\u1EA3i \u0111\u01B0\u1EE3c \u0111\u1ED1i so\xE1t. B\u1EA5m t\u1EA3i l\u1EA1i \u0111\u1EC3 th\u1EED l\u1EA1i.</p>"}</section>`;
   }
   async function load() {
     if (busy) return;
@@ -94,6 +181,10 @@ function initSepayAllocations({ api, root, go, canOpenOrders = () => true }) {
       if (!alive || own !== sequence) return;
       summary = s;
       event = e.transaction;
+      if (!initialSourceSet) {
+        filters.source = event?.transferType === "in" && isGhnSettlementMemo(event?.content) ? "ghn" : "all";
+        initialSourceSet = true;
+      }
       stale = false;
       await find(false);
     } catch (e) {
@@ -117,7 +208,7 @@ function initSepayAllocations({ api, root, go, canOpenOrders = () => true }) {
         const c = candidates.find((c2) => c2.targetId === l.targetId);
         if (c) {
           const previousCap=l.cap;
-          Object.assign(l, { outstanding: c.outstanding, paid: c.paid, total: c.total, paymentReviewRequired: c.paymentReviewRequired, existingPayments: c.existingPayments, ghnCode: c.ghnCode || "", ghnFeeHint: c.ghnFeeHint || 0 });
+          Object.assign(l, { outstanding: c.outstanding, paid: c.paid, total: c.total, paymentReviewRequired: c.paymentReviewRequired, existingPayments: c.existingPayments, ghnCode: c.existingPayments?.find(p => p.id === l.existingPaymentId && p.source === "ghn_cod")?.reference || c.ghnCode || "", ghnFeeHint: c.ghnFeeHint || 0 });
           l.cap = l.existingPaymentId ? c.existingPayments?.find((p) => p.id === l.existingPaymentId)?.amount ?? 0 : c.outstanding ?? c.total;
           if(!pending && l.expectedAmount===previousCap)l.expectedAmount=l.cap;
         }
@@ -290,6 +381,11 @@ function initSepayAllocations({ api, root, go, canOpenOrders = () => true }) {
     }
   }
   function submit(e) {
+    if (e.target.matches("[data-ghn-import]")) {
+      e.preventDefault();
+      void importGhn(e.target);
+      return;
+    }
     if (e.target.matches("[data-search]")) {
       e.preventDefault();
       if (busy) return;
@@ -339,5 +435,8 @@ function initSepayAllocations({ api, root, go, canOpenOrders = () => true }) {
 }
 export {
   allocationTotals,
+  isGhnSettlementMemo,
+  parseGhnSettlementRows,
+  ghnSettlementDraft,
   initSepayAllocations
 };
